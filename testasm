@@ -1,0 +1,13 @@
+.text
+start:
+ mov edx, 10
+big_loop:
+ dec edx
+ mov ecx, 20_000_000
+ xor eax, eax
+again:
+ add eax, ecx
+ loop again
+ or edx, edx
+ jnz big_loop
+ ret

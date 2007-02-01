@@ -1,0 +1,31 @@
+10/01/2007	MZ/PE/COFF encoder works (except COFF obj file format/base relocations)
+
+14/12/2006	Section size optimizer, chooses best instruction encoding
+
+07/12/2006	Encoder (generic+ia32), real lexer, macros, special arg handling ($)
+		parser, section-level linker, raw file format
+
+06/07/2006	Parser for IA32
+
+23/05/2006	Encoder for IA32
+
+05/04/2006	added fpu/sse/sse3 instruction (only a few sse2)
+		preliminary port of dasm_pe_x86 to the new api
+		starting the specs for encoding
+		
+09/03/2006	modularized, rebuilt a filesystem hierarchy
+
+29/11/2005	separation of instruction-level disassembly vs block-level
+		premises of assembler
+		
+27/11/2005	added undocumented intel instructions
+
+25/11/2005	new pause instruction for ia32
+		creation of this CHANGELOG
+
+20/11/2005	support of end of file in block_disasm
+		decode only on demand for imports/exports in libpe
+		basic lexer for assembler
+		
+10/10/2005	support of ELF file format by Arnaud Cornet
+
