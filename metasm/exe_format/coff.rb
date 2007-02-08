@@ -90,21 +90,20 @@ class COFF < ExeFormat
 
 class << self
 	# opts:
-	# 	'pe_target'         in [:exe, :dll, :kmod, :obj]
+	# 	'pe_target'         in ['exe', 'dll', 'kmod', 'obj']
 	# 	'pe_format'         in ['PE', 'PE+']
 	# 	'directories'       hash of directory_name (from Directories) => [start_label, size_in_bytes] (label found in some program.section)
 	# 	'pre_header'        EncodedData to be prepended to the Coff header, the RVA of its first byte is 0
 	# 	'no_merge_sections' set to true if you don't want sections to be merged (implies no_merge_dirs)
-	# 	'no_merge_directories_sections' set to true if you don't want sections edata/idata to be merged
 	# 	'strip_base_relocs' set to true to exclude base relocation information
 	# 	'resources'         hash to compile as resources directories
 	# 	and misc values to initialize most Coff header members
 	def encode(program, opts={})
 		pe_format = opts.delete('pe_format') || 'PE'
-		pe_target = opts.delete('pe_target') || :exe
+		pe_target = opts.delete('pe_target') || 'exe'
 		directories = opts.delete('directories') || {}
 
-		# build initial section list
+		# build initial section list (mutable to allow section merge)
 		pe_sections = program.sections.inject([]) { |pe_sections, sect|
 			s = Section.new(sect.name.dup)
 			s.edata = sect.encoded.dup
@@ -123,11 +122,13 @@ class << self
 			pe_sections << s
 		}
 
-		if not opts.delete('no_merge_dollar_sections') and pe_target != :obj
-			# merge sections whose name have a $
+		canmerge = ! opts.delete('no_merge_sections')
+
+		if canmerge and pe_target != 'obj'
+			# merge sections whose name include '$'
 			pe_sections.sort_by { |s| s.name }.each { |s|
 				if s.name.include? '$'
-					newname = s.name[/.*(?=$)/]
+					newname = s.name[/.*(?=\$)/]
 					if ss = pe_sections.find { |ss| ss.name == newname }
 						pe_sections.delete s
 						ss.edata << s.edata
@@ -140,11 +141,6 @@ class << self
 			}
 		end
 
-		# merge sections
-		canmerge = ! opts.delete('no_merge_sections')
-		canmergedir = ! opts.delete('no_merge_directories_sections')
-		merge_sections(pe_sections, pe_target, opts) if canmerge and not canmergedir
-
 		# rva of <stuff> = <stuff> - program_start
 		program_start = opts.delete('program_start_label') || program.new_unique_label
 
@@ -154,18 +150,17 @@ class << self
 		#pre_encode_delayimports(program, program_start, pe_format, pe_sections, directories, opts) unless directories.has_key?('delay_import') or program.import.empty?
 		pre_encode_resources(program, program_start, opts.delete('resources'), pe_sections, directories, opts) unless directories.has_key?('resource_table') or not opts['resources']
 
-		merge_sections(pe_sections, pe_target, opts) if canmerge and canmergedir
+		merge_sections(pe_sections, pe_target, opts) if canmerge
 
 		# base relocation table
 		# relocs should not work unless sections are page-aligned (unless the dynamic loader accepts non-page-aligned base relocation adresses)
 		if not opts.delete('strip_base_relocs') and not directories.has_key?('base_relocation_table')
 			pre_encode_relocs(program, program_start, pe_sections, directories, opts)
 
-			if canmerge and canmergedir and
-					d = directories['base_relocation_table'] and
-					d[1] < 0x1000 and
+			# merge section
+			if canmerge and d = directories['base_relocation_table'] and d[1] < 0x1000 and
 					s = pe_sections[0..-2].find { |s| (s.virtsize + d[1] + 7) / 0x1000 == s.rawsize / 0x1000 }
-				s.edata.align_size s.align
+				s.edata.align_size pe_sections.last.align
 				s.edata << pe_sections.pop.edata
 			end
 		end
@@ -505,7 +500,7 @@ class << self
 
 	def pre_encode_header(program, program_start, pe_format, pe_target, pe_sections, directories, opts)
 
-		raise 'COFF :obj format not supported yet' if pe_format == :obj		# TODO
+		raise 'COFF :obj format not supported yet' if pe_target == 'obj'	 # TODO
 
 		header = EncodedData.new
 		header << (opts.delete('pre_header') || '')
@@ -520,10 +515,10 @@ class << self
 
 		section_align = opts.delete('section_align') || 0x1000
 #			if pe_sections.inject(0) { |size, s| size + s.rawsize } > 0x2000: 0x1000
-#			elsif pe_target == :kmod: 0x80
+#			elsif pe_target == 'kmod': 0x80
 #			else 0x200
 #			end
-		file_align = opts.delete('file_align') || (pe_target == :kmod ? 0x80 : 0x200)
+		file_align = opts.delete('file_align') || (pe_target == 'kmod' ? 0x80 : 0x200)
 
 		# section_align = [section_align, *program.sections.map { |s| s.align.to_i }].max	# TODO do not ignore source-specified align
 		# labels
@@ -549,10 +544,10 @@ class << self
 		if not tmp = opts.delete('characteristics')
 			tmp = %w[LINE_NUMS_STRIPPED LOCAL_SYMS_STRIPPED DEBUG_STRIPPED] +
 				case pe_target
-				when :exe:  %w[EXECUTABLE_IMAGE]
-				when :dll:  %w[EXECUTABLE_IMAGE DLL]
-				when :kmod: %w[EXECUTABLE_IMAGE] # SYSTEM absent from all windows PE
-				when :obj:  []
+				when 'exe':  %w[EXECUTABLE_IMAGE]
+				when 'dll':  %w[EXECUTABLE_IMAGE DLL]
+				when 'kmod': %w[EXECUTABLE_IMAGE] # SYSTEM absent from all windows PE
+				when 'obj':  []
 				end
 			tmp << "x#{program.cpu.size}BIT_MACHINE"	# XXX EM64T
 			tmp << 'RELOCS_STRIPPED' if not directories['base_relocation_table']
@@ -577,7 +572,7 @@ class << self
 		if entrypoint.kind_of? Integer
 			encode[:u32, entrypoint]
 		elsif not pe_sections.find { |s| s.edata.export[entrypoint] }
-			raise EncodeError, 'No entrypoint defined' if pe_target == :exe
+			raise EncodeError, 'No entrypoint defined' if pe_target == 'exe'
 			puts 'W: No entrypoint defined'
 			encode[:u32, 0]
 		else

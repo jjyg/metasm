@@ -3,6 +3,7 @@
 class PTrace
 	def do_things
 		eip = peekusr(EIP)
+		return unless eip & 0xf000_0000 == 0
 		code = readmem(eip, 8)
 		puts '%08x ' % eip + code.unpack('C*').map { |e| '\\x%02x' % e }.join
 	end
@@ -10,7 +11,7 @@ class PTrace
 	# target: pid (numeric) or path (string)
 	def initialize(target)
 		@buf = 'xxxx'
-		@bufptr = [@buf].pack('P').unpack('V').first
+		@bufptr = [@buf].pack('P').unpack('l').first
 		begin
 			@pid = Integer(target)
 			attach
@@ -24,7 +25,7 @@ class PTrace
 	end
 
 	def bufval
-		@buf.unpack('V').first
+		@buf.unpack('l').first
 	end
 
 	def main_loop
@@ -34,23 +35,32 @@ class PTrace
 			Process.waitpid(@pid, 0)
 			if $?.stopped? and $?.stopsig == 5	# sigtrap
 				do_things
-			else
-				if $?.stopped?
-					puts "stopped by sig #{$?.stopsig}"
-				elsif $?.signaled?
-					puts "signalled with #{$?.termsig}"
-				elsif $?.exited?
-					puts "exited with status #{$?.exitstatus}"
-				end
+				singlestep
+			elsif $?.stopped?
+				puts "stopped by sig #{$?.stopsig}"
+				dump_now = true
+				singlestep #$?.stopsig
+			elsif $?.signaled?
+				puts "exited by signal #{$?.termsig}"
+				break
+			elsif $?.exited?
+				puts "exited with status #{$?.exitstatus}"
+				break
 			end
-			singlestep rescue break
 		end
 		puts "#{count} instructions executed"
 	end
 
 	def readmem(off, len)
-		offend = off + len - 3
+		decal = off & 3
 		buf = ''
+		if decal > 0
+			off -= decal
+			peekdata(off)
+			off += 4
+			buf << @buf[decal..3]
+		end
+		offend = off + len - 3
 		while off < offend
 			peekdata(off)
 			buf << @buf[0, 4]
@@ -163,8 +173,8 @@ SYSCALL         =  24
 		ptrace(KILL, @pid, 0, 0)
 	end
 
-	def singlestep
-		ptrace(SINGLESTEP, @pid, 0, 0)
+	def singlestep(sig = 0)
+		ptrace(SINGLESTEP, @pid, 0, sig)
 	end
 
 	def syscall

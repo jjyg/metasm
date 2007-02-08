@@ -5,18 +5,13 @@ require 'metasm/ia32/parse'
 require 'metasm/ia32/encode'
 require 'metasm/exe_format/elf'
 
-class Metasm::Instruction
-        def inspect() "#<Instruction:%08x #{@opname.inspect} #{@args.inspect}>" % object_id end
-        alias to_s inspect
-end
-
 cpu = Metasm::Ia32.new
 prog = Metasm::Program.new cpu
 
 prog.parse DATA.read
 
 prog.encode
-data = Metasm::ELF.encode prog
+data = Metasm::ELF.encode prog, 'elf_interp' => '/lib/ld-linux.so.2'
 
 File.open('testelf', 'wb', 0755) { |fd| fd.write data }
 
@@ -30,10 +25,13 @@ syscall macro nr
  int 80h
 endm
 
-.text
-toto db "toto\n"
+.data
+ toto db "toto\n"
 toto_len equ $-toto
+
+.text
 start:
+/*
  call geteip
 geteip:
  pop eax
@@ -41,14 +39,13 @@ geteip:
 addr macro label
  [eax + label - geteip]
 endm
-
+*/
  mov ebx, stdout
- lea ecx, addr(toto)
+// lea ecx, addr(toto)
+ mov ecx, toto
  mov edx, toto_len
+ nop nop nop
  syscall(sys_write)
 
  xor ebx, ebx
  syscall(sys_exit)
-
-align 4096-1
-db 'x'
