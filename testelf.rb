@@ -1,4 +1,3 @@
-
 #!/usr/bin/env ruby
 
 require 'metasm/ia32/parse'
@@ -11,7 +10,8 @@ prog = Metasm::Program.new cpu
 prog.parse DATA.read
 
 prog.encode
-data = Metasm::ELF.encode prog, 'elf_interp' => '/lib/ld-linux.so.2'
+PT_GNU_STACK = 0x6474e551
+data = Metasm::ELF.encode prog, 'elf_interp' => '/lib/ld-linux.so.2', 'additional_segments' => [[PT_GNU_STACK, 0, 0, 0, %w[R W], 0, 0]], 'needed' => ['libc.so.6']
 
 File.open('testelf', 'wb', 0755) { |fd| fd.write data }
 
@@ -31,20 +31,9 @@ toto_len equ $-toto
 
 .text
 start:
-/*
- call geteip
-geteip:
- pop eax
-
-addr macro label
- [eax + label - geteip]
-endm
-*/
  mov ebx, stdout
-// lea ecx, addr(toto)
  mov ecx, toto
  mov edx, toto_len
- nop nop nop
  syscall(sys_write)
 
  xor ebx, ebx

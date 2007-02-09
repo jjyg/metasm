@@ -10,6 +10,14 @@ module Metasm
 		4 => '68K', 5 => '88K', 7 => '860', 8 => 'MIPS' }
 
 	# XXX ia32 only
+	DYNAMIC_TAG = { 0 => 'NULL', 1 => 'NEEDED', 2 => 'PLTRELSZ', 3 => 'PLTGOT',
+		4 => 'HASH', 5 => 'STRTAB', 6 => 'SYMTAB', 7 => 'RELA',
+		8 => 'RELASZ', 9 => 'RELAENT', 10 => 'STRSZ', 11 => 'SYMENT',
+		12 => 'INIT', 13 => 'FINI', 14 => 'SONAME', 15 => 'RPATH',
+		16 => 'SYMBOLIC', 17 => 'REL', 18 => 'RELSZ', 19 => 'RELENT',
+		20 => 'PLTREL', 21 => 'DEBUG', 22 => 'TEXTREL', 23 => 'JMPREL',
+		0x7000_0000 => 'LOPROC', 0x7fff_ffff => 'HIPROC' }
+
 	PH_TYPE = { 0 => 'NULL', 1 => 'LOAD', 2 => 'DYNAMIC', 3 => 'INTERP',
 		4 => 'NOTE', 5 => 'SHLIB', 6 => 'PHDR',
 		0x7000_0000 => 'LOPROC', 0x7fff_ffff => 'HIPROC' }
@@ -55,15 +63,87 @@ class << self
 			s.flags << 'EXECINSTR' if sect.mprot.include? :exec
 		}
 
-		# TODO create sym/dynamic/etc sections
+		# TODO create sym/d1ynamic/etc sections
 		# XXX regroup sections by flag (1 big rw segment, 1 big rx segment)
-		#elf_target = opts.delete('elf_target') || 'so'
+		pre_encode_relocs( program, sections, opts) unless opts.delete('non_relocatable')
+		pre_encode_symbols(program, sections, opts) unless opts.delete('no_full_symbols')
+		pre_encode_dynsyms(program, sections, opts) unless opts.delete('static')		# XXX find real option name
 
 		pre_encode_secthdr(program, sections, opts) unless opts.delete('no_section_header')
 		pre_encode_proghdr(program, sections, opts) unless opts.delete('no_program_header')	# or elf_target == 'obj'
 		pre_encode_header( program, sections, opts)
 
 		link(program, sections, opts)
+	end
+
+	def pre_encode_relocs(program, sections, opts)
+
+	end
+
+	def pre_encode_symbols(program, sections, opts)
+	end
+
+	def pre_encode_dynsyms(program, sections, opts)
+		# TODO on-demand instanciation
+
+		sections << (str = Section.new)
+		str.name = '.dynamic.str'	# XXX
+		str.align = 1
+		str.edata = EncodedData.new << 0
+		str.type = 'STRTAB'
+		str.flags << 'ALLOC'
+		end_str = program.new_unique_label
+
+		sections << (sym = Section.new)
+		sym.name = '.symtab'
+		sym.align = 4	# XXX
+		sym.edata = EncodedData.new
+		sym.type = 'SYMTAB'
+		sym.flags << 'ALLOC'
+		sym.link = sections.index(str)
+		#sym.info = index_of_the_last_LOCAL_symbol + 1
+		
+		sections << (hash = Section.new)
+		hash.name = '.hash'
+		hash.align = 4
+		hash.edata = EncodedData.new
+		hash.type = 'HASH'
+		hash.flags << 'ALLOC'
+		hash.link = sections.index(sym)
+
+		sections << (dynsym = Section.new)
+		dynsym.name = '.dynsym'
+		dynsym.align = 4
+		dynsym.edata = EncodedData.new
+		dynsym.type = 'DYNSYM'
+		dynsym.flags << 'ALLOC'
+		dynsym.link = sections.index(str)
+		#dynsym.info = index_of_the_last_LOCAL_symbol + 1
+
+		sections << (dynamic = Section.new)
+		dynamic.name = '.dynamic'
+		dynamic.align = 4
+		dynamic.edata = EncodedData.new
+		dynamic.type = 'DYNAMIC'
+		dynamic.flags << 'ALLOC'
+		dynamic.link = sections.index(str)
+
+		tag = proc { |type, val| dynamic.edata <<
+			Expression[int_from_hash(type, DYNAMIC_TAG)].encode(:u32, program.cpu.endianness) <<
+			Expression[*val].encode(:u32, program.cpu.endianness)
+		}
+
+		tag['STRTAB', program.label_at(str.edata, 0)]
+		tag['STRSZ', [end_str, :-, program.label_at(str.edata, 0)]]
+
+
+		(program.import.keys + (opts.delete('needed') || [])).each { |libname|
+			tag['NEEDED', str.edata.virtsize]
+			str.edata << libname << 0
+		}
+
+		str.edata.export[end_str] = str.edata.virtsize
+		tag['NULL', 0]	# end of array
 	end
 
 	def pre_encode_secthdr(program, sections, opts)
@@ -95,7 +175,6 @@ class << self
 			encode[nidx]
 			encode[int_from_hash(s.type, SH_TYPE)]
 			encode[bits_from_hash(s.flags, SH_FLAGS)]
-puts "bits from hash: bits #{s.flags.inspect}, val #{bits_from_hash(s.flags, SH_FLAGS).to_s 2}"
 			encode[program.label_at(s.edata, 0)]
 			encode[s.rawoffset ||= program.new_unique_label]
 			encode[s.edata.virtsize]
@@ -188,7 +267,7 @@ puts "bits from hash: bits #{s.flags.inspect}, val #{bits_from_hash(s.flags, SH_
 					firstsect.rawoffset ||= program.new_unique_label,
 					program.label_at(firstsect.edata, 0),
 					rawsz, virtsz,
-					['R', *{'WRITE' => 'W', 'EXECINSTR' => 'X'}.values_at(*lastprot)],
+					['R', *{'WRITE' => 'W', 'EXECINSTR' => 'X'}.values_at(*lastprot).compact],
 					0x1000
 				]
 
@@ -202,7 +281,7 @@ puts "bits from hash: bits #{s.flags.inspect}, val #{bits_from_hash(s.flags, SH_
 			firstsect.rawoffset ||= program.new_unique_label,
 			program.label_at(firstsect.edata, 0),
 			rawsz, virtsz,
-			['R', *{'WRITE' => 'W', 'EXECINSTR' => 'X'}.values_at(*lastprot)],
+			['R', *{'WRITE' => 'W', 'EXECINSTR' => 'X'}.values_at(*lastprot).compact],
 			0x1000
 		] if firstsect
 
@@ -213,7 +292,7 @@ puts "bits from hash: bits #{s.flags.inspect}, val #{bits_from_hash(s.flags, SH_
 					s.rawoffset ||= program.new_unique_label,
 					program.label_at(s.edata, 0),
 					s.rawsize, s.edata.virtsize,
-					['R', *{'WRITE' => 'W', 'EXECINSTR' => 'X'}.values_at(s.flags)],
+					['R', *{'WRITE' => 'W', 'EXECINSTR' => 'X'}.values_at(*s.flags).compact],
 					s.align]
 			end
 		}
@@ -298,7 +377,6 @@ puts "bits from hash: bits #{s.flags.inspect}, val #{bits_from_hash(s.flags, SH_
 			rawaddr  = (rawaddr  + s.align - 1) / s.align * s.align if s.align and s.align > 1
 			virtaddr = (virtaddr + s.align - 1) / s.align * s.align if s.align and s.align > 1
 
-puts "#{s.name.inspect} #{virtaddr.to_s 16} #{gap}"
 			s.edata.export.each { |name, off| binding[name] = Expression[virtaddr, :+, off] }
 			binding[s.rawoffset] = rawaddr if s.rawoffset
 

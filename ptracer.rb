@@ -3,7 +3,7 @@
 class PTrace
 	def do_things
 		eip = peekusr(EIP)
-		return unless eip & 0xf000_0000 == 0
+#		return unless eip & 0xf000_0000 == 0
 		code = readmem(eip, 8)
 		puts '%08x ' % eip + code.unpack('C*').map { |e| '\\x%02x' % e }.join
 	end
@@ -39,7 +39,8 @@ class PTrace
 			elsif $?.stopped?
 				puts "stopped by sig #{$?.stopsig}"
 				dump_now = true
-				singlestep #$?.stopsig
+				break
+				# singlestep #$?.stopsig
 			elsif $?.signaled?
 				puts "exited by signal #{$?.termsig}"
 				break
