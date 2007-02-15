@@ -285,11 +285,11 @@ end
 class CPU
 	# returns an EncodedData
 	# uses +#parse_arg_valid?+ to find the opcode whose signature matches with the instruction
-	def encode_instr(section, i)
+	def encode_instr(program, i)
 		op = @opcode_list_byname[i.opname].to_a.find { |o|
 			o.args.length == i.args.length and o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
 		}
-		encode_instr_op section, i, op
+		encode_instr_op program, i, op
 	end
 end
 end # module

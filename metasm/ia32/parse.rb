@@ -214,11 +214,5 @@ end
 			pgm.unreadtok postlabel, :':'
 		end
 	end
-
-
-	def parse_jmp_import_label(pgm, ifunc)	# XXX sucks hard
-		pgm.unreadtok 'jmp', :'[', ifunc, :']', :eol
-		parse_instruction(pgm)
-	end
 end
 end

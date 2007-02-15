@@ -276,5 +276,14 @@ class Ia32
 
 		ret.map { |h| h[:edata] }
 	end
+
+	def encode_thunk(target)
+		# jmp [target]
+		i = Instruction.new
+		i.opname = 'jmp'
+		i.args << ModRM.new(@size, @size, nil, nil, nil, target, nil)
+
+		encode_instr(program, i, op).sort_by { |ed| ed.virtsize }.last
+	end
 end
 end

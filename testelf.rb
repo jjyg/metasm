@@ -11,7 +11,7 @@ prog.parse DATA.read
 
 prog.encode
 PT_GNU_STACK = 0x6474e551
-data = Metasm::ELF.encode prog, 'elf_interp' => '/lib/ld-linux.so.2', 'additional_segments' => [[PT_GNU_STACK, 0, 0, 0, %w[R W], 0, 0]], 'needed' => ['libc.so.6']
+data = Metasm::ELF.encode prog, 'unstripped' => true #, 'elf_interp' => '/lib/ld-linux.so.2', 'additional_segments' => [[PT_GNU_STACK, 0, 0, 0, 0, %w[R W], 0]], 'needed' => ['libc.so.6']
 
 File.open('testelf', 'wb', 0755) { |fd| fd.write data }
 
@@ -25,6 +25,7 @@ syscall macro nr
  int 80h
 endm
 
+.text
 .data
  toto db "toto\n"
 toto_len equ $-toto

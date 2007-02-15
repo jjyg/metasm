@@ -373,10 +373,6 @@ class CPU
 	def parse_parser_instruction(pgm, instr)
 		raise pgm, "Unknown parser instruction #{instr.inspect}"
 	end
-
-	def parse_jmp_import_label(pgm, ifunc)
-		raise pgm, 'Internal error: CPU does not support jmp_import_label'
-	end
 end
 
 
@@ -536,6 +532,10 @@ class Program
 	end
 
 
+	# XXX should
+	#   add eax, toto
+	#   toto equ 42
+	# work ? (need to preparse for macro/equ definitions)
 	def parse(str)
 		if not defined? @parse_cpu_init
 			@parse_cpu_init = true
@@ -607,8 +607,8 @@ class Program
 	end
 
 	# handle global import/export
-	# .export foo [, "teh_foo_function"]
-	# .import "user32.dll" "MessageBoxA"[, messagebox]
+	# .export foo [, "teh_foo_function"] (public name)
+	# .import "user32.dll" "MessageBoxA"[, messagebox] (name of thunk/plt entry, will be generated automatically. When applicable, imports with thunkname are considered 'code imports' and the other 'data import' (ELF))
 	def parse_parser_instruction(instr)
 		case instr.downcase
 		when '.export'
@@ -629,11 +629,12 @@ class Program
 			importfunc = readtok
 			importfunc = importfunc.text if importfunc.kind_of? QString
 			raise self, 'Improper argument to .import' unless libname.kind_of? String and importfunc.kind_of? String
-			(@import[libname] ||= []) << importfunc
 			if nexttok == :','
 				readtok
-				@cursection << Label.new(readtok) << @cpu.parse_jmp_import_label(self, importfunc) if nexttok != importfunc
+				thunkname = readtok
+				# XXX when thunkname == importname, name should point to thunk and import masked
 			end
+			(@import[libname] ||= []) << [importfunc, thunkname]
 
 		when '.text', '.data', '.rdata', '.bss'
 			secname = instr

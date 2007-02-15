@@ -343,8 +343,17 @@ class << self
 			encode['idata', :u32, rva_end['iat']]
 			edata['nametable'] << libname << 0
 
-			importlist.each { |importname|
-				edata['iat'].export[importname] = edata['iat'].virtsize
+			importlist.each { |importname, thunkname|
+				importname_label = importname
+				if thunkname and not pe_sections.find { |s| s.export[thunkname] }
+					importname_label = program.new_unique_label if importname == thunkname
+					thunk_section = pe_sections.find { |s| s.characteristics.include? 'MEM_EXECUTE' } or
+					raise EncodeError, "unable to find an executable section to append import thunks"
+					thunk_section.export[thunkname] = thunk_section.virtsize
+					thunk_section.edata << program.cpu.encode_thunk(program, importname_label)
+				end
+
+				edata['iat'].export[importname_label] = edata['iat'].virtsize
 				if importname =~ OrdinalRegex
 					# import by ordinal: set high bit to 1 and encode ordinal in low 16bits
 					ordnumber = $1.to_i
@@ -405,8 +414,17 @@ class << self
 			encode['idata', :u32, 0]		# bound iat
 			encode['idata', :u32, 0]		# unload iat (copy of biat)
 
-			importlist.each { |importname|
-				edata['iat'].export[importname] = edata['iat'].virtsize
+			importlist.each { |importname, thunkname|
+				importname_label = importname
+				if thunkname and not pe_sections.find { |s| s.export[thunkname] }
+					importname_label = program.new_unique_label if importname == thunkname
+					thunk_section = pe_sections.find { |s| s.characteristics.include? 'MEM_EXECUTE' } or
+					raise EncodeError, "unable to find an executable section to append import thunks"
+					thunk_section.export[thunkname] = thunk_section.virtsize
+					thunk_section.edata << program.cpu.encode_thunk(program, importname_label)
+				end
+
+				edata['iat'].export[importname_label] = edata['iat'].virtsize
 				if importname =~ OrdinalRegex
 					# import by ordinal: set high bit to 1 and encode ordinal in low 16bits
 					ordnumber = $1.to_i
