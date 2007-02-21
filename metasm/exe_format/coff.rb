@@ -518,7 +518,7 @@ class << self
 
 	def pre_encode_header(program, program_start, pe_format, pe_target, pe_sections, directories, opts)
 
-		raise 'COFF :obj format not supported yet' if pe_target == 'obj'	 # TODO
+		raise 'COFF obj format not supported yet' if pe_target == 'obj'	 # TODO
 
 		header = EncodedData.new
 		header << (opts.delete('pre_header') || '')
@@ -632,8 +632,8 @@ class << self
 		encode[:u32, opts.delete('checksum') || 0]		# checksum
 
 		tmp = opts.delete('subsystem') || case pe_target
-			when :exe, :dll: 'WINDOWS_GUI'
-			when :kmod: 'NATIVE'
+			when 'exe', 'dll': 'WINDOWS_GUI'
+			when 'kmod': 'NATIVE'
 			else 'UNKNOWN'
 			end
 		encode[:u16, Subsystem.index(tmp)]
