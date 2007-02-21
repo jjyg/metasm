@@ -183,7 +183,7 @@ class Expression
 	# can return self or another +Expression+ or a +Numeric+
 	def reduce
 		case e = reduce_rec
-		when Expression, Numeric: e
+		when Expression, Numeric, true, false: e
 		else Expression[:+, e]
 		end
 	end
@@ -198,7 +198,7 @@ class Expression
 		    else @rexpr
 		    end
 
-
+		v = 
 		if r.kind_of?(Numeric) and (not l or l.kind_of?(Numeric))
 			# calculate numerics
 			if l
@@ -267,9 +267,9 @@ class Expression
 
 				simplifier[r]
 			end
-		end or
+		end
 		# no dup if no new value
-		((r == @rexpr and l == @lexpr) ? self : Expression[l, @op, r])
+		v.nil? ? ((r == @rexpr and l == @lexpr) ? self : Expression[l, @op, r]) : v
 	end
 
 	def externals

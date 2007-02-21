@@ -27,7 +27,14 @@ endm
 
 .text
 .data
- toto db "toto\n"
+toto:
+# if 0 + 1 > 0
+ db "toto\n"
+#elif defined(STR)
+ db STR
+#else
+ db "lala\n"
+#endif
 toto_len equ $-toto
 
 .text
@@ -37,8 +44,8 @@ start:
  mov edx, toto_len
  syscall(sys_write)
 
-.import 'libc.so.6' '_exit', libexit
- push 0
- call libexit
-// xor ebx, ebx
-// syscall(sys_exit)
+//.import 'libc.so.6' '_exit', libexit
+// push 0
+// call libexit
+ xor ebx, ebx
+ syscall(sys_exit)

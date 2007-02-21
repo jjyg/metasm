@@ -329,14 +329,14 @@ class CPU
 
 	# returns a parsed argument
 	# add your own arguments parser here (registers, memory references..)
-	#def parse_argument(parser)
-	#	Expression.parse(parser)
+	#def parse_argument(lexer)
+	#	Expression.parse(lexer)
 	#end
 
 	# handle all .instructions
 	# handle HLA here
-	def parse_parser_instruction(parser, instr)
-		raise parser, "Unknown parser instruction #{instr.inspect}"
+	def parse_parser_instruction(lexer, instr)
+		raise lexer, "Unknown parser instruction #{instr.inspect}"
 	end
 end
 
@@ -363,7 +363,7 @@ class Program
 		end
 	end
 	
-	attr_reader :parser_macro, :parser_equ
+	attr_reader :parser_macro
 
 	def exception(msg = '')
 		loc = (@backtrace + [@lexer.curpos]).reverse.join ' included from '
@@ -398,7 +398,7 @@ class Program
 				tok = @lexer.queue.pop
 				return tok if tok == :eol
 			end
-			@lexer.pos += 1 while not @lexer.eos? and @lexer.text[@lexer.pos] != ?\n	# XXX interfaces ftw \o/
+			@lexer.pos += 1 while not @lexer.eos? and @lexer.text[@lexer.pos] != ?\n	# XXX interfaces ftw \o/ This avoids lexer errors in comments, and newlines in QStrings, and \-continued comment line
 			@lexer.pos += 1
 			:eol
 		when :'/*'
@@ -416,14 +416,13 @@ class Program
 	end
 
 	# handles preprocessor commands (#include, #ifdef..)
-	# handles 'equ', '$'/'$$' special label, and asm macros
-	# can return anything Lexer#readtok may return, plus Expression (equ)
+	# handles '$'/'$$' special label, and asm macros / equ
+	# can return anything Lexer#readtok may return
 	def readtok
-		@pp_nesting ||= [] # :ok, :ignore, :ignore_all
+		@pp_nesting ||= [] # :ok accept all, :ignore ignore prepro/macro but handle #else, :ignore_all ignore all
 		discard = true if @pp_nesting.last == :ignore or @pp_nesting.last == :ignore_all
 
 		tok = readtok_nocomment
-		return :discarded if discard and tok != :'#'	# discard macro definitions etc in an #ifndef block
 		
 		case tok
 		when :'#'
@@ -438,12 +437,12 @@ class Program
 					case tok
 					when 'ifdef'
 						name = readtok_nocomment
-						cond = true if @parser_equ[name] or @parser_macro[name]
+						cond = true if @parser_macro[name]
 					when 'ifndef'
 						name = readtok_nocomment
-						cond = true unless @parser_equ[name] or @parser_macro[name]
+						cond = true unless @parser_macro[name]
 					when 'if'
-						cond = Expression.parse_bool(self).bind(@parser_equ).reduce
+						cond = Expression.parse_bool(self).reduce
 						cond = false if cond == 0	# '#if 0'
 					end
 
@@ -462,7 +461,7 @@ class Program
 					@pp_nesting[-1] = :ignore_all
 					foo = @pp_nesting.length - 1
 					readtok while @pp_nesting[foo] == :ignore_all and not eos?
-				elsif @pp_nesting.last == :ignore and (tok == 'else' or Expression.parse_bool(self).bind(@parser_equ).reduce)
+				elsif @pp_nesting.last == :ignore and (tok == 'else' or (e = Expression.parse_bool(self).reduce and e != 0))
 					@pp_nesting[-1] = :ok
 				end
 			when 'endif'
@@ -489,6 +488,7 @@ class Program
 				when 'include'
 					curlexer, curnesting = @lexer, @pp_nesting
 					@pp_nesting = []
+					# XXX should push @lexer in an array, call parse_init and just return
 					parse(nil, filename)
 					@lexer, @pp_nesting = curlexer, curnesting
 				when 'include_c'
@@ -499,30 +499,35 @@ class Program
 			when 'define'
 				return nil if discard
 
-				varname = readtok_nocomment
+				tok = readtok_nocomment
 				raise self, "macro by #define not implemented yet" if nexttok == :'('	# TODO
-				value = readtok_nocomment
-				if value != :eol
-					unreadtok value
-					value = Expression.parse(self)
-				else
-					value = ''
+				raise self, "redefinition of #{tok}" if @parser_macro[tok]
+				m = @parser_macro[tok] = Macro.new(tok)
+				while (tok = readtok) != :eol
+					m.body << tok
 				end
-				raise self, "bad #definition" if not value
-				raise self, "redefinition of #{varname}" if @parser_equ[varname] or @parser_macro[varname]
-				@parser_equ[varname] = value
 			else
 				return nil if discard
 				raise self, "unsupported preprocessor command #{tok.inspect}"
 			end
 			:eol
+
+		when 'defined'
+			return tok if discard and @pp_nesting.last == :ignore_all
+			# allowed in :ignore, which is the context of '#elif defined(foo)'
+
+			raise self, "bad use of keyword 'defined'" if readtok_nocomment != :'(' or not (name = readtok_nocomment).kind_of? String or readtok_nocomment != :')'
+			Expression[1, :==, (@parser_macro[name] ? 1 : 0)]
+
 		when '$$'
+			return tok if discard
 			# start of current section
 			if @cursection.source.first.class != Label
 				@cursection.source.unshift(Label.new(new_unique_label))
 			end
 			@cursection.source.first.name
 		when '$'
+			return tok if discard
 			# start of current item
 			if @cursection.source.last.class != Label
 				@automaticlabelcount ||= 0
@@ -531,30 +536,29 @@ class Program
 			@cursection.source.last.name
 
 		when 'equ', 'macro'
+			return tok if discard
 			raise self, "Unexpected #{tok.inspect}"
 
-		when 'defined'
-			raise self, "bad use of keyword 'defined'" if readtok != :'(' or not (name = readtok).kind_of? String or readtok != :')'
-			Expression[1, :==, (@parser_equ[name] || @parser_macro[name] ? 1 : 0)]
-
 		when String
-			# check for equ
+			return tok if discard
 			case ntok = readtok_nocomment
 			when 'equ'
-				raise self, "Redefining equ #{tok.inspect}"   if @parser_equ[tok] or @parser_macro[tok]
-				@parser_equ[tok] = Expression.parse(self)
-				readtok
+				raise self, "Redefining equ #{tok.inspect}"   if @parser_macro[tok]
+				# @parser_equ[tok] = Expression.parse(self)	# allows things like foo equ 1+1 \n foo * 2 => (1+1)*2, disallows things like foo equ "bar"
+				m = @parser_macro[tok] = Macro.new(tok)
+				while (tok = readtok) != :eol	# toto db "foo" \n toto_len equ $-toto   must work
+					m.body << tok
+				end
+				:eol
 			when 'macro'
-				raise self, "Redefining macro #{tok.inspect}" if @parser_equ[tok] or @parser_macro[tok]
+				raise self, "Redefining macro #{tok.inspect}" if @parser_macro[tok]
 				@parser_macro[tok] = parser_new_macro(Macro.new(tok))
-				readtok
+				:eol
 			else
 				unreadtok ntok
 				if m = @parser_macro[tok]
 					parser_apply_macro m
 					readtok
-				elsif m = @parser_equ[tok]
-					m
 				else
 					tok
 				end
@@ -587,7 +591,6 @@ class Program
 		m
 	end
 
-	# TODO check, with foo a macro: add eax, foo($)
 	def parser_apply_macro(m)
 		# checks if the macro has arguments
 		args = [[]]
@@ -623,18 +626,12 @@ class Program
 	end
 
 
-	# XXX should
-	#   add eax, toto
-	#   toto equ 42
-	# work ? (need to preparse for macro/equ definitions)
-	def parse(str, filename = '<stdin>', lineno = 0)
+	def parse_init(str, filename = '<stdin>', lineno = 0)
 		if not defined? @parse_cpu_init
-			# XXX hackish...
 			@parse_cpu_init = true
 			parse @cpu.parse_init, 'cpu parser initialization'
 		end
 
-		@parser_equ ||= {}
 		@parser_macro ||= {}
 		@backtrace ||= []
 		if not str
@@ -642,6 +639,29 @@ class Program
 			str = str.to_a[lineno..-1].join if lineno != 0
 		end
 		@lexer = Lexer.new(str, filename, lineno)
+	end
+
+	# dumps the output of the lexer to stdout (kind of gcc -E)
+	def dump_parse(*a)
+		parse_init(*a)
+
+		until eos?
+			tok = readtok
+			case tok
+			when :eol
+				puts :eol.inspect
+			when :'.'
+				tok = readtok
+				raise self, "Expected parser instruction, found #{tok.inspect}" if tok.class != String
+				print ".#{tok}".inspect, ' '
+			else
+				print tok.inspect, ' '
+			end
+		end
+	end
+
+	def parse(*a)
+		parse_init(*a)
 
 		until eos?
 			tok = readtok
