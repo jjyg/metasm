@@ -178,6 +178,100 @@ class Expression
 		Expression[l, @op, r]
 	end
 
+	# try to symplify itself
+	# non destructive
+	# can return self or another +Expression+ or a +Numeric+
+	def reduce
+		case e = reduce_rec
+		when Expression, Numeric: e
+		else Expression[:+, e]
+		end
+	end
+
+	def reduce_rec
+		l = case @lexpr
+		    when Expression: @lexpr.reduce_rec
+		    else @lexpr
+		    end
+		r = case @rexpr
+		    when Expression: @rexpr.reduce_rec
+		    else @rexpr
+		    end
+
+
+		if r.kind_of?(Numeric) and (not l or l.kind_of?(Numeric))
+			# calculate numerics
+			if l
+				case @op
+				when :'&&': l && r
+				when :'||': l || r
+				when :'!=': l != r
+				else l.send(@op, r)
+				end
+			else
+				case @op
+				when :'!': !r
+				when :+:  r
+				when :-: -r
+				when :~: ~r
+				end
+			end
+		elsif @op == :-
+			if not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
+				if r.op == :- # no lexpr (reduced)
+					# -(-x) => x
+					r.rexpr
+				else # :+ and lexpr (r is reduced)
+					# -(a+b) => (-a)+(-b)
+					Expression[[:-, r.lexpr], :+, [:-, r.rexpr]].reduce_rec
+				end
+			elsif l
+				# a-b => a+(-b)
+				Expression[l, :+, [:-, r]].reduce_rec
+			end
+		elsif @op == :+
+			if not l: r	# +x  => x
+			elsif r == 0: l	# x+0 => x
+			elsif l.kind_of? Numeric
+				if r.kind_of? Expression and r.op == :+
+					# 1+(x+y) => x+(y+1)
+					Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec
+				else
+					# 1+a => a+1
+					Expression[r, :+, l].reduce_rec
+				end
+			elsif l.kind_of? Expression and l.op == :+
+				# (a+b)+foo => a+(b+foo)
+				Expression[l.lexpr, :+, [l.rexpr, :+, r]].reduce_rec
+			else
+				# a+(b+(c+(-a))) => b+c+0
+				# a+((-a)+(b+c)) => 0+b+c
+				neg_l = l.rexpr if l.kind_of? Expression and l.op == :-
+
+				# recursive search & replace -lexpr by 0
+				simplifier = proc { |cur|
+					if (neg_l and neg_l == cur) or (cur.kind_of? Expression and cur.op == :- and not cur.lexpr and cur.rexpr == l)
+						# -l found
+						0
+					else
+						# recurse
+						if cur.kind_of? Expression and cur.op == :+
+							if newl = simplifier[cur.lexpr]
+								Expression[newl, cur.op, cur.rexpr].reduce_rec
+							elsif newr = simplifier[cur.rexpr]
+								Expression[cur.lexpr, cur.op, newr].reduce_rec
+							end
+						end
+					end
+				}
+
+				simplifier[r]
+			end
+		end or
+		# no dup if no new value
+		((r == @rexpr and l == @lexpr) ? self : Expression[l, @op, r])
+	end
+
 	def externals
 		[@rexpr, @lexpr].inject([]) { |a, e|
 			case e

@@ -431,9 +431,10 @@ class << self
 		sections.each { |s|
 			xflags = s.flags & %w[EXECINSTR WRITE]	# non mergeable flags
 			if not s.flags.include? 'ALLOC'	# ignore
+				s.edata.fill
 			elsif firstsect and (xflags | lastprot == xflags or xflags.empty?)	# concat for R+RW / RW + R, not for RW+RX (unless last == RWX)
 				if lastsect.edata.virtsize > lastsect.rawsize + 0x1000
-					# TODO new_seg
+					# XXX new_seg ?
 				end
 				lastsect.edata.fill
 				lastsect = s

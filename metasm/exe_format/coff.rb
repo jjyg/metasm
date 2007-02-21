@@ -345,11 +345,11 @@ class << self
 
 			importlist.each { |importname, thunkname|
 				importname_label = importname
-				if thunkname and not pe_sections.find { |s| s.export[thunkname] }
+				if thunkname and not pe_sections.find { |s| s.edata.export[thunkname] }
 					importname_label = program.new_unique_label if importname == thunkname
 					thunk_section = pe_sections.find { |s| s.characteristics.include? 'MEM_EXECUTE' } or
 					raise EncodeError, "unable to find an executable section to append import thunks"
-					thunk_section.export[thunkname] = thunk_section.virtsize
+					thunk_section.edata.export[thunkname] = thunk_section.virtsize
 					thunk_section.edata << program.cpu.encode_thunk(program, importname_label)
 				end
 
@@ -416,11 +416,11 @@ class << self
 
 			importlist.each { |importname, thunkname|
 				importname_label = importname
-				if thunkname and not pe_sections.find { |s| s.export[thunkname] }
+				if thunkname and not pe_sections.find { |s| s.edata.export[thunkname] }
 					importname_label = program.new_unique_label if importname == thunkname
 					thunk_section = pe_sections.find { |s| s.characteristics.include? 'MEM_EXECUTE' } or
 					raise EncodeError, "unable to find an executable section to append import thunks"
-					thunk_section.export[thunkname] = thunk_section.virtsize
+					thunk_section.edata.export[thunkname] = thunk_section.virtsize
 					thunk_section.edata << program.cpu.encode_thunk(program, importname_label)
 				end
 

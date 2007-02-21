@@ -11,7 +11,7 @@ prog.parse DATA.read
 
 prog.encode
 PT_GNU_STACK = 0x6474e551
-data = Metasm::ELF.encode prog, 'unstripped' => true #, 'elf_interp' => '/lib/ld-linux.so.2', 'additional_segments' => [[PT_GNU_STACK, 0, 0, 0, 0, %w[R W], 0]], 'needed' => ['libc.so.6']
+data = Metasm::ELF.encode prog, 'unstripped' => true, 'elf_interp' => '/lib/ld-linux.so.2', 'additional_segments' => [[PT_GNU_STACK, 0, 0, 0, 0, %w[R W], 0]]
 
 File.open('testelf', 'wb', 0755) { |fd| fd.write data }
 
@@ -37,5 +37,8 @@ start:
  mov edx, toto_len
  syscall(sys_write)
 
- xor ebx, ebx
- syscall(sys_exit)
+.import 'libc.so.6' '_exit', libexit
+ push 0
+ call libexit
+// xor ebx, ebx
+// syscall(sys_exit)

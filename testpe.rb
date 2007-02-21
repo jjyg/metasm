@@ -12,9 +12,9 @@ end
 cpu = Metasm::Ia32.new
 prog = Metasm::Program.new cpu
 
-prog.parse <<EOS
+prog.parse <<EOS, __FILE__, __LINE__
 .text
-# .section ".text" r x # base=0x401000
+// .section ".text" r x // base=0x401000
 start:
 push 0
 push title

@@ -8,23 +8,24 @@ class ParseError < Exception ; end
 # defines the methods nexttok and readtok
 # they spits out tokens :
 #  +String+ for words
-#  +Symbol+ for punctuation/:eol
-#  +Integer+ for ints (allowed: 0x123_456, 0777 (oct), 8BFh, 0b010010)
-#  +Float+ for floats
+#  +Symbols+ for punctuation
+#  :eol for newline
+#  +Integer+ for ints  (positive only)
+#  +Float+ for floats (positive only)
 #  +QString+ for quoted strings
+#  nil on end of stream
 #
-# QStrings and Comments are the only place where non 7bit ascii codes are allowed
+# spaces are ignored: '[]' same as '[ \t]'
+# \ at the end of a line make the lexer ignore the newline
+# integers (positive): multiple formats handled : 0x123_456, 0777 (that's octal), 8BFh, 0b010010 (check regexes)
+# floats: '9234.23234 e + 23', '.2', '23.e42'
+# words are sequence of a-Z0-9_$, not starting by 0-9
+# punctuation is any special character not in the above set. Groups allowed: see the next-to-last case statement (>>, ->, =~, !== etc)
+# QStrings start with ' or " (indifferent). They are the only place where non 7bit ascii codes are allowed. \n are allowed in, after it the indentation is ignored.
+# escape sequence are handled ("\x42\0\n\024\"")
 # lines end in \n (\r ignored)
-# one-line comments start with ';', '#' or '//'
-# multi-line in '/* ... */'
 #
-module Lexer
-	class Comment
-		attr_reader :text
-		def initialize(text='')
-			@text = text
-		end
-	end
+class Lexer
 	class QString
 		attr_reader :delimiter, :text
 		def initialize(delimiter)
@@ -33,54 +34,32 @@ module Lexer
 		end
 	end
 
-	def lexer_curpos
-		"line #@lexer_lineno"
+	attr_reader :text, :lineno, :filename, :queue
+	attr_accessor :pos
+	def initialize(text, filename, lineno)
+		@text = text
+		@queue = []
+		@filename = filename
+		@lineno = lineno
+		@pos = 0
+	end
+
+	def curpos
+		"#@filename - line #@lineno"
 	end
 
 	def exception(msg = '')
-		ParseError.new "Parse error at #{lexer_curpos}: #{msg}"
+		ParseError.new "Parse error at #{curpos}: #{msg}"
 	end
 
-	attr_reader :lexer_pos, :lexer_text, :lexer_lineno
-
-	# start parsing a new string
-	# known macros are kept
-	def feed(text)
-		@lexer_queue = []
-		@lexer_text = text
-		@lexer_lineno = 0
-		@lexer_pos = 0
-	end
 
 	# returns true if no more data is available
 	def eos?
-		@lexer_pos >= @lexer_text.length and @lexer_queue.empty?
+		@pos >= @text.length and @queue.empty?
 	end
 
-	def unreadtok(*tlist)
-		tlist.reverse_each { |t|
-			@lexer_queue << t if t
-		}
-	end
-
-	# handles 2byte operators and floats
-	def readtok
-		tok = @lexer_queue.pop || readtok_basic
-
-		case tok
-		when :+, :-, :*, :/, :&, :|, :^, :'=', :%, :':', :<, :>
-			ntok = @lexer_queue.pop || readtok_basic
-			str = "#{tok}#{ntok}"
-			if (ntok == :'=')
-				tok = str.to_sym
-			else
-				case str
-				when '&&', '||', '>>', '<<': tok = str.to_sym
-				else unreadtok ntok
-				end
-			end
-		end
-		tok
+	def unreadtok(t)
+		@queue << t
 	end
 
 	# peek next token w/o consuming it
@@ -90,43 +69,45 @@ module Lexer
 		tok
 	end
 
-	private
-	# reads and return the next token (1char determinist, except for // /* comments delimiters) (LALR0 ?)
-	def readtok_basic
+	# reads and return the next token
+	def readtok
+		return @queue.pop unless @queue.empty?
+
 		# skip spaces
 		loop do
-			case @lexer_text[@lexer_pos]
+			case @text[@pos]
 			when ?\ , ?\t, ?\r
 			when ?\\
-				nc = @lexer_text[@lexer_pos + 1]
-				break if (nc != ?\n) and (nc != ?\r or @lexer_text[@lexer_pos+2] != ?\n)
-				@lexer_pos += 1 until @lexer_text[@lexer_pos] == ?\n
+				nc = @text[@pos + 1]
+				break if (nc != ?\n) and (nc != ?\r or @text[@pos+2] != ?\n)
+				@pos += 1 until @text[@pos] == ?\n
 			else break
 			end
-			@lexer_pos += 1
+			@pos += 1
 		end
 
 		# read token
-		case c = @lexer_text[@lexer_pos]
+		case c = @text[@pos]
 		# end of string
 		when nil
+			nil
 
 		# end of line 
 		when ?\n
-			@lexer_lineno += 1
-			@lexer_pos += 1
+			@lineno += 1
+			@pos += 1
 			:eol
 
 		# string token
 		when ?a..?z, ?A..?Z, ?_, ?$
 			tok = ''
 			loop do
-				case c = @lexer_text[@lexer_pos]
+				case c = @text[@pos]
 				when ?a..?z, ?A..?Z, ?0..?9, ?_, ?$
 					tok << c
 				else break
 				end
-				@lexer_pos += 1
+				@pos += 1
 			end
 			tok
 
@@ -134,12 +115,12 @@ module Lexer
 		when ?0..?9, ?.
 			tok = ''
 			loop do
-				case c = @lexer_text[@lexer_pos]
+				case c = @text[@pos]
 				when ?_
 				when ?0..?9, ?A..?Z, ?a..?z: tok << c
 				else break
 				end
-				@lexer_pos += 1
+				@pos += 1
 			end
 
 			case tok
@@ -147,42 +128,44 @@ module Lexer
 			when /^(0[0-7]*)$/: $1.to_i(8)
 			when /^0x([0-9a-f]+)$/i, /^([0-9a-f]+)h$/i: $1.to_i(16)
 			when /^([0-9]*)$/
-				if @lexer_text[@lexer_pos] != ?.
+				if @text[@pos] != ?.
 					tok.to_i
 				else
 					# float
 					tok << ?.
-					@lexer_pos += 1
+					@pos += 1
 					loop do
-						case c = @lexer_text[@lexer_pos]
+						case c = @text[@pos]
 						when ?_
 						when ?0..?9: tok << c
 						else break
 						end
-						@lexer_pos += 1
+						@pos += 1	# break shortcircuit this one
 					end
 					return :'.' if tok == '.'
-					@lexer_pos += 1 while (c = @lexer_text[@lexer_pos]) == ?\ 
+					@pos += 1 while (c = @text[@pos]) == ?\ 
 					if c == ?e or c == ?E
 						tok << ?e
-						@lexer_pos += 1
+						@pos += 1
 						loop do
-							case c = @lexer_text[@lexer_pos]
+							case c = @text[@pos]
 							when ?\ 
 							when ?+, ?-
-								tok << c if c == ?+ or c == ?-
-								@lexer_pos += 1 while @lexer_text[@lexer_pos] == ?\ 
+								tok << c
+								@pos += 1
+								@pos += 1 while @text[@pos] == ?\ 
+								break
 							else break
 							end
-							@lexer_pos += 1
+							@pos += 1	# broken over
 						end
 						loop do
-							case c = @lexer_text[@lexer_pos]
+							case c = @text[@pos]
 							when ?_
 							when ?0..?9: tok << c
 							else break
 							end
-							@lexer_pos += 1
+							@pos += 1
 						end
 					end
 					tok.to_f
@@ -192,34 +175,34 @@ module Lexer
 
 		# quotedstr
 		when ?', ?"
-			startlineno = @lexer_lineno
+			startlineno = @lineno
 			tok = QString.new c
-			@lexer_pos += 1
+			@pos += 1
 			loop do
-				case c = @lexer_text[@lexer_pos]
+				case c = @text[@pos]
 				when nil
-					raise ParseError, "Unterminated string starting line #{startlineno}"
+					raise self, "Unterminated string starting line #{startlineno}"
 				when tok.delimiter
-					@lexer_pos += 1
+					@pos += 1
 					break
 				when ?\n
-					@lexer_lineno += 1
-					@lexer_pos += 1
+					@lineno += 1
+					@pos += 1
 					tok.text << c
 				when ?\\
 					# escape sequence
-					@lexer_pos += 2
-					tok.text << case c = @lexer_text[@lexer_pos-1]
+					@pos += 2
+					tok.text << case c = @text[@pos-1]
 					when nil
-						raise ParseError, 'Unterminated escape sequence'
+						raise self, 'Unterminated escape sequence'
 					when ?x
 						ttok = ''
 						while ttok.length < 2
-							case c = @lexer_text[@lexer_pos]
+							case c = @text[@pos]
 							when ?0..?9, ?a..?f, ?A..?F: ttok << c
 							else break
 							end
-							@lexer_pos += 1
+							@pos += 1
 						end
 						ttok.to_i(16)
 	
@@ -227,11 +210,11 @@ module Lexer
 						ttok = ''
 						ttok << c
 						while ttok.length < 3
-							case c = @lexer_text[@lexer_pos]
+							case c = @text[@pos]
 							when ?0..?7: ttok << c
 							else break
 							end
-							@lexer_pos += 1
+							@pos += 1
 						end
 						ttok.to_i(8)
 
@@ -246,72 +229,53 @@ module Lexer
 					when ?\n
 						#   "blablabla\
 						# <skip ws>  bloblo"
-						@lexer_lineno += 1
+						@lineno += 1
 						loop do
-							case @lexer_text[@lexer_pos]
+							case @text[@pos]
 							when ?\ ,?\t
 							else break
 							end
-							@lexer_pos += 1
+							@pos += 1
 						end
 					else
-						raise ParseError, "Unknown escape sequence '\\#{c.chr}'"
+						raise self, "Unknown escape sequence '\\#{c.chr}'"
 						#c	# just ignore the backslash
 					end
 				else
 					tok.text << c
-					@lexer_pos += 1
+					@pos += 1
 				end
 			end
 			tok
 
-		when ?#, ?;
-			tok = Comment.new
-			while c = @lexer_text[@lexer_pos]
-				break if c == ?\n
-				tok.text << c
-				@lexer_pos += 1
-			end
-			tok
-
-		when ?/
-			@lexer_pos += 1
-			case @lexer_text[@lexer_pos]
-			when ?/
-				tok = Comment.new
-				tok.text << ?/
-				while c = @lexer_text[@lexer_pos]
-					break if c == ?\n
-					tok.text << c
-					@lexer_pos += 1
+		when ?+, ?-, ?*, ?/, ?&, ?|, ?^, ?=, ?%, ?:, ?<, ?>, ?!
+			# may start a multichar punctuation
+			case str = @text[pos, 2]
+			when '>>', '<<', '&&', '||', '==', '!='
+				case @text[pos+2]
+				when ?=
+					@pos += 3
+					(str << ?=).to_sym
+				else
+					@pos += 2
+					str.to_sym
 				end
-				tok
-			when ?*
-				tok = Comment.new
-				@lexer_pos += 1
-				tok.text << ?/ << ?*
-				seenstar = false
-				while c = @lexer_text[@lexer_pos]
-					tok.text << c
-					@lexer_pos += 1
-
-					break if seenstar and c == ?/
-					seenstar = false
-					case c
-					when ?*: seenstar = true
-					when ?\n: @lexer_lineno += 1
-					end
-				end
-				tok
-			else :/
+			when /.=/, '->', '//', '/*', '*/', '!~', '=~', '++', '--'
+				@pos += 2
+				str.to_sym
+			else
+				@pos += 1
+				c.chr.to_sym
 			end
 
-		# XXX hardcoded ascii table
 		when 33..126
-			@lexer_pos += 1
+			# other punctuation signs
+			# XXX ?. is handled in floats
+			# XXX hardcoded ascii table
+			@pos += 1
 			c.chr.to_sym
 			
-		else raise ParseError, "Unhandled character #{c.inspect} in source"
+		else raise self, "invalid character #{c.chr.inspect}"
 		end
 	end
 end
@@ -319,15 +283,15 @@ end
 class CPU
 	# Parses prefix/name/arguments
 	# Returns an +Instruction+, or nil on failure
-	def parse_instruction(program)
+	def parse_instruction(parser)
 		@opcode_list_byname ||= @opcode_list.inject({}) { |h, o| (h[o.name] ||= []) << o ; h }
 
 		i = Instruction.new
 
 		# find prefixes, break on opcode name
-		tok = program.readtok
+		tok = parser.readtok
 		while parse_prefix(i, tok)
-			tok = program.readtok
+			tok = parser.readtok
 		end
 
 		return if not @opcode_list_byname[tok]
@@ -335,27 +299,28 @@ class CPU
 
 		# find arguments
 		loop do
-			break if @opcode_list_byname[program.nexttok]
-			break unless arg = parse_argument(program)
+			break if @opcode_list_byname[parser.nexttok] or parser.nexttok == :eol
+			break unless arg = parse_argument(parser)
 			i.args << arg
-			break unless program.nexttok == :','
-			program.readtok
-			program.readtok while program.nexttok == :eol
+			break unless parser.nexttok == :','
+			parser.readtok
+			parser.readtok while parser.nexttok == :eol
 		end
 
 		@opcode_list_byname[i.opname].to_a.find { |o|
 			o.args.length == i.args.length and o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
-		} or raise program, "invalid instruction #{i}"
+		} or raise parser, "invalid instruction #{i}"
 
-		parse_instruction_fixup(program, i)
+		parse_instruction_fixup(parser, i)
 
 		i
 	end
 
-	def parse_init(program)
+	def parse_init
+		''
 	end
 
-	def parse_instruction_fixup(program, i)
+	def parse_instruction_fixup(parser, i)
 	end
 
 	# returns true if a prefix was found
@@ -364,14 +329,14 @@ class CPU
 
 	# returns a parsed argument
 	# add your own arguments parser here (registers, memory references..)
-	#def parse_argument(lex)
-	#	Expression.parse(@program)
+	#def parse_argument(parser)
+	#	Expression.parse(parser)
 	#end
 
 	# handle all .instructions
 	# handle HLA here
-	def parse_parser_instruction(pgm, instr)
-		raise pgm, "Unknown parser instruction #{instr.inspect}"
+	def parse_parser_instruction(parser, instr)
+		raise parser, "Unknown parser instruction #{instr.inspect}"
 	end
 end
 
@@ -391,21 +356,18 @@ class Program
 			labels = @local_labels.inject({}) { |h, k| h.update k => true }
 			@body.map { |e|
 				if args[e]: args[e]
-				elsif labels[e]: "macrolocal_#{@name}_#{e}_#{@apply_count}"
+				elsif labels[e]: "metasmintern_macrolocal_#{@name}_#{e}_#{@apply_count}"
 				else e
 				end
 			}.flatten
 		end
 	end
 	
+	attr_reader :parser_macro, :parser_equ
 
-	include Lexer
-
-	attr_reader :lexer_macro, :lexer_equ
-	def feed(*a)
-		@lexer_equ   ||= {}
-		@lexer_macro ||= {}
-		super
+	def exception(msg = '')
+		loc = (@backtrace + [@lexer.curpos]).reverse.join ' included from '
+		ParseError.new "Parse error at #{loc}: #{msg}"
 	end
 
 	def new_unique_label
@@ -413,91 +375,220 @@ class Program
 		"metasmintern_uniquelabel_#{object_id}_#{@unique_label_counter += 1}"
 	end
 
-	# handles 'equ' and '$'/'$$' special label, and macros
-	# can return anything Lexer#readtok may return, plus Expression
+	def unreadtok(t)
+		@lexer.unreadtok t
+	end
+
+	def nexttok
+		t = readtok
+		unreadtok t
+		t
+	end
+
+	def eos?
+		@lexer.eos?
+	end
+
+	# discards comments
+	def readtok_nocomment
+		case tok = @lexer.readtok
+		when :'//', :';'
+			# single line comment
+			while tok
+				tok = @lexer.queue.pop
+				return tok if tok == :eol
+			end
+			@lexer.pos += 1 while not @lexer.eos? and @lexer.text[@lexer.pos] != ?\n	# XXX interfaces ftw \o/
+			@lexer.pos += 1
+			:eol
+		when :'/*'
+			# multiline comment
+			while tok
+				tok = @lexer.queue.pop
+				return readtok_nocomment if tok == :'*/'
+			end
+			@lexer.pos += 1 while not @lexer.eos? and @lexer.text[@lexer.pos, 2] != '*/'
+			@lexer.pos += 2
+			readtok_nocomment
+		else
+			tok
+		end
+	end
+
+	# handles preprocessor commands (#include, #ifdef..)
+	# handles 'equ', '$'/'$$' special label, and asm macros
+	# can return anything Lexer#readtok may return, plus Expression (equ)
 	def readtok
-		case tok = super
+		@pp_nesting ||= [] # :ok, :ignore, :ignore_all
+		discard = true if @pp_nesting.last == :ignore or @pp_nesting.last == :ignore_all
+
+		tok = readtok_nocomment
+		return :discarded if discard and tok != :'#'	# discard macro definitions etc in an #ifndef block
+		
+		case tok
+		when :'#'
+			# preprocessor command
+			case tok = @lexer.readtok
+			when 'ifdef', 'ifndef', 'if'
+				if discard
+					foo = @pp_nesting.length
+					@pp_nesting << :ignore_all
+					readtok while @pp_nesting.length > foo and not eos?
+				else
+					case tok
+					when 'ifdef'
+						name = readtok_nocomment
+						cond = true if @parser_equ[name] or @parser_macro[name]
+					when 'ifndef'
+						name = readtok_nocomment
+						cond = true unless @parser_equ[name] or @parser_macro[name]
+					when 'if'
+						cond = Expression.parse_bool(self).bind(@parser_equ).reduce
+						cond = false if cond == 0	# '#if 0'
+					end
+
+					if cond
+						@pp_nesting << :ok
+					else
+						foo = @pp_nesting.length
+						@pp_nesting << :ignore
+						readtok while @pp_nesting[foo] == :ignore and not eos?
+					end
+				end
+			when 'elif', 'else'	# '#else if' ?
+				raise self, "##{tok} out of context" if @pp_nesting.empty?
+
+				if @pp_nesting.last == :ok
+					@pp_nesting[-1] = :ignore_all
+					foo = @pp_nesting.length - 1
+					readtok while @pp_nesting[foo] == :ignore_all and not eos?
+				elsif @pp_nesting.last == :ignore and (tok == 'else' or Expression.parse_bool(self).bind(@parser_equ).reduce)
+					@pp_nesting[-1] = :ok
+				end
+			when 'endif'
+				raise self, "##{tok} out of context" if @pp_nesting.empty?
+				@pp_nesting.pop
+			when 'include', 'include_c'
+				return nil if discard
+
+				case filename = readtok_nocomment
+				when Lexer::QString
+					filename = filename.text
+				when :<		# '#include <foobar>'
+					filename = readtok_nocomment
+					raise self, 'bad include statement' unless readtok_nocomment == :> # and readtok_nocomment == :eol
+
+					f = @path_include[tok].map { |dir| File.join(dir, filename) }.find { |f| File.exist? f }
+					raise self, "unable to find <#{filename}> to include" if not f
+					filename = f
+				end
+				raise self, "inexistant included file #{filename.inspect}" unless File.exist? filename
+
+				@backtrace << @lexer.curpos
+				case tok
+				when 'include'
+					curlexer, curnesting = @lexer, @pp_nesting
+					@pp_nesting = []
+					parse(nil, filename)
+					@lexer, @pp_nesting = curlexer, curnesting
+				when 'include_c'
+					raise self, 'Go write a C parser'
+					parse_c(nil, filename)	# TODO
+				end
+				@backtrace.pop
+			when 'define'
+				return nil if discard
+
+				varname = readtok_nocomment
+				raise self, "macro by #define not implemented yet" if nexttok == :'('	# TODO
+				value = readtok_nocomment
+				if value != :eol
+					unreadtok value
+					value = Expression.parse(self)
+				else
+					value = ''
+				end
+				raise self, "bad #definition" if not value
+				raise self, "redefinition of #{varname}" if @parser_equ[varname] or @parser_macro[varname]
+				@parser_equ[varname] = value
+			else
+				return nil if discard
+				raise self, "unsupported preprocessor command #{tok.inspect}"
+			end
+			:eol
 		when '$$'
 			# start of current section
 			if @cursection.source.first.class != Label
 				@cursection.source.unshift(Label.new(new_unique_label))
 			end
-			tok = @cursection.source.first.name
+			@cursection.source.first.name
 		when '$'
 			# start of current item
 			if @cursection.source.last.class != Label
 				@automaticlabelcount ||= 0
 				@cursection << Label.new(new_unique_label)
 			end
-			tok = @cursection.source.last.name
+			@cursection.source.last.name
 
 		when 'equ', 'macro'
 			raise self, "Unexpected #{tok.inspect}"
 
+		when 'defined'
+			raise self, "bad use of keyword 'defined'" if readtok != :'(' or not (name = readtok).kind_of? String or readtok != :')'
+			Expression[1, :==, (@parser_equ[name] || @parser_macro[name] ? 1 : 0)]
+
 		when String
 			# check for equ
-			case ntok = super
+			case ntok = readtok_nocomment
 			when 'equ'
-				raise self, "Redefining equ #{tok.inspect}" if @lexer_equ[tok]
-				@lexer_equ[tok] = Expression.parse(self)
-				tok = readtok
+				raise self, "Redefining equ #{tok.inspect}"   if @parser_equ[tok] or @parser_macro[tok]
+				@parser_equ[tok] = Expression.parse(self)
+				readtok
 			when 'macro'
-				raise self, "Redefining macro #{tok.inspect}" if @lexer_macro[tok]
-				@lexer_macro[tok] = lexer_new_macro(Macro.new(tok))
-				tok = readtok
+				raise self, "Redefining macro #{tok.inspect}" if @parser_equ[tok] or @parser_macro[tok]
+				@parser_macro[tok] = parser_new_macro(Macro.new(tok))
+				readtok
 			else
 				unreadtok ntok
-				if m = @lexer_macro[tok]
-					lexer_apply_macro m
-					tok = readtok
-				elsif m = @lexer_equ[tok]
-					tok = m
+				if m = @parser_macro[tok]
+					parser_apply_macro m
+					readtok
+				elsif m = @parser_equ[tok]
+					m
+				else
+					tok
 				end
 			end
-		end
-
-		case tok
-		when Comment
-			raise self, "#{tok.text} not implemented" if tok.text[0..2] == '#if'
-			readtok
-		else tok
+		else
+			tok
 		end
 	end
 
-	def lexer_new_macro(m)
-		args  = []
-		state = :arg
-		tok = nil
+	def parser_new_macro(m)
+		m.args.clear
 		loop do
-			tok = readtok
-			case state
-			when :arg
-				break if tok.class != String
-				args << tok
-				state = :coma
-			when :coma
-				break if tok != :','
-				state = :arg
+			case tok = readtok_nocomment
+			when :eol, nil: break
+			when String: m.args << tok
+			# allow ',' as arg separator (and anything else)
 			end
 		end
-		m.args.replace args
 		loop do
-			case tok
-			when nil
-				raise self, 'unfinished macro definition'
-			when 'endm'
-				break
+			case tok = readtok_nocomment
+			when nil: raise self, 'unfinished macro definition'
+			when 'endm': break
 			else
-				m.local_labels << m.body.last if tok == :':' and m.body[-1].class == String and m.body[-2] == :eol
+				if ['db', 'dw', 'dd', :':'].include? tok and m.body.last.kind_of? String and m.body[-2] == :eol
+					m.local_labels << m.body.last
+				end
 				m.body << tok
 			end
-			tok = readtok
 		end
-		m.local_labels.find_all { |ll| m.body.find_all { |lll| lll == ll }.length == 1 }.each { |ll| m.local_labels.delete ll }
 		m
 	end
 
-	def lexer_apply_macro(m)
+	# TODO check, with foo a macro: add eax, foo($)
+	def parser_apply_macro(m)
 		# checks if the macro has arguments
 		args = [[]]
 		state = :start
@@ -506,7 +597,7 @@ class Program
 			case state
 			when :start
 				case tok
-				when :'('
+				when :'('	# XXX make them optionnal ?
 					state = :arg
 				else
 					unreadtok tok
@@ -520,7 +611,7 @@ class Program
 					args << []
 					break
 				when nil
-					raise ParseError, 'Unterminated macro argument list'
+					raise self, 'Unterminated macro argument list'
 				else
 					args.last << tok
 				end
@@ -536,33 +627,42 @@ class Program
 	#   add eax, toto
 	#   toto equ 42
 	# work ? (need to preparse for macro/equ definitions)
-	def parse(str)
+	def parse(str, filename = '<stdin>', lineno = 0)
 		if not defined? @parse_cpu_init
+			# XXX hackish...
 			@parse_cpu_init = true
-			@cpu.parse_init self
-			@lexer_lineno = 0
+			parse @cpu.parse_init, 'cpu parser initialization'
 		end
 
-		feed str
+		@parser_equ ||= {}
+		@parser_macro ||= {}
+		@backtrace ||= []
+		if not str
+			str = File.read(filename)
+			str = str.to_a[lineno..-1].join if lineno != 0
+		end
+		@lexer = Lexer.new(str, filename, lineno)
 
 		until eos?
-			case tok = readtok
-			when :eol
+			tok = readtok
+			case tok
+			when :eol, nil
+
 			when :'.'
 				# HLA
 				tok = readtok
-				# XXX .486 ?  => Float
+				# XXX .486 => Float, should be HLA
 				raise self, "Expected parser instruction, found #{tok.inspect}" if tok.class != String
 				parse_parser_instruction ".#{tok}"
 				# XXX nasm 'weak labels'
 
 			when String
-				if ['db', 'dw', 'dd', :':'].include?(ntok = nexttok)
+				if ['db', 'dw', 'dd', :':'].include? nexttok
 					# label
-					readtok if ntok == :':'
+					readtok if nexttok == :':'
 					@knownlabel ||= {}
-					raise self, "Redefinition of label #{tok} (defined at #{@knownlabel[tok]})" if @knownlabel[tok]
-					@knownlabel[tok] = lexer_curpos
+					raise self, "Redefinition of label #{tok} (defined at #{@knownlabel[tok].reverse.join(' included from ')})" if @knownlabel[tok]
+					@knownlabel[tok] = @backtrace + [@lexer.curpos]
 					@cursection << Label.new(tok)
 				elsif %w[db dw dd].include? tok
 					# data
@@ -570,8 +670,7 @@ class Program
 					arr = []
 					loop do
 						arr << parse_data(type)
-						if nexttok == :','
-							readtok
+						if nexttok == :',': readtok
 						else break
 						end
 					end
@@ -579,27 +678,25 @@ class Program
 
 				elsif tok == 'align'
 					e = Expression.parse(self)
-					raise self, 'need immediate alignment size' unless (e = e.reduce).kind_of? Integer
+					raise self, 'need immediate alignment size' unless (e = e.reduce).kind_of? Integer	# XXX sucks
 					@cursection << Align.new(e)
 
 				else
 					# allow '.' in opcode name
 					while nexttok == :'.'
-						tok << readtok
+						tok << '.'
 						raise self, "Invalid instruction name #{tok}" unless nexttok.kind_of? String
 						tok << readtok
 					end
+					unreadtok tok
 
 					# cpu instruction
-					unreadtok tok
 					if i = @cpu.parse_instruction(self)
 						@cursection << i
 					else
 						raise self, "Unknown thing to parse: #{tok.inspect}"
 					end
 				end
-			when nil
-				break
 			else
 				raise self, "Unknown thing to parse: #{tok.inspect}"
 			end
@@ -608,7 +705,8 @@ class Program
 
 	# handle global import/export
 	# .export foo [, "teh_foo_function"] (public name)
-	# .import "user32.dll" "MessageBoxA"[, messagebox] (name of thunk/plt entry, will be generated automatically. When applicable, imports with thunkname are considered 'code imports' and the other 'data import' (ELF))
+	# .import "user32.dll" "MessageBoxA"[, messagebox] (name of thunk/plt entry, will be generated automatically)
+	# When applicable, imports with thunkname are considered 'code imports' and the other 'data import' (ELF)) (TODO: add parser support for symbol type/size)
 	def parse_parser_instruction(instr)
 		case instr.downcase
 		when '.export'
@@ -616,7 +714,7 @@ class Program
 			if nexttok == :','
 				readtok
 				name = readtok
-				name = name.text if name.kind_of? QString
+				name = name.text if name.kind_of? Lexer::QString
 			else
 				name = label
 			end
@@ -624,10 +722,10 @@ class Program
 
 		when '.import'
 			libname = readtok
-			libname = libname.text if libname.kind_of? QString
+			libname = libname.text if libname.kind_of? Lexer::QString
 			readtok if nexttok == :','
 			importfunc = readtok
-			importfunc = importfunc.text if importfunc.kind_of? QString
+			importfunc = importfunc.text if importfunc.kind_of? Lexer::QString
 			raise self, 'Improper argument to .import' unless libname.kind_of? String and importfunc.kind_of? String
 			if nexttok == :','
 				readtok
@@ -651,7 +749,7 @@ class Program
 
 		when '.section'
 			secname = readtok
-			secname = secname.text if secname.kind_of? QString
+			secname = secname.text if secname.kind_of? Lexer::QString
 			args = []
 			args << readtok while nexttok and nexttok != :eol
 			readtok
@@ -687,7 +785,7 @@ class Program
 
 	def parse_data(type)
 		case tok = readtok
-		when QString
+		when Lexer::QString
 			if tok.text.length > Expression::INT_SIZE[Data::INT_TYPE[type]]/8
 				Data.new type, tok.text
 			else
@@ -703,7 +801,7 @@ class Program
 
 			if nexttok == 'dup'
 				raise "Invalid data count #{i}" unless (count = i.reduce).kind_of? Integer
-				readtok # consume 'dup'
+				readtok	# consume 'dup'
 				raise self, "Invalid dup data : '(' expected" if readtok != :'('
 				content = []
 				loop do
@@ -723,23 +821,92 @@ class Program
 end
 
 class Expression
+	# returns :bool or :value, or :invalid (eg 1 + (2 > 3))
+	def check_type
+		l = @lexpr.kind_of?(self.class) ? @lexpr.check_type : :value
+		r = @rexpr.kind_of?(self.class) ? @rexpr.check_type : :value
+		case @op
+		when :'!'
+			r == :bool ? :bool : :invalid
+		when :'&&', :'||'
+			r == l ? r == :bool  ? :bool  : :invalid : :invalid
+		when :<, :>, :==, :'!='
+			r == l ? r == :value ? :bool  : :invalid : :invalid
+		else
+			r == l ? r == :value ? :value : :invalid : :invalid
+		end
+	end
+
 	class << self
 		# key = operator, value = hash regrouping operators of lower precedence
-		OP_PRIO = [[:|], [:^], [:&], [:<<, :>>], [:+, :-], [:*, :/, :%]].inject({}) { |h, oplist|
+		OP_PRIO = [[:'||'], [:'&&'], [:<, :>, :'==', :'!='], [:|], [:^], [:&], [:<<, :>>], [:+, :-], [:*, :/, :%]].inject({}) { |h, oplist|
 			lessprio = h.keys.inject({}) { |hh, op| hh.update op => true }
 			oplist.each { |op| h[op] = lessprio }
 			h }
 
-		# returns an Expression or nil if unparsed
-		def parse(pgm)
+		def parse_bool(lexer)
 			opstack = []
 			stack = []
 
-			return if pgm.eos? or not e = parse_expr(pgm)
+			return if lexer.eos? or not e = parse_bool_expr(lexer)
+
 			stack << e
 
 			loop do
-				case tok = pgm.readtok
+				case tok = lexer.readtok
+				when :<, :>, :'==', :'!=', :'||', :'&&',
+				     :-, :+, :*, :/, :%, :|, :&, :<<, :>>
+					until opstack.empty? or OP_PRIO[tok][opstack.last]
+						stack << new(opstack.pop, stack.pop, stack.pop)
+					end
+
+					opstack << tok
+
+					raise lexer, "Invalid bool expression" unless e = parse_bool_expr(lexer)
+					stack << e
+				else
+					lexer.unreadtok tok
+					break
+				end
+			end
+
+			until opstack.empty?
+				stack << new(opstack.pop, stack.pop, stack.pop)
+			end
+
+			e = stack.first
+			e = new(:+, e, nil) unless e.kind_of? self
+			raise lexer, 'Invalid bool expression' if e.check_type == :invalid
+			e
+		end
+
+		def parse_bool_expr(lexer)
+			case tok = lexer.readtok
+			when :'!'
+				return unless e = parse_bool_expr(lexer)
+				new(tok, e, nil)
+			when :'('
+				return unless e = parse_bool(lexer)
+				raise lexer, "Bool expression: ')' expected" unless lexer.readtok == :')'
+				e
+			when :eol
+				parse_bool_expr lexer
+			else
+				lexer.unreadtok(tok)
+				parse_expr(lexer)
+			end
+		end
+
+		# returns an Expression or nil if unparsed
+		def parse(lexer)
+			opstack = []
+			stack = []
+
+			return if lexer.eos? or not e = parse_expr(lexer)
+			stack << e
+
+			loop do
+				case tok = lexer.readtok
 				when :-, :+, :*, :/, :%, :|, :&, :<<, :>>
 					lessprio = OP_PRIO[tok]
 					
@@ -749,10 +916,10 @@ class Expression
 					
 					opstack << tok
 					
-					raise pgm, "Invalid expression" unless e = parse_expr(pgm)
+					raise lexer, "Invalid expression" unless e = parse_expr(lexer)
 					stack << e
 				else
-					pgm.unreadtok tok
+					lexer.unreadtok tok
 					break
 				end
 			end
@@ -766,35 +933,30 @@ class Expression
 			e
 		end
 
-		def parse_expr(pgm)
-			case tok = pgm.readtok
+		def parse_expr(lexer)
+			case tok = lexer.readtok
 			when :+, :-, :~
 				# unary operator
-				return unless e = parse_expr(pgm)
+				return unless e = parse_expr(lexer)
 				new(tok, e, nil)
 			when :'('
 				# parenthesis
-				return unless e = parse(pgm)
-				raise pgm, "Expression: ')' expected" unless pgm.readtok == :')'
+				return unless e = parse(lexer)
+				raise lexer, "Expression: ')' expected" unless lexer.readtok == :')'
 				e
-			when Numeric, self
+			when Numeric, self, String
+# TODO				if %w[addr near short offset].include?(tok)
+#					puts "#{tok} modifier ignored" if $VERBOSE
+#					parse_expr(lexer)
 				tok
-			when String
-				if %w[addr near short offset].include?(tok)
-					puts "#{tok} modifier ignored" if $VERBOSE
-					parse_expr(pgm)
-				else
-					tok
-				end
 			when Lexer::QString
 				t = tok.text
-				t = t.reverse if pgm.cpu.endianness == :little
+				t = t.reverse if lexer.cpu.endianness == :little rescue nil
 				t.unpack('C*').inject(0) { |v, b| (v << 8) | b }
 			when :eol
-				pgm.unreadtok tok
-				nil
+				parse_expr lexer
 			else
-				raise pgm, "Expression parser: #{tok.inspect} unexpected"
+				raise lexer, "Expression parser: #{tok.inspect} unexpected"
 			end
 		end
 	end

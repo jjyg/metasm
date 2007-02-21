@@ -7,8 +7,8 @@ class Ia32
 class ModRM
 	# must be called after simple Reg/Seg parser
 	# will raise if no modrm is found
-	def self.parse(pgm)
-		tok = pgm.readtok
+	def self.parse(lexer)
+		tok = lexer.readtok
 		if tok =~ /^(?:byte|[dqo]?word|_(\d+)bits)$/
 			ptsz = 
 			if $1
@@ -20,34 +20,34 @@ class ModRM
 				when 'dword':  32
 				when 'qword':  64
 				when 'oword': 128
-				else raise pgm, 'mrm: bad ptr size specifier'
+				else raise lexer, 'mrm: bad ptr size specifier'
 				end
 			end
 
-			tok = pgm.readtok
-			tok = pgm.readtok if tok == 'ptr'
+			tok = lexer.readtok
+			tok = lexer.readtok if tok == 'ptr'
 		end
 		if tok =~ /^[cdefgs]s$/
-			raise pgm, 'bad modrm' if pgm.readtok != :':'
+			raise lexer, 'bad modrm' if lexer.readtok != :':'
 			seg = SegReg.new(SegReg.s_to_i[tok])
-			tok = pgm.readtok
+			tok = lexer.readtok
 		end
 
 		if tok != :'['
-			raise pgm, 'not a modrm' if ptsz or seg
-			pgm.unreadtok tok
+			raise lexer, 'not a modrm' if ptsz or seg
+			lexer.unreadtok tok
 			return
 		end
 
 		# support fasm syntax [fs:eax]
-		if pgm.nexttok =~ /^[cdefgs]s$/
-			tok = pgm.readtok
-			raise pgm, 'bad modrm' if pgm.readtok != :':'
+		if lexer.nexttok =~ /^[cdefgs]s$/
+			tok = lexer.readtok
+			raise lexer, 'bad modrm' if lexer.readtok != :':'
 			seg = SegReg.new(SegReg.s_to_i[tok])
 		end
 
-		content = Expression.parse(pgm)
-		raise(pgm, 'bad modrm') if not content or pgm.readtok != :']'
+		content = Expression.parse(lexer)
+		raise(lexer, 'bad modrm') if not content or lexer.readtok != :']'
 
 		regify = proc { |o|
 			case o
@@ -71,7 +71,7 @@ class ModRM
 			when nil
 			when Reg
 				if b
-					raise pgm, 'mrm: too many regs' if i
+					raise lexer, 'mrm: too many regs' if i
 					i = o
 					s = 1
 				else
@@ -79,11 +79,11 @@ class ModRM
 				end
 			when Expression
 				if o.op == :* and (o.rexpr.kind_of? Reg or o.lexpr.kind_of? Reg)
-					raise pgm, 'mrm: too many index' if i
+					raise lexer, 'mrm: too many index' if i
 					s = o.lexpr
 					i = o.rexpr
 					s, i = i, s if s.kind_of? Reg
-					raise pgm, 'mrm: bad scale' unless s.kind_of? Integer
+					raise lexer, 'mrm: bad scale' unless s.kind_of? Integer
 				elsif o.op == :+
 					walker[o.lexpr]
 					walker[o.rexpr]
@@ -97,20 +97,20 @@ class ModRM
 
 		walker[regify[content.reduce]]
 
-		raise pgm, 'mrm: reg in imm' if imm.kind_of? Expression and not imm.externals.grep(Reg).empty?
+		raise lexer, 'mrm: reg in imm' if imm.kind_of? Expression and not imm.externals.grep(Reg).empty?
 
-		adsz = b ? b.sz : i ? i.sz : pgm.cpu.size
+		adsz = b ? b.sz : i ? i.sz : lexer.cpu.size
 		new adsz, ptsz, s, i, b, imm, seg
 	end
 end
 
 
-	def parse_parser_instruction(pgm, instr)
+	def parse_parser_instruction(lexer, instr)
 		case instr.downcase
 		when '.mode', '.bits'
-			case pgm.nexttok
-			when 16, 32: @size = pgm.readtok
-			else raise pgm, "Invalid IA32 .mode #{tok.inspect}"
+			case lexer.nexttok
+			when 16, 32: @size = lexer.readtok
+			else raise lexer, "Invalid IA32 .mode #{tok.inspect}"
 			end
 		else super
 		end
@@ -126,18 +126,18 @@ end
 		end
 	end
 
-	def parse_argument(pgm)
+	def parse_argument(lexer)
 		@args_token ||= (Argument.double_list + Argument.simple_list).map { |a| a.s_to_i.keys }.flatten.inject({}) { |h, e| h.update e => true }
 		 
-		tok = pgm.readtok
+		tok = lexer.readtok
 
 		# fp reg
-		if tok == 'ST' and pgm.nexttok == :'('
-			tok << pgm.readtok.to_s
-			raise pgm, 'bad FP reg' if not pgm.nexttok.kind_of? Integer
-			tok << pgm.readtok.to_s
-			raise pgm, 'bad FP reg' if not pgm.nexttok == :')'
-			tok << pgm.readtok.to_s
+		if tok == 'ST' and lexer.nexttok == :'('
+			tok << lexer.readtok.to_s
+			raise lexer, 'bad FP reg' if not lexer.nexttok.kind_of? Integer
+			tok << lexer.readtok.to_s
+			raise lexer, 'bad FP reg' if not lexer.nexttok == :')'
+			tok << lexer.readtok.to_s
 		end
 
 		if @args_token[tok]
@@ -147,16 +147,16 @@ end
 			Argument.simple_list.each { |a|
 				return a.new( a.s_to_i[tok]) if a.s_to_i.has_key? tok
 			}
-			raise pgm, "Internal ia32 argument parser error: bad args_token #{tok.inspect}"
+			raise lexer, "Internal ia32 argument parser error: bad args_token #{tok.inspect}"
 		else
-			pgm.unreadtok tok
-			return tok if tok = ModRM.parse(pgm)
+			lexer.unreadtok tok
+			return tok if tok = ModRM.parse(lexer)
 
-			tok = Expression.parse(pgm)
+			tok = Expression.parse(lexer)
 
-			if pgm.nexttok == :':' and (tt = tok.reduce).kind_of? Integer
-				pgm.readtok
-				tok = Expression.parse pgm
+			if lexer.nexttok == :':' and (tt = tok.reduce).kind_of? Integer
+				lexer.readtok
+				tok = Expression.parse lexer
 				Farptr.new tt, tok
 			else
 				tok
@@ -206,12 +206,13 @@ end
 		end
 	end
 
-	def parse_instruction_fixup(pgm, i)
+	def parse_instruction_fixup(lexer, i)
 		# convert label name for jmp/call/loop to relative offset
 		if @opcode_list_byname[i.opname].first.props[:setip] and i.args.first.kind_of? Expression and not i.args.first.reduce.kind_of? Integer	# XXX jmp 0x43040211 ?
-			postlabel = pgm.new_unique_label
+			postlabel = lexer.new_unique_label
 			i.args[0] = Expression[i.args.first, :-, postlabel]
-			pgm.unreadtok postlabel, :':'
+			lexer.unreadtok :':'
+			lexer.unreadtok postlabel
 		end
 	end
 end

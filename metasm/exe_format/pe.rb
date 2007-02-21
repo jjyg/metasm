@@ -19,7 +19,7 @@ start:
 	push cs
 	pop  ds
 	xor  dx, dx	  ; ds:dx = addr of $-terminated string
-	# mov  dx, _str
+	// mov  dx, _str
 	mov  ah, 9
 	int  21h
 	mov  ax, 4c01h    ; exit code in al
@@ -104,7 +104,10 @@ EOMZSTUB
 	end
 
 	def decode(str, opts)
-		p = Program.new
 	end
+
+	def pre_decode_header(str)
+	end
+end
 end
 end
