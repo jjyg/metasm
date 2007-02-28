@@ -1,6 +1,8 @@
 require 'metasm/exe_format/main'
 
 module Metasm
+# TODO ELF64
+class ELF < ExeFormat
 	CLASS = { 0 => 'NONE', 1 => '32', 2 => '64' }
 	DATA  = { 0 => 'NONE', 1 => 'LSB', 2 => 'MSB' }
 	VERSION = { 0 => 'INVALID', 1 => 'CURRENT' }
@@ -9,7 +11,6 @@ module Metasm
 	MACHINE = { 0 => 'NONE', 1 => 'M32', 2 => 'SPARC', 3 => '386',
 		4 => '68K', 5 => '88K', 7 => '860', 8 => 'MIPS' }
 
-	# XXX ia32 only
 	DYNAMIC_TAG = { 0 => 'NULL', 1 => 'NEEDED', 2 => 'PLTRELSZ', 3 =>
 		'PLTGOT', 4 => 'HASH', 5 => 'STRTAB', 6 => 'SYMTAB', 7 => 'RELA',
 		8 => 'RELASZ', 9 => 'RELAENT', 10 => 'STRSZ', 11 => 'SYMENT',
@@ -40,8 +41,12 @@ module Metasm
 	SYMBOL_TYPE = { 0 => 'NOTYPE', 1 => 'OBJECT', 2 => 'FUNC',
 		3 => 'SECTION', 4 => 'FILE', 13 => 'LOPROC', 15 => 'HIPROC' }
 
+	RELOCATION_TYPE = {	# key in MACHINE.values
+		'386' => { 0 => 'NONE', 1 => '32', 2 => 'PC32', 3 => 'GOT32',
+			4 => 'PLT32', 5 => 'COPY', 6 => 'GLOB_DAT', 7 => 'JMP_SLOT',
+			8 => 'RELATIVE', 9 => 'GOTOFF', 10 => 'GOTPC' }
+	}
 
-class ELF < ExeFormat
 	class Section
 		attr_accessor :name, :type, :flags, :addr, :rawoffset, :link, :info, :align, :entsize, :edata
 		attr_accessor :virt_gap	# set to true if a virtual address gap is needed with the preceding section (different memory permission needed)
@@ -65,10 +70,7 @@ class ELF < ExeFormat
 	end
 
 class << self
-	# options:
 	# 'elf_target' in ['REL', 'EXEC', 'DYN']
-	# 'no_section_header' bool
-	# 'no_program_header' bool
 	def encode(program, opts={})
 		sections = []
 
@@ -93,14 +95,19 @@ class << self
 		}
 
 		target = opts.delete('elf_target') || 'EXEC'
+		arch   = opts.delete('e_machine') || '386'	# TODO check program.cpu.class or something
 
 		# XXX regroup sections by flag (1 big rw segment, 1 big rx segment)
 		# dynamic for exe/so, relocs for obj ?
-		pre_encode_dynamic(program, target, sections, opts) unless opts.delete('no_dynamic')
+		if target == 'EXEC' or target == 'DYN'
+			pre_encode_dynamic(program, target, arch, sections, opts) unless opts.delete('no_dynamic')
+		else
+			pre_encode_relocs(program, target, sections, opts)
+		end
 
 		pre_encode_secthdr(program, target, sections, opts) unless opts.delete('no_section_header')
 		pre_encode_proghdr(program, target, sections, opts) unless opts.delete('no_program_header')	# or elf_target == 'obj'
-		pre_encode_header( program, target, sections, opts)
+		pre_encode_header( program, target, arch, sections, opts)
 
 		link(program, target, sections, opts)
 	end
@@ -115,163 +122,369 @@ class << self
 		}
 	end
 
-	def pre_encode_dynamic(program, target, sections, opts)
+	def pre_encode_dynamic(program, target, arch, sections, opts)
+		# TODO add parser support for sym.size / sym.type
+
 		encode = proc { |sect, type, val| sect.edata << Expression[*val].encode(type, program.cpu.endianness) }
 
-		use_va = (target == 'EXEC' or target == 'DYN')
+		#pre_sections = sections.dup
+		
+		dynstr = Section.new
+		dynstr.name = '.dynstr'
+		dynstr.align = 1
+		dynstr.edata = EncodedData.new << 0
+		dynstr.type = 'STRTAB'
+		dynstr.flags << 'ALLOC'
+		sections << dynstr
 
-		str = Section.new
-		str.name = '.dynstr'
-		str.align = 1
-		str.edata = EncodedData.new << 0
-		str.type = 'STRTAB'
-		str.flags << 'ALLOC'
+		dynsym = Section.new
+		dynsym.name = '.dynsym'
+		dynsym.align = 4
+		dynsym.edata = EncodedData.new
+		dynsym.type = 'DYNSYM'
+		dynsym.flags << 'ALLOC'
+		dynsym.entsize = 0x10
+		dynsym.link = dynstr
+		sections << dynsym
 
 		hash = Section.new
 		hash.name = '.hash'
 		hash.align = 4
 		hash.edata = EncodedData.new
 		hash.type = 'HASH'
-		hash.entsize = 4
 		hash.flags << 'ALLOC'
+		hash.entsize = 4
+		hash.link = dynsym
+		sections << hash
 
-		if use_va
-			dynamic = Section.new
-			dynamic.name = '.dynamic'
-			dynamic.align = 4
-			dynamic.edata = EncodedData.new
-			dynamic.type = 'DYNAMIC'
-			dynamic.entsize = 8
-			dynamic.flags << 'ALLOC'
+		rel = Section.new
+		rel.name = '.rel.dyn'
+		rel.align = 4
+		rel.edata = EncodedData.new
+		rel.type = 'REL'
+		rel.flags << 'ALLOC'
+		rel.entsize = 8
+		rel.link = dynsym
+		rel.info = 0
+		sections << rel
+
+		dynamic = Section.new
+		dynamic.name = '.dynamic'
+		dynamic.align = 4
+		dynamic.edata = EncodedData.new
+		dynamic.type = 'DYNAMIC'
+		dynamic.entsize = 8
+		dynamic.flags << 'ALLOC'
+		dynamic.link = dynstr
+		sections << dynamic
+
+		if program.import.find { |lib, ilist| ilist.find { |iname, thunkname| not thunkname } }
+		got = Section.new
+		got.name = '.got'
+		got.align = 4
+		got.edata = EncodedData.new
+		got.type = 'PROGBITS'
+		got.flags << 'ALLOC' << 'WRITE'
+		got.entsize = 4
+		sections << got
 		end
 
-		sym = Section.new
-		sym.align = 4
-		sym.edata = EncodedData.new
-		sym.flags << 'ALLOC'
-		sym.entsize = 0x10
+		if program.import.find { |lib, ilist| ilist.find { |iname, thunkname| thunkname } }
+		pltgot = Section.new
+		pltgot.name = '.plt.got'
+		pltgot.align = 4
+		pltgot.edata = EncodedData.new
+		pltgot.type = 'PROGBITS'
+		pltgot.flags << 'ALLOC' << 'WRITE'
+		pltgot.entsize = 4
+		sections << pltgot
 
-		symlist = []
+		# the plt does not need to be a table
+		plt = Section.new
+		plt.name = '.plt'
+		plt.align = 4
+		plt.edata = EncodedData.new
+		plt.type = 'PROGBITS'
+		plt.flags << 'ALLOC' << 'EXECINSTR'
+		#plt.entsize = 4
+		sections << plt
 
-		# TODO add parser support for sym.size / sym.type
-		if opts.delete('unstripped')
-			sym.name = '.symtab'
-			sym.type = 'SYMTAB'
-		
-			sections.each { |sect|
-				sect.edata.export.each { |name, off|
-					# next if name =~ new_unique_label
-					s = Symbol.new
-					s.name = name
-					s.bind = program.export[name] ? 'GLOBAL' : 'LOCAL'
-					s.section = sect
-					s.value = use_va ? name : off
-					symlist << s
-				}
-			}
-		else
-			sym.name = '.dynsym'
-			sym.type = 'DYNSYM'
+		relplt = Section.new
+		relplt.name = '.rel.plt'
+		relplt.align = 4
+		relplt.edata = EncodedData.new
+		relplt.type = 'REL'
+		relplt.flags << 'ALLOC'
+		relplt.entsize = 8
+		relplt.link = dynsym
+		relplt.info = plt		# should be pltgot, but gcc uses plt
+		sections << relplt
 
-			program.export.each { |name, label|
+		encode[pltgot, :u32, program.label_at(dynamic.edata, 0)]	# reserved, points to _DYNAMIC
+		#if arch == '386'
+			encode[pltgot, :u32, 0]	# ptr to dlresolve
+			encode[pltgot, :u32, 0]	# ptr to got?
+		#end
+		end
+	
+		# group sections by flags
+		sections.replace sections.sort_by { |s|
+			if s.flags.include? 'ALLOC'
+				if s.type == 'PROGBITS'
+					if not s.flags.include? 'WRITE'
+						if not s.flags.include? 'EXECINSTR'
+							0	# R
+						else
+							1	# RX
+						end
+					else
+						2	# RW / RWX
+					end
+				else
+					3	# NOBITS
+				end
+			else
+				4	# NOALLOC
+			end
+		}
+
+		# now section indexes are valid (no insertion/reordering allowed)
+
+		dynsym.edata << ("\0"*dynsym.entsize)	# 1st entry reserved for SHN_UNDEF
+		dynstrndx = {}	# used in hash definition
+		# macros
+		new_dynstr = proc { |str|
+			ret = dynstr.edata.virtsize
+			dynstr.edata << str << 0
+			ret
+		}
+		add_dynsym = proc { |sym|
+			if sym.name
+				dynstrndx[sym.name] = dynsym.edata.virtsize / dynsym.entsize
+				encode[dynsym, :u32, new_dynstr[sym.name]]
+			else
+				encode[dynsym, :u32, 0]
+			end
+			encode[dynsym, :u32, sym.value || 0]
+			encode[dynsym, :u32, sym.size || 0]
+			encode[dynsym, :u8, [[int_from_hash(sym.bind || 'LOCAL', SYMBOL_BIND), :<<, 4], :|, int_from_hash(sym.type || 'NOTYPE', SYMBOL_TYPE)]]
+			encode[dynsym, :u8, sym.other || 0]
+			sndx = sections.index(sym.section)
+			sndx = sndx ? sndx + 1 : int_from_hash(sym.section || 'UNDEF', SH_INDEX)
+			encode[dynsym, :u16, sndx]
+		}
+
+		if false and target != 'EXEC'
+			# XXX ??  not found in gcc's ET_EXEC, from docs: 'used for relocations'
+			pre_sections.map { |s|
+				sym = Symbol.new
+				sym.value = s.rawoffset ||= program.new_unique_label
+				sym.bind = 'LOCAL'
+				sym.type = 'SECTION'
+				sym.section = s
+				sym
+			}.sort_by { |sym| sections.index sym.section }.each { |sym| add_dynsym[sym] }
+		end
+
+		if false and filename = opts.delete('filename')
+			# XXX should be related to debug information
+			sym = Symbol.new
+			sym.name = filename
+			sym.bind = 'LOCAL'
+			sym.section = 'ABS'
+			add_sym[sym]
+		end
+
+		dynsym.info = dynsym.edata.virtsize / dynsym.entsize	# index of the last local sym + 1
+
+		sections.each { |sect|
+			sect.edata.export.each { |name, off|
+				next unless program.export[name]
 				s = Symbol.new
 				s.name = name
 				s.bind = 'GLOBAL'
-				if use_va
-					s.value = label
-				else
-					s.section = sections.find { |sect| s.value = sect.edata.export[label] }
-				end
-				symlist << s
+				s.section = sect
+				s.value = name
+				add_dynsym[s]
 			}
-		end
-
-#pre_sections = sections.dup
-		sections.unshift(str, hash, sym)
-		if dynamic
-			sections.unshift(dynamic)
-		# from this point, the section table is complete, and one can use section indexes (XXX indexes start at 1)
-			dynamic.link = sections.index(str) + 1
-		end
-		hash.link = sections.index(sym) + 1
-		sym.link = sections.index(str) + 1
-
-
-		new_string = proc { |string|
-			ret = str.edata.virtsize
-			str.edata << string << 0
-			ret
+		}
+		program.export.each { |name, label|
+			next if name == label	# already done
+			s = Symbol.new
+			s.name = name
+			s.bind = 'GLOBAL'
+			s.section = sections.find { |sect| sect.edata.export[label] }
+			s.value = label
+			add_dynsym[s]
+		}
+		program.import.each { |lib, ilist|
+			ilist.each { |iname, thunkname|
+				s = Symbol.new
+				s.name = iname
+				s.bind = 'GLOBAL'
+				s.section = 'UNDEF'
+				# s.value = ?
+				add_dynsym[s]
+			}
 		}
 
-		# array of name/symbol index, for hash table construction
-		stringlist = []
-
-		add_sym = proc { |s|
-			if s.name
-				stringlist << [s.name, sym.edata.virtsize / sym.entsize]
-				encode[sym, :u32, new_string[s.name]]
-			else
-				encode[sym, :u32, 0]
-			end
-			encode[sym, :u32, s.value || 0]
-			encode[sym, :u32, s.size || 0]
-			encode[sym, :u8, [[int_from_hash(s.bind || 'LOCAL', SYMBOL_BIND), :<<, 4], :|, int_from_hash(s.type || 'NOTYPE', SYMBOL_TYPE)]]
-			encode[sym, :u8, s.other || 0]
-			sndx = sections.index(s.section)
-			sndx = sndx ? sndx + 1 : int_from_hash(s.section || 'UNDEF', SH_INDEX)
-			encode[sym, :u16, sndx]
-		}
-
-		add_sym[Symbol.new]	# 1st entry NULL
-#pre_sections.each { |ps| s = Symbol.new ; s.value = ps.rawoffset ; s.bind = 'SECTIONS' ; s.section = ps ; add_sym[s] }	# ??? docs => 'used for relocations', not found in ET_EXEC
-		symlist.each { |s| add_sym[s] if s.bind == 'LOCAL' }
-		sym.info = sym.edata.virtsize / 0x10	# index of the last local sym + 1
-		symlist.each { |s| add_sym[s] if s.bind != 'LOCAL' }
-
-
+		# build dynamic symbols hash table
+		#
 		# to find a symbol from its name :
 		# 1 idx = hash(name)
 		# 2 idx = bucket[idx % bucket.size]
 		# 3 if idx == 0: return notfound
-		# 4 if symtable[idx].name == name: return found
+		# 4 if dynsym[idx].name == name: return found
 		# 5 idx = chain[idx] ; goto 3
-		hash_bucket = Array.new(stringlist.length / 4 + 1, 0)
-		hash_chain  = Array.new(sym.edata.virtsize / sym.entsize, 0)
-		stringlist.each { |name, index|
+		hash_bucket = Array.new(dynstrndx.length/4 + 1, 0)
+		hash_chain  = Array.new(dynstrndx.values.max.to_i+1, 0)
+		dynstrndx.each { |name, index|
 			h = symbol_hash(name)
-			hash_chain[index] = hash_bucket[h % hash_bucket.length]
-			hash_bucket[h % hash_bucket.length] = index
+			h_mod = h % hash_bucket.length
+			hash_chain[index] = hash_bucket[h_mod]
+			hash_bucket[h_mod] = index
 		}
 		encode[hash, :u32, hash_bucket.length]
 		encode[hash, :u32, hash_chain.length]
 		hash_bucket.each { |b| encode[hash, :u32, b] }
 		hash_chain.each  { |c| encode[hash, :u32, c] }
 
-		# TODO
-		relocs = []
-		if use_va
-			plt = nil
-			got = nil
-			program.import.values.each { |ilist|
-				ilist.each { |importname, thunkname|
-					if thunkname
-						plt ||= EncodedData.new << "jmp [xx]"
-						plt.export[thunkname] = plt.virtsize
-						# got in ebx or hardcoded, cpu.encode_thunk(importname), ...
-					end
-					# got
+
+		encoderel = proc { |s, off, target, type|
+			encode[s, :u32, off]
+			target = dynstrndx[target] || target
+			encode[s, :u32, [[target, :<<, 8], :|, int_from_hash(type, RELOCATION_TYPE[arch])]]
+		}
+
+		if pltgot
+		# XXX the plt entries need not to follow this model
+		# XXX arch-specific, parser-dependant...
+		program.parse <<EOPLT
+.section metasmintern_plt r x
+metasmintern_pltstart:
+	push dword ptr [ebx+4]
+	jmp  dword ptr [ebx+8]
+
+metasmintern_pltgetgotebx:
+	call metasmintern_pltgetgotebx_foo
+metasmintern_pltgetgotebx_foo:
+	pop ebx
+	add ebx, #{program.label_at(pltgot.edata, 0)} - metasmintern_pltgetgotebx_foo
+	ret
+EOPLT
+		pltsec = program.sections.pop
+		end
+
+		program.import.each { |lib, ilist|
+			ilist.each { |iname, thunkname|
+				if thunkname
+					uninit = program.new_unique_label
+					program.parse <<EOPLTE
+#{thunkname}:
+	call metasmintern_pltgetgotebx
+	jmp [ebx+#{pltgot.edata.virtsize}]
+#{uninit}:
+	push #{relplt.edata.virtsize}
+	jmp metasmintern_pltstart
+align 0x10
+EOPLTE
+					pltgot.edata.export[iname] = pltgot.edata.virtsize if iname != thunkname
+					encoderel[relplt, program.label_at(pltgot.edata, pltgot.edata.virtsize), iname, 'JMP_SLOT']
+					encode[pltgot, :u32, uninit]
+					# no base relocs
+				else
+					got.edata.export[iname] = got.edata.virtsize
+					encoderel[rel, iname, iname, 'GLOB_DAT']
+					encode[got, :u32, 0]
+				end
+			}
+		}
+		pltsec.encode
+		plt.edata << pltsec.encoded
+
+
+		if opts.delete('unstripped')
+			strtab = Section.new
+			strtab.name = '.strtab'
+			strtab.align = 1
+			strtab.edata = EncodedData.new << 0
+			strtab.type = 'STRTAB'
+
+			symtab = Section.new
+			symtab.name = '.symtab'
+			symtab.align = 4
+			symtab.edata = EncodedData.new
+			symtab.type = 'SYMTAB'
+			symtab.entsize = 0x10
+			symtab.link = strtab
+			symtab.edata << ("\0"*symtab.entsize)
+
+			new_str = proc { |str|
+				ret = strtab.edata.virtsize
+				strtab.edata << str << 0
+				ret
+			}
+
+			add_sym = proc { |sym|
+				encode[symtab, :u32, sym.name ? new_str[sym.name] : 0]
+				encode[symtab, :u32, sym.value || 0]
+				encode[symtab, :u32, sym.size || 0]
+				encode[symtab, :u8, [[int_from_hash(sym.bind || 'LOCAL', SYMBOL_BIND), :<<, 4], :|, int_from_hash(sym.type || 'NOTYPE', SYMBOL_TYPE)]]
+				encode[symtab, :u8, sym.other || 0]
+				sndx = sections.index(sym.section)
+				sndx = sndx ? sndx + 1 : int_from_hash(sym.section || 'UNDEF', SH_INDEX)
+				encode[symtab, :u16, sndx]
+			}
+
+			sections.map { |s|	# includes .plt .got etc
+				sym = Symbol.new
+				sym.value = s.rawoffset ||= program.new_unique_label
+				sym.bind = 'LOCAL'
+				sym.type = 'SECTION'
+				sym.section = s
+				add_sym[sym]
+			}
+
+			sections << strtab << symtab
+
+			sections.each { |s|
+				s.edata.export.each { |name, off|
+					next if program.export[name]
+
+					next if name =~ /^metasmintern_uniquelabel_/	# skip autogenerated labels
+					sym = Symbol.new
+					sym.name = name
+					sym.bind = 'LOCAL'
+					sym.section = s
+					sym.value = name
+					add_sym[sym]
 				}
 			}
-			# jmprel / .got.rel
-		else
-			# .*.rel
+
+			symtab.info = symtab.edata.virtsize / symtab.entsize	# index of the last local sym + 1
+
+			program.export.each { |name, label|
+				sym = Symbol.new
+				sym.name = name
+				sym.bind = 'GLOBAL'
+				sym.section = sections.find { |s| s.edata.export[label] }
+				sym.value = label
+				add_sym[sym]
+			}
+			
+			program.import.each { |lib, ilist|
+				ilist.each { |iname, thunkname|
+					sym = Symbol.new
+					sym.name = iname
+					sym.bind = 'GLOBAL'
+					sym.section = 'UNDEF'
+					add_sym[sym]
+				}
+			}
 		end
-	
 
 
-		return if not dynamic
-
-
+		# dynamic tags
 		tag = proc { |type, val|
 			dynamic.edata <<
 			Expression[int_from_hash(type, DYNAMIC_TAG)].encode(:u32, program.cpu.endianness) <<
@@ -279,31 +492,37 @@ class << self
 		}
 
 		(program.import.keys + opts.delete('needed').to_a).each { |libname|
-			tag['NEEDED', new_string[libname]]
+			tag['NEEDED', new_dynstr[libname]]
 		}
 
 		tmp = nil
 		tag['INIT', tmp] if tmp = opts.delete('init')
 		tag['FINI', tmp] if tmp = opts.delete('fini')
+		tag['SONAME', new_dynstr[tmp]] if tmp = opts.delete('soname')
 
-		tag['SONAME', new_string[tmp]] if tmp = opts.delete('soname')
+		tag['HASH',   program.label_at(hash.edata, 0)]
+		tag['STRTAB', program.label_at(dynstr.edata, 0)]
+		tag['SYMTAB', program.label_at(dynsym.edata, 0)]
+		tag['STRSZ',  dynstr.edata.virtsize]
+		tag['SYMENT', dynsym.entsize]
 
-		tag['HASH', program.label_at(hash.edata, 0)]
-		tag['STRTAB', program.label_at(str.edata, 0)]
-		tag['SYMTAB', program.label_at(sym.edata, 0)]
-		tag['STRSZ', str.edata.virtsize]
-		tag['SYMENT', 16]
+		if pltgot
+		tag['PLTGOT', program.label_at(pltgot.edata, 0)]
+		tag['PLTRELSZ', relplt.edata.virtsize]
+		tag['PLTREL', DYNAMIC_TAG.index('REL')]
+		tag['JMPREL', program.label_at(relplt.edata, 0)]
+		end
 
-#		tag['PLTGOT', program.label_at(got.edata, 0)]
-#		tag['PLTRELSZ', got_rels.edata.virtsize]
-#		tag['PLTREL', PLT_REL_TYPE.index('REL')]
-#		tag['JMPREL', program.label_at(got_rels.edata, 0)]
-
-#		tag['REL', program.label_at(rel, 0)]
-#		tag['RELSZ', [end_rel, :-, program.label_at(rel, 0)]]
-#		tag['RELENT', 8]
+		tag['REL',    program.label_at(rel.edata, 0)]
+		tag['RELSZ',  rel.edata.virtsize]
+		tag['RELENT', rel.entsize]
 
 		tag['NULL', 0]	# end of array
+
+		sections.each { |s|
+			s.link = sections.index(s.link) + 1 if s.link.kind_of? Section
+			s.info = sections.index(s.info) + 1 if s.info.kind_of? Section
+		}
 	end
 
 	def pre_encode_secthdr(program, target, sections, opts)
@@ -474,7 +693,7 @@ class << self
 		phdr.export[end_phdr] = phdr.virtsize if end_phdr
 	end
 
-	def pre_encode_header(program, target, sections, opts)
+	def pre_encode_header(program, target, arch, sections, opts)
 		hdr = EncodedData.new
 
 		end_hdr = program.new_unique_label
@@ -490,7 +709,7 @@ class << self
 		encode = proc { |type, val| hdr << Expression[*val].encode(type, program.cpu.endianness) }
 
 		encode[:u16, int_from_hash(target, TYPE)]
-		encode[:u16, int_from_hash(opts.delete('e_machine') || '386', MACHINE)] # TODO check program.cpu.class or something
+		encode[:u16, int_from_hash(arch, MACHINE)]
 		encode[:u32, e_version]
 
 		entrypoint = opts.delete('entrypoint') || 'start'
@@ -562,7 +781,7 @@ class << self
 
 		sections.each { |s| s.edata.fixup binding }
 		puts 'Unused ELF options: ' << opts.keys.sort_by { |k| k.to_s }.inspect unless opts.empty?
-		# raise Foo if sections.find { |s| not s.reloc.empty? }
+		raise EncodeError, "unresolved relocations: " + sections.map { |s| s.edata.reloc.map { |o, r| r.target.bind(binding).reduce } }.flatten.inspect if sections.find { |s| not s.edata.reloc.empty? }
 
 		sections.inject(EncodedData.new) { |ed, s|
 			ed.fill(binding[s.rawoffset] || s.rawoffset)

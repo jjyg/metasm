@@ -503,7 +503,7 @@ class Program
 				raise self, "macro by #define not implemented yet" if nexttok == :'('	# TODO
 				raise self, "redefinition of #{tok}" if @parser_macro[tok]
 				m = @parser_macro[tok] = Macro.new(tok)
-				while (tok = readtok) != :eol
+				while tok = readtok and tok != :eol
 					m.body << tok
 				end
 			else
@@ -546,7 +546,7 @@ class Program
 				raise self, "Redefining equ #{tok.inspect}"   if @parser_macro[tok]
 				# @parser_equ[tok] = Expression.parse(self)	# allows things like foo equ 1+1 \n foo * 2 => (1+1)*2, disallows things like foo equ "bar"
 				m = @parser_macro[tok] = Macro.new(tok)
-				while (tok = readtok) != :eol	# toto db "foo" \n toto_len equ $-toto   must work
+				while tok = readtok and tok != :eol	# toto db "foo" \n toto_len equ $-toto   must work
 					m.body << tok
 				end
 				:eol
@@ -582,7 +582,7 @@ class Program
 			when nil: raise self, 'unfinished macro definition'
 			when 'endm': break
 			else
-				if ['db', 'dw', 'dd', :':'].include? tok and m.body.last.kind_of? String and m.body[-2] == :eol
+				if ['db', 'dw', 'dd', :':'].include? tok and m.body.last.kind_of? String and (m.body[-2] == :eol or not m.body[-2])
 					m.local_labels << m.body.last
 				end
 				m.body << tok
