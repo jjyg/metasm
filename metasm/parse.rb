@@ -805,6 +805,8 @@ class Program
 
 	def parse_data(type)
 		case tok = readtok
+		when :eol
+			parse_data(type)
 		when Lexer::QString
 			if tok.text.length > Expression::INT_SIZE[Data::INT_TYPE[type]]/8
 				Data.new type, tok.text

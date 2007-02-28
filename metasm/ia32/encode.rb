@@ -83,7 +83,7 @@ class Ia32
 				[ret << @imm.encode(:u32, endianness)]
 
 			else
-				imm = @imm.reduce
+				imm = @imm.reduce if @imm
 				imm = nil if imm == 0
 
 				if not @i or (not @b and @s == 1)
