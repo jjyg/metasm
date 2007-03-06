@@ -511,7 +511,6 @@ class Ia32
 	private
 
 	def addop_macro1(name, num)
-		# XXX optimisation: mov eax, imm is shorter for :u32 but mov reg, imm :s is shorter for :i8
 		addop name, [(num << 3) | 4], nil, {:w => [0, 0]}, :reg_eax, :i
 		addop name, [num << 3], :mrmw, {:d => [0, 1]}
 		addop name, [0x80], num, {:w => [0, 0], :s => [0, 1]}, :i
@@ -586,6 +585,7 @@ class Ia32
 
 	# helper function: creates a new Opcode based on the arguments, eventually
 	# yields it for further customisation, and append it to the instruction set
+	# is responsible of the creation of disambiguating opcodes if necessary (:s flag hardcoding)
 	def addop(name, bin, hint=nil, fields={}, *argprops)
 		op = Opcode.new(self, name)
 		op.bin = bin
@@ -654,6 +654,25 @@ class Ia32
 			op.bin[df[0]] |= 1 << df[1]
 		end
 		@opcode_list << op
+
+		if s_field = op.fields[:s]
+			# add explicit choice versions, with lower precedence (so that disassembling will return the general version)
+			# eg "jmp", "jmp.i8", "jmp.i"
+			op8 = Opcode.new(self, op.name + '.i8')
+			op8.bin = op.bin.dup
+			[:fields, :props, :args].each { |f| op8.send(f).replace op.send(f) }
+			op8.fields.delete :s
+			op8.bin[s_field[0]] |= 1 << s_field[1]		# bin value of flag == 1
+			op8.args.map! { |arg| arg == :i ? :i8 : arg }	# arg type == :i8
+			@opcode_list << op8
+
+			op32 = Opcode.new(self, op.name + '.i')
+			op32.bin = op.bin.dup
+			[:fields, :props, :args].each { |f| op32.send(f).replace op.send(f) }
+			op32.fields.delete :s
+			# bin value of flag == 0, arg type == :i
+			@opcode_list << op32
+		end
 	end
 
 end

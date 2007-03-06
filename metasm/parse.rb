@@ -293,8 +293,18 @@ class CPU
 		while parse_prefix(i, tok)
 			tok = parser.readtok
 		end
+	
+		# allow '.' in opcode name
+		while parser.nexttok == :'.'
+			tok << parser.readtok.to_s
+			tok << parser.readtok.to_s
+		end
 
-		return if not @opcode_list_byname[tok]
+		if not @opcode_list_byname[tok]
+			parser.unreadtok tok
+			return
+		end
+
 		i.opname = tok
 
 		# find arguments
@@ -702,19 +712,13 @@ class Program
 					@cursection << Align.new(e)
 
 				else
-					# allow '.' in opcode name
-					while nexttok == :'.'
-						tok << '.'
-						raise self, "Invalid instruction name #{tok}" unless nexttok.kind_of? String
-						tok << readtok
-					end
 					unreadtok tok
 
 					# cpu instruction
 					if i = @cpu.parse_instruction(self)
 						@cursection << i
 					else
-						raise self, "Unknown thing to parse: #{tok.inspect}"
+						raise self, "Unknown instruction: #{nexttok.inspect}"
 					end
 				end
 			else
