@@ -8,6 +8,7 @@ class Exception < RuntimeError ; end
 class CPU
 	attr_reader :valid_args, :valid_props, :fields_mask, :opcode_list
 	attr_reader :endianness, :size
+	attr_accessor :opcode_list_byname
 
 	def initialize
 		@fields_mask = {}
@@ -60,6 +61,11 @@ class Instruction
 	end
 end
 
+# contiguous/uninterrupted sequence of instructions, chained to other blocks
+class InstructionBlock
+	# TODO add content when interface is stable (ie chains through addr or directly etc)
+end
+
 # all kind of data (incl. repeated/uninitialized)
 class Data
 	INT_TYPE = {:db => :u8, :dw => :u16, :dd => :u32}
@@ -109,11 +115,14 @@ class Program
 	# export = hash exportedname => label     XXX could be Export - function, data, int, ...
 	# import = hash libname      => [imported list]
 	attr_reader :cpu, :sections, :export, :import
+	# graph  = addr => InstructionBlock
+	attr_reader :graph
 	def initialize(cpu)
 		@cpu = cpu
 		@sections = []
 		@export = {}
 		@import = {}
+		@graph = {}
 	end
 end
 
@@ -301,6 +310,8 @@ end
 class EncodedData
 	attr_reader :data, :reloc, :export
 	attr_accessor :virtsize
+	attr_accessor :ptr
+
 	# +@data+     string with binary data
 	# +@reloc+   hash: key = offset, value = +Relocation+
 	# +@export+  hash: key = name, value = offset
