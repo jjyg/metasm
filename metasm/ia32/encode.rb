@@ -239,8 +239,7 @@ class Ia32
 			case oa
 			when :farptr
 				# XXX opsz/adsz override not supported (nonsense anyway)
-				# TODO check this not the other way around (seg+addr vs addr+seg)
-				ret.each { |h| h[:edata] << Expression.encode_immediate(ia.seg, :u16, @endianness) << ia.addr.encode("u#@size".to_sym, @endianness) }
+				ret.each { |h| h[:edata] << ia.addr.encode("u#@size".to_sym, @endianness) << Expression.encode_immediate(ia.seg, :u16, @endianness) }
 			when :modrm, :modrmA, :modrmmmx, :modrmxmm
 				if ia.class == ModRM
 					mrm = ia.encode(regval, @endianness)
