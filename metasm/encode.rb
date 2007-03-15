@@ -28,7 +28,7 @@ class Section
 			when Data:  encoded.last << e.encode(@program.cpu.endianness)
 			when Align: encoded << e << EncodedData.new
 			when Instruction:
-				case i = @program.cpu.encode_instr(@program, e)
+				case i = @program.cpu.encode_instruction(@program, e)
 				when Array
 					if i.length == 1
 						encoded.last << i.first
@@ -169,7 +169,7 @@ end
 class CPU
 	# returns an EncodedData
 	# uses +#parse_arg_valid?+ to find the opcode whose signature matches with the instruction
-	def encode_instr(program, i)
+	def encode_instruction(program, i)
 		op = @opcode_list_byname[i.opname].to_a.find { |o|
 			o.args.length == i.args.length and o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
 		}
