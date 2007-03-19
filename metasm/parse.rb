@@ -380,9 +380,9 @@ class Program
 		ParseError.new "Parse error at #{loc}: #{msg}"
 	end
 
-	def new_unique_label
+	def new_unique_label(pfx = 'metasmintern_uniquelabel')
 		@unique_label_counter ||= 0
-		"metasmintern_uniquelabel_#{object_id}_#{@unique_label_counter += 1}"
+		"#{pfx}_#{@unique_label_counter += 1}"
 	end
 
 	def unreadtok(t)
