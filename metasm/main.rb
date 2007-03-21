@@ -18,6 +18,13 @@ class CPU
 	end
 end
 
+class UnknownCPU < CPU
+	def initialize(size, endianness)
+		super()
+		@size, @endianness = size, endianness
+	end
+end
+
 # a specific cpu instruction description
 class Opcode
 	# formal arguments
@@ -47,17 +54,17 @@ end
 # an instruction: opcode name + arguments
 class Instruction
 	# +@args+ is an array of arguments (cpu-specific classes)
-	# +@pfx+  is a hash of present prefixes (Symbol)
+	# +@prefix+  is a hash of present prefixes (Symbol)
 	# +@opname+ the name of the instruction mnemonic (String)
-	attr_reader :args, :pfx
+	attr_reader :args, :prefix
 	attr_accessor :opname
 	def initialize(opname=nil, args=[], pfx={})
-		@pfx, @args = pfx, args
+		@prefix, @args = pfx, args
 		@opname = opname
 	end
 
 	def dup
-		Instruction.new((@opname.dup rescue @opname), @args.dup, @pfx.dup)
+		Instruction.new((@opname.dup rescue @opname), @args.dup, @prefix.dup)
 	end
 end
 

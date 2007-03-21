@@ -2,10 +2,7 @@ require 'metasm/ia32/opcodes'
 require 'metasm/render'
 
 # Rendering:
-# each renderable element must answer to #render with a hash
-# the hash's key are :pre (start of the string), :post (end of the string)
-# :content (array of subelements, which will be rendered recursively) and :join
-# those must be strings or nil.
+# each renderable element answers to #render with an array of element, either responding to #render or #to_s
 # They should also answer to :context with a hash, whose keys are labels
 # and values are procs called for this label. The proc's arity is checked to see if
 # further user input is needed. The proc changes the current object.

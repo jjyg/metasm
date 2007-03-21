@@ -6,14 +6,18 @@ class DecodedInstruction
 	attr_accessor :bin_length, :instruction, :opcode
 end
 
+class Opcode
+	attr_accessor :bin_mask
+end
+
 class CPU
 	def decode(program, edata)
-		@bin_lookaside ||= build_binlookaside
+		@bin_lookaside ||= build_bin_lookaside
 		di = DecodedInstruction.new
 		di.instruction = Instruction.new
 		pre_ptr = edata.ptr
 		decode_findopcode(program, edata, di)
-		decode_instr(program, edata, di)
+		decode_instruction(program, edata, di)
 		di.bin_length = edata.ptr - pre_ptr
 		di
 	end
@@ -22,6 +26,8 @@ end
 class InstructionBlock
 	# list of DecodedInstructions
 	# list of addresses (excluding continued ?)
+	# from = list of addresses of instructions (call/jmp), also addr of normal instruction when call flow continues to this block
+	# to = list of addresses of instructions called, does include normal flow transitions (no jump)
 	attr_accessor :list, :from, :to
 
 	def initialize
@@ -32,52 +38,66 @@ class InstructionBlock
 end
 
 class Program
-	# decodes instructions from entrypoints, (tries to) follows code flow
-	def desasm(entrypoints = [0])
-		entrypoints = [entrypoints] if not entrypoints.kind_of? Array
-
-		@blocks ||= {}	# addr => list of decodedinstr
+	attr_reader :block
+	# decodes instructions from an entrypoint, (tries to) follows code flow
+	# TODO delay slot
+	def desasm(entrypoint = 0)
+		@block ||= {}	# addr => list of decodedinstr
 		@decoded ||= {}	# addr => block start addr
 
 		curblock = nil
+		s = @sections.first
+		s_start = s.base || 0
+		s_end = s_start + s.encoded.virtsize
 
-		while ep = entrypoints.pop
+		# [offset to disasm, addr of instruction pointing there]
+		offsets = [[entrypoint, nil]]
+		while foo = offsets.pop
+			off = foo[0]
+			from = foo[1]
+
 			# resolve labels
-			if ep.kind_of? Integer
-				s = sections.find { |s| (s.base || 0) >= ep and (s.base || 0) + s.encoded.virtsize < ep }
+			if off.kind_of? Integer
+				if not s or off < cur_s_start or off >= cur_s_end
+					next if not s = sections.find { |s| off >= (s_start = s.base || 0) and off < (s_end = s_start + s.encoded.virtsize) }
+				end
 			else
-				next unless s = sections.find { |s| s.export[ep] }
-				ep = s.export[ep]
+				if not s or not s.encoded.export[off]
+					next if not s = sections.find { |s| s.encoded.export[off] }
+					s_start = s.base || 0
+					s_end = s_start + s.encoded.virtsize
+				end
+				off = s_start + s.encoded.export[off]
 			end
 
 			# already gone there
-			if @decoded[ep]
+			if @decoded[off]
 				if curblock
-					@block[curblock].to << ep
+					@block[curblock].to << off
+					from ||= @block[curblock].list[0..-2].inject(curblock) { |off, di| off + di.bin_length }
 					curblock = nil
 				end
 
-				desasm_split_block(@decoded[ep], ep) if not @block[ep]
+				desasm_split_block(@decoded[off], off) if not @block[off]
+
+				@block[@decoded[off]].from |= [from] if from
 
 				next
 			end
 
 			# decode the instruction
-			s.encoded.ptr = ep - (s.base || 0)
+			s.encoded.ptr = off - s_start
 			di = @cpu.decode self, s.encoded
 
 			# start a new block if needed
-			if not curblock or s.export.invert[ep]
-				curblock = ep
-				@block[curblock] = InstructionBlock.new
+			if not curblock
+				@block[curblock = off] = InstructionBlock.new
+				@block[curblock].from << from if from
 			end
 
 			# mark this address as already decoded
-			@decoded[ep] = curblock
+			@decoded[off] = curblock
 			@block[curblock].list << di
-
-			# check what's the next addr to disasm
-			# TODO delay slot
 
 			# invalid opcode
 			if not di.opcode
@@ -87,23 +107,31 @@ class Program
 
 			# jump/call
 			if di.opcode.props[:setip]
-				targets = resolve_jump_target(di, ep)
+				targets = resolve_jump_target(di, off)
 
-				entrypoints.unshift(*targets)
+				offsets.unshift(*targets)
 
 				# end curblock
-				@block[curblock].to = targets
-				@block[curblock].to << (ep + di.bin_length) if not di.opcode.props[:stopexec]
+				@block[curblock].to.concat targets
+				@block[curblock].to << (off + di.bin_length) if not di.opcode.props[:stopexec]
 				curblock = nil
 			end
 
 			if di.opcode.props[:stopexec]
-				# XXX callback to find procedures ?
+				# XXX callback to detect procedures ?
 				curblock = nil
 			else
-				entrypoints << (ep + di.bin_length)
+				offsets << (off + di.bin_length)
 			end
 		end
+
+		# labels only allowed at start of a block
+		@sections.each { |s|
+			s.encoded.export.values.each { |off|
+				off += s.base || 0
+				desasm_split_block(@decoded[off], off) if @decoded[off] and not @block[off]
+			}
+		}
 	end
 
 	# split the block (starting at oldaddr) at newaddr
@@ -131,14 +159,37 @@ class Program
 			curaddr += di.bin_length
 		}
 	end
-	
-	def blocks_to_source
-		# @blocks -> @source, fill gaps with Data
 
-		sections = @sections.sort_by { |s| s.base || 0 }.reverse
-		blocks = blocks.sort.reverse
+	def resolve_jump_target(di, off)
+		target = @cpu.get_jump_target(self, di, off)	# XXX need something containing an Expression, with indirection support, and type support (eg [[:i32 pointed by [eax+42]] + 22])
+		# target.externals.each { |e| next if e.kind_of? String ; backtrace_value(e, off) } ; target.bind...
+		if target.kind_of? String or target.kind_of? Integer
+			[target]
+		else
+			[]
+		end
+	end
+	
+	def make_label(addr, pfx = 'metasmintern_uniquelabel')
+		s_start = nil
+		return addr if not s = @sections.find { |s|
+			s_start = s.base || 0
+			addr >= s_start and addr < s_start + s.encoded.virtsize
+		}
+		if not label = s.encoded.export.invert[addr - s_start]
+			label = "#{pfx}_#{'%x' % addr}"
+			s.encoded.export[label] = addr - s_start
+		end
+		lname
+	end
+
+	def blocks_to_source
+		# @block -> @source, fill gaps with Data
 
 		# optimization: pop instead of shift
+		sections = @sections.sort_by { |s| s.base || 0 }.reverse
+		blocks = @block.sort.reverse
+
 		while cursect = sections.pop
 			cursect.source.clear
 			curoff = curbase = cursect.base || 0
@@ -217,7 +268,7 @@ class Expression
 
 		val = val - (1 << (INT_SIZE[type])) if type.to_s[0] == ?i and val >> (INT_SIZE[type]-1) == 1	# XXX check
 
-		val
+		val < 0 ? Expression[:-, -val] : Expression[val]
 	end
 end
 end
