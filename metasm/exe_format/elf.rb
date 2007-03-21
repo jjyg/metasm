@@ -1,4 +1,5 @@
 require 'metasm/exe_format/main'
+require 'metasm/decode'
 
 module Metasm
 # TODO ELF64
@@ -10,6 +11,7 @@ class ELF < ExeFormat
 		0xff00 => 'LOPROC', 0xffff => 'HIPROC' }
 	MACHINE = { 0 => 'NONE', 1 => 'M32', 2 => 'SPARC', 3 => '386',
 		4 => '68K', 5 => '88K', 7 => '860', 8 => 'MIPS' }
+	FLAGS = {}
 
 	DYNAMIC_TAG = { 0 => 'NULL', 1 => 'NEEDED', 2 => 'PLTRELSZ', 3 =>
 		'PLTGOT', 4 => 'HASH', 5 => 'STRTAB', 6 => 'SYMTAB', 7 => 'RELA',
@@ -577,13 +579,13 @@ EOPLTE
 		encode = proc { |val| phdr << Expression[*val].encode(:u32, program.cpu.endianness) }
 		encode_segm = proc { |type, rawoff, virtoff, rawsz, virtsz, flags, align|
 			encode[int_from_hash(type, PH_TYPE)]
-			encode[rawoff]
-			encode[virtoff]
-			encode[virtoff]
-			encode[rawsz]
-			encode[virtsz ? virtsz : rawsz]
-			encode[bits_from_hash(flags, PH_FLAGS)]
-			encode[align]
+			encode[rawoff || 0]
+			encode[virtoff || 0]
+			encode[virtoff || 0]
+			encode[rawsz || 0]
+			encode[virtsz ? virtsz : rawsz || 0]
+			encode[bits_from_hash(flags || 0, PH_FLAGS)]
+			encode[align || 0]
 		}
 
 
@@ -684,11 +686,9 @@ EOPLTE
 			end
 		}
 
-
 		# create misc segments
-		# arrays: [type, rawoff, virtoff/physoff, rawsz, memsz, flags, align]
-		(opts.delete('additional_segments') || []).each { |sg| encode_segm[*sg] }
-
+		# hash with keys in [type offset vaddr paddr filesz memsz flags align], type needed
+		(opts.delete('additional_segments') || []).each { |sg| encode_segm[sg['type'], sg['offset'], sg['vaddr'], sg['filesz'], sg['memsz'], sg['flags'], sg['align']] }
 
 		phdr.export[end_phdr] = phdr.virtsize if end_phdr
 	end
@@ -787,6 +787,179 @@ EOPLTE
 			ed.fill(binding[s.rawoffset] || s.rawoffset)
 			ed << s.edata.data
 		}.data
+	end
+
+	def decode(str)
+		edata = EncodedData.new str
+		hdr = pre_decode_header edata
+		shdr = pre_decode_sectionheader edata, hdr
+		phdr = pre_decode_programheader edata, hdr
+		
+		case hdr['machine']
+		when '386aonetsuhsan'
+			cpu = Ia32.new
+		else
+			puts "unsupported CPU #{hdr['machine']}"
+			cpu = UnknownCPU.new(32, hdr['endianness'])
+		end
+
+		pgm = Program.new cpu
+
+		case hdr['type']
+		when 'EXEC', 'DYN'
+			opts = decode_load_segments(pgm, edata, phdr)
+			opts['entrypoint'] = hdr['entry']
+		# arrays: [type, rawoff, virtoff/physoff, rawsz, memsz, flags, align]
+			opts['additional_segments'] = phdr.reject { |ph| ph['type'] == 'LOAD' }
+			opts['additional_segments'].delete phdr.find { |ph| ph['type'] == 'DYNAMIC' }	# delete only first
+		when 'REL'
+			opts = decode_load_sections(pgm, edata, shdr)
+		end
+
+		[pgm, opts]
+	end
+
+	def decode_load_segments(pgm, edata, phdr)
+		raise "no program header" if not phdr
+
+		phdr.find_all { |ph| ph['type'] == 'LOAD' }.each { |ph|
+			# create unique name
+			name = bname = ph['flags'].include?('X') ? '.text' : ph['flags'].include?('W') ? '.data' : '.rodata'
+			ctr = 0
+			while pgm.sections.find { |s| s.name == name }
+				ctr += 1
+				name = bname + ".#{ctr}"
+			end
+
+			s = Metasm::Section.new(pgm, name)
+			s.encoded << edata.data[ph['offset'], ph['filesz']]
+			s.encoded.virtsize += ph['memsz'] - ph['filesz']
+			s.base = ph['virtaddr']
+			pgm.sections << s
+		}
+
+		opts = {}
+		if dyn = phdr.find { |ph| ph['type'] == 'DYNAMIC' }
+			edata.ptr = dyn['offset']
+			tags = pre_decode_tags(edata, pgm.cpu.endianness)
+			# XXX what does the dynamic loader do with invalid tags ? (eg multiple STRTAB)
+			tag_val = proc { |tag| tag = tags.find { |t, v| t == tag } ; tag[1] if tag }
+
+			if strtab_addr = tag_val['STRTAB']
+				strtab_s = pgm.sections.find { |s| s.base <= strtab_addr and s.base + s.encoded.virtsize > strtab_addr }
+				strtab_off = strtab_addr - strtab_s.base if strtab_s
+			end
+
+			# symbols XXX check hashed value ?
+			if strtab_addr and symtab_addr = tag_val['SYMTAB'] and hash_addr = tag_val['HASH']
+				symtab_s = pgm.sections.find { |s| s.base <= symtab_addr and s.base + s.encoded.virtsize > symtab_addr }
+				symtab_off = symtab_addr - symtab_s.base if symtab_s
+				hash_s = pgm.sections.find { |s| s.base <= hash_addr and s.base + s.encoded.virtsize > hash_addr }
+				hash_off = hash_addr - hash_s.base if hash_s
+				raise 'cannot find hash/sym/str table' if not strtab_s or not hash_s or not symtab_s
+				hash_s.encoded.ptr = hash_off + 4
+				symcount = Expression.decode(hash_s.encoded, :u32, pgm.cpu.endianness).reduce
+
+				symtab_s.encoded.ptr = symtab_off
+				syms = []
+				symcount.times {
+					sym = {}
+					sym['name_p']= Expression.decode(symtab_s.encoded, :u32, pgm.cpu.endianness).reduce
+					sym['name'] = strtab_s.encoded.data[strtab_off+sym['name_p']...strtab_s.encoded.data.index(0, strtab_off+sym['name_p'])]
+					sym['value'] = Expression.decode(symtab_s.encoded, :u32, pgm.cpu.endianness).reduce
+					sym['size']  = Expression.decode(symtab_s.encoded, :u32, pgm.cpu.endianness).reduce
+					sym['info']  = Expression.decode(symtab_s.encoded,  :u8, pgm.cpu.endianness).reduce
+					sym['other'] = Expression.decode(symtab_s.encoded,  :u8, pgm.cpu.endianness).reduce
+					sym['shndx'] = Expression.decode(symtab_s.encoded, :u16, pgm.cpu.endianness).reduce
+					sym['bind']  = sym['info'] >> 4
+					sym['bind']  = SYMBOL_BIND[sym['bind']] || sym['bind']
+					sym['type']  = sym['info'] & 0xf
+					sym['type']  = SYMBOL_TYPE[sym['type']] || sym['type']
+					syms << sym
+				}
+
+require 'pp'
+pp syms
+			end
+		end
+
+		opts
+	end
+
+	def pre_decode_tags(edata, endianness)
+		tags = []
+		tag = nil
+		while tag != 'NULL'
+			tag = Expression.decode(edata, :u32, endianness).reduce
+			tag = DYNAMIC_TAG[tag] || tag
+			val = Expression.decode(edata, :u32, endianness).reduce
+			tags << [tag, val]
+		end
+		tags
+	end
+
+	def pre_decode_header(edata)
+		edata.ptr = 0
+		hdr = {}
+		hdr['ident'] = edata.data[edata.ptr, 16]
+		edata.ptr += 16
+		raise 'invalid ELF signature'   if hdr['ident'][0, 4] != "\x7fELF"
+		raise 'ELF64 unsupported'       if hdr['ident'][4] != 1
+		hdr['endianness'] = hdr['ident'][5] == 2 ? :big : :little
+		raise 'unsupporded ELF version' if hdr['ident'][6] != 1
+		# ei_flags ?
+
+		# type, varname, hash
+		[[:u16, 'type'], [:u16, 'machine'], [:u32, 'version'], [:u32, 'entry'],
+		 [:u32, 'phoff'], [:u32, 'shoff'], [:u32, 'flags'], [:u16, 'ehsize'],
+		 [:u16, 'phentsize'], [:u16, 'phnum'], [:u16, 'shentsize'], [:u16, 'shnum'],
+		 [:u16, 'shstrndx']].each { |type, varname|
+			hdr.update varname => Expression.decode(edata, type, hdr['endianness']).reduce
+		}
+		hdr['type']    = TYPE[hdr['type']] || hdr['type']
+		hdr['machine'] = MACHINE[hdr['machine']] || hdr['machine']
+		hdr['version'] = VERSION[hdr['version']] || hdr['version']
+		hdr['flags']   = bits_to_hash(hdr['flags'], FLAGS)
+		hdr
+	end
+
+	def pre_decode_sectionheader(edata, hdr)
+		return [] if hdr['shoff'] == 0
+		raise 'unhandled section header' if hdr['shentsize'] != 40
+
+		edata.ptr = hdr['shoff']
+		shdr = []
+		hdr['shnum'].times {
+			shdr << %w[name_p type flags addr offset size link info addralign entsize].inject({}) { |hash, varname|
+				hash.update varname => Expression.decode(edata, :u32, hdr['endianness']).reduce
+			}
+		}
+
+		stroff = shdr[hdr['shstrndx']]['offset'] rescue nil
+		shdr.each { |sh|
+			sh['flags'] = bits_to_hash(sh['flags'], SH_FLAGS)
+			sh['type']  = SH_TYPE[sh['type']] || sh['type']
+			sh['name'] = edata.data[stroff+sh['name_p']...edata.data.index(0, stroff+sh['name_p'])] rescue nil
+		}
+		shdr
+	end
+
+	def pre_decode_programheader(edata, hdr)
+		return [] if hdr['phoff'] == 0
+		raise 'unhandled program header' if hdr['phentsize'] != 32
+
+		edata.ptr = hdr['phoff']
+		phdr = []
+		hdr['phnum'].times {
+			phdr << %w[type offset vaddr paddr filesz memsz flags align].inject({}) { |hash, varname|
+				hash.update varname => Expression.decode(edata, :u32, hdr['endianness']).reduce
+			}
+		}
+		phdr.each { |ph|
+			ph['flags'] = bits_to_hash(ph['flags'], PH_FLAGS)
+			ph['type']  = PH_TYPE[ph['type']] || ph['type']
+		}
+		phdr
 	end
 end
 end
