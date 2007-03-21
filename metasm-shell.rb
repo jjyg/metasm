@@ -8,7 +8,6 @@ puts 'type "exit" or "quit" to quit'
 while (print "> " ; $stdout.flush ; l = gets)
 	exit if %w[quit exit].include? l.chomp
 	p = Metasm::Program.new cpu
-	p.parse '.text'
 	begin
 		p.parse l
 		p.encode

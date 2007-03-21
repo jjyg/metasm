@@ -102,7 +102,7 @@ class Ia32
 		addop 'lidt',  [0x0F, 0x01, 0x18], nil,  {:modrmA => [2, 0]}, :modrmA
 		addop 'lldt',  [0x0F, 0x00], 2
 		addop 'lmsw',  [0x0F, 0x01], 6
-# pfx		addop 'lock',  [0xF0]
+# prefix	addop 'lock',  [0xF0]
 		addop_macrostr 'lods',  [0xAC], :strop
 		addop 'loop',  [0xE2], nil,  {}, :setip, :i8
 		addop 'loopz', [0xE1], nil,  {}, :setip, :i8

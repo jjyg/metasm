@@ -126,7 +126,7 @@ class Ia32
 	end
 	
 	# returns an array of EncodedData
-	def encode_instr(program, i)
+	def encode_instruction(program, i)
 		oplist = @opcode_list_byname[i.opname].to_a.find_all { |o|
 			o.args.length == i.args.length and
 			o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
@@ -147,7 +147,7 @@ class Ia32
 		# 
 		# handle prefixes and bit fields
 		#
-		pfx = i.pfx.map { |k, v|
+		pfx = i.prefix.map { |k, v|
 			case k
 			when :jmp:  {:jmp => 0x3e, :nojmp => 0x2e}[v]
 			when :lock: 0xf0
@@ -239,8 +239,7 @@ class Ia32
 			case oa
 			when :farptr
 				# XXX opsz/adsz override not supported (nonsense anyway)
-				# TODO check this not the other way around (seg+addr vs addr+seg)
-				ret.each { |h| h[:edata] << Expression.encode_immediate(ia.seg, :u16, @endianness) << ia.addr.encode("u#@size".to_sym, @endianness) }
+				ret.each { |h| h[:edata] << ia.addr.encode("u#@size".to_sym, @endianness) << Expression.encode_immediate(ia.seg, :u16, @endianness) }
 			when :modrm, :modrmA, :modrmmmx, :modrmxmm
 				if ia.class == ModRM
 					mrm = ia.encode(regval, @endianness)
@@ -284,7 +283,7 @@ class Ia32
 		i.opname = 'jmp'
 		i.args << ModRM.new(@size, @size, nil, nil, nil, Expression[target], nil)
 
-		encode_instr(program, i).sort_by { |ed| ed.virtsize }.last
+		encode_instruction(program, i).sort_by { |ed| ed.virtsize }.last
 	end
 end
 end

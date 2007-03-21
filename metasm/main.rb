@@ -86,9 +86,10 @@ class Data
 end
 
 class Align
-	attr_reader :val
-	def initialize(val)
+	attr_reader :val, :fillwith
+	def initialize(val, fillwith=nil)
 		@val = val
+		@fillwith = fillwith
 	end
 end
 
@@ -332,6 +333,47 @@ class EncodedData
 
 	def dup
 		self.class.new @data.dup, :reloc => @reloc.dup, :export => @export.dup, :virtsize => @virtsize
+	end
+
+	# replace a relocation by its value calculated from +binding+, if the value is not numeric and replace_target is true the relocation target is replaced with the reduced computed value
+	def fixup(binding, replace_target = false)
+		@reloc.keys.each { |off|
+			val = @reloc[off].target.bind(binding).reduce
+			if val.kind_of? Integer
+				reloc = @reloc.delete(off)
+				str = Expression.encode_immediate(val, reloc.type, reloc.endianness)
+				fill off
+				@data[off, str.length] = str
+			elsif replace_target
+				@reloc[off].target = val
+			end
+		}
+	end
+
+	# fill virtual space with real bytes
+	def fill(len = @virtsize, pattern = 0.chr)
+		# XXX mark this space as freely mutable
+		@virtsize = len if len > @virtsize
+		@data = @data.ljust(len, pattern) if len > @data.length
+	end
+
+	# ensure virtsize is a multiple of len
+	def align_size(len)
+		@virtsize = (@virtsize + len - 1) / len * len
+	end
+
+	# concatenation of another +EncodedData+ or a +String+ or a +Fixnum+
+	def << other
+		other = other.chr            if other.class == Fixnum
+		other = self.class.new other if other.class == String
+
+		fill if other.data.length > 0
+
+		other.reloc.each  { |k, v| @reloc[k + @virtsize] = v  }
+		other.export.each { |k, v| @export[k] = v + @virtsize }
+		@data << other.data
+		@virtsize += other.virtsize
+		self
 	end
 end
 end # module Metasm

@@ -592,7 +592,7 @@ class Program
 			when nil: raise self, 'unfinished macro definition'
 			when 'endm': break
 			else
-				if ['db', 'dw', 'dd', :':'].include? tok and m.body.last.kind_of? String and (m.body[-2] == :eol or not m.body[-2])
+				if (tok == :':' or DataSpec.include? tok) and m.body.last.kind_of? String and (m.body[-2] == :eol or not m.body[-2])
 					m.local_labels << m.body.last
 				end
 				m.body << tok
@@ -670,6 +670,8 @@ class Program
 		end
 	end
 
+	DataSpec = %w[db dw dd dq]
+
 	def parse(*a)
 		parse_init(*a)
 
@@ -687,29 +689,31 @@ class Program
 				# XXX nasm 'weak labels'
 
 			when String
-				if ['db', 'dw', 'dd', :':'].include? nexttok
+				parse_parser_instruction '.text' if not @cursection
+
+				if nexttok == :':' or DataSpec.include? nexttok
 					# label
 					readtok if nexttok == :':'
 					@knownlabel ||= {}
 					raise self, "Redefinition of label #{tok} (defined at #{@knownlabel[tok].reverse.join(' included from ')})" if @knownlabel[tok]
 					@knownlabel[tok] = @backtrace + [@lexer.curpos]
 					@cursection << Label.new(tok)
-				elsif %w[db dw dd].include? tok
+				elsif DataSpec.include? tok
 					# data
-					type = tok.to_sym
-					arr = []
-					loop do
-						arr << parse_data(type)
-						if nexttok == :',': readtok
-						else break
-						end
-					end
-					@cursection << Data.new(type, arr)
+					unreadtok tok
+					@cursection << parse_data_withspec
 
 				elsif tok == 'align'
-					e = Expression.parse(self)
-					raise self, 'need immediate alignment size' unless (e = e.reduce).kind_of? Integer	# XXX sucks
-					@cursection << Align.new(e)
+					e = Expression.parse(self).reduce
+					raise self, 'need immediate alignment size' unless e.kind_of? Integer	# XXX sucks (db dup count as well)
+					if nexttok == :','
+						# want to fill with something specific
+						readtok
+						# allow single byte value or full data statement
+						unreadtok 'db' unless DataSpec.include? nexttok
+						fillwith = parse_data_withspec
+					end
+					@cursection << Align.new(e, fillwith)
 
 				else
 					unreadtok tok
@@ -805,6 +809,19 @@ class Program
 		else
 			@cpu.parse_parser_instruction(self, instr)
 		end
+	end
+
+	def parse_data_withspec
+		raise 'invalid data type' unless DataSpec.include? nexttok
+		type = readtok.to_sym
+		arr = []
+		loop do
+			arr << parse_data(type)
+			if nexttok == :',': readtok
+			else break
+			end
+		end
+		Data.new(type, arr)
 	end
 
 	def parse_data(type)

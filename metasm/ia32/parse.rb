@@ -119,10 +119,10 @@ end
 	def parse_prefix(i, pfx)
 		# XXX check for redefinition
 		case pfx
-		when 'lock': i.pfx[:lock] = true
-		when 'rep':            i.pfx[:rep] = :rep
-		when 'repe', 'repz':   i.pfx[:rep] = :repz
-		when 'repne', 'repnz': i.pfx[:rep] = :repnz
+		when 'lock': i.prefix[:lock] = true
+		when 'rep':            i.prefix[:rep] = :rep
+		when 'repe', 'repz':   i.prefix[:rep] = :repz
+		when 'repne', 'repnz': i.prefix[:rep] = :repnz
 		end
 	end
 
