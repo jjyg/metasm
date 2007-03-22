@@ -796,7 +796,7 @@ EOPLTE
 		phdr = pre_decode_programheader edata, hdr
 		
 		case hdr['machine']
-		when '386aonetsuhsan'
+		when '386'
 			cpu = Ia32.new
 		else
 			puts "unsupported CPU #{hdr['machine']}"
@@ -834,7 +834,7 @@ EOPLTE
 			s = Metasm::Section.new(pgm, name)
 			s.encoded << edata.data[ph['offset'], ph['filesz']]
 			s.encoded.virtsize += ph['memsz'] - ph['filesz']
-			s.base = ph['virtaddr']
+			s.base = ph['vaddr']
 			pgm.sections << s
 		}
 
@@ -850,6 +850,15 @@ EOPLTE
 				strtab_off = strtab_addr - strtab_s.base if strtab_s
 			end
 
+			tags.each { |t, v|
+				case t
+				when 'SONAME'
+					opts['soname'] = strtab_s.encoded.data[strtab_off+v...strtab_s.encoded.data.index(0, strtab_off+v)] if strtab_s
+				when 'NEEDED'
+					(opts['needed'] ||= []) << strtab_s.encoded.data[strtab_off+v...strtab_s.encoded.data.index(0, strtab_off+v)] if strtab_s
+				end
+			}
+
 			# symbols XXX check hashed value ?
 			if strtab_addr and symtab_addr = tag_val['SYMTAB'] and hash_addr = tag_val['HASH']
 				symtab_s = pgm.sections.find { |s| s.base <= symtab_addr and s.base + s.encoded.virtsize > symtab_addr }
@@ -858,19 +867,20 @@ EOPLTE
 				hash_off = hash_addr - hash_s.base if hash_s
 				raise 'cannot find hash/sym/str table' if not strtab_s or not hash_s or not symtab_s
 				hash_s.encoded.ptr = hash_off + 4
-				symcount = Expression.decode(hash_s.encoded, :u32, pgm.cpu.endianness).reduce
+				symcount = Expression.decode_imm(hash_s.encoded, :u32, pgm.cpu.endianness)
 
 				symtab_s.encoded.ptr = symtab_off
 				syms = []
 				symcount.times {
 					sym = {}
-					sym['name_p']= Expression.decode(symtab_s.encoded, :u32, pgm.cpu.endianness).reduce
+					sym['name_p']= Expression.decode_imm(symtab_s.encoded, :u32, pgm.cpu.endianness)
 					sym['name'] = strtab_s.encoded.data[strtab_off+sym['name_p']...strtab_s.encoded.data.index(0, strtab_off+sym['name_p'])]
-					sym['value'] = Expression.decode(symtab_s.encoded, :u32, pgm.cpu.endianness).reduce
-					sym['size']  = Expression.decode(symtab_s.encoded, :u32, pgm.cpu.endianness).reduce
-					sym['info']  = Expression.decode(symtab_s.encoded,  :u8, pgm.cpu.endianness).reduce
-					sym['other'] = Expression.decode(symtab_s.encoded,  :u8, pgm.cpu.endianness).reduce
-					sym['shndx'] = Expression.decode(symtab_s.encoded, :u16, pgm.cpu.endianness).reduce
+					sym['value'] = Expression.decode_imm(symtab_s.encoded, :u32, pgm.cpu.endianness)
+					sym['size']  = Expression.decode_imm(symtab_s.encoded, :u32, pgm.cpu.endianness)
+					sym['info']  = Expression.decode_imm(symtab_s.encoded,  :u8, pgm.cpu.endianness)
+					sym['other'] = Expression.decode_imm(symtab_s.encoded,  :u8, pgm.cpu.endianness)
+					sym['shndx'] = Expression.decode_imm(symtab_s.encoded, :u16, pgm.cpu.endianness)
+					sym['shndx'] = SH_INDEX[sym['shndx']] || sym['shndx']
 					sym['bind']  = sym['info'] >> 4
 					sym['bind']  = SYMBOL_BIND[sym['bind']] || sym['bind']
 					sym['type']  = sym['info'] & 0xf
@@ -878,8 +888,39 @@ EOPLTE
 					syms << sym
 				}
 
-require 'pp'
-pp syms
+				syms[1..-1].each { |sym|
+					case sym['bind']
+					when 'GLOBAL'
+						case sym['shndx']
+						when 'UNDEF'
+							libname = opts['soname'] || opts['needed'].to_a.first || 'any'
+							(pgm.import[libname] ||= []) << sym['name']
+						when 'ABS', 'COMMON'
+						#	puts "unhandled symbol #{sym.inspect}"	# used for relocs
+						else
+							addr = sym['value']
+							s = pgm.sections.find { |s| s.base <= addr and s.base + s.encoded.virtsize > addr }
+							if s
+								label = "exported_#{sym['name'].gsub(/\W/, '_')}"
+								s.encoded.export[label] = addr - s.base
+								pgm.export[sym['name']] = label
+							end
+						end
+					when 'LOCAL'
+						case sym['shndx']
+						when 'UNDEF', 'ABS', 'COMMON'
+						#	puts "unhandled symbol #{sym.inspect}"	# used for relocs
+						else
+							addr = sym['value']
+							s = pgm.sections.find { |s| s.base <= addr and s.base + s.encoded.virtsize > addr }
+							if s
+								label = "exported_#{sym['name'].gsub(/\W/, '_')}"
+								s.encoded.export[label] = addr - s.base
+							end
+						end
+					end
+				}
+
 			end
 		end
 
@@ -890,9 +931,9 @@ pp syms
 		tags = []
 		tag = nil
 		while tag != 'NULL'
-			tag = Expression.decode(edata, :u32, endianness).reduce
+			tag = Expression.decode_imm(edata, :u32, endianness)
 			tag = DYNAMIC_TAG[tag] || tag
-			val = Expression.decode(edata, :u32, endianness).reduce
+			val = Expression.decode_imm(edata, :u32, endianness)
 			tags << [tag, val]
 		end
 		tags
@@ -914,7 +955,7 @@ pp syms
 		 [:u32, 'phoff'], [:u32, 'shoff'], [:u32, 'flags'], [:u16, 'ehsize'],
 		 [:u16, 'phentsize'], [:u16, 'phnum'], [:u16, 'shentsize'], [:u16, 'shnum'],
 		 [:u16, 'shstrndx']].each { |type, varname|
-			hdr.update varname => Expression.decode(edata, type, hdr['endianness']).reduce
+			hdr.update varname => Expression.decode_imm(edata, type, hdr['endianness'])
 		}
 		hdr['type']    = TYPE[hdr['type']] || hdr['type']
 		hdr['machine'] = MACHINE[hdr['machine']] || hdr['machine']
@@ -931,7 +972,7 @@ pp syms
 		shdr = []
 		hdr['shnum'].times {
 			shdr << %w[name_p type flags addr offset size link info addralign entsize].inject({}) { |hash, varname|
-				hash.update varname => Expression.decode(edata, :u32, hdr['endianness']).reduce
+				hash.update varname => Expression.decode_imm(edata, :u32, hdr['endianness'])
 			}
 		}
 
@@ -952,7 +993,7 @@ pp syms
 		phdr = []
 		hdr['phnum'].times {
 			phdr << %w[type offset vaddr paddr filesz memsz flags align].inject({}) { |hash, varname|
-				hash.update varname => Expression.decode(edata, :u32, hdr['endianness']).reduce
+				hash.update varname => Expression.decode_imm(edata, :u32, hdr['endianness'])
 			}
 		}
 		phdr.each { |ph|

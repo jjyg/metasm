@@ -58,7 +58,7 @@ class Program
 
 			# resolve labels
 			if off.kind_of? Integer
-				if not s or off < cur_s_start or off >= cur_s_end
+				if not s or off < s_start or off >= s_end
 					next if not s = sections.find { |s| off >= (s_start = s.base || 0) and off < (s_end = s_start + s.encoded.virtsize) }
 				end
 			else
@@ -109,7 +109,8 @@ class Program
 			if di.opcode.props[:setip]
 				targets = resolve_jump_target(di, off)
 
-				offsets.unshift(*targets)
+puts "debug: jump targets = #{targets.inspect}"
+				offsets.unshift(*targets.map { |t| [t, off] })
 
 				# end curblock
 				@block[curblock].to.concat targets
@@ -119,9 +120,11 @@ class Program
 
 			if di.opcode.props[:stopexec]
 				# XXX callback to detect procedures ?
+puts "debug: cur instruction #{di.opcode.name} stops exec"
 				curblock = nil
 			else
-				offsets << (off + di.bin_length)
+puts "debug: cur instruction #{di.opcode.name} continues, addr => #{'%08x' % (off+di.bin_length)}"
+				offsets << [off + di.bin_length, off]
 			end
 		end
 
@@ -180,7 +183,7 @@ class Program
 			label = "#{pfx}_#{'%x' % addr}"
 			s.encoded.export[label] = addr - s_start
 		end
-		lname
+		label
 	end
 
 	def blocks_to_source
@@ -242,33 +245,36 @@ class EncodedData
 			@data[ptr-1]
 		elsif @ptr <= @virtsize
 			0
-		# else raise
 		end
 	end
 end
 
 class Expression
-	# returns an immediate or an Expression (if relocated)
+	# returns an Expression (checks relocations)
 	def self.decode(edata, type, endianness)
 		if rel = edata.reloc[edata.ptr]
 			# XXX allow :i32 for :u32 ?
 			if rel.type == type or rel.endianness == endianness
-				edata.ptr += INT_SIZE[type]
+				edata.ptr += INT_SIZE[type]/8
 				return rel.target
 			end
 			puts "immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect}"
 		end
 
+		val = decode_imm(edata, type, endianness)
+		val < 0 ? Expression[:-, -val] : Expression[val]
+	end
+
+	def self.decode_imm(edata, type, endianness)
                 val = 0
                 case endianness
                 when :little : (INT_SIZE[type]/8).times { |i| val |= edata.get_byte << (8*i) }
                 when :big    : (INT_SIZE[type]/8).times { val <<= 8 ; val |= edata.get_byte  }
                 else raise SyntaxError, "Unsupported endianness #{endianness.inspect}"
                 end
-
 		val = val - (1 << (INT_SIZE[type])) if type.to_s[0] == ?i and val >> (INT_SIZE[type]-1) == 1	# XXX check
-
-		val < 0 ? Expression[:-, -val] : Expression[val]
+		val
 	end
+
 end
 end

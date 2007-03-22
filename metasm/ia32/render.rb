@@ -1,14 +1,6 @@
 require 'metasm/ia32/opcodes'
 require 'metasm/render'
 
-# Rendering:
-# each renderable element answers to #render with an array of element, either responding to #render or #to_s
-# They should also answer to :context with a hash, whose keys are labels
-# and values are procs called for this label. The proc's arity is checked to see if
-# further user input is needed. The proc changes the current object.
-# Protocol to change the current object need has to be created (Immediate => symbol/expression)
-#
-
 # XXX move context in another file ?
 module Metasm
 class Ia32
@@ -16,17 +8,17 @@ class Ia32
 		include Renderable
 
 		@simple_list.each { |c| c.class_eval {
-			def render ; {:pre => self.class.i_to_s[@val]} end
+			def render ; [self.class.i_to_s[@val]] end
 		} }
 		@double_list.each { |c| c.class_eval {
-			def render ; {:pre => self.class.i_to_s[@sz][@val]} end
+			def render ; [self.class.i_to_s[@sz][@val]] end
 			def context ; {'set sz' => proc { |s| @sz = s }} end
 		} }
 	end
 
 	class Farptr
 		def render
-			{:content => [@seg, @addr], :join => ':'}
+			[@seg, ':', @addr]
 		end
 	end
 
@@ -41,21 +33,18 @@ class Ia32
 		end
 
 		def render
-			pre = ''
+			r = []
 			# is 'dword ptr' needed ?
 #			if not instr or not instr.args.grep(Reg).find {|a| a.sz == @sz}
-				pre << qualifier(@sz) << ' ptr ' 
+			r << ( qualifier(@sz) << ' ptr ' )
 #			end
-			if @seg
-				# XXX do this cleanly ? (ie not call to_s in render)
-				pre << @seg.to_s << ?:
-			end
-			pre << ?[
-			# @i must come first in :content with this
-			pre << "#@s*" if @s and @s != 1
+			r << @seg << ':' if @seg
 
-			{:pre => pre, :post => ']', :join => ' + ',
-			 :content => [@i, @b, @imm].compact}
+			e = nil
+			e = Expression[e, :+, (@s == 1 ? @i : [@s, :*, @i])] if @s
+			e = Expression[e, :+, @b] if @b
+			e = Expression[e, :+, @imm] if @imm
+			r << '[' << e << ']'
 		end
 
 		def context
