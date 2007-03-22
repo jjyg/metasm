@@ -109,7 +109,6 @@ class Program
 			if di.opcode.props[:setip]
 				targets = resolve_jump_target(di, off)
 
-puts "debug: jump targets = #{targets.inspect}"
 				offsets.unshift(*targets.map { |t| [t, off] })
 
 				# end curblock
@@ -120,10 +119,8 @@ puts "debug: jump targets = #{targets.inspect}"
 
 			if di.opcode.props[:stopexec]
 				# XXX callback to detect procedures ?
-puts "debug: cur instruction #{di.opcode.name} stops exec"
 				curblock = nil
 			else
-puts "debug: cur instruction #{di.opcode.name} continues, addr => #{'%08x' % (off+di.bin_length)}"
 				offsets << [off + di.bin_length, off]
 			end
 		end

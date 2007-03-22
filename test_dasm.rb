@@ -13,9 +13,6 @@ ARGV.each { |exp|
 	pgm.desasm pgm.export[exp]
 }
 
-#pgm.blocks_to_source
-#puts pgm.sections.map { |s| s.source }
-p pgm.block
 pgm.block.sort.each { |addr, block|
 	s = pgm.sections.find { |s| s.base <= addr and s.base + s.encoded.virtsize > addr }
 	s.encoded.export.each { |e, off| puts "#{e}:" if off == addr - s.base }
