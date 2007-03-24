@@ -10,6 +10,14 @@ class << self
 		raise "Unresolved external references: #{edata.reloc.values.inspect}" unless edata.reloc.empty?
 		edata.data
 	end
+
+	def decode(cpu, data, loadaddr = 0)
+		pgm = Program.new cpu
+		pgm.sections << Section.new(pgm, '.text')
+		pgm.sections.last.encoded << data
+		pgm.sections.last.base = loadaddr
+		pgm
+	end
 end
 end
 end
