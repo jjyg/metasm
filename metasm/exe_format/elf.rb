@@ -808,7 +808,7 @@ EOPLTE
 		case hdr['type']
 		when 'EXEC', 'DYN'
 			opts = decode_load_segments(pgm, edata, phdr)
-			opts['entrypoint'] = hdr['entry']
+			opts['entrypoint'] = pgm.make_label(hdr['entry'], 'entrypoint')
 		# arrays: [type, rawoff, virtoff/physoff, rawsz, memsz, flags, align]
 			opts['additional_segments'] = phdr.reject { |ph| ph['type'] == 'LOAD' }
 			opts['additional_segments'].delete phdr.find { |ph| ph['type'] == 'DYNAMIC' }	# delete only first
@@ -856,6 +856,12 @@ EOPLTE
 					opts['soname'] = strtab_s.encoded.data[strtab_off+v...strtab_s.encoded.data.index(0, strtab_off+v)] if strtab_s
 				when 'NEEDED'
 					(opts['needed'] ||= []) << strtab_s.encoded.data[strtab_off+v...strtab_s.encoded.data.index(0, strtab_off+v)] if strtab_s
+				when 'INIT'
+					opts['init'] = pgm.make_label(v, 'init')
+				when 'FINI'
+					opts['fini'] = pgm.make_label(v, 'fini')
+				when 'RPATH'
+					opts['rpath'] = strtab_s.encoded.data[strtab_off+v...strtab_s.encoded.data.index(0, strtab_off+v)].split(/[:;]/) if strtab_s
 				end
 			}
 
