@@ -53,8 +53,9 @@ class Indirection
 	end
 
 	def reduce
-		self
+		Indirection.new(Expression[@target.reduce], @type)
 	end
+	alias reduce_rec reduce
 
 	def bind(*a)
 		Indirection.new(@target.bind(*a), @type)
@@ -219,6 +220,11 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 		result = []
 		# XXX highly suboptimal
 		# [max_depth, addr of last di checked, block, index in block.list of last di checked, target to resolve]
+		# TODO
+		# when marking a subfunc, check all paths forward
+		# when find a subfunc return, mark the path in the subfunc 
+		#  (to allow foo: jmp retloc ; bar: jmp retloc retloc: ret to be both recognized as subfuncs 
+		#   otherwise when dasm bar, 'retloc' is marked as 'already dasmed' and no subfunc detection takes place)
 		targets.zip(targets_found).each { |t, tf|
 			if tf
 				result << tf
@@ -241,7 +247,7 @@ puts "backtracking : up to #{'%08x' % f}"
 			else
 				di = block.list[idx-1]
 				off -= di.bin_length
-puts "backtracking : eval #{target.inspect} in #{di.instruction}"
+puts "backtracking : eval #{target} in #{di.instruction}"
 				target = @cpu.emu_backtrace(di, off, target)
 				if t = check_target[target]
 puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
@@ -249,7 +255,7 @@ puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
 					# TODO
 					# mark_as_subfunc(curblock.to) if di.opcode.props[:startsubfunc]
 				elsif target
-puts " continuing with #{target.inspect}"
+puts " continuing with #{target}"
 					trace << [depth-1, off, block, idx-1, target]
 				end
 			end

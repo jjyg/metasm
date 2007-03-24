@@ -154,6 +154,7 @@ class Expression
 
 	# alternative constructor: Expression[[:-, 42], :*, [1, :+, [4, :*, 7]]]
 	def self.[](l, op = nil, r = nil)
+		return l if l.kind_of? Expression and not op
 		l, op, r = nil, :+, l if not op
 		l, op, r = nil, l, op if not r
 		l = self[*l] if l.kind_of? Array
@@ -177,6 +178,7 @@ class Expression
 	attr_accessor :op, :lexpr, :rexpr
 	# !! args reversed
 	def initialize(op, rexpr, lexpr)
+		raise 'invalid arg order' if not op.kind_of? Symbol
 		@op, @lexpr, @rexpr = op, lexpr, rexpr
 	end
 
@@ -192,12 +194,12 @@ class Expression
 
 	def bind(vals = {})
 		l, r = @lexpr, @rexpr
-		if l.kind_of?(Expression)
+		if l.respond_to? :bind
 			l = l.bind(vals)
 		else
 			l = vals.fetch(l, l)
 		end
-		if r.kind_of?(Expression)
+		if r.respond_to? :bind
 			r = r.bind(vals)
 		else
 			r = vals.fetch(r, r)
@@ -230,14 +232,8 @@ class Expression
 	end
 
 	def reduce_rec
-		l = case @lexpr
-		    when Expression: @lexpr.reduce_rec
-		    else @lexpr
-		    end
-		r = case @rexpr
-		    when Expression: @rexpr.reduce_rec
-		    else @rexpr
-		    end
+		l = @lexpr.respond_to?(:reduce_rec) ? @lexpr.reduce_rec : @lexpr
+		r = @rexpr.respond_to?(:reduce_rec) ? @rexpr.reduce_rec : @rexpr
 
 		v = 
 		if r.kind_of?(Numeric) and (not l or l.kind_of?(Numeric))

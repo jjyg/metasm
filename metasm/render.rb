@@ -41,4 +41,11 @@ class Expression
 		end
 	end
 end
+
+class Indirection
+	include Renderable
+	def render
+		[@type.inspect, ' ptr [', @target, ']']
+	end
+end
 end

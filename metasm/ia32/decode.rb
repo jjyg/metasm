@@ -233,30 +233,39 @@ class Ia32
 		}
 
 		a = di.instruction.args.map { |arg| symify[arg] }
-		case di.opcode.name
-		when 'mov'
+		type = "u#@size".to_sym
+
+		case op = di.opcode.name
+		when 'mov', 'movsx', 'movzx'
 			value.bind a[0] => a[1]
-		when 'add', 'sub'
-			value.bind a[0] => Expression[a[0], (di.opcode.name == 'add' ? :+ : :-), a[1]]
+		when 'xchg'
+			value.bind a[0] => a[1], a[1] => a[0]
+		when 'add', 'sub', 'or', 'xor', 'and'
+			op = {'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^}[op]
+			value.bind a[0] => Expression[a[0], op, a[1]]
+		when 'inc', 'dec', 'not'
+			op = {'inc' => [:+, 1], 'dec' => [:-, 1], 'not' => [:^, -1] }
+			value.bind a[0] => Expression[a[0], *op]
+		when 'neg'
+			value.bind a[0] => Expression[:-, a[0]]
+		when 'div', 'mul'
+			# XXX
+		when 'rol', 'ror', 'rcl', 'rcr', 'sar', 'shl', 'sal'
+			# XXX
+		when 'xlat'
+			# XXX
 		when 'push'
-			if value.kind_of? Indirection and value.target.reduce == Expression[:esp]
-				a[0]
-			else
-				value.bind :esp, Expression[:esp, :-, @size/8]
-			end
+			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => a[0]
 		when 'pop'
-			if value.reduce == Expression[a[0]].reduce
-				Indirection.new(Expression[:esp], "u#@size".to_sym)
-			else
-				value.bind :esp, Expression[:esp, :+, @size/8]
-			end
+			# in this order ! (pop esp => esp = [esp])
+			# +4 ?
+			value.bind :esp => Expression[:esp, :+, @size/8], a[0] => Indirection.new(Expression[:esp], type)
 		when 'call'
-			if value.kind_of? Indirection and value.target.reduce == Expression[:esp]
-				Expression[off + di.bin_length]
-			else
-				value.bind :esp, Expression[:esp, :-, @size/8]
-			end
-		when 'jmp', 'jz', 'jnz', 'nop'	# etc etc
+			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => Expression[off+di.bin_length]
+		when 'jmp', 'jz', 'jnz', 'nop', 'cmp', 'test'	# etc etc
+			value
+		else
+			nil
 		end
 
 	end
@@ -279,7 +288,7 @@ class Ia32
 			e = Expression[e, :+, tg.imm] if tg.imm
 			tg = Indirection.new(e, "u#{tg.sz || @size}".to_sym)
 		elsif tg.kind_of? Reg
-			tg = tg.to_s.to_sym
+			tg = Expression[tg.to_s.to_sym]
 		end
 		[tg].compact
 	end
