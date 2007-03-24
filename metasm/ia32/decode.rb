@@ -36,7 +36,7 @@ class Ia32
 					
 					bb = sib & 7
 					if bb == 5 and m == 0
-						imm = Expresion.decode(edata, "i#{adsz}".to_sym, endianness)
+						imm = Expression.decode(edata, "i#{adsz}".to_sym, endianness)
 					else
 						b = Reg.new(bb, adsz)
 					end
@@ -262,6 +262,8 @@ class Ia32
 			value.bind :esp => Expression[:esp, :+, @size/8], a[0] => Indirection.new(Expression[:esp], type)
 		when 'call'
 			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => Expression[off+di.bin_length]
+		when 'ret'
+			value.bind :esp => Expression[:esp, :+, @size/8]
 		when 'jmp', 'jz', 'jnz', 'nop', 'cmp', 'test'	# etc etc
 			value
 		else

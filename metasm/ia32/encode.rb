@@ -82,6 +82,13 @@ class Ia32
 				ret.data[0] |= 5
 				[ret << @imm.encode(:u32, endianness)]
 
+			elsif not @b and @s != 1
+				# sib with no b
+				raise EncodeError, "Invalid ModRM #{self}" if @i.val == 4
+				ret.data[0] |= 4
+				s = {8=>3, 4=>2, 2=>1}[@s]
+				imm = @imm || Expression[0]
+				[ret << ((s << 6) | (@i.val << 3) | 5) << imm.encode(:i32, endianness)]
 			else
 				imm = @imm.reduce if @imm
 				imm = nil if imm == 0
@@ -102,7 +109,7 @@ class Ia32
 					raise EncodeError, "Invalid ModRM #{self}" if i.val == 4
 
 					s = {8=>3, 4=>2, 2=>1, 1=>0}[@s]
-					ret << ((s << 6) | i.val | (b.val << 3))
+					ret << ((s << 6) | (i.val << 3) | b.val)
 				end
 
 				imm ||= 0 if b.val == 5
