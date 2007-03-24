@@ -284,9 +284,7 @@ class CPU
 	# Parses prefix/name/arguments
 	# Returns an +Instruction+, or nil on failure
 	def parse_instruction(parser)
-		@opcode_list_byname ||= @opcode_list.inject({}) { |h, o| (h[o.name] ||= []) << o ; h }
-
-		i = Instruction.new
+		i = Instruction.new self
 
 		# find prefixes, break on opcode name
 		tok = parser.readtok
@@ -300,7 +298,7 @@ class CPU
 			tok << parser.readtok.to_s
 		end
 
-		if not @opcode_list_byname[tok]
+		if not opcode_list_byname[tok]
 			parser.unreadtok tok
 			return
 		end
@@ -309,7 +307,7 @@ class CPU
 
 		# find arguments
 		loop do
-			break if @opcode_list_byname[parser.nexttok] or parser.nexttok == :eol
+			break if opcode_list_byname[parser.nexttok] or parser.nexttok == :eol
 			break unless arg = parse_argument(parser)
 			i.args << arg
 			break unless parser.nexttok == :','
@@ -317,7 +315,7 @@ class CPU
 			parser.readtok while parser.nexttok == :eol
 		end
 
-		@opcode_list_byname[i.opname].to_a.find { |o|
+		opcode_list_byname[i.opname].to_a.find { |o|
 			o.args.length == i.args.length and o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
 		} or raise parser, "invalid instruction #{i}"
 
