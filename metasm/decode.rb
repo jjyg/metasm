@@ -14,12 +14,19 @@ class CPU
 	def decode(program, edata)
 		@bin_lookaside ||= build_bin_lookaside
 		di = DecodedInstruction.new
-		di.instruction = Instruction.new
+		di.instruction = Instruction.new self
 		pre_ptr = edata.ptr
 		decode_findopcode(program, edata, di)
 		decode_instruction(program, edata, di)
 		di.bin_length = edata.ptr - pre_ptr
 		di
+	end
+
+	def emu_backtrace(di, off, value)
+	end
+
+	def get_jump_targets(pgm, di, off)
+		[]
 	end
 end
 
@@ -35,6 +42,31 @@ class InstructionBlock
 		@from = []
 		@to   = []
 	end
+end
+
+class Indirection
+	# Expression + type
+	attr_accessor :target, :type
+
+	def initialize(target, type)
+		@target, @type = target, type
+	end
+
+	def reduce
+		self
+	end
+
+	def bind(*a)
+		Indirection.new(@target.bind(*a), @type)
+	end
+
+	def ==(o)
+		o.class == self.class and [o.target, o.type] == [@target, @type]
+	end
+	def hash
+		[@target, @type].hash
+	end
+	alias eql? ==
 end
 
 class Program
@@ -104,6 +136,7 @@ class Program
 				curblock = nil
 				next
 			end
+puts "decoded at #{'%08x' % off} #{di.instruction}"
 
 			# jump/call
 			if di.opcode.props[:setip]
@@ -161,13 +194,68 @@ class Program
 	end
 
 	def resolve_jump_target(di, off)
-		target = @cpu.get_jump_target(self, di, off)	# XXX need something containing an Expression, with indirection support, and type support (eg [[:i32 pointed by [eax+42]] + 22])
-		# target.externals.each { |e| next if e.kind_of? String ; backtrace_value(e, off) } ; target.bind...
-		if target.kind_of? String or target.kind_of? Integer
-			[target]
-		else
-			[]
+		check_target = proc { |target|
+			if not target
+			elsif target.reduce.kind_of? Integer
+				target.reduce
+			elsif target.kind_of? Expression and target.op == :+ and not target.lexpr and target.rexpr.kind_of? String
+				target.rexpr
+			elsif target.kind_of? Indirection and t = check_target[target.target]
+				if t.kind_of? String
+					s = @sections.find { |s| s.encoded.export[t] }
+					s.encoded.ptr = s.encoded.export[t]
+				else
+					s = @sections.find { |s| s.base <= t and s.base + s.encoded.virtsize > t }
+					s.encoded.ptr = t - s.base
+				end
+				check_target[Expression.decode(s.encoded, target.type, @cpu.endianness)]
+			end
+		}
+
+		targets = @cpu.get_jump_targets(self, di, off)
+		targets_found = targets.map { |t| check_target[t] }
+
+		trace = []
+		result = []
+		# XXX highly suboptimal
+		# [max_depth, addr of last di checked, block, index in block.list of last di checked, target to resolve]
+		targets.zip(targets_found).each { |t, tf|
+			if tf
+				result << tf
+			else
+				trace << [500, off, @block[@decoded[off]], @block[@decoded[off]].list.index(di), t]
+			end
+		}
+
+		while foo = trace.pop
+			depth, off, block, idx, target = foo
+
+			next if depth == 0
+
+			if idx == 0
+				block.from.each { |f|
+puts "backtracking : up to #{'%08x' % f}"
+					l = @block[@decoded[f]].list
+					trace << [depth, f + l.last.bin_length, @block[@decoded[f]], l.length, target]
+				}
+			else
+				di = block.list[idx-1]
+				off -= di.bin_length
+puts "backtracking : eval #{target.inspect} in #{di.instruction}"
+				target = @cpu.emu_backtrace(di, off, target)
+				if t = check_target[target]
+puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
+					result << t
+					# TODO
+					# mark_as_subfunc(curblock.to) if di.opcode.props[:startsubfunc]
+				elsif target
+puts " continuing with #{target.inspect}"
+					trace << [depth-1, off, block, idx-1, target]
+				end
+			end
 		end
+
+		result
 	end
 	
 	def make_label(addr, pfx = 'metasmintern_uniquelabel')

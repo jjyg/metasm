@@ -16,6 +16,10 @@ class CPU
 		@valid_props = []
 		@opcode_list = []
 	end
+
+	def opcode_list_byname
+		@opcode_list_byname ||= @opcode_list.inject({}) { |h, o| (h[o.name] ||= []) << o ; h }
+	end
 end
 
 class UnknownCPU < CPU
@@ -56,15 +60,16 @@ class Instruction
 	# +@args+ is an array of arguments (cpu-specific classes)
 	# +@prefix+  is a hash of present prefixes (Symbol)
 	# +@opname+ the name of the instruction mnemonic (String)
-	attr_reader :args, :prefix
+	attr_reader :args, :prefix, :cpu
 	attr_accessor :opname
-	def initialize(opname=nil, args=[], pfx={})
+	def initialize(cpu, opname=nil, args=[], pfx={})
+		@cpu = cpu
 		@prefix, @args = pfx, args
 		@opname = opname
 	end
 
 	def dup
-		Instruction.new((@opname.dup rescue @opname), @args.dup, @prefix.dup)
+		Instruction.new(@cpu, (@opname.dup rescue @opname), @args.dup, @prefix.dup)
 	end
 end
 
@@ -180,6 +185,11 @@ class Expression
 		o.object_id == object_id or (o.class == self.class and [o.op, o.rexpr, o.lexpr] == [@op, @rexpr, @lexpr])
 	end
 
+	def hash
+		[@lexpr, @op, @rexpr].hash
+	end
+	alias eql? ==
+
 	def bind(vals = {})
 		l, r = @lexpr, @rexpr
 		if l.kind_of?(Expression)
@@ -193,6 +203,20 @@ class Expression
 			r = vals.fetch(r, r)
 		end
 		Expression[l, @op, r]
+	end
+
+	def bind!(vals = {})
+		if @lexpr.kind_of?(Expression)
+			@lexpr.bind!(vals)
+		else
+			@lexpr = vals.fetch(@lexpr, @lexpr)
+		end
+		if @rexpr.kind_of?(Expression)
+			@rexpr.bind!(vals)
+		else
+			@rexpr = vals.fetch(@rexpr, @rexpr)
+		end
+		self
 	end
 
 	# try to symplify itself

@@ -127,7 +127,7 @@ class Ia32
 	
 	# returns an array of EncodedData
 	def encode_instruction(program, i)
-		oplist = @opcode_list_byname[i.opname].to_a.find_all { |o|
+		oplist = opcode_list_byname[i.opname].to_a.find_all { |o|
 			o.args.length == i.args.length and
 			o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
 		}
@@ -151,7 +151,7 @@ class Ia32
 			case k
 			when :jmp:  {:jmp => 0x3e, :nojmp => 0x2e}[v]
 			when :lock: 0xf0
-			when :rep:  {:repnz => 0xf2, :repz => 0xf3, :rep => 0xf2}[v] # TODO
+			when :rep:  {'repnz' => 0xf2, 'repz' => 0xf3, 'rep' => 0xf2}[v] # TODO
 			end
 		}.pack 'C*'
 		pfx << op.props[:needpfx].pack('C*') if op.props[:needpfx]
@@ -279,7 +279,7 @@ class Ia32
 	public
 	def encode_thunk(program, target)
 		# jmp [target]
-		i = Instruction.new
+		i = Instruction.new self
 		i.opname = 'jmp'
 		i.args << ModRM.new(@size, @size, nil, nil, nil, Expression[target], nil)
 

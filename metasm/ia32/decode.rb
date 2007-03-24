@@ -132,7 +132,7 @@ class Ia32
 				 )
 			}
 
-			decode_pfx(program, di.instruction, edata.get_byte)
+			decode_prefix(program, di.instruction, edata.get_byte)
 		end
 	end
 
@@ -202,19 +202,86 @@ class Ia32
 		di.instruction.prefix.delete :opsz
 		di.instruction.prefix.delete :adsz
 		di.instruction.prefix.delete :seg
+		case r = di.instruction.prefix.delete(:rep)
+		when :z
+			if di.opcode.props[:strop]
+				di.instruction.prefix[:rep] = 'rep'
+			elsif di.opcode.props[:stropz]
+				di.instruction.prefix[:rep] = 'repz'
+			end
+		when :nz
+			if di.opcode.props[:stropz]
+				di.instruction.prefix[:rep] = 'repnz'
+			end
+		end
 	end
 
-	def get_jump_target(pgm, di, off)
-		case tg = di.instruction.args.first
-		when Expression
+	def emu_backtrace(di, off, value)
+		symify = proc { |tg|
+			case tg
+			when ModRM
+				e = nil
+				e = Expression[e, :+, tg.b.to_s.to_sym] if tg.b
+				e = Expression[e, :+, tg.s == 1 ? tg.i.to_s.to_sym : [tg.s, :*, tg.i.to_s.to_sym]] if tg.i
+				e = Expression[e, :+, tg.imm] if tg.imm
+				Indirection.new(e, "u#{tg.sz || @size}".to_sym)
+			when Reg
+				tg.to_s.to_sym
+			else
+				tg
+			end
+		}
+
+		a = di.instruction.args.map { |arg| symify[arg] }
+		case di.opcode.name
+		when 'mov'
+			value.bind a[0] => a[1]
+		when 'add', 'sub'
+			value.bind a[0] => Expression[a[0], (di.opcode.name == 'add' ? :+ : :-), a[1]]
+		when 'push'
+			if value.kind_of? Indirection and value.target.reduce == Expression[:esp]
+				a[0]
+			else
+				value.bind :esp, Expression[:esp, :-, @size/8]
+			end
+		when 'pop'
+			if value.reduce == Expression[a[0]].reduce
+				Indirection.new(Expression[:esp], "u#@size".to_sym)
+			else
+				value.bind :esp, Expression[:esp, :+, @size/8]
+			end
+		when 'call'
+			if value.kind_of? Indirection and value.target.reduce == Expression[:esp]
+				Expression[off + di.bin_length]
+			else
+				value.bind :esp, Expression[:esp, :-, @size/8]
+			end
+		when 'jmp', 'jz', 'jnz', 'nop'	# etc etc
+		end
+
+	end
+
+	def get_jump_targets(pgm, di, off)
+		if di.opcode.name == 'ret'
+			tg = Indirection.new(Expression[:esp], "u#@size".to_sym)
+		elsif (tg = di.instruction.args.first).kind_of? Expression
 			delta = tg.reduce
 			if delta.kind_of? Integer
 				tg = off + di.bin_length + delta
 				labelpfx = di.opcode.name[0..3] == 'call' ? 'func' : 'label'
 				di.instruction.args[0] = Expression[pgm.make_label(tg, labelpfx), :-, pgm.make_label(off + di.bin_length)]
+				tg = Expression[tg]
 			end
+		elsif tg.kind_of? ModRM
+			e = nil
+			e = Expression[e, :+, tg.b.to_s.to_sym] if tg.b
+			e = Expression[e, :+, tg.s == 1 ? tg.i.to_s.to_sym : [tg.s, :*, tg.i.to_s.to_sym]] if tg.i
+			e = Expression[e, :+, tg.imm] if tg.imm
+			tg = Indirection.new(e, "u#{tg.sz || @size}".to_sym)
+		elsif tg.kind_of? Reg
+			tg = tg.to_s.to_sym
 		end
-		tg
+		[tg].compact
 	end
 end
 end

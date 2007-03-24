@@ -14,7 +14,7 @@ class Ia32
 		@valid_args.push :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx
 
 		@valid_props.push :strop, :stropz, :opsz, :argsz
-		@valid_props.push :setip, :stopexec
+		@valid_props.push :setip, :stopexec, :saveip
 		
 		addop 'aaa',   [0x37]
 		addop 'aad',   [0xD5, 0x0A]
@@ -36,10 +36,10 @@ class Ia32
 		addop_macro2 'btr', 2
 		addop_macro2 'bts', 1
 		
-		addop 'call',  [0xE8], nil,  {}, :stopexec, :setip, :i
-		addop 'call',  [0xFF], 2,    {}, :stopexec, :setip
-		addop 'call',  [0x9A], nil,  {}, :stopexec, :setip, :farptr
-		addop 'callf', [0xFF], 3,    {}, :stopexec, :setip
+		addop 'call',  [0xE8], nil,  {}, :stopexec, :setip, :i, :saveip
+		addop 'call',  [0xFF], 2,    {}, :stopexec, :setip, :saveip
+		addop 'call',  [0x9A], nil,  {}, :stopexec, :setip, :farptr, :saveip
+		addop 'callf', [0xFF], 3,    {}, :stopexec, :setip, :saveip
 		
 		addop('cbw',   [0x98]) { |o| o.props[:opsz] = 16 }
 		addop('cdq',   [0x99]) { |o| o.props[:opsz] = 32 }
@@ -80,8 +80,8 @@ class Ia32
 		addop 'into',  [0xCE]
 		addop 'invd',  [0x0F, 0x08]
 		addop 'invlpg',[0x0F, 0x01], 7
-		addop 'iret',  [0xCF], nil,  {}, :stopexec
-		addop 'iretd', [0xCF], nil,  {}, :stopexec
+		addop 'iret',  [0xCF], nil,  {}, :stopexec, :setip
+		addop 'iretd', [0xCF], nil,  {}, :stopexec, :setip
 		addop_macrotttn 'j', [0x70], nil, {}, :setip, :i8
 		addop_macrotttn 'j', [0x0F, 0x80], nil, {}, :setip, :i
 		addop('jcxz',  [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 16 }
@@ -159,10 +159,10 @@ class Ia32
 		addop 'rdmsr', [0x0F, 0x32]
 		addop 'rdpmc', [0x0F, 0x33]
 		addop 'rdtsc', [0x0F, 0x31]
-		addop 'ret',   [0xC3], nil,  {}, :stopexec
-		addop 'ret',   [0xC2], nil,  {}, :stopexec, :u16
-		addop 'retf',  [0xCB], nil,  {}, :stopexec
-		addop 'retf',  [0xCA], nil,  {}, :stopexec, :u16
+		addop 'ret',   [0xC3], nil,  {}, :stopexec, :setip
+		addop 'ret',   [0xC2], nil,  {}, :stopexec, :u16, :setip
+		addop 'retf',  [0xCB], nil,  {}, :stopexec, :setip
+		addop 'retf',  [0xCA], nil,  {}, :stopexec, :u16, :setip
 		
 		addop_macro3 'rol', 0
 		addop_macro3 'ror', 1

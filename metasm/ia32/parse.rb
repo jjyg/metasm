@@ -120,9 +120,9 @@ end
 		# XXX check for redefinition
 		case pfx
 		when 'lock': i.prefix[:lock] = true
-		when 'rep':            i.prefix[:rep] = :rep
-		when 'repe', 'repz':   i.prefix[:rep] = :repz
-		when 'repne', 'repnz': i.prefix[:rep] = :repnz
+		when 'rep':            i.prefix[:rep] = 'rep'
+		when 'repe', 'repz':   i.prefix[:rep] = 'repz'
+		when 'repne', 'repnz': i.prefix[:rep] = 'repnz'
 		end
 	end
 
@@ -208,7 +208,7 @@ end
 
 	def parse_instruction_fixup(lexer, i)
 		# convert label name for jmp/call/loop to relative offset
-		if @opcode_list_byname[i.opname].first.props[:setip] and i.args.first.kind_of? Expression and not i.args.first.reduce.kind_of? Integer	# XXX jmp 0x43040211 ?
+		if opcode_list_byname[i.opname].first.props[:setip] and i.args.first.kind_of? Expression and not i.args.first.reduce.kind_of? Integer	# XXX jmp 0x43040211 ?
 			postlabel = lexer.new_unique_label
 			i.args[0] = Expression[i.args.first, :-, postlabel]
 			lexer.unreadtok :':'
