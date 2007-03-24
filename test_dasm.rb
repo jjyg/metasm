@@ -1,18 +1,23 @@
+require 'metasm/ia32/parse'
+require 'metasm/ia32/encode'
 require 'metasm/ia32/decode'
 require 'metasm/ia32/render'
-require 'metasm/exe_format/elf.rb'
+require 'metasm/exe_format/raw'
 
-if ARGV.empty?
-	ARGV << '/lib/libc.so.6' << 'ispunct'
-end
+class Metasm::CPU ; def inspect ; 'cpu' end end	# help debug
 
-class Metasm::CPU ; def inspect ; 'cpu' end end
+cpu = Metasm::Ia32.new
+encpgm = Metasm::Program.new cpu
+encpgm.parse DATA.read
+encpgm.encode
 
-pgm, opts = Metasm::ELF.decode File.read(ARGV.shift)
-pgm.desasm opts['entrypoint'] if opts['entrypoint']
-ARGV.each { |exp|
-	pgm.desasm pgm.export[exp]
-}
+sc = Metasm::Raw.encode encpgm, 'entrypoint' => (ARGV.first || 'proc1')
+
+pgm = Metasm::Raw.decode cpu, sc
+
+pgm.desasm 0
+
+puts '', '-'*20, ''
 
 pgm.block.sort.each { |addr, block|
 	s = pgm.sections.find { |s| s.base <= addr and s.base + s.encoded.virtsize > addr }
@@ -32,3 +37,119 @@ pgm.block.sort.each { |addr, block|
 	puts
 }
 
+__END__
+addr_0:
+ call entrypoint
+ jmp eof
+
+; basic proc
+proc1:
+ push eax
+ pop eax
+ ret
+
+; push foo ret style jump
+proc2:
+ push bla - addr_0
+ ret
+ nop
+bla:
+ ret
+ 
+; subproc
+proc3:
+ call proc3_1
+ ret
+
+proc3_1:
+ ret
+
+; subproc with arguments and retn
+proc4:
+ push 42
+ push 28
+ call proc4_1
+ ret
+
+proc4_1:
+ ret 8
+
+; frame pointer
+proc5:
+ push ebp
+ mov ebp, esp
+ sub esp, 28
+ add eax, 42
+ mov esp, ebp
+ pop ebp
+ ret
+
+; shared ret
+proc6:
+ call proc6_1
+ call proc6_2
+ ret
+
+proc6_1:
+ add eax, ebx
+ jmp retloc
+ nop
+
+proc6_2:
+ sub eax, ebx
+ jmp retloc
+ nop
+
+retloc: ret
+
+; ret as jmp [esp]
+proc7:
+ jmp [esp]
+
+; retaddr mangling
+proc8:
+ add dword ptr [esp], 42
+ ret
+
+; call as push
+proc9:
+ call pushed_addr
+dd hiddenlabel - addr_0
+pushed_addr:
+ pop eax
+ mov eax, [eax]
+ jmp eax
+
+hiddenlabel:
+ add eax, eax
+ ret
+
+; case-style
+proc10:
+ cmp eax, 42
+ jnz case1
+ mov ebx, proc10_1 - addr_0
+ jmp esac
+case1:
+ cmp eax, 28
+ jnz case2
+ mov ebx, proc10_2 - addr_0
+ jmp esac
+case2:
+ mov ebx, proc10_3 - addr_0
+esac:
+ call ebx
+ ret
+
+proc10_1:
+ ret
+
+proc10_2:
+ ret
+
+proc10_3:
+ add eax, 42
+ ret
+
+eof:
+ nop
