@@ -6,7 +6,10 @@ class << self
 	def encode(program, binding={})
 		edata = program.sections.inject(EncodedData.new) { |edata, s| edata << s.encoded }
 		start = program.label_at(edata, 0)
-		edata.fixup edata.export.inject(binding) { |binding, (name, offset)| binding.update name => Expression[start, :+, offset] }
+		if not binding.empty?
+			edata.reloc.each { |off, rel| rel.target.bind! binding }
+		end
+		edata.fixup edata.export.inject({}) { |binding, (name, offset)| binding.update name => Expression[start, :+, offset] }
 		raise "Unresolved external references: #{edata.reloc.values.inspect}" unless edata.reloc.empty?
 		edata.data
 	end
