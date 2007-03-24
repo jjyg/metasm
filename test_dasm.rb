@@ -186,5 +186,12 @@ proc12:
 proc12_ret:
  ret
 
+proc13:
+ lea eax, [proc13_1 - addr_0]
+ jmp eax
+ nop
+proc13_1:
+ ret
+
 eof:
  nop

@@ -16,8 +16,8 @@ class CPU
 		di = DecodedInstruction.new
 		di.instruction = Instruction.new self
 		pre_ptr = edata.ptr
-		decode_findopcode(program, edata, di)
-		decode_instruction(program, edata, di)
+		decode_findopcode(program, edata, di) rescue di.opcode = nil
+		decode_instruction(program, edata, di) if di.opcode rescue di.opcode = nil
 		di.bin_length = edata.ptr - pre_ptr
 		di
 	end
@@ -127,7 +127,7 @@ class Program
 puts "\nrebacktracking to #{'%08x' % targetoff} for #{di.instruction}"
 						targets = resolve_jump_target(di, targetoff)
 						offsets.unshift(*targets.reject { |t|
-							@block[@decoded[targetoff]].to.include? t and @block[t].from.include? targetoff
+							@block[@decoded[targetoff]].to.include? t and @block[t] and @block[t].from.include? targetoff
 						}.map { |t| [t, targetoff] })
 						@block[@decoded[off]].to |= targets
 					}

@@ -105,9 +105,9 @@ class Ia32
 			end
 			instr.prefix[:seg] = SegReg.new(v)
 			
-			instr.prefix[:jmphint] = ((pfx & 0x10) == 0x10)	
+			instr.prefix[:jmphint] = ((byte & 0x10) == 0x10)	
 		else
-			raise InvalidOpcode, "unknown opcode byte #{byte}"
+			raise "unknown opcode byte #{byte}"
 		end
 	end
 
@@ -237,9 +237,11 @@ class Ia32
 
 		case op = di.opcode.name
 		when 'mov', 'movsx', 'movzx'
-			value.bind a[0] => a[1]
+			value.bind a[0] => Expression[a[1]]
+		when 'lea'
+			value.bind a[0] => a[1].target
 		when 'xchg'
-			value.bind a[0] => a[1], a[1] => a[0]
+			value.bind a[0] => Expression[a[1]], a[1] => Expression[a[0]]
 		when 'add', 'sub', 'or', 'xor', 'and'
 			op = {'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^}[op]
 			value.bind a[0] => Expression[a[0], op, a[1]]
@@ -255,7 +257,7 @@ class Ia32
 		when 'xlat'
 			# XXX
 		when 'push'
-			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => a[0]
+			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => Expression[a[0]]
 		when 'pop'
 			# in this order ! (pop esp => esp = [esp])
 			# +4 ?
