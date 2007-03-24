@@ -36,11 +36,15 @@ class InstructionBlock
 	# from = list of addresses of instructions (call/jmp), also addr of normal instruction when call flow continues to this block
 	# to = list of addresses of instructions called, does include normal flow transitions (no jump)
 	attr_accessor :list, :from, :to
+	# list of addr of instruction for which backtrace was needed, and passed by us (an instruction in the end of this block should appear here too, in case of a later split)
+	attr_accessor :backtracked_for
 
 	def initialize
 		@list = []
 		@from = []
 		@to   = []
+
+		@backtracked_for = []
 	end
 end
 
@@ -57,8 +61,8 @@ class Indirection
 	end
 	alias reduce_rec reduce
 
-	def bind(*a)
-		Indirection.new(@target.bind(*a), @type)
+	def bind(h)
+		h.fetch(self, Indirection.new(@target.bind(h), @type))
 	end
 
 	def ==(o)
@@ -106,14 +110,25 @@ class Program
 			# already gone there
 			if @decoded[off]
 				if curblock
-					@block[curblock].to << off
+					@block[curblock].to |= [off]
 					from ||= @block[curblock].list[0..-2].inject(curblock) { |off, di| off + di.bin_length }
 					curblock = nil
 				end
 
 				desasm_split_block(@decoded[off], off) if not @block[off]
 
-				@block[@decoded[off]].from |= [from] if from
+				if from
+					@block[@decoded[off]].from |= [from]
+					@block[@decoded[off]].backtracked_for.each { |targetoff|
+						di = @block[@decoded[targetoff]].list.inject(@decoded[targetoff]) { |o, di|
+							break di if o == targetoff
+							o + di.bin_length
+						}
+						targets = resolve_jump_target(di, targetoff)
+						offsets.unshift(*targets.map { |t| [t, targetoff] })
+						@block[@decoded[off]].to |= targets
+					}
+				end
 
 				next
 			end
@@ -146,7 +161,7 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 				offsets.unshift(*targets.map { |t| [t, off] })
 
 				# end curblock
-				@block[curblock].to.concat targets
+				@block[curblock].to |= targets
 				@block[curblock].to << (off + di.bin_length) if not di.opcode.props[:stopexec]
 				curblock = nil
 			end
@@ -174,6 +189,7 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 		@block[newaddr].to = @block[oldaddr].to
 		@block[oldaddr].to = [newaddr]
 		@block[newaddr].from = [oldaddr]
+		@block[newaddr].backtracked_for.concat @block[oldaddr].backtracked_for
 		
 		# walk the block to find the splitting instruction
 		curaddr = oldaddr
@@ -195,24 +211,33 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 	end
 
 	def resolve_jump_target(di, off)
+		# returns either a String (target == label) or an Integer (address) on success, or nil
 		check_target = proc { |target|
-			if not target
-			elsif target.reduce.kind_of? Integer
-				target.reduce
-			elsif target.kind_of? Expression and target.op == :+ and not target.lexpr and target.rexpr.kind_of? String
-				target.rexpr
-			elsif target.kind_of? Indirection and t = check_target[target.target]
-				if t.kind_of? String
-					s = @sections.find { |s| s.encoded.export[t] }
-					s.encoded.ptr = s.encoded.export[t]
-				else
-					s = @sections.find { |s| s.base <= t and s.base + s.encoded.virtsize > t }
-					s.encoded.ptr = t - s.base
+			if target.kind_of? String or target.kind_of? Integer
+				target
+			elsif target.kind_of? Expression or target.kind_of? Indirection
+				target = target.reduce
+				if target.kind_of? Integer
+					target
+				elsif target.kind_of? Expression and target.op == :+ and not target.lexpr
+					check_target[target.rexpr]
+				elsif target.kind_of? Indirection
+					break if not t = check_target[target.target]
+					if t.kind_of? String
+						s = @sections.find { |s| s.encoded.export[t] }
+						break if not s
+						s.encoded.ptr = s.encoded.export[t]
+					else
+						s = @sections.find { |s| s.base <= t and s.base + s.encoded.virtsize > t }
+						break if not s
+						s.encoded.ptr = t - s.base
+					end
+					check_target[Expression.decode(s.encoded, target.type, @cpu.endianness)]
 				end
-				check_target[Expression.decode(s.encoded, target.type, @cpu.endianness)]
 			end
 		}
 
+		orig_off = off
 		targets = @cpu.get_jump_targets(self, di, off)
 		targets_found = targets.map { |t| check_target[t] }
 
@@ -233,6 +258,10 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 			end
 		}
 
+		if not trace.empty?
+			@block[@decoded[orig_off]].backtracked_for |= [orig_off]
+		end
+
 		while foo = trace.pop
 			depth, off, block, idx, target = foo
 
@@ -241,8 +270,9 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 			if idx == 0
 				block.from.each { |f|
 puts "backtracking : up to #{'%08x' % f}"
-					l = @block[@decoded[f]].list
-					trace << [depth, f + l.last.bin_length, @block[@decoded[f]], l.length, target]
+					b = @block[@decoded[f]]
+					trace << [depth, f + b.list.last.bin_length, b, b.list.length, target]
+					b.backtracked_for |= [orig_off]
 				}
 			else
 				di = block.list[idx-1]
@@ -254,8 +284,9 @@ puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
 					result << t
 					# TODO
 					# mark_as_subfunc(curblock.to) if di.opcode.props[:startsubfunc]
-				elsif target
+				elsif target and target = target.reduce
 puts " continuing with #{target}"
+					# target.reduce is either an Expression or an Indirection, an Integer would have been caught by check_target
 					trace << [depth-1, off, block, idx-1, target]
 				end
 			end

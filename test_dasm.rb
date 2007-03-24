@@ -15,6 +15,9 @@ sc = Metasm::Raw.encode encpgm, 'entrypoint' => (ARGV.first || 'proc1')
 
 pgm = Metasm::Raw.decode cpu, sc
 
+pgm.sections.first.encoded.export.update encpgm.sections.first.encoded.export
+pgm.sections.first.encoded.export.delete_if { |k, v| k =~ /^metasmintern_/ }
+
 pgm.desasm 0
 
 puts '', '-'*20, ''
@@ -149,6 +152,31 @@ proc10_2:
 
 proc10_3:
  add eax, 42
+ ret
+
+; case with pointer table
+proc11:
+ cmp ebx, 4
+ jae proc11_else
+ mov eax, [ebx*4 + (jmp_table - addr_0)]
+ jmp eax
+ nop
+
+align 4
+jmp_table dd proc11_0 - addr_0, proc11_1 - addr_0, proc11_2 - addr_0, proc11_3 - addr_0
+db 0
+proc11_0:
+ ret
+proc11_1:
+ ret
+proc11_2:
+ add ebx, 42
+ ret
+proc11_3:
+ sub ebx, 21
+ ret
+proc11_else:
+ nop
  ret
 
 eof:
