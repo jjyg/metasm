@@ -124,8 +124,11 @@ class Program
 							break di if o == targetoff
 							o + di.bin_length
 						}
+puts "\nrebacktracking to #{'%08x' % targetoff} for #{di.instruction}"
 						targets = resolve_jump_target(di, targetoff)
-						offsets.unshift(*targets.map { |t| [t, targetoff] })
+						offsets.unshift(*targets.reject { |t|
+							@block[@decoded[targetoff]].to.include? t and @block[t].from.include? targetoff
+						}.map { |t| [t, targetoff] })
 						@block[@decoded[off]].to |= targets
 					}
 				end
@@ -140,7 +143,7 @@ class Program
 			# start a new block if needed
 			if not curblock
 				@block[curblock = off] = InstructionBlock.new
-				@block[curblock].from << from if from
+				@block[curblock].from |= [from] if from
 			end
 
 			# mark this address as already decoded
@@ -162,7 +165,7 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 
 				# end curblock
 				@block[curblock].to |= targets
-				@block[curblock].to << (off + di.bin_length) if not di.opcode.props[:stopexec]
+				@block[curblock].to |= [off + di.bin_length] if not di.opcode.props[:stopexec]
 				curblock = nil
 			end
 
@@ -252,7 +255,7 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 		#   otherwise when dasm bar, 'retloc' is marked as 'already dasmed' and no subfunc detection takes place)
 		targets.zip(targets_found).each { |t, tf|
 			if tf
-				result << tf
+				result |= [tf]
 			else
 				trace << [500, off, @block[@decoded[off]], @block[@decoded[off]].list.index(di), t]
 			end
@@ -269,7 +272,7 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 
 			if idx == 0
 				block.from.each { |f|
-puts "backtracking : up to #{'%08x' % f}"
+puts "backtracking : (#{depth}) up to #{'%08x' % f}"
 					b = @block[@decoded[f]]
 					trace << [depth, f + b.list.last.bin_length, b, b.list.length, target]
 					b.backtracked_for |= [orig_off]
@@ -281,7 +284,7 @@ puts "backtracking : eval #{target} in #{di.instruction}"
 				target = @cpu.emu_backtrace(di, off, target)
 				if t = check_target[target]
 puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
-					result << t
+					result |= [t]
 					# TODO
 					# mark_as_subfunc(curblock.to) if di.opcode.props[:startsubfunc]
 				elsif target and target = target.reduce

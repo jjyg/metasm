@@ -263,7 +263,7 @@ class Ia32
 		when 'call'
 			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => Expression[off+di.bin_length]
 		when 'ret'
-			value.bind :esp => Expression[:esp, :+, @size/8]
+			value.bind :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]]
 		when 'jmp', 'jz', 'jnz', 'nop', 'cmp', 'test'	# etc etc
 			value
 		else

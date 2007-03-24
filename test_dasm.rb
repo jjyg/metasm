@@ -179,5 +179,12 @@ proc11_else:
  nop
  ret
 
+proc12:
+ call proc12_ret
+ call proc12_ret
+ ret
+proc12_ret:
+ ret
+
 eof:
  nop
