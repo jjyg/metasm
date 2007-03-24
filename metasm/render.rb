@@ -4,7 +4,7 @@ module Metasm
 
 module Renderable
 	def to_s
-		render.join ' '
+		render.join
 	end
 end
 
@@ -12,14 +12,33 @@ end
 class Instruction
 	include Renderable
 	def render
-		[@prefix.inspect] + [@opname] + @args
+		@cpu.render_instruction(self)
+	end
+end
+
+class CPU
+	def render_instruction(i)
+		r = []
+		r << @opname
+		if not @args.empty?
+			r << ' '
+			@args.each { |a|
+				r << a << ', '
+			}
+			r.pop
+		end
+		r
 	end
 end
 
 class Expression
 	include Renderable
 	def render
-		['(', @lexpr, @op, @rexpr, ')']
+		if @op == :+ and not @lexpr
+			[@rexpr]
+		else
+			['(', @lexpr, @op, @rexpr, ')']
+		end
 	end
 end
 end

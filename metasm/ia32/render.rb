@@ -56,32 +56,42 @@ class Ia32
 		end
 	end
 
-	# XXX this class do not exist, Metasm::Instruction is used
-	# use some cpu-forwarding for render/ctx
-	class Instruction
-		def render
-			pfx = ''
-			pfx << 'lock ' if @pfx[:lock]
-			pfx << "#{@pfx[:rep]} " if @pfx[:rep]
-			
-			{:pre => pfx << @opname << ' ', :content => @args, :join => ', '}
-		end
-
-		def context
-			h = {}
-			if @pfx[:rep]
-				h['toogle repz'] = proc {@pfx[:rep] = {:repnz => :repz, :repz => :repnz}[@pfx[:rep]] } if @op.props[:stropz]
-				h['rm rep']      = proc {@pfx.delete :rep}
+	def render_instruction(i)
+		r = []
+		r << 'lock ' if i.prefix[:lock]
+		r << i.prefix[:rep] << ' ' if i.prefix[:rep]
+		r << i.opname
+		if not i.args.empty?
+			r << ' '
+			if (a = i.args.first).kind_of? Expression and a.op == :- and a.lexpr.kind_of? String and a.rexpr.kind_of? String and opcode_list_byname[i.opname].first.props[:setip] 
+				# jmp foo is stored as jmp foo - bar ; bar:
+				r << a.lexpr
 			else
-				h['set rep']     = proc {@pfx[:rep] = :z} if @op.props[:strop] or @op.props[:stropz]
+				i.args.each { |a|
+					r << a << ', '
+				}
+				r.pop
 			end
-			if @pfx[:seg]
-				h['rm seg'] = proc {@pfx.delete :seg}
-			end
-
-			h['toggle lock'] = proc {@pfx[:lock] = !@pfx[:lock]}
-			h
 		end
+		r
+	end
+
+	def instruction_context(i)
+		# XXX
+		h = {}
+		op = opcode_list_byname[i.opname].first
+		if i.prefix[:rep]
+			h['toogle repz'] = proc { i.prefix[:rep] = {:repnz => 'repz', :repz => 'repnz'}[i.prefix[:rep]] } if op.props[:stropz]
+			h['rm rep']      = proc { i.prefix.delete :rep }
+		else
+			h['set rep']     = proc { i.prefix[:rep] = 'rep'  } if op.props[:strop]
+			h['set rep']     = proc { i.prefix[:rep] = 'repz' } if op.props[:stropz]
+		end
+		if i.args.find { |a| a.kind_of? ModRM and a.seg }
+			h['rm seg'] = proc { i.args.find { |a| a.kind_of? ModRM and a.seg }.seg = nil }
+		end
+		h['toggle lock'] = proc { i.prefix[:lock] = !i.prefix[:lock] }
+		h
 	end
 end
 end
