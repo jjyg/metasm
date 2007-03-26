@@ -1,7 +1,16 @@
- write Program/Parser separate classes
- write CPU#encode_all (all possible encodings for an instruction)
- write some unittests
- rewrite **/decode with new classes and hardcoded ia32.flag[:d]
- write disasm asm
- write dasm gui
- make a public release
+desasm:
+ data xref: trackback memory write/read (read is when you read a value and modify it/its derivates, (!= push eax ; trash ; pop eax))
+ detect loops ?
+ make degraded mode, where saveip opcode do not stopexec
+ improve trackback with specific paths ( foo: call a ; a: jmp retloc ; bar: call b ; b: jmp retloc ; retloc: ret ; call foo ; ret : last ret trackback would trackback to both a: and b:, but only a: is a valid trackback)
+ desasm some code sequences to C
+ externs / C header parser (prototypes, + OS abi ?)
+ somehow handle unknown external calls (virtual func body with special 'trashed' backtrack instruction to allow abi like 'ebp is kept, eax is mutable' ?)
+ gui
+ allow program-wide label renaming
+
+ia32: emu fpu
+mips: fill opcode list, cpu emu for trackback
+elf:  encode/decode relocs, isolate/remove ia32-specific parts
+pe:   decode
+all:  unittests ?
