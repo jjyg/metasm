@@ -9,9 +9,19 @@ end
 class Metasm::CPU ; def inspect ; 'cpu' end end
 
 pgm, opts = Metasm::ELF.decode File.read(ARGV.shift)
-pgm.desasm opts['entrypoint'] if opts['entrypoint']
-ARGV.each { |exp|
-	pgm.desasm pgm.export[exp]
+pgm.cpu.make_call_return rescue nil
+([opts['entrypoint']].compact + ARGV).each { |exp|
+	addr = nil
+	begin
+		addr = Integer(exp)
+	rescue ArgumentError
+		addr = pgm.export[exp] || exp
+	end
+	begin
+		pgm.desasm addr
+	rescue Interrupt
+		puts "interrupted, skipping"
+	end
 }
 
 pgm.block.sort.each { |addr, block|

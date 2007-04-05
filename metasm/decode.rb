@@ -124,7 +124,7 @@ class Program
 							break di if o == targetoff
 							o + di.bin_length
 						}
-puts "\nrebacktracking to #{'%08x' % targetoff} for #{di.instruction}"
+#puts "\nrebacktracking to #{'%08x' % targetoff} for #{di.instruction}"
 						targets = resolve_jump_target(di, targetoff)
 						offsets.unshift(*targets.reject { |t|
 							@block[@decoded[targetoff]].to.include? t and @block[t] and @block[t].from.include? targetoff
@@ -155,7 +155,7 @@ puts "\nrebacktracking to #{'%08x' % targetoff} for #{di.instruction}"
 				curblock = nil
 				next
 			end
-puts "decoded at #{'%08x' % off} #{di.instruction}"
+#puts "decoded at #{'%08x' % off} #{di.instruction}"
 
 			# jump/call
 			if di.opcode.props[:setip]
@@ -257,7 +257,7 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 			if tf
 				result |= [tf]
 			else
-				trace << [500, off, @block[@decoded[off]], @block[@decoded[off]].list.index(di), t]
+				trace << [20, off, @block[@decoded[off]], @block[@decoded[off]].list.index(di), t]
 			end
 		}
 
@@ -272,7 +272,7 @@ puts "decoded at #{'%08x' % off} #{di.instruction}"
 
 			if idx == 0
 				block.from.each { |f|
-puts "backtracking : (#{depth}) up to #{'%08x' % f}"
+#puts "backtracking : (#{depth}) up to #{'%08x' % f}"
 					b = @block[@decoded[f]]
 					trace << [depth, f + b.list.last.bin_length, b, b.list.length, target]
 					b.backtracked_for |= [orig_off]
@@ -280,15 +280,15 @@ puts "backtracking : (#{depth}) up to #{'%08x' % f}"
 			else
 				di = block.list[idx-1]
 				off -= di.bin_length
-puts "backtracking : eval #{target} in #{di.instruction}"
+#puts "backtracking : eval #{target} in #{di.instruction}"
 				target = @cpu.emu_backtrace(di, off, target)
 				if t = check_target[target]
-puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
+#puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
 					result |= [t]
 					# TODO
 					# mark_as_subfunc(curblock.to) if di.opcode.props[:startsubfunc]
 				elsif target and target = target.reduce
-puts " continuing with #{target}"
+#puts " continuing with #{target}"
 					# target.reduce is either an Expression or an Indirection, an Integer would have been caught by check_target
 					trace << [depth-1, off, block, idx-1, target]
 				end

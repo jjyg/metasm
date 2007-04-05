@@ -38,8 +38,7 @@ class Opcode
 	# generic attributes/restrictions
 	attr_reader :props
 
-	def initialize(cpu, name)
-		@cpu = cpu
+	def initialize(name)
 		@name = name
 		@args = []
 		@fields = {}

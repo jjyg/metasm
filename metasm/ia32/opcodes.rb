@@ -587,7 +587,7 @@ class Ia32
 	# yields it for further customisation, and append it to the instruction set
 	# is responsible of the creation of disambiguating opcodes if necessary (:s flag hardcoding)
 	def addop(name, bin, hint=nil, fields={}, *argprops)
-		op = Opcode.new(self, name)
+		op = Opcode.new name
 		op.bin = bin
 		op.fields.replace fields
 
@@ -642,7 +642,7 @@ class Ia32
 		
 		if df = op.fields.delete(:d)
 			# hardcode the bit for the 2 versions
-			dop = Opcode.new(self, op.name)
+			dop = Opcode.new op.name
 			dop.bin = op.bin.dup
 			[:fields, :props, :args].each { |f| dop.send(f).replace op.send(f) }
 
@@ -658,7 +658,7 @@ class Ia32
 		if s_field = op.fields[:s]
 			# add explicit choice versions, with lower precedence (so that disassembling will return the general version)
 			# eg "jmp", "jmp.i8", "jmp.i"
-			op8 = Opcode.new(self, op.name + '.i8')
+			op8 = Opcode.new op.name + '.i8'
 			op8.bin = op.bin.dup
 			[:fields, :props, :args].each { |f| op8.send(f).replace op.send(f) }
 			op8.fields.delete :s
@@ -666,7 +666,7 @@ class Ia32
 			op8.args.map! { |arg| arg == :i ? :i8 : arg }	# arg type == :i8
 			@opcode_list << op8
 
-			op32 = Opcode.new(self, op.name + '.i')
+			op32 = Opcode.new op.name + '.i'
 			op32.bin = op.bin.dup
 			[:fields, :props, :args].each { |f| op32.send(f).replace op.send(f) }
 			op32.fields.delete :s
