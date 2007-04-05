@@ -246,7 +246,7 @@ class Ia32
 			op = {'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^}[op]
 			value.bind a[0] => Expression[a[0], op, a[1]]
 		when 'inc', 'dec', 'not'
-			op = {'inc' => [:+, 1], 'dec' => [:-, 1], 'not' => [:^, -1] }
+			op = {'inc' => [:+, 1], 'dec' => [:-, 1], 'not' => [:^, -1] }[op]
 			value.bind a[0] => Expression[a[0], *op]
 		when 'neg'
 			value.bind a[0] => Expression[:-, a[0]]
@@ -296,5 +296,10 @@ class Ia32
 		end
 		[tg].compact
 	end
+
+	def make_call_return
+		@opcode_list.each { |o| o.props.delete :stopexec if o.name[0..3] == 'call' }
+	end
+
 end
 end
