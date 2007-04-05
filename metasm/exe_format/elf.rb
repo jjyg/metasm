@@ -62,11 +62,11 @@ class ELF < ExeFormat
 	end
 
 	class Symbol
-		attr_accessor :name, :value, :size, :bind, :type, :other, :section
+		attr_accessor :name, :value, :size, :bind, :type, :other, :section, :info, :name_p
 	end
 
-	class Reloc
-		attr_accessor :offset, :type, :symbol, :section
+	class Relocation
+		attr_accessor :offset, :type, :symbol, :info, :addend
 	#	def info ; (@symbol << 8) + @type end
 	#	def info=(i) @symbol = i >> 8 ; @type = i & 0xff end
 	end
@@ -293,6 +293,7 @@ class << self
 			sym = Symbol.new
 			sym.name = filename
 			sym.bind = 'LOCAL'
+			sym.type = 'FILE'
 			sym.section = 'ABS'
 			add_sym[sym]
 		end
@@ -789,6 +790,11 @@ EOPLTE
 		}.data
 	end
 
+
+	# 
+	# decoder
+	#
+	
 	def decode(str)
 		edata = EncodedData.new str
 		hdr = pre_decode_header edata
@@ -807,9 +813,8 @@ EOPLTE
 
 		case hdr['type']
 		when 'EXEC', 'DYN'
-			opts = decode_load_segments(pgm, edata, phdr)
+			opts = decode_load_segments(pgm, edata, phdr, hdr['machine'])
 			opts['entrypoint'] = pgm.make_label(hdr['entry'], 'entrypoint')
-		# arrays: [type, rawoff, virtoff/physoff, rawsz, memsz, flags, align]
 			opts['additional_segments'] = phdr.reject { |ph| ph['type'] == 'LOAD' }
 			opts['additional_segments'].delete phdr.find { |ph| ph['type'] == 'DYNAMIC' }	# delete only first
 		when 'REL'
@@ -819,7 +824,7 @@ EOPLTE
 		[pgm, opts]
 	end
 
-	def decode_load_segments(pgm, edata, phdr)
+	def decode_load_segments(pgm, edata, phdr, arch)
 		raise "no program header" if not phdr
 
 		phdr.find_all { |ph| ph['type'] == 'LOAD' }.each { |ph|
@@ -845,23 +850,23 @@ EOPLTE
 			# XXX what does the dynamic loader do with invalid tags ? (eg multiple STRTAB)
 			tag_val = proc { |tag| tag = tags.find { |t, v| t == tag } ; tag[1] if tag }
 
-			if strtab_addr = tag_val['STRTAB']
-				strtab_s = pgm.sections.find { |s| s.base <= strtab_addr and s.base + s.encoded.virtsize > strtab_addr }
-				strtab_off = strtab_addr - strtab_s.base if strtab_s
+			if strtab_addr = tag_val['STRTAB'] and strtab_s = pgm.sections.find { |s| s.base <= strtab_addr and s.base + s.encoded.virtsize > strtab_addr }
+				strtab_off = strtab_addr - strtab_s.base
+				read_strz = proc { |off| strtab_s.encoded.data[strtab_off + off...strtab_s.encoded.data.index(0, strtab_off+off)] }
 			end
 
 			tags.each { |t, v|
 				case t
 				when 'SONAME'
-					opts['soname'] = strtab_s.encoded.data[strtab_off+v...strtab_s.encoded.data.index(0, strtab_off+v)] if strtab_s
+					opts['soname'] = read_strz[v]
 				when 'NEEDED'
-					(opts['needed'] ||= []) << strtab_s.encoded.data[strtab_off+v...strtab_s.encoded.data.index(0, strtab_off+v)] if strtab_s
+					(opts['needed'] ||= []) << read_strz[v]
 				when 'INIT'
 					opts['init'] = pgm.make_label(v, 'init')
 				when 'FINI'
 					opts['fini'] = pgm.make_label(v, 'fini')
 				when 'RPATH'
-					opts['rpath'] = strtab_s.encoded.data[strtab_off+v...strtab_s.encoded.data.index(0, strtab_off+v)].split(/[:;]/) if strtab_s
+					opts['rpath'] = read_strz[v].split(/[:;]/)
 				end
 			}
 
@@ -878,55 +883,95 @@ EOPLTE
 				symtab_s.encoded.ptr = symtab_off
 				syms = []
 				symcount.times {
-					sym = {}
-					sym['name_p']= Expression.decode_imm(symtab_s.encoded, :u32, pgm.cpu.endianness)
-					sym['name'] = strtab_s.encoded.data[strtab_off+sym['name_p']...strtab_s.encoded.data.index(0, strtab_off+sym['name_p'])]
-					sym['value'] = Expression.decode_imm(symtab_s.encoded, :u32, pgm.cpu.endianness)
-					sym['size']  = Expression.decode_imm(symtab_s.encoded, :u32, pgm.cpu.endianness)
-					sym['info']  = Expression.decode_imm(symtab_s.encoded,  :u8, pgm.cpu.endianness)
-					sym['other'] = Expression.decode_imm(symtab_s.encoded,  :u8, pgm.cpu.endianness)
-					sym['shndx'] = Expression.decode_imm(symtab_s.encoded, :u16, pgm.cpu.endianness)
-					sym['shndx'] = SH_INDEX[sym['shndx']] || sym['shndx']
-					sym['bind']  = sym['info'] >> 4
-					sym['bind']  = SYMBOL_BIND[sym['bind']] || sym['bind']
-					sym['type']  = sym['info'] & 0xf
-					sym['type']  = SYMBOL_TYPE[sym['type']] || sym['type']
+					sym = Symbol.new
+					sym.name_p= Expression.decode_imm(symtab_s.encoded, :u32, pgm.cpu.endianness)
+					sym.name  = read_strz[sym.name_p]
+					sym.value = Expression.decode_imm(symtab_s.encoded, :u32, pgm.cpu.endianness)
+					sym.size  = Expression.decode_imm(symtab_s.encoded, :u32, pgm.cpu.endianness)
+					sym.info  = Expression.decode_imm(symtab_s.encoded,  :u8, pgm.cpu.endianness)
+					sym.other = Expression.decode_imm(symtab_s.encoded,  :u8, pgm.cpu.endianness)
+					sym.section = Expression.decode_imm(symtab_s.encoded, :u16, pgm.cpu.endianness)
+					sym.section = SH_INDEX[sym.section] || sym.section
+					sym.bind  = sym.info >> 4
+					sym.bind  = SYMBOL_BIND[sym.bind] || sym.bind
+					sym.type  = sym.info & 0xf
+					sym.type  = SYMBOL_TYPE[sym.type] || sym.type
 					syms << sym
 				}
 
 				syms[1..-1].each { |sym|
-					case sym['bind']
+					case sym.bind
 					when 'GLOBAL'
-						case sym['shndx']
+						case sym.section
 						when 'UNDEF'
 							libname = opts['soname'] || opts['needed'].to_a.first || 'any'
-							(pgm.import[libname] ||= []) << sym['name']
+							(pgm.import[libname] ||= []) << sym.name
 						when 'ABS', 'COMMON'
 						#	puts "unhandled symbol #{sym.inspect}"	# used for relocs
 						else
-							addr = sym['value']
+							addr = sym.value
 							s = pgm.sections.find { |s| s.base <= addr and s.base + s.encoded.virtsize > addr }
 							if s
-								label = "exported_#{sym['name'].gsub(/\W/, '_')}"
+								label = "exported_#{sym.name.gsub(/\W/, '_')}"
 								s.encoded.export[label] = addr - s.base
-								pgm.export[sym['name']] = label
+								pgm.export[sym.name] = label
 							end
 						end
 					when 'LOCAL'
-						case sym['shndx']
+						case sym.section
 						when 'UNDEF', 'ABS', 'COMMON'
 						#	puts "unhandled symbol #{sym.inspect}"	# used for relocs
 						else
-							addr = sym['value']
+							addr = sym.value
 							s = pgm.sections.find { |s| s.base <= addr and s.base + s.encoded.virtsize > addr }
 							if s
-								label = "exported_#{sym['name'].gsub(/\W/, '_')}"
+								label = "exported_#{sym.name.gsub(/\W/, '_')}"
 								s.encoded.export[label] = addr - s.base
 							end
 						end
 					end
 				}
 
+			end
+
+			if pltgot = tag_val['PLTGOT']
+				type = DYNAMIC_TAG[tag_val['PLTREL']]
+				raise 'invalid pltgot relocation type' if type != 'REL' and type != 'RELA'
+				rels = pre_decode_relocs(pgm, syms, arch, tag_val['JMPREL'], tag_val[type + 'ENT'], tag_val['PLTRELSZ'], (type == 'RELA'))
+				rels.each { |r|
+					if r.type != 'JMP_SLOT'
+						puts "ignoring plt reloc #{r.inspect}"
+						next
+					end
+					off = r.offset
+					s = pgm.sections.find { |s| s.base <= off and s.base + s.encoded.virtsize > off }
+					if not s
+						puts "ignoring unmapped relocation #{r.inspect}"
+						next
+					end
+puts "reloc #{r.symbol.name} at #{off} (#{'%08x' % off})"
+					off -= s.base
+					s.encoded.reloc[off] = Metasm::Relocation.new(Expression[r.symbol.name], :u32, pgm.cpu.endianness)
+					# TODO backtrack, and rename some label upper 'thunk_to_imported_#{name}'
+				}
+
+				off = pltgot
+				s = pgm.sections.find { |s| s.base <= off and s.base + s.encoded.virtsize > off }
+puts "reloc dlresolv at #{off} (#{'%08x' % off})"
+				off -= s.base
+				s.encoded.reloc[off] = Metasm::Relocation.new(Expression['dl_resolv_in_got'], :u32, pgm.cpu.endianness)
+			end
+
+			if tag_val['REL']
+				raise 'invalid rel entsize' if tag_val['RELENT'] != 8
+				rels = pre_decode_relocs(pgm, syms, arch, tag_val['REL'], tag_val['RELENT'], tag_val['RELSZ'])
+				puts rels.map { |s| s.inspect }, ''
+			end
+
+			if tag_val['RELA']
+				raise 'invalid rela entsize' if tag_val['RELAENT'] != 12
+				rels = pre_decode_relocs(pgm, syms, arch, tag_val['RELA'], tag_val['RELAENT'], tag_val['RELASZ'], true)
+				puts rels.map { |s| s.inspect }, ''
 			end
 		end
 
@@ -943,6 +988,29 @@ EOPLTE
 			tags << [tag, val]
 		end
 		tags
+	end
+
+	def pre_decode_relocs(pgm, syms, arch, off, entsz, size, has_addend = false)
+		endianness = pgm.cpu.endianness
+		s = pgm.sections.find { |s| s.base <= off and s.base + s.encoded.virtsize > off }
+		edata = s.encoded
+		edata.ptr = off - s.base
+		padlen = (has_addend ? 12 : 8) - entsz
+		rels = []
+		syms ||= []
+		(size / entsz).times {
+			rel = Relocation.new
+			rel.offset = Expression.decode_imm(edata, :u32, endianness)
+			rel.info   = Expression.decode_imm(edata, :u32, endianness)
+			rel.addend = Expression.decode_imm(edata, :u32, endianness) if has_addend
+			rel.symbol = rel.info >> 8
+			rel.symbol = syms[rel.symbol] || rel.symbol
+			rel.type   = rel.info & 15
+			rel.type   = RELOCATION_TYPE[arch][rel.type] || rel.type
+			edata.ptr += padlen
+			rels << rel
+		}
+		rels
 	end
 
 	def pre_decode_header(edata)
@@ -986,7 +1054,8 @@ EOPLTE
 		shdr.each { |sh|
 			sh['flags'] = bits_to_hash(sh['flags'], SH_FLAGS)
 			sh['type']  = SH_TYPE[sh['type']] || sh['type']
-			sh['name'] = edata.data[stroff+sh['name_p']...edata.data.index(0, stroff+sh['name_p'])] rescue nil
+			off = stroff+sh['name_p']
+			sh['name'] = edata.data[off...edata.data.index(0, off)] rescue nil
 		}
 		shdr
 	end
