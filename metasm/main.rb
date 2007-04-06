@@ -154,8 +154,8 @@ class Expression
 	# alternative constructor: Expression[[:-, 42], :*, [1, :+, [4, :*, 7]]]
 	def self.[](l, op = nil, r = nil)
 		return l if l.kind_of? Expression and not op
-		l, op, r = nil, :+, l if not op
-		l, op, r = nil, l, op if not r
+		l, op, r = nil, :+, l if op == nil	# can find false in boolean expression
+		l, op, r = nil, l, op if r == nil
 		l = self[*l] if l.kind_of? Array
 		r = self[*r] if r.kind_of? Array
 		new(op, r, l)
@@ -177,7 +177,7 @@ class Expression
 	attr_accessor :op, :lexpr, :rexpr
 	# !! args reversed
 	def initialize(op, rexpr, lexpr)
-		raise 'invalid arg order' if not op.kind_of? Symbol
+		raise "Expression: invalid arg order: op #{op.inspect}, r l = #{rexpr.inspect} #{lexpr.inspect}" if not op.kind_of? Symbol
 		@op, @lexpr, @rexpr = op, lexpr, rexpr
 	end
 
@@ -235,12 +235,22 @@ class Expression
 		r = @rexpr.respond_to?(:reduce_rec) ? @rexpr.reduce_rec : @rexpr
 
 		v = 
-		if r.kind_of?(Numeric) and (not l or l.kind_of?(Numeric))
-			# calculate numerics
-			if l
+		if (r == true or r == false) and (l == nil or l == true or l == false) and (@op == :'!' or @op == :'&&' or @op == :'||')
+			if l != nil
 				case @op
 				when :'&&': l && r
 				when :'||': l || r
+				end
+			else
+				if @op == :'!'
+					!r
+				end
+			end
+
+		elsif r.kind_of?(Numeric) and (l == nil or l.kind_of?(Numeric))
+			# calculate numerics
+			if l
+				case @op
 				when :'!=': l != r
 				else l.send(@op, r)
 				end
