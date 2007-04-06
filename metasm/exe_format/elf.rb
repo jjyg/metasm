@@ -425,8 +425,10 @@ EOPLTE
 				end
 			}
 		}
+		if pltgot
 		pltsec.encode
 		plt.edata << pltsec.encoded
+		end
 
 
 		if opts.delete('unstripped')
