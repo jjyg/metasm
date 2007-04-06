@@ -9,8 +9,31 @@ class ELF < ExeFormat
 	VERSION = { 0 => 'INVALID', 1 => 'CURRENT' }
 	TYPE = { 0 => 'NONE', 1 => 'REL', 2 => 'EXEC', 3 => 'DYN', 4 => 'CORE',
 		0xff00 => 'LOPROC', 0xffff => 'HIPROC' }
-	MACHINE = { 0 => 'NONE', 1 => 'M32', 2 => 'SPARC', 3 => '386',
-		4 => '68K', 5 => '88K', 7 => '860', 8 => 'MIPS' }
+	MACHINE = {
+		 0 => 'NONE',   1 => 'M32',     2 => 'SPARC',   3 => '386',
+		 4 => '68K',    5 => '88K',     7 => '860',
+		 8 => 'MIPS',   9 => 'S370',   10 => 'MIPS_RS3_LE',
+		15 => 'PARISC',
+		17 => 'VPP500',18 => 'SPARC32PLUS', 19 => '960',
+		20 => 'PPC',   21 => 'PPC64',  22 => 'S390',
+		36 => 'V800',  37 => 'FR20',   38 => 'RH32',   39 => 'RCE',
+		40 => 'ARM',   41 => 'FAKE_ALPHA', 42 => 'SH', 43 => 'SPARCV9',
+		44 => 'TRICORE', 45 => 'ARC',  46 => 'H8_300', 47 => 'H8_300H',
+		48 => 'H8S',   49 => 'H8_500', 50 => 'IA_64',  51 => 'MIPS_X',
+		52 => 'COLDFIRE', 53 => '68HC12', 54 => 'MMA', 55 => 'PCP',
+		56 => 'NCPU',  57 => 'NDR1',   58 => 'STARCORE', 59 => 'ME16',
+		60 => 'ST100', 61 => 'TINYJ',  62 => 'X86_64', 63 => 'PDSP',
+		66 => 'FX66',  67 => 'ST9PLUS',
+		68 => 'ST7',   69 => '68HC16', 70 => '68HC11', 71 => '68HC08',
+		72 => '68HC05',73 => 'SVX',    74 => 'ST19',   75 => 'VAX',
+		76 => 'CRIS',  77 => 'JAVELIN',78 => 'FIREPATH', 79 => 'ZSP',
+		80 => 'MMIX',  81 => 'HUANY',  82 => 'PRISM',  83 => 'AVR',
+		84 => 'FR30',  85 => 'D10V',   86 => 'D30V',   87 => 'V850',
+		88 => 'M32R',  89 => 'MN10300',90 => 'MN10200',91 => 'PJ',
+		92 => 'OPENRISC', 93 => 'ARC_A5', 94 => 'XTENSA', 95 => 'NUM',
+		0x9026 => 'ALPHA'
+	}
+
 	FLAGS = {}
 
 	DYNAMIC_TAG = { 0 => 'NULL', 1 => 'NEEDED', 2 => 'PLTRELSZ', 3 =>
