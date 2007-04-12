@@ -344,10 +344,14 @@ class EncodedData
 	# +@export+  hash: key = name, value = offset
 	# +@virtsize+ total data virtual size (+Integer+)
 	def initialize(data = '', opts={})
-		@data = data
-		@reloc   = opts[:reloc]   || {}
-		@export  = opts[:export]  || {}
+		@data     = data
+		@reloc    = opts[:reloc]    || {}
+		@export   = opts[:export]   || {}
 		@virtsize = opts[:virtsize] || @data.length
+	end
+
+	def rawsize
+		[@data.length, *@reloc.map { |off, rel| off + Expression::INT_SIZE[rel.type]/8 } ].max
 	end
 
 	def dup
@@ -393,6 +397,27 @@ class EncodedData
 		@data << other.data
 		@virtsize += other.virtsize
 		self
+	end
+
+	# slice
+	def [](from, len=nil)
+		if not len and from.kind_of? Range
+			len = from.end - from.begin
+			len -= 1 if from.exclude_end?
+			from = from.begin
+		elsif not len
+			return @data[from]
+		end
+
+		ret = EncodedData.new @data[from, len]
+		ret.virtsize = len
+		@reloc.each { |o, r|
+			ret.reloc[o - from] = r if o >= from and o + Expression::INT_SIZE[rel.type]/8 < from+len
+		}
+		@export.each { |e, o|
+			ret.export[e] = o - from if o >= from and o <= from+len		# XXX include end ?
+		}
+		ret
 	end
 end
 end # module Metasm

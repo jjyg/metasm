@@ -3,7 +3,6 @@ require 'metasm/main'
 module Metasm
 class ExeFormat
 class << self
-	private
 	def int_from_hash(val, hash)
 		val.kind_of?(Integer) ? val : hash.index(val) or raise "unknown constant #{val.inspect}"
 	end

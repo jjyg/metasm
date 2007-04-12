@@ -372,6 +372,15 @@ class EncodedData
 			0
 		end
 	end
+
+	def read(len)
+		str = ''
+		if @ptr < @data.length
+			str << @data[@ptr, len]
+		end
+		@ptr += len
+		str.ljust(len, "\0")
+	end
 end
 
 class Expression
