@@ -4,14 +4,43 @@ require 'metasm/exe_format/coff'
 
 module Metasm
 class PE < ExeFormat
-class << self
-	def encode(program, opts={})
-		pehdr = EncodedData.new
-		if opts['pre_header']
-			pehdr << opts.delete('pre_header')
-		else
-			mzstubp = Program.new(Ia32.new(386))
-			mzstubp.parse <<EOMZSTUB
+	class Header
+		attr_accessor :coff_offset
+		def self.decode(pe)
+			hdr = new
+			pe.encoded.ptr = 0x3c
+			hdr.coff_offset = Expression.decode_imm(pe.encoded, :u32, :little) + 4
+			pe.encoded.ptr = hdr.coff_offset - 4
+			raise 'Invalid PE signature' if pe.read(4) != "PE\0\0"
+			hdr
+		end
+	end
+
+	def self.decode(str)
+		pe = new
+		pe.encoded = pe.coff.encoded = pe.mz.encoded = EncodedData.new << str
+		pe.decode_header
+		pe.coff.encoded.ptr = pe.header.coff_offset
+		pe.coff.decode_header
+		pe
+	end
+
+
+	attr_accessor :encoded
+	attr_reader :mz, :coff
+	attr_reader :header
+	def initialize
+		@coff = Coff.new
+		@mz = Mz.new
+	end
+
+	def decode_header
+		@header = Header.decode self
+	end
+
+	def encode_mz_header
+		mzstubp = Program.new(Ia32.new(386))
+		mzstubp.parse <<EOMZSTUB
 .mode 16
 .text
 _str	db "Win32 needed\r\n$"
@@ -26,24 +55,35 @@ start:
 	int  21h
 EOMZSTUB
 
-			mzstubp.encode
-			mzparts = MZ.pre_encode mzstubp
-			pehdr << mzparts.shift 
-			until mzparts.empty?
-				break if mzparts.first.virtsize + pehdr.virtsize > 0x3c
-				pehdr << mzparts.shift
-			end
-			pehdr.fill 0x40
-			until mzparts.empty?
-				pehdr << mzparts.shift
-			end
-			start = mzstubp.label_at pehdr, 0
-			pehdr.fixup pehdr.export.inject({}) { |binding, (name, offset)| binding.update name => Expression[start, :+, offset] }
-			pehdr.fill 0x40
-			pehdr.align_size 8
-			pehdr.data[0x3c, 4] = Expression.encode_immediate(pehdr.virtsize, :u32, program.cpu.endianness)
+		mzstubp.encode
+		mzhdr = EncodedData.new
+		mzparts = MZ.pre_encode mzstubp
+		mzhdr << mzparts.shift 
+		until mzparts.empty?
+			break if mzparts.first.virtsize + pehdr.virtsize > 0x3c
+			mzhdr << mzparts.shift
+		end
+		mzhdr.fill 0x40
+		until mzparts.empty?
+			mzhdr << mzparts.shift
+		end
+		start = mzstubp.label_at mzhdr, 0
+		mzhdr.fixup mzhdr.export.inject({}) { |binding, (name, offset)| binding.update name => Expression[start, :+, offset] }
+		mzhdr.align_size 8
+		mzhdr.data[0x3c, 4] = Expression.encode_immediate(mzhdr.virtsize, :u32, :little)
+		MZ.encode_fix_checksum mzhdr.data
+	end
+end
+end
 
-                	MZ.encode_fix_checksum pehdr.data
+
+		
+class << self
+	def encode(program, opts={})
+		pehdr = EncodedData.new
+		if opts['pre_header']
+			pehdr << opts.delete('pre_header')
+		else
 
 		end
 		pehdr.fill 0x40

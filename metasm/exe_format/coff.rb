@@ -3,7 +3,7 @@ require 'metasm/encode'
 
 module Metasm
 class COFF < ExeFormat
-	Characteristic_bits = {
+	CHARACTERISTIC_BITS = {
 		0x0001 => 'RELOCS_STRIPPED',    0x0002 => 'EXECUTABLE_IMAGE',
 		0x0004 => 'LINE_NUMS_STRIPPED', 0x0008 => 'LOCAL_SYMS_STRIPPED',
 		0x0010 => 'AGGRESSIVE_WS_TRIM', 0x0020 => 'LARGE_ADDRESS_AWARE',
@@ -14,7 +14,7 @@ class COFF < ExeFormat
 		0x4000 => 'UP_SYSTEM_ONLY',     0x8000 => 'BYTES_REVERSED_HI'
 	}
 
-	Machines = {
+	MACHINE = {
 		0x0   => 'UNKNOWN',   0x184 => 'ALPHA',   0x1c0 => 'ARM',
 		0x1d3 => 'AM33',      0x8664=> 'AMD64',   0xebc => 'EBC',
 		0x9041=> 'M32R',      0x1f1 => 'POWERPCFP',
@@ -26,9 +26,9 @@ class COFF < ExeFormat
 		0x1c2 => 'THUMB',     0x169 => 'WCEMIPSV2'
 	}
 
-	Signature = { 0x10b => 'PE', 0x20b => 'PE+' }
+	SIGNATURE = { 0x10b => 'PE', 0x20b => 'PE+' }
 
-	Subsystem = {
+	SUBSYSTEM = {
 		0 => 'UNKNOWN',     1 => 'NATIVE',    2 => 'WINDOWS_GUI',
 		3 => 'WINDOWS_CUI', 5 => 'OS/2_CUI',  7 => 'POSIX_CUI',
 		8 => 'WIN9X_DRIVER', 9 => 'WINDOWS_CE_GUI',
@@ -37,17 +37,17 @@ class COFF < ExeFormat
 		13 => 'EFI_ROM', 14 => 'XBOX'
 	}
 
-	Dll_Characteristic_bits = {
+	DLL_CHARACTERISTIC_BITS = {
 		0x40 => 'DYNAMIC_BASE', 0x80 => 'FORCE_INTEGRITY', 0x100 => 'NX_COMPAT',
 		0x200 => 'NO_ISOLATION', 0x400 => 'NO_SEH', 0x800 => 'NO_BIND',
 		0x2000 => 'WDM_DRIVER', 0x8000 => 'TERMINAL_SERVER_AWARE'
 	}
 	
-	Directories = %w[export_table import_table resource_table exception_table certificate_table
+	DIRECTORIES = %w[export_table import_table resource_table exception_table certificate_table
 			  base_relocation_table debug architecture global_ptr tls_table load_config
 			  bound_import iat delay_import com_runtime reserved]
 
-	Section_Characteristic_bits = {
+	SECTION_CHARACTERISTIC_BITS = {
 		0x20 => 'CONTAINS_CODE', 0x40 => 'CONTAINS_DATA', 0x80 => 'CONTAINS_UDATA',
 		0x100 => 'LNK_OTHER', 0x200 => 'LNK_INFO', 0x800 => 'LNK_REMOVE',
 		0x1000 => 'LNK_COMDAT', 0x8000 => 'GPREL',
@@ -68,7 +68,7 @@ class COFF < ExeFormat
 	# the reloc count must be set to 0xffff, and the real reloc count
 	# is the VA of the first relocation
 
-	OrdinalRegex = /^Ordinal_(\d+)$/
+	ORDINAL_REGEX = /^Ordinal_(\d+)$/
 
 	class Section
 		attr_accessor :name, :rawoffset, :align, :base,
@@ -354,7 +354,7 @@ class << self
 				end
 
 				edata['iat'].export[importname_label] = edata['iat'].virtsize
-				if importname =~ OrdinalRegex
+				if importname =~ ORDINAL_REGEX
 					# import by ordinal: set high bit to 1 and encode ordinal in low 16bits
 					ordnumber = $1.to_i
 					ordnumber |= 1 << ((pe_format == 'PE+') ? 63 : 31)
@@ -425,7 +425,7 @@ class << self
 				end
 
 				edata['iat'].export[importname_label] = edata['iat'].virtsize
-				if importname =~ OrdinalRegex
+				if importname =~ ORDINAL_REGEX
 					# import by ordinal: set high bit to 1 and encode ordinal in low 16bits
 					ordnumber = $1.to_i
 					ordnumber |= 1 << ((pe_format == 'PE+') ? 63 : 31)
@@ -445,7 +445,7 @@ class << self
 		7.times { encode['idata', :u32, 0] }
 
 		# commit
-		s = Section.new '.didata'
+		s = Section.new '.idata'
 		s.align = 8
 		s.edata = EncodedData.new
 		s.characteristics = %w[MEM_READ MEM_WRITE]
@@ -551,7 +551,7 @@ class << self
 			when /ia32/i: 'I386'
 			else 'UNKNOWN'
 			end
-		encode[:u16, Machines.index(tmp)]
+		encode[:u16, MACHINE.index(tmp)]
 		encode[:u16, pe_sections.length]
 		encode[:u32, opts.delete('timestamp') || Time.now.to_i]
 		encode[:u32, 0]	# raw offset to symbol table
@@ -570,14 +570,14 @@ class << self
 			tmp << "x#{program.cpu.size}BIT_MACHINE"	# XXX EM64T
 			tmp << 'RELOCS_STRIPPED' if not directories['base_relocation_table']
 		end
-		encode[:u16, tmp.inject(0) { |bits, charac|  bits | Characteristic_bits.index(charac) }]
+		encode[:u16, tmp.inject(0) { |bits, charac|  bits | CHARACTERISTIC_BITS.index(charac) }]
 
 
 		# Optionnal header
 		header.export[start_optheader] = header.virtsize
 
 		# standard fields
-		encode[:u16, Signature.index(pe_format)]
+		encode[:u16, SIGNATURE.index(pe_format)]
 		encode[:u8,  opts.delete('linker_major_version') || 1]
 		encode[:u8,  opts.delete('linker_minor_version') || 0]
 
@@ -636,13 +636,13 @@ class << self
 			when 'kmod': 'NATIVE'
 			else 'UNKNOWN'
 			end
-		encode[:u16, Subsystem.index(tmp)]
+		encode[:u16, SUBSYSTEM.index(tmp)]
 
 		if not tmp = opts.delete('dllcharacteristics')
 			tmp = []
 			tmp << 'DYNAMIC_BASE' if not directories['base_relocation_table']
 		end
-		encode[:u16, tmp.inject(0) { |int, char|  int | Dll_Characteristic_bits.index(char) }]
+		encode[:u16, tmp.inject(0) { |int, char|  int | DLL_CHARACTERISTIC_BITS.index(char) }]
 
 		encode[vlen, opts.delete('size_of_stack_reserve') || 0x100000]
 		encode[vlen, opts.delete('size_of_stack_commit')  || 0x1000]
@@ -653,15 +653,15 @@ class << self
 		if directories.empty?
 			encode[:u32, 0]
 		else
-			tmp = directories.keys - Directories
+			tmp = directories.keys - DIRECTORIES
 			raise EncodeError, "Unknown directories name #{tmp.inspect}" unless tmp.empty?
 
 			#tmp = directories.keys.map { |dir| Directories.index(dir) }.max
-			tmp = Directories.length - 1
+			tmp = DIRECTORIES.length - 1
 			encode[:u32, tmp+1]
 			
 			# Directories
-			Directories[0..tmp].each { |dir|
+			DIRECTORIES[0..tmp].each { |dir|
 				if tmp = directories[dir]
 					encode[:u32, rva[tmp[0]]]
 					encode[:u32, tmp[1]]
@@ -689,7 +689,7 @@ class << self
 			encode[:u32, 0]	# lineno rva
 			encode[:u16, 0]	# relocs nr
 			encode[:u16, 0]	# lineno nr
-			tmp = s.characteristics.inject(0) { |int, char|  int | Section_Characteristic_bits.index(char) }
+			tmp = s.characteristics.inject(0) { |int, char|  int | SECTION_CHARACTERISTIC_BITS.index(char) }
 			encode[:u32, tmp]
 		}
 
@@ -704,7 +704,7 @@ class << self
 	end
 
 	module Resource
-	Type = {
+	TYPE = {
 		1 => 'CURSOR', 2 => 'BITMAP', 3 => 'ICON', 4 => 'MENU',
 		5 => 'DIALOG', 6 => 'STRING', 7 => 'FONTDIR', 8 => 'FONT',
 		9 => 'ACCELERATOR', 10 => 'RCADATA', 11 => 'MESSAGETABLE',
@@ -714,7 +714,7 @@ class << self
 		24 => 'MANIFEST' # ?
 	}
 
-	Accelerator_bits = {
+	ACCELERATOR_BITS = {
 		1 => 'VIRTKEY', 2 => 'NOINVERT', 4 => 'SHIFT', 8 => 'CTRL',
 		16 => 'ALT', 128 => 'LAST'
 	}
