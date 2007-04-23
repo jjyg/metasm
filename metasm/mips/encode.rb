@@ -27,7 +27,7 @@ class MIPS
 				val, mask, shift = Expression[arg, :>>, 2], @fields_mask[sym], @fields_shift[sym]
 			end
 		}
-		# F%SK&*cks PE base relocation detection
+		# XXX detect coff relocs
 		Expression[base, :+, [[val, :&, mask], :<<, shift]].encode(:u32, @endianness)
 	end
 end

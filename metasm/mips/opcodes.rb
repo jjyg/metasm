@@ -1,14 +1,15 @@
 require 'metasm/mips/main'
 
+# TODO coprocessors, floating point, 64bits, thumb mode
+
 module Metasm
 
 class MIPS
 	private
 	def addop(name, bin, *args)
-		o = Opcode.new(self, name)
+		o = Opcode.new name
 
 		o.bin = bin
-		#o.args.concat(args & @valid_args)
 		o.args.concat(args & @fields_mask.keys)
 		(args & @valid_props).each { |p| o.props[p] = true }
 
@@ -20,10 +21,14 @@ class MIPS
 	end
 
 	def init_mips32_obsolete
-		addop 'beql', 0b010100 << 26, :rt,   :rs, :i16, :modip	# == , exec delay slot only if jump taken
-		addop 'bnel', 0b010101 << 26, :rt,   :rs, :i16, :modip	# !=
-		addop 'blezl',0b010110 << 26, :rt_z, :rs, :i16, :modip	# <= 0
-		addop 'bgtzl',0b010111 << 26, :rt_z, :rs, :i16, :modip	# > 0
+		addop 'beql', 0b010100 << 26, :rt,   :rs, :i16, :setip	# == , exec delay slot only if jump taken
+		addop 'bnel', 0b010101 << 26, :rt,   :rs, :i16, :setip	# !=
+		addop 'blezl',0b010110 << 26, :rt_z, :rs, :i16, :setip	# <= 0
+		addop 'bgtzl',0b010111 << 26, :rt_z, :rs, :i16, :setip	# > 0
+		addop 'bltzl',1 << 26 | 0b00010 << 16, :rs, :i16, :setip
+		addop 'bgezl',1 << 26 | 0b00011 << 16, :rs, :i16, :setip
+		addop 'bltzall', 1 << 26 | 0b10010 << 16, :rs, :i16, :setip
+		addop 'bgezall', 1 << 26 | 0b10011 << 16, :rs, :i16, :setip
 	end
 
 	def init_mips32_reserved
@@ -41,10 +46,10 @@ class MIPS
 	def init_mips32
 		@fields_mask.update :rs => 0x1f, :rt => 0x1f, :rd => 0x1f, :sa => 0x1f,
 			:i16 => 0xffff, :i26 => 0x3ffffff, :rs_i16 => 0x3e0ffff, :it => 0x1f,
-			:ft => 0x1f, :i32 => 0
+			:ft => 0x1f, :idm1 => 0x1f, :idb => 0x1f #, :i32 => 0
 		@fields_shift.update :rs => 21, :rt => 16, :rd => 11, :sa => 6,
 			:i16 => 0, :i26 => 0, :rs_i16 => 0, :it => 16,
-			:ft => 16, :i32 => 0
+			:ft => 16, :idm1 => 11, :idb => 11 #, :i32 => 0
 
 		init_mips32_obsolete
 		init_mips32_reserved
@@ -61,12 +66,12 @@ class MIPS
 		addop 'ori',  0b001101 << 26, :rt, :rs, :i16		# or
 		addop 'xori', 0b001110 << 26, :rt, :rs, :i16		# xor
 		addop 'lui',  0b001111 << 26, :rt, :i16			# load upper
-		addop 'li',   0b001111 << 26, :rt, :i32			# pseudoinstruction
+#		addop 'li',   0b001111 << 26, :rt, :i32			# pseudoinstruction
 
-		addop 'beq',  0b000100 << 26, :rt,   :rs, :i16, :modip	# ==
-		addop 'bne',  0b000101 << 26, :rt,   :rs, :i16, :modip	# !=
-		addop 'blez', 0b000110 << 26, :rs, :i16, :modip		# <= 0
-		addop 'bgtz', 0b000111 << 26, :rs, :i16, :modip		# > 0
+		addop 'beq',  0b000100 << 26, :rt, :rs, :i16, :setip, :saveip	# ==
+		addop 'bne',  0b000101 << 26, :rt, :rs, :i16, :setip, :saveip	# !=
+		addop 'blez', 0b000110 << 26, :rs, :i16, :setip, :saveip		# <= 0
+		addop 'bgtz', 0b000111 << 26, :rs, :i16, :setip, :saveip		# > 0
 
 		addop 'lb',   0b100000 << 26, :rt, :rs_i16		# load byte	rs <- [rt+i]
 		addop 'lh',   0b100001 << 26, :rt, :rs_i16		# load halfword
@@ -108,11 +113,9 @@ class MIPS
 		addop 'movf', 0b000001, :rd, :rs, :cc
 		addop 'movt', 0b000001 | (1<<16), :rd, :rs, :cc
 		addop 'srl',  0b000010, :rd, :rt, :sa
-		addop 'rotr', 0b000010 | (1<<21), :rd, :rt, :sa
 		addop 'sra',  0b000011, :rd, :rt, :sa
 		addop 'sllv', 0b000100, :rd, :rt, :rs
 		addop 'srlv', 0b000110, :rd, :rt, :rs
-		addop 'rotrv',0b000110 | (1<<6), :rd, :rt, :rs
 		addop 'srav', 0b000111, :rd, :rt, :rs
 		
 		addop 'jr',   0b001000, :rs, :setip			# hint field ?
@@ -156,19 +159,54 @@ class MIPS
 		addop 'teq',  0b110100, :rs, :rt
 		addop 'tne',  0b110110, :rs, :rt
 
+
+		# regimm
+		addop 'bltz', (1<<26) | (0b00000<<16), :rs, :i16, :setip, :saveip
+		addop 'bgez', (1<<26) | (0b00001<<16), :rs, :i16, :setip, :saveip
+		addop 'tgei', (1<<26) | (0b01000<<16), :rs, :i16, :setip
+		addop 'tgfiu',(1<<26) | (0b01001<<16), :rs, :i16, :setip
+		addop 'tlti', (1<<26) | (0b01010<<16), :rs, :i16, :setip
+		addop 'tltiu',(1<<26) | (0b01011<<16), :rs, :i16, :setip
+		addop 'teqi', (1<<26) | (0b01100<<16), :rs, :i16, :setip
+		addop 'tnei', (1<<26) | (0b01110<<16), :rs, :i16, :setip
+		addop 'bltzal', (1<<26) | (0b10000<<16), :rs, :i16, :setip, :saveip
+		addop 'bgezal', (1<<26) | (0b10001<<16), :rs, :i16, :setip, :saveip
+
+
+		# special2
+		addop 'madd', (0b011100<<26) | 0b000000, :rs, :rt
+		addop 'maddu',(0b011100<<26) | 0b000001, :rs, :rt
+		addop 'mul',  (0b011100<<26) | 0b000010, :rd, :rs, :rt
+		addop 'msub', (0b011100<<26) | 0b000100, :rs, :rt
+		addop 'msubu',(0b011100<<26) | 0b000101, :rs, :rt
+		addop 'clz',  (0b011100<<26) | 0b100000, :rd, :rs, :rt	# must have rs == rt
+		addop 'clo',  (0b011100<<26) | 0b100001, :rd, :rs, :rt	# must have rs == rt
+		addop 'sdbbp',(0b011100<<26) | 0b111111, :i20
+
+
+
 	end
 
 	def init_mips32r2
 		init_mips32
+
+		addop 'rotr', 0b000010 | (1<<21), :rd, :rt, :sa
+		addop 'rotrv',0b000110 | (1<<6), :rd, :rt, :rs
+
+		addop 'synci',(1<<26) | (0b11111<<16), :rs_i16
+
+		# special3
+		addop 'ext', (0b011111<<26) | 0b000000, :rt, :rs, :sa, :idm1
+		addop 'ins', (0b011111<<26) | 0b000100, :rt, :rs, :sa, :idb
+		addop 'rdhwr',(0b011111<<26)| 0b111011, :rt, :rd
+		addop 'wsbh',(0b011111<<26) | (0b00010<<6) | 0b100000, :rd, :rt
+		addop 'seb', (0b011111<<26) | (0b10000<<6) | 0b100000, :rd, :rt
+		addop 'seh', (0b011111<<26) | (0b11000<<6) | 0b100000, :rd, :rt
+
 	end
 end
 end
 __END__
-	def macro_addop_regimm(name, bin, field2, *aprops)
-		flds = [ :rs, field2 ]
-		addop name, :regimm, bin, "rs, #{field2}", flds, *aprops
-	end
-	
 	def macro_addop_cop1(name, bin, *aprops)
 		flds = [ :rt, :fs ] 
 		addop name, :cop1, bin, 'rt, fs', flds, *aprops
@@ -188,44 +226,6 @@ __END__
 					:stype => [0x1F, 6, :imm ],
 					:code => [0xFFFFF, 6, :code ],
 					:sel => [3, 0, :sel ]})
-		
-
-		# ---------------------------------------------------------------
-		# REGIMM opcode encoding of function field
-		# ---------------------------------------------------------------
-
-		macro_addop_regimm 'bltz',   0b00000, :off
-		macro_addop_regimm 'bgez',   0b00001, :off
-		macro_addop_regimm 'btlzl',  0b00010, :off
-		macro_addop_regimm 'bgezl',  0b00011, :off
-		
-		macro_addop_regimm 'tgei',   0b01000, :imm
-		macro_addop_regimm 'tgeiu',  0b01001, :imm
-		macro_addop_regimm 'tlti',   0b01010, :imm
-		macro_addop_regimm 'tltiu',  0b01011, :imm
-		macro_addop_regimm 'teqi',   0b01100, :imm
-		macro_addop_regimm 'tnei',   0b01110, :imm
-
-		macro_addop_regimm 'bltzal',  0b10000, :off
-		macro_addop_regimm 'bgezal',  0b10001, :off
-		macro_addop_regimm 'bltzall', 0b10010, :off
-		macro_addop_regimm 'bgezall', 0b10011, :off
-
-		
-		# ---------------------------------------------------------------
-		# SPECIAL2 opcode encoding of function field
-		# ---------------------------------------------------------------
-
-		macro_addop_special2 'madd',  0b000000, 'rs, rt', :rd_zero
-		macro_addop_special2 'maddu', 0b000001, 'rs, rt', :rd_zero
-		macro_addop_special2 'mul',   0b000010, 'rd, rs, rt'
-		macro_addop_special2 'msub',  0b000100, 'rs, rt', :rd_zero
-		macro_addop_special2 'msubu', 0b000101, 'rs, rt', :rd_zero
-
-		macro_addop_special2 'clz',   0b100000, 'rd, rs'
-		macro_addop_special2 'clo',   0b100001, 'rd, rs'
-
-		addop 'sdbbp', :special2, 0b111111, 'rs, rt', [ :code ]
 
 		# ---------------------------------------------------------------
 		# COP0, field rs
