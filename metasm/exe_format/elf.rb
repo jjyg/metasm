@@ -93,8 +93,6 @@ class ELF < ExeFormat
 	end
 	class Relocation
 		attr_accessor :offset, :type, :symbol, :info, :addend
-	#	def info ; (@symbol << 8) + @type end
-	#	def info=(i) @symbol = i >> 8 ; @type = i & 0xff end
 	end
 	class Tag
 		attr_accessor :type, :values

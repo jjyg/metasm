@@ -16,41 +16,37 @@ class ELF
 			h.ident = elf.encoded.read 16
 
 			h.mag = h.ident[0, 4]
-			raise 'invalid ELF signature' if h.mag != "\x7fELF"
+			raise "E: ELF: invalid ELF signature #{h.mag.inspect}" if h.mag != "\x7fELF"
 
 			case h.ident[4]
 			when 1: h.e_class = 32
-			when 2: h.e_class = 64
+			#when 2: h.e_class = 64
+			else raise "E: ELF: unsupported class #{h.ident[4]}"
 			end
 
 			case h.ident[5]
 			when 1: h.endianness = :little
 			when 2: h.endianness = :big
-			else raise 'invalid ELF endianness'
+			else raise "E: ELF: unsupported endianness #{h.ident[5]}"
 			end
 
-			raise 'unsupported ELF version' if h.ident[6] != 1
+			raise "E: ELF: unsupported ELF version #{h.ident[6]}" if h.ident[6] != 1
 
 			yield h		# set up elf.header.endianness+class, for elf.decode_word to work
 
-			case h.e_class
-			when 32
-				h.type      = elf.decode_half
-				h.machine   = elf.decode_half
-				h.version   = elf.decode_word
-				h.entry     = elf.decode_addr
-				h.phoff     = elf.decode_off
-				h.shoff     = elf.decode_off
-				h.flags     = elf.decode_word
-				h.ehsize    = elf.decode_half
-				h.phentsize = elf.decode_half
-				h.phnum     = elf.decode_half
-				h.shentsize = elf.decode_half
-				h.shnum     = elf.decode_half
-				h.shstrndx  = elf.decode_half
-			else
-				raise 'only ELF32 supported'
-			end
+			h.type      = elf.decode_half
+			h.machine   = elf.decode_half
+			h.version   = elf.decode_word
+			h.entry     = elf.decode_addr
+			h.phoff     = elf.decode_off
+			h.shoff     = elf.decode_off
+			h.flags     = elf.decode_word
+			h.ehsize    = elf.decode_half
+			h.phentsize = elf.decode_half
+			h.phnum     = elf.decode_half
+			h.shentsize = elf.decode_half
+			h.shnum     = elf.decode_half
+			h.shstrndx  = elf.decode_half
 
 			h.type    =    TYPE[h.type]    || h.type
 			h.machine = MACHINE[h.machine] || h.machine
@@ -124,6 +120,22 @@ class ELF
 		end
 	end
 
+	class Relocation
+		def self.decode(elf, has_addend = false)
+			r = new
+
+			r.offset = elf.decode_addr
+			r.info   = elf.decode_word
+			r.addend = elf.decode_sword if has_addend
+
+			r.symbol = r.info >> 8
+			r.symbol = nil if r.symbol == 0
+			r.type = r.info & 255
+			r.type = RELOCATION_TYPE.fetch(elf.header.machine, {})[r.type] || r.type
+
+			r
+		end
+	end
 
 	attr_accessor :encoded
 	attr_reader :header, :program_header, :section_header, :segments, :sections, :tags, :symbols, :relocs
@@ -148,7 +160,7 @@ class ELF
 		if @header.shoff == 0
 			@section_header = nil
 		else
-			raise 'unsupported section header' if @header.shentsize != 40
+			raise "E: ELF: unsupported section header: shentsize = #{@header.shentsize}" if @header.shentsize != 40
 			@encoded.ptr = @header.shoff
 			@section_header = []
 			@header.shnum.times {
@@ -171,7 +183,7 @@ class ELF
 		if @header.phoff == 0
 			@program_header = nil
 		else
-			raise 'unsupported program header' if @header.phentsize != 32
+			raise "E: ELF: unsupported program header: phentsize = #{@header.phentsize}" if @header.phentsize != 32
 			@encoded.ptr = @header.phoff
 			@program_header = []
 			@header.phnum.times {
@@ -223,61 +235,184 @@ class ELF
 	end
 
 	def decode_segments_symbols
-		if @tags['STRTAB'] and @tags['SYMTAB'] and @tags['HASH'] and
-		   str_o = addr_to_off(@tags['STRTAB'].first) and
-		   sym_o = addr_to_off(@tags['SYMTAB'].first) and
-		   hash_o = addr_to_off(@tags['HASH'].first)
-			@encoded.ptr = hash_o
-			hash_bucket_len = decode_word
-			sym_count = decode_word
-
-			hash_bucket = [] ; hash_bucket_len.times { hash_bucket << decode_word }
-			hash_table = [] ; sym_count.times { hash_table << decode_word }
+		return unless @tags['STRTAB'] and @tags['SYMTAB'] and @tags['HASH'] and
+				str_o = addr_to_off(@tags['STRTAB'].first) and
+				sym_o = addr_to_off(@tags['SYMTAB'].first) and
+				hash_o = addr_to_off(@tags['HASH'].first)
 			
-			@symbols = []
-			@encoded.ptr = sym_o
-			sym_count.times {
-				@symbols << Symbol.decode(self)
-			}
+		raise "E: ELF: unsupported symbol entry size: #{@tags['SYMENT'].inspect}" if @tags['SYMENT'].first != 16	# XXX sizeof(elf_word) + sizeof ...
+		
+		@encoded.ptr = hash_o
+		hash_bucket_len = decode_word
+		sym_count = decode_word
 
-			@encoded.ptr = str_o
-			read_strz = proc { |off| @encoded.data[str_o+off ... @encoded.data.index(0, str_o+off)] }
-			@symbols.each { |s|
-				next if s.name_p == 0
-				s.name = read_strz[s.name_p]
-			}
+		hash_bucket = [] ; hash_bucket_len.times { hash_bucket << decode_word }
+		hash_table = [] ; sym_count.times { hash_table << decode_word }
+			
+		@symbols = []
+		@encoded.ptr = sym_o
+		sym_count.times {
+			@symbols << Symbol.decode(self)
+		}
 
-			# check hash table consistency
-			@symbols.each { |s|
-				next if not s.name or s.bind != 'GLOBAL'
-				h = ELF.hash_symbol_name(s.name)
-				off = hash_bucket[h % hash_bucket_len]
-				found = false
-				sym_count.times {	# to avoid DoS
-					break if off == 0
-					if ss = @symbols[off] and ss.name == s.name
-						found = true
-						break
-					end
-					off = hash_table[off]
-				}
-				if not found
-					puts "W: Elf: Symbol #{s.name.inspect} not found in hash table"
+		@encoded.ptr = str_o
+		read_strz = proc { |off| @encoded.data[str_o+off ... @encoded.data.index(0, str_o+off)] }
+		@symbols.each { |s|
+			next if s.name_p == 0
+			s.name = read_strz[s.name_p]
+		}
+
+		# check hash table consistency
+		@symbols.each { |s|
+			next if not s.name or s.bind != 'GLOBAL'
+			h = ELF.hash_symbol_name(s.name)
+			off = hash_bucket[h % hash_bucket_len]
+			found = false
+			sym_count.times {	# to avoid DoS
+				break if off == 0
+				if ss = @symbols[off] and ss.name == s.name
+					found = true
+					break
 				end
+				off = hash_table[off]
 			}
-		end
+			if not found
+				puts "W: Elf: Symbol #{s.name.inspect} not found in hash table"
+			end
+		}
+
+		# use symbols as segments' edata exports
+		return if not curs = @segments.first
+		@symbols.each { |s|
+			next if not s.name or s.shndx == 'UNDEF' or not %w[NOTYPE OBJECT FUNC].include?(s.type)
+			addr = s.value
+			# find segment
+			if curs.header.vaddr > addr or curs.header.vaddr + curs.header.memsz <= addr
+				curs = @segments.find { |seg| seg.header.vaddr <= addr and seg.header.vaddr + seg.header.memsz > addr }
+				if not curs and not curs = @segments.find { |seg| seg.header.vaddr <= addr and seg.header.vaddr + seg.header.memsz >= addr }	# include end
+					puts "W: Elf: no segment for symbol #{s.name.inspect} (#{s.inspect})"
+					curs = @segments.first
+					next
+				end
+			end
+			curs.encoded.export[s.name] = addr - curs.header.vaddr
+		}
 	end
 
 	def decode_segments_relocs
+		# single table in exec/dyn
 		@relocs = []
+
+		if @tags['REL'] and rel_o = addr_to_off(@tags['REL'].first)
+			raise "E: ELF: unsupported rel entry size #{@tags['RELENT'].inspect}" if @tags['RELENT'].first != 8
+
+			@encoded.ptr = rel_o
+			(@tags['RELSZ'].first / @tags['RELENT'].first).times {
+				@relocs << Relocation.decode(self)
+			}
+		end
+
+		if @tags['RELA'] and rel_o = addr_to_off(@tags['RELA'].first)
+			raise "E: ELF: unsupported rela entry size #{@tags['RELAENT'].inspect}" if @tags['RELAENT'].first != 12
+
+			@encoded.ptr = rel_o
+			(@tags['RELASZ'].first / @tags['RELAENT'].first).times {
+				@relocs << Relocation.decode(self, true)
+			}
+		end
+
+		if @tags['JMPREL'] and rel_o = addr_to_off(@tags['JMPREL'].first)
+			reltype = DYNAMIC_TAG[@tags['PLTREL'].first]
+			raise "E: ELF: unsupported plt rel type #{reltype} (#{@tags['JMPREL'].inspect})" unless reltype == 'REL' or reltype == 'RELA'
+
+			@encoded.ptr = rel_o
+			(@tags[reltype+'SZ'].first / @tags[reltype+'ENT'].first).times {
+				@relocs << Relocation.decode(self, (reltype == 'RELA'))
+			}
+		end
+
+		@relocs.each { |r| r.symbol = @symbols[r.symbol] || r.symbol if r.symbol } if @symbols
+
+		# set segments encoded relocs
+		return if not curs = @segments.first
+		@relocs.sort_by { |r| r.offset }.each { |r|
+			addr = r.offset
+			next if addr == 0
+			if curs.header.vaddr > addr or curs.header.vaddr + curs.header.memsz <= addr
+				curs = @segments.find { |seg| seg.header.vaddr <= addr and seg.header.vaddr + seg.header.memsz > addr }
+				if not curs
+					puts "W: Elf: no segment for reloc (#{r.inspect})"
+					curs = @segments.first
+					next
+				end
+			end
+			arch_decode_reloc r, curs
+		}
+	end
+
+	def arch_decode_reloc(reloc, curseg)
+		case @header.machine
+		when '386'
+			case reloc.type
+			when 'NONE', 'COPY', 'GLOB_DAT', 'JMP_SLOT'
+			else
+				if not addend = reloc.addend
+					curseg.encoded.ptr = reloc.offset - curseg.header.vaddr
+					addend = Expression.decode_imm(curseg.encoded, :u32, @header.endianness)	# XXX what if already reloced ?
+				end
+			end
+
+			target = \
+			case reloc.type
+			when 'NONE'
+			when 'RELATIVE'
+				base = @segments.map { |s| s.header.vaddr }.min & 0xffff_f000
+				target = base + addend
+
+				s = @segments.find { |s| s.header.vaddr <= target and s.header.vaddr + s.header.memsz > target }
+				if not s
+					puts "W: Elf: relative reloc outside of mmaped space #{reloc.inspect}"
+					return
+				end
+
+				if not label = s.encoded.export.invert[target - s.header.vaddr]
+					s.encoded.export[label = 'xref_%x' % target] = target - s.header.vaddr
+				end
+				Expression[label]
+
+			when '32'
+				if not reloc.symbol or not reloc.symbol.name
+					puts "W: Elf: invalid 32 reloc: no symbol #{reloc.inspect}"
+					return
+				end
+				if addend != 0
+					Expression[reloc.symbol.name, :+, addend]
+				else
+					Expression[reloc.symbol.name]
+				end
+
+			when 'GLOB_DAT'
+				Expression[reloc.symbol.name]
+
+			when 'JMP_SLOT'	# XXX lazy !
+				Expression[reloc.symbol.name]
+
+			when 'COPY'
+				Expression[reloc.symbol.name]	# indirected ?
+
+			else puts "W: Elf: unhandled i386 reloc #{reloc.inspect}"
+			end
+
+			curseg.encoded.reloc[reloc.offset - curseg.header.vaddr] = Metasm::Relocation.new(target, :u32, @header.endianness) if target
+		end
 	end
 
 	def segments_to_program
-		decode_segments
+		decode_segments if not @segments
 		case @header.machine
 		when '386': cpu = Ia32.new	# check @header.e_class for 64bits
 		else
-			puts "W: Elf: Unknown CPU #{@header.machine}"
+			puts "W: Elf: unsupported CPU #{@header.machine}"
 			cpu = UnknownCpu.new(@header.e_class, @header.endianness)
 		end
 
@@ -291,8 +426,8 @@ class ELF
 			end
 			i = 0 ; name = "#{bname}_#{i+=1}" while pgm.sections.find { |sec| sec.name == name }
 
-			sec = Section.new pgm, name
-			sec.flags # TODO
+			sec = Metasm::Section.new pgm, name
+			sec.mprot = { 'X' => :x, 'W' => :w, 'R' => :r }.values_at(s.header.flags).compact
 			sec.base = s.header.vaddr
 			sec.encoded << s.encoded
 
