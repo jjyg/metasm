@@ -482,9 +482,20 @@ class Program
 				when Lexer::QString
 					filename = filename.text
 				when :<		# '#include <foobar>'
-					filename = readtok_nocomment
-					raise self, 'bad include statement' unless readtok_nocomment == :> # and readtok_nocomment == :eol
+						# XXX '#include <Program Files/sux>'   <- space + :'/' operator...
+					filename = ''
+					while (curtok = readtok_nocomment) != :>
+						case curtok
+						when String
+							filename << curtok
+						when :'.', :/, :-	# XXX need exhaustive list !
+							filename << curtok.to_s
+						else
+							raise self, "invalid filename to include : unexpected #{curtok.inspect}"
+						end
+					end
 
+					@path_include ||= { 'include' => ['/usr/include/'], 'include_c' => ['/usr/include/'] }
 					f = @path_include[tok].map { |dir| File.join(dir, filename) }.find { |f| File.exist? f }
 					raise self, "unable to find <#{filename}> to include" if not f
 					filename = f
@@ -508,7 +519,7 @@ class Program
 				return nil if discard
 
 				tok = readtok_nocomment
-				raise self, "macro by #define not implemented yet" if nexttok == :'('	# TODO
+#				raise self, "macro by #define not implemented yet" if nexttok == :'('	# TODO # XXX XXX '#define FOO (BAR+4)'
 				raise self, "redefinition of #{tok}" if @parser_macro[tok]
 				m = @parser_macro[tok] = Macro.new(tok)
 				while tok = readtok and tok != :eol
