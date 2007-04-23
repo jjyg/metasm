@@ -24,7 +24,8 @@ nop
 
 toto:
 jr r31
-ldc1 fp12, 28(r4)
+;ldc1 fp12, 28(r4)
+nop
 
 .import 'foobar' 'baz'
 EOS

@@ -10,8 +10,8 @@ prog = Metasm::Program.new cpu
 prog.parse DATA.read
 
 prog.encode
-PT_GNU_STACK = 0x6474e551
-data = Metasm::ELF.encode prog, 'unstripped' => true, 'elf_interp' => '/lib/ld-linux.so.2', 'additional_segments' => [[PT_GNU_STACK, 0, 0, 0, 0, %w[R W], 0]] #, 'init' => 'pre_start'
+pt_gnu_stack = { 'type' => 0x6474e551, 'flags' => %w[R W] }
+data = Metasm::ELF.encode prog, 'unstripped' => true, 'elf_interp' => '/lib/ld-linux.so.2', 'additional_segments' => [pt_gnu_stack], 'init' => 'pre_start'
 
 File.open('testelf', 'wb', 0755) { |fd| fd.write data }
 
@@ -56,15 +56,17 @@ start:
 .import 'libc.so.6' '_exit', pltexit
 .import 'libc.so.6' 'printf', pltprintf
 
- push [printf]
+ push dword ptr [printf]
  call hexdump
 
- push 0
+ call pushstr
+ db "kikoolol\n\0"
+pushstr:
  push esp
  call pltprintf
  add esp, 8
 
- push [printf]
+ push dword ptr [printf]
  call hexdump
 
  push 0
