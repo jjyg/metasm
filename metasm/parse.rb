@@ -1007,6 +1007,8 @@ class Expression
 				t.unpack('C*').inject(0) { |v, b| (v << 8) | b }
 			when :eol
 				parse_expr lexer
+			when nil
+				nil
 			else
 				raise lexer, "Expression parser: #{tok.inspect} unexpected"
 			end
