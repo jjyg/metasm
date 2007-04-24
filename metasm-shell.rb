@@ -54,26 +54,23 @@ class String
 	end
 end
 
-if __FILE__ == $0
-	puts 'type "exit" or "quit" to quit'
-	puts 'use ";" for newline'
-	puts 'use \'decode "\x90\x90"\' to disassemble some shellcode'
-	while (print "> " ; $stdout.flush ; l = gets)
-		exit if %w[quit exit].include? l.chomp
+# get in interactive assembler mode
+def asm
+	puts 'type "exit" or "quit" to quit', 'use ";" for newline', ''
+	while (print "asm> " ; $stdout.flush ; l = gets)
+		break if %w[quit exit].include? l.chomp
 	
 		begin
-			if l.split(' ', 2)[0] == 'decode'
-				l = Metasm::Lexer.new l, nil, nil		# use builtin parser
-				l.readtok
-				data = l.readtok
-				data = data.text if data.kind_of? Metasm::Lexer::QString
-				puts data.decode
-			else
-				data = l.gsub(';', "\n").encode
-				puts '"' + data.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
-			end
+			data = l.gsub(';', "\n").encode
+			puts '"' + data.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
 		rescue Metasm::Exception => e
 			puts "Error: #{e.class} #{e.message}"
 		end
 	end
+
+	puts
+end
+
+if __FILE__ == $0
+	asm
 end
