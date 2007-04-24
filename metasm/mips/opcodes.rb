@@ -13,10 +13,6 @@ class MIPS
 		o.args.concat(args & @fields_mask.keys)
 		(args & @valid_props).each { |p| o.props[p] = true }
 
-		(args & @fields_mask.keys).each { |f|
-			o.fields[f] = [@fields_mask[f], @fields_shift[f]]
-		}
-
 		@opcode_list << o
 	end
 
