@@ -698,7 +698,7 @@ class Program
 				# XXX nasm 'weak labels'
 
 			when String
-				parse_parser_instruction '.text' if not @cursection
+				parse_parser_instruction '.text' if not defined? @cursection or not @cursection
 
 				if nexttok == :':' or DataSpec.include? nexttok
 					# label
