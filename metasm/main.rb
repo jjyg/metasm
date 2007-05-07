@@ -8,7 +8,6 @@ class Exception < RuntimeError ; end
 class CPU
 	attr_reader :valid_args, :valid_props, :fields_mask, :opcode_list
 	attr_reader :endianness, :size
-	attr_accessor :opcode_list_byname
 
 	def initialize
 		@fields_mask = {}
@@ -154,8 +153,9 @@ class Expression
 	# alternative constructor: Expression[[:-, 42], :*, [1, :+, [4, :*, 7]]]
 	def self.[](l, op = nil, r = nil)
 		return l if l.kind_of? Expression and not op
-		l, op, r = nil, :+, l if op == nil	# can find false in boolean expression
-		l, op, r = nil, l, op if r == nil
+		l, op, r = nil, :-, -r if op == nil and r.kind_of? Numeric and r < 0
+		l, op, r = nil, :+, l  if op == nil	# can find false in boolean expression
+		l, op, r = nil, l, op  if  r == nil
 		l = self[*l] if l.kind_of? Array
 		r = self[*r] if r.kind_of? Array
 		new(op, r, l)
@@ -412,13 +412,19 @@ class EncodedData
 	# slice
 	def [](from, len=nil)
 		if not len and from.kind_of? Range
-			len = from.end - from.begin
+			b = from.begin
+			e = from.end
+			e = 1 + e + @virtsize if e < 0
+			b = 1 + b + @virtsize if b < 0
+			len = e - b
 			len -= 1 if from.exclude_end?
-			from = from.begin
+			from = b
 		elsif not len
+			from = 1 + from + @virtsize if from < 0
 			return @data[from]
 		end
 
+		from = 1 + from + @virtsize if from < 0
 		ret = EncodedData.new @data[from, len]
 		ret.virtsize = len
 		@reloc.each { |o, r|
