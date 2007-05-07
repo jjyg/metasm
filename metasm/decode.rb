@@ -381,32 +381,28 @@ class EncodedData
 		@ptr += len
 		str.ljust(len, "\0")
 	end
+	
+	# returns an Expression on relocation, or a Numeric
+	def decode_imm(type, endianness)
+		if rel = @reloc[@ptr]
+			if rel.type == type and rel.endianness == endianness
+				@ptr += Expression::INT_SIZE[type]/8
+				return rel.target
+			end
+			puts "W: Immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect}"
+		end
+		Expression.decode_imm(read(Expression::INT_SIZE[type]/8), type, endianness)
+	end
 end
 
 class Expression
-	# returns an Expression (checks relocations)
-	def self.decode(edata, type, endianness)
-		if rel = edata.reloc[edata.ptr]
-			# XXX allow :i32 for :u32 ?
-			if rel.type == type or rel.endianness == endianness
-				edata.ptr += INT_SIZE[type]/8
-				return rel.target
-			end
-			puts "immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect}"
-		end
-
-		val = decode_imm(edata, type, endianness)
-		val < 0 ? Expression[:-, -val] : Expression[val]
-	end
-
-	def self.decode_imm(edata, type, endianness)
+	def self.decode_imm(str, type, endianness)
                 val = 0
                 case endianness
-                when :little : (INT_SIZE[type]/8).times { |i| val |= edata.get_byte << (8*i) }
-                when :big    : (INT_SIZE[type]/8).times { val <<= 8 ; val |= edata.get_byte  }
-                else raise SyntaxError, "Unsupported endianness #{endianness.inspect}"
-                end
-		val = val - (1 << (INT_SIZE[type])) if type.to_s[0] == ?i and val >> (INT_SIZE[type]-1) == 1	# XXX check
+                when :little : str.reverse
+		when :big : str
+		end.unpack('C*').each { |b| val = (val << 8) | b }
+		val = val - (1 << (INT_SIZE[type])) if type.to_s[0] == ?i and val >> (INT_SIZE[type]-1) == 1	# XXX booh
 		val
 	end
 
