@@ -21,7 +21,7 @@ class MZ < ExeFormat
 		def set_default_values mz, h, relocs
 			@magic    ||= 'MZ'
 			@cblp     ||= Expression[[mz.label_at(mz.body, mz.body.virtsize), :-, mz.label_at(h, 0)], :%, 512]	# number of bytes used in last page
-			@cp       ||= Expression[[[mz.label_at(mz.body, mz.body.virtsize), :-, mz.label_at(h, 0)], :+, 511], :/, 512]	# number of pages used
+			@cp       ||= Expression[[mz.label_at(mz.body, mz.body.virtsize), :-, mz.label_at(h, 0)], :/, 512]	# number of pages used
 			@crlc     ||= relocs.virtsize/4
 			@cparhdr  ||= Expression[[mz.label_at(relocs, 0), :-, mz.label_at(h, 0)], :/, 16]	# header size in paragraphs (16o)
 			@minalloc ||= ((mz.body.virtsize - mz.body.rawsize) + 15) / 16
