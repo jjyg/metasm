@@ -6,7 +6,7 @@ module Metasm
 class MZ < ExeFormat
 	class Header
 		Fields = [:magic, :cblp, :cp, :crlc, :cparhdr, :minalloc, :maxalloc,
-			:ss, :sp, :csum, :cs, :ip, :lfarlc, :ovno]
+			:ss, :sp, :csum, :ip, :cs, :lfarlc, :ovno]
 		attr_accessor(*Fields)
 
 		def encode(mz, relocs)
@@ -29,8 +29,8 @@ class MZ < ExeFormat
 			@ss       ||= 0
 			@sp       ||= 0		# ss:sp points at 1st byte of body => works if body does not reach end of segment (or maybe the overflow make the stack go to header space)
 			@csum     ||= 0
-			@cs       ||= 0
 			@ip       ||= Expression[mz.body.export['start'] || 0]	# when empty relocs, cs:ip looks like an offset from end of header
+			@cs       ||= 0
 			@lfarlc   ||= Expression[mz.label_at(relocs, 0), :-, mz.label_at(h, 0)]
 			@ovno     ||= 0
 		end
