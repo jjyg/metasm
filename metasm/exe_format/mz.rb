@@ -24,8 +24,8 @@ class MZ < ExeFormat
 			@cp       ||= Expression[[[mz.label_at(mz.body, mz.body.virtsize), :-, mz.label_at(h, 0)], :+, 511], :/, 512]	# number of pages used
 			@crlc     ||= relocs.virtsize/4
 			@cparhdr  ||= Expression[[mz.label_at(relocs, 0), :-, mz.label_at(h, 0)], :/, 16]	# header size in paragraphs (16o)
-			@minalloc ||= 0
-			@maxalloc ||= 16
+			@minalloc ||= ((mz.body.virtsize - mz.body.rawsize) + 15) / 16
+			@maxalloc ||= @minalloc
 			@ss       ||= 0
 			@sp       ||= 0		# ss:sp points at 1st byte of body => works if body does not reach end of segment (or maybe the overflow make the stack go to header space)
 			@csum     ||= 0
