@@ -15,7 +15,7 @@ class ELF < ExeFormat
 		15 => 'PARISC',
 		17 => 'VPP500',18 => 'SPARC32PLUS', 19 => '960',
 		20 => 'PPC',   21 => 'PPC64',  22 => 'S390',
-		36 => 'V800',  37 => 'FR20',   38 => 'RH32',   39 => 'RCE',
+		36 => 'V800',  37 => 'FR20',   38 => 'RH32',   39 => 'MCORE',
 		40 => 'ARM',   41 => 'FAKE_ALPHA', 42 => 'SH', 43 => 'SPARCV9',
 		44 => 'TRICORE', 45 => 'ARC',  46 => 'H8_300', 47 => 'H8_300H',
 		48 => 'H8S',   49 => 'H8_500', 50 => 'IA_64',  51 => 'MIPS_X',
@@ -30,6 +30,7 @@ class ELF < ExeFormat
 		84 => 'FR30',  85 => 'D10V',   86 => 'D30V',   87 => 'V850',
 		88 => 'M32R',  89 => 'MN10300',90 => 'MN10200',91 => 'PJ',
 		92 => 'OPENRISC', 93 => 'ARC_A5', 94 => 'XTENSA', 95 => 'NUM',
+		99 => 'PJ',
 		0x9026 => 'ALPHA'
 	}
 
@@ -41,7 +42,17 @@ class ELF < ExeFormat
 		12 => 'INIT', 13 => 'FINI', 14 => 'SONAME', 15 => 'RPATH',
 		16 => 'SYMBOLIC', 17 => 'REL', 18 => 'RELSZ', 19 => 'RELENT',
 		20 => 'PLTREL', 21 => 'DEBUG', 22 => 'TEXTREL', 23 => 'JMPREL',
+		24 => 'BIND_NOW',
+		25 => 'INIT_ARRAY', 26 => 'FINI_ARRAY',
+		27 => 'INIT_ARRAYSZ', 28 => 'FINI_ARRAYSZ',
+		29 => 'RUNPATH', 30 => 'FLAGS', 31 => 'ENCODING',
+		32 => 'PREINIT_ARRAY', 33 => 'PREINIT_ARRAYSZ',
+		0x6fff_fef5 => 'GNU_HASH',
 		0x7000_0000 => 'LOPROC', 0x7fff_ffff => 'HIPROC' }
+
+	DYNAMIC_FLAGS = {
+		1 => 'ORIGIN', 2 => 'SYMBOLIC', 4 => 'TEXTREL', 8 => 'BIND_NOW'
+	}
 
 	PH_TYPE = { 0 => 'NULL', 1 => 'LOAD', 2 => 'DYNAMIC', 3 => 'INTERP',
 		4 => 'NOTE', 5 => 'SHLIB', 6 => 'PHDR',
@@ -51,10 +62,15 @@ class ELF < ExeFormat
 	SH_TYPE = { 0 => 'NULL', 1 => 'PROGBITS', 2 => 'SYMTAB', 3 => 'STRTAB',
 		4 => 'RELA', 5 => 'HASH', 6 => 'DYNAMIC', 7 => 'NOTE',
 		8 => 'NOBITS', 9 => 'REL', 10 => 'SHLIB', 11 => 'DYNSYM',
+		14 => 'INIT_ARRAY', 15 => 'FINI_ARRAY', 16 => 'PREINIT_ARRAY',
+		0x6000_0000 => 'LOOS', 0x6fff_ffff => 'HIOS',
+		0x6fff_fff6 => 'GNU_HASH',
 		0x7000_0000 => 'LOPROC', 0x7fff_ffff => 'HIPROC',
 		0x8000_0000 => 'LOUSER', 0xffff_ffff => 'HIUSER' }
 
 	SH_FLAGS = { 1 => 'WRITE', 2 => 'ALLOC', 4 => 'EXECINSTR',
+		16 => 'MERGE', 32 => 'STRINGS', 64 => 'INFO_LINK',
+		128 => 'LINK_ORDER', 256 => 'OS_NONCONFORMING',
 		0xf000_0000 => 'MASKPROC' }
 
 	SH_INDEX = { 0 => 'UNDEF', 0xff00 => 'LORESERVE', 0xff1f => 'HIPROC',		 # LOPROC == LORESERVE
@@ -63,7 +79,7 @@ class ELF < ExeFormat
 	SYMBOL_BIND = { 0 => 'LOCAL', 1 => 'GLOBAL', 2 => 'WEAK',
 		13 => 'LOPROC', 15 => 'HIPROC' }
 	SYMBOL_TYPE = { 0 => 'NOTYPE', 1 => 'OBJECT', 2 => 'FUNC',
-		3 => 'SECTION', 4 => 'FILE', 13 => 'LOPROC', 15 => 'HIPROC' }
+		3 => 'SECTION', 4 => 'FILE', 5 => 'COMMON', 13 => 'LOPROC', 15 => 'HIPROC' }
 
 	RELOCATION_TYPE = {	# key are in MACHINE.values
 		'386' => { 0 => 'NONE', 1 => '32', 2 => 'PC32', 3 => 'GOT32',
@@ -71,22 +87,17 @@ class ELF < ExeFormat
 			8 => 'RELATIVE', 9 => 'GOTOFF', 10 => 'GOTPC' }
 	}
 
-	class Section
-		attr_accessor :name, :type, :flags, :addr, :rawoffset, :link, :info, :align, :entsize, :edata
-		attr_accessor :virt_gap	# set to true if a virtual address gap is needed with the preceding section (different memory permission needed)
-	end
-	class Segment
-		attr_accessor :header, :encoded
-	end
 	class Header
 		attr_accessor :ident, :type, :machine, :version, :entry, :phoff, :shoff, :flags, :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
-		attr_accessor :e_class, :mag, :endianness
+		attr_accessor :sig, :e_class, :endianness
 	end
-	class ProgramHeader
+	class Segment
 		attr_accessor :type, :offset, :vaddr, :paddr, :filesz, :memsz, :flags, :align
+		attr_accessor :encoded
 	end
-	class SectionHeader
+	class Section
 		attr_accessor :name_p, :type, :flags, :addr, :offset, :size, :link, :info, :addralign, :entsize
+		attr_accessor :name, :encoded
 	end
 	class Symbol
 		attr_accessor :name, :value, :size, :bind, :type, :other, :shndx, :info, :name_p
@@ -98,6 +109,9 @@ class ELF < ExeFormat
 		attr_accessor :type, :values
 	end
 
+	attr_accessor :encoded
+	attr_reader :header, :segments, :sections, :tags, :symbols, :relocs
+
 	def self.hash_symbol_name(name)
 		name.unpack('C*').inject(0) { |hash, char|
 			break hash if char == 0
@@ -105,6 +119,15 @@ class ELF < ExeFormat
 			hash += char
 			hash ^= (hash >> 24) & 0xf0
 			hash &= 0x0fff_ffff
+		}
+	end
+
+	def self.gnu_hash_symbol_name(name)
+		name.unpack('C*').inject(5381) { |hash, char|
+			break hash if char == 0
+			hash *= 33
+			hash += char
+			hash &= 0xffff_ffff
 		}
 	end
 end
