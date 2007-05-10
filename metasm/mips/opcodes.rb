@@ -42,10 +42,10 @@ class MIPS
 	def init_mips32
 		@fields_mask.update :rs => 0x1f, :rt => 0x1f, :rd => 0x1f, :sa => 0x1f,
 			:i16 => 0xffff, :i26 => 0x3ffffff, :rs_i16 => 0x3e0ffff, :it => 0x1f,
-			:ft => 0x1f, :idm1 => 0x1f, :idb => 0x1f #, :i32 => 0
+			:ft => 0x1f, :idm1 => 0x1f, :idb => 0x1f, :sel => 7 #, :i32 => 0
 		@fields_shift.update :rs => 21, :rt => 16, :rd => 11, :sa => 6,
 			:i16 => 0, :i26 => 0, :rs_i16 => 0, :it => 16,
-			:ft => 16, :idm1 => 11, :idb => 11 #, :i32 => 0
+			:ft => 16, :idm1 => 11, :idb => 11, :sel => 0 #, :i32 => 0
 
 		init_mips32_obsolete
 		init_mips32_reserved
@@ -180,7 +180,19 @@ class MIPS
 		addop 'sdbbp',(0b011100<<26) | 0b111111, :i20
 
 
+		# cp0
+		addop 'mfc0', (0b010000<<26) | (0b00000<<21), :rt, :rd
+		addop 'mfc0', (0b010000<<26) | (0b00000<<21), :rt, :rd, :sel
+		addop 'mtc0', (0b010000<<26) | (0b00100<<21), :rt, :rd
+		addop 'mtc0', (0b010000<<26) | (0b00100<<21), :rt, :rd, :sel
 
+		addop 'tlbr', (0b010000<<26) | (1<<25) | 0b000001
+		addop 'tlbwi',(0b010000<<26) | (1<<25) | 0b000010
+		addop 'tlbwr',(0b010000<<26) | (1<<25) | 0b000110
+		addop 'tlbp', (0b010000<<26) | (1<<25) | 0b001000
+		addop 'eret', (0b010000<<26) | (1<<25) | 0b011000
+		addop 'deret',(0b010000<<26) | (1<<25) | 0b011111
+		addop 'wait', (0b010000<<26) | (1<<25) | 0b100000	# mode field ?
 	end
 
 	def init_mips32r2
@@ -199,6 +211,13 @@ class MIPS
 		addop 'seb', (0b011111<<26) | (0b10000<<6) | 0b100000, :rd, :rt
 		addop 'seh', (0b011111<<26) | (0b11000<<6) | 0b100000, :rd, :rt
 
+		# cp0
+		addop 'rdpgpr', (0b010000<<26) | (0b01010<<21), :rd, :rt
+		addop 'wrpgpr', (0b010000<<26) | (0b01110<<21), :rd, :rt
+		addop 'di',     (0b010000<<26) | (0b01011<<21) | (0b01100<<11) | (0<<5)
+		addop 'di',     (0b010000<<26) | (0b01011<<21) | (0b01100<<11) | (0<<5), :rt
+		addop 'ei',     (0b010000<<26) | (0b01011<<21) | (0b01100<<11) | (1<<5)
+		addop 'ei',     (0b010000<<26) | (0b01011<<21) | (0b01100<<11) | (1<<5), :rt
 	end
 end
 end
