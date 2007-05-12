@@ -1,13 +1,14 @@
 require 'metasm/exe_format/main'
 
 module Metasm
-# TODO ELF64
 class ELF < ExeFormat
-	CLASS = { 0 => 'NONE', 1 => '32', 2 => '64' }
+	CLASS = { 0 => 'NONE', 1 => '32', 2 => '64', 200 => '64_icc' }
 	DATA  = { 0 => 'NONE', 1 => 'LSB', 2 => 'MSB' }
 	VERSION = { 0 => 'INVALID', 1 => 'CURRENT' }
-	TYPE = { 0 => 'NONE', 1 => 'REL', 2 => 'EXEC', 3 => 'DYN', 4 => 'CORE',
-		0xff00 => 'LOPROC', 0xffff => 'HIPROC' }
+	TYPE = { 0 => 'NONE', 1 => 'REL', 2 => 'EXEC', 3 => 'DYN', 4 => 'CORE' }
+	TYPE_LOPROC = 0xff00
+	TYPE_HIPROC = 0xffff
+
 	MACHINE = {
 		 0 => 'NONE',   1 => 'M32',     2 => 'SPARC',   3 => '386',
 		 4 => '68K',    5 => '88K',     7 => '860',
@@ -34,7 +35,11 @@ class ELF < ExeFormat
 		0x9026 => 'ALPHA'
 	}
 
-	FLAGS = {}
+	FLAGS = Hash.new({}).merge(
+		'SPARC' => {0x100 => '32PLUS', 0x200 => 'SUN_US1',
+			0x400 => 'HAL_R1', 0x800 => 'SUN_US3'},
+		'SPARCV9' => {0 => 'TSO', 1 => 'PSO', 2 => 'RMO'}	# XXX not a flag
+	)
 
 	DYNAMIC_TAG = { 0 => 'NULL', 1 => 'NEEDED', 2 => 'PLTRELSZ', 3 =>
 		'PLTGOT', 4 => 'HASH', 5 => 'STRTAB', 6 => 'SYMTAB', 7 => 'RELA',
@@ -47,45 +52,102 @@ class ELF < ExeFormat
 		27 => 'INIT_ARRAYSZ', 28 => 'FINI_ARRAYSZ',
 		29 => 'RUNPATH', 30 => 'FLAGS', 31 => 'ENCODING',
 		32 => 'PREINIT_ARRAY', 33 => 'PREINIT_ARRAYSZ',
-		0x6fff_fef5 => 'GNU_HASH',
-		0x7000_0000 => 'LOPROC', 0x7fff_ffff => 'HIPROC' }
+		0x6fff_fef5 => 'GNU_HASH' }
+	DYNAMIC_TAG_LOPROC = 0x7000_0000
+	DYNAMIC_TAG_HIPROC = 0x7fff_ffff
 
-	DYNAMIC_FLAGS = {
-		1 => 'ORIGIN', 2 => 'SYMBOLIC', 4 => 'TEXTREL', 8 => 'BIND_NOW'
-	}
+	DYNAMIC_FLAGS = { 1 => 'ORIGIN', 2 => 'SYMBOLIC', 4 => 'TEXTREL',
+		8 => 'BIND_NOW', 0x10 => 'STATIC_TLS' }
 
 	PH_TYPE = { 0 => 'NULL', 1 => 'LOAD', 2 => 'DYNAMIC', 3 => 'INTERP',
-		4 => 'NOTE', 5 => 'SHLIB', 6 => 'PHDR',
-		0x7000_0000 => 'LOPROC', 0x7fff_ffff => 'HIPROC' }
+		4 => 'NOTE', 5 => 'SHLIB', 6 => 'PHDR', 7 => 'TLS' }
+	PH_TYPE_LOPROC = 0x7000_0000
+	PH_TYPE_HIPROC = 0x7fff_ffff
 	PH_FLAGS = { 1 => 'X', 2 => 'W', 4 => 'R' }
 
 	SH_TYPE = { 0 => 'NULL', 1 => 'PROGBITS', 2 => 'SYMTAB', 3 => 'STRTAB',
 		4 => 'RELA', 5 => 'HASH', 6 => 'DYNAMIC', 7 => 'NOTE',
 		8 => 'NOBITS', 9 => 'REL', 10 => 'SHLIB', 11 => 'DYNSYM',
 		14 => 'INIT_ARRAY', 15 => 'FINI_ARRAY', 16 => 'PREINIT_ARRAY',
-		0x6000_0000 => 'LOOS', 0x6fff_ffff => 'HIOS',
-		0x6fff_fff6 => 'GNU_HASH',
-		0x7000_0000 => 'LOPROC', 0x7fff_ffff => 'HIPROC',
-		0x8000_0000 => 'LOUSER', 0xffff_ffff => 'HIUSER' }
+		17 => 'GROUP', 18 => 'SYMTAB_SHNDX',
+		0x6fff_fff6 => 'GNU_HASH' }
+	SH_TYPE_LOOS   = 0x6000_0000
+	SH_TYPE_HIOS   = 0x6fff_ffff
+	SH_TYPE_LOPROC = 0x7000_0000
+	SH_TYPE_HIPROC = 0x7fff_ffff
+	SH_TYPE_LOUSER = 0x8000_0000
+	SH_TYPE_HIUSER = 0xffff_ffff
 
 	SH_FLAGS = { 1 => 'WRITE', 2 => 'ALLOC', 4 => 'EXECINSTR',
-		16 => 'MERGE', 32 => 'STRINGS', 64 => 'INFO_LINK',
-		128 => 'LINK_ORDER', 256 => 'OS_NONCONFORMING',
-		0xf000_0000 => 'MASKPROC' }
+		0x10 => 'MERGE', 0x20 => 'STRINGS', 0x40 => 'INFO_LINK',
+		0x80 => 'LINK_ORDER', 0x100 => 'OS_NONCONFORMING',
+		0x200 => 'GROUP', 0x400 => 'TLS' }
+	SH_FLAGS_MASKPROC = 0xf000_0000
 
-	SH_INDEX = { 0 => 'UNDEF', 0xff00 => 'LORESERVE', 0xff1f => 'HIPROC',		 # LOPROC == LORESERVE
-		0xfff1 => 'ABS', 0xfff2 => 'COMMON', 0xffff => 'HIRESERVE' }
+	SH_INDEX = { 0 => 'UNDEF',
+		0xfff1 => 'ABS', 0xfff2 => 'COMMON',
+		0xffff => 'XINDEX', }
+	SH_INDEX_LORESERVE = 0xff00
+	SH_INDEX_LOPROC    = 0xff00
+	SH_INDEX_HIPROC    = 0xff1f
+	SH_INDEX_LOOS      = 0xff20
+	SH_INDEX_HIOS      = 0xff3f
+	SH_INDEX_HIRESERVE = 0xffff
 
-	SYMBOL_BIND = { 0 => 'LOCAL', 1 => 'GLOBAL', 2 => 'WEAK',
-		13 => 'LOPROC', 15 => 'HIPROC' }
+	SYMBOL_BIND = { 0 => 'LOCAL', 1 => 'GLOBAL', 2 => 'WEAK' }
+	SYMBOL_BIND_LOPROC = 13
+	SYMBOL_BIND_HIPROC = 15
+
 	SYMBOL_TYPE = { 0 => 'NOTYPE', 1 => 'OBJECT', 2 => 'FUNC',
-		3 => 'SECTION', 4 => 'FILE', 5 => 'COMMON', 13 => 'LOPROC', 15 => 'HIPROC' }
+		3 => 'SECTION', 4 => 'FILE', 5 => 'COMMON', 6 => 'TLS' }
+	SYMBOL_TYPE_LOPROC = 13
+	SYMBOL_TYPE_HIPROC = 15
 
-	RELOCATION_TYPE = {	# key are in MACHINE.values
+	SYMBOL_VISIBILITY = { 0 => 'DEFAULT', 1 => 'INTERNAL', 2 => 'HIDDEN', 3 => 'PROTECTED' }
+
+	RELOCATION_TYPE = Hash.new({}).merge(	# key are in MACHINE.values
 		'386' => { 0 => 'NONE', 1 => '32', 2 => 'PC32', 3 => 'GOT32',
-			4 => 'PLT32', 5 => 'COPY', 6 => 'GLOB_DAT', 7 => 'JMP_SLOT',
-			8 => 'RELATIVE', 9 => 'GOTOFF', 10 => 'GOTPC' }
-	}
+			4 => 'PLT32', 5 => 'COPY', 6 => 'GLOB_DAT',
+			7 => 'JMP_SLOT', 8 => 'RELATIVE', 9 => 'GOTOFF',
+			10 => 'GOTPC', 11 => '32PLT', 12 => 'TLS_GD_PLT',
+			13 => 'TLS_LDM_PLT', 14 => 'TLS_TPOFF', 15 => 'TLS_IE',
+			16 => 'TLS_GOTIE', 17 => 'TLS_LE', 18 => 'TLS_GD',
+			19 => 'TLS_LDM', 20 => '16', 21 => 'PC16', 22 => '8',
+			23 => 'PC8', 32 => 'TLS_LDO_32', 35 => 'TLS_DTPMOD32',
+			36 => 'TLS_DTPOFF32', 38 => 'NUM' },
+		'M32' => { 0 => 'NONE', 1 => '32', 2 => '32_S', 3 => 'PC32_S',
+			4 => 'GOT32_S', 5 => 'PLT32_S', 6 => 'COPY',
+			7 => 'GLOB_DAT', 8 => 'JMP_SLOT', 9 => 'RELATIVE',
+			10 => 'RELATIVE_S' },
+		'SPARC' => { 0 => 'NONE', 1 => '8', 2 => '16', 3 => '32',
+			4 => 'DISP8', 5 => 'DISP16', 6 => 'DISP32',
+			7 => 'WDISP30', 8 => 'WDISP22', 9 => 'HI22',
+			10 => '22', 11 => '13', 12 => 'LO10', 13 => 'GOT10',
+			14 => 'GOT13', 15 => 'GOT22', 16 => 'PC10',
+			17 => 'PC22', 18 => 'WPLT30', 19 => 'COPY',
+			20 => 'GLOB_DAT', 21 => 'JMP_SLOT', 22 => 'RELATIVE',
+			23 => 'UA32', 24 => 'PLT32', 25 => 'HIPLT22',
+			26 => 'LOPLT10', 27 => 'PCPLT32', 28 => 'PCPLT22',
+			29 => 'PCPLT10', 30 => '10', 31 => '11', 32 => '64',
+			33 => 'OLO10', 34 => 'HH22', 35 => 'HM10', 36 => 'LM22',
+			37 => 'PC_HH22', 38 => 'PC_HM10', 39 => 'PC_LM22',
+			40 => 'WDISP16', 41 => 'WDISP19', 42 => 'GLOB_JMP',
+			43 => '7', 44 => '5', 45 => '6', 46 => 'DISP64',
+			47 => 'PLT64', 48 => 'HIX22', 49 => 'LOX10', 50 => 'H44',
+			51 => 'M44', 52 => 'L44', 53 => 'REGISTER', 54 => 'UA64',
+			55 => 'UA16', 56 => 'TLS_GD_HI22', 57 => 'TLS_GD_LO10',
+			58 => 'TLS_GD_ADD', 59 => 'TLS_GD_CALL',
+			60 => 'TLS_LDM_HI22', 61 => 'TLS_LDM_LO10',
+			62 => 'TLS_LDM_ADD', 63 => 'TLS_LDM_CALL',
+			64 => 'TLS_LDO_HIX22', 65 => 'TLS_LDO_LOX10',
+			66 => 'TLS_LDO_ADD', 67 => 'TLS_IE_HI22',
+			68 => 'TLS_IE_LO10', 69 => 'TLS_IE_LD',
+			70 => 'TLS_IE_LDX', 71 => 'TLS_IE_ADD',
+			72 => 'TLS_LE_HIX22', 73 => 'TLS_LE_LOX10',
+			74 => 'TLS_DTPMOD32', 75 => 'TLS_DTPMOD64',
+			76 => 'TLS_DTPOFF32', 77 => 'TLS_DTPOFF64',
+			78 => 'TLS_TPOFF32', 79 => 'TLS_TPOFF64' }
+	)
 
 	class Header
 		attr_accessor :ident, :type, :machine, :version, :entry, :phoff, :shoff, :flags, :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
@@ -97,20 +159,32 @@ class ELF < ExeFormat
 	end
 	class Section
 		attr_accessor :name_p, :type, :flags, :addr, :offset, :size, :link, :info, :addralign, :entsize
-		attr_accessor :name, :encoded
+		attr_accessor :encoded
+		def name ; @name ; end
+		def name=(n) ; @name_p = nil ; @name = n ; end		# changing section name invalidates name_p
 	end
 	class Symbol
-		attr_accessor :name, :value, :size, :bind, :type, :other, :shndx, :info, :name_p
+		attr_accessor :name_p, :value, :type, :other, :shndx, :info
+		def name ; @name ; end
+		def name=(n) ; @name_p = nil ; @name = n ; end
+		def size ; @size ; end
+		def size=(s) ; @info = nil ; @size = s ; end
+		def bind ; @bind ; end
+		def bind=(b) ; @info = nil ; @bind = b ; end
 	end
 	class Relocation
-		attr_accessor :offset, :type, :symbol, :info, :addend
+		attr_accessor :offset, :info, :addend
+		def type ; @type ; end
+		def type=(t) ; @info = nil ; @type = t ; end
+		def symbol ; @symbol ; end
+		def symbol=(s) ; @info = nil ; @symbol = s ; end
 	end
 	class Tag
 		attr_accessor :type, :values
 	end
 
 	attr_accessor :encoded
-	attr_reader :header, :segments, :sections, :tags, :symbols, :relocs
+	attr_reader :header, :segments, :sections, :tag, :symbols, :relocs, :interpreter
 
 	def self.hash_symbol_name(name)
 		name.unpack('C*').inject(0) { |hash, char|
@@ -132,3 +206,175 @@ class ELF < ExeFormat
 	end
 end
 end
+
+# TODO symbol version info
+__END__
+/*
+ * Version structures.  There are three types of version structure:
+ *
+ *  o	A definition of the versions within the image itself.
+ *	Each version definition is assigned a unique index (starting from
+ *	VER_NDX_BGNDEF)	which is used to cross-reference symbols associated to
+ *	the version.  Each version can have one or more dependencies on other
+ *	version definitions within the image.  The version name, and any
+ *	dependency names, are specified in the version definition auxiliary
+ *	array.  Version definition entries require a version symbol index table.
+ *
+ *  o	A version requirement on a needed dependency.  Each needed entry
+ *	specifies the shared object dependency (as specified in DT_NEEDED).
+ *	One or more versions required from this dependency are specified in the
+ *	version needed auxiliary array.
+ *
+ *  o	A version symbol index table.  Each symbol indexes into this array
+ *	to determine its version index.  Index values of VER_NDX_BGNDEF or
+ *	greater indicate the version definition to which a symbol is associated.
+ *	(the size of a symbol index entry is recorded in the sh_info field).
+ */
+#ifndef	_ASM
+
+typedef struct {			/* Version Definition Structure. */
+	Elf32_Half	vd_version;	/* this structures version revision */
+	Elf32_Half	vd_flags;	/* version information */
+	Elf32_Half	vd_ndx;		/* version index */
+	Elf32_Half	vd_cnt;		/* no. of associated aux entries */
+	Elf32_Word	vd_hash;	/* version name hash value */
+	Elf32_Word	vd_aux;		/* no. of bytes from start of this */
+					/*	verdef to verdaux array */
+	Elf32_Word	vd_next;	/* no. of bytes from start of this */
+} Elf32_Verdef;				/*	verdef to next verdef entry */
+
+typedef struct {			/* Verdef Auxiliary Structure. */
+	Elf32_Word	vda_name;	/* first element defines the version */
+					/*	name. Additional entries */
+					/*	define dependency names. */
+	Elf32_Word	vda_next;	/* no. of bytes from start of this */
+} Elf32_Verdaux;			/*	verdaux to next verdaux entry */
+
+
+typedef	struct {			/* Version Requirement Structure. */
+	Elf32_Half	vn_version;	/* this structures version revision */
+	Elf32_Half	vn_cnt;		/* no. of associated aux entries */
+	Elf32_Word	vn_file;	/* name of needed dependency (file) */
+	Elf32_Word	vn_aux;		/* no. of bytes from start of this */
+					/*	verneed to vernaux array */
+	Elf32_Word	vn_next;	/* no. of bytes from start of this */
+} Elf32_Verneed;			/*	verneed to next verneed entry */
+
+typedef struct {			/* Verneed Auxiliary Structure. */
+	Elf32_Word	vna_hash;	/* version name hash value */
+	Elf32_Half	vna_flags;	/* version information */
+	Elf32_Half	vna_other;
+	Elf32_Word	vna_name;	/* version name */
+	Elf32_Word	vna_next;	/* no. of bytes from start of this */
+} Elf32_Vernaux;			/*	vernaux to next vernaux entry */
+
+typedef	Elf32_Half 	Elf32_Versym;	/* Version symbol index array */
+
+typedef struct {
+	Elf32_Half	si_boundto;	/* direct bindings - symbol bound to */
+	Elf32_Half	si_flags;	/* per symbol flags */
+} Elf32_Syminfo;
+
+
+#if (defined(_LP64) || ((__STDC__ - 0 == 0) && (!defined(_NO_LONGLONG))))
+typedef struct {
+	Elf64_Half	vd_version;	/* this structures version revision */
+	Elf64_Half	vd_flags;	/* version information */
+	Elf64_Half	vd_ndx;		/* version index */
+	Elf64_Half	vd_cnt;		/* no. of associated aux entries */
+	Elf64_Word	vd_hash;	/* version name hash value */
+	Elf64_Word	vd_aux;		/* no. of bytes from start of this */
+					/*	verdef to verdaux array */
+	Elf64_Word	vd_next;	/* no. of bytes from start of this */
+} Elf64_Verdef;				/*	verdef to next verdef entry */
+
+typedef struct {
+	Elf64_Word	vda_name;	/* first element defines the version */
+					/*	name. Additional entries */
+					/*	define dependency names. */
+	Elf64_Word	vda_next;	/* no. of bytes from start of this */
+} Elf64_Verdaux;			/*	verdaux to next verdaux entry */
+
+typedef struct {
+	Elf64_Half	vn_version;	/* this structures version revision */
+	Elf64_Half	vn_cnt;		/* no. of associated aux entries */
+	Elf64_Word	vn_file;	/* name of needed dependency (file) */
+	Elf64_Word	vn_aux;		/* no. of bytes from start of this */
+					/*	verneed to vernaux array */
+	Elf64_Word	vn_next;	/* no. of bytes from start of this */
+} Elf64_Verneed;			/*	verneed to next verneed entry */
+
+typedef struct {
+	Elf64_Word	vna_hash;	/* version name hash value */
+	Elf64_Half	vna_flags;	/* version information */
+	Elf64_Half	vna_other;
+	Elf64_Word	vna_name;	/* version name */
+	Elf64_Word	vna_next;	/* no. of bytes from start of this */
+} Elf64_Vernaux;			/*	vernaux to next vernaux entry */
+
+typedef	Elf64_Half	Elf64_Versym;
+
+typedef struct {
+	Elf64_Half	si_boundto;	/* direct bindings - symbol bound to */
+	Elf64_Half	si_flags;	/* per symbol flags */
+} Elf64_Syminfo;
+#endif	/* (defined(_LP64) || ((__STDC__ - 0 == 0) ... */
+
+#endif
+
+/*
+ * Versym symbol index values.  Values greater than VER_NDX_GLOBAL
+ * and less then VER_NDX_LORESERVE associate symbols with user
+ * specified version descriptors.
+ */
+#define	VER_NDX_LOCAL		0	/* symbol is local */
+#define	VER_NDX_GLOBAL		1	/* symbol is global and assigned to */
+					/*	the base version */
+#define	VER_NDX_LORESERVE	0xff00	/* beginning of RESERVED entries */
+#define	VER_NDX_ELIMINATE	0xff01	/* symbol is to be eliminated */
+
+/*
+ * Verdef and Verneed (via Veraux) flags values.
+ */
+#define	VER_FLG_BASE		0x1	/* version definition of file itself */
+#define	VER_FLG_WEAK		0x2	/* weak version identifier */
+
+/*
+ * Verdef version values.
+ */
+#define	VER_DEF_NONE		0	/* Ver_def version */
+#define	VER_DEF_CURRENT		1
+#define	VER_DEF_NUM		2
+
+/*
+ * Verneed version values.
+ */
+#define	VER_NEED_NONE		0	/* Ver_need version */
+#define	VER_NEED_CURRENT	1
+#define	VER_NEED_NUM		2
+
+
+/*
+ * Syminfo flag values
+ */
+#define	SYMINFO_FLG_DIRECT	0x0001	/* direct bound symbol */
+#define	SYMINFO_FLG_PASSTHRU	0x0002	/* pass-thru symbol for translator */
+#define	SYMINFO_FLG_COPY	0x0004	/* symbol is a copy-reloc */
+#define	SYMINFO_FLG_LAZYLOAD	0x0008	/* symbol bound to object to be lazy */
+					/*	loaded */
+
+/*
+ * key values for Syminfo.si_boundto
+ */
+#define	SYMINFO_BT_SELF		0xffff	/* symbol bound to self */
+#define	SYMINFO_BT_PARENT	0xfffe	/* symbol bound to parent */
+#define	SYMINFO_BT_LOWRESERVE	0xff00	/* beginning of reserved entries */
+
+/*
+ * Syminfo version values.
+ */
+#define	SYMINFO_NONE		0	/* Syminfo version */
+#define	SYMINFO_CURRENT		1
+#define	SYMINFO_NUM		2
+
+
