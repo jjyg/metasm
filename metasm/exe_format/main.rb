@@ -29,7 +29,7 @@ class ExeFormat
 	end
 	# 5 => ['toto', 4]
 	def bits_to_hash(val, hash)
-		val.kind_of?(Integer) ? (hash.find_all { |k, v| val & k == k and val &= ~k }.map { |k, v| v } << val) : val.kind_of?(Array) ? val.map { |e| int_to_hash(e, hash) } : int_to_hash(val, hash)
+		(val.kind_of?(Integer) ? (hash.find_all { |k, v| val & k == k and val &= ~k }.map { |k, v| v } << val) : val.kind_of?(Array) ? val.map { |e| int_to_hash(e, hash) } : [int_to_hash(val, hash)]) - [0]
 	end
 end
 end
