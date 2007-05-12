@@ -428,7 +428,7 @@ class EncodedData
 		ret = EncodedData.new @data[from, len]
 		ret.virtsize = len
 		@reloc.each { |o, r|
-			ret.reloc[o - from] = r if o >= from and o + Expression::INT_SIZE[rel.type]/8 < from+len
+			ret.reloc[o - from] = r if o >= from and o + Expression::INT_SIZE[r.type]/8 < from+len
 		}
 		@export.each { |e, o|
 			ret.export[e] = o - from if o >= from and o <= from+len		# XXX include end ?
