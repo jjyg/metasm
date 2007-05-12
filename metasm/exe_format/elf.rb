@@ -5,6 +5,10 @@ class ELF < ExeFormat
 	CLASS = { 0 => 'NONE', 1 => '32', 2 => '64', 200 => '64_icc' }
 	DATA  = { 0 => 'NONE', 1 => 'LSB', 2 => 'MSB' }
 	VERSION = { 0 => 'INVALID', 1 => 'CURRENT' }
+	ABI = { 0 => 'SYSV', 1 => 'HPUX', 2 => 'NETBSD', 3 => 'LINUX',
+		6 => 'SOLARIS', 7 => 'AIX', 8 => 'IRIX', 9 => 'FREEBSD',
+		10 => 'TRU64', 11 => 'MODESTO', 12 => 'OPENBSD', 97 => 'ARM',
+		255 => 'STANDALONE'}
 	TYPE = { 0 => 'NONE', 1 => 'REL', 2 => 'EXEC', 3 => 'DYN', 4 => 'CORE' }
 	TYPE_LOPROC = 0xff00
 	TYPE_HIPROC = 0xffff
@@ -151,7 +155,7 @@ class ELF < ExeFormat
 
 	class Header
 		attr_accessor :ident, :type, :machine, :version, :entry, :phoff, :shoff, :flags, :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
-		attr_accessor :sig, :e_class, :endianness
+		attr_accessor :sig, :e_class, :endianness, :abi, :abi_version
 	end
 	class Segment
 		attr_accessor :type, :offset, :vaddr, :paddr, :filesz, :memsz, :flags, :align

@@ -48,6 +48,9 @@ class ELF
 			else raise "E: ELF: unsupported ELF version #{h.ident[6]}"
 			end
 
+			h.abi = elf.int_to_hash(h.ident[7], ABI)
+			h.abi_version = h.ident[8]
+
 			h
 		end
 
