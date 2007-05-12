@@ -34,15 +34,19 @@ class ELF < ExeFormat
 		80 => 'MMIX',  81 => 'HUANY',  82 => 'PRISM',  83 => 'AVR',
 		84 => 'FR30',  85 => 'D10V',   86 => 'D30V',   87 => 'V850',
 		88 => 'M32R',  89 => 'MN10300',90 => 'MN10200',91 => 'PJ',
-		92 => 'OPENRISC', 93 => 'ARC_A5', 94 => 'XTENSA', 95 => 'NUM',
+		92 => 'OPENRISC', 93 => 'ARC_A5', 94 => 'XTENSA',
 		99 => 'PJ',
 		0x9026 => 'ALPHA'
 	}
 
 	FLAGS = Hash.new({}).merge(
 		'SPARC' => {0x100 => '32PLUS', 0x200 => 'SUN_US1',
-			0x400 => 'HAL_R1', 0x800 => 'SUN_US3'},
-		'SPARCV9' => {0 => 'TSO', 1 => 'PSO', 2 => 'RMO'}	# XXX not a flag
+			0x400 => 'HAL_R1', 0x800 => 'SUN_US3',
+			0x8000_0000 => 'LEDATA'},
+		'SPARCV9' => {0 => 'TSO', 1 => 'PSO', 2 => 'RMO'},	# XXX not a flag
+		'MIPS' => {1 => 'NOREORDER', 2 => 'PIC', 4 => 'CPIC',
+			8 => 'XGOT', 16 => '64BIT_WHIRL', 32 => 'ABI2',
+			64 => 'ABI_ON32'}
 	)
 
 	DYNAMIC_TAG = { 0 => 'NULL', 1 => 'NEEDED', 2 => 'PLTRELSZ', 3 =>
@@ -56,12 +60,36 @@ class ELF < ExeFormat
 		27 => 'INIT_ARRAYSZ', 28 => 'FINI_ARRAYSZ',
 		29 => 'RUNPATH', 30 => 'FLAGS', 31 => 'ENCODING',
 		32 => 'PREINIT_ARRAY', 33 => 'PREINIT_ARRAYSZ',
-		0x6fff_fef5 => 'GNU_HASH' }
+		0x6fff_fdf5 => 'GNU_PRELINKED',
+		0x6fff_fdf6 => 'GNU_CONFLICTSZ', 0x6fff_fdf7 => 'LIBLISTSZ',
+		0x6fff_fdf8 => 'CHECKSUM',       0x6fff_fdf9 => 'PLTPADSZ',
+		0x6fff_fdfa => 'MOVEENT',        0x6fff_fdfb => 'MOVESZ',
+		0x6fff_fdfc => 'FEATURE_1',      0x6fff_fdfd => 'POSFLAG_1',
+		0x6fff_fdfe => 'SYMINSZ',        0x6fff_fdff => 'SYMINENT',
+		0x6fff_fef5 => 'GNU_HASH',
+		0x6fff_fef6 => 'TLSDESC_PLT',    0x6fff_fef7 => 'TLSDESC_GOT',
+		0x6fff_fef8 => 'GNU_CONFLICT',   0x6fff_fef9 => 'LIBLIST',
+		0x6fff_fefa => 'CONFIG',         0x6fff_fefb => 'DEPAUDIT',
+		0x6fff_fefc => 'AUDIT',          0x6fff_fefd => 'PLTPAD',
+		0x6fff_fefe => 'MOVETAB',        0x6fff_feff => 'SYMINFO',
+		0x6fff_fff0 => 'VERSYM',         0x6fff_fff9 => 'RELACOUNT',
+		0x6fff_fffa => 'RELCOUNT',       0x6fff_fffb => 'FLAGS_1',
+		0x6fff_fffc => 'VERDEF',         0x6fff_fffd => 'VERDEFNUM',
+		0x6fff_fffe => 'VERNEED',        0x6fff_ffff => 'VERNEEDNUM'
+	}
 	DYNAMIC_TAG_LOPROC = 0x7000_0000
 	DYNAMIC_TAG_HIPROC = 0x7fff_ffff
 
 	DYNAMIC_FLAGS = { 1 => 'ORIGIN', 2 => 'SYMBOLIC', 4 => 'TEXTREL',
 		8 => 'BIND_NOW', 0x10 => 'STATIC_TLS' }
+	DYNAMIC_FLAGS_1 = { 1 => 'NOW', 2 => 'GLOBAL', 4 => 'GROUP',
+		8 => 'NODELETE', 0x10 => 'LOADFLTR', 0x20 => 'INITFIRST',
+		0x40 => 'NOOPEN', 0x80 => 'ORIGIN', 0x100 => 'DIRECT',
+		0x200 => 'TRANS', 0x400 => 'INTERPOSE', 0x800 => 'NODEFLIB',
+		0x1000 => 'NODUMP', 0x2000 => 'CONFALT', 0x4000 => 'ENDFILTEE',
+		0x8000 => 'DISPRELDNE', 0x10000 => 'DISPRELPND' }
+	DYNAMIC_FEATURE_1 = { 1 => 'PARINIT', 2 => 'CONFEXP' }
+	DYNAMIC_POSFLAG_1 = { 1 => 'LAZYLOAD', 2 => 'GROUPPERM' }
 
 	PH_TYPE = { 0 => 'NULL', 1 => 'LOAD', 2 => 'DYNAMIC', 3 => 'INTERP',
 		4 => 'NOTE', 5 => 'SHLIB', 6 => 'PHDR', 7 => 'TLS' }
@@ -74,7 +102,9 @@ class ELF < ExeFormat
 		8 => 'NOBITS', 9 => 'REL', 10 => 'SHLIB', 11 => 'DYNSYM',
 		14 => 'INIT_ARRAY', 15 => 'FINI_ARRAY', 16 => 'PREINIT_ARRAY',
 		17 => 'GROUP', 18 => 'SYMTAB_SHNDX',
-		0x6fff_fff6 => 'GNU_HASH' }
+		0x6fff_fff6 => 'GNU_HASH', 0x6fff_fff6 => 'GNU_LIBLIST',
+		0x6fff_fffd => 'GNU_verdef', 0x6fff_fffe => 'GNU_verneed',
+		0x6fff_ffff => 'GNU_versym' }
 	SH_TYPE_LOOS   = 0x6000_0000
 	SH_TYPE_HIOS   = 0x6fff_ffff
 	SH_TYPE_LOPROC = 0x7000_0000
@@ -117,8 +147,13 @@ class ELF < ExeFormat
 			13 => 'TLS_LDM_PLT', 14 => 'TLS_TPOFF', 15 => 'TLS_IE',
 			16 => 'TLS_GOTIE', 17 => 'TLS_LE', 18 => 'TLS_GD',
 			19 => 'TLS_LDM', 20 => '16', 21 => 'PC16', 22 => '8',
-			23 => 'PC8', 32 => 'TLS_LDO_32', 35 => 'TLS_DTPMOD32',
-			36 => 'TLS_DTPOFF32', 38 => 'NUM' },
+			23 => 'PC8', 24 => 'TLS_GD_32', 25 => 'TLS_GD_PUSH',
+			26 => 'TLS_GD_CALL', 27 => 'TLS_GD_POP',
+			28 => 'TLS_LDM_32', 29 => 'TLS_LDM_PUSH',
+			30 => 'TLS_LDM_CALL', 31 => 'TLS_LDM_POP',
+			32 => 'TLS_LDO_32', 33 => 'TLS_IE_32',
+			34 => 'TLS_LE_32', 35 => 'TLS_DTPMOD32',
+			36 => 'TLS_DTPOFF32', 37 => 'TLS_TPOFF32' },
 		'M32' => { 0 => 'NONE', 1 => '32', 2 => '32_S', 3 => 'PC32_S',
 			4 => 'GOT32_S', 5 => 'PLT32_S', 6 => 'COPY',
 			7 => 'GLOB_DAT', 8 => 'JMP_SLOT', 9 => 'RELATIVE',

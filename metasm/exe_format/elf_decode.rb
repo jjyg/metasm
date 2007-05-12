@@ -347,6 +347,8 @@ class ELF
 			when 'NEEDED'
 				@tag[tag] ||= []
 				@tag[tag] << val
+			when 'POSFLAG_1'
+				puts "W: Elf: ignoring dynamic tag modifier #{tag}" if $VERBOSE
 			else
 				if @tag[tag]
 					puts "W: Elf: re-occurence of dynamic tag #{tag} (value #{'0x%08X' % val})" if $VERBOSE
@@ -402,10 +404,10 @@ class ELF
 					end
 					@encoded.export['dynamic_' + k.downcase + "_#{i}"] = v	# XXX may conflict
 				}
-			when 'FLAGS'
-				@tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS)
-			when 'PLTREL'
-				@tag[k] = int_to_hash(@tag[k], DYNAMIC_TAG)
+			when 'PLTREL': @tag[k] = int_to_hash(@tag[k], DYNAMIC_TAG)
+			when 'FLAGS': @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS)
+			when 'FLAGS_1': @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS_1)
+			when 'FEATURES_1': @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FEATURES_1)
 			end
 		}
 	end
