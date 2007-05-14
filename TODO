@@ -16,3 +16,4 @@ elf:  encode/decode relocs, isolate/remove ia32-specific parts
 pe:   decode
 elf/pe: make helper functions more generic (1 func to 'read' iat, another to apply it to the Program) ; support object files
 all:  unittests ?
+test
