@@ -191,16 +191,35 @@ class ELF < ExeFormat
 	class Header
 		attr_accessor :ident, :type, :machine, :version, :entry, :phoff, :shoff, :flags, :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
 		attr_accessor :sig, :e_class, :endianness, :abi, :abi_version
+
+		def self.size elf
+			x = elf.header.e_class / 8
+			16 + 2 + 2 + 4 + x + x + x + 4 + 2 + 2 + 2 + 2 + 2 + 2
+		end
 	end
 	class Segment
 		attr_accessor :type, :offset, :vaddr, :paddr, :filesz, :memsz, :flags, :align
 		attr_accessor :encoded
+
+		def self.size elf
+			x = elf.header.e_class / 8
+			4 + 4 + x + x + x + x + x + x
+		end
 	end
 	class Section
 		attr_accessor :name_p, :type, :flags, :addr, :offset, :size, :link, :info, :addralign, :entsize
 		attr_accessor :encoded
 		def name ; @name ; end
 		def name=(n) ; @name_p = nil ; @name = n ; end		# changing section name invalidates name_p
+
+		def initialize
+			@name = nil
+		end
+
+		def self.size elf
+			x = elf.header.e_class / 8
+			4 + 4 + x + x + x + x + 4 + 4 + x + x
+		end
 	end
 	class Symbol
 		attr_accessor :name_p, :value, :type, :other, :shndx, :info
@@ -210,6 +229,15 @@ class ELF < ExeFormat
 		def size=(s) ; @info = nil ; @size = s ; end
 		def bind ; @bind ; end
 		def bind=(b) ; @info = nil ; @bind = b ; end
+
+		def initialize
+			@name = nil
+		end
+
+		def self.size elf
+			x = elf.header.e_class / 8
+			4 + x + 4 + 1 + 1 + 2
+		end
 	end
 	class Relocation
 		attr_accessor :offset, :info, :addend
@@ -217,13 +245,20 @@ class ELF < ExeFormat
 		def type=(t) ; @info = nil ; @type = t ; end
 		def symbol ; @symbol ; end
 		def symbol=(s) ; @info = nil ; @symbol = s ; end
-	end
-	class Tag
-		attr_accessor :type, :values
+
+		def self.size elf
+			x = elf.header.e_class / 8
+			x + x
+		end
+
+		def self.size_a elf
+			x = elf.header.e_class / 8
+			x + x + x
+		end
 	end
 
 	attr_accessor :encoded
-	attr_reader :header, :segments, :sections, :tag, :symbols, :relocs, :interpreter
+	attr_reader :header, :segments, :sections, :tag
 
 	def self.hash_symbol_name(name)
 		name.unpack('C*').inject(0) { |hash, char|

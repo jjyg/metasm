@@ -102,7 +102,7 @@ class ELF
 		# sets name by reading str at offset @name_p
 		# avoids invalidation of @name_p by #name=
 		def read_name(str)
-			@name = str[@name_p...str.index(0, @name_p)]
+			@name = str[@name_p...str.index(0, @name_p)] if @name_p > 0
 		end
 	end
 
@@ -160,7 +160,7 @@ class ELF
 		# sets name by reading str at offset @name_p
 		# avoids invalidation of @name_p by #name=
 		def read_name(str)
-			@name = str[@name_p...str.index(0, @name_p)]
+			@name = str[@name_p...str.index(0, @name_p)] if @name_p > 0
 		end
 
 		# sets bind and type from info
@@ -173,47 +173,47 @@ class ELF
 
 	class Relocation
 		# decodes the relocation with no explicit addend pointed to by elf.encoded.ptr
-		# the symbol is taken from elf.symbols if possible, and is set to nil for index 0 (UNDEF)
-		def self.decode(elf)
+		# the symbol is taken from ary if possible, and is set to nil for index 0
+		def self.decode(elf, ary=nil)
 			r = new
 
 			r.offset = elf.decode_addr
 			r.info   = elf.decode_xword
 
-			r.init_info(elf)
+			r.init_info(elf, ary)
 
 			r
 		end
 
 		# same as +decode+, but with explicit addend (RELA)
-		def self.decode_addend(elf)
-			r = decode(elf)
+		def self.decode_addend(elf, ary=nil)
+			r = decode(elf, ary)
 			r.addend = elf.decode_sxword
 			r
 		end
 
 		# sets symbol and type from info
 		# avoids invalidation of @info by accessors
-		def init_info(elf)
+		def init_info(elf, ary=nil)
 			@type = @info & (elf.header.e_class == 32 ? 0xff : 0xffff_ffff)
 			@type = elf.int_to_hash(@type, RELOCATION_TYPE[elf.header.machine])
 			@symbol = @info >> (elf.header.e_class == 32 ? 8 : 32)
-			if @symbol == 0
-				@symbol = nil
-			elsif elf.symbols
-				@symbol = elf.symbols[@symbol] || @symbol
-			end
+			@symbol = nil if @symbol == 0
+			init_symbol ary if ary
+		end
+		def init_symbol(ary)
+			@symbol = ary[@symbol] if @symbol and ary[@symbol]
 		end
 	end
 
 	# basic immediates decoding functions
-	def decode_type(type) @encoded.decode_imm(type, @header.endianness) end
-	def decode_uchar ; decode_type(:u8)  end
-	def decode_half  ; decode_type(:u16) end
-	def decode_word  ; decode_type(:u32) end
-	def decode_sword ; decode_type(:i32) end
-	def decode_xword ; decode_type(@header.e_class == 32 ? :u32 : :u64) end
-	def decode_sxword; decode_type(@header.e_class == 32 ? :i32 : :i64) end
+	def decode_type(edata, type) edata.decode_imm(type, @header.endianness) end
+	def decode_uchar(edata = @encoded) ; decode_type(edata, :u8)  end
+	def decode_half(edata = @encoded)  ; decode_type(edata, :u16) end
+	def decode_word(edata = @encoded)  ; decode_type(edata, :u32) end
+	def decode_sword(edata = @encoded) ; decode_type(edata, :i32) end
+	def decode_xword(edata = @encoded) ; decode_type(edata, (@header.e_class == 32 ? :u32 : :u64)) end
+	def decode_sxword(edata = @encoded); decode_type(edata, (@header.e_class == 32 ? :i32 : :i64)) end
 	alias decode_addr decode_xword
 	alias decode_off  decode_xword
 
@@ -227,13 +227,14 @@ class ELF
 	def decode_header
 		@header = Header.pre_decode(self)	# decode arch-agnostic part
 		@header.decode self			# uses decode_word & co, so @header.endianness needs to be setup at this point
+		raise "Invalid elf header size: #{@header.ehsize}" if Header.size(self) != @header.ehsize
 	end
 
 	# decodes the section header table pointed to by @encoded.ptr
 	# section names are read from shstrndx if possible
 	def decode_section_header
+		raise "Invalid elf section header size: #{@header.shentsize}" if Section.size(self) != @header.shentsize
 		@sections = []
-		# XXX check @header.shentsize ?
 		@header.shnum.times {
 			@sections << Section.decode(self)
 		}
@@ -251,8 +252,8 @@ class ELF
 	# initializes the @interpreter
 	# marks the elf entrypoint as an export of @encoded
 	def decode_program_header
+		raise "Invalid elf program header size: #{@header.phentsize}" if Segment.size(self) != @header.phentsize
 		@segments = []
-		# XXX check @header.phentsize ?
 		@header.phnum.times {
 			@segments << Segment.decode(self)
 		}
@@ -264,22 +265,22 @@ class ELF
 		if @header.entry != 0
 			if not o = addr_to_off(@header.entry)
 				puts "W: Elf: header entrypoints points to unmmaped space #{'0x%08X' % @header.entry}" if $VERBOSE
-				return
+			else
+				@encoded.export['entrypoint'] = o
 			end
-			@encoded.export['entrypoint'] = o
 		end
 	end
 
 	# read the dynamic symbols hash table, and checks that every global and named symbol is accessible through it
 	def decode_segments_check_hash
-		return if not @encoded.ptr = addr_to_off(@tag['HASH'])
+		return if not @encoded.ptr = @encoded.export['dynamic_hash']
 		hash_bucket_len = decode_word
 		sym_count = decode_word
 
 		hash_bucket = [] ; hash_bucket_len.times { hash_bucket << decode_word }
 		hash_table = [] ; sym_count.times { hash_table << decode_word }
 
-		@symbols.each { |s|
+		tag['SYMTAB'].each { |s|
 			next if not s.name or s.bind != 'GLOBAL'
 
 			found = false
@@ -287,7 +288,7 @@ class ELF
 			off = hash_bucket[h % hash_bucket_len]
 			sym_count.times {	# to avoid DoS by loop
 				break if off == 0
-				if ss = @symbols[off] and ss.name == s.name
+				if ss = tag['SYMTAB'][off] and ss.name == s.name
 					found = true
 					break
 				end
@@ -300,7 +301,7 @@ class ELF
 	end
 
 	def decode_segments_check_gnu_hash
-		return if not @encoded.ptr = addr_to_off(@tag['GNU_HASH'])
+		return if not @encoded.ptr = @encoded.export['dynamic_gnu_hash']
 
 		# when present: the symndx first symbols are not sorted (SECTION/LOCAL/FILE/etc) symtable[symndx] is sorted (1st sorted symbol)
 		# the sorted symbols are sorted by [gnu_hash_symbol_name(symbol.name) % hash_bucket_len]
@@ -334,8 +335,6 @@ class ELF
 
 	# read dynamic tags, mark most of them as exports of @encoded
 	def decode_segments_tags
-		@encoded.export['dynamic_tags'] = @encoded.ptr
-
 		@tag = {}
 		while (tag = decode_sword) != 0
 			val = decode_word
@@ -344,7 +343,7 @@ class ELF
 				puts "W: Elf: unknown dynamic tag 0x#{tag.to_s 16}" if $VERBOSE
 				@tag[tag] ||= []
 				@tag[tag] << val
-			when 'NEEDED'
+			when 'NEEDED'		# list of tags for which multiple occurences are allowed
 				@tag[tag] ||= []
 				@tag[tag] << val
 			when 'POSFLAG_1'
@@ -357,56 +356,77 @@ class ELF
 				end
 			end
 		end
+		@tag[int_to_hash(tag, DYNAMIC_TAG)] = decode_word
+	end
 
-		# need to know @tag['STRTAB'] beforehand
+	# interprets tags (convert flags, arrays etc except syms and rels)
+	def decode_segments_tags_interpret
+		if @tag['STRTAB']
+			sz = @tag.delete('STRSZ')
+			if not sz
+				puts "W: Elf: no string table size tag"
+				@tag['STRTAB'] = nil
+			else
+				if not o = addr_to_off(@tag['STRTAB'])
+					puts "W: Elf: string table tag points to unmmaped space #{'%08X' % @tag['STRTAB']}" if $VERBOSE
+					@tag['STRTAB'] = nil
+				else
+					@encoded.export['dynamic_strtab'] = o
+					@tag['STRTAB'] = @encoded.data[o, sz]
+				end
+			end
+		end
+
 		@tag.keys.each { |k|
 			case k
 			when Integer
 			when 'NEEDED'
-				if not strtab = addr_to_off(@tag['STRTAB'])
+				if not @tag['STRTAB']
 					puts "W: Elf: no string table, needed for tag #{k}" if $VERBOSE
 					next
 				end
-				@tag[k].map! { |v| @encoded.data[strtab+v...@encoded.data.index(0, strtab+v)] }
+				@tag[k].map! { |v| @tag['STRTAB'][v...@tag['STRTAB'].index(0, v)] }
 			when 'SONAME', 'RPATH', 'RUNPATH'
-				if not strtab = addr_to_off(@tag['STRTAB'])
+				if not @tag['STRTAB']
 					puts "W: Elf: no string table, needed for tag #{k}" if $VERBOSE
 					next
 				end
-				@tag[k] = @encoded.data[strtab+@tag[k]...@encoded.data.index(0, strtab+@tag[k])]
-			when 'INIT', 'FINI', 'PLTGOT', 'HASH', 'STRTAB', 'SYMTAB', 'RELA', 'REL', 'JMPREL'
+				@tag[k] = @tag['STRTAB'][@tag[k]...@tag['STRTAB'].index(0, @tag[k])]
+			when 'INIT', 'FINI', 'PLTGOT', 'HASH', 'SYMTAB', 'RELA', 'REL', 'JMPREL'
 				if not v = addr_to_off(@tag[k])
 					puts "W: Elf: tag #{k} points to unmmaped space #{'0x%08X' % @tag[k]}" if $VERBOSE
 					next
 				end
-				@encoded.export['dynamic_' + k.downcase] = v	# XXX may conflict w/ a symbol or something
+				@tag[k] = 'dynamic_' + k.downcase	# XXX may conflict w/ a symbol or something
+				@encoded.export[@tag[k]] = v
 			when 'INIT_ARRAY', 'FINI_ARRAY', 'PREINIT_ARRAY'
-				if not sz = @tag[k+'SZ']
+				if not sz = @tag.delete(k+'SZ')
 					puts "W: Elf: tag #{k} has no corresponding size tag" if $VERBOSE
 					next
 				end
-				if not v = addr_to_off(@tag[k])
+				if not o = addr_to_off(@tag[k])
 					puts "W: Elf: tag #{k} points to unmmaped space #{'0x%08X' % @tag[k]}" if $VERBOSE
 					next
 				end
 
-				ary = []
-				vend = v + sz
-				@encoded.ptr = v
-				while @encoded.ptr < vend
-					ary << decode_addr
+				@tag[k] = []
+				oend = o + sz
+				@encoded.ptr = o
+				while @encoded.ptr < oend
+					@tag[k] << decode_addr
 				end
 
-				ary.map { |v| addr_to_off(v) }.each_with_index { |v, i|
+				@tag[k].map { |v| addr_to_off(v) }.each_with_index { |v, i|
 					if not v
-						puts "W: Elf: tag #{k} entry #{i} points to unmmaped space (#{'0x%08X' % ary[i]})" if $VERBOSE
+						puts "W: Elf: tag #{k} entry #{i} points to unmmaped space (#{'0x%08X' % @tag[k][i]})" if $VERBOSE
 						next
 					end
-					@encoded.export['dynamic_' + k.downcase + "_#{i}"] = v	# XXX may conflict
+					@tag[k][i] = 'dynamic_' + k.downcase + "_#{i}"	# XXX may conflict
+					@encoded.export[@tag[k][i]] = v
 				}
-			when 'PLTREL': @tag[k] = int_to_hash(@tag[k], DYNAMIC_TAG)
-			when 'FLAGS': @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS)
-			when 'FLAGS_1': @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS_1)
+			when 'PLTREL':     @tag[k] =  int_to_hash(@tag[k], DYNAMIC_TAG)
+			when 'FLAGS':      @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS)
+			when 'FLAGS_1':    @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS_1)
 			when 'FEATURES_1': @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FEATURES_1)
 			end
 		}
@@ -415,12 +435,12 @@ class ELF
 	# read symbol table, and mark all symbols found as exports of @encoded
 	# symbol count is found from the hash table, this may not work with GNU_HASH only binaries
 	def decode_segments_symbols
-		hash_o = addr_to_off(@tag['HASH'])
-		ghash_o = addr_to_off(@tag['GNU_HASH'])
-		return unless	str_o = addr_to_off(@tag['STRTAB']) and
-				sym_o = addr_to_off(@tag['SYMTAB']) and (hash_o or ghash_o)
+		hash_o = @encoded.export['dynamic_hash']
+		ghash_o = @encoded.export['dynamic_gnu_hash']
+		sym_o = @encoded.export['dynamic_symtab']
+		return unless @tag['STRTAB'] and sym_o and (hash_o or ghash_o)
 			
-		raise "E: ELF: unsupported symbol entry size: #{@tag['SYMENT'].inspect}" if @tag['SYMENT'] != 16	# XXX sizeof(elf_word) + sizeof ...
+		raise "E: ELF: unsupported symbol entry size: #{@tag['SYMENT']}" if @tag['SYMENT'] != Symbol.size(self)
 		
 		# find number of symbols from the hash table
 		if hash_o
@@ -428,71 +448,69 @@ class ELF
 			decode_word
 			sym_count = decode_word
 		elsif ghash_o
-			# XXX UNDEF symbols are not hashed here
+			raise 'TODO find sym_count from gnu_hash'
 			@encoded.ptr = ghash_o
 			decode_word32
 			sym_count = decode_word32	# non hashed symbols
+			# XXX UNDEF symbols are not hashed
 		end
 			
 		@encoded.ptr = sym_o
-		@symbols = []
-		sym_count.times { @symbols << Symbol.decode(self) }
+		@tag['SYMTAB'] = []
+		sym_count.times {
+			s = Symbol.decode(self)
+			s.read_name @tag['STRTAB']
+			@tag['SYMTAB'] << s
 
-		strtab = @encoded.data[str_o..-1]	# TODO
-		@symbols.each { |s| s.read_name(strtab)  }
-
-		# use symbols as segments' edata exports
-		@symbols.find_all { |s|
-			s.name and s.shndx != 'UNDEF' and %w[NOTYPE OBJECT FUNC].include?(s.type)
-		}.sort_by { |s| s.value }.each { |s|
-			if not o = addr_to_off(s.value)
-				if not seg = @segments.find { |seg| seg.type == 'LOAD' and seg.vaddr + seg.memsz == s.value }	# check end
-					puts "W: Elf: symbol #{s.name.inspect} points to unmmaped space (#{s.inspect})" if $VERBOSE
-					next
+			# use symbols as segments' edata exports
+			if s.name and s.shndx != 'UNDEF' and %w[NOTYPE OBJECT FUNC].include?(s.type)
+				if not o = addr_to_off(s.value)
+					if not seg = @segments.find { |seg| seg.type == 'LOAD' and seg.vaddr + seg.memsz == s.value }	# check end
+						puts "W: Elf: symbol #{s.name.inspect} points to unmmaped space (#{s.inspect})" if $VERBOSE
+						next
+					end
+					o = s.value - seg.vaddr + seg.offset
 				end
-				o = s.value - seg.vaddr + seg.offset
+				name = s.name
+				while @encoded.export[name] and @encoded.export[name] != o
+					puts "W: Elf: symbol #{name} already seen at #{@encoded.export[name]} (now #{o}) (may be a different version definition)" if $VERBOSE
+					name += '_'	# do not modify inplace
+				end
+				@encoded.export[name] = o
 			end
-			name = s.name.dup
-			while @encoded.export[name] and @encoded.export[name] != o
-				puts "W: Elf: symbol #{name} already seen at #{@encoded.export[name]} (now #{o})" if $VERBOSE
-				name << ?_
-			end
-			@encoded.export[name] = o
 		}
+
+		decode_segments_check_hash if hash_o and $VERBOSE
+		decode_segments_check_gnu_hash if ghash_o and $VERBOSE
 	end
 
 	# decode relocation tables and mark them as relocation of @encoded
 	def decode_segments_relocs
-		@relocs = []
-
-		if rel_o = addr_to_off(@tag['REL'])
-			raise "E: ELF: unsupported rel entry size #{@tag['RELENT']}" if @tag['RELENT'] != 8
-
-			@encoded.ptr = rel_o
-			(@tag['RELSZ'] / @tag['RELENT']).times {
-				@relocs << Relocation.decode(self)
+		if @encoded.ptr = @encoded.export['dynamic_rel']
+			raise "E: ELF: unsupported rel entry size #{@tag['RELENT']}" if @tag['RELENT'] != Relocation.size(self)
+			@tag['REL'] = []
+			(@tag.delete('RELSZ') / @tag.delete('RELENT')).times {
+				@tag['REL'] << Relocation.decode(self, @tag['SYMTAB'])
 			}
 		end
 
-		if rel_o = addr_to_off(@tag['RELA'])
-			raise "E: ELF: unsupported rela entry size #{@tag['RELAENT'].inspect}" if @tag['RELAENT'] != 12
-
-			@encoded.ptr = rel_o
-			(@tag['RELASZ'] / @tag['RELAENT']).times {
-				@relocs << Relocation.decode_addend(self)
+		if @encoded.ptr = @encoded.export['dynamic_rela']
+			raise "E: ELF: unsupported rela entry size #{@tag['RELAENT'].inspect}" if @tag['RELAENT'] != Relocation.size_a(self)
+			@tag['RELA'] = []
+			(@tag.delete('RELASZ') / @tag.delete('RELAENT')).times {
+				@tag['RELA'] << Relocation.decode_addend(self, @tag['SYMTAB'])
 			}
 		end
 
-		if rel_o = addr_to_off(@tag['JMPREL'])
+		if @encoded.ptr = @encoded.export['dynamic_jmprel']
 			case reltype = @tag['PLTREL']
-			when 'REL': msg = :decode
-			when 'RELA': msg = :decode_addend
-			else raise "E: ELF: unsupported plt rel type #{reltype} (#{@tag['JMPREL']})"
+			when 'REL': msg = :decode ; ent = Relocation.size(self)
+			when 'RELA': msg = :decode_addend ; ent = Relocation.size_a(self)
+			else raise "E: ELF: unsupported plt relocation type #{reltype}"
 			end
-
-			@encoded.ptr = rel_o
-			(@tag['PLTRELSZ'] / @tag[reltype+'ENT']).times {
-				@relocs << Relocation.send(msg, self)
+			@tag['JMPREL'] = []
+			(@tag.delete('PLTRELSZ') / ent).times {		# @tag['RELAENT'] deleted wher reading @tag['RELA']
+				@tag['JMPREL'] << Relocation.send(msg, self, @tag['SYMTAB'])
 			}
 		end
 
@@ -502,13 +520,13 @@ class ELF
 			puts "W: Elf: relocs for arch #{@header.machine} unsupported" if $VERBOSE
 			return
 		end
-		@relocs.each { |r|
+		(@tag['REL'].to_a + @tag['RELA'].to_a + @tag['JMPREL'].to_a).each { |r|
 			next if r.offset == 0
 			if not o = addr_to_off(r.offset)
 				puts "W: Elf: relocation in unmmaped space (#{r.inspect})" if $VERBOSE
 				next
 			end
-			if @encoded.reloc[o]	# should check overlapping relocs ?
+			if @encoded.reloc[o]
 				puts "W: Elf: not rerelocating address #{'%08X' % r.offset}" if $VERBOSE
 				next
 			end
@@ -553,6 +571,15 @@ class ELF
 			t = Expression[t, :+, 'tlsoffset'] if reloc.type == 'TLS_TPOFF'
 			t = Expression[:-, [t, :+, 'tlsoffset']] if reloc.type == 'TLS_TPOFF32'
 			t
+		when 'COPY'
+			# mark the address pointed as a copy of the relocation target
+			if reloc.symbol and n = reloc.symbol.name
+				name = '_' << n << '_copied_in_' << (@tag['SONAME'] || 'mainexec').tr('^a-zA-Z0-9', '_')
+				@encoded.export[name] = @encoded.ptr
+				nil
+			else
+				puts "W: Elf: symbol to COPY has no name: #{reloc.inspect}"
+			end
 		else
 			puts "W: Elf: unhandled 386 reloc #{reloc.inspect}" if $VERBOSE
 		end
@@ -573,8 +600,10 @@ class ELF
 		pgm = Program.new cpu
 
 		if dynamic = @segments.find { |s| s.type == 'DYNAMIC' }
+			@encoded.export['dynamic_tags'] = @encoded.ptr
 			@encoded.ptr = dynamic.offset
 			decode_segments_tags
+			decode_segments_tags_interpret
 			decode_segments_symbols
 			decode_segments_relocs
 		end
