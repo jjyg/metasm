@@ -397,8 +397,11 @@ class EncodedData
 
 	# concatenation of another +EncodedData+ or a +String+ or a +Fixnum+
 	def << other
-		other = other.chr            if other.class == Fixnum
-		other = self.class.new other if other.class == String
+		case other
+		when nil:    other = EncodedData.new
+		when Fixnum: other = EncodedData.new other.chr
+		when String: other = EncodedData.new other
+		end
 
 		fill if other.data.length > 0
 
