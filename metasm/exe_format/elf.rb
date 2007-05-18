@@ -68,7 +68,7 @@ class ELF < ExeFormat
 		0x6fff_fdfe => 'SYMINSZ',        0x6fff_fdff => 'SYMINENT',
 		0x6fff_fef5 => 'GNU_HASH',
 		0x6fff_fef6 => 'TLSDESC_PLT',    0x6fff_fef7 => 'TLSDESC_GOT',
-		0x6fff_fef8 => 'GNU_CONFLICT',   0x6fff_fef9 => 'LIBLIST',
+		0x6fff_fef8 => 'GNU_CONFLICT',   0x6fff_fef9 => 'GNU_LIBLIST',
 		0x6fff_fefa => 'CONFIG',         0x6fff_fefb => 'DEPAUDIT',
 		0x6fff_fefc => 'AUDIT',          0x6fff_fefd => 'PLTPAD',
 		0x6fff_fefe => 'MOVETAB',        0x6fff_feff => 'SYMINFO',
@@ -92,7 +92,9 @@ class ELF < ExeFormat
 	DYNAMIC_POSFLAG_1 = { 1 => 'LAZYLOAD', 2 => 'GROUPPERM' }
 
 	PH_TYPE = { 0 => 'NULL', 1 => 'LOAD', 2 => 'DYNAMIC', 3 => 'INTERP',
-		4 => 'NOTE', 5 => 'SHLIB', 6 => 'PHDR', 7 => 'TLS' }
+		4 => 'NOTE', 5 => 'SHLIB', 6 => 'PHDR', 7 => 'TLS',
+		0x6474e550 => 'GNU_EH_FRAME', 0x6474e551 => 'GNU_STACK',
+		0x6474e552 => 'GNU_RELRO' }
 	PH_TYPE_LOPROC = 0x7000_0000
 	PH_TYPE_HIPROC = 0x7fff_ffff
 	PH_FLAGS = { 1 => 'X', 2 => 'W', 4 => 'R' }
@@ -102,7 +104,8 @@ class ELF < ExeFormat
 		8 => 'NOBITS', 9 => 'REL', 10 => 'SHLIB', 11 => 'DYNSYM',
 		14 => 'INIT_ARRAY', 15 => 'FINI_ARRAY', 16 => 'PREINIT_ARRAY',
 		17 => 'GROUP', 18 => 'SYMTAB_SHNDX',
-		0x6fff_fff6 => 'GNU_HASH', 0x6fff_fff6 => 'GNU_LIBLIST',
+		0x6fff_fff6 => 'GNU_HASH', 0x6fff_fff7 => 'GNU_LIBLIST',
+		0x6fff_fff8 => 'GNU_CHECKSUM',
 		0x6fff_fffd => 'GNU_verdef', 0x6fff_fffe => 'GNU_verneed',
 		0x6fff_ffff => 'GNU_versym' }
 	SH_TYPE_LOOS   = 0x6000_0000
@@ -209,12 +212,8 @@ class ELF < ExeFormat
 	class Section
 		attr_accessor :name_p, :type, :flags, :addr, :offset, :size, :link, :info, :addralign, :entsize
 		attr_accessor :encoded
-		def name ; @name ; end
+		def name ; @name if defined? @name ; end
 		def name=(n) ; @name_p = nil ; @name = n ; end		# changing section name invalidates name_p
-
-		def initialize
-			@name = nil
-		end
 
 		def self.size elf
 			x = elf.header.e_class / 8
@@ -223,16 +222,12 @@ class ELF < ExeFormat
 	end
 	class Symbol
 		attr_accessor :name_p, :value, :type, :other, :shndx, :info
-		def name ; @name ; end
+		def name ; @name if defined? @name ; end
 		def name=(n) ; @name_p = nil ; @name = n ; end
 		def size ; @size ; end
 		def size=(s) ; @info = nil ; @size = s ; end
 		def bind ; @bind ; end
 		def bind=(b) ; @info = nil ; @bind = b ; end
-
-		def initialize
-			@name = nil
-		end
 
 		def self.size elf
 			x = elf.header.e_class / 8
@@ -241,9 +236,9 @@ class ELF < ExeFormat
 	end
 	class Relocation
 		attr_accessor :offset, :info, :addend
-		def type ; @type ; end
+		def type ; @type if defined? @type ; end
 		def type=(t) ; @info = nil ; @type = t ; end
-		def symbol ; @symbol ; end
+		def symbol ; @symbol if defined? @symbol ; end
 		def symbol=(s) ; @info = nil ; @symbol = s ; end
 
 		def self.size elf
