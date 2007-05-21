@@ -191,7 +191,6 @@ class Program
 		@block[newaddr] = InstructionBlock.new
 		@block[newaddr].to = @block[oldaddr].to
 		@block[oldaddr].to = [newaddr]
-		@block[newaddr].from = [oldaddr]
 		@block[newaddr].backtracked_for.concat @block[oldaddr].backtracked_for
 		
 		# walk the block to find the splitting instruction
@@ -205,6 +204,8 @@ class Program
 		@block[newaddr].list = @block[oldaddr].list[i..-1]
 		@block[oldaddr].list[i..-1] = []
 		
+		@block[newaddr].from = [@block[oldaddr].list[0..-2].inject(oldaddr) { |off, di| off + di.bin_length }]
+
 		# fixup @decoded to point to the new block
 		curaddr = newaddr
 		@block[newaddr].list.each { |di|
