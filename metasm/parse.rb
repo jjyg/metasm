@@ -76,6 +76,7 @@ class Lexer
 		# skip spaces
 		loop do
 			case @text[@pos]
+			when nil: break
 			when ?\ , ?\t, ?\r
 			when ?\\
 				nc = @text[@pos + 1]
@@ -103,6 +104,7 @@ class Lexer
 			tok = ''
 			loop do
 				case c = @text[@pos]
+				when nil: break
 				when ?a..?z, ?A..?Z, ?0..?9, ?_, ?$
 					tok << c
 				else break
@@ -116,6 +118,7 @@ class Lexer
 			tok = ''
 			loop do
 				case c = @text[@pos]
+				when nil: break
 				when ?_
 				when ?0..?9, ?A..?Z, ?a..?z: tok << c
 				else break
