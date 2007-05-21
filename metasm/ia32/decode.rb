@@ -36,13 +36,13 @@ class Ia32
 					
 					bb = sib & 7
 					if bb == 5 and m == 0
-						imm = Expression.decode(edata, "i#{adsz}".to_sym, endianness)
+						imm = edata.decode_imm("i#{adsz}".to_sym, endianness)
 					else
 						b = Reg.new(bb, adsz)
 					end
 
 				when :i8, :i16, :i32
-					imm = Expression.decode(edata, a, endianness)
+					imm = edata.decode_imm(a, endianness)
 
 				end
 			}
@@ -53,8 +53,8 @@ class Ia32
 
 	class Farptr
 		def self.decode(edata, endianness, adsz)
-			addr = Expression.decode(edata, "u#{adsz}".to_sym, endianness)
-			seg = Expression.decode(edata, :u16, endianness)
+			addr = edata.decode_imm("u#{adsz}".to_sym, endianness)
+			seg = edata.decode_imm(:u16, endianness)
 			new seg, addr
 		end
 	end
@@ -176,8 +176,8 @@ class Ia32
 			when :regxmm: SimdReg.new field_val[a], 128
 
 			when :farptr: Farptr.decode edata, @endianness, adsz
-			when :i8, :u8, :u16: Expression.decode edata, a, @endianness
-			when :i:   Expression.decode edata, (imm32s ? :i8 : "i#{opsz}".to_sym), @endianness
+			when :i8, :u8, :u16: edata.decode_imm(a, @endianness)
+			when :i:   edata.decode_imm((imm32s ? :i8 : "i#{opsz}".to_sym), @endianness)
 
 			when :mrm_imm:  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, di.instruction.prefix[:seg]
 			when :modrm, :modrmA: ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), di.instruction.prefix[:seg]

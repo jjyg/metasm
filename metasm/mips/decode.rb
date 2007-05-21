@@ -31,7 +31,7 @@ class MIPS
 	def decode_findopcode(program, edata, di)
 		# TODO relocations !!
 		oldptr = edata.ptr
-		val = Expression.decode_imm(edata, :u32, @endianness)
+		val = edata.decode_imm(:u32, @endianness)
 		edata.ptr = oldptr
 		if not di.opcode = @bin_lookaside[val >> 24].find { |op|
 			(op.bin & op.bin_mask) == (val & op.bin_mask)
@@ -44,7 +44,7 @@ class MIPS
 		# TODO relocations !!
 		op = di.opcode
 		di.instruction.opname = op.name
-		val = Expression.decode_imm(edata, :u32, @endianness)
+		val = edata.decode_imm(:u32, @endianness)
 
 		field_val = proc { |f|
 			(val >> @fields_shift[f]) & @fields_mask[f]

@@ -235,7 +235,7 @@ class Program
 						break if not s
 						s.encoded.ptr = t - s.base
 					end
-					check_target[Expression.decode(s.encoded, target.type, @cpu.endianness)]
+					check_target[s.encoded.decode_imm(target.type, @cpu.endianness)]
 				end
 			end
 		}
