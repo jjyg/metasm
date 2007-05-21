@@ -277,6 +277,8 @@ class Ia32
 	def get_jump_targets(pgm, di, off)
 		if di.opcode.name == 'ret'
 			tg = Indirection.new(Expression[:esp], "u#@size".to_sym)
+		elsif (tg = di.instruction.args.first).kind_of? Integer
+			tg = Expression[tg + off + di.bin_length]
 		elsif (tg = di.instruction.args.first).kind_of? Expression
 			delta = tg.reduce
 			if delta.kind_of? Integer
