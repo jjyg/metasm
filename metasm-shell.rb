@@ -1,3 +1,4 @@
+#!/usr/bin/env ruby
 require 'metasm/ia32/parse'
 require 'metasm/ia32/encode'
 require 'metasm/ia32/decode'
