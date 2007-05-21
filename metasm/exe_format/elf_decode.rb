@@ -207,13 +207,12 @@ class ELF
 	end
 
 	# basic immediates decoding functions
-	def decode_type(edata, type) edata.decode_imm(type, @header.endianness) end
-	def decode_uchar(edata = @encoded) ; decode_type(edata, :u8)  end
-	def decode_half(edata = @encoded)  ; decode_type(edata, :u16) end
-	def decode_word(edata = @encoded)  ; decode_type(edata, :u32) end
-	def decode_sword(edata = @encoded) ; decode_type(edata, :i32) end
-	def decode_xword(edata = @encoded) ; decode_type(edata, (@header.e_class == 32 ? :u32 : :u64)) end
-	def decode_sxword(edata = @encoded); decode_type(edata, (@header.e_class == 32 ? :i32 : :i64)) end
+	def decode_uchar(edata = @encoded) ; edata.decode_imm(:u8, @header.endianness) end
+	def decode_half(edata = @encoded)  ; edata.decode_imm(:u16, @header.endianness) end
+	def decode_word(edata = @encoded)  ; edata.decode_imm(:u32, @header.endianness) end
+	def decode_sword(edata = @encoded) ; edata.decode_imm(:i32, @header.endianness) end
+	def decode_xword(edata = @encoded) ; edata.decode_imm((@header.e_class == 32 ? :u32 : :u64), @header.endianness) end
+	def decode_sxword(edata = @encoded); edata.decode_imm((@header.e_class == 32 ? :i32 : :i64), @header.endianness) end
 	alias decode_addr decode_xword
 	alias decode_off  decode_xword
 
@@ -336,8 +335,8 @@ class ELF
 	# read dynamic tags, mark most of them as exports of @encoded
 	def decode_segments_tags
 		@tag = {}
-		while (tag = decode_sword) != 0
-			val = decode_word
+		while (tag = decode_sxword) != 0
+			val = decode_xword
 			case tag = int_to_hash(tag, DYNAMIC_TAG)
 			when Integer
 				puts "W: Elf: unknown dynamic tag 0x#{tag.to_s 16}" if $VERBOSE
@@ -356,7 +355,7 @@ class ELF
 				end
 			end
 		end
-		@tag[int_to_hash(tag, DYNAMIC_TAG)] = decode_word
+		@tag[int_to_hash(tag, DYNAMIC_TAG)] = decode_xword
 	end
 
 	# interprets tags (convert flags, arrays etc except syms and rels)
@@ -410,11 +409,10 @@ class ELF
 				end
 
 				@tag[k] = []
-				oend = o + sz
 				@encoded.ptr = o
-				while @encoded.ptr < oend
+				(sz / (@header.e_class / 8)).times {
 					@tag[k] << decode_addr
-				end
+				}
 
 				@tag[k].map { |v| addr_to_off(v) }.each_with_index { |v, i|
 					if not v
