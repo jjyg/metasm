@@ -103,7 +103,7 @@ class COFF < ExeFormat
 		end
 
 		class Export
-			attr_accessor :forwarder_lib, :forwarder_ordinal, :forwarder_name, :target, :name
+			attr_accessor :forwarder_lib, :forwarder_ordinal, :forwarder_name, :target, :name, :ordinal
 		end
 	end
 
@@ -117,6 +117,7 @@ class COFF < ExeFormat
 	def initialize
 		@directory = {}	# DIRECTORIES.key => [rva, size]
 		@sections = []
+		@endianness = :little
 	end
 
 	module Resource
