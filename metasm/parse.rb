@@ -715,7 +715,7 @@ class Program
 					unreadtok tok
 					@cursection << parse_data_withspec
 
-				elsif tok == 'align'
+				elsif tok == 'padto' or tok == 'align'
 					e = Expression.parse(self).reduce
 					raise self, 'need immediate alignment size' unless e.kind_of? Integer	# XXX sucks (db dup count as well)
 					if nexttok == :','
@@ -725,7 +725,7 @@ class Program
 						unreadtok 'db' unless DataSpec.include? nexttok
 						fillwith = parse_data_withspec
 					end
-					@cursection << Align.new(e, fillwith)
+					@cursection << Align.new(e, fillwith, tok == 'align')
 
 				else
 					unreadtok tok

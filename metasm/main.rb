@@ -89,10 +89,11 @@ class Data
 end
 
 class Align
-	attr_reader :val, :fillwith
-	def initialize(val, fillwith=nil)
+	attr_reader :val, :fillwith, :modulo
+	def initialize(val, fillwith=nil, modulo=true)
 		@val = val
 		@fillwith = fillwith
+		@modulo = modulo
 	end
 end
 

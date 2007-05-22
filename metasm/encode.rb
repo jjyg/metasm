@@ -106,7 +106,11 @@ class Section
 					]
 				}.first
 			when Align
-				targetsize = (result.virtsize + enc.val - 1) / enc.val * enc.val
+				if enc.modulo
+					targetsize = (result.virtsize + enc.val - 1) / enc.val * enc.val
+				else
+					targetsize = enc.val
+				end
 				if enc.fillwith
 					pad = enc.fillwith.encode(@program.cpu.endianness)
 					while result.virtsize + pad.virtsize <= targetsize
@@ -122,6 +126,7 @@ class Section
 				else
 					result.virtsize = targetsize if result.virtsize < targetsize
 				end
+				raise EncodeError, "padto directive too short" if result.virtsize > targetsize
 			else
 				result << enc
 			end
