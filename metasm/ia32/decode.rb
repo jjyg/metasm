@@ -96,7 +96,7 @@ class Ia32
 		when 0x67: instr.prefix[:adsz] = true
 		when 0xF0: instr.prefix[:lock] = true
 		when 0xF2: instr.prefix[:rep]  = :nz
-		when 0xF3: instr.prefix[:rep]  = :z
+		when 0xF3: instr.prefix[:rep]  = :z	# postprocessed by decode_instr
 		when 0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65
 			if byte & 0x40 == 0
 				v = (byte >> 3) & 3
@@ -203,15 +203,15 @@ class Ia32
 		di.instruction.prefix.delete :adsz
 		di.instruction.prefix.delete :seg
 		case r = di.instruction.prefix.delete(:rep)
-		when :z
+		when :nz
 			if di.opcode.props[:strop]
 				di.instruction.prefix[:rep] = 'rep'
 			elsif di.opcode.props[:stropz]
-				di.instruction.prefix[:rep] = 'repz'
-			end
-		when :nz
-			if di.opcode.props[:stropz]
 				di.instruction.prefix[:rep] = 'repnz'
+			end
+		when :z
+			if di.opcode.props[:stropz]
+				di.instruction.prefix[:rep] = 'repz'
 			end
 		end
 	end

@@ -81,7 +81,7 @@ class Ia32
 		h = {}
 		op = opcode_list_byname[i.opname].first
 		if i.prefix[:rep]
-			h['toogle repz'] = proc { i.prefix[:rep] = {:repnz => 'repz', :repz => 'repnz'}[i.prefix[:rep]] } if op.props[:stropz]
+			h['toogle repz'] = proc { i.prefix[:rep] = {'repnz' => 'repz', 'repz' => 'repnz'}[i.prefix[:rep]] } if op.props[:stropz]
 			h['rm rep']      = proc { i.prefix.delete :rep }
 		else
 			h['set rep']     = proc { i.prefix[:rep] = 'rep'  } if op.props[:strop]

@@ -197,7 +197,7 @@ class Ia32
 					end
 				end
 			}
-			pfx << 0x66 if opsz and ((opsz == 16 and @size == 32) or (opsz == 32 and @size == 16))
+			pfx << 0x66 if (opsz and ((opsz == 16 and @size == 32) or (opsz == 32 and @size == 16))) or (op.props[:opsz] and op.props[:opsz] != @size)
 
 			set_field[base, :w, 1] if op.fields[:w] and opsz != 8
 		end

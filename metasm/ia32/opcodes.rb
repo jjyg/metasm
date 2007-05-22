@@ -544,6 +544,7 @@ class Ia32
 	def addop_macrostr(name, bin, type)
 		addop(name+'b', bin) { |o| o.props[:opsz] = 16 ; o.props[type] = true }
 		addop(name+'b', bin) { |o| o.props[:opsz] = 32 ; o.props[type] = true }
+		bin = bin.dup
 		bin[0] |= 1
 		addop(name+'w', bin) { |o| o.props[:opsz] = 16 ; o.props[type] = true }
 		addop(name+'d', bin) { |o| o.props[:opsz] = 32 ; o.props[type] = true }
