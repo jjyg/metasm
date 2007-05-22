@@ -4,12 +4,12 @@ module Metasm
 class ExeFormat
 	def label_at(edata, offset)
 		if not l = edata.export.invert[offset]
-			edata.export[l = unique_label] = offset
+			edata.export[l = new_label] = offset
 		end
 		l
 	end
 
-	def unique_label
+	def new_label
 		@uniquelabelcounter ||= 0
 		labelname = "metasmintern_uniquelabel_#{self.class.name}_#{object_id}_#{@uniquelabelcounter += 1}"
 	end

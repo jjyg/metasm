@@ -138,7 +138,7 @@ end
 class Expression
 	def encode(type, endianness)
 		case val = reduce
-		when Integer: Expression.encode_immediate(val, type, endianness)
+		when Integer: EncodedData.new Expression.encode_immediate(val, type, endianness)
 		else          EncodedData.new('', :reloc => {0 => Relocation.new(self, type, endianness)}, :virtsize => INT_SIZE[type]/8)
 		end
 	end

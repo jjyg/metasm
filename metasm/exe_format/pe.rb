@@ -91,7 +91,6 @@ EOMZSTUB
 		# append the PE signature
 		@encoded << "PE\0\0"
 		# encode the COFF header & body
-		@coff.encoded.ptr = @coff.encoded.virtsize
 		@coff.encode
 
 		@encoded.data

@@ -70,7 +70,7 @@ class COFF < ExeFormat
 	ORDINAL_REGEX = /^Ordinal_(\d+)$/
 
 	class Header
-		attr_accessor :machine, :num_sect, :time, :ptr_sym, :num_sym, :size_opthdr, :characts
+		attr_accessor :machine, :num_sect, :time, :ptr_sym, :num_sym, :size_opthdr, :characteristics
 	end
 
 	class OptionalHeader
@@ -81,19 +81,41 @@ class COFF < ExeFormat
 			:image_size, :headers_size, :csum, :subsystem, :dll_characts, :stackres_size, :stackcom_size, :heapres_size, :heapcom_size, :ldrflags, :numrva
 	end
 
-	class Directory
-		attr_accessor :rva, :size
+	class ImportDirectory
+		attr_accessor :libname, :timestamp, :firstforwarder
+		attr_accessor :imports
+
+		def initialize
+			@imports = []
+		end
+
+		class Import
+			attr_accessor :ordinal, :hint, :name
+		end
+	end
+
+	class ExportDirectory
+		attr_accessor :reserved, :timestamp, :version_major, :version_minor, :dllname, :ordinal_base
+		attr_accessor :exports
+
+		def initialize
+			@exports = []
+		end
+
+		class Export
+			attr_accessor :forwarder_lib, :forwarder_ordinal, :forwarder_name, :target, :name
+		end
 	end
 
 	class Section
-		attr_accessor :name, :virtsize, :virtaddr, :rawsize, :rawaddr, :relocaddr, :linenoaddr, :relocnr, :linenonr, :characts
+		attr_accessor :name, :virtsize, :virtaddr, :rawsize, :rawaddr, :relocaddr, :linenoaddr, :relocnr, :linenonr, :characteristics
 		attr_accessor :encoded
 	end
 
-	attr_accessor :encoded, :header, :optionalheader, :directories, :sections, :endianness
+	attr_accessor :encoded, :header, :optheader, :directory, :sections, :endianness, :export, :imports
 
 	def initialize
-		@directory = {}	# DIRECTORIES.key => Directory
+		@directory = {}	# DIRECTORIES.key => [rva, size]
 		@sections = []
 	end
 

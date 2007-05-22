@@ -8,6 +8,7 @@ class Metasm::Instruction
         def inspect() "#<Instruction:%08x #{@opname.inspect} #{@args.inspect}>" % object_id end
         alias to_s inspect
 end
+class Metasm::CPU ; def inspect ; "#<cpu>" end end
 
 cpu = Metasm::Ia32.new
 prog = Metasm::Program.new cpu
@@ -20,12 +21,12 @@ push 0
 push title
 push message
 push 0
-call messagebox
+call [MessageBoxA]
 
 xor eax, eax
 ret
 
-.import 'user32' 'MessageBoxA', messagebox
+.import 'user32' 'MessageBoxA'
 
 .data
 message db 'kikoo lol', 0
@@ -37,6 +38,9 @@ db 1024 dup(?)
 EOS
 
 prog.encode
-data = Metasm::PE.encode prog, 'timestamp' => 0 #, 'no_merge_sections' => true
+
+pe = Metasm::PE.new
+pe.coff = Metasm::COFF.from_program prog
+data = pe.encode
 
 File.open('testpe.exe', 'wb') { |fd| fd.write data }

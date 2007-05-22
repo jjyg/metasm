@@ -97,7 +97,7 @@ class MZ < ExeFormat
 		@encoded.ptr = 0
 		csum = -@header.csum
 		(mzlen/2).times { csum += @encoded.decode_imm(:u16, @endianness) }
-		@encoded.data[2*Header::Fields.index(:csum), 2] = Expression[csum].encode(:u16, @endianness)
+		@encoded.data[2*Header::Fields.index(:csum), 2] = Expression.encode_immediate(csum, :u16, @endianness)
 	end
 
 	def decode_header
