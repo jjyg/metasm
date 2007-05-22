@@ -715,18 +715,6 @@ class Program
 					unreadtok tok
 					@cursection << parse_data_withspec
 
-				elsif tok == 'padto' or tok == 'align'
-					e = Expression.parse(self).reduce
-					raise self, 'need immediate alignment size' unless e.kind_of? Integer	# XXX sucks (db dup count as well)
-					if nexttok == :','
-						# want to fill with something specific
-						readtok
-						# allow single byte value or full data statement
-						unreadtok 'db' unless DataSpec.include? nexttok
-						fillwith = parse_data_withspec
-					end
-					@cursection << Align.new(e, fillwith, tok == 'align')
-
 				else
 					unreadtok tok
 
@@ -817,6 +805,18 @@ class Program
 				else raise self, "Unknown section specifier #{a.inspect}"
 				end
 			end
+
+		when '.align', '.padto'
+			e = Expression.parse(self).reduce
+			raise self, 'need immediate alignment size' unless e.kind_of? Integer	# XXX sucks (db dup count as well)
+			if nexttok == :','
+				# want to fill with something specific
+				readtok
+				# allow single byte value or full data statement
+				unreadtok 'db' unless DataSpec.include? nexttok
+				fillwith = parse_data_withspec
+			end
+			@cursection << Align.new(e, fillwith, instr == '.align')
 
 		else
 			@cpu.parse_parser_instruction(self, instr)

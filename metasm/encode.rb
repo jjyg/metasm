@@ -126,7 +126,7 @@ class Section
 				else
 					result.virtsize = targetsize if result.virtsize < targetsize
 				end
-				raise EncodeError, "padto directive too short" if result.virtsize > targetsize
+				raise EncodeError, "cannot pad current section to #{targetsize} bytes: #{result.virtsize - targetsize} off" if result.virtsize > targetsize
 			else
 				result << enc
 			end
