@@ -393,7 +393,7 @@ class EncodedData
 		fixup_choice(binding, true)
 	end
 
-	def internal_binding(base = nil)
+	def binding(base = nil)
 		if not base
 			key = @export.keys.first
 			return {} if not key
