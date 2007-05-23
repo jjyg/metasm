@@ -370,7 +370,7 @@ class EncodedData
 	end
 
 	# replace a relocation by its value calculated from +binding+, if the value is not numeric and replace_target is true the relocation target is replaced with the reduced computed value
-	def fixup(binding, replace_target = false)
+	def fixup_choice(binding, replace_target)
 		@reloc.keys.each { |off|
 			val = @reloc[off].target.bind(binding).reduce
 			if val.kind_of? Integer
@@ -382,6 +382,13 @@ class EncodedData
 				@reloc[off].target = val
 			end
 		}
+	end
+
+	def fixup(binding)
+		fixup_choice(binding, false)
+	end
+	def fixup!(binding)
+		fixup_choice(binding, true)
 	end
 
 	def internal_binding(base = nil)
