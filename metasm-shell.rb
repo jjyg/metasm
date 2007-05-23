@@ -39,7 +39,7 @@ class String
 		p = decode_blocks(eip, base_addr)
 		p.block.sort.each { |addr, block|
 			if addr > lastaddr
-				res << s.encoded.data[lastaddr-s.base, addr-lastaddr].unpack('C*').map { |c| '%02xh' % c }.enum_slice(16).map { |e| 'db ' + e.join(', ') + "\n" }.join
+				res << p.sections.first.encoded.data[lastaddr-p.sections.first.base, addr-lastaddr].unpack('C*').map { |c| '%02xh' % c }.enum_slice(16).map { |e| 'db ' + e.join(', ') + "\n" }.join
 			end
 			if p.block[addr] and not p.block[addr].from.empty?
 				res << "; Xrefs: #{p.block[addr].from.map { |f| '%08X' % f }.join(', ')}"
@@ -58,7 +58,7 @@ class String
 		}
 		addr = base_addr + length
 		if addr > lastaddr
-			res << s.encoded.data[lastaddr-s.base, addr-lastaddr].unpack('C*').map { |c| '%02xh' % c }.enum_slice(16).map { |e| 'db ' + e.join(', ') + "\n" }.join
+			res << p.sections.first.encoded.data[lastaddr-p.sections.first.base, addr-lastaddr].unpack('C*').map { |c| '%02xh' % c }.enum_slice(16).map { |e| 'db ' + e.join(', ') + "\n" }.join
 		end
 		res.join("\n")
 	end
