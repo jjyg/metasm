@@ -17,5 +17,9 @@ end
 %w[mz elf_encode elf_decode pe coff_encode coff_decode raw].each { |f|
 	require "metasm/exe_format/#{f}"
 }
+# os-specific features
+%w[windows].each { |f|
+	require "metasm/os/#{f}"
+}
 
 $:.delete metasmdir if metasmdir
