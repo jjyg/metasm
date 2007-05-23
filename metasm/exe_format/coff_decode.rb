@@ -158,6 +158,7 @@ class COFF
 			@firstforwarder = coff.decode_word
 			name = coff.decode_word
 			iat = coff.decode_word
+			nextidata_ptr = coff.encoded.ptr	# will decode other directories
 
 			if off = coff.rva_to_off(name)
 				@libname = coff.encoded.data[off...coff.encoded.data.index(0, off)]
@@ -192,6 +193,8 @@ class COFF
 					@iat << a
 				end
 			end
+
+			coff.encoded.ptr = nextidata_ptr
 		end
 	end
 
