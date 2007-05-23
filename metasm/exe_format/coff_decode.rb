@@ -215,6 +215,7 @@ class LoadedCOFF < COFF
 		rva
 	end
 end
+end
 
 __END__
 	class ImportDirectory
