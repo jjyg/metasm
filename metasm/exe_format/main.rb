@@ -2,16 +2,16 @@ require 'metasm/main'
 
 module Metasm
 class ExeFormat
-	def label_at(edata, offset)
+	def label_at(edata, offset, base = '')
 		if not l = edata.export.invert[offset]
-			edata.export[l = new_label] = offset
+			edata.export[l = new_label(base)] = offset
 		end
 		l
 	end
 
-	def new_label
-		@uniquelabelcounter ||= 0
-		labelname = "metasmintern_uniquelabel_#{self.class.name}_#{object_id}_#{@uniquelabelcounter += 1}"
+	def new_label(base = '')
+		labelname = base + '_uniquelabel'
+		labelname << labelname.object_id.to_s
 	end
 
 	# if hash = {1 => 'toto', 2 => 'tata'}
