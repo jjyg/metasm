@@ -96,4 +96,11 @@ EOMZSTUB
 		@encoded.data
 	end
 end
+
+class LoadedPE < PE
+	def initialize
+		super
+		@coff = LoadedCOFF.new
+	end
+end
 end

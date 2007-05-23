@@ -209,6 +209,11 @@ class COFF
 		pgm
 	end
 end
+
+class LoadedCOFF < COFF
+	def rva_to_off(rva)
+		rva
+	end
 end
 
 __END__
