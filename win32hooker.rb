@@ -1,14 +1,78 @@
 require 'metasm'
+require 'metasm-shell'
 
 getdebugprivilege
+pids = list_processes
 if not pid = ARGV.shift
-	puts list_processes.sort.map { |k, v| "pid #{k} => #{v}" }
-	exit
+	puts pids.sort.map { |pid, (name, addr)| "pid #{pid} => #{name} (#{'%08x' % addr})" }
+	pid = pids.keys.find { |pid| pids[pid][0] =~ /notepad/i }
+	exit if not pid
 end
+pid = pid.to_i
 
-handle = openprocess(pid.to_i)
-r = inject(handle, 'Kikoo LOL')
-p r
+handle = openprocess(pid)
+
+# read the PE headers
+data = read(handle, pids[pid][1], 4096)
+pe = Metasm::LoadedPE.decode(data)
+
+data = read(handle, pids[pid][1], pe.coff.optheader.image_size)
+pe = Metasm::LoadedPE.decode(data)
+pe.coff.decode_imports
+
+target = nil
+msgboxw= nil
+pe.coff.imports.each { |id|
+	id.imports.each_with_index { |i, idx|
+		case i.name
+		when 'MessageBoxW'
+			msgboxw = id.iat[idx]
+		when /Write/
+			p i
+			target = id.iat[idx]
+		end
+	}
+}
+raise "target not found" if not target or not msgboxw
+
+myshellcode = <<EOS.encode_edata
+shellcode:
+push 0
+push title
+push message
+push 0
+call msgboxw
+ret
+title dw 'kikoo lol', 0
+message dw 'HI GUISE', 0
+EOS
+
+overwritten = read(handle, target, 12)
+b = overwritten.decode_blocks(target, target).block[target].list
+# puts "overwritten instructions: ", b.map { |i| i.instruction }
+hook = "pushad\njmp hook".encode_edata
+
+hookend = "call shellcode\npopad\n"
+sz = 0
+while sz < hook.virtsize
+	di = b.shift
+	hookend << di.instruction.to_s << "\n"
+	sz += di.bin_length
+end
+hookend << "jmp hook_done\nshellcode:"
+hookend = hookend.encode_edata << myshellcode
+
+injected = alloc(handle, hookend.virtsize)
+
+hook.fixup hook.internal_binding(target).merge('hook' => injected)
+hookend.fixup hookend.internal_binding(injected).merge('msgboxw' => msgboxw, 'hook_done' => (target + sz))
+
+write(handle, target, hook.data)
+write(handle, injected, hookend.data)
+
+puts "injected:", "at #{'%x' % target}:", hook.data.decode, "at #{'%x' % injected}:", hookend.data[5..-1].decode
+
+
 closehandle(handle)
 
 
@@ -36,6 +100,7 @@ module W32API
 	api 'advapi32', 'LookupPrivilegeValueA', 'PPP I'
 	api 'advapi32', 'AdjustTokenPrivileges', 'IIPIPP I'
 	api 'kernel32', 'VirtualAllocEx', 'IIIII I'
+	api 'kernel32', 'ReadProcessMemory', 'IIPIP I'
 	api 'kernel32', 'WriteProcessMemory', 'IIPIP I'
 	
 	
@@ -117,7 +182,7 @@ def list_processes
 		else
 			name = 'unknown'
 		end
-		hash[pid] = name
+		hash[pid] = [name, mod.int]
 	}
 	hash
 end
@@ -132,16 +197,29 @@ end
 def closehandle(h)
 	CloseHandle.call(h)
 end
-def inject(h, str)
-	retaddr = VirtualAllocEx.call(h, 0, str.length, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+def alloc(h, len)
+	retaddr = VirtualAllocEx.call(h, 0, len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
 	if (retaddr == 0)
 		w32err('VirtualAllocEx')
 		return
 	end
-	if (WriteProcessMemory.call(h, retaddr, str, str.length, nil) == 0)
+	retaddr
+end
+def read(h, addr, rqlen)
+	len = new_int
+	str = ' ' * rqlen
+	if (ReadProcessMemory.call(h, addr, str, rqlen, len) == 0)
+		w32err('ReadProcessMemory')
+		return
+	end
+	len = len.int
+	str[len..-1] = ''
+	str
+end
+def write(h, addr, str)
+	if (WriteProcessMemory.call(h, addr, str, str.length, nil) == 0)
 		w32err('WriteProcessMemory')
 		return
 	end
-	retaddr
 end
 }
