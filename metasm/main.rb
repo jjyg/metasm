@@ -447,7 +447,7 @@ class EncodedData
 			b = 1 + b + @virtsize if b < 0
 			e = 1 + e + @virtsize if e < 0
 			len = e - b
-			len -= 1 if from.exclude_end?
+			len += 1 if not from.exclude_end?
 			from = b
 		end
 		from = 1 + from + @virtsize if from < 0
@@ -475,7 +475,7 @@ class EncodedData
 			b = 1 + b + @virtsize if b < 0
 			e = 1 + e + @virtsize if e < 0
 			len = e - b
-			len -= 1 if from.exclude_end?
+			len += 1 if not from.exclude_end?
 			from = b
 		end
 		from = 1 + from + @virtsize if from < 0
