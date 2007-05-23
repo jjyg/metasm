@@ -30,27 +30,27 @@ class String
 		s.base = base_addr
 		p.sections << s
 		p.desasm eip
-		p.blocks
+		p
 	end
 
 	def decode(eip=0, base_addr=0)
 		res = []
 		lastaddr = base_addr
-		blocks = decode_blocks(eip, base_addr)
-		blocks.sort.each { |addr, block|
+		p = decode_blocks(eip, base_addr)
+		p.block.sort.each { |addr, block|
 			if addr > lastaddr
 				res << s.encoded.data[lastaddr-s.base, addr-lastaddr].unpack('C*').map { |c| '%02xh' % c }.enum_slice(16).map { |e| 'db ' + e.join(', ') + "\n" }.join
 			end
-			if block[addr] and not block[addr].from.empty?
-				res << "; Xrefs: #{block[addr].from.map { |f| '%08X' % f }.join(', ')}"
+			if p.block[addr] and not p.block[addr].from.empty?
+				res << "; Xrefs: #{p.block[addr].from.map { |f| '%08X' % f }.join(', ')}"
 			end
-			s.encoded.export.each { |e, off|
-				res << "#{e}:" if off == addr - s.base and e !~ /^metasmintern/
+			p.sections.first.encoded.export.each { |e, off|
+				res << "#{e}:" if off == addr - p.sections.first.base and e !~ /^metasmintern/
 			}
 			block.list.each { |di|
 				res << ( di.instruction.to_s.ljust(12) + ' ; ' +
 					('%08X  ' % addr) +
-					s.encoded.data[addr-s.base, di.bin_length].unpack('C*').map { |c| '%02x' % c }.join )
+					p.sections.first.encoded.data[addr-p.sections.first.base, di.bin_length].unpack('C*').map { |c| '%02x' % c }.join )
 				addr += di.bin_length
 			}
 			res << ''
