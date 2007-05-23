@@ -160,6 +160,8 @@ class COFF
 			iat = coff.decode_word
 			nextidata_ptr = coff.encoded.ptr	# will decode other directories
 
+			@imports = nil if [ilt, @timestamp, @firstforwarder, name, iat].all? { |p| p == 0 }
+
 			if off = coff.rva_to_off(name)
 				@libname = coff.encoded.data[off...coff.encoded.data.index(0, off)]
 			end
