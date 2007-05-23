@@ -384,6 +384,15 @@ class EncodedData
 		}
 	end
 
+	def internal_binding(base = nil)
+		if not base
+			key = @export.keys.first
+			return {} if not key
+			base = Expression[key, :-, @export[key]]
+		end
+		@export.inject({}) { |binding, (n, o)| binding.update n => Expression[base, :+, o] }
+	end
+
 	# fill virtual space with real bytes
 	def fill(len = @virtsize, pattern = 0.chr)
 		# XXX mark this space as freely mutable
