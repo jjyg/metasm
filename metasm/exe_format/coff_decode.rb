@@ -140,6 +140,61 @@ class COFF
 		end
 	end
 
+	class ImportDirectory
+		def self.decode(coff)
+			coff.imports = []
+			loop do
+				idata = new
+				idata.decode(coff)
+				break if not idata.imports
+				coff.imports << idata
+			end
+		end
+
+		def decode(coff)
+			ilt = coff.decode_word
+			@timestamp = coff.decode_word
+			@firstforwarder = coff.decode_word
+			name = coff.decode_word
+			iat = coff.decode_word
+
+			if off = coff.rva_to_off(name)
+				@libname = coff.encoded.data[off...coff.encoded.data.index(0, off)]
+			end
+
+			if coff.encoded.ptr = coff.rva_to_off(ilt)
+				addrs = []
+				while (a = coff.decode_xword) != 0
+					addrs << a
+				end
+
+				@imports = []
+				
+				ord_mask = 1 << (coff.optheader.sig == 'PE+' ? 63 : 31)
+				addrs.each { |a|
+					i = Import.new
+					if (a & ord_mask) != 0
+						i.ordinal = a & (~ord_mask)
+					else
+						if coff.encoded.ptr = coff.rva_to_off(a)
+							i.hint = coff.decode_half
+							i.name = coff.encoded.data[coff.encoded.ptr...coff.encoded.data.index(0, coff.encoded.ptr)]
+						end
+					end
+					@imports << i
+				}
+			end
+
+			if coff.encoded.ptr = coff.rva_to_off(iat)
+				@iat = []
+				while (a = coff.decode_xword) != 0
+					@iat << a
+				end
+			end
+		end
+	end
+
+
 	def decode_uchar(edata = @encoded) ; edata.decode_imm(:u8,  @endianness) end
 	def decode_half( edata = @encoded) ; edata.decode_imm(:u16, @endianness) end
 	def decode_word( edata = @encoded) ; edata.decode_imm(:u32, @endianness) end
@@ -212,105 +267,7 @@ end
 
 class LoadedCOFF < COFF
 	def rva_to_off(rva)
-		rva
-	end
-end
-end
-
-__END__
-	class ImportDirectory
-		def self.encode(coff, ary)
-			edata = {}
-			ary.each { |i| i.encode(coff, edata) }
-
-			coff.directory['iat'] = [coff.label_at(edata['iat'], 0), edata['iat'].virtsize]
-			coff.directory['import_table'] = [coff.label_at(edata['idata'], 0), edata['idata'].virtsize]
-
-			EncodedData.new <<
-			edata['idata'] <<
-			coff.encode_word(0) <<
-			coff.encode_word(0) <<
-			coff.encode_word(0) <<
-			coff.encode_word(0) <<
-			coff.encode_word(0) <<
-			edata['iat'] <<
-			edata['nametable']
-		end
-
-		def encode(coff, edata)
-			%w[idata iat nametable].each { |name| edata[name] ||= EncodedData.new }
-			label = proc { |n| coff.label_at(edata[n], 0) }
-			rva = proc { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
-			rva_end = proc { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
-
-			edata['idata'] <<
-			coff.encode_word(rva_end['iat']) <<
-			coff.encode_word(@timestamp ||= 0) <<
-			coff.encode_word(@firstforwarder ||= 0) <<
-			coff.encode_word(rva_end['nametable']) <<
-			coff.encode_word(rva_end['iat'])
-
-			edata['nametable'] << @libname << 0
-
-			ord_mask = 1 << (coff.optheader.sig == 'PE+' ? 63 : 31)
-			@imports.each { |i|
-				if i.ordinal
-					edata['iat'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
-				else
-					edata['iat'].export[i.name] = edata['iat'].virtsize
-
-					edata['nametable'].align_size 2
-					edata['iat'] << coff.encode_xword(rva_end['nametable'])
-					edata['nametable'] << coff.encode_half(i.hint || 0) << i.name << 0
-				end
-			}
-			edata['iat'] << coff.encode_xword(0)
-		end
-	end
-
-	def self.from_program(program)
-		coff = new
-		coff.endianness = program.cpu.endianness
-		coff.header = Header.new
-		coff.optheader = OptionalHeader.new
-
-		coff.header.machine = 'I386' if program.cpu.kind_of? Ia32
-		coff.optheader.entrypoint = 'start'
-
-		program.sections.each { |ps|
-			s = Section.new
-			s.name = ps.name
-			s.encoded = ps.encoded
-			s.characteristics = {
-				:exec => 'MEM_EXECUTE', :read => 'MEM_READ', :write => 'MEM_WRITE', :discard => 'MEM_DISCARDABLE', :shared => 'MEM_SHARED'
-			}.values_at(*ps.mprot).compact
-			coff.sections << s
-		}
-
-		program.import.each { |libname, list|
-			coff.imports ||= []
-			id = ImportDirectory.new
-			id.libname = libname
-			list.each { |name, thunk|
-				i = ImportDirectory::Import.new
-				i.name = name
-				id.imports << i
-			}
-			coff.imports << id
-		}
-
-		if not program.export.empty?
-			coff.export = ExportDirectory.new
-			coff.export.name = 'kikoo'
-			program.export.each { |name, label|
-				e = ExportDirectory::Export.new
-				e.name = name
-				e.target = label
-				coff.export.exports << e
-			}
-		end
-
-		coff
+		rva if rva and rva != 0 and rva < @encoded.virtsize
 	end
 end
 end

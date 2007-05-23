@@ -83,7 +83,7 @@ class COFF < ExeFormat
 
 	class ImportDirectory
 		attr_accessor :libname, :timestamp, :firstforwarder
-		attr_accessor :imports
+		attr_accessor :imports, :iat
 
 		def initialize
 			@imports = []
