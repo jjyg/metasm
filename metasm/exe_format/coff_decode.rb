@@ -142,13 +142,14 @@ class COFF
 
 	class ImportDirectory
 		def self.decode(coff)
-			coff.imports = []
+			ret = []
 			loop do
 				idata = new
 				idata.decode(coff)
 				break if not idata.imports
-				coff.imports << idata
+				ret << idata
 			end
+			ret
 		end
 
 		def decode(coff)
@@ -222,6 +223,12 @@ class COFF
 					@encoded.export[e.name] = off
 				end
 			}
+		end
+	end
+
+	def decode_imports
+		if @directory['import_table'] and @encoded.ptr = rva_to_off(@directory['import_table'][0])
+			@imports = ImportDirectory.decode(self)
 		end
 	end
 
