@@ -364,6 +364,8 @@ class EncodedData
 	def rawsize
 		[@data.length, *@reloc.map { |off, rel| off + Expression::INT_SIZE[rel.type]/8 } ].max
 	end
+	alias length virtsize
+	alias size virtsize
 
 	def dup
 		self.class.new @data.dup, :reloc => @reloc.dup, :export => @export.dup, :virtsize => @virtsize
@@ -412,20 +414,28 @@ class EncodedData
 		@virtsize = (@virtsize + len - 1) / len * len
 	end
 
-	# concatenation of another +EncodedData+ or a +String+ or a +Fixnum+
+	# concatenation of another +EncodedData+ (or nil/Fixnum/anything)
 	def << other
 		case other
-		when nil:    other = EncodedData.new
-		when Fixnum: other = EncodedData.new other.chr
-		when String: other = EncodedData.new other
+		when nil
+		when Fixnum
+			fill
+			@data << other
+			@virtsize += 1
+		when EncodedData
+			fill if not other.data.empty?
+			other.reloc.each  { |k, v| @reloc[k + @virtsize] = v  }
+			other.export.each { |k, v| @export[k] = v + @virtsize }
+			if @data.empty?: @data = other.data.dup
+			else @data << other.data
+			end
+			@virtsize += other.virtsize
+		else
+			if @data.empty?: @data = other.dup
+			else @data << other
+			end
+			@virtsize += other.length
 		end
-
-		fill if other.data.length > 0
-
-		other.reloc.each  { |k, v| @reloc[k + @virtsize] = v  }
-		other.export.each { |k, v| @export[k] = v + @virtsize }
-		@data << other.data
-		@virtsize += other.virtsize
 		self
 	end
 
@@ -434,17 +444,15 @@ class EncodedData
 		if not len and from.kind_of? Range
 			b = from.begin
 			e = from.end
-			e = 1 + e + @virtsize if e < 0
 			b = 1 + b + @virtsize if b < 0
+			e = 1 + e + @virtsize if e < 0
 			len = e - b
 			len -= 1 if from.exclude_end?
 			from = b
-		elsif not len
-			from = 1 + from + @virtsize if from < 0
-			return @data[from]
 		end
-
 		from = 1 + from + @virtsize if from < 0
+
+		return @data[from] if not len
 		ret = EncodedData.new @data[from, len]
 		ret.virtsize = len
 		@reloc.each { |o, r|
@@ -454,6 +462,45 @@ class EncodedData
 			ret.export[e] = o - from if o >= from and o <= from+len		# XXX include end ?
 		}
 		ret
+	end
+
+	def []=(from, len, val=nil)
+		if not val
+			val = len
+			len = nil
+		end
+		if not len and from.kind_of? Range
+			b = from.begin
+			e = from.end
+			b = 1 + b + @virtsize if b < 0
+			e = 1 + e + @virtsize if e < 0
+			len = e - b
+			len -= 1 if from.exclude_end?
+			from = b
+		end
+		from = 1 + from + @virtsize if from < 0
+
+		if not len
+			val = val.chr
+			len = val.length
+		end
+		val = EncodedData.new val unless val.kind_of? EncodedData
+
+		# remove overwritten
+		@export.delete_if { |name, off| off > from and off < from + len }
+		@reloc.delete_if { |off, rel| off - Expression::INT_SIZE[r.type]/8 > from and off < from + len }
+		# shift after insert
+		if val.virtsize != len
+			diff = val.virtsize - len
+			@export.keys.each { |name| @export[name] = @export[name] + diff if @export[name] > from }
+			@reloc.keys.each  { |off| @reloc[off+diff] = @reloc.delete(off) if off > from }
+			@virtsize += diff
+		end
+		# replace
+		fill(from) if not val.data.empty?
+		@data[from, len] = val.data
+		val.export.each { |name, off| @export[name] = from + off }
+		val.reloc.each { |off, rel| @reloc[from + off] = rel }
 	end
 end
 end # module Metasm
