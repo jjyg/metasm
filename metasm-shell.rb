@@ -7,18 +7,30 @@ require 'enumerator'
 
 class String
 	@@cpu = Metasm::Ia32.new
+	class << self
+		def cpu
+			@@cpu
+		end
+		def cpu=(c)
+			@@cpu=c
+		end
+	end
 
-	def encode_edata
+	def encode_edata(base=nil)
 		p = Metasm::Program.new @@cpu
 		p.parse self
 		p.encode
-		p.sections.first.encoded
+		ed = p.sections.first.encoded
+		ed.fixup! ed.binding(base)
+		ed
 	end
 
 	def encode(base=nil)
-		ed = encode_edata
+		ed = encode_edata(base)
+		if not ed.reloc.empty?
+			puts 'W: encoded string has unresolved relocations: ' + ed.reloc.map { |o, r| r.target.inspect }.join(', ')
+		end
 		ed.fill
-		ed.fixup! ed.binding(base)
 		ed.data
 	end
 
