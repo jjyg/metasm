@@ -36,8 +36,14 @@ class Expression
 	def render
 		l = @lexpr
 		r = @rexpr
-		l = '%xh' % l if l.kind_of? Integer
-		r = '%xh' % r if r.kind_of? Integer
+		if l.kind_of? Integer
+			l = '%xh' % l
+			l = '0' << l unless (?0..?9).include? l[0]
+		end
+		if r.kind_of? Integer
+			r = '%xh' % r
+			r = '0' << r unless (?0..?9).include? r[0]
+		end
 		if @op == :+ and not l
 			[r]
 		else
