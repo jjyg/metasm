@@ -178,7 +178,7 @@ class Expression
 	attr_accessor :op, :lexpr, :rexpr
 	# !! args reversed
 	def initialize(op, rexpr, lexpr)
-		raise "Expression: invalid arg order: op #{op.inspect}, r l = #{rexpr.inspect} #{lexpr.inspect}" if not op.kind_of? Symbol
+		raise "Expression: invalid arg order: op #{op.inspect}, r l = #{rexpr.inspect} #{lexpr.inspect} #{caller.join("\n")}" if not op.kind_of? Symbol
 		@op, @lexpr, @rexpr = op, lexpr, rexpr
 	end
 

@@ -34,10 +34,14 @@ end
 class Expression
 	include Renderable
 	def render
-		if @op == :+ and not @lexpr
-			[@rexpr]
+		l = @lexpr
+		r = @rexpr
+		l = '%xh' % l if l.kind_of? Integer
+		r = '%xh' % r if r.kind_of? Integer
+		if @op == :+ and not l
+			[r]
 		else
-			['(', @lexpr, @op, @rexpr, ')']
+			['(', l, @op, r, ')']
 		end
 	end
 end

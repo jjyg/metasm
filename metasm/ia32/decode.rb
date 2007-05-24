@@ -36,13 +36,13 @@ class Ia32
 					
 					bb = sib & 7
 					if bb == 5 and m == 0
-						imm = edata.decode_imm("i#{adsz}".to_sym, endianness)
+						imm = Expression[edata.decode_imm("i#{adsz}".to_sym, endianness)]
 					else
 						b = Reg.new(bb, adsz)
 					end
 
 				when :i8, :i16, :i32
-					imm = edata.decode_imm(a, endianness)
+					imm = Expression[edata.decode_imm(a, endianness)]
 
 				end
 			}
@@ -53,8 +53,8 @@ class Ia32
 
 	class Farptr
 		def self.decode(edata, endianness, adsz)
-			addr = edata.decode_imm("u#{adsz}".to_sym, endianness)
-			seg = edata.decode_imm(:u16, endianness)
+			addr = Expression[edata.decode_imm("u#{adsz}".to_sym, endianness)]
+			seg = Expression[edata.decode_imm(:u16, endianness)]
 			new seg, addr
 		end
 	end
@@ -136,7 +136,7 @@ class Ia32
 		end
 	end
 
-	def decode_instruction(program, edata, di)
+	def decode_instruction(program, edata, di, off)
 		op = di.opcode
 		di.instruction.opname = op.name
 		bseq = op.bin.inject([]) { |ar, bin| ar << edata.get_byte }
@@ -176,8 +176,10 @@ class Ia32
 			when :regxmm: SimdReg.new field_val[a], 128
 
 			when :farptr: Farptr.decode edata, @endianness, adsz
-			when :i8, :u8, :u16: edata.decode_imm(a, @endianness)
-			when :i:   edata.decode_imm((imm32s ? :i8 : "i#{opsz}".to_sym), @endianness)
+			when :i8, :u8, :u16: Expression[edata.decode_imm(a, @endianness)]
+			when :i:
+				t = imm32s ? :i8 : "i#{opsz}".to_sym
+				Expression[edata.decode_imm(t, @endianness)]
 
 			when :mrm_imm:  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, di.instruction.prefix[:seg]
 			when :modrm, :modrmA: ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), di.instruction.prefix[:seg]
@@ -197,6 +199,10 @@ class Ia32
 		if op.name == 'movsx' or op.name == 'movzx'
 			# TODO
 			#di.instruction.arg[0].sz = 28
+		end
+
+		if op.props[:setip] and op.name[0, 3] != 'ret' and di.instruction.args.first.kind_of? Expression
+			di.instruction.args[0] = Expression[program.make_label(off + di.instruction.args[0].reduce, 'xref')]
 		end
 
 		di.instruction.prefix.delete :opsz
@@ -275,18 +281,9 @@ class Ia32
 	end
 
 	def get_jump_targets(pgm, di, off)
+		tg = di.instruction.args.first
 		if di.opcode.name == 'ret'
 			tg = Indirection.new(Expression[:esp], "u#@size".to_sym)
-		elsif (tg = di.instruction.args.first).kind_of? Integer
-			tg = Expression[tg + off + di.bin_length]
-		elsif (tg = di.instruction.args.first).kind_of? Expression
-			delta = tg.reduce
-			if delta.kind_of? Integer
-				tg = off + di.bin_length + delta
-				labelpfx = di.opcode.name[0..3] == 'call' ? 'func' : 'label'
-				di.instruction.args[0] = Expression[pgm.make_label(tg, labelpfx), :-, pgm.make_label(off + di.bin_length)]
-				tg = Expression[tg]
-			end
 		elsif tg.kind_of? ModRM
 			e = nil
 			e = Expression[e, :+, tg.b.to_s.to_sym] if tg.b

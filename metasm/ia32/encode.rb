@@ -231,6 +231,11 @@ class Ia32
 			base.chop!
 		end
 
+		# convert label name for jmp/call/loop to relative offset
+		if op.props[:setip] and op.name[0, 3] != 'ret' and i.args.first.kind_of? Expression
+			postlabel = program.new_unique_label
+			postponed.first[1] = Expression[postponed.first[1], :-, postlabel]
+		end
 
 		#
 		# append other arguments
@@ -280,17 +285,10 @@ class Ia32
 			end
 		}
 
-		ret.map { |h| h[:edata] }
-	end
-
-	public
-	def encode_thunk(program, target)
-		# jmp [target]
-		i = Instruction.new self
-		i.opname = 'jmp'
-		i.args << ModRM.new(@size, @size, nil, nil, nil, Expression[target], nil)
-
-		encode_instruction(program, i).sort_by { |ed| ed.virtsize }.last
+		ret.map { |h|
+			h[:edata].export[postlabel] = h[:edata].virtsize if postlabel
+			h[:edata]
+		}
 	end
 end
 end

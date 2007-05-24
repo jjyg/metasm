@@ -205,15 +205,5 @@ end
 		else raise EncodeException, "Internal error: unknown argument specification #{spec.inspect}"
 		end
 	end
-
-	def parse_instruction_fixup(lexer, i)
-		# convert label name for jmp/call/loop to relative offset
-		if opcode_list_byname[i.opname].first.props[:setip] and i.args.first.kind_of? Expression and not i.args.first.reduce.kind_of? Integer	# XXX jmp 0x43040211 ?
-			postlabel = lexer.new_unique_label
-			i.args[0] = Expression[i.args.first, :-, postlabel]
-			lexer.unreadtok :':'
-			lexer.unreadtok postlabel
-		end
-	end
 end
 end

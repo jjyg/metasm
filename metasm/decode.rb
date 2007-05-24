@@ -11,13 +11,13 @@ class Opcode
 end
 
 class CPU
-	def decode(program, edata)
+	def decode(program, edata, off)
 		@bin_lookaside ||= build_bin_lookaside
 		di = DecodedInstruction.new
 		di.instruction = Instruction.new self
 		pre_ptr = edata.ptr
 		decode_findopcode(program, edata, di) rescue di.opcode = nil
-		decode_instruction(program, edata, di) if di.opcode rescue di.opcode = nil
+		decode_instruction(program, edata, di, off) if di.opcode rescue di.opcode = nil
 		di.bin_length = edata.ptr - pre_ptr
 		di
 	end
@@ -138,7 +138,7 @@ class Program
 
 			# decode the instruction
 			s.encoded.ptr = off - s_start
-			di = @cpu.decode self, s.encoded
+			di = @cpu.decode self, s.encoded, off
 
 			# start a new block if needed
 			if not curblock
@@ -220,7 +220,8 @@ class Program
 			if target.kind_of? String or target.kind_of? Integer
 				target
 			elsif target.kind_of? Expression or target.kind_of? Indirection
-				target = target.reduce
+				binding = @sections.inject({}) { |binding, s| s.encoded.binding(s.base) }
+				target = target.bind(binding).reduce
 				if target.kind_of? Integer
 					target
 				elsif target.kind_of? Expression and target.op == :+ and not target.lexpr
@@ -306,7 +307,7 @@ class Program
 			addr >= s_start and addr < s_start + s.encoded.virtsize
 		}
 		if not label = s.encoded.export.invert[addr - s_start]
-			label = "#{pfx}_#{'%x' % addr}"
+			label = pfx << ('_%x_' % addr) << pfx.object_id.to_s
 			s.encoded.export[label] = addr - s_start
 		end
 		label

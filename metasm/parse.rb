@@ -382,8 +382,7 @@ class Program
 	end
 
 	def new_unique_label(pfx = 'metasmintern_uniquelabel')
-		@unique_label_counter ||= 0
-		"#{pfx}_#{@unique_label_counter += 1}"
+		pfx << '_' << pfx.object_id.to_s
 	end
 
 	def unreadtok(t)

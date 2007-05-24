@@ -61,18 +61,9 @@ class Ia32
 		r << 'lock ' if i.prefix[:lock]
 		r << i.prefix[:rep] << ' ' if i.prefix[:rep]
 		r << i.opname
-		if not i.args.empty?
-			r << ' '
-			if (a = i.args.first).kind_of? Expression and a.op == :- and a.lexpr.kind_of? String and a.rexpr.kind_of? String and opcode_list_byname[i.opname].first.props[:setip] 
-				# jmp foo is stored as jmp foo - bar ; bar:
-				r << a.lexpr
-			else
-				i.args.each { |a|
-					r << a << ', '
-				}
-				r.pop
-			end
-		end
+		i.args.each { |a|
+			r << (r.last == i.opname ? ' ' : ', ') << a
+		}
 		r
 	end
 
