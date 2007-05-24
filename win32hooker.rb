@@ -19,7 +19,7 @@ if not pid = ARGV.shift
 end
 pid = pid.to_i
 puts "opening the target process"
-exit if not handle = WinAPI.openprocess(PROCESS_VM_READ, 0, pid)
+exit if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pid)
 
 remote_mem = WindowsRemoteString.new(handle)
 
