@@ -49,7 +49,7 @@ class VirtualString
 	end
 
 	def realstring
-		puts "Using VirtualString.realstring from:" + backtrace if $DEBUG
+		puts "Using VirtualString.realstring from:", caller if $DEBUG
 		raise 'realstring too big' if length > 0x1000000
 	end
 
@@ -77,6 +77,73 @@ class VirtualString
 		else
 			realstring.index(chr, base)
 		end
+	end
+end
+
+class VirtualFile < VirtualString
+	# returns a new VirtualFile of the whole file content, with chosen open mode
+	def self.read(path, mode='rb')
+		File.open(path, mode) { |fd| new fd }
+	end
+
+	attr_accessor :fd, :addr_start, :length,
+		:curpage, :curstart, :invalid
+	# creates a new virtual mapping of a section of the file
+	# the file descriptor must be seekable
+	def initialize(fd, addr_start = 0, length = nil)
+		@fd = fd.dup
+		@addr_start = addr_start
+		if not @length = length
+			@fd.seek(0, File::SEEK_END)
+			@length = @fd.tell - @addr_start
+		end
+		@invalid = true
+	end
+
+	def dup
+		self.class.new(@fd, @addr_start, @length)
+	end
+
+	# reads the data from the current cached page, updating it if necessary
+	def read_range(from, len)
+		from += @addr_start
+		get_page(from) if @invalid or @curstart < from or @curstart + @curpage.length >= from
+		if not len
+			@curpage[from - @curstart]
+		elsif len <= 4096
+			from -= @curstart
+			s = @curpage[from, len]
+			if from + len > 4096	# request crosses a page boundary
+				get_page(@curstart + 4096)
+				s << @curpage[0, from + len - 4096]
+			end
+			s
+		else
+			# big request: return a new virtual page
+			self.class.new(@fd, from, len)
+		end
+	end
+
+	# writes data, invalidating the cache
+	def write_range(from, len, val)
+		@invalid = true
+		@fd.pos = @addr_start + from
+		@fd.write val
+	end
+
+	# reads an aligned page from the file, at file offset addr (ignores @addr_start)
+	def get_page(addr)
+		@invalid = false
+		@curstart = addr & 0xffff_ffff_ffff_f000
+		@fd.pos = @curstart
+		@curpage = @fd.read 4096
+	end
+
+	# returns the full content of the file
+	def realstring
+		super
+		@fd.rewind
+		@fd.read
 	end
 end
 end

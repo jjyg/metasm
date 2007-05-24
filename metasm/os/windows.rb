@@ -122,11 +122,10 @@ end
 
 class WindowsRemoteString < VirtualString
 	attr_accessor :handle, :addr_start, :length
-	attr_accessor :curpage, :curstart
+	attr_accessor :curpage, :curstart, :invalid
 	def initialize(handle, addr_start=0, length=0xffff_ffff)
 		@handle, @addr_start, @length = handle, addr_start, length
-		@curpage = 0.chr * 4096
-		get_page(addr_start)
+		@invalid = true
 	end
 
 	def dup
@@ -135,7 +134,7 @@ class WindowsRemoteString < VirtualString
 
 	def read_range(from, len)
 		from += @addr_start
-		get_page(from) if @curstart < from or @curstart + @curpage.length >= from
+		get_page(from) if @invalid or @curstart < from or @curstart + @curpage.length >= from
 		if not len
 			@curpage[from - @curstart]
 		elsif len <= 4096
@@ -153,10 +152,12 @@ class WindowsRemoteString < VirtualString
 	end
 
 	def write_range(from, len, val)
+		@invalid = true
 		WinAPI.writeprocessmemory(@handle, @addr_start + from, val, val.length, nil)
 	end
 
 	def get_page(addr)
+		@invalid = false
 		@curstart = addr & 0xffff_f000
 		WinAPI.readprocessmemory(@handle, @curstart, @curpage, 4096, 0)
 	end
