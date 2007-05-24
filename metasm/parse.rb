@@ -382,7 +382,11 @@ class Program
 	end
 
 	def new_unique_label(pfx = 'metasmintern_uniquelabel')
+		@knownlabel ||= {}
 		pfx << '_' << pfx.object_id.to_s
+		raise self, "Redefinition of label #{pfx} (defined at #{@knownlabel[pfx].reverse.join(' included from ')})" if @knownlabel[pfx]
+		@knownlabel[pfx] = '<new_unique>'
+		pfx
 	end
 
 	def unreadtok(t)
