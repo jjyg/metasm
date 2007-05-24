@@ -15,9 +15,10 @@ class String
 		p.sections.first.encoded
 	end
 
-	def encode
+	def encode(base=nil)
 		ed = encode_edata
 		ed.fill
+		ed.fixup! ed.binding(base)
 		ed.data
 	end
 
