@@ -205,5 +205,19 @@ end
 		else raise EncodeException, "Internal error: unknown argument specification #{spec.inspect}"
 		end
 	end
+
+	def parse_instruction_fixup(parser, i)
+		if m = i.args.grep(ModRM).first and not m.sz
+			if i.opname == 'movzx' or i.opname == 'movsx'
+				m.sz = 8
+			else
+				if r = i.args.grep(Reg).first
+					m.sz = r.sz
+				else
+					m.sz = @size
+				end
+			end
+		end
+	end
 end
 end

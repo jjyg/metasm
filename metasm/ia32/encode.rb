@@ -52,10 +52,14 @@ class Ia32
 			ret.data[0] |= reg << 3
 			
 			if imm
-				if Expression.in_range?(imm, :i8)		
+				case Expression.in_range?(imm, :i8)
+				when true
 					ret.data[0] |= 1 << 6
 					[ret << Expression.encode_immediate(imm, :i8, endianness)]
-				else
+				when false
+					ret.data[0] |= 2 << 6
+					[ret << Expression.encode_immediate(imm, :i16, endianness)]
+				when nil
 					retl = ret.dup
 					ret.data[0] |= 1 << 6
 					retl.data[0] |= 2 << 6
@@ -114,18 +118,20 @@ class Ia32
 
 				imm ||= 0 if b.val == 5
 				if imm
-					if Expression.in_range?(imm, :i8)		
+					case Expression.in_range?(imm, :i8)		
+					when true
 						ret.data[0] |= 1 << 6
 						[ret << Expression.encode_immediate(imm, :i8, endianness)]
-					else
-						if not imm.kind_of? Integer and not imm.reduce.kind_of? Integer
-							rets = ret.dup
-							rets.data[0] |= 1 << 6
-							rets << @imm.encode(:i8, endianness)
-						end
+					when false
+						ret.data[0] |= 2 << 6
+						[ret << Expression.encode_immediate(imm, :i32, endianness)]
+					when nil
+						rets = ret.dup
+						rets.data[0] |= 1 << 6
+						rets << @imm.encode(:i8, endianness)
 						ret.data[0] |= 2 << 6
 						ret << @imm.encode(:i32, endianness)
-						[ret, rets].compact
+						[ret, rets]
 					end
 				else
 					[ret]
@@ -133,6 +139,13 @@ class Ia32
 			end
 		end
 	end
+
+	class Farptr
+		def encode(endianness, atype)
+			@addr.encode(atype, endianness) << @seg.encode(:u16, endianness)
+		end
+	end
+
 	
 	# returns an array of EncodedData
 	def encode_instruction(program, i)
@@ -191,10 +204,13 @@ class Ia32
 					opsz = ia.sz
 				when :i
 					if op.fields[:s] and opsz != 8
-						if Expression.in_range?(ia, :i8)
+						case Expression.in_range?(ia, :i8)
+						when true
 							imm32s = true 
 							set_field[base, :s, 1]
-						elsif not ia.reduce.kind_of? Integer
+						when false
+							imm32s = false
+						when nil
 							mayimm32s = true
 						end
 					end
@@ -204,12 +220,17 @@ class Ia32
 
 			set_field[base, :w, 1] if op.fields[:w] and opsz != 8
 		end
+		opsz ||= @size
 
 		# addrsize override / segment override
 		if mrm = i.args.grep(ModRM).first
-			pfx << 0x67 if (mrm.b and mrm.b.sz != @size) or (mrm.i and mrm.i.sz != @size)
+			if (mrm.b and mrm.b.sz != @size) or (mrm.i and mrm.i.sz != @size)
+				pfx << 0x67 
+				adsz = 48 - @size
+			end
 			pfx << "\x26\x2E\x36\x3E\x64\x65"[mrm.seg.val] if mrm.seg
 		end
+		adsz ||= @size
 
 	
 		#
@@ -243,55 +264,51 @@ class Ia32
 		#
 		# append other arguments
 		#
-		# this is an array of hashes, each element is an EncodedData + its context (imm32s)
-		ret = [{:edata => EncodedData.new(pfx + base)}]
+		ret = [EncodedData.new(pfx + base)]
 		if mayimm32s
 			set_field[base, :s, 1]
-			ret << {:edata => EncodedData.new(pfx+base), :imm32s => true}
+			imm32sret = [EncodedData.new(pfx+base)]
 		end
 
 		postponed.each { |oa, ia|
 			case oa
 			when :farptr
-				# XXX opsz/adsz override not supported (nonsense anyway)
-				ret.each { |h| h[:edata] << ia.addr.encode("u#@size".to_sym, @endianness) << Expression.encode_immediate(ia.seg, :u16, @endianness) }
+				(ret+imm32sret.to_a).each { |e| e << ia.encode(@endianness, "u#{adsz}".to_sym) }
 			when :modrm, :modrmA, :modrmmmx, :modrmxmm
 				if ia.class == ModRM
 					mrm = ia.encode(regval, @endianness)
-					ret.dup.each { |h|
+					[ret, imm32sret].each { |ary|
+						next if not ary
 						if mrm.length > 1
-							mrm[1..-1].each { |m|
-								ret << h.dup
-								ret.last[:edata] = h[:edata].dup << m
+							first_row = ary.map { |e| e.dup }		# cartesian product
+							ary.clear
+							mrm.each { |m|
+								first_row.each { |e|
+									ary << (e.dup << m)
+								}
 							}
+						else
+							ary.each { |e| e << mrm.first }
 						end
-						h[:edata] << mrm.first
 					}
 				else
-					ret.each { |h| h[:edata] << ModRM.encode_reg(ia, regval) }
+					(ret+imm32sret.to_a).each { |e| e << ModRM.encode_reg(ia, regval) }
 				end
 			when :mrm_imm
-				ret.each { |h| h[:edata] << ia.imm.encode("u#@size".to_sym, @endianness) }
+				(ret+imm32sret.to_a).each { |e| e << ia.imm.encode("u#{adsz}".to_sym, @endianness) }
 			when :i8, :u8, :u16
-				ret.each { |h| h[:edata] << ia.encode(oa, @endianness) }
+				(ret+imm32sret.to_a).each { |e| e << ia.encode(oa, @endianness) }
 			when :i
-				ret.each { |h|
-					if h[:imm32s]
-						oa = :i8
-					else
-						oa = imm32s ? :i8 : "u#{opsz || @size}".to_sym
-					end
-					h[:edata] << ia.encode(oa, @endianness)
-				}
+				ret.each { |e| e << ia.encode((imm32s ? :i8 : "u#{opsz}".to_sym), @endianness) }
+				imm32sret.each { |e| e << ia.encode(:i8, @endianness) } if imm32sret
 			else
 				raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"
 			end
 		}
 
-		ret.map { |h|
-			h[:edata].export[postlabel] = h[:edata].virtsize if postlabel
-			h[:edata]
-		}
+		(ret + imm32sret.to_a).each { |e| e.export[postlabel] = e.virtsize } if postlabel
+
+		ret + imm32sret.to_a
 	end
 end
 end
