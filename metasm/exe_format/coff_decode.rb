@@ -108,7 +108,7 @@ class COFF
 					addr = coff.decode_word
 					if addr >= coff.directory['export_table'][0] and addr < coff.directory['export_table'][0] + coff.directory['export_table'][1]
 						name = coff.encoded.data[addr...coff.encoded.data.index(0, addr)]
-						e.forwarder_libname, name = name.split('.', 2)
+						e.forwarder_lib, name = name.split('.', 2)
 						if name[0] == ?#
 							e.forwarder_ordinal = name[1..-1].to_i
 						else
