@@ -2,41 +2,41 @@ require 'metasm/ia32/opcodes'
 require 'metasm/decode'
 
 module Metasm
-class Ia32
-	class ModRM
-		def self.decode(edata, byte, endianness, adsz, opsz, seg=nil, regclass=Reg)
-			m = (byte >> 6) & 3
-			rm = byte & 7
-	
-			if m == 3
-				return regclass.new(rm, opsz)
-			end
-			
-			sum = Sum[adsz][m][rm]
-			
-			s, i, b, imm = nil
-			sum.each { |a|
-				case a
-				when Integer
-					if not b
-						b = Reg.new(a, adsz)
-					else
-						s = 1
-						i = Reg.new(a, adsz)
-					end
-				
-				when :sib
-					sib = edata.get_byte
-	
-					ii = ((sib >> 3) & 7)
-					if ii != 4
-						s = 1 << ((sib >> 6) & 3)
-						i = Reg.new(ii, adsz)
-					end
-					
-					bb = sib & 7
-					if bb == 5 and m == 0
-						imm = Expression[edata.decode_imm("i#{adsz}".to_sym, endianness)]
+	class Ia32
+		class ModRM
+			def self.decode(edata, byte, endianness, adsz, opsz, seg=nil, regclass=Reg)
+				m = (byte >> 6) & 3
+				rm = byte & 7
+
+				if m == 3
+					return regclass.new(rm, opsz)
+				end
+
+				sum = Sum[adsz][m][rm]
+
+				s, i, b, imm = nil
+				sum.each { |a|
+					case a
+					when Integer
+						if not b
+							b = Reg.new(a, adsz)
+						else
+							s = 1
+							i = Reg.new(a, adsz)
+						end
+
+					when :sib
+						sib = edata.get_byte
+
+						ii = ((sib >> 3) & 7)
+						if ii != 4
+							s = 1 << ((sib >> 6) & 3)
+							i = Reg.new(ii, adsz)
+						end
+
+						bb = sib & 7
+						if bb == 5 and m == 0
+							imm = Expression[edata.decode_imm("i#{adsz}".to_sym, endianness)]
 					else
 						b = Reg.new(bb, adsz)
 					end
@@ -202,7 +202,7 @@ class Ia32
 		end
 
 		if op.props[:setip] and op.name[0, 3] != 'ret' and di.instruction.args.first.kind_of? Expression
-			di.instruction.args[0] = Expression[program.make_label(off + di.instruction.args[0].reduce, 'xref')]
+			di.instruction.args[0] = Expression[program.make_label(off + di.bin_length + di.instruction.args[0].reduce, 'xref')]
 		end
 
 		di.instruction.prefix.delete :opsz
