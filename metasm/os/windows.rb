@@ -9,6 +9,9 @@ module WinAPI
 		class Module
 			attr_accessor :path, :addr
 		end
+		def to_s
+			"pid #{pid}:".ljust(6) + ((@modules and @modules.first and @modules.first.path) ? File.basename(@modules.first.path) : '<unknown>')
+		end
 	end
 
 	def self.new_api(lib, name, args, zero_is_err = true)
