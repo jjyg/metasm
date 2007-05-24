@@ -22,9 +22,13 @@ raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_AL
 
 remote_mem = WindowsRemoteString.new(handle)
 
-pe_base = pids[pid].modules.first.addr
-pe = Metasm::LoadedPE.decode remote_mem[pe_base, 0x1000000]
+mods = pids[pid].modules
+pe = Metasm::LoadedPE.decode remote_mem[mods[0].addr, 0x1000000]
 pe.coff.decode_imports
+
+pe2 = Metasm::LoadedPE.decode remote_mem[mods[1].addr, 0x1000000]
+pe2.coff.decode_exports
+p pe.export
 
 target = nil
 msgboxw= nil
