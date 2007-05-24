@@ -205,7 +205,7 @@ class Ia32
 		# addrsize override / segment override
 		if mrm = i.args.grep(ModRM).first
 			pfx << 0x67 if (mrm.b and mrm.b.sz != @size) or (mrm.i and mrm.i.sz != @size)
-			pfx << "\x26\x2E\x36\x3E\x64\x65"[m.seg.val] if mrm.seg
+			pfx << "\x26\x2E\x36\x3E\x64\x65"[mrm.seg.val] if mrm.seg
 		end
 
 	
