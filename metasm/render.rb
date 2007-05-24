@@ -37,12 +37,22 @@ class Expression
 		l = @lexpr
 		r = @rexpr
 		if l.kind_of? Integer
+			if l < 0
+				nl = true
+				l = -l
+			end
 			l = '%xh' % l
 			l = '0' << l unless (?0..?9).include? l[0]
+			l = '-' << l if nl
 		end
 		if r.kind_of? Integer
+			if r < 0
+				nr = true
+				r = -r
+			end
 			r = '%xh' % r
 			r = '0' << r unless (?0..?9).include? r[0]
+			r = '-' << r if nr
 		end
 		if @op == :+ and not l
 			[r]
