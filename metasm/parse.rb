@@ -382,10 +382,10 @@ class Program
 	end
 
 	def new_unique_label(pfx = 'metasmintern_uniquelabel')
-		@knownlabel ||= {}
+		@knownlabel_unique ||= {}
 		pfx << '_' << pfx.object_id.to_s
-		raise self, "Redefinition of label #{pfx} (defined at #{@knownlabel[pfx].reverse.join(' included from ')})" if @knownlabel[pfx]
-		@knownlabel[pfx] = '<new_unique>'
+		raise self, "Redefinition of unique label #{pfx}" if @knownlabel_unique[pfx]
+		@knownlabel_unique[pfx] = true
 		pfx
 	end
 
