@@ -308,6 +308,7 @@ class Program
 		}
 		if not label = s.encoded.export.invert[addr - s_start]
 			label = (pfx << ('_%x_' % addr) << pfx.object_id.to_s(16)).freeze
+			(@unique_labels ||= {}).update(label => nil)
 			s.encoded.export[label] = addr - s_start
 		end
 		label

@@ -382,7 +382,9 @@ class Program
 	end
 
 	def new_unique_label(pfx = 'metasmintern_uniquelabel')
-		(pfx << '_' << pfx.object_id.to_s(16)).freeze
+		k = (pfx << '_' << pfx.object_id.to_s(16)).freeze
+		(@unique_labels ||= {}).update(k => nil)
+		k
 	end
 
 	def unreadtok(t)
