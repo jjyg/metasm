@@ -201,8 +201,16 @@ module Metasm
 		di.bin_length += edata.ptr - before_ptr
 
 		if op.name == 'movsx' or op.name == 'movzx'
-			# TODO
-			#di.instruction.arg[0].sz = 28
+			if opsz == 8
+				di.instruction.args[1].sz = 8
+			else
+				di.instruction.args[1].sz = 16
+			end
+			if di.instruction.prefix[:opsz]
+				di.instruction.args[0].sz = 48 - @size
+			else
+				di.instruction.args[0].sz = @size
+			end
 		end
 
 		if op.props[:setip] and op.name[0, 3] != 'ret' and di.instruction.args.first.kind_of? Expression

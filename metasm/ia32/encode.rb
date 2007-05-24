@@ -165,9 +165,10 @@ class Ia32
 
 		# opsize override / :s :w fields
 		if op.name == 'movsx' or op.name == 'movzx'
-			case [i.arg[0].sz, i.arg[1].sz]
+			case [i.args[0].sz, i.args[1].sz]
 			when [32, 16]
-				raise EncodeError, "Incompatible arg size in #{i}"
+				set_field[base, :w, 1]
+				pfx << 0x66 if @size == 16
 			when [16, 16]
 				set_field[base, :w, 1]
 				pfx << 0x66 if @size == 32
