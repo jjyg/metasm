@@ -5,29 +5,21 @@ include Metasm
 include WinAPI
 
 WinAPI.get_debug_privilege
-pids = WinAPI.list_processes
 
+# select target
 pid = ARGV.shift
-pid = Integer(pid) rescue pid
+pid = Integer(pid) if pid rescue nil
+pids = WinAPI.list_processes
 if not pid
-	# show list of processes
-	puts pids.sort.map { |pid, pr|
-		"#{pid}:".ljust(6) +
-		if pr.modules and m = pr.modules.first
-			('%08x ' % m.addr) + File.basename(m.path)
-		else
-			'<unknown>'
-		end
-	}
+	puts pids.sort.transpose.last
 	exit
 end
 if not pids[pid]
-	exit if not pid = pids.keys.find { |k| pids[k].modules and pids[k].modules.first.path =~ /#{pid}/i }
+	abort("target not found !") if not pid = pids.keys.find { |k| pids[k].modules and pids[k].modules.first.path =~ /#{pid}/i }
 	puts "using pid #{pid} #{File.basename pids[pid].modules.first.path}"
 end
 
 # open target
-pid = pid.to_i
 raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pid)
 
 # virtual string of remote process memory
@@ -57,20 +49,32 @@ pe.coff.imports.each { |id|
 raise "target not found" if not target or not msgboxw_p
 
 myshellcode = <<EOS.encode_edata
+pushad
+mov esi, dword ptr [esp+20h+8]	; 2nd arg = buffer
+mov edi, message
+mov ecx, 19
+xor eax, eax
+copy_again:
+lodsb
+stosw
+loop copy_again
+
 push 0
 push title
 push message
 push 0
 call [msgboxw]
+popad
 jmp  target
-	
+
+.align 4
 ; strings to display
-title dw 'kikoo lol', 0
-message dw 'HI GUISE', 0
+title dw 'I see what you did there...', 0
+message dw 20 dup(?)
 EOS
 
-injected = WinAPI.virtualallocex(handle, 0, myshellcode.virtsize, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
-raise 'failed to virtualallocex remote memory' if not injected
+raise 'remote allocation failed' if not injected = WinAPI.virtualallocex(handle, 0, myshellcode.virtsize, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+puts "injected malicous code at %x" % injected
 
 myshellcode.fixup myshellcode.binding(injected).merge('msgboxw' => msgboxw_p, 'target' => target)
 
