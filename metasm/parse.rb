@@ -382,11 +382,7 @@ class Program
 	end
 
 	def new_unique_label(pfx = 'metasmintern_uniquelabel')
-		@knownlabel_unique ||= {}
-		pfx << '_' << pfx.object_id.to_s
-		raise self, "Redefinition of unique label #{pfx}" if @knownlabel_unique[pfx]
-		@knownlabel_unique[pfx] = true
-		pfx
+		(pfx << '_' << pfx.object_id.to_s(16)).freeze
 	end
 
 	def unreadtok(t)

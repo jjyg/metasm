@@ -10,8 +10,7 @@ class ExeFormat
 	end
 
 	def new_label(base = '')
-		labelname = base + '_uniquelabel'
-		labelname << labelname.object_id.to_s
+		(base << '_uniquelabel_' << base.object_id.to_s(16)).freeze
 	end
 
 	# if hash = {1 => 'toto', 2 => 'tata'}
