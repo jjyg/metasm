@@ -133,10 +133,12 @@ module Metasm
 			}
 
 			decode_prefix(program, di.instruction, edata.get_byte)
+			di.bin_length += 1
 		end
 	end
 
 	def decode_instruction(program, edata, di, off)
+		before_ptr = edata.ptr
 		op = di.opcode
 		di.instruction.opname = op.name
 		bseq = op.bin.inject([]) { |ar, bin| ar << edata.get_byte }
@@ -195,6 +197,8 @@ module Metasm
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
+
+		di.bin_length += edata.ptr - before_ptr
 
 		if op.name == 'movsx' or op.name == 'movzx'
 			# TODO

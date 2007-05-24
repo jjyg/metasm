@@ -42,6 +42,7 @@ class MIPS
 
 	def decode_instruction(program, edata, di, off)
 		# TODO relocations !!
+		before_ptr = edata.ptr
 		op = di.opcode
 		di.instruction.opname = op.name
 		val = edata.decode_imm(:u32, @endianness)
@@ -60,6 +61,7 @@ class MIPS
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
+		di.bin_length += edata.ptr - before_ptr
 	end
 
 	def emu_backtrace(di, off, value)

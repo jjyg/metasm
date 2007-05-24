@@ -16,9 +16,9 @@ class CPU
 		di = DecodedInstruction.new
 		di.instruction = Instruction.new self
 		pre_ptr = edata.ptr
+		di.bin_length = 0
 		decode_findopcode(program, edata, di) rescue di.opcode = nil
 		decode_instruction(program, edata, di, off) if di.opcode rescue di.opcode = nil
-		di.bin_length = edata.ptr - pre_ptr
 		di
 	end
 
