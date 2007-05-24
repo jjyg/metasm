@@ -118,12 +118,14 @@ class Ia32
 						ret.data[0] |= 1 << 6
 						[ret << Expression.encode_immediate(imm, :i8, endianness)]
 					else
-						retl = ret.dup
-						ret.data[0] |= 1 << 6
-						retl.data[0] |= 2 << 6
-						ret << @imm.encode(:i8, endianness)
-						retl << @imm.encode(:i32, endianness)
-						[retl, ret]
+						if not imm.kind_of? Integer and not imm.reduce.kind_of? Integer
+							rets = ret.dup
+							rets.data[0] |= 1 << 6
+							rets << @imm.encode(:i8, endianness)
+						end
+						ret.data[0] |= 2 << 6
+						ret << @imm.encode(:i32, endianness)
+						[ret, rets].compact
 					end
 				else
 					[ret]
