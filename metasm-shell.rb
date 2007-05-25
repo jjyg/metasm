@@ -90,7 +90,9 @@ def asm
 		break if %w[quit exit].include? l.chomp
 	
 		begin
-			data = l.gsub(';', "\n").encode
+			data = l.gsub(';', "\n")
+			next if data.empty?
+			data = data.encode
 			puts '"' + data.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
 		rescue Metasm::Exception => e
 			puts "Error: #{e.class} #{e.message}"
