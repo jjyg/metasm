@@ -91,7 +91,7 @@ def asm
 	
 		begin
 			data = l.gsub(';', "\n")
-			next if data.empty?
+			next if data.strip.empty?
 			data = data.encode
 			puts '"' + data.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
 		rescue Metasm::Exception => e
