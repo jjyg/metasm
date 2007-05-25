@@ -126,6 +126,7 @@ class WindowsRemoteString < VirtualString
 	def initialize(handle, addr_start=0, length=0xffff_ffff)
 		@handle, @addr_start, @length = handle, addr_start, length
 		@invalid = true
+		@curpage = ' '*4096
 	end
 
 	def dup
