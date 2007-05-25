@@ -226,6 +226,13 @@ class Lexer
 					when ?t: ?\t
 					when ?a: ?\a
 					when ?b: ?\b
+
+					# ruby's str.inspect chars
+					when ?v: ?\v
+					when ?f: ?\f
+					when ?e: ?\e
+					when ?#: ?#
+
 					when ?\\, tok.delimiter: c
 
 					when ?\r
