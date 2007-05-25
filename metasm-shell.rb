@@ -66,7 +66,7 @@ class String
 			block.list.each { |di|
 				res << ( di.instruction.to_s.ljust(12) + ' ; ' +
 					('%08X  ' % addr) +
-					p.sections.first.encoded.data[addr-p.sections.first.base, di.bin_length].unpack('C*').map { |c| '%02x' % c }.join )
+					p.sections.first.encoded.data[addr-p.sections.first.base, di.bin_length].to_s.unpack('C*').map { |c| '%02x' % c }.join )
 				addr += di.bin_length
 			}
 			res << ''

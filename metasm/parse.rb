@@ -910,7 +910,7 @@ class Expression
 
 			loop do
 				case tok = lexer.readtok
-				when :<, :>, :'==', :'!=', :'||', :'&&',
+				when :<, :>, :'==', :'!=', :'||', :'&&', :^,
 				     :-, :+, :*, :/, :%, :|, :&, :<<, :>>
 					until opstack.empty? or OP_PRIO[tok][opstack.last]
 						stack << new(opstack.pop, stack.pop, stack.pop)
@@ -963,7 +963,7 @@ class Expression
 
 			loop do
 				case tok = lexer.readtok
-				when :-, :+, :*, :/, :%, :|, :&, :<<, :>>
+				when :-, :+, :*, :/, :%, :|, :^, :&, :<<, :>>
 					lessprio = OP_PRIO[tok]
 					
 					until opstack.empty? or lessprio[opstack.last]
