@@ -307,11 +307,13 @@ class COFF
 		@encoded << @header.encode(self, opth) << opth
 
 		# encode section table
-		@sections.each { |s| @encoded << s.encode(self) }
+		@sections.each { |s|
+			s.rawaddr = nil if s.rawaddr.kind_of? Integer	# XXX allow to force rawaddr ?
+			@encoded << s.encode(self)
+		}
 		@encoded.align_size @optheader.file_align
 
 		# encode section bodies
-		# TODO handle user-defined section virtual address
 		
 		baseaddr = @optheader.imagebase		# XXX what if label ?
 
@@ -322,6 +324,11 @@ class COFF
 
 		curaddr = (baseaddr + @encoded.virtsize + @optheader.sect_align - 1) / @optheader.sect_align * @optheader.sect_align
 		@sections.each { |s|
+			if s.virtaddr.kind_of? Integer
+				raise "cannot encode section #{s.name}: hardcoded address too short" if curaddr > s.virtaddr
+				curaddr = s.virtaddr
+			end
+
 			s.encoded.export.each { |label, offset| binding[label] = curaddr + offset }
 			binding[s.rawaddr] = @encoded.virtsize if s.rawaddr.kind_of? String
 
