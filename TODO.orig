@@ -1,8 +1,0 @@
- write Program/Parser separate classes
- write CPU#encode_all (all possible encodings for an instruction)
- write some unittests
- rewrite **/decode with new classes and hardcoded ia32.flag[:d]
- write disasm asm
- write dasm gui
- make a public release
-foo
