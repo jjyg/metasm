@@ -52,6 +52,9 @@ class VirtualString
 		puts "Using VirtualString.realstring from:", caller if $DEBUG
 		raise 'realstring too big' if length > 0x1000000
 	end
+	def to_str
+		realstring	# for bad people checking respond_to? :to_str (like String#<<)
+	end
 
 	def method_missing(m, *args, &b)
 		if ''.respond_to? m
