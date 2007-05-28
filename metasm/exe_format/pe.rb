@@ -4,28 +4,26 @@ require 'metasm/exe_format/coff_encode'
 require 'metasm/exe_format/coff_decode'
 
 module Metasm
-class PE < ExeFormat
-	attr_accessor :coff_offset, :sig
-	attr_accessor :encoded, :mz, :coff
+class PE < COFF
+	PESIG = "PE\0\0"
+
+	attr_accessor :coff_offset, :sig, :mz
 
 	def self.decode(str)
 		pe = new
 		pe.encoded = EncodedData.new << str
-		pe.decode_header
-		pe.mz.encoded = pe.encoded[0..pe.coff_offset-4]
+		pe.decode
+		pe.mz.encoded = pe.encoded[0...pe.coff_offset-4]
 		pe.mz.encoded.ptr = 0
 		pe.mz.decode_header
-		pe.coff.encoded = pe.encoded
-		pe.coff.encoded.ptr = pe.coff_offset
-		pe.coff.decode_header
 		pe
 	end
 
 	def initialize
-		@coff = COFF.new
 		@mz = MZ.new
 		@coff_offset = 0x40
 		@sig = "PE\0\0"
+		super
 	end
 
 	def decode_header
@@ -33,7 +31,8 @@ class PE < ExeFormat
 		@coff_offset = @encoded.decode_imm(:u32, :little) + 4
 		@encoded.ptr = @coff_offset - 4
 		@sig = @encoded.read(4)
-		raise "Invalid PE signature #{@sig.inspect}" if @sig != "PE\0\0"
+		raise "Invalid PE signature #{@sig.inspect}" if @sig != PESIG
+		super
 	end
 
 	def encode_default_mz_header
@@ -54,7 +53,7 @@ EOMZSTUB
 		mzparts = @mz.pre_encode
 
 		@mz.encoded = EncodedData.new << mzparts.shift
-		raise 'OH NOES !!1!!!1!' if @mz.encoded.virtsize > 0x3c
+		raise 'OH NOES !!1!!!1!' if @mz.encoded.virtsize > 0x3c	# MZ header is too long, cannot happen
 		# put as much as we can before 0x3c
 		until mzparts.empty?
 			break if mzparts.first.virtsize + @mz.encoded.virtsize > 0x3c
@@ -83,24 +82,27 @@ EOMZSTUB
 		@mz.encode_fix_checksum
 	end
 
-	def encode
+	def encode_header(*a)
 		# @mz.encoded must be an EncodedData with 0x3c pointing beyond its last byte, which should be 8-aligned, and its 1st 2 bytes should be 'MZ'
 		encode_default_mz_header if not @mz.encoded
 
-		@encoded = @coff.encoded = @mz.encoded.dup
+		@encoded << @mz.encoded.dup
 		# append the PE signature
-		@encoded << "PE\0\0"
-		# encode the COFF header & body
-		@coff.encode
+		@encoded << PESIG
 
-		@encoded.data
+		super
 	end
 end
 
 class LoadedPE < PE
-	def initialize
-		super
-		@coff = LoadedCOFF.new
+	def rva_to_off(rva)
+		rva if rva and rva != 0 and rva < @encoded.virtsize
+	end
+
+	def decode_sections
+		@sections.each { |s|
+			s.encoded = @encoded[s.virtaddr, s.virtsize]
+		}
 	end
 end
 end

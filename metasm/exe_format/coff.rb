@@ -78,7 +78,7 @@ class COFF < ExeFormat
 			:base_of_data,	# not in PE+
 			# NT-specific fields
 			:imagebase, :sect_align, :file_align, :osv_maj, :osv_min, :imgv_maj, :imgv_min, :subsys_maj, :subsys_min, :reserved,
-			:image_size, :headers_size, :csum, :subsystem, :dll_characts, :stackres_size, :stackcom_size, :heapres_size, :heapcom_size, :ldrflags, :numrva
+			:image_size, :headers_size, :checksum, :subsystem, :dll_characts, :stackres_size, :stackcom_size, :heapres_size, :heapcom_size, :ldrflags, :numrva
 	end
 
 	class ImportDirectory
@@ -117,6 +117,8 @@ class COFF < ExeFormat
 	def initialize
 		@directory = {}	# DIRECTORIES.key => [rva, size]
 		@sections = []
+		@export = nil
+		@imports = nil
 		@endianness = :little
 	end
 
