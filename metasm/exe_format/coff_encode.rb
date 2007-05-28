@@ -98,8 +98,8 @@ class COFF
 			@subsys_maj   ||= 4
 			@subsys_min   ||= 0
 			@reserved     ||= 0
-			@image_size   ||= coff.new_label
-			@headers_size ||= coff.new_label
+			@image_size   ||= coff.new_label('image_size')
+			@headers_size ||= coff.new_label('headers_size')
 			@checksum     ||= 0
 			@subsystem    ||= 'WINDOWS_GUI'
 			@dll_characts ||= 0
@@ -131,9 +131,9 @@ class COFF
 		def set_default_values(coff)
 			@name ||= ''
 			@virtsize ||= @encoded.virtsize
-			@virtaddr ||= Expression[coff.label_at(@encoded, 0), :-, coff.label_at(coff.encoded, 0)]
-			@rawsize  ||= coff.new_label
-			@rawaddr  ||= coff.new_label
+			@virtaddr ||= Expression[coff.label_at(@encoded, 0, 'sect_start'), :-, coff.label_at(coff.encoded, 0)]
+			@rawsize  ||= coff.new_label('sect_rawsize')
+			@rawaddr  ||= coff.new_label('sect_rawaddr')
 			@relocaddr ||= 0
 			@linenoaddr ||= 0
 			@relocnr  ||= 0
@@ -150,7 +150,7 @@ class COFF
 			%w[edata addrtable namptable ord_table dllname nametable].each { |name|
 				edata[name] = EncodedData.new
 			}
-			label = proc { |n| coff.label_at(edata[n], 0) }
+			label = proc { |n| coff.label_at(edata[n], 0, n) }
 			rva = proc { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
 			rva_end = proc { |n| Exprennsion[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
 
@@ -189,7 +189,7 @@ class COFF
 				end
 			}
 			
-			coff.directory['export_table'] = [coff.label_at(edata, 0), edata.virtsize]
+			coff.directory['export_table'] = [coff.label_at(edata, 0, 'export_table'), edata.virtsize]
 
 			# sorted by alignment directives
 			%w[edata addrtable namptable ord_table dllname nametable].inject(EncodedData.new) { |ed, name| ed << edata[name] }
@@ -210,8 +210,8 @@ class COFF
 			edata = {}
 			ary.each { |i| i.encode(coff, edata) }
 
-			coff.directory['iat'] = [coff.label_at(edata['iat'], 0), edata['iat'].virtsize]
-			coff.directory['import_table'] = [coff.label_at(edata['idata'], 0), edata['idata'].virtsize]
+			coff.directory['iat'] = [coff.label_at(edata['iat'], 0, 'iat'), edata['iat'].virtsize]
+			coff.directory['import_table'] = [coff.label_at(edata['idata'], 0, 'idata'), edata['idata'].virtsize]
 
 			EncodedData.new <<
 			edata['idata'] <<
@@ -370,7 +370,7 @@ class COFF
 
 	# TODO merge sections, base relocations, resources
 	def encode(target = 'exe')
-		@optheader.checksum = new_label
+		@optheader.checksum = new_label('checksum')
 		@encoded ||= EncodedData.new
 		label_at(@encoded, 0, 'pe_start')
 		encode_exports if @export
@@ -613,7 +613,7 @@ __END__
 			}.compact.sort
 			next if reloclist.empty?
 
-			label = program.label_at(s.edata, 0)
+			label = program.label_at(s.edata, 0, 'sect_start')
 
 			# <XXX warn="this is x86 specific">
 			reloclist << [0, 0] if reloclist.length % 2 == 1	# align
@@ -641,7 +641,7 @@ __END__
 		s.characteristics = %w[MEM_READ MEM_DISCARDABLE]
 		pe_sections << s
 
-		directories['base_relocation_table'] = [program.label_at(relocs, 0), relocs.virtsize]
+		directories['base_relocation_table'] = [program.label_at(relocs, 0, 'relocs'), relocs.virtsize]
 	end
 
 	module Resource
