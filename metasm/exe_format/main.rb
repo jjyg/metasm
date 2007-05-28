@@ -10,6 +10,7 @@ class ExeFormat
 	end
 
 	def new_label(base = '')
+		base = base.dup
 		k = (base << '_uniquelabel_' << base.object_id.to_s(16)).freeze
 		(@unique_labels ||= {}).update(k => nil)
 		k

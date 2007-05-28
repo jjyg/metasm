@@ -307,6 +307,7 @@ class Program
 			addr >= s_start and addr < s_start + s.encoded.virtsize
 		}
 		if not label = s.encoded.export.invert[addr - s_start]
+			pfx = pfx.dup
 			label = (pfx << ('_%x_' % addr) << pfx.object_id.to_s(16)).freeze
 			(@unique_labels ||= {}).update(label => nil)
 			s.encoded.export[label] = addr - s_start

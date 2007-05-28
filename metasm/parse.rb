@@ -389,6 +389,7 @@ class Program
 	end
 
 	def new_unique_label(pfx = 'metasmintern_uniquelabel')
+		pfx = pfx.dup
 		k = (pfx << '_' << pfx.object_id.to_s(16)).freeze
 		(@unique_labels ||= {}).update(k => nil)
 		k
