@@ -31,8 +31,8 @@ class VirtualString
 		if not len and from.kind_of? Range
 			b = from.begin
 			e = from.end
-			b = 1 + b + length if b < 0
-			e = 1 + e + length if e < 0
+			b = b + length if b < 0
+			e = e + length if e < 0
 			len = e - b
 			len += 1 if not from.exclude_end?
 			from = b
@@ -40,7 +40,7 @@ class VirtualString
 			len = 1
 			val = val.chr
 		end
-		from = 1 + from + length if from < 0
+		from = from + length if from < 0
 
 		raise IndexError, 'Index out of string' if from > length
 		raise IndexError, 'Cannot modify virtualstring length' if val.length != len or from + len > length

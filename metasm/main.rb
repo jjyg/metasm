@@ -444,13 +444,13 @@ class EncodedData
 		if not len and from.kind_of? Range
 			b = from.begin
 			e = from.end
-			b = 1 + b + @virtsize if b < 0
-			e = 1 + e + @virtsize if e < 0
+			b = b + @virtsize if b < 0
+			e = e + @virtsize if e < 0
 			len = e - b
 			len += 1 if not from.exclude_end?
 			from = b
 		end
-		from = 1 + from + @virtsize if from < 0
+		from = from + @virtsize if from < 0
 
 		return @data[from] if not len
 		ret = EncodedData.new @data[from, len]
