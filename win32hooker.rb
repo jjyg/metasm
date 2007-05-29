@@ -29,19 +29,19 @@ mods = pids[pid].modules
 
 # hook iat
 pe = Metasm::LoadedPE.decode remote_mem[mods[0].addr, 0x1000000]
-pe.coff.decode_imports
+pe.decode_imports
 
 # find iat entries
 target = nil
 target_p = nil
 msgboxw_p = nil
-pe.coff.imports.each { |id|
+pe.imports.each { |id|
 	id.imports.each_with_index { |i, idx|
 		case i.name
 		when 'MessageBoxW'
-			msgboxw_p = mods[0].addr + id.iat_p + (pe.coff.optheader.sig == 'PE+' ? 8 : 4) * idx
+			msgboxw_p = mods[0].addr + id.iat_p + (pe.optheader.sig == 'PE+' ? 8 : 4) * idx
 		when /WriteFile/
-			target_p  = mods[0].addr + id.iat_p + (pe.coff.optheader.sig == 'PE+' ? 8 : 4) * idx
+			target_p  = mods[0].addr + id.iat_p + (pe.optheader.sig == 'PE+' ? 8 : 4) * idx
 			target = id.iat[idx]
 		end
 	}
@@ -81,7 +81,7 @@ myshellcode.fixup myshellcode.binding(injected).merge('msgboxw' => msgboxw_p, 't
 # write shellcode in remote process
 remote_mem[injected, myshellcode.data.length] = myshellcode.data
 # rewrite iat entry
-iat_h = pe.coff.encode_xword(injected)
+iat_h = pe.encode_xword(injected)
 remote_mem[target_p, iat_h.data.length] = iat_h.data
 
 WinAPI.closehandle(handle)

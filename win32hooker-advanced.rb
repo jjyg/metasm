@@ -95,10 +95,10 @@ mods[1..-1].each { |m|
 	next if m.path !~ /user32/i
 	puts "handling #{File.basename m.path}" if $VERBOSE
 	mpe = Metasm::LoadedPE.decode remote_mem[m.addr, 0x1000000]
-	mpe.coff.decode_exports
-	next if not mpe.coff.export or not mpe.coff.export.exports
-	text = mpe.coff.sections.find { |s| s.name == '.text' }
-	mpe.coff.export.exports.each { |e|
+	mpe.decode_exports
+	next if not mpe.export or not mpe.export.exports
+	text = mpe.sections.find { |s| s.name == '.text' }
+	mpe.export.exports.each { |e|
 		next if not e.target or not e.name
 		e.target = mpe.encoded.export[e.target] if mpe.encoded.export[e.target]
 		next if e.target < text.virtaddr or e.target >= text.virtaddr + text.virtsize
