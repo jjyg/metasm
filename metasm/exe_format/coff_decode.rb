@@ -249,8 +249,8 @@ class COFF
 
 	def decode_sections
 		@sections.each { |s|
-			s.encoded = @encoded[s.rawaddr, s.rawsize]
-			s.encoded.virtsize += s.virtsize - s.rawsize if s.virtsize > s.rawsize
+			s.encoded = @encoded[s.rawaddr, [s.rawsize, s.virtsize].min]
+			s.encoded.virtsize = s.virtsize
 		}
 	end
 
@@ -271,8 +271,7 @@ class COFF
 
 		@sections.each { |s|
 			ps = Metasm::Section.new(pgm, s.name)
-			ps.encoded << @encoded[s.rawaddr, s.rawsize]
-			ps.encoded.virtsize += s.virtsize - s.rawsize if s.virtsize > s.rawsize
+			ps.encoded << s.encoded
 			ps.mprot.concat({
 				'MEM_EXECUTE' => :exec, 'MEM_READ' => :read, 'MEM_WRITE' => :write, 'MEM_DISCARDABLE' => :discard, 'MEM_SHARED' => :shared
 			}.values_at(*s.characteristics).compact)
@@ -282,10 +281,7 @@ class COFF
 		
 		if @imports
 			@imports.each { |id|
-				pgm.import[id.libname] = []
-				id.imports.each { |i|
-					pgm.import[id.libname] << [i.name, nil]
-				}
+				pgm.import[id.libname] = id.imports.map { |i| [i.name, nil] }
 			}
 		end
 
