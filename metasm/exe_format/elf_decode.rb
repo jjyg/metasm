@@ -13,10 +13,12 @@ class ELF
 		if e.header.shoff != 0
 			e.encoded.ptr = e.header.shoff
 			e.decode_section_header
+			e.decode_sections
 		end
 		if e.header.phoff != 0
 			e.encoded.ptr = e.header.phoff
 			e.decode_program_header
+			e.decode_segments
 		end
 		e
 	end
@@ -585,6 +587,23 @@ class ELF
 		Metasm::Relocation.new(Expression[target], :u32, @header.endianness) if target
 	end
 
+	def decode_segments
+		if dynamic = @segments.find { |s| s.type == 'DYNAMIC' }
+			@encoded.export['dynamic_tags'] = @encoded.ptr
+			@encoded.ptr = dynamic.offset
+			decode_segments_tags
+			decode_segments_tags_interpret
+			decode_segments_symbols
+			decode_segments_relocs
+		end
+		@segments.each { |s|
+			if s.type == 'LOAD'
+				s.encoded = @encoded[s.offset, s.filesz]
+				s.encoded.virtsize = s.memsz if s.memsz > s.encoded.virtsize
+			end
+		}
+	end
+
 	def segments_to_program
 		case @header.machine
 		when '386': cpu = Ia32.new if defined? Ia32	# check @header.e_class for 64bits
@@ -596,15 +615,6 @@ class ELF
 		end
 
 		pgm = Program.new cpu
-
-		if dynamic = @segments.find { |s| s.type == 'DYNAMIC' }
-			@encoded.export['dynamic_tags'] = @encoded.ptr
-			@encoded.ptr = dynamic.offset
-			decode_segments_tags
-			decode_segments_tags_interpret
-			decode_segments_symbols
-			decode_segments_relocs
-		end
 
 		@segments.find_all { |s| s.type == 'LOAD' }.each { |s|
 			name = bname =
@@ -618,8 +628,7 @@ class ELF
 			sec.mprot = { 'R'=>:r, 'W'=>:w, 'X'=>:x }.values_at(*s.flags).compact
 			sec.base = s.vaddr
 			sec.align = s.align
-			sec.encoded << @encoded[s.offset, s.filesz]
-			sec.encoded.virtsize += s.memsz - s.filesz
+			sec.encoded << s.encoded
 
 			pgm.sections << sec
 		}
@@ -627,10 +636,19 @@ class ELF
 		pgm
 	end
 
-	def sections_to_program
-		# TODO
-		decode_sections
+	def decode_sections
+		@sections.each { |s|
+			if s.flags.include? 'ALLOC'
+				if s.type == 'NOBITS'
+					s.encoded = EncodedData.new :virtsize => s.size
+				else
+					s.encoded = @encoded[s.offset, s.size]
+				end
+			end
+		}
+	end
 
+	def sections_to_program
 		case @header.machine
 		when '386': cpu = Ia32.new	# check @header.e_class for 64bits
 		else
