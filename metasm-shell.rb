@@ -64,7 +64,7 @@ class String
 				res << "#{e}:" if off == addr - p.sections.first.base #and e !~ /^metasmintern/
 			}
 			block.list.each { |di|
-				res << ( di.instruction.to_s.ljust(12) + ' ; ' +
+				res << ( di.instruction.to_s.ljust(32) + ' ; ' +
 					('%08X  ' % addr) +
 					p.sections.first.encoded.data[addr-p.sections.first.base, di.bin_length].to_s.unpack('C*').map { |c| '%02x' % c }.join )
 				addr += di.bin_length
