@@ -346,7 +346,7 @@ class Relocation
 end
 
 class EncodedData
-	attr_reader :data, :reloc, :export
+	attr_accessor :data, :reloc, :export
 	attr_accessor :virtsize
 	attr_accessor :ptr
 
