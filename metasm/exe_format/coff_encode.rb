@@ -323,15 +323,15 @@ class COFF
 		@header.num_sect = nil
 		@header.size_opthdr = nil
 		@encoded << @header.encode(self, opth) << opth << s_table
+	end
 
+	def encode_sections_fixup
 		@encoded.align_size @optheader.file_align
 		if @optheader.headers_size.kind_of? String
 			@encoded.fixup! @optheader.headers_size => @encoded.virtsize
 			@optheader.headers_size = @encoded.virtsize
 		end
-	end
 
-	def encode_sections_fixup
 		baseaddr = @optheader.imagebase.kind_of?(Integer) ? @optheader.imagebase : 0x400000
 		binding = @encoded.binding(baseaddr)
 		curaddr = (baseaddr + @optheader.headers_size + @optheader.sect_align - 1) / @optheader.sect_align * @optheader.sect_align
