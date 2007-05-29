@@ -6,16 +6,27 @@ require 'metasm-shell'
 # code to run on start
 newcode = <<EOS.encode_edata
 hooked_entrypoint:
+pushad
+push libname
+call [LoadLibraryA]
+push funcname
+push eax
+call [GetProcAddress]
+
 push 0
 push title
 push msg
 push 0
-call [MessageBoxA]
+call eax
+
+popad
 jmp entrypoint
 
 .align 4
 msg db '(c) David Hasselhoff', 0
 title db 'Hooked on a feeling', 0
+libname db 'user32', 0
+funcname db 'MessageBoxA', 0
 EOS
 
 # read original file
