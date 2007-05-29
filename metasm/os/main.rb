@@ -145,8 +145,8 @@ class VirtualFile < VirtualString
 	# returns the full content of the file
 	def realstring
 		super
-		@fd.rewind
-		@fd.read
+		@fd.pos = @addr_start
+		@fd.read(@length)
 	end
 end
 end
