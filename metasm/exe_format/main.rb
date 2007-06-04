@@ -2,6 +2,8 @@ require 'metasm/main'
 
 module Metasm
 class ExeFormat
+	attr_accessor :cpu, :encoded
+
 	def label_at(edata, offset, base = '')
 		if not l = edata.export.invert[offset]
 			edata.export[l = new_label(base)] = offset
@@ -12,7 +14,7 @@ class ExeFormat
 	def new_label(base = '')
 		base = base.dup
 		k = (base << '_uniquelabel_' << base.object_id.to_s(16)).freeze
-		(@unique_labels ||= {}).update(k => nil)
+		(@unique_labels_cache ||= []) << k	# prevent garbage collection, this guarantees uniqueness (object_id)
 		k
 	end
 

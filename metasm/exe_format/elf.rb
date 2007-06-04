@@ -252,7 +252,6 @@ class ELF < ExeFormat
 		end
 	end
 
-	attr_accessor :encoded
 	attr_reader :header, :segments, :sections, :tag
 
 	def self.hash_symbol_name(name)

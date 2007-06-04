@@ -112,7 +112,7 @@ class COFF < ExeFormat
 		attr_accessor :encoded
 	end
 
-	attr_accessor :encoded, :header, :optheader, :directory, :sections, :endianness, :export, :imports
+	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports
 
 	def initialize
 		@directory = {}	# DIRECTORIES.key => [rva, size]

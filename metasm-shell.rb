@@ -3,6 +3,7 @@ require 'metasm/ia32/parse'
 require 'metasm/ia32/encode'
 require 'metasm/ia32/decode'
 require 'metasm/ia32/render'
+require 'metasm/exe_format/shellcode'
 require 'enumerator'
 
 class String
@@ -20,9 +21,10 @@ class String
 		p = Metasm::Program.new @@cpu
 		p.parse self
 		p.encode
-		ed = p.sections.first.encoded
-		ed.fixup! ed.binding(base)
-		ed
+		sc = Metasm::Shellcode.from_program p
+		sc.encode
+		sc.encoded.fixup! sc.encoded.binding(base)
+		sc.encoded
 	end
 
 	def encode(base=nil)
@@ -37,11 +39,7 @@ class String
 	# eip is the address of the entrypoint
 	# base_addr is the address of the first byte of the string
 	def decode_blocks(eip=0, base_addr=0)
-		p = Metasm::Program.new @@cpu
-		s = Metasm::Section.new p, nil
-		s.encoded << self
-		s.base = base_addr
-		p.sections << s
+		p = Metasm::Shellcode.decode(self, @@cpu).to_program(base_addr)
 		p.desasm eip
 		p
 	end

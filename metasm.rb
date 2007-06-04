@@ -14,7 +14,7 @@ end
 	require "metasm/#{f}/decode"
 }
 # executable formats
-%w[mz elf_encode elf_decode pe coff_encode coff_decode raw].each { |f|
+%w[mz elf_encode elf_decode pe coff_encode coff_decode shellcode].each { |f|
 	require "metasm/exe_format/#{f}"
 }
 # os-specific features

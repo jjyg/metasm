@@ -59,7 +59,6 @@ class MZ < ExeFormat
 	end
 
 
-	attr_accessor :encoded
 	attr_accessor :endianness, :header, :body, :relocs
 	def initialize
 		@endianness = :little
