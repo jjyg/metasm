@@ -4,6 +4,7 @@ require 'metasm/encode'
 module Metasm
 class COFF
 	class Header
+		# encodes a COFF Header, using coff.sections.length and opth.virtsize
 		def encode(coff, opth)
 			set_default_values coff, opth
 
@@ -16,6 +17,7 @@ class COFF
 			coff.encode_half(coff.bits_from_hash(@characteristics, CHARACTERISTIC_BITS))
 		end
 
+		# finds good default values for header
 		def set_default_values(coff, opth)
 			@machine     ||= 'UNKNOWN'
 			@num_sect    ||= coff.sections.length
@@ -28,26 +30,27 @@ class COFF
 	end
 
 	class OptionalHeader
+		# encodes an Optional header and the directories
 		def encode(coff)
 			set_default_values coff
 
 			opth = \
-			coff.encode_half(coff.int_from_hash(@sig, SIGNATURE)) <<
-			coff.encode_uchar(@linkv_maj) <<
-			coff.encode_uchar(@linkv_min) <<
+			coff.encode_half(coff.int_from_hash(@signature, SIGNATURE)) <<
+			coff.encode_uchar(@link_ver_maj) <<
+			coff.encode_uchar(@link_ver_min) <<
 			coff.encode_word(@code_size)  <<
 			coff.encode_word(@data_size)  <<
 			coff.encode_word(@udata_size) <<
 			coff.encode_word(@entrypoint) <<
 			coff.encode_word(@base_of_code) <<
-			(coff.encode_word(@base_of_data) if @sig != 'PE+') <<
-			coff.encode_xword(@imagebase) <<
+			(coff.encode_word(@base_of_data) if @signature != 'PE+') <<
+			coff.encode_xword(@image_base) <<
 			coff.encode_word(@sect_align) <<
 			coff.encode_word(@file_align) <<
-			coff.encode_half(@osv_maj)    <<
-			coff.encode_half(@osv_min)    <<
-			coff.encode_half(@imgv_maj)   <<
-			coff.encode_half(@imgv_min)   <<
+			coff.encode_half(@os_ver_maj) <<
+			coff.encode_half(@os_ver_min) <<
+			coff.encode_half(@img_ver_maj) <<
+			coff.encode_half(@img_ver_min) <<
 			coff.encode_half(@subsys_maj) <<
 			coff.encode_half(@subsys_min) <<
 			coff.encode_word(@reserved)   <<
@@ -56,10 +59,10 @@ class COFF
 			coff.encode_word(@checksum) <<
 			coff.encode_half(coff.int_from_hash(@subsystem, SUBSYSTEM)) <<
 			coff.encode_half(coff.bits_from_hash(@dll_characts, DLL_CHARACTERISTIC_BITS)) <<
-			coff.encode_xword(@stackres_size) <<
-			coff.encode_xword(@stackcom_size) <<
-			coff.encode_xword(@heapres_size) <<
-			coff.encode_xword(@heapcom_size) <<
+			coff.encode_xword(@stack_reserve) <<
+			coff.encode_xword(@stack_commit) <<
+			coff.encode_xword(@heap_reserve) <<
+			coff.encode_xword(@heap_commit) <<
 			coff.encode_word(@ldrflags) <<
 			coff.encode_word(@numrva)
 
@@ -76,10 +79,11 @@ class COFF
 			opth
 		end
 
+		# find good default values for optheader members, based on coff.sections
 		def set_default_values(coff)
-			@sig          ||= 'PE'
-			@linkv_maj    ||= 1
-			@linkv_min    ||= 0
+			@signature    ||= 'PE'
+			@link_ver_maj ||= 1
+			@link_ver_min ||= 0
 			@sect_align   ||= 0x1000
 			align = proc { |sz| (sz + @sect_align - 1) / @sect_align * @sect_align }
 			@code_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_CODE' }.inject(0) { |sum, s| sum + align[s.virtsize] }
@@ -89,30 +93,31 @@ class COFF
 			@entrypoint   ||= 0
 			@base_of_code ||= (Expression[coff.label_at(coff.sections.find { |s| s.characteristics.include? 'CONTAINS_CODE' }.encoded, 0), :-, coff.label_at(coff.encoded, 0)] rescue 0)
 			@base_of_data ||= (Expression[coff.label_at(coff.sections.find { |s| s.characteristics.include? 'CONTAINS_DATA' }.encoded, 0), :-, coff.label_at(coff.encoded, 0)] rescue 0)
-			@imagebase    ||= coff.label_at(coff.encoded, 0)
+			@image_base   ||= coff.label_at(coff.encoded, 0)
 			@file_align   ||= 0x200
-			@osv_maj      ||= 4
-			@osv_min      ||= 0
-			@imgv_maj     ||= 0
-			@imgv_min     ||= 0
+			@os_ver_maj   ||= 4
+			@os_ver_min   ||= 0
+			@img_ver_maj  ||= 0
+			@img_ver_min  ||= 0
 			@subsys_maj   ||= 4
 			@subsys_min   ||= 0
 			@reserved     ||= 0
 			@image_size   ||= coff.new_label('image_size')
 			@headers_size ||= coff.new_label('headers_size')
-			@checksum     ||= 0
+			@checksum     ||= coff.new_label('checksum')
 			@subsystem    ||= 'WINDOWS_GUI'
 			@dll_characts ||= 0
-			@stackres_size||= 0x100000
-			@stackcom_size||= 0x1000
-			@heapres_size ||= 0x100000
-			@heapcom_size ||= 0x1000
+			@stack_reserve||= 0x100000
+			@stack_commit ||= 0x1000
+			@heap_reserve ||= 0x100000
+			@heap_commit  ||= 0x1000
 			@ldrflags     ||= 0
 			@numrva       ||= DIRECTORIES.length
 		end
 	end
 
 	class Section
+		# encodes a section header
 		def encode(coff)
 			set_default_values(coff)
 
@@ -128,8 +133,9 @@ class COFF
 			coff.encode_word(coff.bits_from_hash(@characteristics, SECTION_CHARACTERISTIC_BITS))
 		end
 
+		# find good default values for section header members, defines rawaddr/rawsize as new_label for later fixup
 		def set_default_values(coff)
-			@name ||= ''
+			@name     ||= ''
 			@virtsize ||= @encoded.virtsize
 			@virtaddr ||= Expression[coff.label_at(@encoded, 0, 'sect_start'), :-, coff.label_at(coff.encoded, 0)]
 			@rawsize  ||= coff.new_label('sect_rawsize')
@@ -143,11 +149,12 @@ class COFF
 	end
 
 	class ExportDirectory
+		# encodes an export directory
 		def encode(coff)
 			set_default_values coff
 
 			edata = {}
-			%w[edata addrtable namptable ord_table dllname nametable].each { |name|
+			%w[edata addrtable namptable ord_table libname nametable].each { |name|
 				edata[name] = EncodedData.new
 			}
 			label = proc { |n| coff.label_at(edata[n], 0, n) }
@@ -159,7 +166,7 @@ class COFF
 			coff.encode_word(@timestamp) <<
 			coff.encode_half(@version_major) <<
 			coff.encode_half(@version_minor) <<
-			coff.encode_word(rva['dllname']) <<
+			coff.encode_word(rva['libname']) <<
 			coff.encode_word(@ordinal_base) <<
 			coff.encode_word(@exports.length) <<
 			coff.encode_word(@exports.find_all { |e| e.name }.length) <<
@@ -167,7 +174,7 @@ class COFF
 			coff.encode_word(rva['namptable']) <<
 			coff.encode_word(rva['ord_table'])
 
-			edata['dllname'] << @dllname << 0
+			edata['libname'] << @libname << 0
 
 			# TODO handle e.ordinal (force export table order, or invalidate @ordinal)
 			@exports.sort_by { |e| e.name.to_s }.each { |e|
@@ -189,10 +196,8 @@ class COFF
 				end
 			}
 			
-			coff.directory['export_table'] = [coff.label_at(edata, 0, 'export_table'), edata.virtsize]
-
 			# sorted by alignment directives
-			%w[edata addrtable namptable ord_table dllname nametable].inject(EncodedData.new) { |ed, name| ed << edata[name] }
+			%w[edata addrtable namptable ord_table libname nametable].inject(EncodedData.new) { |ed, name| ed << edata[name] }
 		end
 
 		def set_default_values(coff)
@@ -200,38 +205,41 @@ class COFF
 			@timestamp ||= Time.now.to_i
 			@version_major ||= 0
 			@version_minor ||= 0
-			@dllname ||= 'metalib'
+			@libname ||= 'metalib'
 			@ordinal_base ||= 1
 		end
 	end
 
 	class ImportDirectory
+		# encodes all import directories + iat
 		def self.encode(coff, ary)
 			edata = {}
 			ary.each { |i| i.encode(coff, edata) }
 
-			coff.directory['iat'] = [coff.label_at(edata['iat'], 0, 'iat'), edata['iat'].virtsize]
-			coff.directory['import_table'] = [coff.label_at(edata['idata'], 0, 'idata'), edata['idata'].virtsize]
-
-			EncodedData.new <<
-			edata['idata'] <<
+			it = edata['idata'] <<
 			coff.encode_word(0) <<
 			coff.encode_word(0) <<
 			coff.encode_word(0) <<
 			coff.encode_word(0) <<
 			coff.encode_word(0) <<
-			edata['iat'] <<
+			edata['ilt'] <<
 			edata['nametable']
+
+			iat = edata['iat']	# why not fragmented ?
+
+			[it, iat]
 		end
 
+		# encodes an import directory + iat + names in the edata hash received as arg
 		def encode(coff, edata)
-			%w[idata iat nametable].each { |name| edata[name] ||= EncodedData.new }
+			%w[idata iat ilt nametable].each { |name| edata[name] ||= EncodedData.new }
+			# edata['ilt'] = edata['iat']
 			label = proc { |n| coff.label_at(edata[n], 0, n) }
 			rva = proc { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
 			rva_end = proc { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
 
 			edata['idata'] <<
-			coff.encode_word(rva_end['iat']) <<
+			coff.encode_word(rva_end['ilt']) <<
 			coff.encode_word(@timestamp ||= 0) <<
 			coff.encode_word(@firstforwarder ||= 0) <<
 			coff.encode_word(rva_end['nametable']) <<
@@ -239,19 +247,54 @@ class COFF
 
 			edata['nametable'] << @libname << 0
 
-			ord_mask = 1 << (coff.optheader.sig == 'PE+' ? 63 : 31)
+			ord_mask = 1 << (coff.optheader.signature == 'PE+' ? 63 : 31)
 			@imports.each { |i|
 				if i.ordinal
+					edata['ilt'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 					edata['iat'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 				else
 					edata['iat'].export[i.name] = edata['iat'].virtsize
 
 					edata['nametable'].align_size 2
+					edata['ilt'] << coff.encode_xword(rva_end['nametable'])
 					edata['iat'] << coff.encode_xword(rva_end['nametable'])
 					edata['nametable'] << coff.encode_half(i.hint || 0) << i.name << 0
 				end
 			}
+			edata['ilt'] << coff.encode_xword(0)
 			edata['iat'] << coff.encode_xword(0)
+		end
+	end
+
+	class RelocationTable
+		# encodes a COFF relocation table
+		def encode(coff)
+			setup_default_values coff
+
+			# encode table header
+			rel = coff.encode_word(@base_addr) << coff.encode_word(8 + 2*@relocs.length)
+
+			# encode table content
+			@relocs.each { |r|
+				raw = coff.int_from_hash(r.type, RELOCATION_TYPE.fetch(coff.header.machine, {}))
+				raw = (raw << 12) | (raw.offset & 0xfff)
+				rel << coff.encode_word(raw)
+			}
+
+			rel
+		end
+
+		def setup_default_values(coff)
+			# @base_addr is an rva
+			@base_addr = Expression[@base_addr, :-, coff.label_at(coff.encoded, 0)] if @base_addr.kind_of? String
+
+			# align relocation table size
+			if @relocs.length % 2 != 0
+				r = Relocation.new
+				r.type = 0
+				r.offset = 0
+				@relocs << r
+			end
 		end
 	end
 
@@ -259,28 +302,67 @@ class COFF
 	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness) end
 	def encode_half(w)   Expression[w].encode(:u16, @endianness) end
 	def encode_word(w)   Expression[w].encode(:u32, @endianness) end
-	def encode_xword(w)  Expression[w].encode((@optheader.sig == 'PE+' ? :u64 : :u32), @endianness) end
+	def encode_xword(w)  Expression[w].encode((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
 
 
+	# adds a new compiler-generated section
+	# TODO merge sections
+	def encode_append_section(s)
+		@sections << s
+	end
+
+	# encodes the export table as a new section, updates directory['export_table']
 	def encode_exports
 		edata = @export.encode self
+
+		# must include name tables (for forwarders)
+		@directory['export_table'] = [label_at(edata, 0, 'export_table'), edata.virtsize]
+
 		s = Section.new
 		s.name = '.edata'
 		s.encoded = edata
 		s.characteristics = %w[MEM_READ MEM_WRITE]
-		@sections << s
+		encode_append_section s
 	end
 
+	# encodes the import tables as a new section, updates directory['import_table'] and directory['iat']
 	def encode_imports
-		idata = ImportDirectory.encode(self, @imports)
+		idata, iat = ImportDirectory.encode(self, @imports)
+
+		@directory['import_table'] = [label_at(idata, 0, 'idata'), idata.virtsize]
+
 		s = Section.new
-		s.name = '.idata'	# XXX .idata discardable, separate from .iat
+		s.name = '.idata'
 		s.encoded = idata
+		s.characteristics = %w[MEM_READ MEM_WRITE MEM_DISCARDABLE]
+		encode_append_section s
+
+		@directory['iat'] = [label_at(iat, 0, 'iat'), iat.virtsize]
+	
+		s = Section.new
+		s.name = '.iat'
+		s.encoded = iat
 		s.characteristics = %w[MEM_READ MEM_WRITE]
-		@sections << s
+		encode_append_section s
 	end
 
+	# encodes relocation tables in a new section .reloc, updates @directory['base_relocation_table']
+	def encode_relocs
+		relocs = @relocations.inject(EncodedData.new) { |edata, rt| edata << rt.encode(self) }
+
+		@directory['base_relocation_table'] = [label_at(relocs, 0, 'reloc_table'), relocs.virtsize]
+
+		s = Section.new
+		s.name = '.reloc'
+		s.encoded = relocs
+		s.characteristics = %[MEM_READ MEM_DISCARDABLE]
+		encode_append_section s
+	end
+
+	# appends the header/optheader/directories/section table to @encoded
+	# initializes some flags based on the target arg ('exe' / 'dll' / 'kmod' / 'obj')
 	def encode_header(target = 'exe')
+		# setup header flags
 		tmp = %w[LINE_NUMS_STRIPPED LOCAL_SYMS_STRIPPED DEBUG_STRIPPED] +
 			case target
 			when 'exe':  %w[EXECUTABLE_IMAGE]
@@ -298,6 +380,7 @@ class COFF
 		end
 		@optheader.dll_characts = ['DYNAMIC_BASE'] if @directory['base_relocation_table']
 
+		# encode section table, add CONTAINS_* flags from other characteristics flags
 		s_table = EncodedData.new
 		@sections.each { |s|
 			if s.characteristics.kind_of? Array and s.characteristics.include? 'MEM_READ'
@@ -315,16 +398,19 @@ class COFF
 			s_table << s.encode(self)
 		}
 
+		# encode optional header
 		@optheader.headers_size = nil
 		@optheader.image_size = nil
 		@optheader.numrva = nil
 		opth = @optheader.encode(self)
 
+		# encode header
 		@header.num_sect = nil
 		@header.size_opthdr = nil
 		@encoded << @header.encode(self, opth) << opth << s_table
 	end
 
+	# append the section bodies to @encoded, and link the resulting binary
 	def encode_sections_fixup
 		@encoded.align_size @optheader.file_align
 		if @optheader.headers_size.kind_of? String
@@ -332,21 +418,23 @@ class COFF
 			@optheader.headers_size = @encoded.virtsize
 		end
 
-		baseaddr = @optheader.imagebase.kind_of?(Integer) ? @optheader.imagebase : 0x400000
+		baseaddr = @optheader.image_base.kind_of?(Integer) ? @optheader.image_base : 0x400000
 		binding = @encoded.binding(baseaddr)
-		curaddr = (baseaddr + @optheader.headers_size + @optheader.sect_align - 1) / @optheader.sect_align * @optheader.sect_align
 
+		curaddr = baseaddr + @optheader.headers_size
 		@sections.each { |s|
+			# align
+			curaddr = (curaddr + @optheader.sect_align - 1) / @optheader.sect_align * @optheader.sect_align
 			if s.rawaddr.kind_of? String
 				@encoded.fixup! s.rawaddr => @encoded.virtsize
 				s.rawaddr = @encoded.virtsize
 			end
 			if s.virtaddr.kind_of? Integer
-				raise "cannot encode section #{s.name}: hardcoded address too short" if curaddr > baseaddr + s.virtaddr
+				raise "E: COFF: cannot encode section #{s.name}: hardcoded address too short" if curaddr > baseaddr + s.virtaddr
 				curaddr = baseaddr + s.virtaddr
 			end
 			binding.update s.encoded.binding(curaddr)
-			curaddr = (curaddr + s.virtsize + @optheader.sect_align - 1) / @optheader.sect_align * @optheader.sect_align
+			curaddr += s.virtsize
 
 			pre_sz = @encoded.virtsize
 			@encoded << s.encoded[0, s.encoded.rawsize]
@@ -356,6 +444,8 @@ class COFF
 				s.rawsize = @encoded.virtsize - pre_sz
 			end
 		}
+
+		# not aligned
 		binding[@optheader.image_size] = curaddr - baseaddr if @optheader.image_size.kind_of? String
 
 		@encoded.fill
@@ -368,13 +458,14 @@ class COFF
 		end
 	end
 
+	# encode a COFF file, building export/import/reloc tables if needed
 	# TODO merge sections, base relocations, resources
 	def encode(target = 'exe')
-		@optheader.checksum = new_label('checksum')
 		@encoded ||= EncodedData.new
-		label_at(@encoded, 0, 'pe_start')
+		label_at(@encoded, 0, 'coff_start')
 		encode_exports if @export
 		encode_imports if @imports
+		encode_relocs if @relocations
 		encode_header(target)
 		encode_sections_fixup
 		@encoded.data
@@ -397,12 +488,14 @@ class COFF
 				:exec => 'MEM_EXECUTE', :read => 'MEM_READ', :write => 'MEM_WRITE', :discard => 'MEM_DISCARDABLE', :shared => 'MEM_SHARED'
 			}.values_at(*ps.mprot).compact
 			coff.sections << s
+			# relocs
 		}
 
 		program.import.each { |libname, list|
 			coff.imports ||= []
 			id = ImportDirectory.new
 			id.libname = libname
+			id.imports = []
 			list.each { |name, thunk|
 				i = ImportDirectory::Import.new
 				i.name = name
@@ -414,6 +507,7 @@ class COFF
 		if not program.export.empty?
 			coff.export = ExportDirectory.new
 			coff.export.name = 'kikoo'
+			coff.export.exports = []
 			program.export.each { |name, label|
 				e = ExportDirectory::Export.new
 				e.name = name
@@ -428,20 +522,9 @@ end
 end
 
 __END__
-
 	def encode_fix_checksum(data, endianness = :little)
 		# may not work with overlapping sections
-
-		long, short, shorts = \
-		case endianness
-		when :little: ['V', 'v', 'v*']
-		when :big: ['N', 'n', 'n*']
-		end
-
-		# check we have a valid PE
-		return if data[0, 2] != 'MZ'
 		off = data[0x3c, 4].unpack(long).first
-		return if data[off, 4] != "PE\0\0"
 		off += 4
 
 		# read some header information

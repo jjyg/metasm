@@ -7,7 +7,7 @@ module Metasm
 class PE < COFF
 	PESIG = "PE\0\0"
 
-	attr_accessor :coff_offset, :sig, :mz
+	attr_accessor :coff_offset, :signature, :mz
 
 	def self.decode(str)
 		pe = new
@@ -21,17 +21,15 @@ class PE < COFF
 
 	def initialize
 		@mz = MZ.new
-		@coff_offset = 0x40
-		@sig = "PE\0\0"
 		super
 	end
 
 	def decode_header
 		@encoded.ptr = 0x3c
-		@coff_offset = @encoded.decode_imm(:u32, :little) + 4
-		@encoded.ptr = @coff_offset - 4
-		@sig = @encoded.read(4)
-		raise "Invalid PE signature #{@sig.inspect}" if @sig != PESIG
+		@encoded.ptr = decode_word
+		@signature = @encoded.read(4)
+		raise "Invalid PE signature #{@signature.inspect}" if @signature != PESIG
+		@coff_offset = @encoded.ptr
 		super
 	end
 
@@ -83,12 +81,14 @@ EOMZSTUB
 	end
 
 	def encode_header(*a)
-		# @mz.encoded must be an EncodedData with 0x3c pointing beyond its last byte, which should be 8-aligned, and its 1st 2 bytes should be 'MZ'
+		# @mz.encoded must be an EncodedData with 0x3c pointing beyond its last byte, which should be 8-aligned, and its 2 1st bytes should be 'MZ'
 		encode_default_mz_header if not @mz.encoded
 
 		@encoded << @mz.encoded.dup
+
 		# append the PE signature
-		@encoded << PESIG
+		@signature ||= PESIG
+		@encoded << @signature
 
 		super
 	end
@@ -96,7 +96,7 @@ end
 
 class LoadedPE < PE
 	def rva_to_off(rva)
-		rva if rva and rva != 0 and rva < @encoded.virtsize
+		rva if rva and rva > 0 and rva <= @encoded.virtsize
 	end
 
 	def decode_sections

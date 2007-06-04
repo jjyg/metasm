@@ -74,36 +74,37 @@ class COFF < ExeFormat
 	end
 
 	class OptionalHeader
-		attr_accessor :sig, :linkv_maj, :linkv_min, :code_size, :idata_size, :udata_size, :entrypoint, :base_of_code,
+		attr_accessor :signature, :link_ver_maj, :link_ver_min, :code_size, :idata_size, :udata_size, :entrypoint, :base_of_code,
 			:base_of_data,	# not in PE+
 			# NT-specific fields
-			:imagebase, :sect_align, :file_align, :osv_maj, :osv_min, :imgv_maj, :imgv_min, :subsys_maj, :subsys_min, :reserved,
-			:image_size, :headers_size, :checksum, :subsystem, :dll_characts, :stackres_size, :stackcom_size, :heapres_size, :heapcom_size, :ldrflags, :numrva
+			:image_base, :sect_align, :file_align, :os_ver_maj, :os_ver_min, :img_ver_maj, :img_ver_min, :subsys_maj, :subsys_min, :reserved,
+			:image_size, :headers_size, :checksum, :subsystem, :dll_characts, :stack_reserve, :stack_commit, :heap_reserve, :heap_commit, :ldrflags, :numrva
 	end
 
 	class ImportDirectory
-		attr_accessor :libname, :timestamp, :firstforwarder
-		attr_accessor :imports, :iat, :iat_p
-
-		def initialize
-			@imports = []
-		end
+		attr_accessor :libname, :timestamp, :firstforwarder, :libname_p
+		attr_accessor :imports, :iat, :iat_p, :ilt_p
 
 		class Import
-			attr_accessor :ordinal, :hint, :name
+			attr_accessor :ordinal, :hint, :hintname_p, :name
 		end
 	end
 
 	class ExportDirectory
-		attr_accessor :reserved, :timestamp, :version_major, :version_minor, :dllname, :ordinal_base
+		attr_accessor :reserved, :timestamp, :ver_maj, :ver_min, :libname, :ordinal_base, :libname_p
 		attr_accessor :exports
 
-		def initialize
-			@exports = []
-		end
-
 		class Export
-			attr_accessor :forwarder_lib, :forwarder_ordinal, :forwarder_name, :target, :name, :ordinal
+			attr_accessor :forwarder_lib, :forwarder_ordinal, :forwarder_name, :target, :name_p, :name, :ordinal
+		end
+	end
+
+	class RelocationTable
+		attr_accessor :base_addr
+		attr_accessor :relocs
+
+		class Relocation
+			attr_accessor :offset, :type
 		end
 	end
 
@@ -112,7 +113,7 @@ class COFF < ExeFormat
 		attr_accessor :encoded
 	end
 
-	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports
+	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports, :relocations
 
 	def initialize
 		@directory = {}	# DIRECTORIES.key => [rva, size]
