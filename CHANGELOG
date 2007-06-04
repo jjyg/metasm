@@ -1,3 +1,5 @@
+01/02/2007	Switch to Mercurial (thanks to Philippe Biondi)
+
 10/01/2007	MZ/PE/COFF encoder works (except COFF obj file format/base relocations)
 
 14/12/2006	Section size optimizer, chooses best instruction encoding
