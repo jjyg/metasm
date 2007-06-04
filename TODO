@@ -1,7 +1,6 @@
 desasm:
  data xref: trackback memory write/read (read is when you read a value and modify it/its derivates, (!= push eax ; trash ; pop eax))
  remove maxdepth param? + detect loops
- make degraded mode, where saveip opcode do not stopexec
  path-specific backtracking ( foo: call a ; a: jmp retloc ; bar: call b ; b: jmp retloc ; retloc: ret ; call foo ; ret : last ret trackback should only reach a:)
  desasm some code sequences to C
  externs / C header parser (prototypes, + OS abi ?)
@@ -9,11 +8,6 @@ desasm:
  gui
  allow program-wide label renaming
 
-asm:  symbol size, align_from, import without libname (elf) (.global ? would need plt support)
 ia32: emu fpu
-mips: fill opcode list, cpu emu for trackback
-elf:  encode/decode relocs, isolate/remove ia32-specific parts
-pe:   decode
-elf/pe: make helper functions more generic (1 func to 'read' iat, another to apply it to the Program) ; support object files
+mips: cpu emu for trackback
 all:  unittests ?
-test
