@@ -825,6 +825,7 @@ class Program
 				unreadtok 'db' unless DataSpec.include? nexttok
 				fillwith = parse_data_withspec
 			end
+			parse_parser_instruction '.text' if not defined? @cursection or not @cursection
 			@cursection << Align.new(e, fillwith, instr == '.align')
 
 		else
