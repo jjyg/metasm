@@ -4,6 +4,14 @@ module Metasm
 class ExeFormat
 	attr_accessor :cpu, :encoded
 
+	def self.decode_file(path, *a)
+		decode((defined?(VirtualFile) ? VirtualFile : File).read(path), *a)
+	end
+
+	def encode_file(path, *a)
+		File.open(path, File::CREAT | File::EXCL | File::WRONLY) { |fd| fd.write(data = encode(*a)) ; data }
+	end
+
 	def label_at(edata, offset, base = '')
 		if not l = edata.export.invert[offset]
 			edata.export[l = new_label(base)] = offset
