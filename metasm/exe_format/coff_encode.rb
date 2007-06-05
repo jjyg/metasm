@@ -582,7 +582,7 @@ class COFF
 
 		if not program.export.empty?
 			coff.export = ExportDirectory.new
-			coff.export.name = 'kikoo'
+			coff.export.libname = 'kikoo'
 			coff.export.exports = []
 			program.export.each { |name, label|
 				e = ExportDirectory::Export.new
