@@ -159,7 +159,7 @@ class COFF
 			}
 			label = proc { |n| coff.label_at(edata[n], 0, n) }
 			rva = proc { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
-			rva_end = proc { |n| Exprennsion[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
+			rva_end = proc { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
 
 			edata['edata'] <<
 			coff.encode_word(@reserved) <<
