@@ -207,6 +207,38 @@ class COFF
 		end
 	end
 
+	class DelayImportDirectory
+		def self.decode(coff)
+			ret = []
+			loop do
+				didata = new
+				didata.decode coff
+				break if didata.empty?
+				ret << didata
+			end
+			ret
+		end
+
+		def decode(coff)
+			@attributes = coff.decode_word
+			@libname_p = coff.decode_word
+			@handle_p = coff.decode_word	# the loader stores the handle at the location pointed by this field at runtime
+			@diat_p  = coff.decode_word
+			@dint_p  = coff.decode_word
+			@bdiat_p = coff.decode_word
+			@udiat_p = coff.decode_word
+			@timestamp = coff.decode_word
+
+			saved_ptr = coff.encoded.ptr
+
+			if off = coff.rva_to_off(@libname_p)
+				@libname = coff.encoded.data[off...coff.encoded.data.index(0, off)]
+			end
+
+			coff.encoded.ptr = saved_ptr
+		end
+	end
+
 	class RelocationTable
 		# decodes a relocation table from coff.encoded.ptr
 		def decode(coff)
@@ -229,6 +261,124 @@ class COFF
 		end
 	end
 
+	class ResourceDirectory
+		def decode(coff, startoff = coff.encoded.ptr)
+			@characteristics = coff.decode_word
+			@timestamp = coff.decode_word
+			@major_version = coff.decode_half
+			@minor_version = coff.decode_half
+			nrnames = coff.decode_half
+			nrid = coff.decode_half
+			@entries = []
+
+			(nrnames+nrid).times {
+				e = Entry.new
+				id  = coff.decode_word
+				ptr = coff.decode_word
+
+				saved_ptr = coff.encoded.ptr
+
+				if (id >> 31) == 1
+					if $DEBUG
+						nrnames -= 1
+						puts "W: COFF: rsrc has invalid id #{id}" if nrnames < 0
+					end
+					e.name_p = id & 0x7fff_ffff
+					coff.encoded.ptr = startoff + e.name_p
+					namelen = coff.decode_half
+					e.name_w = coff.encoded.read(2*namelen)
+					if (chrs = e.name_w.unpack('v*')).all? { |c| c <= 255 }
+						e.name = chrs.pack('C*')
+					end
+				else
+					if $DEBUG
+						puts "W: COFF: rsrc has invalid id #{id}" if nrnames > 0
+					end
+					e.id = id
+				end
+
+				if (ptr >> 31) == 1	# subdir
+					e.subdir_p = ptr & 0x7fff_ffff
+					coff.encoded.ptr = startoff + e.subdir_p
+					e.subdir = ResourceDirectory.new
+					e.subdir.decode coff, startoff
+				else
+					e.dataentry_p = ptr
+					coff.encoded.ptr = startoff + e.dataentry_p
+					e.data_p = coff.decode_word
+					sz = coff.decode_word
+					e.codepage = coff.decode_word
+					e.reserved = coff.decode_word
+
+					if coff.encoded.ptr = coff.rva_to_off(e.data_p)
+						e.data = coff.encoded.read(sz)
+					end
+				end
+
+				@entries << e
+
+				coff.encoded.ptr = saved_ptr
+			}
+		end
+	end
+
+	class DebugDirectory
+		def decode(coff)
+			@characteristics = coff.decode_word
+			@timestamp = coff.decode_word
+			@major_version = coff.decode_half
+			@minor_version = coff.decode_half
+			@type = coff.int_from_hash(coff.decode_word, DEBUG_TYPE)
+			@size_of_data = coff.decode_word
+			@addr = coff.decode_word
+			@pointer = coff.decode_word
+		end
+	end
+
+	class TLSDirectory
+		def decode(coff)
+			@start_va = coff.decode_xword	# must have a .reloc
+			@end_va = coff.decode_xword
+			@index_addr = coff.decode_xword	# va ? rva ?
+			@callback_p = coff.decode_xword	# ptr to 0-terminated x?word callback ptrs
+			@zerofill_sz = coff.decode_word	# nr of 0 bytes to append to the template (start_va)
+			@characteristics = coff.decode_word
+
+			if coff.encoded.ptr = coff.rva_to_off(@callback_p)
+				@callbacks = []
+				while (ptr = coff.decode_xword) != 0
+					# void NTAPI (*ptr)(void* dllhandle, dword reason, void* reserved)
+					# (same as dll entrypoint)
+					@callbacks << ptr
+				end
+			end
+		end
+	end
+
+	class LoadConfig
+		def decode(coff)
+			@characteristics = coff.decode_word
+			@timestamp = coff.decode_word
+			@major_version = coff.decode_half
+			@minor_version = coff.decode_half
+			@globalflags = coff.decode_word
+			@critsec_timeout = coff.decode_word
+			@decommitblock = coff.decode_xword
+			@decommittotal = coff.decode_xword
+			@lockpfxtable = coff.decode_xword	# VA of ary of instruction using LOCK prefix, to be nopped on singleproc machine (wtf?)
+			@maxalloc = coff.decode_xword
+			@maxvirtmem = coff.decode_xword
+			@process_affinity_mask = coff.decode_xword
+			@process_heap_flags = coff.decode_word
+			@servicepackid = coff.decode_half
+			@reserved = coff.decode_half
+			@editlist = coff.decode_xword
+			@security_cookie = coff.decode_xword
+			@sehtable = coff.decode_xword	# VA
+			@sehcount = coff.decode_xword
+		end
+	end
+
 
 	def decode_uchar(edata = @encoded) ; edata.decode_imm(:u8,  @endianness) end
 	def decode_half( edata = @encoded) ; edata.decode_imm(:u16, @endianness) end
@@ -247,9 +397,7 @@ class COFF
 	# decodes the COFF header, optional header, section headers
 	# marks entrypoint and directories as encoded.export
 	def decode_header
-		@header = Header.new
 		@header.decode(self)
-		@optheader = OptionalHeader.new
 		@optheader.decode(self)
 		@header.num_sect.times {
 			s = Section.new
@@ -259,7 +407,7 @@ class COFF
 		if off = rva_to_off(@optheader.entrypoint)
 			@encoded.export[new_label('entrypoint')] = off
 		end
-		DIRECTORIES.each { |d|
+		(DIRECTORIES - ['certificate_table']).each { |d|
 			if @directory and @directory[d] and off = rva_to_off(@directory[d][0])
 				@encoded.export[new_label(d)] = off
 			end
@@ -343,6 +491,22 @@ class COFF
 		end
 	end
 
+	# decodes resources from directory
+	def decode_resources
+		if @directory and @directory['resource_table'] and @encoded.ptr = rva_to_off(@directory['resource_table'][0])
+			@resource = ResourceDirectory.new
+			@resource.decode self
+		end
+	end
+
+	# decodes certificate table
+	def decode_certificates
+		if @directory and ct = @directory['certificate_table']
+			@encoded.ptr = ct[0]
+			@certificates = (0...(ct[1]/8)).map { @encoded.data[decode_word, decode_word] }
+		end
+	end
+
 	# read section data
 	def decode_sections
 		@sections.each { |s|
@@ -357,6 +521,8 @@ class COFF
 		decode_header
 		decode_exports
 		decode_imports
+		decode_resources
+		decode_certificates
 		decode_relocs
 		decode_sections
 	end
@@ -393,6 +559,120 @@ class COFF
 		end
 
 		pgm
+	end
+end
+
+class COFFArchive
+	def self.decode(str)
+		ar = new
+		ar.encoded = EncodedData.new << str
+		ar.signature = ar.encoded.read(8)
+		raise "Invalid COFF Archive signature #{ar.signature.inspect}" if ar.signature != "!<arch>\n"
+		ar.members = []
+		while ar.encoded.ptr < ar.encoded.virtsize
+			ar.decode_member
+		end
+		ar.decode_first_linker
+		ar.decode_second_linker
+		ar.fixup_names
+		ar
+	end
+
+	class Member
+		def decode(ar)
+			@offset = ar.encoded.ptr
+			@name = ar.encoded.read(16).strip
+			@date = ar.encoded.read(12).to_i
+			@uid = ar.encoded.read(6).to_i
+			@gid = ar.encoded.read(6).to_i
+			@mode = ar.encoded.read(8).to_i 8
+			@size = ar.encoded.read(10).to_i
+			@eoh = ar.read(2)	# should be <'\n>
+		end
+	end
+
+	class ImportHeader
+		def decode(ar)
+			@sig1 = ar.encoded.decode_imm(:u16, :little)
+			@sig2 = ar.encoded.decode_imm(:u16, :little)
+			@version = ar.encoded.decode_imm(:u16, :little)
+			@machine = ar.encoded.decode_imm(:u16, :little)
+			@timestamp = ar.encoded.decode_imm(:u32, :little)
+			@size_of_data = ar.encoded.decode_imm(:u32, :little)
+			@hint = ar.encoded.decode_imm(:u16, :little)
+			type = ar.encoded.decode_imm(:u16, :little)
+			@type = ar.int_from_hash((type >> 14) & 3, IMPORT_TYPE)
+			@name_type = ar.int_from_hash((type >> 11) & 7, NAME_TYPE)
+			@reserved = type & 0x7ff
+			@symname = ar.encoded.data[ar.encoded.ptr...ar.encoded.data.index(0, ar.encoded.ptr)]
+			ar.encoded.ptr += @symname.length + 1
+			@libname = ar.encoded.data[ar.encoded.ptr...ar.encoded.data.index(0, ar.encoded.ptr)]
+		end
+	end
+
+	def decode_member_header
+		h = Member.new
+		h.decode self
+		@members << h
+	end
+
+	def decode_member
+		decode_member_header
+		m = @members.last
+		m.encoded = @encoded[@encoded.ptr, m.size]
+		@encoded.ptr += m.size
+	end
+
+	def decode_first_linker
+		m = @members[0]
+		m.encoded.ptr = 0
+		numsym = m.encoded.decode_imm(:u32, :big)
+		offsets = []
+		numsym.times { offsets << m.encoded.decode_imm(:u32, :big) }
+		names = []
+		numsym.times {
+			names << ''
+			while (c = m.encoded.get_byte) != 0
+				names.last << c
+			end
+		}
+		# names[42] is found in object at file offset offsets[42]
+		# offsets are sorted by object index (all syms from 1st object, then 2nd etc)
+		@first_linker = names.zip(offsets).inject({}) { |h, (n, o)| h.update n => o }
+	end
+
+	def decode_second_linker
+		m = @members[1]
+		m.encoded.ptr = 0
+		nummb = m.encoded.decode_imm(:u32, :big)
+		mboffsets = []
+		nummb.times { mboffsets << m.encoded.decode_imm(:u32, :big) }
+		numsym = m.encoded.decode_imm(:u32, :big)
+		indices = []
+		numsym.times { indices << m.encoded.decode_imm(:u16, :big) }
+		names = []
+		numsym.times {
+			names << ''
+			while (c = m.encoded.get_byte) != 0
+				names.last << c
+			end
+		}
+		# names[42] is found in object at file offset mboffsets[indices[42]]
+		# symbols sorted by symbol name (supposed to be more efficient, but no index into string table...)
+		@second_linker = names.zip(indices).inject({}) { |h, (n, i)| h.update n => mboffsets[i] }
+	end
+
+	def fixup_names
+		@members.each { |m|
+			case m.name
+			when '/'
+			when '//'
+			when /\/(\d+)/
+				m.name = @members[2].encoded.data[$1.to_i, @members[2].size]
+				m.name = m.name[0, m.name.index(0)]
+			else m.name.chomp! "/"
+			end
+		}
 	end
 end
 end

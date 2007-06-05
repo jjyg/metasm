@@ -141,8 +141,59 @@ class COFF < ExeFormat
 		attr_accessor :name, :virtsize, :virtaddr, :rawsize, :rawaddr, :relocaddr, :linenoaddr, :relocnr, :linenonr, :characteristics
 		attr_accessor :encoded
 	end
+	
+	class ResourceDirectory
+		attr_accessor :characteristics, :timestamp, :major_version, :minor_version
+		attr_accessor :entries
+		attr_accessor :curoff_label	# internal use, in encoder
 
-	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports, :relocations
+		class Entry
+			attr_accessor :name_p, :name, :name_w,
+				:id, :subdir_p, :subdir, :dataentry_p,
+				:data_p, :data, :codepage, :reserved
+		end
+
+		def to_hash
+			@entries.inject({}) { |h, e|
+				k = e.id ? e.id : e.name ? e.name : e.name_w
+				v = e.subdir ? e.subdir.to_hash : e.data
+				h.update k => v
+			}
+		end
+
+		def self.from_hash(h)
+			ret = new
+			ret.entries = h.map { |k, v|
+				e = Entry.new
+				k.kind_of?(Integer) ? (e.id = k) : (e.name = k)	# name_w ?
+				v.kind_of?(Hash) ? (e.subdir = from_hash(v)) : (e.data = v)
+				e
+			}
+			ret
+		end
+
+		TYPE = {
+			1 => 'CURSOR', 2 => 'BITMAP', 3 => 'ICON', 4 => 'MENU',
+			5 => 'DIALOG', 6 => 'STRING', 7 => 'FONTDIR', 8 => 'FONT',
+			9 => 'ACCELERATOR', 10 => 'RCADATA', 11 => 'MESSAGETABLE',
+			12 => 'GROUP_CURSOR', 14 => 'GROUP_ICON', 16 => 'VERSION',
+			17 => 'DLGINCLUDE', 19 => 'PLUGPLAY', 20 => 'VXD',
+			21 => 'ANICURSOR', 22 => 'ANIICON', 23 => 'HTML',
+			24 => 'MANIFEST' # ?
+		}
+
+		ACCELERATOR_BITS = {
+			1 => 'VIRTKEY', 2 => 'NOINVERT', 4 => 'SHIFT', 8 => 'CTRL',
+			16 => 'ALT', 128 => 'LAST'
+		}
+
+		# cursor = raw data, cursor_group = header , pareil pour les icons
+		class Cursor
+			attr_accessor :xhotspot, :yhotspot, :data
+		end
+	end
+
+	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports, :relocations, :resource, :certificates, :delayimports
 
 	def initialize
 		@directory = {}	# DIRECTORIES.key => [rva, size]
@@ -150,30 +201,23 @@ class COFF < ExeFormat
 		@export = nil
 		@imports = nil
 		@endianness = :little
+		@header = Header.new
+		@optheader = OptionalHeader.new
+	end
+end
+
+class COFFArchive < ExeFormat
+	class Member
+		attr_accessor :name, :date, :uid, :gid, :mode, :size, :eoh
+		attr_accessor :offset
 	end
 
-	module Resource
-	TYPE = {
-		1 => 'CURSOR', 2 => 'BITMAP', 3 => 'ICON', 4 => 'MENU',
-		5 => 'DIALOG', 6 => 'STRING', 7 => 'FONTDIR', 8 => 'FONT',
-		9 => 'ACCELERATOR', 10 => 'RCADATA', 11 => 'MESSAGETABLE',
-		12 => 'GROUP_CURSOR', 14 => 'GROUP_ICON', 16 => 'VERSION',
-		17 => 'DLGINCLUDE', 19 => 'PLUGPLAY', 20 => 'VXD',
-		21 => 'ANICURSOR', 22 => 'ANIICON', 23 => 'HTML',
-		24 => 'MANIFEST' # ?
-	}
-
-	ACCELERATOR_BITS = {
-		1 => 'VIRTKEY', 2 => 'NOINVERT', 4 => 'SHIFT', 8 => 'CTRL',
-		16 => 'ALT', 128 => 'LAST'
-	}
-
-	# TODO
-	# cursor = raw data, cursor_group = header , pareil pour les icons
-	class Cursor
-		attr_accessor :xhotspot, :yhotspot, :data
+	class ImportHeader
+		attr_accessor :sig1, :sig2, :version, :machine, :timestamp, :size_of_data, :hint, :type, :name_type, :reserved
+		attr_accessor :symname, :libname
 	end
-	end
+
+	attr_accessor :members, :signature, :first_linker, :second_linker
 end
 end
 __END__

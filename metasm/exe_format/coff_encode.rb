@@ -298,6 +298,135 @@ class COFF
 		end
 	end
 
+	class ResourceDirectory
+		# compiles ressource directories
+		def encode(coff, edata = nil)
+			if not edata
+				# init recursion
+				edata = {}
+				subtables = %w[table names dataentries data]
+				subtables.each { |n| edata[n] = EncodedData.new }
+				encode(coff, edata)
+				return subtables.inject(EncodedData.new) { |sum, n| sum << edata[n] }
+			end
+
+			label = proc { |n| coff.label_at(edata[n], 0, n) }
+			# data 'rva' are real rvas (from start of COFF)
+			rva_end = proc { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
+			# names and table 'rva' are relative to the beginning of the resource directory
+			off_end = proc { |n| Expression[[label[n], :-, coff.label_at(edata['table'], 0)], :+, edata[n].virtsize] }
+
+			# build name_w if needed
+			@entries.each { |e| e.name_w = e.name.unpack('C*').pack('v*') if e.name and not e.name_w }
+
+			# fixup forward references to us, as subdir
+			edata['table'].fixup @curoff_label => edata['table'].virtsize if @curoff_label
+
+			# encode resource directory table
+			edata['table'] <<
+			coff.encode_word(@characteristics || 0) <<
+			coff.encode_word(@timestamp || 0) <<
+			coff.encode_half(@major_version || 0) <<
+			coff.encode_half(@minor_version || 0) <<
+			coff.encode_half(@entries.find_all { |e| e.name_w }.length) <<
+			coff.encode_half(@entries.find_all { |e| e.id }.length)
+
+			# encode entries, sorted by names nocase, then id
+			@entries.sort_by { |e| e.name_w ? [0, e.name_w.downcase] : [1, e.id] }.each { |e|
+				if e.name_w
+					edata['table'] << coff.encode_word(Expression[off_end['names'], :|, 1 << 31])
+					edata['names'] << coff.encode_half(e.name_w.length/2) << e.name_w
+				else
+					edata['table'] << coff.encode_word(e.id)
+				end
+
+				if e.subdir
+					e.subdir.curoff_label = coff.new_label('rsrc_curoff')
+					edata['table'] << coff.encode_word(Expression[e.subdir.curoff_label, :|, 1 << 31])
+				else # data entry
+					edata['table'] << coff.encode_word(off_end['dataentries'])
+
+					edata['dataentries'] <<
+					coff.encode_word(rva_end['data']) <<
+					coff.encode_word(e.data.length) <<
+					coff.encode_word(e.codepage || 0) <<
+					coff.encode_word(e.reserved || 0)
+
+					edata['data'] << e.data
+				end
+			}
+
+			# recurse
+			@entries.find_all { |e| e.subdir }.each { |e| e.subdir.encode(coff, edata) }
+		end
+	# rsrc: { 'foo' => { 'bar' => 'baz', 4 => 'lol' }, 'quux' => 'blabla' }
+	def pre_encode_resources(program, program_start, rsrc, pe_sections, directories, opts)
+		edata = {}
+		label = {}
+		%w[nametable datatable data].each { |name|
+			edata[name] = EncodedData.new
+			label[name] = program.label_at(edata[name], 0)
+		}
+		label['directory'] = program.new_unique_label
+
+		encode  = proc { |name, type, expr| edata[name] << Expression[*expr].encode(type, program.cpu.endianness) }
+		encode_ = proc { |edat, type, expr| edat << Expression[*expr].encode(type, program.cpu.endianness) }
+		rva_end = proc { |name| [[label[name], :-, program_start], :+, edata[name].virtsize] }
+		off_end = proc { |name| [[label[name], :-, label['directory']], :+, edata[name].virtsize] }
+
+		recurs_encode = proc { |dir, curoffset|
+			# curoffset is the current length of the directory table
+			ed = EncodedData.new
+			encode_[ed, :u32, opts['rsrc_characteristics'] || 0]
+			encode_[ed, :u32, opts['rsrc_timestamp']       || Time.now.to_i]
+			encode_[ed, :u16, opts['rsrc_version_major']   || 0]
+			encode_[ed, :u16, opts['rsrc_version_minor']   || 0]
+			encode_[ed, :u16, dir.keys.grep(String ).length]
+			encode_[ed, :u16, dir.keys.grep(Integer).length]
+
+			curoffset += 4+4+2+2+2+2 + dir.length*8
+			nextdirs = []
+
+			(dir.keys.grep(String).sort_by { |name| name.downcase } + dir.keys.grep(Integer).sort).each { |name|
+				case name
+				when String
+					encode_[ed, :u32, [off_end['nametable'], :|, 1<<31]]
+
+					encode['nametable', :u16, name.length]
+					name.each_byte { |c| encode['nametable', :u16, c] }	# utf16
+				when Integer
+					encode_[ed, :u32, name]
+				end
+
+				data = dir[name]
+				if data.kind_of? Hash
+					# subdirectory
+					nextdirs << recurs_encode[data, curoffset]
+					encode_[ed, :u32, curoffset | (1<<31)]
+					curoffset += nextdirs.last.virtsize
+				else
+					encode_[ed, :u32, off_end['datatable']]
+					
+					encode['datatable', :u32, rva_end['data']]
+					encode['datatable', :u32, data.size]
+					encode['datatable', :u32, 0]	# codepage...
+					encode['datatable', :u32, 0]	# reserved
+
+					edata['data'] << data
+				end
+			}
+			nextdirs.inject(ed) { |ed, nd| ed << nd }
+		}
+
+		s = Section.new '.rsrc'
+		s.edata = recurs_encode[rsrc, 0] << edata['nametable'] << edata['datatable'] << edata['data']
+		s.edata.export[label['directory']] = 0
+		s.characteristics = %w[MEM_READ]
+		pe_sections << s
+
+		directories['resource_table'] = [label['directory'], s.edata.virtsize]
+	end
+	end
 
 	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness) end
 	def encode_half(w)   Expression[w].encode(:u16, @endianness) end
@@ -317,8 +446,15 @@ class COFF
 			if not char.delete 'MEM_DISCARDABLE'
 				secs.delete_if { |ss| ss.characteristics.include? 'MEM_DISCARDABLE' }
 			end
+			# do not merge shared w/ non-shared
+			if char.delete 'MEM_SHARED'
+				secs.delete_if { |ss| not ss.characteristics.include? 'MEM_SHARED' }
+			else
+				secs.delete_if { |ss| ss.characteristics.include? 'MEM_SHARED' }
+			end
 			secs.delete_if { |ss| ss.virtsize.kind_of?(Integer) or ss.rawsize.kind_of?(Integer) }
 
+			# try to find superset of characteristics
 			if target = secs.find { |ss| (ss.characteristics & char) == char }
 				target.encoded << s.encoded
 			else
@@ -339,7 +475,7 @@ class COFF
 		s = Section.new
 		s.name = '.edata'
 		s.encoded = edata
-		s.characteristics = %w[MEM_READ MEM_WRITE]
+		s.characteristics = %w[MEM_READ]
 		encode_append_section s
 	end
 
@@ -431,6 +567,18 @@ class COFF
 				@relocations << rt
 			end
 		}
+	end
+
+	def encode_resource
+		res = @resource.encode self
+
+		@directory['resource_table'] = [label_at(res, 0, 'resource_table'), res.virtsize]
+
+		s = Section.new
+		s.name = '.rsrc'
+		s.encoded = res
+		s.characteristics = %w[MEM_READ]
+		encode_append_section s
 	end
 
 	# appends the header/optheader/directories/section table to @encoded
@@ -533,13 +681,15 @@ class COFF
 	end
 
 	# encode a COFF file, building export/import/reloc tables if needed
-	# TODO merge sections, base relocations, resources
-	def encode(target = 'exe')
+	# creates the base relocation tables (need for references to IAT not known before)
+	def encode(target = 'dll')
 		@encoded ||= EncodedData.new
 		label_at(@encoded, 0, 'coff_start')
 		encode_exports if @export
 		encode_imports if @imports
+		create_relocation_tables if target != 'exe'
 		encode_relocs if @relocations
+		encode_resource if @resource
 		encode_header(target)
 		encode_sections_fixup
 		@encoded.data
@@ -548,10 +698,6 @@ class COFF
 	def self.from_program(program)
 		coff = new
 		coff.endianness = program.cpu.endianness
-		coff.header = Header.new
-		coff.optheader = OptionalHeader.new
-
-		coff.encoded = EncodedData.new
 
 		coff.header.machine = 'I386' if program.cpu.kind_of? Ia32 rescue nil
 		coff.optheader.entrypoint = 'entrypoint'
@@ -591,8 +737,6 @@ class COFF
 				coff.export.exports << e
 			}
 		end
-
-		coff.create_relocation_tables
 
 		coff
 	end
@@ -638,41 +782,6 @@ __END__
 		# patch good value
 		data[csumoff, 4] = [sum].pack(long)
 	end
-
-	def merge_sections(pe_sections, pe_target, opts)
-		# XXX requested alignment
-			
-		dc = proc { |s1, s2| (s1.characteristics - s2.characteristics).length }
-
-		mergesections = proc { |sectionlist|
-			sectionlist.dup.reverse_each { |cur|
-				if cur.rawsize < 0x800 and sectionlist.length >= 2 and not cur.base
-					sectionlist.delete cur
-					pe_sections.delete cur
-					target = sectionlist.sort_by { |s| (dc[s, cur] + dc[cur, s]) * 0x1000 + s.virtsize - s.rawsize }.first
-					target.edata.align_size cur.align
-					target.align = [target.align, cur.align].max
-					target.edata << cur.edata
-					cur.characteristics.delete 'MEM_DISCARDABLE' unless target.characteristics.include? 'MEM_DISCARDABLE'
-					target.characteristics |= cur.characteristics
-				end
-			}
-		}
-
-		# optimize size by merging sections with compatible mprot
-		# do not merge non-shared with shared
-		pe_sections.partition { |s| s.characteristics.include? 'MEM_SHARED' }.each { |subsections|
-			subsections.partition { |s| s.rawsize == 0 }.each { |subsections|
-				# do not merge discardable with non discardable if there is more than 1 page of discardable
-				if subsections.find_all { |s| s.characteristics.include? 'MEM_DISCARDABLE' }.map { |s| s.rawsize }.inject(0) { |a, b| a+b } >= 0x1000
-					subsections.partition { |s| s.characteristics.include? 'MEM_DISCARDABLE' }.each(&mergesections)
-				else
-					mergesections[subsections]
-				end
-			}
-		}
-	end
-
 
 	def pre_encode_delayimports(program, program_start, pe_format, pe_sections, directories, opts)
 		# initialize label and encodeddata tables
@@ -819,74 +928,5 @@ __END__
 	end
 	end
 
-	# compiles ressource directories
-	# rsrc: { 'foo' => { 'bar' => 'baz', 4 => 'lol' }, 'quux' => 'blabla' }
-	# keys must be either Strings or Integers, the encoder won't work otherwise
-	def pre_encode_resources(program, program_start, rsrc, pe_sections, directories, opts)
-		edata = {}
-		label = {}
-		%w[nametable datatable data].each { |name|
-			edata[name] = EncodedData.new
-			label[name] = program.label_at(edata[name], 0)
-		}
-		label['directory'] = program.new_unique_label
-
-		encode  = proc { |name, type, expr| edata[name] << Expression[*expr].encode(type, program.cpu.endianness) }
-		encode_ = proc { |edat, type, expr| edat << Expression[*expr].encode(type, program.cpu.endianness) }
-		rva_end = proc { |name| [[label[name], :-, program_start], :+, edata[name].virtsize] }
-		off_end = proc { |name| [[label[name], :-, label['directory']], :+, edata[name].virtsize] }
-
-		recurs_encode = proc { |dir, curoffset|
-			# curoffset is the current length of the directory table
-			ed = EncodedData.new
-			encode_[ed, :u32, opts['rsrc_characteristics'] || 0]
-			encode_[ed, :u32, opts['rsrc_timestamp']       || Time.now.to_i]
-			encode_[ed, :u16, opts['rsrc_version_major']   || 0]
-			encode_[ed, :u16, opts['rsrc_version_minor']   || 0]
-			encode_[ed, :u16, dir.keys.grep(String ).length]
-			encode_[ed, :u16, dir.keys.grep(Integer).length]
-
-			curoffset += 4+4+2+2+2+2 + dir.length*8
-			nextdirs = []
-
-			(dir.keys.grep(String).sort_by { |name| name.downcase } + dir.keys.grep(Integer).sort).each { |name|
-				case name
-				when String
-					encode_[ed, :u32, [off_end['nametable'], :|, 1<<31]]
-
-					encode['nametable', :u16, name.length]
-					name.each_byte { |c| encode['nametable', :u16, c] }	# utf16
-				when Integer
-					encode_[ed, :u32, name]
-				end
-
-				data = dir[name]
-				if data.kind_of? Hash
-					# subdirectory
-					nextdirs << recurs_encode[data, curoffset]
-					encode_[ed, :u32, curoffset | (1<<31)]
-					curoffset += nextdirs.last.virtsize
-				else
-					encode_[ed, :u32, off_end['datatable']]
-					
-					encode['datatable', :u32, rva_end['data']]
-					encode['datatable', :u32, data.size]
-					encode['datatable', :u32, 0]	# codepage...
-					encode['datatable', :u32, 0]	# reserved
-
-					edata['data'] << data
-				end
-			}
-			nextdirs.inject(ed) { |ed, nd| ed << nd }
-		}
-
-		s = Section.new '.rsrc'
-		s.edata = recurs_encode[rsrc, 0] << edata['nametable'] << edata['datatable'] << edata['data']
-		s.edata.export[label['directory']] = 0
-		s.characteristics = %w[MEM_READ]
-		pe_sections << s
-
-		directories['resource_table'] = [label['directory'], s.edata.virtsize]
-	end
 end
 end
