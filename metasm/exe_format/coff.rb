@@ -42,6 +42,35 @@ class COFF < ExeFormat
 		0x2000 => 'WDM_DRIVER', 0x8000 => 'TERMINAL_SERVER_AWARE'
 	}
 	
+	BASE_RELOCATION_TYPE = { 0 => 'ABSOLUTE', 1 => 'HIGH', 2 => 'LOW', 3 => 'HIGHLOW',
+		4 => 'HIGHADJ', 5 => 'MIPS_JMPADDR', 9 => 'MIPS_JMPADDR16', 10 => 'DIR64'
+	}
+
+	RELOCATION_TYPE = Hash.new({}).merge(
+		'x64' => { 0 => 'ABSOLUTE', 1 => 'ADDR64', 2 => 'ADDR32', 3 => 'ADDR32NB',
+			4 => 'REL32', 5 => 'REL32_1', 6 => 'REL32_2', 7 => 'REL32_3',
+			8 => 'REL32_4', 9 => 'REL32_5', 10 => 'SECTION', 11 => 'SECREL',
+			12 => 'SECREL7', 13 => 'TOKEN', 14 => 'SREL32', 15 => 'PAIR',
+			16 => 'SSPAN32' },
+		'arm' => { 0 => 'ABSOLUTE', 1 => 'ADDR32', 2 => 'ADDR32NB', 3 => 'BRANCH24',
+			4 => 'BRANCH11', 14 => 'SECTION', 15 => 'SECREL' },
+		'I386' => { 0 => 'ABSOLUTE', 1 => 'DIR16', 2 => 'REL16', 6 => 'DIR32',
+			7 => 'DIR32NB', 9 => 'SEG12', 10 => 'SECTION', 11 => 'SECREL',
+			12 => 'TOKEN', 13 => 'SECREL7', 20 => 'REL32' }
+	)
+
+	# lsb of symbol type, unused
+	SYMBOL_TYPE = { 0 => 'NULL', 1 => 'VOID', 2 => 'CHAR', 3 => 'SHORT',
+		4 => 'INT', 5 => 'LONG', 6 => 'FLOAT', 7 => 'DOUBLE', 8 => 'STRUCT',
+		9 => 'UNION', 10 => 'ENUM', 11 => 'MOE', 12 => 'BYTE', 13 => 'WORD',
+		14 => 'UINT', 15 => 'DWORD'}
+	# msb of symbol type, onlf 0x20 used
+	SYMBOL_DTYPE = { 0 => 'NULL', 1 => 'POINTER', 2 => 'FUNCTION', 3 => 'ARRAY' }
+
+	DEBUG_TYPE = { 0 => 'UNKNOWN', 1 => 'COFF', 2 => 'CODEVIEW', 3 => 'FPO', 4 => 'MISC',
+		5 => 'EXCEPTION', 6 => 'FIXUP', 7 => 'OMAP_TO_SRC', 8 => 'OMAP_FROM_SRC',
+		9 => 'BORLAND', 10 => 'RESERVED10', 11 => 'CLSID' }
+
 	DIRECTORIES = %w[export_table import_table resource_table exception_table certificate_table
 			  base_relocation_table debug architecture global_ptr tls_table load_config
 			  bound_import iat delay_import com_runtime reserved]

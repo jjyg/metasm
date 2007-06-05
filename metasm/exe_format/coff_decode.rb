@@ -223,7 +223,7 @@ class COFF
 				raw = coff.decode_half
 				r = Relocation.new
 				r.offset = raw & 0xfff
-				r.type = coff.int_to_hash(((raw >> 12) & 15), RELOCATION_TYPE.fetch(coff.header.machine, {}))
+				r.type = coff.int_to_hash(((raw >> 12) & 15), BASE_RELOCATION_TYPE)
 				@relocs << r
 			}
 		end
@@ -319,7 +319,7 @@ class COFF
 					if off = rva_to_off(rt.base_addr + r.offset)
 						@encoded.ptr = off
 						rel = send(relocfunc, r)
-						@encoded[off] = rel if rel
+						@encoded.reloc[off] = rel if rel
 					end
 				}
 			}
@@ -329,7 +329,17 @@ class COFF
 	# decodes an I386 COFF relocation pointing to encoded.ptr
 	def decode_reloc_i386(r)
 		case r.type
-		when 'NULL'
+		when 'ABSOLUTE'
+		when 'HIGHLOW', 'DIR64'
+			case r.type
+			when 'HIGHLOW': addr, type = decode_word, :u32
+			when 'DIR64':   addr, type = decode_xword, :u64
+			end
+			addr -= @optheader.image_base
+			if off = rva_to_off(addr)
+				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%x' % addr)], type, @endianness)
+			end
+		else puts "W: COFF: Unsupported i386 relocation #{r.inspect}"
 		end
 	end
 

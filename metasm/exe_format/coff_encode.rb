@@ -276,9 +276,9 @@ class COFF
 
 			# encode table content
 			@relocs.each { |r|
-				raw = coff.int_from_hash(r.type, RELOCATION_TYPE.fetch(coff.header.machine, {}))
-				raw = (raw << 12) | (raw.offset & 0xfff)
-				rel << coff.encode_word(raw)
+				raw = coff.int_from_hash(r.type, BASE_RELOCATION_TYPE)
+				raw = (raw << 12) | (r.offset & 0xfff)
+				rel << coff.encode_half(raw)
 			}
 
 			rel
@@ -306,9 +306,27 @@ class COFF
 
 
 	# adds a new compiler-generated section
-	# TODO merge sections
 	def encode_append_section(s)
-		@sections << s
+		if (s.virtsize || s.encoded.virtsize) < 4096
+			# find section to merge with
+			# XXX check following sections for hardcoded base address ?
+
+			char = s.characteristics.dup
+			secs = @sections.dup
+			# do not merge non-discardable in discardable
+			if not char.delete 'MEM_DISCARDABLE'
+				secs.delete_if { |ss| ss.characteristics.include? 'MEM_DISCARDABLE' }
+			end
+			secs.delete_if { |ss| ss.virtsize.kind_of?(Integer) or ss.rawsize.kind_of?(Integer) }
+
+			if target = secs.find { |ss| (ss.characteristics & char) == char }
+				target.encoded << s.encoded
+			else
+				@sections << s
+			end
+		else
+			@sections << s
+		end
 	end
 
 	# encodes the export table as a new section, updates directory['export_table']
@@ -355,13 +373,69 @@ class COFF
 		s = Section.new
 		s.name = '.reloc'
 		s.encoded = relocs
-		s.characteristics = %[MEM_READ MEM_DISCARDABLE]
+		s.characteristics = %w[MEM_READ MEM_DISCARDABLE]
 		encode_append_section s
+	end
+
+	# creates the @relocations from sections.encoded.reloc
+	def create_relocation_tables
+		@relocations = []
+
+		# create a fake binding with all exports, to find only-image_base-dependant relocs targets
+		# not foolproof, but work standard cases
+		startaddr = curaddr = Expression[label_at(@encoded, 0, 'coff_start')]
+		binding = {}
+		@sections.each { |s|
+			binding.update s.encoded.binding(curaddr)
+			curaddr = Expression[curaddr, :+, s.encoded.virtsize]
+		}
+
+		# for each section.encoded, make as many RelocationTables as needed
+		@sections.each { |s|
+
+			# rt.base_addr temporarily holds the offset from section_start, and is fixed up to rva before '@reloc << rt'
+			rt = RelocationTable.new
+
+			s.encoded.reloc.each { |off, rel|
+				# check that the relocation looks like "program_start + integer" when bound using the fake binding
+				# XXX allow :i32 etc
+				if rel.endianness == @endianness and (rel.type == :u32 or rel.type == :u64) and \
+				Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of? Integer
+					# winner !
+
+					# build relocation
+					r = RelocationTable::Relocation.new
+					r.offset = off & 0xfff
+					r.type = { :u32 => 'HIGHLOW', :u64 => 'DIR64' }[rel.type]
+
+					# check if we need to start a new relocation table
+					if rt.base_addr and (rt.base_addr & ~0xfff) != (off & ~0xfff)
+						rt.base_addr = Expression[[label_at(s.encoded, 0, 'sect_start'), :-, label_at(@encoded, 0, 'coff_start')], :+, rt.base_addr]
+						@relocations << rt
+						rt = RelocationTable.new
+					end
+
+					# initialize reloc table base address if needed
+					if not rt.base_addr
+						rt.base_addr = off & ~0xfff
+					end
+
+					(rt.relocs ||= []) << r
+				else
+					puts "W: COFF: Ignoring weird relocation #{rel.inspect} when building relocation tables" if $DEBUG
+				end
+			}
+
+			if rt and rt.relocs
+				rt.base_addr = Expression[[label_at(s.encoded, 0, 'sect_start'), :-, label_at(@encoded, 0, 'coff_start')], :+, rt.base_addr]
+				@relocations << rt
+			end
+		}
 	end
 
 	# appends the header/optheader/directories/section table to @encoded
 	# initializes some flags based on the target arg ('exe' / 'dll' / 'kmod' / 'obj')
-	def encode_header(target = 'exe')
+	def encode_header(target = 'dll')
 		# setup header flags
 		tmp = %w[LINE_NUMS_STRIPPED LOCAL_SYMS_STRIPPED DEBUG_STRIPPED] +
 			case target
@@ -370,7 +444,7 @@ class COFF
 			when 'kmod': %w[EXECUTABLE_IMAGE]
 			when 'obj':  []
 			end
-		tmp << "x32BIT_MACHINE"		# XXX
+		tmp << 'x32BIT_MACHINE'		# XXX
 		tmp << 'RELOCS_STRIPPED' if not @directory['base_relocation_table']
 		@header.characteristics ||= tmp
 
@@ -477,6 +551,8 @@ class COFF
 		coff.header = Header.new
 		coff.optheader = OptionalHeader.new
 
+		coff.encoded = EncodedData.new
+
 		coff.header.machine = 'I386' if program.cpu.kind_of? Ia32 rescue nil
 		coff.optheader.entrypoint = 'entrypoint'
 
@@ -515,6 +591,8 @@ class COFF
 				coff.export.exports << e
 			}
 		end
+
+		coff.create_relocation_tables
 
 		coff
 	end
