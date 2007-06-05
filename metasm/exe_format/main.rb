@@ -5,11 +5,16 @@ class ExeFormat
 	attr_accessor :cpu, :encoded
 
 	def self.decode_file(path, *a)
-		decode((defined?(VirtualFile) ? VirtualFile : File).read(path), *a)
+		if defined? VirtualFile
+			decode(VirtualFile.read(path), *a)
+		else
+			File.open(path, 'rb') { |fd| decode(fd.read, *a) }
+		end
 	end
 
 	def encode_file(path, *a)
-		File.open(path, File::CREAT | File::EXCL | File::WRONLY) { |fd| fd.write(data = encode(*a)) ; data }
+		raise Errno::EEXIST, path if File.exist? path
+		File.open(path, 'wb') { |fd| fd.write(data = encode(*a)) ; data }
 	end
 
 	def label_at(edata, offset, base = '')
