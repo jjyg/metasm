@@ -6,7 +6,7 @@ cpu = Metasm::Ia32.new
 
 exe = Metasm::Program.new cpu
 exe.parse <<EOS
-.text
+.section '.text' r w x
 entrypoint:
 call [foobar]
 xor eax, eax
@@ -21,7 +21,7 @@ pe.encode_file('pe-testreloc.exe', 'exe')
 
 dll = Metasm::Program.new cpu
 dll.parse <<EOS
-.text
+.section '.text' r w x
 foobar:
 push 0
 push msg
