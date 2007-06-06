@@ -18,7 +18,7 @@ end
 	require "metasm/exe_format/#{f}"
 }
 # os-specific features
-%w[windows].each { |f|
+%w[windows linux].each { |f|
 	require "metasm/os/#{f}"
 }
 
