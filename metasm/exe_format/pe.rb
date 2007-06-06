@@ -28,7 +28,7 @@ class PE < COFF
 		@encoded.ptr = 0x3c
 		@encoded.ptr = decode_word
 		@signature = @encoded.read(4)
-		raise "Invalid PE signature #{@signature.inspect}" if @signature != PESIG
+		raise InvalidExeFormat, "Invalid PE signature #{@signature.inspect}" if @signature != PESIG
 		@coff_offset = @encoded.ptr
 		super
 	end

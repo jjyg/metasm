@@ -30,7 +30,7 @@ class ELF
 			h.ident = elf.encoded.read 16
 
 			h.sig = h.ident[0, 4]
-			raise "E: ELF: invalid ELF signature #{h.sig.inspect}" if h.sig != "\x7fELF"
+			raise InvalidExeFormat, "E: ELF: invalid ELF signature #{h.sig.inspect}" if h.sig != "\x7fELF"
 
 			case h.ident[4]
 			when 1: h.e_class = 32
@@ -228,13 +228,13 @@ class ELF
 	def decode_header
 		@header = Header.pre_decode(self)	# decode arch-agnostic part
 		@header.decode self			# uses decode_word & co, so @header.endianness needs to be setup at this point
-		raise "Invalid elf header size: #{@header.ehsize}" if Header.size(self) != @header.ehsize
+		raise InvalidExeFormat, "Invalid elf header size: #{@header.ehsize}" if Header.size(self) != @header.ehsize
 	end
 
 	# decodes the section header table pointed to by @encoded.ptr
 	# section names are read from shstrndx if possible
 	def decode_section_header
-		raise "Invalid elf section header size: #{@header.shentsize}" if Section.size(self) != @header.shentsize
+		raise InvalidExeFormat, "Invalid elf section header size: #{@header.shentsize}" if Section.size(self) != @header.shentsize
 		@sections = []
 		@header.shnum.times {
 			@sections << Section.decode(self)
@@ -253,7 +253,7 @@ class ELF
 	# initializes the @interpreter
 	# marks the elf entrypoint as an export of @encoded
 	def decode_program_header
-		raise "Invalid elf program header size: #{@header.phentsize}" if Segment.size(self) != @header.phentsize
+		raise InvalidExeFormat, "Invalid elf program header size: #{@header.phentsize}" if Segment.size(self) != @header.phentsize
 		@segments = []
 		@header.phnum.times {
 			@segments << Segment.decode(self)

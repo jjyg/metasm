@@ -1,6 +1,9 @@
 require 'metasm/main'
 
 module Metasm
+# error raised when file signatures are invalid
+class InvalidExeFormat < RuntimeError ; end
+
 class ExeFormat
 	attr_accessor :cpu, :encoded
 
@@ -13,7 +16,7 @@ class ExeFormat
 	end
 
 	def encode_file(path, *a)
-		raise Errno::EEXIST, path if File.exist? path
+		raise Errno::EEXIST, path if File.exist? path	# race, but cannot use O_EXCL, as O_BINARY is not defined in ruby
 		File.open(path, 'wb') { |fd| fd.write(data = encode(*a)) ; data }
 	end
 

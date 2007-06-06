@@ -38,7 +38,7 @@ class MZ < ExeFormat
 		def self.decode(mz)
 			h = new
 			h.magic = mz.encoded.read 2
-			raise "Invalid MZ signature #{h.magic.inspect}" if h.magic != 'MZ'
+			raise InvalidExeFormat, "Invalid MZ signature #{h.magic.inspect}" if h.magic != 'MZ'
 			Fields[1..-1].each { |m| h.send("#{m}=", mz.encoded.decode_imm(:u16, mz.endianness)) }
 			h
 		end

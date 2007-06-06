@@ -567,7 +567,7 @@ class COFFArchive
 		ar = new
 		ar.encoded = EncodedData.new << str
 		ar.signature = ar.encoded.read(8)
-		raise "Invalid COFF Archive signature #{ar.signature.inspect}" if ar.signature != "!<arch>\n"
+		raise InvalidExeFormat, "Invalid COFF Archive signature #{ar.signature.inspect}" if ar.signature != "!<arch>\n"
 		ar.members = []
 		while ar.encoded.ptr < ar.encoded.virtsize
 			ar.decode_member
