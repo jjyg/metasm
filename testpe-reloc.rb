@@ -7,6 +7,7 @@ cpu = Metasm::Ia32.new
 exe = Metasm::Program.new cpu
 exe.parse <<EOS
 .text
+entrypoint:
 call [foobar]
 xor eax, eax
 ret
@@ -15,6 +16,7 @@ EOS
 exe.encode
 pe = Metasm::PE.from_program(exe)
 pe.optheader.image_base = 0x50000
+pe.optheader.entrypoint = 'entrypoint'
 pe.encode_file('pe-testreloc.exe', 'exe')
 
 dll = Metasm::Program.new cpu
@@ -29,6 +31,10 @@ call [MessageBoxA]
 
 xor eax, eax
 ret
+
+.align 4
+msg db 'foo', 0
+title db 'bar', 0
 
 .import 'user32', 'MessageBoxA'
 .export foobar, 'foobar'
