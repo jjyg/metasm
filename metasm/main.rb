@@ -141,14 +141,14 @@ end
 # handle immediate values
 class Expression
 	# TODO floats
-	INT_SIZE = {:u8 => 8,    :u16 => 16,     :u32 => 32,
-		    :i8 => 8,    :i16 => 16,     :i32 => 32
+	INT_SIZE = {:u8 => 8,    :u16 => 16,     :u32 => 32, :u64 => 64,
+		    :i8 => 8,    :i16 => 16,     :i32 => 32, :i64 => 64
 	}
-	INT_MIN  = {:u8 => 0,    :u16 => 0,      :u32 => 0,
-		    :i8 =>-0x80, :i16 =>-0x8000, :i32 =>-0x80000000
+	INT_MIN  = {:u8 => 0,    :u16 => 0,      :u32 => 0, :u64 => 0,
+		    :i8 =>-0x80, :i16 =>-0x8000, :i32 =>-0x80000000, :i64 => -0x8000_0000_0000_0000
 	}
-	INT_MAX  = {:u8 => 0xff, :u16 => 0xffff, :u32 => 0xffffffff,
-		    :i8 => 0x7f, :i16 => 0x7fff, :i32 => 0x7fffffff
+	INT_MAX  = {:u8 => 0xff, :u16 => 0xffff, :u32 => 0xffffffff, :u64 => 0xffff_ffff_ffff_ffff,
+		    :i8 => 0x7f, :i16 => 0x7fff, :i32 => 0x7fffffff, :i64 => 0x7fff_ffff_ffff_ffff
 	}
 
 	# alternative constructor: Expression[[:-, 42], :*, [1, :+, [4, :*, 7]]]
