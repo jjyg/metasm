@@ -17,6 +17,8 @@ class Instruction
 end
 
 class CPU
+	# renders an instruction
+	# may use instruction-global properties to render an argument (size specification if not implicit)
 	def render_instruction(i)
 		r = []
 		r << @opname
@@ -28,6 +30,11 @@ class CPU
 			r.pop
 		end
 		r
+	end
+
+	# ease debugging in irb
+	def inspect
+		"#<#{self.class}:#{'%x' % object_id} @size=#{@size.inspect} @endianness=#{@endianness.inspect} ... >"
 	end
 end
 
