@@ -252,7 +252,7 @@ class ELF < ExeFormat
 		end
 	end
 
-	attr_reader :header, :segments, :sections, :tag
+	attr_accessor :header, :segments, :sections, :tag
 
 	def self.hash_symbol_name(name)
 		name.unpack('C*').inject(0) { |hash, char|
