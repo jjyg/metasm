@@ -1,68 +1,40 @@
 #!/usr/bin/env ruby
 
-require 'metasm/ia32/parse'
-require 'metasm/ia32/encode'
-require 'metasm/exe_format/pe'
+require 'metasm'
 
 cpu = Metasm::Ia32.new
 
-def template(name)
-case name
-when 'exe'
-	spec = ".import 'testrelocdll', 'SomeRandomName'\ncall [SomeRandomName]"
-when 'dll'
-	spec = ".export start, 'SomeRandomName'"
-end
-<<EOS
+exe = Metasm::Program.new cpu
+exe.parse <<EOS
 .text
-start:
+call [foobar]
+xor eax, eax
+ret
+.import 'pe-foolib', 'foobar'
+EOS
+exe.encode
+pe = Metasm::PE.from_program(exe)
+pe.optheader.image_base = 0x50000
+pe.encode_file('pe-testreloc.exe', 'exe')
 
-push start
-push format
-push buffer
-call wsprintf
-add esp, 4*3
-
+dll = Metasm::Program.new cpu
+dll.parse <<EOS
+.text
+foobar:
 push 0
+push msg
 push title
-push buffer
 push 0
-call messagebox
-
-#{spec}
+call [MessageBoxA]
 
 xor eax, eax
 ret
 
-.import 'user32' 'MessageBoxA', messagebox
-.import 'user32' 'wsprintfA', wsprintf
-
-.data
-format  db '#{name} code address: %08x', 0
-title   db '#{name} addr', 0
-
-.bss
-buffer  db 1025 dup(?)
+.import 'user32', 'MessageBoxA'
+.export foobar, 'foobar'
 EOS
-end
-
-
-# compile main exe
-prog = Metasm::Program.new cpu
-prog.parse template('exe')
-prog.encode
-data = Metasm::PE.encode prog, 'prefered_base_address' => 0x400000
-File.open('testrelocexe.exe', 'wb') { |fd| fd.write data }
-
-
-# compile dll
-dll = Metasm::Program.new cpu
-dll.parse template('dll')
 dll.encode
-data = Metasm::PE.encode dll, 'pe_target' => :dll, 'edata_dllname' => 'TESTRELOCDLL', 'prefered_base_address' => 0x400000, 'entrypoint' => 'foobar'
-File.open('testrelocdll.dll', 'wb') { |fd| fd.write data }
-
-if RUBY_PLATFORM =~ /mswin32/i
-	puts "press enter"
-	gets
-end
+pe = Metasm::PE.from_program(dll)
+pe.optheader.image_base = 0x50000
+pe.export.libname = 'pe-foolib'
+pe.encode_file('pe-foolib.dll', 'dll')
