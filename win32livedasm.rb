@@ -4,19 +4,18 @@ require 'metasm-shell'
 include Metasm
 include WinAPI
 
-WinAPI.get_debug_privilege
-
-# select target
-pids = WinAPI.list_processes
-abort("target not found !") if not pid = pids.keys.find { |k| pids[k].modules and pids[k].modules.first.path =~ /notepad/i }
-
 # open target
-raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pid)
+WinAPI.get_debug_privilege
+if not pr = WinAPI.find_process((Integer(ARGV.first) rescue ARGV.first))
+	puts WinAPI.list_processes.sort_by { |pr| pr.pid }.map { |pr| "#{pr.pid}: #{File.basename(pr.modules.first.path) rescue nil}" }
+	exit
+end
+raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pr.pid)
 
-# virtual string of remote process memory
+# virtual mapping of remote process memory
 remote_mem = WindowsRemoteString.new(handle)
 
-baseaddr = pids[pid].modules[0].addr
+baseaddr = pr.modules[0].addr
 
 pe = Metasm::LoadedPE.decode remote_mem[baseaddr, 0x100000]
 

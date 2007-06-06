@@ -1,6 +1,8 @@
 require 'metasm/os/main'
 begin
 require 'Win32API'
+rescue LoadError
+end
 
 module Metasm
 module WinAPI
@@ -43,6 +45,7 @@ module WinAPI
 	
 	# raw api function
 	
+	if defined? Win32API
 	new_api 'kernel32', 'GetLastError', 'I', false
 	new_api 'kernel32', 'FormatMessage', 'IPIIPIP I', false
 	new_api 'kernel32', 'OpenProcess', 'III I'
@@ -57,6 +60,7 @@ module WinAPI
 	new_api 'psapi', 'EnumProcesses', 'PIP I'
 	new_api 'psapi', 'EnumProcessModules', 'IPIP I'
 	new_api 'psapi', 'GetModuleFileNameEx', 'IIPI I'
+	end
 	
 	
 	# constants
@@ -76,6 +80,7 @@ module WinAPI
 
 	# higher level functions
 	
+	# try to enable debug privilege in current process
 	def self.get_debug_privilege
 		htok = [0].pack('L')
 		return if not openprocesstoken(getcurrentprocess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, htok)
@@ -91,12 +96,13 @@ module WinAPI
 		true
 	end
 
+	# returns an array of Processes, with pid/module listing
 	def self.list_processes
 		tab = ' '*4096
 		int = [0].pack('L')
 		return if not enumprocesses(tab, tab.length, int)
 		pids = tab[0, int.unpack('L').first].unpack('L*')
-		pids.inject({}) { |hash, pid|
+		pids.map { |pid|
 			pr = Process.new
 			pr.pid = pid
 			if handle = openprocess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid)
@@ -115,14 +121,23 @@ module WinAPI
 				end
 				closehandle(handle)
 			end
-			hash.update pid => pr
+			pr
 		}
+	end
+
+	# returns the Process whose pid is name (numeric) or first module path includes name (string)
+	def self.find_process(name)
+		list_processes.find { |pr| pr.pid == name or (pr.modules.first.path.include? name.to_s rescue false) }
 	end
 end
 
 class WindowsRemoteString < VirtualString
 	attr_accessor :handle, :addr_start, :length
 	attr_accessor :curpage, :curstart, :invalid
+
+	# returns a virtual string proxying the specified process memory range
+	# reads are cached (4096 aligned bytes read at once)
+	# writes are done directly (if handle has appropriate privileges)
 	def initialize(handle, addr_start=0, length=0xffff_ffff)
 		@handle, @addr_start, @length = handle, addr_start, length
 		@invalid = true
@@ -189,6 +204,4 @@ class WindowsRemoteString < VirtualString
 		s
 	end
 end
-end
-rescue LoadError
 end

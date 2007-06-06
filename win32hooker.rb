@@ -4,31 +4,19 @@ require 'metasm-shell'
 include Metasm
 include WinAPI
 
+# open target
 WinAPI.get_debug_privilege
-
-# select target
-pid = ARGV.shift
-pid = Integer(pid) if pid rescue nil
-pids = WinAPI.list_processes
-if not pid
-	puts pids.sort.transpose.last
+if not pr = WinAPI.find_process((Integer(ARGV.first) rescue ARGV.first))
+	puts WinAPI.list_processes.sort_by { |pr| pr.pid }.map { |pr| "#{pr.pid}: #{File.basename(pr.modules.first.path) rescue nil}" }
 	exit
 end
-if not pids[pid]
-	abort("target not found !") if not pid = pids.keys.find { |k| pids[k].modules and pids[k].modules.first.path =~ /#{pid}/i }
-	puts "using pid #{pid} #{File.basename pids[pid].modules.first.path}"
-end
+raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pr.pid)
 
-# open target
-raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pid)
-
-# virtual string of remote process memory
+# virtual mapping of remote process memory
 remote_mem = WindowsRemoteString.new(handle)
 
-mods = pids[pid].modules
-
 # hook iat
-pe = Metasm::LoadedPE.decode remote_mem[mods[0].addr, 0x1000000]
+pe = Metasm::LoadedPE.decode remote_mem[pr.modules[0].addr, 0x1000000]
 pe.decode_imports
 
 # find iat entries
@@ -39,14 +27,14 @@ pe.imports.each { |id|
 	id.imports.each_with_index { |i, idx|
 		case i.name
 		when 'MessageBoxW'
-			msgboxw_p = mods[0].addr + id.iat_p + (pe.optheader.sig == 'PE+' ? 8 : 4) * idx
+			msgboxw_p = pr.modules[0].addr + id.iat_p + (pe.optheader.sig == 'PE+' ? 8 : 4) * idx
 		when /WriteFile/
-			target_p  = mods[0].addr + id.iat_p + (pe.optheader.sig == 'PE+' ? 8 : 4) * idx
+			target_p  = pr.modules[0].addr + id.iat_p + (pe.optheader.sig == 'PE+' ? 8 : 4) * idx
 			target = id.iat[idx]
 		end
 	}
 }
-raise "target not found" if not target or not msgboxw_p
+raise "iat entries not found" if not target or not msgboxw_p
 
 myshellcode = <<EOS.encode_edata
 pushad

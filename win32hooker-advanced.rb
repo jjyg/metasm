@@ -4,28 +4,16 @@ require 'metasm-shell'
 include Metasm
 include WinAPI
 
+# open target
 WinAPI.get_debug_privilege
-
-# select target
-pid = ARGV.shift
-pid = Integer(pid) if pid rescue nil
-pids = WinAPI.list_processes
-if not pid
-	puts pids.sort.transpose.last
+if not pr = WinAPI.find_process((Integer(ARGV.first) rescue ARGV.first))
+	puts WinAPI.list_processes.sort_by { |pr| pr.pid }.map { |pr| "#{pr.pid}: #{File.basename(pr.modules.first.path) rescue nil}" }
 	exit
 end
-if not pids[pid]
-	abort("target not found !") if not pid = pids.keys.find { |k| pids[k].modules and pids[k].modules.first.path =~ /#{pid}/i }
-	puts "using pid #{pid} #{File.basename pids[pid].modules.first.path}"
-end
+raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pr.pid)
 
-# open target
-raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pid)
-
-# virtual string of remote process memory
+# virtual mapping of remote process memory
 remote_mem = WindowsRemoteString.new(handle)
-
-mods = pids[pid].modules
 
 # hook all library functions
 hooks = {}
@@ -91,11 +79,10 @@ EOS
 }
 	
 msgboxw = nil
-mods[1..-1].each { |m|
+pr.modules[1..-1].each { |m|
 	next if m.path !~ /user32/i
 	puts "handling #{File.basename m.path}" if $VERBOSE
 	mpe = Metasm::LoadedPE.decode remote_mem[m.addr, 0x1000000]
-	mpe.decode_exports
 	next if not mpe.export or not mpe.export.exports
 	text = mpe.sections.find { |s| s.name == '.text' }
 	mpe.export.exports.each { |e|
@@ -115,6 +102,8 @@ prog.encode
 main_page = prog.sections.first.encoded
 raise 'remote allocation failed' if not injected_addr = WinAPI.virtualallocex(handle, 0, main_page.virtsize, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
 	
+puts "Injecting hooks at #{'%x' % injected_addr}"
+
 binding = {'messageboxw' => msgboxw}
 hooks.each { |addr, edata| binding.update edata.binding(addr) }
 binding.update main_page.binding(injected_addr)
@@ -126,6 +115,6 @@ hooks.each { |addr, edata|
 	remote_mem[addr, edata.data.length] = edata.data
 }
 
-puts "Injected hooks at #{'%x' % injected_addr}"
+puts 'done'
 
 WinAPI.closehandle(handle)
