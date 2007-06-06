@@ -26,7 +26,7 @@ class ExeFormat
 
 	def new_label(base = '')
 		base = base.dup
-		k = (base << '_uniquelabel_' << base.object_id.to_s(16)).freeze
+		k = (base << '_uniquelabel_' << ('%08x' % base.object_id)).freeze	# use %x instead of to_s(16) for negative values
 		(@unique_labels_cache ||= []) << k	# prevent garbage collection, this guarantees uniqueness (object_id)
 		k
 	end
