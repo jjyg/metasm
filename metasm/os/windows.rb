@@ -132,42 +132,38 @@ module WinAPI
 end
 
 class WindowsRemoteString < VirtualString
-	attr_accessor :handle, :addr_start, :length
-	attr_accessor :curpage, :curstart, :invalid
+	def self.open_pid(pid, access = nil)
+		if access
+			handle = WinAPI.openprocess(access, 0, pid)
+		else
+			handle = WinAPI.openprocess(WinAPI::PROCESS_ALL_ACCESS, 0, pid)
+			if not handle
+				puts "cannot openprocess ALL_ACCESS pid #{pid}"
+				handle = WinAPI.openprocess(WinAPI::PROCESS_VM_READ, 0, pid)
+			end
+		end
+		raise "cannot open process #{pid}" if not handle
+
+		new handle
+	end
+
+	attr_accessor :handle
 
 	# returns a virtual string proxying the specified process memory range
 	# reads are cached (4096 aligned bytes read at once)
 	# writes are done directly (if handle has appropriate privileges)
 	def initialize(handle, addr_start=0, length=0xffff_ffff)
-		@handle, @addr_start, @length = handle, addr_start, length
-		@invalid = true
+		@handle = handle
+		super(addr_start, length)
+		# @curpage is overwritten every time by readprocmem
 		@curpage = ' '*4096
 	end
 
-	def dup
-		self.class.new(@handle, @addr_start, @length)
+	def dup(addr = @addr_start, len = @length)
+		self.class.new(@handle, addr, len)
 	end
 
-	def read_range(from, len)
-		from += @addr_start
-		get_page(from) if @invalid or @curstart < from or @curstart + @curpage.length >= from
-		if not len
-			@curpage[from - @curstart]
-		elsif len <= 4096
-			from -= @curstart
-			s = @curpage[from, len]
-			if from + len > 4096	# request crosses a page boundary
-				get_page(@curstart + 4096)
-				s << @curpage[0, from + len - 4096]
-			end
-			s
-		else
-			# big request: return a new virtual page
-			self.class.new(@handle, from, len)
-		end
-	end
-
-	def write_range(from, len, val)
+	def write_range(from, val)
 		@invalid = true
 		WinAPI.writeprocessmemory(@handle, @addr_start + from, val, val.length, nil)
 	end
@@ -180,27 +176,8 @@ class WindowsRemoteString < VirtualString
 
 	def realstring
 		super
-		s = ''
-		addr = @addr_start
-		len  = @length
-		if addr & 0xffff_f000 != 0
-			# 1st page
-			get_page(addr)
-			s << @curpage[addr - @curstart, len]
-			len  -= s.length
-			addr += s.length
-		end
-		while len >= 4096
-			get_page(addr)
-			s << @curpage
-			addr += 4096
-			len  -= 4096
-		end
-		if len > 0
-			# last page
-			get_page(addr)
-			s << @curpage[0, len]
-		end
+		s = ' ' * @length
+		WinAPI.readprocessmemory(@handle, @addr_start, s, @length, 0)
 		s
 	end
 end
