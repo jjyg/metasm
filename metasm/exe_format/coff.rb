@@ -198,8 +198,7 @@ class COFF < ExeFormat
 	def initialize
 		@directory = {}	# DIRECTORIES.key => [rva, size]
 		@sections = []
-		@export = nil
-		@imports = nil
+		@export = @imports = @relocations = @resource = @certificates = @delayimports = nil
 		@endianness = :little
 		@header = Header.new
 		@optheader = OptionalHeader.new

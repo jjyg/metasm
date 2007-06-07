@@ -320,14 +320,14 @@ class COFF
 			@entries.each { |e| e.name_w = e.name.unpack('C*').pack('v*') if e.name and not e.name_w }
 
 			# fixup forward references to us, as subdir
-			edata['table'].fixup @curoff_label => edata['table'].virtsize if @curoff_label
+			edata['table'].fixup @curoff_label => edata['table'].virtsize if defined? @curoff_label
 
 			# encode resource directory table
 			edata['table'] <<
-			coff.encode_word(@characteristics || 0) <<
-			coff.encode_word(@timestamp || 0) <<
-			coff.encode_half(@major_version || 0) <<
-			coff.encode_half(@minor_version || 0) <<
+			coff.encode_word(@characteristics ||= 0) <<
+			coff.encode_word(@timestamp ||= 0) <<
+			coff.encode_half(@major_version ||= 0) <<
+			coff.encode_half(@minor_version ||= 0) <<
 			coff.encode_half(@entries.find_all { |e| e.name_w }.length) <<
 			coff.encode_half(@entries.find_all { |e| e.id }.length)
 
