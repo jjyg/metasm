@@ -346,14 +346,18 @@ class Relocation
 end
 
 class EncodedData
-	attr_accessor :data, :reloc, :export
+	# string with raw data
+	attr_accessor :data
+	# hash, key = offset within data, value = +Relocation+
+	attr_accessor :reloc
+	# hash, key = export name, value = offset within data
+	attr_accessor :export
+	# virtual size of data (all 0 by default, see +fill+)
 	attr_accessor :virtsize
+	# arbitrary pointer, often used when decoding immediates
 	attr_accessor :ptr
 
-	# +@data+     string with binary data
-	# +@reloc+   hash: key = offset, value = +Relocation+
-	# +@export+  hash: key = name, value = offset
-	# +@virtsize+ total data virtual size (+Integer+)
+	# opts' keys in :reloc, :export, :virtsize, defaults to empty/empty/data.length
 	def initialize(data = '', opts={})
 		@data     = data
 		@reloc    = opts[:reloc]    || {}
@@ -361,17 +365,24 @@ class EncodedData
 		@virtsize = opts[:virtsize] || @data.length
 	end
 
+	# returns the size of raw data, that is [data.length, last relocation end].max
 	def rawsize
 		[@data.length, *@reloc.map { |off, rel| off + Expression::INT_SIZE[rel.type]/8 } ].max
 	end
+	# String-like
 	alias length virtsize
+	# String-like
 	alias size virtsize
 
+	# returns a copy of itself, with reloc/export duped (but not deep)
 	def dup
 		self.class.new @data.dup, :reloc => @reloc.dup, :export => @export.dup, :virtsize => @virtsize
 	end
 
-	# replace a relocation by its value calculated from +binding+, if the value is not numeric and replace_target is true the relocation target is replaced with the reduced computed value
+	# resolve relocations:
+	# calculate each reloc target using Expression#bind(binding)
+	# if numeric, replace the raw data with the encoding of this value (+fill+s preceding data if needed) and remove the reloc
+	# if replace_target is true, the reloc target is replaced with its bound counterpart
 	def fixup_choice(binding, replace_target)
 		@reloc.keys.each { |off|
 			val = @reloc[off].target.bind(binding).reduce
@@ -386,32 +397,43 @@ class EncodedData
 		}
 	end
 
+	# +fixup_choice+ binding, false
 	def fixup(binding)
 		fixup_choice(binding, false)
 	end
+
+	# +fixup_choice+ binding, true
 	def fixup!(binding)
 		fixup_choice(binding, true)
 	end
 
+	# returns a default binding suitable for use in +fixup+
+	# every export is expressed as base + offset
+	# base defaults to the first export name
 	def binding(base = nil)
 		if not base
-			key = @export.keys.first
+			key = @export.keys.sort_by { |k| @export[k] }.first
 			return {} if not key
 			base = Expression[key, :-, @export[key]]
 		end
 		@export.inject({}) { |binding, (n, o)| binding.update n => Expression[base, :+, o] }
 	end
 
-	# fill virtual space with real bytes
+	# fill virtual space by repeating pattern up to len
 	def fill(len = @virtsize, pattern = 0.chr)
 		# XXX mark this space as freely mutable
 		@virtsize = len if len > @virtsize
 		@data = @data.ljust(len, pattern) if len > @data.length
 	end
 
-	# ensure virtsize is a multiple of len
-	def align_size(len)
-		@virtsize = (@virtsize + len - 1) / len * len
+	# rounds up virtsize to next multiple of len
+	def align(len)
+		@virtsize = EncodedData.align_size(@virtsize, len)
+	end
+
+	# returns the value val rounded up to next multiple of len
+	def self.align_size(val, len)
+		((val + len - 1) / len).to_i * len
 	end
 
 	# concatenation of another +EncodedData+ (or nil/Fixnum/anything)
@@ -439,6 +461,12 @@ class EncodedData
 		self
 	end
 
+	# equivalent to dup << other, filters out Integers & nil
+	def + other
+		raise ArgumentError if not other or other.kind_of?(Integer)
+		dup << other
+	end
+
 	# slice
 	def [](from, len=nil)
 		if not len and from.kind_of? Range
@@ -464,6 +492,8 @@ class EncodedData
 		ret
 	end
 
+	# slice replacement, supports size change (shifts relocs/exports)
+	# this discards old exports/relocs from the overwritten space
 	def []=(from, len, val=nil)
 		if not val
 			val = len

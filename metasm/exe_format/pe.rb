@@ -59,7 +59,7 @@ EOMZSTUB
 		end
 
 		# set PE signature pointer at 0x3c
-		@mz.encoded.align_size 0x3c
+		@mz.encoded.align 0x3c
 		@mz.encoded << Expression['pesigptr'].encode(:u32, :little)
 
 		# add the end of the MZ program
@@ -68,7 +68,7 @@ EOMZSTUB
 		end
 
 		# ensure the sig is 8-aligned
-		@mz.encoded.align_size 8
+		@mz.encoded.align 8
 
 		# fixup the MZ program's relocs and the PE sig ptr
 		start = @mz.label_at @mz.encoded, 0

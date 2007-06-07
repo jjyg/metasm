@@ -85,7 +85,7 @@ class COFF
 			@link_ver_maj ||= 1
 			@link_ver_min ||= 0
 			@sect_align   ||= 0x1000
-			align = proc { |sz| (sz + @sect_align - 1) / @sect_align * @sect_align }
+			align = proc { |sz| EncodedData.align_size(sz, @sect_align) }
 			@code_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_CODE' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@data_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_DATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@udata_size   ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_UDATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
@@ -255,7 +255,7 @@ class COFF
 				else
 					edata['iat'].export[i.name] = edata['iat'].virtsize
 
-					edata['nametable'].align_size 2
+					edata['nametable'].align 2
 					edata['ilt'] << coff.encode_xword(rva_end['nametable'])
 					edata['iat'] << coff.encode_xword(rva_end['nametable'])
 					edata['nametable'] << coff.encode_half(i.hint || 0) << i.name << 0
@@ -359,74 +359,8 @@ class COFF
 			# recurse
 			@entries.find_all { |e| e.subdir }.each { |e| e.subdir.encode(coff, edata) }
 		end
-	# rsrc: { 'foo' => { 'bar' => 'baz', 4 => 'lol' }, 'quux' => 'blabla' }
-	def pre_encode_resources(program, program_start, rsrc, pe_sections, directories, opts)
-		edata = {}
-		label = {}
-		%w[nametable datatable data].each { |name|
-			edata[name] = EncodedData.new
-			label[name] = program.label_at(edata[name], 0)
-		}
-		label['directory'] = program.new_unique_label
-
-		encode  = proc { |name, type, expr| edata[name] << Expression[*expr].encode(type, program.cpu.endianness) }
-		encode_ = proc { |edat, type, expr| edat << Expression[*expr].encode(type, program.cpu.endianness) }
-		rva_end = proc { |name| [[label[name], :-, program_start], :+, edata[name].virtsize] }
-		off_end = proc { |name| [[label[name], :-, label['directory']], :+, edata[name].virtsize] }
-
-		recurs_encode = proc { |dir, curoffset|
-			# curoffset is the current length of the directory table
-			ed = EncodedData.new
-			encode_[ed, :u32, opts['rsrc_characteristics'] || 0]
-			encode_[ed, :u32, opts['rsrc_timestamp']       || Time.now.to_i]
-			encode_[ed, :u16, opts['rsrc_version_major']   || 0]
-			encode_[ed, :u16, opts['rsrc_version_minor']   || 0]
-			encode_[ed, :u16, dir.keys.grep(String ).length]
-			encode_[ed, :u16, dir.keys.grep(Integer).length]
-
-			curoffset += 4+4+2+2+2+2 + dir.length*8
-			nextdirs = []
-
-			(dir.keys.grep(String).sort_by { |name| name.downcase } + dir.keys.grep(Integer).sort).each { |name|
-				case name
-				when String
-					encode_[ed, :u32, [off_end['nametable'], :|, 1<<31]]
-
-					encode['nametable', :u16, name.length]
-					name.each_byte { |c| encode['nametable', :u16, c] }	# utf16
-				when Integer
-					encode_[ed, :u32, name]
-				end
-
-				data = dir[name]
-				if data.kind_of? Hash
-					# subdirectory
-					nextdirs << recurs_encode[data, curoffset]
-					encode_[ed, :u32, curoffset | (1<<31)]
-					curoffset += nextdirs.last.virtsize
-				else
-					encode_[ed, :u32, off_end['datatable']]
-					
-					encode['datatable', :u32, rva_end['data']]
-					encode['datatable', :u32, data.size]
-					encode['datatable', :u32, 0]	# codepage...
-					encode['datatable', :u32, 0]	# reserved
-
-					edata['data'] << data
-				end
-			}
-			nextdirs.inject(ed) { |ed, nd| ed << nd }
-		}
-
-		s = Section.new '.rsrc'
-		s.edata = recurs_encode[rsrc, 0] << edata['nametable'] << edata['datatable'] << edata['data']
-		s.edata.export[label['directory']] = 0
-		s.characteristics = %w[MEM_READ]
-		pe_sections << s
-
-		directories['resource_table'] = [label['directory'], s.edata.virtsize]
 	end
-	end
+
 
 	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness) end
 	def encode_half(w)   Expression[w].encode(:u16, @endianness) end
@@ -502,6 +436,12 @@ class COFF
 
 	# encodes relocation tables in a new section .reloc, updates @directory['base_relocation_table']
 	def encode_relocs
+		if @relocations.empty?
+			rt = RelocationTable.new
+			rt.base_addr = 0
+			rt.relocs = []
+			@relocations << rt
+		end
 		relocs = @relocations.inject(EncodedData.new) { |edata, rt| edata << rt.encode(self) }
 
 		@directory['base_relocation_table'] = [label_at(relocs, 0, 'reloc_table'), relocs.virtsize]
@@ -634,7 +574,7 @@ class COFF
 
 	# append the section bodies to @encoded, and link the resulting binary
 	def encode_sections_fixup
-		@encoded.align_size @optheader.file_align
+		@encoded.align @optheader.file_align
 		if @optheader.headers_size.kind_of? String
 			@encoded.fixup! @optheader.headers_size => @encoded.virtsize
 			@optheader.headers_size = @encoded.virtsize
@@ -646,7 +586,7 @@ class COFF
 		curaddr = baseaddr + @optheader.headers_size
 		@sections.each { |s|
 			# align
-			curaddr = (curaddr + @optheader.sect_align - 1) / @optheader.sect_align * @optheader.sect_align
+			curaddr = EncodedData.align_size(curaddr, @optheader.sect_align)
 			if s.rawaddr.kind_of? String
 				@encoded.fixup! s.rawaddr => @encoded.virtsize
 				s.rawaddr = @encoded.virtsize
@@ -660,7 +600,7 @@ class COFF
 
 			pre_sz = @encoded.virtsize
 			@encoded << s.encoded[0, s.encoded.rawsize]
-			@encoded.align_size @optheader.file_align
+			@encoded.align @optheader.file_align
 			if s.rawsize.kind_of? String
 				@encoded.fixup! s.rawsize => (@encoded.virtsize - pre_sz)
 				s.rawsize = @encoded.virtsize - pre_sz
@@ -682,14 +622,14 @@ class COFF
 
 	# encode a COFF file, building export/import/reloc tables if needed
 	# creates the base relocation tables (need for references to IAT not known before)
-	def encode(target = 'dll')
-		@encoded ||= EncodedData.new
+	def encode(target = 'exe')
+		@encoded = EncodedData.new
 		label_at(@encoded, 0, 'coff_start')
 		encode_exports if @export
 		encode_imports if @imports
+		encode_resource if @resource
 		create_relocation_tables if target != 'exe'
 		encode_relocs if @relocations
-		encode_resource if @resource
 		encode_header(target)
 		encode_sections_fixup
 		@encoded.data
@@ -782,151 +722,3 @@ __END__
 		# patch good value
 		data[csumoff, 4] = [sum].pack(long)
 	end
-
-	def pre_encode_delayimports(program, program_start, pe_format, pe_sections, directories, opts)
-		# initialize label and encodeddata tables
-		edata = {}
-		label = {}
-		%w[idata iat nametable].each { |name|
-			label[name] = program.new_unique_label
-			edata[name] = EncodedData.new '', :export => {label[name] => 0}
-		}
-
-		# macros
-		encode = proc { |name, type, expr|
-			edata[name] << Expression[*expr].encode(type, program.cpu.endianness)
-		}
-		rva = proc { |name| [label[name], :-, program_start] }
-		rva_end = proc { |name| [[label[name], :-, program_start], :+, edata[name].virtsize] }
-		vlen = (pe_format == 'PE') ? :u32 : :u64
-
-		# build tables
-		program.import.each { |libname, importlist|
-			encode['idata', :u32, 0]		# attributes (reserved)
-			encode['idata', :u32, rva_end['nametable']]
-			edata['nametable'] << libname << 0
-			encode['idata', :u32, 0]		# module handle
-			encode['idata', :u32, rva_end['iat']]	# iat
-			edata['nametable'].align_size 2
-			encode['idata', :u32, rva_end['nametable']]	# name table ?
-			encode['idata', :u32, 0]		# bound iat
-			encode['idata', :u32, 0]		# unload iat (copy of biat)
-
-			importlist.each { |importname, thunkname|
-				importname_label = importname
-				if thunkname and not pe_sections.find { |s| s.edata.export[thunkname] }
-					importname_label = program.new_unique_label if importname == thunkname
-					thunk_section = pe_sections.find { |s| s.characteristics.include? 'MEM_EXECUTE' } or
-					raise EncodeError, "unable to find an executable section to append import thunks"
-					thunk_section.edata.export[thunkname] = thunk_section.virtsize
-					thunk_section.edata << program.cpu.encode_thunk(program, importname_label)
-				end
-
-				edata['iat'].export[importname_label] = edata['iat'].virtsize
-				if importname =~ ORDINAL_REGEX
-					# import by ordinal: set high bit to 1 and encode ordinal in low 16bits
-					ordnumber = $1.to_i
-					ordnumber |= 1 << ((pe_format == 'PE+') ? 63 : 31)
-					encode['iat', vlen, ordnumber]
-				else
-					# import by name: put hint+name rva in low 31bits (even in PE+)
-					edata['nametable'].align_size 2
-					encode['iat', vlen, rva_end['nametable']]
-					encode['nametable', :u16, 0]	# ordinal hint
-					edata['nametable'] << importname << 0
-				end
-			}
-			encode['iat', :u32, 0]
-		}
-
-		# last entry must be null
-		7.times { encode['idata', :u32, 0] }
-
-		# commit
-		s = Section.new '.idata'
-		s.align = 8
-		s.edata = EncodedData.new
-		s.characteristics = %w[MEM_READ MEM_WRITE]
-		pe_sections << s
-
-		s.edata << edata['iat'] << edata['idata'] << edata['nametable']
-		directories['bound_import'] = [label['iat'], edata['iat'].virtsize]
-		directories['delay_import'] = [label['idata'], edata['idata'].virtsize]
-	end
-
-	def pre_encode_relocs(program, program_start, pe_sections, directories, opts)
-
-		relocs = EncodedData.new
-
-		# create a binding with fake rva for sections (all null)
-		binding = pe_sections.inject({}) { |binding, s|
-			s.edata.export.inject(binding) { |binding, (name, off)|
-				binding.update name => Expression[program_start, :+, off]
-			}
-		}
-
-		pe_sections.each { |s|
-			# find all relocs needing a base relocation entry
-			# may miss weird relocs if the fake binding happens to oversimplify the target (ex: (a-b+4)*foo and binding[a] - binding[b] + 4 == 0)
-			reloclist = s.edata.reloc.map { |off, rel|
-				fakerel = rel.target.bind(binding).reduce
-				if fakerel.kind_of? Integer
-				elsif fakerel.op == :+ and (
-						(fakerel.lexpr == program_start and fakerel.rexpr.kind_of? Integer) or
-						(not fakerel.lexpr and fakerel.rexpr == program_start))
-					if rel.endianness == program.cpu.endianness
-						[off, rel.type]
-					else puts "skip bad relocation endianness #{rel.inspect} at #{s.name}:+#{off}"
-					end
-				else  puts "skip weird relocation #{rel.inspect} ( red to #{fakerel.inspect} ) at #{s.name}:+#{off}"
-				end
-			}.compact.sort
-			next if reloclist.empty?
-
-			label = program.label_at(s.edata, 0, 'sect_start')
-
-			# <XXX warn="this is x86 specific">
-			reloclist << [0, 0] if reloclist.length % 2 == 1	# align
-			relocs << Expression[label, :-, program_start].encode(:u32, program.cpu.endianness)
-			relocs << Expression[8, :+, 2*reloclist.length].encode(:u32, program.cpu.endianness)
-			reloclist.each { |off, type|
-				type = case type
-				when :u64, :i64: 10
-				when :u32, :i32: 3
-				when :u16, :i16: 2	# XXX allowed ?
-				when 0: 0	# pad
-				else raise EncodeError, "Relocation of unknown type #{type.inspect} at #{s.name}:+#{off}"
-				end
-				relocs << Expression[[off, :&, 0x0fff], :|, type << 12].encode(:u16, program.cpu.endianness)
-			}
-			# </XXX>
-
-		}
-
-		return if relocs.virtsize == 0
-
-		s = Section.new '.reloc'
-		s.align = 4
-		s.edata = relocs
-		s.characteristics = %w[MEM_READ MEM_DISCARDABLE]
-		pe_sections << s
-
-		directories['base_relocation_table'] = [program.label_at(relocs, 0, 'relocs'), relocs.virtsize]
-	end
-
-	module Resource
-	# TODO
-	# cursor = raw data, cursor_group = header , pareil pour les icons
-	class Cursor
-		def encode(endianness)	# XXX
-			EncodedData.new <<
-			Expression[@xhotspot.to_i].encode(:u16, endianness) <<
-			Expression[@yhotspot.to_i].encode(:u16, endianness) <<
-			Expression[@data.length  ].encode(:u32, endianness) <<
-			@data
-		end
-	end
-	end
-
-end
-end

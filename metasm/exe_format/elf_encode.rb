@@ -23,7 +23,7 @@ class ELF
 			elf.int_from_hash(@abi, ABI) <<
 			@abi_version
 
-			h.align_size 16
+			h.align 16
 
 			h <<
 			elf.encode_half(elf.int_from_hash(@type, TYPE)) <<
@@ -810,8 +810,8 @@ EOPLTE
 			end
 
 			if s.align and s.align > 1
-				virtaddr = (virtaddr + s.align - 1) / s.align * s.align
-				rawaddr  = (rawaddr  + s.align - 1) / s.align * s.align
+				virtaddr = EncodedData.align_size(virtaddr, s.align)
+				rawaddr  = EncodedData.align_size(rawaddr,  s.align)
 			end
 
 			s.edata.export.each { |name, off| binding[name] = Expression[virtaddr, :+, off] }

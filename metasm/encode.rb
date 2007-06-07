@@ -13,6 +13,7 @@ class Program
 		label
 	end
 
+	# encode every program's section
 	def encode
 		@sections.each { |s| s.encode }
 	end
@@ -24,7 +25,7 @@ class Section
 
 		@source.each { |e|
 			case e
-			when Label: encoded.last << EncodedData.new('', :export => {e.name => 0})
+			when Label: encoded.last.export[e.name] = encoded.last.virtsize
 			when Data:  encoded.last << e.encode(@program.cpu.endianness)
 			when Align: encoded << e << EncodedData.new
 			when Instruction:

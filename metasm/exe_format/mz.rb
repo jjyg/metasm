@@ -14,7 +14,7 @@ class MZ < ExeFormat
 			set_default_values mz, h, relocs
 			h << @magic
 			Fields[1..-1].each { |m| h << Expression[send(m)].encode(:u16, mz.endianness) }
-			h.align_size 16
+			h.align 16
 			h
 		end
 
