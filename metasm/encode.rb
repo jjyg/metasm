@@ -20,6 +20,7 @@ class Program
 end
 
 class Section
+	# encodes the source array to an unique EncodedData
 	def encode
 		encoded = [EncodedData.new]
 
@@ -42,97 +43,164 @@ class Section
 			end
 		}
 
-		@encoded = encode_resolve encoded
-		start = @program.label_at @encoded, 0
-		@encoded.fixup @encoded.export.inject({}) { |binding, (name, offset)| binding.update name => Expression[start, :+, offset] }
+		encode_resolve encoded
+
+		@encoded.fixup @encoded.binding
 		@encoded
 	end
 
+	# chose among multiple possible sub-EncodedData
+	# assumes all ambiguous edata has same relocation targets (with same object_id)
 	def encode_resolve(encoded)
 		startlabel = @program.label_at(@encoded, 0)
 
-		# 
-		# instruction choice resolution
-		#
-		# This is a choice that will be optimal in many cases
-		# XXX make a real optimal alg ?
-
-		# calc all labels offsets in the worst case (as if choice = widest)
-		worstbinding = {}
-		curoff = 0
+		# create two bindings where all encodeddata are the shortest/longest
+		minbinding = {}
+		minoff = 0
+		maxbinding = {}
+		maxoff = 0
+	
 		encoded.each { |enc|
 			case enc
 			when Array
 				enc.each { |e|
 					e.export.each { |label, off|
-						worstbinding[label] = Expression[startlabel, :+, curoff + off] if label != startlabel
+						minbinding[label] = Expression[startlabel, :+, minoff + off]
+						maxbinding[label] = Expression[startlabel, :+, maxoff + off]
 					}
 				}
-				curoff += enc.map { |e| e.virtsize }.max
+				minoff += enc.map { |e| e.virtsize }.min
+				maxoff += enc.map { |e| e.virtsize }.max
 			when Align
-				curoff += enc.val - 1
+				minoff += 0
+				maxoff += enc.val - 1	# XXX suboptimal (.padto 42 ; foo ; .padto 45 => should be max 3)
 			else
 				enc.export.each { |label, off|
-					worstbinding[label] = Expression[startlabel, :+, curoff + off] if label != startlabel
+					minbinding[label] = Expression[startlabel, :+, minoff + off] if label != startlabel
+					maxbinding[label] = Expression[startlabel, :+, maxoff + off] if label != startlabel
 				}
-				curoff += enc.virtsize
+				minoff += enc.virtsize
+				maxoff += enc.virtsize
 			end
 		}
 
-		# now select instructions on:
-		# if a relocation depends on non-section offsets, chose widest field size
-		# if a relocatios can be resolved, chose the instruction with the smallest size (but still able to encode the resolved value)
-		result = encoded.shift
+		# check expression linearity
+		check_linear = proc { |expr|
+			expr = expr.reduce if expr.kind_of? Expression
+			while expr.kind_of? Expression
+				case expr.op
+				when :*
+					if    expr.lexpr.kind_of? Numeric: expr = expr.rexpr
+					elsif expr.rexpr.kind_of? Numeric: expr = expr.lexpr
+					else  break
+					end
+				when :/
+					if    expr.rexpr.kind_of? Numeric: expr = expr.lexpr
+					else  break
+					end
+				when :+, :-
+					if    not expr.lexpr:              expr = expr.rexpr
+					elsif expr.lexpr.kind_of? Numeric: expr = expr.rexpr
+					elsif expr.rexpr.kind_of? Numeric: expr = expr.lexpr
+					else
+						break if not check_linear[expr.rexpr] or not check_linear[expr.lexpr]
+						expr = expr.lexpr
+					end
+				else break
+				end
+			end
+
+			not expr.kind_of? Expression
+		}
+
+		# now we can resolve all relocations
+		# for linear expressions of internal variables (all exports from current section): calc bounds, and use worst case smallest place
+		# else use largest reloc place
+		# on tie, chose overall shortest Edata
+
+		@encoded = encoded.shift
+
 		encoded.each { |enc|
 			case enc
 			when Array
-				result << enc.sort_by { |edata|
-					[
-					# most significant: chose widest field for external deps (sum fields len)
-					edata.reloc.values.map { |rel|
-						case Expression.in_range?(rel.target.bind(worstbinding), rel.type)
-						when true
-							# immediate: ignore
-							0
-						when false
-							# immediate not fitting: reject
-							1000000 - Expression::INT_SIZE[rel.type]
-						when nil
-							# external: wider = better
-							- Expression::INT_SIZE[rel.type]
+				# for each external, compute target value using minbinding[external] and maxbinding[external]
+				# if target is not found in bounds.keys, use largest relocation
+				target_bounds = {}
+				rec_checkminmax = proc { |target, binding, extlist|
+					if extlist.empty?
+						(target_bounds[target] ||= []) << target.bind(binding).reduce
+					else
+						rec_checkminmax[target, binding.merge(extlist.last => minbinding[extlist.last]), extlist[0...-1]]
+						rec_checkminmax[target, binding.merge(extlist.last => maxbinding[extlist.last]), extlist[0...-1]]
+					end
+				}
+
+				# biggest size for this relocation (for non-linear/external)
+				wantsize = {}
+
+				enc.first.reloc.each { |o, r|
+					# has external ref
+					if not r.target.bind(minbinding).reduce.kind_of?(Numeric) or not check_linear[r.target]
+						# find the biggest relocation type for the current target
+						wantsize[r.target] = enc.map { |edata|
+							edata.reloc.values.find { |rel| rel.target == r.target }.type
+						}.sort_by { |type| Expression::INT_SIZE[type] }.last
+					else
+						rec_checkminmax[r.target, {}, r.target.externals]
+						target_bounds[r.target] = [target_bounds[r.target].min, target_bounds[r.target].max]
+					end
+				}
+
+				# reject candidates with reloc type too small
+				acceptable = enc.find_all { |edata|
+					edata.reloc.values.all? { |rel|
+						if wantsize[rel.target]
+							rel.type == wantsize[rel.target]
+						else
+							target_bounds[rel.target].all? { |target| Expression.in_range?(target, rel.type) }
 						end
-					}.inject(0) { |a, b| a+b } ,
-					# least significant: on tie, chose the smallest total size
-					edata.virtsize
-					]
-				}.first
+					}
+				}
+
+				raise EncodeError, "cannot find candidate in #{enc.inspect}, relocations too small" if acceptable.empty?
+
+				# keep the shortest
+				@encoded << acceptable.sort_by { |edata| edata.virtsize }.first
+
+			when EncodedData
+				@encoded << enc
+
 			when Align
 				if enc.modulo
-					targetsize = (result.virtsize + enc.val - 1) / enc.val * enc.val
+					targetsize = EncodedData.align_size(@encoded.virtsize, enc.val)
 				else
 					targetsize = enc.val
 				end
+
 				if enc.fillwith
 					pad = enc.fillwith.encode(@program.cpu.endianness)
-					while result.virtsize + pad.virtsize <= targetsize
-						result << pad
+					while @encoded.virtsize + pad.virtsize <= targetsize
+						@encoded << pad
 					end
-					if result.virtsize < targetsize
-						choplen = targetsize - result.virtsize
+					if @encoded.virtsize < targetsize
+						choplen = targetsize - @encoded.virtsize
 						pad.reloc.delete_if { |off, rel| off + Expression::INT_SIZE[rel.type]/8 > choplen }
 						pad.data[choplen..-1] = '' if pad.data.length > choplen
 						pad.virtsize = choplen
-						result << pad
+						@encoded << pad
 					end
 				else
-					result.virtsize = targetsize if result.virtsize < targetsize
+					@encoded.virtsize = targetsize if @encoded.virtsize < targetsize
 				end
-				raise EncodeError, "cannot pad current section to #{targetsize} bytes: #{result.virtsize - targetsize} off" if result.virtsize > targetsize
+
+				raise EncodeError, "cannot pad current section to #{targetsize} bytes - off by #{@encoded.virtsize - targetsize} bytes" if @encoded.virtsize > targetsize
+
 			else
-				result << enc
+				raise 'Internal error: bad object in encode_resolve'
 			end
 		}
-		result
+
+		@encoded
 	end
 end
 
