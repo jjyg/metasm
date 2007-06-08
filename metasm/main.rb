@@ -16,11 +16,13 @@ class CPU
 		@opcode_list = []
 	end
 
+	# returns a hash opcode_name => array of opcodes with this name
 	def opcode_list_byname
 		@opcode_list_byname ||= @opcode_list.inject({}) { |h, o| (h[o.name] ||= []) << o ; h }
 	end
 end
 
+# generic CPU, with no instructions, just size/endianness
 class UnknownCPU < CPU
 	def initialize(size, endianness)
 		super()
@@ -30,12 +32,19 @@ end
 
 # a specific cpu instruction description
 class Opcode
-	# formal arguments
-	attr_reader :name, :args
-	# binary string, and fields within (fields class used change if cpu is fixed len or variable len)
-	attr_accessor :bin, :fields
-	# generic attributes/restrictions
-	attr_reader :props
+	# the name of the instruction
+	attr_accessor :name
+	# formal description of arguments (array of cpu-specific symbols)
+	attr_accessor :args
+	# binary encoding of the opcode (integer for risc, array of bytes for cisc)
+	attr_accessor :bin
+	# list of bit fields in the binary encoding
+	# hash position => field
+	# position is bit shift for risc, [byte index, bit shift] for risc
+	# field is cpu-specific
+	attr_accessor :fields
+	# hash of opcode generic properties/restrictions (mostly property => true/false)
+	attr_accessor :props
 
 	def initialize(name)
 		@name = name
@@ -55,50 +64,78 @@ end
 
 # an instruction: opcode name + arguments
 class Instruction
-	# +@args+ is an array of arguments (cpu-specific classes)
-	# +@prefix+  is a hash of present prefixes (Symbol)
-	# +@opname+ the name of the instruction mnemonic (String)
-	attr_reader :args, :prefix, :cpu
+	# arguments (cpu-specific objects)
+	attr_accessor :args
+	# hash of prefixes (unused in simpler cpus)
+	attr_accessor :prefix
+	# name of the associated opcode
 	attr_accessor :opname
+	# reference to the cpu which issued this instruction (used for rendering)
+	attr_accessor :cpu
+
 	def initialize(cpu, opname=nil, args=[], pfx={})
 		@cpu = cpu
 		@prefix, @args = pfx, args
 		@opname = opname
 	end
 
+	# duplicates the argument list and prefix hash
 	def dup
 		Instruction.new(@cpu, (@opname.dup rescue @opname), @args.dup, @prefix.dup)
 	end
 end
 
 # contiguous/uninterrupted sequence of instructions, chained to other blocks
+# TODO
 class InstructionBlock
-	# TODO add content when interface is stable (ie chains through addr or directly etc)
 end
 
-# all kind of data (incl. repeated/uninitialized)
+# all kind of data description (including repeated/uninitialized)
 class Data
+	# maps data type to Expression parameters (signedness/bit size)
 	INT_TYPE = {:db => :u8, :dw => :u16, :dd => :u32}
-	Uninitialized = :udata
 
-	attr_reader :data, :type, :count
-	# +@data+ is either an +Expression+, an Array of +Data+, a String, or Uninitialized
+	# an Expression, an Array of Data, a String, or :uninitialized
+	attr_accessor :data
+	# the data type, from INT_TYPE (TODO store directly Expression parameters ?)
+	attr_accessor :type
+	# the repetition count of the data parameter (dup constructs)
+	attr_accessor :count
+
 	def initialize(type, data, count=1)
 		@data, @type, @count = data, type, count
 	end
 end
 
+# alignment/padding directive
 class Align
-	attr_reader :val, :fillwith, :modulo
+	# the size to pad/align to
+	# nil when dynamic (see +Offset+)
+	attr_accessor :val
+	# the Data used to pad
+	attr_accessor :fillwith
+	# true for alignment, false for padding
+	attr_accessor :modulo
+
 	def initialize(val, fillwith=nil, modulo=true)
+		@val, @fillwith, @modulo = val, fillwith, modulo
+	end
+end
+
+# an offset directive, for dynamically computed padding length
+class Offset
+	# the assembler will arrange to make this pseudo-instruction
+	# be at this offset from beginning of current section
+	attr_accessor :val
+
+	def initialize(val)
 		@val = val
-		@fillwith = fillwith
-		@modulo = modulo
 	end
 end
 
 # represents an executable section
 # ie no holes, same permissions
+# XXX will die today !
 class Section
 	# +@name+
 	# +@encoded+ EncodedData
@@ -119,9 +156,12 @@ class Section
 		@encoded = EncodedData.new
 		@base = @align = nil
 	end
+
 	def <<(a) @source << a end
 end
 
+# generic program representation
+# XXX will die today !
 class Program
 	# sections = array of Section
 	# export = hash exportedname => label     XXX could be Export - function, data, int, ...
@@ -129,6 +169,7 @@ class Program
 	attr_reader :cpu, :sections, :export, :import
 	# graph  = addr => InstructionBlock
 	attr_reader :graph
+
 	def initialize(cpu)
 		@cpu = cpu
 		@sections = []
@@ -138,9 +179,11 @@ class Program
 	end
 end
 
-# handle immediate values
+# handle immediate values, and arbitrary arithmetic/logic expression involving variables
+# XXX separate logic expressions ?
+# TODO replace #type with #size => bits + #type => [:signed/:unsigned/:any/:floating]
+# TODO floats
 class Expression
-	# TODO floats
 	INT_SIZE = {:u8 => 8,    :u16 => 16,     :u32 => 32, :u64 => 64,
 		    :i8 => 8,    :i16 => 16,     :i32 => 32, :i64 => 64
 	}
@@ -151,7 +194,10 @@ class Expression
 		    :i8 => 0x7f, :i16 => 0x7fff, :i32 => 0x7fffffff, :i64 => 0x7fff_ffff_ffff_ffff
 	}
 
-	# alternative constructor: Expression[[:-, 42], :*, [1, :+, [4, :*, 7]]]
+	# alternative constructor
+	# in operands order, and allows nesting using sub-arrays
+	# ex: Expression[[:-, 42], :*, [1, :+, [4, :*, 7]]]
+	# with a single argument, return it if already an Expression, else construct a new one (using unary +/-)
 	def self.[](l, op = nil, r = nil)
 		return l if l.kind_of? Expression and not op
 		l, op, r = nil, :-, -r if op == nil and r.kind_of? Numeric and r < 0
@@ -163,7 +209,8 @@ class Expression
 	end
 
 
-	# XXX -1 could be a valid u32
+	# checks if a given Expression/Integer is in the type range
+	# returns true if it is, false if it overflows, and nil if cannot be determined (eg unresolved variable)
 	def self.in_range?(val, type)
 		val = val.reduce if val.kind_of? self
 		return unless val.kind_of? Numeric
@@ -175,62 +222,88 @@ class Expression
 		end
 	end
 
-	attr_accessor :op, :lexpr, :rexpr
-	# !! args reversed
+	# the operator (symbol)
+	attr_accessor :op
+	# the lefthandside expression (nil for unary expressions)
+	# XXX may be false in logic expression TODO use 0/1 for false/true (allows true + 40, as in C)
+	attr_accessor :lexpr
+	# the righthandside expression
+	# XXX may be false in logic expression
+	attr_accessor :rexpr
+
+	# basic constructor
+	# XXX funny args order, you should use +Expression[]+ instead
 	def initialize(op, rexpr, lexpr)
 		raise "Expression: invalid arg order: op #{op.inspect}, r l = #{rexpr.inspect} #{lexpr.inspect} #{caller.join("\n")}" if not op.kind_of? Symbol
 		@op, @lexpr, @rexpr = op, lexpr, rexpr
 	end
 
+	# recursive check of equity using #==
+	# will not match 1+2 and 2+1
 	def ==(o)
 		# shortcircuit recursion
 		o.object_id == object_id or (o.class == self.class and [o.op, o.rexpr, o.lexpr] == [@op, @rexpr, @lexpr])
 	end
 
+	# make it useable as Hash key (see +==+)
 	def hash
 		[@lexpr, @op, @rexpr].hash
 	end
 	alias eql? ==
 
-	def bind(vals = {})
+	# returns a new Expression with all variables found in the binding replaced with their value
+	# does not check the binding's key class except for numeric
+	# calls lexpr/rexpr #bind if they respond_to? it
+	def bind(binding = {})
 		l, r = @lexpr, @rexpr
 		if l.respond_to? :bind
-			l = l.bind(vals)
+			l = l.bind(binding)
 		else
-			l = vals.fetch(l, l)
+			raise "Do not want to bind #{l.inspect}" if binding[l].kind_of? Numeric
+			l = binding.fetch(l, l)
 		end
 		if r.respond_to? :bind
-			r = r.bind(vals)
+			r = r.bind(binding)
 		else
-			r = vals.fetch(r, r)
+			raise "Do not want to bind #{l.inspect}" if binding[l].kind_of? Numeric
+			r = binding.fetch(r, r)
 		end
 		Expression[l, @op, r]
 	end
 
-	def bind!(vals = {})
+	# bind in place (replace self.lexpr/self.rexpr with the binding value)
+	# only recurse with Expressions (does not use respond_to?)
+	def bind!(binding = {})
 		if @lexpr.kind_of?(Expression)
-			@lexpr.bind!(vals)
+			@lexpr.bind!(binding)
 		else
-			@lexpr = vals.fetch(@lexpr, @lexpr)
+			@lexpr = binding.fetch(@lexpr, @lexpr)
 		end
 		if @rexpr.kind_of?(Expression)
-			@rexpr.bind!(vals)
+			@rexpr.bind!(binding)
 		else
-			@rexpr = vals.fetch(@rexpr, @rexpr)
+			@rexpr = binding.fetch(@rexpr, @rexpr)
 		end
 		self
 	end
 
-	# try to symplify itself
-	# non destructive
-	# can return self or another +Expression+ or a +Numeric+
+	# returns a simplified copy of self
+	# can return an +Expression+ or a +Numeric+ or true/false, may return self
+	# see +reduce_rec+ for simplifications description
 	def reduce
 		case e = reduce_rec
 		when Expression, Numeric, true, false: e
-		else Expression[:+, e]
+		else Expression[e]
 		end
 	end
 
+	# resolves logic operations (true || false, etc)
+	# computes numeric operations (1 + 3)
+	# expands substractions to addition of the opposite
+	# reduces double-oppositions (-(-1) => 1)
+	# reduces addition of 0 and unary +
+	# canonicalize additions: put variables in the lhs, descend addition tree in the rhs => (a + (b + (c + 12)))
+	# make formal reduction if finds somewhere in addition tree (a) and (-a)
 	def reduce_rec
 		l = @lexpr.respond_to?(:reduce_rec) ? @lexpr.reduce_rec : @lexpr
 		r = @rexpr.respond_to?(:reduce_rec) ? @rexpr.reduce_rec : @rexpr
@@ -257,7 +330,7 @@ class Expression
 				end
 			else
 				case @op
-				when :'!': !r
+				# when :'!': !r
 				when :+:  r
 				when :-: -r
 				when :~: ~r
@@ -319,6 +392,8 @@ class Expression
 		v.nil? ? ((r == @rexpr and l == @lexpr) ? self : Expression[l, @op, r]) : v
 	end
 
+	# returns the array of non-numeric members of the expression
+	# if a variables appears 3 times, it will be present 3 times in the returned array
 	def externals
 		[@rexpr, @lexpr].inject([]) { |a, e|
 			case e
@@ -330,14 +405,19 @@ class Expression
 	end
 
 	def inspect
-		"(#{@lexpr.inspect if @lexpr} #@op #{@rexpr.inspect})"
+		"#<Expression:#{'%08x' % object_id} #{@lexpr.inspect} #{@op.inspect} #{@rexpr.inspect}>"
 	end
 end
 
+# an EncodedData relocation, specifies a value to patch in
 class Relocation
-	attr_accessor :type, :target, :endianness
-	# +@target+ what the relocation points to (Expression)
-	# +@type+   relocation field type (:u8, :i32 ..)
+	# the relocation value (an Expression)
+	attr_accessor :target
+	# the relocation expression type
+	attr_accessor :type
+	# the endianness of the relocation
+	attr_accessor :endianness
+
 	def initialize(target, type, endianness)
 		@target     = target
 		@type       = type
@@ -345,6 +425,7 @@ class Relocation
 	end
 end
 
+# a String-like, with export/relocation informations added
 class EncodedData
 	# string with raw data
 	attr_accessor :data
@@ -409,7 +490,7 @@ class EncodedData
 
 	# returns a default binding suitable for use in +fixup+
 	# every export is expressed as base + offset
-	# base defaults to the first export name
+	# base defaults to the first export name + its offset
 	def binding(base = nil)
 		if not base
 			key = @export.keys.sort_by { |k| @export[k] }.first
@@ -419,9 +500,9 @@ class EncodedData
 		@export.inject({}) { |binding, (n, o)| binding.update n => Expression[base, :+, o] }
 	end
 
-	# fill virtual space by repeating pattern up to len
+	# fill virtual space by repeating pattern (String) up to len
+	# expand self if len is larger than self.virtsize
 	def fill(len = @virtsize, pattern = 0.chr)
-		# XXX mark this space as freely mutable
 		@virtsize = len if len > @virtsize
 		@data = @data.ljust(len, pattern) if len > @data.length
 	end
@@ -436,7 +517,7 @@ class EncodedData
 		((val + len - 1) / len).to_i * len
 	end
 
-	# concatenation of another +EncodedData+ (or nil/Fixnum/anything)
+	# concatenation of another +EncodedData+ (or nil/Fixnum/anything supporting String#<<)
 	def << other
 		case other
 		when nil
@@ -458,6 +539,7 @@ class EncodedData
 			end
 			@virtsize += other.length
 		end
+
 		self
 	end
 
@@ -492,8 +574,8 @@ class EncodedData
 		ret
 	end
 
-	# slice replacement, supports size change (shifts relocs/exports)
-	# this discards old exports/relocs from the overwritten space
+	# slice replacement, supports size change (shifts following relocs/exports)
+	# discards old exports/relocs from the overwritten space
 	def []=(from, len, val=nil)
 		if not val
 			val = len
@@ -502,13 +584,13 @@ class EncodedData
 		if not len and from.kind_of? Range
 			b = from.begin
 			e = from.end
-			b = 1 + b + @virtsize if b < 0
-			e = 1 + e + @virtsize if e < 0
+			b = b + @virtsize if b < 0
+			e = e + @virtsize if e < 0
 			len = e - b
 			len += 1 if not from.exclude_end?
 			from = b
 		end
-		from = 1 + from + @virtsize if from < 0
+		from = from + @virtsize if from < 0
 
 		if not len
 			val = val.chr
@@ -533,4 +615,4 @@ class EncodedData
 		val.reloc.each { |off, rel| @reloc[from + off] = rel }
 	end
 end
-end # module Metasm
+end

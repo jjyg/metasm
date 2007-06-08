@@ -223,7 +223,7 @@ end
 class Data
 	def encode(endianness)
 		edata = case @data
-		when Uninitialized
+		when :uninitialized
 			EncodedData.new('', :virtsize => Expression::INT_SIZE[INT_TYPE[@type]]/8)
 		when String
 			# db 'foo' => 'foo' # XXX could be optimised, but should not be significant

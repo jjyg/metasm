@@ -358,7 +358,7 @@ class Program
 				end
 				# dump uninitialized data
 				if curoff < curbase + cursect.encoded.virtsize
-					cursect.source << Data.new(:db, Data.new(:db, Data::Uninitialized), curstart + cursect.encoded.virtsize - curoff)
+					cursect.source << Data.new(:db, Data.new(:db, :uninitialized), curstart + cursect.encoded.virtsize - curoff)
 					curoff = curbase + cursect.encoded.virtsize
 				end
 			end

@@ -25,6 +25,7 @@ class ParseError < Exception ; end
 # escape sequence are handled ("\x42\0\n\024\"")
 # lines end in \n (\r ignored)
 #
+# TODO thou shalt be rewritten
 class Lexer
 	class QString
 		attr_reader :delimiter, :text
@@ -859,7 +860,7 @@ class Program
 				Data.new type, i
 			end
 		when :'?'
-			Data.new type, Data::Uninitialized
+			Data.new type, :uninitialized
 		else
 			unreadtok tok
 			i = Expression.parse(self) or raise self, "Invalid data"
