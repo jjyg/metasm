@@ -2,6 +2,8 @@
 
 require 'metasm-shell'
 
+# String.cpu.make_call_return	# assume call does not stop_exec
+
 puts <<EOS.encode(0).decode
 
 ; calcule l'adresse du saut
@@ -11,11 +13,12 @@ xor eax, ebx
 sub eax, 12
 
 ; saute
-push eax
-ret
+call eax
 
 ; code mort
-nop
+add eax, 42
+; die, you vile reverser !
+db 0e9h
 
 ; cible du saut
 toto:
