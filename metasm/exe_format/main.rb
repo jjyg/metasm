@@ -17,7 +17,10 @@ class ExeFormat
 
 	def encode_file(path, *a)
 		raise Errno::EEXIST, path if File.exist? path	# race, but cannot use O_EXCL, as O_BINARY is not defined in ruby
-		File.open(path, 'wb') { |fd| fd.write(data = encode(*a)) ; data }
+		data = encode(*a)
+		raise "Unresolved relocations #{@encoded.reloc.map { |o, r| r.target }.inspect}" if not @encoded.reloc.empty?
+		File.open(path, 'wb') { |fd| fd.write(data) }
+		data
 	end
 
 	def label_at(edata, offset, base = '')
