@@ -2,7 +2,7 @@ require 'metasm/main'
 
 module Metasm
 # error raised when file signatures are invalid
-class InvalidExeFormat < RuntimeError ; end
+class InvalidExeFormat < Exception ; end
 
 class ExeFormat
 	attr_accessor :cpu, :encoded
