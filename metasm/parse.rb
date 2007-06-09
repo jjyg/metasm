@@ -816,9 +816,9 @@ class Program
 				end
 			end
 
-		when '.align', '.padto'
+		when '.align'
 			e = Expression.parse(self).reduce
-			raise self, 'need immediate alignment size' unless e.kind_of? Integer	# XXX sucks (db dup count as well)
+			raise self, 'need immediate alignment size' unless e.kind_of? Integer
 			if nexttok == :','
 				# want to fill with something specific
 				readtok
@@ -827,8 +827,31 @@ class Program
 				fillwith = parse_data_withspec
 			end
 			parse_parser_instruction '.text' if not defined? @cursection or not @cursection
-			@cursection << Align.new(e, fillwith, instr == '.align')
+			@cursection << Align.new(e, fillwith)
 
+		when '.padto'
+			e = Expression.parse(self).reduce
+			raise self, 'need immediate padding size' unless e.kind_of? Integer
+			if nexttok == :','
+				readtok
+				# allow single byte value or full data statement
+				unreadtok 'db' unless DataSpec.include? nexttok
+				fillwith = parse_data_withspec
+			end
+			parse_parser_instruction '.text' if not defined? @cursection or not @cursection
+			@cursection << Padding.new(fillwith) << Offset.new(e)
+		when '.pad'
+			if nexttok != :eol
+				unreadtok 'db' unless DataSpec.include? nexttok
+				fillwith = parse_data_withspec
+			end
+			parse_parser_instruction '.text' if not defined? @cursection or not @cursection
+			@cursection << Padding.new(fillwith)
+		when '.offset'
+			e = Expression.parse(self).reduce
+			raise self, 'need immediate offset value' unless e.kind_of? Integer
+			parse_parser_instruction '.text' if not defined? @cursection or not @cursection
+			@cursection << Offset.new(e)
 		else
 			@cpu.parse_parser_instruction(self, instr)
 		end

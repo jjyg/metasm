@@ -15,12 +15,16 @@ class ExeFormat
 		end
 	end
 
+	def encode_string(*a)
+		encode(*a)
+		raise "Unresolved relocations #{@encoded.reloc.map { |o, r| r.target }.inspect}" if not @encoded.reloc.empty?
+		@encoded.data
+	end
+
 	def encode_file(path, *a)
 		raise Errno::EEXIST, path if File.exist? path	# race, but cannot use O_EXCL, as O_BINARY is not defined in ruby
-		data = encode(*a)
-		raise "Unresolved relocations #{@encoded.reloc.map { |o, r| r.target }.inspect}" if not @encoded.reloc.empty?
-		File.open(path, 'wb') { |fd| fd.write(data) }
-		data
+		encode_string(*a)
+		File.open(path, 'wb') { |fd| fd.write(@encoded.data) }
 	end
 
 	def label_at(edata, offset, base = '')

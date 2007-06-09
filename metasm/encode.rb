@@ -28,7 +28,10 @@ class Section
 			case e
 			when Label: encoded.last.export[e.name] = encoded.last.virtsize
 			when Data:  encoded.last << e.encode(@program.cpu.endianness)
-			when Align: encoded << e << EncodedData.new
+			when Align, Padding:
+				e.fillwith = e.fillwith.encode(@program.cpu.endianness) if e.fillwith
+				encoded << e << EncodedData.new
+			when Offset: encoded << e << EncodedData.new
 			when Instruction:
 				case i = @program.cpu.encode_instruction(@program, e)
 				when Array
@@ -50,37 +53,79 @@ class Section
 	end
 
 	# chose among multiple possible sub-EncodedData
-	# assumes all ambiguous edata has same relocation targets (with same object_id)
+	# assumes all ambiguous edata has same relocation, with exact same targets (used as Hash key)
 	def encode_resolve(encoded)
 		startlabel = @program.label_at(@encoded, 0)
 
-		# create two bindings where all encodeddata are the shortest/longest
+		# create two bindings where all encodeddata are the shortest/longest possible
 		minbinding = {}
 		minoff = 0
 		maxbinding = {}
 		maxoff = 0
 	
-		encoded.each { |enc|
-			case enc
+		encoded.each { |elem|
+			case elem
 			when Array
-				enc.each { |e|
+				elem.each { |e|
 					e.export.each { |label, off|
 						minbinding[label] = Expression[startlabel, :+, minoff + off]
 						maxbinding[label] = Expression[startlabel, :+, maxoff + off]
 					}
 				}
-				minoff += enc.map { |e| e.virtsize }.min
-				maxoff += enc.map { |e| e.virtsize }.max
-			when Align
-				minoff += 0
-				maxoff += enc.val - 1	# XXX suboptimal (.padto 42 ; foo ; .padto 45 => should be max 3)
-			else
-				enc.export.each { |label, off|
+				minoff += elem.map { |e| e.virtsize }.min
+				maxoff += elem.map { |e| e.virtsize }.max
+
+			when EncodedData
+				elem.export.each { |label, off|
 					minbinding[label] = Expression[startlabel, :+, minoff + off] if label != startlabel
 					maxbinding[label] = Expression[startlabel, :+, maxoff + off] if label != startlabel
 				}
-				minoff += enc.virtsize
-				maxoff += enc.virtsize
+				minoff += elem.virtsize
+				maxoff += elem.virtsize
+
+			when Align
+				minoff += 0
+				maxoff += elem.val - 1
+
+			when Padding
+				# find the surrounding Offsets and compute the largest/shortest edata sizes to determine min/max length for the padding
+				prevoff = encoded[0..encoded.index(elem)].grep(Offset).last
+				nextoff = encoded[encoded.index(elem)..-1].grep(Offset).first
+				raise EncodeError, 'need .offset after .pad' if not nextoff
+
+				previdx = prevoff ? encoded.index(prevoff) + 1 : 0
+				surround = encoded[previdx..encoded.index(nextoff)-1]
+				surround.delete elem
+				if surround.find { |nelem| nelem.kind_of? Padding }
+					raise EncodeError, 'need .offset beetween two .pad'
+				end
+				if surround.find { |nelem| nelem.kind_of? Align and encoded.index(nelem) > encoded.index(elem) }
+					raise EncodeError, 'cannot .align after a .pad'
+				end
+
+				lenmin = lenmax = nextoff.val - (prevoff ? prevoff.val : 0)
+				surround.each { |nelem|
+					case nelem
+					when Array
+						lenmin -= nelem.map { |e| e.virtsize }.max
+						lenmax -= nelem.map { |e| e.virtsize }.min
+					when EncodedData
+						lenmin -= nelem.virtsize
+						lenmax -= nelem.virtsize
+					when Align
+						lenmin -= nelem.val - 1
+						lenmax -= 0
+					end
+				}
+				# not sure what would happen if we just checked lenmax...
+				raise EncodeError, "no room for .pad before .offset #{nextoff.val}" if lenmin < 0
+				minoff += lenmin
+				maxoff += lenmax
+
+			when Offset
+				# nothing to do for now
+			else
+				raise "Internal error: bad object #{elem.inspect} in encode_resolve"
 			end
 		}
 
@@ -94,7 +139,7 @@ class Section
 					elsif expr.rexpr.kind_of? Numeric: expr = expr.lexpr
 					else  break
 					end
-				when :/
+				when :/, :>>, :<<
 					if    expr.rexpr.kind_of? Numeric: expr = expr.lexpr
 					else  break
 					end
@@ -103,7 +148,7 @@ class Section
 					elsif expr.lexpr.kind_of? Numeric: expr = expr.rexpr
 					elsif expr.rexpr.kind_of? Numeric: expr = expr.lexpr
 					else
-						break if not check_linear[expr.rexpr] or not check_linear[expr.lexpr]
+						break if not check_linear[expr.rexpr]
 						expr = expr.lexpr
 					end
 				else break
@@ -114,17 +159,15 @@ class Section
 		}
 
 		# now we can resolve all relocations
-		# for linear expressions of internal variables (all exports from current section): calc bounds, and use worst case smallest place
-		# else use largest reloc place
-		# on tie, chose overall shortest Edata
-
-		@encoded = encoded.shift
-
-		encoded.each { |enc|
-			case enc
+		# for linear expressions of internal variables (all exports from current section)
+		#  - calc bounds target numeric bounds, and reject reloc not accepting worst case value 
+		#  - else reject all but largest place available
+		# then chose the shortest overall EData left
+		encoded.map! { |elem|
+			case elem
 			when Array
-				# for each external, compute target value using minbinding[external] and maxbinding[external]
-				# if target is not found in bounds.keys, use largest relocation
+				# for each external, compute numeric target values using minbinding[external] and maxbinding[external]
+				# this gives us all extrem values for linear expressions
 				target_bounds = {}
 				rec_checkminmax = proc { |target, binding, extlist|
 					if extlist.empty?
@@ -134,15 +177,14 @@ class Section
 						rec_checkminmax[target, binding.merge(extlist.last => maxbinding[extlist.last]), extlist[0...-1]]
 					end
 				}
-
-				# biggest size for this relocation (for non-linear/external)
+				# biggest size disponible for this relocation (for non-linear/external)
 				wantsize = {}
 
-				enc.first.reloc.each { |o, r|
+				elem.first.reloc.each { |o, r|
 					# has external ref
 					if not r.target.bind(minbinding).reduce.kind_of?(Numeric) or not check_linear[r.target]
 						# find the biggest relocation type for the current target
-						wantsize[r.target] = enc.map { |edata|
+						wantsize[r.target] = elem.map { |edata|
 							edata.reloc.values.find { |rel| rel.target == r.target }.type
 						}.sort_by { |type| Expression::INT_SIZE[type] }.last
 					else
@@ -152,7 +194,7 @@ class Section
 				}
 
 				# reject candidates with reloc type too small
-				acceptable = enc.find_all { |edata|
+				acceptable = elem.find_all { |edata|
 					edata.reloc.values.all? { |rel|
 						if wantsize[rel.target]
 							rel.type == wantsize[rel.target]
@@ -162,41 +204,44 @@ class Section
 					}
 				}
 
-				raise EncodeError, "cannot find candidate in #{enc.inspect}, relocations too small" if acceptable.empty?
+				raise EncodeError, "cannot find candidate in #{elem.inspect}, relocations too small" if acceptable.empty?
 
 				# keep the shortest
-				@encoded << acceptable.sort_by { |edata| edata.virtsize }.first
-
-			when EncodedData
-				@encoded << enc
-
-			when Align
-				if enc.modulo
-					targetsize = EncodedData.align_size(@encoded.virtsize, enc.val)
-				else
-					targetsize = enc.val
-				end
-
-				if enc.fillwith
-					pad = enc.fillwith.encode(@program.cpu.endianness)
-					while @encoded.virtsize + pad.virtsize <= targetsize
-						@encoded << pad
-					end
-					if @encoded.virtsize < targetsize
-						choplen = targetsize - @encoded.virtsize
-						pad.reloc.delete_if { |off, rel| off + Expression::INT_SIZE[rel.type]/8 > choplen }
-						pad.data[choplen..-1] = '' if pad.data.length > choplen
-						pad.virtsize = choplen
-						@encoded << pad
-					end
-				else
-					@encoded.virtsize = targetsize if @encoded.virtsize < targetsize
-				end
-
-				raise EncodeError, "cannot pad current section to #{targetsize} bytes - off by #{@encoded.virtsize - targetsize} bytes" if @encoded.virtsize > targetsize
-
+				acceptable.sort_by { |edata| edata.virtsize }.first
 			else
-				raise 'Internal error: bad object in encode_resolve'
+				elem
+			end
+		}
+
+		# assemble all parts, resolve padding sizes, check offset directives
+		@encoded = EncodedData.new
+		fillwith = proc { |targetsize, data|
+			if data
+				while @encoded.virtsize + data.virtsize <= targetsize
+					@encoded << data
+				end
+				if @encoded.virtsize < targetsize
+					@encoded << data[0, targetsize - @encoded.virtsize]
+				end
+			else
+				@encoded.virtsize = targetsize
+			end
+		}
+
+		encoded.each { |elem|
+			case elem
+			when EncodedData
+				@encoded << elem
+			when Align
+				fillwith[EncodedData.align_size(@encoded.virtsize, elem.val), elem.fillwith]
+			when Offset
+				raise EncodeError, "could not enforce .offset #{elem.val} directive: offset now #{@encoded.virtsize}" if @encoded.virtsize != elem.val
+			when Padding
+				nextoff = encoded[encoded.index(elem)..-1].grep(Offset).first
+				targetsize = nextoff.val
+				encoded[encoded.index(elem)+1..encoded.index(nextoff)-1].each { |nelem| targetsize -= nelem.virtsize }
+				raise EncodeError, "no room for .pad before .offset #{nextoff.val}: would be #{targetsize} bytes long" if targetsize < 0
+				fillwith[targetsize, elem.fillwith]
 			end
 		}
 

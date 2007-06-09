@@ -107,22 +107,30 @@ class Data
 	end
 end
 
-# alignment/padding directive
+# alignment directive
 class Align
-	# the size to pad/align to
-	# nil when dynamic (see +Offset+)
+	# the size to align to
 	attr_accessor :val
 	# the Data used to pad
 	attr_accessor :fillwith
-	# true for alignment, false for padding
-	attr_accessor :modulo
 
-	def initialize(val, fillwith=nil, modulo=true)
-		@val, @fillwith, @modulo = val, fillwith, modulo
+	def initialize(val, fillwith=nil)
+		@val, @fillwith = val, fillwith
 	end
 end
 
-# an offset directive, for dynamically computed padding length
+# padding directive
+class Padding
+	# Data used to pad
+	attr_accessor :fillwith
+
+	def initialize(fillwith=nil)
+		@fillwith = fillwith
+	end
+end
+
+# offset directive
+# can be used to fix padding length or to assert some code/data compiled length
 class Offset
 	# the assembler will arrange to make this pseudo-instruction
 	# be at this offset from beginning of current section
@@ -259,14 +267,18 @@ class Expression
 		if l.respond_to? :bind
 			l = l.bind(binding)
 		else
-			raise "Do not want to bind #{l.inspect}" if binding[l].kind_of? Numeric
-			l = binding.fetch(l, l)
+			if binding.has_key? l
+				raise "Do not want to bind #{l.inspect}" if l.kind_of? Numeric
+				l = binding[l]
+			end
 		end
 		if r.respond_to? :bind
 			r = r.bind(binding)
 		else
-			raise "Do not want to bind #{l.inspect}" if binding[l].kind_of? Numeric
-			r = binding.fetch(r, r)
+			if binding.has_key? r
+				raise "Do not want to bind #{r.inspect}" if r.kind_of? Numeric
+				r = binding[r]
+			end
 		end
 		Expression[l, @op, r]
 	end
@@ -613,6 +625,21 @@ class EncodedData
 		@data[from, len] = val.data
 		val.export.each { |name, off| @export[name] = from + off }
 		val.reloc.each { |off, rel| @reloc[from + off] = rel }
+	end
+
+	# replace a portion of self
+	# from/to may be Integers (offsets) or labels (from self.export)
+	# content is a String or an EncodedData, which will be inserted in the specified location (padded if necessary)
+	# raise if the string does not fit in.
+	def patch(from, to, content)
+		from = @export.fetch(from, from)
+		raise "invalid offset specification #{from}" if not from.kind_of? Integer
+		to = @export.fetch(to, to)
+		raise "invalid offset specification #{to}" if not to.kind_of? Integer
+		raise 'cannot patch data: new content too long' if to - from < content.length
+		content = EncodedData.new << content
+		content.fill(to - from)
+		self[from, to-from] = content
 	end
 end
 end
