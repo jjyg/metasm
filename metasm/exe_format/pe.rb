@@ -9,21 +9,26 @@ class PE < COFF
 
 	attr_accessor :coff_offset, :signature, :mz
 
+	# returns a PE object, from decoding the raw string
+	# decodes the mz header, and all the coff data
 	def self.decode(str)
 		pe = new
-		pe.encoded = EncodedData.new << str
+		pe.encoded << str
 		pe.decode
-		pe.mz.encoded = pe.encoded[0...pe.coff_offset-4]
+		pe.mz.encoded << pe.encoded[0...pe.coff_offset-4]
 		pe.mz.encoded.ptr = 0
 		pe.mz.decode_header
 		pe
 	end
 
-	def initialize
+	def initialize(cpu=nil)
 		@mz = MZ.new
-		super
+		super(cpu)
 	end
 
+	# overrides COFF#decode_header
+	# simply sets the offset to the PE pointer before decoding the COFF header
+	# also checks the PE signature
 	def decode_header
 		@encoded.ptr = 0x3c
 		@encoded.ptr = decode_word
@@ -33,56 +38,54 @@ class PE < COFF
 		super
 	end
 
+	# creates a default MZ file to be used in the PE header
+	# this one is specially crafted to fit in the 0x3c bytes before the signature
 	def encode_default_mz_header
-		mzstubp = Program.new(Ia32.new(386, 16))
-		mzstubp.parse <<'EOMZSTUB'
+		# XXX use single-quoted source, to avoid ruby interpretation of \r\n
+		mzstubp = MZ.assemble(Ia32.new(386, 16), <<'EOMZSTUB')
 _str	db "Needs Win32!\r\n$"
 start:
 	push cs
 	pop  ds
 	xor  dx, dx	  ; ds:dx = addr of $-terminated string
-	mov  ah, 9
+	mov  ah, 9        ; output string
 	int  21h
-	mov  ax, 4c01h    ; exit code in al
+	mov  ax, 4c01h    ; exit with code in al
 	int  21h
 EOMZSTUB
-		mzstubp.encode
-		@mz = MZ.from_program mzstubp
 		mzparts = @mz.pre_encode
 
-		@mz.encoded = EncodedData.new << mzparts.shift
+		# put stuff before 0x3c
+		@mz.encoded << mzparts.shift
 		raise 'OH NOES !!1!!!1!' if @mz.encoded.virtsize > 0x3c	# MZ header is too long, cannot happen
-		# put as much as we can before 0x3c
 		until mzparts.empty?
 			break if mzparts.first.virtsize + @mz.encoded.virtsize > 0x3c
 			@mz.encoded << mzparts.shift
 		end
 
-		# set PE signature pointer at 0x3c
+		# set PE signature pointer
 		@mz.encoded.align 0x3c
-		@mz.encoded << Expression['pesigptr'].encode(:u32, :little)
+		@mz.encoded << encode_word('pesigptr')
 
-		# add the end of the MZ program
+		# put last parts of the MZ program
 		until mzparts.empty?
 			@mz.encoded << mzparts.shift
 		end
 
-		# ensure the sig is 8-aligned
+		# ensure the sig will be 8bytes-aligned
 		@mz.encoded.align 8
 
-		# fixup the MZ program's relocs and the PE sig ptr
-		start = @mz.label_at @mz.encoded, 0
 		@mz.encoded.fixup 'pesigptr' => @mz.encoded.virtsize
-		@mz.encoded.fixup @mz.encoded.export.inject({}) { |binding, (name, offset)| binding.update name => Expression[start, :+, offset] }
-
-		# fixup the MZ checksum
+		@mz.encoded.fixup @mz.encoded.binding
 		@mz.encoded.fill
 		@mz.encode_fix_checksum
 	end
 
+	# encodes the PE header before the COFF header, uses a default mz header if none defined
+	# the MZ header must have 0x3c pointing just past its last byte which should be 8bytes aligned
+	# the 2 1st bytes of the MZ header should be 'MZ'
 	def encode_header(*a)
-		# @mz.encoded must be an EncodedData with 0x3c pointing beyond its last byte, which should be 8-aligned, and its 2 1st bytes should be 'MZ'
-		encode_default_mz_header if not @mz.encoded
+		encode_default_mz_header if @mz.encoded.empty?
 
 		@encoded << @mz.encoded.dup
 
@@ -94,11 +97,15 @@ EOMZSTUB
 	end
 end
 
+# an instance of a PE file, loaded in memory
+# just change the rva_to_off and the section content decoding methods
 class LoadedPE < PE
+	# just check the bounds / check for 0
 	def rva_to_off(rva)
 		rva if rva and rva > 0 and rva <= @encoded.virtsize
 	end
 
+	# use the virtualaddr/virtualsize fields of the section header
 	def decode_sections
 		@sections.each { |s|
 			s.encoded = @encoded[s.virtaddr, s.virtsize]

@@ -385,6 +385,8 @@ class COFF
 	def decode_word( edata = @encoded) ; edata.decode_imm(:u32, @endianness) end
 	def decode_xword(edata = @encoded) ; edata.decode_imm((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
 
+	# converts an RVA (offset from base address of file when loaded in memory) to an offset in the file, using the section table
+	# may not work with overlapping sections and the like
 	def rva_to_off rva
 		s = @sections.find { |s| s.virtaddr <= rva and s.virtaddr + s.virtsize > rva } if rva and rva != 0
 		if s
@@ -526,40 +528,6 @@ class COFF
 		decode_relocs
 		decode_sections
 	end
-
-	# convert a COFF object to a Program
-	def to_program
-		cpu = \
-		case @header.machine
-		when 'I386': Ia32.new
-		end rescue nil
-		cpu ||= UnknownCPU.new(32, :little)
-		pgm = Program.new cpu
-
-		@sections.each { |s|
-			ps = Metasm::Section.new(pgm, s.name)
-			ps.encoded << s.encoded
-			ps.mprot.concat({
-				'MEM_EXECUTE' => :exec, 'MEM_READ' => :read, 'MEM_WRITE' => :write, 'MEM_DISCARDABLE' => :discard, 'MEM_SHARED' => :shared
-			}.values_at(*s.characteristics).compact)
-			ps.base = s.virtaddr
-			pgm.sections << ps
-		}
-		
-		if @imports
-			@imports.each { |id|
-				pgm.import[id.libname] = id.imports.map { |i| [i.name, nil] }
-			}
-		end
-
-		if @export
-			@export.exports.each { |e|
-				pgm.export[e.name] = e.target if e.name and e.target
-			}
-		end
-
-		pgm
-	end
 end
 
 class COFFArchive
@@ -662,6 +630,7 @@ class COFFArchive
 		@second_linker = names.zip(indices).inject({}) { |h, (n, i)| h.update n => mboffsets[i] }
 	end
 
+	# set real name to archive members: look it up in the name table member if needed, or just remove the trailing /
 	def fixup_names
 		@members.each { |m|
 			case m.name

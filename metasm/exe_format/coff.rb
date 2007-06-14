@@ -1,6 +1,8 @@
 require 'metasm/exe_format/main'
 
 module Metasm
+# the COFF object file format
+# mostly used on windows (PE/COFF)
 class COFF < ExeFormat
 	CHARACTERISTIC_BITS = {
 		0x0001 => 'RELOCS_STRIPPED',    0x0002 => 'EXECUTABLE_IMAGE',
@@ -25,6 +27,7 @@ class COFF < ExeFormat
 		0x1c2 => 'THUMB',     0x169 => 'WCEMIPSV2'
 	}
 
+	# PE+ is for 64bits address spaces
 	SIGNATURE = { 0x10b => 'PE', 0x20b => 'PE+', 0x107 => 'ROM' }
 
 	SUBSYSTEM = {
@@ -102,6 +105,7 @@ class COFF < ExeFormat
 		attr_accessor :machine, :num_sect, :time, :ptr_sym, :num_sym, :size_opthdr, :characteristics
 	end
 
+	# present in linked files (exe/dll/kmod)
 	class OptionalHeader
 		attr_accessor :signature, :link_ver_maj, :link_ver_min, :code_size, :idata_size, :udata_size, :entrypoint, :base_of_code,
 			:base_of_data,	# not in PE+
@@ -110,15 +114,17 @@ class COFF < ExeFormat
 			:image_size, :headers_size, :checksum, :subsystem, :dll_characts, :stack_reserve, :stack_commit, :heap_reserve, :heap_commit, :ldrflags, :numrva
 	end
 
+	# contains the name of dynamic libraries required by the program, and the function to import from them
 	class ImportDirectory
 		attr_accessor :libname, :timestamp, :firstforwarder, :libname_p
 		attr_accessor :imports, :iat, :iat_p, :ilt_p
 
 		class Import
-			attr_accessor :ordinal, :hint, :hintname_p, :name
+			attr_accessor :ordinal, :hint, :hintname_p, :name, :target, :thunk
 		end
 	end
 
+	# lists the functions/addresses exported to the OS (pendant of ImportDirectory)
 	class ExportDirectory
 		attr_accessor :reserved, :timestamp, :ver_maj, :ver_min, :libname, :ordinal_base, :libname_p
 		attr_accessor :exports
@@ -128,6 +134,7 @@ class COFF < ExeFormat
 		end
 	end
 
+	# array of relocations to apply to an executable file when it is loaded at an address that is not its preferred_base_address
 	class RelocationTable
 		attr_accessor :base_addr
 		attr_accessor :relocs
@@ -137,11 +144,20 @@ class COFF < ExeFormat
 		end
 	end
 
+	# section table information, + raw section content (EncodedData)
 	class Section
 		attr_accessor :name, :virtsize, :virtaddr, :rawsize, :rawaddr, :relocaddr, :linenoaddr, :relocnr, :linenonr, :characteristics
 		attr_accessor :encoded
 	end
 	
+	# tree-like structure, holds all misc data the program might need (icons, cursors, version information)
+	# conventionnally structured in a 3-level depth structure:
+	#  I resource type (icon/cursor/etc, see +TYPES+)
+	#  II resource id (icon n1, icon 'toto', ...)
+	#  III language-specific version (icon n1 en, icon n1 en-dvorak...)
+	# for the icon, the one that appears in the explorer is
+	#  (NT) the one with the lowest ID
+	#  (98) the first to appear in the table
 	class ResourceDirectory
 		attr_accessor :characteristics, :timestamp, :major_version, :minor_version
 		attr_accessor :entries
@@ -195,16 +211,24 @@ class COFF < ExeFormat
 
 	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports, :relocations, :resource, :certificates, :delayimports
 
-	def initialize
+	def initialize(cpu=nil)
 		@directory = {}	# DIRECTORIES.key => [rva, size]
 		@sections = []
 		@export = @imports = @relocations = @resource = @certificates = @delayimports = nil
-		@endianness = :little
+		@endianness = cpu ? cpu.endianness : :little
 		@header = Header.new
 		@optheader = OptionalHeader.new
+		@header.machine = case cpu
+		when nil: 'UNKNOWN'
+		when Ia32: 'I386'
+		else 'UNKNOWN'
+		end
+		super(cpu)
 	end
 end
 
+# the COFF archive file format
+# may be used in .lib files (they hold binary import information for libraries)
 class COFFArchive < ExeFormat
 	class Member
 		attr_accessor :name, :date, :uid, :gid, :mode, :size, :eoh

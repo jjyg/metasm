@@ -3,67 +3,54 @@ require 'metasm/parse'
 
 module Metasm
 class EncodeError < Exception ; end
+class ExeFormat
+	# encodes an Array of source (Label/Data/Instruction etc) to an EncodedData
+	# resolves ambiguities using +encode_resolve+
+	def assemble_sequence(seq, cpu)
+		# an array of edata or sub-array of ambiguous edata
+		# its last element is always an edata
+		ary = [EncodedData.new]
 
-class Program
-	# returns the label pointing to edata[offset], create it if needed
-	def label_at(edata, offset)
-		if not label = edata.export.invert[offset]
-			edata.export[label = new_unique_label] = offset
-		end
-		label
-	end
-
-	# encode every program's section
-	def encode
-		@sections.each { |s| s.encode }
-	end
-end
-
-class Section
-	# encodes the source array to an unique EncodedData
-	def encode
-		encoded = [EncodedData.new]
-
-		@source.each { |e|
+		seq.each { |e|
 			case e
-			when Label: encoded.last.export[e.name] = encoded.last.virtsize
-			when Data:  encoded.last << e.encode(@program.cpu.endianness)
+			when Label: ary.last.export[e.name] = ary.last.virtsize
+			when Data:  ary.last << e.encode(cpu.endianness)
 			when Align, Padding:
-				e.fillwith = e.fillwith.encode(@program.cpu.endianness) if e.fillwith
-				encoded << e << EncodedData.new
-			when Offset: encoded << e << EncodedData.new
+				e.fillwith = e.fillwith.encode(cpu.endianness) if e.fillwith
+				ary << e << EncodedData.new
+			when Offset: ary << e << EncodedData.new
 			when Instruction:
-				case i = @program.cpu.encode_instruction(@program, e)
+				case i = cpu.encode_instruction(self, e)
 				when Array
 					if i.length == 1
-						encoded.last << i.first
+						ary.last << i.first
 					else
-						encoded << i << EncodedData.new
+						# ambiguity !
+						ary << i << EncodedData.new
 					end
 				else
-					encoded.last << i
+					ary.last << i
 				end
 			end
 		}
 
-		encode_resolve encoded
-
-		@encoded.fixup @encoded.binding
-		@encoded
+		edata = (ary.length > 1) ? assemble_resolve(ary) : ary.shift
+		edata.fixup edata.binding
+		edata
 	end
 
 	# chose among multiple possible sub-EncodedData
 	# assumes all ambiguous edata has same relocation, with exact same targets (used as Hash key)
-	def encode_resolve(encoded)
-		startlabel = @program.label_at(@encoded, 0)
+	def assemble_resolve(ary)
+		startlabel = new_label
 
-		# create two bindings where all encodeddata are the shortest/longest possible
+		# create two bindings where all elements are the shortest/longest possible
 		minbinding = {}
 		minoff = 0
 		maxbinding = {}
 		maxoff = 0
 	
-		encoded.each { |elem|
+		ary.each { |elem|
 			case elem
 			when Array
 				elem.each { |e|
@@ -77,8 +64,8 @@ class Section
 
 			when EncodedData
 				elem.export.each { |label, off|
-					minbinding[label] = Expression[startlabel, :+, minoff + off] if label != startlabel
-					maxbinding[label] = Expression[startlabel, :+, maxoff + off] if label != startlabel
+					minbinding[label] = Expression[startlabel, :+, minoff + off]
+					maxbinding[label] = Expression[startlabel, :+, maxoff + off]
 				}
 				minoff += elem.virtsize
 				maxoff += elem.virtsize
@@ -89,17 +76,17 @@ class Section
 
 			when Padding
 				# find the surrounding Offsets and compute the largest/shortest edata sizes to determine min/max length for the padding
-				prevoff = encoded[0..encoded.index(elem)].grep(Offset).last
-				nextoff = encoded[encoded.index(elem)..-1].grep(Offset).first
+				prevoff = ary[0..ary.index(elem)].grep(Offset).last
+				nextoff = ary[ary.index(elem)..-1].grep(Offset).first
 				raise EncodeError, 'need .offset after .pad' if not nextoff
 
-				previdx = prevoff ? encoded.index(prevoff) + 1 : 0
-				surround = encoded[previdx..encoded.index(nextoff)-1]
+				previdx = prevoff ? ary.index(prevoff) + 1 : 0
+				surround = ary[previdx..ary.index(nextoff)-1]
 				surround.delete elem
 				if surround.find { |nelem| nelem.kind_of? Padding }
 					raise EncodeError, 'need .offset beetween two .pad'
 				end
-				if surround.find { |nelem| nelem.kind_of? Align and encoded.index(nelem) > encoded.index(elem) }
+				if surround.find { |nelem| nelem.kind_of? Align and ary.index(nelem) > ary.index(elem) }
 					raise EncodeError, 'cannot .align after a .pad'
 				end
 
@@ -129,7 +116,7 @@ class Section
 			end
 		}
 
-		# check expression linearity
+		# checks an expression linearity
 		check_linear = proc { |expr|
 			expr = expr.reduce if expr.kind_of? Expression
 			while expr.kind_of? Expression
@@ -159,11 +146,11 @@ class Section
 		}
 
 		# now we can resolve all relocations
-		# for linear expressions of internal variables (all exports from current section)
-		#  - calc bounds target numeric bounds, and reject reloc not accepting worst case value 
+		# for linear expressions of internal variables (ie differences of labels from the ary):
+		#  - calc target numeric bounds, and reject relocs not accepting worst case value 
 		#  - else reject all but largest place available
 		# then chose the shortest overall EData left
-		encoded.map! { |elem|
+		ary.map! { |elem|
 			case elem
 			when Array
 				# for each external, compute numeric target values using minbinding[external] and maxbinding[external]
@@ -204,7 +191,7 @@ class Section
 					}
 				}
 
-				raise EncodeError, "cannot find candidate in #{elem.inspect}, relocations too small" if acceptable.empty?
+				raise EncodeError, "cannot find candidate in #{elem.inspect}, immediate too big" if acceptable.empty?
 
 				# keep the shortest
 				acceptable.sort_by { |edata| edata.virtsize }.first
@@ -214,52 +201,54 @@ class Section
 		}
 
 		# assemble all parts, resolve padding sizes, check offset directives
-		@encoded = EncodedData.new
+		edata = EncodedData.new
+
+		# fills edata with repetitions of data until targetsize
 		fillwith = proc { |targetsize, data|
 			if data
-				while @encoded.virtsize + data.virtsize <= targetsize
-					@encoded << data
+				while edata.virtsize + data.virtsize <= targetsize
+					edata << data
 				end
-				if @encoded.virtsize < targetsize
-					@encoded << data[0, targetsize - @encoded.virtsize]
+				if edata.virtsize < targetsize
+					edata << data[0, targetsize - edata.virtsize]
 				end
 			else
-				@encoded.virtsize = targetsize
+				edata.virtsize = targetsize
 			end
 		}
 
-		encoded.each { |elem|
+		ary.each { |elem|
 			case elem
 			when EncodedData
-				@encoded << elem
+				edata << elem
 			when Align
-				fillwith[EncodedData.align_size(@encoded.virtsize, elem.val), elem.fillwith]
+				fillwith[EncodedData.align_size(edata.virtsize, elem.val), elem.fillwith]
 			when Offset
-				raise EncodeError, "could not enforce .offset #{elem.val} directive: offset now #{@encoded.virtsize}" if @encoded.virtsize != elem.val
+				raise EncodeError, "could not enforce .offset #{elem.val} #{elem.backtrace}: offset now #{edata.virtsize}" if edata.virtsize != elem.val
 			when Padding
-				nextoff = encoded[encoded.index(elem)..-1].grep(Offset).first
+				nextoff = ary[ary.index(elem)..-1].grep(Offset).first
 				targetsize = nextoff.val
-				encoded[encoded.index(elem)+1..encoded.index(nextoff)-1].each { |nelem| targetsize -= nelem.virtsize }
-				raise EncodeError, "no room for .pad before .offset #{nextoff.val}: would be #{targetsize} bytes long" if targetsize < 0
+				ary[ary.index(elem)+1..ary.index(nextoff)-1].each { |nelem| targetsize -= nelem.virtsize }
+				raise EncodeError, "no room for .pad before .offset #{nextoff.val} #{elem.backtrace}: would be #{targetsize} bytes long" if targetsize < 0
 				fillwith[targetsize, elem.fillwith]
 			end
 		}
 
-		@encoded
+		edata
 	end
 end
 
 class Expression
-	def encode(type, endianness)
+	def encode(type, endianness, backtrace=nil)
 		case val = reduce
-		when Integer: EncodedData.new Expression.encode_immediate(val, type, endianness)
-		else          EncodedData.new('', :reloc => {0 => Relocation.new(self, type, endianness)}, :virtsize => INT_SIZE[type]/8)
+		when Integer: EncodedData.new Expression.encode_immediate(val, type, endianness, backtrace)
+		else          EncodedData.new('', :reloc => {0 => Relocation.new(self, type, endianness, backtrace)}, :virtsize => INT_SIZE[type]/8)
 		end
 	end
 
-	def self.encode_immediate(val, type, endianness)
+	def self.encode_immediate(val, type, endianness, backtrace=nil)
 		raise EncodeError, "unsupported endianness #{endianness.inspect}" unless [:big, :little].include? endianness
-		# XXX warn on overflow ?
+		# TODO overflow => backtrace
 		s = (0...INT_SIZE[type]/8).map { |i| (val >> (8*i)) & 0xff }.pack('C*')
 		endianness != :little ? s.reverse : s
 	end
@@ -273,7 +262,7 @@ class Data
 		when String
 			# db 'foo' => 'foo' # XXX could be optimised, but should not be significant
 			# dw 'foo' => "f\0o\0o\0" / "\0f\0o\0o"
-			@data.unpack('C*').inject(EncodedData.new) { |ed, chr| ed << Expression.encode_immediate(chr, INT_TYPE[@type], endianness) }
+			@data.unpack('C*').inject(EncodedData.new) { |ed, chr| ed << Expression.encode_immediate(chr, INT_TYPE[@type], endianness, @backtrace) }
 		when Expression
 			@data.encode INT_TYPE[@type], endianness
 		when Array
@@ -286,13 +275,16 @@ class Data
 end
 
 class CPU
-	# returns an EncodedData
+	# returns an EncodedData or an ary of them
 	# uses +#parse_arg_valid?+ to find the opcode whose signature matches with the instruction
+	# uses +encode_instr_op+ (arch-specific)
 	def encode_instruction(program, i)
-		op = opcode_list_byname[i.opname].to_a.find { |o|
-			o.args.length == i.args.length and o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
+		oplist = opcode_list_byname[i.opname].to_a.find_all { |o|
+			o.args.length == i.args.length and
+			o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
 		}
-		encode_instr_op program, i, op
+		raise EncodeError, "no matching opcode found for #{i}" if oplist.empty?
+		oplist.map { |op| encode_instr_op(program, i, op) }.flatten.each { |ed| ed.reloc.each_value { |v| v.backtrace = i.backtrace } }
 	end
 end
-end # module
+end

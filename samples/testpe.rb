@@ -1,39 +1,27 @@
 #!/usr/bin/env ruby
 
-require 'metasm/exe_format/pe'
-require 'metasm-shell'
+require 'metasm'
 
-cpu = Metasm::Ia32.new
-prog = Metasm::Program.new cpu
-
-prog.parse <<EOS, __FILE__, __LINE__
+pe = Metasm::PE.assemble Metasm::Ia32.new, <<EOS
 .text
-// .section ".text" r x // base=0x401000
-entrypoint:
+.entrypoint
 push 0
 push title
 push message
 push 0
-call [MessageBoxA]
+call messagebox
 
 xor eax, eax
 ret
 
-.import 'user32' 'MessageBoxA'
+.import 'user32' MessageBoxA MessageBoxA messagebox
 
 .data
 message db 'kikoo lol', 0
 title   db 'blaaa', 0
-
-.bss
-db 1024 dup(?)
-
 EOS
-
-prog.encode
-
-pe = Metasm::PE.from_program prog
-data = pe.encode
-p pe.encoded.reloc if not pe.encoded.reloc.empty?
-
-File.open('testpe.exe', 'wb') { |fd| fd.write data }
+File.unlink('testpe.exe') if File.exist? 'testpe.exe'
+pe.encode_file 'testpe.exe'
+require 'pp'
+pp pe.encoded.export.sort_by { |k, v| v }
+pp pe.encoded.reloc

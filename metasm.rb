@@ -22,4 +22,5 @@ end
 	require "metasm/os/#{f}"
 }
 
+# cleanup include path
 $:.delete metasmdir if metasmdir

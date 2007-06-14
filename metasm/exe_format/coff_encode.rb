@@ -253,7 +253,7 @@ class COFF
 					edata['ilt'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 					edata['iat'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 				else
-					edata['iat'].export[i.name] = edata['iat'].virtsize
+					edata['iat'].export[i.target || i.name] = edata['iat'].virtsize
 
 					edata['nametable'].align 2
 					edata['ilt'] << coff.encode_xword(rva_end['nametable'])
@@ -432,6 +432,29 @@ class COFF
 		s.encoded = iat
 		s.characteristics = %w[MEM_READ MEM_WRITE]
 		encode_append_section s
+
+		plt = Section.new
+		plt.name = '.plt'
+		plt.encoded = EncodedData.new
+		plt.characteristics = %w[MEM_READ MEM_EXECUTE]
+		@imports.each { |id|
+			id.imports.each { |i|
+				if i.thunk
+					arch_encode_thunk(plt.encoded, i)
+				end
+			}
+		}
+		encode_append_section plt if not plt.encoded.empty?
+	end
+
+	# encodes a thunk to imported function
+	def arch_encode_thunk(edata, import)
+		case @cpu
+		when Ia32
+			edata << Shellcode.assemble(@cpu, "metasm_importthunk_getip: call metasm_importthunk_getip2\nmetasm_importthunk_getip2: pop eax sub eax, metasm_importthunk_getip2-metasm_importthunk_getip ret").encoded if edata.empty?
+			edata << Shellcode.assemble(@cpu, "#{import.thunk}: call metasm_importthunk_getip jmp [eax+#{import.target || import.name}-metasm_importthunk_getip]").encoded
+		else raise EncodeError, 'E: COFF: encode import thunk: unsupported architecture'
+		end
 	end
 
 	# encodes relocation tables in a new section .reloc, updates @directory['base_relocation_table']
@@ -607,7 +630,7 @@ class COFF
 			end
 		}
 
-		# not aligned
+		# not aligned ? spec says it is, visual studio does not
 		binding[@optheader.image_size] = curaddr - baseaddr if @optheader.image_size.kind_of? String
 
 		@encoded.fill
@@ -635,50 +658,168 @@ class COFF
 		@encoded.data
 	end
 
-	def self.from_program(program)
-		coff = new
-		coff.endianness = program.cpu.endianness
-
-		coff.header.machine = 'I386' if program.cpu.kind_of? Ia32 rescue nil
-		coff.optheader.entrypoint = 'entrypoint'
-
-		program.sections.each { |ps|
-			s = Section.new
-			s.name = ps.name
-			s.encoded = ps.encoded
-			s.characteristics = {
-				:exec => 'MEM_EXECUTE', :read => 'MEM_READ', :write => 'MEM_WRITE', :discard => 'MEM_DISCARDABLE', :shared => 'MEM_SHARED'
-			}.values_at(*ps.mprot).compact
-			coff.sections << s
-			# relocs
-		}
-
-		program.import.each { |libname, list|
-			coff.imports ||= []
-			id = ImportDirectory.new
-			id.libname = libname
-			id.imports = []
-			list.each { |name, thunk|
-				i = ImportDirectory::Import.new
-				i.name = name
-				id.imports << i
-			}
-			coff.imports << id
-		}
-
-		if not program.export.empty?
-			coff.export = ExportDirectory.new
-			coff.export.libname = 'kikoo'
-			coff.export.exports = []
-			program.export.each { |name, label|
-				e = ExportDirectory::Export.new
-				e.name = name
-				e.target = label
-				coff.export.exports << e
-			}
+	def parse_init
+		# ahem...
+		# a fake object, which when appended makes us parse '.text', which creates a real default section
+		# forwards to it this first appendage.
+		# allows the user to specify its own section if he wishes, and to use .text if he doesn't
+		if not defined? @cursource or not @cursource
+			@cursource = Object.new
+			class << @cursource
+				attr_accessor :coff
+				def <<(*a)
+					t = Token.new(nil)
+					t.raw = '.text'
+					coff.parse_parser_instruction t
+					coff.cursource.send(:<<, *a)
+				end
+			end
+			@cursource.coff = self
 		end
+		@source ||= {}
+	end
 
-		coff
+	# handles section switching, entrypoint definition, imports/exports, etc
+	def parse_parser_instruction(instr)
+		readstr = proc {
+			@lexer.skip_space
+			raise instr, 'syntax error' if not t = @lexer.readtok or (t.type != :string and t.type != :quoted)
+			t.value || t.raw
+		}
+		check_eol = proc {
+			@lexer.skip_space
+			raise instr, 'syntax error' if t = @lexer.nexttok and t.type != :eol
+		}
+		case instr.raw.downcase
+		when '.text', '.data', '.rodata', '.bss'
+			sname = instr.raw.downcase
+			if not @sections.find { |s| s.name == sname }
+				s = Section.new
+				s.name = sname
+				s.encoded = EncodedData.new
+				s.characteristics = case sname
+					when '.text': %w[MEM_READ MEM_EXECUTE]
+					when '.data', '.bss': %w[MEM_READ MEM_WRITE]
+					when '.rodata': %w[MEM_READ]
+					end
+				@sections << s
+			end
+			@cursource = @source[sname] ||= []
+			check_eol[] if instr.backtrace	# special case for magic @cursource
+
+		when '.section'
+			# .section <section name|"section name"> [(no)r w x shared discard] [base=<expr>]
+			sname = readstr[]
+			sname = tok.value || tok.raw
+			if not s = @sections.find { |s| s.name == sname }
+				s = Section.new
+				s.name = sname
+				s.encoded = EncodedData.new
+				s.characteristics = []
+				@sections << s
+			end
+			loop do
+				@lexer.skip_space
+				break if not tok = @lexer.nexttok or tok.type != :string
+				case @lexer.readtok.raw.downcase
+				when /^(no)?(r)?(w)?(x)?(shared)?(discard)?$/
+					ar = []
+					ar << 'MEM_READ' if $2
+					ar << 'MEM_WRITE' if $3
+					ar << 'MEM_EXECUTE' if $4
+					ar << 'MEM_SHARED' if $5
+					ar << 'MEM_DISCARDABLE' if $6
+					if $1: s.characteristics -= ar
+					else   s.characteristics |= ar
+					end
+				when 'base'
+					raise instr, 'syntax error' if not tok = @lexer.readtok or tok.type != :punct or tok.raw != '='
+					raise instr, 'syntax error' if not s.virtaddr = Expression.parse(@lexer).reduce
+				else raise tok, 'unknown parameter'
+				end
+			end
+			@cursource = @source[sname] ||= []
+			check_eol[]
+
+		when '.libname'
+			# export directory library name
+			# .libname <libname|"libname">
+			@export ||= ExportDirectory.new
+			@export.libname = readstr[]
+			check_eol[]
+
+		when '.export'
+			# .export <export name|"export name"> [label to export if different]
+			exportname = readstr[]
+			@lexer.skip_space
+			if tok = @lexer.readtok and tok.type == :punct and tok.raw == ','
+				@lexer.skip_space
+				tok = @lexer.readtok
+			end
+			if tok and tok.type == :string
+				exportlabel = tok.raw
+			end
+
+			@export ||= ExportDirectory.new
+			@export.exports ||= []
+			@export.libname ||= 'metalib'
+			e = ExportDirectory::Export.new
+			e.name = exportname
+			e.target = exportlabel || exportname
+			@export.exports << e
+			check_eol[]
+		
+		when '.import'
+			# .import <libname|"libname"> <imported sym|"imported sym"> [label of iat element if different] [label of plt thunk]
+			libname = readstr[]
+			importname = readstr[]
+			@lexer.skip_space
+			if tok = @lexer.readtok and tok.type == :string
+				target = tok.raw
+				@lexer.skip_space
+				tok = @lexer.readtok
+			end
+			if tok and tok.type == :string
+				thunktarget = tok.raw
+			end
+
+			@imports ||= []
+			if not id = @imports.find { |id| id.libname == libname }
+				id = ImportDirectory.new
+				id.libname = libname
+				id.imports = []
+				@imports << id
+			end
+			i = ImportDirectory::Import.new
+			i.name = importname
+			i.target = target || importname
+			i.thunk = thunktarget
+			id.imports << i
+
+			check_eol[]
+			
+		when '.entrypoint'
+			# ".entrypoint <somelabel/expression>" or ".entrypoint" (here)
+			@lexer.skip_space
+			if tok = @lexer.nexttok and tok.type == :string
+				raise instr, 'syntax error' if not entrypoint = Expression.parse(@lexer)
+			else
+				entrypoint = new_label('entrypoint')
+				@cursource << Label.new(entrypoint, instr.backtrace.dup)
+			end
+			@optheader.entrypoint = entrypoint
+			check_eol[]
+
+		else super
+		end
+	end
+
+	def assemble
+		@source.each { |k, v|
+			raise "no section named #{k} ?" if not s = @sections.find { |s| s.name == k }
+			s.encoded << assemble_sequence(v, @cpu)
+			v.clear
+		}
 	end
 end
 end

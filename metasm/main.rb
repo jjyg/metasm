@@ -2,12 +2,64 @@ module Metasm
 
 # superclass for all metasm exceptions
 class Exception < RuntimeError ; end
+class ParseError < Exception ; end
+
+# A source text preprocessor (C-like)
+# defines the methods nexttok, readtok and unreadtok
+# they spits out Tokens of type :
+#  :string for words (/[a-Z0-9$_]+/)
+#  :punct for punctuation (/[.,:*+-]/ etc), any unhandled character
+#  :space for space/tabs/comment/\r
+#  :eol for newline :space including at least one \n not escaped
+#  :quoted for quoted string, tok.raw includes delimiter and all content. tok.value holds the interpreted value (handles \x, \oct, \r etc). 1-line only
+# or nil on end of stream
+# \ at end of line discards a newline, otherwise returns a tok :punct with the \
+# preprocessor directives start with a :punct '#' just after an :eol (so you can have spaces before #), they take a whole line
+# comments are C/C++ style (//...\n or /*...*/), returned as :eol (resp. :space)
+class Preprocessor
+	# a preprocessor macro
+	class Macro
+		# the token holding the name used in the macro definition
+		attr_accessor :name
+		# array of tokens of formal arguments
+		attr_accessor :args
+		# array of tokens of macro body
+		attr_accessor :body
+	end
+
+	# the raw string we're reading
+	attr_accessor :text, :pos
+	# the backtrace information for current file
+	attr_accessor :filename, :lineno
+	# the unreadtok queue
+	attr_accessor :queue
+	# the backtrace (array of previous [filename, lineno, text, pos] that #included us)
+	attr_accessor :backtrace
+	# a hash of macro definitions: macro name => [macro def tok, [macro args tok], [macro body toks]]
+	attr_accessor :definition
+	# array of directories to search for #included <files>
+	attr_accessor :include_search_path
+
+	# global default search directory for #included <files>
+	@@include_search_path = ['/usr/include']
+	def self.include_search_path
+		@@include_search_path
+	end
+	def self.include_search_path=(np)
+		@@include_search_path = np
+	end
+end
+
+# handle asm-specific syntax: asm macro, equ, ;comments
+# TODO something to allow dynamic switching asm <-> C with same source
+class AsmPreprocessor < Preprocessor
+end
 
 # holds context of a processor
 # endianness, current mode, opcode list...
 class CPU
-	attr_reader :valid_args, :valid_props, :fields_mask, :opcode_list
-	attr_reader :endianness, :size
+	attr_accessor :valid_args, :valid_props, :fields_mask, :opcode_list
+	attr_accessor :endianness, :size
 
 	def initialize
 		@fields_mask = {}
@@ -54,12 +106,63 @@ class Opcode
 	end
 end
 
-# a name for a location
-class Label
-	attr_reader :name
-	def initialize(name)
-		@name = name
+# defines an attribute self.backtrace (array of filename/lineno)
+# and a method backtrace_str which dumps this array to a human-readable form
+module Backtrace
+	# array [file, lineno, file, lineno]
+	# if file 'A' does #include 'B' you'll get ['A', linenoA, 'B', linenoB]
+	attr_accessor :backtrace
+
+	# builds a readable string from self.backtrace
+	def backtrace_str
+		Backtrace.backtrace_str(@backtrace)
 	end
+
+	# builds a readable backtrace string from an array of [file, lineno, file, lineno, ..]
+	def self.backtrace_str(ary)
+		return '' if not ary
+		i = ary.length
+		bt = ''
+		while i > 0
+			bt << ', included from ' if ary[i]
+			i -= 2
+			bt << "#{ary[i].inspect} line #{ary[i+1]}"
+		end
+		bt
+	end
+end
+
+# a token, as returned by the lexers
+class Token
+	# the token type: :space, :eol, :quoted, :string, :punct, ...
+	attr_accessor :type
+	# the interpreted value of the token (Integer for an int, etc)
+	attr_accessor :value
+	# the raw string that gave this token
+	attr_accessor :raw
+
+	include Backtrace
+
+	def initialize(backtrace)
+		@backtrace = backtrace
+		@raw = ''
+	end
+
+	# used when doing 'raise tok, "foo"'
+	# raises a ParseError, adding backtrace information
+	def exception(msg)
+		ins = @raw.length > 35 ? ('...' + @raw[-32..-1]) : @raw
+		ParseError.new "parse error near #{ins.inspect} at #{backtrace_str}: #{msg}"
+	end
+
+	def dup
+		n = self.class.new(backtrace)
+		n.type = @type
+		n.value = @value
+		n.raw = @raw
+		n
+	end
+
 end
 
 # an instruction: opcode name + arguments
@@ -73,27 +176,25 @@ class Instruction
 	# reference to the cpu which issued this instruction (used for rendering)
 	attr_accessor :cpu
 
-	def initialize(cpu, opname=nil, args=[], pfx={})
+	include Backtrace
+
+	def initialize(cpu, opname=nil, args=[], pfx={}, backtrace=nil)
 		@cpu = cpu
 		@prefix, @args = pfx, args
 		@opname = opname
+		@backtrace = backtrace
 	end
 
 	# duplicates the argument list and prefix hash
 	def dup
-		Instruction.new(@cpu, (@opname.dup rescue @opname), @args.dup, @prefix.dup)
+		Instruction.new(@cpu, (@opname.dup rescue @opname), @args.dup, @prefix.dup, @backtrace.dup)
 	end
-end
-
-# contiguous/uninterrupted sequence of instructions, chained to other blocks
-# TODO
-class InstructionBlock
 end
 
 # all kind of data description (including repeated/uninitialized)
 class Data
 	# maps data type to Expression parameters (signedness/bit size)
-	INT_TYPE = {:db => :u8, :dw => :u16, :dd => :u32}
+	INT_TYPE = {'db' => :u8, 'dw' => :u16, 'dd' => :u32, 'dq' => :u64}
 
 	# an Expression, an Array of Data, a String, or :uninitialized
 	attr_accessor :data
@@ -102,8 +203,21 @@ class Data
 	# the repetition count of the data parameter (dup constructs)
 	attr_accessor :count
 
-	def initialize(type, data, count=1)
-		@data, @type, @count = data, type, count
+	include Backtrace
+
+	def initialize(type, data, count=1, backtrace=nil)
+		@data, @type, @count, @backtrace = data, type, count, backtrace
+	end
+end
+
+# a name for a location
+class Label
+	attr_reader :name
+
+	include Backtrace
+
+	def initialize(name, backtrace=nil)
+		@name, @backtrace = name, backtrace
 	end
 end
 
@@ -114,8 +228,10 @@ class Align
 	# the Data used to pad
 	attr_accessor :fillwith
 
-	def initialize(val, fillwith=nil)
-		@val, @fillwith = val, fillwith
+	include Backtrace
+
+	def initialize(val, fillwith=nil, backtrace=nil)
+		@val, @fillwith, @backtrace = val, fillwith, backtrace
 	end
 end
 
@@ -124,8 +240,10 @@ class Padding
 	# Data used to pad
 	attr_accessor :fillwith
 
-	def initialize(fillwith=nil)
-		@fillwith = fillwith
+	include Backtrace
+
+	def initialize(fillwith=nil, backtrace=nil)
+		@fillwith, @backtrace = fillwith, backtrace
 	end
 end
 
@@ -136,61 +254,55 @@ class Offset
 	# be at this offset from beginning of current section
 	attr_accessor :val
 
-	def initialize(val)
-		@val = val
+	include Backtrace
+
+	def initialize(val, backtrace=nil)
+		@val, @backtrace = val, backtrace
 	end
 end
 
-# represents an executable section
-# ie no holes, same permissions
-# XXX will die today !
-class Section
-	# +@name+
-	# +@encoded+ EncodedData
-	# +@source+  +Array+ of +Label+/+Instruction+/+Data+
-	attr_reader :name, :source, :encoded
-	# +@mprot+   memory protection (Array [:read, :write, :exec])
-	# +@base+    absolute base adress wanted
-	# +@align+   base adress must be a multiple of that (octets)
-	attr_accessor :mprot, :base, :align
-	
-	# XXX dynamic label insertion when disassembling..
-	
-	def initialize(program, name)
-		@program = program
-		@name    = name
-		@source  = []
-		@mprot   = [:read]
-		@encoded = EncodedData.new
-		@base = @align = nil
-	end
-
-	def <<(a) @source << a end
+# contiguous/uninterrupted sequence of instructions, chained to other blocks
+# TODO
+class InstructionBlock
 end
 
-# generic program representation
-# XXX will die today !
-class Program
-	# sections = array of Section
-	# export = hash exportedname => label     XXX could be Export - function, data, int, ...
-	# import = hash libname      => [imported list]
-	attr_reader :cpu, :sections, :export, :import
-	# graph  = addr => InstructionBlock
-	attr_reader :graph
-
-	def initialize(cpu)
+# the superclass of all real executable formats
+class ExeFormat
+	# array of Data/Instruction/Align/Padding/Offset/Label, populated in parse
+	attr_accessor :cursource
+	# contains the binary version of the compiled program (EncodedData)
+	attr_accessor :encoded
+	# reference to the current CPU used (may be nil)
+	attr_accessor :cpu
+	# attr_accessor :block
+	
+	# initializes self.cpu, creates an empty self.encoded
+	def initialize(cpu=nil)
 		@cpu = cpu
-		@sections = []
-		@export = {}
-		@import = {}
-		@graph = {}
+		@encoded = EncodedData.new
+	end
+
+	# return the label name corresponding to the specified offset of the encodeddata, creates it if necessary
+	def label_at(edata, offset, base = '')
+		if not l = edata.export.invert[offset]
+			edata.export[l = new_label(base)] = offset
+		end
+		l
+	end
+
+	# creates a new label, that is guaranteed to be unique as long as this object (ExeFormat) exists
+	def new_label(base = '')
+		base = base.dup
+		k = (base << '_uniquelabel_' << ('%08x' % base.object_id)).freeze	# use %x instead of to_s(16) for negative values
+		(@unique_labels_cache ||= []) << k	# prevent garbage collection, this guarantees uniqueness (object_id)
+		k
 	end
 end
 
 # handle immediate values, and arbitrary arithmetic/logic expression involving variables
-# XXX separate logic expressions ?
+# boolean values are treated as in C : true is 1, false is 0
 # TODO replace #type with #size => bits + #type => [:signed/:unsigned/:any/:floating]
-# TODO floats
+# TODO handle floats
 class Expression
 	INT_SIZE = {:u8 => 8,    :u16 => 16,     :u32 => 32, :u64 => 64,
 		    :i8 => 8,    :i16 => 16,     :i32 => 32, :i64 => 64
@@ -208,9 +320,9 @@ class Expression
 	# with a single argument, return it if already an Expression, else construct a new one (using unary +/-)
 	def self.[](l, op = nil, r = nil)
 		return l if l.kind_of? Expression and not op
-		l, op, r = nil, :-, -r if op == nil and r.kind_of? Numeric and r < 0
-		l, op, r = nil, :+, l  if op == nil	# can find false in boolean expression
-		l, op, r = nil, l, op  if  r == nil
+		l, op, r = nil, :-, -r if not op and r.kind_of? Numeric and r < 0
+		l, op, r = nil, :+, l  if not op
+		l, op, r = nil, l, op  if not r
 		l = self[*l] if l.kind_of? Array
 		r = self[*r] if r.kind_of? Array
 		new(op, r, l)
@@ -233,16 +345,14 @@ class Expression
 	# the operator (symbol)
 	attr_accessor :op
 	# the lefthandside expression (nil for unary expressions)
-	# XXX may be false in logic expression TODO use 0/1 for false/true (allows true + 40, as in C)
 	attr_accessor :lexpr
 	# the righthandside expression
-	# XXX may be false in logic expression
 	attr_accessor :rexpr
 
 	# basic constructor
 	# XXX funny args order, you should use +Expression[]+ instead
 	def initialize(op, rexpr, lexpr)
-		raise "Expression: invalid arg order: op #{op.inspect}, r l = #{rexpr.inspect} #{lexpr.inspect} #{caller.join("\n")}" if not op.kind_of? Symbol
+		raise "Expression: invalid arg order: op #{op.inspect}, r l = #{rexpr.inspect} #{lexpr.inspect}" if not op.kind_of? Symbol
 		@op, @lexpr, @rexpr = op, lexpr, rexpr
 	end
 
@@ -300,11 +410,11 @@ class Expression
 	end
 
 	# returns a simplified copy of self
-	# can return an +Expression+ or a +Numeric+ or true/false, may return self
+	# can return an +Expression+ or a +Numeric+, may return self
 	# see +reduce_rec+ for simplifications description
 	def reduce
 		case e = reduce_rec
-		when Expression, Numeric, true, false: e
+		when Expression, Numeric: e
 		else Expression[e]
 		end
 	end
@@ -321,33 +431,33 @@ class Expression
 		r = @rexpr.respond_to?(:reduce_rec) ? @rexpr.reduce_rec : @rexpr
 
 		v = 
-		if (r == true or r == false) and (l == nil or l == true or l == false) and (@op == :'!' or @op == :'&&' or @op == :'||')
-			if l != nil
-				case @op
-				when :'&&': l && r
-				when :'||': l || r
-				end
-			else
-				if @op == :'!'
-					!r
-				end
-			end
-
-		elsif r.kind_of?(Numeric) and (l == nil or l.kind_of?(Numeric))
+		if r.kind_of?(Numeric) and (l == nil or l.kind_of?(Numeric))
 			# calculate numerics
-			if l
+			if [:'&&', :'||', :'>', :'<', :'>=', :'<=', :'==', :'!='].include?(@op)
+				# bool expr
+				raise 'internal error' if not l
 				case @op
+				when :'&&': (l != 0) && (r != 0)
+				when :'||': (l != 0) || (r != 0)
+				when :'>' : l > r
+				when :'>=': l >= r
+				when :'<' : l < r
+				when :'<=': l <= r
+				when :'==': l == r
 				when :'!=': l != r
-				else l.send(@op, r)
-				end
-			else
+				end ? 1 : 0
+			elsif not l
 				case @op
-				# when :'!': !r
+				when :'!': (r == 0) ? 1 : 0
 				when :+:  r
 				when :-: -r
 				when :~: ~r
 				end
+			else
+				# use ruby evaluator
+				l.send(@op, r)
 			end
+
 		elsif @op == :-
 			if not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
 				if r.op == :- # no lexpr (reduced)
@@ -430,10 +540,10 @@ class Relocation
 	# the endianness of the relocation
 	attr_accessor :endianness
 
-	def initialize(target, type, endianness)
-		@target     = target
-		@type       = type
-		@endianness = endianness
+	include Backtrace
+
+	def initialize(target, type, endianness, backtrace = nil)
+		@target, @type, @endianness, @backtrace = target, type, endianness, backtrace
 	end
 end
 
@@ -467,6 +577,10 @@ class EncodedData
 	# String-like
 	alias size virtsize
 
+	def empty?
+		@virtsize == 0
+	end
+
 	# returns a copy of itself, with reloc/export duped (but not deep)
 	def dup
 		self.class.new @data.dup, :reloc => @reloc.dup, :export => @export.dup, :virtsize => @virtsize
@@ -477,11 +591,14 @@ class EncodedData
 	# if numeric, replace the raw data with the encoding of this value (+fill+s preceding data if needed) and remove the reloc
 	# if replace_target is true, the reloc target is replaced with its bound counterpart
 	def fixup_choice(binding, replace_target)
+		# jj wtf ? coff import arch_encode_thunk defines jmp [eax + MessageBoxA - goteip], encoded as jmp [eax+0]
+		# puts binding['MessageBoxA']
 		@reloc.keys.each { |off|
 			val = @reloc[off].target.bind(binding).reduce
+			# puts "#{@reloc[off].target} => #{val}" if @reloc[off].target.externals.include? 'MessageBoxA'
 			if val.kind_of? Integer
 				reloc = @reloc.delete(off)
-				str = Expression.encode_immediate(val, reloc.type, reloc.endianness)
+				str = Expression.encode_immediate(val, reloc.type, reloc.endianness, reloc.backtrace)
 				fill off
 				@data[off, str.length] = str
 			elsif replace_target

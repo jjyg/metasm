@@ -5,50 +5,68 @@ require 'metasm/parse'
 module Metasm
 class Ia32
 class ModRM
-	# must be called after simple Reg/Seg parser
-	# will raise if no modrm is found
-	def self.parse(lexer)
-		tok = lexer.readtok
-		if tok =~ /^(?:byte|[dqo]?word|_(\d+)bits)$/
+	# may return a SegReg
+	# must be called before SegReg parser (which could match only the seg part of a modrm)
+	def self.parse(lexer, otok)
+		tok = otok
+		
+		# read operand size specifier
+		if tok and tok.type == :string and tok.raw =~ /^(?:byte|[dqo]?word|_(\d+)bits)$/
 			ptsz = 
 			if $1
 				$1.to_i
 			else
-				case tok
+				case tok.raw
 				when  'byte':   8
 				when  'word':  16
 				when 'dword':  32
 				when 'qword':  64
 				when 'oword': 128
-				else raise lexer, 'mrm: bad ptr size specifier'
+				else raise otok, 'mrm: bad ptr size'
 				end
 			end
-
-			tok = lexer.readtok
-			tok = lexer.readtok if tok == 'ptr'
-		end
-		if tok =~ /^[cdefgs]s$/
-			raise lexer, 'bad modrm' if lexer.readtok != :':'
-			seg = SegReg.new(SegReg.s_to_i[tok])
-			tok = lexer.readtok
+			lexer.skip_space
+			if tok = lexer.readtok and tok.type == :string and tok.raw == 'ptr'
+				lexer.skip_space
+				tok = lexer.readtok
+			end
 		end
 
-		if tok != :'['
-			raise lexer, 'not a modrm' if ptsz or seg
-			lexer.unreadtok tok
+		# read segment selector
+		if tok and tok.type == :string and seg = SegReg.s_to_i[tok.raw]
+			lexer.skip_space
+			seg = SegReg.new(seg)
+			if not ntok = lexer.readtok or ntok.type != :punct or ntok.raw != ':'
+				raise otok, 'invalid modrm' if ptsz
+				lexer.unreadtok ntok
+				return seg
+			end
+			lexer.skip_space
+			tok = lexer.readtok
+		end
+
+		# ensure we have a modrm
+		if not tok or tok.type != :punct or tok.raw != '['
+			raise otok, 'invalid modrm' if ptsz or seg
 			return
 		end
+		lexer.skip_space_eol
 
-		# support fasm syntax [fs:eax]
-		if lexer.nexttok =~ /^[cdefgs]s$/
-			tok = lexer.readtok
-			raise lexer, 'bad modrm' if lexer.readtok != :':'
-			seg = SegReg.new(SegReg.s_to_i[tok])
+		# support fasm syntax [fs:eax] for segment selector
+		if tok = lexer.readtok and tok.type == :string and not seg and seg = SegReg.s_to_i[tok.raw]
+			raise otok, 'invalid modrm' if not ntok = lexer.readtok or ntok.type != :punct or ntok.raw != ':'
+			seg = SegReg.new(seg)
+			lexer.skip_space_eol
+		else
+			lexer.unreadtok tok
 		end
 
+		# read modrm content as generic expression
 		content = Expression.parse(lexer)
-		raise(lexer, 'bad modrm') if not content or lexer.readtok != :']'
+		lexer.skip_space_eol
+		raise(otok, 'bad modrm') if not content or not ntok = lexer.readtok or ntok.type != :punct or ntok.raw != ']'
 
+		# converts matching externals to Regs in an expression
 		regify = proc { |o|
 			case o
 			when Expression
@@ -66,12 +84,13 @@ class ModRM
 
 		s = i = b = imm = nil
 
+		# assigns the Regs in the expression to base or index field of the modrm
 		walker = proc { |o|
 			case o
 			when nil
 			when Reg
 				if b
-					raise lexer, 'mrm: too many regs' if i
+					raise otok, 'mrm: too many regs' if i
 					i = o
 					s = 1
 				else
@@ -79,45 +98,60 @@ class ModRM
 				end
 			when Expression
 				if o.op == :* and (o.rexpr.kind_of? Reg or o.lexpr.kind_of? Reg)
-					raise lexer, 'mrm: too many index' if i
+					# scaled index
+					raise otok, 'mrm: too many indexes' if i
 					s = o.lexpr
 					i = o.rexpr
 					s, i = i, s if s.kind_of? Reg
-					raise lexer, 'mrm: bad scale' unless s.kind_of? Integer
+					raise otok, 'mrm: bad scale' unless s.kind_of? Integer
 				elsif o.op == :+
+					# recurse
 					walker[o.lexpr]
 					walker[o.rexpr]
 				else
+					# found (a part of) the immediate
 					imm = Expression[imm, :+, o]
 				end
 			else
+				# found (a part of) the immediate
 				imm = Expression[imm, :+, o]
 			end
 		}
 
+		# do it
 		walker[regify[content.reduce]]
 
-		raise lexer, 'mrm: reg in imm' if imm.kind_of? Expression and not imm.externals.grep(Reg).empty?
+		# ensure found immediate is really an immediate
+		raise otok, 'mrm: reg in imm' if imm.kind_of? Expression and not imm.externals.grep(Reg).empty?
 
-		adsz = b ? b.sz : i ? i.sz : lexer.cpu.size
+		# find default address size
+		adsz = b ? b.sz : i ? i.sz : lexer.program.cpu.size
+		# ptsz may be nil now, will be fixed up later (in parse_instr_fixup) to match another instruction argument's size
 		new adsz, ptsz, s, i, b, imm, seg
 	end
 end
 
 
+	# handles cpu-specific parser instruction, falls back to Ancestor's version if unknown keyword
+	# XXX changing the cpu size in the middle of the code may have baaad effects...
 	def parse_parser_instruction(lexer, instr)
-		case instr.downcase
+		case instr.raw.downcase
 		when '.mode', '.bits'
-			case lexer.nexttok
-			when 16, 32: @size = lexer.readtok
-			else raise lexer, "Invalid IA32 .mode #{tok.inspect}"
+			lexer.skip_space
+			if tok = lexer.readtok and tok.type == :string and (tok.raw == '16' or tok.raw == '32')
+				@size = tok.raw.to_i
+				lexer.skip_space
+				raise instr, 'syntax error' if ntok = lexer.nexttok and ntok.type != :eol
+			else
+				raise instr, 'invalid cpu mode'
 			end
 		else super
 		end
 	end
 
 	def parse_prefix(i, pfx)
-		# XXX check for redefinition
+		# XXX check for redefinition ?
+		# implicit 'true' return value when assignment occur
 		case pfx
 		when 'lock': i.prefix[:lock] = true
 		when 'rep':            i.prefix[:rep] = 'rep'
@@ -126,49 +160,69 @@ end
 		end
 	end
 
+	# parses a arbitrary ia32 instruction argument
 	def parse_argument(lexer)
+		# reserved names (registers/segments etc)
 		@args_token ||= (Argument.double_list + Argument.simple_list).map { |a| a.s_to_i.keys }.flatten.inject({}) { |h, e| h.update e => true }
 		 
-		tok = lexer.readtok
+		lexer.skip_space
+		return if not tok = lexer.readtok
 
-		# fp reg
-		if tok == 'ST' and lexer.nexttok == :'('
-			tok << lexer.readtok.to_s
-			raise lexer, 'bad FP reg' if not lexer.nexttok.kind_of? Integer
-			tok << lexer.readtok.to_s
-			raise lexer, 'bad FP reg' if not lexer.nexttok == :')'
-			tok << lexer.readtok.to_s
+		if tok.type == :string and tok.raw == 'ST'
+			lexer.skip_space
+			if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == '('
+				lexer.skip_space
+				if not nntok = lexer.readtok or nntok.type != :string or nntok.raw != /^[0-9]$/ or
+						not ntok = (lexer.skip_space; lexer.readtok) or ntok.type != :punct or ntok.raw != ')'
+					raise tok, 'invalid FP register'
+				else
+					tok.raw << '(' << nntok.raw << ')'
+					if FpReg.s_to_i.has_key? tok.raw
+						return FpReg.new(FpReg.s_to_i[tok.raw])
+					else
+						raise tok, 'invalid FP register'
+					end
+				end
+			else
+				lexer.unreadtok ntok
+			end
 		end
 
-		if @args_token[tok]
+		if ret = ModRM.parse(lexer, tok)
+			ret
+		elsif @args_token[tok.raw]
+			# most frequent first: standard register
 			Argument.double_list.each { |a|
-				return a.new(*a.s_to_i[tok]) if a.s_to_i.has_key? tok
+				return a.new(*a.s_to_i[tok.raw]) if a.s_to_i.has_key? tok.raw
 			}
 			Argument.simple_list.each { |a|
-				return a.new( a.s_to_i[tok]) if a.s_to_i.has_key? tok
+				return a.new( a.s_to_i[tok.raw]) if a.s_to_i.has_key? tok.raw
 			}
-			raise lexer, "Internal ia32 argument parser error: bad args_token #{tok.inspect}"
+			raise tok, 'internal error'
 		else
 			lexer.unreadtok tok
-			return tok if tok = ModRM.parse(lexer)
+			expr = Expression.parse(lexer)
+			lexer.skip_space
 
-			tok = Expression.parse(lexer)
-
-			if lexer.nexttok == :':' and (tt = tok.reduce).kind_of? Integer
-				lexer.readtok
-				tok = Expression.parse lexer
-				Farptr.new tt, tok
+			# may be a farptr
+			if expr and ntok = lexer.readtok and ntok.type == :punct and ntok.raw == ':'
+				raise tok, 'invalid farptr' if not addr = Expression.parse(lexer)
+				Farptr.new expr, addr
 			else
-				tok
+				lexer.unreadtok ntok
+				expr
 			end
 		end
 	end
 
+	# check if the argument matches the opcode's argument spec
 	def parse_arg_valid?(o, spec, arg)
 		case spec
 		when :reg
 			arg.class == Reg and
 				if not o.fields[:w] or o.name == 'movsx' or o.name == 'movzx'
+					# we know the prototype of movsx: :reg is the large param
+					# no al/bl/bh/etc allowed
 					arg.sz >= 16
 				else true
 				end
@@ -177,6 +231,7 @@ end
 				if not o.fields[:w]
 					!arg.sz or arg.sz >= 16
 				elsif o.name == 'movsx' or o.name == 'movzx'
+					# we know the prototype of movsx: :modrm is the small param
 					!arg.sz or arg.sz <= 16
 				else true
 				end
@@ -195,18 +250,19 @@ end
 		when :mrm_imm:  arg.class == ModRM   and not arg.s and not arg.i and not arg.b
 		when :farptr:   arg.class == Farptr
 		when :regfp:    arg.class == FpReg
-		when :regfp0:   arg.class == FpReg   and (arg.val == nil or arg.val == 0)	# XXX optionnal
+		when :regfp0:   arg.class == FpReg   and (arg.val == nil or arg.val == 0)	# XXX optional argument
 		when :modrmmmx: arg.class == ModRM   or (arg.class == SimdReg and arg.sz == 64)
 		when :regmmx:   arg.class == SimdReg and arg.sz == 64
 		when :modrmxmm: arg.class == ModRM   or (arg.class == SimdReg and arg.sz == 128)
 		when :regxmm:   arg.class == SimdReg and arg.sz == 128
 		when :i8, :u8, :u16:
-			arg.kind_of? Expression or Expression.in_range?(arg, spec)
-		else raise EncodeException, "Internal error: unknown argument specification #{spec.inspect}"
+			Expression.in_range?(arg, spec) != false	# true or nil allowed
+		else raise EncodeError, "Internal error: unknown argument specification #{spec.inspect}"
 		end
 	end
 
-	def parse_instruction_fixup(parser, i)
+	# fixup the ptsz of a modrm argument, defaults to other argument size or current cpu mode
+	def parse_instruction_fixup(i)
 		if m = i.args.grep(ModRM).first and not m.sz
 			if i.opname == 'movzx' or i.opname == 'movsx'
 				m.sz = 8
@@ -214,6 +270,8 @@ end
 				if r = i.args.grep(Reg).first
 					m.sz = r.sz
 				else
+					# this is also the size of ctrlreg/dbgreg etc
+					# XXX fpu/simd ?
 					m.sz = @size
 				end
 			end

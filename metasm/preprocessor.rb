@@ -170,7 +170,7 @@ class Preprocessor
 		if not tok
 			# end of file: resume parent
 			if not @backtrace.empty?
-				@filename, @lineno, @text, @pos, @traceignore = @backtrace.pop
+				@filename, @lineno, @text, @pos, @queue, @traceignore = @backtrace.pop
 				tok = readtok
 			end
 
@@ -218,7 +218,7 @@ class Preprocessor
 	def readtok_nopp
 		return @queue.pop unless @queue.empty?
 
-		tok = Token.new((@backtrace.map { |fn, lnn, *a| [fn, lnn] } + [@filename, @lineno]).flatten)
+		tok = Token.new((@backtrace.map { |bt| bt[0, 2] } + [@filename, @lineno]).flatten)
 
 		case c = @text[@pos]
 		when nil
@@ -286,6 +286,7 @@ class Preprocessor
 			tok.type = :string
 			loop do
 				case @text[@pos]
+				when nil: break		# avoids 'no method "coerce" for nil' warning
 				when ?a..?z, ?A..?Z, ?0..?9, ?$, ?_
 					tok.raw << getchar
 				else break
@@ -305,6 +306,7 @@ class Preprocessor
 			tok.type = :space
 			loop do
 				case @text[@pos]
+				when nil: break
 				when ?\ , ?\t, ?\r, ?\n
 					tok.raw << getchar
 				else break
@@ -493,11 +495,12 @@ class Preprocessor
 			end
 			raise cmd, 'pp: cannot find file to include' if not File.exist? path
 
-			@backtrace << [@filename, @lineno, @text, @pos, @traceignore]
-			@text = File.read(path)
-			@pos = 0
+			@backtrace << [@filename, @lineno, @text, @pos, @queue, @traceignore]
 			@filename = path
 			@lineno = 0
+			@text = File.read(path)
+			@pos = 0
+			@queue = []
 			@traceignore ||= traceignore if @traceary
 
 		else return false

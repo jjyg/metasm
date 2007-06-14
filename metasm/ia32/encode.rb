@@ -14,9 +14,8 @@ class Ia32
 
 		# The argument is an integer representing the 'reg' field of the mrm
 		#
-		# The instruction encoder is responsible for setting the adsz
-		#  override prefix / segment override prefix if needed
-		# returns an array, 1 element per possible immediate size (when un-reduce()ible Expression)
+		# caller is responsible for setting the adsz
+		# returns an array, 1 element per possible immediate size (for un-reduce()able Expression)
 		def encode(reg = 0, endianness = :little)
 			case @adsz
 			when 16: encode16(reg, endianness)
@@ -146,18 +145,9 @@ class Ia32
 		end
 	end
 
-	
-	# returns an array of EncodedData
-	def encode_instruction(program, i)
-		oplist = opcode_list_byname[i.opname].to_a.find_all { |o|
-			o.args.length == i.args.length and
-			o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
-		}
-		raise EncodeError, "no matching opcode found for #{i}" if oplist.empty?
-		oplist.inject([]) { |ret, op| ret.concat encode_instr_op(program, i, op) }
-	end
-
-	private
+	# returns all forms of the encoding of instruction i using opcode op
+	# program may be used to create a new label for relative jump/call
+	# TODO hardcode :s in @opcode_list
 	def encode_instr_op(program, i, op)
 		base      = op.bin.pack('C*')
 		oi        = op.args.zip(i.args)
@@ -257,7 +247,7 @@ class Ia32
 
 		# convert label name for jmp/call/loop to relative offset
 		if op.props[:setip] and op.name[0, 3] != 'ret' and i.args.first.kind_of? Expression
-			postlabel = program.new_unique_label
+			postlabel = program.new_label('jmp_offset')
 			postponed.first[1] = Expression[postponed.first[1], :-, postlabel]
 		end
 
