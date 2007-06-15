@@ -162,7 +162,7 @@ class Token
 
 	# used when doing 'raise tok, "foo"'
 	# raises a ParseError, adding backtrace information
-	def exception(msg)
+	def exception(msg='syntax error')
 		ins = @raw.length > 35 ? ('...' + @raw[-32..-1]) : @raw
 		ParseError.new "parse error near #{ins.inspect} at #{backtrace_str}: #{msg}"
 	end
