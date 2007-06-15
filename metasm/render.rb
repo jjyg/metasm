@@ -2,6 +2,7 @@ require 'metasm/main'
 
 module Metasm
 
+# a Renderable element has a method #render that returns an array of [String or Renderable]
 module Renderable
 	def to_s
 		render.join
@@ -18,17 +19,13 @@ end
 
 class CPU
 	# renders an instruction
-	# may use instruction-global properties to render an argument (size specification if not implicit)
+	# may use instruction-global properties to render an argument (eg specify pointer size if not implicit)
 	def render_instruction(i)
 		r = []
 		r << @opname
-		if not @args.empty?
-			r << ' '
-			@args.each { |a|
-				r << a << ', '
-			}
-			r.pop
-		end
+		r << ' '
+		@args.each { |a| r << a << ', ' }
+		r.pop
 		r
 	end
 
@@ -41,31 +38,19 @@ end
 class Expression
 	include Renderable
 	def render
-		l = @lexpr
-		r = @rexpr
-		if l.kind_of? Integer
-			if l < 0
-				nl = true
-				l = -l
+		l, r = [@lexpr, @rexpr].map { |e|
+			if e.kind_of? Integer
+				if e < 0
+					neg = true
+					e = -e
+				end
+				e = '%xh' % e
+				e = '0' << e unless (?0..?9).include? e[0]
+				e = '-' << e if neg
 			end
-			l = '%xh' % l
-			l = '0' << l unless (?0..?9).include? l[0]
-			l = '-' << l if nl
-		end
-		if r.kind_of? Integer
-			if r < 0
-				nr = true
-				r = -r
-			end
-			r = '%xh' % r
-			r = '0' << r unless (?0..?9).include? r[0]
-			r = '-' << r if nr
-		end
-		if @op == :+ and not l
-			[r]
-		else
-			['(', l, @op, r, ')']
-		end
+			e
+		}
+		['(', l, @op, r, ')'].compact
 	end
 end
 

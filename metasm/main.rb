@@ -82,7 +82,7 @@ class UnknownCPU < CPU
 	end
 end
 
-# a specific cpu instruction description
+# a cpu instruction 'formal' description
 class Opcode
 	# the name of the instruction
 	attr_accessor :name
@@ -267,6 +267,11 @@ class InstructionBlock
 end
 
 # the superclass of all real executable formats
+# main methods:
+#  self.decode(str) => decodes the file format (imports/relocs/etc), no asm disassembly
+#  parse(source) => parses assembler source, fills self.source
+#  assemble => assembles self.source in binary sections/segments/whatever
+#  encode => builds imports/relocs tables, put all this together, links everything in self.encoded
 class ExeFormat
 	# array of Data/Instruction/Align/Padding/Offset/Label, populated in parse
 	attr_accessor :cursource

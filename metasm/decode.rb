@@ -11,20 +11,27 @@ class Opcode
 end
 
 class CPU
-	def decode(program, edata, off)
+	# takes an encoded instruction, returns a DecodedInstruction
+	# if decoding fails, either di.opcode or di.instruction will be nil (depending on when the decoding problem occurs)
+	def decode_instruction(program, edata, off)
 		@bin_lookaside ||= build_bin_lookaside
 		di = DecodedInstruction.new
 		di.instruction = Instruction.new self
 		pre_ptr = edata.ptr
 		di.bin_length = 0
 		decode_findopcode(program, edata, di) rescue di.opcode = nil
-		decode_instruction(program, edata, di, off) if di.opcode rescue di.opcode = nil
+		decode_instruction(program, edata, di, off) if di.opcode rescue di.instruction = nil
 		di
 	end
 
+	# return the thing to backtrace that would give +value+ after the execution of this instruction
+	# eg emu_backtrace('inc eax', whatever, :eax) => (:eax - 1)
+	# off is the address of the beginning of di
 	def emu_backtrace(di, off, value)
 	end
 
+	# returns an array of opaque cpu-specific values or immediates addresses, representing the target of the jump
+	# the non-immediates will be backtracked using emu_backtrace
 	def get_jump_targets(pgm, di, off)
 		[]
 	end
@@ -138,7 +145,7 @@ class Program
 
 			# decode the instruction
 			s.encoded.ptr = off - s_start
-			di = @cpu.decode self, s.encoded, off
+			di = @cpu.decode_instruction self, s.encoded, off
 
 			# start a new block if needed
 			if not curblock
@@ -151,7 +158,7 @@ class Program
 			@block[curblock].list << di
 
 			# invalid opcode
-			if not di.opcode
+			if not di.opcode or not di.instruction
 				curblock = nil
 				next
 			end
@@ -393,7 +400,7 @@ class EncodedData
 				@ptr += Expression::INT_SIZE[type]/8
 				return rel.target
 			end
-			puts "W: Immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect}"
+			puts "W: Immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect} (wanted #{type.inspect})"
 		end
 		Expression.decode_imm(read(Expression::INT_SIZE[type]/8), type, endianness)
 	end
