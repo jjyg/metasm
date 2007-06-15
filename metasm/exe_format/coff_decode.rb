@@ -357,7 +357,7 @@ class COFF
 
 	class LoadConfig
 		def decode(coff)
-			@characteristics = coff.decode_word
+			@signature = coff.decode_word
 			@timestamp = coff.decode_word
 			@major_version = coff.decode_half
 			@minor_version = coff.decode_half
@@ -374,8 +374,14 @@ class COFF
 			@reserved = coff.decode_half
 			@editlist = coff.decode_xword
 			@security_cookie = coff.decode_xword
-			@sehtable = coff.decode_xword	# VA
+			@sehtable_p = coff.decode_xword	# VA
 			@sehcount = coff.decode_xword
+
+			# @sehcount is really the count ?
+			if @sehcount >= 0 and @sehcount < 100 and (@signature == 0x40 or @signature == 0x48) and coff.encoded.ptr = coff.rva_to_off(@sehtable_p - coff.optheader.image_base)
+				@safeseh = []
+				@sehcount.times { @safeseh << coff.decode_xword }
+			end
 		end
 	end
 
@@ -394,6 +400,13 @@ class COFF
 		elsif rva > 0 and rva < @optheader.headers_size
 			rva
 		end
+	end
+
+	def each_section
+		base = @optheader.image_base
+		base = 0 if not base.kind_of? Integer
+		yield @encoded[0, @optheader.headers_size], base
+		@sections.each { |s| yield s.encoded, base + s.virtaddr }
 	end
 
 	# decodes the COFF header, optional header, section headers
@@ -506,6 +519,13 @@ class COFF
 		if @directory and ct = @directory['certificate_table']
 			@encoded.ptr = ct[0]
 			@certificates = (0...(ct[1]/8)).map { @encoded.data[decode_word, decode_word] }
+		end
+	end
+
+	def decode_loadconfig
+		if @directory and lc = @directory['load_config'] and @encoded.ptr = rva_to_off(lc[0])
+			@loadconfig = LoadConfig.new
+			@loadconfig.decode(self)
 		end
 	end
 

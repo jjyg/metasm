@@ -150,6 +150,15 @@ class COFF < ExeFormat
 		attr_accessor :encoded
 	end
 	
+	# the 'load configuration' directory
+	class LoadConfig
+		attr_accessor :signature, :timestamp, :major_version, :minor_version, :globalflags, :critsec_timeout,
+			:decommitblock, :decommittotal, :lockpfxtable, :maxalloc, :maxvirtmem, :process_affinity_mask, :process_heap_flags,
+			:servicepackid, :reserved, :editlist,
+			:security_cookie, :sehtable_p, :sehcount
+		attr_accessor :safeseh
+	end
+
 	# tree-like structure, holds all misc data the program might need (icons, cursors, version information)
 	# conventionnally structured in a 3-level depth structure:
 	#  I resource type (icon/cursor/etc, see +TYPES+)
@@ -209,7 +218,8 @@ class COFF < ExeFormat
 		end
 	end
 
-	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports, :relocations, :resource, :certificates, :delayimports
+	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports,
+		:relocations, :resource, :certificates, :delayimports, :loadconfig
 
 	def initialize(cpu=nil)
 		@directory = {}	# DIRECTORIES.key => [rva, size]
