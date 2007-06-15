@@ -40,7 +40,7 @@ class MIPS
 		end
 	end
 
-	def decode_instruction(program, edata, di, off)
+	def decode_instr_op(program, edata, di, off)
 		# TODO relocations !!
 		before_ptr = edata.ptr
 		op = di.opcode

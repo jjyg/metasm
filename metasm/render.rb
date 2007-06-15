@@ -44,13 +44,19 @@ class Expression
 					neg = true
 					e = -e
 				end
-				e = '%xh' % e
+				if e < 10: e = e.to_s
+				else e = '%xh' % e
+				end
 				e = '0' << e unless (?0..?9).include? e[0]
 				e = '-' << e if neg
 			end
 			e
 		}
-		['(', l, @op, r, ')'].compact
+		if not l and @op == :+
+			[r]
+		else
+			['(', l, @op, r, ')'].compact
+		end
 	end
 end
 

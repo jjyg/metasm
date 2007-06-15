@@ -1,24 +1,41 @@
 require 'metasm/main'
 
 module Metasm
-# error raised when file signatures are invalid
-class InvalidExeFormat < Exception ; end
-
 class ExeFormat
 	attr_accessor :cpu, :encoded
 
-	# reads the specified file, using VirtualFile if available,
-	# and returns the decoded corresponding object
-	def self.decode_file(path, *a)
+	# creates a new instance, populates self.encoded with the supplied string
+	def self.load(str, *a)
+		e = new(*a)
+		e.encoded << str
+		e
+	end
+
+	# same as +load+, but from a file
+	# uses VirtualFile if available
+	def self.load_file(path, *a)
 		if defined? VirtualFile
-			decode(VirtualFile.read(path), *a)
+			load(VirtualFile.read(path), *a)
 		else
-			File.open(path, 'rb') { |fd| decode(fd.read, *a) }
+			File.open(path, 'rb') { |fd| load(fd.read, *a) }
 		end
 	end
 
-	# creates a new object using the specified cpu, parses the asm
-	# source and assemble it
+	# +load_file+ then decode
+	def self.decode_file(path, *a)
+		e = load_file(path, *a)
+		e.decode
+		e
+	end
+
+	# +load_file+ then decode header
+	def self.decode_file_header(path, *a)
+		e = load_file(path, *a)
+		e.decode_header
+		e
+	end
+
+	# creates a new object using the specified cpu, parses the asm source, and assemble
 	def self.assemble(cpu, source)
 		ex = new(cpu)
 		ex.parse(source)

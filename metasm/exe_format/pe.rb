@@ -9,20 +9,8 @@ class PE < COFF
 
 	attr_accessor :coff_offset, :signature, :mz
 
-	# returns a PE object, from decoding the raw string
-	# decodes the mz header, and all the coff data
-	def self.decode(str)
-		pe = new
-		pe.encoded << str
-		pe.decode
-		pe.mz.encoded << pe.encoded[0...pe.coff_offset-4]
-		pe.mz.encoded.ptr = 0
-		pe.mz.decode_header
-		pe
-	end
-
 	def initialize(cpu=nil)
-		@mz = MZ.new
+		@mz = MZ.new(cpu)
 		super(cpu)
 	end
 
@@ -35,6 +23,11 @@ class PE < COFF
 		@signature = @encoded.read(4)
 		raise InvalidExeFormat, "Invalid PE signature #{@signature.inspect}" if @signature != PESIG
 		@coff_offset = @encoded.ptr
+		if @mz.encoded.empty?
+			@mz.encoded << @encoded[0, @coff_offset-4]
+			@mz.encoded.ptr = 0
+			@mz.decode_header
+		end
 		super
 	end
 

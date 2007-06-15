@@ -2,7 +2,14 @@ module Metasm
 
 # superclass for all metasm exceptions
 class Exception < RuntimeError ; end
+# parse error
 class ParseError < Exception ; end
+# invalid binary sequence
+class InvalidInstruction < Exception ; end
+# invalid exeformat signature
+class InvalidExeFormat < Exception ; end
+# cannot honor .offset specification, reloc fixup overflow
+class EncodeError < Exception ; end
 
 # A source text preprocessor (C-like)
 # defines the methods nexttok, readtok and unreadtok
@@ -71,6 +78,11 @@ class CPU
 	# returns a hash opcode_name => array of opcodes with this name
 	def opcode_list_byname
 		@opcode_list_byname ||= @opcode_list.inject({}) { |h, o| (h[o.name] ||= []) << o ; h }
+	end
+
+	# assume that all subfunction calls returns (may fXXk up desasm backtracker)
+	def make_call_return
+		@opcode_list.each { |o| o.props.delete :stopexec if o.props[:saveip] }
 	end
 end
 
@@ -295,10 +307,24 @@ class ExeFormat
 		l
 	end
 
+	# creates a label at the specified address, return the address if not in handled space
+	def label_at_addr(addr, basename='')
+		each_section { |edata, base|
+			if addr >= base and addr < base + edata.length
+				if not l = edata.export.index(addr - base)
+					l = new_label basename
+					edata.export[l] = addr - base
+				end
+				return l
+			end
+		}
+		addr
+	end
+
 	# creates a new label, that is guaranteed to be unique as long as this object (ExeFormat) exists
 	def new_label(base = '')
 		base = base.dup
-		k = (base << '_uniquelabel_' << ('%08x' % base.object_id)).freeze	# use %x instead of to_s(16) for negative values
+		k = (base << '_uuid' << ('%08x' % base.object_id)).freeze	# use %x instead of to_s(16) for negative values
 		(@unique_labels_cache ||= []) << k	# prevent garbage collection, this guarantees uniqueness (object_id)
 		k
 	end

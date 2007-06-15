@@ -2,7 +2,6 @@ require 'metasm/main'
 require 'metasm/parse'
 
 module Metasm
-class EncodeError < Exception ; end
 class ExeFormat
 	# encodes an Array of source (Label/Data/Instruction etc) to an EncodedData
 	# resolves ambiguities using +encode_resolve+
@@ -247,7 +246,7 @@ class Expression
 	end
 
 	def self.encode_immediate(val, type, endianness, backtrace=nil)
-		raise EncodeError, "unsupported endianness #{endianness.inspect}" unless [:big, :little].include? endianness
+		raise "unsupported endianness #{endianness.inspect}" unless [:big, :little].include? endianness
 		# TODO overflow => backtrace
 		s = (0...INT_SIZE[type]/8).map { |i| (val >> (8*i)) & 0xff }.pack('C*')
 		endianness != :little ? s.reverse : s

@@ -4,31 +4,24 @@ require 'metasm/ia32/encode'
 require 'metasm/ia32/decode'
 require 'metasm/ia32/render'
 require 'metasm/exe_format/shellcode'
-require 'enumerator'
 
 class String
 	@@cpu = Metasm::Ia32.new
 	class << self
-		def cpu
-			@@cpu
-		end
-		def cpu=(c)
-			@@cpu=c
-		end
+		def cpu()   @@cpu   end
+		def cpu=(c) @@cpu=c end
 	end
 
-	def encode_edata(base=nil)
-		p = Metasm::Program.new @@cpu
-		p.parse self
-		p.encode
-		sc = Metasm::Shellcode.from_program p
-		sc.encode
-		sc.encoded.fixup! sc.encoded.binding(base)
-		sc.encoded
+	# encodes the current string as a Shellcode, returns the resulting EncodedData
+	def encode_edata
+		s = Metasm::Shellcode.assemble @@cpu, self
+		s.encoded
 	end
 
-	def encode(base=nil)
-		ed = encode_edata(base)
+	# encodes the current string as a Shellcode, returns the resulting binary String
+	# outputs warnings on unresolved relocations
+	def encode
+		ed = encode_edata
 		if not ed.reloc.empty?
 			puts 'W: encoded string has unresolved relocations: ' + ed.reloc.map { |o, r| r.target.inspect }.join(', ')
 		end
@@ -36,48 +29,19 @@ class String
 		ed.data
 	end
 
-	# eip is the address of the entrypoint
-	# base_addr is the address of the first byte of the string
-	def decode_blocks(eip=0, base_addr=0)
-		p = Metasm::Shellcode.decode(self, @@cpu).to_program(base_addr)
-		p.desasm eip
-		p
+	# decodes the current string as a Shellcode, with specified base address
+	# returns the resulting Shellcode
+	def decode_blocks(base_addr=0, eip=base_addr)
+		sc = Metasm::Shellcode.decode(self, @@cpu)
+		sc.base_addr = base_addr
+		sc.desasm(eip)
+		sc
 	end
 
-	def decode(eip=0, base_addr=0)
-		res = []
-		lastaddr = base_addr
-		p = decode_blocks(eip, base_addr)
-		p.block.sort.each { |addr, block|
-			if addr > lastaddr
-				p.sections.first.encoded.export.each { |e, off|
-					res << "#{e}:" if off == lastaddr - p.sections.first.base #and e !~ /^metasmintern/
-				}
-				res << p.sections.first.encoded.data[lastaddr-p.sections.first.base, addr-lastaddr].unpack('C*').map { |c| '%02xh' % c }.enum_slice(16).map { |e| 'db ' + e.join(', ') + "\n" }.join
-			end
-			if p.block[addr] and not p.block[addr].from.empty?
-				res << "; Xrefs: #{p.block[addr].from.map { |f| '%08X' % f }.join(', ')}"
-			end
-			p.sections.first.encoded.export.each { |e, off|
-				res << "#{e}:" if off == addr - p.sections.first.base #and e !~ /^metasmintern/
-			}
-			block.list.each { |di|
-				res << ( di.instruction.to_s.ljust(32) + ' ; ' +
-					('%08X  ' % addr) +
-					p.sections.first.encoded.data[addr-p.sections.first.base, di.bin_length].to_s.unpack('C*').map { |c| '%02x' % c }.join )
-				addr += di.bin_length
-			}
-			res << ''
-			lastaddr = addr
-		}
-		addr = base_addr + length
-		if addr > lastaddr
-			p.sections.first.encoded.export.each { |e, off|
-				res << "#{e}:" if off == lastaddr - p.sections.first.base #and e !~ /^metasmintern/
-			}
-			res << p.sections.first.encoded.data[lastaddr-p.sections.first.base, addr-lastaddr].unpack('C*').map { |c| '%02xh' % c }.enum_slice(16).map { |e| 'db ' + e.join(', ') + "\n" }.join
-		end
-		res.join("\n")
+	# decodes the current string as a Shellcode, with specified base address
+	# returns the asm source equivallent
+	def decode(base_addr=0, eip=base_addr)
+		decode_blocks(base_addr, eip).blocks_to_src.sub(/\/\/ section.*/, '').strip
 	end
 end
 

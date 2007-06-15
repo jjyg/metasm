@@ -107,7 +107,7 @@ module Metasm
 			
 			instr.prefix[:jmphint] = ((byte & 0x10) == 0x10)	
 		else
-			raise "unknown opcode byte #{byte}"
+			raise InvalidInstruction, "unknown opcode byte #{byte}"
 		end
 	end
 
@@ -137,7 +137,7 @@ module Metasm
 		end
 	end
 
-	def decode_instruction(program, edata, di, off)
+	def decode_instr_op(program, edata, di, off)
 		before_ptr = edata.ptr
 		op = di.opcode
 		di.instruction.opname = op.name
@@ -214,7 +214,8 @@ module Metasm
 		end
 
 		if op.props[:setip] and op.name[0, 3] != 'ret' and di.instruction.args.first.kind_of? Expression
-			di.instruction.args[0] = Expression[program.make_label(off + di.bin_length + di.instruction.args[0].reduce, 'xref')]
+			tg = off + di.bin_length + di.instruction.args[0].reduce
+			di.instruction.args[0] = Expression[program.label_at_addr(tg, 'xref_%08x' % tg)]
 		end
 
 		di.instruction.prefix.delete :opsz
@@ -307,10 +308,5 @@ module Metasm
 		end
 		[tg].compact
 	end
-
-	def make_call_return
-		@opcode_list.each { |o| o.props.delete :stopexec if o.name[0..3] == 'call' }
-	end
-
 end
 end

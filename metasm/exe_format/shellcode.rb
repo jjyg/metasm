@@ -31,6 +31,20 @@ class Shellcode < ExeFormat
 		end
 	end
 
+	def get_section_at(addr)
+		base = @base_addr || 0
+		if not addr.kind_of? Integer
+			[@encoded, addr] if @encoded.ptr = @encoded.export[addr]
+		elsif addr >= base and addr < base + @encoded.virtsize
+			@encoded.ptr = addr - base
+			[@encoded, addr]
+		end
+	end
+
+	def each_section
+		yield @encoded, (@base_addr || 0)
+	end
+
 	# encodes the source found in self.source
 	# appends it to self.encoded
 	# clears self.source

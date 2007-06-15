@@ -1,9 +1,12 @@
 require 'metasm/main'
 
+
 module Metasm
 
+# XXX highly experimental
+
 class DecodedInstruction
-	attr_accessor :bin_length, :instruction, :opcode
+	attr_accessor :bin_length, :instruction, :opcode, :comment
 end
 
 class Opcode
@@ -19,8 +22,16 @@ class CPU
 		di.instruction = Instruction.new self
 		pre_ptr = edata.ptr
 		di.bin_length = 0
-		decode_findopcode(program, edata, di) rescue di.opcode = nil
-		decode_instruction(program, edata, di, off) if di.opcode rescue di.instruction = nil
+		begin
+			decode_findopcode(program, edata, di)
+		rescue InvalidInstruction
+			di.opcode = nil
+		end
+		begin
+			decode_instr_op(program, edata, di, off) if di.opcode
+		rescue InvalidInstruction
+			di.instruction = nil
+		end
 		di
 	end
 
@@ -39,11 +50,12 @@ end
 
 class InstructionBlock
 	# list of DecodedInstructions
-	# list of addresses (excluding continued ?)
-	# from = list of addresses of instructions (call/jmp), also addr of normal instruction when call flow continues to this block
-	# to = list of addresses of instructions called, does include normal flow transitions (no jump)
-	attr_accessor :list, :from, :to
-	# list of addr of instruction for which backtrace was needed, and passed by us (an instruction in the end of this block should appear here too, in case of a later split)
+	attr_accessor :list
+	# list of addresses of instructions (call/jmp), also addr of normal instruction when call flow continues to this block
+	attr_accessor :from
+	# list of addresses of instructions called, does include normal flow transitions (with no jump)
+	attr_accessor :to
+	# list of addr of instruction for which backtrace was needed, and went through us (an instruction in the end of the current block should appear here too, in case of a later split)
 	attr_accessor :backtracked_for
 
 	def initialize
@@ -55,9 +67,13 @@ class InstructionBlock
 	end
 end
 
+# expresses a pointer-like functionning
+# API similar to Expression
 class Indirection
-	# Expression + type
-	attr_accessor :target, :type
+	# Expression (the pointer)
+	attr_accessor :target
+	# the type of reference
+	attr_accessor :type
 
 	def initialize(target, type)
 		@target, @type = target, type
@@ -81,20 +97,45 @@ class Indirection
 	alias eql? ==
 end
 
-class Program
+class ExeFormat
+	# Hash, address => InstructionBlock
 	attr_reader :block
+
+	# returns an [encodeddata, addr of encodeddata start] with encodeddata.ptr pointing to addr
+	# addr may be an address or a label name
+	# default version uses each_section, which enumerates all encodeddata with their base address
+	def get_section_at(addr)
+		each_section { |edata, base|
+			if addr.kind_of? Integer
+				if addr >= base and addr < base + edata.length
+					edata.ptr = addr - base
+					return [edata, base]
+				end
+			else
+				if edata.ptr = edata.export[addr]
+					return [edata, base]
+				end
+			end
+		}
+		nil
+	end
+
 	# decodes instructions from an entrypoint, (tries to) follows code flow
 	# TODO delay slot
 	def desasm(entrypoint = 0)
-		@block ||= {}	# addr => list of decodedinstr
-		@decoded ||= {}	# addr => block start addr
+		@block ||= {}
 
+		# hash, addr => addr of block containing the instr at this addr
+		@decoded ||= {}
+
+		# EncodedData, returned by get_section_at(addr)
+		cursection = nil
+		# address of first byte of cursection
+		curstart = nil
+		# addr of current block
 		curblock = nil
-		s = @sections.first
-		s_start = s.base || 0
-		s_end = s_start + s.encoded.virtsize
 
-		# [offset to disasm, addr of instruction pointing there]
+		# array of couples [offset to disasm, addr of instruction pointing there]
 		offsets = [[entrypoint, nil]]
 		while foo = offsets.pop
 			off = foo[0]
@@ -102,16 +143,19 @@ class Program
 
 			# resolve labels
 			if off.kind_of? Integer
-				if not s or off < s_start or off >= s_end
-					next if not s = sections.find { |s| off >= (s_start = s.base || 0) and off < (s_end = s_start + s.encoded.virtsize) }
-				end
+				if not curstart or off < curstart or off >= curstart + cursection.virtsize
+					cursection, curstart = get_section_at(off)
+					next if not curstart
+				end	
+				cursection.ptr = off - curstart
 			else
-				if not s or not s.encoded.export[off]
-					next if not s = sections.find { |s| s.encoded.export[off] }
-					s_start = s.base || 0
-					s_end = s_start + s.encoded.virtsize
+				if not cursection or not cursection.export[off]
+					cursection, curstart = get_section_at(off)
+					next if not curstart
+				else
+					cursection.ptr = cursection.export[off]
 				end
-				off = s_start + s.encoded.export[off]
+				off = curstart + cursection.ptr
 			end
 
 			# already gone there
@@ -144,8 +188,7 @@ class Program
 			end
 
 			# decode the instruction
-			s.encoded.ptr = off - s_start
-			di = @cpu.decode_instruction self, s.encoded, off
+			di = @cpu.decode_instruction self, cursection, off
 
 			# start a new block if needed
 			if not curblock
@@ -157,7 +200,7 @@ class Program
 			@decoded[off] = curblock
 			@block[curblock].list << di
 
-			# invalid opcode
+			# invalid opcode: stop following flow
 			if not di.opcode or not di.instruction
 				curblock = nil
 				next
@@ -166,31 +209,30 @@ class Program
 
 			# jump/call
 			if di.opcode.props[:setip]
+				# TODO check if where we resolved the jump is a :saveip => we have a procedure
+				# handle procedures as well ('step over' (+moonwalk))
 				targets = resolve_jump_target(di, off)
+				di.comment = 'to ' + targets.map { |t| Expression[t] }.join(', ')
 
 				offsets.unshift(*targets.map { |t| [t, off] })
 
 				# end curblock
 				@block[curblock].to |= targets
+				# fall through
+				@block[curblock].to |= [off + di.bin_length] if not di.opcode.props[:stopexec]
+				curblock = nil
+			elsif cursection.export.index(cursection.ptr)
+				# labels only allowed at start of block: split
 				@block[curblock].to |= [off + di.bin_length] if not di.opcode.props[:stopexec]
 				curblock = nil
 			end
 
 			if di.opcode.props[:stopexec]
-				# XXX callback to detect procedures ?
 				curblock = nil
 			else
 				offsets << [off + di.bin_length, off]
 			end
 		end
-
-		# labels only allowed at start of a block
-		@sections.each { |s|
-			s.encoded.export.values.each { |off|
-				off += s.base || 0
-				desasm_split_block(@decoded[off], off) if @decoded[off] and not @block[off]
-			}
-		}
 	end
 
 	# split the block (starting at oldaddr) at newaddr
@@ -221,30 +263,27 @@ class Program
 		}
 	end
 
+	# the disassembly backtracker
 	def resolve_jump_target(di, off)
-		# returns either a String (target == label) or an Integer (address) on success, or nil
+		# this returns either a String (target == label) or an Integer (address) on success, or nil
+		progbinding = {}
+		each_section { |edata, base| progbinding.update edata.binding(base) }
 		check_target = proc { |target|
 			if target.kind_of? String or target.kind_of? Integer
+				# puts "success: #{target.to_s 16 rescue target.inspect}"
 				target
 			elsif target.kind_of? Expression or target.kind_of? Indirection
-				binding = @sections.inject({}) { |binding, s| s.encoded.binding(s.base) }
-				target = target.bind(binding).reduce
+				target = target.bind(progbinding).reduce
 				if target.kind_of? Integer
 					target
 				elsif target.kind_of? Expression and target.op == :+ and not target.lexpr
 					check_target[target.rexpr]
 				elsif target.kind_of? Indirection
 					break if not t = check_target[target.target]
-					if t.kind_of? String
-						s = @sections.find { |s| s.encoded.export[t] }
-						break if not s
-						s.encoded.ptr = s.encoded.export[t]
-					else
-						s = @sections.find { |s| s.base <= t and s.base + s.encoded.virtsize > t }
-						break if not s
-						s.encoded.ptr = t - s.base
-					end
-					check_target[s.encoded.decode_imm(target.type, @cpu.endianness)]
+					edata, base = get_section_at(t)
+					break if not edata
+					# puts "got ptr: #{(base + edata.ptr).to_s 16} #{target.type}"
+					check_target[edata.decode_imm(target.type, @cpu.endianness)]
 				end
 			end
 		}
@@ -295,7 +334,7 @@ class Program
 #puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
 					result |= [t]
 					# TODO
-					# mark_as_subfunc(curblock.to) if di.opcode.props[:startsubfunc]
+					# mark_as_subfunc(curblock.to) if di.opcode.props[:saveip]
 				elsif target and target = target.reduce
 #puts " continuing with #{target}"
 					# target.reduce is either an Expression or an Indirection, an Integer would have been caught by check_target
@@ -307,69 +346,110 @@ class Program
 		result
 	end
 	
-	def make_label(addr, pfx = 'metasmintern_uniquelabel')
-		s_start = nil
-		return addr if not s = @sections.find { |s|
-			s_start = s.base || 0
-			addr >= s_start and addr < s_start + s.encoded.virtsize
+	# returns a string (source style) containing the dump of all decoded blocks
+	def blocks_to_src
+		# array of lines to return
+		res = []
+		blocks = @block.sort.reverse
+		each_section { |edata, baseaddr|
+			res << '' << '' << "// section: #{'%08x' % baseaddr} - #{'%08x' % (baseaddr + edata.length)}"
+			curaddr = baseaddr
+			while curaddr < baseaddr + edata.length
+				addr, block = blocks.pop
+				if addr and addr >= baseaddr + edata.length
+					# block in next section
+					blocks << [addr, block]
+					addr, block = nil
+				end
+				addr ||= baseaddr + edata.length	# dump end of section as data
+				if addr > curaddr
+					# dump data from curaddr to addr
+					res.concat data_to_src(edata[curaddr-baseaddr...addr-baseaddr], curaddr)
+				end
+				curaddr = addr	# may have gone back (overlapping blocks)
+				next if not block
+				# dump block
+				res << ''
+				# xrefs
+				if not block.from.empty?
+					res << "; Xrefs: #{block.from.map { |f| '%08x' % f }.join(', ')}"
+				end
+				# labels
+				edata.export.keys.find_all { |k| edata.export[k] == curaddr - baseaddr }.each { |l| res << "#{l}:" }
+				# instrs
+				block.list.each { |di|
+					binstr = edata.data[curaddr-baseaddr, di.bin_length].unpack('C*').map { |b| '%02x' % b }.join
+					res << "  #{di.instruction.to_s.ljust(29)} ; @#{'%08x' % curaddr}   #{binstr}"
+					res.last << '  -- ' << di.comment if di.comment
+					curaddr += di.bin_length
+				}
+			end
 		}
-		if not label = s.encoded.export.invert[addr - s_start]
-			pfx = pfx.dup
-			label = (pfx << ('_%x_' % addr) << pfx.object_id.to_s(16)).freeze
-			(@unique_labels ||= {}).update(label => nil)
-			s.encoded.export[label] = addr - s_start
-		end
-		label
+		res.join("\n")
 	end
 
-	def blocks_to_source
-		# @block -> @source, fill gaps with Data
-
-		# optimization: pop instead of shift
-		sections = @sections.sort_by { |s| s.base || 0 }.reverse
-		blocks = @block.sort.reverse
-
-		while cursect = sections.pop
-			cursect.source.clear
-			curoff = curbase = cursect.base || 0
-			labels = cursect.encoded.export.sort.reverse
-			off, block = blocks.pop
-
-			if block and off < curbase + cursect.encoded.data.length
-				if off > curoff
-					# TODO split on relocs/labels
-					cursect.source << Data.new(:db, cursect.encoded.data[curoff...off])
-				end
-
-				# XXX quickfix for interlaced code
-				labels.pop while labels.last and labels.last[1] < off
-
-				while labels.last and labels.last[1] == off
-					cursect.source << Label.new(labels.pop[0])
-				end
-
-				block.list.each { |di|
-					next if not di.opcode
-					cursect.source << di.instruction
-					curoff += di.bin_length
-				}
+	# returns an array of strings representing the content of edata as data
+	# split on labels
+	def data_to_src(edata, base)
+		res = []
+		return res if not edata
+		edata.ptr = 0
+		l = ''
+		lastoff = nil 
+		flush = proc {
+			if not l.empty?
+				res << l.ljust(56)
+				res.last << (' ; %08x' % (lastoff + base)) if lastoff
+				l = ''
+			end
+			lastoff = nil
+		}
+		rawsize = edata.rawsize
+		while edata.ptr < edata.virtsize
+			# export
+			if edata.export.index(edata.ptr)
+				flush[]
+				edata.export.keys.find_all { |k| edata.export[k] == edata.ptr }.each { |label| res << "#{label}:" }
+			end
+			# reloc
+			if r = edata.reloc[edata.ptr]
+				flush[]
+				l << {	:i8  => 'db ', :u8  => 'db ',
+					:i16 => 'dw ', :u16 => 'dw ',
+					:i32 => 'dd ', :u32 => 'dd ',
+					:i64 => 'dq ', :u64 => 'dq '}.fetch(r.type, "db /* unknown data type for #{r.type.inspect} */ ")
+				l << r.target.to_s
+				flush[]
+				edata.ptr += Expression::INT_SIZE[r.type]/8
+				next
+			end
+			flush[] if (base+edata.ptr) % 16 == 0
+			if l.empty?
+				lastoff = edata.ptr
+				l << 'db '
+			end
+			if edata.ptr > rawsize
+				l << ', ' if l.length > 3
+				l << '?'
 			else
-				blocks << [off, block]
-
-				# no more blocks till end of this section: dump as Data
-
-				# dump data
-				if curoff < curbase + cursect.encoded.data.length
-					cursect.source << Data.new(:db, cursect.encoded.data[curoff..-1]) if curoff < curbase + cursect.encoded.data.length
-					curoff = curbase + cursect.encoded.data.length
-				end
-				# dump uninitialized data
-				if curoff < curbase + cursect.encoded.virtsize
-					cursect.source << Data.new(:db, Data.new(:db, :uninitialized), curstart + cursect.encoded.virtsize - curoff)
-					curoff = curbase + cursect.encoded.virtsize
+				c = edata.data[edata.ptr]
+				if (0x20..0x7e).include? c and c != ?" and c != ?\\
+					# string
+					if l[-1] != ?"
+						l << ', ' if l.length > 3
+						l << '""'
+					end
+					l[-1, 0] = c.chr
+				else
+					# any byte
+					l << ', ' if l.length > 3
+					l << Expression[c].to_s
 				end
 			end
+			edata.ptr += 1
 		end
+		flush[]
+		res
 	end
 end
 
