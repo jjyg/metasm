@@ -591,11 +591,8 @@ class EncodedData
 	# if numeric, replace the raw data with the encoding of this value (+fill+s preceding data if needed) and remove the reloc
 	# if replace_target is true, the reloc target is replaced with its bound counterpart
 	def fixup_choice(binding, replace_target)
-		# jj wtf ? coff import arch_encode_thunk defines jmp [eax + MessageBoxA - goteip], encoded as jmp [eax+0]
-		# puts binding['MessageBoxA']
 		@reloc.keys.each { |off|
 			val = @reloc[off].target.bind(binding).reduce
-			# puts "#{@reloc[off].target} => #{val}" if @reloc[off].target.externals.include? 'MessageBoxA'
 			if val.kind_of? Integer
 				reloc = @reloc.delete(off)
 				str = Expression.encode_immediate(val, reloc.type, reloc.endianness, reloc.backtrace)
@@ -695,7 +692,7 @@ class EncodedData
 		ret = EncodedData.new @data[from, len]
 		ret.virtsize = len
 		@reloc.each { |o, r|
-			ret.reloc[o - from] = r if o >= from and o + Expression::INT_SIZE[r.type]/8 < from+len
+			ret.reloc[o - from] = r if o >= from and o + Expression::INT_SIZE[r.type]/8 <= from+len
 		}
 		@export.each { |e, o|
 			ret.export[e] = o - from if o >= from and o <= from+len		# XXX include end ?

@@ -22,6 +22,3 @@ title   db 'blaaa', 0
 EOS
 File.unlink('testpe.exe') if File.exist? 'testpe.exe'
 pe.encode_file 'testpe.exe'
-require 'pp'
-pp pe.encoded.export.sort_by { |k, v| v }
-pp pe.encoded.reloc
