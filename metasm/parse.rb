@@ -406,8 +406,9 @@ end
 class Expression
 	class << self
 		# key = operator, value = hash regrouping operators of lower precedence
-		OP_PRIO = [[:'||'], [:'&&'], [:'<', :'>', :'<=', :'>=', :'==', :'!='],
-			[:|], [:^], [:&], [:<<, :>>], [:+, :-], [:*, :/, :%]].inject({}) { |h, oplist|
+		OP_PRIO = [[:'||'], [:'&&'], [:|], [:^], [:&], [:'==', :'!='],
+			[:'<', :'>', :'<=', :'>='], [:<<, :>>], [:+, :-], [:*, :/, :%]
+		].inject({}) { |h, oplist|
 			lessprio = h.keys.inject({}) { |hh, op| hh.update op => true }
 			oplist.each { |op| h[op] = lessprio }
 			h }
