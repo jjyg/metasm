@@ -4,87 +4,239 @@ require 'metasm/parse'
 module Metasm
 class Preprocessor
 	class Macro
-		attr_accessor :trace_dep
 		def initialize(name)
 			@name = name
-			@body, @args = [], []
-			@trace_dep = nil
+			@body = []
+			@args = nil
+			@varargs = false	# macro is of type #define foo(a1, ...)
 		end
 
 		# applies a preprocessor macro
 		# parses arguments if needed 
 		# returns an array of tokens
-		def apply(lexer)
-			# read arguments
-			args = []
-			lexer.skip_space
-			if not @args.empty? and tok = lexer.nexttok and tok.type == :punct and tok.raw == '('
-				lexer.readtok
+		# macros are lazy
+		def apply(lexer, name)
+			if @args
+				# if defined with arg list (even empty), then must be followed by parenthesis, otherwise do not replace
+				unr = []
+				while tok = lexer.readtok_nopp and tok.type == :space
+					unr << tok
+				end
+				if not tok or tok.type != :punct or tok.raw != '('
+					lexer.unreadtok tok
+					unr.reverse_each { |t| lexer.unreadtok t }
+					return [name]
+				end
+				args = []
+				# each argument is any token sequence
+				# if it includes an '(' then find the matching ')', whatever is inside (handle nesting)
+				# arg cannot include ',' in the top-level
+				# convert any space/eol sequence to a single space, strips them at begin/end of argument
 				loop do
-					lexer.skip_space_eol
-					args << Expression.parse_toks(lexer)
-					lexer.skip_space_eol
-					raise @name, 'invalid arg list' if not tok = lexer.readtok or tok.type != :punct or (tok.raw != ')' and tok.raw != ',')
+					arg = []
+					nest = 0
+					loop do
+						raise name, 'unterminated arg list' if not tok
+						case tok.type
+						when :eol, :space
+							next if arg.last and arg.last.type == :space
+							tok.type = :space
+							tok.raw = ' '
+						when :punct
+							case tok.raw
+							when ',': break if nest == 0
+							when ')': break if nest == 0 ; nest -= 1
+							when '(': nest += 1
+							end
+						end
+						arg << tok
+					end
+					arg.pop if arg.last and arg.last.type == :space
+					args << arg
 					break if tok.raw == ')'
 				end
-			end
-			raise @name, 'invalid argument count' if args.length != @args.length
+				if @varargs
+					raise name, 'invalid argument count' if args.length < @args.length
+					virg = name.dup
+					virg.type = :punct
+					virg.raw = ','
+					va = args[@args.length..-1].map { |a| a + [virg] }.flatten
+					va.pop
+				else
+					raise name, 'invalid argument count' if args.length != @args.length
+				end
 
-			lexer.traceary |= [self] if lexer.traceary and lexer.definition[@name.raw].trace_dep
+				# map name => token list
+				hargs = @args.zip(args).inject({}) { |h, (af, ar)| h.update af.raw => ar }
+				hargs['__VA_ARGS__'] = va if va
+			else
+				hargs = {}
+			end
 
 			# apply macro
-			@body.map { |t|
-				if a = @args.find { |a| a.raw == t.raw }
-					args[@args.index(a)]
-				else
-					t = t.dup
-					t.backtrace += @name.backtrace[-2..-1] if not @name.backtrace.empty?
-					t
+			res = []
+			b = @body.reverse
+			while t = b.pop
+				if a = hargs[t.raw]
+					res.pop if res.last and res.last.type == :space and a.first and a.first.type == :space
+					res.concat a
+					next
+				elsif t.type == :punct and t.raw == '#'
+					if tt = b.last and tt.type == :punct and tt.raw == '#'
+						t = b.pop
+						# the '##' operator: concat 2 tokens
+						t = b.pop if t and t.type == :space
+						raise name, 'internal error, bad macro' if not t or t.type == :space	# cannot happen
+						res.pop if res.last and res.last.type == :space
+						if not a = hargs[t.raw]
+							a = [t]
+						end
+						if @varargs and a and t.raw == '__VA_ARGS__' and res.last and res.last.type == :punct and res.last.raw == ','
+							# allow merging with ',' without warning
+							if args.length == @args.length
+								res.pop
+							else
+								res.concat a
+							end
+						else
+							if not res.last or res.last.type != :string or not a.first or a.first.type != :string
+								puts "cannot merge token #{res.last.inspect} with #{a.first.inspect}"
+								res.concat a
+							else
+								res.last.raw << a.first.raw
+								res.concat a[1..-1]
+							end
+						end
+						next
+
+					elsif @args
+						# the '#' operator: transforms an argument to the quotedstring of its value
+						t = b.pop
+						t = b.pop if t and t.type == :space
+						raise name, 'internal error, bad macro' if not t or t.type == :space or not hargs[t.raw]
+						a = hargs[t.raw]
+						nt = t.dup
+						nt.type = :quoted
+						nt.value = a.map { |aa| aa.raw }.join
+						nt.value = nt.value[1..-1] if nt.value[0] == ?\ 	# <- space
+						nt.raw = '"' + nt.value.gsub(/[\\"]/) { |o| "\\#{o}" } + '"'
+						res << nt
+						next
+					end
 				end
-			}.flatten
+				nt = t.dup
+				nt.backtrace += name.backtrace[-2, 2]
+				res << nt
+			end
+			res
 		end
 
 		# parses the argument list and the body from lexer
 		def parse_definition(lexer)
 			if tok = lexer.readtok_nopp and tok.type == :punct and tok.raw == '('
+				@args = []
 				loop do
 					nil while tok = lexer.readtok_nopp and tok.type == :space
+					# check '...'
+					if tok and tok.type == :punct and tok.raw == '.'
+						t1 = lexer.readtok_nopp
+						t2 = lexer.readtok_nopp
+						t3 = lexer.readtok_nopp
+						t3 = lexer.readtok_nopp while t3 and t3.type == :space
+						raise @name, 'booh'  if not t1 or t1.type != :punct or t1.raw != '.' or
+									not t2 or t2.type != :punct or t2.raw != '.' or
+									not t3 or t3.type != :punct or t3.raw != ')'
+						@varargs = true
+						break
+					end
 					raise @name, 'invalid arg definition' if not tok or tok.type != :string
 					@args << tok
 					nil while tok = lexer.readtok_nopp and tok.type == :space
+					# check '...'
+					if tok and tok.type == :punct and tok.raw == '.'
+						t1 = lexer.readtok_nopp
+						t2 = lexer.readtok_nopp
+						t3 = lexer.readtok_nopp
+						t3 = lexer.readtok_nopp while t3 and t3.type == :space
+						raise @name, 'booh'  if not t1 or t1.type != :punct or t1.raw != '.' or
+									not t2 or t2.type != :punct or t2.raw != '.' or
+									not t3 or t3.type != :punct or t3.raw != ')'
+						@varargs = true
+						varg = @args.pop.raw
+						break
+					end
 					raise @name, 'invalid arg separator' if not tok or tok.type != :punct or (tok.raw != ')' and tok.raw != ',')
 					break if tok.raw == ')'
 				end
 			else lexer.unreadtok tok
 			end
+
 			nil while tok = lexer.readtok_nopp and tok.type == :space
 			lexer.unreadtok tok
 
-			msg = (lexer.traceary and lexer.traceignore) ? :readtok_nopp : :readtok
-			@trace_dep = [] if msg == :readtok_nopp
-			while tok = lexer.send(msg) and tok.type != :eol
+			while tok = lexer.readtok_nopp
+				case tok.type
+				when :eol
+					lexer.unreadtok tok
+					break
+				when :space
+					next if @body.last and @body.last.type == :space
+					tok.raw = ' '
+				when :string
+					tok.raw = '__VA_ARGS__' if varg and tok.raw == varg
+				end
 				@body << tok
-				@trace_dep |= [lexer.definition[tok.raw]] if @trace_dep and lexer.definition[tok.raw]
 			end
-			lexer.unreadtok tok
+			@body.pop if @body.last and @body.last.type == :space
+
+			invalid_body = false
+			if (@body[-1] and @body[-1].raw == '#' and @body[-2] and @body[-2].raw == '#') or (@body[0] and @body[0].raw == '#' and @body[1] and @body[1].raw == '#')
+				puts "W: #{lexer.filename}:#{lexer.lineno}, in #{@name.raw}: cannot have ## at begin or end of macro body"
+				lexer.definition.delete(name.raw)
+			end
+			@body.each_with_index { |tk, i|
+				if tk.raw == '#'
+					a = @body[i+1]
+					a = @body[i+2] if not a or a.type == :space
+					if not a.type == :string or (not @args.find { |aa| aa.raw == a.raw } and (not @varargs or a.raw != '__VA_ARGS__'))
+						puts "W: #{lexer.filename}:#{lexer.lineno}, in #{@name.raw}: cannot have # followed by non-argument"
+						lexer.definition.delete(name.raw)
+					end
+				end
+			}
 		end
 
 		def dump
-			str = "// from #{@name.backtrace[-2]}:#{@name.backtrace[-1]}\n"
+			str = "// from #{@name.backtrace[-2, 2] * ':'}\n"
 			str << "#define #{@name.raw}"
-			if not @args.empty?
-				str << '(' << @args.map { |t| t.raw }.join(', ') << ')'
+			if @args
+				str << '(' << (@args.map { |t| t.raw } + (@varargs ? ['...'] : []).join(', ')) << ')'
 			end
 			str << ' ' << @body.map { |t| t.raw }.join << "\n"
 		end
 	end
 
-	# set self.trace = [] to trace macro usage
+	# special object, handles __FILE__ and __LINE__ macros
+	class SpecialMacro
+		def apply(lexer, name)
+			case name.raw
+			when '__FILE__', '__LINE__'
+				tok = name.dup
+				tok.type = :quoted
+				# keep tok.raw
+				tok.value = tok.backtrace[name.raw == 'FILE' ? -2 : -1].to_s
+				[tok]
+			else raise name, 'internal error'
+			end
+		end
+	end
+
 	attr_accessor :traceignore, :traceary
+
 	def initialize
 		@queue = []
 		@backtrace = []
-		@definition = {}
+		@definition = {'__FILE__' => SpecialMacro.new, '__LINE__' => SpecialMacro.new}
 		@include_search_path = @@include_search_path
 		# stack of :accept/:discard/:discard_all/:testing, represents the current nesting of #if..#endif
 		@ifelse_nesting = []
@@ -92,18 +244,19 @@ class Preprocessor
 		@pos = 0
 		@filename = nil
 		@lineno = nil
-		@traceignore = false
-		@traceary = nil
+		# TODO setup standard macro names ? see $(gcc -dM -E - </dev/null)
 	end
 
 	# preprocess text, and retrieve all macros defined in #included <files> and used in the text
 	# returns a string useable as source
 	# may not work if some macro is #defined, used, #undefined and then re-#defined differently
-	def trace_macros(text, maxdepth=40)
-		feed text
-		@traceary = []
+	def trace_macros(text, maxdepth=256)
+		caller.first =~ /^(.*?):(\d+)/
+		feed text, $1, $2.to_i+1
 		readtok while not eos?
+
 		str = []
+		raise TOREDO
 		walk = proc { |a, d| @traceary |= a ; a.each { |m| walk[m.trace_dep, d-1] } if d > 0 }
 		walk[@traceary, maxdepth]
 		while not @traceary.empty?
@@ -117,21 +270,54 @@ class Preprocessor
 	end
 
 	# starts a new lexer, with the specified initial filename/line number (for backtraces)
-	def feed(text, filename='<ruby>', lineno=0)
+	def feed(text, filename=nil, lineno=1)
 		raise ParseError, 'cannot start new text, did not finish current source' if not eos?
+		if not filename and caller.first =~ /^(.*?):(\d+)/
+			filename, lineno = $1, $2.to_i+1
+		end
 		@text = text
-		@filename = filename
+		# @filename[-1] used in trace_macros to distinguish generic/specific files
+		@filename = "\"#{filename}\""
 		@lineno = lineno
 		@pos = 0
 	end
 
+	Trigraph = {	?= => ?#, ?) => ?], ?! => ?|,
+			?( => ?[, ?' => ?^, ?> => ?},
+			?/ => ?\\,?< => ?{, ?- => ?~ }
+	
 	# reads one character from self.text
 	# updates self.lineno
+	# handles trigraphs and \-continued lines
 	def getchar
+		@ungetcharpos = @pos
 		c = @text[@pos]
-		@lineno += 1 if c == ?\n
 		@pos += 1
+
+		# check trigraph
+		if c == ?? and @text[@pos] == ?? and Trigraph[@text[@pos+1]]
+			puts "can i has trigraf plox ??#{c.chr} (#@filename:#@lineno)" if $VERBOSE
+			c = Trigraph[@text[@pos+1]]
+			@pos += 2
+		end
+
+		# check line continuation
+		if c == ?\\ and @text[@pos] == ?\n
+			@lineno += 1
+			@pos += 1
+			return getchar
+		end
+
+		# update lineno
+		if c == ?\n
+			@lineno += 1
+		end
+
 		c
+	end
+
+	def ungetchar
+		@pos = @ungetcharpos || 0
 	end
 
 	# returns true if no more data is available
@@ -170,7 +356,8 @@ class Preprocessor
 		if not tok
 			# end of file: resume parent
 			if not @backtrace.empty?
-				@filename, @lineno, @text, @pos, @queue, @traceignore = @backtrace.pop
+				raise ParseError, "parse error in #@filename: unmatched #if/#endif" if @backtrace.last.pop != @ifelse_nesting.length
+				@filename, @lineno, @text, @pos, @queue = @backtrace.pop
 				tok = readtok
 			end
 
@@ -185,8 +372,9 @@ class Preprocessor
 				pretok << (ntok = readtok_nopp)
 				break if not ntok
 				if ntok.type == :space	# nothing
-				elsif state == 1 and ntok.type == :punct and ntok.raw == '#': state = 2
-				elsif state == 2 and ntok.type == :string
+				elsif state == 1 and ntok.type == :punct and ntok.raw == '#' and not ntok.expanded_from
+					state = 2
+				elsif state == 2 and ntok.type == :string and not ntok.expanded_from
 					rewind = false if preprocessor_directive(ntok)
 					break
 				else break
@@ -196,13 +384,23 @@ class Preprocessor
 				# false alarm: revert
 				pretok.reverse_each { |t| unreadtok t }
 			end
-			tok = readtok if lastpos == 0
+			tok = readtok if lastpos == 0	# else return the :eol
 
-		elsif tok.type == :string and @definition[tok.raw]
+		elsif tok.type == :string and @definition[tok.raw] and (not tok.expanded_from or not tok.expanded_from.include? tok.raw)
 			# expand macros
-			body = @definition[tok.raw].apply(self)
+			if @traced_macros
+				files = (tok.expanded_from.to_a + [tok.raw]).map { |macroname| @definition[macroname].name.backtrace[-2] rescue break }
+				if files and files.find { |f| f[0] == ?" } and files.find { |f| f[0] == ?< }
+					# we are/are expanded from a header file and are/are expanded from a normal file
+	# XXX not the work: "foo": toto ; <bla> #def toto => exp_from all <>
+					@traced_macros |= [tok.raw]
+				end
+			end
+
+			body = @definition[tok.raw].apply(self, tok)
+			body.each { |t| (t.expanded_from ||= []) << tok.raw }
 			body.reverse_each { |t| unreadtok t }
-			tok = body.empty? ? readtok : readtok_nopp
+			tok = readtok
 
 		elsif @ifelse_nesting.last == :testing and tok.type == :string and tok.raw == 'defined'
 			preprocessor_directive(tok)
@@ -220,14 +418,14 @@ class Preprocessor
 
 		tok = Token.new((@backtrace.map { |bt| bt[0, 2] } + [@filename, @lineno]).flatten)
 
-		case c = @text[@pos]
+		case c = getchar
 		when nil
 			return nil
 		when ?', ?"
 			# read quoted string value
 			tok.type = :quoted
 			delimiter = c
-			tok.raw << getchar
+			tok.raw << c
 			tok.value = ''
 			loop do
 				raise tok, 'unterminated string' if not c = getchar
@@ -249,30 +447,30 @@ class Preprocessor
 					when ?f: ?\f
 					when ?e: ?\e
 					when ?#, ?\\, ?', ?": c
-					when ?\n: ''
+					when ?\n: ''	# already handled by getchar
 					when ?x:
 						hex = ''
 						while hex.length < 2
-							raise tok, 'unterminated escape' if not c = @text[@pos]
+							raise tok, 'unterminated escape' if not c = getchar
 							case c
 							when ?0..?9, ?a..?f, ?A..?F
-							else break
+							else ungetchar; break
 							end
 							hex << c
-							tok.raw << getchar
+							tok.raw << c
 						end
 						raise tok, 'unterminated escape' if hex.empty?
 						hex.hex
 					when ?0..?7:
 						oct = '' << c
 						while oct.length < 3
-							raise tok, 'unterminated escape' if not c = @text[@pos]
+							raise tok, 'unterminated escape' if not c = getchar
 							case c
 							when ?0..?7
-							else break
+							else ungetchar; break
 							end
 							oct << c
-							tok.raw << getchar
+							tok.raw << c
 						end
 						oct.oct
 					else b	# raise tok, 'unknown escape sequence'
@@ -284,55 +482,48 @@ class Preprocessor
 
 		when ?a..?z, ?A..?Z, ?0..?9, ?$, ?_
 			tok.type = :string
+			tok.raw << c
 			loop do
-				case @text[@pos]
-				when nil: break		# avoids 'no method "coerce" for nil' warning
+				case c = getchar
+				when nil: ungetchar; break		# avoids 'no method "coerce" for nil' warning
 				when ?a..?z, ?A..?Z, ?0..?9, ?$, ?_
-					tok.raw << getchar
-				else break
+					tok.raw << c
+				else ungetchar; break
 				end
-			end
-
-		when ?\\
-			if @text[@pos+1] == ?\n
-				tok.type = :space	# not :eol !
-				tok.raw << getchar << getchar
-			else
-				tok.type = :punct
-				tok.raw << getchar
 			end
 
 		when ?\ , ?\t, ?\r, ?\n
 			tok.type = :space
+			tok.raw << c
 			loop do
-				case @text[@pos]
-				when nil: break
+				case c = getchar
+				when nil: ungetchar; break
 				when ?\ , ?\t, ?\r, ?\n
-					tok.raw << getchar
-				else break
+					tok.raw << c
+				else ungetchar; break
 				end
 			end
 			tok.type = :eol if tok.raw.index(?\n)
 
 		when ?/
+			tok.raw << c
 			# comment
-			case @text[@pos+1]
+			case c = getchar
 			when ?/
 				# till eol
-				# a backslash before eol does not discard eol here (== C, != ruby)
 				tok.type = :eol
-				tok.raw << getchar << getchar
-				while @text[@pos]
-					tok.raw << (c = getchar)
+				tok.raw << c
+				while c = getchar
+					tok.raw << c
 					break if c == ?\n
 				end
 			when ?*
 				tok.type = :space
-				tok.raw << getchar << getchar
+				tok.raw << c
 				seenstar = false
 				loop do
-					raise tok, 'unterminated c++ comment' if not @text[@pos]
-					tok.raw << (c = getchar)
+					raise tok, 'unterminated c++ comment' if not c = getchar
+					tok.raw << c
 					case c
 					when ?*: seenstar = true
 					when ?/: break if seenstar	# no need to reset seenstar, already false
@@ -341,13 +532,13 @@ class Preprocessor
 				end
 			else
 				# just a slash
+				ungetchar
 				tok.type = :punct
-				tok.raw << getchar
 			end
 
 		else
 			tok.type = :punct
-			tok.raw << getchar
+			tok.raw << c
 		end
 
 		tok
@@ -477,31 +668,59 @@ class Preprocessor
 		when 'include'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
-			tok = skipspc[]
+			raise cmd, 'nested too deeply' if backtrace.length > 200	# gcc
+	
+			# gcc seems to discard @queue on input, but we'll prolly use this in include_c
+
+			# allow preprocessing
+			skip_space
+			tok = readtok
 			raise cmd, 'pp syntax error' if not tok or (tok.type != :quoted and (tok.type != :punct or tok.raw != '<'))
 			if tok.type == :quoted
-				path = tok.raw[1..-2]	# XXX decode arbitrary bytes ?
+				path = tok.value
+				path = File.join(File.dirname(@filename[1..-2]), path) if path[0] != ?/
 			else
-				path = readtok_nopp
-				path.type = :string
+				# no more preprocessing : allow comments/multiple space/etc
+				ipath = ''
 				while tok = readtok_nopp and (tok.type != :punct or tok.raw != '>')
-					path.raw << tok.raw
+					raise cmd, 'syntax error' if tok.type == :eol
+					ipath << tok.raw
 				end
 				raise cmd, 'pp syntax error, unterminated path' if not tok
-				path = path.raw
-				dir = @include_search_path.find { |d| File.exist? File.join(d, path) }
-				path = File.join(dir, path) if dir
-				traceignore = true
+				if ipath[0] != ?/
+					dir = @include_search_path.find { |d| File.exist? File.join(d, ipath) }
+					path = File.join(dir, ipath) if dir
+				else
+					path = ipath
+				end
 			end
-			raise cmd, 'pp: cannot find file to include' if not File.exist? path
 
-			@backtrace << [@filename, @lineno, @text, @pos, @queue, @traceignore]
-			@filename = path
-			@lineno = 0
+			raise cmd, 'pp: No such file or directory' if not path or not File.exist? path
+			raise cmd, 'filename too long' if path.length > 4096		# gcc
+
+			@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
+			# @filename[-1] used in trace_macros to distinguish generic/specific files
+			if tok.type == :quoted
+				@filename = '"' + path + '"'
+			else
+				@filename = '<' + path + '>'
+			end
+			@lineno = 1
 			@text = File.read(path)
 			@pos = 0
 			@queue = []
-			@traceignore ||= traceignore if @traceary
+			puts "metasm preprocessor: including #@filename" if $DEBUG
+
+		when 'error', 'warning'
+			msg = ''
+			while tok = readtok_nopp and tok.type != :eol
+				msg << tok.raw
+			end
+			if cmd.raw == 'warning'
+				puts "#@filename:#@lineno : #warning #{msg}"
+			else
+				raise cmd, "#error #{msg}"
+			end
 
 		else return false
 		end
@@ -512,7 +731,7 @@ class Preprocessor
 			begin 
 				tok = skipspc[]
 			rescue ParseError
-				# react as gcc -E: " unterminated in #undef => ok, /* unterminated => error
+				# react as gcc -E: " unterminated in #undef => ok, /* unterminated => error (the " will fail at eol)
 				retry
 			end
 
