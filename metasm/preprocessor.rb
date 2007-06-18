@@ -514,7 +514,7 @@ class Preprocessor
 						oct.oct
 					else b	# raise tok, 'unknown escape sequence'
 					end
-				when ?\n: raise tok, 'unterminated string'
+				when ?\n: ungetchar ; raise tok, 'unterminated string'
 				else tok.value << c
 				end
 			end

@@ -139,10 +139,10 @@ class AsmPreprocessor
 			lexer.skip_space
 			while tok = lexer.nexttok and tok.type != :eol
 				# no preprocess argument list
-				raise @name, 'invalid arg definition' if not tok = lexer.readtok_nopp or tok.type != :string
+				raise @name, 'invalid arg definition' if not tok = lexer.readtok or tok.type != :string
 				@args << tok
 				lexer.skip_space
-				raise @name, 'invalid arg separator' if not tok = lexer.readtok_nopp or ((tok.type != :punct or tok != ',') and tok != :eol)
+				raise @name, 'invalid arg separator' if not tok = lexer.readtok or ((tok.type != :punct or tok != ',') and tok != :eol)
 				break if tok.type == :eol
 				lexer.skip_space
 			end
@@ -193,7 +193,7 @@ class AsmPreprocessor
 		if tok and tok.type == :punct and tok.raw == ';'
 			tok.type = :eol
 			begin
-				while ntok = readtok_nopp and ntok.type != :eol
+				while ntok = readtok and ntok.type != :eol
 					tok.raw << ntok.raw
 				end
 				tok.raw << ntok.raw if ntok
@@ -511,7 +511,7 @@ class Expression
 
 			if not tok.value and tok.type == :punct and tok.raw == '.'
 				# bouh
-				ntok = lexer.readtok_nopp
+				ntok = lexer.readtok
 				lexer.unreadtok ntok
 				if ntok and ntok.type == :string and ntok.raw =~ /^[0-9][0-9e_]*$/ and ntok.raw.count('e') <= 1
 					point = tok.dup
@@ -532,10 +532,10 @@ class Expression
 				tok.value = $1.to_i(16)
 			when /^[0-9_]+$/
 				# TODO 1e3 == 1000
-				if ntok = lexer.readtok_nopp and ntok.type == :punct and ntok.raw == '.'
+				if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == '.'
 					# parse float
 					tok.raw << ntok.raw
-					ntok = lexer.readtok_nopp
+					ntok = lexer.readtok
 					# XXX 1.0e2 => '1', '.', '0e2'
 					raise tok, 'invalid float'+ntok.raw.inspect if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9][0-9_e]*$/ or ntok.raw.count('e') > 1
 					if ntok.raw.include? 'e'
@@ -551,12 +551,12 @@ class Expression
 					end
 					tok.raw << ntok.raw
 
-					if ntok = lexer.readtok_nopp and ntok.type == :string and ntok.raw == 'e'
+					if ntok = lexer.readtok and ntok.type == :string and ntok.raw == 'e'
 						tok.raw << ntok.raw
-						ntok = lexer.readtok_nopp
+						ntok = lexer.readtok
 						if ntok and ntok.type == :punct and (ntok.raw == '-' or ntok.raw == '+')
 							tok.raw << ntok.raw
-							ntok = lexer.readtok_nopp
+							ntok = lexer.readtok
 						end
 						raise tok, 'invalid float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9_]+$/
 						tok.raw << ntok.raw
@@ -586,7 +586,7 @@ class Expression
 					return
 				end
 				s = tok.value || tok.raw[1..-2]	# raise tok, 'need ppcessing !'
-				s = s.reverse if lexer.program and lexer.program.cpu and lexer.program.cpu.endianness == :little
+				s = s.reverse if lexer.respond_to? :program and lexer.program and lexer.program.cpu and lexer.program.cpu.endianness == :little
 				val = s.unpack('C*').inject(0) { |sum, c| (sum << 8) | c }
 			when :punct
 				case tok.raw
