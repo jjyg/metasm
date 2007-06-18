@@ -710,7 +710,7 @@ class COFF
 		when '.section'
 			# .section <section name|"section name"> [(no)r w x shared discard] [base=<expr>]
 			sname = readstr[]
-			sname = tok.value || tok.raw
+			sname = instr.value || instr.raw
 			if not s = @sections.find { |s| s.name == sname }
 				s = Section.new
 				s.name = sname
@@ -735,7 +735,7 @@ class COFF
 				when 'base'
 					raise instr, 'syntax error' if not tok = @lexer.readtok or tok.type != :punct or tok.raw != '='
 					raise instr, 'syntax error' if not s.virtaddr = Expression.parse(@lexer).reduce
-				else raise tok, 'unknown parameter'
+				else raise instr, 'unknown parameter'
 				end
 			end
 			@cursource = @source[sname] ||= []

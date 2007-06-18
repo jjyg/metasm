@@ -7,7 +7,8 @@ require 'metasm/preprocessor'
 class TestPreproc < Test::Unit::TestCase
 	def load txt
 		p = Metasm::Preprocessor.new
-		p.feed txt
+		caller.first =~ /^(.*?):(\d+)/
+		p.feed txt, $1, $2.to_i+1
 		p
 	end
 
@@ -18,8 +19,8 @@ test boo
 xx
 EOS
 		assert_equal \
-		['test', :space, ' ', :string, :eol, :quoted, :space, 'xx', :eol, true],
-		[p.readtok.raw, p.nexttok.type, p.readtok.raw, p.readtok.type, p.readtok.type, p.readtok.type, p.readtok.type, p.readtok.raw, p.readtok.type, p.eos?]
+		['test', :space, :string, :eol, :quoted, :space, 'xx', :eol, true],
+		[p.readtok.raw, p.readtok.type, p.readtok.type, p.readtok.type, p.readtok.type, p.readtok.type, p.readtok.raw, p.readtok.type, p.eos?]
 	end
 
 	def test_comment
@@ -29,10 +30,10 @@ kikoo // lol \
 asv
 EOS
 		toks = []
-		p.skip_space_eol
+		nil while tok = p.readtok and (tok.type == :space or tok.type == :eol)
 		until p.eos?
-			toks << p.readtok.raw
-			p.skip_space_eol
+			toks << tok.raw
+			nil while tok = p.readtok and (tok.type == :space or tok.type == :eol)
 		end
 		assert_equal %w[foo baz kikoo], toks
 	end
@@ -76,7 +77,7 @@ b\
 #define x
 EOS
 		p = load('__LINE__')
-		assert_equal('0', p.readtok.value)
+		assert_equal(__LINE__.to_s, p.readtok.value)
 		t_preparse[<<EOS, 'toto 1 toto 12 toto 3+(3-2) otot hoho']
 #define azer(k) 12
 # define xxx azer(7)
@@ -104,6 +105,14 @@ EOS
 #define d(a) #a
 d(haha)
 EOS
+		t_preparse[<<EOS, '{']
+#define toto(a) a
+toto({)
+EOS
+		t_preparse[<<EOS, 'x(, 1)']
+#define d(a,b) x(a, b)
+d(,1)
+EOS
 		Metasm::Preprocessor.include_search_path << '.'
 		begin
 			File.open('tests/prepro_testinclude.asm', 'w') { |fd| fd.puts '#define out in' }
@@ -119,33 +128,38 @@ EOS
 #define cct(a, b) a ## _ ## b
 cct(toto, tutu)
 EOS
-		p.skip_space_eol
-		assert_equal('toto_tutu', p.readtok.raw)	# check we get only 1 token back
+		nil while tok = p.readtok and (tok.type == :space or tok.type == :eol)
+		assert_equal('toto_tutu', tok.raw)	# check we get only 1 token back
 
-		t_preparse[<<EOS, <<EOS]
+		# assert_outputs_a_warning ?
+		t_preparse[<<EOS, <<EOS.strip]
 #define va1(a, b...) toto(a, ##b)
-#define va2(a, b...) toto(a. ##b)
 #define va3(a, ...)  toto(a, __VA_ARGS__)
 va1(1, 2);
 va1(1,2);
 va1(1);
-va2(1, 2);
-va2(1);
 va3(1, 2);
 va3(1);
 EOS
 toto(1, 2);
 toto(1,2);
 toto(1);
-toto(1. 2);
-toto(1.);
 toto(1, 2);
 toto(1, );
 EOS
+
+		t_preparse[<<EOS, "#define a c\n#define b d\na b"]
+#define x(z) z
+#define y #define
+x(#)define a c
+y b d
+a b
+EOS
+		t_preparse["#define a(a) a(a)\na(1)", '1(1)']
 	end
 
 	def test_errors
-		test_err = proc { |txt| assert_raise(Metasm::ParseError) { load(txt).readtok } }
+		test_err = proc { |txt| assert_raise(Metasm::ParseError) { p = load(txt) ; p.readtok until p.eos? } }
 		test_err["\"abc\n\""]
 		test_err['"abc\x"']
 		test_err['/*']
@@ -166,11 +180,11 @@ EOS
 #define abc(def)
 abc (1, 3)
 EOS
-		test_err[<<EOS]
-#define a
-#define a
-EOS
-		test_err['#define a(b) #c']
+		# warnings only
+		#test_err["#define aa\n#define aa"]
+		#test_err['#define a(b) #c']
+		#test_err['#define a(b, b)']
+		#test_err['#define a ##z']
 	end
 end
 
