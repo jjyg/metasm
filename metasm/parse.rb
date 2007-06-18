@@ -260,6 +260,7 @@ class ExeFormat
 
 		while not @lexer.eos?
 			tok = @lexer.readtok
+			next if not tok
 			case tok.type
 			when :space
 			when :eol
