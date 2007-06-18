@@ -192,10 +192,14 @@ class AsmPreprocessor
 		# handle ; comments
 		if tok and tok.type == :punct and tok.raw == ';'
 			tok.type = :eol
-			while ntok = readtok_nopp and ntok.type != :eol
-				tok.raw << ntok.raw
+			begin
+				while ntok = readtok_nopp and ntok.type != :eol
+					tok.raw << ntok.raw
+				end
+				tok.raw << ntok.raw if ntok
+			rescue ParseError
+				# unterminated string
 			end
-			tok.raw << ntok.raw if ntok
 		end
 
 		# aggregate space/eol
