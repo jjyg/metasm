@@ -9,6 +9,8 @@ end
 
 class Preprocessor
 	class Macro
+		attr_accessor :name, :body
+
 		def initialize(name)
 			@name = name
 			@body = []
@@ -250,7 +252,9 @@ class Preprocessor
 	# special object, handles __FILE__ and __LINE__ macros
 	class SpecialMacro
 		def name
-			Token.new []
+		end
+		def body
+			[]
 		end
 
 		def apply(lexer, name)
@@ -265,8 +269,6 @@ class Preprocessor
 			end
 		end
 	end
-
-	attr_accessor :traceignore, :traceary
 
 	def initialize
 		@queue = []
@@ -283,25 +285,40 @@ class Preprocessor
 	end
 
 	# preprocess text, and retrieve all macros defined in #included <files> and used in the text
-	# returns a string useable as source
-	# may not work if some macro is #defined, used, #undefined and then re-#defined differently
-	def trace_macros(text, maxdepth=256)
+	# returns a C source-like string
+	def trace_macros(text, filename=nil, lineno=1)
 		caller.first =~ /^(.*?):(\d+)/
-		feed text, $1, $2.to_i+1
+		feed(text, (filename || $1), (filename ? lineno : ($2.to_i+1)))
+		@traced_macros = []
 		readtok while not eos?
 
-		str = []
-		raise TOREDO
-		walk = proc { |a, d| @traceary |= a ; a.each { |m| walk[m.trace_dep, d-1] } if d > 0 }
-		walk[@traceary, maxdepth]
-		while not @traceary.empty?
-			ngen = @traceary.find_all { |m| m.trace_dep.empty? }
-			raise 'circular dependency ?' if ngen.empty?
-			ngen.each { |m| str << m.dump }
-			@traceary -= ngen
-			@traceary.each { |m| m.trace_dep -= ngen }
+		depend = {}
+		# build dependency graph (we can output macros in any order, but it's more human-readable)
+		walk = proc { |mname|
+			depend[mname] ||= []
+			@definition[mname].body.each { |t|
+				name = t.raw
+				if @definition[name]
+					depend[mname] << name
+					if not depend[name]
+						depend[name] = []
+						walk[name]
+					end
+				end
+			}
+		}
+		@traced_macros.each { |mname| walk[mname] }
+
+		res = []
+		while not depend.empty?
+			leafs = depend.keys.find_all { |k| depend[k].empty? }
+			leafs.each { |l|
+				res << @definition[l].dump
+				depend.delete l
+			}
+			depend.each_key { |k| depend[k] -= leafs }
 		end
-		str.join("\n")
+		res.join("\n")
 	end
 
 	# starts a new lexer, with the specified initial filename/line number (for backtraces)
@@ -406,11 +423,9 @@ class Preprocessor
 
 		elsif tok.type == :string and @definition[tok.raw] and (not tok.expanded_from or not tok.expanded_from.include? tok.raw)
 			# expand macros
-			if @traced_macros ||= nil
-				filesfrom = (tok.expanded_from.to_a + [tok.raw]).map { |macroname| @definition[macroname].name.backtrace[-2] rescue '' }
-				if filesfrom and filesfrom.find { |f| f[0] == ?" } and files.find { |f| f[0] == ?< }
-					# we are/are expanded from a header file and are/are expanded from a normal file
-	# XXX not the work: "foo": toto ; <bla> #def toto => exp_from all <>
+			if defined? @traced_macros
+				if tok.backtrace[-2].to_s[0] == ?" and @definition[tok.raw].name and @definition[tok.raw].name.backtrace[-2].to_s[0] == ?<
+					# are we in a normal file and expand to an header-defined macro ?
 					@traced_macros |= [tok.raw]
 				end
 			end
@@ -706,8 +721,6 @@ class Preprocessor
 				if ipath[0] != ?/
 					dir = @include_search_path.find { |d| File.exist? File.join(d, ipath) }
 					path = File.join(dir, ipath) if dir
-				else
-					path = ipath
 				end
 			end
 
@@ -719,7 +732,7 @@ class Preprocessor
 			if tok.type == :quoted
 				@filename = '"' + path + '"'
 			else
-				@filename = '<' + path + '>'
+				@filename = '<' + ipath + '>'
 			end
 			@lineno = 1
 			@text = File.read(path)
@@ -733,9 +746,9 @@ class Preprocessor
 				msg << tok.raw
 			end
 			if cmd.raw == 'warning'
-				puts "#@filename:#@lineno : #warning #{msg}"
+				puts "#@filename:#@lineno : #warning#{msg}"
 			else
-				raise cmd, "#error #{msg}"
+				raise cmd, "#error#{msg}"
 			end
 
 		else return false
