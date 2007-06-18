@@ -284,6 +284,13 @@ class Preprocessor
 		# TODO setup standard macro names ? see $(gcc -dM -E - </dev/null)
 	end
 
+	# outputs the preprocessed source
+	def dump
+		while not eos?
+			print readtok.raw
+		end
+	end
+
 	# preprocess text, and retrieve all macros defined in #included <files> and used in the text
 	# returns a C source-like string
 	def trace_macros(text, filename=nil, lineno=1)
