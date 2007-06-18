@@ -337,13 +337,16 @@ end
 # TODO handle floats
 class Expression
 	INT_SIZE = {:u8 => 8,    :u16 => 16,     :u32 => 32, :u64 => 64,
-		    :i8 => 8,    :i16 => 16,     :i32 => 32, :i64 => 64
+		    :i8 => 8,    :i16 => 16,     :i32 => 32, :i64 => 64,
+		    :a8 => 8,    :a16 => 16,     :a32 => 32, :a64 => 64
 	}
 	INT_MIN  = {:u8 => 0,    :u16 => 0,      :u32 => 0, :u64 => 0,
-		    :i8 =>-0x80, :i16 =>-0x8000, :i32 =>-0x80000000, :i64 => -0x8000_0000_0000_0000
+		    :i8 =>-0x80, :i16 =>-0x8000, :i32 =>-0x80000000, :i64 => -0x8000_0000_0000_0000,
+		    :a8 =>-0x80, :a16 =>-0x8000, :a32 =>-0x80000000, :a64 => -0x8000_0000_0000_0000
 	}
 	INT_MAX  = {:u8 => 0xff, :u16 => 0xffff, :u32 => 0xffffffff, :u64 => 0xffff_ffff_ffff_ffff,
-		    :i8 => 0x7f, :i16 => 0x7fff, :i32 => 0x7fffffff, :i64 => 0x7fff_ffff_ffff_ffff
+		    :i8 => 0x7f, :i16 => 0x7fff, :i32 => 0x7fffffff, :i64 => 0x7fff_ffff_ffff_ffff,
+		    :a8 => 0xff, :a16 => 0xffff, :a32 => 0xffffffff, :a64 => 0xffff_ffff_ffff_ffff
 	}
 
 	# alternative constructor
@@ -367,8 +370,7 @@ class Expression
 		val = val.reduce if val.kind_of? self
 		return unless val.kind_of? Numeric
 
-		case type
-		when :u8, :u16, :u32, :i8, :i16, :i32
+		if INT_MIN[type]
 			val == val.to_i and
 			val >= INT_MIN[type] and val <= INT_MAX[type]
 		end

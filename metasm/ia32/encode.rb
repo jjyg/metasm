@@ -91,7 +91,7 @@ class Ia32
 				ret.data[0] |= 4
 				s = {8=>3, 4=>2, 2=>1}[@s]
 				imm = @imm || Expression[0]
-				[ret << ((s << 6) | (@i.val << 3) | 5) << imm.encode(:i32, endianness)]
+				[ret << ((s << 6) | (@i.val << 3) | 5) << imm.encode(:a32, endianness)]
 			else
 				imm = @imm.reduce if @imm
 				imm = nil if imm == 0
@@ -123,13 +123,13 @@ class Ia32
 						[ret << Expression.encode_immediate(imm, :i8, endianness)]
 					when false
 						ret.data[0] |= 2 << 6
-						[ret << Expression.encode_immediate(imm, :i32, endianness)]
+						[ret << Expression.encode_immediate(imm, :a32, endianness)]
 					when nil
 						rets = ret.dup
 						rets.data[0] |= 1 << 6
 						rets << @imm.encode(:i8, endianness)
 						ret.data[0] |= 2 << 6
-						ret << @imm.encode(:i32, endianness)
+						ret << @imm.encode(:a32, endianness)
 						[ret, rets]
 					end
 				else
@@ -263,7 +263,7 @@ class Ia32
 		postponed.each { |oa, ia|
 			case oa
 			when :farptr
-				(ret+imm32sret.to_a).each { |e| e << ia.encode(@endianness, "u#{adsz}".to_sym) }
+				(ret+imm32sret.to_a).each { |e| e << ia.encode(@endianness, "a#{adsz}".to_sym) }
 			when :modrm, :modrmA, :modrmmmx, :modrmxmm
 				if ia.class == ModRM
 					mrm = ia.encode(regval, @endianness)
@@ -285,11 +285,11 @@ class Ia32
 					(ret+imm32sret.to_a).each { |e| e << ModRM.encode_reg(ia, regval) }
 				end
 			when :mrm_imm
-				(ret+imm32sret.to_a).each { |e| e << ia.imm.encode("u#{adsz}".to_sym, @endianness) }
+				(ret+imm32sret.to_a).each { |e| e << ia.imm.encode("a#{adsz}".to_sym, @endianness) }
 			when :i8, :u8, :u16
 				(ret+imm32sret.to_a).each { |e| e << ia.encode(oa, @endianness) }
 			when :i
-				ret.each { |e| e << ia.encode((imm32s ? :i8 : "u#{opsz}".to_sym), @endianness) }
+				ret.each { |e| e << ia.encode((imm32s ? :i8 : "a#{opsz}".to_sym), @endianness) }
 				imm32sret.each { |e| e << ia.encode(:i8, @endianness) } if imm32sret
 			else
 				raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"

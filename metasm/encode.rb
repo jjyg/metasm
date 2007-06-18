@@ -39,7 +39,7 @@ class ExeFormat
 	end
 
 	# chose among multiple possible sub-EncodedData
-	# assumes all ambiguous edata has same relocation, with exact same targets (used as Hash key)
+	# assumes all ambiguous edata have the equivallent relocations in the same order
 	def assemble_resolve(ary)
 		startlabel = new_label
 
@@ -155,42 +155,44 @@ class ExeFormat
 				# for each external, compute numeric target values using minbinding[external] and maxbinding[external]
 				# this gives us all extrem values for linear expressions
 				target_bounds = {}
-				rec_checkminmax = proc { |target, binding, extlist|
+				rec_checkminmax = proc { |idx, target, binding, extlist|
 					if extlist.empty?
-						(target_bounds[target] ||= []) << target.bind(binding).reduce
+						(target_bounds[idx] ||= []) << target.bind(binding).reduce
 					else
-						rec_checkminmax[target, binding.merge(extlist.last => minbinding[extlist.last]), extlist[0...-1]]
-						rec_checkminmax[target, binding.merge(extlist.last => maxbinding[extlist.last]), extlist[0...-1]]
+						rec_checkminmax[idx, target, binding.merge(extlist.last => minbinding[extlist.last]), extlist[0...-1]]
+						rec_checkminmax[idx, target, binding.merge(extlist.last => maxbinding[extlist.last]), extlist[0...-1]]
 					end
 				}
 				# biggest size disponible for this relocation (for non-linear/external)
 				wantsize = {}
 
-				elem.first.reloc.each { |o, r|
-					# has external ref
-					if not r.target.bind(minbinding).reduce.kind_of?(Numeric) or not check_linear[r.target]
-						# find the biggest relocation type for the current target
-						wantsize[r.target] = elem.map { |edata|
-							edata.reloc.values.find { |rel| rel.target == r.target }.type
-						}.sort_by { |type| Expression::INT_SIZE[type] }.last
-					else
-						rec_checkminmax[r.target, {}, r.target.externals]
-						target_bounds[r.target] = [target_bounds[r.target].min, target_bounds[r.target].max]
-					end
-				}
-
-				# reject candidates with reloc type too small
-				acceptable = elem.find_all { |edata|
-					edata.reloc.values.all? { |rel|
-						if wantsize[rel.target]
-							rel.type == wantsize[rel.target]
+				elem.each { |e|
+					e.reloc.sort.each_with_index { |(o, r), i|
+						# has external ref
+						if not r.target.bind(minbinding).reduce.kind_of?(Numeric) or not check_linear[r.target]
+							# find the biggest relocation type for the current target
+							wantsize[i] = elem.map { |edata|
+								edata.reloc.sort[i][1].type
+							}.sort_by { |type| Expression::INT_SIZE[type] }.last
 						else
-							target_bounds[rel.target].all? { |target| Expression.in_range?(target, rel.type) }
+							rec_checkminmax[i, r.target, {}, r.target.externals]
 						end
 					}
 				}
 
-				raise EncodeError, "cannot find candidate in #{elem.inspect}, immediate too big" if acceptable.empty?
+				# reject candidates with reloc type too small
+				acceptable = elem.find_all { |edata|
+					r = edata.reloc.sort
+					(0...r.length).all? { |i|
+						if wantsize[i]
+							r[i][1].type == wantsize[i]
+						else
+							target_bounds[i].all? { |b| Expression.in_range?(b, r[i][1].type) }
+						end
+					}
+				}
+
+				raise EncodeError, "cannot find candidate in #{elem.inspect}, immediate too big #{wantsize.inspect} #{target_bounds.inspect}" if acceptable.empty?
 
 				# keep the shortest
 				acceptable.sort_by { |edata| edata.virtsize }.first
@@ -247,7 +249,7 @@ class Expression
 
 	def self.encode_immediate(val, type, endianness, backtrace=nil)
 		raise "unsupported endianness #{endianness.inspect}" unless [:big, :little].include? endianness
-		# TODO overflow => backtrace
+		raise("immediate overflow #{(Backtrace::backtrace_str(backtrace) if backtrace)}") if not in_range?(val, type)
 		s = (0...INT_SIZE[type]/8).map { |i| (val >> (8*i)) & 0xff }.pack('C*')
 		endianness != :little ? s.reverse : s
 	end
