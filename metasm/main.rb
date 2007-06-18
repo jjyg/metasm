@@ -784,10 +784,9 @@ class EncodedData
 		raise "invalid offset specification #{from}" if not from.kind_of? Integer
 		to = @export.fetch(to, to)
 		raise "invalid offset specification #{to}" if not to.kind_of? Integer
-		raise 'cannot patch data: new content too long' if to - from < content.length
+		raise EncodeError, 'cannot patch data: new content too long' if to - from < content.length
 		content = EncodedData.new << content
-		content.fill(to - from)
-		self[from, to-from] = content
+		self[from, content.length] = content
 	end
 end
 end

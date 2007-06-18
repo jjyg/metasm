@@ -3,6 +3,7 @@ require 'metasm/preprocessor'
 
 module Metasm
 # c parser
+# http://www.csci.csusb.edu/dick/samples/c.syntax.html
 class CParser
 	class Variable
 		attr_accessor :name, :type, :initializer

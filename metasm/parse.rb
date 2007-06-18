@@ -331,6 +331,8 @@ class ExeFormat
 					type = ntok.raw
 				end
 				fillwith = parse_data_data(type)
+			else
+				@lexer.unreadtok ntok
 			end
 			raise tok, 'syntax error' if ntok = @lexer.nexttok and ntok.type != :eol
 			@cursource << Padding.new(fillwith, tok.backtrace.dup)
@@ -355,6 +357,8 @@ class ExeFormat
 					type = ntok.raw
 				end
 				fillwith = parse_data_data type
+			else
+				@lexer.unreadtok ntok
 			end
 			raise tok, 'syntax error' if ntok = @lexer.nexttok and ntok.type != :eol
 			@cursource << Padding.new(fillwith, tok.backtrace.dup) << Offset.new(e, tok.backtrace.dup)
