@@ -2,6 +2,11 @@ require 'metasm/main'
 require 'metasm/parse'
 
 module Metasm
+class Token
+	# array of macros name
+	attr_accessor :expanded_from
+end
+
 class Preprocessor
 	class Macro
 		def initialize(name)
@@ -15,6 +20,7 @@ class Preprocessor
 		# parses arguments if needed 
 		# returns an array of tokens
 		# macros are lazy
+		# fills token.expanded_from
 		def apply(lexer, name)
 			if @args
 				# if defined with arg list (even empty), then must be followed by parenthesis, otherwise do not replace
@@ -25,7 +31,9 @@ class Preprocessor
 				if not tok or tok.type != :punct or tok.raw != '('
 					lexer.unreadtok tok
 					unr.reverse_each { |t| lexer.unreadtok t }
-					return [name]
+					tok = name.dup
+						(tok.expanded_from ||= []) << name.raw
+					return [tok]
 				end
 				args = []
 				# each argument is any token sequence
@@ -36,7 +44,7 @@ class Preprocessor
 					arg = []
 					nest = 0
 					loop do
-						raise name, 'unterminated arg list' if not tok
+						raise name, 'unterminated arg list' if not tok = lexer.readtok
 						case tok.type
 						when :eol, :space
 							next if arg.last and arg.last.type == :space
@@ -76,63 +84,66 @@ class Preprocessor
 			# apply macro
 			res = []
 			b = @body.reverse
+			hargs.each_value { |a| a.map! { |t| t = t.dup ; (t.expanded_from ||= []) << name.raw ; t } }
 			while t = b.pop
+				t = t.dup
+				t.expanded_from = (name.expanded_from || []) << name.raw
 				if a = hargs[t.raw]
 					res.pop if res.last and res.last.type == :space and a.first and a.first.type == :space
 					res.concat a
 					next
-				elsif t.type == :punct and t.raw == '#'
-					if tt = b.last and tt.type == :punct and tt.raw == '#'
-						t = b.pop
-						# the '##' operator: concat 2 tokens
-						t = b.pop if t and t.type == :space
-						raise name, 'internal error, bad macro' if not t or t.type == :space	# cannot happen
-						res.pop if res.last and res.last.type == :space
-						if not a = hargs[t.raw]
-							a = [t]
-						end
-						if @varargs and a and t.raw == '__VA_ARGS__' and res.last and res.last.type == :punct and res.last.raw == ','
-							# allow merging with ',' without warning
-							if args.length == @args.length
-								res.pop
-							else
-								res.concat a
-							end
-						else
-							if not res.last or res.last.type != :string or not a.first or a.first.type != :string
-								puts "cannot merge token #{res.last.inspect} with #{a.first.inspect}"
-								res.concat a
-							else
-								res.last.raw << a.first.raw
-								res.concat a[1..-1]
-							end
-						end
-						next
-
-					elsif @args
-						# the '#' operator: transforms an argument to the quotedstring of its value
-						t = b.pop
-						t = b.pop if t and t.type == :space
-						raise name, 'internal error, bad macro' if not t or t.type == :space or not hargs[t.raw]
-						a = hargs[t.raw]
-						nt = t.dup
-						nt.type = :quoted
-						nt.value = a.map { |aa| aa.raw }.join
-						nt.value = nt.value[1..-1] if nt.value[0] == ?\ 	# <- space
-						nt.raw = '"' + nt.value.gsub(/[\\"]/) { |o| "\\#{o}" } + '"'
-						res << nt
-						next
+				elsif t.type == :punct and t.raw == '##'
+					# the '##' operator: concat the next token to the last in body
+					t = b.pop
+					t = b.pop while t and t.type == :space
+					res.pop while res.last and res.last.type == :space
+					if not a = hargs[t.raw]
+						a = [t]
 					end
+					if @varargs and t.raw == '__VA_ARGS__' and res.last and res.last.type == :punct and res.last.raw == ','
+						if args.length == @args.length
+							# pop last , if no vararg passed
+							# XXX poof(1, 2,) != poof(1, 2)
+							res.pop
+						else
+							# allow merging with ',' without warning
+							res.concat a
+						end
+					else
+						a = a[1..-1] if a.first and a.first.type == :space
+						if not res.last or res.last.type != :string or not a.first or a.first.type != :string
+							puts "W: preprocessor: in #{name.raw}: cannot merge token #{res.last.raw} with #{a.first ? a.first.raw : 'nil'}" if not a.first or (a.first.raw != '.' and res.last.raw != '.')
+							res.concat a
+						else
+							res.last.raw << a.first.raw
+							res.concat a[1..-1]
+						end
+					end
+					next
+
+				elsif @args and t.type == :punct and t.raw == '#'
+					# the '#' operator: transforms an argument to the quotedstring of its value
+					t = b.pop
+					t = b.pop if t and t.type == :space
+					raise name, 'internal error, bad macro' if not t or t.type == :space or not hargs[t.raw]	# should have been filtered on parse_definition
+					a = hargs[t.raw]
+					t.type = :quoted
+					t.value = a.map { |aa| aa.raw }.join
+					t.value = t.value[1..-1] if t.value[0] == ?\ 	# delete leading space
+					t.raw = '"' + t.value.gsub(/[\\"]/) { |o| "\\#{o}" } + '"'
+					res << t
+					next
 				end
-				nt = t.dup
-				nt.backtrace += name.backtrace[-2, 2]
-				res << nt
+				t.backtrace += name.backtrace[-2, 2]	# don't modify inplace
+				res << t
 			end
 			res
 		end
 
 		# parses the argument list and the body from lexer
+		# converts # + # to ## in body
 		def parse_definition(lexer)
+			varg = nil
 			if tok = lexer.readtok_nopp and tok.type == :punct and tok.raw == '('
 				@args = []
 				loop do
@@ -149,6 +160,7 @@ class Preprocessor
 						@varargs = true
 						break
 					end
+					break if tok and tok.type == :punct and tok.raw == ')' and @args.empty?	# allow empty list
 					raise @name, 'invalid arg definition' if not tok or tok.type != :string
 					@args << tok
 					nil while tok = lexer.readtok_nopp and tok.type == :space
@@ -184,33 +196,52 @@ class Preprocessor
 					tok.raw = ' '
 				when :string
 					tok.raw = '__VA_ARGS__' if varg and tok.raw == varg
+				when :punct
+					if tok.raw == '#'
+						ntok = lexer.readtok_nopp
+						if ntok and ntok.type == :punct and ntok.raw == '#'
+							tok.raw << '#'
+						else
+							lexer.unreadtok ntok
+						end
+					end
 				end
 				@body << tok
 			end
 			@body.pop if @body.last and @body.last.type == :space
 
-			invalid_body = false
-			if (@body[-1] and @body[-1].raw == '#' and @body[-2] and @body[-2].raw == '#') or (@body[0] and @body[0].raw == '#' and @body[1] and @body[1].raw == '#')
-				puts "W: #{lexer.filename}:#{lexer.lineno}, in #{@name.raw}: cannot have ## at begin or end of macro body"
+			# check macro is correct
+			invalid_body = nil
+			if (@body[-1] and @body[-1].raw == '##') or (@body[0] and @body[0].raw == '##')
+				invalid_body ||= 'cannot have ## at begin or end of macro body'
 				lexer.definition.delete(name.raw)
 			end
-			@body.each_with_index { |tk, i|
-				if tk.raw == '#'
-					a = @body[i+1]
-					a = @body[i+2] if not a or a.type == :space
-					if not a.type == :string or (not @args.find { |aa| aa.raw == a.raw } and (not @varargs or a.raw != '__VA_ARGS__'))
-						puts "W: #{lexer.filename}:#{lexer.lineno}, in #{@name.raw}: cannot have # followed by non-argument"
-						lexer.definition.delete(name.raw)
-					end
+			if @args
+				if @args.map { |a| a.raw }.uniq.length != @args.length
+					invalid_body ||= 'duplicate macro parameter'
 				end
-			}
+				@body.each_with_index { |tok, i|
+					if tok.type == :punct and tok.raw == '#'
+						a = @body[i+1]
+						a = @body[i+2] if not a or a.type == :space
+						if not a.type == :string or (not @args.find { |aa| aa.raw == a.raw } and (not @varargs or a.raw != '__VA_ARGS__'))
+							invalid_body ||= 'cannot have # followed by non-argument'
+						end
+					end
+				}
+				
+			end
+			if invalid_body
+				puts "W: #{lexer.filename}:#{lexer.lineno}, in #{@name.raw}: #{invalid_body}"
+				lexer.definition.delete(name.raw)
+			end
 		end
 
 		def dump
 			str = "// from #{@name.backtrace[-2, 2] * ':'}\n"
 			str << "#define #{@name.raw}"
 			if @args
-				str << '(' << (@args.map { |t| t.raw } + (@varargs ? ['...'] : []).join(', ')) << ')'
+				str << '(' << (@args.map { |t| t.raw } + (@varargs ? ['...'] : [])).join(', ') << ')'
 			end
 			str << ' ' << @body.map { |t| t.raw }.join << "\n"
 		end
@@ -218,6 +249,10 @@ class Preprocessor
 
 	# special object, handles __FILE__ and __LINE__ macros
 	class SpecialMacro
+		def name
+			Token.new []
+		end
+
 		def apply(lexer, name)
 			case name.raw
 			when '__FILE__', '__LINE__'
@@ -325,27 +360,10 @@ class Preprocessor
 		@pos >= @text.length and @queue.empty? and @backtrace.empty?
 	end
 
-	# consumes all :space tokens
-	def skip_space
-		readtok while tok = nexttok and tok.type == :space
-	end
-	
-	# consumes all :space or :eol tokens
-	def skip_space_eol
-		readtok while tok = nexttok and (tok.type == :space or tok.type == :eol)
-	end
-	
-	# push back a token, will be returned on the next readtok/nexttok
+	# push back a token, will be returned on the next readtok
 	# lifo
 	def unreadtok(tok)
 		@queue << tok if tok
-	end
-
-	# peek next token w/o consuming it
-	def nexttok
-		tok = readtok
-		unreadtok tok
-		tok
 	end
 
 	# calls readtok_nopp and handles preprocessor directives
@@ -388,9 +406,9 @@ class Preprocessor
 
 		elsif tok.type == :string and @definition[tok.raw] and (not tok.expanded_from or not tok.expanded_from.include? tok.raw)
 			# expand macros
-			if @traced_macros
-				files = (tok.expanded_from.to_a + [tok.raw]).map { |macroname| @definition[macroname].name.backtrace[-2] rescue break }
-				if files and files.find { |f| f[0] == ?" } and files.find { |f| f[0] == ?< }
+			if @traced_macros ||= nil
+				filesfrom = (tok.expanded_from.to_a + [tok.raw]).map { |macroname| @definition[macroname].name.backtrace[-2] rescue '' }
+				if filesfrom and filesfrom.find { |f| f[0] == ?" } and files.find { |f| f[0] == ?< }
 					# we are/are expanded from a header file and are/are expanded from a normal file
 	# XXX not the work: "foo": toto ; <bla> #def toto => exp_from all <>
 					@traced_macros |= [tok.raw]
@@ -398,7 +416,6 @@ class Preprocessor
 			end
 
 			body = @definition[tok.raw].apply(self, tok)
-			body.each { |t| (t.expanded_from ||= []) << tok.raw }
 			body.reverse_each { |t| unreadtok t }
 			tok = readtok
 
@@ -673,8 +690,7 @@ class Preprocessor
 			# gcc seems to discard @queue on input, but we'll prolly use this in include_c
 
 			# allow preprocessing
-			skip_space
-			tok = readtok
+			nil while tok = readtok and tok.type == :space
 			raise cmd, 'pp syntax error' if not tok or (tok.type != :quoted and (tok.type != :punct or tok.raw != '<'))
 			if tok.type == :quoted
 				path = tok.value

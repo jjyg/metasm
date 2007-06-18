@@ -157,6 +157,7 @@ class Token
 
 	def initialize(backtrace)
 		@backtrace = backtrace
+		@value = nil
 		@raw = ''
 	end
 

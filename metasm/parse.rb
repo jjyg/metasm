@@ -170,6 +170,20 @@ class AsmPreprocessor
 		super()
 	end
 
+	def skip_space_eol
+		readtok while t = nexttok and (t.type == :space or t.type == :eol)
+	end
+
+	def skip_space
+		readtok while t = nexttok and t.type == :space
+	end
+
+	def nexttok
+		t = readtok
+		unreadtok t
+		t
+	end
+
 	# reads a token, handles macros/comments/integers/etc
 	# argument is for internal use
 	def readtok_asmpp(rec = false)
@@ -434,21 +448,26 @@ class Expression
 			case op.raw
 			# may be followed by itself or '='
 			when '>', '<'
-				if ntok = lexer.nexttok and ntok.type == :punct and (ntok.raw == op.raw or ntok.raw == '=')
-					op.raw << lexer.readtok.raw
+				if ntok = lexer.readtok and ntok.type == :punct and (ntok.raw == op.raw or ntok.raw == '=')
+					op.raw << ntok.raw
+				else
+					lexer.unreadtok ntok
 				end
 			# may be followed by itself
 			when '|', '&'
-				if ntok = lexer.nexttok and ntok.type == :punct and ntok.raw == op.raw
-					op.raw << lexer.readtok.raw
+				if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == op.raw
+					op.raw << ntok.raw
+				else
+					lexer.unreadtok ntok
 				end
 			# must be followed by '='
 			when '!', '='
-				if not ntok = lexer.nexttok or ntok.type != :punct and ntok.raw != '='
+				if not ntok = lexer.readtok or ntok.type != :punct and ntok.raw != '='
+					lexer.unreadtok ntok
 					lexer.unreadtok tok
 					return
 				end
-				op.raw << lexer.readtok.raw
+				op.raw << ntok.raw
 			# ok
 			when '^', '+', '-', '*', '/', '%'
 			# unknown
@@ -503,6 +522,7 @@ class Expression
 			when /^0x([a-fA-F0-9_]+)$/, /^([0-9][a-fA-F0-9_]*)h$/
 				tok.value = $1.to_i(16)
 			when /^[0-9_]+$/
+				# TODO 1e3 == 1000
 				if ntok = lexer.readtok_nopp and ntok.type == :punct and ntok.raw == '.'
 					# parse float
 					tok.raw << ntok.raw
@@ -545,8 +565,8 @@ class Expression
 
 		# returns the next value from lexer (parenthesised expression, immediate, variable, unary operators)
 		def parse_value(lexer)
-			lexer.skip_space
-			return if not tok = lexer.readtok
+			nil while tok = lexer.readtok and tok.type == :space
+			return if not tok
 			case tok.type
 			when :string
 				parse_intfloat(lexer, tok)
@@ -562,12 +582,14 @@ class Expression
 			when :punct
 				case tok.raw
 				when '('
-					lexer.skip_space_eol
+					nil while ntok = lexer.readtok and (ntok.type == :space or ntok.type == :eol)
+					lexer.unreadtok ntok
 					val = parse(lexer)
-					lexer.skip_space_eol
-					raise tok, 'syntax error, no ) found' if not ntok = lexer.readtok or ntok.type != :punct or ntok.raw != ')'
+					nil while ntok = lexer.readtok and (ntok.type == :space or ntok.type == :eol)
+					raise tok, 'syntax error, no ) found' if not ntok or ntok.type != :punct or ntok.raw != ')'
 				when '!', '+', '-', '~'
-					lexer.skip_space_eol
+					nil while ntok = lexer.readtok and (ntok.type == :space or ntok.type == :eol)
+					lexer.unreadtok ntok
 					raise tok, 'need expression after unary operator' if not val = parse_value(lexer)
 					val = Expression[tok.raw.to_sym, val]
 				when '.'
@@ -585,7 +607,8 @@ class Expression
 				lexer.unreadtok tok
 				return
 			end
-			lexer.skip_space
+			nil while tok = lexer.readtok and tok.type == :space
+			lexer.unreadtok tok
 			val
 		end
 
@@ -599,7 +622,8 @@ class Expression
 			stack << e
 
 			while op = readop(lexer)
-				lexer.skip_space_eol
+				nil while ntok = lexer.readtok and (ntok.type == :space or ntok.type == :eol)
+				lexer.unreadtok ntok
 				until opstack.empty? or OP_PRIO[op.value][opstack.last]
 					stack << new(opstack.pop, stack.pop, stack.pop)
 				end
@@ -619,12 +643,13 @@ class Expression
 
 		# same as parsing an expression, but return the array of tokens instead of the Expression
 		def parse_toks(lexer)
-			raise lexer.nexttok, 'invalid expression' if not p1 = parse_value_toks(lexer)
+			raise lexer.readtok, 'invalid expression' if not p1 = parse_value_toks(lexer)
 			while p2 = readop(lexer)
 				p1 << p2
-				while ntok = lexer.nexttok and (ntok.type == :space or ntok.type == :eol)
-					p1 << lexer.readtok
+				while ntok = lexer.readtok and (ntok.type == :space or ntok.type == :eol)
+					p1 << ntok
 				end
+				lexer.unreadtok ntok
 				p3 = parse_value_toks(lexer)
 				raise p1.last, 'no right hand side expression member' if not p3
 				p1.concat p3
@@ -635,26 +660,29 @@ class Expression
 		def parse_value_toks(lexer)
 			ret = []
 			cancel = proc { ret.reverse_each { |t| lexer.unreadtok t } ; return }
-			ret << lexer.readtok while ntok = lexer.nexttok and ntok.type == :space
-			cancel[] if not tok = lexer.readtok
+
+			tok = nil
+			ret << tok while tok = lexer.readtok and tok.type == :space
+			cancel[] if not tok
 			ret << tok
+			otok = tok
 			case tok.type
 			when :string
 				parse_intfloat(lexer, tok)
 			when :quoted
-				cancel[] if tok.raw[0] != ?'
+				cancel[] if tok.raw[0] != ?'	# singlequoted only
 			when :punct
 				case tok.raw
 				when '('
-					ret << lexer.readtok while ntok = lexer.nexttok and (ntok.type == :space or ntok.type == :eol)
+					ret << tok while tok = lexer.readtok and (tok.type == :space or tok.type == :eol)
+					lexer.unreadtok tok
 					ret.concat parse_toks(lexer)
-					ret << lexer.readtok while ntok = lexer.nexttok and (ntok.type == :space or ntok.type == :eol)
-					raise tok, 'syntax error, no ) found' if not ntok = lexer.readtok or ntok.type != :punct or ntok.raw != ')'
-					ret << ntok
+					ret << tok while tok = lexer.readtok and (tok.type == :space or tok.type == :eol)
+					raise otok, 'syntax error, no ) found' if not tok = lexer.readtok or tok.type != :punct or tok.raw != ')'
+					ret << tok
 				when '!', '+', '-', '~'
 					# unary operators
-					ret << lexer.readtok while ntok = lexer.nexttok and (ntok.type == :space or ntok.type == :eol)
-					raise tok, 'need expression after unary operator' if not val = parse_value_toks(lexer)
+					raise otok, 'need expression after unary operator' if not val = parse_value_toks(lexer)
 					ret.concat val
 				when '.'
 					parse_intfloat(lexer, tok)
@@ -663,7 +691,8 @@ class Expression
 				end
 			else cancel[]
 			end
-			ret << lexer.readtok while ntok = lexer.nexttok and ntok.type == :space
+			ret << tok while tok = lexer.readtok and tok.type == :space
+			lexer.unreadtok tok
 			ret
 		end
 
