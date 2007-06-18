@@ -1,3 +1,4 @@
+require 'test/unit'
 require 'metasm/exe_format/shellcode'
 
 class TestEncodedData < Test::Unit::TestCase
