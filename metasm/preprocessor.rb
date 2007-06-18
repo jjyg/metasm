@@ -598,6 +598,7 @@ class Preprocessor
 
 		case cmd.raw
 		when 'if'
+			return false if @ifelse_nesting.last == :testing
 			case @ifelse_nesting.last
 			when :accept, nil
 				@ifelse_nesting << :testing
@@ -615,6 +616,7 @@ class Preprocessor
 			end
 
 		when 'ifdef'
+			return false if @ifelse_nesting.last == :testing
 			case @ifelse_nesting.last
 			when :accept, nil
 				tok = skipspc[]
@@ -627,6 +629,7 @@ class Preprocessor
 			end
 
 		when 'ifndef'
+			return false if @ifelse_nesting.last == :testing
 			case @ifelse_nesting.last
 			when :accept, nil
 				tok = skipspc[]
@@ -639,6 +642,7 @@ class Preprocessor
 			end
 
 		when 'elif'
+			return false if @ifelse_nesting.last == :testing
 			case @ifelse_nesting.last
 			when :accept
 				@ifelse_nesting[-1] = :discard_all
@@ -658,6 +662,7 @@ class Preprocessor
 			end
 
 		when 'else'
+			return false if @ifelse_nesting.last == :testing
 			eol = skipspc[]
 			raise cmd, 'pp syntax error' if @ifelse_nesting.empty? or (eol and eol.type != :eol)
 			unreadtok eol
@@ -670,6 +675,7 @@ class Preprocessor
 			end
 
 		when 'endif'
+			return false if @ifelse_nesting.last == :testing
 			eol = skipspc[]
 			raise cmd, 'pp syntax error' if @ifelse_nesting.empty? or (eol and eol.type != :eol)
 			unreadtok eol

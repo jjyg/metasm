@@ -43,7 +43,8 @@ EOS
 		t_preparse = proc { |text, result|
 			p = load text
 			txt = ''
-			txt << p.readtok.raw until p.eos?
+			t = nil
+			txt << t.raw until p.eos? or not t = p.readtok
 			assert_equal(result, txt.strip)
 		}
 		t_preparse[<<EOS, '']
@@ -156,6 +157,7 @@ y b d
 a b
 EOS
 		t_preparse["#define a(a) a(a)\na(1)", '1(1)']
+		t_preparse["#if 0\n#endif", '']
 	end
 
 	def test_errors
