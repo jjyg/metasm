@@ -2,8 +2,7 @@ require 'metasm'
 
 include Metasm
 
-p = Program.new Ia32.new
-p.parse <<EOS
+pe = PE.assemble Ia32.new, <<EOS
 .section '.text' r w x
 
 .import 'kernel32' 'GetCurrentProcess'
@@ -12,7 +11,7 @@ p.parse <<EOS
 .import 'advapi32' 'AdjustTokenPrivileges'
 .import 'user32'   'ExitWindowsEx'
 
-entrypoint:
+.entrypoint
 
 ; OpenProcessToken(GetCurrentProcess, ADJUST_PRIV | QUERY, &htok)
 push htok
@@ -57,7 +56,4 @@ tokpriv:
 privname db "SeShutdownPrivilege\0"
 
 EOS
-p.encode
-pe = PE.from_program(p)
-pe.optheader.entrypoint = 'entrypoint'
 pe.encode_file 'metasm-shutup.exe'
