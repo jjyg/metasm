@@ -287,7 +287,7 @@ class Preprocessor
 	# outputs the preprocessed source
 	def dump
 		while not eos?
-			print readtok.raw
+			print readtok.raw rescue nil
 		end
 	end
 
@@ -403,7 +403,7 @@ class Preprocessor
 				tok = readtok
 			end
 
-		elsif tok.type == :eol or lastpos == 0
+		elsif (tok.type == :eol or lastpos == 0) and @ifelse_nesting.last != :testing
 			unreadtok tok if lastpos == 0
 			# detect preprocessor directive
 			# state = 1 => seen :eol, 2 => seen #
@@ -442,8 +442,16 @@ class Preprocessor
 			tok = readtok
 
 		elsif @ifelse_nesting.last == :testing and tok.type == :string and tok.raw == 'defined'
-			preprocessor_directive(tok)
-			tok = readtok_nopp
+			tok = tok.dup
+			nil while t1 = readtok_nopp and t1.type == :space
+			if t1 and t1.type == :string
+				tok.raw = @definition[t1.raw] ? '1' : '0'
+			else
+				nil while t2 = readtok_nopp and t2.type == :space
+				nil while t3 = readtok_nopp and t3.type == :space
+				raise tok, 'syntax error' if not t3 or t1.type != :punct or t1.raw != '(' or t3.type != :punct or t3.raw != ')' or t2.type != :string
+				tok.raw = @definition[t2.raw] ? '1' : '0'
+			end
 		end
 
 		tok
@@ -588,17 +596,16 @@ class Preprocessor
 	# second parameter for internal use
 	def preprocessor_directive(cmd, ocmd = cmd)
 		# read spaces, returns the next token
+		# XXX for all commands that may change @ifelse_nesting, ensure last element is :testing to disallow any other preprocessor directive to be run in a bad environment (while looking ahead)
 		skipspc = proc {
 			loop do
 				tok = readtok_nopp
-				next if tok and tok.type == :space
-				break tok
+				break tok if not tok or tok.type != :space
 			end
 		}
 
 		case cmd.raw
 		when 'if'
-			return false if @ifelse_nesting.last == :testing
 			case @ifelse_nesting.last
 			when :accept, nil
 				@ifelse_nesting << :testing
@@ -609,40 +616,40 @@ class Preprocessor
 				case test.reduce
 				when 0:       @ifelse_nesting[-1] = :discard
 				when Integer: @ifelse_nesting[-1] = :accept
-				else raise cmd, 'pp cannot evaluate condition'
+				else          @ifelse_nesting[-1] = :discard
+#				else raise cmd, 'pp cannot evaluate condition ' + test.inspect
 				end
 			when :discard, :discard_all
 				@ifelse_nesting << :discard_all
 			end
 
 		when 'ifdef'
-			return false if @ifelse_nesting.last == :testing
 			case @ifelse_nesting.last
 			when :accept, nil
+				@ifelse_nesting << :testing
 				tok = skipspc[]
 				eol = skipspc[]
 				raise cmd, 'pp syntax error' if not tok or tok.type != :string or (eol and eol.type != :eol)
 				unreadtok eol
-				@ifelse_nesting << (@definition[tok.raw] ? :accept : :discard)
+				@ifelse_nesting[-1] = (@definition[tok.raw] ? :accept : :discard)
 			when :discard, :discard_all
 				@ifelse_nesting << :discard_all
 			end
 
 		when 'ifndef'
-			return false if @ifelse_nesting.last == :testing
 			case @ifelse_nesting.last
 			when :accept, nil
+				@ifelse_nesting << :testing
 				tok = skipspc[]
 				eol = skipspc[]
 				raise cmd, 'pp syntax error' if not tok or tok.type != :string or (eol and eol.type != :eol)
 				unreadtok eol
-				@ifelse_nesting << (@definition[tok.raw] ? :discard : :accept)
+				@ifelse_nesting[-1] = (@definition[tok.raw] ? :discard : :accept)
 			when :discard, :discard_all
 				@ifelse_nesting << :discard_all
 			end
 
 		when 'elif'
-			return false if @ifelse_nesting.last == :testing
 			case @ifelse_nesting.last
 			when :accept
 				@ifelse_nesting[-1] = :discard_all
@@ -655,15 +662,17 @@ class Preprocessor
 				case test.reduce
 				when 0:       @ifelse_nesting[-1] = :discard
 				when Integer: @ifelse_nesting[-1] = :accept
-				else raise cmd, 'pp cannot evaluate condition'
+				else          @ifelse_nesting[-1] = :discard
+#				else raise cmd, 'pp cannot evaluate condition ' + test.inspect
 				end
 			when :discard_all
 			else raise cmd, 'pp syntax error'
 			end
 
 		when 'else'
-			return false if @ifelse_nesting.last == :testing
+			@ifelse_nesting << :testing
 			eol = skipspc[]
+			@ifelse_nesting.pop
 			raise cmd, 'pp syntax error' if @ifelse_nesting.empty? or (eol and eol.type != :eol)
 			unreadtok eol
 			case @ifelse_nesting.last
@@ -675,22 +684,12 @@ class Preprocessor
 			end
 
 		when 'endif'
-			return false if @ifelse_nesting.last == :testing
+			@ifelse_nesting << :testing
 			eol = skipspc[]
+			@ifelse_nesting.pop
 			raise cmd, 'pp syntax error' if @ifelse_nesting.empty? or (eol and eol.type != :eol)
 			unreadtok eol
 			@ifelse_nesting.pop
-
-		when 'defined'
-			return false if not @ifelse_nesting.last == :testing
-			opn = skipspc[]
-			tok = skipspc[]
-			cls = skipspc[]
-			raise cmd, 'pp syntax error' if not cls or opn.type != :punct or opn.raw != '(' or cls.type != :punct or cls.raw != ')' or tok.type != :string
-			ret = cmd.dup
-			ret.type = :string
-			ret.raw = @definition[tok.raw] ? '1' : '0'
-			unreadtok ret
 
 		when 'define'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
@@ -721,7 +720,7 @@ class Preprocessor
 			nil while tok = readtok and tok.type == :space
 			raise cmd, 'pp syntax error' if not tok or (tok.type != :quoted and (tok.type != :punct or tok.raw != '<'))
 			if tok.type == :quoted
-				path = tok.value
+				path = ipath = tok.value
 				path = File.join(File.dirname(@filename[1..-2]), path) if path[0] != ?/
 			else
 				# no more preprocessing : allow comments/multiple space/etc
@@ -737,7 +736,8 @@ class Preprocessor
 				end
 			end
 
-			raise cmd, 'pp: No such file or directory' if not path or not File.exist? path
+			puts "metasm preprocessor: including #{ipath}" if $DEBUG
+			raise cmd, 'No such file or directory' if not path or not File.exist? path
 			raise cmd, 'filename too long' if path.length > 4096		# gcc
 
 			@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
@@ -751,9 +751,9 @@ class Preprocessor
 			@text = File.read(path)
 			@pos = 0
 			@queue = []
-			puts "metasm preprocessor: including #@filename" if $DEBUG
 
 		when 'error', 'warning'
+			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 			msg = ''
 			while tok = readtok_nopp and tok.type != :eol
 				msg << tok.raw

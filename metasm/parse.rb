@@ -530,7 +530,7 @@ class Expression
 				tok.value = $1.to_i(8)
 			when /^0x([a-fA-F0-9_]+)$/, /^([0-9][a-fA-F0-9_]*)h$/
 				tok.value = $1.to_i(16)
-			when /^[0-9_]+$/
+			when /^[0-9_]+l?$/i
 				# TODO 1e3 == 1000
 				if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == '.'
 					# parse float

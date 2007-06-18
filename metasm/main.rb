@@ -492,6 +492,12 @@ class Expression
 				l.send(@op, r)
 			end
 
+		# shortcircuit
+		elsif l == 0 and @op == :'&&'
+			0
+		elsif l.kind_of?(Numeric) and l != 0 and @op == :'||'
+			1
+
 		elsif @op == :-
 			if not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
 				if r.op == :- # no lexpr (reduced)
