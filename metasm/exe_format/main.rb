@@ -38,7 +38,8 @@ class ExeFormat
 	# creates a new object using the specified cpu, parses the asm source, and assemble
 	def self.assemble(cpu, source)
 		ex = new(cpu)
-		ex.parse(source)
+		caller.first =~ /^(.*?):(\d+)/
+		ex.parse(source, $1, $2.to_i+1)
 		ex.assemble
 		ex
 	end
