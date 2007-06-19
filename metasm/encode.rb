@@ -103,9 +103,9 @@ class ExeFormat
 						lenmax -= 0
 					end
 				}
-				raise EncodeError, "no room for .pad before .offset #{nextoff.val}" if lenmax < 0
+				raise EncodeError, "no room for .pad before '.offset #{nextoff.val}' at #{Backtrace::backtrace_str(nextoff.backtrace)}, need at least #{-lenmax} more bytes" if lenmax < 0
 				minoff += lenmin
-				maxoff += lenmax
+				maxoff += [lenmax, 0].max
 
 			when Offset
 				# nothing to do for now
@@ -229,7 +229,7 @@ class ExeFormat
 				nextoff = ary[ary.index(elem)..-1].grep(Offset).first
 				targetsize = nextoff.val
 				ary[ary.index(elem)+1..ary.index(nextoff)-1].each { |nelem| targetsize -= nelem.virtsize }
-				raise EncodeError, "no room for .pad before .offset #{nextoff.val} #{elem.backtrace}: would be #{targetsize} bytes long" if targetsize < 0
+				raise EncodeError, "no room for .pad before .offset #{nextoff.val} at #{Backtrace.backtrace_str(elem.backtrace)}: would be #{targetsize} bytes long" if targetsize < 0
 				fillwith[targetsize, elem.fillwith]
 			end
 		}
