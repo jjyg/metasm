@@ -55,6 +55,7 @@ class Shellcode < ExeFormat
 		@source.clear
 		@encoded.fixup! binding
 		@encoded.fixup @encoded.binding(@base_addr)
+		@encoded.fill @encoded.rawsize
 	end
 	alias encode assemble
 
