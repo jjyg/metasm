@@ -666,6 +666,12 @@ class EncodedData
 		@export.inject({}) { |binding, (n, o)| binding.update n => Expression[base, :+, o] }
 	end
 
+	# returns the offset where the relocation for target t is to be applied
+	def offset_of_reloc(t)
+		t = Expression[t]
+		@reloc.keys.find { |off| @reloc[off].target == t }
+	end
+
 	# fill virtual space by repeating pattern (String) up to len
 	# expand self if len is larger than self.virtsize
 	def fill(len = @virtsize, pattern = 0.chr)

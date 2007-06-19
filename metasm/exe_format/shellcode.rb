@@ -65,5 +65,13 @@ class Shellcode < ExeFormat
 		sc.encoded << str
 		sc
 	end
+
+	def self.desassemble(cpu, str, eip=0)
+		sc = decode(str, cpu)
+		sc.desasm(eip)
+		sc
+	end
+
+	alias to_s blocks_to_src
 end
 end
