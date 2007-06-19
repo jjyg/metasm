@@ -103,8 +103,7 @@ class ExeFormat
 						lenmax -= 0
 					end
 				}
-				# not sure what would happen if we just checked lenmax...
-				raise EncodeError, "no room for .pad before .offset #{nextoff.val}" if lenmin < 0
+				raise EncodeError, "no room for .pad before .offset #{nextoff.val}" if lenmax < 0
 				minoff += lenmin
 				maxoff += lenmax
 
