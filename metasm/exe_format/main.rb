@@ -1,4 +1,7 @@
 require 'metasm/main'
+require 'metasm/parse'
+require 'metasm/encode'
+require 'metasm/decode'
 
 module Metasm
 class ExeFormat
