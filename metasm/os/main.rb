@@ -1,3 +1,9 @@
+#    This file is part of Metasm, the Ruby assembly manipulation suite
+#    Copyright (C) 2007 Yoann GUILLOT
+#
+#    Licence is LGPL, see LICENCE in the top-level directory
+
+
 module Metasm
 # a virtual string, whose content is the memory of some other process
 # may be writeable, but its size cannot change
