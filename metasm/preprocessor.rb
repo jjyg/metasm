@@ -350,6 +350,7 @@ class Preprocessor
 	# handles trigraphs and \-continued lines
 	def getchar
 		@ungetcharpos = @pos
+		@ungetcharlineno = @lineno
 		c = @text[@pos]
 		@pos += 1
 
@@ -376,7 +377,8 @@ class Preprocessor
 	end
 
 	def ungetchar
-		@pos = @ungetcharpos || 0
+		@pos = @ungetcharpos
+		@lineno = @ungetcharlineno
 	end
 
 	# returns true if no more data is available
