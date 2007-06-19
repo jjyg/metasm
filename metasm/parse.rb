@@ -121,8 +121,8 @@ class AsmPreprocessor
 					t.raw = labels[t.raw]
 				elsif args[t.raw]
 					args[t.raw].map { |a|
-						tt = t.dup
-						tt.raw = a.raw
+						tt = a.dup
+						tt.backtrace = t.backtrace
 						tt
 					}
 				else
@@ -142,14 +142,14 @@ class AsmPreprocessor
 				raise @name, 'invalid arg definition' if not tok = lexer.readtok or tok.type != :string
 				@args << tok
 				lexer.skip_space
-				raise @name, 'invalid arg separator' if not tok = lexer.readtok or ((tok.type != :punct or tok != ',') and tok != :eol)
+				raise @name, 'invalid arg separator' if not tok = lexer.readtok or ((tok.type != :punct or tok.raw != ',') and tok.type != :eol)
 				break if tok.type == :eol
 				lexer.skip_space
 			end
 
 			lexer.skip_space_eol
-			while tok = lexer.nexttok and (tok.type != :string or tok.raw != 'endm')
-				@body << lexer.readtok
+			while tok = lexer.readtok and (tok.type != :string or tok.raw != 'endm')
+				@body << tok
 				if @body[-2] and @body[-2].type == :string and @body[-1].raw == ':' and (not @body[-3] or @body[-3].type == :eol)
 					@labels[@body[-2].raw] = true
 				elsif @body[-3] and @body[-3].type == :string and @body[-2].type == :space and Data::DataSpec.include?(@body[-1].raw) and (not @body[-4] or @body[-4].type == :eol)
