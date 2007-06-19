@@ -329,7 +329,7 @@ class ExeFormat
 			@lexer.skip_space
 			if ntok = @lexer.readtok and ntok.type != :eol
 				# allow single byte value or full data statement
-				if not ntok = @lexer.readtok or not ntok.type == :string or not Data::DataSpec.include?(ntok.raw)
+				if not ntok.type == :string or not Data::DataSpec.include?(ntok.raw)
 					@lexer.unreadtok ntok
 					type = 'db'
 				else
