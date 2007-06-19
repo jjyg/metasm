@@ -14,17 +14,26 @@ class MIPS
 	end
 
         def parse_argument(pgm)
-		if Reg.s_to_i[pgm.nexttok]
-			arg = Reg.new Reg.s_to_i[pgm.readtok]
-		elsif FpReg.s_to_i[pgm.nexttok]
-			arg = FpReg.new FpReg.s_to_i[pgm.readtok]
+		pgm.skip_space
+		return if not tok = pgm.nexttok
+		if tok.type == :string and Reg.s_to_i[tok.raw]
+			pgm.readtok
+			arg = Reg.new Reg.s_to_i[tok.raw]
+		elsif tok.type == :string and FpReg.s_to_i[tok.raw]
+			pgm.readtok
+			arg = FpReg.new FpReg.s_to_i[tok.raw]
 		else
 			arg = Expression.parse pgm
-			if arg and pgm.nexttok == :'('
+			pgm.skip_space
+			if arg and pgm.nexttok and pgm.nexttok.type == :punct and pgm.nexttok.raw == '('
 				pgm.readtok
-				raise pgm, "Invalid base #{nexttok}" unless Reg.s_to_i[pgm.nexttok]
-				base = Reg.new Reg.s_to_i[pgm.readtok]
-				raise pgm, "Invalid memory reference, ')' expected" if pgm.readtok != :')'
+				pgm.skip_space_eol
+				ntok = pgm.readtok
+				raise tok, "Invalid base #{ntok}" unless ntok and ntok.type == :string and Reg.s_to_i[ntok.raw]
+				base = Reg.new Reg.s_to_i[ntok.raw]
+				pgm.skip_space_eol
+				ntok = pgm.readtok
+				raise tok, "Invalid memory reference, ')' expected" if not ntok or ntok.type != :punct or ntok.raw != ')'
 				arg = Memref.new base, arg
 			end
 		end

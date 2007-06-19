@@ -5,11 +5,11 @@ module Metasm
 class MIPS
 	class Reg
 		include Renderable
-		def render ; [self.class.i_to_s[@val]] end
+		def render ; [self.class.i_to_s[@i]] end
 	end
 	class FpReg
 		include Renderable
-		def render ; [self.class.i_to_s[@val]] end
+		def render ; [self.class.i_to_s[@i]] end
 	end
 	class Memref
 		include Renderable
