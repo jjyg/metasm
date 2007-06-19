@@ -145,8 +145,8 @@ class Ia32
 		addop('popfd', [0x9D]) { |o| o.props[:opsz] = 32 }
 		addop 'push',  [0x50], :reg
 		addop 'push',  [0xFF], 6
-		addop 'push',  [0x68], nil,  {:s => [0, 1]}, :i
 		addop('push.i16', [0x68], nil, {}, :i) { |o| o.props[:opsz] = 16 }
+		addop 'push',  [0x68], nil,  {:s => [0, 1]}, :i
 		addop('push.i32', [0x68], nil, {}, :i) { |o| o.props[:opsz] = 32 }
 		addop 'push',  [0x06], nil,  {:seg2 => [0, 3]}, :seg2
 		addop 'push',  [0x0F, 0x80], nil,  {:seg3 => [1, 3]}
