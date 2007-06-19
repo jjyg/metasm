@@ -7,7 +7,6 @@ syscall macro nr
  int 80h
 endm
 
-.code
  nop nop
  call foobar
 toto_str db "toto\n"
@@ -15,7 +14,7 @@ toto_str_len equ $ - toto_str
 
 foobar:
 ; setup write arguments
- mov ebx, stdout		# fd
+ mov ebx, stdout		; fd
  call got_eip
 got_eip: pop ecx
  add ecx, toto_str - got_eip	// buf
@@ -23,7 +22,7 @@ got_eip: pop ecx
  syscall(sys_write)
 
  /*
- # hang forever
+ ; hang forever
  jmp $
  */
 

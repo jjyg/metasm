@@ -1,5 +1,0 @@
-metasm-shell:
-
-- gérer readline
-- si input commence par " ou ', faire un .decode
-- sinon encoder
