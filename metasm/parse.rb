@@ -369,7 +369,7 @@ class ExeFormat
 			@cursource << Padding.new(fillwith, tok.backtrace.dup) << Offset.new(e, tok.backtrace.dup)
 
 		else
-			@cpu.parse_parser_instruction(self, instr)
+			@cpu.parse_parser_instruction(self, tok)
 		end
 	end
 
