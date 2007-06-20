@@ -8,20 +8,21 @@
 
 require 'metasm/ia32/parse'
 require 'metasm/ia32/encode'
-require 'metasm/exe_format/elf'
+require 'metasm/exe_format/elf_encode'
 
-cpu = Metasm::Ia32.new
-prog = Metasm::Program.new cpu
+elf = Metasm::ELF.assemble(Metasm::Ia32.new, DATA.read)
 
-prog.parse DATA.read
+# add a PT_GNU_STACK RW segment descriptor
+ptgnustack = Metasm::ELF::Segment.new
+ptgnustack.memsize = %w[R W]
+ptgnustack.type = 'PT_GNU_STACK'
+elf.segments << ptgnustack
 
-prog.encode
-pt_gnu_stack = { 'type' => 0x6474e551, 'flags' => %w[R W] }
-data = Metasm::ELF.encode prog, 'unstripped' => true, 'elf_interp' => '/lib/ld-linux.so.2', 'additional_segments' => [pt_gnu_stack], 'init' => 'pre_start'
-
-File.open('testelf', 'wb', 0755) { |fd| fd.write data }
+elf.encode_file('testelf')
 
 __END__
+.interp '/lib/ld-linux.so.2'
+
 sys_write equ 4
 sys_exit  equ 1
 stdout    equ 1
