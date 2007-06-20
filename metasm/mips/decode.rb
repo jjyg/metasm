@@ -42,7 +42,7 @@ class MIPS
 		if not di.opcode = @bin_lookaside[val >> 24].find { |op|
 			(op.bin & op.bin_mask) == (val & op.bin_mask)
 		}
-			raise "unknown opcode byte #{byte}"
+			raise InvalidInstruction, "unknown opcode #{val.to_s 16}"
 		end
 	end
 
@@ -54,13 +54,23 @@ class MIPS
 		val = edata.decode_imm(:u32, @endianness)
 
 		field_val = proc { |f|
-			(val >> @fields_shift[f]) & @fields_mask[f]
+			r = (val >> @fields_shift[f]) & @fields_mask[f]
+			# XXX do that cleanly (Expr.decode_imm)
+			case f
+			when :sa, :i16, :it
+				((r >> 15) == 1) ? (r - (1 << 16)) : r
+			when :i20
+				((r >> 19) == 1) ? (r - (1 << 20)) : r
+			when :i26
+				((r >> 25) == 1) ? (r - (1 << 26)) : r
+			else r
+			end
 		}
 
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :rs, :rt, :rd: Reg.new field_val[a]
-			when :sa, :i16, :i26, :it: Expression[field_val[a]]
+			when :sa, :i16, :i20, :i26, :it: Expression[field_val[a]]
 			when :rs_i16: Memref.new field_val[:rs], field_val[:i16]
 			when :ft: FpReg.new field_val[a]
 			when :idm1, :idb: Expression['unsupported']
@@ -68,37 +78,38 @@ class MIPS
 			end
 		}
 		di.bin_length += edata.ptr - before_ptr
+
+		if op.props[:setip] and di.instruction.args.last.kind_of? Expression
+			tg = off + di.bin_length + di.instruction.args.last.reduce
+			di.instruction.args[-1] = Expression[program.label_at_addr(tg, 'xref_%08x' % tg)]
+		end
 	end
 
 	def emu_backtrace(di, off, value)
 		symify = proc { |tg|
 			case tg
-			when Memref
-				Indirection.new(Expression[tg.base.to_s.to_sym, :+, tg.offset], :u32)
-			when Reg
-				tg.to_s.to_sym
-			else
-				tg
+			when Memref: Indirection.new(Expression[tg.base.to_s.to_sym, :+, tg.offset], :u32)
+			when Reg: tg.to_s.to_sym
+			else tg
 			end
 		}
-
 		a = di.instruction.args.map { |arg| symify[arg] }
 
 		case op = di.opcode.name
 		when :TODO
 		else nil
 		end
-
 	end
 
 	def get_jump_targets(pgm, di, off)
-		case di.opcode.name
-		when :TODO
-			tg = off + di.bin_length + delta
-			di.instruction.args[0] = Expression[pgm.make_label(tg, 'label'), :-, pgm.make_label(off + di.bin_length)]
-			[Expression[tg]]
-		else []
-		end
+		symify = proc { |tg|
+			case tg
+			when Memref: Indirection.new(Expression[tg.base.to_s.to_sym, :+, tg.offset], :u32)
+			when Reg: tg.to_s.to_sym	# XXX $1 == $t0 == ...
+			else tg
+			end
+		}
+		[symify[di.instruction.args.last]]
 	end
 end
 end

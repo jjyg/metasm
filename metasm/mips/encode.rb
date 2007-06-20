@@ -10,13 +10,23 @@ require 'metasm/encode'
 module Metasm
 class MIPS
 	private
-	def encode_instr_op(section, instr, op)
+	def encode_instr_op(exe, instr, op)
 		base = op.bin
 		set_field = proc { |f, v|
 			base |= (v & @fields_mask[f]) << @fields_shift[f]
 		}
 
 		val, mask, shift = 0, 0, 0
+
+		# convert label name for jmp/call/loop to relative offset
+		if op.props[:setip] and instr.args.last.kind_of? Expression
+			postlabel = exe.new_label('jmp_offset')
+			instr = instr.dup
+			instr.args[-1] = Expression[instr.args[-1], :-, postlabel]
+			postdata = EncodedData.new '', :export => {postlabel => 0}
+		else
+			postdata = ''
+		end
 
 		op.args.zip(instr.args).each { |sym, arg|
 			case sym
@@ -33,8 +43,8 @@ class MIPS
 				val, mask, shift = Expression[arg, :>>, 2], @fields_mask[sym], @fields_shift[sym]
 			end
 		}
-		# XXX detect coff relocs
-		Expression[base, :+, [[val, :&, mask], :<<, shift]].encode(:u32, @endianness)
+
+		Expression[base, :+, [[val, :&, mask], :<<, shift]].encode(:u32, @endianness) << postdata
 	end
 end
 end

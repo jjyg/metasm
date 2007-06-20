@@ -32,6 +32,7 @@ class MIPS
 		else
 			arg = Expression.parse pgm
 			pgm.skip_space
+			# check memory indirection: 'off(base reg)'	# XXX scaled index ?
 			if arg and pgm.nexttok and pgm.nexttok.type == :punct and pgm.nexttok.raw == '('
 				pgm.readtok
 				pgm.skip_space_eol
