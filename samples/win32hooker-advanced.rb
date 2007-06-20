@@ -37,7 +37,7 @@ remote_mem = WindowsRemoteString.new(handle)
 # the main shellcode
 sc = Shellcode.assemble Ia32.new, <<EOS
 main_hook:
- pushf				; save registers
+ pushfd				; save registers
  pushad
 
  mov eax, dword ptr [in_hook]	; check if we are in the hook (yay threadsafe)
@@ -56,7 +56,7 @@ main_hook:
  mov dword ptr [in_hook], 0
 main_hook_done:
  popad
- popf
+ popfd
  ret 4
 
 .align 4
