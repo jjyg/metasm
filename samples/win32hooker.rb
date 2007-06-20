@@ -15,7 +15,6 @@
 #
 
 require 'metasm'
-require 'metasm-shell'
 
 include Metasm
 include WinAPI
