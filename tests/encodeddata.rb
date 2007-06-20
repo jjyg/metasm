@@ -94,4 +94,34 @@ EOS
 		assert_equal(0, e[2, 8].reloc.length)
 		assert_equal(0, e[1, 3].reloc.length)
 	end
+
+	def test_fixup
+		e = compile <<EOS
+db 1
+db toto + tata
+dd tutu
+EOS
+		assert_equal(2, e.reloc.length)
+		e.fixup!('toto' => 42)
+		assert_raise(Metasm::EncodeError) { e.fixup('tata' => 192349129) }
+		e.fixup('tata' => -12)
+		assert_equal(30, e.data[1])
+		assert_equal(1, e.reloc.length)
+		assert_equal(2, e.offset_of_reloc('tutu'))
+		assert_equal(2, e.offset_of_reloc(Metasm::Expression[:+, 'tutu']))
+		e.fixup('tutu' => 1024)
+		assert_equal("\1\x1e\0\4\0\0", e.data)
+
+		ee = Metasm::Expression[:+, 'bla'].encode(:u16, :big)
+		ee.fixup('bla' => 1024)
+		assert_equal("\4\0", ee.data)
+		
+		eee = compile <<EOS
+db abc - def
+def:
+db 12 dup(?, 3 dup('x'))
+abc:
+EOS
+		assert_equal(12*4, eee.data[0])
+	end
 end

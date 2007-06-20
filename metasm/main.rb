@@ -640,8 +640,9 @@ class EncodedData
 		@reloc.keys.each { |off|
 			val = @reloc[off].target.bind(binding).reduce
 			if val.kind_of? Integer
-				reloc = @reloc.delete(off)
+				reloc = @reloc[off]
 				str = Expression.encode_immediate(val, reloc.type, reloc.endianness, reloc.backtrace)
+				@reloc.delete(off)	# delete only if encode_imm does not raise
 				fill off
 				@data[off, str.length] = str
 			elsif replace_target
