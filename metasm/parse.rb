@@ -26,6 +26,7 @@ class CPU
 		end
 	
 		# allow '.' in opcode name
+		tok = tok.dup
 		while ntok = lexer.nexttok and ntok.type == :punct and ntok.raw == '.'
 			tok.raw << lexer.readtok.raw
 			ntok = lexer.readtok
@@ -199,7 +200,8 @@ class AsmPreprocessor
 		if tok and tok.type == :punct and tok.raw == ';'
 			tok.type = :eol
 			begin
-				while ntok = readtok and ntok.type != :eol
+				tok = tok.dup
+				while ntok = readtok_cpp and ntok.type != :eol
 					tok.raw << ntok.raw
 				end
 				tok.raw << ntok.raw if ntok
@@ -211,8 +213,10 @@ class AsmPreprocessor
 		# aggregate space/eol
 		if tok and (tok.type == :space or tok.type == :eol)
 			if ntok = readtok and ntok.type == :space
+				tok = tok.dup
 				tok.raw << ntok.raw
 			elsif ntok and ntok.type == :eol
+				tok = tok.dup
 				tok.raw << ntok.raw
 				tok.type = :eol
 			else
@@ -274,6 +278,7 @@ class ExeFormat
 			when :punct
 				case tok.raw
 				when '.'
+					tok = tok.dup
 					while ntok = @lexer.nexttok and ((ntok.type == :string) or (ntok.type == :punct and ntok.raw == '.'))
 						tok.raw << @lexer.readtok.raw
 					end
@@ -464,6 +469,7 @@ class Expression
 			# may be followed by itself or '='
 			when '>', '<'
 				if ntok = lexer.readtok and ntok.type == :punct and (ntok.raw == op.raw or ntok.raw == '=')
+					op = op.dup
 					op.raw << ntok.raw
 				else
 					lexer.unreadtok ntok
@@ -471,6 +477,7 @@ class Expression
 			# may be followed by itself
 			when '|', '&'
 				if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == op.raw
+					op = op.dup
 					op.raw << ntok.raw
 				else
 					lexer.unreadtok ntok
@@ -482,6 +489,7 @@ class Expression
 					lexer.unreadtok tok
 					return
 				end
+				op = op.dup
 				op.raw << ntok.raw
 			# ok
 			when '^', '+', '-', '*', '/', '%'
@@ -601,7 +609,7 @@ class Expression
 					lexer.unreadtok ntok
 					val = parse(lexer)
 					nil while ntok = lexer.readtok and (ntok.type == :space or ntok.type == :eol)
-					raise tok, 'syntax error, no ) found' if not ntok or ntok.type != :punct or ntok.raw != ')'
+					raise tok, "syntax error, no ) found after #{val.inspect}, got #{ntok.inspect}" if not ntok or ntok.type != :punct or ntok.raw != ')'
 				when '!', '+', '-', '~'
 					nil while ntok = lexer.readtok and (ntok.type == :space or ntok.type == :eol)
 					lexer.unreadtok ntok
@@ -646,6 +654,7 @@ class Expression
 				opstack << op.value
 				
 				raise op, 'need rhs' if not e = parse_value(lexer)
+
 				stack << e
 			end
 

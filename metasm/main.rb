@@ -77,7 +77,7 @@ class CPU
 	def initialize
 		@fields_mask = {}
 		@valid_args  = []
-		@valid_props = []
+		@valid_props = [:setip, :saveip, :stopexec]
 		@opcode_list = []
 	end
 
@@ -178,7 +178,7 @@ class Token
 		n = self.class.new(backtrace)
 		n.type = @type
 		n.value = @value
-		n.raw = @raw
+		n.raw = @raw.dup
 		n
 	end
 
@@ -612,6 +612,7 @@ class EncodedData
 		@reloc    = opts[:reloc]    || {}
 		@export   = opts[:export]   || {}
 		@virtsize = opts[:virtsize] || @data.length
+		@ptr = 0
 	end
 
 	# returns the size of raw data, that is [data.length, last relocation end].max
