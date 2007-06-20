@@ -4,18 +4,9 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+require 'metasm'
 
-
-# usage: test.rb < source.asm
-
-require 'metasm/ia32/parse'
-require 'metasm/ia32/encode'
-require 'metasm/exe_format/pe'
-
-cpu = Metasm::Ia32.new
-prog = Metasm::Program.new cpu
-
-prog.parse <<EOS
+pe = Metasm::PE.assemble Metasm::Ia32.new, <<EOS
 .text
 m_cpuid macro nr
 	xor ebx, ebx
@@ -25,7 +16,8 @@ m_cpuid macro nr
 	cpuid
 endm
 
-start:
+.entrypoint
+
 push ebx push ecx push edx
 
 m_cpuid(0)
@@ -71,11 +63,11 @@ pop edx pop ecx pop ebx
 xor eax, eax
 ret
 
-.import 'user32' 'MessageBoxA', messagebox
-.import 'user32' 'wsprintfA', wsprintf
+.import 'user32' 'MessageBoxA' MessageBoxA messagebox
+.import 'user32' 'wsprintfA' wsprintfA wsprintf
 
 .data
-format  db 'CPU: %s\nBrandstring: %s', 0
+format  db 'CPU: %s\\nBrandstring: %s', 0
 title   db 'cpuid', 0
 
 .export foo, "Ordinal_42"
@@ -84,28 +76,25 @@ foo dw "Test", 0
 
 .bss
 buffer  db 1025 dup(?)
-align 4
+.align 4
 cpuname db 3*4+1 dup(?)
-align 4
+.align 4
 cpubrand db 3*4*4+1 dup(?)
 
 EOS
 
-prog.encode
-data = Metasm::PE.encode prog
-
 if ARGV.delete '--dump'
 require 'enumerator'
 o = -16
-data.unpack('C*').each_slice(16) { |s|
+pe.encode_string.unpack('C*').each_slice(16) { |s|
 	print '%04x  ' % (o += 16)
 	print s.map { |b| '%02x' % b }.join(' ').ljust(3*16-1) + '  '
 	print s.pack('C*').unpack('L*').map { |bb| '%08x' % bb }.join(' ').ljust(9*4-1) + '  '
 	puts  s.pack('C*').tr('^a-z0-9A-Z', '.')
 }
+else
+	pe.encode_file('metasm-cpuid.exe')
 end
-
-File.open('metasm-testpe.exe', 'wb') { |fd| fd.write data }
 
 __END__
 
