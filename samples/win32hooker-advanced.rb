@@ -79,7 +79,7 @@ prepare_hook = proc { |mpe, base, export|
 	sz = 0
 	overwritten = []
 	while sz < hooks[target].length
-		di = prog.cpu.decode prog, mpe.encoded, target
+		di = sc.cpu.decode_instruction sc, mpe.encoded, target
 		if not di or not di.opcode or not di.instruction
 			puts "W: unknown instruction in #{export.name} !"
 			break
