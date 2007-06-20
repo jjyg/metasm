@@ -18,6 +18,10 @@ class MIPS
 		o.bin = bin
 		o.args.concat(args & @fields_mask.keys)
 		(args & @valid_props).each { |p| o.props[p] = true }
+if $DEBUG
+a = (args - @valid_props - @fields_mask.keys)
+p ['mips unhandled args',a]	if not a.empty?
+end
 
 		@opcode_list << o
 	end
@@ -48,10 +52,10 @@ class MIPS
 	def init_mips32
 		@fields_mask.update :rs => 0x1f, :rt => 0x1f, :rd => 0x1f, :sa => 0x1f,
 			:i16 => 0xffff, :i26 => 0x3ffffff, :rs_i16 => 0x3e0ffff, :it => 0x1f,
-			:ft => 0x1f, :idm1 => 0x1f, :idb => 0x1f, :sel => 7 #, :i32 => 0
+			:ft => 0x1f, :idm1 => 0x1f, :idb => 0x1f, :sel => 7, :i20 => 0xfffff #, :i32 => 0
 		@fields_shift.update :rs => 21, :rt => 16, :rd => 11, :sa => 6,
 			:i16 => 0, :i26 => 0, :rs_i16 => 0, :it => 16,
-			:ft => 16, :idm1 => 11, :idb => 11, :sel => 0 #, :i32 => 0
+			:ft => 16, :idm1 => 11, :idb => 11, :sel => 0, :i20 => 0 #, :i32 => 0
 
 		init_mips32_obsolete
 		init_mips32_reserved

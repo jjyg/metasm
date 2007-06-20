@@ -13,9 +13,10 @@ class MIPS
 		# special case for lw reg, imm32(reg) ? (pseudo-instr, need to convert to 'lui t0, up imm32  ori t0 down imm32  add t0, reg  lw reg, 0(t0)
 		case sym
 		when :rs, :rt, :rd:   arg.class == Reg
-		when :sa, :i16, :i26: arg.kind_of? Expression
+		when :sa, :i16, :i20, :i26: arg.kind_of? Expression
 		when :rs_i16:         arg.class == Memref
 		when :ft:             arg.class == FpReg
+		else raise "internal error: mips arg #{sym.inspect}"
 		end
 	end
 

@@ -27,7 +27,7 @@ class MIPS
 			when :rs_i16
 				set_field[:rs, arg.base.i]
 				val, mask, shift = arg.offset, @fields_mask[:i16], @fields_shift[:i16]
-			when :sa, :i16
+			when :sa, :i16, :i20
 				val, mask, shift = arg, @fields_mask[sym], @fields_shift[sym]
 			when :i26
 				val, mask, shift = Expression[arg, :>>, 2], @fields_mask[sym], @fields_shift[sym]
