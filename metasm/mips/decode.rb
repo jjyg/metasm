@@ -71,7 +71,7 @@ class MIPS
 			di.instruction.args << case a
 			when :rs, :rt, :rd: Reg.new field_val[a]
 			when :sa, :i16, :i20, :i26, :it: Expression[field_val[a]]
-			when :rs_i16: Memref.new field_val[:rs], field_val[:i16]
+			when :rs_i16: Memref.new Reg.new(field_val[:rs]), field_val[:i16]
 			when :ft: FpReg.new field_val[a]
 			when :idm1, :idb: Expression['unsupported']
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
@@ -79,8 +79,9 @@ class MIPS
 		}
 		di.bin_length += edata.ptr - before_ptr
 
-		if op.props[:setip] and di.instruction.args.last.kind_of? Expression
-			tg = off + di.bin_length + di.instruction.args.last.reduce
+		if op.props[:setip] and op.name[0] != ?t and di.instruction.args.last.kind_of? Expression
+			delta = di.instruction.args.last.reduce << 2
+			tg = off + di.bin_length + delta
 			di.instruction.args[-1] = Expression[program.label_at_addr(tg, 'xref_%08x' % tg)]
 		end
 	end

@@ -19,10 +19,10 @@ class MIPS
 		val, mask, shift = 0, 0, 0
 
 		# convert label name for jmp/call/loop to relative offset
-		if op.props[:setip] and instr.args.last.kind_of? Expression
+		if op.props[:setip] and op.name[0] != ?t and instr.args.last.kind_of? Expression
 			postlabel = exe.new_label('jmp_offset')
 			instr = instr.dup
-			instr.args[-1] = Expression[instr.args[-1], :-, postlabel]
+			instr.args[-1] = Expression[[instr.args[-1], :-, postlabel], :>>, 2]
 			postdata = EncodedData.new '', :export => {postlabel => 0}
 		else
 			postdata = ''

@@ -55,7 +55,7 @@ end
 			:ft => 0x1f, :idm1 => 0x1f, :idb => 0x1f, :sel => 7, :i20 => 0xfffff #, :i32 => 0
 		@fields_shift.update :rs => 21, :rt => 16, :rd => 11, :sa => 6,
 			:i16 => 0, :i26 => 0, :rs_i16 => 0, :it => 16,
-			:ft => 16, :idm1 => 11, :idb => 11, :sel => 0, :i20 => 0 #, :i32 => 0
+			:ft => 16, :idm1 => 11, :idb => 11, :sel => 0, :i20 => 6 #, :i32 => 0
 
 		init_mips32_obsolete
 		init_mips32_reserved
