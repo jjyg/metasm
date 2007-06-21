@@ -4,6 +4,11 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+#
+# here we assemble a dummy MIPS PE
+# TODO autodetect header.machine from cpu, find something to put in
+# the MZ header, make a real mips sample program
+#
 
 
 require 'metasm'

@@ -37,13 +37,14 @@ EOS
 
 # read original file
 target = ARGV.shift
-pe = Metasm::PE.decode Metasm::VirtualFile.read(target)
+pe = Metasm::PE.decode_file(target)
 
 # modify last section
 s = pe.sections.last
 s.encoded.data = s.encoded.data.to_str
 s.encoded << newcode
 s.virtaddr = s.virtsize = s.rawaddr = s.rawsize = nil
+s.encoded.fixup!('entrypoint' => pe.optheader.image_base + pe.optheader.entrypoint)
 
 # patch entrypoint
 pe.optheader.entrypoint = 'hook_entrypoint'
@@ -56,7 +57,7 @@ pe.encode_header
 pe.encoded << oldhdr[pe.encoded.virtsize..-1] if oldhdr.virtsize > pe.encoded.virtsize
 pe.encode_sections_fixup
 
-puts "Unresolved relocations: #{pe.encoded.reloc.inspect}" if not pe.encoded.reloc.empty?
+puts "Unresolved relocations: #{pe.encoded.reloc.map { |o, r| r.target }.join(', ')}" if not pe.encoded.reloc.empty?
 
 # save to file
 File.open(target.sub('.exe', '-patch.exe'), 'wb') { |fd| fd.write pe.encoded.data }

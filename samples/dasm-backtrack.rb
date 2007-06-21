@@ -5,28 +5,30 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
+# 
+# quick demonstration that the disassembler's backtracker works
+#
 
 require 'metasm-shell'
 
-# String.cpu.make_call_return	# assume call does not stop_exec
+puts <<EOS.encode.decode
+.base_addr 0
 
-puts <<EOS.encode(0).decode
-
-; calcule l'adresse du saut
+; compute jump target
 mov ebx, 0x12345678
 mov eax, ((toto + 12) ^ 0x12345678)
 xor eax, ebx
 sub eax, 12
 
-; saute
+; jump
 call eax
 
-; code mort
+; trap
 add eax, 42
 ; die, you vile reverser !
 db 0e9h
 
-; cible du saut
+; real target
 toto:
 mov eax, 28h
 

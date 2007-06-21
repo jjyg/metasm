@@ -4,6 +4,12 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
+# 
+# here we will build an executable file that will shut down the machine
+# when run
+# TODO #include <windows.h>, use some struct handling
+#
+
 require 'metasm'
 
 include Metasm
@@ -11,11 +17,11 @@ include Metasm
 pe = PE.assemble Ia32.new, <<EOS
 .section '.text' r w x
 
-.import 'kernel32' 'GetCurrentProcess' GetCurrentProcess getcurrentprocess
-.import 'advapi32' 'OpenProcessToken'  OpenProcessToken openprocesstoken
-.import 'advapi32' 'LookupPrivilegeValueA' LookipPrivilegeValueA lookupprivilegevalue
-.import 'advapi32' 'AdjustTokenPrivileges' AdjustTokenPrivileges adjusttokenprivileges
-.import 'user32'   'ExitWindowsEx' ExitWindowsEx exitwindowsex
+.import kernel32 GetCurrentProcess getcurrentprocess
+.import advapi32 OpenProcessToken  openprocesstoken
+.import advapi32 LookupPrivilegeValueA lookupprivilegevalue
+.import advapi32 AdjustTokenPrivileges adjusttokenprivileges
+.import user32   ExitWindowsEx exitwindowsex
 
 .entrypoint
 

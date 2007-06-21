@@ -4,6 +4,12 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+
+# 
+# this sample shows the compilation of a slightly more complex program
+# it displays in a messagebox the result of CPUID
+#
+
 require 'metasm'
 
 pe = Metasm::PE.assemble Metasm::Ia32.new, <<EOS
@@ -63,16 +69,19 @@ pop edx pop ecx pop ebx
 xor eax, eax
 ret
 
-.import 'user32' 'MessageBoxA' MessageBoxA messagebox
-.import 'user32' 'wsprintfA' wsprintfA wsprintf
+.import user32 MessageBoxA messagebox
+.import user32 wsprintfA wsprintf
+
+#define PE_HOOK_TARGET
+#ifdef PE_HOOK_TARGET
+; import these to be a good target for pe-hook.rb
+.import kernel32 LoadLibraryA
+.import kernel32 GetProcAddress
+#endif
 
 .data
 format  db 'CPU: %s\\nBrandstring: %s', 0
 title   db 'cpuid', 0
-
-.export foo, "Ordinal_42"
-bla dw "lol"
-foo dw "Test", 0
 
 .bss
 buffer  db 1025 dup(?)
@@ -83,20 +92,11 @@ cpubrand db 3*4*4+1 dup(?)
 
 EOS
 
-if ARGV.delete '--dump'
-require 'enumerator'
-o = -16
-pe.encode_string.unpack('C*').each_slice(16) { |s|
-	print '%04x  ' % (o += 16)
-	print s.map { |b| '%02x' % b }.join(' ').ljust(3*16-1) + '  '
-	print s.pack('C*').unpack('L*').map { |bb| '%08x' % bb }.join(' ').ljust(9*4-1) + '  '
-	puts  s.pack('C*').tr('^a-z0-9A-Z', '.')
-}
-else
-	pe.encode_file('metasm-cpuid.exe')
-end
+pe.encode_file('metasm-cpuid.exe')
 
 __END__
+
+// original C code (more complete)
 
 #include <unistd.h>
 #include <stdio.h>

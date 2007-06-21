@@ -16,20 +16,21 @@ if not pr = WinAPI.find_process((Integer(ARGV.first) rescue ARGV.first))
 	puts WinAPI.list_processes.sort_by { |pr| pr.pid }.map { |pr| "#{pr.pid}: #{File.basename(pr.modules.first.path) rescue nil}" }
 	exit
 end
-raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pr.pid)
-
 # virtual mapping of remote process memory
-remote_mem = WindowsRemoteString.new(handle)
+remote_mem = WindowsRemoteString.open_pid(pr.pid)
 
+# retrieve the pe load address
 baseaddr = pr.modules[0].addr
 
-pe = Metasm::LoadedPE.decode remote_mem[baseaddr, 0x100000]
+# decode the COFF headers
+pe = Metasm::LoadedPE.load remote_mem[baseaddr, 0x100000]
+pe.decode_header
 
+# get the entrypoint address
 eip = baseaddr + pe.optheader.entrypoint
 
-# use degraded desasm mode
-String.cpu.make_call_return
+# use degraded desasm mode: assume all calls will return
+String.cpu.make_call_return	# String.cpu is the Ia32 cpu set up by metasm-shell
 
-puts pe.encoded[pe.optheader.entrypoint, 0x100].data.decode(eip, eip)
-
-WinAPI.closehandle(handle)
+# disassemble & dump opcodes
+puts pe.encoded[pe.optheader.entrypoint, 0x100].data.decode(eip)
