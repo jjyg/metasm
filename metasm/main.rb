@@ -782,7 +782,7 @@ class EncodedData
 
 		# remove overwritten
 		@export.delete_if { |name, off| off > from and off < from + len }
-		@reloc.delete_if { |off, rel| off - Expression::INT_SIZE[r.type]/8 > from and off < from + len }
+		@reloc.delete_if { |off, rel| off - Expression::INT_SIZE[rel.type]/8 > from and off < from + len }
 		# shift after insert
 		if val.virtsize != len
 			diff = val.virtsize - len

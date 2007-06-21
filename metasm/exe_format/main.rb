@@ -57,7 +57,7 @@ class ExeFormat
 	# resolved, and returns the raw string version
 	def encode_string(*a)
 		encode(*a)
-		raise "Unresolved relocations #{@encoded.reloc.map { |o, r| r.target }.inspect}" if not @encoded.reloc.empty?
+		raise ["Unresolved relocations:", @encoded.reloc.map { |o, r| "#{r.target} " + (Backtrace.backtrace_str(r.backtrace) if r.backtrace).to_s }].join("\n") if not @encoded.reloc.empty?
 		@encoded.data
 	end
 
