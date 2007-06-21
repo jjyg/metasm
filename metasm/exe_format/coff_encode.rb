@@ -820,7 +820,7 @@ class COFF
 			check_eol[]
 
 		when '.image_base'
-			raise instr if not base = Expression.parse(@lexer)
+			raise instr if not base = Expression.parse(@lexer) or not (base = base.reduce).kind_of? Integer
 			@optheader.image_base = base
 			check_eol[]
 
