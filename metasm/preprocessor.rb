@@ -299,9 +299,8 @@ class Preprocessor
 
 	# preprocess text, and retrieve all macros defined in #included <files> and used in the text
 	# returns a C source-like string
-	def trace_macros(text, filename=nil, lineno=1)
-		caller.first =~ /^(.*?):(\d+)/
-		feed(text, (filename || $1), (filename ? lineno : ($2.to_i+1)))
+	def trace_macros(text, filename='unknown', lineno=1)
+		feed(text, filename, lineno)
 		@traced_macros = []
 		readtok while not eos?
 
@@ -335,11 +334,8 @@ class Preprocessor
 	end
 
 	# starts a new lexer, with the specified initial filename/line number (for backtraces)
-	def feed(text, filename=nil, lineno=1)
+	def feed(text, filename='unknown', lineno=1)
 		raise ParseError, 'cannot start new text, did not finish current source' if not eos?
-		if not filename and caller.first =~ /^(.*?):(\d+)/
-			filename, lineno = $1, $2.to_i+1
-		end
 		@text = text
 		# @filename[-1] used in trace_macros to distinguish generic/specific files
 		@filename = "\"#{filename}\""
@@ -743,6 +739,9 @@ class Preprocessor
 					path = File.join(dir, ipath) if dir
 				end
 			end
+			nil while tok = readtok_nopp and tok.type == :space
+			raise cmd if tok.type != :eol
+			unreadtok tok
 
 			puts "metasm preprocessor: including #{ipath}" if $DEBUG
 			raise cmd, 'No such file or directory' if not path or not File.exist? path
@@ -766,11 +765,22 @@ class Preprocessor
 			while tok = readtok_nopp and tok.type != :eol
 				msg << tok.raw
 			end
+			unreadtok tok
 			if cmd.raw == 'warning'
 				puts "#@filename:#@lineno : #warning#{msg}"
 			else
 				raise cmd, "#error#{msg}"
 			end
+
+		when 'line'
+			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
+
+			nil while tok = readtok_nopp and tok.type == :space
+			raise cmd if not tok or tok.type != :string or tok.raw != tok.raw.to_i.to_s
+			@lineno = tok.raw.to_i
+			nil while tok = readtok_nopp and tok.type == :space
+			raise cmd if tok and tok.type != :eol
+			unreadtok tok
 
 		else return false
 		end

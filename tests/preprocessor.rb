@@ -11,9 +11,9 @@ require 'metasm/preprocessor'
 # BEWARE OF TEH RUBY PARSER
 # use single-quoted source strings
 class TestPreproc < Test::Unit::TestCase
-	def load txt
+	def load txt, bt = caller.first
 		p = Metasm::Preprocessor.new
-		caller.first =~ /^(.*?):(\d+)/
+		bt =~ /^(.*?):(\d+)/
 		p.feed txt, $1, $2.to_i+1
 		p
 	end
@@ -21,7 +21,8 @@ class TestPreproc < Test::Unit::TestCase
 	def test_gettok
 		p = load <<'EOS'
 test boo
-" bla bla \"\\"   \
+" bla bla\
+\"\\"   \
 xx
 EOS
 		assert_equal \
@@ -47,7 +48,7 @@ EOS
 	def test_preproc
 		# ignores eol/space at begin/end
 		t_preparse = proc { |text, result|
-			p = load text
+			p = load text, caller.first
 			txt = ''
 			t = nil
 			txt << t.raw until p.eos? or not t = p.readtok
@@ -167,7 +168,7 @@ EOS
 	end
 
 	def test_errors
-		test_err = proc { |txt| assert_raise(Metasm::ParseError) { p = load(txt) ; p.readtok until p.eos? } }
+		test_err = proc { |txt| assert_raise(Metasm::ParseError) { p = load(txt, caller.first) ; p.readtok until p.eos? } }
 		test_err["\"abc\n\""]
 		test_err['"abc\x"']
 		test_err['/*']
