@@ -415,29 +415,32 @@ class ExeFormat
 			# export
 			if edata.export.index(edata.ptr)
 				flush[]
-				edata.export.keys.find_all { |k| edata.export[k] == edata.ptr }.each { |label| res << "#{label}:" }
+				edata.export.keys.find_all { |k| edata.export[k] == edata.ptr }.sort.each { |label| res << "#{label}:" }
 			end
 			# reloc
 			if r = edata.reloc[edata.ptr]
 				flush[]
-				l << {	:i8  => 'db ', :u8  => 'db ',
-					:i16 => 'dw ', :u16 => 'dw ',
-					:i32 => 'dd ', :u32 => 'dd ',
-					:i64 => 'dq ', :u64 => 'dq '}.fetch(r.type, "db /* unknown data type for #{r.type.inspect} */ ")
+				l << {	:i8  => 'db ', :u8  => 'db ', :a8  => 'db ',
+					:i16 => 'dw ', :u16 => 'dw ', :a16 => 'dw ',
+					:i32 => 'dd ', :u32 => 'dd ', :a32 => 'dd ',
+					:i64 => 'dq ', :u64 => 'dq ', :a64 => 'dq '
+				}.fetch(r.type, "db /* unknown data type for #{r.type.inspect} */ ")
 				l << r.target.to_s
 				flush[]
 				edata.ptr += Expression::INT_SIZE[r.type]/8
 				next
 			end
 			flush[] if (base+edata.ptr) % 16 == 0
-			if l.empty?
-				lastoff = edata.ptr
-				l << 'db '
-			end
-			if edata.ptr > rawsize
-				l << ', ' if l.length > 3
-				l << '?'
+			if edata.ptr >= rawsize
+				flush[]
+				len = (edata.export.values.find_all { |k| k > edata.ptr }.min || edata.virtsize) - edata.ptr
+				res << ("db #{len} dup(?)".ljust(56) + (' ; %08x' % (base + edata.ptr)))
+				edata.ptr += len
 			else
+				if l.empty?
+					lastoff = edata.ptr
+					l << 'db '
+				end
 				c = edata.data[edata.ptr]
 				if (0x20..0x7e).include? c and c != ?" and c != ?\\
 					# string
@@ -451,8 +454,8 @@ class ExeFormat
 					l << ', ' if l.length > 3
 					l << Expression[c].to_s
 				end
+				edata.ptr += 1
 			end
-			edata.ptr += 1
 		end
 		flush[]
 		res

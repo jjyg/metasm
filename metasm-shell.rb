@@ -40,6 +40,7 @@ class String
 	def decode_blocks(base_addr=0, eip=base_addr)
 		sc = Metasm::Shellcode.decode(self, @@cpu)
 		sc.base_addr = base_addr
+		sc.encoded.export['base'] = 0
 		sc.desasm(eip)
 		sc
 	end
