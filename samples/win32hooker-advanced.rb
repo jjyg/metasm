@@ -100,8 +100,6 @@ prepare_hook = proc { |mpe, base, export|
  jmp #{resumeaddr}	; get back to original code flow
 #{namelabel} dw #{export.name.inspect}, 0
 EOS
-
- 	sc.assemble
 }
 	
 msgboxw = nil
@@ -142,6 +140,10 @@ pr.modules[1..-1].each { |m|
 }
 	
 raise 'Did not find MessageBoxW !' if not msgboxw
+
+puts 'linking...'
+sc.assemble
+puts 'done'
 
 # allocate memory for our code
 raise 'remote allocation failed' if not injected_addr = WinAPI.virtualallocex(handle, 0, sc.encoded.length, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
