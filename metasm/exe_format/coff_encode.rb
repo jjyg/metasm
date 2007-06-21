@@ -504,14 +504,14 @@ class COFF
 			s.encoded.reloc.each { |off, rel|
 				# check that the relocation looks like "program_start + integer" when bound using the fake binding
 				# XXX allow :i32 etc
-				if rel.endianness == @endianness and (rel.type == :u32 or rel.type == :u64) and \
+				if rel.endianness == @endianness and [:u32, :a32, :u64, :a64].include?(rel.type) and \
 				Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of? Integer
 					# winner !
 
 					# build relocation
 					r = RelocationTable::Relocation.new
 					r.offset = off & 0xfff
-					r.type = { :u32 => 'HIGHLOW', :u64 => 'DIR64' }[rel.type]
+					r.type = { :u32 => 'HIGHLOW', :u64 => 'DIR64', :a32 => 'HIGHLOW', :a64 => 'DIR64' }[rel.type]
 
 					# check if we need to start a new relocation table
 					if rt.base_addr and (rt.base_addr & ~0xfff) != (off & ~0xfff)
@@ -764,6 +764,8 @@ class COFF
 			end
 			if tok and tok.type == :string
 				exportlabel = tok.raw
+			else
+				@lexer.unreadtok tok
 			end
 
 			@export ||= ExportDirectory.new
@@ -776,17 +778,19 @@ class COFF
 			check_eol[]
 		
 		when '.import'
-			# .import <libname|"libname"> <imported sym|"imported sym"> [label of iat element if different] [label of plt thunk]
+			# .import <libname|"libname"> <imported sym|"imported sym"> [label of plt thunk] [label of iat element if != symname]
 			libname = readstr[]
 			importname = readstr[]
 			@lexer.skip_space
 			if tok = @lexer.readtok and tok.type == :string
-				target = tok.raw
+				thunktarget = tok.raw
 				@lexer.skip_space
 				tok = @lexer.readtok
 			end
 			if tok and tok.type == :string
-				thunktarget = tok.raw
+				target = tok.raw
+			else
+				@lexer.unreadtok tok
 			end
 
 			@imports ||= []
@@ -814,6 +818,11 @@ class COFF
 				@cursource << Label.new(entrypoint, instr.backtrace.dup)
 			end
 			@optheader.entrypoint = entrypoint
+			check_eol[]
+
+		when '.image_base'
+			raise instr if not base = Expression.parse(@lexer)
+			@optheader.image_base = base
 			check_eol[]
 
 		else super
