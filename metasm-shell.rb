@@ -41,7 +41,7 @@ class String
 		sc = Metasm::Shellcode.decode(self, @@cpu)
 		sc.base_addr = base_addr
 		sc.encoded.export['base'] = 0
-		sc.desasm(eip)
+		sc.disassemble(eip)
 		sc
 	end
 

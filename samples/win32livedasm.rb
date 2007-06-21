@@ -29,7 +29,7 @@ pe.decode_header
 # get the entrypoint address
 eip = baseaddr + pe.optheader.entrypoint
 
-# use degraded desasm mode: assume all calls will return
+# use degraded disasm mode: assume all calls will return
 String.cpu.make_call_return	# String.cpu is the Ia32 cpu set up by metasm-shell
 
 # disassemble & dump opcodes

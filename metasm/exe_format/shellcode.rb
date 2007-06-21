@@ -75,7 +75,7 @@ class Shellcode < ExeFormat
 
 	def self.disassemble(cpu, str, eip=0)
 		sc = decode(str, cpu)
-		sc.desasm(eip)
+		sc.disassemble(eip)
 		sc
 	end
 

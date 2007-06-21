@@ -86,7 +86,7 @@ class CPU
 		@opcode_list_byname ||= @opcode_list.inject({}) { |h, o| (h[o.name] ||= []) << o ; h }
 	end
 
-	# assume that all subfunction calls returns (may fXXk up desasm backtracker)
+	# assume that all subfunction calls returns (may fXXk up disasm backtracker)
 	def make_call_return
 		@opcode_list.each { |o| o.props.delete :stopexec if o.props[:saveip] }
 	end

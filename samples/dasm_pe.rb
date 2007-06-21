@@ -18,7 +18,7 @@ raise 'usage: script <pe filename>' if not filename = ARGV.shift
 pe = Metasm::PE.decode_file filename, Metasm::Ia32.new
 
 # disassemble instructions
-pe.desasm pe.optheader.entrypoint + pe.optheader.image_base
+pe.disassemble pe.optheader.entrypoint + pe.optheader.image_base
 
 # dump
 puts pe.blocks_to_src

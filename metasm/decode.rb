@@ -128,7 +128,7 @@ class ExeFormat
 
 	# decodes instructions from an entrypoint, (tries to) follows code flow
 	# TODO delay slot
-	def desasm(entrypoint = 0)
+	def disassemble(entrypoint = 0)
 		@block ||= {}
 
 		# hash, addr => addr of block containing the instr at this addr
@@ -172,7 +172,7 @@ class ExeFormat
 					curblock = nil
 				end
 
-				desasm_split_block(@decoded[off], off) if not @block[off]
+				disasm_split_block(@decoded[off], off) if not @block[off]
 
 				if from
 					@block[@decoded[off]].from |= [from]
@@ -242,7 +242,7 @@ class ExeFormat
 	end
 
 	# split the block (starting at oldaddr) at newaddr
-	def desasm_split_block(oldaddr, newaddr)
+	def disasm_split_block(oldaddr, newaddr)
 		@block[newaddr] = InstructionBlock.new
 		@block[newaddr].to = @block[oldaddr].to
 		@block[oldaddr].to = [newaddr]
