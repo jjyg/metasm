@@ -505,6 +505,9 @@ class Expression
 		# parses an integer/a float, sets its tok.value, consumes&aggregate necessary following tokens (point, mantissa..)
 		# handles $/$$ special asm label name
 		def parse_intfloat(lexer, tok)
+			if not tok.value and tok.raw =~ /^[a-f][0-9a-f]*h$/i
+				puts "W: Parser: you may want to add a leading 0 to #{tok.raw.inspect} at #{tok.backtrace[-2]}:#{tok.backtrace[-1]}"
+			end
 			if tok.raw == '$' and lexer.program
 				if not (l = lexer.program.cursource.last).kind_of? Label
 					l = Label.new(lexer.program.new_label('instr_start'))
