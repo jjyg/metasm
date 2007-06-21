@@ -716,7 +716,6 @@ class COFF
 		when '.section'
 			# .section <section name|"section name"> [(no)r w x shared discard] [base=<expr>]
 			sname = readstr[]
-			sname = instr.value || instr.raw
 			if not s = @sections.find { |s| s.name == sname }
 				s = Section.new
 				s.name = sname
