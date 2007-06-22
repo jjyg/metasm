@@ -32,14 +32,19 @@ db 4 dup(1)
 toto:
 db 4 dup(2)
 db 4 dup(?)
+foo:
 dd bla
 tutu:
 EOS
 		e1 = e[4, 8]
 		e2 = e[4..11]
 		e3 = e[4...12]
+		e4 = e['toto', 8]
+		e5 = e['toto'...'foo']
 		assert_equal([e1.data, e1.virtsize], [e2.data, e2.virtsize])
 		assert_equal([e1.data, e1.virtsize], [e3.data, e3.virtsize])
+		assert_equal([e1.data, e1.virtsize], [e4.data, e4.virtsize])
+		assert_equal([e1.data, e1.virtsize], [e5.data, e5.virtsize])
 		assert_equal(nil, e[53, 12])
 		assert_equal(2, e[2,  2].export['toto'])
 		assert_equal(4, e[0,  4].export['toto'])

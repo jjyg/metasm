@@ -734,12 +734,15 @@ class EncodedData
 		if not len and from.kind_of? Range
 			b = from.begin
 			e = from.end
+			b = @export[b] if @export[b]
+			e = @export[e] if @export[e]
 			b = b + @virtsize if b < 0
 			e = e + @virtsize if e < 0
 			len = e - b
 			len += 1 if not from.exclude_end?
 			from = b
 		end
+		from = @export[from] if @export[from]
 		from = from + @virtsize if from < 0
 		return nil if from > @virtsize
 		len = @virtsize - from if from+len > @virtsize
@@ -766,19 +769,23 @@ class EncodedData
 		if not len and from.kind_of? Range
 			b = from.begin
 			e = from.end
+			b = @export[b] if @export[b]
+			e = @export[e] if @export[e]
 			b = b + @virtsize if b < 0
 			e = e + @virtsize if e < 0
 			len = e - b
 			len += 1 if not from.exclude_end?
 			from = b
 		end
+		from = @export[from] if @export[from]
 		from = from + @virtsize if from < 0
 
 		if not len
 			val = val.chr
 			len = val.length
 		end
-		val = EncodedData.new val unless val.kind_of? EncodedData
+
+		val = EncodedData.new << val
 
 		# remove overwritten
 		@export.delete_if { |name, off| off > from and off < from + len }
@@ -807,7 +814,6 @@ class EncodedData
 		to = @export.fetch(to, to)
 		raise "invalid offset specification #{to}" if not to.kind_of? Integer
 		raise EncodeError, 'cannot patch data: new content too long' if to - from < content.length
-		content = EncodedData.new << content
 		self[from, content.length] = content
 	end
 end
