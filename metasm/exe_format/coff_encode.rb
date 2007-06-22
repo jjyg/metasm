@@ -457,6 +457,7 @@ class COFF
 	def arch_encode_thunk(edata, import)
 		case @cpu
 		when Ia32
+			# sections starts with a helper function that returns the address of metasm_importthunk_getip in eax (PIC)
 			edata << Shellcode.assemble(@cpu, "metasm_importthunk_getip: call metasm_importthunk_getip2\nmetasm_importthunk_getip2: pop eax sub eax, metasm_importthunk_getip2-metasm_importthunk_getip ret").encoded if edata.empty?
 			edata << Shellcode.assemble(@cpu, "#{import.thunk}: call metasm_importthunk_getip jmp [eax+#{import.target || import.name}-metasm_importthunk_getip]").encoded
 		else raise EncodeError, 'E: COFF: encode import thunk: unsupported architecture'
