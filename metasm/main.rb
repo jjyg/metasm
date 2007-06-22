@@ -604,7 +604,11 @@ class EncodedData
 	# virtual size of data (all 0 by default, see +fill+)
 	attr_accessor :virtsize
 	# arbitrary pointer, often used when decoding immediates
-	attr_accessor :ptr
+	# may be initialized with an export value
+	attr_reader   :ptr
+	def ptr=(p)
+		@ptr = @export[p] || p
+	end
 
 	# opts' keys in :reloc, :export, :virtsize, defaults to empty/empty/data.length
 	def initialize(data = '', opts={})
