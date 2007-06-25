@@ -748,11 +748,11 @@ class EncodedData
 		end
 		from = @export[from] if @export[from]
 		from = from + @virtsize if from < 0
-		return nil if from > @virtsize
-		len = @virtsize - from if from+len > @virtsize
+		return if from > @virtsize or from < 0
 
 		return @data[from] if not len
-		ret = EncodedData.new @data[from, len].to_s
+		len = @virtsize - from if from+len > @virtsize
+		ret = EncodedData.new @data[from, len]
 		ret.virtsize = len
 		@reloc.each { |o, r|
 			ret.reloc[o - from] = r if o >= from and o + Expression::INT_SIZE[r.type]/8 <= from+len

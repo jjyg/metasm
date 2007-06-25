@@ -463,7 +463,6 @@ class ExeFormat
 end
 
 class EncodedData
-	attr_accessor :ptr
 	def get_byte
 		@ptr += 1
 		if @ptr <= @data.length
