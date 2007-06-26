@@ -368,6 +368,43 @@ class COFF
 	end
 
 
+	# computes the checksum for a given COFF file
+	# may not work with overlapping sections
+	def self.checksum(str, endianness = :little)
+		coff = load str
+		coff.endianness = endianness
+		coff.decode_header
+		coff.encoded.ptr = 0
+
+		flen = 0
+		csum = 0
+		# negate old checksum
+		oldcs = coff.encode_word(coff.optheader.checksum)
+		oldcs.ptr = 0
+		csum -= coff.decode_half(oldcs)
+		csum -= coff.decode_half(oldcs)
+
+		# checksum header
+		while coff.encoded.ptr < coff.optheader.headers_size
+			csum += coff.decode_half
+			csum = (csum & 0xffff) + (csum >> 16) if (csum >> 16) 
+		end
+		flen += coff.optheader.headers_size
+
+		coff.sections.each { |s|
+			coff.encoded.ptr = coff.rva_to_off(s.virtaddr)
+			off_end = coff.encoded.ptr + s.rawsize
+			while coff.encoded.ptr < off_end
+				csum += coff.decode_half
+				csum = (csum & 0xffff) + (csum >> 16) if (csum >> 16) > 0
+			end
+			flen += s.rawsize
+		}
+
+		csum + flen
+	end
+
+
 	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness) end
 	def encode_half(w)   Expression[w].encode(:u16, @endianness) end
 	def encode_word(w)   Expression[w].encode(:u32, @endianness) end
@@ -643,8 +680,9 @@ class COFF
 		@encoded.fill
 		@encoded.fixup! binding
 
-		if @optheader.checksum.kind_of? String
-			checksum = 0 # TODO checksum
+		if @optheader.checksum.kind_of? String and @encoded.reloc.length == 1
+			# won't work if there are other unresolved relocs
+			checksum = self.class.checksum(@encoded.data, @endianness)
 			@encoded.fixup @optheader.checksum => checksum
 			@optheader.checksum = checksum
 		end
@@ -686,16 +724,44 @@ class COFF
 		@source ||= {}
 	end
 
-	# handles section switching, entrypoint definition, imports/exports, etc
+	# handles compiler meta-instructions
+	#
+	# syntax:
+	#  .section "<section name>" <perm list> <base>
+	#    section name is a string (may be quoted)
+	#    perms are in 'r' 'w' 'x' 'shared' 'discard', may be concatenated (in this order), may be prefixed by 'no' to remove the attribute for an existing section
+	#    base is the token 'base', the token '=' and an immediate expression
+	#    default sections:
+	#    .text =   .section '.text' rx
+	#    .data =   .section '.data' rw
+	#    .rodata = .section '.rodata' r
+	#    .bss =    .section '.bss' rw
+	#  .entrypoint | .entrypoint <label>
+	#    defines the label as the program entrypoint
+	#    without argument, creates a label used as entrypoint
+	#  .libname "<name>"
+	#    defines the string to be used as exported library name (should be the same as the file name, may omit extension)
+	#  .export "<exported_name>" [<label_name>]
+	#    exports the specified label with the specified name (label_name defaults to exported_name)
+	#    TODO export by ordinal
+	#  .import "<libname>" "<import_name>" [<thunk_name>] [<label_name>]
+	#    imports a symbol from a library
+	#    if the thunk name is specified and not 'nil', the compiler will generate a thunk that can be called (in ia32, 'call thunk' == 'call [import_name]')
+	#      the thunk is position-independent, and should be used instead of the indirect call form, for imported functions
+	#    label_name is the label to attribute to the location that will receive the address of the imported symbol, defaults to import_name
+	#    TODO import by ordinal (now must be done manually, using coff.imports[<n>].imports[<nn>].ordinal = <i>)
+	#  .image_base <base>
+	#    specifies the COFF prefered load address, base is an immediate expression
+	#
 	def parse_parser_instruction(instr)
 		readstr = proc {
 			@lexer.skip_space
-			raise instr, 'syntax error' if not t = @lexer.readtok or (t.type != :string and t.type != :quoted)
+			raise instr, 'string expected' if not t = @lexer.readtok or (t.type != :string and t.type != :quoted)
 			t.value || t.raw
 		}
 		check_eol = proc {
 			@lexer.skip_space
-			raise instr, 'syntax error' if t = @lexer.nexttok and t.type != :eol
+			raise instr, 'eol expected' if t = @lexer.nexttok and t.type != :eol
 		}
 		case instr.raw.downcase
 		when '.text', '.data', '.rodata', '.bss'
@@ -739,8 +805,9 @@ class COFF
 					else   s.characteristics |= ar
 					end
 				when 'base'
-					raise instr, 'syntax error' if not tok = @lexer.readtok or tok.type != :punct or tok.raw != '='
-					raise instr, 'syntax error' if not s.virtaddr = Expression.parse(@lexer).reduce
+					@lexer.skip_space
+					raise instr, 'invalid base' if not tok = @lexer.readtok or tok.type != :punct or tok.raw != '='
+					raise instr, 'invalid base' if not s.virtaddr = Expression.parse(@lexer).reduce or not s.virtaddr.kind_of? Integer
 				else raise instr, 'unknown parameter'
 				end
 			end
@@ -778,12 +845,13 @@ class COFF
 			check_eol[]
 		
 		when '.import'
-			# .import <libname|"libname"> <imported sym|"imported sym"> [label of plt thunk] [label of iat element if != symname]
+			# .import <libname|"libname"> <imported sym|"imported sym"> [label of plt thunk|nil] [label of iat element if != symname]
 			libname = readstr[]
 			importname = readstr[]
 			@lexer.skip_space
 			if tok = @lexer.readtok and tok.type == :string
 				thunktarget = tok.raw
+				thunktarget = nil if thunktarget == 'nil'
 				@lexer.skip_space
 				tok = @lexer.readtok
 			end
@@ -838,43 +906,3 @@ class COFF
 	end
 end
 end
-
-__END__
-	def encode_fix_checksum(data, endianness = :little)
-		# may not work with overlapping sections
-		off = data[0x3c, 4].unpack(long).first
-		off += 4
-
-		# read some header information
-		csumoff = off + 0x14 + 0x40
-		secoff  = off + 0x14 + data[off+0x10, 2].unpack(short).first
-		secnum  = data[off+2, 2].unpack(short).first
-
-		sum = 0
-		flen = 0
-
-		# header
-		# patch csum at 0
-		data[csumoff, 4] = [0].pack(long)
-		curoff  = 0
-		cursize = data[off+0x14+0x3c, 4].unpack(long).first
-		data[curoff, cursize].unpack(shorts).each { |s|
-			sum += s
-			sum = (sum & 0xffff) + (sum >> 16) if (sum >> 16) > 0
-		}
-		flen += cursize
-
-		# sections
-		secnum.times { |n|
-			cursize, curoff = data[secoff + 0x28*n + 0x10, 8].unpack(long + long)
-			data[curoff, cursize].unpack(shorts).each { |s|
-				sum += s
-				sum = (sum & 0xffff) + (sum >> 16) if (sum >> 16) > 0
-			}
-			flen += cursize
-		}
-		sum += flen
-
-		# patch good value
-		data[csumoff, 4] = [sum].pack(long)
-	end
