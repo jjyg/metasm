@@ -352,13 +352,20 @@ class ExeFormat
 		result
 	end
 	
+	# returns a string that is put at the beginning of each section during dump after dasm
+	def dasm_dump_section_header(edata, baseaddr)
+		"\n\n// section: #{'%08x' % baseaddr} - #{'%08x' % (baseaddr + edata.length)}"
+	end
+
 	# returns a string (source style) containing the dump of all decoded blocks
-	def blocks_to_src
+	# if given a block (ruby block), it is called with each line that would be output and return nil
+	def blocks_to_src(dump_data = true, &b)
 		# array of lines to return
 		res = []
+		b ||= proc { |l| res << l }
 		blocks = @block.sort.reverse
 		each_section { |edata, baseaddr|
-			res << '' << '' << "// section: #{'%08x' % baseaddr} - #{'%08x' % (baseaddr + edata.length)}"
+			b[dasm_dump_section_header(edata, baseaddr)]
 			curaddr = baseaddr
 			while curaddr < baseaddr + edata.length
 				addr, block = blocks.pop
@@ -370,42 +377,47 @@ class ExeFormat
 				addr ||= baseaddr + edata.length	# dump end of section as data
 				if addr > curaddr
 					# dump data from curaddr to addr
-					res.concat data_to_src(edata[curaddr-baseaddr...addr-baseaddr], curaddr)
+					if dump_data
+						data_to_src(edata[curaddr-baseaddr...addr-baseaddr], curaddr, &b)
+					else
+						b["\n// data, #{addr-curaddr} bytes"]
+					end
 				end
 				curaddr = addr	# may have gone back (overlapping blocks)
 				next if not block
 				# dump block
-				res << ''
+				b['']
 				# xrefs
 				if not block.from.empty?
-					res << "; Xrefs: #{block.from.map { |f| '%08x' % f }.join(', ')}"
+					b["; Xrefs: #{block.from.map { |f| '%08x' % f }.join(', ')}"]
 				end
 				# labels
-				edata.export.keys.find_all { |k| edata.export[k] == curaddr - baseaddr }.each { |l| res << "#{l}:" }
+				edata.export.keys.find_all { |k| edata.export[k] == curaddr - baseaddr }.each { |l| b["#{l}:"] }
 				# instrs
 				block.list.each { |di|
-					binstr = edata.data[curaddr-baseaddr, di.bin_length].unpack('C*').map { |b| '%02x' % b }.join
-					res << "  #{di.instruction.to_s.ljust(29)} ; @#{'%08x' % curaddr}   #{binstr}"
-					res.last << '  -- ' << di.comment if di.comment
+					binstr = edata.data[curaddr-baseaddr, di.bin_length].unpack('C*').map { |c| '%02x' % c }.join
+					str = "  #{di.instruction.to_s.ljust(29)} ; @#{'%08x' % curaddr}   #{binstr}"
+					str << '  -- ' << di.comment if di.comment
+					b[str]
 					curaddr += di.bin_length
 				}
 			end
 		}
-		res.join("\n")
+		res.join("\n") if not block_given?
 	end
 
-	# returns an array of strings representing the content of edata as data
-	# split on labels
+	# dump edata as data, split on labels
+	# yields each line
 	def data_to_src(edata, base)
-		res = []
-		return res if not edata
+		return if not edata
 		edata.ptr = 0
 		l = ''
 		lastoff = nil 
 		flush = proc {
 			if not l.empty?
-				res << l.ljust(56)
-				res.last << (' ; %08x' % (lastoff + base)) if lastoff
+				str = l.ljust(56)
+				str << (' ; %08x' % (lastoff + base)) if lastoff
+				yield str
 				l = ''
 			end
 			lastoff = nil
@@ -415,7 +427,7 @@ class ExeFormat
 			# export
 			if edata.export.index(edata.ptr)
 				flush[]
-				edata.export.keys.find_all { |k| edata.export[k] == edata.ptr }.sort.each { |label| res << "#{label}:" }
+				edata.export.keys.find_all { |k| edata.export[k] == edata.ptr }.sort.each { |label| yield "#{label}:" }
 			end
 			# reloc
 			if r = edata.reloc[edata.ptr]
@@ -434,7 +446,7 @@ class ExeFormat
 			if edata.ptr >= rawsize
 				flush[]
 				len = (edata.export.values.find_all { |k| k > edata.ptr }.min || edata.virtsize) - edata.ptr
-				res << ("db #{len} dup(?)".ljust(56) + (' ; %08x' % (base + edata.ptr)))
+				yield("db #{len} dup(?)".ljust(56) + (' ; %08x' % (base + edata.ptr)))
 				edata.ptr += len
 			else
 				if l.empty?
@@ -458,7 +470,6 @@ class ExeFormat
 			end
 		end
 		flush[]
-		res
 	end
 end
 

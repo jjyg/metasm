@@ -80,5 +80,8 @@ class Shellcode < ExeFormat
 	end
 
 	alias to_s blocks_to_src
+	def dasm_dump_section_header(edata, baseaddr)
+		''
+	end
 end
 end
