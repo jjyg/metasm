@@ -6,7 +6,7 @@
 
 require 'metasm/os/main'
 begin
-require 'Win32API'
+require 'Win32API' if PLATFORM =~ /mswin/i
 rescue LoadError
 end
 
