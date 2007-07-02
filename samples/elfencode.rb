@@ -6,18 +6,9 @@
 
 
 
-require 'metasm/ia32/parse'
-require 'metasm/ia32/encode'
-require 'metasm/exe_format/elf_encode'
+require 'metasm'
 
 elf = Metasm::ELF.assemble(Metasm::Ia32.new, DATA.read)
-
-# add a PT_GNU_STACK RW segment descriptor
-ptgnustack = Metasm::ELF::Segment.new
-ptgnustack.memsize = %w[R W]
-ptgnustack.type = 'PT_GNU_STACK'
-elf.segments << ptgnustack
-
 elf.encode_file('testelf')
 
 __END__
@@ -32,7 +23,7 @@ syscall macro nr
  int 80h
 endm
 
-write macro(string, stringlen)
+write macro string, stringlen
  mov ebx, stdout
  mov ecx, string
  mov edx, stringlen
@@ -41,28 +32,24 @@ endm
 
 .text
 .data
-toto:
-# if 0 + 1 > 0
- db "toto\n"
-#elif defined(STR)
- db STR
-#else
- db "lala\n"
-#endif
+.global toto toto toto_end
+toto db "lala\n"
+toto_end:
 toto_len equ $-toto
 
 convtab db '0123456789ABCDEF'
 outbuf	db '0x', 8 dup('0'), '\n'
 
 .text
-pre_start:
+.entrypoint
  write(toto, toto_len)
  ret
 
-start:
-.import 'libc.so.6' '_exit', pltexit
-.import 'libc.so.6' 'printf', pltprintf
+.needed 'libc.so.6'
+.global '_exit'
+.global 'printf'
 
+/*
  push dword ptr [printf]
  call hexdump
 
@@ -98,3 +85,4 @@ charloop:
  write(outbuf, 11)
 
  ret 4
+*/

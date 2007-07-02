@@ -228,6 +228,7 @@ class ELF < ExeFormat
 	end
 	class Symbol
 		attr_accessor :name_p, :value, :type, :other, :shndx, :info
+		attr_accessor :thunk
 		def name ; @name if defined? @name ; end
 		def name=(n) ; @name_p = nil ; @name = n ; end
 		def size ; @size ; end
@@ -258,8 +259,6 @@ class ELF < ExeFormat
 		end
 	end
 
-	attr_accessor :header, :segments, :sections, :tag
-
 	def self.hash_symbol_name(name)
 		name.unpack('C*').inject(0) { |hash, char|
 			break hash if char == 0
@@ -277,6 +276,21 @@ class ELF < ExeFormat
 			hash += char
 			hash &= 0xffff_ffff
 		}
+	end
+
+	attr_accessor :header, :segments, :sections, :tag, :symbols, :relocations
+	def initialize(cpu=nil)
+		@header = Header.new
+		@tag = {}
+		@symbols = []
+		@relocations = []
+		@sections = []
+		@segments = []
+		if cpu
+			@header.endianness = cpu.endianness
+			@header.e_class = cpu.size
+		end
+		super
 	end
 end
 end
