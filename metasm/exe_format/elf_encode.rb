@@ -413,7 +413,7 @@ class ELF
 		end
 
 		list = @relocations.find_all { |r| r.type != 'JMP_SLOT' and not r.addend }
-		if not list.empty?
+		if not list.empty? or @relocations.empty?
 			if not rel = @sections.find { |s| s.type == 'REL' and s.name == '.rel.dyn' }
 				rel = Section.new
 				rel.name = '.rel.dyn'
@@ -546,7 +546,7 @@ class ELF
 
 	# reads the existing segment/sections.encoded and populate @relocations from the encoded.reloc hash
 	def create_relocations
-
+		@relocations = []
 	end
 
 	# create the relocations from the sections.encoded.reloc
@@ -594,7 +594,19 @@ class ELF
 		if not seg or not seg.flags.include? 'W'
 			seg = Segment.new
 			seg.type = 'LOAD'
-			seg.flags = 'W'
+			seg.flags = ['R', 'W']
+			@segments << seg
+		end
+
+		# add dynamic segment
+		if ds = @sections.find { |sec| sec.type == 'DYNAMIC' }
+			ds.set_default_values self
+			seg = Segment.new
+			seg.type = 'DYNAMIC'
+			seg.flags = ['R', 'W']
+			seg.offset = ds.offset
+			seg.vaddr = ds.addr
+			seg.memsz = seg.filesz = ds.size
 			@segments << seg
 		end
 
