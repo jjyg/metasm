@@ -390,7 +390,7 @@ class ELF
 		return if not @relocations
 
 		list = @relocations.find_all { |r| r.type == 'JMP_SLOT' }
-		if not list.empty?
+		if not list.empty? or @relocations.empty?
 			list.each { |r| r.addend ||= 0 } if list.find { |r| r.addend }	# ensure list is homogenous
 			if not relplt = @sections.find { |s| s.type == 'REL' and s.name == '.rel.plt' } 	# XXX arch-dependant ?
 				relplt = Section.new
@@ -402,7 +402,7 @@ class ELF
 			list.each { |r| relplt.encoded << r.encode(self, @symbols) }
 			@tag['JMPREL'] = label_at(relplt.encoded, 0)
 			@tag['PLTRELSZ'] = relplt.encoded.virtsize
-			if not list.first.addend
+			if not list.first or not list.first.addend
 				@tag['PLTREL'] = relplt.type = 'REL'
 				@tag['RELENT']  = relplt.entsize = relplt.addralign = Relocation.size(self)
 			else
@@ -413,7 +413,7 @@ class ELF
 		end
 
 		list = @relocations.find_all { |r| r.type != 'JMP_SLOT' and not r.addend }
-		if not list.empty? or @relocations.empty?
+		if not list.empty?
 			if not rel = @sections.find { |s| s.type == 'REL' and s.name == '.rel.dyn' }
 				rel = Section.new
 				rel.name = '.rel.dyn'
@@ -714,6 +714,7 @@ class ELF
 			if not @sections.find { |s| s.name == sname }
 				s = Section.new
 				s.name = sname
+				s.type = 'PROGBITS'
 				s.encoded = EncodedData.new
 				s.flags = case sname
 					when '.text': %w[ALLOC EXECINSTR]
@@ -730,6 +731,7 @@ class ELF
 			sname = readstr[]
 			if not s = @sections.find { |s| s.name == sname }
 				s = Section.new
+				s.type = 'PROGBITS'
 				s.name = sname
 				s.encoded = EncodedData.new
 				s.flags = []
@@ -844,9 +846,9 @@ class ELF
 			# PT_GNU_STACK marking
 			mode = readstr[]
 
-			@segments.delete_if { |s| s.type == 'PT_GNU_STACK' }
+			@segments.delete_if { |s| s.type == 'GNU_STACK' }
 			s = Segment.new
-			s.type = 'PT_GNU_STACK'
+			s.type = 'GNU_STACK'
 			s.vaddr = s.paddr = s.offset = s.filesz = s.memsz = 0
 			case mode
 			when /^rw$/i: s.flags = %w[R W]

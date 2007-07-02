@@ -13,6 +13,7 @@ elf.encode_file('testelf')
 
 __END__
 .interp '/lib/ld-linux.so.2'
+.pt_gnu_stack rw
 
 sys_write equ 4
 sys_exit  equ 1
@@ -35,7 +36,7 @@ endm
 .global toto toto toto_end
 toto db "lala\n"
 toto_end:
-toto_len equ $-toto
+toto_len equ toto_end - toto
 
 convtab db '0123456789ABCDEF'
 outbuf	db '0x', 8 dup('0'), '\n'
