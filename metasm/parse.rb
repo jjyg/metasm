@@ -126,6 +126,7 @@ class AsmPreprocessor
 				t.backtrace += macro.backtrace[-2..-1] if not macro.backtrace.empty?
 				if labels[t.raw]
 					t.raw = labels[t.raw]
+					t
 				elsif args[t.raw]
 					args[t.raw].map { |a|
 						tt = a.dup
@@ -157,10 +158,10 @@ class AsmPreprocessor
 			lexer.skip_space_eol
 			while tok = lexer.readtok and (tok.type != :string or tok.raw != 'endm')
 				@body << tok
-				if @body[-2] and @body[-2].type == :string and @body[-1].raw == ':' and (not @body[-3] or @body[-3].type == :eol)
-					@labels[@body[-2].raw] = true
+				if @body[-2] and @body[-2].type == :string and @body[-1].raw == ':' and (not @body[-3] or @body[-3].type == :eol) and @body[-2].raw !~ /^[1-9][0-9]*$/
+					@labels << @body[-2].raw
 				elsif @body[-3] and @body[-3].type == :string and @body[-2].type == :space and Data::DataSpec.include?(@body[-1].raw) and (not @body[-4] or @body[-4].type == :eol)
-					@labels[@body[-3].raw] = true
+					@labels << @body[-3].raw
 				end
 			end
 		end
@@ -259,6 +260,26 @@ end
 class ExeFormat
 	# setup self.cursource here
 	def parse_init
+		@locallabels_bkw ||= {}
+		@locallabels_fwd ||= {}
+		@knownlabel ||= {}
+	end
+
+	# hash mapping local anonymous label number => unique name
+	# defined only while parsing
+	# usage:
+	#   jmp 1f
+	#  1:
+	#   jmp 1f
+	#   jmp 1b
+	#  1:
+	# defined in #parse, replaced in use by Expression#parse
+	# no macro-scope (macro are gsub-like, and no special handling for those labels is done)
+	def locallabels_bkw(id)
+		@locallabels_bkw[id]
+	end
+	def locallabels_fwd(id)
+		@locallabels_fwd[id] ||= new_label("local_#{id}")
 	end
 
 	# parses an asm source file to an array of Instruction/Data/Align/Offset/Padding
@@ -289,27 +310,34 @@ class ExeFormat
 			when :string
 				ntok = nntok = nil
 				if lasteol and ((ntok = @lexer.readtok and ntok.type == :punct and ntok.raw == ':') or (nntok = @lexer.nexttok and ntok.type == :space and nntok.type == :string and Data::DataSpec.include?(nntok.raw)))
-					l = Label.new(tok.raw)
+					if ntok.type == :punct and ntok.raw == ':' and tok.raw =~ /^[1-9][0-9]*$/
+						# handle anonymous local labels
+						lname = @locallabels_bkw[tok.raw] = @locallabels_fwd.delete(tok.raw) || new_label('local_'+tok.raw)
+					else
+						lname = tok.raw
+					end
+					l = Label.new(lname)
 					l.backtrace = tok.backtrace.dup
-					@knownlabel ||= {}
-					raise tok, "label redefinition, previous definition at #{@knownlabel[tok.raw].backtrace_str}" if @knownlabel[tok.raw]
-					@knownlabel[tok.raw] = l
+					raise tok, "label redefinition, previous definition at #{@knownlabel[lname].backtrace_str}" if @knownlabel[lname]
+					@knownlabel[lname] = l
 					@cursource << l
 					lasteol = false
-					next
-				end
-				lasteol = false
-				@lexer.unreadtok ntok
-				@lexer.unreadtok tok
-				if Data::DataSpec.include?(tok.raw)
-					@cursource << parse_data
 				else
-					@cursource << @cpu.parse_instruction(@lexer)
+					lasteol = false
+					@lexer.unreadtok ntok
+					@lexer.unreadtok tok
+					if Data::DataSpec.include?(tok.raw)
+						@cursource << parse_data
+					else
+						@cursource << @cpu.parse_instruction(@lexer)
+					end
 				end
 			else
 				raise tok, 'syntax error'
 			end
 		end
+
+		puts "Undefined forward reference to anonymous labels #{@locallabels_fwd.keys.inspect}" if $VERBOSE and not @locallabels_fwd.empty?
 	end
 
 	# handles special directives (alignment, changing section, ...)
@@ -504,8 +532,10 @@ class Expression
 
 		# parses an integer/a float, sets its tok.value, consumes&aggregate necessary following tokens (point, mantissa..)
 		# handles $/$$ special asm label name
+		# XXX for binary, use _ delimiter or 0b prefix, or start with 0 : 1b may conflict with backward local anonymous label reference 
 		def parse_intfloat(lexer, tok)
 			if not tok.value and tok.raw =~ /^[a-f][0-9a-f]*h$/i
+				# warn on variable name like ffffh
 				puts "W: Parser: you may want to add a leading 0 to #{tok.raw.inspect} at #{tok.backtrace[-2]}:#{tok.backtrace[-1]}"
 			end
 			if tok.raw == '$' and lexer.program
@@ -515,7 +545,6 @@ class Expression
 					lexer.program.cursource << l
 				end
 				tok.value = l.name
-				return
 			elsif tok.raw == '$$' and lexer.program
 				if not (l = lexer.program.cursource.first).kind_of? Label
 					l = Label.new(lexer.program.new_label('section_start'))
@@ -523,7 +552,11 @@ class Expression
 					lexer.program.cursource.unshift l
 				end
 				tok.value = l.name
-				return
+			elsif tok.raw =~ /^([1-9][0-9]*)([fb])$/ and lexer.program
+				case $2
+				when 'b': tok.value = lexer.program.locallabels_bkw($1)	# may fallback to binary parser
+				when 'f': tok.value = lexer.program.locallabels_fwd($1)
+				end
 			end
 
 			if not tok.value and tok.type == :punct and tok.raw == '.'

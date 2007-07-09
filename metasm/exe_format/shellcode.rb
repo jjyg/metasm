@@ -22,6 +22,7 @@ class Shellcode < ExeFormat
 
 	def parse_init
 		@cursource = @source
+		super
 	end
 
 	# allows definition of the base address

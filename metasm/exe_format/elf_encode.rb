@@ -666,6 +666,7 @@ class ELF
 			@cursource.elf = self
 		end
 		@source ||= {}
+		super
 	end
 
         # handles elf meta-instructions

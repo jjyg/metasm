@@ -9,16 +9,6 @@ require 'metasm/parse'
 
 module Metasm
 class ARM
-	def parse_init(program)
-		program.parse <<EOI
-li macro reg, imm
-	lui reg, imm >> 16
-	ori reg, reg, imm & 0ffffh
-endm
-
-EOI
-	end
-
 	def parse_arg_valid?(op, sym, arg)
 		# special case for lw reg, imm32(reg) ? (pseudo-instr, need to convert to 'lui t0, up imm32  ori t0 down imm32  add t0, reg  lw reg, 0(t0)
 		case sym

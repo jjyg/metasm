@@ -93,6 +93,7 @@ class MZ < ExeFormat
 	# sets up @cursource
 	def parse_init
 		@cursource = @source
+		super
 	end
 
 	# encodes the header and the relocation table, return them in an array, with the body.

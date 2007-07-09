@@ -722,6 +722,7 @@ class COFF
 			@cursource.coff = self
 		end
 		@source ||= {}
+		super
 	end
 
 	# handles compiler meta-instructions
