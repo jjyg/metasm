@@ -32,7 +32,7 @@ module Metasm
 						end
 
 					when :sib
-						sib = edata.get_byte
+						sib = edata.get_byte.to_i
 
 						ii = ((sib >> 3) & 7)
 						if ii != 4
@@ -122,6 +122,7 @@ module Metasm
 		# tries to match a prefix if no match, updates di.instruction.prefix
 		# on match, edata.ptr points to the first byte of the opcode (after prefixes)
 		loop do
+			break if edata.ptr >= edata.data.length
 			return if di.opcode = @bin_lookaside[edata.data[edata.ptr]].find { |op|
 				# fetch the relevant bytes from edata
 				bseq = edata.data[edata.ptr, op.bin.length].unpack('C*')
@@ -147,7 +148,7 @@ module Metasm
 		before_ptr = edata.ptr
 		op = di.opcode
 		di.instruction.opname = op.name
-		bseq = op.bin.inject([]) { |ar, bin| ar << edata.get_byte }
+		bseq = op.bin.inject([]) { |ar, bin| ar << edata.get_byte.to_i }
 
 		field_val = proc { |f|
 			if fld = op.fields[f]
@@ -300,19 +301,24 @@ module Metasm
 	end
 
 	def get_jump_targets(pgm, di, off)
-		tg = di.instruction.args.first
 		if di.opcode.name == 'ret'
-			tg = Indirection.new(Expression[:esp], "u#@size".to_sym)
-		elsif tg.kind_of? ModRM
+			return [Indirection.new(Expression[:esp], "u#@size".to_sym)]
+		end
+
+		case tg = di.instruction.args.first
+		when ModRM
 			e = nil
 			e = Expression[e, :+, tg.b.to_s.to_sym] if tg.b
 			e = Expression[e, :+, tg.s == 1 ? tg.i.to_s.to_sym : [tg.s, :*, tg.i.to_s.to_sym]] if tg.i
 			e = Expression[e, :+, tg.imm] if tg.imm
-			tg = Indirection.new(e, "u#{tg.sz || @size}".to_sym)
-		elsif tg.kind_of? Reg
-			tg = Expression[tg.to_s.to_sym]
+			[Indirection.new(e, "u#{tg.sz || @size}".to_sym)]
+		when Reg
+			[Expression[tg.to_s.to_sym]]
+		when Expression, Numeric, String
+			[tg]
+		else
+			[]
 		end
-		[tg].compact
 	end
 end
 end
