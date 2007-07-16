@@ -744,7 +744,7 @@ class Preprocessor
 			unreadtok tok
 
 			puts "metasm preprocessor: including #{ipath}" if $DEBUG
-			raise cmd, 'No such file or directory' if not path or not File.exist? path
+			raise cmd, "No such file or directory #{ipath.inspect}" if not path or not File.exist? path
 			raise cmd, 'filename too long' if path.length > 4096		# gcc
 
 			@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
