@@ -364,10 +364,16 @@ class Preprocessor
 		end
 
 		# check line continuation
-		if c == ?\\ and @text[@pos] == ?\n
+		if c == ?\\ and (@text[@pos] == ?\n or (@text[@pos] == ?\r and @text[@pos+1] == ?\n))
 			@lineno += 1
+			@pos += 1 if @text[@pos] == ?\r
 			@pos += 1
 			return getchar
+		end
+
+		if c == ?\r and @text[@pos] == ?\n
+			@pos += 1
+			c = ?\n
 		end
 
 		# update lineno
@@ -404,6 +410,7 @@ class Preprocessor
 			if not @backtrace.empty?
 				raise ParseError, "parse error in #@filename: unmatched #if/#endif" if @backtrace.last.pop != @ifelse_nesting.length
 				@filename, @lineno, @text, @pos, @queue = @backtrace.pop
+				puts "metasm preprocessor: end of include" if $DEBUG
 				tok = readtok
 			end
 
@@ -700,7 +707,7 @@ class Preprocessor
 
 			tok = skipspc[]
 			raise cmd, 'pp syntax error' if not tok or tok.type != :string
-			puts "W: pp: redefinition of #{tok.raw} #{tok.backtrace_str}, prev def at #{@definition[tok.raw].name.backtrace_str}" if @definition[tok.raw]
+			puts "W: pp: redefinition of #{tok.raw} #{tok.backtrace_str}, prev def at #{@definition[tok.raw].name.backtrace_str}" if @definition[tok.raw] and $VERBOSE
 			@definition[tok.raw] = Macro.new(tok)
 			@definition[tok.raw].parse_definition(self)
 
@@ -724,8 +731,16 @@ class Preprocessor
 			nil while tok = readtok and tok.type == :space
 			raise cmd, 'pp syntax error' if not tok or (tok.type != :quoted and (tok.type != :punct or tok.raw != '<'))
 			if tok.type == :quoted
-				path = ipath = tok.value
-				path = File.join(File.dirname(@filename[1..-2]), path) if path[0] != ?/
+				ipath = tok.value
+				if @backtrace.find { |btf, *a| btf[0] == ?< }
+					# XXX local include from a std include... (kikoo windows.h !)
+					dir = @include_search_path.find { |d| File.exist? File.join(d, ipath) }
+					path = File.join(dir, ipath) if dir
+				elsif ipath[0] != ?/
+					path = File.join(File.dirname(@filename[1..-2]), path) if path[0] != ?/
+				else
+					path = ipath
+				end
 			else
 				# no more preprocessing : allow comments/multiple space/etc
 				ipath = ''

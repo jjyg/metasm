@@ -15,29 +15,14 @@ require 'metasm/preprocessor'
 include Metasm
 require 'pp'
 
-# traces macro use, returns only the one used (and the one they depend on)
-begin
-# create a fictive header
-File.open('foo.h', 'w') { |fd| fd.puts DATA.read }
-
+visualstudiopath = ARGV.shift || '/mnt/wxp2/apps/VisualStudio8'
 p = Preprocessor.new
-# macro tracing is done only in files included with <>
-p.include_search_path << '.'
-# do the trace and print the result
+p.include_search_path << "#{visualstudiopath}/VC/PlatformSDK/Include"
+p.include_search_path << "#{visualstudiopath}/VC/include"
 puts p.trace_macros(<<EOS)
-#include <foo.h>
-#define abc(toto) xxx toto
-abc(aaa)
+#define _WIN32
+#define _M_IX86
+#include <windows.h>
+PAGE_READONLY PAGE_READWRITE PAGE_EXECUTE PAGE_EXECUTE_READ PAGE_EXECUTE_READWRITE MEM_COMMIT MEM_RESERVE
 EOS
-ensure
-# cleanup our header
-File.unlink('foo.h')
-end
 
-__END__
-// header content goes here
-#define gugu(zo) (zo+2)
-#define x gugu(4)
-#define y 2
-#define xxx x
-#define yyy y
