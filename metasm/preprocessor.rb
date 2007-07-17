@@ -133,7 +133,7 @@ class Preprocessor
 					# the '#' operator: transforms an argument to the quotedstring of its value
 					t = b.pop
 					t = b.pop if t and t.type == :space
-					raise name, 'internal error, bad macro' if not t or t.type == :space or not hargs[t.raw]	# should have been filtered on parse_definition
+					raise name, "internal error, bad macro #{t.inspect}" if not t or t.type == :space or not hargs[t.raw]	# should have been filtered on parse_definition
 					a = hargs[t.raw]
 					t.type = :quoted
 					t.value = a.map { |aa| aa.raw }.join
@@ -276,6 +276,12 @@ class Preprocessor
 		end
 	end
 
+	attr_accessor :pragma_pack
+	# visual studio default
+	def default_pragma_pack_value
+		8
+	end
+
 	def initialize
 		@queue = []
 		@backtrace = []
@@ -287,6 +293,7 @@ class Preprocessor
 		@pos = 0
 		@filename = nil
 		@lineno = nil
+		@pragma_pack = default_pragma_pack_value
 		# TODO setup standard macro names ? see $(gcc -dM -E - </dev/null)
 	end
 
@@ -758,21 +765,25 @@ class Preprocessor
 			raise cmd if tok.type != :eol
 			unreadtok tok
 
-			puts "metasm preprocessor: including #{ipath}" if $DEBUG
-			raise cmd, "No such file or directory #{ipath.inspect}" if not path or not File.exist? path
-			raise cmd, 'filename too long' if path.length > 4096		# gcc
+			if not defined? @pragma_once or not @pragma_once or not @pragma_once[path]
+				puts "metasm preprocessor: including #{path}" if $DEBUG
+				raise cmd, "No such file or directory #{ipath.inspect}" if not path or not File.exist? path
+				raise cmd, 'filename too long' if path.length > 4096		# gcc
 
-			@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
-			# @filename[-1] used in trace_macros to distinguish generic/specific files
-			if tok.type == :quoted
-				@filename = '"' + path + '"'
+				@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
+				# @filename[-1] used in trace_macros to distinguish generic/specific files
+				if tok.type == :quoted
+					@filename = '"' + path + '"'
+				else
+					@filename = '<' + path + '>'
+				end
+				@lineno = 1
+				@text = File.read(path)
+				@pos = 0
+				@queue = []
 			else
-				@filename = '<' + ipath + '>'
+				puts "metasm preprocessor: not reincluding #{path} (once pragma)" if $DEBUG
 			end
-			@lineno = 1
-			@text = File.read(path)
-			@pos = 0
-			@queue = []
 
 		when 'error', 'warning'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
@@ -795,6 +806,77 @@ class Preprocessor
 			@lineno = tok.raw.to_i
 			nil while tok = readtok_nopp and tok.type == :space
 			raise cmd if tok and tok.type != :eol
+			unreadtok tok
+
+		when 'pragma'
+			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
+
+			tok = skipspc[]
+			raise cmd if not tok or tok.type != :string
+
+			case tok.raw
+			when 'once'
+				(@pragma_once ||= {})[@filename[1..-2]] = true
+			when 'push_macro'
+				@pragma_macro_stack ||= []
+				lp = skipspc[]
+				m = skipspc[]
+				rp = skipspc[]
+				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')' or m.type != :quoted
+				mbody = @definition[m.value]
+				raise cmd, "undefined macro #{m.raw}" if not mbody
+				@pragma_macro_stack << mbody
+
+			when 'pop_macro'
+				@pragma_macro_stack ||= []
+				lp = skipspc[]
+				m = skipspc[]
+				rp = skipspc[]
+				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')' or m.type != :quoted
+				raise cmd, "macro stack empty" if @pragma_macro_stack.empty?
+				@definition[m.value] = @pragma_macro_stack.pop
+				
+			
+			when 'pack'
+				lp = skipspc[]
+				v1 = skipspc[]
+				if v1 and v1.type == :punct and v1.raw == ')'
+					v1 = nil
+					unreadtok v1
+				end
+				rp = skipspc[]
+				if rp and rp.raw == ','
+					v2 = skipspc[]
+					rp = skipspc[]
+				end
+				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
+				raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != string or v2.raw =~ /[^\d]/))
+				if not v1
+					@pragma_pack = default_pragma_pack_value
+				elsif v1.raw == 'push'
+					@pragma_pack_stack ||= []
+					@pragma_pack_stack << @pragma_pack
+					@pragma_pack = v2.raw.to_i if v2
+				elsif v1.raw == 'pop'
+					@pragma_pack_stack ||= []
+					raise cmd, "pack stack empty" if @pragma_pack_stack.empty?
+					@pragma_pack = @pragma_pack_stack.pop
+					@pragma_pack = v2.raw.to_i if v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
+				elsif v1.raw !~ /[^\d]/  
+					raise cmd if v2
+					@pragma_pack = v1.raw.to_i
+				else
+					raise cmd
+				end
+
+			else
+				str = tok.raw.dup
+				str << tok.raw while tok = readtok and tok.type != :eol
+				unreadtok tok
+				puts "unhandled #pragma #{str}" if $VERBOSE
+			end
+
+			raise cmd if tok = skipspc[] and tok.type != :eol
 			unreadtok tok
 
 		else return false
