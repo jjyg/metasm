@@ -12,5 +12,5 @@ disasm:
 ia32: emu fpu
 mips: cpu emu for trackback
 encode: SplitReloc for pseudo-instrs (mips li => reloc high :a16 + reloc low :a16), use Reloc.encode(edata, off) or sumthin for edata.fixup (allows ducktyping)
-asm:  asmpp.pp (instead of asm < pp), weak labels (jmp .1p \n .1: jmp .1b) (w/ macro scope) - check gas syntax
+asm:  asmpp.pp (instead of asm < pp)
 optimizer/deoptimizer (asm/dasm): reorder instructions
