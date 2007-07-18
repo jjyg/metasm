@@ -178,7 +178,7 @@ class ExeFormat
 							# find the biggest relocation type for the current target
 							wantsize[i] = elem.map { |edata|
 								edata.reloc.sort[i][1].type
-							}.sort_by { |type| Expression::INT_SIZE[type] }.last
+							}.sort_by { |type| Expression::INT_SIZE[type] }.last	# XXX do not use rel.length
 						else
 							rec_checkminmax[i, r.target, {}, r.target.externals]
 						end
@@ -248,7 +248,7 @@ class Expression
 	def encode(type, endianness, backtrace=nil)
 		case val = reduce
 		when Integer: EncodedData.new Expression.encode_immediate(val, type, endianness, backtrace)
-		else          EncodedData.new('', :reloc => {0 => Relocation.new(self, type, endianness, backtrace)}, :virtsize => INT_SIZE[type]/8)
+		else          EncodedData.new(0.chr*(INT_SIZE[type]/8), :reloc => {0 => Relocation.new(self, type, endianness, backtrace)})
 		end
 	end
 

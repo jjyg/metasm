@@ -439,7 +439,7 @@ class ExeFormat
 				}.fetch(r.type, "db /* unknown data type for #{r.type.inspect} */ ")
 				l << r.target.to_s
 				flush[]
-				edata.ptr += Expression::INT_SIZE[r.type]/8
+				edata.ptr += r.length
 				next
 			end
 			flush[] if (base+edata.ptr) % 16 == 0
@@ -496,7 +496,7 @@ class EncodedData
 	def decode_imm(type, endianness)
 		if rel = @reloc[@ptr]
 			if rel.type == type and rel.endianness == endianness
-				@ptr += Expression::INT_SIZE[type]/8
+				@ptr += rel.length
 				return rel.target
 			end
 			puts "W: Immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect} (wanted #{type.inspect})"

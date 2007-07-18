@@ -595,6 +595,18 @@ class Relocation
 	def initialize(target, type, endianness, backtrace = nil)
 		@target, @type, @endianness, @backtrace = target, type, endianness, backtrace
 	end
+
+	# fixup the encodeddata with value (reloc starts at off)
+	def fixup(edata, off, value)
+		str = Expression.encode_immediate(value, @type, @endianness, @backtrace)
+		edata.fill off
+		edata.data[off, str.length] = str
+	end
+
+	# size of the relocation field, in bytes
+	def length
+		Expression::INT_SIZE[@type]/8
+	end
 end
 
 # a String-like, with export/relocation informations added
@@ -625,7 +637,7 @@ class EncodedData
 
 	# returns the size of raw data, that is [data.length, last relocation end].max
 	def rawsize
-		[@data.length, *@reloc.map { |off, rel| off + Expression::INT_SIZE[rel.type]/8 } ].max
+		[@data.length, *@reloc.map { |off, rel| off + rel.length } ].max
 	end
 	# String-like
 	alias length virtsize
@@ -650,10 +662,8 @@ class EncodedData
 			val = @reloc[off].target.bind(binding).reduce
 			if val.kind_of? Integer
 				reloc = @reloc[off]
-				str = Expression.encode_immediate(val, reloc.type, reloc.endianness, reloc.backtrace)
-				@reloc.delete(off)	# delete only if encode_imm does not raise
-				fill off
-				@data[off, str.length] = str
+				reloc.fixup(self, off, val)
+				@reloc.delete(off)	# delete only if not overflowed
 			elsif replace_target
 				@reloc[off].target = val
 			end
@@ -759,7 +769,7 @@ class EncodedData
 		ret = EncodedData.new @data[from, len]
 		ret.virtsize = len
 		@reloc.each { |o, r|
-			ret.reloc[o - from] = r if o >= from and o + Expression::INT_SIZE[r.type]/8 <= from+len
+			ret.reloc[o - from] = r if o >= from and o + r.length <= from+len
 		}
 		@export.each { |e, o|
 			ret.export[e] = o - from if o >= from and o <= from+len		# XXX include end ?
@@ -797,7 +807,7 @@ class EncodedData
 
 		# remove overwritten
 		@export.delete_if { |name, off| off > from and off < from + len }
-		@reloc.delete_if { |off, rel| off - Expression::INT_SIZE[rel.type]/8 > from and off < from + len }
+		@reloc.delete_if { |off, rel| off - rel.length > from and off < from + len }
 		# shift after insert
 		if val.virtsize != len
 			diff = val.virtsize - len
