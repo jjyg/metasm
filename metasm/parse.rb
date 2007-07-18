@@ -466,7 +466,6 @@ class ExeFormat
 end
 
 class Expression
-	class << self
 		# key = operator, value = hash regrouping operators of lower precedence
 		OP_PRIO = [[:'||'], [:'&&'], [:|], [:^], [:&], [:'==', :'!='],
 			[:'<', :'>', :'<=', :'>='], [:<<, :>>], [:+, :-], [:*, :/, :%]
@@ -476,6 +475,7 @@ class Expression
 			h }
 
 
+	class << self
 		# reads an operator from the lexer, returns the corresponding symbol or nil
 		def readop(lexer)
 			if not tok = lexer.readtok or tok.type != :punct

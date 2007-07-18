@@ -461,18 +461,6 @@ class Preprocessor
 			body = @definition[tok.raw].apply(self, tok)
 			body.reverse_each { |t| unreadtok t }
 			tok = readtok
-
-		elsif @ifelse_nesting.last == :testing and tok.type == :string and tok.raw == 'defined'
-			tok = tok.dup
-			nil while t1 = readtok_nopp and t1.type == :space
-			if t1 and t1.type == :string
-				tok.raw = @definition[t1.raw] ? '1' : '0'
-			else
-				nil while t2 = readtok_nopp and t2.type == :space
-				nil while t3 = readtok_nopp and t3.type == :space
-				raise tok, 'syntax error' if not t3 or t1.type != :punct or t1.raw != '(' or t3.type != :punct or t3.raw != ')' or t2.type != :string
-				tok.raw = @definition[t2.raw] ? '1' : '0'
-			end
 		end
 
 		tok
@@ -645,7 +633,7 @@ class Preprocessor
 			case @ifelse_nesting.last
 			when :accept, nil
 				@ifelse_nesting << :testing
-				test = Expression.parse(self)
+				test = PPExpression.parse(self)
 				eol = skipspc[]
 				raise cmd, 'pp syntax error' if eol and eol.type != :eol
 				unreadtok eol
@@ -691,7 +679,7 @@ class Preprocessor
 				@ifelse_nesting[-1] = :discard_all
 			when :discard
 				@ifelse_nesting[-1] = :testing
-				test = Expression.parse(self)
+				test = PPExpression.parse(self)
 				eol = skipspc[]
 				raise cmd, 'pp syntax error' if eol and eol.type != :eol
 				unreadtok eol
@@ -923,6 +911,217 @@ class Preprocessor
 		end
 
 		true
+	end
+end
+
+# parses a preprocessor expression (similar to Expression, + handles "defined(foo)")
+class PPExpression
+	class << self
+		# reads an operator from the lexer, returns the corresponding symbol or nil
+		def readop(lexer)
+			if not tok = lexer.readtok or tok.type != :punct
+				lexer.unreadtok tok
+				return
+			end
+
+			op = tok
+			case op.raw
+			# may be followed by itself or '='
+			when '>', '<'
+				if ntok = lexer.readtok and ntok.type == :punct and (ntok.raw == op.raw or ntok.raw == '=')
+					op = op.dup
+					op.raw << ntok.raw
+				else
+					lexer.unreadtok ntok
+				end
+			# may be followed by itself
+			when '|', '&'
+				if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == op.raw
+					op = op.dup
+					op.raw << ntok.raw
+				else
+					lexer.unreadtok ntok
+				end
+			# must be followed by '='
+			when '!', '='
+				if not ntok = lexer.readtok or ntok.type != :punct and ntok.raw != '='
+					lexer.unreadtok ntok
+					lexer.unreadtok tok
+					return
+				end
+				op = op.dup
+				op.raw << ntok.raw
+			# ok
+			when '^', '+', '-', '*', '/', '%'
+			# unknown
+			else
+				lexer.unreadtok tok
+				return
+			end
+			op.value = op.raw.to_sym
+			op
+		end
+
+		# handles floats and "defined" keyword
+		def parse_intfloat(lexer, tok)
+			if not tok.value and tok.raw =~ /^[a-f][0-9a-f]*h$/i
+				# warn on variable name like ffffh
+				puts "W: Parser: you may want to add a leading 0 to #{tok.raw.inspect} at #{tok.backtrace[-2]}:#{tok.backtrace[-1]}"
+			end
+			if tok.type == :string and tok.raw == 'defined'
+				nil while ntok = lexer.readtok_nopp and ntok.type == :space
+				raise tok if not ntok
+				if ntok.type == :punct and ntok.raw == '('
+					nil while ntok = lexer.readtok_nopp and ntok.type == :space
+					nil while rtok = lexer.readtok_nopp and rtok.type == :space
+					raise tok if not rtok or rtok.type != :punct or rtok.raw != ')'
+				end
+				raise tok if not ntok or ntok.type != :string
+				tok.value = lexer.definition[ntok.raw] ? 1 : 0
+				return 
+			end
+
+			# ugly float hax
+			if not tok.value and tok.type == :punct and tok.raw == '.'
+				# bouh
+				ntok = lexer.readtok
+				lexer.unreadtok ntok
+				if ntok and ntok.type == :string and ntok.raw =~ /^[0-9][0-9e_]*$/ and ntok.raw.count('e') <= 1
+					point = tok.dup
+					lexer.unreadtok point
+					tok.raw = '0'
+					tok.type = :string
+				end
+			end
+
+			return if tok.value or not (?0..?9).include? tok.raw[0]
+
+			case tok.raw
+			when /^0b([01_]+)$/, /^([01_]+)b$/
+				tok.value = $1.to_i(2)
+			when /^(0[0-7_]+)$/
+				tok.value = $1.to_i(8)
+			when /^0x([a-fA-F0-9_]+)$/, /^([0-9][a-fA-F0-9_]*)h$/
+				tok.value = $1.to_i(16)
+			when /^[0-9_]+l?$/i
+				# TODO 1e3 == 1000
+				if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == '.'
+					# parse float
+					tok.raw << ntok.raw
+					ntok = lexer.readtok
+					# XXX 1.0e2 => '1', '.', '0e2'
+					raise tok, 'invalid float'+ntok.raw.inspect if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9][0-9_e]*$/ or ntok.raw.count('e') > 1
+					if ntok.raw.include? 'e'
+						ntok.raw, post = ntok.raw.split('e', 2)
+						if post.length > 0
+							t = ntok.dup
+							t.raw = post
+							lexer.unreadtok t
+						end
+						t = ntok.dup
+						t.raw = 'e'
+						lexer.unreadtok t
+					end
+					tok.raw << ntok.raw
+
+					if ntok = lexer.readtok and ntok.type == :string and ntok.raw == 'e'
+						tok.raw << ntok.raw
+						ntok = lexer.readtok
+						if ntok and ntok.type == :punct and (ntok.raw == '-' or ntok.raw == '+')
+							tok.raw << ntok.raw
+							ntok = lexer.readtok
+						end
+						raise tok, 'invalid float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9_]+$/
+						tok.raw << ntok.raw
+					else
+						lexer.unreadtok ntok
+					end
+					tok.value = tok.raw.to_f
+				else
+					lexer.unreadtok ntok
+					tok.value = tok.raw.to_i
+				end
+			else raise tok, 'invalid integer'
+			end
+		end
+
+		# returns the next value from lexer (parenthesised expression, immediate, variable, unary operators)
+		# single-line only, and does not handle multibyte char string
+		def parse_value(lexer)
+			nil while tok = lexer.readtok and tok.type == :space
+			return if not tok
+			case tok.type
+			when :string
+				parse_intfloat(lexer, tok)
+				val = tok.value || tok.raw
+			when :quoted
+				if tok.raw[0] != ?' or tok.value.length > 1	# allow single-char
+					lexer.unreadtok tok
+					return
+				end
+				val = tok.value[0]
+			when :punct
+				case tok.raw
+				when '('
+					nil while ntok = lexer.readtok and ntok.type == :space
+					lexer.unreadtok ntok
+					val = parse(lexer)
+					nil while ntok = lexer.readtok and ntok.type == :space
+					raise tok, "syntax error, no ) found after #{val.inspect}, got #{ntok.inspect}" if not ntok or ntok.type != :punct or ntok.raw != ')'
+				when '!', '+', '-', '~'
+					nil while ntok = lexer.readtok and ntok.type == :space
+					lexer.unreadtok ntok
+					raise tok, 'need expression after unary operator' if not val = parse_value(lexer)
+					val = Expression[tok.raw.to_sym, val]
+				when '.'
+					parse_intfloat(lexer, tok)
+					if not tok.value
+						lexer.unreadtok tok
+						return
+					end
+					val = tok.value
+				else
+					lexer.unreadtok tok
+					return
+				end
+			else
+				lexer.unreadtok tok
+				return
+			end
+			nil while tok = lexer.readtok and tok.type == :space
+			lexer.unreadtok tok
+			val
+		end
+
+		# for boolean operators, true is 1 (or anything != 0), false is 0
+		def parse(lexer)
+			opstack = []
+			stack = []
+
+			return if not e = parse_value(lexer)
+
+			stack << e
+
+			while op = readop(lexer)
+				nil while ntok = lexer.readtok and ntok.type == :space
+				lexer.unreadtok ntok
+				until opstack.empty? or Expression::OP_PRIO[op.value][opstack.last]
+					stack << Expression.new(opstack.pop, stack.pop, stack.pop)
+				end
+				
+				opstack << op.value
+				
+				raise op, 'need rhs' if not e = parse_value(lexer)
+
+				stack << e
+			end
+
+			until opstack.empty?
+				stack << Expression.new(opstack.pop, stack.pop, stack.pop)
+			end
+
+			Expression[stack.first]
+		end
 	end
 end
 end
