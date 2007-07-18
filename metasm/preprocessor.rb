@@ -56,6 +56,7 @@ class Preprocessor
 						case tok.type
 						when :eol, :space
 							next if arg.last and arg.last.type == :space
+							tok = tok.dup
 							tok.type = :space
 							tok.raw = ' '
 						when :punct
@@ -123,6 +124,7 @@ class Preprocessor
 							puts "W: preprocessor: in #{name.raw}: cannot merge token #{res.last.raw} with #{a.first ? a.first.raw : 'nil'}" if not a.first or (a.first.raw != '.' and res.last.raw != '.')
 							res.concat a
 						else
+							res[-1] = res[-1].dup
 							res.last.raw << a.first.raw
 							res.concat a[1..-1]
 						end
@@ -131,14 +133,14 @@ class Preprocessor
 
 				elsif @args and t.type == :punct and t.raw == '#'
 					# the '#' operator: transforms an argument to the quotedstring of its value
-					t = b.pop
-					t = b.pop if t and t.type == :space
-					raise name, "internal error, bad macro #{t.inspect}" if not t or t.type == :space or not hargs[t.raw]	# should have been filtered on parse_definition
+					t = b.pop.dup
+					t = b.pop.dup if t and t.type == :space
+					raise name, "internal error, bad macro:\n #{dump}\n near #{t.inspect}" if not t or t.type == :space or not hargs[t.raw]	# should have been filtered on parse_definition
 					a = hargs[t.raw]
 					t.type = :quoted
 					t.value = a.map { |aa| aa.raw }.join
 					t.value = t.value[1..-1] if t.value[0] == ?\ 	# delete leading space
-					t.raw = '"' + t.value.gsub(/[\\"]/) { |o| "\\#{o}" } + '"'
+					t.raw = t.value.inspect
 					res << t
 					next
 				end
@@ -195,6 +197,7 @@ class Preprocessor
 			lexer.unreadtok tok
 
 			while tok = lexer.readtok_nopp
+				tok = tok.dup
 				case tok.type
 				when :eol
 					lexer.unreadtok tok
@@ -839,7 +842,6 @@ class Preprocessor
 				nil while rp = readtok and rp.type == :space
 				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')' or m.type != :quoted
 				mbody = @definition[m.value]
-				raise cmd, "undefined macro #{m.raw}" if not mbody
 				@pragma_macro_stack << mbody
 
 			when 'pop_macro'
@@ -849,8 +851,13 @@ class Preprocessor
 				nil while rp = readtok and rp.type == :space
 				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')' or m.type != :quoted
 				raise cmd, "macro stack empty" if @pragma_macro_stack.empty?
-				@definition[m.value] = @pragma_macro_stack.pop
-				
+				# pushing undefined macro name is allowed, handled here
+				mbody = @pragma_macro_stack.pop
+				if mbody
+					@definition[m.value] = mbody
+				else
+					@definition.delete m.value
+				end
 			
 			when 'pack'
 				nil while lp = readtok and lp.type == :space
