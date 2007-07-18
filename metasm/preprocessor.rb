@@ -609,6 +609,21 @@ class Preprocessor
 		tok
 	end
 
+	# defines a simple preprocessor macro (expands to 0 or 1 token)
+	def define(name, value=nil)
+		raise "redefinition of #{name}" if @definition[name]
+		t = Token.new([])
+		t.type = :string
+		t.raw = name.dup
+		@definition[name] = Macro.new(t)
+		if value
+			t = Token.new([])
+			t.type = :string
+			t.raw = value.to_s
+			@definition[name].body << t
+		end
+	end
+
 	# handles #directives
 	# returns true if the command is valid
 	# second parameter for internal use
@@ -811,7 +826,7 @@ class Preprocessor
 		when 'pragma'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
-			tok = skipspc[]
+			nil while tok = readtok and tok.type == :space
 			raise cmd if not tok or tok.type != :string
 
 			case tok.raw
@@ -819,9 +834,9 @@ class Preprocessor
 				(@pragma_once ||= {})[@filename[1..-2]] = true
 			when 'push_macro'
 				@pragma_macro_stack ||= []
-				lp = skipspc[]
-				m = skipspc[]
-				rp = skipspc[]
+				nil while lp = readtok and lp.type == :space
+				nil while m = readtok and m.type == :space
+				nil while rp = readtok and rp.type == :space
 				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')' or m.type != :quoted
 				mbody = @definition[m.value]
 				raise cmd, "undefined macro #{m.raw}" if not mbody
@@ -829,28 +844,27 @@ class Preprocessor
 
 			when 'pop_macro'
 				@pragma_macro_stack ||= []
-				lp = skipspc[]
-				m = skipspc[]
-				rp = skipspc[]
+				nil while lp = readtok and lp.type == :space
+				nil while m = readtok and m.type == :space
+				nil while rp = readtok and rp.type == :space
 				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')' or m.type != :quoted
 				raise cmd, "macro stack empty" if @pragma_macro_stack.empty?
 				@definition[m.value] = @pragma_macro_stack.pop
 				
 			
 			when 'pack'
-				lp = skipspc[]
-				v1 = skipspc[]
-				if v1 and v1.type == :punct and v1.raw == ')'
-					v1 = nil
-					unreadtok v1
+				nil while lp = readtok and lp.type == :space
+				nil while rp = readtok and rp.type == :space
+				if not rp or rp.type != :punct or rp.raw != ')'
+					v1 = rp
+					nil while rp = readtok and rp.type == :space
 				end
-				rp = skipspc[]
-				if rp and rp.raw == ','
-					v2 = skipspc[]
-					rp = skipspc[]
+				if rp and rp.type == :punct and rp.raw == ','
+					nil while v2 = readtok and v2.type == :space
+					nil while rp = readtok and rp.type == :space
 				end
 				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
-				raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != string or v2.raw =~ /[^\d]/))
+				raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != :string or v2.raw =~ /[^\d]/))
 				if not v1
 					@pragma_pack = default_pragma_pack_value
 				elsif v1.raw == 'push'
@@ -861,7 +875,7 @@ class Preprocessor
 					@pragma_pack_stack ||= []
 					raise cmd, "pack stack empty" if @pragma_pack_stack.empty?
 					@pragma_pack = @pragma_pack_stack.pop
-					@pragma_pack = v2.raw.to_i if v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
+					@pragma_pack = v2.raw.to_i if v2 and v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
 				elsif v1.raw !~ /[^\d]/  
 					raise cmd if v2
 					@pragma_pack = v1.raw.to_i
@@ -876,7 +890,8 @@ class Preprocessor
 				puts "unhandled #pragma #{str}" if $VERBOSE
 			end
 
-			raise cmd if tok = skipspc[] and tok.type != :eol
+			nil while tok = readtok and tok.type == :space
+			raise cmd if tok and tok.type != :eol
 			unreadtok tok
 
 		else return false
