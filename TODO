@@ -1,6 +1,6 @@
 disasm:
  handle delay slot
- data xref: trackback memory write/read (read is when you read a value and modify it/its derivates, (!= push eax ; trash ; pop eax))
+ data xref: trackback memory write/read (read is when you read a value and modify it/its derivates, (!= push eax ; trash ; pop eax)) - detect self-modifying code
  remove maxdepth param? + detect loops
  path-specific backtracking ( foo: call a ; a: jmp retloc ; bar: call b ; b: jmp retloc ; retloc: ret ; call foo ; ret : last ret trackback should only reach a:)
  disasm some code sequences to C
