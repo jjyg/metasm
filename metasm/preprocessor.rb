@@ -762,6 +762,7 @@ class Preprocessor
 					dir = @include_search_path.find { |d| File.exist? File.join(d, ipath) }
 					path = File.join(dir, ipath) if dir
 				elsif ipath[0] != ?/
+					raise cmd, "wtfbbq" if not @filename
 					path = File.join(File.dirname(@filename[1..-2]), path) if path[0] != ?/
 				else
 					path = ipath
@@ -800,7 +801,7 @@ class Preprocessor
 				@pos = 0
 				@queue = []
 			else
-				puts "metasm preprocessor: not reincluding #{path} (once pragma)" if $DEBUG
+				puts "metasm preprocessor: not reincluding #{path} (pragma once)" if $DEBUG
 			end
 
 		when 'error', 'warning'
