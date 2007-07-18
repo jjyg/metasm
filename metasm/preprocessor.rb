@@ -121,7 +121,7 @@ class Preprocessor
 					else
 						a = a[1..-1] if a.first and a.first.type == :space
 						if not res.last or res.last.type != :string or not a.first or a.first.type != :string
-							puts "W: preprocessor: in #{name.raw}: cannot merge token #{res.last.raw} with #{a.first ? a.first.raw : 'nil'}" if not a.first or (a.first.raw != '.' and res.last.raw != '.')
+							puts "W: preprocessor: in #{name.raw}: cannot merge token #{res.last.raw} with #{a.first ? a.first.raw : 'nil'}" if not a.first or (a.first.raw != '.' and res.last.raw != '.') if $VERBOSE
 							res.concat a
 						else
 							res[-1] = res[-1].dup
@@ -243,7 +243,7 @@ class Preprocessor
 				
 			end
 			if invalid_body
-				puts "W: #{lexer.filename}:#{lexer.lineno}, in #{@name.raw}: #{invalid_body}"
+				puts "W: #{lexer.filename}:#{lexer.lineno}, in #{@name.raw}: #{invalid_body}" if $VERBOSE
 				lexer.definition.delete(name.raw)
 			end
 		end
@@ -419,8 +419,8 @@ class Preprocessor
 			# end of file: resume parent
 			if not @backtrace.empty?
 				raise ParseError, "parse error in #@filename: unmatched #if/#endif" if @backtrace.last.pop != @ifelse_nesting.length
+				puts "metasm preprocessor: end of include #@filename" if $DEBUG
 				@filename, @lineno, @text, @pos, @queue = @backtrace.pop
-				puts "metasm preprocessor: end of include" if $DEBUG
 				tok = readtok
 			end
 
@@ -762,8 +762,7 @@ class Preprocessor
 					dir = @include_search_path.find { |d| File.exist? File.join(d, ipath) }
 					path = File.join(dir, ipath) if dir
 				elsif ipath[0] != ?/
-					raise cmd, "wtfbbq" if not @filename
-					path = File.join(File.dirname(@filename[1..-2]), path) if path[0] != ?/
+					path = File.join(File.dirname(@filename[1..-2]), ipath) if ipath[0] != ?/
 				else
 					path = ipath
 				end
