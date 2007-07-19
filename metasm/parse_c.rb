@@ -9,40 +9,49 @@ require 'metasm/preprocessor'
 
 module Metasm
 # c parser
-# http://www.csci.csusb.edu/dick/samples/c.syntax.html
+# bad reference at http://www.csci.csusb.edu/dick/samples/c.syntax.html
 class CParser
-	class Variable
-		attr_accessor :name, :type, :initializer
+	class Declaration
+		attr_accessor :attributes
 	end
-	class Function
-		# arguments => Variable
-		attr_accessor :name, :return_type, :args, :scope
+
+	class Variable < Declaration
+		attr_accessor :name, :type, :initializer, :cast
 	end
-	class Struct
-		# Variable
-		attr_accessor :members, :bits
+
+	class Type < Declaration
+		attr_accessor :qualifier
+		# not instanciable
 	end
-	class Type
-		attr_accessor :type, :modifiers
-		def initialize(type=nil)
-			@type = type
-		end
-		def ==(o)
-			o.kind_of? Type and o.type == @type
-		end
+	class BaseType < Type
+		attr_accessor :modifier, :qualifier
+	end
+	class Function < Type
+		attr_accessor :return_type
+		# array of Variable
+		attr_accessor :args
+	end
+	class Struct < Type
+		# hash offset => Variable
+		attr_accessor :members
+		# hash varname => nrbits
+		attr_accessor :bits
+	end
+	class Union < Type
+		# array of Variable
+		attr_accessor :members
+	end
+	class Enum < Type
+		# hash name => value
+		attr_accessor :values
 	end
 	class Pointer < Type
+		attr_accessor :type
 	end
 	class Array < Type
 		attr_accessor :length
 	end
 
-	class Union
-		attr_accessor :members
-	end
-	class Enum
-		attr_accessor :values
-	end
 	class Scope
 		attr_accessor :parent, :variables, :content
 		def initialize(parent)
