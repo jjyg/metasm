@@ -964,10 +964,6 @@ class PPExpression
 
 		# handles floats and "defined" keyword
 		def parse_intfloat(lexer, tok)
-			if not tok.value and tok.raw =~ /^[a-f][0-9a-f]*h$/i
-				# warn on variable name like ffffh
-				puts "W: Parser: you may want to add a leading 0 to #{tok.raw.inspect} at #{tok.backtrace[-2]}:#{tok.backtrace[-1]}"
-			end
 			if tok.type == :string and tok.raw == 'defined'
 				nil while ntok = lexer.readtok_nopp and ntok.type == :space
 				raise tok if not ntok
@@ -981,68 +977,7 @@ class PPExpression
 				return 
 			end
 
-			# ugly float hax
-			if not tok.value and tok.type == :punct and tok.raw == '.'
-				# bouh
-				ntok = lexer.readtok
-				lexer.unreadtok ntok
-				if ntok and ntok.type == :string and ntok.raw =~ /^[0-9][0-9e_]*$/ and ntok.raw.count('e') <= 1
-					point = tok.dup
-					lexer.unreadtok point
-					tok.raw = '0'
-					tok.type = :string
-				end
-			end
-
-			return if tok.value or not (?0..?9).include? tok.raw[0]
-
-			case tok.raw
-			when /^0b([01_]+)$/, /^([01_]+)b$/
-				tok.value = $1.to_i(2)
-			when /^(0[0-7_]+)$/
-				tok.value = $1.to_i(8)
-			when /^0x([a-fA-F0-9_]+)$/, /^([0-9][a-fA-F0-9_]*)h$/
-				tok.value = $1.to_i(16)
-			when /^[0-9_]+l?$/i
-				# TODO 1e3 == 1000
-				if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == '.'
-					# parse float
-					tok.raw << ntok.raw
-					ntok = lexer.readtok
-					# XXX 1.0e2 => '1', '.', '0e2'
-					raise tok, 'invalid float'+ntok.raw.inspect if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9][0-9_e]*$/ or ntok.raw.count('e') > 1
-					if ntok.raw.include? 'e'
-						ntok.raw, post = ntok.raw.split('e', 2)
-						if post.length > 0
-							t = ntok.dup
-							t.raw = post
-							lexer.unreadtok t
-						end
-						t = ntok.dup
-						t.raw = 'e'
-						lexer.unreadtok t
-					end
-					tok.raw << ntok.raw
-
-					if ntok = lexer.readtok and ntok.type == :string and ntok.raw == 'e'
-						tok.raw << ntok.raw
-						ntok = lexer.readtok
-						if ntok and ntok.type == :punct and (ntok.raw == '-' or ntok.raw == '+')
-							tok.raw << ntok.raw
-							ntok = lexer.readtok
-						end
-						raise tok, 'invalid float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9_]+$/
-						tok.raw << ntok.raw
-					else
-						lexer.unreadtok ntok
-					end
-					tok.value = tok.raw.to_f
-				else
-					lexer.unreadtok ntok
-					tok.value = tok.raw.to_i
-				end
-			else raise tok, 'invalid integer'
-			end
+			Expression.parse_num_value(lexer, tok)
 		end
 
 		# returns the next value from lexer (parenthesised expression, immediate, variable, unary operators)

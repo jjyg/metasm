@@ -167,14 +167,37 @@ EOS
 		t_preparse["#if 0\n#endif", '']
 	end
 
+	def test_floats
+		t_float = proc { |txt|
+			text = <<EOS
+#if #{txt}
+1
+#endif
+EOS
+			p = load text, caller.first
+			txt = ''
+			t = nil
+			txt << t.raw until p.eos? or not t = p.readtok
+			assert_equal('1', txt.strip)
+		}
+		t_float['1 > 0']
+		t_float['1.0 > 0']
+		t_float['1e2 > 10 && 1.0e2 < 1000']
+		t_float['1.0e+2 > 10']
+		t_float['10_00e-2 > 1 && 10_00e-2 < 100']
+		t_float['.1e2 > 1']
+		#t_float['0x1.p2L > 1 && 0x1p2f < 5']
+		t_float['0x1.p2L > 1']
+		t_float['0x1p2f < 5']
+	end
+
 	def test_errors
 		test_err = proc { |txt| assert_raise(Metasm::ParseError) { p = load(txt, caller.first) ; p.readtok until p.eos? } }
+		t_float = proc { |txt| assert_raise(Metasm::ParseError) { p = load("#if #{txt}\n#endif", caller.first) ; p.readtok } }
 		test_err["\"abc\n\""]
 		test_err['"abc\x"']
 		test_err['/*']
 		test_err['#if 0']
-		test_err["#if 0.\n#end"]
-		test_err["#if 0.3e\n#end"]
 		test_err["#define toto(tutu,"]
 		test_err["#define toto( (tutu, tata)"]
 		test_err['#error bla']
@@ -194,6 +217,18 @@ EOS
 		#test_err['#define a(b) #c']
 		#test_err['#define a(b, b)']
 		#test_err['#define a ##z']
+		t_float['1e++4']
+		t_float['1.0e 4']
+		t_float['_1.0']
+		t_float['.e2']
+		t_float['1.1e+_1']
+		t_float['.2e']
+		t_float['.']
+		t_float['1.2e*4']
+		t_float['0x1.e4']
+		t_float['0x1.p4a']
+		t_float['0x.p1']
+		t_float['0x.1lp1']
 	end
 end
 

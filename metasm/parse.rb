@@ -44,7 +44,7 @@ class CPU
 		loop do
 			if not ntok = lexer.nexttok or opcode_list_byname[ntok.raw] or not arg = parse_argument(lexer)
 				break if i.args.empty?
-				raise tok, 'invalid argument'
+				raise tok, "invalid argument #{ntok.inspect}"
 			end
 			i.args << arg
 			lexer.skip_space
@@ -109,9 +109,19 @@ class AsmPreprocessor
 				lexer.readtok
 				loop do
 					lexer.skip_space_eol
-					args << Expression.parse_toks(lexer)
+					
+					raise @name if not etok = lexer.readtok
+					lexer.unreadtok etok
+					raise @name if not v = Expression.parse(lexer)
+					if v.op != :+ or v.lexpr or not v.rexpr.kind_of? String
+						etok = etok.dup
+						etok.type = :string
+						etok.value = v
+						etok.raw = v.to_s
+					end
+					args << etok
 					lexer.skip_space_eol
-					raise @name, 'invalid arg list' if not tok = lexer.readtok or tok.type != :punct or (tok.raw != ')' and tok.raw != ',')
+					raise @name if not tok = lexer.readtok or tok.type != :punct or (tok.raw != ')' and tok.raw != ',')
 					break if tok.raw == ')'
 				end
 			end
@@ -128,15 +138,13 @@ class AsmPreprocessor
 					t.raw = labels[t.raw]
 					t
 				elsif args[t.raw]
-					args[t.raw].map { |a|
-						tt = a.dup
-						tt.backtrace = t.backtrace
-						tt
-					}
+					tt = args[t.raw].dup
+					tt.backtrace = t.backtrace
+					tt
 				else
 					t
 				end
-			}.flatten
+			}
 		end
 
 		# parses the argument list and the body from lexer
@@ -241,7 +249,17 @@ class AsmPreprocessor
 					if nntok.raw == 'macro'
 						m.parse_definition self
 					else
-						m.body = Expression.parse_toks(self)
+						# equ
+						raise nntok if not etok = readtok
+						unreadtok etok
+						raise nntok if not v = Expression.parse(self)
+						if v.op != :+ or v.lexpr or not v.rexpr.kind_of? String
+							etok = etok.dup
+							etok.type = :string
+							etok.value = v
+							etok.raw = v.to_s
+						end
+						m.body << etok
 					end
 					@macro[tok.raw] = m
 					tok = readtok
@@ -530,96 +548,130 @@ class Expression
 			op
 		end
 
+		# parses floats/hex into tok.value, returns nothing
+		# does not parse unary operators (-/+/~)
+		def parse_num_value(lexer, tok)
+			if not tok.value and tok.raw =~ /^[a-f][0-9a-f]*h$/i
+				# warn on variable name like ffffh
+				puts "W: Parser: you may want to add a leading 0 to #{tok.raw.inspect} at #{tok.backtrace[-2]}:#{tok.backtrace[-1]}" if $VERBOSE
+			end
+
+			return if tok.value
+			return if tok.raw[0] != ?. and not (?0..?9).include? tok.raw[0]
+
+			case tr = tok.raw.downcase
+			when /^0b([01][01_]*)$/, /^([01][01_]*)b$/
+				tok.value = $1.to_i(2)
+
+			when /^(0[0-7][0-7_]*)$/
+				tok.value = $1.to_i(8)
+
+			when /^([0-9][a-f0-9_]*)h$/
+				tok.value = $1.to_i(16)
+
+			when /^0x([a-f0-9][a-f0-9_]*)([lu]?|p([0-9][0-9_]*[fl]?)?)$/, '0x'
+				tok.value = $1.to_i(16) if $1
+				ntok = lexer.readtok
+
+				# check for C99 hex float
+				if not tr.include? 'p' and ntok and ntok.type == :punct and ntok.raw == '.'
+					# read all pre-mantissa
+					tok.raw << ntok.raw
+					ntok = lexer.readtok
+					tok.raw << ntok.raw if ntok
+					raise tok, 'invalid hex float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9a-f_]*p([0-9][0-9_]*[fl]?)?$/i
+					raise tok, 'invalid hex float' if tok.raw.delete('_').downcase[0,4] == '0x.p'	# no digits
+					ntok = lexer.readtok
+				end
+
+				if not tok.raw.downcase.include? 'p'
+					# standard hex
+					lexer.unreadtok ntok
+				else
+					if tok.raw.downcase[-1] == ?p
+						# read signed mantissa
+						tok.raw << ntok.raw if ntok
+						raise tok, 'invalid hex float' if not ntok or ntok.type == :punct or (ntok.raw != '+' and ntok.raw != '-')
+						ntok = lexer.readtok
+						tok.raw << ntok.raw if ntok
+						raise tok, 'invalid hex float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9][0-9_]*[fl]?$/i
+					end
+
+					raise tok, 'internal error' if not tok.raw.delete('_').downcase =~ /^0x([0-9a-f]*)(?:\.([0-9a-f]*))?p([+-]?[0-9]+)[fl]?$/
+					b1, b2, b3 = $1.to_i(16), $2, $3.to_i
+					b2 = b2.to_i(16) if b2
+					tok.value = b1.to_f
+					# tok.value += 1/b2.to_f # TODO
+					puts "W: unhandled hex float #{tok.raw}" if $VERBOSE and b2 != 0
+					tok.value *= 2**b3
+					puts "hex float: #{tok.raw} => #{tok.value}" if $DEBUG
+				end
+
+			when /^([0-9][0-9_]*)([ul]?|e([0-9][0-9_]*[fl]?)?)$/, '.'
+				tok.value = $1.to_i if $1
+				ntok = lexer.readtok
+
+				if not tr.include? 'e' and tr != '.' and ntok and ntok.type == :punct and ntok.raw == '.'
+					# read upto '.'
+					tok.raw << ntok.raw
+					ntok = lexer.readtok
+				end
+
+				if not tok.raw.downcase.include? 'e' and tok.raw[-1] == ?.
+					# read fractional part
+					tok.raw << ntok.raw if ntok
+					raise tok, 'bad float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9_]*(e[0-9_]*)?[fl]?$/i
+					ntok = lexer.readtok
+				end
+				
+				if tok.raw.downcase[-1] == ?e
+					# read signed exponent
+					tok.raw << ntok.raw if ntok
+					raise tok, 'bad float' if not ntok or ntok.type != :punct or (ntok.raw != '+' and ntok.raw != '-')
+					ntok = lexer.readtok
+					tok.raw << ntok.raw if ntok
+					raise tok, 'bad float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9][0-9_]*[fl]?$/i
+					ntok = lexer.readtok
+				end
+
+				lexer.unreadtok ntok
+
+				if tok.raw.delete('_').downcase =~ /^(?:(?:[0-9]+\.[0-9]*|\.[0-9]+)(?:e[+-]?[0-9]+)?|[0-9]+e[+-]?[0-9]+)[fl]?$/i
+					tok.value = tok.raw.to_f
+				else
+					raise tok, 'internal error' if tok.raw =~ /[e.]/i
+				end
+
+			else raise tok, 'invalid numeric constant'
+			end
+		end
+
 		# parses an integer/a float, sets its tok.value, consumes&aggregate necessary following tokens (point, mantissa..)
 		# handles $/$$ special asm label name
 		# XXX for binary, use _ delimiter or 0b prefix, or start with 0 : 1b may conflict with backward local anonymous label reference 
 		def parse_intfloat(lexer, tok)
-			if not tok.value and tok.raw =~ /^[a-f][0-9a-f]*h$/i
-				# warn on variable name like ffffh
-				puts "W: Parser: you may want to add a leading 0 to #{tok.raw.inspect} at #{tok.backtrace[-2]}:#{tok.backtrace[-1]}"
-			end
-			if tok.raw == '$' and lexer.program
+			if not tok.value and tok.raw == '$'
 				if not (l = lexer.program.cursource.last).kind_of? Label
 					l = Label.new(lexer.program.new_label('instr_start'))
 					l.backtrace = tok.backtrace.dup
 					lexer.program.cursource << l
 				end
 				tok.value = l.name
-			elsif tok.raw == '$$' and lexer.program
+			elsif not tok.value and tok.raw == '$$'
 				if not (l = lexer.program.cursource.first).kind_of? Label
 					l = Label.new(lexer.program.new_label('section_start'))
 					l.backtrace = tok.backtrace.dup
 					lexer.program.cursource.unshift l
 				end
 				tok.value = l.name
-			elsif tok.raw =~ /^([1-9][0-9]*)([fb])$/ and lexer.program
+			elsif not tok.value and tok.raw =~ /^([1-9][0-9]*)([fb])$/
 				case $2
 				when 'b': tok.value = lexer.program.locallabels_bkw($1)	# may fallback to binary parser
 				when 'f': tok.value = lexer.program.locallabels_fwd($1)
 				end
 			end
 
-			if not tok.value and tok.type == :punct and tok.raw == '.'
-				# bouh
-				ntok = lexer.readtok
-				lexer.unreadtok ntok
-				if ntok and ntok.type == :string and ntok.raw =~ /^[0-9][0-9e_]*$/ and ntok.raw.count('e') <= 1
-					point = tok.dup
-					lexer.unreadtok point
-					tok.raw = '0'
-					tok.type = :string
-				end
-			end
-
-			return if tok.value or not (?0..?9).include? tok.raw[0]
-
-			case tok.raw
-			when /^0b([01_]+)$/, /^([01_]+)b$/
-				tok.value = $1.to_i(2)
-			when /^(0[0-7_]+)$/
-				tok.value = $1.to_i(8)
-			when /^0x([a-fA-F0-9_]+)$/, /^([0-9][a-fA-F0-9_]*)h$/
-				tok.value = $1.to_i(16)
-			when /^[0-9_]+l?$/i
-				# TODO 1e3 == 1000
-				if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == '.'
-					# parse float
-					tok.raw << ntok.raw
-					ntok = lexer.readtok
-					# XXX 1.0e2 => '1', '.', '0e2'
-					raise tok, 'invalid float'+ntok.raw.inspect if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9][0-9_e]*$/ or ntok.raw.count('e') > 1
-					if ntok.raw.include? 'e'
-						ntok.raw, post = ntok.raw.split('e', 2)
-						if post.length > 0
-							t = ntok.dup
-							t.raw = post
-							lexer.unreadtok t
-						end
-						t = ntok.dup
-						t.raw = 'e'
-						lexer.unreadtok t
-					end
-					tok.raw << ntok.raw
-
-					if ntok = lexer.readtok and ntok.type == :string and ntok.raw == 'e'
-						tok.raw << ntok.raw
-						ntok = lexer.readtok
-						if ntok and ntok.type == :punct and (ntok.raw == '-' or ntok.raw == '+')
-							tok.raw << ntok.raw
-							ntok = lexer.readtok
-						end
-						raise tok, 'invalid float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9_]+$/
-						tok.raw << ntok.raw
-					else
-						lexer.unreadtok ntok
-					end
-					tok.value = tok.raw.to_f
-				else
-					lexer.unreadtok ntok
-					tok.value = tok.raw.to_i
-				end
-			else raise tok, 'invalid integer'
-			end
+			parse_num_value(lexer, tok)
 		end
 
 		# returns the next value from lexer (parenthesised expression, immediate, variable, unary operators)
@@ -700,62 +752,6 @@ class Expression
 
 			Expression[stack.first]
 		end
-
-		# same as parsing an expression, but return the array of tokens instead of the Expression
-		def parse_toks(lexer)
-			raise lexer.readtok, 'invalid expression' if not p1 = parse_value_toks(lexer)
-			while p2 = readop(lexer)
-				p1 << p2
-				while ntok = lexer.readtok and (ntok.type == :space or ntok.type == :eol)
-					p1 << ntok
-				end
-				lexer.unreadtok ntok
-				p3 = parse_value_toks(lexer)
-				raise p1.last, 'no right hand side expression member' if not p3
-				p1.concat p3
-			end
-			p1
-		end
-
-		def parse_value_toks(lexer)
-			ret = []
-			cancel = proc { ret.reverse_each { |t| lexer.unreadtok t } ; return }
-
-			tok = nil
-			ret << tok while tok = lexer.readtok and tok.type == :space
-			cancel[] if not tok
-			ret << tok
-			otok = tok
-			case tok.type
-			when :string
-				parse_intfloat(lexer, tok)
-			when :quoted
-				cancel[] if tok.raw[0] != ?'	# singlequoted only
-			when :punct
-				case tok.raw
-				when '('
-					ret << tok while tok = lexer.readtok and (tok.type == :space or tok.type == :eol)
-					lexer.unreadtok tok
-					ret.concat parse_toks(lexer)
-					ret << tok while tok = lexer.readtok and (tok.type == :space or tok.type == :eol)
-					raise otok, 'syntax error, no ) found' if not tok = lexer.readtok or tok.type != :punct or tok.raw != ')'
-					ret << tok
-				when '!', '+', '-', '~'
-					# unary operators
-					raise otok, 'need expression after unary operator' if not val = parse_value_toks(lexer)
-					ret.concat val
-				when '.'
-					parse_intfloat(lexer, tok)
-					cancel[] if not tok.value
-				else cancel[]
-				end
-			else cancel[]
-			end
-			ret << tok while tok = lexer.readtok and tok.type == :space
-			lexer.unreadtok tok
-			ret
-		end
-
 	end
 end
 end
