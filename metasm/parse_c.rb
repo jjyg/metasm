@@ -12,21 +12,36 @@ module Metasm
 # bad reference at http://www.csci.csusb.edu/dick/samples/c.syntax.html
 class CParser
 	class Scope
-		# name => cls
+		# name => obj
 		attr_accessor :variable
 		attr_accessor :type
 		attr_accessor :struct
 		attr_accessor :outer	# outer scope
+
+		def initialize(outer=nil)
+			@variable, @type, @struct = {}, {}, {}
+			@outer = outer
+		end
+
+		def variable_ancestors
+			(outer ? outer.variable_ancestors : {}).merge @variables
+		end
+		def type_ancestors
+			(outer ? outer.type_ancestors : {}).merge @types
+		end
+		def struct_ancestors
+			(outer ? outer.struct_ancestors : {}).merge @struct
+		end
 	end
 
 	class Block
 		attr_accessor :scope
+		# sequence of CExpr/If/While/DoWhile/For/Continue/Break/Return/Goto/Switch/Case/Label
 		attr_accessor :statements
 
 		def initialize(outer = nil)
 			@statements = []
-			@scope = Scope.new
-			@scope.outer = outer.outer if outer
+			@scope = Scope.new(outer.outer if outer)
 		end
 	end
 
@@ -43,7 +58,7 @@ class CParser
 		# not instanciable
 	end
 	class BaseType < Type
-		attr_accessor :modifier, :qualifier
+		attr_accessor :modifier
 	end
 	class Function < Type
 		attr_accessor :return_type
@@ -78,67 +93,132 @@ class CParser
 		# blocks
 		attr_accessor :then, :else
 	end
-	class For < Block
+	class For
 		# expressions
 		attr_accessor :init, :test, :iter
+		attr_accessor :scope, :body
+		# scope used for init
 	end
-	class While < Block
+	class While
 		attr_accessor :test
+		attr_accessor :body
 	end
 	class DoWhile < While
+	end
+	class Switch
+		attr_accessor :test, :body
+	end
+
+	class Continue
+	end
+	class Break
+	end
+	class Goto
+		attr_accessor :target
+	end
+	class Return
+		# CExpr
+		attr_accessor :value
+	end
+	class Label
+		attr_accessor :name
+	end
+	class Case
+		attr_accessor :case
 	end
 
 	class CExpression
 		# op may be :,, :., :->, :funcall (funcname, :funcall, [arglist]), :cast (type, :cast, expr)
+		# XXX cast to fnptr
 		attr_accessor :lexpr, :op, :rexpr
 		def initialize(l, o, r)
 			@lexpr, @op, @rexpr = l, o, r
 		end
 	end
 
-	attr_accessor :toplevel
+	attr_accessor :lexer, :toplevel
 	def initialize
 		@lexer = Preprocessor.new(self)
 		@toplevel = Block.new
 	end
 
-	def parse(text, file='unknown', lineno=1)
-		@lexer.feed text, file, lineno
-		@curscope = @scope
-
-		while not @lexer.eos?
-			parse_toplevel
+	# creates a new CParser, parses all top-level statements
+	def self.parse(text, file='unknown', lineno=1)
+		c = new
+		c.lexer.feed text, file, lineno
+		while not c.lexer.eos?
+			c.parse_toplevel
 		end
+		c
 	end
 
-	def skipspace(unread=false)
+	# skip all space/eol, returns the next token or unread it
+	def skipspaces(unread=false)
 		nil while tok = @lexer.readtok and (tok.type == :space or tok.type == :eol)
 		unread ? @lexer.unreadtok(tok) : tok
 	end
 
 	# check if a word is an invalid variable name
-	def reserved(w)
+	def isreserved(w)
 		@type[w] or %w[struct union enum register const volatile static extern].include? a.raw
-	end
-
-	def readtok(tok, opttype=nil)
-		@lexer.skip_space_eol
-		raise tok if not ntok = @lexer.readtok or (opttype and ntok.type != opttype)
-		ntok
 	end
 
 	# typedef / var declaration/definition / function decl/def
 	# XXX __attributes__ ?
+	# root of the state machine
 	def parse_toplevel
-		@lexer.skip_space_eol
-		return if not tok = @lexer.readtok
+		return if not tok = skipspaces
 		raise tok if tok.type != :string
 
 		case tok.raw
 		when 'typedef'
-			parse_typedef tok
-			return 
+			parse_typedef @toplevel.scope
 		when 'union'
+			parse_union @toplevel.scope
+		when 'struct'
+			parse_struct @toplevel.scope
+		when 'enum'
+			parse_enum @toplevel.scope
+		else
+			parse_type @toplevel.scope
+		end
+	end
+
+	def parse_typedef(scope)
+		raise @lexer if not tok = skipspaces
+	end
+
+	def parse_union(scope)
+		raise @lexer if not tok = skipspaces
+	end
+
+	def parse_struct(scope)
+		raise @lexer if not tok = skipspaces
+		if tok.type == :string
+			name = tok.raw
+			raise tok, 'reserved struct name' if isreserved(name)
+		end
+		# XXX	ntok = skipspaces
+	end
+
+	def parse_enum(scope)
+		raise @lexer if not tok = skipspaces
+	end
+
+	# TODO don't handle fntype for now
+	def parse_type(scope)
+		raise @lexer if not tok = skipspaces
+
+	end
+
+# XXX undone XXX #
+# XXX undone XXX #
+# XXX undone XXX #
+# XXX undone XXX #
+
+			u = parse_union
+
+			parse_union @toplevel.scope
 			type = parse_union tok
 			ntok = readtok(tok)
 			return if ntok.type == :punct and ntok.raw == ';'
