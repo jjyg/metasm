@@ -85,7 +85,7 @@ b\
 #define x
 EOS
 		p = load('__LINE__')
-		assert_equal(__LINE__, p.readtok.value)
+		assert_equal(__LINE__.to_s, p.readtok.value)
 		t_preparse[<<EOS, 'toto 1 toto 12 toto 3+(3-2) otot hoho']
 #define azer(k) 12
 # define xxx azer(7)
