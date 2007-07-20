@@ -267,15 +267,20 @@ class Preprocessor
 		end
 
 		def apply(lexer, name)
+			tok = name.dup
+			(tok.expanded_from ||= []) << name.raw
 			case name.raw
-			when '__FILE__', '__LINE__'
-				tok = name.dup
-				tok.type = :quoted
+			when '__FILE__'
 				# keep tok.raw
-				tok.value = tok.backtrace[name.raw == 'FILE' ? -2 : -1].to_s
-				[tok]
+				tok.type = :quoted
+				tok.value = tok.backtrace[-2].to_s
+			when '__LINE__'
+				# keep tok.raw
+				tok.type = :string
+				tok.value = tok.backtrace[-1]
 			else raise name, 'internal error'
 			end
+			[tok]
 		end
 	end
 
