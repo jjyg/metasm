@@ -9,7 +9,7 @@ require 'metasm/preprocessor'
 
 module Metasm
 # c parser
-# bad reference at http://www.csci.csusb.edu/dick/samples/c.syntax.html
+# inspired from http://www.math.grin.edu/~stone/courses/languages/C-syntax.xhtml
 class CParser
 	class Scope
 		# name => obj
