@@ -11,12 +11,31 @@ module Metasm
 # c parser
 # bad reference at http://www.csci.csusb.edu/dick/samples/c.syntax.html
 class CParser
+	class Scope
+		# name => cls
+		attr_accessor :variable
+		attr_accessor :type
+		attr_accessor :struct
+		attr_accessor :outer	# outer scope
+	end
+
+	class Block
+		attr_accessor :scope
+		attr_accessor :statements
+
+		def initialize(outer = nil)
+			@statements = []
+			@scope = Scope.new
+			@scope.outer = outer.outer if outer
+		end
+	end
+
 	class Declaration
 		attr_accessor :attributes
 	end
 
 	class Variable < Declaration
-		attr_accessor :name, :type, :initializer, :cast
+		attr_accessor :type, :initializer
 	end
 
 	class Type < Declaration
@@ -28,17 +47,18 @@ class CParser
 	end
 	class Function < Type
 		attr_accessor :return_type
-		# array of Variable
+		# ary [[name, Variable], [..]]
 		attr_accessor :args
 	end
 	class Struct < Type
-		# hash offset => Variable
-		attr_accessor :members
-		# hash varname => nrbits
+		# hash name => Variable
+		attr_accessor :member
+		# hash name => offset
+		attr_accessor :members_offset
+		# hash name => nrbits
 		attr_accessor :bits
 	end
 	class Union < Type
-		# array of Variable
 		attr_accessor :members
 	end
 	class Enum < Type
@@ -52,49 +72,48 @@ class CParser
 		attr_accessor :length
 	end
 
-	class Scope
-		attr_accessor :parent, :variables, :content
-		def initialize(parent)
-			@parent, @variables, @content = parent, {}, []
-		end
-		def find_var(name)
-			@variables[name] || (@parent.find_var(name) if @parent)
-		end
-	end
 	class If
-		attr_accessor :condition, :then, :else
+		# expression
+		attr_accessor :test
+		# blocks
+		attr_accessor :then, :else
 	end
-	class For
-		attr_accessor :setup, :condition, :iter, :body
+	class For < Block
+		# expressions
+		attr_accessor :init, :test, :iter
 	end
-	class While
-		attr_accessor :condition, :body, :is_do_while
+	class While < Block
+		attr_accessor :test
 	end
+	class DoWhile < While
+	end
+
 	class CExpression
+		# op may be :,, :., :->, :funcall (funcname, :funcall, [arglist]), :cast (type, :cast, expr)
 		attr_accessor :lexpr, :op, :rexpr
 		def initialize(l, o, r)
 			@lexpr, @op, @rexpr = l, o, r
 		end
 	end
 
-	attr_accessor :lexer, :type, :scope
+	attr_accessor :toplevel
 	def initialize
 		@lexer = Preprocessor.new(self)
-		@type = {}
-		@scope = Scope.new(:global)
+		@toplevel = Block.new
 	end
 
-	def allscope
-		@scope.inject({}) { |h, s| h.update s }
-	end
-
-	def parse(text, file='<ruby>', lineno=0)
+	def parse(text, file='unknown', lineno=1)
 		@lexer.feed text, file, lineno
 		@curscope = @scope
 
 		while not @lexer.eos?
 			parse_toplevel
 		end
+	end
+
+	def skipspace(unread=false)
+		nil while tok = @lexer.readtok and (tok.type == :space or tok.type == :eol)
+		unread ? @lexer.unreadtok(tok) : tok
 	end
 
 	# check if a word is an invalid variable name
