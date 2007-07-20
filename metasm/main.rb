@@ -61,6 +61,11 @@ class Preprocessor
 	def self.include_search_path=(np)
 		@@include_search_path = np
 	end
+
+	def exception(msg='syntax error')
+		backtrace_str = Backtrace.backtrace_str(@backtrace.map { |f, l, *a| [f, l] }.flatten)
+		ParseError.new "parse error at #{backtrace_str}: #{msg}"
+	end
 end
 
 # handle asm-specific syntax: asm macro, equ, ;comments
