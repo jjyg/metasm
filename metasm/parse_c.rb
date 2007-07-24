@@ -18,7 +18,7 @@ class CParser
 		attr_accessor :struct	# hash name => Type
 		attr_accessor :enum	# hash enum name => value
 		attr_accessor :outer	# parent block
-		attr_accessor :statements	# array of CExpr/If../Continue../Goto/Label
+		attr_accessor :statements	# array of CExpr/If../Continue../Goto/Label/Block
 
 		def initialize(outer)
 			@variable, @type, @struct, @enum = {}, {}, {}, {}
@@ -42,31 +42,27 @@ class CParser
 
 	class Variable < Declaration
 		attr_accessor :type, :initializer
-		#attr_accessor :name
+		attr_accessor :name		# defined by parse_declarator
 		attr_accessor :attributes
 		attr_accessor :storage		# auto register static extern
 	end
 
 	class Type < Declaration
 		attr_accessor :qualifier	# const volatile
+		attr_accessor :attributes
 	end
 	class BaseType < Type
-		attr_accessor :name
-		attr_accessor :attributes
+		attr_accessor :name		# a typedefed name or 'int' 'long' 'long long' 'short' 'double' 'long double' 'float' 'char' 'void'
+		attr_accessor :specifier	# holds only sign specifier
 	end
-	class FunctionType < Type
-		attr_accessor :return_type
-		attr_accessor :args_type
-
-		def initialize(rt)
-			@return_type = rt
-			@args_type = []
-		end
+	class Function < Type
+		attr_accessor :type		# return type
+		attr_accessor :args		# [name, Variable]
+		attr_accessor :varargs		# true/false
 	end
 	class Union < Type
-		# [[name, Type, bits=nil], ...]
 		attr_accessor :members
-		attr_accessor :attributes
+		attr_accessor :bits		# name => len
 	end
 	class Struct < Union
 		attr_accessor :align
@@ -77,28 +73,15 @@ class CParser
 	end
 	class Pointer < Type
 		attr_accessor :type
+
+		def initialize(type)
+			@type = type
+		end
 	end
-	class Array < Type
-		attr_accessor :type
+	class Array < Pointer
 		attr_accessor :length
 	end
 
-	class Function
-		attr_accessor :type	# FunctionType
-		attr_accessor :args	# array of Variables
-		attr_accessor :varargs	# true/false
-		attr_accessor :attributes
-		attr_accessor :name
-		attr_accessor :body
-
-		# parser helper
-		def initialize(var)
-			@name = var.name
-			@type = FunctionType.new(var.type)
-			@args = []
-			@attributes = var.attributes
-		end
-	end
 	class If
 		# expression
 		attr_accessor :test
@@ -152,9 +135,8 @@ class CParser
 	def self.parse(text, file='unknown', lineno=1)
 		c = new
 		c.lexer.feed text, file, lineno
-		while not c.lexer.eos?
-			c.parse_definition c.toplevel
-		end
+		nil while not c.lexer.eos? and c.parse_definition(c.toplevel)
+		raise c.lexer if not c.lexer.eos?
 		c.sanity_checks
 		c
 	end
@@ -168,7 +150,9 @@ class CParser
 	# C sanity checks
 	#  typedef are not initialized
 	#  no addr of register-class variable is taken
-	#  toplevel initializers are constants (including struct members)
+	#  toplevel initializers are constants (including struct members and bit length)
+	#  array lengthes are constant on toplevel
+	#  no variable is of type 'void'
 	#  etc
 	#  TODO
 	def sanity_checks
@@ -179,6 +163,10 @@ class CParser
 	def skipspaces
 		nil while tok = @lexer.readtok and (tok.type == :space or tok.type == :eol)
 		tok
+	end
+
+	# checks that the types are compatible for the same variable
+	def check_compatible_type(oldtype, newtype)
 	end
 
 	Reserved = %w[struct union enum  if else for while do switch goto
@@ -192,73 +180,68 @@ class CParser
 	# populates scope.struct/scope.enum
 	# if allow_value, populates scope.variable, else returns an array of Variables
 	# raises on redefinition
+	# returns the definitions if not allow_value, else true
+	# returns false if no definition is found
 	def parse_definition(scope, allow_value=true)
-		defs = [] if not allow_value
+		defs = allow_value ? true : []
 
 		basetype = Variable.new
 		parse_type(scope, basetype, allow_value)	# filters out typedefs
+		return false if not basetype.type
 
 		# check struct predeclaration
 		tok = skipspaces
-		if tok and tok.type == :punct and tok.raw == ';' and basetype.type
-				and basetype.type.kind_of? Union or basetype.type.kind_of? Enum
-			defs << basetype if allow_value
-			return defs
+		if allow_value and tok and tok.type == :punct and tok.raw == ';' and basetype.type
+				and (basetype.type.kind_of? Union or basetype.type.kind_of? Enum)
+			return true
 		else @lexer.unreadtok tok
 		end
 
 		nofunc = false
 		loop do
 			var = basetype.dup
-			parse_declarator(scope, var, allow_value)
-
-			# check for redefinition
-			if allow_value and var.storage and var.storage.include?(:typedef)
-				raise @lexer, "redefinition of type #{var.name}" if scope.type[var.name]
-			elsif allow_value
-				raise @lexer, "redefinition of #{var.name}" if scope.variable[var.name]
-			end
-
-			raise @lexer if not tok = skipspaces
-			raise tok, '"(" "=" ";" or "," expected' if tok.type != :punct
-
-			case tok.raw
-			when '(':
-				# XXX do that in parse_declarator
-				raise tok, 'no function definition allowed here' if not allow_value and not var.type.kind_of? Pointer
-				raise tok if nofunc
-				var = Function.new(var)
-				raise tok, 'attribute forbidden here' if var.attribute
-				parse_function_arglist(scope, var)	# 'register' storage class allowed
-				raise @lexer if not tok = skipspaces
-				raise tok, '";" or "{" expected' if tok.type != :punct
-				case tok.raw
-				when ';'
-				when '{'
-					# XXX the function may reference itself, so populate scope.variable[name] before parsing_func_body
-					raise tok, 'attribute forbidden here' if var.attribute
-					parse_function_body(scope, var)
-				else raise tok, '";" or "{" expected'
-				end
-			when '=':
-				raise tok, 'no initialization allowed here' if not allow_value
-				raise tok, 'cannot initialize extern variable' if var.storage and var.storage.include?(:extern)
-				parse_initializer(scope, var)
-				raise @lexer if not tok = skipspaces
-				raise tok if tok.type != :punct
-			end
+			parse_declarator(scope, var)
 
 			if allow_value
-				# already checked for redefinition
-				if var.storage.include? :typedef
+				if var.storage and var.storage.include? :typedef
+					raise @lexer, "redefinition of type #{var.name}" if scope.type[var.name]
 					scope.type[var.name] = var.type
 				else
+					raise @lexer, "redefinition of #{var.name}" if scope.variable[var.name] and scope.variable[var.name].initializer
+					check_compatible_type(scope.variable[var.name].type, var.type) if scope.variable[var.name]
 					scope.variable[var.name] = var
 				end
 			else
 				defs << var
 			end
-			break if var.kind_of? Function	# only one function definition allowed (and the end token is already consumed)
+
+			raise @lexer if not tok = skipspaces
+			raise tok, 'punctuation expected' if tok.type != :punct
+			raise tok, 'no function definition allowed here' if (nofunc or not allow_value) and tok.type.kind_of? Function
+
+			case tok.raw
+			when '{':
+				raise tok, '"=", "," or ";" expected' if not var.type.kind_of? Function
+				body = Block.new scope
+				var.type.args.each { |v|
+					if not v.name
+						puts "unnamed argument in definition" if $VERBOSE
+						next
+					end
+					raise @lexer, "argument redefinition: #{v.name.inspect}" if body.variable[v.name]
+					body.variable[v.name] = v
+				}
+
+				parse_function_body(scope, var)
+				raise @lexer, '"}" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != '}'
+				break
+			when '=':
+				raise tok, 'no initialization allowed here' if not allow_value
+				raise tok, 'cannot initialize extern variable' if var.storage and var.storage.include?(:extern)
+				raise tok, '"{" or ";" expected' if var.type.kind_of? Function
+				parse_initializer(scope, var)
+				raise @lexer, '"," or ";" expected' if not tok = skipspaces or tok.type != :punct
+			end
 
 			case tok.raw
 			when ',': nofunc = true
@@ -274,8 +257,12 @@ class CParser
 	def parse_type(scope, var, allow_value)
 		qualifier = nil
 		loop do
-			raise @lexer if not tok = skipspaces
-			raise tok if tok.type != :string
+			break if not tok = skipspaces
+			if tok.type != :string
+				@lexer.unreadtok tok
+				break
+			end
+
 			case tok.raw
 			when 'const', 'volatile'
 				# XXX allow multiple qualifiers ?
@@ -297,25 +284,192 @@ class CParser
 				var.type = Enum.new
 				parse_type_enum(scope, var)
 			when 'long', 'short', 'signed', 'unsigned', 'int', 'char', 'float', 'double', 'void'
+				var.type = BaseType.new
+				loop do
+					case tok.raw
+					when 'long', 'short', 'signed', 'unsigned'
+						(var.type.specifier ||= []) << tok.raw.to_sym
+						raise @lexer if not tok = skipspaces
+						if tok.type != :string or not %w[long short signed unsigned int double].include?(tok.raw)
+							@lexer.unreadtok tok
+							var.type.name ||= 'int'
+							break
+						end
+					when 'int', 'char', 'void', 'float', 'double'
+						var.type.name = tok.raw
+						break
+					end
+				end
+				if s = var.type.specifier
+					raise @lexer, "invalid specifier list" if \
+					case var.type.name
+					when 'double'	# long double
+						true if s != [:long]
+					when 'int'	# short, long, long long X signed, unsigned
+						s = s - [:long] + [:longlong] if (s & [:long]).length == 2
+						true if (s & [:signed, :unsigned]).length > 1 or (s & [:short, :long, :longlong]).length > 1
+					when 'char'	# signed, unsigned
+						# signed char != char and unsigned char != char
+						true if (s & [:signed, :unsigned]).length > 1 or (s & [:short, :long]).length > 0
+					else		# none
+						true
+					end
+
+					# normalize long/short in type.name
+					case var.type.name
+					when 'double'
+						var.type.name = 'long double'
+						var.type.specifier = nil
+					when 'int'
+						if s.delete :longlong
+							var.type.name = 'long long'
+						elsif s.delete :long
+							var.type.name = 'long'
+						elsif s.delete :short
+							var.type.name = 'short'
+						end
+						s.delete :signed
+						var.type.specifier = nil if var.type.specifier.empty?
+					end
+				end
 			else
-				if not var.type = scope.type_ancestors[tok.raw]
-					raise tok, 'type name expected'
+				if type = scope.type_ancestors[tok.raw]
+					var.type = BaseType.new
+					var.type.name = type
+				else
+					@lexer.unreadtok tok
 				end
 			end
 
 			break
 		end
+
+		if not var.type
+			raise @lexer, 'bad type name' if qualifier or var.storage
+			return
+		end
+
 		var.type.qualifier = qualifier if qualifier
 
-		loop do # TODO
-			raise @lexer if not tok = skipspaces
+		loop do
+			return if not tok = skipspaces
 			if tok.type == :string and tok.raw == '__attribute__'
-				parse_type_attribute(scope, var)
+				var.type = var.type.dup
+				parse_attribute(var.type)
 			else
 				@lexer.unreadtok tok
 				break
 			end
 		end
+	end
+
+	# updates var.type and var.name, parses pointer/arrays/function declarations
+	# parses anonymous declarators (var.name will be false)
+	# the caller is responsible for detecting redefinitions
+	# scope used only in CExpression.parse for array sizes and function prototype argument types
+	def parse_declarator(scope, var)
+		return if not tok = skipspaces
+		if tok.type == :punct and tok.raw == '*'
+			ptr = Pointer.new nil
+
+			parse_attribute(ptr) while tok = skipspaces and tok.type == :string and tok.raw == '__attribute__'
+			@lexer.unreadtok tok
+
+			parse_declarator(scope, var)
+			t = var
+			t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
+			ptr.type = t.type
+			t.type = ptr
+			return
+		elsif tok.type == :punct and tok.raw == '('
+			parse_declarator(scope, var)
+			raise @lexer, '")" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ')'
+		elsif tok.type == :string
+			raise tok, 'bad var name' if Reserved[tok.raw]
+			raise tok if var.name or var.name == false
+			var.name = tok.raw
+		else
+			# unnamed
+			raise tok if var.name or var.name == false
+			var.name = false
+			@lexer.unreadtok tok
+		end
+
+		loop do
+			break if not tok = skipspaces
+			if tok.type == :punct and tok.raw == '['
+				t = var
+				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
+				t.type = Array.new t.type
+				t.type.length = CExpression.parse(@lexer, scope)	# may be nil
+				raise @lexer, '"]" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ']'
+			elsif tok.type == :punct and tok.raw == '('
+				t = var
+				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
+				t.type = Function.new t.type
+				tok = skipspaces
+				if not tok or tok.type != :punct or tok.raw != ')'
+					t.type.args = []
+					loop do
+						v = Variable.new
+						raise @lexer if not tok = skipspace
+						if tok.type == :punct and tok.raw == '.'	# variadic function
+							raise @lexer, '"..." expected' if not tok = skipspaces or tok.type != :punct or tok.raw != '.'
+							raise @lexer, '"..." expected' if not tok = skipspaces or tok.type != :punct or tok.raw != '.'
+							raise @lexer, '")" expected'   if not tok = skipspaces or tok.type != :punct or tok.raw != ')'
+							t.type.varargs = true
+							break
+						elsif tok.type == :string and tok.raw == 'register'
+							v.storage = tok.raw.to_sym
+						else
+							@lexer.unreadtok tok
+						end
+
+						parse_type(scope, v, false)
+						raise @lexer if not v.type
+						parse_declarator(scope, v)
+
+						args << v if not v.type.kind_of? BaseType or v.type.name != 'void'
+
+						parse_attribute(v) while tok = skipspaces and tok.type == :string and tok.raw == '__attribute__'
+
+						if tok and tok.type == :punct and tok.raw == ','
+							raise @lexer if args.last != v		# last arg of type 'void'
+						elsif tok and tok.type == :punct and tok.raw == ')'
+							break
+						else raise @lexer
+						end
+					end
+				end
+				parse_attribute(t.type) while tok = skipspaces and tok.type == :string and tok.raw == '__attribute__'
+				@lexer.unreadtok tok
+			else
+				@lexer.unreadtok tok
+				break
+			end
+		end
+	end
+
+	def parse_attribute(obj)
+		raise @lexer if not tok = skipspaces or tok.type != :punct or tok.type != '('
+		raise @lexer if not tok = skipspaces or tok.type != :punct or tok.type != '('
+		nest = 0
+		attrib = ''
+		loop do
+			raise @lexer if not tok = skipspaces
+			if tok.type == :punct and tok.raw == ')'
+				if nest == 0
+					raise @lexer if not tok = skipspaces or tok.type != :punct or tok.raw != ')'
+					break
+				else
+					nest -= 1
+				end
+			elsif tok.type == :punct and tok.raw == '('
+				nest += 1
+			end
+			attrib << tok.raw
+		end
+		(obj.attributes ||= []) << attrib
 	end
 
 	# parses a structure/union declaration
@@ -328,7 +482,8 @@ class CParser
 			# a struct name
 			name = tok.raw
 			raise tok, 'bad struct name' if Reserved[name]
-			raise @lexer if not ntok = skipspaces
+			parse_attribute(var.type) while ntok = skipspaces and ntok.type == :string and ntok.raw == '__attribute__'
+			raise @lexer if not ntok
 			if ntok.type != :punct or ntok.raw != '{'
 				@lexer.unreadtok ntok
 				if ntok.type == :punct and ntok.raw == ';'
@@ -341,7 +496,6 @@ class CParser
 					var.type = scope.struct_ancestors[name]
 					raise tok, 'undeclared struct' if not var.type
 				end
-				# XXX TODO check attribute
 				return
 			end
 			raise tok, 'struct redefinition' if scope.struct[name]
@@ -350,33 +504,27 @@ class CParser
 			raise tok, 'struct name expected'
 		end
 
+		var.type.members = []
 		# parse struct/union members in definition
 		loop do
 			basetype = Variable.new
 			parse_type(scope, basetype, false)
-			nofunc = false
 			loop do
-				var = basetype.dup
-				parse_declarator(scope, var)
-				raise @lexer if not tok = skipspaces
-				raise tok if tok.type != :punct
+				member = basetype.dup
+				parse_declarator(scope, member)
+				# raise @lexer if not member.name	# can be useful in hacking: struct foo {int; int*; int iwant;};
+				parse_attribute(member) while tok = skipspaces and tok.type == :string and tok.raw == '__attribute__'
+				raise @lexer if not tok or tok.type != :punct
 
+				var.type.members << member
 				case tok.raw
-				when '}': break
-				when '(', '=': raise tok
-				when 
-				raise tok if nofunc
-				when '=':
-					raise tok if var.storage and var.storage.include?(:typedef)
-					parse_initializer(scope, var)
-					raise @lexer if not tok = skipspaces
-					raise tok if tok.type != :punct
-				end
+				when ';'
+					break
+				when ':'
 
-				case tok.raw
-				when ';': break
-				when ',': nofunc = true
-				else raise tok
+					# bits
+				when ','
+				else raise tok, '",", ":" or ";" expected'
 				end
 			end
 		end
