@@ -59,6 +59,10 @@ class CParser
 		attr_accessor :type		# return type
 		attr_accessor :args		# [name, Variable]
 		attr_accessor :varargs		# true/false
+
+		def initialize(type=nil)
+			@type = type
+		end
 	end
 	class Union < Type
 		attr_accessor :members
@@ -74,7 +78,7 @@ class CParser
 	class Pointer < Type
 		attr_accessor :type
 
-		def initialize(type)
+		def initialize(type=nil)
 			@type = type
 		end
 	end
@@ -202,12 +206,11 @@ class CParser
 			var = basetype.dup
 			parse_declarator(scope, var)
 
-			if allow_value
+			if allow_value and var.name
+				raise @lexer, "redefinition of #{var.name}" if scope.type[var.name] or (scope.variable[var.name] and (scope.variable[var.name].initializer or (var.storage and var.storage.include? :typedef))) or scope.enum[var.name]
 				if var.storage and var.storage.include? :typedef
-					raise @lexer, "redefinition of type #{var.name}" if scope.type[var.name]
 					scope.type[var.name] = var.type
 				else
-					raise @lexer, "redefinition of #{var.name}" if scope.variable[var.name] and scope.variable[var.name].initializer
 					check_compatible_type(scope.variable[var.name].type, var.type) if scope.variable[var.name]
 					scope.variable[var.name] = var
 				end
@@ -370,7 +373,7 @@ class CParser
 	def parse_declarator(scope, var)
 		return if not tok = skipspaces
 		if tok.type == :punct and tok.raw == '*'
-			ptr = Pointer.new nil
+			ptr = Pointer.new
 
 			parse_attribute(ptr) while tok = skipspaces and tok.type == :string and tok.raw == '__attribute__'
 			@lexer.unreadtok tok
@@ -493,12 +496,14 @@ class CParser
 				else
 					# check that the structure exists
 					# do not check it is declared (may be a pointer, check in declarator)
-					var.type = scope.struct_ancestors[name]
-					raise tok, 'undeclared struct' if not var.type
+					struct = scope.struct_ancestors[name]
+					raise tok, 'undeclared struct' if not struct
+					(struct.attributes ||= []).concat var.type.attributes if var.type.attributes
+					var.type = struct
 				end
 				return
 			end
-			raise tok, 'struct redefinition' if scope.struct[name]
+			raise tok, 'struct redefinition' if scope.struct[name] and scope.struct[name].members
 			scope.struct[name] = var.type
 		else
 			raise tok, 'struct name expected'
@@ -507,334 +512,119 @@ class CParser
 		var.type.members = []
 		# parse struct/union members in definition
 		loop do
+			raise @lexer if not tok = skipspaces
+			break if tok.type == :punct and tok.raw == '}'
+			@lexer.unreadtok tok
+
 			basetype = Variable.new
 			parse_type(scope, basetype, false)
+			raise @lexer if not basetype.type
 			loop do
 				member = basetype.dup
 				parse_declarator(scope, member)
-				# raise @lexer if not member.name	# can be useful in hacking: struct foo {int; int*; int iwant;};
+				# raise @lexer if not member.name	# can be useful while hacking: struct foo {int; int*; int iwant;};
 				parse_attribute(member) while tok = skipspaces and tok.type == :string and tok.raw == '__attribute__'
+				raise @lexer, 'member redefinition' if member.name and var.type.members.find { |m| m.name == member.name }
+				var.type.members << member
+
 				raise @lexer if not tok or tok.type != :punct
 
-				var.type.members << member
+				if tok.raw == ':'	# bits
+					raise @lexer if not bits = CExpression.parse(@lexer, scope)
+					(var.type.bits ||= {})[member.name] = bits if member.name
+					raise @lexer if not tok = skipspaces or tok.type != :punct
+				end
+
 				case tok.raw
-				when ';'
-					break
-				when ':'
-
-					# bits
-				when ','
-				else raise tok, '",", ":" or ";" expected'
-				end
-			end
-		end
-		
-
-			if ntok.type == :string
-				# variable declaration using preexisting structure
-				@lexer.unreadtok ntok
-				struct = scope.struct_ancestors[name]
-				raise tok, 'undeclared structure' if not struct
-				# do not check undeclared structure now (don't know if the variable following 
-				var.type = struct
-			elsif ntok.type == :punct and ntok.raw == '{'
-			end
-		elsif tok.type == :punct or tok.raw == '{'
-		elsif tok.type == :punct or tok.raw == ';'
-		end
-	end
-
-	def parse_enum(scope)
-		raise @lexer if not tok = skipspaces
-			loop do
-				raise @lexer if not tok = skipspaces
-				if tok.type == :string and tok.raw == '__attribute__'
-					parse_type_attribute(scope, var)
-				else break
-				end
-			end
-	end
-
-	# parses a variable name, may include pointer/array specification with qualifiers
-	# does not parse initializer
-	def parse_declarator(scope, var)
-		# TODO check undeclared struct
-		raise @lexer if not tok = skipspaces
-		if tok.type == :punct and tok.raw == '*'
-			var.type = Pointer.new(var.type)
-			raise @lexer if not tok = skipspace
-			if tok.type == :string and (tok.raw == 'const' or tok.raw == 'volatile')
-				(tok.type.qualifier ||= []) << tok.raw.to_sym
-				# allow many ?
-			end
-		end
-		raise tok if tok.type != :string or Reserved[tok.raw]
-		tok.name = tok.raw
-		loop do
-			raise @lexer if not tok = skipspaces
-			if tok.type != :punct or tok.raw != '['
-				@lexer.unreadtok tok
-				break 
-			end
-			var.type = Array.new(var.type)
-			var.length = parse_cexpr_single(scope)
-			raise @lexer if not tok = skipspaces
-			raise tok if tok.type != :punct or tok.raw != ']'
-		end
-			loop do
-				raise @lexer if not tok = skipspaces
-				if tok.type == :string and tok.raw == '__attribute__'
-					parse_type_attribute(scope, var)
-				else break
-				end
-			end
-	end
-
-# XXX undone XXX #
-# XXX undone XXX #
-# XXX undone XXX #
-# XXX undone XXX #
-
-			u = parse_union
-
-			parse_union @toplevel.scope
-			type = parse_union tok
-			ntok = readtok(tok)
-			return if ntok.type == :punct and ntok.raw == ';'
-			@lexer.unreadtok ntok
-		when 'struct'
-			type = parse_struct tok
-			ntok = readtok(tok)
-			return if ntok.type == :punct and ntok.raw == ';'
-			@lexer.unreadtok ntok
-		else
-			if not reserved(tok.raw)
-				type = Type.new('int')
-				@lexer.unreadtok tok
-			else
-				type = parse_type tok
-			end
-		end
-
-		loop do
-			name = readtok(tok, :string)
-			case readtok(name, :punct).raw
-			when '('	# function declaration/definition
-				func = Function.new
-				func.name = name
-				func.return_type = type
-				func.args = []
-				seentype = false
-				# read argument list
-				loop do
-					func.args << Variable.new
-					a = readtok(name, :string)
-					if not reserved(a.raw)
-						func.args.last.name = a
-					else
-						seentype = true
-						func.args.last.type = parse_type a
-					end
-					ntok = readtok(tok)
-					if not oldstyledef and ntok.type == :string
-						func.args.last.name = ntok
-						ntok = readtok(tok)
-					end
-					raise name if ntok.type != :punct or (ntok.raw != ',' and ntok.raw != ')')
-					break if ntok.raw == ')'
-				end
-				if not seentype
-					# oldstyle: int toto(a, b, c) int a; int b; double c; { kikoo lol }
-					loop do
-						ntok = readtok(tok)
-						if ntok.type == :punct and ntok.raw == '{'
-							@lexer.unreadtok ntok
-							break
-						end
-						raise name if ntok.type != :string
-						atype = parse_type(ntok)
-						aname = readtok(name, :string)
-						if not arg = func.args.find { |a| a.name.raw == aname.raw } or arg.type != atype
-							raise name, 'syntax error'
-						end
-						arg.type = atype
-						raise name if readtok(name, :punct).raw != ';'
-					end
-				end
-				func.args.each { |a| a.type ||= Type.new('int') }
-				# check redefinition
-				if o = @curscope.find_var(name.raw)
-					if not o.kind_of? Function or o.body or o.return_type != func.return_type or
-					(o.args.length > 0 and func.args.length > 0 and (o.args.length != func.args.length or
-					(o.args.zip(func.args).any? { |t1, t2| t1 != t2 })))
-						raise name, 'bad redeclaration'
-					end
-				end
-				@curscope.variables[name.tok] = func
-				# read body
-				case readtok(name, :punct).raw
-				when ',': next
 				when ';': break
-				when '{'
-					func.scope = @curscope = Scope.new(@curscope)
-					loop do
-						ntok = readtok(name)
-						break if ntok.type == :punct and ntok.raw == '}'
-						@lexer.unreadtok ntok
-						@curscope << parse_c_statement(ntok)
-					end
-					@curscope = @curscope.parent
-					break
-				else raise name
-				end
-
-			when '='	# variable initialization
-				raise name, 'redefinition' if v = @curscope.variables[name] and (v.initializer or v.type != type)
-				raise name if type.modifiers.include? 'extern'
-				var = Variable.new
-				var.name = name
-				var.type = type
-				var.initializer = parse_initializer(name, var)
-				@curscope.variables[name] = var
-			when ','	# next variable
-				raise name, 'redefinition' if v = @curscope.variables[name] and (v.initializer or v.type != type)
-				var = Variable.new
-				var.name = name
-				var.type = type
-				@curscope.variables[name] = var
-			when ';'	# done
-				break
-			else raise name
-			end
-		end
-	end
-
-	def parse_typedef(tok)
-		type = parse_type(tok)
-		newtype = readtok(tok, :string)
-		raise tok if readtok(tok, :punct).raw != ';'
-		@type[newtype.raw] = type
-	end
-
-	def parse_struct(tok)
-		ntok = readtok(tok)
-		if ntok.type == :string
-			name = ntok.raw
-			ntok = readtok(tok, :punct)
-			if ntok.raw == ';'
-				s = Struct.new
-				s.name = name
-				@type["struct #{name.raw}"] ||= s
-				return s
-			end
-		end
-		raise tok if ntok.raw != '{'
-		s = Struct.new
-		s.name = name
-		s.members = []
-		@type["struct #{name.raw}"] = s if name
-		loop do
-			ntok = readtok(tok)
-			if ntok.type == :punct and ntok.raw == '}'
-				break
-			end
-			s.members << Variable.new
-			s.members.last.type = parse_type(ntok)
-			s.members.last.name = readtok(tok, :string)
-			ntok = readtok(tok, :punct)
-			if ntok.raw == ':'
-				s.bits ||= {}
-				s.bits[s.members.last.name.raw] = readtok(tok, :string).raw.to_i
-				ntok = readtok(tok, :punct)
-			end
-			raise tok if readtok(tok, :punct).raw != ';'
-		end
-		s
-	end
-
-	def parse_union(tok)
-		ntok = readtok(tok)
-		if ntok.type == :string
-			name = ntok.raw
-			ntok = readtok(tok, :punct)
-			if ntok.raw == ';'
-				u = Union.new
-				u.name = name
-				@type["union #{name.raw}"] ||= u
-				return u
-			end
-		end
-		raise tok if ntok.raw != '{'
-		u = Union.new
-		u.name = name
-		u.members = []
-		@type["union #{name.raw}"] = u if name
-		loop do
-			ntok = readtok(tok)
-			if ntok.type == :punct and ntok.raw == '}'
-				break
-			end
-			u.members << Variable.new
-			u.members.last.type = parse_type(ntok)
-			u.members.last.name = readtok(tok, :string)
-			raise tok if readtok(tok, :punct).raw != ';'
-		end
-		u
-	end
-
-	def parse_type(tok)
-		# XXX int (*foo)(void); : we read type and unreadtok name
-	end
-
-	def parse_initializer(tok, var)
-		ntok = readtok(tok)
-		if ntok.type == :punct and ntok.raw == '{'	# struct/array initialization
-			members = []
-			if var.type.type.kind_of? Struct
-				members = var.type.type.members
-			end
-			type = var.type
-			ret = []
-			loop do
-				ntok = readtok(tok)
-				if ntok.type == :punct and ntok.type == '.'
-					raise tok if not members.include?((name = readtok(tok, :string)).raw)
-					raise tok if readtok(tok, :punct).raw != '='
-					ret << CExpression.new(name.raw, :'=', parse_c_expression(name))
-				else
-					@lexer.unreadtok ntok
-					ret << parse_c_expression(tok)
-				end
-				case readtok(tok, :punct).raw
 				when ','
-				when '}': break
-				else raise tok
+				else raise tok, '"," or ";" expected'
 				end
 			end
-			ret
-		else parse_c_expression(tok)
 		end
+		parse_attribute(var.type) while tok = skipspaces and tok.type == :string and tok.raw == '__attribute__'
+		@lexer.unreadtok tok
 	end
 
-	def parse_c_expression(tok)
-		p1 = parse_c_value
-		loop do
-			op = readop
-			p2 = parse_c_value
+	def parse_enum(scope, var)
+		raise @lexer if not tok = skipspaces
+		if tok.type == :punct and tok.raw == '{'
+			# ok
+		elsif tok.type == :string
+			# enum name
+			name = tok.raw
+			raise tok, 'bad enum name' if Reserved[name]
+			parse_attribute(var.type) while ntok = skipspaces and ntok.type == :string and ntok.raw == '__attribute__'
+			raise @lexer if not ntok
+			if ntok.type != :punct or ntok.raw != '{'
+				@lexer.unreadtok ntok
+				if ntok.type == :punct and ntok.raw == ';'
+					# predeclaration
+					# allow redefinition
+					scope.enum[name] ||= var.type
+				else
+					# check that the enum exists
+					enum = scope.enum_ancestors[name]
+					raise tok, 'undeclared enum' if not enum
+					(enum.attributes ||= []).concat var.type.attributes if var.type.attributes
+					var.type = enum
+				end
+				return
+			end
+			raise tok, 'enum redefinition' if scope.enum[name] and scope.enum[name].values
+			scope.enum[name] = var.type
+		else
+			raise tok, 'enum name expected'
 		end
+
+		val = -1
+		loop do
+			raise @lexer if not tok = skipspaces
+			break if tok.type == :punct and tok.raw == '}'
+
+			raise tok if tok.type != :string or Reserved[tok.raw]
+			name = tok.raw
+			raise tok, 'enum value redefinition' if scope.enum[name]
+
+			raise @lexer if not tok = skipspaces
+			if tok.type == :punct and tok.raw == '='
+				nval = CExpression.parse(@lexer, scope)
+				raise @lexer, 'need constant initializer' if not val = nval.reduce
+				raise @lexer if not tok = skipspaces
+			else
+				val += 1
+			end
+			(var.type.values ||= {})[name] = val
+			scope.enum[name] = val
+
+			if tok.type == :punct and tok.raw == '}'
+				break
+			elsif tok.type == :punct and tok.raw == ','
+			else raise tok
+			end
+		end
+		parse_attribute(var.type) while tok = skipspaces and tok.type == :string and tok.raw == '__attribute__'
+		@lexer.unreadtok tok
 	end
 
 	def parse_c_statement(tok)
-		case ntok
+		case tok.raw
 		when 'if'
 		when 'switch'
+		when 'case'
 		when 'while'
 		when 'do'
 		when 'for'
-		when 'asm'
-		else
-			if reserved ntok
-				parse_def
+		when 'asm', '__asm', '__asm__'
+		when 'goto'
+		when 'return'
+		when 'continue'
+		when 'break'
+		when String
+			raise if Reserved
+			if ntok and notk.type == :punct and ntok.raw == ':'
+				Label.new
+			else
 			end
 		end
 	end
@@ -842,6 +632,7 @@ class CParser
 	class CExpression
 	class << self
 		# key = operator, value = hash regrouping operators of lower precedence
+		# XXX . -> |= ^= += ++ --, unary & *
 		OP_PRIO = [[:'||'], [:'&&'], [:'<', :'>', :'<=', :'>=', :'==', :'!='],
 			[:|], [:^], [:&], [:<<, :>>], [:+, :-], [:*, :/, :%]].inject({}) { |h, oplist|
 			lessprio = h.keys.inject({}) { |hh, op| hh.update op => true }
