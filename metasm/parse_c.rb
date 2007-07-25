@@ -632,12 +632,19 @@ class CParser
 	class CExpression
 	class << self
 		# key = operator, value = hash regrouping operators of lower precedence
-		# XXX . -> |= ^= += ++ --, unary & *
-		OP_PRIO = [[:'||'], [:'&&'], [:'<', :'>', :'<=', :'>=', :'==', :'!='],
-			[:|], [:^], [:&], [:<<, :>>], [:+, :-], [:*, :/, :%]].inject({}) { |h, oplist|
+		# XXX . -> |= ^= += ++ -- ',', unary & * cast sizeof funcall, ternary x?x:x
+		OP_PRIO = [[:','], [:'=', :'+=', :'-=', :'*=', :'/=', :'%=',
+			:'&=', :'|=', :'^=', :'<<=', :'>>='], [:'||'], [:'&&'],
+			[:|], [:^], [:&], [:'==', :'!='],
+			[:'<', :'>', :'<=', :'>='], [:<<, :>>], [:+, :-],
+			[:*, :/, :%]].inject({}) { |h, oplist|
 			lessprio = h.keys.inject({}) { |hh, op| hh.update op => true }
 			oplist.each { |op| h[op] = lessprio }
 			h }
+
+		RIGHTTOLEFT = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'&=',
+			:'|=', :'^=', :'<<=', :'>>=', :cast
+		].inject({}) { |h, op| h.update op => true }
 
 
 		# reads an operator from the lexer, returns the corresponding symbol or nil
