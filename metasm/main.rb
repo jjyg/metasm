@@ -186,7 +186,7 @@ class Token
 	def dup
 		n = self.class.new(backtrace)
 		n.type = @type
-		n.value = @value.respond_to?(:dup) ? @value.dup : @value
+		n.value = @value.kind_of?(String) ? @value.dup : @value
 		n.raw = @raw.dup
 		n
 	end
