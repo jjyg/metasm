@@ -607,7 +607,7 @@ class Expression
 					puts "hex float: #{tok.raw} => #{tok.value}" if $DEBUG
 				end
 
-			when /^([0-9][0-9_]*)([ul]?|e([0-9][0-9_]*[fl]?)?)$/, '.'
+			when /^([0-9][0-9_]*)(u|l?l|ul?l|l?lu|e([0-9][0-9_]*[fl]?)?)$/, '.'
 				tok.value = $1.to_i if $1
 				ntok = lexer.readtok
 
