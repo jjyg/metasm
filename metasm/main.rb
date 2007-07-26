@@ -64,7 +64,7 @@ class Preprocessor
 
 	def exception(msg='syntax error')
 		backtrace_str = Backtrace.backtrace_str(@backtrace.map { |f, l, *a| [f, l] }.flatten)
-		ParseError.new "parse error at #{backtrace_str}: #{msg}"
+		ParseError.new "at #{backtrace_str}: #{msg}"
 	end
 end
 
@@ -147,7 +147,7 @@ module Backtrace
 		i = ary.length
 		bt = ''
 		while i > 0
-			bt << ', included from ' if ary[i]
+			bt << ",\n\tincluded from " if ary[i]
 			i -= 2
 			bt << "#{ary[i].inspect} line #{ary[i+1]}"
 		end
@@ -180,7 +180,7 @@ class Token
 		if defined? @expanded_from
 			@expanded_from.to_a.each { |ef| me << " expanded from #{ef.inspect}" }
 		end
-		ParseError.new "parse error near #{me} at #{backtrace_str}: #{msg}"
+		ParseError.new "near #{me} at #{backtrace_str}: #{msg}"
 	end
 
 	def dup
