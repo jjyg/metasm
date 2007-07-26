@@ -633,6 +633,7 @@ class Preprocessor
 			end
 		}
 
+		eol = tok = nil
 		case cmd.raw
 		when 'if'
 			case @ifelse_nesting.last
@@ -640,7 +641,7 @@ class Preprocessor
 				@ifelse_nesting << :testing
 				test = PPExpression.parse(self)
 				eol = skipspc[]
-				raise cmd, 'pp syntax error' if eol and eol.type != :eol
+				raise eol, 'pp syntax error' if eol and eol.type != :eol
 				unreadtok eol
 				case test.reduce
 				when 0:       @ifelse_nesting[-1] = :discard
@@ -656,9 +657,7 @@ class Preprocessor
 			case @ifelse_nesting.last
 			when :accept, nil
 				@ifelse_nesting << :testing
-				tok = skipspc[]
-				eol = skipspc[]
-				raise cmd, 'pp syntax error' if not tok or tok.type != :string or (eol and eol.type != :eol)
+				raise eol || tok || cmd, 'pp syntax error' if not tok = skipspc[] or tok.type != :string or (eol = skipspc[] and eol.type != :eol)
 				unreadtok eol
 				@ifelse_nesting[-1] = (@definition[tok.raw] ? :accept : :discard)
 			when :discard, :discard_all
@@ -669,9 +668,7 @@ class Preprocessor
 			case @ifelse_nesting.last
 			when :accept, nil
 				@ifelse_nesting << :testing
-				tok = skipspc[]
-				eol = skipspc[]
-				raise cmd, 'pp syntax error' if not tok or tok.type != :string or (eol and eol.type != :eol)
+				raise eol || tok || cmd, 'pp syntax error' if not tok = skipspc[] or tok.type != :string or (eol = skipspc[] and eol.type != :eol)
 				unreadtok eol
 				@ifelse_nesting[-1] = (@definition[tok.raw] ? :discard : :accept)
 			when :discard, :discard_all
@@ -685,8 +682,7 @@ class Preprocessor
 			when :discard
 				@ifelse_nesting[-1] = :testing
 				test = PPExpression.parse(self)
-				eol = skipspc[]
-				raise cmd, 'pp syntax error' if eol and eol.type != :eol
+				raise eol, 'pp syntax error' if eol = skipspc[] and eol.type != :eol
 				unreadtok eol
 				case test.reduce
 				when 0:       @ifelse_nesting[-1] = :discard
@@ -700,9 +696,8 @@ class Preprocessor
 
 		when 'else'
 			@ifelse_nesting << :testing
-			eol = skipspc[]
 			@ifelse_nesting.pop
-			raise cmd, 'pp syntax error' if @ifelse_nesting.empty? or (eol and eol.type != :eol)
+			raise eol || cmd, 'pp syntax error' if @ifelse_nesting.empty? or (eol = skipspc[] and eol.type != :eol)
 			unreadtok eol
 			case @ifelse_nesting.last
 			when :accept
@@ -714,17 +709,15 @@ class Preprocessor
 
 		when 'endif'
 			@ifelse_nesting << :testing
-			eol = skipspc[]
 			@ifelse_nesting.pop
-			raise cmd, 'pp syntax error' if @ifelse_nesting.empty? or (eol and eol.type != :eol)
+			raise eol || cmd, 'pp syntax error' if @ifelse_nesting.empty? or (eol = skipspc[] and eol.type != :eol)
 			unreadtok eol
 			@ifelse_nesting.pop
 
 		when 'define'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
-			tok = skipspc[]
-			raise cmd, 'pp syntax error' if not tok or tok.type != :string
+			raise tok || cmd, 'pp syntax error' if not tok = skipspc[] or tok.type != :string
 			puts "W: pp: redefinition of #{tok.raw} #{tok.backtrace_str}, prev def at #{@definition[tok.raw].name.backtrace_str}" if @definition[tok.raw] and $VERBOSE
 			@definition[tok.raw] = Macro.new(tok)
 			@definition[tok.raw].parse_definition(self)
@@ -732,9 +725,7 @@ class Preprocessor
 		when 'undef'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
-			tok = skipspc[]
-			eol = skipspc[]
-			raise cmd, 'pp syntax error' if not tok or tok.type != :string or (eol and eol.type != :eol)
+			raise eol || tok || cmd, 'pp syntax error' if not tok = skipspc[] or tok.type != :string or (eol = skipspc[] and eol.type != :eol)
 			@definition.delete tok.raw
 			unreadtok eol
 
@@ -747,7 +738,7 @@ class Preprocessor
 
 			# allow preprocessing
 			nil while tok = readtok and tok.type == :space
-			raise cmd, 'pp syntax error' if not tok or (tok.type != :quoted and (tok.type != :punct or tok.raw != '<'))
+			raise tok || cmd, 'pp syntax error' if not tok or (tok.type != :quoted and (tok.type != :punct or tok.raw != '<'))
 			if tok.type == :quoted
 				ipath = tok.value
 				if @backtrace.find { |btf, *a| btf[0] == ?< }
@@ -773,7 +764,7 @@ class Preprocessor
 				end
 			end
 			nil while tok = readtok_nopp and tok.type == :space
-			raise cmd if tok.type != :eol
+			raise tok if tok and tok.type != :eol
 			unreadtok tok
 
 			if not defined? @pragma_once or not @pragma_once or not @pragma_once[path]
@@ -804,7 +795,7 @@ class Preprocessor
 			end
 			unreadtok tok
 			if cmd.raw == 'warning'
-				puts "#@filename:#@lineno : #warning#{msg}"
+				puts cmd.exception("#warning#{msg}").message if $VERBOSE
 			else
 				raise cmd, "#error#{msg}"
 			end
@@ -813,17 +804,17 @@ class Preprocessor
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
 			nil while tok = readtok_nopp and tok.type == :space
-			raise cmd if not tok or tok.type != :string or tok.raw != tok.raw.to_i.to_s
+			raise tok || cmd if not tok or tok.type != :string or tok.raw != tok.raw.to_i.to_s
 			@lineno = tok.raw.to_i
 			nil while tok = readtok_nopp and tok.type == :space
-			raise cmd if tok and tok.type != :eol
+			raise tok if tok and tok.type != :eol
 			unreadtok tok
 
 		when 'pragma'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
 			nil while tok = readtok and tok.type == :space
-			raise cmd if not tok or tok.type != :string
+			raise tok || cmd if not tok or tok.type != :string
 
 			case tok.raw
 			when 'once'
@@ -887,11 +878,11 @@ class Preprocessor
 				str = tok.raw.dup
 				str << tok.raw while tok = readtok and tok.type != :eol
 				unreadtok tok
-				puts "unhandled #pragma #{str}" if $VERBOSE
+				puts cmd.exception("unhandled #pragma #{str}").message if $VERBOSE
 			end
 
 			nil while tok = readtok and tok.type == :space
-			raise cmd if tok and tok.type != :eol
+			raise tok if tok and tok.type != :eol
 			unreadtok tok
 
 		else return false
