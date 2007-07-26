@@ -165,6 +165,9 @@ a b
 EOS
 		t_preparse["#define a(a) a(a)\na(1)", '1(1)']
 		t_preparse["#if 0\n#endif", '']
+		t_preparse["#if 0U\n#endif", '']
+		t_preparse["#if 0L\n#endif", '']
+		t_preparse["#if 0LLU\n#endif", '']
 	end
 
 	def test_floats
@@ -212,6 +215,7 @@ EOS
 #define abc(def)
 abc (1, 3)
 EOS
+		test_err["#if 0LUL\n#endif"]
 		# warnings only
 		#test_err["#define aa\n#define aa"]
 		#test_err['#define a(b) #c']

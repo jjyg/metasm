@@ -569,15 +569,20 @@ class Expression
 			when /^([0-9][a-f0-9_]*)h$/
 				tok.value = $1.to_i(16)
 
-			when /^0x([a-f0-9][a-f0-9_]*)([lu]?|p([0-9][0-9_]*[fl]?)?)$/, '0x'
+			when /^0x([a-f0-9][a-f0-9_]*)(u?l?l?|l?l?u?|p([0-9][0-9_]*[fl]?)?)$/, '0x'
 				tok.value = $1.to_i(16) if $1
 				ntok = lexer.readtok
 
 				# check for C99 hex float
 				if not tr.include? 'p' and ntok and ntok.type == :punct and ntok.raw == '.'
+					if not nntok = lexer.readtok or nntok.type != :string
+						lexer.unreadtok nntok
+						lexer.unreadtok ntok
+						return
+					end
 					# read all pre-mantissa
 					tok.raw << ntok.raw
-					ntok = lexer.readtok
+					ntok = nntok
 					tok.raw << ntok.raw if ntok
 					raise tok, 'invalid hex float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9a-f_]*p([0-9][0-9_]*[fl]?)?$/i
 					raise tok, 'invalid hex float' if tok.raw.delete('_').downcase[0,4] == '0x.p'	# no digits
@@ -607,14 +612,23 @@ class Expression
 					puts "hex float: #{tok.raw} => #{tok.value}" if $DEBUG
 				end
 
-			when /^([0-9][0-9_]*)(u|l?l|ul?l|l?lu|e([0-9][0-9_]*[fl]?)?)$/, '.'
+			when /^([0-9][0-9_]*)(u?l?l?|l?l?u?|e([0-9][0-9_]*[fl]?)?)$/, '.'
 				tok.value = $1.to_i if $1
 				ntok = lexer.readtok
+				if tok.raw == '.' and (not ntok or ntok.type != :string)
+					lexer.unreadtok ntok
+					return
+				end
 
 				if not tr.include? 'e' and tr != '.' and ntok and ntok.type == :punct and ntok.raw == '.'
+					if not nntok = lexer.readtok or nntok.type != :string
+						lexer.unreadtok nntok
+						lexer.unreadtok ntok
+						return
+					end
 					# read upto '.'
 					tok.raw << ntok.raw
-					ntok = lexer.readtok
+					ntok = nntok
 				end
 
 				if not tok.raw.downcase.include? 'e' and tok.raw[-1] == ?.
