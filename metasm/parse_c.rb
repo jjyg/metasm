@@ -1706,57 +1706,204 @@ EOS
 	end
 
 	# dumper: ruby objects => source
-	def dump
-		@toplevel.dump_inner
+	def to_s
+		r, dep = @toplevel.dump_inner
+		r.join("\n")
 	end
+
 	class Block
-		# array of c source lines
+		# return array of c source lines and array of dependencies (objects)
 		def dump
-			['{'] + dump_inner.map { |s| "\t" + s } + ['}']
+			r, dep = dump_inner
+			[['{'] + r.map { |s| "\t" + s } + ['}'], dep]
 		end
 		def dump_inner
-			# TODO dependancy reorder (struct bar {}; before struct baz { struct bar z };, typedefs..)
-			ret = []
-			todo = @symbol.values + @struct.values
-			todo.each { |s| ret.concat s.dump }
-			todo = @statements
-			todo.each { |s| ret.concat s.dump }
-			ret
+			mydefs = @symbol.values + @struct.values
+			# XXX struct a { int outer; };  {  struct b { struct a* outer; }; struct a { int inner; }; }
+			todo = mydefs.map { |t| [t, t.dump(self)] }
+			r = []
+			dep = []
+			loop do
+				# reorder
+				break if todo.empty?
+				prelen = todo.length
+				todo.find_all { |t, (tr, tdep)|
+					((tdep & mydefs) - [t]).empty?
+				}.each { |t, (tr, tdep)|
+					r.concat tr
+					dep |= (tdep - mydefs)
+					todo.delete t
+					todo.each { |ttr, ttdep| ttdep.delete t }
+				}
+				if todo.length == prelen
+					# loop: predeclare needed structs
+					# TODO
+					# XXX struct foo; typedef struct foo *bla; struct foo { bla toto; };
+					r << 'failure!'
+					break
+				end
+			end
+
+			@statements.each { |s|
+				tr, tdep = s.dump(self)
+				dep.concat(tdep - mydefs)
+				r.concat tr
+				case s
+				when CExpression, Goto, Return, Break, Continue, Asm
+					r.last << ';'
+				end
+			}
+			[r, dep]
 		end
 	end
 	class Variable
-		# array of lines
-		def dump
-			case @type
-			when Function
-			when Struct, Union, Enum
-				if @storage
-					r = "#@storage "
-				else
-					r = ''
-				end
-				r << "#{@type.class.downcase} "
-				if @type.name
-					# struct members already dumped (from scope.struct)
-					r << "#{@type.name} "
-				else
-					# multilines
-				end
-				r << " #@name" if @name
-				if @initializer
-					r << ' = '
-					case @initializer
-					when ::Array
-						r << '{'
+		# array of lines, array of dep
+		def dump(scope)
+			r = ['']
+			r.last << @storage.to_s << ' ' if @storage
+
+			decl = ['']
+			decl.last << @name if @name
+
+			t = type
+			loop do
+				# un-declaratorize
+				case t
+				when Array: decl.last << '[todo]'	# TODO
+				when Pointer
+					decl[0] = t.qualifier.map { |q| ' ' << q.to_s }.join << ' ' << decl[0] if t.qualifier
+					decl[0] = '*' << decl[0]
+					if t.type.kind_of? Function or t.type.kind_of? Array or (not @name and t.type.class != Pointer)
+						decl[0] = '(' << decl[0]
+						decl[-1] << ')'
 					end
+				when Function
+					decl.last << '(todo)'
+				else break
 				end
-				[r << ';']
+				t = t.type
 			end
+
+			dep = []
+			tr, tdep = t.dump(scope)
+			dep.concat tdep
+			r.last << tr.shift
+			r.concat tr
+			r.last << ' ' << decl.shift
+			r.concat decl
+
+			if @initializer
+				case @type
+				when Function
+
+				else
+					tr, tdep = @type.dump_initializer(scope, @initializer)
+					dep.concat tdep
+					r.last << ' = ' << tr.shift
+					r.concat tr
+				end
+			end
+			[r, dep]
 		end
 	end
 	class Type
-		# one line
-		def dump(name)
+		def dump_initializer(scope, init)
+			init.dump(scope)
+		end
+	end
+	class BaseType
+		def dump(scope)
+			r = ''
+			r << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			r << @specifier.to_s << ' ' if @specifier
+			r <<
+			case @name
+			when :char, :short, :int, :long, :double, :float: @name.to_s
+			when :longlong: 'long long'
+			when :longdouble: 'long double'
+			end
+			[[r], []]
+		end
+	end
+	class TypeDef
+		def dump(scope)
+			[[@name], [scope.symbol_ancestors[@name]]]
+		end
+	end
+	class Union
+		def dump(scope)
+			if @name
+				r = ''
+				r << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+				r << self.class.name.downcase << ' ' << @name
+				[[r], [scope.struct_ancestors[@name]]]
+			else
+				dump_def(scope)
+			end
+		end
+
+		def dump_def(scope)
+			r = ['']
+			dep = []
+			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			r.last << self.class.name.downcase << ' '
+			r.last << @name << ' ' if @name
+			r.last << '{'
+			@members.each { |m|
+				tr, tdep = m.dump(scope)
+				dep.concat tdep
+				r.concat tr.map { |s| "\t" + s }
+				r.last << ';'
+			}
+			r << '}'
+			[r, dep]
+		end
+
+		def dump_initializer(scope, init)
+			if init.kind_of? ::Array
+				r = ['{']
+				dep = []
+				showname = false
+				@members.zip(init) { |m, i|
+					if not i
+						showname = true
+						next
+					end
+					if showname
+						showname = false
+						r << "\t.#{m.name} = "
+					end
+					tr, tdep = m.type.dump_initializer(scope, i)
+					dep.concat tdep
+					r.last << tr.shift
+					r.concat tr
+					r.last << ','
+				}
+				r.last[-1, 1] = '' if r.last[-1] == ?,
+				r << '}'
+				[r, dep]
+			else super
+			end
+		end
+	end
+	class If
+		def dump(scope)
+			r = ['if (']
+			dep = []
+			tr, tdep = cond.dump(scope)
+			dep.concat tdep
+			r.last << tr.shift
+			r.concat tr
+			# if bthen.kind_of? Block
+			tr, tdep = bthen.dump(scope)
+			dep.concat tdep
+			r.concat tr
+			# if belse
+		end
+	end
+	class CExpression
+		def dump(scope)
+			[[inspect], []]
 		end
 	end
 end
