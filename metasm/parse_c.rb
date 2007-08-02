@@ -580,7 +580,7 @@ EOS
 
 	# checks that the types are compatible (variable predeclaration, function argument..)
 	# strict = false for func call/assignment (eg char compatible with int -- but int is incompatible with char)
-	def check_compatible_type(tok, oldtype, newtype, strict = false)
+	def check_compatible_type(tok, oldtype, newtype, strict = false, checked = [])
 		puts tok.exception('type qualifier mismatch').message if oldtype.qualifier != newtype.qualifier
 
 		oldtype = oldtype.type while oldtype.kind_of? TypeDef
@@ -588,10 +588,14 @@ EOS
 		oldtype = BaseType(:int) if oldtype.kind_of? Enum
 		newtype = BaseType(:int) if newtype.kind_of? Enum
 
+		# avoid infinite recursion
+		return if checked.include? oldtype
+		checked = checked + [oldtype]
+
 		case newtype
 		when Function
 			raise tok, 'incompatible type' if not oldtype.kind_of? Function
-			check_compatible_type tok, oldtype.type, newtype.type, strict
+			check_compatible_type tok, oldtype.type, newtype.type, strict, checked
 			if oldtype.args and newtype.args
 				if oldtype.args.length != newtype.args.length or
 						oldtype.varargs != newtype.varargs
@@ -599,13 +603,13 @@ EOS
 				end
 				oldtype.args.zip(newtype.args) { |oa, na|
 					# begin ; rescue ParseError: raise $!.message + "in parameter #{oa.name}" end
-					check_compatible_type tok, oa.type, na.type, strict
+					check_compatible_type tok, oa.type, na.type, strict, checked
 				}
 			end
 		when Pointer
 			raise tok, 'incompatible type' if not oldtype.kind_of? Pointer
 			# allow any pointer to void*
-			check_compatible_type tok, oldtype.type, newtype.type, strict if strict or newtype.type != :void
+			check_compatible_type tok, oldtype.type, newtype.type, strict, checked if strict or newtype.type != :void
 		when Union
 			raise tok, 'incompatible type' if not oldtype.class == newtype.class
 			if oldtype.members and newtype.members
@@ -614,7 +618,7 @@ EOS
 				end
 				oldtype.members.zip(newtype.members) { |om, nm|
 					# raise tok if om.name and nm.name and om.name != nm.name # don't care
-					check_compatible_type tok, om.type, nm.type, strict
+					check_compatible_type tok, om.type, nm.type, strict, checked
 				}
 			end
 		when BaseType
@@ -825,14 +829,14 @@ EOS
 			loop do
 				raise tok || self, '"}" expected' if not tok = skipspaces
 				break if tok.type == :punct and tok.raw == '}'
-				unskipspaces tok
+				unreadtok tok
 				if not parse_definition(body)
 					body.statements << parse_statement(body, nest)
 				end
 			end
 			return body
 		elsif tok.type != :string
-			unskipspaces tok
+			unreadtok tok
 			raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
@@ -993,13 +997,17 @@ EOS
 						struct = scope.struct_ancestors[name]
 						raise tok, 'unknown struct' if not struct or not struct.kind_of?(@type.class)
 						(struct.attributes ||= []).concat @type.attributes if @type.attributes
-						(struct.qualifier ||= []).concat @type.qualifier if @type.qualifier
+						(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier
 						@type = struct
 					end
 					return
 				end
-				raise tok, 'struct redefinition' if scope.struct[name] and scope.struct[name].members
-				scope.struct[name] = @type
+				raise tok, 'struct redefinition' if struct = scope.struct[name] and struct.members
+				if struct
+					(struct.attributes ||= []).concat @type.attributes if @type.attributes
+					(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier
+					@type = struct
+				end
 			else
 				raise tok || parser, 'struct name or "{" expected'
 			end
@@ -1324,7 +1332,7 @@ EOS
 		end
 
 		RIGHTASSOC = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'&=',
-			:'|=', :'^=', :'<<=', :'>>='
+			:'|=', :'^=', :'<<=', :'>>=', :'?:'
 		].inject({}) { |h, op| h.update op => true }
 
 		# key = operator, value = hash regrouping operators of lower precedence
@@ -1342,34 +1350,33 @@ EOS
 	class << self
 		# reads a binary operator from the parser, returns the corresponding symbol or nil
 		def readop(parser)
-			if not tok = parser.readtok or tok.type != :punct
-				parser.unreadtok tok
+			if not op = parser.readtok or op.type != :punct
+				parser.unreadtok op
 				return
 			end
 
-			op = tok
 			case op.raw
 			when '>', '<', '|', '&' # << >> || &&
 				if ntok = parser.readtok and ntok.type == :punct and ntok.raw == op.raw
-					op.raw << parser.readtok.raw
+					op.raw << ntok.raw
 				else
 					parser.unreadtok ntok
 				end
 			when '!' # != (mandatory)
-				if not ntok = parser.nexttok or ntok.type != :punct and ntok.raw != '='
-					parser.unreadtok tok
+				if not ntok = parser.readtok or ntok.type != :punct and ntok.raw != '='
+					parser.unreadtok op
 					return
 				end
-				op.raw << parser.readtok.raw
+				op.raw << ntok.raw
 			when '+', '-', '*', '/', '%', '^', '=', '&', '|', ',', '?', ':', '>>', '<<', '||', '&&',
 			     '+=','-=','*=','/=','%=','^=','==','&=','|=','!=' # ok
 			else # bad
-				parser.unreadtok tok
+				parser.unreadtok op
 				return
 			end
 
 			# may be followed by '='
-			case tok.raw
+			case op.raw
 			when '+', '-', '*', '/', '%', '^', '&', '|', '>>', '<<', '<', '>', '='
 				if ntok = parser.readtok and ntok.type == :punct and ntok.raw == '='
 					op.raw << ntok.raw
@@ -1554,7 +1561,7 @@ EOS
 			if tok and tok.type == :punct
 				case tok.raw
 				when '-', '--', '->'
-					ntok = parser.skipspaces
+					ntok = parser.readtok
 					if tok.raw == '-' and ntok and ntok.type == :punct and (ntok.raw == '-' or ntok.raw == '>')
 						tok.raw << ntok.raw
 					else
@@ -1563,7 +1570,6 @@ EOS
 
 					case tok.raw
 					when '-'
-						parser.unreadtok tok
 						nil
 					when '->'
 						raise tok, 'not a pointer' if not val.type.pointer?
@@ -1579,7 +1585,7 @@ EOS
 						CExpression.new(val, :'--', nil, val.type)
 					end
 				when '+', '++'
-					ntok = parser.skipspaces
+					ntok = parser.readtok
 					if tok.raw == '+' and ntok and ntok.type == :punct and ntok.raw == '+'
 						tok.raw << ntok.raw
 					else
@@ -1587,7 +1593,6 @@ EOS
 					end
 					case tok.raw
 					when '+'
-						parser.unreadtok tok
 						nil
 					when '++'
 						raise parser, "invalid lvalue #{val.inspect}" if not CExpression.lvalue?(val)
@@ -1683,7 +1688,7 @@ EOS
 				case op.value
 				when :'?'
 					# a, b ? c, d : e, f  ==  a, (b ? (c, d) : e), f
-					until opstack.empty? or opstack.last == :','
+					until opstack.empty? or OP_PRIO[opstack.last][:'?:']
 						popstack[]
 					end
 					stack << parse(parser, scope)
@@ -1734,7 +1739,7 @@ EOS
 			# skip is for function arguments
 			mydefs = @symbol.values + @struct.values - skip
 			# XXX struct a { int outer; };  { struct a x; x.outer ; struct a { int inner; }; }
-			todo = mydefs.map { |t| [t, t.dump(self, [''], [])] }
+			todo = mydefs.map { |t| [t, t.dump_def(self, [''], [])] }
 			loop do
 				# reorder
 				break if todo.empty?
@@ -1772,6 +1777,7 @@ EOS
 						r << ''
 						r.concat tr
 					else
+						r.pop if r.last.empty?
 						r.concat tr
 						r.last << ';'
 					end
@@ -1782,7 +1788,7 @@ EOS
 			end
 
 			@statements.each { |s|
-				r << ''
+				r << '' if not r.last.empty?
 				r, dep = s.dump(self, r, dep)
 			}
 
@@ -1790,8 +1796,13 @@ EOS
 		end
 	end
 	class Variable
-		# array of lines, array of dep
-		def dump(scope, r, dep, skiptype=false)
+		def dump(scope, r, dep)
+			raise 'noname' if not @name
+			dep |= [scope.symbol_ancestors[@name]]
+			r.last << @name
+			[r, dep]
+		end
+		def dump_def(scope, r, dep, skiptype=false)
 			if not skiptype
 				r.last << @storage.to_s << ' ' if @storage
 				r, dep = @type.base.dump(scope, r, dep)
@@ -1800,7 +1811,7 @@ EOS
 			r, dep = @type.dump_declarator(scope, r, dep, [@name.to_s])
 
 			if @initializer
-				@type.kind_of?(Function) ? r << '' : r.last << ' = '
+				r.last << ' = ' if not @type.kind_of?(Function)
 				r, dep = @type.dump_initializer(scope, r, dep, @initializer)
 			end
 			[r, dep]
@@ -1819,6 +1830,10 @@ EOS
 			r.last << decl.shift
 			r.concat decl
 			[r, dep]
+		end
+
+		def dump_def(*a)
+			dump(*a)
 		end
 	end
 	class Pointer
@@ -1855,7 +1870,11 @@ EOS
 		end
 
 		def dump_initializer(scope, r, dep, init)
-			init.dump(scope, r, dep, @args)
+			r << '{'
+			tr, dep = init.dump(scope, [''], dep, @args)
+			r.concat tr.map { |s| Case.dump_indent(s) }
+			r << '}'
+			[r, dep]
 		end
 	end
 	class BaseType
@@ -1877,6 +1896,13 @@ EOS
 			dep |= [scope.symbol_ancestors[@name]]
 			[r, dep]
 		end
+
+		def dump_def(scope, r, dep)
+			r.last << 'typedef '
+			r, dep = @type.base.dump(scope, r, dep)
+			r.last << ' '
+			@type.dump_declarator(scope, r, dep, [@name.to_s])
+		end
 		
 		def dump_initializer(scope, r, dep, init)
 			@type.dump_initializer(scope, r, dep, init)
@@ -1895,15 +1921,16 @@ EOS
 		end
 
 		def dump_def(scope, r, dep)
+			r << ''
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
 			r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1] << ' '
 			r.last << @name << ' ' if @name
 			r.last << '{'
 			@members.each { |m|
-				r << "\t"
-				r, dep = m.dump(scope, r, dep)
-				r.last << ':' << @bits[m.name].to_s if @bits[m.name]
-				r.last << ';'
+				tr, dep = m.dump_def(scope, [''], dep)
+				tr.last << ':' << @bits[m.name].to_s if @bits and @bits[m.name]
+				tr.last << ';'
+				r.concat tr.map { |s| "\t" << s }
 			}
 			r << '}'
 			[r, dep]
@@ -1914,16 +1941,19 @@ EOS
 			r.last << '{ '
 			showname = false
 			@members.zip(init) { |m, i|
-				r.last << ', ' if r.last[-1] != ?{
 				if not i
 					showname = true
 					next
 				end
+				r.last << ', ' if r.last[-2, 2] != '{ '
+				rt = ['']
 				if showname
 					showname = false
-					r << "\t.#{m.name} = "
+					rt << ".#{m.name} = "
 				end
-				r, dep = m.type.dump_initializer(scope, r, dep, i)
+				rt, dep = m.type.dump_initializer(scope, rt, dep, i)
+				r.last << rt.shift
+				r.concat rt.map { |s| "\t" << s }
 			}
 			r.last << ' }'
 			[r, dep]
@@ -1973,6 +2003,7 @@ EOS
 			if not e
 				r << "\t;"
 			else
+				r.last << ' ' if e.kind_of? Block and not r.last.empty?
 				r.last << '{' if e.kind_of? Block
 				tr, dep = e.dump(scope, [''], dep)
 				r.concat tr.map { |s| Case.dump_indent(s) }
@@ -2002,7 +2033,7 @@ EOS
 				skiptype = false
 				@init.symbols.each { |s|
 					r.last << ', ' if skiptype
-					r, dep = s.dump(scope, r, dep, skiptype)
+					r, dep = s.dump_def(scope, r, dep, skiptype)
 					skiptype = true
 				}
 			else
@@ -2042,7 +2073,7 @@ EOS
 			if not @body
 				r << "\t;"
 			else
-				r.last << '{' if @body.kind_of? Block
+				r.last << ' {' if @body.kind_of? Block
 				tr, dep = @body.dump(scope, [''], dep)
 				r.concat tr.map { |s| s[-1] == ?: ? s : "\t" << s }
 				r << '}' if @body.kind_of? Block
@@ -2090,7 +2121,7 @@ EOS
 				end
 			end
 			r.last << ':'
-			Statement.dump(scope, r, dep, @statement)
+			dump_inner(scope, r, dep)
 		end
 
 		def self.dump_indent(s)
@@ -2100,7 +2131,13 @@ EOS
 	class Label
 		def dump(scope, r, dep)
 			r.last << @name << ':'
-			Statement.dump(scope, r, dep, @statement)
+			dump_inner(scope, r, dep)
+		end
+		def dump_inner(scope, r, dep)
+			if not @statement: [r << ';', dep]
+			elsif @statement.kind_of? Block: Statement.dump(scope, r, @statement)
+			else  @statement.dump(scope, r << '', dep)
+			end
 		end
 	end
 	class Asm
@@ -2138,19 +2175,17 @@ EOS
 		end
 
 		def self.dump(scope, r, dep, e, brace = false)
+#brace = false
+#r.last << '('
+#r, dep =\
 			case e
-			when ::Numeric
-				r.last << e.to_s
-			when ::String
-				r.last << e.inspect
-			when CExpression
-				r, dep = e.dump_inner(scope, r, dep, brace)
-			when Variable
-				raise 'noname' if not e.name
-				dep |= [scope.symbol_ancestors[e.name]]
-				r.last << e.name
+			when ::Numeric: r.last << e.to_s ; [r, dep]
+			when ::String: r.last << e.inspect ; [r, dep]
+			when CExpression: e.dump_inner(scope, r, dep, brace)
+			when Variable: e.dump(scope, r, dep)
 			end
-			[r, dep]
+#r.last << ')'
+#[r, dep]
 		end
 
 		def dump_inner(scope, r, dep, brace = false)
@@ -2159,6 +2194,7 @@ EOS
 			when TypeDef: dep << scope.symbol_ancestors[t.name]
 			when Enum, Union: dep << scope.struct_ancestors[t.name]
 			end
+			r.last << '(' if brace and @op != :'->' and @op != :'.' and (@op or @rexpr.kind_of? CExpression)
 			if not @lexpr
 				if not @op
 					case @rexpr
@@ -2182,7 +2218,9 @@ EOS
 						r, dep = v.dump(scope, r, dep)
 						r.last << ')'
 						r, dep = CExpression.dump(scope, r, dep, @rexpr, true)
-					else raise 'wtf?'
+					when Variable
+						r, dep = @rexpr.dump(scope, r, dep)
+					else raise "wtf? #{inspect}"
 					end
 				else
 					r.last << @op.to_s
@@ -2216,15 +2254,12 @@ EOS
 					r.last << ' : '
 					r, dep = CExpression.dump(scope, r, dep, @rexpr[1], true)
 				else
-					r, dep = CExpression.dump(scope, r, dep, @lexpr, (@lexpr.kind_of? CExpression and OP_PRIO.fetch(@lexpr.op, {})[@op]))
+					r, dep = CExpression.dump(scope, r, dep, @lexpr, (@lexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@lexpr.op]))
 					r.last << @op.to_s
-					r, dep = CExpression.dump(scope, r, dep, @rexpr, (@rexpr.kind_of? CExpression and OP_PRIO.fetch(@rexpr.op, {})[@op]))
+					r, dep = CExpression.dump(scope, r, dep, @rexpr, (@rexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@rexpr.op]))
 				end
 			end
-			if brace and @op != :'->' and @op != :'.'
-				r[0] = '(' << r[0]
-				r[-1] << ')'
-			end
+			r.last << ')' if brace and @op != :'->' and @op != :'.' and (@op or @rexpr.kind_of? CExpression)
 			[r, dep]
 		end
 	end
