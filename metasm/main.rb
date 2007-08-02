@@ -176,11 +176,14 @@ class Token
 	# raises a ParseError, adding backtrace information
 	def exception(msg='syntax error')
 		ins = @raw.length > 35 ? ('...' + @raw[-32..-1]) : @raw
-		me = ins.inspect
+		msgh = ins.inspect
+		msgh << ' at ' << backtrace_str
 		if defined? @expanded_from
-			@expanded_from.to_a.each { |ef| me << " expanded from #{ef.inspect}" }
+			p @expanded_from
+			@expanded_from.to_a.reverse_each { |ef| msgh << ' expanded from ' << ef.exception('').message }
 		end
-		ParseError.new "near #{me} at #{backtrace_str}: #{msg}"
+		msgh = "near #{msgh} :" if not msg.empty?
+		ParseError.new "#{msgh} #{msg}"
 	end
 
 	def dup

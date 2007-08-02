@@ -9,7 +9,7 @@ require 'metasm/parse'
 
 module Metasm
 class Token
-	# array of macros name
+	# array of macro names
 	attr_accessor :expanded_from
 end
 
@@ -39,8 +39,8 @@ class Preprocessor
 				if not tok or tok.type != :punct or tok.raw != '('
 					lexer.unreadtok tok
 					unr.reverse_each { |t| lexer.unreadtok t }
-					tok = name.dup
-						(tok.expanded_from ||= []) << name.raw
+					tok = @name.dup
+					(tok.expanded_from ||= []) << @name	# we don't want to be called repeatedly
 					return [tok]
 				end
 				args = []
@@ -83,7 +83,7 @@ class Preprocessor
 					raise name, 'invalid argument count' if args.length != @args.length
 				end
 
-				# map name => token list
+				# argument formal name => token list (argument invocation)
 				hargs = @args.zip(args).inject({}) { |h, (af, ar)| h.update af.raw => ar }
 				hargs['__VA_ARGS__'] = va if va
 			else
@@ -93,13 +93,13 @@ class Preprocessor
 			# apply macro
 			res = []
 			b = @body.reverse
-			hargs.each_value { |a| a.map! { |t| t = t.dup ; (t.expanded_from ||= []) << name.raw ; t } }
+			#hargs.each_value { |a| a.map! { |t| t = t.dup ; (t.expanded_from ||= []) << name ; t } }	# #define foo(x) x \n foo(foo(bar))
 			while t = b.pop
 				t = t.dup
-				t.expanded_from = (name.expanded_from || []) << name.raw
+				t.expanded_from = (@name.expanded_from || []) << @name
 				if a = hargs[t.raw]
 					res.pop if res.last and res.last.type == :space and a.first and a.first.type == :space
-					res.concat a
+					res.concat a.map { |tt| tt.dup }
 					next
 				elsif t.type == :punct and t.raw == '##'
 					# the '##' operator: concat the next token to the last in body
@@ -121,7 +121,7 @@ class Preprocessor
 					else
 						a = a[1..-1] if a.first and a.first.type == :space
 						if not res.last or res.last.type != :string or not a.first or a.first.type != :string
-							puts "W: preprocessor: in #{name.raw}: cannot merge token #{res.last.raw} with #{a.first ? a.first.raw : 'nil'}" if not a.first or (a.first.raw != '.' and res.last.raw != '.') if $VERBOSE
+							puts name.exception("cannot merge token #{res.last.raw} with #{a.first ? a.first.raw : 'nil'}").message if not a.first or (a.first.raw != '.' and res.last.raw != '.') if $VERBOSE
 							res.concat a
 						else
 							res[-1] = res[-1].dup
@@ -144,7 +144,7 @@ class Preprocessor
 					res << t
 					next
 				end
-				t.backtrace += name.backtrace[-2, 2]	# don't modify inplace
+				#t.backtrace += name.backtrace[-2, 2]	# don't modify inplace
 				res << t
 			end
 			res
@@ -268,7 +268,7 @@ class Preprocessor
 
 		def apply(lexer, name)
 			tok = name.dup
-			(tok.expanded_from ||= []) << name.raw
+			(tok.expanded_from ||= []) << name
 			case name.raw
 			when '__FILE__'
 				# keep tok.raw
@@ -454,7 +454,7 @@ class Preprocessor
 			end
 			tok = readtok if lastpos == 0	# else return the :eol
 
-		elsif tok.type == :string and @definition[tok.raw] and (not tok.expanded_from or not tok.expanded_from.include? tok.raw)
+		elsif tok.type == :string and m = @definition[tok.raw] and (not tok.expanded_from or not tok.expanded_from.include? m.name)
 			# expand macros
 			if defined? @traced_macros
 				if tok.backtrace[-2].to_s[0] == ?" and @definition[tok.raw].name and @definition[tok.raw].name.backtrace[-2].to_s[0] == ?<
@@ -463,7 +463,7 @@ class Preprocessor
 				end
 			end
 
-			body = @definition[tok.raw].apply(self, tok)
+			body = m.apply(self, tok)
 			body.reverse_each { |t| unreadtok t }
 			tok = readtok
 		end
@@ -819,6 +819,12 @@ class Preprocessor
 			case tok.raw
 			when 'once'
 				(@pragma_once ||= {})[@filename[1..-2]] = true
+			when 'include_dir'
+				nil while dir = readtok and dir.type == :space
+				raise cmd, 'qstring expected' if not dir or dir.type != :quoted
+				raise cmd, 'invalid path' if not File.directory? dir.value
+				@include_search_path << dir.value
+
 			when 'push_macro'
 				@pragma_macro_stack ||= []
 				nil while lp = readtok and lp.type == :space
