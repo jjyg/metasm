@@ -175,7 +175,7 @@ class CParser
 			off = 0
 			@members.each { |m|
 				break if m.name == name
-				raise parser, 'offsetof unhandled with bit members' if @bits and @bits[m.name]	# TODO
+				raise parser, 'offsetof unhandled with bit members' if bits and @bits[m.name]	# TODO
 				off += parser.sizeof(m)
 				off = (off + @align - 1) / @align * @align
 			}
@@ -217,7 +217,7 @@ class CParser
 
 		def parse_members(parser, scope)
 			super
-			if @attributes and @attributes.include? 'packed'
+			if defined? @attributes and @attributes and @attributes.include? 'packed'
 				@type.align = 1
 			end
 		end
@@ -581,12 +581,12 @@ EOS
 	# checks that the types are compatible (variable predeclaration, function argument..)
 	# strict = false for func call/assignment (eg char compatible with int -- but int is incompatible with char)
 	def check_compatible_type(tok, oldtype, newtype, strict = false, checked = [])
-		puts tok.exception('type qualifier mismatch').message if oldtype.qualifier != newtype.qualifier
-
 		oldtype = oldtype.type while oldtype.kind_of? TypeDef
 		newtype = newtype.type while newtype.kind_of? TypeDef
 		oldtype = BaseType(:int) if oldtype.kind_of? Enum
 		newtype = BaseType(:int) if newtype.kind_of? Enum
+
+		puts tok.exception('type qualifier mismatch').message if oldtype.qualifier != newtype.qualifier
 
 		# avoid infinite recursion
 		return if checked.include? oldtype
@@ -594,7 +594,7 @@ EOS
 
 		case newtype
 		when Function
-			raise tok, 'incompatible type' if not oldtype.kind_of? Function
+			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.kind_of? Function
 			check_compatible_type tok, oldtype.type, newtype.type, strict, checked
 			if oldtype.args and newtype.args
 				if oldtype.args.length != newtype.args.length or
@@ -607,14 +607,14 @@ EOS
 				}
 			end
 		when Pointer
-			raise tok, 'incompatible type' if not oldtype.kind_of? Pointer
+			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.kind_of? Pointer
 			# allow any pointer to void*
 			check_compatible_type tok, oldtype.type, newtype.type, strict, checked if strict or newtype.type != :void
 		when Union
-			raise tok, 'incompatible type' if not oldtype.class == newtype.class
+			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.class == newtype.class
 			if oldtype.members and newtype.members
 				if oldtype.members.length != newtype.members.length
-					raise tok, 'incompatible type'
+					raise tok, 'incompatible type (member count)'
 				end
 				oldtype.members.zip(newtype.members) { |om, nm|
 					# raise tok if om.name and nm.name and om.name != nm.name # don't care
@@ -622,17 +622,17 @@ EOS
 				}
 			end
 		when BaseType
+			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.kind_of? BaseType
 			if strict
 				if oldtype.name != newtype.name or
-				oldtype.qualifier != newtype.qualifier or
 				oldtype.specifier != newtype.specifier
 					raise tok, 'incompatible type'
 				end
 			else
 				# void type not allowed
-				raise tok, 'incompatible type' if oldtype.name == :void or newtype.name == :void
+				raise tok, 'incompatible type void' if oldtype.name == :void or newtype.name == :void
 				# check int/float mix	# TODO float -> int allowed ?
-				raise tok, 'incompatible type' if oldtype.name != newtype.name and ([:char, :int, :short, :long, :longlong] & [oldtype.name, newtype.name]).length == 1
+				#raise tok, 'float <> int' if oldtype.name != newtype.name and ([:char, :int, :short, :long, :longlong] & [oldtype.name, newtype.name]).length == 1
 				# check int size/sign
 				raise tok, 'incompatible type' if @typesize[oldtype.name] > @typesize[newtype.name]
 				puts tok.exception('sign mismatch').message if $VERBOSE and oldtype.specifier != newtype.specifier and @typesize[newtype.name] == @typesize[oldtype.name]
@@ -649,7 +649,7 @@ EOS
 
 	# allows 'raise self'
 	def exception(msg='EOF unexpected')
-		raise @lexer, msg
+		@lexer.exception msg
 	end
 
 	# reads a token, convert 'L"foo"' to a :quoted
@@ -786,7 +786,7 @@ EOS
 						puts "unnamed argument in definition" if $VERBOSE
 						next	# should raise
 					end
-					body.variable[v.name] = v	# XXX will need special check in stack allocator
+					body.symbol[v.name] = v	# XXX will need special check in stack allocator
 				}
 
 				loop do
@@ -841,7 +841,7 @@ EOS
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 			if $VERBOSE and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-				puts tok.exception('statement with no effect')
+				puts tok.exception("statement with no effect : #{expr.dump(scope, [''], [])[0].join(' ')}")
 			end
 			return expr
 		end
@@ -893,7 +893,7 @@ EOS
 				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 				if $VERBOSE and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-					puts tok.exception('statement with no effect')
+					puts tok.exception("statement with no effect : #{expr.dump(scope, [''], [])[0].join(' ')}")
 				end
 				expr
 			end
@@ -947,7 +947,7 @@ EOS
 						parser.unreadtok ntok
 						raise tok, 'expr expected' if not v = CExpression.parse_value(parser, scope)
 					end
-					var.type = TypeDef.new('typeof', v.type, tok)
+					var.type = v.type # TypeDef.new('typeof', v.type, tok)
 				when 'long', 'short', 'signed', 'unsigned', 'int', 'char', 'float', 'double', 'void'
 					parser.unreadtok tok
 					var.parse_type_base(parser, scope)
@@ -1096,14 +1096,14 @@ EOS
 					(@type.qualifier ||= []) << tok.raw.to_sym
 					return parse_declarator(parser, scope, rec)
 				end
-				raise tok if @name or @name == false
+				raise tok if defined? @name and (@name or @name == false)
 				raise tok, 'bad var name' if Reserved[tok.raw] or (?0..?9).include?(tok.raw[0])
 				@name = tok.raw
 				@backtrace = tok
 				parse_attributes(parser)
 			else
 				# unnamed
-				raise tok if @name or @name == false
+				raise tok if defined? @name and (@name or @name == false)
 				@name = false
 				@backtrace = tok
 				parser.unreadtok tok
@@ -1111,7 +1111,7 @@ EOS
 			end
 			parse_declarator_postfix(parser, scope)
 			if not rec
-				raise @backtrace, 'void type is invalid' if @name and @type.kind_of? BaseType and @type.name == :void
+				raise @backtrace, 'void type is invalid' if name and @type.kind_of? BaseType and @type.name == :void
 				raise @backtrace, 'uninitialized structure' if (@type.kind_of? Union or @type.kind_of? Enum) and not @type.members
 			end
 		end
@@ -1157,9 +1157,9 @@ EOS
 						v.storage = storage if storage
 						v.parse_declarator(parser, scope)
 	
-						args << v if not v.type.kind_of? BaseType or v.type.name != :void
+						t.type.args << v if not v.type.kind_of? BaseType or v.type.name != :void
 						if tok = parser.skipspaces and tok.type == :punct and tok.raw == ','
-							raise tok, '")" expected' if args.last != v		# last arg of type :void
+							raise tok, '")" expected' if t.type.args.last != v		# last arg of type :void
 						elsif tok and tok.type == :punct and tok.raw == ')'
 							break
 						else raise tok || parser, '"," or ")" expected'
@@ -1194,7 +1194,7 @@ EOS
 		end
 		def constant?
 			# gcc considers '1, 2' not constant
-			if [:',', :funcall, :'--', :'++', :'+=', :'-=', :'*=', :'/=', :'>>=', :'<<=', :'&=', :'|=', :'^=', :'%=', :'->', :'[]'].include?(@op)
+			if [:',', :funcall, :'=', :'--', :'++', :'+=', :'-=', :'*=', :'/=', :'>>=', :'<<=', :'&=', :'|=', :'^=', :'%=', :'->', :'[]'].include?(@op)
 				false
 			elsif @op == :'*' and not @lexpr: false
 			else
@@ -1635,7 +1635,7 @@ EOS
 					end
 
 					raise tok, "bad argument count: #{args.length} for #{type.args.length}" if (type.varargs ? (args.length < type.args.length) : (args.length != type.args.length))
-					type.args.zip(args) { |ta, a| parser.check_compatible_type(tok, a, ta) }
+					type.args.zip(args) { |ta, a| parser.check_compatible_type(tok, a.type, ta.type) }
 					CExpression.new(val, :funcall, args, type.type)
 				end
 			end
@@ -1669,7 +1669,7 @@ EOS
 						raise parser, 'cannot do that on pointers' if op != :'-'
 						type = BaseType.new(:long)	# addr_t or sumthin ?
 					elsif l.type.pointer? or r.type.pointer?
-						raise parser, 'cannot do that on pointer' if op != :'+' and op != :'-'
+						raise parser, "cannot do #{op.inspect} on pointer" if not [:'+', :'-', :'=', :'+=', :'-='].include? op
 						type = l.type.pointer? ? l.type : r.type
 					else
 						# integer promotion
@@ -1797,20 +1797,20 @@ EOS
 	end
 	class Variable
 		def dump(scope, r, dep)
-			raise 'noname' if not @name
+			raise 'noname ' + inspect if not name
 			dep |= [scope.symbol_ancestors[@name]]
 			r.last << @name
 			[r, dep]
 		end
 		def dump_def(scope, r, dep, skiptype=false)
 			if not skiptype
-				r.last << @storage.to_s << ' ' if @storage
+				r.last << @storage.to_s << ' ' if storage
 				r, dep = @type.base.dump(scope, r, dep)
-				r.last << ' '
+				r.last << ' ' if name
 			end
-			r, dep = @type.dump_declarator(scope, r, dep, [@name.to_s])
+			r, dep = @type.dump_declarator(scope, r, dep, [name ? @name.dup : ''])
 
-			if @initializer
+			if initializer
 				r.last << ' = ' if not @type.kind_of?(Function)
 				r, dep = @type.dump_initializer(scope, r, dep, @initializer)
 			end
@@ -1838,7 +1838,7 @@ EOS
 	end
 	class Pointer
 		def dump_declarator(scope, r, dep, decl)
-			decl[0] = ' ' << @qualifier.map { |q| q.to_s << ' ' }.join << decl[0] if @qualifier
+			decl[0] = ' ' << @qualifier.map { |q| q.to_s << ' ' }.join << decl[0] if qualifier
 			decl[0] = '*' << decl[0]
 			if @type.kind_of? Function or @type.kind_of? Array or (decl[0].delete('*').empty? and @type.class != Pointer)
 				decl[0]  =  '(' << decl[0]
@@ -1858,10 +1858,10 @@ EOS
 	class Function
 		def dump_declarator(scope, r, dep, decl)
 			decl.last << '('
-			if @args
+			if args
 				@args.each { |arg|
 					decl.last << ', ' if decl.last[-1] != ?(
-					decl, dep = arg.dump(scope, decl, dep)
+					decl, dep = arg.dump_def(scope, decl, dep)
 				}
 				decl.last << 'void' if @args.empty?
 			end
@@ -1879,8 +1879,8 @@ EOS
 	end
 	class BaseType
 		def dump(scope, r, dep)
-			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
-			r.last << @specifier.to_s << ' ' if @specifier
+			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
+			r.last << @specifier.to_s << ' ' if specifier
 			r.last << case @name
 			when :longlong: 'long long'
 			when :longdouble: 'long double'
@@ -1891,7 +1891,7 @@ EOS
 	end
 	class TypeDef
 		def dump(scope, r, dep)
-			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << @name
 			dep |= [scope.symbol_ancestors[@name]]
 			[r, dep]
@@ -1901,7 +1901,7 @@ EOS
 			r.last << 'typedef '
 			r, dep = @type.base.dump(scope, r, dep)
 			r.last << ' '
-			@type.dump_declarator(scope, r, dep, [@name.to_s])
+			@type.dump_declarator(scope, r, dep, [name ? @name.dup : ''])
 		end
 		
 		def dump_initializer(scope, r, dep, init)
@@ -1910,8 +1910,8 @@ EOS
 	end
 	class Union
 		def dump(scope, r, dep)
-			if @name
-				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			if name
+				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 				r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1] << ' ' << @name
 				dep |= [scope.struct_ancestors[@name]]
 				[r, dep]
@@ -1922,13 +1922,13 @@ EOS
 
 		def dump_def(scope, r, dep)
 			r << ''
-			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1] << ' '
-			r.last << @name << ' ' if @name
+			r.last << @name << ' ' if name
 			r.last << '{'
 			@members.each { |m|
 				tr, dep = m.dump_def(scope, [''], dep)
-				tr.last << ':' << @bits[m.name].to_s if @bits and @bits[m.name]
+				tr.last << ':' << @bits[m.name].to_s if bits and @bits[m.name]
 				tr.last << ';'
 				r.concat tr.map { |s| "\t" << s }
 			}
@@ -1961,8 +1961,8 @@ EOS
 	end
 	class Enum
 		def dump(scope, r, dep)
-			if @name
-				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			if name
+				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 				r.last << 'union ' << @name
 				dep |= [scope.struct_ancestors[@name]]
 				[r, dep]
@@ -1972,9 +1972,9 @@ EOS
 		end
 
 		def dump_def(scope, r, dep)
-			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << 'enum '
-			r.last << @name << ' ' if @name
+			r.last << @name << ' ' if name
 			r.last << '{ '
 			val = -1
 			@members.sort_by { |m, v| v }.each { |m, v|
@@ -2018,7 +2018,7 @@ EOS
 			r, dep = CExpression.dump(scope, r, dep, @test)
 			r.last << ')'
 			r, dep = Statement.dump(scope, r, dep, @bthen)
-			if @belse
+			if belse
 				@bthen.kind_of?(Block) ? (r.last << ' else') : (r << 'else')
 				r, dep = Statement.dump(scope, r, dep, @belse)
 			end
@@ -2115,7 +2115,7 @@ EOS
 			else
 				r.last << 'case '
 				r, dep = CExpression.dump(scope, r, dep, @expr)
-				if @exprup
+				if exprup
 					r.last << ' ... '
 					r, dep = CExpression.dump(scope, r, dep, @exprup)
 				end
@@ -2255,7 +2255,11 @@ EOS
 					r, dep = CExpression.dump(scope, r, dep, @rexpr[1], true)
 				else
 					r, dep = CExpression.dump(scope, r, dep, @lexpr, (@lexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@lexpr.op]))
-					r.last << @op.to_s
+					if OP_PRIO[:'='][@op]
+						r.last << ' ' << @op.to_s << ' '
+					else
+						r.last << @op.to_s
+					end
 					r, dep = CExpression.dump(scope, r, dep, @rexpr, (@rexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@rexpr.op]))
 				end
 			end

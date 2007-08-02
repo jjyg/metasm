@@ -63,7 +63,7 @@ class Preprocessor
 	end
 
 	def exception(msg='syntax error')
-		backtrace_str = Backtrace.backtrace_str(@backtrace.map { |f, l, *a| [f, l] }.flatten)
+		backtrace_str = Backtrace.backtrace_str([@filename, @lineno] + @backtrace.map { |f, l, *a| [f, l] }.flatten)
 		ParseError.new "at #{backtrace_str}: #{msg}"
 	end
 end
