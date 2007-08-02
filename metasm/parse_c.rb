@@ -71,6 +71,8 @@ class CParser
 
 		def pointer? ; false ; end
 		def arithmetic? ; false ; end
+		def integral? ; false ; end
+		def base ; self ; end
 
 		def parse_initializer(parser, scope)
 			raise parser, 'expr expected' if not ret = CExpression.parse(parser, scope, false)
@@ -83,6 +85,7 @@ class CParser
 		attr_accessor :specifier	# sign specifier only
 
 		def arithmetic? ; true ; end
+		def integral? ; [:char, :short, :int, :long, :longlong].include? @name ; end
 
 		def initialize(name, *specs)
 			@name = name
@@ -104,8 +107,9 @@ class CParser
 			@name, @type, @backtrace = name, type, backtrace
 		end
 
-		def pointer? ; @type.pointer? ; end
+		def pointer? ;    @type.pointer? ;    end
 		def arithmetic? ; @type.arithmetic? ; end
+		def integral? ;   @type.integral? ;   end
 	end
 	class Function < Type
 		attr_accessor :type		# return type
@@ -115,6 +119,8 @@ class CParser
 		def initialize(type=nil)
 			@type = type
 		end
+
+		def base ; @type.base ; end
 	end
 	class Union < Type
 		attr_accessor :members		# [Variable]
@@ -141,7 +147,10 @@ class CParser
 					raise tok || parser if not tok = parser.skipspaces or tok.type != :punct
 	
 					if tok.raw == ':'	# bits
-						raise tok, 'bad bit count' if not bits = CExpression.parse(parser, scope, false) or not bits.constant? or not bits = bits.reduce
+						raise tok, 'bad type for bitslice' if not member.type.integral?
+						raise tok, 'bad bit count' if not bits = CExpression.parse(parser, scope, false) or
+							not bits.constant? or not (bits = bits.reduce(parser)).kind_of? ::Integer
+						raise tok, 'need more bits' if bits > 8*parser.sizeof(member)
 						raise tok, 'bitfield must have a name' if not member.name
 						(@bits ||= {})[member.name] = bits
 						raise tok || parser, '"," or ";" expected' if not tok = parser.skipspaces or tok.type != :punct
@@ -230,7 +239,7 @@ class CParser
 	
 				raise parser if not tok = parser.skipspaces
 				if tok.type == :punct and tok.raw == '='
-					raise tok || parser if not val = CExpression.parse(parser, scope, false) or not val = val.reduce or not tok = parser.skipspaces
+					raise tok || parser if not val = CExpression.parse(parser, scope, false) or not val = val.reduce(parser) or not tok = parser.skipspaces
 				else
 					val += 1
 				end
@@ -256,6 +265,7 @@ class CParser
 
 		def pointer? ; true ; end
 		def arithmetic? ; true ; end
+		def base ; @type.base ; end
 	end
 	class Array < Pointer
 		attr_accessor :length
@@ -966,6 +976,8 @@ EOS
 			elsif tok and tok.type == :string
 				name = tok.raw
 				raise tok, 'bad struct name' if Reserved[name] or (?0..?9).include?(name[0])
+				@type.backtrace = tok
+				@type.name = tok.raw
 				@type.parse_attributes(parser)
 				raise parser if not ntok = parser.skipspaces
 				if ntok.type != :punct or ntok.raw != '{'
@@ -988,7 +1000,6 @@ EOS
 				end
 				raise tok, 'struct redefinition' if scope.struct[name] and scope.struct[name].members
 				scope.struct[name] = @type
-				@type.backtrace = tok
 			else
 				raise tok || parser, 'struct name or "{" expected'
 			end
@@ -1104,6 +1115,7 @@ EOS
 				idx = CExpression.parse(parser, scope)	# may be nil
 				if idx and (scope == parser.toplevel or @storage == :static)
 					raise tok, 'array size is not constant' if not idx.constant?
+					idx = idx.reduce(parser)
 				end
 				t = self
 				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
@@ -1273,7 +1285,7 @@ EOS
 				# overflow
 				case t.name
 				when :char, :short, :int, :long, :longlong
-					max = 1 << (8*parser.typesize(t.name))
+					max = 1 << (8*parser.typesize[t.name])
 					ret = ret.to_i & (max-1)
 					if t.specifier == :signed and (ret & (max >> 1)) > 0	# char == unsigned char
 						ret - max
@@ -1311,7 +1323,6 @@ EOS
 			end
 		end
 
-	class << self
 		RIGHTASSOC = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'&=',
 			:'|=', :'^=', :'<<=', :'>>='
 		].inject({}) { |h, op| h.update op => true }
@@ -1328,6 +1339,7 @@ EOS
 				oplist.each { |op| h[op] = lessprio }
 				h }
 
+	class << self
 		# reads a binary operator from the parser, returns the corresponding symbol or nil
 		def readop(parser)
 			if not tok = parser.readtok or tok.type != :punct
@@ -1503,12 +1515,12 @@ EOS
 
 					case tok.raw
 					when '&'
-						val = parse_expr(parser, scope)
+						val = parse_value(parser, scope)
 						raise parser, "invalid lvalue #{val.inspect}" if not CExpression.lvalue?(val)
 						raise val.backtrace, 'cannot take addr of register' if val.kind_of? Variable and val.storage == :register
 						val = CExpression.new(nil, tok.raw.to_sym, val, Pointer.new(val.type))
 					when '++', '--'
-						val = parse_expr(parser, scope)
+						val = parse_value(parser, scope)
 						raise parser, "invalid lvalue #{val.inspect}" if not CExpression.lvalue?(val)
 						val = CExpression.new(nil, tok.raw.to_sym, val, val.type)
 					when '&&'
@@ -1705,205 +1717,515 @@ EOS
 	end
 	end
 
-	# dumper: ruby objects => source
+
+	#
+	# Dumper : objects => C source
+	#
+
+	# TODO attributes, switch/case indent
 	def to_s
-		r, dep = @toplevel.dump_inner
+		r, dep = @toplevel.dump(nil, [''], [])
 		r.join("\n")
 	end
 
 	class Block
 		# return array of c source lines and array of dependencies (objects)
-		def dump
-			r, dep = dump_inner
-			[['{'] + r.map { |s| "\t" + s } + ['}'], dep]
-		end
-		def dump_inner
-			mydefs = @symbol.values + @struct.values
-			# XXX struct a { int outer; };  {  struct b { struct a* outer; }; struct a { int inner; }; }
-			todo = mydefs.map { |t| [t, t.dump(self)] }
-			r = []
-			dep = []
+		def dump(scp, r, dep, skip=[])
+			# skip is for function arguments
+			mydefs = @symbol.values + @struct.values - skip
+			# XXX struct a { int outer; };  { struct a x; x.outer ; struct a { int inner; }; }
+			todo = mydefs.map { |t| [t, t.dump(self, [''], [])] }
 			loop do
 				# reorder
 				break if todo.empty?
-				prelen = todo.length
-				todo.find_all { |t, (tr, tdep)|
+				todo_now = todo.find_all { |t, (tr, tdep)|
 					((tdep & mydefs) - [t]).empty?
-				}.each { |t, (tr, tdep)|
-					r.concat tr
-					dep |= (tdep - mydefs)
-					todo.delete t
-					todo.each { |ttr, ttdep| ttdep.delete t }
 				}
-				if todo.length == prelen
-					# loop: predeclare needed structs
-					# TODO
+				if todo_now.empty?
+					# cyclic dependency: predeclare needed structs
 					# XXX struct foo; typedef struct foo *bla; struct foo { bla toto; };
-					r << 'failure!'
-					break
+					dep_cycle = proc { |ary|
+						# sexyness inside (c)
+						deps = todo.assoc(ary.last)[1][1]
+						if deps.include? ary.first: ary
+						elsif (deps-ary).find { |d| deps = dep_cycle[ary + [d]] }: deps
+						end
+					}
+					cycle = nil
+					if not todo.find { |t, (tr, tdep)| cycle = dep_cycle[[t]] if t.kind_of? Union and t.name }
+						r << '/* cyclic dependency, this should not compile */'
+						todo_now = todo.map { |t, (tr, tdep)| t }
+					else
+						cycle.grep(Union).each { |s|
+							next if not s.name
+							r << "#{s.class.name.downcase[/(?:.*::)?(.*)/,1]} #{s.name};"
+							cycle.each { |ss| todo.assoc(ss)[1][1].delete s }
+						}
+						todo_now = cycle.map { |s| todo.assoc s }.find_all { |t, (tr, tdep)|
+							((tdep & mydefs) - [t]).empty?
+						}
+						raise "fuxored! #{cycle.map { |t| t.name }.inspect}" if todo_now.empty?
+					end
 				end
+				todo_now.sort_by { |t, x| t.name }.each { |t, (tr, tdep)|
+					if t.kind_of? Variable and t.type.kind_of? Function and t.initializer
+						r << ''
+						r.concat tr
+					else
+						r.concat tr
+						r.last << ';'
+					end
+					dep |= (tdep - mydefs)
+					todo.delete_if { |tt, x| tt == t }
+					todo.each { |tt, (ttr, ttdep)| ttdep.delete t }
+				}
 			end
 
 			@statements.each { |s|
-				tr, tdep = s.dump(self)
-				dep.concat(tdep - mydefs)
-				r.concat tr
-				case s
-				when CExpression, Goto, Return, Break, Continue, Asm
-					r.last << ';'
-				end
+				r << ''
+				r, dep = s.dump(self, r, dep)
 			}
+
 			[r, dep]
 		end
 	end
 	class Variable
 		# array of lines, array of dep
-		def dump(scope)
-			r = ['']
-			r.last << @storage.to_s << ' ' if @storage
-
-			decl = ['']
-			decl.last << @name if @name
-
-			t = type
-			loop do
-				# un-declaratorize
-				case t
-				when Array: decl.last << '[todo]'	# TODO
-				when Pointer
-					decl[0] = t.qualifier.map { |q| ' ' << q.to_s }.join << ' ' << decl[0] if t.qualifier
-					decl[0] = '*' << decl[0]
-					if t.type.kind_of? Function or t.type.kind_of? Array or (not @name and t.type.class != Pointer)
-						decl[0] = '(' << decl[0]
-						decl[-1] << ')'
-					end
-				when Function
-					decl.last << '(todo)'
-				else break
-				end
-				t = t.type
+		def dump(scope, r, dep, skiptype=false)
+			if not skiptype
+				r.last << @storage.to_s << ' ' if @storage
+				r, dep = @type.base.dump(scope, r, dep)
+				r.last << ' '
 			end
-
-			dep = []
-			tr, tdep = t.dump(scope)
-			dep.concat tdep
-			r.last << tr.shift
-			r.concat tr
-			r.last << ' ' << decl.shift
-			r.concat decl
+			r, dep = @type.dump_declarator(scope, r, dep, [@name.to_s])
 
 			if @initializer
-				case @type
-				when Function
-
-				else
-					tr, tdep = @type.dump_initializer(scope, @initializer)
-					dep.concat tdep
-					r.last << ' = ' << tr.shift
-					r.concat tr
-				end
+				@type.kind_of?(Function) ? r << '' : r.last << ' = '
+				r, dep = @type.dump_initializer(scope, r, dep, @initializer)
 			end
 			[r, dep]
 		end
 	end
 	class Type
-		def dump_initializer(scope, init)
-			init.dump(scope)
-		end
-	end
-	class BaseType
-		def dump(scope)
-			r = ''
-			r << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
-			r << @specifier.to_s << ' ' if @specifier
-			r <<
-			case @name
-			when :char, :short, :int, :long, :double, :float: @name.to_s
-			when :longlong: 'long long'
-			when :longdouble: 'long double'
-			end
-			[[r], []]
-		end
-	end
-	class TypeDef
-		def dump(scope)
-			[[@name], [scope.symbol_ancestors[@name]]]
-		end
-	end
-	class Union
-		def dump(scope)
-			if @name
-				r = ''
-				r << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
-				r << self.class.name.downcase << ' ' << @name
-				[[r], [scope.struct_ancestors[@name]]]
-			else
-				dump_def(scope)
+		def dump_initializer(scope, r, dep, init)
+			if init.kind_of? ::Numeric
+				r.last << init.to_s
+				[r, dep]
+			else init.dump_inner(scope, r, dep)
 			end
 		end
 
-		def dump_def(scope)
-			r = ['']
-			dep = []
+		def dump_declarator(scope, r, dep, decl)
+			r.last << decl.shift
+			r.concat decl
+			[r, dep]
+		end
+	end
+	class Pointer
+		def dump_declarator(scope, r, dep, decl)
+			decl[0] = ' ' << @qualifier.map { |q| q.to_s << ' ' }.join << decl[0] if @qualifier
+			decl[0] = '*' << decl[0]
+			if @type.kind_of? Function or @type.kind_of? Array or (decl[0].delete('*').empty? and @type.class != Pointer)
+				decl[0]  =  '(' << decl[0]
+				decl[-1] << ')'
+			end
+			@type.dump_declarator(scope, r, dep, decl)
+		end
+	end
+	class Array
+		def dump_declarator(scope, r, dep, decl)
+			decl.last << '['
+			decl, dep = CExpression.dump(scope, decl, dep, @length)
+			decl.last << ']'
+			@type.dump_declarator(scope, r, dep, decl)
+		end
+	end
+	class Function
+		def dump_declarator(scope, r, dep, decl)
+			decl.last << '('
+			if @args
+				@args.each { |arg|
+					decl.last << ', ' if decl.last[-1] != ?(
+					decl, dep = arg.dump(scope, decl, dep)
+				}
+				decl.last << 'void' if @args.empty?
+			end
+			decl.last << ')'
+			@type.dump_declarator(scope, r, dep, decl)
+		end
+
+		def dump_initializer(scope, r, dep, init)
+			init.dump(scope, r, dep, @args)
+		end
+	end
+	class BaseType
+		def dump(scope, r, dep)
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
-			r.last << self.class.name.downcase << ' '
+			r.last << @specifier.to_s << ' ' if @specifier
+			r.last << case @name
+			when :longlong: 'long long'
+			when :longdouble: 'long double'
+			else @name.to_s
+			end
+			[r, dep]
+		end
+	end
+	class TypeDef
+		def dump(scope, r, dep)
+			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			r.last << @name
+			dep |= [scope.symbol_ancestors[@name]]
+			[r, dep]
+		end
+		
+		def dump_initializer(scope, r, dep, init)
+			@type.dump_initializer(scope, r, dep, init)
+		end
+	end
+	class Union
+		def dump(scope, r, dep)
+			if @name
+				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+				r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1] << ' ' << @name
+				dep |= [scope.struct_ancestors[@name]]
+				[r, dep]
+			else
+				dump_def(scope, r, dep)
+			end
+		end
+
+		def dump_def(scope, r, dep)
+			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1] << ' '
 			r.last << @name << ' ' if @name
 			r.last << '{'
 			@members.each { |m|
-				tr, tdep = m.dump(scope)
-				dep.concat tdep
-				r.concat tr.map { |s| "\t" + s }
+				r << "\t"
+				r, dep = m.dump(scope, r, dep)
+				r.last << ':' << @bits[m.name].to_s if @bits[m.name]
 				r.last << ';'
 			}
 			r << '}'
 			[r, dep]
 		end
 
-		def dump_initializer(scope, init)
-			if init.kind_of? ::Array
-				r = ['{']
-				dep = []
-				showname = false
-				@members.zip(init) { |m, i|
-					if not i
-						showname = true
-						next
-					end
-					if showname
-						showname = false
-						r << "\t.#{m.name} = "
-					end
-					tr, tdep = m.type.dump_initializer(scope, i)
-					dep.concat tdep
-					r.last << tr.shift
-					r.concat tr
-					r.last << ','
-				}
-				r.last[-1, 1] = '' if r.last[-1] == ?,
-				r << '}'
+		def dump_initializer(scope, r, dep, init)
+			return super if not init.kind_of? ::Array
+			r.last << '{ '
+			showname = false
+			@members.zip(init) { |m, i|
+				r.last << ', ' if r.last[-1] != ?{
+				if not i
+					showname = true
+					next
+				end
+				if showname
+					showname = false
+					r << "\t.#{m.name} = "
+				end
+				r, dep = m.type.dump_initializer(scope, r, dep, i)
+			}
+			r.last << ' }'
+			[r, dep]
+		end
+	end
+	class Enum
+		def dump(scope, r, dep)
+			if @name
+				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+				r.last << 'union ' << @name
+				dep |= [scope.struct_ancestors[@name]]
+				[r, dep]
+			else
+				dump_def(scope, r, dep)
+			end
+		end
+
+		def dump_def(scope, r, dep)
+			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if @qualifier
+			r.last << 'enum '
+			r.last << @name << ' ' if @name
+			r.last << '{ '
+			val = -1
+			@members.sort_by { |m, v| v }.each { |m, v|
+				r.last << ', ' if r.last[-1] != ?{
+				r.last << m
+				if v != (val += 1)
+					val = v
+					r.last << ' = ' << val.to_s
+				end
+			}
+			r << ' }'
+			[r, dep]
+		end
+
+		def dump_initializer(scope, r, dep, init)
+			if k = @members.index(init) or (init.kind_of? CExpression and not init.op and k = @members.index(init.rexpr))
+				r.last << k
+				dep |= [scope.struct_ancestors[@name]]
 				[r, dep]
 			else super
 			end
 		end
 	end
+	class Statement
+		def self.dump(scope, r, dep, e)
+			if not e
+				r << "\t;"
+			else
+				r.last << '{' if e.kind_of? Block
+				tr, dep = e.dump(scope, [''], dep)
+				r.concat tr.map { |s| Case.dump_indent(s) }
+				r << '}' if e.kind_of? Block
+			end
+			[r, dep]
+		end
+	end
 	class If
-		def dump(scope)
-			r = ['if (']
-			dep = []
-			tr, tdep = cond.dump(scope)
-			dep.concat tdep
-			r.last << tr.shift
-			r.concat tr
-			# if bthen.kind_of? Block
-			tr, tdep = bthen.dump(scope)
-			dep.concat tdep
-			r.concat tr
-			# if belse
+		def dump(scope, r, dep)
+			r.last << 'if ('
+			r, dep = CExpression.dump(scope, r, dep, @test)
+			r.last << ')'
+			r, dep = Statement.dump(scope, r, dep, @bthen)
+			if @belse
+				@bthen.kind_of?(Block) ? (r.last << ' else') : (r << 'else')
+				r, dep = Statement.dump(scope, r, dep, @belse)
+			end
+			[r, dep]
+		end
+	end
+	class For
+		def dump(scope, r, dep)
+			r.last << 'for ('
+			if @init.kind_of? Block
+				scope = @init
+				skiptype = false
+				@init.symbols.each { |s|
+					r.last << ', ' if skiptype
+					r, dep = s.dump(scope, r, dep, skiptype)
+					skiptype = true
+				}
+			else
+				r, dep = CExpression.dump(scope, r, dep, @init)
+			end
+			r.last << ' ; '
+			r, dep = CExpression.dump(scope, r, dep, @test)
+			r.last << ' ; '
+			r, dep = CExpression.dump(scope, r, dep, @iter)
+			r.last << ')'
+			Statement.dump(scope, r, dep, @body)
+		end
+	end
+	class While
+		def dump(scope, r, dep)
+			r.last << 'while ('
+			r, dep = CExpression.dump(scope, r, dep, @test)
+			r.last << ')'
+			Statement.dump(scope, r, dep, @body)
+		end
+	end
+	class DoWhile
+		def dump(scope, r, dep)
+			r.last << 'do'
+			r, dep = Statement.dump(scope, r, dep, @body)
+			@body.kind_of?(Block) ? (r.last << ' while (') : (r << 'while (')
+			r, dep = CExpression.dump(scope, r, dep, @test)
+			r.last << ');'
+			[r, dep]
+		end
+	end
+	class Switch
+		def dump(scope, r, dep)
+			r.last << 'switch ('
+			CExpression.dump(scope, r, dep, @test)
+			r.last << ')'
+			if not @body
+				r << "\t;"
+			else
+				r.last << '{' if @body.kind_of? Block
+				tr, dep = @body.dump(scope, [''], dep)
+				r.concat tr.map { |s| s[-1] == ?: ? s : "\t" << s }
+				r << '}' if @body.kind_of? Block
+			end
+			[r, dep]
+		end
+	end
+	class Continue
+		def dump(scope, r, dep)
+			r.last << 'continue;'
+			[r, dep]
+		end
+	end
+	class Break
+		def dump(scope, r, dep)
+			r.last << 'break;'
+			[r, dep]
+		end
+	end
+	class Goto
+		def dump(scope, r, dep)
+			r.last << "goto #@target;"
+			[r, dep]
+		end
+	end
+	class Return
+		def dump(scope, r, dep)
+			r.last << 'return '
+			r, dep = CExpression.dump(scope, r, dep, @value)
+			r.last << ';'
+			[r, dep]
+		end
+	end
+	class Case
+		def dump(scope, r, dep)
+			case @expr
+			when 'default'
+				r.last << @expr
+			else
+				r.last << 'case '
+				r, dep = CExpression.dump(scope, r, dep, @expr)
+				if @exprup
+					r.last << ' ... '
+					r, dep = CExpression.dump(scope, r, dep, @exprup)
+				end
+			end
+			r.last << ':'
+			Statement.dump(scope, r, dep, @statement)
+		end
+
+		def self.dump_indent(s)
+			(s[-1] == ?: and s !~ /^\s*(case|default)\W/) ? s : ("\t" << s)
+		end
+	end
+	class Label
+		def dump(scope, r, dep)
+			r.last << @name << ':'
+			Statement.dump(scope, r, dep, @statement)
+		end
+	end
+	class Asm
+		def dump(scope, r, dep)
+			r.last << 'asm '
+			r.last << 'volatile ' if @volatile
+			r.last << '('
+			r << @body.inspect
+			if @output or @input or @clobber
+				r << ': '
+				if @output
+					# TODO
+					r.last << '/* todo */'
+				end
+			end
+			if @input or @clobber
+				r << ': '
+				if @input
+					# TODO
+					r.last << '/* todo */'
+				end
+			end
+			if @clobber
+				r << (': ' << @clobber.map { |c| c.inspect }.join(', '))
+			end
+			r.last << ');'
+			[r, dep]
 		end
 	end
 	class CExpression
-		def dump(scope)
-			[[inspect], []]
+		def dump(scope, r, dep)
+			r, dep = dump_inner(scope, r, dep)
+			r.last << ';'
+			[r, dep]
+		end
+
+		def self.dump(scope, r, dep, e, brace = false)
+			case e
+			when ::Numeric
+				r.last << e.to_s
+			when ::String
+				r.last << e.inspect
+			when CExpression
+				r, dep = e.dump_inner(scope, r, dep, brace)
+			when Variable
+				raise 'noname' if not e.name
+				dep |= [scope.symbol_ancestors[e.name]]
+				r.last << e.name
+			end
+			[r, dep]
+		end
+
+		def dump_inner(scope, r, dep, brace = false)
+			t = @type.base
+			case t
+			when TypeDef: dep << scope.symbol_ancestors[t.name]
+			when Enum, Union: dep << scope.struct_ancestors[t.name]
+			end
+			if not @lexpr
+				if not @op
+					case @rexpr
+					when ::Numeric
+						r.last << @rexpr.to_s
+						if @type.kind_of? BaseType
+							r.last << 'U' if @type.specifier == :unsigned
+							case @type.name
+							when :longlong: r.last << 'LL'
+							when :long, :longdouble: r.last << 'L'
+							when :float: r.last << 'F'
+							end
+						end
+					when ::String
+						r.last << 'L' if @type.kind_of? Pointer and @type.type.kind_of? BaseType and @type.type.name == :short
+						r.last << @rexpr.inspect
+					when CExpression # cast
+						r.last << '('
+						v = Variable.new
+						v.type = @type
+						r, dep = v.dump(scope, r, dep)
+						r.last << ')'
+						r, dep = CExpression.dump(scope, r, dep, @rexpr, true)
+					else raise 'wtf?'
+					end
+				else
+					r.last << @op.to_s
+					r, dep = CExpression.dump(scope, r, dep, @rexpr, true)
+				end
+			elsif not @rexpr
+				r, dep = CExpression.dump(scope, r, dep, @lexpr)
+				r.last << @op.to_s
+			else
+				case @op
+				when :'->', :'.'
+					r, dep = CExpression.dump(scope, r, dep, @lexpr, true)
+					r.last << @op.to_s << @rexpr
+				when :'[]'
+					r, dep = CExpression.dump(scope, r, dep, @lexpr, true)
+					r.last << '['
+					r, dep = CExpression.dump(scope, r, dep, @rexpr)
+					r.last << ']'
+				when :funcall
+					r, dep = CExpression.dump(scope, r, dep, @lexpr, true)
+					r.last << '('
+					@rexpr.each { |arg|
+						r.last << ', ' if r.last[-1] != ?(
+						r, dep = CExpression.dump(scope, r, dep, arg)
+					}
+					r.last << ')'
+				when :'?:'
+					r, dep = CExpression.dump(scope, r, dep, @lexpr, true)
+					r.last << ' ? '
+					r, dep = CExpression.dump(scope, r, dep, @rexpr[0], true)
+					r.last << ' : '
+					r, dep = CExpression.dump(scope, r, dep, @rexpr[1], true)
+				else
+					r, dep = CExpression.dump(scope, r, dep, @lexpr, (@lexpr.kind_of? CExpression and OP_PRIO.fetch(@lexpr.op, {})[@op]))
+					r.last << @op.to_s
+					r, dep = CExpression.dump(scope, r, dep, @rexpr, (@rexpr.kind_of? CExpression and OP_PRIO.fetch(@rexpr.op, {})[@op]))
+				end
+			end
+			if brace and @op != :'->' and @op != :'.'
+				r[0] = '(' << r[0]
+				r[-1] << ')'
+			end
+			[r, dep]
 		end
 	end
 end
