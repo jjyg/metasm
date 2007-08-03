@@ -188,6 +188,7 @@ class Token
 		n.type = @type
 		n.value = @value.kind_of?(String) ? @value.dup : @value
 		n.raw = @raw.dup
+		n.expanded_from = @expanded_from.dup if defined? @expanded_from
 		n
 	end
 

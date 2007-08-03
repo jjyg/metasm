@@ -264,10 +264,19 @@ class Preprocessor
 			case @name.raw
 			when '__FILE__'
 				tok.type = :quoted
+				name = name.expanded_from.first if name.expanded_from
 				tok.value = name.backtrace.to_a[-2].to_s
+				tok.raw = tok.value.inspect
 			when '__LINE__'
 				tok.type = :string
+				name = name.expanded_from.first if name.expanded_from
 				tok.value = name.backtrace.to_a[-1]
+				tok.raw = tok.value.to_s
+			when '__COUNTER__'
+				tok.type = :string
+				tok.value = @counter ||= 0
+				tok.raw = tok.value.to_s
+				@counter += 1
 			else raise name, 'internal error'
 			end
 			[tok]
@@ -283,7 +292,8 @@ class Preprocessor
 	def initialize
 		@queue = []
 		@backtrace = []
-		@definition = {'__FILE__' => SpecialMacro.new('__FILE__'), '__LINE__' => SpecialMacro.new('__LINE__')}
+		@definition = {'__FILE__' => SpecialMacro.new('__FILE__'),
+		'__LINE__' => SpecialMacro.new('__LINE__'), '__COUNTER__' => SpecialMacro.new('__COUNTER__')}
 		@include_search_path = @@include_search_path
 		# stack of :accept/:discard/:discard_all/:testing, represents the current nesting of #if..#endif
 		@ifelse_nesting = []
@@ -365,6 +375,7 @@ class Preprocessor
 		@filename = "\"#{filename}\""
 		@lineno = lineno
 		@pos = 0
+		self
 	end
 
 	Trigraph = {	?= => ?#, ?) => ?], ?! => ?|,

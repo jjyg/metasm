@@ -906,6 +906,7 @@ EOS
 		def self.parse_type(parser, scope, allow_value = false)
 			var = new
 			qualifier = []
+			tok = nil
 			loop do
 				break if not tok = parser.skipspaces
 				if tok.type != :string
@@ -963,7 +964,7 @@ EOS
 			end
 	
 			if not var.type
-				raise parser, 'bad type name' if not qualifier.empty? or var.storage
+				raise tok || parser, 'bad type name' if not qualifier.empty? or var.storage
 				nil
 			else
 				(var.type.qualifier ||= []).concat qualifier if not qualifier.empty?
@@ -1726,8 +1727,21 @@ EOS
 	#
 	# Dumper : objects => C source
 	#
+	
+	# parses a C source with standard includes, returns a big string containing all definitions from headers used in the source
+	def self.factorize(src)
+		c = new
+		c.lexer.feed src
+		c.lexer.traced_macros = []
+		nil while not c.lexer.eos? and c.parse_definition(c.toplevel)
+		raise c.lexer.readtok || c, 'EOF expected' if not c.lexer.eos?
+		# now find all types/defs not coming from the standard headers
+		interested = (c.toplevel.struct.values + c.toplevel.symbol.values).find_all { |t|
+			p t.backtrace.backtrace
+		}
+	end
 
-	# TODO attributes, switch/case indent
+	# TODO attributes
 	def to_s
 		r, dep = @toplevel.dump(nil, [''], [])
 		r.join("\n")
