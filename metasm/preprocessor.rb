@@ -236,12 +236,12 @@ class Preprocessor
 
 		def dump(comment = true)
 			str = ''
-			str << "// from #{@name.backtrace[-2, 2] * ':'}\n" if comment
+			str << "\n// from #{@name.backtrace[-2, 2] * ':'}\n" if comment
 			str << "#define #{@name.raw}"
 			if @args
 				str << '(' << (@args.map { |t| t.raw } + (@varargs ? ['...'] : [])).join(', ') << ')'
 			end
-			str << ' ' << @body.map { |t| t.raw }.join << "\n"
+			str << ' ' << @body.map { |t| t.raw }.join
 		end
 	end
 
@@ -316,11 +316,12 @@ class Preprocessor
 	attr_accessor :traced_macros
 	# preprocess text, and retrieve all macros defined in #included <files> and used in the text
 	# returns a C source-like string
-	def factorize(text, comment=true)
-		feed(text)
-		@traced_macros = []
-		readtok while not eos?
-		dump_macros(@traced_macros, comment)
+	def self.factorize(text, comment=false)
+		p = new
+		p.feed(text)
+		p.traced_macros = []
+		p.readtok while not p.eos?
+		p.dump_macros(p.traced_macros, comment)
 	end
 
 	# dumps the definition of the macros whose name is in the list + their dependencies
@@ -725,7 +726,7 @@ class Preprocessor
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
 			raise tok || cmd, 'pp syntax error' if not tok = skipspc[] or tok.type != :string
-			puts "W: pp: redefinition of #{tok.raw} #{tok.backtrace_str}, prev def at #{@definition[tok.raw].name.backtrace_str}" if @definition[tok.raw] and $VERBOSE
+			puts "W: pp: redefinition of #{tok.raw} at #{tok.backtrace_str}, prev def at #{@definition[tok.raw].name.backtrace_str}" if @definition[tok.raw] and $VERBOSE
 			@definition[tok.raw] = Macro.new(tok)
 			@definition[tok.raw].parse_definition(self)
 
