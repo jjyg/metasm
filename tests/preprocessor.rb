@@ -62,7 +62,7 @@ EOS
 		t_preparse[<<EOS, 'coucou']
 #define tutu
 #if defined ( tutu )
-coucou
+tutu coucou
 #endif
 EOS
 		t_preparse['a #define b', 'a #define b']

@@ -61,11 +61,6 @@ class Preprocessor
 	def self.include_search_path=(np)
 		@@include_search_path = np
 	end
-
-	def exception(msg='syntax error')
-		backtrace_str = Backtrace.backtrace_str([@filename, @lineno] + @backtrace.map { |f, l, *a| [f, l] }.flatten)
-		ParseError.new "at #{backtrace_str}: #{msg}"
-	end
 end
 
 # handle asm-specific syntax: asm macro, equ, ;comments
@@ -163,6 +158,8 @@ class Token
 	attr_accessor :value
 	# the raw string that gave this token
 	attr_accessor :raw
+	# a list of token this on is expanded from (Preprocessor macro expansion)
+	attr_accessor :expanded_from
 
 	include Backtrace
 
@@ -175,15 +172,15 @@ class Token
 	# used when doing 'raise tok, "foo"'
 	# raises a ParseError, adding backtrace information
 	def exception(msg='syntax error')
-		ins = @raw.length > 35 ? ('...' + @raw[-32..-1]) : @raw
-		msgh = ins.inspect
-		msgh << ' at ' << backtrace_str
-		if defined? @expanded_from
-			p @expanded_from
-			@expanded_from.to_a.reverse_each { |ef| msgh << ' expanded from ' << ef.exception('').message }
+		msgh = ''
+		msgh << 'near ' if msg
+		if msg and defined? @expanded_from
+			@expanded_from.each { |ef| msgh << ef.exception(nil).message << ' expanded to '  }
 		end
-		msgh = "near #{msgh} :" if not msg.empty?
-		ParseError.new "#{msgh} #{msg}"
+		msgh << ((@raw.length > 35) ? (@raw[0..10] + '<...>' + @raw[-10..-1]).inspect : @raw.inspect)
+		msgh << ' at ' << backtrace_str
+		msgh << ': ' << msg if msg
+		ParseError.new msgh
 	end
 
 	def dup

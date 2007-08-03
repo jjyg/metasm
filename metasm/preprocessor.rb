@@ -7,12 +7,8 @@
 require 'metasm/main'
 require 'metasm/parse'
 
-module Metasm
-class Token
-	# array of macro names
-	attr_accessor :expanded_from
-end
 
+module Metasm
 class Preprocessor
 	class Macro
 		attr_accessor :name, :body
@@ -28,8 +24,9 @@ class Preprocessor
 		# parses arguments if needed 
 		# returns an array of tokens
 		# macros are lazy
-		# fills token.expanded_from
+		# fills tokens.expanded_from
 		def apply(lexer, name)
+			expfrom = name.expanded_from.to_a + [name]
 			if @args
 				# if defined with arg list (even empty), then must be followed by parenthesis, otherwise do not replace
 				unr = []
@@ -39,9 +36,8 @@ class Preprocessor
 				if not tok or tok.type != :punct or tok.raw != '('
 					lexer.unreadtok tok
 					unr.reverse_each { |t| lexer.unreadtok t }
-					tok = @name.dup
-					(tok.expanded_from ||= []) << @name	# we don't want to be called repeatedly
-					return [tok]
+					name.expanded_from = expfrom		# we don't want to be called repeatedly
+					return [name]
 				end
 				args = []
 				# each argument is any token sequence
@@ -92,15 +88,11 @@ class Preprocessor
 
 			# apply macro
 			res = []
-			b = @body.reverse
-			#hargs.each_value { |a| a.map! { |t| t = t.dup ; (t.expanded_from ||= []) << name ; t } }	# #define foo(x) x \n foo(foo(bar))
+			b = @body.reverse.map { |t| t = t.dup ; t.expanded_from = expfrom ; t }
 			while t = b.pop
-				t = t.dup
-				t.expanded_from = (@name.expanded_from || []) << @name
 				if a = hargs[t.raw]
 					res.pop if res.last and res.last.type == :space and a.first and a.first.type == :space
 					res.concat a.map { |tt| tt.dup }
-					next
 				elsif t.type == :punct and t.raw == '##'
 					# the '##' operator: concat the next token to the last in body
 					t = b.pop
@@ -110,12 +102,9 @@ class Preprocessor
 						a = [t]
 					end
 					if @varargs and t.raw == '__VA_ARGS__' and res.last and res.last.type == :punct and res.last.raw == ','
-						if args.length == @args.length
-							# pop last , if no vararg passed
-							# XXX poof(1, 2,) != poof(1, 2)
+						if args.length == @args.length # pop last , if no vararg passed # XXX poof(1, 2,) != poof(1, 2)
 							res.pop
-						else
-							# allow merging with ',' without warning
+						else # allow merging with ',' without warning
 							res.concat a
 						end
 					else
@@ -129,23 +118,20 @@ class Preprocessor
 							res.concat a[1..-1]
 						end
 					end
-					next
-
-				elsif @args and t.type == :punct and t.raw == '#'
-					# the '#' operator: transforms an argument to the quotedstring of its value
+				elsif @args and t.type == :punct and t.raw == '#' # map an arg to a qstring
 					t = b.pop.dup
 					t = b.pop.dup if t and t.type == :space
-					raise name, "internal error, bad macro:\n #{dump}\n near #{t.inspect}" if not t or t.type == :space or not hargs[t.raw]	# should have been filtered on parse_definition
+					raise name, "internal error, bad macro:\n #{dump}\n near #{t.inspect}" if not t or t.type == :space or
+							not hargs[t.raw]	# should have been filtered on parse_definition
 					a = hargs[t.raw]
 					t.type = :quoted
 					t.value = a.map { |aa| aa.raw }.join
 					t.value = t.value[1..-1] if t.value[0] == ?\ 	# delete leading space
 					t.raw = t.value.inspect
 					res << t
-					next
+				else
+					res << t
 				end
-				#t.backtrace += name.backtrace[-2, 2]	# don't modify inplace
-				res << t
 			end
 			res
 		end
@@ -248,8 +234,9 @@ class Preprocessor
 			end
 		end
 
-		def dump
-			str = "// from #{@name.backtrace[-2, 2] * ':'}\n"
+		def dump(comment = true)
+			str = ''
+			str << "// from #{@name.backtrace[-2, 2] * ':'}\n" if comment
 			str << "#define #{@name.raw}"
 			if @args
 				str << '(' << (@args.map { |t| t.raw } + (@varargs ? ['...'] : [])).join(', ') << ')'
@@ -260,24 +247,27 @@ class Preprocessor
 
 	# special object, handles __FILE__ and __LINE__ macros
 	class SpecialMacro
-		def name
-		end
 		def body
-			[]
+			[@name]
+		end
+
+		attr_reader :name
+		def initialize(raw)
+			@name = Token.new(nil)
+			@name.type = :string
+			@name.raw = raw
 		end
 
 		def apply(lexer, name)
-			tok = name.dup
-			(tok.expanded_from ||= []) << name
-			case name.raw
+			tok = @name.dup
+			tok.expanded_from = name.expanded_from.to_a + [name]
+			case @name.raw
 			when '__FILE__'
-				# keep tok.raw
 				tok.type = :quoted
-				tok.value = tok.backtrace[-2].to_s
+				tok.value = name.backtrace.to_a[-2].to_s
 			when '__LINE__'
-				# keep tok.raw
 				tok.type = :string
-				tok.value = tok.backtrace[-1]
+				tok.value = name.backtrace.to_a[-1]
 			else raise name, 'internal error'
 			end
 			[tok]
@@ -293,7 +283,7 @@ class Preprocessor
 	def initialize
 		@queue = []
 		@backtrace = []
-		@definition = {'__FILE__' => SpecialMacro.new, '__LINE__' => SpecialMacro.new}
+		@definition = {'__FILE__' => SpecialMacro.new('__FILE__'), '__LINE__' => SpecialMacro.new('__LINE__')}
 		@include_search_path = @@include_search_path
 		# stack of :accept/:discard/:discard_all/:testing, represents the current nesting of #if..#endif
 		@ifelse_nesting = []
@@ -305,20 +295,37 @@ class Preprocessor
 		# TODO setup standard macro names ? see $(gcc -dM -E - </dev/null)
 	end
 
+	def exception(msg='syntax error')
+		backtrace_str = Backtrace.backtrace_str([@filename, @lineno] + @backtrace.map { |f, l, *a| [f, l] }.flatten)
+		ParseError.new "at #{backtrace_str}: #{msg}"
+	end
+
 	# outputs the preprocessed source
 	def dump
 		while not eos?
-			print readtok.raw rescue nil
+			t = readtok
+			case t.type
+			when :space: print ' '
+			when :eol: puts
+			when :quoted: print t.value.inspect
+			else print((t.value || t.raw).to_s)
+			end
 		end
 	end
 
+	attr_accessor :traced_macros
 	# preprocess text, and retrieve all macros defined in #included <files> and used in the text
 	# returns a C source-like string
-	def trace_macros(text, filename='unknown', lineno=1)
-		feed(text, filename, lineno)
+	def factorize(text, comment=true)
+		feed(text)
 		@traced_macros = []
 		readtok while not eos?
+		dump_macros(@traced_macros, comment)
+	end
 
+	# dumps the definition of the macros whose name is in the list + their dependencies
+	# returns one big C-style source string
+	def dump_macros(list, comment = true)
 		depend = {}
 		# build dependency graph (we can output macros in any order, but it's more human-readable)
 		walk = proc { |mname|
@@ -334,13 +341,13 @@ class Preprocessor
 				end
 			}
 		}
-		@traced_macros.each { |mname| walk[mname] }
+		list.each { |mname| walk[mname] }
 
 		res = []
 		while not depend.empty?
 			leafs = depend.keys.find_all { |k| depend[k].empty? }
 			leafs.each { |l|
-				res << @definition[l].dump
+				res << @definition[l].dump(comment)
 				depend.delete l
 			}
 			depend.each_key { |k| depend[k] -= leafs }
@@ -454,7 +461,7 @@ class Preprocessor
 			end
 			tok = readtok if lastpos == 0	# else return the :eol
 
-		elsif tok.type == :string and m = @definition[tok.raw] and (not tok.expanded_from or not tok.expanded_from.include? m.name)
+		elsif tok.type == :string and m = @definition[tok.raw] and not tok.expanded_from.to_a.find { |ef| ef.raw == m.name.raw }
 			# expand macros
 			if defined? @traced_macros
 				if tok.backtrace[-2].to_s[0] == ?" and @definition[tok.raw].name and @definition[tok.raw].name.backtrace[-2].to_s[0] == ?<
@@ -743,10 +750,10 @@ class Preprocessor
 				ipath = tok.value
 				if @backtrace.find { |btf, *a| btf[0] == ?< }
 					# XXX local include from a std include... (kikoo windows.h !)
-					dir = @include_search_path.find { |d| File.exist? File.join(d, ipath) }
-					path = File.join(dir, ipath) if dir
+					dir = @include_search_path.find { |d| ::File.exist? ::File.join(d, ipath) }
+					path = ::File.join(dir, ipath) if dir
 				elsif ipath[0] != ?/
-					path = File.join(File.dirname(@filename[1..-2]), ipath) if ipath[0] != ?/
+					path = ::File.join(::File.dirname(@filename[1..-2]), ipath) if ipath[0] != ?/
 				else
 					path = ipath
 				end
@@ -759,8 +766,8 @@ class Preprocessor
 				end
 				raise cmd, 'pp syntax error, unterminated path' if not tok
 				if ipath[0] != ?/
-					dir = @include_search_path.find { |d| File.exist? File.join(d, ipath) }
-					path = File.join(dir, ipath) if dir
+					dir = @include_search_path.find { |d| ::File.exist? ::File.join(d, ipath) }
+					path = ::File.join(dir, ipath) if dir
 				end
 			end
 			nil while tok = readtok_nopp and tok.type == :space
@@ -769,7 +776,7 @@ class Preprocessor
 
 			if not defined? @pragma_once or not @pragma_once or not @pragma_once[path]
 				puts "metasm preprocessor: including #{path}" if $DEBUG
-				raise cmd, "No such file or directory #{ipath.inspect}" if not path or not File.exist? path
+				raise cmd, "No such file or directory #{ipath.inspect}" if not path or not ::File.exist? path
 				raise cmd, 'filename too long' if path.length > 4096		# gcc
 
 				@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
@@ -780,7 +787,7 @@ class Preprocessor
 					@filename = '<' + path + '>'
 				end
 				@lineno = 1
-				@text = File.read(path)
+				@text = ::File.read(path)
 				@pos = 0
 				@queue = []
 			else
@@ -822,7 +829,7 @@ class Preprocessor
 			when 'include_dir'
 				nil while dir = readtok and dir.type == :space
 				raise cmd, 'qstring expected' if not dir or dir.type != :quoted
-				raise cmd, 'invalid path' if not File.directory? dir.value
+				raise cmd, 'invalid path' if not ::File.directory? dir.value
 				@include_search_path << dir.value
 
 			when 'push_macro'
@@ -914,7 +921,6 @@ class Preprocessor
 
 		true
 	end
-end
 
 # parses a preprocessor expression (similar to Expression, + handles "defined(foo)")
 class PPExpression
@@ -1060,5 +1066,6 @@ class PPExpression
 			Expression[stack.first]
 		end
 	end
+end
 end
 end
