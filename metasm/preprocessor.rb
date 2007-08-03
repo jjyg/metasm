@@ -302,13 +302,14 @@ class Preprocessor
 
 	# outputs the preprocessed source
 	def dump
+		neol = 0
 		while not eos?
 			t = readtok
 			case t.type
 			when :space: print ' '
-			when :eol: puts
-			when :quoted: print t.value.inspect
-			else print((t.value || t.raw).to_s)
+			when :eol: puts if (neol += 1) <= 2
+			when :quoted: neol = 0 ; print t.raw	# keep quoted style
+			else neol = 0 ; print((t.value || t.raw).to_s)
 			end
 		end
 	end
