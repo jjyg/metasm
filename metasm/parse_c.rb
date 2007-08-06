@@ -506,7 +506,7 @@ class CParser
 	class CExpression < Statement
 		# may be :,, :., :->, :funcall (function, [arglist]), :[] (array indexing), nil (cast)
 		attr_accessor :op
-		# nil/CExpr/Variable/Label/::String( = :quoted/struct member name)/::Integer/::Float
+		# nil/CExpr/Variable/Label/::String( = :quoted/struct member name)/::Integer/::Float/Block
 		attr_accessor :lexpr, :rexpr
 		# a Type
 		attr_accessor :type
@@ -1480,14 +1480,23 @@ EOS
 			when :punct
 				case tok.raw
 				when '('
+					ntok = nil
 					# check type casting
 					if v = Variable.parse_type(parser, scope)
 						v.parse_declarator(parser, scope)
 						raise tok, 'bad cast' if v.name != false
-						raise ntok || tok, 'no ")" found' if not ntok = parser.readtok or ntok.type != :punct or ntok.raw != ')'
+						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 						raise ntok, 'expr expected' if not val = parse_value(parser, scope)	# parses postfix too
 						val = CExpression.new(nil, nil, val, v.type)
+					# check compound statement expression
+					elsif ntok = parser.skipspaces and ntok.type == :punct and ntok.raw == '{'
+						parser.unreadtok ntok
+						blk = parser.parse_statement(scope, []) # XXX nesting ?
+						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
+						type = blk.last.kind_of?(CExpression) ? blk.last.type : BaseType.new(:void)
+						val = CExpression.new(nil, nil, blk, type)
 					else
+						parser.unreadtok ntok
 						if not val = parse(parser, scope)
 							parser.unreadtok tok
 							return
