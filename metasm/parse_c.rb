@@ -39,17 +39,20 @@ class CParser
 		attr_accessor :attributes
 
 		# parses a sequence of __attribute__((anything)) into self.attributes (array of string)
-		def parse_attributes(parser)
-			while tok = parser.skipspaces and tok.type == :string and tok.raw == '__attribute__'
+		def parse_attributes(parser, declspec = false)
+			while tok = parser.skipspaces and tok.type == :string
+			    case keyword = tok.raw
+			    when '__attribute__', '__declspec'	# synonymous: __attribute__((foo)) == __declspec(foo)
+				break if keyword == '__declspec' and not declspec
 				raise tok || parser if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
-				raise tok || parser if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
+				raise tok || parser if keyword == '__attribute__' and (not tok = parser.skipspaces or tok.type != :punct or tok.raw != '(')
 				nest = 0
 				attrib = ''
 				loop do
 					raise parser if not tok = parser.skipspaces
 					if tok.type == :punct and tok.raw == ')'
 						if nest == 0
-							raise tok || parser if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
+							raise tok || parser if keyword == '__attribute__' and (not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')')
 							break
 						else
 							nest -= 1
@@ -59,7 +62,12 @@ class CParser
 					end
 					attrib << tok.raw
 				end
-				(@attributes ||= []) << attrib
+			    when 'inline', '__inline', '__inline__', '__stdcall', '__fastcall', '__cdecl'
+				break if not declspec
+				attrib = keyword.delete '_'
+			    else break
+			    end
+			    (@attributes ||= []) << attrib
 			end
 			parser.unreadtok tok
 		end
@@ -144,7 +152,7 @@ class CParser
 				break if tok.type == :punct and tok.raw == '}'
 				parser.unreadtok tok
 	
-				raise parser if not basetype = Variable.parse_type(parser, scope)
+				raise tok, 'invalid struct member type' if not basetype = Variable.parse_type(parser, scope)
 				loop do
 					member = basetype.dup
 					member.parse_declarator(parser, scope)
@@ -492,6 +500,48 @@ class CParser
 				volatile = true
 				tok = parser.skipspaces
 			end
+			if not tok or tok.type != :punct or tok.raw != '('
+				# detect MS-style inline asm: "__asm .* __asm .*" or "asm { [\s.]* }"
+				ftok = tok
+				body = ''
+				if tok.type == :punct and tok.raw == '{'
+					loop do
+						raise ftok, 'unterminated asm block' if not tok = parser.readtok
+						break if tok.type == :punct and tok.raw == '}'
+						case tok.type
+						when :space: body << ' '
+						when :eol: body << "\n"
+						when :punct: body << tok.raw
+						when :quoted: body << tok.value.inspect	# concat adjacent c strings
+						when :string
+							body << \
+							case tok.raw
+							when 'asm', '__asm', '__asm__': "\n"
+							when '_emit': 'db'
+							else tok.raw
+							end
+						end
+					end
+				else
+					parser.unreadtok tok
+					loop do
+						break if not tok = parser.readtok or tok.type == :eol
+						case tok.type
+						when :space: body << ' '
+						when :punct: body << tok.raw
+						when :quoted: body << tok.value.inspect
+						when :string
+							body << \
+							case tok.raw
+							when 'asm', '__asm', '__asm__': "\n"
+							when '_emit': 'db'
+							else tok.raw
+							end
+						end
+					end
+				end
+				return new(body, ftok, nil, nil, nil, volatile)
+			end
 			raise tok || parser, '"(" expected' if not tok or tok.type != :punct or tok.raw != '('
 			raise tok || parser, 'qstring expected' if not tok = parser.skipspaces or tok.type != :quoted
 			body = tok
@@ -564,17 +614,6 @@ class CParser
 	attr_accessor :lexer, :toplevel, :typesize
 	def initialize(lexer = nil, model=:ilp32)
 		@lexer = lexer || Preprocessor.new
-		@lexer.feed <<EOS, 'metasm_intern_init'
-#ifndef inline
-# define inline __attribute__((inline))
-#endif
-#ifndef __declspec
-# define __declspec(a) __attribute__((a))
-# define __cdecl    __declspec(cdecl)
-# define __stdcall  __declspec(stdcall)
-# define __fastcall __declspec(fastcall)
-#endif
-EOS
 		@lexer.readtok until @lexer.eos?
 		@toplevel = Block.new(nil)
 		@unreadtoks = []
@@ -680,7 +719,9 @@ EOS
 			register extern auto static typedef  const volatile
 			void int float double char  signed unsigned long short
 			case continue break return default  __attribute__
-			asm __asm__ sizeof __builtin_offsetof typeof
+			asm __asm __asm__ sizeof __builtin_offsetof typeof
+			__declspec __cdecl __stdcall __fastcall
+			inline __inline __inline__ __volatile__
 	].inject({}) { |h, w| h.update w => true }
 
 	# allows 'raise self'
@@ -917,7 +958,7 @@ EOS
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 			raise tok, 'break out of loop' if not nest.include? :loop and not nest.include? :switch
 			Break.new
-		when 'asm', '__asm__'
+		when 'asm', '__asm', '__asm__'
 			Asm.parse self, scope
 		else
 			if ntok = skipspaces and ntok.type == :punct and ntok.raw == ':'
@@ -944,6 +985,7 @@ EOS
 			qualifier = []
 			tok = nil
 			loop do
+				var.parse_attributes(parser, true)
 				break if not tok = parser.skipspaces
 				if tok.type != :string
 					parser.unreadtok tok
@@ -1116,6 +1158,7 @@ EOS
 		# scope used only in CExpression.parse for array sizes and function prototype argument types
 		# rec for internal use only
 		def parse_declarator(parser, scope, rec = false)
+			parse_attributes(parser, true)
 			raise parser if not tok = parser.skipspaces
 			# read upto name
 			if tok.type == :punct and tok.raw == '*'
@@ -1135,14 +1178,14 @@ EOS
 					(@type.qualifier ||= []) << tok.raw.to_sym
 					return parse_declarator(parser, scope, rec)
 				end
-				raise tok if defined? @name and (@name or @name == false)
+				raise tok if name or name == false
 				raise tok, 'bad var name' if Reserved[tok.raw] or (?0..?9).include?(tok.raw[0])
 				@name = tok.raw
 				@backtrace = tok
 				parse_attributes(parser)
 			else
 				# unnamed
-				raise tok if defined? @name and (@name or @name == false)
+				raise tok if name or name == false
 				@name = false
 				@backtrace = tok
 				parser.unreadtok tok
