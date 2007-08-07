@@ -84,8 +84,11 @@ a\
 b\
 #define x
 EOS
-		p = load('__LINE__')
-		assert_equal(__LINE__, p.readtok.value)
+		p = load('__LINE__,__DATE__,__TIME__')
+		assert_equal(__LINE__, p.readtok.value) ; p.readtok
+		assert_not_equal('__DATE__', p.readtok.raw) ; p.readtok
+		assert_not_equal('__TIME__', p.readtok.raw)
+
 		t_preparse[<<EOS, 'toto 1 toto 12 toto 3+(3-2) otot hoho']
 #define azer(k) 12
 # define xxx azer(7)
@@ -105,9 +108,10 @@ EOS
 #undef b
 a
 EOS
-		t_preparse[<<EOS, 'toto tutu']
+		t_preparse[<<EOS, 'toto tutu huhu()']
 #define toto() abcd
-toto tutu
+#define tata huhu
+toto tutu tata()
 EOS
 		t_preparse[<<EOS, '"haha"']
 #define d(a) #a
@@ -120,6 +124,12 @@ EOS
 		t_preparse[<<EOS, 'x(, 1)']
 #define d(a,b) x(a, b)
 d(,1)
+EOS
+		t_preparse[<<EOS, '"foo" "4"']
+#define str(x) #x
+#define xstr(x) str(x)
+#define foo 4
+str(foo) xstr(foo)
 EOS
 		Metasm::Preprocessor.include_search_path << '.'
 		begin

@@ -11,97 +11,111 @@ require 'metasm/parse'
 module Metasm
 class Preprocessor
 	class Macro
-		attr_accessor :name, :body
+		attr_accessor :name, :body, :args, :varargs
 
 		def initialize(name)
 			@name = name
 			@body = []
-			@args = nil
-			@varargs = false	# macro is of type #define foo(a1, ...)
+		end
+
+
+		# parses an argument list from the lexer or from a list of tokens
+		# modifies the list, returns an array of list of tokens/nil
+		# handles nesting
+		def self.parse_arglist(lexer, list=nil)
+			readtok = proc { list ? list.shift : lexer.readtok(false) }
+			unreadtok = proc { |t| list ? (list.unshift(t) if t) : lexer.unreadtok(t) }
+			tok = nil
+			unreadlist = []
+			unreadlist << tok while tok = readtok[] and tok.type == :space
+			if not tok or tok.type != :punct or tok.raw != '('
+				unreadtok[tok]
+				unreadlist.reverse_each { |t| unreadtok[t] }
+				return nil
+			end
+			args = []
+			# each argument is any token sequence
+			# if it includes an '(' then find the matching ')', whatever is inside (handle nesting)
+			# arg cannot include ',' in the top-level
+			# args are parsed with no macro expansion
+			# convert any space/eol sequence to a single space, strips them at begin/end of argument
+			loop do
+				arg = []
+				nest = 0
+				loop do
+					raise lexer, 'unterminated arg list' if not tok = readtok[]
+					case tok.type
+					when :eol, :space
+						next if arg.last and arg.last.type == :space
+						tok = tok.dup
+						tok.type = :space
+						tok.raw = ' '
+					when :punct
+						case tok.raw
+						when ',': break if nest == 0
+						when ')': break if nest == 0 ; nest -= 1
+						when '(': nest += 1
+						end
+					end
+					arg << tok
+				end
+				arg.pop if arg.last and arg.last.type == :space
+				args << arg if not arg.empty? or args.length > 0 or tok.raw != ')'
+				break if tok.raw == ')'
+			end
+			args
 		end
 
 		# applies a preprocessor macro
 		# parses arguments if needed 
-		# returns an array of tokens
 		# macros are lazy
 		# fills tokens.expanded_from
-		def apply(lexer, name)
+		# returns an array of tokens
+		def apply(lexer, name, args, list=nil)
 			expfrom = name.expanded_from.to_a + [name]
-			if @args
-				# if defined with arg list (even empty), then must be followed by parenthesis, otherwise do not replace
-				unr = []
-				while tok = lexer.readtok_nopp and tok.type == :space
-					unr << tok
-				end
-				if not tok or tok.type != :punct or tok.raw != '('
-					lexer.unreadtok tok
-					unr.reverse_each { |t| lexer.unreadtok t }
-					name.expanded_from = expfrom		# we don't want to be called repeatedly
-					return [name]
-				end
-				args = []
-				# each argument is any token sequence
-				# if it includes an '(' then find the matching ')', whatever is inside (handle nesting)
-				# arg cannot include ',' in the top-level
-				# convert any space/eol sequence to a single space, strips them at begin/end of argument
-				loop do
-					arg = []
-					nest = 0
-					loop do
-						raise name, 'unterminated arg list' if not tok = lexer.readtok
-						case tok.type
-						when :eol, :space
-							next if arg.last and arg.last.type == :space
-							tok = tok.dup
-							tok.type = :space
-							tok.raw = ' '
-						when :punct
-							case tok.raw
-							when ',': break if nest == 0
-							when ')': break if nest == 0 ; nest -= 1
-							when '(': nest += 1
-							end
-						end
-						arg << tok
-					end
-					arg.pop if arg.last and arg.last.type == :space
-					args << arg
-					break if tok.raw == ')'
-				end
-				if @varargs
+			if args
+				# hargs is a hash argname.raw => array of tokens
+				hargs = @args.zip(args).inject({}) { |h, (af, ar)| h.update af.raw => ar }
+
+				if not varargs
+					raise name, 'invalid argument count' if args.length != @args.length
+				else
 					raise name, 'invalid argument count' if args.length < @args.length
-					virg = name.dup
+					virg = name.dup		# concat remaining args in __VA_ARGS__
 					virg.type = :punct
 					virg.raw = ','
-					va = args[@args.length..-1].map { |a| a + [virg] }.flatten
+					va = args[@args.length..-1].map { |a| a + [virg.dup] }.flatten
 					va.pop
-				else
-					raise name, 'invalid argument count' if args.length != @args.length
+					hargs['__VA_ARGS__'] = va
 				end
-
-				# argument formal name => token list (argument invocation)
-				hargs = @args.zip(args).inject({}) { |h, (af, ar)| h.update af.raw => ar }
-				hargs['__VA_ARGS__'] = va if va
 			else
 				hargs = {}
 			end
 
-			# apply macro
 			res = []
-			b = @body.reverse.map { |t| t = t.dup ; t.expanded_from = expfrom ; t }
-			while t = b.pop
+			b = @body.map { |t| t = t.dup ; t.expanded_from = expfrom ; t }
+			while t = b.shift
 				if a = hargs[t.raw]
-					res.pop if res.last and res.last.type == :space and a.first and a.first.type == :space
-					res.concat a.map { |tt| tt.dup }
+					# expand macros
+					a = a.dup
+					while at = a.shift
+						margs = nil
+						if at.type == :string and am = lexer.definition[at.raw] and not at.expanded_from.to_a.find { |ef| ef.raw == @name.raw } and
+								((am.args and margs = Macro.parse_arglist(lexer, a)) or not am.args)
+							toks = am.apply(lexer, at, margs, a)
+							a = toks + a	# reroll
+						else
+							res << at.dup if not res.last or res.last.type != :space or at.type != :space
+						end
+					end
 				elsif t.type == :punct and t.raw == '##'
 					# the '##' operator: concat the next token to the last in body
-					t = b.pop
-					t = b.pop while t and t.type == :space
+					nil while t = b.shift and t.type == :space
 					res.pop while res.last and res.last.type == :space
 					if not a = hargs[t.raw]
 						a = [t]
 					end
-					if @varargs and t.raw == '__VA_ARGS__' and res.last and res.last.type == :punct and res.last.raw == ','
+					if varargs and t.raw == '__VA_ARGS__' and res.last and res.last.type == :punct and res.last.raw == ','
 						if args.length == @args.length # pop last , if no vararg passed # XXX poof(1, 2,) != poof(1, 2)
 							res.pop
 						else # allow merging with ',' without warning
@@ -118,14 +132,10 @@ class Preprocessor
 							res.concat a[1..-1]
 						end
 					end
-				elsif @args and t.type == :punct and t.raw == '#' # map an arg to a qstring
-					t = b.pop.dup
-					t = b.pop.dup if t and t.type == :space
-					raise name, "internal error, bad macro:\n #{dump}\n near #{t.inspect}" if not t or t.type == :space or
-							not hargs[t.raw]	# should have been filtered on parse_definition
-					a = hargs[t.raw]
+				elsif args and t.type == :punct and t.raw == '#' # map an arg to a qstring
+					nil while t = b.shift and t.type == :space
 					t.type = :quoted
-					t.value = a.map { |aa| aa.raw }.join
+					t.value = hargs[t.raw].map { |aa| aa.raw }.join
 					t.value = t.value[1..-1] if t.value[0] == ?\ 	# delete leading space
 					t.raw = t.value.inspect
 					res << t
@@ -213,7 +223,7 @@ class Preprocessor
 				invalid_body ||= 'cannot have ## at begin or end of macro body'
 				lexer.definition.delete(name.raw)
 			end
-			if @args
+			if args
 				if @args.map { |a| a.raw }.uniq.length != @args.length
 					invalid_body ||= 'duplicate macro parameter'
 				end
@@ -221,7 +231,7 @@ class Preprocessor
 					if tok.type == :punct and tok.raw == '#'
 						a = @body[i+1]
 						a = @body[i+2] if not a or a.type == :space
-						if not a.type == :string or (not @args.find { |aa| aa.raw == a.raw } and (not @varargs or a.raw != '__VA_ARGS__'))
+						if not a.type == :string or (not @args.find { |aa| aa.raw == a.raw } and (not varargs or a.raw != '__VA_ARGS__'))
 							invalid_body ||= 'cannot have # followed by non-argument'
 						end
 					end
@@ -238,18 +248,17 @@ class Preprocessor
 			str = ''
 			str << "\n// from #{@name.backtrace[-2, 2] * ':'}\n" if comment
 			str << "#define #{@name.raw}"
-			if @args
+			if args
 				str << '(' << (@args.map { |t| t.raw } + (@varargs ? ['...'] : [])).join(', ') << ')'
 			end
 			str << ' ' << @body.map { |t| t.raw }.join
 		end
 	end
 
-	# special object, handles __FILE__ and __LINE__ macros
+	# special object, handles __FILE__ __LINE__ __COUNTER__ __DATE__ __TIME__ macros
 	class SpecialMacro
-		def body
-			[@name]
-		end
+		def args ; end
+		def body ; [@name] end
 
 		attr_reader :name
 		def initialize(raw)
@@ -258,25 +267,32 @@ class Preprocessor
 			@name.raw = raw
 		end
 
-		def apply(lexer, name)
+		def apply(lexer, name, emptyarglist)
 			tok = @name.dup
 			tok.expanded_from = name.expanded_from.to_a + [name]
 			case @name.raw
-			when '__FILE__'
+			when '__FILE__', '__DATE__', '__TIME__'	# returns a :quoted
 				tok.type = :quoted
-				name = name.expanded_from.first if name.expanded_from
-				tok.value = name.backtrace.to_a[-2].to_s
+				tok.value = \
+				case @name.raw
+				when '__FILE__'
+					name = name.expanded_from.first if name.expanded_from
+					name.backtrace.to_a[-2].to_s
+				when '__DATE__': Time.now.strftime('%b %e %Y')
+				when '__TIME__': Time.now.strftime('%H:%M:%S')
+				end
 				tok.raw = tok.value.inspect
-			when '__LINE__'
+			when '__LINE__', '__COUNTER__'		# returns a :string
 				tok.type = :string
-				name = name.expanded_from.first if name.expanded_from
-				tok.value = name.backtrace.to_a[-1]
+				case @name.raw
+				when '__LINE__'
+					name = name.expanded_from.first if name.expanded_from
+					tok.value = name.backtrace.to_a[-1]
+				when '__COUNTER__'
+					tok.value = @counter ||= 0
+					@counter += 1
+				end
 				tok.raw = tok.value.to_s
-			when '__COUNTER__'
-				tok.type = :string
-				tok.value = @counter ||= 0
-				tok.raw = tok.value.to_s
-				@counter += 1
 			else raise name, 'internal error'
 			end
 			[tok]
@@ -292,8 +308,7 @@ class Preprocessor
 	def initialize
 		@queue = []
 		@backtrace = []
-		@definition = {'__FILE__' => SpecialMacro.new('__FILE__'),
-		'__LINE__' => SpecialMacro.new('__LINE__'), '__COUNTER__' => SpecialMacro.new('__COUNTER__')}
+		@definition = %w[__FILE__ __LINE__ __COUNTER__ __DATE__ __TIME__].inject({}) { |h, n| h.update n => SpecialMacro.new(n) }
 		@include_search_path = @@include_search_path
 		# stack of :accept/:discard/:discard_all/:testing, represents the current nesting of #if..#endif
 		@ifelse_nesting = []
@@ -302,6 +317,7 @@ class Preprocessor
 		@filename = nil
 		@lineno = nil
 		@pragma_pack = default_pragma_pack_value
+		@warn_redefinition = true
 		# TODO setup standard macro names ? see $(gcc -dM -E - </dev/null)
 	end
 
@@ -310,18 +326,20 @@ class Preprocessor
 		ParseError.new "at #{backtrace_str}: #{msg}"
 	end
 
-	# outputs the preprocessed source
+	# returns the preprocessed content
 	def dump
+		ret = ''
 		neol = 0
 		while not eos?
 			t = readtok
 			case t.type
-			when :space: print ' '
-			when :eol: puts if (neol += 1) <= 2
-			when :quoted: neol = 0 ; print t.raw	# keep quoted style
-			else neol = 0 ; print((t.value || t.raw).to_s)
+			when :space: ret << ' '
+			when :eol: ret << "\n" if (neol += 1) <= 2
+			when :quoted: neol = 0 ; ret << t.raw	# keep quoted style
+			else neol = 0 ; ret << (t.value || t.raw).to_s
 			end
 		end
+		ret
 	end
 
 	attr_accessor :traced_macros
@@ -436,7 +454,7 @@ class Preprocessor
 	end
 
 	# calls readtok_nopp and handles preprocessor directives
-	def readtok_cpp
+	def readtok_cpp(expand_macros = true)
 		lastpos = @pos
 		tok = readtok_nopp
 
@@ -474,17 +492,15 @@ class Preprocessor
 			end
 			tok = readtok if lastpos == 0	# else return the :eol
 
-		elsif tok.type == :string and m = @definition[tok.raw] and not tok.expanded_from.to_a.find { |ef| ef.raw == m.name.raw }
-			# expand macros
-			if defined? @traced_macros
-				if tok.backtrace[-2].to_s[0] == ?" and @definition[tok.raw].name and @definition[tok.raw].name.backtrace[-2].to_s[0] == ?<
-					# are we in a normal file and expand to an header-defined macro ?
-					@traced_macros |= [tok.raw]
-				end
+		elsif expand_macros and tok.type == :string and m = @definition[tok.raw] and not tok.expanded_from.to_a.find { |ef| ef.raw == m.name.raw } and
+				((m.args and margs = Macro.parse_arglist(self)) or not m.args)
+
+			if defined? @traced_macros and tok.backtrace[-2].to_s[0] == ?" and m.name and m.name.backtrace[-2].to_s[0] == ?<
+				@traced_macros |= [tok.raw]	# we are in a normal file and expand to an header-defined macro
 			end
 
-			body = m.apply(self, tok)
-			body.reverse_each { |t| unreadtok t }
+			m.apply(self, tok, margs).reverse_each { |t| unreadtok t }
+
 			tok = readtok
 		end
 
@@ -738,7 +754,7 @@ class Preprocessor
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
 			raise tok || cmd, 'pp syntax error' if not tok = skipspc[] or tok.type != :string
-			puts "W: pp: redefinition of #{tok.raw} at #{tok.backtrace_str}, prev def at #{@definition[tok.raw].name.backtrace_str}" if @definition[tok.raw] and $VERBOSE
+			puts "W: pp: redefinition of #{tok.raw} at #{tok.backtrace_str},\n prev def at #{@definition[tok.raw].name.backtrace_str}" if @definition[tok.raw] and $VERBOSE and @warn_redefinition
 			@definition[tok.raw] = Macro.new(tok)
 			@definition[tok.raw].parse_definition(self)
 
@@ -839,11 +855,13 @@ class Preprocessor
 			case tok.raw
 			when 'once'
 				(@pragma_once ||= {})[@filename[1..-2]] = true
+			when 'no_warn_redefinition'
+				@warn_redefinition = false
 			when 'include_dir'
 				nil while dir = readtok and dir.type == :space
 				raise cmd, 'qstring expected' if not dir or dir.type != :quoted
 				raise cmd, 'invalid path' if not ::File.directory? dir.value
-				@include_search_path << dir.value
+				@include_search_path.unshift dir.value
 
 			when 'push_macro'
 				@pragma_macro_stack ||= []
