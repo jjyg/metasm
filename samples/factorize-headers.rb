@@ -25,10 +25,20 @@ puts CParser.factorize(<<EOS)
 #pragma include_dir #{(visualstudiopath+'/VC/include').inspect}
 
 // those are needed by the VS headers
+#pragma no_warn_redefinition
+#define _STDC 1
 #define _WIN32
-#define _M_IX86
+#define _M_IX86 500
+#define _INTEGRAL_MAX_BITS 64
+#define _MSC_VER 1001	// handle pragma_once
+#define __int8 char
+#define __int16 short
+#define __int32 long
+#define __int64 long long
+#define __w64
 // if you have time, you can try #include <windows.h> only :)
-#include <winnt.h>
+struct lconv;	// yay standard headers !
+#include <windef.h>
 #include <winbase.h>
 
 // now write our code, using preprocessor macros and header-defined variables/types
