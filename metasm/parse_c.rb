@@ -140,7 +140,7 @@ class CParser
 	end
 	class Union < Type
 		attr_accessor :members		# [Variable]
-		attr_accessor :bits		# name => len
+		attr_accessor :bits		# [bits] or nil
 		attr_accessor :name
 		attr_accessor :backtrace
 
@@ -164,11 +164,12 @@ class CParser
 	
 					if tok.raw == ':'	# bits
 						raise tok, 'bad type for bitslice' if not member.type.integral?
-						raise tok, 'bad bit count' if not bits = CExpression.parse(parser, scope, false) or
+						bits = nil
+						raise tok, "bad bit count #{bits.inspect}" if not bits = CExpression.parse(parser, scope, false) or
 							not bits.constant? or not (bits = bits.reduce(parser)).kind_of? ::Integer
 						raise tok, 'need more bits' if bits > 8*parser.sizeof(member)
 						raise tok, 'bitfield must have a name' if not member.name
-						(@bits ||= {})[member.name] = bits
+						(@bits ||= [])[@members.length] = bits
 						raise tok || parser, '"," or ";" expected' if not tok = parser.skipspaces or tok.type != :punct
 					end
 	
@@ -231,9 +232,9 @@ class CParser
 			raise parser, 'undefined structure' if not @members
 			raise parser, 'unknown structure member' if not @members.find { |m| m.name == name }
 			off = 0
-			@members.each { |m|
+			@members.each_with_index { |m, i|
 				break if m.name == name
-				raise parser, 'offsetof unhandled with bit members' if bits and @bits[m.name]	# TODO
+				raise parser, 'offsetof unhandled with bit members' if bits and @bits[i]	# TODO
 				off += parser.sizeof(m)
 				off = (off + @align - 1) / @align * @align
 			}
@@ -250,6 +251,8 @@ class CParser
 	class Enum < Type
 		# name => value
 		attr_accessor :members
+		attr_accessor :name
+		attr_accessor :backtrace
 
 		def parse_members(parser, scope)
 			val = -1
@@ -277,7 +280,7 @@ class CParser
 				else raise tok, '"," or "}" expected'
 				end
 			end
-			@type.parse_attributes(parser)
+			parse_attributes(parser)
 		end
 
 	end
@@ -528,7 +531,13 @@ class CParser
 						break if not tok = parser.readtok or tok.type == :eol
 						case tok.type
 						when :space: body << ' '
-						when :punct: body << tok.raw
+						when :punct
+							case tok.raw
+							when '}'
+								parser.unreadtok tok
+								break
+							else body << tok.raw
+							end
 						when :quoted: body << tok.value.inspect
 						when :string
 							body << \
@@ -867,7 +876,7 @@ class CParser
 				}
 
 				loop do
-					raise tok || self, '"}" expected' if not tok = skipspaces
+					raise tok || self, var.backtrace.exception('"}" expected for end of function') if not tok = skipspaces
 					break if tok.type == :punct and tok.raw == '}'
 					unreadtok tok
 					if not parse_definition(body)
@@ -912,6 +921,8 @@ class CParser
 				end
 			end
 			return body
+		elsif tok.type == :punct and tok.raw == ';'
+			return Block.new(scope)
 		elsif tok.type != :string
 			unreadtok tok
 			raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
@@ -2057,9 +2068,9 @@ class CParser
 			r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1] << ' '
 			r.last << @name << ' ' if name
 			r.last << '{'
-			@members.each { |m|
+			@members.each_with_index { |m,i|
 				tr, dep = m.dump_def(scope, [''], dep)
-				tr.last << ':' << @bits[m.name].to_s if bits and @bits[m.name]
+				tr.last << ':' << @bits[i].to_s if bits and @bits[i]
 				tr.last << ';'
 				r.concat tr.map { |s| "\t" << s }
 			}
