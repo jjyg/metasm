@@ -25,7 +25,7 @@ class TestMips < Test::Unit::TestCase
 ; This is Linux-only because I use the cacheflush system call
 ;
 ; You can use shellforge to assemble this, but be sure to discard all
-; the nul bytes at the end (everything after x01\x4a\x54\x0c)
+; the nul bytes at the end (everything after x01\\x4a\\x54\\x0c)
 ;
 ; change 2 bytes in the first instruction's opcode with the number of passes
 ; the number of passes is the number of xor operations to apply, which should be
@@ -88,7 +88,7 @@ loop:
 
 ;	.set    noreorder
 	li(     $2, 4147)               ; cacheflush
-	;.ascii "\x01JT\x0c"		; nul-free syscall
+	;.ascii "\\x01JT\\x0c"		; nul-free syscall
 	syscall 0x52950
 ;	.set    reorder
 
