@@ -39,11 +39,11 @@ class CParser
 		attr_accessor :attributes
 
 		# parses a sequence of __attribute__((anything)) into self.attributes (array of string)
-		def parse_attributes(parser, declspec = false)
+		def parse_attributes(parser, allow_declspec = false)
 			while tok = parser.skipspaces and tok.type == :string
 			    case keyword = tok.raw
 			    when '__attribute__', '__declspec'	# synonymous: __attribute__((foo)) == __declspec(foo)
-				break if keyword == '__declspec' and not declspec
+				break if keyword == '__declspec' and not allow_declspec
 				raise tok || parser if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
 				raise tok || parser if keyword == '__attribute__' and (not tok = parser.skipspaces or tok.type != :punct or tok.raw != '(')
 				nest = 0
@@ -63,7 +63,7 @@ class CParser
 					attrib << tok.raw
 				end
 			    when 'inline', '__inline', '__inline__', '__stdcall', '__fastcall', '__cdecl'
-				break if not declspec
+				break if not allow_declspec
 				attrib = keyword.delete '_'
 			    else break
 			    end
@@ -77,10 +77,11 @@ class CParser
 		include Attributes
 		attr_accessor :qualifier	# const volatile
 
-		def pointer? ; false ; end
-		def arithmetic? ; false ; end
-		def integral? ; false ; end
-		def base ; self ; end
+		def pointer? ;    false end
+		def arithmetic? ; false end
+		def integral? ;   false end
+		def base ;        self  end
+		def untypedef ;   self  end
 
 		def parse_initializer(parser, scope)
 			raise parser, 'expr expected' if not ret = CExpression.parse(parser, scope, false)
@@ -97,11 +98,12 @@ class CParser
 		end
 	end
 	class BaseType < Type
-		attr_accessor :name		# :int :long :longlong :short :double :longdouble :float :char :void
+		attr_accessor :name		# :int :long :longlong :short :double :longdouble :float :char :void :__int8/16/32/64
 		attr_accessor :specifier	# sign specifier only
 
-		def arithmetic? ; @name != :void ; end
-		def integral? ; [:char, :short, :int, :long, :longlong].include? @name ; end
+		def arithmetic? ; @name != :void end
+		def integral? ; [:char, :short, :int, :long, :longlong,
+			:__int8, :__int16, :__int32, :__int64].include? @name end
 
 		def initialize(name, *specs)
 			@name = name
@@ -123,9 +125,10 @@ class CParser
 			@name, @type, @backtrace = name, type, backtrace
 		end
 
-		def pointer? ;    @type.pointer? ;    end
-		def arithmetic? ; @type.arithmetic? ; end
-		def integral? ;   @type.integral? ;   end
+		def pointer? ;    @type.pointer?      end
+		def arithmetic? ; @type.arithmetic?   end
+		def integral? ;   @type.integral?     end
+		def untypedef ;   @type.untypedef     end
 	end
 	class Function < Type
 		attr_accessor :type		# return type
@@ -168,7 +171,6 @@ class CParser
 						raise tok, "bad bit count #{bits.inspect}" if not bits = CExpression.parse(parser, scope, false) or
 							not bits.constant? or not (bits = bits.reduce(parser)).kind_of? ::Integer
 						raise tok, 'need more bits' if bits > 8*parser.sizeof(member)
-						raise tok, 'bitfield must have a name' if not member.name
 						(@bits ||= [])[@members.length] = bits
 						raise tok || parser, '"," or ";" expected' if not tok = parser.skipspaces or tok.type != :punct
 					end
@@ -262,7 +264,7 @@ class CParser
 				break if tok.type == :punct and tok.raw == '}'
 	
 				name = tok.raw
-				raise tok, 'bad enum name' if tok.type != :string or Reserved[name] or (?0..?9).include?(name[0])
+				raise tok, 'bad enum name' if tok.type != :string or Keyword[name] or (?0..?9).include?(name[0])
 				raise tok, 'enum value redefinition' if scope.symbol[name]
 	
 				raise parser if not tok = parser.skipspaces
@@ -610,6 +612,7 @@ class CParser
 		end
 	end
 
+
 	# creates a new CParser, parses all top-level statements
 	def self.parse(text, file='unknown', lineno=1)
 		c = new
@@ -620,40 +623,94 @@ class CParser
 		c
 	end
 
-	attr_accessor :lexer, :toplevel, :typesize
+	attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
 	def initialize(lexer = nil, model=:ilp32)
 		@lexer = lexer || Preprocessor.new
 		@lexer.readtok until @lexer.eos?
+		@prev_pragma_callback = @lexer.pragma_callback
+		@lexer.pragma_callback = proc { |tok| parse_pragma_callback(tok) }
+		@pragma_pack = 8 	# default for MSVC++
 		@toplevel = Block.new(nil)
 		@unreadtoks = []
+		@typesize = {:__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8 }
 		send model
 	end
 
 	def lp32
-		@typesize = { :char => 1, :short => 2, :ptr => 4,
+		@typesize.update :char => 1, :short => 2, :ptr => 4,
 			:int => 2, :long => 4, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12 }
+			:float => 4, :double => 8, :longdouble => 12
 	end
 	def ilp32
-		@typesize = { :char => 1, :short => 2, :ptr => 4,
+		@typesize.update :char => 1, :short => 2, :ptr => 4,
 			:int => 4, :long => 4, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12 }
+			:float => 4, :double => 8, :longdouble => 12
 	end
 	def llp64
 		# longlong should only exist here
-		@typesize = { :char => 1, :short => 2, :ptr => 8,
+		@typesize.update :char => 1, :short => 2, :ptr => 8,
 			:int => 4, :long => 4, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12 }
+			:float => 4, :double => 8, :longdouble => 12
 	end
 	def ilp64
-		@typesize = { :char => 1, :short => 2, :ptr => 8,
+		@typesize.update :char => 1, :short => 2, :ptr => 8,
 			:int => 8, :long => 8, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12 }
+			:float => 4, :double => 8, :longdouble => 12
 	end
 	def lp64
-		@typesize = { :char => 1, :short => 2, :ptr => 8,
+		@typesize.update :char => 1, :short => 2, :ptr => 8,
 			:int => 4, :long => 8, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12 }
+			:float => 4, :double => 8, :longdouble => 12
+	end
+
+	attr_accessor :auto_predeclare_unknown_structs
+	def parse_pragma_callback(otok)
+		case otok.raw
+		when 'pack'
+			nil while lp = @lexer.readtok and lp.type == :space
+			nil while rp = @lexer.readtok and rp.type == :space
+			if not rp or rp.type != :punct or rp.raw != ')'
+				v1 = rp
+				nil while rp = @lexer.readtok and rp.type == :space
+			end
+			if rp and rp.type == :punct and rp.raw == ','
+				nil while v2 = @lexer.readtok and v2.type == :space
+				nil while rp = @lexer.readtok and rp.type == :space
+			end
+			raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
+			raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != :string or v2.raw =~ /[^\d]/))
+			if not v1
+				@pragma_pack = 8	# default for MSVC++
+			elsif v1.raw == 'push'
+				@pragma_pack_stack ||= []
+				@pragma_pack_stack << @pragma_pack
+				@pragma_pack = v2.raw.to_i if v2
+				raise v2, 'bad pack value' if @pragma_pack == 0
+			elsif v1.raw == 'pop'
+				@pragma_pack_stack ||= []
+				raise v1, 'pack stack empty' if @pragma_pack_stack.empty?
+				@pragma_pack = @pragma_pack_stack.pop
+				@pragma_pack = v2.raw.to_i if v2 and v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
+				raise v2, 'bad pack value' if @pragma_pack == 0
+			elsif v1.raw !~ /[^\d]/  
+				raise v2, '2nd arg unexpected' if v2
+				@pragma_pack = v1.raw.to_i
+				raise v1, 'bad pack value' if @pragma_pack == 0
+			else raise otok
+			end
+			# the caller checks for :eol
+		when 'auto_predeclare_unknown_structs'
+			@auto_predeclare_unknown_structs = true
+		when 'warning'
+			if $DEBUG
+				@prev_pragma_callback[otok]
+			else
+				# silent discard
+				nil while tok = @lexer.readtok and tok.type != :eol
+				@lexer.unreadtok tok
+			end
+		else @prev_pragma_callback[otok]
+		end
 	end
 
 	# C sanity checks
@@ -665,8 +722,8 @@ class CParser
 	# checks that the types are compatible (variable predeclaration, function argument..)
 	# strict = false for func call/assignment (eg char compatible with int -- but int is incompatible with char)
 	def check_compatible_type(tok, oldtype, newtype, strict = false, checked = [])
-		oldtype = oldtype.type while oldtype.kind_of? TypeDef
-		newtype = newtype.type while newtype.kind_of? TypeDef
+		oldtype = oldtype.untypedef
+		newtype = newtype.untypedef
 		oldtype = BaseType(:int) if oldtype.kind_of? Enum
 		newtype = BaseType(:int) if newtype.kind_of? Enum
 
@@ -693,7 +750,7 @@ class CParser
 		when Pointer
 			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.kind_of? Pointer
 			# allow any pointer to void*
-			check_compatible_type tok, oldtype.type, newtype.type, strict, checked if strict or newtype.type != :void
+			check_compatible_type tok, oldtype.type, newtype.type, strict, checked if strict or not (t = newtype.type.untypedef).kind_of? BaseType or t.name != :void
 		when Union
 			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.class == newtype.class
 			if oldtype.members and newtype.members
@@ -713,24 +770,21 @@ class CParser
 					raise tok, 'incompatible type'
 				end
 			else
-				# void type not allowed
 				raise tok, 'incompatible type void' if oldtype.name == :void or newtype.name == :void
-				# check int/float mix	# TODO float -> int allowed ?
-				#raise tok, 'float <> int' if oldtype.name != newtype.name and ([:char, :int, :short, :long, :longlong] & [oldtype.name, newtype.name]).length == 1
-				# check int size/sign
-				raise tok, "incompatible type #{oldtype.name} -> #{newtype.name}" if @typesize[oldtype.name] > @typesize[newtype.name]
+				puts tok.exception('type size mismatch, may lose bits') if $VERBOSE and @typesize[oldtype.name] > @typesize[newtype.name]
 				puts tok.exception('sign mismatch').message if $VERBOSE and oldtype.specifier != newtype.specifier and @typesize[newtype.name] == @typesize[oldtype.name]
 			end
 		end
 	end
 
-	Reserved = %w[struct union enum  if else for while do switch goto
+	Keyword = %w[struct union enum  if else for while do switch goto
 			register extern auto static typedef  const volatile
 			void int float double char  signed unsigned long short
 			case continue break return default  __attribute__
 			asm __asm __asm__ sizeof __builtin_offsetof typeof
 			__declspec __cdecl __stdcall __fastcall
 			inline __inline __inline__ __volatile__
+			__int8 __int16 __int32 __int64
 	].inject({}) { |h, w| h.update w => true }
 
 	# allows 'raise self'
@@ -847,13 +901,19 @@ class CParser
 			raise self if not var.name	# barrel roll
 
 			if prev = scope.symbol[var.name] and (
-					not scope.symbol[var.name].kind_of?(Variable) or
-					scope.symbol[var.name].initializer)
-				raise var.backtrace, 'redefinition'
+					not prev.kind_of?(Variable) or
+					prev.initializer)
+				if var.storage == :typedef
+					check_compatible_type(var.backtrace, prev.type, var.type, true)
+					puts "redefining typedef #{var.name}" if $VERBOSE
+					var = prev
+				else
+					raise var.backtrace, "redefinition, from\n#{prev.backtrace.exception('').message}"
+				end
 			elsif var.storage == :typedef
 				var = TypeDef.new var.name, var.type, var.backtrace
 			elsif prev
-				check_compatible_type prev.backtrace, prev.type, var.type, true
+				check_compatible_type var.backtrace, prev.type, var.type, true
 				# XXX forward attributes ?
 			end
 			scope.symbol[var.name] = var
@@ -1014,7 +1074,7 @@ class CParser
 					next
 				when 'struct'
 					var.type = Struct.new
-					var.type.align = parser.lexer.pragma_pack
+					var.type.align = parser.pragma_pack
 					var.parse_type_struct(parser, scope)
 				when 'union'
 					var.type = Union.new
@@ -1038,7 +1098,8 @@ class CParser
 						raise tok, 'expr expected' if not v = CExpression.parse_value(parser, scope)
 					end
 					var.type = v.type # TypeDef.new('typeof', v.type, tok)
-				when 'long', 'short', 'signed', 'unsigned', 'int', 'char', 'float', 'double', 'void'
+				when 'long', 'short', 'signed', 'unsigned', 'int', 'char', 'float', 'double',
+						'void', '__int8', '__int16', '__int32', '__int64'
 					parser.unreadtok tok
 					var.parse_type_base(parser, scope)
 				else
@@ -1069,7 +1130,7 @@ class CParser
 				@type.backtrace = tok
 			elsif tok and tok.type == :string
 				name = tok.raw
-				raise tok, 'bad struct name' if Reserved[name] or (?0..?9).include?(name[0])
+				raise tok, 'bad struct name' if Keyword[name] or (?0..?9).include?(name[0])
 				@type.backtrace = tok
 				@type.name = tok.raw
 				@type.parse_attributes(parser)
@@ -1085,6 +1146,10 @@ class CParser
 						# check that the structure exists
 						# do not check it is declared (may be a pointer)
 						struct = scope.struct_ancestors[name]
+						if not struct and parser.auto_predeclare_unknown_structs
+							puts "auto-predeclaring #{@type.class.name.downcase[/(?:.*::)?(.*)/,1]} #{@type.name}" if $VERBOSE
+							struct = scope.struct[name] = @type
+						end
 						raise tok, 'unknown struct' if not struct or not struct.kind_of?(@type.class)
 						(struct.attributes ||= []).concat @type.attributes if @type.attributes
 						(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier
@@ -1096,6 +1161,8 @@ class CParser
 				if struct
 					(struct.attributes ||= []).concat @type.attributes if @type.attributes
 					(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier
+					struct.backtrace = @type.backtrace
+					struct.name = @type.name
 					@type = struct
 				else
 					scope.struct[name] = @type
@@ -1124,7 +1191,7 @@ class CParser
 					qualifier << tok.raw.to_sym
 				when 'long', 'short', 'signed', 'unsigned'
 					specifier << tok.raw.to_sym
-				when 'int', 'char', 'void', 'float', 'double'
+				when 'int', 'char', 'void', 'float', 'double', '__int8', '__int16', '__int32', '__int64'
 					name = tok.raw.to_sym
 					break
 				else
@@ -1155,6 +1222,11 @@ class CParser
 				if (specifier & [:signed, :unsigned]).length > 1 or (specifier & [:short, :long]).length > 0
 					raise tok || parser, 'invalid specifier list'
 				end
+			when :__int8, :__int16, :__int32, :__int64
+				if (specifier & [:signed, :unsigned]).length > 1 or (specifier & [:short, :long]).length > 0
+					raise tok || parser, 'invalid specifier list'
+				end
+				specifier.delete :signed	# default
 			else		# none
 				raise tok || parser, 'invalid type' if not specifier.empty?
 			end
@@ -1190,7 +1262,7 @@ class CParser
 					return parse_declarator(parser, scope, rec)
 				end
 				raise tok if name or name == false
-				raise tok, 'bad var name' if Reserved[tok.raw] or (?0..?9).include?(tok.raw[0])
+				raise tok, 'bad var name' if Keyword[tok.raw] or (?0..?9).include?(tok.raw[0])
 				@name = tok.raw
 				@backtrace = tok
 				parse_attributes(parser)
@@ -1204,8 +1276,10 @@ class CParser
 			end
 			parse_declarator_postfix(parser, scope)
 			if not rec
-				raise @backtrace, 'void type is invalid' if name and @type.kind_of? BaseType and @type.name == :void
-				raise @backtrace, 'uninitialized structure' if (@type.kind_of? Union or @type.kind_of? Enum) and not @type.members
+				raise @backtrace, 'void type is invalid' if name and (t = @type.untypedef).kind_of? BaseType and
+						t.name == :void and @storage != :typedef
+				raise @backtrace, 'uninitialized structure' if (@type.kind_of? Union or @type.kind_of? Enum) and
+						not @type.members and @storage != :typedef
 			end
 		end
 	
@@ -1387,7 +1461,7 @@ class CParser
 				
 				# overflow
 				case t.name
-				when :char, :short, :int, :long, :longlong
+				when :char, :short, :int, :long, :longlong, :__int8, :__int16, :__int32, :__int64
 					max = 1 << (8*parser.typesize[t.name])
 					ret = ret.to_i & (max-1)
 					if t.specifier == :signed and (ret & (max >> 1)) > 0	# char == unsigned char
@@ -1445,7 +1519,7 @@ class CParser
 	class << self
 		# reads a binary operator from the parser, returns the corresponding symbol or nil
 		def readop(parser)
-			if not op = parser.readtok or op.type != :punct
+			if not op = parser.skipspaces or op.type != :punct
 				parser.unreadtok op
 				return
 			end
@@ -1844,6 +1918,7 @@ class CParser
 		# now find all types/defs not coming from the standard headers
 		interested = (c.toplevel.struct.values + c.toplevel.symbol.values).find_all { |t|
 			p t.backtrace.backtrace
+			exit
 		}
 	end
 
@@ -2331,11 +2406,6 @@ class CParser
 		end
 
 		def dump_inner(scope, r, dep, brace = false)
-			t = @type.base
-			case t
-			when TypeDef: dep << scope.symbol_ancestors[t.name]
-			when Enum, Union: dep << scope.struct_ancestors[t.name]
-			end
 			r.last << '(' if brace and @op != :'->' and @op != :'.' and (@op or @rexpr.kind_of? CExpression)
 			if not @lexpr
 				if not @op
@@ -2362,6 +2432,11 @@ class CParser
 						r, dep = CExpression.dump(scope, r, dep, @rexpr, true)
 					when Variable
 						r, dep = @rexpr.dump(scope, r, dep)
+					when Block
+						tr, dep = @rexpr.dump(scope, [''], dep)
+						r.last << '({'
+						r.concat tr.map { |s| Case.dump_indent(s) }
+						r << '})'
 					else raise "wtf? #{inspect}"
 					end
 				else
