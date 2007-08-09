@@ -706,7 +706,7 @@ class CParser
 				@prev_pragma_callback[otok]
 			else
 				# silent discard
-				nil while tok = @lexer.readtok and tok.type != :eol
+				nil while tok = @lexer.readtok_nopp and tok.type != :eol
 				@lexer.unreadtok tok
 			end
 		else @prev_pragma_callback[otok]
@@ -1257,8 +1257,14 @@ class CParser
 				parse_declarator(parser, scope, true)
 				raise tok || parser, '")" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
 			elsif tok.type == :string
-				if tok.raw == 'const' or tok.raw == 'volatile'
+				case tok.raw
+				when 'const', 'volatile'
 					(@type.qualifier ||= []) << tok.raw.to_sym
+					return parse_declarator(parser, scope, rec)
+				when 'register', 'auto', 'static', 'typedef', 'extern'
+					raise tok, 'multiple storage class' if storage
+					@storage = tok.raw.to_sym
+					puts tok.exception('misplaced storage specifier').message if $VERBOSE
 					return parse_declarator(parser, scope, rec)
 				end
 				raise tok if name or name == false
@@ -1916,10 +1922,14 @@ class CParser
 		nil while not c.lexer.eos? and c.parse_definition(c.toplevel)
 		raise c.lexer.readtok || c, 'EOF expected' if not c.lexer.eos?
 		# now find all types/defs not coming from the standard headers
-		interested = (c.toplevel.struct.values + c.toplevel.symbol.values).find_all { |t|
-			p t.backtrace.backtrace
-			exit
+		userdefined = (c.toplevel.struct.values + c.toplevel.symbol.values).find_all { |t|
+			t.backtrace.backtrace.grep(::String).grep(/^</).empty? rescue p t
 		}
+		# dump only their dependencies (recursively)
+		r, dep = c.toplevel.dump(nil, [''], [], userdefined)
+
+		c.lexer.dump_macros(c.lexer.traced_macros, false) +
+		r.join("\n")
 	end
 
 	# TODO attributes

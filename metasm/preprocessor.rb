@@ -466,7 +466,7 @@ class Preprocessor
 			# end of file: resume parent
 			if not @backtrace.empty?
 				raise ParseError, "parse error in #@filename: unmatched #if/#endif" if @backtrace.last.pop != @ifelse_nesting.length
-				puts "metasm preprocessor: end of include #@filename" if $DEBUG
+				puts "metasm preprocessor: end of include #@filename, back to #{@backtrace[-1][0]}:#{@backtrace[-1][1]}" if $DEBUG
 				@filename, @lineno, @text, @pos, @queue = @backtrace.pop
 				tok = readtok
 			end
@@ -674,6 +674,8 @@ class Preprocessor
 			end
 		}
 
+		# XXX do not preprocess tokens when searching for :eol, it will trigger preprocessor directive detection from readtok_cpp
+
 		eol = tok = nil
 		case cmd.raw
 		when 'if'
@@ -775,8 +777,6 @@ class Preprocessor
 
 			raise cmd, 'nested too deeply' if backtrace.length > 200	# gcc
 	
-			# gcc seems to discard @queue on input, but we'll prolly use this in include_c
-
 			# allow preprocessing
 			nil while tok = readtok and tok.type == :space
 			raise tok || cmd, 'pp syntax error' if not tok or (tok.type != :quoted and (tok.type != :punct or tok.raw != '<'))
@@ -896,7 +896,7 @@ class Preprocessor
 				@pragma_callback[tok]
 			end
 
-			nil while tok = readtok and tok.type == :space
+			nil while tok = readtok_nopp and tok.type == :space
 			raise tok if tok and tok.type != :eol
 			unreadtok tok
 
