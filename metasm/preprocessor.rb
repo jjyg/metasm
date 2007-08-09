@@ -299,12 +299,9 @@ class Preprocessor
 		end
 	end
 
-	attr_accessor :pragma_pack
-	# visual studio default
-	def default_pragma_pack_value
-		8
-	end
-
+	# a Proc called for unhandled #pragma occurences
+	# takes the pragma 1st tok as arg, must unread the final :eol, should fallback to the previous callback
+	attr_accessor :pragma_callback
 	def initialize
 		@queue = []
 		@backtrace = []
@@ -316,8 +313,14 @@ class Preprocessor
 		@pos = 0
 		@filename = nil
 		@lineno = nil
-		@pragma_pack = default_pragma_pack_value
 		@warn_redefinition = true
+		@pragma_callback = proc { |otok|
+			tok = otok
+			str = tok.raw.dup
+			str << tok.raw while tok = readtok and tok.type != :eol
+			unreadtok tok
+			puts otok.exception("unhandled pragma #{str.inspect}").message if $VERBOSE
+		}
 		# TODO setup standard macro names ? see $(gcc -dM -E - </dev/null)
 	end
 
@@ -417,6 +420,7 @@ class Preprocessor
 		end
 
 		# check line continuation
+		# TODO portability
 		if c == ?\\ and (@text[@pos] == ?\n or (@text[@pos] == ?\r and @text[@pos+1] == ?\n))
 			@lineno += 1
 			@pos += 1 if @text[@pos] == ?\r
@@ -539,7 +543,6 @@ class Preprocessor
 					when ?t: ?\t
 					when ?a: ?\a
 					when ?b: ?\b
-					# ruby's str.inspect chars
 					when ?v: ?\v
 					when ?f: ?\f
 					when ?e: ?\e
@@ -589,18 +592,20 @@ class Preprocessor
 				end
 			end
 
-		when ?\ , ?\t, ?\r, ?\n
+		when ?\ , ?\t, ?\r, ?\n, ?\f
 			tok.type = :space
 			tok.raw << c
 			loop do
 				case c = getchar
-				when nil: ungetchar; break
-				when ?\ , ?\t, ?\r, ?\n
-					tok.raw << c
-				else ungetchar; break
+				when nil: break
+				when ?\ , ?\t
+				when ?\n, ?\f, ?\r: tok.type = :eol
+				else break
 				end
+				tok.raw << c
 			end
-			tok.type = :eol if tok.raw.index(?\n)
+			ungetchar
+			tok.type = :eol if tok.raw.index(?\n) or tok.raw.index(?\f)
 
 		when ?/
 			tok.raw << c
@@ -887,42 +892,8 @@ class Preprocessor
 					@definition.delete m.value
 				end
 			
-			when 'pack'
-				nil while lp = readtok and lp.type == :space
-				nil while rp = readtok and rp.type == :space
-				if not rp or rp.type != :punct or rp.raw != ')'
-					v1 = rp
-					nil while rp = readtok and rp.type == :space
-				end
-				if rp and rp.type == :punct and rp.raw == ','
-					nil while v2 = readtok and v2.type == :space
-					nil while rp = readtok and rp.type == :space
-				end
-				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
-				raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != :string or v2.raw =~ /[^\d]/))
-				if not v1
-					@pragma_pack = default_pragma_pack_value
-				elsif v1.raw == 'push'
-					@pragma_pack_stack ||= []
-					@pragma_pack_stack << @pragma_pack
-					@pragma_pack = v2.raw.to_i if v2
-				elsif v1.raw == 'pop'
-					@pragma_pack_stack ||= []
-					raise cmd, "pack stack empty" if @pragma_pack_stack.empty?
-					@pragma_pack = @pragma_pack_stack.pop
-					@pragma_pack = v2.raw.to_i if v2 and v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
-				elsif v1.raw !~ /[^\d]/  
-					raise cmd if v2
-					@pragma_pack = v1.raw.to_i
-				else
-					raise cmd
-				end
-
 			else
-				str = tok.raw.dup
-				str << tok.raw while tok = readtok and tok.type != :eol
-				unreadtok tok
-				puts cmd.exception("unhandled #pragma #{str}").message if $VERBOSE
+				@pragma_callback[tok]
 			end
 
 			nil while tok = readtok and tok.type == :space
