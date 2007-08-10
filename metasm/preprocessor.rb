@@ -267,7 +267,7 @@ class Preprocessor
 			@name.raw = raw
 		end
 
-		def apply(lexer, name, emptyarglist)
+		def apply(lexer, name, emptyarglist, toklist=nil)
 			tok = @name.dup
 			tok.expanded_from = name.expanded_from.to_a + [name]
 			case @name.raw
@@ -378,12 +378,23 @@ class Preprocessor
 
 		res = []
 		while not depend.empty?
-			leafs = depend.keys.find_all { |k| depend[k].empty? }
-			leafs.each { |l|
-				res << @definition[l].dump(comment)
-				depend.delete l
+			todo_now = depend.keys.find_all { |k| (depend[k] - [k]).empty? }
+			if todo_now.empty?
+				dep_cycle = proc { |ary|
+					deps = depend[ary.last]
+					if deps.include? ary.first: ary
+					elsif (deps-ary).find { |d| deps = dep_cycle[ary + [d]] }: deps
+					end
+				}
+				if not depend.find { |k, dep| todo_now = dep_cycle[[k]] }
+					todo_now = depend.keys
+				end
+			end
+			todo_now.sort.each { |k|
+				res << @definition[k].dump(comment) if @definition[k].kind_of? Macro
+				depend.delete k
 			}
-			depend.each_key { |k| depend[k] -= leafs }
+			depend.each_key { |k| depend[k] -= todo_now }
 		end
 		res.join("\n")
 	end

@@ -854,6 +854,15 @@ class CParser
 			case type.length
 			when nil
 				raise self, 'unknown array size' if not var.kind_of? Variable or not var.initializer
+				case var.initializer
+				when ::String: sizeof(nil, type.type) * var.initializer.length
+				when ::Array
+					v = Variable.new
+					v.type = type.type
+					v.initializer = var.initializer.compact.first
+					v.initializer ? (sizeof(v) * var.initializer.length) : 0
+				else raise self, 'unknown array size'
+				end
 				raise self, 'TODO sizeof(array[] initializer)'	# TODO
 			when Integer: type.length * sizeof(type)
 			else raise self, 'unknown array size'
@@ -1921,18 +1930,33 @@ class CParser
 		c.lexer.traced_macros = []
 		nil while not c.lexer.eos? and c.parse_definition(c.toplevel)
 		raise c.lexer.readtok || c, 'EOF expected' if not c.lexer.eos?
-		# now find all types/defs not coming from the standard headers
-		userdefined = (c.toplevel.struct.values + c.toplevel.symbol.values).find_all { |t|
-			t.backtrace.backtrace.grep(::String).grep(/^</).empty? rescue p t
-		}
-		# dump only their dependencies (recursively)
-		r, dep = c.toplevel.dump(nil, [''], [], userdefined)
 
+		# now find all types/defs not coming from the standard headers
+		# all
+		all = c.toplevel.struct.values + c.toplevel.symbol.values -
+				c.toplevel.symbol.values.grep(::Integer)	# enum constants
+
+		# list of definitions of user-defined objects
+		userdefined = all.find_all { |t|
+			t.backtrace.backtrace.grep(::String).grep(/^</).empty?
+		}
+		# list of definitions that we may display
+		cando = all - userdefined
+		# list of definitions rendered
+		done = []
+		# list of [definition, [rendering], [dependencies]] we want to display
+		want = userdefined.map { |t|
+			tr, td = t.dump_def(c.toplevel, [''], [])
+			[t, tr, td]
+		}
+		# result
+		r = []
+
+		# a macro is fine too
 		c.lexer.dump_macros(c.lexer.traced_macros, false) +
 		r.join("\n")
 	end
 
-	# TODO attributes
 	def to_s
 		r, dep = @toplevel.dump(nil, [''], [])
 		r.join("\n")
@@ -1944,11 +1968,15 @@ class CParser
 			# skip is for function arguments
 			mydefs = @symbol.values + @struct.values - skip
 			# XXX struct a { int outer; };  { struct a x; x.outer ; struct a { int inner; }; }
-			todo = mydefs.map { |t| [t, t.dump_def(self, [''], [])] }
+			# filter out Enum values
+			todo = (mydefs - mydefs.grep(::Integer)).map { |t|
+				tr, td = t.dump_def(self, [''], [])
+				[t, tr, td]
+			}
 			loop do
 				# reorder
 				break if todo.empty?
-				todo_now = todo.find_all { |t, (tr, tdep)|
+				todo_now = todo.find_all { |t, tr, tdep|
 					((tdep & mydefs) - [t]).empty?
 				}
 				if todo_now.empty?
@@ -1956,28 +1984,28 @@ class CParser
 					# XXX struct foo; typedef struct foo *bla; struct foo { bla toto; };
 					dep_cycle = proc { |ary|
 						# sexyness inside (c)
-						deps = todo.assoc(ary.last)[1][1]
+						deps = todo.assoc(ary.last)[2]
 						if deps.include? ary.first: ary
 						elsif (deps-ary).find { |d| deps = dep_cycle[ary + [d]] }: deps
 						end
 					}
 					cycle = nil
-					if not todo.find { |t, (tr, tdep)| cycle = dep_cycle[[t]] if t.kind_of? Union and t.name }
+					if not todo.find { |t, tr, tdep| cycle = dep_cycle[[t]] if t.kind_of? Union and t.name }
 						r << '/* cyclic dependency, this should not compile */'
-						todo_now = todo.map { |t, (tr, tdep)| t }
+						todo_now = todo.map { |t, tr, tdep| t }
 					else
 						cycle.grep(Union).each { |s|
 							next if not s.name
 							r << "#{s.class.name.downcase[/(?:.*::)?(.*)/,1]} #{s.name};"
-							cycle.each { |ss| todo.assoc(ss)[1][1].delete s }
+							cycle.each { |ss| todo.assoc(ss)[2].delete s }
 						}
-						todo_now = cycle.map { |s| todo.assoc s }.find_all { |t, (tr, tdep)|
+						todo_now = cycle.map { |s| todo.assoc s }.find_all { |t, tr, tdep|
 							((tdep & mydefs) - [t]).empty?
 						}
 						raise "fuxored! #{cycle.map { |t| t.name }.inspect}" if todo_now.empty?
 					end
 				end
-				todo_now.sort_by { |t, x| t.name }.each { |t, (tr, tdep)|
+				todo_now.sort_by { |t, x| t.name }.each { |t, tr, tdep|
 					if t.kind_of? Variable and t.type.kind_of? Function and t.initializer
 						r << ''
 						r.concat tr
@@ -1988,7 +2016,7 @@ class CParser
 					end
 					dep |= (tdep - mydefs)
 					todo.delete_if { |tt, x| tt == t }
-					todo.each { |tt, (ttr, ttdep)| ttdep.delete t }
+					todo.each { |tt, ttr, ttdep| ttdep.delete t }
 				}
 			end
 
@@ -2000,11 +2028,20 @@ class CParser
 			[r, dep]
 		end
 	end
+	module Attributes
+		def dump_attributes
+			if attributes
+				attributes.map { |a| " __attribute__((#{a}))" }.join
+			else ''
+			end
+		end
+	end
 	class Variable
 		def dump(scope, r, dep)
-			raise 'noname ' + inspect if not name
-			dep |= [scope.symbol_ancestors[@name]]
-			r.last << @name
+			if name
+				dep |= [scope.symbol_ancestors[@name]]
+				r.last << @name
+			end
 			[r, dep]
 		end
 		def dump_def(scope, r, dep, skiptype=false)
@@ -2013,7 +2050,7 @@ class CParser
 				r, dep = @type.base.dump(scope, r, dep)
 				r.last << ' ' if name
 			end
-			r, dep = @type.dump_declarator(scope, r, dep, [name ? @name.dup : ''])
+			r, dep = @type.dump_declarator(scope, r, dep, [(name ? @name.dup : '') << dump_attributes])
 
 			if initializer
 				r.last << ' = ' if not @type.kind_of?(Function)
@@ -2055,7 +2092,7 @@ class CParser
 	class Array
 		def dump_declarator(scope, r, dep, decl)
 			decl.last << '['
-			decl, dep = CExpression.dump(scope, decl, dep, @length)
+			decl, dep = CExpression.dump(scope, decl, dep, @length) if @length
 			decl.last << ']'
 			@type.dump_declarator(scope, r, dep, decl)
 		end
@@ -2090,7 +2127,12 @@ class CParser
 					decl.last << ', ' if decl.last[-1] != ?(
 					decl, dep = arg.dump_def(scope, decl, dep)
 				}
-				decl.last << 'void' if @args.empty?
+				if varargs
+					decl.last << ', ' if decl.last[-1] != ?(
+					decl.last << '...'
+				else
+					decl.last << 'void' if @args.empty?
+				end
 			end
 			decl.last << ')'
 			@type.dump_declarator(scope, r, dep, decl)
@@ -2150,16 +2192,19 @@ class CParser
 		def dump_def(scope, r, dep)
 			r << ''
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
-			r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1] << ' '
-			r.last << @name << ' ' if name
-			r.last << '{'
-			@members.each_with_index { |m,i|
-				tr, dep = m.dump_def(scope, [''], dep)
-				tr.last << ':' << @bits[i].to_s if bits and @bits[i]
-				tr.last << ';'
-				r.concat tr.map { |s| "\t" << s }
-			}
-			r << '}'
+			r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1]
+			r.last << ' ' << @name if name
+			if members
+				r.last << ' {'
+				@members.each_with_index { |m,i|
+					tr, dep = m.dump_def(scope, [''], dep)
+					tr.last << ':' << @bits[i].to_s if bits and @bits[i]
+					tr.last << ';'
+					r.concat tr.map { |s| "\t" << s }
+				}
+				r << '}'
+			end
+			r.last << dump_attributes
 			[r, dep]
 		end
 
@@ -2200,24 +2245,29 @@ class CParser
 
 		def dump_def(scope, r, dep)
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
-			r.last << 'enum '
-			r.last << @name << ' ' if name
-			r.last << '{ '
-			val = -1
-			@members.sort_by { |m, v| v }.each { |m, v|
-				r.last << ', ' if r.last[-1] != ?{
-				r.last << m
-				if v != (val += 1)
-					val = v
-					r.last << ' = ' << val.to_s
-				end
-			}
-			r << ' }'
+			r.last << 'enum'
+			r.last << ' ' << @name if name
+			if members
+				r.last << ' { '
+				val = -1
+				@members.sort_by { |m, v| v }.each { |m, v|
+					r.last << ', ' if r.last[-2, 2] != '{ '
+					r.last << m
+					if v != (val += 1)
+						val = v
+						r.last << ' = ' << val.to_s
+					end
+				}
+				r.last << ' }'
+			end
 			[r, dep]
 		end
 
 		def dump_initializer(scope, r, dep, init)
-			if k = @members.index(init) or (init.kind_of? CExpression and not init.op and k = @members.index(init.rexpr))
+			if members and (
+					k = @members.index(init) or
+					(init.kind_of? CExpression and not init.op and k = @members.index(init.rexpr))
+			)
 				r.last << k
 				dep |= [scope.struct_ancestors[@name]]
 				[r, dep]
@@ -2372,7 +2422,7 @@ class CParser
 			r.last << 'asm '
 			r.last << 'volatile ' if @volatile
 			r.last << '('
-			r << @body.inspect
+			r.last << @body.inspect
 			if @output or @input or @clobber
 				r << ': '
 				if @output
@@ -2410,6 +2460,7 @@ class CParser
 			when ::String: r.last << e.inspect ; [r, dep]
 			when CExpression: e.dump_inner(scope, r, dep, brace)
 			when Variable: e.dump(scope, r, dep)
+			else raise 'wtf?' + e.inspect
 			end
 #r.last << ')'
 #[r, dep]
