@@ -27,11 +27,11 @@ class CParser
 		end
 
 		def struct_ancestors
-			(outer ? outer.struct_ancestors : {}).merge @struct
+			@outer ? @outer.struct_ancestors.merge(@struct) : @struct
 		end
 
 		def symbol_ancestors
-			(outer ? outer.symbol_ancestors : {}).merge @symbol
+			@outer ? @outer.symbol_ancestors.merge(@symbol) : @symbol
 		end
 	end
 
@@ -724,8 +724,8 @@ class CParser
 	def check_compatible_type(tok, oldtype, newtype, strict = false, checked = [])
 		oldtype = oldtype.untypedef
 		newtype = newtype.untypedef
-		oldtype = BaseType(:int) if oldtype.kind_of? Enum
-		newtype = BaseType(:int) if newtype.kind_of? Enum
+		oldtype = BaseType.new(:int) if oldtype.kind_of? Enum
+		newtype = BaseType.new(:int) if newtype.kind_of? Enum
 
 		puts tok.exception('type qualifier mismatch').message if oldtype.qualifier != newtype.qualifier
 
