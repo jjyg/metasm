@@ -19,6 +19,7 @@ class CParser
 		attr_accessor :struct	# hash name => Struct/Union/Enum
 		attr_accessor :outer	# parent block
 		attr_accessor :statements	# array of statements
+		attr_accessor :anonymous_enums	# array of anonymous Enum
 
 		def initialize(outer)
 			@symbol, @struct = {}, {}
@@ -917,7 +918,10 @@ class CParser
 					puts "redefining typedef #{var.name}" if $VERBOSE
 					var = prev
 				else
-					raise var.backtrace, "redefinition, from\n#{prev.backtrace.exception('').message}"
+					if prev.kind_of? ::Integer
+						prev = scope.struct.values.grep(Enum).find { |e| e.members.index(prev) }
+					end
+					raise var.backtrace, "redefinition, previous is #{prev ? prev.backtrace.exception(nil).message : 'an enum'}"
 				end
 			elsif var.storage == :typedef
 				var = TypeDef.new var.name, var.type, var.backtrace
@@ -934,6 +938,7 @@ class CParser
 				# function body
 				raise tok if nofunc or not var.kind_of? Variable or not var.type.kind_of? Function
 				body = var.initializer = Block.new(scope)
+				var.type.args ||= []
 				var.type.args.each { |v|
 					# put func parameters in func body scope
 					# arg redefinition is checked in parse_declarator
@@ -1137,6 +1142,9 @@ class CParser
 			if tok = parser.skipspaces and tok.type == :punct and tok.raw == '{'
 				# anonymous struct, ok
 				@type.backtrace = tok
+				if @type.kind_of? Enum
+					(scope.anonymous_enums ||= []) << @type
+				end
 			elsif tok and tok.type == :string
 				name = tok.raw
 				raise tok, 'bad struct name' if Keyword[name] or (?0..?9).include?(name[0])
@@ -1923,7 +1931,8 @@ class CParser
 	# Dumper : objects => C source
 	#
 	
-	# parses a C source with standard includes, returns a big string containing all definitions from headers used in the source
+	# parses a C source with standard includes, returns a big string containing
+	# all definitions from headers used in the source (including macros)
 	def self.factorize(src)
 		c = new
 		c.lexer.feed src
@@ -1933,27 +1942,33 @@ class CParser
 
 		# now find all types/defs not coming from the standard headers
 		# all
-		all = c.toplevel.struct.values + c.toplevel.symbol.values -
-				c.toplevel.symbol.values.grep(::Integer)	# enum constants
+		all = c.toplevel.struct.values + c.toplevel.symbol.values
+		all -= all.grep(::Integer)	# Enum values
 
 		# list of definitions of user-defined objects
 		userdefined = all.find_all { |t|
 			t.backtrace.backtrace.grep(::String).grep(/^</).empty?
 		}
-		# list of definitions that we may display
-		cando = all - userdefined
-		# list of definitions rendered
-		done = []
-		# list of [definition, [rendering], [dependencies]] we want to display
-		want = userdefined.map { |t|
-			tr, td = t.dump_def(c.toplevel, [''], [])
-			[t, tr, td]
+
+		# recurse all dependencies
+		todo_rndr = {}
+		todo_deps = {}
+		userdefined.each { |t|
+			todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel, [''], [])
 		}
-		# result
-		r = []
+		# c.toplevel.anonymous_enums.to_a.each { |t| todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel, [''], []) }
+		while not (ar = (todo_deps.values.flatten - todo_deps.keys)).empty?
+			ar.each { |t|
+				todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel, [''], [])
+			}
+		end
+		userdefined.each { |t| todo_deps.delete t ; todo_rndr.delete t }
+		todo_deps.each_key { |t| todo_deps[t] -= userdefined }
+
+		r, dep = c.toplevel.dump_reorder([''], [], all, todo_rndr, todo_deps)
 
 		# a macro is fine too
-		c.lexer.dump_macros(c.lexer.traced_macros, false) +
+		c.lexer.dump_macros(c.lexer.traced_macros, false) + "\n\n" +
 		r.join("\n")
 	end
 
@@ -1966,57 +1981,61 @@ class CParser
 		# return array of c source lines and array of dependencies (objects)
 		def dump(scp, r, dep, skip=[])
 			# skip is for function arguments
-			mydefs = @symbol.values + @struct.values - skip
-			# XXX struct a { int outer; };  { struct a x; x.outer ; struct a { int inner; }; }
-			# filter out Enum values
-			todo = (mydefs - mydefs.grep(::Integer)).map { |t|
-				tr, td = t.dump_def(self, [''], [])
-				[t, tr, td]
+			mydefs = @symbol.values + @struct.values + anonymous_enums.to_a - skip
+			mydefs -= mydefs.grep(::Integer)
+			todo_rndr = {}
+			todo_deps = {}
+			mydefs.each { |t| # filter out Enum values
+				todo_rndr[t], todo_deps[t] = t.dump_def(self, [''], [])
 			}
+			r, dep = dump_reorder(r, dep, mydefs, todo_rndr, todo_deps)
+			dep -= @symbol.values + @struct.values
+			[r, dep]
+		end
+
+		def dump_reorder(r, dep, mydefs, todo_rndr, todo_deps)
 			loop do
-				# reorder
-				break if todo.empty?
-				todo_now = todo.find_all { |t, tr, tdep|
-					((tdep & mydefs) - [t]).empty?
+				break if todo_rndr.empty?
+				todo_now = todo_rndr.keys.find_all { |t|
+					((todo_deps[t] & mydefs) - [t]).empty?
 				}
 				if todo_now.empty?
 					# cyclic dependency: predeclare needed structs
 					# XXX struct foo; typedef struct foo *bla; struct foo { bla toto; };
 					dep_cycle = proc { |ary|
 						# sexyness inside (c)
-						deps = todo.assoc(ary.last)[2]
+						deps = todo_deps[ary.last]
 						if deps.include? ary.first: ary
 						elsif (deps-ary).find { |d| deps = dep_cycle[ary + [d]] }: deps
 						end
 					}
 					cycle = nil
-					if not todo.find { |t, tr, tdep| cycle = dep_cycle[[t]] if t.kind_of? Union and t.name }
+					if not todo_rndr.keys.find { |t| cycle = dep_cycle[[t]] if t.kind_of? Union and t.name }
 						r << '/* cyclic dependency, this should not compile */'
-						todo_now = todo.map { |t, tr, tdep| t }
+						todo_now = todo_rndr.keys
 					else
 						cycle.grep(Union).each { |s|
 							next if not s.name
 							r << "#{s.class.name.downcase[/(?:.*::)?(.*)/,1]} #{s.name};"
-							cycle.each { |ss| todo.assoc(ss)[2].delete s }
+							cycle.each { |ss| todo_deps[ss].delete s }
 						}
-						todo_now = cycle.map { |s| todo.assoc s }.find_all { |t, tr, tdep|
-							((tdep & mydefs) - [t]).empty?
+						todo_now = cycle.find_all { |t|
+							((todo_deps[t] & mydefs) - [t]).empty?
 						}
 						raise "fuxored! #{cycle.map { |t| t.name }.inspect}" if todo_now.empty?
 					end
 				end
-				todo_now.sort_by { |t, x| t.name }.each { |t, tr, tdep|
+				todo_now.sort_by { |t, x| t.name ? t.name : '0' }.each { |t|
 					if t.kind_of? Variable and t.type.kind_of? Function and t.initializer
 						r << ''
-						r.concat tr
+						r.concat todo_rndr.delete(t)
 					else
-						r.pop if r.last.empty?
-						r.concat tr
+						r.pop if r.last == ''
+						r.concat todo_rndr.delete(t)
 						r.last << ';'
 					end
-					dep |= (tdep - mydefs)
-					todo.delete_if { |tt, x| tt == t }
-					todo.each { |tt, ttr, ttdep| ttdep.delete t }
+					dep |= todo_deps.delete(t)
+					todo_deps.each_value { |tdep| tdep.delete t }
 				}
 			end
 
@@ -2029,6 +2048,7 @@ class CParser
 		end
 	end
 	module Attributes
+		# TODO handle __cdecl etc correctly, and place them right
 		def dump_attributes
 			if attributes
 				attributes.map { |a| " __attribute__((#{a}))" }.join

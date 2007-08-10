@@ -33,8 +33,8 @@ puts CParser.factorize(<<EOS)
 #define _INTEGRAL_MAX_BITS 64
 #define __w64
 #define _cdecl __cdecl	// typo? seen in winreg.h
-//#define _MSC_VER 1001	// handle #pragma once
-#define WIN32_LEAN_AND_MEAN
+#define _MSC_VER 1001	// handle #pragma once
+#define WIN32_LEAN_AND_MEAN	// without this, you'll need lots of ram
 #include <windows.h>
 
 // now write our code, using preprocessor macros and header-defined variables/types
