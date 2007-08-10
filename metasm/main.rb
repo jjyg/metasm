@@ -172,14 +172,14 @@ class Token
 	# used when doing 'raise tok, "foo"'
 	# raises a ParseError, adding backtrace information
 	def exception(msg='syntax error')
-		msgh = ''
+		msgh = "\n"
 		msgh << 'near ' if msg
 		if msg and defined? @expanded_from
 			@expanded_from.each { |ef| msgh << ef.exception(nil).message << ' expanded to '  }
 		end
 		msgh << ((@raw.length > 35) ? (@raw[0..10] + '<...>' + @raw[-10..-1]).inspect : @raw.inspect)
 		msgh << ' at ' << backtrace_str
-		msgh << ': ' << msg if msg
+		msgh << ': ' << msg << "\n" if msg
 		ParseError.new msgh
 	end
 
