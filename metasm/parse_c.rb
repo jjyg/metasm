@@ -384,15 +384,15 @@ class CParser
 		def self.parse(parser, scope, nest)
 			tok = nil
 			raise tok || parser, '"(" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
-			init = forscope = Block.new
-			if not parse_definition(forscope)
+			init = forscope = Block.new(scope)
+			if not parser.parse_definition(forscope)
 				forscope = scope
-				raise tok, 'expr expected' if not init = CExpression.parse(parser, forscope)
+				init = CExpression.parse(parser, forscope)
 				raise tok || parser, '";" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ';'
 			end
-			raise tok, 'expr expected' if not test = CExpression.parse(parser, forscope)
+			test = CExpression.parse(parser, forscope)
 			raise tok || parser, '";" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ';'
-			raise tok, 'expr expected' if not iter = CExpression.parse(parser, forscope)
+			iter = CExpression.parse(parser, forscope)
 			raise tok || parser, '")" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
 
 			new init, test, iter, parser.parse_statement(forscope, nest + [:loop])
@@ -728,20 +728,21 @@ class CParser
 		oldtype = BaseType.new(:int) if oldtype.kind_of? Enum
 		newtype = BaseType.new(:int) if newtype.kind_of? Enum
 
-		puts tok.exception('type qualifier mismatch').message if oldtype.qualifier != newtype.qualifier
+		puts tok.exception('type qualifier mismatch').message if $VERBOSE and oldtype.qualifier != newtype.qualifier
 
 		# avoid infinite recursion
 		return if checked.include? oldtype
 		checked = checked + [oldtype]
 
+	    begin
 		case newtype
 		when Function
-			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.kind_of? Function
+			raise tok if not oldtype.kind_of? Function
 			check_compatible_type tok, oldtype.type, newtype.type, strict, checked
 			if oldtype.args and newtype.args
 				if oldtype.args.length != newtype.args.length or
 						oldtype.varargs != newtype.varargs
-					raise tok, 'incompatible type'
+					raise tok
 				end
 				oldtype.args.zip(newtype.args) { |oa, na|
 					# begin ; rescue ParseError: raise $!.message + "in parameter #{oa.name}" end
@@ -749,14 +750,21 @@ class CParser
 				}
 			end
 		when Pointer
-			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.kind_of? Pointer
-			# allow any pointer to void*
-			check_compatible_type tok, oldtype.type, newtype.type, strict, checked if strict or not (t = newtype.type.untypedef).kind_of? BaseType or t.name != :void
+			if oldtype.kind_of? BaseType and oldtype.integral?
+				puts tok.exception('making pointer from integer without a cast').message if $VERBOSE
+				return
+			end
+			raise tok if not oldtype.kind_of? Pointer
+			hasvoid = true if (t = newtype.type.untypedef).kind_of? BaseType and t.name == :void
+			hasvoid = true if (t = oldtype.type.untypedef).kind_of? BaseType and t.name == :void	# struct foo *f = NULL;
+			if strict or not hasvoid
+				check_compatible_type tok, oldtype.type, newtype.type, strict, checked
+			end
 		when Union
-			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.class == newtype.class
+			raise tok if not oldtype.class == newtype.class
 			if oldtype.members and newtype.members
 				if oldtype.members.length != newtype.members.length
-					raise tok, 'incompatible type (member count)'
+					raise tok, 'bad member count'
 				end
 				oldtype.members.zip(newtype.members) { |om, nm|
 					# raise tok if om.name and nm.name and om.name != nm.name # don't care
@@ -764,18 +772,23 @@ class CParser
 				}
 			end
 		when BaseType
-			raise tok, "incompatible type family #{oldtype.class} to #{newtype.class}" if not oldtype.kind_of? BaseType
+			raise tok if not oldtype.kind_of? BaseType
 			if strict
 				if oldtype.name != newtype.name or
 				oldtype.specifier != newtype.specifier
-					raise tok, 'incompatible type'
+					raise tok
 				end
 			else
-				raise tok, 'incompatible type void' if oldtype.name == :void or newtype.name == :void
+				raise tok if oldtype.name == :void or newtype.name == :void
 				puts tok.exception('type size mismatch, may lose bits') if $VERBOSE and @typesize[oldtype.name] > @typesize[newtype.name]
 				puts tok.exception('sign mismatch').message if $VERBOSE and oldtype.specifier != newtype.specifier and @typesize[newtype.name] == @typesize[oldtype.name]
 			end
 		end
+	    rescue ParseError
+		oname = oldtype.dump_cast(@toplevel, [''], [])[0].join rescue oldtype.class.name
+		nname = newtype.dump_cast(@toplevel, [''], [])[0].join rescue newtype.class.name
+		raise $!, $!.message + " incompatible type #{oname} to #{nname}"
+	    end
 	end
 
 	Keyword = %w[struct union enum  if else for while do switch goto
@@ -1003,7 +1016,7 @@ class CParser
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 			if $VERBOSE and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-				puts tok.exception("statement with no effect : #{expr.dump(scope, [''], [])[0].join(' ')}")
+				puts tok.exception("statement with no effect : #{expr.dump_inner(scope, [''], [])[0].join(' ')}")
 			end
 			return expr
 		end
@@ -1055,7 +1068,7 @@ class CParser
 				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 				if $VERBOSE and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-					puts tok.exception("statement with no effect : #{expr.dump(scope, [''], [])[0].join(' ')}")
+					puts tok.exception("statement with no effect : #{expr.dump_inner(scope, [''], [])[0].join(' ')}")
 				end
 				expr
 			end
@@ -1372,7 +1385,7 @@ class CParser
 		def lvalue?
 			case @op
 			when :*: true if not @lexpr
-			when :'[]': true
+			when :'[]', :'.', :'->': true
 			when nil	# cast
 				CExpression.lvalue?(@rexpr)
 			else false
@@ -1724,12 +1737,12 @@ class CParser
 					case tok.raw
 					when '&'
 						val = parse_value(parser, scope)
-						raise parser, "invalid lvalue #{val.inspect}" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
 						raise val.backtrace, 'cannot take addr of register' if val.kind_of? Variable and val.storage == :register
 						val = CExpression.new(nil, tok.raw.to_sym, val, Pointer.new(val.type))
 					when '++', '--'
 						val = parse_value(parser, scope)
-						raise parser, "invalid lvalue #{val.inspect}" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
 						val = CExpression.new(nil, tok.raw.to_sym, val, val.type)
 					when '&&'
 						raise tok, 'label name expected' if not val = lexer.skipspaces or val.type != :string
@@ -1782,7 +1795,7 @@ class CParser
 						raise tok, 'invalid member' if not type.kind_of? Union or not type.members or not m = type.members.find { |m| m.name == tok.raw }
 						CExpression.new(val, :'->', tok.raw, m.type)
 					when '--'
-						raise parser, "invalid lvalue #{val.inspect}" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
 						CExpression.new(val, :'--', nil, val.type)
 					end
 				when '+', '++'
@@ -1796,7 +1809,7 @@ class CParser
 					when '+'
 						nil
 					when '++'
-						raise parser, "invalid lvalue #{val.inspect}" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
 						CExpression.new(val, :'++', nil, val.type)
 					end
 				when '.'
@@ -1825,18 +1838,17 @@ class CParser
 					type = type.type while type.kind_of? TypeDef
 					raise tok, 'not a function' if not type.kind_of? Function
 
-					list = parse(parser, scope)
-					raise tok if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
-
 					args = []
-					if list
-						# XXX func((omg, owned))
-						while list.kind_of? CExpression and list.op == :','
-							args << list.lexpr
-							list = list.rexpr
+					loop do
+						a = parse(parser, scope, false)
+						break if not a
+						args << a
+						if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ','
+							parser.unreadtok ntok
+							break
 						end
-						args << list
 					end
+					raise ntok || parser, '")" expected' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 
 					raise tok, "bad argument count: #{args.length} for #{type.args.length}" if (type.varargs ? (args.length < type.args.length) : (args.length != type.args.length))
 					type.args.zip(args) { |ta, a| parser.check_compatible_type(tok, a.type, ta.type) }
@@ -1863,15 +1875,20 @@ class CParser
 					#parser.check_compatible_type(parser, l.type, r.type)
 					ll = stack.pop
 					stack << CExpression.new(ll, op, [l, r], l.type)
-				when :','
+				when :',', :'&&', :'||', :'='
 					stack << CExpression.new(l, op, r, r.type)
 				else
-					raise parser, "invalid type #{l.inspect}" if not l.type.arithmetic?
-					raise parser, "invalid type #{r.inspect}" if not r.type.arithmetic?
+					raise parser, "invalid type #{l.type.dump_cast(scope)[0].join(' ')} #{l.dump_inner(scope)[0].join(' ')} for #{op.inspect}" if not l.type.arithmetic?
+					raise parser, "invalid type #{r.type.dump_cast(scope)[0].join(' ')} #{r.dump_inner(scope)[0].join(' ')} for #{op.inspect}" if not r.type.arithmetic?
 
 					if l.type.pointer? and r.type.pointer?
-						raise parser, 'cannot do that on pointers' if op != :'-'
-						type = BaseType.new(:long)	# addr_t or sumthin ?
+						type = \
+						case op
+						when :'-': BaseType.new(:long)	# addr_t or sumthin ?
+						when :'-=': l.type
+						when :'==', :'!=', :'>', :'<', :'>=', :'<=': BaseType.new(:int)
+						else raise parser, "cannot do #{op.inspect} on pointers"
+						end
 					elsif l.type.pointer? or r.type.pointer?
 						raise parser, "cannot do #{op.inspect} on pointer" if not [:'+', :'-', :'=', :'+=', :'-='].include? op
 						type = l.type.pointer? ? l.type : r.type
@@ -1950,36 +1967,44 @@ class CParser
 			t.backtrace.backtrace.grep(::String).grep(/^</).empty?
 		}
 
+		# a macro is fine too
+		c.lexer.dump_macros(c.lexer.traced_macros, false) + "\n\n" +
+		c.dump_definitions(userdefined, userdefined)
+	end
+
+	# returns a big string representing the definitions of all terms appearing in +list+, excluding +exclude+
+	# includes dependencies
+	def dump_definitions(list, exclude=[])
 		# recurse all dependencies
 		todo_rndr = {}
 		todo_deps = {}
-		userdefined.each { |t|
-			todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel, [''], [])
+		list.each { |t|
+			todo_rndr[t], todo_deps[t] = t.dump_def(@toplevel)
 		}
 		# c.toplevel.anonymous_enums.to_a.each { |t| todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel, [''], []) }
 		while not (ar = (todo_deps.values.flatten - todo_deps.keys)).empty?
 			ar.each { |t|
-				todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel, [''], [])
+				todo_rndr[t], todo_deps[t] = t.dump_def(@toplevel)
 			}
 		end
-		userdefined.each { |t| todo_deps.delete t ; todo_rndr.delete t }
-		todo_deps.each_key { |t| todo_deps[t] -= userdefined }
+		exclude.each { |t| todo_deps.delete t ; todo_rndr.delete t }
+		todo_deps.each_key { |t| todo_deps[t] -= exclude }
 
-		r, dep = c.toplevel.dump_reorder([''], [], all, todo_rndr, todo_deps)
+		all = @toplevel.struct.values + @toplevel.symbol.values
+		all -= all.grep(::Integer)	# Enum values
 
-		# a macro is fine too
-		c.lexer.dump_macros(c.lexer.traced_macros, false) + "\n\n" +
+		r, dep = @toplevel.dump_reorder([''], [], all, todo_rndr, todo_deps)
 		r.join("\n")
 	end
 
 	def to_s
-		r, dep = @toplevel.dump(nil, [''], [])
+		r, dep = @toplevel.dump(nil)
 		r.join("\n")
 	end
 
 	class Block
 		# return array of c source lines and array of dependencies (objects)
-		def dump(scp, r, dep, skip=[])
+		def dump(scp, r=[''], dep=[], skip=[])
 			# skip is for function arguments
 			mydefs = @symbol.values + @struct.values + anonymous_enums.to_a - skip
 			mydefs -= mydefs.grep(::Integer)
@@ -2057,30 +2082,31 @@ class CParser
 		end
 	end
 	class Variable
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			if name
 				dep |= [scope.symbol_ancestors[@name]]
 				r.last << @name
 			end
 			[r, dep]
 		end
-		def dump_def(scope, r, dep, skiptype=false)
+		def dump_def(scope, r=[''], dep=[], skiptype=false)
+			# int a=1, b=2;
 			if not skiptype
 				r.last << @storage.to_s << ' ' if storage
 				r, dep = @type.base.dump(scope, r, dep)
 				r.last << ' ' if name
 			end
-			r, dep = @type.dump_declarator(scope, r, dep, [(name ? @name.dup : '') << dump_attributes])
+			r, dep = @type.dump_declarator([(name ? @name.dup : '') << dump_attributes], scope, r, dep)
 
 			if initializer
 				r.last << ' = ' if not @type.kind_of?(Function)
-				r, dep = @type.dump_initializer(scope, r, dep, @initializer)
+				r, dep = @type.dump_initializer(@initializer, scope, r, dep)
 			end
 			[r, dep]
 		end
 	end
 	class Type
-		def dump_initializer(scope, r, dep, init)
+		def dump_initializer(init, scope, r=[''], dep=[])
 			if init.kind_of? ::Numeric
 				r.last << init.to_s
 				[r, dep]
@@ -2088,7 +2114,7 @@ class CParser
 			end
 		end
 
-		def dump_declarator(scope, r, dep, decl)
+		def dump_declarator(decl, scope, r=[''], dep=[])
 			r.last << decl.shift
 			r.concat decl
 			[r, dep]
@@ -2097,26 +2123,34 @@ class CParser
 		def dump_def(*a)
 			dump(*a)
 		end
+
+		def dump_cast(scope, r=[''], dep=[])
+			r.last << '('
+			r, dep = base.dump(scope, r, dep)
+			r, dep = dump_declarator([dump_attributes], scope, r, dep)
+			r.last << ')'
+			[r, dep]
+		end
 	end
 	class Pointer
-		def dump_declarator(scope, r, dep, decl)
+		def dump_declarator(decl, scope, r=[''], dep=[])
 			decl[0] = ' ' << @qualifier.map { |q| q.to_s << ' ' }.join << decl[0] if qualifier
 			decl[0] = '*' << decl[0]
 			if @type.kind_of? Function or @type.kind_of? Array or (decl[0].delete('*').empty? and @type.class != Pointer)
 				decl[0]  =  '(' << decl[0]
 				decl[-1] << ')'
 			end
-			@type.dump_declarator(scope, r, dep, decl)
+			@type.dump_declarator(decl, scope, r, dep)
 		end
 	end
 	class Array
-		def dump_declarator(scope, r, dep, decl)
+		def dump_declarator(decl, scope, r=[''], dep=[])
 			decl.last << '['
-			decl, dep = CExpression.dump(scope, decl, dep, @length) if @length
+			decl, dep = CExpression.dump(@length, scope, decl, dep) if @length
 			decl.last << ']'
-			@type.dump_declarator(scope, r, dep, decl)
+			@type.dump_declarator(decl, scope, r, dep)
 		end
-		def dump_initializer(scope, r, dep, init)
+		def dump_initializer(init, scope, r=[''], dep=[])
 			return super if not init.kind_of? ::Array
 			r.last << '{ '
 			showname = false
@@ -2131,7 +2165,7 @@ class CParser
 					showname = false
 					rt << "[#{i}] = "
 				end
-				rt, dep = @type.dump_initializer(scope, rt, dep, v)
+				rt, dep = @type.dump_initializer(v, scope, rt, dep)
 				r.last << rt.shift
 				r.concat rt.map { |s| "\t" << s }
 			}
@@ -2140,7 +2174,7 @@ class CParser
 		end
 	end
 	class Function
-		def dump_declarator(scope, r, dep, decl)
+		def dump_declarator(decl, scope, r=[''], dep=[])
 			decl.last << '('
 			if args
 				@args.each { |arg|
@@ -2155,10 +2189,10 @@ class CParser
 				end
 			end
 			decl.last << ')'
-			@type.dump_declarator(scope, r, dep, decl)
+			@type.dump_declarator(decl, scope, r, dep)
 		end
 
-		def dump_initializer(scope, r, dep, init)
+		def dump_initializer(init, scope, r=[''], dep=[])
 			r << '{'
 			tr, dep = init.dump(scope, [''], dep, @args)
 			r.concat tr.map { |s| Case.dump_indent(s) }
@@ -2167,7 +2201,7 @@ class CParser
 		end
 	end
 	class BaseType
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << @specifier.to_s << ' ' if specifier
 			r.last << case @name
@@ -2179,26 +2213,26 @@ class CParser
 		end
 	end
 	class TypeDef
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << @name
 			dep |= [scope.symbol_ancestors[@name]]
 			[r, dep]
 		end
 
-		def dump_def(scope, r, dep)
+		def dump_def(scope, r=[''], dep=[])
 			r.last << 'typedef '
 			r, dep = @type.base.dump(scope, r, dep)
 			r.last << ' '
-			@type.dump_declarator(scope, r, dep, [name ? @name.dup : ''])
+			@type.dump_declarator([name ? @name.dup : ''], scope, r, dep)
 		end
 		
-		def dump_initializer(scope, r, dep, init)
-			@type.dump_initializer(scope, r, dep, init)
+		def dump_initializer(init, scope, r=[''], dep=[])
+			@type.dump_initializer(init, scope, r, dep)
 		end
 	end
 	class Union
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			if name
 				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 				r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1] << ' ' << @name
@@ -2209,7 +2243,7 @@ class CParser
 			end
 		end
 
-		def dump_def(scope, r, dep)
+		def dump_def(scope, r=[''], dep=[])
 			r << ''
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1]
@@ -2228,7 +2262,7 @@ class CParser
 			[r, dep]
 		end
 
-		def dump_initializer(scope, r, dep, init)
+		def dump_initializer(init, scope, r=[''], dep=[])
 			return super if not init.kind_of? ::Array
 			r.last << '{ '
 			showname = false
@@ -2243,7 +2277,7 @@ class CParser
 					showname = false
 					rt << ".#{m.name} = "
 				end
-				rt, dep = m.type.dump_initializer(scope, rt, dep, i)
+				rt, dep = m.type.dump_initializer(i, scope, rt, dep)
 				r.last << rt.shift
 				r.concat rt.map { |s| "\t" << s }
 			}
@@ -2252,7 +2286,7 @@ class CParser
 		end
 	end
 	class Enum
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			if name
 				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 				r.last << 'union ' << @name
@@ -2263,7 +2297,7 @@ class CParser
 			end
 		end
 
-		def dump_def(scope, r, dep)
+		def dump_def(scope, r=[''], dep=[])
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << 'enum'
 			r.last << ' ' << @name if name
@@ -2283,7 +2317,7 @@ class CParser
 			[r, dep]
 		end
 
-		def dump_initializer(scope, r, dep, init)
+		def dump_initializer(init, scope, r=[''], dep=[])
 			if members and (
 					k = @members.index(init) or
 					(init.kind_of? CExpression and not init.op and k = @members.index(init.rexpr))
@@ -2296,7 +2330,7 @@ class CParser
 		end
 	end
 	class Statement
-		def self.dump(scope, r, dep, e)
+		def self.dump(e, scope, r=[''], dep=[])
 			if not e
 				r << "\t;"
 			else
@@ -2310,20 +2344,20 @@ class CParser
 		end
 	end
 	class If
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << 'if ('
-			r, dep = CExpression.dump(scope, r, dep, @test)
+			r, dep = CExpression.dump(@test, scope, r, dep)
 			r.last << ')'
-			r, dep = Statement.dump(scope, r, dep, @bthen)
+			r, dep = Statement.dump(@bthen, scope, r, dep)
 			if belse
 				@bthen.kind_of?(Block) ? (r.last << ' else') : (r << 'else')
-				r, dep = Statement.dump(scope, r, dep, @belse)
+				r, dep = Statement.dump(@belse, scope, r, dep)
 			end
 			[r, dep]
 		end
 	end
 	class For
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << 'for ('
 			if @init.kind_of? Block
 				scope = @init
@@ -2334,38 +2368,38 @@ class CParser
 					skiptype = true
 				}
 			else
-				r, dep = CExpression.dump(scope, r, dep, @init)
+				r, dep = CExpression.dump(@init, scope, r, dep)
 			end
 			r.last << ' ; '
-			r, dep = CExpression.dump(scope, r, dep, @test)
+			r, dep = CExpression.dump(@test, scope, r, dep)
 			r.last << ' ; '
-			r, dep = CExpression.dump(scope, r, dep, @iter)
+			r, dep = CExpression.dump(@iter, scope, r, dep)
 			r.last << ')'
-			Statement.dump(scope, r, dep, @body)
+			Statement.dump(@body, scope, r, dep)
 		end
 	end
 	class While
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << 'while ('
-			r, dep = CExpression.dump(scope, r, dep, @test)
+			r, dep = CExpression.dump(@test, scope, r, dep)
 			r.last << ')'
-			Statement.dump(scope, r, dep, @body)
+			Statement.dump(@body, scope, r, dep)
 		end
 	end
 	class DoWhile
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << 'do'
-			r, dep = Statement.dump(scope, r, dep, @body)
+			r, dep = Statement.dump(@body, scope, r, dep)
 			@body.kind_of?(Block) ? (r.last << ' while (') : (r << 'while (')
-			r, dep = CExpression.dump(scope, r, dep, @test)
+			r, dep = CExpression.dump(@test, scope, r, dep)
 			r.last << ');'
 			[r, dep]
 		end
 	end
 	class Switch
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << 'switch ('
-			CExpression.dump(scope, r, dep, @test)
+			CExpression.dump(@test, scope, r, dep)
 			r.last << ')'
 			if not @body
 				r << "\t;"
@@ -2379,42 +2413,42 @@ class CParser
 		end
 	end
 	class Continue
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << 'continue;'
 			[r, dep]
 		end
 	end
 	class Break
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << 'break;'
 			[r, dep]
 		end
 	end
 	class Goto
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << "goto #@target;"
 			[r, dep]
 		end
 	end
 	class Return
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << 'return '
-			r, dep = CExpression.dump(scope, r, dep, @value)
+			r, dep = CExpression.dump(@value, scope, r, dep)
 			r.last << ';'
 			[r, dep]
 		end
 	end
 	class Case
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			case @expr
 			when 'default'
 				r.last << @expr
 			else
 				r.last << 'case '
-				r, dep = CExpression.dump(scope, r, dep, @expr)
+				r, dep = CExpression.dump(@expr, scope, r, dep)
 				if exprup
 					r.last << ' ... '
-					r, dep = CExpression.dump(scope, r, dep, @exprup)
+					r, dep = CExpression.dump(@exprup, scope, r, dep)
 				end
 			end
 			r.last << ':'
@@ -2426,19 +2460,19 @@ class CParser
 		end
 	end
 	class Label
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << @name << ':'
 			dump_inner(scope, r, dep)
 		end
-		def dump_inner(scope, r, dep)
+		def dump_inner(scope, r=[''], dep=[])
 			if not @statement: [r << ';', dep]
-			elsif @statement.kind_of? Block: Statement.dump(scope, r, @statement)
+			elsif @statement.kind_of? Block: Statement.dump(@statement, scope, r, dep)
 			else  @statement.dump(scope, r << '', dep)
 			end
 		end
 	end
 	class Asm
-		def dump(scope, r, dep)
+		def dump(scope, r=[''], dep=[])
 			r.last << 'asm '
 			r.last << 'volatile ' if @volatile
 			r.last << '('
@@ -2465,13 +2499,7 @@ class CParser
 		end
 	end
 	class CExpression
-		def dump(scope, r, dep)
-			r, dep = dump_inner(scope, r, dep)
-			r.last << ';'
-			[r, dep]
-		end
-
-		def self.dump(scope, r, dep, e, brace = false)
+		def self.dump(e, scope, r=[''], dep=[], brace = false)
 #brace = false
 #r.last << '('
 #r, dep = 
@@ -2480,14 +2508,21 @@ class CParser
 			when ::String: r.last << e.inspect ; [r, dep]
 			when CExpression: e.dump_inner(scope, r, dep, brace)
 			when Variable: e.dump(scope, r, dep)
+			when nil: r.last << ';' ; [r, dep]
 			else raise 'wtf?' + e.inspect
 			end
 #r.last << ')'
 #[r, dep]
 		end
 
-		def dump_inner(scope, r, dep, brace = false)
-			r.last << '(' if brace and @op != :'->' and @op != :'.' and (@op or @rexpr.kind_of? CExpression)
+		def dump(scope, r=[''], dep=[])
+			r, dep = dump_inner(scope, r, dep)
+			r.last << ';'
+			[r, dep]
+		end
+
+		def dump_inner(scope, r=[''], dep=[], brace = false)
+			r.last << '(' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
 			if not @lexpr
 				if not @op
 					case @rexpr
@@ -2505,12 +2540,8 @@ class CParser
 						r.last << 'L' if @type.kind_of? Pointer and @type.type.kind_of? BaseType and @type.type.name == :short
 						r.last << @rexpr.inspect
 					when CExpression # cast
-						r.last << '('
-						v = Variable.new
-						v.type = @type
-						r, dep = v.dump(scope, r, dep)
-						r.last << ')'
-						r, dep = CExpression.dump(scope, r, dep, @rexpr, true)
+						r, dep = @type.dump_cast(scope, r, dep)
+						r, dep = CExpression.dump(@rexpr, scope, r, dep, true)
 					when Variable
 						r, dep = @rexpr.dump(scope, r, dep)
 					when Block
@@ -2522,46 +2553,46 @@ class CParser
 					end
 				else
 					r.last << @op.to_s
-					r, dep = CExpression.dump(scope, r, dep, @rexpr, true)
+					r, dep = CExpression.dump(@rexpr, scope, r, dep, true)
 				end
 			elsif not @rexpr
-				r, dep = CExpression.dump(scope, r, dep, @lexpr)
+				r, dep = CExpression.dump(@lexpr, scope, r, dep)
 				r.last << @op.to_s
 			else
 				case @op
 				when :'->', :'.'
-					r, dep = CExpression.dump(scope, r, dep, @lexpr, true)
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, true)
 					r.last << @op.to_s << @rexpr
 				when :'[]'
-					r, dep = CExpression.dump(scope, r, dep, @lexpr, true)
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, true)
 					r.last << '['
-					r, dep = CExpression.dump(scope, r, dep, @rexpr)
+					r, dep = CExpression.dump(@rexpr, scope, r, dep)
 					r.last << ']'
 				when :funcall
-					r, dep = CExpression.dump(scope, r, dep, @lexpr, true)
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, true)
 					r.last << '('
 					@rexpr.each { |arg|
 						r.last << ', ' if r.last[-1] != ?(
-						r, dep = CExpression.dump(scope, r, dep, arg)
+						r, dep = CExpression.dump(arg, scope, r, dep)
 					}
 					r.last << ')'
 				when :'?:'
-					r, dep = CExpression.dump(scope, r, dep, @lexpr, true)
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, true)
 					r.last << ' ? '
-					r, dep = CExpression.dump(scope, r, dep, @rexpr[0], true)
+					r, dep = CExpression.dump(@rexpr[0], scope, r, dep, true)
 					r.last << ' : '
-					r, dep = CExpression.dump(scope, r, dep, @rexpr[1], true)
+					r, dep = CExpression.dump(@rexpr[1], scope, r, dep, true)
 				else
-					r, dep = CExpression.dump(scope, r, dep, @lexpr, (@lexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@lexpr.op]))
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@lexpr.op]))
 					if OP_PRIO[:'='][@op]
 						r.last << ' ' << @op.to_s << ' '
 					else
 						r.last << @op.to_s
 					end
-					r, dep = CExpression.dump(scope, r, dep, @rexpr, (@rexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@rexpr.op]))
+					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@rexpr.op]))
 				end
 			end
-			r.last << ')' if brace and @op != :'->' and @op != :'.' and (@op or @rexpr.kind_of? CExpression)
+			r.last << ')' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
 			[r, dep]
 		end
 	end
