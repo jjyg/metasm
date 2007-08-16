@@ -28,5 +28,7 @@ end
 	require "metasm/os/#{f}"
 }
 
+require 'metasm/parse_c'
+
 # cleanup include path
 $:.delete metasmdir if metasmdir
