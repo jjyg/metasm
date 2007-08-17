@@ -602,7 +602,7 @@ class CParser
 	end
 
 	class CExpression < Statement
-		# may be :,, :., :->, :funcall (function, [arglist]), :[] (array indexing), nil (cast)
+		# may be :,, :., :'->', :funcall (function, [arglist]), :[] (array indexing), nil (cast)
 		attr_accessor :op
 		# nil/CExpr/Variable/Label/::String( = :quoted/struct member name)/::Integer/::Float/Block
 		attr_accessor :lexpr, :rexpr
@@ -633,7 +633,7 @@ class CParser
 		@pragma_pack = 8 	# default for MSVC++
 		@toplevel = Block.new(nil)
 		@unreadtoks = []
-		@typesize = {:__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8 }
+		@typesize = {:void => 0, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8 }
 		send model
 	end
 
@@ -693,7 +693,7 @@ class CParser
 				@pragma_pack = @pragma_pack_stack.pop
 				@pragma_pack = v2.raw.to_i if v2 and v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
 				raise v2, 'bad pack value' if @pragma_pack == 0
-			elsif v1.raw !~ /[^\d]/  
+			elsif v1.raw =~ /^\d+$/  
 				raise v2, '2nd arg unexpected' if v2
 				@pragma_pack = v1.raw.to_i
 				raise v1, 'bad pack value' if @pragma_pack == 0
@@ -779,14 +779,14 @@ class CParser
 					raise tok
 				end
 			else
-				raise tok if oldtype.name == :void or newtype.name == :void
+				raise tok if @typesize[newtype.name] == 0 and @typesize[oldtype.name] > 0
 				puts tok.exception('type size mismatch, may lose bits') if $VERBOSE and @typesize[oldtype.name] > @typesize[newtype.name]
 				puts tok.exception('sign mismatch').message if $VERBOSE and oldtype.specifier != newtype.specifier and @typesize[newtype.name] == @typesize[oldtype.name]
 			end
 		end
 	    rescue ParseError
-		oname = oldtype.dump_cast(@toplevel, [''], [])[0].join rescue oldtype.class.name
-		nname = newtype.dump_cast(@toplevel, [''], [])[0].join rescue newtype.class.name
+		oname = oldtype.dump_cast(@toplevel)[0].join rescue oldtype.class.name
+		nname = newtype.dump_cast(@toplevel)[0].join rescue newtype.class.name
 		raise $!, $!.message + " incompatible type #{oname} to #{nname}"
 	    end
 	end
@@ -795,10 +795,11 @@ class CParser
 			register extern auto static typedef  const volatile
 			void int float double char  signed unsigned long short
 			case continue break return default  __attribute__
-			asm __asm __asm__ sizeof __builtin_offsetof typeof
+			asm __asm __asm__ sizeof typeof
 			__declspec __cdecl __stdcall __fastcall
 			inline __inline __inline__ __volatile__
 			__int8 __int16 __int32 __int64
+			__builtin_offsetof
 	].inject({}) { |h, w| h.update w => true }
 
 	# allows 'raise self'
@@ -877,15 +878,14 @@ class CParser
 					v.initializer ? (sizeof(v) * var.initializer.length) : 0
 				else raise self, 'unknown array size'
 				end
-				raise self, 'TODO sizeof(array[] initializer)'	# TODO
 			when Integer: type.length * sizeof(type)
 			else raise self, 'unknown array size'
 			end
 		when Pointer
 			@typesize[:ptr]
 		when Function
-			# raise # gcc responds 1
-			1
+			# raise
+			1	# gcc
 		when BaseType
 			@typesize[type.name]
 		when Enum
@@ -967,8 +967,11 @@ class CParser
 					break if tok.type == :punct and tok.raw == '}'
 					unreadtok tok
 					if not parse_definition(body)
-						body.statements << parse_statement(body, [])
+						body.statements << parse_statement(body, [var.type.type])
 					end
+				end
+				if $VERBOSE and not body.statements.last.kind_of? Return
+					puts tok.exception('missing function return value').message if not var.type.type.kind_of? BaseType or var.type.type.name != :void
 				end
 				break
 			when '='
@@ -1016,7 +1019,7 @@ class CParser
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 			if $VERBOSE and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-				puts tok.exception("statement with no effect : #{expr.dump_inner(scope, [''], [])[0].join(' ')}")
+				puts tok.exception("statement with no effect : #{expr.dump_inner(scope)[0].join(' ')}")
 			end
 			return expr
 		end
@@ -1039,6 +1042,7 @@ class CParser
 			Goto.new name
 		when 'return'
 			expr = CExpression.parse(self, scope)	# nil allowed
+			check_compatible_type(tok, (expr ? expr.type : BaseType.new(:void)), nest[0])
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 			Return.new expr
 		when 'case'
@@ -1068,7 +1072,7 @@ class CParser
 				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 				if $VERBOSE and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-					puts tok.exception("statement with no effect : #{expr.dump_inner(scope, [''], [])[0].join(' ')}")
+					puts tok.exception("statement with no effect : #{expr.dump_inner(scope)[0].join(' ')}")
 				end
 				expr
 			end
@@ -1691,13 +1695,14 @@ class CParser
 						raise tok, 'bad cast' if v.name != false
 						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 						raise ntok, 'expr expected' if not val = parse_value(parser, scope)	# parses postfix too
+						val = CExpression.new(nil, nil, val, val.type) if not val.kind_of? CExpression
 						val = CExpression.new(nil, nil, val, v.type)
 					# check compound statement expression
 					elsif ntok = parser.skipspaces and ntok.type == :punct and ntok.raw == '{'
 						parser.unreadtok ntok
 						blk = parser.parse_statement(scope, []) # XXX nesting ?
 						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
-						type = blk.last.kind_of?(CExpression) ? blk.last.type : BaseType.new(:void)
+						type = blk.statements.last.kind_of?(CExpression) ? blk.statements.last.type : BaseType.new(:void)
 						val = CExpression.new(nil, nil, blk, type)
 					else
 						parser.unreadtok ntok
@@ -1981,7 +1986,7 @@ class CParser
 		list.each { |t|
 			todo_rndr[t], todo_deps[t] = t.dump_def(@toplevel)
 		}
-		# c.toplevel.anonymous_enums.to_a.each { |t| todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel, [''], []) }
+		# c.toplevel.anonymous_enums.to_a.each { |t| todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel) }
 		while not (ar = (todo_deps.values.flatten - todo_deps.keys)).empty?
 			ar.each { |t|
 				todo_rndr[t], todo_deps[t] = t.dump_def(@toplevel)
@@ -1993,7 +1998,7 @@ class CParser
 		all = @toplevel.struct.values + @toplevel.symbol.values
 		all -= all.grep(::Integer)	# Enum values
 
-		r, dep = @toplevel.dump_reorder([''], [], all, todo_rndr, todo_deps)
+		r, dep = @toplevel.dump_reorder(all, todo_rndr, todo_deps)
 		r.join("\n")
 	end
 
@@ -2011,14 +2016,14 @@ class CParser
 			todo_rndr = {}
 			todo_deps = {}
 			mydefs.each { |t| # filter out Enum values
-				todo_rndr[t], todo_deps[t] = t.dump_def(self, [''], [])
+				todo_rndr[t], todo_deps[t] = t.dump_def(self)
 			}
-			r, dep = dump_reorder(r, dep, mydefs, todo_rndr, todo_deps)
+			r, dep = dump_reorder(mydefs, todo_rndr, todo_deps, r, dep)
 			dep -= @symbol.values + @struct.values
 			[r, dep]
 		end
 
-		def dump_reorder(r, dep, mydefs, todo_rndr, todo_deps)
+		def dump_reorder(mydefs, todo_rndr, todo_deps, r=[''], dep=[])
 			loop do
 				break if todo_rndr.empty?
 				todo_now = todo_rndr.keys.find_all { |t|
@@ -2136,7 +2141,7 @@ class CParser
 		def dump_declarator(decl, scope, r=[''], dep=[])
 			decl[0] = ' ' << @qualifier.map { |q| q.to_s << ' ' }.join << decl[0] if qualifier
 			decl[0] = '*' << decl[0]
-			if @type.kind_of? Function or @type.kind_of? Array or (decl[0].delete('*').empty? and @type.class != Pointer)
+			if (@type.kind_of? Function or @type.kind_of? Array) and (decl[0].delete('*').empty? and @type.class != Pointer)
 				decl[0]  =  '(' << decl[0]
 				decl[-1] << ')'
 			end
@@ -2259,6 +2264,7 @@ class CParser
 				r << '}'
 			end
 			r.last << dump_attributes
+			# TODO #pragma pack value
 			[r, dep]
 		end
 
@@ -2337,6 +2343,7 @@ class CParser
 				r.last << ' ' if e.kind_of? Block and not r.last.empty?
 				r.last << '{' if e.kind_of? Block
 				tr, dep = e.dump(scope, [''], dep)
+				tr.pop if e.kind_of? Block and tr.last.empty?
 				r.concat tr.map { |s| Case.dump_indent(s) }
 				r << '}' if e.kind_of? Block
 			end
@@ -2362,7 +2369,7 @@ class CParser
 			if @init.kind_of? Block
 				scope = @init
 				skiptype = false
-				@init.symbols.each { |s|
+				@init.symbol.each_value { |s|
 					r.last << ', ' if skiptype
 					r, dep = s.dump_def(scope, r, dep, skiptype)
 					skiptype = true
@@ -2434,6 +2441,7 @@ class CParser
 		def dump(scope, r=[''], dep=[])
 			r.last << 'return '
 			r, dep = CExpression.dump(@value, scope, r, dep)
+			r.last.chop! if r.last[-1] == ?\ 
 			r.last << ';'
 			[r, dep]
 		end
@@ -2508,7 +2516,7 @@ class CParser
 			when ::String: r.last << e.inspect ; [r, dep]
 			when CExpression: e.dump_inner(scope, r, dep, brace)
 			when Variable: e.dump(scope, r, dep)
-			when nil: r.last << ';' ; [r, dep]
+			when nil: [r, dep]
 			else raise 'wtf?' + e.inspect
 			end
 #r.last << ')'
@@ -2583,13 +2591,9 @@ class CParser
 					r.last << ' : '
 					r, dep = CExpression.dump(@rexpr[1], scope, r, dep, true)
 				else
-					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@lexpr.op]))
-					if OP_PRIO[:'='][@op]
-						r.last << ' ' << @op.to_s << ' '
-					else
-						r.last << @op.to_s
-					end
-					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and OP_PRIO.fetch(@op, {})[@rexpr.op]))
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and @lexpr.lexpr and OP_PRIO.fetch(@op, {})[@lexpr.op]))
+					r.last << ' ' << @op.to_s << ' '
+					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and @rexpr.lexpr and not OP_PRIO.fetch(@rexpr.op, {})[@op]))	# rtl assoc
 				end
 			end
 			r.last << ')' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
