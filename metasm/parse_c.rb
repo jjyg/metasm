@@ -1328,7 +1328,7 @@ class CParser
 			if tok = parser.skipspaces and tok.type == :punct and tok.raw == '['
 				# array indexing
 				idx = CExpression.parse(parser, scope)	# may be nil
-				if idx and (scope == parser.toplevel or @storage == :static)
+				if idx and (scope == parser.toplevel or storage == :static)
 					raise tok, 'array size is not constant' if not idx.constant?
 					idx = idx.reduce(parser)
 				end

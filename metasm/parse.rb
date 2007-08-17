@@ -607,7 +607,7 @@ class Expression
 					b2 = b2.to_i(16) if b2
 					tok.value = b1.to_f
 					# tok.value += 1/b2.to_f # TODO
-					puts "W: unhandled hex float #{tok.raw}" if $VERBOSE and b2 != 0
+					puts "W: unhandled hex float #{tok.raw}" if $VERBOSE and b2 and b2 != 0
 					tok.value *= 2**b3
 					puts "hex float: #{tok.raw} => #{tok.value}" if $DEBUG
 				end
