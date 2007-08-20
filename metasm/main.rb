@@ -336,6 +336,8 @@ class ExeFormat
 		}
 		addr
 	end
+	def each_section
+	end
 
 	# creates a new label, that is guaranteed to be unique as long as this object (ExeFormat) exists
 	def new_label(base = '')

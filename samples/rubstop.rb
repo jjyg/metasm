@@ -8,7 +8,7 @@
 # Works on linux/x86
 #
 
-require 'metasm/os/linux'
+require 'metasm'
 
 module Metasm
 class Rubstop < PTrace32
@@ -18,22 +18,41 @@ class Rubstop < PTrace32
 		define_method(reg+'=') { |v| pokeusr(REGS_I386[reg.upcase], v) }
 	}
 
-	# read memory
-	# use LinuxRemoteString for better performances - it uses /proc/pid/mem instead of ptrace(peekusr)
-	def [](addr, len)
-		readmem(addr, len)
+	def cont(*a)
+		super
+		::Process.waitpid(@pid)
+	end
+	def singlestep(*a)
+		super
+		::Process.waitpid(@pid)
+	end
+	def syscall(*a)
+		super
+		::Process.waitpid(@pid)
 	end
 
-	# write memory
-	# len ignored, uses val.length
-	def []=(addr, len, val)
-		writemem(addr, val)
+	def initialize(*a)
+		super
+		@pgm = ExeFormat.new Ia32.new
+		@pgm.encoded = EncodedData.new LinuxRemoteString.new(@pid)
+		@pgm.encoded.data.ptrace = self
+	end
+
+	def mnemonic(addr = eip)
+		@pgm.encoded.ptr = addr
+		@pgm.cpu.decode_instruction(@pgm, @pgm.encoded, addr).instruction
+	end
+
+	def [](addr, len)
+		@pgm.encoded.data[addr, len]
+	end
+	def []=(addr, len, str)
+		@pgm.encoded.data[addr, len] = str
 	end
 end
 end
 
 if $0 == __FILE__
-	require 'metasm/preprocessor'
 
 	# map syscall number to syscall name
 	pp = Metasm::Preprocessor.new
@@ -41,10 +60,10 @@ if $0 == __FILE__
 	pp.feed '#include <asm/unistd.h>'
 	pp.readtok until pp.eos?
 
-	syscall = {}
+	syscall_map = {}
 	pp.definition.each_value { |macro|
 		next if macro.name.raw !~ /__NR_(.*)/
-		syscall[macro.body.first.raw.to_i] = $1.downcase
+		syscall_map[macro.body.first.raw.to_i] = $1.downcase
 	}
 
 	# start debugging
@@ -52,11 +71,14 @@ if $0 == __FILE__
 
 	begin
 		loop do
-			rs.syscall
-			Process.waitpid(rs.pid)
-			puts syscall[rs.orig_eax]
+			#rs.singlestep
+			#puts "#{'%08x' % (rs.eip & 0xffffffff)} #{rs.mnemonic}"
+			rs.syscall ; rs.syscall	# wait return of syscall
+			puts syscall_map[rs.orig_eax]
 		end
-	rescue
+	rescue Interrupt
 		rs.detach rescue nil
+		puts 'interrupted!'
+	rescue Errno::ESRCH
 	end
 end

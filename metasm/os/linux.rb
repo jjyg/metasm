@@ -21,8 +21,8 @@ class PTrace32
 	# creates a ptraced process (target = path)
 	# or opens a running process (target = pid)
 	def initialize(target)
-		@buf = [0].pack('L')
-		@bufptr = [@buf].pack('P').unpack('L').first
+		@buf = [0].pack('l')
+		@bufptr = [@buf].pack('P').unpack('l').first
 		begin
 			@pid = Integer(target)
 			attach
@@ -39,7 +39,7 @@ class PTrace32
 
 	# interpret the value turned as an unsigned long
 	def bufval
-		@buf.unpack('L').first
+		@buf.unpack('l').first
 	end
 
 	# reads a memory range
@@ -156,11 +156,11 @@ class PTrace32
 	end
 
 	def poketext(addr, data)
-		ptrace(COMMAND['POKETEXT'], @pid, addr, data.unpack('L').first)
+		ptrace(COMMAND['POKETEXT'], @pid, addr, data.unpack('l').first)
 	end
 
 	def pokedata(addr, data)
-		ptrace(COMMAND['POKEDATA'], @pid, addr, data.unpack('L').first)
+		ptrace(COMMAND['POKEDATA'], @pid, addr, data.unpack('l').first)
 	end
 
 	def pokeusr(addr, data)
@@ -194,6 +194,7 @@ end
 
 class LinuxRemoteString < VirtualString
 	attr_accessor :pid, :readfd
+	attr_accessor :ptrace
 
 	# returns a virtual string proxying the specified process memory range
 	# reads are cached (4096 aligned bytes read at once), from /proc/pid/mem
@@ -209,22 +210,31 @@ class LinuxRemoteString < VirtualString
 		self.class.new(@pid, addr, len)
 	end
 
+	def do_ptrace
+		if ptrace
+			yield @ptrace
+		else
+			PTrace32.open(@pid) { |ptrace| yield ptrace }
+		end
+	end
+
 	def write_range(from, val)
 		@invalid = true
-		# attach to target, it must be stopped before reading/writing its memory (even with /proc/pid/mem)
-		PTrace32.open(@pid) { |ptrace| ptrace.writemem(@addr_start + from, val) }
+		# target must be stopped
+		do_ptrace { |ptrace| ptrace.writemem(@addr_start + from, val) }
 	end
 
 	def get_page(addr)
 		@invalid = false
 		@readfd.pos = @curstart = addr & 0xffff_f000
-		PTrace32.open(@pid) { @curpage = @readfd.read 4096 }
+		# target must be stopped
+		do_ptrace { @curpage = @readfd.read 4096 }
 	end
 
 	def realstring
 		super
 		@readfd.pos = @addr_start
-		PTrace32.open(@pid) { @readfd.read @length }
+		do_ptrace { @readfd.read @length }
 	end
 end
 end
