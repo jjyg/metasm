@@ -815,9 +815,9 @@ class Preprocessor
 					path = ::File.join(dir, ipath) if dir
 				end
 			end
-			nil while tok = readtok_nopp and tok.type == :space
-			raise tok if tok and tok.type != :eol
-			unreadtok tok
+			nil while ntok = readtok_nopp and ntok.type == :space
+			raise ntok if ntok and ntok.type != :eol
+			unreadtok ntok
 
 			if not defined? @pragma_once or not @pragma_once or not @pragma_once[path]
 				puts "metasm preprocessor: including #{path}" if $DEBUG

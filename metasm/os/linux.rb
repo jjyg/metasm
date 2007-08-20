@@ -26,13 +26,13 @@ class PTrace32
 		begin
 			@pid = Integer(target)
 			attach
-			Process.wait(@pid)
 		rescue ArgumentError
 			if not @pid = fork
 				traceme
 				exec target
 			end
 		end
+		Process.wait(@pid)
 		puts "Ptrace: attached to #@pid" if $DEBUG
 	end
 
