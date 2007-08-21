@@ -18,7 +18,7 @@ class CParser
 		attr_accessor :symbol	# hash name => Type/Variable/enum value
 		attr_accessor :struct	# hash name => Struct/Union/Enum
 		attr_accessor :outer	# parent block
-		attr_accessor :statements	# array of statements
+		attr_accessor :statements	# array of Statement/Definition
 		attr_accessor :anonymous_enums	# array of anonymous Enum
 
 		def initialize(outer)
@@ -348,6 +348,15 @@ class CParser
 		attr_accessor :name
 		attr_accessor :storage		# auto register static extern typedef
 		attr_accessor :backtrace	# definition backtrace info (the name token)
+	end
+
+	# found in a block's Statements, used to know the initialization order
+	# eg { int i; i = 4; struct foo { int k; } toto = {i}; }
+	class Definition
+		attr_accessor :var
+		def initialize(var)
+			@var = var
+		end
 	end
 
 	class If < Statement
@@ -921,28 +930,32 @@ class CParser
 			var = basetype.dup
 			var.parse_declarator(self, scope)
 
-			raise self if not var.name	# barrel roll
+			raise var.backtrace if not var.name	# barrel roll
 
-			if prev = scope.symbol[var.name] and (
-					not prev.kind_of?(Variable) or
-					prev.initializer)
-				if var.storage == :typedef
+			if prev = scope.symbol[var.name]
+				if prev.kind_of? Variable and prev.storage == :typedef and var.storage == :typedef
 					check_compatible_type(var.backtrace, prev.type, var.type, true)
+					# windows.h redefines many typedefs with the same definition
 					puts "redefining typedef #{var.name}" if $VERBOSE
 					var = prev
-				else
-					if prev.kind_of? ::Integer
-						prev = scope.struct.values.grep(Enum).find { |e| e.members.index(prev) }
+				elsif not prev.kind_of?(Variable) or
+						prev.initializer or
+						prev.storage != var.storage or
+						(scope != @toplevel and prev.storage != :static)
+					if prev.kind_of? ::Integer	# enum value
+						prev = (scope.struct.values.grep(Enum) + scope.anonymous_enums.to_a).find { |e| e.members.index(prev) }
 					end
-					raise var.backtrace, "redefinition, previous is #{prev ? prev.backtrace.exception(nil).message : 'an enum'}"
+					raise var.backtrace, "redefinition, previous is #{prev.backtrace.exception(nil).message}"
+				else
+					check_compatible_type var.backtrace, prev.type, var.type, true
+					(var.attributes ||= []).concat prev.attributes if prev.attributes
 				end
 			elsif var.storage == :typedef
 				var = TypeDef.new var.name, var.type, var.backtrace
-			elsif prev
-				check_compatible_type var.backtrace, prev.type, var.type, true
-				# XXX forward attributes ?
 			end
 			scope.symbol[var.name] = var
+
+			scope.statements << Definition.new(var) unless var.kind_of? TypeDef
 
 			raise tok || self, 'punctuation expected' if not tok = skipspaces or tok.type != :punct
 
@@ -1972,6 +1985,8 @@ class CParser
 			t.backtrace.backtrace.grep(::String).grep(/^</).empty?
 		}
 
+		c.toplevel.statements.clear	# don't want all Definitions
+
 		# a macro is fine too
 		c.lexer.dump_macros(c.lexer.traced_macros, false) + "\n\n" +
 		c.dump_definitions(userdefined, userdefined)
@@ -2009,10 +2024,8 @@ class CParser
 
 	class Block
 		# return array of c source lines and array of dependencies (objects)
-		def dump(scp, r=[''], dep=[], skip=[])
-			# skip is for function arguments
-			mydefs = @symbol.values + @struct.values + anonymous_enums.to_a - skip
-			mydefs -= mydefs.grep(::Integer)
+		def dump(scp, r=[''], dep=[])
+			mydefs = @symbol.values.grep(TypeDef) + @struct.values + anonymous_enums.to_a
 			todo_rndr = {}
 			todo_deps = {}
 			mydefs.each { |t| # filter out Enum values
@@ -2024,6 +2037,7 @@ class CParser
 		end
 
 		def dump_reorder(mydefs, todo_rndr, todo_deps, r=[''], dep=[])
+			done = []
 			loop do
 				break if todo_rndr.empty?
 				todo_now = todo_rndr.keys.find_all { |t|
@@ -2066,14 +2080,32 @@ class CParser
 					end
 					dep |= todo_deps.delete(t)
 					todo_deps.each_value { |tdep| tdep.delete t }
+					done << t
 				}
 			end
 
 			@statements.each { |s|
+				next if s.kind_of? Definition and done.include? s.var
 				r << '' if not r.last.empty?
 				r, dep = s.dump(self, r, dep)
 			}
 
+			dep -= done
+
+			[r, dep]
+		end
+	end
+	class Definition
+		def dump(scope, r=[''], dep=[])
+			tr, dep = @var.dump_def(scope, [''], dep)
+			if @var.kind_of? Variable and @var.type.kind_of? Function and @var.initializer
+				r << ''
+				r.concat tr
+			else
+				r.pop if r.last == ''
+				r.concat tr
+				r.last << ';'
+			end
 			[r, dep]
 		end
 	end
@@ -2199,7 +2231,7 @@ class CParser
 
 		def dump_initializer(init, scope, r=[''], dep=[])
 			r << '{'
-			tr, dep = init.dump(scope, [''], dep, @args)
+			tr, dep = init.dump(scope, [''], dep)
 			r.concat tr.map { |s| Case.dump_indent(s) }
 			r << '}'
 			[r, dep]
