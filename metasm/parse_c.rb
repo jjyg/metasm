@@ -112,6 +112,7 @@ class CParser
 				case s
 				when :const, :volatile: (@qualifier ||= []) << s
 				when :signed, :unsigned: @specifier = s
+				when nil
 				else raise "internal error, got #{name.inspect} #{specs.inspect}"
 				end
 			}
@@ -2393,7 +2394,13 @@ class CParser
 			r, dep = Statement.dump(@bthen, scope, r, dep)
 			if belse
 				@bthen.kind_of?(Block) ? (r.last << ' else') : (r << 'else')
-				r, dep = Statement.dump(@belse, scope, r, dep)
+				if @belse.kind_of? If
+					# skip indent
+					r.last << ' '
+					r, dep = @belse.dump(scope, r, dep)
+				else
+					r, dep = Statement.dump(@belse, scope, r, dep)
+				end
 			end
 			[r, dep]
 		end
@@ -2412,9 +2419,13 @@ class CParser
 			else
 				r, dep = CExpression.dump(@init, scope, r, dep)
 			end
-			r.last << ' ; '
+			r.last << ' ' if @init
+			r.last << ';'
+			r.last << ' ' if @test
 			r, dep = CExpression.dump(@test, scope, r, dep)
-			r.last << ' ; '
+			r.last << ' ' if @test
+			r.last << ';'
+			r.last << ' ' if @iter
 			r, dep = CExpression.dump(@iter, scope, r, dep)
 			r.last << ')'
 			Statement.dump(@body, scope, r, dep)
@@ -2443,14 +2454,10 @@ class CParser
 			r.last << 'switch ('
 			CExpression.dump(@test, scope, r, dep)
 			r.last << ')'
-			if not @body
-				r << "\t;"
-			else
-				r.last << ' {' if @body.kind_of? Block
-				tr, dep = @body.dump(scope, [''], dep)
-				r.concat tr.map { |s| s[-1] == ?: ? s : "\t" << s }
-				r << '}' if @body.kind_of? Block
-			end
+			r.last << ' {' if @body.kind_of? Block
+			tr, dep = @body.dump(scope, [''], dep)
+			r.concat tr.map { |s| Case.dump_indent(s, true) }
+			r << '}' if @body.kind_of? Block
 			[r, dep]
 		end
 	end
@@ -2498,8 +2505,13 @@ class CParser
 			dump_inner(scope, r, dep)
 		end
 
-		def self.dump_indent(s)
-			(s[-1] == ?: and s !~ /^\s*(case|default)\W/) ? s : ("\t" << s)
+		def self.dump_indent(s, short=false)
+			case s
+			when /^(case|default)\W/: (short ? '    ' : "\t") << s
+			when /^\s+(case|default)\W/: "\t" << s
+			when /:$/: s
+			else "\t" << s
+			end
 		end
 	end
 	class Label

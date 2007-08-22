@@ -29,6 +29,7 @@ end
 }
 
 require 'metasm/parse_c'
+require 'metasm/compile_c'
 
 # cleanup include path
 $:.delete metasmdir if metasmdir
