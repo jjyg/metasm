@@ -249,7 +249,7 @@ class Preprocessor
 			str << "\n// from #{@name.backtrace[-2, 2] * ':'}\n" if comment
 			str << "#define #{@name.raw}"
 			if args
-				str << '(' << (@args.map { |t| t.raw } + (@varargs ? ['...'] : [])).join(', ') << ')'
+				str << '(' << (@args.map { |t| t.raw } + (varargs ? ['...'] : [])).join(', ') << ')'
 			end
 			str << ' ' << @body.map { |t| t.raw }.join
 		end

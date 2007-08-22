@@ -18,7 +18,7 @@ class CParser
 		attr_accessor :symbol	# hash name => Type/Variable/enum value
 		attr_accessor :struct	# hash name => Struct/Union/Enum
 		attr_accessor :outer	# parent block
-		attr_accessor :statements	# array of Statement/Definition
+		attr_accessor :statements	# array of Statement/Declaration
 		attr_accessor :anonymous_enums	# array of anonymous Enum
 
 		def initialize(outer)
@@ -352,7 +352,7 @@ class CParser
 
 	# found in a block's Statements, used to know the initialization order
 	# eg { int i; i = 4; struct foo { int k; } toto = {i}; }
-	class Definition
+	class Declaration
 		attr_accessor :var
 		def initialize(var)
 			@var = var
@@ -474,7 +474,7 @@ class CParser
 	class Label < Statement
 		attr_accessor :name
 		attr_accessor :statement
-		def initialize(name, statement)
+		def initialize(name, statement=nil)
 			@name, @statement = name, statement
 		end
 	end
@@ -933,7 +933,7 @@ class CParser
 			raise var.backtrace if not var.name	# barrel roll
 
 			if prev = scope.symbol[var.name]
-				if prev.kind_of? Variable and prev.storage == :typedef and var.storage == :typedef
+				if prev.kind_of? TypeDef and var.storage == :typedef
 					check_compatible_type(var.backtrace, prev.type, var.type, true)
 					# windows.h redefines many typedefs with the same definition
 					puts "redefining typedef #{var.name}" if $VERBOSE
@@ -955,7 +955,7 @@ class CParser
 			end
 			scope.symbol[var.name] = var
 
-			scope.statements << Definition.new(var) unless var.kind_of? TypeDef
+			scope.statements << Declaration.new(var) unless var.kind_of? TypeDef
 
 			raise tok || self, 'punctuation expected' if not tok = skipspaces or tok.type != :punct
 
@@ -983,7 +983,7 @@ class CParser
 						body.statements << parse_statement(body, [var.type.type])
 					end
 				end
-				if $VERBOSE and not body.statements.last.kind_of? Return
+				if $VERBOSE and not body.statements.last.kind_of? Return and not body.statements.last.kind_of? Asm
 					puts tok.exception('missing function return value').message if not var.type.type.kind_of? BaseType or var.type.type.name != :void
 				end
 				break
@@ -1031,7 +1031,7 @@ class CParser
 			raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
-			if $VERBOSE and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
+			if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
 				puts tok.exception("statement with no effect : #{expr.dump_inner(scope)[0].join(' ')}")
 			end
 			return expr
@@ -1084,7 +1084,7 @@ class CParser
 				raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
 				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
-				if $VERBOSE and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
+				if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
 					puts tok.exception("statement with no effect : #{expr.dump_inner(scope)[0].join(' ')}")
 				end
 				expr
@@ -1713,7 +1713,7 @@ class CParser
 					# check compound statement expression
 					elsif ntok = parser.skipspaces and ntok.type == :punct and ntok.raw == '{'
 						parser.unreadtok ntok
-						blk = parser.parse_statement(scope, []) # XXX nesting ?
+						blk = parser.parse_statement(scope, [:expression]) # XXX nesting ?
 						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 						type = blk.statements.last.kind_of?(CExpression) ? blk.statements.last.type : BaseType.new(:void)
 						val = CExpression.new(nil, nil, blk, type)
@@ -1773,6 +1773,7 @@ class CParser
 						raise tok, 'expr expected' if not val = parse_value(parser, scope)
 						raise tok, 'type not arithmetic' if not val.type.arithmetic?
 						val = CExpression.new(nil, tok.raw.to_sym, val, val.type)
+						val.type = BaseType.new(:int) if tok.raw == '!'
 					else raise tok, 'internal error'
 					end
 				else
@@ -1893,8 +1894,10 @@ class CParser
 					#parser.check_compatible_type(parser, l.type, r.type)
 					ll = stack.pop
 					stack << CExpression.new(ll, op, [l, r], l.type)
-				when :',', :'&&', :'||', :'='
+				when :',', :'='
 					stack << CExpression.new(l, op, r, r.type)
+				when :'&&', :'||'
+					stack << CExpression.new(l, op, r, BaseType.new(:int))
 				else
 					raise parser, "invalid type #{l.type.dump_cast(scope)[0].join(' ')} #{l.dump_inner(scope)[0].join(' ')} for #{op.inspect}" if not l.type.arithmetic?
 					raise parser, "invalid type #{r.type.dump_cast(scope)[0].join(' ')} #{r.dump_inner(scope)[0].join(' ')} for #{op.inspect}" if not r.type.arithmetic?
@@ -1985,7 +1988,7 @@ class CParser
 			t.backtrace.backtrace.grep(::String).grep(/^</).empty?
 		}
 
-		c.toplevel.statements.clear	# don't want all Definitions
+		c.toplevel.statements.clear	# don't want all Declarations
 
 		# a macro is fine too
 		c.lexer.dump_macros(c.lexer.traced_macros, false) + "\n\n" +
@@ -2085,7 +2088,7 @@ class CParser
 			end
 
 			@statements.each { |s|
-				next if s.kind_of? Definition and done.include? s.var
+				next if s.kind_of? Declaration and done.include? s.var
 				r << '' if not r.last.empty?
 				r, dep = s.dump(self, r, dep)
 			}
@@ -2095,7 +2098,7 @@ class CParser
 			[r, dep]
 		end
 	end
-	class Definition
+	class Declaration
 		def dump(scope, r=[''], dep=[])
 			tr, dep = @var.dump_def(scope, [''], dep)
 			if @var.kind_of? Variable and @var.type.kind_of? Function and @var.initializer
@@ -2173,9 +2176,9 @@ class CParser
 		def dump_declarator(decl, scope, r=[''], dep=[])
 			decl[0] = ' ' << @qualifier.map { |q| q.to_s << ' ' }.join << decl[0] if qualifier
 			decl[0] = '*' << decl[0]
-			if (@type.kind_of? Function or @type.kind_of? Array) and (decl[0].delete('*').empty? and @type.class != Pointer)
-				decl[0]  =  '(' << decl[0]
-				decl[-1] << ')'
+			if @type.kind_of? Function or @type.kind_of? Array
+				decl[0] = '(' << decl[0]
+				decl.last << ')'
 			end
 			@type.dump_declarator(decl, scope, r, dep)
 		end
@@ -2505,7 +2508,7 @@ class CParser
 			dump_inner(scope, r, dep)
 		end
 		def dump_inner(scope, r=[''], dep=[])
-			if not @statement: [r << ';', dep]
+			if not @statement: [r, dep]
 			elsif @statement.kind_of? Block: Statement.dump(@statement, scope, r, dep)
 			else  @statement.dump(scope, r << '', dep)
 			end
