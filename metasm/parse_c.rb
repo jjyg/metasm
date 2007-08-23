@@ -487,12 +487,12 @@ class CParser
 		end
 
 		def self.parse(parser, scope, nest)
-			raise parser if not expr = CExpression.parse(parser, scope)
+			raise parser, 'invalid case' if not expr = CExpression.parse(parser, scope) or not expr.constant?
 			raise tok || parser, '":" or "..." expected' if not tok = parser.skipspaces or tok.type != :punct or (tok.raw != ':' and tok.raw != '.')
 			if tok.raw == '.'
 				raise tok || parser, '".." expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '.'
 				raise tok || parser,  '"." expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '.'
-				raise tok if not exprup = CExpression.parse(parser, scope)
+				raise tok, 'invalid case range' if not exprup = CExpression.parse(parser, scope) or not exprup.constant?
 				raise tok || parser, '":" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ':'
 			end
 			body = parser.parse_statement scope, nest
@@ -1482,8 +1482,7 @@ class CParser
 				else CExpression.new(c, @op, @rexpr, @type)
 				end
 			when :'+', :'-', :'*', :'/', :'^', :'%', :'&', :'|', :'>>', :'<<', :'~', nil
-				t = @type
-				t = t.type while t.kind_of? TypeDef
+				t = @type.untypedef
 				case t
 				when BaseType
 				when Pointer: return self #raise parser, 'address unknown for now'
@@ -1769,7 +1768,7 @@ class CParser
 					when '*'
 						raise tok, 'expr expected' if not val = parse_value(parser, scope)
 						raise tok, 'not a pointer' if not val.type.pointer?
-						val = CExpression.new(nil, tok.raw.to_sym, val, val.type.type)
+						val = CExpression.new(nil, tok.raw.to_sym, val, val.type.untypedef.type)
 					when '~', '!', '+', '-'
 						raise tok, 'expr expected' if not val = parse_value(parser, scope)
 						raise tok, 'type not arithmetic' if not val.type.arithmetic?
@@ -1794,47 +1793,29 @@ class CParser
 			nval = \
 			if tok and tok.type == :punct
 				case tok.raw
-				when '-', '--', '->'
+				when '+', '++', '-', '--', '->'
 					ntok = parser.readtok
-					if tok.raw == '-' and ntok and ntok.type == :punct and (ntok.raw == '-' or ntok.raw == '>')
+					if (tok.raw == '+' or tok.raw == '-') and ntok and ntok.type == :punct and
+							(ntok.raw == tok.raw or (tok.raw == '-' and ntok.raw == '>'))
 						tok.raw << ntok.raw
 					else
 						parser.unreadtok ntok
 					end
-
 					case tok.raw
-					when '-'
+					when '+', '-'
 						nil
+					when '++', '--'
+						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
+						CExpression.new(val, :'++', nil, val.type)
 					when '->'
 						raise tok, 'not a pointer' if not val.type.pointer?
 						raise tok, 'invalid member' if not tok = parser.skipspaces or tok.type != :string
-						type = val.type
-						type = type.type while type.kind_of? TypeDef
-						type = type.type
-						type = type.type while type.kind_of? TypeDef
+						type = val.type.untypedef.type.untypedef
 						raise tok, 'invalid member' if not type.kind_of? Union or not type.members or not m = type.members.find { |m| m.name == tok.raw }
 						CExpression.new(val, :'->', tok.raw, m.type)
-					when '--'
-						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
-						CExpression.new(val, :'--', nil, val.type)
-					end
-				when '+', '++'
-					ntok = parser.readtok
-					if tok.raw == '+' and ntok and ntok.type == :punct and ntok.raw == '+'
-						tok.raw << ntok.raw
-					else
-						parser.unreadtok ntok
-					end
-					case tok.raw
-					when '+'
-						nil
-					when '++'
-						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
-						CExpression.new(val, :'++', nil, val.type)
 					end
 				when '.'
-					type = val.type
-					type = type.type while type.kind_of? TypeDef
+					type = val.type.untypedef
 					if not ntok = parser.skipspaces or ntok.type != :string or not type.kind_of? Union or not type.members or not m = type.members.find { |m| m.name == ntok.raw }
 						parser.unreadtok ntok
 						nil
@@ -1842,20 +1823,18 @@ class CParser
 						CExpression.new(val, :'.', ntok.raw, m.type)
 					end
 				when '['
+					raise tok, 'index expected' if not idx = parse(parser, scope)
+					val, idx = idx, val        if not val.type.pointer?		# fake support of '4[tab]'
 					raise tok, 'not a pointer' if not val.type.pointer?
-					raise tok, 'bad index' if not idx = parse(parser, scope)
+					raise tok, 'not an index'  if not idx.type.integral?
 					raise tok, 'get perpendicular ! (elsewhere)' if idx.kind_of?(CExpression) and idx.op == :','
 					raise tok || parser, '"]" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ']'
-					type = val.type
-					type = type.type while type.kind_of? TypeDef
-					type = type.type
+					type = val.type.untypedef.type
 					# TODO boundscheck (and become king of the universe)
 					CExpression.new(val, :'[]', idx, type)
 				when '('
-					type = val.type
-					type = type.type while type.kind_of? TypeDef
-					type = type.type if type.kind_of? Pointer
-					type = type.type while type.kind_of? TypeDef
+					type = val.type.untypedef
+					type = type.type.untypedef if type.kind_of? Pointer
 					raise tok, 'not a function' if not type.kind_of? Function
 
 					args = []
