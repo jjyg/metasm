@@ -847,13 +847,18 @@ class CParser
 			when :quoted
 				# merge consecutive :quoted
 				t = t.dup
-				while nt = readtok_longstr and nt.type == :quoted
-					if t.raw[0] == ?" and nt.raw[0, 1] == 'L"'
-						# ensure wide prefix is set
-						t.raw[0, 0] = 'L'
+				while nt = readtok_longstr
+					case nt.type
+					when :quoted
+						if t.raw[0] == ?" and nt.raw[0, 1] == 'L"'
+							# ensure wide prefix is set
+							t.raw[0, 0] = 'L'
+						end
+						t.raw << ' ' << nt.raw
+						t.value << nt.value
+					when :space, :eol
+					else break
 					end
-					t.raw << ' ' << nt.raw
-					t.value << nt.value
 				end
 				@lexer.unreadtok nt
 			end
@@ -1295,6 +1300,15 @@ class CParser
 			if tok.type == :punct and tok.raw == '*'
 				ptr = Pointer.new
 				ptr.parse_attributes(parser)
+				while ntok = parser.skipspaces and ntok.type == :string
+					case ntok.raw
+					when 'const', 'volatile'
+						(ptr.qualifier ||= []) << ntok.raw.to_sym
+						ptr.parse_attributes(parser)
+					else break
+					end
+				end
+				parser.unreadtok ntok
 				parse_declarator(parser, scope, true)
 				t = self
 				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
@@ -2154,8 +2168,10 @@ class CParser
 	end
 	class Pointer
 		def dump_declarator(decl, scope, r=[''], dep=[])
-			decl[0] = ' ' << @qualifier.map { |q| q.to_s << ' ' }.join << decl[0] if qualifier
-			decl[0] = '*' << decl[0]
+			d = decl[0]
+			decl[0] = '*'
+			decl[0] << ' ' << @qualifier.map { |q| q.to_s }.join(' ') << ' ' if qualifier
+			decl[0] << d
 			if @type.kind_of? Function or @type.kind_of? Array
 				decl[0] = '(' << decl[0]
 				decl.last << ')'
