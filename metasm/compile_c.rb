@@ -4,6 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
+require 'metasm/main'
 require 'metasm/parse_c'
 
 module Metasm
@@ -31,9 +32,8 @@ class CParser
 	end
 
 	class Statement
-		# all Statements/Declaration must define this method
+		# all Statements/Declaration must define a precompile(parser, scope) method
 		# it must append itself to scope.statements
-		def precompile(parser, scope) raise end
 
 		def precompile_make_block(scope)
 			b = Block.new scope
@@ -290,29 +290,37 @@ class CParser
 		# except Arrays if keep_arrays is true (need to know variable allocation sizes etc)
 		# returns the type
 		def self.precompile_type(parser, scope, obj, declaration = false)
-			obj.type = \
 			case t = obj.type.untypedef
-			when BaseType: t.name == :void ? t : BaseType.new("__int#{parser.typesize[t.name]*8}".to_sym, t.specifier)
-			when Array
-				if declaration: precompile_type(parser, scope, t, declaration) ; t
-				else   BaseType.new("__int#{parser.typesize[:ptr]*8}".to_sym, :unsigned)
+			when BaseType
+				case t.name
+				when :void
+				when :float, :double, :longdouble
+				else t = BaseType.new("__int#{parser.typesize[t.name]*8}".to_sym, t.specifier)
 				end
-			when Pointer:  BaseType.new("__int#{parser.typesize[:ptr]*8}".to_sym, :unsigned)
-			when Enum:     BaseType.new("__int#{parser.typesize[:int]*8}".to_sym)
+			when Array
+				if declaration: precompile_type(parser, scope, t, declaration)
+				else   t = BaseType.new("__int#{parser.typesize[:ptr]*8}".to_sym, :unsigned)
+				end
+			when Pointer:  t = BaseType.new("__int#{parser.typesize[:ptr]*8}".to_sym, :unsigned)
+			when Enum:     t = BaseType.new("__int#{parser.typesize[:int]*8}".to_sym)
 			when Function
 				precompile_type(parser, scope, t)
 				t.args.each { |a| precompile_type(parser, scope, a) }
-				t
 			when Union
 				if declaration and t.members and not t.name	# anonymous struct
 					t.members.each { |a| precompile_type(parser, scope, a, true) }
 				end
-				t
 			else raise 'bad type ' + t.inspect
 			end
+			begin
+				(t.qualifier ||= []).concat obj.type.qualifier if obj.type.qualifier and t != obj.type
+			end while obj.type.kind_of? TypeDef
+			obj.type = t
 		end
 
 		# returns a new CExpression with simplified self.type, computes structure offsets
+		# TODO turns char[] statements into reference to anonymised const char[]
+		# TODO same with float constants ?
 		def precompile_inner(parser, scope)
 			case @op
 			when :'.'
@@ -347,19 +355,25 @@ class CParser
 				@op = :'*'
 				@lexpr = nil
 				precompile_inner(parser, scope)
-			when :'?:', :funcall
+			when :'?:'
+				# cannot precompile in place, a conditionnal expression may have a coma: must turn into If
+				raise 'conditional in toplevel' if scope == parser.toplevel	# just in case
+				var = Variable.new
+				var.name = parser.new_label('ternary')
+				var.type = @rexpr[0].type
+				CExpression.precompile_type(parser, scope, var)
+				Declaration.new(var).precompile(parser, scope)
+				If.new(@lexpr, CExpression.new(var, :'=', @rexpr[0], var.type), CExpression.new(var, :'=', @rexpr[1], var.type)).precompile(parser, scope)
+				
+				@lexpr = nil
+				@op = nil
+				@rexpr = var
+				precompile_inner(parser, scope)
+			when :funcall
 				@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
-				if @op == :'?:' and @lexpr.kind_of? CExpression and not @lexpr.lexpr and not @lexpr.op and @lexpr.rexpr.kind_of? Numeric
-					if @lexpr.rexpr != 0
-						CExpression.precompile_inner(parser, scope, @rexpr[0])
-					else
-						CExpression.precompile_inner(parser, scope, @rexpr[1])
-					end
-				else
-					@rexpr.map! { |e| CExpression.precompile_inner(parser, scope, e) }
-					CExpression.precompile_type(parser, scope, self)
-					self
-				end
+				@rexpr.map! { |e| CExpression.precompile_inner(parser, scope, e) }
+				CExpression.precompile_type(parser, scope, self)
+				self
 			when :','
 				lexpr = @lexpr.kind_of?(CExpression) ? @lexpr : CExpression.new(nil, nil, @lexpr, @lexpr.type)
 				rexpr = @rexpr.kind_of?(CExpression) ? @rexpr : CExpression.new(nil, nil, @rexpr, @rexpr.type)
@@ -386,6 +400,30 @@ class CParser
 					return e.precompile_inner(parser, scope)
 				end
 
+				# handle char[] immediates and float
+				if not @lexpr and not @op and scope != parser.toplevel
+					case @rexpr
+					when ::String
+						v = Variable.new
+						v.name = parser.new_label('string')
+						v.type = Array.new(@type.type)
+						v.type.type.qualifier = [:const]
+						v.initializer = CExpression.new(nil, nil, @rexpr, @type)
+						parser.toplevel.symbol[v.name] = v
+						parser.toplevel.statements << Declaration.new(v)
+						@rexpr = v
+					when ::Float
+						v = Variable.new
+						v.name = parser.new_label(@type.untypedef.name.to_s)
+						v.type = @type
+						v.type.qualifier = [:const]
+						v.initializer = CExpression.new(nil, nil, @rexpr, @type)
+						parser.toplevel.symbol[v.name] = v
+						parser.toplevel.statements << Declaration.new(v)
+						@rexpr = v
+					end
+				end
+
 				CExpression.precompile_type(parser, scope, self)
 
 				# calc numeric
@@ -397,9 +435,86 @@ class CParser
 						@rexpr = val
 					end
 				end
+
 				self
 			end
 		end
+	end
+end
+
+class CPU
+	# turns a precompiled CParser into an assembler source string
+	def compile_c(exe, cp)
+		src = []
+
+		# reorder statements (arrays of Variables)
+		funcs, rwdata, rodata, udata = [], [], [], []
+		cp.toplevel.statements.each { |st|
+			v = st.var
+			if v.type.kind_of? CParser::Function: funcs << v if v.initializer	# no initializer == storage :extern
+			elsif v.storage == :extern
+			elsif v.initializer and not v.type.qualifier.to_a.include?(:const):  rwdata << v
+			elsif v.initializer: rodata << v
+			else udata << v
+			end
+		}
+
+		exe.compile_setsection src, '.text' if not funcs.empty?
+		funcs.each { |func|
+			compile_c_function(exe, cp, src, func)
+		}
+
+		exe.compile_setsection src, '.data' if not rwdata.empty?
+		rwdata.each { |data|
+			compile_c_idata(exe, cp, src, data)
+		}
+
+		exe.compile_setsection src, '.rodata' if not rodata.empty?
+		rodata.each { |data|
+			compile_c_idata(exe, cp, src, data)
+		}
+
+		exe.compile_setsection src, '.bss' if not udata.empty?
+		udata.each { |data|
+			compile_c_udata(exe, cp, src, data)
+		}
+
+		src.join("\n")
+	end
+
+	def compile_c_function(exe, cp, src, func)
+		src << "#{func.name}:"
+		src << "; function body goes here"
+	end
+
+	def compile_c_idata(exe, cp, src, data)
+		src << "#{data.name}"
+		case data.type
+		when CParser::BaseType
+		when CParser::Struct
+		when CParser::Union
+		when CParser::Array
+		else raise 'bad data type ' + data.type.dump_cast(cp.toplevel)[0].join(' ') + src.last
+		end
+		src.last << " db 0 ; data definition goes here"
+	end
+
+	def compile_c_udata(exe, cp, src, data)
+		src << "#{data.name} db #{cp.sizeof(data)} dup(?)"
+	end
+end
+
+class ExeFormat
+	# add directives to encode different sections (.text .data .rodata .bss)
+	def compile_setsection(src, section)
+		src << section
+	end
+
+	def self.compile_c_to_asm(cpu, source)
+		exe = new(cpu)
+		cp = CParser.parse(source)
+		cp.precompile
+		exe.cpu.compile_c(exe, cp)
 	end
 end
 end

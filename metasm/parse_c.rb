@@ -959,8 +959,6 @@ class CParser
 			elsif var.storage == :typedef
 				var = TypeDef.new var.name, var.type, var.backtrace
 			end
-			scope.symbol[var.name] = var
-
 			scope.statements << Declaration.new(var) unless var.kind_of? TypeDef
 
 			raise tok || self, 'punctuation expected' if not tok = skipspaces or tok.type != :punct
@@ -969,6 +967,7 @@ class CParser
 			when '{'
 				# function body
 				raise tok if nofunc or not var.kind_of? Variable or not var.type.kind_of? Function
+				scope.symbol[var.name] = var
 				body = var.initializer = Block.new(scope)
 				var.type.args ||= []
 				var.type.args.each { |v|
@@ -1004,6 +1003,9 @@ class CParser
 					var.initializer = var.initializer.initializer if var.initializer.kind_of? Variable
 				end
 				raise tok || self, '"," or ";" expected' if not tok = skipspaces or tok.type != :punct
+				scope.symbol[var.name] = var
+			else
+				scope.symbol[var.name] = var
 			end
 
 			case tok.raw
