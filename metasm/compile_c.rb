@@ -502,6 +502,7 @@ class CPU
 	def compile_c_udata(exe, cp, src, data)
 		src << "#{data.name} db #{cp.sizeof(data)} dup(?)"
 	end
+	# foo
 end
 
 class ExeFormat
