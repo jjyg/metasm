@@ -907,7 +907,8 @@ class CParser
 			@typesize[:int]
 		when Struct
 			raise self, 'unknown structure size' if not type.members
-			type.members.map { |m| (sizeof(m) + type.align - 1) / type.align * type.align }.inject(0) { |a, b| a+b }
+			al = type.align
+			type.members.map { |m| (sizeof(m)+al-1) / al * al }.inject(0){|a,b|a+b}
 		when Union
 			raise self, 'unknown structure size' if not type.members
 			type.members.map { |m| sizeof(m) }.max || 0
