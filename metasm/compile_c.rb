@@ -35,6 +35,7 @@ class CParser
 		# all Statements/Declaration must define a precompile(parser, scope) method
 		# it must append itself to scope.statements
 
+		# turns a statement into a new block
 		def precompile_make_block(scope)
 			b = Block.new scope
 			b.statements << self
@@ -43,6 +44,7 @@ class CParser
 	end
 	
 	class Block
+		# precompile all statements, then simplifies symbols/structs types
 		def precompile(parser, scope=nil)
 			stmts = @statements.dup
 			@statements.clear
@@ -63,9 +65,8 @@ class CParser
 			scope.statements << self if scope
 		end
 
-		def precompile_make_block(scope)
-			self
-		end
+		# noop
+		def precompile_make_block(scope) self end
 
 		def continue_label ; defined?(@continue_label) ? @continue_label : @outer.continue_label end
 		def continue_label=(l) @continue_label = l end
@@ -95,20 +96,18 @@ class CParser
 
 	class If
 		def precompile(parser, scope)
-			if not @belse and @bthen.kind_of? Goto
-				scope.statements << self
-				return
-			end
-
-			if @test.kind_of? CExpression and not @test.lexpr and @test.op == :'!' and @test.rexpr.kind_of? CExpression
-				@test = @test.rexpr
-			else
-				@test = CExpression.new(nil, :'!', @test, BaseType.new(:int))
+			if belse or not @bthen.kind_of? Goto
+				if @test.kind_of? CExpression and not @test.lexpr and @test.op == :'!' and @test.rexpr.kind_of? CExpression
+					@test = @test.rexpr
+				else
+					@test = CExpression.new(nil, :'!', @test, BaseType.new(:int))
+				end
+				inverted = true
 			end
 			@test = CExpression.precompile_inner(parser, scope, @test)
 
 			if @test.kind_of? CExpression and not @test.lexpr and not @test.op and @test.rexpr.kind_of? Numeric
-				if @test.rexpr == 0
+				if (inverted and @test.rexpr == 0) or (not inverted and @test.rexpr != 0)
 					@bthen.precompile(parser, scope)
 					return
 				else
@@ -312,15 +311,18 @@ class CParser
 				end
 			else raise 'bad type ' + t.inspect
 			end
-			begin
+			loop do
 				(t.qualifier ||= []).concat obj.type.qualifier if obj.type.qualifier and t != obj.type
-			end while obj.type.kind_of? TypeDef
+				if obj.type.kind_of? TypeDef: obj.type = obj.type.type
+				else break
+				end
+			end
 			obj.type = t
 		end
 
 		# returns a new CExpression with simplified self.type, computes structure offsets
-		# TODO turns char[] statements into reference to anonymised const char[]
-		# TODO same with float constants ?
+		# turns char[]/float immediates to reference to anonymised const
+		# TODO anonymise legit Goto/Label
 		def precompile_inner(parser, scope)
 			case @op
 			when :'.'
@@ -380,6 +382,21 @@ class CParser
 				scope.statements << lexpr.precompile_inner(parser, scope)
 				rexpr.precompile_inner(parser, scope)
 			else
+				# handle compound statements
+				if not @lexpr and not @op and @rexpr.kind_of? Block
+					raise 'compound statement in toplevel' if scope == parser.toplevel	# just in case
+					var = Variable.new
+					var.name = parser.new_label('compoundstatement')
+					var.type = @type
+					CExpression.precompile_type(parser, scope, var)
+					Declaration.new(var).precompile(parser, scope)
+					if @rexpr.statements.last.kind_of? CExpression
+						@rexpr.statements[-1] = CExpression.new(var, :'=', @rexpr.statements[-1], var.type)
+						@rexpr.precompile(parser, scope)
+					end
+					@rexpr = var
+				end
+
 				# handle pointer + 2 == ((char *)pointer) + 2*sizeof(*pointer)
 				if		@lexpr and (@lexpr.kind_of? CExpression or @lexpr.kind_of? Variable) and
 						@rexpr and (@rexpr.kind_of? CExpression or @rexpr.kind_of? Variable) and
@@ -389,6 +406,8 @@ class CParser
 					sz = parser.sizeof(nil, @lexpr.type.untypedef.type.untypedef)
 					@rexpr = CExpression.new(@rexpr, :'*', sz, @rexpr.type) if sz != 1
 				end
+
+				# TODO handle struct/array assignment
 
 				@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
 				@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
@@ -460,49 +479,116 @@ class CPU
 		}
 
 		exe.compile_setsection src, '.text' if not funcs.empty?
-		funcs.each { |func|
-			compile_c_function(exe, cp, src, func)
-		}
+		funcs.each { |func| compile_c_function(exe, cp, src, func) }
 
 		exe.compile_setsection src, '.data' if not rwdata.empty?
-		rwdata.each { |data|
-			compile_c_idata(exe, cp, src, data)
-		}
+		rwdata.each { |data| compile_c_idata(exe, cp, src, data) }
 
 		exe.compile_setsection src, '.rodata' if not rodata.empty?
-		rodata.each { |data|
-			compile_c_idata(exe, cp, src, data)
-		}
+		rodata.each { |data| compile_c_idata(exe, cp, src, data) }
 
-		exe.compile_setsection src, '.bss' if not udata.empty?
-		udata.each { |data|
-			compile_c_udata(exe, cp, src, data)
-		}
+		exe.compile_setsection src, '.bss'  if not udata.empty?
+		udata.each  { |data| compile_c_udata(exe, cp, src, data) }
 
 		src.join("\n")
 	end
 
+	# compiles a C function +func+ to asm source into the array of strings +str+
 	def compile_c_function(exe, cp, src, func)
 		src << "#{func.name}:"
 		src << "; function body goes here"
+		#raise 'go buy a real proc !'
 	end
 
+	# compiles a C static data definition into an asm string
 	def compile_c_idata(exe, cp, src, data)
+		# XXX src << '.align 42'
 		src << "#{data.name}"
-		case data.type
+		compile_c_idata_inner(exe, cp, src, data.type, data.initializer)
+	end
+
+	# dumps an anonymous variable definition
+	def compile_c_idata_inner(exe, cp, src, type, value)
+		value ||= 0
+		case type
 		when CParser::BaseType
+			if type.name == :void
+				src.last << ':' if not src.last.empty?
+				return
+			end
+
+			src.last <<
+			case type.name
+			when :__int8:  ' db '
+			when :__int16: ' dw '
+			when :__int32: ' dd '
+			when :__int64: ' dq '
+			when :float:   ' df '	# TODO
+			when :double:  ' dfd '
+			when :longdouble: ' dfld '
+			else raise "unknown idata type #{type.inspect} #{value.inspect}"
+			end
+
+			src.last <<
+			case value
+			when CParser::CExpression: value.rexpr.kind_of?(::Numeric) ? value.rexpr.to_s : value.inspect
+			when ::Integer: (value >= 4096) ? ('0x%X' % value) : value.to_s
+			when ::Numeric: value.to_s
+			else value.inspect
+			end
 		when CParser::Struct
+			src.last << ':' if not src.last.empty?
+			case value
+			when ::Array
+				type.members.zip(value).each { |m, v|
+					src << ''
+					compile_c_idata_inner(exe, cp, src, m.type, v)
+					src << ' ; i am the padding'
+				}
+			when 0:
+				type.members.each { |m|
+					src << ''
+					compile_c_idata_inner(exe, cp, src, m.type, 0)
+					src << ' ; i am the padding'
+				}
+			else raise "unknown struct initializer #{value.inspect}"
+			end
 		when CParser::Union
+			# TODO
+			src.last << ':' if not src.last.empty?
+			src << '; union ' + value.inspect
 		when CParser::Array
+			if value.kind_of? CParser::CExpression and not value.op and value.rexpr.kind_of? ::String
+				src.last << 
+				case cp.sizeof(nil, value.type.type)
+				when 1: ' db '
+				when 2: ' dw '
+				else raise 'bad char* type ' + value.inspect
+				end << value.rexpr.inspect << ', 0'
+
+				if nr = type.length and nr.kind_of? ::Integer and nr > value.rexpr.length+1
+					src.last << ", #{nr - value.rexpr.length - 1} dup(0)"
+				end
+			elsif value.kind_of? ::Array
+				src.last << ':' if not src.last.empty?
+				len = type.length || value.length
+				value.each { |v|
+					src << ''
+					compile_c_idata_inner(exe, cp, src, type.type, v)
+				}
+				len -= value.length
+				if len > 0
+					src << " db #{len * cp.sizeof(nil, type.type)} dup(0)"
+				end
+			else raise "unknown array initializer #{value.inspect}"
+			end
 		else raise 'bad data type ' + data.type.dump_cast(cp.toplevel)[0].join(' ') + src.last
 		end
-		src.last << " db 0 ; data definition goes here"
 	end
 
 	def compile_c_udata(exe, cp, src, data)
 		src << "#{data.name} db #{cp.sizeof(data)} dup(?)"
 	end
-	# foo
 end
 
 class ExeFormat
