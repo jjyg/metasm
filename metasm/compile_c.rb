@@ -366,13 +366,6 @@ class CParser
 				scope.statements << lexpr.precompile_inner(parser, scope)
 				rexpr.precompile_inner(parser, scope)
 			else
-				if @op == :'&' and not @lexpr and @rexpr.kind_of? CExpression and @rexpr.op == :'*' and not @rexpr.lexpr
-					if @rexpr.rexpr.kind_of? CExpression: (e = @rexpr.rexpr).type = @type
-					else e = CExpression.new(nil, nil, @rexpr.rexpr, @type)
-					end
-					return e.precompile_inner(parser, scope)
-				end
-
 				# handle pointer + 2 == ((char *)pointer) + 2*sizeof(*pointer)
 				if		@lexpr and (@lexpr.kind_of? CExpression or @lexpr.kind_of? Variable) and
 						@rexpr and (@rexpr.kind_of? CExpression or @rexpr.kind_of? Variable) and
@@ -385,6 +378,14 @@ class CParser
 
 				@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
 				@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+
+				if @op == :'&' and not @lexpr and @rexpr.kind_of? CExpression and @rexpr.op == :'*' and not @rexpr.lexpr
+					if @rexpr.rexpr.kind_of? CExpression: (e = @rexpr.rexpr).type = @type
+					else e = CExpression.new(nil, nil, @rexpr.rexpr, @type)
+					end
+					return e.precompile_inner(parser, scope)
+				end
+
 				CExpression.precompile_type(parser, scope, self)
 
 				# calc numeric
