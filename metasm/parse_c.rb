@@ -1434,6 +1434,7 @@ class CParser
 			if [:',', :funcall, :'=', :'--', :'++', :'+=', :'-=', :'*=', :'/=', :'>>=', :'<<=', :'&=', :'|=', :'^=', :'%=', :'->', :'[]'].include?(@op)
 				false
 			elsif @op == :'*' and not @lexpr: false
+			elsif not @lexpr and not @op and @rexpr.kind_of? Block: false
 			else
 				out = true
 				walk { |e| break out = false if not CExpression.constant?(e) }
@@ -1865,6 +1866,7 @@ class CParser
 					end
 					raise ntok || parser, '")" expected' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 
+					type.args ||= []
 					raise tok, "bad argument count: #{args.length} for #{type.args.length}" if (type.varargs ? (args.length < type.args.length) : (args.length != type.args.length))
 					type.args.zip(args) { |ta, a| parser.check_compatible_type(tok, a.type, ta.type) }
 					CExpression.new(val, :funcall, args, type.type)
