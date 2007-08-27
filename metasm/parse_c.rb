@@ -372,7 +372,7 @@ class CParser
 		def self.parse(parser, scope, nest)
 			tok = nil
 			raise tok || self, '"(" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
-			raise tok, 'expr expected' if not expr = CExpression.parse(parser, scope)
+			raise tok, 'expr expected' if not expr = CExpression.parse(parser, scope) or not expr.type.arithmetic?
 			raise tok || self, '")" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
 			bthen = parser.parse_statement scope, nest
 			if tok = parser.skipspaces and tok.type == :string and tok.raw == 'else'
@@ -402,6 +402,7 @@ class CParser
 			end
 			test = CExpression.parse(parser, forscope)
 			raise tok || parser, '";" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ';'
+			raise tok, 'bad test expression in for loop' if test and not test.type.arithmetic?
 			iter = CExpression.parse(parser, forscope)
 			raise tok || parser, '")" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
 
@@ -420,7 +421,7 @@ class CParser
 		def self.parse(parser, scope, nest)
 			tok = nil
 			raise tok || parser, '"(" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
-			raise tok, 'expr expected' if not expr = CExpression.parse(parser, scope)
+			raise tok, 'expr expected' if not expr = CExpression.parse(parser, scope) or not expr.type.arithmetic?
 			raise tok || parser, '")" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
 
 			new expr, parser.parse_statement(scope, nest + [:loop])
@@ -432,7 +433,7 @@ class CParser
 			tok = nil
 			raise tok || parser, '"while" expected' if not tok = parser.skipspaces or tok.type != :string or tok.raw != 'while'
 			raise tok || parser, '"(" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
-			raise tok, 'expr expected' if not expr = CExpression.parse(parser, scope)
+			raise tok, 'expr expected' if not expr = CExpression.parse(parser, scope) or not expr.type.arithmetic?
 			raise tok || parser, '")" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
 			raise tok || parser, '";" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ';'
 
@@ -449,7 +450,7 @@ class CParser
 
 		def self.parse(parser, scope, nest)
 			raise tok || parser, '"(" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
-			raise tok, 'expr expected' if not expr = CExpression.parse(parser, scope)
+			raise tok, 'expr expected' if not expr = CExpression.parse(parser, scope) or not expr.type.integral?
 			raise tok || parser, '")" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
 
 			new expr, parser.parse_statement(scope, nest + [:switch])
@@ -487,12 +488,12 @@ class CParser
 		end
 
 		def self.parse(parser, scope, nest)
-			raise parser, 'invalid case' if not expr = CExpression.parse(parser, scope) or not expr.constant?
+			raise parser, 'invalid case' if not expr = CExpression.parse(parser, scope) or not expr.constant? or not expr.type.integral?
 			raise tok || parser, '":" or "..." expected' if not tok = parser.skipspaces or tok.type != :punct or (tok.raw != ':' and tok.raw != '.')
 			if tok.raw == '.'
 				raise tok || parser, '".." expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '.'
 				raise tok || parser,  '"." expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '.'
-				raise tok, 'invalid case range' if not exprup = CExpression.parse(parser, scope) or not exprup.constant?
+				raise tok, 'invalid case range' if not exprup = CExpression.parse(parser, scope) or not exprup.constant? or not exprup.type.integral?
 				raise tok || parser, '":" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ':'
 			end
 			body = parser.parse_statement scope, nest
@@ -883,17 +884,22 @@ class CParser
 		when Array
 			case type.length
 			when nil
+				if var.kind_of? CExpression and not var.lexpr and not var.op and var.rexpr.kind_of? Variable
+					var = var.rexpr
+				end
 				raise self, 'unknown array size' if not var.kind_of? Variable or not var.initializer
 				case var.initializer
 				when ::String: sizeof(nil, type.type) * var.initializer.length
 				when ::Array
-					v = Variable.new
-					v.type = type.type
-					v.initializer = var.initializer.compact.first
-					v.initializer ? (sizeof(v) * var.initializer.length) : 0
-				else raise self, 'unknown array size'
+					v = var.initializer.compact.first
+					v ? (sizeof(nil, type.type) * var.initializer.length) : 0
+				else sizeof(var.initializer)
 				end
-			when Integer: type.length * sizeof(type)
+			when ::Integer: type.length * sizeof(type)
+			when CExpression
+				len = type.length.reduce(self)
+				raise self, 'unknown array size' if not len.kind_of? ::Integer
+				len * sizeof(type)
 			else raise self, 'unknown array size'
 			end
 		when Pointer
@@ -1362,6 +1368,10 @@ class CParser
 				if idx and (scope == parser.toplevel or storage == :static)
 					raise tok, 'array size is not constant' if not idx.constant?
 					idx = idx.reduce(parser)
+				else
+					if nidx = idx.reduce(parser) and nidx.kind_of? ::Integer
+						idx = nidx
+					end
 				end
 				t = self
 				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
@@ -1556,15 +1566,11 @@ class CParser
 
 		def walk
 			case @op
-			when :funcall
+			when :funcall, :'?:'
 				yield @lexpr
 				@rexpr.each { |arg| yield arg }
 			when :'->', :'.'
 				yield @lexpr
-			when :'?:'
-				yield @lexpr
-				yield @rexpr[0]
-				yield @rexpr[1]
 			else
 				yield @lexpr if @lexpr
 				yield @rexpr if @rexpr
@@ -1726,6 +1732,7 @@ class CParser
 						raise tok, 'bad cast' if v.name != false
 						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 						raise ntok, 'expr expected' if not val = parse_value(parser, scope)	# parses postfix too
+						raise ntok, 'unable to cast a struct' if val.type.untypedef.kind_of? Union
 						val = CExpression.new(nil, nil, val, val.type) if not val.kind_of? CExpression
 						val = CExpression.new(nil, nil, val, v.type)
 					# check compound statement expression
