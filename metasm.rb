@@ -18,6 +18,7 @@ end
 	require "metasm/#{f}/parse"
 	require "metasm/#{f}/encode"
 	require "metasm/#{f}/decode"
+	require "metasm/#{f}/compile_c"
 }
 # executable formats
 %w[mz elf_encode elf_decode pe coff_encode coff_decode shellcode].each { |f|
