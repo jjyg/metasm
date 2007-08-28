@@ -303,6 +303,7 @@ class CParser
 		attr_accessor :length
 
 		def parse_initializer(parser, scope)
+			raise parser, 'cannot initialize dynamic array' if @length.kind_of? CExpression
 			if tok = parser.skipspaces and tok.type == :punct and tok.raw == '{'
 				# struct x foo[] = { { 4 }, [12].tutu = 2 };
 				ret = []
@@ -1368,10 +1369,8 @@ class CParser
 				if idx and (scope == parser.toplevel or storage == :static)
 					raise tok, 'array size is not constant' if not idx.constant?
 					idx = idx.reduce(parser)
-				else
-					if nidx = idx.reduce(parser) and nidx.kind_of? ::Integer
-						idx = nidx
-					end
+				elsif idx and nidx = idx.reduce(parser) and nidx.kind_of? ::Integer
+					idx = nidx
 				end
 				t = self
 				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
