@@ -65,7 +65,7 @@ class CParser
 					CExpression.precompile_type(parser, self, m, true)
 				}
 			}
-			scope.statements << self if scope
+			scope.statements << self if scope and not @statements.empty?
 
 			# TODO precompile return struct
 		end
@@ -75,27 +75,40 @@ class CParser
 			precompile_optimize_inner(precompile_optimize_inner([], 1), 2)
 		end
 
-		# step 1: list used labels
+		# step 1: list used labels/unused goto
 		# step 2: remove unused labels
 		def precompile_optimize_inner(list, step)
-			# XXX goto 3; goto 2; goto 1; 1: 3: 2: x;
 			lastgoto = nil
+			hadref = false
 			@statements.dup.each { |s|
 				lastgoto = nil if not s.kind_of? Label
 				case s
-				when Block: s.precompile_optimize(list, step)
-				when Switch: s.statement.precompile_optimise(list, step)
+				when Block: s.precompile_optimize_inner(list, step)
+				when Switch: s.statement.precompile_optimise_inner(list, step)
 				when Case
 				when CExpression:	# gcc's unary && support
 				when Label
 					case step
-					when 1: list.delete s.name if lastgoto == s.name
+					when 1
+						if lastgoto and lastgoto.target == s.name
+							list << lastgoto
+							list.delete s.name if not hadref
+						end
 					when 2: @statements.delete s if not list.include? s.name
 					end
-				when Goto
+				when Goto, If
+					s.kind_of?(If) ? g = s.bthen : g = s
 					case step
-					when 1: list << s.target ; lastgoto = s.target
-					when 2: @statements.delete s if not list.include? s.target
+					when 1
+						hadref = list.include? g.target
+						lastgoto = g
+						list << g.target
+					when 2
+						if list.include? g
+							idx = @statements.index s
+							@statements.delete s
+							@statements[idx, 0] = s.test if s != g and not s.test.constant?
+						end
 					end
 				end
 			}
@@ -208,9 +221,17 @@ class CParser
 				end
 				inverted = true
 			end
+
+			case @test.op
+			when :'!'
+			when :'&&'
+			when :'||'
+				# need the precompiled bthen/belse...
+			end
+
 			@test = CExpression.precompile_inner(parser, scope, @test)
 
-			if @test.kind_of? CExpression and not @test.lexpr and not @test.op and @test.rexpr.kind_of? Numeric
+			if @test.kind_of? CExpression and not @test.lexpr and not @test.op and @test.rexpr.kind_of? ::Numeric
 				if (inverted and @test.rexpr == 0) or (not inverted and @test.rexpr != 0)
 					@bthen.precompile(parser, scope)
 					return
@@ -220,7 +241,7 @@ class CParser
 				end
 			end
 
-			scope.statements << self	# @test might have a coma, we must precompile it before appending ourself
+			scope.statements << self
 
 			if belse
 				ifelse = parser.new_label('if_else')
@@ -433,7 +454,7 @@ class CParser
 
 		# returns a new CExpression with simplified self.type, computes structure offsets
 		# turns char[]/float immediates to reference to anonymised const
-		# TODO anonymise legit Goto/Label
+		# TODO 'a = b += c' => 'b += c; a = b'
 		def precompile_inner(parser, scope)
 			case @op
 			when :'.'
@@ -472,6 +493,7 @@ class CParser
 				# cannot precompile in place, a conditionnal expression may have a coma: must turn into If
 				raise 'conditional in toplevel' if scope == parser.toplevel	# just in case
 				var = Variable.new
+				var.storage = :register
 				var.name = parser.new_label('ternary')
 				var.type = @rexpr[0].type
 				CExpression.precompile_type(parser, scope, var)
@@ -482,6 +504,50 @@ class CParser
 				@op = nil
 				@rexpr = var
 				precompile_inner(parser, scope)
+			when :'&&'
+				if scope == parser.toplevel
+					@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
+					@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+					self
+				else
+					var = Variable.new
+					var.storage = :register
+					var.name = parser.new_label('and')
+					var.type = @type
+					CExpression.precompile_type(parser, scope, var)
+					var.initializer = CExpression.new(nil, nil, 0, var.type)
+					Declaration.new(var).precompile(parser, scope)
+					l = @lexpr.kind_of?(CExpression) ? @lexpr : CExpression.new(nil, nil, @lexpr, @lexpr.type)
+					r = @rexpr.kind_of?(CExpression) ? @rexpr : CExpression.new(nil, nil, @rexpr, @rexpr.type)
+					If.new(l, If.new(r, CExpression.new(var, :'=', CExpression.new(nil, nil, 1, var.type), var.type))).precompile(parser, scope)
+					@lexpr = nil
+					@op = nil
+					@rexpr = var
+					precompile_inner(parser, scope)
+				end
+			when :'||'
+				if scope == parser.toplevel
+					@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
+					@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+					self
+				else
+					var = Variable.new
+					var.storage = :register
+					var.name = parser.new_label('or')
+					var.type = @type
+					CExpression.precompile_type(parser, scope, var)
+					var.initializer = CExpression.new(nil, nil, 1, var.type)
+					Declaration.new(var).precompile(parser, scope)
+					l = @lexpr.kind_of?(CExpression) ? @lexpr : CExpression.new(nil, nil, @lexpr, @lexpr.type)
+					l = CExpression.new(nil, :'!', l, var.type)
+					r = @rexpr.kind_of?(CExpression) ? @rexpr : CExpression.new(nil, nil, @rexpr, @rexpr.type)
+					r = CExpression.new(nil, :'!', r, var.type)
+					If.new(l, If.new(r, CExpression.new(var, :'=', CExpression.new(nil, nil, 0, var.type), var.type))).precompile(parser, scope)
+					@lexpr = nil
+					@op = nil
+					@rexpr = var
+					precompile_inner(parser, scope)
+				end
 			when :funcall
 				@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
 				@rexpr.map! { |e| CExpression.precompile_inner(parser, scope, e) }
@@ -492,6 +558,48 @@ class CParser
 				rexpr = @rexpr.kind_of?(CExpression) ? @rexpr : CExpression.new(nil, nil, @rexpr, @rexpr.type)
 				scope.statements << lexpr.precompile_inner(parser, scope)
 				rexpr.precompile_inner(parser, scope)
+			when :'!'
+				CExpression.precompile_type(parser, scope, self)
+				if @rexpr.kind_of?(CExpression)
+					case @rexpr.op
+					when :'<', :'>', :'<=', :'>=', :'==', :'!='
+						@op = { :'<' => :'>=', :'>' => :'<=', :'<=' => :'>', :'>=' => :'<', :'==' => :'!=', :'!=' => :'==' }[@rexpr.op]
+						@lexpr = @rexpr.lexpr
+						@rexpr = @rexpr.rexpr
+						precompile_inner(parser, scope)
+					when :'&&', :'||'
+						@op = { :'&&' => :'||', :'||' => :'&&' }[@rexpr.op]
+						@lexpr = CExpression.new(nil, :'!', @rexpr.lexpr, @type)
+						@rexpr = CExpression.new(nil, :'!', @rexpr.rexpr, @type)
+						precompile_inner(parser, scope)
+					when :'!'
+						if @rexpr.rexpr.kind_of? CExpression
+							@op = nil
+							@rexpr = @rexpr.rexpr
+						else
+							@op = :'=='
+							@lexpr = @rexpr.rexpr
+							@rexpr = CExpression.new(nil, nil, 0, @lexpr.type)
+						end
+						precompile_inner(parser, scope)
+					else
+						@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+						self
+					end
+				else
+					@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+					self
+				end
+			when :'++', :'--'
+				if not @lexpr
+					CExpression.new(@rexpr, @op, nil, @type).precompile(parser, scope)
+					@op = nil
+					precompile_inner(parser, scope)
+				else
+					CExpression.precompile_type(parser, scope, self)
+					@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
+					self
+				end
 			when :'='
 				# handle structure assignment/array assignment
 				case @lexpr.type.untypedef
@@ -541,6 +649,7 @@ class CParser
 				if not @lexpr and not @op and @rexpr.kind_of? Block
 					raise 'compound statement in toplevel' if scope == parser.toplevel	# just in case
 					var = Variable.new
+					var.storage = :register
 					var.name = parser.new_label('compoundstatement')
 					var.type = @type
 					CExpression.precompile_type(parser, scope, var)
@@ -560,6 +669,7 @@ class CParser
 					#sz = parser.sizeof(CExpression.new(nil, :'*', @lexpr, @lexpr.type.untypedef.type.untypedef))
 					sz = parser.sizeof(nil, @lexpr.type.untypedef.type.untypedef)
 					@rexpr = CExpression.new(@rexpr, :'*', sz, @rexpr.type) if sz != 1
+					CExpression.precompile_type(parser, scope, @lexpr)
 				end
 
 				@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
@@ -577,9 +687,11 @@ class CParser
 					case @rexpr
 					when ::String
 						v = Variable.new
+						v.storage = :static
 						v.name = parser.new_label('string')
 						v.type = Array.new(@type.type)
 						v.type.length = @rexpr.length + 1
+						v.type.qualifier = [:const]
 						v.type.type.qualifier = [:const]
 						v.initializer = CExpression.new(nil, nil, @rexpr, @type)
 						parser.toplevel.symbol[v.name] = v
@@ -587,6 +699,7 @@ class CParser
 						@rexpr = v
 					when ::Float
 						v = Variable.new
+						v.storage = :static
 						v.name = parser.new_label(@type.untypedef.name.to_s)
 						v.type = @type
 						v.type.qualifier = [:const]
@@ -599,10 +712,16 @@ class CParser
 
 				CExpression.precompile_type(parser, scope, self)
 
+				isnumeric = proc { |e| e.kind_of?(::Numeric) or (e.kind_of? CExpression and not e.lexpr and not e.op and e.rexpr.kind_of? ::Numeric) }
+
+				# (x + imm) + imm => x + imm
+				# XXX type overflow etc...
+				#if isnumeric[@rexpr] and @lexpr.kind_of? CExpression and isnumeric[@lexpr.rexpr] and (@lexpr.lexpr.kind_of? Variable or @lexpr.lexpr.kind_of? CExpression)
+				#end
+
 				# calc numeric
-				if @rexpr.kind_of? CExpression and not @rexpr.lexpr and not @rexpr.op and @rexpr.rexpr.kind_of? Numeric and
-					(not @lexpr or (@lexpr.kind_of? CExpression and not @lexpr.lexpr and not @lexpr.op and @lexpr.rexpr.kind_of? Numeric))
-					if (val = reduce(parser)).kind_of? Numeric
+				if isnumeric[@rexpr] and (not @lexpr or isnumeric[@lexpr])
+					if (val = reduce(parser)).kind_of? ::Numeric
 						@lexpr = nil
 						@op = nil
 						@rexpr = val
@@ -678,8 +797,10 @@ class CPU
 				# removes Cases
 				compile_c_switch(exe, cp, tmpsrc, state, stmt)
 			when CParser::Goto
+				compile_c_flushregs(cp, tmpsrc, state)
 				compile_c_goto(exe, cp, tmpsrc, state, stmt.target)
 			when CParser::Label
+				compile_c_flushregs(cp, tmpsrc, state)
 				tmpsrc << "#{stmt.name}:"
 			when CParser::Return
 				compile_c_return(exe, cp, tmpsrc, state, stmt.value) if stmt.value
@@ -687,6 +808,7 @@ class CPU
 				compile_c_asm(exe, cp, tmpsrc, state, stmt)
 			end
 		}
+		compile_c_flushregs(cp, tmpsrc, state)
 
 		compile_c_prolog(exe, cp, src, func, state)
 		src.concat tmpsrc
