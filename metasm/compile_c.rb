@@ -10,8 +10,11 @@ require 'metasm/parse_c'
 module Metasm
 class CParser
 	attr_accessor :exeformat
+	attr_accessor :auto_label_list
 	def new_label(base='')
-		@exeformat.new_label base
+		lbl = @exeformat.new_label base
+		(@auto_label_list ||= {})[lbl] = true
+		lbl
 	end
 
 	# simplifies self.toplevel (destructively)
@@ -21,7 +24,7 @@ class CParser
 	# simplifies While/For/Break into If/goto
 	# If: else are removed, then are turned in goto
 	# label statements are removed
-	# returns are kept
+	# returns are kept, but are followed by a jump to the end of the function
 	# uses an ExeFormat to build unique label names
 	# only toplevel symbols are initialized (static symbols are turned into anonymised toplevel one)
 	# after that, we are no longer valid C (typewise, + moved blocks outside of their enclosing scope)
@@ -63,6 +66,40 @@ class CParser
 				}
 			}
 			scope.statements << self if scope
+
+			# TODO precompile return struct
+		end
+
+		# removes unused labels, and in-place goto (goto toto; toto:)
+		def precompile_optimize
+			precompile_optimize_inner(precompile_optimize_inner([], 1), 2)
+		end
+
+		# step 1: list used labels
+		# step 2: remove unused labels
+		def precompile_optimize_inner(list, step)
+			# XXX goto 3; goto 2; goto 1; 1: 3: 2: x;
+			lastgoto = nil
+			@statements.dup.each { |s|
+				lastgoto = nil if not s.kind_of? Label
+				case s
+				when Block: s.precompile_optimize(list, step)
+				when Switch: s.statement.precompile_optimise(list, step)
+				when Case
+				when CExpression:	# gcc's unary && support
+				when Label
+					case step
+					when 1: list.delete s.name if lastgoto == s.name
+					when 2: @statements.delete s if not list.include? s.name
+					end
+				when Goto
+					case step
+					when 1: list << s.target ; lastgoto = s.target
+					when 2: @statements.delete s if not list.include? s.target
+					end
+				end
+			}
+			list
 		end
 
 		# noop
@@ -72,6 +109,10 @@ class CParser
 		def continue_label=(l) @continue_label = l end
 		def break_label ; defined?(@break_label) ? @break_label : @outer.break_label end
 		def break_label=(l) @break_label = l end
+		def return_label ; defined?(@return_label) ? @return_label : @outer.return_label end
+		def return_label=(l) @return_label = l end
+		def nonauto_label=(l) @nonauto_label = l end
+		def nonauto_label ; defined?(@nonauto_label) ? @nonauto_label : @outer.nonauto_label end
 	end
 
 	class Declaration
@@ -85,11 +126,74 @@ class CParser
 				scope.statements << self
 			end
 
-			if @var.type.kind_of? Function and @var.initializer
-				@var.initializer.precompile(parser)
-			elsif @var.initializer.kind_of? CExpression and scope != parser.toplevel
-				CExpression.new(@var, :'=', @var.initializer, @var.type).precompile(parser, scope)
-				@var.initializer = nil
+			if i = @var.initializer
+				if @var.type.kind_of? Function
+					i.return_label = parser.new_label('epilog')
+					i.nonauto_label = {}
+					i.precompile(parser)
+					i.statements << Label.new(i.return_label)
+					i.precompile_optimize
+
+				elsif scope != parser.toplevel
+					precompile_dyn_initializer(parser, scope, @var, @var.type, i)
+					@var.initializer = nil
+				end
+
+			end
+		end
+
+		def precompile_dyn_initializer(parser, scope, var, type, init)
+			case type = type.untypedef
+			when Array
+				# XXX TODO type.length may be dynamic !!
+				case init
+				when CExpression
+					# char toto[] = "42"
+					if not init.kind_of? CExpression or init.op or init.lexpr or not init.rexpr.kind_of? ::String
+						raise "unknown initializer #{init.inspect} for #{var.inspect}"
+					end
+					init = init.rexpr.unpack('C*') + [0]
+					init.map! { |chr| CExpression.new(nil, nil, chr, type.type) }
+					precompile_dyn_initializer(parser, scope, var, type, init)
+
+				when ::Array
+					type.length ||= init.length
+					# len is an Integer
+					init.each_with_index { |it, idx|
+						next if not it
+						break if idx >= type.length
+						idx = CExpression.new(nil, nil, idx, BaseType.new(:long, :unsigned))
+						v = CExpression.new(var, :'[]', idx, type.type)
+						precompile_dyn_initializer(parser, scope, v, type.type, it)
+					}
+				else raise "unknown initializer #{init.inspect} for #{var.inspect}"
+				end
+			when Union
+				case init
+				when CExpression, Variable
+					if init.type.untypedef.kind_of? BaseType
+						# works for struct foo bar[] = {0}; ...
+						type.members.each { |m|
+							v = CExpression.new(var, :'.', m.name, m.type)
+							precompile_dyn_initializer(parser, scope, v, v.type, init)
+						}
+					elsif init.type.untypedef.kind_of? type.class
+						CExpression.new(var, :'=', init, type).precompile(parser, scope)
+					else
+						raise "bad initializer #{init.inspect} for #{var.inspect}"
+					end
+				when ::Array
+					init.each_with_index{ |it, idx|
+						next if not it
+					}
+				else raise "unknown initializer #{init.inspect} for #{var.inspect}"
+				end
+			else
+				case init
+				when CExpression
+					CExpression.new(var, :'=', init, type).precompile(parser, scope)
+				else raise "unknown initializer #{init.inspect} for #{var.inspect}"
+				end
 			end
 		end
 	end
@@ -238,11 +342,15 @@ class CParser
 		def precompile(parser, scope)
 			@value = CExpression.precompile_inner(parser, scope, @value)
 			scope.statements << self
+			scope.statements << Goto.new(scope.return_label)
 		end
 	end
 
 	class Label
 		def precompile(parser, scope)
+			if not parser.auto_label_list or not parser.auto_label_list[@name]
+				@name = scope.nonauto_label[@name] ||= parser.new_label(@name)
+			end
 			scope.statements << self
 			if statement 
 				@statement.precompile(parser, scope)
@@ -261,6 +369,9 @@ class CParser
 
 	class Goto
 		def precompile(parser, scope)
+			if not parser.auto_label_list or not parser.auto_label_list[@target]
+				@target = scope.nonauto_label[@target] ||= parser.new_label(@target)
+			end
 			scope.statements << self
 		end
 	end
@@ -381,6 +492,50 @@ class CParser
 				rexpr = @rexpr.kind_of?(CExpression) ? @rexpr : CExpression.new(nil, nil, @rexpr, @rexpr.type)
 				scope.statements << lexpr.precompile_inner(parser, scope)
 				rexpr.precompile_inner(parser, scope)
+			when :'='
+				# handle structure assignment/array assignment
+				case @lexpr.type.untypedef
+				when Union
+					@lexpr.type.untypedef.members.zip(@rexpr.type.untypedef.members) { |m1, m2|
+						# assume m1 and m2 are compatible
+						v1 = CExpression.new(@lexpr, :'.', m1.name, m1.type)
+						v2 = CExpression.new(@rexpr, :'.', m2.name, m1.type)
+						scope.statements << CExpression.new(v1, :'=', v2, v1.type).precompile_inner(parser, scope)
+					}
+					# struct may have no members...
+					@op = nil
+					@lexpr = nil
+					@rexpr = CExpression.new(nil, nil, 0, BaseType.new(:int))
+					@type = BaseType.new(:void)
+					precompile_inner(parser, scope)
+				when Array
+					if not len = @lexpr.type.untypedef.length
+						@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+						# char toto[] = "bla"
+						if @rexpr.kind_of? CExpression and not @rexpr.lexpr and not @rexpr.op and
+								@rexpr.rexpr.kind_of? Variable and @rexpr.rexpr.type.kind_of? Array
+							len = @rexpr.rexpr.type.length
+						end
+					end
+					raise 'array initializer with no length !' if not len
+					# TODO optimize...
+					len.times { |i|
+						i = CExpression.new(nil, nil, i, BaseType.new(:long, :unsigned))
+						v1 = CExpression.new(@lexpr, :'[]', i, @lexpr.type.untypedef.type)
+						v2 = CExpression.new(@rexpr, :'[]', i, v1.type)
+						scope.statements << CExpression.new(v1, :'=', v2, v1.type).precompile_inner(parser, scope)
+					}
+					@op = nil
+					@lexpr = nil
+					@rexpr = CExpression.new(nil, nil, 0, BaseType.new(:int))
+					@type = BaseType.new(:void)
+					precompile_inner(parser, scope)
+				else
+					@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
+					@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+					CExpression.precompile_type(parser, scope, self)
+					self
+				end
 			else
 				# handle compound statements
 				if not @lexpr and not @op and @rexpr.kind_of? Block
@@ -407,8 +562,6 @@ class CParser
 					@rexpr = CExpression.new(@rexpr, :'*', sz, @rexpr.type) if sz != 1
 				end
 
-				# TODO handle struct/array assignment
-
 				@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
 				@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
 
@@ -426,6 +579,7 @@ class CParser
 						v = Variable.new
 						v.name = parser.new_label('string')
 						v.type = Array.new(@type.type)
+						v.type.length = @rexpr.length + 1
 						v.type.type.qualifier = [:const]
 						v.initializer = CExpression.new(nil, nil, @rexpr, @type)
 						parser.toplevel.symbol[v.name] = v
@@ -459,6 +613,10 @@ class CParser
 			end
 		end
 	end
+	class BaseType ;def wantalign(cp) [cp.typesize[@name], 8].min end end
+	class Array    ;def wantalign(cp) @type.wantalign(cp) end end
+	class Struct   ;def wantalign(cp) @align end end
+	class Union    ;def wantalign(cp) @members.map { |m| m.type.wantalign(cp) }.max end end
 end
 
 class CPU
@@ -481,40 +639,124 @@ class CPU
 		exe.compile_setsection src, '.text' if not funcs.empty?
 		funcs.each { |func| compile_c_function(exe, cp, src, func) }
 
+		align = 1
 		exe.compile_setsection src, '.data' if not rwdata.empty?
-		rwdata.each { |data| compile_c_idata(exe, cp, src, data) }
+		rwdata.each { |data| align = compile_c_idata(exe, cp, src, data, align) }
 
 		exe.compile_setsection src, '.rodata' if not rodata.empty?
-		rodata.each { |data| compile_c_idata(exe, cp, src, data) }
+		rodata.each { |data| align = compile_c_idata(exe, cp, src, data, align) }
 
-		exe.compile_setsection src, '.bss'  if not udata.empty?
-		udata.each  { |data| compile_c_udata(exe, cp, src, data) }
+		exe.compile_setsection src, '.bss' if not udata.empty?
+		udata.each  { |data| align = compile_c_udata(exe, cp, src, data, align) }
 
 		src.join("\n")
 	end
 
 	# compiles a C function +func+ to asm source into the array of strings +str+
 	def compile_c_function(exe, cp, src, func)
+		src << ''
 		src << "#{func.name}:"
-		src << "; function body goes here"
-		#raise 'go buy a real proc !'
+
+		# must wait the Declaration to run the CExpr for dynamic auto offsets,
+		# and must run those statements once only
+		# XXX alloc a stack variable to maintain the auto offset of every dynarray ?
+		auto_offsets = compile_c_reservestack(cp, func.initializer)
+
+		# state caches register values, includes auto_offsets
+		tmpsrc = []
+		state = compile_c_pre_prolog(exe, cp, tmpsrc, func, auto_offsets)
+
+		func.initializer.statements.each { |stmt|
+			case stmt
+			when CParser::CExpression
+				compile_c_cexpr(exe, cp, tmpsrc, state, stmt)
+			when CParser::Declaration
+				compile_c_decl(exe, cp, tmpsrc, state, stmt.var)
+			when CParser::If
+				compile_c_ifgoto(exe, cp, tmpsrc, state, stmt.test, stmt.bthen.target)
+			when CParser::Switch
+				# removes Cases
+				compile_c_switch(exe, cp, tmpsrc, state, stmt)
+			when CParser::Goto
+				compile_c_goto(exe, cp, tmpsrc, state, stmt.target)
+			when CParser::Label
+				tmpsrc << "#{stmt.name}:"
+			when CParser::Return
+				compile_c_return(exe, cp, tmpsrc, state, stmt.value) if stmt.value
+			when CParser::Asm
+				compile_c_asm(exe, cp, tmpsrc, state, stmt)
+			end
+		}
+
+		compile_c_prolog(exe, cp, src, func, state)
+		src.concat tmpsrc
+		compile_c_epilog(exe, cp, src, func, state)
+	end
+
+	# creates a hash automatic variable => stack offset for a precompiled block (recursive)
+	# offset is an ::Integer or a CParser::CExpression (dynamic array), offset from a ptr-size-aligned value.
+	# TODO nested function
+	def compile_c_reservestack(cp, block, off = 0)
+		block.statements.inject({}) { |res, stmt|
+			case stmt
+			when CParser::Declaration
+				off = compile_c_reservestack_var(cp, stmt.var, off)
+				res[stmt.var] = off
+				next res
+			when CParser::Block
+			when CParser::Switch: stmt = stmt.statement
+			else next res
+			end
+			res.update compile_c_reservestack(cp, stmt, off)
+			# do not update off, not nested subblocks can overlap
+		}
+	end
+
+	# computes the new stack offset for var
+	# off is either an offset from stack start (:ptr-size-aligned) or
+	# a CExpression [[[expr, +, 7], &, -7], +, off]
+	def compile_c_reservestack_var(cp, var, off)
+		e = CParser::CExpression
+		if (arr_type = var.type.untypedef).kind_of? CParser::Array and (arr_sz = arr_type.length).kind_of? e
+			# dynamic array !
+			arr_sz = e.new(arr_sz, :*, cp.sizeof(nil, arr_type.type),
+				       BaseType.new(:long, :unsigned)).precompile_inner(cp, nil)
+			off = e.new(arr_sz, :+, off, arr_sz.type)
+			off = e.new(off, :+,  7, off.type)
+			off = e.new(off, :&, -7, off.type)
+			e.new(off, :+,  0, off.type)
+		else
+			al = var.type.wantalign(cp)
+			sz = cp.sizeof(var)
+			case off
+			when e: e.new(off.lexpr, :+, ((off.rexpr + sz + al - 1) / al * al), off.type)
+			else (off + sz + al - 1) / al * al
+			end
+		end
 	end
 
 	# compiles a C static data definition into an asm string
-	def compile_c_idata(exe, cp, src, data)
-		# XXX src << '.align 42'
-		src << "#{data.name}"
-		compile_c_idata_inner(exe, cp, src, data.type, data.initializer)
+	# returns the new alignment value
+	def compile_c_idata(exe, cp, src, data, align)
+		w = data.type.wantalign(cp)
+		src << ".align #{align = w}" if w > align
+
+		src << data.name.dup
+		len = compile_c_idata_inner(exe, cp, src, data.type, data.initializer)
+		len %= w
+		len == 0 ? w : len
 	end
 
-	# dumps an anonymous variable definition
+	# dumps an anonymous variable definition, appending to the last line of src
+	# src.last is a label name or is empty before calling here
+	# return the length of the data written
 	def compile_c_idata_inner(exe, cp, src, type, value)
 		value ||= 0
 		case type
 		when CParser::BaseType
 			if type.name == :void
 				src.last << ':' if not src.last.empty?
-				return
+				return 0
 			end
 
 			src.last <<
@@ -536,39 +778,52 @@ class CPU
 			when ::Numeric: value.to_s
 			else value.inspect
 			end
+
+			cp.typesize[type.name]
+
 		when CParser::Struct
 			src.last << ':' if not src.last.empty?
-			case value
-			when ::Array
-				type.members.zip(value).each { |m, v|
-					src << ''
-					compile_c_idata_inner(exe, cp, src, m.type, v)
-					src << ' ; i am the padding'
-				}
-			when 0:
-				type.members.each { |m|
-					src << ''
-					compile_c_idata_inner(exe, cp, src, m.type, 0)
-					src << ' ; i am the padding'
-				}
-			else raise "unknown struct initializer #{value.inspect}"
-			end
+			value = [0] * type.members.length if value == 0
+			raise "unknown struct initializer #{value.inspect}" if not value.kind_of? ::Array
+			sz = 0
+			type.members.zip(value).each { |m, v|
+				src << ''
+				flen = compile_c_idata_inner(exe, cp, src, m.type, v)
+				sz += flen
+				src << ".align #{type.align}" if flen % type.align != 0
+			}
+
+			sz
+
 		when CParser::Union
-			# TODO
 			src.last << ':' if not src.last.empty?
-			src << '; union ' + value.inspect
+			len = cp.sizeof(nil, type)
+			value = [0] if value == 0
+			raise "unknown union initializer #{value.inspect}" if not value.kind_of? ::Array
+			idx = value.rindex(value.compact.last)
+			raise "empty union initializer" if not idx
+			wlen = compile_c_idata_inner(exe, cp, src, type.members[idx].type, value[idx])
+			src << "db #{'0' * (len - wlen) * ', '}" if wlen < len
+
+			len
+
 		when CParser::Array
 			if value.kind_of? CParser::CExpression and not value.op and value.rexpr.kind_of? ::String
+				elen = cp.sizeof(nil, value.type.type)
 				src.last << 
-				case cp.sizeof(nil, value.type.type)
+				case elen
 				when 1: ' db '
 				when 2: ' dw '
 				else raise 'bad char* type ' + value.inspect
-				end << value.rexpr.inspect << ', 0'
+				end << value.rexpr.inspect
 
-				if nr = type.length and nr.kind_of? ::Integer and nr > value.rexpr.length+1
-					src.last << ", #{nr - value.rexpr.length - 1} dup(0)"
+				len = type.length || (value.rexpr.length+1)
+				if len > value.rexpr.length
+					src.last << (', 0' * (len - value.rexpr.length))
 				end
+
+				elen * len
+
 			elsif value.kind_of? ::Array
 				src.last << ':' if not src.last.empty?
 				len = type.length || value.length
@@ -580,14 +835,33 @@ class CPU
 				if len > 0
 					src << " db #{len * cp.sizeof(nil, type.type)} dup(0)"
 				end
-			else raise "unknown array initializer #{value.inspect}"
+
+				cp.sizeof(nil, type.type) * len
+
+			else raise "unknown static array initializer #{value.inspect}"
 			end
-		else raise 'bad data type ' + data.type.dump_cast(cp.toplevel)[0].join(' ') + src.last
 		end
 	end
 
-	def compile_c_udata(exe, cp, src, data)
-		src << "#{data.name} db #{cp.sizeof(data)} dup(?)"
+	def compile_c_udata(exe, cp, src, data, align)
+		src << "#{data.name} "
+		src.last <<
+		case data.type
+		when CParser::BaseType
+			len = cp.typesize[data.type.name]
+			case type.name
+			when :__int8:  'db ?'
+			when :__int16: 'dw ?'
+			when :__int32: 'dd ?'
+			when :__int64: 'dq ?'
+			else "db #{len} dup(?)"
+			end
+		else
+			len = cp.sizeof(data)
+			"db #{len} dup(?)"
+		end
+		len %= align
+		len == 0 ? align : len
 	end
 end
 
