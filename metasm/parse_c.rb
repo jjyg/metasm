@@ -642,11 +642,11 @@ class CParser
 		@lexer.readtok until @lexer.eos?
 		@prev_pragma_callback = @lexer.pragma_callback
 		@lexer.pragma_callback = proc { |tok| parse_pragma_callback(tok) }
-		@pragma_pack = 8 	# default for MSVC++
 		@toplevel = Block.new(nil)
 		@unreadtoks = []
 		@typesize = {:void => 0, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8 }
 		send model
+		@pragma_pack = @typesize[:ptr]
 	end
 
 	def lp32
@@ -693,7 +693,7 @@ class CParser
 			raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
 			raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != :string or v2.raw =~ /[^\d]/))
 			if not v1
-				@pragma_pack = 8	# default for MSVC++
+				@pragma_pack = @typesize[:ptr]
 			elsif v1.raw == 'push'
 				@pragma_pack_stack ||= []
 				@pragma_pack_stack << @pragma_pack
@@ -1779,12 +1779,12 @@ class CParser
 					case tok.raw
 					when '&'
 						val = parse_value(parser, scope)
-						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue (#{CExpression.dump(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
 						raise val.backtrace, 'cannot take addr of register' if val.kind_of? Variable and val.storage == :register
 						val = CExpression.new(nil, tok.raw.to_sym, val, Pointer.new(val.type))
 					when '++', '--'
 						val = parse_value(parser, scope)
-						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue (#{CExpression.dump(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
 						val = CExpression.new(nil, tok.raw.to_sym, val, val.type)
 					when '&&'
 						raise tok, 'label name expected' if not val = lexer.skipspaces or val.type != :string
@@ -1829,7 +1829,7 @@ class CParser
 					when '+', '-'
 						nil
 					when '++', '--'
-						raise parser, "invalid lvalue (#{CExpression.dump_inner(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue (#{CExpression.dump(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
 						CExpression.new(val, :'++', nil, val.type)
 					when '->'
 						raise tok, 'not a pointer' if not val.type.pointer?
@@ -2561,9 +2561,15 @@ class CParser
 	end
 	class CExpression
 		def self.dump(e, scope, r=[''], dep=[], brace = false)
-#brace = false
-#r.last << '('
-#r, dep = 
+			if $DEBUG
+				brace = false
+				case e
+				when CExpression, Variable
+					e.type.dump_cast(scope, r, dep)
+				end
+				r.last << '('
+			end
+			r, dep = 
 			case e
 			when ::Numeric: r.last << e.to_s ; [r, dep]
 			when ::String: r.last << e.inspect ; [r, dep]
@@ -2572,8 +2578,10 @@ class CParser
 			when nil: [r, dep]
 			else raise 'wtf?' + e.inspect
 			end
-#r.last << ')'
-#[r, dep]
+			if $DEBUG
+				r.last << ')'
+			end
+			[r, dep]
 		end
 
 		def dump(scope, r=[''], dep=[])
