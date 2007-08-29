@@ -1779,15 +1779,20 @@ class CParser
 					case tok.raw
 					when '&'
 						val = parse_value(parser, scope)
-						raise parser, "invalid lvalue (#{CExpression.dump(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
-						raise val.backtrace, 'cannot take addr of register' if val.kind_of? Variable and val.storage == :register
-						val = CExpression.new(nil, tok.raw.to_sym, val, Pointer.new(val.type))
+						if val.kind_of? CExpression and val.op == :& and not val.lexpr and
+							(val.rexpr.kind_of? Variable or val.rexpr.kind_of? CExpression) and val.rexpr.type.kind_of? Function
+							# function == function pointer
+						else
+							raise parser, "invalid lvalue (#{CExpression.dump(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
+							raise val.backtrace, 'cannot take addr of register' if val.kind_of? Variable and val.storage == :register
+							val = CExpression.new(nil, tok.raw.to_sym, val, Pointer.new(val.type))
+						end
 					when '++', '--'
 						val = parse_value(parser, scope)
 						raise parser, "invalid lvalue (#{CExpression.dump(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
 						val = CExpression.new(nil, tok.raw.to_sym, val, val.type)
 					when '&&'
-						raise tok, 'label name expected' if not val = lexer.skipspaces or val.type != :string
+						raise tok, 'label name expected' if not val = parser.skipspaces or val.type != :string
 						val = CExpression.new(nil, nil, Label.new(val.raw, nil), Pointer.new(BaseType.new(:void)))
 					when '*'
 						raise tok, 'expr expected' if not val = parse_value(parser, scope)
@@ -1807,6 +1812,10 @@ class CParser
 			else
 				parser.unreadtok tok
 				return
+			end
+			if val.kind_of? Variable or val.kind_of? CExpression and val.type.kind_of? Function
+				# function == functionpointer
+				val = CExpression.new(nil, :'&', val, Pointer.new(val.type))
 			end
 			val
 		end
@@ -2618,6 +2627,8 @@ class CParser
 						r.last << '({'
 						r.concat tr.map { |s| Case.dump_indent(s) }
 						r << '})'
+					when Label
+						r.last << '&&' << @rexpr.name
 					else raise "wtf? #{inspect}"
 					end
 				else
