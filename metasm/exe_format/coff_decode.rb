@@ -403,7 +403,7 @@ class COFF
 		s = @sections.find { |s| s.virtaddr <= rva and s.virtaddr + s.virtsize > rva } if rva and rva != 0
 		if s
 			rva - s.virtaddr + s.rawaddr
-		elsif rva > 0 and rva < @optheader.headers_size
+		elsif rva and rva > 0 and rva < @optheader.headers_size
 			rva
 		end
 	end
