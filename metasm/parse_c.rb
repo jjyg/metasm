@@ -627,53 +627,58 @@ class CParser
 
 
 	# creates a new CParser, parses all top-level statements
-	def self.parse(text, file='unknown', lineno=1)
+	def self.parse(text)
 		c = new
-		c.lexer.feed text, file, lineno
-		nil while not c.lexer.eos? and c.parse_definition(c.toplevel)
-		raise c.lexer.readtok || c, 'EOF expected' if not c.lexer.eos?
-		c.sanity_checks
+		caller.first =~ /^(.*?):(\d+)/
+                c.parse text, $1, $2.to_i+1
+		raise c.lexer.readtok || c, 'invalid definition' if not c.lexer.eos?
 		c
+	end
+
+	# parses the current lexer content (or the text arg) for toplevel definitions
+	def parse(text=nil, filename='unknown', lineno=1)
+		@lexer.feed text, filename, lineno if text
+		nil while not @lexer.eos? and parse_definition(@toplevel)
+		sanity_checks
 	end
 
 	attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
 	def initialize(lexer = nil, model=:ilp32)
 		@lexer = lexer || Preprocessor.new
-		@lexer.readtok until @lexer.eos?
 		@prev_pragma_callback = @lexer.pragma_callback
 		@lexer.pragma_callback = proc { |tok| parse_pragma_callback(tok) }
 		@toplevel = Block.new(nil)
 		@unreadtoks = []
-		@typesize = {:void => 0, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8 }
+		@typesize = { :void => 0, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8,
+			:char => 1, :float => 4, :double => 8, :longdouble => 12 }
 		send model
-		@pragma_pack = @typesize[:ptr]
 	end
 
 	def lp32
-		@typesize.update :char => 1, :short => 2, :ptr => 4,
-			:int => 2, :long => 4, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12
+		@pragma_pack = 4
+		@typesize.update :short => 2, :ptr => 4,
+			:int => 2, :long => 4, :longlong => 8
 	end
 	def ilp32
-		@typesize.update :char => 1, :short => 2, :ptr => 4,
-			:int => 4, :long => 4, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12
+		@pragma_pack = 4
+		@typesize.update :short => 2, :ptr => 4,
+			:int => 4, :long => 4, :longlong => 8
 	end
 	def llp64
 		# longlong should only exist here
-		@typesize.update :char => 1, :short => 2, :ptr => 8,
-			:int => 4, :long => 4, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12
+		@pragma_pack = 8
+		@typesize.update :short => 2, :ptr => 8,
+			:int => 4, :long => 4, :longlong => 8
 	end
 	def ilp64
-		@typesize.update :char => 1, :short => 2, :ptr => 8,
-			:int => 8, :long => 8, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12
+		@pragma_pack = 8
+		@typesize.update :short => 2, :ptr => 8,
+			:int => 8, :long => 8, :longlong => 8
 	end
 	def lp64
-		@typesize.update :char => 1, :short => 2, :ptr => 8,
-			:int => 4, :long => 8, :longlong => 8,
-			:float => 4, :double => 8, :longdouble => 12
+		@pragma_pack = 8
+		@typesize.update :short => 2, :ptr => 8,
+			:int => 4, :long => 8, :longlong => 8
 	end
 
 	attr_accessor :auto_predeclare_unknown_structs
@@ -1849,10 +1854,12 @@ class CParser
 					end
 				when '.'
 					type = val.type.untypedef
-					if not ntok = parser.skipspaces or ntok.type != :string or not type.kind_of? Union or not type.members or not m = type.members.find { |m| m.name == ntok.raw }
+					if not ntok = parser.skipspaces or ntok.type != :string or not type.kind_of? Union
 						parser.unreadtok ntok
 						nil
 					else
+						raise 'uninitialized structure' if not type.members
+						raise "bad struct member #{ntok.raw} not in #{type.members.map { |m| m.name }.inspect}" if not m = type.members.find { |m| m.name == ntok.raw }
 						CExpression.new(val, :'.', ntok.raw, m.type)
 					end
 				when '['
@@ -2231,6 +2238,7 @@ class CParser
 	end
 	class Function
 		def dump_declarator(decl, scope, r=[''], dep=[])
+			decl.last << '()' if decl.last.empty?
 			decl.last << '('
 			if args
 				@args.each { |arg|

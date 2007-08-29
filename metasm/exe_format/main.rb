@@ -45,12 +45,45 @@ class ExeFormat
 	end
 
 	# creates a new object using the specified cpu, parses the asm source, and assemble
-	def self.assemble(cpu, source)
-		ex = new(cpu)
+	def self.assemble(cpu, source, file=nil, lineno=nil)
 		caller.first =~ /^(.*?):(\d+)/
-		ex.parse(source, $1, $2.to_i+1)
-		ex.assemble
-		ex
+		lineno ||= file ? 1 : $2.to_i+1
+		file ||= $1
+		e = new(cpu)
+		e.parse(source, file, lineno)
+		e.assemble
+		e
+	end
+
+	def self.assemble_file(cpu, filename)
+		assemble(cpu, File.read(filename), filename, 1)
+	end
+
+	# creates a new object using the specified cpu, parse/compile/assemble the C source
+	def self.compile_c(cpu, source, file=nil, lineno=nil)
+		caller.first =~ /^(.*?):(\d+)/
+		lineno ||= file ? 1 : $2.to_i+1
+		file ||= $1
+		e = new(cpu)
+		cp = CParser.new
+		cpu.tune_cparser(cp)
+		cp.parse(source, file, lineno)
+		cp.precompile(e)
+		asm_source = cpu.compile_c(e, cp)
+		puts asm_source if $DEBUG
+		e.parse(asm_source, 'C compiler output', 1)
+		e.assemble
+		e.set_entrypoint 'main'
+		e
+	end
+
+	def self.compile_c_file(cpu, filename)
+		compile_c(cpu, File.read(filename), filename, 1)
+	end
+
+	# add directive to change the current assembler section to the assembler source +src+
+	def compile_setsection(src, section)
+		src << section
 	end
 
 	# encodes the executable as a string, checks that all relocations are

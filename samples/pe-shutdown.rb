@@ -7,59 +7,70 @@
 # 
 # here we will build an executable file that will shut down the machine
 # when run
-# TODO #include <windows.h>, use some struct handling	-- incoming ;)
 #
 
 require 'metasm'
 
-include Metasm
+Metasm::PE.compile_c(Metasm::Ia32.new, <<EOS).encode_file('metasm-shutdown.exe')
+#define EWX_FORCE 0x00000004
+#define EWX_SHUTDOWN 0x00000001
+#define LookupPrivilegeValue LookupPrivilegeValueA
+#define NULL ((void *)0)
+#define SE_PRIVILEGE_ENABLED (0x00000002L)
+#define SHTDN_REASON_FLAG_PLANNED 0x80000000
+#define SHTDN_REASON_MAJOR_OPERATINGSYSTEM 0x00020000
+#define SHTDN_REASON_MINOR_UPGRADE 0x00000003
+#define TOKEN_ADJUST_PRIVILEGES (0x0020)
+#define TOKEN_QUERY (0x0008)
+#define __TEXT(quote) quote
+#define TEXT(quote) __TEXT(quote)
+#define SE_SHUTDOWN_NAME TEXT("SeShutdownPrivilege")
 
-pe = PE.assemble Ia32.new, <<EOS
-.section '.text' r w x
+typedef int BOOL;
+typedef char CHAR;
+typedef unsigned long DWORD;
+typedef void *HANDLE;
+typedef long LONG;
+typedef unsigned int UINT;
+BOOL ExitWindowsEx __attribute__((dllimport)) __attribute__((stdcall))(UINT uFlags, DWORD dwReason);
+HANDLE GetCurrentProcess __attribute__((dllimport)) __attribute__((stdcall))(void);
+typedef const CHAR *LPCSTR;
+typedef DWORD *PDWORD;
+typedef HANDLE *PHANDLE;
 
-.entrypoint
+struct _LUID {
+	DWORD LowPart;
+	LONG HighPart;
+};
+typedef struct _LUID LUID;
+BOOL OpenProcessToken __attribute__((dllimport)) __attribute__((stdcall))(HANDLE ProcessHandle, DWORD DesiredAccess, PHANDLE TokenHandle);
+typedef struct _LUID *PLUID;
+BOOL LookupPrivilegeValueA __attribute__((dllimport)) __attribute__((stdcall))(LPCSTR lpSystemName, LPCSTR lpName, PLUID lpLuid);
 
-; OpenProcessToken(GetCurrentProcess, ADJUST_PRIV | QUERY, &htok)
-push htok
-push 28h
-call GetCurrentProcess
-push eax
-call OpenProcessToken
+struct _LUID_AND_ATTRIBUTES {
+	LUID Luid;
+	DWORD Attributes;
+};
+typedef struct _LUID_AND_ATTRIBUTES LUID_AND_ATTRIBUTES;
 
-; LookupPrivVal(0, SE_SHUTDOWN, &tokpriv.priv[0].luid)
-push tokpriv_luid
-push privname
-push 0
-call LookupPrivilegeValueA
+struct _TOKEN_PRIVILEGES {
+	DWORD PrivilegeCount;
+	LUID_AND_ATTRIBUTES Privileges[1];
+};
+typedef struct _TOKEN_PRIVILEGES *PTOKEN_PRIVILEGES;
+typedef struct _TOKEN_PRIVILEGES TOKEN_PRIVILEGES;
+BOOL AdjustTokenPrivileges __attribute__((dllimport)) __attribute__((stdcall))(HANDLE TokenHandle, BOOL DisableAllPrivileges, PTOKEN_PRIVILEGES NewState, DWORD BufferLength, PTOKEN_PRIVILEGES PreviousState, PDWORD ReturnLength);
+// end of factorized header
 
-; tokpriv.privcnt = 1 ; tokpriv.priv[0].attr = ENABLED
-mov dword ptr [tokpriv], 1
-mov dword ptr [tokpriv_attr], 2
-
-; AdjustTokenPrivileges(htok, 0, &tokpriv, 0, 0, 0)
-xor eax, eax
-push eax
-push eax
-push eax
-push tokpriv
-push eax
-push dword ptr [htok]
-call AdjustTokenPrivileges
-
-; ExitWindowsEx(SHUTDOWN | FORCE, OS | MINORUPDATE | PLANNED)
-push 80020003h
-push 5
-call ExitWindowsEx
-
-ret
-
-.align 4
-htok dd ?
-tokpriv:
- tokpriv_count dd ?
- tokpriv_luid  dd ?, ?
- tokpriv_attr  dd ?
-privname db "SeShutdownPrivilege\0"
-
+int main(void) {
+	HANDLE htok;
+	TOKEN_PRIVILEGES tokpriv;
+	OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &htok);
+	LookupPrivilegeValue(NULL, SE_SHUTDOWN_NAME, &tokpriv.Privileges[0].Luid);
+	tokpriv.PrivilegeCount = 1U;
+	tokpriv.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+	AdjustTokenPrivileges(htok, 0, &tokpriv, 0U, NULL, NULL);
+	ExitWindowsEx(EWX_SHUTDOWN | EWX_FORCE, SHTDN_REASON_MAJOR_OPERATINGSYSTEM | SHTDN_REASON_MINOR_UPGRADE | SHTDN_REASON_FLAG_PLANNED);
+	return 0;
+}
 EOS
-pe.encode_file 'metasm-shutdown.exe'

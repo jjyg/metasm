@@ -99,8 +99,7 @@ class Ia32
 				reg = compile_c_findreg(cp, src, state)
 				e = compile_c_findvaraddr(cp, src, state, expr, reg)
 				if expr.type.kind_of? CParser::Array
-					i = state.offset[expr] ? 'lea' : 'mov'
-					src << "#{i} #{reg}, #{e}" if e != reg
+					src << (state.offset[expr] ? "lea #{reg}, [#{e}]" : "mov #{reg}, #{e}") if e != reg
 				else
 					src << "mov #{reg}, [#{e}]"
 				end
@@ -132,8 +131,7 @@ class Ia32
 			when :&
 				reg = compile_c_findreg(cp, src, state)
 				e = compile_c_findvaraddr(cp, src, state, expr.rexpr, reg)
-				i = state.offset[expr.rexpr] ? 'lea' : 'mov'
-				src << "#{i} #{reg}, #{e}" if e != reg
+				src << (state.offset[expr.rexpr] ? "lea #{reg}, [#{e}]" : "mov #{reg}, #{e}") if e != reg
 			else
 				src << "; wtf? #{expr.inspect}"
 			end
@@ -202,11 +200,11 @@ class Ia32
 			state.used.delete rr
 			case expr.lexpr
 			when CParser::Variable
-				src << "#{BASIC_OPS[expr.op]} #{rl}, #{rr}"
+				src << "#{BASIC_OPS_LVALUE[expr.op]} #{rl}, #{rr}"
 				state.pending[rl] = expr.lexpr
 			when CParser::CExpression
 				if expr.lexpr.op == :'*' and not expr.lexpr.lexpr
-					src << "#{BASIC_OPS[expr.op]} [#{rl}], #{rr}"
+					src << "#{BASIC_OPS_LVALUE[expr.op]} [#{rl}], #{rr}"
 					state.used.delete rl
 					rl = nil
 				else

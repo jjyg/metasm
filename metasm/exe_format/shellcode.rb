@@ -84,5 +84,11 @@ class Shellcode < ExeFormat
 	def dasm_dump_section_header(edata, baseaddr)
 		''
 	end
+
+	def compile_setsection(src, section)
+	end
+
+	def set_entrypoint(ep)
+	end
 end
 end

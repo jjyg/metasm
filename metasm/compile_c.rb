@@ -473,11 +473,11 @@ class CParser
 				if struct.kind_of? Struct and (off = struct.offsetof(parser, @rexpr)) != 0
 					@rexpr = CExpression.new(lexpr, :'+', off, lexpr.type)
 				else
+					# union/1st struct member
 					@rexpr = lexpr
 					if @rexpr.kind_of? CExpression and @rexpr.op == :'&' and not @rexpr.lexpr
-						if @rexpr.rexpr.kind_of? CExpression: (e = @rexpr.rexpr).type = @type
-						else e = CExpression.new(nil, nil, @rexpr.rexpr, @type)
-						end
+						e = CExpression.new(nil, nil, @rexpr.rexpr, @type)
+						e = CExpression.new(nil, nil, e, @type) if not e.rexpr.kind_of? CExpression
 						return e.precompile_inner(parser, scope)
 					end
 				end
@@ -485,7 +485,12 @@ class CParser
 				@lexpr = nil
 				precompile_inner(parser, scope)
 			when :'[]'
-				@rexpr = CExpression.new(@lexpr, :'+', @rexpr, @lexpr.type)
+				rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+				if rexpr.kind_of? CExpression and not rexpr.op and rexpr.rexpr == 0
+					@rexpr = @lexpr
+				else
+					@rexpr = CExpression.new(@lexpr, :'+', rexpr, @lexpr.type)
+				end
 				@op = :'*'
 				@lexpr = nil
 				precompile_inner(parser, scope)
@@ -691,7 +696,6 @@ class CParser
 						v.name = parser.new_label('string')
 						v.type = Array.new(@type.type)
 						v.type.length = @rexpr.length + 1
-						v.type.qualifier = [:const]
 						v.type.type.qualifier = [:const]
 						v.initializer = CExpression.new(nil, nil, @rexpr, @type)
 						parser.toplevel.symbol[v.name] = v
@@ -749,7 +753,8 @@ class CPU
 			v = st.var
 			if v.type.kind_of? CParser::Function: funcs << v if v.initializer	# no initializer == storage :extern
 			elsif v.storage == :extern
-			elsif v.initializer and not v.type.qualifier.to_a.include?(:const):  rwdata << v
+			elsif v.initializer and not v.type.qualifier.to_a.include?(:const) and
+				(not v.type.kind_of? CParser::Array or not v.type.type.qualifier.to_a.include?(:const)):  rwdata << v
 			elsif v.initializer: rodata << v
 			else udata << v
 			end
@@ -984,20 +989,6 @@ class CPU
 		end
 		len %= align
 		len == 0 ? align : len
-	end
-end
-
-class ExeFormat
-	# add directives to encode different sections (.text .data .rodata .bss)
-	def compile_setsection(src, section)
-		src << section
-	end
-
-	def self.compile_c_to_asm(cpu, source)
-		exe = new(cpu)
-		cp = CParser.parse(source)
-		cp.precompile
-		exe.cpu.compile_c(exe, cp)
 	end
 end
 end

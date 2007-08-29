@@ -90,6 +90,10 @@ class CPU
 	def make_call_return
 		@opcode_list.each { |o| o.props.delete :stopexec if o.props[:saveip] }
 	end
+
+	def tune_cparser(cp)
+		cp.send "ilp#@size"
+	end
 end
 
 # generic CPU, with no instructions, just size/endianness
