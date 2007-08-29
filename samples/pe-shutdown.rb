@@ -7,7 +7,7 @@
 # 
 # here we will build an executable file that will shut down the machine
 # when run
-# TODO #include <windows.h>, use some struct handling
+# TODO #include <windows.h>, use some struct handling	-- incoming ;)
 #
 
 require 'metasm'
@@ -17,26 +17,20 @@ include Metasm
 pe = PE.assemble Ia32.new, <<EOS
 .section '.text' r w x
 
-.import kernel32 GetCurrentProcess getcurrentprocess
-.import advapi32 OpenProcessToken  openprocesstoken
-.import advapi32 LookupPrivilegeValueA lookupprivilegevalue
-.import advapi32 AdjustTokenPrivileges adjusttokenprivileges
-.import user32   ExitWindowsEx exitwindowsex
-
 .entrypoint
 
 ; OpenProcessToken(GetCurrentProcess, ADJUST_PRIV | QUERY, &htok)
 push htok
 push 28h
-call getcurrentprocess
+call GetCurrentProcess
 push eax
-call openprocesstoken
+call OpenProcessToken
 
 ; LookupPrivVal(0, SE_SHUTDOWN, &tokpriv.priv[0].luid)
 push tokpriv_luid
 push privname
 push 0
-call lookupprivilegevalue
+call LookupPrivilegeValueA
 
 ; tokpriv.privcnt = 1 ; tokpriv.priv[0].attr = ENABLED
 mov dword ptr [tokpriv], 1
@@ -50,12 +44,12 @@ push eax
 push tokpriv
 push eax
 push dword ptr [htok]
-call adjusttokenprivileges
+call AdjustTokenPrivileges
 
 ; ExitWindowsEx(SHUTDOWN | FORCE, OS | MINORUPDATE | PLANNED)
 push 80020003h
 push 5
-call exitwindowsex
+call ExitWindowsEx
 
 ret
 
@@ -68,4 +62,4 @@ tokpriv:
 privname db "SeShutdownPrivilege\0"
 
 EOS
-pe.encode_file 'metasm-shutup.exe'
+pe.encode_file 'metasm-shutdown.exe'

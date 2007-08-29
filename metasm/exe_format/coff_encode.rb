@@ -255,12 +255,11 @@ class COFF
 
 			ord_mask = 1 << (coff.optheader.signature == 'PE+' ? 63 : 31)
 			@imports.each { |i|
+				edata['iat'].export[i.target] = edata['iat'].virtsize
 				if i.ordinal
 					edata['ilt'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 					edata['iat'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 				else
-					edata['iat'].export[i.target || i.name] = edata['iat'].virtsize
-
 					edata['nametable'].align 2
 					edata['ilt'] << coff.encode_xword(rva_end['nametable'])
 					edata['iat'] << coff.encode_xword(rva_end['nametable'])
@@ -495,8 +494,8 @@ class COFF
 		case @cpu
 		when Ia32
 			# sections starts with a helper function that returns the address of metasm_importthunk_getip in eax (PIC)
-			edata << Shellcode.assemble(@cpu, "metasm_importthunk_getip: call metasm_importthunk_getip2\nmetasm_importthunk_getip2: pop eax sub eax, metasm_importthunk_getip2-metasm_importthunk_getip ret").encoded if edata.empty?
-			edata << Shellcode.assemble(@cpu, "#{import.thunk}: call metasm_importthunk_getip jmp [eax+#{import.target || import.name}-metasm_importthunk_getip]").encoded
+			edata << Shellcode.assemble(@cpu, "metasm_importthunk_getip: call 42f\n42: pop eax sub eax, 42b-metasm_importthunk_getip ret").encoded if edata.empty?
+			edata << Shellcode.assemble(@cpu, "#{import.thunk}: call metasm_importthunk_getip jmp [eax+#{import.target}-metasm_importthunk_getip]").encoded
 		else raise EncodeError, 'E: COFF: encode import thunk: unsupported architecture'
 		end
 	end
@@ -693,6 +692,7 @@ class COFF
 	def encode(target = 'exe')
 		@encoded = EncodedData.new
 		label_at(@encoded, 0, 'coff_start')
+		autoimport
 		encode_exports if @export
 		encode_imports if @imports
 		encode_resource if @resource
@@ -749,7 +749,7 @@ class COFF
 	#    imports a symbol from a library
 	#    if the thunk name is specified and not 'nil', the compiler will generate a thunk that can be called (in ia32, 'call thunk' == 'call [import_name]')
 	#      the thunk is position-independent, and should be used instead of the indirect call form, for imported functions
-	#    label_name is the label to attribute to the location that will receive the address of the imported symbol, defaults to import_name
+	#    label_name is the label to attribute to the location that will receive the address of the imported symbol, defaults to import_name (iat_<import_name> if thunk == iname)
 	#    TODO import by ordinal (now must be done manually, using coff.imports[<n>].imports[<nn>].ordinal = <i>)
 	#  .image_base <base>
 	#    specifies the COFF prefered load address, base is an immediate expression
@@ -848,17 +848,18 @@ class COFF
 		when '.import'
 			# .import <libname|"libname"> <imported sym|"imported sym"> [label of plt thunk|nil] [label of iat element if != symname]
 			libname = readstr[]
-			importname = readstr[]
+			i = ImportDirectory::Import.new
+			i.name = readstr[]
 			@lexer.skip_space
 			if tok = @lexer.readtok and tok.type == :string
-				thunktarget = tok.raw
-				thunktarget = nil if thunktarget == 'nil'
+				i.thunk = tok.raw if tok.raw != 'nil'
 				@lexer.skip_space
 				tok = @lexer.readtok
 			end
 			if tok and tok.type == :string
-				target = tok.raw
+				i.target = tok.raw
 			else
+				i.target = i.thunk == i.name ? 'iat_' + i.name : i.name
 				@lexer.unreadtok tok
 			end
 
@@ -869,10 +870,6 @@ class COFF
 				id.imports = []
 				@imports << id
 			end
-			i = ImportDirectory::Import.new
-			i.name = importname
-			i.target = target || importname
-			i.thunk = thunktarget
 			id.imports << i
 
 			check_eol[]
@@ -903,6 +900,50 @@ class COFF
 			raise "no section named #{k} ?" if not s = @sections.find { |s| s.name == k }
 			s.encoded << assemble_sequence(v, @cpu)
 			v.clear
+		}
+	end
+
+	# try to resolve automatically COFF import tables from self.sections.encoded.relocations
+	# and WindowsExports::EXPORT
+	# if the relocation target is '<symbolname>' or 'iat_<symbolname>, link to the IAT address, if it is '<symbolname> + <expr>', 
+	# link to a thunk (plt-like) 
+	def autoimport
+		next if not defined? WindowsExports
+		autoexports = WindowsExports::EXPORT.dup
+		@sections.each { |s|
+			next if not s.encoded
+			s.encoded.export.keys.each { |e| autoexports.delete e }
+		}
+		@sections.each { |s|
+			next if not s.encoded
+			s.encoded.reloc.each_value { |r|
+				if r.target.op == :+ and not r.target.lexpr and r.target.rexpr.kind_of? ::String
+					sym = target = r.target.rexpr
+					sym = sym[4..-1] if sym[0, 4] == 'iat_'
+				elsif r.target.op == :- and r.target.rexpr.kind_of? ::String and r.target.lexpr.kind_of? ::String
+					sym = thunk = r.target.lexpr
+				end
+				next if not dll = autoexports[sym]
+				@imports ||= []
+				if not id = @imports.find { |id| id.libname =~ /^#{dll}(\.dll)?$/i }
+					id = ImportDirectory.new
+					id.libname = dll
+					id.imports = []
+					@imports << id
+				end
+				if not i = id.imports.find { |i| i.target == sym }
+					i = ImportDirectory::Import.new
+					i.name = sym
+					id.imports << i
+				end
+				if (target and i.target and (i.target != target or i.thunk == target)) or
+				   (thunk  and i.thunk  and (i.thunk  != thunk or  i.target == thunk))
+					puts "autoimport: conflict for #{target} #{thunk} #{i.inspect}" if $VERBOSE
+				else
+					i.target = target || ('iat_' + thunk)
+					i.thunk = thunk if thunk
+				end
+			}
 		}
 	end
 end
