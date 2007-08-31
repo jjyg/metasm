@@ -268,11 +268,6 @@ class Ia32
 		end
 	end
 
-	# removes cases
-	def compile_c_switch(exe, cp, src, state, stmt)
-		src << "; switch"
-	end
-
 	def compile_c_goto(exe, cp, src, state, target)
 		src << "jmp #{target}"
 	end

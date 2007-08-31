@@ -2046,6 +2046,25 @@ class CParser
 		r.join("\n")
 	end
 
+	class Statement
+		def self.dump(e, scope, r=[''], dep=[])
+			case e
+			when nil: r.last << ';'
+			when Block
+				r.last << ' ' if not r.last.empty?
+				r.last << '{'
+				tr, dep = e.dump(scope, [''], dep)
+				tr.pop if tr.last.empty?
+				r.concat tr.map { |s| Case.dump_indent(s) }
+				(r.last[-1] == ?{ ? r.last : r) << '}'
+			else
+				tr, dep = e.dump(scope, [''], dep)
+				r.concat tr.map { |s| Case.dump_indent(s) }
+			end
+			[r, dep]
+		end
+	end
+
 	class Block
 		# return array of c source lines and array of dependencies (objects)
 		def dump(scp, r=[''], dep=[])
@@ -2093,7 +2112,7 @@ class CParser
 						raise "fuxored! #{cycle.map { |t| t.name }.inspect}" if todo_now.empty?
 					end
 				end
-				todo_now.sort_by { |t, x| t.name ? t.name : '0' }.each { |t|
+				todo_now.sort_by { |t, x| t.name || '0' }.each { |t|
 					if t.kind_of? Variable and t.type.kind_of? Function and t.initializer
 						r << ''
 						r.concat todo_rndr.delete(t)
@@ -2111,7 +2130,11 @@ class CParser
 			@statements.each { |s|
 				next if s.kind_of? Declaration and done.include? s.var
 				r << '' if not r.last.empty?
-				r, dep = s.dump(self, r, dep)
+				if s.kind_of? Block
+					Statement.dump(s, self, r, dep)
+				else
+					s.dump(self, r, dep)
+				end
 			}
 
 			dep -= done
@@ -2257,11 +2280,7 @@ class CParser
 		end
 
 		def dump_initializer(init, scope, r=[''], dep=[])
-			r << '{'
-			tr, dep = init.dump(scope, [''], dep)
-			r.concat tr.map { |s| Case.dump_indent(s) }
-			r << '}'
-			[r, dep]
+			Statement.dump(init, scope, r << '', dep)
 		end
 	end
 	class BaseType
@@ -2392,21 +2411,6 @@ class CParser
 				[r, dep]
 			else super
 			end
-		end
-	end
-	class Statement
-		def self.dump(e, scope, r=[''], dep=[])
-			if not e
-				r << "\t;"
-			else
-				r.last << ' ' if e.kind_of? Block and not r.last.empty?
-				r.last << '{' if e.kind_of? Block
-				tr, dep = e.dump(scope, [''], dep)
-				tr.pop if e.kind_of? Block and tr.last.empty?
-				r.concat tr.map { |s| Case.dump_indent(s) }
-				r << '}' if e.kind_of? Block
-			end
-			[r, dep]
 		end
 	end
 	class If
@@ -2631,10 +2635,9 @@ class CParser
 					when Variable
 						r, dep = @rexpr.dump(scope, r, dep)
 					when Block
-						tr, dep = @rexpr.dump(scope, [''], dep)
-						r.last << '({'
-						r.concat tr.map { |s| Case.dump_indent(s) }
-						r << '})'
+						r.last << '('
+						Statement.dump(scope, r, dep)
+						r.last << ' )'
 					when Label
 						r.last << '&&' << @rexpr.name
 					else raise "wtf? #{inspect}"

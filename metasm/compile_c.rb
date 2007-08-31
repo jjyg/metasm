@@ -18,16 +18,34 @@ class CParser
 	end
 
 	# simplifies self.toplevel (destructively)
-	# remove typedefs
-	# remove structs/arrays from expressions (kept only in declarations)
-	# types are turned into __int8/__int16/__int32/__int64 (signed or unsigned)
-	# simplifies While/For/Break into If/goto
-	# If: else are removed, then are turned in goto
-	# label statements are removed
-	# returns are kept, but are followed by a jump to the end of the function
-	# uses an ExeFormat to build unique label names
-	# only toplevel symbols are initialized (static symbols are turned into anonymised toplevel one)
-	# after that, we are no longer valid C (typewise, + moved blocks outside of their enclosing scope)
+	# static symbols are converted to toplevel ones, as nested functions
+	# uses an ExeFormat (the argument) to create unique label/variable names
+	#
+	# remove typedefs/enums
+	# CExpressions: all expr types are converted to __int8/__int16/__int32/__int64 (sign kept) (incl. ptr), + void
+	#  struct member dereference/array indexes are converted to *(ptr + off)
+	#  coma are converted to 2 statements, ?: are converted to If
+	#  :|| and :&& are converted to If + assignment to temporary
+	#  immediate quotedstrings/floats are converted to references to const static toplevel
+	#  pre/postincrements are moved standalone
+	#  compound statements are unnested
+	#  inner assignments are separated ('a = b = c;' => 'b = c; a = b;')
+	# Asm are kept (TODO precompile clobber types)
+	# Declarations: initializers are converted to separate assignment CExpressions
+	# Blocks are kept unless empty
+	# structure dereferences/array indexing are converted to *(ptr + offset)
+	# While/For/DoWhile/Switch are converted to If/Goto
+	# Continue/Break are converted to Goto
+	# Cases are converted to Labels during Switch conversion
+	# Label statements are removed
+	# Return: 'return <foo>;' => 'return <foo>; goto <end_of_func>;', 'return;' => 'goto <eof>;'
+	# If: 'if (a) b; else c;' => 'if (!a) goto l1; { b; }; goto l2; l1: { c; } l2:'
+	#  && and || in condition are expanded to multiple If (TODO)
+	#
+	# in a second phase, unused labels are removed from functions, as noop goto (goto x; x:)
+	# dead code is removed ('goto foo; bar; baz:' => 'goto foo; baz:') (TODO)
+	#
+	# after that, we are no longer valid C (bad types, blocks moved...)
 	def precompile(exe = ExeFormat.new)
 		@exeformat = exe
 		@toplevel.precompile(self)
@@ -72,7 +90,9 @@ class CParser
 
 		# removes unused labels, and in-place goto (goto toto; toto:)
 		def precompile_optimize
-			precompile_optimize_inner(precompile_optimize_inner([], 1), 2)
+			list = []
+			precompile_optimize_inner(list, 1)
+			precompile_optimize_inner(list, 2)
 		end
 
 		# step 1: list used labels/unused goto
@@ -80,13 +100,23 @@ class CParser
 		def precompile_optimize_inner(list, step)
 			lastgoto = nil
 			hadref = false
+			walk = proc { |expr|
+				next if not expr.kind_of? CExpression
+				# gcc's unary && support
+				if not expr.op and not expr.lexpr and expr.rexpr.kind_of? Label
+					list << expr.rexpr.name
+				else
+					walk[expr.lexpr]
+					walk[expr.rexpr]
+				end
+			}
 			@statements.dup.each { |s|
 				lastgoto = nil if not s.kind_of? Label
 				case s
-				when Block: s.precompile_optimize_inner(list, step)
-				when Switch: s.statement.precompile_optimise_inner(list, step)
-				when Case
-				when CExpression:	# gcc's unary && support
+				when Block
+					s.precompile_optimize_inner(list, step)
+					@statements.delete s if step == 2 and s.statements.empty?
+				when CExpression: walk[s] if step == 1
 				when Label
 					case step
 					when 1
@@ -146,7 +176,6 @@ class CParser
 					i.precompile(parser)
 					i.statements << Label.new(i.return_label)
 					i.precompile_optimize
-
 				elsif scope != parser.toplevel
 					precompile_dyn_initializer(parser, scope, @var, @var.type, i)
 					@var.initializer = nil
@@ -242,6 +271,7 @@ class CParser
 			end
 
 			scope.statements << self
+			return if not inverted
 
 			if belse
 				ifelse = parser.new_label('if_else')
@@ -335,14 +365,44 @@ class CParser
 
 	class Switch
 		def precompile(parser, scope)
-			@test = CExpression.precompile_inner(parser, scope, @test)
-
-			scope.statements << self
+			var = Variable.new
+			var.storage = :register
+			var.name = parser.new_label('switch')
+			var.type = @test.type
+			var.initializer = @test
+			CExpression.precompile_type(parser, scope, var)
+			Declaration.new(var).precompile(parser, scope)
 
 			@body = @body.precompile_make_block scope
 			@body.break_label = parser.new_label('switch_break')
 			@body.precompile(parser)
-
+			default = @body.break_label
+			# recursive proc to change Case to Labels
+			# dynamically creates the If sequence
+			walk = proc { |blk|
+				blk.statements.each_with_index { |s, i|
+					case s
+					when Case
+						label = parser.new_label('case')
+						if s.expr == 'default'
+							default = label
+						elsif s.exprup
+							If.new(CExpression.new(CExpression.new(var, :'>=', s.expr, BaseType.new(:int)), :'&&',
+										CExpression.new(var, :'<=', s.exprup, BaseType.new(:int)),
+										BaseType.new(:int)), Goto.new(label)).precompile(parser, scope)
+						else
+							If.new(CExpression.new(var, :'==', s.expr, BaseType.new(:int)),
+								Goto.new(label)).precompile(parser, scope)
+						end
+						blk.statements[i] = Label.new(label)
+					when Block
+						walk[s]
+					end
+				}
+			}
+			walk[@body]
+			scope.statements << Goto.new(default)
+			scope.statements << @body
 			scope.statements << Label.new(@body.break_label)
 		end
 	end
@@ -362,14 +422,14 @@ class CParser
 	class Return
 		def precompile(parser, scope)
 			@value = CExpression.precompile_inner(parser, scope, @value)
-			scope.statements << self
+			scope.statements << self if @value
 			scope.statements << Goto.new(scope.return_label)
 		end
 	end
 
 	class Label
 		def precompile(parser, scope)
-			if not parser.auto_label_list or not parser.auto_label_list[@name]
+			if name and (not parser.auto_label_list or not parser.auto_label_list[@name])
 				@name = scope.nonauto_label[@name] ||= parser.new_label(@name)
 			end
 			scope.statements << self
@@ -405,20 +465,14 @@ class CParser
 	end
 
 	class CExpression
-		def self.precompile_inner(parser, scope, expr)
-			case expr
-			when CExpression: expr.precompile_inner(parser, scope)
-			else expr
-			end
-		end
-
 		def precompile(parser, scope)
-			scope.statements << precompile_inner(parser, scope)
+			i = precompile_inner(parser, scope, false)
+			scope.statements << i if i
 		end
 
 		# changes obj.type to a precompiled type
 		# keeps struct/union, change everything else to __int* 
-		# except Arrays if keep_arrays is true (need to know variable allocation sizes etc)
+		# except Arrays if declaration is true (need to know variable allocation sizes etc)
 		# returns the type
 		def self.precompile_type(parser, scope, obj, declaration = false)
 			case t = obj.type.untypedef
@@ -452,10 +506,18 @@ class CParser
 			obj.type = t
 		end
 
+		def self.precompile_inner(parser, scope, expr, nested = true)
+			case expr
+			when CExpression: expr.precompile_inner(parser, scope, nested)
+			else expr
+			end
+		end
+
 		# returns a new CExpression with simplified self.type, computes structure offsets
 		# turns char[]/float immediates to reference to anonymised const
-		# TODO 'a = b += c' => 'b += c; a = b'
-		def precompile_inner(parser, scope)
+		# TODO 'a = b += c' => 'b += c; a = b' (use nested argument)
+		# TODO handle precompile_inner return nil
+		def precompile_inner(parser, scope, nested = true)
 			case @op
 			when :'.'
 				lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
@@ -716,11 +778,13 @@ class CParser
 
 				CExpression.precompile_type(parser, scope, self)
 
-				isnumeric = proc { |e| e.kind_of?(::Numeric) or (e.kind_of? CExpression and not e.lexpr and not e.op and e.rexpr.kind_of? ::Numeric) }
+				isnumeric = proc { |e| e.kind_of?(::Numeric) or (e.kind_of? CExpression and
+					not e.lexpr and not e.op and e.rexpr.kind_of? ::Numeric) }
 
 				# (x + imm) + imm => x + imm
 				# XXX type overflow etc...
-				#if isnumeric[@rexpr] and @lexpr.kind_of? CExpression and isnumeric[@lexpr.rexpr] and (@lexpr.lexpr.kind_of? Variable or @lexpr.lexpr.kind_of? CExpression)
+				#if isnumeric[@rexpr] and @lexpr.kind_of? CExpression and isnumeric[@lexpr.rexpr] and
+				#	(@lexpr.lexpr.kind_of? Variable or @lexpr.lexpr.kind_of? CExpression)
 				#end
 
 				# calc numeric
@@ -798,9 +862,6 @@ class CPU
 				compile_c_decl(exe, cp, tmpsrc, state, stmt.var)
 			when CParser::If
 				compile_c_ifgoto(exe, cp, tmpsrc, state, stmt.test, stmt.bthen.target)
-			when CParser::Switch
-				# removes Cases
-				compile_c_switch(exe, cp, tmpsrc, state, stmt)
 			when CParser::Goto
 				compile_c_flushregs(cp, tmpsrc, state)
 				compile_c_goto(exe, cp, tmpsrc, state, stmt.target)
@@ -808,7 +869,7 @@ class CPU
 				compile_c_flushregs(cp, tmpsrc, state)
 				tmpsrc << "#{stmt.name}:"
 			when CParser::Return
-				compile_c_return(exe, cp, tmpsrc, state, stmt.value) if stmt.value
+				compile_c_return(exe, cp, tmpsrc, state, stmt.value)
 			when CParser::Asm
 				compile_c_asm(exe, cp, tmpsrc, state, stmt)
 			end
