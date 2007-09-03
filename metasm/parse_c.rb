@@ -2231,6 +2231,7 @@ class CParser
 	end
 	class Array
 		def dump_declarator(decl, scope, r=[''], dep=[])
+			decl.last << '()' if decl.last.empty?
 			decl.last << '['
 			decl, dep = CExpression.dump(@length, scope, decl, dep) if @length
 			decl.last << ']'

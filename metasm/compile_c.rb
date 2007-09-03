@@ -227,6 +227,9 @@ class CParser
 				when ::Array
 					init.each_with_index{ |it, idx|
 						next if not it
+						m = type.members[idx]
+						v = CExpression.new(var, :'.', m.name, m.type)
+						precompile_dyn_initializer(parser, scope, v, m.type, it)
 					}
 				else raise "unknown initializer #{init.inspect} for #{var.inspect}"
 				end
@@ -520,30 +523,39 @@ class CParser
 		def precompile_inner(parser, scope, nested = true)
 			case @op
 			when :'.'
+				# a.b => (&a)->b
 				lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
 				if lexpr.kind_of? CExpression and lexpr.op == :'*' and not lexpr.lexpr
-					@lexpr = lexpr.rexpr
-					@lexpr.type = Pointer.new(lexpr.type)
+					# do not change lexpr.rexpr.type directly to a pointer, might retrigger (ptr+imm) => (ptr + imm*sizeof(*ptr))
+					@lexpr = CExpression.new(nil, nil, lexpr.rexpr, Pointer.new(lexpr.type))
 				else
 					@lexpr = CExpression.new(nil, :'&', lexpr, Pointer.new(lexpr.type))
 				end
 				@op = :'->'
 				precompile_inner(parser, scope)
 			when :'->'
+				# a->b => *(a + off(b))
 				struct = @lexpr.type.untypedef.type.untypedef
 				lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
 				if struct.kind_of? Struct and (off = struct.offsetof(parser, @rexpr)) != 0
 					@rexpr = CExpression.new(lexpr, :'+', off, lexpr.type)
+					# ensure the (ptr + value) is not expanded to (ptr + value * sizeof(*ptr))
+					CExpression.precompile_type(parser, scope, @rexpr)
 				else
-					# union/1st struct member
+					# union or 1st struct member
 					@rexpr = lexpr
-					if @rexpr.kind_of? CExpression and @rexpr.op == :'&' and not @rexpr.lexpr
-						e = CExpression.new(nil, nil, @rexpr.rexpr, @type)
-						e = CExpression.new(nil, nil, e, @type) if not e.rexpr.kind_of? CExpression
-						return e.precompile_inner(parser, scope)
-					end
 				end
-				@op = :'*'
+				if @type.kind_of? Array
+					# Array member type is special
+					@op = nil
+				elsif @rexpr.kind_of? CExpression and @rexpr.op == :'&' and not @rexpr.lexpr
+					# simplify *(&foo)
+					@op = nil
+					@rexpr = @rexpr.rexpr
+					@rexpr = CExpression.new(nil, nil, @rexpr, @type) if not @rexpr.kind_of? CExpression	# ensure cast
+				else
+					@op = :'*'
+				end
 				@lexpr = nil
 				precompile_inner(parser, scope)
 			when :'[]'
@@ -729,24 +741,23 @@ class CParser
 				end
 
 				# handle pointer + 2 == ((char *)pointer) + 2*sizeof(*pointer)
-				if		@lexpr and (@lexpr.kind_of? CExpression or @lexpr.kind_of? Variable) and
-						@rexpr and (@rexpr.kind_of? CExpression or @rexpr.kind_of? Variable) and
+				#if @lexpr and (@lexpr.kind_of? CExpression or @lexpr.kind_of? Variable) and
+				if @rexpr and (@rexpr.kind_of? CExpression or @rexpr.kind_of? Variable) and
 						[:'+', :'+=', :'-', :'-='].include? @op and
-						@lexpr.type.pointer? and @rexpr.type.integral?
+						@type.pointer? and @rexpr.type.integral?
 					#sz = parser.sizeof(CExpression.new(nil, :'*', @lexpr, @lexpr.type.untypedef.type.untypedef))
-					sz = parser.sizeof(nil, @lexpr.type.untypedef.type.untypedef)
+					sz = parser.sizeof(nil, @type.untypedef.type.untypedef)
 					@rexpr = CExpression.new(@rexpr, :'*', sz, @rexpr.type) if sz != 1
-					CExpression.precompile_type(parser, scope, @lexpr)
 				end
 
 				@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
 				@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
 
 				if @op == :'&' and not @lexpr and @rexpr.kind_of? CExpression and @rexpr.op == :'*' and not @rexpr.lexpr
-					if @rexpr.rexpr.kind_of? CExpression: (e = @rexpr.rexpr).type = @type
-					else e = CExpression.new(nil, nil, @rexpr.rexpr, @type)
-					end
-					return e.precompile_inner(parser, scope)
+					@lexpr = nil
+					@op = nil
+					@rexpr = @rexpr.rexpr
+					return precompile_inner(parser, scope)
 				end
 
 				# handle char[] immediates and float
