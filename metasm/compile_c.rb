@@ -166,7 +166,8 @@ class CParser
 				parser.toplevel.symbol[@var.name] = @var
 				parser.toplevel.statements << self
 			else
-				scope.statements << self
+				scope.symbol[@var.name] ||= @var
+				appendme = true
 			end
 
 			if i = @var.initializer
@@ -176,15 +177,20 @@ class CParser
 					i.precompile(parser)
 					i.statements << Label.new(i.return_label)
 					i.precompile_optimize
-				elsif scope != parser.toplevel
-					precompile_dyn_initializer(parser, scope, @var, @var.type, i)
+				elsif scope != parser.toplevel and @var.storage != :static
+					Declaration.precompile_dyn_initializer(parser, scope, @var, @var.type, i)
 					@var.initializer = nil
+				else
+					@var.initializer = Declaration.precompile_static_initializer(parser, @var.type, i)
 				end
 
 			end
+
+			scope.statements << self if appendme	# append now so that static dependencies are declared before us
 		end
 
-		def precompile_dyn_initializer(parser, scope, var, type, init)
+		# turns an initializer to CExpressions in scope.statements
+		def self.precompile_dyn_initializer(parser, scope, var, type, init)
 			case type = type.untypedef
 			when Array
 				# XXX TODO type.length may be dynamic !!
@@ -241,6 +247,43 @@ class CParser
 				end
 			end
 		end
+
+		# returns a precompiled static initializer (eg string constants)
+		def self.precompile_static_initializer(parser, type, init)
+			# TODO
+			case type = type.untypedef
+			when Array
+				if init.kind_of? ::Array
+					init.map { |i| precompile_static_initializer(parser, type.type, i) }
+				else
+					init
+				end
+			when Union
+				if init.kind_of? ::Array
+					init.zip(type.members).map { |i, m| precompile_static_initializer(parser, m.type, i) }
+				else
+					init
+				end
+			else
+				if init.kind_of? CExpression
+					init = init.reduce(parser)
+					if not init.op and init.rexpr.kind_of? ::String
+						v = Variable.new
+						v.storage = :static
+						v.name = 'char'
+						v.type = Array.new(type.type)
+						v.type.length = init.rexpr.length + 1
+						v.type.type.qualifier = [:const]
+						v.initializer = CExpression.new(nil, nil, init.rexpr, type)
+						Declaration.new(v).precompile(parser, parser.toplevel)
+						init.rexpr = v
+					end
+					init.rexpr = precompile_static_initializer(parser, init.rexpr.type, init.rexpr) if init.rexpr.kind_of? CExpression
+					init.lexpr = precompile_static_initializer(parser, init.lexpr.type, init.lexpr) if init.lexpr.kind_of? CExpression
+				end
+				init
+			end
+		end
 	end
 
 	class If
@@ -258,7 +301,7 @@ class CParser
 			when :'!'
 			when :'&&'
 			when :'||'
-				# need the precompiled bthen/belse...
+				# TODO
 			end
 
 			@test = CExpression.precompile_inner(parser, scope, @test)
@@ -570,6 +613,18 @@ class CParser
 				precompile_inner(parser, scope)
 			when :'?:'
 				# cannot precompile in place, a conditionnal expression may have a coma: must turn into If
+				if @lexpr.kind_of? CExpression
+					@lexpr = @lexpr.precompile_inner(parser, scope)
+					if not @lexpr.lexpr and not @lexpr.op and @lexpr.rexpr.kind_of? ::Numeric
+						if @lexpr.rexpr == 0
+							e = @rexpr[1]
+						else
+							e = @rexpr[0]
+						end
+						e = CExpression.new(nil, nil, e, e.type) if not e.kind_of? CExpression
+						return e.precompile_inner(parser, scope)
+					end
+				end
 				raise 'conditional in toplevel' if scope == parser.toplevel	# just in case
 				var = Variable.new
 				var.storage = :register
@@ -578,7 +633,6 @@ class CParser
 				CExpression.precompile_type(parser, scope, var)
 				Declaration.new(var).precompile(parser, scope)
 				If.new(@lexpr, CExpression.new(var, :'=', @rexpr[0], var.type), CExpression.new(var, :'=', @rexpr[1], var.type)).precompile(parser, scope)
-				
 				@lexpr = nil
 				@op = nil
 				@rexpr = var
@@ -587,6 +641,7 @@ class CParser
 				if scope == parser.toplevel
 					@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
 					@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+					CExpression.precompile_type(parser, scope, self)
 					self
 				else
 					var = Variable.new
@@ -608,6 +663,7 @@ class CParser
 				if scope == parser.toplevel
 					@lexpr = CExpression.precompile_inner(parser, scope, @lexpr)
 					@rexpr = CExpression.precompile_inner(parser, scope, @rexpr)
+					CExpression.precompile_type(parser, scope, self)
 					self
 				else
 					var = Variable.new
@@ -723,9 +779,10 @@ class CParser
 					CExpression.precompile_type(parser, scope, self)
 					self
 				end
-			else
-				# handle compound statements
-				if not @lexpr and not @op and @rexpr.kind_of? Block
+			when nil
+				case @rexpr
+				when Block
+					# compound statements
 					raise 'compound statement in toplevel' if scope == parser.toplevel	# just in case
 					var = Variable.new
 					var.storage = :register
@@ -738,8 +795,53 @@ class CParser
 						@rexpr.precompile(parser, scope)
 					end
 					@rexpr = var
+					precompile_inner(parser, scope)
+				when ::String
+					# char[] immediate
+					v = Variable.new
+					v.storage = :static
+					v.name = 'char'
+					v.type = Array.new(@type.type)
+					v.type.length = @rexpr.length + 1
+					v.type.type.qualifier = [:const]
+					v.initializer = CExpression.new(nil, nil, @rexpr, @type)
+					Declaration.new(v).precompile(parser, scope)
+					@rexpr = v
+					precompile_inner(parser, scope)
+				when ::Float
+					# float immediate
+					v = Variable.new
+					v.storage = :static
+					v.name = @type.untypedef.name.to_s
+					v.type = @type
+					v.type.qualifier = [:const]
+					v.initializer = CExpression.new(nil, nil, @rexpr, @type)
+					Declaration.new(v).precompile(parser, scope)
+					@rexpr = CExpression.new(nil, :'*', v, Pointer.new(v.type))
+					precompile_inner(parser, scope)
+				when CExpression
+					# simplify casts
+					@rexpr = @rexpr.precompile_inner(parser, scope)
+					CExpression.precompile_type(parser, scope, self)
+					if @type.kind_of? BaseType and @rexpr.type.kind_of? BaseType
+						if @rexpr.type.name == @type.name and @rexpr.type.specifier == @type.specifier
+							# noop cast
+							@lexpr, @op, @rexpr = @rexpr.lexpr, @rexpr.op, @rexpr.rexpr
+						elsif not @rexpr.op and @type.integral? and @rexpr.type.integral?
+							if @rexpr.rexpr.kind_of? ::Numeric and (val = reduce(parser)).kind_of? ::Numeric
+								@rexpr = val
+							elsif parser.typesize[@type.name] < parser.typesize[@rexpr.type.name]
+								# (char)(short)(int)(long)foo => (char)foo
+								@rexpr = @rexpr.rexpr
+							end
+						end
+					end
+					self
+				else
+					CExpression.precompile_type(parser, scope, self)
+					self
 				end
-
+			else
 				# handle pointer + 2 == ((char *)pointer) + 2*sizeof(*pointer)
 				#if @lexpr and (@lexpr.kind_of? CExpression or @lexpr.kind_of? Variable) and
 				if @rexpr and (@rexpr.kind_of? CExpression or @rexpr.kind_of? Variable) and
@@ -758,33 +860,6 @@ class CParser
 					@op = nil
 					@rexpr = @rexpr.rexpr
 					return precompile_inner(parser, scope)
-				end
-
-				# handle char[] immediates and float
-				if not @lexpr and not @op and scope != parser.toplevel
-					case @rexpr
-					when ::String
-						v = Variable.new
-						v.storage = :static
-						v.name = parser.new_label('string')
-						v.type = Array.new(@type.type)
-						v.type.length = @rexpr.length + 1
-						v.type.type.qualifier = [:const]
-						v.initializer = CExpression.new(nil, nil, @rexpr, @type)
-						parser.toplevel.symbol[v.name] = v
-						parser.toplevel.statements << Declaration.new(v)
-						@rexpr = v
-					when ::Float
-						v = Variable.new
-						v.storage = :static
-						v.name = parser.new_label(@type.untypedef.name.to_s)
-						v.type = @type
-						v.type.qualifier = [:const]
-						v.initializer = CExpression.new(nil, nil, @rexpr, @type)
-						parser.toplevel.symbol[v.name] = v
-						parser.toplevel.statements << Declaration.new(v)
-						@rexpr = v
-					end
 				end
 
 				CExpression.precompile_type(parser, scope, self)
