@@ -10,7 +10,18 @@ require 'metasm/preprocessor'
 module Metasm
 # c parser
 # inspired from http://www.math.grin.edu/~stone/courses/languages/C-syntax.xhtml
-class CParser
+module C
+	Keyword = %w[struct union enum  if else for while do switch goto
+			register extern auto static typedef  const volatile
+			void int float double char  signed unsigned long short
+			case continue break return default  __attribute__
+			asm __asm __asm__ sizeof typeof
+			__declspec __cdecl __stdcall __fastcall
+			inline __inline __inline__ __volatile__
+			__int8 __int16 __int32 __int64
+			__builtin_offsetof
+	].inject({}) { |h, w| h.update w => true }
+
 	class Statement
 	end
 
@@ -314,6 +325,9 @@ class CParser
 						idx = parse_initializer_designator(parser, scope, ret, idx, true)
 						raise tok || parser, '"," or "}" expected' if not tok = parser.skipspaces or tok.type != :punct or (tok.raw != '}' and tok.raw != ',')
 						break if tok.raw == '}'
+						# allow int x[] = {1, 2, 3, };
+						break if tok = parser.skipspaces and tok.type == :punct and tok.raw == '}'
+						parser.unreadtok tok
 					end
 				end
 				ret
@@ -626,6 +640,7 @@ class CParser
 	end
 
 
+class Parser
 	# creates a new CParser, parses all top-level statements
 	def self.parse(text)
 		c = new
@@ -807,17 +822,6 @@ class CParser
 		raise $!, $!.message + " incompatible type #{oname} to #{nname}"
 	    end
 	end
-
-	Keyword = %w[struct union enum  if else for while do switch goto
-			register extern auto static typedef  const volatile
-			void int float double char  signed unsigned long short
-			case continue break return default  __attribute__
-			asm __asm __asm__ sizeof typeof
-			__declspec __cdecl __stdcall __fastcall
-			inline __inline __inline__ __volatile__
-			__int8 __int16 __int32 __int64
-			__builtin_offsetof
-	].inject({}) { |h, w| h.update w => true }
 
 	# allows 'raise self'
 	def exception(msg='EOF unexpected')
@@ -1012,8 +1016,6 @@ class CParser
 				var.initializer = var.type.parse_initializer(self, scope)
 				if var.initializer.kind_of?(CExpression) and (scope == @toplevel or var.storage == :static)
 					raise tok, 'initializer is not constant' if not var.initializer.constant?
-					var.initializer = var.initializer.reduce(self)
-					var.initializer = var.initializer.initializer if var.initializer.kind_of? Variable
 				end
 				raise tok || self, '"," or ";" expected' if not tok = skipspaces or tok.type != :punct
 				scope.symbol[var.name] = var
@@ -1112,6 +1114,7 @@ class CParser
 			end
 		end
 	end
+end
 
 	class Variable
 		# parses a variable basetype/qualifier/(storage if allow_value), returns a new variable of this type
@@ -1990,6 +1993,7 @@ class CParser
 	# Dumper : objects => C source
 	#
 	
+class Parser	
 	# parses a C source with standard includes, returns a big string containing
 	# all definitions from headers used in the source (including macros)
 	def self.factorize(src)
@@ -2045,6 +2049,7 @@ class CParser
 		r, dep = @toplevel.dump(nil)
 		r.join("\n")
 	end
+end
 
 	class Statement
 		def self.dump(e, scope, r=[''], dep=[])

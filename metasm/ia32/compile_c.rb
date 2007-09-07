@@ -9,131 +9,153 @@ require 'metasm/compile_c'
 
 module Metasm
 class Ia32
-	class CState
-		# the automatic variable offsets
+class CCompiler < C::Compiler
+	# holds compiler state information for a function
+	class State
+		# variable => offset from ebp (::Integer or CExpression)
+		# TODO dynamicarray/nestedfunc/arg/varargs
 		attr_accessor :offset
 		# the current function
 		attr_accessor :func
-		# the current register values (reg => CExpression)
+		# the current register values (reg symbol => CExpression, reg size from expr.type)
 		attr_accessor :regs
-		# the registers used
+		# array of registers used (to save/restore at prolog/epilog)
 		attr_accessor :dirty
 		# the register currently in use by our caller
 		attr_accessor :used
-		# the uncommited variable assignment (reg => Variable)
-		attr_accessor :pending
+		# variable => register for current scope (variable never on the stack)
+		attr_accessor :bound
 
-		attr_accessor :no_saved_ebp
+		# bool
+		attr_accessor :saved_ebp
 
-		def initialize(offset, func)
-			@offset, @func = offset, func
-			@regs, @dirty, @used, @pending = {}, [], [], {}
+		def initialize(func)
+			@func = func
+			@offset = {}
+			@regs = {}
+			@dirty = []
+			@used = []
+			@bound = {}
 		end
 	end
 
+	BASIC_OPS = { :+ => 'add', :- => 'sub', :^ => 'xor', :| => 'or', :& => 'and', :<< => 'shl', :>> => 'shr' }
+	BASIC_OPS_LVALUE = { :'=' => 'mov', :'+=' => 'add', :'-=' => 'sub', :'^=' => 'xor',
+		:'|=' => 'or', :'&=' => 'and', :'<<=' => 'shl', :'>>=' => 'shr' }
+
 	# returns a new State
-	def compile_c_pre_prolog(exe, cp, src, func, offset)
-		CState.new(offset, func)
+	def c_init_state(func)
+		@state = State.new(func)
+		c_reserve_stack(func.initializer)
+		# TODO add args to state.offset
 	end
 
 	# returns a new register, put it in state.used
-	def compile_c_findreg(cp, src, state)
-		reg = [:eax, :ebx, :ecx, :edx, :edi, :esi].find { |r| not state.used.include? r and not state.pending.include? r }
+	def findreg
+		reg = [:eax, :ebx, :ecx, :edx, :edi, :esi].find { |r| not @state.used.include? r }
 		if not reg
-			if not reg = state.pending.keys.first
-				raise 'need more register (or a better compiler?)'
-			end
-			var = state.pending.delete(reg)
-			src << "push #{reg}"
-			e = compile_c_findvaraddr(cp, src, state, var, reg)
-			src << "pop #{cp.sizeof(var) == 1 ? 'byte' : 'dword'} ptr [#{e}]"
+			raise 'need more registers! (or a better compiler?)'
 		end
 
-		state.used << reg
-		state.dirty |= [reg] if not [:eax].include? reg
+		@state.used << reg
+		@state.regs.delete reg
+		@state.dirty |= [reg] if not [:eax].include? reg	# XXX ABI
 		reg
 	end
 
-	def compile_c_flushregs(cp, src, state)
-		state.pending.keys.each { |reg|
-			var = state.pending.delete(reg)
-			src << "push #{reg}"
-			e = compile_c_findvaraddr(cp, src, state, var, reg)
-			src << "pop #{cp.sizeof(var) == 1 ? 'byte' : 'dword'} ptr [#{e}]"
-		}
-	end
-		
-	def compile_c_findvaraddr(cp, src, state, expr, reg)
-		case e = state.offset[expr]
-		when CParser::CExpression
+	# returns the address of a variable in reg
+	def findvaraddr(var, reg=nil)
+		return @state.bound[var] if @state.bound[var]
+
+		case e = @state.offset[var]
+		when C::CExpression
 			# automatic, dynamic address
-			src << "; find dynamic addr of #{expr.name} in #{reg}"
-			e = "ebp-#{reg}"
+			# TODO
+			raise "find dynamic addr of #{var.name} in #{reg}"
 		when ::Integer
 			# automatic
-			e = "ebp-#{e}"
+			"ebp-#{e}"
 		when nil
 			# static
-			# XXX choice for position-independant code
-			if false
-			src << 'push eax' if reg != :eax and state.used.include? :eax
-			src << "call metasm_intern_geteip"
-			src << "mov #{reg}, eax" if reg != :eax
-			src << 'pop eax' if reg != 'eax' and state.used.include? :eax
-			src << "add #{reg}, #{expr.name} - metasm_intern_geteip"
-			e = reg
+			# TODO choice for position-independant code
+			if true
+				reg ||= findreg
+				@source << 'push eax' if reg != :eax and @state.used.include? :eax
+				@source << "call metasm_intern_geteip"
+				@source << "mov #{reg}, eax" if reg != :eax
+				@source << 'pop eax' if reg != 'eax' and @state.used.include? :eax
+				@source << "add #{reg}, #{var.name} - metasm_intern_geteip"
+				reg
 			else
-			e = expr.name
+				var.name
 			end
 		end
-		e
+	end
+	
+	# adds the metasm_intern_geteip function, which returns its own adress in eax (used for PIC adressing)
+	def c_program_epilog
+		@source <<
+			'metasm_intern_geteip:' <<
+			'call 123123f' <<
+			'123123: pop eax' <<
+			'add eax, metasm_intern_geteip-123123b' <<
+			'ret'
 	end
 
 	# compiles a c expression, updates state
 	# returns the register containing the value
 	# TODO XXX floating point (or anything other than int)
-	def compile_c_cexpr_inner(cp, src, state, expr)
+	def c_cexpr_inner(expr, want=nil)
 		case expr
-		when CParser::Variable
-			if not reg = state.pending.keys.find { |r| state.pending[r] == expr }
-				reg = compile_c_findreg(cp, src, state)
-				e = compile_c_findvaraddr(cp, src, state, expr, reg)
-				if expr.type.kind_of? CParser::Array
-					src << (state.offset[expr] ? "lea #{reg}, [#{e}]" : "mov #{reg}, #{e}") if e != reg
+		when C::Variable
+			if not reg = @state.regs.keys.find { |reg| @state.regs[reg] == expr }
+				e = findvaraddr(expr)
+				case expr.type
+				when C::Array
+					if e != reg
+						use_lea = e.to_s[1..-1].count('+-*') > 0
+						@source << (use_lea ? "lea #{reg}, [#{e}]" : "mov #{reg}, #{e}")
+					end
+					@source << "push #{reg}" if want == :push
 				else
-					src << "mov #{reg}, [#{e}]"
+					if want == :push
+						@source << "push [#{e}]"
+					else
+						@source << "mov #{reg}, [#{e}]"
+					end
 				end
 			end
 			return reg
 		when ::Integer
+			@source << "push #{expr}" if want == :push
 			return expr
 		end
 		if not expr.lexpr
 			case expr.op
 			when nil
 				# TODO movzx etc
-				reg = compile_c_cexpr_inner(cp, src, state, expr.rexpr)
+				reg = c_cexpr_inner(expr.rexpr)
 			when :+
-				reg = compile_c_cexpr_inner(cp, src, state, expr.rexpr)
+				reg = c_cexpr_inner(expr.rexpr)
 			when :-
-				reg = compile_c_cexpr_inner(cp, src, state, expr.rexpr)
-				src << "neg #{reg}"
+				reg = c_cexpr_inner(expr.rexpr)
+				@source << "neg #{reg}"
 			when :*
 				case expr.rexpr
-				when CParser::CExpression
+				when C::CExpression
 					case expr.op
 					when :'+', :'*'
-						src << '; TODO optimize dereference'
+						@source << '; TODO optimize dereference'
 					end
 				end
-				reg = compile_c_cexpr_inner(cp, src, state, expr.rexpr)
-				src << "mov #{reg}, [#{reg}]"
+				reg = c_cexpr_inner(expr.rexpr)
+				@source << "mov #{reg}, [#{reg}]"
 			when :&
-				reg = compile_c_findreg(cp, src, state)
-				e = compile_c_findvaraddr(cp, src, state, expr.rexpr, reg)
-				src << (state.offset[expr.rexpr] ? "lea #{reg}, [#{e}]" : "mov #{reg}, #{e}") if e != reg
+				reg = findreg
+				e = findvaraddr(expr.rexpr, reg)
+				@source << (@state.offset[expr.rexpr] ? "lea #{reg}, [#{e}]" : "mov #{reg}, #{e}") if e != reg
 			else
-				src << "; wtf? #{expr.inspect}"
+				@source << "; wtf? #{expr.inspect}"
 			end
 			return reg
 		elsif not expr.rexpr
@@ -141,44 +163,43 @@ class Ia32
 			when :'++', :'--'
 				op = expr.op == :'++' ? 'inc' : 'dec'
 				case expr.lexpr
-				when CParser::Variable
-					reg = compile_c_cexpr_inner(cp, src, state, expr.lexpr)
-					src << "#{op} #{reg}"
-					state.pending[reg] = expr.lexpr
-				when CParser::CExpression
+				when C::Variable
+					reg = c_cexpr_inner(expr.lexpr)
+					@source << "#{op} #{reg}"
+					@state.pending[reg] = expr.lexpr
+				when C::CExpression
 					if expr.lexpr.op == :'*' and not expr.lexpr.lexpr
-						reg = compile_c_cexpr_inner(cp, src, state, expr.lexpr.rexpr)
-						src << "#{op} [#{reg}]"
-						state.used.delete reg
+						reg = c_cexpr_inner(expr.lexpr.rexpr)
+						@source << "#{op} [#{reg}]"
+						@state.used.delete reg
 						reg = nil
 					else
-						src << "; bad lvalue? #{expr.inspect}"
+						@source << "; bad lvalue? #{expr.inspect}"
 					end
 				end
 			else
-				src << "; wtf? #{expr.inspect}"
+				@source << "; wtf? #{expr.inspect}"
 			end
 			return reg
 		end
 		case expr.op
 		when :funcall
 			expr.rexpr.reverse_each { |arg|
-				reg = compile_c_cexpr_inner(cp, src, state, arg)
-				src << "push #{reg}"
-				state.used.delete reg
+				reg = c_cexpr_inner(arg)
+				@source << "push #{reg}"
+				@state.used.delete reg
 			}
-			compile_c_flushregs(cp, src, state)
-			if expr.lexpr.kind_of? CParser::Variable
-				src << "call #{expr.lexpr.name}"
+			if expr.lexpr.kind_of? C::Variable
+				@source << "call #{expr.lexpr.name}"
 				if not expr.lexpr.attributes.to_a.include? 'stdcall'
 					retargs = expr.rexpr.length * 4	# booh	(varargs)
-					src << "add esp, #{retargs}" if retargs > 0
+					@source << "add esp, #{retargs}" if retargs > 0
 				end
 			else
 				# declspec ?
-				reg = compile_c_cexpr_inner(cp, src, state, expr.lexpr)
-				src << "call #{reg}"
-				state.used.delete reg
+				reg = c_cexpr_inner(expr.lexpr)
+				@source << "call #{reg}"
+				@state.used.delete reg
 			end
 			:eax
 #		when :'/'
@@ -189,124 +210,126 @@ class Ia32
 #		when :'%='
 		when *BASIC_OPS.keys
 			# TODO shr/shar
-			rl = compile_c_cexpr_inner(cp, src, state, expr.lexpr)
-			rr = compile_c_cexpr_inner(cp, src, state, expr.rexpr)
-			src << "#{BASIC_OPS[expr.op]} #{rl}, #{rr}"
-			state.used.delete rr
+			rl = c_cexpr_inner(expr.lexpr)
+			rr = c_cexpr_inner(expr.rexpr)
+			@source << "#{BASIC_OPS[expr.op]} #{rl}, #{rr}"
+			@state.used.delete rr
 			rl
 		when *BASIC_OPS_LVALUE.keys
-			rl = compile_c_cexpr_inner(cp, src, state, expr.lexpr)
-			rr = compile_c_cexpr_inner(cp, src, state, expr.rexpr)
-			state.used.delete rr
+			rl = c_cexpr_inner(expr.lexpr)
+			rr = c_cexpr_inner(expr.rexpr)
+			@state.used.delete rr
 			case expr.lexpr
-			when CParser::Variable
-				src << "#{BASIC_OPS_LVALUE[expr.op]} #{rl}, #{rr}"
-				state.pending[rl] = expr.lexpr
-			when CParser::CExpression
+			when C::Variable
+				@source << "#{BASIC_OPS_LVALUE[expr.op]} #{rl}, #{rr}"
+				@state.pending[rl] = expr.lexpr
+			when C::CExpression
 				if expr.lexpr.op == :'*' and not expr.lexpr.lexpr
-					src << "#{BASIC_OPS_LVALUE[expr.op]} [#{rl}], #{rr}"
-					state.used.delete rl
+					@source << "#{BASIC_OPS_LVALUE[expr.op]} [#{rl}], #{rr}"
+					@state.used.delete rl
 					rl = nil
 				else
-					src << "; bad lvalue? #{expr.inspect}"
+					@source << "; bad lvalue? #{expr.inspect}"
 				end
 			end
 			rl
 		else
-			src << "; wtf? #{expr.inspect}"
+			@source << "; wtf? #{expr.inspect}"
 		end
 	end
 
-	BASIC_OPS = { :+ => 'add', :- => 'sub', :^ => 'xor', :| => 'or', :& => 'and', :<< => 'shl', :>> => 'shr' }
-	BASIC_OPS_LVALUE = { :'=' => 'mov', :'+=' => 'add', :'-=' => 'sub', :'^=' => 'xor',
-		:'|=' => 'or', :'&=' => 'and', :'<<=' => 'shl', :'>>=' => 'shr' }
-
-	def compile_c_cexpr(exe, cp, src, state, expr)
-		src << "; #{expr.dump(state.func.initializer)[0].join}"
-		compile_c_cexpr_inner(cp, src, state, expr)
+	def c_cexpr(expr)
+		@source << "; #{expr.dump(C::Block.new(nil))[0].join}"
+		c_cexpr_inner(expr)
 	end
 
-	def compile_c_decl(exe, cp, src, state, var)
-		if var.type.kind_of? CParser::Array and
-				var.type.length.kind_of? CParser::CExpression
-			reg = compile_c_cexpr_inner(cp, src, state, var.type.length)
-			src << "sub esp, #{reg}"
+	def c_decl(var)
+		if var.type.kind_of? C::Array and
+				var.type.length.kind_of? C::CExpression
+			reg = c_cexpr_inner(var.type.length)
+			@source << "sub esp, #{reg}"
 			# TODO
 		end
 	end
 
-	def compile_c_ifgoto(exe, cp, src, state, expr, dst)
+	def c_ifgoto(expr, target)
 		case expr.op
 		when :<, :>, :<=, :>=, :==, :'!='
-			rl = compile_c_cexpr_inner(cp, src, state, stmt.lexpr)
-			rr = compile_c_cexpr_inner(cp, src, state, stmt.rexpr)
-			state.used.delete rl
-			state.used.delete rr
-			src << "cmp #{rl}, #{rr}"	# XXX eax/ax/al
+			rl = c_cexpr_inner(expr.lexpr)
+			rr = c_cexpr_inner(expr.rexpr)
+			@state.used.delete rl
+			@state.used.delete rr
+			@source << "cmp #{rl}, #{rr}"	# XXX eax/ax/al
+
 			jop = { :== => 'jz', :'!=' => 'jnz' }
-			if expr.lexpr.type.kind_of? CParser::BaseType and expr.lexpr.type.specifier == :unsigned
+			if expr.lexpr.type.kind_of? C::BaseType and expr.lexpr.type.specifier == :unsigned
 				jop.update :< => 'jg', :> => 'jl', :<= => 'jge', :>= => 'jle'
 			else
 				jop.update :< => 'jb', :> => 'ja', :<= => 'jbe', :>= => 'jae'
 			end
-			src << "#{jop[expr.op]} dst"
+			@source << "#{jop[expr.op]} #{target}"
 		when :'!'
-			reg = compile_c_cexpr_inner(cp, src, state, stmt.test)
-			state.used.delete reg
-			src << "test #{reg}, #{reg}"
-			src << "jz #{dst}"
-		when :'&&'
-			src << "; test &&"
-		when :'||'
-			compile_c_ifgoto(exe, cp, src, state, expr.lexpr, dst)
-			compile_c_ifgoto(exe, cp, src, state, expr.rexpr, dst)
+			reg = c_cexpr_inner(expr.rexpr)
+			@state.used.delete reg
+			@source << "test #{reg}, #{reg}"
+			@source << "jz #{target}"
 		else
-			reg = compile_c_cexpr_inner(cp, src, state, stmt.test)
-			state.used.delete(reg)
-			src << "test #{reg}, #{reg}"
-			src << "jnz #{dst}"
+			reg = c_cexpr_inner(expr)
+			@state.used.delete reg
+			@source << "test #{reg}, #{reg}"
+			@source << "jnz #{target}"
 		end
 	end
 
-	def compile_c_goto(exe, cp, src, state, target)
-		src << "jmp #{target}"
+	def c_goto(target)
+		@source << "jmp #{target}"
 	end
 
-	def compile_c_return(exe, cp, src, state, expr)
-		reg = compile_c_cexpr_inner(cp, src, state, expr)
-		state.used.delete reg
-		src << "mov eax, #{reg}" if reg != :eax
+	def c_return(expr)
+		if expr
+			reg = c_cexpr_inner(expr)
+			@state.used.delete reg
+			@source << "mov eax, #{reg}" if reg != :eax
+		end
 	end
 
-	def compile_c_prolog(exe, cp, src, func, state)
-		localspc = state.offset.values.grep(::Integer).max
+	def c_prolog
+		localspc = @state.offset.values.grep(::Integer).max
 		if localspc
-			src << "push ebp"
-			src << "mov ebp, esp"
-			src << "sub esp, #{localspc}"
-		else
-			state.no_saved_ebp = true
+			a = typesize[:ptr]
+			localspc = (localspc + a - 1) / a * a
+			@source << 'push ebp'
+			@source << 'mov ebp, esp'
+			@source << "sub esp, #{localspc}"
+			@state.saved_ebp = true
+			@state.used << :ebp
 		end
-		state.dirty.each { |reg|
-			src << "push #{reg}"
+		@state.dirty.each { |reg|
+			@source << "push #{reg}"
 		}
 	end
 
-	def compile_c_epilog(exe, cp, src, func, state)
+	def c_epilog
 		#src << "; restore esp from dynarrays"
-		state.dirty.reverse_each { |reg|
-			src << "pop #{reg}"
+		@state.dirty.reverse_each { |reg|
+			@source << "pop #{reg}"
 		}
-		if not state.no_saved_ebp
-			src << "mov esp, ebp"
-			src << "pop ebp"
+		if @state.saved_ebp
+			@source << 'mov esp, ebp'
+			@source << 'pop ebp'
 		end
-		if func.attributes.to_a.include? 'stdcall' and
-				(retargs = func.type.args.length * 4) > 0	# booh
-			src << "ret #{retargs}"
+		if @state.func.attributes.to_a.include? 'stdcall' and
+				(retargs = @state.func.type.args.length * 4) > 0	# booh
+			@source << "ret #{retargs}"
 		else
-			src << 'ret'
+			@source << 'ret'
 		end
+	end
+end
+
+	def compile_c(parser, exe=ExeFormat.new)
+		cmp = CCompiler.new(parser, exe)
+		cmp.compile
 	end
 end
 end
