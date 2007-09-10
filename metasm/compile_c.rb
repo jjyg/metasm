@@ -61,6 +61,7 @@ module C
 		# Return: 'return <foo>;' => 'return <foo>; goto <end_of_func>;', 'return;' => 'goto <eof>;'
 		# If: 'if (a) b; else c;' => 'if (a) goto l1; { c; }; goto l2; l1: { b; } l2:'
 		#  && and || in condition are expanded to multiple If
+		# functions returning struct are precompiled (in Declaration/CExpression/Return)
 		#
 		# in a second phase, unused labels are removed from functions, as noop goto (goto x; x:)
 		# dead code is removed ('goto foo; bar; baz:' => 'goto foo; baz:') (TODO)
@@ -122,10 +123,6 @@ module C
 		# in a first pass the stack variable offsets are computed,
 		# then each statement is compiled in turn
 		def c_function(func)
-			# hide the full @source while compiling, then add prolog/epilog (saves 1 pass)
-			presource = @source
-			@source = []
-
 			# must wait the Declaration to run the CExpr for dynamic auto offsets,
 			# and must run those statements once only
 			# TODO alloc a stack variable to maintain the size for each dynamic array
@@ -133,7 +130,9 @@ module C
 			# TODO nested function
 			c_init_state(func)
 			
+			# hide the full @source while compiling, then add prolog/epilog (saves 1 pass)
 			@source << "#{func.name}:"
+			presource, @source = @source, []
 
 			func.initializer.statements.each { |stmt|
 				case stmt
@@ -147,12 +146,11 @@ module C
 				end
 			}
 			
+			tmpsource, @source = @source, presource
 			c_prolog
+			@source.concat tmpsource
 			c_epilog
 			@source << ''
-
-			# restore full source
-			@source = presource + @source
 		end
 
 		def c_label(name)
@@ -408,8 +406,6 @@ module C
 				}
 			}
 			scope.statements << self if scope and not @statements.empty?
-
-			# TODO precompile return struct
 		end
 
 		# removes unused labels, and in-place goto (goto toto; toto:)
@@ -480,6 +476,8 @@ module C
 		def return_label=(l) @return_label = l end
 		def nonauto_label=(l) @nonauto_label = l end
 		def nonauto_label ; defined?(@nonauto_label) ? @nonauto_label : @outer.nonauto_label end
+		def function ; defined?(@function) ? @function : @outer.function end
+		def function=(f) @function = f end
 	end
 
 	class Declaration
@@ -496,6 +494,16 @@ module C
 
 			if i = @var.initializer
 				if @var.type.kind_of? Function
+					if @var.type.type.kind_of? Struct
+						s = @var.type.type
+						v = Variable.new
+						v.name = compiler.new_label('return_struct_ptr')
+						v.type = Pointer.new(s)
+						CExpression.precompile_type(compiler, scope, v)
+						@var.type.args.unshift v
+						@var.type.type = v.type
+					end
+					i.function = @var
 					i.return_label = compiler.new_label('epilog')
 					i.nonauto_label = {}
 					i.precompile(compiler)
@@ -511,7 +519,7 @@ module C
 					@var.initializer = Declaration.precompile_static_initializer(compiler, @var.type, i)
 				end
 			else
-				scope.statements << self if appendme
+				scope.statements << self if appendme and not @var.type.kind_of? Function
 			end
 
 		end
@@ -822,6 +830,11 @@ module C
 	class Return
 		def precompile(compiler, scope)
 			@value = CExpression.precompile_inner(compiler, scope, @value)
+			if @value and @value.type.kind_of? Struct
+				func = scope.function.type
+				CExpression.new(CExpression.new(nil, :*, func.args.first, @value.type), :'=', @value, @value.type).precompile(compiler, scope)
+				@value = func.args.first
+			end
 			scope.statements << self if @value
 			Goto.new(scope.return_label).precompile(compiler, scope)
 		end
@@ -934,6 +947,8 @@ module C
 				# a->b => *(a + off(b))
 				struct = @lexpr.type.untypedef.type.untypedef
 				lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
+				@lexpr = nil
+				@op = nil
 				if struct.kind_of? Struct and (off = struct.offsetof(compiler, @rexpr)) != 0
 					@rexpr = CExpression.new(lexpr, :'+', off, lexpr.type)
 					# ensure the (ptr + value) is not expanded to (ptr + value * sizeof(*ptr))
@@ -944,16 +959,14 @@ module C
 				end
 				if @type.kind_of? Array
 					# Array member type is special
-					@op = nil
 				elsif @rexpr.kind_of? CExpression and @rexpr.op == :'&' and not @rexpr.lexpr
 					# simplify *(&foo)
-					@op = nil
 					@rexpr = @rexpr.rexpr
-					@rexpr = CExpression.new(nil, nil, @rexpr, @type) if not @rexpr.kind_of? CExpression	# ensure cast
+					@rexpr = CExpression.new(nil, nil, @rexpr, @rexpr.type) if not @rexpr.kind_of? CExpression
+					@rexpr = CExpression.new(nil, nil, @rexpr, @type) # ensure cast
 				else
-					@op = :'*'
+					@rexpr = CExpression.new(nil, :*, @rexpr, @rexpr.type)
 				end
-				@lexpr = nil
 				precompile_inner(compiler, scope)
 			when :'[]'
 				rexpr = CExpression.precompile_inner(compiler, scope, @rexpr)
@@ -1038,10 +1051,29 @@ module C
 					precompile_inner(compiler, scope)
 				end
 			when :funcall
-				@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
-				@rexpr.map! { |e| CExpression.precompile_inner(compiler, scope, e) }
-				CExpression.precompile_type(compiler, scope, self)
-				self
+				if @type.kind_of? Struct
+					var = Variable.new
+					var.name = compiler.new_label('return_struct')
+					var.type = @type
+					Declaration.new(var).precompile(compiler, scope)
+					@rexpr.unshift CExpression.new(nil, :&, var, Pointer.new(var.type))
+
+					var2 = Variable.new
+					var2.name = compiler.new_label('return_struct_ptr')
+					var2.type = Pointer.new(@type)
+					var2.storage = :register
+					CExpression.precompile_type(compiler, scope, var2)
+					Declaration.new(var2).precompile(compiler, scope)
+					@type = var2.type
+					CExpression.new(var2, :'=', self, var2.type).precompile(compiler, scope)
+
+					CExpression.new(nil, :'*', var2, var.type).precompile_inner(compiler, scope)
+				else
+					@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
+					@rexpr.map! { |e| CExpression.precompile_inner(compiler, scope, e) }
+					CExpression.precompile_type(compiler, scope, self)
+					self
+				end
 			when :','
 				lexpr = @lexpr.kind_of?(CExpression) ? @lexpr : CExpression.new(nil, nil, @lexpr, @lexpr.type)
 				rexpr = @rexpr.kind_of?(CExpression) ? @rexpr : CExpression.new(nil, nil, @rexpr, @rexpr.type)
@@ -1093,6 +1125,8 @@ module C
 				# handle structure assignment/array assignment
 				case @lexpr.type.untypedef
 				when Union
+					# rexpr may be a :funcall
+					@rexpr = CExpression.precompile_inner(compiler, scope, @rexpr)
 					@lexpr.type.untypedef.members.zip(@rexpr.type.untypedef.members) { |m1, m2|
 						# assume m1 and m2 are compatible
 						v1 = CExpression.new(@lexpr, :'.', m1.name, m1.type)
@@ -1104,7 +1138,7 @@ module C
 					@rexpr = @lexpr
 					@lexpr = nil
 					@type = @rexpr.type
-					precompile_inner(compiler, scope)
+					precompile_inner(compiler, scope) if nested
 				when Array
 					if not len = @lexpr.type.untypedef.length
 						@rexpr = CExpression.precompile_inner(compiler, scope, @rexpr)
@@ -1126,7 +1160,7 @@ module C
 					@rexpr = @lexpr
 					@lexpr = nil
 					@type = @rexpr.type
-					precompile_inner(compiler, scope)
+					precompile_inner(compiler, scope) if nested
 				else
 					@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
 					@rexpr = CExpression.precompile_inner(compiler, scope, @rexpr)
