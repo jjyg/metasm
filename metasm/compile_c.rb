@@ -9,6 +9,13 @@ require 'metasm/parse_c'
 
 module Metasm
 module C
+	class Parser
+		def precompile
+			@toplevel.precompile(Compiler.new(self))
+			self
+		end
+	end
+
 	# each CPU defines a subclass of this one
 	class Compiler
 		# an ExeFormat (mostly used for unique label creation)
@@ -519,7 +526,7 @@ module C
 					@var.initializer = Declaration.precompile_static_initializer(compiler, @var.type, i)
 				end
 			else
-				scope.statements << self if appendme and not @var.type.kind_of? Function
+				scope.statements << self if appendme
 			end
 
 		end
