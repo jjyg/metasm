@@ -26,7 +26,6 @@ class CPU
 		@bin_lookaside ||= build_bin_lookaside
 		di = DecodedInstruction.new
 		di.instruction = Instruction.new self
-		pre_ptr = edata.ptr
 		di.bin_length = 0
 		begin
 			decode_findopcode(program, edata, di)
