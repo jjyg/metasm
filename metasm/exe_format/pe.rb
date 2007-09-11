@@ -110,5 +110,24 @@ class LoadedPE < PE
 			s.encoded = @encoded[s.virtaddr, s.virtsize]
 		}
 	end
+
+	# returns a PE which should give us back when loaded
+	# TODO rebuild imports + revert base relocations
+	def dump(baseaddr = @optheader.image_base, oep = baseaddr + @optheader.entrypoint)
+		pe = PE.new
+		pe.optheader.entrypoint = oep - baseaddr
+		pe.optheader.image_base = @optheader.image_base
+		@sections.each { |s|
+			ss = Section.new
+			ss.name = s.name
+			ss.virtaddr = s.virtaddr
+			ss.encoded = s.encoded
+			ss.characteristics = s.characteristics
+			pe.sections << s
+		}
+		# pe.imports
+		# pe.relocations
+		pe
+	end
 end
 end
