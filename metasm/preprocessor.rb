@@ -321,6 +321,7 @@ class Preprocessor
 			unreadtok tok
 			puts otok.exception("unhandled pragma #{str.inspect}").message if $VERBOSE
 		}
+		define '__METASM__', VERSION
 		# TODO setup standard macro names ? see $(gcc -dM -E - </dev/null)
 	end
 

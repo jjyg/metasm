@@ -120,6 +120,11 @@ class Ia32 < CPU
 		@size = mode
 		send "init_#{family}"
 	end
+
+	def tune_cparser(cp)
+		super
+		cp.lexer.define('_M_IX86', 500) if not cp.lexer.definition['_M_IX86']
+	end
 end
 
 end

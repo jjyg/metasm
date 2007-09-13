@@ -6,6 +6,8 @@
 
 module Metasm
 
+VERSION = 0x0001	# major major minor minor
+
 # superclass for all metasm exceptions
 class Exception < RuntimeError ; end
 # parse error
@@ -91,8 +93,19 @@ class CPU
 		@opcode_list.each { |o| o.props.delete :stopexec if o.props[:saveip] }
 	end
 
+	# sets up the C parser : standard macro definitions, type model (size of int etc)
 	def tune_cparser(cp)
 		cp.send "ilp#@size"
+		cp.lexer.define('_STDC', 1) if not cp.lexer.definition['_STDC']
+		# TODO cp.lexer.define('BIGENDIAN')
+		# add ExeFormat-specific definitions ?
+	end
+
+	# returns a new & tuned C::Parser
+	def new_cparser
+		cp = C::Parser.new
+		tune_cparser cp
+		cp
 	end
 end
 
@@ -154,7 +167,7 @@ module Backtrace
 	end
 end
 
-# a token, as returned by the lexers
+# a token, as returned by the lexer
 class Token
 	# the token type: :space, :eol, :quoted, :string, :punct, ...
 	attr_accessor :type
@@ -201,7 +214,7 @@ end
 class Instruction
 	# arguments (cpu-specific objects)
 	attr_accessor :args
-	# hash of prefixes (unused in simpler cpus)
+	# hash of prefixes (unused in simple cpus)
 	attr_accessor :prefix
 	# name of the associated opcode
 	attr_accessor :opname
