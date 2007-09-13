@@ -50,6 +50,8 @@ module C
 	module Attributes
 		attr_accessor :attributes
 
+		PREFIXED = %w[cdecl stdcall fastcall inline]
+
 		# parses a sequence of __attribute__((anything)) into self.attributes (array of string)
 		def parse_attributes(parser, allow_declspec = false)
 			while tok = parser.skipspaces and tok.type == :string
@@ -251,15 +253,20 @@ module C
 				break if m.name == name
 				raise parser, 'offsetof unhandled with bit members' if bits and @bits[i]	# TODO
 				off += parser.sizeof(m)
-				off = (off + @align - 1) / @align * @align
+				al = @align || parser.typesize[:ptr]
+				off = (off + al - 1) / al * al
 			}
 			off
 		end
 
 		def parse_members(parser, scope)
 			super
-			if defined? @attributes and @attributes and @attributes.include? 'packed'
-				@align = 1
+			if defined? @attributes and @attributes
+				if @attributes.include? 'packed'
+					@align = 1
+				elsif p = @attributes.grep(/^pack\(\d+\)$/).first
+					@align = p[/\d+/].to_i
+				end
 			end
 		end
 	end
@@ -655,6 +662,7 @@ class Parser
 		@lexer.feed text, filename, lineno if text
 		nil while not @lexer.eos? and parse_definition(@toplevel)
 		sanity_checks
+		self
 	end
 
 	attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
@@ -670,28 +678,23 @@ class Parser
 	end
 
 	def lp32
-		@pragma_pack = 4
 		@typesize.update :short => 2, :ptr => 4,
 			:int => 2, :long => 4, :longlong => 8
 	end
 	def ilp32
-		@pragma_pack = 4
 		@typesize.update :short => 2, :ptr => 4,
 			:int => 4, :long => 4, :longlong => 8
 	end
 	def llp64
 		# longlong should only exist here
-		@pragma_pack = 8
 		@typesize.update :short => 2, :ptr => 8,
 			:int => 4, :long => 4, :longlong => 8
 	end
 	def ilp64
-		@pragma_pack = 8
 		@typesize.update :short => 2, :ptr => 8,
 			:int => 8, :long => 8, :longlong => 8
 	end
 	def lp64
-		@pragma_pack = 8
 		@typesize.update :short => 2, :ptr => 8,
 			:int => 4, :long => 8, :longlong => 8
 	end
@@ -713,18 +716,18 @@ class Parser
 			raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
 			raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != :string or v2.raw =~ /[^\d]/))
 			if not v1
-				@pragma_pack = @typesize[:ptr]
+				@pragma_pack = nil
 			elsif v1.raw == 'push'
 				@pragma_pack_stack ||= []
-				@pragma_pack_stack << @pragma_pack
+				@pragma_pack_stack << pragma_pack
 				@pragma_pack = v2.raw.to_i if v2
-				raise v2, 'bad pack value' if @pragma_pack == 0
+				raise v2, 'bad pack value' if pragma_pack == 0
 			elsif v1.raw == 'pop'
 				@pragma_pack_stack ||= []
 				raise v1, 'pack stack empty' if @pragma_pack_stack.empty?
 				@pragma_pack = @pragma_pack_stack.pop
 				@pragma_pack = v2.raw.to_i if v2 and v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
-				raise v2, 'bad pack value' if @pragma_pack == 0
+				raise v2, 'bad pack value' if pragma_pack == 0
 			elsif v1.raw =~ /^\d+$/  
 				raise v2, '2nd arg unexpected' if v2
 				@pragma_pack = v1.raw.to_i
@@ -742,6 +745,14 @@ class Parser
 				nil while tok = @lexer.readtok_nopp and tok.type != :eol
 				@lexer.unreadtok tok
 			end
+		when 'prepare_visualstudio'
+			@auto_predeclare_unknown_structs = true
+			@lexer.define('_WIN32') if not @lexer.definition['_WIN32']
+			@lexer.define('_WIN32_WINNT', 0x500) if not @lexer.definition['_WIN32_WINNT']
+			@lexer.define('_INTEGRAL_MAX_BITS', 64) if not @lexer.definition['_INTEGRAL_MAX_BITS']
+			@lexer.define('__w64') if not @lexer.definition['__w64']
+			@lexer.define('_cdecl', '__cdecl') if not @lexer.definition['_cdecl']	# typo ? seen in winreg.h
+			@lexer.define('_MSC_VER', 1001) if not @lexer.definition['_MSC_VER']	# handle '#pragma once'
 		else @prev_pragma_callback[otok]
 		end
 	end
@@ -817,8 +828,8 @@ class Parser
 			end
 		end
 	    rescue ParseError
-		oname = oldtype.dump_cast(@toplevel)[0].join rescue oldtype.class.name
-		nname = newtype.dump_cast(@toplevel)[0].join rescue newtype.class.name
+		oname = oldtype.to_s rescue oldtype.class.name
+		nname = newtype.to_s rescue newtype.class.name
 		raise $!, $!.message + " incompatible type #{oname} to #{nname}"
 	    end
 	end
@@ -923,7 +934,7 @@ class Parser
 			@typesize[:int]
 		when Struct
 			raise self, 'unknown structure size' if not type.members
-			al = type.align
+			al = type.align || @typesize[:ptr]
 			type.members.map { |m| (sizeof(m)+al-1) / al * al }.inject(0){|a,b|a+b}
 		when Union
 			raise self, 'unknown structure size' if not type.members
@@ -974,7 +985,9 @@ class Parser
 					(var.attributes ||= []).concat prev.attributes if prev.attributes
 				end
 			elsif var.storage == :typedef
+				attrs = var.attributes
 				var = TypeDef.new var.name, var.type, var.backtrace
+				var.attributes = attrs if attrs
 			end
 			scope.statements << Declaration.new(var) unless var.kind_of? TypeDef
 
@@ -1055,7 +1068,7 @@ class Parser
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 			if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-				puts tok.exception("statement with no effect : #{expr.dump_inner(scope)[0].join(' ')}")
+				puts tok.exception("statement with no effect : #{expr}")
 			end
 			return expr
 		end
@@ -1108,7 +1121,7 @@ class Parser
 				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 				if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-					puts tok.exception("statement with no effect : #{expr.dump_inner(scope)[0].join(' ')}")
+					puts tok.exception("statement with no effect : #{expr}")
 				end
 				expr
 			end
@@ -1142,7 +1155,7 @@ end
 					next
 				when 'struct'
 					var.type = Struct.new
-					var.type.align = parser.pragma_pack
+					var.type.align = parser.pragma_pack if parser.pragma_pack
 					var.parse_type_struct(parser, scope)
 				when 'union'
 					var.type = Union.new
@@ -1791,13 +1804,13 @@ end
 							(val.rexpr.kind_of? Variable or val.rexpr.kind_of? CExpression) and val.rexpr.type.kind_of? Function
 							# function == function pointer
 						else
-							raise parser, "invalid lvalue (#{CExpression.dump(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
+							raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val)
 							raise val.backtrace, 'cannot take addr of register' if val.kind_of? Variable and val.storage == :register
 							val = CExpression.new(nil, tok.raw.to_sym, val, Pointer.new(val.type))
 						end
 					when '++', '--'
 						val = parse_value(parser, scope)
-						raise parser, "invalid lvalue (#{CExpression.dump(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val)
 						val = CExpression.new(nil, tok.raw.to_sym, val, val.type)
 					when '&&'
 						raise tok, 'label name expected' if not val = parser.skipspaces or val.type != :string
@@ -1846,7 +1859,7 @@ end
 					when '+', '-'
 						nil
 					when '++', '--'
-						raise parser, "invalid lvalue (#{CExpression.dump(val, scope)[0].join(' ')})" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val)
 						CExpression.new(val, :'++', nil, val.type)
 					when '->'
 						raise tok, 'not a pointer' if not val.type.pointer?
@@ -1915,32 +1928,72 @@ end
 				r, l = stack.pop, stack.pop
 				case op = opstack.pop
 				when :'?:'
-					#parser.check_compatible_type(parser, l.type, r.type)
-					ll = stack.pop
-					stack << CExpression.new(ll, op, [l, r], l.type)
-				when :',', :'='
+					stack << CExpression.new(stack.pop, op, [l, r], l.type)
+				when :','
 					stack << CExpression.new(l, op, r, r.type)
-				when :'&&', :'||'
+				when :'='
+					stack << CExpression.new(l, op, r, l.type)
+				when :'&&', :'||', :'==', :'!='
+					stack << CExpression.new(l, op, r, BaseType.new(:int))
+				when :'>', :'>=', :'<', :'<='
+					raise parser, "invalid type in #{l} #{op} #{r}" if not l.type.arithmetic? or not r.type.arithmetic?
 					stack << CExpression.new(l, op, r, BaseType.new(:int))
 				else
-					raise parser, "invalid type #{l.type.dump_cast(scope)[0].join(' ')} #{l.dump_inner(scope)[0].join(' ')} for #{op.inspect}" if not l.type.arithmetic?
-					raise parser, "invalid type #{r.type.dump_cast(scope)[0].join(' ')} #{r.dump_inner(scope)[0].join(' ')} for #{op.inspect}" if not r.type.arithmetic?
+					raise parser, "invalid type #{l.type} #{l} for #{op.inspect}" if not l.type.arithmetic?
+					raise parser, "invalid type #{r.type} #{r} for #{op.inspect}" if not r.type.arithmetic?
 
 					if l.type.pointer? and r.type.pointer?
 						type = \
 						case op
 						when :'-': BaseType.new(:long)	# addr_t or sumthin ?
 						when :'-=': l.type
-						when :'==', :'!=', :'>', :'<', :'>=', :'<=': BaseType.new(:int)
 						else raise parser, "cannot do #{op.inspect} on pointers"
 						end
 					elsif l.type.pointer? or r.type.pointer?
 						raise parser, "cannot do #{op.inspect} on pointer" if not [:'+', :'-', :'=', :'+=', :'-='].include? op
 						type = l.type.pointer? ? l.type : r.type
 					else
-						# integer promotion
-						# TODO
-						type = r.type
+						# yay integer promotion
+						lt = l.type.untypedef
+						rt = r.type.untypedef
+						if    (t = lt).name == :longdouble or (t = rt).name == :longdouble or
+						      (t = lt).name == :double or (t = rt).name == :double or
+						      (t = lt).name == :float or (t = rt).name == :float
+						# long double > double > float ...
+							type = t
+						elsif true
+							# custom integer rules based on type sizes
+							lts = parser.typesize[lt.name]
+							rts = parser.typesize[rt.name]
+							its = parser.typesize[:int]
+							if    lts >  rts and lts >= its
+								type = lt
+							elsif rts >  lts and rts >= its
+								type = rt
+							elsif lts == rts and lts >= its
+								type = lt
+								type = rt if rt.qualifier == :unsigned
+							else
+								type = BaseType.new(:int)
+							end
+							# end of custom rules
+						elsif ((t = lt).name == :long and t.qualifier == :unsigned) or
+						      ((t = rt).name == :long and t.qualifier == :unsigned)
+						# ... ulong ...
+							type = t
+						elsif (lt.name == :long and rt.name == :int and rt.qualifier == :unsigned) or
+						      (rt.name == :long and lt.name == :int and lt.qualifier == :unsigned)
+						# long+uint => ulong
+							type = BaseType.new(:long, :unsigned)
+						elsif (t = lt).name == :long or (t = rt).name == :long or
+						      ((t = lt).name == :int and t.qualifier == :unsigned) or
+						      ((t = rt).name == :int and t.qualifier == :unsigned)
+						# ... long > uint ...
+							type = t
+						else
+						# int
+							type = BaseType.new(:int)
+						end
 					end
 					stack << CExpression.new(l, op, r, type)
 				end
@@ -1994,18 +2047,14 @@ end
 	#
 	
 class Parser	
-	# parses a C source with standard includes, returns a big string containing
-	# all definitions from headers used in the source (including macros)
-	def self.factorize(src)
-		c = new
-		c.lexer.feed src
-		c.lexer.traced_macros = []
-		nil while not c.lexer.eos? and c.parse_definition(c.toplevel)
-		raise c.lexer.readtok || c, 'EOF expected' if not c.lexer.eos?
+	# returns a big string containing all definitions from headers used in the source (including macros)
+	def factorize(src)
+		@lexer.traced_macros = []
+		parse(src)
 
 		# now find all types/defs not coming from the standard headers
 		# all
-		all = c.toplevel.struct.values + c.toplevel.symbol.values
+		all = @toplevel.struct.values + @toplevel.symbol.values
 		all -= all.grep(::Integer)	# Enum values
 
 		# list of definitions of user-defined objects
@@ -2013,11 +2062,11 @@ class Parser
 			t.backtrace.backtrace.grep(::String).grep(/^</).empty?
 		}
 
-		c.toplevel.statements.clear	# don't want all Declarations
+		@toplevel.statements.clear	# don't want all Declarations
 
 		# a macro is fine too
-		c.lexer.dump_macros(c.lexer.traced_macros, false) + "\n\n" +
-		c.dump_definitions(userdefined, userdefined)
+		@lexer.dump_macros(@lexer.traced_macros, false) + "\n\n" +
+		dump_definitions(userdefined, userdefined)
 	end
 
 	# returns a big string representing the definitions of all terms appearing in +list+, excluding +exclude+
@@ -2046,8 +2095,7 @@ class Parser
 	end
 
 	def to_s
-		r, dep = @toplevel.dump(nil)
-		r.join("\n")
+		@toplevel.dump(nil)[0].join("\n")
 	end
 end
 
@@ -2067,6 +2115,10 @@ end
 				r.concat tr.map { |s| Case.dump_indent(s) }
 			end
 			[r, dep]
+		end
+
+		def to_s
+			dump(Block.new(nil))[0].join(' ')
 		end
 	end
 
@@ -2136,9 +2188,9 @@ end
 				next if s.kind_of? Declaration and done.include? s.var
 				r << '' if not r.last.empty?
 				if s.kind_of? Block
-					Statement.dump(s, self, r, dep)
+					r, dep = Statement.dump(s, self, r, dep)
 				else
-					s.dump(self, r, dep)
+					r, dep = s.dump(self, r, dep)
 				end
 			}
 
@@ -2160,12 +2212,21 @@ end
 			end
 			[r, dep]
 		end
+
+		def to_s
+			dump(Block.new(nil))[0].join(' ')
+		end
 	end
 	module Attributes
-		# TODO handle __cdecl etc correctly, and place them right
 		def dump_attributes
 			if attributes
-				attributes.map { |a| " __attribute__((#{a}))" }.join
+				(attributes - PREFIXED).map { |a| " __attribute__((#{a}))" }.join
+			else ''
+			end
+		end
+		def dump_attributes_pre
+			if attributes
+				(attributes & PREFIXED).map { |a| "__#{a} " }.join
 			else ''
 			end
 		end
@@ -2180,6 +2241,7 @@ end
 		end
 		def dump_def(scope, r=[''], dep=[], skiptype=false)
 			# int a=1, b=2;
+			r.last << dump_attributes_pre
 			if not skiptype
 				r.last << @storage.to_s << ' ' if storage
 				r, dep = @type.base.dump(scope, r, dep)
@@ -2192,6 +2254,10 @@ end
 				r, dep = @type.dump_initializer(@initializer, scope, r, dep)
 			end
 			[r, dep]
+		end
+
+		def to_s
+			dump(Block.new(nil))[0].join(' ')
 		end
 	end
 	class Type
@@ -2219,6 +2285,10 @@ end
 			r, dep = dump_declarator([dump_attributes], scope, r, dep)
 			r.last << ')'
 			[r, dep]
+		end
+
+		def to_s
+			dump_cast(Block.new(nil))[0].join(' ')
 		end
 	end
 	class Pointer
@@ -2311,9 +2381,10 @@ end
 
 		def dump_def(scope, r=[''], dep=[])
 			r.last << 'typedef '
+			r.last << dump_attributes_pre
 			r, dep = @type.base.dump(scope, r, dep)
 			r.last << ' '
-			@type.dump_declarator([name ? @name.dup : ''], scope, r, dep)
+			@type.dump_declarator([(name ? @name.dup : '') << dump_attributes], scope, r, dep)
 		end
 		
 		def dump_initializer(init, scope, r=[''], dep=[])
@@ -2348,7 +2419,6 @@ end
 				r << '}'
 			end
 			r.last << dump_attributes
-			# TODO #pragma pack value
 			[r, dep]
 		end
 
@@ -2373,6 +2443,20 @@ end
 			}
 			r.last << ' }'
 			[r, dep]
+		end
+	end
+	class Struct
+		def dump_def(scope, r=[''], dep=[])
+			if align
+				r, dep = super
+				r.last <<
+				if @align == 1: " __attribute__((packed))"
+				else " __attribute__((pack(#@align)))"
+				end
+				[r, dep]
+			else
+				super
+			end
 		end
 	end
 	class Enum
@@ -2485,7 +2569,7 @@ end
 	class Switch
 		def dump(scope, r=[''], dep=[])
 			r.last << 'switch ('
-			CExpression.dump(@test, scope, r, dep)
+			r, dep = CExpression.dump(@test, scope, r, dep)
 			r.last << ')'
 			r.last << ' {' if @body.kind_of? Block
 			tr, dep = @body.dump(scope, [''], dep)
@@ -2592,7 +2676,7 @@ end
 				brace = false
 				case e
 				when CExpression, Variable
-					e.type.dump_cast(scope, r, dep)
+					r, dep = e.type.dump_cast(scope, r, dep)
 				end
 				r.last << '('
 			end
@@ -2642,7 +2726,7 @@ end
 						r, dep = @rexpr.dump(scope, r, dep)
 					when Block
 						r.last << '('
-						Statement.dump(scope, r, dep)
+						r, dep = Statement.dump(scope, r, dep)
 						r.last << ' )'
 					when Label
 						r.last << '&&' << @rexpr.name
@@ -2687,6 +2771,10 @@ end
 			end
 			r.last << ')' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
 			[r, dep]
+		end
+
+		def to_s
+			dump_inner(Block.new(nil))[0].join(' ')
 		end
 	end
 end
