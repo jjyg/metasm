@@ -677,6 +677,11 @@ class Parser
 		send model
 	end
 
+	def ilp16
+		# XXX check this
+		@typesize.update :short => 2, :ptr => 2,
+			:int => 2, :long => 4, :longlong => 4
+	end
 	def lp32
 		@typesize.update :short => 2, :ptr => 4,
 			:int => 2, :long => 4, :longlong => 8
@@ -1424,6 +1429,7 @@ end
 						raise tok if not v = Variable.parse_type(parser, scope)
 						v.storage = storage if storage
 						v.parse_declarator(parser, scope)
+						v.type = Pointer.new(v.type.type) if v.type.kind_of? Array
 	
 						t.type.args << v if not v.type.kind_of? BaseType or v.type.name != :void
 						if tok = parser.skipspaces and tok.type == :punct and tok.raw == ','
