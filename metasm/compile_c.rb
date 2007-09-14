@@ -1077,7 +1077,9 @@ module C
 					CExpression.new(nil, :'*', var2, var.type).precompile_inner(compiler, scope)
 				else
 					@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
-					@rexpr.map! { |e| CExpression.precompile_inner(compiler, scope, e) }
+					types = @lexpr.type.args.map { |a| a.type }
+					# cast args to func prototype
+					@rexpr.map! { |e| CExpression.new(nil, nil, e, types.shift).precompile_inner(compiler, scope) }
 					CExpression.precompile_type(compiler, scope, self)
 					self
 				end
