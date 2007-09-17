@@ -1225,7 +1225,7 @@ module C
 					@rexpr = @rexpr.precompile_inner(compiler, scope)
 					CExpression.precompile_type(compiler, scope, self)
 					if @type.kind_of? BaseType and @rexpr.type.kind_of? BaseType
-						if @rexpr.type.name == @type.name and @rexpr.type.specifier == @type.specifier
+						if @rexpr.type == @type
 							# noop cast
 							@lexpr, @op, @rexpr = @rexpr.lexpr, @rexpr.op, @rexpr.rexpr
 						elsif not @rexpr.op and @type.integral? and @rexpr.type.integral?
@@ -1244,13 +1244,36 @@ module C
 				end
 			else
 				# handle pointer + 2 == ((char *)pointer) + 2*sizeof(*pointer)
-				#if @lexpr and (@lexpr.kind_of? CExpression or @lexpr.kind_of? Variable) and
-				if @rexpr and (@rexpr.kind_of? CExpression or @rexpr.kind_of? Variable) and
-						[:'+', :'+=', :'-', :'-='].include? @op and
+				if @rexpr and [:'+', :'+=', :'-', :'-='].include? @op and
 						@type.pointer? and @rexpr.type.integral?
-					#sz = compiler.sizeof(CExpression.new(nil, :'*', @lexpr, @lexpr.type.untypedef.type.untypedef))
 					sz = compiler.sizeof(nil, @type.untypedef.type.untypedef)
 					@rexpr = CExpression.new(@rexpr, :'*', sz, @rexpr.type) if sz != 1
+				end
+
+				# type promotion => cast
+				case @op
+				when :+, :-, :*, :/, :&, :|, :^, :%
+				    if @lexpr
+					if @lexpr.type != @type
+						@lexpr = CExpression.new(nil, nil, @lexpr, @lexpr.type) if not @lexpr.kind_of? CExpression
+						@lexpr = CExpression.new(nil, nil, @lexpr, @type)
+					end
+					if @rexpr.type != @type
+						@rexpr = CExpression.new(nil, nil, @rexpr, @rexpr.type) if not @rexpr.kind_of? CExpression
+						@rexpr = CExpression.new(nil, nil, @rexpr, @type)
+					end
+				    end
+				when :>>, :<<
+					# char => int
+					if @lexpr.type != @type
+						@lexpr = CExpression.new(nil, nil, @lexpr, @lexpr.type) if not @lexpr.kind_of? CExpression
+						@lexpr = CExpression.new(nil, nil, @lexpr, @type)
+					end
+				when :'+=', :'-=', :'*=', :'/=', :'&=', :'|=', :'^=', :'%='
+					if @rexpr.type != @lexpr.type
+						@rexpr = CExpression.new(nil, nil, @rexpr, @rexpr.type) if not @rexpr.kind_of? CExpression
+						@rexpr = CExpression.new(nil, nil, @rexpr, @type)
+					end
 				end
 
 				@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
@@ -1268,19 +1291,12 @@ module C
 				isnumeric = proc { |e| e.kind_of?(::Numeric) or (e.kind_of? CExpression and
 					not e.lexpr and not e.op and e.rexpr.kind_of? ::Numeric) }
 
-				# (x + imm) + imm => x + imm
-				# XXX type overflow etc...
-				#if isnumeric[@rexpr] and @lexpr.kind_of? CExpression and isnumeric[@lexpr.rexpr] and
-				#	(@lexpr.lexpr.kind_of? Variable or @lexpr.lexpr.kind_of? CExpression)
-				#end
-
 				# calc numeric
-				if isnumeric[@rexpr] and (not @lexpr or isnumeric[@lexpr])
-					if (val = reduce(compiler)).kind_of? ::Numeric
-						@lexpr = nil
-						@op = nil
-						@rexpr = val
-					end
+				# XXX do not simplify operations involving variables (for type overflow etc)
+				if isnumeric[@rexpr] and (not @lexpr or isnumeric[@lexpr]) and (val = reduce(compiler)).kind_of? ::Numeric
+					@lexpr = nil
+					@op = nil
+					@rexpr = val
 				end
 
 				self

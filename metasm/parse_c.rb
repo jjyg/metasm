@@ -94,6 +94,7 @@ module C
 		def pointer? ;    false end
 		def arithmetic? ; false end
 		def integral? ;   false end
+		def float? ;      false end
 		def base ;        self  end
 		def untypedef ;   self  end
 
@@ -118,6 +119,7 @@ module C
 		def arithmetic? ; @name != :void end
 		def integral? ; [:char, :short, :int, :long, :longlong,
 			:__int8, :__int16, :__int32, :__int64].include? @name end
+		def float? ; [:float, :double, :longdouble].include? @name end
 
 		def initialize(name, *specs)
 			@name = name
@@ -129,6 +131,10 @@ module C
 				else raise "internal error, got #{name.inspect} #{specs.inspect}"
 				end
 			}
+		end
+
+		def ==(o)
+			o.class == self.class and o.name == self.name and o.specifier == self.specifier
 		end
 	end
 	class TypeDef < Type
@@ -143,6 +149,7 @@ module C
 		def pointer? ;    @type.pointer?      end
 		def arithmetic? ; @type.arithmetic?   end
 		def integral? ;   @type.integral?     end
+		def float? ;      @type.float?        end
 		def untypedef ;   @type.untypedef     end
 	end
 	class Function < Type
@@ -1741,6 +1748,7 @@ end
 
 			when :quoted
 				if tok.raw[0] == ?'
+					# XXX should only warn...
 					raise tok, 'invalid character constant' if tok.value.length > 1
 					val = CExpression.new(nil, nil, tok.value[0], BaseType.new(:int))
 				else
@@ -1939,12 +1947,10 @@ end
 					stack << CExpression.new(l, op, r, r.type)
 				when :'='
 					stack << CExpression.new(l, op, r, l.type)
-				when :'&&', :'||', :'==', :'!='
-					stack << CExpression.new(l, op, r, BaseType.new(:int))
-				when :'>', :'>=', :'<', :'<='
-					raise parser, "invalid type in #{l} #{op} #{r}" if not l.type.arithmetic? or not r.type.arithmetic?
+				when :'&&', :'||'
 					stack << CExpression.new(l, op, r, BaseType.new(:int))
 				else
+					# XXX struct == struct ?
 					raise parser, "invalid type #{l.type} #{l} for #{op.inspect}" if not l.type.arithmetic?
 					raise parser, "invalid type #{r.type} #{r} for #{op.inspect}" if not r.type.arithmetic?
 
@@ -2001,7 +2007,17 @@ end
 							type = BaseType.new(:int)
 						end
 					end
-					stack << CExpression.new(l, op, r, type)
+
+					case @op
+					when :'>', :'>=', :'<', :'<=', :'==', :'!='
+						# cast both sides
+						l = CExpression.new(nil, nil, l, type) if l.type != type
+						r = CExpression.new(nil, nil, r, type) if r.type != type
+						stack << CExpression.new(l, op, r, BaseType.new(:int))
+					else
+						# promote result
+						stack << CExpression.new(l, op, r, type)
+					end
 				end
 			}
 
