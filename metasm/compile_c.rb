@@ -836,11 +836,15 @@ module C
 
 	class Return
 		def precompile(compiler, scope)
-			@value = CExpression.precompile_inner(compiler, scope, @value)
+			@value = CExpression.new(nil, nil, @value, @value.type) if not @value.kind_of? CExpression
 			if @value and @value.type.kind_of? Struct
+				@value = @value.precompile_inner(compiler, scope)
 				func = scope.function.type
 				CExpression.new(CExpression.new(nil, :*, func.args.first, @value.type), :'=', @value, @value.type).precompile(compiler, scope)
 				@value = func.args.first
+			elsif @value
+				# cast to function return type
+				@value = CExpression.new(nil, nil, @value, scope.function.type.type).precompile_inner(compiler, scope)
 			end
 			scope.statements << self if @value
 			Goto.new(scope.return_label).precompile(compiler, scope)
@@ -1079,7 +1083,7 @@ module C
 					@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
 					types = @lexpr.type.args.map { |a| a.type }
 					# cast args to func prototype
-					@rexpr.map! { |e| CExpression.new(nil, nil, e, types.shift).precompile_inner(compiler, scope) }
+					@rexpr.map! { |e| (types.empty? ? e : CExpression.new(nil, nil, e, types.shift)).precompile_inner(compiler, scope) }
 					CExpression.precompile_type(compiler, scope, self)
 					self
 				end
