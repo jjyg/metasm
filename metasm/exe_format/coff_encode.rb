@@ -432,6 +432,8 @@ class COFF
 
 			# try to find superset of characteristics
 			if target = secs.find { |ss| (ss.characteristics & char) == char }
+				target.encoded.align 8
+				puts "PE: merging #{s.name} in #{target.name} (#{target.encoded.virtsize})" if $DEBUG
 				target.encoded << s.encoded
 			else
 				@sections << s

@@ -223,7 +223,7 @@ end
 
 	# check if the argument matches the opcode's argument spec
 	def parse_arg_valid?(o, spec, arg)
-		return false if s = o.props[:argsz] and arg.kind_of? Reg or arg.kind_of? ModRM and arg.sz and s != arg.sz
+		return false if s = o.props[:argsz] and (arg.kind_of? Reg or arg.kind_of? ModRM) and arg.sz and s != arg.sz
 		case spec
 		when :reg
 			arg.class == Reg and
