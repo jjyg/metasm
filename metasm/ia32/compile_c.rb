@@ -43,16 +43,21 @@ class CCompiler < C::Compiler
 		end
 	end
 
+	# tracks 2 registers storing a value bigger than each
+	class Composite
+		attr_accessor :low, :high
+		def initialize(low, high)
+			       @low, @high = low, high
+		end
+	end
+
 	attr_accessor :generate_PIC
 	def initialize(*a)
 		super
 		@generate_PIC = true
-		@regnummax = (@exe.cpu.size == 64 ? 15 : 7)
+		@cpusz = @exeformat.cpu.size
+		@regnummax = (@cpusz == 64 ? 15 : 7)
 	end
-
-	BASIC_OPS = { :+ => 'add', :- => 'sub', :^ => 'xor', :| => 'or', :& => 'and', :<< => 'shl' }
-	BASIC_OPS_LVALUE = { :'=' => 'mov', :'+=' => 'add', :'-=' => 'sub', :'^=' => 'xor',
-		:'|=' => 'or', :'&=' => 'and', :'<<=' => 'shl' }
 
 	# returns a new State
 	def c_init_state(func)
@@ -68,27 +73,29 @@ class CCompiler < C::Compiler
 
 	# shortcut
 	def instr(name, *args)
-		# parse_postfix ?
-		@source << Instruction.new(@exe.cpu, name, args)
+		# XXX parse_postfix ?
+		@source << Instruction.new(@exeformat.cpu, name, args)
 	end
 
 	# returns a new register number, put it in state.used
-	# reg size defaults to current cpu size
-	def findreg
-		if not regval = [*0..@regnummax].find { |r| not @state.used.include? r and not @state.cache[r] } ||
-		                [*0..@regnummax].find { |r| not @state.used.include? r }
+	# XXX beware of sz == 8 ! (aliasing)
+	def findreg(sz = @cpusz)
+		caching = @state.cache.keys.grep(Reg).map { |r| r.val }
+		if not regval = ([*0..@regnummax] - @state.used - caching).first ||
+		                ([*0..@regnummax] - @state.used).first
 			raise 'need more registers! (or a better compiler?)'
 		end
 
 		@state.used << regval
-		@state.cache.delete_if { |e|
+		@state.cache.delete_if { |e, val|
 			case e
 			when Reg: e.val == regval
 			when ModRM: e.b && (e.b.val == regval) or e.i && (e.i.val == regval)
+			when Composite: e.low.val == regval or e.high.val == regval
 			end
 		}
 		@state.dirty |= [regval]
-		Reg.new(regval, @exe.cpu.size)
+		Reg.new(regval, sz)
 	end
 
 	# makes an argument disposable (removes from state.used)
@@ -97,17 +104,17 @@ class CCompiler < C::Compiler
 		case val
 		when Reg: @state.used.delete val.val if not @state.bound.index(val)
 		when ModRM: unuse(val.b); unuse(val.i)
+		when Composite: unuse(val.low); unuse(val.high)
 		end
 	end
 
-	# returns a variable storage (ModRM for stack/global, Reg for register-bound..)
-	# TODO __int64 ?
+	# returns a variable storage (ModRM for stack/global, Reg for register-bound)
 	def findvar(var)
 		return @state.bound[var] if @state.bound[var]
 
-		if ret = @state.cache.find { |e, v| v == var }
-			puts "ia32cc: cache hit  #{ret[0]} -> #{var}" if $DEBUG
-			return ret[0]
+		if ret = @state.cache.index(var)
+			puts "ia32cc: cache hit  #{ret} -> #{var}" if $DEBUG
+			return ret
 		end
 
 		case off = @state.offset[var]
@@ -118,22 +125,25 @@ class CCompiler < C::Compiler
 			raise "find dynamic addr of #{var.name}"
 		when ::Integer
 			# stack
-			# TODO -fomit-frame-pointer
+			# TODO -fomit-frame-pointer ( => state.cache dependant on stack_offset... )
 			ModRM.new(@state.saved_ebp.sz, sizeof(var), nil, nil, @state.saved_ebp, -off)
 		when nil
 			# global
 			if @generate_PIC
-				@need_geteip_stub = true
-				reg = findreg
-				eax = Reg.new(0, @exe.cpu.size)
+				if not reg = @state.cache.index('metasm_intern_geteip')
+					@need_geteip_stub = true
+					reg = findreg
 
-				# TODO search cache for the addr of another global ?
-				instr 'xchg', eax, reg if reg.val != 0 and @state.used.include? 0
-				instr 'call', Expression['metasm_intern_geteip']
-				instr 'xchg', eax, reg if reg.val != 0 and @state.used.include? 0
-				ModRM.new(@exe.cpu.size, sizeof(var), nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
+					eax = Reg.new(0, @cpusz)
+					instr 'xchg', eax, reg if reg.val != 0 and @state.used.include? 0
+					instr 'call', Expression['metasm_intern_geteip']
+					instr 'xchg', eax, reg if reg.val != 0 and @state.used.include? 0
+
+					@state.cache[reg] = 'metasm_intern_geteip'
+				end
+				ModRM.new(@cpusz, sizeof(var), nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
 			else
-				ModRM.new(@exe.cpu.size, sizeof(var), nil, nil, nil, Expression[var.name])
+				ModRM.new(@cpusz, sizeof(var), nil, nil, nil, Expression[var.name])
 			end
 		end
 	end
@@ -146,34 +156,15 @@ class CCompiler < C::Compiler
 			unuse e
 			reg = findreg
 			instr 'mov', reg, e
-		when Expression
-			reg = findreg
-			instr 'mov', reg, e
 		else
 			reg = e
 		end
 		reg
 	end
 	
-	# adds the metasm_intern_geteip function, which returns its own adress in eax (used for PIC adressing)
-	def c_program_epilog
-		if defined? @need_geteip_stub and @need_geteip_stub
-			eax = Reg.new(0, @exe.cpu.size)
-			label = new_label('geteip')
-
-			@source << Label.new('metasm_intern_geteip')
-			instr 'call', Expression[label]
-			@source << Label.new(label)
-			instr 'pop', eax
-			instr 'add', eax, Expression['metasm_intern_geteip', :-, label]
-			instr 'ret'
-		end
-	end
-
 	# compiles a c expression, returns an Ia32 instruction argument
 	def c_cexpr_inner(expr)
-		ret =
-		case expr
+		ret = case expr
 		when ::Integer: Expression[expr]
 		when C::Variable: findvar(expr)
 		when C::CExpression
@@ -183,7 +174,13 @@ class CCompiler < C::Compiler
 				c_cexpr_inner_l(expr)
 			end
 		end
-		@state.cache[ret] = expr if ret.kind_of? Reg or ret.kind_of? ModRM
+		
+		# update cache
+		case ret
+		when Reg, ModRM, Composite
+			@state.cache[ret] = expr if expr.lexpr or not [:'--', :'++', :'+'].include? expr.op
+		end
+
 		ret
 	end
 
@@ -194,42 +191,138 @@ class CCompiler < C::Compiler
 # TODO fpu
 		case expr.op
 		when nil
-			# TODO cast -> movzx etc
-			c_cexpr_inner(expr.rexpr)
+			# cast
+			r = c_cexpr_inner(expr.rexpr)
+			if expr.rexpr.kind_of? C::CExpression and expr.type.kind_of? C::BaseType and expr.rexpr.type.kind_of? C::BaseType
+				if expr.type.float? and expr.rexpr.type.float
+					# float -> float == noop
+					r
+				elsif expr.type.float? and expr.rexpr.type.integral?
+					# XXX push @cpusz ...
+					esp = Reg.new(4, @cpusz)
+					case r
+					when ModRM
+						# XXX signedness ?
+						if expr.rexpr.type.name == :__int8
+							instr 'push', r
+							r = ModRM.new(@cpusz, @cpusz, nil, nil, esp, nil)
+							addesp = @cpusz
+						end
+					when Composite
+						instr 'push', r.high
+						instr 'push', r.low
+						r = ModRM.new(@cpusz, 64, nil, nil, esp, nil)
+						addesp = 64
+					when Reg
+						instr 'push', r
+						psz = r.sz
+						psz = @cpusz if psz == 8
+						r = ModRM.new(@cpusz, psz, nil, nil, esp, nil)
+						addesp = psz
+					when Expression
+						r = ModRM.new(@cpusz, @cpusz, nil, nil, esp, nil)
+						if expr.rexpr.type == :__int64
+							instr 'push.i32', Expression[r, :>>, 32]
+							instr 'push.i32', Expression[r, :&, 0xffff_ffff]
+							r.sz = 64
+							addesp = 64
+						else
+							instr 'push', r
+							addesp = @cpusz
+						end
+					end
+					instr 'fild', r
+					# XXX barrier ?
+					instr 'add', esp, Expression[addesp/8] if addesp
+				elsif expr.type.integral? and expr.rexpr.type.float?
+					# TODO
+				elsif expr.type.integral? and expr.rexpr.type.integral?
+					# TODO
+				end
+			end
+			r
 		when :+
 			c_cexpr_inner(expr.rexpr)
 		when :-
-			case r = c_cexpr_inner(expr.rexpr)
-			when Reg, ModRM
-				r = make_reg(r)
-				instr 'neg', Reg.new(r.val, @exe.cpu.size)
-				r
-			else raise 'bad cexpr_inner ' + r.inspect
-			end
-		when :'++', :'--'
 			r = c_cexpr_inner(expr.rexpr)
-			unuse r
-			reg = findreg
-			instr 'mov', reg, r
-			op = expr.op == :'++' ? 'inc' : 'dec'
-			instr op, r
-			@cache.delete r		# XXX really ?
-			reg
+			if expr.type.integral?
+				if expr.type.name == :__int64 and @cpusz != 64
+					if r.kind_of? ModRM
+						unuse r
+						reg = Composite.new(findreg(32), findreg(32))
+						ml = r.dup
+						ml.sz = 32
+						mh = ml.dup
+						mh.imm = Expression[mh.imm, :+, 4]
+						instr 'mov', reg.low, ml
+						instr 'mov', reg.high, mh
+						r = reg
+					end
+					instr 'neg', r.low
+					instr 'adc', r.high, Expression[0]
+					instr 'neg', r.high
+				else
+					if r.kind_of? ModRM or @state.bound.index(r)	# XXX used ?
+						unuse r if r.kind_of? ModRM
+						reg = findreg
+						reg.sz = r.sz
+						instr 'mov', reg, r
+						r = reg
+					end
+					instr 'neg', r
+				end
+			elsif expr.type.float?
+				if r.kind_of? ModRM
+					unuse r
+					instr 'fld', r
+					r = FpReg.new
+				end
+				instr 'fchs'
+			else raise
+			end
+			r
+		when :'++', :'--'
+			# TODO XXX defer incrementation ! ( i++ + i )
+			r = c_cexpr_inner(expr.rexpr)
+			if expr.type.integral?
+				if expr.type.name == :__int64 and @cpusz != 64
+					if r.kind_of? ModRM
+						ml = r.dup
+						ml.sz = 32
+						mh = ml.dup
+						mh.imm = Expression[mh.imm, :+, 4]
+					else
+						ml = r.low
+						mh = r.high
+					end
+					instr 'add', ml, Expression[expr.op == :'++' ? 1 : -1]
+					instr 'adc', mh, Expression[expr.op == :'++' ? 0 : -1]
+				else
+					op = (expr.op == :'++' ? 'inc' : 'dec')
+					instr op, r
+				end
+			elsif expr.type.float?
+				instr 'fld1'
+				op = (expr.op == :'++' ? 'faddp' : 'fsubp')
+				instr op, FpReg.new(1)
+			end
+			r
 		when :&
 			r = findvar(expr.rexpr)
-			raise 'cannot take addr of ' + expr.rexpr.inspect + ' ' + r.inspect if not expr.rexpr.kind_of? C::Variable or not r.kind_of? ModRM
-			unuse r
-			reg = findreg
+			raise 'cannot take addr of ' + expr.to_s + r.inspect if not expr.rexpr.kind_of? C::Variable or not r.kind_of? ModRM
 			if r.b or r.i
+				# r.seg is ignored by lea
+				unuse r
+				reg = findreg
 				instr 'lea', reg, r
+				reg
 			else
-				instr 'mov', reg, r.imm
+				r.imm
 			end
-			reg
 		when :*
 			e = expr.rexpr
-			m = ModRM.new(@exe.cpu.size, sizeof(e), nil, nil, nil, nil)
-			if e.kind_of? C::CExpression and e.op == :+ and e.lexpr
+			m = ModRM.new(@cpusz, sizeof(e), nil, nil, nil, nil)
+			if e.kind_of? C::CExpression and e.op == :+ and e.lexpr	# TODO or e.op == :-
 				# *(a+b), *(a+(b*c)), TODO *(a+(b*c)+d) (seen in ary[off].bla)
 				case b = c_cexpr_inner(e.lexpr)
 				when Expression: m.imm = b
@@ -328,7 +421,7 @@ class CCompiler < C::Compiler
 				if not expr.lexpr.attributes.to_a.include? 'stdcall'
 					al = typesize[:ptr]
 					argsz = expr.rexpr.inject(0) { |sum, a| sum += (sizeof(a) + al - 1) / al * al }
-					instr 'add', Reg.new(4, @exe.cpu.size), argsz if argsz > 0
+					instr 'add', Reg.new(4, @cpusz), argsz if argsz > 0
 				end
 			else
 				# TODO declspec
@@ -336,7 +429,7 @@ class CCompiler < C::Compiler
 				unuse ptr
 				instr 'call', ptr
 			end
-			Reg.new(0, @exe.cpu.size)
+			Reg.new(0, @cpusz)
 # XXX
 # TODO
 # XXX
@@ -401,7 +494,7 @@ class CCompiler < C::Compiler
 				var.type.length.kind_of? C::CExpression
 			reg = c_cexpr_inner(var.type.length)
 			unuse reg
-			instr 'sub', Reg.new(4, @exe.cpu.size), reg
+			instr 'sub', Reg.new(4, @cpusz), reg
 			# TODO
 		end
 	end
@@ -439,12 +532,17 @@ class CCompiler < C::Compiler
 		instr 'jmp', Expression[target]
 	end
 
+	def c_label(name)
+		state.cache.clear
+		@source << Label.new(name)
+	end
+
 	def c_return(expr)
 		if expr
 			ret = c_cexpr_inner(expr)
 			unuse ret
 			if not ret.kind_of? Reg or ret.val != 0
-				eax = Reg.new(0, @exe.cpu.size)
+				eax = Reg.new(0, @cpusz)
 				if (ret.kind_of? Reg or ret.kind_of? ModRM) and ret.sz != eax.sz
 					rettype = @state.func.type.type
 					if rettype.kind_of? C::BaseType and not rettype.qualifier
@@ -460,12 +558,16 @@ class CCompiler < C::Compiler
 		end
 	end
 
+	def c_asm(stmt)
+		super
+	end
+
 	def c_prolog
 		localspc = @state.offset.values.grep(::Integer).max
 		if localspc
 			al = typesize[:ptr]
 			localspc = (localspc + al - 1) / al * al
-			@state.saved_ebp = ebp = Reg.new(5, @exe.cpu.size)
+			@state.saved_ebp = ebp = Reg.new(5, @cpusz)
 			@state.used << 5
 			esp = Reg.new(4, ebp.sz)
 			instr 'push', ebp
@@ -474,14 +576,14 @@ class CCompiler < C::Compiler
 		end
 		@state.dirty -= [0]	# XXX ABI
 		@state.dirty.each { |reg|
-			instr 'push', Reg.new(reg, @exe.cpu.size)
+			instr 'push', Reg.new(reg, @cpusz)
 		}
 	end
 
 	def c_epilog
 		# TODO revert dynamic array alloc
 		@state.dirty.reverse_each { |reg|
-			instr 'pop', Reg.new(reg, @exe.cpu.size)
+			instr 'pop', Reg.new(reg, @cpusz)
 		}
 		if ebp = @state.saved_ebp
 			instr 'mov', Reg.new(4, ebp.sz), ebp
@@ -493,6 +595,21 @@ class CCompiler < C::Compiler
 		if f.attributes.to_a.include? 'stdcall' and argsz > 0
 			instr 'ret', Expression[argsz]
 		else
+			instr 'ret'
+		end
+	end
+
+	# adds the metasm_intern_geteip function, which returns its own adress in eax (used for PIC adressing)
+	def c_program_epilog
+		if defined? @need_geteip_stub and @need_geteip_stub
+			eax = Reg.new(0, @cpusz)
+			label = new_label('geteip')
+
+			@source << Label.new('metasm_intern_geteip')
+			instr 'call', Expression[label]
+			@source << Label.new(label)
+			instr 'pop', eax
+			instr 'add', eax, Expression['metasm_intern_geteip', :-, label]
 			instr 'ret'
 		end
 	end
