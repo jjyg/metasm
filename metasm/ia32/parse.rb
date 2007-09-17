@@ -249,6 +249,7 @@ end
 		when :reg_cl:   arg.class == Reg     and arg.val == 1 and arg.sz == 8
 		when :reg_dx:   arg.class == Reg     and arg.val == 2 and arg.sz == 16
 		when :seg3:     arg.class == SegReg
+		when :seg3A:    arg.class == SegReg  and arg.val > 3
 		when :seg2:     arg.class == SegReg  and arg.val < 4
 		when :seg2A:    arg.class == SegReg  and arg.val < 4 and arg.val != 1
 		when :eeec:     arg.class == CtrlReg

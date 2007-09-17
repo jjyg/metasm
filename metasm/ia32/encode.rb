@@ -238,7 +238,7 @@ class Ia32
 		postponed = []
 		oi.each { |oa, ia|
 			case oa
-			when :reg, :seg3, :seg2, :seg2A, :eeec, :eeed, :regfp, :regmmx, :regxmm
+			when :reg, :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regmmx, :regxmm
 				# field arg
 				set_field[base, oa, ia.val]
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0

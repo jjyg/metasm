@@ -132,7 +132,8 @@ module Metasm
 				# check special cases
 				!(
 				  # fail if any of those is true
-				  (fld = op.fields[:seg2A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg2A] == 1) or		# field byte outside of edata.data is handled in the above #all
+				  (fld = op.fields[:seg2A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg2A] == 1) or
+				  (fld = op.fields[:seg3A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg3A] < 4) or
 				  (fld = op.fields[:modrmA] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
 				  (sz  = op.props[:opsz]    and ((di.instruction.prefix[:opsz] and @size != 48-sz) or (not di.instruction.prefix[:opsz] and @size != sz))) or
 				  (pfx = op.props[:needpfx] and not (di.instruction.prefix[:list] || []).include? pfx)
@@ -179,7 +180,7 @@ module Metasm
 			when :reg:    Reg.new     field_val[a], opsz
 			when :eeec:   CtrlReg.new field_val[a]
 			when :eeed:   DbgReg.new  field_val[a]
-			when :seg2, :seg2A, :seg3: SegReg.new field_val[a]
+			when :seg2, :seg2A, :seg3, :seg3A: SegReg.new field_val[a]
 			when :regfp:  FpReg.new   field_val[a]
 			when :regmmx: SimdReg.new field_val[a], 64
 			when :regxmm: SimdReg.new field_val[a], 128

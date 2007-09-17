@@ -12,10 +12,11 @@ class Ia32
 		@fields_mask.update :w => 1, :s => 1, :d => 1, :modrm => 0xc7
 		@fields_mask.update :reg => 7, :eeec => 7, :eeed => 7, :seg2 => 3, :seg3 => 7
 		@fields_mask[:seg2A]    = @fields_mask[:seg2]
+		@fields_mask[:seg3A]    = @fields_mask[:seg3]
 		@fields_mask[:modrmA]   = @fields_mask[:modrm]
 
 		@valid_args.push :i, :i8, :u8, :u16
-		@valid_args.push :reg, :seg2, :seg2A, :seg3, :eeec, :eeed
+		@valid_args.push :reg, :seg2, :seg2A, :seg3, :seg3A, :eeec, :eeed
 		@valid_args.push :modrm, :modrmA, :mrm_imm, :farptr
 		@valid_args.push :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx
 
@@ -144,7 +145,7 @@ class Ia32
 		addop 'pop',   [0x58], :reg
 		addop 'pop',   [0x8F], 0
 		addop 'pop',   [0x07], nil,  {:seg2A => [0, 3]}, :seg2A
-		addop 'pop',   [0x0F, 0x81], nil,  {:seg3 => [1, 3]}, :seg3
+		addop 'pop',   [0x0F, 0x81], nil,  {:seg3A => [1, 3]}, :seg3A
 		addop('popa',  [0x61]) { |o| o.props[:opsz] = 16 }
 		addop('popad', [0x61]) { |o| o.props[:opsz] = 32 }
 		addop('popf',  [0x9D]) { |o| o.props[:opsz] = 16 }
@@ -155,7 +156,7 @@ class Ia32
 		addop 'push',  [0x68], nil,  {:s => [0, 1]}, :i
 		addop('push.i32', [0x68], nil, {}, :i) { |o| o.props[:opsz] = 32 }
 		addop 'push',  [0x06], nil,  {:seg2 => [0, 3]}, :seg2
-		addop 'push',  [0x0F, 0x80], nil,  {:seg3 => [1, 3]}
+		addop 'push',  [0x0F, 0x80], nil,  {:seg3A => [1, 3]}, :seg3A
 		addop('pusha', [0x60]) { |o| o.props[:opsz] = 16 }
 		addop('pushad',[0x60]) { |o| o.props[:opsz] = 32 }
 		addop('pushf', [0x9C]) { |o| o.props[:opsz] = 16 }
@@ -299,6 +300,8 @@ class Ia32
 		addop 'frndint',[0xD9, 0xFC]
 		addop 'frstor', [0xDD, 0x20], nil, {:modrmA => [1, 0]}, :modrmA
 		addop 'fnsave', [0xDD, 0x30], nil, {:modrmA => [1, 0]}, :modrmA
+		addop 'fnstsw', [0xDF, 0xE0]
+		addop('fnstsw', [0xDD, 0x38], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
 		addop 'fscale', [0xD9, 0xFD]
 		addop 'fsin',   [0xD9, 0xFE]
 		addop 'fsincos',[0xD9, 0xFB]
@@ -312,8 +315,8 @@ class Ia32
 		addop 'fstp', [0xDD, 0xD8], :regfp
 		addop('fstcw',  [0xD9, 0x38], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
 		addop 'fstenv', [0xD9, 0x30], nil, {:modrmA => [1, 0]}, :modrmA
-		addop 'fstsw',  [0xDF, 0xE0]
-		addop('fstsw',  [0xDD, 0x38], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
+		addop 'fstsw',  [0x9B, 0xDF, 0xE0]
+		addop('fstsw',  [0x9B, 0xDD, 0x38], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
 		addop_macrofpu1 'fsub',  4
 		addop 'fsubp',  [0xDE, 0xE8], :regfp
 		addop_macrofpu1 'fsubp', 5
@@ -550,6 +553,7 @@ class Ia32
 	end
 
 	def addop_macrostr(name, bin, type)
+		# addop(name, bin.dup, {:w => [0, 0]}) { |o| o.props[type] = true }     # TODO allow segment override
 		addop(name+'b', bin) { |o| o.props[:opsz] = 16 ; o.props[type] = true }
 		addop(name+'b', bin) { |o| o.props[:opsz] = 32 ; o.props[type] = true }
 		bin = bin.dup
