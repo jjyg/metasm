@@ -226,6 +226,12 @@ class ExeFormat
 				# fall through
 				@block[curblock].to |= [off + di.bin_length] if not di.opcode.props[:stopexec]
 				curblock = nil
+
+				if di.opcode.props[:saveip] and di.opcode.props[:stopexec] and not targets.find { |t| get_section_at(t) }
+					# XXX temp workaround for external calls: assume they return
+					offsets << [off + di.bin_length, nil]
+				end
+
 			elsif cursection.export.index(cursection.ptr)
 				# labels only allowed at start of block: split
 				@block[curblock].to |= [off + di.bin_length] if not di.opcode.props[:stopexec]
@@ -494,7 +500,7 @@ class EncodedData
 	# returns an Expression on relocation, or a Numeric
 	def decode_imm(type, endianness)
 		if rel = @reloc[@ptr]
-			if rel.type == type and rel.endianness == endianness
+			if Expression::INT_SIZE[rel.type] == Expression::INT_SIZE[type] and rel.endianness == endianness
 				@ptr += rel.length
 				return rel.target
 			end
