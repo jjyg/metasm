@@ -308,7 +308,7 @@ class Ia32
 		addop 'fst',  [0xD9, 0xD0], :regfp
 		addop('fstp', [0xD9, 0x18], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 32 }
 		addop('fstp', [0xDD, 0x18], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 64 }
-		addop('fstp', [0xDB, 0x28], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 80 }
+		addop('fstp', [0xDB, 0x38], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 80 }
 		addop 'fstp', [0xDD, 0xD8], :regfp
 		addop('fstcw',  [0xD9, 0x38], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
 		addop 'fstenv', [0xD9, 0x30], nil, {:modrmA => [1, 0]}, :modrmA
@@ -661,6 +661,13 @@ class Ia32
 
 			# bit == 1 => args normal
 			op.bin[df[0]] |= 1 << df[1]
+
+		elsif op.args.include? :regfp0
+			dop = Opcode.new op.name
+			dop.bin = op.bin.dup
+			[:fields, :props, :args].each { |f| dop.send(f).replace op.send(f) }
+			dop.args.delete :regfp0
+			@opcode_list << dop
 		end
 		@opcode_list << op
 

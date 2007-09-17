@@ -221,8 +221,12 @@ module Metasm
 		end
 
 		if op.props[:setip] and op.name[0, 3] != 'ret' and di.instruction.args.first.kind_of? Expression
-			tg = off + di.bin_length + di.instruction.args[0].reduce
-			di.instruction.args[0] = Expression[program.label_at_addr(tg, 'xref_%08x' % tg)]
+			case tg = Expression[off + di.bin_length, :+, di.instruction.args.first].reduce
+			when ::Integer
+				di.instruction.args[0] = Expression[program.label_at_addr(tg, 'xref_%08x' % tg)]
+			else
+				di.instruction.args[0] = tg
+			end
 		end
 
 		di.instruction.prefix.delete :opsz
