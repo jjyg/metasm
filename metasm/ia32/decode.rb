@@ -281,12 +281,9 @@ module Metasm
 			value.bind a[0] => Expression[a[0], *op]
 		when 'neg'
 			value.bind a[0] => Expression[:-, a[0]]
-		when 'div', 'mul'
-			# XXX
 		when 'rol', 'ror', 'rcl', 'rcr', 'sar', 'shl', 'sal'
 			# XXX
-		when 'xlat'
-			# XXX
+			value.bind a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), a[1]]
 		when 'push'
 			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => Expression[a[0]]
 		when 'pop'
@@ -297,10 +294,24 @@ module Metasm
 			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => Expression[off+di.bin_length]
 		when 'ret'
 			value.bind :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]]
-		when 'jmp', 'jz', 'jnz', 'nop', 'cmp', 'test'	# etc etc
-			value
+		when 'stosd', 'stosb', 'stosw'
+			if di.instruction.prefix[:rep]
+				value.bind :edi => :undef
+			else
+				sz = {?b => 1, ?w => 2, ?d => 4}[op[-1]]
+				value.bind Indirection.new(Expression[:edi], "u#{sz*8}".to_sym) => Expression[:eax], :edi => Expression[:edi, :+, sz]
+			end
+		when 'sbb', 'adc'
+			value.bind a[0] => :undef
+		when 'aaa'
+			value.bind :eax => :undef
 		else
-			nil
+			if %[jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle nop cmp test].include? op	# etc etc
+				value
+			else
+				puts "unhandled instruction to backtrace: #{di.instruction}" if $VERBOSE
+				nil
+			end
 		end
 
 	end

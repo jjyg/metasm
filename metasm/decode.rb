@@ -305,6 +305,7 @@ class ExeFormat
 		}
 
 		orig_off = off
+		orig_di =  di
 		targets = @cpu.get_jump_targets(self, di, off)
 		targets_found = targets.map { |t| check_target[t] }
 
@@ -321,22 +322,24 @@ class ExeFormat
 			if tf
 				result |= [tf]
 			else
-				trace << [20, off, @block[@decoded[off]], @block[@decoded[off]].list.index(di), t]
+				trace << [50, off, @block[@decoded[off]], @block[@decoded[off]].list.index(di), t]
 			end
 		}
 
 		if not trace.empty?
 			@block[@decoded[orig_off]].backtracked_for |= [orig_off]
+puts '', "backtracking #{'%08x' % off} #{di.instruction}" if $DEBUG
 		end
 
 		while foo = trace.pop
 			depth, off, block, idx, target = foo
 
+puts "backtrack too deep, aborting before #{'%08x' % off}" if depth == 0 and $DEBUG
 			next if depth == 0
 
 			if idx == 0
 				block.from.each { |f|
-#puts "backtracking : (#{depth}) up to #{'%08x' % f}"
+puts "backtracking (#{depth}) up to #{'%08x' % f}" if $DEBUG
 					b = @block[@decoded[f]]
 					trace << [depth, f + b.list.last.bin_length, b, b.list.length, target]
 					b.backtracked_for |= [orig_off]
@@ -344,24 +347,25 @@ class ExeFormat
 			else
 				di = block.list[idx-1]
 				off -= di.bin_length
-#puts "backtracking : eval #{target} in #{di.instruction}"
+puts "backtracking eval #{target} in #{di.instruction}" if $DEBUG
 				if @externalcall[off]
 					target = @cpu.emu_backtrace_external(di, off, target, [], @externalcall[off])
 				else
 					target = @cpu.emu_backtrace(di, off, target)
 				end
 				if t = check_target[target]
-#puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
+puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}" if $DEBUG
 					result |= [t]
 					# TODO
 					# mark_as_subfunc(curblock.to) if di.opcode.props[:saveip]
 				elsif target and target = target.reduce
-#puts " continuing with #{target}"
+puts " continuing with #{target}" if $DEBUG
 					# target.reduce is either an Expression or an Indirection, an Integer would have been caught by check_target
 					trace << [depth-1, off, block, idx-1, target]
 				end
 			end
 		end
+puts "backtracking failed for #{'%08x' % orig_off} #{orig_di.instruction}" if $VERBOSE and result.empty?
 
 		result
 	end
