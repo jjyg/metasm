@@ -192,7 +192,8 @@ module C
 						bits = nil
 						raise tok, "bad bit count #{bits.inspect}" if not bits = CExpression.parse(parser, scope, false) or
 							not bits.constant? or not (bits = bits.reduce(parser)).kind_of? ::Integer
-						raise tok, 'need more bits' if bits > 8*parser.sizeof(member)
+						#raise tok, 'need more bits' if bits > 8*parser.sizeof(member)
+						# WORD wReserved:17; => yay windows.h
 						(@bits ||= [])[@members.length] = bits
 						raise tok || parser, '"," or ";" expected' if not tok = parser.skipspaces or tok.type != :punct
 					end
@@ -292,7 +293,6 @@ module C
 	
 				name = tok.raw
 				raise tok, 'bad enum name' if tok.type != :string or Keyword[name] or (?0..?9).include?(name[0])
-				raise tok, 'enum value redefinition' if scope.symbol[name]
 	
 				raise parser if not tok = parser.skipspaces
 				if tok.type == :punct and tok.raw == '='
@@ -300,6 +300,7 @@ module C
 				else
 					val += 1
 				end
+				raise tok, "enum value #{name} redefinition" if scope.symbol[name] and scope.symbol[name] != val
 				@members[name] = val
 				scope.symbol[name] = val
 	
@@ -857,6 +858,13 @@ class Parser
 		nt = @lexer.readtok and nt.type == :quoted and nt.raw[0] == ?"
 			nt.raw[0, 0] = 'L'
 			nt
+		elsif t and t.type == :punct and t.raw == '/' and
+		# nt has not been read
+		nt = @lexer.readtok and nt.type == :punct and nt.raw == '/'
+			# windows.h has a #define some_type_name /##/, and VS interprets this as a comment..
+			puts @lexer.exception('#defined //').message if $VERBOSE
+			t = @lexer.readtok while t and t.type != :eol
+			t
 		else
 			@lexer.unreadtok nt
 			t
@@ -2008,7 +2016,7 @@ end
 						end
 					end
 
-					case @op
+					case op
 					when :'>', :'>=', :'<', :'<=', :'==', :'!='
 						# cast both sides
 						l = CExpression.new(nil, nil, l, type) if l.type != type
@@ -2485,7 +2493,7 @@ end
 		def dump(scope, r=[''], dep=[])
 			if name
 				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
-				r.last << 'union ' << @name
+				r.last << 'enum ' << @name
 				dep |= [scope.struct_ancestors[@name]]
 				[r, dep]
 			else
