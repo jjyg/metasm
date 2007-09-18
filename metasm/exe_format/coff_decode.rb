@@ -454,11 +454,16 @@ class COFF
 	def decode_imports
 		if @directory and @directory['import_table'] and @encoded.ptr = rva_to_off(@directory['import_table'][0])
 			@imports = ImportDirectory.decode(self)
-			iatlen = @optheader.signature == 'PE+' ? 8 : 4
+			iatlen = (@optheader.signature == 'PE+' ? 8 : 4)
 			@imports.each { |id|
 				if off = rva_to_off(id.iat_p)
 					id.imports.each_with_index { |i, idx|
-						@encoded.export[i.name] = off + iatlen*idx if i.name
+						if i.name
+							r = Metasm::Relocation.new(Expression[i.name], :u32, @endianness)
+							addr = off + iatlen * idx
+							@encoded.reloc[addr] = r
+							@encoded.export['iat_' + i.name] = addr
+						end
 					}
 				end
 			}

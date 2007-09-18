@@ -133,6 +133,10 @@ class ExeFormat
 		# hash, addr => addr of block containing the instr at this addr
 		@decoded ||= {}
 
+		# aosentuhasn
+		# hash to mark :saveip that call unknown adresses (addr of call => array of dests)
+		@externalcall ||= {}
+
 		# EncodedData, returned by get_section_at(addr)
 		cursection = nil
 		# address of first byte of cursection
@@ -228,8 +232,9 @@ class ExeFormat
 				curblock = nil
 
 				if di.opcode.props[:saveip] and di.opcode.props[:stopexec] and not targets.find { |t| get_section_at(t) }
-					# XXX temp workaround for external calls: assume they return
-					offsets << [off + di.bin_length, nil]
+					# XXX temp workaround for external calls
+					@externalcall[off] = targets
+					offsets << [off + di.bin_length, off]
 				end
 
 			elsif cursection.export.index(cursection.ptr)
@@ -340,7 +345,11 @@ class ExeFormat
 				di = block.list[idx-1]
 				off -= di.bin_length
 #puts "backtracking : eval #{target} in #{di.instruction}"
-				target = @cpu.emu_backtrace(di, off, target)
+				if @externalcall[off]
+					target = @cpu.emu_backtrace_external(di, off, target, [], @externalcall[off])
+				else
+					target = @cpu.emu_backtrace(di, off, target)
+				end
 				if t = check_target[target]
 #puts " found #{t.inspect}#{' (%08x)' % t if t.kind_of? Integer}"
 					result |= [t]

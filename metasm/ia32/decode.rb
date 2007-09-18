@@ -305,6 +305,18 @@ module Metasm
 
 	end
 
+	# XXX temporary hack
+	def emu_backtrace_external(di, off, value, offsets, abi)
+		# XXX handle :undef (so that :undef - :undef => :undef)
+		# XXX handle function ptrs in args => offsets, eg CreateThread (need a standalone backtrace) XXX CreateRemoteThread ?
+		if libfuncname = abi.grep(::String).first and defined?(StackOffsets)
+			stackoff = StackOffsets[libfuncname] || 0
+		else
+			stackoff = 0
+		end
+		value.bind :eax => :undef, :ecx => :undef, :edx => :undef, :esp => Expression[:esp, :+, stackoff]
+	end
+
 	def get_jump_targets(pgm, di, off)
 		if di.opcode.name == 'ret'
 			return [Indirection.new(Expression[:esp], "u#@size".to_sym)]
