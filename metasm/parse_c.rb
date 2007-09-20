@@ -2155,7 +2155,6 @@ end
 	class Block
 		# return array of c source lines and array of dependencies (objects)
 		def dump(scp, r=[''], dep=[])
-$stderr.puts "#{Time.now} start dump" if not @outer
 			mydefs = @symbol.values.grep(TypeDef) + @struct.values + anonymous_enums.to_a
 			todo_rndr = {}
 			todo_deps = {}
@@ -2187,7 +2186,7 @@ $stderr.puts "#{Time.now} start dump" if not @outer
 				elsif (deps-ary).find { |d| deps = dep_cycle[ary + [d]] }: deps
 				end
 			}
-			todo_rndr.keys.grep(Union).find_all { |t| t.name }.each { |t|
+			todo_rndr.keys.grep(Union).find_all { |t| t.name }.sort_by { |t| t.name }.each { |t|
 				if c = dep_cycle[[t]]
 					r << "#{t.kind_of?(Struct) ? 'struct' : 'union'} #{t.name};"
 					c.each { |s|
