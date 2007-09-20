@@ -194,7 +194,7 @@ module C
 							not bits.constant? or not (bits = bits.reduce(parser)).kind_of? ::Integer
 						#raise tok, 'need more bits' if bits > 8*parser.sizeof(member)
 						# WORD wReserved:17; => yay windows.h
-						(@bits ||= [])[@members.length] = bits
+						(@bits ||= [])[@members.length-1] = bits
 						raise tok || parser, '"," or ";" expected' if not tok = parser.skipspaces or tok.type != :punct
 					end
 	
@@ -1245,7 +1245,7 @@ end
 					if ntok.type == :punct and ntok.raw == ';'
 						# struct predeclaration
 						# allow redefinition
-						scope.struct[name] ||= @type
+						@type = scope.struct[name] ||= @type
 					else
 						# check that the structure exists
 						# do not check it is declared (may be a pointer)
@@ -1397,7 +1397,7 @@ end
 			if not rec
 				raise @backtrace, 'void type is invalid' if name and (t = @type.untypedef).kind_of? BaseType and
 						t.name == :void and @storage != :typedef
-				raise @backtrace, 'uninitialized structure' if (@type.kind_of? Union or @type.kind_of? Enum) and
+				raise @backtrace, "uninitialized structure #{@type.name}" if (@type.kind_of? Union or @type.kind_of? Enum) and
 						not @type.members and @storage != :typedef
 			end
 		end
@@ -2155,6 +2155,7 @@ end
 	class Block
 		# return array of c source lines and array of dependencies (objects)
 		def dump(scp, r=[''], dep=[])
+$stderr.puts "#{Time.now} start dump" if not @outer
 			mydefs = @symbol.values.grep(TypeDef) + @struct.values + anonymous_enums.to_a
 			todo_rndr = {}
 			todo_deps = {}
@@ -2167,55 +2168,59 @@ end
 		end
 
 		def dump_reorder(mydefs, todo_rndr, todo_deps, r=[''], dep=[])
-			done = []
+			val = todo_deps.values.flatten.uniq
+			dep |= val
+			dep -= mydefs | todo_deps.keys
+			todo_deps.each { |k, v| v.delete k }
+			ext = val - mydefs
+			if ext.length > todo_deps.length
+				todo_deps.each_key { |k| todo_deps[k] = todo_deps[k] & mydefs }
+			else
+				ext.each { |k| todo_deps.each_value { |v| v.delete k } }
+			end
+
+			# predeclare structs involved in cyclic dependencies
+			dep_cycle = proc { |ary|
+				# sexyness inside (c)
+				deps = todo_deps[ary.last]
+				if deps.include? ary.first: ary
+				elsif (deps-ary).find { |d| deps = dep_cycle[ary + [d]] }: deps
+				end
+			}
+			todo_rndr.keys.grep(Union).find_all { |t| t.name }.each { |t|
+				if c = dep_cycle[[t]]
+					r << "#{t.kind_of?(Struct) ? 'struct' : 'union'} #{t.name};"
+					c.each { |s|
+						# XXX struct z { struct a* }; struct a { void (*foo)(struct z); };
+						todo_deps[s].delete t unless s.kind_of? Union and
+							s.members.find { |sm| sm.type.untypedef == t }
+					}
+				end
+			}
+
 			loop do
 				break if todo_rndr.empty?
-				todo_now = todo_rndr.keys.find_all { |t|
-					((todo_deps[t] & mydefs) - [t]).empty?
-				}
+				todo_now = todo_deps.keys.find_all { |k| todo_deps[k].empty? }
 				if todo_now.empty?
-					# cyclic dependency: predeclare needed structs
-					# XXX struct foo; typedef struct foo *bla; struct foo { bla toto; };
-					dep_cycle = proc { |ary|
-						# sexyness inside (c)
-						deps = todo_deps[ary.last]
-						if deps.include? ary.first: ary
-						elsif (deps-ary).find { |d| deps = dep_cycle[ary + [d]] }: deps
-						end
-					}
-					cycle = nil
-					if not todo_rndr.keys.find { |t| cycle = dep_cycle[[t]] if t.kind_of? Union and t.name }
-						r << '/* cyclic dependency, this should not compile */'
-						todo_now = todo_rndr.keys
-					else
-						cycle.grep(Union).each { |s|
-							next if not s.name
-							r << "#{s.class.name.downcase[/(?:.*::)?(.*)/,1]} #{s.name};"
-							cycle.each { |ss| todo_deps[ss].delete s }
-						}
-						todo_now = cycle.find_all { |t|
-							((todo_deps[t] & mydefs) - [t]).empty?
-						}
-						raise "fuxored! #{cycle.map { |t| t.name }.inspect}" if todo_now.empty?
-					end
+					r << '// dependency problem, this should not compile'
+					todo_now = todo_deps.keys
 				end
-				todo_now.sort_by { |t, x| t.name || '0' }.each { |t|
-					if t.kind_of? Variable and t.type.kind_of? Function and t.initializer
+				todo_now.sort_by { |k| k.name || '0' }.each { |k|
+					if k.kind_of? Variable and k.type.kind_of? Function and k.initializer
 						r << ''
-						r.concat todo_rndr.delete(t)
+						r.concat todo_rndr.delete(k)
 					else
 						r.pop if r.last == ''
-						r.concat todo_rndr.delete(t)
+						r.concat todo_rndr.delete(k)
 						r.last << ';'
 					end
-					dep |= todo_deps.delete(t)
-					todo_deps.each_value { |tdep| tdep.delete t }
-					done << t
+					todo_deps.delete k
 				}
+				todo_deps.each_key { |k| todo_deps[k] -= todo_now }
+				r << '' << '' << ''
 			end
 
 			@statements.each { |s|
-				next if s.kind_of? Declaration and done.include? s.var
 				r << '' if not r.last.empty?
 				if s.kind_of? Block
 					r, dep = Statement.dump(s, self, r, dep)
@@ -2223,8 +2228,6 @@ end
 					r, dep = s.dump(self, r, dep)
 				end
 			}
-
-			dep -= done
 
 			[r, dep]
 		end
@@ -2480,8 +2483,8 @@ end
 			if align
 				r, dep = super
 				r.last <<
-				if @align == 1: " __attribute__((packed))"
-				else " __attribute__((pack(#@align)))"
+				if @align == 1: (attributes and @attributes.include? 'packed') ? '' : " __attribute__((packed))"
+				else (attributes and @attributes.include? "pack(#@align)") ? '' : " __attribute__((pack(#@align)))"
 				end
 				[r, dep]
 			else

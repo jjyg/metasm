@@ -50,13 +50,6 @@ puts 'end'
 
 if $VERBOSE
 	puts '__END__'
-	puts <<EOS
-
-#ifdef __METASM__
- #pragma prepare_visualstudio
- #pragma no_warn_redefinition
-#endif
-EOS
 	# dump the full parsed header
 	puts cp
 end

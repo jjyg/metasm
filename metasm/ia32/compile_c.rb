@@ -161,6 +161,16 @@ class CCompiler < C::Compiler
 		end
 		reg
 	end
+
+	# loads the immediate integral expression expr in ST(0)
+	def load_fp_imm(expr)
+		esp = Reg.new(4, @cpusz)
+		instr 'push.i32', Expression[expr, :>>, 32]
+		instr 'push.i32', Expression[expr, :>>, 32]
+		instr 'fild', ModRM.new(@cpusz, 64, nil, nil, esp, nil)
+		instr 'add', esp, 8
+		FpReg.new
+	end
 	
 	# compiles a c expression, returns an Ia32 instruction argument
 	def c_cexpr_inner(expr)
@@ -186,20 +196,20 @@ class CCompiler < C::Compiler
 
 	# compile a CExpression with no lexpr
 	def c_cexpr_inner_nol(expr)
-# TODO patch reg.sz
-# TODO __int64
-# TODO fpu
 		case expr.op
 		when nil
 			# cast
 			r = c_cexpr_inner(expr.rexpr)
 			if expr.rexpr.kind_of? C::CExpression and expr.type.kind_of? C::BaseType and expr.rexpr.type.kind_of? C::BaseType
+				esp = Reg.new(4, @cpusz)
 				if expr.type.float? and expr.rexpr.type.float
-					# float -> float == noop
-					r
+					if expr.type.name != expr.rexpr.type.name and r.kind_of? ModRM
+						instr 'fld', r
+						r = FpReg.new
+					end
 				elsif expr.type.float? and expr.rexpr.type.integral?
-					# XXX push @cpusz ...
-					esp = Reg.new(4, @cpusz)
+					# XXX investigate push sizes (push al, push ax, push eax, push rax)
+					unuse r
 					case r
 					when ModRM
 						# XXX signedness ?
@@ -220,14 +230,14 @@ class CCompiler < C::Compiler
 						r = ModRM.new(@cpusz, psz, nil, nil, esp, nil)
 						addesp = psz
 					when Expression
-						r = ModRM.new(@cpusz, @cpusz, nil, nil, esp, nil)
-						if expr.rexpr.type == :__int64
+						if expr.rexpr.type == :__int64 and @cpusz != 64
 							instr 'push.i32', Expression[r, :>>, 32]
 							instr 'push.i32', Expression[r, :&, 0xffff_ffff]
-							r.sz = 64
+							r = ModRM.new(@cpusz, 64, nil, nil, esp, nil)
 							addesp = 64
 						else
 							instr 'push', r
+							r = ModRM.new(@cpusz, @cpusz, nil, nil, esp, nil)
 							addesp = @cpusz
 						end
 					end
@@ -235,9 +245,89 @@ class CCompiler < C::Compiler
 					# XXX barrier ?
 					instr 'add', esp, Expression[addesp/8] if addesp
 				elsif expr.type.integral? and expr.rexpr.type.float?
-					# TODO
+					case r
+					when Expression
+						# assume the Expression is integral
+						# XXX why bother ?
+						return r
+						#instr 'push.i32', Expression[r, :>>, 32]
+						#instr 'push.i32', Expression[r, :&, 0xffff_ffff]
+						#r = ModRM.new(@cpusz, 64, nil, nil, esp, nil)
+						#instr 'fild', r
+						#instr 'add', esp, Expression[8]
+					when ModRM
+						unuse r
+						instr 'fild', r
+					end
+
+					case expr.type.name
+					when :__int64
+						instr 'sub', esp, Expression[8]
+						instr 'fistp', ModRM.new(@cpusz, 64, nil, nil, esp, nil)
+						if @cpusz != 64
+							r = Composite.new(findreg(32), findreg(32))
+							instr 'pop', r.low
+							instr 'pop', r.high
+						else
+							r = findreg
+							instr 'pop', r
+						end
+					else
+						instr 'sub', esp, Expression[4]
+						instr 'fistp', ModRM.new(@cpusz, 32, nil, nil, esp, nil)
+						r = findreg(32)
+						instr 'pop', r
+						r = Reg.new(r.val,  8) if expr.type.name == :__int8
+						r = Reg.new(r.val, 16) if expr.type.name == :__int16
+					end
 				elsif expr.type.integral? and expr.rexpr.type.integral?
-					# TODO
+					tto   = typesize[expr.type.name]*8
+					tfrom = typesize[expr.rexpr.type.name]*8
+					if tfrom > tto and not r.kind_of? Expression
+						if tfrom == 64 and r.kind_of? Composite
+							unuse r.high
+							r = r.low
+						end
+						case r
+						when ModRM
+							r = r.dup
+							r.sz = tto
+						when Reg
+							r = Reg.new(r.val, tto)
+						end
+					elsif tto > tfrom and not r.kind_of? Expression
+						if tto == 64 and @cpusz != 64
+							if not r.kind_of? Reg or r.sz == 32
+								unuse r
+								low = findreg(32)
+								if r.sz == 32
+									instr 'mov', low, r
+								elsif expr.type.qualifier == :unsigned
+									instr 'movzx', low, r
+								else
+									instr 'movsx', low, r
+								end
+							else
+								low = r
+							end
+							high = findreg(32)
+							if expr.type.qualifier == :unsigned
+								instr 'xor', high, high
+							else
+								instr 'mov', high, low
+								instr 'sar', high, Expression[31]
+							end
+							r = Composite.new(high, low)
+						else
+							reg = findreg(tto)
+							if expr.type.qualifier == :unsigned
+								instr 'movzx', reg, r
+							else
+								instr 'movsx', reg, r
+							end
+							r = reg
+						end
+					end
 				end
 			end
 			r
@@ -282,8 +372,9 @@ class CCompiler < C::Compiler
 			end
 			r
 		when :'++', :'--'
-			# TODO XXX defer incrementation ! ( i++ + i )
+			# 'i++ + i;'  =>  'a = i; b = i+1; i+=1 ; a+b;'
 			r = c_cexpr_inner(expr.rexpr)
+			inc = true if op == :'++'
 			if expr.type.integral?
 				if expr.type.name == :__int64 and @cpusz != 64
 					if r.kind_of? ModRM
@@ -295,15 +386,15 @@ class CCompiler < C::Compiler
 						ml = r.low
 						mh = r.high
 					end
-					instr 'add', ml, Expression[expr.op == :'++' ? 1 : -1]
-					instr 'adc', mh, Expression[expr.op == :'++' ? 0 : -1]
+					instr 'add', ml, Expression[inc ? 1 : -1]
+					instr 'adc', mh, Expression[inc ? 0 : -1]
 				else
-					op = (expr.op == :'++' ? 'inc' : 'dec')
+					op = (inc ? 'inc' : 'dec')
 					instr op, r
 				end
 			elsif expr.type.float?
 				instr 'fld1'
-				op = (expr.op == :'++' ? 'faddp' : 'fsubp')
+				op = (inc ? 'faddp' : 'fsubp')
 				instr op, FpReg.new(1)
 			end
 			r
@@ -369,50 +460,69 @@ class CCompiler < C::Compiler
 	def c_cexpr_inner_l(expr)
 		case expr.op
 		when :funcall
+			# TODO __fastcall
 			expr.rexpr.reverse_each { |arg|
 				a = c_cexpr_inner(arg)
 				unuse a
 				case arg.type
 				when BaseType
-					case arg.type.name
+					case t = arg.type.name
 					when :__int8
 						instr 'push', a
 					when :__int16
-						if a.kind_of? Expression
-							instr 'push', a
+						if @cpusz != 16 and a.kind_of? Reg
+							instr 'push', Reg.new(a.val, @cpusz)
 						else
-							# XXX check if already 16bits
-							reg = findreg
-							unuse reg
-							op = arg.type.qualifier == :unsigned ? 'movzx' : 'movsx'
-							instr op, reg, a
-							instr 'push', reg
+							instr 'push', a
 						end
 					when :__int32
+						# XXX 64bits && Reg ?
 						instr 'push', a
 					when :__int64
-						if a.kind_of? Expression
-							# XXX generic for 16/32/64 cpu.size
-							instr 'push', Expression[[a, :>>, 32], :&, 0xffff_ffff]
-							instr 'push', Expression[a, :&, 0xffff_ffff]
-						else
-							raise 'how do i put 64bit in 32b regs ?'
+						case a
+						when Composite
+							instr 'push', a.high
+							instr 'push', a.low
+						when Reg
+							instr 'push', a
+						when ModRM
+							if @cpusz == 64
+								instr 'push', a
+							else
+								ml = a.dup
+								ml.sz = 32
+								mh = ml.dup
+								mh.imm = Expression[mh.imm, :+, 4]
+								instr 'push', mh
+								instr 'push', ml
+							end
+						when Expression
+							instr 'push.i32', Expression[a, :>>, 32]
+							instr 'push.i32', Expression[a, :&, 0xffff_ffff]
 						end
-					when :float
-						raise
-					when :double
-						raise
-					when :longdouble
-						raise
+					when :float, :double, :longdouble
+						esp = Reg.new(4, @cpusz)
+						case a
+						when Expression
+							# assume expr is integral
+							a = load_fp_imm(a)
+						when ModRM
+							instr 'fld', a
+						end
+						instr 'sub', esp, typesize[t]
+						instr 'fstp', ModRM.new(@cpusz, (t == :longdouble ? 80 : (t == :double ? 64 : 32)), nil, nil, esp, nil)
 					end
 				when Union
 					raise 'want a modrm ! ' + a.inspect if not a.kind_of? ModRM
 					reg = findreg
+					unuse reg
 					al = typesize[:ptr]
 					argsz = (sizeof(arg) + al - 1) / al * al
 					while argsz > 0
 						argsz -= reg.sz
-						instr 'push', ModRM.new(a.adsz, a.sz, a.s, a.i, a.b, Expression[a.imm, :+, argsz], a.seg)
+						m = a.dup
+						m.imm = Expression[m.imm, :+, argsz]
+						instr 'push', m
 					end
 				end
 			}
@@ -420,8 +530,8 @@ class CCompiler < C::Compiler
 				instr 'call', Expression[expr.lexpr.name]
 				if not expr.lexpr.attributes.to_a.include? 'stdcall'
 					al = typesize[:ptr]
-					argsz = expr.rexpr.inject(0) { |sum, a| sum += (sizeof(a) + al - 1) / al * al }
-					instr 'add', Reg.new(4, @cpusz), argsz if argsz > 0
+					argsz = expr.rexpr.inject(0) { |sum, a| sum + (sizeof(a) + al - 1) / al * al }
+					instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 				end
 			else
 				# TODO declspec
@@ -429,52 +539,196 @@ class CCompiler < C::Compiler
 				unuse ptr
 				instr 'call', ptr
 			end
-			Reg.new(0, @cpusz)
-# XXX
-# TODO
-# XXX
-# TODO
-# XXX
-# TODO
-# XXX
-# TODO
-# XXX
-# TODO
-# XXX
+			expr.lexpr.type.float? ? FpReg.new : Reg.new(0, @cpusz)
 
-		when :'/'
-		when :'/='
-		when :'*'
-		when :'*='
-		when :'%'
-		when :'%='
-		when *BASIC_OPS.keys
-			# TODO shr/shar
-			rl = c_cexpr_inner(expr.lexpr)
-			rr = c_cexpr_inner(expr.rexpr)
-			@source << "#{BASIC_OPS[expr.op]} #{rl}, #{rr}"
-			@state.used.delete rr
-			rl
-		when *BASIC_OPS_LVALUE.keys
-			rl = c_cexpr_inner(expr.lexpr)
-			rr = c_cexpr_inner(expr.rexpr)
-			@state.used.delete rr
-			case expr.lexpr
-			when C::Variable
-				@source << "#{BASIC_OPS_LVALUE[expr.op]} #{rl}, #{rr}"
-				@state.pending[rl] = expr.lexpr
-			when C::CExpression
-				if expr.lexpr.op == :'*' and not expr.lexpr.lexpr
-					@source << "#{BASIC_OPS_LVALUE[expr.op]} [#{rl}], #{rr}"
-					@state.used.delete rl
-					rl = nil
+		# for arithmetic operations, both sides are cast to the same type by the precompilator
+		when :+, :-
+			op = (expr.op == :+ ? 'add' : 'sub')
+			if expr.type.integral?
+				l = c_cexpr_inner(expr.lexpr)
+				r = c_cexpr_inner(expr.rexpr)
+				if expr.type.name == :__int64 and @cpusz != 64
+					case l
+					when ModRM
+						l2 = Composite.new(findreg(32), findreg(32))
+						unuse l
+						ll = l.dup
+						ll.sz = 32
+						lh = ll.dup
+						lh.imm = Expression[lh, :+, 4]
+						instr 'mov', l2.low, ll
+						instr 'mov', l2.high, lh
+						l = l2
+					when Expression
+						return Expression.new[l, op, r] if r.kind_of? Expression
+						l2 = Composite.new(findreg(32), findreg(32))
+						instr 'mov', l2.low, Expression[l, :&, 0xffff_ffff]
+						instr 'mov', l2.high, Expression[l, :>>, 32]
+						l = l2
+					end
+					unuse r
+					case r
+					when ModRM
+						rl = r.dup
+						rl.sz = 32
+						rh = rl.dup
+						rh.imm = Expression[rh.imm, :+, 4]
+					when Composite
+						rl = r.low
+						rh = r.high
+					when Expression
+						rl = Expression[r, :&, 0xffff_ffff]
+						rh = Expression[r, :>>, 32]
+					end
+					instr op, l.low, rl
+					op = {'add' => 'adc', 'sub' => 'sbb'}[op]
+					instr op, l.high, rh
+					l
 				else
-					@source << "; bad lvalue? #{expr.inspect}"
+					if not l.kind_of? Reg or @state.bound.index(l)
+						unuse l
+						ll = findreg
+						instr 'mov', ll, l
+						l = ll
+					end
+					unuse r
+					instr op, l, r
+					l
 				end
+			elsif expr.type.float?
+				case l = c_cexpr_inner(expr.lexpr)
+				when Expression: load_fp_imm(l)
+				when ModRM: instr 'fld', l ; unuse l
+				end
+				case r = c_cexpr_inner(expr.rexpr)
+				when Expression: load_fp_imm(r)
+				when ModRM: instr 'fld', r ; unuse r
+				end
+				instr "f#{op}p", FpReg.new(1)
+				FpReg.new
 			end
-			rl
+
+		when :'+=', :'-='
+			op = (expr.op == :+ ? 'add' : 'sub')
+			l = c_expr_inner(expr.lexpr)
+			r = c_expr_inner(expr.rexpr)
+			unuse r
+			raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and (not l.kind_of? Reg or not @state.bound.index(l))
+			if expr.type.integral?
+				if expr.type.name == :__int64 and @cpusz != 64
+					if r.kind_of? ModRM
+						rh = findreg(32)
+						@state.used[r.b] = true if r.b # need to reuse r
+						@state.used[r.i] = true if r.i
+						rl = findreg(32)
+						unuse r.b if r.b and rh.val != r.b.val
+						unuse r.i if r.i and rh.val != r.i.val
+						r = r.dup
+						r.sz = 32
+						instr 'mov', rl, r
+						r = r.dup
+						r.imm = Expression[r.imm, :+, 4]
+						instr 'mov', rh, r
+						r = Composite.new(rl, rh)
+					end
+					case r
+					when Composite
+						rl = r.low
+						rh = r.high
+					when Expression
+						rl = Expression[r, :&, 0xffff_ffff]
+						rh = Expression[r, :>>, 32]
+					end
+					# Composite are never bound
+					ll = l.dup
+					ll.sz = 32
+					lh = ll.dup
+					lh.imm = Expression[lh, :+, 4]
+					instr op, ll, rl
+					op = {'add' => 'adc', 'sub' => 'sbb'}[op]
+					instr op, lh, rh
+				else
+					if r.kind_of? ModRM
+						rr = findreg
+						# TODO movzx
+						instr 'mov', r, rr
+						r = rr
+					end
+					instr op, l, r
+				end
+			elsif expr.type.float?
+				instr 'fld', l
+				case r
+				when FpReg: r = FpReg.new(1)	# XXX stack in good order ?
+				when Expression: load_fp_imm(r) ; r = FpReg.new
+				end
+				instr "f#{op}p", r
+				instr 'fstp', l
+			end
+			l
+
+		when :'='
+			l = c_expr_inner(expr.lexpr)
+			r = c_expr_inner(expr.rexpr)
+			unuse r
+			raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and (not l.kind_of? Reg or not @state.bound.index(l))
+			if expr.type.integral?
+				if expr.type.name == :__int64 and @cpusz != 64
+					if r.kind_of? ModRM
+						rh = findreg(32)
+						@state.used[r.b] = true if r.b # need to reuse r
+						@state.used[r.i] = true if r.i
+						rl = findreg(32)
+						unuse r.b if r.b and rh.val != r.b.val
+						unuse r.i if r.i and rh.val != r.i.val
+						r = r.dup
+						r.sz = 32
+						instr 'mov', rl, r
+						r = r.dup
+						r.imm = Expression[r.imm, :+, 4]
+						instr 'mov', rh, r
+						r = Composite.new(rl, rh)
+					end
+					case r
+					when Composite
+						rl = r.low
+						rh = r.high
+					when Expression
+						rl = Expression[r, :&, 0xffff_ffff]
+						rh = Expression[r, :>>, 32]
+					end
+					# Composite are never bound
+					ll = l.dup
+					ll.sz = 32
+					lh = ll.dup
+					lh.imm = Expression[lh, :+, 4]
+					instr 'mov', ll, rl
+					instr 'mov', lh, rh
+				else
+					if r.kind_of? ModRM
+						rr = findreg
+						# TODO movzx
+						instr 'mov', r, rr
+						r = rr
+					end
+					instr 'mov', l, r
+				end
+			elsif expr.type.float?
+				# XXX ?
+				instr 'fld', r
+				instr 'fstp', l
+			end
+# TODO
+		#when :>>, :<<
+		#when :'<<=', :'>>='
+		#when :'/'
+		#when :'/='
+		#when :'%'
+		#when :'%='
+		#when :'*'
+		#when :'*='
 		else
-			@source << "; wtf? #{expr.inspect}"
+			raise 'unhandled cexpr ' + expr.to_s
 		end
 	end
 
@@ -545,7 +799,7 @@ class CCompiler < C::Compiler
 				eax = Reg.new(0, @cpusz)
 				if (ret.kind_of? Reg or ret.kind_of? ModRM) and ret.sz != eax.sz
 					rettype = @state.func.type.type
-					if rettype.kind_of? C::BaseType and not rettype.qualifier
+					if rettype.kind_of? C::BaseType and rettype.specifier != :unsigned
 						op = 'movsx'
 					else
 						op = 'movzx'
