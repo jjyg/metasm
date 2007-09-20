@@ -100,12 +100,14 @@ class CCompiler < C::Compiler
 
 	# makes an argument disposable (removes from state.used)
 	# works with reg/modrm
-	def unuse(val)
-		case val
-		when Reg: @state.used.delete val.val if not @state.bound.index(val)
-		when ModRM: unuse(val.b); unuse(val.i)
-		when Composite: unuse(val.low); unuse(val.high)
-		end
+	def unuse(*val)
+		val.each { |val|
+			case val
+			when Reg: @state.used.delete val.val if not @state.bound.index(val)
+			when ModRM: unuse val.b, val.i
+			when Composite: unuse val.low, val.high
+			end
+		}
 	end
 
 	# returns a variable storage (ModRM for stack/global, Reg for register-bound)
@@ -542,128 +544,124 @@ class CCompiler < C::Compiler
 			expr.lexpr.type.float? ? FpReg.new : Reg.new(0, @cpusz)
 
 		# for arithmetic operations, both sides are cast to the same type by the precompilator
-		when :+, :-
-			op = (expr.op == :+ ? 'add' : 'sub')
-			if expr.type.integral?
-				l = c_cexpr_inner(expr.lexpr)
-				r = c_cexpr_inner(expr.rexpr)
+		when :+, :-, :'+=', :'-='
+			op =	case expr.op
+				when :+, :'+=': 'add'
+				when :-, :'-=': 'sub'
+				end
+
+			l = c_expr_inner(expr.lexpr)
+			instr 'fld', al if expr.type.float? and l.kind_of? ModRM		# must push in order on fpstack
+			r = c_expr_inner(expr.rexpr)
+
+			case expr.op
+			when :'+=', :'-='
+				raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and not @state.bound.index(l)
+			when :+, :-
+				# l = make_volatile l
 				if expr.type.name == :__int64 and @cpusz != 64
+					l2 = Composite.new(findreg(32), findreg(32))
 					case l
 					when ModRM
-						l2 = Composite.new(findreg(32), findreg(32))
-						unuse l
 						ll = l.dup
 						ll.sz = 32
 						lh = ll.dup
 						lh.imm = Expression[lh, :+, 4]
-						instr 'mov', l2.low, ll
-						instr 'mov', l2.high, lh
-						l = l2
-					when Expression
-						return Expression.new[l, op, r] if r.kind_of? Expression
-						l2 = Composite.new(findreg(32), findreg(32))
-						instr 'mov', l2.low, Expression[l, :&, 0xffff_ffff]
-						instr 'mov', l2.high, Expression[l, :>>, 32]
-						l = l2
+					when Composite
+						ll = l.low
+						lh = l.high
+					else raise
 					end
-					unuse r
+					instr 'mov', l2.low, ll
+					instr 'mov', l2.high, lh
+				else
+					# XXX set l2.sz, beware __int8 -> !ah
+					l2 = findreg
+					instr 'mov', l2, l
+				end
+				unuse l if l.kind_of? ModRM
+				l = l2
+			end if expr.type.integral? and (l.kind_of? ModRM or @state.bound.index(l))
+
+			raise 'bad lvalue' if not l.kind_of? ModRM and not @state.bound.index(l) and (expr.op == :'+=' or expr.op == :'-=')
+
+			if expr.type.integral?
+				unuse r
+				if expr.type.name == :__int64 and @cpusz != 64
+					case l
+					when ModRM
+						ll = l.dup
+						ll.sz = 32
+						lh = ll.dup
+						lh.imm = Expression[lh, :+, 4]
+					when Expression
+						return Expression.new[l, expr.op, r] if r.kind_of? Expression
+						ll = Expression[l, :&, 0xffff_ffff]
+						lh = Expression[l, :>>, 32]
+						l = Composite.new(findreg(32), findreg(32))
+						instr 'mov', l.low, ll
+						instr 'mov', l.high, lh
+						ll = l.low
+						lh = l.high
+					when Composite
+						ll = l.low
+						lh = l.high
+					else raise
+					end
+
 					case r
 					when ModRM
 						rl = r.dup
 						rl.sz = 32
 						rh = rl.dup
 						rh.imm = Expression[rh.imm, :+, 4]
-					when Composite
-						rl = r.low
-						rh = r.high
+						if l.kind_of? ModRM
+							# add [x], [y]
+							r2h = findreg(32)
+							# undo unuse(r)
+							@state.used[r.b] = true if r.b
+							@state.used[r.i] = true if r.i
+							r2l = findreg(32)
+							unuse r, r2h, r2l
+							instr 'mov', r2l, rl
+							instr 'mov', r2h, rh
+							rl = r2l
+							rh = r2h
+						end
 					when Expression
 						rl = Expression[r, :&, 0xffff_ffff]
 						rh = Expression[r, :>>, 32]
-					end
-					instr op, l.low, rl
-					op = {'add' => 'adc', 'sub' => 'sbb'}[op]
-					instr op, l.high, rh
-					l
-				else
-					if not l.kind_of? Reg or @state.bound.index(l)
-						unuse l
-						ll = findreg
-						instr 'mov', ll, l
-						l = ll
-					end
-					unuse r
-					instr op, l, r
-					l
-				end
-			elsif expr.type.float?
-				case l = c_cexpr_inner(expr.lexpr)
-				when Expression: load_fp_imm(l)
-				when ModRM: instr 'fld', l ; unuse l
-				end
-				case r = c_cexpr_inner(expr.rexpr)
-				when Expression: load_fp_imm(r)
-				when ModRM: instr 'fld', r ; unuse r
-				end
-				instr "f#{op}p", FpReg.new(1)
-				FpReg.new
-			end
-
-		when :'+=', :'-='
-			op = (expr.op == :+ ? 'add' : 'sub')
-			l = c_expr_inner(expr.lexpr)
-			r = c_expr_inner(expr.rexpr)
-			unuse r
-			raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and (not l.kind_of? Reg or not @state.bound.index(l))
-			if expr.type.integral?
-				if expr.type.name == :__int64 and @cpusz != 64
-					if r.kind_of? ModRM
-						rh = findreg(32)
-						@state.used[r.b] = true if r.b # need to reuse r
-						@state.used[r.i] = true if r.i
-						rl = findreg(32)
-						unuse r.b if r.b and rh.val != r.b.val
-						unuse r.i if r.i and rh.val != r.i.val
-						r = r.dup
-						r.sz = 32
-						instr 'mov', rl, r
-						r = r.dup
-						r.imm = Expression[r.imm, :+, 4]
-						instr 'mov', rh, r
-						r = Composite.new(rl, rh)
-					end
-					case r
 					when Composite
 						rl = r.low
 						rh = r.high
-					when Expression
-						rl = Expression[r, :&, 0xffff_ffff]
-						rh = Expression[r, :>>, 32]
 					end
-					# Composite are never bound
-					ll = l.dup
-					ll.sz = 32
-					lh = ll.dup
-					lh.imm = Expression[lh, :+, 4]
 					instr op, ll, rl
 					op = {'add' => 'adc', 'sub' => 'sbb'}[op]
 					instr op, lh, rh
 				else
-					if r.kind_of? ModRM
-						rr = findreg
-						# TODO movzx
-						instr 'mov', r, rr
-						r = rr
+					if l.kind_of? ModRM and r.kind_of? ModRM
+						# TODO r = make_volatile r
+						r2 = findreg
+						instr 'mov', r, r2
+						r = r2
+						unuse r
 					end
 					instr op, l, r
 				end
+
 			elsif expr.type.float?
-				instr 'fld', l
 				case r
-				when FpReg: r = FpReg.new(1)	# XXX stack in good order ?
-				when Expression: load_fp_imm(r) ; r = FpReg.new
+				when FpReg
+					instr "f#{op}p", FpReg.new(1)
+				when ModRM
+					instr "f#{op}", r	# XXX pop ?
+				else raise
 				end
-				instr "f#{op}p", r
-				instr 'fstp', l
+				case expr.op
+				when :'+=', :'-='
+					raise 'bad lvalue' if not l.kind_of? ModRM
+					instr 'fstp', l
+				end
 			end
 			l
 
@@ -671,7 +669,7 @@ class CCompiler < C::Compiler
 			l = c_expr_inner(expr.lexpr)
 			r = c_expr_inner(expr.rexpr)
 			unuse r
-			raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and (not l.kind_of? Reg or not @state.bound.index(l))
+			raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and not @state.bound.index(l)
 			if expr.type.integral?
 				if expr.type.name == :__int64 and @cpusz != 64
 					if r.kind_of? ModRM
