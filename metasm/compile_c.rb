@@ -895,7 +895,7 @@ module C
 		end
 
 		# changes obj.type to a precompiled type
-		# keeps struct/union, change everything else to __int* 
+		# keeps struct/union, change everything else to __int\d
 		# except Arrays if declaration is true (need to know variable allocation sizes etc)
 		# returns the type
 		def self.precompile_type(compiler, scope, obj, declaration = false)
@@ -921,11 +921,13 @@ module C
 				end
 			else raise 'bad type ' + t.inspect
 			end
-			loop do
-				(t.qualifier ||= []).concat obj.type.qualifier if obj.type.qualifier and t != obj.type
-				if obj.type.kind_of? TypeDef: obj.type = obj.type.type
-				else break
-				end
+			# TODO fix attribute propagation (__stdcall etc)
+			(t.qualifier  ||= []).concat obj.type.qualifier  if obj.type.qualifier  and t != obj.type
+			(t.attributes ||= []).concat obj.type.attributes if obj.type.attributes and t != obj.type
+			while obj.type.kind_of? TypeDef
+				obj.type = obj.type.type
+				(t.qualifier  ||= []).concat obj.type.qualifier  if obj.type.qualifier  and t != obj.type
+				(t.attributes ||= []).concat obj.type.attributes if obj.type.attributes and t != obj.type
 			end
 			obj.type = t
 		end
