@@ -10,8 +10,9 @@
 #
 
 require 'metasm'
-
-Metasm::PE.compile_c(Metasm::Ia32.new, <<EOS).encode_file('metasm-shutdown.exe')
+cpu = Metasm::Ia32.new
+cpu.generate_PIC = false
+Metasm::PE.compile_c(cpu, <<EOS).encode_file('metasm-shutdown.exe')
 #define EWX_FORCE 0x00000004U
 #define EWX_SHUTDOWN 0x00000001U
 #define LookupPrivilegeValue LookupPrivilegeValueA

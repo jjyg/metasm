@@ -68,7 +68,8 @@ class ExeFormat
 		cp = cpu.new_cparser
 		cp.parse(source, file, lineno)
 		asm_source = cpu.new_ccompiler(cp, e).compile
-		puts asm_source if $DEBUG
+puts cp if $VERBOSE
+puts asm_source if $VERBOSE
 		e.parse(asm_source, 'C compiler output', 1)
 		e.assemble
 		e.set_entrypoint 'main'

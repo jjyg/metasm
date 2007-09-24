@@ -23,6 +23,13 @@ class Instruction
 	end
 end
 
+class Label
+	include Renderable
+	def render
+		[@name + ':']
+	end
+end
+
 class CPU
 	# renders an instruction
 	# may use instruction-global properties to render an argument (eg specify pointer size if not implicit)

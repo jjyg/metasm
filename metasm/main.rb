@@ -75,12 +75,14 @@ end
 class CPU
 	attr_accessor :valid_args, :valid_props, :fields_mask, :opcode_list
 	attr_accessor :endianness, :size
+	attr_accessor :generate_PIC
 
 	def initialize
 		@fields_mask = {}
 		@valid_args  = []
 		@valid_props = [:setip, :saveip, :stopexec]
 		@opcode_list = []
+		@generate_PIC = true
 	end
 
 	# returns a hash opcode_name => array of opcodes with this name
