@@ -107,6 +107,12 @@ class CPU
 		tune_cparser cp
 		cp
 	end
+
+	# returns a new C::Compiler
+	def new_ccompiler(parser, exe=ExeFormat.new)
+		exe.cpu ||= self
+		C::Compiler.new(parser, exe)
+	end
 end
 
 # generic CPU, with no instructions, just size/endianness

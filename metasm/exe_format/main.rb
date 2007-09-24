@@ -65,10 +65,9 @@ class ExeFormat
 		lineno ||= file ? 1 : $2.to_i+1
 		file ||= $1
 		e = new(cpu)
-		cp = C::Parser.new
-		cpu.tune_cparser(cp)
+		cp = cpu.new_cparser
 		cp.parse(source, file, lineno)
-		asm_source = cpu.compile_c(cp, e)
+		asm_source = cpu.new_ccompiler(cp, e).compile
 		puts asm_source if $DEBUG
 		e.parse(asm_source, 'C compiler output', 1)
 		e.assemble
