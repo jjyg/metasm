@@ -52,24 +52,11 @@ class CCompiler < C::Compiler
 		def sz; 64 end
 	end
 
-	attr_accessor :generate_PIC
 	def initialize(*a)
 		super
-		@generate_PIC = true
+		@generate_PIC = @exeformat.cpu.generate_PIC
 		@cpusz = @exeformat.cpu.size
 		@regnummax = (@cpusz == 64 ? 15 : 7)
-	end
-
-	# returns a new State
-	def c_init_state(func)
-		@state = State.new(func)
-		argoff = 0
-		al = typesize[:ptr]
-		func.type.args.each { |a|
-			@state.offsets[a] = -argoff
-			argoff = (argoff + sizeof(a) + al - 1) / al * al
-		}
-		c_reserve_stack(func.initializer)
 	end
 
 	# shortcut
@@ -120,6 +107,10 @@ class CCompiler < C::Compiler
 			return ret
 		end
 
+		case var.type
+		when C::Array, C::Union: sz = typesize[:ptr]
+		else sz = sizeof(var)
+		end
 		case off = @state.offset[var]
 		when C::CExpression
 			# stack, dynamic address
@@ -129,7 +120,7 @@ class CCompiler < C::Compiler
 		when ::Integer
 			# stack
 			# TODO -fomit-frame-pointer ( => state.cache dependant on stack_offset... )
-			ModRM.new(@state.saved_ebp.sz, sizeof(var), nil, nil, @state.saved_ebp, -off)
+			ModRM.new(@state.saved_ebp.sz, 8*sz, nil, nil, @state.saved_ebp, -off)
 		when nil
 			# global
 			if @generate_PIC
@@ -144,9 +135,9 @@ class CCompiler < C::Compiler
 
 					@state.cache[reg] = 'metasm_intern_geteip'
 				end
-				ModRM.new(@cpusz, sizeof(var), nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
+				ModRM.new(@cpusz, 8*sz, nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
 			else
-				ModRM.new(@cpusz, sizeof(var), nil, nil, nil, Expression[var.name])
+				ModRM.new(@cpusz, 8*sz, nil, nil, nil, Expression[var.name])
 			end
 		end
 	end
@@ -187,7 +178,7 @@ class CCompiler < C::Compiler
 					end
 					instr op, e2, e
 				end
-				state.cache[e2] = oldval if oldval and e.kind_of? ModRM
+				@state.cache[e2] = oldval if oldval and e.kind_of? ModRM
 				e2
 			elsif type.float?
 				raise 'bad float static' + e.inspect if not e.kind_of? ModRM
@@ -271,7 +262,7 @@ class CCompiler < C::Compiler
 		# update cache
 		case ret
 		when Reg, ModRM, Composite
-			@state.cache[ret] = expr if expr.lexpr or not [:'--', :'++', :'+'].include? expr.op
+			@state.cache[ret] = expr if expr.kind_of? C::CExpression and (expr.lexpr or not [:'--', :'++', :'+'].include? expr.op)
 		end
 
 		ret
@@ -338,8 +329,13 @@ class CCompiler < C::Compiler
 			raise 'bad lvalue' if not r.kind_of? ModRM
 			if r.b or r.i
 				# r.seg is ignored by lea
+				if not r.imm and ((not r.b and r.s == 1) or not r.i)
+					return r.b || r.i
+				end
 				unuse r
 				reg = findreg
+				r = r.dup
+				r.sz = reg.sz
 				instr 'lea', reg, r
 				reg
 			elsif r.imm
@@ -350,19 +346,20 @@ class CCompiler < C::Compiler
 		when :*
 			# optimized modrm
 			e = expr.rexpr
-			m = ModRM.new(@cpusz, sizeof(e), nil, nil, nil, nil)
+			m = ModRM.new(@cpusz, 8*sizeof(expr), nil, nil, nil, nil)
 			if e.kind_of? C::CExpression and e.op == :+ and e.lexpr	# TODO or e.op == :-
 				# *(a+b), *(a+(b*c)), TODO *(a+(b*c)+d) (seen in ary[off].bla)
 				case b = c_cexpr_inner(e.lexpr)
 				when Expression: m.imm = b
-				when ModRM, Reg: m.b = make_reg(b)
+				when ModRM: m.b = make_volatile(b, e.lexpr.type)
+				when Reg: m.b = b
 				end
 
 				ee = e.rexpr
 				if ee.kind_of? C::CExpression and ee.op == :* and ee.lexpr and
 					ee.rexpr.kind_of? C::CExpression and not ee.rexpr.op and [1,2,4,8].include? ee.rexpr.rexpr
 					i = c_cexpr_inner(ee.lexpr)
-					i = make_reg(i)
+					i = make_volatile(i, ee.lexpr.type) if not i.kind_of? Reg
 					if ee.rexpr.rexpr == 1 and not m.b
 						m.b = i
 					else
@@ -374,7 +371,7 @@ class CCompiler < C::Compiler
 					when Expression
 						m.imm = off
 					when ModRM, Reg
-						off = make_reg(off)
+						off = make_volatile(off, ee.lexpr.type) if not off.kind_of? Reg
 						if not m.b
 							m.b = off
 						else
@@ -386,7 +383,8 @@ class CCompiler < C::Compiler
 			else
 				case p = c_cexpr_inner(e)
 				when Expression: m.imm = p
-				when ModRM, Reg: m.b = make_reg(p)
+				when ModRM: m.b = make_volatile(p, e.type)
+				when Reg: m.b = p
 				end
 			end
 			m
@@ -566,8 +564,8 @@ class CCompiler < C::Compiler
 			c_cexpr_inner_arith(l, expr.op, r, expr.type)
 			l
 		when :'='
-			l = c_expr_inner(expr.lexpr)
-			r = c_expr_inner(expr.rexpr)
+			l = c_cexpr_inner(expr.lexpr)
+			r = c_cexpr_inner(expr.rexpr)
 			raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and not @state.bound.index(l)
 			r = make_volatile(r, expr.type) if l.kind_of? ModRM and r.kind_of? ModRM
 			unuse r
@@ -621,7 +619,7 @@ class CCompiler < C::Compiler
 			a = c_cexpr_inner(arg)
 			unuse a
 			case arg.type
-			when BaseType
+			when C::BaseType
 				case t = arg.type.name
 				when :__int8
 					instr 'push', a
@@ -695,6 +693,7 @@ class CCompiler < C::Compiler
 			unuse ptr
 			instr 'call', ptr
 		end
+		@state.cache.clear
 		expr.lexpr.type.float? ? FpReg.new : Reg.new(0, @cpusz)
 	end
 
@@ -726,9 +725,9 @@ class CCompiler < C::Compiler
 			end
 		end
 
-		if expr.type.float?
+		if type.float?
 			c_cexpr_inner_arith_float(l, op, r, type)
-		elsif expr.type.integral? and expr.type.name == :__int64 and @cpusz != 64
+		elsif type.integral? and type.name == :__int64 and @cpusz != 64
 			c_cexpr_inner_arith_int64compose(l, op, r, type)
 		else
 			c_cexpr_inner_arith_int(l, op, r, type)
@@ -899,7 +898,7 @@ class CCompiler < C::Compiler
 	end
 
 	def c_label(name)
-		state.cache.clear
+		@state.cache.clear
 		@source << Label.new(name)
 	end
 
@@ -915,12 +914,26 @@ class CCompiler < C::Compiler
 		raise # TODO parse, handle %%0 -> clobber etc
 	end
 
+	def c_init_state(func)
+		@state = State.new(func)
+		argoff = 0
+		al = typesize[:ptr]
+		func.type.args.each { |a|
+			@state.offsets[a] = -argoff
+			argoff = (argoff + sizeof(a) + al - 1) / al * al
+		}
+		c_reserve_stack(func.initializer)
+		if not @state.offset.values.grep(::Integer).empty?
+			@state.saved_ebp = Reg.new(5, @cpusz)
+		end
+	end
+
 	def c_prolog
 		localspc = @state.offset.values.grep(::Integer).max
 		if localspc
 			al = typesize[:ptr]
 			localspc = (localspc + al - 1) / al * al
-			ebp = @state.saved_ebp = Reg.new(5, @cpusz)
+			ebp = @state.saved_ebp
 			@state.used << 5
 			esp = Reg.new(4, ebp.sz)
 			instr 'push', ebp
@@ -944,7 +957,7 @@ class CCompiler < C::Compiler
 		end
 		f = @state.func
 		al = typesize[:ptr]
-		argsz = f.args.inject(0) { |sum, a| sum += (sizeof(a) + al - 1) / al * al }
+		argsz = f.type.args.inject(0) { |sum, a| sum += (sizeof(a) + al - 1) / al * al }
 		if f.attributes.to_a.include? 'stdcall' and argsz > 0
 			instr 'ret', Expression[argsz]
 		else
