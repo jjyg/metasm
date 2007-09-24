@@ -310,7 +310,7 @@ module Metasm
 				value
 			else
 				puts "unhandled instruction to backtrace: #{di.instruction}" if $VERBOSE
-				nil
+				value
 			end
 		end
 
