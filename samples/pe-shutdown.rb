@@ -12,16 +12,16 @@
 require 'metasm'
 
 Metasm::PE.compile_c(Metasm::Ia32.new, <<EOS).encode_file('metasm-shutdown.exe')
-#define EWX_FORCE 0x00000004
-#define EWX_SHUTDOWN 0x00000001
+#define EWX_FORCE 0x00000004U
+#define EWX_SHUTDOWN 0x00000001U
 #define LookupPrivilegeValue LookupPrivilegeValueA
 #define NULL ((void *)0)
-#define SE_PRIVILEGE_ENABLED (0x00000002L)
-#define SHTDN_REASON_FLAG_PLANNED 0x80000000
-#define SHTDN_REASON_MAJOR_OPERATINGSYSTEM 0x00020000
-#define SHTDN_REASON_MINOR_UPGRADE 0x00000003
-#define TOKEN_ADJUST_PRIVILEGES (0x0020)
-#define TOKEN_QUERY (0x0008)
+#define SE_PRIVILEGE_ENABLED (0x00000002UL)
+#define SHTDN_REASON_FLAG_PLANNED 0x80000000U
+#define SHTDN_REASON_MAJOR_OPERATINGSYSTEM 0x00020000U
+#define SHTDN_REASON_MINOR_UPGRADE 0x00000003U
+#define TOKEN_ADJUST_PRIVILEGES (0x0020U)
+#define TOKEN_QUERY (0x0008U)
 #define __TEXT(quote) quote
 #define TEXT(quote) __TEXT(quote)
 #define SE_SHUTDOWN_NAME TEXT("SeShutdownPrivilege")
