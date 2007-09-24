@@ -963,6 +963,7 @@ module C
 				@lexpr = nil
 				@op = nil
 				if struct.kind_of? Struct and (off = struct.offsetof(compiler, @rexpr)) != 0
+					off = CExpression.new(nil, nil, off, BaseType.new(:int, :unsigned))
 					@rexpr = CExpression.new(lexpr, :'+', off, lexpr.type)
 					# ensure the (ptr + value) is not expanded to (ptr + value * sizeof(*ptr))
 					CExpression.precompile_type(compiler, scope, @rexpr)
@@ -1307,7 +1308,7 @@ module C
 	end
 	class BaseType ;def wantalign(cp) [cp.typesize[@name], 8].min end end
 	class Array    ;def wantalign(cp) @type.wantalign(cp) end end
-	class Struct   ;def wantalign(cp) @align end end
+	class Struct   ;def wantalign(cp) align || cp.typesize[:ptr] end end
 	class Union    ;def wantalign(cp) @members.map { |m| m.type.wantalign(cp) }.max end end
 end
 end

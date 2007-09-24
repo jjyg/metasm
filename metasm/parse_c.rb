@@ -261,7 +261,7 @@ module C
 				break if m.name == name
 				raise parser, 'offsetof unhandled with bit members' if bits and @bits[i]	# TODO
 				off += parser.sizeof(m)
-				al = @align || parser.typesize[:ptr]
+				al = align || parser.typesize[:ptr]
 				off = (off + al - 1) / al * al
 			}
 			off
