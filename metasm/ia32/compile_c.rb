@@ -107,10 +107,7 @@ class CCompiler < C::Compiler
 			return ret
 		end
 
-		case var.type
-		when C::Array, C::Union: sz = typesize[:ptr]
-		else sz = sizeof(var)
-		end
+		v =
 		case off = @state.offset[var]
 		when C::CExpression
 			# stack, dynamic address
@@ -120,7 +117,7 @@ class CCompiler < C::Compiler
 		when ::Integer
 			# stack
 			# TODO -fomit-frame-pointer ( => state.cache dependant on stack_offset... )
-			ModRM.new(@state.saved_ebp.sz, 8*sz, nil, nil, @state.saved_ebp, -off)
+			ModRM.new(@state.saved_ebp.sz, 8*sizeof(var), nil, nil, @state.saved_ebp, -off)
 		when nil
 			# global
 			if @generate_PIC
@@ -135,10 +132,24 @@ class CCompiler < C::Compiler
 
 					@state.cache[reg] = 'metasm_intern_geteip'
 				end
-				ModRM.new(@cpusz, 8*sz, nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
+				ModRM.new(@cpusz, 8*sizeof(var), nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
 			else
-				ModRM.new(@cpusz, 8*sz, nil, nil, nil, Expression[var.name])
+				ModRM.new(@cpusz, 8*sizeof(var), nil, nil, nil, Expression[var.name])
 			end
+		end
+
+		case var.type
+		when C::Array
+			v.sz = 8*typesize[:ptr]
+			if not v.b and not v.i: v.imm
+			elsif (not v.b and v.s == 1) or not v.i: v.b || v.i
+			else
+				unuse v
+				r = findreg
+				instr 'lea', r, v
+				r
+			end
+		else v
 		end
 	end
 
@@ -184,7 +195,7 @@ class CCompiler < C::Compiler
 				raise 'bad float static' + e.inspect if not e.kind_of? ModRM
 				unuse e
 				instr 'fld', e
-				FpReg.new
+				FpReg.new nil
 			end
 		elsif e.kind_of? Expression
 			if type.integral?
@@ -208,7 +219,7 @@ class CCompiler < C::Compiler
 					instr 'fild', ModRM.new(@cpusz, 64, nil, nil, esp, nil)
 					instr 'add', esp, 8
 				end
-				FpReg.new
+				FpReg.new nil
 			end
 		else
 			e
@@ -262,7 +273,7 @@ class CCompiler < C::Compiler
 		# update cache
 		case ret
 		when Reg, ModRM, Composite
-			@state.cache[ret] = expr if expr.kind_of? C::CExpression and (expr.lexpr or not [:'--', :'++', :'+'].include? expr.op)
+			@state.cache[ret] = expr if expr.kind_of? C::Variable #CExpression and (expr.lexpr or not [:'--', :'++', :'+'].include? expr.op)
 		end
 
 		ret
@@ -274,7 +285,10 @@ class CCompiler < C::Compiler
 		when nil
 			r = c_cexpr_inner(expr.rexpr)
 			if expr.rexpr.kind_of? C::CExpression and expr.type.kind_of? C::BaseType and expr.rexpr.type.kind_of? C::BaseType
-				r = r_cexpr_inner_cast(expr.rexpr, r)
+				r = c_cexpr_inner_cast(expr, r)
+			elsif r.kind_of? ModRM
+				r = r.dup
+				r.sz = sizeof(expr)*8
 			end
 			r
 		when :+
@@ -367,7 +381,7 @@ class CCompiler < C::Compiler
 						m.s = ee.rexpr.rexpr
 					end
 				else
-					case off = c_cexpr_inner(ee.lexpr)
+					case off = c_cexpr_inner(ee)
 					when Expression
 						m.imm = off
 					when ModRM, Reg
@@ -426,7 +440,7 @@ class CCompiler < C::Compiler
 		if expr.type.float? and expr.rexpr.type.float?
 			if expr.type.name != expr.rexpr.type.name and r.kind_of? ModRM
 				instr 'fld', r
-				r = FpReg.new
+				r = FpReg.new nil
 			end
 		elsif expr.type.float? and expr.rexpr.type.integral?
 			return make_volatile(r, expr.type) if r.kind_of? Expression
@@ -440,7 +454,7 @@ class CCompiler < C::Compiler
 				else
 					if expr.rexpr.type.specifier != :unsigned
 						instr 'fild', r
-						return FpReg.new
+						return FpReg.new(nil)
 					end
 					instr 'push', r
 				end
@@ -475,7 +489,7 @@ class CCompiler < C::Compiler
 				@source << Label.new(label)
 			end
 			instr 'add', esp, Expression[r.sz/8]
-			r = FpReg.new
+			r = FpReg.new nil
 		elsif expr.type.integral? and expr.rexpr.type.float?
 			r = make_volatile(r, expr.rexpr.type)
 
@@ -694,7 +708,7 @@ class CCompiler < C::Compiler
 			instr 'call', ptr
 		end
 		@state.cache.clear
-		expr.lexpr.type.float? ? FpReg.new : Reg.new(0, @cpusz)
+		expr.lexpr.type.float? ? FpReg.new(nil) : Reg.new(0, @cpusz)
 	end
 
 	# compiles/optimizes arithmetic operations
@@ -851,6 +865,10 @@ class CCompiler < C::Compiler
 			# skip no-ops
 			c_cexpr(expr.lexpr) if expr.lexpr.kind_of? C::CExpression
 			c_cexpr(expr.rexpr) if expr.rexpr.kind_of? C::CExpression
+		when :funcall
+			ret = c_cexpr_inner(expr)
+			unuse ret
+			ret
 		else c_cexpr_inner(expr)
 		end
 	end
