@@ -365,7 +365,7 @@ module C
 			case data.type
 			when BaseType
 				len = @parser.typesize[data.type.name]
-				case type.name
+				case data.type.name
 				when :__int8:  'db ?'
 				when :__int16: 'dw ?'
 				when :__int32: 'dd ?'
