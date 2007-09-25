@@ -64,8 +64,8 @@ BOOL AdjustTokenPrivileges __attribute__((dllimport)) __attribute__((stdcall))(H
 // end of factorized header
 
 int main(void) {
-	HANDLE htok;
-	TOKEN_PRIVILEGES tokpriv;
+	static HANDLE htok;
+	static TOKEN_PRIVILEGES tokpriv;
 	OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &htok);
 	LookupPrivilegeValue(NULL, SE_SHUTDOWN_NAME, &tokpriv.Privileges[0].Luid);
 	tokpriv.PrivilegeCount = 1U;

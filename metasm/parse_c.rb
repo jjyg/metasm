@@ -2314,7 +2314,7 @@ end
 		def dump_cast(scope, r=[''], dep=[])
 			r.last << '('
 			r, dep = base.dump(scope, r, dep)
-			r, dep = dump_declarator([dump_attributes], scope, r, dep)
+			r, dep = dump_declarator([''], scope, r, dep)
 			r.last << ')'
 			[r, dep]
 		end

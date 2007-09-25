@@ -52,6 +52,12 @@ class CCompiler < C::Compiler
 		def sz; 64 end
 	end
 
+	# some address
+	class Address
+		attr_accessor :modrm, :target
+		def initialize(modrm) @modrm = modrm end
+	end
+
 	def initialize(*a)
 		super
 		@generate_PIC = @exeformat.cpu.generate_PIC
@@ -78,7 +84,9 @@ class CCompiler < C::Compiler
 		@state.cache.delete_if { |e, val|
 			case e
 			when Reg: e.val == regval
-			when ModRM: e.b && (e.b.val == regval) or e.i && (e.i.val == regval)
+			when Address, ModRM
+				e = e.modrm if e.kind_of? Address
+				e.b && (e.b.val == regval) or e.i && (e.i.val == regval)
 			when Composite: e.low.val == regval or e.high.val == regval
 			end
 		}
@@ -94,6 +102,7 @@ class CCompiler < C::Compiler
 			when Reg: @state.used.delete val.val if not @state.bound.index(val)
 			when ModRM: unuse val.b, val.i
 			when Composite: unuse val.low, val.high
+			when Address: unuse val.modrm
 			end
 		}
 	end
@@ -139,18 +148,27 @@ class CCompiler < C::Compiler
 		end
 
 		case var.type
-		when C::Array
-			v.sz = 8*typesize[:ptr]
-			if not v.b and not v.i: v.imm
-			elsif (not v.b and v.s == 1) or not v.i: v.b || v.i
-			else
-				unuse v
-				r = findreg
-				instr 'lea', r, v
-				r
-			end
+		when C::Array: Address.new(v)
 		else v
 		end
+	end
+
+	# resolves the Address to Reg/Expr (may encode an 'lea')
+	def resolve_address(e)
+		r = e.modrm
+		if r.imm and not r.b and not r.i
+			reg = r.imm
+		elsif not r.imm and ((not r.b and r.s == 1) or not r.i)
+			reg = r.b || r.i
+		else
+			unuse r
+			reg = findreg
+			r.sz = reg.sz
+			instr 'lea', reg, r
+			reg
+		end
+		@state.cache[reg] = e
+		reg
 	end
 
 	# copies the arg e to a volatile location (register/composite) if it is not already
@@ -197,6 +215,8 @@ class CCompiler < C::Compiler
 				instr 'fld', e
 				FpReg.new nil
 			end
+		elsif e.kind_of? Address
+			make_volatile resolve_address(e), type, rsz
 		elsif e.kind_of? Expression
 			if type.integral?
 				if type.name == :__int64 and @cpusz != 64
@@ -259,7 +279,7 @@ class CCompiler < C::Compiler
 
 	# compiles a c expression, returns an Ia32 instruction argument
 	def c_cexpr_inner(expr)
-		ret = case expr
+		case expr
 		when ::Integer: Expression[expr]
 		when C::Variable: findvar(expr)
 		when C::CExpression
@@ -269,14 +289,6 @@ class CCompiler < C::Compiler
 				c_cexpr_inner_l(expr)
 			end
 		end
-		
-		# update cache
-		case ret
-		when Reg, ModRM, Composite
-			@state.cache[ret] = expr if expr.kind_of? C::Variable #CExpression and (expr.lexpr or not [:'--', :'++', :'+'].include? expr.op)
-		end
-
-		ret
 	end
 
 	# compile a CExpression with no lexpr
@@ -339,69 +351,35 @@ class CCompiler < C::Compiler
 			end
 			r
 		when :&
+			raise 'bad precompiler ' + expr.to_s if not expr.rexpr.kind_of? C::Variable
+			@state.cache.each { |r, c|
+				c.kind_of? Address and c.target == expr.rexpr and return r
+			}
 			r = c_cexpr_inner(expr.rexpr)
 			raise 'bad lvalue' if not r.kind_of? ModRM
-			if r.b or r.i
-				# r.seg is ignored by lea
-				if not r.imm and ((not r.b and r.s == 1) or not r.i)
-					return r.b || r.i
-				end
-				unuse r
-				reg = findreg
-				r = r.dup
-				r.sz = reg.sz
-				instr 'lea', reg, r
-				reg
-			elsif r.imm
-				r.imm
-			else
-				raise 'bad modrm'
-			end
+			r = Address.new(r)
+			r.target = expr.rexpr
+			r
 		when :*
-			# optimized modrm
-			e = expr.rexpr
-			m = ModRM.new(@cpusz, 8*sizeof(expr), nil, nil, nil, nil)
-			if e.kind_of? C::CExpression and e.op == :+ and e.lexpr	# TODO or e.op == :-
-				# *(a+b), *(a+(b*c)), TODO *(a+(b*c)+d) (seen in ary[off].bla)
-				case b = c_cexpr_inner(e.lexpr)
-				when Expression: m.imm = b
-				when ModRM: m.b = make_volatile(b, e.lexpr.type)
-				when Reg: m.b = b
+			e = c_cexpr_inner(expr.rexpr)
+			sz = 8*sizeof(expr)
+			mkmrm = proc { |x|
+				case x
+				when Reg: xr = x
+				when Expression: xi = i
+				else raise
 				end
-
-				ee = e.rexpr
-				if ee.kind_of? C::CExpression and ee.op == :* and ee.lexpr and
-					ee.rexpr.kind_of? C::CExpression and not ee.rexpr.op and [1,2,4,8].include? ee.rexpr.rexpr
-					i = c_cexpr_inner(ee.lexpr)
-					i = make_volatile(i, ee.lexpr.type) if not i.kind_of? Reg
-					if ee.rexpr.rexpr == 1 and not m.b
-						m.b = i
-					else
-						m.i = i
-						m.s = ee.rexpr.rexpr
-					end
-				else
-					case off = c_cexpr_inner(ee)
-					when Expression
-						m.imm = off
-					when ModRM, Reg
-						off = make_volatile(off, ee.lexpr.type) if not off.kind_of? Reg
-						if not m.b
-							m.b = off
-						else
-							m.i = off
-							m.s = 1
-						end
-					end
-				end
-			else
-				case p = c_cexpr_inner(e)
-				when Expression: m.imm = p
-				when ModRM: m.b = make_volatile(p, e.type)
-				when Reg: m.b = p
-				end
+				ModRM.new(@cpusz, sz, nil, nil, xr, xi)
+			}
+			return case(e)
+			when Address
+				m = e.modrm.dup
+				m.sz = sz
+				m
+			when ModRM: mkmrm[make_volatile(m, expr.type)]
+			when Reg, Expression: mkmrm[e]
+			else raise
 			end
-			m
 		when :'!'
 			r = c_cexpr_inner(expr.rexpr)
 			r = make_volatile(r, expr.rexpr.type)
@@ -443,6 +421,7 @@ class CCompiler < C::Compiler
 				r = FpReg.new nil
 			end
 		elsif expr.type.float? and expr.rexpr.type.integral?
+			r = resolve_address r if r.kind_of? Address
 			return make_volatile(r, expr.type) if r.kind_of? Expression
 			unuse r
 			case r
@@ -515,6 +494,7 @@ class CCompiler < C::Compiler
 		elsif expr.type.integral? and expr.rexpr.type.integral?
 			tto   = typesize[expr.type.name]*8
 			tfrom = typesize[expr.rexpr.type.name]*8
+			r = resolve_address r if r.kind_of? Address
 			if r.kind_of? Expression
 				r = make_volatile r, expr.type
 			elsif tfrom > tto
@@ -573,14 +553,67 @@ class CCompiler < C::Compiler
 		when :'+', :'-', :'*', :'/', :'%', :'^', :'&', :'|', :'<<', :'>>'
 			# both sides are already cast to the same type by the precompiler
 			l = c_cexpr_inner(expr.lexpr)
+			if l.kind_of? Address and expr.type.integral?
+				case expr.op
+				when :+
+					if expr.rexpr.kind_of? C::CExpression and expr.rexpr.op == :* and expr.rexpr.lexpr
+						r1 = c_cexpr_inner(expr.rexpr.lexpr)
+						r2 = c_cexpr_inner(expr.rexpr.rexpr)
+						r1, r2 = r2, r1 if r1.kind_of? Expression
+						if r2.kind_of? Expression and [1, 2, 4, 8].include?(rr2 = r2.reduce)
+							case r1
+							when ModRM, Address, Reg
+								r1 = make_volatile(r1, expr.rexpr.type) if not r1.kind_of? Reg
+								if not l.modrm.i or (l.modrm.i.val == r1.val and l.modrm.s == 1 and rr2 == 1)
+									l = Address.new(l.modrm.dup)
+									l.modrm.i = r1
+									l.modrm.s = (l.modrm.s || 0) + rr2
+									return l
+								end
+							end
+						end
+						r = c_cexpr_inner_arith(r1, :*, r2, expr.rexpr.type)
+					else
+						r = c_cexpr_inner(expr.rexpr)
+					end
+					r = resolve_address r if r.kind_of? Address
+					r = make_volatile(r, expr.rexpr.type) if r.kind_of? ModRM
+					case r
+					when Reg	
+						l = Address.new(l.modrm.dup)
+						if l.modrm.b
+							if not l.modrm.i or (l.modrm.i.val == r.val and l.modrm.s == 1)
+								l.modrm.i = r
+								l.modrm.s = (l.modrm.s || 0) + 1
+								return l
+							end
+						else
+							l.modrm.b = r
+							return l
+						end
+					when Expression
+						l = Address.new(l.modrm.dup)
+						l.modrm.imm = Expression[l.modrm.imm, :+, r]
+						return l
+					end
+				when :-
+					r = c_cexpr_inner(expr.rexpr)
+					if r.kind_of? Expression
+						l = Address.new(l.modrm.dup)
+						l.modrm.imm = Expression[l.modrm.imm, :-, r]
+						return l
+					end
+				end
+			end
 			l = make_volatile(l, expr.type)
-			r = c_cexpr_inner(expr.rexpr)
+			r ||= c_cexpr_inner(expr.rexpr)
 			c_cexpr_inner_arith(l, expr.op, r, expr.type)
 			l
 		when :'='
 			l = c_cexpr_inner(expr.lexpr)
 			r = c_cexpr_inner(expr.rexpr)
 			raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and not @state.bound.index(l)
+			r = resolve_address r if r.kind_of? Address
 			r = make_volatile(r, expr.type) if l.kind_of? ModRM and r.kind_of? ModRM
 			unuse r
 			if expr.type.integral?
@@ -589,6 +622,10 @@ class CCompiler < C::Compiler
 					rl, rh = get_composite_parts r
 					instr 'mov', ll, rl
 					instr 'mov', lh, rh
+				elsif r.kind_of? Address
+					m = r.modrm.dup
+					m.sz = l.sz
+					instr 'lea', l, m
 				else
 					instr 'mov', l, r
 				end
@@ -631,11 +668,13 @@ class CCompiler < C::Compiler
 		# TODO __fastcall
 		expr.rexpr.reverse_each { |arg|
 			a = c_cexpr_inner(arg)
+			a = resolve_address a if a.kind_of? Address
 			unuse a
 			case arg.type
 			when C::BaseType
 				case t = arg.type.name
 				when :__int8
+					a = make_volatile(a) if a.kind_of? ModRM
 					instr 'push', a
 				when :__int16
 					if @cpusz != 16 and a.kind_of? Reg
@@ -922,6 +961,7 @@ class CCompiler < C::Compiler
 
 	def c_return(expr)
 		return if not expr
+		@state.cache.delete_if { |r, v| r.kind_of? Reg and r.val == 0 and expr != v }
 		r = c_cexpr_inner(expr)
 		r = make_volatile(r, expr.type)
 		unuse r

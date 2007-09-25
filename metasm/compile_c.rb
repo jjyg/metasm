@@ -948,9 +948,11 @@ module C
 			when :'.'
 				# a.b => (&a)->b
 				lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
-				if lexpr.kind_of? CExpression and lexpr.op == :'*' and not lexpr.lexpr
+				ll = lexpr
+				ll = lexpr.rexpr while ll.kind_of? CExpression and not ll.op
+				if ll.kind_of? CExpression and ll.op == :'*' and not ll.lexpr
 					# do not change lexpr.rexpr.type directly to a pointer, might retrigger (ptr+imm) => (ptr + imm*sizeof(*ptr))
-					@lexpr = CExpression.new(nil, nil, lexpr.rexpr, Pointer.new(lexpr.type))
+					@lexpr = CExpression.new(nil, nil, ll.rexpr, Pointer.new(lexpr.type))
 				else
 					@lexpr = CExpression.new(nil, :'&', lexpr, Pointer.new(lexpr.type))
 				end
@@ -971,13 +973,7 @@ module C
 					# union or 1st struct member
 					@rexpr = lexpr
 				end
-				if @type.kind_of? Array
-					# Array member type is special
-				elsif @rexpr.kind_of? CExpression and @rexpr.op == :'&' and not @rexpr.lexpr
-					# simplify *(&foo)
-					@rexpr = @rexpr.rexpr
-					@rexpr = CExpression.new(nil, nil, @rexpr, @rexpr.type) if not @rexpr.kind_of? CExpression
-					@rexpr = CExpression.new(nil, nil, @rexpr, @type) # ensure cast
+				if @type.kind_of? Array # Array member type is already an adress
 				else
 					@rexpr = CExpression.new(nil, :*, @rexpr, @rexpr.type)
 				end
@@ -1282,10 +1278,12 @@ module C
 				@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
 				@rexpr = CExpression.precompile_inner(compiler, scope, @rexpr)
 
-				if @op == :'&' and not @lexpr and @rexpr.kind_of? CExpression and @rexpr.op == :'*' and not @rexpr.lexpr
+				rr = @rexpr
+				rr = rr.rexpr while rr.kind_of? CExpression and not rr.op
+				if @op == :'&' and not @lexpr and rr.kind_of? CExpression and rr.op == :'*' and not rr.lexpr
 					@lexpr = nil
 					@op = nil
-					@rexpr = @rexpr.rexpr
+					@rexpr = rr.rexpr
 					return precompile_inner(compiler, scope)
 				end
 
