@@ -1935,6 +1935,7 @@ end
 					raise tok, "bad argument count: #{args.length} for #{type.args.length}" if (type.varargs ? (args.length < type.args.length) : (args.length != type.args.length))
 					type.args.zip(args) { |ta, a|
 						if not ta.type.integral? or not a.reduce(parser).kind_of? ::Integer
+							tok = tok.dup ; tok.raw = a.to_s
 							parser.check_compatible_type(tok, a.type, ta.type)
 						end
 					}

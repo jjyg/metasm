@@ -200,10 +200,10 @@ class Token
 		msgh = msg.to_s
 		if msg
 			msgh << ' near '
-			expanded_from.to_a.each { |ef| msgh << ef.exception(nil).message << ' expanded to '  }
+			expanded_from.to_a.each { |ef| msgh << ef.exception(nil).message << " expanded to \n\t"  }
 		end
 		msgh << ((@raw.length > 35) ? (@raw[0..10] + '<...>' + @raw[-10..-1]).inspect : @raw.inspect)
-		msgh << "\n\tat " << backtrace_str
+		msgh << " at " << backtrace_str
 		ParseError.new msgh
 	end
 
