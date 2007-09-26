@@ -836,17 +836,19 @@ module C
 
 	class Return
 		def precompile(compiler, scope)
-			@value = CExpression.new(nil, nil, @value, @value.type) if not @value.kind_of? CExpression
-			if @value and @value.type.kind_of? Struct
-				@value = @value.precompile_inner(compiler, scope)
-				func = scope.function.type
-				CExpression.new(CExpression.new(nil, :*, func.args.first, @value.type), :'=', @value, @value.type).precompile(compiler, scope)
-				@value = func.args.first
-			elsif @value
-				# cast to function return type
-				@value = CExpression.new(nil, nil, @value, scope.function.type.type).precompile_inner(compiler, scope)
+			if @value
+				@value = CExpression.new(nil, nil, @value, @value.type) if not @value.kind_of? CExpression
+				if @value.type.kind_of? Struct
+					@value = @value.precompile_inner(compiler, scope)
+					func = scope.function.type
+					CExpression.new(CExpression.new(nil, :*, func.args.first, @value.type), :'=', @value, @value.type).precompile(compiler, scope)
+					@value = func.args.first
+				else
+					# cast to function return type
+					@value = CExpression.new(nil, nil, @value, scope.function.type.type).precompile_inner(compiler, scope)
+				end
+				scope.statements << self
 			end
-			scope.statements << self if @value
 			Goto.new(scope.return_label).precompile(compiler, scope)
 		end
 	end
@@ -1246,7 +1248,10 @@ module C
 				if @rexpr and [:'+', :'+=', :'-', :'-='].include? @op and
 						@type.pointer? and @rexpr.type.integral?
 					sz = compiler.sizeof(nil, @type.untypedef.type.untypedef)
-					@rexpr = CExpression.new(@rexpr, :'*', sz, @rexpr.type) if sz != 1
+					if sz != 1
+						sz = CExpression.new(nil, nil, sz, @rexpr.type)
+						@rexpr = CExpression.new(@rexpr, :'*', sz, @rexpr.type)
+					end
 				end
 
 				# type promotion => cast
