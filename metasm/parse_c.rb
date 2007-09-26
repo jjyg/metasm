@@ -100,7 +100,9 @@ module C
 
 		def parse_initializer(parser, scope)
 			raise parser, 'expr expected' if not ret = CExpression.parse(parser, scope, false)
-			parser.check_compatible_type(parser, ret.type, self)
+			if not integral? or not ret.reduce(parser).kind_of? ::Integer
+				parser.check_compatible_type(parser, ret.type, self)
+			end
 			ret
 		end
 
@@ -784,7 +786,7 @@ class Parser
 		oldtype = BaseType.new(:int) if oldtype.kind_of? Enum
 		newtype = BaseType.new(:int) if newtype.kind_of? Enum
 
-		puts tok.exception('type qualifier mismatch').message if $VERBOSE and oldtype.qualifier != newtype.qualifier
+		puts tok.exception('type qualifier mismatch').message if $VERBOSE and oldtype.qualifier.to_a.uniq.length > newtype.qualifier.to_a.uniq.length
 
 		# avoid infinite recursion
 		return if checked.include? oldtype
@@ -1111,7 +1113,9 @@ class Parser
 			Goto.new name
 		when 'return'
 			expr = CExpression.parse(self, scope)	# nil allowed
-			check_compatible_type(tok, (expr ? expr.type : BaseType.new(:void)), nest[0])
+			if not expr or not nest[0].integral? or not expr.reduce(self).kind_of? ::Integer
+				check_compatible_type(tok, (expr ? expr.type : BaseType.new(:void)), nest[0])
+			end
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 			Return.new expr
 		when 'case'
@@ -1929,7 +1933,11 @@ end
 
 					type.args ||= []
 					raise tok, "bad argument count: #{args.length} for #{type.args.length}" if (type.varargs ? (args.length < type.args.length) : (args.length != type.args.length))
-					type.args.zip(args) { |ta, a| parser.check_compatible_type(tok, a.type, ta.type) }
+					type.args.zip(args) { |ta, a|
+						if not ta.type.integral? or not a.reduce(parser).kind_of? ::Integer
+							parser.check_compatible_type(tok, a.type, ta.type)
+						end
+					}
 					CExpression.new(val, :funcall, args, type.type)
 				end
 			end
@@ -1967,6 +1975,7 @@ end
 						case op
 						when :'-': BaseType.new(:long)	# addr_t or sumthin ?
 						when :'-=': l.type
+						when :'>', :'>=', :'<', :'<=', :'==', :'!=': BaseType.new(:long)
 						else raise parser, "cannot do #{op.inspect} on pointers"
 						end
 					elsif l.type.pointer? or r.type.pointer?
