@@ -130,7 +130,7 @@ class CCompiler < C::Compiler
 		when ::Integer
 			# stack
 			# TODO -fomit-frame-pointer ( => state.cache dependant on stack_offset... )
-			ModRM.new(@state.saved_ebp.sz, 8*sizeof(var), nil, nil, @state.saved_ebp, -off)
+			ModRM.new(@state.saved_ebp.sz, 8*sizeof(var), nil, nil, @state.saved_ebp, Expression[-off])
 		when nil
 			# global
 			if @generate_PIC
@@ -190,17 +190,7 @@ class CCompiler < C::Compiler
 					e2l = findreg(32)
 					unuse e
 					e2h = findreg(32)
-					case e
-					when ModRM
-						el = e.dup
-						el.sz = 32
-						eh = el.dup
-						eh.imm = Expression[eh, :+, 4]
-					when Composite
-						el = e.low
-						eh = e.high
-					else raise
-					end
+					el, eh = get_composite_parts e
 					instr 'mov', e2l, el
 					instr 'mov', e2h, eh
 					e2 = Composite.new(e2l, e2h)
@@ -291,7 +281,7 @@ class CCompiler < C::Compiler
 		when ::Integer: Expression[expr]
 		when C::Variable: findvar(expr)
 		when C::CExpression
-			if not expr.lexpr
+			if not expr.lexpr or not expr.rexpr
 				c_cexpr_inner_nol(expr)
 			else
 				c_cexpr_inner_l(expr)
@@ -331,21 +321,13 @@ class CCompiler < C::Compiler
 			r
 		when :'++', :'--'
 			# 'i++ + i;'  =>  'a = i; b = i+1; i+=1 ; a+b;'
-			r = c_cexpr_inner(expr.rexpr)
-			inc = true if op == :'++'
+			r = c_cexpr_inner(expr.lexpr)	# i++ is CExpression.new(i, :++, nil, type)
+			inc = true if expr.op == :'++'
 			if expr.type.integral?
 				if expr.type.name == :__int64 and @cpusz != 64
-					if r.kind_of? ModRM
-						ml = r.dup
-						ml.sz = 32
-						mh = ml.dup
-						mh.imm = Expression[mh.imm, :+, 4]
-					else
-						ml = r.low
-						mh = r.high
-					end
-					instr 'add', ml, Expression[inc ? 1 : -1]
-					instr 'adc', mh, Expression[inc ? 0 : -1]
+					rl, rh = get_composite_parts r
+					instr 'add', rl, Expression[inc ? 1 : -1]
+					instr 'adc', rh, Expression[inc ? 0 : -1]
 				else
 					op = (inc ? 'inc' : 'dec')
 					instr op, r
@@ -384,7 +366,7 @@ class CCompiler < C::Compiler
 				m = e.modrm.dup
 				m.sz = sz
 				m
-			when ModRM: mkmrm[make_volatile(m, expr.type)]
+			when ModRM: mkmrm[make_volatile(e, expr.rexpr.type)]
 			when Reg, Expression: mkmrm[e]
 			else raise
 			end
@@ -396,7 +378,7 @@ class CCompiler < C::Compiler
 					raise # TODO
 				end
 				instr 'test', r, Expression[-1]
-			elsif expr.lexpr.type.float?
+			elsif expr.rexpr.type.float?
 				if @exeformat.cpu.opcode_list_byname['fucomip']
 					instr 'fldz'
 					instr 'fucomip'
@@ -406,16 +388,17 @@ class CCompiler < C::Compiler
 				r = findreg
 			else raise 'bad comparison ' + expr.to_s
 			end
-			opcc = getcc(expr.op, expr.type)
-			if @exeformat.cpu.opcode_list_byname['set'+opcc]
-				instr 'set'+opcc, r
+			if @exeformat.cpu.opcode_list_byname['setz']
+				instr 'setz', Reg.new(r.val, 8)
+				instr 'and', r, Expression[0xff]
 			else
 				instr 'mov', r, Expression[1]
 				label = new_label('setcc')
-				instr 'j'+opcc, Expression[label]
+				instr 'jz', Expression[label]
 				instr 'mov', r, Expression[0]
 				@source << Label.new(label)
 			end
+			r
 		else raise 'mmh ? ' + expr.to_s
 		end
 	end
@@ -522,6 +505,7 @@ class CCompiler < C::Compiler
 					if not r.kind_of? Reg or r.sz != 32
 						unuse r
 						low = findreg(32)
+@source << "// 2 #{low} #{r}"
 						op = (r.sz == 32 ? 'mov' : (expr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
 						instr op, low, r
 						r = low
@@ -535,6 +519,7 @@ class CCompiler < C::Compiler
 					end
 				else
 					reg = findreg
+@source << "// 3 #{reg} #{r}"
 					op = (r.sz == reg.sz ? 'mov' : (expr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
 					instr op, reg, r
 					r = reg
@@ -640,6 +625,7 @@ class CCompiler < C::Compiler
 			elsif expr.type.float?
 				instr 'fstp', l
 			end
+			l
 		when :>, :<, :>=, :<=, :==, :'!='
 			l = c_cexpr_inner(expr.lexpr)
 			l = make_volatile(l, expr.type)
@@ -666,6 +652,7 @@ class CCompiler < C::Compiler
 				instr 'mov', l, Expression[0]
 				@source << Label.new(label)
 			end
+			l
 		else
 			raise 'unhandled cexpr ' + expr.to_s
 		end
@@ -796,6 +783,7 @@ class CCompiler < C::Compiler
 	end
 
 	# compiles a float arithmetic expression
+	# l is ST(0)
 	def c_cexpr_inner_arith_float(l, op, r, type)
 		op = case op
 		when :+: 'fadd'
@@ -812,6 +800,7 @@ class CCompiler < C::Compiler
 	end
 
 	# compile an integral arithmetic expression, reg-sized
+	# l is a Reg
 	def c_cexpr_inner_arith_int(l, op, r, type)
 		op = case op
 		when :+: 'add'
@@ -834,10 +823,19 @@ class CCompiler < C::Compiler
 			if r.kind_of? Expression
 				instr op, l, r
 			else
-				raise # TODO cl
+				# XXX bouh
+				r = make_volatile(r, type)
+				unuse r
+				if r.val != 1
+					ecx = Reg.new(1, @cpusz)
+					instr 'xchg', ecx, r
+					l = Reg.new(r.val, l.sz) if l.val == 1
+				end
+				instr op, l, Reg.new(1, 8)
+				instr 'xchg', ecx, r if r.val != 1
 			end
 		when 'mul'
-			raise # TODO
+			instr 'imul', l, r
 		when 'div'
 			raise # TODO
 		when 'mod'
@@ -846,6 +844,7 @@ class CCompiler < C::Compiler
 	end
 
 	# compile an integral arithmetic 64-bits expression on a non-64 cpu
+	# l is a Composite
 	def c_cexpr_inner_arith_int64compose(l, op, r)
 		op = case op
 		when :+: 'add'
@@ -949,12 +948,16 @@ class CCompiler < C::Compiler
 			end
 			op = 'j' + getcc(expr.op, expr.lexpr.type)
 			instr op, Expression[target]
-		else
+		when :'!'
 			r = c_cexpr_inner(expr.rexpr)
 			unuse r
 			instr 'test', r, Expression[-1]
-			jop = ((expr.op == :'!') ? 'jz' : 'jnz')
-			instr jop, Expression[target]
+			instr 'jz', Expression[target]
+		else
+			r = c_cexpr_inner(expr)
+			unuse r
+			instr 'test', r, Expression[-1]
+			instr 'jnz', Expression[target]
 		end
 	end
 
@@ -982,10 +985,10 @@ class CCompiler < C::Compiler
 
 	def c_init_state(func)
 		@state = State.new(func)
-		argoff = 0
 		al = typesize[:ptr]
+		argoff = 2*al
 		func.type.args.each { |a|
-			@state.offsets[a] = -argoff
+			@state.offset[a] = -argoff
 			argoff = (argoff + sizeof(a) + al - 1) / al * al
 		}
 		c_reserve_stack(func.initializer)
