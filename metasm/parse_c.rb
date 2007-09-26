@@ -100,7 +100,9 @@ module C
 
 		def parse_initializer(parser, scope)
 			raise parser, 'expr expected' if not ret = CExpression.parse(parser, scope, false)
-			if not integral? or not ret.reduce(parser).kind_of? ::Integer
+			p, i = pointer?, integral?
+			r = ret.reduce(parser) if p or i
+			if (not p and not i) or (i and not r.kind_of? ::Integer) or (p and r != 0)
 				parser.check_compatible_type(parser, ret.type, self)
 			end
 			ret
@@ -1113,7 +1115,9 @@ class Parser
 			Goto.new name
 		when 'return'
 			expr = CExpression.parse(self, scope)	# nil allowed
-			if not expr or not nest[0].integral? or not expr.reduce(self).kind_of? ::Integer
+			p, i = nest[0].pointer?, nest[0].integral? if expr
+			r = expr.reduce(self) if p or i
+			if (not p and not i) or (i and not r.kind_of? ::Integer) or (p and r != 0)
 				check_compatible_type(tok, (expr ? expr.type : BaseType.new(:void)), nest[0])
 			end
 			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
@@ -1934,7 +1938,9 @@ end
 					type.args ||= []
 					raise tok, "bad argument count: #{args.length} for #{type.args.length}" if (type.varargs ? (args.length < type.args.length) : (args.length != type.args.length))
 					type.args.zip(args) { |ta, a|
-						if not ta.type.integral? or not a.reduce(parser).kind_of? ::Integer
+						p, i = ta.type.pointer?, ta.type.integral?
+						r = a.reduce(parser) if p or i
+						if (not p and not i) or (i and not r.kind_of? ::Integer) or (p and r != 0)
 							tok = tok.dup ; tok.raw = a.to_s
 							parser.check_compatible_type(tok, a.type, ta.type)
 						end
