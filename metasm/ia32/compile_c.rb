@@ -79,7 +79,11 @@ class CCompiler < C::Compiler
 		                ([*0..@regnummax] - @state.used).first
 			raise 'need more registers! (or a better compiler?)'
 		end
+		usereg(regval, sz)
+	end
 
+	# remove the cache keys that depends on the register, returns the Reg
+	def usereg(regval, sz)
 		@state.used << regval
 		@state.cache.delete_if { |e, val|
 			case e
@@ -132,12 +136,16 @@ class CCompiler < C::Compiler
 			if @generate_PIC
 				if not reg = @state.cache.index('metasm_intern_geteip')
 					@need_geteip_stub = true
-					reg = findreg
+					if @state.used.include? 0
+						reg = findreg
+						eax = Reg.new(0, @cpusz)
+					else
+						reg = usereg(0, @cpusz)
+					end
 
-					eax = Reg.new(0, @cpusz)
-					instr 'xchg', eax, reg if reg.val != 0 and @state.used.include? 0
+					instr 'xchg', eax, reg if reg.val != 0
 					instr 'call', Expression['metasm_intern_geteip']
-					instr 'xchg', eax, reg if reg.val != 0 and @state.used.include? 0
+					instr 'xchg', eax, reg if reg.val != 0
 
 					@state.cache[reg] = 'metasm_intern_geteip'
 				end
