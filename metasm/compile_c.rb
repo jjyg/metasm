@@ -141,7 +141,18 @@ module C
 			@source << "#{func.name}:"
 			presource, @source = @source, []
 
-			func.initializer.statements.each { |stmt|
+			c_block(func.initializer)
+			
+			tmpsource, @source = @source, presource
+			c_prolog
+			@source.concat tmpsource
+			c_epilog
+			@source << ''
+		end
+
+		def c_block(blk)
+			c_block_enter(blk)
+			blk.statements.each { |stmt|
 				case stmt
 				when CExpression: c_cexpr(stmt)
 				when Declaration: c_decl(stmt.var)
@@ -150,14 +161,17 @@ module C
 				when Label: c_label(stmt.name)
 				when Return: c_return(stmt.value)
 				when Asm: c_asm(stmt)
+				when Block: c_block(stmt)
+				else raise
 				end
 			}
-			
-			tmpsource, @source = @source, presource
-			c_prolog
-			@source.concat tmpsource
-			c_epilog
-			@source << ''
+			c_block_exit(blk)
+		end
+
+		def c_block_enter(blk)
+		end
+
+		def c_block_exit(blk)
 		end
 
 		def c_label(name)

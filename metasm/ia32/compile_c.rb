@@ -919,6 +919,18 @@ class CCompiler < C::Compiler
 		end
 	end
 
+	def c_block_exit(block)
+		@state.cache.delete_if { |k, v|
+			case v
+			when C::Variable: block.symbol.index v
+			when Address: block.symbol.index v.target
+			end
+		}
+		block.symbol.each { |s|
+			unuse @state.bound.delete(s)
+		}
+	end
+
 	def c_decl(var)
 		if var.type.kind_of? C::Array and
 				var.type.length.kind_of? C::CExpression
