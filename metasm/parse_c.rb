@@ -121,7 +121,7 @@ module C
 		attr_accessor :specifier	# sign specifier only
 
 		def arithmetic? ; @name != :void end
-		def integral? ; [:char, :short, :int, :long, :longlong,
+		def integral? ; [:char, :short, :int, :long, :longlong, :ptr,
 			:__int8, :__int16, :__int32, :__int64].include? @name end
 		def float? ; [:float, :double, :longdouble].include? @name end
 
