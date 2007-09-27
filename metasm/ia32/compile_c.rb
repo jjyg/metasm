@@ -83,7 +83,7 @@ class CCompiler < C::Compiler
 	end
 
 	# remove the cache keys that depends on the register, returns the Reg
-	def usereg(regval, sz)
+	def usereg(regval, sz=@cpusz)
 		@state.used << regval
 		@state.cache.delete_if { |e, val|
 			case e
@@ -140,7 +140,7 @@ class CCompiler < C::Compiler
 						reg = findreg
 						eax = Reg.new(0, @cpusz)
 					else
-						reg = usereg(0, @cpusz)
+						reg = usereg(0)
 					end
 
 					instr 'xchg', eax, reg if reg.val != 0
@@ -691,6 +691,13 @@ class CCompiler < C::Compiler
 	# compiles a subroutine call
 	def c_cexpr_inner_funcall(expr)
 		# TODO __fastcall
+		backup = []
+		@state.used.each { |reg|
+			next if reg == 4 or (reg == 5 and @state.saved_ebp)
+			reg = Reg.new(reg, @cpusz)	# XXX 32bits in cpu@16 ?
+			backup << reg
+			instr 'push', reg
+		}
 		expr.rexpr.reverse_each { |arg|
 			a = c_cexpr_inner(arg)
 			a = resolve_address a if a.kind_of? Address
@@ -771,8 +778,25 @@ class CCompiler < C::Compiler
 			unuse ptr
 			instr 'call', ptr
 		end
-		@state.cache.clear
-		expr.lexpr.type.float? ? FpReg.new(nil) : Reg.new(0, @cpusz)
+		@state.cache.clear	# TODO ABI
+		if expr.type.float?
+			retreg = FpReg.new(nil)
+		else
+			if @state.used.include? 0
+				retreg = findreg
+			else
+				retreg = usereg(0)
+			end
+		end
+		backup.reverse_each { |reg|
+			if reg.val == 0
+				instr 'pop', retreg
+				instr 'xchg', reg, retreg
+			else
+				instr 'pop', reg
+			end
+		}
+		retreg
 	end
 
 	# compiles/optimizes arithmetic operations

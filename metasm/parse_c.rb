@@ -150,6 +150,10 @@ module C
 			@name, @type, @backtrace = name, type, backtrace
 		end
 
+		def parse_initializer(parser, scope)
+			@type.parse_initializer(parser, scope)
+		end
+
 		def pointer? ;    @type.pointer?      end
 		def arithmetic? ; @type.arithmetic?   end
 		def integral? ;   @type.integral?     end

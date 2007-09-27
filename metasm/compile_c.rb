@@ -650,9 +650,14 @@ module C
 				when :'!'
 					expr[e.rexpr]
 				when :'&&', :'||'
-					e.op = e.op == :'&&' ? :'||' : :'&&'
+					next CExpression.new(nil, :'!', e, BaseType.new(:int)) if not e.lexpr
+					e.op = { :'&&' => :'||', :'||' => :'&&' }[op]
 					e.lexpr = neg[e.lexpr]
 					e.rexpr = neg[e.rexpr]
+					e
+				when :>, :<, :>=, :<=, :==, :'!='
+					e.op = { :> => :<=, :< => :>=, :>= => :<, :<= => :>,
+						:== => :'!=', :'!=' => :== }[op]
 					e
 				else
 					CExpression.new(nil, :'!', e, BaseType.new(:int))
@@ -694,7 +699,7 @@ module C
 				precompile(compiler, scope)
 			when :'||'
 				l1 = compiler.new_label('if_or')
-				If.new(expr[@test.lexpr], Goto.new(l1)).precompile(compiler, scope)
+				If.new(expr[@test.lexpr], Goto.new(@bthen.target)).precompile(compiler, scope)
 				@test = expr[@test.rexpr]
 				precompile(compiler, scope)
 			else
@@ -1112,7 +1117,8 @@ module C
 				if @rexpr.kind_of?(CExpression)
 					case @rexpr.op
 					when :'<', :'>', :'<=', :'>=', :'==', :'!='
-						@op = { :'<' => :'>=', :'>' => :'<=', :'<=' => :'>', :'>=' => :'<', :'==' => :'!=', :'!=' => :'==' }[@rexpr.op]
+						@op = { :'<' => :'>=', :'>' => :'<=', :'<=' => :'>', :'>=' => :'<',
+							:'==' => :'!=', :'!=' => :'==' }[@rexpr.op]
 						@lexpr = @rexpr.lexpr
 						@rexpr = @rexpr.rexpr
 						precompile_inner(compiler, scope)
