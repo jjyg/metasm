@@ -22,11 +22,15 @@ class CCompiler < C::Compiler
 		attr_accessor :cache
 		# array of register values used in the function (to save/restore at prolog/epilog)
 		attr_accessor :dirty
-		# the register values currently in use by our caller
+		# the array of register values currently not available
 		attr_accessor :used
+		# the array of args in use (reg/modrm/composite) the reg dependencies are in +used+
+		attr_accessor :inuse
 		# variable => register for current scope (variable never on the stack)
 		# bound registers are also in +used+
 		attr_accessor :bound
+		# list of reg values that are not kept across function call
+		attr_accessor :abi_flushregs_call
 
 		# +used+ includes ebp if true
 		# nil if ebp is not reserved for stack variable adressing
@@ -39,7 +43,9 @@ class CCompiler < C::Compiler
 			@cache = {}
 			@dirty = []
 			@used = [4]	# esp is always in use
+			@inuse = []
 			@bound = {}
+			@abi_flushregs_call = [0, 1, 2]		# eax, ecx, edx (r8 etc ?)
 		end
 	end
 
@@ -55,152 +61,205 @@ class CCompiler < C::Compiler
 	# some address
 	class Address
 		attr_accessor :modrm, :target
-		def initialize(modrm) @modrm = modrm end
+		def initialize(modrm, target=nil)
+			@modrm, @target = modrm, target
+		end
+		def sz; @modrm.adsz end
 	end
+
 
 	def initialize(*a)
 		super
-		@generate_PIC = @exeformat.cpu.generate_PIC
 		@cpusz = @exeformat.cpu.size
 		@regnummax = (@cpusz == 64 ? 15 : 7)
 	end
 
-	# shortcut
+	# shortcut to add an instruction to the source
 	def instr(name, *args)
 		# XXX parse_postfix ?
 		@source << Instruction.new(@exeformat.cpu, name, args)
 	end
 
-	# returns a new register number, put it in state.used
-	# XXX beware of sz == 8 ! (aliasing)
+	# returns an available register, tries to find one not in @state.cache
+	# do not use with sz==8 (aliasing ah=>esp)
+	# does not put it in @state.inuse
+	# TODO multipass for reg cache optimization
+	# TODO dynamic regval for later fixup (need a value to be in ecx for shl, etc)
 	def findreg(sz = @cpusz)
 		caching = @state.cache.keys.grep(Reg).map { |r| r.val }
 		if not regval = ([*0..@regnummax] - @state.used - caching).first ||
 		                ([*0..@regnummax] - @state.used).first
 			raise 'need more registers! (or a better compiler?)'
 		end
-		usereg(regval, sz)
+		getreg(regval, sz)
 	end
 
-	# remove the cache keys that depends on the register, returns the Reg
-	def usereg(regval, sz=@cpusz)
-		@state.used << regval
-		@state.cache.delete_if { |e, val|
-			case e
-			when Reg: e.val == regval
-			when Address, ModRM
-				e = e.modrm if e.kind_of? Address
-				e.b && (e.b.val == regval) or e.i && (e.i.val == regval)
-			when Composite: e.low.val == regval or e.high.val == regval
-			end
-		}
+	# returns a Reg from a regval, mark it as dirty, flush old cache dependencies
+	def getreg(regval, sz=@cpusz)
+		flushcachereg(regval)
 		@state.dirty |= [regval]
 		Reg.new(regval, sz)
 	end
 
-	# makes an argument disposable (removes from state.used)
-	# works with reg/modrm
-	def unuse(*val)
-		val.each { |val|
-			case val
-			when Reg: @state.used.delete val.val if not @state.bound.index(val) and val.val != 4 and (val.val != 5 or not @state.saved_ebp)
-			when ModRM: unuse val.b, val.i
-			when Composite: unuse val.low, val.high
-			when Address: unuse val.modrm
+	# remove the cache keys that depends on the register
+	def flushcachereg(regval)
+		@state.cache.delete_if { |e, val|
+			case e
+			when Reg: e.val == regval
+			when Address: e = e.modrm ; redo
+			when ModRM: e.b && (e.b.val == regval) or e.i && (e.i.val == regval)
+			when Composite: e.low.val == regval or e.high.val == regval
 			end
 		}
 	end
 
-	# returns a variable storage (ModRM for stack/global, Reg for register-bound)
-	def findvar(var)
-		return @state.bound[var] if @state.bound[var]
+	# removes elements from @state.inuse, free @state.used if unreferenced
+	# must be the exact object present in inuse
+	def unuse(*val)
+		val.each { |val|
+			val = val.modrm if val.kind_of? Address
+			@state.inuse.delete val
+		}
+		# XXX cache exempt
+		exempt = @state.bound.values.map { |r| r.kind_of? Composite ? [r.low.val, r.high.val] : r.val }.flatten
+		exempt << 4
+		exempt << 5 if @state.saved_ebp
+		@state.used.delete_if { |regval|
+			next if exempt.include? regval
+			not @state.inuse.find { |val|
+				case val
+				when Reg: val.val == regval
+				when ModRM: (val.b and val.b.val == regval) or (val.i and val.i.val == regval)
+				when Composite: val.low.val == regval or val.high.val == regval
+				else raise 'internal error - inuse ' + val.inspect
+				end
+			}
+		}
+	end
 
-		if ret = @state.cache.index(var)
-			puts "ia32cc: cache hit  #{ret} -> #{var}" if $DEBUG
+	# marks an arg as in use, returns the arg
+	def inuse(v)
+		case v
+		when Reg: @state.used |= [v.val]
+		when ModRM
+			@state.used |= [v.i.val] if v.i
+			@state.used |= [v.b.val] if v.b
+		when Composite: @state.used |= [v.low.val, v.high.val]
+		when Address: inuse v.modrm ; return v
+		end
+		@state.inuse |= [v]
+		v
+	end
+
+	# returns a variable storage (ModRM for stack/global, Reg/Composite for register-bound)
+	def findvar(var)
+		if ret = @state.bound[var]
 			return ret
 		end
 
-		v =
+		if ret = @state.cache.index(var)
+			ret = ret.dup
+			inuse ret
+			return ret
+		end
+
 		case off = @state.offset[var]
 		when C::CExpression
 			# stack, dynamic address
 			# TODO
 			# no need to update state.cache here, never recursive
-			raise "find dynamic addr of #{var.name}"
+			v = raise "find dynamic addr of #{var.name}"
 		when ::Integer
 			# stack
 			# TODO -fomit-frame-pointer ( => state.cache dependant on stack_offset... )
-			ModRM.new(@state.saved_ebp.sz, 8*sizeof(var), nil, nil, @state.saved_ebp, Expression[-off])
+			v = ModRM.new(@cpusz, 8*sizeof(var), nil, nil, @state.saved_ebp, Expression[-off])
 		when nil
 			# global
-			if @generate_PIC
+			if @exeformat.cpu.generate_PIC
 				if not reg = @state.cache.index('metasm_intern_geteip')
 					@need_geteip_stub = true
-					if @state.used.include? 0
+					if @state.used.include? 6	# esi
 						reg = findreg
-						eax = Reg.new(0, @cpusz)
 					else
-						reg = usereg(0)
+						reg = getreg 6
+					end
+					if reg.val != 0
+						if @state.used.include? 0
+							eax = Reg.new(0, @cpusz)
+							instr 'mov', reg, eax
+						else
+							eax = getreg 0
+						end
 					end
 
-					instr 'xchg', eax, reg if reg.val != 0
 					instr 'call', Expression['metasm_intern_geteip']
-					instr 'xchg', eax, reg if reg.val != 0
+
+					if reg.val != 0
+						if @state.used.include? 0
+							instr 'xchg', eax, reg
+						else
+							instr 'mov', reg, eax
+						end
+					end
 
 					@state.cache[reg] = 'metasm_intern_geteip'
 				end
-				ModRM.new(@cpusz, 8*sizeof(var), nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
+				v = ModRM.new(@cpusz, 8*sizeof(var), nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
 			else
-				ModRM.new(@cpusz, 8*sizeof(var), nil, nil, nil, Expression[var.name])
+				v = ModRM.new(@cpusz, 8*sizeof(var), nil, nil, nil, Expression[var.name])
 			end
 		end
 
 		case var.type
-		when C::Array: Address.new(v)
-		else v
+		when C::Array: inuse Address.new(v)
+		else inuse v
 		end
 	end
 
 	# resolves the Address to Reg/Expr (may encode an 'lea')
 	def resolve_address(e)
 		r = e.modrm
+		unuse e
 		if r.imm and not r.b and not r.i
 			reg = r.imm
 		elsif not r.imm and ((not r.b and r.s == 1) or not r.i)
 			reg = r.b || r.i
+		elsif reg = @state.cache.index(e)
+			reg = reg.dup
 		else
-			unuse r
 			reg = findreg
 			r.sz = reg.sz
 			instr 'lea', reg, r
-			reg
 		end
+		inuse reg
 		@state.cache[reg] = e
 		reg
 	end
 
 	# copies the arg e to a volatile location (register/composite) if it is not already
-	# unuses the old storage if ModRM
+	# unuses the old storage
 	# may return a register bigger than the type size (eg __int8 are stored in full reg size)
+	# use rsz only to force 32bits-return on a 16bits cpu
 	def make_volatile(e, type, rsz=@cpusz)
 		if e.kind_of? ModRM or @state.bound.index(e)
 			if type.integral?
 				oldval = @state.cache[e]
 				if type.name == :__int64 and @cpusz != 64
-					e2l = findreg(32)
+					e2l = inuse findreg(32)
 					unuse e
-					e2h = findreg(32)
+					e2h = inuse findreg(32)
 					el, eh = get_composite_parts e
 					instr 'mov', e2l, el
 					instr 'mov', e2h, eh
-					e2 = Composite.new(e2l, e2h)
+					e2 = inuse Composite.new(e2l, e2h)
+					unuse e2l, e2h
 				else
 					unuse e
 					if (sz = typesize[type.name]*8) < @cpusz or sz < rsz
-						e2 = findreg(rsz)
+						e2 = inuse findreg(rsz)
 						op = ((type.specifier == :unsigned) ? 'movzx' : 'movsx')
 					else
-						e2 = findreg(sz)
+						e2 = inuse findreg(sz)
 						op = 'mov'
 					end
 					instr op, e2, e
@@ -219,11 +278,11 @@ class CCompiler < C::Compiler
 		elsif e.kind_of? Expression
 			if type.integral?
 				if type.name == :__int64 and @cpusz != 64
-					e2 = Composite.new(findreg(32), findreg(32))
+					e2 = inuse Composite.new(findreg(32), findreg(32))
 					instr 'mov', e2.low, Expression[e, :&, 0xffff_ffff]
 					instr 'mov', e2.high, Expression[e, :>>, 32]
 				else
-					e2 = findreg
+					e2 = inuse findreg
 					instr 'mov', e2, e
 				end
 				e2
@@ -264,6 +323,7 @@ class CCompiler < C::Compiler
 		[el, eh]
 	end
 
+	# returns the instruction prefix for a comparison operator
 	def getcc(op, type)
 		case op
 		when :'==': 'z'
@@ -298,7 +358,9 @@ class CCompiler < C::Compiler
 			if expr.rexpr.kind_of? C::CExpression and expr.type.kind_of? C::BaseType and expr.rexpr.type.kind_of? C::BaseType
 				r = c_cexpr_inner_cast(expr, r)
 			elsif r.kind_of? ModRM
+				unuse r
 				r = r.dup
+				inuse r
 				r.sz = sizeof(expr)*8
 			end
 			r
@@ -344,34 +406,32 @@ class CCompiler < C::Compiler
 		when :&
 			raise 'bad precompiler ' + expr.to_s if not expr.rexpr.kind_of? C::Variable
 			@state.cache.each { |r, c|
-				c.kind_of? Address and c.target == expr.rexpr and return r
+				return inuse(r) if c.kind_of? Address and c.target == expr.rexpr
 			}
 			r = c_cexpr_inner(expr.rexpr)
 			raise 'bad lvalue' if not r.kind_of? ModRM
+			unuse r
 			r = Address.new(r)
+			inuse r
 			r.target = expr.rexpr
 			r
 		when :*
 			expr.rexpr.type.name = :ptr if expr.rexpr.kind_of? C::CExpression and expr.rexpr.type.kind_of? C::BaseType and typesize[expr.rexpr.type.name] == typesize[:ptr]	# hint to use Address
 			e = c_cexpr_inner(expr.rexpr)
 			sz = 8*sizeof(expr)
-			mkmrm = proc { |x|
-				case x
-				when Reg: xr = x
-				when Expression: xi = i
-				else raise
-				end
-				ModRM.new(@cpusz, sz, nil, nil, xr, xi)
-			}
-			return case(e)
+			case e
 			when Address
-				m = e.modrm.dup
-				m.sz = sz
-				m
-			when ModRM: mkmrm[make_volatile(e, expr.rexpr.type)]
-			when Reg, Expression: mkmrm[e]
-			else raise
+				unuse e
+				e = e.modrm.dup
+				e.sz = sz
+				inuse e
+			when ModRM: e = make_volatile(e, expr.rexpr.type)
 			end
+			case e
+			when Reg: unuse e ; e = inuse ModRM.new(@cpusz, sz, nil, nil, e, nil)
+			when Expression: e = inuse ModRM.new(@cpusz, sz, nil, nil, nil, e)
+			end
+			e
 		when :'!'
 			r = c_cexpr_inner(expr.rexpr)
 			r = make_volatile(r, expr.rexpr.type)
@@ -387,7 +447,7 @@ class CCompiler < C::Compiler
 				else
 					raise # TODO
 				end
-				r = findreg
+				r = inuse findreg
 			else raise 'bad comparison ' + expr.to_s
 			end
 			if @exeformat.cpu.opcode_list_byname['setz']
@@ -418,6 +478,9 @@ class CCompiler < C::Compiler
 			r = resolve_address r if r.kind_of? Address
 			return make_volatile(r, expr.type) if r.kind_of? Expression
 			unuse r
+			if expr.rexpr.type.specifier == :unsigned and r.sz != 64
+				instr 'push.i32', Expression[0]
+			end
 			case r
 			when ModRM
 				case expr.rexpr.type.name
@@ -435,47 +498,48 @@ class CCompiler < C::Compiler
 				instr 'push', r.high
 				instr 'push', r.low
 			when Reg
+				if r.sz == 16
+					op = ((expr.rexpr.type.specifier == :unsigned) ? 'movzx' : 'movsx')
+					rr = r.dup
+					rr.sz = 32
+					instr op, rr, r
+					r = rr
+				end
 				instr 'push', r
 			end
 			m = ModRM.new(@cpusz, r.sz, nil, nil, esp, nil)
 			instr 'fild', m
-			if expr.rexpr.type.specifier == :unsigned
-				t = findreg(32)
-				unuse t
-				raise
-				if m.sz == 64
-					mm = m.dup
-					mm.sz = 32
-					mm.imm = Expression[mm.imm, :+, 4]
-					instr 'mov', t, mm
-					fcst = @prolog_add_variables['floatunsigned64'] ||= C::Variable.new	# TODO
-				else
-					instr 'mov', t, m
-					fcst = @prolog_add_variables['floatunsigned32'] ||= C::Variable.new
-					fcst.initializer = (1<<31).to_f	# 0xffff_ffff + fcst => 0x0000_0000_ffff_ffff
+			instr 'add', esp, (expr.rexpr.type.specifier == :unsigned ? 8 : Expression[r.sz/8])
+			if expr.rexpr.type.specifier == :unsigned and r.sz == 64
+				label = new_label('unsign_float')
+				if m.sz == 64 and @cpusz < 64
+					foo, m = get_composite_parts m
 				end
-				instr 'test', t, t
-				label = new_label('unsignedfloat')
-				instr 'jns', label
-				fcst = c_cexpr_inner(fcst)
-				instr 'fadd', fcst
+				instr 'test', m, -1
+				instr 'jns', Expression[label]
+				instr 'push.i32', Expression[0x7fff_ffff]
+				instr 'push.i32', Expression[0xffff_ffff]
+				instr 'fild', m
+				instr 'add', esp, 8
+				instr 'faddp'
+				instr 'fld1'
+				instr 'faddp'
 				@source << Label.new(label)
 			end
-			instr 'add', esp, Expression[r.sz/8]
 			r = FpReg.new nil
 		elsif expr.type.integral? and expr.rexpr.type.float?
-			r = make_volatile(r, expr.rexpr.type)
+			r = make_volatile(r, expr.rexpr.type)	# => ST(0)
 
 			if expr.type.name == :__int64
 				instr 'sub', esp, Expression[8]
 				instr 'fistp', ModRM.new(@cpusz, 64, nil, nil, esp, nil)
-				if @cpusz != 64
+				if @cpusz == 64
+					r = findreg
+					instr 'pop', r
+				else
 					r = Composite.new(findreg(32), findreg(32))
 					instr 'pop', r.low
 					instr 'pop', r.high
-				else
-					r = findreg
-					instr 'pop', r
 				end
 			else
 				instr 'sub', esp, Expression[4]
@@ -485,6 +549,7 @@ class CCompiler < C::Compiler
 				tto = typesize[expr.type.name]*8
 				instr 'and', r, Expression[(1<<tto)-1] if r.sz > tto
 			end
+			inuse r
 		elsif expr.type.integral? and expr.rexpr.type.integral?
 			tto   = typesize[expr.type.name]*8
 			tfrom = typesize[expr.rexpr.type.name]*8
@@ -493,26 +558,32 @@ class CCompiler < C::Compiler
 				r = make_volatile r, expr.type
 			elsif tfrom > tto
 				if tfrom == 64 and r.kind_of? Composite
-					unuse r.high
+					unuse r
 					r = r.low
+					inuse r
 				end
 				case r
 				when ModRM
+					unuse r
 					r = r.dup
 					r.sz = tto
+					inuse r
 				when Reg
 					instr 'and', r, Expression[(1<<tto)-1] if r.sz > tto
 				end
 			elsif tto > tfrom
 				if tto == 64 and @cpusz != 64
+					high = findreg(32)
+					unuse r
 					if not r.kind_of? Reg or r.sz != 32
-						unuse r
+						inuse high
 						low = findreg(32)
+						unuse high
 						op = (r.sz == 32 ? 'mov' : (expr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
 						instr op, low, r
 						r = low
 					end
-					r = Composite.new(r, findreg(32))
+					r = inuse Composite.new(r, high)
 					if expr.type.specifier == :unsigned
 						instr 'xor', r.high, r.high
 					else
@@ -521,7 +592,7 @@ class CCompiler < C::Compiler
 					end
 				elsif not r.kind_of? Reg or r.sz != @cpusz
 					unuse r
-					reg = findreg
+					reg = inuse findreg
 					op = (r.sz == reg.sz ? 'mov' : (expr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
 					instr op, reg, r
 					r = reg
@@ -547,12 +618,24 @@ class CCompiler < C::Compiler
 			l
 		when :'+', :'-', :'*', :'/', :'%', :'^', :'&', :'|', :'<<', :'>>'
 			# both sides are already cast to the same type by the precompiler
+			if expr.type.integral? and expr.type.name == :ptr and expr.lexpr.type.kind_of? C::BaseType and
+				typesize[expr.lexpr.type.name] == typesize[:ptr]
+				expr.lexpr.type.name = :ptr
+			end
 			l = c_cexpr_inner(expr.lexpr)
 			l = make_volatile(l, expr.type) if not l.kind_of? Address
-			if expr.type.integral? and expr.type.name == :ptr
-				l = Address.new ModRM.new(l.sz, @cpusz, nil, nil, l, nil) if l.kind_of? Reg
+			if expr.type.integral? and expr.type.name == :ptr and l.kind_of? Reg
+				unuse l
+				l = Address.new ModRM.new(l.sz, @cpusz, nil, nil, l, nil)
+				inuse l
 			end
 			if l.kind_of? Address and expr.type.integral?
+				l.modrm.imm = nil if l.modrm.imm and not l.modrm.imm.op and l.modrm.imm.rexpr == 0
+				if l.modrm.b and l.modrm.i and l.modrm.s == 1 and l.modrm.b.val == l.modrm.i.val
+					unuse l.modrm.b if l.modrm.b != l.modrm.i
+					l.modrm.b = nil
+					l.modrm.s = 2
+				end
 				case expr.op
 				when :+
 					rexpr = expr.rexpr
@@ -568,7 +651,9 @@ class CCompiler < C::Compiler
 							when ModRM, Address, Reg
 								r1 = make_volatile(r1, rexpr.type) if not r1.kind_of? Reg
 								if not l.modrm.i or (l.modrm.i.val == r1.val and l.modrm.s == 1 and rr2 == 1)
+									unuse l, r1, r2
 									l = Address.new(l.modrm.dup)
+									inuse l
 									l.modrm.i = r1
 									l.modrm.s = (l.modrm.s || 0) + rr2
 									return l
@@ -582,29 +667,55 @@ class CCompiler < C::Compiler
 					r = resolve_address r if r.kind_of? Address
 					r = make_volatile(r, rexpr.type) if r.kind_of? ModRM
 					case r
-					when Reg	
+					when Reg
+						unuse l
 						l = Address.new(l.modrm.dup)
+						inuse l
 						if l.modrm.b
 							if not l.modrm.i or (l.modrm.i.val == r.val and l.modrm.s == 1)
 								l.modrm.i = r
 								l.modrm.s = (l.modrm.s || 0) + 1
+								unuse r
 								return l
 							end
 						else
 							l.modrm.b = r
+							unuse r
 							return l
 						end
 					when Expression
+						unuse l, r
 						l = Address.new(l.modrm.dup)
+						inuse l
 						l.modrm.imm = Expression[l.modrm.imm, :+, r]
 						return l
 					end
 				when :-
 					r = c_cexpr_inner(expr.rexpr)
 					if r.kind_of? Expression
+						unuse l, r
 						l = Address.new(l.modrm.dup)
+						inuse l
 						l.modrm.imm = Expression[l.modrm.imm, :-, r]
 						return l
+					end
+				when :*
+					r = c_cexpr_inner(expr.rexpr)
+					if r.kind_of? Expression and [1, 2, 4, 8].includre?(rr = r.reduce)
+						if l.modrm.b and not l.modrm.i
+							if rr != 1
+								l.modrm.i = l.modrm.b
+								l.modrm.s = rr
+								l.modrm.imm = Expression[l.modrm.imm, :*, rr] if l.modrm.imm
+							end
+							unuse r
+							return l
+						elsif l.modrm.i and not l.modrm.b and l.modrm.s*rr <= 8
+							l.modrm.s *= rr
+							l.modrm.imm = Expression[l.modrm.imm, :*, rr] if l.modrm.imm and rr != 1
+							unuse r
+							return l
+						end
 					end
 				end
 			end
@@ -640,10 +751,9 @@ class CCompiler < C::Compiler
 								instr 'mov', l, Reg.new(eax.val, 8)
 								instr 'pop', eax
 							else
-								unuse usereg(reg)
-								reg = Reg.new(reg, r.sz)
-								instr 'mov', reg, r
-								instr 'mov', l, Reg.new(reg.val, 8)
+								flushecachereg(reg)
+								instr 'mov', Reg.new(reg, r.sz), r
+								instr 'mov', l, Reg.new(reg, 8)
 							end
 						else
 							instr 'mov', l, Reg.new(r.val, l.sz)
@@ -669,7 +779,7 @@ class CCompiler < C::Compiler
 			elsif expr.lexpr.type.float?
 				raise # TODO
 				instr 'fucompp', l, r
-				l = findreg
+				l = inuse findreg
 			else raise 'bad comparison ' + expr.to_s
 			end
 			opcc = getcc(expr.op, expr.type)
@@ -692,11 +802,12 @@ class CCompiler < C::Compiler
 	def c_cexpr_inner_funcall(expr)
 		# TODO __fastcall
 		backup = []
-		@state.used.each { |reg|
-			next if reg == 4 or (reg == 5 and @state.saved_ebp)
-			reg = Reg.new(reg, @cpusz)	# XXX 32bits in cpu@16 ?
+		@state.abi_flushregs_call.each { |reg|
+			next if reg == 4
+			next if reg == 5 and @state.saved_ebp
+			next if not @state.used.include? reg
 			backup << reg
-			instr 'push', reg
+			instr 'push', Reg.new(reg, [@cpusz, 32].max)
 		}
 		expr.rexpr.reverse_each { |arg|
 			a = c_cexpr_inner(arg)
@@ -707,6 +818,7 @@ class CCompiler < C::Compiler
 				case t = arg.type.name
 				when :__int8
 					a = make_volatile(a) if a.kind_of? ModRM
+					unuse a
 					instr 'push', a
 				when :__int16
 					if @cpusz != 16 and a.kind_of? Reg
@@ -728,10 +840,7 @@ class CCompiler < C::Compiler
 						if @cpusz == 64
 							instr 'push', a
 						else
-							ml = a.dup
-							ml.sz = 32
-							mh = ml.dup
-							mh.imm = Expression[mh.imm, :+, 4]
+							ml, mh = get_composite_parts a
 							instr 'push', mh
 							instr 'push', ml
 						end
@@ -745,6 +854,7 @@ class CCompiler < C::Compiler
 					when Expression
 						# assume expr is integral
 						a = load_fp_imm(a)
+						unuse a
 					when ModRM
 						instr 'fld', a
 					end
@@ -753,13 +863,12 @@ class CCompiler < C::Compiler
 				end
 			when Union
 				raise 'want a modrm ! ' + a.inspect if not a.kind_of? ModRM
-				reg = findreg
-				unuse reg
 				al = typesize[:ptr]
 				argsz = (sizeof(arg) + al - 1) / al * al
 				while argsz > 0
-					argsz -= reg.sz
+					argsz -= al
 					m = a.dup
+					m.sz = 8*al
 					m.imm = Expression[m.imm, :+, argsz]
 					instr 'push', m
 				end
@@ -767,33 +876,53 @@ class CCompiler < C::Compiler
 		}
 		if expr.lexpr.kind_of? C::Variable
 			instr 'call', Expression[expr.lexpr.name]
-			if not expr.lexpr.attributes.to_a.include? 'stdcall'
+			if not expr.lexpr.attributes.to_a.include? 'stdcall' and not expr.lexpr.attributes.to_a.include? 'stdcall'
 				al = typesize[:ptr]
 				argsz = expr.rexpr.inject(0) { |sum, a| sum + (sizeof(a) + al - 1) / al * al }
 				instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 			end
 		else
-			# TODO declspec
 			ptr = c_cexpr_inner(expr.lexpr)
 			unuse ptr
 			instr 'call', ptr
+			if not expr.lexpr.type.attributes.to_a.include? 'stdcall'	# TODO check this
+				al = typesize[:ptr]
+				argsz = expr.rexpr.inject(0) { |sum, a| sum + (sizeof(a) + al - 1) / al * al }
+				instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
+			end
 		end
-		@state.cache.clear	# TODO ABI
+		@state.abi_flushregs_call.each { |reg| flushcachereg reg }
 		if expr.type.float?
 			retreg = FpReg.new(nil)
-		else
+		elsif not expr.type.kind_of? C::BaseType or expr.type.name != :void
 			if @state.used.include? 0
-				retreg = findreg
+				retreg = inuse findreg
 			else
-				retreg = usereg(0)
+				retreg = inuse getreg(0)
+			end
+			if expr.type.integral? and expr.type.name == :__int64 and @cpusz != 64
+				retreg.sz = 32
+				if @state.used.include? 2
+					retreg = inuse Composite.new(retreg, findreg(32))
+				else
+					retreg = inuse Composite.new(retreg, getreg(2, 32))
+				end
+				unuse retreg.low
 			end
 		end
 		backup.reverse_each { |reg|
-			if reg.val == 0
-				instr 'pop', retreg
-				instr 'xchg', reg, retreg
+			sz = [@cpusz, 32].max
+			if    retreg.kind_of? Composite and reg == 0
+				instr 'pop', Reg.new(retreg.low.val, sz)
+				instr 'xchg', Reg.new(reg, sz), Reg.new(retreg.low.val, sz)
+			elsif retreg.kind_of? Composite and reg == 2
+				instr 'pop', Reg.new(retreg.high.val, sz)
+				instr 'xchg', Reg.new(reg, sz), Reg.new(retreg.high.val, sz)
+			elsif retreg.kind_of? Reg and reg == 0
+				instr 'pop', Reg.new(retreg.val, sz)
+				instr 'xchg', Reg.new(reg, sz), Reg.new(retreg.val, sz)
 			else
-				instr 'pop', reg
+				instr 'pop', Reg.new(reg, sz)
 			end
 		}
 		retreg
@@ -801,7 +930,7 @@ class CCompiler < C::Compiler
 
 	# compiles/optimizes arithmetic operations
 	def c_cexpr_inner_arith(l, op, r, type)
-		# optimize *2 -> <<1
+		# optimizes *2 -> <<1
 		if r.kind_of? Expression and (rr = r.reduce).kind_of? ::Integer
 			if type.integral?
 				log2 = proc { |v|
@@ -864,7 +993,6 @@ class CCompiler < C::Compiler
 		when :^: 'xor'
 		when :>>: type.specifier == :unsigned ? 'shr' : 'sar'
 		when :<<: 'shl'
-		# pseudo ops
 		when :*: 'mul'
 		when :/: 'div'
 		when :%: 'mod'
@@ -883,12 +1011,12 @@ class CCompiler < C::Compiler
 				r = make_volatile(r, type)
 				unuse r
 				if r.val != 1
-					ecx = Reg.new(1, @cpusz)
-					instr 'xchg', ecx, r
-					l = Reg.new(r.val, l.sz) if l.val == 1
+					ecx = Reg.new(1, 32)
+					instr 'xchg', ecx, Reg.new(r.val, 32)
+					l = Reg.new(r.val, l.sz) if l.kind_of? Reg and l.val == 1
 				end
 				instr op, l, Reg.new(1, 8)
-				instr 'xchg', ecx, r if r.val != 1
+				instr 'xchg', ecx, Reg.new(r.val, 32) if r.val != 1
 			end
 		when 'mul'
 			if l.kind_of? ModRM
@@ -897,9 +1025,9 @@ class CCompiler < C::Compiler
 					instr 'imul', ll, l, r
 				else
 					ll = make_volatile(l, type)
+					unuse ll
 					instr 'imul', ll, r
 				end
-				unuse ll
 				instr 'mov', l, ll
 			else
 				instr 'imul', l, r
@@ -922,7 +1050,6 @@ class CCompiler < C::Compiler
 		when :^: 'xor'
 		when :>>: type.specifier == :unsigned ? 'shr' : 'sar'
 		when :<<: 'shl'
-		# pseudo ops
 		when :*: 'mul'
 		when :/: 'div'
 		when :%: 'mod'
@@ -941,6 +1068,8 @@ class CCompiler < C::Compiler
 		when 'shr', 'sar'
 			unuse r
 			raise # TODO
+			instr 'cmp', ecx, Expression[32]
+			instr 'jae'
 			instr 'shrd'
 		when 'shl'
 			unuse r
@@ -983,8 +1112,6 @@ class CCompiler < C::Compiler
 			# skip no-ops
 			c_cexpr(expr.lexpr) if expr.lexpr.kind_of? C::CExpression
 			c_cexpr(expr.rexpr) if expr.rexpr.kind_of? C::CExpression
-		when :funcall
-			unuse c_cexpr_inner(expr)
 		else unuse c_cexpr_inner(expr)
 		end
 	end
@@ -1091,7 +1218,7 @@ class CCompiler < C::Compiler
 			instr 'mov', ebp, esp
 			instr 'sub', esp, Expression[localspc] if localspc > 0
 		end
-		@state.dirty -= [0]	# XXX ABI
+		@state.dirty -= @state.abi_flushregs_call	# XXX ABI
 		@state.dirty.each { |reg|
 			instr 'push', Reg.new(reg, @cpusz)
 		}
