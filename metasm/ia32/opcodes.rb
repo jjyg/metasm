@@ -541,7 +541,7 @@ class Ia32
 		[%w{o},     %w{no},    %w{b nae}, %w{nb ae},
 		 %w{z e},   %w{nz ne}, %w{be na}, %w{nbe a},
 		 %w{s},     %w{ns},    %w{p pe},  %w{np po},
-		 %w{l nge}, %w{nl ge}, %w{le ng}, %w{l nge}].each_with_index { |e, i|
+		 %w{l nge}, %w{nl ge}, %w{le ng}, %w{nle g}].each_with_index { |e, i|
 			b = bin.dup
 			if b[0] == 0x0F
 				b[1] |= i
