@@ -74,7 +74,6 @@ class Ia32
 		addop 'imul',  [0xF6], 5,    {:w => [0, 0]}, :reg_eax
 		addop 'imul',  [0x0F, 0xAF], :mrm
 		addop 'imul',  [0x69], :mrm, {:s => [0, 1]}, :i
-		addop 'imul',  [0x69], :reg, {:s => [0, 1]}, :i		# shortcut for imul reg, reg, imm
 		addop 'in',    [0xE4], nil,  {:w => [0, 0]}, :reg_eax, :u8
 		addop 'in',    [0xE4], nil,  {:w => [0, 0]}, :u8
 		addop 'in',    [0xEC], nil,  {:w => [0, 0]}, :reg_eax, :reg_dx

@@ -270,6 +270,13 @@ end
 		end
 	end
 
+	def parse_instruction_checkproto(i)
+		if i.opname == 'imul' and i.args.length == 2 and i.args.first.kind_of? Reg and i.args.last.kind_of? Expression
+			i.args.unshift i.args.first.dup
+		end
+		super
+	end
+
 	# fixup the ptsz of a modrm argument, defaults to other argument size or current cpu mode
 	def parse_instruction_fixup(i)
 		if m = i.args.grep(ModRM).first and not m.sz

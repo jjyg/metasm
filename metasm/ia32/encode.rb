@@ -240,10 +240,6 @@ class Ia32
 			case oa
 			when :reg, :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regmmx, :regxmm
 				# field arg
-				if oa == :reg and op.name == 'imul' and oi.length == 2 and oi.last.last.kind_of? Expression
-					base << ModRM.encode_reg(ia, ia.val)
-					next
-				end
 				set_field[base, oa, ia.val]
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0
 				# implicit

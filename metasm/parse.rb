@@ -53,13 +53,16 @@ class CPU
 			lexer.skip_space_eol
 		end
 
-		opcode_list_byname[i.opname].to_a.find { |o|
-			o.args.length == i.args.length and o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
-		} or raise tok, "invalid opcode arguments #{i.to_s.inspect}, allowed : #{opcode_list_byname[i.opname].to_a.map { |o| o.args }.inspect}" 
-
+		parse_instruction_checkproto(i)
 		parse_instruction_fixup(i)
 
 		i
+	end
+
+	def parse_instruction_checkproto(i)
+		opcode_list_byname[i.opname].to_a.find { |o|
+			o.args.length == i.args.length and o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
+		} or raise tok, "invalid opcode arguments #{i.to_s.inspect}, allowed : #{opcode_list_byname[i.opname].to_a.map { |o| o.args }.inspect}" 
 	end
 
 	# called after the instruction is fully parsed
