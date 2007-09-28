@@ -690,6 +690,7 @@ module C
 				@test = neg[@test]
 			end
 
+			@test = expr[@test]
 			case @test.op
 			when :'&&'
 				# if (c1 && c2) goto a; => if (!c1) goto b; if (c2) goto a; b:
