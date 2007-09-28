@@ -112,10 +112,6 @@ class Ia32 < CPU
 		def initialize(adsz, sz, s, i, b, imm, seg = nil)
 			@adsz, @sz, @s, @i, @b, @imm, @seg = adsz, sz, s, i, b, imm, seg
 		end
-
-		def dup
-			self.class.new @adsz, @sz, @s, @i, @b, @imm, @seg
-		end
 	end
 
 	def initialize(family = :sse3, mode = 32)
