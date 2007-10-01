@@ -1151,6 +1151,11 @@ module C
 					CExpression.new(@rexpr, @op, nil, @type).precompile(compiler, scope)
 					@op = nil
 					precompile_inner(compiler, scope)
+				elsif @type.pointer? and compiler.sizeof(nil, @type.untypedef.type.untypedef) != 1
+					# ptr++ => ptr += sizeof(*ptr) (done in += precompiler)
+					@op = { :'++' => :'+=', :'--' => :'-=' }[@op]
+					@rexpr = CExpression.new(nil, nil, 1, BaseType.new(:ptr, :unsigned))
+					precompile_inner(compiler, scope)
 				else
 					CExpression.precompile_type(compiler, scope, self)
 					@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)

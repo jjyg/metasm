@@ -1894,7 +1894,7 @@ end
 						nil
 					when '++', '--'
 						raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val)
-						CExpression.new(val, :'++', nil, val.type)
+						CExpression.new(val, tok.raw.to_sym, nil, val.type)
 					when '->'
 						raise tok, 'not a pointer' if not val.type.pointer?
 						raise tok, 'invalid member' if not tok = parser.skipspaces or tok.type != :string
