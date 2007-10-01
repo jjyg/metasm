@@ -146,6 +146,7 @@ class CCompiler < C::Compiler
 			@state.used |= [v.b.val] if v.b
 		when Composite: @state.used |= [v.low.val, v.high.val]
 		when Address: inuse v.modrm ; return v
+		else return v
 		end
 		@state.inuse |= [v]
 		v
