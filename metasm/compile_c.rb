@@ -55,7 +55,7 @@ module C
 		#  coma are converted to 2 statements, ?: are converted to If
 		#  :|| and :&& are converted to If + assignment to temporary
 		#  immediate quotedstrings/floats are converted to references to const static toplevel
-		#  pre/postincrements are moved standalone
+		#  postincrements are replaced by a temporary (XXX arglist)
 		#  compound statements are unnested
 		# Asm are kept (TODO precompile clobber types)
 		# Declarations: initializers are converted to separate assignment CExpressions
@@ -138,7 +138,7 @@ module C
 			c_init_state(func)
 			
 			# hide the full @source while compiling, then add prolog/epilog (saves 1 pass)
-			@source << "#{func.name}:"
+			@source << '' << "#{func.name}:"
 			presource, @source = @source, []
 
 			c_block(func.initializer)
@@ -1147,18 +1147,27 @@ module C
 					self
 				end
 			when :'++', :'--'
-				if not @lexpr
-					CExpression.new(@rexpr, @op, nil, @type).precompile(compiler, scope)
+				if not @rexpr
+					var = Variable.new
+					var.storage = :register
+					var.name = compiler.new_label('postincrement')
+					var.type = @type
+					Declaration.new(var).precompile(compiler, scope)
+					CExpression.new(var, :'=', @lexpr, @type).precompile(compiler, scope)
+					CExpression.new(nil, @op, @lexpr, @type).precompile(compiler, scope)
+					@lexpr = nil
 					@op = nil
+					@rexpr = var
 					precompile_inner(compiler, scope)
 				elsif @type.pointer? and compiler.sizeof(nil, @type.untypedef.type.untypedef) != 1
-					# ptr++ => ptr += sizeof(*ptr) (done in += precompiler)
+					# ++ptr => ptr += sizeof(*ptr) (done in += precompiler)
 					@op = { :'++' => :'+=', :'--' => :'-=' }[@op]
+					@lexpr = @rexpr
 					@rexpr = CExpression.new(nil, nil, 1, BaseType.new(:ptr, :unsigned))
 					precompile_inner(compiler, scope)
 				else
 					CExpression.precompile_type(compiler, scope, self)
-					@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
+					@rexpr = CExpression.precompile_inner(compiler, scope, @rexpr)
 					self
 				end
 			when :'='

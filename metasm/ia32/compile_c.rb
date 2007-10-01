@@ -384,8 +384,7 @@ class CCompiler < C::Compiler
 			end
 			r
 		when :'++', :'--'
-			# 'i++ + i;'  =>  'a = i; b = i+1; i+=1 ; a+b;'
-			r = c_cexpr_inner(expr.lexpr)	# i++ is CExpression.new(i, :++, nil, type)
+			r = c_cexpr_inner(expr.rexpr)
 			inc = true if expr.op == :'++'
 			if expr.type.integral?
 				if expr.type.name == :__int64 and @cpusz != 64
@@ -1177,7 +1176,7 @@ class CCompiler < C::Compiler
 
 	def c_label(name)
 		@state.cache.clear
-		@source << Label.new(name)
+		@source << '' << Label.new(name)
 	end
 
 	def c_return(expr)
