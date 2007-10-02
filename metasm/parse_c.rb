@@ -912,7 +912,7 @@ class Parser
 				while nt = readtok_longstr
 					case nt.type
 					when :quoted
-						if t.raw[0] == ?" and nt.raw[0, 1] == 'L"'
+						if t.raw[0] == ?" and nt.raw[0, 2] == 'L"'
 							# ensure wide prefix is set
 							t.raw[0, 0] = 'L'
 						end
@@ -1785,7 +1785,7 @@ end
 					raise tok, 'invalid character constant' if tok.value.length > 1
 					val = CExpression.new(nil, nil, tok.value[0], BaseType.new(:int))
 				else
-					val = CExpression.new(nil, nil, tok.value, Pointer.new(BaseType.new(tok.raw[0, 1] == 'L"' ? :short : :char)))
+					val = CExpression.new(nil, nil, tok.value, Pointer.new(BaseType.new(tok.raw[0, 2] == 'L"' ? :short : :char)))
 					val = parse_value_postfix(parser, scope, val)
 				end
 
