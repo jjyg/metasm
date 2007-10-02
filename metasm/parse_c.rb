@@ -124,6 +124,7 @@ module C
 		def integral? ; [:char, :short, :int, :long, :longlong, :ptr,
 			:__int8, :__int16, :__int32, :__int64].include? @name end
 		def float? ; [:float, :double, :longdouble].include? @name end
+		def align(parser) [parser.typesize[@name], 8].min end
 
 		def initialize(name, *specs)
 			@name = name
@@ -159,6 +160,7 @@ module C
 		def integral? ;   @type.integral?     end
 		def float? ;      @type.float?        end
 		def untypedef ;   @type.untypedef     end
+		def align(parser) @type.align(parser) end	# XXX __attribute__ ?
 	end
 	class Function < Type
 		attr_accessor :type		# return type
@@ -176,6 +178,8 @@ module C
 		attr_accessor :bits		# [bits] or nil
 		attr_accessor :name
 		attr_accessor :backtrace
+
+		def align(parser) @members.map { |m| m.type.align(parser) }.max end
 
 		def parse_members(parser, scope)
 			@members = []
@@ -259,18 +263,21 @@ module C
 		end
 	end
 	class Struct < Union
-		attr_accessor :align
+		attr_accessor :pack
+
+		def align(parser) [@members.map { |m| m.type.align(parser) }.max, (pack || 8)].min end
 
 		def offsetof(parser, name)
 			raise parser, 'undefined structure' if not @members
 			raise parser, 'unknown structure member' if not @members.find { |m| m.name == name }
+			al = align(parser)
 			off = 0
 			@members.each_with_index { |m, i|
 				break if m.name == name
 				raise parser, 'offsetof unhandled with bit members' if bits and @bits[i]	# TODO
+				mal = [m.type.align(parser), al].min
+				off = (off + mal - 1) / mal * mal
 				off += parser.sizeof(m)
-				al = align || parser.typesize[:ptr]
-				off = (off + al - 1) / al * al
 			}
 			off
 		end
@@ -279,9 +286,9 @@ module C
 			super
 			if defined? @attributes and @attributes
 				if @attributes.include? 'packed'
-					@align = 1
+					@pack = 1
 				elsif p = @attributes.grep(/^pack\(\d+\)$/).first
-					@align = p[/\d+/].to_i
+					@pack = p[/\d+/].to_i
 				end
 			end
 		end
@@ -291,6 +298,8 @@ module C
 		attr_accessor :members
 		attr_accessor :name
 		attr_accessor :backtrace
+
+		def align(parser) BaseType.new(:int).align(parser) end
 
 		def parse_members(parser, scope)
 			val = -1
@@ -332,9 +341,12 @@ module C
 		def pointer? ; true ; end
 		def arithmetic? ; true ; end
 		def base ; @type.base ; end
+		def align(parser) BaseType.new(:ptr).align(parser) end
 	end
 	class Array < Pointer
 		attr_accessor :length
+
+		def align(parser) @type.align(parser) end
 
 		def parse_initializer(parser, scope)
 			raise parser, 'cannot initialize dynamic array' if @length.kind_of? CExpression
@@ -962,8 +974,9 @@ class Parser
 			@typesize[:int]
 		when Struct
 			raise self, 'unknown structure size' if not type.members
-			al = type.align || @typesize[:ptr]
-			type.members.map { |m| (sizeof(m)+al-1) / al * al }.inject(0){|a,b|a+b}
+			al = type.align(self)
+			lm = type.members.last
+			(type.offsetof(self, lm.name) + sizeof(lm) + al - 1) / al * al
 		when Union
 			raise self, 'unknown structure size' if not type.members
 			type.members.map { |m| sizeof(m) }.max || 0
@@ -1187,7 +1200,7 @@ end
 					next
 				when 'struct'
 					var.type = Struct.new
-					var.type.align = parser.pragma_pack if parser.pragma_pack
+					var.type.pack = parser.pragma_pack if parser.pragma_pack
 					var.parse_type_struct(parser, scope)
 				when 'union'
 					var.type = Union.new
@@ -2499,11 +2512,11 @@ end
 	end
 	class Struct
 		def dump_def(scope, r=[''], dep=[])
-			if align
+			if pack
 				r, dep = super
 				r.last <<
-				if @align == 1: (attributes and @attributes.include? 'packed') ? '' : " __attribute__((packed))"
-				else (attributes and @attributes.include? "pack(#@align)") ? '' : " __attribute__((pack(#@align)))"
+				if @pack == 1: (attributes and @attributes.include? 'packed') ? '' : " __attribute__((packed))"
+				else (attributes and @attributes.include? "pack(#@pack)") ? '' : " __attribute__((pack(#@pack)))"
 				end
 				[r, dep]
 			else

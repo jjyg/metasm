@@ -209,7 +209,7 @@ module C
 				off = CExpression.new(off, :&, -7, off.type)
 				CExpression.new(off, :+,  0, off.type)
 			else
-				al = var.type.wantalign(@parser)
+				al = var.type.align(@parser)
 				sz = sizeof(var)
 				case off
 				when CExpression: CExpression.new(off.lexpr, :+, ((off.rexpr + sz + al - 1) / al * al), off.type)
@@ -225,7 +225,7 @@ module C
 		# compiles a C static data definition into an asm string
 		# returns the new alignment value
 		def c_idata(data, align)
-			w = data.type.wantalign(@parser)
+			w = data.type.align(@parser)
 			@source << ".align #{align = w}" if w > align
 			
 			@source << data.name.dup
@@ -1344,9 +1344,5 @@ module C
 			end
 		end
 	end
-	class BaseType ;def wantalign(cp) [cp.typesize[@name], 8].min end end
-	class Array    ;def wantalign(cp) @type.wantalign(cp) end end
-	class Struct   ;def wantalign(cp) align || cp.typesize[:ptr] end end
-	class Union    ;def wantalign(cp) @members.map { |m| m.type.wantalign(cp) }.max end end
 end
 end
