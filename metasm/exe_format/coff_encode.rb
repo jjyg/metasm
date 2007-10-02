@@ -937,7 +937,7 @@ class COFF
 					id.imports = []
 					@imports << id
 				end
-				if not i = id.imports.find { |i| i.target == sym }
+				if not i = id.imports.find { |i| i.name == sym }
 					i = ImportDirectory::Import.new
 					i.name = sym
 					id.imports << i
