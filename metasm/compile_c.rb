@@ -503,12 +503,12 @@ module C
 
 	class Declaration
 		def precompile(compiler, scope)
-			return if @var.type.kind_of? Function and @var.attributes and @var.attributes.include? 'inline'
 			if (@var.type.kind_of? Function and @var.initializer and scope != compiler.toplevel) or @var.storage == :static
 				scope.symbol.delete @var.name
 				@var.name = compiler.new_label @var.name
 				compiler.toplevel.symbol[@var.name] = @var
-				compiler.toplevel.statements << self
+				# TODO no pure inline if addrof(func) needed
+				compiler.toplevel.statements << self unless @var.attributes.to_a.include? 'inline'
 			else
 				scope.symbol[@var.name] ||= @var
 				appendme = true
@@ -531,7 +531,8 @@ module C
 					i.precompile(compiler)
 					Label.new(i.return_label).precompile(compiler, i)
 					i.precompile_optimize
-					scope.statements << self if appendme	# append now so that static dependencies are declared before us
+					# append now so that static dependencies are declared before us
+					scope.statements << self if appendme and not @var.attributes.to_a.include? 'inline'
 				elsif scope != compiler.toplevel and @var.storage != :static
 					scope.statements << self if appendme
 					Declaration.precompile_dyn_initializer(compiler, scope, @var, @var.type, i)
@@ -1085,17 +1086,55 @@ module C
 					precompile_inner(compiler, scope)
 				end
 			when :funcall
-				if @lexpr.kind_of? Variable and @lexpr.attributes and @lexpr.attributes.include? 'inline' and @lexpr.initializer
-					b = Block.new(scope)
-					# TODO must re-precompile each statement at each invocation (goto target are func-local, etc)
-					# TODO return => break
-					raise if @lexpr.type.varargs	# TODO ?
-					@rexpr.zip(@lexpr.type.args) { |ar, af|
-						b.statements << Declaration.new(af) << CExpression.new(af, :'=', ar, af.type)
+				if @lexpr.kind_of? Variable and @lexpr.type.kind_of? Function and @lexpr.attributes and @lexpr.attributes.include? 'inline' and @lexpr.initializer
+					# TODO check recursive call (direct or indirect)
+					raise 'inline varargs unsupported' if @lexpr.type.varargs
+					rtype = @lexpr.type.type.untypedef
+					if not rtype.kind_of? BaseType or rtype.name != :void
+						rval = Variable.new
+						rval.name = compiler.new_label('inline_return')
+						rval.type = @lexpr.type.type
+						Declaration.new(rval).precompile(compiler, scope)
+					end
+					inline_label = {}
+					locals = @lexpr.type.args.zip(@rexpr).inject({}) { |h, (fa, a)|
+						h.update fa => CExpression.new(nil, nil, a, fa.type).precompile_inner(compiler, scope)
 					}
-					b.statements.concat @lexpr.initializer.statements
-					b.precompile(parser, scope)
-					nil
+					copy_inline_ce = proc { |ce|
+						case ce
+						when CExpression: CExpression.new(copy_inline_ce[ce.lexpr], ce.op, copy_inline_ce[ce.rexpr], ce.type)
+						when Variable: locals[ce] || ce
+						when ::Array: ce.map { |e| copy_inline_ce[e] }
+						else ce
+						end
+					}
+					copy_inline = proc { |stmt, scp|
+						case stmt
+						when Block
+							b = Block.new(scp)
+							stmt.statements.each { |s|
+								s = copy_inline[s, b]
+								b.statements << s if s
+							}
+							b
+						when If:     If.new(copy_inline_ce[stmt.test], copy_inline[stmt.bthen, scp])		# re-precompile ?
+						when Label:  Label.new(inline_label[stmt.name]  ||= compiler.new_label('inline_'+stmt.name))
+						when Goto:   Goto.new(inline_label[stmt.target] ||= compiler.new_label('inline_'+stmt.target))
+						when Return: CExpression.new(rval, :'=', copy_inline_ce[stmt.value], rval.type).precompile_inner(compiler, scp) if stmt.value
+						when CExpression: copy_inline_ce[stmt]
+						when Declaration
+							nv = stmt.var.dup
+							if nv.type.kind_of? Array and nv.type.length.kind_of? CExpression
+								nv.type = Array.new(nv.type.type, copy_inline_ce[nv.type.length])	# XXX nested dynamic?
+							end
+							locals[stmt.var] = nv
+							scp.symbol[nv.name] = nv
+							Declaration.new(nv)
+						else raise 'unexpected inline statement ' + stmt.inspect
+						end
+					}
+					scope.statements << copy_inline[@lexpr.initializer, scope]		# body already precompiled
+					CExpression.new(nil, nil, rval, rval.type).precompile_inner(compiler, scope)
 				elsif @type.kind_of? Struct
 					var = Variable.new
 					var.name = compiler.new_label('return_struct')
