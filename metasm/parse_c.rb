@@ -1470,6 +1470,7 @@ end
 						v.storage = storage if storage
 						v.parse_declarator(parser, scope)
 						v.type = Pointer.new(v.type.type) if v.type.kind_of? Array
+						v.type = Pointer.new(v.type) if v.type.kind_of? Function
 	
 						t.type.args << v if not v.type.kind_of? BaseType or v.type.name != :void
 						if tok = parser.skipspaces and tok.type == :punct and tok.raw == ','
