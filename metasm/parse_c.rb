@@ -124,7 +124,7 @@ module C
 		def integral? ; [:char, :short, :int, :long, :longlong, :ptr,
 			:__int8, :__int16, :__int32, :__int64].include? @name end
 		def float? ; [:float, :double, :longdouble].include? @name end
-		def align(parser) [parser.typesize[@name], 8].min end
+		def align(parser) @name == :double ? 4 : parser.typesize[@name] end
 
 		def initialize(name, *specs)
 			@name = name
