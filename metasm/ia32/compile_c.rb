@@ -1189,7 +1189,12 @@ class CCompiler < C::Compiler
 	end
 
 	def c_asm(stmt)
-		raise # TODO parse, handle %%0 -> clobber etc
+		if stmt.output or stmt.input or stmt.clobber
+			raise # TODO (handle %%0 => eax, gas, etc)
+		else
+			raise if @state.func.symbol.keys.find { |sym| stmt.body.include? sym }	# gsub ebp+off ?
+			@source << stmt.body
+		end
 	end
 
 	def c_init_state(func)
@@ -1256,8 +1261,8 @@ class CCompiler < C::Compiler
 			instr 'add', eax, Expression['metasm_intern_geteip', :-, label]
 			instr 'ret'
 		end
-#puts @parser
-#puts @source
+#File.open('m-dbg-precomp.c', 'w') { |fd| fd.puts @parser }
+#File.open('m-dbg-src.asm', 'w') { |fd| fd.puts @source }
 	end
 end
 
