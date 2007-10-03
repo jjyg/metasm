@@ -503,6 +503,7 @@ module C
 
 	class Declaration
 		def precompile(compiler, scope)
+			return if @var.type.kind_of? Function and @var.attributes and @var.attributes.include? 'inline'
 			if (@var.type.kind_of? Function and @var.initializer and scope != compiler.toplevel) or @var.storage == :static
 				scope.symbol.delete @var.name
 				@var.name = compiler.new_label @var.name
@@ -936,6 +937,7 @@ module C
 			when Enum:     t = BaseType.new("__int#{compiler.typesize[:int]*8}".to_sym)
 			when Function
 				precompile_type(compiler, scope, t)
+				t.args ||= []
 				t.args.each { |a| precompile_type(compiler, scope, a) }
 			when Union
 				if declaration and t.members and not t.name	# anonymous struct
@@ -965,6 +967,7 @@ module C
 		# turns char[]/float immediates to reference to anonymised const
 		# TODO 'a = b += c' => 'b += c; a = b' (use nested argument)
 		# TODO handle precompile_inner return nil
+		# TODO struct.bits
 		def precompile_inner(compiler, scope, nested = true)
 			case @op
 			when :'.'
@@ -1083,7 +1086,18 @@ module C
 					precompile_inner(compiler, scope)
 				end
 			when :funcall
-				if @type.kind_of? Struct
+				if @lexpr.kind_of? Variable and @lexpr.attributes and @lexpr.attributes.include? 'inline' and @lexpr.initializer
+					b = Block.new(scope)
+					# TODO must re-precompile each statement at each invocation (goto target are func-local, etc)
+					# TODO return => break
+					raise if @lexpr.type.varargs	# TODO ?
+					@rexpr.zip(@lexpr.type.args) { |ar, af|
+						b.statements << Declaration.new(af) << CExpression.new(af, :'=', ar, af.type)
+					}
+					b.statements.concat @lexpr.initializer.statements
+					b.precompile(parser, scope)
+					nil
+				elsif @type.kind_of? Struct
 					var = Variable.new
 					var.name = compiler.new_label('return_struct')
 					var.type = @type
@@ -1318,13 +1332,18 @@ module C
 				@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
 				@rexpr = CExpression.precompile_inner(compiler, scope, @rexpr)
 
-				rr = @rexpr
-				rr = rr.rexpr while rr.kind_of? CExpression and not rr.op
-				if @op == :'&' and not @lexpr and rr.kind_of? CExpression and rr.op == :'*' and not rr.lexpr
-					@lexpr = nil
-					@op = nil
-					@rexpr = rr.rexpr
-					return precompile_inner(compiler, scope)
+				if @op == :'&' and not @lexpr
+					rr = @rexpr
+					rr = rr.rexpr while rr.kind_of? CExpression and not rr.op
+					if rr.kind_of? CExpression and rr.op == :'*' and not rr.lexpr
+						@lexpr = nil
+						@op = nil
+						@rexpr = rr.rexpr
+						return precompile_inner(compiler, scope)
+					elsif rr != @rexpr
+						@rexpr = rr
+						return precompile_inner(compiler, scope)
+					end
 				end
 
 				CExpression.precompile_type(compiler, scope, self)
