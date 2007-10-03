@@ -859,7 +859,7 @@ module C
 		def precompile(compiler, scope)
 			if @value
 				@value = CExpression.new(nil, nil, @value, @value.type) if not @value.kind_of? CExpression
-				if @value.type.kind_of? Struct
+				if @value.type.untypedef.kind_of? Struct
 					@value = @value.precompile_inner(compiler, scope)
 					func = scope.function.type
 					CExpression.new(CExpression.new(nil, :*, func.args.first, @value.type), :'=', @value, @value.type).precompile(compiler, scope)
@@ -945,7 +945,6 @@ module C
 				end
 			else raise 'bad type ' + t.inspect
 			end
-			# TODO fix attribute propagation (__stdcall etc)
 			(t.qualifier  ||= []).concat obj.type.qualifier  if obj.type.qualifier  and t != obj.type
 			(t.attributes ||= []).concat obj.type.attributes if obj.type.attributes and t != obj.type
 			while obj.type.kind_of? TypeDef
@@ -1115,8 +1114,10 @@ module C
 
 					CExpression.new(nil, :'*', var2, var.type).precompile_inner(compiler, scope)
 				else
+					t = @lexpr.type.untypedef
+					t = t.type.untypedef if t.pointer?
 					@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
-					types = @lexpr.type.args.map { |a| a.type }
+					types = t.args.map { |a| a.type }
 					# cast args to func prototype
 					@rexpr.map! { |e| (types.empty? ? e : CExpression.new(nil, nil, e, types.shift)).precompile_inner(compiler, scope) }
 					CExpression.precompile_type(compiler, scope, self)

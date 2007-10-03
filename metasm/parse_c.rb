@@ -139,7 +139,7 @@ module C
 		end
 
 		def ==(o)
-			o.class == self.class and o.name == self.name and o.specifier == self.specifier
+			o.class == self.class and o.name == self.name and o.specifier == self.specifier and o.attributes == self.attributes
 		end
 	end
 	class TypeDef < Type
@@ -1796,6 +1796,7 @@ end
 					# check type casting
 					if v = Variable.parse_type(parser, scope)
 						v.parse_declarator(parser, scope)
+						(v.type.attributes ||= []).concat v.attributes if v.attributes
 						raise tok, 'bad cast' if v.name != false
 						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 						raise ntok, 'expr expected' if not val = parse_value(parser, scope)	# parses postfix too
@@ -2346,8 +2347,9 @@ end
 
 		def dump_cast(scope, r=[''], dep=[])
 			r.last << '('
+			r.last << dump_attributes_pre if not kind_of? TypeDef
 			r, dep = base.dump(scope, r, dep)
-			r, dep = dump_declarator([''], scope, r, dep)
+			r, dep = dump_declarator([kind_of?(TypeDef) ? '' : dump_attributes], scope, r, dep)
 			r.last << ')'
 			[r, dep]
 		end
