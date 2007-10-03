@@ -528,7 +528,7 @@ class Ia32
 	end
 	def addop_macro2(name, num)
 		addop name, [0x0F, 0xBA], (4 | num), {}, :u8
-		addop name, [0x0F, 0xA3 | (num << 3)], :mrm
+		addop(name, [0x0F, 0xA3 | (num << 3)], :mrm) { |op| op.args.reverse! }
 	end
 	def addop_macro3(name, num)
 		addop name, [0xD0], num, {:w => [0, 0]}, :imm_val1

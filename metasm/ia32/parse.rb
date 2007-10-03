@@ -271,8 +271,11 @@ end
 	end
 
 	def parse_instruction_checkproto(i)
-		if i.opname == 'imul' and i.args.length == 2 and i.args.first.kind_of? Reg and i.args.last.kind_of? Expression
-			i.args.unshift i.args.first.dup
+		case i.opname
+		when 'imul'
+			if i.args.length == 2 and i.args.first.kind_of? Reg and i.args.last.kind_of? Expression
+				i.args.unshift i.args.first.dup
+			end
 		end
 		super
 	end
