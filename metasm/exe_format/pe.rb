@@ -41,7 +41,8 @@ class PE < COFF
 	# this one is specially crafted to fit in the 0x3c bytes before the signature
 	def encode_default_mz_header
 		# XXX use single-quoted source, to avoid ruby interpretation of \r\n
-		mzstubp = MZ.assemble(Ia32.new(386, 16), <<'EOMZSTUB')
+		@mz.cpu = Ia32.new(386, 16)
+		@mz.parse <<'EOMZSTUB'
 _str	db "Needs Win32!\r\n$"
 start:
 	push cs
@@ -52,6 +53,8 @@ start:
 	mov  ax, 4c01h    ; exit with code in al
 	int  21h
 EOMZSTUB
+		@mz.assemble
+
 		mzparts = @mz.pre_encode
 
 		# put stuff before 0x3c

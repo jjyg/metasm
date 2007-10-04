@@ -124,6 +124,7 @@ class MZ < ExeFormat
 		@encoded.ptr = 0
 		csum = -@header.csum
 		(mzlen/2).times { csum += decode_word }
+		csum &= 0xffff
 		@encoded[2*Header::Fields.index(:csum), 2] = encode_word(csum)
 	end
 
@@ -146,9 +147,15 @@ class MZ < ExeFormat
 	# decodes the main part of the program
 	# mostly defines the 'start' export, to point to the MZ entrypoint
 	def decode_body
-		@body = @encoded[@header.cparhdr*16..@header.cp*512+@header.cblp]
+		@body = @encoded[@header.cparhdr*16...@header.cp*512+@header.cblp]
 		@body.virtsize += @header.minalloc * 16
 		@body.export['start'] = @header.cs * 16 + @header.ip
+	end
+
+	def decode
+		decode_header
+		decode_relocs
+		decode_body
 	end
 
 	# returns an MZ object from reading the specified string
@@ -157,10 +164,12 @@ class MZ < ExeFormat
 		mz = new
 		mz.encoded << str
 		mz.encoded.ptr = 0
-		mz.decode_header
-		mz.decode_relocs
-		mz.decode_body
+		mz.decode
 		mz
+	end
+
+	def each_section
+		yield @body, 0
 	end
 end
 end
