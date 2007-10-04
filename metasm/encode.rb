@@ -254,7 +254,7 @@ class Expression
 
 	def self.encode_immediate(val, type, endianness, backtrace=nil)
 		raise "unsupported endianness #{endianness.inspect}" unless [:big, :little].include? endianness
-		raise(EncodeError, "immediate overflow #{(Backtrace::backtrace_str(backtrace) if backtrace)}") if not in_range?(val, type)
+		raise(EncodeError, "immediate overflow 0x#{val.to_s 16} #{(Backtrace::backtrace_str(backtrace) if backtrace)}") if not in_range?(val, type)
 		s = (0...INT_SIZE[type]/8).map { |i| (val >> (8*i)) & 0xff }.pack('C*')
 		endianness != :little ? s.reverse : s
 	end

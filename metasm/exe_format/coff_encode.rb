@@ -497,10 +497,10 @@ class COFF
 		when Ia32
 			if @cpu.generate_PIC
 				# sections starts with a helper function that returns the address of metasm_importthunk_getip in eax (PIC)
-				edata << Shellcode.assemble(@cpu, "metasm_importthunk_getip: call 42f\n42: pop eax sub eax, 42b-metasm_importthunk_getip ret").encoded if edata.empty?
-				edata << Shellcode.assemble(@cpu, "#{import.thunk}: call metasm_importthunk_getip jmp [eax+#{import.target}-metasm_importthunk_getip]").encoded
+				edata << Shellcode.new(@cpu).parse("metasm_importthunk_getip: call 42f\n42: pop eax sub eax, 42b-metasm_importthunk_getip ret").assemble.encoded if edata.empty?
+				edata << Shellcode.new(@cpu).parse("#{import.thunk}: call metasm_importthunk_getip jmp [eax+#{import.target}-metasm_importthunk_getip]").assemble.encoded
 			else
-				edata << Shellcode.assemble(@cpu, "#{import.thunk}: jmp [#{import.target}]").encoded
+				edata << Shellcode.new(@cpu).parse("#{import.thunk}: jmp [#{import.target}]").assemble.encoded
 			end
 		else raise EncodeError, 'E: COFF: encode import thunk: unsupported architecture'
 		end

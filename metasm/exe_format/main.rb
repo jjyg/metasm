@@ -50,7 +50,9 @@ class ExeFormat
 		lineno ||= file ? 1 : $2.to_i+1
 		file ||= $1
 		e = new(cpu)
+		puts 'parsing asm' if $VERBOSE
 		e.parse(source, file, lineno)
+		puts 'assembling' if $VERBOSE
 		e.assemble
 		e
 	end
@@ -66,9 +68,13 @@ class ExeFormat
 		file ||= $1
 		e = new(cpu)
 		cp = cpu.new_cparser
+		puts 'parsing C' if $VERBOSE
 		cp.parse(source, file, lineno)
+		puts 'compiling C' if $VERBOSE
 		asm_source = cpu.new_ccompiler(cp, e).compile
+		puts 'parsing asm' if $VERBOSE
 		e.parse(asm_source, 'C compiler output', 1)
+		puts 'assembling' if $VERBOSE
 		e.assemble
 		e.set_entrypoint 'main'
 		e

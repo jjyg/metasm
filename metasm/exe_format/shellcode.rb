@@ -63,6 +63,7 @@ class Shellcode < ExeFormat
 		@encoded.fixup! binding
 		@encoded.fixup @encoded.binding(@base_addr)
 		@encoded.fill @encoded.rawsize
+		self
 	end
 	alias encode assemble
 

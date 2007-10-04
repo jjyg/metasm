@@ -360,6 +360,8 @@ class ExeFormat
 		end
 
 		puts "Undefined forward reference to anonymous labels #{@locallabels_fwd.keys.inspect}" if $VERBOSE and not @locallabels_fwd.empty?
+
+		self
 	end
 
 	# handles special directives (alignment, changing section, ...)
