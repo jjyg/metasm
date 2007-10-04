@@ -675,504 +675,504 @@ module C
 	end
 
 
-class Parser
-	# creates a new CParser, parses all top-level statements
-	def self.parse(text)
-		c = new
-		caller.first =~ /^(.*?):(\d+)/
-                c.parse text, $1, $2.to_i+1
-		raise c.lexer.readtok || c, 'invalid definition' if not c.lexer.eos?
-		c
-	end
-
-	# parses the current lexer content (or the text arg) for toplevel definitions
-	def parse(text=nil, filename='unknown', lineno=1)
-		@lexer.feed text, filename, lineno if text
-		nil while not @lexer.eos? and parse_definition(@toplevel)
-		sanity_checks
-		self
-	end
-
-	attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
-	def initialize(lexer = nil, model=:ilp32)
-		@lexer = lexer || Preprocessor.new
-		@prev_pragma_callback = @lexer.pragma_callback
-		@lexer.pragma_callback = proc { |tok| parse_pragma_callback(tok) }
-		@toplevel = Block.new(nil)
-		@unreadtoks = []
-		@typesize = { :void => 0, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8,
-			:char => 1, :float => 4, :double => 8, :longdouble => 12 }
-		send model
-	end
-
-	def ilp16
-		# XXX check this
-		@typesize.update :short => 2, :ptr => 2,
-			:int => 2, :long => 4, :longlong => 4
-	end
-	def lp32
-		@typesize.update :short => 2, :ptr => 4,
-			:int => 2, :long => 4, :longlong => 8
-	end
-	def ilp32
-		@typesize.update :short => 2, :ptr => 4,
-			:int => 4, :long => 4, :longlong => 8
-	end
-	def llp64
-		# longlong should only exist here
-		@typesize.update :short => 2, :ptr => 8,
-			:int => 4, :long => 4, :longlong => 8
-	end
-	def ilp64
-		@typesize.update :short => 2, :ptr => 8,
-			:int => 8, :long => 8, :longlong => 8
-	end
-	def lp64
-		@typesize.update :short => 2, :ptr => 8,
-			:int => 4, :long => 8, :longlong => 8
-	end
-
-	attr_accessor :auto_predeclare_unknown_structs
-	def parse_pragma_callback(otok)
-		case otok.raw
-		when 'pack'
-			nil while lp = @lexer.readtok and lp.type == :space
-			nil while rp = @lexer.readtok and rp.type == :space
-			if not rp or rp.type != :punct or rp.raw != ')'
-				v1 = rp
+	class Parser
+		# creates a new CParser, parses all top-level statements
+		def self.parse(text)
+			c = new
+			caller.first =~ /^(.*?):(\d+)/
+	                c.parse text, $1, $2.to_i+1
+			raise c.lexer.readtok || c, 'invalid definition' if not c.lexer.eos?
+			c
+		end
+	
+		# parses the current lexer content (or the text arg) for toplevel definitions
+		def parse(text=nil, filename='unknown', lineno=1)
+			@lexer.feed text, filename, lineno if text
+			nil while not @lexer.eos? and parse_definition(@toplevel)
+			sanity_checks
+			self
+		end
+	
+		attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
+		def initialize(lexer = nil, model=:ilp32)
+			@lexer = lexer || Preprocessor.new
+			@prev_pragma_callback = @lexer.pragma_callback
+			@lexer.pragma_callback = proc { |tok| parse_pragma_callback(tok) }
+			@toplevel = Block.new(nil)
+			@unreadtoks = []
+			@typesize = { :void => 0, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8,
+				:char => 1, :float => 4, :double => 8, :longdouble => 12 }
+			send model
+		end
+	
+		def ilp16
+			# XXX check this
+			@typesize.update :short => 2, :ptr => 2,
+				:int => 2, :long => 4, :longlong => 4
+		end
+		def lp32
+			@typesize.update :short => 2, :ptr => 4,
+				:int => 2, :long => 4, :longlong => 8
+		end
+		def ilp32
+			@typesize.update :short => 2, :ptr => 4,
+				:int => 4, :long => 4, :longlong => 8
+		end
+		def llp64
+			# longlong should only exist here
+			@typesize.update :short => 2, :ptr => 8,
+				:int => 4, :long => 4, :longlong => 8
+		end
+		def ilp64
+			@typesize.update :short => 2, :ptr => 8,
+				:int => 8, :long => 8, :longlong => 8
+		end
+		def lp64
+			@typesize.update :short => 2, :ptr => 8,
+				:int => 4, :long => 8, :longlong => 8
+		end
+	
+		attr_accessor :auto_predeclare_unknown_structs
+		def parse_pragma_callback(otok)
+			case otok.raw
+			when 'pack'
+				nil while lp = @lexer.readtok and lp.type == :space
 				nil while rp = @lexer.readtok and rp.type == :space
-			end
-			if rp and rp.type == :punct and rp.raw == ','
-				nil while v2 = @lexer.readtok and v2.type == :space
-				nil while rp = @lexer.readtok and rp.type == :space
-			end
-			raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
-			raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != :string or v2.raw =~ /[^\d]/))
-			if not v1
-				@pragma_pack = nil
-			elsif v1.raw == 'push'
-				@pragma_pack_stack ||= []
-				@pragma_pack_stack << pragma_pack
-				@pragma_pack = v2.raw.to_i if v2
-				raise v2, 'bad pack value' if pragma_pack == 0
-			elsif v1.raw == 'pop'
-				@pragma_pack_stack ||= []
-				raise v1, 'pack stack empty' if @pragma_pack_stack.empty?
-				@pragma_pack = @pragma_pack_stack.pop
-				@pragma_pack = v2.raw.to_i if v2 and v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
-				raise v2, 'bad pack value' if pragma_pack == 0
-			elsif v1.raw =~ /^\d+$/  
-				raise v2, '2nd arg unexpected' if v2
-				@pragma_pack = v1.raw.to_i
-				raise v1, 'bad pack value' if @pragma_pack == 0
-			else raise otok
-			end
-			# the caller checks for :eol
-		when 'auto_predeclare_unknown_structs'
-			@auto_predeclare_unknown_structs = true
-		when 'warning'
-			if $DEBUG
-				@prev_pragma_callback[otok]
-			else
-				# silent discard
-				nil while tok = @lexer.readtok_nopp and tok.type != :eol
-				@lexer.unreadtok tok
-			end
-		when 'prepare_visualstudio'
-			@auto_predeclare_unknown_structs = true
-			@lexer.define('_WIN32') if not @lexer.definition['_WIN32']
-			@lexer.define('_WIN32_WINNT', 0x500) if not @lexer.definition['_WIN32_WINNT']
-			@lexer.define('_INTEGRAL_MAX_BITS', 64) if not @lexer.definition['_INTEGRAL_MAX_BITS']
-			@lexer.define('__w64') if not @lexer.definition['__w64']
-			@lexer.define('_cdecl', '__cdecl') if not @lexer.definition['_cdecl']	# typo ? seen in winreg.h
-			@lexer.define('_MSC_VER', 1001) if not @lexer.definition['_MSC_VER']	# handle '#pragma once'
-		else @prev_pragma_callback[otok]
-		end
-	end
-
-	# C sanity checks
-	def sanity_checks
-		return if not $VERBOSE
-		#  TODO
-	end
-
-	# checks that the types are compatible (variable predeclaration, function argument..)
-	# strict = false for func call/assignment (eg char compatible with int -- but int is incompatible with char)
-	def check_compatible_type(tok, oldtype, newtype, strict = false, checked = [])
-		oldtype = oldtype.untypedef
-		newtype = newtype.untypedef
-		oldtype = BaseType.new(:int) if oldtype.kind_of? Enum
-		newtype = BaseType.new(:int) if newtype.kind_of? Enum
-
-		puts tok.exception('type qualifier mismatch').message if $VERBOSE and oldtype.qualifier.to_a.uniq.length > newtype.qualifier.to_a.uniq.length
-
-		# avoid infinite recursion
-		return if checked.include? oldtype
-		checked = checked + [oldtype]
-
-	    begin
-		case newtype
-		when Function
-			raise tok if not oldtype.kind_of? Function
-			check_compatible_type tok, oldtype.type, newtype.type, strict, checked
-			if oldtype.args and newtype.args
-				if oldtype.args.length != newtype.args.length or
-						oldtype.varargs != newtype.varargs
-					raise tok
+				if not rp or rp.type != :punct or rp.raw != ')'
+					v1 = rp
+					nil while rp = @lexer.readtok and rp.type == :space
 				end
-				oldtype.args.zip(newtype.args) { |oa, na|
-					# begin ; rescue ParseError: raise $!.message + "in parameter #{oa.name}" end
-					check_compatible_type tok, oa.type, na.type, strict, checked
-				}
-			end
-		when Pointer
-			if oldtype.kind_of? BaseType and oldtype.integral?
-				puts tok.exception('making pointer from integer without a cast').message if $VERBOSE
-				return
-			end
-			raise tok if not oldtype.kind_of? Pointer
-			hasvoid = true if (t = newtype.type.untypedef).kind_of? BaseType and t.name == :void
-			hasvoid = true if (t = oldtype.type.untypedef).kind_of? BaseType and t.name == :void	# struct foo *f = NULL;
-			if strict or not hasvoid
-				check_compatible_type tok, oldtype.type, newtype.type, strict, checked
-			end
-		when Union
-			raise tok if not oldtype.class == newtype.class
-			if oldtype.members and newtype.members
-				if oldtype.members.length != newtype.members.length
-					raise tok, 'bad member count'
+				if rp and rp.type == :punct and rp.raw == ','
+					nil while v2 = @lexer.readtok and v2.type == :space
+					nil while rp = @lexer.readtok and rp.type == :space
 				end
-				oldtype.members.zip(newtype.members) { |om, nm|
-					# raise tok if om.name and nm.name and om.name != nm.name # don't care
-					check_compatible_type tok, om.type, nm.type, strict, checked
-				}
-			end
-		when BaseType
-			raise tok if not oldtype.kind_of? BaseType
-			if strict
-				if oldtype.name != newtype.name or
-				oldtype.specifier != newtype.specifier
-					raise tok
+				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
+				raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != :string or v2.raw =~ /[^\d]/))
+				if not v1
+					@pragma_pack = nil
+				elsif v1.raw == 'push'
+					@pragma_pack_stack ||= []
+					@pragma_pack_stack << pragma_pack
+					@pragma_pack = v2.raw.to_i if v2
+					raise v2, 'bad pack value' if pragma_pack == 0
+				elsif v1.raw == 'pop'
+					@pragma_pack_stack ||= []
+					raise v1, 'pack stack empty' if @pragma_pack_stack.empty?
+					@pragma_pack = @pragma_pack_stack.pop
+					@pragma_pack = v2.raw.to_i if v2 and v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
+					raise v2, 'bad pack value' if pragma_pack == 0
+				elsif v1.raw =~ /^\d+$/  
+					raise v2, '2nd arg unexpected' if v2
+					@pragma_pack = v1.raw.to_i
+					raise v1, 'bad pack value' if @pragma_pack == 0
+				else raise otok
 				end
-			else
-				raise tok if @typesize[newtype.name] == 0 and @typesize[oldtype.name] > 0
-				puts tok.exception('type size mismatch, may lose bits') if $VERBOSE and @typesize[oldtype.name] > @typesize[newtype.name]
-				puts tok.exception('sign mismatch').message if $VERBOSE and oldtype.specifier != newtype.specifier and @typesize[newtype.name] == @typesize[oldtype.name]
-			end
-		end
-	    rescue ParseError
-		oname = oldtype.to_s rescue oldtype.class.name
-		nname = newtype.to_s rescue newtype.class.name
-		raise $!, $!.message + " incompatible type #{oname} to #{nname}"
-	    end
-	end
-
-	# allows 'raise self'
-	def exception(msg='EOF unexpected')
-		@lexer.exception msg
-	end
-
-	# reads a token, convert 'L"foo"' to a :quoted
-	def readtok_longstr
-		if t = @lexer.readtok and t.type == :string and t.raw == 'L' and
-		nt = @lexer.readtok and nt.type == :quoted and nt.raw[0] == ?"
-			nt.raw[0, 0] = 'L'
-			nt
-		elsif t and t.type == :punct and t.raw == '/' and
-		# nt has not been read
-		nt = @lexer.readtok and nt.type == :punct and nt.raw == '/'
-			# windows.h has a #define some_type_name /##/, and VS interprets this as a comment..
-			puts @lexer.exception('#defined //').message if $VERBOSE
-			t = @lexer.readtok while t and t.type != :eol
-			t
-		else
-			@lexer.unreadtok nt
-			t
-		end
-	end
-	private :readtok_longstr
-
-	# reads a token from self.lexer
-	# concatenates strings, merges spaces/eol to ' ', handles wchar strings
-	def readtok
-		if not t = @unreadtoks.pop
-			return if not t = readtok_longstr
-			case t.type
-			when :space, :eol
-				# merge consecutive :space/:eol
-				t = t.dup
-				t.type = :space
-				t.raw = ' '
-				nil while nt = @lexer.readtok and (nt.type == :eol or nt.type == :space)
-				@lexer.unreadtok nt
-
-			when :quoted
-				# merge consecutive :quoted
-				t = t.dup
-				while nt = readtok_longstr
-					case nt.type
-					when :quoted
-						if t.raw[0] == ?" and nt.raw[0, 2] == 'L"'
-							# ensure wide prefix is set
-							t.raw[0, 0] = 'L'
-						end
-						t.raw << ' ' << nt.raw
-						t.value << nt.value
-					when :space, :eol
-					else break
-					end
-				end
-				@lexer.unreadtok nt
-			end
-		end
-		t
-	end
-
-	def unreadtok(tok)
-		@unreadtoks << tok if tok
-	end
-
-	# returns the next non-space/non-eol token
-	def skipspaces
-		nil while t = readtok and t.type == :space
-		t
-	end
-
-	# returns the size of a type in bytes
-	def sizeof(var, type=var.type)
-		# XXX double-check class apparition order ('when' checks inheritance)
-		case type
-		when Array
-			case type.length
-			when nil
-				if var.kind_of? CExpression and not var.lexpr and not var.op and var.rexpr.kind_of? Variable
-					var = var.rexpr
-				end
-				raise self, 'unknown array size' if not var.kind_of? Variable or not var.initializer
-				case var.initializer
-				when ::String: sizeof(nil, type.type) * var.initializer.length
-				when ::Array
-					v = var.initializer.compact.first
-					v ? (sizeof(nil, type.type) * var.initializer.length) : 0
-				else sizeof(var.initializer)
-				end
-			when ::Integer: type.length * sizeof(type)
-			when CExpression
-				len = type.length.reduce(self)
-				raise self, 'unknown array size' if not len.kind_of? ::Integer
-				len * sizeof(type)
-			else raise self, 'unknown array size'
-			end
-		when Pointer
-			@typesize[:ptr]
-		when Function
-			# raise
-			1	# gcc
-		when BaseType
-			@typesize[type.name]
-		when Enum
-			@typesize[:int]
-		when Struct
-			raise self, 'unknown structure size' if not type.members
-			al = type.align(self)
-			lm = type.members.last
-			(type.offsetof(self, lm.name) + sizeof(lm) + al - 1) / al * al
-		when Union
-			raise self, 'unknown structure size' if not type.members
-			type.members.map { |m| sizeof(m) }.max || 0
-		when TypeDef
-			sizeof(var, type.type)
-		end
-	end
-
-	# parses variable/function definition/declaration/initialization
-	# populates scope.symbols and scope.struct
-	# raises on redefinitions
-	# returns false if no definition found
-	def parse_definition(scope)
-		return false if not basetype = Variable.parse_type(self, scope, true)
-
-		# check struct predeclaration
-		tok = skipspaces
-		if tok and tok.type == :punct and tok.raw == ';' and basetype.type and
-				(basetype.type.kind_of? Union or basetype.type.kind_of? Enum)
-			return true
-		else unreadtok tok
-		end
-
-		nofunc = false
-		loop do
-			var = basetype.dup
-			var.parse_declarator(self, scope)
-
-			raise var.backtrace if not var.name	# barrel roll
-
-			if prev = scope.symbol[var.name]
-				if prev.kind_of? TypeDef and var.storage == :typedef
-					check_compatible_type(var.backtrace, prev.type, var.type, true)
-					# windows.h redefines many typedefs with the same definition
-					puts "redefining typedef #{var.name}" if $VERBOSE
-					var = prev
-				elsif not prev.kind_of?(Variable) or
-						prev.initializer or
-						prev.storage != var.storage or
-						(scope != @toplevel and prev.storage != :static)
-					if prev.kind_of? ::Integer	# enum value
-						prev = (scope.struct.values.grep(Enum) + scope.anonymous_enums.to_a).find { |e| e.members.index(prev) }
-					end
-					raise var.backtrace, "redefinition, previous is #{prev.backtrace.exception(nil).message}"
+				# the caller checks for :eol
+			when 'auto_predeclare_unknown_structs'
+				@auto_predeclare_unknown_structs = true
+			when 'warning'
+				if $DEBUG
+					@prev_pragma_callback[otok]
 				else
-					check_compatible_type var.backtrace, prev.type, var.type, true
-					(var.attributes ||= []).concat prev.attributes if prev.attributes
+					# silent discard
+					nil while tok = @lexer.readtok_nopp and tok.type != :eol
+					@lexer.unreadtok tok
 				end
-			elsif var.storage == :typedef
-				attrs = var.attributes
-				var = TypeDef.new var.name, var.type, var.backtrace
-				var.attributes = attrs if attrs
+			when 'prepare_visualstudio'
+				@auto_predeclare_unknown_structs = true
+				@lexer.define('_WIN32') if not @lexer.definition['_WIN32']
+				@lexer.define('_WIN32_WINNT', 0x500) if not @lexer.definition['_WIN32_WINNT']
+				@lexer.define('_INTEGRAL_MAX_BITS', 64) if not @lexer.definition['_INTEGRAL_MAX_BITS']
+				@lexer.define('__w64') if not @lexer.definition['__w64']
+				@lexer.define('_cdecl', '__cdecl') if not @lexer.definition['_cdecl']	# typo ? seen in winreg.h
+				@lexer.define('_MSC_VER', 1001) if not @lexer.definition['_MSC_VER']	# handle '#pragma once'
+			else @prev_pragma_callback[otok]
 			end
-			scope.statements << Declaration.new(var) unless var.kind_of? TypeDef
-
-			raise tok || self, 'punctuation expected' if not tok = skipspaces or tok.type != :punct
-
-			case tok.raw
-			when '{'
-				# function body
-				raise tok if nofunc or not var.kind_of? Variable or not var.type.kind_of? Function
-				scope.symbol[var.name] = var
-				body = var.initializer = Block.new(scope)
-				var.type.args ||= []
-				var.type.args.each { |v|
-					# put func parameters in func body scope
-					# arg redefinition is checked in parse_declarator
-					if not v.name
-						puts "unnamed argument in definition" if $VERBOSE
-						next	# should raise
+		end
+	
+		# C sanity checks
+		def sanity_checks
+			return if not $VERBOSE
+			#  TODO
+		end
+	
+		# checks that the types are compatible (variable predeclaration, function argument..)
+		# strict = false for func call/assignment (eg char compatible with int -- but int is incompatible with char)
+		def check_compatible_type(tok, oldtype, newtype, strict = false, checked = [])
+			oldtype = oldtype.untypedef
+			newtype = newtype.untypedef
+			oldtype = BaseType.new(:int) if oldtype.kind_of? Enum
+			newtype = BaseType.new(:int) if newtype.kind_of? Enum
+	
+			puts tok.exception('type qualifier mismatch').message if $VERBOSE and oldtype.qualifier.to_a.uniq.length > newtype.qualifier.to_a.uniq.length
+	
+			# avoid infinite recursion
+			return if checked.include? oldtype
+			checked = checked + [oldtype]
+	
+		    begin
+			case newtype
+			when Function
+				raise tok if not oldtype.kind_of? Function
+				check_compatible_type tok, oldtype.type, newtype.type, strict, checked
+				if oldtype.args and newtype.args
+					if oldtype.args.length != newtype.args.length or
+							oldtype.varargs != newtype.varargs
+						raise tok
 					end
-					body.symbol[v.name] = v	# XXX will need special check in stack allocator
-				}
-
+					oldtype.args.zip(newtype.args) { |oa, na|
+						# begin ; rescue ParseError: raise $!.message + "in parameter #{oa.name}" end
+						check_compatible_type tok, oa.type, na.type, strict, checked
+					}
+				end
+			when Pointer
+				if oldtype.kind_of? BaseType and oldtype.integral?
+					puts tok.exception('making pointer from integer without a cast').message if $VERBOSE
+					return
+				end
+				raise tok if not oldtype.kind_of? Pointer
+				hasvoid = true if (t = newtype.type.untypedef).kind_of? BaseType and t.name == :void
+				hasvoid = true if (t = oldtype.type.untypedef).kind_of? BaseType and t.name == :void	# struct foo *f = NULL;
+				if strict or not hasvoid
+					check_compatible_type tok, oldtype.type, newtype.type, strict, checked
+				end
+			when Union
+				raise tok if not oldtype.class == newtype.class
+				if oldtype.members and newtype.members
+					if oldtype.members.length != newtype.members.length
+						raise tok, 'bad member count'
+					end
+					oldtype.members.zip(newtype.members) { |om, nm|
+						# raise tok if om.name and nm.name and om.name != nm.name # don't care
+						check_compatible_type tok, om.type, nm.type, strict, checked
+					}
+				end
+			when BaseType
+				raise tok if not oldtype.kind_of? BaseType
+				if strict
+					if oldtype.name != newtype.name or
+					oldtype.specifier != newtype.specifier
+						raise tok
+					end
+				else
+					raise tok if @typesize[newtype.name] == 0 and @typesize[oldtype.name] > 0
+					puts tok.exception('type size mismatch, may lose bits') if $VERBOSE and @typesize[oldtype.name] > @typesize[newtype.name]
+					puts tok.exception('sign mismatch').message if $VERBOSE and oldtype.specifier != newtype.specifier and @typesize[newtype.name] == @typesize[oldtype.name]
+				end
+			end
+		    rescue ParseError
+			oname = oldtype.to_s rescue oldtype.class.name
+			nname = newtype.to_s rescue newtype.class.name
+			raise $!, $!.message + " incompatible type #{oname} to #{nname}"
+		    end
+		end
+	
+		# allows 'raise self'
+		def exception(msg='EOF unexpected')
+			@lexer.exception msg
+		end
+	
+		# reads a token, convert 'L"foo"' to a :quoted
+		def readtok_longstr
+			if t = @lexer.readtok and t.type == :string and t.raw == 'L' and
+			nt = @lexer.readtok and nt.type == :quoted and nt.raw[0] == ?"
+				nt.raw[0, 0] = 'L'
+				nt
+			elsif t and t.type == :punct and t.raw == '/' and
+			# nt has not been read
+			nt = @lexer.readtok and nt.type == :punct and nt.raw == '/'
+				# windows.h has a #define some_type_name /##/, and VS interprets this as a comment..
+				puts @lexer.exception('#defined //').message if $VERBOSE
+				t = @lexer.readtok while t and t.type != :eol
+				t
+			else
+				@lexer.unreadtok nt
+				t
+			end
+		end
+		private :readtok_longstr
+	
+		# reads a token from self.lexer
+		# concatenates strings, merges spaces/eol to ' ', handles wchar strings
+		def readtok
+			if not t = @unreadtoks.pop
+				return if not t = readtok_longstr
+				case t.type
+				when :space, :eol
+					# merge consecutive :space/:eol
+					t = t.dup
+					t.type = :space
+					t.raw = ' '
+					nil while nt = @lexer.readtok and (nt.type == :eol or nt.type == :space)
+					@lexer.unreadtok nt
+	
+				when :quoted
+					# merge consecutive :quoted
+					t = t.dup
+					while nt = readtok_longstr
+						case nt.type
+						when :quoted
+							if t.raw[0] == ?" and nt.raw[0, 2] == 'L"'
+								# ensure wide prefix is set
+								t.raw[0, 0] = 'L'
+							end
+							t.raw << ' ' << nt.raw
+							t.value << nt.value
+						when :space, :eol
+						else break
+						end
+					end
+					@lexer.unreadtok nt
+				end
+			end
+			t
+		end
+	
+		def unreadtok(tok)
+			@unreadtoks << tok if tok
+		end
+	
+		# returns the next non-space/non-eol token
+		def skipspaces
+			nil while t = readtok and t.type == :space
+			t
+		end
+	
+		# returns the size of a type in bytes
+		def sizeof(var, type=var.type)
+			# XXX double-check class apparition order ('when' checks inheritance)
+			case type
+			when Array
+				case type.length
+				when nil
+					if var.kind_of? CExpression and not var.lexpr and not var.op and var.rexpr.kind_of? Variable
+						var = var.rexpr
+					end
+					raise self, 'unknown array size' if not var.kind_of? Variable or not var.initializer
+					case var.initializer
+					when ::String: sizeof(nil, type.type) * var.initializer.length
+					when ::Array
+						v = var.initializer.compact.first
+						v ? (sizeof(nil, type.type) * var.initializer.length) : 0
+					else sizeof(var.initializer)
+					end
+				when ::Integer: type.length * sizeof(type)
+				when CExpression
+					len = type.length.reduce(self)
+					raise self, 'unknown array size' if not len.kind_of? ::Integer
+					len * sizeof(type)
+				else raise self, 'unknown array size'
+				end
+			when Pointer
+				@typesize[:ptr]
+			when Function
+				# raise
+				1	# gcc
+			when BaseType
+				@typesize[type.name]
+			when Enum
+				@typesize[:int]
+			when Struct
+				raise self, 'unknown structure size' if not type.members
+				al = type.align(self)
+				lm = type.members.last
+				(type.offsetof(self, lm.name) + sizeof(lm) + al - 1) / al * al
+			when Union
+				raise self, 'unknown structure size' if not type.members
+				type.members.map { |m| sizeof(m) }.max || 0
+			when TypeDef
+				sizeof(var, type.type)
+			end
+		end
+	
+		# parses variable/function definition/declaration/initialization
+		# populates scope.symbols and scope.struct
+		# raises on redefinitions
+		# returns false if no definition found
+		def parse_definition(scope)
+			return false if not basetype = Variable.parse_type(self, scope, true)
+	
+			# check struct predeclaration
+			tok = skipspaces
+			if tok and tok.type == :punct and tok.raw == ';' and basetype.type and
+					(basetype.type.kind_of? Union or basetype.type.kind_of? Enum)
+				return true
+			else unreadtok tok
+			end
+	
+			nofunc = false
+			loop do
+				var = basetype.dup
+				var.parse_declarator(self, scope)
+	
+				raise var.backtrace if not var.name	# barrel roll
+	
+				if prev = scope.symbol[var.name]
+					if prev.kind_of? TypeDef and var.storage == :typedef
+						check_compatible_type(var.backtrace, prev.type, var.type, true)
+						# windows.h redefines many typedefs with the same definition
+						puts "redefining typedef #{var.name}" if $VERBOSE
+						var = prev
+					elsif not prev.kind_of?(Variable) or
+							prev.initializer or
+							prev.storage != var.storage or
+							(scope != @toplevel and prev.storage != :static)
+						if prev.kind_of? ::Integer	# enum value
+							prev = (scope.struct.values.grep(Enum) + scope.anonymous_enums.to_a).find { |e| e.members.index(prev) }
+						end
+						raise var.backtrace, "redefinition, previous is #{prev.backtrace.exception(nil).message}"
+					else
+						check_compatible_type var.backtrace, prev.type, var.type, true
+						(var.attributes ||= []).concat prev.attributes if prev.attributes
+					end
+				elsif var.storage == :typedef
+					attrs = var.attributes
+					var = TypeDef.new var.name, var.type, var.backtrace
+					var.attributes = attrs if attrs
+				end
+				scope.statements << Declaration.new(var) unless var.kind_of? TypeDef
+	
+				raise tok || self, 'punctuation expected' if not tok = skipspaces or tok.type != :punct
+	
+				case tok.raw
+				when '{'
+					# function body
+					raise tok if nofunc or not var.kind_of? Variable or not var.type.kind_of? Function
+					scope.symbol[var.name] = var
+					body = var.initializer = Block.new(scope)
+					var.type.args ||= []
+					var.type.args.each { |v|
+						# put func parameters in func body scope
+						# arg redefinition is checked in parse_declarator
+						if not v.name
+							puts "unnamed argument in definition" if $VERBOSE
+							next	# should raise
+						end
+						body.symbol[v.name] = v	# XXX will need special check in stack allocator
+					}
+	
+					loop do
+						raise tok || self, var.backtrace.exception('"}" expected for end of function') if not tok = skipspaces
+						break if tok.type == :punct and tok.raw == '}'
+						unreadtok tok
+						if not parse_definition(body)
+							body.statements << parse_statement(body, [var.type.type])
+						end
+					end
+					if $VERBOSE and not body.statements.last.kind_of? Return and not body.statements.last.kind_of? Asm
+						puts tok.exception('missing function return value').message if not var.type.type.kind_of? BaseType or var.type.type.name != :void
+					end
+					break
+				when '='
+					# variable initialization
+					raise tok, '"{" or ";" expected' if var.type.kind_of? Function
+					raise tok, 'cannot initialize extern variable' if var.storage == :extern
+					var.initializer = var.type.parse_initializer(self, scope)
+					if var.initializer.kind_of?(CExpression) and (scope == @toplevel or var.storage == :static)
+						raise tok, 'initializer is not constant' if not var.initializer.constant?
+					end
+					raise tok || self, '"," or ";" expected' if not tok = skipspaces or tok.type != :punct
+					scope.symbol[var.name] = var
+				else
+					scope.symbol[var.name] = var
+				end
+	
+				case tok.raw
+				when ',': nofunc = true
+				when ';': break
+				else raise tok, '";" or "," expected'
+				end
+			end
+			true
+		end
+	
+		# returns a statement or raise
+		def parse_statement(scope, nest)
+			raise self, 'statement expected' if not tok = skipspaces
+	
+			if tok.type == :punct and tok.raw == '{'
+				body = Block.new scope
 				loop do
-					raise tok || self, var.backtrace.exception('"}" expected for end of function') if not tok = skipspaces
+					raise tok || self, '"}" expected' if not tok = skipspaces
 					break if tok.type == :punct and tok.raw == '}'
 					unreadtok tok
 					if not parse_definition(body)
-						body.statements << parse_statement(body, [var.type.type])
+						body.statements << parse_statement(body, nest)
 					end
 				end
-				if $VERBOSE and not body.statements.last.kind_of? Return and not body.statements.last.kind_of? Asm
-					puts tok.exception('missing function return value').message if not var.type.type.kind_of? BaseType or var.type.type.name != :void
-				end
-				break
-			when '='
-				# variable initialization
-				raise tok, '"{" or ";" expected' if var.type.kind_of? Function
-				raise tok, 'cannot initialize extern variable' if var.storage == :extern
-				var.initializer = var.type.parse_initializer(self, scope)
-				if var.initializer.kind_of?(CExpression) and (scope == @toplevel or var.storage == :static)
-					raise tok, 'initializer is not constant' if not var.initializer.constant?
-				end
-				raise tok || self, '"," or ";" expected' if not tok = skipspaces or tok.type != :punct
-				scope.symbol[var.name] = var
-			else
-				scope.symbol[var.name] = var
-			end
-
-			case tok.raw
-			when ',': nofunc = true
-			when ';': break
-			else raise tok, '";" or "," expected'
-			end
-		end
-		true
-	end
-
-	# returns a statement or raise
-	def parse_statement(scope, nest)
-		raise self, 'statement expected' if not tok = skipspaces
-
-		if tok.type == :punct and tok.raw == '{'
-			body = Block.new scope
-			loop do
-				raise tok || self, '"}" expected' if not tok = skipspaces
-				break if tok.type == :punct and tok.raw == '}'
-				unreadtok tok
-				if not parse_definition(body)
-					body.statements << parse_statement(body, nest)
-				end
-			end
-			return body
-		elsif tok.type == :punct and tok.raw == ';'
-			return Block.new(scope)
-		elsif tok.type != :string
-			unreadtok tok
-			raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
-			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
-
-			if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-				puts tok.exception("statement with no effect : #{expr}")
-			end
-			return expr
-		end
-
-		case tok.raw
-		when 'if'
-			If.parse      self, scope, nest
-		when 'while'
-			While.parse   self, scope, nest
-		when 'do'
-			DoWhile.parse self, scope, nest
-		when 'for'
-			For.parse     self, scope, nest
-		when 'switch'
-			Switch.parse  self, scope, nest
-		when 'goto'
-			raise tok || self, 'label expected' if not tok = skipspaces or tok.type != :string
-			name = tok.raw
-			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
-			Goto.new name
-		when 'return'
-			expr = CExpression.parse(self, scope)	# nil allowed
-			p, i = nest[0].pointer?, nest[0].integral? if expr
-			r = expr.reduce(self) if p or i
-			if (not p and not i) or (i and not r.kind_of? ::Integer) or (p and r != 0)
-				check_compatible_type(tok, (expr ? expr.type : BaseType.new(:void)), nest[0])
-			end
-			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
-			Return.new expr
-		when 'case'
-			raise tok, 'case out of switch' if not nest.include? :switch
-			Case.parse    self, scope, nest
-		when 'default'
-			raise tok || self, '":" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ':'
-			raise tok, 'case out of switch' if not nest.include? :switch
-			Case.new 'default', nil, parse_statement(scope, nest)
-		when 'continue'
-			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
-			raise tok, 'continue out of loop' if not nest.include? :loop
-			Continue.new
-		when 'break'
-			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
-			raise tok, 'break out of loop' if not nest.include? :loop and not nest.include? :switch
-			Break.new
-		when 'asm', '__asm', '__asm__'
-			Asm.parse self, scope
-		else
-			if ntok = skipspaces and ntok.type == :punct and ntok.raw == ':'
-				Label.new tok.raw, parse_statement(scope, nest)
-			else
-				unreadtok ntok
+				return body
+			elsif tok.type == :punct and tok.raw == ';'
+				return Block.new(scope)
+			elsif tok.type != :string
 				unreadtok tok
 				raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
 				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
-
+	
 				if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
 					puts tok.exception("statement with no effect : #{expr}")
 				end
-				expr
+				return expr
+			end
+	
+			case tok.raw
+			when 'if'
+				If.parse      self, scope, nest
+			when 'while'
+				While.parse   self, scope, nest
+			when 'do'
+				DoWhile.parse self, scope, nest
+			when 'for'
+				For.parse     self, scope, nest
+			when 'switch'
+				Switch.parse  self, scope, nest
+			when 'goto'
+				raise tok || self, 'label expected' if not tok = skipspaces or tok.type != :string
+				name = tok.raw
+				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+				Goto.new name
+			when 'return'
+				expr = CExpression.parse(self, scope)	# nil allowed
+				p, i = nest[0].pointer?, nest[0].integral? if expr
+				r = expr.reduce(self) if p or i
+				if (not p and not i) or (i and not r.kind_of? ::Integer) or (p and r != 0)
+					check_compatible_type(tok, (expr ? expr.type : BaseType.new(:void)), nest[0])
+				end
+				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+				Return.new expr
+			when 'case'
+				raise tok, 'case out of switch' if not nest.include? :switch
+				Case.parse    self, scope, nest
+			when 'default'
+				raise tok || self, '":" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ':'
+				raise tok, 'case out of switch' if not nest.include? :switch
+				Case.new 'default', nil, parse_statement(scope, nest)
+			when 'continue'
+				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+				raise tok, 'continue out of loop' if not nest.include? :loop
+				Continue.new
+			when 'break'
+				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+				raise tok, 'break out of loop' if not nest.include? :loop and not nest.include? :switch
+				Break.new
+			when 'asm', '__asm', '__asm__'
+				Asm.parse self, scope
+			else
+				if ntok = skipspaces and ntok.type == :punct and ntok.raw == ':'
+					Label.new tok.raw, parse_statement(scope, nest)
+				else
+					unreadtok ntok
+					unreadtok tok
+					raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
+					raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+	
+					if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
+						puts tok.exception("statement with no effect : #{expr}")
+					end
+					expr
+				end
 			end
 		end
 	end
-end
 
 	class Variable
 		# parses a variable basetype/qualifier/(storage if allow_value), returns a new variable of this type
@@ -2111,58 +2111,58 @@ end
 	# Dumper : objects => C source
 	#
 	
-class Parser	
-	# returns a big string containing all definitions from headers used in the source (including macros)
-	def factorize(src)
-		@lexer.traced_macros = []
-		parse(src)
-
-		# now find all types/defs not coming from the standard headers
-		# all
-		all = @toplevel.struct.values + @toplevel.symbol.values
-		all -= all.grep(::Integer)	# Enum values
-
-		# list of definitions of user-defined objects
-		userdefined = all.find_all { |t|
-			t.backtrace.backtrace.grep(::String).grep(/^</).empty?
-		}
-
-		@toplevel.statements.clear	# don't want all Declarations
-
-		# a macro is fine too
-		@lexer.dump_macros(@lexer.traced_macros, false) + "\n\n" +
-		dump_definitions(userdefined, userdefined)
-	end
-
-	# returns a big string representing the definitions of all terms appearing in +list+, excluding +exclude+
-	# includes dependencies
-	def dump_definitions(list, exclude=[])
-		# recurse all dependencies
-		todo_rndr = {}
-		todo_deps = {}
-		list.each { |t|
-			todo_rndr[t], todo_deps[t] = t.dump_def(@toplevel)
-		}
-		# c.toplevel.anonymous_enums.to_a.each { |t| todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel) }
-		while not (ar = (todo_deps.values.flatten - todo_deps.keys)).empty?
-			ar.each { |t|
+	class Parser	
+		# returns a big string containing all definitions from headers used in the source (including macros)
+		def factorize(src)
+			@lexer.traced_macros = []
+			parse(src)
+	
+			# now find all types/defs not coming from the standard headers
+			# all
+			all = @toplevel.struct.values + @toplevel.symbol.values
+			all -= all.grep(::Integer)	# Enum values
+	
+			# list of definitions of user-defined objects
+			userdefined = all.find_all { |t|
+				t.backtrace.backtrace.grep(::String).grep(/^</).empty?
+			}
+	
+			@toplevel.statements.clear	# don't want all Declarations
+	
+			# a macro is fine too
+			@lexer.dump_macros(@lexer.traced_macros, false) + "\n\n" +
+			dump_definitions(userdefined, userdefined)
+		end
+	
+		# returns a big string representing the definitions of all terms appearing in +list+, excluding +exclude+
+		# includes dependencies
+		def dump_definitions(list, exclude=[])
+			# recurse all dependencies
+			todo_rndr = {}
+			todo_deps = {}
+			list.each { |t|
 				todo_rndr[t], todo_deps[t] = t.dump_def(@toplevel)
 			}
+			# c.toplevel.anonymous_enums.to_a.each { |t| todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel) }
+			while not (ar = (todo_deps.values.flatten - todo_deps.keys)).empty?
+				ar.each { |t|
+					todo_rndr[t], todo_deps[t] = t.dump_def(@toplevel)
+				}
+			end
+			exclude.each { |t| todo_deps.delete t ; todo_rndr.delete t }
+			todo_deps.each_key { |t| todo_deps[t] -= exclude }
+	
+			all = @toplevel.struct.values + @toplevel.symbol.values
+			all -= all.grep(::Integer)	# Enum values
+	
+			r, dep = @toplevel.dump_reorder(all, todo_rndr, todo_deps)
+			r.join("\n")
 		end
-		exclude.each { |t| todo_deps.delete t ; todo_rndr.delete t }
-		todo_deps.each_key { |t| todo_deps[t] -= exclude }
-
-		all = @toplevel.struct.values + @toplevel.symbol.values
-		all -= all.grep(::Integer)	# Enum values
-
-		r, dep = @toplevel.dump_reorder(all, todo_rndr, todo_deps)
-		r.join("\n")
+	
+		def to_s
+			@toplevel.dump(nil)[0].join("\n")
+		end
 	end
-
-	def to_s
-		@toplevel.dump(nil)[0].join("\n")
-	end
-end
 
 	class Statement
 		def self.dump(e, scope, r=[''], dep=[])
