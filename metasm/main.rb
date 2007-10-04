@@ -19,57 +19,6 @@ class InvalidExeFormat < Exception ; end
 # cannot honor .offset specification, reloc fixup overflow
 class EncodeError < Exception ; end
 
-# A source text preprocessor (C-like)
-# defines the methods nexttok, readtok and unreadtok
-# they spits out Tokens of type :
-#  :string for words (/[a-Z0-9$_]+/)
-#  :punct for punctuation (/[.,:*+-]/ etc), any unhandled character
-#  :space for space/tabs/comment/\r
-#  :eol for newline :space including at least one \n not escaped
-#  :quoted for quoted string, tok.raw includes delimiter and all content. tok.value holds the interpreted value (handles \x, \oct, \r etc). 1-line only
-# or nil on end of stream
-# \ at end of line discards a newline, otherwise returns a tok :punct with the \
-# preprocessor directives start with a :punct '#' just after an :eol (so you can have spaces before #), they take a whole line
-# comments are C/C++ style (//...\n or /*...*/), returned as :eol (resp. :space)
-class Preprocessor
-	# a preprocessor macro
-	class Macro
-		# the token holding the name used in the macro definition
-		attr_accessor :name
-		# array of tokens of formal arguments
-		attr_accessor :args
-		# array of tokens of macro body
-		attr_accessor :body
-	end
-
-	# the raw string we're reading
-	attr_accessor :text, :pos
-	# the backtrace information for current file
-	attr_accessor :filename, :lineno
-	# the unreadtok queue
-	attr_accessor :queue
-	# the backtrace (array of previous [filename, lineno, text, pos] that #included us)
-	attr_accessor :backtrace
-	# a hash of macro definitions: macro name => [macro def tok, [macro args tok], [macro body toks]]
-	attr_accessor :definition
-	# array of directories to search for #included <files>
-	attr_accessor :include_search_path
-
-	# global default search directory for #included <files>
-	@@include_search_path = ['/usr/include']
-	def self.include_search_path
-		@@include_search_path
-	end
-	def self.include_search_path=(np)
-		@@include_search_path = np
-	end
-end
-
-# handle asm-specific syntax: asm macro, equ, ;comments
-# TODO something to allow dynamic switching asm <-> C with same source
-class AsmPreprocessor < Preprocessor
-end
-
 # holds context of a processor
 # endianness, current mode, opcode list...
 class CPU
@@ -100,7 +49,8 @@ class CPU
 		cp.send "ilp#@size"
 		cp.lexer.define('_STDC', 1) if not cp.lexer.definition['_STDC']
 		# TODO cp.lexer.define('BIGENDIAN')
-		# add ExeFormat-specific definitions ?
+		# TODO gcc -dM -E - </dev/null
+		# TODO ExeFormat-specific definitions
 	end
 
 	# returns a new & tuned C::Parser

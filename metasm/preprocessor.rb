@@ -9,9 +9,30 @@ require 'metasm/parse'
 
 
 module Metasm
+
+# A source text preprocessor (C-like)
+# defines the methods nexttok, readtok and unreadtok
+# they spits out Tokens of type :
+#  :string for words (/[a-Z0-9$_]+/)
+#  :punct for punctuation (/[.,:*+-]/ etc), any unhandled character
+#  :space for space/tabs/comment/\r
+#  :eol for newline :space including at least one \n not escaped
+#  :quoted for quoted string, tok.raw includes delimiter and all content. tok.value holds the interpreted value (handles \x, \oct, \r etc). 1-line only
+# or nil on end of stream
+# \ at end of line discards a newline, otherwise returns a tok :punct with the \
+# preprocessor directives start with a :punct '#' just after an :eol (so you can have spaces before #), they take a whole line
+# comments are C/C++ style (//...\n or /*...*/), returned as :eol (resp. :space)
 class Preprocessor
+	# a preprocessor macro
 	class Macro
-		attr_accessor :name, :body, :args, :varargs
+		# the token holding the name used in the macro definition
+		attr_accessor :name
+		# array of tokens of formal arguments
+		attr_accessor :args
+		# array of tokens of macro body
+		attr_accessor :body
+		# bool
+		attr_accessor :varargs
 
 		def initialize(name)
 			@name = name
@@ -299,14 +320,35 @@ class Preprocessor
 		end
 	end
 
+	# the raw string we're reading
+	attr_accessor :text, :pos
+	# the backtrace information for current file
+	attr_accessor :filename, :lineno
+	# the unreadtok queue
+	attr_accessor :queue
+	# the backtrace (array of previous [filename, lineno, text, pos] that #included us)
+	attr_accessor :backtrace
+	# a hash of macro definitions: macro name => [macro def tok, [macro args tok], [macro body toks]]
+	attr_accessor :definition
+	# array of directories to search for #included <files>
+	attr_accessor :include_search_path
 	# a Proc called for unhandled #pragma occurences
 	# takes the pragma 1st tok as arg, must unread the final :eol, should fallback to the previous callback
 	attr_accessor :pragma_callback
+	# hash filename => file content
+	attr_accessor :hooked_include
+	attr_accessor :warn_redefinition
+
+	# global default search directory for #included <files>
+	@@include_search_path = ['/usr/include']
+	def self.include_search_path ; @@include_search_path end
+	def self.include_search_path=(np) @@include_search_path=np end
+
 	def initialize
 		@queue = []
 		@backtrace = []
 		@definition = %w[__FILE__ __LINE__ __COUNTER__ __DATE__ __TIME__].inject({}) { |h, n| h.update n => SpecialMacro.new(n) }
-		@include_search_path = @@include_search_path
+		@include_search_path = @@include_search_path.dup
 		# stack of :accept/:discard/:discard_all/:testing, represents the current nesting of #if..#endif
 		@ifelse_nesting = []
 		@text = ''
@@ -314,6 +356,8 @@ class Preprocessor
 		@filename = nil
 		@lineno = nil
 		@warn_redefinition = true
+		@hooked_include = {}
+		@pragma_once = {}
 		@pragma_callback = proc { |otok|
 			tok = otok
 			str = tok.raw.dup
@@ -322,7 +366,6 @@ class Preprocessor
 			puts otok.exception("unhandled pragma #{str.inspect}").message if $VERBOSE
 		}
 		define '__METASM__', VERSION
-		# TODO setup standard macro names ? see $(gcc -dM -E - </dev/null)
 	end
 
 	def exception(msg='syntax error')
@@ -470,7 +513,7 @@ class Preprocessor
 	end
 
 	# calls readtok_nopp and handles preprocessor directives
-	def readtok_cpp(expand_macros = true)
+	def readtok(expand_macros = true)
 		lastpos = @pos
 		tok = readtok_nopp
 
@@ -478,7 +521,6 @@ class Preprocessor
 			# end of file: resume parent
 			if not @backtrace.empty?
 				raise ParseError, "parse error in #@filename: unmatched #if/#endif" if @backtrace.last.pop != @ifelse_nesting.length
-				puts "metasm preprocessor: end of include #@filename, back to #{@backtrace[-1][0]}:#{@backtrace[-1][1]}" if $DEBUG
 				@filename, @lineno, @text, @pos, @queue = @backtrace.pop
 				tok = readtok
 			end
@@ -522,7 +564,6 @@ class Preprocessor
 
 		tok
 	end
-	alias readtok readtok_cpp
 
 	# read and return the next token
 	# parses quoted strings (set tok.value) and C/C++ comments (:space/:eol)
@@ -659,14 +700,16 @@ class Preprocessor
 	end
 
 	# defines a simple preprocessor macro (expands to 0 or 1 token)
+	# does not check overwriting
 	def define(name, value=nil)
-		raise "redefinition of #{name}" if @definition[name]
-		t = Token.new([])
+		caller.first =~ /^(.*?):(\d+)/
+		btfile, btlineno = $1, $2.to_i
+		t = Token.new([btfile, btlineno])
 		t.type = :string
 		t.raw = name.dup
 		@definition[name] = Macro.new(t)
 		if value
-			t = Token.new([])
+			t = Token.new([btfile, btlineno])
 			t.type = :string
 			t.raw = value.to_s
 			@definition[name].body << t
@@ -686,7 +729,7 @@ class Preprocessor
 			end
 		}
 
-		# XXX do not preprocess tokens when searching for :eol, it will trigger preprocessor directive detection from readtok_cpp
+		# XXX do not preprocess tokens when searching for :eol, it will trigger preprocessor directive detection from readtok
 
 		eol = tok = nil
 		case cmd.raw
@@ -702,7 +745,6 @@ class Preprocessor
 				when 0:       @ifelse_nesting[-1] = :discard
 				when Integer: @ifelse_nesting[-1] = :accept
 				else          @ifelse_nesting[-1] = :discard
-#				else raise cmd, 'pp cannot evaluate condition ' + test.inspect
 				end
 			when :discard, :discard_all
 				@ifelse_nesting << :discard_all
@@ -743,7 +785,6 @@ class Preprocessor
 				when 0:       @ifelse_nesting[-1] = :discard
 				when Integer: @ifelse_nesting[-1] = :accept
 				else          @ifelse_nesting[-1] = :discard
-#				else raise cmd, 'pp cannot evaluate condition ' + test.inspect
 				end
 			when :discard_all
 			else raise cmd, 'pp syntax error'
@@ -816,16 +857,22 @@ class Preprocessor
 					path = ::File.join(dir, ipath) if dir
 				end
 			end
-			nil while ntok = readtok_nopp and ntok.type == :space
-			raise ntok if ntok and ntok.type != :eol
-			unreadtok ntok
+			raise eol if eol = skipspc[] and eol.type != :eol
+			unreadtok eol
 
-			if not defined? @pragma_once or not @pragma_once or not @pragma_once[path]
-				puts "metasm preprocessor: including #{path}" if $DEBUG
-				raise cmd, "No such file or directory #{ipath.inspect}" if not path or not ::File.exist? path
-				raise cmd, 'filename too long' if path.length > 4096		# gcc
-
+			if not @pragma_once[path || ipath]
 				@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
+
+				if @hooked_include[ipath || path]
+					puts "metasm preprocessor: including hooked #{ipath || path}" if $DEBUG
+					@text = @hooked_include[ipath || path]
+				else
+					puts "metasm preprocessor: including #{path}" if $DEBUG
+					raise cmd, "No such file or directory #{ipath.inspect}" if not path or not ::File.exist? path
+					raise cmd, 'filename too long' if path.length > 4096		# gcc
+					@text = ::File.read(path)
+				end
+
 				# @filename[-1] used in trace_macros to distinguish generic/specific files
 				if tok.type == :quoted
 					@filename = '"' + path + '"'
@@ -833,7 +880,6 @@ class Preprocessor
 					@filename = '<' + path + '>'
 				end
 				@lineno = 1
-				@text = ::File.read(path)
 				@pos = 0
 				@queue = []
 			else
@@ -856,12 +902,10 @@ class Preprocessor
 		when 'line'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
-			nil while tok = readtok_nopp and tok.type == :space
-			raise tok || cmd if not tok or tok.type != :string or tok.raw != tok.raw.to_i.to_s
-			@lineno = tok.raw.to_i
-			nil while tok = readtok_nopp and tok.type == :space
-			raise tok if tok and tok.type != :eol
-			unreadtok tok
+			raise tok || cmd if not tok = skipspc[] or tok.type != :string
+			@lineno = Integer(tok.raw) rescue raise(tok, 'bad line number')
+			raise eol if eol = skipspc[] and eol.type != :eol
+			unreadtok eol
 
 		when 'pragma'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
@@ -871,57 +915,48 @@ class Preprocessor
 
 			case tok.raw
 			when 'once'
-				(@pragma_once ||= {})[@filename[1..-2]] = true
+				@pragma_once[@filename[1..-2]] = true
 			when 'no_warn_redefinition'
 				@warn_redefinition = false
-			when 'include_dir'
+			when 'include_dir', 'include_path'
 				nil while dir = readtok and dir.type == :space
 				raise cmd, 'qstring expected' if not dir or dir.type != :quoted
 				raise cmd, 'invalid path' if not ::File.directory? dir.value
 				@include_search_path.unshift dir.value
 
-			when 'push_macro'
+			when 'push_macro', 'pop_macro'
 				@pragma_macro_stack ||= []
 				nil while lp = readtok and lp.type == :space
 				nil while m = readtok and m.type == :space
 				nil while rp = readtok and rp.type == :space
 				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')' or m.type != :quoted
-				mbody = @definition[m.value]
-				@pragma_macro_stack << mbody
-
-			when 'pop_macro'
-				@pragma_macro_stack ||= []
-				nil while lp = readtok and lp.type == :space
-				nil while m = readtok and m.type == :space
-				nil while rp = readtok and rp.type == :space
-				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')' or m.type != :quoted
-				raise cmd, "macro stack empty" if @pragma_macro_stack.empty?
-				# pushing undefined macro name is allowed, handled here
-				mbody = @pragma_macro_stack.pop
-				if mbody
-					@definition[m.value] = mbody
+				if tok.raw == 'push_macro'
+					@pragma_macro_stack << @definition[m.value]
 				else
-					@definition.delete m.value
+					raise cmd, "macro stack empty" if @pragma_macro_stack.empty?
+					if mbody = @pragma_macro_stack.pop	# push undefined macro allowed
+						@definition[m.value] = mbody
+					else
+						@definition.delete m.value
+					end
 				end
-			
 			else
 				@pragma_callback[tok]
 			end
 
-			nil while tok = readtok_nopp and tok.type == :space
-			raise tok if tok and tok.type != :eol
-			unreadtok tok
+			raise eol, 'eol expected' if eol = skipspc[] and eol.type != :eol
+			unreadtok eol
 
 		else return false
 		end
 
-		# skip #undef'd parts of the source
+		# skip #ifndef'd parts of the source
 		state = 1	# just seen :eol
 		while @ifelse_nesting.last == :discard or @ifelse_nesting.last == :discard_all
 			begin 
 				tok = skipspc[]
 			rescue ParseError
-				# react as gcc -E: " unterminated in #undef => ok, /* unterminated => error (the " will fail at eol)
+				# react as gcc -E: <"> unterminated in #if 0 => ok, </*> unterminated => error (the " will fail at eol)
 				retry
 			end
 
@@ -936,7 +971,7 @@ class Preprocessor
 		true
 	end
 
-# parses a preprocessor expression (similar to Expression, + handles "defined(foo)")
+# parses a preprocessor expression (similar to Expression, + handles "defined(foo)"), returns an Expression
 class PPExpression
 	class << self
 		# reads an operator from the lexer, returns the corresponding symbol or nil
@@ -974,7 +1009,7 @@ class PPExpression
 				op = op.dup
 				op.raw << ntok.raw
 			# ok
-			when '^', '+', '-', '*', '/', '%'
+			when '^', '+', '-', '*', '/', '%', '>>', '<<', '>=', '<=', '||', '&&', '|', '&', '!=', '=='
 			# unknown
 			else
 				lexer.unreadtok tok
@@ -1020,11 +1055,9 @@ class PPExpression
 			when :punct
 				case tok.raw
 				when '('
-					nil while ntok = lexer.readtok and ntok.type == :space
-					lexer.unreadtok ntok
 					val = parse(lexer)
 					nil while ntok = lexer.readtok and ntok.type == :space
-					raise tok, "syntax error, no ) found after #{val.inspect}, got #{ntok.inspect}" if not ntok or ntok.type != :punct or ntok.raw != ')'
+					raise tok, "')' expected after #{val.inspect} got #{ntok.inspect}" if not ntok or ntok.type != :punct or ntok.raw != ')'
 				when '!', '+', '-', '~'
 					nil while ntok = lexer.readtok and ntok.type == :space
 					lexer.unreadtok ntok
@@ -1050,7 +1083,6 @@ class PPExpression
 			val
 		end
 
-		# for boolean operators, true is 1 (or anything != 0), false is 0
 		def parse(lexer)
 			opstack = []
 			stack = []

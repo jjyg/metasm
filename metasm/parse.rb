@@ -93,7 +93,7 @@ end
 # asm macros (name macro args\nbody endm, name equ val)
 # initializes token.value (reads integers in hex etc)
 # merges consecutive space/eol
-class AsmPreprocessor
+class AsmPreprocessor < Preprocessor
 	# an assembler macro, similar to preprocessor macro
 	# handles local labels
 	class Macro
@@ -207,15 +207,15 @@ class AsmPreprocessor
 
 	# reads a token, handles macros/comments/integers/etc
 	# argument is for internal use
-	def readtok_asmpp(rec = false)
-		tok = readtok_cpp
+	def readtok(rec = false)
+		tok = super()
 
 		# handle ; comments
 		if tok and tok.type == :punct and tok.raw == ';'
 			tok.type = :eol
 			begin
 				tok = tok.dup
-				while ntok = readtok_cpp and ntok.type != :eol
+				while ntok = super() and ntok.type != :eol
 					tok.raw << ntok.raw
 				end
 				tok.raw << ntok.raw if ntok
@@ -277,7 +277,6 @@ class AsmPreprocessor
 
 		tok
 	end
-	alias readtok readtok_asmpp
 end
 
 class ExeFormat
