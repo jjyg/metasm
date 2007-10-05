@@ -134,8 +134,13 @@ end
 
 class VirtualFile < VirtualString
 	# returns a new VirtualFile of the whole file content (defaults readonly)
+	# returns a String if the file is small (<4096o) and readonly access
 	def self.read(path, mode='rb')
-		File.open(path, mode) { |fd| new fd }
+		if sz = File.size(path) <= 4096 and (mode == 'rb' or mode == 'r')
+			File.open(path, mode) { |fd| fd.read }
+		else
+			File.open(path, mode) { |fd| new fd, 0, sz }
+		end
 	end
 
 	attr_accessor :fd, :addr_start, :length,

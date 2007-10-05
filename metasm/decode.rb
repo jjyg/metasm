@@ -501,7 +501,7 @@ class EncodedData
 		end
 	end
 
-	def read(len)
+	def read(len=@virtsize-@ptr)
 		str = ''
 		if @ptr < @data.length
 			str << @data[@ptr, len]
