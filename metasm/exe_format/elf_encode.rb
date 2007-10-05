@@ -657,7 +657,7 @@ class ELF
 			class << @cursource
 				attr_accessor :elf
 				def <<(*a)
-					t = Token.new(nil)
+					t = Preprocessor::Token.new(nil)
 					t.raw = '.text'
 					elf.parse_parser_instruction t
 					elf.cursource.send(:<<, *a)

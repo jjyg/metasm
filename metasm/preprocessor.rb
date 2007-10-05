@@ -9,7 +9,6 @@ require 'metasm/parse'
 
 
 module Metasm
-
 # A source text preprocessor (C-like)
 # defines the methods nexttok, readtok and unreadtok
 # they spits out Tokens of type :
@@ -23,6 +22,48 @@ module Metasm
 # preprocessor directives start with a :punct '#' just after an :eol (so you can have spaces before #), they take a whole line
 # comments are C/C++ style (//...\n or /*...*/), returned as :eol (resp. :space)
 class Preprocessor
+	# a token, as returned by the preprocessor
+	class Token
+		# the token type: :space, :eol, :quoted, :string, :punct, ...
+		attr_accessor :type
+		# the interpreted value of the token (Integer for an int, etc)
+		attr_accessor :value
+		# the raw string that gave this token
+		attr_accessor :raw
+		# a list of token this on is expanded from (Preprocessor macro expansion)
+		attr_accessor :expanded_from
+
+		include Backtrace
+
+		def initialize(backtrace)
+			@backtrace = backtrace
+			@value = nil
+			@raw = ''
+		end
+
+		# used when doing 'raise tok, "foo"'
+		# raises a ParseError, adding backtrace information
+		def exception(msg='syntax error')
+			msgh = msg.to_s
+			if msg
+				msgh << ' near '
+				expanded_from.to_a.each { |ef| msgh << ef.exception(nil).message << " expanded to \n\t"  }
+			end
+			msgh << ((@raw.length > 35) ? (@raw[0..10] + '<...>' + @raw[-10..-1]).inspect : @raw.inspect)
+			msgh << " at " << backtrace_str
+			ParseError.new msgh
+		end
+
+		def dup
+			n = self.class.new(backtrace)
+			n.type = @type
+			n.value = @value.kind_of?(String) ? @value.dup : @value
+			n.raw = @raw.dup
+			n.expanded_from = @expanded_from.dup if defined? @expanded_from
+			n
+		end
+	end
+
 	# a preprocessor macro
 	class Macro
 		# the token holding the name used in the macro definition
@@ -971,8 +1012,8 @@ class Preprocessor
 		true
 	end
 
-# parses a preprocessor expression (similar to Expression, + handles "defined(foo)"), returns an Expression
-class PPExpression
+	# parses a preprocessor expression (similar to Expression, + handles "defined(foo)"), returns an Expression
+	class PPExpression
 	class << self
 		# reads an operator from the lexer, returns the corresponding symbol or nil
 		def readop(lexer)
@@ -1112,6 +1153,6 @@ class PPExpression
 			Expression[stack.first]
 		end
 	end
-end
+	end
 end
 end

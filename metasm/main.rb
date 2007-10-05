@@ -125,49 +125,6 @@ module Backtrace
 	end
 end
 
-# a token, as returned by the lexer
-class Token
-	# the token type: :space, :eol, :quoted, :string, :punct, ...
-	attr_accessor :type
-	# the interpreted value of the token (Integer for an int, etc)
-	attr_accessor :value
-	# the raw string that gave this token
-	attr_accessor :raw
-	# a list of token this on is expanded from (Preprocessor macro expansion)
-	attr_accessor :expanded_from
-
-	include Backtrace
-
-	def initialize(backtrace)
-		@backtrace = backtrace
-		@value = nil
-		@raw = ''
-	end
-
-	# used when doing 'raise tok, "foo"'
-	# raises a ParseError, adding backtrace information
-	def exception(msg='syntax error')
-		msgh = msg.to_s
-		if msg
-			msgh << ' near '
-			expanded_from.to_a.each { |ef| msgh << ef.exception(nil).message << " expanded to \n\t"  }
-		end
-		msgh << ((@raw.length > 35) ? (@raw[0..10] + '<...>' + @raw[-10..-1]).inspect : @raw.inspect)
-		msgh << " at " << backtrace_str
-		ParseError.new msgh
-	end
-
-	def dup
-		n = self.class.new(backtrace)
-		n.type = @type
-		n.value = @value.kind_of?(String) ? @value.dup : @value
-		n.raw = @raw.dup
-		n.expanded_from = @expanded_from.dup if defined? @expanded_from
-		n
-	end
-
-end
-
 # an instruction: opcode name + arguments
 class Instruction
 	# arguments (cpu-specific objects)

@@ -719,7 +719,7 @@ class COFF
 			class << @cursource
 				attr_accessor :coff
 				def <<(*a)
-					t = Token.new(nil)
+					t = Preprocessor::Token.new(nil)
 					t.raw = '.text'
 					coff.parse_parser_instruction t
 					coff.cursource.send(:<<, *a)
