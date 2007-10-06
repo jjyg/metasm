@@ -413,7 +413,7 @@ puts "backtracking failed for #{'%08x' % orig_off} #{orig_di.instruction}" if $V
 				edata.export.keys.find_all { |k| edata.export[k] == curaddr - baseaddr }.each { |l| b["#{l}:"] }
 				# instrs
 				block.list.each { |di|
-					binstr = edata.data[curaddr-baseaddr, di.bin_length].unpack('C*').map { |c| '%02x' % c }.join
+					binstr = edata.data[curaddr-baseaddr, di.bin_length].to_s.unpack('C*').map { |c| '%02x' % c }.join
 					str = "  #{di.instruction.to_s.ljust(29)} ; @#{'%08x' % curaddr}   #{binstr}"
 					str << '  -- ' << di.comment if di.comment
 					b[str]
