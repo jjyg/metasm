@@ -184,20 +184,32 @@ class COFF < ExeFormat
 				:data_p, :data, :codepage, :reserved
 		end
 
-		def to_hash
+		def to_hash(depth=0)
+			map =	case depth
+				when 0: TYPE
+				when 1: {}	# resource-id
+				when 2: {}	# lang
+				else {}
+				end
 			@entries.inject({}) { |h, e|
-				k = e.id ? e.id : e.name ? e.name : e.name_w
-				v = e.subdir ? e.subdir.to_hash : e.data
+				k = e.id ? map.fetch(e.id, e.id) : e.name ? e.name : e.name_w
+				v = e.subdir ? e.subdir.to_hash(depth+1) : e.data
 				h.update k => v
 			}
 		end
 
-		def self.from_hash(h)
+		def self.from_hash(h, depth=0)
+			map =	case depth
+				when 0: TYPE
+				when 1: {}	# resource-id
+				when 2: {}	# lang
+				else {}
+				end
 			ret = new
 			ret.entries = h.map { |k, v|
 				e = Entry.new
-				k.kind_of?(Integer) ? (e.id = k) : (e.name = k)	# name_w ?
-				v.kind_of?(Hash) ? (e.subdir = from_hash(v)) : (e.data = v)
+				k.kind_of?(Integer) ? (e.id = k) : map.index(k) ? (e.id = map.index(k)) : (e.name = k)	# name_w ?
+				v.kind_of?(Hash) ? (e.subdir = from_hash(v, depth+1)) : (e.data = v)
 				e
 			}
 			ret
@@ -210,7 +222,7 @@ class COFF < ExeFormat
 			12 => 'GROUP_CURSOR', 14 => 'GROUP_ICON', 16 => 'VERSION',
 			17 => 'DLGINCLUDE', 19 => 'PLUGPLAY', 20 => 'VXD',
 			21 => 'ANICURSOR', 22 => 'ANIICON', 23 => 'HTML',
-			24 => 'MANIFEST' # ?
+			24 => 'MANIFEST'
 		}
 
 		ACCELERATOR_BITS = {
