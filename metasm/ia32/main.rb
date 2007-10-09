@@ -114,7 +114,7 @@ class Ia32 < CPU
 		end
 	end
 
-	def initialize(family = :sse3, mode = 32)
+	def initialize(family = :vmx, mode = 32)
 		super()
 		@endianness = :little
 		@size = mode

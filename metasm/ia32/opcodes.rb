@@ -518,6 +518,25 @@ class Ia32
 		addop('movsldup', [0x0F, 0x12], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
 	end
 
+	def init_vmx
+		init_sse3
+
+		addop 'vmcall',   [0x0F, 0x01, 0xC1]
+
+		if @size == 64
+		addop('vmclear',  [0x66, 0x0F, 0xC7, 6<<3], nil, {:modrmA => [3, 0]}, :modrmA) { |o| o.props[:argsz] = 64 }
+		addop 'vmlaunch', [0x0F, 0x01, 0xC2]
+		addop 'vmresume', [0x0F, 0x01, 0xC3]
+		addop('vmptrld',  [0x0F, 0xC7, 6<<3], nil, {:modrmA => [2, 0]}, :modrmA) { |o| o.props[:argsz] = 64 }
+		addop('vmptrrst', [0x0F, 0xC7, 7<<3], nil, {:modrmA => [2, 0]}, :modrmA) { |o| o.props[:argsz] = 64 }
+		addop 'vmread',   [0x0F, 0x78], :mrm
+		addop 'vmread',   [0x0F, 0x78], :mrm
+		addop 'vmwrite',  [0x0F, 0x79], :mrm
+		addop 'vmxoff',   [0x0F, 0x01, 0xC4]
+		addop('vmxon',    [0xF3, 0x0F, 0xC7, 6<<3], nil, {:modrmA => [3, 0]}, :modrmA) { |o| o.props[:argsz] = 64 }
+		end
+	end
+
 
 	private
 
