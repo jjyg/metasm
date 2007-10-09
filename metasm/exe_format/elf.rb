@@ -21,13 +21,13 @@ class ELF < ExeFormat
 
 	MACHINE = {
 		 0 => 'NONE',   1 => 'M32',     2 => 'SPARC',   3 => '386',
-		 4 => '68K',    5 => '88K',     7 => '860',
+		 4 => '68K',    5 => '88K',     6 => '486',     7 => '860',
 		 8 => 'MIPS',   9 => 'S370',   10 => 'MIPS_RS3_LE',
 		15 => 'PARISC',
 		17 => 'VPP500',18 => 'SPARC32PLUS', 19 => '960',
 		20 => 'PPC',   21 => 'PPC64',  22 => 'S390',
 		36 => 'V800',  37 => 'FR20',   38 => 'RH32',   39 => 'MCORE',
-		40 => 'ARM',   41 => 'FAKE_ALPHA', 42 => 'SH', 43 => 'SPARCV9',
+		40 => 'ARM',   41 => 'ALPHA_STD', 42 => 'SH', 43 => 'SPARCV9',
 		44 => 'TRICORE', 45 => 'ARC',  46 => 'H8_300', 47 => 'H8_300H',
 		48 => 'H8S',   49 => 'H8_500', 50 => 'IA_64',  51 => 'MIPS_X',
 		52 => 'COLDFIRE', 53 => '68HC12', 54 => 'MMA', 55 => 'PCP',
@@ -163,10 +163,100 @@ class ELF < ExeFormat
 			32 => 'TLS_LDO_32', 33 => 'TLS_IE_32',
 			34 => 'TLS_LE_32', 35 => 'TLS_DTPMOD32',
 			36 => 'TLS_DTPOFF32', 37 => 'TLS_TPOFF32' },
+		'ARM' => { 0 => 'NONE', 1 => 'PC24', 2 => 'ABS32', 3 => 'REL32',
+			4 => 'PC13', 5 => 'ABS16', 6 => 'ABS12',
+			7 => 'THM_ABS5', 8 => 'ABS8', 9 => 'SBREL32',
+			10 => 'THM_PC22', 11 => 'THM_PC8', 12 => 'AMP_VCALL9',
+			13 => 'SWI24', 14 => 'THM_SWI8', 15 => 'XPC25',
+			16 => 'THM_XPC22', 20 => 'COPY', 21 => 'GLOB_DAT',
+			22 => 'JUMP_SLOT', 23 => 'RELATIVE', 24 => 'GOTOFF',
+			25 => 'GOTPC', 26 => 'GOT32', 27 => 'PLT32',
+			100 => 'GNU_VTENTRY', 101 => 'GNU_VTINHERIT',
+			250 => 'RSBREL32', 251 => 'THM_RPC22', 252 => 'RREL32',
+			253 => 'RABS32', 254 => 'RPC24', 255 => 'RBASE' },
+		'IA_64' => { 0 => 'NONE',
+			0x21 => 'IMM14', 0x22 => 'IMM22', 0x23 => 'IMM64',
+			0x24 => 'DIR32MSB', 0x25 => 'DIR32LSB',
+			0x26 => 'DIR64MSB', 0x27 => 'DIR64LSB',
+			0x2a => 'GPREL22', 0x2b => 'GPREL64I',
+			0x2c => 'GPREL32MSB', 0x2d => 'GPREL32LSB',
+			0x2e => 'GPREL64MSB', 0x2f => 'GPREL64LSB',
+			0x32 => 'LTOFF22', 0x33 => 'LTOFF64I',
+			0x3a => 'PLTOFF22', 0x3b => 'PLTOFF64I',
+			0x3e => 'PLTOFF64MSB', 0x3f => 'PLTOFF64LSB',
+			0x43 => 'FPTR64I', 0x44 => 'FPTR32MSB',
+			0x45 => 'FPTR32LSB', 0x46 => 'FPTR64MSB',
+			0x47 => 'FPTR64LSB',
+			0x48 => 'PCREL60B', 0x49 => 'PCREL21B',
+			0x4a => 'PCREL21M', 0x4b => 'PCREL21F',
+			0x4c => 'PCREL32MSB', 0x4d => 'PCREL32LSB',
+			0x4e => 'PCREL64MSB', 0x4f => 'PCREL64LSB',
+			0x52 => 'LTOFF_FPTR22', 0x53 => 'LTOFF_FPTR64I',
+			0x54 => 'LTOFF_FPTR32MSB', 0x55 => 'LTOFF_FPTR32LSB',
+			0x56 => 'LTOFF_FPTR64MSB', 0x57 => 'LTOFF_FPTR64LSB',
+			0x5c => 'SEGREL32MSB', 0x5d => 'SEGREL32LSB',
+			0x5e => 'SEGREL64MSB', 0x5f => 'SEGREL64LSB',
+			0x64 => 'SECREL32MSB', 0x65 => 'SECREL32LSB',
+			0x66 => 'SECREL64MSB', 0x67 => 'SECREL64LSB',
+			0x6c => 'REL32MSB', 0x6d => 'REL32LSB',
+			0x6e => 'REL64MSB', 0x6f => 'REL64LSB',
+			0x74 => 'LTV32MSB', 0x75 => 'LTV32LSB',
+			0x76 => 'LTV64MSB', 0x77 => 'LTV64LSB',
+			0x79 => 'PCREL21BI', 0x7a => 'PCREL22',
+			0x7b => 'PCREL64I', 0x80 => 'IPLTMSB',
+			0x81 => 'IPLTLSB', 0x85 => 'SUB',
+			0x86 => 'LTOFF22X', 0x87 => 'LDXMOV',
+			0x91 => 'TPREL14', 0x92 => 'TPREL22',
+			0x93 => 'TPREL64I', 0x96 => 'TPREL64MSB',
+			0x97 => 'TPREL64LSB', 0x9a => 'LTOFF_TPREL22',
+			0xa6 => 'DTPMOD64MSB', 0xa7 => 'DTPMOD64LSB',
+			0xaa => 'LTOFF_DTPMOD22', 0xb1 => 'DTPREL14',
+			0xb2 => 'DTPREL22', 0xb3 => 'DTPREL64I',
+			0xb4 => 'DTPREL32MSB', 0xb5 => 'DTPREL32LSB',
+			0xb6 => 'DTPREL64MSB', 0xb7 => 'DTPREL64LSB',
+			0xba => 'LTOFF_DTPREL22' },
 		'M32' => { 0 => 'NONE', 1 => '32', 2 => '32_S', 3 => 'PC32_S',
 			4 => 'GOT32_S', 5 => 'PLT32_S', 6 => 'COPY',
 			7 => 'GLOB_DAT', 8 => 'JMP_SLOT', 9 => 'RELATIVE',
 			10 => 'RELATIVE_S' },
+		'PPC' => { 0 => 'NONE',
+			1 => 'ADDR32', 2 => 'ADDR24', 3 => 'ADDR16',
+			4 => 'ADDR16_LO', 5 => 'ADDR16_HI', 6 => 'ADDR16_HA',
+			7 => 'ADDR14', 8 => 'ADDR14_BRTAKEN', 9 => 'ADDR14_BRNTAKEN',
+			10 => 'REL24', 11 => 'REL14',
+			12 => 'REL14_BRTAKEN', 13 => 'REL14_BRNTAKEN',
+			14 => 'GOT16', 15 => 'GOT16_LO',
+			16 => 'GOT16_HI', 17 => 'GOT16_HA',
+			18 => 'PLTREL24', 19 => 'COPY',
+			20 => 'GLOB_DAT', 21 => 'JMP_SLOT',
+			22 => 'RELATIVE', 23 => 'LOCAL24PC',
+			24 => 'UADDR32', 25 => 'UADDR16',
+			26 => 'REL32', 27 => 'PLT32',
+			28 => 'PLTREL32', 29 => 'PLT16_LO',
+			30 => 'PLT16_HI', 31 => 'PLT16_HA',
+			32 => 'SDAREL16', 33 => 'SECTOFF',
+			34 => 'SECTOFF_LO', 35 => 'SECTOFF_HI',
+			36 => 'SECTOFF_HA', 67 => 'TLS',
+			68 => 'DTPMOD32', 69 => 'TPREL16',
+			70 => 'TPREL16_LO', 71 => 'TPREL16_HI',
+			72 => 'TPREL16_HA', 73 => 'TPREL32',
+			74 => 'DTPREL16', 75 => 'DTPREL16_LO',
+			76 => 'DTPREL16_HI', 77 => 'DTPREL16_HA',
+			78 => 'DTPREL32', 79 => 'GOT_TLSGD16',
+			80 => 'GOT_TLSGD16_LO', 81 => 'GOT_TLSGD16_HI',
+			82 => 'GOT_TLSGD16_HA', 83 => 'GOT_TLSLD16',
+			84 => 'GOT_TLSLD16_LO', 85 => 'GOT_TLSLD16_HI',
+			86 => 'GOT_TLSLD16_HA', 87 => 'GOT_TPREL16',
+			88 => 'GOT_TPREL16_LO', 89 => 'GOT_TPREL16_HI',
+			90 => 'GOT_TPREL16_HA', 101 => 'EMB_NADDR32',
+			102 => 'EMB_NADDR16', 103 => 'EMB_NADDR16_LO',
+			104 => 'EMB_NADDR16_HI', 105 => 'EMB_NADDR16_HA',
+			106 => 'EMB_SDAI16', 107 => 'EMB_SDA2I16',
+			108 => 'EMB_SDA2REL', 109 => 'EMB_SDA21',
+			110 => 'EMB_MRKREF', 111 => 'EMB_RELSEC16',
+			112 => 'EMB_RELST_LO', 113 => 'EMB_RELST_HI',
+			114 => 'EMB_RELST_HA', 115 => 'EMB_BIT_FLD',
+			116 => 'EMB_RELSDA' },
 		'SPARC' => { 0 => 'NONE', 1 => '8', 2 => '16', 3 => '32',
 			4 => 'DISP8', 5 => 'DISP16', 6 => 'DISP32',
 			7 => 'WDISP30', 8 => 'WDISP22', 9 => 'HI22',
@@ -194,16 +284,24 @@ class ELF < ExeFormat
 			72 => 'TLS_LE_HIX22', 73 => 'TLS_LE_LOX10',
 			74 => 'TLS_DTPMOD32', 75 => 'TLS_DTPMOD64',
 			76 => 'TLS_DTPOFF32', 77 => 'TLS_DTPOFF64',
-			78 => 'TLS_TPOFF32', 79 => 'TLS_TPOFF64' }
+			78 => 'TLS_TPOFF32', 79 => 'TLS_TPOFF64' },
+		'X86_64' => { 0 => 'NONE',
+			1 => '64', 2 => 'PC32', 3 => 'GOT32', 4 => 'PLT32',
+			5 => 'COPY', 6 => 'GLOB_DAT', 7 => 'JMP_SLOT',
+			8 => 'RELATIVE', 9 => 'GOTPCREL', 10 => '32',
+			11 => '32S', 12 => '16', 13 => 'PC16', 14 => '8',
+			15 => 'PC8', 16 => 'DTPMOD64', 17 => 'DTPOFF64',
+			18 => 'TPOFF64', 19 => 'TLSGD', 20 => 'TLSLD',
+			21 => 'DTPOFF32', 22 => 'GOTTPOFF', 23 => 'TPOFF32' }
 	)
 
 	class Header
-		attr_accessor :ident, :type, :machine, :version, :entry, :phoff, :shoff, :flags, :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
-		attr_accessor :sig, :e_class, :endianness, :abi, :abi_version
+		attr_accessor :type, :machine, :version, :entry, :phoff, :shoff, :flags, :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
+		attr_accessor :magic, :e_class, :data, :i_version, :abi, :abi_version, :ident
 
 		def self.size elf
-			x = elf.header.e_class / 8
-			16 + 2 + 2 + 4 + x + x + x + 4 + 2 + 2 + 2 + 2 + 2 + 2
+			x = elf.bitsize >> 3
+			40 + 3*x
 		end
 	end
 	class Segment
@@ -211,51 +309,58 @@ class ELF < ExeFormat
 		attr_accessor :encoded
 
 		def self.size elf
-			x = elf.header.e_class / 8
-			4 + 4 + x + x + x + x + x + x
+			x = elf.bitsize >> 3
+			8 + 6*x
 		end
 	end
 	class Section
-		attr_accessor :name_p, :type, :flags, :addr, :offset, :size, :link, :info, :addralign, :entsize
+		attr_accessor :name_p, :name, :type, :flags, :addr, :offset, :size, :link, :info, :addralign, :entsize
 		attr_accessor :encoded
-		def name ; @name if defined? @name ; end
-		def name=(n) ; @name_p = nil ; @name = n ; end		# changing section name invalidates name_p
 
 		def self.size elf
-			x = elf.header.e_class / 8
-			4 + 4 + x + x + x + x + 4 + 4 + x + x
+			x = elf.bitsize >> 3
+			16 + 6*x
 		end
 	end
 	class Symbol
-		attr_accessor :name_p, :value, :type, :other, :shndx, :info
+		attr_accessor :name_p, :name, :size, :bind, :value, :type, :other, :shndx
 		attr_accessor :thunk
-		def name ; @name if defined? @name ; end
-		def name=(n) ; @name_p = nil ; @name = n ; end
-		def size ; @size ; end
-		def size=(s) ; @info = nil ; @size = s ; end
-		def bind ; @bind ; end
-		def bind=(b) ; @info = nil ; @bind = b ; end
 
 		def self.size elf
-			x = elf.header.e_class / 8
-			4 + x + 4 + 1 + 1 + 2
+			x = elf.bitsize >> 3
+			12 + x
+		end
+		def set_info(elf, info)
+			@bind = elf.int_to_hash((info >> 4) & 15, SYMBOL_BIND)
+			@type = elf.int_to_hash(info & 15, SYMBOL_TYPE)
+		end
+		def get_info(elf)
+			((elf.int_from_hash(@bind, SYMBOL_BIND) & 15) << 4) |
+			(elf.int_from_hash(@type, SYMBOL_TYPE) & 15)
 		end
 	end
 	class Relocation
-		attr_accessor :offset, :info, :addend
-		def type ; @type if defined? @type ; end
-		def type=(t) ; @info = nil ; @type = t ; end
-		def symbol ; @symbol if defined? @symbol ; end
-		def symbol=(s) ; @info = nil ; @symbol = s ; end
-
+		attr_accessor :offset, :type, :symbol, :addend
 		def self.size elf
-			x = elf.header.e_class / 8
-			x + x
+			x = elf.bitsize >> 3
+			2*x
 		end
-
 		def self.size_a elf
-			x = elf.header.e_class / 8
-			x + x + x
+			x = elf.bitsize >> 3
+			3*x
+		end
+		def set_info(elf, info, symtab)
+			v = (elf.bitsize == 32 ? 8 : 32)
+			@type = elf.int_to_hash((info & ((1 << v) - 1)), RELOCATION_TYPE[elf.header.machine])
+			@symbol = (info >> v) & 0xffff_ffff
+			@symbol = symtab[@symbol] if symtab[@symbol]
+		end
+		def get_info(elf, symtab)
+			v = (elf.bitsize == 32 ? 8 : 32)
+			s = symbol || 0
+			s = symtab.index(s) if s.kind_of? Symbol
+			(s << v) |
+			(elf.int_from_hash(@type, RELOCATION_TYPE[elf.header.machine]) & ((1 << v)-1))
 		end
 	end
 
@@ -278,17 +383,25 @@ class ELF < ExeFormat
 		}
 	end
 
-	attr_accessor :header, :segments, :sections, :tag, :symbols, :relocations
+	attr_accessor :header, :segments, :sections, :tag, :symbols, :relocations, :endianness, :bitsize
 	def initialize(cpu=nil)
 		@header = Header.new
 		@tag = {}
-		@symbols = []
+		@symbols = [Symbol.new]
+		 @symbols.first.shndx = 'UNDEF'
 		@relocations = []
-		@sections = []
+		@sections = [Section.new]
+		 @sections.first.type = 'NULL'
 		@segments = []
 		if cpu
-			@header.endianness = cpu.endianness
-			@header.e_class = cpu.size
+			@endianness = cpu.endianness
+			@bitsize = cpu.size
+			case cpu
+			when Ia32: @header.machine = '386'
+			end
+		else
+			@endianness = :little
+			@bitsize = 32
 		end
 		super
 	end
@@ -469,4 +582,5 @@ typedef struct {
 #define	SYMINFO_CURRENT		1
 #define	SYMINFO_NUM		2
 
+ P
 

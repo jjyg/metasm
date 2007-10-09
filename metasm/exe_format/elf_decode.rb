@@ -14,26 +14,28 @@ class ELF
 		def decode elf
 			@ident = elf.encoded.read 16
 
-			@signature = @ident[0, 4]
-			raise InvalidExeFormat, "E: ELF: invalid ELF signature #{@signature.inspect}" if @signature != "\x7fELF"
+			@magic = @ident[0, 4]
+			raise InvalidExeFormat, "E: ELF: invalid ELF signature #{@magic.inspect}" if @magic != "\x7fELF"
 
-			case @ident[4]
-			when 1: @e_class = 32
-			when 2, 200: @e_class = 64
-			else raise InvalidExeFormat, "E: ELF: unsupported class #{@ident[4]}"
+			@e_class = elf.int_to_hash(@ident[4], CLASS)
+			case @e_class
+			when '32': elf.bitsize = 32
+			when '64', '64_icc': elf.bitsize = 64
+			else raise InvalidExeFormat, "E: ELF: unsupported class #{@e_class}"
 			end
 
-			case @ident[5]
-			when 1: @endianness = :little
-			when 2: @endianness = :big
-			else raise InvalidExeFormat, "E: ELF: unsupported endianness #{@ident[5]}"
+			@data = elf.int_to_hash(@ident[5], DATA)
+			case @data
+			when 'LSB': elf.endianness = :little
+			when 'MSB': elf.endianness = :big
+			else raise InvalidExeFormat, "E: ELF: unsupported endianness #{@data}"
 			end
 
 			# from there we can use elf.decode_word etc
-
-			case @ident[6]
-			when 1
-			else raise "E: ELF: unsupported ELF version #{@ident[6]}"
+			@version = elf.int_to_hash(@ident[6], VERSION)
+			case @version
+			when 'CURRENT'
+			else raise "E: ELF: unsupported ELF version #{@version}"
 			end
 
 			@abi = elf.int_to_hash(@ident[7], ABI)
@@ -70,25 +72,19 @@ class ELF
 			@addralign = elf.decode_xword
 			@entsize   = elf.decode_xword
 		end
-
-		# sets name by reading str at offset @name_p
-		# avoids invalidation of @name_p by #name=
-		def read_name(str)
-			@name = str[@name_p...str.index(0, @name_p)] if @name_p > 0
-		end
 	end
 
 	class Segment
 		# decodes the program header pointed to by elf.encoded.ptr
 		def decode elf
 			@type   = elf.int_to_hash(elf.decode_word, PH_TYPE)
-			@flags  = elf.bits_to_hash(elf.decode_word, PH_FLAGS) if elf.header.e_class == 64
+			@flags  = elf.bits_to_hash(elf.decode_word, PH_FLAGS) if elf.bitsize == 64
 			@offset = elf.decode_off
 			@vaddr  = elf.decode_addr
 			@paddr  = elf.decode_addr
 			@filesz = elf.decode_xword
 			@memsz  = elf.decode_xword
-			@flags  = elf.bits_to_hash(elf.decode_word, PH_FLAGS) if elf.header.e_class == 32
+			@flags  = elf.bits_to_hash(elf.decode_word, PH_FLAGS) if elf.bitsize == 32
 			@align  = elf.decode_xword
 		end
 	end
@@ -97,81 +93,55 @@ class ELF
 		# decodes the symbol pointed to by elf.encoded.ptr
 		# read the symbol name from strtab
 		def decode elf, strtab=nil
-			case elf.header.e_class
+			case elf.bitsize
 			when 32
 				@name_p = elf.decode_word
 				@value  = elf.decode_addr
 				@size   = elf.decode_word
-				@info   = elf.decode_uchar
+				set_info(elf, elf.decode_uchar)
 				@other  = elf.decode_uchar
 				@shndx  = elf.int_to_hash(elf.decode_half, SH_INDEX)
 			when 64
 				@name_p = elf.decode_word
-				@info   = elf.decode_uchar
+				set_info(elf, elf.decode_uchar)
 				@other  = elf.decode_uchar
 				@shndx  = elf.int_to_hash(elf.decode_half, SH_INDEX)
 				@value  = elf.decode_addr
 				@size   = elf.decode_xword
 			end
 
-			init_info elf
-			read_name strtab if strtab
-		end
-
-		# sets name by reading str at offset @name_p
-		# avoids invalidation of @name_p by #name=
-		def read_name(str)
-			@name = str[@name_p...str.index(0, @name_p)] if @name_p > 0
-		end
-
-		# sets bind and type from info
-		# avoids invalidation of @info by accessors
-		def init_info(elf)
-			@bind = elf.int_to_hash(((@info >> 4) & 15), SYMBOL_BIND)
-			@type = elf.int_to_hash((@info & 15), SYMBOL_TYPE)
+			@name = elf.readstr(strtab, @name_p) if strtab
 		end
 	end
 
 	class Relocation
 		# decodes the relocation with no explicit addend pointed to by elf.encoded.ptr
 		# the symbol is taken from ary if possible, and is set to nil for index 0
-		def decode(elf, ary=nil)
+		def decode(elf, symtab)
 			@offset = elf.decode_addr
-			@info   = elf.decode_xword
-
-			init_info(elf, ary)
+			set_info(elf, elf.decode_xword, symtab)
 		end
 
 		# same as +decode+, but with explicit addend (RELA)
-		def decode_addend(elf, ary=nil)
-			decode(elf, ary)
+		def decode_addend(elf, symtab)
+			decode(elf, symtab)
 			@addend = elf.decode_sxword
-		end
-
-		# sets symbol and type from info
-		# avoids invalidation of @info by accessors
-		def init_info(elf, ary=nil)
-			@type = @info & (elf.header.e_class == 32 ? 0xff : 0xffff_ffff)
-			@type = elf.int_to_hash(@type, RELOCATION_TYPE[elf.header.machine])
-			@symbol = @info >> (elf.header.e_class == 32 ? 8 : 32)
-			@symbol = nil if @symbol == 0
-
-			init_symbol ary if ary
-		end
-		def init_symbol(ary)
-			@symbol = ary[@symbol] if @symbol and ary[@symbol]
 		end
 	end
 
 	# basic immediates decoding functions
-	def decode_uchar(edata = @encoded) ; edata.decode_imm(:u8,  @header.endianness) end
-	def decode_half( edata = @encoded) ; edata.decode_imm(:u16, @header.endianness) end
-	def decode_word( edata = @encoded) ; edata.decode_imm(:u32, @header.endianness) end
-	def decode_sword(edata = @encoded) ; edata.decode_imm(:i32, @header.endianness) end
-	def decode_xword(edata = @encoded) ; edata.decode_imm((@header.e_class == 32 ? :u32 : :u64), @header.endianness) end
-	def decode_sxword(edata= @encoded) ; edata.decode_imm((@header.e_class == 32 ? :i32 : :i64), @header.endianness) end
+	def decode_uchar(edata = @encoded) edata.decode_imm(:u8,  @endianness) end
+	def decode_half( edata = @encoded) edata.decode_imm(:u16, @endianness) end
+	def decode_word( edata = @encoded) edata.decode_imm(:u32, @endianness) end
+	def decode_sword(edata = @encoded) edata.decode_imm(:i32, @endianness) end
+	def decode_xword(edata = @encoded) edata.decode_imm((@bitsize == 32 ? :u32 : :u64), @endianness) end
+	def decode_sxword(edata= @encoded) edata.decode_imm((@bitsize == 32 ? :i32 : :i64), @endianness) end
 	alias decode_addr decode_xword
 	alias decode_off  decode_xword
+
+	def readstr(str, off)
+		str[off...str.index(0, off)] if off > 0
+	end
 
 	# transforms a virtual address to a file offset, from mmaped segments addresses
 	def addr_to_off addr
@@ -219,7 +189,7 @@ class ELF
 		if @header.shstrndx != 0 and str = @sections[@header.shstrndx]
 			str.encoded = @encoded[str.offset, str.size]
 			@sections.each { |s|
-				s.read_name(str.encoded.data)
+				s.name = readstr(str.encoded.data, s.name_p)
 			}
 		end
 	end
@@ -238,7 +208,7 @@ class ELF
 		}
 
 		if @header.entry != 0
-			add_label('entrypoint', @header.entry)
+			add_label(new_label('entrypoint'), @header.entry)
 		end
 	end
 
@@ -318,7 +288,7 @@ class ELF
 		end
 		return if not @encoded.ptr = off
 
-		@tag.clear
+		@tag = {}
 		loop do
 			tag = decode_sxword
 			val = decode_xword
@@ -349,12 +319,11 @@ class ELF
 	def decode_segments_tags_interpret
 		if @tag['STRTAB']
 			if not sz = @tag['STRSZ']
-				puts "W: Elf: no string table size tag"
+				puts "W: Elf: no string table size tag" if $VERBOSE
 			else
 				if l = add_label('dynamic_strtab', @tag['STRTAB'])
 					@tag['STRTAB'] = l
 					strtab = @encoded[l, sz].data
-					str = proc { |off| strtab[off...strtab.index(0, off)] }
 				end
 			end
 		end
@@ -368,14 +337,14 @@ class ELF
 					puts "W: Elf: no string table, needed for tag #{k}" if $VERBOSE
 					next
 				end
-				@tag[k].map! { |v| str[v] }
+				@tag[k].map! { |v| readstr(strtab, v) }
 			when 'SONAME', 'RPATH', 'RUNPATH'
 				# string
 				if not strtab
 					puts "W: Elf: no string table, needed for tag #{k}" if $VERBOSE
 					next
 				end
-				@tag[k] = str[@tag[k]]
+				@tag[k] = readstr(strtab, @tag[k])
 			when 'INIT', 'FINI', 'PLTGOT', 'HASH', 'GNU_HASH', 'SYMTAB', 'RELA', 'REL', 'JMPREL'
 				@tag[k] = add_label('dynamic_' + k.downcase, @tag[k]) || @tag[k]
 			when 'INIT_ARRAY', 'FINI_ARRAY', 'PREINIT_ARRAY'
@@ -462,7 +431,7 @@ class ELF
 			p_end = @encoded.ptr + @tag['RELSZ']
 			while @encoded.ptr < p_end
 				r = Relocation.new
-				r.decode self, @symbols		# XXX can @symbols be hardcoded in Rel.decode ? (check with ET_REL decoding)
+				r.decode self, @symbols
 				@relocations << r
 			end
 		end
@@ -561,7 +530,7 @@ class ELF
 			target = nil
 		end
 
-		Metasm::Relocation.new(Expression[target], :u32, @header.endianness) if target
+		Metasm::Relocation.new(Expression[target], :u32, @endianness) if target
 	end
 
 	# decodes the ELF dynamic tags, interpret them, and decodes symbols and relocs

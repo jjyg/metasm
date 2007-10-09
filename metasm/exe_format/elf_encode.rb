@@ -13,31 +13,21 @@ class ELF
 		def encode elf
 			set_default_values elf
 
-			h = EncodedData.new <<
-			"\x7fELF" <<
-			case @e_class
-			when 32: 1
-			when 64: 2
-			else raise "E: Elf: unsupported class #@e_class"
-			end <<
-			case @endianness
-			when :little: 1
-			when :big: 2
-			else raise "E: Elf: unsupported endianness #@endianness"
-			end <<
-			1 <<
-			elf.int_from_hash(@abi, ABI) <<
-			@abi_version
+			@indent[0,4] = @magic
+			@indent[4] = elf.int_from_hash(@e_class, CLASS)
+			@indent[5] = elf.int_from_hash(@data, DATA)
+			@indent[6] = elf.int_from_hash(@i_version, VERSION)
+			@indent[7] = elf.int_from_hash(@abi, ABI)
+			@indent[8] = @abi_version
 
-			h.align 16
-
-			h <<
+			EncodedData.new <<
+			@indent <<
 			elf.encode_half(elf.int_from_hash(@type, TYPE)) <<
 			elf.encode_half(elf.int_from_hash(@machine, MACHINE)) <<
 			elf.encode_word(elf.int_from_hash(@version, VERSION)) <<
 			elf.encode_addr(@entry) <<
-			elf.encode_off( @phoff) <<
-			elf.encode_off( @shoff) <<
+			elf.encode_off(@phoff) <<
+			elf.encode_off(@shoff) <<
 			elf.encode_word(elf.bits_from_hash(@flags, FLAGS[@machine])) <<
 			elf.encode_half(@ehsize) <<
 			elf.encode_half(@phentsize) <<
@@ -48,48 +38,53 @@ class ELF
 		end
 
 		def set_default_values elf
-		#	@e_class   ||= elf.cpu.size			# those are heavily used by all other encode, and must be set long before we get here
-		#	@endianness||= elf.cpu.endianness
-			@type      ||= 'EXEC'
-			@machine   ||= '386'	# TODO			# should probably be set at the same time as class/endianness
-			@version   ||= 1
+			@indent    ||= 0.chr*16
+			@magic     ||= "\x7fELF"
+			@e_class   ||= elf.bitsize.to_s
+			@data      ||= (elf.endianness == :big ? 'MSB' : 'LSB')
+			@type      ||= 0
+			@machine   ||= 0
+			@version   ||= 'CURRENT'
+			@i_version ||= @version
 			@abi       ||= 0
 			@abi_version ||= 0
-			@entry     ||= 'entrypoint'
-			@phoff     ||= elf.new_label('phdr')
-			@shoff     ||= elf.new_label('shdr')
-			@flags     ||= 0
-			@ehsize    ||= 52
+			@entry     ||= 0
+			@phoff     ||= elf.segments.empty? ? 0 : elf.new_label('phdr')
+			@shoff     ||= elf.sections.length <= 1 ? 0 : elf.new_label('shdr')
+			@flags     ||= []
+			@ehsize    ||= Header.size(elf)
 			@phentsize ||= Segment.size(elf)
-			@phnum     ||= elf.segments.to_a.length
+			@phnum     ||= elf.segments.length
 			@shentsize ||= Section.size(elf)
-			@shnum     ||= elf.sections.to_a.length
+			@shnum     ||= elf.sections.length
 			@shstrndx  ||= 0
-
 		end
 	end
 
 	class Section
-		# needs elf.encoded (for offset)
 		def encode elf
 			set_default_values elf
 
-			elf.encode_word( @name_p) <<
+			elf.encode_word(@name_p) <<
 			elf.encode_word(elf.int_from_hash(@type, SH_TYPE)) <<
 			elf.encode_xword(elf.bits_from_hash(@flags, SH_FLAGS)) <<
-			elf.encode_addr( @addr) <<
-			elf.encode_off(  @offset) <<
+			elf.encode_addr(@addr) <<
+			elf.encode_off(@offset) <<
 			elf.encode_xword(@size) <<
-			elf.encode_word( @link.kind_of?(Section) ? elf.sections.index(@link) : @link) <<
-			elf.encode_word( @info.kind_of?(Section) ? elf.sections.index(@info) : @info) <<
+			elf.encode_word(@link.kind_of?(Section) ? elf.sections.index(@link) : @link) <<
+			elf.encode_word(@info.kind_of?(Section) ? elf.sections.index(@info) : @info) <<
 			elf.encode_xword(@addralign) <<
 			elf.encode_xword(@entsize)
 		end
 
 		def set_default_values elf
-			@name_p ||= default_make_name_p elf	# must occur before @size default initialization, for section[shstrndx]
+			if @name and @name != ''
+				make_name_p elf
+			else
+				@name_p ||= 0
+			end
 			@type   ||= 0
-			@flags  ||= [0]
+			@flags  ||= []
 			@addr   ||= (@encoded and @flags.include?('ALLOC')) ? elf.label_at(@encoded, 0) : 0
 			@offset ||= @encoded ? elf.new_label('section_offset') : 0
 			@size   ||= @encoded ? @encoded.length : 0
@@ -99,9 +94,10 @@ class ELF
 			@entsize ||= @addralign
 		end
 
-		# returns the @name_p field, after adding @name to .shstrndx (creating it if needed)
-		def default_make_name_p elf
-			return 0 if not @name or @name.empty?
+		# defines the @name_p field from @name and elf.section[elf.header.shstrndx]
+		# creates .shstrndx if needed
+		def make_name_p elf
+			return 0 if not @name or @name == ''
 			if elf.header.shstrndx.to_i == 0
 				sn = Section.new
 				sn.name = '.shstrndx'
@@ -111,10 +107,11 @@ class ELF
 				elf.header.shstrndx = elf.sections.length
 				elf.sections << sn
 			end
-			sn = elf.sections[elf.header.shstrndx]
-			ptr = sn.encoded.virtsize
-			sn.encoded << @name << 0
-			ptr
+			sne = elf.sections[elf.header.shstrndx].encoded
+			return if @name_p and sne.data[@name_p, @name.length+1] == @name+0.chr
+			return if @name_p = sne.data.index(@name+0.chr)
+			@name_p = sne.virtsize
+			sne << @name << 0
 		end
 	end
 
@@ -123,19 +120,19 @@ class ELF
 			set_default_values elf
 
 			elf.encode_word(elf.int_from_hash(@type, PH_TYPE)) <<
-			(elf.encode_word(elf.bits_from_hash(@flags, PH_FLAGS)) if elf.header.e_class == 64) <<
-			elf.encode_off( @offset) <<
+			(elf.encode_word(elf.bits_from_hash(@flags, PH_FLAGS)) if elf.bitsize == 64) <<
+			elf.encode_off(@offset) <<
 			elf.encode_addr(@vaddr) <<
 			elf.encode_addr(@paddr) <<
 			elf.encode_xword(@filesz) <<
 			elf.encode_xword(@memsz) <<
-			(elf.encode_word(elf.bits_from_hash(@flags, PH_FLAGS)) if elf.header.e_class == 32) <<
+			(elf.encode_word(elf.bits_from_hash(@flags, PH_FLAGS)) if elf.bitsize == 32) <<
 			elf.encode_xword(@align)
 		end
 
 		def set_default_values elf
 			@type   ||= 0
-			@flags  ||= 0
+			@flags  ||= []
 			@offset ||= @encoded ? elf.new_label('segment_offset') : 0
 			@vaddr  ||= @encoded ? elf.label_at(@encoded, 0) : 0
 			@paddr  ||= @vaddr
@@ -146,98 +143,89 @@ class ELF
 	end
 
 	class Symbol
-		def encode(elf, strtab=nil)
+		def encode(elf, strtab)
 			set_default_values elf, strtab
 
-			case elf.header.e_class
+			sndx = @shndx
+			sndx = elf.sections.index(sndx)+1 if sndx.kind_of? Section
+			case elf.bitsize
 			when 32
 				elf.encode_word(@name_p) <<
 				elf.encode_addr(@value) <<
 				elf.encode_word(@size) <<
-				elf.encode_uchar(@info) <<
+				elf.encode_uchar(get_info(elf)) <<
 				elf.encode_uchar(@other) <<
-				elf.encode_half(elf.int_from_hash(@shndx, SH_INDEX))
+				elf.encode_half(elf.int_from_hash(sndx, SH_INDEX))
 			when 64
 				elf.encode_word(@name_p) <<
-				elf.encode_uchar(@info) <<
+				elf.encode_uchar(get_info(elf)) <<
 				elf.encode_uchar(@other) <<
-				elf.encode_half(elf.int_from_hash(@shndx, SH_INDEX)) <<
+				elf.encode_half(elf.int_from_hash(sndx, SH_INDEX)) <<
 				elf.encode_addr(@value) <<
 				elf.encode_xword(@size)
 			end
 		end
 
 		def set_default_values(elf, strtab)
-			@name_p ||= default_make_name_p elf, strtab
+			if strtab and @name and @name != ''
+				make_name_p elf, strtab
+			else
+				@name_p ||= 0
+			end
 			@value  ||= 0
 			@size   ||= 0
 			@bind  ||= 0
 			@type  ||= 0
-			@info   ||= ((elf.int_from_hash(@bind, SYMBOL_BIND) & 15) << 4) | (elf.int_from_hash(@type, SYMBOL_TYPE) & 15)
 			@other  ||= 0
-			@shndx = elf.sections.index(@shndx) if @shndx.kind_of? Section
 			@shndx  ||= 0
 		end
 
-		# returns the value of @name_p, after adding @name to the symbol string table
-		def default_make_name_p(elf, strtab)
-			ret = 0
-			if @name and not @name.empty?
-				raise 'E: Elf: need string table to store symbol names' if not strtab
-				if not ret = strtab.data.index(@name + 0.chr)
-					ret = strtab.virtsize
-					strtab << @name << 0
-				end
-			end
-			ret
+		# sets the value of @name_p, appends @name to strtab if needed
+		def make_name_p(elf, strtab)
+			s = strtab.kind_of?(EncodedData) ? strtab.data : strtab
+			return if @name_p and s[@name_p, @name.length+1] == @name+0.chr
+			return if @name_p = s.index(@name+0.chr)
+			@name_p = strtab.length
+			strtab << @name << 0
 		end
 	end
 
 	class Relocation
-		def encode(elf, ary=nil)
-			set_default_values elf, ary
+		def encode(elf, symtab)
+			set_default_values elf, symtab
 
 			elf.encode_addr(r, @offset) <<
-			elf.encode_xword(r, @info) <<
+			elf.encode_xword(r, get_info(elf, symtab)) <<
 			(elf.encode_sxword(r, @addend) if @addend)
 		end
 
-		def set_default_values(elf, ary)
+		def set_default_values(elf, symtab)
 			@offset ||= 0
 			@symbol ||= 0
-			@type  ||= 0
-			@info   ||= default_make_info elf, ary
-		end
-
-		# returns the numeric value of @info from @type and @symbol
-		def default_make_info(elf, ary)
-			type = elf.int_from_hash(@type, RELOCATION_TYPE.fetch(elf.header.machine, {}))
-			symb = @symbol.kind_of?(Symbol) ? ary.index(@symbol) : @symbol
-			case elf.header.e_class
-			when 32: (type & 0xff) | ((symb & 0xff_ffff) << 8)
-			when 64: (type & 0xffff_ffff) | ((symb & 0xffff_ffff) << 32)
-			end
+			@type   ||= 0
 		end
 	end
 
 
-	def encode_uchar(w)  Expression[w].encode(:u8,  @header.endianness) end
-	def encode_half(w)   Expression[w].encode(:u16, @header.endianness) end
-	def encode_word(w)   Expression[w].encode(:u32, @header.endianness) end
-	def encode_sword(w)  Expression[w].encode(:i32, @header.endianness) end
-	def encode_xword(w)  Expression[w].encode((@header.e_class == 32 ? :u32 : :u64), @header.endianness) end
-	def encode_sxword(w) Expression[w].encode((@header.e_class == 32 ? :i32 : :i64), @header.endianness) end
+	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness) end
+	def encode_half(w)   Expression[w].encode(:u16, @endianness) end
+	def encode_word(w)   Expression[w].encode(:u32, @endianness) end
+	def encode_sword(w)  Expression[w].encode(:i32, @endianness) end
+	def encode_xword(w)  Expression[w].encode((@bitsize == 32 ? :u32 : :u64), @endianness) end
+	def encode_sxword(w) Expression[w].encode((@bitsize == 32 ? :i32 : :i64), @endianness) end
 	alias encode_addr encode_xword
 	alias encode_off  encode_xword
 
+	# checks a section's data has not grown beyond s.size, if so undefs addr/offset
 	def encode_check_section_size(s)
 		if s.size and s.encoded.virtsize < s
-			puts "W: Elf: preexisting section #{s} has grown, relocating"
+			puts "W: Elf: preexisting section #{s} has grown, relocating" if $VERBOSE
 			s.addr = s.offset = nil
 			s.size = s.encoded.virtsize
 		end
 	end
 
+	# reorders self.symbols according to their gnu_hash
 	def encode_reorder_symbols
 		gnu_hash_bucket_length = 42	# TODO
 		@symbols[1..-1] = @symbols[1..-1].sort_by { |s|
@@ -251,7 +239,7 @@ class ELF
 		}
 	end
 
-	# adds a new sections to the existing array, insert the new one near other with same permissions (for easier segment merge)
+	# sorted insert of a new section to self.sections according to its permission (for segment merging)
 	def encode_add_section s
 		# order: r rx rw noalloc
 		rank = proc { |sec|
@@ -265,11 +253,10 @@ class ELF
 		@sections.insert(nexts, s)				# insert section
 	end
 
-	# encodes the GNU_HASH table (not implemented)
+	# encodes the GNU_HASH table
+	# TODO
 	def encode_gnu_hash
 		return if true
-
-		return if not @symbols
 
 		sortedsyms = @symbols.find_all { |s| s.bind == 'GLOBAL' and s.shndx != 'UNDEF' and s.name }
 		bucket = Array.new(42)
@@ -319,8 +306,6 @@ class ELF
 
 	# encodes the symbol dynamic hash table in the .hash section, updates the HASH tag
 	def encode_hash
-		return if not @symbols
-
 		if not hash = @sections.find { |s| s.type == 'HASH' }
 			hash = Section.new
 			hash.name = '.hash'
@@ -361,15 +346,13 @@ class ELF
 	# encodes the symbol table
 	# should have a stable self.sections array (only append allowed after this step)
 	def encode_segments_symbols(strtab)
-		return if not @symbols
-
 		if not dynsym = @sections.find { |s| s.type == 'DYNSYM' }
 			dynsym = Section.new
 			dynsym.name = '.dynsym'
 			dynsym.type = 'DYNSYM'
 			dynsym.entsize = dynsym.addralign = Symbol.size(self)
 			dynsym.flags = ['ALLOC']
-			dynsym.info = @symbols.find_all { |s| s.bind == 'LOCAL' }.length
+			dynsym.info = @symbols[1..-1].find_all { |s| s.bind == 'LOCAL' }.length + 1
 			dynsym.link = strtab
 			encode_add_section dynsym
 		end
@@ -468,7 +451,7 @@ class ELF
 			dynamic.name = '.dynamic'
 			dynamic.type = 'DYNAMIC'
 			dynamic.flags = %w[WRITE ALLOC]		# XXX why write ?
-			dynamic.addralign = dynamic.entsize = @header.e_class / 8 * 2
+			dynamic.addralign = dynamic.entsize = @bitsize / 8 * 2
 			dynamic.link = strtab
 			encode_add_section dynamic
 		end
@@ -482,7 +465,7 @@ class ELF
 
 		# find or create string in strtab
 		add_str = proc { |n|
-			if n and not n.empty? and not ret = strtab.encoded.data.index(n + 0.chr)
+			if n and n != '' and not ret = strtab.encoded.data.index(n + 0.chr)
 				ret = strtab.encoded.virtsize
 				strtab.encoded << n << 0
 			end
@@ -497,7 +480,7 @@ class ELF
 					ar = Section.new
 					ar.name = '.' + k.downcase
 					ar.type = k
-					ar.addralign = ar.entsize = @header.e_class/8
+					ar.addralign = ar.entsize = @bitsize/8
 					ar.flags = %w[WRITE ALLOC]	# why write ? base reloc ?
 					encode_add_section ar # insert before encoding syms/relocs (which need section indexes)
 				end
@@ -555,13 +538,7 @@ class ELF
 	# link
 	# TODO support mapped PHDR, obey section-specified base address, handle NOBITS
 	def encode
-		if @sections.empty? or @sections.first.type != 'NULL'
-			s = Section.new
-			s.type = 'NULL'
-			s.flags = []
-			@sections.unshift s
-		end
-
+		@header.type ||= 'EXEC'
 		create_relocations
 		encode_segments_dynamic
 
@@ -571,12 +548,13 @@ class ELF
 
 		# put every section in a segment
 		@sections.each { |sec|
-			if sec.flags.include? 'ALLOC'
+			if sec.flags and sec.flags.include? 'ALLOC'
 				if not seg = @segments.find { |seg| seg.type == 'LOAD' and not seg.memsz and prot_match[seg.flags, sec.flags] }
 					seg = Segment.new
 					seg.type = 'LOAD'
 					seg.flags = ['R']
 					seg.flags << 'W' if sec.flags.include? 'WRITE'
+					seg.align = 0x1000
 					seg.encoded = EncodedData.new
 					seg.offset = new_label('segment_offset')
 					seg.vaddr = new_label('segment_address')
@@ -588,6 +566,23 @@ class ELF
 				seg.encoded << sec.encoded
 			end
 		}
+		# ensure PT_INTERP is mapped if present
+		if interp = @segments.find { |i| i.type == 'INTERP' }
+			if not seg = @segments.find { |seg| seg.type == 'LOAD' and not seg.memsz and interp.flags & seg.flags == interp.flags }
+				seg = Segment.new
+				seg.type = 'LOAD'
+				seg.flags = interp.flags.dup
+				seg.align = 0x1000
+				seg.encoded = EncodedData.new
+				seg.offset = new_label('segment_offset')
+				seg.vaddr = new_label('segment_address')
+				@segments << seg
+			end
+			interp.vaddr = Expression[seg.vaddr, :+, seg.encoded.length]
+			interp.offset = Expression[seg.offset, :+, seg.encoded.length]
+			seg.encoded << interp.encoded
+			interp.encoded = nil
+		end
 
 		# ensure last PT_LOAD is writeable (used for bss)
 		seg = @segments.reverse.find { |seg| seg.type == 'LOAD' }
@@ -648,6 +643,7 @@ class ELF
 		}
 
 		@encoded.fixup! binding
+		@encoded.data
 	end
 
 	def parse_init
@@ -838,6 +834,7 @@ class ELF
 			seg = Segment.new
 			seg.type = 'INTERP'
 			seg.encoded = EncodedData.new << interp << 0
+			seg.flags = ['R']
 			seg.memsz = seg.filesz = seg.encoded.length
 			@segments.unshift seg
 
@@ -850,7 +847,6 @@ class ELF
 			@segments.delete_if { |s| s.type == 'GNU_STACK' }
 			s = Segment.new
 			s.type = 'GNU_STACK'
-			s.vaddr = s.paddr = s.offset = s.filesz = s.memsz = 0
 			case mode
 			when /^rw$/i: s.flags = %w[R W]
 			when /^rwx$/i: s.flags = %w[R W X]
@@ -893,6 +889,11 @@ class ELF
 			s.encoded << assemble_sequence(v, @cpu)
 			v.clear
 		}
+	end
+
+	def encode_file(path, *a)
+		super
+		File.chmod(0755, path) if @header.type == 'EXEC'
 	end
 end
 end

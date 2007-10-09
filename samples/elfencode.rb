@@ -31,21 +31,22 @@ write macro string, stringlen
  syscall(sys_write)
 endm
 
-.text
 .data
 .global toto toto toto_end
 toto db "lala\n"
 toto_end:
 toto_len equ toto_end - toto
 
-convtab db '0123456789ABCDEF'
-outbuf	db '0x', 8 dup('0'), '\n'
+// convtab db '0123456789ABCDEF'
+// outbuf  db '0x', 8 dup('0'), '\n'
 
 .text
 .entrypoint
  write(toto, toto_len)
+ mov ebx, 0
+ syscall(sys_exit)
  ret
-
+/*
 .needed 'libc.so.6'
 .global '_exit'
 .global 'printf'
