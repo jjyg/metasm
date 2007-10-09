@@ -305,9 +305,13 @@ class COFF
 
 				if (ptr >> 31) == 1	# subdir
 					e.subdir_p = ptr & 0x7fff_ffff
-					coff.encoded.ptr = startoff + e.subdir_p
-					e.subdir = ResourceDirectory.new
-					e.subdir.decode coff, startoff
+					if startoff + e.subdir_p >= coff.encoded.length
+						puts 'invalid resource structure: directory too far' if $VERBOSE
+					else
+						coff.encoded.ptr = startoff + e.subdir_p
+						e.subdir = ResourceDirectory.new
+						e.subdir.decode coff, startoff
+					end
 				else
 					e.dataentry_p = ptr
 					coff.encoded.ptr = startoff + e.dataentry_p
