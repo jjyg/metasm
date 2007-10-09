@@ -43,6 +43,12 @@ class Rubstop < PTrace32
 		@pgm.cpu.decode_instruction(@pgm, @pgm.encoded, addr).instruction
 	end
 
+	def regs
+		[%w[eax ebx ecx edx orig_eax], %w[ebp esp edi esi eip]].map { |l|
+			l.map { |reg| "#{reg}=#{'%08x'%send(reg)}" }.join(' ')
+		}.join("\n")
+	end
+
 	def [](addr, len)
 		@pgm.encoded.data[addr, len]
 	end
@@ -70,12 +76,17 @@ if $0 == __FILE__
 	rs = Metasm::Rubstop.new(ARGV.shift)
 
 	begin
-		loop do
-			#rs.singlestep
-			#puts "#{'%08x' % (rs.eip & 0xffffffff)} #{rs.mnemonic}"
-			rs.syscall ; rs.syscall	# wait return of syscall
-			puts syscall_map[rs.orig_eax]
+		while $?.stopped? and $?.stopsig == Signal.list['TRAP']
+			if $VERBOSE
+				rs.singlestep
+				puts "#{'%08x' % (rs.eip & 0xffffffff)} #{rs.mnemonic}"
+			else
+				rs.syscall ; rs.syscall	# wait return of syscall
+				puts syscall_map[rs.orig_eax]
+			end
 		end
+		p $?
+		puts rs.regs
 	rescue Interrupt
 		rs.detach rescue nil
 		puts 'interrupted!'
