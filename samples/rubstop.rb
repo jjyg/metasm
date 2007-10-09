@@ -45,7 +45,7 @@ class Rubstop < PTrace32
 
 	def regs
 		[%w[eax ebx ecx edx orig_eax], %w[ebp esp edi esi eip]].map { |l|
-			l.map { |reg| "#{reg}=#{'%08x'%send(reg)}" }.join(' ')
+			l.map { |reg| "#{reg}=#{'%08x' % (send(reg)&0xffff_ffff)}" }.join(' ')
 		}.join("\n")
 	end
 
