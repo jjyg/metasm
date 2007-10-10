@@ -30,7 +30,7 @@ class LinDebug
 		Ncurses.curs_set 0		# hide cursor
 		Ncurses.noecho			# do not show keypresses
 		Ncurses.keypad @curses_scr, 1	# activate keypad (needed to catch F1, arrows etc)
-		Ncurses.raw			# catch everything, incl. ^C
+		Ncurses.cbreak			# catch everything, incl. ^C
 		Ncurses.init_pair(:normal,  Ncurses::COLOR_WHITE, Ncurses::COLOR_BLACK)
 		Ncurses.init_pair(:changed, Ncurses::COLOR_BLUE,  Ncurses::COLOR_BLACK)
 		Ncurses.init_pair(:hilight, Ncurses::COLOR_BLACK, Ncurses::COLOR_YELLOW)
@@ -41,7 +41,8 @@ class LinDebug
 		@data_window = new_window(@data_height = 20)
 		@code_window = new_window(@code_height = 20)
 		cur_y = @windows.inject(0) { |cur_y, w| cur_y + w.getmaxy }
-		@prpt_window = Ncurses::WINDOW.new(@console_height-cur_y, @console_width, cur_y, 0)
+		@prpt_height = @console_height-cur_y-1
+		@prpt_window = Ncurses::WINDOW.new(@prpt_height, @console_width, cur_y, 0)
 	end
 
 	def new_window(height)
@@ -77,6 +78,7 @@ class LinDebug
 		updateregs
 		updatecode
 		updatedata
+		updateprompt
 	end
 
 	EFLAGS = {0 => 'c', 2 => 'p', 4 => 'a', 6 => 'z', 7 => 's', 11 => 'o'}
@@ -158,10 +160,35 @@ class LinDebug
 		@data_window.refresh
 	end
 
+	def updateprompt
+		@prpt_window.erase
+		@prpt_window.color :border
+		@prpt_window.box
+		@prpt_window.color :normal
+		@prpt_window.mvwaddstr(@prpt_height-2, 1, ':'+@promptbuf)
+		@prpt_window.refresh
+	end
+
 	def readregs
 		%w[eax ebx ecx edx esi edi esp ebp eip eflags].each { |r|
 			@regs[r] = @rs.send(r)
 		}
+	end
+
+	def checkbp
+		addr = @regs['eip']
+		if @breakpoints[addr] and @rs[addr] == 0xcc
+			@rs[addr] = @breakpoints.delete addr
+			@rs.eip = @regs['eip'] -= 1
+		end
+	end
+
+	def cont
+		@rs.cont
+		return if $?.exited?
+		@oldregs.update @regs
+		readregs
+		checkbp
 	end
 
 	def singlestep
@@ -169,6 +196,7 @@ class LinDebug
 		return if $?.exited?
 		@oldregs.update @regs
 		readregs
+		checkbp
 	end
 
 	def stepover
@@ -176,29 +204,57 @@ class LinDebug
 			eaddr = @regs['eip'] + @curinstr.bin_length
 			@breakpoints[eaddr] = @rs[eaddr]
 			@rs[eaddr] = 0xcc
-			@rs.cont until @breakpoints[@rs.eip]
+			@rs.cont
 			return if $?.exited?
-			@rs[eaddr] = @breakpoints.delete eaddr if @rs[eaddr] == 0xcc
+			@oldregs.update @regs
+			readregs
+			checkbp
 		else
 			singlestep
 		end
 	end
 
+	def exec_prompt
+		case @promptbuf
+		when 'kill'
+			@rs.kill
+			@running = false
+		when 'q', 'quit'
+			@rs.detach
+			@running = false
+		when /^bp (.*)/
+			addr = Integer($1)
+			return if @breakpoints[addr]
+			@breakpoints[addr] = @rs[addr]
+			@rs[addr] = 0xcc
+		end
+	end
+
 	def main_loop
-		loop do
+		@promptbuf = ''
+		updateprompt
+		@running = true
+		while @running
 			update
-			case @curses_scr.getch
-			when 27, ?q	# esc
+			case c = @curses_scr.getch
+			when 27	# esc
 				break
-			when ?k
-				@rs.kill
-				break
-			when Ncurses::KEY_F11
-				singlestep
+			when Ncurses::KEY_F5
+				cont
 				break if $?.exited?
 			when Ncurses::KEY_F10
 				stepover
 				break if $?.exited?
+			when Ncurses::KEY_F11
+				singlestep
+				break if $?.exited?
+			# when Ncurses::Del
+			# curcmd.chop
+			when ?\n
+				exec_prompt
+				@promptbuf = ''
+			when 0x32..0x7e
+				@promptbuf << c
 			end
 		end
 	end

@@ -14,8 +14,11 @@ module Metasm
 class Rubstop < PTrace32
 	# define accessors for registers
 	%w[eax ebx ecx edx ebp esp edi esi eip orig_eax eflags].each { |reg|
-		define_method(reg) { peekusr(REGS_I386[reg.upcase]) }
-		define_method(reg+'=') { |v| pokeusr(REGS_I386[reg.upcase], v) }
+		define_method(reg) { peekusr(REGS_I386[reg.upcase]) & 0xffffffff }
+		define_method(reg+'=') { |v|
+			v = [v].pack('L').unpack('l').first if v >= 0x8000_0000
+			pokeusr(REGS_I386[reg.upcase], v)
+		}
 	}
 
 	def cont(*a)
@@ -48,7 +51,7 @@ class Rubstop < PTrace32
 
 	def regs
 		[%w[eax ebx ecx edx orig_eax], %w[ebp esp edi esi eip]].map { |l|
-			l.map { |reg| "#{reg}=#{'%08x' % (send(reg)&0xffff_ffff)}" }.join(' ')
+			l.map { |reg| "#{reg}=#{'%08x' % send(reg)}" }.join(' ')
 		}.join("\n")
 	end
 

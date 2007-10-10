@@ -136,6 +136,7 @@ class PTrace32
 # };
 
 	def ptrace(req, pid, addr, data)
+		addr = [addr].pack('L').unpack('l').first if addr >= 0x8000_0000
 		Kernel.syscall(26, req, pid, addr, data)
 	end
 
