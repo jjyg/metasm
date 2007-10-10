@@ -13,7 +13,7 @@ require 'metasm'
 module Metasm
 class Rubstop < PTrace32
 	# define accessors for registers
-	%w[eax ebx ecx edx ebp esp edi esi eip orig_eax].each { |reg|
+	%w[eax ebx ecx edx ebp esp edi esi eip orig_eax eflags].each { |reg|
 		define_method(reg) { peekusr(REGS_I386[reg.upcase]) }
 		define_method(reg+'=') { |v| pokeusr(REGS_I386[reg.upcase], v) }
 	}
@@ -38,9 +38,12 @@ class Rubstop < PTrace32
 		@pgm.encoded.data.ptrace = self
 	end
 
-	def mnemonic(addr = eip)
+	def mnemonic_di(addr = eip)
 		@pgm.encoded.ptr = addr
-		@pgm.cpu.decode_instruction(@pgm, @pgm.encoded, addr).instruction
+		@pgm.cpu.decode_instruction(@pgm, @pgm.encoded, addr)
+	end
+	def mnemonic(addr=eip)
+		mnemonic_di(addr).instruction
 	end
 
 	def regs
@@ -49,10 +52,10 @@ class Rubstop < PTrace32
 		}.join("\n")
 	end
 
-	def [](addr, len)
+	def [](addr, len=nil)
 		@pgm.encoded.data[addr, len]
 	end
-	def []=(addr, len, str)
+	def []=(addr, len, str=nil)
 		@pgm.encoded.data[addr, len] = str
 	end
 end

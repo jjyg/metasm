@@ -52,7 +52,7 @@ class PTrace32
 			off += 4
 			buf << @buf[decal..3]
 		end
-		offend = off + len - 3
+		offend = off + len
 		while off < offend
 			peekdata(off)
 			buf << @buf[0, 4]
@@ -124,7 +124,7 @@ class PTrace32
 		'EDI' => 4, 'EBP' => 5, 'EAX' => 6, 'DS'  => 7,
 		'ES'  => 8, 'FS'  => 9, 'GS'  => 10, 'ORIG_EAX' => 11,
 		'EIP' => 12, 'CS'  => 13, 'EFL' => 14, 'UESP'=> 15,
-		'ESP' => 15,
+		'EFLAGS' => 14, 'ESP' => 15,
 		'SS'  => 16, 'FRAME_SIZE' => 17 }
 
 #  this struct defines the way the registers are stored on the stack during a system call.
@@ -144,11 +144,13 @@ class PTrace32
 	end
 
 	def peektext(addr)
-		ptrace(COMMAND['PEEKTEXT'], @pid, addr, 0)
+		ptrace(COMMAND['PEEKTEXT'], @pid, addr, @bufptr)
+		@buf
 	end
 
 	def peekdata(addr)
 		ptrace(COMMAND['PEEKDATA'], @pid, addr, @bufptr)
+		@buf
 	end
 
 	def peekusr(addr)
