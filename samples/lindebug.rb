@@ -41,7 +41,7 @@ class LinDebug
 		@data_window = new_window(@data_height = 20)
 		@code_window = new_window(@code_height = 20)
 		cur_y = @windows.inject(0) { |cur_y, w| cur_y + w.getmaxy }
-		@prpt_height = @console_height-cur_y-1
+		@prpt_height = @console_height-cur_y
 		@prpt_window = Ncurses::WINDOW.new(@prpt_height, @console_width, cur_y, 0)
 	end
 
@@ -203,7 +203,9 @@ class LinDebug
 	end
 
 	def checkbp
-		if not $?.stopped?
+		if not $?
+			return
+		elsif not $?.stopped?
 			if $?.exited?:      log "process exited with status #{$?.exitstatus}"
 			elsif $?.signaled?: log "process exited due to signal #{$?.termsig} (#{Signal.list.index $?.termsig})"
 			else                log "process in unknown status #{$?.inspect}"
@@ -243,6 +245,14 @@ class LinDebug
 		else
 			singlestep
 		end
+	end
+
+	def syscall
+		@rs.syscall
+		return if $?.exited?
+		@oldregs.update @regs
+		readregs
+		checkbp
 	end
 
 	def log(str)
@@ -305,9 +315,8 @@ class LinDebug
 			log 'killed'
 		when 'q', 'quit', 'detach', 'exit'
 			@rs.detach
-			@running = false
+			@runing = false
 		when 'bp'
-			# TODO handle bp [eip+42] etc
 			addr = argint[]
 			return if @breakpoints[addr]
 			@breakpoints[addr] = @rs[addr]
@@ -337,13 +346,30 @@ class LinDebug
 			end
 		when 'run', 'cont'
 			cont
+		when 'syscall'
+			syscall
 		when 'g'
-			addr = argint
+			addr = argint[]
 			if not @breakpoints[addr]
 				@breakpoints[addr] = @rs[addr]
 				@rs[addr] = 0xcc
 			end
 			cont
+		when 'help'
+			log 'commands: (addr/values are things like dword ptr [ebp+(4*byte [eax])] )'
+			log ' kill'
+			log ' cont/run/F5'
+			log ' q/quit/detach/exit'
+			log ' syscall: run til next syscall/bp'
+			log ' bp <addr>'
+			log ' g <addr>: set a bp at <addr> and run'
+			log ' d/dd/dw/db [<addr>]: change data type/address'
+			log ' r <reg> [<value>]: show/change register'
+			log ' fl <flag>: toggle eflags bit'
+			log ' F10: step over'
+			log ' F11: single step'
+			log ' pgup/pgdown: move command history'
+			log ' alt+pgup/pgdown/up/down: move data pointer'
 		else
 			log 'unknown command'
 		end
@@ -385,9 +411,9 @@ class LinDebug
 				end
 				log 'exiting'
 				break
-			when Ncurses::KEY_F5: cont; break if $?.exited?
-			when Ncurses::KEY_F10: stepover; break if $?.exited?
-			when Ncurses::KEY_F11: singlestep; break if $?.exited?
+			when Ncurses::KEY_F5: cont; break if not $? or $?.exited?
+			when Ncurses::KEY_F10: stepover; break if not $? or $?.exited?
+			when Ncurses::KEY_F11: singlestep; break if not $? or $?.exited?
 			when Ncurses::KEY_DOWN
 				@prompthistory |= [@promptbuf]
 				@prompthistory.push @prompthistory.shift
@@ -409,7 +435,8 @@ class LinDebug
 				exec_prompt
 				@promptbuf = ''
 				@promptpos = @promptbuf.length
-				break if $?.exited?
+				::Process.waitpid(@rs.pid, ::Process::WNOHANG)
+				break if not $? or $?.exited?
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = c.chr
 				@promptpos += 1
