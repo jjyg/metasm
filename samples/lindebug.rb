@@ -203,9 +203,9 @@ class LinDebug
 	end
 
 	def checkbp
-		if not $?
-			return
-		elsif not $?.stopped?
+		::Process::waitpid(@rs.pid, ::Process::WNOHANG) if not $?
+		return if not $?
+		if not $?.stopped?
 			if $?.exited?:      log "process exited with status #{$?.exitstatus}"
 			elsif $?.signaled?: log "process exited due to signal #{$?.termsig} (#{Signal.list.index $?.termsig})"
 			else                log "process in unknown status #{$?.inspect}"
@@ -411,9 +411,9 @@ class LinDebug
 				end
 				log 'exiting'
 				break
-			when Ncurses::KEY_F5: cont; break if not $? or $?.exited?
-			when Ncurses::KEY_F10: stepover; break if not $? or $?.exited?
-			when Ncurses::KEY_F11: singlestep; break if not $? or $?.exited?
+			when Ncurses::KEY_F5: cont; break if $?.exited?
+			when Ncurses::KEY_F10: stepover; break if $?.exited?
+			when Ncurses::KEY_F11: singlestep; break if $?.exited?
 			when Ncurses::KEY_DOWN
 				@prompthistory |= [@promptbuf]
 				@prompthistory.push @prompthistory.shift
@@ -435,14 +435,12 @@ class LinDebug
 				exec_prompt
 				@promptbuf = ''
 				@promptpos = @promptbuf.length
-				::Process.waitpid(@rs.pid, ::Process::WNOHANG)
-				break if not $? or $?.exited?
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = c.chr
 				@promptpos += 1
 			else log "unknown key pressed #{c.to_s 16} (#{Ncurses.constants.find { |k| k[0,4]=='KEY_' and Ncurses.const_get(k) == c }})"
 			end
-			update
+			update rescue break
 		end
 		logback=0
 		checkbp
