@@ -67,7 +67,7 @@ class LinDebug
 		@prompthistlen = 20
 		@prompthistory = []
 		@promptloglen = 200
-		@promptlog = []
+		@promptlog = ['']*50
 		@dataptr = 0
 		@datafmt = 'db'
 
@@ -179,14 +179,14 @@ class LinDebug
 		@data_window.refresh
 	end
 
-	def updateprompt
+	def updateprompt(back=0)
 		@prpt_window.erase
 		@prpt_window.color :border
 		@prpt_window.box
 		@prpt_window.color :normal
 
 		y = 1
-		@promptlog[-[@prpt_height-3, @promptlog.length].min..-1].each { |l|
+		@promptlog[-[(@prpt_height-3)*(back+1), @promptlog.length].min, @prpt_height-3].each { |l|
 			@prpt_window.mvaddstr(y, 1, l)
 			y += 1
 		}
@@ -355,25 +355,39 @@ class LinDebug
 		@promptbuf = ''
 		@promptpos = 0
 		@prompthistory = []
-		updateprompt
 		@running = true
-		while @running
-			update
-			c = @curses_scr.getch
-			#log "key #{c.to_s 16} (#{Ncurses.constants.find_all { |k| k[0, 4] == 'KEY_' and Ncurses.const_get(k) == c }.join ' '})"
+		logback=0
+		update
+		while @running and c = @curses_scr.getch
 			case c
-			when 4, 27	# eof, esc XXX F1-F5 too
+			when 4: log 'exiting'; break
+				# eof
+			when 27		# esc/composed key
+				if IO::select([$stdin], nil, nil, 0) and c1 = @curses_scr.getch
+					if IO::select([$stdin], nil, nil, 0) and c2 = @curses_scr.getch
+						case [c1, c2]
+						when [0x4f, 0x50]: c = Ncurses::KEY_F1; redo
+						when [0x4f, 0x51]: c = Ncurses::KEY_F2; redo
+						when [0x4f, 0x52]: c = Ncurses::KEY_F3; redo
+						when [0x4f, 0x53]: c = Ncurses::KEY_F4; redo
+						when [0x5b, 0x31]: c = Ncurses::KEY_F5; redo
+						else log "unknown esc2 #{c1.to_s 16}h #{c2.to_s 16}h"; c = 0; redo
+						end
+					else
+						case c1
+						when Ncurses::KEY_PPAGE: @dataptr = (@dataptr - 16*(@data_height-2)) & 0xffff_ffff; updatedata; next
+						when Ncurses::KEY_NPAGE: @dataptr = (@dataptr + 16*(@data_height-2)) & 0xffff_ffff; updatedata; next
+						when Ncurses::KEY_UP:    @dataptr = (@dataptr - 16) & 0xffff_ffff; updatedata; next
+						when Ncurses::KEY_DOWN:  @dataptr = (@dataptr + 16) & 0xffff_ffff; updatedata; next
+						else log "unknown esc1 #{c1.to_s 16}h"; c = 0; redo
+						end
+					end
+				end
 				log 'exiting'
 				break
-			#when Ncurses::KEY_F5
-			#	cont
-			#	break if $?.exited?
-			when Ncurses::KEY_F10
-				stepover
-				break if $?.exited?
-			when Ncurses::KEY_F11
-				singlestep
-				break if $?.exited?
+			when Ncurses::KEY_F5: cont; break if $?.exited?
+			when Ncurses::KEY_F10: stepover; break if $?.exited?
+			when Ncurses::KEY_F11: singlestep; break if $?.exited?
 			when Ncurses::KEY_DOWN
 				@prompthistory |= [@promptbuf]
 				@prompthistory.push @prompthistory.shift
@@ -384,16 +398,13 @@ class LinDebug
 				@prompthistory.unshift @prompthistory.pop
 				@promptbuf = @prompthistory.last
 				@promptpos = @promptbuf.length
-			when Ncurses::KEY_LEFT
-				@promptpos -= 1 if @promptpos > 0
-			when Ncurses::KEY_RIGHT
-				@promptpos += 1 if @promptpos < @promptbuf.length
-			when Ncurses::KEY_BACKSPACE
-				@promptbuf[@promptpos-=1, 1] = '' if @promptpos > 0
-			when Ncurses::KEY_DC
-				@promptbuf[@promptpos, 1] = '' if @promptpos < @promptbuf.length
-			#when ?\t
-			#	autocomplete
+			when Ncurses::KEY_LEFT: @promptpos -= 1 if @promptpos > 0
+			when Ncurses::KEY_RIGHT: @promptpos += 1 if @promptpos < @promptbuf.length
+			when Ncurses::KEY_BACKSPACE: @promptbuf[@promptpos-=1, 1] = '' if @promptpos > 0
+			when Ncurses::KEY_DC: @promptbuf[@promptpos, 1] = '' if @promptpos < @promptbuf.length
+			when Ncurses::KEY_PPAGE: updateprompt(logback+=1); next
+			when Ncurses::KEY_NPAGE: updateprompt(logback <= 0 ? logback : logback-=1); next
+			#when ?\t:	# autocomplete
 			when ?\n
 				exec_prompt
 				@promptbuf = ''
@@ -402,10 +413,11 @@ class LinDebug
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = c.chr
 				@promptpos += 1
-			else
-				log "unknown key pressed #{c.to_s 16}"
+			else log "unknown key pressed #{c.to_s 16} (#{Ncurses.constants.find { |k| k[0,4]=='KEY_' and Ncurses.const_get(k) == c }})"
 			end
+			update
 		end
+		logback=0
 		checkbp
 		updateprompt
 	end
