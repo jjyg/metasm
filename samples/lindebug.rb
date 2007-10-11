@@ -77,6 +77,7 @@ class LinDebug
 		ensure
 			fini_screen
 			@rs.detach rescue nil
+			puts
 		end
 	end
 
@@ -214,8 +215,8 @@ class LinDebug
 		elsif $?.stopsig != Signal.list['TRAP']
 			log "process stopped due to signal #{$?.stopsig} (#{Signal.list.index $?.stopsig})"
 		end
-		if @breakpoints[@regs['eip']] and @rs[@regs['eip']] == 0xcc
-			@rs[@regs['eip']] = @breakpoints.delete @regs['eip']
+		if @breakpoints[@regs['eip']-1] and @rs[@regs['eip']-1] == 0xcc
+			@rs[@regs['eip']-1] = @breakpoints.delete @regs['eip']-1
 			@rs.eip = @regs['eip'] -= 1
 		end
 	end
@@ -385,6 +386,7 @@ class LinDebug
 		logback=0
 		update
 		while @running and c = @curses_scr.getch
+			# log "key #{c.to_s 16} (#{Ncurses.constants.find { |k| k[0,4]=='KEY_' and Ncurses.const_get(k) == c }})"
 			case c
 			when 4: log 'exiting'; break
 				# eof
