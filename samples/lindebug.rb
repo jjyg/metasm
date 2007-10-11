@@ -26,22 +26,21 @@ class Indirect
 	UNPACK_STR = {1 => 'C', 2 => 'S', 4 => 'L'}
 	def initialize(ptr, sz) @ptr, @sz = ptr, sz end
 	def bind(bd)
-		raw = bd['tracer_memory'][@ptr.bind(bd).reduce, @sz]
-		Metasm::Expression[(raw.unpack(UNPACK_STR[@sz]).first rescue 0)]
+		raw = (bd['tracer_memory'][@ptr.bind(bd).reduce, @sz] rescue "\0\0\0\0")
+		Metasm::Expression[raw.unpack(UNPACK_STR[@sz]).first]
 	end
 end
 
 class ExprParser < Metasm::Expression
-	def parse_intfloat(lex, tok)
+	def self.parse_intfloat(lex, tok)
 		case tok.raw
 		when 'byte', 'word', 'dword'
-			ntok = nil
-			ntok = lex.readtok while ntok.type == :space
-			ntok = lex.readtok while ntok.type == :space if ntok.raw == 'ptr'
-			if ntok.raw == '['
+			nil while ntok = lex.readtok and ntok.type == :space
+			nil while ntok = lex.readtok and ntok.type == :space if ntok and ntok.raw == 'ptr'
+			if ntok and ntok.raw == '['
 				tok.value = Indirect.new(parse(lex), {'byte' => 1, 'word' => 2, 'dword' => 4}[tok.raw])
-				ntok = lex.readtok while ntok.type == :space
-				ntok = lex.readtok while ntok.type == :space if ntok.raw == ']'
+				nil while ntok = lex.readtok and ntok.type == :space
+				nil while ntok = lex.readtok and ntok.type == :space if ntok and ntok.raw == ']'
 				lex.unreadtok ntok
 			end
 		else super
@@ -311,8 +310,19 @@ class LinDebug
 		@promptpos = @promptbuf.length
 
 		argint = proc {
-			e = ExprParser.parse Metasm::Preprocessor.new.feed(args.join(' '))
-			e.bind(@symbols.invert.merge(@regs).merge('tracer_memory' => @rs)).reduce
+			args[0][0, 0] = 'dword ' if args[0][0] == ?[
+			begin
+				raise if not e = ExprParser.parse(Metasm::Preprocessor.new.feed(args.join(' ')))
+			rescue
+				log 'syntax error'
+				return
+			end
+			v = e.bind(@symbols.invert.merge(@regs).merge('tracer_memory' => @rs)).reduce
+			if not v.kind_of? ::Integer
+				log 'unsolvable expression'
+				return
+			end
+			v
 		}
 
 		case cmd
@@ -324,7 +334,7 @@ class LinDebug
 			@rs.detach
 			@runing = false
 		when 'bpx'
-			addr = argint[]
+			addr = argint[] || return
 			return if @breakpoints[addr]
 			if @has_pax
 				@breakpoints[addr] = @rs[addr] if set_hwbp 'x', addr
@@ -334,14 +344,14 @@ class LinDebug
 			end
 		when 'bphw'
 			type = args.shift
-			addr = argint[]
+			addr = argint[] || return
 			set_hwbp type, addr
 			# TODO clear...
 		when 'd'
-			@dataptr = argint[]
+			@dataptr = argint[] || return
 		when 'db', 'dw', 'dd'
 			@datafmt = cmd.dup
-			@dataptr = argint[] if not args.empty?
+			@dataptr = argint[] || return if not args.empty?
 		when 'r'
 			r = args.shift
 			if r == 'fl'
@@ -355,7 +365,7 @@ class LinDebug
 			elsif not @regs[r]
 				log "bad reg #{r}"
 			elsif not args.empty?
-				@rs.send r+'=', argint[]
+				@rs.send r+'=', argint[] || return
 				readregs
 			else
 				log "#{r} = #{@regs[r]}"
@@ -365,7 +375,7 @@ class LinDebug
 		when 'syscall'
 			syscall
 		when 'g'
-			addr = argint[]
+			addr = argint[] || return
 			return if @breakpoints[addr]
 			if @has_pax
 				@breakpoints[addr] = @rs[addr] if set_hwbp 'x', addr
@@ -375,7 +385,7 @@ class LinDebug
 			end
 			cont
 		when 'has_pax'
-			val = args.empty? ? 1 : argint[]
+			val = args.empty? ? 1 : argint[] || return
 			@has_pax = (val != 0)
 			log "has_pax now #@has_pax"
 		when 'help'
@@ -400,7 +410,6 @@ class LinDebug
 			log ' alt+pgup/pgdown/up/down: move data pointer'
 		when 'loadsyms'
 			File.read("/proc/#{@rs.pid}/maps").each { |l| loadsyms l.to_i(16), l.split[5] }
-update
 		when 'sym'
 			sym = args.shift
 			s = @symbols.keys.find_all { |s| @symbols[s] =~ /#{sym}/ }
@@ -442,7 +451,7 @@ update
 		when 'r': @regs['dr7'] |= (((len-1)<<2)|3) << (16+4*dr)
 		when 'w': @regs['dr7'] |= (((len-1)<<2)|1) << (16+4*dr)
 		end
-		@rs.send('dr'+dr+'=', addr)
+		@rs.send("dr#{dr}=", addr)
 		@rs.dr6 = 0
 		@rs.dr7 = @regs['dr7'] | (1 << (2*dr))
 		readregs
