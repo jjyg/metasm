@@ -125,7 +125,11 @@ class PTrace32
 		'ES'  => 8, 'FS'  => 9, 'GS'  => 10, 'ORIG_EAX' => 11,
 		'EIP' => 12, 'CS'  => 13, 'EFL' => 14, 'UESP'=> 15,
 		'EFLAGS' => 14, 'ESP' => 15,
-		'SS'  => 16, 'FRAME_SIZE' => 17 }
+		'SS'  => 16, 'FRAME_SIZE' => 17,
+		# from ptrace.c in kernel source & asm-i386/user.h
+		'DR0' => 63, 'DR1' => 64, 'DR2' => 65, 'DR3' => 66,
+		'DR4' => 67, 'DR5' => 68, 'DR6' => 69, 'DR7' => 70
+	}
 
 #  this struct defines the way the registers are stored on the stack during a system call.
 # struct pt_regs {
