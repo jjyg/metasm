@@ -21,6 +21,34 @@ module Ncurses
 	end
 end
 
+class Indirect
+	attr_accessor :ptr, :sz
+	UNPACK_STR = {1 => 'C', 2 => 'S', 4 => 'L'}
+	def initialize(ptr, sz) @ptr, @sz = ptr, sz end
+	def bind(bd)
+		raw = bd['tracer_memory'][@ptr.bind(bd).reduce, @sz]
+		Metasm::Expression[(raw.unpack(UNPACK_STR[@sz]).first rescue 0)]
+	end
+end
+
+class ExprParser < Metasm::Expression
+	def parse_intfloat(lex, tok)
+		case tok.raw
+		when 'byte', 'word', 'dword'
+			ntok = nil
+			ntok = lex.readtok while ntok.type == :space
+			ntok = lex.readtok while ntok.type == :space if ntok.raw == 'ptr'
+			if ntok.raw == '['
+				tok.value = Indirect.new(parse(lex), {'byte' => 1, 'word' => 2, 'dword' => 4}[tok.raw])
+				ntok = lex.readtok while ntok.type == :space
+				ntok = lex.readtok while ntok.type == :space if ntok.raw == ']'
+				lex.unreadtok ntok
+			end
+		else super
+		end
+	end
+end
+
 class LinDebug
 	def init_screen
 		@curses_scr = Ncurses.initscr	# initialize screen
@@ -30,7 +58,7 @@ class LinDebug
 		Ncurses.curs_set 1		# show cursor
 		Ncurses.noecho			# do not show keypresses
 		Ncurses.keypad @curses_scr, 1	# activate keypad (needed to catch F1, arrows etc)
-		Ncurses.cbreak			# catch everything, incl. ^C
+		Ncurses.cbreak			# config keyboard 
 		Ncurses.init_pair(:normal,  Ncurses::COLOR_WHITE, Ncurses::COLOR_BLACK)
 		Ncurses.init_pair(:changed, Ncurses::COLOR_BLUE,  Ncurses::COLOR_BLACK)
 		Ncurses.init_pair(:hilight, Ncurses::COLOR_BLACK, Ncurses::COLOR_YELLOW)
@@ -63,6 +91,9 @@ class LinDebug
 		@oldregs = {}
 		readregs
 		@breakpoints = {}
+		@symbols = {}
+		@symbols_len = {}
+		@filemap = {}
 
 		@prompthistlen = 20
 		@prompthistory = []
@@ -70,6 +101,7 @@ class LinDebug
 		@promptlog = ['']*50
 		@dataptr = 0
 		@datafmt = 'db'
+		@has_pax = false
 
 		begin
 			init_screen
@@ -131,17 +163,25 @@ class LinDebug
 	end
 
 	def updatecode
+		addr = @regs['eip']
+
 		@code_window.erase
 		@code_window.color :border
 		@code_window.box
+		@code_window.mvwaddstr 0, [@console_width-150, 1].max, ' ' + findsymbol(addr) + ' '
 		@code_window.color :normal
 
-		addr = @regs['eip']
-		(1..@code_height-2).each { |y|
-			@code_window.color :hilight if y == 1
+		y = 1
+		while y < @code_height-1
+			if @symbols[addr]
+				@code_window.mvwaddstr y, 1, "#{@symbols[addr]}:"
+				y += 1
+				break if y >= @code_height-1
+			end
+			@code_window.color :hilight if addr == @regs['eip']
 			@code_window.mvwaddstr y, 1, '%08x' % addr
 			di = @rs.mnemonic_di(addr)
-			@curinstr = di if y == 1
+			@curinstr = di if addr == @regs['eip']
 			len = di.instruction ? di.bin_length : 1
 			@code_window.mvwaddstr y, 12, @rs[addr, [len, 10].min].unpack('C*').map { |c| '%02x' % c }.join
 			if di.instruction
@@ -151,22 +191,25 @@ class LinDebug
 				@code_window.mvwaddstr y, 35, '<unk>'
 				addr += 1
 			end
-			@code_window.color :normal if y == 1
-		}
+			@code_window.color :normal if addr == @regs['eip']
+			y += 1
+		end
 
 		@code_window.refresh
 	end
 
 	def updatedata
+		addr = @dataptr
+
 		@data_window.erase
 		@data_window.color :border
 		@data_window.box
+		@data_window.mvwaddstr 0, [@console_width-150, 1].max, ' ' + findsymbol(addr) + ' '
 		@data_window.color :normal
 
-		ptr = @dataptr
 		(1..@data_height-2).each { |y|
-			raw = (@rs[ptr, 16] rescue 0.chr*16)
-			@data_window.mvwaddstr y, 1, '%08x' % ptr
+			raw = (@rs[addr, 16] rescue 0.chr*16)
+			@data_window.mvwaddstr y, 1, '%08x' % addr
 			x = 11
 			case @datafmt
 			when 'db': raw.unpack('C*').each { |c| @data_window.mvwaddstr(y, x, '%02x'%c) ; x+=3 }
@@ -174,7 +217,7 @@ class LinDebug
 			when 'dd': raw.unpack('L*').each { |c| @data_window.mvwaddstr(y, x, '%08x'%c) ; x+=9 }
 			end
 			@data_window.mvwaddstr y, x+1, raw.unpack('C*').map { |c| (0x20..0x7e).include?(c) ? c : ?. }.pack('C*')
-			ptr += 16
+			addr += 16
 		}
 
 		@data_window.refresh
@@ -200,7 +243,7 @@ class LinDebug
 	end
 
 	def readregs
-		%w[eax ebx ecx edx esi edi esp ebp eip eflags].each { |r| @regs[r] = @rs.send(r) }
+		%w[eax ebx ecx edx esi edi esp ebp eip eflags dr0 dr1 dr2 dr3 dr6 dr7].each { |r| @regs[r] = @rs.send(r) }
 	end
 
 	def checkbp
@@ -264,51 +307,14 @@ class LinDebug
 	def exec_prompt
 		log ':'+@promptbuf
 		cmd, *args = @promptbuf.split ' '
+		@promptbuf = ''
+		@promptpos = @promptbuf.length
+
 		argint = proc {
-			ret = nil
-			ptrsz = 4
-			wantclose = false
-			until args.empty?
-				case a = args.shift
-				when /^([\]\(\)+*\[-])(.+)$/, /^(.+)([\]\(\)+*\[-])$/, /^(.+)([-+*])(.+)$/
-					args.unshift $3 if $3
-					args.unshift $1, $2
-					next
-				when 'ptr'
-				when 'byte': ptrsz = 1
-				when 'word': ptrsz = 2
-				when 'dword': ptrsz = 4
-				when '['
-					ret = (@rs[argint[], ptrsz].unpack({1=>'C', 2=>'S', 4=>'L'}[ptrsz]).first rescue 0)
-					wantclose = true
-				when ']'
-					if not wantclose: args.unshift a; break
-					else wantclose = false
-					end
-				when '('
-					ret = argint[]
-					wantclose = true
-				when ')'
-					if not wantclose: args.unshift a; break
-					else wantclose = false
-					end
-				when /^e[abcd]x|e[sd]i|e[sbi]p$/: ret = @regs[a]
-				when /^[abcd]x|[sd]i|[sbi]p$/: ret = @regs['e'+a] & 0xffff
-				when 'al', 'bl', 'cl', 'dl': ret = @regs['e'+a[0, 1]+'x'] & 0xff
-				when 'ah', 'bh', 'ch', 'dh': ret = (@regs['e'+a[0, 1]+'x'] >> 8) & 0xff
-				when /^0x(.*)$/, /^([0-9].*)h$/: ret = $1.to_i(16)
-				when /^0[0-7]+$/: ret = a.to_i(8)
-				when /^[0-9]+$/: ret = a.to_i
-				when '+', '-', '*'	# XXX no operator precedence !
-					log "syntax error : unary *" if not ret and a == '*'
-					ret = (ret || 0).send(a, argint[])
-				else log "unknown expression #{a}"; args.unshift a; break
-				end
-				log "syntax error, ] or ) expected, found #{a}" if wantclose and a != '[' and a != '('
-			end
-			log "expression expected" if not ret
-			ret || 0
+			e = ExprParser.parse Metasm::Preprocessor.new.feed(args.join(' '))
+			e.bind(@symbols.invert.merge(@regs).merge('tracer_memory' => @rs)).reduce
 		}
+
 		case cmd
 		when 'kill'
 			@rs.kill
@@ -317,11 +323,20 @@ class LinDebug
 		when 'q', 'quit', 'detach', 'exit'
 			@rs.detach
 			@runing = false
-		when 'bp'
+		when 'bpx'
 			addr = argint[]
 			return if @breakpoints[addr]
-			@breakpoints[addr] = @rs[addr]
-			@rs[addr] = 0xcc
+			if @has_pax
+				@breakpoints[addr] = @rs[addr] if set_hwbp 'x', addr
+			else
+				@breakpoints[addr] = @rs[addr]
+				@rs[addr] = 0xcc
+			end
+		when 'bphw'
+			type = args.shift
+			addr = argint[]
+			set_hwbp type, addr
+			# TODO clear...
 		when 'd'
 			@dataptr = argint[]
 		when 'db', 'dw', 'dd'
@@ -329,7 +344,15 @@ class LinDebug
 			@dataptr = argint[] if not args.empty?
 		when 'r'
 			r = args.shift
-			if not @regs[r]
+			if r == 'fl'
+				flag = args.shift
+				if not EFLAGS.index(flag)
+					log "bad flag #{flag}"
+				else
+					@rs.eflags = @regs['eflags'] ^ (1 << EFLAGS.index(flag))
+					readregs
+				end
+			elsif not @regs[r]
 				log "bad reg #{r}"
 			elsif not args.empty?
 				@rs.send r+'=', argint[]
@@ -337,45 +360,115 @@ class LinDebug
 			else
 				log "#{r} = #{@regs[r]}"
 			end
-		when 'fl'
-			flag = args.shift
-			if not EFLAGS.index(flag)
-				log "bad flag #{flag}"
-			else
-				@rs.eflags = @regs['eflags'] ^ (1 << EFLAGS.index(flag))
-				readregs
-			end
 		when 'run', 'cont'
 			cont
 		when 'syscall'
 			syscall
 		when 'g'
 			addr = argint[]
-			if not @breakpoints[addr]
+			return if @breakpoints[addr]
+			if @has_pax
+				@breakpoints[addr] = @rs[addr] if set_hwbp 'x', addr
+			else
 				@breakpoints[addr] = @rs[addr]
 				@rs[addr] = 0xcc
 			end
 			cont
+		when 'has_pax'
+			val = args.empty? ? 1 : argint[]
+			@has_pax = (val != 0)
+			log "has_pax now #@has_pax"
 		when 'help'
 			log 'commands: (addr/values are things like dword ptr [ebp+(4*byte [eax])] )'
-			log ' kill'
+			log ' bpx <addr>'
+			log ' bphw [r|w|x] <addr>: debug register breakpoint'
 			log ' cont/run/F5'
-			log ' q/quit/detach/exit'
-			log ' syscall: run til next syscall/bp'
-			log ' bp <addr>'
+			log ' d/db/dw/dd [<addr>]: change data type/address'
 			log ' g <addr>: set a bp at <addr> and run'
-			log ' d/dd/dw/db [<addr>]: change data type/address'
+			log ' has_pax [0|1]: set has_pax flag (hwbp+0x60000000 instead of bpx)'
+			log ' kill'
+			log ' loadsyms: load symbol information from mapped files (from /proc and disk)'
+			log ' q/quit/detach/exit'
 			log ' r <reg> [<value>]: show/change register'
-			log ' fl <flag>: toggle eflags bit'
+			log ' r fl <flag>: toggle eflags bit'
+			log ' sym <symbol regex>: show symbol information'
+			log ' syscall: run til next syscall/bp'
+			log 'keys:'
 			log ' F10: step over'
 			log ' F11: single step'
 			log ' pgup/pgdown: move command history'
 			log ' alt+pgup/pgdown/up/down: move data pointer'
+		when 'loadsyms'
+			File.read("/proc/#{@rs.pid}/maps").each { |l| loadsyms l.to_i(16), l.split[5] }
+update
+		when 'sym'
+			sym = args.shift
+			s = @symbols.keys.find_all { |s| @symbols[s] =~ /#{sym}/ }
+			if s.empty?
+				log "unknown symbol #{sym}"
+			else
+				s.each { |s| log "#{'%08x' % s} #{@symbols_len[s]} #{findsymbol[s]}" }
+			end
+		when '', nil: return
 		else
 			log 'unknown command'
 		end
 		@prompthistory << @promptbuf
 		@prompthistory.shift if @prompthistory.length > @prompthistlen
+	end
+
+	def findfilemap(s)
+		@filemap.keys.find { |k| @filemap[k][0] <= s and @filemap[k][1] > s } || '???'
+	end
+
+	def findsymbol(k)
+		file = findfilemap(k) + '!'
+		if s = @symbols.keys.find { |s| s <= k and s + @symbols_len[s] > k }
+			file + @symbols[s] + (s == k ? '' : (k-s).to_s(16))
+		else
+			file + ('%08x' % k)
+		end
+	end
+
+	def set_hwbp(type, addr, len=1)
+		if @regs['dr7'] & 0x55 == 0x55
+			log 'no debug reg available :('
+			return false
+		end
+		dr = (0..3).find { |dr| @regs['dr7'] & (1 << (2*dr)) == 0 }
+		@regs['dr7'] &= 0xffff_ffff ^ (0xf << (16+4*dr))
+		case type
+		when 'x': addr |= 0x6000_0000 if @has_pax
+		when 'r': @regs['dr7'] |= (((len-1)<<2)|3) << (16+4*dr)
+		when 'w': @regs['dr7'] |= (((len-1)<<2)|1) << (16+4*dr)
+		end
+		@rs.send('dr'+dr+'=', addr)
+		@rs.dr6 = 0
+		@rs.dr7 = @regs['dr7'] | (1 << (2*dr))
+		readregs
+		true
+	end
+
+	def loadsyms(baseaddr, name)
+		@loadedsyms ||= {0 => true} 	# TODO scan memory for pax-obfuscated pid/maps
+		return if not name or name[0] != ?/ or @loadedsyms[name] or @loadedsyms[baseaddr] or @rs[baseaddr, 4] != "\x7fELF"
+		@loadedsyms[name] = @loadedsyms[baseaddr] = true
+
+		e = Metasm::ELF.decode_file name rescue return 	# read from disk
+
+		last_s = e.segments.reverse.find { |s| s.type == 'LOAD' }
+		vlen = last_s.vaddr + last_s.memsz
+		vlen -= baseaddr if e.header.type == 'EXEC'
+		@filemap[name] = [baseaddr, baseaddr + vlen]
+
+		oldsyms = @symbols.length
+		e.symbols.each { |s|
+			next if not s.name or s.shndx == 'UNDEF'
+			@symbols[baseaddr + s.value] = s.name
+			@symbols_len[baseaddr + s.value] = s.size
+		}
+		log "loaded #{@symbols.length-oldsyms} symbols from #{name} at #{'%08x' % baseaddr}"
+		updateprompt
 	end
 
 	def main_loop
@@ -388,8 +481,7 @@ class LinDebug
 		while @running and c = @curses_scr.getch
 			# log "key #{c.to_s 16} (#{Ncurses.constants.find { |k| k[0,4]=='KEY_' and Ncurses.const_get(k) == c }})"
 			case c
-			when 4: log 'exiting'; break
-				# eof
+			when 4: log 'exiting'; break	 # eof
 			when 27		# esc/composed key
 				if IO::select([$stdin], nil, nil, 0) and c1 = @curses_scr.getch
 					if IO::select([$stdin], nil, nil, 0) and c2 = @curses_scr.getch
@@ -426,23 +518,26 @@ class LinDebug
 				@prompthistory.unshift @prompthistory.pop
 				@promptbuf = @prompthistory.last
 				@promptpos = @promptbuf.length
-			when Ncurses::KEY_LEFT: @promptpos -= 1 if @promptpos > 0
+			when Ncurses::KEY_LEFT:  @promptpos -= 1 if @promptpos > 0
 			when Ncurses::KEY_RIGHT: @promptpos += 1 if @promptpos < @promptbuf.length
+			when Ncurses::KEY_HOME:  @promptpos = 0
+			when Ncurses::KEY_END:   @promptpos = @promptbuf.length
 			when Ncurses::KEY_BACKSPACE: @promptbuf[@promptpos-=1, 1] = '' if @promptpos > 0
 			when Ncurses::KEY_DC: @promptbuf[@promptpos, 1] = '' if @promptpos < @promptbuf.length
 			when Ncurses::KEY_PPAGE: updateprompt(logback+=1); next
 			when Ncurses::KEY_NPAGE: updateprompt(logback <= 0 ? logback : logback-=1); next
 			#when ?\t:	# autocomplete
-			when ?\n
-				exec_prompt
-				@promptbuf = ''
-				@promptpos = @promptbuf.length
+			when ?\n: exec_prompt
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = c.chr
 				@promptpos += 1
 			else log "unknown key pressed #{c.to_s 16} (#{Ncurses.constants.find { |k| k[0,4]=='KEY_' and Ncurses.const_get(k) == c }})"
 			end
-			update rescue break
+			begin
+				update
+			rescue Errno::ESRCH
+				break
+			end
 		end
 		logback=0
 		checkbp
