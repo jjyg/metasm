@@ -27,7 +27,7 @@ class LinDebug
 		@console_width  = @curses_scr.getmaxx
 		@console_height = @curses_scr.getmaxy
 		@windows = []
-		Ncurses.curs_set 0		# hide cursor
+		Ncurses.curs_set 1		# show cursor
 		Ncurses.noecho			# do not show keypresses
 		Ncurses.keypad @curses_scr, 1	# activate keypad (needed to catch F1, arrows etc)
 		Ncurses.cbreak			# catch everything, incl. ^C
@@ -63,6 +63,13 @@ class LinDebug
 		@oldregs = {}
 		readregs
 		@breakpoints = {}
+
+		@prompthistlen = 20
+		@prompthistory = []
+		@promptloglen = 200
+		@promptlog = []
+		@dataptr = 0
+		@datafmt = 'db'
 
 		begin
 			init_screen
@@ -155,7 +162,19 @@ class LinDebug
 		@data_window.box
 		@data_window.color :normal
 
-		@data_window.mvwaddstr 1, 1, 'TODO'
+		ptr = @dataptr
+		(1..@data_height-2).each { |y|
+			raw = (@rs[ptr, 16] rescue 0.chr*16)
+			@data_window.mvwaddstr y, 1, '%08x' % ptr
+			x = 11
+			case @datafmt
+			when 'db': raw.unpack('C*').each { |c| @data_window.mvwaddstr(y, x, '%02x'%c) ; x+=3 }
+			when 'dw': raw.unpack('S*').each { |c| @data_window.mvwaddstr(y, x, '%04x'%c) ; x+=5 }
+			when 'dd': raw.unpack('L*').each { |c| @data_window.mvwaddstr(y, x, '%08x'%c) ; x+=9 }
+			end
+			@data_window.mvwaddstr y, x+1, raw.unpack('C*').map { |c| (0x20..0x7e).include?(c) ? c : ?. }.pack('C*')
+			ptr += 16
+		}
 
 		@data_window.refresh
 	end
@@ -165,20 +184,36 @@ class LinDebug
 		@prpt_window.color :border
 		@prpt_window.box
 		@prpt_window.color :normal
-		@prpt_window.mvwaddstr(@prpt_height-2, 1, ':'+@promptbuf)
+
+		y = 1
+		@promptlog[-[@prpt_height-3, @promptlog.length].min..-1].each { |l|
+			@prpt_window.mvaddstr(y, 1, l)
+			y += 1
+		}
+
+		@prpt_window.mvwaddstr(y, 1, ':'+@promptbuf)
+
+		@prpt_window.move y, @promptpos+2
+
 		@prpt_window.refresh
 	end
 
 	def readregs
-		%w[eax ebx ecx edx esi edi esp ebp eip eflags].each { |r|
-			@regs[r] = @rs.send(r)
-		}
+		%w[eax ebx ecx edx esi edi esp ebp eip eflags].each { |r| @regs[r] = @rs.send(r) }
 	end
 
 	def checkbp
-		addr = @regs['eip']
-		if @breakpoints[addr] and @rs[addr] == 0xcc
-			@rs[addr] = @breakpoints.delete addr
+		if not $?.stopped?
+			if $?.exited?:      log "process exited with status #{$?.exitstatus}"
+			elsif $?.signaled?: log "process exited due to signal #{$?.termsig} (#{Signal.list.index $?.termsig})"
+			else                log "process in unknown status #{$?.inspect}"
+			end
+			return
+		elsif $?.stopsig != Signal.list['TRAP']
+			log "process stopped due to signal #{$?.stopsig} (#{Signal.list.index $?.stopsig})"
+		end
+		if @breakpoints[@regs['eip']] and @rs[@regs['eip']] == 0xcc
+			@rs[@regs['eip']] = @breakpoints.delete @regs['eip']
 			@rs.eip = @regs['eip'] -= 1
 		end
 	end
@@ -204,59 +239,175 @@ class LinDebug
 			eaddr = @regs['eip'] + @curinstr.bin_length
 			@breakpoints[eaddr] = @rs[eaddr]
 			@rs[eaddr] = 0xcc
-			@rs.cont
-			return if $?.exited?
-			@oldregs.update @regs
-			readregs
-			checkbp
+			cont
 		else
 			singlestep
 		end
 	end
 
+	def log(str)
+		@promptlog << str
+		@promptlog.shift if @promptlog.length > @promptloglen
+	end
+
 	def exec_prompt
-		case @promptbuf
+		log ':'+@promptbuf
+		cmd, *args = @promptbuf.split ' '
+		argint = proc {
+			ret = nil
+			ptrsz = 4
+			wantclose = false
+			until args.empty?
+				case a = args.shift
+				when /^([\]\(\)+*\[-])(.+)$/, /^(.+)([\]\(\)+*\[-])$/, /^(.+)([-+*])(.+)$/
+					args.unshift $3 if $3
+					args.unshift $1, $2
+					next
+				when 'ptr'
+				when 'byte': ptrsz = 1
+				when 'word': ptrsz = 2
+				when 'dword': ptrsz = 4
+				when '['
+					ret = (@rs[argint[], ptrsz].unpack({1=>'C', 2=>'S', 4=>'L'}[ptrsz]).first rescue 0)
+					wantclose = true
+				when ']'
+					if not wantclose: args.unshift a; break
+					else wantclose = false
+					end
+				when '('
+					ret = argint[]
+					wantclose = true
+				when ')'
+					if not wantclose: args.unshift a; break
+					else wantclose = false
+					end
+				when /^e[abcd]x|e[sd]i|e[sbi]p$/: ret = @regs[a]
+				when /^[abcd]x|[sd]i|[sbi]p$/: ret = @regs['e'+a] & 0xffff
+				when 'al', 'bl', 'cl', 'dl': ret = @regs['e'+a[0, 1]+'x'] & 0xff
+				when 'ah', 'bh', 'ch', 'dh': ret = (@regs['e'+a[0, 1]+'x'] >> 8) & 0xff
+				when /^0x(.*)$/, /^([0-9].*)h$/: ret = $1.to_i(16)
+				when /^0[0-7]+$/: ret = a.to_i(8)
+				when /^[0-9]+$/: ret = a.to_i
+				when '+', '-', '*'	# XXX no operator precedence !
+					log "syntax error : unary *" if not ret and a == '*'
+					ret = (ret || 0).send(a, argint[])
+				else log "unknown expression #{a}"; args.unshift a; break
+				end
+				log "syntax error, ] or ) expected, found #{a}" if wantclose and a != '[' and a != '('
+			end
+			log "expression expected" if not ret
+			ret || 0
+		}
+		case cmd
 		when 'kill'
 			@rs.kill
 			@running = false
-		when 'q', 'quit'
+			log 'killed'
+		when 'q', 'quit', 'detach', 'exit'
 			@rs.detach
 			@running = false
-		when /^bp (.*)/
-			addr = Integer($1)
+		when 'bp'
+			# TODO handle bp [eip+42] etc
+			addr = argint[]
 			return if @breakpoints[addr]
 			@breakpoints[addr] = @rs[addr]
 			@rs[addr] = 0xcc
+		when 'd'
+			@dataptr = argint[]
+		when 'db', 'dw', 'dd'
+			@datafmt = cmd.dup
+			@dataptr = argint[] if not args.empty?
+		when 'r'
+			r = args.shift
+			if not @regs[r]
+				log "bad reg #{r}"
+			elsif not args.empty?
+				@rs.send r+'=', argint[]
+				readregs
+			else
+				log "#{r} = #{@regs[r]}"
+			end
+		when 'fl'
+			flag = args.shift
+			if not EFLAGS.index(flag)
+				log "bad flag #{flag}"
+			else
+				@rs.eflags = @regs['eflags'] ^ (1 << EFLAGS.index(flag))
+				readregs
+			end
+		when 'run', 'cont'
+			cont
+		when 'g'
+			addr = argint
+			if not @breakpoints[addr]
+				@breakpoints[addr] = @rs[addr]
+				@rs[addr] = 0xcc
+			end
+			cont
+		else
+			log 'unknown command'
 		end
+		@prompthistory << @promptbuf
+		@prompthistory.shift if @prompthistory.length > @prompthistlen
 	end
 
 	def main_loop
 		@promptbuf = ''
+		@promptpos = 0
+		@prompthistory = []
 		updateprompt
 		@running = true
 		while @running
 			update
-			case c = @curses_scr.getch
-			when 27	# esc
+			c = @curses_scr.getch
+			#log "key #{c.to_s 16} (#{Ncurses.constants.find_all { |k| k[0, 4] == 'KEY_' and Ncurses.const_get(k) == c }.join ' '})"
+			case c
+			when 4, 27	# eof, esc XXX F1-F5 too
+				log 'exiting'
 				break
-			when Ncurses::KEY_F5
-				cont
-				break if $?.exited?
+			#when Ncurses::KEY_F5
+			#	cont
+			#	break if $?.exited?
 			when Ncurses::KEY_F10
 				stepover
 				break if $?.exited?
 			when Ncurses::KEY_F11
 				singlestep
 				break if $?.exited?
-			# when Ncurses::Del
-			# curcmd.chop
+			when Ncurses::KEY_DOWN
+				@prompthistory |= [@promptbuf]
+				@prompthistory.push @prompthistory.shift
+				@promptbuf = @prompthistory.last
+				@promptpos = @promptbuf.length
+			when Ncurses::KEY_UP
+				@prompthistory |= [@promptbuf]
+				@prompthistory.unshift @prompthistory.pop
+				@promptbuf = @prompthistory.last
+				@promptpos = @promptbuf.length
+			when Ncurses::KEY_LEFT
+				@promptpos -= 1 if @promptpos > 0
+			when Ncurses::KEY_RIGHT
+				@promptpos += 1 if @promptpos < @promptbuf.length
+			when Ncurses::KEY_BACKSPACE
+				@promptbuf[@promptpos-=1, 1] = '' if @promptpos > 0
+			when Ncurses::KEY_DC
+				@promptbuf[@promptpos, 1] = '' if @promptpos < @promptbuf.length
+			#when ?\t
+			#	autocomplete
 			when ?\n
 				exec_prompt
 				@promptbuf = ''
-			when 0x32..0x7e
-				@promptbuf << c
+				@promptpos = @promptbuf.length
+				break if $?.exited?
+			when 0x20..0x7e
+				@promptbuf[@promptpos, 0] = c.chr
+				@promptpos += 1
+			else
+				log "unknown key pressed #{c.to_s 16}"
 			end
 		end
+		checkbp
+		updateprompt
 	end
 end
 
