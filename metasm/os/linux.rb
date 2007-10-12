@@ -201,21 +201,23 @@ class PTrace32
 end
 
 class LinuxRemoteString < VirtualString
-	attr_accessor :pid, :readfd
+	attr_accessor :pid, :readfd, :invalid_addr
 	attr_accessor :ptrace
 
 	# returns a virtual string proxying the specified process memory range
 	# reads are cached (4096 aligned bytes read at once), from /proc/pid/mem
 	# writes are done directly by ptrace
 	# XXX could fallback to ptrace if no /proc/pid...
-	def initialize(pid, addr_start=0, length=0xffff_ffff)
+	def initialize(pid, addr_start=0, length=0xffff_ffff, ptrace=nil)
 		@pid = pid
 		@readfd = File.open("/proc/#@pid/mem")
+		@ptrace = ptrace if ptrace
+		@invalid_addr = false
 		super(addr_start, length)
 	end
 
 	def dup(addr = @addr_start, len = @length)
-		self.class.new(@pid, addr, len)
+		self.class.new(@pid, addr, len, ptrace)
 	end
 
 	def do_ptrace
@@ -236,7 +238,15 @@ class LinuxRemoteString < VirtualString
 		@invalid = false
 		@readfd.pos = @curstart = addr & 0xffff_f000
 		# target must be stopped
-		do_ptrace { @curpage = @readfd.read 4096 }
+		do_ptrace {
+			begin
+				@invalid_addr = false
+				@curpage = @readfd.read 4096
+			rescue Errno::EIO
+				@invalid_addr = true
+				@curpage = 0.chr*4096
+			end
+		}
 	end
 
 	def realstring
