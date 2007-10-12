@@ -140,7 +140,9 @@ class ELF
 	alias decode_off  decode_xword
 
 	def readstr(str, off)
-		str[off...str.index(0, off)] if off > 0
+		if off > 0 and i = str.index(0, off)
+			str[off...i]
+		end
 	end
 
 	# transforms a virtual address to a file offset, from mmaped segments addresses
