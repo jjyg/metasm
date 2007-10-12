@@ -140,18 +140,9 @@ class LinDebug
 		:normal => Ansi.color(:white, :black, :normal), :hilight => Ansi.color(:blue, :white, :normal),
 		:status => Ansi.color(:black, :cyan)}
 
-	def initialize(target)
-		@rs = Metasm::Rubstop.new(target)
-		@regs = {}
-		@oldregs = {}
-		readregs
-		@breakpoints = {}
-		@singleshot = {}
-		@wantbp = nil
-		@symbols = {}
-		@symbols_len = {}
-		@filemap = {}
-		@has_pax = false
+	def initialize(rs)
+		@rs = rs
+		@rs.logger = self
 		@dataptr = 0
 		@datafmt = 'db'
 
@@ -177,45 +168,41 @@ class LinDebug
 				puts Ansi.set_cursor_pos(@console_height, 1)
 			end
 		rescue
-			puts $!, $!.backtrace
+			$stdout.puts $!, $!.backtrace
 		end
-		puts @promptlog[-1]
-		((target.to_i == 0) ? @rs.kill : @rs.detach) rescue nil
+		$stdout.puts @promptlog[-1]
 	end
 	
 	def update
-		#print Color[:normal] + Ansi::ClearScreen
 		print Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt
 	end
 
-	EFLAGS = {0 => 'c', 2 => 'p', 4 => 'a', 6 => 'z', 7 => 's', 9 => 'i', 10 => 'd', 11 => 'o'}
 	def updateregs
-		@oldregs = @regs.dup if @oldregs.empty?
 		text = ''
 		text << ' '
 		x = 1
 		%w[eax ebx ecx edx eip].each { |r|
-			text << Color[:changed] if @regs[r] != @oldregs[r]
+			text << Color[:changed] if @rs.regs_cache[r] != @rs.oldregs[r]
 			text << r << ?=
-			text << ('%08X' % @regs[r])
-			text << Color[:normal] if @regs[r] != @oldregs[r]
+			text << ('%08X' % @rs.regs_cache[r])
+			text << Color[:normal] if @rs.regs_cache[r] != @rs.oldregs[r]
 			text << '  '
 			x += r.length + 11
 		}
 		text << (' '*(@console_width-x)) << "\n" << ' '
 		x = 1
 		%w[esi edi ebp esp].each { |r|
-			text << Color[:changed] if @regs[r] != @oldregs[r]
+			text << Color[:changed] if @rs.regs_cache[r] != @rs.oldregs[r]
 			text << r << ?=
-			text << ('%08X' % @regs[r])
-			text << Color[:normal] if @regs[r] != @oldregs[r]
+			text << ('%08X' % @rs.regs_cache[r])
+			text << Color[:normal] if @rs.regs_cache[r] != @rs.oldregs[r]
 			text << '  '
 			x += r.length + 11
 		}
-		EFLAGS.sort.each { |off, flag|
-			val = @regs['eflags'] & (1<<off)
+		Rubstop::EFLAGS.sort.each { |off, flag|
+			val = @rs.regs_cache['eflags'] & (1<<off)
 			flag = flag.upcase if val != 0
-			if val != @oldregs['eflags'] & (1 << off)
+			if val != @rs.oldregs['eflags'] & (1 << off)
 				text << Color[:changed]
 				text << flag
 				text << Color[:normal]
@@ -231,18 +218,18 @@ class LinDebug
 	def updatecode
 		if @codeptr
 			addr = @codeptr
-		elsif @oldregs['eip'] and @oldregs['eip'] < @regs['eip'] and @oldregs['eip'] + 8 >= @regs['eip']
-			addr = @oldregs['eip']
+		elsif @rs.oldregs['eip'] and @rs.oldregs['eip'] < @rs.regs_cache['eip'] and @rs.oldregs['eip'] + 8 >= @rs.regs_cache['eip']
+			addr = @rs.oldregs['eip']
 		else
-			addr = @regs['eip']
+			addr = @rs.regs_cache['eip']
 		end
 
-		if findfilemap(addr) == '???'
+		if @rs.findfilemap(addr) == '???'
 			base = addr & 0xffff_f000
 			8.times {
 				sig = @rs[base, 4]
 				if sig == "\x7fELF"
-					loadsyms(base, base.to_s(16))
+					@rs.loadsyms(base, base.to_s(16))
 					break
 				end
 				base -= 0x1000
@@ -251,7 +238,7 @@ class LinDebug
 
 		text = ''
 		text << Color[:border]
-		title = findsymbol(addr)
+		title = @rs.findsymbol(addr)
 		pre  = [@console_width-100, 6].max
 		post = @console_width - (pre + title.length + 2)
 		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post)
@@ -260,21 +247,20 @@ class LinDebug
 
 		cnt = @win_code_height
 		while (cnt -= 1) > 0
-			if @symbols[addr]
-				text << ('    ' << @symbols[addr] << ?:) << Ansi::ClearLineAfter << "\n"
+			if @rs.symbols[addr]
+				text << ('    ' << @rs.symbols[addr] << ?:) << Ansi::ClearLineAfter << "\n"
 				break if (cnt -= 1) <= 0
 			end
-			text << Color[:hilight] if addr == @regs['eip']
-			text << ('%04X' % @regs['cs']) << ':'
+			text << Color[:hilight] if addr == @rs.regs_cache['eip']
+			text << ('%04X' % @rs.regs_cache['cs']) << ':'
 			text << ('%08X' % addr)
 			di = @rs.mnemonic_di(addr)
-			@curinstr = di if addr == @regs['eip']
 			len = di.instruction ? di.bin_length : 1
 			text << '  '
 			text << @rs[addr, [len, 10].min].unpack('C*').map { |c| '%02X' % c }.join.ljust(22)
 			if di.instruction
 				text <<
-				if addr == @regs['eip']
+				if addr == @rs.regs_cache['eip']
 					"*#{di.instruction}".ljust(@console_width-37)
 				else
 					" #{di.instruction}" << Ansi::ClearLineAfter
@@ -282,7 +268,7 @@ class LinDebug
 			else
 				text << ' <unk>' << Ansi::ClearLineAfter
 			end
-			text << Color[:normal] if addr == @regs['eip']
+			text << Color[:normal] if addr == @rs.regs_cache['eip']
 			addr += len
 			text << "\n"
 		end
@@ -294,7 +280,7 @@ class LinDebug
 
 		text = ''
 		text << Color[:border]
-		title = findsymbol(addr)
+		title = @rs.findsymbol(addr)
 		pre  = [@console_width-100, 6].max
 		post = @console_width - (pre + title.length + 2)
 		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post)
@@ -303,7 +289,7 @@ class LinDebug
 		cnt = @win_data_height
 		while (cnt -= 1) > 0
 			raw = @rs[addr, 16]
-			text << ('%04X' % @regs['ds']) << ':' << ('%08X' % addr) << '  '
+			text << ('%04X' % @rs.regs_cache['ds']) << ':' << ('%08X' % addr) << '  '
 			case @datafmt
 			when 'db': text << raw[0,8].unpack('C*').map { |c| '%02x ' % c }.join << ' ' <<
 				   raw[8,8].unpack('C*').map { |c| '%02x ' % c }.join
@@ -312,6 +298,7 @@ class LinDebug
 			end
 			text << ' ' << raw.unpack('C*').map { |c| (0x20..0x7e).include?(c) ? c : ?. }.pack('C*')
 			text << Ansi::ClearLineAfter << "\n"
+			addr += 16
 		end
 		text
 	end
@@ -334,7 +321,7 @@ class LinDebug
 	end
 
 	def statusline
-		'    Enter a command (h for help)'
+		'    Enter a command (help for help)'
 	end
 
 	def resize
@@ -345,98 +332,14 @@ class LinDebug
 		update
 	end
 
-	def readregs
-		%w[eax ebx ecx edx esi edi esp ebp eip eflags dr0 dr1 dr2 dr3 dr6 dr7 cs ds].each { |r| @regs[r] = @rs.send(r) }
-	end
-
-	def checkbp
-		::Process::waitpid(@rs.pid, ::Process::WNOHANG) if not $?
-		return if not $?
-		if not $?.stopped?
-			if $?.exited?:      log "process exited with status #{$?.exitstatus}"
-			elsif $?.signaled?: log "process exited due to signal #{$?.termsig} (#{Signal.list.index $?.termsig})"
-			else                log "process in unknown status #{$?.inspect}"
-			end
-			return
-		elsif $?.stopsig != Signal.list['TRAP']
-			log "process stopped due to signal #{$?.stopsig} (#{Signal.list.index $?.stopsig})"
-		end
-		@codeptr = nil
-		if @breakpoints[@regs['eip']-1] and @rs[@regs['eip']-1] == 0xcc
-			@rs[@regs['eip']-1] = @breakpoints.delete @regs['eip']-1
-			@rs.eip = @regs['eip'] -= 1
-			@wantbp = @regs['eip'] if not @singleshot.delete @regs['eip']
-		elsif @regs['dr6'] & 15 != 0
-			dr = (0..3).find { |dr| @regs['dr6'] & (1 << dr) != 0 }
-			@wantbp = "dr#{dr}" if not @singleshot.delete @regs['eip']
-			@rs.dr6 = 0
-			@rs.dr7 = @regs['dr7'] & (0xffff_ffff ^ (3 << (2*dr)))
-			readregs
-		end
-	end
-
-	def bpx(addr, singleshot=false)
-		return if @breakpoints[addr]
-		if @has_pax
-			set_hwbp 'x', addr
-		else
-			begin
-				@breakpoints[addr] = @rs[addr]
-				@rs[addr] = 0xcc
-			rescue Errno::EIO
-				log 'i/o error when setting breakpoint, switching to PaX mode'
-				@has_pax = true
-				@breakpoints.delete addr
-				bpx(addr)
-			end
-		end
-		@singleshot[addr] = true if singleshot
-	end
-
-	def cont
-		singlestep if @wantbp
-		@rs.cont
-		return if $?.exited?
-		@oldregs.update @regs
-		readregs
-		checkbp
-	end
-
-	def singlestep(justcheck=false)
-		@rs.singlestep
-		return if $?.exited?
-		case @wantbp
-		when ::Integer: bpx @wantbp; @wantbp=nil
-		when ::String: @rs.dr7 |= 1 << (2*@wantbp[2, 1].to_i) ; @wantbp=nil
-		end
-		return if justcheck
-		@oldregs.update @regs
-		readregs
-		checkbp
-	end
-
-	def stepover
-		if @curinstr.opcode and @curinstr.opcode.name == 'call'
-			eaddr = @regs['eip'] + @curinstr.bin_length
-			bpx eaddr, true
-			cont
-		else
-			singlestep
-		end
-	end
-
-	def syscall
-		singlestep if @wantbp
-		@rs.syscall
-		return if $?.exited?
-		@oldregs.update @regs
-		readregs
-		checkbp
-	end
-
 	def log(str)
 		@promptlog << str
 		@promptlog.shift if @promptlog.length > @promptloglen
+	end
+
+	def puts(*s)
+		s.each { |s| log s }
+		update rescue nil
 	end
 
 	def exec_prompt
@@ -454,17 +357,17 @@ class LinDebug
 				log 'syntax error'
 				return
 			end
-			binding = @regs.dup
+			binding = @rs.regs_cache.dup
 			ext = e.externals
 			ext.map! { |exte| exte.kind_of?(Indirect) ? exte.ptr.externals : exte }.flatten! while not ext.grep(Indirect).empty?
-			(ext - @regs.keys).each { |ex|
-				if not s = @symbols.index(ex)
+			(ext - @rs.regs_cache.keys).each { |ex|
+				if not s = @rs.symbols.index(ex)
 					log "unknown value #{ex}"
 					return
 				end
 				binding[ex] = s
-				if @symbols.values.grep(ex).length > 1
-					log "multiple definitions found for #{ex}..."
+				if @rs.symbols.values.grep(ex).length > 1
+					raise "multiple definitions found for #{ex}"
 				end
 			}
 			binding['tracer_memory'] = @rs
@@ -486,76 +389,6 @@ class LinDebug
 		end
 	end
 
-	def findfilemap(s)
-		@filemap.keys.find { |k| @filemap[k][0] <= s and @filemap[k][1] > s } || '???'
-	end
-
-	def findsymbol(k)
-		file = findfilemap(k) + '!'
-		if s = @symbols.keys.find { |s| s <= k and s + @symbols_len[s] > k }
-			file + @symbols[s] + (s == k ? '' : (k-s).to_s(16))
-		else
-			file + ('%08x' % k)
-		end
-	end
-
-	def set_hwbp(type, addr, len=1)
-		dr = (0..3).find { |dr| @regs['dr7'] & (1 << (2*dr)) == 0 and @wantbp != "dr#{dr}" }
-		if not dr
-			log 'no debug reg available :('
-			return false
-		end
-		@regs['dr7'] &= 0xffff_ffff ^ (0xf << (16+4*dr))
-		case type
-		when 'x': addr += 0x6000_0000 if @has_pax
-		when 'r': @regs['dr7'] |= (((len-1)<<2)|3) << (16+4*dr)
-		when 'w': @regs['dr7'] |= (((len-1)<<2)|1) << (16+4*dr)
-		end
-		@rs.send("dr#{dr}=", addr)
-		@rs.dr6 = 0
-		@rs.dr7 = @regs['dr7'] | (1 << (2*dr))
-		readregs
-		true
-	end
-
-	def loadsyms(baseaddr, name)
-		@loadedsyms ||= {}
-		return if @loadedsyms[name] or @rs[baseaddr, 4] != "\x7fELF"
-		@loadedsyms[name] = true
-
-		e = Metasm::LoadedELF.load @rs[baseaddr, 0x100_0000]
-		e.load_address = baseaddr
-		begin
-			e.decode
-		rescue
-			log "failed to load symbols from #{name}: #$!"
-			($!.backtrace - caller).each { |l| log l.chomp }
-			@filemap[baseaddr.to_s(16)] = [baseaddr, baseaddr+0x1000]
-			return
-		end
-
-		name = e.tag['SONAME'] if e.tag['SONAME']
-		#e = Metasm::ELF.decode_file name rescue return 	# read from disk
-
-		last_s = e.segments.reverse.find { |s| s.type == 'LOAD' }
-		vlen = last_s.vaddr + last_s.memsz
-		vlen -= baseaddr if e.header.type == 'EXEC'
-		@filemap[name] = [baseaddr, baseaddr + vlen]
-
-		oldsyms = @symbols.length
-		e.symbols.each { |s|
-			next if not s.name or s.shndx == 'UNDEF'
-			@symbols[baseaddr + s.value] = s.name
-			@symbols_len[baseaddr + s.value] = s.size
-		}
-		if e.header.type == 'EXEC'
-			@symbols[e.header.entry] = 'entrypoint'
-			@symbols_len[e.header.entry] = 1
-		end
-		log "loaded #{@symbols.length-oldsyms} symbols from #{name} at #{'%08x' % baseaddr}"
-		update
-	end
-
 	def main_loop
 		@prompthistory = ['']
 		@histptr = nil
@@ -565,9 +398,9 @@ class LinDebug
 			case k = Ansi.getkey
 			when 4: log 'exiting'; break	 # eof
 			when ?\e: focus = :prompt
-			when :f5: cont
-			when :f10: stepover
-			when :f11: singlestep
+			when :f5: @rs.cont
+			when :f10: @rs.stepover
+			when :f11: @rs.singlestep
 			when :up
 				if not @histptr
 					@prompthistory << @promptbuf
@@ -618,7 +451,7 @@ class LinDebug
 				break
 			end
 		end
-		checkbp
+		@rs.checkbp
 	end
 
 	def load_commands
@@ -632,115 +465,122 @@ class LinDebug
 			@rs.detach
 			@runing = false
 		}
+		@command['closeui'] = proc { |lex, int|
+			@rs.logger = nil
+			@running = false
+		}
 		@command['bpx'] = proc { |lex, int|
 			addr = int[]
-			bpx addr
+			@rs.bpx addr
 		}
 		@command['bphw'] = proc { |lex, int|
 			type = lex.readtok.raw
 			addr = int[]
-			set_hwbp type, addr
+			@rs.set_hwbp type, addr
 		}
 		@command['bl'] = proc { |lex, int|
-			@breakpoints.sort.each { |addr, oct|
-				log "bpx at #{findsymbol(addr)}"
+			@rs.breakpoints.sort.each { |addr, oct|
+				log "bpx at #{@rs.findsymbol(addr)}"
 			}
 			(0..3).each { |dr|
-				if @regs['dr7'] & (1 << (2*dr)) != 0
-					log "bphw #{{0=>'x', 1=>'w', 2=>'?', 3=>'r'}[(@regs['dr7'] >> (16+4*dr)) & 3]} at #{findsymbol(@regs["dr#{dr}"])}"
+				if @rs.regs_cache['dr7'] & (1 << (2*dr)) != 0
+					log "bphw #{{0=>'x', 1=>'w', 2=>'?', 3=>'r'}[(@rs.regs_cache['dr7'] >> (16+4*dr)) & 3]} at #{@rs.findsymbol(@rs.regs_cache["dr#{dr}"])}"
 				end
 			}
 		}
 		@command['bc'] = proc { |lex, int|
-			@breakpoints.each { |addr, oct| @rs[addr] = oct }
-			@breakpoints.clear
-			if @regs['dr7'] & 0xff != 0
+			@rs.breakpoints.each { |addr, oct| @rs[addr] = oct }
+			@rs.breakpoints.clear
+			if @rs.regs_cache['dr7'] & 0xff != 0
 				@rs.dr7 = 0 
-				readregs
+				@rs.readregs
 			end
 		}
-		@command['d'] = proc { |lex, int| @dataptr = int[] || return }
+		@command['d'] =  proc { |lex, int| @dataptr = int[] || return }
 		@command['db'] = proc { |lex, int| @datafmt = 'db' ; @dataptr = int[] || return }
 		@command['dw'] = proc { |lex, int| @datafmt = 'dw' ; @dataptr = int[] || return }
 		@command['dd'] = proc { |lex, int| @datafmt = 'dd' ; @dataptr = int[] || return }
-		@command['r'] = proc { |lex, int| 
+		@command['r'] =  proc { |lex, int| 
 			r = lex.readtok.raw
 			nil while ntok = lex.readtok and ntok.type == :space
 			if r == 'fl'
 				flag = ntok.raw
-				if not EFLAGS.index(flag)
-					log "bad flag #{flag}"
-				else
-					@rs.eflags = @regs['eflags'] ^ (1 << EFLAGS.index(flag))
+				if i = Rubstop::EFLAGS.index(flag)
+					@rs.eflags = @rs.regs_cache['eflags'] ^ (1 << i)
 					readregs
+				else
+					log "bad flag #{flag}"
 				end
-			elsif not @regs[r]
+			elsif not @rs.regs_cache[r]
 				log "bad reg #{r}"
 			elsif ntok
 				lex.unreadtok ntok
 				@rs.send r+'=', int[]
-				readregs
+				@rs.readregs
 			else
-				log "#{r} = #{@regs[r]}"
+				log "#{r} = #{@rs.regs_cache[r]}"
 			end
 		}
-		@command['run'] = @command['cont'] = proc { |lex, int| cont }
-		@command['syscall'] = proc { |lex, int| syscall }
-		@command['singlestep'] = proc { |lex, int| singlestep }
-		@command['stepover'] = proc { |lex, int| stepover }
-		@command['g'] = proc { |lex, int| bpx int[], true ; cont }
+		@command['run'] = @command['cont'] = proc { |lex, int|
+			if tok = lex.readtok
+				lex.unreadtok tok
+				@rs.cont int[]
+			else @rs.cont
+			end
+		}
+		@command['syscall']    = proc { |lex, int| @rs.syscall }
+		@command['singlestep'] = proc { |lex, int| @rs.singlestep }
+		@command['stepover']   = proc { |lex, int| @rs.stepover }
+		@command['stepout']    = proc { |lex, int| @rs.stepout }
+		@command['g'] = proc { |lex, int| @rs.bpx int[], true ; @rs.cont }
 		@command['u'] = proc { |lex, int| @codeptr = int[] || break }
 		@command['has_pax'] = proc { |lex, int|
-			@has_pax = int[]
-			@has_pax = false if @has_pax == 0
-			log "has_pax now #@has_pax"
+			@rs.has_pax = int[]
+			@rs.has_pax = false if @rs.has_pax == 0
+			log "has_pax now #@rs.has_pax"
 		}
-		@command['loadsyms'] = proc { |lex, int|
-			File.read("/proc/#{@rs.pid}/maps").each { |l|
-				name = l.split[5]
-				loadsyms l.to_i(16), name if name and name[0] == ?/
-			}
-		}
+		@command['loadsyms'] = proc { |lex, int| @rs.loadallsyms }
+		@command['scansyms'] = proc { |lex, int| @rs.scansyms }
 		@command['sym'] = proc { |lex, int|
 			sym = ''
 			sym << ntok.raw while ntok = lex.readtok
-			s = @symbols.keys.find_all { |s| @symbols[s] =~ /#{sym}/ }
+			s = @rs.symbols.keys.find_all { |s| @rs.symbols[s] =~ /#{sym}/ }
 			if s.empty?
 				log "unknown symbol #{sym}"
 			else
-				s.each { |s| log "#{'%08x' % s} #{@symbols_len[s].to_s.ljust 6} #{findsymbol(s)}" }
+				s.each { |s| log "#{'%08x' % s} #{@rs.symbols_len[s].to_s.ljust 6} #{@rs.findsymbol(s)}" }
 			end
 		}
 		@command['delsym'] = proc { |lex, int|
 			addr = int[]
-			log "deleted #{@symbols.delete addr}"
-			@symbols_len.delete addr
+			log "deleted #{@rs.symbols.delete addr}"
+			@rs.symbols_len.delete addr
 		}
 		@command['help'] = proc { |lex, int|
-			log 'commands: (addr/values are things like dword ptr [ebp+(4*byte [eax])] )'
+			log 'commands: (addr/values are things like dword ptr [ebp+(4*byte [eax])] ), type <tab> to see all commands'
 			log ' bpx <addr>'
 			log ' bphw [r|w|x] <addr>: debug register breakpoint'
 			log ' bl: list breakpoints'
 			log ' bc: clear breakpoints'
-			log ' cont/run/F5'
+			log ' cont [<signr>]: continue the target sending a signal'
 			log ' d/db/dw/dd [<addr>]: change data type/address'
 			log ' g <addr>: set a bp at <addr> and run'
 			log ' has_pax [0|1]: set has_pax flag (hwbp+0x60000000 instead of bpx)'
-			log ' kill'
-			log ' loadsyms: load symbol information from mapped files (from /proc and disk)'
-			log ' q/quit/detach/exit'
 			log ' r <reg> [<value>]: show/change register'
 			log ' r fl <flag>: toggle eflags bit'
+			log ' loadsyms: load symbol information from mapped files (from /proc and disk)'
+			log ' scansyms: scan memory for ELF headers'
 			log ' sym <symbol regex>: show symbol information'
 			log ' delsym <addr>'
-			log ' syscall: run til next syscall/bp'
 			log ' u <addr>: disassemble addr'
 			log ' reload: reload lindebug source'
 			log ' ruby <ruby code>: instance_evals ruby code in current instance'
+			log ' closeui: detach from the underlying RubStop'
 			log 'keys:'
 			log ' F5: continue'
 			log ' F10: step over'
 			log ' F11: single step'
+			log ' F12: step out (til next ret)'
 			log ' pgup/pgdown: move command history'
 		}
 		@command['reload'] = proc { |lex, int| load $0 ; load_commands }
@@ -760,10 +600,14 @@ class LinDebug
 			@win_code_height = int[] || return
 			resize
 		}
+		@command['?'] = proc { |lex, int|
+			val = int[]
+			log "#{val} 0x#{val.to_s(16)} #{[val].pack('L').inspect}"
+		}
 	end
 end
 
 
 if $0 == __FILE__
-	LinDebug.new(ARGV.shift)
+	LinDebug.new Rubstop.new(ARGV.shift)
 end
