@@ -12,12 +12,17 @@ require 'ncurses'
 
 # fix the ^@$#$% ncurses interface
 module Ncurses
+	PAIRID = {}
+	def self.my_init_pair(id, fg, bg)
+		PAIRID[id] = PAIRID.values.max || 0
+		init_pair(PAIRID[id], fg, bg)
+	end
 	class WINDOW
 		%w[delwin getmaxx getmaxy mvwaddstr].each { |meth|
 			define_method(meth) { |*a| Ncurses.send(meth, self, *a) }
 		}
 		def box(v=ACS_VLINE, h=ACS_HLINE) Ncurses.box(self, v, h) end
-		def color(col) color_set(Ncurses.COLOR_PAIR(col), nil) end
+		def color(col) color_set(Ncurses.COLOR_PAIR(PAIRID[col]), nil) end
 	end
 end
 
@@ -26,7 +31,7 @@ class Indirect
 	UNPACK_STR = {1 => 'C', 2 => 'S', 4 => 'L'}
 	def initialize(ptr, sz) @ptr, @sz = ptr, sz end
 	def bind(bd)
-		raw = (bd['tracer_memory'][@ptr.bind(bd).reduce, @sz] rescue "\0\0\0\0")
+		raw = bd['tracer_memory'][@ptr.bind(bd).reduce, @sz]
 		Metasm::Expression[raw.unpack(UNPACK_STR[@sz]).first]
 	end
 end
@@ -46,6 +51,17 @@ class ExprParser < Metasm::Expression
 		else super
 		end
 	end
+	def self.parse_value(lex)
+		nil while tok = lex.readtok and tok.type == :space
+		lex.unreadtok tok
+		if tok.type == :punct and tok.raw == '['
+			tt = tok.dup
+			tt.type = :string
+			tt.raw = 'dword'
+			lex.unreadtok tt
+		end
+		super
+	end
 end
 
 class LinDebug
@@ -58,10 +74,11 @@ class LinDebug
 		Ncurses.noecho			# do not show keypresses
 		Ncurses.keypad @curses_scr, 1	# activate keypad (needed to catch F1, arrows etc)
 		Ncurses.cbreak			# config keyboard 
-		Ncurses.init_pair(:normal,  Ncurses::COLOR_WHITE, Ncurses::COLOR_BLACK)
-		Ncurses.init_pair(:changed, Ncurses::COLOR_BLUE,  Ncurses::COLOR_BLACK)
-		Ncurses.init_pair(:hilight, Ncurses::COLOR_BLACK, Ncurses::COLOR_YELLOW)
-		Ncurses.init_pair(:border,  Ncurses::COLOR_GREEN, Ncurses::COLOR_BLACK)
+		Ncurses.start_color
+		Ncurses.my_init_pair(:normal,  Ncurses::COLOR_WHITE, Ncurses::COLOR_BLACK)
+		Ncurses.my_init_pair(:changed, Ncurses::COLOR_BLUE,  Ncurses::COLOR_BLACK)
+		Ncurses.my_init_pair(:hilight, Ncurses::COLOR_BLACK, Ncurses::COLOR_YELLOW)
+		Ncurses.my_init_pair(:border,  Ncurses::COLOR_GREEN, Ncurses::COLOR_BLACK)
 		@regs_window = new_window 4
 		@regs_window.color :border
 		@regs_window.box
@@ -90,6 +107,8 @@ class LinDebug
 		@oldregs = {}
 		readregs
 		@breakpoints = {}
+		@singleshot = {}
+		@wantbp = nil
 		@symbols = {}
 		@symbols_len = {}
 		@filemap = {}
@@ -103,12 +122,17 @@ class LinDebug
 		@has_pax = false
 
 		begin
+		begin
 			init_screen
 			main_loop
+			@rs.detach rescue nil
 		ensure
 			fini_screen
-			@rs.detach rescue nil
 			puts
+		end
+		rescue
+			@rs.kill rescue nil
+			puts $!, $!.backtrace
 		end
 	end
 
@@ -162,12 +186,30 @@ class LinDebug
 	end
 
 	def updatecode
-		addr = @regs['eip']
+		if @codeptr
+			addr = @codeptr
+		elsif @oldregs['eip'] and @oldregs['eip'] < @regs['eip'] and @oldregs['eip'] + 8 >= @regs['eip']
+			addr = @oldregs['eip']
+		else
+			addr = @regs['eip']
+		end
+
+		if findfilemap(addr) == '???'
+			base = addr & 0xffff_f000
+			8.times {
+				sig = @rs[base, 4]
+				if sig == "\x7fELF"
+					loadsyms(base, base.to_s(16)) rescue nil
+					break
+				end
+				base -= 0x1000
+			}
+		end
 
 		@code_window.erase
 		@code_window.color :border
 		@code_window.box
-		@code_window.mvwaddstr 0, [@console_width-150, 1].max, ' ' + findsymbol(addr) + ' '
+		@code_window.mvwaddstr 0, [@console_width-100, 1].max, ' ' + findsymbol(addr) + ' '
 		@code_window.color :normal
 
 		y = 1
@@ -184,6 +226,7 @@ class LinDebug
 			len = di.instruction ? di.bin_length : 1
 			@code_window.mvwaddstr y, 12, @rs[addr, [len, 10].min].unpack('C*').map { |c| '%02x' % c }.join
 			if di.instruction
+				@code_window.mvwaddstr y, 34, '*' if addr == @regs['eip']
 				@code_window.mvwaddstr y, 35, di.instruction.to_s
 				addr += di.bin_length
 			else
@@ -203,11 +246,11 @@ class LinDebug
 		@data_window.erase
 		@data_window.color :border
 		@data_window.box
-		@data_window.mvwaddstr 0, [@console_width-150, 1].max, ' ' + findsymbol(addr) + ' '
+		@data_window.mvwaddstr 0, [@console_width-100, 1].max, ' ' + findsymbol(addr) + ' '
 		@data_window.color :normal
 
 		(1..@data_height-2).each { |y|
-			raw = (@rs[addr, 16] rescue 0.chr*16)
+			raw = @rs[addr, 16]
 			@data_window.mvwaddstr y, 1, '%08x' % addr
 			x = 11
 			case @datafmt
@@ -257,13 +300,40 @@ class LinDebug
 		elsif $?.stopsig != Signal.list['TRAP']
 			log "process stopped due to signal #{$?.stopsig} (#{Signal.list.index $?.stopsig})"
 		end
+		@codeptr = nil
 		if @breakpoints[@regs['eip']-1] and @rs[@regs['eip']-1] == 0xcc
 			@rs[@regs['eip']-1] = @breakpoints.delete @regs['eip']-1
 			@rs.eip = @regs['eip'] -= 1
+			@wantbp = @regs['eip'] if not @singleshot.delete @regs['eip']
+		elsif @regs['dr6'] & 15 != 0
+			dr = (0..3).find { |dr| @regs['dr6'] & (1 << dr) != 0 }
+			@wantbp = "dr#{dr}" if not @singleshot.delete @regs['eip']
+			@rs.dr6 = 0
+			@rs.dr7 = @regs['dr7'] & (0xffff_ffff ^ (3 << (2*dr)))
+			readregs
 		end
 	end
 
+	def bpx(addr, singleshot=false)
+		return if @breakpoints[addr]
+		if @has_pax
+			set_hwbp 'x', addr
+		else
+			begin
+				@breakpoints[addr] = @rs[addr]
+				@rs[addr] = 0xcc
+			rescue Errno::EIO
+				log 'i/o error when setting breakpoint, switching to PaX mode'
+				@has_pax = true
+				@breakpoints.delete addr
+				bpx(addr)
+			end
+		end
+		@singleshot[addr] = true if singleshot
+	end
+
 	def cont
+		singlestep if @wantbp
 		@rs.cont
 		return if $?.exited?
 		@oldregs.update @regs
@@ -271,9 +341,14 @@ class LinDebug
 		checkbp
 	end
 
-	def singlestep
+	def singlestep(justcheck=false)
 		@rs.singlestep
 		return if $?.exited?
+		case @wantbp
+		when ::Integer: bpx @wantbp; @wantbp=nil
+		when ::String: @rs.dr7 |= 1 << (2*@wantbp[2, 1].to_i) ; @wantbp=nil
+		end
+		return if justcheck
 		@oldregs.update @regs
 		readregs
 		checkbp
@@ -282,8 +357,7 @@ class LinDebug
 	def stepover
 		if @curinstr.opcode and @curinstr.opcode.name == 'call'
 			eaddr = @regs['eip'] + @curinstr.bin_length
-			@breakpoints[eaddr] = @rs[eaddr]
-			@rs[eaddr] = 0xcc
+			bpx eaddr, true
 			cont
 		else
 			singlestep
@@ -291,6 +365,7 @@ class LinDebug
 	end
 
 	def syscall
+		singlestep if @wantbp
 		@rs.syscall
 		return if $?.exited?
 		@oldregs.update @regs
@@ -305,26 +380,40 @@ class LinDebug
 
 	def exec_prompt
 		log ':'+@promptbuf
-		cmd, *args = @promptbuf.split ' '
+		return if @promptbuf == ''
+		lex = Metasm::Preprocessor.new.feed @promptbuf
+		@prompthistory << @promptbuf
+		@prompthistory.shift if @prompthistory.length > @prompthistlen
 		@promptbuf = ''
 		@promptpos = @promptbuf.length
-
 		argint = proc {
-			args[0][0, 0] = 'dword ' if args[0][0] == ?[
 			begin
-				raise if not e = ExprParser.parse(Metasm::Preprocessor.new.feed(args.join(' ')))
+				raise if not e = ExprParser.parse(lex)
 			rescue
 				log 'syntax error'
 				return
 			end
-			v = e.bind(@symbols.invert.merge(@regs).merge('tracer_memory' => @rs)).reduce
-			if not v.kind_of? ::Integer
-				log 'unsolvable expression'
-				return
-			end
-			v
+			binding = @regs.dup
+			ext = e.externals
+			ext.map! { |exte| exte.kind_of?(Indirect) ? exte.ptr.externals : exte }.flatten! while not ext.grep(Indirect).empty?
+			(ext - @regs.keys).each { |ex|
+				if not s = @symbols.index(ex)
+					log "unknown value #{ex}"
+					return
+				end
+				binding[ex] = s
+				if @symbols.values.grep(ex).length > 1
+					log "multiple definitions found for #{ex}..."
+				end
+			}
+			binding['tracer_memory'] = @rs
+			e.bind(binding).reduce
 		}
 
+		cmd = lex.readtok
+		cmd = cmd.raw if cmd
+		nil while ntok = lex.readtok and ntok.type == :space
+		lex.unreadtok ntok
 		case cmd
 		when 'kill'
 			@rs.kill
@@ -335,27 +424,39 @@ class LinDebug
 			@runing = false
 		when 'bpx'
 			addr = argint[] || return
-			return if @breakpoints[addr]
-			if @has_pax
-				@breakpoints[addr] = @rs[addr] if set_hwbp 'x', addr
-			else
-				@breakpoints[addr] = @rs[addr]
-				@rs[addr] = 0xcc
-			end
+			bpx addr
 		when 'bphw'
-			type = args.shift
+			type = lex.readtok.raw if ntok
 			addr = argint[] || return
 			set_hwbp type, addr
-			# TODO clear...
+		when 'bl'
+			@breakpoints.sort.each { |addr, oct|
+				log "bpx at #{findsymbol(addr)}"
+			}
+			(0..3).each { |dr|
+				if @regs['dr7'] & (1 << (2*dr)) != 0
+					log "bphw #{{0=>'x', 1=>'w', 2=>'?', 3=>'r'}[(@regs['dr7'] >> (16+4*dr)) & 3]} at #{findsymbol(@regs["dr#{dr}"])}"
+				end
+			}
+		when 'bc'
+			@breakpoints.each { |addr, oct| @rs[addr] = oct }
+			@breakpoints.clear
+			if @regs['dr7'] & 0xff != 0
+				@rs.dr7 = 0 
+				readregs
+			end
 		when 'd'
 			@dataptr = argint[] || return
 		when 'db', 'dw', 'dd'
 			@datafmt = cmd.dup
-			@dataptr = argint[] || return if not args.empty?
+			@dataptr = argint[] || return if ntok
 		when 'r'
-			r = args.shift
+			return if not ntok
+			r = lex.readtok.raw
+			nil while ntok = lex.readtok and ntok.type == :space
 			if r == 'fl'
-				flag = args.shift
+				return if not ntok
+				flag = ntok.raw
 				if not EFLAGS.index(flag)
 					log "bad flag #{flag}"
 				else
@@ -364,7 +465,8 @@ class LinDebug
 				end
 			elsif not @regs[r]
 				log "bad reg #{r}"
-			elsif not args.empty?
+			elsif ntok
+				lex.unreadtok ntok
 				@rs.send r+'=', argint[] || return
 				readregs
 			else
@@ -376,22 +478,34 @@ class LinDebug
 			syscall
 		when 'g'
 			addr = argint[] || return
-			return if @breakpoints[addr]
-			if @has_pax
-				@breakpoints[addr] = @rs[addr] if set_hwbp 'x', addr
-			else
-				@breakpoints[addr] = @rs[addr]
-				@rs[addr] = 0xcc
-			end
+			bpx addr, true
 			cont
+		when 'u'
+			@codeptr = argint[] || return
 		when 'has_pax'
-			val = args.empty? ? 1 : argint[] || return
+			val = ntok ? argint[] || return : 1
 			@has_pax = (val != 0)
 			log "has_pax now #@has_pax"
+		when 'loadsyms'
+			File.read("/proc/#{@rs.pid}/maps").each { |l|
+				name = l.split[5]
+				loadsyms l.to_i(16), name if name and name[0] == ?/
+			}
+		when 'sym'
+			sym = ''
+			sym << ntok.raw while ntok = lex.readtok
+			s = @symbols.keys.find_all { |s| @symbols[s] =~ /#{sym}/ }
+			if s.empty?
+				log "unknown symbol #{sym}"
+			else
+				s.each { |s| log "#{'%08x' % s} #{@symbols_len[s].to_s.ljust 6} #{findsymbol(s)}" }
+			end
 		when 'help'
 			log 'commands: (addr/values are things like dword ptr [ebp+(4*byte [eax])] )'
 			log ' bpx <addr>'
 			log ' bphw [r|w|x] <addr>: debug register breakpoint'
+			log ' bl: list breakpoints'
+			log ' bc: clear breakpoints'
 			log ' cont/run/F5'
 			log ' d/db/dw/dd [<addr>]: change data type/address'
 			log ' g <addr>: set a bp at <addr> and run'
@@ -403,27 +517,14 @@ class LinDebug
 			log ' r fl <flag>: toggle eflags bit'
 			log ' sym <symbol regex>: show symbol information'
 			log ' syscall: run til next syscall/bp'
+			log ' u <addr>: disassemble addr'
 			log 'keys:'
 			log ' F10: step over'
 			log ' F11: single step'
 			log ' pgup/pgdown: move command history'
 			log ' alt+pgup/pgdown/up/down: move data pointer'
-		when 'loadsyms'
-			File.read("/proc/#{@rs.pid}/maps").each { |l| loadsyms l.to_i(16), l.split[5] }
-		when 'sym'
-			sym = args.shift
-			s = @symbols.keys.find_all { |s| @symbols[s] =~ /#{sym}/ }
-			if s.empty?
-				log "unknown symbol #{sym}"
-			else
-				s.each { |s| log "#{'%08x' % s} #{@symbols_len[s]} #{findsymbol[s]}" }
-			end
-		when '', nil: return
-		else
-			log 'unknown command'
+		else log 'unknown command'
 		end
-		@prompthistory << @promptbuf
-		@prompthistory.shift if @prompthistory.length > @prompthistlen
 	end
 
 	def findfilemap(s)
@@ -440,14 +541,15 @@ class LinDebug
 	end
 
 	def set_hwbp(type, addr, len=1)
-		if @regs['dr7'] & 0x55 == 0x55
+		dr = (0..3).find { |dr| @regs['dr7'] & (1 << (2*dr)) == 0 and @wantbp != "dr#{dr}" }
+		if not dr
 			log 'no debug reg available :('
 			return false
 		end
-		dr = (0..3).find { |dr| @regs['dr7'] & (1 << (2*dr)) == 0 }
+		log "setting hwbp using dr#{dr}"
 		@regs['dr7'] &= 0xffff_ffff ^ (0xf << (16+4*dr))
 		case type
-		when 'x': addr |= 0x6000_0000 if @has_pax
+		when 'x': addr += 0x6000_0000 if @has_pax
 		when 'r': @regs['dr7'] |= (((len-1)<<2)|3) << (16+4*dr)
 		when 'w': @regs['dr7'] |= (((len-1)<<2)|1) << (16+4*dr)
 		end
@@ -459,11 +561,13 @@ class LinDebug
 	end
 
 	def loadsyms(baseaddr, name)
-		@loadedsyms ||= {0 => true} 	# TODO scan memory for pax-obfuscated pid/maps
-		return if not name or name[0] != ?/ or @loadedsyms[name] or @loadedsyms[baseaddr] or @rs[baseaddr, 4] != "\x7fELF"
-		@loadedsyms[name] = @loadedsyms[baseaddr] = true
+		@loadedsyms ||= {}
+		return if @loadedsyms[name] or @rs[baseaddr, 4] != "\x7fELF"
+		@loadedsyms[name] = true
 
-		e = Metasm::ELF.decode_file name rescue return 	# read from disk
+		e = Metasm::LoadedELF.load @rs[baseaddr, 0x100_0000]
+		e.decode
+		#e = Metasm::ELF.decode_file name rescue return 	# read from disk
 
 		last_s = e.segments.reverse.find { |s| s.type == 'LOAD' }
 		vlen = last_s.vaddr + last_s.memsz
