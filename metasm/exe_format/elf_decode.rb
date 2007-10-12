@@ -608,5 +608,12 @@ class LoadedELF < ELF
 			end
 		}
 	end
+
+	# do not try to decode the section header by default
+	def decode_header(off = 0)
+		@encoded.ptr = off
+		@header.decode self
+		decode_program_header(@header.phoff+off)
+	end
 end
 end
