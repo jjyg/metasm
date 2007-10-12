@@ -122,11 +122,10 @@ end
 class LinDebug
 	attr_accessor :win_data_height, :win_code_height, :win_prpt_height
 	def init_screen
-		@console_height, @console_width = Ansi.get_terminal_size
 		Ansi.set_term_canon(true)
 		@win_data_height = 20
 		@win_code_height = 20
-		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2)
+		resize
 	end
 
 	def fini_screen
@@ -166,6 +165,7 @@ class LinDebug
 		@focus = :prompt
 		@command = {}
 		load_commands
+		trap('WINCH') { resize }
 
 		begin
 			begin
@@ -322,6 +322,14 @@ class LinDebug
 			text << l.ljust(@console_width) << "\n"
 		}
 		text << ':' << @promptbuf.ljust(@console_width-1) << Ansi.set_cursor_pos(@console_height, @promptpos+2)
+	end
+
+	def resize
+		@console_height, @console_width = Ansi.get_terminal_size
+		@win_data_height = 6 if @win_data_height + @win_code_height + 4 > @console_height
+		@win_code_height = 6 if @win_data_height + @win_code_height + 4 > @console_height
+		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2)
+		update
 	end
 
 	def readregs
@@ -722,7 +730,7 @@ class LinDebug
 			str << ntok.raw while ntok = lex.readtok
 			instance_eval str
 		}
-		@command['resize'] = proc { |lex, int| @console_height, @console_width = Ansi.get_terminal_size }
+		@command['resize'] = proc { |lex, int| resize }
 		@command['wd'] = proc { |lex, int|
 			@focus = :data
 			@win_data_height = int[] || return
