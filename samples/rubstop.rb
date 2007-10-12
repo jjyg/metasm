@@ -288,8 +288,8 @@ if $0 == __FILE__
 	begin
 		while rs.child.stopped? and rs.child.stopsig == Signal.list['TRAP']
 			if $VERBOSE
-				rs.singlestep
 				puts "#{'%08x' % rs.eip} #{rs.mnemonic}"
+				rs.singlestep
 			else
 				rs.syscall ; rs.syscall	# wait return of syscall
 				puts syscall_map[rs.orig_eax]

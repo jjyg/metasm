@@ -223,6 +223,7 @@ class LinDebug
 		else
 			addr = @rs.regs_cache['eip']
 		end
+		@codeptr = addr
 
 		if @rs.findfilemap(addr) == '???'
 			base = addr & 0xffff_f000
@@ -255,7 +256,7 @@ class LinDebug
 			text << ('%04X' % @rs.regs_cache['cs']) << ':'
 			text << ('%08X' % addr)
 			di = @rs.mnemonic_di(addr)
-			len = di.instruction ? di.bin_length : 1
+			len = (di.opcode ? di.bin_length : 1)
 			text << '  '
 			text << @rs[addr, [len, 10].min].unpack('C*').map { |c| '%02X' % c }.join.ljust(22)
 			if di.instruction
@@ -276,6 +277,7 @@ class LinDebug
 	end
 
 	def updatedata
+		@dataptr &= 0xffff_ffff
 		addr = @dataptr
 
 		text = ''
@@ -343,6 +345,7 @@ class LinDebug
 	end
 
 	def exec_prompt
+		@log_off = 0
 		log ':'+@promptbuf
 		return if @promptbuf == ''
 		lex = Metasm::Preprocessor.new.feed @promptbuf
@@ -389,6 +392,55 @@ class LinDebug
 		end
 	end
 
+	def singlestep
+		@rs.singlestep
+		@codeptr ||= @rs.regs_cache['eip']
+		if @codeptr > @rs.regs_cache['eip'] or @codeptr < @rs.regs_cache['eip'] - 6*@win_code_height
+			@codeptr = @rs.regs_cache['eip']
+		elsif @codeptr != @rs.regs_cache['eip']
+			addr = @codeptr
+			addrs = []
+			while addr < @rs.regs_cache['eip']
+				addrs << addr
+				o = @rs.mnemonic_di(addr).bin_length
+				addr += ((o == 0) ? 1 : o)
+			end
+			if addrs.length > @win_code_height-4
+				@codeptr = addrs[-(@win_code_height-4)]
+			end
+		end
+	end
+	def stepover
+		@rs.stepover
+		@codeptr ||= @rs.regs_cache['eip']
+		if @codeptr > @rs.regs_cache['eip'] or @codeptr < @rs.regs_cache['eip'] - 6*@win_code_height
+			@codeptr = @rs.regs_cache['eip']
+		elsif @codeptr != @rs.regs_cache['eip']
+			addr = @codeptr
+			addrs = []
+			while addr < @rs.regs_cache['eip']
+				addrs << addr
+				o = @rs.mnemonic_di(addr).bin_length
+				addr += ((o == 0) ? 1 : o)
+			end
+			if addrs.length > @win_code_height-4
+				@codeptr = addrs[-(@win_code_height-4)]
+			end
+		end
+	end
+	def cont(*a)
+		@codeptr = nil
+		@rs.cont(*a)
+	end
+	def stepout
+		@codeptr = nil
+		@rs.stepout
+	end
+	def syscall
+		@codeptr = nil
+		@rs.syscall
+	end
+
 	def main_loop
 		@prompthistory = ['']
 		@histptr = nil
@@ -398,37 +450,70 @@ class LinDebug
 			case k = Ansi.getkey
 			when 4: log 'exiting'; break	 # eof
 			when ?\e: focus = :prompt
-			when :f5: @rs.cont
-			when :f10: @rs.stepover
-			when :f11: @rs.singlestep
+			when :f5:  cont
+			when :f10: stepover
+			when :f11: singlestep
+			when :f12: stepout
 			when :up
-				if not @histptr
-					@prompthistory << @promptbuf
-					@histptr = 2
-				else
-					@histptr += 1
-					@histptr = 1 if @histptr > @prompthistory.length
+				case @focus
+				when :prompt
+					if not @histptr
+						@prompthistory << @promptbuf
+						@histptr = 2
+					else
+						@histptr += 1
+						@histptr = 1 if @histptr > @prompthistory.length
+					end
+					@promptbuf = @prompthistory[-@histptr].dup
+					@promptpos = @promptbuf.length
+				when :data
+					@dataptr -= 16
+				when :code
+					@codeptr ||= @rs.regs_cache['eip']
+					@codeptr -= (1..10).find { |off| @rs.mnemonic_di(@codeptr-off).bin_length == off rescue false } || 10
 				end
-				@promptbuf = @prompthistory[-@histptr].dup
-				@promptpos = @promptbuf.length
 			when :down
-				if not @histptr
-					@prompthistory << @promptbuf
-					@histptr = @prompthistory.length
-				else
-					@histptr -= 1
-					@histptr = @prompthistory.length if @histptr < 1
+				case @focus
+				when :prompt
+					if not @histptr
+						@prompthistory << @promptbuf
+						@histptr = @prompthistory.length
+					else
+						@histptr -= 1
+						@histptr = @prompthistory.length if @histptr < 1
+					end
+					@promptbuf = @prompthistory[-@histptr].dup
+					@promptpos = @promptbuf.length
+				when :data
+					@dataptr += 16
+				when :code
+					@codeptr ||= @rs.regs_cache['eip']
+					@codeptr += (((o = @rs.mnemonic_di(@codeptr).bin_length) == 0) ? 1 : o)
 				end
-				@promptbuf = @prompthistory[-@histptr].dup
-				@promptpos = @promptbuf.length
 			when :left:  @promptpos -= 1 if @promptpos > 0
 			when :right: @promptpos += 1 if @promptpos < @promptbuf.length
 			when :home:  @promptpos = 0
 			when :end:   @promptpos = @promptbuf.length
 			when :backspace, 0x7f: @promptbuf[@promptpos-=1, 1] = '' if @promptpos > 0
 			when :suppr: @promptbuf[@promptpos, 1] = '' if @promptpos < @promptbuf.length
-			when :pgup:  @log_off += @win_prpt_height-3
-			when :pgdown: @log_off -= @win_prpt_height-3
+			when :pgup
+				case @focus
+				when :prompt: @log_off += @win_prpt_height-3
+				when :data: @dataptr -= 16*(@win_data_height-1)
+				when :code
+					@codeptr ||= @rs.regs_cache['eip']
+					(@win_code_height-1).times {
+						@codeptr -= (1..10).find { |off| @rs.mnemonic_di(@codeptr-off).bin_length == off rescue false } || 10
+					}
+				end
+			when :pgdown
+				case @focus
+				when :prompt: @log_off -= @win_prpt_height-3
+				when :data: @dataptr += 16*(@win_data_height-1)
+				when :code
+					@codeptr ||= @rs.regs_cache['eip']
+					(@win_code_height-1).times { @codeptr += (((o = @rs.mnemonic_di(@codeptr).bin_length) == 0) ? 1 : o) }
+				end
 			when ?\t:
 				if not @promptbuf[0, @promptpos].include? ' '
 					poss = @command.keys.find_all { |c| c[0, @promptpos] == @promptbuf[0, @promptpos] }
@@ -524,20 +609,23 @@ class LinDebug
 		@command['run'] = @command['cont'] = proc { |lex, int|
 			if tok = lex.readtok
 				lex.unreadtok tok
-				@rs.cont int[]
-			else @rs.cont
+				cont int[]
+			else cont
 			end
 		}
-		@command['syscall']    = proc { |lex, int| @rs.syscall }
-		@command['singlestep'] = proc { |lex, int| @rs.singlestep }
-		@command['stepover']   = proc { |lex, int| @rs.stepover }
-		@command['stepout']    = proc { |lex, int| @rs.stepout }
-		@command['g'] = proc { |lex, int| @rs.bpx int[], true ; @rs.cont }
+		@command['syscall']    = proc { |lex, int| syscall }
+		@command['singlestep'] = proc { |lex, int| singlestep }
+		@command['stepover']   = proc { |lex, int| stepover }
+		@command['stepout']    = proc { |lex, int| stepout }
+		@command['g'] = proc { |lex, int| @rs.bpx int[], true ; cont }
 		@command['u'] = proc { |lex, int| @codeptr = int[] || break }
 		@command['has_pax'] = proc { |lex, int|
-			@rs.has_pax = int[]
-			@rs.has_pax = false if @rs.has_pax == 0
-			log "has_pax now #@rs.has_pax"
+			if tok = lex.readtok
+				lex.unreadtok tok
+				@rs.has_pax = (int[] != 0)
+			else @rs.has_pax = !@rs.has_pax
+			end
+			log "has_pax now #{@rs.has_pax}"
 		}
 		@command['loadsyms'] = proc { |lex, int| @rs.loadallsyms }
 		@command['scansyms'] = proc { |lex, int| @rs.scansyms }
@@ -548,13 +636,22 @@ class LinDebug
 			if s.empty?
 				log "unknown symbol #{sym}"
 			else
-				s.each { |s| log "#{'%08x' % s} #{@rs.symbols_len[s].to_s.ljust 6} #{@rs.findsymbol(s)}" }
+				s.sort.each { |s| log "#{'%08x' % s} #{@rs.symbols_len[s].to_s.ljust 6} #{@rs.findsymbol(s)}" }
 			end
 		}
 		@command['delsym'] = proc { |lex, int|
 			addr = int[]
 			log "deleted #{@rs.symbols.delete addr}"
 			@rs.symbols_len.delete addr
+		}
+		@command['addsym'] = proc { |lex, int|
+			name = lex.readtok.raw
+			addr = int[]
+			if t = lex.readtok
+				lex.unreadtok t
+				@rs.symbols_len[addr] = int[]
+			end
+			@rs.symbols[addr] = name
 		}
 		@command['help'] = proc { |lex, int|
 			log 'commands: (addr/values are things like dword ptr [ebp+(4*byte [eax])] ), type <tab> to see all commands'
@@ -589,21 +686,31 @@ class LinDebug
 			str << ntok.raw while ntok = lex.readtok
 			instance_eval str
 		}
+		@command['maps'] = proc { |lex, int|
+			@rs.filemap.sort_by { |f, (b, e)| b }.each { |f, (b, e)|
+				log "#{f.ljust 20} #{'%08x' % b} - #{'%08x' % e}"
+			}
+		}
 		@command['resize'] = proc { |lex, int| resize }
 		@command['wd'] = proc { |lex, int|
 			@focus = :data
-			@win_data_height = int[] || return
-			resize
+			if tok = lex.readtok
+				@win_data_height = int[] || return
+				resize
+			end
 		}
 		@command['wc'] = proc { |lex, int|
 			@focus = :code
-			@win_code_height = int[] || return
-			resize
+			if tok = lex.readtok
+				@win_code_height = int[] || return
+				resize
+			end
 		}
 		@command['?'] = proc { |lex, int|
 			val = int[]
 			log "#{val} 0x#{val.to_s(16)} #{[val].pack('L').inspect}"
 		}
+		@command['.'] = proc { |lex, int| @codeptr = nil }
 	end
 end
 
