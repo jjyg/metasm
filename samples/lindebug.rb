@@ -136,8 +136,9 @@ class LinDebug
 	def win_code_start; win_data_start+win_data_height end
 	def win_prpt_start; win_code_start+win_code_height end
 
-	Color = {:changed => Ansi.color(:blue, :bold), :border => Ansi.color(:green),
-		:normal => Ansi.color(:white, :black, :normal), :hilight => Ansi.color(:blue, :white, :normal)}
+	Color = {:changed => Ansi.color(:cyan, :bold), :border => Ansi.color(:green),
+		:normal => Ansi.color(:white, :black, :normal), :hilight => Ansi.color(:blue, :white, :normal),
+		:status => Ansi.color(:black, :cyan)}
 
 	def initialize(target)
 		@rs = Metasm::Rubstop.new(target)
@@ -173,7 +174,7 @@ class LinDebug
 				main_loop
 			ensure
 				fini_screen
-				puts
+				puts Ansi.set_cursor_pos(@console_height, 1)
 			end
 		rescue
 			puts $!, $!.backtrace
@@ -195,7 +196,7 @@ class LinDebug
 		x = 1
 		%w[eax ebx ecx edx eip].each { |r|
 			text << Color[:changed] if @regs[r] != @oldregs[r]
-			text << r.upcase << ?=
+			text << r << ?=
 			text << ('%08X' % @regs[r])
 			text << Color[:normal] if @regs[r] != @oldregs[r]
 			text << '  '
@@ -205,7 +206,7 @@ class LinDebug
 		x = 1
 		%w[esi edi ebp esp].each { |r|
 			text << Color[:changed] if @regs[r] != @oldregs[r]
-			text << r.upcase << ?=
+			text << r << ?=
 			text << ('%08X' % @regs[r])
 			text << Color[:normal] if @regs[r] != @oldregs[r]
 			text << '  '
@@ -260,20 +261,26 @@ class LinDebug
 		cnt = @win_code_height
 		while (cnt -= 1) > 0
 			if @symbols[addr]
-				text << ('    ' << @symbols[addr] << ?:).ljust(@console_width) << "\n"
+				text << ('    ' << @symbols[addr] << ?:) << Ansi::ClearLineAfter << "\n"
 				break if (cnt -= 1) <= 0
 			end
 			text << Color[:hilight] if addr == @regs['eip']
-			text << ('%08x' % addr)
+			text << ('%04X' % @regs['cs']) << ':'
+			text << ('%08X' % addr)
 			di = @rs.mnemonic_di(addr)
 			@curinstr = di if addr == @regs['eip']
 			len = di.instruction ? di.bin_length : 1
 			text << '  '
-			text << @rs[addr, [len, 10].min].unpack('C*').map { |c| '%02x' % c }.join.ljust(22)
+			text << @rs[addr, [len, 10].min].unpack('C*').map { |c| '%02X' % c }.join.ljust(22)
 			if di.instruction
-				text << ((addr == @regs['eip'] ? '*' : ' ') << di.instruction.to_s).ljust(@console_width-32)
+				text <<
+				if addr == @regs['eip']
+					"*#{di.instruction}".ljust(@console_width-37)
+				else
+					" #{di.instruction}" << Ansi::ClearLineAfter
+				end
 			else
-				text << ' <unk>'.ljust(@console_width-32)
+				text << ' <unk>' << Ansi::ClearLineAfter
 			end
 			text << Color[:normal] if addr == @regs['eip']
 			addr += len
@@ -296,15 +303,15 @@ class LinDebug
 		cnt = @win_data_height
 		while (cnt -= 1) > 0
 			raw = @rs[addr, 16]
-			l = ('%08x' % addr) << '  '
+			text << ('%04X' % @regs['ds']) << ':' << ('%08X' % addr) << '  '
 			case @datafmt
-			when 'db': l << raw[0,8].unpack('C*').map { |c| '%02x ' % c }.join << ' ' <<
+			when 'db': text << raw[0,8].unpack('C*').map { |c| '%02x ' % c }.join << ' ' <<
 				   raw[8,8].unpack('C*').map { |c| '%02x ' % c }.join
-			when 'dw': l << raw.unpack('S*').map { |c| '%04x ' % c }.join
-			when 'dd': l << raw.unpack('L*').map { |c| '%08x ' % c }.join
+			when 'dw': text << raw.unpack('S*').map { |c| '%04x ' % c }.join
+			when 'dd': text << raw.unpack('L*').map { |c| '%08x ' % c }.join
 			end
-			l << ' ' << raw.unpack('C*').map { |c| (0x20..0x7e).include?(c) ? c : ?. }.pack('C*')
-			text << l.ljust(@console_width) << "\n"
+			text << ' ' << raw.unpack('C*').map { |c| (0x20..0x7e).include?(c) ? c : ?. }.pack('C*')
+			text << Ansi::ClearLineAfter << "\n"
 		end
 		text
 	end
@@ -318,22 +325,28 @@ class LinDebug
 		len = @win_prpt_height - 2
 		len.times { |i|
 			i += @promptlog.length - @log_off - len
-			l = (@promptlog[i] if i >= 0) || ''
-			text << l.ljust(@console_width) << "\n"
+			text << ((@promptlog[i] if i >= 0) || '')
+			text << Ansi::ClearLineAfter << "\n"
 		}
-		text << ':' << @promptbuf.ljust(@console_width-1) << Ansi.set_cursor_pos(@console_height, @promptpos+2)
+		text << ':' << @promptbuf << Ansi::ClearLineAfter << "\n"
+		text << Color[:status] << statusline.ljust(@console_width) << Color[:normal]
+		text << Ansi.set_cursor_pos(@console_height-1, @promptpos+2)
+	end
+
+	def statusline
+		'    Enter a command (h for help)'
 	end
 
 	def resize
 		@console_height, @console_width = Ansi.get_terminal_size
 		@win_data_height = 6 if @win_data_height + @win_code_height + 4 > @console_height
 		@win_code_height = 6 if @win_data_height + @win_code_height + 4 > @console_height
-		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2)
+		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2) - 1
 		update
 	end
 
 	def readregs
-		%w[eax ebx ecx edx esi edi esp ebp eip eflags dr0 dr1 dr2 dr3 dr6 dr7].each { |r| @regs[r] = @rs.send(r) }
+		%w[eax ebx ecx edx esi edi esp ebp eip eflags dr0 dr1 dr2 dr3 dr6 dr7 cs ds].each { |r| @regs[r] = @rs.send(r) }
 	end
 
 	def checkbp
@@ -492,7 +505,6 @@ class LinDebug
 			log 'no debug reg available :('
 			return false
 		end
-		log "setting hwbp using dr#{dr}"
 		@regs['dr7'] &= 0xffff_ffff ^ (0xf << (16+4*dr))
 		case type
 		when 'x': addr += 0x6000_0000 if @has_pax
@@ -544,7 +556,7 @@ class LinDebug
 	end
 
 	def main_loop
-		@prompthistory = []
+		@prompthistory = ['']
 		@histptr = nil
 		@running = true
 		update
@@ -734,12 +746,12 @@ class LinDebug
 		@command['wd'] = proc { |lex, int|
 			@focus = :data
 			@win_data_height = int[] || return
-			@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2)
+			resize
 		}
 		@command['wc'] = proc { |lex, int|
 			@focus = :code
 			@win_code_height = int[] || return
-			@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2)
+			resize
 		}
 	end
 end
