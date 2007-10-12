@@ -140,7 +140,7 @@ class ELF
 	alias decode_off  decode_xword
 
 	def readstr(str, off)
-		if off > 0 and i = str.index(0, off)
+		if off > 0 and i = str.index(0, off) rescue false	# LoadedElf with arbitrary pointer...
 			str[off...i]
 		end
 	end
@@ -188,8 +188,8 @@ class ELF
 		}
 		
 		# read sections name
-		if @header.shstrndx != 0 and str = @sections[@header.shstrndx]
-			str.encoded = @encoded[str.offset, str.size]
+		if @header.shstrndx != 0 and str = @sections[@header.shstrndx] and str.encoded = @encoded[str.offset, str.size]
+			# LoadedElf may not have shstr mmaped
 			@sections.each { |s|
 				s.name = readstr(str.encoded.data, s.name_p)
 			}
@@ -593,8 +593,10 @@ class ELF
 end
 
 class LoadedELF < ELF
+	attr_accessor :load_address
 	def addr_to_off(addr)
-		addr
+		@load_address ||= 0
+		addr >= @load_address ? addr - @load_address : addr if addr
 	end
 
 	# decodes the dynamic segment, fills segments.encoded

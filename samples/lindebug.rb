@@ -524,6 +524,7 @@ class LinDebug
 		@loadedsyms[name] = true
 
 		e = Metasm::LoadedELF.load @rs[baseaddr, 0x100_0000]
+		e.load_address = baseaddr
 		begin
 			e.decode
 		rescue
@@ -552,7 +553,7 @@ class LinDebug
 			@symbols_len[e.header.entry] = 1
 		end
 		log "loaded #{@symbols.length-oldsyms} symbols from #{name} at #{'%08x' % baseaddr}"
-		updateprompt
+		update
 	end
 
 	def main_loop
@@ -710,6 +711,11 @@ class LinDebug
 				s.each { |s| log "#{'%08x' % s} #{@symbols_len[s].to_s.ljust 6} #{findsymbol(s)}" }
 			end
 		}
+		@command['delsym'] = proc { |lex, int|
+			addr = int[]
+			log "deleted #{@symbols.delete addr}"
+			@symbols_len.delete addr
+		}
 		@command['help'] = proc { |lex, int|
 			log 'commands: (addr/values are things like dword ptr [ebp+(4*byte [eax])] )'
 			log ' bpx <addr>'
@@ -726,6 +732,7 @@ class LinDebug
 			log ' r <reg> [<value>]: show/change register'
 			log ' r fl <flag>: toggle eflags bit'
 			log ' sym <symbol regex>: show symbol information'
+			log ' delsym <addr>'
 			log ' syscall: run til next syscall/bp'
 			log ' u <addr>: disassemble addr'
 			log ' reload: reload lindebug source'
