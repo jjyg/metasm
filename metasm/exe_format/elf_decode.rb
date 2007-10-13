@@ -166,11 +166,11 @@ class ELF
 		@encoded.ptr = off
 		@header.decode self
 		raise InvalidExeFormat, "Invalid elf header size: #{@header.ehsize}" if Header.size(self) != @header.ehsize
-		if @header.shoff != 0
-			decode_section_header(@header.shoff+off)
-		end
 		if @header.phoff != 0
 			decode_program_header(@header.phoff+off)
+		end
+		if @header.shoff != 0
+			decode_section_header(@header.shoff+off)
 		end
 	end
 
@@ -192,6 +192,7 @@ class ELF
 			# LoadedElf may not have shstr mmaped
 			@sections.each { |s|
 				s.name = readstr(str.encoded.data, s.name_p)
+				add_label("section_#{s.name}", s.addr)
 			}
 		end
 	end

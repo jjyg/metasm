@@ -273,7 +273,7 @@ class ExeFormat
 
 	# creates a new label, that is guaranteed to be unique as long as this object (ExeFormat) exists
 	def new_label(base = '')
-		base = base.dup
+		base = base.dup.tr('^a-zA-Z0-9_', '_')
 		k = (base << '_uuid' << ('%08x' % base.object_id)).freeze	# use %x instead of to_s(16) for negative values
 		(@unique_labels_cache ||= []) << k	# prevent garbage collection, this guarantees uniqueness (object_id)
 		k
