@@ -75,7 +75,7 @@ class COFF
 			DIRECTORIES[0, @numrva].each { |d|
 				if d = coff.directory[d]
 					d = d.dup
-					d[0] = Expression[d[0], :-, coff.label_at(coff.encoded, 0)] if d[0].kind_of? String
+					d[0] = Expression[d[0], :-, coff.label_at(coff.encoded, 0)] if d[0].kind_of?(::String)
 				else
 					d = [0, 0]
 				end
@@ -95,7 +95,7 @@ class COFF
 			@code_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_CODE' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@data_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_DATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@udata_size   ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_UDATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
-			@entrypoint = Expression[@entrypoint, :-, coff.label_at(coff.encoded, 0)] if @entrypoint.kind_of? String
+			@entrypoint = Expression[@entrypoint, :-, coff.label_at(coff.encoded, 0)] if @entrypoint.kind_of?(::String)
 			@entrypoint   ||= 0
 			@base_of_code ||= (Expression[coff.label_at(coff.sections.find { |s| s.characteristics.include? 'CONTAINS_CODE' }.encoded, 0), :-, coff.label_at(coff.encoded, 0)] rescue 0)
 			@base_of_data ||= (Expression[coff.label_at(coff.sections.find { |s| s.characteristics.include? 'CONTAINS_DATA' }.encoded, 0), :-, coff.label_at(coff.encoded, 0)] rescue 0)
@@ -291,7 +291,7 @@ class COFF
 
 		def setup_default_values(coff)
 			# @base_addr is an rva
-			@base_addr = Expression[@base_addr, :-, coff.label_at(coff.encoded, 0)] if @base_addr.kind_of? String
+			@base_addr = Expression[@base_addr, :-, coff.label_at(coff.encoded, 0)] if @base_addr.kind_of?(::String)
 
 			# align relocation table size
 			if @relocs.length % 2 != 0
@@ -428,7 +428,7 @@ class COFF
 			else
 				secs.delete_if { |ss| ss.characteristics.include? 'MEM_SHARED' }
 			end
-			secs.delete_if { |ss| ss.virtsize.kind_of?(Integer) or ss.rawsize.kind_of?(Integer) }
+			secs.delete_if { |ss| ss.virtsize.kind_of?(::Integer) or ss.rawsize.kind_of?(::Integer) }
 
 			# try to find superset of characteristics
 			if target = secs.find { |ss| (ss.characteristics & char) == char }
@@ -530,8 +530,8 @@ class COFF
 		@relocations = []
 
 		# create a fake binding with all exports, to find only-image_base-dependant relocs targets
-		# not foolproof, but work standard cases
-		startaddr = curaddr = Expression[label_at(@encoded, 0, 'coff_start')]
+		# not foolproof, but works in standard cases
+		startaddr = curaddr = label_at(@encoded, 0, 'coff_start')
 		binding = {}
 		@sections.each { |s|
 			binding.update s.encoded.binding(curaddr)
@@ -547,8 +547,9 @@ class COFF
 			s.encoded.reloc.each { |off, rel|
 				# check that the relocation looks like "program_start + integer" when bound using the fake binding
 				# XXX allow :i32 etc
-				if rel.endianness == @endianness and [:u32, :a32, :u64, :a64].include?(rel.type) and \
-				Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of? Integer
+				if rel.endianness == @endianness and [:u32, :a32, :u64, :a64].include?(rel.type) and
+				rel.target.bind(binding).reduce.kind_of?(Expression) and
+				Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of?(::Integer)
 					# winner !
 
 					# build relocation
@@ -628,7 +629,7 @@ class COFF
 					end
 				end
 			end
-			s.rawaddr = nil if s.rawaddr.kind_of? Integer	# XXX allow to force rawaddr ?
+			s.rawaddr = nil if s.rawaddr.kind_of?(::Integer)	# XXX allow to force rawaddr ?
 			s_table << s.encode(self)
 		}
 
@@ -647,23 +648,23 @@ class COFF
 	# append the section bodies to @encoded, and link the resulting binary
 	def encode_sections_fixup
 		@encoded.align @optheader.file_align
-		if @optheader.headers_size.kind_of? String
+		if @optheader.headers_size.kind_of?(::String)
 			@encoded.fixup! @optheader.headers_size => @encoded.virtsize
 			@optheader.headers_size = @encoded.virtsize
 		end
 
-		baseaddr = @optheader.image_base.kind_of?(Integer) ? @optheader.image_base : 0x400000
+		baseaddr = @optheader.image_base.kind_of?(::Integer) ? @optheader.image_base : 0x400000
 		binding = @encoded.binding(baseaddr)
 
 		curaddr = baseaddr + @optheader.headers_size
 		@sections.each { |s|
 			# align
 			curaddr = EncodedData.align_size(curaddr, @optheader.sect_align)
-			if s.rawaddr.kind_of? String
+			if s.rawaddr.kind_of?(::String)
 				@encoded.fixup! s.rawaddr => @encoded.virtsize
 				s.rawaddr = @encoded.virtsize
 			end
-			if s.virtaddr.kind_of? Integer
+			if s.virtaddr.kind_of?(::Integer)
 				raise "E: COFF: cannot encode section #{s.name}: hardcoded address too short" if curaddr > baseaddr + s.virtaddr
 				curaddr = baseaddr + s.virtaddr
 			end
@@ -673,19 +674,19 @@ class COFF
 			pre_sz = @encoded.virtsize
 			@encoded << s.encoded[0, s.encoded.rawsize]
 			@encoded.align @optheader.file_align
-			if s.rawsize.kind_of? String
+			if s.rawsize.kind_of?(::String)
 				@encoded.fixup! s.rawsize => (@encoded.virtsize - pre_sz)
 				s.rawsize = @encoded.virtsize - pre_sz
 			end
 		}
 
 		# not aligned ? spec says it is, visual studio does not
-		binding[@optheader.image_size] = curaddr - baseaddr if @optheader.image_size.kind_of? String
+		binding[@optheader.image_size] = curaddr - baseaddr if @optheader.image_size.kind_of?(::String)
 
 		@encoded.fill
 		@encoded.fixup! binding
 
-		if @optheader.checksum.kind_of? String and @encoded.reloc.length == 1
+		if @optheader.checksum.kind_of?(::String) and @encoded.reloc.length == 1
 			# won't work if there are other unresolved relocs
 			checksum = self.class.checksum(@encoded.data, @endianness)
 			@encoded.fixup @optheader.checksum => checksum
@@ -715,7 +716,7 @@ class COFF
 		# forwards to it this first appendage.
 		# allows the user to specify its own section if he wishes, and to use .text if he doesn't
 		if not defined? @cursource or not @cursource
-			@cursource = Object.new
+			@cursource = ::Object.new
 			class << @cursource
 				attr_accessor :coff
 				def <<(*a)
@@ -814,7 +815,7 @@ class COFF
 				when 'base'
 					@lexer.skip_space
 					raise instr, 'invalid base' if not tok = @lexer.readtok or tok.type != :punct or tok.raw != '='
-					raise instr, 'invalid base' if not s.virtaddr = Expression.parse(@lexer).reduce or not s.virtaddr.kind_of? Integer
+					raise instr, 'invalid base' if not s.virtaddr = Expression.parse(@lexer).reduce or not s.virtaddr.kind_of?(::Integer)
 				else raise instr, 'unknown parameter'
 				end
 			end
@@ -893,7 +894,7 @@ class COFF
 			check_eol[]
 
 		when '.image_base'
-			raise instr if not base = Expression.parse(@lexer) or not (base = base.reduce).kind_of? Integer
+			raise instr if not base = Expression.parse(@lexer) or not (base = base.reduce).kind_of?(::Integer)
 			@optheader.image_base = base
 			check_eol[]
 
@@ -923,10 +924,10 @@ class COFF
 		@sections.each { |s|
 			next if not s.encoded
 			s.encoded.reloc.each_value { |r|
-				if r.target.op == :+ and not r.target.lexpr and r.target.rexpr.kind_of? ::String
+				if r.target.op == :+ and not r.target.lexpr and r.target.rexpr.kind_of?(::String)
 					sym = target = r.target.rexpr
 					sym = sym[4..-1] if sym[0, 4] == 'iat_'
-				elsif r.target.op == :- and r.target.rexpr.kind_of? ::String and r.target.lexpr.kind_of? ::String
+				elsif r.target.op == :- and r.target.rexpr.kind_of?(::String) and r.target.lexpr.kind_of?(::String)
 					sym = thunk = r.target.lexpr
 				end
 				next if not dll = autoexports[sym]
