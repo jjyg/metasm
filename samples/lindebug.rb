@@ -650,6 +650,8 @@ class LinDebug
 			if t = lex.readtok
 				lex.unreadtok t
 				@rs.symbols_len[addr] = int[]
+			else
+				@rs.symbols_len[addr] = 1
 			end
 			@rs.symbols[addr] = name
 		}

@@ -16,9 +16,9 @@ class Rubstop < Metasm::PTrace32
 	%w[eax ebx ecx edx ebp esp edi esi eip orig_eax eflags dr0 dr1 dr2 dr3 dr6 dr7 cs ds es fs gs].each { |reg|
 		define_method(reg) { peekusr(REGS_I386[reg.upcase]) & 0xffffffff }
 		define_method(reg+'=') { |v|
+			@regs_cache[reg] = v
 			v = [v].pack('L').unpack('l').first if v >= 0x8000_0000
 			pokeusr(REGS_I386[reg.upcase], v)
-			@regs_cache[reg] = v
 		}
 	}
 
