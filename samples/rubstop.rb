@@ -121,7 +121,7 @@ class Rubstop < Metasm::PTrace32
 		if @breakpoints[ccaddr] and self[ccaddr] == 0xcc
 			self[ccaddr] = @breakpoints.delete ccaddr
 			self.eip = ccaddr
-			@wantbp = @regs_cache['eip'] if not @singleshot.delete @regs['eip']
+			@wantbp = @regs_cache['eip'] if not @singleshot.delete @regs_cache['eip']
 		elsif @regs_cache['dr6'] & 15 != 0
 			dr = (0..3).find { |dr| @regs_cache['dr6'] & (1 << dr) != 0 }
 			@wantbp = "dr#{dr}" if not @singleshot.delete @regs_cache['eip']
