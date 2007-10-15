@@ -530,6 +530,82 @@ class ELF
 	# reads the existing segment/sections.encoded and populate @relocations from the encoded.reloc hash
 	def create_relocations
 		@relocations = []
+
+		@sections.delete_if { |s| %w[.plt .got .pltgot].include? s.name }	# XXX ...
+		plt = Section.new
+		plt.name = '.plt'
+		plt.type = 'PROGBITS'
+		plt.flags = %w[READ EXECINSTR]
+		plt.encoded = EncodedData.new
+		got = Section.new
+		got.name = '.got'
+		got.type = 'PROGBITS'
+		got.flags = %w[READ WRITE]
+		got.encoded = EncodedData.new
+		pltgot = Section.new
+		pltgot.name = '.plt.got'
+		pltgot.type = 'PROGBITS'
+		pltgot.flags = %w[READ WRITE]
+		pltgot.encoded = EncodedData.new
+
+                # create a fake binding with all our own symbols
+                # not foolproof, should work in most cases
+                startaddr = curaddr = Expression[label_at(@encoded, 0, 'elf_start')]
+                binding = {}
+                @sections.each { |s|
+                        binding.update s.encoded.binding(curaddr)
+                        curaddr = Expression[curaddr, :+, s.encoded.virtsize]
+                }
+
+				# COFF
+                                if rel.endianness == @endianness and [:u32, :a32, :u64, :a64].include?(rel.type) and \
+                                Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of? Integer
+                                        # winner !
+
+                                        # build relocation
+                                        r = RelocationTable::Relocation.new
+                                        r.offset = off & 0xfff
+                                        r.type = { :u32 => 'HIGHLOW', :u64 => 'DIR64', :a32 => 'HIGHLOW', :a64 => 'DIR64' }[rel.type]
+
+                                        # check if we need to start a new relocation table
+                                        if rt.base_addr and (rt.base_addr & ~0xfff) != (off & ~0xfff)
+                                                rt.base_addr = Expression[[label_at(s.encoded, 0, 'sect_start'), :-, label_at(@encoded, 0, 'coff_start')], :+,
+rt.base_addr]
+                                                @relocations << rt
+                                                rt = RelocationTable.new
+                                        end
+				end
+
+		@sections.each { |s|
+			s.encoded.reloc.each { |o, r|
+				r = r.target.bind(binding).reduce
+				next if not r.kind_of? Expression
+				if (r.op == :+ and not r.lexpr and r.rexpr.kind_of?(::String) and not known[r.rexpr]) or
+				  ((r.op == :+ or r.op == :-)  and r.lexpr.kind_of?(::String) and not known[r.lexpr] and r.rexpr.kind_of?(::Integer))
+					rel = Relocation.new
+					sym = Symbol.new
+					sym.shndx = 'UNDEF'
+					sym.name = (r.lexpr || r.rexpr)
+					rel.symbol = sym
+					rel.offset = label_at(s.encoded, o)
+					s.encoded.reloc[o].target.bind! sym.name => 0
+				elsif  r.op == :- and r.lexpr.kind-of?(::String) and not known[r.lexpr]
+					# assume it's relative -> call (...)
+					rel = Relocation.new
+					sym = Symbol.new
+					sym.shndx = 'UNDEF'
+					sym.name = r.lexpr
+					rel.symbol = sym
+					rel.offset = label_at(plt.encoded, plt.encoded.virtsize)
+					raise # TODO
+					plt << thunk
+				end
+			}
+		}
+		# @tag['PLTGOT']
+		# @section '.got'
+		# @section '.plt'
+		# @section '.got.plt'
 	end
 
 	# create the relocations from the sections.encoded.reloc
@@ -537,8 +613,9 @@ class ELF
 	# put sections/phdr in PT_LOAD segments
 	# link
 	# TODO support mapped PHDR, obey section-specified base address, handle NOBITS
-	def encode
-		@header.type ||= 'EXEC'
+	def encode(type='EXEC')
+		@header.type ||= type
+		@encoded = EncodedData.new
 		create_relocations
 		encode_segments_dynamic
 

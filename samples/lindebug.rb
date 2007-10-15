@@ -163,18 +163,20 @@ class LinDebug
 			begin
 				init_screen
 				main_loop
+			rescue Errno::ESRCH
+				log "target does not exist anymore"
 			ensure
 				fini_screen
-				puts Ansi.set_cursor_pos(@console_height, 1)
+				$stdout.print Ansi.set_cursor_pos(@console_height, 1)
 			end
 		rescue
 			$stdout.puts $!, $!.backtrace
 		end
-		$stdout.puts @promptlog[-1]
+		$stdout.puts @promptlog.last
 	end
 	
 	def update
-		print Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt
+		$stdout.print Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt
 	end
 
 	def updateregs
@@ -335,12 +337,13 @@ class LinDebug
 	end
 
 	def log(str)
+		raise str.inspect if not str.kind_of? ::String
 		@promptlog << str
 		@promptlog.shift if @promptlog.length > @promptloglen
 	end
 
 	def puts(*s)
-		s.each { |s| log s }
+		s.each { |s| log s.to_s }
 		update rescue nil
 	end
 
@@ -391,54 +394,44 @@ class LinDebug
 			end
 		end
 	end
+	
+	def updatecodeptr
+		@codeptr ||= @rs.regs_cache['eip']
+		if @codeptr > @rs.regs_cache['eip'] or @codeptr < @rs.regs_cache['eip'] - 6*@win_code_height
+			@codeptr = @rs.regs_cache['eip']
+		elsif @codeptr != @rs.regs_cache['eip']
+			addr = @codeptr
+			addrs = []
+			while addr < @rs.regs_cache['eip']
+				addrs << addr
+				o = @rs.mnemonic_di(addr).bin_length
+				addr += ((o == 0) ? 1 : o)
+			end
+			if addrs.length > @win_code_height-4
+				@codeptr = addrs[-(@win_code_height-4)]
+			end
+		end
+	end
 
 	def singlestep
 		@rs.singlestep
-		@codeptr ||= @rs.regs_cache['eip']
-		if @codeptr > @rs.regs_cache['eip'] or @codeptr < @rs.regs_cache['eip'] - 6*@win_code_height
-			@codeptr = @rs.regs_cache['eip']
-		elsif @codeptr != @rs.regs_cache['eip']
-			addr = @codeptr
-			addrs = []
-			while addr < @rs.regs_cache['eip']
-				addrs << addr
-				o = @rs.mnemonic_di(addr).bin_length
-				addr += ((o == 0) ? 1 : o)
-			end
-			if addrs.length > @win_code_height-4
-				@codeptr = addrs[-(@win_code_height-4)]
-			end
-		end
+		updatecodeptr
 	end
 	def stepover
 		@rs.stepover
-		@codeptr ||= @rs.regs_cache['eip']
-		if @codeptr > @rs.regs_cache['eip'] or @codeptr < @rs.regs_cache['eip'] - 6*@win_code_height
-			@codeptr = @rs.regs_cache['eip']
-		elsif @codeptr != @rs.regs_cache['eip']
-			addr = @codeptr
-			addrs = []
-			while addr < @rs.regs_cache['eip']
-				addrs << addr
-				o = @rs.mnemonic_di(addr).bin_length
-				addr += ((o == 0) ? 1 : o)
-			end
-			if addrs.length > @win_code_height-4
-				@codeptr = addrs[-(@win_code_height-4)]
-			end
-		end
+		updatecodeptr
 	end
 	def cont(*a)
-		@codeptr = nil
 		@rs.cont(*a)
+		updatecodeptr
 	end
 	def stepout
-		@codeptr = nil
 		@rs.stepout
+		updatecodeptr
 	end
 	def syscall
-		@codeptr = nil
 		@rs.syscall
+		updatecodeptr
 	end
 
 	def main_loop
@@ -524,7 +517,7 @@ class LinDebug
 						@promptpos = poss.first.length+1
 					end
 				end
-			when ?\n: @histptr = nil ; exec_prompt rescue log "#$!"
+			when ?\n: @histptr = nil ; exec_prompt rescue log "error: #$!"
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = k.chr
 				@promptpos += 1
