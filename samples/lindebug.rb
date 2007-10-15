@@ -62,7 +62,9 @@ module Ansi
 		'5~' => :pgup, '6~' => :pgdown,
 		'P' => :f1, 'Q' => :f2, 'R' => :f3, 'S' => :f4,
 		'15~' => :f5, '17~' => :f6, '18~' => :f7, '19~' => :f8,
-		'20~' => :f9, '21~' => :f10, '23~' => :f11, '24~' => :f12 }
+		'20~' => :f9, '21~' => :f10, '23~' => :f11, '24~' => :f12,
+		'[A' => :f1, '[B' => :f2, '[C' => :f3, '[D' => :f4, '[E' => :f5,
+	}
 	def self.getkey
 		c = $stdin.getc
 		return c if c != ?\e
@@ -557,6 +559,7 @@ class LinDebug
 			@rs.set_hwbp type, addr
 		}
 		@command['bl'] = proc { |lex, int|
+			log "bpx at #{@rs.findsymbol(@rs.wantbp)}" if @rs.wantbp.kind_of? ::Integer
 			@rs.breakpoints.sort.each { |addr, oct|
 				log "bpx at #{@rs.findsymbol(addr)}"
 			}
@@ -567,6 +570,7 @@ class LinDebug
 			}
 		}
 		@command['bc'] = proc { |lex, int|
+			@rs.wantbp = nil if @rs.wantbp == @rs.regs_cache['eip']
 			@rs.breakpoints.each { |addr, oct| @rs[addr] = oct }
 			@rs.breakpoints.clear
 			if @rs.regs_cache['dr7'] & 0xff != 0
@@ -574,6 +578,7 @@ class LinDebug
 				@rs.readregs
 			end
 		}
+		@command['bt'] = proc { |lex, int| @rs.backtrace.each { |t| puts t } }
 		@command['d'] =  proc { |lex, int| @dataptr = int[] || return }
 		@command['db'] = proc { |lex, int| @datafmt = 'db' ; @dataptr = int[] || return }
 		@command['dw'] = proc { |lex, int| @datafmt = 'dw' ; @dataptr = int[] || return }

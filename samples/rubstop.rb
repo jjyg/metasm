@@ -173,7 +173,7 @@ class Rubstop < Metasm::PTrace32
 	def findsymbol(k)
 		file = findfilemap(k) + '!'
 		if s = @symbols.keys.find { |s| s <= k and s + @symbols_len[s] > k }
-			file + @symbols[s] + (s == k ? '' : (k-s).to_s(16))
+			file + @symbols[s] + (s == k ? '' : "+#{(k-s).to_s(16)}")
 		else
 			file + ('%08x' % k)
 		end
@@ -216,6 +216,8 @@ class Rubstop < Metasm::PTrace32
 
 		name = e.tag['SONAME'] if e.tag['SONAME']
 		#e = Metasm::ELF.decode_file name rescue return 	# read from disk
+		return if @loadedsyms[name]
+		@loadedsyms[name] = true
 
 		last_s = e.segments.reverse.find { |s| s.type == 'LOAD' }
 		vlen = last_s.vaddr + last_s.memsz
@@ -252,6 +254,17 @@ class Rubstop < Metasm::PTrace32
 			loadsyms(addr, '%08x'%addr) if (fd.read(4) == "\x7fELF" rescue false)
 			addr += 0x1000
 		end
+	end
+
+	def backtrace
+		bt = []
+		bt << findsymbol(@regs_cache['eip'])
+		fp = @regs_cache['ebp']
+		while fp >= @regs_cache['esp'] and fp <= @regs_cache['esp']+0x10000
+			bt << findsymbol(self[fp+4, 4].unpack('L').first)
+			fp = self[fp, 4].unpack('L').first
+		end
+		bt
 	end
 
 	def [](addr, len=nil)
