@@ -695,6 +695,7 @@ class LinDebug
 		@command['wd'] = proc { |lex, int|
 			@focus = :data
 			if tok = lex.readtok
+				lex.unreadtok tok
 				@win_data_height = int[] || return
 				resize
 			end
@@ -702,6 +703,7 @@ class LinDebug
 		@command['wc'] = proc { |lex, int|
 			@focus = :code
 			if tok = lex.readtok
+				lex.unreadtok tok
 				@win_code_height = int[] || return
 				resize
 			end
