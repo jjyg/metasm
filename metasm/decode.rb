@@ -381,7 +381,7 @@ puts "backtracking failed for #{'%08x' % orig_off} #{orig_di.instruction}" if $V
 		# array of lines to return
 		res = []
 		b ||= proc { |l| res << l }
-		blocks = @block.sort.reverse
+		blocks = @block.to_a.sort.reverse
 		each_section { |edata, baseaddr|
 			b[dasm_dump_section_header(edata, baseaddr)]
 			curaddr = baseaddr
