@@ -78,19 +78,19 @@ class ELF
 		end
 
 		def set_default_values elf
-			if @name and @name != ''
+			if name and @name != ''
 				make_name_p elf
 			else
 				@name_p ||= 0
 			end
 			@type   ||= 0
 			@flags  ||= []
-			@addr   ||= (@encoded and @flags.include?('ALLOC')) ? elf.label_at(@encoded, 0) : 0
-			@offset ||= @encoded ? elf.new_label('section_offset') : 0
-			@size   ||= @encoded ? @encoded.length : 0
+			@addr   ||= (encoded and @flags.include?('ALLOC')) ? elf.label_at(@encoded, 0) : 0
+			@offset ||= encoded ? elf.new_label('section_offset') : 0
+			@size   ||= encoded ? @encoded.length : 0
 			@link   ||= 0
 			@info   ||= 0
-			@addralign ||= @entsize || 0
+			@addralign ||= entsize || 0
 			@entsize ||= @addralign
 		end
 
@@ -108,7 +108,7 @@ class ELF
 				elf.sections << sn
 			end
 			sne = elf.sections[elf.header.shstrndx].encoded
-			return if @name_p and sne.data[@name_p, @name.length+1] == @name+0.chr
+			return if name_p and sne.data[@name_p, @name.length+1] == @name+0.chr
 			return if @name_p = sne.data.index(@name+0.chr)
 			@name_p = sne.virtsize
 			sne << @name << 0
@@ -133,11 +133,11 @@ class ELF
 		def set_default_values elf
 			@type   ||= 0
 			@flags  ||= []
-			@offset ||= @encoded ? elf.new_label('segment_offset') : 0
-			@vaddr  ||= @encoded ? elf.label_at(@encoded, 0) : 0
+			@offset ||= encoded ? elf.new_label('segment_offset') : 0
+			@vaddr  ||= encoded ? elf.label_at(@encoded, 0) : 0
 			@paddr  ||= @vaddr
-			@filesz ||= @encoded ? @encoded.rawsize : 0
-			@memsz  ||= @encoded ? @encoded.virtsize : 0
+			@filesz ||= encoded ? @encoded.rawsize : 0
+			@memsz  ||= encoded ? @encoded.virtsize : 0
 			@align  ||= 0
 		end
 	end
@@ -167,7 +167,7 @@ class ELF
 		end
 
 		def set_default_values(elf, strtab)
-			if strtab and @name and @name != ''
+			if strtab and name and @name != ''
 				make_name_p elf, strtab
 			else
 				@name_p ||= 0
@@ -183,7 +183,7 @@ class ELF
 		# sets the value of @name_p, appends @name to strtab if needed
 		def make_name_p(elf, strtab)
 			s = strtab.kind_of?(EncodedData) ? strtab.data : strtab
-			return if @name_p and s[@name_p, @name.length+1] == @name+0.chr
+			return if name_p and s[@name_p, @name.length+1] == @name+0.chr
 			return if @name_p = s.index(@name+0.chr)
 			@name_p = strtab.length
 			strtab << @name << 0
@@ -194,9 +194,10 @@ class ELF
 		def encode(elf, symtab)
 			set_default_values elf, symtab
 
-			elf.encode_addr(r, @offset) <<
-			elf.encode_xword(r, get_info(elf, symtab)) <<
-			(elf.encode_sxword(r, @addend) if @addend)
+			EncodedData.new <<
+			elf.encode_addr(@offset) <<
+			elf.encode_xword(get_info(elf, symtab)) <<
+			(elf.encode_sxword(@addend) if addend)
 		end
 
 		def set_default_values(elf, symtab)
@@ -350,7 +351,8 @@ class ELF
 			dynsym = Section.new
 			dynsym.name = '.dynsym'
 			dynsym.type = 'DYNSYM'
-			dynsym.entsize = dynsym.addralign = Symbol.size(self)
+			dynsym.entsize = Symbol.size(self)
+			dynsym.addralign = 4
 			dynsym.flags = ['ALLOC']
 			dynsym.info = @symbols[1..-1].find_all { |s| s.bind == 'LOCAL' }.length + 1
 			dynsym.link = strtab
@@ -372,6 +374,9 @@ class ELF
 	def encode_segments_relocs
 		return if not @relocations
 
+		arch_preencode_reloc_func = "arch_#{@header.machine.downcase}_preencode_reloc"
+		send arch_preencode_reloc_func if respond_to? arch_preencode_reloc_func
+
 		list = @relocations.find_all { |r| r.type == 'JMP_SLOT' }
 		if not list.empty? or @relocations.empty?
 			list.each { |r| r.addend ||= 0 } if list.find { |r| r.addend }	# ensure list is homogenous
@@ -381,7 +386,7 @@ class ELF
 				relplt.flags = ['ALLOC']
 				encode_add_section relplt
 			end
-			relplt.encoded = EncodedData.new
+			relplt.encoded = EncodedData.new('', :export => {'_REL_PLT' => 0})
 			list.each { |r| relplt.encoded << r.encode(self, @symbols) }
 			@tag['JMPREL'] = label_at(relplt.encoded, 0)
 			@tag['PLTRELSZ'] = relplt.encoded.virtsize
@@ -397,6 +402,11 @@ class ELF
 
 		list = @relocations.find_all { |r| r.type != 'JMP_SLOT' and not r.addend }
 		if not list.empty?
+			if not @tag['TEXTREL'] and s = @sections.find { |s|
+				s.encoded and e = s.encoded.export.invert[0] and Expression[r.offset, :-, e].reduce.kind_of? ::Integer
+			} and not s.flags.include? 'WRITE'
+				@tag['TEXTREL'] = 0
+			end
 			if not rel = @sections.find { |s| s.type == 'REL' and s.name == '.rel.dyn' }
 				rel = Section.new
 				rel.name = '.rel.dyn'
@@ -432,6 +442,92 @@ class ELF
 		end
 	end
 
+	# creates the .plt/.got from the @relocations
+	def arch_386_preencode_reloc
+		# if .got.plt does not exist, the dynamic loader segfaults
+		if not gotplt = @sections.find { |s| s.type == 'PROGBITS' and s.name == '.got.plt' }
+			gotplt = Section.new
+			gotplt.name = '.got.plt'
+			gotplt.type = 'PROGBITS'
+			gotplt.flags = %w[ALLOC WRITE]
+			gotplt.addralign = 4
+			gotplt.encoded = EncodedData.new('', :export => {'_PLT_GOT' => 0})
+			gotplt.encoded << encode_word('_DYNAMIC') << encode_word(0) << encode_word(0)
+			# _DYNAMIC is not base-relocated at runtime
+			encode_add_section gotplt
+		end
+		@tag['PLTGOT'] = label_at(gotplt.encoded, 0)
+		plt = nil
+
+		@relocations.each { |r|
+			case r.type
+			when 'PC32'
+				next if not r.symbol or r.symbol.type != 'FUNC'
+				
+				# convert to .plt entry
+				#
+				# [.plt header]
+				# plt_start:			# caller set ebx = gotplt if generate_PIC
+				#  push [gotplt+4]
+				#  jmp  [gotplt+8]
+				#
+				# [.plt thunk]
+				# some_func_thunk:
+				#  jmp  [gotplt+func_got_offset]
+				# some_func_got_default:
+				#  push some_func_jmpslot_offset_in_.rel.plt
+				#  jmp plt_start
+				#
+				# [.got.plt header]
+				# dd _DYNAMIC
+				# dd 0 				# rewritten to GOTPLT? by ld-linux
+				# dd 0				# rewritten to dlresolve_inplace by ld-linux
+				#
+				# [.got.plt + func_got_offset]
+				# dd some_func_got_default	# lazily rewritten to the real addr of some_func by jmp dlresolve_inplace
+				# 				# base_relocated ?
+				
+				base = @cpu.generate_PIC ? 'ebx' : '_PLT_GOT'
+				if not plt ||= @sections.find { |s| s.type == 'PROGBITS' and s.name == '.plt' }
+					plt = Section.new
+					plt.name = '.plt'
+					plt.type = 'PROGBITS'
+					plt.flags = %w[ALLOC EXECINSTR]
+					plt.addralign = 4
+					plt.encoded = EncodedData.new
+					plt.encoded << Shellcode.new(@cpu).parse("metasm_plt_start:\npush dword ptr [#{base}+4]\njmp dword ptr [#{base}+8]").assemble.encoded
+					if @cpu.generate_PIC and not @sections.find { |s| s.encoded and s.encoded.export['metasm_intern_geteip'] }
+						plt.encoded << Shellcode.new(@cpu).parse("metasm_intern_geteip:\ncall 42f\n42: pop eax\nsub eax, 42b-metasm_intern_geteip\nret").assemble.encoded
+					end
+					encode_add_section plt
+				end
+				plt.encoded.export[r.symbol.name + '_plt_thunk'] = plt.encoded.length
+				if @cpu.generate_PIC
+					plt.encoded << Shellcode.new(@cpu).parse("call metasm_intern_geteip\nlea ebx, [eax+_PLT_GOT-metasm_intern_geteip]").assemble.encoded
+				end
+				plt.encoded << Shellcode.new(@cpu).parse("jmp [#{base} + #{gotplt.encoded.length}]").assemble.encoded
+				plt.encoded.export[r.symbol.name + '_plt_default'] = plt.encoded.length
+				reloffset = @relocations.find_all { |rr| rr.type == 'JMP_SLOT' }.length * Relocation.size(self)
+				plt.encoded << Shellcode.new(@cpu).parse("push #{reloffset}\njmp metasm_plt_start").assemble.encoded
+
+				# fixup original PC32 target
+				# relies on arch_create_reloc initialization of r.target
+				target_s = @sections.find { |s| s.encoded and s.encoded.export[r.offset.lexpr.lexpr] == 0 }
+				rel = target_s.encoded.reloc[r.offset.rexpr]
+				rel.target = Expression[[[rel.target, :-, r.offset.rexpr], :-, label_at(target_s.encoded, 0)], :+, r.symbol.name+'_plt_thunk']
+
+				r.type = 'JMP_SLOT'
+				r.offset = Expression['_PLT_GOT', :+, gotplt.encoded.length]
+
+				gotplt.encoded << encode_word(r.symbol.name + '_plt_default')
+			# when 'GOTOFF', 'GOTPC'
+			end
+		}
+		encode_check_section_size gotplt
+		encode_check_section_size plt if plt
+		#encode_check_section_size got if got
+	end
+
 	# encodes the .dynamic section, creates .hash/.gnu.hash/.rel/.rela/.dynsym/.strtab/.init,*_array as needed
 	def encode_segments_dynamic
 		if not strtab = @sections.find { |s| s.type == 'STRTAB' and s.flags.include? 'ALLOC' }
@@ -455,7 +551,7 @@ class ELF
 			dynamic.link = strtab
 			encode_add_section dynamic
 		end
-		dynamic.encoded = EncodedData.new
+		dynamic.encoded = EncodedData.new('', :export => {'_DYNAMIC' => 0})
 
 		encode_tag = proc { |k, v|
 			dynamic.encoded <<
@@ -527,85 +623,105 @@ class ELF
 		encode_check_section_size dynamic
 	end
 
+	# creates the undef symbol list from the section.encoded.reloc and a list of known exported symbols (e.g. from libc)
+	# also populates @tag['NEEDED']
+	def automagic_symbols
+		next if not defined? GNUExports
+		autoexports = GNUExports::EXPORT.dup
+		@sections.each { |s|
+			next if not s.encoded
+			s.encoded.export.keys.each { |e| autoexports.delete e }
+		}
+		@sections.each { |s|
+			next if not s.encoded
+			s.encoded.reloc.each_value { |r|
+				if r.target.op == :- and r.target.rexpr.kind_of?(::String) and r.target.lexpr.kind_of?(::String)
+					symname = r.target.lexpr
+				end
+				next if not dll = autoexports[symname]
+				@tag['NEEDED'] ||= []
+				@tag['NEEDED'] |= [dll]
+				if not @symbols.find { |sym| sym.name == symname }
+					sym = Symbol.new
+					sym.shndx = 'UNDEF'
+					sym.type = 'FUNC'
+					sym.name = symname
+					sym.bind = 'GLOBAL'
+					@symbols << sym
+				end
+			}
+		}
+	end
+
 	# reads the existing segment/sections.encoded and populate @relocations from the encoded.reloc hash
 	def create_relocations
 		@relocations = []
 
-		@sections.delete_if { |s| %w[.plt .got .pltgot].include? s.name }	# XXX ...
-		plt = Section.new
-		plt.name = '.plt'
-		plt.type = 'PROGBITS'
-		plt.flags = %w[READ EXECINSTR]
-		plt.encoded = EncodedData.new
-		got = Section.new
-		got.name = '.got'
-		got.type = 'PROGBITS'
-		got.flags = %w[READ WRITE]
-		got.encoded = EncodedData.new
-		pltgot = Section.new
-		pltgot.name = '.plt.got'
-		pltgot.type = 'PROGBITS'
-		pltgot.flags = %w[READ WRITE]
-		pltgot.encoded = EncodedData.new
+		arch_create_reloc_func = "arch_#{@header.machine.downcase}_create_reloc"
+		if not respond_to? arch_create_reloc_func
+			puts "Elf: create_reloc: unhandled architecture" if $VERBOSE
+			return
+		end
 
                 # create a fake binding with all our own symbols
                 # not foolproof, should work in most cases
-                startaddr = curaddr = Expression[label_at(@encoded, 0, 'elf_start')]
-                binding = {}
+                startaddr = curaddr = label_at(@encoded, 0, 'elf_start')
+                binding = {'_DYNAMIC' => 0, '_GOT' => 0}	# XXX
                 @sections.each { |s|
+			next if not s.encoded
                         binding.update s.encoded.binding(curaddr)
                         curaddr = Expression[curaddr, :+, s.encoded.virtsize]
                 }
 
-				# COFF
-                                if rel.endianness == @endianness and [:u32, :a32, :u64, :a64].include?(rel.type) and \
-                                Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of? Integer
-                                        # winner !
-
-                                        # build relocation
-                                        r = RelocationTable::Relocation.new
-                                        r.offset = off & 0xfff
-                                        r.type = { :u32 => 'HIGHLOW', :u64 => 'DIR64', :a32 => 'HIGHLOW', :a64 => 'DIR64' }[rel.type]
-
-                                        # check if we need to start a new relocation table
-                                        if rt.base_addr and (rt.base_addr & ~0xfff) != (off & ~0xfff)
-                                                rt.base_addr = Expression[[label_at(s.encoded, 0, 'sect_start'), :-, label_at(@encoded, 0, 'coff_start')], :+,
-rt.base_addr]
-                                                @relocations << rt
-                                                rt = RelocationTable.new
-                                        end
-				end
-
 		@sections.each { |s|
-			s.encoded.reloc.each { |o, r|
-				r = r.target.bind(binding).reduce
-				next if not r.kind_of? Expression
-				if (r.op == :+ and not r.lexpr and r.rexpr.kind_of?(::String) and not known[r.rexpr]) or
-				  ((r.op == :+ or r.op == :-)  and r.lexpr.kind_of?(::String) and not known[r.lexpr] and r.rexpr.kind_of?(::Integer))
-					rel = Relocation.new
-					sym = Symbol.new
-					sym.shndx = 'UNDEF'
-					sym.name = (r.lexpr || r.rexpr)
-					rel.symbol = sym
-					rel.offset = label_at(s.encoded, o)
-					s.encoded.reloc[o].target.bind! sym.name => 0
-				elsif  r.op == :- and r.lexpr.kind-of?(::String) and not known[r.lexpr]
-					# assume it's relative -> call (...)
-					rel = Relocation.new
-					sym = Symbol.new
-					sym.shndx = 'UNDEF'
-					sym.name = r.lexpr
-					rel.symbol = sym
-					rel.offset = label_at(plt.encoded, plt.encoded.virtsize)
-					raise # TODO
-					plt << thunk
-				end
+			next if not s.encoded
+			s.encoded.reloc.each { |off, rel|
+				t = rel.target.bind(binding).reduce
+				next if not t.kind_of? Expression	# XXX segment_encode only
+				send(arch_create_reloc_func, s, off, binding)
 			}
 		}
-		# @tag['PLTGOT']
-		# @section '.got'
-		# @section '.plt'
-		# @section '.got.plt'
+	end
+
+	# references to FUNC symbols are transformed to JMPSLOT relocations (aka call to .plt)
+	# TODO ET_REL support
+	def arch_386_create_reloc(section, off, binding)
+		rel = section.encoded.reloc[off]
+		if rel.endianness != @endianness or not [:u32, :i32, :a32].include? rel.type
+			puts "ELF: 386_create_reloc: ignoring reloc #{rel.target} in #{section.name}: bad reloc type" if $VERBOSE
+			return
+		end
+		startaddr = label_at(@encoded, 0)
+		r = Relocation.new
+		r.offset = Expression[[label_at(section.encoded, 0, 'sect_start'), :-, startaddr], :+, off]
+		if Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of?(::Integer)
+			# this location is relative to the base load address of the ELF
+			r.type = 'RELATIVE'
+		else
+			et = rel.target.externals
+			extern = et.find_all { |name| not binding[name] }
+			if extern.length > 1
+				puts "ELF: 386_create_reloc: ignoring reloc #{rel.target} in #{section.name}: #{extern.inspect} unknown" if $VERBOSE
+				return
+			end
+			if not sym = @symbols.find { |s| s.name == extern.first }
+				puts "ELF: 386_create_reloc: ignoring reloc #{rel.target} in #{section.name}: undefined symbol #{extern.first}" if $VERBOSE
+				return
+			end
+			r.symbol = sym
+			rel.target = Expression[rel.target, :-, sym.name]
+			if rel.target.bind(binding).reduce.kind_of? ::Integer
+				r.type = '32'
+			elsif Expression[rel.target, :+, label_at(section.encoded, 0)].bind(section.encoded.binding).reduce.kind_of? ::Integer
+				rel.target = Expression[[rel.target, :+, label_at(section.encoded, 0)], :+, off]
+				r.type = 'PC32'
+			# TODO tls ?
+			else
+				puts "ELF: 386_create_reloc: ignoring reloc #{sym.name} + #{rel.target}: cannot find matching standard reloc type" if $VERBOSE
+				return
+			end
+		end
+		@relocations << r
 	end
 
 	# create the relocations from the sections.encoded.reloc
@@ -616,6 +732,7 @@ rt.base_addr]
 	def encode(type='EXEC')
 		@header.type ||= type
 		@encoded = EncodedData.new
+		automagic_symbols
 		create_relocations
 		encode_segments_dynamic
 
@@ -638,6 +755,7 @@ rt.base_addr]
 					@segments << seg
 				end
 				seg.flags |= ['X'] if sec.flags.include? 'EXECINSTR'
+				seg.encoded.align sec.addralign if sec.addralign
 				sec.addr = Expression[seg.vaddr, :+, seg.encoded.length]
 				sec.offset = Expression[seg.offset, :+, seg.encoded.length]
 				seg.encoded << sec.encoded
@@ -695,9 +813,10 @@ rt.base_addr]
 		@encoded << @header.encode(self)
 
 		addr = @header.type == 'EXEC' ? 0x08048000 : 0
-		binding = {}
+		binding = @encoded.binding(addr)
 		binding[@header.phoff] = @encoded.length
 		@encoded << pt
+		@encoded.align 8
 
 		addr += @encoded.length
 		@segments.each { |seg|
@@ -705,18 +824,21 @@ rt.base_addr]
 			binding[seg.vaddr] = addr
 			binding.update seg.encoded.binding(addr)
 			binding[seg.offset] = @encoded.length
+			seg.encoded.align 8
 			@encoded << seg.encoded
 			addr += seg.encoded.length + 0x1000	# 1page gap for memory permission enforcement
 		}
 
 		binding[@header.shoff] = @encoded.length
 		@encoded << st
+		@encoded.align 8
 
 		@sections.each { |sec|
 			next if not sec.encoded or sec.flags.include? 'ALLOC'	# already in a segment.encoded
 			binding[sec.offset] = @encoded.length
 			binding.update sec.encoded.binding
 			@encoded << sec.encoded
+			@encoded.align 8
 		}
 
 		@encoded.fixup! binding
@@ -738,6 +860,15 @@ rt.base_addr]
 			end
 			@cursource.elf = self
 		end
+
+		@segments.delete_if { |s| s.type == 'INTERP' }
+		seg = Segment.new
+		seg.type = 'INTERP'
+		seg.encoded = EncodedData.new << '/lib/ld-linux.so.2' << 0
+		seg.flags = ['R']
+		seg.memsz = seg.filesz = seg.encoded.length
+		@segments.unshift seg
+
 		@source ||= {}
 		super
 	end
@@ -757,6 +888,7 @@ rt.base_addr]
 	#   .local  ...
 	#     builds a symbol with specified type/scope/size, type defaults to 'func'
 	#     if plt_label_name is specified, the compiler will build an entry in the plt for this symbol, with this label (PIC & on-demand resolution)
+	#     XXX plt ignored (automagic)
 	#   .needed "<libpath>"
 	#     marks the elf as requiring the specified library (DT_NEEDED)
 	#   .soname "<soname>"
@@ -795,7 +927,8 @@ rt.base_addr]
 					when '.data', '.bss': %w[ALLOC WRITE]
 					when '.rodata': %w[ALLOC]
 					end
-				@sections << s
+				s.addralign = 8
+				encode_add_section s
 			end
 			@cursource = @source[sname] ||= []
 			check_eol[] if instr.backtrace  # special case for magic @cursource
@@ -995,7 +1128,7 @@ __END__
 		encode[pltgot, :u32, program.label_at(dynamic.edata, 0)]	# reserved, points to _DYNAMIC
 		#if arch == '386'
 			encode[pltgot, :u32, 0]	# ptr to dlresolve
-			encode[pltgot, :u32, 0]	# ptr to got?
+			encode[pltgot, :u32, 0]	# ptr to pltgot
 		#end
 		end
 

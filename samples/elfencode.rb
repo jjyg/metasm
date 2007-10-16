@@ -9,82 +9,36 @@
 require 'metasm'
 
 elf = Metasm::ELF.assemble(Metasm::Ia32.new, DATA.read)
-elf.encode_file('testelf')
+elf.encode_file('sampelf')
 
 __END__
 .interp '/lib/ld-linux.so.2'
 .pt_gnu_stack rw
 
-sys_write equ 4
-sys_exit  equ 1
-stdout    equ 1
-
-syscall macro nr
- mov eax, nr // the syscall number goes in eax
- int 80h
-endm
-
-write macro string, stringlen
- mov ebx, stdout
- mov ecx, string
- mov edx, stringlen
- syscall(sys_write)
-endm
-
 .data
-.global toto toto toto_end
-toto db "lala\n"
-toto_end:
-toto_len equ toto_end - toto
-
-// convtab db '0123456789ABCDEF'
-// outbuf  db '0x', 8 dup('0'), '\n'
+toto db "world", 0
+fmt db "Hello, %s !\n", 0
 
 .text
 .entrypoint
- write(toto, toto_len)
- mov ebx, 0
- syscall(sys_exit)
- ret
-/*
-.needed 'libc.so.6'
-.global '_exit'
-.global 'printf'
-
-/*
- push dword ptr [printf]
- call hexdump
-
- call pushstr
- db "kikoolol\n\0"
-pushstr:
- push esp
- call pltprintf
+ call metasm_intern_geteip
+ mov esi, eax
+ lea eax, [esi-metasm_intern_geteip+toto]
+ push eax
+ lea eax, [esi-metasm_intern_geteip+fmt]
+ push eax
+ call printf
  add esp, 8
 
- push dword ptr [printf]
- call hexdump
+ push 28h
+ call _exit
+ add esp, 4
+ ret
 
- push 0
- call pltexit
+metasm_intern_geteip:
+ call asonht
+asonht:
+ pop eax
+ add eax, metasm_intern_geteip - asonht
+ ret
 
-hexdump:
- mov ebx, convtab
- mov edx, [esp+4]
- mov ecx, 8
- mov ebp, outbuf+1
- std
-
-charloop:
- mov eax, edx
- and eax, 0xf
- xlat
- mov [ebp+ecx], al
- shl edx, 4
- loop charloop
-
- cld
- write(outbuf, 11)
-
- ret 4
-*/
