@@ -161,8 +161,17 @@ class LinDebug
 		load_commands
 		trap('WINCH') { resize }
 
-		p = @rs[@rs.regs_cache['esp']+0x88, 4].unpack('L').first & 0xffff_f000	# ptr to the EXEC seghdr on ld.so stack (wild guess)
-		@rs.loadsyms p, p.to_s(16)
+		stack = @rs[@rs.regs_cache['esp'], 0x1000].unpack('L*')
+		stack.shift	# argc
+		stack.shift until stack.empty? or stack.first == 0	# argv
+		stack.shift
+		stack.shift until stack.empty? or stack.first == 0	# envp
+		stack.shift
+		stack.shift until stack.empty? or stack.shift == 3	# find PHDR ptr in auxv
+		if phdr = stack.shift
+			phdr &= 0xffff_f000
+			@rs.loadsyms phdr, phdr.to_s(16)
+		end
 
 		begin
 			begin
@@ -336,8 +345,12 @@ class LinDebug
 
 	def resize
 		@console_height, @console_width = Ansi.get_terminal_size
-		@win_data_height = 6 if @win_data_height + @win_code_height + 4 > @console_height
-		@win_code_height = 6 if @win_data_height + @win_code_height + 4 > @console_height
+		@win_data_height = 1 if @win_data_height < 1
+		@win_code_height = 1 if @win_code_height < 1
+		if @win_data_height + @win_code_height + 5 > @console_height
+			@win_data_height = @console_height/2 - 4
+			@win_code_height = @console_height/2 - 4
+		end
 		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2) - 1
 		update
 	end
