@@ -523,6 +523,10 @@ class LinDebug
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = k.chr
 				@promptpos += 1
+				if @promptpos == @promptbuf.length
+					$stdout.print k.chr
+					next
+				end
 			else log "unknown key pressed #{k.inspect}"
 			end
 			begin
@@ -630,10 +634,11 @@ class LinDebug
 		@command['sym'] = proc { |lex, int|
 			sym = ''
 			sym << ntok.raw while ntok = lex.readtok
-			s = @rs.symbols.keys.find_all { |s| @rs.symbols[s] =~ /#{sym}/ }
+			s = @rs.symbols.values.grep(/#{sym}/)
 			if s.empty?
 				log "unknown symbol #{sym}"
 			else
+				s = @rs.symbols.keys.find_all { |k| s.include? @rs.symbols[k] }
 				s.sort.each { |s| log "#{'%08x' % s} #{@rs.symbols_len[s].to_s.ljust 6} #{@rs.findsymbol(s)}" }
 			end
 		}
@@ -668,6 +673,7 @@ class LinDebug
 			log ' loadsyms: load symbol information from mapped files (from /proc and disk)'
 			log ' scansyms: scan memory for ELF headers'
 			log ' sym <symbol regex>: show symbol information'
+			log ' addsym <name> <addr> [<size>]'
 			log ' delsym <addr>'
 			log ' u <addr>: disassemble addr'
 			log ' reload: reload lindebug source'

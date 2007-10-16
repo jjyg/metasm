@@ -207,6 +207,7 @@ class Rubstop < Metasm::PTrace32
 		e.load_address = baseaddr
 		begin
 			e.decode
+			#e = Metasm::ELF.decode_file name rescue return 	# read from disk
 		rescue
 			log "failed to load symbols from #{name}: #$!"
 			($!.backtrace - caller).each { |l| log l.chomp }
@@ -214,10 +215,11 @@ class Rubstop < Metasm::PTrace32
 			return
 		end
 
-		name = e.tag['SONAME'] if e.tag['SONAME']
-		#e = Metasm::ELF.decode_file name rescue return 	# read from disk
-		return if @loadedsyms[name]
-		@loadedsyms[name] = true
+		if e.tag['SONAME']
+			name = e.tag['SONAME']
+			return if name and @loadedsyms[name]
+			@loadedsyms[name] = true
+		end
 
 		last_s = e.segments.reverse.find { |s| s.type == 'LOAD' }
 		vlen = last_s.vaddr + last_s.memsz
@@ -227,7 +229,10 @@ class Rubstop < Metasm::PTrace32
 		oldsyms = @symbols.length
 		e.symbols.each { |s|
 			next if not s.name or s.shndx == 'UNDEF'
-			@symbols[baseaddr + s.value] = s.name
+			sname = s.name
+			sname = 'weak_'+sname if s.bind == 'WEAK'
+			sname = 'local_'+sname if s.bind == 'LOCAL'
+			@symbols[baseaddr + s.value] = sname
 			@symbols_len[baseaddr + s.value] = s.size
 		}
 		if e.header.type == 'EXEC'
