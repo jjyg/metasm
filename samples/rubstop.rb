@@ -23,6 +23,7 @@ class Rubstop < Metasm::PTrace32
 	}
 
 	def cont(signal=0)
+		@ssdontstopbp = nil
 		singlestep(true) if @wantbp
 		super
 		::Process.waitpid(@pid)
@@ -59,9 +60,11 @@ class Rubstop < Metasm::PTrace32
 	def stepout
 		# XXX @regs_cache..
 		stepover until curinstr.opcode.name == 'ret'
+		singlestep
 	end
 
 	def syscall
+		@ssdontstopbp = nil
 		singlestep(true) if @wantbp
 		super
 		::Process.waitpid(@pid)
@@ -115,13 +118,18 @@ class Rubstop < Metasm::PTrace32
 			return
 		elsif child.stopsig != ::Signal.list['TRAP']
 			log "process stopped due to signal #{child.stopsig} (#{Signal.list.index child.stopsig})"
+			return	# do not check 0xcc at eip-1 ! ( if curinstr.bin_length == 1 )
 		end
-		@codeptr = nil
 		ccaddr = @regs_cache['eip']-1
 		if @breakpoints[ccaddr] and self[ccaddr] == 0xcc
-			self[ccaddr] = @breakpoints.delete ccaddr
-			self.eip = ccaddr
-			@wantbp = @regs_cache['eip'] if not @singleshot.delete @regs_cache['eip']
+			if @ssdontstopbp != ccaddr
+				self[ccaddr] = @breakpoints.delete ccaddr
+				self.eip = ccaddr
+				@wantbp = ccaddr if not @singleshot.delete ccaddr
+				@ssdontstopbp = ccaddr
+			else
+				@ssdontstopbp = nil
+			end
 		elsif @regs_cache['dr6'] & 15 != 0
 			dr = (0..3).find { |dr| @regs_cache['dr6'] & (1 << dr) != 0 }
 			@wantbp = "dr#{dr}" if not @singleshot.delete @regs_cache['eip']

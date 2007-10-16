@@ -161,6 +161,9 @@ class LinDebug
 		load_commands
 		trap('WINCH') { resize }
 
+		p = @rs[@rs.regs_cache['esp']+0x88, 4].unpack('L').first & 0xffff_f000	# ptr to the EXEC seghdr on ld.so stack (wild guess)
+		@rs.loadsyms p, p.to_s(16)
+
 		begin
 			begin
 				init_screen
@@ -260,10 +263,11 @@ class LinDebug
 			text << ('%04X' % @rs.regs_cache['cs']) << ':'
 			text << ('%08X' % addr)
 			di = @rs.mnemonic_di(addr)
+			di.opcode = nil if di.opcode and addr < @rs.regs_cache['eip'] and addr+di.bin_length > @rs.regs_cache['eip']
 			len = (di.opcode ? di.bin_length : 1)
 			text << '  '
 			text << @rs[addr, [len, 10].min].unpack('C*').map { |c| '%02X' % c }.join.ljust(22)
-			if di.instruction
+			if di.opcode
 				text <<
 				if addr == @rs.regs_cache['eip']
 					"*#{di.instruction}".ljust(@console_width-37)
