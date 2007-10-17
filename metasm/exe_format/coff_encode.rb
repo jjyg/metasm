@@ -496,11 +496,11 @@ class COFF
 		case @cpu
 		when Ia32
 			if @cpu.generate_PIC
-				# sections starts with a helper function that returns the address of metasm_importthunk_getip in eax (PIC)
+				# sections starts with a helper function that returns the address of metasm_intern_geteip in eax (PIC)
 				if not @sections.find { |s| s.encoded and s.encoded.export['metasm_intern_geteip'] } and edata.empty?
 					edata << Shellcode.new(@cpu).parse("metasm_intern_geteip: call 42f\n42:\npop eax\nsub eax, 42b-metasm_intern_geteip\nret").assemble.encoded
 				end
-				edata << Shellcode.new(@cpu).parse("#{import.thunk}:\ncall metasm_importthunk_geteip\njmp [eax+#{import.target}-metasm_importthunk_getip]").assemble.encoded
+				edata << Shellcode.new(@cpu).parse("#{import.thunk}:\ncall metasm_intern_geteip\njmp [eax+#{import.target}-metasm_intern_geteip]").assemble.encoded
 			else
 				edata << Shellcode.new(@cpu).parse("#{import.thunk}:\njmp [#{import.target}]").assemble.encoded
 			end
