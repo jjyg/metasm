@@ -7,7 +7,7 @@
 # this is a linux/x86 debugger with a console interface
 #
 
-require 'rubstop'
+require 'metasm'
 
 module Ansi
 	CursHome = "\e[H".freeze
@@ -64,6 +64,7 @@ module Ansi
 		'15~' => :f5, '17~' => :f6, '18~' => :f7, '19~' => :f8,
 		'20~' => :f9, '21~' => :f10, '23~' => :f11, '24~' => :f12,
 		'[A' => :f1, '[B' => :f2, '[C' => :f3, '[D' => :f4, '[E' => :f5,
+		'H' => :home, 'F' => :end,
 	}
 	def self.getkey
 		c = $stdin.getc
@@ -142,6 +143,7 @@ class LinDebug
 		:normal => Ansi.color(:white, :black, :normal), :hilight => Ansi.color(:blue, :white, :normal),
 		:status => Ansi.color(:black, :cyan)}
 
+	attr_accessor :dataptr, :codeptr, :rs, :promptlog
 	def initialize(rs)
 		@rs = rs
 		@rs.logger = self
@@ -172,11 +174,13 @@ class LinDebug
 			phdr &= 0xffff_f000
 			@rs.loadsyms phdr, phdr.to_s(16)
 		end
+	end
 
+	def main_loop
 		begin
 			begin
 				init_screen
-				main_loop
+				main_loop_inner
 			rescue Errno::ESRCH
 				log "target does not exist anymore"
 			ensure
@@ -453,7 +457,7 @@ class LinDebug
 		updatecodeptr
 	end
 
-	def main_loop
+	def main_loop_inner
 		@prompthistory = ['']
 		@histptr = nil
 		@running = true
@@ -731,6 +735,7 @@ class LinDebug
 				resize
 			end
 		}
+		@command['wp'] = proc { |lex, int| @focus = :prompt }
 		@command['?'] = proc { |lex, int|
 			val = int[]
 			log "#{val} 0x#{val.to_s(16)} #{[val].pack('L').inspect}"
@@ -741,5 +746,10 @@ end
 
 
 if $0 == __FILE__
-	LinDebug.new Rubstop.new(ARGV.shift)
+	begin
+		require 'samples/rubstop'
+	rescue LoadError
+	end
+
+	LinDebug.new(Rubstop.new(ARGV.shift)).main_loop
 end
