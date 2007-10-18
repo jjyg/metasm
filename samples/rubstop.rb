@@ -95,7 +95,7 @@ class Rubstop < Metasm::PTrace32
 	end
 
 	def readregs
-		%w[eax ebx ecx edx esi edi esp ebp eip eflags dr0 dr1 dr2 dr3 dr6 dr7 cs ds].each { |r| @regs_cache[r] = send(r) }
+		%w[eax ebx ecx edx esi edi esp ebp eip orig_eax eflags dr0 dr1 dr2 dr3 dr6 dr7 cs ds].each { |r| @regs_cache[r] = send(r) }
 		@curinstr = nil if @regs_cache['eip'] != @oldregs['eip']
 	end
 
@@ -318,7 +318,7 @@ if $0 == __FILE__
 				rs.singlestep
 			else
 				rs.syscall ; rs.syscall	# wait return of syscall
-				puts syscall_map[rs.orig_eax]
+				puts "#{rs.orig_eax} #{syscall_map[rs.orig_eax]}"
 			end
 		end
 		p rs.child
