@@ -95,7 +95,7 @@ class COFF
 			@code_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_CODE' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@data_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_DATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@udata_size   ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_UDATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
-			@entrypoint = Expression[@entrypoint, :-, coff.label_at(coff.encoded, 0)] if @entrypoint.kind_of?(::String)
+			@entrypoint = Expression[@entrypoint, :-, coff.label_at(coff.encoded, 0)] if @entrypoint and not @entrypoint.kind_of?(::Integer)
 			@entrypoint   ||= 0
 			@base_of_code ||= (Expression[coff.label_at(coff.sections.find { |s| s.characteristics.include? 'CONTAINS_CODE' }.encoded, 0), :-, coff.label_at(coff.encoded, 0)] rescue 0)
 			@base_of_data ||= (Expression[coff.label_at(coff.sections.find { |s| s.characteristics.include? 'CONTAINS_DATA' }.encoded, 0), :-, coff.label_at(coff.encoded, 0)] rescue 0)
@@ -238,7 +238,9 @@ class COFF
 
 		# encodes an import directory + iat + names in the edata hash received as arg
 		def encode(coff, edata)
-			%w[idata iat ilt nametable].each { |name| edata[name] ||= EncodedData.new }
+			%w[idata ilt nametable].each { |name| edata[name] ||= EncodedData.new }
+			edata['iat'] ||= []
+			edata['iat'] << EncodedData.new
 			# edata['ilt'] = edata['iat']
 			label = proc { |n| coff.label_at(edata[n], 0, n) }
 			rva = proc { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
@@ -247,27 +249,27 @@ class COFF
 			edata['idata'] <<
 			coff.encode_word(rva_end['ilt']) <<
 			coff.encode_word(@timestamp ||= 0) <<
-			coff.encode_word(@firstforwarder ||= 0) <<
+			coff.encode_word(@firstforwarder ||= -1) <<
 			coff.encode_word(rva_end['nametable']) <<
-			coff.encode_word(rva_end['iat'])
+			coff.encode_word(Expression[coff.label_at(edata['iat'].last, 0, 'iat'), :-, coff.label_at(coff.encoded, 0)])
 
 			edata['nametable'] << @libname << 0
 
 			ord_mask = 1 << (coff.optheader.signature == 'PE+' ? 63 : 31)
 			@imports.each { |i|
-				edata['iat'].export[i.target] = edata['iat'].virtsize
+				edata['iat'].last.export[i.name] = edata['iat'].last.virtsize
 				if i.ordinal
 					edata['ilt'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
-					edata['iat'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
+					edata['iat'].last << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 				else
 					edata['nametable'].align 2
 					edata['ilt'] << coff.encode_xword(rva_end['nametable'])
-					edata['iat'] << coff.encode_xword(rva_end['nametable'])
+					edata['iat'].last << coff.encode_xword(rva_end['nametable'])
 					edata['nametable'] << coff.encode_half(i.hint || 0) << i.name << 0
 				end
 			}
 			edata['ilt'] << coff.encode_xword(0)
-			edata['iat'] << coff.encode_xword(0)
+			edata['iat'].last << coff.encode_xword(0)
 		end
 	end
 
@@ -404,10 +406,10 @@ class COFF
 	end
 
 
-	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness) end
-	def encode_half(w)   Expression[w].encode(:u16, @endianness) end
-	def encode_word(w)   Expression[w].encode(:u32, @endianness) end
-	def encode_xword(w)  Expression[w].encode((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
+	def encode_uchar(w)  Expression[w].encode(:a8,  @endianness) end
+	def encode_half(w)   Expression[w].encode(:a16, @endianness) end
+	def encode_word(w)   Expression[w].encode(:a32, @endianness) end
+	def encode_xword(w)  Expression[w].encode((@optheader.signature == 'PE+' ? :a64 : :a32), @endianness) end
 
 
 	# adds a new compiler-generated section
@@ -434,7 +436,7 @@ class COFF
 			if target = secs.find { |ss| (ss.characteristics & char) == char }
 				target.encoded.align 8
 				puts "PE: merging #{s.name} in #{target.name} (#{target.encoded.virtsize})" if $DEBUG
-				target.encoded << s.encoded
+				s.encoded = target.encoded << s.encoded
 			else
 				@sections << s
 			end
@@ -469,25 +471,38 @@ class COFF
 		s.characteristics = %w[MEM_READ MEM_WRITE MEM_DISCARDABLE]
 		encode_append_section s
 
-		@directory['iat'] = [label_at(iat, 0, 'iat'), iat.virtsize]
+		@directory['iat'] = [label_at(iat.first, 0, 'iat'),
+			Expression[label_at(iat.last, iat.last.virtsize, 'iat_end'), :-, label_at(iat.first, 0)]]
 	
-		s = Section.new
-		s.name = '.iat'
-		s.encoded = iat
-		s.characteristics = %w[MEM_READ MEM_WRITE]
-		encode_append_section s
+		iat_s = nil
 
 		plt = Section.new
 		plt.name = '.plt'
 		plt.encoded = EncodedData.new
 		plt.characteristics = %w[MEM_READ MEM_EXECUTE]
-		@imports.each { |id|
+
+		@imports.zip(iat) { |id, it|
+			if id.iat_p and s = @sections.find { |s| s.virtaddr <= id.iat_p and s.virtaddr + s.virtsize > id.iat_p }
+				id.iat = it	# will be fixed up after encode_section
+			else
+				# XXX should not be mixed (for @directory['iat'][1])
+				if not iat_s
+					iat_s = Section.new
+					iat_s.name = '.iat'
+					iat_s.encoded = EncodedData.new
+					iat_s.characteristics = %w[MEM_READ MEM_WRITE]
+					encode_append_section iat_s
+				end
+				iat_s.encoded << it
+			end
+
 			id.imports.each { |i|
 				if i.thunk
 					arch_encode_thunk(plt.encoded, i)
 				end
 			}
 		}
+
 		encode_append_section plt if not plt.encoded.empty?
 	end
 
@@ -608,7 +623,7 @@ class COFF
 			when 'obj':  []
 			end
 		tmp << 'x32BIT_MACHINE'		# XXX
-		tmp << 'RELOCS_STRIPPED' if not @directory['base_relocation_table']
+		tmp << 'RELOCS_STRIPPED' # if not @directory['base_relocation_table'] # object relocs
 		@header.characteristics ||= tmp
 
 		@optheader.subsystem ||= case target
@@ -684,6 +699,15 @@ class COFF
 
 		# not aligned ? spec says it is, visual studio does not
 		binding[@optheader.image_size] = curaddr - baseaddr if @optheader.image_size.kind_of?(::String)
+
+		# patch the iat where iat_p was defined
+		@imports.each { |id|
+			if id.iat_p
+				p = rva_to_off(id.iat_p)
+				@encoded[p, id.iat.virtsize] = id.iat
+				binding.update id.iat.binding(baseaddr + id.iat_p)
+			end
+		}
 
 		@encoded.fill
 		@encoded.fixup! binding
@@ -934,6 +958,7 @@ class COFF
 				end
 				next if not dll = autoexports[sym]
 				@imports ||= []
+				next if @imports.find { |id| id.imports.find { |ii| ii.name == sym } }
 				if not id = @imports.find { |id| id.libname =~ /^#{dll}(\.dll)?$/i }
 					id = ImportDirectory.new
 					id.libname = dll
