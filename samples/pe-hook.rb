@@ -13,15 +13,24 @@
 require 'metasm'
 require 'metasm-shell'
 
-# code to run on start
+# read original file
+raise 'need a target filename' if not target = ARGV.shift
+pe = Metasm::PE.decode_file(target).mini_copy
+
+has_mb = pe.imports.find { |id| id.imports.find { |i| i.name == 'MessageBoxA' } } ? 1 : 0
+# hook code to run on start
 newcode = <<EOS.encode_edata
 hook_entrypoint:
 pushad
+#if ! #{has_mb}
 push hook_libname
-call [LoadLibraryA]
+call [iat_LoadLibraryA]
 push hook_funcname
 push eax
-call [GetProcAddress]
+call [iat_GetProcAddress]
+#else
+mov eax, [iat_MessageBoxA]
+#endif
 
 push 0
 push hook_title
@@ -35,33 +44,22 @@ jmp entrypoint
 .align 4
 hook_msg db '(c) David Hasselhoff', 0
 hook_title db 'Hooked on a feeling', 0
+#if ! #{has_mb}
 hook_libname db 'user32', 0
 hook_funcname db 'MessageBoxA', 0
+#endif
 EOS
 
-# read original file
-raise 'need a target filename' if not target = ARGV.shift
-pe = Metasm::PE.decode_file(target)
-
 # modify last section
-s = pe.sections.last
-s.encoded.data = s.encoded.data.to_str	# get rid of the VirtualString, if any
-s.encoded << newcode
-s.virtaddr = s.virtsize = s.rawaddr = s.rawsize = nil	# reset those value, so that the linker computes them for us
-s.encoded.fixup!('entrypoint' => pe.optheader.image_base + pe.optheader.entrypoint)
+s = Metasm::PE::Section.new
+s.name = '.hook'
+s.encoded = newcode
+s.characteristics = %w[MEM_READ MEM_WRITE MEM_EXECUTE]
+s.encoded.fixup!('entrypoint' => pe.optheader.image_base + pe.optheader.entrypoint)	# tell the original entrypoint address to our hook
+pe.sections << s
 
 # patch entrypoint
 pe.optheader.entrypoint = 'hook_entrypoint'
 
-# reencode
-oldhdr = pe.encoded[0, pe.sections.first.rawaddr]
-pe.encoded = Metasm::EncodedData.new
-pe.encode_header
-# bad people store information in unmapped space here (eg import libnames), so we try to keep the header as similar as possible to what it was
-pe.encoded << oldhdr[pe.encoded.virtsize..-1] if oldhdr.virtsize > pe.encoded.virtsize
-pe.encode_sections_fixup
-
-puts "Unresolved relocations: #{pe.encoded.reloc.map { |o, r| r.target }.join(', ')}" if not pe.encoded.reloc.empty?
-
-# save to file
-File.open(target.sub('.exe', '-patch.exe'), 'wb') { |fd| fd.write pe.encoded.data }
+# save
+pe.encode_file(target.sub(/\.exe$/i, '-patch.exe'))
