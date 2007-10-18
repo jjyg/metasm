@@ -97,6 +97,36 @@ EOMZSTUB
 
 		super
 	end
+
+	# a returns a new PE with only minimal information copied:
+	#  section name/perm/addr/content
+	#  exports
+	#  imports (with boundimport cleared)
+	#  resources
+	def mini_copy
+		ret = self.class.new(@cpu)
+		ret.header.machine = @header.machine
+		ret.optheader.entrypoint = @optheader.entrypoint
+		ret.optheader.image_base = @optheader.image_base
+		@sections.each { |s|
+			rs = Section.new
+			rs.name = s.name
+			rs.virtaddr = s.virtaddr
+			rs.characteristics = s.characteristics
+			rs.encoded = s.encoded
+			ret.sections << s
+		}
+		ret.resource = @resource
+		if @imports
+			ret.imports = @imports.map { |id| id.dup }
+			ret.imports.each { |id|
+				id.timestamp = id.firstforwarder =
+				id.ilt_p = id.libname_p = nil
+			}
+		end
+		ret.export = @export
+		ret
+	end
 end
 
 # an instance of a PE file, loaded in memory
