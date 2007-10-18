@@ -547,8 +547,9 @@ class COFF
 	# read section data
 	def decode_sections
 		@sections.each { |s|
-			s.encoded = @encoded[s.rawaddr, [s.rawsize, s.virtsize].min]
-			s.encoded.virtsize = s.virtsize
+			# decode up to s.virtsize to retrieve exports (like base relocs to .bss)
+			s.encoded = @encoded[s.rawaddr, s.virtsize]
+			s.encoded.data = s.encoded.data[0, s.rawsize] if s.rawsize < s.virtsize
 		}
 	end
 
