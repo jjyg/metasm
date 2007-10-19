@@ -14,7 +14,7 @@
 require 'metasm'
 include Metasm
 
-visualstudiopath = ARGV.shift || '/mnt/wxp2/apps/VisualStudio8'
+visualstudiopath = ARGV.shift || '/home/jj/tmp'
 
 # to trace only pp macros (using eg an asm source), use Preprocessor#factorize instead
 

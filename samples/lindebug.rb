@@ -194,7 +194,8 @@ class LinDebug
 	end
 	
 	def update
-		$stdout.print Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt
+		csy, csx = @console_height-1, @promptpos+2
+		$stdout.write Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt + Ansi.set_cursor_pos(csy, csx)
 	end
 
 	def updateregs
@@ -340,7 +341,6 @@ class LinDebug
 		}
 		text << ':' << @promptbuf << Ansi::ClearLineAfter << "\n"
 		text << Color[:status] << statusline.ljust(@console_width) << Color[:normal]
-		text << Ansi.set_cursor_pos(@console_height-1, @promptpos+2)
 	end
 
 	def statusline
@@ -463,10 +463,26 @@ class LinDebug
 		@running = true
 		update
 		while @running
-			case k = Ansi.getkey
-			when 4: log 'exiting'; break	 # eof
+			if not IO.select [$stdin], nil, nil, 0
+				begin
+					update
+				rescue Errno::ESRCH
+					break
+				end
+			end
+			break if handle_keypress(Ansi.getkey)
+		end
+		@rs.checkbp
+	end
+
+	def handle_keypress(k)
+			case k
+			when 4: log 'exiting'; return true	 # eof
 			when ?\e: focus = :prompt
 			when :f5:  cont
+			when :f6
+				syscall
+				log Rubstop::SYSCALLNR.index(@rs.regs_cache['orig_eax']) || @rs.regs_cache['orig_eax'].to_s
 			when :f10: stepover
 			when :f11: singlestep
 			when :f12: stepout
@@ -544,19 +560,9 @@ class LinDebug
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = k.chr
 				@promptpos += 1
-				if @promptpos == @promptbuf.length
-					$stdout.print k.chr
-					next
-				end
 			else log "unknown key pressed #{k.inspect}"
 			end
-			begin
-				update
-			rescue Errno::ESRCH
-				break
-			end
-		end
-		@rs.checkbp
+			nil
 	end
 
 	def load_commands
@@ -702,6 +708,7 @@ class LinDebug
 			log ' closeui: detach from the underlying RubStop'
 			log 'keys:'
 			log ' F5: continue'
+			log ' F6: syscall'
 			log ' F10: step over'
 			log ' F11: single step'
 			log ' F12: step out (til next ret)'

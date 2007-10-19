@@ -295,19 +295,6 @@ class Rubstop < Metasm::PTrace32
 end
 
 if $0 == __FILE__
-
-	# map syscall number to syscall name
-	pp = Metasm::Preprocessor.new
-	pp.define('__i386__')
-	pp.feed '#include <asm/unistd.h>'
-	pp.readtok until pp.eos?
-
-	syscall_map = {}
-	pp.definition.each_value { |macro|
-		next if macro.name.raw !~ /__NR_(.*)/
-		syscall_map[macro.body.first.raw.to_i] = $1.downcase
-	}
-
 	# start debugging
 	rs = Rubstop.new(ARGV.shift)
 
@@ -318,7 +305,7 @@ if $0 == __FILE__
 				rs.singlestep
 			else
 				rs.syscall ; rs.syscall	# wait return of syscall
-				puts "#{rs.orig_eax} #{syscall_map[rs.orig_eax]}"
+				puts "#{rs.orig_eax.to_s.ljust(3)} #{Rubstop::SYSCALLNR.index rs.orig_eax}"
 			end
 		end
 		p rs.child
