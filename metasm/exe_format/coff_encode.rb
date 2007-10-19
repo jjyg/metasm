@@ -249,7 +249,7 @@ class COFF
 			edata['idata'] <<
 			coff.encode_word(rva_end['ilt']) <<
 			coff.encode_word(@timestamp ||= 0) <<
-			coff.encode_word(@firstforwarder ||= -1) <<
+			coff.encode_word(@firstforwarder ||= 0xffff_ffff) <<
 			coff.encode_word(rva_end['nametable']) <<
 			coff.encode_word(Expression[coff.label_at(edata['iat'].last, 0, 'iat'), :-, coff.label_at(coff.encoded, 0)])
 
@@ -406,10 +406,10 @@ class COFF
 	end
 
 
-	def encode_uchar(w)  Expression[w].encode(:a8,  @endianness) end
-	def encode_half(w)   Expression[w].encode(:a16, @endianness) end
-	def encode_word(w)   Expression[w].encode(:a32, @endianness) end
-	def encode_xword(w)  Expression[w].encode((@optheader.signature == 'PE+' ? :a64 : :a32), @endianness) end
+	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness) end
+	def encode_half(w)   Expression[w].encode(:u16, @endianness) end
+	def encode_word(w)   Expression[w].encode(:u32, @endianness) end
+	def encode_xword(w)  Expression[w].encode((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
 
 
 	# adds a new compiler-generated section
@@ -471,8 +471,14 @@ class COFF
 		s.characteristics = %w[MEM_READ MEM_WRITE MEM_DISCARDABLE]
 		encode_append_section s
 
-		@directory['iat'] = [label_at(iat.first, 0, 'iat'),
-			Expression[label_at(iat.last, iat.last.virtsize, 'iat_end'), :-, label_at(iat.first, 0)]]
+		if @imports.first and @imports.first.iat_p
+			ordiat = @imports.zip(iat).sort_by { |id, it| id.iat_p }.map { |id, it| it }
+		else
+			ordiat = iat
+		end
+		
+		@directory['iat'] = [label_at(ordiat.first, 0, 'iat'),
+			Expression[label_at(ordiat.last, ordiat.last.virtsize, 'iat_end'), :-, label_at(ordiat.first, 0)]]
 	
 		iat_s = nil
 
