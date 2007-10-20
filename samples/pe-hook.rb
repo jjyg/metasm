@@ -15,7 +15,11 @@ require 'metasm-shell'
 
 # read original file
 raise 'need a target filename' if not target = ARGV.shift
-pe = Metasm::PE.decode_file(target).mini_copy
+pe_orig = Metasm::PE.decode_file(target)
+pe = pe_orig.mini_copy
+pe.mz.encoded = pe_orig.encoded[0, pe_orig.coff_offset-4]
+pe.mz.encoded.export = pe_orig.encoded[0, 512].export.dup
+pe.header.time = pe_orig.header.time
 
 has_mb = pe.imports.find { |id| id.imports.find { |i| i.name == 'MessageBoxA' } } ? 1 : 0
 # hook code to run on start
