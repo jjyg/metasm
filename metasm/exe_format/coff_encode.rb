@@ -257,7 +257,7 @@ class COFF
 
 			ord_mask = 1 << (coff.optheader.signature == 'PE+' ? 63 : 31)
 			@imports.each { |i|
-				edata['iat'].last.export[i.name] = edata['iat'].last.virtsize
+				edata['iat'].last.export[i.name] = edata['iat'].last.virtsize if i.name
 				if i.ordinal
 					edata['ilt'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 					edata['iat'].last << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
