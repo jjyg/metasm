@@ -1117,7 +1117,7 @@ class ELF
 
 	def c_set_default_entrypoint
 		return if @header.entry
-		if @sections.find { |s| s.encoded.export['main'] }
+		if @sections.find { |s| s.encoded and s.encoded.export['main'] }
 			@header.entry = 'main'
 		end
 	end
