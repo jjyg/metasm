@@ -405,10 +405,6 @@ class ELF < ExeFormat
 		end
 		super
 	end
-
-	def set_entrypoint(ep)
-		@header.entry = ep
-	end
 end
 end
 

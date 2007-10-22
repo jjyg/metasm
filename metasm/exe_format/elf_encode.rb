@@ -459,7 +459,7 @@ class ELF
 		@tag['PLTGOT'] = label_at(gotplt.encoded, 0)
 		plt = nil
 
-		@relocations.each { |r|
+		@relocations.dup.each { |r|
 			case r.type
 			when 'PC32'
 				next if not r.symbol or r.symbol.type != 'FUNC'
@@ -501,25 +501,34 @@ class ELF
 					end
 					encode_add_section plt
 				end
-				plt.encoded.export[r.symbol.name + '_plt_thunk'] = plt.encoded.length
-				if @cpu.generate_PIC
-					plt.encoded << Shellcode.new(@cpu).parse("call metasm_intern_geteip\nlea ebx, [eax+_PLT_GOT-metasm_intern_geteip]").assemble.encoded
+
+				prevoffset = r.offset
+				if not plt.encoded.export[r.symbol.name + '_plt_thunk']
+					# create the plt thunk
+					plt.encoded.export[r.symbol.name + '_plt_thunk'] = plt.encoded.length
+					if @cpu.generate_PIC
+						plt.encoded << Shellcode.new(@cpu).parse("call metasm_intern_geteip\nlea ebx, [eax+_PLT_GOT-metasm_intern_geteip]").assemble.encoded
+					end
+					plt.encoded << Shellcode.new(@cpu).parse("jmp [#{base} + #{gotplt.encoded.length}]").assemble.encoded
+					plt.encoded.export[r.symbol.name + '_plt_default'] = plt.encoded.length
+					reloffset = @relocations.find_all { |rr| rr.type == 'JMP_SLOT' }.length * Relocation.size(self)
+					plt.encoded << Shellcode.new(@cpu).parse("push #{reloffset}\njmp metasm_plt_start").assemble.encoded
+
+					# transform the reloc PC32 => JMP_SLOT
+					r.type = 'JMP_SLOT'
+					r.offset = Expression['_PLT_GOT', :+, gotplt.encoded.length]
+
+					gotplt.encoded << encode_word(r.symbol.name + '_plt_default')
+				else
+					@relocations.delete r
 				end
-				plt.encoded << Shellcode.new(@cpu).parse("jmp [#{base} + #{gotplt.encoded.length}]").assemble.encoded
-				plt.encoded.export[r.symbol.name + '_plt_default'] = plt.encoded.length
-				reloffset = @relocations.find_all { |rr| rr.type == 'JMP_SLOT' }.length * Relocation.size(self)
-				plt.encoded << Shellcode.new(@cpu).parse("push #{reloffset}\njmp metasm_plt_start").assemble.encoded
 
-				# fixup original PC32 target
-				# relies on arch_create_reloc initialization of r.target
-				target_s = @sections.find { |s| s.encoded and s.encoded.export[r.offset.lexpr.lexpr] == 0 }
-				rel = target_s.encoded.reloc[r.offset.rexpr]
-				rel.target = Expression[[[rel.target, :-, r.offset.rexpr], :-, label_at(target_s.encoded, 0)], :+, r.symbol.name+'_plt_thunk']
-
-				r.type = 'JMP_SLOT'
-				r.offset = Expression['_PLT_GOT', :+, gotplt.encoded.length]
-
-				gotplt.encoded << encode_word(r.symbol.name + '_plt_default')
+				# mutate the original relocation
+				# XXX relies on the exact form of r.target from arch_create_reloc
+				target_s = @sections.find { |s| s.encoded and s.encoded.export[prevoffset.lexpr.lexpr] == 0 }
+				rel = target_s.encoded.reloc[prevoffset.rexpr]
+				rel.target = Expression[[[rel.target, :-, prevoffset.rexpr], :-, label_at(target_s.encoded, 0)], :+, r.symbol.name+'_plt_thunk']
+				
 			# when 'GOTOFF', 'GOTPC'
 			end
 		}
@@ -1104,6 +1113,13 @@ class ELF
 	def encode_file(path, *a)
 		super
 		File.chmod(0755, path) if @header.type == 'EXEC'
+	end
+
+	def c_set_default_entrypoint
+		return if @header.entry
+		if @sections.find { |s| s.encoded.export['main'] }
+			@header.entry = 'main'
+		end
 	end
 end
 end

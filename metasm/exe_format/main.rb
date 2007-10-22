@@ -76,7 +76,7 @@ class ExeFormat
 		e.parse(asm_source, 'C compiler output', 1)
 		puts 'assembling' if $VERBOSE
 		e.assemble
-		e.set_entrypoint 'main'
+		e.c_set_default_entrypoint
 		e
 	end
 
@@ -87,6 +87,9 @@ class ExeFormat
 	# add directive to change the current assembler section to the assembler source +src+
 	def compile_setsection(src, section)
 		src << section
+	end
+
+	def c_set_default_entrypoint
 	end
 
 	# encodes the executable as a string, checks that all relocations are

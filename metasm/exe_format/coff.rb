@@ -253,10 +253,6 @@ class COFF < ExeFormat
 		end
 		super(cpu)
 	end
-
-	def set_entrypoint(ep)
-		@optheader.entrypoint = ep
-	end
 end
 
 # the COFF archive file format

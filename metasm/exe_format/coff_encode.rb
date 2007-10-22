@@ -257,7 +257,7 @@ class COFF
 
 			ord_mask = 1 << (coff.optheader.signature == 'PE+' ? 63 : 31)
 			@imports.each { |i|
-				edata['iat'].last.export[i.name] = edata['iat'].last.virtsize if i.name
+				edata['iat'].last.export[i.target] = edata['iat'].last.virtsize if i.target
 				if i.ordinal
 					edata['ilt'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 					edata['iat'].last << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
@@ -898,7 +898,7 @@ class COFF
 			if tok and tok.type == :string
 				i.target = tok.raw
 			else
-				i.target = i.thunk == i.name ? 'iat_' + i.name : i.name
+				i.target = ((i.thunk == i.name) ? ('iat_' + i.name) : i.name)
 				@lexer.unreadtok tok
 			end
 

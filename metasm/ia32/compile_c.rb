@@ -1192,7 +1192,7 @@ class CCompiler < C::Compiler
 		if stmt.output or stmt.input or stmt.clobber
 			raise # TODO (handle %%0 => eax, gas, etc)
 		else
-			raise if @state.func.symbol.keys.find { |sym| stmt.body.include? sym }	# gsub ebp+off ?
+			raise if @state.func.initializer.symbol.keys.find { |sym| stmt.body.include? sym }	# gsub ebp+off ?
 			@source << stmt.body
 		end
 	end

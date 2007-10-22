@@ -127,6 +127,80 @@ EOMZSTUB
 		ret.export = @export
 		ret
 	end
+
+	def c_set_default_entrypoint
+		return if @optheader.entrypoint
+		if @sections.find { |s| s.encoded.export['main'] }
+			@optheader.entrypoint = 'main'
+		elsif @sections.find { |s| s.encoded.export['DllEntryPoint'] }
+			@optheader.entrypoint = 'DllEntryPoint'
+		elsif @sections.find { |s| s.encoded.export['DllMain'] }
+			cp = @cpu.new_cparser
+			cp.parse <<EOS
+enum { DLL_PROCESS_DETACH, DLL_PROCESS_ATTACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH, DLL_PROCESS_VERIFIER };
+__stdcall int DllMain(void *handle, unsigned long reason, void *reserved);
+__stdcall int DllEntryPoint(void *handle, unsigned long reason, void *reserved) {
+	int ret = DllMain(handle, reason, reserved);
+	if (ret == 0 && reason == DLL_PROCESS_ATTACH)
+		DllMain(handle, DLL_PROCESS_DETACH, reserved);
+	return ret;
+}
+EOS
+			parse(@cpu.new_ccompiler(cp, self).compile)
+			assemble
+			@optheader.entrypoint = 'DllEntryPoint'
+		elsif @sections.find { |s| s.encoded.export['WinMain'] }
+			cp = @cpu.new_cparser
+			cp.parse <<EOS
+#define GetCommandLine GetCommandLineA
+#define GetModuleHandle GetModuleHandleA
+#define GetStartupInfo GetStartupInfoA
+#define STARTF_USESHOWWINDOW 0x00000001
+#define SW_SHOWDEFAULT 10
+
+typedef unsigned long DWORD;
+typedef unsigned short WORD;
+typedef struct {
+        DWORD cb; char *lpReserved, *lpDesktop, *lpTitle;
+        DWORD dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+	WORD wShowWindow, cbReserved2; char *lpReserved2;
+        void *hStdInput, *hStdOutput, *hStdError;
+} STARTUPINFO;
+
+__stdcall void *GetModuleHandleA(const char *lpModuleName);
+__stdcall void GetStartupInfoA(STARTUPINFO *lpStartupInfo);
+__stdcall void ExitProcess(unsigned int uExitCode);
+__stdcall char *GetCommandLineA(void);
+__stdcall int WinMain(void *hInstance, void *hPrevInstance, char *lpCmdLine, int nShowCmd);
+
+int main(void) {
+	STARTUPINFO startupinfo;
+	startupinfo.cb = sizeof(STARTUPINFO);
+	char *cmd = GetCommandLine();
+	int ret;
+
+	if (*cmd == '"') {
+		cmd++;
+		while (*cmd && *cmd != '"') {
+			if (*cmd == '\\\\') cmd++;
+			cmd++;
+		}
+		if (*cmd == '"') cmd++;
+	} else
+		while (*cmd && *cmd != ' ') cmd++;
+	while (*cmd == ' ') cmd++;
+
+	GetStartupInfo(&startupinfo);
+	ret = WinMain(GetModuleHandle(0), 0, cmd, (startupinfo.dwFlags & STARTF_USESHOWWINDOW) ? (int)startupinfo.wShowWindow : (int)SW_SHOWDEFAULT);
+	ExitProcess((DWORD)ret);
+	return ret;
+}
+EOS
+			parse(@cpu.new_ccompiler(cp, self).compile)
+			assemble
+			@optheader.entrypoint = 'main'
+		end
+	end
 end
 
 # an instance of a PE file, loaded in memory
