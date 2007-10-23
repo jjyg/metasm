@@ -1117,8 +1117,21 @@ class ELF
 
 	def c_set_default_entrypoint
 		return if @header.entry
-		if @sections.find { |s| s.encoded and s.encoded.export['main'] }
-			@header.entry = 'main'
+		if @sections.find { |s| s.encoded and s.encoded.export['_start'] }
+			@header.entry = '_start'
+		elsif @sections.find { |s| s.encoded and s.encoded.export['main'] }
+			# entrypoint stack: [sp] = argc, [sp+1] = argv0, [sp+1] = argv1, [sp+argc] = 0, [sp+argc+1] = envp0, etc
+			cp = @cpu.new_cparser
+			cp.parse <<EOS
+__stdcall int main(int, char **, char **);
+void _exit(int);
+void _start(char *argv0) {
+	_exit(main(*(int*)(&argv0-1), &argv0, &argv0 + *(int*)(&argv0-1) + 1 ));
+}
+EOS
+			parse(@cpu.new_ccompiler(cp, self).compile)
+			assemble
+			@header.entry = '_start'
 		end
 	end
 end
