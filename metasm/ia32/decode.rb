@@ -157,10 +157,6 @@ module Metasm
 			end
 		}
 
-		if field_val[:s] == 1
-			imm32s = true
-		end
-
 		if field_val[:w] == 0
 			opsz = 8
 		elsif di.instruction.prefix[:opsz]
@@ -187,9 +183,7 @@ module Metasm
 
 			when :farptr: Farptr.decode edata, @endianness, adsz
 			when :i8, :u8, :u16: Expression[edata.decode_imm(a, @endianness)]
-			when :i:
-				t = imm32s ? :i8 : "i#{opsz}".to_sym
-				Expression[edata.decode_imm(t, @endianness)]
+			when :i: Expression[edata.decode_imm("i#{opsz}".to_sym, @endianness)]
 
 			when :mrm_imm:  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, di.instruction.prefix[:seg]
 			when :modrm, :modrmA: ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), di.instruction.prefix[:seg]

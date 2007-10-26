@@ -672,47 +672,53 @@ class Ia32
 		argprops = (op.props.keys - @valid_props) + (op.args - @valid_args) + (op.fields.keys - @fields_mask.keys)
 		raise "Invalid opcode customisation: #{name}: #{argprops.inspect}" unless argprops.empty?
 		
-		if df = op.fields.delete(:d)
-			# hardcode the bit for the 2 versions
-			dop = Opcode.new op.name
-			dop.bin = op.bin.dup
-			[:fields, :props, :args].each { |f| dop.send(f).replace op.send(f) }
-
-			# bit == 0 => args reversed
-			dop.args.reverse!
-			@opcode_list << dop
-
-			# bit == 1 => args normal
-			op.bin[df[0]] |= 1 << df[1]
-
-		elsif op.args.include? :regfp0
-			dop = Opcode.new op.name
-			dop.bin = op.bin.dup
-			[:fields, :props, :args].each { |f| dop.send(f).replace op.send(f) }
-			dop.args.delete :regfp0
-			@opcode_list << dop
-		end
-		@opcode_list << op
-
-		if s_field = op.fields[:s]
-			# add explicit choice versions, with lower precedence (so that disassembling will return the general version)
-			# eg "jmp", "jmp.i8", "jmp.i"
-			op8 = Opcode.new op.name + '.i8'
-			op8.bin = op.bin.dup
-			[:fields, :props, :args].each { |f| op8.send(f).replace op.send(f) }
-			op8.fields.delete :s
-			op8.bin[s_field[0]] |= 1 << s_field[1]		# bin value of flag == 1
-			op8.args.map! { |arg| arg == :i ? :i8 : arg }	# arg type == :i8
-			@opcode_list << op8
-
-			op32 = Opcode.new op.name + '.i'
-			op32.bin = op.bin.dup
-			[:fields, :props, :args].each { |f| op32.send(f).replace op.send(f) }
-			op32.fields.delete :s
-			# bin value of flag == 0, arg type == :i
-			@opcode_list << op32
-		end
+		addop_post(op)
 	end
 
+	# this recursive method is in charge of Opcode duplication (eg to hardcode some flag)
+	def addop_post(op)
+		dupe = proc { |o|
+			dop = Opcode.new o.name.dup
+			dop.bin, dop.fields, dop.props, dop.args = o.bin.dup, o.fields.dup, o.props.dup, o.args.dup
+			dop
+		}
+		if df = op.fields.delete(:d)
+			# hardcode the bit
+			dop = dupe[op]
+			dop.args.reverse!
+			addop_post dop
+
+			op.bin[df[0]] |= 1 << df[1]
+			addop_post op
+
+			return
+		elsif sf = op.fields.delete(:s)
+			# add explicit choice versions, with lower precedence (so that disassembling will return the general version)
+			# eg "jmp", "jmp.i8", "jmp.i"
+			# also hardcode the bit
+			op32 = op
+			addop_post op32
+
+			op8 = dupe[op]
+			op8.bin[sf[0]] |= 1 << sf[1]
+			op8.args.map! { |arg| arg == :i ? :i8 : arg }
+			addop_post op8
+
+			op32 = dupe[op32]
+			op32.name << '.i'
+			addop_post op32
+
+			op8 = dupe[op8]
+			op8.name << '.i8'
+			addop_post op8
+
+			return
+		elsif op.args.include? :regfp0
+			dop = dupe[op]
+			dop.args.delete :regfp0
+			addop_post dop
+		end
+		@opcode_list << op
+	end
 end
 end

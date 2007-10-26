@@ -153,7 +153,6 @@ class Ia32
 
 	# returns all forms of the encoding of instruction i using opcode op
 	# program may be used to create a new label for relative jump/call
-	# TODO hardcode :s in @opcode_list
 	def encode_instr_op(program, i, op)
 		base      = op.bin.pack('C*')
 		oi        = op.args.zip(i.args)
@@ -174,7 +173,7 @@ class Ia32
 		}.pack 'C*'
 		pfx << op.props[:needpfx].pack('C*') if op.props[:needpfx]
 
-		# opsize override / :s :w fields
+		# opsize override (:w field)
 		if op.name == 'movsx' or op.name == 'movzx'
 			case [i.args[0].sz, i.args[1].sz]
 			when [32, 16]
@@ -191,25 +190,11 @@ class Ia32
 
 		else
 			opsz = nil
-			imm32s = false
-			mayimm32s = false
 			oi.each { |oa, ia|
 				case oa
 				when :reg, :reg_eax, :modrm, :modrmA, :mrm_imm
 					raise EncodeError, "Incompatible arg size in #{i}" if (ia.sz and opsz and opsz != ia.sz) or (ia.sz == 8 and not op.fields[:w])
 					opsz = ia.sz
-				when :i
-					if op.fields[:s] and opsz != 8
-						case Expression.in_range?(ia, :i8)
-						when true
-							imm32s = true 
-							set_field[base, :s, 1]
-						when false
-							imm32s = false
-						when nil
-							mayimm32s = true
-						end
-					end
 				end
 			}
 			pfx << 0x66 if (opsz and ((opsz == 16 and @size == 32) or (opsz == 32 and @size == 16))) or (op.props[:opsz] and op.props[:opsz] != @size)
@@ -256,7 +241,7 @@ class Ia32
 
 		# convert label name for jmp/call/loop to relative offset
 		if op.props[:setip] and op.name[0, 3] != 'ret' and i.args.first.kind_of? Expression
-			postlabel = program.new_label('jmp_offset')
+			postlabel = program.new_label(op.name)
 			target = postponed.first[1]
 			target = target.rexpr if target.kind_of? Expression and target.op == :+ and not target.lexpr
 			postponed.first[1] = Expression[target, :-, postlabel]
@@ -265,51 +250,47 @@ class Ia32
 		#
 		# append other arguments
 		#
-		ret = [EncodedData.new(pfx + base)]
-		if mayimm32s
-			set_field[base, :s, 1]
-			imm32sret = [EncodedData.new(pfx+base)]
-		end
+		ret = EncodedData.new(pfx + base)
 
 		postponed.each { |oa, ia|
 			case oa
-			when :farptr
-				(ret+imm32sret.to_a).each { |e| e << ia.encode(@endianness, "a#{adsz}".to_sym) }
+			when :farptr: ed = ia.encode(@endianness, "a#{adsz}".to_sym)
 			when :modrm, :modrmA, :modrmmmx, :modrmxmm
-				if ia.class == ModRM
-					mrm = ia.encode(regval, @endianness)
-					[ret, imm32sret].each { |ary|
-						next if not ary
-						if mrm.length > 1
-							first_row = ary.map { |e| e.dup }		# cartesian product
-							ary.clear
-							mrm.each { |m|
-								first_row.each { |e|
-									ary << (e.dup << m)
-								}
+				if ia.kind_of? ModRM
+					ed = ia.encode(regval, @endianness)
+					if ed.kind_of?(::Array)
+						if ed.length > 1
+							# we know that no opcode can have more than 1 modrm
+							ary = []
+							ed.each { |m|
+								ary << (ret.dup << m)
 							}
+							ret = ary
+							next
 						else
-							ary.each { |e| e << mrm.first }
+							ed = ed.first
 						end
-					}
+					end
 				else
-					(ret+imm32sret.to_a).each { |e| e << ModRM.encode_reg(ia, regval) }
+					ed = ModRM.encode_reg(ia, regval)
 				end
-			when :mrm_imm
-				(ret+imm32sret.to_a).each { |e| e << ia.imm.encode("a#{adsz}".to_sym, @endianness) }
-			when :i8, :u8, :u16
-				(ret+imm32sret.to_a).each { |e| e << ia.encode(oa, @endianness) }
-			when :i
-				ret.each { |e| e << ia.encode((imm32s ? :i8 : "a#{opsz}".to_sym), @endianness) }
-				imm32sret.each { |e| e << ia.encode(:i8, @endianness) } if imm32sret
+			when :mrm_imm: ed = ia.imm.encode("a#{adsz}".to_sym, @endianness)
+			when :i8, :u8, :u16: ed = ia.encode(oa, @endianness)
+			when :i: ed = ia.encode("a#{opsz}".to_sym, @endianness)
+			else raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"
+			end
+
+			if ret.kind_of?(::Array)
+				ret.each { |e| e << ed }
 			else
-				raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"
+				ret << ed
 			end
 		}
 
-		(ret + imm32sret.to_a).each { |e| e.export[postlabel] = e.virtsize } if postlabel
+		# we know that no opcode with setip accept both modrm and immediate arg, so ret is not an ::Array
+		ret.export[postlabel] = ret.virtsize if postlabel
 
-		ret + imm32sret.to_a
+		ret
 	end
 end
 end
