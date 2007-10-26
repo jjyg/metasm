@@ -69,7 +69,7 @@ toto:
 .pad
 tutu:
 db '0'
-.offset 12
+.offset toto+11
 EOS
 		assert_equal(12, e.virtsize)
 		assert_equal(11, e.export['tutu'])

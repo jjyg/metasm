@@ -18,10 +18,10 @@ post_pad:
 
 toto:
 .offset 24 + ((3-12) >> 8)	; we are now at 24 bytes from the beginning of the shellcode (inc ebx)
-				; .offset accepts an arbitrary expression, but unresolved variables are not allowed
+				; .offset accepts an arbitrary expression
 mov eax, [ebx + ((kikoo<<1) - 4*lol)]	; all immediate value can be an arbitrary arithmetic/logic expression
 
-.padto 38, db 3 dup(0b0110_0110)	; fill space till byte 30 with the specified data structure (same as .pad + .offset)
+.padto toto+38, db 3 dup(0b0110_0110)	; fill space with the specified data structure until 38 bytes after toto (same as .pad + .offset)
 
 inc eax
 
@@ -44,6 +44,6 @@ newdata = 'somestring'
 edata.patch 'pre_pad', 'post_pad', newdata		# replace the (beginning of the) segment beetween the labels by a string
 #edata.patch 'pre_pad', 'post_pad', 'waaaaaaaaaay tooooooooooooooooooooooooooooooooooooooooo big !!!!'	# raise an error
 
-edata.fixup 'kikoo' => 8, 'lol' => '42'	# fixup the immediate value
+edata.fixup 'kikoo' => 8, 'lol' => 42	# fixup the immediate values
 
 p edata.data # show the resulting raw string

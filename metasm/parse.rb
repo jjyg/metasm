@@ -405,14 +405,12 @@ class ExeFormat
 			@cursource << Padding.new(fillwith, tok.backtrace.dup)
 
 		when '.offset'
-			e = Expression.parse(@lexer).reduce
-			raise tok, 'need immediate offset value' unless e.kind_of? Integer
+			e = Expression.parse(@lexer)
 			raise tok, 'syntax error' if ntok = @lexer.nexttok and ntok.type != :eol
 			@cursource << Offset.new(e, tok.backtrace.dup)
 
 		when '.padto'
-			e = Expression.parse(@lexer).reduce
-			raise self, 'need immediate alignment size' unless e.kind_of? Integer
+			e = Expression.parse(@lexer)
 			@lexer.skip_space
 			if ntok = @lexer.readtok and ntok.type == :punct and ntok.raw == ','
 				@lexer.skip_space

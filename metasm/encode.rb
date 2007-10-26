@@ -21,7 +21,7 @@ class ExeFormat
 			when Label: ary.last.export[e.name] = ary.last.virtsize
 			when Data:  ary.last << e.encode(cpu.endianness)
 			when Align, Padding:
-				e.fillwith = e.fillwith.encode(cpu.endianness) if e.fillwith
+				e.fillwith = e.fillwith.encode(cpu.endianness) if e.fillwith and not e.fillwith.kind_of? EncodedData
 				ary << e << EncodedData.new
 			when Offset: ary << e << EncodedData.new
 			when Instruction:
@@ -47,7 +47,7 @@ class ExeFormat
 	# chose among multiple possible sub-EncodedData
 	# assumes all ambiguous edata have the equivallent relocations in the same order
 	def assemble_resolve(ary)
-		startlabel = new_label
+		startlabel = new_label('section_start')
 
 		# create two bindings where all elements are the shortest/longest possible
 		minbinding = {}
@@ -83,19 +83,32 @@ class ExeFormat
 				# find the surrounding Offsets and compute the largest/shortest edata sizes to determine min/max length for the padding
 				prevoff = ary[0..ary.index(elem)].grep(Offset).last
 				nextoff = ary[ary.index(elem)..-1].grep(Offset).first
-				raise EncodeError, 'need .offset after .pad' if not nextoff
+				raise elem, 'need .offset after .pad' if not nextoff
 
+				# find all elements between the surrounding Offsets
 				previdx = prevoff ? ary.index(prevoff) + 1 : 0
 				surround = ary[previdx..ary.index(nextoff)-1]
 				surround.delete elem
 				if surround.find { |nelem| nelem.kind_of? Padding }
-					raise EncodeError, 'need .offset beetween two .pad'
+					raise elem, 'need .offset beetween two .pad'
 				end
 				if surround.find { |nelem| nelem.kind_of? Align and ary.index(nelem) > ary.index(elem) }
-					raise EncodeError, 'cannot .align after a .pad'
+					raise elem, 'cannot .align after a .pad'	# XXX really ?
 				end
 
-				lenmin = lenmax = nextoff.val - (prevoff ? prevoff.val : 0)
+				# lenmin/lenmax are the extrem length of the Padding
+				nxt = Expression[nextoff.val]
+				ext = nxt.externals
+				raise elem, "bad offset #{nxt}" if ext.length > 1 or (ext.length == 1 and not minbinding[ext.first])
+				nxt = Expression[nxt, :-, startlabel] if not nxt.bind(minbinding).reduce.kind_of? ::Integer
+				prv = Expression[prevoff ? prevoff.val : 0]
+				ext = prv.externals
+				raise elem, "bad offset #{prv}" if ext.length > 1 or (ext.length == 1 and not minbinding[ext.first])
+				prv = Expression[prv, :-, startlabel] if not prv.bind(minbinding).reduce.kind_of? ::Integer
+
+				lenmin = Expression[nxt.bind(minbinding), :-, prv.bind(maxbinding)].reduce
+				lenmax = Expression[nxt.bind(maxbinding), :-, prv.bind(minbinding)].reduce
+				raise elem, "bad labels: #{lenmin}" if not lenmin.kind_of? ::Integer or not lenmax.kind_of? ::Integer
 				surround.each { |nelem|
 					case nelem
 					when Array
@@ -109,9 +122,9 @@ class ExeFormat
 						lenmax -= 0
 					end
 				}
-				raise EncodeError, "no room for .pad before '.offset #{nextoff.val}' at #{Backtrace::backtrace_str(nextoff.backtrace)}, need at least #{-lenmax} more bytes" if lenmax < 0
-				minoff += lenmin
-				maxoff += [lenmax, 0].max
+				raise elem, "no room for .pad before '.offset #{nextoff.val}' at #{Backtrace.backtrace_str(nextoff.backtrace)}, need at least #{-lenmax} more bytes" if lenmax < 0
+				minoff += [lenmin, 0].max
+				maxoff += lenmax
 
 			when Offset
 				# nothing to do for now
@@ -230,13 +243,14 @@ class ExeFormat
 			when Align
 				fillwith[EncodedData.align_size(edata.virtsize, elem.val), elem.fillwith]
 			when Offset
-				raise EncodeError, "could not enforce .offset #{elem.val} #{elem.backtrace}: offset now #{edata.virtsize}" if edata.virtsize != elem.val
+				raise EncodeError, "could not enforce .offset #{elem.val} #{elem.backtrace}: offset now #{edata.virtsize}" if edata.virtsize != Expression[elem.val].bind(edata.binding(0)).reduce
 			when Padding
 				nextoff = ary[ary.index(elem)..-1].grep(Offset).first
-				targetsize = nextoff.val
+				targetsize = Expression[nextoff.val].bind(edata.binding(0)).reduce
 				ary[ary.index(elem)+1..ary.index(nextoff)-1].each { |nelem| targetsize -= nelem.virtsize }
-				raise EncodeError, "no room for .pad before .offset #{nextoff.val} at #{Backtrace.backtrace_str(elem.backtrace)}: would be #{targetsize} bytes long" if targetsize < 0
+				raise EncodeError, "no room for .pad #{elem.backtrace_str} before .offset #{nextoff.val}, would be #{targetsize-edata.length} bytes long" if targetsize < edata.length
 				fillwith[targetsize, elem.fillwith]
+			else raise "Internal error: #{elem.inspect}"
 			end
 		}
 

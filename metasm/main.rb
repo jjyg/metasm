@@ -123,6 +123,10 @@ module Backtrace
 		end
 		bt
 	end
+
+	def exception(msg='syntax error')
+		ParseError.new "at #{backtrace_str}: #{msg}"
+	end
 end
 
 # an instruction: opcode name + arguments
