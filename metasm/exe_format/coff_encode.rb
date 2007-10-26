@@ -386,22 +386,18 @@ class COFF
 		csum -= coff.decode_half(oldcs)
 
 		# checksum header
-		while coff.encoded.ptr < coff.optheader.headers_size
-			csum += coff.decode_half
-			csum = (csum & 0xffff) + (csum >> 16) if (csum >> 16) 
-		end
+		raw = coff.encoded.read(coff.optheader.headers_size)
 		flen += coff.optheader.headers_size
 
 		coff.sections.each { |s|
 			coff.encoded.ptr = coff.rva_to_off(s.virtaddr)
-			off_end = coff.encoded.ptr + s.rawsize
-			while coff.encoded.ptr < off_end
-				csum += coff.decode_half
-				csum = (csum & 0xffff) + (csum >> 16) if (csum >> 16) > 0
-			end
+			raw << coff.encoded.read(s.rawsize)
 			flen += s.rawsize
 		}
-
+		raw.unpack(endianness == :little ? 'v*' : 'n*').each { |s|
+			csum += s
+			csum = (csum & 0xffff) + (csum >> 16) if (csum >> 16) > 0
+		}
 		csum + flen
 	end
 
