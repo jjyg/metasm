@@ -662,7 +662,7 @@ class EncodedData
 	def << other
 		case other
 		when nil
-		when Fixnum
+		when ::Fixnum
 			fill
 			@data << other
 			@virtsize += 1
@@ -675,6 +675,7 @@ class EncodedData
 			end
 			@virtsize += other.virtsize
 		else
+			fill
 			if @data.empty?: @data = other.dup
 			else @data << other
 			end
@@ -727,7 +728,7 @@ class EncodedData
 			val = len
 			len = nil
 		end
-		if not len and from.kind_of? Range
+		if not len and from.kind_of? ::Range
 			b = from.begin
 			e = from.end
 			b = @export[b] if @export[b]
@@ -738,29 +739,48 @@ class EncodedData
 			len += 1 if not from.exclude_end?
 			from = b
 		end
-		from = @export[from] if @export[from]
+		from = @export.fetch(from, from)
+		raise "invalid offset #{from}" if not from.kind_of? ::Integer
 		from = from + @virtsize if from < 0
 
 		if not len
-			val = val.chr
+			val = val.chr if val.kind_of? ::Integer
 			len = val.length
+		end
+		raise "invalid slice length #{len}" if not len.kind_of? ::Integer or len < 0
+
+		if from >= @virtsize
+			len = 0
+		elsif from+len > @virtsize
+			len = @virtsize-from
 		end
 
 		val = EncodedData.new << val
 
-		# remove overwritten
+		# remove overwritten metadata
 		@export.delete_if { |name, off| off > from and off < from + len }
 		@reloc.delete_if { |off, rel| off - rel.length > from and off < from + len }
-		# shift after insert
-		if val.virtsize != len
-			diff = val.virtsize - len
+		# shrink/grow
+		if val.length != len
+			diff = val.length - len
 			@export.keys.each { |name| @export[name] = @export[name] + diff if @export[name] > from }
-			@reloc.keys.each  { |off| @reloc[off+diff] = @reloc.delete(off) if off > from }
-			@virtsize += diff
+			@reloc.keys.each { |off| @reloc[off + diff] = @reloc.delete(off) if off > from }
+			if @virtsize >= from+len
+				@virtsize += diff
+			end
 		end
-		# replace
-		fill(from) if not val.data.empty?
-		@data[from, len] = val.data
+
+		@virtsize = from + val.length if @virtsize < from + val.length
+
+		if from + len < @data.length	# patch real data
+			val.fill
+			@data[from, len] = val.data
+		elsif not val.data.empty?	# patch end of real data
+			@data << (0.chr*(from-@data.length)) if @data.length < from
+			@data[from..-1] = val.data
+		else				# patch end of real data with fully virtual
+			@data = @data[0, from]
+		end
 		val.export.each { |name, off| @export[name] = from + off }
 		val.reloc.each { |off, rel| @reloc[from + off] = rel }
 	end
