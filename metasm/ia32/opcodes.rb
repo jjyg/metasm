@@ -537,6 +537,7 @@ class Ia32
 		end
 	end
 
+	alias init_latest init_vmx
 
 	private
 

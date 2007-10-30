@@ -114,10 +114,10 @@ class Ia32 < CPU
 		end
 	end
 
-	def initialize(family = :vmx, mode = 32)
+	def initialize(family = :latest, size = 32)
 		super()
 		@endianness = :little
-		@size = mode
+		@size = size
 		send "init_#{family}"
 	end
 
