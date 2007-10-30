@@ -228,6 +228,9 @@ class AOut < ExeFormat
 		# data must be 4096-aligned
 		# 32 bytes of header included in .text
 		@text.virtsize = (@text.virtsize + 32 + 4096 - 1) / 4096 * 4096 - 32
+		if @data.rawsize % 4096 != 0
+			@data[(@data.rawsize + 4096 - 1) / 4096 * 4096 - 1] = 0
+		end
 
 		@header.text = @text.length+32
 		@header.data = @data.rawsize
