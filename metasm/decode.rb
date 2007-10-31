@@ -9,10 +9,12 @@ require 'metasm/main'
 
 module Metasm
 
-# XXX highly experimental
-
 class DecodedInstruction
 	attr_accessor :bin_length, :instruction, :opcode, :comment
+	def initialize(cpu)
+		@instruction = Instruction.new cpu
+		@bin_length = 0
+	end
 end
 
 class Opcode
@@ -20,23 +22,33 @@ class Opcode
 end
 
 class CPU
-	# takes an encoded instruction, returns a DecodedInstruction
-	# if decoding fails, either di.opcode or di.instruction will be nil (depending on when the decoding problem occurs)
-	def decode_instruction(program, edata, off)
+	# takes an encoded instruction, returns a DecodedInstruction (or nil if no opcode matches)
+	def decode_instruction_simple(edata)
 		@bin_lookaside ||= build_bin_lookaside
-		di = DecodedInstruction.new
-		di.instruction = Instruction.new self
-		di.bin_length = 0
-		begin
-			decode_findopcode(program, edata, di)
-		rescue InvalidInstruction
-			di.opcode = nil
-		end
-		begin
-			decode_instr_op(program, edata, di, off) if di.opcode
-		rescue InvalidInstruction
-			di.instruction = nil
-		end
+		di = decode_findopcode edata
+		decode_instr_op(edata, di) if di
+	end
+
+	# decodes the instruction at edata.ptr, mapped at virtual address off, interprets arguments (jump target, etc)
+	# returns a DecodedInstruction or nil
+	def decode_instruction(program, edata, off)
+		di = decode_instruction_simple(edata)
+		decode_instr_interpret(program, off, edata, di) if di
+	end
+
+	# returns a new DecodeInstruction, with its opcode corresponding to the encoded instruction at edata.ptr
+	def decode_findopcode(edata)
+		DecodedInstruction.new self
+	end
+
+	# defines di.instruction by decoding arguments at edata.ptr (di.opcode defined by decode_findopcode)
+	# returns di or nil on error
+	def decode_instr_op(edata, di)
+	end
+
+	# may modify di.instruction.args for eg jump offset => label name
+	# returns di or nil
+	def decode_instr_interpret(program, off, edata, di)
 		di
 	end
 
@@ -207,13 +219,14 @@ class ExeFormat
 
 			# mark this address as already decoded
 			@decoded[off] = curblock
-			@block[curblock].list << di
 
 			# invalid opcode: stop following flow
-			if not di.opcode or not di.instruction
+			if not di
 				curblock = nil
 				next
 			end
+
+			@block[curblock].list << di
 #puts "decoded at #{'%08x' % off} #{di.instruction}"
 
 			# jump/call
@@ -249,6 +262,8 @@ class ExeFormat
 				offsets << [off + di.bin_length, off]
 			end
 		end
+
+		self
 	end
 
 	# split the block (starting at oldaddr) at newaddr

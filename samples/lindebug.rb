@@ -277,11 +277,11 @@ class LinDebug
 			text << ('%04X' % @rs.regs_cache['cs']) << ':'
 			text << ('%08X' % addr)
 			di = @rs.mnemonic_di(addr)
-			di.opcode = nil if di.opcode and addr < @rs.regs_cache['eip'] and addr+di.bin_length > @rs.regs_cache['eip']
-			len = (di.opcode ? di.bin_length : 1)
+			di = nil if di and addr < @rs.regs_cache['eip'] and addr+di.bin_length > @rs.regs_cache['eip']
+			len = (di ? di.bin_length : 1)
 			text << '  '
 			text << @rs[addr, [len, 10].min].unpack('C*').map { |c| '%02X' % c }.join.ljust(22)
-			if di.opcode
+			if di
 				text <<
 				if addr == @rs.regs_cache['eip']
 					"*#{di.instruction}".ljust(@console_width-37)

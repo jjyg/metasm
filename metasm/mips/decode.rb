@@ -34,19 +34,17 @@ class MIPS
 		lookaside
 	end
 
-	def decode_findopcode(program, edata, di)
+	def decode_findopcode(edata)
 		# TODO relocations !!
-		oldptr = edata.ptr
+		di = DecodedInstruction.new(self)
 		val = edata.decode_imm(:u32, @endianness)
-		edata.ptr = oldptr
-		if not di.opcode = @bin_lookaside[val >> 24].find { |op|
+		edata.ptr -= 4
+		di if di.opcode = @bin_lookaside[val >> 24].find { |op|
 			(op.bin & op.bin_mask) == (val & op.bin_mask)
 		}
-			raise InvalidInstruction, "unknown opcode #{val.to_s 16}"
-		end
 	end
 
-	def decode_instr_op(program, edata, di, off)
+	def decode_instr_op(edata, di)
 		# TODO relocations !!
 		before_ptr = edata.ptr
 		op = di.opcode
@@ -79,11 +77,26 @@ class MIPS
 		}
 		di.bin_length += edata.ptr - before_ptr
 
-		if op.props[:setip] and op.name[0] != ?t and di.instruction.args.last.kind_of? Expression
-			delta = di.instruction.args.last.reduce << 2
-			tg = off + di.bin_length + delta
-			di.instruction.args[-1] = Expression[program.label_at_addr(tg, 'xref_%08x' % tg)]
+		di
+	end
+
+	# converts relative branch offsets to absolute addresses
+	# if the jump is into edata, create a new label
+	# else just add the offset +off+ of the instruction + its length (off may be an Expression)
+	# assumes edata.ptr points just after the instruction (as decode_instr_op left it)
+	# do not call twice on the same di !
+	def decode_instr_interpret(program, off, edata, di)
+		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.opcode.name[0] != ?t
+			delta = Expression[di.instruction.args.last, :<<, 2].reduce
+			if delta.kind_of? ::Integer and edata.ptr + delta <= edata.length and edata.ptr + delta >= 0
+				arg = program.label_at(edata, edata.ptr+delta, 'loc_%08x' % (edata.ptr+delta))
+			else
+				arg = Expression[[off, :+, di.bin_length], :+, delta].reduce
+			end
+			di.instruction.args[-1] = Expression[arg]
 		end
+
+		di
 	end
 
 	def emu_backtrace(di, off, value)

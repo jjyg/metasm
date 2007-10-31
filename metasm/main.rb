@@ -12,8 +12,6 @@ VERSION = 0x0001	# major major minor minor
 class Exception < RuntimeError ; end
 # parse error
 class ParseError < Exception ; end
-# invalid binary sequence
-class InvalidInstruction < Exception ; end
 # invalid exeformat signature
 class InvalidExeFormat < Exception ; end
 # cannot honor .offset specification, reloc fixup overflow
@@ -257,22 +255,6 @@ class ExeFormat
 			edata.export[l = new_label(base)] = offset
 		end
 		l
-	end
-
-	# creates a label at the specified address, return the address if not in handled space
-	def label_at_addr(addr, basename='')
-		each_section { |edata, base|
-			if addr >= base and addr < base + edata.length
-				if not l = edata.export.index(addr - base)
-					l = new_label basename
-					edata.export[l] = addr - base
-				end
-				return l
-			end
-		}
-		addr
-	end
-	def each_section
 	end
 
 	# creates a new label, that is guaranteed to be unique as long as this object (ExeFormat) exists

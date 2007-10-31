@@ -93,7 +93,7 @@ module Metasm
 		lookaside
 	end
 
-	def decode_prefix(program, instr, byte)
+	def decode_prefix(instr, byte)
 		# XXX check multiple occurences ?
 		(instr.prefix[:list] ||= []) << byte
 
@@ -113,17 +113,18 @@ module Metasm
 			
 			instr.prefix[:jmphint] = ((byte & 0x10) == 0x10)	
 		else
-			raise InvalidInstruction, "unknown opcode byte #{byte}"
+			return false
 		end
+		true
 	end
 
-	def decode_findopcode(program, edata, di)
-		# tries to find the opcode encoded at edata.ptr
-		# tries to match a prefix if no match, updates di.instruction.prefix
-		# on match, edata.ptr points to the first byte of the opcode (after prefixes)
-		loop do
-			break if edata.ptr >= edata.data.length
-			return if di.opcode = @bin_lookaside[edata.data[edata.ptr]].find { |op|
+	# tries to find the opcode encoded at edata.ptr
+	# if no match, tries to match a prefix (update di.instruction.prefix)
+	# on match, edata.ptr points to the first byte of the opcode (after prefixes)
+	def decode_findopcode(edata)
+		di = DecodedInstruction.new self
+		while edata.ptr < edata.data.length
+			return di if di.opcode = @bin_lookaside[edata.data[edata.ptr]].find { |op|
 				# fetch the relevant bytes from edata
 				bseq = edata.data[edata.ptr, op.bin.length].unpack('C*')
 
@@ -135,21 +136,22 @@ module Metasm
 				  (fld = op.fields[:seg2A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg2A] == 1) or
 				  (fld = op.fields[:seg3A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg3A] < 4) or
 				  (fld = op.fields[:modrmA] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
-				  (sz  = op.props[:opsz]    and ((di.instruction.prefix[:opsz] and @size != 48-sz) or (not di.instruction.prefix[:opsz] and @size != sz))) or
+				  (sz  = op.props[:opsz]    and ((di.instruction.prefix[:opsz] and @size != 48-sz) or
+					(not di.instruction.prefix[:opsz] and @size != sz))) or
 				  (pfx = op.props[:needpfx] and not (di.instruction.prefix[:list] || []).include? pfx)
 				 )
 			}
 
-			decode_prefix(program, di.instruction, edata.get_byte)
+			break if not decode_prefix(di.instruction, edata.get_byte)
 			di.bin_length += 1
 		end
 	end
 
-	def decode_instr_op(program, edata, di, off)
+	def decode_instr_op(edata, di)
 		before_ptr = edata.ptr
 		op = di.opcode
 		di.instruction.opname = op.name
-		bseq = op.bin.inject([]) { |ar, bin| ar << edata.get_byte.to_i }
+		bseq = edata.read(op.bin.length).unpack('C*')		# decode_findopcode ensures that data >= op.length
 
 		field_val = proc { |f|
 			if fld = op.fields[f]
@@ -215,15 +217,6 @@ module Metasm
 			end
 		end
 
-		if op.props[:setip] and op.name[0, 3] != 'ret' and di.instruction.args.first.kind_of? Expression
-			case tg = Expression[off + di.bin_length, :+, di.instruction.args.first].reduce
-			when ::Integer
-				di.instruction.args[0] = Expression[program.label_at_addr(tg, 'xref_%08x' % tg)]
-			else
-				di.instruction.args[0] = tg
-			end
-		end
-
 		di.instruction.prefix.delete :opsz
 		di.instruction.prefix.delete :adsz
 		di.instruction.prefix.delete :seg
@@ -239,6 +232,27 @@ module Metasm
 				di.instruction.prefix[:rep] = 'repz'
 			end
 		end
+
+		di
+	end
+
+	# converts relative jump/call offsets to absolute addresses
+	# if the jump is into edata, create a new label
+	# else just add the offset +off+ of the instruction + its length (off may be an Expression)
+	# assumes edata.ptr points just after the instruction (as decode_instr_op left it)
+	# do not call twice on the same di !
+	def decode_instr_interpret(program, off, edata, di)
+		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.instruction.opname[0, 3] != 'ret'
+			delta = di.instruction.args.last.reduce
+			if delta.kind_of? ::Integer and edata.ptr + delta <= edata.length and edata.ptr + delta >= 0
+				arg = program.label_at(edata, edata.ptr+delta, 'loc_%08x' % (edata.ptr+delta))
+			else
+				arg = Expression[[off, :+, di.bin_length], :+,delta].reduce
+			end
+			di.instruction.args[-1] = Expression[arg]
+		end
+
+		di
 	end
 
 	def emu_backtrace(di, off, value)
