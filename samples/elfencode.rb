@@ -36,9 +36,9 @@ fmt db "Hello, %s !\n", 0
  ret
 
 metasm_intern_geteip:
- call asonht
-asonht:
+ call 1f
+1:
  pop eax
- add eax, metasm_intern_geteip - asonht
+ add eax, metasm_intern_geteip - 1b
  ret
 
