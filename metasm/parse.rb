@@ -117,12 +117,10 @@ class AsmPreprocessor < Preprocessor
 					raise @name if not etok = lexer.readtok
 					lexer.unreadtok etok
 					raise @name if not v = Expression.parse(lexer)
-					if v.op != :+ or v.lexpr or not v.rexpr.kind_of? String
-						etok = etok.dup
-						etok.type = :string
-						etok.value = v
-						etok.raw = v.to_s
-					end
+					etok = etok.dup
+					etok.type = :string
+					etok.value = v
+					etok.raw = v.to_s
 					args << etok
 					lexer.skip_space_eol
 					raise @name if not tok = lexer.readtok or tok.type != :punct or (tok.raw != ')' and tok.raw != ',')
@@ -225,7 +223,7 @@ class AsmPreprocessor < Preprocessor
 
 		# aggregate space/eol
 		if tok and (tok.type == :space or tok.type == :eol)
-			if ntok = readtok and ntok.type == :space
+			if ntok = readtok(true) and ntok.type == :space
 				tok = tok.dup
 				tok.raw << ntok.raw
 			elsif ntok and ntok.type == :eol
@@ -257,12 +255,10 @@ class AsmPreprocessor < Preprocessor
 						raise nntok if not etok = readtok
 						unreadtok etok
 						raise nntok if not v = Expression.parse(self)
-						if v.op != :+ or v.lexpr or not v.rexpr.kind_of? String
-							etok = etok.dup
-							etok.type = :string
-							etok.value = v
-							etok.raw = v.to_s
-						end
+						etok = etok.dup
+						etok.type = :string
+						etok.value = v
+						etok.raw = v.to_s
 						m.body << etok
 					end
 					@macro[tok.raw] = m
@@ -330,8 +326,9 @@ class ExeFormat
 				lasteol = false
 			when :string
 				ntok = nntok = nil
-				if lasteol and ((ntok = @lexer.readtok and ntok.type == :punct and ntok.raw == ':') or (nntok = @lexer.nexttok and ntok.type == :space and nntok.type == :string and Data::DataSpec.include?(nntok.raw)))
-					if ntok.type == :punct and ntok.raw == ':' and tok.raw =~ /^[1-9][0-9]*$/
+				if lasteol and ((ntok = @lexer.readtok and ntok.type == :punct and ntok.raw == ':') or
+						(ntok.type == :space and nntok = @lexer.nexttok and nntok.type == :string and Data::DataSpec.include?(nntok.raw)))
+					if tok.raw =~ /^[1-9][0-9]*$/
 						# handle anonymous local labels
 						lname = @locallabels_bkw[tok.raw] = @locallabels_fwd.delete(tok.raw) || new_label('local_'+tok.raw)
 					else
@@ -369,7 +366,7 @@ class ExeFormat
 		case tok.raw.downcase
 		when '.align'
 			e = Expression.parse(@lexer).reduce
-			raise self, 'need immediate alignment size' unless e.kind_of? Integer
+			raise self, 'need immediate alignment size' unless e.kind_of? ::Integer
 			@lexer.skip_space
 			if ntok = @lexer.readtok and ntok.type == :punct and ntok.raw == ','
 				@lexer.skip_space_eol
@@ -463,7 +460,7 @@ class ExeFormat
 			raise tok, 'invalid data' if not i = Expression.parse(@lexer)
 			@lexer.skip_space
 			if ntok = @lexer.readtok and ntok.type == :string and ntok.raw.downcase == 'dup'
-				raise ntok, 'need immediate count expression' unless (count = i.reduce).kind_of? Integer
+				raise ntok, 'need immediate count expression' unless (count = i.reduce).kind_of? ::Integer
 				raise ntok, 'syntax error, ( expected' if not ntok = @lexer.readtok or ntok.type != :punct or ntok.raw != '('
 				content = []
 				loop do
