@@ -57,13 +57,14 @@ class COFF
 			@ldrflags   = coff.decode_word
 			@numrva     = coff.decode_word
 
+			nrva = @numrva
 			if @numrva > DIRECTORIES.length
-				puts "W: COFF: Invalid directories count #{@numrva}"
-				return self
+				puts "W: COFF: Invalid directories count #{@numrva}" if $VERBOSE
+				nrva = DIRECTORIES.length
 			end
 
 			coff.directory = {}
-			DIRECTORIES[0, @numrva].each { |dir|
+			DIRECTORIES[0, nrva].each { |dir|
 				rva = coff.decode_word
 				sz  = coff.decode_word
 				if rva != 0 or sz != 0
@@ -252,7 +253,7 @@ class COFF
 			@relocs = []
 			len = coff.decode_word
 			if len < 8 or len % 2 != 0
-				puts "W: COFF: Invalid relocation table length #{len}"
+				puts "W: COFF: Invalid relocation table length #{len}" if $VERBOSE
 				return
 			end
 			len -= 8
@@ -423,7 +424,9 @@ class COFF
 	# marks entrypoint and directories as encoded.export
 	def decode_header
 		@header.decode(self)
+		optoff = @encoded.ptr
 		@optheader.decode(self)
+		@encoded.ptr = optoff + @header.size_opthdr
 		@header.num_sect.times {
 			s = Section.new
 			s.decode self
@@ -489,7 +492,7 @@ class COFF
 			# interpret as EncodedData relocations
 			relocfunc = ('decode_reloc_' << @header.machine.downcase).to_sym
 			if not respond_to? relocfunc
-				puts "W: COFF: unsupported relocs for architecture #{@header.machine}"
+				puts "W: COFF: unsupported relocs for architecture #{@header.machine}" if $VERBOSE
 				return
 			end
 			@relocations.each { |rt|
@@ -517,7 +520,7 @@ class COFF
 			if off = rva_to_off(addr)
 				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%x' % addr)], type, @endianness)
 			end
-		else puts "W: COFF: Unsupported i386 relocation #{r.inspect}"
+		else puts "W: COFF: Unsupported i386 relocation #{r.inspect}" if $VERBOSE
 		end
 	end
 
