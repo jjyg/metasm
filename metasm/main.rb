@@ -88,6 +88,8 @@ class Opcode
 	attr_accessor :fields
 	# hash of opcode generic properties/restrictions (mostly property => true/false)
 	attr_accessor :props
+	# binary mask for decoding
+	attr_accessor :bin_mask
 
 	def initialize(name)
 		@name = name
@@ -433,6 +435,8 @@ class Expression
 		elsif l.kind_of?(Numeric) and l != 0 and @op == :'||'
 			1
 
+		elsif @op == :^
+			0 if l == r
 		elsif @op == :-
 			if not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
 				if r.op == :- # no lexpr (reduced)

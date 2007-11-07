@@ -81,6 +81,9 @@ class Ia32 < CPU
 			   16 => %w{ ax  cx  dx  bx  sp  bp  si  di},
 			   32 => %w{eax ecx edx ebx esp ebp esi edi}
 			  #64 => %w{rax rcx rdx rbx rsp rbp rsi rdi}
+
+		Sym = @i_to_s[32].map { |s| s.to_sym }
+		def symbolic ; Sym[@val] end
 	end
 	
 	class Farptr < Argument
@@ -110,7 +113,18 @@ class Ia32 < CPU
 		attr_accessor :s, :i, :b, :imm
 	
 		def initialize(adsz, sz, s, i, b, imm, seg = nil)
-			@adsz, @sz, @s, @i, @b, @imm, @seg = adsz, sz, s, i, b, imm, seg
+			@adsz, @sz = adsz, sz
+			@s, @i = s, i if i
+			@b = b if b
+			@imm = imm if imm
+			@seg = seg if seg
+		end
+
+		def symbolic
+			p = Expression[@s, :*, @i.symbolic] if @i
+			p = Expression[p, :+, @b.symbolic] if @b
+			p = Expression[p, :+, @imm] if @imm
+			Indirection.new(p, "u#@sz".to_sym)
 		end
 	end
 
