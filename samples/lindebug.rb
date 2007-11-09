@@ -112,7 +112,7 @@ class ExprParser < Metasm::Expression
 	def self.parse_value(lex)
 		nil while tok = lex.readtok and tok.type == :space
 		lex.unreadtok tok
-		if tok.type == :punct and tok.raw == '['
+		if tok and tok.type == :punct and tok.raw == '['
 			tt = tok.dup
 			tt.type = :string
 			tt.raw = 'dword'
@@ -370,6 +370,24 @@ class LinDebug
 		update rescue nil
 	end
 
+	def mem_binding(expr)
+		b = @rs.regs_cache.dup
+		ext = expr.externals
+		ext.map! { |exte| exte.kind_of?(Indirect) ? exte.ptr.externals : exte }.flatten! while not ext.grep(Indirect).empty?
+		(ext - @rs.regs_cache.keys).each { |ex|
+			if not s = @rs.symbols.index(ex)
+				log "unknown value #{ex}"
+				return {}
+			end
+			b[ex] = s
+			if @rs.symbols.values.grep(ex).length > 1
+				raise "multiple definitions found for #{ex}"
+			end
+		}
+		b['tracer_memory'] = @rs
+		b
+	end
+
 	def exec_prompt
 		@log_off = 0
 		log ':'+@promptbuf
@@ -386,21 +404,7 @@ class LinDebug
 				log 'syntax error'
 				return
 			end
-			binding = @rs.regs_cache.dup
-			ext = e.externals
-			ext.map! { |exte| exte.kind_of?(Indirect) ? exte.ptr.externals : exte }.flatten! while not ext.grep(Indirect).empty?
-			(ext - @rs.regs_cache.keys).each { |ex|
-				if not s = @rs.symbols.index(ex)
-					log "unknown value #{ex}"
-					return
-				end
-				binding[ex] = s
-				if @rs.symbols.values.grep(ex).length > 1
-					raise "multiple definitions found for #{ex}"
-				end
-			}
-			binding['tracer_memory'] = @rs
-			e.bind(binding).reduce
+			e.bind(mem_binding(e)).reduce
 		}
 
 		cmd = lex.readtok
@@ -434,6 +438,11 @@ class LinDebug
 				@codeptr = addrs[-(@win_code_height-4)]
 			end
 		end
+		updatedataptr
+	end
+
+	def updatedataptr
+		@dataptr = @watch.bind(mem_binding(@watch)).reduce if @watch
 	end
 
 	def singlestep
@@ -726,6 +735,7 @@ class LinDebug
 			}
 		}
 		@command['resize'] = proc { |lex, int| resize }
+		@command['watch'] = proc { |lex, int| @watch = ExprParser.parse(lex) ; updatedataptr }
 		@command['wd'] = proc { |lex, int|
 			@focus = :data
 			if tok = lex.readtok
