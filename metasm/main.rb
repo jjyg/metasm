@@ -436,9 +436,26 @@ class Expression
 			1
 
 		elsif @op == :^
-			0 if l == r
+			if l == :unknown or r == :unknown: :unknown
+			elsif l == 0: r
+			elsif r == 0: l
+			elsif l == r: 0
+			end
+		elsif @op == :&
+			0 if l == 0 or r == 0
+		elsif @op == :|
+			if    l == 0: r
+			elsif r == 0: l
+			elsif l == -1 or r == -1: -1
+			end
+		elsif @op == :*
+			if    l == 0 or r == 0: 0
+			elsif l == 1: r
+			elsif r == 1: l
+			end
 		elsif @op == :-
-			if not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
+			if l == :unknown or r == :unknown: :unknown
+			elsif not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
 				if r.op == :- # no lexpr (reduced)
 					# -(-x) => x
 					r.rexpr
@@ -451,7 +468,8 @@ class Expression
 				Expression[l, :+, [:-, r]].reduce_rec
 			end
 		elsif @op == :+
-			if not l: r	# +x  => x
+			if l == :unknown or r == unknown: :unknown
+			elsif not l: r	# +x  => x
 			elsif r == 0: l	# x+0 => x
 			elsif l.kind_of? Numeric
 				if r.kind_of? Expression and r.op == :+
@@ -489,8 +507,16 @@ class Expression
 				simplifier[r]
 			end
 		end
-		# no dup if no new value
-		v.nil? ? ((r == @rexpr and l == @lexpr) ? self : Expression[l, @op, r]) : v
+
+		case v
+		when nil
+			# no dup if no new value
+			(r == :unknown or l == :unknown) ? :unknown :
+			((r == @rexpr and l == @lexpr) ? self : Expression[l, @op, r])
+		when Expression
+			(v.lexpr == :unknown or v.rexpr == :unknown) ? :unknown : v
+		else v
+		end
 	end
 
 	# returns the array of non-numeric members of the expression
@@ -616,7 +642,7 @@ class EncodedData
 		if not base
 			key = @export.keys.sort_by { |k| @export[k] }.first
 			return {} if not key
-			base = Expression[key, :-, @export[key]]
+			base = (@export[key] == 0 ? key : Expression[key, :-, @export[key]])
 		end
 		@export.inject({}) { |binding, (n, o)| binding.update n => Expression[base, :+, o] }
 	end
