@@ -327,7 +327,7 @@ class ExeFormat
 			when :string
 				ntok = nntok = nil
 				if lasteol and ((ntok = @lexer.readtok and ntok.type == :punct and ntok.raw == ':') or
-						(ntok.type == :space and nntok = @lexer.nexttok and nntok.type == :string and Data::DataSpec.include?(nntok.raw)))
+						(ntok and ntok.type == :space and nntok = @lexer.nexttok and nntok.type == :string and Data::DataSpec.include?(nntok.raw)))
 					if tok.raw =~ /^[1-9][0-9]*$/
 						# handle anonymous local labels
 						lname = @locallabels_bkw[tok.raw] = @locallabels_fwd.delete(tok.raw) || new_label('local_'+tok.raw)

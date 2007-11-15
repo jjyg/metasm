@@ -347,19 +347,15 @@ class Expression
 		l, r = @lexpr, @rexpr
 		if l.respond_to? :bind
 			l = l.bind(binding)
-		else
-			if binding.has_key? l
-				raise "Do not want to bind #{l.inspect}" if l.kind_of? Numeric
-				l = binding[l]
-			end
+		elsif l and binding[l]
+			raise "internal error - bound #{l.inspect}" if l.kind_of? ::Numeric
+			l = binding[l]
 		end
 		if r.respond_to? :bind
 			r = r.bind(binding)
-		else
-			if binding.has_key? r
-				raise "Do not want to bind #{r.inspect}" if r.kind_of? Numeric
-				r = binding[r]
-			end
+		elsif r and binding[r]
+			raise "internal error - bound #{r.inspect}" if r.kind_of? ::Numeric
+			r = binding[r]
 		end
 		Expression[l, @op, r]
 	end
@@ -369,13 +365,13 @@ class Expression
 	def bind!(binding = {})
 		if @lexpr.kind_of?(Expression)
 			@lexpr.bind!(binding)
-		else
-			@lexpr = binding.fetch(@lexpr, @lexpr)
+		elsif @lexpr
+			@lexpr = binding[@lexpr] || @lexpr
 		end
 		if @rexpr.kind_of?(Expression)
 			@rexpr.bind!(binding)
-		else
-			@rexpr = binding.fetch(@rexpr, @rexpr)
+		elsif @rexpr
+			@rexpr = binding[@rexpr] || @rexpr
 		end
 		self
 	end
@@ -468,7 +464,7 @@ class Expression
 				Expression[l, :+, [:-, r]].reduce_rec
 			end
 		elsif @op == :+
-			if l == :unknown or r == unknown: :unknown
+			if l == :unknown or r == :unknown: :unknown
 			elsif not l: r	# +x  => x
 			elsif r == 0: l	# x+0 => x
 			elsif l.kind_of? Numeric
@@ -751,7 +747,7 @@ class EncodedData
 			len += 1 if not from.exclude_end?
 			from = b
 		end
-		from = @export.fetch(from, from)
+		from = @export[from] || from
 		raise "invalid offset #{from}" if not from.kind_of? ::Integer
 		from = from + @virtsize if from < 0
 
@@ -802,9 +798,9 @@ class EncodedData
 	# content is a String or an EncodedData, which will be inserted in the specified location (padded if necessary)
 	# raise if the string does not fit in.
 	def patch(from, to, content)
-		from = @export.fetch(from, from)
+		from = @export[from] || from
 		raise "invalid offset specification #{from}" if not from.kind_of? Integer
-		to = @export.fetch(to, to)
+		to = @export[to] || to
 		raise "invalid offset specification #{to}" if not to.kind_of? Integer
 		raise EncodeError, 'cannot patch data: new content too long' if to - from < content.length
 		self[from, content.length] = content
