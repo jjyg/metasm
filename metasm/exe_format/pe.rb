@@ -201,6 +201,20 @@ EOS
 			@optheader.entrypoint = 'main'
 		end
 	end
+
+	# handles writes to fs:[0] -> decode SEH handler
+	def get_xrefs_x(dasm, di)
+		if @header.machine == 'I386' and a = di.instruction.args.first and a.kind_of? Ia32::ModRM and a.seg and a.seg.val == 4 and
+				w = get_xrefs_rw(dasm, di).find { |type, ptr, len| type == :w and ptr.externals.include? 'segment_base_fs' } and
+				dasm.backtrace(Expression[w[1], :-, 'segment_base_fs'], di) == [0]
+			sehptr = w[1]
+			sehptr = Indirection.new(Expression[Indirection.new(sehptr, @cpu.size/8), :+, @cpu.size/8], @cpu.size/8)
+puts "seh: x #{di.instruction} for #{sehptr}"
+			super + dasm.backtrace(sehptr, di, true, false, di.address, :x)
+		else
+			super
+		end
+	end
 end
 
 # an instance of a PE file, loaded in memory

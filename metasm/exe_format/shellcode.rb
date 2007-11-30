@@ -78,18 +78,13 @@ class Shellcode < ExeFormat
 	def self.disassemble(cpu, str, eip=0)
 		sc = decode(str, cpu)
 		sc.disassemble(eip)
-		sc
-	end
-
-	alias to_s blocks_to_src
-	def dasm_dump_section_header(edata, baseaddr)
-		''
 	end
 
 	def compile_setsection(src, section)
 	end
 
-	def set_entrypoint(ep)
+	def dump_section_header(addr, edata)
+		''
 	end
 end
 end

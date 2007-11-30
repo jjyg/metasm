@@ -768,5 +768,5 @@ if $0 == __FILE__
 	rescue LoadError
 	end
 
-	LinDebug.new(Rubstop.new(ARGV.shift)).main_loop
+	LinDebug.new(Rubstop.new(ARGV.join(' '))).main_loop
 end

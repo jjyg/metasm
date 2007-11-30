@@ -92,6 +92,14 @@ class ExeFormat
 	def c_set_default_entrypoint
 	end
 
+	def disassemble(*entrypoints)
+		if not defined? @disassembler
+			@disassembler = Disassembler.new(self)
+			each_section { |edata, base| @disassembler.add_section edata, base }
+		end
+		@disassembler.disassemble(*entrypoints)
+	end
+
 	# encodes the executable as a string, checks that all relocations are
 	# resolved, and returns the raw string version
 	def encode_string(*a)

@@ -5,11 +5,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-require 'metasm/ia32/parse'
-require 'metasm/ia32/encode'
-require 'metasm/ia32/decode'
-require 'metasm/ia32/render'
-require 'metasm/exe_format/shellcode'
+require 'metasm'
 
 class String
 	@@cpu = Metasm::Ia32.new
@@ -36,18 +32,17 @@ class String
 	end
 
 	# decodes the current string as a Shellcode, with specified base address
-	# returns the resulting Shellcode
+	# returns the resulting Disassembler
 	def decode_blocks(base_addr=0, eip=base_addr)
 		sc = Metasm::Shellcode.decode(self, @@cpu)
 		sc.base_addr = base_addr
 		sc.disassemble(eip)
-		sc
 	end
 
 	# decodes the current string as a Shellcode, with specified base address
 	# returns the asm source equivallent
 	def decode(base_addr=0, eip=base_addr)
-		decode_blocks(base_addr, eip).blocks_to_src
+		decode_blocks(base_addr, eip).to_s
 	end
 end
 

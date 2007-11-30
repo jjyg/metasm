@@ -65,18 +65,10 @@ class Expression
 			end
 			e
 		}
-		if not l and @op == :+
-			[r]
-		else
-			['(', l, @op, r, ')'].compact
-		end
-	end
-end
-
-class Indirection
-	include Renderable
-	def render
-		[@type.inspect, ' ptr [', @target, ']']
+		l = ['(', l, ')'] if l.kind_of? Expression and (l.lexpr or l.op != :+)
+		r = ['(', r, ')'] if r.kind_of? Expression and (r.lexpr or r.op != :+)
+		op = @op if l or @op != :+
+		[l, op, r].compact
 	end
 end
 end

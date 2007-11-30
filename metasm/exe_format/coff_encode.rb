@@ -709,7 +709,7 @@ class COFF
 				@encoded[p, id.iat.virtsize] = id.iat
 				binding.update id.iat.binding(baseaddr + id.iat_p)
 			end
-		}
+		} if @imports
 
 		@encoded.fill
 		@encoded.fixup! binding

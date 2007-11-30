@@ -159,7 +159,7 @@ class Rubstop < Metasm::PTrace32
 
 	def mnemonic_di(addr = eip)
 		@pgm.encoded.ptr = addr
-		di = @pgm.cpu.decode_instruction(@pgm, @pgm.encoded, addr)
+		di = @pgm.cpu.decode_instruction(@pgm.encoded, addr)
 		@curinstr = di if addr == @regs_cache['eip']
 		di
 	end

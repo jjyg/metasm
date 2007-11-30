@@ -44,20 +44,18 @@ class Ia32
 #			if not instr or not instr.args.grep(Reg).find {|a| a.sz == @sz}
 			r << ( qualifier(@sz) << ' ptr ' )
 #			end
-			r << @seg << ':' if @seg
+			r << @seg << ':' if seg
 
 			e = nil
-			e = Expression[e, :+, (@s == 1 ? @i : [@s, :*, @i])] if @s
-			e = Expression[e, :+, @b] if @b
-			e = Expression[e, :+, @imm] if @imm
+			e = Expression[e, :+, (@s == 1 ? @i : [@s, :*, @i])] if s
+			e = Expression[e, :+, @b] if b
+			e = Expression[e, :+, @imm] if imm
 			r << '[' << e << ']'
 		end
 
 		def context
-			return @direct.context if @direct
-
-			{'set targetsz' => proc {|s| @sz = s},
-			 'set seg' => proc {|s| @seg = Seg.new s}
+			{'set targetsz' => proc { |s| @sz = s },
+			 'set seg' => proc { |s| @seg = Seg.new s }
 			}
 		end
 	end

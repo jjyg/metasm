@@ -237,124 +237,141 @@ module Metasm
 	end
 
 	# converts relative jump/call offsets to absolute addresses
-	# if the jump is into edata, create a new label
-	# else just add the offset +off+ of the instruction + its length (off may be an Expression)
-	# assumes edata.ptr points just after the instruction (as decode_instr_op left it)
+	# adds the eip delta to the offset +off+ of the instruction (may be an Expression) + its bin_length
 	# do not call twice on the same di !
-	def decode_instr_interpret(program, off, edata, di)
+	def decode_instr_interpret(di, addr)
 		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.instruction.opname[0, 3] != 'ret'
 			delta = di.instruction.args.last.reduce
-			if delta.kind_of? ::Integer and edata.ptr + delta <= edata.length and edata.ptr + delta >= 0
-				arg = program.label_at(edata, edata.ptr+delta, 'loc_%08x' % (edata.ptr+delta))
-			else
-				arg = Expression[[off, :+, di.bin_length], :+,delta].reduce
-			end
+			arg = Expression[[addr, :+, di.bin_length], :+, delta].reduce
 			di.instruction.args[-1] = Expression[arg]
 		end
 
 		di
 	end
 
-	def emu_backtrace(di, off, value)
-		symify = proc { |tg|
-			case tg
-			when ModRM
-				e = nil
-				e = Expression[e, :+, tg.b.to_s.to_sym] if tg.b
-				e = Expression[e, :+, tg.s == 1 ? tg.i.to_s.to_sym : [tg.s, :*, tg.i.to_s.to_sym]] if tg.i
-				e = Expression[e, :+, tg.imm] if tg.imm
-				Indirection.new(e, "u#{tg.sz || @size}".to_sym)
-			when Reg
-				tg.to_s.to_sym
-			else
-				tg
+	def backtrace_binding(di)
+		a = di.instruction.args.map { |arg|
+			case arg
+			when ModRM, Reg: arg.symbolic
+			else arg
 			end
 		}
 
-		a = di.instruction.args.map { |arg| symify[arg] }
-		type = "u#@size".to_sym
-
 		case op = di.opcode.name
-		when 'mov', 'movsx', 'movzx'
-			value.bind a[0] => Expression[a[1]]
-		when 'lea'
-			value.bind a[0] => a[1].target
-		when 'xchg'
-			value.bind a[0] => Expression[a[1]], a[1] => Expression[a[0]]
+		when 'mov', 'movsx', 'movzx': { a[0] => Expression[a[1]] }
+		when 'lea': { a[0] => a[1].target }
+		when 'xchg': { a[0] => Expression[a[1]], a[1] => Expression[a[0]] }
 		when 'add', 'sub', 'or', 'xor', 'and'
-			op = {'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^}[op]
-			value.bind a[0] => Expression[a[0], op, a[1]]
-		when 'inc', 'dec', 'not'
-			op = {'inc' => [:+, 1], 'dec' => [:-, 1], 'not' => [:^, -1] }[op]
-			value.bind a[0] => Expression[a[0], *op]
-		when 'neg'
-			value.bind a[0] => Expression[:-, a[0]]
-		when 'rol', 'ror', 'rcl', 'rcr', 'sar', 'shl', 'sal'
-			# XXX
-			value.bind a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), a[1]]
+			op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^ }[op]
+			ret = Expression[a[0], op, a[1]]
+			# optimises :eax ^ :eax => 0, avoids unnecessary r/w xrefs
+			# avoid hiding memory accesses (may cause an exception)
+			ret = Expression[ret.reduce] if not a[0].kind_of? Indirection
+			{ a[0] => ret }
+		when 'inc': { a[0] => Expression[a[0], :+, 1] }
+		when 'dec': { a[0] => Expression[a[0], :-, 1] }
+		when 'not': { a[0] => Expression[a[0], :^, (1 << (di.instruction.args.first.sz || @size)) - 1] }
+		when 'neg': { a[0] => Expression[:-, a[0]] }
+		when 'rol', 'ror', 'rcl', 'rcr': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), a[1]] } # XXX
+		when 'sar', 'shl', 'sal': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), a[1]] }
 		when 'push'
-			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => Expression[a[0]]
+			# XXX order operations ? (eg push esp)
+			{ :esp => Expression[:esp, :-, @size/8],
+			  Indirection.new(Expression[:esp], @size/8) => Expression[a[0]] }
 		when 'pop'
-			# in this order ! (pop esp => esp = [esp])
-			# +4 ?
-			value.bind :esp => Expression[:esp, :+, @size/8], a[0] => Indirection.new(Expression[:esp], type)
+			{ :esp => Expression[:esp, :+, @size/8],
+			  a[0] => Indirection.new(Expression[:esp], @size/8) }
 		when 'call'
-			value.bind :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], type) => Expression[off+di.bin_length]
-		when 'ret'
-			value.bind :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]]
-		when 'stosd', 'stosb', 'stosw'
+			eoff = Expression[di.block.address, :+, di.block_offset + di.bin_length]
+			{ :esp => Expression[:esp, :-, @size/8],
+			  Indirection.new(Expression[:esp], @size/8) => Expression[eoff.reduce] }
+		when 'ret': { :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]] }
+		when 'stosd', 'stosw', 'stosb'
 			if di.instruction.prefix[:rep]
-				value.bind :edi => :undef
+				# XXX backtrace ecx ?
+				{ :edi => Expression[:unknown], :ecx => Expression[:unknown] }
 			else
-				sz = {?b => 1, ?w => 2, ?d => 4}[op[-1]]
-				value.bind Indirection.new(Expression[:edi], "u#{sz*8}".to_sym) => Expression[:eax], :edi => Expression[:edi, :+, sz]
+				sz = { ?b => 1, ?w => 2, ?d => 4 }[op[-1]]
+				{ Indirection.new(Expression[:edi], "u#{sz*8}".to_sym) => Expression[:eax], :edi => Expression[:edi, :+, sz] }
 			end
-		when 'sbb', 'adc'
-			value.bind a[0] => :undef
-		when 'aaa'
-			value.bind :eax => :undef
+		when 'loop': { :ecx => Expression[:ecx, :-, 1] }
+		when 'enter'
+			depth = a[1].reduce % 32
+			b = { Indirection.new(Expression[:esp], @size/8) => Expression[:ebp], :ebp => Expression[:esp, :-, @size/8],
+					:esp => Expression[:esp, :-, a[0].reduce + ((@size/8) * depth)] }
+			(1..depth).each { |i| # XXX test me !
+				b[Indirection.new(Expression[:esp, :-, i*@size/8], @size/8)] = Indirection.new(Expression[:ebp, :-, i*@size/8], @size/8) }
+			b
+		when 'leave': { :ebp => Indirection.new(Expression[:ebp], @size/8), :esp => Expression[:ebp, :+, @size/8] }
+		when 'aaa': { :eax => Expression[:unknown] }
 		else
-			if %[jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle nop cmp test].include? op	# etc etc
-				value
+			if %[nop cmp test jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle].include? op	# etc etc
+				# XXX eflags !
+				{}
 			else
 				puts "unhandled instruction to backtrace: #{di.instruction}" if $VERBOSE
-				value
+				# assume nothing except the arg list is modified
+				(a.grep(Indirection) + a.grep(::Symbol)).inject({}) { |h, s| h.update s => Expression[:unknown] }
 			end
 		end
 
 	end
 
-	# XXX temporary hack
-	def emu_backtrace_external(di, off, value, offsets, abi)
-		# XXX handle :undef (so that :undef - :undef => :undef)
-		# XXX handle function ptrs in args => offsets, eg CreateThread (need a standalone backtrace) XXX CreateRemoteThread ?
-		if libfuncname = abi.grep(::String).first and defined?(StackOffsets)
-			stackoff = StackOffsets[libfuncname] || 0
-		else
-			stackoff = 0
-		end
-		value.bind :eax => :undef, :ecx => :undef, :edx => :undef, :esp => Expression[:esp, :+, stackoff]
-	end
+	def get_xrefs_x(dasm, di)
+		return [] if not di.opcode.props[:setip]
 
-	def get_jump_targets(pgm, di, off)
-		if di.opcode.name == 'ret'
-			return [Indirection.new(Expression[:esp], "u#@size".to_sym)]
-		end
+		return [Indirection.new(Expression[:esp], @size/8)] if di.opcode.name == 'ret'
 
 		case tg = di.instruction.args.first
-		when ModRM
-			e = nil
-			e = Expression[e, :+, tg.b.to_s.to_sym] if tg.b
-			e = Expression[e, :+, tg.s == 1 ? tg.i.to_s.to_sym : [tg.s, :*, tg.i.to_s.to_sym]] if tg.i
-			e = Expression[e, :+, tg.imm] if tg.imm
-			[Indirection.new(e, "u#{tg.sz || @size}".to_sym)]
-		when Reg
-			[Expression[tg.to_s.to_sym]]
-		when Expression, Numeric, String
-			[tg]
-		else
+		when ModRM, Reg
+			tg.sz ||= @size if tg.kind_of? ModRM
+			[Expression[tg.symbolic]]
+		when Expression, ::Integer
+			[Expression[tg]]
+		when Farptr
+			puts "far pointer unhandled at #{di.address} #{di.instruction}" if $VERBOSE
 			[]
+		else raise "internal error: ia32 bad setip arg in #{di.instruction} #{tg.inspect}"
 		end
+	end
+
+	# checks if expr is a valid return expression matching the :saveip instruction
+	def is_function_return(di, expr)
+		expr = expr.reduce
+		expr = expr.rexpr if expr.kind_of? Expression and not expr.lexpr and expr.op == :+
+		di.opcode.props[:saveip] and expr.kind_of? Indirection and expr.len == @size/8 and expr.target == Expression[:esp]
+	end
+
+	# updates the function backtrace_binding
+	# XXX will fail if different functions share the same epilog - TODO unoptimize -> duplicate those ?
+	def update_function_backtrace(dasm, faddr, f, retaddr)
+		b = f.backtrace_binding
+		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each { |r|
+			next if b[r] == Expression[:unknown]
+			# TODO recheck
+			# include_start ?
+			# ret 42 ?
+			# ...
+			bt = dasm.backtrace(Expression[r], retaddr, true, false, nil, nil, nil, faddr)	# XXX is_subfunc
+			if bt.length != 1 or (b[r] and bt.first != b[r])
+				b[r] = Expression[:unknown]
+			else
+				b[r] = bt.first
+			end
+		}
+	end
+
+	# updates an instruction's argument replacing an expression with another (eg label renamed)
+	def replace_instr_arg_immediate(i, old, new)
+		i.args.map! { |a|
+			case a
+			when Expression: a == old ? new : Expression[a.bind(old => new).reduce]
+			when ModRM
+				a.imm = (a.imm == old ? new : Expression[a.imm.bind(old => new).reduce]) if a.imm
+				a
+			else a
+			end
+		}
 	end
 end
 end

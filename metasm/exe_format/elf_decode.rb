@@ -190,9 +190,9 @@ class ELF
 		# read sections name
 		if @header.shstrndx != 0 and str = @sections[@header.shstrndx] and str.encoded = @encoded[str.offset, str.size]
 			# LoadedElf may not have shstr mmaped
-			@sections.each { |s|
+			@sections[1..-1].each { |s|
 				s.name = readstr(str.encoded.data, s.name_p)
-				add_label("section_#{s.name}", s.addr)
+				add_label("section_#{s.name}", s.addr) if s.name and s.addr > 0
 			}
 		end
 	end
@@ -590,6 +590,25 @@ class ELF
 	def each_section
 		@segments.each { |s| yield s.encoded, s.vaddr if s.type == 'LOAD' }
 		# @sections ?
+	end
+	
+	# disassembles, sets the default value for @cpu, with no args disassembles entrypoint and exported symbols
+	def disassemble(*entrypoints)
+		if not @cpu
+			case @header.machine
+			when '386': @cpu = Ia32.new
+			else raise 'you must manually define elf.cpu'
+			end
+		end
+		
+		if entrypoints.empty?
+			entrypoints << @header.entry if @header.entry != 0
+			@symbols.each { |s|
+				entrypoints << s.value if s.shndx != 'UNDEF' and s.type == 'FUNC'
+			} if @symbols
+		end
+		
+		super(*entrypoints)
 	end
 end
 

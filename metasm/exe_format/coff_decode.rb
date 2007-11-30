@@ -567,6 +567,25 @@ class COFF
 		decode_relocs
 		decode_sections
 	end
+
+	# disassembles, sets the default value for @cpu, with no args disassembles entrypoint and exported symbols
+	def disassemble(*entrypoints)
+		if not @cpu
+			case @header.machine
+			when 'I386': @cpu = Ia32.new
+			else raise 'you must manually define pe.cpu'
+			end
+		end
+
+		if entrypoints.empty?
+			entrypoints << (@optheader.image_base + @optheader.entrypoint)
+			@export.exports.each { |e|
+				entrypoints << (@optheader.image_base + e.target) if not e.forwarder_lib
+			} if @export
+		end
+
+		super(*entrypoints)
+	end
 end
 
 class COFFArchive
