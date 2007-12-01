@@ -87,24 +87,24 @@ class Ia32
 
 			ret = EncodedData.new << (reg << 3)
 
-			if not @b and not @i
+			if not self.b and not self.i
 				ret.data[0] |= 5
 				[ret << @imm.encode(:u32, endianness)]
 
-			elsif not @b and @s != 1
+			elsif not self.b and self.s != 1
 				# sib with no b
 				raise EncodeError, "Invalid ModRM #{self}" if @i.val == 4
 				ret.data[0] |= 4
 				s = {8=>3, 4=>2, 2=>1}[@s]
-				imm = @imm || Expression[0]
+				imm = self.imm || Expression[0]
 				[ret << ((s << 6) | (@i.val << 3) | 5) << imm.encode(:a32, endianness)]
 			else
-				imm = @imm.reduce if @imm
+				imm = @imm.reduce if self.imm
 				imm = nil if imm == 0
 
-				if not @i or (not @b and @s == 1)
+				if not self.i or (not self.b and self.s == 1)
 					# no sib byte (except for [esp])
-					b = @b || @i
+					b = self.b || self.i
 
 					ret.data[0] |= b.val
 					ret << 0x24 if b.val == 4

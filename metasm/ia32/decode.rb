@@ -307,7 +307,7 @@ module Metasm
 		else
 			if %[nop cmp test jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle].include? op	# etc etc
 				# XXX eflags !
-				{}
+				b = a.inject({}) { |b, foo| b.update "dummy#{b.length}".to_sym => foo } # mark args as read (modrm)
 			else
 				puts "unhandled instruction to backtrace: #{di.instruction}" if $VERBOSE
 				# assume nothing except the arg list is modified
@@ -336,7 +336,7 @@ module Metasm
 	end
 
 	# checks if expr is a valid return expression matching the :saveip instruction
-	def is_function_return(di, expr)
+	def backtrace_is_function_return(di, expr)
 		expr = expr.reduce
 		expr = expr.rexpr if expr.kind_of? Expression and not expr.lexpr and expr.op == :+
 		di.opcode.props[:saveip] and expr.kind_of? Indirection and expr.len == @size/8 and expr.target == Expression[:esp]
@@ -344,7 +344,7 @@ module Metasm
 
 	# updates the function backtrace_binding
 	# XXX will fail if different functions share the same epilog - TODO unoptimize -> duplicate those ?
-	def update_function_backtrace(dasm, faddr, f, retaddr)
+	def backtrace_update_function_binding(dasm, faddr, f, retaddr)
 		b = f.backtrace_binding
 		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each { |r|
 			next if b[r] == Expression[:unknown]
@@ -359,6 +359,11 @@ module Metasm
 				b[r] = bt.first
 			end
 		}
+	end
+
+	# returns true if the expression is an address on the stack
+	def backtrace_is_stack_address(expr)
+		Expression[expr].externals.include? :esp
 	end
 
 	# updates an instruction's argument replacing an expression with another (eg label renamed)

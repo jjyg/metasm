@@ -32,6 +32,10 @@ class DecodedInstruction
 	def address
 		Expression[@block.address, :+, @block_offset].reduce
 	end
+
+	def to_s
+		"#{Expression[address]} #{instruction}"
+	end
 end
 
 # defines a class method attr_accessor_list to declare an attribute that may have multiple values
@@ -338,10 +342,10 @@ class CPU
 	end
 
 	# return the thing to backtrace to find +value+ before the execution of this instruction
-	# eg emu_backtrace('inc eax', Expression[:eax]) => Expression[:eax + 1]
+	# eg backtrace_emu('inc eax', Expression[:eax]) => Expression[:eax + 1]
 	#  (the value of :eax after 'inc eax' is the value of :eax before plus 1)
 	# may return Expression[:unknown]
-	def emu_backtrace(di, value)
+	def backtrace_emu(di, value)
 		value.bind(di.backtrace_binding ||= backtrace_binding(di)).reduce
 	end
 
@@ -358,12 +362,17 @@ class CPU
 
 	# checks if the expression corresponds to a function return value with the instruction
 	# (eg di == 'call something' and expr == [esp])
-	def is_function_return(di, expr)
+	def backtrace_is_function_return(di, expr)
 	end
 
 	# updates f.backtrace_binding when a new return address has been found
 	# TODO update also when anything changes inside the function (new loop found etc) - use backtracked_for ?
-	def update_function_backtrace(faddr, f, retaddr)
+	def backtrace_update_function_binding(dasm, faddr, f, retaddr)
+	end
+
+	# returns if the expression is an address on the stack
+	# (to avoid trying to backtrace its absolute address until we found function boundaries)
+	def backtrace_is_stack_address(expr)
 	end
 
 	# updates the instruction arguments: replace an expression with another (eg when a label is renamed)
@@ -517,6 +526,8 @@ class Disassembler
 		each_xref(normalize(old)) { |x|
 			@cpu.replace_instr_arg_immediate(@decoded[x.origin].instruction, old, new) if @decoded[x.origin]
 		}
+		e, l = get_section_at(old)
+		e.export[new] = e.export.delete(old) if e
 		@prog_binding[new] = @prog_binding.delete(old)
 	end
 
@@ -589,7 +600,7 @@ class Disassembler
 					expr = nil
 					break
 				end
-				expr = @cpu.emu_backtrace(di, expr)
+				expr = @cpu.backtrace_emu(di, expr)
 			}
 			if expr
 				btt = BacktraceTrace.new(expr, origin, type, len)
@@ -665,9 +676,10 @@ class Disassembler
 	# returns an array of Integer/Expression (may contain Expression[:unknown])
 	# set is_subfunc to true if the instr at start_addr is a call and this call is to be backtracked as a factorized subfunction call (block.each_subfunc)
 	# if snapshot_addr is defined, when the backtrace gets at it the current value of the expression is added to result. Must be a block start addr.
+	# if snapshot_addr is not defined, expressions that are @cpu.backtrace_is_stack_address are not backtraced
 	# if origin is defined: (it is the normalized address of the instruction that initiated the backtrace)
 	#  updates block.backtracked_for on the way
-	#  on resolution, checks cpu.is_function_return to recognise subfunctions
+	#  on resolution, checks cpu.backtrace_is_function_return to recognise subfunctions
 	#  creates Xrefs on successful resolution
 	# type is :r/:w/:x
 	# len is the length of the r/w access (xref.len)
@@ -683,7 +695,6 @@ class Disassembler
 		# updates todo to check for expr before di (will walk block.from* if di.block_offset == 0)
 		# updates block.backtracked_from{,_end} if +origin+ is defined
 		# checks path, handles loops
-		# XXX detect backtrace past entrypoint ? (eg exported function)
 		walk_up = proc { |e, di, path|
 			if di.block_offset != 0
 				prev_di = di.block.list[di.block.list.index(di)-1]
@@ -746,15 +757,15 @@ class Disassembler
 			walk_up[expr, di, {}]
 		end
 
-puts '', "backtracking #{type} #{expr} from #{@decoded[start_addr].instruction rescue addr} #{include_start}" if type == :x if $DEBUG
+puts '', "backtracking #{type} #{expr} from #{Expression[start_addr]} #{di.instruction if di}" if $DEBUG
 		# do the backtrace
 		while not todo.empty?
 			addr, expr, path, from, is_subfunc = todo.pop
 			if not di = @decoded[addr]
-				puts "backtrace: unknown addr for #{expr} at #{addr}" if $VERBOSE
+				puts "backtrace: unknown addr for #{expr} at #{Expression[addr]}" if $VERBOSE
 				result |= [Expression[:unknown]]
 			elsif path.length > 50
-				puts "backtrace: too long for #{expr} at #{addr}" if $VERBOSE
+				puts "backtrace: too long for #{expr} at #{Expression[addr]}" if $VERBOSE
 				result |= [Expression[:unknown]]
 			elsif is_subfunc
 				# backtrace using each function backtrace_binding, then backtrace the instruction
@@ -769,14 +780,25 @@ puts '', "backtracking #{type} #{expr} from #{@decoded[start_addr].instruction r
 				off = di.block_offset
 				di.block.list.reverse_each { |di|
 					next if di.block_offset > off
-					nexpr = @cpu.emu_backtrace(di, expr)
-puts "backtrace #{di.instruction} : #{expr} -> #{nexpr}" if type == :x if $DEBUG
+					if not snapshot_addr and @cpu.backtrace_is_stack_address(expr)
+puts "not backtracking stack address #{expr}" if $DEBUG
+						break
+					end
+					nexpr = @cpu.backtrace_emu(di, expr)
+puts "backtrace #{di}: #{expr} -> #{Expression[nexpr]}" if $DEBUG
 					break if backtrace_check_found(result, nexpr, di, origin, type, len, expr, from)
 					expr = nexpr
 					from = di.address
 					walk_up[expr, di, path] if di.block_offset == 0
 				}
 			end
+		end
+puts 'backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']' if $DEBUG
+
+		if result.empty? and type == :x and origin and @decoded[origin]
+			# TODO check entrypoint == function
+			@decoded[origin].comment ||= ''
+			@decoded[origin].comment << ' to unknown' if not @decoded[origin].comment.include? ' to unknown'
 		end
 
 		result
@@ -834,7 +856,7 @@ puts "backtrace #{di.instruction} : #{expr} -> #{nexpr}" if type == :x if $DEBUG
 
 			# update @addrs_todo
 			# check if we found a function return
-			if oldaddr and di and @cpu.is_function_return(di, oldexpr)
+			if oldaddr and di and @cpu.backtrace_is_function_return(di, oldexpr)
 				l = @prog_binding.index(oldaddr)
 				# new function ?
 				if not f = @function[oldaddr]
@@ -846,22 +868,24 @@ puts "backtrace #{di.instruction} : #{expr} -> #{nexpr}" if type == :x if $DEBUG
 							l = newl
 						end
 					end
-					puts "found new function #{l} at #{oldaddr}" if $VERBOSE
+					puts "found new function #{l} at #{Expression[oldaddr]}" if $VERBOSE
 				end
 				if @decoded[origin]
 					f.add_return_address origin
 					c = @decoded[origin].comment ||= ''
-					es = " end sub #{l || oldaddr}"
+					es = " endsub #{l || Expression[oldaddr]}"
 					c << es if not c.include? es
 				end
 				f.backtracked_for |= @decoded[oldaddr].block.backtracked_for.find_all { |btt| not btt.block_offset }
-				@cpu.update_function_backtrace(self, oldaddr, f, origin)
+				@cpu.backtrace_update_function_binding(self, oldaddr, f, origin)
 				# TODO rebacktrace things
 				di.block.add_to_subfuncret ee
 				di.block.add_subfunction oldaddr
 				@addrs_todo << [ee, di.address, true]
+puts "backtrace_check: addrs_todo << #{Expression[ee]} from #{di} (funcret)" if $DEBUG
 			else
 				@addrs_todo << [ee, origin]
+puts "backtrace_check: addrs_todo << #{Expression[ee]} from #{Expression[origin] if origin}" if $DEBUG
 			end
 		end
 		true

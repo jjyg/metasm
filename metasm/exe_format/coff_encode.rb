@@ -97,8 +97,10 @@ class COFF
 			@udata_size   ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_UDATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@entrypoint = Expression[@entrypoint, :-, coff.label_at(coff.encoded, 0)] if @entrypoint and not @entrypoint.kind_of?(::Integer)
 			@entrypoint   ||= 0
-			@base_of_code ||= (Expression[coff.label_at(coff.sections.find { |s| s.characteristics.include? 'CONTAINS_CODE' }.encoded, 0), :-, coff.label_at(coff.encoded, 0)] rescue 0)
-			@base_of_data ||= (Expression[coff.label_at(coff.sections.find { |s| s.characteristics.include? 'CONTAINS_DATA' }.encoded, 0), :-, coff.label_at(coff.encoded, 0)] rescue 0)
+			tmp = coff.sections.find { |s| s.characteristics.include? 'CONTAINS_CODE' }
+			@base_of_code ||= (tmp ? Expression[coff.label_at(tmp.encoded, 0), :-, coff.label_at(coff.encoded, 0)] : 0)
+			tmp = coff.sections.find { |s| s.characteristics.include? 'CONTAINS_DATA' }
+			@base_of_data ||= (tmp ? Expression[coff.label_at(tmp.encoded, 0), :-, coff.label_at(coff.encoded, 0)] : 0)
 			@image_base   ||= coff.label_at(coff.encoded, 0)
 			@file_align   ||= 0x200
 			@os_ver_maj   ||= 4

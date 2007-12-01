@@ -202,15 +202,18 @@ EOS
 		end
 	end
 
-	# handles writes to fs:[0] -> decode SEH handler
+	# handles writes to fs:[0] -> dasm SEH handler (first only, does not follow the chain)
+	# TODO seh prototype (args => context)
 	def get_xrefs_x(dasm, di)
 		if @header.machine == 'I386' and a = di.instruction.args.first and a.kind_of? Ia32::ModRM and a.seg and a.seg.val == 4 and
 				w = get_xrefs_rw(dasm, di).find { |type, ptr, len| type == :w and ptr.externals.include? 'segment_base_fs' } and
-				dasm.backtrace(Expression[w[1], :-, 'segment_base_fs'], di) == [0]
+				dasm.backtrace(Expression[w[1], :-, 'segment_base_fs'], di.address) == [0]
 			sehptr = w[1]
-			sehptr = Indirection.new(Expression[Indirection.new(sehptr, @cpu.size/8), :+, @cpu.size/8], @cpu.size/8)
-puts "seh: x #{di.instruction} for #{sehptr}"
-			super + dasm.backtrace(sehptr, di, true, false, di.address, :x)
+			sz = @cpu.size/8
+			sehptr = Indirection.new(Expression[Indirection.new(sehptr, sz), :+, sz], sz)
+			a = dasm.backtrace(sehptr, di.address, true, false, di.address, :x)
+puts "backtrace seh from #{di} => [#{a.map { |addr| Expression[addr] }.join(', ')}]" if $VERBOSE
+			a + super
 		else
 			super
 		end
