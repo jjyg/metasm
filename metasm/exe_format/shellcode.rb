@@ -86,5 +86,9 @@ class Shellcode < ExeFormat
 	def dump_section_header(addr, edata)
 		''
 	end
+
+	def get_default_entrypoints
+		[@base_addr || 0]
+	end
 end
 end

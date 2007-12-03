@@ -568,23 +568,23 @@ class COFF
 		decode_sections
 	end
 
-	# disassembles, sets the default value for @cpu, with no args disassembles entrypoint and exported symbols
-	def disassemble(*entrypoints)
-		if not @cpu
-			case @header.machine
-			when 'I386': @cpu = Ia32.new
-			else raise 'you must manually define pe.cpu'
-			end
+	# returns a metasm CPU object corresponding to +header.machine+
+	def cpu_from_headers
+		case @header.machine
+		when 'I386': Ia32.new
+		else raise 'unknown cpu'
 		end
+	end
 
-		if entrypoints.empty?
-			entrypoints << (@optheader.image_base + @optheader.entrypoint)
-			@export.exports.each { |e|
-				entrypoints << (@optheader.image_base + e.target) if not e.forwarder_lib
-			} if @export
-		end
-
-		super(*entrypoints)
+	# returns an array including the PE entrypoint and the exported functions entrypoints
+	# TODO filter out exported data, include TLS&other callbacks (safeseh ?)
+	def get_default_entrypoints
+		ep = []
+		ep << (@optheader.image_base + @optheader.entrypoint)
+		@export.exports.each { |e|
+			ep << (@optheader.image_base + e.target) if not e.forwarder_lib
+		} if @export
+		ep
 	end
 end
 

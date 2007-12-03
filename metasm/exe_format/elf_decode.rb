@@ -591,24 +591,24 @@ class ELF
 		@segments.each { |s| yield s.encoded, s.vaddr if s.type == 'LOAD' }
 		# @sections ?
 	end
-	
-	# disassembles, sets the default value for @cpu, with no args disassembles entrypoint and exported symbols
-	def disassemble(*entrypoints)
-		if not @cpu
-			case @header.machine
-			when '386': @cpu = Ia32.new
-			else raise 'you must manually define elf.cpu'
-			end
+
+	# returns a metasm CPU object corresponding to +header.machine+
+	def cpu_from_headers
+		case @header.machine
+		when '386': Ia32.new
+		else raise 'unknown cpu'
 		end
-		
-		if entrypoints.empty?
-			entrypoints << @header.entry if @header.entry != 0
-			@symbols.each { |s|
-				entrypoints << s.value if s.shndx != 'UNDEF' and s.type == 'FUNC'
-			} if @symbols
-		end
-		
-		super(*entrypoints)
+	end
+
+	# returns an array including the ELF entrypoint (if not null) and the FUNC symbols addresses
+	# TODO include init/init_array
+	def get_default_entrypoints
+		ep = []
+		ep << @header.entry if @header.entry != 0
+		@symbols.each { |s|
+			ep << s.value if s.shndx != 'UNDEF' and s.type == 'FUNC'
+		} if @symbols
+		ep
 	end
 end
 

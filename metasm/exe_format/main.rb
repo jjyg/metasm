@@ -92,12 +92,31 @@ class ExeFormat
 	def c_set_default_entrypoint
 	end
 
-	def disassemble(*entrypoints)
-		if not defined? @disassembler
+	attr_accessor :disassembler
+	# returns the exe disassembler
+	# if it does not exist, creates one, and feeds it with the exe sections
+	def init_disassembler
+		if not defined? @disassembler or not @disassembler
+			@cpu ||= cpu_from_headers
 			@disassembler = Disassembler.new(self)
 			each_section { |edata, base| @disassembler.add_section edata, base }
 		end
+		@disassembler
+	end
+
+	# disassembles the specified entrypoints
+	# initializes the disassembler if needed
+	# uses get_default_entrypoints if the argument list is empty
+	# returns the disassembler
+	def disassemble(*entrypoints)
+		init_disassembler
+		entrypoints = get_default_entrypoints if entrypoints.empty?
 		@disassembler.disassemble(*entrypoints)
+	end
+
+	# returns a list of entrypoints to disassemble (program entrypoint, exported functions...)
+	def get_default_entrypoints
+		[]
 	end
 
 	# encodes the executable as a string, checks that all relocations are

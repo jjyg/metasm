@@ -225,6 +225,8 @@ class DecodedFunction
 	end
 end
 
+# TODO special decodedfunction, eg GetProcAddress
+
 # symbolic pointer dereference
 # API similar to Expression
 class Indirection
@@ -715,7 +717,7 @@ class Disassembler
 						# XXX nested loops ?
 						if e != path[addr]
 							# TODO
-							puts "backtrace: modifying loop at #{addr}: #{e} was #{path[addr]}" if $VERBOSE
+							puts "  backtrace: modifying loop at #{addr}: #{e} was #{path[addr]}" if $VERBOSE
 						end
 					else
 						todo << [addr, e, path.merge(addr => e), di.block.address, is_subfunc]
@@ -757,19 +759,20 @@ class Disassembler
 			walk_up[expr, di, {}]
 		end
 
-puts '', "backtracking #{type} #{expr} from #{Expression[start_addr]} #{di.instruction if di}" if $DEBUG
+puts "backtracking #{type} #{expr} from #{Expression[start_addr]} #{di.instruction if di}" if $DEBUG
 		# do the backtrace
 		while not todo.empty?
 			addr, expr, path, from, is_subfunc = todo.pop
 			if not di = @decoded[addr]
-				puts "backtrace: unknown addr for #{expr} at #{Expression[addr]}" if $VERBOSE
+				puts "  backtrace: unknown addr for #{expr} at #{Expression[addr]}" if $VERBOSE
 				result |= [Expression[:unknown]]
 			elsif path.length > 50
-				puts "backtrace: too long for #{expr} at #{Expression[addr]}" if $VERBOSE
+				puts "  backtrace: too long for #{expr} at #{Expression[addr]}" if $VERBOSE
 				result |= [Expression[:unknown]]
 			elsif is_subfunc
 				# backtrace using each function backtrace_binding, then backtrace the instruction
 				# TODO mark the functions so that on a bt_binding update this could be rebacktraced
+				#      generally include ruby callbacks
 				di.block.each_subfunction { |f|
 					nexpr = expr.bind(@function[f].backtrace_binding).reduce
 					if not backtrace_check_found(result, nexpr, nil, origin, type, len, expr, from)
@@ -781,11 +784,11 @@ puts '', "backtracking #{type} #{expr} from #{Expression[start_addr]} #{di.instr
 				di.block.list.reverse_each { |di|
 					next if di.block_offset > off
 					if not snapshot_addr and @cpu.backtrace_is_stack_address(expr)
-puts "not backtracking stack address #{expr}" if $DEBUG
+puts "  not backtracking stack address #{expr}" if $DEBUG
 						break
 					end
 					nexpr = @cpu.backtrace_emu(di, expr)
-puts "backtrace #{di}: #{expr} -> #{Expression[nexpr]}" if $DEBUG
+puts "  backtrace #{di}: #{expr} -> #{Expression[nexpr]}" if $DEBUG
 					break if backtrace_check_found(result, nexpr, di, origin, type, len, expr, from)
 					expr = nexpr
 					from = di.address
@@ -793,7 +796,7 @@ puts "backtrace #{di}: #{expr} -> #{Expression[nexpr]}" if $DEBUG
 				}
 			end
 		end
-puts 'backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']' if $DEBUG
+puts '  backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']' if $DEBUG
 
 		if result.empty? and type == :x and origin and @decoded[origin]
 			# TODO check entrypoint == function
@@ -882,10 +885,10 @@ puts 'backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']' i
 				di.block.add_to_subfuncret ee
 				di.block.add_subfunction oldaddr
 				@addrs_todo << [ee, di.address, true]
-puts "backtrace_check: addrs_todo << #{Expression[ee]} from #{di} (funcret)" if $DEBUG
+puts "   backtrace_check: addrs_todo << #{Expression[ee]} from #{di} (funcret)" if $DEBUG
 			else
 				@addrs_todo << [ee, origin]
-puts "backtrace_check: addrs_todo << #{Expression[ee]} from #{Expression[origin] if origin}" if $DEBUG
+puts "   backtrace_check: addrs_todo << #{Expression[ee]} from #{Expression[origin] if origin}" if $DEBUG
 			end
 		end
 		true
@@ -901,19 +904,6 @@ puts "backtrace_check: addrs_todo << #{Expression[ee]} from #{Expression[origin]
 			when ::Symbol: x != :unknown
 			when ::String: not @prog_binding[x]
 			end
-		}
-	end
-
-	# updates di.block.backtracked_for[:r] and di.block.from.backtracked_for[:end_r]
-	def update_backtracked_for(type, block, origin, expr, len)
-		bf = block.backtracked_for
-		bf[type] ||= []
-		bf[type] |= [[origin, expr, len].compact]
-		block.from.each { |from|
-			next if not di = @decoded[from]
-			bf = di.block.backtracked_for_end
-			bf[type] ||= []
-			bf[type] |= [[di.block_offset, origin, expr, len].compact]
 		}
 	end
 
@@ -966,7 +956,7 @@ puts "backtrace_check: addrs_todo << #{Expression[ee]} from #{Expression[origin]
 	# dumps one line only
 	# stops on end of edata/@decoded/@xref
 	# returns the next offset to display
-	# TODO array-style access
+	# TODO array-style data access
 	def dump_data(addr, edata, off, &b)
 		l = ''
 		l << @prog_binding.index(addr).to_s
@@ -1041,7 +1031,7 @@ puts "backtrace_check: addrs_todo << #{Expression[ee]} from #{Expression[origin]
 					value.unpack('C*').map { |c| Expression[c] }
 				end
 			else
-				value
+				Expression[value]
 			end
 		}.flatten
 
