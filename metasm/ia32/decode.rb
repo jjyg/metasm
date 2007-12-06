@@ -252,7 +252,8 @@ module Metasm
 	def backtrace_binding(di)
 		a = di.instruction.args.map { |arg|
 			case arg
-			when ModRM, Reg: arg.symbolic
+			when ModRM: arg.symbolic(di.address)
+			when Reg: arg.symbolic
 			else arg
 			end
 		}
@@ -277,14 +278,14 @@ module Metasm
 		when 'push'
 			# XXX order operations ? (eg push esp)
 			{ :esp => Expression[:esp, :-, @size/8],
-			  Indirection.new(Expression[:esp], @size/8) => Expression[a[0]] }
+			  Indirection.new(Expression[:esp], @size/8, nil) => Expression[a[0]] }
 		when 'pop'
 			{ :esp => Expression[:esp, :+, @size/8],
-			  a[0] => Indirection.new(Expression[:esp], @size/8) }
+			  a[0] => Indirection.new(Expression[:esp], @size/8, di.address) }
 		when 'call'
 			eoff = Expression[di.block.address, :+, di.block_offset + di.bin_length]
 			{ :esp => Expression[:esp, :-, @size/8],
-			  Indirection.new(Expression[:esp], @size/8) => Expression[eoff.reduce] }
+			  Indirection.new(Expression[:esp], @size/8, nil) => Expression[eoff.reduce] }
 		when 'ret': { :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]] }
 		when 'stosd', 'stosw', 'stosb'
 			if di.instruction.prefix[:rep]
@@ -292,17 +293,17 @@ module Metasm
 				{ :edi => Expression[:unknown], :ecx => Expression[:unknown] }
 			else
 				sz = { ?b => 1, ?w => 2, ?d => 4 }[op[-1]]
-				{ Indirection.new(Expression[:edi], "u#{sz*8}".to_sym) => Expression[:eax], :edi => Expression[:edi, :+, sz] }
+				{ Indirection.new(Expression[:edi], "u#{sz*8}".to_sym, nil) => Expression[:eax], :edi => Expression[:edi, :+, sz] }
 			end
 		when 'loop': { :ecx => Expression[:ecx, :-, 1] }
 		when 'enter'
 			depth = a[1].reduce % 32
-			b = { Indirection.new(Expression[:esp], @size/8) => Expression[:ebp], :ebp => Expression[:esp, :-, @size/8],
+			b = { Indirection.new(Expression[:esp], @size/8, nil) => Expression[:ebp], :ebp => Expression[:esp, :-, @size/8],
 					:esp => Expression[:esp, :-, a[0].reduce + ((@size/8) * depth)] }
 			(1..depth).each { |i| # XXX test me !
-				b[Indirection.new(Expression[:esp, :-, i*@size/8], @size/8)] = Indirection.new(Expression[:ebp, :-, i*@size/8], @size/8) }
+				b[Indirection.new(Expression[:esp, :-, i*@size/8], @size/8, nil)] = Indirection.new(Expression[:ebp, :-, i*@size/8], @size/8, di.address) }
 			b
-		when 'leave': { :ebp => Indirection.new(Expression[:ebp], @size/8), :esp => Expression[:ebp, :+, @size/8] }
+		when 'leave': { :ebp => Indirection.new(Expression[:ebp], @size/8, di.address), :esp => Expression[:ebp, :+, @size/8] }
 		when 'aaa': { :eax => Expression[:unknown] }
 		else
 			if %[nop cmp test jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle].include? op	# etc etc
@@ -320,11 +321,13 @@ module Metasm
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
 
-		return [Indirection.new(Expression[:esp], @size/8)] if di.opcode.name == 'ret'
+		return [Indirection.new(Expression[:esp], @size/8, di.address)] if di.opcode.name == 'ret'
 
 		case tg = di.instruction.args.first
-		when ModRM, Reg
+		when ModRM
 			tg.sz ||= @size if tg.kind_of? ModRM
+			[Expression[tg.symbolic(di.address)]]
+		when Reg
 			[Expression[tg.symbolic]]
 		when Expression, ::Integer
 			[Expression[tg]]
@@ -336,10 +339,10 @@ module Metasm
 	end
 
 	# checks if expr is a valid return expression matching the :saveip instruction
-	def backtrace_is_function_return(di, expr)
+	def backtrace_is_function_return(expr, di=nil)
 		expr = expr.reduce
 		expr = expr.rexpr if expr.kind_of? Expression and not expr.lexpr and expr.op == :+
-		di.opcode.props[:saveip] and expr.kind_of? Indirection and expr.len == @size/8 and expr.target == Expression[:esp]
+		expr.kind_of? Indirection and expr.len == @size/8 and expr.target == Expression[:esp]
 	end
 
 	# updates the function backtrace_binding

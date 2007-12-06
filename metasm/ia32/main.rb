@@ -120,12 +120,12 @@ class Ia32 < CPU
 			@seg = seg if seg
 		end
 
-		def symbolic
+		def symbolic(orig)
 			p = Expression[@s, :*, @i.symbolic] if i
 			p = Expression[p, :+, @b.symbolic] if b
 			p = Expression[p, :+, @imm.reduce] if imm
 			p = Expression["segment_base_#@seg", :+, p] if seg
-			Indirection.new(p, @sz/8)
+			Indirection.new(p, @sz/8, orig)
 		end
 	end
 
