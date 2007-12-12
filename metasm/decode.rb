@@ -434,11 +434,24 @@ class Disassembler
 	attr_accessor :addrs_todo 
 	# number of blocks to backtrace before aborting if no result is found (defaults to class.backtrace_maxblocks, 50 by default)
 	attr_accessor :backtrace_maxblocks
+	# a cparser that parsed some C header files, prototypes are converted to DecodedFunction when jumped to
+	attr_accessor :c_parser
 
 	@@backtrace_maxblocks = 50
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
 	def self.backtrace_maxblocks=(b) ; @@backtrace_maxblocks = b ; end
 
+
+	# parses a C header file, from which function prototypes will be converted to DecodedFunction when found in the code flow
+	def parse_c_file(file)
+		parse_c File.read(file)
+	end
+
+	# parses a C string for function prototypes
+	def parse_c(str)
+		@c_parser = @cpu.new_cparser
+		@c_parser.parse(str)
+	end
 
 	# creates a new disassembler
 	def initialize(program, cpu=program.cpu)
@@ -575,6 +588,9 @@ class Disassembler
 			block = InstructionBlock.new(Expression[s[1], :+, s[0].ptr].reduce, s[0])
 			block.add_from(from, from_subfuncret) if from
 			disassemble_block(block)
+		elsif from and c_parser and addr.kind_of? Expression and addr.op == :+ and not addr.lexpr and addr.rexpr.kind_of? ::String and
+				s = c_parser.toplevel.symbol[addr.rexpr] and s.type.untypedef.kind_of? C::Function
+			bf = @function[addr.rexpr] = @cpu.decode_c_function_prototype(@c_parser, s)
 		elsif from
 			puts "not disassembling unknown address #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
 			add_xref(addr, Xref.new(:x, from))
@@ -836,6 +852,7 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 						if @function[from] and type == :x and @cpu.backtrace_is_function_return(expr) and
 							retaddr = backtrace_emu_instr(@decoded[to], expr) and not need_backtrace(retaddr)
 							@decoded[to].block.add_subfunction from
+puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{@decoded[to]} (funcret)" if $DEBUG
 							@addrs_todo << [retaddr, to, true]
 							next false
 						end
@@ -947,10 +964,6 @@ puts '  backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']'
 
 			f.backtracked_for |= @decoded[addr].block.backtracked_for.find_all { |btt| not btt.block_offset }
 			@cpu.backtrace_update_function_binding(self, addr, f, origin)
-#			di.block.add_to_subfuncret ee
-#			di.block.add_subfunction oldaddr
-#			@addrs_todo << [n, di.address, true]
-#puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{di} (funcret)" if $DEBUG
 		end
 
 		return if need_backtrace(expr)

@@ -381,5 +381,51 @@ module Metasm
 			end
 		}
 	end
+
+	# returns a DecodedFunction from a parsed C function prototype
+	# TODO walk structs args
+	def decode_c_function_prototype(cp, sym)
+		df = DecodedFunction.new
+		orig = Expression[sym.name]
+
+		new_bt = proc { |expr, rlen|
+			df.backtracked_for << BacktraceTrace.new(expr, orig, rlen ? :r : :x, rlen)
+		}
+
+		# return instr emulation
+		new_bt[Indirection.new(Expression[:esp], @size/8, orig), nil] if not sym.attributes.to_a.include? 'noreturn'
+
+		# register dirty (XXX assume standard ABI)
+		df.backtrace_binding.update :eax => Expression[:unknown], :ecx => Expression[:unknown], :edx => Expression[:unknown]
+
+		# emulate ret <n>
+		al = cp.typesize[:ptr]
+		if sym.attributes.to_a.include? 'stdcall'
+			argsz = sym.type.args.inject(0) { |sum, a| sum += (cp.sizeof(a) + al - 1) / al * al }
+			df.backtrace_binding[:esp] = Expression[:esp, :+, argsz].reduce
+		else
+			df.backtrace_binding[:esp] = Expression[:esp]
+		end
+
+		# scan args for function pointers
+		# TODO walk structs/unions..
+		stackoff = 4
+		sym.type.args.each { |a|
+			if a.type.untypedef.kind_of? C::Pointer
+				pt = a.type.untypedef.type.untypedef
+				if pt.kind_of? C::Function
+					puts " #{orig} arg #{a} funcptr at [esp+#{stackoff}]"
+					new_bt[Indirection.new(Expression[:esp, :+, stackoff], @size/8, orig), nil]
+				elsif pt.kind_of? C::Struct
+					puts " #{orig} arg #{a} dereference struct at [esp+#{stackoff}] (#{pt})"
+				else
+					new_bt[Indirection.new(Expression[:esp, :+, stackoff], cp.typesize[:ptr], orig), 1]
+				end
+			end
+			stackoff += (cp.sizeof(a) + al - 1) / al * al
+		}
+
+		df
+	end
 end
 end
