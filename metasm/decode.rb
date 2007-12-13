@@ -449,7 +449,7 @@ class Disassembler
 
 	# parses a C string for function prototypes
 	def parse_c(str)
-		@c_parser = @cpu.new_cparser
+		@c_parser ||= @cpu.new_cparser
 		@c_parser.parse(str)
 	end
 
@@ -559,12 +559,9 @@ class Disassembler
 	def disassemble(*entrypoints)
 		@addrs_todo.concat entrypoints
 		while not @addrs_todo.empty?
-#			begin
 			disassemble_step
-#			rescue
-#				puts $!, $!.backtrace if $VERBOSE
-#			end
 		end
+		detect_thunks
 		self
 	end
 
@@ -590,20 +587,20 @@ class Disassembler
 			disassemble_block(block)
 		elsif from and c_parser and addr.kind_of? Expression and addr.op == :+ and not addr.lexpr and addr.rexpr.kind_of? ::String and
 				s = c_parser.toplevel.symbol[addr.rexpr] and s.type.untypedef.kind_of? C::Function
-			bf = @function[addr.rexpr] = @cpu.decode_c_function_prototype(@c_parser, s)
+			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
 		elsif from
 			puts "not disassembling unknown address #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
 			add_xref(addr, Xref.new(:x, from))
 			add_xref(Expression[:unknown], Xref.new(:x, from))
-			bf = @function[:default]
-			di = @decoded[from]
-			di.block.add_to(:default, from_subfuncret) if di and bf
+			addr = :default if bf = @function[:default]
 		else
 			raise "unknown location to disassemble #{addr}"
 		end
 
 		bf.backtracked_for.each { |btt|
-			backtrace(btt.expr, from, true, from_subfuncret, btt.origin, btt.type, btt.len) if not btt.block_offset
+			next if btt.block_offset
+			next if backtrace_check_funcret(btt, addr, from)
+			backtrace(btt.expr, from, true, from_subfuncret, btt.origin, btt.type, btt.len)
 		} if bf
 	end
 
@@ -725,6 +722,10 @@ class Disassembler
 		# loopdetect is an array of [obj, addr, from_subfuncret] of each end of block encountered
 		todo = []
 
+		# array of [obj, blockaddr]
+		# avoids rewalking the same value
+		done = []
+
 		# updates todo with the addresses to backtrace next
 		walk_up = proc { |w_obj, w_addr, w_loopdetect|
 			if w_loopdetect.length > maxdepth
@@ -735,6 +736,8 @@ class Disassembler
 				prevdi = w_di.block.list[w_di.block.list.index(w_di)-1]
 				todo << [w_obj, prevdi.address, false, w_loopdetect]
 			elsif w_di
+				next if done.include? [w_obj, w_addr]
+				done << [w_obj, w_addr]
 				hadsomething = false
 				w_di.block.each_from { |f_addr, f_func|
 					hadsomething = true
@@ -848,14 +851,8 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 					btt = BacktraceTrace.new(expr, origin, type, len)
 					@decoded[from].block.backtracked_for |= [btt] if @decoded[from]
 					@function[from].backtracked_for |= [btt] if @function[from]
+					next false if backtrace_check_funcret(btt, from, to)
 					if @decoded[to]
-						if @function[from] and type == :x and @cpu.backtrace_is_function_return(expr) and
-							retaddr = backtrace_emu_instr(@decoded[to], expr) and not need_backtrace(retaddr)
-							@decoded[to].block.add_subfunction from
-puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{@decoded[to]} (funcret)" if $DEBUG
-							@addrs_todo << [retaddr, to, true]
-							next false
-						end
 						btt = btt.dup
 						btt.block_offset = @decoded[to].block_offset
 						btt.from_subfuncret = true if subf
@@ -873,7 +870,7 @@ oldexpr = expr
 				when :di: backtrace_emu_instr(args[0], expr)
 				when :func: f, args[0] = args[0], nil ; backtrace_emu_subfunc(f, expr)	# for check_found
 				end
-puts "  backtrace #{ev}  #{oldexpr} => #{expr}" if $DEBUG
+puts "  backtrace #{args[0] || Expression[@function.index(f)]}  #{oldexpr} => #{expr}" if $DEBUG
 				if vals = backtrace_check_found(expr, args[0], origin, type, len, maxdepth-args[1])
 					result |= vals
 					next false
@@ -889,6 +886,20 @@ puts '  backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']'
 		end
 
 		result
+	end
+
+	# checks if the BacktraceTrace is a call to a subfunction
+	# returns true and updates self.addrs_todo
+	def backtrace_check_funcret(btt, funcaddr, instraddr)
+		if di = @decoded[instraddr] and @function[funcaddr] and btt.type == :x and
+				@cpu.backtrace_is_function_return(btt.expr) and
+				retaddr = backtrace_emu_instr(di, btt.expr) and
+				not need_backtrace(retaddr)
+puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if $DEBUG
+			di.block.add_subfunction funcaddr
+			di.block.add_to retaddr, true
+			@addrs_todo << [retaddr, instraddr, true]
+		end
 	end
 
 	# applies one decodedinstruction to an expression
@@ -1094,23 +1105,13 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 		ret
 	end
 
-	# creates xrefs, recognizes subfunctions, updates addrs_todo, updates instr args
+	# creates xrefs, updates addrs_todo, updates instr args
 	def backtrace_found_result(expr, di, type, origin, len)
-		if n = normalize(expr)
-			if type == :x and di and di.block_offset == 0 and @cpu.backtrace_is_function_return(expr)
-				# no label/xref creation on from_subfuncret
-				its_a_subfuncret = true
-			else
-				add_xref(n, Xref.new(type, origin, len))
-				base = { nil => 'loc', 1 => 'byte', 2 => 'word', 4 => 'dword' }[len] || 'xref'
-				base = 'sub' if @function[n]
-				n = label_at(n, base) || n
-			end
-		# elsif @function[n]	# TODO handle extern API call
-		else
-			n = Expression[:unknown] 
-			add_xref(n, Xref.new(type, origin, len))
-		end
+		n = normalize(expr)
+		add_xref(n, Xref.new(type, origin, len))
+		base = { nil => 'loc', 1 => 'byte', 2 => 'word', 4 => 'dword' }[len] || 'xref'
+		base = 'sub' if @function[n]
+		n = label_at(n, base) || n
 
 		# update instr args
 		# TODO trace expression evolution to allow handling of
@@ -1125,40 +1126,35 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 			@decoded[origin].add_comment "#{type}#{len} #{Expression[n]}"
 		end
 
-		return if type != :x
-
-		# update addrs_todo
-		# recognize functions
-		if its_a_subfuncret
-			l = label_at(oldaddr, 'sub')
-			if not f = @function[oldaddr]
-				f = @function[oldaddr] = DecodedFunction.new
-				if l and l[0, 4] == 'loc_'
-					newl = l.sub('loc_', 'sub_')
-					if not @prog_binding[newl]
-						rename_label(l, newl)
-						l = newl
-					end
-				end
-				puts "found new function #{l} at #{Expression[oldaddr]}" if $VERBOSE
-			end
-
-			if @decoded[origin]
-				f.add_return_address origin
-				@decoded[origin].add_comment "endsub #{l || Expression[oldaddr]}"
-			end
-
-			f.backtracked_for |= @decoded[oldaddr].block.backtracked_for.find_all { |btt| not btt.block_offset }
-			@cpu.backtrace_update_function_binding(self, oldaddr, f, origin)
-			di.block.add_to_subfuncret ee
-			di.block.add_subfunction oldaddr
-			@addrs_todo << [n, di.address, true]
-puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{di} (funcret)" if $DEBUG
-		else
+		if type == :x and origin
+			@decoded[origin].block.add_to_normal(n) if @decoded[origin]
 			@addrs_todo << [n, origin]
 puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{Expression[origin]}" if $DEBUG
 		end
 	end
+
+	# detect and rename thunks
+	# a thunk is a location that you can call and that will just forward to an external function
+	def detect_thunks
+		@function.each_key { |f|
+			next if @decoded[f] or not f.kind_of? Expression or f.op != :+ or f.lexpr or not f.rexpr.kind_of? ::String
+			each_xref(f, :x) { |xr|
+				next if not di = @decoded[xr.origin]
+				next if di.block.to_subfuncret or di.block.to_normal != f
+				while di and (not @function[di.block.address] or not @xrefs[di.block.address])
+					di = @decoded[di.block.from_subfuncret || di.block.from_normal]
+				end
+				next if not di
+				l = label_at(di.block.address)
+				next if l[0, 4] != 'sub_'
+				puts "found thunk for #{f.rexpr} at #{Expression[di.block.address]}" if $VERBOSE
+				label = "thunk_#{f.rexpr}"
+				label << '_' if @prog_binding[label]
+				rename_label(l, label)
+			}
+		}
+	end
+
 
 	def to_s
 		a = ''

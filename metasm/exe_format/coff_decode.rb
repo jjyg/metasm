@@ -586,6 +586,12 @@ class COFF
 		} if @export
 		ep
 	end
+
+	def dump_section_header(addr, edata)
+		s = @sections.find { |s| s.virtaddr == addr-@optheader.image_base }
+		s ? "\n.section #{s.name.inspect} base=#{Expression[addr]}" :
+		addr == @optheader.image_base ? "// exe header at #{Expression[addr]}" : super
+	end
 end
 
 class COFFArchive

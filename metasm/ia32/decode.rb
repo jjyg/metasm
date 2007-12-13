@@ -414,12 +414,11 @@ module Metasm
 			if a.type.untypedef.kind_of? C::Pointer
 				pt = a.type.untypedef.type.untypedef
 				if pt.kind_of? C::Function
-					puts " #{orig} arg #{a} funcptr at [esp+#{stackoff}]"
 					new_bt[Indirection.new(Expression[:esp, :+, stackoff], @size/8, orig), nil]
 				elsif pt.kind_of? C::Struct
-					puts " #{orig} arg #{a} dereference struct at [esp+#{stackoff}] (#{pt})"
+					new_bt[Indirection.new(Expression[:esp, :+, stackoff], cp.typesize[:ptr], orig), cp.typesize[:ptr]]
 				else
-					new_bt[Indirection.new(Expression[:esp, :+, stackoff], cp.typesize[:ptr], orig), 1]
+					new_bt[Indirection.new(Expression[:esp, :+, stackoff], cp.typesize[:ptr], orig), cp.sizeof(nil, pt)]
 				end
 			end
 			stackoff += (cp.sizeof(a) + al - 1) / al * al
