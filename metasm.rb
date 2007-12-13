@@ -21,7 +21,7 @@ end
 	require "metasm/#{f}/compile_c"
 }
 # executable formats
-%w[mz elf_encode elf_decode pe coff_encode coff_decode shellcode a_out xcoff].each { |f|
+%w[mz elf_encode elf_decode pe coff_encode coff_decode shellcode a_out xcoff autoexe].each { |f|
 	require "metasm/exe_format/#{f}"
 }
 # os-specific features
