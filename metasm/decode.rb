@@ -308,7 +308,7 @@ class EncodedData
 				@ptr += rel.length
 				return rel.target
 			end
-			puts "W: Immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect} (wanted #{type.inspect})"
+			puts "W: Immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect} (wanted #{type.inspect})" if $VERBOSE
 		end
 		Expression.decode_imm(read(Expression::INT_SIZE[type]/8), type, endianness)
 	end
@@ -854,11 +854,11 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 					btt = BacktraceTrace.new(expr, origin, type, len)
 					@decoded[from].block.backtracked_for |= [btt] if @decoded[from]
 					@function[from].backtracked_for |= [btt] if @function[from]
-					next false if backtrace_check_funcret(btt, from, to)
 					if @decoded[to]
 						btt = btt.dup
 						btt.block_offset = @decoded[to].block_offset
 						btt.from_subfuncret = true if subf
+						next false if backtrace_check_funcret(btt, from, to)
 						@decoded[to].block.backtracked_for |= [btt]
 					end
 				end
@@ -884,10 +884,6 @@ puts "  backtrace #{args[0] || Expression[@function.index(f)]}  #{oldexpr} => #{
 		}
 puts '  backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']' if $DEBUG
 
-		if result.empty? and type == :x and origin and @decoded[origin]
-			@decoded[origin].add_comment 'to unknown'	# XXX already done in check_found ?
-		end
-
 		result
 	end
 
@@ -895,6 +891,7 @@ puts '  backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']'
 	# returns true and updates self.addrs_todo
 	def backtrace_check_funcret(btt, funcaddr, instraddr)
 		if di = @decoded[instraddr] and @function[funcaddr] and btt.type == :x and
+				not btt.from_subfuncret and
 				@cpu.backtrace_is_function_return(btt.expr) and
 				retaddr = backtrace_emu_instr(di, btt.expr) and
 				not need_backtrace(retaddr)

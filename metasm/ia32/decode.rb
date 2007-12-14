@@ -401,24 +401,24 @@ module Metasm
 		# emulate ret <n>
 		al = cp.typesize[:ptr]
 		if sym.attributes.to_a.include? 'stdcall'
-			argsz = sym.type.args.inject(0) { |sum, a| sum += (cp.sizeof(a) + al - 1) / al * al }
-			df.backtrace_binding[:esp] = Expression[:esp, :+, argsz].reduce
+			argsz = sym.type.args.inject(al) { |sum, a| sum += (cp.sizeof(a) + al - 1) / al * al }
+			df.backtrace_binding[:esp] = Expression[:esp, :+, argsz]
 		else
-			df.backtrace_binding[:esp] = Expression[:esp]
+			df.backtrace_binding[:esp] = Expression[:esp, :+, al]
 		end
 
 		# scan args for function pointers
 		# TODO walk structs/unions..
-		stackoff = 4
-		sym.type.args.each { |a|
+		stackoff = al
+		sym.type.args.to_a.each { |a|
 			if a.type.untypedef.kind_of? C::Pointer
 				pt = a.type.untypedef.type.untypedef
 				if pt.kind_of? C::Function
-					new_bt[Indirection.new(Expression[:esp, :+, stackoff], @size/8, orig), nil]
+					new_bt[Indirection.new(Expression[:esp, :+, stackoff], al, orig), nil]
 				elsif pt.kind_of? C::Struct
-					new_bt[Indirection.new(Expression[:esp, :+, stackoff], cp.typesize[:ptr], orig), cp.typesize[:ptr]]
+					new_bt[Indirection.new(Expression[:esp, :+, stackoff], al, orig), al]
 				else
-					new_bt[Indirection.new(Expression[:esp, :+, stackoff], cp.typesize[:ptr], orig), cp.sizeof(nil, pt)]
+					new_bt[Indirection.new(Expression[:esp, :+, stackoff], al, orig), cp.sizeof(nil, pt)]
 				end
 			end
 			stackoff += (cp.sizeof(a) + al - 1) / al * al
