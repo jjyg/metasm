@@ -18,7 +18,7 @@ class ExeFormat
 
 		seq.each { |e|
 			case e
-			when Label: ary.last.export[e.name] = ary.last.virtsize
+			when Label: ary.last.add_export(e.name, ary.last.virtsize)
 			when Data:  ary.last << e.encode(cpu.endianness)
 			when Align, Padding:
 				e.fillwith = e.fillwith.encode(cpu.endianness) if e.fillwith and not e.fillwith.kind_of? EncodedData

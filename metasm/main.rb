@@ -253,8 +253,8 @@ class ExeFormat
 
 	# return the label name corresponding to the specified offset of the encodeddata, creates it if necessary
 	def label_at(edata, offset, base = '')
-		if not l = edata.export.invert[offset]
-			edata.export[l = new_label(base)] = offset
+		if not l = edata.inv_export[offset]
+			edata.add_export(l = new_label(base), offset)
 		end
 		l
 	end
@@ -566,8 +566,10 @@ class EncodedData
 	attr_accessor :data
 	# hash, key = offset within data, value = +Relocation+
 	attr_accessor :reloc
-	# hash, key = export name, value = offset within data
+	# hash, key = export name, value = offset within data - use add_export to update
 	attr_accessor :export
+	# hash, key = offset, value = 1st export name
+	attr_accessor :inv_export
 	# virtual size of data (all 0 by default, see +fill+)
 	attr_accessor :virtsize
 	# arbitrary pointer, often used when decoding immediates
@@ -582,8 +584,14 @@ class EncodedData
 		@data     = data
 		@reloc    = opts[:reloc]    || {}
 		@export   = opts[:export]   || {}
+		@inv_export = @export.invert
 		@virtsize = opts[:virtsize] || @data.length
 		@ptr = 0
+	end
+
+	def add_export(label, off)
+		@export[label] = off
+		@inv_export[off] ||= label
 	end
 
 	# returns the size of raw data, that is [data.length, last relocation end].max
@@ -678,6 +686,7 @@ class EncodedData
 			fill if not other.data.empty?
 			other.reloc.each  { |k, v| @reloc[k + @virtsize] = v  }
 			other.export.each { |k, v| @export[k] = v + @virtsize }
+			other.inv_export.each { |k, v| @inv_export[@virtsize + k] = v }
 			if @data.empty?: @data = other.data.dup
 			else @data << other.data
 			end
@@ -726,6 +735,9 @@ class EncodedData
 		@export.each { |e, o|
 			ret.export[e] = o - from if o >= from and o <= from+len		# XXX include end ?
 		}
+		@inv_export.each { |o, e|
+			ret.inv_export[o-from] = e if o >= from and o <= from+len
+		}
 		ret
 	end
 
@@ -772,6 +784,7 @@ class EncodedData
 		if val.length != len
 			diff = val.length - len
 			@export.keys.each { |name| @export[name] = @export[name] + diff if @export[name] > from }
+			@inv_export.keys.each { |off| @inv_export[off+diff] = @inv_export.delete(off) if off > from }
 			@reloc.keys.each { |off| @reloc[off + diff] = @reloc.delete(off) if off > from }
 			if @virtsize >= from+len
 				@virtsize += diff
@@ -790,6 +803,7 @@ class EncodedData
 			@data = @data[0, from]
 		end
 		val.export.each { |name, off| @export[name] = from + off }
+		val.inv_export.each { |off, name| @inv_export[from+off] = name }
 		val.reloc.each { |off, rel| @reloc[from + off] = rel }
 	end
 

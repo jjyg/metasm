@@ -433,11 +433,11 @@ class COFF
 			@sections << s
 		}
 		if off = rva_to_off(@optheader.entrypoint)
-			@encoded.export[new_label('entrypoint')] = off
+			@encoded.add_export new_label('entrypoint'), off
 		end
 		(DIRECTORIES - ['certificate_table']).each { |d|
 			if @directory and @directory[d] and off = rva_to_off(@directory[d][0])
-				@encoded.export[new_label(d)] = off
+				@encoded.add_export new_label(d), off
 			end
 		}
 	end
@@ -450,7 +450,7 @@ class COFF
 			@export.decode(self)
 			@export.exports.each { |e|
 				if e.name and off = rva_to_off(e.target)
-					@encoded.export[e.name] = off
+					@encoded.add_export e.name, off
 				end
 			} if @export.exports
 		end
@@ -469,7 +469,7 @@ class COFF
 							r = Metasm::Relocation.new(Expression[i.name], :u32, @endianness)
 							addr = off + iatlen * idx
 							@encoded.reloc[addr] = r
-							@encoded.export['iat_' + i.name] = addr
+							@encoded.add_export 'iat_'+i.name, addr
 						end
 					}
 				end
@@ -511,14 +511,15 @@ class COFF
 	def decode_reloc_i386(r)
 		case r.type
 		when 'ABSOLUTE'
-		when 'HIGHLOW', 'DIR64'
-			case r.type
-			when 'HIGHLOW': addr, type = decode_word, :u32
-			when 'DIR64':   addr, type = decode_xword, :u64
-			end
-			addr -= @optheader.image_base
+		when 'HIGHLOW'
+			addr = decode_word - @optheader.image_base
 			if off = rva_to_off(addr)
-				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%x' % addr)], type, @endianness)
+				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%x' % addr)], :u32, @endianness)
+			end
+		when 'DIR64'
+			addr = decode_xword - @optheader.image_base
+			if off = rva_to_off(addr)
+				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%x' % addr)], :u64, @endianness)
 			end
 		else puts "W: COFF: Unsupported i386 relocation #{r.inspect}" if $VERBOSE
 		end

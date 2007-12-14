@@ -149,7 +149,7 @@ class MZ < ExeFormat
 	def decode_body
 		@body = @encoded[@header.cparhdr*16...@header.cp*512+@header.cblp]
 		@body.virtsize += @header.minalloc * 16
-		@body.export['start'] = @header.cs * 16 + @header.ip
+		@body.add_export 'start', @header.cs * 16 + @header.ip
 	end
 
 	def decode

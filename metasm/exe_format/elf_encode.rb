@@ -403,7 +403,7 @@ class ELF
 		list = @relocations.find_all { |r| r.type != 'JMP_SLOT' and not r.addend }
 		if not list.empty?
 			if not @tag['TEXTREL'] and s = @sections.find { |s|
-				s.encoded and e = s.encoded.export.invert[0] and Expression[r.offset, :-, e].reduce.kind_of? ::Integer
+				s.encoded and e = s.encoded.inv_export[0] and Expression[r.offset, :-, e].reduce.kind_of? ::Integer
 			} and not s.flags.include? 'WRITE'
 				@tag['TEXTREL'] = 0
 			end
@@ -505,12 +505,12 @@ class ELF
 				prevoffset = r.offset
 				if not plt.encoded.export[r.symbol.name + '_plt_thunk']
 					# create the plt thunk
-					plt.encoded.export[r.symbol.name + '_plt_thunk'] = plt.encoded.length
+					plt.encoded.add_export r.symbol.name+'_plt_thunk', plt.encoded.length
 					if @cpu.generate_PIC
 						plt.encoded << Shellcode.new(@cpu).parse("call metasm_intern_geteip\nlea ebx, [eax+_PLT_GOT-metasm_intern_geteip]").assemble.encoded
 					end
 					plt.encoded << Shellcode.new(@cpu).parse("jmp [#{base} + #{gotplt.encoded.length}]").assemble.encoded
-					plt.encoded.export[r.symbol.name + '_plt_default'] = plt.encoded.length
+					plt.encoded.add_export r.symbol.name+'_plt_default', plt.encoded.length
 					reloffset = @relocations.find_all { |rr| rr.type == 'JMP_SLOT' }.length * Relocation.size(self)
 					plt.encoded << Shellcode.new(@cpu).parse("push #{reloffset}\njmp metasm_plt_start").assemble.encoded
 
@@ -1152,162 +1152,3 @@ foo:
 	ret
 foo_end:
 EOS
-
-__END__
-		encode[pltgot, :u32, program.label_at(dynamic.edata, 0)]	# reserved, points to _DYNAMIC
-		#if arch == '386'
-			encode[pltgot, :u32, 0]	# ptr to dlresolve
-			encode[pltgot, :u32, 0]	# ptr to pltgot
-		#end
-		end
-
-		if pltgot
-		# XXX the plt entries need not to follow this model
-		# XXX arch-specific, parser-dependant...
-		program.parse <<EOPLT
-.section metasmintern_plt r x
-metasmintern_pltstart:
-	push dword ptr [ebx+4]
-	jmp  dword ptr [ebx+8]
-
-metasmintern_pltgetgotebx:
-	call metasmintern_pltgetgotebx_foo
-metasmintern_pltgetgotebx_foo:
-	pop ebx
-	add ebx, #{program.label_at(pltgot.edata, 0)} - metasmintern_pltgetgotebx_foo
-	ret
-EOPLT
-		pltsec = program.sections.pop
-		end
-
-		program.import.each { |lib, ilist|
-			ilist.each { |iname, thunkname|
-				if thunkname
-					uninit = program.new_unique_label
-					program.parse <<EOPLTE
-#{thunkname}:
-	call metasmintern_pltgetgotebx
-	jmp [ebx+#{pltgot.edata.virtsize}]
-#{uninit}:
-	push #{relplt.edata.virtsize}
-	jmp metasmintern_pltstart
-align 0x10
-EOPLTE
-					pltgot.edata.export[iname] = pltgot.edata.virtsize if iname != thunkname
-					encoderel[relplt, program.label_at(pltgot.edata, pltgot.edata.virtsize), iname, 'JMP_SLOT']
-					encode[pltgot, :u32, uninit]
-					# no base relocs
-				else
-					got.edata.export[iname] = got.edata.virtsize
-					encoderel[rel, iname, iname, 'GLOB_DAT']
-					encode[got, :u32, 0]
-				end
-			}
-		}
-		if pltgot
-		pltsec.encode
-		plt.edata << pltsec.encoded
-		end
-
-		# create load segments
-		# merge sections, try to avoid rwx segment (PaX)
-		# TODO enforce noread/nowrite/noexec section specification ?
-		# TODO minimize segment with unneeded permissions ? (R R R R R RW R RX R => rw[R R R R R RW R] rx[RX R], could be r[R R R R R] rw[RW] r[R] rx[RX] r[R] (with page-size merges/in-section splitting?))
-		aligned = opts.delete('create_aligned_load_segments')
-		lastprot = []
-		firstsect = lastsect = nil
-		encode_load_segment = proc {
-			if lastsect.name == :phdr
-				# the program header is not complete yet, so we cannot rely on its virtsize/rawsize
-				end_phdr ||= program.new_unique_label
-				size = virtsize = [end_phdr, :-, program.label_at(firstsect.edata, 0)]
-			else
-				size = [program.label_at(lastsect.edata, lastsect.edata.rawsize), :-, program.label_at(firstsect.edata, 0)]
-				virtsize = [program.label_at(lastsect.edata, lastsect.edata.virtsize), :-, program.label_at(firstsect.edata, 0)]
-			end
-			if not aligned
-				encode_segm['LOAD',
-					firstsect.rawoffset ||= program.new_unique_label,
-					program.label_at(firstsect.edata, 0),
-					size,	# allow virtual data here (will be zeroed on load) XXX check zeroing
-					virtsize,
-					['R', *{'WRITE' => 'W', 'EXECINSTR' => 'X'}.values_at(*lastprot).compact],
-					0x1000
-				]
-			else
-				encode_segm['LOAD',
-					[(firstsect.rawoffset ||= program.new_unique_label), :&, 0xffff_f000],
-					[program.label_at(firstsect.edata, 0), :&, 0xffff_f000],
-					[[[size, :+, [firstsect.rawoffset, :&, 0xfff]], :+, 0xfff], :&, 0xffff_f000],
-					[[[virtsize, :+, [firstsect.rawoffset, :&, 0xfff]], :+, 0xfff], :&, 0xffff_f000],
-					['R', *{'WRITE' => 'W', 'EXECINSTR' => 'X'}.values_at(*lastprot).compact],
-					0x1000
-				]
-			end
-		}
-		sections.each { |s|
-			xflags = s.flags & %w[EXECINSTR WRITE]	# non mergeable flags
-			if not s.flags.include? 'ALLOC'	# ignore
-				s.edata.fill
-			elsif firstsect and (xflags | lastprot == xflags or xflags.empty?)	# concat for R+RW / RW + R, not for RW+RX (unless last == RWX)
-				if lastsect.edata.virtsize > lastsect.edata.rawsize + 0x1000
-					# XXX new_seg ?
-				end
-				lastsect.edata.fill
-				lastsect = s
-				lastprot |= xflags
-			else					# section incompatible with current segment: create new segment (or first section seen)
-				if firstsect
-					encode_load_segment[]
-					s.virt_gap = true
-				end
-				firstsect = lastsect = s
-				lastprot = xflags
-			end
-		}
-		if firstsect	# encode last load segment
-			encode_load_segment[]
-		end
-
-
-		(opts.delete('additional_segments') || []).each { |sg| encode_segm[sg['type'], sg['offset'], sg['vaddr'], sg['filesz'], sg['memsz'], sg['flags'], sg['align']] }
-		phdr.export[end_phdr] = phdr.virtsize if end_phdr
-
-	def link(program, target, sections, opts)
-		virtaddr = opts.delete('prefered_base_adress') || (target == 'EXEC' ? 0x08048000 : 0)
-		rawaddr  = 0
-
-		has_segments = sections.find { |s| s.name == :phdr }
-		binding = {}
-		sections.each { |s|
-			if has_segments
-				if s.virt_gap
-					if virtaddr & 0xfff >= 0xe00
-						# small gap: align in file
-						virtaddr = (virtaddr + 0xfff) & 0xffff_f000
-						rawaddr  = (rawaddr  + 0xfff) & 0xffff_f000
-					elsif virtaddr & 0xfff > 0
-						# big gap: map page twice
-						virtaddr += 0x1000
-					end
-				end
-				if rawaddr & 0xfff != virtaddr & 0xfff
-					virtaddr += ((rawaddr & 0xfff) - (virtaddr & 0xfff)) & 0xfff
-				end
-			end
-
-			if s.align and s.align > 1
-				virtaddr = EncodedData.align_size(virtaddr, s.align)
-				rawaddr  = EncodedData.align_size(rawaddr,  s.align)
-			end
-
-			s.edata.export.each { |name, off| binding[name] = Expression[virtaddr, :+, off] }
-			if s.rawoffset
-				binding[s.rawoffset] = rawaddr
-			else
-				s.rawoffset = rawaddr
-			end
-
-			virtaddr += s.edata.virtsize if target != 'REL'
-			rawaddr  += s.edata.rawsize
-		}

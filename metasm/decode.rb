@@ -476,7 +476,7 @@ class Disassembler
 		when ::String
 			raise "invalid section base #{base.inspect} - not at section start" if encoded.export[base] and encoded.export[base] != 0
 			raise "invalid section base #{base.inspect} - already seen at #{@prog_binding[base]}" if @prog_binding[base] and @prog_binding[base] != Expression[base]
-			encoded.export[base] = 0
+			encoded.add_export base, 0
 		else raise "invalid section base #{base.inspect} - expected string or integer"
 		end
 
@@ -536,10 +536,10 @@ class Disassembler
 	def label_at(addr, base='xref')
 		e, b = get_section_at(addr)
 		return if not e
-		if not l = e.export.index(e.ptr)
+		if not l = e.inv_export[e.ptr]
 			l = base + '_%08x' % (addr.kind_of?(Expression) ? addr.rexpr.kind_of?(::Integer) ? addr.rexpr : 0 : addr)
 			l = @program.new_label(l) if @prog_binding[l]
-			e.export[l] = e.ptr
+			e.add_export l, e.ptr
 			@prog_binding[l] = Expression[b, :+, e.ptr].reduce
 		end
 		l
@@ -551,7 +551,10 @@ class Disassembler
 			@cpu.replace_instr_arg_immediate(di.instruction, old, new)
 		}
 		e, l = get_section_at(old)
-		e.export[new] = e.export.delete(old) if e
+		if e
+			e.inv_export.delete e.export[old]
+			e.add_export new, e.export.delete(old)
+		end
 		@prog_binding[new] = @prog_binding.delete(old)
 	end
 

@@ -156,7 +156,8 @@ class ELF
 		if not o = addr_to_off(addr)
 			puts "W: Elf: #{name} points to unmmaped space #{'0x%08X' % addr}" if $VERBOSE
 		else
-			@encoded.export[l = new_label(name)] = o
+			l = new_label(name)
+			@encoded.add_export l, o
 		end
 		l
 	end
@@ -178,7 +179,7 @@ class ELF
 	# section names are read from shstrndx if possible
 	def decode_section_header(off = @header.shoff)
 		raise InvalidExeFormat, "Invalid elf section header size: #{@header.shentsize}" if Section.size(self) != @header.shentsize
-		@encoded.export[new_label('section_header')] = off
+		@encoded.add_export new_label('section_header'), off
 		@encoded.ptr = off
 		@sections.clear
 		@header.shnum.times {
@@ -201,7 +202,7 @@ class ELF
 	# marks the elf entrypoint as an export of +self.encoded+
 	def decode_program_header(off = @header.phoff)
 		raise InvalidExeFormat, "Invalid elf program header size: #{@header.phentsize}" if Segment.size(self) != @header.phentsize
-		@encoded.export[new_label('program_header')] = off
+		@encoded.add_export new_label('program_header'), off
 		@encoded.ptr = off
 		@segments.clear
 		@header.phnum.times {
@@ -418,7 +419,7 @@ class ELF
 					puts "W: Elf: symbol #{name} already seen at #{'%X' % @encoded.export[name]} - now at #{'%X' % o}) (may be a different version definition)" if $VERBOSE
 					name += '_'	# do not modify inplace
 				end
-				@encoded.export[name] = o
+				@encoded.add_export name, o
 			end
 		}
 
@@ -503,8 +504,9 @@ class ELF
 			base = @segments.find_all { |s| s.type == 'LOAD' }.map { |s| s.vaddr }.min & 0xffff_f000
 			target = base + addend
 			if o = addr_to_off(target)
-				if not label = @encoded.export.invert[o]
-					@encoded.export[label = new_label('xref_%X' % target)] = o
+				if not label = @encoded.inv_export[o]
+					label = new_label('xref_%X' % target)
+					@encoded.add_export label, o
 				end
 				target = label
 			else
@@ -526,7 +528,7 @@ class ELF
 				name = ''
 			end
 			name = new_label("copy_of_#{name}")
-			@encoded.export[name] = @encoded.ptr
+			@encoded.add_export name, @encoded.ptr
 			target = nil
 		else
 			puts "W: Elf: unhandled 386 reloc #{reloc.inspect}" if $VERBOSE
