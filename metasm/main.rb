@@ -292,11 +292,11 @@ class Expression
 	# with a single argument, return it if already an Expression, else construct a new one (using unary +/-)
 	def self.[](l, op = nil, r = nil)
 		return l if l.kind_of? Expression and not op
-		l, op, r = nil, :-, -r if not op and r.kind_of? Numeric and r < 0
+		l, op, r = nil, :-, -l if not op and l.kind_of? ::Numeric and l < 0
 		l, op, r = nil, :+, l  if not op
 		l, op, r = nil, l, op  if not r
-		l = self[*l] if l.kind_of? Array
-		r = self[*r] if r.kind_of? Array
+		l = self[*l] if l.kind_of? ::Array
+		r = self[*r] if r.kind_of? ::Array
 		new(op, r, l)
 	end
 

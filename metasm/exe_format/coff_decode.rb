@@ -179,7 +179,7 @@ class COFF
 				@libname = coff.encoded.data[off...coff.encoded.data.index(0, off)]
 			end
 
-			if coff.encoded.ptr = coff.rva_to_off(@ilt_p)
+			if coff.encoded.ptr = coff.rva_to_off(@ilt_p) || coff.rva_to_off(@iat_p)
 				addrs = []
 				while (a = coff.decode_xword) != 0
 					addrs << a
