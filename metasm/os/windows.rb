@@ -196,28 +196,25 @@ class WindowsRemoteString < VirtualString
 	def initialize(handle, addr_start=0, length=0xffff_ffff)
 		@handle = handle
 		super(addr_start, length)
-		# @curpage is overwritten every time by readprocmem
-		@curpage = ' '*4096
 	end
 
 	def dup(addr = @addr_start, len = @length)
 		self.class.new(@handle, addr, len)
 	end
 
-	def write_range(from, val)
-		@invalid = true
-		WinAPI.writeprocessmemory(@handle, @addr_start + from, val, val.length, nil)
+	def rewrite_at(addr, data)
+		WinAPI.writeprocessmemory(@handle, addr, data, data.length, nil)
 	end
 
 	def get_page(addr)
-		@invalid = false
-		@curstart = addr & 0xffff_f000
-		WinAPI.readprocessmemory(@handle, @curstart, @curpage, 4096, 0)
+		page = 0.chr*4096
+		WinAPI.readprocessmemory(@handle, addr, page, 4096, 0)
+		page
 	end
 
 	def realstring
 		super
-		s = ' ' * @length
+		s = 0.chr * @length
 		WinAPI.readprocessmemory(@handle, @addr_start, s, @length, 0)
 		s
 	end

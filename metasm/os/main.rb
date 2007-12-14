@@ -5,9 +5,12 @@
 
 
 module Metasm
-# a virtual string, whose content is the memory of some other process
-# may be writeable, but its size cannot change
-# unknown methods falls back to a frozen full copy of the virtual content
+# This class implements an objects that behaves like a regular string, but
+# whose real data is dynamically fetched or generated on demand
+# its size is immutable
+# implements a page cache
+# substrings are Strings (small substring) or a sub-VirtualString
+#  (a kind of 'window' on the original VString, when the substring length is > 4096)
 class VirtualString
 	# formats parameters for reading
 	def [](from, len=nil)
@@ -98,31 +101,61 @@ class VirtualString
 		end
 	end
 
-	# implements a 1-page cache
-	# uses get_page(realaddr), which must return a 4096 bytes page containing realaddr
-	# must define @curstart (real address of page 1st byte) and unset @invalid
-	attr_accessor :addr_start, :length, :curpage, :curstart, :invalid
+	# implements a read page cache
+
+	# the real address of our first byte
+	attr_accessor :addr_start
+	# our length
+	attr_accessor :length
+	# array of [addr, raw data], sorted by first == last accessed
+	attr_accessor :pagecache
+	# maximum length of self.pagecache (number of cached pages)
+	attr_accessor :pagecache_len
 	def initialize(addr_start, length)
 		@addr_start = addr_start
 		@length = length
-		@curpage = nil
-		@curstart = 0
-		@invalid = true
+		@pagecache = []
+		@pagecache_len = 4
+	end
+
+	# invalidates the page cache
+	def invalidate
+		@pagecache.clear
+	end
+
+	# returns the 4096-bytes page starting at addr
+	# return nil if the page is invalid/inaccessible
+	# addr is page-aligned by the caller
+	# addr is absolute
+	#def get_page(addr)
+	#end
+	
+	# searches the cache for a page containing addr, updates if not found
+	def cache_get_page(addr)
+		addr &= 0xffff_ffff_ffff_f000
+		@pagecache.each { |c|
+			if addr == c[0]
+				@pagecache.unshift @pagecache.delete(c) if c != @pagecache[0]
+				return c
+			end
+		}
+		@pagecache.pop if @pagecache.length >= @pagecache_len
+		@pagecache.unshift [addr, get_page(addr) || 0.chr*4096]
+		@pagecache.first
 	end
 
 	# reads a range from the page cache
 	# returns a new VirtualString (using dup) if the request is bigger than 4096 bytes
 	def read_range(from, len)
 		from += @addr_start
-		get_page(from) if @invalid or @curstart < from or @curstart + @curpage.length >= from
+		base, page = cache_get_page(from)
 		if not len
-			@curpage[from - @curstart]
+			page[from - base]
 		elsif len <= 4096
-			from -= @curstart
-			s = @curpage[from, len]
-			if from + len > 4096	# request crosses a page boundary
-				get_page(@curstart + 4096)
-				s << @curpage[0, from + len - 4096]
+			s = page[from - base, len]
+			if from+len-base > 4096		# request crosses a page boundary
+				base, page = cache_get_page(from+len)
+				s << page[0, from+len-base]
 			end
 			s
 		else
@@ -130,6 +163,17 @@ class VirtualString
 			dup(from, len)
 		end
 	end
+
+	# rewrites a segment of data
+	# the length written is the length of the content (a VirtualString cannot grow/shrink)
+	def write_range(from, content)
+		invalidate
+		rewrite_at(from + @addr_start, content)
+	end
+
+	# overwrites a section of the original data
+	#def rewrite_at(addr, content)
+	#end
 end
 
 class VirtualFile < VirtualString
@@ -144,8 +188,9 @@ class VirtualFile < VirtualString
 		end
 	end
 
-	attr_accessor :fd, :addr_start, :length,
-		:curpage, :curstart, :invalid
+	# the underlying file descriptor
+	attr_accessor :fd
+	
 	# creates a new virtual mapping of a section of the file
 	# the file descriptor must be seekable
 	def initialize(fd, addr_start = 0, length = nil)
@@ -161,18 +206,16 @@ class VirtualFile < VirtualString
 		self.class.new(@fd, addr, len)
 	end
 
-	# writes data, invalidating the cache
-	def write_range(from, val)
-		@invalid = true
-		@fd.pos = @addr_start + from
-		@fd.write val
-	end
-
 	# reads an aligned page from the file, at file offset addr
 	def get_page(addr)
-		@invalid = false
-		@fd.pos = @curstart = addr - (addr & 0xfff)
-		@curpage = @fd.read 4096
+		@fd.pos = addr
+		@fd.read 4096
+	end
+
+	# overwrite a section of the file
+	def rewrite_at(addr, data)
+		@fd.pos = addr
+		@fd.write data
 	end
 
 	# returns the full content of the file

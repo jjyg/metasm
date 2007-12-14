@@ -311,23 +311,19 @@ class LinuxRemoteString < VirtualString
 		end
 	end
 
-	def write_range(from, val)
-		@invalid = true
+	def rewrite_at(addr, data)
 		# target must be stopped
-		do_ptrace { |ptrace| ptrace.writemem(@addr_start + from, val) }
+		do_ptrace { |ptrace| ptrace.writemem(addr, data) }
 	end
 
 	def get_page(addr)
-		@invalid = false
-		@readfd.pos = @curstart = addr & 0xffff_f000
+		@readfd.pos = addr
 		# target must be stopped
 		do_ptrace {
 			begin
-				@invalid_addr = false
-				@curpage = @readfd.read 4096
+				@readfd.read 4096
 			rescue Errno::EIO
-				@invalid_addr = true
-				@curpage = 0.chr*4096
+				nil
 			end
 		}
 	end
