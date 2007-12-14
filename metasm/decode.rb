@@ -912,7 +912,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 
 	# applies one subfunction to an expression
 	def backtrace_emu_subfunc(sf, expr)
-		expr.bind(sf.backtrace_binding).reduce
+		Expression[expr.bind(sf.backtrace_binding).reduce]
 	end
 
 	# static resolution of indirections
@@ -988,7 +988,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 		# create xrefs/labels
 		result.each { |e|
 			backtrace_found_result(e, di, type, origin, len)
-		} if di and type and origin
+		} if type and origin
 
 		result
 	end
@@ -1120,7 +1120,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 		# TODO trace expression evolution to allow handling of
 		#  mov eax, 28 ; add eax, 4 ; jmp eax
 		#  => mov eax, (loc_xx-4)
-		if n != Expression[:unknown] and di.address == origin
+		if n != Expression[:unknown] and di and di.address == origin
 			@cpu.replace_instr_arg_immediate(di.instruction, expr, Expression[n])
 		end
 

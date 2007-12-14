@@ -288,7 +288,7 @@ class Ia32
 		}
 
 		# we know that no opcode with setip accept both modrm and immediate arg, so ret is not an ::Array
-		ret.export.add_export(postlabel, ret.virtsize) if postlabel
+		ret.add_export(postlabel, ret.virtsize) if postlabel
 
 		ret
 	end
