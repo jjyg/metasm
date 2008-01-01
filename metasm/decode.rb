@@ -369,7 +369,11 @@ class CPU
 	def get_xrefs_rw(dasm, di)
 		b = di.backtrace_binding ||= backtrace_binding(di)
 		find_ind = proc { |list| (list + list.grep(Expression).map { |e| e.externals }.flatten).grep(Indirection) }
-		find_ind[b.values].map { |e| [:r, e.target, e.len] } + find_ind[b.keys].map { |e| [:w, e.target, e.len] }
+		r = b.values
+		w = b.keys
+		x = get_xrefs_x(dasm, di)
+		r |= x if x
+		find_ind[r].map { |e| [:r, e.target, e.len] } + find_ind[w].map { |e| [:w, e.target, e.len] }
 	end
 
 	# checks if the expression corresponds to a function return value with the instruction
@@ -549,6 +553,7 @@ class Disassembler
 		each_xref(normalize(old)) { |x|
 			next if not di = @decoded[x.origin]
 			@cpu.replace_instr_arg_immediate(di.instruction, old, new)
+			di.comment.to_a.each { |c| c.gsub!(old, new) }
 		}
 		e, l = get_section_at(old)
 		if e
@@ -642,7 +647,7 @@ class Disassembler
 			block.add_di di
 
 			# check self-modifying code
-			if @check_smc and @trace_data_xref
+			if @check_smc
 				# uncomment to check for unaligned rewrites
 				#(-7...di.bin_length).each { |off|
 				waddr = di_addr		#Expression[di_addr, :+, off].reduce
@@ -672,7 +677,7 @@ class Disassembler
 						#}
 					end
 				}
-			} if @trace_data_xref
+			}
 			@program.get_xrefs_x(self, di).each { |expr|
 				if backtrace(expr, di_addr, false, false, di_addr, :x).length > 0
 					breakafter = true
@@ -824,6 +829,10 @@ class Disassembler
 			return result
 		end
 		
+		if (type == :r or type == :w) and not @trace_data_xref
+			return [Expression[:unknown]]
+		end
+
 		# create initial backtracked_for
 		if type and origin == start_addr and di
 			btt = BacktraceTrace.new(expr, origin, type, len)
@@ -845,7 +854,7 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 			when :loop
 				oldexpr = args[0][0][0]
 				next false if expr == oldexpr		# unmodifying loop
-				puts "  bt loop at #{Expression[args[0][0][1]]}: #{oldexpr} => #{expr}" if $VERBOSE
+				puts "  bt loop at #{Expression[args[0][0][1]]}: #{oldexpr} => #{expr} (#{args[0].map { |z| Expression[z[1]] }.join(' -> ')})" if $VERBOSE
 				false
 			when :up
 				if origin and type
@@ -980,6 +989,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 		return if need_backtrace(expr)
 
 puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expression[origin] if origin}" if $DEBUG
+		maxdepth = 0 if (type == :r or type == :w) and not @trace_data_xref
 		result = backtrace_value(expr, maxdepth)
 
 		# create xrefs/labels

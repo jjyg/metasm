@@ -214,7 +214,16 @@ EOS
 			sehptr = Indirection.new(Expression[Indirection.new(sehptr, sz, di.address), :+, sz], sz, di.address)
 			a = dasm.backtrace(sehptr, di.address, true, false, di.address, :x)
 puts "backtrace seh from #{di} => [#{a.map { |addr| Expression[addr] }.join(', ')}]" if $VERBOSE
-			a + super
+			a.each { |aa|
+				next if aa == Expression[:unknown]
+				l = dasm.label_at(aa, 'seh')
+				if l[0, 4] == 'loc_'
+					newl = l.sub('loc_', 'seh_')
+					dasm.rename_label(l, newl) if not dasm.prog_binding[newl]
+				end
+				dasm.addrs_todo << [aa] 
+			}
+			super
 		else
 			super
 		end

@@ -29,6 +29,9 @@ d = exe.init_disassembler
 d.parse_c_file cheader if cheader
 d.trace_data_xref = false if no_data_trace
 # do the work
+begin
 exe.disassemble
+rescue Interrupt
+end
 # output
 d.dump(!no_data)
