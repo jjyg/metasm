@@ -34,7 +34,8 @@ class Ia32
 			 8 => 'byte',
 			16 => 'word',
 			32 => 'dword',
-			64 => 'qword'
+			64 => 'qword',
+			128 => 'oword'
 			}.fetch(sz) { |k| "_#{sz}bits" }
 		end
 

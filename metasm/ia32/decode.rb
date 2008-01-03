@@ -174,13 +174,14 @@ module Metasm
 		end
 		
 		op.args.each { |a|
+			mmxsz = ((op.props[:xmmx] && di.instruction.prefix[:opsz]) ? 128 : 64)
 			di.instruction.args << case a
 			when :reg:    Reg.new     field_val[a], opsz
 			when :eeec:   CtrlReg.new field_val[a]
 			when :eeed:   DbgReg.new  field_val[a]
 			when :seg2, :seg2A, :seg3, :seg3A: SegReg.new field_val[a]
 			when :regfp:  FpReg.new   field_val[a]
-			when :regmmx: SimdReg.new field_val[a], 64
+			when :regmmx: SimdReg.new field_val[a], mmxsz
 			when :regxmm: SimdReg.new field_val[a], 128
 
 			when :farptr: Farptr.decode edata, @endianness, adsz
@@ -189,8 +190,8 @@ module Metasm
 
 			when :mrm_imm:  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, di.instruction.prefix[:seg]
 			when :modrm, :modrmA: ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), di.instruction.prefix[:seg]
-			when :modrmmmx: ModRM.decode edata, field_val[a], @endianness, adsz, 64, di.instruction.prefix[:seg], SimdReg
-			when :modrmxmm: ModRM.decode edata, field_val[a], @endianness, adsz,128, di.instruction.prefix[:seg], SimdReg
+			when :modrmmmx: ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, di.instruction.prefix[:seg], SimdReg
+			when :modrmxmm: ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, di.instruction.prefix[:seg], SimdReg
 
 			when :imm_val1: Expression[1]
 			when :imm_val3: Expression[3]
@@ -253,13 +254,13 @@ module Metasm
 		a = di.instruction.args.map { |arg|
 			case arg
 			when ModRM: arg.symbolic(di.address)
-			when Reg: arg.symbolic
+			when Reg, SimdReg: arg.symbolic
 			else arg
 			end
 		}
 
 		case op = di.opcode.name
-		when 'mov', 'movsx', 'movzx': { a[0] => Expression[a[1]] }
+		when 'mov', 'movsx', 'movzx', 'movd', 'movq': { a[0] => Expression[a[1]] }
 		when 'lea': { a[0] => a[1].target }
 		when 'xchg': { a[0] => Expression[a[1]], a[1] => Expression[a[0]] }
 		when 'add', 'sub', 'or', 'xor', 'and'
@@ -275,17 +276,20 @@ module Metasm
 		when 'neg': { a[0] => Expression[:-, a[0]] }
 		when 'rol', 'ror', 'rcl', 'rcr': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), a[1]] } # XXX
 		when 'sar', 'shl', 'sal': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), a[1]] }
+		when 'shr': { a[0] => Expression[[a[0], :&, (1<<@size) - 1], :>>, a[1]] }
+		when 'cdq': { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, @size-1], :>, 0]] }
 		when 'push'
-			# XXX order operations ? (eg push esp)
 			{ :esp => Expression[:esp, :-, @size/8],
-			  Indirection.new(Expression[:esp], @size/8, nil) => Expression[a[0]] }
+			  Indirection.new(Expression[:esp], @size/8, di.address) => Expression[a[0]] }
 		when 'pop'
 			{ :esp => Expression[:esp, :+, @size/8],
 			  a[0] => Indirection.new(Expression[:esp], @size/8, di.address) }
+		when 'pushfd': { :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], @size/8, di.address) => Expression[:unknown] }
+		when 'popfd':  { :esp => Expression[:esp, :+, @size/8] }
 		when 'call'
 			eoff = Expression[di.block.address, :+, di.block_offset + di.bin_length]
 			{ :esp => Expression[:esp, :-, @size/8],
-			  Indirection.new(Expression[:esp], @size/8, nil) => Expression[eoff.reduce] }
+			  Indirection.new(Expression[:esp], @size/8, di.address) => Expression[eoff.reduce] }
 		when 'ret': { :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]] }
 		when 'stosd', 'stosw', 'stosb'
 			if di.instruction.prefix[:rep]
@@ -293,24 +297,25 @@ module Metasm
 				{ :edi => Expression[:unknown], :ecx => Expression[:unknown] }
 			else
 				sz = { ?b => 1, ?w => 2, ?d => 4 }[op[-1]]
-				{ Indirection.new(Expression[:edi], "u#{sz*8}".to_sym, nil) => Expression[:eax], :edi => Expression[:edi, :+, sz] }
+				{ Indirection.new(Expression[:edi], sz, di.address) => Expression[:eax], :edi => Expression[:edi, :+, sz] }
 			end
 		when 'loop': { :ecx => Expression[:ecx, :-, 1] }
 		when 'enter'
 			depth = a[1].reduce % 32
-			b = { Indirection.new(Expression[:esp], @size/8, nil) => Expression[:ebp], :ebp => Expression[:esp, :-, @size/8],
+			b = { Indirection.new(Expression[:esp], @size/8, di.address) => Expression[:ebp], :ebp => Expression[:esp, :-, @size/8],
 					:esp => Expression[:esp, :-, a[0].reduce + ((@size/8) * depth)] }
 			(1..depth).each { |i| # XXX test me !
-				b[Indirection.new(Expression[:esp, :-, i*@size/8], @size/8, nil)] = Indirection.new(Expression[:ebp, :-, i*@size/8], @size/8, di.address) }
+				b[Indirection.new(Expression[:esp, :-, i*@size/8], @size/8, di.address)] = Indirection.new(Expression[:ebp, :-, i*@size/8], @size/8, di.address) }
 			b
 		when 'leave': { :ebp => Indirection.new(Expression[:ebp], @size/8, di.address), :esp => Expression[:ebp, :+, @size/8] }
 		when 'aaa': { :eax => Expression[:unknown] }
+		when 'imul': { a[0] => ((a[2] and a[0] == a[1]) ? Expression[a[0], :*, a[2]] : Expression[:unknown]) }
 		else
-			if %[nop cmp test jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle].include? op	# etc etc
+			if %[nop cmp test jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle jnb jnbe jp jnp jnl jnle].include? op	# etc etc
 				# XXX eflags !
 				b = a.inject({}) { |b, foo| b.update "dummy#{b.length}".to_sym => foo } # mark args as read (modrm)
 			else
-				puts "unhandled instruction to backtrace: #{di.instruction}" if $VERBOSE
+				puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 				# assume nothing except the arg list is modified
 				(a.grep(Indirection) + a.grep(::Symbol)).inject({}) { |h, s| h.update s => Expression[:unknown] }
 			end
@@ -355,13 +360,16 @@ module Metasm
 			# include_start ?
 			# ret 42 ?
 			# ...
-			bt = dasm.backtrace(Expression[r], retaddr, true, false, nil, nil, nil, faddr)	# XXX is_subfunc
+			bt = dasm.backtrace(Expression[r], retaddr, :include_start => true, :snapshot_addr => faddr)	# XXX is_subfunc
 			if bt.length != 1 or (b[r] and bt.first != b[r])
 				b[r] = Expression[:unknown]
 			else
 				b[r] = bt.first
 			end
 		}
+		if b[:eax].reduce == faddr
+			l = dasm.label_at(faddr, 'geteip', 'loc', 'sub')
+		end
 	end
 
 	# returns true if the expression is an address on the stack

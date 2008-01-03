@@ -125,7 +125,7 @@ class Ia32
 		addop 'mov',   [0xC6], 0,    {:w => [0, 0]}, :i
 		addop 'mov',   [0x0F, 0x20, 0xC0], :reg, {:d => [1, 1], :eeec => [2, 3]}, :eeec
 		addop 'mov',   [0x0F, 0x21, 0xC0], :reg, {:d => [1, 1], :eeed => [2, 3]}, :eeed
-		addop 'mov',   [0x8C], 0,    {:d => [0, 1], :seg3 => [1, 3]}, :seg3
+		addop('mov',   [0x8C], 0,    {:d => [0, 1], :seg3 => [1, 3]}, :seg3) { |op| op.args.reverse! }
 		addop_macrostr 'movs',  [0xA4], :strop
 		addop 'movsx', [0x0F, 0xBE], :mrmw
 		addop 'movzx', [0x0F, 0xB6], :mrmw
@@ -481,6 +481,8 @@ class Ia32
 	def init_sse2
 		init_sse
 
+		@opcode_list.each { |o| o.props[:xmmx] = true if o.args.include? :regmmx and o.args.include? :modrmmmx }
+
 		# TODO
 		# TODO <..blabla...integer...blabla..>
 		# TODO
@@ -647,13 +649,13 @@ class Ia32
 			argprops.unshift :modrm
 			
 		when :mrmmmx
-			fields[:regmmx] = [bin.length, 3]
-			fields[:modrm] = [bin.length, 0]
+			op.fields[:regmmx] = [bin.length, 3]
+			op.fields[:modrm] = [bin.length, 0]
 			bin << 0
 			argprops.unshift :regmmx, :modrmmmx
 		when :mrmxmm
-			fields[:regxmm] = [bin.length, 3]
-			fields[:modrm] = [bin.length, 0]
+			op.fields[:regxmm] = [bin.length, 3]
+			op.fields[:modrm] = [bin.length, 0]
 			bin << 0
 			argprops.unshift :regxmm, :modrmxmm	
 		else

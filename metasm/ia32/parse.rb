@@ -259,8 +259,8 @@ end
 		when :farptr:   arg.class == Farptr
 		when :regfp:    arg.class == FpReg
 		when :regfp0:   arg.class == FpReg   and (arg.val == nil or arg.val == 0)	# XXX optional argument
-		when :modrmmmx: arg.class == ModRM   or (arg.class == SimdReg and arg.sz == 64)
-		when :regmmx:   arg.class == SimdReg and arg.sz == 64
+		when :modrmmmx: arg.class == ModRM   or (arg.class == SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx])))
+		when :regmmx:   arg.class == SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx]))
 		when :modrmxmm: arg.class == ModRM   or (arg.class == SimdReg and arg.sz == 128)
 		when :regxmm:   arg.class == SimdReg and arg.sz == 128
 		when :i8, :u8, :u16:

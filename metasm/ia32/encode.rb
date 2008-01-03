@@ -226,6 +226,7 @@ class Ia32
 			when :reg, :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regmmx, :regxmm
 				# field arg
 				set_field[base, oa, ia.val]
+				pfx << 0x66 if oa == :regmmx and op.props[:xmmx] and ia.sz == 128
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0
 				# implicit
 			else

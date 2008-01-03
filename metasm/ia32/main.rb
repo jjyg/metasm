@@ -74,6 +74,7 @@ class Ia32 < CPU
 	class SimdReg < Argument
 		double_map  64 => (0..7).map { |n| "mm#{n}" },
 			   128 => (0..7).map { |n| "xmm#{n}" }
+		def symbolic ; to_s.to_sym end
 	end
 	
 	class Reg < Argument
