@@ -57,7 +57,6 @@ module C
 			while tok = parser.skipspaces and tok.type == :string
 			    case keyword = tok.raw
 			    when '__attribute__', '__declspec'	# synonymous: __attribute__((foo)) == __declspec(foo)
-				break if keyword == '__declspec' and not allow_declspec
 				raise tok || parser if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
 				raise tok || parser if keyword == '__attribute__' and (not tok = parser.skipspaces or tok.type != :punct or tok.raw != '(')
 				nest = 0
@@ -76,6 +75,7 @@ module C
 					end
 					attrib << tok.raw
 				end
+				raise tok || parser if not allow_declspec and %w[inline stdcall fastcall cdecl].include? attrib
 			    when 'inline', '__inline', '__inline__', '__stdcall', '__fastcall', '__cdecl'
 				break if not allow_declspec
 				attrib = keyword.delete '_'
@@ -785,7 +785,10 @@ module C
 				@lexer.define('_INTEGRAL_MAX_BITS', 64) if not @lexer.definition['_INTEGRAL_MAX_BITS']
 				@lexer.define('__w64') if not @lexer.definition['__w64']
 				@lexer.define('_cdecl', '__cdecl') if not @lexer.definition['_cdecl']	# typo ? seen in winreg.h
-				@lexer.define('_MSC_VER', 1001) if not @lexer.definition['_MSC_VER']	# handle '#pragma once'
+				@lexer.define('_MSC_VER', 1300) if not @lexer.definition['_MSC_VER']	# handle '#pragma once' and _declspec(noreturn)
+				@lexer.define('__forceinline', '__inline') if not @lexer.definition['__forceinline']
+				@lexer.define('__ptr32') if not @lexer.definition['__ptr32']	# needed with msc_ver 1300, don't understand their use
+				@lexer.define('__ptr64') if not @lexer.definition['__ptr64']
 			else @prev_pragma_callback[otok]
 			end
 		end
@@ -1251,6 +1254,7 @@ module C
 	
 		# parses a structure/union/enum declaration
 		def parse_type_struct(parser, scope)
+			@type.parse_attributes(parser)
 			if tok = parser.skipspaces and tok.type == :punct and tok.raw == '{'
 				# anonymous struct, ok
 				@type.backtrace = tok
