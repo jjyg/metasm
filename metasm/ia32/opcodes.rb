@@ -69,7 +69,7 @@ class Ia32
 		addop 'dec',   [0xFE], 1,    {:w => [0, 0]}
 		addop 'div',   [0xF6], 6,    {:w => [0, 0]}
 		addop 'enter', [0xC8], nil,  {}, :u16, :u8
-		addop 'hlt',   [0xF4]
+		addop 'hlt',   [0xF4], nil, {}, :stopexec
 		addop 'idiv',  [0xF6], 7,    {:w => [0, 0]}
 		addop 'imul',  [0xF6], 5,    {:w => [0, 0]}, :reg_eax
 		addop 'imul',  [0x0F, 0xAF], :mrm
