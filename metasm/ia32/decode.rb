@@ -351,15 +351,10 @@ module Metasm
 	end
 
 	# updates the function backtrace_binding
-	# XXX will fail if different functions share the same epilog - TODO unoptimize -> duplicate those ?
 	def backtrace_update_function_binding(dasm, faddr, f, retaddr)
 		b = f.backtrace_binding
 		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each { |r|
 			next if b[r] == Expression::Unknown
-			# TODO recheck
-			# include_start ?
-			# ret 42 ?
-			# ...
 			bt = dasm.backtrace(Expression[r], retaddr, :include_start => true, :snapshot_addr => faddr)	# XXX is_subfunc
 			if bt.length != 1 or (b[r] and bt.first != b[r])
 				b[r] = Expression::Unknown
@@ -367,6 +362,10 @@ module Metasm
 				b[r] = bt.first
 			end
 		}
+
+		puts "update func bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer) if $VERBOSE
+
+		# rename some functions
 		case b[:eax].reduce
 		when faddr # metasm pic linker
 			dasm.label_at(faddr, 'geteip', 'loc', 'sub')

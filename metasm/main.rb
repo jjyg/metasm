@@ -293,6 +293,7 @@ class Expression
 	# ex: Expression[[:-, 42], :*, [1, :+, [4, :*, 7]]]
 	# with a single argument, return it if already an Expression, else construct a new one (using unary +/-)
 	def self.[](l, op = nil, r = nil)
+		raise ArgumentError, 'invalid Expression[nil]' if not l and not r and not op
 		return l if l.kind_of? Expression and not op
 		l, op, r = nil, :-, -l if not op and l.kind_of? ::Numeric and l < 0
 		l, op, r = nil, :+, l  if not op
@@ -307,7 +308,7 @@ class Expression
 	# returns true if it is, false if it overflows, and nil if cannot be determined (eg unresolved variable)
 	def self.in_range?(val, type)
 		val = val.reduce if val.kind_of? self
-		return unless val.kind_of? Numeric
+		return unless val.kind_of? ::Numeric
 
 		if INT_MIN[type]
 			val == val.to_i and
@@ -325,7 +326,7 @@ class Expression
 	# basic constructor
 	# XXX funny args order, you should use +Expression[]+ instead
 	def initialize(op, rexpr, lexpr)
-		raise "Expression: invalid arg order: op #{op.inspect}, r l = #{rexpr.inspect} #{lexpr.inspect}" if not op.kind_of? Symbol
+		raise ArgumentError, "Expression: invalid arg order: #{[lexpr, op, rexpr].inspect}" if not op.kind_of? ::Symbol
 		@op, @lexpr, @rexpr = op, lexpr, rexpr
 	end
 

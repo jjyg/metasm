@@ -21,21 +21,23 @@ no_data = ARGV.delete('--no-data')
 no_data_trace = ARGV.delete('--no-data-trace')
 exename = ARGV.shift
 cheader = ARGV.shift
-entrypoints = ARGV.map { |a|
-	if a =~ /^(0x[0-9a-f]+|[0-9]+)$/: Integer(a) rescue a
-	else a
-	end
-}
 
 # load the file
 exe = AutoExe.decode_file exename
 # set options
 d = exe.init_disassembler
 d.parse_c_file cheader if cheader
-d.backtrace_maxblocks_data = 1 if no_data_trace
+d.backtrace_maxblocks_data = -1 if no_data_trace
 # do the work
 begin
-	exe.disassemble(*entrypoints)
+	if ARGV.empty?
+		exe.disassemble
+	else
+		ARGV.each { |ep|
+			ep = Integer(ep) if ep =~ /^0x[0-9a-f]+$/
+			exe.disassemble ep
+		}
+	end
 rescue Interrupt
 	puts $!, $!.backtrace
 end
