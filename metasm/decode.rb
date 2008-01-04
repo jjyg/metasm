@@ -89,6 +89,8 @@ class BacktraceTrace
 	attr_accessor :len
 	# :r/:w/:x
 	attr_accessor :type
+	# bool: true if this maps to a :x that should not have a from when resolved
+	attr_accessor :detached
 
 	def initialize(expr, origin, type, len=nil)
 		@expr, @origin, @type = expr, origin, type
@@ -223,14 +225,24 @@ class DecodedFunction
 	attr_accessor :backtracked_for
 	# addresses of instruction causing the function to return
 	attr_accessor_list :return_address
+	# a proc called for dynamic backtrace_binding generation
+	attr_accessor :btbind_callback
 
-	def initialize
+	def get_backtrace_binding(dasm, funcaddr, calladdr)
+		if btbind_callback
+			@btbind_callback[dasm, @backtrace_binding, funcaddr, calladdr]
+		else
+			@backtrace_binding
+		end
+	end
+
+	# if given a block, this block is called in get_backtrace_binding, with args [dasm, binding, funcaddr, calladdr]
+	def initialize(&btbind_callback)
 		@backtracked_for = []
 		@backtrace_binding = {}
+		@btbind_callback = btbind_callback if btbind_callback
 	end
 end
-
-# TODO special decodedfunction, eg GetProcAddress
 
 # symbolic pointer dereference
 # API similar to Expression
@@ -248,7 +260,7 @@ class Indirection
 
 	def reduce
 		ptr = Expression[@target.reduce]
-		(ptr.rexpr == :unknown) ? ptr : Indirection.new(ptr, @len, @origin)
+		(ptr == Expression::Unknown) ? ptr : Indirection.new(ptr, @len, @origin)
 	end
 	alias reduce_rec reduce
 
@@ -356,7 +368,7 @@ class CPU
 	# return the thing to backtrace to find +value+ before the execution of this instruction
 	# eg backtrace_emu('inc eax', Expression[:eax]) => Expression[:eax + 1]
 	#  (the value of :eax after 'inc eax' is the value of :eax before plus 1)
-	# may return Expression[:unknown]
+	# may return Expression::Unknown
 	def backtrace_emu(di, value)
 		Expression[value.bind(di.backtrace_binding ||= backtrace_binding(di)).reduce]
 	end
@@ -430,14 +442,14 @@ class Disassembler
 	attr_accessor :function
 	# hash addr => (array of) xrefs - access with +add_xref+/+each_xref+
 	attr_accessor :xrefs
-	# bool, true to trace data acces (default true)
-	attr_accessor :trace_data_xref
-	# bool, true to check write xrefs on each instr disasm (default true) - depends on trace_data_xref
+	# bool, true to check write xrefs on each instr disasm (default true)
 	attr_accessor :check_smc
 	# list of [addr to disassemble, (optional)who jumped to it, (optional)got there by a subfunction return]
 	attr_accessor :addrs_todo 
 	# number of blocks to backtrace before aborting if no result is found (defaults to class.backtrace_maxblocks, 50 by default)
 	attr_accessor :backtrace_maxblocks
+	# maximum backtrace length for :r/:w, defaults to backtrace_maxblocks
+	attr_accessor :backtrace_maxblocks_data
 	# a cparser that parsed some C header files, prototypes are converted to DecodedFunction when jumped to
 	attr_accessor :c_parser
 
@@ -466,7 +478,6 @@ class Disassembler
 		@xrefs = {}
 		@function = {}
 		@check_smc = true
-		@trace_data_xref = true
 		@prog_binding = {}
 		@addrs_todo = []
 		@backtrace_maxblocks = @@backtrace_maxblocks
@@ -502,6 +513,7 @@ class Disassembler
 
 	# yields each xref to a given address, optionnaly restricted to a type
 	def each_xref(addr, type=nil)
+		addr = normalize addr
 		case @xrefs[addr]
 		when nil
 		when ::Array: @xrefs[addr].each { |x| yield x if not type or x.type == type }
@@ -537,14 +549,25 @@ class Disassembler
 	end
 
 	# returns the label at the specified address, creates it if needed using the specified prefix (updates prog_binding)
-	def label_at(addr, base='xref')
+	# renames it if the old matches one rewritepfx + addr
+	# returns nil if the address is not known and is not a string
+	def label_at(addr, base='xref', *rewritepfx)
 		e, b = get_section_at(addr)
-		return if not e
+		if not e
+			return case addr
+			when ::String: addr
+			when Expression: addr.rexpr if not addr.lexpr and addr.op == :+ and addr.rexpr.kind_of?(::String)
+			end
+		end
+		addrstr = '_%04x' % (addr.kind_of?(Expression) ? addr.rexpr.kind_of?(::Integer) ? addr.rexpr : 0 : addr)
 		if not l = e.inv_export[e.ptr]
-			l = base + '_%08x' % (addr.kind_of?(Expression) ? addr.rexpr.kind_of?(::Integer) ? addr.rexpr : 0 : addr)
-			l = @program.new_label(l) if @prog_binding[l]
+			l = @program.new_label(base + addrstr)
 			e.add_export l, e.ptr
 			@prog_binding[l] = Expression[b, :+, e.ptr].reduce
+		elsif rewritepfx.find { |p| p+addrstr == l }
+			newl = @program.new_label(base + addrstr)
+			rename_label l, newl
+			l = newl
 		end
 		l
 	end
@@ -557,10 +580,10 @@ class Disassembler
 		}
 		e, l = get_section_at(old)
 		if e
-			e.inv_export.delete e.export[old]
-			e.add_export new, e.export.delete(old)
+			e.add_export new, e.export[old], true
 		end
 		@prog_binding[new] = @prog_binding.delete(old)
+		@addrs_todo.each { |at| at[0] = new if at[0] == old }
 	end
 
 	# decodes instructions from an entrypoint, (tries to) follows code flow
@@ -578,9 +601,15 @@ class Disassembler
 	# if @function[:default] exists, jumps to unknows locations are interpreted as to @function[:default]
 	def disassemble_step
 		# from_func is true if from is the address of a function call that returns to addr
-		addr, from, from_subfuncret = @addrs_todo.pop
+		@addrs_done ||= []
+		return if not todo = @addrs_todo.pop or @addrs_done.include? todo
+		@addrs_done << todo
 
-		return if not addr
+		addr, from, from_subfuncret = todo
+
+		return if from == :default or from == Expression::Unknown
+
+		puts "disassemble_step #{Expression[addr]} #{Expression[from] if from} #{from_subfuncret}  #{@addrs_todo.length}" if $DEBUG or $VERBOSE
 
 		addr = normalize(addr)
 
@@ -596,20 +625,28 @@ class Disassembler
 		elsif from and c_parser and addr.kind_of? Expression and addr.op == :+ and not addr.lexpr and addr.rexpr.kind_of? ::String and
 				s = c_parser.toplevel.symbol[addr.rexpr] and s.type.untypedef.kind_of? C::Function
 			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
-		elsif from
-			puts "not disassembling unknown address #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
-			add_xref(addr, Xref.new(:x, from))
-			add_xref(Expression[:unknown], Xref.new(:x, from))
-			addr = :default if bf = @function[:default]
 		else
-			raise "unknown location to disassemble #{addr}"
+			if bf = @function[:default]
+				puts "using default function for #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
+				if addr.kind_of? Expression and not addr.lexpr and addr.op == :+ and addr.rexpr.kind_of? ::String
+					@function[addr] = @function[:default].dup
+				else
+					addr = :default
+				end
+			else
+				puts "not disassembling unknown address #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
+			end
+			add_xref(addr, Xref.new(:x, from))
+			add_xref(Expression::Unknown, Xref.new(:x, from))
 		end
 
 		bf.backtracked_for.each { |btt|
 			next if btt.block_offset
 			next if backtrace_check_funcret(btt, addr, from)
-			backtrace(btt.expr, from, true, from_subfuncret, btt.origin, btt.type, btt.len)
-		} if bf
+			backtrace(btt.expr, from,
+				  :include_start => true, :from_subfuncret => from_subfuncret,
+				  :origin => btt.origin, :type => btt.type, :len => btt.len, :detached => btt.detached)
+		} if bf and from
 	end
 
 	# splits an InstructionBlock, updates the blocks backtracked_for
@@ -617,10 +654,10 @@ class Disassembler
 		new_b = block.split offset
 		todo = []	# array of [expr, off]
 		new_b.backtracked_for.each { |btt|
-			backtrace(btt.expr,
-				  Expression[new_b.address, :+, btt.block_offset].reduce,
-				  !btt.exclude_instr, btt.from_subfuncret,
-				  btt.origin, btt.type, btt.len, block.address)
+			backtrace(btt.expr, Expression[new_b.address, :+, btt.block_offset].reduce,
+				  :include_start => !btt.exclude_instr, :from_subfuncret => btt.from_subfuncret,
+				  :origin => btt.origin, :type => btt.type, :len => btt.len, :snapshot_addr => block.address, 
+				  :detached => btt.detached)
 		}
 		new_b
 	end
@@ -664,8 +701,8 @@ class Disassembler
 			# trace xrefs
 			# PE SEH needs rw to be checked before x (for xrefs :w)
 			@program.get_xrefs_rw(self, di).each { |type, ptr, len|
-				backtrace(ptr, di_addr, false, false, di_addr, type, len).each { |xaddr|
-					next if xaddr.kind_of? Expression and xaddr.rexpr == :unknown
+				backtrace(ptr, di_addr, :origin => di_addr, :type => type, :len => len).each { |xaddr|
+					next if xaddr == Expression::Unknown
 					# uncomment to check for unaligned rewrites
 					if @check_smc and type == :w
 						#len.times { |off|
@@ -679,7 +716,7 @@ class Disassembler
 				}
 			}
 			@program.get_xrefs_x(self, di).each { |expr|
-				if backtrace(expr, di_addr, false, false, di_addr, :x).length > 0
+				if backtrace(expr, di_addr, :origin => di_addr, :type => :x).length > 0
 					breakafter = true
 				end
 			}
@@ -699,7 +736,7 @@ class Disassembler
 	# walks the backtrace tree from an address, passing along an object
 	# at each step, it yields:
 	# 	:di, <obj>, <decodedinstr>, <depth> for each decoded instruction encountered
-	# 	:func, <obj>, <decodedfunc>, <depth> when backtracking to a block through a decodedfunction (yield for each of the block's subfunctions)
+	# 	:func, <obj>, [<decodedfunc>, <funcaddr>, <addr>], <depth> when backtracking to a block through a decodedfunction (yield for each of the block's subfunctions)
 	# 		the decodedinstruction will be yielded next.
 	# 	:up, <from>, <to>, <sfret> when jumping from one block to another (excluding :loop) # XXX include :loops ?
 	# 	:end, <obj>, <lastaddr> when the backtrack has nothing to backtrack to (eg program entrypoint)
@@ -751,20 +788,34 @@ class Disassembler
 					hadsomething = true
 					if l = w_loopdetect.find { |l_obj, l_addr, l_func| l_addr == f_addr and l_func == f_func }
 						f_obj = yield(:loop, w_obj, w_loopdetect[w_loopdetect.index(l)..-1])
-						f_loopdetect = w_loopdetect[0...w_loopdetect.index(l)]
+						if f_obj and f_obj != w_obj	# should avoid infinite loops
+							f_loopdetect = w_loopdetect[0...w_loopdetect.index(l)]
+						end
 					else
-						f_obj = yield(:up, w_obj, w_addr, f_addr, f_func)
-						f_loopdetect = w_loopdetect
+						f_obj = yield(:up, w_obj, w_addr, f_addr, f_func, w_loopdetect)
 					end
 					next if f_obj == false
 					f_obj ||= w_obj
+					f_loopdetect ||= w_loopdetect
 					todo << [f_obj, f_addr, f_func, f_loopdetect + [[f_obj, f_addr, f_func]] ]
 				}
 				yield :end, w_obj, w_addr if not hadsomething
 			elsif @function[w_addr]
+#raise 'TODO: walk up only to the thunk'
 				oldlen = todo.length
 				each_xref(w_addr, :x) { |x|
-					todo << [w_obj, x.origin, false, w_loopdetect + [[w_obj, x.origin, false]] ]
+					if l = w_loopdetect.find { |l_obj, l_addr, l_func| l_addr == w_addr }
+						f_obj = yield(:loop, w_obj, w_loopdetect[w_loopdetect.index(l)..-1])
+						if f_obj and f_obj != w_obj
+							f_loopdetect = w_loopdetect[0...w_loopdetect.index(l)]
+						end
+					else
+						f_obj = yield(:up, w_obj, w_addr, x.origin, false, w_loopdetect)
+					end
+					next if f_obj == false
+					f_obj ||= w_obj
+					f_loopdetect ||= w_loopdetect
+					todo << [f_obj, x.origin, false, f_loopdetect + [[f_obj, x.origin, false]] ]
 				}
 				yield :end, w_obj, w_addr if todo.length == oldlen
 			else
@@ -784,16 +835,18 @@ class Disassembler
 			if func
 				raise "backtrace #{Expression[addr]}: bad from_subfuncret" if not di or not di.block.subfunction
 				di.block.each_subfunction { |sf|
-					s_obj = yield(:func, obj, @function[sf], loopdetect.length)
+					s_obj = yield(:func, obj, [@function[sf], sf, addr], loopdetect.length)
 					next if s_obj == false
 					s_obj ||= obj
 					if l = loopdetect.find { |l_obj, l_addr, l_func| addr == l_addr and not l_func }
 						l_obj = yield(:loop, s_obj, loopdetect[loopdetect.index(l)..-1])
-						s_loopdetect = loopdetect[0...loopdetect.index(l)]
+						if l_obj and l_obj != s_obj
+							s_loopdetect = loopdetect[0...loopdetect.index(l)]
+						end
 						next if l_obj == false
 						s_obj = l_obj if l_obj
-					else s_loopdetect = loopdetect
 					end
+					s_loopdetect ||= loopdetect
 					todo << [s_obj, addr, false, s_loopdetect + [[s_obj, addr, false]] ]
 				}
 			elsif di
@@ -805,8 +858,9 @@ class Disassembler
 				}
 				walk_up[obj, di.block.address, loopdetect] if obj
 			elsif @function[addr]
+#raise 'TODO: walk up only to the thunk'
 				ex_obj = obj
-				obj = yield(:func, obj, @function[addr], loopdetect.length)
+				obj = yield(:func, obj, [@function[addr], addr, addr], loopdetect.length)
 				next if obj == false
 				obj ||= ex_obj
 				walk_up[obj, addr, loopdetect]
@@ -820,25 +874,38 @@ class Disassembler
 	# updates blocks backtracked_for if type is set
 	# uses backtrace_walk
 	# all values returned are from backtrace_check_found (which may generate xrefs, labels etc)
-	def backtrace(expr, start_addr, include_start=false, from_subfuncret=false, origin=nil, type=nil, len=nil, snapshot_addr=nil, maxdepth=@backtrace_maxblocks)
+	def backtrace(expr, start_addr, nargs={})
+		include_start   = nargs.fetch(:include_start,   false)
+		from_subfuncret = nargs.fetch(:from_subfuncret, false)
+		origin          = nargs.fetch(:origin,          nil)
+		type            = nargs.fetch(:type,            nil)
+		len             = nargs.fetch(:len,             nil)
+		snapshot_addr   = nargs.fetch(:snapshot_addr,   nil)
+		maxdepth        = nargs.fetch(:maxdepth,        @backtrace_maxblocks)
+		detached        = nargs.fetch(:detached,        false)
+
 		start_addr = normalize(start_addr)
 		di = @decoded[start_addr]
 
-		if result = backtrace_check_found(expr, di, origin, type, len, maxdepth)
+		if not snapshot_addr and @cpu.backtrace_is_stack_address(expr)
+			puts "  not backtracking stack address #{expr}" if $DEBUG
+			return []
+		end
+		
+		maxdepth = @backtrace_maxblocks_data if backtrace_maxblocks_data and (type == :r or type == :w) and maxdepth > @backtrace_maxblocks_data
+
+		if result = backtrace_check_found(expr, di, origin, type, len, maxdepth, detached)
 			# no need to update backtrace_for
 			return result
 		end
 		
-		if (type == :r or type == :w) and not @trace_data_xref
-			return [Expression[:unknown]]
-		end
-
 		# create initial backtracked_for
 		if type and origin == start_addr and di
 			btt = BacktraceTrace.new(expr, origin, type, len)
 			btt.block_offset = di.block_offset
 			btt.exclude_instr = true if not include_start
 			btt.from_subfuncret = true if from_subfuncret and include_start
+			btt.detached = true if detached
 			di.block.backtracked_for |= [btt]
 		end
 
@@ -854,15 +921,16 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 			when :loop
 				oldexpr = args[0][0][0]
 				next false if expr == oldexpr		# unmodifying loop
-				puts "  bt loop at #{Expression[args[0][0][1]]}: #{oldexpr} => #{expr} (#{args[0].map { |z| Expression[z[1]] }.join(' -> ')})" if $VERBOSE
+				puts "  bt loop at #{Expression[args[0][0][1]]}: #{oldexpr} => #{expr} (#{args[0].map { |z| Expression[z[1]] }.join(' <- ')})" if $DEBUG
 				false
 			when :up
 				if origin and type
 					# update backtracked_for
 					from, to, subf = args
 					btt = BacktraceTrace.new(expr, origin, type, len)
+					btt.detached = true if detached
 					@decoded[from].block.backtracked_for |= [btt] if @decoded[from]
-					@function[from].backtracked_for |= [btt] if @function[from]
+					@function[from].backtracked_for |= [btt] if @function[from] and from != :default
 					if @decoded[to]
 						btt = btt.dup
 						btt.block_offset = @decoded[to].block_offset
@@ -878,12 +946,12 @@ puts "  not backtracking stack address #{expr}" if $DEBUG
 					next false
 				end
 oldexpr = expr
-				expr = case ev
-				when :di: backtrace_emu_instr(args[0], expr)
-				when :func: f, args[0] = args[0], nil ; backtrace_emu_subfunc(f, expr)	# for check_found
+				case ev
+				when :di: expr = backtrace_emu_instr(args[0], expr)
+				when :func: expr = backtrace_emu_subfunc(args[0][0], f=args[0][1], args[0][2], expr) ; args[0] = nil	# for check_found
 				end
-puts "  backtrace #{args[0] || Expression[@function.index(f)]}  #{oldexpr} => #{expr}" if $DEBUG
-				if vals = backtrace_check_found(expr, args[0], origin, type, len, maxdepth-args[1])
+puts "  backtrace #{args[0] || Expression[f]}  #{oldexpr} => #{expr}" if $DEBUG
+				if vals = backtrace_check_found(expr, args[0], origin, type, len, maxdepth-args[1], detached)
 					result |= vals
 					next false
 				end
@@ -907,7 +975,8 @@ puts '  backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']'
 puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if $DEBUG
 			di.block.add_subfunction funcaddr
 			di.block.add_to retaddr, true
-			@addrs_todo << [retaddr, instraddr, true]
+			@addrs_todo.unshift [retaddr, instraddr, true]	# dasm inside of the function first
+			true
 		end
 	end
 
@@ -917,8 +986,9 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	end
 
 	# applies one subfunction to an expression
-	def backtrace_emu_subfunc(sf, expr)
-		Expression[expr.bind(sf.backtrace_binding).reduce]
+	def backtrace_emu_subfunc(func, funcaddr, calladdr, expr)
+		bind = func.get_backtrace_binding(self, funcaddr, calladdr)
+		Expression[expr.bind(bind).reduce]
 	end
 
 	# static resolution of indirections
@@ -934,7 +1004,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# returns true if the expression needs more backtrace
 	# it checks for the presence of a symbol (not :unknown), which means it depends on some register value
 	def need_backtrace(expr)
-		return if expr.kind_of? ::Integer or expr == Expression[:unknown]
+		return if expr.kind_of? ::Integer or expr == Expression::Unknown
 		expr.externals.find { |x|
 			case x
 			when Indirection: need_backtrace(x.target)
@@ -951,28 +1021,24 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# if type is :x, addrs_todo is updated, and if di starts a block, expr is checked to see if it may be a subfunction return value
 	#
 	# expr indirection are solved by first finding the value of the pointer, and then rebacktracking for write-type access
+	# detached is true if type is :x and from should not be set in addrs_todo (indirect call flow, eg external function callback)
 	# if the backtrace ends pre entrypoint, returns the value encoded in the raw binary
 	# XXX global variable (modified by another function), exported data, multithreaded app..
 	# TODO handle memory aliasing (mov ebx, eax ; write [ebx] ; read [eax])
 	# TODO mark things for rebacktrace
 	# TODO trace expr evolution through backtrace, to modify immediates to an expr involving label names
 	#  eg. mov eax, 42 ; add eax, 4 ; jmp eax  =>  mov eax, some_label-4
-	def backtrace_check_found(expr, di, origin, type, len, maxdepth)
-		if type == :x and di and di.block_offset == 0 and @cpu.backtrace_is_function_return(expr)
+	def backtrace_check_found(expr, di, origin, type, len, maxdepth, detached)
+		if type == :x and di and di.block_offset == 0 and @cpu.backtrace_is_function_return(expr) and (
+			(not di.block.from_normal and not di.block.from_subfuncret) or
+			(bool = false ; di.block.each_from_normal { |fn| bool = true if @decoded[fn] and @decoded[fn].opcode.props[:saveip] } ; bool))
 			# new function
 			# the actual return address will be found later (after we return nil)
 			# XXX to_subfuncret -> we need to know the call address
 			addr = di.address
-			l = label_at(addr, 'sub')
+			l = label_at(addr, 'sub', 'loc', 'xref')
 			if not f = @function[addr]
 				f = @function[addr] = DecodedFunction.new
-				if l and l[0, 4] == 'loc_'
-					newl = l.sub('loc_', 'sub_')
-					if not @prog_binding[newl]
-						rename_label(l, newl)
-						l = newl
-					end
-				end
 				puts "found new function #{l} at #{Expression[addr]}" if $VERBOSE
 				# each_xref(addr, :x) { rebacktrace => to_subfuncret ? }
 			end
@@ -984,17 +1050,17 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 
 			f.backtracked_for |= @decoded[addr].block.backtracked_for.find_all { |btt| not btt.block_offset }
 			@cpu.backtrace_update_function_binding(self, addr, f, origin)
+puts l, f.backtrace_binding.map { |k, v| "#{k} -> #{v}" }.sort
 		end
 
 		return if need_backtrace(expr)
 
 puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expression[origin] if origin}" if $DEBUG
-		maxdepth = 0 if (type == :r or type == :w) and not @trace_data_xref
 		result = backtrace_value(expr, maxdepth)
 
 		# create xrefs/labels
 		result.each { |e|
-			backtrace_found_result(e, di, type, origin, len)
+			backtrace_found_result(e, di, type, origin, len, detached)
 		} if type and origin
 
 		result
@@ -1030,7 +1096,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 			if edata
 				Expression[ edata.decode_imm("u#{8*len}".to_sym, @cpu.endianness) ]
 			else
-				Expression[:unknown]
+				Expression::Unknown
 			end
 		}
 
@@ -1042,7 +1108,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 				# XXX should be rebacktracked on new xref
 				next if x.len != ind.len or not @decoded[x.origin]
 				refs |= [x.origin]
-			} if ptr != Expression[:unknown]
+			} if ptr != Expression::Unknown
 
 			if refs.empty?
 				if get_section_at(ptr)
@@ -1061,7 +1127,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 			# wait until we arrive at an xref'ing instruction, then backtrace the written value
 			backtrace_walk(initval, ind.origin, true, false, maxdepth-1) { |ev, expr, *args|
 				case ev
-				when :unknown_addr, :maxdepth, :stopaddr: ret |= [Expression[:unknown]]
+				when :unknown_addr, :maxdepth, :stopaddr: ret |= [Expression::Unknown]
 				when :end
 					if not refs.empty? and (expr == true or not need_backtrace(expr))
 						if expr == true
@@ -1073,7 +1139,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 						end
 					else
 						# unknown pointer, backtrace did not resolve...
-						ret |= [Expression[:unknown]]
+						ret |= [Expression::Unknown]
 					end
 				when :di
 					di = args[0]
@@ -1084,13 +1150,13 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 						writes = writes.find_all { |x_type, x_ptr, x_len| x_type == :w and x_len == ind.len }
 						if writes.length != 1
 							puts "backtrace_ind: cannot find :w #{ptr} in xrefs from #{di}" if $VERBOSE
-							ret |= [Expression[:unknown]]
+							ret |= [Expression::Unknown]
 							next false
 						end
 						expr = Indirection.new(writes[0][1], ind.len, di.address)
 					end
 					expr = backtrace_emu_instr(di, expr)
-# may have new indirections... recall bt_value ?
+					# may have new indirections... recall bt_value ?
 					#if not need_backtrace(expr)
 					if expr.externals.all? { |e| @prog_binding[e] or @function[Expression[e].reduce] }
 						ret |= backtrace_value(expr, maxdepth-1-args[1])
@@ -1100,7 +1166,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 					end
 				when :func
 					next true if expr == true	# XXX
-					expr = backtrace_emu_subfunc(args[0], expr)
+					expr = backtrace_emu_subfunc(args[0][0], args[0][1], args[0][2], expr)
 					#if not need_backtrace(expr)
 					if expr.externals.all? { |e| @prog_binding[e] or @function[Expression[e].reduce] }
 						ret |= backtrace_value(expr, maxdepth-1-args[1])
@@ -1116,30 +1182,34 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 	end
 
 	# creates xrefs, updates addrs_todo, updates instr args
-	def backtrace_found_result(expr, di, type, origin, len)
+	def backtrace_found_result(expr, di, type, origin, len, detached)
 		n = normalize(expr)
-		add_xref(n, Xref.new(type, origin, len))
+		add_xref(n, Xref.new(type, origin, len)) if origin != :default and origin != Expression::Unknown
+		unk = true if n == Expression::Unknown
+
+		add_xref(n, Xref.new(:addr, di.address)) if di and di.address != origin and not unk
 		base = { nil => 'loc', 1 => 'byte', 2 => 'word', 4 => 'dword' }[len] || 'xref'
 		base = 'sub' if @function[n]
-		n = label_at(n, base) || n
+		n = Expression[label_at(n, base, 'loc', 'xref') || n]
 
 		# update instr args
 		# TODO trace expression evolution to allow handling of
 		#  mov eax, 28 ; add eax, 4 ; jmp eax
 		#  => mov eax, (loc_xx-4)
-		if n != Expression[:unknown] and di and di.address == origin
-			@cpu.replace_instr_arg_immediate(di.instruction, expr, Expression[n])
+		if di and not unk # and di.address == origin
+			@cpu.replace_instr_arg_immediate(di.instruction, expr, n)
 		end
 
 		# add comment
-		if type and @decoded[origin] and not @decoded[origin].instruction.args.include? Expression[n]
-			@decoded[origin].add_comment "#{type}#{len} #{Expression[n]}"
+		if type and @decoded[origin] and not @decoded[origin].instruction.args.include? n
+			@decoded[origin].add_comment "#{type}#{len}:#{n}"
 		end
 
 		if type == :x and origin
-			@decoded[origin].block.add_to_normal(n) if @decoded[origin]
+			origin = nil if detached
+			@decoded[origin].block.add_to_normal(n) if @decoded[origin] and not unk
 			@addrs_todo << [n, origin]
-puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{Expression[origin]}" if $DEBUG
+puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origin}" if $DEBUG
 		end
 	end
 
@@ -1158,8 +1228,7 @@ puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{Expression[orig
 				l = label_at(di.block.address)
 				next if l[0, 4] != 'sub_'
 				puts "found thunk for #{f.rexpr} at #{Expression[di.block.address]}" if $VERBOSE
-				label = "thunk_#{f.rexpr}"
-				label << '_' if @prog_binding[label]
+				label = @program.new_label "thunk_#{f.rexpr}"
 				rename_label(l, label)
 			}
 		}
@@ -1177,6 +1246,7 @@ puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{Expression[orig
 	def dump(dump_data=true, &b)
 		b ||= proc { |l| puts l }
 		@sections.sort.each { |addr, edata|
+			blockoffs = @decoded.values.map { |di| Expression[di.block.address, :-, addr].reduce if di.block_offset == 0 }.grep(::Integer).sort
 			b.call @program.dump_section_header(addr, edata)
 			unk_off = 0
 			# blocks.sort_by { |b| b.addr }.each { |b|
@@ -1186,8 +1256,14 @@ puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{Expression[orig
 					dump_block(di.block, &b)
 					di = di.block.list.last
 					unk_off = i + di.block_offset + di.bin_length
-				elsif i >= unk_off and dump_data
-					unk_off = dump_data(Expression[addr, :+, unk_off].reduce, edata, unk_off, &b)
+				elsif i >= unk_off
+					next_off = blockoffs.find { |bo| bo > i } || edata.length
+					if dump_data or next_off - i < 16
+						unk_off = dump_data(Expression[addr, :+, unk_off].reduce, edata, unk_off, &b)
+					else
+						b["// [#{next_off - i} data bytes]"]
+						unk_off = next_off
+					end
 				end
 			}
 		}
@@ -1196,18 +1272,24 @@ puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{Expression[orig
 	# dumps a block of decoded instructions
 	def dump_block(block, &b)
 		xr = []
-		each_xref(block.address, :x) { |x| xr << Expression[x.origin] }
+		each_xref(block.address) { |x|
+			case x.type
+			when :x: xr << Expression[x.origin]
+			when :r, :w: xr << "#{x.type}#{x.len}:#{Expression[x.origin]}"
+			end
+		}
 		if not xr.empty?
 			b.call ''
 			b.call "// Xrefs: #{xr[0, 8].join(' ')}#{' ...' if xr.length > 8}"
 		end
 		if @prog_binding.index(block.address)
+			b.call '' if xr.empty?
 			@prog_binding.each { |name, addr| b.call "#{name}:" if addr == block.address }
 		end
 		block.list.each { |di|
 			block.edata.ptr = block.edata_ptr + di.block_offset
 			bin = block.edata.read(di.bin_length).unpack('C*').map { |c| '%02x' % c }.join
-			b.call "    #{di.instruction.to_s.ljust(44)} ; @#{Expression[di.address]}  #{bin}  #{di.comment[0,6].join(' ') if di.comment}"
+			b.call "    #{di.instruction.to_s.ljust(44)} ; @#{Expression[di.address]}  #{bin}  #{di.comment.sort[0,6].join(' ') if di.comment}"
 		}
 	end
 
@@ -1217,17 +1299,19 @@ puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{Expression[orig
 	# returns the next offset to display
 	# TODO array-style data access
 	def dump_data(addr, edata, off, aggreging=false, &b)
-		l = ''
-		l << @prog_binding.index(addr).to_s
-		l << ' ' if not l.empty?
+		if l = @prog_binding.index(addr)
+			l = (l + ' ').ljust(16)
+		else l = ''
+		end
 		elemlen = 1	# size of each element we dump (db by default)
 		dumplen = -off % 16	# number of octets to dump
 		dumplen = 16 if dumplen == 0
-		cmt = " ; @#{Expression[addr]}"
+		cmt = []
 		each_xref(addr) { |x|
 			dumplen = elemlen = x.len if x.len == 2 or x.len == 4
-			cmt << " #{Expression[x.origin]}:#{x.type}#{x.len}"
+			cmt << " #{x.type}#{x.len}:#{Expression[x.origin]}"
 		}
+		cmt = " ; @#{Expression[addr]}" + cmt.sort[0, 6].join
 		if r = edata.reloc[off]
 			dumplen = elemlen = r.type.to_s[1..-1].to_i/8
 		end
@@ -1261,27 +1345,26 @@ puts "    backtrace_found: addrs_todo << #{Expression[n]} from #{Expression[orig
 			addr = Expression[addr, :+, elemlen].reduce
 			if i = (1-elemlen..0).find { |i|
 				t = Expression[addr, :+, i].reduce
-				@xrefs[t] or @decoded[t] or edata.reloc[edata.ptr+i]
+				@xrefs[t] or @decoded[t] or edata.reloc[edata.ptr+i] or edata.inv_export[edata.ptr+i]
 			}
 				edata.ptr += i
 				break
 			end
 			break if edata.reloc[edata.ptr-elemlen]
-			# TODO uninitialized data
 		}
 
 		# recognize strings
 		vals = vals.inject([]) { |vals, value|
-			if (elemlen == 1 or elemlen == 2) and value.kind_of? ::Integer and value >= 0x20 and value <= 0x7e
-				if vals.last.kind_of? ::String
-					vals.last << value
-				else
-					vals << value.chr
+			if (elemlen == 1 or elemlen == 2)
+				case value
+				when 0x20..0x7e, 0x0a, 0x0d
+					if vals.last.kind_of? ::String: vals.last << value ; vals
+					else vals << value.chr
+					end
+				else vals << value
 				end
-			else
-				vals << value
+			else vals << value
 			end
-			vals
 		}
 		vals.map! { |value|
 			if value.kind_of? ::String
