@@ -583,7 +583,7 @@ class LinDebug
 		}
 		@command['quit'] = @command['detach'] = @command['exit'] = proc { |lex, int|
 			@rs.detach
-			@runing = false
+			@running = false
 		}
 		@command['closeui'] = proc { |lex, int|
 			@rs.logger = nil

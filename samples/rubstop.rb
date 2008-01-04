@@ -97,6 +97,7 @@ class Rubstop < Metasm::PTrace32
 	def readregs
 		%w[eax ebx ecx edx esi edi esp ebp eip orig_eax eflags dr0 dr1 dr2 dr3 dr6 dr7 cs ds].each { |r| @regs_cache[r] = send(r) }
 		@curinstr = nil if @regs_cache['eip'] != @oldregs['eip']
+		@pgm.encoded.data.invalidate
 	end
 
 	def curinstr
