@@ -284,7 +284,7 @@ module Metasm
 		when 'pop'
 			{ :esp => Expression[:esp, :+, @size/8],
 			  a[0] => Indirection.new(Expression[:esp], @size/8, di.address) }
-		when 'pushfd': { :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], @size/8, di.address) => Expression[:unknown] }
+		when 'pushfd': { :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], @size/8, di.address) => Expression::Unknown }
 		when 'popfd':  { :esp => Expression[:esp, :+, @size/8] }
 		when 'call'
 			eoff = Expression[di.block.address, :+, di.block_offset + di.bin_length]
@@ -294,7 +294,7 @@ module Metasm
 		when 'stosd', 'stosw', 'stosb'
 			if di.instruction.prefix[:rep]
 				# XXX backtrace ecx ?
-				{ :edi => Expression[:unknown], :ecx => Expression[:unknown] }
+				{ :edi => Expression::Unknown, :ecx => Expression::Unknown }
 			else
 				sz = { ?b => 1, ?w => 2, ?d => 4 }[op[-1]]
 				{ Indirection.new(Expression[:edi], sz, di.address) => Expression[:eax], :edi => Expression[:edi, :+, sz] }
@@ -308,8 +308,8 @@ module Metasm
 				b[Indirection.new(Expression[:esp, :-, i*@size/8], @size/8, di.address)] = Indirection.new(Expression[:ebp, :-, i*@size/8], @size/8, di.address) }
 			b
 		when 'leave': { :ebp => Indirection.new(Expression[:ebp], @size/8, di.address), :esp => Expression[:ebp, :+, @size/8] }
-		when 'aaa': { :eax => Expression[:unknown] }
-		when 'imul': { a[0] => ((a[2] and a[0] == a[1]) ? Expression[a[0], :*, a[2]] : Expression[:unknown]) }
+		when 'aaa': { :eax => Expression::Unknown }
+		when 'imul': { a[0] => ((a[2] and a[0] == a[1]) ? Expression[a[0], :*, a[2]] : Expression::Unknown) }
 		else
 			if %[nop cmp test jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle jnb jnbe jp jnp jnl jnle].include? op	# etc etc
 				# XXX eflags !
@@ -317,7 +317,7 @@ module Metasm
 			else
 				puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 				# assume nothing except the arg list is modified
-				(a.grep(Indirection) + a.grep(::Symbol)).inject({}) { |h, s| h.update s => Expression[:unknown] }
+				(a.grep(Indirection) + a.grep(::Symbol)).inject({}) { |h, s| h.update s => Expression::Unknown }
 			end
 		end
 
@@ -355,20 +355,23 @@ module Metasm
 	def backtrace_update_function_binding(dasm, faddr, f, retaddr)
 		b = f.backtrace_binding
 		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each { |r|
-			next if b[r] == Expression[:unknown]
+			next if b[r] == Expression::Unknown
 			# TODO recheck
 			# include_start ?
 			# ret 42 ?
 			# ...
 			bt = dasm.backtrace(Expression[r], retaddr, :include_start => true, :snapshot_addr => faddr)	# XXX is_subfunc
 			if bt.length != 1 or (b[r] and bt.first != b[r])
-				b[r] = Expression[:unknown]
+				b[r] = Expression::Unknown
 			else
 				b[r] = bt.first
 			end
 		}
-		if b[:eax].reduce == faddr
-			l = dasm.label_at(faddr, 'geteip', 'loc', 'sub')
+		case b[:eax].reduce
+		when faddr # metasm pic linker
+			dasm.label_at(faddr, 'geteip', 'loc', 'sub')
+		when Expression[:eax] # check elf pic convention
+			dasm.label_at(faddr, 'get_pc_thunk_ebx', 'loc', 'sub') if b[:ebx].reduce == Expression[Indirection.new(Expression[:esp], @size/8, nil)]
 		end
 	end
 
@@ -392,9 +395,10 @@ module Metasm
 
 	# returns a DecodedFunction from a parsed C function prototype
 	# TODO walk structs args
-	def decode_c_function_prototype(cp, sym)
+	def decode_c_function_prototype(cp, sym, orig=nil)
+		sym = cp.toplevel.symbol[sym] if sym.kind_of?(::String)
 		df = DecodedFunction.new
-		orig = Expression[sym.name]
+		orig ||= Expression[sym.name]
 
 		new_bt = proc { |expr, rlen|
 			df.backtracked_for << BacktraceTrace.new(expr, orig, rlen ? :r : :x, rlen)
@@ -404,7 +408,7 @@ module Metasm
 		new_bt[Indirection.new(Expression[:esp], @size/8, orig), nil] if not sym.attributes.to_a.include? 'noreturn'
 
 		# register dirty (XXX assume standard ABI)
-		df.backtrace_binding.update :eax => Expression[:unknown], :ecx => Expression[:unknown], :edx => Expression[:unknown]
+		df.backtrace_binding.update :eax => Expression::Unknown, :ecx => Expression::Unknown, :edx => Expression::Unknown
 
 		# emulate ret <n>
 		al = cp.typesize[:ptr]
@@ -423,6 +427,7 @@ module Metasm
 				pt = a.type.untypedef.type.untypedef
 				if pt.kind_of? C::Function
 					new_bt[Indirection.new(Expression[:esp, :+, stackoff], al, orig), nil]
+					df.backtracked_for.last.detached = true
 				elsif pt.kind_of? C::Struct
 					new_bt[Indirection.new(Expression[:esp, :+, stackoff], al, orig), al]
 				else

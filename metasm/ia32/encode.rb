@@ -242,7 +242,7 @@ class Ia32
 
 		# convert label name for jmp/call/loop to relative offset
 		if op.props[:setip] and op.name[0, 3] != 'ret' and i.args.first.kind_of? Expression
-			postlabel = program.new_label(op.name)
+			postlabel = program.new_label('post'+op.name)
 			target = postponed.first[1]
 			target = target.rexpr if target.kind_of? Expression and target.op == :+ and not target.lexpr
 			postponed.first[1] = Expression[target, :-, postlabel]
