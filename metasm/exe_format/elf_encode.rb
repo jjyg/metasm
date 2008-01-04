@@ -403,8 +403,10 @@ class ELF
 		list = @relocations.find_all { |r| r.type != 'JMP_SLOT' and not r.addend }
 		if not list.empty?
 			if not @tag['TEXTREL'] and s = @sections.find { |s|
-				s.encoded and e = s.encoded.inv_export[0] and Expression[r.offset, :-, e].reduce.kind_of? ::Integer
-			} and not s.flags.include? 'WRITE'
+				s.encoded and e = s.encoded.inv_export[0] and not s.flags.include? 'WRITE' and
+				list.find { |r| Expression[r.offset, :-, e].reduce.kind_of? ::Integer }
+				# TODO need to check with r.offset.bind(elf_binding)
+			}
 				@tag['TEXTREL'] = 0
 			end
 			if not rel = @sections.find { |s| s.type == 'REL' and s.name == '.rel.dyn' }
@@ -702,14 +704,14 @@ class ELF
 		end
 		startaddr = label_at(@encoded, 0)
 		r = Relocation.new
-		r.offset = Expression[[label_at(section.encoded, 0, 'sect_start'), :-, startaddr], :+, off]
+		r.offset = Expression[label_at(section.encoded, 0, 'sect_start'), :+, off]
 		if Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of?(::Integer)
 			# this location is relative to the base load address of the ELF
 			r.type = 'RELATIVE'
 		else
 			et = rel.target.externals
 			extern = et.find_all { |name| not binding[name] }
-			if extern.length > 1
+			if extern.length != 1
 				puts "ELF: 386_create_reloc: ignoring reloc #{rel.target} in #{section.name}: #{extern.inspect} unknown" if $VERBOSE
 				return
 			end
@@ -1050,12 +1052,14 @@ class ELF
 			interp = readstr[]
 
 			@segments.delete_if { |s| s.type == 'INTERP' }
-			seg = Segment.new
-			seg.type = 'INTERP'
-			seg.encoded = EncodedData.new << interp << 0
-			seg.flags = ['R']
-			seg.memsz = seg.filesz = seg.encoded.length
-			@segments.unshift seg
+			if interp != 'nil'
+				seg = Segment.new
+				seg.type = 'INTERP'
+				seg.encoded = EncodedData.new << interp << 0
+				seg.flags = ['R']
+				seg.memsz = seg.filesz = seg.encoded.length
+				@segments.unshift seg
+			end
 
 			check_eol[]
 

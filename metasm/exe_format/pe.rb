@@ -206,27 +206,46 @@ EOS
 	# TODO seh prototype (args => context)
 	# TODO hook on (non)resolution of :w xref
 	def get_xrefs_x(dasm, di)
-		if @header.machine == 'I386' and a = di.instruction.args.first and a.kind_of? Ia32::ModRM and a.seg and a.seg.val == 4 and
+		if @cpu.kind_of? Ia32 and a = di.instruction.args.first and a.kind_of? Ia32::ModRM and a.seg and a.seg.val == 4 and
 				w = get_xrefs_rw(dasm, di).find { |type, ptr, len| type == :w and ptr.externals.include? 'segment_base_fs' } and
 				dasm.backtrace(Expression[w[1], :-, 'segment_base_fs'], di.address) == [Expression[0]]
 			sehptr = w[1]
 			sz = @cpu.size/8
 			sehptr = Indirection.new(Expression[Indirection.new(sehptr, sz, di.address), :+, sz], sz, di.address)
-			a = dasm.backtrace(sehptr, di.address, true, false, di.address, :x)
+			a = dasm.backtrace(sehptr, di.address, :include_start => true, :origin => di.address, :type => :x, :detached => true)
 puts "backtrace seh from #{di} => [#{a.map { |addr| Expression[addr] }.join(', ')}]" if $VERBOSE
 			a.each { |aa|
-				next if aa == Expression[:unknown]
-				l = dasm.label_at(aa, 'seh')
-				if l[0, 4] == 'loc_'
-					newl = l.sub('loc_', 'seh_')
-					dasm.rename_label(l, newl) if not dasm.prog_binding[newl]
-				end
+				next if aa == Expression::Unknown
+				l = dasm.label_at(aa, 'seh', 'loc', 'sub')
 				dasm.addrs_todo << [aa] 
 			}
 			super
 		else
 			super
 		end
+	end
+
+	# returns a disassembler with a special decodedfunction for GetProcAddress (i386 only)
+	def init_disassembler
+		d = super
+		if @cpu.kind_of? Ia32
+			old_cp = d.c_parser
+			d.c_parser = nil
+			d.parse_c '__stdcall void *GetProcAddress(int, char *);'
+			gpa = @cpu.decode_c_function_prototype(d.c_parser, 'GetProcAddress')
+			d.c_parser = old_cp
+			gpa.btbind_callback = proc { |dasm, bind, funcaddr, calladdr|
+				sz = @cpu.size/8
+				raise 'getprocaddr call error' if not dasm.decoded[calladdr]
+				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true)
+				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(0) and i > sz	# try to avoid ordinals
+					bind = bind.merge :eax => Expression[fn[0, i]]
+				end
+				bind
+			}
+			d.function[Expression['GetProcAddress']] = gpa
+		end
+		d
 	end
 end
 

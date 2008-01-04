@@ -212,7 +212,7 @@ class ELF
 		}
 
 		if @header.entry != 0
-			add_label(new_label('entrypoint'), @header.entry)
+			add_label('entrypoint', @header.entry)
 		end
 	end
 
@@ -492,6 +492,11 @@ class ELF
 	# returns the Metasm::Relocation that should be applied for reloc
 	# self.encoded.ptr must point to the location that will be relocated (for implicit addends)
 	def arch_decode_segments_reloc_386(reloc)
+		if reloc.symbol and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
+			s = @sections.find { |s| s.name and s.offset <= @encoded.ptr and s.offset + s.size > @encoded.ptr }
+			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
+		end
+
 		# decode addend if needed
 		case reloc.type
 		when 'NONE', 'COPY', 'GLOB_DAT', 'JMP_SLOT' # no addend
@@ -501,8 +506,9 @@ class ELF
 		case reloc.type
 		when 'NONE'
 		when 'RELATIVE'
-			base = @segments.find_all { |s| s.type == 'LOAD' }.map { |s| s.vaddr }.min & 0xffff_f000
-			target = base + addend
+			# base = @segments.find_all { |s| s.type == 'LOAD' }.map { |s| s.vaddr }.min & 0xffff_f000
+			# compiled to be loaded at seg.vaddr
+			target = addend
 			if o = addr_to_off(target)
 				if not label = @encoded.inv_export[o]
 					label = new_label('xref_%X' % target)
@@ -611,6 +617,42 @@ class ELF
 			ep << s.value if s.shndx != 'UNDEF' and s.type == 'FUNC'
 		} if @symbols
 		ep
+	end
+
+	def dump_section_header(addr, edata)
+		if s = @segments.find { |s| s.vaddr == addr }
+			"\n// ELF segment at #{Expression[addr]}, flags = #{s.flags.sort.join(', ')}"
+		else super
+		end
+	end
+
+	# returns a disassembler with a special decodedfunction for dlsym, __libc_start_main, and a default function (i386 only)
+	def init_disassembler
+		d = super
+		if @cpu.kind_of? Ia32
+			old_cp = d.c_parser
+			d.c_parser = nil
+			d.parse_c 'void *dlsym(int, char *);'
+			d.parse_c 'void __libc_start_main(void(*)(), int, int, void(*)(), void(*)()) __attribute__((noreturn));'
+			d.parse_c 'void stdfunc(void);'
+			dls  = @cpu.decode_c_function_prototype(d.c_parser, 'dlsym')
+			main = @cpu.decode_c_function_prototype(d.c_parser, '__libc_start_main')
+			df   = @cpu.decode_c_function_prototype(d.c_parser, 'stdfunc', :default)
+			d.c_parser = old_cp
+			dls.btbind_callback = proc { |dasm, bind, funcaddr, calladdr|
+				sz = @cpu.size/8
+				raise 'dlsym call error' if not dasm.decoded[calladdr]
+				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true)
+				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(0) and i > sz	# try to avoid ordinals
+					bind = bind.merge :eax => Expression[fn[0, i]]
+				end
+				bind
+			}
+			d.function[Expression['dlsym']] = dls
+			d.function[Expression['__libc_start_main']] = main
+			d.function[:default] = df
+		end
+		d
 	end
 end
 

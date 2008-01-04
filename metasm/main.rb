@@ -259,12 +259,14 @@ class ExeFormat
 		l
 	end
 
-	# creates a new label, that is guaranteed to be unique as long as this object (ExeFormat) exists
+	# creates a new label, that is guaranteed to never be returned again as long as this object (ExeFormat) exists
 	def new_label(base = '')
-		base = base.dup.tr('^a-zA-Z0-9_', '_')
-		k = (base << '_uuid' << ('%08x' % base.object_id)).freeze	# use %x instead of to_s(16) for negative values
-		(@unique_labels_cache ||= []) << k	# prevent garbage collection, this guarantees uniqueness (object_id)
-		k
+		base = base.dup.tr('^a-zA-Z0-9_', '_').gsub(/_+/, '_').sub(/^_+/, '')
+		@unique_labels_cache ||= ['']
+		# use %x instead of to_s(16) for negative values
+		base = (base << '_uuid' << ('%08x' % base.object_id)).freeze if @unique_labels_cache.include? base
+		@unique_labels_cache << base
+		base
 	end
 end
 
@@ -530,6 +532,8 @@ class Expression
 	def inspect
 		"#<Expression:#{'%08x' % object_id} #{@lexpr.inspect} #{@op.inspect} #{@rexpr.inspect}>"
 	end
+
+	Unknown = self[:unknown]
 end
 
 # an EncodedData relocation, specifies a value to patch in
@@ -589,9 +593,11 @@ class EncodedData
 		@ptr = 0
 	end
 
-	def add_export(label, off)
+	def add_export(label, off, set_inv=false)
 		@export[label] = off
-		@inv_export[off] ||= label
+		if set_inv or not @inv_export[off]
+			@inv_export[off] = label
+		end
 	end
 
 	# returns the size of raw data, that is [data.length, last relocation end].max
