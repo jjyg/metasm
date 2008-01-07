@@ -137,8 +137,8 @@ class Viewer
 		#str << Ansi::ClearScreen
 		str << Ansi.set_cursor_pos(0, 0)
 		(0..@h).each { |h|
-			break if not l = @text[pos+h]
-			str << outline(l) << (' '*(@w-l.length)) << "\n"
+			l = @text[@pos+h] || ''
+			str << outline(l) << Ansi::ClearLineAfter << "\n"
 		}
 		str << Ansi.set_cursor_pos(@y+1, @x+1)
 		$stdout.write str
@@ -234,7 +234,7 @@ class Viewer
 			end
 		when ?\n
 			return if not label = readtext
-			return if label.empty? or not newy = @text.index(label+':') or newy == @pos+@y
+			return if label.empty? or not newy = @text.index(@text.find { |l| l[0, label.length] == label }) or newy == @pos+@y
 			@posstack << [@posh, @pos, @x, @y]
 			view(0, newy)
 		when :up
@@ -247,6 +247,9 @@ class Viewer
 			end
 		when :home
 			@x = @posh = 0
+		when :end
+			@x = @text[@pos+@y].length
+			@posh, @x = @x-@w, @w if @x > @w
 		when :left
 			x = @text[@pos+@y].rindex(/\W\w/, [@posh+@x-2, 0].max)
 			x = x ? x+1 : @posh+@x-1
@@ -262,8 +265,10 @@ class Viewer
 			x = @text[@pos+@y].index(/\W\w/, @posh+@x)
 			x = x ? x+1 : @posh+@x+1
 			x = @posh+@x+3 if x > @posh+@x+3
-			if x < @posh: @posh, @x = x, 0
-			else @x = x-@posh
+			if x > @posh+@w: @posh, @x = x-@w, @w
+			else
+				@x = x-@posh
+				@posh, @x = @x-@w, @w if @x > @w
 			end
 			#if @x < @w: @x += 1
 			#elsif @posh+@w < (@text[@pos, @h].map { |l| l.length }.max): @posh += 1
