@@ -228,7 +228,7 @@ class ELF
 		hash_table = [] ; sym_count.times { hash_table << decode_word }
 
 		@symbols.each { |s|
-			next if not s.name or s.bind != 'GLOBAL'
+			next if not s.name or s.bind != 'GLOBAL' or s.shndx == 'UNDEF'
 
 			found = false
 			h = ELF.hash_symbol_name(s.name)
@@ -629,6 +629,7 @@ class ELF
 	# returns a disassembler with a special decodedfunction for dlsym, __libc_start_main, and a default function (i386 only)
 	def init_disassembler
 		d = super
+		d.backtrace_maxblocks_data = 8
 		if @cpu.kind_of? Ia32
 			old_cp = d.c_parser
 			d.c_parser = nil
@@ -639,7 +640,7 @@ class ELF
 			main = @cpu.decode_c_function_prototype(d.c_parser, '__libc_start_main')
 			df   = @cpu.decode_c_function_prototype(d.c_parser, 'stdfunc', :default)
 			d.c_parser = old_cp
-			dls.btbind_callback = proc { |dasm, bind, funcaddr, calladdr|
+			dls.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin|
 				sz = @cpu.size/8
 				raise 'dlsym call error' if not dasm.decoded[calladdr]
 				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true)

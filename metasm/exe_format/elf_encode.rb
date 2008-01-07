@@ -489,6 +489,7 @@ class ELF
 				# dd some_func_got_default	# lazily rewritten to the real addr of some_func by jmp dlresolve_inplace
 				# 				# base_relocated ?
 				
+				shellcode = proc { |c| Shellcode.new(@cpu).share_namespace(self).parse(c).assemble.encoded }
 				base = @cpu.generate_PIC ? 'ebx' : '_PLT_GOT'
 				if not plt ||= @sections.find { |s| s.type == 'PROGBITS' and s.name == '.plt' }
 					plt = Section.new
@@ -497,9 +498,9 @@ class ELF
 					plt.flags = %w[ALLOC EXECINSTR]
 					plt.addralign = 4
 					plt.encoded = EncodedData.new
-					plt.encoded << Shellcode.new(@cpu).parse("metasm_plt_start:\npush dword ptr [#{base}+4]\njmp dword ptr [#{base}+8]").assemble.encoded
+					plt.encoded << shellcode["metasm_plt_start:\npush dword ptr [#{base}+4]\njmp dword ptr [#{base}+8]"]
 					if @cpu.generate_PIC and not @sections.find { |s| s.encoded and s.encoded.export['metasm_intern_geteip'] }
-						plt.encoded << Shellcode.new(@cpu).parse("metasm_intern_geteip:\ncall 42f\n42: pop eax\nsub eax, 42b-metasm_intern_geteip\nret").assemble.encoded
+						plt.encoded << shellcode["metasm_intern_geteip:\ncall 42f\n42: pop eax\nsub eax, 42b-metasm_intern_geteip\nret"]
 					end
 					encode_add_section plt
 				end
@@ -509,12 +510,12 @@ class ELF
 					# create the plt thunk
 					plt.encoded.add_export r.symbol.name+'_plt_thunk', plt.encoded.length
 					if @cpu.generate_PIC
-						plt.encoded << Shellcode.new(@cpu).parse("call metasm_intern_geteip\nlea ebx, [eax+_PLT_GOT-metasm_intern_geteip]").assemble.encoded
+						plt.encoded << shellcode["call metasm_intern_geteip\nlea ebx, [eax+_PLT_GOT-metasm_intern_geteip]"]
 					end
-					plt.encoded << Shellcode.new(@cpu).parse("jmp [#{base} + #{gotplt.encoded.length}]").assemble.encoded
+					plt.encoded << shellcode["jmp [#{base} + #{gotplt.encoded.length}]"]
 					plt.encoded.add_export r.symbol.name+'_plt_default', plt.encoded.length
 					reloffset = @relocations.find_all { |rr| rr.type == 'JMP_SLOT' }.length * Relocation.size(self)
-					plt.encoded << Shellcode.new(@cpu).parse("push #{reloffset}\njmp metasm_plt_start").assemble.encoded
+					plt.encoded << shellcode["push #{reloffset}\njmp metasm_plt_start"]
 
 					# transform the reloc PC32 => JMP_SLOT
 					r.type = 'JMP_SLOT'
@@ -527,7 +528,7 @@ class ELF
 
 				# mutate the original relocation
 				# XXX relies on the exact form of r.target from arch_create_reloc
-				target_s = @sections.find { |s| s.encoded and s.encoded.export[prevoffset.lexpr.lexpr] == 0 }
+				target_s = @sections.find { |s| s.encoded and s.encoded.export[prevoffset.lexpr] == 0 }
 				rel = target_s.encoded.reloc[prevoffset.rexpr]
 				rel.target = Expression[[[rel.target, :-, prevoffset.rexpr], :-, label_at(target_s.encoded, 0)], :+, r.symbol.name+'_plt_thunk']
 				

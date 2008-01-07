@@ -469,7 +469,7 @@ class COFF
 							r = Metasm::Relocation.new(Expression[i.name], :u32, @endianness)
 							addr = off + iatlen * idx
 							@encoded.reloc[addr] = r
-							@encoded.add_export 'iat_'+i.name, addr
+							@encoded.add_export 'iat_'+i.name, addr, true
 						end
 					}
 				end

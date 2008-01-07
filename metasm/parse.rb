@@ -279,7 +279,6 @@ class ExeFormat
 	def parse_init
 		@locallabels_bkw ||= {}
 		@locallabels_fwd ||= {}
-		@knownlabel ||= {}
 	end
 
 	# hash mapping local anonymous label number => unique name
@@ -333,11 +332,10 @@ class ExeFormat
 						lname = @locallabels_bkw[tok.raw] = @locallabels_fwd.delete(tok.raw) || new_label('local_'+tok.raw)
 					else
 						lname = tok.raw
+						raise tok, "label redefinition" if new_label(lname) != lname
 					end
 					l = Label.new(lname)
 					l.backtrace = tok.backtrace.dup
-					raise tok, "label redefinition, previous definition at #{@knownlabel[lname].backtrace_str}" if @knownlabel[lname]
-					@knownlabel[lname] = l
 					@cursource << l
 					lasteol = false
 				else

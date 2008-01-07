@@ -35,7 +35,7 @@ class MZ < ExeFormat
 			@ss       ||= 0
 			@sp       ||= 0		# ss:sp points at 1st byte of body => works if body does not reach end of segment (or maybe the overflow make the stack go to header space)
 			@csum     ||= 0
-			@ip       ||= Expression[mz.body.export['start'] || 0]	# when empty relocs, cs:ip looks like an offset from end of header
+			@ip       ||= 0
 			@cs       ||= 0
 			@lfarlc   ||= Expression[mz.label_at(relocs, 0), :-, mz.label_at(h, 0)]
 			@ovno     ||= 0
@@ -102,6 +102,26 @@ class MZ < ExeFormat
 		header = @header.encode self, relocs
 		[header, relocs, @body]
 	end
+
+	# defines the exe-specific parser instructions:
+	# .entrypoint [<label>]: defines the program entrypoint to label (or create a new label at this location)
+	def parse_parser_instruction(instr)
+		case instr.raw.downcase
+		when '.entrypoint'
+			# ".entrypoint <somelabel/expression>" or ".entrypoint" (here)
+			@lexer.skip_space
+			if tok = @lexer.nexttok and tok.type == :string
+				raise instr, 'syntax error' if not entrypoint = Expression.parse(@lexer)
+			else
+				entrypoint = new_label('entrypoint')
+				@cursource << Label.new(entrypoint, instr.backtrace.dup)
+			end
+			@header.ip = Expression[entrypoint, :-, label_at(@body, 0, 'body')]
+			@lexer.skip_space
+			raise instr, 'eol expected' if t = @lexer.nexttok and t.type != :eol
+		end
+	end
+
 
 	# concats the header, relocation table and body
 	def encode

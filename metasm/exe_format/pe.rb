@@ -16,8 +16,8 @@ class PE < COFF
 	attr_accessor :coff_offset, :signature, :mz
 
 	def initialize(cpu=nil)
-		@mz = MZ.new(cpu)
 		super(cpu)
+		@mz = MZ.new(cpu).share_namespace(self)
 	end
 
 	# overrides COFF#decode_header
@@ -43,8 +43,8 @@ class PE < COFF
 		# XXX use single-quoted source, to avoid ruby interpretation of \r\n
 		@mz.cpu = Ia32.new(386, 16)
 		@mz.parse <<'EOMZSTUB'
-_str	db "Needs Win32!\r\n$"
-start:
+	db "Needs Win32!\r\n$"
+.entrypoint
 	push cs
 	pop  ds
 	xor  dx, dx	  ; ds:dx = addr of $-terminated string
@@ -213,7 +213,7 @@ EOS
 			sz = @cpu.size/8
 			sehptr = Indirection.new(Expression[Indirection.new(sehptr, sz, di.address), :+, sz], sz, di.address)
 			a = dasm.backtrace(sehptr, di.address, :include_start => true, :origin => di.address, :type => :x, :detached => true)
-puts "backtrace seh from #{di} => [#{a.map { |addr| Expression[addr] }.join(', ')}]" if $VERBOSE
+puts "backtrace seh from #{di} => #{a.map { |addr| Expression[addr] }.join(', ')}" if $VERBOSE
 			a.each { |aa|
 				next if aa == Expression::Unknown
 				l = dasm.label_at(aa, 'seh', 'loc', 'sub')
@@ -225,16 +225,17 @@ puts "backtrace seh from #{di} => [#{a.map { |addr| Expression[addr] }.join(', '
 		end
 	end
 
-	# returns a disassembler with a special decodedfunction for GetProcAddress (i386 only)
+	# returns a disassembler with a special decodedfunction for GetProcAddress (i386 only), and the default func
 	def init_disassembler
 		d = super
+		d.backtrace_maxblocks_data = 4
 		if @cpu.kind_of? Ia32
 			old_cp = d.c_parser
 			d.c_parser = nil
 			d.parse_c '__stdcall void *GetProcAddress(int, char *);'
 			gpa = @cpu.decode_c_function_prototype(d.c_parser, 'GetProcAddress')
 			d.c_parser = old_cp
-			gpa.btbind_callback = proc { |dasm, bind, funcaddr, calladdr|
+			gpa.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, *a|
 				sz = @cpu.size/8
 				raise 'getprocaddr call error' if not dasm.decoded[calladdr]
 				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true)
@@ -244,6 +245,7 @@ puts "backtrace seh from #{di} => [#{a.map { |addr| Expression[addr] }.join(', '
 				bind
 			}
 			d.function[Expression['GetProcAddress']] = gpa
+			d.function[:default] = @cpu.disassembler_default_func
 		end
 		d
 	end

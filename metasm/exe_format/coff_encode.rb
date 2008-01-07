@@ -514,14 +514,15 @@ class COFF
 	def arch_encode_thunk(edata, import)
 		case @cpu
 		when Ia32
+			shellcode = proc { |c| Shellcode.new(@cpu).share_namespace(self).parse(c).assemble.encoded }
 			if @cpu.generate_PIC
 				# sections starts with a helper function that returns the address of metasm_intern_geteip in eax (PIC)
 				if not @sections.find { |s| s.encoded and s.encoded.export['metasm_intern_geteip'] } and edata.empty?
-					edata << Shellcode.new(@cpu).parse("metasm_intern_geteip: call 42f\n42:\npop eax\nsub eax, 42b-metasm_intern_geteip\nret").assemble.encoded
+					edata << shellcode["metasm_intern_geteip: call 42f\n42:\npop eax\nsub eax, 42b-metasm_intern_geteip\nret"]
 				end
-				edata << Shellcode.new(@cpu).parse("#{import.thunk}:\ncall metasm_intern_geteip\njmp [eax+#{import.target}-metasm_intern_geteip]").assemble.encoded
+				edata << shellcode["#{import.thunk}: call metasm_intern_geteip\njmp [eax+#{import.target}-metasm_intern_geteip]"]
 			else
-				edata << Shellcode.new(@cpu).parse("#{import.thunk}:\njmp [#{import.target}]").assemble.encoded
+				edata << shellcode["#{import.thunk}: jmp [#{import.target}]"]
 			end
 		else raise EncodeError, 'E: COFF: encode import thunk: unsupported architecture'
 		end
@@ -878,7 +879,7 @@ class COFF
 			@export.libname ||= 'metalib'
 			e = ExportDirectory::Export.new
 			e.name = exportname
-			e.target = exportlabel || exportname
+			e.target = exportlabel || new_label(exportname)
 			@export.exports << e
 			check_eol[]
 		
@@ -899,6 +900,7 @@ class COFF
 				i.target = ((i.thunk == i.name) ? ('iat_' + i.name) : i.name)
 				@lexer.unreadtok tok
 			end
+			raise tok, 'import target exists' if i.target != new_label(i.target)
 
 			@imports ||= []
 			if not id = @imports.find { |id| id.libname == libname }
@@ -978,8 +980,8 @@ class COFF
 				   (thunk  and i.thunk  and (i.thunk  != thunk or  i.target == thunk))
 					puts "autoimport: conflict for #{target} #{thunk} #{i.inspect}" if $VERBOSE
 				else
-					i.target = target || ('iat_' + thunk)
-					i.thunk = thunk if thunk
+					i.target ||= new_label(target || 'iat_' + thunk)
+					i.thunk ||= thunk if thunk
 				end
 			}
 		}

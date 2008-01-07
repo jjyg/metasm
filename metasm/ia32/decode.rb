@@ -263,8 +263,8 @@ module Metasm
 		when 'mov', 'movsx', 'movzx', 'movd', 'movq': { a[0] => Expression[a[1]] }
 		when 'lea': { a[0] => a[1].target }
 		when 'xchg': { a[0] => Expression[a[1]], a[1] => Expression[a[0]] }
-		when 'add', 'sub', 'or', 'xor', 'and'
-			op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^ }[op]
+		when 'add', 'sub', 'or', 'xor', 'and', 'pxor'
+			op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^, 'pxor' => :^ }[op]
 			ret = Expression[a[0], op, a[1]]
 			# optimises :eax ^ :eax => 0, avoids unnecessary r/w xrefs
 			# avoid hiding memory accesses (may cause an exception)
@@ -291,14 +291,6 @@ module Metasm
 			{ :esp => Expression[:esp, :-, @size/8],
 			  Indirection.new(Expression[:esp], @size/8, di.address) => Expression[eoff.reduce] }
 		when 'ret': { :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]] }
-		when 'stosd', 'stosw', 'stosb'
-			if di.instruction.prefix[:rep]
-				# XXX backtrace ecx ?
-				{ :edi => Expression::Unknown, :ecx => Expression::Unknown }
-			else
-				sz = { ?b => 1, ?w => 2, ?d => 4 }[op[-1]]
-				{ Indirection.new(Expression[:edi], sz, di.address) => Expression[:eax], :edi => Expression[:edi, :+, sz] }
-			end
 		when 'loop': { :ecx => Expression[:ecx, :-, 1] }
 		when 'enter'
 			depth = a[1].reduce % 32
@@ -310,6 +302,25 @@ module Metasm
 		when 'leave': { :ebp => Indirection.new(Expression[:ebp], @size/8, di.address), :esp => Expression[:ebp, :+, @size/8] }
 		when 'aaa': { :eax => Expression::Unknown }
 		when 'imul': { a[0] => ((a[2] and a[0] == a[1]) ? Expression[a[0], :*, a[2]] : Expression::Unknown) }
+		when /^(stos|movs)([bwd])$/
+			op = $1
+			sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
+			dir = :+
+			dir = :- if di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil
+			pesi = Indirection.new(Expression[:esi], sz, di.address)
+			pedi = Indirection.new(Expression[:edi], sz, di.address)
+			case op
+			when 'movs'
+				case di.instruction.prefix[:rep]
+				when nil: { pedi => pesi, :esi => Expression[:esi, dir, sz], :edi => Expression[:edi, dir, sz] }
+				else      { pedi => pesi, :esi => Expression::Unknown, :edi => Expression::Unknown }	# repz/repnz..
+				end
+			when 'stos'
+				case di.instruction.prefix[:rep]
+				when nil: { pedi => Expression[:eax], :edi => Expression[:edi, dir, sz] }
+				else      { pedi => Expression[:eax], :edi => Expression[:edi, dir, [sz, :*, :ecx]] }	# XXX create an xref at edi+sz*ecx ?
+				end
+			end
 		else
 			if %[nop cmp test jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle jnb jnbe jp jnp jnl jnle].include? op	# etc etc
 				# XXX eflags !
@@ -327,6 +338,25 @@ module Metasm
 		return [] if not di.opcode.props[:setip]
 
 		return [Indirection.new(Expression[:esp], @size/8, di.address)] if di.opcode.name == 'ret'
+
+		if di.opcode.name == 'jmp'
+			a = di.instruction.args.first
+			if a.kind_of? ModRM and a.imm and a.s == @size/8 and not a.b and s = dasm.get_section_at(Expression[a.imm, :-, 3*@size/8])
+				# jmp table
+				ret = [Expression[a.symbolic(di.address)]]
+				v = -3
+				loop do
+					diff = Expression[s[0].decode_imm("u#@size".to_sym, @endianness), :-, di.address].reduce
+					if diff.kind_of? ::Integer and diff.abs < 4096
+						ret << Indirection.new(Expression[a.imm, :+, v*@size/8], @size/8, di.address)
+					elsif v > 0
+						break
+					end
+					v += 1
+				end
+				return ret
+			end
+		end
 
 		case tg = di.instruction.args.first
 		when ModRM
@@ -353,17 +383,24 @@ module Metasm
 	# updates the function backtrace_binding
 	def backtrace_update_function_binding(dasm, faddr, f, retaddr)
 		b = f.backtrace_binding
-		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each { |r|
+		prevesp = b[:esp]
+		bt_val = proc { |r|
 			next if b[r] == Expression::Unknown
-			bt = dasm.backtrace(Expression[r], retaddr, :include_start => true, :snapshot_addr => faddr)	# XXX is_subfunc
+			bt = dasm.backtrace(Expression[r], retaddr, :include_start => true, :snapshot_addr => faddr, :origin => retaddr)
 			if bt.length != 1 or (b[r] and bt.first != b[r])
 				b[r] = Expression::Unknown
 			else
 				b[r] = bt.first
 			end
 		}
+		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each(&bt_val)
+		b[:esp] = prevesp if prevesp and b[:esp] == Expression::Unknown
 
-		puts "update func bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer) if $VERBOSE
+		puts "update_func_bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if b[:esp] != prevesp and not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer) if $VERBOSE
+		if b[:ebp] != Expression[:ebp]
+			# may be a custom 'enter' function (eg recent Visual Studio)
+			bt_val[Indirection.new(Expression[:ebp], @size/8, faddr)]
+		end
 
 		# rename some functions
 		case b[:eax].reduce
@@ -437,6 +474,131 @@ module Metasm
 		}
 
 		df
+	end
+
+	# the proc for the :default backtrace_binding callback of the disassembler
+	# tries to determine the stack offset of unprototyped functions
+	# working:
+	#   checks that origin is a ret, that expr is an indirection from :esp and that expr.origin is the ret
+	#   bt_walk from calladdr until we finds a call into us, and assumes it is the current function start
+	#   TODO handle foo: call bar ; bar: pop eax ; call <withourcallback> ; ret -> bar is not the function start (foo is)
+	#   then backtrace expr from calladdr to funcstart (snapshot), using esp -> esp+<stackoffvariable>
+	#   from the result, compute stackoffvariable (only if trivial)
+	# will not work if the current function calls any other unknown function (unless all are __cdecl)
+	# will not work if the current function is framed (ebp leave ret): in this case the function will return, but its :esp will be unknown
+	# TODO remember failed attempts and rebacktrace them if we find our stackoffset later ? (other funcs may depend on us)
+	# if the stack offset is found and funcaddr is a string, fixup the static binding and remove the dynamic binding
+	# TODO dynamise thunks
+	def disassembler_default_btbind_callback
+		proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
+			@dasm_func_default_off ||= {}
+			if off = @dasm_func_default_off[[dasm, calladdr]]
+				bind = bind.merge(:esp => Expression[:esp, :+, off])
+aoeu = true
+			end
+			next bind if not odi = dasm.decoded[origin] or odi.opcode.name != 'ret'
+			expr = expr.reduce
+			expr = expr.rexpr if expr.kind_of? Expression and expr.op == :+ and not expr.lexpr
+			next bind unless expr.kind_of? Indirection and expr.origin == origin
+			ptr = expr.target
+			reg = ptr.externals.reject { |e| e =~ /^autostackoffset_/ }
+			next bind unless reg == [:esp]
+
+			# scan from calladdr for the probable parent function start
+			func_start = nil
+			dasm.backtrace_walk(true, calladdr, false, false, nil, maxdepth) { |ev, foo, h|
+				if ev == :up and not h[:sfret] and di = dasm.decoded[h[:to]] and di.opcode.name == 'call'
+					# check that that call has not func_start as subfunction
+					otherfunc = false
+					di.block.each_subfunction { |sf| otherfunc = true if dasm.normalize(sf) == h[:from] }
+					next false if otherfunc
+					
+					func_start = h[:from]
+					break
+				elsif ev == :end
+					# assume entrypoints are functions too
+					func_start = h[:addr]
+					break
+				end
+			}
+			next bind if not func_start
+			puts "automagic #{funcaddr}: found func start for #{dasm.decoded[origin]} at #{Expression[func_start]}" if $DEBUG
+			s_off = "autostackoffset_#{Expression[funcaddr]}_#{Expression[calladdr]}"
+			list = dasm.backtrace(expr.bind(:esp => Expression[:esp, :+, s_off]), calladdr, :include_start => true, :snapshot_addr => func_start, :maxdepth => maxdepth, :origin => origin)
+			next bind if list.length != 1
+			e_expr = list.first
+			e_expr = e_expr.rexpr if e_expr.kind_of? Expression and e_expr.op == :+ and not e_expr.lexpr
+			next bind unless e_expr.kind_of? Indirection
+
+			off = Expression[[:esp, :+, s_off], :-, e_expr.target].reduce
+			case off
+			when Expression
+                                bd = off.externals.grep(/^autostackoffset_/).inject({}) { |bd, xt| bd.update xt => @size/8 }
+                                bd.delete s_off
+                                # all __cdecl
+                                off = @size/8 if off.bind(bd).reduce == @size/8
+			when Integer
+				if off < @size/8 or off > 10*@size/8 or (off % (@size/8)) != 0
+					puts "autostackoffset: ignoring off #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
+					off = :unknown 
+				end
+                        end
+
+                        bind = bind.merge :esp => Expression[:esp, :+, off] if off != :unknown
+                        if funcaddr != :default
+                                if not off.kind_of? ::Integer
+                                        #register origin and rebacktrace it if we ever find our stackoff (to solve other unknown that depend on us)
+                                        #XXX we allow the current function to return, so we should handle the func backtracking its :esp
+                                        #(and other register that are saved and restored in epilog)
+                                        puts "stackoff #{dasm.decoded[origin]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if $DEBUG
+                                else
+                                        puts "autostackoffset: found #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
+                                        dasm.function[funcaddr].btbind_callback = nil
+                                        dasm.function[funcaddr].backtrace_binding = bind
+                                        #rebacktrace registered origins
+                                end
+                        else
+				if off.kind_of? ::Integer and dasm.decoded[calladdr]
+                                        puts "autostackoffset: using #{off} for #{dasm.decoded[calladdr]}" if $VERBOSE
+					dasm.decoded[calladdr].add_comment "autostackoffset #{off}"
+					@dasm_func_default_off[[dasm, calladdr]] = off
+				elsif cachedoff = @dasm_func_default_off[[dasm, calladdr]]
+					bind[:esp] = Expression[:esp, :+, cachedoff]
+				else
+					dasm.decoded[calladdr].add_comment "autostackoffset #{off}"
+				end
+                                # cache calladdr/funcaddr/origin -> off for current function binding ?
+                                puts "stackoff #{dasm.decoded[origin]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if $DEBUG
+                        end
+
+                        bind
+                }
+        end
+
+	# the :default backtracked_for callback
+	# returns empty unless funcaddr is not default or calladdr is a call or a jmp
+        def disassembler_default_btfor_callback
+                proc { |dasm, btfor, funcaddr, calladdr|
+                        if funcaddr != :default
+                                btfor
+                        elsif di = dasm.decoded[calladdr] and (di.opcode.name == 'call' or di.opcode.name == 'jmp')
+                                btfor
+                        else
+				[]
+                        end
+                }
+        end
+
+	# returns a DecodedFunction suitable for :default
+	# uses disassembler_default_bt{for/bind}_callback
+	def disassembler_default_func
+		cp = new_cparser
+		cp.parse 'void stdfunc(void);'
+		f = decode_c_function_prototype(cp, 'stdfunc', :default)
+		f.backtrace_binding[:esp] = Expression[:esp, :+, :unknown]
+		f.btbind_callback = disassembler_default_btbind_callback
+		f.btfor_callback  = disassembler_default_btfor_callback
+		f
 	end
 end
 end

@@ -231,20 +231,32 @@ class DecodedFunction
 	# a proc called for dynamic backtrace_binding generation
 	# XXX TODO handle propagation (eg GetProcAddress thunk)
 	attr_accessor :btbind_callback
+	# a proc called for dynamic backtracked_for
+	attr_accessor :btfor_callback
 
-	def get_backtrace_binding(dasm, funcaddr, calladdr)
+	# if btbind_callback is defined, calls it with args [dasm, binding, funcaddr, calladdr, expr, origin, maxdepth]
+	# else return backtrace_binding
+	def get_backtrace_binding(dasm, funcaddr, calladdr, expr, origin, maxdepth)
 		if btbind_callback
-			@btbind_callback[dasm, @backtrace_binding, funcaddr, calladdr]
+			@btbind_callback[dasm, @backtrace_binding, funcaddr, calladdr, expr, origin, maxdepth]
 		else
 			@backtrace_binding
 		end
 	end
 
-	# if given a block, this block is called in get_backtrace_binding, with args [dasm, binding, funcaddr, calladdr]
-	def initialize(&btbind_callback)
+	# if btfor_callback is defined, calls it with args [dasm, bt_for, funcaddr, calladdr]
+	# else return backtracked_for
+	def get_backtracked_for(dasm, funcaddr, calladdr)
+		if btfor_callback
+			@btfor_callback[dasm, @backtracked_for, funcaddr, calladdr]
+		else
+			@backtracked_for
+		end
+	end
+
+	def initialize
 		@backtracked_for = []
 		@backtrace_binding = {}
-		@btbind_callback = btbind_callback if btbind_callback
 	end
 end
 
@@ -597,12 +609,23 @@ class Disassembler
 
 	# decodes instructions from an entrypoint, (tries to) follows code flow
 	def disassemble(*entrypoints)
-		@addrs_todo.concat entrypoints
-		while not @addrs_todo.empty?
-			disassemble_step
+		loop do
+			@addrs_todo << entrypoints.shift if @addrs_todo.empty?
+			while not @addrs_todo.empty?
+				disassemble_step
+			end
+			break if entrypoints.empty?
 		end
-		detect_thunks
+		post_disassemble
 		self
+	end
+
+	def post_disassemble
+		detect_thunks
+		@decoded.each_value { |di|
+			next if not di.opcode.props[:saveip]
+			di.add_comment 'noreturn' if not di.block.to_subfuncret
+		}
 	end
 
 	# disassembles one block from addrs_todo
@@ -618,7 +641,7 @@ class Disassembler
 
 		return if from == :default or from == Expression::Unknown
 
-		puts "disassemble_step #{Expression[addr]} #{Expression[from] if from} #{from_subfuncret}  #{@addrs_todo.length}" if $DEBUG or $VERBOSE
+		puts "disassemble_step #{Expression[addr]} #{Expression[from] if from} #{from_subfuncret}  #{@addrs_todo.length}" if $DEBUG
 
 		addr = normalize(addr)
 
@@ -634,7 +657,7 @@ class Disassembler
 		elsif from and c_parser and addr.kind_of? Expression and addr.op == :+ and not addr.lexpr and addr.rexpr.kind_of? ::String and
 				s = c_parser.toplevel.symbol[addr.rexpr] and s.type.untypedef.kind_of? C::Function
 			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
-		else
+		elsif from
 			if bf = @function[:default]
 				puts "using default function for #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
 				if addr.kind_of? Expression and not addr.lexpr and addr.op == :+ and addr.rexpr.kind_of? ::String
@@ -643,20 +666,29 @@ class Disassembler
 					addr = :default
 				end
 			else
-				puts "not disassembling unknown address #{Expression[addr]} from #{Expression[from] if from}" if $VERBOSE
+				puts "not disassembling unknown address #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
 			end
 			add_xref(addr, Xref.new(:x, from))
 			add_xref(Expression::Unknown, Xref.new(:x, from))
+		else
+			puts "not disassembling unknown address #{Expression[addr]}" if $VERBOSE
 		end
 
-		bf.backtracked_for.each { |btt|
+		if bf and from
+			if bf.kind_of? DecodedFunction
+				bff = bf.get_backtracked_for(self, addr, from)
+			else
+				bff = bf.backtracked_for
+			end
+		end
+		bff.each { |btt|
 			next if btt.block_offset
 			next if backtrace_check_funcret(btt, addr, from)
 			backtrace(btt.expr, from,
 				  :include_start => true, :from_subfuncret => from_subfuncret,
 				  :origin => btt.origin, :type => btt.type, :len => btt.len,
 				  :detached => btt.detached, :maxdepth => btt.maxdepth)
-		} if bf and from
+		} if bff
 	end
 
 	# splits an InstructionBlock, updates the blocks backtracked_for
@@ -784,7 +816,7 @@ class Disassembler
 	#  addr is the address where the backtrace starts
 	#  include_start is a bool specifying if the backtrace should start at addr or just before
 	#  from_subfuncret is a bool specifying if addr points to a decodedinstruction that calls its block.subfunctions
-	#  stopaddr is an [array of] address of beginning of block on which the backtrace will stop
+	#  stopaddr is an [array of] address of instruction, the backtrace will stop just after executing it
 	#  maxdepth is the maximum depth (in blocks) for each backtrace branch.
 	#  (defaults to dasm.backtrace_maxblocks, which defaults do Dasm.backtrace_maxblocks)
 	def backtrace_walk(obj, addr, include_start, from_subfuncret, stopaddr, maxdepth)
@@ -828,7 +860,7 @@ class Disassembler
 					todo << [f_obj, f_addr, f_func, f_loopdetect + [[f_obj, f_addr, f_func]] ]
 				}
 				yield :end, w_obj, :addr => w_addr, :loopdetect => w_loopdetect if not hadsomething
-			elsif @function[w_addr]
+			elsif @function[w_addr] and w_addr != :default and w_addr != Expression::Unknown
 				next if done.include? [w_obj, w_addr]
 				oldlen = todo.length
 				each_xref(w_addr, :x) { |x|
@@ -879,13 +911,17 @@ class Disassembler
 				}
 			elsif di
 				di.block.list[0..di.block.list.index(di)].reverse_each { |di|
+					if stopaddr and ea = Expression[di.block.address, :+, di.block_offset+di.bin_length].reduce and stopaddr.include?(ea)
+						yield :stopaddr, obj, :addr => ea, :loopdetect => loopdetect
+						break
+					end
 					ex_obj = obj
 					obj = yield(:di, obj, :di => di, :loopdetect => loopdetect)
 					break if obj == false
 					obj ||= ex_obj
 				}
 				walk_up[obj, di.block.address, loopdetect] if obj
-			elsif @function[addr]
+			elsif @function[addr] and addr != :default and addr != Expression::Unknown
 				ex_obj = obj
 				obj = yield(:func, obj, :func => @function[addr], :funcaddr => addr, :addr => addr, :loopdetect => loopdetect)
 				next if obj == false
@@ -1009,7 +1045,7 @@ puts "  not backtracking stack address #{expr}" if $DEBUG
 oldexpr = expr
 				case ev
 				when :di: expr = backtrace_emu_instr(h[:di], expr)
-				when :func: expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr)
+				when :func: expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr, origin, maxdepth-h[:loopdetect].length)
 				if snapshot_addr and snapshot_addr == h[:funcaddr]
 					puts "  backtrace: recursive function #{Expression[h[:funcaddr]]}" if $DEBUG
 					next false
@@ -1028,7 +1064,7 @@ puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" 
 			else raise ev.inspect
 			end
 		}
-puts '  backtrace result: [' + result.map { |r| Expression[r] }.join(', ') + ']' if $DEBUG
+puts '  backtrace result: ' + result.map { |r| Expression[r] }.join(', ') if $DEBUG
 
 		result
 	end
@@ -1055,8 +1091,8 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	end
 
 	# applies one subfunction to an expression
-	def backtrace_emu_subfunc(func, funcaddr, calladdr, expr)
-		bind = func.get_backtrace_binding(self, funcaddr, calladdr)
+	def backtrace_emu_subfunc(func, funcaddr, calladdr, expr, origin, maxdepth)
+		bind = func.get_backtrace_binding(self, funcaddr, calladdr, expr, origin, maxdepth)
 		Expression[expr.bind(bind).reduce]
 	end
 
@@ -1102,9 +1138,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 		if type == :x and di and di.block_offset == 0 and @cpu.backtrace_is_function_return(expr) and (
 			(not di.block.from_normal and not di.block.from_subfuncret) or
 			(bool = false ; di.block.each_from_normal { |fn| bool = true if @decoded[fn] and @decoded[fn].opcode.props[:saveip] } ; bool))
-			# new function
 			# the actual return address will be found later (after we return nil)
-			# XXX to_subfuncret -> we need to know the call address
 			addr = di.address
 			l = label_at(addr, 'sub', 'loc', 'xref')
 			if not f = @function[addr]
@@ -1120,7 +1154,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 
 			f.backtracked_for |= @decoded[addr].block.backtracked_for.find_all { |btt| not btt.block_offset }
 			@cpu.backtrace_update_function_binding(self, addr, f, origin)
-puts "backtrace function binding for #{l}:", f.backtrace_binding.map { |k, v| " #{k} -> #{v}" }.sort if $VERBOSE
+puts "backtrace function binding for #{l}:", f.backtrace_binding.map { |k, v| " #{k} -> #{v}" }.sort if $DEBUG
 		end
 
 		return if need_backtrace(expr)
@@ -1236,7 +1270,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 					end
 				when :func
 					next true if expr == true	# XXX
-					expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr)
+					expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr, ind.origin, maxdepth-h[:loopdetect].length)
 					#if not need_backtrace(expr)
 					if expr.externals.all? { |e| @prog_binding[e] or @function[Expression[e].reduce] }
 						ret |= backtrace_value(expr, maxdepth-1-h[:loopdetect].length)
@@ -1271,8 +1305,29 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 		end
 
 		# add comment
-		if type and @decoded[origin] and not @decoded[origin].instruction.args.include? n
+		if type and @decoded[origin] # and not @decoded[origin].instruction.args.include? n
 			@decoded[origin].add_comment "#{type}#{len}:#{n}"
+		end
+
+		if di and type == :r and (len == 1 or len == 2) and s = get_section_at(n)
+			l = s[0].inv_export[s[0].ptr]
+			case len
+			when 1: str = s[0].read(32).unpack('C*')
+			when 2: str = s[0].read(64).unpack('v*')
+			end
+			str = str.inject('') { |str, c|
+				case c
+				when 0x20..0x7e, ?\n, ?\r, ?\t: str << c
+				else break str
+				end
+			}
+			if str.length >= 4
+				di.add_comment "#{'L' if len == 2}#{str.inspect}"
+				str = 'a_' + str.downcase.delete('^a-z0-9')[0, 12]
+				if str.length >= 8 and l[0, 5] == 'byte_'
+					rename_label(l, @program.new_label(str))
+				end
+			end
 		end
 
 		if type == :x and origin
@@ -1368,7 +1423,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 	# stops on end of edata/@decoded/@xref
 	# returns the next offset to display
 	# TODO array-style data access
-	def dump_data(addr, edata, off, aggreging=false, &b)
+	def dump_data(addr, edata, off, &b)
 		if l = @prog_binding.index(addr)
 			l = (l + ' ').ljust(16)
 		else l = ''
@@ -1388,6 +1443,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 		dataspec = { 1 => 'db ', 2 => 'dw ', 4 => 'dd ' }[elemlen]
 		l << dataspec
 
+		# dup(?)
 		if off >= edata.data.length
 			dups = edata.virtsize - off
 			if tmp = @prog_binding.values.find { |a|
@@ -1410,7 +1466,15 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 
 		vals = []
 		edata.ptr = off
-		(dumplen/elemlen).times {
+		dups = dumplen/elemlen
+		while edata.ptr < edata.data.length
+			if vals.length > dups and vals.uniq.length > 1
+				vals.pop
+				addr = Expression[addr, :-, elemlen].reduce
+				edata.ptr -= elemlen
+				break
+			end
+			break if vals.length == dups and vals.uniq.length > 1
 			vals << edata.decode_imm("u#{elemlen*8}".to_sym, @cpu.endianness)
 			addr = Expression[addr, :+, elemlen].reduce
 			if i = (1-elemlen..0).find { |i|
@@ -1418,10 +1482,17 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 				@xrefs[t] or @decoded[t] or edata.reloc[edata.ptr+i] or edata.inv_export[edata.ptr+i]
 			}
 				edata.ptr += i
+				addr = Expression[addr, :+, i].reduce
 				break
 			end
 			break if edata.reloc[edata.ptr-elemlen]
-		}
+		end
+
+		# line of repeated value => dup()
+		if vals.length > 8 and vals.uniq.length == 1
+			b.call((l << "#{vals.length} dup(#{Expression[vals.first]})").ljust(48) << cmt)
+			return edata.ptr
+		end
 
 		# recognize strings
 		vals = vals.inject([]) { |vals, value|
@@ -1436,6 +1507,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 			else vals << value
 			end
 		}
+
 		vals.map! { |value|
 			if value.kind_of? ::String
 				if value.length > 2 # or value == vals.first or value == vals.last # if there is no xref, don't care
@@ -1446,28 +1518,12 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 			else
 				Expression[value]
 			end
-		}.flatten
+		}
+		vals.flatten!
 
-		endptr = edata.ptr
+		b.call((l << vals.join(', ')).ljust(48) << cmt)
 
-		# line of repeated value => aggregate with next and show dup()
-		if (vals.length > 1 or aggreging) and vals.uniq.length == 1
-			elem = vals.first.to_s
-			nstr = nil
-			nptr = dump_data(addr, edata, edata.ptr, true) { |ll| nstr = ll }
-			if nstr =~ /^#{dataspec}(\d+) dup\(#{Regexp.escape(elem)}\)\s*;/
-				l << "#{vals.length + $1.to_i} dup(#{elem})"
-				endptr = nptr
-			else
-				l << "#{vals.length} dup(#{elem})"
-			end
-		else
-			l << vals.join(', ')
-		end
-
-		b.call l.ljust(48) + cmt
-
-		endptr
+		edata.ptr
 	end
 end
 end
