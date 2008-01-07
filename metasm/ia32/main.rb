@@ -140,6 +140,7 @@ class Ia32 < CPU
 	def tune_cparser(cp)
 		super
 		cp.lexer.define('_M_IX86', 500) if not cp.lexer.definition['_M_IX86']
+		cp.lexer.define('_X86_') if not cp.lexer.definition['_X86_']
 	end
 end
 

@@ -181,6 +181,19 @@ module C
 
 		def align(parser) @members.map { |m| m.type.align(parser) }.max end
 
+		def findmember(name)
+			if m = @members.find { |m| m.name == name }
+				return m
+			else
+				@members.each { |m|
+					if t = m.type.untypedef and t.kind_of? Union and mm = t.findmember(name)
+						return mm
+					end
+				}
+			end
+			nil
+		end
+
 		def parse_members(parser, scope)
 			@members = []
 			# parse struct/union members in definition
@@ -245,7 +258,8 @@ module C
 		def parse_initializer_designator(parser, scope, value, idx, root=true)
 			if nt = parser.skipspaces and nt.type == :punct and nt.raw == '.' and
 					nnt = parser.skipspaces and nnt.type == :string and
-					nidx = @members.index(@members.find { |m| m.name == nnt.raw })
+					m = findmember(nnt.raw)
+				raise nnt, 'unhandled initializer' if not nidx = @members.index(@members.find { |m| m.name == nnt.raw })	# TODO
 				value = value[idx] ||= [] if not root
 				idx = nidx
 				@members[idx].type.parse_initializer_designator(parser, scope, value, idx, false)
@@ -688,7 +702,7 @@ module C
 		# parses the current lexer content (or the text arg) for toplevel definitions
 		def parse(text=nil, filename='unknown', lineno=1)
 			@lexer.feed text, filename, lineno if text
-			nil while not @lexer.eos? and parse_definition(@toplevel)
+			nil while not @lexer.eos? and (parse_definition(@toplevel) or parse_toplevel_statement(@toplevel))
 			sanity_checks
 			self
 		end
@@ -785,6 +799,7 @@ module C
 				@lexer.define('_INTEGRAL_MAX_BITS', 64) if not @lexer.definition['_INTEGRAL_MAX_BITS']
 				@lexer.define('__w64') if not @lexer.definition['__w64']
 				@lexer.define('_cdecl', '__cdecl') if not @lexer.definition['_cdecl']	# typo ? seen in winreg.h
+				@lexer.define('_fastcall', '__fastcall') if not @lexer.definition['_fastcall']	# typo ? seen in ntddk.h
 				@lexer.define('_MSC_VER', 1300) if not @lexer.definition['_MSC_VER']	# handle '#pragma once' and _declspec(noreturn)
 				@lexer.define('__forceinline', '__inline') if not @lexer.definition['__forceinline']
 				@lexer.define('__ptr32') if not @lexer.definition['__ptr32']	# needed with msc_ver 1300, don't understand their use
@@ -1087,6 +1102,20 @@ module C
 				end
 			end
 			true
+		end
+
+		# parses toplevel statements, return nil if none found
+		# toplevel statements are ';' and 'asm <..>'
+		def parse_toplevel_statement(scope)
+			if tok = skipspaces and tok.type == :punct and tok.raw == ';'
+				true
+			elsif tok and tok.type == :punct and tok.raw == '{'
+				raise tok || self, '"}" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != '}'
+				true
+			elsif tok and tok.type == :string and %w[asm __asm __asm__].include? tok.raw
+				scope.statements << Asm.parse(self, scope)
+				true
+			end
 		end
 	
 		# returns a statement or raise
@@ -1918,7 +1947,7 @@ module C
 						raise tok, 'not a pointer' if not val.type.pointer?
 						raise tok, 'invalid member' if not tok = parser.skipspaces or tok.type != :string
 						type = val.type.untypedef.type.untypedef
-						raise tok, 'invalid member' if not type.kind_of? Union or not type.members or not m = type.members.find { |m| m.name == tok.raw }
+						raise tok, 'invalid member' if not type.kind_of? Union or not type.members or not m = type.findmember(tok.raw)
 						CExpression.new(val, :'->', tok.raw, m.type)
 					end
 				when '.'
@@ -1928,7 +1957,7 @@ module C
 						nil
 					else
 						raise 'uninitialized structure' if not type.members
-						raise "bad struct member #{ntok.raw} not in #{type.members.map { |m| m.name }.inspect}" if not m = type.members.find { |m| m.name == ntok.raw }
+						raise ntok, "bad struct member #{ntok.raw} not in #{type.members.map { |m| m.name }.inspect}" if not m = type.findmember(ntok.raw)
 						CExpression.new(val, :'.', ntok.raw, m.type)
 					end
 				when '['
@@ -2120,6 +2149,7 @@ module C
 		def factorize(src)
 			@lexer.traced_macros = []
 			parse(src)
+			raise @lexer.readtok || self, 'eof expected' if not @lexer.eos?
 	
 			# now find all types/defs not coming from the standard headers
 			# all

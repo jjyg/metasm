@@ -778,7 +778,7 @@ class Preprocessor
 			case @ifelse_nesting.last
 			when :accept, nil
 				@ifelse_nesting << :testing
-				test = PPExpression.parse(self)
+				raise cmd, 'expr expected' if not test = PPExpression.parse(self)
 				eol = skipspc[]
 				raise eol, 'pp syntax error' if eol and eol.type != :eol
 				unreadtok eol
@@ -819,7 +819,7 @@ class Preprocessor
 				@ifelse_nesting[-1] = :discard_all
 			when :discard
 				@ifelse_nesting[-1] = :testing
-				test = PPExpression.parse(self)
+				raise cmd, 'expr expected' if not test = PPExpression.parse(self)
 				raise eol, 'pp syntax error' if eol = skipspc[] and eol.type != :eol
 				unreadtok eol
 				case test.reduce
