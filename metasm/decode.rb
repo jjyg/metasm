@@ -507,6 +507,7 @@ class Disassembler
 		@function = {}
 		@check_smc = true
 		@prog_binding = {}
+		@old_prog_binding = {}
 		@addrs_todo = []
 		@backtrace_maxblocks = @@backtrace_maxblocks
 	end
@@ -552,7 +553,7 @@ class Disassembler
 	# returns the canonical form of addr (absolute address integer or label of start of section + section offset)
 	def normalize(addr)
 		return :default if addr == :default
-		Expression[addr].bind(@prog_binding).reduce
+		Expression[addr].bind(@old_prog_binding).bind(@prog_binding).reduce
 	end
 
 	# returns [edata, edata_base] or nil
@@ -610,6 +611,7 @@ class Disassembler
 		if e
 			e.add_export new, e.export[old], true
 		end
+		@old_prog_binding[old] = @prog_binding[old]
 		@prog_binding[new] = @prog_binding.delete(old)
 		@addrs_todo.each { |at|
 			case at[0]
@@ -1120,7 +1122,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 
 	# static resolution of indirections
 	def resolve(expr)
-		binding = Expression[expr].externals.grep(Indirection).inject(@prog_binding) { |binding, ind|
+		binding = Expression[expr].externals.grep(Indirection).inject(@prog_binding.merge(@old_prog_binding)) { |binding, ind|
 			e, b = get_section_at(resolve(ind.target))
 			return expr if not e
 			binding.merge ind => Expression[ e.decode_imm("u#{8*ind.len}".to_sym, @cpu.endianness) ]
