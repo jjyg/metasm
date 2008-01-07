@@ -42,6 +42,7 @@ src = <<EOS
 #if DDK
  typedef struct _CONTEXT CONTEXT;	// needed by ntddk.h, but this will pollute the factorized output..
  typedef CONTEXT *PCONTEXT;
+ #define dllimport stdcall		// wtff
  #include <ntddk.h>
  #include <stdio.h>
 #else
