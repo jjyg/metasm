@@ -283,7 +283,8 @@ module C
 
 		def offsetof(parser, name)
 			raise parser, 'undefined structure' if not @members
-			raise parser, 'unknown structure member' if not @members.find { |m| m.name == name }
+			raise parser, 'unknown structure member' if not findmember(name)
+			raise parser, 'unhandled indirect offsetof' if not @members.find { |m| m.name == name }	# TODO
 			al = align(parser)
 			off = 0
 			@members.each_with_index { |m, i|
@@ -2256,8 +2257,11 @@ module C
 				end
 			}
 			todo_rndr.keys.grep(Union).find_all { |t| t.name }.sort_by { |t| t.name }.each { |t|
-				if c = dep_cycle[[t]]
-					r << "#{t.kind_of?(Struct) ? 'struct' : 'union'} #{t.name};"
+				oldc = nil
+				while c = dep_cycle[[t]]
+					break if oldc == c
+					r << "#{t.kind_of?(Struct) ? 'struct' : 'union'} #{t.name};" if not oldc
+					oldc = c
 					c.each { |s|
 						# XXX struct z { struct a* }; struct a { void (*foo)(struct z); };
 						todo_deps[s].delete t unless s.kind_of? Union and
@@ -2270,7 +2274,7 @@ module C
 				break if todo_rndr.empty?
 				todo_now = todo_deps.keys.find_all { |k| todo_deps[k].empty? }
 				if todo_now.empty?
-					r << '// dependency problem, this should not compile'
+					r << '// dependency problem, this may not compile'
 					todo_now = todo_deps.keys
 				end
 				todo_now.sort_by { |k| k.name || '0' }.each { |k|
