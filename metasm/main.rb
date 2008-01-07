@@ -449,6 +449,16 @@ class Expression
 			elsif l == 0: r
 			elsif r == 0: l
 			elsif l == r: 0
+			elsif l.kind_of? Expression and l.op == :^
+				# a^(b^c) => (a^b)^c
+				Expression[l.lexpr, :^, [l.rexpr, :^, r]].reduce_rec
+			elsif r.kind_of? Expression and r.op == :^
+				# (a^b)^a => b
+				if r.rexpr == l
+					Expression[r.lexpr].reduce_rec
+				elsif r.lexpr == l
+					Expression[r.rexpr].reduce_rec
+				end
 			end
 		elsif @op == :&
 			0 if l == 0 or r == 0
