@@ -299,6 +299,18 @@ class Indirection
 		qual = {1 => 'byte', 2 => 'word', 4 => 'dword'}[@len] || "_#{len*8}bits"
 		"#{qual} ptr [#{target}]"
 	end
+
+	# returns the complexity of the expression (number of externals +1 per indirection)
+	def complexity
+		1+@target.complexity
+	end
+end
+
+class Expression
+	# returns the complexity of the expression (number of externals +1 per indirection)
+	def complexity
+		externals.map { |e| e.respond_to?(:complexity) ? e.complexity : 1 }.inject(0) { |a, b| a+b }
+	end
 end
 
 class EncodedData
@@ -609,6 +621,7 @@ class Disassembler
 
 	# decodes instructions from an entrypoint, (tries to) follows code flow
 	def disassemble(*entrypoints)
+		begin
 		loop do
 			@addrs_todo << entrypoints.shift if @addrs_todo.empty?
 			while not @addrs_todo.empty?
@@ -616,7 +629,9 @@ class Disassembler
 			end
 			break if entrypoints.empty?
 		end
+		ensure
 		post_disassemble
+		end
 		self
 	end
 
@@ -626,6 +641,10 @@ class Disassembler
 			next if not di.opcode.props[:saveip]
 			di.add_comment 'noreturn' if not di.block.to_subfuncret
 		}
+		@function.each { |addr, f|
+			next if not di = @decoded[addr]
+			di.add_comment f.backtrace_binding.map { |k, v| "#{k} -> #{v}" }.sort.join(', ')
+		} if $VERBOSE
 	end
 
 	# disassembles one block from addrs_todo
@@ -1059,6 +1078,9 @@ puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" 
 						result |= vals
 						next false
 					end
+				elsif expr.complexity > 10
+					puts "  backtrace aborting, expr too complex" if $DEBUG
+					next false
 				end
 				expr
 			else raise ev.inspect
@@ -1348,6 +1370,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 				next if di.block.to_subfuncret or di.block.to_normal != f
 				while di and (not @function[di.block.address] or not @xrefs[di.block.address])
 					di = @decoded[di.block.from_subfuncret || di.block.from_normal]
+					di = nil if di and di.block.to_normal.kind_of? ::Array
 				end
 				next if not di
 				l = label_at(di.block.address)
@@ -1371,8 +1394,12 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 	def dump(dump_data=true, &b)
 		b ||= proc { |l| puts l }
 		@sections.sort.each { |addr, edata|
-			blockoffs = @decoded.values.map { |di| Expression[di.block.address, :-, addr].reduce if di.block_offset == 0 }.grep(::Integer).sort
+			blockoffs = @decoded.values.map { |di| Expression[di.block.address, :-, addr].reduce if di.block_offset == 0 }.grep(::Integer).sort.reject { |o| o < 0 or o >= edata.length }
 			b.call @program.dump_section_header(addr, edata)
+			if not dump_data and edata.length > 16*1024 and blockoffs.empty?
+				b["// [#{edata.length} data bytes]"]
+				next
+			end
 			unk_off = 0
 			# blocks.sort_by { |b| b.addr }.each { |b|
 			edata.length.times { |i|

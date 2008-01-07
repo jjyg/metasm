@@ -511,7 +511,7 @@ class ELF
 			target = addend
 			if o = addr_to_off(target)
 				if not label = @encoded.inv_export[o]
-					label = new_label('xref_%X' % target)
+					label = new_label('xref_%04x' % target)
 					@encoded.add_export label, o
 				end
 				target = label

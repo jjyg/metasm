@@ -512,14 +512,14 @@ class COFF
 		case r.type
 		when 'ABSOLUTE'
 		when 'HIGHLOW'
-			addr = decode_word - @optheader.image_base
-			if off = rva_to_off(addr)
-				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%x' % addr)], :u32, @endianness)
+			addr = decode_word
+			if off = rva_to_off(addr - @optheader.image_base)
+				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%04x' % addr)], :u32, @endianness)
 			end
 		when 'DIR64'
-			addr = decode_xword - @optheader.image_base
-			if off = rva_to_off(addr)
-				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%x' % addr)], :u64, @endianness)
+			addr = decode_xword
+			if off = rva_to_off(addr - @optheader.image_base)
+				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%04x' % addr)], :u64, @endianness)
 			end
 		else puts "W: COFF: Unsupported i386 relocation #{r.inspect}" if $VERBOSE
 		end
