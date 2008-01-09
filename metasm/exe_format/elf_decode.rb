@@ -640,10 +640,11 @@ class ELF
 			main = @cpu.decode_c_function_prototype(d.c_parser, '__libc_start_main')
 			df   = @cpu.decode_c_function_prototype(d.c_parser, 'stdfunc', :default)
 			d.c_parser = old_cp
-			dls.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin|
+			dls.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
+
 				sz = @cpu.size/8
 				raise 'dlsym call error' if not dasm.decoded[calladdr]
-				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true)
+				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)
 				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(0) and i > sz	# try to avoid ordinals
 					bind = bind.merge :eax => Expression[fn[0, i]]
 				end
