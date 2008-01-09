@@ -145,7 +145,7 @@ class Viewer
 	end
 
 	def refresh_search
-		$stdout.write '' << Ansi.set_cursor_pos(@h+2, 1) << @searchtext << Ansi::ClearLineAfter
+		$stdout.write '' << Ansi.set_cursor_pos(@h+2, 1) << '/' << @searchtext << Ansi::ClearLineAfter
 	end
 
 	def outline(l)
@@ -181,8 +181,8 @@ class Viewer
 				view(x, y)
 				return
 			end
+			break if y == @pos+@y or (y >= @text.length and not @text[@pos+@y])
 			y += 1
-			break if y == @pos+@y
 		end
 	end
 
@@ -283,8 +283,10 @@ class Viewer
 			elsif @pos > @h/2: @pos -= @h/2 ; @y = 0
 			else @pos = @y = 0
 			end
-		when ?q
-			exit
+		when ?q: exit
+		when ?o: @text.insert(@pos+@y+1, '')
+		when ?O: @text.insert(@pos+@y, '') ; handle_key_navig(:down)
+		when :suppr: @text.delete_at(@pos+@y) if @text[@pos+@y] == ''
 		when ?/
 			@mode = :search
 			@searchtext = ''

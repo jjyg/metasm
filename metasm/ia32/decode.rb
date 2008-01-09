@@ -259,6 +259,7 @@ module Metasm
 			end
 		}
 
+		mask = (1 << @size)-1	# 0xffff_ffff for 32bits
 		case op = di.opcode.name
 		when 'mov', 'movsx', 'movzx', 'movd', 'movq': { a[0] => Expression[a[1]] }
 		when 'lea': { a[0] => a[1].target }
@@ -266,18 +267,22 @@ module Metasm
 		when 'add', 'sub', 'or', 'xor', 'and', 'pxor'
 			op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^, 'pxor' => :^ }[op]
 			ret = Expression[a[0], op, a[1]]
-			# optimises :eax ^ :eax => 0, avoids unnecessary r/w xrefs
-			# avoid hiding memory accesses (may cause an exception)
+			# optimises :eax ^ :eax => 0
+			# avoid hiding memory accesses (to not hide possible fault)
 			ret = Expression[ret.reduce] if not a[0].kind_of? Indirection
 			{ a[0] => ret }
 		when 'inc': { a[0] => Expression[a[0], :+, 1] }
 		when 'dec': { a[0] => Expression[a[0], :-, 1] }
-		when 'not': { a[0] => Expression[a[0], :^, (1 << (di.instruction.args.first.sz || @size)) - 1] }
+		when 'not': { a[0] => Expression[a[0], :^, mask] }
 		when 'neg': { a[0] => Expression[:-, a[0]] }
-		when 'rol', 'ror', 'rcl', 'rcr': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), a[1]] } # XXX
+		when 'rol', 'ror', 'rcl', 'rcr':
+			invop = (op[-1] == ?r ? :<< : :>>)
+			op = (op[-1] == ?r ? :>> : :<<)
+			# ror a, b  =>  (a >> b) | (a << (32-b))
+			{ a[0] => Expression[[[[a[0], :^, mask], op, a[1]], :|, [[a[0], :&, mask], invop, [@size, :-, a[1]]]], :&, mask] }
 		when 'sar', 'shl', 'sal': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), a[1]] }
-		when 'shr': { a[0] => Expression[[a[0], :&, (1<<@size) - 1], :>>, a[1]] }
-		when 'cdq': { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, @size-1], :>, 0]] }
+		when 'shr': { a[0] => Expression[[a[0], :&, mask], :>>, a[1]] }
+		when 'cdq': { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, @size-1], :&, 1]] }
 		when 'push'
 			{ :esp => Expression[:esp, :-, @size/8],
 			  Indirection.new(Expression[:esp], @size/8, di.address) => Expression[a[0]] }
@@ -286,6 +291,24 @@ module Metasm
 			  a[0] => Indirection.new(Expression[:esp], @size/8, di.address) }
 		when 'pushfd': { :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], @size/8, di.address) => Expression::Unknown }
 		when 'popfd':  { :esp => Expression[:esp, :+, @size/8] }
+		when 'pushad'
+			ret = {}
+			st_off = 0
+			[:eax, :ecx, :edx, :ecx, :ebx, :ebp, :esp, :esi, :edi].each { |r|
+				ret[Indirection.new(Expression[:esp, :-, st_off].reduce, @size/8, di.address)] = Expression[r]
+				st_off -= @size/8
+			}
+			ret[:esp] = Expression[:esp, :-, st_off]
+			ret
+		when 'popad'
+			ret = {}
+			st_off = 0
+			[:eax, :ecx, :edx, :ecx, :ebx, :ebp, :esp, :esi, :edi].reverse_each { |r|
+				ret[r] = Indirection.new(Expression[:esp, :+, st_off].reduce, @size/8, di.address)
+				st_off += @size/8
+			}
+			ret[:esp] = Expression[:esp, :+, st_off]
+			ret
 		when 'call'
 			eoff = Expression[di.block.address, :+, di.block_offset + di.bin_length]
 			{ :esp => Expression[:esp, :-, @size/8],
@@ -301,7 +324,12 @@ module Metasm
 			b
 		when 'leave': { :ebp => Indirection.new(Expression[:ebp], @size/8, di.address), :esp => Expression[:ebp, :+, @size/8] }
 		when 'aaa': { :eax => Expression::Unknown }
-		when 'imul': { a[0] => ((a[2] and a[0] == a[1]) ? Expression[a[0], :*, a[2]] : Expression::Unknown) }
+		when 'imul'
+			if a[2]: e = Expression[a[1], :*, a[2]]
+			else e = Expression[[a[0], :*, a[1]], :&, (1 << (di.instruction.args.first.sz || @size)) - 1]
+			end
+			{ a[0] => e }
+		when 'rdtsc': { :eax => Expression::Unknown, :edx => Expression::Unknown }
 		when /^(stos|movs)([bwd])$/
 			op = $1
 			sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]

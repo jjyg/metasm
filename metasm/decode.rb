@@ -625,11 +625,14 @@ class Disassembler
 	def disassemble(*entrypoints)
 		begin
 		loop do
-			@addrs_todo << entrypoints.shift if @addrs_todo.empty?
+			if @addrs_todo.empty?
+				break if not ep = entrypoints.shift
+				label_at(normalize(ep), 'entrypoint')
+				@addrs_todo << ep
+			end
 			while not @addrs_todo.empty?
 				disassemble_step
 			end
-			break if entrypoints.empty?
 		end
 		ensure
 		post_disassemble
@@ -1443,6 +1446,9 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 		block.list.each { |di|
 			block.edata.ptr = block.edata_ptr + di.block_offset
 			bin = block.edata.read(di.bin_length).unpack('C*').map { |c| '%02x' % c }.join
+			if di.bin_length > 12
+				bin = bin[0, 20] + "..<+#{di.bin_length-10}>"
+			end
 			b.call "    #{di.instruction.to_s.ljust(44)} ; @#{Expression[di.address]}  #{bin}  #{di.comment.sort[0,6].join(' ') if di.comment}"
 		}
 	end
