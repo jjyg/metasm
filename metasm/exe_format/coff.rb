@@ -215,6 +215,36 @@ class COFF < ExeFormat
 			ret
 		end
 
+		# returns a string with the to_hash key tree
+		def to_s
+			to_s_a(0).join("\n")
+		end
+
+		def to_s_a(depth)
+			@entries.map { |e|
+				ar = []
+				ar << if e.id
+					if depth == 0 and TYPE.has_key?(e.id): "#{e.id.to_s} (#{TYPE[e.id]})".ljust(18)
+					else e.id.to_s.ljust(5)
+					end
+				else (e.name || e.name_w).inspect
+				end
+				if e.subdir
+					sa = e.subdir.to_s_a(depth+1)
+					if sa.length == 1
+						ar.last << " | #{sa.first}"
+					else
+						ar << sa.map { |s| '    ' + s }
+					end
+				elsif e.data.length > 16
+					ar.last << " #{e.data[0, 8].inspect}... <#{e.data.length} bytes>"
+				else
+					ar.last << ' ' << e.data.inspect
+				end
+				ar
+			}.flatten
+		end
+
 		TYPE = {
 			1 => 'CURSOR', 2 => 'BITMAP', 3 => 'ICON', 4 => 'MENU',
 			5 => 'DIALOG', 6 => 'STRING', 7 => 'FONTDIR', 8 => 'FONT',
