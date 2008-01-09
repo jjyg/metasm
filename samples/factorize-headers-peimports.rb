@@ -22,7 +22,13 @@ funcnames = pe.imports.map { |id| id.imports.map { |i| i.name } }.flatten.compac
 
 raise 'need a path to the headers' if not visualstudiopath = ARGV.shift
 
-funcnames |= ARGV
+ARGV.each { |n|
+	if n[0] == ?-
+		funcnames.delete n[1..-1]
+	else
+		funcnames |= [n]
+	end
+}
 
 src = <<EOS
 // add the path to the visual studio std headers
@@ -40,6 +46,7 @@ src = <<EOS
 #endif
 
 #if DDK
+ #define NO_INTERLOCKED_INTRINSICS
  typedef struct _CONTEXT CONTEXT;	// needed by ntddk.h, but this will pollute the factorized output..
  typedef CONTEXT *PCONTEXT;
  #define dllimport stdcall		// wtff
