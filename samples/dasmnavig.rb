@@ -90,6 +90,7 @@ class Viewer
 		:normal  => Ansi.color(:white, :black, :normal),
 		:comment => Ansi.color(:blue),
 		:label   => Ansi.color(:green),
+		:hilight => Ansi.color(:yellow),
 	}
 
 
@@ -136,9 +137,10 @@ class Viewer
 		str = ''
 		#str << Ansi::ClearScreen
 		str << Ansi.set_cursor_pos(0, 0)
+		hl = readtext
 		(0..@h).each { |h|
 			l = @text[@pos+h] || ''
-			str << outline(l) << Ansi::ClearLineAfter << "\n"
+			str << outline(l, hl) << Ansi::ClearLineAfter << "\n"
 		}
 		str << Ansi.set_cursor_pos(@y+1, @x+1)
 		$stdout.write str
@@ -148,13 +150,19 @@ class Viewer
 		$stdout.write '' << Ansi.set_cursor_pos(@h+2, 1) << '/' << @searchtext << Ansi::ClearLineAfter
 	end
 
-	def outline(l)
+	def outline(l, hl=nil)
 		l = l[@posh, @w] || ''
 		case l
 		when /^\/\//: Color[:comment] + l + Color[:normal]
 		when /^\S+:$/: Color[:label] + l + Color[:normal]
-		when /^(.*)(;.*)$/: $1 + Color[:comment] + $2 + Color[:normal]
-		else l
+		when /^(.*)(;.*)$/
+			str = $1
+			cmt = $2
+			str.gsub!(hl, Color[:hilight]+hl+Color[:normal]) if hl
+			str + Color[:comment] + cmt + Color[:normal]
+		else
+			l = l.gsub(hl, Color[:hilight]+hl+Color[:normal]) if hl
+			l
 		end
 	end
 
@@ -205,8 +213,9 @@ class Viewer
 
 	def readtext
 		return if not l = @text[@pos+@y]
-		x = (l.rindex(/\W/, @posh+@x) || -1)+1
-		l[x..-1][/^\w+/]
+		x = (l.rindex(/\W/, @posh+@x-1) || -1)+1
+		t = l[x..-1][/^\w+/]
+		t if t and @posh+@x < x+t.length
 	end
 
 	def handle_key(k)
