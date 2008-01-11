@@ -1083,7 +1083,7 @@ puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" 
 						result |= vals
 						next false
 					end
-				elsif expr.complexity > 10
+				elsif expr.complexity > 40
 					puts "  backtrace aborting, expr too complex" if $DEBUG
 					next false
 				end

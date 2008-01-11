@@ -294,20 +294,19 @@ module Metasm
 		when 'pushad'
 			ret = {}
 			st_off = 0
-			[:eax, :ecx, :edx, :ecx, :ebx, :ebp, :esp, :esi, :edi].each { |r|
-				ret[Indirection.new(Expression[:esp, :-, st_off].reduce, @size/8, di.address)] = Expression[r]
-				st_off -= @size/8
+			[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
+				ret[Indirection.new(Expression[:esp, :+, st_off].reduce, @size/8, di.address)] = Expression[r]
+				st_off += @size/8
 			}
 			ret[:esp] = Expression[:esp, :-, st_off]
 			ret
 		when 'popad'
 			ret = {}
 			st_off = 0
-			[:eax, :ecx, :edx, :ecx, :ebx, :ebp, :esp, :esi, :edi].reverse_each { |r|
+			[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
 				ret[r] = Indirection.new(Expression[:esp, :+, st_off].reduce, @size/8, di.address)
 				st_off += @size/8
 			}
-			ret[:esp] = Expression[:esp, :+, st_off]
 			ret
 		when 'call'
 			eoff = Expression[di.block.address, :+, di.block_offset + di.bin_length]

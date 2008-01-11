@@ -213,7 +213,7 @@ class Viewer
 
 	def readtext
 		return if not l = @text[@pos+@y]
-		x = (l.rindex(/\W/, @posh+@x-1) || -1)+1
+		x = (l.rindex(/\W/, [@posh+@x-1, 0].max) || -1)+1
 		t = l[x..-1][/^\w+/]
 		t if t and @posh+@x < x+t.length
 	end
