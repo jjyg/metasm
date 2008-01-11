@@ -1258,7 +1258,9 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 			# wait until we arrive at an xref'ing instruction, then backtrace the written value
 			backtrace_walk(initval, ind.origin, true, false, nil, maxdepth-1) { |ev, expr, h|
 				case ev
-				when :unknown_addr, :maxdepth, :stopaddr: ret |= [Expression::Unknown]
+				when :unknown_addr, :maxdepth, :stopaddr
+					puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if $DEBUG
+					ret |= [Expression::Unknown]
 				when :end
 					if not refs.empty? and (expr == true or not need_backtrace(expr))
 						if expr == true

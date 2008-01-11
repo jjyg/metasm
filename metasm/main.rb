@@ -444,6 +444,14 @@ class Expression
 		elsif l.kind_of?(Numeric) and l != 0 and @op == :'||'
 			1
 
+		elsif @op == :>> or @op == :<<
+			if l == 0: 0
+			elsif r == 0: l
+			elsif l.kind_of? Expression and l.op == @op
+				Expression[l.lexpr, @op, [l.rexpr, :+, r]].reduce_rec
+			# XXX (a >> 1) << 1  !=  a (lose low bit)
+			# XXX (a << 1) >> 1  !=  a (with real cpus, lose high bit)
+			end
 		elsif @op == :^
 			if l == :unknown or r == :unknown: :unknown
 			elsif l == 0: r
@@ -490,7 +498,7 @@ class Expression
 			if l == :unknown or r == :unknown: :unknown
 			elsif not l: r	# +x  => x
 			elsif r == 0: l	# x+0 => x
-			elsif l.kind_of? Numeric
+			elsif l.kind_of?(::Numeric)
 				if r.kind_of? Expression and r.op == :+
 					# 1+(x+y) => x+(y+1)
 					Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec

@@ -170,7 +170,7 @@ class Viewer
 		return if @searchtext == ''
 		y = @pos+@y-1
 		loop do
-			y = @text.length-1 if not @text[y]
+			y = @text.length-1 if not @text[y] or y < 0
 			if x = (@text[y] =~ /#@searchtext/i)
 				view(x, y)
 				return

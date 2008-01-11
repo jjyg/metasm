@@ -21,7 +21,7 @@ class Ia32
 		@valid_args.push :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx
 
 		@valid_props.push :strop, :stropz, :opsz, :argsz
-		@valid_props.push :setip, :stopexec, :saveip
+		@valid_props.push :setip, :stopexec, :saveip, :unsigned_imm, :random
 		
 		addop 'aaa',   [0x37]
 		addop 'aad',   [0xD5, 0x0A]
@@ -30,7 +30,7 @@ class Ia32
 		
 		addop_macro1 'adc', 2
 		addop_macro1 'add', 0
-		addop_macro1 'and', 4
+		addop_macro1 'and', 4, :u
 		
 		addop 'arpl',  [0x63], :mrm
 		addop 'bound', [0x62], :mrmA
@@ -121,8 +121,8 @@ class Ia32
 		addop 'ltr',   [0x0F, 0x00], 3
 		addop 'mov',   [0xA0], nil,  {:w => [0, 0], :d => [0, 1]}, :mrm_imm, :reg_eax
 		addop 'mov',   [0x88], :mrmw,{:d => [0, 1]}
-		addop 'mov',   [0xB0], :reg, {:w => [0, 3]}, :i
-		addop 'mov',   [0xC6], 0,    {:w => [0, 0]}, :i
+		addop 'mov',   [0xB0], :reg, {:w => [0, 3]}, :u
+		addop 'mov',   [0xC6], 0,    {:w => [0, 0]}, :u
 		addop 'mov',   [0x0F, 0x20, 0xC0], :reg, {:d => [1, 1], :eeec => [2, 3]}, :eeec
 		addop 'mov',   [0x0F, 0x21, 0xC0], :reg, {:d => [1, 1], :eeed => [2, 3]}, :eeed
 		addop('mov',   [0x8C], 0,    {:d => [0, 1], :seg3 => [1, 3]}, :seg3) { |op| op.args.reverse! }
@@ -134,7 +134,7 @@ class Ia32
 		addop 'nop',   [0x90]
 		addop 'not',   [0xF6], 2,    {:w => [0, 0]}
 		
-		addop_macro1 'or', 1
+		addop_macro1 'or', 1, :u
 		
 		addop 'out',   [0xE6], nil,  {:w => [0, 0]}, :reg_eax, :u8
 		addop 'out',   [0xE6], nil,  {:w => [0, 0]}, :u8
@@ -167,7 +167,7 @@ class Ia32
 		
 		addop 'rdmsr', [0x0F, 0x32]
 		addop 'rdpmc', [0x0F, 0x33]
-		addop 'rdtsc', [0x0F, 0x31]
+		addop 'rdtsc', [0x0F, 0x31], nil, {}, :random
 		addop 'ret',   [0xC3], nil,  {}, :stopexec, :setip
 		addop 'ret',   [0xC2], nil,  {}, :stopexec, :u16, :setip
 		addop 'retf',  [0xCB], nil,  {}, :stopexec, :setip
@@ -209,8 +209,8 @@ class Ia32
 		addop_macro1 'sub', 5
 		
 		addop 'test',  [0x84], :mrmw
-		addop 'test',  [0xA8], nil,  {:w => [0, 0]}, :reg_eax, :i
-		addop 'test',  [0xF6], 0,    {:w => [0, 0]}, :i
+		addop 'test',  [0xA8], nil,  {:w => [0, 0]}, :reg_eax, :u
+		addop 'test',  [0xF6], 0,    {:w => [0, 0]}, :u
 		addop 'ud2',   [0x0F, 0x0B]
 		addop 'verr',  [0x0F, 0x00], 4
 		addop 'verw',  [0x0F, 0x00], 5
@@ -223,7 +223,7 @@ class Ia32
 		addop 'xchg',  [0x86], :mrmw
 		addop 'xlat',  [0xD7]
 		
-		addop_macro1 'xor', 6
+		addop_macro1 'xor', 6, :u
 	
 # pfx:  addrsz = 0x67, lock = 0xf0, opsz = 0x66, repnz = 0xf2, rep/repz = 0xf3
 #	cs/nojmp = 0x2E, ds/jmp = 0x3E, es = 0x26, fs = 0x64, gs = 0x65, ss = 0x36
@@ -543,10 +543,10 @@ class Ia32
 
 	private
 
-	def addop_macro1(name, num)
-		addop name, [(num << 3) | 4], nil, {:w => [0, 0]}, :reg_eax, :i
+	def addop_macro1(name, num, immtype=:i)
+		addop name, [(num << 3) | 4], nil, {:w => [0, 0]}, :reg_eax, :u
 		addop name, [num << 3], :mrmw, {:d => [0, 1]}
-		addop name, [0x80], num, {:w => [0, 0], :s => [0, 1]}, :i
+		addop name, [0x80], num, {:w => [0, 0], :s => [0, 1]}, :u
 	end
 	def addop_macro2(name, num)
 		addop name, [0x0F, 0xBA], (4 | num), {}, :u8
@@ -660,6 +660,11 @@ class Ia32
 			argprops.unshift :regxmm, :modrmxmm	
 		else
 			raise SyntaxError, "invalid hint #{hint.inspect} for #{name}"
+		end
+
+		if argprops.index(:u)
+			argprops << :unsigned_imm
+			argprops[argprops.index(:u)] = :i
 		end
 
 		(argprops & @valid_props).each { |p| op.props[p] = true }

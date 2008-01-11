@@ -186,7 +186,7 @@ module Metasm
 
 			when :farptr: Farptr.decode edata, @endianness, adsz
 			when :i8, :u8, :u16: Expression[edata.decode_imm(a, @endianness)]
-			when :i: Expression[edata.decode_imm("i#{opsz}".to_sym, @endianness)]
+			when :i: Expression[edata.decode_imm("#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym, @endianness)]
 
 			when :mrm_imm:  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, di.instruction.prefix[:seg]
 			when :modrm, :modrmA: ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), di.instruction.prefix[:seg]
@@ -279,9 +279,9 @@ module Metasm
 			invop = (op[-1] == ?r ? :<< : :>>)
 			op = (op[-1] == ?r ? :>> : :<<)
 			# ror a, b  =>  (a >> b) | (a << (32-b))
-			{ a[0] => Expression[[[[a[0], :^, mask], op, a[1]], :|, [[a[0], :&, mask], invop, [@size, :-, a[1]]]], :&, mask] }
-		when 'sar', 'shl', 'sal': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), a[1]] }
-		when 'shr': { a[0] => Expression[[a[0], :&, mask], :>>, a[1]] }
+			{ a[0] => Expression[[[[a[0], :&, mask], op, [a[1], :%, @size]], :|, [[a[0], :&, mask], invop, [[@size, :-, a[1]], :%, @size]]], :&, mask] }
+		when 'sar', 'shl', 'sal': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), [a[1], :%, @size]] }
+		when 'shr': { a[0] => Expression[[a[0], :&, mask], :>>, [a[1], :%, @size]] }
 		when 'cdq': { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, @size-1], :&, 1]] }
 		when 'push'
 			{ :esp => Expression[:esp, :-, @size/8],
