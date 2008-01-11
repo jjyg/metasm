@@ -1412,6 +1412,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 			edata.length.times { |i|
 				curaddr = Expression[addr, :+, i].reduce
 				if di = @decoded[curaddr] and di.block_offset == 0
+					b["\n// ------ overlap (#{unk_off-di.block.edata_ptr}) ------"] if unk_off != di.block.edata_ptr
 					dump_block(di.block, &b)
 					di = di.block.list.last
 					unk_off = i + di.block_offset + di.bin_length
