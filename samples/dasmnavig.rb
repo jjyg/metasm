@@ -152,16 +152,17 @@ class Viewer
 
 	def outline(l, hl=nil)
 		l = l[@posh, @w] || ''
+		hlr = /\b#{Regexp.escape(hl)}\b/i if hl
 		case l
 		when /^\/\//: Color[:comment] + l + Color[:normal]
 		when /^\S+:$/: Color[:label] + l + Color[:normal]
 		when /^(.*)(;.*)$/
 			str = $1
 			cmt = $2
-			str.gsub!(hl, Color[:hilight]+hl+Color[:normal]) if hl
+			str.gsub!(hlr, Color[:hilight]+hl+Color[:normal]) if hl
 			str + Color[:comment] + cmt + Color[:normal]
 		else
-			l = l.gsub(hl, Color[:hilight]+hl+Color[:normal]) if hl
+			l = l.gsub(hlr, Color[:hilight]+hl+Color[:normal]) if hl
 			l
 		end
 	end
