@@ -34,7 +34,15 @@ class DecodedInstruction
 	end
 
 	def to_s
-		"#{Expression[address]} #{instruction}"
+		if block
+			bin = @block.edata.data[@block.edata_ptr, @bin_length].unpack('C*').map { |c| '%02x' % c }.join
+			if @bin_length > 12
+				bin = bin[0, 20] + "..<+#{@bin_length-10}>"
+			end
+			"    #{@instruction.to_s.ljust(44)} ; @#{Expression[address]}  #{bin}  #{@comment.sort[0,6].join(' ') if comment}"
+		else
+			"#{@instruction}#{' ; ' + @comment.join(' ') if comment}"
+		end
 	end
 
 	def add_comment(c)
@@ -304,12 +312,22 @@ class Indirection
 	def complexity
 		1+@target.complexity
 	end
+
+	# externals, including indirection pointers'
+	def ind_externals
+		@target.ind_externals
+	end
 end
 
 class Expression
 	# returns the complexity of the expression (number of externals +1 per indirection)
 	def complexity
 		externals.map { |e| e.respond_to?(:complexity) ? e.complexity : 1 }.inject(0) { |a, b| a+b }
+	end
+
+	# externals, walks indirections too
+	def ind_externals
+		externals.map { |e| e.kind_of? Indirection ? e.ind_externals : e }.flatten
 	end
 end
 
@@ -1116,6 +1134,13 @@ puts '  backtrace result: ' + result.map { |r| Expression[r] }.join(', ') if $DE
 				retaddr = backtrace_emu_instr(di, btt.expr) and
 				not need_backtrace(retaddr)
 puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if $DEBUG
+			# XXX call <thiscallretaddr>
+			if di.block.to_normal and di.block.to_normal.kind_of?(::Array)
+				di.block.to_normal.delete funcaddr
+				di.block.to_normal = nil if di.block.to_normal == []
+			elsif di.block.to_normal and di.block.to_normal == funcaddr
+				di.block.to_normal = nil
+			end
 			di.block.add_subfunction funcaddr
 			di.block.add_to retaddr, true
 			@addrs_todo.unshift [retaddr, instraddr, true]	# dasm inside of the function first
@@ -1442,6 +1467,12 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 
 	# dumps a block of decoded instructions
 	def dump_block(block, &b)
+		dump_block_header(block, &b)
+		block.list.each { |di| b.call di.to_s }
+	end
+
+	# shows the xrefs/labels at block start
+	def dump_block_header(block, &b)
 		xr = []
 		each_xref(block.address) { |x|
 			case x.type
@@ -1457,14 +1488,6 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 			b.call '' if xr.empty?
 			@prog_binding.each { |name, addr| b.call "#{name}:" if addr == block.address }
 		end
-		block.list.each { |di|
-			block.edata.ptr = block.edata_ptr + di.block_offset
-			bin = block.edata.read(di.bin_length).unpack('C*').map { |c| '%02x' % c }.join
-			if di.bin_length > 12
-				bin = bin[0, 20] + "..<+#{di.bin_length-10}>"
-			end
-			b.call "    #{di.instruction.to_s.ljust(44)} ; @#{Expression[di.address]}  #{bin}  #{di.comment.sort[0,6].join(' ') if di.comment}"
-		}
 	end
 
 	# dumps data/labels, honours @xrefs.len if exists

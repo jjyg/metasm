@@ -22,8 +22,11 @@ funcnames = pe.imports.map { |id| id.imports.map { |i| i.name } }.flatten.compac
 
 raise 'need a path to the headers' if not visualstudiopath = ARGV.shift
 
+add_hdrs = []
 ARGV.each { |n|
-	if n[0] == ?-
+	if n[0, 4] == '--I:'
+		add_hdrs = n[4..-1].split(':')
+	elsif n[0] == ?-
 		funcnames.delete n[1..-1]
 	else
 		funcnames |= [n]
@@ -57,6 +60,7 @@ src = <<EOS
  #include <windows.h>
  #include <winternl.h>
 #endif
+#{add_hdrs.map { |h| "#include <#{h}>" }.join("\n")}
 
 void *fnptr[] = { #{funcnames.map { |f| '&'+f }.join(', ')} };
 EOS
