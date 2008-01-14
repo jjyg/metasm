@@ -1136,9 +1136,9 @@ puts '  backtrace result: ' + result.map { |r| Expression[r] }.join(', ') if $DE
 puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if $DEBUG
 			# XXX call <thiscallretaddr>
 			if di.block.to_normal and di.block.to_normal.kind_of?(::Array)
-				di.block.to_normal.delete funcaddr
+				di.block.to_normal.delete_if { |to| normalize(to) == funcaddr }
 				di.block.to_normal = nil if di.block.to_normal == []
-			elsif di.block.to_normal and di.block.to_normal == funcaddr
+			elsif di.block.to_normal and normalize(di.block.to_normal) == funcaddr
 				di.block.to_normal = nil
 			end
 			di.block.add_subfunction funcaddr
