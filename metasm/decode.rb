@@ -35,7 +35,7 @@ class DecodedInstruction
 
 	def to_s
 		if block
-			bin = @block.edata.data[@block.edata_ptr, @bin_length].unpack('C*').map { |c| '%02x' % c }.join
+			bin = @block.edata.data[@block.edata_ptr+@block_offset, @bin_length].unpack('C*').map { |c| '%02x' % c }.join
 			if @bin_length > 12
 				bin = bin[0, 20] + "..<+#{@bin_length-10}>"
 			end
