@@ -1214,6 +1214,7 @@ class CCompiler < C::Compiler
 
 	def c_prolog
 		localspc = @state.offset.values.grep(::Integer).max
+		return if @state.func.attributes.to_a.include? 'naked'
 		if localspc
 			al = typesize[:ptr]
 			localspc = (localspc + al - 1) / al * al
@@ -1230,6 +1231,7 @@ class CCompiler < C::Compiler
 	end
 
 	def c_epilog
+		return if @state.func.attributes.to_a.include? 'naked'
 		# TODO revert dynamic array alloc
 		@state.dirty.reverse_each { |reg|
 			instr 'pop', Reg.new(reg, @cpusz)

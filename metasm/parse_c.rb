@@ -75,7 +75,7 @@ module C
 					end
 					attrib << tok.raw
 				end
-				raise tok || parser if not allow_declspec and %w[inline stdcall fastcall cdecl].include? attrib
+				raise tok || parser if not allow_declspec and %w[inline stdcall fastcall cdecl naked].include? attrib
 			    when 'inline', '__inline', '__inline__', '__stdcall', '__fastcall', '__cdecl'
 				break if not allow_declspec
 				attrib = keyword.delete '_'
