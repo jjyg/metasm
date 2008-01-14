@@ -48,8 +48,8 @@ class Ia32
 			r << @seg << ':' if seg
 
 			e = nil
-			e = Expression[e, :+, (@s == 1 ? @i : [@s, :*, @i])] if s
 			e = Expression[e, :+, @b] if b
+			e = Expression[e, :+, (@s == 1 ? @i : [@s, :*, @i])] if s
 			e = Expression[e, :+, @imm] if imm
 			r << '[' << e << ']'
 		end

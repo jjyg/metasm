@@ -279,7 +279,7 @@ module Metasm
 			invop = (op[-1] == ?r ? :<< : :>>)
 			op = (op[-1] == ?r ? :>> : :<<)
 			# ror a, b  =>  (a >> b) | (a << (32-b))
-			{ a[0] => Expression[[[[a[0], :&, mask], op, [a[1], :%, @size]], :|, [[a[0], :&, mask], invop, [[@size, :-, a[1]], :%, @size]]], :&, mask] }
+			{ a[0] => Expression[[[a[0], op, [a[1], :%, @size]], :|, [a[0], invop, [[@size, :-, a[1]], :%, @size]]], :&, mask] }
 		when 'sar', 'shl', 'sal': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), [a[1], :%, @size]] }
 		when 'shr': { a[0] => Expression[[a[0], :&, mask], :>>, [a[1], :%, @size]] }
 		when 'cdq': { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, @size-1], :&, 1]] }

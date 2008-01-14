@@ -171,10 +171,11 @@ class InstructionBlock
 		raise "invalid split #{off}" if off == 0 or not idx = @list.index(@list.find { |di| di.block_offset == off })
 		new_b = self.class.new(Expression[@address, :+, off].reduce, @edata, @edata_ptr + off)
 		new_b.add_di @list.delete_at(idx) while @list[idx]
-		new_b.add_from_normal @list.last.address
-		new_b.to_normal,     @to_normal =     to_normal,     new_b.to_normal
+		new_b.to_normal, @to_normal = to_normal, new_b.to_normal
 		new_b.to_subfuncret, @to_subfuncret = to_subfuncret, new_b.to_subfuncret
 		new_b.subfunction,   @subfunction =   subfunction,   new_b.subfunction
+		new_b.add_from @list.last.address
+		add_to new_b.address
 		@backtracked_for.delete_if { |btt|
 			if btt.block_offset and btt.block_offset >= off
 				btt.block_offset -= off
@@ -282,7 +283,6 @@ class Indirection
 
 	def bind(h)
 		if r = h[self]: r
-		elsif r = h[@target]: Indirection.new(Expression[r], @len, @origin)
 		else Indirection.new(@target.bind(h), @len, @origin)
 		end
 	end
@@ -656,11 +656,11 @@ class Disassembler
 	# adds next addresses to handle to addrs_todo
 	# if @function[:default] exists, jumps to unknows locations are interpreted as to @function[:default]
 	def disassemble_step
-		# from_func is true if from is the address of a function call that returns to addr
 		@addrs_done ||= []
 		return if not todo = @addrs_todo.pop or @addrs_done.include? todo
-		@addrs_done << todo
+		@addrs_done << todo if todo[1]
 
+		# from_sfret is true if from is the address of a function call that returns to addr
 		addr, from, from_subfuncret = todo
 
 		return if from == :default or from == Expression::Unknown
@@ -977,6 +977,7 @@ class Disassembler
 	#   if a snapshot_addr is given, values found are ignored if continuing the backtrace does not get to it (eg maxdepth/unk_addr/end)
 	#  :maxdepth => maximum number of blocks to backtrace
 	#  :detached => true if backtracking type :x and the result should not have from = origin set in @addrs_todo
+	#  :max_complexity{_data} => maximum complexity of the expression before aborting its backtrace
 	# XXX origin/type/len/detached -> BacktraceTrace ?
 	def backtrace(expr, start_addr, nargs={})
 		include_start   = nargs.delete :include_start
@@ -987,7 +988,10 @@ class Disassembler
 		snapshot_addr   = nargs.delete :snapshot_addr
 		maxdepth        = nargs.delete(:maxdepth) || @backtrace_maxblocks
 		detached        = nargs.delete :detached
+		max_complexity  = nargs.delete(:max_complexity) || 40
+		max_complexity_data = nargs.delete(:max_complexity) || 8
 		raise ArgumentError, "invalid argument to backtrace #{nargs.keys.inspect}" if not nargs.empty?
+
 
 		start_addr = normalize(start_addr)
 		di = @decoded[start_addr]
@@ -997,11 +1001,16 @@ class Disassembler
 			return []
 		end
 		
-		maxdepth = @backtrace_maxblocks_data if backtrace_maxblocks_data and (type == :r or type == :w) and maxdepth > @backtrace_maxblocks_data
+		if type == :r or type == :w
+			max_complexity = max_complexity_data
+			maxdepth = @backtrace_maxblocks_data if backtrace_maxblocks_data and maxdepth > @backtrace_maxblocks_data
+		end
 
 		if result = backtrace_check_found(expr, di, origin, type, len, maxdepth, detached)
 			# no need to update backtrace_for
 			return result
+		elsif maxdepth <= 0
+			return [Expression::Unknown]
 		end
 		
 		# create initial backtracked_for
@@ -1023,6 +1032,7 @@ puts "\nbacktracking #{type} #{expr} from #{di || Expression[start_addr]}" if $D
 			when :unknown_addr, :maxdepth
 puts "  backtrace end #{ev} #{expr}" if $DEBUG
 				result |= [expr] if not snapshot_addr
+				@addrs_todo << [expr, (detached ? nil : origin)] if not snapshot_addr and type == :x and origin
 			when :end
 puts "  backtrace end #{ev} #{expr}" if $DEBUG
 				if not snapshot_addr
@@ -1032,6 +1042,7 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 					btt.detached = true if detached
 					@decoded[h[:addr]].block.backtracked_for |= [btt] if @decoded[h[:addr]]
 					@function[h[:addr]].backtracked_for |= [btt] if @function[h[:addr]] and h[:addr] != :default
+					@addrs_todo << [expr, (detached ? nil : origin)] if type == :x and origin
 				end
 			when :stopaddr
 puts "  backtrace end #{ev} #{expr}" if $DEBUG
@@ -1083,7 +1094,7 @@ puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" 
 						result |= vals
 						next false
 					end
-				elsif expr.complexity > 40
+				elsif expr.complexity > max_complexity
 					puts "  backtrace aborting, expr too complex" if $DEBUG
 					next false
 				end

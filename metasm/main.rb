@@ -357,18 +357,22 @@ class Expression
 	# does not check the binding's key class except for numeric
 	# calls lexpr/rexpr #bind if they respond_to? it
 	def bind(binding = {})
+		if binding[self]
+			return binding[self].dup
+		end
+
 		l, r = @lexpr, @rexpr
-		if l.respond_to? :bind
-			l = l.bind(binding)
-		elsif l and binding[l]
+		if l and binding[l]
 			raise "internal error - bound #{l.inspect}" if l.kind_of? ::Numeric
 			l = binding[l]
+		elsif l.respond_to? :bind
+			l = l.bind(binding)
 		end
-		if r.respond_to? :bind
-			r = r.bind(binding)
-		elsif r and binding[r]
+		if r and binding[r]
 			raise "internal error - bound #{r.inspect}" if r.kind_of? ::Numeric
 			r = binding[r]
+		elsif r.respond_to? :bind
+			r = r.bind(binding)
 		end
 		Expression[l, @op, r]
 	end
