@@ -473,11 +473,35 @@ class Expression
 				end
 			end
 		elsif @op == :&
-			0 if l == 0 or r == 0
+			if l == 0 or r == 0: 0
+			elsif r.kind_of? ::Integer and l.kind_of? Expression and l.op == :|
+				# check for rol/ror composition
+				m = Expression[[['var', :sh_op, 'amt'], :|, ['var', :inv_sh_op, 'inv_amt']], :&, 'mask']
+				if vars = match(m, 'var', :sh_op, 'amt', :inv_sh_op, 'inv_amt', 'mask') and vars[:sh_op] == {:>> => :<<, :<< => :>>}[ vars[:inv_sh_op]] and
+				   ((vars['amt'].kind_of?(::Integer) and  vars['inv_amt'].kind_of?(::Integer) and ampl = vars['amt'] + vars['inv_amt']) or
+				    (vars['amt'].kind_of? Expression and vars['amt'].op == :% and vars['amt'].rexpr.kind_of? ::Integer and
+				     vars['inv_amt'].kind_of? Expression and vars['inv_amt'].op == :% and vars['amt'].rexpr == vars['inv_amt'].rexpr and ampl = vars['amt'].rexpr)) and
+				   vars['mask'].kind_of?(::Integer) and vars['mask'] == (1<<ampl)-1 and vars['var'].kind_of? Expression and	# it's a rotation
+				  ivars = vars['var'].match(m, 'var', :sh_op, 'amt', :inv_sh_op, 'inv_amt', 'mask') and ivars[:sh_op] == {:>> => :<<, :<< => :>>}[ivars[:inv_sh_op]] and
+				   ((ivars['amt'].kind_of?(::Integer) and  ivars['inv_amt'].kind_of?(::Integer) and ampl = ivars['amt'] + ivars['inv_amt']) or
+				    (ivars['amt'].kind_of? Expression and ivars['amt'].op == :% and ivars['amt'].rexpr.kind_of? ::Integer and
+				     ivars['inv_amt'].kind_of? Expression and ivars['inv_amt'].op == :% and ivars['amt'].rexpr == ivars['inv_amt'].rexpr and ampl = ivars['amt'].rexpr)) and
+				   ivars['mask'].kind_of?(::Integer) and ivars['mask'] == (1<<ampl)-1 and ivars['mask'] == vars['mask']		# it's a composed rotation
+					if ivars[:sh_op] != vars[:sh_op]
+						# ensure the rotations are the same orientation
+						ivars[:sh_op], ivars[:inv_sh_op] = ivars[:inv_sh_op], ivars[:sh_op]
+						ivars['amt'],  ivars['inv_amt']  = ivars['inv_amt'],  ivars['amt']
+					end
+					amt = Expression[[vars['amt'], :+, ivars['amt']], :%, ampl]
+					invamt = Expression[[vars['inv_amt'], :+, ivars['inv_amt']], :%, ampl]
+					Expression[[[ivars['var'], vars[:sh_op], amt], :|, [ivars['var'], vars[:inv_sh_op], invamt]], :&, vars['mask']].reduce_rec
+				end
+			end
 		elsif @op == :|
 			if    l == 0: r
 			elsif r == 0: l
 			elsif l == -1 or r == -1: -1
+			elsif l == r: l
 			end
 		elsif @op == :*
 			if    l == 0 or r == 0: 0
@@ -513,6 +537,8 @@ class Expression
 			elsif l.kind_of? Expression and l.op == :+
 				# (a+b)+foo => a+(b+foo)
 				Expression[l.lexpr, :+, [l.rexpr, :+, r]].reduce_rec
+			elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
+				Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
 			else
 				# a+(b+(c+(-a))) => b+c+0
 				# a+((-a)+(b+c)) => 0+b+c
@@ -548,6 +574,31 @@ class Expression
 			(v.lexpr == :unknown or v.rexpr == :unknown) ? :unknown : v
 		else v
 		end
+	end
+
+	# a pattern-matching method
+	# Expression[42, :+, 28].match(Expression['any', :+, 28], 'any') => {'any' => 42}
+	# Expression[42, :+, 28].match(Expression['any', :+, 'any'], 'any') => false
+	# Expression[42, :+, 42].match(Expression['any', :+, 'any'], 'any') => {'any' => 42}
+	# vars can match anything except nil
+	def match(target, *vars)
+		match_rec(target, vars.inject({}) { |h, v| h.update v => nil })
+	end
+
+	def match_rec(target, vars)
+		return false if not target.kind_of? Expression
+		[target.lexpr, target.op, target.rexpr].zip([@lexpr, @op, @rexpr]) { |targ, exp|
+			if targ and vars[targ]
+				return false if exp != vars[targ]
+			elsif targ and vars.has_key? targ
+				return false if not vars[targ] = exp
+			elsif targ.kind_of? Expression
+				return false if not exp.kind_of? Expression or not exp.match_rec(targ, vars)
+			else
+				return false if targ != exp
+			end
+		}
+		vars
 	end
 
 	# returns the array of non-numeric members of the expression

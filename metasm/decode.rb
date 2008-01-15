@@ -33,7 +33,7 @@ class DecodedInstruction
 		Expression[@block.address, :+, @block_offset].reduce
 	end
 
-	def to_s
+	def show
 		if block
 			bin = @block.edata.data[@block.edata_ptr+@block_offset, @bin_length].unpack('C*').map { |c| '%02x' % c }.join
 			if @bin_length > 12
@@ -43,6 +43,10 @@ class DecodedInstruction
 		else
 			"#{@instruction}#{' ; ' + @comment.join(' ') if comment}"
 		end
+	end
+
+	def to_s
+		"#{Expression[address] if block} #{@instruction}"
 	end
 
 	def add_comment(c)
@@ -1468,7 +1472,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 	# dumps a block of decoded instructions
 	def dump_block(block, &b)
 		dump_block_header(block, &b)
-		block.list.each { |di| b.call di.to_s }
+		block.list.each { |di| b.call di.show }
 	end
 
 	# shows the xrefs/labels at block start
