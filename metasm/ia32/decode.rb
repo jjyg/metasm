@@ -286,6 +286,9 @@ module Metasm
 		when 'push'
 			{ :esp => Expression[:esp, :-, @size/8],
 			  Indirection.new(Expression[:esp], @size/8, di.address) => Expression[a[0]] }
+		when 'push.i16'
+			{ :esp => Expression[:esp, :-, 2],
+			  Indirection.new(Expression[:esp], 2, di.address) => Expression[a[0]] }
 		when 'pop'
 			{ :esp => Expression[:esp, :+, @size/8],
 			  a[0] => Indirection.new(Expression[:esp], @size/8, di.address) }
