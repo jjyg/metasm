@@ -321,6 +321,15 @@ class Indirection
 	def ind_externals
 		@target.ind_externals
 	end
+	
+	def self.[](t, l, o=nil)
+		new(Expression[*t], l, o)
+	end
+
+	def inspect
+		"Indirection[#{@target.inspect.sub(/^Expression/, '')}, #{@len.inspect}#{', '+@origin.inspect if @origin}]"
+	end
+
 end
 
 class Expression

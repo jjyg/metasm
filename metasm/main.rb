@@ -614,7 +614,7 @@ class Expression
 	end
 
 	def inspect
-		"#<Expression:#{'%08x' % object_id} #{@lexpr.inspect} #{@op.inspect} #{@rexpr.inspect}>"
+		"Expression[#{@lexpr.inspect.sub(/^Expression/, '') + ', ' if @lexpr}#{@op.inspect + ', ' if @lexpr or @op != :+}#{@rexpr.inspect.sub(/^Expression/, '')}]"
 	end
 
 	Unknown = self[:unknown]
