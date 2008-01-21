@@ -635,13 +635,10 @@ class ELF
 			d.c_parser = nil
 			d.parse_c 'void *dlsym(int, char *);'
 			d.parse_c 'void __libc_start_main(void(*)(), int, int, void(*)(), void(*)()) __attribute__((noreturn));'
-			d.parse_c 'void stdfunc(void);'
 			dls  = @cpu.decode_c_function_prototype(d.c_parser, 'dlsym')
 			main = @cpu.decode_c_function_prototype(d.c_parser, '__libc_start_main')
-			df   = @cpu.decode_c_function_prototype(d.c_parser, 'stdfunc', :default)
 			d.c_parser = old_cp
 			dls.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
-
 				sz = @cpu.size/8
 				raise 'dlsym call error' if not dasm.decoded[calladdr]
 				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)
@@ -652,7 +649,9 @@ class ELF
 			}
 			d.function[Expression['dlsym']] = dls
 			d.function[Expression['__libc_start_main']] = main
-			d.function[:default] = df
+			df = d.function[:default] = @cpu.disassembler_default_func
+			df.backtrace_binding[:esp] = Expression[:esp, :+, 4]
+			df.btbind_callback = nil
 		end
 		d
 	end

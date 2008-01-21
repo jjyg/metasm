@@ -35,9 +35,9 @@ class CPU
 	# may use instruction-global properties to render an argument (eg specify pointer size if not implicit)
 	def render_instruction(i)
 		r = []
-		r << @opname
+		r << i.opname
 		r << ' '
-		@args.each { |a| r << a << ', ' }
+		i.args.each { |a| r << a << ', ' }
 		r.pop
 		r
 	end

@@ -285,20 +285,20 @@ module Metasm
 		when 'cdq': { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, @size-1], :&, 1]] }
 		when 'push'
 			{ :esp => Expression[:esp, :-, @size/8],
-			  Indirection.new(Expression[:esp], @size/8, di.address) => Expression[a[0]] }
+			  Indirection[:esp, @size/8, di.address] => Expression[a[0]] }
 		when 'push.i16'
 			{ :esp => Expression[:esp, :-, 2],
-			  Indirection.new(Expression[:esp], 2, di.address) => Expression[a[0]] }
+			  Indirection[:esp, 2, di.address] => Expression[a[0]] }
 		when 'pop'
 			{ :esp => Expression[:esp, :+, @size/8],
-			  a[0] => Indirection.new(Expression[:esp], @size/8, di.address) }
-		when 'pushfd': { :esp => Expression[:esp, :-, @size/8], Indirection.new(Expression[:esp], @size/8, di.address) => Expression::Unknown }
+			  a[0] => Indirection[:esp, @size/8, di.address] }
+		when 'pushfd': { :esp => Expression[:esp, :-, @size/8], Indirection[:esp, @size/8, di.address] => Expression::Unknown }
 		when 'popfd':  { :esp => Expression[:esp, :+, @size/8] }
 		when 'pushad'
 			ret = {}
 			st_off = 0
 			[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
-				ret[Indirection.new(Expression[:esp, :+, st_off].reduce, @size/8, di.address)] = Expression[r]
+				ret[Indirection[Expression[:esp, :+, st_off].reduce, @size/8, di.address]] = Expression[r]
 				st_off += @size/8
 			}
 			ret[:esp] = Expression[:esp, :-, st_off]
@@ -307,24 +307,24 @@ module Metasm
 			ret = {}
 			st_off = 0
 			[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
-				ret[r] = Indirection.new(Expression[:esp, :+, st_off].reduce, @size/8, di.address)
+				ret[r] = Indirection[Expression[:esp, :+, st_off].reduce, @size/8, di.address]
 				st_off += @size/8
 			}
 			ret
 		when 'call'
 			eoff = Expression[di.block.address, :+, di.block_offset + di.bin_length]
 			{ :esp => Expression[:esp, :-, @size/8],
-			  Indirection.new(Expression[:esp], @size/8, di.address) => Expression[eoff.reduce] }
+			  Indirection[:esp, @size/8, di.address] => Expression[eoff.reduce] }
 		when 'ret': { :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]] }
 		when 'loop': { :ecx => Expression[:ecx, :-, 1] }
 		when 'enter'
 			depth = a[1].reduce % 32
-			b = { Indirection.new(Expression[:esp], @size/8, di.address) => Expression[:ebp], :ebp => Expression[:esp, :-, @size/8],
+			b = { Indirection[:esp, @size/8, di.address] => Expression[:ebp], :ebp => Expression[:esp, :-, @size/8],
 					:esp => Expression[:esp, :-, a[0].reduce + ((@size/8) * depth)] }
 			(1..depth).each { |i| # XXX test me !
-				b[Indirection.new(Expression[:esp, :-, i*@size/8], @size/8, di.address)] = Indirection.new(Expression[:ebp, :-, i*@size/8], @size/8, di.address) }
+				b[Indirection[[:esp, :-, i*@size/8], @size/8, di.address]] = Indirection[[:ebp, :-, i*@size/8], @size/8, di.address] }
 			b
-		when 'leave': { :ebp => Indirection.new(Expression[:ebp], @size/8, di.address), :esp => Expression[:ebp, :+, @size/8] }
+		when 'leave': { :ebp => Indirection[[:ebp], @size/8, di.address], :esp => Expression[:ebp, :+, @size/8] }
 		when 'aaa': { :eax => Expression::Unknown }
 		when 'imul'
 			if a[2]: e = Expression[a[1], :*, a[2]]
@@ -337,8 +337,8 @@ module Metasm
 			sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
 			dir = :+
 			dir = :- if di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil
-			pesi = Indirection.new(Expression[:esi], sz, di.address)
-			pedi = Indirection.new(Expression[:edi], sz, di.address)
+			pesi = Indirection[:esi, sz, di.address]
+			pedi = Indirection[:edi, sz, di.address]
 			case op
 			when 'movs'
 				case di.instruction.prefix[:rep]
@@ -367,7 +367,7 @@ module Metasm
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
 
-		return [Indirection.new(Expression[:esp], @size/8, di.address)] if di.opcode.name == 'ret'
+		return [Indirection[:esp, @size/8, di.address]] if di.opcode.name == 'ret'
 
 		if di.opcode.name == 'jmp'
 			a = di.instruction.args.first
@@ -378,7 +378,7 @@ module Metasm
 				loop do
 					diff = Expression[s[0].decode_imm("u#@size".to_sym, @endianness), :-, di.address].reduce
 					if diff.kind_of? ::Integer and diff.abs < 4096
-						ret << Indirection.new(Expression[a.imm, :+, v*@size/8], @size/8, di.address)
+						ret << Indirection[[a.imm, :+, v*@size/8], @size/8, di.address]
 					elsif v > 0
 						break
 					end
@@ -414,9 +414,21 @@ module Metasm
 	def backtrace_update_function_binding(dasm, faddr, f, retaddr)
 		b = f.backtrace_binding
 		prevesp = b[:esp]
+
+		if not dasm.decoded[retaddr] and di = dasm.decoded[faddr]
+			# no return instruction, must be a thunk : find the last instruction (to backtrace from it)
+			while ndi = dasm.decoded[di.block.to_subfuncret] || dasm.decoded[di.block.to_normal]
+				di = ndi
+			end
+			if not di.block.to_subfuncret and di.block.to_normal and not di.block.to_normal.kind_of?(::Array)
+				thunklast = di.block.list.last.address
+			end
+		end
+			
 		bt_val = proc { |r|
 			next if b[r] == Expression::Unknown
-			bt = dasm.backtrace(Expression[r], retaddr, :include_start => true, :snapshot_addr => faddr, :origin => retaddr)
+			bt = dasm.backtrace(Expression[r], (thunklast ? thunklast : retaddr),
+					:include_start => true, :snapshot_addr => faddr, :origin => retaddr, :from_subfuncret => thunklast)
 			if bt.length != 1 or (b[r] and bt.first != b[r])
 				b[r] = Expression::Unknown
 			else
@@ -429,7 +441,7 @@ module Metasm
 		puts "update_func_bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if b[:esp] != prevesp and not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer) if $VERBOSE
 		if b[:ebp] != Expression[:ebp]
 			# may be a custom 'enter' function (eg recent Visual Studio)
-			bt_val[Indirection.new(Expression[:ebp], @size/8, faddr)]
+			bt_val[Indirection[:ebp, @size/8, faddr]]
 		end
 
 		# rename some functions
@@ -437,7 +449,7 @@ module Metasm
 		when faddr # metasm pic linker
 			dasm.label_at(faddr, 'geteip', 'loc', 'sub')
 		when Expression[:eax] # check elf pic convention
-			dasm.label_at(faddr, 'get_pc_thunk_ebx', 'loc', 'sub') if b[:ebx].reduce == Expression[Indirection.new(Expression[:esp], @size/8, nil)]
+			dasm.label_at(faddr, 'get_pc_thunk_ebx', 'loc', 'sub') if b[:ebx].reduce == Expression[Indirection[:esp, @size/8, nil]]
 		end
 	end
 
@@ -471,7 +483,7 @@ module Metasm
 		}
 
 		# return instr emulation
-		new_bt[Indirection.new(Expression[:esp], @size/8, orig), nil] if not sym.attributes.to_a.include? 'noreturn'
+		new_bt[Indirection[:esp, @size/8, orig], nil] if not sym.attributes.to_a.include? 'noreturn'
 
 		# register dirty (XXX assume standard ABI)
 		df.backtrace_binding.update :eax => Expression::Unknown, :ecx => Expression::Unknown, :edx => Expression::Unknown
@@ -492,12 +504,12 @@ module Metasm
 			if a.type.untypedef.kind_of? C::Pointer
 				pt = a.type.untypedef.type.untypedef
 				if pt.kind_of? C::Function
-					new_bt[Indirection.new(Expression[:esp, :+, stackoff], al, orig), nil]
+					new_bt[Indirection[[:esp, :+, stackoff], al, orig], nil]
 					df.backtracked_for.last.detached = true
 				elsif pt.kind_of? C::Struct
-					new_bt[Indirection.new(Expression[:esp, :+, stackoff], al, orig), al]
+					new_bt[Indirection[[:esp, :+, stackoff], al, orig], al]
 				else
-					new_bt[Indirection.new(Expression[:esp, :+, stackoff], al, orig), cp.sizeof(nil, pt)]
+					new_bt[Indirection[[:esp, :+, stackoff], al, orig], cp.sizeof(nil, pt)]
 				end
 			end
 			stackoff += (cp.sizeof(a) + al - 1) / al * al
@@ -540,7 +552,7 @@ aoeu = true
 				if ev == :up and not h[:sfret] and di = dasm.decoded[h[:to]] and di.opcode.name == 'call'
 					# check that that call has not func_start as subfunction
 					otherfunc = false
-					di.block.each_subfunction { |sf| otherfunc = true if dasm.normalize(sf) == h[:from] }
+					di.block.each_to_normal { |sf| sf = dasm.normalize sf ; otherfunc = true if dasm.function[sf] and sf == h[:from] }
 					next false if otherfunc
 					
 					func_start = h[:from]
