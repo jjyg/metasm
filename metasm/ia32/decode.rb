@@ -312,9 +312,8 @@ module Metasm
 			}
 			ret
 		when 'call'
-			eoff = Expression[di.block.address, :+, di.block_offset + di.bin_length]
 			{ :esp => Expression[:esp, :-, @size/8],
-			  Indirection[:esp, @size/8, di.address] => Expression[eoff.reduce] }
+			  Indirection[:esp, @size/8, di.address] => Expression[Expression[di.address, :+, di.bin_length].reduce] }
 		when 'ret': { :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]] }
 		when 'loop': { :ecx => Expression[:ecx, :-, 1] }
 		when 'enter'

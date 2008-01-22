@@ -466,6 +466,16 @@ class CPU
 			end
 		}
 	end
+
+	# a callback called whenever a backtrace is successful
+	# di is the decodedinstruction at the backtrace's origin
+	def backtrace_found_result(dasm, di, expr, type, len)
+	end
+
+	# number of instructions following a jump that are still executed
+	def delay_slot(di)
+		0
+	end
 end
 
 class ExeFormat
@@ -500,6 +510,8 @@ class Disassembler
 	attr_accessor :check_smc
 	# list of [addr to disassemble, (optional)who jumped to it, (optional)got there by a subfunction return]
 	attr_accessor :addrs_todo 
+	# hash address => binding
+	attr_accessor :address_binding
 	# number of blocks to backtrace before aborting if no result is found (defaults to class.backtrace_maxblocks, 50 by default)
 	attr_accessor :backtrace_maxblocks
 	# maximum backtrace length for :r/:w, defaults to backtrace_maxblocks
@@ -538,6 +550,7 @@ class Disassembler
 		@prog_binding = {}
 		@old_prog_binding = {}
 		@addrs_todo = []
+		@address_binding = {}
 		@backtrace_maxblocks = @@backtrace_maxblocks
 		@comment = {}
 	end
@@ -769,6 +782,7 @@ class Disassembler
 	def disassemble_block(block)
 		raise if not block.list.empty?
 		di_addr = block.address
+		delay_slot = nil
 
 		# try not to run for too long
 		# loop usage: break if the block continues to the following instruction, else return
@@ -800,7 +814,6 @@ class Disassembler
 				#}
 			end
 
-			breakafter = false
 			# trace xrefs
 			# PE SEH needs rw to be checked before x (for xrefs :w)
 			@program.get_xrefs_rw(self, di).each { |type, ptr, len|
@@ -819,16 +832,26 @@ class Disassembler
 				}
 			}
 			@program.get_xrefs_x(self, di).each { |expr|
-				if backtrace(expr, di_addr, :origin => di_addr, :type => :x).length > 0
-					breakafter = true
-				end
+				# di may be a return instruction, and the stack fixup may be in the delay slot (eg MIPS)
+				# so we must wait until we have all the instrs in the instrblock before backtracking it
+				# otherwise the update_func_binding return wrong results
+				delay_slot ||= [di, @cpu.delay_slot(di)]
+				delay_slot << expr if delay_slot[0] == di
 			}
 
-			return if di.opcode.props[:stopexec]
+			delay_slot ||= [di, @cpu.delay_slot(di)] if di.opcode.props[:stopexec]
 
 			di_addr = Expression[di_addr, :+, di.bin_length].reduce
 
-			break if breakafter
+			if delay_slot
+				if delay_slot[1] == 0
+					di = delay_slot[0]
+					delay_slot[2..-1].each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x) }
+					return if di.opcode.props[:stopexec]
+					break
+				end
+				delay_slot[1] -= 1
+			end
 		}
 
 		block.add_to di_addr
@@ -1071,6 +1094,16 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 				result |= [expr] if not snapshot_addr
 				@addrs_todo << [expr, (detached ? nil : origin)] if not snapshot_addr and type == :x and origin
 			when :end
+				if not expr.kind_of? StoppedExpr
+					oldexpr = expr
+					expr = backtrace_emu_blockup(h[:addr], expr)
+puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr} => #{expr}" if $DEBUG
+					if expr != oldexpr and not snapshot_addr and vals = backtrace_check_found(expr,
+							nil, origin, type, len, maxdepth-h[:loopdetect].length, detached)
+						result |= vals
+						next
+					end
+				end
 puts "  backtrace end #{ev} #{expr}" if $DEBUG
 				if not snapshot_addr
 					result |= [expr]
@@ -1092,7 +1125,21 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 				puts "  bt loop at #{Expression[t[0][1]]}: #{oldexpr} => #{expr} (#{t.map { |z| Expression[z[1]] }.join(' <- ')})" if $DEBUG
 				false
 			when :up
-				next if expr.kind_of? StoppedExpr
+				next expr if expr.kind_of? StoppedExpr
+				oldexpr = expr
+				expr = backtrace_emu_blockup(h[:from], expr)
+puts "  backtrace up #{Expression[h[:from]]}  #{oldexpr} => #{expr}" if $DEBUG
+				if expr != oldexpr and vals = backtrace_check_found(expr,
+						nil, origin, type, len, maxdepth-h[:loopdetect].length, detached)
+					if snapshot_addr
+						expr = StoppedExpr.new vals
+						next expr
+					else
+						result |= vals
+						next false
+					end
+				end
+
 				if origin and type
 					# update backtracked_for
 					btt = BacktraceTrace.new(expr, origin, type, len, maxdepth-h[:loopdetect].length)
@@ -1107,7 +1154,7 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 						@decoded[h[:to]].block.backtracked_for |= [btt]
 					end
 				end
-				nil
+				expr
 			when :di, :func
 				next if expr.kind_of? StoppedExpr
 				if not snapshot_addr and @cpu.backtrace_is_stack_address(expr)
@@ -1169,6 +1216,11 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	def backtrace_emu_subfunc(func, funcaddr, calladdr, expr, origin, maxdepth)
 		bind = func.get_backtrace_binding(self, funcaddr, calladdr, expr, origin, maxdepth)
 		Expression[expr.bind(bind).reduce]
+	end
+
+	# applies a location binding
+	def backtrace_emu_blockup(addr, expr)
+		Expression[expr.bind(@address_binding[addr] || {}).reduce]
 	end
 
 	# static resolution of indirections
@@ -1381,6 +1433,9 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 		#  => mov eax, (loc_xx-4)
 		if di and not unk # and di.address == origin
 			@cpu.replace_instr_arg_immediate(di.instruction, expr, n)
+		end
+		if @decoded[origin] and not unk
+			 @cpu.backtrace_found_result(self, @decoded[origin], expr, type, len)
 		end
 
 		# add comment
