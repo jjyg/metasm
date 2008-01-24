@@ -178,7 +178,7 @@ class MIPS
 	end
 
 	def backtrace_is_stack_address(expr)
-		Expression[expr].externals.include? :$sp
+		Expression[expr].expr_externals.include? :$sp
 	end
 
         def replace_instr_arg_immediate(i, old, new)

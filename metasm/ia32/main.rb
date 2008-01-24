@@ -127,7 +127,7 @@ class Ia32 < CPU
 			p = Expression[p, :+, [@s, :*, @i.symbolic]] if i
 			p = Expression[p, :+, @imm] if imm
 			p = Expression["segment_base_#@seg", :+, p] if seg and seg.val != ((b && (@b.val == 4 || @b.val == 5)) ? 2 : 3)
-			Indirection.new(p, @sz/8, orig).reduce
+			Indirection[p.reduce, @sz/8, orig]
 		end
 	end
 

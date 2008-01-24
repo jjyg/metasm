@@ -373,7 +373,6 @@ class LinDebug
 	def mem_binding(expr)
 		b = @rs.regs_cache.dup
 		ext = expr.externals
-		ext.map! { |exte| exte.kind_of?(Indirect) ? exte.ptr.externals : exte }.flatten! while not ext.grep(Indirect).empty?
 		(ext - @rs.regs_cache.keys).each { |ex|
 			if not s = @rs.symbols.index(ex)
 				log "unknown value #{ex}"

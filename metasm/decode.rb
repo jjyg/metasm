@@ -270,7 +270,7 @@ end
 
 # symbolic pointer dereference
 # API similar to Expression
-class Indirection
+class Indirection < ExpressionType
 	# Expression (the pointer)
 	attr_accessor :target
 	# length in bytes of data referenced
@@ -282,11 +282,10 @@ class Indirection
 		@target, @len, @origin = target, len, origin
 	end
 
-	def reduce
+	def reduce_rec
 		ptr = Expression[@target.reduce]
 		(ptr == Expression::Unknown) ? ptr : Indirection.new(ptr, @len, @origin)
 	end
-	alias reduce_rec reduce
 
 	def bind(h)
 		if r = h[self]: r
@@ -298,10 +297,6 @@ class Indirection
 	def eql?(o) o.class == self.class and [o.target, o.len] == [@target, @len] end
 	alias == eql?
 
-	def externals
-		[self]
-	end
-
 	def to_s
 		qual = {1 => 'byte', 2 => 'word', 4 => 'dword'}[@len] || "_#{len*8}bits"
 		"#{qual} ptr [#{target}]"
@@ -312,11 +307,6 @@ class Indirection
 		1+@target.complexity
 	end
 
-	# externals, including indirection pointers'
-	def ind_externals
-		@target.ind_externals
-	end
-	
 	def self.[](t, l, o=nil)
 		new(Expression[*t], l, o)
 	end
@@ -325,17 +315,59 @@ class Indirection
 		"Indirection[#{@target.inspect.sub(/^Expression/, '')}, #{@len.inspect}#{', '+@origin.inspect if @origin}]"
 	end
 
+	def externals
+		@target.externals
+	end
+
+	def match_rec(target, vars)
+		return false if not target.kind_of? Indirection
+		t = target.target
+		if vars[t]
+			return false if @target != vars[t]
+		elsif vars.has_key? t
+			vars[t] = @target
+		elsif t.kind_of? ExpressionType
+			return false if not @target.match_rec(t, vars)
+		else
+			return false if targ != @target
+		end
+		if vars[target.len]
+			return false if @len != vars[target.len]
+		elsif vars.has_key? target.len
+			vars[target.len] = @len
+		else
+			return false if target.len != @len
+		end
+		vars
+	end
 end
 
 class Expression
 	# returns the complexity of the expression (number of externals +1 per indirection)
 	def complexity
-		externals.map { |e| e.respond_to?(:complexity) ? e.complexity : 1 }.inject(0) { |a, b| a+b }
+		case @lexpr
+		when ExpressionType: @lexpr.complexity
+		when nil, ::Numeric: 0
+		else 1
+		end +
+		case @rexpr
+		when ExpressionType: @rexpr.complexity
+		when nil, ::Numeric: 0
+		else 1
+		end
 	end
 
-	# externals, walks indirections too
-	def ind_externals
-		externals.map { |e| e.kind_of? Indirection ? e.ind_externals : e }.flatten
+	def expr_indirections
+		ret = case @lexpr
+		when Indirection: [@lexpr]
+		when Expression: @lexpr.expr_indirections
+		else []
+		end
+		case @rexpr
+		when Indirection: ret << @rexpr
+		when Expression: ret.concat @rexpr.expr_indirections
+		else ret
+		end
 	end
 end
 
@@ -424,7 +456,7 @@ class CPU
 	#  (the value of :eax after 'inc eax' is the value of :eax before plus 1)
 	# may return Expression::Unknown
 	def backtrace_emu(di, value)
-		Expression[value.bind(di.backtrace_binding ||= backtrace_binding(di)).reduce]
+		Expression[Expression[value].bind(di.backtrace_binding ||= backtrace_binding(di)).reduce]
 	end
 
 	# returns a list of Expressions/Integer to backtrace to find an execution target
@@ -434,7 +466,7 @@ class CPU
 	# returns a list of [type, address, len]
 	def get_xrefs_rw(dasm, di)
 		b = di.backtrace_binding ||= backtrace_binding(di)
-		find_ind = proc { |list| (list + list.grep(Expression).map { |e| e.externals }.flatten).grep(Indirection) }
+		find_ind = proc { |list| list.grep(Indirection) + list.grep(Expression).map { |e| e.expr_indirections }.flatten }
 		r = b.values
 		w = b.keys
 		x = get_xrefs_x(dasm, di)
@@ -1052,6 +1084,7 @@ class Disassembler
 		max_complexity_data = nargs.delete(:max_complexity) || 8
 		raise ArgumentError, "invalid argument to backtrace #{nargs.keys.inspect}" if not nargs.empty?
 
+		expr = Expression[expr]
 
 		start_addr = normalize(start_addr)
 		di = @decoded[start_addr]
@@ -1225,7 +1258,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 
 	# static resolution of indirections
 	def resolve(expr)
-		binding = Expression[expr].externals.grep(Indirection).inject(@prog_binding.merge(@old_prog_binding)) { |binding, ind|
+		binding = Expression[expr].expr_indirections.inject(@prog_binding.merge(@old_prog_binding)) { |binding, ind|
 			e, b = get_section_at(resolve(ind.target))
 			return expr if not e
 			binding.merge ind => Expression[ e.decode_imm("u#{8*ind.len}".to_sym, @cpu.endianness) ]
@@ -1236,18 +1269,12 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# returns true if the expression needs more backtrace
 	# it checks for the presence of a symbol (not :unknown), which means it depends on some register value
 	def need_backtrace(expr)
-		return if expr.kind_of? ::Integer or expr == Expression::Unknown
-		expr.externals.find { |x|
-			case x
-			when Indirection: need_backtrace(x.target)
-			when ::Symbol: x != :unknown
-			# when ::String: not @prog_binding[x]
-			end
-		}
+		return if expr.kind_of? ::Integer
+		not (expr.externals.grep(::Symbol) - [:unknown]).empty?
 	end
 
 	# returns an array of expressions, or nil if expr needs more backtrace
-	# it needs more backtrace if expr.externals include a Symbol != :unknown (recursed through Indirections too) (symbol == register value)
+	# it needs more backtrace if expr.externals include a Symbol != :unknown (symbol == register value)
 	# if it need no more backtrace, expr's indirections are recursively resolved
 	# xrefs are created, and di args are updated (immediate => label)
 	# if type is :x, addrs_todo is updated, and if di starts a block, expr is checked to see if it may be a subfunction return value
@@ -1305,7 +1332,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 		result = [Expression[expr.reduce]]
 
 		# solve each indirection sequentially, clone expr for each value (aka cross-product)
-		result.first.externals.grep(Indirection).uniq.each { |i|
+		result.first.expr_indirections.uniq.each { |i|
 			next_result = []
 			backtrace_indirection(i, maxdepth).each { |rr|
 				next_result |= result.map { |e| Expression[e.bind(i => rr).reduce] }
@@ -1369,7 +1396,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 							# found a path avoiding the :w xrefs, read the encoded initial value
 							ret |= [decode_imm[ptr, ind.len]]
 						else
-							bd = expr.externals.grep(Indirection).inject({}) { |h, i| h.update i => decode_imm[i.target, i.len] }
+							bd = expr.expr_indirections.inject({}) { |h, i| h.update i => decode_imm[i.target, i.len] }
 							ret |= [Expression[expr.bind(bd).reduce]]
 						end
 					else
@@ -1393,7 +1420,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 					expr = backtrace_emu_instr(di, expr)
 					# may have new indirections... recall bt_value ?
 					#if not need_backtrace(expr)
-					if expr.externals.all? { |e| @prog_binding[e] or @function[normalize(e)] }
+					if expr.expr_externals.all? { |e| @prog_binding[e] or @function[normalize(e)] } and expr.expr_indirections.empty?
 						ret |= backtrace_value(expr, maxdepth-1-h[:loopdetect].length)
 						false
 					else
@@ -1403,7 +1430,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 					next true if expr == true	# XXX
 					expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr, ind.origin, maxdepth-h[:loopdetect].length)
 					#if not need_backtrace(expr)
-					if expr.externals.all? { |e| @prog_binding[e] or @function[normalize(e)] }
+					if expr.expr_externals.all? { |e| @prog_binding[e] or @function[normalize(e)] } and expr.expr_indirections.empty?
 						ret |= backtrace_value(expr, maxdepth-1-h[:loopdetect].length)
 						false
 					else

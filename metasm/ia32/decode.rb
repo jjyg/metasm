@@ -404,8 +404,7 @@ module Metasm
 
 	# checks if expr is a valid return expression matching the :saveip instruction
 	def backtrace_is_function_return(expr, di=nil)
-		expr = expr.reduce
-		expr = expr.rexpr if expr.kind_of? Expression and not expr.lexpr and expr.op == :+
+		expr = Expression[expr].reduce_rec
 		expr.kind_of? Indirection and expr.len == @size/8 and expr.target == Expression[:esp]
 	end
 
@@ -454,7 +453,7 @@ module Metasm
 
 	# returns true if the expression is an address on the stack
 	def backtrace_is_stack_address(expr)
-		Expression[expr].externals.include? :esp
+		Expression[expr].expr_externals.include? :esp
 	end
 
 	# updates an instruction's argument replacing an expression with another (eg label renamed)
@@ -538,12 +537,9 @@ module Metasm
 aoeu = true
 			end
 			next bind if not odi = dasm.decoded[origin] or odi.opcode.name != 'ret'
-			expr = expr.reduce
-			expr = expr.rexpr if expr.kind_of? Expression and expr.op == :+ and not expr.lexpr
+			expr = expr.reduce_rec if expr.kind_of? Expression
 			next bind unless expr.kind_of? Indirection and expr.origin == origin
-			ptr = expr.target
-			reg = ptr.externals.reject { |e| e =~ /^autostackoffset_/ }
-			next bind unless reg == [:esp]
+			next bind unless expr.externals.reject { |e| e =~ /^autostackoffset_/ } == [:esp]
 
 			# scan from calladdr for the probable parent function start
 			func_start = nil

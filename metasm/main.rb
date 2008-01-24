@@ -280,11 +280,16 @@ class ExeFormat
 	end
 end
 
+# superclass for classes similar to Expression
+# must define #bind, #reduce_rec, #match_rec, #externals
+class ExpressionType
+end
+
 # handle immediate values, and arbitrary arithmetic/logic expression involving variables
 # boolean values are treated as in C : true is 1, false is 0
 # TODO replace #type with #size => bits + #type => [:signed/:unsigned/:any/:floating]
 # TODO handle floats
-class Expression
+class Expression < ExpressionType
 	INT_SIZE = {:u8 => 8,    :u16 => 16,     :u32 => 32, :u64 => 64,
 		    :i8 => 8,    :i16 => 16,     :i32 => 32, :i64 => 64,
 		    :a8 => 8,    :a16 => 16,     :a32 => 32, :a64 => 64
@@ -365,13 +370,13 @@ class Expression
 		if l and binding[l]
 			raise "internal error - bound #{l.inspect}" if l.kind_of? ::Numeric
 			l = binding[l]
-		elsif l.respond_to? :bind
+		elsif l.kind_of? ExpressionType
 			l = l.bind(binding)
 		end
 		if r and binding[r]
 			raise "internal error - bound #{r.inspect}" if r.kind_of? ::Numeric
 			r = binding[r]
-		elsif r.respond_to? :bind
+		elsif r.kind_of? ExpressionType
 			r = r.bind(binding)
 		end
 		Expression[l, @op, r]
@@ -411,11 +416,11 @@ class Expression
 	# canonicalize additions: put variables in the lhs, descend addition tree in the rhs => (a + (b + (c + 12)))
 	# make formal reduction if finds somewhere in addition tree (a) and (-a)
 	def reduce_rec
-		l = @lexpr.respond_to?(:reduce_rec) ? @lexpr.reduce_rec : @lexpr
-		r = @rexpr.respond_to?(:reduce_rec) ? @rexpr.reduce_rec : @rexpr
+		l = @lexpr.kind_of?(ExpressionType) ? @lexpr.reduce_rec : @lexpr
+		r = @rexpr.kind_of?(ExpressionType) ? @rexpr.reduce_rec : @rexpr
 
 		v = 
-		if r.kind_of?(Numeric) and (l == nil or l.kind_of?(Numeric))
+		if r.kind_of?(::Numeric) and (l == nil or l.kind_of?(::Numeric))
 			# calculate numerics
 			if [:'&&', :'||', :'>', :'<', :'>=', :'<=', :'==', :'!='].include?(@op)
 				# bool expr
@@ -445,7 +450,7 @@ class Expression
 		# shortcircuit
 		elsif l == 0 and @op == :'&&'
 			0
-		elsif l.kind_of?(Numeric) and l != 0 and @op == :'||'
+		elsif l.kind_of?(::Numeric) and l != 0 and @op == :'||'
 			1
 
 		elsif @op == :>> or @op == :<<
@@ -592,8 +597,8 @@ class Expression
 				return false if exp != vars[targ]
 			elsif targ and vars.has_key? targ
 				return false if not vars[targ] = exp
-			elsif targ.kind_of? Expression
-				return false if not exp.kind_of? Expression or not exp.match_rec(targ, vars)
+			elsif targ.kind_of? ExpressionType
+				return false if not exp.kind_of? ExpressionType or not exp.match_rec(targ, vars)
 			else
 				return false if targ != exp
 			end
@@ -606,8 +611,19 @@ class Expression
 	def externals
 		[@rexpr, @lexpr].inject([]) { |a, e|
 			case e
-			when Expression: a.concat e.externals
-			when nil, Numeric: a
+			when ExpressionType: a.concat e.externals
+			when nil, ::Numeric: a
+			else a << e
+			end
+		}
+	end
+
+	# returns the externals that appears in the expression, does not walk through other ExpressionType
+	def expr_externals
+		[@rexpr, @lexpr].inject([]) { |a, e|
+			case e
+			when Expression: a.concat e.expr_externals
+			when nil, ::Numeric, ExpressionType: a
 			else a << e
 			end
 		}
