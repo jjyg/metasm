@@ -297,6 +297,7 @@ class Viewer
 		when ?o: @text.insert(@pos+@y+1, '')
 		when ?O: @text.insert(@pos+@y, '') ; handle_key_navig(:down)
 		when :suppr: @text.delete_at(@pos+@y) if @text[@pos+@y] == ''
+		when ?D: @text.delete_at(@pos+@y)
 		when ?/
 			@mode = :search
 			@searchtext = ''

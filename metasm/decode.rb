@@ -30,7 +30,7 @@ class DecodedInstruction
 	end
 
 	def address
-		Expression[@block.address, :+, @block_offset].reduce
+		@block.address + @block_offset
 	end
 
 	def show
@@ -360,12 +360,12 @@ class Expression
 	def expr_indirections
 		ret = case @lexpr
 		when Indirection: [@lexpr]
-		when Expression: @lexpr.expr_indirections
+		when ExpressionType: @lexpr.expr_indirections
 		else []
 		end
 		case @rexpr
 		when Indirection: ret << @rexpr
-		when Expression: ret.concat @rexpr.expr_indirections
+		when ExpressionType: ret.concat @rexpr.expr_indirections
 		else ret
 		end
 	end
@@ -465,13 +465,23 @@ class CPU
 
 	# returns a list of [type, address, len]
 	def get_xrefs_rw(dasm, di)
+		get_xrefs_r(dasm, di).map { |addr, len| [:r, addr, len] } + get_xrefs_w(dasm, di).map { |addr, len| [:w, addr, len] }
+	end
+
+	# returns a list [addr, len]
+	def get_xrefs_r(dasm, di)
 		b = di.backtrace_binding ||= backtrace_binding(di)
-		find_ind = proc { |list| list.grep(Indirection) + list.grep(Expression).map { |e| e.expr_indirections }.flatten }
 		r = b.values
-		w = b.keys
 		x = get_xrefs_x(dasm, di)
 		r |= x if x
-		find_ind[r].map { |e| [:r, e.target, e.len] } + find_ind[w].map { |e| [:w, e.target, e.len] }
+		(r.grep(Indirection) + r.grep(Expression).map { |e| e.expr_indirections }.flatten).map { |e| [e.target, e.len] }
+	end
+
+	# returns a list [addr, len]
+	def get_xrefs_w(dasm, di)
+		b = di.backtrace_binding ||= backtrace_binding(di)
+		w = b.keys
+		(w.grep(Indirection) + w.grep(Expression).map { |e| e.expr_indirections }.flatten).map { |e| [e.target, e.len] }
 	end
 
 	# checks if the expression corresponds to a function return value with the instruction
@@ -656,20 +666,17 @@ class Disassembler
 	# renames it if the old matches one rewritepfx + addr
 	# returns nil if the address is not known and is not a string
 	def label_at(addr, base='xref', *rewritepfx)
+		addr = Expression[addr].reduce
+		addrstr = "#{base}_#{Expression[addr]}"
 		e, b = get_section_at(addr)
 		if not e
-			return case addr
-			when ::String: addr
-			when Expression: addr.rexpr if not addr.lexpr and addr.op == :+ and addr.rexpr.kind_of?(::String)
-			end
-		end
-		addrstr = (addr.kind_of?(Expression) && addr.rexpr.kind_of?(::Integer) ? ('_%04x' % addr.rexpr) : addr.kind_of?(::Integer) ? '_%04x' % addr : '_unk'+addr.to_s)
-		if not l = e.inv_export[e.ptr]
-			l = @program.new_label(base + addrstr)
+			l = addrstr if Expression[addr].externals.grep(::Symbol).empty?
+		elsif not l = e.inv_export[e.ptr]
+			l = @program.new_label(addrstr)
 			e.add_export l, e.ptr
-			@prog_binding[l] = Expression[b, :+, e.ptr].reduce
-		elsif rewritepfx.find { |p| base != p and p+addrstr == l }
-			newl = @program.new_label(base + addrstr)
+			@prog_binding[l] = b + e.ptr
+		elsif rewritepfx.find { |p| base != p and addrstr.sub(base, p) == l }
+			newl = @program.new_label(addrstr)
 			rename_label l, newl
 			l = newl
 		end
@@ -718,6 +725,7 @@ class Disassembler
 	def post_disassemble
 		detect_thunks
 		@decoded.each_value { |di|
+			next if not di.kind_of? DecodedInstruction
 			next if not di.opcode or not di.opcode.props[:saveip]
 			di.add_comment 'noreturn' if not di.block.to_subfuncret
 		}
@@ -747,21 +755,23 @@ class Disassembler
 		addr = normalize(addr)
 
 		if di = @decoded[addr]
-			split_block(di.block, di.address) if di.block_offset != 0	# this updates di.block
-			di.block.add_from(from, from_subfuncret) if from and from != :default
-			bf = di.block
+			if di.kind_of? DecodedInstruction
+				split_block(di.block, di.address) if di.block_offset != 0	# this updates di.block
+				di.block.add_from(from, from_subfuncret) if from and from != :default
+				bf = di.block
+			end
 		elsif bf = @function[addr]
 		elsif s = get_section_at(addr)
 			block = InstructionBlock.new(normalize(addr), s[0])
 			block.add_from(from, from_subfuncret) if from and from != :default
 			disassemble_block(block)
-		elsif from and c_parser and addr.kind_of? Expression and addr.op == :+ and not addr.lexpr and addr.rexpr.kind_of? ::String and
-				s = c_parser.toplevel.symbol[addr.rexpr] and s.type.untypedef.kind_of? C::Function
+		elsif from and c_parser and name = Expression[addr].reduce_rec and name.kind_of? ::String and
+				s = c_parser.toplevel.symbol[s] and s.type.untypedef.kind_of? C::Function
 			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
 		elsif from
 			if bf = @function[:default]
 				puts "using default function for #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
-				if addr.kind_of? Expression and not addr.lexpr and addr.op == :+ and addr.rexpr.kind_of? ::String
+				if name = Expression[addr].reduce_rec and name.kind_of? ::String
 					@function[addr] = @function[:default].dup
 				else
 					addr = :default
@@ -802,7 +812,7 @@ class Disassembler
 		new_b = block.split address
 		todo = []	# array of [expr, off]
 		new_b.backtracked_for.each { |btt|
-			backtrace(btt.expr, Expression[new_b.address, :+, btt.block_offset].reduce,
+			backtrace(btt.expr, new_b.address + btt.block_offset,
 				  :include_start => !btt.exclude_instr, :from_subfuncret => btt.from_subfuncret,
 				  :origin => btt.origin, :type => btt.type, :len => btt.len, :snapshot_addr => block.address, 
 				  :detached => btt.detached, :maxdepth => btt.maxdepth)
@@ -823,7 +833,7 @@ class Disassembler
 			break if @decoded[di_addr]
 
 			# decode instruction
-			block.edata.ptr = block.edata_ptr + Expression[di_addr, :-, block.address].reduce
+			block.edata.ptr = di_addr - block.address + block.edata_ptr
 			if not di = @cpu.decode_instruction(block.edata, di_addr)
 				puts "unknown instruction to decode at #{Expression[di_addr]}" if $VERBOSE
 				return
@@ -836,7 +846,7 @@ class Disassembler
 			if @check_smc
 				# uncomment to check for unaligned rewrites
 				#(-7...di.bin_length).each { |off|
-				waddr = di_addr		#Expression[di_addr, :+, off].reduce
+				waddr = di_addr		#di_addr + off
 				each_xref(waddr, :w) { |x|
 					#next if off + x.len < 0
 					puts "W: disasm: self-modifying code at #{Expression[waddr]}" if $VERBOSE
@@ -854,7 +864,7 @@ class Disassembler
 					# uncomment to check for unaligned rewrites
 					if @check_smc and type == :w
 						#len.times { |off|
-						waddr = xaddr	#Expression[xaddr, :+, off].reduce
+						waddr = xaddr	#xaddr + off
 						if wdi = @decoded[normalize(waddr)]
 							puts "W: disasm: #{di} overwrites #{wdi}" if $VERBOSE
 							wdi.add_comment "overwritten by #{di}"
@@ -873,7 +883,7 @@ class Disassembler
 
 			delay_slot ||= [di, @cpu.delay_slot(di)] if di.opcode.props[:stopexec]
 
-			di_addr = Expression[di_addr, :+, di.bin_length].reduce
+			di_addr += di.bin_length
 
 			if delay_slot
 				if delay_slot[1] == 0
@@ -1027,7 +1037,7 @@ class Disassembler
 				}
 			elsif di
 				di.block.list[0..di.block.list.index(di)].reverse_each { |di|
-					if stopaddr and ea = Expression[di.block.address, :+, di.block_offset+di.bin_length].reduce and stopaddr.include?(ea)
+					if stopaddr and ea = di.block.address + di.block_offset+di.bin_length and stopaddr.include?(ea)
 						yield :stopaddr, obj, :addr => ea, :loopdetect => loopdetect
 						break
 					end
@@ -1130,7 +1140,7 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 				if not expr.kind_of? StoppedExpr
 					oldexpr = expr
 					expr = backtrace_emu_blockup(h[:addr], expr)
-puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr} => #{expr}" if $DEBUG
+puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if $DEBUG
 					if expr != oldexpr and not snapshot_addr and vals = backtrace_check_found(expr,
 							nil, origin, type, len, maxdepth-h[:loopdetect].length, detached)
 						result |= vals
@@ -1161,7 +1171,7 @@ puts "  backtrace end #{ev} #{expr}" if $DEBUG
 				next expr if expr.kind_of? StoppedExpr
 				oldexpr = expr
 				expr = backtrace_emu_blockup(h[:from], expr)
-puts "  backtrace up #{Expression[h[:from]]}  #{oldexpr} => #{expr}" if $DEBUG
+puts "  backtrace up #{Expression[h[:from]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if $DEBUG
 				if expr != oldexpr and vals = backtrace_check_found(expr,
 						nil, origin, type, len, maxdepth-h[:loopdetect].length, detached)
 					if snapshot_addr
@@ -1194,6 +1204,7 @@ puts "  backtrace up #{Expression[h[:from]]}  #{oldexpr} => #{expr}" if $DEBUG
 puts "  not backtracking stack address #{expr}" if $DEBUG
 					next false
 				end
+
 oldexpr = expr
 				case ev
 				when :di: expr = backtrace_emu_instr(h[:di], expr)
@@ -1203,7 +1214,7 @@ oldexpr = expr
 					next false
 				end
 				end
-puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" if $DEBUG
+puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" if $DEBUG and oldexpr != expr
 				if vals = backtrace_check_found(expr, h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached)
 					if snapshot_addr
 						expr = StoppedExpr.new vals
@@ -1343,12 +1354,17 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 		result.uniq
 	end
 
-	# returns the array of values pointer by the indirection at its invocation (ind.origin)
+	# returns the array of values pointed by the indirection at its invocation (ind.origin)
 	# first resolves the pointer using backtrace_value, if it does not point in edata keep the original pointer
 	# then backtraces from ind.origin until it finds an :w xref origin
 	# if no :w access is found, returns the value encoded in the raw section data
 	# TODO handle unaligned (partial?) writes
 	def backtrace_indirection(ind, maxdepth)
+		if not ind.origin
+			puts "backtrace_ind: no origin for #{ind}" if $VERBOSE
+			return [ind]
+		end
+
 		ret = []
 
 		decode_imm = proc { |addr, len|
@@ -1504,7 +1520,8 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 	# a thunk is a location that you can call and that will just forward to an external function
 	def detect_thunks
 		@function.each_key { |f|
-			next if @decoded[f] or not f.kind_of? Expression or f.op != :+ or f.lexpr or not f.rexpr.kind_of? ::String
+			f = normalize f
+			next if @decoded[f] or not Expression[f].reduce_rec.kind_of? ::String
 			each_xref(f, :x) { |xr|
 				next if not di = @decoded[xr.origin]
 				next if di.block.to_subfuncret or di.block.to_normal != f
@@ -1543,8 +1560,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 			unk_off = 0
 			# blocks.sort_by { |b| b.addr }.each { |b|
 			edata.length.times { |i|
-				curaddr = Expression[addr, :+, i].reduce
-				if di = @decoded[curaddr] and di.block_offset == 0
+				if di = @decoded[addr+i] and di.block_offset == 0
 					if unk_off != di.block.edata_ptr
 						b["\n// ------ overlap (#{unk_off-di.block.edata_ptr}) ------"]
 					elsif di.block.from_normal.kind_of? ::Array
@@ -1556,7 +1572,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 				elsif i >= unk_off
 					next_off = blockoffs.find { |bo| bo > i } || edata.length
 					if dump_data or next_off - i < 16
-						unk_off = dump_data(Expression[addr, :+, unk_off].reduce, edata, unk_off, &b)
+						unk_off = dump_data(addr + unk_off, edata, unk_off, &b)
 					else
 						b["// [#{next_off - i} data bytes]"]
 						unk_off = next_off
@@ -1651,13 +1667,13 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 			end
 			break if vals.length == dups and vals.uniq.length > 1
 			vals << edata.decode_imm("u#{elemlen*8}".to_sym, @cpu.endianness)
-			addr = Expression[addr, :+, elemlen].reduce
+			addr += elemlen
 			if i = (1-elemlen..0).find { |i|
-				t = Expression[addr, :+, i].reduce
+				t = addr + i
 				@xrefs[t] or @decoded[t] or edata.reloc[edata.ptr+i] or edata.inv_export[edata.ptr+i]
 			}
 				edata.ptr += i
-				addr = Expression[addr, :+, i].reduce
+				addr += i
 				break
 			end
 			break if edata.reloc[edata.ptr-elemlen]

@@ -142,16 +142,17 @@ class Instruction
 
 	include Backtrace
 
-	def initialize(cpu, opname=nil, args=[], pfx={}, backtrace=nil)
+	def initialize(cpu, opname=nil, args=[], pfx=nil, backtrace=nil)
 		@cpu = cpu
-		@prefix, @args = pfx, args
 		@opname = opname
+		@args = args
+		@prefix = pfx if pfx
 		@backtrace = backtrace
 	end
 
 	# duplicates the argument list and prefix hash
 	def dup
-		Instruction.new(@cpu, (@opname.dup rescue @opname), @args.dup, @prefix.dup, @backtrace.dup)
+		Instruction.new(@cpu, (@opname.dup if opname), @args.dup, (@prefix.dup if prefix), (@backtrace.dup if backtrace))
 	end
 end
 
@@ -283,6 +284,8 @@ end
 # superclass for classes similar to Expression
 # must define #bind, #reduce_rec, #match_rec, #externals
 class ExpressionType
+	def +(o) Expression[self, :+, o].reduce end
+	def -(o) Expression[self, :-, o].reduce end
 end
 
 # handle immediate values, and arbitrary arithmetic/logic expression involving variables

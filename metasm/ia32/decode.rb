@@ -95,6 +95,7 @@ module Metasm
 
 	def decode_prefix(instr, byte)
 		# XXX check multiple occurences ?
+		instr.prefix ||= {}
 		(instr.prefix[:list] ||= []) << byte
 
 		case byte
@@ -124,6 +125,7 @@ module Metasm
 	def decode_findopcode(edata)
 		di = DecodedInstruction.new self
 		while edata.ptr < edata.data.length
+			pfx = di.instruction.prefix || {}
 			return di if di.opcode = @bin_lookaside[edata.data[edata.ptr]].find { |op|
 				# fetch the relevant bytes from edata
 				bseq = edata.data[edata.ptr, op.bin.length].unpack('C*')
@@ -136,9 +138,9 @@ module Metasm
 				  (fld = op.fields[:seg2A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg2A] == 1) or
 				  (fld = op.fields[:seg3A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg3A] < 4) or
 				  (fld = op.fields[:modrmA] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
-				  (sz  = op.props[:opsz]    and ((di.instruction.prefix[:opsz] and @size != 48-sz) or
-					(not di.instruction.prefix[:opsz] and @size != sz))) or
-				  (pfx = op.props[:needpfx] and not (di.instruction.prefix[:list] || []).include? pfx)
+				  (sz  = op.props[:opsz]    and ((pfx[:opsz] and @size != 48-sz) or
+					(not pfx[:opsz] and @size != sz))) or
+				  (pfx = op.props[:needpfx] and not (pfx[:list] || []).include? pfx)
 				 )
 			}
 
@@ -152,6 +154,7 @@ module Metasm
 		op = di.opcode
 		di.instruction.opname = op.name
 		bseq = edata.read(op.bin.length).unpack('C*')		# decode_findopcode ensures that data >= op.length
+		pfx = di.instruction.prefix || {}
 
 		field_val = proc { |f|
 			if fld = op.fields[f]
@@ -161,20 +164,20 @@ module Metasm
 
 		if field_val[:w] == 0
 			opsz = 8
-		elsif di.instruction.prefix[:opsz]
+		elsif pfx[:opsz]
 			opsz = 48 - @size
 		else
 			opsz = @size
 		end
 
-		if di.instruction.prefix[:adsz]
+		if pfx[:adsz]
 			adsz = 48 - @size
 		else
 			adsz = @size
 		end
 		
 		op.args.each { |a|
-			mmxsz = ((op.props[:xmmx] && di.instruction.prefix[:opsz]) ? 128 : 64)
+			mmxsz = ((op.props[:xmmx] && pfx[:opsz]) ? 128 : 64)
 			di.instruction.args << case a
 			when :reg:    Reg.new     field_val[a], opsz
 			when :eeec:   CtrlReg.new field_val[a]
@@ -188,10 +191,10 @@ module Metasm
 			when :i8, :u8, :u16: Expression[edata.decode_imm(a, @endianness)]
 			when :i: Expression[edata.decode_imm("#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym, @endianness)]
 
-			when :mrm_imm:  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, di.instruction.prefix[:seg]
-			when :modrm, :modrmA: ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), di.instruction.prefix[:seg]
-			when :modrmmmx: ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, di.instruction.prefix[:seg], SimdReg
-			when :modrmxmm: ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, di.instruction.prefix[:seg], SimdReg
+			when :mrm_imm:  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx[:seg]
+			when :modrm, :modrmA: ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), pfx[:seg]
+			when :modrmmmx: ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx[:seg], SimdReg
+			when :modrmxmm: ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg
 
 			when :imm_val1: Expression[1]
 			when :imm_val3: Expression[3]
@@ -211,26 +214,26 @@ module Metasm
 			else
 				di.instruction.args[1].sz = 16
 			end
-			if di.instruction.prefix[:opsz]
+			if pfx[:opsz]
 				di.instruction.args[0].sz = 48 - @size
 			else
 				di.instruction.args[0].sz = @size
 			end
 		end
 
-		di.instruction.prefix.delete :opsz
-		di.instruction.prefix.delete :adsz
-		di.instruction.prefix.delete :seg
-		case r = di.instruction.prefix.delete(:rep)
+		pfx.delete :opsz
+		pfx.delete :adsz
+		pfx.delete :seg
+		case r = pfx.delete(:rep)
 		when :nz
 			if di.opcode.props[:strop]
-				di.instruction.prefix[:rep] = 'rep'
+				pfx[:rep] = 'rep'
 			elsif di.opcode.props[:stropz]
-				di.instruction.prefix[:rep] = 'repnz'
+				pfx[:rep] = 'repnz'
 			end
 		when :z
 			if di.opcode.props[:stropz]
-				di.instruction.prefix[:rep] = 'repz'
+				pfx[:rep] = 'repz'
 			end
 		end
 
@@ -338,14 +341,15 @@ module Metasm
 			dir = :- if di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil
 			pesi = Indirection[:esi, sz, di.address]
 			pedi = Indirection[:edi, sz, di.address]
+			pfx = di.instruction.prefix || {}
 			case op
 			when 'movs'
-				case di.instruction.prefix[:rep]
+				case pfx[:rep]
 				when nil: { pedi => pesi, :esi => Expression[:esi, dir, sz], :edi => Expression[:edi, dir, sz] }
 				else      { pedi => pesi, :esi => Expression::Unknown, :edi => Expression::Unknown }	# repz/repnz..
 				end
 			when 'stos'
-				case di.instruction.prefix[:rep]
+				case pfx[:rep]
 				when nil: { pedi => Expression[:eax], :edi => Expression[:edi, dir, sz] }
 				else      { pedi => Expression[:eax], :edi => Expression[:edi, dir, [sz, :*, :ecx]] }	# XXX create an xref at edi+sz*ecx ?
 				end
