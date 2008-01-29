@@ -674,7 +674,8 @@ class Disassembler
 		addrstr = "#{base}_#{Expression[addr]}"
 		e, b = get_section_at(addr)
 		if not e
-			l = addrstr if Expression[addr].externals.grep(::Symbol).empty?
+			l = Expression[addr].reduce_rec if Expression[addr].reduce_rec.kind_of? ::String
+			l ||= addrstr if Expression[addr].externals.grep(::Symbol).empty?
 		elsif not l = e.inv_export[e.ptr]
 			l = @program.new_label(addrstr)
 			e.add_export l, e.ptr
