@@ -33,6 +33,10 @@ class DecodedInstruction
 		@block.address + @block_offset
 	end
 
+	def next_addr
+		address + @bin_length
+	end
+
 	def show
 		if block
 			bin = @block.edata.data[@block.edata_ptr+@block_offset, @bin_length].unpack('C*').map { |c| '%02x' % c }.join
@@ -89,10 +93,11 @@ end
 
 # holds information on a backtracked expression near begin and end of instruction blocks (#backtracked_for)
 class BacktraceTrace
-	# offset of the instruction in the block from which rebacktrace should start (use with from_subfuncret bool)
+	# address of the instruction in the block from which rebacktrace should start (use with from_subfuncret bool)
+	# address is nil if the backtrace is from block start
 	# exclude_instr is a bool saying if the backtrace should start at block_offset or at the preceding instruction
 	# optional: if absent, expr is to be rebacktracked when a new codepath arrives at the beginning of the block
-	attr_accessor :block_offset, :from_subfuncret, :exclude_instr
+	attr_accessor :address, :from_subfuncret, :exclude_instr
 	# address of the instruction that initiated the backtrace
 	attr_accessor :origin
 	# the Expression to backtrace at this point
@@ -115,8 +120,8 @@ class BacktraceTrace
 	def hash ; [origin, expr].hash ; end
 	def eql?(o)
 		o.class == self.class and
-		[block_offset, from_subfuncret, origin, expr, len, type] ==
-		 [o.block_offset, o.from_subfuncret, o.origin, o.expr, o.len, o.type]
+		[address, from_subfuncret, origin, expr, len, type] ==
+		 [o.address, o.from_subfuncret, o.origin, o.expr, o.len, o.type]
 	end
 	alias == eql?
 end
@@ -163,8 +168,8 @@ class InstructionBlock
 	# address of instruction executed after a called subfunction returns
 	attr_accessor_list :to_subfuncret
 	# array of BacktraceTrace
-	# when a new code path comes to us, it should be backtracked for the values of :r/:w/:x using btt with no block_offset
-	# for internal use only (block splitting): btt with a block_offset
+	# when a new code path comes to us, it should be backtracked for the values of :r/:w/:x using btt with no address
+	# for internal use only (block splitting): btt with an address
 	attr_accessor :backtracked_for
 
 	def initialize(address, edata, edata_ptr=edata.ptr)
@@ -174,8 +179,8 @@ class InstructionBlock
 		@backtracked_for = []
 	end
 
-	# splits the current block into a new one with all di from offset off (di.block_offset) to end
-	# caller is responsible for rebacktracing new.bt_for to regenerate correct old.bt.b_off/new.bt
+	# splits the current block into a new one with all di from address addr to end
+	# caller is responsible for rebacktracing new.bt_for to regenerate correct old.btt/new.btt
 	def split(addr)
 		raise "invalid split #{addr}" if not idx = @list.index(@list.find { |di| di.address == addr }) or idx == 0
 		off = @list[idx].block_offset
@@ -186,8 +191,7 @@ class InstructionBlock
 		new_b.add_from @list.last.address
 		add_to new_b.address
 		@backtracked_for.delete_if { |btt|
-			if btt.block_offset and btt.block_offset >= off
-				btt.block_offset -= off
+			if btt.address and new_b.list.find { |di| di.address == btt.address }
 				new_b.backtracked_for << btt
 				true
 			end
@@ -798,7 +802,7 @@ class Disassembler
 			end
 		end
 		bff.each { |btt|
-			next if btt.block_offset
+			next if btt.address
 			next if backtrace_check_funcret(btt, addr, from)
 			backtrace(btt.expr, from,
 				  :include_start => true, :from_subfuncret => from_subfuncret,
@@ -812,7 +816,7 @@ class Disassembler
 		new_b = block.split address
 		todo = []	# array of [expr, off]
 		new_b.backtracked_for.each { |btt|
-			backtrace(btt.expr, new_b.address + btt.block_offset,
+			backtrace(btt.expr, btt.address,
 				  :include_start => !btt.exclude_instr, :from_subfuncret => btt.from_subfuncret,
 				  :origin => btt.origin, :type => btt.type, :len => btt.len, :snapshot_addr => block.address, 
 				  :detached => btt.detached, :maxdepth => btt.maxdepth)
@@ -1037,7 +1041,7 @@ class Disassembler
 				}
 			elsif di
 				di.block.list[0..di.block.list.index(di)].reverse_each { |di|
-					if stopaddr and ea = di.block.address + di.block_offset+di.bin_length and stopaddr.include?(ea)
+					if stopaddr and ea = di.next_addr and stopaddr.include?(ea)
 						yield :stopaddr, obj, :addr => ea, :loopdetect => loopdetect
 						break
 					end
@@ -1119,7 +1123,7 @@ class Disassembler
 		# create initial backtracked_for
 		if type and origin == start_addr and di
 			btt = BacktraceTrace.new(expr, origin, type, len, maxdepth)
-			btt.block_offset = di.block_offset
+			btt.address = di.address
 			btt.exclude_instr = true if not include_start
 			btt.from_subfuncret = true if from_subfuncret and include_start
 			btt.detached = true if detached
@@ -1191,7 +1195,7 @@ puts "  backtrace up #{Expression[h[:from]]}  #{oldexpr}#{" => #{expr}" if expr 
 					@function[h[:from]].backtracked_for |= [btt] if @function[h[:from]] and h[:from] != :default
 					if @decoded[h[:to]]
 						btt = btt.dup
-						btt.block_offset = @decoded[h[:to]].block_offset
+						btt.address = @decoded[h[:to]].address
 						btt.from_subfuncret = true if h[:sfret]
 						next false if backtrace_check_funcret(btt, h[:from], h[:to])
 						@decoded[h[:to]].block.backtracked_for |= [btt]
@@ -1319,7 +1323,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 				@decoded[origin].add_comment "endsub #{l}"
 			end
 
-			f.backtracked_for |= @decoded[addr].block.backtracked_for.find_all { |btt| not btt.block_offset }
+			f.backtracked_for |= @decoded[addr].block.backtracked_for.find_all { |btt| not btt.address }
 			@cpu.backtrace_update_function_binding(self, addr, f, origin)
 puts "backtrace function binding for #{l}:", f.backtrace_binding.map { |k, v| " #{k} -> #{v}" }.sort if $DEBUG
 		end

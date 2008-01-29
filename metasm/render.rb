@@ -44,7 +44,7 @@ class CPU
 
 	# ease debugging in irb
 	def inspect
-		"#<#{self.class}:#{'%x' % object_id} @size=#{@size.inspect} @endianness=#{@endianness.inspect} ... >"
+		"#<#{self.class}:#{'%x' % object_id} ... >"
 	end
 end
 
