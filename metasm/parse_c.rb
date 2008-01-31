@@ -2870,9 +2870,12 @@ module C
 					r.last << ' : '
 					r, dep = CExpression.dump(@rexpr[1], scope, r, dep, true)
 				else
-					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and @lexpr.lexpr and OP_PRIO.fetch(@op, {})[@lexpr.op]))
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and
+						@lexpr.lexpr and OP_PRIO[@op] != OP_PRIO[@lexpr.op]))
 					r.last << ' ' << @op.to_s << ' '
-					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and @rexpr.lexpr and not OP_PRIO.fetch(@rexpr.op, {})[@op]))	# rtl assoc
+					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and
+						OP_PRIO[@op] != OP_PRIO[:'='] and
+						@rexpr.lexpr and OP_PRIO[@op] != OP_PRIO[@rexpr.op]))
 				end
 			end
 			r.last << ')' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
