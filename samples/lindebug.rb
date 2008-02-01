@@ -84,7 +84,7 @@ module Ansi
 	end
 end
 
-class Indirect
+class Indirect < Metasm::ExpressionType
 	attr_accessor :ptr, :sz
 	UNPACK_STR = {1 => 'C', 2 => 'S', 4 => 'L'}
 	def initialize(ptr, sz) @ptr, @sz = ptr, sz end
@@ -92,6 +92,7 @@ class Indirect
 		raw = bd['tracer_memory'][@ptr.bind(bd).reduce, @sz]
 		Metasm::Expression[raw.unpack(UNPACK_STR[@sz]).first]
 	end
+	def externals ; @ptr.externals end
 end
 
 class ExprParser < Metasm::Expression
