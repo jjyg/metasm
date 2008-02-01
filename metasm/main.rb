@@ -464,24 +464,30 @@ class Expression < ExpressionType
 			# XXX (a >> 1) << 1  !=  a (lose low bit)
 			# XXX (a << 1) >> 1  !=  a (with real cpus, lose high bit)
 			end
+		elsif @op == :'!'
+			if r.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[r.op]
+				Expression[r.lexpr, op, r.rexpr].reduce_rec
+			end
 		elsif @op == :^
 			if l == :unknown or r == :unknown: :unknown
 			elsif l == 0: r
 			elsif r == 0: l
 			elsif l == r: 0
+			elsif r == 1 and l.kind_of? Expression and [:'==', :'!=', :<, :>, :<=, :>=].include? l.op
+				Expression[nil, :'!', l].reduce_rec
 			elsif l.kind_of? Expression and l.op == :^
 				# a^(b^c) => (a^b)^c
 				Expression[l.lexpr, :^, [l.rexpr, :^, r]].reduce_rec
 			elsif r.kind_of? Expression and r.op == :^
 				# (a^b)^a => b
-				if r.rexpr == l
-					Expression[r.lexpr].reduce_rec
-				elsif r.lexpr == l
-					Expression[r.rexpr].reduce_rec
+				if    r.rexpr == l: r.lexpr
+				elsif r.lexpr == l: r.rexpr
 				end
 			end
 		elsif @op == :&
 			if l == 0 or r == 0: 0
+			elsif r == 1 and l.kind_of? Expression and [:'==', :'!=', :<, :>, :<=, :>=].include? l.op
+				l
 			elsif r.kind_of? ::Integer and l.kind_of? Expression and l.op == :|
 				# check for rol/ror composition
 				m = Expression[[['var', :sh_op, 'amt'], :|, ['var', :inv_sh_op, 'inv_amt']], :&, 'mask']
