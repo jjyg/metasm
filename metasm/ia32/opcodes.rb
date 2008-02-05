@@ -544,9 +544,9 @@ class Ia32
 	private
 
 	def addop_macro1(name, num, immtype=:i)
-		addop name, [(num << 3) | 4], nil, {:w => [0, 0]}, :reg_eax, :u
+		addop name, [(num << 3) | 4], nil, {:w => [0, 0]}, :reg_eax, immtype
 		addop name, [num << 3], :mrmw, {:d => [0, 1]}
-		addop name, [0x80], num, {:w => [0, 0], :s => [0, 1]}, :u
+		addop name, [0x80], num, {:w => [0, 0], :s => [0, 1]}, immtype
 	end
 	def addop_macro2(name, num)
 		addop name, [0x0F, 0xBA], (4 | num), {}, :u8
