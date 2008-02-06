@@ -5,6 +5,7 @@
 
 
 require 'metasm/main'
+module Metasm ; class Preprocessor ; end end	# XXX how to break a circular dependency in a clean way, in 3 lessons
 require 'metasm/parse'
 
 
