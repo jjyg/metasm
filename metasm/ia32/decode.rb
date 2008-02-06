@@ -540,10 +540,10 @@ module Metasm
 				bind = bind.merge(:esp => Expression[:esp, :+, off])
 aoeu = true
 			end
-			next bind if not odi = dasm.decoded[origin] or odi.opcode.name != 'ret'
+			break bind if not odi = dasm.decoded[origin] or odi.opcode.name != 'ret'
 			expr = expr.reduce_rec if expr.kind_of? Expression
-			next bind unless expr.kind_of? Indirection and expr.origin == origin
-			next bind unless expr.externals.reject { |e| e =~ /^autostackoffset_/ } == [:esp]
+			break bind unless expr.kind_of? Indirection and expr.origin == origin
+			break bind unless expr.externals.reject { |e| e =~ /^autostackoffset_/ } == [:esp]
 
 			# scan from calladdr for the probable parent function start
 			func_start = nil
@@ -562,14 +562,14 @@ aoeu = true
 					break
 				end
 			}
-			next bind if not func_start
+			break bind if not func_start
 			puts "automagic #{funcaddr}: found func start for #{dasm.decoded[origin]} at #{Expression[func_start]}" if $DEBUG
 			s_off = "autostackoffset_#{Expression[funcaddr]}_#{Expression[calladdr]}"
 			list = dasm.backtrace(expr.bind(:esp => Expression[:esp, :+, s_off]), calladdr, :include_start => true, :snapshot_addr => func_start, :maxdepth => maxdepth, :origin => origin)
-			next bind if list.length != 1
+			break bind if list.length != 1
 			e_expr = list.first
 			e_expr = e_expr.rexpr if e_expr.kind_of? Expression and e_expr.op == :+ and not e_expr.lexpr
-			next bind unless e_expr.kind_of? Indirection
+			break bind unless e_expr.kind_of? Indirection
 
 			off = Expression[[:esp, :+, s_off], :-, e_expr.target].reduce
 			case off

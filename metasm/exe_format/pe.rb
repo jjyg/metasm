@@ -237,7 +237,7 @@ puts "backtrace seh from #{di} => #{a.map { |addr| Expression[addr] }.join(', ')
 			d.c_parser = old_cp
 			@getprocaddr_unknown = []
 			gpa.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
-				next bind if @getprocaddr_unknown.include? [dasm, calladdr]
+				break bind if @getprocaddr_unknown.include? [dasm, calladdr]
 				sz = @cpu.size/8
 				raise 'getprocaddr call error' if not dasm.decoded[calladdr]
 				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)

@@ -659,7 +659,7 @@ module C
 				when :'!'
 					expr[e.rexpr]
 				when :'&&', :'||'
-					next CExpression.new(nil, :'!', e, BaseType.new(:int)) if not e.lexpr
+					break CExpression.new(nil, :'!', e, BaseType.new(:int)) if not e.lexpr
 					e.op = { :'&&' => :'||', :'||' => :'&&' }[op]
 					e.lexpr = neg[e.lexpr]
 					e.rexpr = neg[e.rexpr]
