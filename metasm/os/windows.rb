@@ -271,7 +271,7 @@ class WinDbg
 
 		attr_accessor :hthread, :ctx
 		# retrieves the thread context
-		def initialize(hthread, flags = WinAPI::CONTEXT86_FULL)
+		def initialize(hthread, flags = WinAPI::CONTEXT86_FULL | WinAPI::CONTEXT86_DEBUG_REGISTERS)
 			@hthread = hthread
 			@ctx = 0.chr * (OFFSETS.values.max + 4 + 512)
 			set_val(:ctxflags, flags)
