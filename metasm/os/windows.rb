@@ -179,7 +179,7 @@ class WindowsRemoteString < VirtualString
 		else
 			handle = WinAPI.openprocess(WinAPI::PROCESS_ALL_ACCESS, 0, pid)
 			if not handle
-				puts "cannot openprocess ALL_ACCESS pid #{pid}"
+				puts "cannot openprocess ALL_ACCESS pid #{pid}" if $VERBOSE
 				handle = WinAPI.openprocess(WinAPI::PROCESS_VM_READ, 0, pid)
 			end
 		end
@@ -401,16 +401,23 @@ class WinDbg
 
 	def handler_exception(pid, tid, info)
 		puts "wdbg: #{pid}:#{tid} exception" if $DEBUG
-		if info.code == WinAPI::STATUS_ACCESS_VIOLATION
+		case info.code
+		when WinAPI::STATUS_ACCESS_VIOLATION
 			# fix fs bug in xpsp1
-			ctx = get_context(pid, tid, WinAPI::CONTEXT86_SEGMENTS)
+			ctx = get_context(pid, tid)
 			if ctx[:fs] != 0x3b
 				puts "wdbg: #{pid}:#{tid} fix fs bug" if $DEBUG
 				ctx[:fs] = 0x3b
 				return WinAPI::DBG_CONTINUE
 			end
+			WinAPI::DBG_EXCEPTION_NOT_HANDLED
+		when WinAPI::STATUS_BREAKPOINT
+			# we must ack ntdll interrupts on process start
+			# but we should not mask process-generated exceptions by default..
+			WinAPI::DBG_CONTINUE
+		else
+			WinAPI::DBG_EXCEPTION_NOT_HANDLED
 		end
-		WinAPI::DBG_EXCEPTION_NOT_HANDLED
 	end
 
 	def handler_newprocess(pid, tid, info)
@@ -446,11 +453,13 @@ class WinDbg
 	end
 
 	def handler_loaddll(pid, tid, info)
-		dll = LoadedPE.load(@mem[pid][info.imagebase, 0x1000_0000])
-		dll.decode_header
-		dll.decode_exports
-		str = (dll.export ? dll.export.libname : read_str_indirect(pid, info.imagename, info.unicode))
-		puts "wdbg: #{pid}:#{tid} loaddll #{str.inspect} at #{'0x%08X' % info.imagebase}"
+		if $DEBUG
+			dll = LoadedPE.load(@mem[pid][info.imagebase, 0x1000_0000])
+			dll.decode_header
+			dll.decode_exports
+			str = (dll.export ? dll.export.libname : read_str_indirect(pid, info.imagename, info.unicode))
+			puts "wdbg: #{pid}:#{tid} loaddll #{str.inspect} at #{'0x%08X' % info.imagebase}"
+		end
 		WinAPI::DBG_CONTINUE
 	end
 
