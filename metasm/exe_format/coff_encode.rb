@@ -706,12 +706,12 @@ class COFF
 		binding[@optheader.image_size] = curaddr - baseaddr if @optheader.image_size.kind_of?(::String)
 
 		# patch the iat where iat_p was defined
-		@imports.each { |id|
-			if id.iat_p
-				p = rva_to_off(id.iat_p)
-				@encoded[p, id.iat.virtsize] = id.iat
-				binding.update id.iat.binding(baseaddr + id.iat_p)
-			end
+		# sort to ensure a 0-terminated will not overwrite an entry
+		# (try to dump notepad.exe, which has a forwarder;)
+		@imports.find_all { |id| id.iat_p }.sort_by { |id| id.iat_p }.each { |id|
+			p = rva_to_off(id.iat_p)
+			@encoded[p, id.iat.virtsize] = id.iat
+			binding.update id.iat.binding(baseaddr + id.iat_p)
 		} if @imports
 
 		@encoded.fill

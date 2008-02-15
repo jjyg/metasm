@@ -130,7 +130,7 @@ class ExeFormat
 	# saves the result of +encode_string+ in the specified file
 	# fails if the file already exists
 	def encode_file(path, *a)
-		raise Errno::EEXIST, path if File.exist? path	# race, but cannot use O_EXCL, as O_BINARY is not defined in ruby
+		#raise Errno::EEXIST, path if File.exist? path	# race, but cannot use O_EXCL, as O_BINARY is not defined in ruby
 		encode_string(*a)
 		File.open(path, 'wb') { |fd| fd.write(@encoded.data) }
 	end

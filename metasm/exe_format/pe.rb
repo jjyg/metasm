@@ -280,7 +280,7 @@ class LoadedPE < PE
 		loaded.load_address = baseaddr
 		loaded.decode
 
-		dump = PE.new
+		dump = PE.new(loaded.cpu_from_headers)
 		dump.share_namespace loaded
 		dump.optheader.image_base = baseaddr
 		dump.optheader.entrypoint = (entrypoint || loaded.optheader.entrypoint + baseaddr) - baseaddr
