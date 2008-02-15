@@ -428,7 +428,7 @@ class COFF
 			else
 				secs.delete_if { |ss| ss.characteristics.include? 'MEM_SHARED' }
 			end
-			secs.delete_if { |ss| ss.virtsize.kind_of?(::Integer) or ss.rawsize.kind_of?(::Integer) }
+			secs.delete_if { |ss| ss.virtsize.kind_of?(::Integer) or ss.rawsize.kind_of?(::Integer) or secs[secs.index(ss)+1..-1].find { |ss| ss.virtaddr.kind_of?(::Integer) } }
 
 			# try to find superset of characteristics
 			if target = secs.find { |ss| (ss.characteristics & char) == char }
@@ -486,7 +486,7 @@ class COFF
 		plt.characteristics = %w[MEM_READ MEM_EXECUTE]
 
 		@imports.zip(iat) { |id, it|
-			if id.iat_p and s = @sections.find { |s| s.virtaddr <= id.iat_p and s.virtaddr + s.virtsize > id.iat_p }
+			if id.iat_p and s = @sections.find { |s| s.virtaddr <= id.iat_p and s.virtaddr + (s.virtsize || s.encoded.virtsize) > id.iat_p }
 				id.iat = it	# will be fixed up after encode_section
 			else
 				# XXX should not be mixed (for @directory['iat'][1])

@@ -292,7 +292,7 @@ class LoadedPE < PE
 			ss.virtaddr = s.virtaddr
 			ss.encoded = s.encoded
 			ss.characteristics = s.characteristics
-			dump.sections << s
+			dump.sections << ss
 		}
 
 		loaded.memdump_imports(memory, dump)

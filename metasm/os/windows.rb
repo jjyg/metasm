@@ -446,7 +446,10 @@ class WinDbg
 	end
 
 	def handler_loaddll(pid, tid, info)
-		str = read_str_indirect(pid, info.imagename, info.unicode)
+		dll = LoadedPE.load(@mem[pid][info.imagebase, 0x1000_0000])
+		dll.decode_header
+		dll.decode_exports
+		str = (dll.export ? dll.export.libname : read_str_indirect(pid, info.imagename, info.unicode))
 		puts "wdbg: #{pid}:#{tid} loaddll #{str.inspect} at #{'0x%08X' % info.imagebase}"
 		WinAPI::DBG_CONTINUE
 	end
