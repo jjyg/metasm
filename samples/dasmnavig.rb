@@ -95,7 +95,7 @@ class Viewer
 
 
 	def initialize(text)
-		text = File.read(text) if File.exist? text
+		text = File.read(text) if File.exist? text rescue nil
 		@text = text.gsub("\t", " "*8).to_a.map { |l| l.chomp }
 		@pos = @posh = 0
 		@x = @y = 0

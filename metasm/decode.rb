@@ -714,7 +714,8 @@ class Disassembler
 		loop do
 			if @addrs_todo.empty?
 				break if not ep = entrypoints.shift
-				label_at(normalize(ep), 'entrypoint')
+				l = label_at(normalize(ep), 'entrypoint')
+				puts "start disassemble from #{l} (#{entrypoints.length})" if $VERBOSE and not entrypoints.empty?
 				@addrs_todo << [ep]
 			end
 			while not @addrs_todo.empty?
