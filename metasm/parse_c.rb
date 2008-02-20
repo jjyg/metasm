@@ -357,6 +357,10 @@ module C
 		def arithmetic? ; true ; end
 		def base ; @type.base ; end
 		def align(parser) BaseType.new(:ptr).align(parser) end
+
+		def ==(o)
+			o.class == self.class and o.type == self.type
+		end
 	end
 	class Array < Pointer
 		attr_accessor :length
