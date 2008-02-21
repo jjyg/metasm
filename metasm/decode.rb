@@ -772,7 +772,7 @@ class Disassembler
 			block.add_from(from, from_subfuncret) if from and from != :default
 			disassemble_block(block)
 		elsif from and c_parser and name = Expression[addr].reduce_rec and name.kind_of? ::String and
-				s = c_parser.toplevel.symbol[s] and s.type.untypedef.kind_of? C::Function
+				s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
 			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
 		elsif from
 			if bf = @function[:default]
