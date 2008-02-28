@@ -287,7 +287,7 @@ module Metasm
 
 		# XXX TODO opsz override ?
 		opsz = @size
-		opsz = 48 - instrsz if di.instruction.prefix[:opsz]
+		opsz = 48 - opsz if di.instruction.prefix and di.instruction.prefix[:opsz]
 		mask = (1 << opsz)-1	# 32bits => 0xffff_ffff
 
 		binding =
@@ -429,8 +429,8 @@ module Metasm
 		case op
 		when 'adc', 'add', 'and', 'cmp', 'or', 'sbb', 'sub', 'xor', 'test'
 			e_op = { 'adc' => :+, 'add' => :+, 'and' => :&, 'cmp' => :-, 'or' => :|, 'sbb' => :-, 'sub' => :-, 'xor' => :^, 'test' => :& }[op]
-			e = Expression[[a[0], :&, mask], e_op, [a[1], :&, mask]]
-			e = Expression[e, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
+			res = Expression[[a[0], :&, mask], e_op, [a[1], :&, mask]]
+			res = Expression[res, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
 
 			binding[:eflag_z] = Expression[[res, :&, mask], :==, 0]
 			binding[:eflag_s] = sign[res]
