@@ -221,8 +221,6 @@ module Metasm
 			end
 		end
 
-		pfx.delete :opsz
-		pfx.delete :adsz
 		pfx.delete :seg
 		case r = pfx.delete(:rep)
 		when :nz
@@ -253,6 +251,31 @@ module Metasm
 		di
 	end
 
+	# interprets a condition code (in an opcode name) as an expression involving backtracked eflags
+	# eflag_p is never computed, and this returns Expression::Unknown for this flag
+	# ex: 'z' => Expression[:eflag_z]
+	def decode_cc_to_expr(cc)
+		case cc
+		when 'o': Expression[:eflag_o]
+		when 'no': Expression[1, :-, :eflag_o]
+		when 'b', 'nae': Expression[:eflag_c]
+		when 'nb', 'ae': Expression[1, :-, :eflag_c]
+		when 'z', 'e': Expression[:eflag_z]
+		when 'nz', 'ne': Expression[1, :-, :eflag_z]
+		when 'be', 'na': Expression[:eflag_c, :|, :eflag_z]
+		when 'nbe', 'a': Expression[1, :-, [:eflag_c, :|, :eflag_z]]
+		when 's': Expression[:eflag_s]
+		when 'ns': Expression[1, :-, :eflag_s]
+		when 'p', 'pe': Expression::Unknown
+		when 'np', 'po': Expression::Unknown
+		when 'l', 'nge': Expression[:eflag_s, :'!=', :eflag_o]
+		when 'nl', 'ge': Expression[:eflag_s, :==, :eflag_o]
+		when 'le', 'ng': Expression[[:eflag_s, :'!=', :eflag_o], :|, :eflag_z]
+		when 'nle', 'g': Expression[[:eflag_s, :==, :eflag_o], :&, :eflag_z]
+		else raise "Internal error: invalid conditioncode #{cc.inspect}"
+		end
+	end
+
 	def backtrace_binding(di)
 		a = di.instruction.args.map { |arg|
 			case arg
@@ -262,14 +285,20 @@ module Metasm
 			end
 		}
 
-		mask = (1 << @size)-1	# 0xffff_ffff for 32bits
+		# XXX TODO opsz override ?
+		opsz = @size
+		opsz = 48 - instrsz if di.instruction.prefix[:opsz]
+		mask = (1 << opsz)-1	# 32bits => 0xffff_ffff
+
+		binding =
 		case op = di.opcode.name
 		when 'mov', 'movsx', 'movzx', 'movd', 'movq': { a[0] => Expression[a[1]] }
 		when 'lea': { a[0] => a[1].target }
 		when 'xchg': { a[0] => Expression[a[1]], a[1] => Expression[a[0]] }
-		when 'add', 'sub', 'or', 'xor', 'and', 'pxor'
-			op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^, 'pxor' => :^ }[op]
-			ret = Expression[a[0], op, a[1]]
+		when 'add', 'sub', 'or', 'xor', 'and', 'pxor', 'adc', 'sbb'
+			e_op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^, 'pxor' => :^, 'adc' => :+, 'sbb' => :- }[op]
+			ret = Expression[a[0], e_op, a[1]]
+			ret = Expression[ret, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
 			# optimises :eax ^ :eax => 0
 			# avoid hiding memory accesses (to not hide possible fault)
 			ret = Expression[ret.reduce] if not a[0].kind_of? Indirection
@@ -278,31 +307,52 @@ module Metasm
 		when 'dec': { a[0] => Expression[a[0], :-, 1] }
 		when 'not': { a[0] => Expression[a[0], :^, mask] }
 		when 'neg': { a[0] => Expression[:-, a[0]] }
-		when 'rol', 'ror', 'rcl', 'rcr':
-			invop = (op[-1] == ?r ? :<< : :>>)
-			op = (op[-1] == ?r ? :>> : :<<)
+		when 'rol', 'ror'
+			inv_op = (op[2] == ?r ? :<< : :>>)
+			e_op = (op[2] == ?r ? :>> : :<<)
+			sz = [a[1], :%, opsz]
+			isz = [[opsz, :-, a[1]], :%, opsz]
 			# ror a, b  =>  (a >> b) | (a << (32-b))
-			{ a[0] => Expression[[[a[0], op, [a[1], :%, @size]], :|, [a[0], invop, [[@size, :-, a[1]], :%, @size]]], :&, mask] }
-		when 'sar', 'shl', 'sal': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), [a[1], :%, @size]] }
-		when 'shr': { a[0] => Expression[[a[0], :&, mask], :>>, [a[1], :%, @size]] }
-		when 'cdq': { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, @size-1], :&, 1]] }
-		when 'push'
-			{ :esp => Expression[:esp, :-, @size/8],
-			  Indirection[:esp, @size/8, di.address] => Expression[a[0]] }
-		when 'push.i16'
-			{ :esp => Expression[:esp, :-, 2],
-			  Indirection[:esp, 2, di.address] => Expression[a[0]] }
+			{ a[0] => Expression[[[a[0], e_op, sz], :|, [a[0], inv_op, isz]], :&, mask] }
+		when 'sar', 'shl', 'sal': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), [a[1], :%, opsz]] }
+		when 'shr': { a[0] => Expression[[a[0], :&, mask], :>>, [a[1], :%, opsz]] }
+		when 'cdq': { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz-1], :&, 1]] }
+		when 'push', 'push.i16'
+			{ :esp => Expression[:esp, :-, opsz/8],
+			  Indirection[:esp, opsz/8, di.address] => Expression[a[0]] }
 		when 'pop'
-			{ :esp => Expression[:esp, :+, @size/8],
-			  a[0] => Indirection[:esp, @size/8, di.address] }
-		when 'pushfd': { :esp => Expression[:esp, :-, @size/8], Indirection[:esp, @size/8, di.address] => Expression::Unknown }
-		when 'popfd':  { :esp => Expression[:esp, :+, @size/8] }
+			{ :esp => Expression[:esp, :+, opsz/8],
+			  a[0] => Indirection[:esp, opsz/8, di.address] }
+		when 'pushfd'
+			# TODO Unknown per bit
+			efl = Expression[0x202]
+			bts = proc { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
+			bts[0, :eflag_c]
+			bts[6, :eflag_z]
+			bts[7, :eflag_s]
+			bts[11, :eflag_o]
+			{ :esp => Expression[:esp, :-, opsz/8], Indirection[:esp, opsz/8, di.address] => efl }
+		when 'popfd'
+			bt = proc { |pos| Expression[[Indirection[:esp, opsz/8, di.address], :>>, pos], :&, 1] }
+			{ :esp => Expression[:esp, :+, opsz/8], :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7], :eflag_o => bt[11] }
+		when 'sahf'
+			bt = proc { |pos| Expression[[:eax, :>>, pos], :&, 1] }
+			{ :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7] }
+		when 'lahf'
+			efl = Expression[2]
+			bts = proc { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
+			bts[0, :eflag_c]
+			#bts[2, :eflag_p]
+			#bts[4, :eflag_a]
+			bts[6, :eflag_z]
+			bts[7, :eflag_s]
+			{ :eax => efl }
 		when 'pushad'
 			ret = {}
 			st_off = 0
 			[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
-				ret[Indirection[Expression[:esp, :+, st_off].reduce, @size/8, di.address]] = Expression[r]
-				st_off += @size/8
+				ret[Indirection[Expression[:esp, :+, st_off].reduce, opsz/8, di.address]] = Expression[r]
+				st_off += opsz/8
 			}
 			ret[:esp] = Expression[:esp, :-, st_off]
 			ret
@@ -310,39 +360,39 @@ module Metasm
 			ret = {}
 			st_off = 0
 			[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
-				ret[r] = Indirection[Expression[:esp, :+, st_off].reduce, @size/8, di.address]
-				st_off += @size/8
+				ret[r] = Indirection[Expression[:esp, :+, st_off].reduce, opsz/8, di.address]
+				st_off += opsz/8
 			}
 			ret
 		when 'call'
-			{ :esp => Expression[:esp, :-, @size/8],
-			  Indirection[:esp, @size/8, di.address] => Expression[Expression[di.address, :+, di.bin_length].reduce] }
-		when 'ret': { :esp => Expression[:esp, :+, [@size/8, :+, a[0] || 0]] }
-		when 'loop': { :ecx => Expression[:ecx, :-, 1] }
+			{ :esp => Expression[:esp, :-, opsz/8],
+			  Indirection[:esp, opsz/8, di.address] => Expression[Expression[di.address, :+, di.bin_length].reduce] }
+		when 'ret': { :esp => Expression[:esp, :+, [opsz/8, :+, a[0] || 0]] }
+		when 'loop', 'loopz', 'loopnz': { :ecx => Expression[:ecx, :-, 1] }
 		when 'enter'
 			depth = a[1].reduce % 32
-			b = { Indirection[:esp, @size/8, di.address] => Expression[:ebp], :ebp => Expression[:esp, :-, @size/8],
-					:esp => Expression[:esp, :-, a[0].reduce + ((@size/8) * depth)] }
+			b = { Indirection[:esp, opsz/8, di.address] => Expression[:ebp], :ebp => Expression[:esp, :-, opsz/8],
+					:esp => Expression[:esp, :-, a[0].reduce + ((opsz/8) * depth)] }
 			(1..depth).each { |i| # XXX test me !
-				b[Indirection[[:esp, :-, i*@size/8], @size/8, di.address]] = Indirection[[:ebp, :-, i*@size/8], @size/8, di.address] }
+				b[Indirection[[:esp, :-, i*opsz/8], opsz/8, di.address]] = Indirection[[:ebp, :-, i*opsz/8], opsz/8, di.address] }
 			b
-		when 'leave': { :ebp => Indirection[[:ebp], @size/8, di.address], :esp => Expression[:ebp, :+, @size/8] }
+		when 'leave': { :ebp => Indirection[[:ebp], opsz/8, di.address], :esp => Expression[:ebp, :+, opsz/8] }
 		when 'aaa': { :eax => Expression::Unknown }
 		when 'imul'
 			if a[2]: e = Expression[a[1], :*, a[2]]
-			else e = Expression[[a[0], :*, a[1]], :&, (1 << (di.instruction.args.first.sz || @size)) - 1]
+			else e = Expression[[a[0], :*, a[1]], :&, (1 << (di.instruction.args.first.sz || opsz)) - 1]
 			end
 			{ a[0] => e }
 		when 'rdtsc': { :eax => Expression::Unknown, :edx => Expression::Unknown }
 		when /^(stos|movs)([bwd])$/
-			op = $1
+			e_op = $1
 			sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
 			dir = :+
-			dir = :- if di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil
+			dir = :- if di.block and (di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil)
 			pesi = Indirection[:esi, sz, di.address]
 			pedi = Indirection[:edi, sz, di.address]
 			pfx = di.instruction.prefix || {}
-			case op
+			case e_op
 			when 'movs'
 				case pfx[:rep]
 				when nil: { pedi => pesi, :esi => Expression[:esi, dir, sz], :edi => Expression[:edi, dir, sz] }
@@ -354,17 +404,66 @@ module Metasm
 				else      { pedi => Expression[:eax], :edi => Expression[:edi, dir, [sz, :*, :ecx]] }	# XXX create an xref at edi+sz*ecx ?
 				end
 			end
+		when 'clc': { :eflag_c => Expression[0] }
+		when 'stc': { :eflag_c => Expression[1] }
+		when 'cmc': { :eflag_c => Expression[1, :-, :eflag_c] }
+		when /^set(.*)/
+			cd = decode_cc_to_expr($1)
+			# (bool * a1)  +  ((1-bool) * a0)
+			{ a[0] => Expression[[cd, :*, a[1]], :+, [[1, :-, cd], :*, a[0]]] }
 		else
 			if %[nop cmp test jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle jnb jnbe jp jnp jnl jnle].include? op	# etc etc
 				# XXX eflags !
 				b = a.inject({}) { |b, foo| b.update "dummy#{b.length}".to_sym => foo } # mark args as read (modrm)
 			else
 				puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
-				# assume nothing except the arg list is modified
-				(a.grep(Indirection) + a.grep(::Symbol)).inject({}) { |h, s| h.update s => Expression::Unknown }
+				# assume nothing except the 1st arg
+				case a[0]
+				when Indirection, Symbol: { a[0] => Expression::Unknown }
+				else {}
+				end
 			end
 		end
+		# eflags side-effects
+		sign = proc { |v| Expression[[[v, :&, mask], :>>, opsz-1], :'!=', 0] }
+		case op
+		when 'adc', 'add', 'and', 'cmp', 'or', 'sbb', 'sub', 'xor', 'test'
+			e_op = { 'adc' => :+, 'add' => :+, 'and' => :&, 'cmp' => :-, 'or' => :|, 'sbb' => :-, 'sub' => :-, 'xor' => :^, 'test' => :& }[op]
+			e = Expression[[a[0], :&, mask], e_op, [a[1], :&, mask]]
+			e = Expression[e, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
 
+			binding[:eflag_z] = Expression[[res, :&, mask], :==, 0]
+			binding[:eflag_s] = sign[res]
+			binding[:eflag_c] = case e_op
+				when :+: Expression[res, :>, mask]
+				when :-: Expression[[a[0], :&, mask], :<, [a[1], :&, mask]]
+				else Expression[0]
+				end
+			binding[:eflag_o] = case e_op
+				when :+: Expression[[sign[a[0]], :==, sign[a[1]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
+				when :-: Expression[[sign[a[0]], :==, [1, :-, sign[a[1]]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
+				else Expression[0]
+				end
+		when 'inc', 'dec', 'neg', 'shl', 'shr', 'sar', 'ror', 'rol', 'rcr', 'rcl', 'shld', 'shrd'
+			res = binding[a[0]]
+			binding[:eflag_z] = Expression[[res, :&, mask], :==, 0]
+			binding[:eflag_s] = sign[res]
+			case op
+			when 'neg': binding[:eflag_c] = Expression[[res, :&, mask], :'!=', 0]
+			when 'inc', 'dec'	# don't touch carry flag
+			else binding[:eflag_c] = Expression::Unknown
+			end
+			binding[:eflag_o] = case op
+				when 'inc': Expression[[a[0], :&, mask], :==, mask >> 1]
+				when 'dec': Expression[[res , :&, mask], :==, mask >> 1]
+				when 'neg': Expression[[a[0], :&, mask], :==, (mask+1) >> 1]
+				else Expression::Unknown	# TODO someday
+				end
+		when 'imul', 'mul', 'idiv', 'div'
+			binding[:eflag_z] = binding[:eflag_s] = binding[:eflag_c] = binding[:eflag_o] = Expression::Unknown
+
+		end
+		binding
 	end
 
 	def get_xrefs_x(dasm, di)
@@ -538,7 +637,6 @@ module Metasm
 			@dasm_func_default_off ||= {}
 			if off = @dasm_func_default_off[[dasm, calladdr]]
 				bind = bind.merge(:esp => Expression[:esp, :+, off])
-aoeu = true
 			end
 			break bind if not odi = dasm.decoded[origin] or odi.opcode.name != 'ret'
 			expr = expr.reduce_rec if expr.kind_of? Expression
