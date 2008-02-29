@@ -272,7 +272,6 @@ module Metasm
 		when 'nl', 'ge': Expression[:eflag_s, :==, :eflag_o]
 		when 'le', 'ng': Expression[[:eflag_s, :'!=', :eflag_o], :|, :eflag_z]
 		when 'nle', 'g': Expression[[:eflag_s, :==, :eflag_o], :&, :eflag_z]
-		else raise "Internal error: invalid conditioncode #{cc.inspect}"
 		end
 	end
 
@@ -411,17 +410,19 @@ module Metasm
 			cd = decode_cc_to_expr($1)
 			# (bool * a1)  +  ((1-bool) * a0)
 			{ a[0] => Expression[[cd, :*, a[1]], :+, [[1, :-, cd], :*, a[0]]] }
+		when /^j(.*)/
+			binding = { 'dummy_metasm_0' => Expression[a[0]] }
+			if fl = decode_cc_to_expr($1)
+				binding['dummy_metasm_1'] = fl	# mark eflags as read
+			end
+			binding
+		when 'nop', 'pause': {}
 		else
-			if %[nop cmp test jmp jz jnz js jns jo jno jg jge jb jbe ja jae jl jle jnb jnbe jp jnp jnl jnle].include? op	# etc etc
-				# XXX eflags !
-				b = a.inject({}) { |b, foo| b.update "dummy#{b.length}".to_sym => foo } # mark args as read (modrm)
-			else
-				puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
-				# assume nothing except the 1st arg
-				case a[0]
-				when Indirection, Symbol: { a[0] => Expression::Unknown }
-				else {}
-				end
+			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
+			# assume nothing except the 1st arg
+			case a[0]
+			when Indirection, Symbol: { a[0] => Expression::Unknown }
+			else {}
 			end
 		end
 		# eflags side-effects
