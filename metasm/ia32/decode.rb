@@ -408,8 +408,7 @@ module Metasm
 		when 'cmc': { :eflag_c => Expression[1, :-, :eflag_c] }
 		when /^set(.*)/
 			cd = decode_cc_to_expr($1)
-			# (bool * a1)  +  ((1-bool) * a0)
-			{ a[0] => Expression[[cd, :*, a[1]], :+, [[1, :-, cd], :*, a[0]]] }
+			{ a[0] => Expression[cd] }
 		when /^j(.*)/
 			binding = { 'dummy_metasm_0' => Expression[a[0]] }
 			if fl = decode_cc_to_expr($1)
