@@ -48,8 +48,18 @@ class GraphViewContext
 		@box << Box.new(id, text)
 	end
 
+	# checks if a box is reachable from another following a 'to' chain
+	def arrange_can_reach(src, dst, allow=@box)
+		src.to.each { |f|
+			next if not allow.include? f
+			return true if dst == f
+			return true if arrange_can_reach(f, dst, allow-[src])
+		}
+		false
+	end
+
 	# define box width&height from their text content
-	# position(?) them to get a lovely graph (TODO)
+	# place them for kawaii
 	def auto_arrange_boxes
 		# calc box sizes
 		@box.each { |b|
@@ -59,19 +69,38 @@ class GraphViewContext
 		}
 
 		# organize boxes
-		# TODO
-		y = 10
-		x = 10
-		@box.each { |b|
-			b.y = y
-			b.x = x
-			y += b.h + 32
-			x += 16
-		}
+		# TODO groups
+		rank = {}	# a->b->c + a->c  => rk(a) < rk(b) < rk(c)
+		@box.each { |b| rank[b] = 0 if b.from.empty? }
+		until (@box - rank.keys).empty?
+			nextgen = rank.keys.map { |b| b.to }.flatten
+			nextgen -= rank.keys
+			nextgen.uniq!
+			while b = nextgen.find { |b| nextgen.find { |bb|
+				b != bb and arrange_can_reach(bb, b, @box-rank.keys)
+			} }
+				nextgen.delete b
+			end
+			nrank = rank.values.max + 1
+			nextgen.each { |b| rank[b] = nrank }
+		end
 
-		# show root box (TODO center X)
-		@view_x = 0
-		@view_y = 0
+		# TODO imbricated groups
+		ary = Array.new(rank.values.max+1) { [] }
+		rank.each { |b, r| ary[r] << b }
+		y = 0
+		ary.each { |ar|
+			x = -ar.inject(0) { |s, b| s + b.w + 16 } / 2
+			x += ar.first.w + 16 if ar.length == 1 and ff = ar.first.from.find { |ff| rank[ff] == rank[ar.first]-1 } and ff.to.find { |tt| rank[tt] > rank[ar.first] }
+			ar.each { |b|
+				b.x = x
+				b.y = y
+				x += b.w + 16
+			}
+			y += ar.map { |b| b.h }.max + 32
+		}
+		@view_x = ary.first.first.x - 16
+		@view_y = -16
 	end
 end
 
@@ -93,6 +122,7 @@ class GtkGraphView < Gtk::DrawingArea
 		@color[:arrow] = Gdk::Color.new(    0,     0,     0)
 		@mousemove_origin = nil
 		@text_layout = Pango::Layout.new(Gdk::Pango.context)
+		@text_layout.font_description = Pango::FontDescription.new('courier 10')
 		super()
 		set_size_request 400, 400		# default control size
 		set_events Gdk::Event::ALL_EVENTS_MASK	# receive click/keys
@@ -199,6 +229,7 @@ class GtkGraphView < Gtk::DrawingArea
 					else
 						@selected_boxes = []
 					end
+					redraw
 				when 3
 					b = find_box_xy(@curcontext.view_x+ev.x, @curcontext.view_y+ev.y)
 					rightclick_callback[b] # TODO text offset clicked
@@ -208,6 +239,7 @@ class GtkGraphView < Gtk::DrawingArea
 				if ev.button == 1
 					if @shown_boxes.empty?
 						@curcontext.view_x, @curcontext.view_y = @curcontext.box[0].x-10, @curcontext.box[0].y-10 if @curcontext.box[0]
+						redraw
 					else
 						b = find_box_xy(@curcontext.view_x+ev.x, @curcontext.view_y+ev.y)
 						doubleclick_callback[b] # TODO text offset
@@ -267,7 +299,7 @@ class GtkGraphView < Gtk::DrawingArea
 		w.signal_connect('destroy') { Gtk.main_quit }
 		w.add self
 		w.show_all
-		Gtk.idle_add &b if b
+		Gtk.idle_add(&b) if b
 		Gtk.main
 	end
 
@@ -307,13 +339,13 @@ require 'metasm'
 # raise, my minion !
 module Metasm
 class Disassembler
+	# rebuild the code flow graph (function graph + each function block graph), and update the GUI accordingly
 	def gui_update
 		# build the transition graphs: (arrays of normalized addresses)
 		#  function -> subfunctions
 		func_rel = {}
 		#  block -> following blocks in same function
 		block_rel = {}
-		# XXX to_indirect in same func ! (seh, __libc_start_main -> callbacks...)
 
 		todo_f = @entrypoints.dup
 		done_f = []
@@ -339,16 +371,23 @@ class Disassembler
 					}
 					di.block.each_to_subfuncret { |t|
 						t = normalize t
+						next if not @decoded[t]
 						todo_b << t
 						block_rel[b] << t
 					}
 				else
 					di.block.each_to_normal { |t|
 						t = normalize t
+						next if not @decoded[t]
 						todo_b << t
 						block_rel[b] << t
 					}
 				end
+				di.block.each_to_indirect { |t|
+					t = normalize t
+					todo_f << t
+					func_rel[f] << t
+				}
 				block_rel[b].uniq!
 			end
 			func_rel[f].uniq!
@@ -357,7 +396,7 @@ class Disassembler
 		ctx = @gui.get_context(:functions)
 		ctx.clear
 		func_rel.each { |func, subfunc|
-			ctx.new_box func, label_at(func)
+			ctx.new_box func, label_at(func) || "unk #{func}"
 		}
 		func_rel.each { |func, subfunc|
 			subfunc.each { |sf| ctx.link_boxes func, sf }
@@ -372,8 +411,7 @@ class Disassembler
 				next  if done.include? b
 				done << b
 				if di = @decoded[b] and di.kind_of? DecodedInstruction
-					src = ''
-					dump_block(di.block) { |l| src << l << "\n" }
+					src = gui_dump_block(di.block)
 				else
 					src = b.to_s
 				end
@@ -387,6 +425,7 @@ class Disassembler
 		@gui.redraw
 	end
 
+	# disassembles the program with an interactive gui (well, almost interactive ;) )
 	def gui_disassemble(gui, *entrypoints)
 		entrypoints = @program.get_default_entrypoints if entrypoints.empty?
 		@gui = gui
@@ -429,6 +468,17 @@ class Disassembler
 				true
 			end
 		}
+	end
+
+	# returns a string to be used as block content in graphic view
+	def gui_dump_block(b)
+		return 'x'
+		src = ''
+		dump_block(b) { |l|
+			l = l.sub(/\s+;/, ' ;').sub(/;\s+@\S+\s+\S+/, ';').sub(/\s*;\s*$/, '')	# remove instr addr, instr binary encoding & empty asm comment
+			src << l << "\n" if not l.strip.empty?
+		}
+		src
 	end
 end
 end
