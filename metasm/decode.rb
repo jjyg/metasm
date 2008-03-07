@@ -59,38 +59,6 @@ class DecodedInstruction
 	end
 end
 
-# defines a class method attr_accessor_list to declare an attribute that may have multiple values
-module AccessorList
-	# defines an attribute that may be a value or an array, along with its accessors
-	# used to optimize ruby's memory usage with many objects that have mostly single-value attributes
-	# the values must not be arrays !
-	def attr_accessor_list(*a)
-		a.each { |a|
-			# XXX no way to yield from a define_method block...
-			class_eval <<EOS
-	attr_accessor :#{a}
-
-	def each_#{a}
-		case #{a}
-		when nil
-		when ::Array: @#{a}.each { |b| yield b }
-		else yield @#{a}
-		end
-	end
-
-	def add_#{a}(b)
-		case #{a}
-		when nil: @#{a} = b
-		when b
-		when ::Array: @#{a} |= [b]
-		else @#{a} = [@#{a}, b]
-		end
-	end
-EOS
-		}
-	end
-end
-
 # holds information on a backtracked expression near begin and end of instruction blocks (#backtracked_for)
 class BacktraceTrace
 	# address of the instruction in the block from which rebacktrace should start (use with from_subfuncret bool)
@@ -149,8 +117,6 @@ end
 # holds a list of contiguous decoded instructions, forming an uninterrupted block (except for eg CPU exceptions)
 # most attributes are either a value or an array of values, use the associated iterator.
 class InstructionBlock
-	extend AccessorList
-
 	# address of the first instruction
 	attr_accessor :address
 	# pointer to raw data
@@ -160,13 +126,17 @@ class InstructionBlock
 	# address of instructions giving control directly to us
 	# includes addr of normal instruction when call flow continues to us past the end of the preceding block
 	# does not include addresses of subfunction return instructions
-	attr_accessor_list :from_normal
+	# may be nil or an array
+	attr_accessor :from_normal
 	# address of instructions called/jumped to
-	attr_accessor_list :to_normal
+	attr_accessor :to_normal
 	# address of an instruction that calls a subfunction which returns to us
-	attr_accessor_list :from_subfuncret
+	attr_accessor :from_subfuncret
 	# address of instruction executed after a called subfunction returns
-	attr_accessor_list :to_subfuncret
+	attr_accessor :to_subfuncret
+	# address of instructions executed indirectly through us (callback in a subfunction, SEH...)
+	# XXX from_indirect is not populated for now
+	attr_accessor :from_indirect, :to_indirect
 	# array of BacktraceTrace
 	# when a new code path comes to us, it should be backtracked for the values of :r/:w/:x using btt with no address
 	# for internal use only (block splitting): btt with an address
@@ -207,27 +177,65 @@ class InstructionBlock
 	end
 
 	# adds an address to the from_normal/from_subfuncret list
-	def add_from(addr, subfuncret=false)
-		if subfuncret: add_from_subfuncret addr
-		else add_from_normal addr
-		end
+	def add_from(addr, type=:normal)
+		send "add_from_#{type}", addr
 	end
-	
-	# iterates over every from address, yields [address, (bool)from_subfuncret]
+	def add_from_normal(addr)
+		@from_normal ||= []
+		@from_normal |= [addr]
+	end
+	def add_from_subfuncret(addr)
+		@from_subfuncret ||= []
+		@from_subfuncret |= [addr]
+	end
+	def add_from_indirect(addr)
+		@from_indirect ||= []
+		@from_indirect |= [addr]
+	end
+	# iterates over every from address, yields [address, type in [:normal, :subfuncret, :indirect]]
 	def each_from
-		each_from_normal { |a| yield a }
-		each_from_subfuncret { |a| yield a, true }
+		each_from_normal { |a| yield a, :normal }
+		each_from_subfuncret { |a| yield a, :subfuncret }
+		each_from_indirect { |a| yield a, :indirect }
+	end
+	def each_from_normal(&b)
+		@from_normal.each(&b) if from_normal
+	end
+	def each_from_subfuncret(&b)
+		@from_subfuncret.each(&b) if from_subfuncret
+	end
+	def each_from_indirect(&b)
+		@from_indirect.each(&b) if from_indirect
 	end
 
-	def add_to(addr, subfuncret=false)
-		if subfuncret: add_to_subfuncret addr
-		else add_to_normal addr
-		end
+	def add_to(addr, type=:normal)
+		send "add_to_#{type}", addr
 	end
-
+	def add_to_normal(addr)
+		@to_normal ||= []
+		@to_normal |= [addr]
+	end
+	def add_to_subfuncret(addr)
+		@to_subfuncret ||= []
+		@to_subfuncret |= [addr]
+	end
+	def add_to_indirect(addr)
+		@to_indirect ||= []
+		@to_indirect |= [addr]
+	end
 	def each_to
-		each_to_normal { |a| yield a }
-		each_to_subfuncret { |a| yield a, true }
+		each_to_normal { |a| yield a, :normal }
+		each_to_subfuncret { |a| yield a, :subfuncret }
+		each_to_indirect { |a| yield a, :indirect }
+	end
+	def each_to_normal(&b)
+		@to_normal.each(&b) if to_normal
+	end
+	def each_to_subfuncret(&b)
+		@to_subfuncret.each(&b) if to_subfuncret
+	end
+	def each_to_indirect(&b)
+		@to_indirect.each(&b) if to_indirect
 	end
 end
 
@@ -763,13 +771,13 @@ class Disassembler
 		if di = @decoded[addr]
 			if di.kind_of? DecodedInstruction
 				split_block(di.block, di.address) if di.block_offset != 0	# this updates di.block
-				di.block.add_from(from, from_subfuncret) if from and from != :default
+				di.block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
 				bf = di.block
 			end
 		elsif bf = @function[addr]
 		elsif s = get_section_at(addr)
 			block = InstructionBlock.new(normalize(addr), s[0])
-			block.add_from(from, from_subfuncret) if from and from != :default
+			block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
 			disassemble_block(block)
 		elsif from and c_parser and name = Expression[addr].reduce_rec and name.kind_of? ::String and
 				s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
@@ -956,7 +964,7 @@ class Disassembler
 		stopaddr = [stopaddr] if stopaddr and not stopaddr.kind_of? ::Array
 
 		# array of [obj, addr, from_subfuncret, loopdetect]
-		# loopdetect is an array of [obj, addr, from_subfuncret] of each end of block encountered
+		# loopdetect is an array of [obj, addr, from_type] of each end of block encountered
 		todo = []
 
 		# array of [obj, blockaddr]
@@ -971,32 +979,33 @@ class Disassembler
 				yield :stopaddr, w_obj, :addr => w_addr, :loopdetect => w_loopdetect
 			elsif w_di = @decoded[w_addr] and w_di.block_offset != 0
 				prevdi = w_di.block.list[w_di.block.list.index(w_di)-1]
-				todo << [w_obj, prevdi.address, false, w_loopdetect]
+				todo << [w_obj, prevdi.address, :normal, w_loopdetect]
 			elsif w_di
 				next if done.include? [w_obj, w_addr]
 				done << [w_obj, w_addr]
 				hadsomething = false
-				w_di.block.each_from { |f_addr, f_func|
+				w_di.block.each_from { |f_addr, f_type|
+					next if f_type == :indirect
 					hadsomething = true
-					if l = w_loopdetect.find { |l_obj, l_addr, l_func| l_addr == f_addr and l_func == f_func }
+					if l = w_loopdetect.find { |l_obj, l_addr, l_type| l_addr == f_addr and l_type == f_type }
 						f_obj = yield(:loop, w_obj, :looptrace => w_loopdetect[w_loopdetect.index(l)..-1], :loopdetect => w_loopdetect)
 						if f_obj and f_obj != w_obj	# should avoid infinite loops
 							f_loopdetect = w_loopdetect[0...w_loopdetect.index(l)]
 						end
 					else
-						f_obj = yield(:up, w_obj, :from => w_addr, :to => f_addr, :sfret => f_func, :loopdetect => w_loopdetect)
+						f_obj = yield(:up, w_obj, :from => w_addr, :to => f_addr, :sfret => f_type, :loopdetect => w_loopdetect)
 					end
 					next if f_obj == false
 					f_obj ||= w_obj
 					f_loopdetect ||= w_loopdetect
-					todo << [f_obj, f_addr, f_func, f_loopdetect + [[f_obj, f_addr, f_func]] ]
+					todo << [f_obj, f_addr, f_type, f_loopdetect + [[f_obj, f_addr, f_type]] ]
 				}
 				yield :end, w_obj, :addr => w_addr, :loopdetect => w_loopdetect if not hadsomething
 			elsif @function[w_addr] and w_addr != :default and w_addr != Expression::Unknown
 				next if done.include? [w_obj, w_addr]
 				oldlen = todo.length
 				each_xref(w_addr, :x) { |x|
-					if l = w_loopdetect.find { |l_obj, l_addr, l_func| l_addr == w_addr }
+					if l = w_loopdetect.find { |l_obj, l_addr, l_type| l_addr == w_addr }
 						f_obj = yield(:loop, w_obj, :looptrace => w_loopdetect[w_loopdetect.index(l)..-1], :loopdetect => w_loopdetect)
 						if f_obj and f_obj != w_obj
 							f_loopdetect = w_loopdetect[0...w_loopdetect.index(l)]
@@ -1007,7 +1016,7 @@ class Disassembler
 					next if f_obj == false
 					f_obj ||= w_obj
 					f_loopdetect ||= w_loopdetect
-					todo << [f_obj, x.origin, false, f_loopdetect + [[f_obj, x.origin, false]] ]
+					todo << [f_obj, x.origin, :normal, f_loopdetect + [[f_obj, x.origin, :normal]] ]
 				}
 				yield :end, w_obj, :addr => w_addr, :loopdetect => w_loopdetect if todo.length == oldlen
 			else
@@ -1016,21 +1025,21 @@ class Disassembler
 		}
 
 		if include_start
-			todo << [obj, start_addr, from_subfuncret, []]
+			todo << [obj, start_addr, from_subfuncret ? :subfuncret : :normal, []]
 		else
 			walk_up[obj, start_addr, []]
 		end
 
 		while not todo.empty?
-			obj, addr, func, loopdetect = todo.pop
+			obj, addr, type, loopdetect = todo.pop
 			di = @decoded[addr]
-			if func
+			if type == :subfuncret
 				di.block.each_to_normal { |sf|
 					next if not f = @function[normalize(sf)]
 					s_obj = yield(:func, obj, :func => f, :funcaddr => sf, :addr => addr, :loopdetect => loopdetect)
 					next if s_obj == false
 					s_obj ||= obj
-					if l = loopdetect.find { |l_obj, l_addr, l_func| addr == l_addr and not l_func }
+					if l = loopdetect.find { |l_obj, l_addr, l_type| addr == l_addr and l_type == :normal }
 						l_obj = yield(:loop, s_obj, :looptrace => loopdetect[loopdetect.index(l)..-1], :loopdetect => loopdetect)
 						if l_obj and l_obj != s_obj
 							s_loopdetect = loopdetect[0...loopdetect.index(l)]
@@ -1039,7 +1048,7 @@ class Disassembler
 						s_obj = l_obj if l_obj
 					end
 					s_loopdetect ||= loopdetect
-					todo << [s_obj, addr, false, s_loopdetect + [[s_obj, addr, false]] ]
+					todo << [s_obj, addr, :normal, s_loopdetect + [[s_obj, addr, :normal]] ]
 				}
 			elsif di
 				di.block.list[0..di.block.list.index(di)].reverse_each { |di|
@@ -1251,7 +1260,7 @@ puts '  backtrace result: ' + result.map { |r| Expression[r] }.join(', ') if $DE
 				retaddr = backtrace_emu_instr(di, btt.expr) and
 				not need_backtrace(retaddr)
 puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if $DEBUG
-			di.block.add_to(normalize(retaddr), true)
+			di.block.add_to_subfuncret normalize(retaddr)
 			@addrs_todo.unshift [retaddr, instraddr, true]	# dasm inside of the function first
 			true
 		end
@@ -1514,9 +1523,15 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 			end
 		end
 
+		# XXX all this should be done in  backtrace() { <here> }
 		if type == :x and origin
-			origin = nil if detached
-			@decoded[origin].block.add_to_normal(normalize(n)) if @decoded[origin] and not unk
+			if detached
+				o = @decoded[origin] ? origin : di ? di.address : nil	# lib function callback have origin == libfuncname, so we must find a block somewhere else
+				origin = nil
+				@decoded[o].block.add_to_indirect(normalize(n)) if @decoded[o] and not unk
+			else
+				@decoded[origin].block.add_to_normal(normalize(n)) if @decoded[origin] and not unk
+			end
 			@addrs_todo << [n, origin]
 puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origin}" if $DEBUG
 		end
