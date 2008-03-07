@@ -415,7 +415,7 @@ module Metasm
 				binding['dummy_metasm_1'] = fl	# mark eflags as read
 			end
 			binding
-		when 'nop', 'pause': {}
+		when 'nop', 'pause', 'cmp', 'test': {}
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			# assume nothing except the 1st arg
