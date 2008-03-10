@@ -427,9 +427,16 @@ class COFF
 		optoff = @encoded.ptr
 		@optheader.decode(self)
 		@encoded.ptr = optoff + @header.size_opthdr
+		vroff = @encoded.virtsize
 		@header.num_sect.times {
 			s = Section.new
 			s.decode self
+			if s.rawaddr == 0 and s.rawsize == 0
+				# add a bias to rva_to_off to allow exports (eg. relocation
+				#  target) in .bss without conflicting w/ existing sections
+				s.rawaddr = vroff
+				vroff += s.virtsize
+			end
 			@sections << s
 		}
 		if off = rva_to_off(@optheader.entrypoint)
