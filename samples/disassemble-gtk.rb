@@ -21,6 +21,36 @@ class GraphViewContext
 		end
 	end
 
+	# hierarchical box representation/positionning
+	class BoxGroup
+		attr_accessor :to, :from	# array of box
+		attr_accessor :list	# list of inner box/boxgroup
+		attr_accessor :type	# pattern (eg :if, :ifelse ?)
+		attr_accessor :hash
+		def initialize(type=:straight)
+			@to, @from, @list = [], [], []
+			@type = type
+		end
+		def <<(b)
+			@list << b
+			@to |= b.to - boxes
+			@to -= boxes(b)
+			@from |= b.from - boxes
+			@from -= boxes(b)
+			self
+		end
+		def boxes(g=self)
+			return [g] if not g.kind_of? BoxGroup
+			g.list.map { |gg| boxes(gg) }.flatten
+		end
+		def x ; list.map { |b| b.x }.min end
+		def y ; list.map { |b| b.y }.min end
+		def w ; list.map { |b| b.x+b.w }.max - x end
+		def h ; list.map { |b| b.y+b.h }.max - y end
+		def x=(nx) dx = nx-x ; list.each { |b| b.x += dx } end
+		def y=(ny) dy = ny-y ; list.each { |b| b.y += dy } end
+	end
+
 	attr_accessor :id, :view_x, :view_y, :box
 	def initialize(gui, id)
 		@gui = gui
@@ -49,11 +79,11 @@ class GraphViewContext
 	end
 
 	# checks if a box is reachable from another following a 'to' chain
-	def arrange_can_reach(src, dst, allow=@box)
+	def can_reach(src, dst, allow=@box)
 		src.to.each { |f|
 			next if not allow.include? f
 			return true if dst == f
-			return true if arrange_can_reach(f, dst, allow-[src])
+			return true if can_reach(f, dst, allow-[src])
 		}
 		false
 	end
@@ -66,41 +96,104 @@ class GraphViewContext
 			text_w, text_h = @gui.get_text_wh(b.text)
 			b.w = [100, text_w + 2].max
 			b.h = text_h + 2
+			b.x = b.y = 0
 		}
 
 		# organize boxes
-		# TODO groups
 		rank = {}	# a->b->c + a->c  => rk(a) < rk(b) < rk(c)
-		@box.each { |b| rank[b] = 0 if b.from.empty? }
+
+		# find roots
+		@box.reverse.each { |b|		# reverse -> in case of an ep loop, prefer @box order
+			if not rank.keys.find { |bb| can_reach(bb, b) }
+				rank.delete_if { |bb, r| can_reach(b, bb) }
+				rank[b] = 0
+			end
+		}
+
+		# propagate ranks
 		until (@box - rank.keys).empty?
-			nextgen = rank.keys.map { |b| b.to }.flatten
-			nextgen -= rank.keys
-			nextgen.uniq!
-			while b = nextgen.find { |b| nextgen.find { |bb|
-				b != bb and arrange_can_reach(bb, b, @box-rank.keys)
-			} }
+			nextgen = rank.keys.map { |b| b.to }.flatten.uniq - rank.keys
+			while b = nextgen.find { |b| (nextgen-[b]).find { |bb| can_reach(bb, b, @box-rank.keys) } }
 				nextgen.delete b
 			end
 			nrank = rank.values.max + 1
 			nextgen.each { |b| rank[b] = nrank }
 		end
 
-		# TODO imbricated groups
-		ary = Array.new(rank.values.max+1) { [] }
-		rank.each { |b, r| ary[r] << b }
-		y = 0
-		ary.each { |ar|
-			x = -ar.inject(0) { |s, b| s + b.w + 16 } / 2
-			x += ar.first.w + 16 if ar.length == 1 and ff = ar.first.from.find { |ff| rank[ff] == rank[ar.first]-1 } and ff.to.find { |tt| rank[tt] > rank[ar.first] }
-			ar.each { |b|
-				b.x = x
-				b.y = y
-				x += b.w + 16
+		# group hierarchy
+		group = {}	# box/group => group
+		@box.each { |b| group[b] = BoxGroup.new(:straight) << b if rank[b] == 0 }
+		until (@box - group.keys).empty?
+			(group.values - group.keys).each { |g|
+				case g.to.length
+				when 0
+				when 1
+					t = g.to.first
+					tg = t ; tg = group[tg] while group[tg]
+					if tg == t or not tg.boxes.find { |b| b != t and rank[b] <= rank[t] }
+						if g.type != :straight
+							ng = BoxGroup.new(:straight) << g
+							group[g] = ng
+							g = ng
+						end
+						g << tg
+						group[tg] = g
+					else
+						if tg.type != :merge or tg.hash[:merge] != t
+							ng = BoxGroup.new(:merge) << tg
+							ng.hash[:merge] = t
+							group[tg] = ng
+							tg = ng
+						end
+						tg << g
+						group[g] = tg
+					end
+				else
+					ng = BoxGroup.new(:split) << g
+					group[g] = ng
+					to = g.to.dup
+					to.dup.each { |t|
+						tg = t ; tg = group[tg] while group[tg]
+						if tg != t and tg.boxes.find { |b| b != t and rank[b] <= rank[t] }
+							to.delete t
+							ng.to.delete t	# it's only in my mind, lalala
+						end
+					}
+					while b = to.find { |b| (to - [b]).find { |bb| can_reach(bb, b, @box-g.boxes) } }
+						to.delete b
+						ng.hash[:direct] = true
+					end
+					to.each { |t|
+						tg = t ; tg = group[tg] while group[tg]
+						ng << tg
+						group[tg] = ng
+					}
+				end
 			}
-			y += ar.map { |b| b.h }.max + 32
+		end
+
+		arrange = proc { |g|
+			next if not g.kind_of? GroupBox
+			g.list.each { |gg| arrange[gg] }
+			case g.type
+			when :straight
+				dy = 0
+				g.list.each { |gg| gg.y += dy ; dy += gg.h+16 }
+			when :split
+				dx = g.list[1..-1].inject(0) { |dx, gg| dx + gg.w + 16 }-8
+				dx = -dx/2
+				dx = 0 if g.hash[:direct]
+				dy = g.list.first.h+16
+				g.list[1..-1].each { |gg| gg.x += dx ; gg.y += dy ; dx += g.w+16 }
+			when :merge
+				dx = g.list.inject(0) { |dx, gg| dx + gg.w + 32 }-16
+				dx = -dx/2
+				g.list.each { |gg| gg.x += dx ; dx += g.w+32 }
+			end
 		}
-		@view_x = ary.first.first.x - 16
-		@view_y = -16
+		m = GroupBox.new(:merge)
+		(group.values - group.keys).each { |g| m << g }
+		arrange[m]
 	end
 end
 
@@ -118,8 +211,8 @@ class GtkGraphView < Gtk::DrawingArea
 		@color[:bg] = Gdk::Color.new(45000, 45000, 65000)
 		@color[:selected_box_bg] = Gdk::Color.new(45000, 45000, 45000)
 		@color[:box_bg] = Gdk::Color.new(55000, 55000, 55000)
-		@color[:box_fg] = Gdk::Color.new(    0,     0,     0)
-		@color[:arrow] = Gdk::Color.new(    0,     0,     0)
+		@color[:box_fg] = Gdk::Color.new(0, 0, 0)
+		@color[:arrow] = Gdk::Color.new(0, 0, 0)
 		@mousemove_origin = nil
 		@text_layout = Pango::Layout.new(Gdk::Pango.context)
 		@text_layout.font_description = Pango::FontDescription.new('courier 10')
@@ -254,9 +347,10 @@ class GtkGraphView < Gtk::DrawingArea
 			when Gdk::Event::BUTTON_RELEASE
 				if ev.button == 1
 					@mousemove_origin = nil
-					if ev.state & Gdk::Window::CONTROL_MASK != Gdk::Window::CONTROL_MASK
-						@selected_boxes = []
-					end
+					#if ev.state & Gdk::Window::CONTROL_MASK != Gdk::Window::CONTROL_MASK
+					#	@selected_boxes = []
+					#	redraw
+					#end
 				end
 			end
 		}
@@ -284,7 +378,7 @@ class GtkGraphView < Gtk::DrawingArea
 	end
 
 	def find_box_xy(x, y)
-		@shown_boxes.to_a.find { |b| b.x <= x and b.x+b.w >= x and b.y <= y and b.y+b.h >= y }
+		@shown_boxes.to_a.reverse.find { |b| b.x <= x and b.x+b.w >= x and b.y <= y and b.y+b.h >= y }
 	end
 
 
@@ -348,7 +442,7 @@ class Disassembler
 		block_rel = {}
 
 		todo_f = @entrypoints.dup
-		done_f = []
+		done_f = [:default, Expression::Unknown]
 		while f = todo_f.shift
 			f = normalize f
 			next if done_f.include? f
@@ -357,13 +451,15 @@ class Disassembler
 
 			todo_b = [f]
 			done_b = []
+			retaddr = []
+			retaddr = @function[f].return_address.to_a if @function[f]
 			while b = todo_b.shift
 				b = normalize b
 				next if done_b.include? b
 				done_b << b
 				block_rel[b] = []
-				next if not di = @decoded[b] or not di.kind_of? DecodedInstruction
-				if di.block.to_subfuncret
+				next if not di = @decoded[b] or not di.kind_of? DecodedInstruction or retaddr.include? di.block.list.last.address
+				if di.block.to_normal.find { |t| @function[normalize(t)] }
 					di.block.each_to_normal { |t|
 						t = normalize t
 						todo_f << t
@@ -391,6 +487,8 @@ class Disassembler
 				block_rel[b].uniq!
 			end
 			func_rel[f].uniq!
+			func_rel[f].delete :default
+			func_rel[f].delete Expression::Unknown
 		end
 
 		ctx = @gui.get_context(:functions)
@@ -403,6 +501,7 @@ class Disassembler
 		}
 		ctx.auto_arrange_boxes
 		func_rel.each_key { |func|
+			next if not @decoded[func]
 			ctx = @gui.get_context(func)
 			ctx.clear
 			todo = [func]
@@ -431,8 +530,11 @@ class Disassembler
 		@gui = gui
 		@gui.keyboard_callback = proc { |key|
 			case key
-			when :esc: @gui.quit
-			when ?f: @gui.set_context(:functions)
+			when ?q: @gui.quit
+			when :esc: @gui.set_context(:functions)
+			when ?l: load __FILE__
+			when ?a: @gui.curcontext.auto_arrange_boxes ; @gui.redraw
+			when ?u: gui_update
 			else puts "unknown key #{key.inspect}"
 			end
 		}
@@ -472,7 +574,7 @@ class Disassembler
 
 	# returns a string to be used as block content in graphic view
 	def gui_dump_block(b)
-		return 'x'
+		#return 'x'
 		src = ''
 		dump_block(b) { |l|
 			l = l.sub(/\s+;/, ' ;').sub(/;\s+@\S+\s+\S+/, ';').sub(/\s*;\s*$/, '')	# remove instr addr, instr binary encoding & empty asm comment
@@ -483,7 +585,7 @@ class Disassembler
 end
 end
 
-if __FILE__ == $0
+if __FILE__ == $0 and not ARGV.empty?
 	# roll
 	exename = ARGV.shift
 	cheader = ARGV.shift
@@ -491,5 +593,7 @@ if __FILE__ == $0
 	d = exe.init_disassembler
 	d.parse_c_file cheader if cheader
 	ep = ARGV.map { |e| e =~ /^[0-9]/ ? Integer(e) : e }
+	ARGV.clear
 	d.gui_disassemble(GtkGraphView.new, *ep)
+	d.dump(false)
 end
