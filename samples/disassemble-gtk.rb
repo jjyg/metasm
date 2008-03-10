@@ -15,6 +15,7 @@ class GraphViewContext
 	class Box
 		attr_accessor :id, :text, :x, :y, :w, :h
 		attr_accessor :to, :from # other boxes linked (arrays)
+		attr_accessor :rdtext
 		def initialize(id, text, x=0, y=0)
 			@id, @text, @x, @y = id, text, x, y
 			@to, @from = [], []
@@ -23,20 +24,13 @@ class GraphViewContext
 
 	# hierarchical box representation/positionning
 	class BoxGroup
-		attr_accessor :to, :from	# array of box
 		attr_accessor :list	# list of inner box/boxgroup
-		attr_accessor :type	# pattern (eg :if, :ifelse ?)
-		attr_accessor :hash
-		def initialize(type=:straight)
-			@to, @from, @list = [], [], []
-			@type = type
+		def initialize(list=[])
+			@list = []
+			list.each { |b| self << b }
 		end
 		def <<(b)
-			@list << b
-			@to |= b.to - boxes
-			@to -= boxes(b)
-			@from |= b.from - boxes
-			@from -= boxes(b)
+			@list << b if b
 			self
 		end
 		def boxes(g=self)
@@ -49,6 +43,17 @@ class GraphViewContext
 		def h ; list.map { |b| b.y+b.h }.max - y end
 		def x=(nx) dx = nx-x ; list.each { |b| b.x += dx } end
 		def y=(ny) dy = ny-y ; list.each { |b| b.y += dy } end
+	end
+	class VtBoxGroup < BoxGroup
+		def <<(b)
+			if b.kind_of? self.class ; @list.concat b.list ; self ; else super end
+		end
+	end
+	class HzBoxGroup < BoxGroup
+		attr_accessor :direct	# leave passage for a direct arrow from vt_prev to vt_next (eg. if then end)
+		def <<(b)
+			if b.kind_of? self.class and not direct and not b.direct ; @list.concat b.list ; self ; else super end
+		end
 	end
 
 	attr_accessor :id, :view_x, :view_y, :box
@@ -93,24 +98,26 @@ class GraphViewContext
 	def auto_arrange_boxes
 		# calc box sizes
 		@box.each { |b|
-			text_w, text_h = @gui.get_text_wh(b.text)
+			text_w, text_h = @gui.get_text_wh(b)
 			b.w = [100, text_w + 2].max
 			b.h = text_h + 2
 			b.x = b.y = 0
 		}
 
 		# organize boxes
-		rank = {}	# a->b->c + a->c  => rk(a) < rk(b) < rk(c)
 
 		# find roots
-		@box.reverse.each { |b|		# reverse -> in case of an ep loop, prefer @box order
-			if not rank.keys.find { |bb| can_reach(bb, b) }
-				rank.delete_if { |bb, r| can_reach(b, bb) }
-				rank[b] = 0
+		roots = []
+		@box.reverse_each { |b|		# reverse -> in case of an ep loop, prefer @box order
+			if not roots.find { |bb| can_reach(bb, b) }
+				roots.delete_if { |bb, r| can_reach(b, bb) }
+				roots << b
 			end
 		}
 
-		# propagate ranks
+		# calc ranks
+		rank = {}	# a->b->c + a->c  => rk(a) < rk(b) < rk(c)
+		roots.each { |b| rank[b] = 0 }
 		until (@box - rank.keys).empty?
 			nextgen = rank.keys.map { |b| b.to }.flatten.uniq - rank.keys
 			while b = nextgen.find { |b| (nextgen-[b]).find { |bb| can_reach(bb, b, @box-rank.keys) } }
@@ -120,80 +127,103 @@ class GraphViewContext
 			nextgen.each { |b| rank[b] = nrank }
 		end
 
-		# group hierarchy
-		group = {}	# box/group => group
-		@box.each { |b| group[b] = BoxGroup.new(:straight) << b if rank[b] == 0 }
-		until (@box - group.keys).empty?
-			(group.values - group.keys).each { |g|
-				case g.to.length
-				when 0
-				when 1
-					t = g.to.first
-					tg = t ; tg = group[tg] while group[tg]
-					if tg == t or not tg.boxes.find { |b| b != t and rank[b] <= rank[t] }
-						if g.type != :straight
-							ng = BoxGroup.new(:straight) << g
-							group[g] = ng
-							g = ng
-						end
-						g << tg
-						group[tg] = g
-					else
-						if tg.type != :merge or tg.hash[:merge] != t
-							ng = BoxGroup.new(:merge) << tg
-							ng.hash[:merge] = t
-							group[tg] = ng
-							tg = ng
-						end
-						tg << g
-						group[g] = tg
+		simplify_merge = proc { |ary, b|
+			down = nil
+			walk = proc { |g|
+				ret = false
+				case g
+				when HzBoxGroup
+					g.list.each { |gg| ret ||= walk[gg] }
+					if g.list.find { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
+						g.list.delete_if { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
+						g.direct = true if ret
 					end
-				else
-					ng = BoxGroup.new(:split) << g
-					group[g] = ng
-					to = g.to.dup
-					to.dup.each { |t|
-						tg = t ; tg = group[tg] while group[tg]
-						if tg != t and tg.boxes.find { |b| b != t and rank[b] <= rank[t] }
-							to.delete t
-							ng.to.delete t	# it's only in my mind, lalala
-						end
-					}
-					while b = to.find { |b| (to - [b]).find { |bb| can_reach(bb, b, @box-g.boxes) } }
-						to.delete b
-						ng.hash[:direct] = true
+				when VtBoxGroup
+					if g.list.include? b
+						down = VtBoxGroup.new g.list[g.list.index(b)..-1]
+						g.list[g.list.index(b)..-1] = []
+						ret = true if not g.list.empty?
 					end
-					to.each { |t|
-						tg = t ; tg = group[tg] while group[tg]
-						ng << tg
-						group[tg] = ng
-					}
+					g.list.each { |gg| ret ||= walk[gg] }
+					if g.list.find { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
+						g.list.delete_if { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
+						g.direct = true if ret
+					end
 				end
+				ret
 			}
-		end
+			ret = false
+			ary.each { |a| ret ||= walk[a] }
+			g = HzBoxGroup.new(ary)
+			if g.list.find { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
+				g.list.delete_if { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
+				g.direct = true if ret
+			end
+			VtBoxGroup.new << g << down
+		}
 
-		arrange = proc { |g|
-			next if not g.kind_of? GroupBox
-			g.list.each { |gg| arrange[gg] }
-			case g.type
-			when :straight
-				dy = 0
-				g.list.each { |gg| gg.y += dy ; dy += gg.h+16 }
-			when :split
-				dx = g.list[1..-1].inject(0) { |dx, gg| dx + gg.w + 16 }-8
-				dx = -dx/2
-				dx = 0 if g.hash[:direct]
-				dy = g.list.first.h+16
-				g.list[1..-1].each { |gg| gg.x += dx ; gg.y += dy ; dx += g.w+16 }
-			when :merge
-				dx = g.list.inject(0) { |dx, gg| dx + gg.w + 32 }-16
-				dx = -dx/2
-				g.list.each { |gg| gg.x += dx ; dx += g.w+32 }
+		simplify_split = proc { |g|
+			raise if not g.kind_of? HzBoxGroup
+			case g.list.length
+			when 0
+			when 1: g.direct ? g : g.list.first
+			else
+				# search for a diamond pattern
+				boxes = g.list.inject({}) { |h, gg| h.update gg => g.boxes(gg) }
+				if b = g.list.map { |gg|
+					(g.list - [gg]).map { |ggg| boxes[gg] & boxes[ggg] }.flatten.sort_by { |b| rank[b] }.first
+				}.compact.sort_by { |b| rank[b] }.first
+					v = g.list.find_all { |gg| boxes[gg].include?(b) }
+					g.list -= v
+					g.list << simplify_merge[v, b]
+					if g.list.find { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
+						g.list.delete_if { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
+						g.direct = true
+					end
+					simplify_split[g]
+				else
+					g
+				end
 			end
 		}
-		m = GroupBox.new(:merge)
-		(group.values - group.keys).each { |g| m << g }
-		arrange[m]
+
+		make_group = proc { |root|
+			g = HzBoxGroup.new
+			root.to.each { |t| g << make_group[t] if rank[t] > rank[root] }
+			VtBoxGroup.new << root << simplify_split[g]
+		}
+
+		arrange = proc { |g|
+			next if not g.kind_of? BoxGroup
+			g.list.each { |gg| arrange[gg] }
+			case g
+			when VtBoxGroup
+				dy = 0
+				gw = g.w
+				g.list.each { |gg|
+					gg.x += (gw-gg.w)/2
+					if gg.kind_of? HzBoxGroup
+						if gg.direct
+							gg.x += gg.w/2+8
+						else
+							dy += 17
+						end
+					end
+					gg.y += dy
+					dy += gg.h+17
+				}
+			when HzBoxGroup
+				dx = 0
+				g.list.each { |gg| gg.x += dx ; dx += gg.w + 17 }
+			end
+		}
+
+		g = HzBoxGroup.new
+		roots.each { |r| g << make_group[r] }
+		g = simplify_split[g]
+		arrange[g]
+		@view_x = g.x-16	# need window width to center..
+		@view_y = g.y-16
 	end
 end
 
@@ -214,8 +244,8 @@ class GtkGraphView < Gtk::DrawingArea
 		@color[:box_fg] = Gdk::Color.new(0, 0, 0)
 		@color[:arrow] = Gdk::Color.new(0, 0, 0)
 		@mousemove_origin = nil
-		@text_layout = Pango::Layout.new(Gdk::Pango.context)
-		@text_layout.font_description = Pango::FontDescription.new('courier 10')
+		#@text_layout = Pango::Layout.new(Gdk::Pango.context)
+		#@text_layout.font_description = Pango::FontDescription.new('courier 10')
 		super()
 		set_size_request 400, 400		# default control size
 		set_events Gdk::Event::ALL_EVENTS_MASK	# receive click/keys
@@ -280,9 +310,14 @@ class GtkGraphView < Gtk::DrawingArea
 
 				gc.set_foreground color[@selected_boxes.include?(b) ? :selected_box_bg : :box_bg]
 				window.draw_rectangle(gc, true, b.x-@curcontext.view_x, b.y-@curcontext.view_y, b.w, b.h)
-				@text_layout.text = b.text
+				#@text_layout.text = b.text
+				if not b.rdtext
+					b.rdtext = Pango::Layout.new(Gdk::Pango.context)
+					b.rdtext.font_description = Pango::FontDescription.new('courier 10')
+					b.rdtext.text = text
+				end
 				gc.set_foreground color[:box_fg]
-				window.draw_layout(gc, b.x-@curcontext.view_x+1, b.y-@curcontext.view_y+1, @text_layout)
+				window.draw_layout(gc, b.x-@curcontext.view_x+1, b.y-@curcontext.view_y+1, b.rdtext)
 			}
 		}
 
@@ -371,6 +406,7 @@ class GtkGraphView < Gtk::DrawingArea
 		signal_connect('key_press_event') { |own, ev|
 			key = case ev.keyval
 			when 65307: :esc
+			when 65513, 65505, 65506, 65507, 65514, 65516, 65383, 65515: next	# ctrl, alt, shift etc
 			else ev.keyval
 			end
 			keyboard_callback[key]
@@ -421,9 +457,13 @@ class GtkGraphView < Gtk::DrawingArea
 	end
 
 	# returns [width, height] of the rendering of text
-	def get_text_wh(text)
-		@text_layout.text = text
-		@text_layout.pixel_size
+	def get_text_wh(b)
+		if not b.rdtext
+			b.rdtext = Pango::Layout.new(Gdk::Pango.context)
+			b.rdtext.font_description = Pango::FontDescription.new('courier 10')
+			b.rdtext.text = b.text
+		end
+		b.rdtext.pixel_size
 	end
 end
 
@@ -532,9 +572,9 @@ class Disassembler
 			case key
 			when ?q: @gui.quit
 			when :esc: @gui.set_context(:functions)
-			when ?l: load __FILE__
-			when ?a: @gui.curcontext.auto_arrange_boxes ; @gui.redraw
-			when ?u: gui_update
+			#when ?l: load __FILE__
+			#when ?a: @gui.curcontext.auto_arrange_boxes ; @gui.redraw
+			#when ?u: gui_update
 			else puts "unknown key #{key.inspect}"
 			end
 		}
@@ -574,7 +614,6 @@ class Disassembler
 
 	# returns a string to be used as block content in graphic view
 	def gui_dump_block(b)
-		#return 'x'
 		src = ''
 		dump_block(b) { |l|
 			l = l.sub(/\s+;/, ' ;').sub(/;\s+@\S+\s+\S+/, ';').sub(/\s*;\s*$/, '')	# remove instr addr, instr binary encoding & empty asm comment
@@ -595,5 +634,5 @@ if __FILE__ == $0 and not ARGV.empty?
 	ep = ARGV.map { |e| e =~ /^[0-9]/ ? Integer(e) : e }
 	ARGV.clear
 	d.gui_disassemble(GtkGraphView.new, *ep)
-	d.dump(false)
+	#d.dump(false)
 end
