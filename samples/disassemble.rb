@@ -19,6 +19,7 @@ include Metasm
 # parse arguments
 no_data = ARGV.delete('--no-data')
 no_data_trace = ARGV.delete('--no-data-trace')
+debug_backtrace = ARGV.delete('--debug-backtrace')
 exename = ARGV.shift
 cheader = ARGV.shift
 
@@ -28,6 +29,8 @@ exe = AutoExe.decode_file exename
 d = exe.init_disassembler
 d.parse_c_file cheader if cheader
 d.backtrace_maxblocks_data = -1 if no_data_trace
+d.debug_backtrace = true if debug_backtrace
+
 # do the work
 begin
 	if ARGV.empty?
