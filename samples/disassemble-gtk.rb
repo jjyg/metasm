@@ -20,6 +20,7 @@ class GraphViewContext
 			@id, @text, @x, @y = id, text, x, y
 			@to, @from = [], []
 		end
+		def inspect ; "<box:#{@text[0..10].inspect} #@x:#@y #@w:#@h>" end
 	end
 
 	# hierarchical box representation/positionning
@@ -48,12 +49,18 @@ class GraphViewContext
 		def <<(b)
 			if b.kind_of? self.class ; @list.concat b.list ; self ; else super end
 		end
+		def inspect ; "<vt #{@list.inspect}>" end
 	end
 	class HzBoxGroup < BoxGroup
 		attr_accessor :direct	# leave passage for a direct arrow from vt_prev to vt_next (eg. if then end)
 		def <<(b)
-			if b.kind_of? self.class and not direct and not b.direct ; @list.concat b.list ; self ; else super end
+			if b.kind_of? self.class
+				@direct = true if b.direct
+				@list.concat b.list
+				self
+			else super end
 		end
+		def inspect ; "<hz #{'d ' if direct}#{@list.inspect}>" end
 	end
 
 	attr_accessor :id, :view_x, :view_y, :box
@@ -96,6 +103,9 @@ class GraphViewContext
 	# define box width&height from their text content
 	# place them for kawaii
 	def auto_arrange_boxes
+#puts Metasm::Expression[@id]
+ptt = Time.now
+pt = proc { |i| nt = Time.now ; puts "aa #{'%0.3f' % (nt-ptt)} #{i}" if $VERBOSE ; ptt = nt }
 		# calc box sizes
 		@box.each { |b|
 			text_w, text_h = @gui.get_text_wh(b)
@@ -103,17 +113,19 @@ class GraphViewContext
 			b.h = text_h + 2
 			b.x = b.y = 0
 		}
+pt['initbox']
 
 		# organize boxes
 
 		# find roots
-		roots = []
+		roots = [@box.first]
 		@box.reverse_each { |b|		# reverse -> in case of an ep loop, prefer @box order
 			if not roots.find { |bb| can_reach(bb, b) }
-				roots.delete_if { |bb, r| can_reach(b, bb) }
+				roots.delete_if { |bb| can_reach(b, bb) }
 				roots << b
 			end
 		}
+pt['roots']
 
 		# calc ranks
 		rank = {}	# a->b->c + a->c  => rk(a) < rk(b) < rk(c)
@@ -126,60 +138,52 @@ class GraphViewContext
 			nrank = rank.values.max + 1
 			nextgen.each { |b| rank[b] = nrank }
 		end
+pt['rank']
 
+		simplify_split = nil
 		simplify_merge = proc { |ary, b|
+			# common suffix
 			down = nil
+			# walk blocks, if find b => update down, remove from block
+			# returns true if found b in the middle of a vblock
 			walk = proc { |g|
 				ret = false
 				case g
 				when HzBoxGroup
 					g.list.each { |gg| ret ||= walk[gg] }
-					if g.list.find { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
-						g.list.delete_if { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
-						g.direct = true if ret
-					end
+					g.direct = true if ret and g.list.grep(BoxGroup).find { |gg| gg.list.empty? }
+					g.list.delete_if { |gg| gg.kind_of? BoxGroup and gg.list.empty? }
 				when VtBoxGroup
 					if g.list.include? b
 						down = VtBoxGroup.new g.list[g.list.index(b)..-1]
 						g.list[g.list.index(b)..-1] = []
 						ret = true if not g.list.empty?
 					end
-					g.list.each { |gg| ret ||= walk[gg] }
-					if g.list.find { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
-						g.list.delete_if { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
-						g.direct = true if ret
-					end
+					g.list.each { |gg| ret = true if walk[gg] and gg != g.list.first }	# XXX g.list.first.list.empty?
+					g.list.delete_if { |gg| gg.kind_of? BoxGroup and gg.list.empty? }
 				end
 				ret
 			}
-			ret = false
-			ary.each { |a| ret ||= walk[a] }
 			g = HzBoxGroup.new(ary)
-			if g.list.find { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
-				g.list.delete_if { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
-				g.direct = true if ret
-			end
-			VtBoxGroup.new << g << down
+			walk[g]
+			VtBoxGroup.new << simplify_split[g] << down
 		}
 
+		# take an hbox, find common boxes, simplify_merge groups containing them ( =>  h[v[h[prefix], common suffix], nothing in common])
 		simplify_split = proc { |g|
-			raise if not g.kind_of? HzBoxGroup
 			case g.list.length
-			when 0
+			when 0: nil
 			when 1: g.direct ? g : g.list.first
 			else
-				# search for a diamond pattern
+				# search common box
 				boxes = g.list.inject({}) { |h, gg| h.update gg => g.boxes(gg) }
-				if b = g.list.map { |gg|
-					(g.list - [gg]).map { |ggg| boxes[gg] & boxes[ggg] }.flatten.sort_by { |b| rank[b] }.first
+				# for all couple of groups, find the lowest-ranked common box, then return the lowest-ranked of them
+				if b = (0...g.list.length).map { |i| 
+					(i+1...g.list.length).map { |ii| boxes[g.list[i]] & boxes[g.list[ii]] }.flatten.uniq.sort_by { |b| rank[b] }.first
 				}.compact.sort_by { |b| rank[b] }.first
 					v = g.list.find_all { |gg| boxes[gg].include?(b) }
 					g.list -= v
 					g.list << simplify_merge[v, b]
-					if g.list.find { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
-						g.list.delete_if { |gg| gg.kind_of? VtBoxGroup and gg.list.empty? }
-						g.direct = true
-					end
 					simplify_split[g]
 				else
 					g
@@ -187,11 +191,18 @@ class GraphViewContext
 			end
 		}
 
+		# create a vbox with 2 elems: the root, and an hbox containing all to with higher rank, simplified
 		make_group = proc { |root|
 			g = HzBoxGroup.new
 			root.to.each { |t| g << make_group[t] if rank[t] > rank[root] }
 			VtBoxGroup.new << root << simplify_split[g]
 		}
+
+		rootbox = HzBoxGroup.new
+		roots.each { |r| rootbox << make_group[r] }
+pt['makegroups']
+		rootbox = simplify_split[rootbox]
+pt['simp_split final']
 
 		arrange = proc { |g|
 			next if not g.kind_of? BoxGroup
@@ -218,12 +229,24 @@ class GraphViewContext
 			end
 		}
 
-		g = HzBoxGroup.new
-		roots.each { |r| g << make_group[r] }
-		g = simplify_split[g]
-		arrange[g]
-		@view_x = g.x-16	# need window width to center..
-		@view_y = g.y-16
+		# fails, a box may be now in two non-imbricated groups => bad layout
+		arrange[rootbox]
+pt['arrange']
+		# shrink the graph
+0.times {
+		@box.sort_by { |b| rank[b] }.each { |b|
+			pv = @box.map { |bb| bb.y + bb.h if bb.x+bb.w+16 < b.x or b.x+b.w+16 < bb.x }.compact.delete_if { |pv| pv >= b.y }.sort.last
+			b.y = pv+24 if pv and b.y > pv+24
+		}
+		@box.sort_by { |b| rank[b] }.each { |b|
+			pv = @box.map { |bb| bb.x + bb.w if bb.y+bb.h+12 < b.y or b.y+b.h+12 < bb.y }.compact.delete_if { |pv| pv >= b.x }.sort.last
+			b.x = pv+24 if pv and b.x > pv+24
+		}
+}
+pt['shrink']
+
+		@view_x = rootbox.x-16	# need window width to center..
+		@view_y = rootbox.y-16
 	end
 end
 
@@ -244,8 +267,6 @@ class GtkGraphView < Gtk::DrawingArea
 		@color[:box_fg] = Gdk::Color.new(0, 0, 0)
 		@color[:arrow] = Gdk::Color.new(0, 0, 0)
 		@mousemove_origin = nil
-		#@text_layout = Pango::Layout.new(Gdk::Pango.context)
-		#@text_layout.font_description = Pango::FontDescription.new('courier 10')
 		super()
 		set_size_request 400, 400		# default control size
 		set_events Gdk::Event::ALL_EVENTS_MASK	# receive click/keys
@@ -310,7 +331,6 @@ class GtkGraphView < Gtk::DrawingArea
 
 				gc.set_foreground color[@selected_boxes.include?(b) ? :selected_box_bg : :box_bg]
 				window.draw_rectangle(gc, true, b.x-@curcontext.view_x, b.y-@curcontext.view_y, b.w, b.h)
-				#@text_layout.text = b.text
 				if not b.rdtext
 					b.rdtext = Pango::Layout.new(Gdk::Pango.context)
 					b.rdtext.font_description = Pango::FontDescription.new('courier 10')
@@ -382,10 +402,6 @@ class GtkGraphView < Gtk::DrawingArea
 			when Gdk::Event::BUTTON_RELEASE
 				if ev.button == 1
 					@mousemove_origin = nil
-					#if ev.state & Gdk::Window::CONTROL_MASK != Gdk::Window::CONTROL_MASK
-					#	@selected_boxes = []
-					#	redraw
-					#end
 				end
 			end
 		}
@@ -634,5 +650,4 @@ if __FILE__ == $0 and not ARGV.empty?
 	ep = ARGV.map { |e| e =~ /^[0-9]/ ? Integer(e) : e }
 	ARGV.clear
 	d.gui_disassemble(GtkGraphView.new, *ep)
-	#d.dump(false)
 end
