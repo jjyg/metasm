@@ -575,6 +575,8 @@ class Disassembler
 	# hash address => array of strings
 	# default dasm dump will only show comments at beginning of code blocks
 	attr_accessor :comment
+	# bool, set to true (default) if functions with undetermined binding should be assumed to return with ABI-conforming binding (conserve frame ptr)
+	attr_accessor :funcs_stdabi
 
 	@@backtrace_maxblocks = 50
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
@@ -607,6 +609,7 @@ class Disassembler
 		@address_binding = {}
 		@backtrace_maxblocks = @@backtrace_maxblocks
 		@comment = {}
+		@funcs_stdabi = true
 	end
 
 	# adds a section, updates prog_binding

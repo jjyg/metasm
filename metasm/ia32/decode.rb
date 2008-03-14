@@ -539,10 +539,23 @@ module Metasm
 		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each(&bt_val)
 		b[:esp] = prevesp if prevesp and b[:esp] == Expression::Unknown
 
-		puts "update_func_bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if b[:esp] != prevesp and not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer) if $VERBOSE
-		if b[:ebp] != Expression[:ebp]
-			# may be a custom 'enter' function (eg recent Visual Studio)
-			bt_val[Indirection[:ebp, @size/8, faddr]]
+		if dasm.funcs_stdabi
+			if b[:ebp] == Expression::Unknown
+				puts "update_func_bind: #{Expression[faddr]} has ebp -> unknown, presume it is preserved" if $VERBOSE
+				b[:ebp] = Expression[:ebp]
+			end
+			if b[:esp] == Expression::Unknown and not f.btbind_callback
+				puts "update_func_bind: #{Expression[faddr]} has esp -> unknown, use dynamic callback" if $VERBOSE
+				f.btbind_callback = disassembler_default_btbind_callback
+			end
+		else
+			if b[:ebp] != Expression[:ebp]
+				# may be a custom 'enter' function (eg recent Visual Studio)
+				bt_val[Indirection[:ebp, @size/8, faddr]]
+			end
+			if b[:esp] != prevesp and not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer)
+				puts "update_func_bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if $VERBOSE
+			end
 		end
 
 		# rename some functions
@@ -646,7 +659,7 @@ module Metasm
 			# scan from calladdr for the probable parent function start
 			func_start = nil
 			dasm.backtrace_walk(true, calladdr, false, false, nil, maxdepth) { |ev, foo, h|
-				if ev == :up and not h[:sfret] and di = dasm.decoded[h[:to]] and di.opcode.name == 'call'
+				if ev == :up and h[:sfret] != :subfuncret and di = dasm.decoded[h[:to]] and di.opcode.name == 'call'
 					# check that that call has not func_start as subfunction
 					otherfunc = false
 					di.block.each_to_normal { |sf| sf = dasm.normalize sf ; otherfunc = true if dasm.function[sf] and sf == h[:from] }
@@ -661,7 +674,7 @@ module Metasm
 				end
 			}
 			break bind if not func_start
-			puts "automagic #{funcaddr}: found func start for #{dasm.decoded[origin]} at #{Expression[func_start]}" if $DEBUG
+			puts "automagic #{funcaddr}: found func start for #{dasm.decoded[origin]} at #{Expression[func_start]}" if dasm.debug_backtrace
 			s_off = "autostackoffset_#{Expression[funcaddr]}_#{Expression[calladdr]}"
 			list = dasm.backtrace(expr.bind(:esp => Expression[:esp, :+, s_off]), calladdr, :include_start => true, :snapshot_addr => func_start, :maxdepth => maxdepth, :origin => origin)
 			break bind if list.length != 1
@@ -689,7 +702,7 @@ module Metasm
                                         #register origin and rebacktrace it if we ever find our stackoff (to solve other unknown that depend on us)
                                         #XXX we allow the current function to return, so we should handle the func backtracking its :esp
                                         #(and other register that are saved and restored in epilog)
-                                        puts "stackoff #{dasm.decoded[origin]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if $DEBUG
+                                        puts "stackoff #{dasm.decoded[origin]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
                                 else
                                         puts "autostackoffset: found #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
                                         dasm.function[funcaddr].btbind_callback = nil
@@ -707,7 +720,7 @@ module Metasm
 					dasm.decoded[calladdr].add_comment "autostackoffset #{off}"
 				end
                                 # cache calladdr/funcaddr/origin -> off for current function binding ?
-                                puts "stackoff #{dasm.decoded[origin]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if $DEBUG
+                                puts "stackoff #{dasm.decoded[origin]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
                         end
 
                         bind
