@@ -806,6 +806,7 @@ class EncodedData
 			other.export.each { |k, v| @export[k] = v + @virtsize }
 			other.inv_export.each { |k, v| @inv_export[@virtsize + k] = v }
 			if @data.empty?: @data = other.data.dup
+			elsif defined? VirtualString and @data.kind_of? VirtualString: @data = @data.realstring << other.data
 			else @data << other.data
 			end
 			@virtsize += other.virtsize
