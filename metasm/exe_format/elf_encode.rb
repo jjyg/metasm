@@ -13,15 +13,15 @@ class ELF
 		def encode elf
 			set_default_values elf
 
-			@indent[0,4] = @magic
-			@indent[4] = elf.int_from_hash(@e_class, CLASS)
-			@indent[5] = elf.int_from_hash(@data, DATA)
-			@indent[6] = elf.int_from_hash(@i_version, VERSION)
-			@indent[7] = elf.int_from_hash(@abi, ABI)
-			@indent[8] = @abi_version
+			@ident[0,4] = @magic
+			@ident[4] = elf.int_from_hash(@e_class, CLASS)
+			@ident[5] = elf.int_from_hash(@data, DATA)
+			@ident[6] = elf.int_from_hash(@i_version, VERSION)
+			@ident[7] = elf.int_from_hash(@abi, ABI)
+			@ident[8] = @abi_version
 
 			EncodedData.new <<
-			@indent <<
+			@ident <<
 			elf.encode_half(elf.int_from_hash(@type, TYPE)) <<
 			elf.encode_half(elf.int_from_hash(@machine, MACHINE)) <<
 			elf.encode_word(elf.int_from_hash(@version, VERSION)) <<
@@ -38,7 +38,7 @@ class ELF
 		end
 
 		def set_default_values elf
-			@indent    ||= 0.chr*16
+			@ident    ||= 0.chr*16
 			@magic     ||= "\x7fELF"
 			@e_class   ||= elf.bitsize.to_s
 			@data      ||= (elf.endianness == :big ? 'MSB' : 'LSB')
