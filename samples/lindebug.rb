@@ -511,7 +511,10 @@ class LinDebug
 					@dataptr -= 16
 				when :code
 					@codeptr ||= @rs.regs_cache['eip']
-					@codeptr -= (1..10).find { |off| @rs.mnemonic_di(@codeptr-off).bin_length == off rescue false } || 10
+					@codeptr -= (1..10).find { |off|
+						di = @rs.mnemonic_di(@codeptr-off)
+						di.bin_length == off if di
+					} || 10
 				end
 			when :down
 				case @focus
@@ -529,7 +532,8 @@ class LinDebug
 					@dataptr += 16
 				when :code
 					@codeptr ||= @rs.regs_cache['eip']
-					@codeptr += (((o = @rs.mnemonic_di(@codeptr).bin_length) == 0) ? 1 : o)
+					di = @rs.mnemonic_di(@codeptr)
+					@codeptr += (di ? (di.bin_length || 1) : 1)
 				end
 			when :left:  @promptpos -= 1 if @promptpos > 0
 			when :right: @promptpos += 1 if @promptpos < @promptbuf.length
@@ -544,7 +548,10 @@ class LinDebug
 				when :code
 					@codeptr ||= @rs.regs_cache['eip']
 					(@win_code_height-1).times {
-						@codeptr -= (1..10).find { |off| @rs.mnemonic_di(@codeptr-off).bin_length == off rescue false } || 10
+						@codeptr -= (1..10).find { |off|
+							di = @rs.mnemonic_di(@codeptr-off)
+							di.bin_length == off if di
+						} || 10
 					}
 				end
 			when :pgdown
