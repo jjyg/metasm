@@ -558,7 +558,8 @@ class COFF
 	def decode_sections
 		@sections.each { |s|
 			# decode up to s.virtsize to retrieve exports (like base relocs to .bss)
-			s.encoded = @encoded[s.rawaddr, s.virtsize]
+			s.encoded = @encoded[s.rawaddr, s.virtsize] || EncodedData.new
+			s.encoded.virtsize = s.virtsize
 			s.encoded.data = s.encoded.data[0, s.rawsize] if s.rawsize < s.virtsize
 		}
 	end

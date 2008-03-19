@@ -609,7 +609,8 @@ class ELF
 				if s.type == 'NOBITS'
 					s.encoded = EncodedData.new :virtsize => s.size
 				else
-					s.encoded = @encoded[s.offset, s.size]
+					s.encoded = @encoded[s.offset, s.size] || EncodedData.new
+					s.encoded.virtsize = s.size
 				end
 			end
 		}
