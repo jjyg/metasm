@@ -806,6 +806,7 @@ class ELF
 			seg = Segment.new
 			seg.type = 'LOAD'
 			seg.flags = ['R', 'W']
+			seg.encoded = EncodedData.new
 			@segments << seg
 		end
 
