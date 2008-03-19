@@ -629,8 +629,8 @@ class LinDebug
 			if r == 'fl'
 				flag = ntok.raw
 				if i = Rubstop::EFLAGS.index(flag)
-					@rs.eflags = @rs.regs_cache['eflags'] ^ (1 << i)
-					readregs
+					@rs.eflags ^= 1 << i
+					@rs.readregs
 				else
 					log "bad flag #{flag}"
 				end
@@ -638,8 +638,11 @@ class LinDebug
 				log "bad reg #{r}"
 			elsif ntok
 				lex.unreadtok ntok
-				@rs.send r+'=', int[]
-				@rs.readregs
+				newval = int[]
+				if newval and newval.kind_of? ::Integer
+					@rs.send r+'=', newval
+					@rs.readregs
+				end
 			else
 				log "#{r} = #{@rs.regs_cache[r]}"
 			end
