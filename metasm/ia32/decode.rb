@@ -415,7 +415,7 @@ module Metasm
 				binding['dummy_metasm_1'] = fl	# mark eflags as read
 			end
 			binding
-		when 'nop', 'pause', 'cmp', 'test': {}
+		when 'nop', 'pause', 'wait', 'cmp', 'test': {}
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			# assume nothing except the 1st arg
@@ -469,9 +469,10 @@ module Metasm
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
 
-		return [Indirection[:esp, @size/8, di.address]] if di.opcode.name == 'ret'
-
-		if di.opcode.name == 'jmp'
+		case di.opcode.name
+		when 'ret': return [Indirection[:esp, @size/8, di.address]]
+		when 'iret': return []
+		when 'jmp'
 			a = di.instruction.args.first
 			if a.kind_of? ModRM and a.imm and a.s == @size/8 and not a.b and s = dasm.get_section_at(Expression[a.imm, :-, 3*@size/8])
 				# jmp table
