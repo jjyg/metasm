@@ -7,42 +7,61 @@
 
 # 
 # this script disassembles an executable (elf/pe) and dumps the output
-# ruby [-v|-d] disassemble.rb [options] <exe file> [<c header file>] [<entrypoints>]
-# options:
-#   --no-data		do not display data sections
-#   --no-data-trace	do not backtrace for data access (r/w xrefs)
+# ruby -h for help
 #
 
 require 'metasm'
 include Metasm
+require 'optparse'
 
 # parse arguments
-no_data = ARGV.delete('--no-data')
-no_data_trace = ARGV.delete('--no-data-trace')
-debug_backtrace = ARGV.delete('--debug-backtrace')
+opts = {}
+OptionParser.new { |opt|
+	opt.banner = 'Usage: disassemble.rb [options] <executable> [<entrypoints>]'
+	opt.on('--no-data', 'do not display data bytes') { opts[:nodata] = true }
+	opt.on('--no-data-trace', 'do not backtrace memory read/write accesses') { opts[:nodatatrace] = true }
+	opt.on('--debug-backtrace', 'enable backtrace-related debug messages (very verbose)') { opts[:debugbacktrace] = true }
+	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
+	opt.on('-o <outfile>', '--output <outfile>', 'save the assembly listing in the specified file (defaults to stdout)') { |h| opts[:outfile] = h }
+	opt.on('-s <addrlist>', '--stop <addrlist>', '--stopaddr <addrlist>', 'do not disassemble past these addresses') { |h| opts[:stopaddr] ||= [] ; opts[:stopaddr] |= h.split ',' }
+	opt.on('-v', '--verbose') { $VERBOSE = true }
+	opt.on('-d', '--debug') { $DEBUG = true }
+}.parse!(ARGV)
+
 exename = ARGV.shift
-cheader = ARGV.shift
 
 # load the file
 exe = AutoExe.decode_file exename
 # set options
 d = exe.init_disassembler
-d.parse_c_file cheader if cheader
-d.backtrace_maxblocks_data = -1 if no_data_trace
-d.debug_backtrace = true if debug_backtrace
+makeint = proc { |addr|
+	case addr
+	when /^[0-9].*h/: addr.to_i(16)
+	when /^[0-9]/: Integer(addr)
+	else d.normalize(addr)
+	end
+}
+d.parse_c_file opts[:cheader] if opts[:cheader]
+d.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
+d.debug_backtrace = true if opts[:debugbacktrace]
+opts[:stopaddr].to_a.each { |addr| d.decoded[makeint[addr]] = true }
 
 # do the work
 begin
 	if ARGV.empty?
 		exe.disassemble
 	else
-		ARGV.each { |ep|
-			ep = Integer(ep) if ep =~ /^0x[0-9a-f]+$/
-			exe.disassemble ep
-		}
+		exe.disassemble(*ARGV.map { |addr| makeint[addr] })
 	end
 rescue Interrupt
 	puts $!, $!.backtrace
 end
+
 # output
-d.dump(!no_data)
+if opts[:outfile]
+	File.open(opts[:outfile], 'w') { |fd|
+		d.dump(!opts[:nodata]) { |l| fd.puts l }
+	}
+else
+	d.dump(!opts[:nodata])
+end
