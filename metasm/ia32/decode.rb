@@ -471,7 +471,6 @@ module Metasm
 
 		case di.opcode.name
 		when 'ret': return [Indirection[:esp, @size/8, di.address]]
-		when 'iret': return []
 		when 'jmp'
 			a = di.instruction.args.first
 			if a.kind_of? ModRM and a.imm and a.s == @size/8 and not a.b and s = dasm.get_section_at(Expression[a.imm, :-, 3*@size/8])
@@ -499,10 +498,9 @@ module Metasm
 			[Expression[tg.symbolic]]
 		when Expression, ::Integer
 			[Expression[tg]]
-		when Farptr
-			puts "far pointer unhandled at #{di.address} #{di.instruction}" if $VERBOSE
+		else
+			puts "unhandled setip at #{di.address} #{di.instruction}" if $VERBOSE
 			[]
-		else raise "internal error: ia32 bad setip arg in #{di.instruction} #{tg.inspect}"
 		end
 	end
 

@@ -1490,7 +1490,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		add_xref(n, Xref.new(:addr, di.address)) if di and di.address != origin and not unk
 		base = { nil => 'loc', 1 => 'byte', 2 => 'word', 4 => 'dword' }[len] || 'xref'
 		base = 'sub' if @function[n]
-		n = Expression[label_at(n, base, 'loc', 'xref') || n]
+		n = Expression[label_at(n, base, 'xref') || n]
 
 		# update instr args
 		# TODO trace expression evolution to allow handling of
