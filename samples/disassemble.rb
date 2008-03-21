@@ -24,11 +24,14 @@ OptionParser.new { |opt|
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-o <outfile>', '--output <outfile>', 'save the assembly listing in the specified file (defaults to stdout)') { |h| opts[:outfile] = h }
 	opt.on('-s <addrlist>', '--stop <addrlist>', '--stopaddr <addrlist>', 'do not disassemble past these addresses') { |h| opts[:stopaddr] ||= [] ; opts[:stopaddr] |= h.split ',' }
+	opt.on('--benchmark') { opts[:benchmark] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
 	opt.on('-d', '--debug') { $DEBUG = true }
 }.parse!(ARGV)
 
 exename = ARGV.shift
+
+t0 = Time.now if opts[:benchmark]
 
 # load the file
 exe = AutoExe.decode_file exename
@@ -46,6 +49,7 @@ d.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 d.debug_backtrace = true if opts[:debugbacktrace]
 opts[:stopaddr].to_a.each { |addr| d.decoded[makeint[addr]] = true }
 
+t1 = Time.now if opts[:benchmark]
 # do the work
 begin
 	if ARGV.empty?
@@ -57,6 +61,7 @@ rescue Interrupt
 	puts $!, $!.backtrace
 end
 
+t2 = Time.now if opts[:benchmark]
 # output
 if opts[:outfile]
 	File.open(opts[:outfile], 'w') { |fd|
@@ -65,3 +70,7 @@ if opts[:outfile]
 else
 	d.dump(!opts[:nodata])
 end
+
+t3 = Time.now if opts[:benchmark]
+
+puts "durations\n load   %.02fs\n dasm   %.02fs\n output %.02fs\n total  %.02fs" % [t1-t0, t2-t1, t3-t2, t3-t0] if opts[:benchmark]
