@@ -137,6 +137,7 @@ module Metasm
 				  # fail if any of those is true
 				  (fld = op.fields[:seg2A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg2A] == 1) or
 				  (fld = op.fields[:seg3A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg3A] < 4) or
+				  (fld = op.fields[:seg3A] || op.fields[:seg3] and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg3] > 5) or
 				  (fld = op.fields[:modrmA] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
 				  (sz  = op.props[:opsz]    and ((pfx[:opsz] and @size != 48-sz) or
 					(not pfx[:opsz] and @size != sz))) or
