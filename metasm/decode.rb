@@ -899,15 +899,15 @@ class Disassembler
 				delay_slot << expr if delay_slot[0] == di
 			}
 
-			delay_slot ||= [di, @cpu.delay_slot(di)] if di.opcode.props[:stopexec]
+			di_addr = di.next_addr
 
-			di_addr += di.bin_length
+			delay_slot ||= [di, @cpu.delay_slot(di)] if di.opcode.props[:stopexec] or not di_addr
 
 			if delay_slot
-				if delay_slot[1] == 0
+				if delay_slot[1] == 0 or not di_addr
 					di = delay_slot[0]
 					delay_slot[2..-1].each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x) }
-					return if di.opcode.props[:stopexec]
+					return if di.opcode.props[:stopexec] or not di_addr
 					break
 				end
 				delay_slot[1] -= 1
