@@ -237,6 +237,23 @@ class InstructionBlock
 	def each_to_indirect(&b)
 		@to_indirect.each(&b) if to_indirect
 	end
+
+	# yields all to that are in the same subfunction as this block
+	def each_to_samefunc(&b)
+		if to_subfuncret and not @to_subfuncret.empty?
+			@to_subfuncret.each(&b)
+		else
+			@to_normal.each(&b) if to_normal
+		end
+	end
+
+	# yields all to that are not in the same subfunction as this block
+	def each_to_otherfunc(&b)
+		if to_subfuncret and not @to_subfuncret.empty?
+			@to_normal.each(&b) if to_normal
+		end
+		@to_indirect.each(&b) if to_indirect
+	end
 end
 
 # a factorized subfunction as seen by the disassembler
@@ -418,7 +435,7 @@ class EncodedData
 				@ptr += rel.length
 				return rel.target
 			end
-			puts "W: Immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect} (wanted #{type.inspect})" if $VERBOSE
+			puts "W: Immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect} (wanted #{type.inspect})" if $DEBUG
 		end
 		Expression.decode_imm(read(Expression::INT_SIZE[type]/8), type, endianness)
 	end
@@ -787,7 +804,7 @@ class Disassembler
 			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
 		elsif from
 			if bf = @function[:default]
-				puts "using default function for #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
+				puts "using default function for #{Expression[addr]} from #{Expression[from]}" if $DEBUG
 				if name = Expression[addr].reduce_rec and name.kind_of? ::String
 					@function[addr] = @function[:default].dup
 				else
@@ -797,7 +814,7 @@ class Disassembler
 					@decoded[from].block.add_to addr
 				end
 			else
-				puts "not disassembling unknown address #{Expression[addr]} from #{Expression[from]}" if $VERBOSE
+				puts "not disassembling unknown address #{Expression[addr]} from #{Expression[from]}" if $DEBUG
 			end
 			if from != :default
 				add_xref(addr, Xref.new(:x, from))
@@ -1449,7 +1466,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 						writes = @program.get_xrefs_rw(self, di)
 						writes = writes.find_all { |x_type, x_ptr, x_len| x_type == :w and x_len == ind.len }
 						if writes.length != 1
-							puts "backtrace_ind: incompatible xrefs to #{ptr} from #{di}" if $VERBOSE
+							puts "backtrace_ind: incompatible xrefs to #{ptr} from #{di}" if $DEBUG
 							ret |= [Expression::Unknown]
 							next false
 						end
@@ -1559,7 +1576,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 				end
 				next if not di or @function[di.block.address].return_address
 				l = label_at(di.block.address)
-				puts "found thunk for #{f.rexpr} at #{Expression[di.block.address]}" if $VERBOSE
+				puts "found thunk for #{f.rexpr} at #{Expression[di.block.address]}" if $DEBUG
 				next if l[0, 4] != 'sub_'
 				label = @program.new_label "thunk_#{f.rexpr}"
 				rename_label(l, label)

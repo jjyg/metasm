@@ -20,7 +20,7 @@ class GraphViewContext
 			@id, @text, @x, @y = id, text, x, y
 			@to, @from = [], []
 		end
-		def inspect ; "<box:#{@text[0..10].inspect} #@x:#@y #@w:#@h>" end
+		def inspect ; "<box #{@id.inspect} #{@text[0..10].inspect} #@x:#@y #@w:#@h>" end
 	end
 
 	# hierarchical box representation/positionning
@@ -287,6 +287,8 @@ class GtkGraphView < Gtk::DrawingArea
 			gc.set_foreground color[:bg]
 			window.draw_rectangle(gc, true, 0, 0, w_w, w_h)
 
+			@curcontext.auto_arrange_boxes if not @curcontext.box.empty? and @curcontext.box.all? { |b| b.x == 0 and b.y == 0 }
+
 			# TODO syntax coloration
 
 			# arrows
@@ -515,27 +517,13 @@ class Disassembler
 				done_b << b
 				block_rel[b] = []
 				next if not di = @decoded[b] or not di.kind_of? DecodedInstruction or retaddr.include? di.block.list.last.address
-				if di.block.to_normal.find { |t| @function[normalize(t)] }
-					di.block.each_to_normal { |t|
-						t = normalize t
-						todo_f << t
-						func_rel[f] << t
-					}
-					di.block.each_to_subfuncret { |t|
-						t = normalize t
-						next if not @decoded[t]
-						todo_b << t
-						block_rel[b] << t
-					}
-				else
-					di.block.each_to_normal { |t|
-						t = normalize t
-						next if not @decoded[t]
-						todo_b << t
-						block_rel[b] << t
-					}
-				end
-				di.block.each_to_indirect { |t|
+				di.block.each_to_samefunc { |t|
+					t = normalize t
+					next if not @decoded[t]
+					todo_b << t
+					block_rel[b] << t
+				}
+				di.block.each_to_otherfunc { |t|
 					t = normalize t
 					todo_f << t
 					func_rel[f] << t
@@ -555,7 +543,6 @@ class Disassembler
 		func_rel.each { |func, subfunc|
 			subfunc.each { |sf| ctx.link_boxes func, sf }
 		}
-		ctx.auto_arrange_boxes
 		func_rel.each_key { |func|
 			next if not @decoded[func]
 			ctx = @gui.get_context(func)
@@ -574,7 +561,6 @@ class Disassembler
 				todo.concat block_rel[b]
 			end
 			done.each { |b| block_rel[b].each { |tb| ctx.link_boxes b, tb } }	# XXX
-			ctx.auto_arrange_boxes
 		}
 
 		@gui.redraw

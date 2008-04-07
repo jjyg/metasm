@@ -500,7 +500,7 @@ module Metasm
 		when Expression, ::Integer
 			[Expression[tg]]
 		else
-			puts "unhandled setip at #{di.address} #{di.instruction}" if $VERBOSE
+			puts "unhandled setip at #{di.address} #{di.instruction}" if $DEBUG
 			[]
 		end
 	end
@@ -541,11 +541,11 @@ module Metasm
 
 		if dasm.funcs_stdabi
 			if b[:ebp] == Expression::Unknown
-				puts "update_func_bind: #{Expression[faddr]} has ebp -> unknown, presume it is preserved" if $VERBOSE
+				puts "update_func_bind: #{Expression[faddr]} has ebp -> unknown, presume it is preserved" if $DEBUG
 				b[:ebp] = Expression[:ebp]
 			end
 			if b[:esp] == Expression::Unknown and not f.btbind_callback
-				puts "update_func_bind: #{Expression[faddr]} has esp -> unknown, use dynamic callback" if $VERBOSE
+				puts "update_func_bind: #{Expression[faddr]} has esp -> unknown, use dynamic callback" if $DEBUG
 				f.btbind_callback = disassembler_default_btbind_callback
 			end
 		else
@@ -554,7 +554,7 @@ module Metasm
 				bt_val[Indirection[:ebp, @size/8, faddr]]
 			end
 			if b[:esp] != prevesp and not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer)
-				puts "update_func_bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if $VERBOSE
+				puts "update_func_bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if $DEBUG
 			end
 		end
 
