@@ -84,7 +84,7 @@ class Ia32 < CPU
 			  #64 => %w{rax rcx rdx rbx rsp rbp rsi rdi}
 
 		Sym = @i_to_s[32].map { |s| s.to_sym }
-		def symbolic ; Sym[@val] end
+		def symbolic ; Sym[@val - ((@sz == 8) ? 4 : 0)] end
 	end
 	
 	class Farptr < Argument
@@ -121,7 +121,7 @@ class Ia32 < CPU
 			@seg = seg if seg
 		end
 
-		def symbolic(orig)
+		def symbolic(orig=nil)
 			p = nil
 			p = Expression[p, :+, @b.symbolic] if b
 			p = Expression[p, :+, [@s, :*, @i.symbolic]] if i
