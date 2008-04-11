@@ -258,15 +258,15 @@ module Metasm
 	def decode_cc_to_expr(cc)
 		case cc
 		when 'o': Expression[:eflag_o]
-		when 'no': Expression[1, :-, :eflag_o]
+		when 'no': Expression[:'!', :eflag_o]
 		when 'b', 'nae': Expression[:eflag_c]
-		when 'nb', 'ae': Expression[1, :-, :eflag_c]
+		when 'nb', 'ae': Expression[:'!', :eflag_c]
 		when 'z', 'e': Expression[:eflag_z]
-		when 'nz', 'ne': Expression[1, :-, :eflag_z]
+		when 'nz', 'ne': Expression[:'!', :eflag_z]
 		when 'be', 'na': Expression[:eflag_c, :|, :eflag_z]
-		when 'nbe', 'a': Expression[1, :-, [:eflag_c, :|, :eflag_z]]
+		when 'nbe', 'a': Expression[:'!', [:eflag_c, :|, :eflag_z]]
 		when 's': Expression[:eflag_s]
-		when 'ns': Expression[1, :-, :eflag_s]
+		when 'ns': Expression[:'!', :eflag_s]
 		when 'p', 'pe': Expression::Unknown
 		when 'np', 'po': Expression::Unknown
 		when 'l', 'nge': Expression[:eflag_s, :'!=', :eflag_o]
@@ -406,7 +406,7 @@ module Metasm
 			end
 		when 'clc': { :eflag_c => Expression[0] }
 		when 'stc': { :eflag_c => Expression[1] }
-		when 'cmc': { :eflag_c => Expression[1, :-, :eflag_c] }
+		when 'cmc': { :eflag_c => Expression[:'!', :eflag_c] }
 		when /^set(.*)/
 			cd = decode_cc_to_expr($1)
 			{ a[0] => Expression[cd] }
@@ -442,7 +442,7 @@ module Metasm
 				end
 			binding[:eflag_o] = case e_op
 				when :+: Expression[[sign[a[0]], :==, sign[a[1]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
-				when :-: Expression[[sign[a[0]], :==, [1, :-, sign[a[1]]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
+				when :-: Expression[[sign[a[0]], :==, [:'!', sign[a[1]]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
 				else Expression[0]
 				end
 		when 'inc', 'dec', 'neg', 'shl', 'shr', 'sar', 'ror', 'rol', 'rcr', 'rcl', 'shld', 'shrd'
