@@ -2817,7 +2817,17 @@ module C
 				if not @op
 					case @rexpr
 					when ::Numeric
-						r.last << @rexpr.to_s
+						if @rexpr < 0
+							r.last << ?-
+							re = -@rexpr
+						else
+							re = @rexpr
+						end
+						if re >= 0x1000
+							r.last << ("0x%X" % re)
+						else
+							r.last << re.to_s
+						end
 						if @type.kind_of? BaseType
 							r.last << 'U' if @type.specifier == :unsigned
 							case @type.name
