@@ -488,6 +488,7 @@ class Expression < ExpressionType
 			if l == 0 or r == 0: 0
 			elsif r == 1 and l.kind_of? Expression and [:'==', :'!=', :<, :>, :<=, :>=].include? l.op
 				l
+			elsif l == r: l
 			elsif r.kind_of? ::Integer and l.kind_of? Expression and l.op == :|
 				# check for rol/ror composition
 				m = Expression[[['var', :sh_op, 'amt'], :|, ['var', :inv_sh_op, 'inv_amt']], :&, 'mask']
