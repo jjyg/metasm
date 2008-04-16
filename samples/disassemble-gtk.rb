@@ -587,30 +587,23 @@ class Disassembler
 			end
 		}
 
-		counter = 0
 		@gui.curcontext = @gui.get_context(:functions)
+		counter = 0
+		work_todo = false
 		@gui.main_loop {
-			if @addrs_todo.empty?
-				if not ep = entrypoints.shift
-					post_disassemble
-					gui_update
-					puts 'disassembly finished'
-					false
-				else
-					@entrypoints ||= []
-					@entrypoints << label_at(normalize(ep), 'entrypoint')
-					@addrs_todo << ep
-					true
+			work_todo = true if not entrypoints.empty?
+			if work_todo
+				if not disassemble_mainiter(entrypoints)
+					work_todo = false
+					counter = 10000
 				end
-			else
 				counter += 1
 				if counter > 100
 					counter = 0
 					gui_update
 				end
-				disassemble_step
-				true
 			end
+			true
 		}
 	end
 

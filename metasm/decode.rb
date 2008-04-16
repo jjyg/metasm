@@ -738,22 +738,30 @@ class Disassembler
 
 	# decodes instructions from an entrypoint, (tries to) follows code flow
 	def disassemble(*entrypoints)
-		begin
-		loop do
-			if @addrs_todo.empty?
-				break if not ep = entrypoints.shift
-				l = label_at(normalize(ep), 'entrypoint')
-				puts "start disassemble from #{l} (#{entrypoints.length})" if $VERBOSE and not entrypoints.empty?
-				@addrs_todo << [ep]
-			end
-			while not @addrs_todo.empty?
-				disassemble_step
-			end
-		end
-		ensure
-		post_disassemble
-		end
+		nil while disassemble_mainiter(entrypoints)
 		self
+	end
+
+	attr_accessor :entrypoints
+
+	# do one operation relevant to disassembling
+	# returns nil once done
+	def disassemble_mainiter(entrypoints=[])
+		@entrypoints ||= []
+		if @addrs_todo.empty? and entrypoints.empty?
+			post_disassemble
+			puts 'disassembly finished' if $VERBOSE
+			return false
+		elsif @addrs_todo.empty?
+			ep = entrypoints.shift
+			l = label_at(normalize(ep), 'entrypoint')
+			puts "start disassemble from #{l} (#{entrypoints.length})" if $VERBOSE and not entrypoints.empty?
+			@entrypoints << l
+			@addrs_todo << [ep]
+		else
+			disassemble_step
+		end
+		true
 	end
 
 	def post_disassemble

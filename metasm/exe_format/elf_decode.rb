@@ -661,7 +661,7 @@ class ELF
 	# returns a disassembler with a special decodedfunction for dlsym, __libc_start_main, and a default function (i386 only)
 	def init_disassembler
 		d = super
-		d.backtrace_maxblocks_data = 8
+		d.backtrace_maxblocks_data = 4
 		case @cpu
 		when Ia32
 			old_cp = d.c_parser
