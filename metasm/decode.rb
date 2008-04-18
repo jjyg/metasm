@@ -224,9 +224,9 @@ class InstructionBlock
 		@to_indirect |= [addr]
 	end
 	def each_to
-		each_to_normal { |a| yield a, :normal }
+		each_to_normal     { |a| yield a, :normal }
 		each_to_subfuncret { |a| yield a, :subfuncret }
-		each_to_indirect { |a| yield a, :indirect }
+		each_to_indirect   { |a| yield a, :indirect }
 	end
 	def each_to_normal(&b)
 		@to_normal.each(&b) if to_normal
@@ -236,6 +236,20 @@ class InstructionBlock
 	end
 	def each_to_indirect(&b)
 		@to_indirect.each(&b) if to_indirect
+	end
+
+	def each_from_samefunc(dasm, &b)
+		if from_subfuncret and not @from_subfuncret.empty?
+			@from_subfuncret.each(&b)
+		elsif from_normal and not dasm.function[address]
+			@from_normal.each(&b)
+		end
+	end
+
+	# yields all from that are not in the same subfunction as this block
+	def each_from_otherfunc(dasm, &b)
+		@from_normal.each(&b) if from_normal and dasm.function[address]
+		@from_indirect.each(&b) if from_indirect
 	end
 
 	# yields all to that are in the same subfunction as this block
