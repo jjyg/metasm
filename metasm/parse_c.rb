@@ -2152,10 +2152,17 @@ module C
 	class Parser	
 		# returns a big string containing all definitions from headers used in the source (including macros)
 		def factorize(src)
-			@lexer.traced_macros = []
+			factorize_init
 			parse(src)
 			raise @lexer.readtok || self, 'eof expected' if not @lexer.eos?
+			factorize_final
+		end
+
+		def factorize_init
+			@lexer.traced_macros = []
+		end
 	
+		def factorize_final
 			# now find all types/defs not coming from the standard headers
 			# all
 			all = @toplevel.struct.values + @toplevel.symbol.values
