@@ -84,7 +84,13 @@ class Ia32 < CPU
 			  #64 => %w{rax rcx rdx rbx rsp rbp rsi rdi}
 
 		Sym = @i_to_s[32].map { |s| s.to_sym }
-		def symbolic ; Sym[@val - ((@sz == 8) ? 4 : 0)] end
+		def symbolic
+			if @sz == 8 and to_s[-1] == ?h
+				Expression[Sym[@val-4], :>>, 8]
+			else
+				Sym[@val]
+			end
+		end
 	end
 	
 	class Farptr < Argument
