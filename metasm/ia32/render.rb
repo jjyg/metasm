@@ -49,8 +49,8 @@ class Ia32
 
 			e = nil
 			e = Expression[e, :+, @b] if b
+			e = Expression[e, :+, @imm.reduce] if imm
 			e = Expression[e, :+, (@s == 1 ? @i : [@s, :*, @i])] if s
-			e = Expression[e, :+, @imm] if imm
 			r << '[' << e << ']'
 		end
 

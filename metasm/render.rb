@@ -51,6 +51,7 @@ end
 class Expression
 	include Renderable
 	def render
+		return Expression[@lexpr, :-, -@rexpr].render if @op == :+ and @rexpr.kind_of?(::Numeric) and @rexpr < 0
 		l, r = [@lexpr, @rexpr].map { |e|
 			if e.kind_of? Integer
 				if e < 0
@@ -65,8 +66,10 @@ class Expression
 			end
 			e
 		}
-		l = ['(', l, ')'] if l.kind_of? Expression and (l.lexpr or l.op != :+)
-		r = ['(', r, ')'] if r.kind_of? Expression and (r.lexpr or r.op != :+)
+		nosq = {:* => [:*], :+ => [:+, :-, :*], :- => [:+, :-, :*]}
+		l = ['(', l, ')'] if @lexpr.kind_of? Expression and not nosq[@op].to_a.include?(@lexpr.op)
+		nosq[:-] = [:*]
+		r = ['(', r, ')'] if @rexpr.kind_of? Expression and not nosq[@op].to_a.include?(@rexpr.op)
 		op = @op if l or @op != :+
 		[l, op, r].compact
 	end

@@ -1598,8 +1598,8 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 				end
 				next if not di or @function[di.block.address].return_address
 				l = label_at(di.block.address)
-				puts "found thunk for #{f.rexpr} at #{Expression[di.block.address]}" if $DEBUG
 				next if l[0, 4] != 'sub_'
+				puts "found thunk for #{f.rexpr} at #{Expression[di.block.address]}" if $DEBUG
 				label = @program.new_label "thunk_#{f.rexpr}"
 				rename_label(l, label)
 			}
@@ -1669,7 +1669,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 		end
 		if @prog_binding.index(block.address)
 			b["\n"] if xr.empty?
-			@prog_binding.each { |name, addr| b["#{name}:"] if addr == block.address }
+			@prog_binding.keys.sort.each { |name| b["#{name}:"] if @prog_binding[name] == block.address }
 		end
 		if c = @comment[block.address]
 			c.each { |l| b["// #{l}"] }
