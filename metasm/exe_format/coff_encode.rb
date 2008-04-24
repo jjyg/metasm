@@ -198,7 +198,7 @@ class COFF
 					edata['addrtable'] << coff.encode_word(Expression[e.target, :-, coff.label_at(coff.encoded, 0)])
 				end
 				if e.name
-					edata['ord_table'] << coff.encode_half(edata['addrtable'].virtsize/4 - @ordinal_base)
+					edata['ord_table'] << coff.encode_half(edata['addrtable'].virtsize/4 - 1)
 					edata['namptable'] << coff.encode_word(rva_end['nametable'])
 					edata['nametable'] << e.name << 0
 				end
@@ -879,7 +879,7 @@ class COFF
 			@export.libname ||= 'metalib'
 			e = ExportDirectory::Export.new
 			e.name = exportname
-			e.target = exportlabel || new_label(exportname)
+			e.target = exportlabel || exportname
 			@export.exports << e
 			check_eol[]
 		
