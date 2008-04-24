@@ -199,7 +199,7 @@ class AsmListingWidget < Gtk::HBox
 		# draw text until screen is full
 		# builds arrows_addr with addresses
 		while y < w_h
-			if di = @dasm.decoded[curaddr] and di.kind_of? Metasm::DecodedInstruction
+			if di = @dasm.decoded[curaddr] and di.kind_of? DecodedInstruction
 				# a decoded instruction : check if it's a block start
 				if di.block.list.first == di
 					# render dump_block_header, add a few colors
@@ -212,7 +212,7 @@ class AsmListingWidget < Gtk::HBox
 					}
 					di.block.each_from_samefunc(@dasm) { |addr|
 						addr = @dasm.normalize addr
-						next if not addr.kind_of? ::Integer or (@dasm.decoded[addr].kind_of? Metasm::DecodedInstruction and addr + @dasm.decoded[addr].bin_length == curaddr)
+						next if not addr.kind_of? ::Integer or (@dasm.decoded[addr].kind_of? DecodedInstruction and addr + @dasm.decoded[addr].bin_length == curaddr)
 						arrows_addr << [addr, curaddr]
 					}
 				end
@@ -223,7 +223,7 @@ class AsmListingWidget < Gtk::HBox
 						arrows_addr << [curaddr, addr]
 					}
 				end
-				render[Metasm::Expression[di.address].to_s + '    ', :address]
+				render[Expression[di.address].to_s + '    ', :address]
 				render[di.instruction.to_s.ljust(24), :instruction]
 				render[' ; ' + di.comment.join(' '), :comment] if di.comment
 				nl[]
@@ -240,21 +240,20 @@ class AsmListingWidget < Gtk::HBox
 			elsif curaddr < @vscroll.adjustment.upper
 				# TODO real data display (dwords, xrefs, strings..)
 				if label = @dasm.prog_binding.index(curaddr) and @dasm.xrefs[curaddr]
-					render[Metasm::Expression[curaddr].to_s + '    ', :address]
+					render[Expression[curaddr].to_s + '    ', :address]
 					render[label + ' ', :label]
 				else
 					if label
 						render[label+':', :label]
 						nl[]
 					end
-					render[Metasm::Expression[curaddr].to_s + '    ', :address]
+					render[Expression[curaddr].to_s + '    ', :address]
 				end
 				s = @dasm.get_section_at(curaddr)
-				render['db '+((s and s[0].rawsize > s[0].ptr) ? Metasm::Expression[s[0].read(1)[0]].to_s : '?'), :instruction]
+				render['db '+((s and s[0].rawsize > s[0].ptr) ? Expression[s[0].read(1)[0]].to_s : '?'), :instruction]
 				nl[]
 				curaddr += 1
 			else
-				render['', :text]
 				nl[]
 			end
 		end
@@ -392,7 +391,7 @@ class AsmListingWidget < Gtk::HBox
 				@caret_y += 1
 			else
 				off = 1
-				if a = @line_address[0] and @dasm.decoded[a].kind_of? Metasm::DecodedInstruction
+				if a = @line_address[0] and @dasm.decoded[a].kind_of? DecodedInstruction
 					off = @dasm.decoded[a].bin_length
 				end
 				@vscroll.adjustment.value += off
@@ -423,7 +422,7 @@ class AsmListingWidget < Gtk::HBox
 				# if points to a call, make it return
 			#@entrypoints << @line_address[@caret_y]
 			return if not addr = @line_address[@caret_y]
-			if di = @dasm.decoded[addr] and di.kind_of? Metasm::DecodedInstruction and di.opcode.props[:saveip] and not @dasm.decoded[addr + di.bin_length]
+			if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip] and not @dasm.decoded[addr + di.bin_length]
 				@dasm.addrs_todo << [addr + di.bin_length, addr, true]
 			else
 				@dasm.addrs_todo << [addr]
@@ -441,7 +440,7 @@ class AsmListingWidget < Gtk::HBox
 			if old = @dasm.prog_binding.index(addr)
 				InputBox.new("new name for #{old}") { |v| @dasm.rename_label(old, v) ; redraw }
 			else
-				InputBox.new("label name for #{Metasm::Expression[addr]}") { |v| @dasm.rename_label(@dasm.label_at(addr, v), v) ; redraw }
+				InputBox.new("label name for #{Expression[addr]}") { |v| @dasm.rename_label(@dasm.label_at(addr, v), v) ; redraw }
 			end
 		when GDK_p	# pause/play disassembler
 			@dasm_pause ||= []
@@ -464,25 +463,31 @@ class AsmListingWidget < Gtk::HBox
 			puts "verbose #$VERBOSE"
 		when GDK_x	# show xrefs to the current address
 			return if not addr = @line_address[@caret_y]
-			lst = ["list of xrefs to #{Metasm::Expression[addr]}"]
+			lst = ["list of xrefs to #{Expression[addr]}"]
 			@dasm.each_xref(addr) { |xr|
-				if @dasm.decoded[xr.origin].kind_of? Metasm::DecodedInstruction
+				if @dasm.decoded[xr.origin].kind_of? DecodedInstruction
 					org = @dasm.decoded[xr.origin]
 				else
-					org = Metasm::Expression[xr.origin]
+					org = Expression[xr.origin]
 				end
 				lst << "xref #{xr.type}#{xr.len} from #{org}"
 			}
 			MessageBox.new lst.join("\n ")
 		when GDK_i	# misc debug
-			#load 'metasm/ia32/render.rb'
 			begin
-			a = []
-			@dasm.decoded[@line_address[@caret_y]].block.each_to { |to| a << "#{Metasm::Expression[to[0]]} #{to[1]}" }
-			MessageBox.new a.inspect 
 			rescue
 				MessageBox.new $!
 			end
+
+		when GDK_space
+			if @dasm.decoded[current_address]
+				graph = GraphViewWidget.new(@dasm, @entrypoints)
+				graph.focus_addr current_address
+				w = Gtk::Window.new
+				w.add graph
+				w.show_all
+			end
+
 		when 0x20..0x7e	# normal kbd (use ascii code)
 		when GDK_Shift_L, GDK_Shift_R, GDK_Control_L, GDK_Control_R, GDK_Alt_L, GDK_Alt_R, GDK_Meta_L,
 		     GDK_Meta_R, GDK_Super_L, GDK_Super_R, GDK_Menu
