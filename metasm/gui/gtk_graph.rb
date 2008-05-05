@@ -22,7 +22,8 @@ class Graph
 			@line_text = {}
 			@addresses = []
 		end
-		def inspect ; "<box #{@id.inspect} #{@text[0..10].inspect} #@x:#@y #@w:#@h>" end
+		#def inspect ; "<box #{@id.inspect} #{@line_text[2]} #@x:#@y #@w:#@h>" end
+		def inspect ; "#{Expression[@addresses.first||0]}" end
 	end
 
 	# TODO
@@ -59,7 +60,7 @@ class Graph
 			@list.concat b.list
 			self
 		end
-		def inspect ; "<vt #{@list.inspect}>" end
+		def inspect ; "vt#{@list.inspect}" end
 	end
 	class HzBoxGroup < BoxGroup
 		attr_accessor :direct	# leave passage for a direct arrow from vt_prev to vt_next (eg. if then end)
@@ -69,7 +70,7 @@ class Graph
 			@list.concat b.list
 			self
 		end
-		def inspect ; "<hz #{'d ' if direct}#{@list.inspect}>" end
+		def inspect ; "hz#{'d' if direct}#{@list.inspect}" end
 	end
 
 	attr_accessor :id, :box, :w, :h, :roots, :view_x, :view_y
@@ -113,14 +114,14 @@ class Graph
 	# define box width&height from their text content
 	# place them for kawaii
 	def auto_arrange_boxes
-#puts Metasm::Expression[@id]
+# XXX TODO cache can_reach
 ptt = Time.now
 pt = proc { |i| nt = Time.now ; puts "aa #{'%0.3f' % (nt-ptt)} #{i}" if $VERBOSE ; ptt = nt }
 		# calc box sizes
 		@box.each { |b|
 			b.x = b.y = 0
 		}
-pt['initbox']
+pt["initbox #{@box.length}"]
 
 		# find graph roots
 		roots = [@box.first]
@@ -174,7 +175,9 @@ pt['rank']
 			VtBoxGroup.new << simplify_split[g] << down
 		}
 
-		# take an hbox, find common boxes, simplify_merge groups containing them ( =>  h[v[h[prefix], common suffix], nothing in common])
+		# take an hbox, find common boxes, simplify_merge groups containing them
+		# what does that mean, h[prefix1+suffix, suffix, other] =>  h[v[h[prefix], common suffix], nothing in common] .. ?
+		# TODO v[hz[1, 2], 2] => v[hzd[1], 2]
 		simplify_split = proc { |g|
 			case g.list.length
 			when 0: nil
@@ -205,6 +208,16 @@ pt['rank']
 
 		rootbox = HzBoxGroup.new
 		roots.each { |r| rootbox << make_group[r] }
+simpler = proc { |g|
+	next if not g.kind_of? BoxGroup
+	g.list.each_with_index { |e, i|
+		simpler[e]
+		if e.kind_of? BoxGroup and e.list.length == 1
+			g.list[i] = e.list.first
+		end
+	}
+}
+simpler[rootbox]
 pt['makegroups']
 		rootbox = simplify_split[rootbox]
 pt['simp_split final']
@@ -235,6 +248,7 @@ pt['simp_split final']
 		}
 
 		# fails, a box may be now in two non-imbricated groups => bad layout
+p rootbox
 		arrange[rootbox]
 pt['arrange']
 		# shrink the graph
@@ -347,20 +361,24 @@ class GraphViewWidget < Gtk::HBox
 		case ev.direction
 		when Gdk::EventScroll::Direction::UP
 			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-				@curcontext.view_x += (ev.x / @zoom - ev.x / (@zoom/1.1))
-				@curcontext.view_y += (ev.y / @zoom - ev.y / (@zoom/1.1))
-				@zoom /= 1.1
+				if @zoom < 100
+					@curcontext.view_x += (ev.x / @zoom - ev.x / (@zoom*1.1))
+					@curcontext.view_y += (ev.y / @zoom - ev.y / (@zoom*1.1))
+					@zoom *= 1.1
+				end
 			else
-				@curcontext.view_y -= allocation.height/4 / @zoom
+				@curcontext.view_y -= @height/4 / @zoom
 			end
 			redraw
 		when Gdk::EventScroll::Direction::DOWN
 			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-				@curcontext.view_x += (ev.x / @zoom - ev.x / (@zoom*1.1))
-				@curcontext.view_y += (ev.y / @zoom - ev.y / (@zoom*1.1))
-				@zoom *= 1.1
+				if @zoom > 1.0/100
+					@curcontext.view_x += (ev.x / @zoom - ev.x / (@zoom/1.1))
+					@curcontext.view_y += (ev.y / @zoom - ev.y / (@zoom/1.1))
+					@zoom /= 1.1
+				end
 			else
-				@curcontext.view_y += allocation.height/4 / @zoom
+				@curcontext.view_y += @height/4 / @zoom
 			end
 			redraw
 		end
@@ -402,6 +420,8 @@ class GraphViewWidget < Gtk::HBox
 			update_caret
 		else
 			@selected_boxes = []
+			@caret_box = nil
+			@hl_word = nil
 		end
 		redraw
 	end
@@ -412,13 +432,22 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def doubleclick(ev)
-		@zoom = 1.0
-		if @shown_boxes.empty?
-			if b = @curcontext.box[0]
-				@curcontext.view_x, @curcontext.view_y = b.x-10, b.y-10
+		if b = find_box_xy(ev.x, ev.y)
+			if @hl_word and @zoom >= 0.90 and @zoom <= 1.1
+				focus_addr(@hl_word)
+			else
+				focus_addr b.addresses.first
 			end
-		elsif @hl_word
-			focus_addr(@hl_word)
+		elsif @zoom == 1.0
+			@curcontext.view_x = @curcontext.box.map { |b| b.x }.min - 10
+			@curcontext.view_y = @curcontext.box.map { |b| b.y }.min - 10
+			maxx = @curcontext.box.map { |b| b.x + b.w }.max + 10
+			maxy = @curcontext.box.map { |b| b.y + b.h }.max + 10
+			@zoom = [@width.to_f/(maxx-@curcontext.view_x), @height.to_f/(maxy-@curcontext.view_y)].min
+		else
+			@curcontext.view_x += (ev.x / @zoom - ev.x)
+			@curcontext.view_y += (ev.y / @zoom - ev.y)
+			@zoom = 1.0
 		end
 		redraw
 	end
@@ -426,7 +455,7 @@ class GraphViewWidget < Gtk::HBox
 	def paint
 		w = @drawarea.window
 		gc = Gdk::GC.new(w)
-		w_w, w_h = allocation.width, allocation.height
+		w_w, w_h = @width, @height
 
 		# TODO do this somewhere else
 		#@curcontext.auto_arrange_boxes if not @curcontext.box.empty? and @curcontext.box.all? { |b| b.x == 0 and b.y == 0 }
@@ -437,11 +466,7 @@ class GraphViewWidget < Gtk::HBox
 		# XXX precalc ?
 		@curcontext.box.each { |b|
 			b.to.each { |tb|
-				srcx, srcy =  b.x+ b.w/2-@curcontext.view_x, b.y+b.h-@curcontext.view_y
-				dstx, dsty = tb.x+tb.w/2-@curcontext.view_x, tb.y-1-@curcontext.view_y
-				margin = 8
-				next if (srcy+margin < 0 and dsty < 0) or (srcy > w_h/@zoom and dsty-margin > w_h/@zoom)	# just clip on y
-				paint_arrow(w, gc, srcx, srcy, dstx, dsty, b, tb)
+				paint_arrow(w, gc, b, tb)
 			}
 		}
 		
@@ -454,20 +479,25 @@ class GraphViewWidget < Gtk::HBox
 		}
 	end
 
-	def paint_arrow(w, gc, x1, y1, x2, y2, b1, b2)
+	def paint_arrow(w, gc, b1, b2)
+		x1, y1 = b1.x+b1.w/2-@curcontext.view_x, b1.y+b1.h-@curcontext.view_y
+		x2, y2 = b2.x+b2.w/2-@curcontext.view_x, b2.y-1-@curcontext.view_y
 		margin = 8
+		return if (y1+margin < 0 and y2 < 0) or (y1 > @height/@zoom and y1-margin > @height/@zoom)	# just clip on y
 		margin, x1, y1, x2, y2, b1w, b2w = [margin, x1, y1, x2, y2, b1.w, b2.w].map { |v| v*@zoom }
 		if b1 == @caret_box or b2 == @caret_box
 			gc.set_foreground @color[:arrow_hl]
 		else
 			gc.set_foreground @color[:arrow]
 		end
-		w.draw_line(gc, x1, y1, x1, y1+margin)
-		w.draw_line(gc, x2, y2-margin, x2, y2)
-		w.draw_line(gc, x2-margin/2, y2-margin/2, x2, y2)
-		w.draw_line(gc, x2+margin/2, y2-margin/2, x2, y2)
-		y1 += margin
-		y2 -= margin
+		if margin > 2
+			w.draw_line(gc, x1, y1, x1, y1+margin)
+			w.draw_line(gc, x2, y2-margin, x2, y2)
+			w.draw_line(gc, x2-margin/2, y2-margin/2, x2, y2)
+			w.draw_line(gc, x2+margin/2, y2-margin/2, x2, y2)
+			y1 += margin
+			y2 -= margin
+		end
 		if y2+margin >= y1-margin
 			w.draw_line(gc, x1, y1, x2, y2) if x1 != y1 or x2 != y2
 		elsif x1-b1w/2-margin >= x2+b2w/2+margin	# z
@@ -499,12 +529,12 @@ class GraphViewWidget < Gtk::HBox
 		# current text position
 		x = (b.x - @curcontext.view_x + 1)*@zoom
 		y = (b.y - @curcontext.view_y + 1)*@zoom
-		w_w = (b.x + b.w - @curcontext.view_x)*@zoom - @font_width
-		w_h = (b.y + b.h - @curcontext.view_y)*@zoom - @font_height
+		w_w = (b.x - @curcontext.view_x)*@zoom + b.w - @font_width
+		w_h = (b.y - @curcontext.view_y)*@zoom + b.h - @font_height
 
-		if @caretbox == b
+		if @caret_box == b
 			gc.set_foreground @color[:cursorline_bg]
-			w.draw_rectangle(gc, true, x, y+@caret_y*@fontheight, b.w*@zoom-2, @fontheight)
+			w.draw_rectangle(gc, true, x-1, y+@caret_y*@font_height, b.w*@zoom-2, @font_height)
 		end
 
 		# renders a string at current cursor position with a color
@@ -658,7 +688,7 @@ class GraphViewWidget < Gtk::HBox
 				end
 			}
 			b.w = b.line_text.values.map { |str| str.length }.max * @font_width + 2
-			b.h = b.line_text.length * @font_height + 2
+			b.h = line * @font_height + 2
 		}
 
 		if @curcontext.box.length < 15
@@ -693,40 +723,82 @@ class GraphViewWidget < Gtk::HBox
 	def keypress(ev)
 		case ev.keyval
 		when GDK_Left
-			if @caret_x > 0
-				@caret_x -= 1
-				update_caret
+			if @caret_box
+				if @caret_x > 0
+					@caret_x -= 1
+					update_caret
+				end
+			else
+				@curcontext.view_x -= 20/@zoom
+				redraw
 			end
 		when GDK_Up
-			if @caret_y > 0
-				@caret_y -= 1
-				update_caret
+			if @caret_box
+				if @caret_y > 0
+					@caret_y -= 1
+					update_caret
+				end
+			else
+				@curcontext.view_y -= 20/@zoom
+				redraw
 			end
 		when GDK_Right
-			if @caret_x <= @caret_box.line_text.values.map { |s| s.length }.max
-				@caret_x += 1
-				update_caret
+			if @caret_box
+				if @caret_x <= @caret_box.line_text.values.map { |s| s.length }.max
+					@caret_x += 1
+					update_caret
+				end
+			else
+				@curcontext.view_x += 20/@zoom
+				redraw
 			end
 		when GDK_Down
-			if @caret_y < @caret_box.line_text.length-1
-				@caret_y += 1
-				update_caret
+			if @caret_box
+				if @caret_y < @caret_box.line_text.length-1
+					@caret_y += 1
+					update_caret
+				end
+			else
+				@curcontext.view_y += 20/@zoom
+				redraw
 			end
 		when GDK_Page_Up
-			@caret_y = 0
-			update_caret
+			if @caret_box
+				@caret_y = 0
+				update_caret
+			else
+				@curcontext.view_y -= @height/4/@zoom
+				redraw
+			end
 		when GDK_Page_Down
-			@caret_y = @caret_box.line_length-1
-			update_caret
+			if @caret_box
+				@caret_y = @caret_box.line_length-1
+				update_caret
+			else
+				@curcontext.view_y += @height/4/@zoom
+				redraw
+			end
 		when GDK_Home
-			@caret_x = 0
-			update_caret
+			if @caret_box
+				@caret_x = 0
+				update_caret
+			else
+				@curcontext.view_x = @curcontext.box.map { |b| b.x }.min-10
+				@curcontext.view_y = @curcontext.box.map { |b| b.y }.min-10
+				redraw
+			end
 		when GDK_End
-			@caret_x = @caret_box.line_text[@caret_y].length
-			update_caret
+			if @caret_box
+				@caret_x = @caret_box.line_text[@caret_y].length
+				update_caret
+			else
+				@curcontext.view_x = [@curcontext.box.map { |b| b.x+b.w }.max-@width/@zoom+10, @curcontext.box.map { |b| b.x }.min-10].max
+				@curcontext.view_y = [@curcontext.box.map { |b| b.y+b.h }.max-@height/@zoom+10, @curcontext.box.map { |b| b.y }.min-10].max
+				redraw
+			end
 
 		when GDK_Return, GDK_KP_Enter
-			focus_addr @hl_word
+			focus_addr @hl_word if @hl_word
 		when GDK_Escape
 			if not @view_history.empty?
 				addr, x = @view_history.pop
@@ -740,16 +812,6 @@ class GraphViewWidget < Gtk::HBox
 			@curcontext.auto_arrange_boxes
 			redraw
 			puts 'autoarrange done'
-		when GDK_e
-			puts 'expose'
-			@curcontext.box.each { |b| b.addresses = [] }
-			minx = @curcontext.box.map { |b| b.x }.min
-			maxx = @curcontext.box.map { |b| b.x + b.w }.max
-			miny = @curcontext.box.map { |b| b.y }.min
-			maxy = @curcontext.box.map { |b| b.y + b.h }.max
-			@zoom = [@width.to_f/(maxx-minx), @height.to_f/(maxy-miny)].min
-			redraw
-			puts 'expose done'
 		when GDK_u
 			puts 'update'
 			gui_update
@@ -941,11 +1003,11 @@ class GraphViewWidget < Gtk::HBox
 
 	def focus_xy(x, y)
 		if @curcontext.view_x*@zoom + @width < x or @curcontext.view_x*@zoom > x
-			@curcontext.view_x = (x - @width/2)/@zoom
+			@curcontext.view_x = (x - @width/5)/@zoom
 			redraw
 		end
 		if @curcontext.view_y*@zoom + @height < y or @curcontext.view_y*@zoom > y
-			@curcontext.view_y = (y - @height/2)/@zoom
+			@curcontext.view_y = (y - @height/5)/@zoom
 			redraw
 		end
 	end
