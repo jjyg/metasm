@@ -274,6 +274,7 @@ class GraphViewWidget < Gtk::HBox
 		@shown_boxes = []
 		@mousemove_origin = nil
 		@curcontext = Graph.new(nil)
+		@zoom = 1.0
 		# @allgraphs = ?
 		# scrollbars ?
 
@@ -310,14 +311,7 @@ class GraphViewWidget < Gtk::HBox
 			mouserelease(ev) if @mousemove_origin and ev.button == 1
 		}
 		signal_connect('scroll_event') { |w, ev|
-			case ev.direction
-			when Gdk::EventScroll::Direction::UP
-				@curcontext.view_y -= allocation.height/4
-				redraw
-			when Gdk::EventScroll::Direction::DOWN
-				@curcontext.view_y += allocation.height/4
-				redraw
-			end
+			mousewheel(ev)
 		}
 		signal_connect('key_press_event') { |w, ev|
 			keypress(ev)
@@ -344,12 +338,37 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def find_box_xy(x, y)
-		@shown_boxes.to_a.reverse.find { |b| b.x <= x and b.x+b.w >= x and b.y <= y and b.y+b.h >= y }
+		x = @curcontext.view_x+x/@zoom
+		y = @curcontext.view_y+y/@zoom
+		@shown_boxes.to_a.reverse.find { |b| b.x <= x+@zoom and b.x+b.w >= x and b.y <= y+@zoom and b.y+b.h >= y }
 	end
 
+	def mousewheel(ev)
+		case ev.direction
+		when Gdk::EventScroll::Direction::UP
+			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+				@curcontext.view_x += (ev.x / @zoom - ev.x / (@zoom/1.1))
+				@curcontext.view_y += (ev.y / @zoom - ev.y / (@zoom/1.1))
+				@zoom /= 1.1
+			else
+				@curcontext.view_y -= allocation.height/4 / @zoom
+			end
+			redraw
+		when Gdk::EventScroll::Direction::DOWN
+			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+				@curcontext.view_x += (ev.x / @zoom - ev.x / (@zoom*1.1))
+				@curcontext.view_y += (ev.y / @zoom - ev.y / (@zoom*1.1))
+				@zoom *= 1.1
+			else
+				@curcontext.view_y += allocation.height/4 / @zoom
+			end
+			redraw
+		end
+	end
+	
 	def mousemove(ev)
-		dx = ev.x - @mousemove_origin[0]
-		dy = ev.y - @mousemove_origin[1]
+		dx = (ev.x - @mousemove_origin[0])/@zoom
+		dy = (ev.y - @mousemove_origin[1])/@zoom
 		@mousemove_origin = [ev.x, ev.y]
 		if @selected_boxes.empty?
 			@curcontext.view_x -= dx ; @curcontext.view_y -= dy
@@ -366,7 +385,7 @@ class GraphViewWidget < Gtk::HBox
 
 	def click(ev)
 		@mousemove_origin = [ev.x, ev.y]
-		b = find_box_xy(@curcontext.view_x+ev.x, @curcontext.view_y+ev.y)
+		b = find_box_xy(ev.x, ev.y)
 		if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
 			if b
 				if @selected_boxes.include? b
@@ -378,8 +397,8 @@ class GraphViewWidget < Gtk::HBox
 		elsif b
 			@selected_boxes = [b] if not @selected_boxes.include? b
 			@caret_box = b
-			@caret_x = (@curcontext.view_x+ev.x-b.x - 1).to_i / @font_width
-			@caret_y = (@curcontext.view_y+ev.y-b.y - 1).to_i / @font_height
+			@caret_x = (@curcontext.view_x+ev.x-b.x*@zoom - 1).to_i / @font_width
+			@caret_y = (@curcontext.view_y+ev.y-b.y*@zoom - 1).to_i / @font_height
 			update_caret
 		else
 			@selected_boxes = []
@@ -388,19 +407,20 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def rightclick(ev)
-		b = find_box_xy(@curcontext.view_x+ev.x, @curcontext.view_y+ev.y)
+		b = find_box_xy(ev.x, ev.y)
 		# TODO
 	end
 
 	def doubleclick(ev)
+		@zoom = 1.0
 		if @shown_boxes.empty?
 			if b = @curcontext.box[0]
 				@curcontext.view_x, @curcontext.view_y = b.x-10, b.y-10
-				redraw
 			end
-		else
+		elsif @hl_word
 			focus_addr(@hl_word)
 		end
+		redraw
 	end
 
 	def paint
@@ -420,14 +440,14 @@ class GraphViewWidget < Gtk::HBox
 				srcx, srcy =  b.x+ b.w/2-@curcontext.view_x, b.y+b.h-@curcontext.view_y
 				dstx, dsty = tb.x+tb.w/2-@curcontext.view_x, tb.y-1-@curcontext.view_y
 				margin = 8
-				next if (srcy+margin < 0 and dsty < 0) or (srcy > w_h and dsty-margin > w_h)	# just clip on y
+				next if (srcy+margin < 0 and dsty < 0) or (srcy > w_h/@zoom and dsty-margin > w_h/@zoom)	# just clip on y
 				paint_arrow(w, gc, srcx, srcy, dstx, dsty, b, tb)
 			}
 		}
 		
 		@shown_boxes = []
 		@curcontext.box.each { |b|
-			next if b.x >= @curcontext.view_x+w_w or b.y >= @curcontext.view_y+w_h or b.x+b.w <= @curcontext.view_x or b.y+b.h <= @curcontext.view_y
+			next if b.x >= @curcontext.view_x+w_w/@zoom or b.y >= @curcontext.view_y+w_h/@zoom or b.x+b.w <= @curcontext.view_x or b.y+b.h <= @curcontext.view_y
 			@shown_boxes << b
 			
 			paint_box(w, gc, b)
@@ -436,6 +456,7 @@ class GraphViewWidget < Gtk::HBox
 
 	def paint_arrow(w, gc, x1, y1, x2, y2, b1, b2)
 		margin = 8
+		margin, x1, y1, x2, y2, b1w, b2w = [margin, x1, y1, x2, y2, b1.w, b2.w].map { |v| v*@zoom }
 		if b1 == @caret_box or b2 == @caret_box
 			gc.set_foreground @color[:arrow_hl]
 		else
@@ -449,16 +470,16 @@ class GraphViewWidget < Gtk::HBox
 		y2 -= margin
 		if y2+margin >= y1-margin
 			w.draw_line(gc, x1, y1, x2, y2) if x1 != y1 or x2 != y2
-		elsif x1-b1.w/2-margin >= x2+b2.w/2+margin	# z
-			w.draw_line(gc, x1, y1, x1-b1.w/2-margin, y1)
-			w.draw_line(gc, x1-b1.w/2-margin, y1, x2+b2.w/2+margin, y2)
-			w.draw_line(gc, x2+b2.w/2+margin, y2, x2, y2)
-		elsif x1+b1.w/2+margin <= x2-b2.w/2-margin	# invert z
-			w.draw_line(gc, x1, y1, x1+b1.w/2+margin, y1)
-			w.draw_line(gc, x1+b1.w/2+margin, y1, x2-b2.w/2-margin, y2)
-			w.draw_line(gc, x2-b2.w/2-margin, y2, x2, y2)
+		elsif x1-b1w/2-margin >= x2+b2w/2+margin	# z
+			w.draw_line(gc, x1, y1, x1-b1w/2-margin, y1)
+			w.draw_line(gc, x1-b1w/2-margin, y1, x2+b2w/2+margin, y2)
+			w.draw_line(gc, x2+b2w/2+margin, y2, x2, y2)
+		elsif x1+b1w/2+margin <= x2-b2w/2-margin	# invert z
+			w.draw_line(gc, x1, y1, x1+b1w/2+margin, y1)
+			w.draw_line(gc, x1+b1w/2+margin, y1, x2-b2w/2-margin, y2)
+			w.draw_line(gc, x2-b2w/2-margin, y2, x2, y2)
 		else						# turn around
-			x = (x1 > x2 ? [x1-b1.w/2-margin, x2-b2.w/2-margin].min : [x1+b1.w/2+margin, x2+b2.w/2+margin].max)
+			x = (x1 > x2 ? [x1-b1w/2-margin, x2-b2w/2-margin].min : [x1+b1w/2+margin, x2+b2w/2+margin].max)
 			w.draw_line(gc, x1, y1, x, y1)
 			w.draw_line(gc, x, y1, x, y2)
 			w.draw_line(gc, x, y2, x2, y2)
@@ -471,17 +492,19 @@ class GraphViewWidget < Gtk::HBox
 		else
 			gc.set_foreground @color[:box_bg]
 		end
-		w.draw_rectangle(gc, true, b.x-@curcontext.view_x, b.y-@curcontext.view_y, b.w, b.h)
+		w.draw_rectangle(gc, true, (b.x-@curcontext.view_x)*@zoom, (b.y-@curcontext.view_y)*@zoom, b.w*@zoom, b.h*@zoom)
+
+		return if @zoom < 0.99 or @zoom > 1.1
 
 		# current text position
-		x = b.x - @curcontext.view_x + 1
-		y = b.y - @curcontext.view_y + 1
-		w_w = b.x + b.w - @curcontext.view_x - @font_width
-		w_h = b.y + b.h - @curcontext.view_y - @font_height
+		x = (b.x - @curcontext.view_x + 1)*@zoom
+		y = (b.y - @curcontext.view_y + 1)*@zoom
+		w_w = (b.x + b.w - @curcontext.view_x)*@zoom - @font_width
+		w_h = (b.y + b.h - @curcontext.view_y)*@zoom - @font_height
 
 		if @caretbox == b
 			gc.set_foreground @color[:cursorline_bg]
-			w.draw_rectangle(gc, true, x, y+@caret_y*@fontheight, b.w-2, @fontheight)
+			w.draw_rectangle(gc, true, x, y+@caret_y*@fontheight, b.w*@zoom-2, @fontheight)
 		end
 
 		# renders a string at current cursor position with a color
@@ -505,7 +528,7 @@ class GraphViewWidget < Gtk::HBox
 		}
 		# newline: current line is fully rendered, update @line_address/@line_text etc
 		nl = proc {
-			x = b.x - @curcontext.view_x + 1
+			x = (b.x - @curcontext.view_x + 1)*@zoom
 			y += @font_height
 		}
 
@@ -546,8 +569,8 @@ class GraphViewWidget < Gtk::HBox
 
 		if b == @caret_box
 			gc.set_foreground @color[:caret]
-			cx = b.x - @curcontext.view_x + @caret_x*@font_width + 1
-			cy = b.y - @curcontext.view_y + @caret_y*@font_height
+			cx = (b.x - @curcontext.view_x + 1)*@zoom + @caret_x*@font_width
+			cy = (b.y - @curcontext.view_y + 1)*@zoom + @caret_y*@font_height
 			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
 		end
 	end
@@ -717,6 +740,21 @@ class GraphViewWidget < Gtk::HBox
 			@curcontext.auto_arrange_boxes
 			redraw
 			puts 'autoarrange done'
+		when GDK_e
+			puts 'expose'
+			@curcontext.box.each { |b| b.addresses = [] }
+			minx = @curcontext.box.map { |b| b.x }.min
+			maxx = @curcontext.box.map { |b| b.x + b.w }.max
+			miny = @curcontext.box.map { |b| b.y }.min
+			maxy = @curcontext.box.map { |b| b.y + b.h }.max
+			@zoom = [@width.to_f/(maxx-minx), @height.to_f/(maxy-miny)].min
+			redraw
+			puts 'expose done'
+		when GDK_u
+			puts 'update'
+			gui_update
+			redraw
+			puts 'update done'
 
 		when GDK_c	# disassemble from this point
 				# if points to a call, make it return
@@ -850,6 +888,8 @@ class GraphViewWidget < Gtk::HBox
 	def focus_addr(addr, can_update_context=true)
 		return if not addr or addr == ''
 
+		@zoom = 1.0
+
 		# find real address from addr
 		if addr.kind_of? ::String
 			if (?0..?9).include? addr[0]
@@ -900,12 +940,12 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def focus_xy(x, y)
-		if @curcontext.view_x + @width < x or @curcontext.view_x > x
-			@curcontext.view_x = x - @width/2
+		if @curcontext.view_x*@zoom + @width < x or @curcontext.view_x*@zoom > x
+			@curcontext.view_x = (x - @width/2)/@zoom
 			redraw
 		end
-		if @curcontext.view_y + @height < y or @curcontext.view_y > y
-			@curcontext.view_y = y - @height/2
+		if @curcontext.view_y*@zoom + @height < y or @curcontext.view_y*@zoom > y
+			@curcontext.view_y = (y - @height/2)/@zoom
 			redraw
 		end
 	end
@@ -913,8 +953,7 @@ class GraphViewWidget < Gtk::HBox
 	# hint that the caret moved
 	# redraw, change the hilighted word
 	def update_caret
-		return if not @caret_box
-		l = @caret_box.line_text[@caret_y]
+		return if not @caret_box or not @caret_x or not l = @caret_box.line_text[@caret_y]
 		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
 		word = nil if word == ''
 		@hl_word = word
