@@ -12,18 +12,15 @@ class Graph
 	class Box
 		attr_accessor :id, :x, :y, :w, :h
 		attr_accessor :to, :from # other boxes linked (arrays)
-		attr_accessor :line_address, :line_text
-		attr_accessor :addresses	# list of addresses to display
-		def initialize(id)
+		attr_accessor :content
+		def initialize(id, content=nil)
 			@id = id
 			@x = @y = @w = @h = 0
 			@to, @from = [], []
-			@line_address = {}
-			@line_text = {}
-			@addresses = []
+			@content = content
 		end
-		#def inspect ; "<box #{@id.inspect} #{@line_text[2]} #@x:#@y #@w:#@h>" end
-		def inspect ; "#{Expression[@addresses.first||0]}" end
+		def [](a) @content[a] end
+		def inspect ; puts caller ; "#{Expression[@id] rescue @id.inspect}" end
 	end
 
 	# TODO
@@ -32,48 +29,7 @@ class Graph
 		attr_accessor :to, :from
 	end
 
-	# hierarchical box grouping
-	class BoxGroup
-		attr_accessor :list	# list of inner box/boxgroup
-		def initialize(list=[])
-			@list = []
-			list.each { |b| self << b }
-		end
-		def <<(b)
-			@list << b if b
-			self
-		end
-		def boxes(g=self)
-			return [g] if not g.kind_of? BoxGroup
-			g.list.map { |gg| boxes(gg) }.flatten
-		end
-		def x ; list.map { |b| b.x }.min end
-		def y ; list.map { |b| b.y }.min end
-		def w ; list.map { |b| b.x+b.w }.max - x end
-		def h ; list.map { |b| b.y+b.h }.max - y end
-		def x=(nx) dx = nx-x ; list.each { |b| b.x += dx } end
-		def y=(ny) dy = ny-y ; list.each { |b| b.y += dy } end
-	end
-	class VtBoxGroup < BoxGroup
-		def <<(b)
-			return super if not b.kind_of? VtBoxGroup
-			@list.concat b.list
-			self
-		end
-		def inspect ; "vt#{@list.inspect}" end
-	end
-	class HzBoxGroup < BoxGroup
-		attr_accessor :direct	# leave passage for a direct arrow from vt_prev to vt_next (eg. if then end)
-		def <<(b)
-			return super if not b.kind_of? HzBoxGroup
-			@direct = true if b.direct
-			@list.concat b.list
-			self
-		end
-		def inspect ; "hz#{'d' if direct}#{@list.inspect}" end
-	end
-
-	attr_accessor :id, :box, :w, :h, :roots, :view_x, :view_y
+	attr_accessor :id, :box, :root_addrs, :view_x, :view_y
 	def initialize(id)
 		@id = id
 		clear
@@ -94,14 +50,15 @@ class Graph
 	end
 
 	# creates a new box, ensures id is not already taken
-	def new_box(id)
+	def new_box(id, content=nil)
 		raise "duplicate id #{id}" if @box.find { |b| b.id == id }
-		b = Box.new(id)
+		b = Box.new(id, content)
 		@box << b
 		b
 	end
 
 	# checks if a box is reachable from another following a 'to' chain
+	# TODO cache a cantreach b (all allowed)
 	def can_reach(src, dst, allow=@box)
 		src.to.each { |f|
 			next if not allow.include? f
@@ -111,161 +68,141 @@ class Graph
 		false
 	end
 
-	# define box width&height from their text content
-	# place them for kawaii
+	# place boxes in a good-looking layout
 	def auto_arrange_boxes
-# XXX TODO cache can_reach
-ptt = Time.now
-pt = proc { |i| nt = Time.now ; puts "aa #{'%0.3f' % (nt-ptt)} #{i}" if $VERBOSE ; ptt = nt }
-		# calc box sizes
-		@box.each { |b|
-			b.x = b.y = 0
+		# groups is an array of box groups
+		# all groups are centered on the origin
+		groups = @box.map { |b|
+			b.x = -b.w/2
+			b.y = -b.h/2
+			g = Box.new(nil, [b])
+			g.x = b.x - 8
+			g.y = b.y - 8
+			g.w = b.w + 16
+			g.h = b.h + 16
+			g
 		}
-pt["initbox #{@box.length}"]
 
-		# find graph roots
-		roots = [@box.first]
-		@box.reverse_each { |b|		# reverse -> in case of an ep loop, prefer @box order
-			if not roots.find { |bb| can_reach(bb, b) }
-				roots.delete_if { |bb| can_reach(b, bb) }
-				roots << b
-			end
+		# init group.to/from
+		# must always point to something that is in the 'groups' array
+		# no self references
+		# a box is in one and only one group in 'groups'
+		groups.each { |g|
+			g.to   = g.content.first.to.map   { |t| groups[@box.index(t)] } - [g]
+			g.from = g.content.first.from.map { |f| groups[@box.index(f)] } - [g]
 		}
-pt['roots']
 
-		# calc ranks
-		rank = {}	# a->b->c + a->c  => rk(a) < rk(b) < rk(c)
-		roots.each { |b| rank[b] = 0 }
-		until (@box - rank.keys).empty?
-			nextgen = rank.keys.map { |b| b.to }.flatten.uniq - rank.keys
-			while b = nextgen.find { |b| (nextgen-[b]).find { |bb| can_reach(bb, b, @box-rank.keys) } }
-				nextgen.delete b
-			end
-			nrank = rank.values.max + 1
-			nextgen.each { |b| rank[b] = nrank }
-		end
-pt['rank']
-
-		simplify_split = nil
-		simplify_merge = proc { |ary, b|
-			# common suffix
-			down = nil
-			# walk blocks, if find b => update down, remove from block
-			# returns true if found b in the middle of a vblock
-			walk = proc { |g|
-				ret = false
-				case g
-				when HzBoxGroup
-					g.list.each { |gg| ret ||= walk[gg] }
-					g.direct = true if ret and g.list.grep(BoxGroup).find { |gg| gg.list.empty? }
-					g.list.delete_if { |gg| gg.kind_of? BoxGroup and gg.list.empty? }
-				when VtBoxGroup
-					if g.list.include? b
-						down = VtBoxGroup.new g.list[g.list.index(b)..-1]
-						g.list[g.list.index(b)..-1] = []
-						ret = true if not g.list.empty?
-					end
-					g.list.each { |gg| ret = true if walk[gg] and gg != g.list.first }	# XXX g.list.first.list.empty?
-					g.list.delete_if { |gg| gg.kind_of? BoxGroup and gg.list.empty? }
-				end
-				ret
+		# concat all ary boxes into its 1st element, remove trailing groups from 'groups'
+		# updates from/to
+		merge_groups = proc { |ary|
+			bg = Box.new(nil, [])
+			bg.x, bg.y = ary.map { |g| g.x }.min, ary.map { |g| g.y }.min
+			bg.w, bg.h = ary.map { |g| g.x+g.w }.max - bg.x, ary.map { |g| g.y+g.h }.max - bg.y
+			ary.each { |g|
+				bg.content.concat g.content
+				bg.to |= g.to
+				bg.from |= g.from
 			}
-			g = HzBoxGroup.new(ary)
-			walk[g]
-			VtBoxGroup.new << simplify_split[g] << down
+			bg.to -= ary
+			bg.to.each { |t| t.from = t.from - ary + [bg] }
+			bg.from -= ary
+			bg.from.each { |f| f.to = f.to - ary + [bg] }
+			idx = ary.map { |g| groups.index(g) }.min
+			groups = groups - ary
+			groups.insert(idx, bg)
+			bg
 		}
 
-		# take an hbox, find common boxes, simplify_merge groups containing them
-		# what does that mean, h[prefix1+suffix, suffix, other] =>  h[v[h[prefix], common suffix], nothing in common] .. ?
-		# TODO v[hz[1, 2], 2] => v[hzd[1], 2]
-		simplify_split = proc { |g|
-			case g.list.length
-			when 0: nil
-			when 1: g.direct ? g : g.list.first
-			else
-				# search common box
-				boxes = g.list.inject({}) { |h, gg| h.update gg => g.boxes(gg) }
-				# for all couple of groups, find the lowest-ranked common box, then return the lowest-ranked of them
-				if b = (0...g.list.length).map { |i| 
-					(i+1...g.list.length).map { |ii| boxes[g.list[i]] & boxes[g.list[ii]] }.flatten.uniq.sort_by { |b| rank[b] }.first
-				}.compact.sort_by { |b| rank[b] }.first
-					v = g.list.find_all { |gg| boxes[gg].include?(b) }
-					g.list -= v
-					g.list << simplify_merge[v, b]
-					simplify_split[g]
-				else
-					g
-				end
-			end
+		# move all boxes within group of dx, dy
+		move_group = proc { |g, dx, dy|
+			g.content.each { |b| b.x += dx ; b.y += dy }
+			g.x += dx ; g.y += dy
 		}
 
-		# create a vbox with 2 elems: the root, and an hbox containing all to with higher rank, simplified
-		make_group = proc { |root|
-			g = HzBoxGroup.new
-			root.to.each { |t| g << make_group[t] if rank[t] > rank[root] }
-			VtBoxGroup.new << root << simplify_split[g]
+		align_hz = proc { |ary|
+			nx = ary.map { |g| g.w }.inject { |a, b| a+b } / -2
+			ary.each { |g|
+				move_group[g, nx-g.x, 0]
+				nx += g.w
+			}
+		}
+		align_vt = proc { |ary|
+			ny = ary.map { |g| g.h }.inject { |a, b| a+b } / -2
+			ary.each { |g|
+				move_group[g, 0, ny-g.y]
+				ny += g.h
+			}
 		}
 
-		rootbox = HzBoxGroup.new
-		roots.each { |r| rootbox << make_group[r] }
-simpler = proc { |g|
-	next if not g.kind_of? BoxGroup
-	g.list.each_with_index { |e, i|
-		simpler[e]
-		if e.kind_of? BoxGroup and e.list.length == 1
-			g.list[i] = e.list.first
-		end
-	}
-}
-simpler[rootbox]
-pt['makegroups']
-		rootbox = simplify_split[rootbox]
-pt['simp_split final']
+		# scan groups for a column pattern (head has 1 'to' which from == [head]
+		group_columns = proc {
+			groups.find { |g|
+				next if g.from.length == 1 and g.from.first.to.length == 1
+				ary = [g]
+				ary << (g = g.to.first) while g.to.length == 1 and g.to.first.from.length == 1
+				next if ary.length == 1
+				align_vt[ary]
+				merge_groups[ary]
+				true
+			}
+		}
 
-		arrange = proc { |g|
-			next if not g.kind_of? BoxGroup
-			g.list.each { |gg| arrange[gg] }
-			case g
-			when VtBoxGroup
-				dy = 0
-				gw = g.w
-				g.list.each { |gg|
-					gg.x += (gw-gg.w)/2
-					if gg.kind_of? HzBoxGroup
-						if gg.direct
-							gg.x += gg.w/2+8
-						else
-							dy += 17
-						end
-					end
-					gg.y += dy
-					dy += gg.h+17
+		# scan groups for a line pattern (multiple groups with same to & same from)
+		group_lines = proc {
+			groups.find { |g|
+				ary = groups.find_all { |gg|
+					g.from.uniq.length == gg.from.uniq.length and (g.from - gg.from).empty? and
+					g.to.uniq.length == gg.to.uniq.length and (g.to - gg.to).empty?
 				}
-			when HzBoxGroup
-				dx = 0
-				g.list.each { |gg| gg.x += dx ; dx += gg.w + 17 }
-			end
+				next if ary.length == 1
+				dy = 16*(ary.length-2)	# many boxes => lower
+				ary.each { |g| move_group[g, 0, dy] ; g.h += dy ; g.y -= dy }
+				merge_groups[ary]
+				align_hz[ary]
+				true
+			}
 		}
 
-		# fails, a box may be now in two non-imbricated groups => bad layout
-p rootbox
-		arrange[rootbox]
-pt['arrange']
-		# shrink the graph
-0.times {
-		@box.sort_by { |b| rank[b] }.each { |b|
-			pv = @box.map { |bb| bb.y + bb.h if bb.x+bb.w+16 < b.x or b.x+b.w+16 < bb.x }.compact.delete_if { |pv| pv >= b.y }.sort.last
-			b.y = pv+24 if pv and b.y > pv+24
+		# scan groups for a if/then pattern (1 -> 2 -> 3 & 1 -> 3)
+		group_ifthen = proc { |strict|
+			groups.find { |g|
+				next if not g2 = g.to.find { |g2| (g2.to.length == 1 and g.to.include?(g2.to.first)) or
+					(not strict and g2.to.empty?)  }
+				next if strict and g2.from != [g]
+				align_vt[[g, g2]]
+				move_group[g2, g2.w/2, 0]
+				g2.x -= g2.w ; g2.w *= 2	# so that merge gives the correct x/w to head
+				merge_groups[[g, g2]]
+				true
+			}
 		}
-		@box.sort_by { |b| rank[b] }.each { |b|
-			pv = @box.map { |bb| bb.x + bb.w if bb.y+bb.h+12 < b.y or b.y+b.h+12 < bb.y }.compact.delete_if { |pv| pv >= b.x }.sort.last
-			b.x = pv+24 if pv and b.x > pv+24
-		}
-}
-pt['shrink']
 
-		@view_x = rootbox.x-16	# need window width to center..
-		@view_y = rootbox.y-16
+		# unknown pattern, group as we can..
+		group_other = proc {
+			next if groups.length == 1
+puts 'unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.inspect}" }
+			g1 = groups.find_all { |g| g.from.empty? }
+			g1 << groups.first if g1.empty?
+			g2 = g1.map { |g| g.to }.flatten.uniq - g1
+
+			align_hz[g1]
+			g1 = merge_groups[g1]
+			move_group[g1, 0, -24]
+			g1.h += 48
+			align_hz[g2]
+			g2 = merge_groups[g2]
+			move_group[g2, 0, 24]
+			g2.h += 48 ; g2.y -= 48
+
+			align_vt[[g1, g2]]
+			merge_groups[[g1, g2]]
+			true
+		}
+
+		nil while group_columns[] or group_lines[] or group_ifthen[true] or group_ifthen[false] or group_other[]
+
+		@view_x = groups.first.x-10
+		@view_y = groups.first.y-10
 	end
 end
 
@@ -278,8 +215,6 @@ class GraphViewWidget < Gtk::HBox
 		@dasm = dasm
 		@entrypoints = entrypoints
 		@view_history = []
-		@line_address = {}	# box => {line => addr}
-		@line_text = {}
 		@hl_word = nil
 		@caret_x = @caret_y = @caret_box = nil
 		@layout = Pango::Layout.new Gdk::Pango.context
@@ -436,7 +371,7 @@ class GraphViewWidget < Gtk::HBox
 			if @hl_word and @zoom >= 0.90 and @zoom <= 1.1
 				focus_addr(@hl_word)
 			else
-				focus_addr b.addresses.first
+				focus_addr b[:addresses].first
 			end
 		elsif @zoom == 1.0
 			@curcontext.view_x = @curcontext.box.map { |b| b.x }.min - 10
@@ -496,9 +431,9 @@ class GraphViewWidget < Gtk::HBox
 			w.draw_line(gc, x2-margin/2, y2-margin/2, x2, y2)
 			w.draw_line(gc, x2+margin/2, y2-margin/2, x2, y2)
 			y1 += margin
-			y2 -= margin
+			y2 -= margin-1
 		end
-		if y2+margin >= y1-margin
+		if y2+margin >= y1-margin-1
 			w.draw_line(gc, x1, y1, x2, y2) if x1 != y1 or x2 != y2
 		elsif x1-b1w/2-margin >= x2+b2w/2+margin	# z
 			w.draw_line(gc, x1, y1, x1-b1w/2-margin, y1)
@@ -556,13 +491,13 @@ class GraphViewWidget < Gtk::HBox
 			w.draw_layout(gc, x, y, @layout)
 			x += @layout.pixel_size[0]
 		}
-		# newline: current line is fully rendered, update @line_address/@line_text etc
+		# newline: current line is fully rendered, update line_address/line_text etc
 		nl = proc {
 			x = (b.x - @curcontext.view_x + 1)*@zoom
 			y += @font_height
 		}
 
-		b.addresses.each { |addr|
+		b[:addresses].each { |addr|
 			curaddr = addr
 			if di = @dasm.decoded[curaddr] and di.kind_of? Metasm::DecodedInstruction
 				# a decoded instruction : check if it's a block start
@@ -616,7 +551,7 @@ class GraphViewWidget < Gtk::HBox
 		# graph : block -> following blocks in same function
 		block_rel = {}
 
-		todo = @curcontext.roots.dup
+		todo = @curcontext.root_addrs.dup
 		done = [:default, Expression::Unknown]
 		while a = todo.shift
 			a = @dasm.normalize a
@@ -635,7 +570,7 @@ class GraphViewWidget < Gtk::HBox
 
 		# populate boxes
 		addr2box = {}
-		todo = @curcontext.roots.dup
+		todo = @curcontext.root_addrs.dup
 		done = []
 		while a = todo.shift
 			next if done.include? a
@@ -645,10 +580,10 @@ class GraphViewWidget < Gtk::HBox
 					addr2box[from.first] and @dasm.decoded[from.first].block.list.last.next_addr == a
 				box = addr2box[from.first]
 			else
-				box = @curcontext.new_box(a)
+				box = @curcontext.new_box a, :addresses => [], :line_text => {}, :line_address => {}
 			end
 			@dasm.decoded[a].block.list.each { |di|
-				box.addresses << di.address
+				box[:addresses] << di.address
 				addr2box[di.address] = box
 			}
 			todo.concat block_rel[a]
@@ -656,7 +591,7 @@ class GraphViewWidget < Gtk::HBox
 
 		# link boxes
 		@curcontext.box.each { |b|
-			a = @dasm.decoded[b.addresses.last].block.address
+			a = @dasm.decoded[b[:addresses].last].block.address
 			next if not block_rel[a]
 			block_rel[a].each { |t|
 				@curcontext.link_boxes(b.id, t)
@@ -670,12 +605,12 @@ class GraphViewWidget < Gtk::HBox
 			line = 0
 			render = proc { |str| fullstr << str }
 			nl = proc {
-				b.line_address[line] = curaddr
-				b.line_text[line] = fullstr
+				b[:line_address][line] = curaddr
+				b[:line_text][line] = fullstr
 				fullstr = ''
 				line += 1
 			}
-			b.addresses.each { |addr|
+			b[:addresses].each { |addr|
 				curaddr = addr
 				if di = @dasm.decoded[curaddr] and di.kind_of? Metasm::DecodedInstruction
 					if di.block.list.first == di
@@ -687,18 +622,15 @@ class GraphViewWidget < Gtk::HBox
 					nl[]
 				end
 			}
-			b.w = b.line_text.values.map { |str| str.length }.max * @font_width + 2
+			b.w = b[:line_text].values.map { |str| str.length }.max * @font_width + 2
 			b.h = line * @font_height + 2
 		}
 
-		if @curcontext.box.length < 15
-			@curcontext.auto_arrange_boxes
-			@curcontext.view_x = @curcontext.box.map { |b| b.x }.min.to_i - 10
-		end
+		@curcontext.auto_arrange_boxes
 
 		w_x = @curcontext.box.map { |b| b.x + b.w }.max - @curcontext.box.map { |b| b.x }.min + 20
 		w_y = @curcontext.box.map { |b| b.y + b.h }.max - @curcontext.box.map { |b| b.y }.min + 20
-		@drawarea.set_size_request([w_x, @width].max, [w_y, @height].max)
+		@drawarea.set_size_request([400, [w_x, @width].max].min, [400, [w_y, @height].max].min)
 
 
 		redraw
@@ -744,7 +676,7 @@ class GraphViewWidget < Gtk::HBox
 			end
 		when GDK_Right
 			if @caret_box
-				if @caret_x <= @caret_box.line_text.values.map { |s| s.length }.max
+				if @caret_x <= @caret_box[:line_text].values.map { |s| s.length }.max
 					@caret_x += 1
 					update_caret
 				end
@@ -754,7 +686,7 @@ class GraphViewWidget < Gtk::HBox
 			end
 		when GDK_Down
 			if @caret_box
-				if @caret_y < @caret_box.line_text.length-1
+				if @caret_y < @caret_box[:line_text].length-1
 					@caret_y += 1
 					update_caret
 				end
@@ -789,7 +721,7 @@ class GraphViewWidget < Gtk::HBox
 			end
 		when GDK_End
 			if @caret_box
-				@caret_x = @caret_box.line_text[@caret_y].length
+				@caret_x = @caret_box[:line_text][@caret_y].length
 				update_caret
 			else
 				@curcontext.view_x = [@curcontext.box.map { |b| b.x+b.w }.max-@width/@zoom+10, @curcontext.box.map { |b| b.x }.min-10].max
@@ -807,6 +739,14 @@ class GraphViewWidget < Gtk::HBox
 				update_caret
 			end
 
+		when GDK_Delete
+			@selected_boxes.each { |b|
+				@curcontext.box.delete b
+				b.from.each { |bb| bb.to.delete b }
+				b.to.each { |bb| bb.from.delete b }
+			}
+			redraw
+
 		when GDK_a
 			puts 'autoarrange'
 			@curcontext.auto_arrange_boxes
@@ -820,9 +760,9 @@ class GraphViewWidget < Gtk::HBox
 
 		when GDK_c	# disassemble from this point
 				# if points to a call, make it return
-			#@entrypoints << @line_address[@caret_y]
-			return if not addr = @caret_box.line_address[@caret_y]
+			return if not addr = @caret_box[:line_address][@caret_y]
 			if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip] and not @dasm.decoded[addr + di.bin_length]
+				di.block.add_to_subfuncret(addr+di.bin_length)
 				@dasm.addrs_todo << [addr + di.bin_length, addr, true]
 			else
 				@dasm.addrs_todo << [addr]
@@ -835,7 +775,7 @@ class GraphViewWidget < Gtk::HBox
 			}
 		when GDK_n	# name/rename a label
 			if not @hl_word or not addr = @dasm.prog_binding[@hl_word]
-				return if not addr = @caret_box.line_address[@caret_y]
+				return if not addr = @caret_box[:line_address][@caret_y]
 			end
 			if old = @dasm.prog_binding.index(addr)
 				InputBox.new("new name for #{old}") { |v| @dasm.rename_label(old, v) ; redraw }
@@ -862,7 +802,7 @@ class GraphViewWidget < Gtk::HBox
 			$VERBOSE = ! $VERBOSE
 			puts "verbose #$VERBOSE"
 		when GDK_x	# show xrefs to the current address
-			return if not addr = @caret_box.line_address[@caret_y]
+			return if not addr = @caret_box[:line_address][@caret_y]
 			lst = ["list of xrefs to #{Expression[addr]}"]
 			@dasm.each_xref(addr) { |xr|
 				if @dasm.decoded[xr.origin].kind_of? DecodedInstruction
@@ -875,9 +815,9 @@ class GraphViewWidget < Gtk::HBox
 			MessageBox.new lst.join("\n ")
 		when GDK_i	# misc debug
 			begin
-				p @curcontext.box.map { |b| b.line_address.sort.map { |a1, a2| "#{a1} #{Expression[a2]}" } }
+				p @curcontext.box.map { |b| b[:line_address].sort.map { |a1, a2| "#{a1} #{Expression[a2]}" } }
 				if @caret_box
-					puts @caret_box.line_text.sort.transpose.last
+					puts @caret_box[:line_text].sort.transpose.last
 				else
 					puts 'nobox'
 				end
@@ -901,6 +841,7 @@ class GraphViewWidget < Gtk::HBox
 		done = []
 		roots = []
 		while a = todo.shift
+			a = @dasm.normalize(a)
 			next if done.include? a
 			next if not b = @dasm.decoded[a] or not b.kind_of? DecodedInstruction or not b = b.block
 			done << a
@@ -978,24 +919,22 @@ class GraphViewWidget < Gtk::HBox
 
 		# move window / change curcontext
 		@view_history << [current_address, @caret_x] if can_update_context
-#puts "focus #{Expression[addr]}"
-#puts "ctx #{@curcontext.box.map { |b| b.line_address.sort.map { |a1, a2| "#{Expression[a1]} => #{Expression[a2]}" }.join(', ') } }"
-		if b = @curcontext.box.find { |b| b.line_address.index(addr) }
-			@caret_box, @caret_x, @caret_y = b, 0, b.line_address.index(addr)
+		if b = @curcontext.box.find { |b| b[:line_address].index(addr) }
+			@caret_box, @caret_x, @caret_y = b, 0, b[:line_address].index(addr)
 			focus_xy(b.x, b.y + @caret_y*@font_height)
 			update_caret
 		elsif can_update_context
 			@curcontext = Graph.new 'testic'
-			@curcontext.roots = dasm_find_roots(addr)
+			@curcontext.root_addrs = dasm_find_roots(addr)
 			gui_update
 			return focus_addr(addr, false)
 		else
 			MessageBox.new "Bad control graph, cannot find graph root :("
 			if @caret_box
 				@curcontext = Graph.new 'testic'
-				@curcontext.roots = dasm_find_roots(@caret_box.line_address[0])
+				@curcontext.root_addrs = dasm_find_roots(@caret_box[:line_address][0])
 				gui_update
-				return focus_addr(@caret_box.line_address[0], false)
+				return focus_addr(@caret_box[:line_address][0], false)
 			end
 		end
 		true
@@ -1015,7 +954,7 @@ class GraphViewWidget < Gtk::HBox
 	# hint that the caret moved
 	# redraw, change the hilighted word
 	def update_caret
-		return if not @caret_box or not @caret_x or not l = @caret_box.line_text[@caret_y]
+		return if not @caret_box or not @caret_x or not l = @caret_box[:line_text][@caret_y]
 		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
 		word = nil if word == ''
 		@hl_word = word
@@ -1023,7 +962,7 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def current_address
-		@caret_box.line_address[@caret_y] if @caret_box
+		@caret_box[:line_address][@caret_y] if @caret_box
 	end
 end
 end

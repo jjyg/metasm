@@ -423,6 +423,7 @@ class AsmListingWidget < Gtk::HBox
 			#@entrypoints << @line_address[@caret_y]
 			return if not addr = @line_address[@caret_y]
 			if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip] and not @dasm.decoded[addr + di.bin_length]
+				di.block.add_to_subfuncret(addr+di.bin_length)
 				@dasm.addrs_todo << [addr + di.bin_length, addr, true]
 			else
 				@dasm.addrs_todo << [addr]
