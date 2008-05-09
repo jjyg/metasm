@@ -12,7 +12,15 @@
 require 'metasm'
 require 'metasm/gui/gtk'
 
-exe = Metasm::AutoExe.decode_file(ARGV.shift)
+target = ARGV.shift
+if not target
+	w = Metasm::GtkGui::OpenFile.new('chose target binary') { |t| target = t }
+	w.signal_connect('destroy') { Gtk.main_quit }
+	Gtk.main
+	exit if not target
+end
+
+exe = Metasm::AutoExe.decode_file(target)
 dasm = exe.init_disassembler
 
 w = Metasm::GtkGui::MainWindow.new.display(dasm)
