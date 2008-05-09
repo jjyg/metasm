@@ -315,7 +315,7 @@ class WinDbg
 	class CreateThreadInfo
 		attr_reader :hthread, :threadlocalbase, :startaddr
 		def initialize(str)
-			@handle, @threadlocalbase, @startaddr = str.unpack('LLL')
+			@hthread, @threadlocalbase, @startaddr = str.unpack('LLL')
 		end
 	end
 	class CreateProcessInfo
@@ -362,41 +362,56 @@ class WinDbg
 		end
 	end
 
+	# returns a string suitable for use as a debugevent structure
+	def debugevent_alloc
+		# on wxpsp2, debugevent is at most 24*uint
+		([0]*30).pack('L*')
+	end
+
 	# waits for debug events
 	# dispatches to the different handler_*
 	# custom handlers should call the default version
 	def debugloop
-		# on wxpsp2, debugevent is at most 24*uint
-		debugevent = ([0]*30).pack('L*')
+		debugevent = debugevent_alloc
 		while not @mem.empty?
 			WinAPI.waitfordebugevent(debugevent, WinAPI::INFINITE)
-			code, pid, tid = debugevent.unpack('LLL')
-			info = debugevent[[0,0,0].pack('LLL').length..-1]
-
-			cont = \
-			case code
-			when WinAPI::EXCEPTION_DEBUG_EVENT
-				handler_exception pid, tid, ExceptionInfo.new(info)
-			when WinAPI::CREATE_PROCESS_DEBUG_EVENT
-				handler_newprocess pid, tid, CreateProcessInfo.new(info)
-			when WinAPI::CREATE_THREAD_DEBUG_EVENT
-				handler_newthread pid, tid, CreateThreadInfo.new(info)
-			when WinAPI::EXIT_PROCESS_DEBUG_EVENT
-				handler_endprocess pid, tid, ExitProcessInfo.new(info)
-			when WinAPI::EXIT_THREAD_DEBUG_EVENT
-				handler_endthread pid, tid, ExitThreadInfo.new(info)
-			when WinAPI::LOAD_DLL_DEBUG_EVENT
-				handler_loaddll pid, tid, LoadDllInfo.new(info)
-			when WinAPI::UNLOAD_DLL_DEBUG_EVENT
-				handler_unloaddll pid, tid, UnloadDllInfo.new(info)
-			when WinAPI::OUTPUT_DEBUG_STRING_EVENT
-				handler_debugstring pid, tid, OutputDebugStringInfo.new(info)
-			when WinAPI::RIP_EVENT
-				handler_rip pid, tid, RipInfo.new(info)
-			end
-
-			WinAPI.continuedebugevent(pid, tid, cont)
+			debugloop_step(debugevent)
 		end
+	end
+
+	# handles one debug event
+	# arg is a packed string containing a debugevent structure
+	# usage:
+	#  de = debugevent_alloc
+	#  waitfordebugevent(de, <timeout>)
+	#  debugloop_step(de)
+	def debugloop_step(debugevent)
+		code, pid, tid = debugevent.unpack('LLL')
+		info = debugevent[[0,0,0].pack('LLL').length..-1]
+		
+		cont = \
+		case code
+		when WinAPI::EXCEPTION_DEBUG_EVENT
+			handler_exception pid, tid, ExceptionInfo.new(info)
+		when WinAPI::CREATE_PROCESS_DEBUG_EVENT
+			handler_newprocess pid, tid, CreateProcessInfo.new(info)
+		when WinAPI::CREATE_THREAD_DEBUG_EVENT
+			handler_newthread pid, tid, CreateThreadInfo.new(info)
+		when WinAPI::EXIT_PROCESS_DEBUG_EVENT
+			handler_endprocess pid, tid, ExitProcessInfo.new(info)
+		when WinAPI::EXIT_THREAD_DEBUG_EVENT
+			handler_endthread pid, tid, ExitThreadInfo.new(info)
+		when WinAPI::LOAD_DLL_DEBUG_EVENT
+			handler_loaddll pid, tid, LoadDllInfo.new(info)
+		when WinAPI::UNLOAD_DLL_DEBUG_EVENT
+			handler_unloaddll pid, tid, UnloadDllInfo.new(info)
+		when WinAPI::OUTPUT_DEBUG_STRING_EVENT
+			handler_debugstring pid, tid, OutputDebugStringInfo.new(info)
+		when WinAPI::RIP_EVENT
+			handler_rip pid, tid, RipInfo.new(info)
+		end
+
+		WinAPI.continuedebugevent(pid, tid, cont)
 	end
 
 	def handler_exception(pid, tid, info)
