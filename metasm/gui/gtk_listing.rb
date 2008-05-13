@@ -8,11 +8,12 @@ require 'gtk2'
 module Metasm
 module GtkGui
 class AsmListingWidget < Gtk::HBox
+	attr_accessor :hl_word
+
 	# construction method
-	def initialize(dasm, entrypoints)
+	def initialize(dasm, parent_widget)
 		@dasm = dasm
-		@entrypoints = entrypoints
-		@view_history = []	# addrs we jumped from using focus_addr
+		@parent_widget = parent_widget
 		@arrows = []	# array of [linefrom, lineto] (may be :up or :down for offscreen)
 		@line_address = {}
 		@line_text = {}
@@ -37,7 +38,7 @@ class AsmListingWidget < Gtk::HBox
 		@vscroll.adjustment.upper = @dasm.sections.keys.max + @dasm.sections[@dasm.sections.keys.max].length
 		@vscroll.adjustment.step_increment = 1
 		@vscroll.adjustment.page_increment = 10
-		@vscroll.adjustment.value = @vscroll.adjustment.lower
+		@vscroll.adjustment.value = @dasm.prog_binding['entrypoint'] || @vscroll.adjustment.lower
 		set_font 'courier 10'
 
 		# receive mouse/kbd events
@@ -80,18 +81,7 @@ class AsmListingWidget < Gtk::HBox
 			keypress(ev)
 		}
 		signal_connect('scroll_event') { |w, ev| # mouse wheel
-			case ev.direction
-			when Gdk::EventScroll::Direction::UP
-				# TODO scroll up exactly win_height/2 lines
-				# at least cache page_down addresses
-				@vscroll.adjustment.value -= @vscroll.adjustment.page_increment
-				true
-			when Gdk::EventScroll::Direction::DOWN
-				pgdown = @line_address[@line_address.keys.max.to_i/2] || @vscroll.adjustment.value
-				pgdown += @vscroll.adjustment.page_increment if pgdown == @vscroll.adjustment.value
-				@vscroll.adjustment.value = pgdown
-				true
-			end
+			mouse_wheel(ev)
 		}
 		signal_connect('realize') { # one-time initialize
 			# raw color declaration
@@ -128,6 +118,21 @@ class AsmListingWidget < Gtk::HBox
 
 	def doubleclick(ev)
 		focus_addr(@hl_word)
+	end
+
+	def mouse_wheel(ev)
+		case ev.direction
+		when Gdk::EventScroll::Direction::UP
+			# TODO scroll up exactly win_height/2 lines
+			# at least cache page_down addresses
+			@vscroll.adjustment.value -= @vscroll.adjustment.page_increment
+			true
+		when Gdk::EventScroll::Direction::DOWN
+			pgdown = @line_address[@line_address.keys.max.to_i/2] || @vscroll.adjustment.value
+			pgdown += @vscroll.adjustment.page_increment if pgdown == @vscroll.adjustment.value
+			@vscroll.adjustment.value = pgdown
+			true
+		end
 	end
 
 	# renders the disassembler in the @listing_widget using @vscroll.adjustment.value
@@ -412,96 +417,25 @@ class AsmListingWidget < Gtk::HBox
 			@caret_x = @line_text[@caret_y].length
 			update_caret
 
-		when GDK_Return, GDK_KP_Enter
-			focus_addr @hl_word
-		when GDK_Escape
-			@vscroll.adjustment.value, @caret_x, @caret_y = @view_history.pop if not @view_history.empty?
-			update_caret
-
-		when GDK_c	# disassemble from this point
-				# if points to a call, make it return
-			#@entrypoints << @line_address[@caret_y]
-			return if not addr = @line_address[@caret_y]
-			if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip] and not @dasm.decoded[addr + di.bin_length]
-				di.block.add_to_subfuncret(addr+di.bin_length)
-				@dasm.addrs_todo << [addr + di.bin_length, addr, true]
-			else
-				@dasm.addrs_todo << [addr]
-			end
-		when GDK_g	# jump to address
-			InputBox.new('address to go') { |v| focus_addr v }
-		when GDK_h	# parses a C header
-			OpenFile.new('open C header') { |f|
-				@dasm.parse_c_file(f) rescue MessageBox.new("#{$!}\n#{$!.backtrace}")
-			}
-		when GDK_n	# name/rename a label
-			if not @hl_word or not addr = @dasm.prog_binding[@hl_word]
-				return if not addr = @line_address[@caret_y]
-			end
-			if old = @dasm.prog_binding.index(addr)
-				InputBox.new("new name for #{old}") { |v| @dasm.rename_label(old, v) ; redraw }
-			else
-				InputBox.new("label name for #{Expression[addr]}") { |v| @dasm.rename_label(@dasm.label_at(addr, v), v) ; redraw }
-			end
-		when GDK_p	# pause/play disassembler
-			@dasm_pause ||= []
-			if @dasm_pause.empty? and @dasm.addrs_todo.empty?
-			elsif @dasm_pause.empty?
-				@dasm_pause = @dasm.addrs_todo.dup
-				@dasm.addrs_todo.clear
-				puts "dasm paused (#{@dasm_pause.length})"
-			else
-				@dasm.addrs_todo.concat @dasm_pause
-				@dasm_pause.clear
-				puts "dasm restarted (#{@dasm.addrs_todo.length})"
-			end
 		when GDK_r	# reload this file
 			load __FILE__
 			redraw
 			puts 'reloaded'
-		when GDK_v	# toggle verbose flag
-			$VERBOSE = ! $VERBOSE
-			puts "verbose #$VERBOSE"
-		when GDK_x	# show xrefs to the current address
-			return if not addr = @line_address[@caret_y]
-			lst = ["list of xrefs to #{Expression[addr]}"]
-			@dasm.each_xref(addr) { |xr|
-				if @dasm.decoded[xr.origin].kind_of? DecodedInstruction
-					org = @dasm.decoded[xr.origin]
-				else
-					org = Expression[xr.origin]
-				end
-				lst << "xref #{xr.type}#{xr.len} from #{org}"
-			}
-			MessageBox.new lst.join("\n ")
-		when GDK_i	# misc debug
-			begin
-			rescue
-				MessageBox.new $!
-			end
-
-		when GDK_space
-			if @dasm.decoded[current_address]
-				graph = GraphViewWidget.new(@dasm, @entrypoints)
-				graph.focus_addr current_address
-				w = Gtk::Window.new
-				w.add graph
-				w.show_all
-			end
-
-		when 0x20..0x7e	# normal kbd (use ascii code)
-		when GDK_Shift_L, GDK_Shift_R, GDK_Control_L, GDK_Control_R, GDK_Alt_L, GDK_Alt_R, GDK_Meta_L,
-		     GDK_Meta_R, GDK_Super_L, GDK_Super_R, GDK_Menu
+			return @parent_widget.keypress(ev)
 		else
-			c = Gdk::Keyval.constants.find { |c| Gdk::Keyval.const_get(c) == ev.keyval }
-			p [:unknown_keypress, ev.keyval, c, ev.state]
+			return @parent_widget.keypress(ev)
 		end
-		false
+		true
 	end
-	
-	# 
-	# Widget external API
-	#
+
+	def get_cursor_pos
+		[@vscroll.adjustment, @caret_x, @caret_y]
+	end
+
+	def set_cursor_pos(p)
+		@vscroll.adjustment, @caret_x, @caret_y = p
+		update_caret
+	end
 	
 	# change the font of the listing
 	# arg is a Gtk Fontdescription string (eg 'courier 10')
@@ -559,7 +493,6 @@ class AsmListingWidget < Gtk::HBox
 	# focus on addr
 	# addr may be a dasm label, dasm address, dasm address in string form (eg "0DEADBEEFh")
 	# may scroll the window
-	# updates @view_history
 	# returns true on success (address exists)
 	def focus_addr(addr)
 		return if not addr or addr == ''
@@ -569,17 +502,17 @@ class AsmListingWidget < Gtk::HBox
 				begin
 					addr = Integer(addr)
 				rescue ::ArgumentError
-					MessageBox.new "Invalid address #{addr}"
+					messagebox "Invalid address #{addr}"
 					return
 				end
 			elsif @dasm.prog_binding[addr]
 				addr = @dasm.prog_binding[addr]
 			else
-				MessageBox.new "Unknown label #{addr}"
+				messagebox "Unknown label #{addr}"
 				return
 			end
 		end
-		@view_history << [@vscroll.adjustment.value, @caret_x, @caret_y]
+
 		if l = @line_address.index(addr) and l < @line_address.keys.max - 4
 			@caret_y, @caret_x = @line_address.keys.find_all { |k| @line_address[k] == addr }.max, 0
 		else
@@ -587,6 +520,10 @@ class AsmListingWidget < Gtk::HBox
 		end
 		update_caret
 		true
+	end
+
+	def messagebox(*a)
+		@parent_widget.messagebox(*a)
 	end
 
 	# returns the address of the data under the cursor

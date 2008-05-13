@@ -32,6 +32,7 @@ class Graph
 	attr_accessor :id, :box, :root_addrs, :view_x, :view_y
 	def initialize(id)
 		@id = id
+		@root_addrs = []
 		clear
 	end
 
@@ -70,6 +71,8 @@ class Graph
 
 	# place boxes in a good-looking layout
 	def auto_arrange_boxes
+		return if @box.empty?
+
 		# groups is an array of box groups
 		# all groups are centered on the origin
 		groups = @box.map { |b|
@@ -211,10 +214,11 @@ end
 
 
 class GraphViewWidget < Gtk::HBox
-	def initialize(dasm, entrypoints=[])
+	attr_accessor :hl_word
+
+	def initialize(dasm, parent_widget)
 		@dasm = dasm
-		@entrypoints = entrypoints
-		@view_history = []
+		@parent_widget = parent_widget
 		@hl_word = nil
 		@caret_x = @caret_y = @caret_box = nil
 		@layout = Pango::Layout.new Gdk::Pango.context
@@ -232,8 +236,7 @@ class GraphViewWidget < Gtk::HBox
 		@drawarea = Gtk::DrawingArea.new
 		pack_start @drawarea
 
-		@drawarea.set_size_request 400, 400		# default control size
-		@width = @height = 400
+		@width = @height = 20
 
 		set_font 'courier 10'
 		
@@ -379,6 +382,7 @@ class GraphViewWidget < Gtk::HBox
 			maxx = @curcontext.box.map { |b| b.x + b.w }.max + 10
 			maxy = @curcontext.box.map { |b| b.y + b.h }.max + 10
 			@zoom = [@width.to_f/(maxx-@curcontext.view_x), @height.to_f/(maxy-@curcontext.view_y)].min
+			@zoom = 1.0 if @zoom > 1.0
 		else
 			@curcontext.view_x += (ev.x / @zoom - ev.x)
 			@curcontext.view_y += (ev.y / @zoom - ev.y)
@@ -398,6 +402,7 @@ class GraphViewWidget < Gtk::HBox
 		# TODO MergedBoxes
 
 		# arrows
+		# draw first to stay under the boxes
 		# XXX precalc ?
 		@curcontext.box.each { |b|
 			b.to.each { |tb|
@@ -405,6 +410,7 @@ class GraphViewWidget < Gtk::HBox
 			}
 		}
 		
+		# XXX reorder boxes ? (for zorder) (eg. on focus)
 		@shown_boxes = []
 		@curcontext.box.each { |b|
 			next if b.x >= @curcontext.view_x+w_w/@zoom or b.y >= @curcontext.view_y+w_h/@zoom or b.x+b.w <= @curcontext.view_x or b.y+b.h <= @curcontext.view_y
@@ -415,10 +421,11 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def paint_arrow(w, gc, b1, b2)
+		# TODO separate arrows ends by a few pixels (esp incoming vs outgoing)
 		x1, y1 = b1.x+b1.w/2-@curcontext.view_x, b1.y+b1.h-@curcontext.view_y
 		x2, y2 = b2.x+b2.w/2-@curcontext.view_x, b2.y-1-@curcontext.view_y
 		margin = 8
-		return if (y1+margin < 0 and y2 < 0) or (y1 > @height/@zoom and y1-margin > @height/@zoom)	# just clip on y
+		return if (y1+margin < 0 and y2 < 0) or (y1 > @height/@zoom and y2-margin > @height/@zoom)	# just clip on y
 		margin, x1, y1, x2, y2, b1w, b2w = [margin, x1, y1, x2, y2, b1.w, b2.w].map { |v| v*@zoom }
 		if b1 == @caret_box or b2 == @caret_box
 			gc.set_foreground @color[:arrow_hl]
@@ -427,7 +434,7 @@ class GraphViewWidget < Gtk::HBox
 		end
 		if margin > 2
 			w.draw_line(gc, x1, y1, x1, y1+margin)
-			w.draw_line(gc, x2, y2-margin, x2, y2)
+			w.draw_line(gc, x2, y2-margin+1, x2, y2)
 			w.draw_line(gc, x2-margin/2, y2-margin/2, x2, y2)
 			w.draw_line(gc, x2+margin/2, y2-margin/2, x2, y2)
 			y1 += margin
@@ -460,6 +467,7 @@ class GraphViewWidget < Gtk::HBox
 		w.draw_rectangle(gc, true, (b.x-@curcontext.view_x)*@zoom, (b.y-@curcontext.view_y)*@zoom, b.w*@zoom, b.h*@zoom)
 
 		return if @zoom < 0.99 or @zoom > 1.1
+		# TODO dynamic font size ?
 
 		# current text position
 		x = (b.x - @curcontext.view_x + 1)*@zoom
@@ -623,14 +631,16 @@ class GraphViewWidget < Gtk::HBox
 				end
 			}
 			b.w = b[:line_text].values.map { |str| str.length }.max * @font_width + 2
+			b.w += 1 if b.w % 2 == 0	# ensure boxes have odd width -> vertical arrows are straight
 			b.h = line * @font_height + 2
 		}
 
 		@curcontext.auto_arrange_boxes
 
-		w_x = @curcontext.box.map { |b| b.x + b.w }.max - @curcontext.box.map { |b| b.x }.min + 20
-		w_y = @curcontext.box.map { |b| b.y + b.h }.max - @curcontext.box.map { |b| b.y }.min + 20
-		@drawarea.set_size_request([400, [w_x, @width].max].min, [400, [w_y, @height].max].min)
+		w_x = @curcontext.box.map { |b| b.x + b.w }.max.to_i - @curcontext.box.map { |b| b.x }.min.to_i + 20
+		w_y = @curcontext.box.map { |b| b.y + b.h }.max.to_i - @curcontext.box.map { |b| b.y }.min.to_i + 20
+		# TODO 
+		# @drawarea.set_default_size([750, [w_x, @width].max].min, [500, [w_y, @height].max].min)	# fit in ~800x600..
 
 
 		redraw
@@ -729,16 +739,6 @@ class GraphViewWidget < Gtk::HBox
 				redraw
 			end
 
-		when GDK_Return, GDK_KP_Enter
-			focus_addr @hl_word if @hl_word
-		when GDK_Escape
-			if not @view_history.empty?
-				addr, x = @view_history.pop
-				@view_history.pop if focus_addr addr
-				@caret_x = x
-				update_caret
-			end
-
 		when GDK_Delete
 			@selected_boxes.each { |b|
 				@curcontext.box.delete b
@@ -758,61 +758,6 @@ class GraphViewWidget < Gtk::HBox
 			redraw
 			puts 'update done'
 
-		when GDK_c	# disassemble from this point
-				# if points to a call, make it return
-			return if not addr = @caret_box[:line_address][@caret_y]
-			if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip] and not @dasm.decoded[addr + di.bin_length]
-				di.block.add_to_subfuncret(addr+di.bin_length)
-				@dasm.addrs_todo << [addr + di.bin_length, addr, true]
-			else
-				@dasm.addrs_todo << [addr]
-			end
-		when GDK_g	# jump to address
-			InputBox.new('address to go') { |v| focus_addr v }
-		when GDK_h	# parses a C header
-			OpenFile.new('open C header') { |f|
-				@dasm.parse_c_file(f) rescue MessageBox.new($!)
-			}
-		when GDK_n	# name/rename a label
-			if not @hl_word or not addr = @dasm.prog_binding[@hl_word]
-				return if not addr = @caret_box[:line_address][@caret_y]
-			end
-			if old = @dasm.prog_binding.index(addr)
-				InputBox.new("new name for #{old}") { |v| @dasm.rename_label(old, v) ; redraw }
-			else
-				InputBox.new("label name for #{Expression[addr]}") { |v| @dasm.rename_label(@dasm.label_at(addr, v), v) ; redraw }
-			end
-		when GDK_p	# pause/play disassembler
-			@dasm_pause ||= []
-			if @dasm_pause.empty? and @dasm.addrs_todo.empty?
-			elsif @dasm_pause.empty?
-				@dasm_pause = @dasm.addrs_todo.dup
-				@dasm.addrs_todo.clear
-				puts "dasm paused (#{@dasm_pause.length})"
-			else
-				@dasm.addrs_todo.concat @dasm_pause
-				@dasm_pause.clear
-				puts "dasm restarted (#{@dasm.addrs_todo.length})"
-			end
-		when GDK_r	# reload this file
-			load __FILE__
-			redraw
-			puts 'reloaded'
-		when GDK_v	# toggle verbose flag
-			$VERBOSE = ! $VERBOSE
-			puts "verbose #$VERBOSE"
-		when GDK_x	# show xrefs to the current address
-			return if not addr = @caret_box[:line_address][@caret_y]
-			lst = ["list of xrefs to #{Expression[addr]}"]
-			@dasm.each_xref(addr) { |xr|
-				if @dasm.decoded[xr.origin].kind_of? DecodedInstruction
-					org = @dasm.decoded[xr.origin]
-				else
-					org = Expression[xr.origin]
-				end
-				lst << "xref #{xr.type}#{xr.len} from #{org}"
-			}
-			MessageBox.new lst.join("\n ")
 		when GDK_i	# misc debug
 			begin
 				p @curcontext.box.map { |b| b[:line_address].sort.map { |a1, a2| "#{a1} #{Expression[a2]}" } }
@@ -823,18 +768,19 @@ class GraphViewWidget < Gtk::HBox
 				end
 				p [@caret_x, @caret_y]
 			rescue
-				MessageBox.new $!
+				messagebox $!
 			end
-		when 0x20..0x7e	# normal kbd (use ascii code)
-		when GDK_Shift_L, GDK_Shift_R, GDK_Control_L, GDK_Control_R, GDK_Alt_L, GDK_Alt_R, GDK_Meta_L,
-		     GDK_Meta_R, GDK_Super_L, GDK_Super_R, GDK_Menu
+		when GDK_r	# reload this file
+			load __FILE__
+			redraw
+			puts 'reloaded'
+			return @parent_widget.keypress(ev)
 		else
-			c = Gdk::Keyval.constants.find { |c| Gdk::Keyval.const_get(c) == ev.keyval }
-			p [:unknown_keypress, ev.keyval, c, ev.state]
+			return @parent_widget.keypress(ev)
 		end
-		false
+		true
 	end
-	
+
 	# find a suitable array of graph roots, walking up from a block (function start/entrypoint)
 	def dasm_find_roots(addr)
 		todo = [addr]
@@ -857,6 +803,21 @@ class GraphViewWidget < Gtk::HBox
 		roots
 	end
 
+	def messagebox(*a)
+		@parent_widget.messagebox(*a)
+	end
+
+	def set_cursor_pos(p)
+		addr, x = p
+		focus_addr(addr)
+		@caret_x = x
+		update_caret
+	end
+
+	def get_cursor_pos
+		[current_address, @caret_x]
+	end
+	
 	# queue redraw of the whole GUI visible area
 	def redraw
 		return if not @drawarea.window
@@ -900,25 +861,24 @@ class GraphViewWidget < Gtk::HBox
 				begin
 					addr = Integer(addr)
 				rescue ::ArgumentError
-					MessageBox.new "Invalid address #{addr}"
+					messagebox "Invalid address #{addr}"
 					return
 				end
 			elsif @dasm.prog_binding[addr]
 				addr = @dasm.prog_binding[addr]
 			else
-				MessageBox.new "Unknown label #{addr}"
+				messagebox "Unknown label #{addr}"
 				return
 			end
 		end
 
 		if not @dasm.decoded[addr].kind_of? DecodedInstruction
 			# TODO switch to Listing
-			MessageBox.new "Not an instruction"
+			messagebox "Not an instruction"
 			return
 		end
 
 		# move window / change curcontext
-		@view_history << [current_address, @caret_x] if can_update_context
 		if b = @curcontext.box.find { |b| b[:line_address].index(addr) }
 			@caret_box, @caret_x, @caret_y = b, 0, b[:line_address].index(addr)
 			focus_xy(b.x, b.y + @caret_y*@font_height)
@@ -929,7 +889,8 @@ class GraphViewWidget < Gtk::HBox
 			gui_update
 			return focus_addr(addr, false)
 		else
-			MessageBox.new "Bad control graph, cannot find graph root :("
+			messagebox "Bad control graph, cannot find graph root :("
+			# TODO let parent.focus_addr handle this ? (eg restore cursor_pos to oldpos on fail)
 			if @caret_box
 				@curcontext = Graph.new 'testic'
 				@curcontext.root_addrs = dasm_find_roots(@caret_box[:line_address][0])

@@ -14,7 +14,7 @@ require 'metasm/gui/gtk'
 
 target = ARGV.shift
 if not target
-	w = Metasm::GtkGui::OpenFile.new('chose target binary') { |t| target = t }
+	w = Metasm::GtkGui::OpenFile.new(nil, 'chose target binary') { |t| target = t }
 	w.signal_connect('destroy') { Gtk.main_quit }
 	Gtk.main
 	exit if not target
