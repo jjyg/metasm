@@ -117,7 +117,7 @@ class AsmListingWidget < Gtk::HBox
 	end
 
 	def doubleclick(ev)
-		focus_addr(@hl_word)
+		@parent_widget.focus_addr(@hl_word)
 	end
 
 	def mouse_wheel(ev)
@@ -224,12 +224,13 @@ class AsmListingWidget < Gtk::HBox
 				if di.block.list.last == di
 					di.block.each_to_samefunc { |addr|
 						addr = @dasm.normalize addr
-						next if not addr.kind_of? ::Integer or addr == curaddr + di.bin_length
+						next if not addr.kind_of? ::Integer or (addr == curaddr + di.bin_length and
+								(not di.opcode.props[:saveip] or di.block.to_subfuncret))
 						arrows_addr << [curaddr, addr]
 					}
 				end
 				render[Expression[di.address].to_s + '    ', :address]
-				render[di.instruction.to_s.ljust(24), :instruction]
+				render[di.instruction.to_s.ljust(di.comment ? 24 : 0), :instruction]
 				render[' ; ' + di.comment.join(' '), :comment] if di.comment
 				nl[]
 
@@ -429,11 +430,11 @@ class AsmListingWidget < Gtk::HBox
 	end
 
 	def get_cursor_pos
-		[@vscroll.adjustment, @caret_x, @caret_y]
+		[@vscroll.adjustment.value, @caret_x, @caret_y]
 	end
 
 	def set_cursor_pos(p)
-		@vscroll.adjustment, @caret_x, @caret_y = p
+		@vscroll.adjustment.value, @caret_x, @caret_y = p
 		update_caret
 	end
 	
@@ -495,35 +496,15 @@ class AsmListingWidget < Gtk::HBox
 	# may scroll the window
 	# returns true on success (address exists)
 	def focus_addr(addr)
-		return if not addr or addr == ''
-		if addr.kind_of? ::String
-			if (?0..?9).include? addr[0]
-				addr = '0x'+addr[0...-1] if addr[-1] == ?h
-				begin
-					addr = Integer(addr)
-				rescue ::ArgumentError
-					messagebox "Invalid address #{addr}"
-					return
-				end
-			elsif @dasm.prog_binding[addr]
-				addr = @dasm.prog_binding[addr]
-			else
-				messagebox "Unknown label #{addr}"
-				return
-			end
-		end
-
 		if l = @line_address.index(addr) and l < @line_address.keys.max - 4
 			@caret_y, @caret_x = @line_address.keys.find_all { |k| @line_address[k] == addr }.max, 0
-		else
+		elsif addr >= @vscroll.adjustment.lower and addr <= @vscroll.adjustment.upper
 			@vscroll.adjustment.value, @caret_x, @caret_y = addr, 0, 0
+		else
+			return
 		end
 		update_caret
 		true
-	end
-
-	def messagebox(*a)
-		@parent_widget.messagebox(*a)
 	end
 
 	# returns the address of the data under the cursor

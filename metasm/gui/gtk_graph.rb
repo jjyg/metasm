@@ -372,9 +372,9 @@ class GraphViewWidget < Gtk::HBox
 	def doubleclick(ev)
 		if b = find_box_xy(ev.x, ev.y)
 			if @hl_word and @zoom >= 0.90 and @zoom <= 1.1
-				focus_addr(@hl_word)
+				@parent_widget.focus_addr(@hl_word)
 			else
-				focus_addr b[:addresses].first
+				@parent_widget.focus_addr b[:addresses].first
 			end
 		elsif @zoom == 1.0
 			@curcontext.view_x = @curcontext.box.map { |b| b.x }.min - 10
@@ -519,7 +519,7 @@ class GraphViewWidget < Gtk::HBox
 						nl[]
 					}
 				end
-				render[di.instruction.to_s.ljust(24), :instruction]
+				render[di.instruction.to_s.ljust(di.comment ? 24 : 0), :instruction]
 				render[' ; ' + di.comment.join(' ')[0, 64], :comment] if di.comment
 				nl[]
 			else
@@ -585,7 +585,8 @@ class GraphViewWidget < Gtk::HBox
 			done << a
 			if from = block_rel.keys.find_all { |ba| block_rel[ba].include? a } and
 					from.length == 1 and block_rel[from.first].length == 1 and
-					addr2box[from.first] and @dasm.decoded[from.first].block.list.last.next_addr == a
+					addr2box[from.first] and lst = @dasm.decoded[from.first].block.list.last and
+					lst.next_addr == a and (not lst.opcode.props[:saveip] or lst.block.to_subfuncret)
 				box = addr2box[from.first]
 			else
 				box = @curcontext.new_box a, :addresses => [], :line_text => {}, :line_address => {}
@@ -625,7 +626,7 @@ class GraphViewWidget < Gtk::HBox
 						b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
 						b_header.each { |l| render[l.chomp] ; nl[] }
 					end
-					render[di.instruction.to_s.ljust(24)]
+					render[di.instruction.to_s.ljust(di.comment ? 24 : 0)]
 					render[' ; ' + di.comment.join(' ')[0, 64]] if di.comment
 					nl[]
 				end
@@ -768,7 +769,7 @@ class GraphViewWidget < Gtk::HBox
 				end
 				p [@caret_x, @caret_y]
 			rescue
-				messagebox $!
+				@parent_widget.messagebox $!
 			end
 		when GDK_r	# reload this file
 			load __FILE__
@@ -794,17 +795,13 @@ class GraphViewWidget < Gtk::HBox
 			newf = []
 			b.each_from_samefunc(@dasm) { |f| newf << f }
 			if newf.empty?
-				roots << a
+				roots << b.address
 			else
 				todo.concat newf
 			end
 		end
 
 		roots
-	end
-
-	def messagebox(*a)
-		@parent_widget.messagebox(*a)
 	end
 
 	def set_cursor_pos(p)
@@ -850,31 +847,9 @@ class GraphViewWidget < Gtk::HBox
 	# start or an entrypoint is found, then the graph is created from there
 	# will call gui_update then
 	def focus_addr(addr, can_update_context=true)
-		return if not addr or addr == ''
-
 		@zoom = 1.0
 
-		# find real address from addr
-		if addr.kind_of? ::String
-			if (?0..?9).include? addr[0]
-				addr = '0x'+addr[0...-1] if addr[-1] == ?h
-				begin
-					addr = Integer(addr)
-				rescue ::ArgumentError
-					messagebox "Invalid address #{addr}"
-					return
-				end
-			elsif @dasm.prog_binding[addr]
-				addr = @dasm.prog_binding[addr]
-			else
-				messagebox "Unknown label #{addr}"
-				return
-			end
-		end
-
 		if not @dasm.decoded[addr].kind_of? DecodedInstruction
-			# TODO switch to Listing
-			messagebox "Not an instruction"
 			return
 		end
 
@@ -889,14 +864,7 @@ class GraphViewWidget < Gtk::HBox
 			gui_update
 			return focus_addr(addr, false)
 		else
-			messagebox "Bad control graph, cannot find graph root :("
-			# TODO let parent.focus_addr handle this ? (eg restore cursor_pos to oldpos on fail)
-			if @caret_box
-				@curcontext = Graph.new 'testic'
-				@curcontext.root_addrs = dasm_find_roots(@caret_box[:line_address][0])
-				gui_update
-				return focus_addr(@caret_box[:line_address][0], false)
-			end
+			return
 		end
 		true
 	end

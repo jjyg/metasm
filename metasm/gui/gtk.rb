@@ -73,14 +73,9 @@ class DisasmWidget < Gtk::VBox
 	def keypress(ev)
 		case ev.keyval
 		when GDK_Return, GDK_KP_Enter
-			focus_addr @hl_word
+			focus_addr curview.hl_word
 		when GDK_Escape
-			# TODO widget switch
-			if not @pos_history.empty?
-				page, pos = @pos_history.pop
-				@notebook.page = page
-				curview.set_cursor_pos pos
-			end
+			focus_addr_back
 		when GDK_c	# disassemble from this point
 				# if points to a call, make it return
 			return if not addr = curview.current_address
@@ -101,9 +96,9 @@ class DisasmWidget < Gtk::VBox
 				return if not addr = curview.current_address
 			end
 			if old = @dasm.prog_binding.index(addr)
-				inputbox("new name for #{old}") { |v| @dasm.rename_label(old, v) ; redraw }
+				inputbox("new name for #{old}") { |v| @dasm.rename_label(old, v) ; gui_update }
 			else
-				inputbox("label name for #{Expression[addr]}") { |v| @dasm.rename_label(@dasm.label_at(addr, v), v) ; redraw }
+				inputbox("label name for #{Expression[addr]}") { |v| @dasm.rename_label(@dasm.label_at(addr, v), v) ; gui_update }
 			end
 		when GDK_p	# pause/play disassembler
 			@dasm_pause ||= []
@@ -153,11 +148,43 @@ class DisasmWidget < Gtk::VBox
         end
 
 	def focus_addr(addr, page=@notebook.page)
+		case addr
+		when ::String
+			if @dasm.prog_binding[addr]
+				addr = @dasm.prog_binding[addr]
+			elsif (?0..?9).include? addr[0]
+				addr = '0x' + addr[0...-1] if addr[-1] == ?h
+				begin 
+					addr = Integer(addr)
+				rescue ::ArgumentError
+					messagebox "Invalid address #{addr}"
+					return
+				end
+			else
+				messagebox "Invalid address #{addr}"
+				return
+			end
+		when nil: return
+		end
+
 		oldpos = [@notebook.page, curview.get_cursor_pos]
 		@notebook.page = page
-		if curview.focus_addr(addr) or (@notebook.page == 1 and @view[0].focus_addr(addr) and @notebook.page = 0)
+		# XXX TODO improve view-switch..
+		if curview.focus_addr(addr) or (@notebook.page == 1 and @views[0].focus_addr(addr) and @notebook.page = 0)
 			@pos_history << oldpos
+			true
+		else
+			messagebox "Invalid address #{Expression[addr]}"
+			focus_addr_back oldpos
+			false
 		end
+	end
+
+	def focus_addr_back(val = @pos_history.pop)
+		return if not val
+		@notebook.page = val[0]
+		curview.set_cursor_pos val[1]
+		true
 	end
 
 	def gui_update
@@ -165,15 +192,15 @@ class DisasmWidget < Gtk::VBox
 	end
 
 	def messagebox(str)
-		MessageBox.new((window.toplevel if window), str)
+		MessageBox.new(toplevel, str)
 	end
 
 	def inputbox(str, &b)
-		InputBox.new((window.toplevel if window), str, &b)
+		InputBox.new(toplevel, str, &b)
 	end
 
 	def openfile(title)
-		OpenFile.new((window.toplevel if window), title, &b)
+		OpenFile.new(toplevel, title, &b)
 	end
 end
 
