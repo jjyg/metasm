@@ -80,9 +80,9 @@ class Graph
 			b.y = -b.h/2
 			g = Box.new(nil, [b])
 			g.x = b.x - 8
-			g.y = b.y - 8
+			g.y = b.y - 9
 			g.w = b.w + 16
-			g.h = b.h + 16
+			g.h = b.h + 18
 			g
 		}
 
@@ -158,8 +158,8 @@ class Graph
 					g.to.uniq.length == gg.to.uniq.length and (g.to - gg.to).empty?
 				}
 				next if ary.length == 1
-				dy = 16*(ary.length-2)	# many boxes => lower
-				ary.each { |g| move_group[g, 0, dy] ; g.h += dy ; g.y -= dy }
+				dy = 16*ary.length
+				ary.each { |g| g.h += dy ; g.y -= dy/2 }
 				merge_groups[ary]
 				align_hz[ary]
 				true
@@ -172,9 +172,24 @@ class Graph
 				next if not g2 = g.to.find { |g2| (g2.to.length == 1 and g.to.include?(g2.to.first)) or
 					(not strict and g2.to.empty?)  }
 				next if strict and g2.from != [g]
+				g2.h += 16 ; g2.y -= 8
 				align_vt[[g, g2]]
 				move_group[g2, g2.w/2, 0]
 				g2.x -= g2.w ; g2.w *= 2	# so that merge gives the correct x/w to head
+				merge_groups[[g, g2]]
+				true
+			}
+		}
+
+		# 0 -> 1, 1 -> 0
+		group_loop = proc { 
+			groups.find { |g|
+				next if not g2 = g.to.find { |g2| g2.to.include? g }
+				dh = [256, g.h].min
+				g.h += dh ; g.y -= dh/2
+				dh = [256, g2.h].min
+				g2.h += dh ; g2.y -= dh/2
+				align_vt[[g, g2]]
 				merge_groups[[g, g2]]
 				true
 			}
@@ -188,21 +203,19 @@ puts 'unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map
 			g1 << groups.first if g1.empty?
 			g2 = g1.map { |g| g.to }.flatten.uniq - g1
 
-			align_hz[g1]
+			align_vt[g1]
 			g1 = merge_groups[g1]
-			move_group[g1, 0, -24]
-			g1.h += 48
-			align_hz[g2]
+			g1.w += 128 ; g1.x -= 64
+			align_vt[g2]
 			g2 = merge_groups[g2]
-			move_group[g2, 0, 24]
-			g2.h += 48 ; g2.y -= 48
+			g2.w += 128 ; g2.x -= 64
 
-			align_vt[[g1, g2]]
+			align_hz[[g1, g2]]
 			merge_groups[[g1, g2]]
 			true
 		}
 
-		nil while group_columns[] or group_lines[] or group_ifthen[true] or group_ifthen[false] or group_other[]
+		nil while group_columns[] or group_lines[] or group_ifthen[true] or group_ifthen[false] or group_loop[] or group_other[]
 
 		@view_x = groups.first.x-10
 		@view_y = groups.first.y-10
@@ -323,6 +336,8 @@ class GraphViewWidget < Gtk::HBox
 	end
 	
 	def mousemove(ev)
+		return if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+
 		dx = (ev.x - @mousemove_origin[0])/@zoom
 		dy = (ev.y - @mousemove_origin[1])/@zoom
 		@mousemove_origin = [ev.x, ev.y]
@@ -336,6 +351,16 @@ class GraphViewWidget < Gtk::HBox
 
 	def mouserelease(ev)
 		mousemove(ev)
+		if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+			x1 = @curcontext.view_x + @mousemove_origin[0]/@zoom
+			x2 = x1 + (ev.x - @mousemove_origin[0])/@zoom
+			x1, x2 = x2, x1 if x1 > x2
+			y1 = @curcontext.view_y + @mousemove_origin[1]/@zoom
+			y2 = y1 + (ev.y - @mousemove_origin[1])/@zoom
+			y1, y2 = y2, y1 if y1 > y2
+			@selected_boxes |= @curcontext.box.find_all { |b| b.x >= x1 and b.x + b.w <= x2 and b.y >= y1 and b.y + b.h <= y2 }
+			redraw
+		end
 		@mousemove_origin = nil
 	end
 
@@ -377,17 +402,23 @@ class GraphViewWidget < Gtk::HBox
 				@parent_widget.focus_addr b[:addresses].first
 			end
 		elsif @zoom == 1.0
-			@curcontext.view_x = @curcontext.box.map { |b| b.x }.min - 10
-			@curcontext.view_y = @curcontext.box.map { |b| b.y }.min - 10
-			maxx = @curcontext.box.map { |b| b.x + b.w }.max + 10
-			maxy = @curcontext.box.map { |b| b.y + b.h }.max + 10
-			@zoom = [@width.to_f/(maxx-@curcontext.view_x), @height.to_f/(maxy-@curcontext.view_y)].min
-			@zoom = 1.0 if @zoom > 1.0
+			zoom_all
 		else
 			@curcontext.view_x += (ev.x / @zoom - ev.x)
 			@curcontext.view_y += (ev.y / @zoom - ev.y)
 			@zoom = 1.0
 		end
+		redraw
+	end
+
+	# update the zoom & view_xy to show the whole graph in the window
+	def zoom_all
+		@curcontext.view_x = @curcontext.box.map { |b| b.x }.min.to_i - 10
+		@curcontext.view_y = @curcontext.box.map { |b| b.y }.min.to_i - 10
+		maxx = @curcontext.box.map { |b| b.x + b.w }.max.to_i + 10
+		maxy = @curcontext.box.map { |b| b.y + b.h }.max.to_i + 10
+		@zoom = [@width.to_f/(maxx-@curcontext.view_x), @height.to_f/(maxy-@curcontext.view_y)].min
+		@zoom = 1.0 if @zoom > 1.0
 		redraw
 	end
 
@@ -427,6 +458,14 @@ class GraphViewWidget < Gtk::HBox
 		margin = 8
 		return if (y1+margin < 0 and y2 < 0) or (y1 > @height/@zoom and y2-margin > @height/@zoom)	# just clip on y
 		margin, x1, y1, x2, y2, b1w, b2w = [margin, x1, y1, x2, y2, b1.w, b2.w].map { |v| v*@zoom }
+
+
+		# gtk wraps coords around 0x8000
+		if x1.abs > 0x7000 ; y1 /= x1.abs/0x7000 ; x1 /= x1.abs/0x7000 ; end
+		if y1.abs > 0x7000 ; x1 /= y1.abs/0x7000 ; y1 /= y1.abs/0x7000 ; end
+		if x2.abs > 0x7000 ; y2 /= x2.abs/0x7000 ; x2 /= x2.abs/0x7000 ; end
+		if y2.abs > 0x7000 ; x2 /= y2.abs/0x7000 ; y2 /= y2.abs/0x7000 ; end
+
 		if b1 == @caret_box or b2 == @caret_box
 			gc.set_foreground @color[:arrow_hl]
 		else
@@ -638,11 +677,7 @@ class GraphViewWidget < Gtk::HBox
 
 		@curcontext.auto_arrange_boxes
 
-		w_x = @curcontext.box.map { |b| b.x + b.w }.max.to_i - @curcontext.box.map { |b| b.x }.min.to_i + 20
-		w_y = @curcontext.box.map { |b| b.y + b.h }.max.to_i - @curcontext.box.map { |b| b.y }.min.to_i + 20
-		# TODO 
-		# @drawarea.set_default_size([750, [w_x, @width].max].min, [500, [w_y, @height].max].min)	# fit in ~800x600..
-
+		zoom_all
 
 		redraw
 	end

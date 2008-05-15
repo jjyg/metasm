@@ -199,7 +199,7 @@ class DisasmWidget < Gtk::VBox
 		InputBox.new(toplevel, str, &b)
 	end
 
-	def openfile(title)
+	def openfile(title, &b)
 		OpenFile.new(toplevel, title, &b)
 	end
 end
