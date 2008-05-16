@@ -98,7 +98,7 @@ class DisasmWidget < Gtk::VBox
 			if old = @dasm.prog_binding.index(addr)
 				inputbox("new name for #{old}") { |v| @dasm.rename_label(old, v) ; gui_update }
 			else
-				inputbox("label name for #{Expression[addr]}") { |v| @dasm.rename_label(@dasm.label_at(addr, v), v) ; gui_update }
+				inputbox("label name for #{Expression[addr]}") { |v| @dasm.set_label_at(addr, @dasm.program.new_label(v)) ; gui_update }
 			end
 		when GDK_p	# pause/play disassembler
 			@dasm_pause ||= []

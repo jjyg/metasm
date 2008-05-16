@@ -1,7 +1,4 @@
 disasm:
- reorder disasm addrs_todo to dasm subfunctions as encountered
- do not rebacktrace things
- minimize the number of full context backtraces (for functions)
  find a way to recognize non-returning subfunction (eg thunk_exit)
  DecodedData (dword, string, array, structs? ...)
  make exe.decode generate DecodedData ? (for elf symbols, import names etc)

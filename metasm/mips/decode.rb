@@ -211,7 +211,7 @@ class MIPS
 		df = DecodedFunction.new
 		# from http://www.cs.rpi.edu/~chrisc/COURSES/CSCI-4250/FALL-2004/MIPS-regs.html
 		df.backtrace_binding = %w[v0 v1 a0 a1 a2 a3 t0 t1 t2 t3 t4 t5 t6 t7 t8 t9 at k0 k1].inject({}) { |h, r| h.update "$#{r}".to_sym => Expression::Unknown }
-		df.backtracked_for = [BacktraceTrace.new(Expression[:$ra], :default, :x)]
+		df.backtracked_for = [BacktraceTrace.new(Expression[:$ra], :default, Expression[:$ra], :x)]
 		df.btfor_callback = proc { |dasm, btfor, funcaddr, calladdr|
 			if funcaddr != :default
 				btfor

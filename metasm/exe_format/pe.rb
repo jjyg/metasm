@@ -216,7 +216,7 @@ EOS
 puts "backtrace seh from #{di} => #{a.map { |addr| Expression[addr] }.join(', ')}" if $VERBOSE
 			a.each { |aa|
 				next if aa == Expression::Unknown
-				l = dasm.label_at(aa, 'seh', 'loc', 'sub')
+				l = dasm.auto_label_at(aa, 'seh', 'loc', 'sub')
 				dasm.addrs_todo << [aa] 
 			}
 			super
