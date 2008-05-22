@@ -85,6 +85,15 @@ class DisasmWidget < Gtk::VBox
 			else
 				@dasm.addrs_todo << [addr]
 			end
+		when GDK_f	# list functions
+			list = [['name', 'addr']]
+			@dasm.function.keys.each { |f|
+				addr = @dasm.normalize(f)
+				next if not @dasm.decoded[addr]
+				list << [@dasm.prog_binding.index(addr), Expression[addr]]
+			}
+			title = "list of functions"
+			listwindow(title, list) { |i| focus_addr i[1] }
 		when GDK_g	# jump to address
 			inputbox('address to go') { |v| focus_addr v }
 		when GDK_h	# parses a C header
@@ -116,17 +125,20 @@ class DisasmWidget < Gtk::VBox
 			$VERBOSE = ! $VERBOSE
 			puts "verbose #$VERBOSE"
 		when GDK_x      # show xrefs to the current address
-			return if not addr = @line_address[@caret_y]
-			lst = ["list of xrefs to #{Expression[addr]}"]
+			return if not addr = @dasm.prog_binding[curview.hl_word] || curview.current_address
+			list = [['address', 'type', 'instr']]
 			@dasm.each_xref(addr) { |xr|
-				if @dasm.decoded[xr.origin].kind_of? DecodedInstruction
-					org = @dasm.decoded[xr.origin]
-				else
-					org = Expression[xr.origin]
+				list << [Expression[xr.origin], "#{xr.type}#{xr.len}"]
+				if di = @dasm.decoded[xr.origin] and di.kind_of? DecodedInstruction
+					list.last << di.instruction
 				end
-				lst << "xref #{xr.type}#{xr.len} from #{org}"
 			}
-			MessageBox.new lst.join("\n ")
+			title = "list of xrefs to #{Expression[addr]}"
+			if list.length == 1
+				messagebox "no xref to #{Expression[addr]}"
+			else
+				listwindow(title, list) { |i| focus_addr(i[0], nil, true) }
+			end
 			
 		when GDK_space
 			focus_addr(curview.current_address, 1-@notebook.page)
@@ -147,7 +159,8 @@ class DisasmWidget < Gtk::VBox
 		true
         end
 
-	def focus_addr(addr, page=@notebook.page)
+	def focus_addr(addr, page=nil, quiet=false)
+		page ||= @notebook.page
 		case addr
 		when ::String
 			if @dasm.prog_binding[addr]
@@ -157,16 +170,17 @@ class DisasmWidget < Gtk::VBox
 				begin 
 					addr = Integer(addr)
 				rescue ::ArgumentError
-					messagebox "Invalid address #{addr}"
+					messagebox "Invalid address #{addr}" if not quiet
 					return
 				end
 			else
-				messagebox "Invalid address #{addr}"
+				messagebox "Invalid address #{addr}" if not quiet
 				return
 			end
 		when nil: return
 		end
 
+		return if page == @notebook.page and addr == curview.current_address
 		oldpos = [@notebook.page, curview.get_cursor_pos]
 		@notebook.page = page
 		# XXX TODO improve view-switch..
@@ -174,7 +188,7 @@ class DisasmWidget < Gtk::VBox
 			@pos_history << oldpos
 			true
 		else
-			messagebox "Invalid address #{Expression[addr]}"
+			messagebox "Invalid address #{Expression[addr]}" if not quiet
 			focus_addr_back oldpos
 			false
 		end
@@ -201,6 +215,10 @@ class DisasmWidget < Gtk::VBox
 
 	def openfile(title, &b)
 		OpenFile.new(toplevel, title, &b)
+	end
+
+	def listwindow(title, list, &b)
+		ListWindow.new(toplevel, title, list, &b)
 	end
 end
 
@@ -263,7 +281,7 @@ class OpenFile < Gtk::FileChooserDialog
 			if id == Gtk::Dialog::RESPONSE_ACCEPT
 				file = filename
 				destroy
-					yield file
+				yield file
 			else
 				destroy
 			end
@@ -272,6 +290,53 @@ class OpenFile < Gtk::FileChooserDialog
 
 		show_all
 		present
+	end
+end
+
+class ListWindow < Gtk::Dialog
+	# shows a window with a list of items
+	# the list is an array of arrays, displayed as String
+	# the first array is the column names
+	# each item double-clicked yields the block with the selected iterator
+	def initialize(owner, title, list)
+		owner ||= Gtk::Window.toplevels.first
+		super(title, owner, Gtk::Dialog::DESTROY_WITH_PARENT)
+
+		cols = list.shift
+
+		treeview = Gtk::TreeView.new
+		treeview.model = Gtk::ListStore.new(*[String]*cols.length)
+		treeview.selection.mode = Gtk::SELECTION_NONE
+
+		cols.each_with_index { |col, i|
+			crt = Gtk::CellRendererText.new
+			tvc = Gtk::TreeViewColumn.new(col, crt)
+			tvc.set_cell_data_func(crt) { |_tvc, _crt, model, iter| _crt.text = iter[i] }
+			treeview.append_column tvc
+		}
+		
+		list.each { |e|
+			iter = treeview.model.append
+			e.each_with_index { |v, i| iter[i] = v.to_s }
+		}
+
+		treeview.model.set_sort_column_id(0)
+
+		treeview.signal_connect('cursor_changed') { |x|
+			if iter = treeview.selection.selected
+				yield iter
+			end
+		}
+
+		remove vbox
+		add Gtk::ScrolledWindow.new.add(treeview)
+		toplevel.set_default_size 200, 100
+
+		show_all
+		present
+
+		# so that the 1st line is not selected by default
+		treeview.selection.mode = Gtk::SELECTION_SINGLE
 	end
 end
 
