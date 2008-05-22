@@ -589,7 +589,8 @@ class ELF
 	def decode_segments
 		decode_segments_dynamic
 		@segments.each { |s|
-			if s.type == 'LOAD'
+			case s.type
+			when 'LOAD', 'INTERP'
 				s.encoded = @encoded[s.offset, s.filesz]
 				s.encoded.virtsize = s.memsz if s.memsz > s.encoded.virtsize
 			end
