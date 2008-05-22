@@ -6,6 +6,7 @@ disasm:
  handle function-local labels (also rename local stack vars offsets)
  forward register tracking ? with weak values ?
  path-specific backtracking ( foo: call a ; a: jmp retloc ; bar: call b ; b: jmp retloc ; retloc: ret ; call foo ; ret : last ret trackback should only reach a:)
+ function signatures (a la FLIRT?)
 
 decompiler: make one
 ia32: emu fpu
