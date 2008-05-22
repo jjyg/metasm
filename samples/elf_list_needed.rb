@@ -8,6 +8,7 @@
 # 
 # this script reads a list of elf files, and lists its dependencies recursively
 # libraries are searched in LD_LIBRARY_PATH, /usr/lib and /lib
+# includes the elf interpreter
 # can be useful when chrooting a binary
 #
 
@@ -21,11 +22,20 @@ while src = todo.shift
 	puts src
 	# could do a simple ELF.decode_file, but this is quicker
 	elf = Metasm::ELF.decode_file_header(src)
+
+	if s = elf.segments.find { |s| s.type == 'INTERP' }
+		interp = elf.encoded[s.offset, s.filesz].data.chomp("\0")
+		if not done.include? interp
+			puts interp
+			done << interp
+		end
+	end
+
 	elf.decode_tags
 	elf.decode_segments_tags_interpret
 	deps = elf.tag['NEEDED'].to_a - done
-
 	done.concat deps
+
 	deps.each { |dep|
 		if not path = paths.find { |path| File.exist? File.join(path, dep) }
 			$stderr.puts "cannot find #{dep} for #{src}"
