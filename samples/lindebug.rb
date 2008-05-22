@@ -776,6 +776,11 @@ if $0 == __FILE__
 	begin
 		require 'samples/rubstop'
 	rescue LoadError
+		if not defined? Rubstop
+			$: << File.dirname(__FILE__)
+			require 'rubstop'
+			$:.pop
+		end
 	end
 
 	LinDebug.new(Rubstop.new(ARGV.join(' '))).main_loop
