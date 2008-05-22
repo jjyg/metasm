@@ -223,7 +223,7 @@ class AsmListingWidget < Gtk::HBox
 					}
 				end
 				if di.block.list.last == di
-					di.block.each_to_samefunc { |addr|
+					di.block.each_to_samefunc(@dasm) { |addr|
 						addr = @dasm.normalize addr
 						next if not addr.kind_of? ::Integer or (addr == curaddr + di.bin_length and
 								(not di.opcode.props[:saveip] or di.block.to_subfuncret))

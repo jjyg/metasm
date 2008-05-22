@@ -629,7 +629,7 @@ class GraphViewWidget < Gtk::HBox
 			done << a
 			next if not di = @dasm.decoded[a] or not di.kind_of? DecodedInstruction
 			block_rel[a] = []
-			di.block.each_to_samefunc { |t|
+			di.block.each_to_samefunc(@dasm) { |t|
 				t = @dasm.normalize t
 				next if not @dasm.decoded[t]
 				todo << t

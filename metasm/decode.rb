@@ -241,34 +241,33 @@ class InstructionBlock
 	end
 
 	def each_from_samefunc(dasm, &b)
-		if from_subfuncret and not @from_subfuncret.empty?
-			@from_subfuncret.each(&b)
-		elsif from_normal and not dasm.function[address]
-			@from_normal.each(&b)
-		end
+		return if dasm.function[address]
+		@from_subfuncret.each(&b) if from_subfuncret
+		@from_normal.each(&b) if from_normal
 	end
 
 	# yields all from that are not in the same subfunction as this block
 	def each_from_otherfunc(dasm, &b)
 		@from_normal.each(&b) if from_normal and dasm.function[address]
+		@from_subfuncret.each(&b) if from_subfuncret and dasm.function[address]
 		@from_indirect.each(&b) if from_indirect
 	end
 
 	# yields all to that are in the same subfunction as this block
-	def each_to_samefunc(&b)
-		if to_subfuncret and not @to_subfuncret.empty?
-			@to_subfuncret.each(&b)
-		else
-			@to_normal.each(&b) if to_normal
-		end
+	def each_to_samefunc(dasm)
+		each_to { |to, type|
+			next if type != :normal and type != :subfuncret
+			to = dasm.normalize(to)
+			yield to if not dasm.function[to]
+		}
 	end
 
 	# yields all to that are not in the same subfunction as this block
-	def each_to_otherfunc(&b)
-		if to_subfuncret and not @to_subfuncret.empty?
-			@to_normal.each(&b) if to_normal
-		end
-		@to_indirect.each(&b) if to_indirect
+	def each_to_otherfunc(dasm)
+		each_to { |to, type|
+			to = dasm.normalize(to)
+			yield to if type == :indirect or dasm.function[to]
+		}
 	end
 end
 
@@ -1411,7 +1410,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 					next if faddrlist.include? a or not get_section_at(a)
 					faddrlist << a
 					if @decoded[a].kind_of? DecodedInstruction
-						@decoded[a].block.each_to_samefunc { |t| todo << normalize(t) }
+						@decoded[a].block.each_to_samefunc(self) { |t| todo << normalize(t) }
 					end
 				end
 
