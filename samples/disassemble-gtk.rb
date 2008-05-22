@@ -10,19 +10,39 @@
 #
 
 require 'metasm'
+require 'optparse'
 require 'metasm/gui/gtk'
 
-target = ARGV.shift
-if not target
-	w = Metasm::GtkGui::OpenFile.new(nil, 'chose target binary') { |t| target = t }
+# parse arguments
+opts = {}
+OptionParser.new { |opt|
+	opt.banner = 'Usage: disassemble-gtk.rb [options] <executable> [<entrypoints>]'
+	opt.on('--no-data-trace', 'do not backtrace memory read/write accesses') { opts[:nodatatrace] = true }
+	opt.on('--debug-backtrace', 'enable backtrace-related debug messages (very verbose)') { opts[:debugbacktrace] = true }
+	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
+	opt.on('-v', '--verbose') { $VERBOSE = true }
+	opt.on('-d', '--debug') { $DEBUG = true }
+}.parse!(ARGV)
+
+exename = ARGV.shift
+
+if not exename
+	w = Metasm::GtkGui::OpenFile.new(nil, 'chose target binary') { |t| exename = t }
 	w.signal_connect('destroy') { Gtk.main_quit }
 	Gtk.main
-	exit if not target
+	exit if not exename
 end
 
-exe = Metasm::AutoExe.decode_file(target)
+exe = Metasm::AutoExe.decode_file(exename)
 dasm = exe.init_disassembler
 
-w = Metasm::GtkGui::MainWindow.new.display(dasm)
+dasm.parse_c_file opts[:cheader] if opts[:cheader]
+dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
+dasm.debug_backtrace = true if opts[:debugbacktrace]
+
+ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
+
+w = Metasm::GtkGui::MainWindow.new.display(dasm, ep)
+w.dasm_widget.focus_addr ep.first if not ep.empty?
 w.signal_connect('destroy') { Gtk.main_quit }
 Gtk.main

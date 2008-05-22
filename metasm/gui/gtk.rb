@@ -276,20 +276,21 @@ class OpenFile < Gtk::FileChooserDialog
 end
 
 class MainWindow < Gtk::Window
+	attr_accessor :dasm_widget
 	def initialize(dasm=nil, ep=[])
 		super()
 		self.title = 'metasm disassembler'
-		@view_widget = nil
+		@dasm_widget = nil
 		display(dasm, ep) if dasm
 	end
 
 	def display(dasm, ep=[])
-		if @view_widget
-			@view_widget.terminate
-			remove @view_widget
+		if @dasm_widget
+			@dasm_widget.terminate
+			remove @dasm_widget
 		end
-		@view_widget = DisasmWidget.new(dasm, ep)
-		add @view_widget
+		@dasm_widget = DisasmWidget.new(dasm, ep)
+		add @dasm_widget
 		set_default_size 700, 500
 		show_all
 	end

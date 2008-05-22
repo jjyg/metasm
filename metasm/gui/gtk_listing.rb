@@ -193,6 +193,7 @@ class AsmListingWidget < Gtk::HBox
 		}
 		# newline: current line is fully rendered, update @line_address/@line_text etc
 		nl = proc {
+			next if y >= w_h
 			@line_text[line] = fullstr
 			@line_address[line] = curaddr
 			fullstr = ''
@@ -468,7 +469,7 @@ class AsmListingWidget < Gtk::HBox
 	# hint that the caret moved
 	# redraws the caret, change the hilighted word, redraw if needed
 	def update_caret
-		l = @line_text[@caret_y]
+		return if not l = @line_text[@caret_y]
 		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
 		word = nil if word == ''
 		if @hl_word != word or @oldcaret_y != @caret_y
