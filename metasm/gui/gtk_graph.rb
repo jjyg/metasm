@@ -20,7 +20,7 @@ class Graph
 			@content = content
 		end
 		def [](a) @content[a] end
-		def inspect ; puts caller ; "#{Expression[@id] rescue @id.inspect}" end
+		#def inspect ; puts caller ; "#{Expression[@id] rescue @id.inspect}" end
 	end
 
 	# TODO
@@ -94,6 +94,20 @@ class Graph
 			g.from = g.content.first.from.map { |f| groups[@box.index(f)] } - [g]
 		}
 
+		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
+		# will fail in some cases (a-b-c a-c c-b will cut b-c if a-c is walked first..)
+		maketree = proc { |path|
+			path.last.to.delete_if { |g|
+				if path.include? g
+					g.from.delete path.last
+					true
+				else
+					maketree[path+[g]]
+					false
+				end
+			}
+		}
+
 		# concat all ary boxes into its 1st element, remove trailing groups from 'groups'
 		# updates from/to
 		merge_groups = proc { |ary|
@@ -122,14 +136,14 @@ class Graph
 		}
 
 		align_hz = proc { |ary|
-			nx = ary.map { |g| g.w }.inject { |a, b| a+b } / -2
+			nx = ary.map { |g| g.w }.inject(0) { |a, b| a+b } / -2
 			ary.each { |g|
 				move_group[g, nx-g.x, 0]
 				nx += g.w
 			}
 		}
 		align_vt = proc { |ary|
-			ny = ary.map { |g| g.h }.inject { |a, b| a+b } / -2
+			ny = ary.map { |g| g.h }.inject(0) { |a, b| a+b } / -2
 			ary.each { |g|
 				move_group[g, 0, ny-g.y]
 				ny += g.h
@@ -142,7 +156,7 @@ class Graph
 				next if g.from.length == 1 and g.from.first.to.length == 1
 				ary = [g]
 				ary << (g = g.to.first) while g.to.length == 1 and g.to.first.from.length == 1
-				next if ary.length == 1
+				next if ary.length <= 1
 				align_vt[ary]
 				merge_groups[ary]
 				true
@@ -150,44 +164,30 @@ class Graph
 		}
 
 		# scan groups for a line pattern (multiple groups with same to & same from)
-		group_lines = proc {
+		group_lines = proc { |strict|
 			groups.find { |g|
 				ary = groups.find_all { |gg|
-					g.from.uniq.length == gg.from.uniq.length and (g.from - gg.from).empty? and
-					g.to.uniq.length == gg.to.uniq.length and (g.to - gg.to).empty?
+					(gg.from - g.from).empty? and (g.from - gg.from).empty? and
+					(strict ? ((gg.to - g.to).empty? and (g.to - gg.to).empty?) : (g.to & gg.to).first)
 				}
-				next if ary.length == 1
-				dy = 16*ary.length
+				next if ary.length <= 1
+				dy = 16*ary.map { |g| g.to.length + g.from.length }.inject { |a, b| a+b }
 				ary.each { |g| g.h += dy ; g.y -= dy/2 }
-				merge_groups[ary]
 				align_hz[ary]
+				merge_groups[ary]
 				true
 			}
 		}
 
 		# scan groups for a if/then pattern (1 -> 2 -> 3 & 1 -> 3)
 		group_ifthen = proc { |strict|
-			groups.find { |g|
+			groups.reverse.find { |g|
 				next if not g2 = g.to.find { |g2| (g2.to.length == 1 and g.to.include?(g2.to.first)) or
 					(not strict and g2.to.empty?)  }
 				next if strict and g2.from != [g]
 				g2.h += 16 ; g2.y -= 8
 				align_vt[[g, g2]]
-				move_group[g2, g2.w/2, 0]
-				merge_groups[[g, g2]]
-				true
-			}
-		}
-
-		# 0 -> 1, 1 -> 0
-		group_loop = proc { 
-			groups.find { |g|
-				next if not g2 = g.to.find { |g2| g2.to.include? g }
-				dh = [256, g.h].min
-				g.h += dh ; g.y -= dh/2
-				dh = [256, g2.h].min
-				g2.h += dh ; g2.y -= dh/2
-				align_vt[[g, g2]]
+				move_group[g2, -g2.x+8, 0]
 				merge_groups[[g, g2]]
 				true
 			}
@@ -196,9 +196,13 @@ class Graph
 		# unknown pattern, group as we can..
 		group_other = proc {
 			next if groups.length == 1
-puts 'unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.inspect}" }
 			g1 = groups.find_all { |g| g.from.empty? }
 			g1 << groups.first if g1.empty?
+			cntpre = groups.inject(0) { |cntpre, g| cntpre + g.to.length }
+			g1.each { |g| maketree[[g]] }
+			break true if cntpre != groups.inject(0) { |cntpre, g| cntpre + g.to.length }
+
+puts 'unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.inspect}" }
 			g2 = g1.map { |g| g.to }.flatten.uniq - g1
 
 			align_vt[g1]
@@ -213,7 +217,16 @@ puts 'unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map
 			true
 		}
 
-		nil while group_columns[] or group_lines[] or group_ifthen[true] or group_ifthen[false] or group_loop[] or group_other[]
+		# known, clean patterns
+		group_clean = proc {
+			group_columns[] or group_lines[true] or group_ifthen[true]
+		}
+		# approximations
+		group_unclean = proc {
+			group_lines[false] or group_ifthen[false] or group_other[]
+		}
+
+		nil while group_clean[] or group_unclean[]
 
 		@box.each { |b|
 			b.to = b.to.sort_by { |bt| bt.x }
