@@ -407,6 +407,8 @@ module Metasm
 		when 'clc': { :eflag_c => Expression[0] }
 		when 'stc': { :eflag_c => Expression[1] }
 		when 'cmc': { :eflag_c => Expression[:'!', :eflag_c] }
+		when 'cld': { :eflag_d => Expression[0] }
+		when 'std': { :eflag_d => Expression[1] }
 		when /^set(.*)/
 			cd = decode_cc_to_expr($1)
 			{ a[0] => Expression[cd] }
@@ -512,32 +514,36 @@ module Metasm
 	end
 
 	# updates the function backtrace_binding
-	def backtrace_update_function_binding(dasm, faddr, f, retaddr)
+	# XXX assume retaddrlist is either a list of addr of ret or a list with a single entry which is an external function name (thunk)
+	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist)
 		b = f.backtrace_binding
 
-		if not dasm.decoded[retaddr] and di = dasm.decoded[faddr]
+		# XXX handle retaddrlist for multiple/mixed thunks
+		if not dasm.decoded[retaddrlist.first] and di = dasm.decoded[faddr]
 			# no return instruction, must be a thunk : find the last instruction (to backtrace from it)
-			while ndi = dasm.decoded[di.block.to_subfuncret] || dasm.decoded[di.block.to_normal]
+			while ndi = dasm.decoded[di.block.to_subfuncret.to_a.first] || dasm.decoded[di.block.to_normal.to_a.first] and ndi.kind_of? DecodedInstruction
 				di = ndi
 			end
-			if not di.block.to_subfuncret and di.block.to_normal and not di.block.to_normal.kind_of?(::Array)
+			if not di.block.to_subfuncret.to_a.first and di.block.to_normal and di.block.to_normal.length > 1
 				thunklast = di.block.list.last.address
 			end
 		end
 			
 		bt_val = proc { |r|
-			next if b[r] == Expression::Unknown
-			bt = dasm.backtrace(Expression[r], (thunklast ? thunklast : retaddr),
+			bt = []
+			retaddrlist.each { |retaddr|
+				bt |= dasm.backtrace(Expression[r], (thunklast ? thunklast : retaddr),
 					:include_start => true, :snapshot_addr => faddr, :origin => retaddr, :from_subfuncret => thunklast)
-			ubt = bt - [Expression::Unknown]
-			if ubt.length != 1 or (b[r] and ubt.first != b[r])
-				b[r] = Expression::Unknown if r != :esp or not b[r]
+			}
+			if bt.length != 1
+				b[r] = Expression::Unknown
 			else
-				b[r] = ubt.first
+				b[r] = bt.first
 			end
 		}
-		b.delete :esp if b[:esp] == Expression::Unknown
 		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each(&bt_val)
+
+		return if f.need_finalize
 
 		if dasm.funcs_stdabi
 			if b[:ebp] == Expression::Unknown
@@ -559,6 +565,7 @@ module Metasm
 		end
 
 		# rename some functions
+		# TODO database and real signatures
 		case b[:eax].reduce
 		when faddr # metasm pic linker
 			dasm.auto_label_at(faddr, 'geteip', 'loc', 'sub')
@@ -586,6 +593,7 @@ module Metasm
 	end
 
 	# returns a DecodedFunction from a parsed C function prototype
+	# TODO rebacktrace already decoded functions (load a header file after dasm finished)
 	# TODO walk structs args
 	def decode_c_function_prototype(cp, sym, orig=nil)
 		sym = cp.toplevel.symbol[sym] if sym.kind_of?(::String)
@@ -650,6 +658,7 @@ module Metasm
 			@dasm_func_default_off ||= {}
 			if off = @dasm_func_default_off[[dasm, calladdr]]
 				bind = bind.merge(:esp => Expression[:esp, :+, off])
+				break bind
 			end
 			break bind if not odi = dasm.decoded[origin] or odi.opcode.name != 'ret'
 			expr = expr.reduce_rec if expr.kind_of? Expression
@@ -677,8 +686,14 @@ module Metasm
 			puts "automagic #{funcaddr}: found func start for #{dasm.decoded[origin]} at #{Expression[func_start]}" if dasm.debug_backtrace
 			s_off = "autostackoffset_#{Expression[funcaddr]}_#{Expression[calladdr]}"
 			list = dasm.backtrace(expr.bind(:esp => Expression[:esp, :+, s_off]), calladdr, :include_start => true, :snapshot_addr => func_start, :maxdepth => maxdepth, :origin => origin)
-			break bind if list.length != 1
-			e_expr = list.first
+			e_expr = list.find { |e_expr|
+				# TODO cleanup this
+				e_expr = Expression[e_expr].reduce_rec
+				next if not e_expr.kind_of? Indirection
+				off = Expression[[:esp, :+, s_off], :-, e_expr.target].reduce
+				off.kind_of? Integer and off >= @size/8 and off < 10*@size/8 and (off % (@size/8)) == 0
+			} || list.first
+
 			e_expr = e_expr.rexpr if e_expr.kind_of? Expression and e_expr.op == :+ and not e_expr.lexpr
 			break bind unless e_expr.kind_of? Indirection
 
@@ -699,28 +714,33 @@ module Metasm
                         bind = bind.merge :esp => Expression[:esp, :+, off] if off != :unknown
                         if funcaddr != :default
                                 if not off.kind_of? ::Integer
-                                        #register origin and rebacktrace it if we ever find our stackoff (to solve other unknown that depend on us)
                                         #XXX we allow the current function to return, so we should handle the func backtracking its :esp
                                         #(and other register that are saved and restored in epilog)
-                                        puts "stackoff #{dasm.decoded[origin]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
+                                        puts "stackoff #{dasm.decoded[calladdr]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
                                 else
                                         puts "autostackoffset: found #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
                                         dasm.function[funcaddr].btbind_callback = nil
                                         dasm.function[funcaddr].backtrace_binding = bind
-                                        #rebacktrace registered origins
+
+					# rebacktrace the return address, so that other unknown funcs that depend on us are solved
+					dasm.backtrace(Indirection[:esp, @size/8, origin], origin, :origin => origin)
                                 end
                         else
 				if off.kind_of? ::Integer and dasm.decoded[calladdr]
                                         puts "autostackoffset: using #{off} for #{dasm.decoded[calladdr]}" if $VERBOSE
-					dasm.decoded[calladdr].add_comment "autostackoffset #{off}"
+					di = dasm.decoded[calladdr]
+					di.comment.delete_if { |c| c =~ /^autostackoffset / } if di.comment
+					di.add_comment "autostackoffset #{off}"
 					@dasm_func_default_off[[dasm, calladdr]] = off
+
+					dasm.backtrace(Indirection[:esp, @size/8, origin], origin, :origin => origin)
 				elsif cachedoff = @dasm_func_default_off[[dasm, calladdr]]
 					bind[:esp] = Expression[:esp, :+, cachedoff]
 				else
 					dasm.decoded[calladdr].add_comment "autostackoffset #{off}"
 				end
-                                # cache calladdr/funcaddr/origin -> off for current function binding ?
-                                puts "stackoff #{dasm.decoded[origin]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
+
+                                puts "stackoff #{dasm.decoded[calladdr]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
                         end
 
                         bind

@@ -152,25 +152,21 @@ class MIPS
 		end]]
 	end
 
-	def backtrace_update_function_binding(dasm, faddr, f, retaddr)
-		retaddr = dasm.decoded[retaddr].block.list.last.address if dasm.decoded[retaddr]
+	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist)
+		retaddrlist.map! { |retaddr| dasm.decoded[retaddr] ? dasm.decoded[retaddr].block.list.last.address : retaddr }
 		b = f.backtrace_binding
-		prevesp = b[:$sp]
 		
 		bt_val = proc { |r|
-			next if b[r] == Expression::Unknown
-			bt = dasm.backtrace(Expression[r], retaddr,
+			bt = []
+			retaddrlist.each { |retaddr|
+				bt |= dasm.backtrace(Expression[r], retaddr,
 					:include_start => true, :snapshot_addr => faddr, :origin => retaddr)
-			if bt.length != 1 or (b[r] and bt.first != b[r])
-				b[r] = Expression::Unknown
-			else
-				b[r] = bt.first
-			end
+			}
+			b[r] = ((bt.length == 1) ? bt.first : Expression::Unknown)
 		}
 		Reg.i_to_s.values.map { |r| r.to_sym }.each(&bt_val)
-		b[:$sp] = prevesp if prevesp and b[:$sp] == Expression::Unknown
 		
-		puts "update_func_bind: #{Expression[faddr]} has sp -> #{b[:$sp]}" if b[:$sp] != prevesp and not Expression[b[:$sp], :-, :$sp].reduce.kind_of?(::Integer) if $VERBOSE
+		puts "update_func_bind: #{Expression[faddr]} has sp -> #{b[:$sp]}" if not f.need_finalize and not Expression[b[:$sp], :-, :$sp].reduce.kind_of?(::Integer) if $VERBOSE
 	end
 
 	def backtrace_is_function_return(expr, di=nil)

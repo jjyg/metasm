@@ -428,16 +428,15 @@ class EncodedData
 		end
 	end
 
-	# returns a ::String containing +len+ bytes from self.ptr, advances ptr
+	# reads len bytes from self.data, advances ptr
 	# bytes from rawsize to virtsize are returned as zeroes
 	# ignores self.relocations
 	def read(len=@virtsize-@ptr)
-		str = ''
-		if @ptr < @data.length
-			str << @data[@ptr, len]
-		end
+		len = @virtsize-@ptr if len > @virtsize-@ptr
+		str = (@ptr < @data.length) ? @data[@ptr, len] : ''
+		str = str.ljust(len, "\0") if str.length < len
 		@ptr += len
-		str.ljust(len, "\0")
+		str
 	end
 	
 	# decodes an immediate value from self.ptr, advances ptr
@@ -535,7 +534,7 @@ class CPU
 
 	# updates f.backtrace_binding when a new return address has been found
 	# TODO update also when anything changes inside the function (new loop found etc) - use backtracked_for ?
-	def backtrace_update_function_binding(dasm, faddr, f, retaddr)
+	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist)
 	end
 
 	# returns if the expression is an address on the stack
@@ -808,7 +807,10 @@ class Disassembler
 		@function.each { |addr, f|
 			next if not di = @decoded[addr]
 			@comment[addr] ||= []
-			@comment[addr] |= ["function binding: " + f.backtrace_binding.reject { |k, v| Expression[k] == Expression[v] }.map { |k, v| "#{k} -> #{v}" }.sort.join(', ')]
+			bd = f.backtrace_binding.reject { |k, v| Expression[k] == Expression[v] or Expression[v] == Expression::Unknown }
+			unk = f.backtrace_binding.map { |k, v| k if v == Expression::Unknown }.compact
+			bd[unk.map { |u| Expression[u].to_s }.sort.join(',')] = Expression::Unknown if not unk.empty?
+			@comment[addr] |= ["function binding: " + bd.map { |k, v| "#{k} -> #{v}" }.sort.join(', ')]
 			@comment[addr] |= ["function ends at " + f.return_address.map { |ra| Expression[ra] }.join(', ')] if f.return_address
 		}
 	end
@@ -836,9 +838,7 @@ class Disassembler
 				next if not f = @function[subfunc] or not f.need_finalize
 				f.need_finalize = false
 				if f.return_address
-					f.return_address.each { |ra|
-						@cpu.backtrace_update_function_binding(self, subfunc, f, ra)
-					}
+					@cpu.backtrace_update_function_binding(self, subfunc, f, f.return_address)
 				else
 					detect_function_thunk(subfunc)
 				end
@@ -1497,7 +1497,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 			end
 
 			f.backtracked_for |= @decoded[addr].block.backtracked_for.find_all { |btt| not btt.address }
-			@cpu.backtrace_update_function_binding(self, addr, f, origin)
+			@cpu.backtrace_update_function_binding(self, addr, f, [origin])
 puts "backtrace function binding for #{l}:", f.backtrace_binding.map { |k, v| " #{k} -> #{v}" }.sort if $DEBUG
 		end
 
