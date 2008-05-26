@@ -669,15 +669,10 @@ module Metasm
 			func_start = nil
 			dasm.backtrace_walk(true, calladdr, false, false, nil, maxdepth) { |ev, foo, h|
 				if ev == :up and h[:sfret] != :subfuncret and di = dasm.decoded[h[:to]] and di.opcode.name == 'call'
-					# check that that call has not func_start as subfunction
-					otherfunc = false
-					di.block.each_to_normal { |sf| sf = dasm.normalize sf ; otherfunc = true if dasm.function[sf] and sf == h[:from] }
-					next false if otherfunc
-					
 					func_start = h[:from]
 					break
 				elsif ev == :end
-					# assume entrypoints are functions too
+					# entrypoints are functions too
 					func_start = h[:addr]
 					break
 				end
@@ -700,7 +695,7 @@ module Metasm
 			off = Expression[[:esp, :+, s_off], :-, e_expr.target].reduce
 			case off
 			when Expression
-                                bd = off.externals.grep(/^autostackoffset_/).inject({}) { |bd, xt| bd.update xt => @size/8 }
+                                bd = off.externals.grep(/^stackoff=/).inject({}) { |bd, xt| bd.update xt => @size/8 }
                                 bd.delete s_off
                                 # all __cdecl
                                 off = @size/8 if off.bind(bd).reduce == @size/8
@@ -729,15 +724,15 @@ module Metasm
 				if off.kind_of? ::Integer and dasm.decoded[calladdr]
                                         puts "autostackoffset: using #{off} for #{dasm.decoded[calladdr]}" if $VERBOSE
 					di = dasm.decoded[calladdr]
-					di.comment.delete_if { |c| c =~ /^autostackoffset / } if di.comment
-					di.add_comment "autostackoffset #{off}"
+					di.comment.delete_if { |c| c =~ /^stackoff=/ } if di.comment
+					di.add_comment "stackoff=#{off-@size/8}"
 					@dasm_func_default_off[[dasm, calladdr]] = off
 
 					dasm.backtrace(Indirection[:esp, @size/8, origin], origin, :origin => origin)
 				elsif cachedoff = @dasm_func_default_off[[dasm, calladdr]]
 					bind[:esp] = Expression[:esp, :+, cachedoff]
 				else
-					dasm.decoded[calladdr].add_comment "autostackoffset #{off}"
+					dasm.decoded[calladdr].add_comment "stackoff=#{off-@size/8}"
 				end
 
                                 puts "stackoff #{dasm.decoded[calladdr]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
