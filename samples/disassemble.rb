@@ -73,4 +73,14 @@ end
 
 t3 = Time.now if opts[:benchmark]
 
-puts "durations\n load   %.02fs\n dasm   %.02fs\n output %.02fs\n total  %.02fs" % [t1-t0, t2-t1, t3-t2, t3-t0] if opts[:benchmark]
+todate = proc { |f|
+	if f > 5400
+		"#{f.to_i/3600}h#{(f.to_i%3600)/60}mn"
+	elsif f > 90
+		"#{f.to_i/60}mn#{f.to_i%60}s"
+	else
+		"#{'%.02f' % f}s"
+	end
+}
+
+puts "durations\n load   #{todate[t1-t0]}\n dasm   #{todate[t2-t1]}\n output #{todate[t3-t2]}\n total  #{todate[t3-t0]}" if opts[:benchmark]

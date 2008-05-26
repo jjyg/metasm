@@ -838,6 +838,7 @@ class Disassembler
 				next if not f = @function[subfunc] or not f.need_finalize
 				f.need_finalize = false
 				if f.return_address
+puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					@cpu.backtrace_update_function_binding(self, subfunc, f, f.return_address)
 				else
 					detect_function_thunk(subfunc)
@@ -890,6 +891,9 @@ class Disassembler
 		end
 		bff.each { |btt|
 			next if btt.address
+			if @decoded[from].kind_of? DecodedInstruction and @decoded[from].opcode.props[:saveip] and not from_subfuncret and not @function[addr]
+				backtrace_check_found(btt.expr, @decoded[addr], btt.origin, btt.type, btt.len, btt.maxdepth, btt.detached)
+			end
 			next if backtrace_check_funcret(btt, addr, from)
 			backtrace(btt.expr, from,
 				  :include_start => true, :from_subfuncret => from_subfuncret,

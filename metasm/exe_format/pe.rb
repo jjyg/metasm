@@ -213,7 +213,7 @@ EOS
 			sz = @cpu.size/8
 			sehptr = Indirection.new(Expression[Indirection.new(sehptr, sz, di.address), :+, sz], sz, di.address)
 			a = dasm.backtrace(sehptr, di.address, :include_start => true, :origin => di.address, :type => :x, :detached => true)
-puts "backtrace seh from #{di} => #{a.map { |addr| Expression[addr] }.join(', ')}" if $VERBOSE
+			puts "backtrace seh from #{di} => #{a.map { |addr| Expression[addr] }.join(', ')}" if $VERBOSE
 			a.each { |aa|
 				next if aa == Expression::Unknown
 				l = dasm.auto_label_at(aa, 'seh', 'loc', 'sub')
@@ -237,7 +237,7 @@ puts "backtrace seh from #{di} => #{a.map { |addr| Expression[addr] }.join(', ')
 			d.c_parser = old_cp
 			@getprocaddr_unknown = []
 			gpa.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
-				break bind if @getprocaddr_unknown.include? [dasm, calladdr]
+				break bind if @getprocaddr_unknown.include? [dasm, calladdr] or not Expression[expr].externals.include? :eax
 				sz = @cpu.size/8
 				raise 'getprocaddr call error' if not dasm.decoded[calladdr]
 				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)

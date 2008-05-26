@@ -722,7 +722,7 @@ module Metasm
                                 end
                         else
 				if off.kind_of? ::Integer and dasm.decoded[calladdr]
-                                        puts "autostackoffset: using #{off} for #{dasm.decoded[calladdr]}" if $VERBOSE
+                                        puts "autostackoffset: found #{off-@size/8} for #{dasm.decoded[calladdr]}" if $VERBOSE
 					di = dasm.decoded[calladdr]
 					di.comment.delete_if { |c| c =~ /^stackoff=/ } if di.comment
 					di.add_comment "stackoff=#{off-@size/8}"
