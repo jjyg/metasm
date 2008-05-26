@@ -51,7 +51,7 @@ class MIPS < CPU
 			p = nil
 			p = Expression[p, :+, @base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
-			Indirection.new(p, 4, orig).reduce
+			Expression[Indirection.new(p, 4, orig)].reduce
 		end
 	end
 

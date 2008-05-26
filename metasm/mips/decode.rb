@@ -118,10 +118,10 @@ class MIPS
 		when 'srl', 'sra': { a[0] => Expression[a[1], :<<, a[2]] }	# XXX sign-extend
 		when 'lw':    { a[0] => Expression[a[1]] }
 		when 'sw':    { a[1] => Expression[a[0]] }
-		when 'lh', 'lhu': a[1].len = 2 ; { a[0] => Expression[a[1]] }	# XXX sign-extend
-		when 'sh':        a[1].len = 2 ; { a[1] => Expression[a[0]] }
-		when 'lb', 'lbu': a[1].len = 1 ; { a[0] => Expression[a[1]] }
-		when 'sb':        a[1].len = 1 ; { a[1] => Expression[a[0]] }
+		when 'lh', 'lhu': { a[0] => Expression[a[1]] }	# XXX sign-extend
+		when 'sh':        { a[1] => Expression[a[0]] }
+		when 'lb', 'lbu': { a[0] => Expression[a[1]] }
+		when 'sb':        { a[1] => Expression[a[0]] }
 		when 'mfhi':  { a[0] => Expression[:hi] }
 		when 'mflo':  { a[0] => Expression[:lo] }
 		when 'mult':  { :hi => Expression[[a[0], :*, a[1]], :>>, 32], :lo => Expression[[a[0], :*, a[1]], :&, 0xffff_ffff] }
