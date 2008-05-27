@@ -545,6 +545,15 @@ module Metasm
 
 		return if f.need_finalize
 
+		if b[:ebp] != Expression[:ebp]
+			sz = @size/8
+			# may be a custom 'enter' function (eg recent Visual Studio)
+			# TODO put all memory writes in the binding ?
+			bt_val[Indirection[:ebp, sz, faddr]]
+			bt_val[Indirection[[:esp, :+, 1*sz], sz, faddr]]
+			bt_val[Indirection[[:esp, :+, 2*sz], sz, faddr]]
+			bt_val[Indirection[[:esp, :+, 3*sz], sz, faddr]]
+		end
 		if dasm.funcs_stdabi
 			if b[:ebp] == Expression::Unknown
 				puts "update_func_bind: #{Expression[faddr]} has ebp -> unknown, presume it is preserved" if $DEBUG
@@ -555,10 +564,6 @@ module Metasm
 				f.btbind_callback = disassembler_default_btbind_callback
 			end
 		else
-			if b[:ebp] != Expression[:ebp]
-				# may be a custom 'enter' function (eg recent Visual Studio)
-				bt_val[Indirection[:ebp, @size/8, faddr]]
-			end
 			if b[:esp] != prevesp and not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer)
 				puts "update_func_bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if $DEBUG
 			end
