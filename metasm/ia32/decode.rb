@@ -545,14 +545,15 @@ module Metasm
 
 		return if f.need_finalize
 
+		sz = @size/8
 		if b[:ebp] != Expression[:ebp]
-			sz = @size/8
 			# may be a custom 'enter' function (eg recent Visual Studio)
 			# TODO put all memory writes in the binding ?
-			bt_val[Indirection[:ebp, sz, faddr]]
-			bt_val[Indirection[[:esp, :+, 1*sz], sz, faddr]]
-			bt_val[Indirection[[:esp, :+, 2*sz], sz, faddr]]
-			bt_val[Indirection[[:esp, :+, 3*sz], sz, faddr]]
+			[[:ebp], [:esp, :+, 1*sz], [:esp, :+, 2*sz], [:esp, :+, 3*sz]].each { |ptr|
+				ind = Indirection[ptr, sz, faddr]
+				bt_val[ind]
+				b.delete(ind) if not [:ebx, :edx, :esi, :edi, :ebp].include? b[ind].reduce_rec
+			}
 		end
 		if dasm.funcs_stdabi
 			if b[:ebp] == Expression::Unknown
@@ -571,12 +572,19 @@ module Metasm
 
 		# rename some functions
 		# TODO database and real signatures
-		case b[:eax].reduce
-		when faddr # metasm pic linker
-			dasm.auto_label_at(faddr, 'geteip', 'loc', 'sub')
-		when Expression[:eax] # check elf pic convention
-			dasm.auto_label_at(faddr, 'get_pc_thunk_ebx', 'loc', 'sub') if b[:ebx].reduce == Expression[Indirection[:esp, @size/8, nil]]
+		rename =
+		if Expression[b[:eax], :-, faddr].reduce == 0
+			'geteip' # metasm pic linker
+		elsif Expression[b[:eax], :-, :eax].reduce == 0 and Expression[b[:ebx], :-, Indirection[:esp, sz, nil]].reduce == 0
+			'get_pc_thunk_ebx' # elf pic convention
+		elsif Expression[b[:esp], :-, [:esp, :-, [Indirection[[:esp, :+, 2*sz], sz, nil], :+, 0x18]]].reduce == 0
+			'__SEH_prolog'
+		elsif Expression[b[:esp], :-, [:ebp, :+, sz]].reduce == 0 and Expression[b[:ebx], :-, Indirection[[:esp, :+, 4*sz], sz, nil]].reduce == 0
+			'__SEH_epilog'
 		end
+		dasm.auto_label_at(faddr, rename, 'loc', 'sub') if rename
+
+		b
 	end
 
 	# returns true if the expression is an address on the stack
@@ -705,7 +713,7 @@ module Metasm
                                 # all __cdecl
                                 off = @size/8 if off.bind(bd).reduce == @size/8
 			when Integer
-				if off < @size/8 or off > 10*@size/8 or (off % (@size/8)) != 0
+				if off < @size/8 or off > 20*@size/8 or (off % (@size/8)) != 0
 					puts "autostackoffset: ignoring off #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
 					off = :unknown 
 				end
