@@ -906,7 +906,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	def split_block(block, address)
 		new_b = block.split address
 		todo = []	# array of [expr, off]
-		new_b.backtracked_for.each { |btt|
+		new_b.backtracked_for.dup.each { |btt|
 			backtrace(btt.expr, btt.address,
 				  :include_start => !btt.exclude_instr, :from_subfuncret => btt.from_subfuncret,
 				  :origin => btt.origin, :orig_expr => btt.orig_expr, :type => btt.type, :len => btt.len,
