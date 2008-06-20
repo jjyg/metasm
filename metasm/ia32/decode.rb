@@ -519,7 +519,7 @@ module Metasm
 		b = f.backtrace_binding
 
 		# XXX handle retaddrlist for multiple/mixed thunks
-		if not dasm.decoded[retaddrlist.first] and di = dasm.decoded[faddr]
+		if retaddrlist and not dasm.decoded[retaddrlist.first] and di = dasm.decoded[faddr]
 			# no return instruction, must be a thunk : find the last instruction (to backtrace from it)
 			while ndi = dasm.decoded[di.block.to_subfuncret.to_a.first] || dasm.decoded[di.block.to_normal.to_a.first] and ndi.kind_of? DecodedInstruction
 				di = ndi
@@ -530,6 +530,7 @@ module Metasm
 		end
 			
 		bt_val = proc { |r|
+			next if not retaddrlist
 			bt = []
 			retaddrlist.each { |retaddr|
 				bt |= dasm.backtrace(Expression[r], (thunklast ? thunklast : retaddr),
@@ -552,7 +553,7 @@ module Metasm
 			[[:ebp], [:esp, :+, 1*sz], [:esp, :+, 2*sz], [:esp, :+, 3*sz]].each { |ptr|
 				ind = Indirection[ptr, sz, faddr]
 				bt_val[ind]
-				b.delete(ind) if not [:ebx, :edx, :esi, :edi, :ebp].include? b[ind].reduce_rec
+				b.delete(ind) if b[ind] and not [:ebx, :edx, :esi, :edi, :ebp].include? b[ind].reduce_rec
 			}
 		end
 		if dasm.funcs_stdabi

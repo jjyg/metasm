@@ -837,10 +837,9 @@ class Disassembler
 				subfunc = normalize(subfunc)
 				next if not f = @function[subfunc] or not f.need_finalize
 				f.need_finalize = false
-				if f.return_address
 puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
-					@cpu.backtrace_update_function_binding(self, subfunc, f, f.return_address)
-				else
+				@cpu.backtrace_update_function_binding(self, subfunc, f, f.return_address)
+				if not f.return_address
 					detect_function_thunk(subfunc)
 				end
 			}
