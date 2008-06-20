@@ -33,7 +33,7 @@ if not exename
 	exit if not exename
 end
 
-exe = Metasm::AutoExe.decode_file(exename)
+exe = Metasm::AutoExe.orshellcode.decode_file(exename)
 dasm = exe.init_disassembler
 
 dasm.parse_c_file opts[:cheader] if opts[:cheader]

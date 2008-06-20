@@ -44,6 +44,18 @@ class ExeFormat
 		e
 	end
 
+	def self.decode(raw, *a)
+		e = load(raw, *a)
+		e.decode
+		e
+	end
+
+	def self.decode_header(raw, *a)
+		e = load(raw, *a)
+		e.decode_header
+		e
+	end
+
 	# creates a new object using the specified cpu, parses the asm source, and assemble
 	def self.assemble(cpu, source, file=nil, lineno=nil)
 		caller.first =~ /^(.*?):(\d+)/

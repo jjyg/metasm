@@ -34,7 +34,7 @@ exename = ARGV.shift
 t0 = Time.now if opts[:benchmark]
 
 # load the file
-exe = AutoExe.decode_file exename
+exe = AutoExe.orshellcode.decode_file exename
 # set options
 d = exe.init_disassembler
 makeint = proc { |addr|
