@@ -1294,6 +1294,11 @@ puts "  backtrace end #{ev} #{expr}" if debug_backtrace
 					@addrs_todo << [expr, (detached ? nil : origin)] if type == :x and origin
 				end
 			when :stopaddr
+				if not expr.kind_of? StoppedExpr
+					oldexpr = expr
+					expr = backtrace_emu_blockup(h[:addr], expr)
+puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if debug_backtrace
+				end
 puts "  backtrace end #{ev} #{expr}" if debug_backtrace
 				result |= ((expr.kind_of?(StoppedExpr)) ? expr.exprs : [expr])
 			when :loop
