@@ -183,8 +183,16 @@ class DisasmWidget < Gtk::VBox
 		return if page == @notebook.page and addr == curview.current_address
 		oldpos = [@notebook.page, curview.get_cursor_pos]
 		@notebook.page = page
-		# XXX TODO improve view-switch..
-		if curview.focus_addr(addr) or (@notebook.page == 1 and @views[0].focus_addr(addr) and @notebook.page = 0)
+		if curview.focus_addr(addr) or [0...@views.length].find { |v|
+			o_p = @views[v].get_cursor_pos
+			if @views[v].focus_addr(addr)
+				@notebook.page = v
+				true
+			else
+				@views[v].set_cursor_pos o_p
+				false
+			end
+		}
 			@pos_history << oldpos
 			true
 		else
@@ -342,11 +350,10 @@ end
 
 class MainWindow < Gtk::Window
 	attr_accessor :dasm_widget
-	def initialize(dasm=nil, ep=[])
+	def initialize(title = 'metasm disassembler')
 		super()
-		self.title = 'metasm disassembler'
+		self.title = title
 		@dasm_widget = nil
-		display(dasm, ep) if dasm
 	end
 
 	def display(dasm, ep=[])

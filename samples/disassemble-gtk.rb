@@ -42,7 +42,7 @@ dasm.debug_backtrace = true if opts[:debugbacktrace]
 
 ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
 
-w = Metasm::GtkGui::MainWindow.new.display(dasm, ep)
+w = Metasm::GtkGui::MainWindow.new("#{exename} - metasm disassembler").display(dasm, ep)
 w.dasm_widget.focus_addr ep.first if not ep.empty?
 w.signal_connect('destroy') { Gtk.main_quit }
 Gtk.main
