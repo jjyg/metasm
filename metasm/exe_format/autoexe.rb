@@ -9,7 +9,7 @@ module Metasm
 # special class that decodes a PE or ELF file from its signature
 # does not support other exeformats (for now)
 class AutoExe < ExeFormat
-class UnknownSignature < Exception ; end
+class UnknownSignature < InvalidExeFormat ; end
 def self.load(str, *a)
 	s = str
 	s = str.data if s.kind_of? EncodedData
