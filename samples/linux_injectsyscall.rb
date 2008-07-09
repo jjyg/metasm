@@ -17,32 +17,22 @@ require 'metasm'
 
 class SyscallHooker < Metasm::PTrace32
 	CTX = ['EBX', 'ECX', 'EDX', 'ESI', 'EDI', 'EAX', 'ESP', 'EBP', 'EIP', 'ORIG_EAX']
-	def savectx
-		CTX.inject({}) { |ctx, reg| ctx.update reg => peekusr(REGS_I386[reg]) }
-	end
-	def restorectx(ctx)
-		ctx.each { |reg, val| pokeusr(REGS_I386[reg], val) }
-	end
-	def verb(str)
-		puts str if $VERBOSE
-	end
-
-	def initialize(pid)
-		super
-	end
 
 	def inject(sysnr, *args)
 		sysnr = SYSCALLNR[sysnr] || sysnr
+
 		syscall
 		puts '[*] waiting syscall'
 		Process.waitpid(@pid)
-		savedctx = savectx()
+
+		savedctx = CTX.inject({}) { |ctx, reg| ctx.update reg => peekusr(REGS_I386[reg]) }
+
 		if readmem((savedctx['EIP'] - 2) & 0xffff_ffff, 2) != "\xcd\x80"
 			puts 'no int 80h seen, cannot replay orig syscall, aborting'
 		elsif args.length > 5
 			puts 'too may arguments, unsupported, aborting'
 		else
-			verb "[*] hooking #{SYSCALLNR.index(savedctx['ORIG_EAX'])}"
+			puts "[*] hooking #{SYSCALLNR.index(savedctx['ORIG_EAX'])}"
 
 			# stack pointer to store buffers to
 			esp_ptr = savedctx['ESP']
@@ -58,14 +48,15 @@ class SyscallHooker < Metasm::PTrace32
 			}
 			# patch syscall number
 			pokeusr(REGS_I386['ORIG_EAX'], sysnr)
+			# run hooked syscall
 			syscall
 			Process.waitpid(@pid)
-			puts "[*] retval: #{'%X' % peekusr(REGS_I386['EAX']}"
+			puts "[*] retval: #{'%X' % peekusr(REGS_I386['EAX'])}"
 
 			# restore eax & eip to run the orig syscall
 			savedctx['EIP'] -= 2
 			savedctx['EAX'] = savedctx['ORIG_EAX']
-			restorectx(savedctx)
+			savedctx.each { |reg, val| pokeusr(REGS_I386[reg], val) }
 		end
 		cont
 	end
