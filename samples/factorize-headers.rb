@@ -9,17 +9,17 @@
 # gives us back the macro/C definitions that we use in our code, so that we can
 # get rid of the header
 # Argument: C file to factorize, [path to visual studio installation]
+# with a single argument, uses GCC standard headers
 #
 
 require 'metasm'
 include Metasm
 
 abort 'target needed' if not file = ARGV.shift
-visualstudiopath = ARGV.shift || File.expand_path('~/tmp/VC')
 
-# to trace only pp macros (using eg an asm source), use Preprocessor#factorize instead
-
-puts Ia32.new.new_cparser.factorize(<<EOS + File.read(file))
+visualstudiopath = ARGV.shift
+if visualstudiopath
+	stub = <<EOS
 // add the path to the visual studio std headers
 #ifdef __METASM__
  #pragma include_dir #{(visualstudiopath+'/platformsdk/include').inspect}
@@ -27,6 +27,16 @@ puts Ia32.new.new_cparser.factorize(<<EOS + File.read(file))
  #pragma prepare_visualstudio
  #pragma no_warn_redefinition
 #endif
-
 EOS
+else
+	stub = <<EOS
+#ifdef __METASM__
+ #pragma prepare_gcc
+#endif
+EOS
+end
+
+# to trace only pp macros (using eg an asm source), use Preprocessor#factorize instead
+
+puts Ia32.new.new_cparser.factorize(stub + File.read(file))
 
