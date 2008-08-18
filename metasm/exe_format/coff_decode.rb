@@ -430,7 +430,7 @@ class COFF
 		@header.num_sect.times {
 			s = Section.new
 			s.decode self
-			if s.rawaddr == 0 and s.rawsize == 0
+			if s.rawsize == 0
 				# add a bias to rva_to_off to allow exports (eg. relocation
 				#  target) in .bss without conflicting w/ existing sections
 				s.rawaddr = @encoded.virtsize
