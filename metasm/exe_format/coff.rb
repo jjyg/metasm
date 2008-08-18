@@ -165,6 +165,10 @@ class COFF < ExeFormat
 		attr_accessor :safeseh
 	end
 
+	class TLSDirectory
+		attr_accessor :start_va, :end_va, :index_addr, :callback_p, :zerofill_sz, :characteristics, :callbacks
+	end
+	
 	# tree-like structure, holds all misc data the program might need (icons, cursors, version information)
 	# conventionnally structured in a 3-level depth structure:
 	#  I resource type (icon/cursor/etc, see +TYPES+)
@@ -267,7 +271,7 @@ class COFF < ExeFormat
 	end
 
 	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports,
-		:relocations, :resource, :certificates, :delayimports, :loadconfig
+		:relocations, :resource, :certificates, :delayimports, :loadconfig, :tls
 
 	def initialize(cpu=nil)
 		@directory = {}	# DIRECTORIES.key => [rva, size]

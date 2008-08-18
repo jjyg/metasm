@@ -355,12 +355,12 @@ class COFF
 			@zerofill_sz = coff.decode_word	# nr of 0 bytes to append to the template (start_va)
 			@characteristics = coff.decode_word
 
-			if coff.encoded.ptr = coff.rva_to_off(@callback_p)
+			if coff.encoded.ptr = coff.rva_to_off(@callback_p - coff.optheader.image_base)
 				@callbacks = []
 				while (ptr = coff.decode_xword) != 0
 					# void NTAPI (*ptr)(void* dllhandle, dword reason, void* reserved)
 					# (same as dll entrypoint)
-					@callbacks << ptr
+					@callbacks << (ptr - coff.optheader.image_base)
 				end
 			end
 		end
@@ -483,6 +483,18 @@ class COFF
 		end
 	end
 
+	# decode TLS directory, including tls callback table
+	def decode_tls
+		if @directory and @directory['tls_table'] and @encoded.ptr = rva_to_off(@directory['tls_table'][0])
+			@tls = TLSDirectory.new
+			@tls.decode(self)
+			@encoded.add_export 'tls_callback_table', @tls.callback_p
+			@tls.callbacks.each_with_index { |cb, i|
+				@encoded.add_export "tls_callback_#{i}", cb if cb = rva_to_off(cb)
+			}
+		end
+	end
+
 	# decode COFF relocation tables from directory
 	# mark relocations as encoded.relocs
 	def decode_relocs
@@ -573,6 +585,7 @@ class COFF
 		decode_resources
 		decode_certificates
 		decode_relocs
+		decode_tls
 		decode_sections
 	end
 
@@ -585,9 +598,10 @@ class COFF
 	end
 
 	# returns an array including the PE entrypoint and the exported functions entrypoints
-	# TODO filter out exported data, include TLS&other callbacks (safeseh ?)
+	# TODO filter out exported data, include safeseh ?
 	def get_default_entrypoints
 		ep = []
+		ep.concat @tls.callbacks.to_a if tls
 		ep << (@optheader.image_base + @optheader.entrypoint)
 		@export.exports.each { |e|
 			ep << (@optheader.image_base + e.target) if not e.forwarder_lib
