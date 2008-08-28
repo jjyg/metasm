@@ -570,7 +570,13 @@ class COFF
 	def decode_sections
 		@sections.each { |s|
 			# decode up to s.virtsize to retrieve exports (like base relocs to .bss)
-			s.encoded = @encoded[s.rawaddr, s.virtsize] || EncodedData.new
+			ns = @sections.find { |ss| ss.rawaddr > s.rawaddr and s.rawsize > 0 }
+			if ns and ns.rawaddr - s.rawaddr < s.virtsize
+				ssz = [ns.rawaddr - s.rawaddr, s.rawsize].max
+			else
+				ssz = s.virtsize
+			end
+			s.encoded = @encoded[s.rawaddr, ssz] || EncodedData.new
 			s.encoded.virtsize = s.virtsize
 			s.encoded.data = s.encoded.data[0, s.rawsize] if s.rawsize < s.virtsize
 		}
@@ -584,8 +590,8 @@ class COFF
 		decode_imports
 		decode_resources
 		decode_certificates
-		decode_relocs
 		decode_tls
+		decode_relocs
 		decode_sections
 	end
 
