@@ -456,7 +456,7 @@ class COFF
 			@export.decode(self)
 			@export.exports.each { |e|
 				if e.name and off = rva_to_off(e.target)
-					@encoded.add_export e.name, off
+					e.target = @encoded.add_export e.name, off
 				end
 			} if @export.exports
 		end

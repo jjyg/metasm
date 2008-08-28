@@ -103,8 +103,9 @@ EOMZSTUB
 	#  exports
 	#  imports (with boundimport cleared)
 	#  resources
-	def mini_copy
+	def mini_copy(share_ns=true)
 		ret = self.class.new(@cpu)
+		ret.share_namespace(self) if share_ns
 		ret.header.machine = @header.machine
 		ret.optheader.entrypoint = @optheader.entrypoint
 		ret.optheader.image_base = @optheader.image_base

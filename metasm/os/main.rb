@@ -61,7 +61,6 @@ class VirtualString
 
 	# returns the full raw data (if not too big)
 	def realstring
-		puts "Using VirtualString.realstring from:", caller if $DEBUG
 		raise 'realstring too big' if length > 0x1000000
 	end
 
@@ -75,6 +74,7 @@ class VirtualString
 	# forwards unhandled messages to a frozen realstring
 	def method_missing(m, *args, &b)
 		if ''.respond_to? m
+			puts "Using VirtualString.realstring for #{m} from:", caller if $DEBUG
 			realstring.freeze.send(m, *args, &b)
 		else
 			super
