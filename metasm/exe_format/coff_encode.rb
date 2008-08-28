@@ -404,10 +404,10 @@ class COFF
 	end
 
 
-	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness) end
-	def encode_half(w)   Expression[w].encode(:u16, @endianness) end
-	def encode_word(w)   Expression[w].encode(:u32, @endianness) end
-	def encode_xword(w)  Expression[w].encode((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
+	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness, (caller if $DEBUG)) end
+	def encode_half(w)   Expression[w].encode(:u16, @endianness, (caller if $DEBUG)) end
+	def encode_word(w)   Expression[w].encode(:u32, @endianness, (caller if $DEBUG)) end
+	def encode_xword(w)  Expression[w].encode((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness, (caller if $DEBUG)) end
 
 
 	# adds a new compiler-generated section
@@ -581,7 +581,7 @@ class COFF
 
 					# check if we need to start a new relocation table
 					if rt.base_addr and (rt.base_addr & ~0xfff) != (off & ~0xfff)
-						rt.base_addr = Expression[[label_at(s.encoded, 0, 'sect_start'), :-, label_at(@encoded, 0, 'coff_start')], :+, rt.base_addr]
+						rt.base_addr = Expression[[label_at(s.encoded, 0, 'sect_start'), :-, startaddr], :+, rt.base_addr]
 						@relocations << rt
 						rt = RelocationTable.new
 					end
@@ -598,7 +598,7 @@ class COFF
 			}
 
 			if rt and rt.relocs
-				rt.base_addr = Expression[[label_at(s.encoded, 0, 'sect_start'), :-, label_at(@encoded, 0, 'coff_start')], :+, rt.base_addr]
+				rt.base_addr = Expression[[label_at(s.encoded, 0, 'sect_start'), :-, startaddr], :+, rt.base_addr]
 				@relocations << rt
 			end
 		}

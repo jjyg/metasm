@@ -208,12 +208,12 @@ class ELF
 	end
 
 
-	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness) end
-	def encode_half(w)   Expression[w].encode(:u16, @endianness) end
-	def encode_word(w)   Expression[w].encode(:u32, @endianness) end
-	def encode_sword(w)  Expression[w].encode(:i32, @endianness) end
-	def encode_xword(w)  Expression[w].encode((@bitsize == 32 ? :u32 : :u64), @endianness) end
-	def encode_sxword(w) Expression[w].encode((@bitsize == 32 ? :i32 : :i64), @endianness) end
+	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness, (caller if $DEBUG)) end
+	def encode_half(w)   Expression[w].encode(:u16, @endianness, (caller if $DEBUG)) end
+	def encode_word(w)   Expression[w].encode(:u32, @endianness, (caller if $DEBUG)) end
+	def encode_sword(w)  Expression[w].encode(:i32, @endianness, (caller if $DEBUG)) end
+	def encode_xword(w)  Expression[w].encode((@bitsize == 32 ? :u32 : :u64), @endianness, (caller if $DEBUG)) end
+	def encode_sxword(w) Expression[w].encode((@bitsize == 32 ? :i32 : :i64), @endianness, (caller if $DEBUG)) end
 	alias encode_addr encode_xword
 	alias encode_off  encode_xword
 
