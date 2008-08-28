@@ -798,6 +798,7 @@ class EncodedData
 		when nil
 		when ::Fixnum
 			fill
+			@data = @data.realstring if defined? VirtualString and @data.kind_of? VirtualString
 			@data << other
 			@virtsize += 1
 		when EncodedData
@@ -815,6 +816,7 @@ class EncodedData
 		else
 			fill
 			if @data.empty?: @data = other.dup
+			elsif defined? VirtualString and @data.kind_of? VirtualString: @data = @data.realstring << other
 			else @data << other
 			end
 			@virtsize += other.length
