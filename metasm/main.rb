@@ -705,7 +705,7 @@ class EncodedData
 		@ptr = 0
 	end
 
-	def add_export(label, off, set_inv=false)
+	def add_export(label, off=@ptr, set_inv=false)
 		@export[label] = off
 		if set_inv or not @inv_export[off]
 			@inv_export[off] = label

@@ -358,7 +358,7 @@ class COFF
 			if coff.encoded.ptr = coff.rva_to_off(@callback_p - coff.optheader.image_base)
 				@callbacks = []
 				while (ptr = coff.decode_xword) != 0
-					# void NTAPI (*ptr)(void* dllhandle, dword reason, void* reserved)
+					# __stdcall void (*ptr)(void* dllhandle, dword reason, void* reserved)
 					# (same as dll entrypoint)
 					@callbacks << (ptr - coff.optheader.image_base)
 				end
