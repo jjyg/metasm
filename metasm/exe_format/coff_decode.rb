@@ -265,8 +265,7 @@ class COFF
 	end
 
 	class ResourceDirectory
-		def decode(coff, edata = coff.cursection.encoded)
-			startptr = edata.ptr
+		def decode(coff, edata = coff.cursection.encoded, startptr = edata.ptr)
 
 			@characteristics = coff.decode_word(edata)
 			@timestamp = coff.decode_word(edata)
@@ -310,11 +309,11 @@ class COFF
 					else
 						edata.ptr = startptr + e.subdir_p
 						e.subdir = ResourceDirectory.new
-						e.subdir.decode coff, edata
+						e.subdir.decode coff, edata, startptr
 					end
 				else
 					e.dataentry_p = e_ptr
-					edata.ptr = startoff + e.dataentry_p
+					edata.ptr = startptr + e.dataentry_p
 					e.data_p = coff.decode_word(edata)
 					sz = coff.decode_word(edata)
 					e.codepage = coff.decode_word(edata)
