@@ -10,7 +10,7 @@ require 'metasm/decode'
 module Metasm
 class COFF
 	class Header
-		# decodes a COFF header from coff.encoded.ptr
+		# decodes a COFF header from coff.cursection
 		def decode(coff)
 			@machine  = coff.int_to_hash(coff.decode_half, MACHINE)
 			@num_sect = coff.decode_half
@@ -23,7 +23,7 @@ class COFF
 	end
 
 	class OptionalHeader
-		# decodes a COFF optional header from coff.encoded.ptr
+		# decodes a COFF optional header from coff.cursection
 		# also decodes directories in coff.directory
 		def decode(coff)
 			@signature  = coff.int_to_hash(coff.decode_half, SIGNATURE)
@@ -75,9 +75,9 @@ class COFF
 	end
 
 	class Section
-		# decodes a COFF section header from coff.encoded
+		# decodes a COFF section header from coff.cursection
 		def decode(coff)
-			@name = coff.encoded.read(8)
+			@name = coff.cursection.encoded.read(8)
 			@name = @name[0, @name.index(0)] if @name.index(0)
 			@virtsize   = coff.decode_word
 			@virtaddr   = coff.decode_word
@@ -92,7 +92,7 @@ class COFF
 	end
 
 	class ExportDirectory
-		# decodes a COFF export table from coff.encoded.ptr
+		# decodes a COFF export table from coff.cursection
 		def decode(coff)
 			@reserved   = coff.decode_word
 			@timestamp  = coff.decode_word
@@ -106,18 +106,18 @@ class COFF
 			names_p    = coff.decode_word
 			ord_p      = coff.decode_word
 
-			if off = coff.rva_to_off(@libname_p)
-				@libname = coff.encoded.data[off...coff.encoded.data.index(0, off)]
+			if coff.sect_at_rva(@libname_p)
+				@libname = coff.decode_strz
 			end
 
-			if coff.encoded.ptr = coff.rva_to_off(func_p)
+			if coff.sect_at_rva(func_p)
 				@exports = []
 				num_exports.times { |i|
 					e = Export.new
 					e.ordinal = i + @ordinal_base
 					addr = coff.decode_word
-					if addr >= coff.directory['export_table'][0] and addr < coff.directory['export_table'][0] + coff.directory['export_table'][1] and off = coff.rva_to_off(addr)
-						name = coff.encoded.data[off...coff.encoded.data.index(0, off)]
+					if addr >= coff.directory['export_table'][0] and addr < coff.directory['export_table'][0] + coff.directory['export_table'][1] and coff.sect_at_rva(addr)
+						name = coff.decode_strz
 						e.forwarder_lib, name = name.split('.', 2)
 						if name[0] == ?#
 							e.forwarder_ordinal = name[1..-1].to_i
@@ -130,19 +130,19 @@ class COFF
 					@exports << e
 				}
 			end
-			if coff.encoded.ptr = coff.rva_to_off(names_p)
+			if coff.sect_at_rva(names_p)
 				namep = []
 				num_names.times { namep << coff.decode_word }
 			end
-			if coff.encoded.ptr = coff.rva_to_off(ord_p)
+			if coff.sect_at_rva(ord_p)
 				ords = []
 				num_names.times { ords << coff.decode_half }
 			end
 			if namep and ords
 				namep.zip(ords).each { |np, oi|
 					@exports[oi].name_p = np
-					if addr = coff.rva_to_off(np)
-						@exports[oi].name = coff.encoded.data[addr...coff.encoded.data.index(0, addr)]
+					if coff.sect_at_rva(np)
+						@exports[oi].name = coff.decode_strz
 					end
 				}
 			end
@@ -150,36 +150,35 @@ class COFF
 	end
 
 	class ImportDirectory
-		# decodes all COFF import directories from coff.encoded.ptr
+		# decodes all COFF import directories from coff.cursection
 		def self.decode(coff)
 			ret = []
 			loop do
 				idata = new
-				idata.decode(coff)
-				break if not idata.imports
+				idata.decode_header(coff)
+				break if [idata.ilt_p, idata.libname_p, idata.iat_p].all? { |p| p == 0 }
 				ret << idata
 			end
+			ret.each { |idata| idata.decode_inner(coff) }
 			ret
 		end
 
-		# decode a COFF import table from coff.encoded.ptr
-		# after the function, coff.encoded.ptr points to the end of the import table
-		def decode(coff)
+		# decode a COFF import table from coff.cursection
+		def decode_header(coff)
 			@ilt_p = coff.decode_word
 			@timestamp = coff.decode_word
 			@firstforwarder = coff.decode_word
 			@libname_p = coff.decode_word
 			@iat_p = coff.decode_word
+		end
 
-			nextidata_ptr = coff.encoded.ptr	# will decode other directories
-
-			return if [@ilt_p, @timestamp, @firstforwarder, @libname_p, @iat_p].all? { |p| p == 0 }
-
-			if off = coff.rva_to_off(@libname_p)
-				@libname = coff.encoded.data[off...coff.encoded.data.index(0, off)]
+		# decode the tables referenced
+		def decode_inner(coff)
+			if coff.sect_at_rva(@libname_p)
+				@libname = coff.decode_strz
 			end
 
-			if coff.encoded.ptr = coff.rva_to_off(@ilt_p) || coff.rva_to_off(@iat_p)
+			if coff.sect_at_rva(@ilt_p) || coff.sect_at_rva(@iat_p)
 				addrs = []
 				while (a = coff.decode_xword) != 0
 					addrs << a
@@ -194,23 +193,21 @@ class COFF
 						i.ordinal = a & (~ord_mask)
 					else
 						i.hintname_p = a
-						if coff.encoded.ptr = coff.rva_to_off(a)
+						if coff.sect_at_rva(a)
 							i.hint = coff.decode_half
-							i.name = coff.encoded.data[coff.encoded.ptr...coff.encoded.data.index(0, coff.encoded.ptr)]
+							i.name = coff.decode_strz
 						end
 					end
 					@imports << i
 				}
 			end
 
-			if coff.encoded.ptr = coff.rva_to_off(@iat_p)
+			if coff.sect_at_rva(@iat_p)
 				@iat = []
 				while (a = coff.decode_xword) != 0
 					@iat << a
 				end
 			end
-
-			coff.encoded.ptr = nextidata_ptr
 		end
 	end
 
@@ -219,14 +216,15 @@ class COFF
 			ret = []
 			loop do
 				didata = new
-				didata.decode coff
-				break if didata.empty?
+				didata.decode_header coff
+				break if [didata.libname_p, didata.handle_p, didata.diat_p].all? { |p| p == 0 }
 				ret << didata
 			end
+			ret.each { |didata| didata.decode_inner(coff) }
 			ret
 		end
 
-		def decode(coff)
+		def decode_header(coff)
 			@attributes = coff.decode_word
 			@libname_p = coff.decode_word
 			@handle_p = coff.decode_word	# the loader stores the handle at the location pointed by this field at runtime
@@ -235,14 +233,12 @@ class COFF
 			@bdiat_p = coff.decode_word
 			@udiat_p = coff.decode_word
 			@timestamp = coff.decode_word
+		end
 
-			saved_ptr = coff.encoded.ptr
-
-			if off = coff.rva_to_off(@libname_p)
-				@libname = coff.encoded.data[off...coff.encoded.data.index(0, off)]
+		def decode_inner(coff)
+			if coff.sect_at_rva(@libname_p)
+				@libname = coff.decode_strz
 			end
-
-			coff.encoded.ptr = saved_ptr
 		end
 	end
 
@@ -269,66 +265,68 @@ class COFF
 	end
 
 	class ResourceDirectory
-		def decode(coff, startoff = coff.encoded.ptr)
-			@characteristics = coff.decode_word
-			@timestamp = coff.decode_word
-			@major_version = coff.decode_half
-			@minor_version = coff.decode_half
-			nrnames = coff.decode_half
-			nrid = coff.decode_half
+		def decode(coff, edata = coff.cursection.encoded)
+			startptr = edata.ptr
+
+			@characteristics = coff.decode_word(edata)
+			@timestamp = coff.decode_word(edata)
+			@major_version = coff.decode_half(edata)
+			@minor_version = coff.decode_half(edata)
+			nrnames = coff.decode_half(edata)
+			nrid = coff.decode_half(edata)
 			@entries = []
 
 			(nrnames+nrid).times {
-				e = Entry.new
-				id  = coff.decode_word
-				ptr = coff.decode_word
+ 				e = Entry.new
+				
+ 				e_id = coff.decode_word(edata)
+ 				e_ptr = coff.decode_word(edata)
 
-				saved_ptr = coff.encoded.ptr
+				tmp = edata.ptr
 
-				if (id >> 31) == 1
+				if (e_id >> 31) == 1
 					if $DEBUG
 						nrnames -= 1
 						puts "W: COFF: rsrc has invalid id #{id}" if nrnames < 0
 					end
-					e.name_p = id & 0x7fff_ffff
-					coff.encoded.ptr = startoff + e.name_p
-					namelen = coff.decode_half
-					e.name_w = coff.encoded.read(2*namelen)
-					if (chrs = e.name_w.unpack('v*')).all? { |c| c <= 255 }
+					e.name_p = e_id & 0x7fff_ffff
+					edata.ptr = startptr + e.name_p
+					namelen = coff.decode_half(edata)
+					e.name_w = edata.read(2*namelen)
+					if (chrs = e.name_w.unpack('v*')).all? { |c| c >= 0 and c <= 255 }
 						e.name = chrs.pack('C*')
 					end
 				else
 					if $DEBUG
 						puts "W: COFF: rsrc has invalid id #{id}" if nrnames > 0
 					end
-					e.id = id
+					e.id = e_id
 				end
 
-				if (ptr >> 31) == 1	# subdir
-					e.subdir_p = ptr & 0x7fff_ffff
-					if startoff + e.subdir_p >= coff.encoded.length
+				if (e_ptr >> 31) == 1	# subdir
+					e.subdir_p = e_ptr & 0x7fff_ffff
+					if startptr + e.subdir_p >= edata.length
 						puts 'invalid resource structure: directory too far' if $VERBOSE
 					else
-						coff.encoded.ptr = startoff + e.subdir_p
+						edata.ptr = startptr + e.subdir_p
 						e.subdir = ResourceDirectory.new
-						e.subdir.decode coff, startoff
+						e.subdir.decode coff, edata
 					end
 				else
-					e.dataentry_p = ptr
-					coff.encoded.ptr = startoff + e.dataentry_p
-					e.data_p = coff.decode_word
-					sz = coff.decode_word
-					e.codepage = coff.decode_word
-					e.reserved = coff.decode_word
+					e.dataentry_p = e_ptr
+					edata.ptr = startoff + e.dataentry_p
+					e.data_p = coff.decode_word(edata)
+					sz = coff.decode_word(edata)
+					e.codepage = coff.decode_word(edata)
+					e.reserved = coff.decode_word(edata)
 
-					if coff.encoded.ptr = coff.rva_to_off(e.data_p)
-						e.data = coff.encoded.read(sz)
+					if coff.sect_at_rva(e.data_p)
+						e.data = coff.cursection.encoded.read(sz)
 					end
 				end
 
+				edata.ptr = tmp
 				@entries << e
-
-				coff.encoded.ptr = saved_ptr
 			}
 		end
 	end
@@ -355,7 +353,7 @@ class COFF
 			@zerofill_sz = coff.decode_word	# nr of 0 bytes to append to the template (start_va)
 			@characteristics = coff.decode_word
 
-			if coff.encoded.ptr = coff.rva_to_off(@callback_p - coff.optheader.image_base)
+			if coff.sect_at_va(@callback_p)
 				@callbacks = []
 				while (ptr = coff.decode_xword) != 0
 					# __stdcall void (*ptr)(void* dllhandle, dword reason, void* reserved)
@@ -389,28 +387,43 @@ class COFF
 			@sehcount = coff.decode_xword
 
 			# @sehcount is really the count ?
-			if @sehcount >= 0 and @sehcount < 100 and (@signature == 0x40 or @signature == 0x48) and coff.encoded.ptr = coff.rva_to_off(@sehtable_p - coff.optheader.image_base)
+			if @sehcount >= 0 and @sehcount < 100 and (@signature == 0x40 or @signature == 0x48) and coff.sect_at_va(@sehtable_p)
 				@safeseh = []
 				@sehcount.times { @safeseh << coff.decode_xword }
 			end
 		end
 	end
 
+	attr_accessor :cursection
 
-	def decode_uchar(edata = @encoded) ; edata.decode_imm(:u8,  @endianness) end
-	def decode_half( edata = @encoded) ; edata.decode_imm(:u16, @endianness) end
-	def decode_word( edata = @encoded) ; edata.decode_imm(:u32, @endianness) end
-	def decode_xword(edata = @encoded) ; edata.decode_imm((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
+	def decode_uchar(edata = @cursection.encoded) ; edata.decode_imm(:u8,  @endianness) end
+	def decode_half( edata = @cursection.encoded) ; edata.decode_imm(:u16, @endianness) end
+	def decode_word( edata = @cursection.encoded) ; edata.decode_imm(:u32, @endianness) end
+	def decode_xword(edata = @cursection.encoded) ; edata.decode_imm((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
+	def decode_strz( edata = @cursection.encoded) ; if i = edata.data.index(0, edata.ptr) ; edata.read(i+1-edata.ptr).chop ; end ; end
 
-	# converts an RVA (offset from base address of file when loaded in memory) to an offset in the file, using the section table
-	# may not work with overlapping sections and the like
-	def rva_to_off rva
-		s = @sections.find { |s| s.virtaddr <= rva and s.virtaddr + s.virtsize > rva } if rva and rva != 0
-		if s
-			rva - s.virtaddr + s.rawaddr
-		elsif rva and rva > 0 and rva < @optheader.headers_size
-			rva
+	# converts an RVA (offset from base address of file when loaded in memory) to the section containing it using the section table
+	# updates @cursection and @cursection.encoded.ptr to point to the specified address
+	# may return self when rva points to the coff header
+	# returns nil if none match, 0 never matches
+	def sect_at_rva(rva)
+		return if not rva or rva <= 0
+		if sections and not @sections.empty?
+			if s = @sections.find { |s| s.virtaddr <= rva and s.virtaddr + s.virtsize > rva }
+				s.encoded.ptr = rva - s.virtaddr
+				@cursection = s
+			elsif rva < @sections.map { |s| s.virtaddr }.min
+				@encoded.ptr = rva
+				@cursection = self
+			end
+		elsif rva <= @encoded.length
+			@encoded.ptr = rva
+			@cursection = self
 		end
+	end
+
+	def sect_at_va(va)
+		sect_at_rva(va - @optheader.image_base)
 	end
 
 	def each_section
@@ -421,62 +434,66 @@ class COFF
 	end
 
 	# decodes the COFF header, optional header, section headers
-	# marks entrypoint and directories as encoded.export
+	# marks entrypoint and directories as edata.expord
 	def decode_header
+		@cursection ||= self
+		@encoded.ptr ||= 0
 		@header.decode(self)
 		optoff = @encoded.ptr
 		@optheader.decode(self)
-		@encoded.ptr = optoff + @header.size_opthdr
+		@cursection.encoded.ptr = optoff + @header.size_opthdr
 		@header.num_sect.times {
 			s = Section.new
 			s.decode self
-			if s.rawsize == 0
-				# add a bias to rva_to_off to allow exports (eg. relocation
-				#  target) in .bss without conflicting w/ existing sections
-				s.rawaddr = @encoded.virtsize
-				@encoded.virtsize += s.virtsize
-			end
 			@sections << s
+			decode_section_body(s)
 		}
-		if off = rva_to_off(@optheader.entrypoint)
-			@encoded.add_export new_label('entrypoint'), off
+		if sect_at_rva(@optheader.entrypoint)
+			@cursection.encoded.add_export new_label('entrypoint')
 		end
 		(DIRECTORIES - ['certificate_table']).each { |d|
-			if @directory and @directory[d] and off = rva_to_off(@directory[d][0])
-				@encoded.add_export new_label(d), off
+			if @directory and @directory[d] and sect_at_rva(@directory[d][0])
+				@cursection.encoded.add_export new_label(d)
 			end
 		}
+	end
+
+	# decodes a section content (allows simpler LoadedPE override)
+	def decode_section_body(s)
+		s.encoded = @encoded[s.rawaddr, [s.rawsize, s.virtsize].min]
+		s.encoded.virtsize = s.virtsize
 	end
 
 	# decodes COFF export table from directory
 	# mark exported names as encoded.export
 	def decode_exports
-		if @directory and @directory['export_table'] and @encoded.ptr = rva_to_off(@directory['export_table'][0])
+		if @directory and @directory['export_table'] and sect_at_rva(@directory['export_table'][0])
 			@export = ExportDirectory.new
 			@export.decode(self)
-			@export.exports.each { |e|
-				if e.name and off = rva_to_off(e.target)
-					e.target = @encoded.add_export e.name, off
+			@export.exports.to_a.each { |e|
+				if e.name and sect_at_rva(e.target)
+					e.target = @cursection.encoded.add_export e.name
 				end
-			} if @export.exports
+			}
 		end
 	end
 
 	# decodes COFF import tables from directory
 	# mark iat entries as encoded.export
 	def decode_imports
-		if @directory and @directory['import_table'] and @encoded.ptr = rva_to_off(@directory['import_table'][0])
+		if @directory and @directory['import_table'] and sect_at_rva(@directory['import_table'][0])
 			@imports = ImportDirectory.decode(self)
 			iatlen = (@optheader.signature == 'PE+' ? 8 : 4)
 			@imports.each { |id|
-				if off = rva_to_off(id.iat_p)
-					id.imports.each_with_index { |i, idx|
+				if sect_at_rva(id.iat_p)
+					ptr = @cursection.encoded.ptr
+					id.imports.each { |i|
 						if i.name
 							r = Metasm::Relocation.new(Expression[i.name], :u32, @endianness)
-							addr = off + iatlen * idx
-							@encoded.reloc[addr] = r
-							@encoded.add_export 'iat_'+i.name, addr, true
+							@cursection.encoded.reloc[ptr] = r
+							@cursection.encoded.add_export 'iat_'+i.name, ptr, true
 						end
+						ptr += iatlen
 					}
 				end
 			}
@@ -485,23 +502,24 @@ class COFF
 
 	# decode TLS directory, including tls callback table
 	def decode_tls
-		if @directory and @directory['tls_table'] and @encoded.ptr = rva_to_off(@directory['tls_table'][0])
+		if @directory and @directory['tls_table'] and sect_at_rva(@directory['tls_table'][0])
 			@tls = TLSDirectory.new
 			@tls.decode(self)
-			@encoded.add_export 'tls_callback_table', @tls.callback_p
-			@tls.callbacks.each_with_index { |cb, i|
-				@encoded.add_export "tls_callback_#{i}", cb if cb = rva_to_off(cb)
-			}
+		       	if s = sect_at_va(@tls.callback_p)
+				s.encoded.add_export 'tls_callback_table'
+				@tls.callbacks.each_with_index { |cb, i|
+					@cursection.encoded.add_export "tls_callback_#{i}" if sect_at_rva(cb)
+			       	}
+			end
 		end
 	end
 
 	# decode COFF relocation tables from directory
-	# mark relocations as encoded.relocs
 	def decode_relocs
-		if @directory and @directory['base_relocation_table'] and @encoded.ptr = rva_to_off(@directory['base_relocation_table'][0])
-			end_addr = @encoded.ptr + @directory['base_relocation_table'][1]
+		if @directory and @directory['base_relocation_table'] and sect_at_rva(@directory['base_relocation_table'][0])
+			end_ptr = @cursection.encoded.ptr + @directory['base_relocation_table'][1]
 			@relocations = []
-			while @encoded.ptr < end_addr
+			while @cursection.encoded.ptr < end_ptr
 				rt = RelocationTable.new
 				rt.decode self
 				@relocations << rt
@@ -515,10 +533,10 @@ class COFF
 			end
 			@relocations.each { |rt|
 				rt.relocs.each { |r|
-					if off = rva_to_off(rt.base_addr + r.offset)
-						@encoded.ptr = off
+					if s = sect_at_rva(rt.base_addr + r.offset)
+						e, p = s.encoded, s.encoded.ptr
 						rel = send(relocfunc, r)
-						@encoded.reloc[off] = rel if rel
+						e.reloc[p] = rel if rel
 					end
 				}
 			}
@@ -531,13 +549,15 @@ class COFF
 		when 'ABSOLUTE'
 		when 'HIGHLOW'
 			addr = decode_word
-			if off = rva_to_off(addr - @optheader.image_base)
-				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%04x' % addr)], :u32, @endianness)
+			if s = sect_at_va(addr)
+				label = label_at(s.encoded, s.encoded.ptr, 'xref_%04x' % addr)
+				Metasm::Relocation.new(Expression[label], :u32, @endianness)
 			end
 		when 'DIR64'
 			addr = decode_xword
-			if off = rva_to_off(addr - @optheader.image_base)
-				Metasm::Relocation.new(Expression[label_at(@encoded, off, 'xref_%04x' % addr)], :u64, @endianness)
+			if s = sect_at_va(addr)
+				label = label_at(s.encoded, s.encoded.ptr, 'xref_%04x' % addr)
+				Metasm::Relocation.new(Expression[label], :u64, @endianness)
 			end
 		else puts "W: COFF: Unsupported i386 relocation #{r.inspect}" if $VERBOSE
 		end
@@ -545,7 +565,7 @@ class COFF
 
 	# decodes resources from directory
 	def decode_resources
-		if @directory and @directory['resource_table'] and @encoded.ptr = rva_to_off(@directory['resource_table'][0])
+		if @directory and @directory['resource_table'] and sect_at_rva(@directory['resource_table'][0])
 			@resource = ResourceDirectory.new
 			@resource.decode self
 		end
@@ -555,31 +575,15 @@ class COFF
 	def decode_certificates
 		if @directory and ct = @directory['certificate_table']
 			@encoded.ptr = ct[0]
-			@certificates = (0...(ct[1]/8)).map { @encoded.data[decode_word, decode_word] }
+			@certificates = (0...(ct[1]/8)).map { @encoded.data[decode_word(@encoded), decode_word(encoded)] }
 		end
 	end
 
 	def decode_loadconfig
-		if @directory and lc = @directory['load_config'] and @encoded.ptr = rva_to_off(lc[0])
+		if @directory and lc = @directory['load_config'] and sect_at_rva(lc[0])
 			@loadconfig = LoadConfig.new
 			@loadconfig.decode(self)
 		end
-	end
-
-	# read section data
-	def decode_sections
-		@sections.each { |s|
-			# decode up to s.virtsize to retrieve exports (like base relocs to .bss)
-			ns = @sections.find { |ss| ss.rawaddr > s.rawaddr and s.rawsize > 0 }
-			if ns and ns.rawaddr - s.rawaddr < s.virtsize
-				ssz = [ns.rawaddr - s.rawaddr, s.rawsize].max
-			else
-				ssz = s.virtsize
-			end
-			s.encoded = @encoded[s.rawaddr, ssz] || EncodedData.new
-			s.encoded.virtsize = s.virtsize
-			s.encoded.data = s.encoded.data[0, s.rawsize] if s.rawsize < s.virtsize
-		}
 	end
 
 	# decodes a COFF file (headers/exports/imports/relocs/sections)
@@ -592,7 +596,6 @@ class COFF
 		decode_certificates
 		decode_tls
 		decode_relocs
-		decode_sections
 	end
 
 	# returns a metasm CPU object corresponding to +header.machine+

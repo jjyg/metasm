@@ -24,6 +24,7 @@ class PE < COFF
 	# simply sets the offset to the PE pointer before decoding the COFF header
 	# also checks the PE signature
 	def decode_header
+		@cursection ||= self
 		@encoded.ptr = 0x3c
 		@encoded.ptr = decode_word
 		@signature = @encoded.read(4)
@@ -262,16 +263,9 @@ end
 class LoadedPE < PE
 	attr_accessor :load_address
 
-	# just check the bounds / check for 0
-	def rva_to_off(rva)
-		rva if rva and rva > 0 and rva <= @encoded.virtsize
-	end
-
 	# use the virtualaddr/virtualsize fields of the section header
-	def decode_sections
-		@sections.each { |s|
-			s.encoded = @encoded[s.virtaddr, s.virtsize]
-		}
+	def decode_section_body(s)
+		s.encoded = @encoded[s.virtaddr, s.virtsize]
 	end
 
 	# reads a loaded PE from memory, returns a PE object

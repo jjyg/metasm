@@ -392,7 +392,7 @@ class COFF
 		flen += coff.optheader.headers_size
 
 		coff.sections.each { |s|
-			coff.encoded.ptr = coff.rva_to_off(s.virtaddr)
+			coff.encoded.ptr = s.rawaddr
 			raw << coff.encoded.read(s.rawsize)
 			flen += s.rawsize
 		}
@@ -709,8 +709,8 @@ class COFF
 		# sort to ensure a 0-terminated will not overwrite an entry
 		# (try to dump notepad.exe, which has a forwarder;)
 		@imports.find_all { |id| id.iat_p }.sort_by { |id| id.iat_p }.each { |id|
-			p = rva_to_off(id.iat_p)
-			@encoded[p, id.iat.virtsize] = id.iat
+			s = sect_at_rva(id.iat_p)
+			@encoded[s.rawaddr + s.encoded.ptr, id.iat.virtsize] = id.iat
 			binding.update id.iat.binding(baseaddr + id.iat_p)
 		} if @imports
 
