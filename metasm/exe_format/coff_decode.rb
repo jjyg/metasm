@@ -112,10 +112,12 @@ class COFF
 
 			if coff.sect_at_rva(func_p)
 				@exports = []
+				addrs = []
+				num_exports.times { |i| addrs << coff.decode_word }
 				num_exports.times { |i|
 					e = Export.new
 					e.ordinal = i + @ordinal_base
-					addr = coff.decode_word
+					addr = addrs[i]
 					if addr >= coff.directory['export_table'][0] and addr < coff.directory['export_table'][0] + coff.directory['export_table'][1] and coff.sect_at_rva(addr)
 						name = coff.decode_strz
 						e.forwarder_lib, name = name.split('.', 2)
