@@ -106,7 +106,7 @@ class AsmPreprocessor < Preprocessor
 		# returns the array of token resulting from the application of the macro
 		# parses arguments if needed, handles macro-local labels
 		def apply(macro, lexer, program)
-			args = Preprocessor::Macro.parse_arglist(lexer)
+			args = Preprocessor::Macro.parse_arglist(lexer).to_a
 			raise @name, 'invalid argument count' if args.length != @args.length
 
 			labels = @labels.inject({}) { |h, l| h.update l => program.new_label(l) }
