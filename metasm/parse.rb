@@ -106,27 +106,7 @@ class AsmPreprocessor < Preprocessor
 		# returns the array of token resulting from the application of the macro
 		# parses arguments if needed, handles macro-local labels
 		def apply(macro, lexer, program)
-			# read arguments
-			args = []
-			lexer.skip_space
-			if not @args.empty? and tok = lexer.nexttok and tok.type == :punct and tok.raw == '('
-				lexer.readtok
-				loop do
-					lexer.skip_space_eol
-					
-					raise @name if not etok = lexer.readtok
-					lexer.unreadtok etok
-					raise @name if not v = Expression.parse(lexer)
-					etok = etok.dup
-					etok.type = :string
-					etok.value = v
-					etok.raw = v.to_s
-					args << etok
-					lexer.skip_space_eol
-					raise @name if not tok = lexer.readtok or tok.type != :punct or (tok.raw != ')' and tok.raw != ',')
-					break if tok.raw == ')'
-				end
-			end
+			args = Preprocessor::Macro.parse_arglist(lexer)
 			raise @name, 'invalid argument count' if args.length != @args.length
 
 			labels = @labels.inject({}) { |h, l| h.update l => program.new_label(l) }
@@ -140,13 +120,12 @@ class AsmPreprocessor < Preprocessor
 					t.raw = labels[t.raw]
 					t
 				elsif args[t.raw]
-					tt = args[t.raw].dup
-					tt.backtrace = t.backtrace
-					tt
+					# XXX update toks backtrace ?
+					args[t.raw]
 				else
 					t
 				end
-			}
+			}.flatten
 		end
 
 		# parses the argument list and the body from lexer
