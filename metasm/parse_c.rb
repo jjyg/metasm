@@ -1499,14 +1499,14 @@ EOH
 				raise tok, 'bad var name' if Keyword[tok.raw] or (?0..?9).include?(tok.raw[0])
 				@name = tok.raw
 				@backtrace = tok
-				parse_attributes(parser)
+				parse_attributes(parser, true)
 			else
 				# unnamed
 				raise tok if name or name == false
 				@name = false
 				@backtrace = tok
 				parser.unreadtok tok
-				parse_attributes(parser)
+				parse_attributes(parser, true)
 			end
 			parse_declarator_postfix(parser, scope)
 			if not rec
