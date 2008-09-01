@@ -275,6 +275,37 @@ class COFF
 		end
 	end
 
+	class TLSDirectory
+		def encode(coff)
+			set_default_values coff
+
+			cblist = EncodedData.new
+			@callback_p = coff.label_at(cblist, 0, 'callback_p')
+			@callbacks.to_a.each { |cb|
+				cblist << coff.encode_xword(cb)
+			}
+			cblist << coff.encode_xword(0)
+
+			dir = EncodedData.new <<
+			coff.encode_xword(@start_va)   <<
+			coff.encode_xword(@end_va)     <<
+			coff.encode_xword(@index_addr) <<
+			coff.encode_xword(@callback_p) <<
+			coff.encode_word(@zerofill_sz) <<
+			coff.encode_word(@characteristics)
+
+			[dir, cblist]
+		end
+
+		def set_default_values(coff)
+			@start_va ||= 0
+			@end_va ||= @start_va
+			@index_addr ||= 0
+			@zerofill_sz ||= 0
+			@characteristics ||= 0
+		end
+	end
+
 	class RelocationTable
 		# encodes a COFF relocation table
 		def encode(coff)
@@ -528,6 +559,17 @@ class COFF
 		end
 	end
 
+	def encode_tls
+		dir, cbtable = @tls.encode(self)
+		@directory['tls_table'] = [label_at(dir, 0, 'tls_table'), dir.virtsize]
+
+		s = Section.new
+		s.name = '.tls'
+		s.encoded = EncodedData.new << dir << cbtable
+		s.characteristics = %w[MEM_READ MEM_WRITE]
+		encode_append_section s
+	end
+
 	# encodes relocation tables in a new section .reloc, updates @directory['base_relocation_table']
 	def encode_relocs
 		if @relocations.empty?
@@ -727,15 +769,16 @@ class COFF
 
 	# encode a COFF file, building export/import/reloc tables if needed
 	# creates the base relocation tables (need for references to IAT not known before)
-	def encode(target = 'exe')
+	def encode(target = 'exe', want_relocs = (target != 'exe'))
 		@encoded = EncodedData.new
 		label_at(@encoded, 0, 'coff_start')
 		autoimport
-		encode_exports if @export
-		encode_imports if @imports
-		encode_resource if @resource
-		create_relocation_tables if target != 'exe'
-		encode_relocs if @relocations
+		encode_exports if export
+		encode_imports if imports
+		encode_resource if resource
+		encode_tls if tls
+		create_relocation_tables if want_relocs
+		encode_relocs if relocations
 		encode_header(target)
 		encode_sections_fixup
 		@encoded.data

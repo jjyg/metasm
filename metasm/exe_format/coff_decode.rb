@@ -507,7 +507,7 @@ class COFF
 		       	if s = sect_at_va(@tls.callback_p)
 				s.encoded.add_export 'tls_callback_table'
 				@tls.callbacks.each_with_index { |cb, i|
-					@cursection.encoded.add_export "tls_callback_#{i}" if sect_at_rva(cb)
+					@tls.callbacks[i] = @cursection.encoded.add_export "tls_callback_#{i}" if sect_at_rva(cb)
 			       	}
 			end
 		end

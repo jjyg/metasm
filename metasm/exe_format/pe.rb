@@ -118,15 +118,16 @@ EOMZSTUB
 			rs.encoded = s.encoded
 			ret.sections << s
 		}
-		ret.resource = @resource
-		if @imports
+		ret.resource = resource
+		ret.tls = tls
+		if imports
 			ret.imports = @imports.map { |id| id.dup }
 			ret.imports.each { |id|
 				id.timestamp = id.firstforwarder =
 				id.ilt_p = id.libname_p = nil
 			}
 		end
-		ret.export = @export
+		ret.export = export
 		ret
 	end
 
