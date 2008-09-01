@@ -439,6 +439,7 @@ class CCompiler < C::Compiler
 				if expr.rexpr.type.name == :__int64 and @cpusz != 64
 					raise # TODO
 				end
+				r = make_volatile(r, expr.rexpr.type)
 				instr 'test', r, r
 			elsif expr.rexpr.type.float?
 				if @exeformat.cpu.opcode_list_byname['fucomip']
@@ -1159,12 +1160,12 @@ class CCompiler < C::Compiler
 			instr op, Expression[target]
 		when :'!'
 			r = c_cexpr_inner(expr.rexpr)
-			unuse r
+			r = make_volatile(r, expr.rexpr.type)
 			instr 'test', r, r
 			instr 'jz', Expression[target]
 		else
 			r = c_cexpr_inner(expr)
-			unuse r
+			r = make_volatile(r, expr.type)
 			instr 'test', r, r
 			instr 'jnz', Expression[target]
 		end
