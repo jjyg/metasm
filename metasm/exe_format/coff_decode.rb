@@ -427,6 +427,16 @@ class COFF
 		sect_at_rva(va - @optheader.image_base)
 	end
 
+	def label_rva(name)
+		if name.kind_of? Integer
+			name
+		elsif s = @sections.find { |s| s.encoded.export[name] }
+			s.virtaddr + s.encoded.export[name]
+		else
+		       @encoded.export[name]
+		end
+	end
+
 	def each_section
 		base = @optheader.image_base
 		base = 0 if not base.kind_of? Integer
