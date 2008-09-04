@@ -79,7 +79,7 @@ prepare_hook = proc { |mpe, base, export|
 	sz = 0
 	overwritten = []
 	while sz < hooks[target].length
-		di = sc.cpu.decode_instruction sc, mpe.encoded, target
+		di = sc.cpu.decode_instruction mpe.encoded, target
 		if not di or not di.opcode or not di.instruction
 			puts "W: unknown instruction in #{export.name} !"
 			break
@@ -91,15 +91,16 @@ prepare_hook = proc { |mpe, base, export|
 	resumeaddr = target + sz
 	
 	# append the call-specific shellcode to the main hook code
+	sc.cursource << Label.new(hooklabel)
 	sc.parse <<EOS
-#{hooklabel}:
  push #{namelabel}
  call main_hook		; log the call
 ; rerun the overwritten instructions
 #{overwritten.join("\n")}
  jmp #{resumeaddr}	; get back to original code flow
-#{namelabel} dw #{export.name.inspect}, 0
 EOS
+	sc.cursource << Label.new(namelabel)
+	sc.parse "dw #{export.name.inspect}, 0"
 }
 	
 msgboxw = nil
@@ -110,10 +111,10 @@ pr.modules[1..-1].each { |m|
 		mpe = LoadedPE.load remote_mem[m.addr, 0x1000000]
 		mpe.decode_header
 		mpe.decode_exports
-		mpe.export.exports.each { |e| msgboxw = m.addr + e.target if e.name == 'MessageBoxW' }
+		mpe.export.exports.each { |e| msgboxw = m.addr + mpe.label_rva(e.target) if e.name == 'MessageBoxW' }
 	end
 	# prepare hooks
-	next if m.path !~ /user32/i	# filter interesting libraries
+	next if m.path !~ /kernel32/i	# filter interesting libraries
 	puts "handling #{File.basename m.path}" if $VERBOSE
 
 	if not mpe
@@ -127,9 +128,10 @@ pr.modules[1..-1].each { |m|
 	text = mpe.sections.find { |s| s.name == '.text' }
 	mpe.export.exports.each { |e|
 		next if not e.target or not e.name
+		next if e.name !~ /WriteFile/
 
 		# ensure we have an offset and not a label name
-		e.target = mpe.encoded.export[e.target] if mpe.encoded.export[e.target]
+		e.target = mpe.label_rva(e.target)
 
 		# ensure the exported thing is in the .text section
 		next if e.target < text.virtaddr or e.target >= text.virtaddr + text.virtsize

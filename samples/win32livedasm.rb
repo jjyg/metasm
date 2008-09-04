@@ -27,7 +27,7 @@ pe = Metasm::LoadedPE.load remote_mem[baseaddr, 0x100000]
 pe.decode_header
 
 # get the entrypoint address
-eip = baseaddr + pe.optheader.entrypoint
+eip = baseaddr + pe.label_rva(pe.optheader.entrypoint)
 
 # use degraded disasm mode: assume all calls will return
 String.cpu.make_call_return	# String.cpu is the Ia32 cpu set up by metasm-shell

@@ -51,6 +51,7 @@ class Tracer < Metasm::WinDbg
 		pe.decode_header
 		pe.decode_exports
 		libname = read_str_indirect(pid, info.imagename, info.unicode)
+puts 'FIXME',caller
 		pe.encoded.export.each { |name, off| @label[info.imagebase + off] = libname + '!' + name }
 		super
 	end
@@ -65,7 +66,7 @@ class Tracer < Metasm::WinDbg
 		end
 		if $VERBOSE
 		bin = @mem[pid][eip, 16]
-		di = @prog.cpu.decode_instruction(@prog, Metasm::EncodedData.new(bin), eip)
+		di = @prog.cpu.decode_instruction(Metasm::EncodedData.new(bin), eip)
 		puts "#{'%08X' % eip} #{di.instruction}"
 		end
 
