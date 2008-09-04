@@ -35,6 +35,7 @@ class MIPS
 	end
 
 	def decode_findopcode(edata)
+		return if edata.ptr >= edata.data.length
 		# TODO handle relocations !!
 		di = DecodedInstruction.new(self)
 		val = edata.decode_imm(:u32, @endianness)
