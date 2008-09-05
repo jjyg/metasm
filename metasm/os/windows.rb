@@ -22,6 +22,18 @@ module WinAPI
 		end
 	end
 
+	def self.last_error_msg
+		message = ' '*512
+		errno = getlasterror()
+		if formatmessage(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
+			message = 'unknown error %x' % errno
+		else
+			message = message[0, message.index(0)] if message.index(0)
+			message.chomp!
+		end
+		message
+	end
+
 	def self.new_api(lib, name, args, zero_is_err = true)
 		args = args.delete(' ').split(//)
 		retval = args.pop
@@ -29,17 +41,7 @@ module WinAPI
 		define_method(name.downcase) { |*a|
 			r = const_get(name).call(*a)
 			if r == 0 and zero_is_err
-				if $VERBOSE
-				message = ' '*512
-				errno = getlasterror()
-				if formatmessage(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
-					message = 'unknown error %x' % errno
-				else
-					message = message[0, message.index(0)] if message.index(0)
-					message.chomp!
-				end
-				puts "WinAPI: Error in #{name}: #{message}"
-				end
+				puts "WinAPI: Error in #{name}: #{last_error_msg}" if $VERBOSE
 				nil
 			else
 				r
@@ -183,7 +185,7 @@ class WindowsRemoteString < VirtualString
 				handle = WinAPI.openprocess(WinAPI::PROCESS_VM_READ, 0, pid)
 			end
 		end
-		raise "cannot open process #{pid}" if not handle
+		raise "OpenProcess(#{pid}): #{WinAPI.last_error_msg}" if not handle
 
 		new handle
 	end
@@ -244,7 +246,7 @@ class WinDbg
 			processinfo = [0, 0, 0, 0].pack('L*')
 			flags = WinAPI::DEBUG_PROCESS
 			flags |= WinAPI::DEBUG_ONLY_THIS_PROCESS if not debug_children
-			h = WinAPI.createprocessa(target, nil, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
+			raise "CreateProcess: #{WinAPI.last_error_msg}" if not h = WinAPI.createprocessa(target, nil, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
 			hprocess, hthread, pid, tid = processinfo.unpack('LLLL')
 			WinAPI.closehandle(hthread)
 			@mem[pid] = WindowsRemoteString.new(hprocess) # need @mem not empty (terminate condition of debugloop)
@@ -374,7 +376,7 @@ class WinDbg
 	def debugloop
 		debugevent = debugevent_alloc
 		while not @mem.empty?
-			WinAPI.waitfordebugevent(debugevent, WinAPI::INFINITE)
+			return if not WinAPI.waitfordebugevent(debugevent, WinAPI::INFINITE)
 			debugloop_step(debugevent)
 		end
 	end
