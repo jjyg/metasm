@@ -17,7 +17,6 @@
 #
 
 require 'metasm'
-require 'metasm-shell'
 
 include Metasm
 include WinAPI
@@ -71,7 +70,7 @@ prepare_hook = proc { |mpe, base, export|
 	
 	# this will overwrite the function entrypoint
 	target = base + export.target
-	hooks[target] = "jmp #{hooklabel}".encode_edata
+	hooks[target] = Shellcode.new(sc.cpu).share_namespace(sc).parse("jmp #{hooklabel}").assemble.encoded
 	
 	# backup the overwritten instructions
 	# retrieve instructions until their length is >= our hook length
@@ -114,7 +113,7 @@ pr.modules[1..-1].each { |m|
 		mpe.export.exports.each { |e| msgboxw = m.addr + mpe.label_rva(e.target) if e.name == 'MessageBoxW' }
 	end
 	# prepare hooks
-	next if m.path !~ /kernel32/i	# filter interesting libraries
+	next if m.path !~ /user32/i	# filter interesting libraries
 	puts "handling #{File.basename m.path}" if $VERBOSE
 
 	if not mpe
@@ -128,7 +127,7 @@ pr.modules[1..-1].each { |m|
 	text = mpe.sections.find { |s| s.name == '.text' }
 	mpe.export.exports.each { |e|
 		next if not e.target or not e.name
-		next if e.name !~ /WriteFile/
+		next if e.name =~ /(?:Translate|Get|Dispatch)Message|CallNextHookEx|TranslateAccelerator/
 
 		# ensure we have an offset and not a label name
 		e.target = mpe.label_rva(e.target)
