@@ -51,8 +51,10 @@ class Tracer < Metasm::WinDbg
 		pe.decode_header
 		pe.decode_exports
 		libname = read_str_indirect(pid, info.imagename, info.unicode)
-puts 'FIXME',caller
-		pe.encoded.export.each { |name, off| @label[info.imagebase + off] = libname + '!' + name }
+		pe.export.exports.each { |e|
+			next if not r = pe.label_rva(e.target)
+			@label[info.imagebase + r] = libname + '!' + (e.name || "ord_#{e.ordinal}")
+		}
 		super
 	end
 
