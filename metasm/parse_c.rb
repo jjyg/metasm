@@ -287,12 +287,22 @@ module C
 			raise parser, 'unhandled indirect offsetof' if not @members.find { |m| m.name == name }	# TODO
 			al = align(parser)
 			off = 0
+			bit_off = 0
 			@members.each_with_index { |m, i|
 				break if m.name == name
-				raise parser, 'offsetof unhandled with bit members' if bits and @bits[i]	# TODO
-				mal = [m.type.align(parser), al].min
-				off = (off + mal - 1) / mal * mal
-				off += parser.sizeof(m)
+				if bits and b = @bits[i]
+					isz = parser.typesize[:int]
+					if bit_off + b > 8*isz
+						bit_off = 0
+						off = (off + isz - 1) / isz * isz + isz
+					else
+						bit_off += b
+					end
+				else
+					mal = [m.type.align(parser), al].min
+					off = (off + mal - 1) / mal * mal
+					off += parser.sizeof(m)
+				end
 			}
 			off
 		end
