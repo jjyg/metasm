@@ -622,9 +622,9 @@ class COFF
 	def get_default_entrypoints
 		ep = []
 		ep.concat @tls.callbacks.to_a if tls
-		ep << (@optheader.image_base + @optheader.entrypoint)
+		ep << (@optheader.image_base + label_rva(@optheader.entrypoint))
 		@export.exports.each { |e|
-			ep << (@optheader.image_base + e.target) if not e.forwarder_lib
+			ep << (@optheader.image_base + label_rva(e.target)) if not e.forwarder_lib
 		} if @export
 		ep
 	end

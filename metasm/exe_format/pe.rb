@@ -242,7 +242,7 @@ EOS
 			gpa.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
 				break bind if @getprocaddr_unknown.include? [dasm, calladdr] or not Expression[expr].externals.include? :eax
 				sz = @cpu.size/8
-				raise 'getprocaddr call error' if not dasm.decoded[calladdr]
+				break bind if not dasm.decoded[calladdr]
 				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)
 				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(0) and i > sz	# try to avoid ordinals
 					bind = bind.merge :eax => Expression[fn[0, i]]
