@@ -681,6 +681,10 @@ class Disassembler
 		end
 	end
 
+	def each_instructionblock
+		@decoded.sort.each { |addr, di| yield di.block if di.kind_of? DecodedInstruction and di.block.list.first == di }
+	end
+
 	# returns the canonical form of addr (absolute address integer or label of start of section + section offset)
 	def normalize(addr)
 		return addr if not addr or addr == :default
@@ -1752,12 +1756,14 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 
 	# dumps a block of decoded instructions
 	def dump_block(block, &b)
+		b ||= proc { |l| puts l }
 		dump_block_header(block, &b)
 		block.list.each { |di| b[di.show] }
 	end
 
 	# shows the xrefs/labels at block start
 	def dump_block_header(block, &b)
+		b ||= proc { |l| puts l }
 		xr = []
 		each_xref(block.address) { |x|
 			case x.type
@@ -1783,6 +1789,7 @@ puts "    backtrace_found: addrs_todo << #{n} from #{Expression[origin] if origi
 	# returns the next offset to display
 	# TODO array-style data access
 	def dump_data(addr, edata, off, &b)
+		b ||= proc { |l| puts l }
 		if l = @prog_binding.index(addr)
 			l = (l + ' ').ljust(16)
 		else l = ''
