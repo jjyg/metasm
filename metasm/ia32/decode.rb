@@ -409,6 +409,7 @@ module Metasm
 		when 'cmc': { :eflag_c => Expression[:'!', :eflag_c] }
 		when 'cld': { :eflag_d => Expression[0] }
 		when 'std': { :eflag_d => Expression[1] }
+		when 'setalc': { :eax => Expression[:eflag_c, :*, 0xff] }
 		when /^set(.*)/
 			cd = decode_cc_to_expr($1)
 			{ a[0] => Expression[cd] }

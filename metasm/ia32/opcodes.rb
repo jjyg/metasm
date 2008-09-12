@@ -53,7 +53,7 @@ class Ia32
 		addop 'imul',  [0x69], :mrm, {:s => [0, 1]}, :i
 		addop 'inc',   [0x40], :reg
 		addop 'inc',   [0xFE], 0,    {:w => [0, 0]}
-		addop 'int',   [0xCC], nil,  {}, :imm_val3
+		addop 'int',   [0xCC], nil,  {}, :imm_val3, :stopexec
 		addop 'int',   [0xCD], nil,  {}, :u8
 		addop_macrotttn 'j', [0x70], nil, {}, :setip, :i8
 		addop_macrotttn 'j', [0x0F, 0x80], nil, {}, :setip, :i
@@ -221,8 +221,10 @@ class Ia32
 #	cs/nojmp = 0x2E, ds/jmp = 0x3E, es = 0x26, fs = 0x64, gs = 0x65, ss = 0x36
 		# undocumented opcodes
 		# TODO put these in the right place (486/P6/...)
-		addop 'aad',   [0xD5], nil,  {}, :u8
 		addop 'aam',   [0xD4], nil,  {}, :u8
+		addop 'aad',   [0xD5], nil,  {}, :u8
+		addop 'setalc', [0xD6]
+		addop 'salc', [0xD6]
 		addop 'icebp', [0xF1]
 		addop 'loadall',[0x0F, 0x07]
 		addop 'ud2',   [0x0F, 0xB9]
