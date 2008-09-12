@@ -33,7 +33,7 @@ class DisasmWidget < Gtk::VBox
 						gui_update_counter = 10000
 					end
 				rescue
-					messagebox $!
+					messagebox [$!, $!.backtrace].join("\n")
 				end
 				gui_update_counter += 1
 				if gui_update_counter > 100
@@ -183,7 +183,7 @@ class DisasmWidget < Gtk::VBox
 		return if page == @notebook.page and addr == curview.current_address
 		oldpos = [@notebook.page, curview.get_cursor_pos]
 		@notebook.page = page
-		if curview.focus_addr(addr) or [0...@views.length].find { |v|
+		if curview.focus_addr(addr) or (0...@views.length).find { |v|
 			o_p = @views[v].get_cursor_pos
 			if @views[v].focus_addr(addr)
 				@notebook.page = v
