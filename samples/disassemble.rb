@@ -24,6 +24,7 @@ OptionParser.new { |opt|
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-o <outfile>', '--output <outfile>', 'save the assembly listing in the specified file (defaults to stdout)') { |h| opts[:outfile] = h }
 	opt.on('-s <addrlist>', '--stop <addrlist>', '--stopaddr <addrlist>', 'do not disassemble past these addresses') { |h| opts[:stopaddr] ||= [] ; opts[:stopaddr] |= h.split ',' }
+	opt.on('--custom <hookfile>', 'loads the ruby script hookfile and invokes "dasm_setup(exe, dasm)"') { |h| opts[:hookfile] = h }
 	opt.on('--benchmark') { opts[:benchmark] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
 	opt.on('-d', '--debug') { $DEBUG = true }
@@ -48,6 +49,10 @@ d.parse_c_file opts[:cheader] if opts[:cheader]
 d.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 d.debug_backtrace = true if opts[:debugbacktrace]
 opts[:stopaddr].to_a.each { |addr| d.decoded[makeint[addr]] = true }
+if opts[:hookfile]
+	load opts[:hookfile]
+	dasm_setup(exe, d)
+end
 
 t1 = Time.now if opts[:benchmark]
 # do the work
