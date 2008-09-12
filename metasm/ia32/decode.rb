@@ -521,7 +521,9 @@ module Metasm
 		# XXX handle retaddrlist for multiple/mixed thunks
 		if retaddrlist and not dasm.decoded[retaddrlist.first] and di = dasm.decoded[faddr]
 			# no return instruction, must be a thunk : find the last instruction (to backtrace from it)
-			while ndi = dasm.decoded[di.block.to_subfuncret.to_a.first] || dasm.decoded[di.block.to_normal.to_a.first] and ndi.kind_of? DecodedInstruction
+			done = []
+			while ndi = dasm.decoded[di.block.to_subfuncret.to_a.first] || dasm.decoded[di.block.to_normal.to_a.first] and ndi.kind_of? DecodedInstruction and not done.include? ndi.address
+				done << ndi.address
 				di = ndi
 			end
 			if not di.block.to_subfuncret.to_a.first and di.block.to_normal and di.block.to_normal.length > 1
