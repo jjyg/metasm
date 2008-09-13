@@ -748,7 +748,7 @@ module Metasm
 					dasm.backtrace(Indirection[:esp, @size/8, origin], origin, :origin => origin)
 				elsif cachedoff = @dasm_func_default_off[[dasm, calladdr]]
 					bind[:esp] = Expression[:esp, :+, cachedoff]
-				else
+				elsif off.kind_of? ::Integer
 					dasm.decoded[calladdr].add_comment "stackoff=#{off-@size/8}"
 				end
 
