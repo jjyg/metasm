@@ -24,8 +24,8 @@ class Ia32
 		# returns an array, 1 element per possible immediate size (for un-reduce()able Expression)
 		def encode(reg = 0, endianness = :little)
 			case @adsz
-			when 16: encode16(reg, endianness)
-			when 32: encode32(reg, endianness)
+			when 16; encode16(reg, endianness)
+			when 32; encode32(reg, endianness)
 			end
 		end
 
@@ -41,16 +41,16 @@ class Ia32
 			ret = EncodedData.new
 			ret <<
 			case [@b.val, (@s.val if @s)]
-			when [3, 6], [6, 3]: 0
-			when [3, 7], [7, 3]: 1
-			when [5, 6], [6, 5]: 2
-			when [5, 7], [7, 5]: 3
-			when [6, nil]: 4
-			when [7, nil]: 5
+			when [3, 6], [6, 3]; 0
+			when [3, 7], [7, 3]; 1
+			when [5, 6], [6, 5]; 2
+			when [5, 7], [7, 5]; 3
+			when [6, nil]; 4
+			when [7, nil]; 5
 			when [5, nil]
 				imm ||= 0
 				6
-			when [3, nil]: 7
+			when [3, nil]; 7
 			else raise InvalidModRM, 'invalid modrm16'
 			end
 
@@ -166,9 +166,9 @@ class Ia32
 		#
 		pfx = i.prefix.map { |k, v|
 			case k
-			when :jmp:  {:jmp => 0x3e, :nojmp => 0x2e}[v]
-			when :lock: 0xf0
-			when :rep:  {'repnz' => 0xf2, 'repz' => 0xf3, 'rep' => 0xf2}[v] # TODO
+			when :jmp;  {:jmp => 0x3e, :nojmp => 0x2e}[v]
+			when :lock; 0xf0
+			when :rep;  {'repnz' => 0xf2, 'repz' => 0xf3, 'rep' => 0xf2}[v] # TODO
 			end
 		}.pack 'C*'
 		pfx << op.props[:needpfx].pack('C*') if op.props[:needpfx]
@@ -255,7 +255,7 @@ class Ia32
 
 		postponed.each { |oa, ia|
 			case oa
-			when :farptr: ed = ia.encode(@endianness, "a#{adsz}".to_sym)
+			when :farptr; ed = ia.encode(@endianness, "a#{adsz}".to_sym)
 			when :modrm, :modrmA, :modrmmmx, :modrmxmm
 				if ia.kind_of? ModRM
 					ed = ia.encode(regval, @endianness)
@@ -275,9 +275,9 @@ class Ia32
 				else
 					ed = ModRM.encode_reg(ia, regval)
 				end
-			when :mrm_imm: ed = ia.imm.encode("a#{adsz}".to_sym, @endianness)
-			when :i8, :u8, :u16: ed = ia.encode(oa, @endianness)
-			when :i: ed = ia.encode("a#{opsz}".to_sym, @endianness)
+			when :mrm_imm; ed = ia.imm.encode("a#{adsz}".to_sym, @endianness)
+			when :i8, :u8, :u16; ed = ia.encode(oa, @endianness)
+			when :i; ed = ia.encode("a#{opsz}".to_sym, @endianness)
 			else raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"
 			end
 

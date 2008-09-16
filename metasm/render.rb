@@ -58,7 +58,7 @@ class Expression
 					neg = true
 					e = -e
 				end
-				if e < 10: e = e.to_s
+				if e < 10; e = e.to_s
 				else e = '%xh' % e
 				end
 				e = '0' << e unless (?0..?9).include? e[0]

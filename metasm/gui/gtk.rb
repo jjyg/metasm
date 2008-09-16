@@ -177,7 +177,7 @@ class DisasmWidget < Gtk::VBox
 				messagebox "Invalid address #{addr}" if not quiet
 				return
 			end
-		when nil: return
+		when nil; return
 		end
 
 		return if page == @notebook.page and addr == curview.current_address
@@ -254,8 +254,8 @@ class InputBox < Gtk::Dialog
 
 		text.signal_connect('key_press_event') { |w, ev|
 			case ev.keyval
-			when Gdk::Keyval::GDK_Escape: response(RESPONSE_REJECT) ; true
-			when Gdk::Keyval::GDK_Return, Gdk::Keyval::GDK_KP_Enter: response(RESPONSE_ACCEPT) ; true
+			when Gdk::Keyval::GDK_Escape; response(RESPONSE_REJECT) ; true
+			when Gdk::Keyval::GDK_Return, Gdk::Keyval::GDK_KP_Enter; response(RESPONSE_ACCEPT) ; true
 			end
 		}
 

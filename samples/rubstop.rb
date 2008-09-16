@@ -38,8 +38,8 @@ class Rubstop < Metasm::PTrace32
 		::Process.waitpid(@pid)
 		return if child.exited?
 		case @wantbp
-		when ::Integer: bpx @wantbp ; @wantbp = nil
-		when ::String: self.dr7 |= 1 << (2*@wantbp[2, 1].to_i) ; @wantbp = nil
+		when ::Integer; bpx @wantbp ; @wantbp = nil
+		when ::String; self.dr7 |= 1 << (2*@wantbp[2, 1].to_i) ; @wantbp = nil
 		end
 		return if justcheck
 		@oldregs.update @regs_cache
@@ -112,8 +112,8 @@ class Rubstop < Metasm::PTrace32
 		::Process::waitpid(@pid, ::Process::WNOHANG) if not child
 		return if not child
 		if not child.stopped?
-			if child.exited?:      log "process exited with status #{child.exitstatus}"
-			elsif child.signaled?: log "process exited due to signal #{child.termsig} (#{Signal.list.index child.termsig})"
+			if child.exited?;      log "process exited with status #{child.exitstatus}"
+			elsif child.signaled?; log "process exited due to signal #{child.termsig} (#{Signal.list.index child.termsig})"
 			else                log "process in unknown status #{child.inspect}"
 			end
 			return
@@ -196,9 +196,9 @@ class Rubstop < Metasm::PTrace32
 		end
 		@regs_cache['dr7'] &= 0xffff_ffff ^ (0xf << (16+4*dr))
 		case type
-		when 'x': addr += 0x6000_0000 if @has_pax
-		when 'r': @regs_cache['dr7'] |= (((len-1)<<2)|3) << (16+4*dr)
-		when 'w': @regs_cache['dr7'] |= (((len-1)<<2)|1) << (16+4*dr)
+		when 'x'; addr += 0x6000_0000 if @has_pax
+		when 'r'; @regs_cache['dr7'] |= (((len-1)<<2)|3) << (16+4*dr)
+		when 'w'; @regs_cache['dr7'] |= (((len-1)<<2)|1) << (16+4*dr)
 		end
 		send("dr#{dr}=", addr)
 		self.dr6 = 0

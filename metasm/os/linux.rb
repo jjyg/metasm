@@ -470,7 +470,7 @@ libc.so.6
  xdrrec_eof xdrrec_skiprecord xdrstdio_create xencrypt xprt_register xprt_unregister
 EOL
 	curlibname = nil
-	data.each { |l|
+	data.each_line { |l|
 		list = l.split
 		curlibname = list.shift if l[0, 1] != ' '
 		list.each { |export| EXPORT[export] = curlibname }

@@ -19,7 +19,7 @@ class Object
 		end
 		scan_iter { |v, p|
 			case v
-			when Fixnum, Symbol: next
+			when Fixnum, Symbol; next
 			end
 			p = path+p
 			if done[v.object_id]

@@ -8,41 +8,41 @@ require 'metasm/ia32/opcodes'
 require 'metasm/decode'
 
 module Metasm
-	class Ia32
-		class ModRM
-			def self.decode(edata, byte, endianness, adsz, opsz, seg=nil, regclass=Reg)
-				m = (byte >> 6) & 3
-				rm = byte & 7
+class Ia32
+	class ModRM
+		def self.decode(edata, byte, endianness, adsz, opsz, seg=nil, regclass=Reg)
+			m = (byte >> 6) & 3
+			rm = byte & 7
 
-				if m == 3
-					return regclass.new(rm, opsz)
-				end
+			if m == 3
+				return regclass.new(rm, opsz)
+			end
 
-				sum = Sum[adsz][m][rm]
+			sum = Sum[adsz][m][rm]
 
-				s, i, b, imm = nil
-				sum.each { |a|
-					case a
-					when Integer
-						if not b
-							b = Reg.new(a, adsz)
-						else
-							s = 1
-							i = Reg.new(a, adsz)
-						end
+			s, i, b, imm = nil
+			sum.each { |a|
+				case a
+				when Integer
+					if not b
+						b = Reg.new(a, adsz)
+					else
+						s = 1
+						i = Reg.new(a, adsz)
+					end
 
-					when :sib
-						sib = edata.get_byte.to_i
+				when :sib
+					sib = edata.get_byte.to_i
 
-						ii = ((sib >> 3) & 7)
-						if ii != 4
-							s = 1 << ((sib >> 6) & 3)
-							i = Reg.new(ii, adsz)
-						end
+					ii = ((sib >> 3) & 7)
+					if ii != 4
+						s = 1 << ((sib >> 6) & 3)
+						i = Reg.new(ii, adsz)
+					end
 
-						bb = sib & 7
-						if bb == 5 and m == 0
-							imm = Expression[edata.decode_imm("i#{adsz}".to_sym, endianness)]
+					bb = sib & 7
+					if bb == 5 and m == 0
+						imm = Expression[edata.decode_imm("i#{adsz}".to_sym, endianness)]
 					else
 						b = Reg.new(bb, adsz)
 					end
@@ -52,7 +52,7 @@ module Metasm
 
 				end
 			}
-			
+		
 			new adsz, opsz, s, i, b, imm, seg
 		end
 	end
@@ -99,11 +99,11 @@ module Metasm
 		(instr.prefix[:list] ||= []) << byte
 
 		case byte
-		when 0x66: instr.prefix[:opsz] = true
-		when 0x67: instr.prefix[:adsz] = true
-		when 0xF0: instr.prefix[:lock] = true
-		when 0xF2: instr.prefix[:rep]  = :nz
-		when 0xF3: instr.prefix[:rep]  = :z	# postprocessed by decode_instr
+		when 0x66; instr.prefix[:opsz] = true
+		when 0x67; instr.prefix[:adsz] = true
+		when 0xF0; instr.prefix[:lock] = true
+		when 0xF2; instr.prefix[:rep]  = :nz
+		when 0xF3; instr.prefix[:rep]  = :z	# postprocessed by decode_instr
 		when 0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65
 			if byte & 0x40 == 0
 				v = (byte >> 3) & 3
@@ -180,29 +180,29 @@ module Metasm
 		op.args.each { |a|
 			mmxsz = ((op.props[:xmmx] && pfx[:opsz]) ? 128 : 64)
 			di.instruction.args << case a
-			when :reg:    Reg.new     field_val[a], opsz
-			when :eeec:   CtrlReg.new field_val[a]
-			when :eeed:   DbgReg.new  field_val[a]
-			when :seg2, :seg2A, :seg3, :seg3A: SegReg.new field_val[a]
-			when :regfp:  FpReg.new   field_val[a]
-			when :regmmx: SimdReg.new field_val[a], mmxsz
-			when :regxmm: SimdReg.new field_val[a], 128
+			when :reg;    Reg.new     field_val[a], opsz
+			when :eeec;   CtrlReg.new field_val[a]
+			when :eeed;   DbgReg.new  field_val[a]
+			when :seg2, :seg2A, :seg3, :seg3A; SegReg.new field_val[a]
+			when :regfp;  FpReg.new   field_val[a]
+			when :regmmx; SimdReg.new field_val[a], mmxsz
+			when :regxmm; SimdReg.new field_val[a], 128
 
-			when :farptr: Farptr.decode edata, @endianness, adsz
-			when :i8, :u8, :u16: Expression[edata.decode_imm(a, @endianness)]
-			when :i: Expression[edata.decode_imm("#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym, @endianness)]
+			when :farptr; Farptr.decode edata, @endianness, adsz
+			when :i8, :u8, :u16; Expression[edata.decode_imm(a, @endianness)]
+			when :i; Expression[edata.decode_imm("#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym, @endianness)]
 
-			when :mrm_imm:  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx[:seg]
-			when :modrm, :modrmA: ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), pfx[:seg]
-			when :modrmmmx: ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx[:seg], SimdReg
-			when :modrmxmm: ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg
+			when :mrm_imm;  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx[:seg]
+			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), pfx[:seg]
+			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx[:seg], SimdReg
+			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg
 
-			when :imm_val1: Expression[1]
-			when :imm_val3: Expression[3]
-			when :reg_cl:   Reg.new 1, 8
-			when :reg_eax:  Reg.new 0, opsz
-			when :reg_dx:   Reg.new 2, 16
-			when :regfp0:   FpReg.new nil	# implicit?
+			when :imm_val1; Expression[1]
+			when :imm_val3; Expression[3]
+			when :reg_cl;   Reg.new 1, 8
+			when :reg_eax;  Reg.new 0, opsz
+			when :reg_dx;   Reg.new 2, 16
+			when :regfp0;   FpReg.new nil	# implicit?
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
@@ -257,30 +257,30 @@ module Metasm
 	# ex: 'z' => Expression[:eflag_z]
 	def decode_cc_to_expr(cc)
 		case cc
-		when 'o': Expression[:eflag_o]
-		when 'no': Expression[:'!', :eflag_o]
-		when 'b', 'nae': Expression[:eflag_c]
-		when 'nb', 'ae': Expression[:'!', :eflag_c]
-		when 'z', 'e': Expression[:eflag_z]
-		when 'nz', 'ne': Expression[:'!', :eflag_z]
-		when 'be', 'na': Expression[:eflag_c, :|, :eflag_z]
-		when 'nbe', 'a': Expression[:'!', [:eflag_c, :|, :eflag_z]]
-		when 's': Expression[:eflag_s]
-		when 'ns': Expression[:'!', :eflag_s]
-		when 'p', 'pe': Expression::Unknown
-		when 'np', 'po': Expression::Unknown
-		when 'l', 'nge': Expression[:eflag_s, :'!=', :eflag_o]
-		when 'nl', 'ge': Expression[:eflag_s, :==, :eflag_o]
-		when 'le', 'ng': Expression[[:eflag_s, :'!=', :eflag_o], :|, :eflag_z]
-		when 'nle', 'g': Expression[[:eflag_s, :==, :eflag_o], :&, :eflag_z]
+		when 'o'; Expression[:eflag_o]
+		when 'no'; Expression[:'!', :eflag_o]
+		when 'b', 'nae'; Expression[:eflag_c]
+		when 'nb', 'ae'; Expression[:'!', :eflag_c]
+		when 'z', 'e'; Expression[:eflag_z]
+		when 'nz', 'ne'; Expression[:'!', :eflag_z]
+		when 'be', 'na'; Expression[:eflag_c, :|, :eflag_z]
+		when 'nbe', 'a'; Expression[:'!', [:eflag_c, :|, :eflag_z]]
+		when 's'; Expression[:eflag_s]
+		when 'ns'; Expression[:'!', :eflag_s]
+		when 'p', 'pe'; Expression::Unknown
+		when 'np', 'po'; Expression::Unknown
+		when 'l', 'nge'; Expression[:eflag_s, :'!=', :eflag_o]
+		when 'nl', 'ge'; Expression[:eflag_s, :==, :eflag_o]
+		when 'le', 'ng'; Expression[[:eflag_s, :'!=', :eflag_o], :|, :eflag_z]
+		when 'nle', 'g'; Expression[[:eflag_s, :==, :eflag_o], :&, :eflag_z]
 		end
 	end
 
 	def backtrace_binding(di)
 		a = di.instruction.args.map { |arg|
 			case arg
-			when ModRM: arg.symbolic(di.address)
-			when Reg, SimdReg: arg.symbolic
+			when ModRM; arg.symbolic(di.address)
+			when Reg, SimdReg; arg.symbolic
 			else arg
 			end
 		}
@@ -292,9 +292,9 @@ module Metasm
 
 		binding =
 		case op = di.opcode.name
-		when 'mov', 'movsx', 'movzx', 'movd', 'movq': { a[0] => Expression[a[1]] }
-		when 'lea': { a[0] => a[1].target }
-		when 'xchg': { a[0] => Expression[a[1]], a[1] => Expression[a[0]] }
+		when 'mov', 'movsx', 'movzx', 'movd', 'movq'; { a[0] => Expression[a[1]] }
+		when 'lea'; { a[0] => a[1].target }
+		when 'xchg'; { a[0] => Expression[a[1]], a[1] => Expression[a[0]] }
 		when 'add', 'sub', 'or', 'xor', 'and', 'pxor', 'adc', 'sbb'
 			e_op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^, 'pxor' => :^, 'adc' => :+, 'sbb' => :- }[op]
 			ret = Expression[a[0], e_op, a[1]]
@@ -303,10 +303,10 @@ module Metasm
 			# avoid hiding memory accesses (to not hide possible fault)
 			ret = Expression[ret.reduce] if not a[0].kind_of? Indirection
 			{ a[0] => ret }
-		when 'inc': { a[0] => Expression[a[0], :+, 1] }
-		when 'dec': { a[0] => Expression[a[0], :-, 1] }
-		when 'not': { a[0] => Expression[a[0], :^, mask] }
-		when 'neg': { a[0] => Expression[:-, a[0]] }
+		when 'inc'; { a[0] => Expression[a[0], :+, 1] }
+		when 'dec'; { a[0] => Expression[a[0], :-, 1] }
+		when 'not'; { a[0] => Expression[a[0], :^, mask] }
+		when 'neg'; { a[0] => Expression[:-, a[0]] }
 		when 'rol', 'ror'
 			inv_op = (op[2] == ?r ? :<< : :>>)
 			e_op = (op[2] == ?r ? :>> : :<<)
@@ -314,9 +314,9 @@ module Metasm
 			isz = [[opsz, :-, a[1]], :%, opsz]
 			# ror a, b  =>  (a >> b) | (a << (32-b))
 			{ a[0] => Expression[[[a[0], e_op, sz], :|, [a[0], inv_op, isz]], :&, mask] }
-		when 'sar', 'shl', 'sal': { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), [a[1], :%, opsz]] }
-		when 'shr': { a[0] => Expression[[a[0], :&, mask], :>>, [a[1], :%, opsz]] }
-		when 'cdq': { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz-1], :&, 1]] }
+		when 'sar', 'shl', 'sal'; { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), [a[1], :%, opsz]] }
+		when 'shr'; { a[0] => Expression[[a[0], :&, mask], :>>, [a[1], :%, opsz]] }
+		when 'cdq'; { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz-1], :&, 1]] }
 		when 'push', 'push.i16'
 			{ :esp => Expression[:esp, :-, opsz/8],
 			  Indirection[:esp, opsz/8, di.address] => Expression[a[0]] }
@@ -367,8 +367,8 @@ module Metasm
 		when 'call'
 			{ :esp => Expression[:esp, :-, opsz/8],
 			  Indirection[:esp, opsz/8, di.address] => Expression[Expression[di.address, :+, di.bin_length].reduce] }
-		when 'ret': { :esp => Expression[:esp, :+, [opsz/8, :+, a[0] || 0]] }
-		when 'loop', 'loopz', 'loopnz': { :ecx => Expression[:ecx, :-, 1] }
+		when 'ret'; { :esp => Expression[:esp, :+, [opsz/8, :+, a[0] || 0]] }
+		when 'loop', 'loopz', 'loopnz'; { :ecx => Expression[:ecx, :-, 1] }
 		when 'enter'
 			depth = a[1].reduce % 32
 			b = { Indirection[:esp, opsz/8, di.address] => Expression[:ebp], :ebp => Expression[:esp, :-, opsz/8],
@@ -376,14 +376,14 @@ module Metasm
 			(1..depth).each { |i| # XXX test me !
 				b[Indirection[[:esp, :-, i*opsz/8], opsz/8, di.address]] = Indirection[[:ebp, :-, i*opsz/8], opsz/8, di.address] }
 			b
-		when 'leave': { :ebp => Indirection[[:ebp], opsz/8, di.address], :esp => Expression[:ebp, :+, opsz/8] }
-		when 'aaa': { :eax => Expression::Unknown }
+		when 'leave'; { :ebp => Indirection[[:ebp], opsz/8, di.address], :esp => Expression[:ebp, :+, opsz/8] }
+		when 'aaa'; { :eax => Expression::Unknown }
 		when 'imul'
-			if a[2]: e = Expression[a[1], :*, a[2]]
+			if a[2]; e = Expression[a[1], :*, a[2]]
 			else e = Expression[[a[0], :*, a[1]], :&, (1 << (di.instruction.args.first.sz || opsz)) - 1]
 			end
 			{ a[0] => e }
-		when 'rdtsc': { :eax => Expression::Unknown, :edx => Expression::Unknown }
+		when 'rdtsc'; { :eax => Expression::Unknown, :edx => Expression::Unknown }
 		when /^(stos|movs)([bwd])$/
 			e_op = $1
 			sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
@@ -395,21 +395,21 @@ module Metasm
 			case e_op
 			when 'movs'
 				case pfx[:rep]
-				when nil: { pedi => pesi, :esi => Expression[:esi, dir, sz], :edi => Expression[:edi, dir, sz] }
+				when nil; { pedi => pesi, :esi => Expression[:esi, dir, sz], :edi => Expression[:edi, dir, sz] }
 				else      { pedi => pesi, :esi => Expression::Unknown, :edi => Expression::Unknown }	# repz/repnz..
 				end
 			when 'stos'
 				case pfx[:rep]
-				when nil: { pedi => Expression[:eax], :edi => Expression[:edi, dir, sz] }
+				when nil; { pedi => Expression[:eax], :edi => Expression[:edi, dir, sz] }
 				else      { pedi => Expression[:eax], :edi => Expression[:edi, dir, [sz, :*, :ecx]] }	# XXX create an xref at edi+sz*ecx ?
 				end
 			end
-		when 'clc': { :eflag_c => Expression[0] }
-		when 'stc': { :eflag_c => Expression[1] }
-		when 'cmc': { :eflag_c => Expression[:'!', :eflag_c] }
-		when 'cld': { :eflag_d => Expression[0] }
-		when 'std': { :eflag_d => Expression[1] }
-		when 'setalc': { :eax => Expression[:eflag_c, :*, 0xff] }
+		when 'clc'; { :eflag_c => Expression[0] }
+		when 'stc'; { :eflag_c => Expression[1] }
+		when 'cmc'; { :eflag_c => Expression[:'!', :eflag_c] }
+		when 'cld'; { :eflag_d => Expression[0] }
+		when 'std'; { :eflag_d => Expression[1] }
+		when 'setalc'; { :eax => Expression[:eflag_c, :*, 0xff] }
 		when /^set(.*)/
 			cd = decode_cc_to_expr($1)
 			{ a[0] => Expression[cd] }
@@ -419,12 +419,12 @@ module Metasm
 				binding['dummy_metasm_1'] = fl	# mark eflags as read
 			end
 			binding
-		when 'nop', 'pause', 'wait', 'cmp', 'test': {}
+		when 'nop', 'pause', 'wait', 'cmp', 'test'; {}
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			# assume nothing except the 1st arg
 			case a[0]
-			when Indirection, Symbol: { a[0] => Expression::Unknown }
+			when Indirection, Symbol; { a[0] => Expression::Unknown }
 			else {}
 			end
 		end
@@ -439,13 +439,13 @@ module Metasm
 			binding[:eflag_z] = Expression[[res, :&, mask], :==, 0]
 			binding[:eflag_s] = sign[res]
 			binding[:eflag_c] = case e_op
-				when :+: Expression[res, :>, mask]
-				when :-: Expression[[a[0], :&, mask], :<, [a[1], :&, mask]]
+				when :+; Expression[res, :>, mask]
+				when :-; Expression[[a[0], :&, mask], :<, [a[1], :&, mask]]
 				else Expression[0]
 				end
 			binding[:eflag_o] = case e_op
-				when :+: Expression[[sign[a[0]], :==, sign[a[1]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
-				when :-: Expression[[sign[a[0]], :==, [:'!', sign[a[1]]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
+				when :+; Expression[[sign[a[0]], :==, sign[a[1]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
+				when :-; Expression[[sign[a[0]], :==, [:'!', sign[a[1]]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
 				else Expression[0]
 				end
 		when 'inc', 'dec', 'neg', 'shl', 'shr', 'sar', 'ror', 'rol', 'rcr', 'rcl', 'shld', 'shrd'
@@ -453,14 +453,14 @@ module Metasm
 			binding[:eflag_z] = Expression[[res, :&, mask], :==, 0]
 			binding[:eflag_s] = sign[res]
 			case op
-			when 'neg': binding[:eflag_c] = Expression[[res, :&, mask], :'!=', 0]
+			when 'neg'; binding[:eflag_c] = Expression[[res, :&, mask], :'!=', 0]
 			when 'inc', 'dec'	# don't touch carry flag
 			else binding[:eflag_c] = Expression::Unknown
 			end
 			binding[:eflag_o] = case op
-				when 'inc': Expression[[a[0], :&, mask], :==, mask >> 1]
-				when 'dec': Expression[[res , :&, mask], :==, mask >> 1]
-				when 'neg': Expression[[a[0], :&, mask], :==, (mask+1) >> 1]
+				when 'inc'; Expression[[a[0], :&, mask], :==, mask >> 1]
+				when 'dec'; Expression[[res , :&, mask], :==, mask >> 1]
+				when 'neg'; Expression[[a[0], :&, mask], :==, (mask+1) >> 1]
 				else Expression::Unknown	# TODO someday
 				end
 		when 'imul', 'mul', 'idiv', 'div'
@@ -474,7 +474,7 @@ module Metasm
 		return [] if not di.opcode.props[:setip]
 
 		case di.opcode.name
-		when 'ret': return [Indirection[:esp, @size/8, di.address]]
+		when 'ret'; return [Indirection[:esp, @size/8, di.address]]
 		when 'jmp'
 			a = di.instruction.args.first
 			if a.kind_of? ModRM and a.imm and a.s == @size/8 and not a.b and s = dasm.get_section_at(Expression[a.imm, :-, 3*@size/8])
@@ -600,7 +600,7 @@ module Metasm
 	def replace_instr_arg_immediate(i, old, new)
 		i.args.map! { |a|
 			case a
-			when Expression: a == old ? new : Expression[a.bind(old => new).reduce]
+			when Expression; a == old ? new : Expression[a.bind(old => new).reduce]
 			when ModRM
 				a.imm = (a.imm == old ? new : Expression[a.imm.bind(old => new).reduce]) if a.imm
 				a

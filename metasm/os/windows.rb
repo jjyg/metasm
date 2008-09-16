@@ -6,7 +6,7 @@
 
 require 'metasm/os/main'
 begin
-require 'Win32API' if PLATFORM =~ /mswin/i
+require 'Win32API' if RUBY_PLATFORM =~ /mswin/i
 rescue LoadError
 end
 
@@ -1056,7 +1056,7 @@ ntdll
  wcspbrk wcsrchr wcsspn wcsstr wcstol wcstombs wcstoul
 EOL
 	curlibname = nil
-	data.each { |l|
+	data.each_line { |l|
 		list = l.split
 		curlibname = list.shift if l[0, 1] != ' '
 		list.each { |export| EXPORT[export] = curlibname }

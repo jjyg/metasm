@@ -40,8 +40,8 @@ exe = AutoExe.orshellcode.decode_file exename
 d = exe.init_disassembler
 makeint = proc { |addr|
 	case addr
-	when /^[0-9].*h/: addr.to_i(16)
-	when /^[0-9]/: Integer(addr)
+	when /^[0-9].*h/; addr.to_i(16)
+	when /^[0-9]/; Integer(addr)
 	else d.normalize(addr)
 	end
 }

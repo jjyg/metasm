@@ -19,15 +19,15 @@ class ELF
 
 			@e_class = elf.int_to_hash(@ident[4], CLASS)
 			case @e_class
-			when '32': elf.bitsize = 32
-			when '64', '64_icc': elf.bitsize = 64
+			when '32'; elf.bitsize = 32
+			when '64', '64_icc'; elf.bitsize = 64
 			else raise InvalidExeFormat, "E: ELF: unsupported class #{@e_class}"
 			end
 
 			@data = elf.int_to_hash(@ident[5], DATA)
 			case @data
-			when 'LSB': elf.endianness = :little
-			when 'MSB': elf.endianness = :big
+			when 'LSB'; elf.endianness = :little
+			when 'MSB'; elf.endianness = :big
 			else raise InvalidExeFormat, "E: ELF: unsupported endianness #{@data}"
 			end
 
@@ -365,10 +365,10 @@ class ELF
 					a = decode_addr(tab)
 					@tag[k] << (add_label("dynamic_#{k.downcase}_#{@tag[k].length}", a) || a)
 				end
-			when 'PLTREL':     @tag[k] =  int_to_hash(@tag[k], DYNAMIC_TAG)
-			when 'FLAGS':      @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS)
-			when 'FLAGS_1':    @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS_1)
-			when 'FEATURES_1': @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FEATURES_1)
+			when 'PLTREL';     @tag[k] =  int_to_hash(@tag[k], DYNAMIC_TAG)
+			when 'FLAGS';      @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS)
+			when 'FLAGS_1';    @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FLAGS_1)
+			when 'FEATURES_1'; @tag[k] = bits_to_hash(@tag[k], DYNAMIC_FEATURES_1)
 			end
 		}
 	end
@@ -452,8 +452,8 @@ class ELF
 
 		if @encoded.ptr = @tag['JMPREL']
 			case reltype = @tag['PLTREL']
-			when 'REL':  msg = :decode
-			when 'RELA': msg = :decode_addend
+			when 'REL';  msg = :decode
+			when 'RELA'; msg = :decode_addend
 			else raise "E: ELF: unsupported plt relocation type #{reltype}"
 			end
 			p_end = @encoded.ptr + @tag['PLTRELSZ']
@@ -621,8 +621,8 @@ class ELF
 	def decode
 		decode_header
 		case @header.type
-		when 'DYN', 'EXEC': decode_segments
-		when 'REL': decode_sections
+		when 'DYN', 'EXEC'; decode_segments
+		when 'REL'; decode_sections
 		when 'CORE'
 		end
 	end
@@ -635,8 +635,8 @@ class ELF
 	# returns a metasm CPU object corresponding to +header.machine+
 	def cpu_from_headers
 		case @header.machine
-		when '386': Ia32.new
-		when 'MIPS': MIPS.new @endianness
+		when '386'; Ia32.new
+		when 'MIPS'; MIPS.new @endianness
 		else raise "unknown cpu #{@header.machine}"
 		end
 	end

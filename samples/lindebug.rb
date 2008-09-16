@@ -22,10 +22,10 @@ module Ansi
 		fg = true
 		"\e[" << args.map { |a|
 			case a
-			when :bold: 2
-			when :negative: 7
-			when :normal: 22
-			when :positive: 27
+			when :bold; 2
+			when :negative; 7
+			when :normal; 22
+			when :positive; 27
 			else
 				if col = Colors.index(a)
 					add = (fg ? 30 : 40)
@@ -78,7 +78,7 @@ module Ansi
 		loop do
 			c = $stdin.getc
 			seq << c
-			case c; when ?a..?z, ?A..?Z, ?~: break end
+			case c; when ?a..?z, ?A..?Z, ?~; break end
 		end
 		ESC_SEQ[seq] || seq
 	end
@@ -316,10 +316,10 @@ class LinDebug
 			raw = @rs[addr, 16]
 			text << ('%04X' % @rs.regs_cache['ds']) << ':' << ('%08X' % addr) << '  '
 			case @datafmt
-			when 'db': text << raw[0,8].unpack('C*').map { |c| '%02x ' % c }.join << ' ' <<
+			when 'db'; text << raw[0,8].unpack('C*').map { |c| '%02x ' % c }.join << ' ' <<
 				   raw[8,8].unpack('C*').map { |c| '%02x ' % c }.join
-			when 'dw': text << raw.unpack('S*').map { |c| '%04x ' % c }.join
-			when 'dd': text << raw.unpack('L*').map { |c| '%08x ' % c }.join
+			when 'dw'; text << raw.unpack('S*').map { |c| '%04x ' % c }.join
+			when 'dd'; text << raw.unpack('L*').map { |c| '%08x ' % c }.join
 			end
 			text << ' ' << raw.unpack('C*').map { |c| (0x20..0x7e).include?(c) ? c : ?. }.pack('C*')
 			text << Ansi::ClearLineAfter << "\n"
@@ -486,15 +486,15 @@ class LinDebug
 
 	def handle_keypress(k)
 			case k
-			when 4: log 'exiting'; return true	 # eof
-			when ?\e: focus = :prompt
-			when :f5:  cont
+			when 4; log 'exiting'; return true	 # eof
+			when ?\e; focus = :prompt
+			when :f5;  cont
 			when :f6
 				syscall
 				log Rubstop::SYSCALLNR.index(@rs.regs_cache['orig_eax']) || @rs.regs_cache['orig_eax'].to_s
-			when :f10: stepover
-			when :f11: singlestep
-			when :f12: stepout
+			when :f10; stepover
+			when :f11; singlestep
+			when :f12; stepout
 			when :up
 				case @focus
 				when :prompt
@@ -535,16 +535,16 @@ class LinDebug
 					di = @rs.mnemonic_di(@codeptr)
 					@codeptr += (di ? (di.bin_length || 1) : 1)
 				end
-			when :left:  @promptpos -= 1 if @promptpos > 0
-			when :right: @promptpos += 1 if @promptpos < @promptbuf.length
-			when :home:  @promptpos = 0
-			when :end:   @promptpos = @promptbuf.length
-			when :backspace, 0x7f: @promptbuf[@promptpos-=1, 1] = '' if @promptpos > 0
-			when :suppr: @promptbuf[@promptpos, 1] = '' if @promptpos < @promptbuf.length
+			when :left;  @promptpos -= 1 if @promptpos > 0
+			when :right; @promptpos += 1 if @promptpos < @promptbuf.length
+			when :home;  @promptpos = 0
+			when :end;   @promptpos = @promptbuf.length
+			when :backspace, 0x7f; @promptbuf[@promptpos-=1, 1] = '' if @promptpos > 0
+			when :suppr; @promptbuf[@promptpos, 1] = '' if @promptpos < @promptbuf.length
 			when :pgup
 				case @focus
-				when :prompt: @log_off += @win_prpt_height-3
-				when :data: @dataptr -= 16*(@win_data_height-1)
+				when :prompt; @log_off += @win_prpt_height-3
+				when :data; @dataptr -= 16*(@win_data_height-1)
 				when :code
 					@codeptr ||= @rs.regs_cache['eip']
 					(@win_code_height-1).times {
@@ -556,13 +556,13 @@ class LinDebug
 				end
 			when :pgdown
 				case @focus
-				when :prompt: @log_off -= @win_prpt_height-3
-				when :data: @dataptr += 16*(@win_data_height-1)
+				when :prompt; @log_off -= @win_prpt_height-3
+				when :data; @dataptr += 16*(@win_data_height-1)
 				when :code
 					@codeptr ||= @rs.regs_cache['eip']
 					(@win_code_height-1).times { @codeptr += (((o = @rs.mnemonic_di(@codeptr).bin_length) == 0) ? 1 : o) }
 				end
-			when ?\t:
+			when ?\t
 				if not @promptbuf[0, @promptpos].include? ' '
 					poss = @command.keys.find_all { |c| c[0, @promptpos] == @promptbuf[0, @promptpos] }
 					if poss.length > 1
@@ -572,7 +572,7 @@ class LinDebug
 						@promptpos = poss.first.length+1
 					end
 				end
-			when ?\n: @histptr = nil ; exec_prompt rescue log "error: #$!"
+			when ?\n; @histptr = nil ; exec_prompt rescue log "error: #$!"
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = k.chr
 				@promptpos += 1

@@ -664,18 +664,18 @@ class COFF
 		# setup header flags
 		tmp = %w[LINE_NUMS_STRIPPED LOCAL_SYMS_STRIPPED DEBUG_STRIPPED] +
 			case target
-			when 'exe':  %w[EXECUTABLE_IMAGE]
-			when 'dll':  %w[EXECUTABLE_IMAGE DLL]
-			when 'kmod': %w[EXECUTABLE_IMAGE]
-			when 'obj':  []
+			when 'exe';  %w[EXECUTABLE_IMAGE]
+			when 'dll';  %w[EXECUTABLE_IMAGE DLL]
+			when 'kmod'; %w[EXECUTABLE_IMAGE]
+			when 'obj';  []
 			end
 		tmp << 'x32BIT_MACHINE'		# XXX
 		tmp << 'RELOCS_STRIPPED' # if not @directory['base_relocation_table'] # object relocs
 		@header.characteristics ||= tmp
 
 		@optheader.subsystem ||= case target
-		when 'exe', 'dll': 'WINDOWS_GUI'
-		when 'kmod': 'NATIVE'
+		when 'exe', 'dll'; 'WINDOWS_GUI'
+		when 'kmod'; 'NATIVE'
 		end
 		@optheader.dll_characts = ['DYNAMIC_BASE'] if @directory['base_relocation_table']
 
@@ -853,9 +853,9 @@ class COFF
 				s.name = sname
 				s.encoded = EncodedData.new
 				s.characteristics = case sname
-					when '.text': %w[MEM_READ MEM_EXECUTE]
-					when '.data', '.bss': %w[MEM_READ MEM_WRITE]
-					when '.rodata': %w[MEM_READ]
+					when '.text'; %w[MEM_READ MEM_EXECUTE]
+					when '.data', '.bss'; %w[MEM_READ MEM_WRITE]
+					when '.rodata'; %w[MEM_READ]
 					end
 				@sections << s
 			end
@@ -883,7 +883,7 @@ class COFF
 					ar << 'MEM_EXECUTE' if $4
 					ar << 'MEM_SHARED' if $5
 					ar << 'MEM_DISCARDABLE' if $6
-					if $1: s.characteristics -= ar
+					if $1; s.characteristics -= ar
 					else   s.characteristics |= ar
 					end
 				when 'base'
@@ -990,7 +990,7 @@ class COFF
 	# if the relocation target is '<symbolname>' or 'iat_<symbolname>, link to the IAT address, if it is '<symbolname> + <expr>', 
 	# link to a thunk (plt-like) 
 	def autoimport
-		next if not defined? WindowsExports
+		return if not defined? WindowsExports
 		autoexports = WindowsExports::EXPORT.dup
 		@sections.each { |s|
 			next if not s.encoded

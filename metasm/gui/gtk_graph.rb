@@ -278,8 +278,8 @@ class GraphViewWidget < Gtk::HBox
 			case ev.event_type
 			when Gdk::Event::BUTTON_PRESS
 				case ev.button
-				when 1: click(ev)
-				when 3: rightclick(ev)
+				when 1; click(ev)
+				when 3; rightclick(ev)
 				end
 			when Gdk::Event::BUTTON2_PRESS
 				doubleclick(ev)

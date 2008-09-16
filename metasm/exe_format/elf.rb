@@ -416,7 +416,7 @@ class ELF < ExeFormat
 			@endianness = cpu.endianness
 			@bitsize = cpu.size
 			case cpu
-			when Ia32: @header.machine = '386'
+			when Ia32; @header.machine = '386'
 			end
 		else
 			@endianness = :little

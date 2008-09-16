@@ -612,7 +612,7 @@ class COFF
 	# returns a metasm CPU object corresponding to +header.machine+
 	def cpu_from_headers
 		case @header.machine
-		when 'I386': Ia32.new
+		when 'I386'; Ia32.new
 		else raise 'unknown cpu'
 		end
 	end

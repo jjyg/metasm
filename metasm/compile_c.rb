@@ -165,14 +165,14 @@ module C
 			c_block_enter(blk)
 			blk.statements.each { |stmt|
 				case stmt
-				when CExpression: c_cexpr(stmt)
-				when Declaration: c_decl(stmt.var)
-				when If: c_ifgoto(stmt.test, stmt.bthen.target)
-				when Goto: c_goto(stmt.target)
-				when Label: c_label(stmt.name)
-				when Return: c_return(stmt.value)
-				when Asm: c_asm(stmt)
-				when Block: c_block(stmt)
+				when CExpression; c_cexpr(stmt)
+				when Declaration; c_decl(stmt.var)
+				when If; c_ifgoto(stmt.test, stmt.bthen.target)
+				when Goto; c_goto(stmt.target)
+				when Label; c_label(stmt.name)
+				when Return; c_return(stmt.value)
+				when Asm; c_asm(stmt)
+				when Block; c_block(stmt)
 				else raise
 				end
 			}
@@ -223,7 +223,7 @@ module C
 				al = var.type.align(@parser)
 				sz = sizeof(var)
 				case off
-				when CExpression: CExpression.new(off.lexpr, :+, ((off.rexpr + sz + al - 1) / al * al), off.type)
+				when CExpression; CExpression.new(off.lexpr, :+, ((off.rexpr + sz + al - 1) / al * al), off.type)
 				else (off + sz + al - 1) / al * al
 				end
 			end
@@ -259,13 +259,13 @@ module C
 				
 				@source.last <<
 				case type.name
-				when :__int8:  ' db '
-				when :__int16: ' dw '
-				when :__int32: ' dd '
-				when :__int64: ' dq '
-				when :float:   ' df '	# TODO
-				when :double:  ' dfd '
-				when :longdouble: ' dfld '
+				when :__int8;  ' db '
+				when :__int16; ' dw '
+				when :__int32; ' dd '
+				when :__int64; ' dq '
+				when :float;   ' df '	# TODO
+				when :double;  ' dfd '
+				when :longdouble; ' dfld '
 				else raise "unknown idata type #{type.inspect} #{value.inspect}"
 				end
 				
@@ -304,8 +304,8 @@ module C
 					elen = sizeof(nil, value.type.type)
 					@source.last << 
 					case elen
-					when 1: ' db '
-					when 2: ' dw '
+					when 1; ' db '
+					when 2; ' dw '
 					else raise 'bad char* type ' + value.inspect
 					end << value.rexpr.inspect
 					
@@ -338,11 +338,11 @@ module C
 		def c_idata_inner_cexpr(expr)
 			expr = expr.reduce(@parser) if expr.kind_of? CExpression
 			case expr
-			when ::Integer: (expr >= 4096) ? ('0x%X' % expr) : expr.to_s
-			when ::Numeric: expr.to_s
+			when ::Integer; (expr >= 4096) ? ('0x%X' % expr) : expr.to_s
+			when ::Numeric; expr.to_s
 			when Variable
 				case expr.type
-				when Array: expr.name
+				when Array; expr.name
 				else c_idata_inner_cexpr(expr.initializer)
 				end
 			when CExpression
@@ -350,12 +350,12 @@ module C
 					case expr.op
 					when :&
 						case expr.rexpr
-						when Variable: expr.rexpr.name
+						when Variable; expr.rexpr.name
 						else raise 'unhandled addrof in initializer ' + expr.rexpr.inspect
 						end
 					#when :*
-					when :+: c_idata_inner_cexpr(expr.rexpr)
-					when :-: ' -' << c_idata_inner_cexpr(expr.rexpr)
+					when :+; c_idata_inner_cexpr(expr.rexpr)
+					when :-; ' -' << c_idata_inner_cexpr(expr.rexpr)
 					when nil
 						e = c_idata_inner_cexpr(expr.rexpr)
 						if expr.rexpr.kind_of? CExpression
@@ -391,10 +391,10 @@ module C
 			when BaseType
 				len = @parser.typesize[data.type.name]
 				case data.type.name
-				when :__int8:  'db ?'
-				when :__int16: 'dw ?'
-				when :__int32: 'dd ?'
-				when :__int64: 'dq ?'
+				when :__int8;  'db ?'
+				when :__int16; 'dw ?'
+				when :__int32; 'dd ?'
+				when :__int64; 'dq ?'
 				else "db #{len} dup(?)"
 				end
 			else
@@ -468,7 +468,7 @@ module C
 				when Block
 					s.precompile_optimize_inner(list, step)
 					@statements.delete s if step == 2 and s.statements.empty?
-				when CExpression: walk[s] if step == 1
+				when CExpression; walk[s] if step == 1
 				when Label
 					case step
 					when 1
@@ -476,7 +476,7 @@ module C
 							list << lastgoto
 							list.delete s.name if not hadref
 						end
-					when 2: @statements.delete s if not list.include? s.name
+					when 2; @statements.delete s if not list.include? s.name
 					end
 				when Goto, If
 					s.kind_of?(If) ? g = s.bthen : g = s
@@ -942,11 +942,11 @@ module C
 				else t = BaseType.new("__int#{compiler.typesize[t.name]*8}".to_sym, t.specifier)
 				end
 			when Array
-				if declaration: precompile_type(compiler, scope, t, declaration)
+				if declaration; precompile_type(compiler, scope, t, declaration)
 				else   t = BaseType.new("__int#{compiler.typesize[:ptr]*8}".to_sym, :unsigned)
 				end
-			when Pointer:  t = BaseType.new("__int#{compiler.typesize[:ptr]*8}".to_sym, :unsigned)
-			when Enum:     t = BaseType.new("__int#{compiler.typesize[:int]*8}".to_sym)
+			when Pointer;  t = BaseType.new("__int#{compiler.typesize[:ptr]*8}".to_sym, :unsigned)
+			when Enum;     t = BaseType.new("__int#{compiler.typesize[:int]*8}".to_sym)
 			when Function
 				precompile_type(compiler, scope, t)
 				t.args ||= []
@@ -969,7 +969,7 @@ module C
 
 		def self.precompile_inner(compiler, scope, expr, nested = true)
 			case expr
-			when CExpression: expr.precompile_inner(compiler, scope, nested)
+			when CExpression; expr.precompile_inner(compiler, scope, nested)
 			else expr
 			end
 		end
@@ -1113,9 +1113,9 @@ module C
 					}
 					copy_inline_ce = proc { |ce|
 						case ce
-						when CExpression: CExpression.new(copy_inline_ce[ce.lexpr], ce.op, copy_inline_ce[ce.rexpr], ce.type)
-						when Variable: locals[ce] || ce
-						when ::Array: ce.map { |e| copy_inline_ce[e] }
+						when CExpression; CExpression.new(copy_inline_ce[ce.lexpr], ce.op, copy_inline_ce[ce.rexpr], ce.type)
+						when Variable; locals[ce] || ce
+						when ::Array; ce.map { |e| copy_inline_ce[e] }
 						else ce
 						end
 					}
@@ -1128,11 +1128,11 @@ module C
 								b.statements << s if s
 							}
 							b
-						when If:     If.new(copy_inline_ce[stmt.test], copy_inline[stmt.bthen, scp])		# re-precompile ?
-						when Label:  Label.new(inline_label[stmt.name]  ||= compiler.new_label('inline_'+stmt.name))
-						when Goto:   Goto.new(inline_label[stmt.target] ||= compiler.new_label('inline_'+stmt.target))
-						when Return: CExpression.new(rval, :'=', copy_inline_ce[stmt.value], rval.type).precompile_inner(compiler, scp) if stmt.value
-						when CExpression: copy_inline_ce[stmt]
+						when If;     If.new(copy_inline_ce[stmt.test], copy_inline[stmt.bthen, scp])		# re-precompile ?
+						when Label;  Label.new(inline_label[stmt.name]  ||= compiler.new_label('inline_'+stmt.name))
+						when Goto;   Goto.new(inline_label[stmt.target] ||= compiler.new_label('inline_'+stmt.target))
+						when Return; CExpression.new(rval, :'=', copy_inline_ce[stmt.value], rval.type).precompile_inner(compiler, scp) if stmt.value
+						when CExpression; copy_inline_ce[stmt]
 						when Declaration
 							nv = stmt.var.dup
 							if nv.type.kind_of? Array and nv.type.length.kind_of? CExpression

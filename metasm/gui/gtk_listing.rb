@@ -52,11 +52,11 @@ class AsmListingWidget < Gtk::HBox
 			case ev.event_type
 			when Gdk::Event::Type::BUTTON_PRESS
 				case ev.button
-				when 1: click(ev)
+				when 1; click(ev)
 				end
 			when Gdk::Event::Type::BUTTON2_PRESS
 				case ev.button
-				when 1: doubleclick(ev)
+				when 1; doubleclick(ev)
 				end
 			end
 		}
@@ -322,13 +322,13 @@ class AsmListingWidget < Gtk::HBox
 			end
 		}.each { |from, to|
 			y1 = case from
-			when :up: 0
-			when :down: w_h-1
+			when :up; 0
+			when :down; w_h-1
 			else from * @font_height + @font_height/2 - 1
 			end
 			y2 = case to
-			when :up: 0
-			when :down: w_h-1
+			when :up; 0
+			when :down; w_h-1
 			else to * @font_height + @font_height/2 - 1
 			end
 			if y1 <= y2

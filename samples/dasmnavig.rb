@@ -21,10 +21,10 @@ module Ansi
 		fg = true
 		"\e[" << args.map { |a|
 			case a
-			when :bold: 2
-			when :negative: 7
-			when :normal: 22
-			when :positive: 27
+			when :bold; 2
+			when :negative; 7
+			when :normal; 22
+			when :positive; 27
 			else
 				if col = Colors.index(a)
 					add = (fg ? 30 : 40)
@@ -77,7 +77,7 @@ module Ansi
 		loop do
 			c = $stdin.getc
 			seq << c
-			case c; when ?a..?z, ?A..?Z, ?~: break end
+			case c; when ?a..?z, ?A..?Z, ?~; break end
 		end
 		ESC_SEQ[seq] || seq
 	end
@@ -154,8 +154,8 @@ class Viewer
 		l = l[@posh, @w] || ''
 		hlr = /\b#{Regexp.escape(hl)}\b/i if hl
 		case l
-		when /^\/\//: Color[:comment] + l + Color[:normal]
-		when /^\S+:$/: Color[:label] + l + Color[:normal]
+		when /^\/\//; Color[:comment] + l + Color[:normal]
+		when /^\S+:$/; Color[:label] + l + Color[:normal]
 		when /^(.*)(;.*)$/
 			str = $1
 			cmt = $2
@@ -230,9 +230,9 @@ class Viewer
 
 	def handle_key_search(k)
 		case k
-		when ?\n: @mode = :navig ; @posstack << [@posh, @pos, @x, @y] ; search_next
-		when 0x20..0x7e: @searchtext << k
-		when :backspace, 0x7f: @searchtext.chop!
+		when ?\n; @mode = :navig ; @posstack << [@posh, @pos, @x, @y] ; search_next
+		when 0x20..0x7e; @searchtext << k
+		when :backspace, 0x7f; @searchtext.chop!
 		end
 	end
 
@@ -248,12 +248,12 @@ class Viewer
 			@posstack << [@posh, @pos, @x, @y]
 			view(0, newy)
 		when :up
-			if @y > 0: @y -= 1
-			elsif @pos > 0: @pos -= 1
+			if @y > 0; @y -= 1
+			elsif @pos > 0; @pos -= 1
 			end
 		when :down
-			if @y < @h: @y += 1
-			elsif @pos < text.length-@h: @pos += 1
+			if @y < @h; @y += 1
+			elsif @pos < text.length-@h; @pos += 1
 			end
 		when :home
 			@x = @posh = 0
@@ -265,47 +265,47 @@ class Viewer
 			x = x ? x+1 : @posh+@x-1
 			x = @posh+@x-3 if x < @posh+@x-3
 			x = 0 if x < 0
-			if x < @posh: @posh, @x = x, 0
+			if x < @posh; @posh, @x = x, 0
 			else @x = x-@posh
 			end
-			#if @x > 0: @x -= 1
-			#elsif @posh > 0: @posh -= 1
+			#if @x > 0; @x -= 1
+			#elsif @posh > 0; @posh -= 1
 			#end
 		when :right
 			x = @text[@pos+@y].index(/\W\w/, @posh+@x)
 			x = x ? x+1 : @posh+@x+1
 			x = @posh+@x+3 if x > @posh+@x+3
-			if x > @posh+@w: @posh, @x = x-@w, @w
+			if x > @posh+@w; @posh, @x = x-@w, @w
 			else
 				@x = x-@posh
 				@posh, @x = @x-@w, @w if @x > @w
 			end
-			#if @x < @w: @x += 1
-			#elsif @posh+@w < (@text[@pos, @h].map { |l| l.length }.max): @posh += 1
+			#if @x < @w; @x += 1
+			#elsif @posh+@w < (@text[@pos, @h].map { |l| l.length }.max); @posh += 1
 			#end
 		when :pgdown
-			if @y < @h/2: @y += @h/2
-			elsif @pos < @text.length-3*@h/2: @pos += @h/2 ; @y = @h
+			if @y < @h/2; @y += @h/2
+			elsif @pos < @text.length-3*@h/2; @pos += @h/2 ; @y = @h
 			else @pos = [0, @text.length-@h].max ; @y = @h
 			end
 		when :pgup
-			if @y > @h/2: @y -= @h/2
-			elsif @pos > @h/2: @pos -= @h/2 ; @y = 0
+			if @y > @h/2; @y -= @h/2
+			elsif @pos > @h/2; @pos -= @h/2 ; @y = 0
 			else @pos = @y = 0
 			end
-		when ?q: exit
-		when ?o: @text.insert(@pos+@y+1, '')
-		when ?O: @text.insert(@pos+@y, '') ; handle_key_navig(:down)
-		when :suppr: @text.delete_at(@pos+@y) if @text[@pos+@y] == ''
-		when ?D: @text.delete_at(@pos+@y)
+		when ?q; exit
+		when ?o; @text.insert(@pos+@y+1, '')
+		when ?O; @text.insert(@pos+@y, '') ; handle_key_navig(:down)
+		when :suppr; @text.delete_at(@pos+@y) if @text[@pos+@y] == ''
+		when ?D; @text.delete_at(@pos+@y)
 		when ?/
 			@mode = :search
 			@searchtext = ''
 		when ?*
 			@searchtext = readtext || ''
 			search_next
-		when ?n: search_next
-		when ?N: search_prev
+		when ?n; search_next
+		when ?N; search_prev
 		when :f5
 			ARGV << '--reload'
 			load $0

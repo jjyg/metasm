@@ -18,13 +18,13 @@ class ExeFormat
 
 		seq.each { |e|
 			case e
-			when Label: ary.last.add_export(e.name, ary.last.virtsize)
-			when Data:  ary.last << e.encode(cpu.endianness)
-			when Align, Padding:
+			when Label; ary.last.add_export(e.name, ary.last.virtsize)
+			when Data;  ary.last << e.encode(cpu.endianness)
+			when Align, Padding
 				e.fillwith = e.fillwith.encode(cpu.endianness) if e.fillwith and not e.fillwith.kind_of? EncodedData
 				ary << e << EncodedData.new
-			when Offset: ary << e << EncodedData.new
-			when Instruction:
+			when Offset; ary << e << EncodedData.new
+			when Instruction
 				case i = cpu.encode_instruction(self, e)
 				when Array
 					if i.length == 1
@@ -139,18 +139,18 @@ class ExeFormat
 			while expr.kind_of? Expression
 				case expr.op
 				when :*
-					if    expr.lexpr.kind_of? Numeric: expr = expr.rexpr
-					elsif expr.rexpr.kind_of? Numeric: expr = expr.lexpr
+					if    expr.lexpr.kind_of? Numeric; expr = expr.rexpr
+					elsif expr.rexpr.kind_of? Numeric; expr = expr.lexpr
 					else  break
 					end
 				when :/, :>>, :<<
-					if    expr.rexpr.kind_of? Numeric: expr = expr.lexpr
+					if    expr.rexpr.kind_of? Numeric; expr = expr.lexpr
 					else  break
 					end
 				when :+, :-
-					if    not expr.lexpr:              expr = expr.rexpr
-					elsif expr.lexpr.kind_of? Numeric: expr = expr.rexpr
-					elsif expr.rexpr.kind_of? Numeric: expr = expr.lexpr
+					if    not expr.lexpr;              expr = expr.rexpr
+					elsif expr.lexpr.kind_of? Numeric; expr = expr.rexpr
+					elsif expr.rexpr.kind_of? Numeric; expr = expr.lexpr
 					else
 						break if not check_linear[expr.rexpr]
 						expr = expr.lexpr
@@ -261,7 +261,7 @@ end
 class Expression
 	def encode(type, endianness, backtrace=nil)
 		case val = reduce
-		when Integer: EncodedData.new Expression.encode_immediate(val, type, endianness, backtrace)
+		when Integer; EncodedData.new Expression.encode_immediate(val, type, endianness, backtrace)
 		else          EncodedData.new(0.chr*(INT_SIZE[type]/8), :reloc => {0 => Relocation.new(self, type, endianness, backtrace)})
 		end
 	end
