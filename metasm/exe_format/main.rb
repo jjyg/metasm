@@ -8,6 +8,7 @@ require 'metasm/main'
 require 'metasm/parse'
 require 'metasm/encode'
 require 'metasm/decode'
+require 'metasm/serialstruct'
 
 module Metasm
 class ExeFormat

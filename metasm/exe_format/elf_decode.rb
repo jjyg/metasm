@@ -9,128 +9,8 @@ require 'metasm/exe_format/elf'
 
 module Metasm
 class ELF
-	class Header
-		# decodes the elf header, pointed to by elf.encoded.ptr
-		def decode elf
-			@ident = elf.encoded.read 16
-
-			@magic = @ident[0, 4]
-			raise InvalidExeFormat, "E: ELF: invalid ELF signature #{@magic.inspect}" if @magic != "\x7fELF"
-
-			@e_class = elf.int_to_hash(@ident[4], CLASS)
-			case @e_class
-			when '32'; elf.bitsize = 32
-			when '64', '64_icc'; elf.bitsize = 64
-			else raise InvalidExeFormat, "E: ELF: unsupported class #{@e_class}"
-			end
-
-			@data = elf.int_to_hash(@ident[5], DATA)
-			case @data
-			when 'LSB'; elf.endianness = :little
-			when 'MSB'; elf.endianness = :big
-			else raise InvalidExeFormat, "E: ELF: unsupported endianness #{@data}"
-			end
-
-			# from there we can use elf.decode_word etc
-			@version = elf.int_to_hash(@ident[6], VERSION)
-			case @version
-			when 'CURRENT'
-			else raise "E: ELF: unsupported ELF version #{@version}"
-			end
-
-			@abi = elf.int_to_hash(@ident[7], ABI)
-			@abi_version = @ident[8]
-
-			# decodes the architecture-dependant part
-			@type      = elf.int_to_hash(elf.decode_half, TYPE)
-			@machine   = elf.int_to_hash(elf.decode_half, MACHINE)
-			@version   = elf.int_to_hash(elf.decode_word, VERSION)
-			@entry     = elf.decode_addr
-			@phoff     = elf.decode_off
-			@shoff     = elf.decode_off
-			@flags     = elf.bits_to_hash(elf.decode_word, FLAGS[@machine])
-			@ehsize    = elf.decode_half
-			@phentsize = elf.decode_half
-			@phnum     = elf.decode_half
-			@shentsize = elf.decode_half
-			@shnum     = elf.decode_half
-			@shstrndx  = elf.decode_half
-		end
-	end
-
-	class Section
-		# decodes the section header pointed to by elf.encoded.ptr
-		def decode elf
-			@name_p    = elf.decode_word
-			@type      = elf.int_to_hash(elf.decode_word, SH_TYPE)
-			@flags     = elf.bits_to_hash(elf.decode_xword, SH_FLAGS)
-			@addr      = elf.decode_addr
-			@offset    = elf.decode_off
-			@size      = elf.decode_xword
-			@link      = elf.decode_word
-			@info      = elf.decode_word
-			@addralign = elf.decode_xword
-			@entsize   = elf.decode_xword
-		end
-	end
-
-	class Segment
-		# decodes the program header pointed to by elf.encoded.ptr
-		def decode elf
-			@type   = elf.int_to_hash(elf.decode_word, PH_TYPE)
-			@flags  = elf.bits_to_hash(elf.decode_word, PH_FLAGS) if elf.bitsize == 64
-			@offset = elf.decode_off
-			@vaddr  = elf.decode_addr
-			@paddr  = elf.decode_addr
-			@filesz = elf.decode_xword
-			@memsz  = elf.decode_xword
-			@flags  = elf.bits_to_hash(elf.decode_word, PH_FLAGS) if elf.bitsize == 32
-			@align  = elf.decode_xword
-		end
-	end
-
-	class Symbol
-		# decodes the symbol pointed to by elf.encoded.ptr
-		# read the symbol name from strtab
-		def decode elf, strtab=nil
-			case elf.bitsize
-			when 32
-				@name_p = elf.decode_word
-				@value  = elf.decode_addr
-				@size   = elf.decode_word
-				set_info(elf, elf.decode_uchar)
-				@other  = elf.decode_uchar
-				@shndx  = elf.int_to_hash(elf.decode_half, SH_INDEX)
-			when 64
-				@name_p = elf.decode_word
-				set_info(elf, elf.decode_uchar)
-				@other  = elf.decode_uchar
-				@shndx  = elf.int_to_hash(elf.decode_half, SH_INDEX)
-				@value  = elf.decode_addr
-				@size   = elf.decode_xword
-			end
-
-			@name = elf.readstr(strtab, @name_p) if strtab
-		end
-	end
-
-	class Relocation
-		# decodes the relocation with no explicit addend pointed to by elf.encoded.ptr
-		# the symbol is taken from ary if possible, and is set to nil for index 0
-		def decode(elf, symtab)
-			@offset = elf.decode_addr
-			set_info(elf, elf.decode_xword, symtab)
-		end
-
-		# same as +decode+, but with explicit addend (RELA)
-		def decode_addend(elf, symtab)
-			decode(elf, symtab)
-			@addend = elf.decode_sxword
-		end
-	end
-
 	# basic immediates decoding functions
-	def decode_uchar(edata = @encoded) edata.decode_imm(:u8,  @endianness) end
+	def decode_byte( edata = @encoded) edata.decode_imm(:u8,  @endianness) end
 	def decode_half( edata = @encoded) edata.decode_imm(:u16, @endianness) end
 	def decode_word( edata = @encoded) edata.decode_imm(:u32, @endianness) end
 	def decode_sword(edata = @encoded) edata.decode_imm(:i32, @endianness) end
@@ -181,12 +61,8 @@ class ELF
 		raise InvalidExeFormat, "Invalid elf section header size: #{@header.shentsize}" if Section.size(self) != @header.shentsize
 		@encoded.add_export new_label('section_header'), off
 		@encoded.ptr = off
-		@sections.clear
-		@header.shnum.times {
-			s = Section.new
-			s.decode(self)
-			@sections << s
-		}
+		@sections = []
+		@header.shnum.times { @sections << Section.decode(self) }
 		
 		# read sections name
 		if @header.shstrndx != 0 and str = @sections[@header.shstrndx] and str.encoded = @encoded[str.offset, str.size]
@@ -204,12 +80,8 @@ class ELF
 		raise InvalidExeFormat, "Invalid elf program header size: #{@header.phentsize}" if Segment.size(self) != @header.phentsize
 		@encoded.add_export new_label('program_header'), off
 		@encoded.ptr = off
-		@segments.clear
-		@header.phnum.times {
-			s = Segment.new
-			s.decode(self)
-			@segments << s
-		}
+		@segments = []
+		@header.phnum.times { @segments << Segment.decode(self) }
 
 		if @header.entry != 0
 			add_label('entrypoint', @header.entry)
@@ -399,8 +271,7 @@ class ELF
 		@encoded.ptr = @tag['SYMTAB']
 		@symbols.clear
 		sym_count.times {
-			s = Symbol.new
-			s.decode self, strtab
+			s = Symbol.decode(self, strtab)
 			@symbols << s
 
 			# mark in @encoded.export
@@ -434,33 +305,27 @@ class ELF
 			raise "E: ELF: unsupported rel entry size #{@tag['RELENT']}" if @tag['RELENT'] != Relocation.size(self)
 			p_end = @encoded.ptr + @tag['RELSZ']
 			while @encoded.ptr < p_end
-				r = Relocation.new
-				r.decode self, @symbols
-				@relocations << r
+				@relocations << Relocation.decode(self, @symbols)
 			end
 		end
 
 		if @encoded.ptr = @tag['RELA']
-			raise "E: ELF: unsupported rela entry size #{@tag['RELAENT'].inspect}" if @tag['RELAENT'] != Relocation.size_a(self)
+			raise "E: ELF: unsupported rela entry size #{@tag['RELAENT'].inspect}" if @tag['RELAENT'] != RelocationAddend.size_a(self)
 			p_end = @encoded.ptr + @tag['RELASZ']
 			while @encoded.ptr < p_end
-				r = Relocation.new
-				r.decode_addend self, @symbols
-				@relocations << r
+				@relocations << RelocationAddend.decode(self, @symbols)
 			end
 		end
 
 		if @encoded.ptr = @tag['JMPREL']
 			case reltype = @tag['PLTREL']
-			when 'REL';  msg = :decode
-			when 'RELA'; msg = :decode_addend
+			when 'REL';  relcls = Relocation
+			when 'RELA'; relcls = RelocationAddend
 			else raise "E: ELF: unsupported plt relocation type #{reltype}"
 			end
 			p_end = @encoded.ptr + @tag['PLTRELSZ']
 			while @encoded.ptr < p_end
-				r = Relocation.new
-				r.send(msg, self, @symbols)
-				@relocations << r
+				@relocations << relcls.decode(self, @symbols)
 			end
 		end
 	end

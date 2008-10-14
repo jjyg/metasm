@@ -314,73 +314,208 @@ class ELF < ExeFormat
 			21 => 'DTPOFF32', 22 => 'GOTTPOFF', 23 => 'TPOFF32' }
 	)
 
-	class Header
-		attr_accessor :type, :machine, :version, :entry, :phoff, :shoff, :flags, :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
-		attr_accessor :magic, :e_class, :data, :i_version, :abi, :abi_version, :ident
+	class SerialStruct < SerialStruct
+		class << self
+			Struct_new_inttype[:addr, :off, :xword, :sword, :sxword]
+		end
+	end
+
+	class Header < SerialStruct
+		mem :magic, 4, "\x7fELF"
+		byte :e_class, 0, CLASS
+		byte :data, 0, DATA
+		byte :i_version, 'CURRENT', VERSION
+		byte :abi, 0, ABI
+		byte :abi_version
+		mem :ident_unk, 7
+
+		# hook the decode sequence, to fixup elf data
+		# based on info we have (endianness & xword size, needed in decode_word)
+		decode_hook { |elf, hdr|
+			raise InvalidExeFormat, "E: ELF: invalid ELF signature #{hdr.magic.inspect}" if hdr.magic != "\x7fELF"
+
+			case hdr.e_class
+			when '32'; elf.bitsize = 32
+			when '64', '64_icc'; elf.bitsize = 64
+			else raise InvalidExeFormat, "E: ELF: unsupported class #{hdr.e_class}"
+			end
+
+			case hdr.data
+			when 'LSB'; elf.endianness = :little
+			when 'MSB'; elf.endianness = :big
+			else raise InvalidExeFormat, "E: ELF: unsupported endianness #{hdr.data}"
+			end
+
+			if hdr.i_version != 'CURRENT'
+				raise InvalidExeFormat, "E: ELF: unsupported ELF version #{hdr.i_version}"
+			end
+	       	}
+
+		half :type, 0, TYPE
+		half :machine, 0, MACHINE
+		word :version, 'CURRENT', VERSION
+		addr :entry
+		off :phoff
+		off :shoff
+		word :flags
+		fld_bits(:flags) { |elf, hdr| FLAGS[hdr.machine] }
+		halfs :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
 
 		def self.size elf
 			x = elf.bitsize >> 3
 			40 + 3*x
 		end
 	end
-	class Segment
-		attr_accessor :type, :offset, :vaddr, :paddr, :filesz, :memsz, :flags, :align
+
+	class Segment < SerialStruct
 		attr_accessor :encoded
+
+		def self.decode(elf)
+			return super if self != Segment
+
+			case elf.bitsize
+			when 32; Segment32.decode(elf)
+			when 64; Segment64.decode(elf)
+			end
+		end
 
 		def self.size elf
 			x = elf.bitsize >> 3
 			8 + 6*x
 		end
 	end
-	class Section
-		attr_accessor :name_p, :name, :type, :flags, :addr, :offset, :size, :link, :info, :addralign, :entsize
-		attr_accessor :encoded
+
+	class Segment32 < Segment
+		word :type, 0, PH_TYPE
+		off :offset
+		addr :vaddr
+		addr :paddr
+		xword :filesz
+		xword :memsz
+		word :flags
+		fld_bits :flags, PH_FLAGS
+		xword :align
+	end
+	class Segment64 < Segment
+		word :type, 0, PH_TYPE
+		word :flags
+		fld_bits :flags, PH_FLAGS
+		off :offset
+		addr :vaddr
+		addr :paddr
+		xword :filesz
+		xword :memsz
+		xword :align
+	end
+
+	class Section < SerialStruct
+		word :name_p
+		word :type, 0, SH_TYPE
+		xword :flags
+		fld_bits :flags, SH_FLAGS
+		addr :addr
+		off :offset
+		xword :size
+		word :link
+		word :info
+		xword :addralign
+		xword :entsize
+
+		attr_accessor :name, :encoded
 
 		def self.size elf
 			x = elf.bitsize >> 3
 			16 + 6*x
 		end
 	end
-	class Symbol
-		attr_accessor :name_p, :name, :size, :bind, :value, :type, :other, :shndx
-		attr_accessor :thunk
+
+	class Symbol < SerialStruct
+		def self.decode(elf, strtab=nil)
+			return super if self != Symbol
+
+			case elf.bitsize
+			when 32; Symbol32.decode(elf, strtab)
+			when 64; Symbol64.decode(elf, strtab)
+			end
+		end
+
+		attr_accessor :name, :bind, :type, :thunk
 
 		def self.size elf
 			x = elf.bitsize >> 3
 			12 + x
 		end
+
+		def decode(elf, strtab=nil)
+			super(elf)
+# XXX bind & type should be fields
+			set_info elf, @info
+			@name = elf.readstr(strtab, @name_p) if strtab
+		end
+
 		def set_info(elf, info)
 			@bind = elf.int_to_hash((info >> 4) & 15, SYMBOL_BIND)
 			@type = elf.int_to_hash(info & 15, SYMBOL_TYPE)
 		end
+
 		def get_info(elf)
 			((elf.int_from_hash(@bind, SYMBOL_BIND) & 15) << 4) |
 			(elf.int_from_hash(@type, SYMBOL_TYPE) & 15)
 		end
 	end
-	class Relocation
-		attr_accessor :offset, :type, :symbol, :addend
+
+	class Symbol32 < Symbol
+		word :name_p
+		addr :value
+		word :size
+		byte :info
+		byte :other
+		half :shndx, 0, SH_INDEX
+	end
+	class Symbol64 < Symbol
+		word :name_p
+		byte :info
+		byte :other
+		half :shndx, 0, SH_INDEX
+		addr :value
+		xword :size
+	end
+
+	class Relocation < SerialStruct
+		addr :offset
+		xword :info
+		def addend ; nil end
+
+		def decode(elf, symtab={})
+			super(elf)
+			set_info(elf, symtab)
+		end
+
+		attr_accessor :type, :symbol
+
 		def self.size elf
 			x = elf.bitsize >> 3
-			2*x
+			@@fields[self].length*x
 		end
-		def self.size_a elf
-			x = elf.bitsize >> 3
-			3*x
-		end
-		def set_info(elf, info, symtab)
+
+		def set_info(elf, symtab)
 			v = (elf.bitsize == 32 ? 8 : 32)
-			@type = elf.int_to_hash((info & ((1 << v) - 1)), RELOCATION_TYPE[elf.header.machine])
-			@symbol = (info >> v) & 0xffff_ffff
+			@type = elf.int_to_hash((@info & ((1 << v) - 1)), RELOCATION_TYPE[elf.header.machine])
+			@symbol = (@info >> v) & 0xffff_ffff
 			@symbol = symtab[@symbol] if symtab[@symbol]
 		end
 		def get_info(elf, symtab)
 			v = (elf.bitsize == 32 ? 8 : 32)
 			s = symbol || 0
 			s = symtab.index(s) if s.kind_of? Symbol
-			(s << v) |
+			@info = (s << v) |
 			(elf.int_from_hash(@type, RELOCATION_TYPE[elf.header.machine]) & ((1 << v)-1))
 		end
+	end
+	class RelocationAddend < Relocation
+		addr :offset
+		xword :info
+		sxword :addend
 	end
 
 	def self.hash_symbol_name(name)
@@ -406,7 +541,7 @@ class ELF < ExeFormat
 	def initialize(cpu=nil)
 		@header = Header.new
 		@tag = {}
-		@symbols = [Symbol.new]
+		@symbols = [Symbol32.new]
 		 @symbols.first.shndx = 'UNDEF'
 		@relocations = []
 		@sections = [Section.new]

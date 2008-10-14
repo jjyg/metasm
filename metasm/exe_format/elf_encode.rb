@@ -10,44 +10,12 @@ require 'metasm/exe_format/elf'
 module Metasm
 class ELF
 	class Header
-		def encode elf
-			set_default_values elf
-
-			@ident[0,4] = @magic
-			@ident[4] = elf.int_from_hash(@e_class, CLASS)
-			@ident[5] = elf.int_from_hash(@data, DATA)
-			@ident[6] = elf.int_from_hash(@i_version, VERSION)
-			@ident[7] = elf.int_from_hash(@abi, ABI)
-			@ident[8] = @abi_version
-
-			EncodedData.new <<
-			@ident <<
-			elf.encode_half(elf.int_from_hash(@type, TYPE)) <<
-			elf.encode_half(elf.int_from_hash(@machine, MACHINE)) <<
-			elf.encode_word(elf.int_from_hash(@version, VERSION)) <<
-			elf.encode_addr(@entry) <<
-			elf.encode_off(@phoff) <<
-			elf.encode_off(@shoff) <<
-			elf.encode_word(elf.bits_from_hash(@flags, FLAGS[@machine])) <<
-			elf.encode_half(@ehsize) <<
-			elf.encode_half(@phentsize) <<
-			elf.encode_half(@phnum) <<
-			elf.encode_half(@shentsize) <<
-			elf.encode_half(@shnum) <<
-			elf.encode_half(@shstrndx)
-		end
-
 		def set_default_values elf
-			@ident    ||= 0.chr*16
 			@magic     ||= "\x7fELF"
 			@e_class   ||= elf.bitsize.to_s
 			@data      ||= (elf.endianness == :big ? 'MSB' : 'LSB')
-			@type      ||= 0
-			@machine   ||= 0
 			@version   ||= 'CURRENT'
 			@i_version ||= @version
-			@abi       ||= 0
-			@abi_version ||= 0
 			@entry     ||= 0
 			@phoff     ||= elf.segments.empty? ? 0 : elf.new_label('phdr')
 			@shoff     ||= elf.sections.length <= 1 ? 0 : elf.new_label('shdr')
@@ -57,10 +25,12 @@ class ELF
 			@phnum     ||= elf.segments.length
 			@shentsize ||= Section.size(elf)
 			@shnum     ||= elf.sections.length
-			@shstrndx  ||= 0
+
+			super
 		end
 	end
 
+# SerialStruct TODO
 	class Section
 		def encode elf
 			set_default_values elf
