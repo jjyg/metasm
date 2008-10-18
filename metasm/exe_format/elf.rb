@@ -383,6 +383,16 @@ class ELF < ExeFormat
 			x = elf.bitsize >> 3
 			8 + 6*x
 		end
+
+		attr_accessor :type, :offset, :vaddr, :paddr, :filesz, :memsz, :flags, :align
+		def encode(elf)
+			return super if self.class != Segment
+
+			case elf.bitsize
+			when 32; clone_to(Segment32).encode(elf)
+			when 64; clone_to(Segment64).encode(elf)
+			end
+		end
 	end
 
 	class Segment32 < Segment
@@ -440,6 +450,7 @@ class ELF < ExeFormat
 		end
 
 		attr_accessor :name, :bind, :type, :thunk
+		attr_accessor :name_p, :value, :size, :info, :other, :shndx
 
 		def self.size elf
 			x = elf.bitsize >> 3
@@ -451,6 +462,15 @@ class ELF < ExeFormat
 # XXX bind & type should be fields
 			set_info elf, @info
 			@name = elf.readstr(strtab, @name_p) if strtab
+		end
+
+		def encode(elf, strtab)
+			return super if self.class != Symbol
+
+			case elf.bitsize
+			when 32; clone_to(Symbol32).encode(elf, strtab)
+			when 64; clone_to(Symbol64).encode(elf, strtab)
+			end
 		end
 
 		def set_info(elf, info)

@@ -779,7 +779,7 @@ class EncodedData
 	# expand self if len is larger than self.virtsize
 	def fill(len = @virtsize, pattern = 0.chr)
 		@virtsize = len if len > @virtsize
-		@data = @data.ljust(len, pattern) if len > @data.length
+		@data = @data.to_str.ljust(len, pattern) if len > @data.length
 	end
 
 	# rounds up virtsize to next multiple of len

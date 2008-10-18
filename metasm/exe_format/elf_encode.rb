@@ -30,44 +30,24 @@ class ELF
 		end
 	end
 
-# SerialStruct TODO
 	class Section
-		def encode elf
-			set_default_values elf
-
-			elf.encode_word(@name_p) <<
-			elf.encode_word(elf.int_from_hash(@type, SH_TYPE)) <<
-			elf.encode_xword(elf.bits_from_hash(@flags, SH_FLAGS)) <<
-			elf.encode_addr(@addr) <<
-			elf.encode_off(@offset) <<
-			elf.encode_xword(@size) <<
-			elf.encode_word(@link.kind_of?(Section) ? elf.sections.index(@link) : @link) <<
-			elf.encode_word(@info.kind_of?(Section) ? elf.sections.index(@info) : @info) <<
-			elf.encode_xword(@addralign) <<
-			elf.encode_xword(@entsize)
-		end
-
 		def set_default_values elf
-			if name and @name != ''
-				make_name_p elf
-			else
-				@name_p ||= 0
-			end
-			@type   ||= 0
+			make_name_p elf if name and @name != ''
 			@flags  ||= []
 			@addr   ||= (encoded and @flags.include?('ALLOC')) ? elf.label_at(@encoded, 0) : 0
 			@offset ||= encoded ? elf.new_label('section_offset') : 0
 			@size   ||= encoded ? @encoded.length : 0
-			@link   ||= 0
-			@info   ||= 0
 			@addralign ||= entsize || 0
 			@entsize ||= @addralign
+			@link = elf.sections.index(@link) if link.kind_of? Section
+			@info = elf.sections.index(@info) if info.kind_of? Section
+			super
 		end
 
 		# defines the @name_p field from @name and elf.section[elf.header.shstrndx]
 		# creates .shstrndx if needed
 		def make_name_p elf
-			return 0 if not @name or @name == ''
+			return 0 if not name or @name == ''
 			if elf.header.shstrndx.to_i == 0
 				sn = Section.new
 				sn.name = '.shstrndx'
@@ -86,68 +66,24 @@ class ELF
 	end
 
 	class Segment
-		def encode elf
-			set_default_values elf
-
-			elf.encode_word(elf.int_from_hash(@type, PH_TYPE)) <<
-			(elf.encode_word(elf.bits_from_hash(@flags, PH_FLAGS)) if elf.bitsize == 64) <<
-			elf.encode_off(@offset) <<
-			elf.encode_addr(@vaddr) <<
-			elf.encode_addr(@paddr) <<
-			elf.encode_xword(@filesz) <<
-			elf.encode_xword(@memsz) <<
-			(elf.encode_word(elf.bits_from_hash(@flags, PH_FLAGS)) if elf.bitsize == 32) <<
-			elf.encode_xword(@align)
-		end
-
 		def set_default_values elf
-			@type   ||= 0
-			@flags  ||= []
-			@offset ||= encoded ? elf.new_label('segment_offset') : 0
-			@vaddr  ||= encoded ? elf.label_at(@encoded, 0) : 0
-			@paddr  ||= @vaddr
-			@filesz ||= encoded ? @encoded.rawsize : 0
-			@memsz  ||= encoded ? @encoded.virtsize : 0
-			@align  ||= 0
+			if encoded
+				@offset ||= elf.new_label('segment_offset')
+				@vaddr  ||= elf.label_at(@encoded, 0)
+				@filesz ||= @encoded.rawsize
+				@memsz  ||= @encoded.virtsize
+			end
+			@paddr  ||= @vaddr if vaddr
+
+			super
 		end
 	end
 
 	class Symbol
-		def encode(elf, strtab)
-			set_default_values elf, strtab
-
-			sndx = @shndx
-			sndx = elf.sections.index(sndx)+1 if sndx.kind_of? Section
-			case elf.bitsize
-			when 32
-				elf.encode_word(@name_p) <<
-				elf.encode_addr(@value) <<
-				elf.encode_word(@size) <<
-				elf.encode_uchar(get_info(elf)) <<
-				elf.encode_uchar(@other) <<
-				elf.encode_half(elf.int_from_hash(sndx, SH_INDEX))
-			when 64
-				elf.encode_word(@name_p) <<
-				elf.encode_uchar(get_info(elf)) <<
-				elf.encode_uchar(@other) <<
-				elf.encode_half(elf.int_from_hash(sndx, SH_INDEX)) <<
-				elf.encode_addr(@value) <<
-				elf.encode_xword(@size)
-			end
-		end
-
 		def set_default_values(elf, strtab)
-			if strtab and name and @name != ''
-				make_name_p elf, strtab
-			else
-				@name_p ||= 0
-			end
-			@value  ||= 0
-			@size   ||= 0
-			@bind  ||= 0
-			@type  ||= 0
-			@other  ||= 0
-			@shndx  ||= 0
+			make_name_p elf, strtab if strtab and name and @name != ''
+
+			super(elf)
 		end
 
 		# sets the value of @name_p, appends @name to strtab if needed
@@ -161,24 +97,15 @@ class ELF
 	end
 
 	class Relocation
-		def encode(elf, symtab)
-			set_default_values elf, symtab
-
-			EncodedData.new <<
-			elf.encode_addr(@offset) <<
-			elf.encode_xword(get_info(elf, symtab)) <<
-			(elf.encode_sxword(@addend) if addend)
-		end
-
 		def set_default_values(elf, symtab)
-			@offset ||= 0
-			@symbol ||= 0
-			@type   ||= 0
+			@info ||= get_info(elf, symtab)
+
+			super(elf)
 		end
 	end
 
 
-	def encode_uchar(w)  Expression[w].encode(:u8,  @endianness, (caller if $DEBUG)) end
+	def encode_byte(w)   Expression[w].encode(:u8,  @endianness, (caller if $DEBUG)) end
 	def encode_half(w)   Expression[w].encode(:u16, @endianness, (caller if $DEBUG)) end
 	def encode_word(w)   Expression[w].encode(:u32, @endianness, (caller if $DEBUG)) end
 	def encode_sword(w)  Expression[w].encode(:i32, @endianness, (caller if $DEBUG)) end

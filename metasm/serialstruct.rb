@@ -48,11 +48,11 @@ class SerialStruct
 
 	# a fixed-size memory chunk
 	def mem(name, len, defval='')
-		new_field(name, proc { |exe, me| exe.encoded.read(len) }, proc { |val| val[0, len].ljust(len, 0.chr) }, defval)
+		new_field(name, proc { |exe, me| exe.encoded.read(len) }, proc { |exe, me, val| val[0, len].ljust(len, 0.chr) }, defval)
 	end
 	# a fixed-size string, 0-padded
 	def str(name, len, defval='')
-		e = proc { |val| val[0, len].ljust(len, 0.chr) }
+		e = proc { |exe, me, val| val[0, len].ljust(len, 0.chr) }
 		d = proc { |exe, me| v = exe.encoded.read(len) ; v = v[0, v.index(0)] if v.index(0) ; v }
 		new_field(name, d, e, defval)
        	end
@@ -62,7 +62,7 @@ class SerialStruct
 		       	ed = exe.encoded
 			ed.read(ed.data.index(0, ed.ptr)+1).chop
 		}
-		new_field(name, d, proc { |val| val + 0.chr }, defval)
+		new_field(name, d, proc { |exe, me, val| val + 0.chr }, defval)
 	end
 
 	def fld_get(name)
@@ -105,20 +105,22 @@ class SerialStruct
 	end
 	def set_default_values(exe)
 		struct_fields.each { |f|
-			next if not f[NAME] or instance_variable_get(f[NAME])
+			next if not f[NAME] or (instance_variables.include?(f[NAME]) and instance_variable_get(f[NAME]))
 			val = f[DEFVAL]
 			val = val[exe, self] if val.kind_of? Proc
+			if val.kind_of? Integer and h = f[ENUM]; h = h[exe, self] if h.kind_of? Proc; val = exe.int_to_hash( val, h) end
+			if val.kind_of? Integer and h = f[BITS]; h = h[exe, self] if h.kind_of? Proc; val = exe.bits_to_hash(val, h) end
 			instance_variable_set(f[NAME], val)
 		}
 	end
 	# sets default values, then encodes the fields, returns an EData
-	def encode(exe)
-		set_default_values(exe)
+	def encode(exe, *a)
+		set_default_values(exe, *a)
 
 		struct_fields.inject(EncodedData.new) { |ed, f|
 			if not f[NAME]
 				f[ENCODE][exe, self, nil] if f[ENCODE]
-				next
+				next ed
 			end
 			val = instance_variable_get(f[NAME])
 			if h = f[ENUM]; h = h[exe, self] if h.kind_of? Proc; val = exe.int_from_hash( val, h) end
@@ -149,6 +151,18 @@ class SerialStruct
 			end
 		       	"#{iv}=#{v}"
 		}.join(' ') + ">"
+	end
+
+	# create a new instance of otherclass and copy all instance variables to it
+	# useful for specialized subclasses (eg ELF::Symbol{32,64}), where you
+	# have an object and don't known which subclass to cast it to until late in
+	# the encoding process (eg where cpu.size is set)
+	def clone_to(otherclass)
+		other = otherclass.allocate
+		instance_variables.each { |iv|
+			other.instance_variable_set(iv, instance_variable_get(iv))
+		}
+		other
 	end
 end
 end
