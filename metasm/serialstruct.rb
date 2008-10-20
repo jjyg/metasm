@@ -105,7 +105,8 @@ class SerialStruct
 	end
 	def set_default_values(exe)
 		struct_fields.each { |f|
-			next if not f[NAME] or (instance_variables.include?(f[NAME]) and instance_variable_get(f[NAME]))
+			next if not f[NAME]
+			next if instance_variables.map { |ivn| ivn.to_sym }.include?(f[NAME]) and instance_variable_get(f[NAME])
 			val = f[DEFVAL]
 			val = val[exe, self] if val.kind_of? Proc
 			if val.kind_of? Integer and h = f[ENUM]; h = h[exe, self] if h.kind_of? Proc; val = exe.int_to_hash( val, h) end
