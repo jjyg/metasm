@@ -10,54 +10,39 @@ require 'metasm/decode'
 
 module Metasm
 class MZ < ExeFormat
-	class Header
-		Fields = [:magic, :cblp, :cp, :crlc, :cparhdr, :minalloc, :maxalloc,
-			:ss, :sp, :csum, :ip, :cs, :lfarlc, :ovno]
-		attr_accessor(*Fields)
+	class Header < SerialStruct
+		mem :magic, 2, 'MZ'
+		words :cblp, :cp, :crlc, :cparhdr, :minalloc, :maxalloc, :ss, :sp, :csum, :ip, :cs, :lfarlc, :ovno
+		mem :unk, 4
 
 		def encode(mz, relocs)
 			h = EncodedData.new
 			set_default_values mz, h, relocs
-			h << @magic
-			Fields[1..-1].each { |m| h << mz.encode_word(send(m)) }
-			h.align 16
-			h
+			h << super(mz)
 		end
 
-		def set_default_values mz, h, relocs
-			@magic    ||= 'MZ'
+		def set_default_values(mz, h=nil, relocs=nil)
+			return if not h
 			@cblp     ||= Expression[[mz.label_at(mz.body, mz.body.virtsize), :-, mz.label_at(h, 0)], :%, 512]	# number of bytes used in last page
 			@cp       ||= Expression[[mz.label_at(mz.body, mz.body.virtsize), :-, mz.label_at(h, 0)], :/, 512]	# number of pages used
 			@crlc     ||= relocs.virtsize/4
 			@cparhdr  ||= Expression[[mz.label_at(relocs, 0), :-, mz.label_at(h, 0)], :/, 16]	# header size in paragraphs (16o)
 			@minalloc ||= ((mz.body.virtsize - mz.body.rawsize) + 15) / 16
 			@maxalloc ||= @minalloc
-			@ss       ||= 0
 			@sp       ||= 0		# ss:sp points at 1st byte of body => works if body does not reach end of segment (or maybe the overflow make the stack go to header space)
-			@csum     ||= 0
-			@ip       ||= 0
-			@cs       ||= 0
 			@lfarlc   ||= Expression[mz.label_at(relocs, 0), :-, mz.label_at(h, 0)]
-			@ovno     ||= 0
+
+			super(mz)
 		end
 
 		def decode(mz)
-			@magic = mz.encoded.read 2
+			super
 			raise InvalidExeFormat, "Invalid MZ signature #{h.magic.inspect}" if @magic != 'MZ'
-			Fields[1..-1].each { |m| send("#{m}=", mz.decode_word) }
 		end
 	end
 
-	class Relocation
-		attr_accessor :segment, :offset
-		def encode(mz)
-			mz.encode_word(@offset) << mz.encode_word(@segment)
-		end
-
-		def decode(mz)
-			@offset  = mz.decode_word
-			@segment = mz.decode_word
-		end
+	class Relocation < SerialStruct
+		words :offset, :segment
 	end
 
 
@@ -127,13 +112,7 @@ class MZ < ExeFormat
 	def encode
 		pre_encode.inject(@encoded) { |edata, pe| edata << pe }
 		@encoded.fixup @encoded.binding
-	end
-
-	# returns the raw content of the mz file, with updated checksum
-	def encode_string
-		super
 		encode_fix_checksum
-		@encoded.data
 	end
 
 	# sets the file checksum (untested)
@@ -145,7 +124,9 @@ class MZ < ExeFormat
 		csum = -@header.csum
 		(mzlen/2).times { csum += decode_word }
 		csum &= 0xffff
-		@encoded[2*Header::Fields.index(:csum), 2] = encode_word(csum)
+		@header.csum = csum
+		hdr = @header.encode(self, nil)
+		@encoded[0, hdr.length] = hdr
 	end
 
 	# decodes the MZ header from the current offset in self.encoded
@@ -157,11 +138,7 @@ class MZ < ExeFormat
 	def decode_relocs
 		@relocs.clear
 		@encoded.ptr = @header.lfarlc
-		@header.crlc.times {
-			r = Relocation.new
-			r.decode self
-			@relocs << r
-		}
+		@header.crlc.times { @relocs << Relocation.decode(self) }
 	end
 
 	# decodes the main part of the program
