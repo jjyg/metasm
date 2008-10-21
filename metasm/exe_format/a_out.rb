@@ -28,9 +28,9 @@ class AOut < ExeFormat
 
 	attr_accessor :endianness, :header, :text, :data, :symbols, :textrel, :datarel
 
-	class Header
+	class Header < SerialStruct
+		words :info, :text, :data, :bss, :syms, :entry, :trsz, :drsz
 		attr_accessor :magic, :machtype, :flags
-		attr_accessor :text, :data, :bss, :syms, :entry, :trsz, :drsz
 
 		def set_info(aout, info)
 			@magic = aout.int_to_hash(info & 0xffff, MAGIC)
@@ -44,61 +44,41 @@ class AOut < ExeFormat
 		end
 
 		def decode(aout)
-			set_info(aout, aout.decode_word)
+			super
+
+			set_info(aout, @info)
+			@info = nil
 			case @magic
 			when 'OMAGIC', 'NMAGIC', 'ZMAGIC', 'QMAGIC'
-			else raise InvalidExeFormat
+			else raise InvalidExeFormat, "Bad A.OUT signature #@magic"
 			end
-			@text = aout.decode_word
-			@data = aout.decode_word
-			@bss  = aout.decode_word
-			@syms = aout.decode_word
-			@entry= aout.decode_word
-			@trsz = aout.decode_word
-			@drsz = aout.decode_word
-		end
-
-		def encode(aout)
-			set_default_values aout
-
-			EncodedData.new <<
-			aout.encode_word(get_info(aout)) <<
-			aout.encode_word(@text) <<
-			aout.encode_word(@data) <<
-			aout.encode_word(@bss ) <<
-			aout.encode_word(@syms) <<
-			aout.encode_word(@entry)<<
-			aout.encode_word(@trsz) <<
-			aout.encode_word(@drsz)
 		end
 
 		def set_default_values(aout)
 			@magic ||= 'QMAGIC'
 			@machtype ||= 'PC386'
 			@flags ||= 0
-			@text ||= aout.text ? aout.text.length + (@magic == 'QMAGIC' ? 32 : 0) : 0
-			@data ||= aout.data ? aout.data.length : 0
-			@bss  ||= 0
-			@syms ||= 0
-			@entry||= 0
-			@trsz ||= 0
-			@drsz ||= 0
+			@info ||= get_info(aout)
+			@text ||= aout.text.length + (@magic == 'QMAGIC' ? 32 : 0) if aout.text
+			@data ||= aout.data.length if aout.data
+
+			super
 		end
 	end
 
-	class Relocation
-		attr_accessor :address, :symbolnum, :pcrel, :length, :extern,
-			:baserel, :jmptable, :relative, :rtcopy
+	class Relocation < SerialStruct
+		attr_accessor :symbolnum, :pcrel, :length, :extern, :baserel, :jmptable, :relative, :rtcopy
+		words :address, :info
 
 		def get_info(aout)
 			(@symbolnum & 0xffffff) |
-			((@pcrel    ? 1 : 0) << 24) |
+			((pcrel    ? 1 : 0) << 24) |
 			(({1=>0, 2=>1, 4=>2, 8=>3}[@length] || 0) << 25) |
-			((@extern   ? 1 : 0) << 27) |
-			((@baserel  ? 1 : 0) << 28) |
-			((@jmptable ? 1 : 0) << 29) |
-			((@relative ? 1 : 0) << 30) |
-			((@rtcopy   ? 1 : 0) << 31)
+			((extern   ? 1 : 0) << 27) |
+			((baserel  ? 1 : 0) << 28) |
+			((jmptable ? 1 : 0) << 29) |
+			((relative ? 1 : 0) << 30) |
+			((rtcopy   ? 1 : 0) << 31)
 		end
 		def set_info(aout, info)
 			@symbolnum = info & 0xffffff
@@ -111,58 +91,46 @@ class AOut < ExeFormat
 			@rtcopy   = (info[31] == 1)
 		end
 
-		def encode(aout)
-			EncodedData.new <<
-			aout.encode_word(@address) <<
-			aout.encode_word(get_info(aout))
-		end
-
 		def decode(aout)
-			@address = aout.decode_word
-			set_info(aout, aout.decode_word)
+			super
+
+			set_info(aout, @info)
+			@info = nil
 		end
 
 		def set_default_values(aout)
-			@address ||= 0
 			@length ||= 4
+			@symbolnum ||= 0
+			@info ||= get_info(aout)
+
+			super
 		end
 	end
 
-	class Symbol
-		attr_accessor :name_p, :type, :extern, :stab, :other, :desc, :value
+	class Symbol < SerialStruct
+		word :name_p
+		bytes :info, :other
+		half :desc
+ 		word :value
+		attr_accessor :extern, :type, :stab
 		attr_accessor :name
 
-		def get_type(aout)
+		def get_info(aout)
 			(extern ? 1 : 0) |
 			((aout.int_from_hash(@type, SYMBOL_TYPE) & 0xf) << 1) |
 			((@stab & 7) << 5)
 		end
-		def set_type(aout, type)
-			@extern = (type[0] == 1)
-			@type = aout.int_to_hash((type >> 1) & 0xf, SYMBOL_TYPE)
-			@stab = (type >> 5) & 7
+		def set_info(aout, info)
+			@extern = (info[0] == 1)
+			@type = aout.int_to_hash((info >> 1) & 0xf, SYMBOL_TYPE)
+			@stab = (info >> 5) & 7
 		end
 
 		def decode(aout, strings=nil)
-			@name_p = aout.decode_word
-			set_type(aout.decode_byte)
-			@other = aout.decode_byte
-			@desc = aout.decode_short
-			@value = aout.decode_word
-			if strings
-				@name = strings[@name_p...(strings.index(0, @name_p))]
-			end
-		end
-
-		def encode(aout, strings=nil)
-			set_default_values aout, strings
-
-			EncodedData.new <<
-			aout.encode_word(@name_p) <<
-			aout.encode_byte(get_type(aout)) <<
-			aout.encode_byte(@other) <<
-			aout.encode_short(@desc) <<
-			aout.encode_word(@value)
+			super(aout)
+			set_info(aout, @info)
+			@info = nil
+			@name = strings[@name_p...(strings.index(0, @name_p))] if strings
 		end
 
 		def set_default_values(aout, strings=nil)
@@ -171,14 +139,12 @@ class AOut < ExeFormat
 					@name_p = strings.length
 					strings << @name << 0
 				end
-			else
-				@name_p ||= 0
 			end
-			@type  ||= 0
-			@stab  ||= 0
-			@other ||= 0
-			@desc  ||= 0
-			@value ||= 0
+
+			@type ||= 0
+			@stab ||= 0
+			@info ||= get_info(aout)
+			super
 		end
 	end
 
@@ -218,6 +184,7 @@ class AOut < ExeFormat
 		datarel = @encoded.read @header.drsz
 		syms    = @encoded.read @header.syms
 		strings = @encoded.read
+		# TODO
 	end
 
 	def encode
