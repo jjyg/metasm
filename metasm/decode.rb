@@ -1851,7 +1851,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			end
 			dups /= elemlen
 			dups = 1 if dups < 1
-			b[l + "#{dups} dup(?)"]
+			b[(l + "#{dups} dup(?)").ljust(48) << cmt]
 			return off + dups*elemlen
 		end
 
