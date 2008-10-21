@@ -82,6 +82,9 @@ class ELF
 	class Symbol
 		def set_default_values(elf, strtab)
 			make_name_p elf, strtab if strtab and name and @name != ''
+			@bind ||= 0
+			@type ||= 0
+			@info ||= get_info(elf)
 
 			super(elf)
 		end

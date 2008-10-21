@@ -143,11 +143,15 @@ class SerialStruct
 	end
 
 	def to_s
-		"<#{self.class} " + (struct_fields.map { |f| f[NAME] }.compact | instance_variables.map { |iv| iv.to_sym }).map { |iv|
+		# use fields display order
+		ivs = instance_variables.map { |iv| iv.to_sym }
+		ivs = (struct_fields.map { |f| f[NAME] }.compact & ivs) | ivs
+		"<#{self.class} " + ivs.map { |iv|
 			v = instance_variable_get(iv)
 			case v
 			when Integer; v = '0x%X'%v if v >= 0x100
 			when String; v = v[0, 64].inspect + (v.length > 64 ? '...' : '')
+			# TODO when EncodedData
 			else v = v.inspect
 			end
 		       	"#{iv}=#{v}"

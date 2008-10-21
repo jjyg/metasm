@@ -463,6 +463,7 @@ class ELF < ExeFormat
 			super(elf)
 # XXX bind & type should be fields
 			set_info elf, @info
+			@info = nil
 			@name = elf.readstr(strtab, @name_p) if strtab
 		end
 
@@ -513,6 +514,7 @@ class ELF < ExeFormat
 		def decode(elf, symtab={})
 			super(elf)
 			set_info(elf, symtab)
+			@info = nil
 		end
 
 		attr_accessor :type, :symbol
