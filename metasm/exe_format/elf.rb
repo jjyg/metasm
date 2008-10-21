@@ -388,6 +388,8 @@ class ELF < ExeFormat
 		def encode(elf)
 			return super if self.class != Segment
 
+			set_default_values(elf)
+
 			case elf.bitsize
 			when 32; clone_to(Segment32).encode(elf)
 			when 64; clone_to(Segment64).encode(elf)
@@ -466,6 +468,8 @@ class ELF < ExeFormat
 
 		def encode(elf, strtab)
 			return super if self.class != Symbol
+
+			set_default_values(elf, strtab)
 
 			case elf.bitsize
 			when 32; clone_to(Symbol32).encode(elf, strtab)

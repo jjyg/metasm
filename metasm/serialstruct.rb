@@ -86,7 +86,7 @@ class SerialStruct
 	end
 
 	# returns this classes' field array
-	def struct_fields() @@fields[self.class] end
+	def struct_fields() @@fields[self.class].to_a end
 
 	# decodes the fields from the exe
 	def decode(exe)
