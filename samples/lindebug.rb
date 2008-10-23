@@ -376,13 +376,19 @@ class LinDebug
 		ext = expr.externals
 		(ext - @rs.regs_cache.keys).each { |ex|
 			if not s = @rs.symbols.index(ex)
-				log "unknown value #{ex}"
-				return {}
+				near = @rs.symbols.values.grep(/#{ex}/i)
+				if near.length > 1
+					log "#{ex.inspect} is ambiguous: #{near.inspect}"
+					return {}
+				elsif near.empty?
+					log "unknown value #{ex.inspect}"
+					return {}
+				else
+					log "using #{near.first.inspect} for #{ex.inspect}"
+					s = @rs.symbols.index(near.first)
+				end
 			end
 			b[ex] = s
-			if @rs.symbols.values.grep(ex).length > 1
-				raise "multiple definitions found for #{ex}"
-			end
 		}
 		b['tracer_memory'] = @rs
 		b
@@ -404,7 +410,10 @@ class LinDebug
 				log 'syntax error'
 				return
 			end
-			e.bind(mem_binding(e)).reduce
+			e = e.bind(mem_binding(e)).reduce
+			if e.kind_of? Integer; e
+			else log "could not resolve #{e.inspect}" ; nil
+			end
 		}
 
 		cmd = lex.readtok
