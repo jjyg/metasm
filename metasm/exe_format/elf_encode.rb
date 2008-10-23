@@ -82,10 +82,6 @@ class ELF
 	class Symbol
 		def set_default_values(elf, strtab)
 			make_name_p elf, strtab if strtab and name and @name != ''
-			@bind ||= 0
-			@type ||= 0
-			@info ||= get_info(elf)
-
 			super(elf)
 		end
 
@@ -96,14 +92,6 @@ class ELF
 			return if @name_p = s.index(@name+0.chr)
 			@name_p = strtab.length
 			strtab << @name << 0
-		end
-	end
-
-	class Relocation
-		def set_default_values(elf, symtab)
-			@info ||= get_info(elf, symtab)
-
-			super(elf)
 		end
 	end
 
@@ -287,7 +275,7 @@ class ELF
 				encode_add_section relplt
 			end
 			relplt.encoded = EncodedData.new('', :export => {'_REL_PLT' => 0})
-			list.each { |r| relplt.encoded << r.encode(self, @symbols) }
+			list.each { |r| relplt.encoded << r.encode(self) }
 			@tag['JMPREL'] = label_at(relplt.encoded, 0)
 			@tag['PLTRELSZ'] = relplt.encoded.virtsize
 			if not list.first or not list.first.addend
@@ -295,7 +283,7 @@ class ELF
 				@tag['RELENT']  = relplt.entsize = relplt.addralign = Relocation.size(self)
 			else
 				@tag['PLTREL'] = relplt.type = 'RELA'
-				@tag['RELAENT'] = relplt.entsize = relplt.addralign = Relocation.size_a(self)
+				@tag['RELAENT'] = relplt.entsize = relplt.addralign = RelocationAddend.size(self)
 			end
 			encode_check_section_size relplt
 		end
@@ -318,7 +306,7 @@ class ELF
 				encode_add_section rel
 			end
 			rel.encoded = EncodedData.new
-			list.each { |r| rel.encoded << r.encode(self, @symbols) }
+			list.each { |r| rel.encoded << r.encode(self) }
 			@tag['REL'] = label_at(rel.encoded, 0)
 			@tag['RELENT'] = Relocation.size(self)
 			@tag['RELSZ'] = rel.encoded.virtsize
@@ -332,11 +320,11 @@ class ELF
 				rela.name = '.rela.dyn'
 				rela.type = 'RELA'
 				rela.flags = ['ALLOC']
-				rela.entsize = rela.addralign = Relocation.size_a(self)
+				rela.entsize = rela.addralign = RelocationAddend.size(self)
 				encode_add_section rela
 			end
 			rela.encoded = EncodedData.new
-			list.each { |r| rela.encoded << r.encode(self, @symbols) }
+			list.each { |r| rela.encoded << r.encode(self) }
 			@tag['RELA'] = label_at(rela.encoded, 0)
 			@tag['RELAENT'] = Relocation.size(self)
 			@tag['RELASZ'] = rela.encoded.virtsize
@@ -510,7 +498,7 @@ class ELF
 			case k
 			when Integer	# unknown tags = array of values
 				@tag[k].each { |n| encode_tag[k, n] }
-			when 'PLTREL';     encode_tag[k,  int_from_hash(@tag[k], DYNAMIC_TAG)]
+			when 'PLTREL';     encode_tag[k, int_from_hash(@tag[k], DYNAMIC_TAG)]
 			when 'FLAGS';      encode_tag[k, bits_from_hash(@tag[k], DYNAMIC_FLAGS)]
 			when 'FLAGS_1';    encode_tag[k, bits_from_hash(@tag[k], DYNAMIC_FLAGS_1)]
 			when 'FEATURES_1'; encode_tag[k, bits_from_hash(@tag[k], DYNAMIC_FEATURES_1)]

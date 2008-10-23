@@ -9,6 +9,37 @@ require 'metasm/exe_format/elf'
 
 module Metasm
 class ELF
+	class Header
+		# hook the decode sequence, to fixup elf data based on info
+		# we have (endianness & xword size, needed in decode_word etc)
+		decode_hook(:type) { |elf, hdr|
+			raise InvalidExeFormat, "E: ELF: invalid ELF signature #{hdr.magic.inspect}" if hdr.magic != "\x7fELF"
+
+			case hdr.e_class
+			when '32'; elf.bitsize = 32
+			when '64', '64_icc'; elf.bitsize = 64
+			else raise InvalidExeFormat, "E: ELF: unsupported class #{hdr.e_class}"
+			end
+
+			case hdr.data
+			when 'LSB'; elf.endianness = :little
+			when 'MSB'; elf.endianness = :big
+			else raise InvalidExeFormat, "E: ELF: unsupported endianness #{hdr.data}"
+			end
+
+			if hdr.i_version != 'CURRENT'
+				raise InvalidExeFormat, "E: ELF: unsupported ELF version #{hdr.i_version}"
+			end
+	       	}
+	end
+
+	class Symbol
+		def decode(elf, strtab=nil)
+			super(elf)
+			@name = elf.readstr(strtab, @name_p) if strtab
+		end
+	end
+
 	# basic immediates decoding functions
 	def decode_byte( edata = @encoded) edata.decode_imm(:u8,  @endianness) end
 	def decode_half( edata = @encoded) edata.decode_imm(:u16, @endianness) end
@@ -305,15 +336,15 @@ class ELF
 			raise "E: ELF: unsupported rel entry size #{@tag['RELENT']}" if @tag['RELENT'] != Relocation.size(self)
 			p_end = @encoded.ptr + @tag['RELSZ']
 			while @encoded.ptr < p_end
-				@relocations << Relocation.decode(self, @symbols)
+				@relocations << Relocation.decode(self)
 			end
 		end
 
 		if @encoded.ptr = @tag['RELA']
-			raise "E: ELF: unsupported rela entry size #{@tag['RELAENT'].inspect}" if @tag['RELAENT'] != RelocationAddend.size_a(self)
+			raise "E: ELF: unsupported rela entry size #{@tag['RELAENT'].inspect}" if @tag['RELAENT'] != RelocationAddend.size(self)
 			p_end = @encoded.ptr + @tag['RELASZ']
 			while @encoded.ptr < p_end
-				@relocations << RelocationAddend.decode(self, @symbols)
+				@relocations << RelocationAddend.decode(self)
 			end
 		end
 
@@ -325,7 +356,7 @@ class ELF
 			end
 			p_end = @encoded.ptr + @tag['PLTRELSZ']
 			while @encoded.ptr < p_end
-				@relocations << relcls.decode(self, @symbols)
+				@relocations << relcls.decode(self)
 			end
 		end
 	end

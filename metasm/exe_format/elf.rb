@@ -315,9 +315,7 @@ class ELF < ExeFormat
 	)
 
 	class SerialStruct < SerialStruct
-		class << self
-			Struct_new_inttype[:addr, :off, :xword, :sword, :sxword]
-		end
+		new_int_field :addr, :off, :xword, :sword, :sxword
 	end
 
 	class Header < SerialStruct
@@ -328,29 +326,6 @@ class ELF < ExeFormat
 		byte :abi, 0, ABI
 		byte :abi_version
 		mem :ident_unk, 7
-
-		# hook the decode sequence, to fixup elf data
-		# based on info we have (endianness & xword size, needed in decode_word)
-		decode_hook { |elf, hdr|
-			raise InvalidExeFormat, "E: ELF: invalid ELF signature #{hdr.magic.inspect}" if hdr.magic != "\x7fELF"
-
-			case hdr.e_class
-			when '32'; elf.bitsize = 32
-			when '64', '64_icc'; elf.bitsize = 64
-			else raise InvalidExeFormat, "E: ELF: unsupported class #{hdr.e_class}"
-			end
-
-			case hdr.data
-			when 'LSB'; elf.endianness = :little
-			when 'MSB'; elf.endianness = :big
-			else raise InvalidExeFormat, "E: ELF: unsupported endianness #{hdr.data}"
-			end
-
-			if hdr.i_version != 'CURRENT'
-				raise InvalidExeFormat, "E: ELF: unsupported ELF version #{hdr.i_version}"
-			end
-	       	}
-
 		half :type, 0, TYPE
 		half :machine, 0, MACHINE
 		word :version, 'CURRENT', VERSION
@@ -368,32 +343,19 @@ class ELF < ExeFormat
 	end
 
 	class Segment < SerialStruct
+		attr_accessor :type, :offset, :vaddr, :paddr, :filesz, :memsz, :flags, :align
 		attr_accessor :encoded
 
-		def self.decode(elf)
-			return super if self != Segment
-
+		def struct_specialized(elf)
 			case elf.bitsize
-			when 32; Segment32.decode(elf)
-			when 64; Segment64.decode(elf)
+			when 32; Segment32
+			else Segment64
 			end
 		end
 
 		def self.size elf
 			x = elf.bitsize >> 3
 			8 + 6*x
-		end
-
-		attr_accessor :type, :offset, :vaddr, :paddr, :filesz, :memsz, :flags, :align
-		def encode(elf)
-			return super if self.class != Segment
-
-			set_default_values(elf)
-
-			case elf.bitsize
-			when 32; clone_to(Segment32).encode(elf)
-			when 64; clone_to(Segment64).encode(elf)
-			end
 		end
 	end
 
@@ -404,14 +366,12 @@ class ELF < ExeFormat
 		addr :paddr
 		xword :filesz
 		xword :memsz
-		word :flags
-		fld_bits :flags, PH_FLAGS
+		word :flags ; fld_bits :flags, PH_FLAGS
 		xword :align
 	end
 	class Segment64 < Segment
 		word :type, 0, PH_TYPE
-		word :flags
-		fld_bits :flags, PH_FLAGS
+		word :flags ; fld_bits :flags, PH_FLAGS
 		off :offset
 		addr :vaddr
 		addr :paddr
@@ -423,8 +383,7 @@ class ELF < ExeFormat
 	class Section < SerialStruct
 		word :name_p
 		word :type, 0, SH_TYPE
-		xword :flags
-		fld_bits :flags, SH_FLAGS
+		xword :flags ; fld_bits :flags, SH_FLAGS
 		addr :addr
 		off :offset
 		xword :size
@@ -442,50 +401,19 @@ class ELF < ExeFormat
 	end
 
 	class Symbol < SerialStruct
-		def self.decode(elf, strtab=nil)
-			return super if self != Symbol
-
+		def struct_specialized(elf)
 			case elf.bitsize
-			when 32; Symbol32.decode(elf, strtab)
-			when 64; Symbol64.decode(elf, strtab)
+			when 32; Symbol32
+			else Symbol64
 			end
 		end
 
-		attr_accessor :name, :bind, :type, :thunk
-		attr_accessor :name_p, :value, :size, :info, :other, :shndx
+		attr_accessor :name_p, :value, :size, :bind, :type, :other, :shndx
+		attr_accessor :name, :thunk
 
 		def self.size elf
 			x = elf.bitsize >> 3
 			12 + x
-		end
-
-		def decode(elf, strtab=nil)
-			super(elf)
-# XXX bind & type should be fields
-			set_info elf, @info
-			@info = nil
-			@name = elf.readstr(strtab, @name_p) if strtab
-		end
-
-		def encode(elf, strtab)
-			return super if self.class != Symbol
-
-			set_default_values(elf, strtab)
-
-			case elf.bitsize
-			when 32; clone_to(Symbol32).encode(elf, strtab)
-			when 64; clone_to(Symbol64).encode(elf, strtab)
-			end
-		end
-
-		def set_info(elf, info)
-			@bind = elf.int_to_hash((info >> 4) & 15, SYMBOL_BIND)
-			@type = elf.int_to_hash(info & 15, SYMBOL_TYPE)
-		end
-
-		def get_info(elf)
-			((elf.int_from_hash(@bind, SYMBOL_BIND) & 15) << 4) |
-			(elf.int_from_hash(@type, SYMBOL_TYPE) & 15)
 		end
 	end
 
@@ -493,13 +421,17 @@ class ELF < ExeFormat
 		word :name_p
 		addr :value
 		word :size
-		byte :info
+		bitfield :byte, 0 => :type, 4 => :bind
+		fld_enum :type, SYMBOL_TYPE
+		fld_enum :bind, SYMBOL_BIND
 		byte :other
 		half :shndx, 0, SH_INDEX
 	end
 	class Symbol64 < Symbol
 		word :name_p
-		byte :info
+		bitfield :byte, 0 => :type, 4 => :bind
+		fld_enum :type, SYMBOL_TYPE
+		fld_enum :bind, SYMBOL_BIND
 		byte :other
 		half :shndx, 0, SH_INDEX
 		addr :value
@@ -507,40 +439,60 @@ class ELF < ExeFormat
 	end
 
 	class Relocation < SerialStruct
-		addr :offset
-		xword :info
-		def addend ; nil end
-
-		def decode(elf, symtab={})
-			super(elf)
-			set_info(elf, symtab)
-			@info = nil
+		attr_accessor :offset, :type, :symbol
+		def struct_specialized(elf)
+			case elf.bitsize
+			when 32; Relocation32
+			else Relocation64
+			end
 		end
 
-		attr_accessor :type, :symbol
+		def addend ; end
 
 		def self.size elf
 			x = elf.bitsize >> 3
-			@@fields[self].length*x
+			2*x
 		end
 
-		def set_info(elf, symtab)
-			v = (elf.bitsize == 32 ? 8 : 32)
-			@type = elf.int_to_hash((@info & ((1 << v) - 1)), RELOCATION_TYPE[elf.header.machine])
-			@symbol = (@info >> v) & 0xffff_ffff
-			@symbol = symtab[@symbol] if symtab[@symbol]
-		end
-		def get_info(elf, symtab)
-			v = (elf.bitsize == 32 ? 8 : 32)
-			s = symbol || 0
-			s = symtab.index(s) if s.kind_of? Symbol
-			@info = (s << v) |
-			(elf.int_from_hash(@type, RELOCATION_TYPE[elf.header.machine]) & ((1 << v)-1))
-		end
+	end
+	class Relocation32 < Relocation
+		addr :offset
+		bitfield :xword, 0 => :type, 8 => :symbol
+		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] }
+		fld_enum(:symbol) { |elf, rel| elf.symbols }
+	end
+	class Relocation64 < Relocation
+		addr :offset
+		bitfield :xword, 0 => :type, 32 => :symbol
+		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] }
+		fld_enum(:symbol) { |elf, rel| elf.symbols }
 	end
 	class RelocationAddend < Relocation
+		attr_accessor :addend
+		def struct_specialized(elf)
+			case elf.bitsize
+			when 32; RelocationAddend32
+			else RelocationAddend64
+			end
+		end
+		def self.size elf
+			x = elf.bitsize >> 3
+			3*x
+		end
+
+	end
+	class RelocationAddend32 < RelocationAddend
 		addr :offset
-		xword :info
+		bitfield :xword, 0 => :type, 8 => :symbol
+		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] }
+		fld_enum(:symbol) { |elf, rel| elf.symbols }
+		sxword :addend
+	end
+	class RelocationAddend64 < RelocationAddend
+		addr :offset
+		bitfield :xword, 0 => :type, 32 => :symbol
+		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] }
+		fld_enum(:symbol) { |elf, rel| elf.symbols }
 		sxword :addend
 	end
 
