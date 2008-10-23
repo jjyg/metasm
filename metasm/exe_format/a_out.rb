@@ -29,25 +29,15 @@ class AOut < ExeFormat
 	attr_accessor :endianness, :header, :text, :data, :symbols, :textrel, :datarel
 
 	class Header < SerialStruct
-		words :info, :text, :data, :bss, :syms, :entry, :trsz, :drsz
-		attr_accessor :magic, :machtype, :flags
-
-		def set_info(aout, info)
-			@magic = aout.int_to_hash(info & 0xffff, MAGIC)
-			@machtype = aout.int_to_hash((info >> 16) & 0xff, MACHINE_TYPE)
-			@flags = aout.bits_to_hash((info >> 24) & 0xff, FLAGS)
-		end
-		def get_info(aout)
-			(aout.int_from_hash(@magic, MAGIC) & 0xffff) |
-			((aout.int_from_hash(@machtype, MACHINE_TYPE) & 0xff) << 16) |
-			((aout.bits_from_hash(@flags, FLAGS) & 0xff) << 24)
-		end
+		bitfield :word, 0 => :magic, 16 => :machtype, 24 => :flags
+		fld_enum(:magic, MAGIC)
+		fld_enum(:machtype, MACHINE_TYPE)
+		fld_bits(:flags, FLAGS)
+		words :text, :data, :bss, :syms, :entry, :trsz, :drsz
 
 		def decode(aout)
 			super
 
-			set_info(aout, @info)
-			@info = nil
 			case @magic
 			when 'OMAGIC', 'NMAGIC', 'ZMAGIC', 'QMAGIC'
 			else raise InvalidExeFormat, "Bad A.OUT signature #@magic"
@@ -57,8 +47,7 @@ class AOut < ExeFormat
 		def set_default_values(aout)
 			@magic ||= 'QMAGIC'
 			@machtype ||= 'PC386'
-			@flags ||= 0
-			@info ||= get_info(aout)
+			@flags ||= []
 			@text ||= aout.text.length + (@magic == 'QMAGIC' ? 32 : 0) if aout.text
 			@data ||= aout.data.length if aout.data
 
@@ -67,83 +56,33 @@ class AOut < ExeFormat
 	end
 
 	class Relocation < SerialStruct
-		attr_accessor :symbolnum, :pcrel, :length, :extern, :baserel, :jmptable, :relative, :rtcopy
-		words :address, :info
-
-		def get_info(aout)
-			(@symbolnum & 0xffffff) |
-			((pcrel    ? 1 : 0) << 24) |
-			(({1=>0, 2=>1, 4=>2, 8=>3}[@length] || 0) << 25) |
-			((extern   ? 1 : 0) << 27) |
-			((baserel  ? 1 : 0) << 28) |
-			((jmptable ? 1 : 0) << 29) |
-			((relative ? 1 : 0) << 30) |
-			((rtcopy   ? 1 : 0) << 31)
-		end
-		def set_info(aout, info)
-			@symbolnum = info & 0xffffff
-			@pcrel    = (info[24] == 1)
-			@length = 1 << ((info >> 25) & 3)
-			@extern   = (info[27] == 1)
-			@baserel  = (info[28] == 1)
-			@jmptable = (info[29] == 1)
-			@relative = (info[30] == 1)
-			@rtcopy   = (info[31] == 1)
-		end
-
-		def decode(aout)
-			super
-
-			set_info(aout, @info)
-			@info = nil
-		end
-
-		def set_default_values(aout)
-			@length ||= 4
-			@symbolnum ||= 0
-			@info ||= get_info(aout)
-
-			super
-		end
+		word :address
+		bitfield :word, 0 => :symbolnum, 24 => :pcrel, 25 => :length,
+ 			27 => :extern, 28 => :baserel, 29 => :jmptable, 30 => :relative, 31 => :rtcopy
+		fld_enum :length, 0 => 1, 1 => 2, 2 => 4, 3 => 8
+		fld_default :length, 4
 	end
 
 	class Symbol < SerialStruct
 		word :name_p
-		bytes :info, :other
+		bitfield :byte, 0 => :extern, 1 => :type, 5 => :stab
+		byte :other
 		half :desc
  		word :value
-		attr_accessor :extern, :type, :stab
 		attr_accessor :name
-
-		def get_info(aout)
-			(extern ? 1 : 0) |
-			((aout.int_from_hash(@type, SYMBOL_TYPE) & 0xf) << 1) |
-			((@stab & 7) << 5)
-		end
-		def set_info(aout, info)
-			@extern = (info[0] == 1)
-			@type = aout.int_to_hash((info >> 1) & 0xf, SYMBOL_TYPE)
-			@stab = (info >> 5) & 7
-		end
 
 		def decode(aout, strings=nil)
 			super(aout)
-			set_info(aout, @info)
-			@info = nil
 			@name = strings[@name_p...(strings.index(0, @name_p))] if strings
 		end
 
 		def set_default_values(aout, strings=nil)
-			if strings and @name and @name != ''
+			if strings and name and @name != ''
 				if not @name_p or strings[@name_p, @name.length] != @name
 					@name_p = strings.length
 					strings << @name << 0
 				end
 			end
-
-			@type ||= 0
-			@stab ||= 0
-			@info ||= get_info(aout)
 			super
 		end
 	end
