@@ -8,7 +8,7 @@ require 'metasm/main'
 require 'metasm/parse'
 require 'metasm/encode'
 require 'metasm/decode'
-require 'metasm/serialstruct'
+require 'metasm/exe_format/serialstruct'
 
 module Metasm
 class ExeFormat
@@ -145,11 +145,11 @@ class ExeFormat
 		encode_string(*a)
 		File.open(path, 'wb') { |fd| fd.write(@encoded.data) }
 	end
-
+module IntToHash
 	# converts a constant name to its numeric value using the hash
 	# {1 => 'toto', 2 => 'tata'}: 'toto' => 1, 42 => 42, 'tutu' => raise
 	def int_from_hash(val, hash)
-		val.kind_of?(Integer) ? val : hash.index(val) or raise "unknown constant #{val.inspect}"
+		val.kind_of?(Integer) ? hash.index(val) || val : hash.index(val) or raise "unknown constant #{val.inspect}"
 	end
 
 	# converts an array of flag constants to its numeric value using the hash
@@ -169,5 +169,11 @@ class ExeFormat
 	def bits_to_hash(val, hash)
 		(val.kind_of?(Integer) ? (hash.find_all { |k, v| val & k == k and val &= ~k }.map { |k, v| v } << val) : val.kind_of?(Array) ? val.map { |e| int_to_hash(e, hash) } : [int_to_hash(val, hash)]) - [0]
 	end
+end
+	include IntToHash
+end
+
+class SerialStruct
+	include ExeFormat::IntToHash
 end
 end
