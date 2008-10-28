@@ -73,7 +73,7 @@ class COFF < ExeFormat
 		4 => 'INT', 5 => 'LONG', 6 => 'FLOAT', 7 => 'DOUBLE', 8 => 'STRUCT',
 		9 => 'UNION', 10 => 'ENUM', 11 => 'MOE', 12 => 'BYTE', 13 => 'WORD',
 		14 => 'UINT', 15 => 'DWORD'}
-	# msb of symbol type, onlf 0x20 used
+	# msb of symbol type, only 0x20 used
 	SYMBOL_DTYPE = { 0 => 'NULL', 1 => 'POINTER', 2 => 'FUNCTION', 3 => 'ARRAY' }
 
 	DEBUG_TYPE = { 0 => 'UNKNOWN', 1 => 'COFF', 2 => 'CODEVIEW', 3 => 'FPO', 4 => 'MISC',
@@ -107,66 +107,69 @@ class COFF < ExeFormat
 
 	ORDINAL_REGEX = /^Ordinal_(\d+)$/
 
-	class Header
-		attr_accessor :machine, :num_sect, :time, :ptr_sym, :num_sym, :size_opthdr, :characteristics
+	class SerialStruct < SerialStruct
+		new_int_field :xword
+	end
+
+	class Header < SerialStruct
+		half :machine, 'I386', MACHINE
+		half :num_sect
+		words :time, :ptr_sym, :num_sym
+		half :size_opthdr
+		half :characteristics
+		fld_bits :characteristics, CHARACTERISTIC_BITS
 	end
 
 	# present in linked files (exe/dll/kmod)
-	class OptionalHeader
-		attr_accessor :signature, :link_ver_maj, :link_ver_min, :code_size, :idata_size, :udata_size, :entrypoint, :base_of_code,
-			:base_of_data,	# not in PE+
-			# NT-specific fields
-			:image_base, :sect_align, :file_align, :os_ver_maj, :os_ver_min, :img_ver_maj, :img_ver_min, :subsys_maj, :subsys_min, :reserved,
-			:image_size, :headers_size, :checksum, :subsystem, :dll_characts, :stack_reserve, :stack_commit, :heap_reserve, :heap_commit, :ldrflags, :numrva
+	class OptionalHeader < SerialStruct
+		half :signature, 'PE', SIGNATURE
+		bytes :link_ver_maj, :link_ver_min
+		words :code_size, :data_size, :udata_size, :entrypoint, :base_of_code
+		# base_of_data does not exist in PE+
+		new_field(:base_of_data, proc { |exe, hdr| exe.decode_word if @signature != 'PE+' }, proc { |exe, hdr, val| exe.encode_word(val) if @signature != 'PE+' }, 0)
+		# NT-specific fields
+		xword :image_base
+		words :sect_align, :file_align
+		halfs :os_ver_maj, :os_ver_min, :img_ver_maj, :img_ver_min, :subsys_maj, :subsys_min
+		words :reserved, :image_size, :headers_size, :checksum
+		half :subsystem, 0, SUBSYSTEM
+		half :dll_characts
+		fld_bits :dll_characts, DLL_CHARACTERISTIC_BITS
+		xwords :stack_reserve, :stack_commit, :heap_reserve, :heap_commit
+		words :ldrflags, :numrva
 	end
 
-	# contains the name of dynamic libraries required by the program, and the function to import from them
-	class ImportDirectory
-		attr_accessor :libname, :timestamp, :firstforwarder, :libname_p
-		attr_accessor :imports, :iat, :iat_p, :ilt_p
+	class Section < SerialStruct
+		str :name, 8
+		words :virtsize, :virtaddr, :rawsize, :rawaddr, :relocaddr, :linenoaddr
+		halfs :relocnr, :linenonr
+		word :characteristics
+		fld_bits :characteristics, SECTION_CHARACTERISTIC_BITS
 
-		class Import
-			attr_accessor :ordinal, :hint, :hintname_p, :name, :target, :thunk
-		end
+		attr_accessor :encoded
 	end
 
 	# lists the functions/addresses exported to the OS (pendant of ImportDirectory)
-	class ExportDirectory
-		attr_accessor :reserved, :timestamp, :ver_maj, :ver_min, :libname, :ordinal_base, :libname_p
-		attr_accessor :exports
+	class ExportDirectory < SerialStruct
+		words :reserved, :timestamp
+		halfs :version_major, :version_minor
+		words :libname_p, :ordinal_base, :num_exports, :num_names, :func_p, :names_p, :ord_p
+		attr_accessor :libname, :exports
 
 		class Export
 			attr_accessor :forwarder_lib, :forwarder_ordinal, :forwarder_name, :target, :name_p, :name, :ordinal
 		end
 	end
-
-	# array of relocations to apply to an executable file when it is loaded at an address that is not its preferred_base_address
-	class RelocationTable
-		attr_accessor :base_addr
-		attr_accessor :relocs
-
-		class Relocation
-			attr_accessor :offset, :type
-		end
-	end
-
-	# section table information, + raw section content (EncodedData)
-	class Section
-		attr_accessor :name, :virtsize, :virtaddr, :rawsize, :rawaddr, :relocaddr, :linenoaddr, :relocnr, :linenonr, :characteristics
-		attr_accessor :encoded
-	end
 	
-	# the 'load configuration' directory
-	class LoadConfig
-		attr_accessor :signature, :timestamp, :major_version, :minor_version, :globalflags, :critsec_timeout,
-			:decommitblock, :decommittotal, :lockpfxtable, :maxalloc, :maxvirtmem, :process_affinity_mask, :process_heap_flags,
-			:servicepackid, :reserved, :editlist,
-			:security_cookie, :sehtable_p, :sehcount
-		attr_accessor :safeseh
-	end
+	# contains the name of dynamic libraries required by the program, and the function to import from them
+	class ImportDirectory < SerialStruct
+		words :ilt_p, :timestamp, :firstforwarder, :libname_p, :iat_p
+		fld_default :firstforwarder, 0xffff_ffff
+		attr_accessor :libname, :imports, :iat
 
-	class TLSDirectory
-		attr_accessor :start_va, :end_va, :index_addr, :callback_p, :zerofill_sz, :characteristics, :callbacks
+		class Import
+			attr_accessor :ordinal, :hint, :hintname_p, :name, :target, :thunk
+		end
 	end
 	
 	# tree-like structure, holds all misc data the program might need (icons, cursors, version information)
@@ -174,11 +177,9 @@ class COFF < ExeFormat
 	#  I resource type (icon/cursor/etc, see +TYPES+)
 	#  II resource id (icon n1, icon 'toto', ...)
 	#  III language-specific version (icon n1 en, icon n1 en-dvorak...)
-	# for the icon, the one that appears in the explorer is
-	#  (NT) the one with the lowest ID
-	#  (98) the first to appear in the table
-	class ResourceDirectory
-		attr_accessor :characteristics, :timestamp, :major_version, :minor_version
+	class ResourceDirectory < SerialStruct
+		words :characteristics, :timestamp
+		halfs :major_version, :minor_version, :nr_names, :nr_id
 		attr_accessor :entries
 		attr_accessor :curoff_label	# internal use, in encoder
 
@@ -187,7 +188,59 @@ class COFF < ExeFormat
 				:id, :subdir_p, :subdir, :dataentry_p,
 				:data_p, :data, :codepage, :reserved
 		end
+	end
 
+	# array of relocations to apply to an executable file
+	# when it is loaded at an address that is not its preferred_base_address
+	class RelocationTable < SerialStruct
+		word :base_addr
+		attr_accessor :relocs
+
+		class Relocation < SerialStruct
+			bitfield :half, 0 => :offset, 12 => :type
+			fld_enum :type, BASE_RELOCATION_TYPE
+		end
+	end
+
+	class DebugDirectory < SerialStruct
+		words :characteristics, :timestamp
+		halfs :major_version, :minor_version
+		words :type, :size_of_data, :addr, :pointer
+		fld_enum :type, DEBUG_TYPE
+	end
+
+	class TLSDirectory < SerialStruct
+		xwords :start_va, :end_va, :index_addr, :callback_p
+ 		words :zerofill_sz, :characteristics
+
+		attr_accessor :callbacks
+	end
+
+	# the 'load configuration' directory (used for SafeSEH)
+	class LoadConfig < SerialStruct
+		words :signature, :timestamp
+		halfs :major_version, :minor_version
+		words :globalflags, :critsec_timeout
+		# lockpfxtable is an array of VA of LOCK prefixes, to be nopped on singleproc machines (!)
+		xwords :decommitblock, :decommittotal, :lockpfxtable, :maxalloc, :maxvirtmem, :process_affinity_mask
+		word :process_heap_flags
+		halfs :service_pack_id, :reserved
+		xwords :editlist, :security_cookie, :sehtable_p, :sehcount
+
+		attr_accessor :safeseh
+	end
+
+	class DelayImportDirectory < SerialStruct
+		words :attributes, :libname_p, :handle_p, :iat_p, :int_p, :biat_p, :uiat_p, :timestamp
+
+		attr_accessor :libname
+	end
+
+	
+	# for the icon, the one that appears in the explorer is
+	#  (NT) the one with the lowest ID
+	#  (98) the first to appear in the table
+	class ResourceDirectory
 		def to_hash(depth=0)
 			map =	case depth
 				when 0; TYPE
@@ -270,13 +323,12 @@ class COFF < ExeFormat
 		end
 	end
 
-	attr_accessor :header, :optheader, :directory, :sections, :endianness, :export, :imports,
-		:relocations, :resource, :certificates, :delayimports, :loadconfig, :tls
+	attr_accessor :header, :optheader, :directory, :sections, :endianness,
+		:export, :imports, :resource, :certificates, :relocations, :debug, :tls, :loadconfig, :delayimports
 
 	def initialize(cpu=nil)
 		@directory = {}	# DIRECTORIES.key => [rva, size]
 		@sections = []
-		@export = @imports = @relocations = @resource = @certificates = @delayimports = nil
 		@endianness = cpu ? cpu.endianness : :little
 		@header = Header.new
 		@optheader = OptionalHeader.new
@@ -285,21 +337,35 @@ class COFF < ExeFormat
 		when Ia32; 'I386'
 		else 'UNKNOWN'
 		end
-		super(cpu)
+
+		super
 	end
 end
 
 # the COFF archive file format
-# may be used in .lib files (they hold binary import information for libraries)
+# maybe used in .lib files (they hold binary import information for libraries)
 class COFFArchive < ExeFormat
-	class Member
-		attr_accessor :name, :date, :uid, :gid, :mode, :size, :eoh
+	class Member < SerialStruct
+		str :name, 16
+		str :date, 12
+		str :uid, 6
+		str :gid, 6
+		str :mode, 8
+		str :size, 10
+		str :eoh, 2
+
 		attr_accessor :offset
 	end
 
-	class ImportHeader
-		attr_accessor :sig1, :sig2, :version, :machine, :timestamp, :size_of_data, :hint, :type, :name_type, :reserved
-		attr_accessor :symname, :libname
+	class ImportHeader < SerialStruct
+		halfs :sig1, :sig2, :version, :machine
+		words :timestamp, :size_of_data
+		half :hint
+		bitfield :half, 0 => :reserved, 11 => :name_type, 14 => :type
+		#fld_enum :type, IMPORT_TYPE
+		#fld_enum :name_type, NAME_TYPE
+		strz :symname
+		strz :libname
 	end
 
 	attr_accessor :members, :signature, :first_linker, :second_linker

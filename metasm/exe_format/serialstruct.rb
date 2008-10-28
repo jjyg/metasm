@@ -62,7 +62,8 @@ class SerialStruct
 		       	ed = exe.encoded
 			ed.read(ed.data.index(0, ed.ptr)+1).chop
 		}
-		new_field(name, d, proc { |exe, me, val| val + 0.chr }, defval)
+		e = proc { |exe, me, val| val + 0.chr }
+		new_field(name, d, e, defval)
 	end
 
 	# field access
