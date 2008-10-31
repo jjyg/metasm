@@ -560,14 +560,16 @@ class Ia32
 			}
 		end
 		if dasm.funcs_stdabi
-			if b[:ebp] == Expression::Unknown
-				puts "update_func_bind: #{Expression[faddr]} has ebp -> unknown, presume it is preserved" if $DEBUG
-				b[:ebp] = Expression[:ebp]
-			end
 			if b[:esp] == Expression::Unknown and not f.btbind_callback
 				puts "update_func_bind: #{Expression[faddr]} has esp -> unknown, use dynamic callback" if $DEBUG
 				f.btbind_callback = disassembler_default_btbind_callback
 			end
+			[:ebp, :ebx, :esi, :edi].each { |reg|
+				if b[reg] == Expression::Unknown
+					puts "update_func_bind: #{Expression[faddr]} has #{reg} -> unknown, presume it is preserved" if $DEBUG
+					b[reg] = Expression[reg]
+				end
+			}
 		else
 			if b[:esp] != prevesp and not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer)
 				puts "update_func_bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if $DEBUG
@@ -712,7 +714,7 @@ class Ia32
 			off = Expression[[:esp, :+, s_off], :-, e_expr.target].reduce
 			case off
 			when Expression
-                                bd = off.externals.grep(/^stackoff=/).inject({}) { |bd, xt| bd.update xt => @size/8 }
+                                bd = off.externals.grep(/^autostackoffset_/).inject({}) { |bd, xt| bd.update xt => @size/8 }
                                 bd.delete s_off
                                 # all __cdecl
                                 off = @size/8 if off.bind(bd).reduce == @size/8
