@@ -33,7 +33,7 @@ EOS
 
 	def test_comment
 		p = load <<'EOS'
-foo /* bar * /*/ baz
+foo /*/ bar ' " * /*/ baz
 kikoo // lol \
 asv
 EOS
@@ -46,28 +46,31 @@ EOS
 		assert_equal %w[foo baz kikoo], toks
 	end
 
+	def helper_preparse(text, result)
+		p = load(text, caller.first)
+		yield p if block_given?
+		txt = ''
+		until p.eos? or not t = p.readtok
+			txt << t.raw
+	       	end
+		assert_equal(result, txt.strip)
+	end
+
 	def test_preproc
 		# ignores eol/space at begin/end
-		t_preparse = proc { |text, result|
-			p = load text, caller.first
-			txt = ''
-			t = nil
-			txt << t.raw until p.eos? or not t = p.readtok
-			assert_equal(result, txt.strip)
-		}
-		t_preparse[<<EOS, '']
+		helper_preparse(<<EOS, '')
 #if 0  // test # as first char
 toto
 #endif
 EOS
-		t_preparse[<<EOS, 'coucou']
+		helper_preparse(<<EOS, 'coucou')
 #define tutu
 #if defined ( tutu )
 tutu coucou
 #endif
 EOS
-		t_preparse['a #define b', 'a #define b']
-		t_preparse[<<EOS, "// true !\nblu"]
+		helper_preparse('a #define b', 'a #define b')
+		helper_preparse(<<EOS, "// true !\nblu")
 #ifdef toto // this is false
 bla
 #elif .2_3e-4 > 2 /* this one too */
@@ -80,7 +83,7 @@ ble
 bli
 #endif
 EOS
-		t_preparse[<<'EOS', 'ab#define x']
+		helper_preparse(<<'EOS', 'ab#define x')
 a\
 b\
 #define x
@@ -90,52 +93,52 @@ EOS
 		assert_not_equal('__DATE__', p.readtok.raw) ; p.readtok
 		assert_not_equal('__TIME__', p.readtok.raw)
 
-		t_preparse[<<EOS, 'toto 1 toto 12 toto 3+(3-2) otot hoho']
+		helper_preparse(<<EOS, 'toto 1 toto 12 toto 3+(3-2) otot hoho')
 #define azer(k) 12
 # define xxx azer(7)
 #define macro(a, b, c) toto a toto b toto c otot
 macro(1, xxx, 3+(3-2)) hoho
 EOS
-		t_preparse[<<EOS, 'c']
+		helper_preparse(<<EOS, 'c')
 #define a b
 #define d c
 #define c d
 #define b c
 a
 EOS
-		t_preparse[<<EOS, 'b']
+		helper_preparse(<<EOS, 'b')
 #define b c
 #define a b
 #undef b
 a
 EOS
-		t_preparse[<<EOS, 'toto tutu huhu()']
+		helper_preparse(<<EOS, 'toto tutu huhu()')
 #define toto() abcd
 #define tata huhu
 toto tutu tata()
 EOS
-		t_preparse[<<EOS, '"haha"']
+		helper_preparse(<<EOS, '"haha"')
 #define d(a) #a
 d(haha)
 EOS
-		t_preparse[<<EOS, '{']
+		helper_preparse(<<EOS, '{')
 #define toto(a) a
 toto({)
 EOS
-		t_preparse[<<EOS, 'x(, 1)']
+		helper_preparse(<<EOS, 'x(, 1)')
 #define d(a,b) x(a, b)
 d(,1)
 EOS
-		t_preparse[<<EOS, '"foo" "4"']
+		helper_preparse(<<EOS, '"foo" "4"')
 #define str(x) #x
 #define xstr(x) str(x)
 #define foo 4
 str(foo) xstr(foo)
 EOS
-		Metasm::Preprocessor.include_search_path << '.'
 		begin
 			File.open('tests/prepro_testinclude.asm', 'w') { |fd| fd.puts '#define out in' }
-			t_preparse[<<EOS, 'in']
+			helper_preparse(<<EOS, 'in')
+#pragma include_path "."
 #include <tests/prepro_testinclude.asm>
 out
 EOS
@@ -143,6 +146,23 @@ EOS
 			File.unlink('tests/prepro_testinclude.asm') rescue nil
 		end
 
+		helper_preparse(<<EOS, 'in') { |p| p.hooked_include['bla.h'] = '#define out in' }
+#include <bla.h>
+out
+EOS
+		helper_preparse(<<EOS, 'in') { |p| p.define('out', 'in') }
+out
+EOS
+		helper_preparse(<<EOS, 'in') { |p| p.define_strong('out', 'in') }
+out
+EOS
+		helper_preparse(<<EOS, 'in') { |p| p.define_strong('out', 'in') }
+#define out poil
+out
+EOS
+		helper_preparse(<<EOS, 'in') { |p| p.define('out', 'in') ; p.define_weak('out', 'poil') }
+out
+EOS
 		p = load <<EOS
 #define cct(a, b) a ## _ ## b
 cct(toto, tutu)
@@ -151,7 +171,7 @@ EOS
 		assert_equal('toto_tutu', tok.raw)	# check we get only 1 token back
 
 		# assert_outputs_a_warning ?
-		t_preparse[<<EOS, <<EOS.strip]
+		helper_preparse(<<EOS, <<EOS.strip)
 #define va1(a, b...) toto(a, ##b)
 #define va3(a, ...)  toto(a, __VA_ARGS__)
 va1(1, 2);
@@ -167,18 +187,18 @@ toto(1, 2);
 toto(1, );
 EOS
 
-		t_preparse[<<EOS, "#define a c\n#define b d\na b"]
+		helper_preparse(<<EOS, "#define a c\n#define b d\na b")
 #define x(z) z
 #define y #define
 x(#)define a c
 y b d
 a b
 EOS
-		t_preparse["#define a(a) a(a)\na(1)", '1(1)']
-		t_preparse["#if 0\n#endif", '']
-		t_preparse["#if 0U\n#endif", '']
-		t_preparse["#if 0L\n#endif", '']
-		t_preparse["#if 0LLU\n#endif", '']
+		helper_preparse("#define a(a) a(a)\na(1)", '1(1)')
+		helper_preparse("#if 0\n#endif", '')
+		helper_preparse("#if 0U\n#endif", '')
+		helper_preparse("#if 0L\n#endif", '')
+		helper_preparse("#if 0LLU\n#endif", '')
 	end
 
 	def test_floats
