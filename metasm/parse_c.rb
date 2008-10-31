@@ -72,6 +72,11 @@ module C
 						end
 					elsif tok.type == :punct and tok.raw == '('
 						nest += 1
+					elsif nest == 0 and tok.type == :punct and tok.raw == ','
+						raise tok || parser if not allow_declspec and %w[inline stdcall fastcall cdecl naked].include? attrib
+						(@attributes ||= []) << attrib
+						attrib = ''
+						next
 					end
 					attrib << tok.raw
 				end
@@ -820,6 +825,11 @@ module C
 				@lexer.define_weak('__ptr32')	# needed with msc_ver 1300, don't understand their use
 				@lexer.define_weak('__ptr64')
 			when 'prepare_gcc'
+				@lexer.define_weak('__GNUC__', 2)	# otherwise __attribute__ is defined to void..
+				@lexer.define_weak('__STDC__')
+				@lexer.define_weak('__const', 'const')
+				@lexer.define_weak('__signed', 'signed')
+				@lexer.define_weak('__volatile', 'volatile')
 				@lexer.hooked_include['stddef.h'] = <<EOH 
 #if !defined (_STDDEF_H) || defined(__need_NULL) || defined(__need_ptrdiff_t) || defined(__need_size_t) || defined(__need_wint_t)
 #if !defined(__need_NULL) && !defined(__need_ptrdiff_t) && !defined(__need_size_t) && !defined(__need_wint_t)
@@ -1546,6 +1556,12 @@ EOH
 				parse_attributes(parser)	# should be type.attrs, but this is should be more compiler-compatible
 			elsif tok and tok.type == :punct and tok.raw == '('
 				# function prototype
+				# void __attribute__((noreturn)) func() => attribute belongs to func
+				if @type and @type.attributes.to_a.include? 'noreturn'
+					@type.attributes.delete 'noreturn'
+					@type.attributes = nil if @type.attributes.empty?
+					(@attributes ||= []) << 'noreturn'
+				end
 				t = self
 				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
 				t.type = Function.new t.type
