@@ -563,10 +563,22 @@ class ELF
 		when Ia32
 			old_cp = d.c_parser
 			d.c_parser = nil
-			d.parse_c 'void *dlsym(int, char *);'
-			d.parse_c 'void __libc_start_main(void(*)(), int, int, void(*)(), void(*)()) __attribute__((noreturn));'
-			dls  = @cpu.decode_c_function_prototype(d.c_parser, 'dlsym')
-			main = @cpu.decode_c_function_prototype(d.c_parser, '__libc_start_main')
+			d.parse_c <<EOC
+void *dlsym(int, char *);	// has special callback
+// gcc's entrypoint, need pointers to reach main exe code (last callback)
+void __libc_start_main(void(*)(), int, int, void(*)(), void(*)()) __attribute__((noreturn));
+// standard noreturn, optimized by gcc
+void __attribute__ ((noreturn)) exit(int);
+void _exit __attribute__((noreturn))(int);
+void abort(void) __attribute__((noreturn));
+void __stack_chk_fail __attribute__((noreturn))(void);
+EOC
+			d.function[Expression['dlsym']] = dls = @cpu.decode_c_function_prototype(d.c_parser, 'dlsym')
+			d.function[Expression['__libc_start_main']] = @cpu.decode_c_function_prototype(d.c_parser, '__libc_start_main')
+			d.function[Expression['exit']] = @cpu.decode_c_function_prototype(d.c_parser, 'exit')
+			d.function[Expression['_exit']] = @cpu.decode_c_function_prototype(d.c_parser, '_exit')
+			d.function[Expression['abort']] = @cpu.decode_c_function_prototype(d.c_parser, 'abort')
+			d.function[Expression['__stack_chk_fail']] = @cpu.decode_c_function_prototype(d.c_parser, '__stack_chk_fail')
 			d.c_parser = old_cp
 			dls.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
 				sz = @cpu.size/8
@@ -577,8 +589,6 @@ class ELF
 				end
 				bind
 			}
-			d.function[Expression['dlsym']] = dls
-			d.function[Expression['__libc_start_main']] = main
 			df = d.function[:default] = @cpu.disassembler_default_func
 			df.backtrace_binding[:esp] = Expression[:esp, :+, 4]
 			df.btbind_callback = nil
