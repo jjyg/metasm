@@ -56,12 +56,9 @@ class MIPS
 			r = (val >> @fields_shift[f]) & @fields_mask[f]
 			# XXX do that cleanly (Expr.decode_imm)
 			case f
-			when :sa, :i16, :it
-				((r >> 15) == 1) ? (r - (1 << 16)) : r
-			when :i20
-				((r >> 19) == 1) ? (r - (1 << 20)) : r
-			when :i26
-				((r >> 25) == 1) ? (r - (1 << 26)) : r
+			when :sa, :i16, :it; r = Expression.make_signed(r, 16)
+			when :i20; r = Expression.make_signed(r, 20)
+			when :i26; r = Expression.make_signed(r, 26)
 			else r
 			end
 		}

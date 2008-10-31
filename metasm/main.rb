@@ -334,6 +334,14 @@ class Expression < ExpressionType
 		end
 	end
 
+	# casts an unsigned value to a two-complement signed if the sign bit is set
+	def self.make_signed(val, bitlength)
+		if val.kind_of? Integer
+			val = val - (1 << bitlength) if val >> (bitlength - 1) == 1
+		end
+		val
+	end
+
 	# the operator (symbol)
 	attr_accessor :op
 	# the lefthandside expression (nil for unary expressions)
