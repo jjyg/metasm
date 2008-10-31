@@ -44,6 +44,8 @@ class DisasmWidget < Gtk::VBox
 			true
 		}
 
+		@dasm.callback_prebacktrace ||= proc { Gtk.main_iteration_do(false) }
+
 		#pack_start iconbar, dasm_working_flag ?
 		
 		@notebook = Gtk::Notebook.new

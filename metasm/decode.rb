@@ -619,6 +619,8 @@ class Disassembler
 	# this method must return the address to append ; or nil if no address is to be appended.
 	# it is invoked with arguments (target address found, address of origininating instruction)
 	attr_accessor :callback_newaddr
+	# callback called before each backtrace that may take some time
+	attr_accessor :callback_prebacktrace
 
 	@@backtrace_maxblocks = 50
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
@@ -945,7 +947,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			# decode instruction
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
 			if not di = @cpu.decode_instruction(block.edata, di_addr)
-				puts "unknown instruction to decode at #{Expression[di_addr]}" if $VERBOSE
+				puts "#{block.edata.ptr >= block.edata.length ? "end of section reached" : "unknown instruction"} at #{Expression[di_addr]}" if $VERBOSE
 				return
 			end
 
@@ -1282,6 +1284,8 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 			btt.detached = true if detached
 			di.block.backtracked_for |= [btt]
 		end
+
+		@callback_prebacktrace[] if callback_prebacktrace
 
 		# list of Expression/Integer
 		result = []
