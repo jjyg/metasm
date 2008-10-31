@@ -569,7 +569,7 @@ class LinDebug
 				when :data; @dataptr += 16*(@win_data_height-1)
 				when :code
 					@codeptr ||= @rs.regs_cache['eip']
-					(@win_code_height-1).times { @codeptr += (((o = @rs.mnemonic_di(@codeptr).bin_length) == 0) ? 1 : o) }
+					(@win_code_height-1).times { @codeptr += ((o = @rs.mnemonic_di(@codeptr)) ? [o.bin_length, 1].max : 1) }
 				end
 			when ?\t
 				if not @promptbuf[0, @promptpos].include? ' '
