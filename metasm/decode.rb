@@ -59,6 +59,13 @@ class DecodedInstruction
 		@comment ||= []
 		@comment |= [c]
 	end
+
+	# returns a copy of the DecInstr, with duplicated #instruction ("deep_copy")
+	def dup
+		new = super
+		new.instruction = @instruction.dup
+		new
+	end
 end
 
 # holds information on a backtracked expression near begin and end of instruction blocks (#backtracked_for)
