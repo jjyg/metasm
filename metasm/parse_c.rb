@@ -726,7 +726,12 @@ module C
 			sanity_checks
 			self
 		end
-	
+
+		# parses a C file
+		def parse_file(file)
+			parse(File.read(file), file)
+		end
+
 		attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
 		def initialize(lexer = nil, model=:ilp32)
 			@lexer = lexer || Preprocessor.new
@@ -830,6 +835,7 @@ module C
 				@lexer.define_weak('__const', 'const')
 				@lexer.define_weak('__signed', 'signed')
 				@lexer.define_weak('__volatile', 'volatile')
+				@lexer.nodefine_strong('__REDIRECT_NTH')	# booh gnu
 				@lexer.hooked_include['stddef.h'] = <<EOH 
 #if !defined (_STDDEF_H) || defined(__need_NULL) || defined(__need_ptrdiff_t) || defined(__need_size_t) || defined(__need_wint_t)
 #if !defined(__need_NULL) && !defined(__need_ptrdiff_t) && !defined(__need_size_t) && !defined(__need_wint_t)

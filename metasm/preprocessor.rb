@@ -495,6 +495,11 @@ class Preprocessor
 		self
 	end
 
+	# calls #feed on the content of the file
+	def feed_file(filename)
+		feed(File.read(filename), filename)
+	end
+
 	Trigraph = {	?= => ?#, ?) => ?], ?! => ?|,
 			?( => ?[, ?' => ?^, ?> => ?},
 			?/ => ?\\,?< => ?{, ?- => ?~ }
@@ -766,6 +771,11 @@ class Preprocessor
 	def define_strong(name, value=nil, from=caller.first)
 		(@defined_strong ||= []) << name
 		define(name, value, from)
+	end
+
+	# does not define name, and prevent it from being defined later
+	def nodefine_strong(name)
+		(@defined_strong ||= []) << name
 	end
 
 	# handles #directives
