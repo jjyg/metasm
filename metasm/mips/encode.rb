@@ -30,17 +30,13 @@ class MIPS
 
 		op.args.zip(instr.args).each { |sym, arg|
 			case sym
-			when :rs, :rt, :rd
-				set_field[sym, arg.i]
-			when :ft
+			when :rs, :rt, :rd, :ft
 				set_field[sym, arg.i]
 			when :rs_i16
 				set_field[:rs, arg.base.i]
 				val, mask, shift = arg.offset, @fields_mask[:i16], @fields_shift[:i16]
-			when :sa, :i16, :i20
+			when :sa, :i16, :i20, :i26
 				val, mask, shift = arg, @fields_mask[sym], @fields_shift[sym]
-			when :i26
-				val, mask, shift = Expression[arg, :>>, 2], @fields_mask[sym], @fields_shift[sym]
 			end
 		}
 
