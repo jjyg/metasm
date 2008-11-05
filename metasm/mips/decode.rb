@@ -92,7 +92,42 @@ class MIPS
 		di
 	end
 
-	def backtrace_binding(di)
+	# hash opname => proc { |di, *sym_args| binding }
+	attr_accessor :backtrace_binding
+
+	def init_backtrace_binding
+		@backtrace_binding ||= {}
+		opcode_list.map { |ol| ol.name }.uniq.each { |op|
+			binding = case op
+			when 'nop', 'j', 'jr'; proc { |di, *a| {} }
+			when 'lui'; proc { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
+			when 'add', 'addu', 'addi', 'addiu'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :+, a2] } }	# XXX addiu $sp, -40h should be addiu $sp, 0xffc0 from the books, but..
+			when 'sub', 'subu'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :-, a2] } }
+			when 'slt', 'slti'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :<, a2] } }
+			when 'and', 'andi'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :&, a2] } }
+			when 'or', 'ori';   proc { |di, a0, a1, a2|   { a0 => Expression[a1, :|, a2] } }
+			when 'nor'; proc { |di, a0, a1, a2| { a0 => Expression[:~, [a1, :|, a2]] } }
+			when 'xor'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :^, a2] } }
+			when 'sll'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :>>, a2] } }
+			when 'srl', 'sra'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :<<, a2] } }	# XXX sign-extend
+			when 'lw';        proc { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'sw';        proc { |di, a0, a1| { a1 => Expression[a0] } }
+			when 'lh', 'lhu'; proc { |di, a0, a1| { a0 => Expression[a1] } }	# XXX sign-extend
+			when 'sh';        proc { |di, a0, a1| { a1 => Expression[a0] } }
+			when 'lb', 'lbu'; proc { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'sb';        proc { |di, a0, a1| { a1 => Expression[a0] } }
+			when 'mfhi'; proc { |di, a0| { a0 => Expression[:hi] } }
+			when 'mflo'; proc { |di, a0| { a0 => Expression[:lo] } }
+			when 'mult'; proc { |di, a0, a1| { :hi => Expression[[a0, :*, a1], :>>, 32], :lo => Expression[[a0, :*, a1], :&, 0xffff_ffff] } }
+			when 'div';  proc { |di, a0, a1| { :hi => Expression[a0, :%, a1], :lo => Expression[a0, :/, a1] } }
+			when 'jal', 'jalr'; proc { |di, a0| { :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] } }
+			end
+
+			@backtrace_binding[op] ||= binding if binding
+		}
+	end
+
+	def get_backtrace_binding(di)
 		a = di.instruction.args.map { |arg|
 			case arg
 			when Memref; arg.symbolic(di.address)
@@ -101,32 +136,10 @@ class MIPS
 			end
 		}
 
-		binding =
-		case op = di.opcode.name
-		when 'nop', 'j', 'jr'; {}
-		when 'lui'; { a[0] => Expression[a[1], :<<, 16] }
-		when 'add', 'addu', 'addi', 'addiu'; { a[0] => Expression[a[1], :+, a[2]] }	# XXX addiu $sp, -40h should be addiu $sp, 0xffc0 from the books, but..
-		when 'sub', 'subu'; { a[0] => Expression[a[1], :-, a[2]] }
-		when 'slt', 'slti'; { a[0] => Expression[a[1], :<, a[2]] }
-		when 'and', 'andi'; { a[0] => Expression[a[1], :&, a[2]] }
-		when 'or', 'ori';   { a[0] => Expression[a[1], :|, a[2]] }
-		when 'nor';   { a[0] => Expression[:~, [a[1], :|, a[2]]] }
-		when 'xor';   { a[0] => Expression[a[1], :^, a[2]] }
-		when 'sll';   { a[0] => Expression[a[1], :>>, a[2]] }
-		when 'srl', 'sra'; { a[0] => Expression[a[1], :<<, a[2]] }	# XXX sign-extend
-		when 'lw';    { a[0] => Expression[a[1]] }
-		when 'sw';    { a[1] => Expression[a[0]] }
-		when 'lh', 'lhu'; { a[0] => Expression[a[1]] }	# XXX sign-extend
-		when 'sh';        { a[1] => Expression[a[0]] }
-		when 'lb', 'lbu'; { a[0] => Expression[a[1]] }
-		when 'sb';        { a[1] => Expression[a[0]] }
-		when 'mfhi';  { a[0] => Expression[:hi] }
-		when 'mflo';  { a[0] => Expression[:lo] }
-		when 'mult';  { :hi => Expression[[a[0], :*, a[1]], :>>, 32], :lo => Expression[[a[0], :*, a[1]], :&, 0xffff_ffff] }
-		when 'div';   { :hi => Expression[a[0], :%, a[1]], :lo => Expression[a[0], :/, a[1]] }
-		when 'jalr';  { :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] }
+		binding = if binding = @backtrace_binding[di.instruction.opname]
+			binding[di, *a]
 		else
-			if op[0] == ?b and di.opcode.props[:setip]
+			if di.instruction.opname[0] == ?b and di.opcode.props[:setip]
 			else
 				puts "unknown instruction to emu #{di}" if $VERBOSE
 			end

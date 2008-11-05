@@ -513,7 +513,7 @@ class CPU
 	#  (the value of :eax after 'inc eax' is the value of :eax before plus 1)
 	# may return Expression::Unknown
 	def backtrace_emu(di, value)
-		Expression[Expression[value].bind(di.backtrace_binding ||= backtrace_binding(di)).reduce]
+		Expression[Expression[value].bind(di.backtrace_binding ||= get_backtrace_binding(di)).reduce]
 	end
 
 	# returns a list of Expressions/Integer to backtrace to find an execution target
@@ -527,7 +527,7 @@ class CPU
 
 	# returns a list [addr, len]
 	def get_xrefs_r(dasm, di)
-		b = di.backtrace_binding ||= backtrace_binding(di)
+		b = di.backtrace_binding ||= get_backtrace_binding(di)
 		r = b.values
 		x = get_xrefs_x(dasm, di)
 		r |= x if x
@@ -536,7 +536,7 @@ class CPU
 
 	# returns a list [addr, len]
 	def get_xrefs_w(dasm, di)
-		b = di.backtrace_binding ||= backtrace_binding(di)
+		b = di.backtrace_binding ||= get_backtrace_binding(di)
 		w = b.keys
 		(w.grep(Indirection) + w.grep(Expression).map { |e| e.expr_indirections }.flatten).map { |e| [e.target, e.len] }
 	end

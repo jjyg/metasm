@@ -276,7 +276,244 @@ class Ia32
 		end
 	end
 
-	def backtrace_binding(di)
+	# hash opcode_name => proc { |dasm, di, *symbolic_args| instr_binding }
+	attr_accessor :backtrace_binding
+
+	# populate the @backtrace_binding hash with default values
+	def init_backtrace_binding
+		@backtrace_binding ||= {}
+
+		opsz = proc { |di|
+			ret = @size
+			ret = 48 - ret if di.instruction.prefix and di.instruction.prefix[:opsz]
+			ret
+		}
+		mask = proc { |di| (1 << opsz[di])-1 }	# 32bits => 0xffff_ffff
+		sign = proc { |v, di| Expression[[[v, :&, mask[di]], :>>, opsz[di]-1], :'!=', 0] }
+		
+    		opcode_list.map { |ol| ol.name }.uniq.sort.each { |op|
+			binding = case op
+			when 'mov', 'movsx', 'movzx', 'movd', 'movq'; proc { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'lea'; proc { |di, a0, a1| { a0 => a1.target } }
+			when 'xchg'; proc { |di, a0, a1| { a0 => Expression[a1], a1 => Expression[a0] } }
+			when 'add', 'sub', 'or', 'xor', 'and', 'pxor', 'adc', 'sbb'
+				proc { |di, a0, a1|
+					e_op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^, 'pxor' => :^, 'adc' => :+, 'sbb' => :- }[op]
+					ret = Expression[a0, e_op, a1]
+					ret = Expression[ret, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
+					# optimises :eax ^ :eax => 0
+					# avoid hiding memory accesses (to not hide possible fault)
+					ret = Expression[ret.reduce] if not a0.kind_of? Indirection
+					{ a0 => ret }
+				}
+			when 'inc'; proc { |di, a0| { a0 => Expression[a0, :+, 1] } }
+			when 'dec'; proc { |di, a0| { a0 => Expression[a0, :-, 1] } }
+			when 'not'; proc { |di, a0| { a0 => Expression[a0, :^, mask[di]] } }
+			when 'neg'; proc { |di, a0| { a0 => Expression[:-, a0] } }
+			when 'rol', 'ror'
+				proc { |di, a0, a1|
+					e_op = (op[2] == ?r ? :>> : :<<)
+					inv_op = {:<< => :>>, :>> => :<< }[e_op]
+					sz = [a1, :%, opsz[di]]
+					isz = [[opsz[di], :-, a1], :%, opsz[di]]
+					# ror a, b  =>  (a >> b) | (a << (32-b))
+					{ a0 => Expression[[[a0, e_op, sz], :|, [a0, inv_op, isz]], :&, mask[di]] }
+				}
+			when 'sar', 'shl', 'sal'; proc { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, opsz[di]]] } }
+			when 'shr'; proc { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz[di]]] } }
+			when 'cdq'; proc { |di| { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz[di]-1], :&, 1]] } }
+			when 'push', 'push.i16'
+				proc { |di, a0| { :esp => Expression[:esp, :-, opsz[di]/8],
+      					Indirection[:esp, opsz[di]/8, di.address] => Expression[a0] } }
+			when 'pop'
+				proc { |di, a0| { :esp => Expression[:esp, :+, opsz[di]/8],
+      					a0 => Indirection[:esp, opsz[di]/8, di.address] } }
+			when 'pushfd'
+				# TODO Unknown per bit
+				proc { |di|
+					efl = Expression[0x202]
+					bts = proc { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
+					bts[0, :eflag_c]
+					bts[6, :eflag_z]
+					bts[7, :eflag_s]
+					bts[11, :eflag_o]
+					{ :esp => Expression[:esp, :-, opsz[di]/8], Indirection[:esp, opsz[di]/8, di.address] => efl }
+			       	}
+			when 'popfd'
+				proc { |di| bt = proc { |pos| Expression[[Indirection[:esp, opsz[di]/8, di.address], :>>, pos], :&, 1] }
+					{ :esp => Expression[:esp, :+, opsz[di]/8], :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7], :eflag_o => bt[11] } }
+			when 'sahf'
+				proc { |di| bt = proc { |pos| Expression[[:eax, :>>, pos], :&, 1] }
+					{ :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7] } }
+			when 'lahf'
+				proc { |di|
+					efl = Expression[2]
+					bts = proc { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
+					bts[0, :eflag_c] #bts[2, :eflag_p] #bts[4, :eflag_a]
+					bts[6, :eflag_z]
+					bts[7, :eflag_s]
+					{ :eax => efl }
+				}
+			when 'pushad'
+				proc { |di|
+					ret = {}
+					st_off = 0
+					[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
+						ret[Indirection[Expression[:esp, :+, st_off].reduce, opsz[di]/8, di.address]] = Expression[r]
+						st_off += opsz[di]/8
+					}
+					ret[:esp] = Expression[:esp, :-, st_off]
+					ret
+				}
+			when 'popad'
+				proc { |di|
+					ret = {}
+					st_off = 0
+					[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
+						ret[r] = Indirection[Expression[:esp, :+, st_off].reduce, opsz[di]/8, di.address]
+						st_off += opsz[di]/8
+					}
+					ret
+				}
+			when 'call'
+				proc { |di, a0| { :esp => Expression[:esp, :-, opsz[di]/8],
+					Indirection[:esp, opsz[di]/8, di.address] => Expression[Expression[di.address, :+, di.bin_length].reduce] } }
+			when 'ret'; proc { |di, *a| { :esp => Expression[:esp, :+, [opsz[di]/8, :+, a[0] || 0]] } }
+			when 'loop', 'loopz', 'loopnz'; proc { |di, a0| { :ecx => Expression[:ecx, :-, 1] } }
+			when 'enter'
+				proc { |di, a0, a1|
+					depth = a1.reduce % 32
+					b = { Indirection[:esp, opsz[di]/8, di.address] => Expression[:ebp], :ebp => Expression[:esp, :-, opsz[di]/8],
+							:esp => Expression[:esp, :-, a0.reduce + ((opsz[di]/8) * depth)] }
+					(1..depth).each { |i| # XXX test me !
+						b[Indirection[[:esp, :-, i*opsz[di]/8], opsz[di]/8, di.address]] = Indirection[[:ebp, :-, i*opsz[di]/8], opsz[di]/8, di.address] }
+					b
+				}
+			when 'leave'; proc { |di| { :ebp => Indirection[[:ebp], opsz[di]/8, di.address], :esp => Expression[:ebp, :+, opsz[di]/8] } }
+			when 'aaa'; proc { |di| { :eax => Expression::Unknown } }
+			when 'imul'
+				proc { |di, *a|
+					if a[2]; e = Expression[a[1], :*, a[2]]
+					else e = Expression[[a[0], :*, a[1]], :&, (1 << (di.instruction.args.first.sz || opsz[di])) - 1]
+					end
+					{ a[0] => e }
+				}
+			when 'rdtsc'; proc { |di| { :eax => Expression::Unknown, :edx => Expression::Unknown } }
+			when /^(stos|movs|lods|scas|cmps)[bwd]$/
+				proc { |di|
+					op =~ /^(stos|movs|lods|scas|cmps)([bwd])$/
+					e_op = $1
+					sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
+					dir = :+
+					if di.block and (di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil)
+						dir = :- 
+					end
+					pesi = Indirection[:esi, sz, di.address]
+					pedi = Indirection[:edi, sz, di.address]
+					pfx = di.instruction.prefix || {}
+					case e_op
+					when 'movs'
+						case pfx[:rep]
+						when nil; { pedi => pesi, :esi => Expression[:esi, dir, sz], :edi => Expression[:edi, dir, sz] }
+						else      { pedi => pesi, :esi => Expression[:esi, dir, [sz ,:*, :ecx]], :edi => Expression[:edi, dir, [sz, :*, :ecx]], :ecx => 0 }
+						end
+					when 'stos'
+						case pfx[:rep]
+						when nil; { pedi => Expression[:eax], :edi => Expression[:edi, dir, sz] }
+						else      { pedi => Expression[:eax], :edi => Expression[:edi, dir, [sz, :*, :ecx]], :ecx => 0 }
+						end
+					when 'lods'
+						case pfx[:rep]
+						when nil; { :eax => pesi, :esi => Expression[:esi, dir, sz] }
+						else      { :eax => Indirection[[:esi, dir, [sz, :*, [:ecx, :-, 1]]], sz, di.address], :esi => Expression[:esi, dir, [sz, :*, :ecx]], :ecx => 0 }
+						end
+					when 'scas'
+						case pfx[:rep]
+						when nil; { :edi => Expression[:edi, dir, sz] }
+						else { :edi => Expression::Unknown, :ecx => Expression::Unknown }
+						end
+					when 'cmps'
+						case pfx[:rep]
+						when nil; { :edi => Expression[:edi, dir, sz], :esi => Expression[:esi, dir, sz] }
+						else { :edi => Expression::Unknown, :esi => Expression::Unknown, :ecx => Expression::Unknown }
+						end
+					end
+				}
+			when 'clc'; proc { |di| { :eflag_c => Expression[0] } }
+			when 'stc'; proc { |di| { :eflag_c => Expression[1] } }
+			when 'cmc'; proc { |di| { :eflag_c => Expression[:'!', :eflag_c] } }
+			when 'cld'; proc { |di| { :eflag_d => Expression[0] } }
+			when 'std'; proc { |di| { :eflag_d => Expression[1] } }
+			when 'setalc'; proc { |di| { :eax => Expression[:eflag_c, :*, 0xff] } }
+			when /^set/: proc { |di, a0| { a0 => Expression[decode_cc_to_expr(op[/^set(.*)/, 1])] } }
+			when /^j/
+				proc { |di, a0|
+					ret = { 'dummy_metasm_0' => Expression[a0] }	# mark modr/m as read
+					if fl = decode_cc_to_expr(op[/^j(.*)/, 1]) and fl != Expression::Unknown
+						ret['dummy_metasm_1'] = fl	# mark eflags as read
+					end
+					ret
+				}
+			when 'nop', 'pause', 'wait', 'cmp', 'test'; proc { |di, *a| {} }
+			end
+	
+			# add eflags side-effects
+
+			full_binding = case op
+			when 'adc', 'add', 'and', 'cmp', 'or', 'sbb', 'sub', 'xor', 'test'
+				proc { |di, a0, a1|
+					e_op = { 'adc' => :+, 'add' => :+, 'and' => :&, 'cmp' => :-, 'or' => :|, 'sbb' => :-, 'sub' => :-, 'xor' => :^, 'test' => :& }[op]
+					res = Expression[[a0, :&, mask[di]], e_op, [a1, :&, mask[di]]]
+					res = Expression[res, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
+	
+					ret = binding[di, a0, a1] || {}
+					ret[:eflag_z] = Expression[[res, :&, mask[di]], :==, 0]
+					ret[:eflag_s] = sign[res, di]
+					ret[:eflag_c] = case e_op
+						when :+; Expression[res, :>, mask[di]]
+						when :-; Expression[[a0, :&, mask[di]], :<, [a1, :&, mask[di]]]
+						else Expression[0]
+						end
+					ret[:eflag_o] = case e_op
+						when :+; Expression[[sign[a0, di], :==, sign[a1, di]], :'&&', [sign[a0, di], :'!=', sign[res, di]]]
+						when :-; Expression[[sign[a0, di], :==, [:'!', sign[a1, di]]], :'&&', [sign[a0, di], :'!=', sign[res, di]]]
+						else Expression[0]
+						end
+					ret
+				}
+			when 'inc', 'dec', 'neg', 'shl', 'shr', 'sar', 'ror', 'rol', 'rcr', 'rcl', 'shld', 'shrd'
+				proc { |di, a0, *a|
+					ret = binding[di, a0, *a] || {}
+					res = ret[a0] || Expression::Unknown
+					ret[:eflag_z] = Expression[[res, :&, mask[di]], :==, 0]
+					ret[:eflag_s] = sign[res, di]
+					case op
+					when 'neg'; ret[:eflag_c] = Expression[[res, :&, mask[di]], :'!=', 0]
+					when 'inc', 'dec'	# don't touch carry flag
+					else ret[:eflag_c] = Expression::Unknown
+					end
+					ret[:eflag_o] = case op
+					when 'inc'; Expression[[a0, :&, mask[di]], :==, mask[di] >> 1]
+					when 'dec'; Expression[[res , :&, mask[di]], :==, mask[di] >> 1]
+					when 'neg'; Expression[[a0, :&, mask[di]], :==, (mask[di]+1) >> 1]
+					else Expression::Unknown
+					end
+					ret
+				}
+			when 'imul', 'mul', 'idiv', 'div', /^(scas|cmps)[bwdq]$/
+				proc { |di, *a|
+					ret = binding[di, *a] || {}
+					ret[:eflag_z] = ret[:eflag_s] = ret[:eflag_c] = ret[:eflag_o] = Expression::Unknown
+					ret
+				}
+			end
+	
+			@backtrace_binding[op] ||= full_binding || binding if full_binding || binding
+		}
+	end
+
+
+	def get_backtrace_binding(di)
 		a = di.instruction.args.map { |arg|
 			case arg
 			when ModRM; arg.symbolic(di.address)
@@ -285,189 +522,16 @@ class Ia32
 			end
 		}
 
-		# XXX TODO opsz override ?
-		opsz = @size
-		opsz = 48 - opsz if di.instruction.prefix and di.instruction.prefix[:opsz]
-		mask = (1 << opsz)-1	# 32bits => 0xffff_ffff
-
-		binding =
-		case op = di.opcode.name
-		when 'mov', 'movsx', 'movzx', 'movd', 'movq'; { a[0] => Expression[a[1]] }
-		when 'lea'; { a[0] => a[1].target }
-		when 'xchg'; { a[0] => Expression[a[1]], a[1] => Expression[a[0]] }
-		when 'add', 'sub', 'or', 'xor', 'and', 'pxor', 'adc', 'sbb'
-			e_op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^, 'pxor' => :^, 'adc' => :+, 'sbb' => :- }[op]
-			ret = Expression[a[0], e_op, a[1]]
-			ret = Expression[ret, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
-			# optimises :eax ^ :eax => 0
-			# avoid hiding memory accesses (to not hide possible fault)
-			ret = Expression[ret.reduce] if not a[0].kind_of? Indirection
-			{ a[0] => ret }
-		when 'inc'; { a[0] => Expression[a[0], :+, 1] }
-		when 'dec'; { a[0] => Expression[a[0], :-, 1] }
-		when 'not'; { a[0] => Expression[a[0], :^, mask] }
-		when 'neg'; { a[0] => Expression[:-, a[0]] }
-		when 'rol', 'ror'
-			inv_op = (op[2] == ?r ? :<< : :>>)
-			e_op = (op[2] == ?r ? :>> : :<<)
-			sz = [a[1], :%, opsz]
-			isz = [[opsz, :-, a[1]], :%, opsz]
-			# ror a, b  =>  (a >> b) | (a << (32-b))
-			{ a[0] => Expression[[[a[0], e_op, sz], :|, [a[0], inv_op, isz]], :&, mask] }
-		when 'sar', 'shl', 'sal'; { a[0] => Expression[a[0], (op[-1] == ?r ? :>> : :<<), [a[1], :%, opsz]] }
-		when 'shr'; { a[0] => Expression[[a[0], :&, mask], :>>, [a[1], :%, opsz]] }
-		when 'cdq'; { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz-1], :&, 1]] }
-		when 'push', 'push.i16'
-			{ :esp => Expression[:esp, :-, opsz/8],
-			  Indirection[:esp, opsz/8, di.address] => Expression[a[0]] }
-		when 'pop'
-			{ :esp => Expression[:esp, :+, opsz/8],
-			  a[0] => Indirection[:esp, opsz/8, di.address] }
-		when 'pushfd'
-			# TODO Unknown per bit
-			efl = Expression[0x202]
-			bts = proc { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
-			bts[0, :eflag_c]
-			bts[6, :eflag_z]
-			bts[7, :eflag_s]
-			bts[11, :eflag_o]
-			{ :esp => Expression[:esp, :-, opsz/8], Indirection[:esp, opsz/8, di.address] => efl }
-		when 'popfd'
-			bt = proc { |pos| Expression[[Indirection[:esp, opsz/8, di.address], :>>, pos], :&, 1] }
-			{ :esp => Expression[:esp, :+, opsz/8], :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7], :eflag_o => bt[11] }
-		when 'sahf'
-			bt = proc { |pos| Expression[[:eax, :>>, pos], :&, 1] }
-			{ :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7] }
-		when 'lahf'
-			efl = Expression[2]
-			bts = proc { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
-			bts[0, :eflag_c]
-			#bts[2, :eflag_p]
-			#bts[4, :eflag_a]
-			bts[6, :eflag_z]
-			bts[7, :eflag_s]
-			{ :eax => efl }
-		when 'pushad'
-			ret = {}
-			st_off = 0
-			[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
-				ret[Indirection[Expression[:esp, :+, st_off].reduce, opsz/8, di.address]] = Expression[r]
-				st_off += opsz/8
-			}
-			ret[:esp] = Expression[:esp, :-, st_off]
-			ret
-		when 'popad'
-			ret = {}
-			st_off = 0
-			[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
-				ret[r] = Indirection[Expression[:esp, :+, st_off].reduce, opsz/8, di.address]
-				st_off += opsz/8
-			}
-			ret
-		when 'call'
-			{ :esp => Expression[:esp, :-, opsz/8],
-			  Indirection[:esp, opsz/8, di.address] => Expression[Expression[di.address, :+, di.bin_length].reduce] }
-		when 'ret'; { :esp => Expression[:esp, :+, [opsz/8, :+, a[0] || 0]] }
-		when 'loop', 'loopz', 'loopnz'; { :ecx => Expression[:ecx, :-, 1] }
-		when 'enter'
-			depth = a[1].reduce % 32
-			b = { Indirection[:esp, opsz/8, di.address] => Expression[:ebp], :ebp => Expression[:esp, :-, opsz/8],
-					:esp => Expression[:esp, :-, a[0].reduce + ((opsz/8) * depth)] }
-			(1..depth).each { |i| # XXX test me !
-				b[Indirection[[:esp, :-, i*opsz/8], opsz/8, di.address]] = Indirection[[:ebp, :-, i*opsz/8], opsz/8, di.address] }
-			b
-		when 'leave'; { :ebp => Indirection[[:ebp], opsz/8, di.address], :esp => Expression[:ebp, :+, opsz/8] }
-		when 'aaa'; { :eax => Expression::Unknown }
-		when 'imul'
-			if a[2]; e = Expression[a[1], :*, a[2]]
-			else e = Expression[[a[0], :*, a[1]], :&, (1 << (di.instruction.args.first.sz || opsz)) - 1]
-			end
-			{ a[0] => e }
-		when 'rdtsc'; { :eax => Expression::Unknown, :edx => Expression::Unknown }
-		when /^(stos|movs)([bwd])$/
-			e_op = $1
-			sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
-			dir = :+
-			dir = :- if di.block and (di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil)
-			pesi = Indirection[:esi, sz, di.address]
-			pedi = Indirection[:edi, sz, di.address]
-			pfx = di.instruction.prefix || {}
-			case e_op
-			when 'movs'
-				case pfx[:rep]
-				when nil; { pedi => pesi, :esi => Expression[:esi, dir, sz], :edi => Expression[:edi, dir, sz] }
-				else      { pedi => pesi, :esi => Expression::Unknown, :edi => Expression::Unknown }	# repz/repnz..
-				end
-			when 'stos'
-				case pfx[:rep]
-				when nil; { pedi => Expression[:eax], :edi => Expression[:edi, dir, sz] }
-				else      { pedi => Expression[:eax], :edi => Expression[:edi, dir, [sz, :*, :ecx]] }	# XXX create an xref at edi+sz*ecx ?
-				end
-			end
-		when 'clc'; { :eflag_c => Expression[0] }
-		when 'stc'; { :eflag_c => Expression[1] }
-		when 'cmc'; { :eflag_c => Expression[:'!', :eflag_c] }
-		when 'cld'; { :eflag_d => Expression[0] }
-		when 'std'; { :eflag_d => Expression[1] }
-		when 'setalc'; { :eax => Expression[:eflag_c, :*, 0xff] }
-		when /^set(.*)/
-			cd = decode_cc_to_expr($1)
-			{ a[0] => Expression[cd] }
-		when /^j(.*)/
-			binding = { 'dummy_metasm_0' => Expression[a[0]] }
-			if fl = decode_cc_to_expr($1)
-				binding['dummy_metasm_1'] = fl	# mark eflags as read
-			end
-			binding
-		when 'nop', 'pause', 'wait', 'cmp', 'test'; {}
+		if binding = @backtrace_binding[di.instruction.opname]
+			binding[di, *a]
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
-			# assume nothing except the 1st arg
+			# assume nothing except the 1st arg is modified
 			case a[0]
 			when Indirection, Symbol; { a[0] => Expression::Unknown }
 			else {}
 			end
 		end
-		# eflags side-effects
-		sign = proc { |v| Expression[[[v, :&, mask], :>>, opsz-1], :'!=', 0] }
-		case op
-		when 'adc', 'add', 'and', 'cmp', 'or', 'sbb', 'sub', 'xor', 'test'
-			e_op = { 'adc' => :+, 'add' => :+, 'and' => :&, 'cmp' => :-, 'or' => :|, 'sbb' => :-, 'sub' => :-, 'xor' => :^, 'test' => :& }[op]
-			res = Expression[[a[0], :&, mask], e_op, [a[1], :&, mask]]
-			res = Expression[res, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
-
-			binding[:eflag_z] = Expression[[res, :&, mask], :==, 0]
-			binding[:eflag_s] = sign[res]
-			binding[:eflag_c] = case e_op
-				when :+; Expression[res, :>, mask]
-				when :-; Expression[[a[0], :&, mask], :<, [a[1], :&, mask]]
-				else Expression[0]
-				end
-			binding[:eflag_o] = case e_op
-				when :+; Expression[[sign[a[0]], :==, sign[a[1]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
-				when :-; Expression[[sign[a[0]], :==, [:'!', sign[a[1]]]], :'&&', [sign[a[0]], :'!=', sign[res]]]
-				else Expression[0]
-				end
-		when 'inc', 'dec', 'neg', 'shl', 'shr', 'sar', 'ror', 'rol', 'rcr', 'rcl', 'shld', 'shrd'
-			res = binding[a[0]]
-			binding[:eflag_z] = Expression[[res, :&, mask], :==, 0]
-			binding[:eflag_s] = sign[res]
-			case op
-			when 'neg'; binding[:eflag_c] = Expression[[res, :&, mask], :'!=', 0]
-			when 'inc', 'dec'	# don't touch carry flag
-			else binding[:eflag_c] = Expression::Unknown
-			end
-			binding[:eflag_o] = case op
-				when 'inc'; Expression[[a[0], :&, mask], :==, mask >> 1]
-				when 'dec'; Expression[[res , :&, mask], :==, mask >> 1]
-				when 'neg'; Expression[[a[0], :&, mask], :==, (mask+1) >> 1]
-				else Expression::Unknown	# TODO someday
-				end
-		when 'imul', 'mul', 'idiv', 'div'
-			binding[:eflag_z] = binding[:eflag_s] = binding[:eflag_c] = binding[:eflag_o] = Expression::Unknown
-
-		end
-		binding
 	end
 
 	def get_xrefs_x(dasm, di)
@@ -498,10 +562,8 @@ class Ia32
 		when ModRM
 			tg.sz ||= @size if tg.kind_of? ModRM
 			[Expression[tg.symbolic(di.address)]]
-		when Reg
-			[Expression[tg.symbolic]]
-		when Expression, ::Integer
-			[Expression[tg]]
+		when Reg; [Expression[tg.symbolic]]
+		when Expression, ::Integer; [Expression[tg]]
 		else
 			puts "unhandled setip at #{di.address} #{di.instruction}" if $DEBUG
 			[]

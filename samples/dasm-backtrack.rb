@@ -31,5 +31,7 @@ db 0e9h
 ; real target
 toto:
 mov eax, 28h
+pop ebx
+ret
 
 EOS

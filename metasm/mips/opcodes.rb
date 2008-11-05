@@ -229,6 +229,7 @@ end
 		addop 'ei',     (0b010000<<26) | (0b01011<<21) | (0b01100<<11) | (1<<5)
 		addop 'ei',     (0b010000<<26) | (0b01011<<21) | (0b01100<<11) | (1<<5), :rt
 	end
+	alias init_latest init_mips32r2
 end
 end
 __END__

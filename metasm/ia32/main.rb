@@ -142,6 +142,7 @@ class Ia32 < CPU
 		@endianness = :little
 		@size = size
 		send "init_#{family}"
+		init_backtrace_binding
 	end
 
 	def tune_cparser(cp)

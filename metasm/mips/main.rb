@@ -55,12 +55,13 @@ class MIPS < CPU
 		end
 	end
 
-	def initialize(endianness = :big, family = :mips32r2)
+	def initialize(endianness = :big, family = :latest)
 		super()
 		@endianness = endianness
 		@size = 32
 		@fields_shift = {}
-		send "init_#{family}"
+		send("init_#{family}")
+		init_backtrace_binding
 	end
 end
 end
