@@ -490,6 +490,7 @@ class COFF
 	def cpu_from_headers
 		case @header.machine
 		when 'I386'; Ia32.new
+		when 'R4000'; MIPS.new(:little)
 		else raise 'unknown cpu'
 		end
 	end
