@@ -466,7 +466,7 @@ class Ia32
 					res = Expression[[a0, :&, mask[di]], e_op, [a1, :&, mask[di]]]
 					res = Expression[res, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
 	
-					ret = binding[di, a0, a1] || {}
+					ret = (binding ? binding[di, a0, a1] : {})
 					ret[:eflag_z] = Expression[[res, :&, mask[di]], :==, 0]
 					ret[:eflag_s] = sign[res, di]
 					ret[:eflag_c] = case e_op
@@ -483,7 +483,7 @@ class Ia32
 				}
 			when 'inc', 'dec', 'neg', 'shl', 'shr', 'sar', 'ror', 'rol', 'rcr', 'rcl', 'shld', 'shrd'
 				proc { |di, a0, *a|
-					ret = binding[di, a0, *a] || {}
+					ret = (binding ? binding[di, a0, *a] : {})
 					res = ret[a0] || Expression::Unknown
 					ret[:eflag_z] = Expression[[res, :&, mask[di]], :==, 0]
 					ret[:eflag_s] = sign[res, di]
@@ -502,7 +502,7 @@ class Ia32
 				}
 			when 'imul', 'mul', 'idiv', 'div', /^(scas|cmps)[bwdq]$/
 				proc { |di, *a|
-					ret = binding[di, *a] || {}
+					ret = (binding ? binding[di, *a] : {})
 					ret[:eflag_z] = ret[:eflag_s] = ret[:eflag_c] = ret[:eflag_o] = Expression::Unknown
 					ret
 				}
