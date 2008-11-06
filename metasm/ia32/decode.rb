@@ -319,7 +319,7 @@ class Ia32
 					# ror a, b  =>  (a >> b) | (a << (32-b))
 					{ a0 => Expression[[[a0, e_op, sz], :|, [a0, inv_op, isz]], :&, mask[di]] }
 				}
-			when 'sar', 'shl', 'sal'; proc { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, opsz[di]]] } }
+			when 'sar', 'shl', 'sal'; proc { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz[di], 32].max]] } }
 			when 'shr'; proc { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz[di]]] } }
 			when 'cdq'; proc { |di| { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz[di]-1], :&, 1]] } }
 			when 'push', 'push.i16'
