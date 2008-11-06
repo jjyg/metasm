@@ -731,9 +731,8 @@ class Ia32
 	#   from the result, compute stackoffvariable (only if trivial)
 	# will not work if the current function calls any other unknown function (unless all are __cdecl)
 	# will not work if the current function is framed (ebp leave ret): in this case the function will return, but its :esp will be unknown
-	# TODO remember failed attempts and rebacktrace them if we find our stackoffset later ? (other funcs may depend on us)
 	# if the stack offset is found and funcaddr is a string, fixup the static binding and remove the dynamic binding
-	# TODO dynamise thunks
+	# TODO dynamise thunks bt_for & bt_cb
 	def disassembler_default_btbind_callback
 		proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
 			@dasm_func_default_off ||= {}
@@ -762,6 +761,13 @@ class Ia32
 			puts "automagic #{funcaddr}: found func start for #{dasm.decoded[origin]} at #{Expression[func_start]}" if dasm.debug_backtrace
 			s_off = "autostackoffset_#{Expression[funcaddr]}_#{Expression[calladdr]}"
 			list = dasm.backtrace(expr.bind(:esp => Expression[:esp, :+, s_off]), calladdr, :include_start => true, :snapshot_addr => func_start, :maxdepth => maxdepth, :origin => origin)
+			# check if this backtrace made us find our binding
+			if off = @dasm_func_default_off[[dasm, calladdr]]
+				bind = bind.merge(:esp => Expression[:esp, :+, off])
+				break bind
+			elsif not dasm.function[funcaddr].btbind_callback
+				break dasm.function[funcaddr].backtrace_binding
+			end
 			e_expr = list.find { |e_expr|
 				# TODO cleanup this
 				e_expr = Expression[e_expr].reduce_rec
