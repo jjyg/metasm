@@ -406,9 +406,30 @@ class GraphViewWidget < Gtk::HBox
 		redraw
 	end
 
+	# if the target is a call to a subfunction, open a new window with the graph of this function (popup)
 	def rightclick(ev)
 		b = find_box_xy(ev.x, ev.y)
-		# TODO
+		ly = (@curcontext.view_y+ev.y-b.y*@zoom - 1).to_i / @font_height if b
+		if b and di = @dasm.decoded[oldaddr = b[:line_address][ly]]
+			di.block.each_to_otherfunc(@dasm) { |t|
+				t = @dasm.normalize(t)
+				next if @curcontext.box.find { |bb| bb.id == t }
+				popup = Gtk::Window.new
+				popup.title = "metasm dasm: #{Expression[t]} (popup)"
+				popwidg = DisasmWidget.new(@dasm, @parent_widget.entrypoints)
+				class << popwidg
+					def keypress(ev)
+						if ev.keyval == Gdk::Keyval::GDK_Escape; toplevel.destroy
+						else super
+						end
+					end
+				end
+				popup.add popwidg
+				popup.set_default_size 500, 500 # XXX find good size
+				popup.show_all
+				popwidg.focus_addr t, 1
+			}
+		end
 	end
 
 	def doubleclick(ev)
@@ -625,17 +646,16 @@ class GraphViewWidget < Gtk::HBox
 	#
 	# rebuild the code flow graph from @curcontext.roots
 	# recalc the boxes w/h
-	# TODO should autorearrange the boxes
 	#
-	def gui_update
-		boxcnt = @curcontext.box.length
-		arrcnt = @curcontext.box.inject(0) { |s, b| s + b.to.length + b.from.length }
-		@curcontext.clear
+	def gui_update(ctx=@curcontext)
+		boxcnt = ctx.box.length
+		arrcnt = ctx.box.inject(0) { |s, b| s + b.to.length + b.from.length }
+		ctx.clear
 
 		# graph : block -> following blocks in same function
 		block_rel = {}
 
-		todo = @curcontext.root_addrs.dup
+		todo = ctx.root_addrs.dup
 		done = [:default, Expression::Unknown]
 		while a = todo.shift
 			a = @dasm.normalize a
@@ -654,7 +674,7 @@ class GraphViewWidget < Gtk::HBox
 
 		# populate boxes
 		addr2box = {}
-		todo = @curcontext.root_addrs.dup
+		todo = ctx.root_addrs.dup
 		done = []
 		while a = todo.shift
 			next if done.include? a
@@ -665,7 +685,7 @@ class GraphViewWidget < Gtk::HBox
 					lst.next_addr == a and (not lst.opcode.props[:saveip] or lst.block.to_subfuncret)
 				box = addr2box[from.first]
 			else
-				box = @curcontext.new_box a, :addresses => [], :line_text => {}, :line_address => {}
+				box = ctx.new_box a, :addresses => [], :line_text => {}, :line_address => {}
 			end
 			@dasm.decoded[a].block.list.each { |di|
 				box[:addresses] << di.address
@@ -675,16 +695,16 @@ class GraphViewWidget < Gtk::HBox
 		end
 
 		# link boxes
-		@curcontext.box.each { |b|
+		ctx.box.each { |b|
 			a = @dasm.decoded[b[:addresses].last].block.address
 			next if not block_rel[a]
 			block_rel[a].each { |t|
-				@curcontext.link_boxes(b.id, t)
+				ctx.link_boxes(b.id, t)
 			}
 		}
 
 		# calc box dimensions
-		@curcontext.box.each { |b|
+		ctx.box.each { |b|
 			fullstr = ''
 			curaddr = nil
 			line = 0
@@ -712,8 +732,11 @@ class GraphViewWidget < Gtk::HBox
 			b.h = line * @font_height + 2
 		}
 
-		@curcontext.auto_arrange_boxes
-		if boxcnt != @curcontext.box.length or arrcnt != @curcontext.box.inject(0) { |s, b| s + b.to.length + b.from.length }
+		ctx.auto_arrange_boxes
+
+		return if ctx != @curcontext
+
+		if boxcnt != ctx.box.length or arrcnt != ctx.box.inject(0) { |s, b| s + b.to.length + b.from.length }
 			zoom_all
 		end
 
