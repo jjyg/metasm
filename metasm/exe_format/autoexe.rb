@@ -17,7 +17,7 @@ def self.load(str, *a)
 end
 def self.execlass_from_signature(raw)
 	if raw[0, 4] == "\x7fELF"; ELF
-	elsif off = raw[0x3c, 4].to_s.unpack('V').first and raw[off, 4] == "PE\0\0"; PE
+	elsif off = raw[0x3c, 4].to_s.unpack('V').first and off < raw.length and raw[off, 4] == "PE\0\0"; PE
 	else raise UnknownSignature, 'unrecognized executable file format'
 	end
 end
