@@ -904,6 +904,11 @@ class GraphViewWidget < Gtk::HBox
 			gui_update
 			redraw
 			puts 'update done'
+		when GDK_1
+			@curcontext.view_x += (@width/2 / @zoom - @width/2)
+			@curcontext.view_y += (@height/2 / @zoom - @height/2)
+			@zoom = 1.0
+			redraw
 
 		when GDK_i	# misc debug
 			begin
