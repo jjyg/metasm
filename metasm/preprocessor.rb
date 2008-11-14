@@ -385,17 +385,17 @@ class Preprocessor
 	def self.include_search_path ; @@include_search_path end
 	def self.include_search_path=(np) @@include_search_path=np end
 
-	def initialize
+	def initialize(text='')
 		@queue = []
 		@backtrace = []
 		@definition = %w[__FILE__ __LINE__ __COUNTER__ __DATE__ __TIME__].inject({}) { |h, n| h.update n => SpecialMacro.new(n) }
 		@include_search_path = @@include_search_path.dup
 		# stack of :accept/:discard/:discard_all/:testing, represents the current nesting of #if..#endif
 		@ifelse_nesting = []
-		@text = ''
+		@text = text
 		@pos = 0
-		@filename = nil
-		@lineno = nil
+		@filename = 'unknown'
+		@lineno = 1
 		@warn_redefinition = true
 		@hooked_include = {}
 		@pragma_once = {}
@@ -434,8 +434,7 @@ class Preprocessor
 	# preprocess text, and retrieve all macros defined in #included <files> and used in the text
 	# returns a C source-like string
 	def self.factorize(text, comment=false)
-		p = new
-		p.feed(text)
+		p = new(text)
 		p.traced_macros = []
 		p.readtok while not p.eos?
 		p.dump_macros(p.traced_macros, comment)

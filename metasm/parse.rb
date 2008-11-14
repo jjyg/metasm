@@ -17,13 +17,17 @@ end
 class CPU
 	# parses prefix/name/arguments
 	# returns an +Instruction+ or raise a ParseError
+	# if the parameter is a String, a custom AsmPP is built - XXX it will not be able to create labels (eg jmp 1b / jmp $)
 	def parse_instruction(lexer)
+		lexer = AsmPreprocessor.new(lexer) if lexer.kind_of? String
+
 		i = Instruction.new self
 
 		# find prefixes, break on opcode name
 		while tok = lexer.readtok and parse_prefix(i, tok.raw)
 			lexer.skip_space_eol
 		end
+		return if not tok
 	
 		# allow '.' in opcode name
 		tok = tok.dup
@@ -161,10 +165,10 @@ class AsmPreprocessor < Preprocessor
 	# hash macro name => Macro
 	attr_accessor :macro
 
-	def initialize(program)
+	def initialize(text='', program=nil)
 		@program = program
 		@macro = {}
-		super()
+		super(text)
 	end
 
 	def skip_space_eol
@@ -280,7 +284,7 @@ class ExeFormat
 	# parses an asm source file to an array of Instruction/Data/Align/Offset/Padding
 	def parse(text, file='<ruby>', lineno=0)
 		parse_init
-		@lexer ||= AsmPreprocessor.new(self)
+		@lexer ||= AsmPreprocessor.new('', self)
 		@lexer.feed text, file, lineno
 		lasteol = true
 
