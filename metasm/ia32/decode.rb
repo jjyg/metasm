@@ -445,7 +445,7 @@ class Ia32
 			when 'cld'; proc { |di| { :eflag_d => Expression[0] } }
 			when 'std'; proc { |di| { :eflag_d => Expression[1] } }
 			when 'setalc'; proc { |di| { :eax => Expression[:eflag_c, :*, 0xff] } }
-			when /^set/: proc { |di, a0| { a0 => Expression[decode_cc_to_expr(op[/^set(.*)/, 1])] } }
+			when /^set/; proc { |di, a0| { a0 => Expression[decode_cc_to_expr(op[/^set(.*)/, 1])] } }
 			when /^j/
 				proc { |di, a0|
 					ret = { 'dummy_metasm_0' => Expression[a0] }	# mark modr/m as read

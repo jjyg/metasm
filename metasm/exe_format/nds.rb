@@ -82,7 +82,7 @@ class NDS < ExeFormat
 				ret = []
 				ar.each { |elem|
 					case elem
-					when Hash: ret.concat iter[elem.values.first, cur + elem.keys.first + '/']
+					when Hash; ret.concat iter[elem.values.first, cur + elem.keys.first + '/']
 					else ret << (cur + elem)
 					end
 				}
