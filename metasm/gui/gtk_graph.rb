@@ -580,14 +580,20 @@ class GraphViewWidget < Gtk::HBox
 		render = proc { |str, color|
 			# function ends when we write under the bottom of the listing
 			next if y >= w_h or x >= w_w
-			if @hl_word and str =~ /^(.*)(\b#{Regexp.escape @hl_word}\b)/
-				s1, s2 = $1, $2
-				@layout.text = s1
-				pre_x = @layout.pixel_size[0]
-				@layout.text = s2
-				hl_x = @layout.pixel_size[0]
-				gc.set_foreground @color[:hl_word]
-				w.draw_rectangle(gc, true, x+pre_x, y, hl_x, @font_height)
+			if @hl_word
+				stmp = str
+				pre_x = 0
+				while stmp =~ /^(.*?)(\b#{Regexp.escape @hl_word}\b)/
+					s1, s2 = $1, $2
+					@layout.text = s1
+					pre_x += @layout.pixel_size[0]
+					@layout.text = s2
+					hl_x = @layout.pixel_size[0]
+					gc.set_foreground @color[:hl_word]
+					w.draw_rectangle(gc, true, x+pre_x, y, hl_x, @font_height)
+					pre_x += hl_x
+					stmp = stmp[s1.length+s2.length..-1]
+				end
 			end
 			@layout.text = str
 			gc.set_foreground @color[color]
