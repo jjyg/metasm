@@ -99,7 +99,8 @@ class MIPS
 		@backtrace_binding ||= {}
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
 			binding = case op
-			when 'nop', 'j', 'jr'; proc { |di, *a| {} }
+			when 'break'
+			when 'nop', 'j', 'jr', /^b/; proc { |di, *a| {} }
 			when 'lui'; proc { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
 			when 'add', 'addu', 'addi', 'addiu'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :+, a2] } }	# XXX addiu $sp, -40h should be addiu $sp, 0xffc0 from the books, but..
 			when 'sub', 'subu'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :-, a2] } }
@@ -108,19 +109,21 @@ class MIPS
 			when 'or', 'ori';   proc { |di, a0, a1, a2|   { a0 => Expression[a1, :|, a2] } }
 			when 'nor'; proc { |di, a0, a1, a2| { a0 => Expression[:~, [a1, :|, a2]] } }
 			when 'xor'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :^, a2] } }
-			when 'sll'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :>>, a2] } }
-			when 'srl', 'sra'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :<<, a2] } }	# XXX sign-extend
+			when 'sll', 'sllv'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :>>, a2] } }
+			when 'srl', 'srlv', 'sra', 'srav'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :<<, a2] } }	# XXX sign-extend
 			when 'lw';        proc { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'sw';        proc { |di, a0, a1| { a1 => Expression[a0] } }
 			when 'lh', 'lhu'; proc { |di, a0, a1| { a0 => Expression[a1] } }	# XXX sign-extend
 			when 'sh';        proc { |di, a0, a1| { a1 => Expression[a0] } }
 			when 'lb', 'lbu'; proc { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'sb';        proc { |di, a0, a1| { a1 => Expression[a0] } }
+			when /^slti?u?/;  proc { |di, a0, a1, a2| { a0 => Expression[a1, :<, a2] } }	# XXX signedness
 			when 'mfhi'; proc { |di, a0| { a0 => Expression[:hi] } }
 			when 'mflo'; proc { |di, a0| { a0 => Expression[:lo] } }
 			when 'mult'; proc { |di, a0, a1| { :hi => Expression[[a0, :*, a1], :>>, 32], :lo => Expression[[a0, :*, a1], :&, 0xffff_ffff] } }
 			when 'div';  proc { |di, a0, a1| { :hi => Expression[a0, :%, a1], :lo => Expression[a0, :/, a1] } }
 			when 'jal', 'jalr'; proc { |di, a0| { :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] } }
+			when 'li', 'mov'; proc { |di, a0, a1| { a0 => Expression[a1] } }
 			end
 
 			@backtrace_binding[op] ||= binding if binding

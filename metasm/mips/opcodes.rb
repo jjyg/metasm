@@ -65,14 +65,21 @@ end
 
 		addop 'mov',  0b001000 << 26, :rt, :rs			# rt <- rs+0
 		addop 'addi', 0b001000 << 26, :rt, :rs, :i16		# add		rt <- rs+i
+		addop 'li',   0b001001 << 26, :rt, :i16			# add $0	# XXX liu ?
 		addop 'addiu',0b001001 << 26, :rt, :rs, :i16		# add unsigned
 		addop 'slti', 0b001010 << 26, :rt, :rs, :i16		# set on less than
 		addop 'sltiu',0b001011 << 26, :rt, :rs, :i16		# set on less than unsigned
 		addop 'andi', 0b001100 << 26, :rt, :rs, :i16		# and
+		addop 'li',   0b001101 << 26, :rt, :i16			# or $0
 		addop 'ori',  0b001101 << 26, :rt, :rs, :i16		# or
 		addop 'xori', 0b001110 << 26, :rt, :rs, :i16		# xor
 		addop 'lui',  0b001111 << 26, :rt, :i16			# load upper
-#		addop 'li',   0b001111 << 26, :rt, :i32			# pseudoinstruction
+#		addop 'li',   (0b001111 << 26) << 32 | (0b001101 << 26), :rt_64, :i32			# lui + ori
+
+		addop 'bz',   0b000100 << 26, :rs, :i16, :setip		# == 0	(beq $0)
+		addop 'bz',   0b000100 << 26, :rt, :i16, :setip		# == 0
+		addop 'bnz',  0b000101 << 26, :rs, :i16, :setip		# != 0
+		addop 'bnz',  0b000101 << 26, :rt, :i16, :setip		# != 0
 
 		addop 'beq',  0b000100 << 26, :rt, :rs, :i16, :setip	# ==
 		addop 'bne',  0b000101 << 26, :rt, :rs, :i16, :setip	# !=
@@ -133,7 +140,7 @@ end
 		addop 'movz', 0b001010, :rd, :rs, :rt			# rt == 0 ? rd <- rs
 		addop 'movn', 0b001011, :rd, :rs, :rt
 		addop 'syscall', 0b001100, :i20
-		addop 'break',0b001101, :i20
+		addop 'break',0b001101, :i20, :stopexec
 		addop 'sync', 0b001111					# type 0 implicit
 		addop 'sync', 0b001111, :sa
 
@@ -153,6 +160,8 @@ end
 		addop 'and',  0b100100, :rd, :rs, :rt
 		addop 'or',   0b100101, :rd, :rs, :rt
 		addop 'xor',  0b100110, :rd, :rs, :rt
+		addop 'not',  0b100111, :rd, :rt			# nor $0
+		addop 'not',  0b100111, :rd, :rs
 		addop 'nor',  0b100111, :rd, :rs, :rt
 	
 		addop 'slt',  0b101010, :rd, :rs, :rt			# rs<rt ? rd<-1 : rd<-0

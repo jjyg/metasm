@@ -41,32 +41,26 @@ class TestMips < Test::Unit::TestCase
 
 main:
 
-li macro reg, imm
-;	lui reg, ((imm) >> 16) & 0ffffh
-;	ori reg, reg, (imm) & 0ffffh
-	addiu reg, $0, imm		; sufficient if imm.abs <= 0x7fff
-endm
-
-	li(	$14, -5)		; 4 passes
+	li	$14, -5			; 4 passes
 	nor	$14, $14, $0		; put number of passes in $14
 
-	li(	$11,-73)		; addend to calculated PC is 73
+	li	$11,-73			; addend to calculated PC is 73
 ;.set noreorder
 next:
 	bltzal  $8, next
 ;.set reorder
-	slti    $8, $0, 0x8282
-	nor     $11, $11, $0		; addend in $9	
-	addu	$25, $31, $11		; $25 points to encoded shellcode +4 
+	slti	$8, $0, 0x8282
+	nor	$11, $11, $0		; addend in $9
+	addu	$25, $31, $11		; $25 points to encoded shellcode +4
 ;	addu	$16, $31, $11		; $16 too (enable if you want to pass correct parameters to cacheflush
 
-;	lui	$2, 0xDDDD     		; first part of the xor (old method)
+;	lui	$2, 0xDDDD		; first part of the xor (old method)
 	slti	$23, $0, 0x8282 	; store 0 in $23 (our counter)
 ;	ori	$17, $2, 0xDDDD 	; second part of the xor (old method)
-	lw	$17, -4($25)		; load xor key in $17 
+	lw	$17, -4($25)		; load xor key in $17
 
 
-	li(	$13, -5)
+	li	$13, -5
 	nor	$13, $13, $0		; 4 in $13
 
 	addi	$15, $13, -3		; 1 in $15
@@ -82,26 +76,26 @@ loop:
 	addu	$25, $25, $13		; next instruction to decode :)
 
 
-;	addiu	$4, $16, -4	       	; not checked by Linux
-;	li      $5,40                  	; not checked by Linux
-;	li      $6,3                   	; $6 is set above
+;	addiu	$4, $16, -4		; not checked by Linux
+;	li	$5,40			; not checked by Linux
+;	li	$6,3			; $6 is set above
 
-;	.set    noreorder
-	li(     $2, 4147)               ; cacheflush
+;	.set	noreorder
+	li	$2, 4147		; cacheflush
 	;.ascii "\\x01JT\\x0c"		; nul-free syscall
 	syscall 0x52950
-;	.set    reorder
+;	.set	reorder
 
 
 					; write last decoder opcode and decoded shellcode
-;	li      $4,1            	; stdout
+;	li	$4,1			; stdout
 ;	addi	$5, $16, -8
-;	li      $6,40           	; how much to write     
-;	.set    noreorder
-;	li      $2, 4004                ; write
+;	li	$6,40			; how much to write
+;	.set	noreorder
+;	li	$2, 4004		; write
 ;	syscall
-;	.set    reorder
-	
+;	.set	reorder
+
 
 	nop				; encoded shellcoded must be here (xor key right here ;)
 ; $t9 (aka $25) points here
