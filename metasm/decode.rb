@@ -994,6 +994,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 			di = @callback_newinstr[di] if callback_newinstr
 			return if not di
+			block = di.block
 
 			di_addr = di.next_addr
 
@@ -1785,6 +1786,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	#  all instructions are stuffed in the first block
 	#  paths are only walked using from/to_normal
 	# 'by' may be empty
+	# returns the block containing the new instrs (nil if empty)
 	def replace_instrs(from, to, by)
 		raise 'bad from' if not fdi = @decoded[from] or not fdi.kind_of? DecodedInstruction or not fdi.block.list.index(fdi)
 		raise 'bad to' if not tdi = @decoded[to] or not tdi.kind_of? DecodedInstruction or not tdi.block.list.index(tdi)
@@ -1795,7 +1797,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 		# generate DecodedInstr from Instrs
 		# try to keep the bin_length of original block
-		orig_len = fdi.block.list.inject(0) { |orig_len, di| orig_len + di.bin_length }
+		orig_len = fdi.block.list.inject(0) { |orig_len, di| orig_len + di.bin_length } - by.grep(DecodedInstruction).inject(0) { |len, di| len + di.bin_length }
 		by.map! { |di|
 			if di.kind_of? Instruction
 				di = DecodedInstruction.new(di)
@@ -1831,6 +1833,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				end
 			}
 		end
+
+		fdi.block if not by.empty?
 	end
 
 
