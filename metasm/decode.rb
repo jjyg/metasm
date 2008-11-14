@@ -26,13 +26,21 @@ class DecodedInstruction
 	# a cache of the binding used by the backtracker to emulate this instruction
 	attr_accessor :backtrace_binding
 
-	def initialize(cpu)
-		@instruction = Instruction.new cpu
+	# create a new DecodedInstruction with an Instruction whose cpu is the argument
+	# can take an existing Instruction as argument
+	def initialize(arg, addr=nil)
+		case arg
+		when Instruction
+			@instruction = arg
+			@opcode = @instruction.cpu.opcode_list.find { |op| op.name == @instruction.opname } if @instruction.cpu
+		else @instruction = Instruction.new(arg)
+		end
 		@bin_length = 0
+		@address = addr
 	end
 
 	def next_addr
-		address + @bin_length
+		address + @bin_length if address
 	end
 
 	def block_head?
@@ -487,6 +495,7 @@ class CPU
 	def decode_instruction(edata, addr)
 		@bin_lookaside ||= build_bin_lookaside
 		di = decode_findopcode edata
+		di.address = addr if di
 		di = decode_instr_op(edata, di) if di
 		decode_instr_interpret(di, addr) if di
 	end
@@ -1763,6 +1772,63 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 					@decoded[origin].block.add_to_normal(normalize(n)) if @decoded[origin] and not unk
 				end
 				@addrs_todo << [n, origin]
+			}
+		end
+	end
+
+	# remove the decodedinstruction from..to, replace them by the new Instructions in 'by'
+	# this updates the block list structure, old di will still be visible in @decoded, except from original block (those are deleted)
+	# if from..to spans multiple blocks
+	#  to.block is splitted after to
+	#  all path from from are replaced by a single link to after 'to', be careful !
+ 	#   (eg a->b->... & a->c ; from in a, to in c => a->b is lost)
+	#  all instructions are stuffed in the first block
+	#  paths are only walked using from/to_normal
+	# 'by' may be empty
+	def replace_instrs(from, to, by)
+		raise 'bad from' if not fdi = @decoded[from] or not fdi.kind_of? DecodedInstruction or not fdi.block.list.index(fdi)
+		raise 'bad to' if not tdi = @decoded[to] or not tdi.kind_of? DecodedInstruction or not tdi.block.list.index(tdi)
+
+		# create DecodedInstruction from Instructions in 'by' if needed
+		split_block(fdi.block, fdi.address)
+		split_block(tdi.block, tdi.block.list[tdi.block.list.index(tdi)+1].address) if tdi != tdi.block.list.last
+
+		# generate DecodedInstr from Instrs
+		# try to keep the bin_length of original block
+		orig_len = fdi.block.list.inject(0) { |orig_len, di| orig_len + di.bin_length }
+		by.map! { |di|
+			if di.kind_of? Instruction
+				di = DecodedInstruction.new(di)
+				di.bin_length = orig_len / by.grep(Instruction).length
+				orig_len -= di.bin_length
+			end
+			di
+		}
+
+
+		if not by.empty?
+			fdi.block.list.each { |di| @decoded.delete di.address }
+			fdi.block.list.clear
+			by.each { |di| fdi.block.add_di di ; @decoded[di.address] = di }
+		end
+
+		# update to_normal/from_normal
+		fdi.block.to_normal = tdi.block.to_normal
+		fdi.block.to_normal.to_a.each { |newto|
+			# other paths may already point to newto, we must only update the relevant entry
+			if @decoded[newto].kind_of? DecodedInstruction and idx = @decoded[newto].block.from_normal.to_a.index(to)
+				if by.empty?
+					@decoded[newto].block.from_normal[idx..idx] = fdi.block.from_normal.to_a
+				else
+					@decoded[newto].block.from_normal[idx] = fdi.block.list.last.address
+				end
+			end
+		}
+		if by.empty?
+			fdi.block.from_normal.to_a.each { |newfrom|
+				if @decoded[newfrom].kind_of? DecodedInstruction and idx = @decoded[newfrom].block.to_normal.to_a.index(from)
+					@decoded[newfrom].block.to_normal[idx..idx] = tdi.block.to_normal.to_a
+				end
 			}
 		end
 	end
