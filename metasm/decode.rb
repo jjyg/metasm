@@ -623,9 +623,16 @@ class Disassembler
 	# bool, set to true (default) if functions with undetermined binding should be assumed to return with ABI-conforming binding (conserve frame ptr)
 	attr_accessor :funcs_stdabi
 	# callback called whenever a new address is to be appended to the list of addresses to disassemble (except subfunction returns)
-	# this method must return the address to append ; or nil if no address is to be appended.
+	# this method must return the address to append ; or nil if no address is to be appended, or an array of addresses.
 	# it is invoked with arguments (target address found, address of origininating instruction)
 	attr_accessor :callback_newaddr
+	# called whenever an instruction is decoded and added to an instruction block. arg: the new decoded instruction
+	# returns the new di to consider (nil to end block)
+	attr_accessor :callback_newinstr
+	# called whenever the disassembler tries to disassemble an addresse that has been written to. arg: the address
+	attr_accessor :callback_selfmodifying
+	# called when the disassembler stops (stopexec/undecodable instruction)
+	attr_accessor :callback_stopaddr
 	# callback called before each backtrace that may take some time
 	attr_accessor :callback_prebacktrace
 
@@ -964,63 +971,74 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 			# check self-modifying code
 			if @check_smc
-				# uncomment to check for unaligned rewrites
-				#(-7...di.bin_length).each { |off|
+				#(-7...di.bin_length).each { |off|	# uncomment to check for unaligned rewrites
 				waddr = di_addr		#di_addr + off
 				each_xref(waddr, :w) { |x|
 					#next if off + x.len < 0
 					puts "W: disasm: self-modifying code at #{Expression[waddr]}" if $VERBOSE
 					di.add_comment "overwritten by #{@decoded[x.origin] || Expression[x.origin]}"
+					@callback_selfmodifying[di_addr] if callback_selfmodifying
 					return
 				}
 				#}
 			end
 
-			# trace xrefs
-			# PE SEH needs rw to be checked before x (for xrefs :w)
-			@program.get_xrefs_rw(self, di).each { |type, ptr, len|
-				backtrace(ptr, di_addr, :origin => di_addr, :type => type, :len => len).each { |xaddr|
-					next if xaddr == Expression::Unknown
-					# uncomment to check for unaligned rewrites
-					if @check_smc and type == :w
-						#len.times { |off|
-						waddr = xaddr	#xaddr + off
-						if wdi = @decoded[normalize(waddr)]
-							puts "W: disasm: #{di} overwrites #{wdi}" if $VERBOSE
-							wdi.add_comment "overwritten by #{di}"
-						end
-						#}
-					end
-				}
-			}
-			@program.get_xrefs_x(self, di).each { |expr|
-				# di may be a return instruction, and the stack fixup may be in the delay slot (eg MIPS)
-				# so we must wait until we have all the instrs in the instrblock before backtracking it
-				# otherwise the update_func_binding return wrong results
-				delay_slot ||= [di, @cpu.delay_slot(di)]
-				delay_slot << expr if delay_slot[0] == di
-			}
+			di = @callback_newinstr[di] if callback_newinstr
+			return if not di
 
 			di_addr = di.next_addr
 
-			delay_slot ||= [di, @cpu.delay_slot(di)] if di.opcode.props[:stopexec] or not di_addr
+			backtrace_xrefs_di_rw(di)
+
+			if not di_addr or di.opcode.props[:stopexec] or not @program.get_xrefs_x(self, di).empty?
+				# do not backtrace until delay slot is finished (eg MIPS: di is a
+			       	#  ret and the delay slot holds stack fixup needed to calc func_binding)
+				# XXX if the delay slot is also xref_x or :stopexec it is ignored
+				delay_slot ||= [di, @cpu.delay_slot(di)]
+			end
 
 			if delay_slot
-				if delay_slot[1] == 0 or not di_addr
-					di = delay_slot[0]
-					delay_slot[2..-1].each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x) }
-					return if di.opcode.props[:stopexec] or not di_addr
-					break
+				di, delay = delay_slot
+				if delay == 0 or not di_addr
+					backtrace_xrefs_di_x(di)
+					if di.opcode.props[:stopexec] or not di_addr; return 
+					else break
+					end
 				end
-				delay_slot[1] -= 1
+				delay_slot[1] = delay - 1
 			end
 		}
 
 		if not callback_newaddr or di_addr = @callback_newaddr[di_addr, block.list.last.address]
-			block.add_to di_addr
-			@addrs_todo << [di_addr, block.list.last.address]
+			[di_addr].flatten.compact.each { |di_addr|
+				block.add_to di_addr
+				@addrs_todo << [di_addr, block.list.last.address]
+			}
 		end
 		block
+	end
+
+	# trace whose xrefs this di is responsible of
+	def backtrace_xrefs_di_rw(di)
+		@program.get_xrefs_rw(self, di).each { |type, ptr, len|
+			backtrace(ptr, di.address, :origin => di.address, :type => type, :len => len).each { |xaddr|
+				next if xaddr == Expression::Unknown
+				if @check_smc and type == :w
+					#len.times { |off|	# check unaligned ?
+					waddr = xaddr	#+ off
+					if wdi = @decoded[normalize(waddr)]
+						puts "W: disasm: #{di} overwrites #{wdi}" if $VERBOSE
+						wdi.add_comment "overwritten by #{di}"
+					end
+					#}
+				end
+			}
+		}
+	end
+
+	# trace xrefs for execution
+	def backtrace_xrefs_di_x(di)
+		@program.get_xrefs_x(self, di).each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x) }
 	end
 
 	# checks if the function starting at funcaddr is an external function thunk (eg jmp [SomeExtFunc])
@@ -1736,14 +1754,16 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 		# XXX all this should be done in  backtrace() { <here> }
 		if type == :x and origin and (not callback_newaddr or n = @callback_newaddr[n, origin])
-			if detached
-				o = @decoded[origin] ? origin : di ? di.address : nil	# lib function callback have origin == libfuncname, so we must find a block somewhere else
-				origin = nil
-				@decoded[o].block.add_to_indirect(normalize(n)) if @decoded[o] and not unk
-			else
-				@decoded[origin].block.add_to_normal(normalize(n)) if @decoded[origin] and not unk
-			end
-			@addrs_todo << [n, origin]
+			[n].flatten.compact.each { |n|
+				if detached
+					o = @decoded[origin] ? origin : di ? di.address : nil	# lib function callback have origin == libfuncname, so we must find a block somewhere else
+					origin = nil
+					@decoded[o].block.add_to_indirect(normalize(n)) if @decoded[o] and not unk
+				else
+					@decoded[origin].block.add_to_normal(normalize(n)) if @decoded[origin] and not unk
+				end
+				@addrs_todo << [n, origin]
+			}
 		end
 	end
 
@@ -1792,6 +1812,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# dumps a block of decoded instructions
 	def dump_block(block, &b)
 		b ||= proc { |l| puts l }
+		block = @decoded[block].block if @decoded[block]
 		dump_block_header(block, &b)
 		block.list.each { |di| b[di.show] }
 	end
