@@ -1797,12 +1797,14 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 		# generate DecodedInstr from Instrs
 		# try to keep the bin_length of original block
-		orig_len = fdi.block.list.inject(0) { |orig_len, di| orig_len + di.bin_length } - by.grep(DecodedInstruction).inject(0) { |len, di| len + di.bin_length }
+		lastdi = DecodedInstruction.new(by[-1]) if by[-1].kind_of? Instruction
+		wantlen = tdi.address + tdi.bin_length - fdi.address if lastdi and not lastdi.opcode.props[:stopexec]
+		wantlen -= by.grep(DecodedInstruction).inject(0) { |len, di| len + di.bin_length } if wantlen
+		wantlen ||= by.grep(Instruction).length
 		by.map! { |di|
 			if di.kind_of? Instruction
 				di = DecodedInstruction.new(di)
-				di.bin_length = orig_len / by.grep(Instruction).length
-				orig_len -= di.bin_length
+				wantlen -= di.bin_length = wantlen / by.grep(Instruction).length
 			end
 			di
 		}
@@ -1811,6 +1813,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		if not by.empty?
 			fdi.block.list.each { |di| @decoded.delete di.address }
 			fdi.block.list.clear
+			tdi.block.list.each { |di| @decoded.delete di.address }
+			tdi.block.list.clear
 			by.each { |di| fdi.block.add_di di ; @decoded[di.address] = di }
 		end
 
@@ -1865,7 +1869,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 						b["\n"]
 					end
 					dump_block(di.block, &b)
-					unk_off = i + di.block.bin_length
+					unk_off = i + [di.block.bin_length, 1].max
 				elsif i >= unk_off
 					next_off = blockoffs.find { |bo| bo > i } || edata.length
 					if dump_data or next_off - i < 16
