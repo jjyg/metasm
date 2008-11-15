@@ -671,7 +671,7 @@ class GraphViewWidget < Gtk::HBox
 			block_rel[a] = []
 			di.block.each_to_samefunc(@dasm) { |t|
 				t = @dasm.normalize t
-				next if not @dasm.decoded[t]
+				next if not @dasm.decoded[t].kind_of? DecodedInstruction
 				todo << t
 				block_rel[a] << t
 			}
