@@ -501,8 +501,8 @@ end if $VERBOSE
 			when '': break
 			when /\A-?\d+(?:\.\d+)?/: tok = $&.to_f
 			when /\A\((?:\\.|[^\\)])*\)/: tok = $&
-			when /\A\[(?:[^\](]*\((?:\\.|[^\\)])*\))*\]/: tok = $&
-			when /\A\S+/: tok = $&.to_sym
+			when /\A\[(?:[^\](]*\((?:\\.|[^\\)])*\))*[^]]*\]/: tok = $&
+			when /\A\S+/: tok = $&.to_sym rescue nil
 			when /\A\s+/
 			end
 			str = str[$&.length..-1]
