@@ -128,8 +128,8 @@ class AsmListingWidget < Gtk::HBox
 			@vscroll.adjustment.value -= @vscroll.adjustment.page_increment
 			true
 		when Gdk::EventScroll::Direction::DOWN
-			pgdown = @line_address[@line_address.keys.max.to_i/2] || @vscroll.adjustment.value
-			pgdown += @vscroll.adjustment.page_increment if pgdown == @vscroll.adjustment.value
+			pgdown = @line_address[@line_address.keys.max.to_i/2]
+			pgdown = @vscroll.adjustment.value + @vscroll.adjustment.page_increment if pgdown == -1
 			@vscroll.adjustment.value = pgdown
 			true
 		end
@@ -414,8 +414,8 @@ class AsmListingWidget < Gtk::HBox
 			@vscroll.adjustment.value -= @vscroll.adjustment.page_increment
 			update_caret
 		when GDK_Page_Down
-			pgdown = @line_address[@line_address.length/2] || @vscroll.adjustment.value
-			pgdown = @vscroll.adjustment.value + @vscroll.adjustment.page_increment if pgdown == @vscroll.adjustment.value
+			pgdown = @line_address[@line_address.length/2]
+			pgdown = @vscroll.adjustment.value + @vscroll.adjustment.page_increment if pgdown == -1
 			@vscroll.adjustment.value = pgdown
 			update_caret
 		when GDK_Home
