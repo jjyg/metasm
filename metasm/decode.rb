@@ -60,7 +60,7 @@ class DecodedInstruction
 	end
 
 	def to_s
-		"#{Expression[address] if block} #{@instruction}"
+		"#{Expression[address] if address} #{@instruction}"
 	end
 
 	def add_comment(c)
@@ -175,7 +175,7 @@ class InstructionBlock
 	# splits the current block into a new one with all di from address addr to end
 	# caller is responsible for rebacktracing new.bt_for to regenerate correct old.btt/new.btt
 	def split(addr)
-		raise "invalid split #{addr}" if not idx = @list.index(@list.find { |di| di.address == addr }) or idx == 0
+		raise "invalid split @#{Expression[addr]}" if not idx = @list.index(@list.find { |di| di.address == addr }) or idx == 0
 		off = @list[idx].block_offset
 		new_b = self.class.new(addr, @edata, @edata_ptr + off)
 		new_b.add_di @list.delete_at(idx) while @list[idx]
@@ -1797,10 +1797,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 		# generate DecodedInstr from Instrs
 		# try to keep the bin_length of original block
-		lastdi = DecodedInstruction.new(by[-1]) if by[-1].kind_of? Instruction
-		wantlen = tdi.address + tdi.bin_length - fdi.address if lastdi and not lastdi.opcode.props[:stopexec]
-		wantlen -= by.grep(DecodedInstruction).inject(0) { |len, di| len + di.bin_length } if wantlen
-		wantlen ||= by.grep(Instruction).length
+		wantlen = tdi.address + tdi.bin_length - fdi.address
+		wantlen -= by.grep(DecodedInstruction).inject(0) { |len, di| len + di.bin_length }
 		by.map! { |di|
 			if di.kind_of? Instruction
 				di = DecodedInstruction.new(di)
@@ -1816,6 +1814,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			tdi.block.list.each { |di| @decoded.delete di.address }
 			tdi.block.list.clear
 			by.each { |di| fdi.block.add_di di ; @decoded[di.address] = di }
+			fdi = fdi.block.list.first
 		end
 
 		# update to_normal/from_normal
@@ -1830,15 +1829,34 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				end
 			end
 		}
+
 		if by.empty?
 			fdi.block.from_normal.to_a.each { |newfrom|
 				if @decoded[newfrom].kind_of? DecodedInstruction and idx = @decoded[newfrom].block.to_normal.to_a.index(from)
 					@decoded[newfrom].block.to_normal[idx..idx] = tdi.block.to_normal.to_a
 				end
 			}
+		else
+			# merge with adjacent blocks
+			merge_blocks(fdi.block, @decoded[fdi.block.to_normal.first].block) if @decoded[fdi.block.to_normal.to_a.first]
+			merge_blocks(@decoded[fdi.block.from_normal.first].block, fdi.block) if @decoded[fdi.block.from_normal.to_a.first]
 		end
 
 		fdi.block if not by.empty?
+	end
+
+	# merge two instruction blocks if they form a simple chain and are adjacent
+	# returns true if merged
+	def merge_blocks(b1, b2)
+		if b1 and b2 and b1.list.last.next_addr == b2.address and
+				b1.to_normal.to_a == [b2.address] and b2.from_normal.to_a.length == 1 and	# that handles delay_slot
+				b1.to_subfuncret.to_a == [] and b2.from_subfuncret.to_a == [] and
+				b1.to_indirect.to_a == [] and b2.from_indirect.to_a == []
+			b2.list.each { |di| b1.add_di di }
+			b1.to_normal = b2.to_normal
+			b2.list.clear
+			true
+		end
 	end
 
 
