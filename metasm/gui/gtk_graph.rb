@@ -861,7 +861,7 @@ class GraphViewWidget < Gtk::HBox
 			end
 		when GDK_Page_Down
 			if @caret_box
-				@caret_y = @caret_box.line_length-1
+				@caret_y = @caret_box[:line_text].length-1
 				update_caret
 			else
 				@curcontext.view_y += @height/4/@zoom
