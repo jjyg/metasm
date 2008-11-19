@@ -168,7 +168,10 @@ class DisasmWidget < Gtk::VBox
 			if @dasm.prog_binding[addr]
 				addr = @dasm.prog_binding[addr]
 			elsif (?0..?9).include? addr[0]
-				addr = '0x' + addr[0...-1] if addr[-1] == ?h
+				case addr
+				when /h$/: addr = '0x' + addr[0...-1]
+				when /[a-f]/i: addr = '0x' + addr
+				end
 				begin 
 					addr = Integer(addr)
 				rescue ::ArgumentError
