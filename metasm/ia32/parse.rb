@@ -217,7 +217,7 @@ end
 				Farptr.new expr, addr
 			else
 				lexer.unreadtok ntok
-				Expression[expr.reduce]
+				Expression[expr.reduce] if expr
 			end
 		end
 	end
