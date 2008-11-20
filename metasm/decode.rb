@@ -584,6 +584,9 @@ class CPU
 	def delay_slot(di)
 		0
 	end
+
+	# alias for scripts using older version of metasm
+	def get_backtrace_binding(di) backtrace_binding(di) end
 end
 
 class ExeFormat
