@@ -502,8 +502,8 @@ end if $VERBOSE
 			when /\A-?\d+(?:\.\d+)?/: tok = $&.to_f
 			when /\A\((?:\\.|[^\\)])*\)/: tok = $&
 			when /\A\[(?:[^\](]*\((?:\\.|[^\\)])*\))*[^]]*\]/: tok = $&
-			when /\A\S+/: tok = $&.to_sym rescue nil
-			when /\A\s+/
+			when /\A[a-zA-Z0-9_*]+/: tok = $&.to_sym rescue nil
+			when /\A\S+/, /\A\s+/
 			end
 			str = str[$&.length..-1]
 			yield tok if tok
@@ -515,7 +515,7 @@ end if $VERBOSE
 		mx = @lines.flatten.map { |l| l.x }.min
 		py = nil
 		strs = ['']
-		@lines.sort_by { |la| -la.map { |l| l.y }.max }.each { |la|
+		@lines.sort_by { |la| -la.map { |l| l.y }.max.to_i }.each { |la|
 		y = la.map { |l| l.y }.max
 		strs.concat ['']*((py-y)/12) if py and py > y
 		la.sort_by { |l| [-l.y, l.x] }.each { |l|
