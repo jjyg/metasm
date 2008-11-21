@@ -5,11 +5,11 @@
 
 
 # temporarily put the current file directory in the ruby include path
-metasmdir = File.dirname(__FILE__)
-if $:.include? metasmdir
-	metasmdir = nil
+incdir = Metasmdir = File.dirname(__FILE__)
+if $:.include? incdir
+	incdir = nil
 else
-	$: << metasmdir
+	$: << incdir
 end
 
 # cpu architectures
@@ -18,7 +18,7 @@ end
 	require "metasm/#{f}/parse"
 	require "metasm/#{f}/encode"
 	require "metasm/#{f}/decode"
-	require "metasm/#{f}/compile_c"
+	require "metasm/#{f}/compile_c" if File.exist? File.join(Metasmdir, 'metasm', f, 'compile_c.rb')
 }
 # executable formats
 %w[mz elf_encode elf_decode pe coff_encode coff_decode shellcode a_out xcoff nds autoexe].each { |f|
@@ -33,4 +33,4 @@ require 'metasm/parse_c'
 require 'metasm/compile_c'
 
 # cleanup include path
-$:.delete metasmdir if metasmdir
+$:.delete incdir if incdir
