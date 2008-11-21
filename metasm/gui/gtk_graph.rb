@@ -29,7 +29,7 @@ class Graph
 		attr_accessor :to, :from
 	end
 
-	attr_accessor :id, :box, :root_addrs, :view_x, :view_y
+	attr_accessor :id, :box, :root_addrs, :view_x, :view_y, :keep_split
 	def initialize(id)
 		@id = id
 		@root_addrs = []
@@ -413,13 +413,13 @@ class GraphViewWidget < Gtk::HBox
 		if b and di = @dasm.decoded[oldaddr = b[:line_address][ly]]
 			di.block.each_to_otherfunc(@dasm) { |t|
 				t = @dasm.normalize(t)
-				next if @curcontext.box.find { |bb| bb.id == t }
+				next if not t.kind_of? Integer or @curcontext.box.find { |bb| bb.id == t }
 				popup = Gtk::Window.new
 				popup.title = "metasm dasm: #{Expression[t]} (popup)"
 				popwidg = DisasmWidget.new(@dasm, @parent_widget.entrypoints)
 				class << popwidg
 					def keypress(ev)
-						if ev.keyval == Gdk::Keyval::GDK_Escape; toplevel.destroy
+						if ev.keyval == Gdk::Keyval::GDK_Escape; terminate ; toplevel.destroy
 						else super
 						end
 					end
@@ -685,7 +685,7 @@ class GraphViewWidget < Gtk::HBox
 		while a = todo.shift
 			next if done.include? a
 			done << a
-			if from = block_rel.keys.find_all { |ba| block_rel[ba].include? a } and
+			if not ctx.keep_split.to_a.include?(a) and from = block_rel.keys.find_all { |ba| block_rel[ba].include? a } and
 					from.length == 1 and block_rel[from.first].length == 1 and
 					addr2box[from.first] and lst = @dasm.decoded[from.first].block.list.last and
 					lst.next_addr == a and (not lst.opcode.props[:saveip] or lst.block.to_subfuncret)
@@ -909,6 +909,13 @@ class GraphViewWidget < Gtk::HBox
 			@curcontext.view_y += (@height/2 / @zoom - @height/2)
 			@zoom = 1.0
 			redraw
+		when GDK_Insert		# split curbox at @caret_y
+			if @caret_box and a = @caret_box[:line_address][@caret_y] and @dasm.decoded[a] and @dasm.decoded[a].block.address != a
+				@dasm.split_block(@dasm.decoded[a].block, a)
+				@curcontext.keep_split ||= []
+				@curcontext.keep_split << a
+				gui_update
+			end
 
 		when GDK_i	# misc debug
 			begin
@@ -1013,6 +1020,7 @@ class GraphViewWidget < Gtk::HBox
 			@curcontext = Graph.new 'testic'
 			@curcontext.root_addrs = dasm_find_roots(addr)
 			gui_update
+			return if not @curcontext.box.first
 			# find an address that can be shown if addr is not
 			if not @curcontext.box.find { |b| b[:line_address].index(addr) }
 				addr = @curcontext.box.first[:line_address].values.first
