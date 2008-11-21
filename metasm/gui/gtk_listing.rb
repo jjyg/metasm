@@ -248,7 +248,7 @@ class AsmListingWidget < Gtk::HBox
 					render["// ------ overlap (#{di.bin_length - off}) ------", :comment]
 					nl[]
 				else
-					curaddr += di.bin_length
+					curaddr += [di.bin_length, 1].max
 				end
 			elsif curaddr < @vscroll.adjustment.upper
 				# TODO real data display (dwords, xrefs, strings..)

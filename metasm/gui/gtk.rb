@@ -11,7 +11,7 @@ require 'metasm/gui/gtk_graph'
 module Metasm
 module GtkGui
 class DisasmWidget < Gtk::VBox
-	attr_accessor :dasm, :entrypoints, :views
+	attr_accessor :dasm, :entrypoints, :views, :gui_update_counter_max, :notebook
 	def initialize(dasm, ep=[])
 		super()
 
@@ -19,6 +19,7 @@ class DisasmWidget < Gtk::VBox
 		@entrypoints = ep
 		@views = []
 		@pos_history = []
+		@gui_update_counter_max = 100
 
 		gui_update_counter = 0
 		dasm_working = false
@@ -30,13 +31,13 @@ class DisasmWidget < Gtk::VBox
 				begin
 					if not @dasm.disassemble_mainiter(@entrypoints)
 						dasm_working = false
-						gui_update_counter = 10000
+						gui_update_counter = @gui_update_counter_max
 					end
 				rescue
 					messagebox [$!, $!.backtrace].join("\n")
 				end
 				gui_update_counter += 1
-				if gui_update_counter > 100
+				if gui_update_counter > @gui_update_counter_max
 					gui_update_counter = 0
 					gui_update
 				end
