@@ -74,6 +74,20 @@ class DisasmWidget < Gtk::VBox
 
 	include Gdk::Keyval
 	def keypress(ev)
+	    case ev.state & Gdk::Window::CONTROL_MASK
+	    when Gdk::Window::CONTROL_MASK
+		case ev.keyval
+		when GDK_r	# run arbitrary ruby
+			inputbox('ruby code to eval()') { |c|
+				begin
+					ret = eval c
+					messagebox ret.inspect[0, 128], 'eval'
+				rescue
+					messagebox "#$! #{$!.message}\n#{$!.backtrace.join("\n")}", 'eval error'
+				end
+			}
+		end
+	    when 0
 		case ev.keyval
 		when GDK_Return, GDK_KP_Enter
 			focus_addr curview.hl_word
@@ -103,6 +117,12 @@ class DisasmWidget < Gtk::VBox
 			openfile('open C header') { |f|
 				@dasm.parse_c_file(f) rescue messagebox("#{$!}\n#{$!.backtrace}")
 			}
+		when GDK_l	# list labels
+			list = [['name', 'addr']]
+			@dasm.prog_binding.each { |k, v|
+				list << [k, Expression[@dasm.normalize(v)]]
+			}
+			listwindow("list of labels", list) { |i| focus_addr i[1] }
 		when GDK_n	# name/rename a label
 			if not curview.hl_word or not addr = @dasm.prog_binding[curview.hl_word]
 				return if not addr = curview.current_address
@@ -159,6 +179,7 @@ class DisasmWidget < Gtk::VBox
 			p [:unknown_keypress, ev.keyval, c, ev.state]
 			return false
 		end
+	    end		# ctrl/alt
 		true
         end
 
@@ -219,11 +240,11 @@ class DisasmWidget < Gtk::VBox
 		@views.each { |v| v.gui_update }
 	end
 
-	def messagebox(str)
-		MessageBox.new(toplevel, str)
+	def messagebox(str, title=nil)
+		MessageBox.new(toplevel, str, title)
 	end
 
-	def inputbox(str, &b)
+	def inputbox(str, title=nil, &b)
 		InputBox.new(toplevel, str, &b)
 	end
 
@@ -238,9 +259,10 @@ end
 
 class MessageBox < Gtk::MessageDialog
 	# shows a message box (non-modal)
-	def initialize(onwer, str)
+	def initialize(owner, str, title=nil)
 		owner ||= Gtk::Window.toplevels.first
 		super(owner, Gtk::Dialog::DESTROY_WITH_PARENT, INFO, BUTTONS_CLOSE, str)
+		self.title = title if title
 		signal_connect('response') { destroy }
 		show_all
 		present		# bring the window to the foreground & set focus
@@ -250,10 +272,11 @@ end
 class InputBox < Gtk::Dialog
 	# shows a simplitic input box (eg window with a 1-line textbox + OK button), yields the text
 	# TODO history, dropdown, autocomplete, contexts, 3D stereo surround, etc
-	def initialize(owner, str)
+	def initialize(owner, str, title=nil)
 		owner ||= Gtk::Window.toplevels.first
 		super(nil, owner, Gtk::Dialog::DESTROY_WITH_PARENT,
 			[Gtk::Stock::OK, Gtk::Dialog::RESPONSE_ACCEPT], [Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_REJECT])
+		self.title = title if title
 
 		label = Gtk::Label.new(str)
 		text  = Gtk::TextView.new

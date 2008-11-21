@@ -766,6 +766,7 @@ class GraphViewWidget < Gtk::HBox
 	# TODO arrows => change caret_box
 	# TODO non-navigation commands are global, get it out of the widget
 	def keypress(ev)
+		return @parent_widget.keypress if ev.state & Gdk::Window::CONTROL_MASK != 0
 		case ev.keyval
 		when GDK_Left
 			if @caret_box
@@ -917,23 +918,6 @@ class GraphViewWidget < Gtk::HBox
 				gui_update
 			end
 
-		when GDK_i	# misc debug
-			begin
-				p @curcontext.box.map { |b| b[:line_address].sort.map { |a1, a2| "#{a1} #{Expression[a2]}" } }
-				if @caret_box
-					puts @caret_box[:line_text].sort.transpose.last
-				else
-					puts 'nobox'
-				end
-				p [@caret_x, @caret_y]
-			rescue
-				@parent_widget.messagebox $!
-			end
-		when GDK_r	# reload this file
-			load __FILE__
-			redraw
-			puts 'reloaded'
-			return @parent_widget.keypress(ev)
 		else
 			return @parent_widget.keypress(ev)
 		end
