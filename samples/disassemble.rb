@@ -24,7 +24,7 @@ OptionParser.new { |opt|
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-o <outfile>', '--output <outfile>', 'save the assembly listing in the specified file (defaults to stdout)') { |h| opts[:outfile] = h }
 	opt.on('-s <addrlist>', '--stop <addrlist>', '--stopaddr <addrlist>', 'do not disassemble past these addresses') { |h| opts[:stopaddr] ||= [] ; opts[:stopaddr] |= h.split ',' }
-	opt.on('--custom <hookfile>', 'loads the ruby script hookfile and invokes "dasm_setup(exe, dasm)"') { |h| opts[:hookfile] = h }
+	opt.on('--custom <hookfile>', 'eval a ruby script hookfile') { |h| (opts[:hookfile] ||= []) << h }
 	opt.on('--benchmark') { opts[:benchmark] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
 	opt.on('-d', '--debug') { $DEBUG = true }
@@ -37,22 +37,19 @@ t0 = Time.now if opts[:benchmark]
 # load the file
 exe = AutoExe.orshellcode.decode_file exename
 # set options
-d = exe.init_disassembler
+dasm = exe.init_disassembler
 makeint = proc { |addr|
 	case addr
 	when /^[0-9].*h/; addr.to_i(16)
 	when /^[0-9]/; Integer(addr)
-	else d.normalize(addr)
+	else dasm.normalize(addr)
 	end
 }
-d.parse_c_file opts[:cheader] if opts[:cheader]
-d.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
-d.debug_backtrace = true if opts[:debugbacktrace]
-opts[:stopaddr].to_a.each { |addr| d.decoded[makeint[addr]] = true }
-if opts[:hookfile]
-	load opts[:hookfile]
-	dasm_setup(exe, d)
-end
+dasm.parse_c_file opts[:cheader] if opts[:cheader]
+dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
+dasm.debug_backtrace = true if opts[:debugbacktrace]
+opts[:stopaddr].to_a.each { |addr| dasm.decoded[makeint[addr]] = true }
+opts[:hookfile].to_a.each { |f| eval File.read(f) }
 
 t1 = Time.now if opts[:benchmark]
 # do the work
@@ -70,10 +67,10 @@ t2 = Time.now if opts[:benchmark]
 # output
 if opts[:outfile]
 	File.open(opts[:outfile], 'w') { |fd|
-		d.dump(!opts[:nodata]) { |l| fd.puts l }
+		dasm.dump(!opts[:nodata]) { |l| fd.puts l }
 	}
 else
-	d.dump(!opts[:nodata])
+	dasm.dump(!opts[:nodata])
 end
 
 t3 = Time.now if opts[:benchmark]

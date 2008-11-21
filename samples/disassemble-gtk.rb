@@ -11,7 +11,6 @@
 
 require 'metasm'
 require 'optparse'
-require 'metasm/gui/gtk'
 
 # parse arguments
 opts = {}
@@ -19,11 +18,13 @@ OptionParser.new { |opt|
 	opt.banner = 'Usage: disassemble-gtk.rb [options] <executable> [<entrypoints>]'
 	opt.on('--no-data-trace', 'do not backtrace memory read/write accesses') { opts[:nodatatrace] = true }
 	opt.on('--debug-backtrace', 'enable backtrace-related debug messages (very verbose)') { opts[:debugbacktrace] = true }
-	opt.on('--custom <hookfile>', 'loads the ruby script hookfile and invokes "dasm_setup(exe, dasm)"') { |h| opts[:hookfile] = h }
+	opt.on('--custom <hookfile>', 'eval a ruby script hookfile') { |h| (opts[:hookfile] ||= []) << h }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
 	opt.on('-d', '--debug') { $DEBUG = true }
 }.parse!(ARGV)
+
+require 'metasm/gui/gtk'	# windows version of gtk.rb raises on unknown cli args...
 
 exename = ARGV.shift
 
@@ -40,11 +41,7 @@ dasm = exe.init_disassembler
 dasm.parse_c_file opts[:cheader] if opts[:cheader]
 dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 dasm.debug_backtrace = true if opts[:debugbacktrace]
-if opts[:hookfile]
-	load opts[:hookfile]
-	dasm_setup(exe, dasm)
-end
-
+opts[:hookfile].to_a.each { |f| eval File.read(f) }
 
 ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
 
