@@ -395,7 +395,9 @@ class COFF
 	# decode COFF relocation tables from directory
 	def decode_relocs
 		if @directory['base_relocation_table'] and sect_at_rva(@directory['base_relocation_table'][0])
-			end_ptr = @cursection.encoded.ptr + @directory['base_relocation_table'][1]
+			len = @directory['base_relocation_table'][1]
+			end_ptr = @cursection.encoded.ptr + len
+			puts 'decoding PE relocations...' if $VERBOSE and len > 0x4000
 			@relocations = []
 			while @cursection.encoded.ptr < end_ptr
 				@relocations << RelocationTable.decode(self)
@@ -416,6 +418,7 @@ class COFF
 					end
 				}
 			}
+			puts 'decode_relocs done' if $DEBUG and len > 0x4000
 		end
 	end
 
