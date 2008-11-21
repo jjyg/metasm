@@ -75,6 +75,12 @@ class Shellcode < ExeFormat
 		sc.disassemble(eip)
 	end
 
+	def init_disassembler
+		d = super
+		d.function[:default] = @cpu.disassembler_default_func
+		d
+	end
+
 	def compile_setsection(src, section)
 	end
 
