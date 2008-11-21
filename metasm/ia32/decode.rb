@@ -758,7 +758,7 @@ class Ia32
 				end
 			}
 			break bind if not func_start
-			puts "automagic #{funcaddr}: found func start for #{dasm.decoded[origin]} at #{Expression[func_start]}" if dasm.debug_backtrace
+			puts "automagic #{Expression[funcaddr]}: found func start for #{dasm.decoded[origin]} at #{Expression[func_start]}" if dasm.debug_backtrace
 			s_off = "autostackoffset_#{Expression[funcaddr]}_#{Expression[calladdr]}"
 			list = dasm.backtrace(expr.bind(:esp => Expression[:esp, :+, s_off]), calladdr, :include_start => true, :snapshot_addr => func_start, :maxdepth => maxdepth, :origin => origin)
 			# check if this backtrace made us find our binding
@@ -784,8 +784,17 @@ class Ia32
 			when Expression
                                 bd = off.externals.grep(/^autostackoffset_/).inject({}) { |bd, xt| bd.update xt => @size/8 }
                                 bd.delete s_off
-                                # all __cdecl
-                                off = @size/8 if off.bind(bd).reduce == @size/8
+				if off.bind(bd).reduce == @size/8
+                                	# all __cdecl
+       					off = @size/8 
+				else
+					# check if all calls are to the same extern func
+					bd.delete_if { |k, v| k !~ /^autostackoffset_#{Expression[funcaddr]}_/ }
+					bd.each_key { |k| bd[k] = 0 }
+					if off.bind(bd).reduce.kind_of? Integer
+						off = off.bind(bd).reduce / (bd.length + 1)
+					end
+				end
 			when Integer
 				if off < @size/8 or off > 20*@size/8 or (off % (@size/8)) != 0
 					puts "autostackoffset: ignoring off #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
