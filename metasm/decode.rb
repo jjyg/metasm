@@ -953,7 +953,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			backtrace(btt.expr, btt.address,
 				  :include_start => !btt.exclude_instr, :from_subfuncret => btt.from_subfuncret,
 				  :origin => btt.origin, :orig_expr => btt.orig_expr, :type => btt.type, :len => btt.len,
-				  :snapshot_addr => block.address, :detached => btt.detached, :maxdepth => btt.maxdepth)
+				  :snapshot_addr => block.address, :detached => btt.detached, :maxdepth => btt.maxdepth, :mindepth => 2)
 		}
 		new_b
 	end
@@ -1270,6 +1270,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	#  :snapshot_addr => addr (or array of) where the backtracker should stop
 	#   if a snapshot_addr is given, values found are ignored if continuing the backtrace does not get to it (eg maxdepth/unk_addr/end)
 	#  :maxdepth => maximum number of blocks to backtrace
+	#  :mindepth => decrease a each :up, ignore values found while >0 but still generate bt_for (used in split_block to avoid result duplication)
 	#  :detached => true if backtracking type :x and the result should not have from = origin set in @addrs_todo
 	#  :max_complexity{_data} => maximum complexity of the expression before aborting its backtrace
 	#  :log => Array, will be updated with the backtrace evolution
@@ -1286,6 +1287,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		detached        = nargs.delete :detached
 		max_complexity  = nargs.delete(:max_complexity) || 40
 		max_complexity_data = nargs.delete(:max_complexity) || 8
+		mindepth	= nargs.delete(:mindepth) || 0
 		bt_log          = nargs.delete :log	# array to receive the ongoing backtrace info
 		raise ArgumentError, "invalid argument to backtrace #{nargs.keys.inspect}" if not nargs.empty?
 
@@ -1306,7 +1308,7 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 			maxdepth = @backtrace_maxblocks_data if backtrace_maxblocks_data and maxdepth > @backtrace_maxblocks_data
 		end
 
-		if result = backtrace_check_found(expr, di, origin, type, len, maxdepth, detached)
+		if mindepth <= 0 and result = backtrace_check_found(expr, di, origin, type, len, maxdepth, detached)
 			# no need to update backtrace_for
 			return result
 		elsif maxdepth <= 0
@@ -1380,7 +1382,7 @@ puts "  bt loop at #{Expression[t[0][1]]}: #{oldexpr} => #{expr} (#{t.map { |z| 
 				expr = backtrace_emu_blockup(h[:from], expr)
 puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if debug_backtrace
 				bt_log << [:up, expr, oldexpr, h[:from], h[:to]] if bt_log
-				if expr != oldexpr and vals = backtrace_check_found(expr,
+				if expr != oldexpr and mindepth <= h[:loopdetect].length and vals = backtrace_check_found(expr,
 						nil, origin, type, len, maxdepth-h[:loopdetect].length, detached)
 					if snapshot_addr
 						expr = StoppedExpr.new vals
@@ -1447,7 +1449,7 @@ puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" 
 				else
 					bt_log << [ev, expr, oldexpr, h[:addr], h[:funcaddr]] if bt_log and expr != oldexpr
 				end
-				if vals = backtrace_check_found(expr, h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached)
+				if mindepth <= h[:loopdetect].length and vals = backtrace_check_found(expr, h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached)
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 					else
@@ -1814,6 +1816,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		if not by.empty?
 			fdi.block.list.each { |di| @decoded.delete di.address }
 			fdi.block.list.clear
+			@addrs_done.delete_if { |ad| normalize(ad[0]) == tdi.block.address }
 			tdi.block.list.each { |di| @decoded.delete di.address }
 			tdi.block.list.clear
 			by.each { |di| fdi.block.add_di di ; @decoded[di.address] = di }
