@@ -1,6 +1,48 @@
-# deobfuscation module, to be used as --custom script from samples/disassemble{,-gtk}.rb
-# for your own patterns, create a script to define Patterns, then load this script
+#    This file is part of Metasm, the Ruby assembly manipulation suite
+#    Copyright (C) 2008 Yoann GUILLOT
+#
+#    Licence is LGPL, see LICENCE in the top-level directory
+
+
+# 
+# To use your own patterns, create a script that defines Deobfuscate::Patterns, then eval() this file.
+# Use your script as argument to --custom.
+#
+# This script is to be used with the --custom option of samples/disassemble(-gtk).rb
+# It holds methods to ease the definition of instruction patterns that are to be replaced
+# by another arbitrary instruction sequence, using mostly a regexp syntax
+#
+# The pattern search&replace is done every time the disassembler, found in variable 'dasm',
+# finds a new instruction, through the callback_newinstr callback.
+#
+# The patterns can use shortcuts for frequently-used regexps (like 'any machine registers'), 
+# defined in the PatternMacros hash.
+# 
+# The patterns are matched first against the sequence of instruction opcode names, then
+# each instruction is rendered as text (using Instruction#to_s), and the global regexp
+# is checked.
+# Backreferences can be used in the substitution instruction sequence, through the %1 ... %9
+# special values.
+#
+# A pattern consists of a sequence of regexp for instructions, separated by ' ; '
+# Each subregexps should not match multiple instructions (ie a patterns matches a fixed-length
+# instruction sequence, whose length equals the number of ' ; '-separated regexps)
+# The first word of each regexp should match only the instruction opcode name.
+#
+# The substitution may be a Proc, which will receive |dasm object, matched decodedinstr list| as
+# arguments, and should return:
+# a String, holding a sequence of instructions separated by ' ; ', which will be parsed by the CPU
+# an Array of Instruction/DecodedInstruction
+# nil
+#
+# If the substitution array is different from the matched sequence, the new instructions are passed
+# to dasm.replace_instrs, which will patch the disassembler decoded instruction graph ; and each
+# new instruction is passed through the callback once more, allowing for recursive patterns.
+#
+
 module Deobfuscate
+
+
 # special constructs : %i => an integer (immediate/standard label)
 #                      %r => standard x86 register (except esp), all sizes
 #                      %m => modr/m 32 (memory indirection or reg)
@@ -10,16 +52,22 @@ PatternMacros = {
 	'%m' => '(?:dword ptr \[.*?\]|eax|ebx|ecx|edx|edi|esi|ebp)',
 } if not defined? PatternMacros
 
+
+
+
 # instructions are separated by ' ; '
 # instruction must be '<simple regexp matching opcode> <arbitrary regexp>'
 # patterns should not span more than 2 blocks
 # in the pattern target, %1-%9 are used for backreferences from the regexp match
 Patterns = {
-'nop ; (.*)' => '%1',	# concat 'nop' into following instruction
-'mov (%r|esp), \1' => 'nop',
-'lea (%r|esp), dword ptr \[\1(?:\+0)?\]' => 'nop',
-#'call %i ; pop (%r)' => proc { |dasm, list| "mov %1, #{list.first.next_addr}" },
+	'nop ; (.*)' => '%1',	# concat 'nop' into following instruction
+	'mov (%r|esp), \1' => 'nop',
+	'lea (%r|esp), dword ptr \[\1(?:\+0)?\]' => 'nop',
+	#'call %i ; pop (%r)' => proc { |dasm, list| "mov %1, #{list.first.next_addr}" },
 } if not defined? Patterns
+
+
+
 
 # returns an array of strings matching the regexp (only |,?,[], non-nested allowed, no special chars)
 # expand_regexp['a[bcd]?(ef|gh)'] => [abef acef adef aef abgh acgh adgh agh]
@@ -132,6 +180,7 @@ def self.newinstr_callback(dasm, di)
 					di_seq.inject(-di.bin_length) { |len, i| len + i.bin_length } + lastdi.address != di.address
 				# ensure that the last instr ends the same place as the original last instr (to allow disassemble_block to continue)
 				newinstrs << dasm.cpu.parse_instruction("jmp #{Metasm::Expression[di.next_addr]}")
+				# nop ; jmp => jmp
 				newinstrs.shift if newinstrs.length >= 2 and newinstrs.first.kind_of? Metasm::Instruction and newinstrs.first.opname == 'nop'
 			end
 
