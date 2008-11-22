@@ -766,7 +766,7 @@ class GraphViewWidget < Gtk::HBox
 	# TODO arrows => change caret_box
 	# TODO non-navigation commands are global, get it out of the widget
 	def keypress(ev)
-		return @parent_widget.keypress if ev.state & Gdk::Window::CONTROL_MASK != 0
+		return @parent_widget.keypress(ev) if ev.state & Gdk::Window::CONTROL_MASK != 0
 		case ev.keyval
 		when GDK_Left
 			if @caret_box
