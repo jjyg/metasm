@@ -131,7 +131,16 @@ class SerialStruct
 	# standard int fields
 	new_int_field :byte, :half, :word
 
-
+	# set value of fields from argument list, runs int_to_hash if needed
+	def initialize(*a)
+		if not a.empty?
+			a.zip(struct_fields.reject { |f| not f[NAME] }).each { |v, f|
+				v = int_to_hash(v, f[ENUM]) if f[ENUM]
+				v = bits_to_hash(v, f[BITS]) if f[BITS]
+				instance_variable_set f[NAME], v
+			}
+		end
+	end
 
 	# returns this classes' field array
 	# uses struct_specialized if defined (a method that returns another
