@@ -643,7 +643,7 @@ class GraphViewWidget < Gtk::HBox
 
 		b[:addresses].each { |addr|
 			curaddr = addr
-			if di = @dasm.decoded[curaddr] and di.kind_of? Metasm::DecodedInstruction
+			if di = @dasm.decoded[curaddr] and di.kind_of? DecodedInstruction
 				# a decoded instruction : check if it's a block start
 				if di.block.list.first == di
 					# render dump_block_header, add a few colors
@@ -661,17 +661,17 @@ class GraphViewWidget < Gtk::HBox
 			else
 				# TODO real data display (dwords, xrefs, strings..)
 				if label = @dasm.prog_binding.index(curaddr) and @dasm.xrefs[curaddr]
-					render[Metasm::Expression[curaddr].to_s + '    ', :black]
+					render[Expression[curaddr].to_s + '    ', :black]
 					render[label + ' ', :label]
 				else
 					if label
 						render[label+':', :label]
 						nl[]
 					end
-					render[Metasm::Expression[curaddr].to_s + '    ', :black]
+					render[Expression[curaddr].to_s + '    ', :black]
 				end
 				s = @dasm.get_section_at(curaddr)
-				render['db '+((s and s[0].rawsize > s[0].ptr) ? Metasm::Expression[s[0].read(1)[0]].to_s : '?'), :instruction]
+				render['db '+((s and s[0].data.length > s[0].ptr) ? Expression[s[0].read(1)[0]].to_s : '?'), :instruction]
 				nl[]
 			end
 		}
@@ -758,7 +758,7 @@ class GraphViewWidget < Gtk::HBox
 			}
 			b[:addresses].each { |addr|
 				curaddr = addr
-				if di = @dasm.decoded[curaddr] and di.kind_of? Metasm::DecodedInstruction
+				if di = @dasm.decoded[curaddr] and di.kind_of? DecodedInstruction
 					if di.block.list.first == di
 						b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
 						b_header.each { |l| render[l.chomp] ; nl[] }

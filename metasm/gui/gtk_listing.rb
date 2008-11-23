@@ -263,7 +263,7 @@ class AsmListingWidget < Gtk::HBox
 					render[Expression[curaddr].to_s + '    ', :address]
 				end
 				s = @dasm.get_section_at(curaddr)
-				render['db '+((s and s[0].rawsize > s[0].ptr) ? Expression[s[0].read(1)[0]].to_s : '?'), :instruction]
+				render['db '+((s and s[0].data.length > s[0].ptr) ? Expression[s[0].read(1)[0]].to_s : '?'), :instruction]
 				nl[]
 				curaddr += 1
 			else
@@ -425,11 +425,6 @@ class AsmListingWidget < Gtk::HBox
 			@caret_x = @line_text[@caret_y].length
 			update_caret
 
-		when GDK_r	# reload this file
-			load __FILE__
-			redraw
-			puts 'reloaded'
-			return @parent_widget.keypress(ev)
 		else
 			return @parent_widget.keypress(ev)
 		end
