@@ -207,14 +207,16 @@ class COFF
 		def decode(coff)
 			super
 			len = coff.decode_word
-			@relocs = []
-			if len < 8 or len % 2 != 0
-				puts "W: COFF: Invalid relocation table length #{len}" if $VERBOSE
+			len -= 8
+			if len < 0 or len % 2 != 0
+				puts "W: COFF: Invalid relocation table length #{len+8}" if $VERBOSE
+				coff.cursection.encoded.read(len) if len > 0
+				@relocs = []
 				return
 			end
-			len -= 8
-			len /= 2
-			len.times { @relocs << Relocation.decode(coff) }
+
+			@relocs = coff.cursection.encoded.read(len).unpack(coff.endianness == :big ? 'n*' : 'v*').map { |r| Relocation.new(r&0xfff, r>>12) }
+			#(len/2).times { @relocs << Relocation.decode(coff) }	# tables may be big, this is too slow
 		end
 	end
 
@@ -395,9 +397,7 @@ class COFF
 	# decode COFF relocation tables from directory
 	def decode_relocs
 		if @directory['base_relocation_table'] and sect_at_rva(@directory['base_relocation_table'][0])
-			len = @directory['base_relocation_table'][1]
-			end_ptr = @cursection.encoded.ptr + len
-			puts 'decoding PE relocations...' if $VERBOSE and len > 0x4000
+			end_ptr = @cursection.encoded.ptr + @directory['base_relocation_table'][1]
 			@relocations = []
 			while @cursection.encoded.ptr < end_ptr
 				@relocations << RelocationTable.decode(self)
@@ -418,7 +418,6 @@ class COFF
 					end
 				}
 			}
-			puts 'decode_relocs done' if $DEBUG and len > 0x4000
 		end
 	end
 
