@@ -174,6 +174,28 @@ class Graph
 				dy = 16*ary.map { |g| g.to.length + g.from.length }.inject { |a, b| a+b }
 				ary.each { |g| g.h += dy ; g.y -= dy/2 }
 				align_hz[ary]
+				if ary.first.to.empty?	# shrink graph if highly dissymetric and to.empty?
+					ah = ary.map { |g| g.h }.max
+					ary.each { |g|
+						move_group[g, 0, (g.h-ah)/2]	# move up
+						next if not p = ary[ary.index(g)-1]
+						y = [g.y, p.y].min		# shrink width
+						h = [g.h, p.h].min
+						xp = p.content.map { |b| b.x+b.w if b.y+b.h+8 >= y and b.y-8 <= y+h }.compact.max || p.x+p.w/2
+						xg = g.content.map { |b| b.x if b.y+b.h+8 >= y and b.y-8 <= y+h }.compact.min || g.x+g.w/2
+						dx = xg-xp-24
+						next if dx <= 0
+						ary.each { |gg|
+							dx = -dx if gg == g
+							move_group[gg, dx/2, 0]
+						}
+						if p.x+p.w > ary.last.x+ary.last.w or ary.first.x > g.x # fix broken centerism
+							x = [g.x, ary.first.x].min
+							xm = [p.x+p.w, ary.last.x+ary.last.w].max
+							ary.each { |gg| move_group[gg, (x+xm)/-2, 0] }
+						end
+					}
+				end
 				merge_groups[ary]
 				true
 			}
@@ -192,6 +214,19 @@ class Graph
 				true
 			}
 		}
+
+		# loop with exit 1 -> 2, 3 & 2 -> 1
+		group_loop = proc {
+			groups.find { |g|
+				next if not g2 = g.to.sort_by { |g2| g2.h }.find { |g2| g2.to == [g] or (g2.to.empty? and g2.from == [g]) }
+				g2.h += 16
+				align_vt[[g, g2]]
+				move_group[g2, g2.x-8, 0]
+				merge_groups[[g, g2]]
+				true
+			}
+		}
+
 
 		# unknown pattern, group as we can..
 		group_other = proc {
@@ -219,7 +254,7 @@ puts 'unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map
 
 		# known, clean patterns
 		group_clean = proc {
-			group_columns[] or group_lines[true] or group_ifthen[true]
+			group_columns[] or group_lines[true] or group_ifthen[true] or group_loop[]
 		}
 		# approximations
 		group_unclean = proc {
