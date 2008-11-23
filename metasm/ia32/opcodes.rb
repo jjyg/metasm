@@ -131,7 +131,7 @@ class Ia32
 		addop 'cli',   [0xFA]
 		addop 'clts',  [0x0F, 0x06]
 		addop 'cmc',   [0xF5]
-		addop 'cmpxchg',[0x0F, 0xB0], :mrmw
+		addop('cmpxchg',[0x0F, 0xB0], :mrmw) { |o| o.args.reverse! }
 		addop 'cpuid', [0x0F, 0xA2]
 		addop('cwd',   [0x99]) { |o| o.props[:opsz] = 16 }
 		addop('cwde',  [0x98]) { |o| o.props[:opsz] = 32 }
