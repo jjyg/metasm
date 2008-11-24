@@ -31,9 +31,9 @@
 #
 # The substitution may be a Proc, which will receive |dasm object, matched decodedinstr list| as
 # arguments, and should return:
-# a String, holding a sequence of instructions separated by ' ; ', which will be parsed by the CPU
-# an Array of Instruction/DecodedInstruction
-# nil
+# a String, holding a sequence of instructions separated by ' ; ', which will be parsed by the CPU (no labels allowed)
+# nil if the pattern did not match, continue searching
+# an Array of Instruction/DecodedInstruction. If the array is the original di list, same as returning nil
 #
 # If the substitution array is different from the matched sequence, the new instructions are passed
 # to dasm.replace_instrs, which will patch the disassembler decoded instruction graph ; and each
@@ -154,12 +154,20 @@ def self.newinstr_callback(dasm, di)
 	lastdi = di
 	tree = PrecalcPatterns
 	tree = mergetree[tree['.*'], tree[lastdi.instruction.opname]]
-	pat = match = nil
+	newinstrs = match = nil
 	# walk the Precalc tree
 	while tree
 		if tree[:pattern]
 			strs = di_seq.map { |pdi| pdi.instruction.to_s }
-			break if tree[:pattern].find { |pat| match = /#{pat}/.match(strs.join(' ; ')) } or tree.length == 1
+			break if tree[:pattern].find { |pat|
+				if match = /#{pat}/.match(strs.join(' ; '))
+					newinstrs = Patterns[pat]
+					newinstrs = newinstrs[dasm, di_seq] if newinstrs.kind_of? Proc
+					newinstrs = nil if newinstrs == di_seq
+				else newinstrs = nil
+				end
+				newinstrs
+			} or tree.length == 1
 		end
 
 		if lastdi = prev_di(dasm, lastdi)
@@ -170,28 +178,24 @@ def self.newinstr_callback(dasm, di)
 	end
 
 	# match found : create instruction stream, replace in dasm, recurse
-	if match
-		newinstrs = Patterns[pat]
-		newinstrs = newinstrs[dasm, di_seq] if newinstrs.kind_of? Proc
+	if newinstrs
 		# replace %1-%9 by the matched substrings
 		newinstrs = newinstrs.gsub(/%(\d)/) { match.captures[$1.to_i-1] }.split(' ; ').map { |str| dasm.cpu.parse_instruction(str) } if newinstrs.kind_of? String
-		if newinstrs != di_seq
-			if newinstrs and newinstrs.last.kind_of? Metasm::Instruction and newinstrs.last.opname != 'jmp' and
-					di_seq.inject(-di.bin_length) { |len, i| len + i.bin_length } + lastdi.address != di.address
-				# ensure that the last instr ends the same place as the original last instr (to allow disassemble_block to continue)
-				newinstrs << dasm.cpu.parse_instruction("jmp #{Metasm::Expression[di.next_addr]}")
-				# nop ; jmp => jmp
-				newinstrs.shift if newinstrs.length >= 2 and newinstrs.first.kind_of? Metasm::Instruction and newinstrs.first.opname == 'nop'
-			end
+		if newinstrs.last.kind_of? Metasm::Instruction and newinstrs.last.opname != 'jmp' and
+				di_seq.inject(-di.bin_length) { |len, i| len + i.bin_length } + lastdi.address != di.address
+			# ensure that the last instr ends the same place as the original last instr (to allow disassemble_block to continue)
+			newinstrs << dasm.cpu.parse_instruction("jmp #{Metasm::Expression[di.next_addr]}")
+			# nop ; jmp => jmp
+			newinstrs.shift if newinstrs.length >= 2 and newinstrs.first.kind_of? Metasm::Instruction and newinstrs.first.opname == 'nop'
+		end
 
-			# patch the dasm graph
-			if blk = dasm.replace_instrs(lastdi.address, di.address, newinstrs)
-				puts ' deobfuscate', di_seq, ' into', newinstrs, ' ---' if $DEBUG
-				# recurse, keep the last generated di to return to caller as replacement
-				blk.list.each { |bdi| di = newinstr_callback(dasm, bdi) || di }
-			else
-				di = nil
-			end
+		# patch the dasm graph
+		if blk = dasm.replace_instrs(lastdi.address, di.address, newinstrs)
+			puts ' deobfuscate', di_seq, ' into', newinstrs, ' ---' if $DEBUG
+			# recurse, keep the last generated di to return to caller as replacement
+			blk.list.each { |bdi| di = newinstr_callback(dasm, bdi) || di }
+		else
+			di = nil
 		end
 	end
 
