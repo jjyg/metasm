@@ -471,6 +471,9 @@ class Expression < ExpressionType
 				Expression[l.lexpr, @op, [l.rexpr, :+, r]].reduce_rec
 			# XXX (a >> 1) << 1  !=  a (lose low bit)
 			# XXX (a << 1) >> 1  !=  a (with real cpus, lose high bit)
+			# (a | b) << i
+			elsif r.kind_of? Integer and l.kind_of? Expression and [:&, :|, :^].include? l.op
+				Expression[[l.lexpr, @op, r], l.op, [l.rexpr, @op, r]].reduce_rec
 			end
 		elsif @op == :'!'
 			if r.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[r.op]
@@ -491,17 +494,23 @@ class Expression < ExpressionType
 				if    r.rexpr == l; r.lexpr
 				elsif r.lexpr == l; r.rexpr
 				end
+			elsif r.kind_of? Expression and l.kind_of? Integer; Expression[r, @op, l].reduce_rec
 			end
 		elsif @op == :&
 			if l == 0 or r == 0; 0
 			elsif r == 1 and l.kind_of? Expression and [:'==', :'!=', :<, :>, :<=, :>=].include? l.op
 				l
 			elsif l == r; l
-			elsif l.kind_of? Expression and l.op == :& and r.kind_of? Integer and l.rexpr.kind_of? Integer; Expression[l.lexpr, :&, r & l.rexpr].reduce_rec
+			elsif r.kind_of? Expression and l.kind_of? Integer; Expression[r, @op, l].reduce_rec
+			# (a &^| b) & i
+			elsif l.kind_of? Expression and [:|, :&, :^].include? l.op and r.kind_of? Integer
+				ll = l.lexpr
+				ll = Expression[ll, :&, r] if l.op != :&
+				Expression[ll, l.op, [l.rexpr, :&, r]].reduce_rec
+			# rol/ror composition
 			elsif r.kind_of? ::Integer and l.kind_of? Expression and l.op == :|
-				# check for rol/ror composition
 				m = Expression[[['var', :sh_op, 'amt'], :|, ['var', :inv_sh_op, 'inv_amt']], :&, 'mask']
-				if vars = match(m, 'var', :sh_op, 'amt', :inv_sh_op, 'inv_amt', 'mask') and vars[:sh_op] == {:>> => :<<, :<< => :>>}[ vars[:inv_sh_op]] and
+				if vars = Expression[l, :&, r].match(m, 'var', :sh_op, 'amt', :inv_sh_op, 'inv_amt', 'mask') and vars[:sh_op] == {:>> => :<<, :<< => :>>}[ vars[:inv_sh_op]] and
 				   ((vars['amt'].kind_of?(::Integer) and  vars['inv_amt'].kind_of?(::Integer) and ampl = vars['amt'] + vars['inv_amt']) or
 				    (vars['amt'].kind_of? Expression and vars['amt'].op == :% and vars['amt'].rexpr.kind_of? ::Integer and
 				     vars['inv_amt'].kind_of? Expression and vars['inv_amt'].op == :% and vars['amt'].rexpr == vars['inv_amt'].rexpr and ampl = vars['amt'].rexpr)) and
@@ -526,6 +535,7 @@ class Expression < ExpressionType
 			elsif r == 0; l
 			elsif l == -1 or r == -1; -1
 			elsif l == r; l
+			elsif r.kind_of? Expression and l.kind_of? Integer; Expression[r, @op, l].reduce_rec
 			end
 		elsif @op == :*
 			if    l == 0 or r == 0; 0
