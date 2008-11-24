@@ -36,11 +36,11 @@ class Ia32
 				return [EncodedData.new << (6 | (reg << 3)) << @imm.encode(:u16, endianness)]
 			end
 
-			imm = @imm.reduce
+			imm = @imm.reduce if imm
 			imm = nil if imm == 0
 			ret = EncodedData.new
 			ret <<
-			case [@b.val, (@s.val if @s)]
+			case [@b.val, (@s.val if s)]
 			when [3, 6], [6, 3]; 0
 			when [3, 7], [7, 3]; 1
 			when [5, 6], [6, 5]; 2
