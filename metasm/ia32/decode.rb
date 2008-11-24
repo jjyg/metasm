@@ -404,6 +404,7 @@ class Ia32
 					op =~ /^(stos|movs|lods|scas|cmps)([bwd])$/
 					e_op = $1
 					sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
+					eax = Reg.new(0, 8*sz).symbolic
 					dir = :+
 					if di.block and (di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil)
 						dir = :- 
@@ -419,13 +420,13 @@ class Ia32
 						end
 					when 'stos'
 						case pfx[:rep]
-						when nil; { pedi => Expression[:eax], :edi => Expression[:edi, dir, sz] }
-						else      { pedi => Expression[:eax], :edi => Expression[:edi, dir, [sz, :*, :ecx]], :ecx => 0 }
+						when nil; { pedi => Expression[eax], :edi => Expression[:edi, dir, sz] }
+						else      { pedi => Expression[eax], :edi => Expression[:edi, dir, [sz, :*, :ecx]], :ecx => 0 }
 						end
 					when 'lods'
 						case pfx[:rep]
-						when nil; { :eax => pesi, :esi => Expression[:esi, dir, sz] }
-						else      { :eax => Indirection[[:esi, dir, [sz, :*, [:ecx, :-, 1]]], sz, di.address], :esi => Expression[:esi, dir, [sz, :*, :ecx]], :ecx => 0 }
+						when nil; { eax => pesi, :esi => Expression[:esi, dir, sz] }
+						else      { eax => Indirection[[:esi, dir, [sz, :*, [:ecx, :-, 1]]], sz, di.address], :esi => Expression[:esi, dir, [sz, :*, :ecx]], :ecx => 0 }
 						end
 					when 'scas'
 						case pfx[:rep]
@@ -444,7 +445,7 @@ class Ia32
 			when 'cmc'; proc { |di| { :eflag_c => Expression[:'!', :eflag_c] } }
 			when 'cld'; proc { |di| { :eflag_d => Expression[0] } }
 			when 'std'; proc { |di| { :eflag_d => Expression[1] } }
-			when 'setalc'; proc { |di| { :eax => Expression[:eflag_c, :*, 0xff] } }
+			when 'setalc'; proc { |di| { Reg.new(0, 8).symbolic => Expression[:eflag_c, :*, 0xff] } }
 			when /^set/; proc { |di, a0| { a0 => Expression[decode_cc_to_expr(op[/^set(.*)/, 1])] } }
 			when /^j/
 				proc { |di, a0|
@@ -523,12 +524,29 @@ class Ia32
 		}
 
 		if binding = @backtrace_binding[di.instruction.opname]
-			binding[di, *a]
+			bd = binding[di, *a]
+			# handle modifications to al/ah etc
+			bd.keys.grep(Expression).each { |e|
+				# must be in the form (x & mask), with x either :reg or (:reg >> shift) eg ah == ((eax >> 8) & 0xff)
+				if e.op == :& and mask = e.rexpr and mask.kind_of? Integer
+					reg = e.lexpr
+					reg = reg.lexpr if reg.kind_of? Expression and reg.op == :>> and shift = reg.rexpr and shift.kind_of? Integer
+					next if not reg.kind_of? Symbol
+					raise "backtrace_binding: conflict for #{di}: #{e} vs #{reg}" if bd.has_key? reg
+					val = bd.delete e
+					mask <<= shift if shift
+					invmask = mask ^ 0xffff_ffff
+					val = Expression[val, :<<, shift] if shift
+					bd[reg] = Expression[[reg, :&, invmask], :|, [val, :&, mask]]
+				end
+			}
+			bd
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			# assume nothing except the 1st arg is modified
 			case a[0]
 			when Indirection, Symbol; { a[0] => Expression::Unknown }
+			when Expression; { a[0].externals.first => Expression::Unknown }
 			else {}
 			end
 		end

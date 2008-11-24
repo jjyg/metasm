@@ -85,8 +85,13 @@ class Ia32 < CPU
 
 		Sym = @i_to_s[32].map { |s| s.to_sym }
 		def symbolic
+			s = Sym[@val]
 			if @sz == 8 and to_s[-1] == ?h
-				Expression[Sym[@val-4], :>>, 8]
+				Expression[[Sym[@val-4], :>>, 8], :&, 0xff]
+			elsif @sz == 8
+				Expression[s, :&, 0xff]
+			elsif @sz == 16
+				Expression[s, :&, 0xffff]
 			else
 				Sym[@val]
 			end
