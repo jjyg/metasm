@@ -12,6 +12,9 @@ module Metasm
 module GtkGui
 class DisasmWidget < Gtk::VBox
 	attr_accessor :dasm, :entrypoints, :views, :gui_update_counter_max, :notebook
+	# hash key_val => proc { |keyb_ev| true if handled }
+	attr_accessor :keyboard_callback
+
 	def initialize(dasm, ep=[])
 		super()
 
@@ -20,6 +23,7 @@ class DisasmWidget < Gtk::VBox
 		@views = []
 		@pos_history = []
 		@gui_update_counter_max = 100
+		@keyboard_callback = {}
 
 		gui_update_counter = 0
 		dasm_working = false
@@ -74,6 +78,7 @@ class DisasmWidget < Gtk::VBox
 
 	include Gdk::Keyval
 	def keypress(ev)
+		return true if @keyboard_callback[ev.keyval] and @keyboard_callback[ev.keyval].call(ev)
 	    case ev.state & Gdk::Window::CONTROL_MASK
 	    when Gdk::Window::CONTROL_MASK
 		case ev.keyval
