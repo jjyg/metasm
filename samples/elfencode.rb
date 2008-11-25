@@ -4,12 +4,37 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-
+#
+# this sample shows how to compile an ELF file
+# either from C or ASM source
+#
 
 require 'metasm'
+require 'optparse'
 
-elf = Metasm::ELF.assemble(Metasm::Ia32.new, DATA.read)
-elf.encode_file('sampelf')
+outfilename = 'a.out'
+type = nil
+OptionParser.new { |opt|
+	opt.on('-o file') { |f| outfilename = f }
+	opt.on('--c') { type = 'c' }
+	opt.on('--asm') { type = 'asm' }
+	opt.on('-v', '-W') { $VERBOSE=true }
+	opt.on('-d') { $DEBUG=$VERBOSE=true }
+}.parse!
+
+if file = ARGV.shift
+	src = File.read(file)
+	type ||= 'c' if file =~ /\.c$/
+else
+	src = DATA.read	# the text after __END__
+end
+
+if type == 'c'
+	elf = Metasm::ELF.compile_c(Metasm::Ia32.new, src)
+else
+	elf = Metasm::ELF.assemble(Metasm::Ia32.new, src)
+end
+elf.encode_file(outfilename)
 
 __END__
 .interp '/lib/ld-linux.so.2'

@@ -166,7 +166,7 @@ class ELF
 		# ((gnu_hash(sym[M].name) >> shift2) % C) == B"
 		# bloomfilter may be [~0]
 		bloomfilter = []
-		
+
 		# bucket[N] contains the lowest M for which
 		# gnu_hash(sym[M]) % nbuckets == N
 		# or 0 if none
@@ -204,7 +204,7 @@ class ELF
 			encode_add_section hash
 		end
 		hash.encoded = EncodedData.new
-		
+
 		# to find a symbol from its name :
 		# 1: idx = hash(name)
 		# 2: idx = bucket[idx % bucket.size]
@@ -353,7 +353,7 @@ class ELF
 			case r.type
 			when 'PC32'
 				next if not r.symbol or r.symbol.type != 'FUNC'
-				
+
 				# convert to .plt entry
 				#
 				# [.plt header]
@@ -376,7 +376,7 @@ class ELF
 				# [.got.plt + func_got_offset]
 				# dd some_func_got_default	# lazily rewritten to the real addr of some_func by jmp dlresolve_inplace
 				# 				# base_relocated ?
-				
+
 				shellcode = proc { |c| Shellcode.new(@cpu).share_namespace(self).parse(c).assemble.encoded }
 				base = @cpu.generate_PIC ? 'ebx' : '_PLT_GOT'
 				if not plt ||= @sections.find { |s| s.type == 'PROGBITS' and s.name == '.plt' }
@@ -419,7 +419,7 @@ class ELF
 				target_s = @sections.find { |s| s.encoded and s.encoded.export[prevoffset.lexpr] == 0 }
 				rel = target_s.encoded.reloc[prevoffset.rexpr]
 				rel.target = Expression[[[rel.target, :-, prevoffset.rexpr], :-, label_at(target_s.encoded, 0)], :+, r.symbol.name+'_plt_thunk']
-				
+
 			# when 'GOTOFF', 'GOTPC'
 			end
 		}
@@ -437,7 +437,7 @@ class ELF
 			strtab.type = 'STRTAB'
 			strtab.flags = ['ALLOC']
 			strtab.encoded = EncodedData.new << 0
-			strtab.flags 
+			strtab.flags
 			encode_add_section strtab
 		end
 		@tag['STRTAB'] = label_at(strtab.encoded, 0)
@@ -514,7 +514,7 @@ class ELF
 				encode_tag[k, label_at(ar.encoded, 0)]
 				encode_tag[k + 'SZ', ar.encoded.virtsize]
 			when 'NEEDED', 'SONAME', 'RPATH', 'RUNPATH'	# already handled
-			else 
+			else
 				encode_tag[k, @tag[k]]
 			end
 		}
@@ -565,15 +565,15 @@ class ELF
 			return
 		end
 
-                # create a fake binding with all our own symbols
-                # not foolproof, should work in most cases
-                startaddr = curaddr = label_at(@encoded, 0, 'elf_start')
-                binding = {'_DYNAMIC' => 0, '_GOT' => 0}	# XXX
-                @sections.each { |s|
+		# create a fake binding with all our own symbols
+		# not foolproof, should work in most cases
+		startaddr = curaddr = label_at(@encoded, 0, 'elf_start')
+		binding = {'_DYNAMIC' => 0, '_GOT' => 0}	# XXX
+		@sections.each { |s|
 			next if not s.encoded
-                        binding.update s.encoded.binding(curaddr)
-                        curaddr = Expression[curaddr, :+, s.encoded.virtsize]
-                }
+			binding.update s.encoded.binding(curaddr)
+			curaddr = Expression[curaddr, :+, s.encoded.virtsize]
+		}
 
 		@sections.each { |s|
 			next if not s.encoded
@@ -634,9 +634,11 @@ class ELF
 	def encode(type='EXEC')
 		@header.type ||= type
 		@encoded = EncodedData.new
-		automagic_symbols
-		create_relocations
-		encode_segments_dynamic
+		if @segments.find { |i| i.type == 'INTERP' }
+			automagic_symbols
+			create_relocations
+			encode_segments_dynamic
+		end
 
 		prot_match = proc { |seg, sec|
 			(sec.include?('WRITE') == seg.include?('W')) # and (sec.include?('EXECINSTR') == seg.include?('X'))
@@ -732,7 +734,11 @@ class ELF
 		end
 
 		# encode section&program headers
-		st = @sections.inject(EncodedData.new) { |edata, s| edata << s.encode(self) }
+		if @segments.find { |seg| seg.type == 'INTERP' }
+			st = @sections.inject(EncodedData.new) { |edata, s| edata << s.encode(self) }
+		else
+			@header.shoff = @header.shnum = @header.shstrndx = 0
+		end
 		pt = @segments.inject(EncodedData.new) { |edata, s| edata << s.encode(self) }
 
 		binding = {}
@@ -788,7 +794,7 @@ class ELF
 			end
 		}
 
-		binding[@header.shoff] = @encoded.length
+		binding[@header.shoff] = @encoded.length if st
 		@encoded << st
 		@encoded.align 8
 
@@ -823,7 +829,7 @@ class ELF
 		@segments.delete_if { |s| s.type == 'INTERP' }
 		seg = Segment.new
 		seg.type = 'INTERP'
-		seg.encoded = EncodedData.new << '/lib/ld-linux.so.2' << 0
+		seg.encoded = EncodedData.new << DEFAULT_INTERP << 0
 		seg.flags = ['R']
 		seg.memsz = seg.filesz = seg.encoded.length
 		@segments.unshift seg
@@ -832,7 +838,7 @@ class ELF
 		super
 	end
 
-        # handles elf meta-instructions
+	# handles elf meta-instructions
 	#
 	# syntax:
 	#   .section "<name>" [<perms>] [base=<base>]
@@ -896,7 +902,7 @@ class ELF
 			end
 			@cursource = @source[sname] ||= []
 			check_eol[] if instr.backtrace  # special case for magic @cursource
-			
+
 		when '.section'
 			# .section <section name|"section name"> [(no)wxalloc] [base=<expr>]
 			sname = readstr[]
@@ -929,7 +935,7 @@ class ELF
 			end
 			@cursource = @source[sname] ||= []
 			check_eol[]
-			
+
 		when '.entrypoint'
 			# ".entrypoint <somelabel/expression>" or ".entrypoint" (here)
 			@lexer.skip_space
@@ -952,7 +958,7 @@ class ELF
 			s.type = 'FUNC'
 			s.bind = (bind || instr.raw[1..-1]).upcase
 			# define s.section ? should check the section exporting s.target, but it may not be defined now
-			
+
 			# parse pseudo instruction arguments
 			loop do
 				@lexer.skip_space
@@ -993,12 +999,12 @@ class ELF
 			end
 			s.shndx ||= 1 if s.value
 			@symbols << s
-			
+
 		when '.needed'
 			# a required library
 			(@tag['NEEDED'] ||= []) << readstr[]
 			check_eol[]
-			
+
 		when '.soname'
 			# exported library name
 			@tag['SONAME'] = readstr[]

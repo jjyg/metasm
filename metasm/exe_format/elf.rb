@@ -220,8 +220,8 @@ class ELF < ExeFormat
 			7 => 'GLOB_DAT', 8 => 'JMP_SLOT', 9 => 'RELATIVE',
 			10 => 'RELATIVE_S' },
 		'MIPS' => {
-			0 => 'NONE', 1 => '16', 2 => '32', 3 => 'REL32', 
-			4 => '26', 5 => 'HI16', 6 => 'LO16', 7 => 'GPREL16', 
+			0 => 'NONE', 1 => '16', 2 => '32', 3 => 'REL32',
+			4 => '26', 5 => 'HI16', 6 => 'LO16', 7 => 'GPREL16',
 			8 => 'LITERAL', 9 => 'GOT16', 10 => 'PC16',
 			11 => 'CALL16', 12 => 'GPREL32',
 			16 => 'SHIFT5', 17 => 'SHIFT6', 18 => '64',
@@ -313,6 +313,8 @@ class ELF < ExeFormat
 			18 => 'TPOFF64', 19 => 'TLSGD', 20 => 'TLSLD',
 			21 => 'DTPOFF32', 22 => 'GOTTPOFF', 23 => 'TPOFF32' }
 	)
+
+	DEFAULT_INTERP = '/lib/ld-linux.so.2'
 
 	class SerialStruct < SerialStruct
 		new_int_field :addr, :off, :xword, :sword, :sxword

@@ -94,7 +94,7 @@ class ELF
 		@encoded.ptr = off
 		@sections = []
 		@header.shnum.times { @sections << Section.decode(self) }
-		
+
 		# read sections name
 		if @header.shstrndx != 0 and str = @sections[@header.shstrndx] and str.encoded = @encoded[str.offset, str.size]
 			# LoadedElf may not have shstr mmaped
@@ -172,7 +172,7 @@ class ELF
 		# bucket[N] contains the lowest M for which
 		# gnu_hash(sym[M]) % nbuckets == N
 		# or 0 if none
-			
+
 		symcount = 0			# XXX how do we get symcount ?
 		part4 = [] ; (symcount - symndx).times { part4 << decode_word }
 		# part4[N] contains
@@ -281,9 +281,9 @@ class ELF
 	# XXX symbol count is found from the hash table, this may not work with GNU_HASH only binaries
 	def decode_segments_symbols
 		return unless @tag['STRTAB'] and @tag['STRSZ'] and @tag['SYMTAB'] and (@tag['HASH'] or @tag['GNU_HASH'])
-			
+
 		raise "E: ELF: unsupported symbol entry size: #{@tag['SYMENT']}" if @tag['SYMENT'] != Symbol.size(self)
-		
+
 		# find number of symbols
 		if @tag['HASH']
 			@encoded.ptr = @tag['HASH']	# assume tag already interpreted (would need addr_to_off otherwise)
@@ -296,7 +296,7 @@ class ELF
 			sym_count = decode_word	# non hashed symbols
 			# XXX UNDEF symbols are not hashed
 		end
-			
+
 		strtab = @encoded[@tag['STRTAB'], @tag['STRSZ']].data
 
 		@encoded.ptr = @tag['SYMTAB']
@@ -487,7 +487,7 @@ class ELF
 		@segments.each { |s|
 			case s.type
 			when 'LOAD', 'INTERP'
-				s.encoded = @encoded[s.offset, s.filesz]
+				s.encoded = @encoded[s.offset, s.filesz] || EncodedData.new
 				s.encoded.virtsize = s.memsz if s.memsz > s.encoded.virtsize
 			end
 		}
