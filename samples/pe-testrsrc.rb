@@ -5,7 +5,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # compiles a PE file with the specified resource directory
 # TODO build an icon or something
 #

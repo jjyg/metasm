@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # To use your own patterns, create a script that defines Deobfuscate::Patterns, then eval() this file.
 # Use your script as argument to --custom.
 #
@@ -15,9 +15,9 @@
 # The pattern search&replace is done every time the disassembler, found in variable 'dasm',
 # finds a new instruction, through the callback_newinstr callback.
 #
-# The patterns can use shortcuts for frequently-used regexps (like 'any machine registers'), 
+# The patterns can use shortcuts for frequently-used regexps (like 'any machine registers'),
 # defined in the PatternMacros hash.
-# 
+#
 # The patterns are matched first against the sequence of instruction opcode names, then
 # each instruction is rendered as text (using Instruction#to_s), and the global regexp
 # is checked.

@@ -5,7 +5,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # this script scans directories recursively for ELF files which have a PT_GNU_STACK rwe or absent
 # usage : scan_pt_gnu_stack.rb <dir> [<dir>]
 #

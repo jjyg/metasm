@@ -117,7 +117,7 @@ class PTrace32
 		'EVENT_CLONE'      => 3, 'EVENT_EXEC'       => 4,
 		'EVENT_VFORK_DONE' => 5, 'EVENT_EXIT'       => 6
 	}
-	
+
 
 	REGS_I386 = {
 		'EBX' => 0, 'ECX' => 1, 'EDX' => 2, 'ESI' => 3,

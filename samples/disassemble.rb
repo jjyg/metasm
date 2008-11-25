@@ -5,7 +5,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # this script disassembles an executable (elf/pe) and dumps the output
 # ruby -h for help
 #

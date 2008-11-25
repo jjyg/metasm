@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # in this exemple we will patch a process specified on the commandline (pid or part of image name)
 # the IAT entry matching /WriteFile/ will be replaced by a pointer to a malicious code we inject,
 # which calls back the original function.

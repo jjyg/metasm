@@ -129,7 +129,7 @@ class VirtualString
 	# addr is absolute
 	#def get_page(addr)
 	#end
-	
+
 	# searches the cache for a page containing addr, updates if not found
 	def cache_get_page(addr)
 		addr &= 0xffff_ffff_ffff_f000
@@ -190,7 +190,7 @@ class VirtualFile < VirtualString
 
 	# the underlying file descriptor
 	attr_accessor :fd
-	
+
 	# creates a new virtual mapping of a section of the file
 	# the file descriptor must be seekable
 	def initialize(fd, addr_start = 0, length = nil)

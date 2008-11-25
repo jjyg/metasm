@@ -304,7 +304,7 @@ class CCompiler < C::Compiler
 			e
 		end
 	end
-	
+
 	# returns two args corresponding to the low and high 32bits of the 64bits composite arg
 	def get_composite_parts(e)
 		case e

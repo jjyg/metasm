@@ -5,7 +5,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # in this sample we compile 2 PE files, one executable and one dll
 # with the same base address, to check if the base relocation table
 # of the dll is correctly encoded

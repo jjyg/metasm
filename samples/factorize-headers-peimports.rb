@@ -3,7 +3,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # this exemple illustrates the use of the cparser/preprocessor #factorize functionnality:
 # it generates code that references to the functions imported by a windows executable, and
 # factorizes the windows headers through them

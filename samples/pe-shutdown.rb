@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # here we will build an executable file that will shut down the machine
 # when run
 # the header part comes from the factorize sample script

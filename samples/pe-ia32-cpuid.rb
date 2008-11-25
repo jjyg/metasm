@@ -5,7 +5,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # this sample shows the compilation of a slightly more complex program
 # it displays in a messagebox the result of CPUID
 #
@@ -120,9 +120,9 @@ int main(void)
 	unsigned long eax, ebx, ecx, edx;
 	unsigned long i, max;
 	int support_extended;
-	
+
 	printf("%8s - %8s %8s %8s %8s\n", "query", "eax", "ebx", "ecx", "edx");
-	
+
 	max = 0;
 	for (i=0 ; i<=max ; i++) {
 		cpuid(i);
@@ -131,7 +131,7 @@ int main(void)
 		printf("%.8lX - %.8lX %.8lX %.8lX %.8lX\n", i, eax, ebx, ecx, edx);
 	}
 	printf("\n");
-	
+
 	max = 0x80000000;
 	for (i=0x80000000 ; i<=max ; i++) {
 		cpuid(i);
@@ -145,19 +145,19 @@ int main(void)
 
 	cpuid(0);
 	printf("identification: \"%.4s%.4s%.4s\"\n", (char *)&ebx, (char *)&edx, (char *)&ecx);
-	
+
 	printf("cpu information:\n");
 	cpuid(1);
-	printf(" family %ld model %ld stepping %ld efamily %ld emodel %ld\n", 
+	printf(" family %ld model %ld stepping %ld efamily %ld emodel %ld\n",
 			b(eax, 8, 11), b(eax, 4, 7), b(eax, 0, 3), b(eax, 20, 27), b(eax, 16, 19));
 	printf(" brand %ld cflush sz %ld*8 nproc %ld apicid %ld\n",
 			b(ebx, 0, 7), b(ebx, 8, 15), b(ebx, 16, 23), b(ebx, 24, 31));
-	
+
 	printf(" feature information:");
 	for (i=0 ; i<32 ; i++)
 		if (edx & (1 << i))
 			printf(" %s", featureinfo[i]);
-	
+
 	printf("\n extended information:");
 	for (i=0 ; i<32 ; i++)
 		if (ecx & (1 << i))
@@ -172,14 +172,14 @@ int main(void)
 	printf(" %.8lX %.8lX %.8lX %.8lX + ", eax, ebx, ecx & ~1, edx & ~0x00800102);
 	if (ecx & 1)
 		printf(" lahf64");
-	
+
 	if (edx & (1 << 11))
 		printf(" syscall64");
 	if (edx & (1 << 20))
 		printf(" nx");
 	if (edx & (1 << 29))
 		printf(" em64t");
-	
+
 	char brandstring[48];
 	unsigned long *p = (unsigned long*)brandstring;
 	cpuid(0x80000002);
@@ -198,6 +198,6 @@ int main(void)
 	*p++ = ecx;
 	*p++ = edx;
 	printf("\n brandstring: \"%.48s\"\n", brandstring);
-	
+
 	return 0;
 }

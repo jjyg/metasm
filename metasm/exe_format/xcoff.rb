@@ -9,7 +9,7 @@ require 'metasm/decode'
 
 module Metasm
 class XCoff < ExeFormat
-	FLAGS = { 1 => 'RELFLG', 2 => 'EXEC', 4 => 'LNNO', 
+	FLAGS = { 1 => 'RELFLG', 2 => 'EXEC', 4 => 'LNNO',
 		0x200 => 'AR32W', 0x400 => 'PATCH', 0x1000 => 'DYNLOAD',
 		0x2000 => 'SHROBJ', 0x4000 => 'LOADONLY' }
 

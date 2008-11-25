@@ -3,7 +3,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # here we build a simple a.out executable
 #
 

@@ -44,7 +44,7 @@ def make_instr(bins, bits, text)
 		# fnabs FRT,FRB (Rc=0)
 		curbin = bin
 		curfields = fields.dup
-		txt.sub!('  Rc=1)', '  (Rc=1)') if txt.include? 'fdiv.'		# typo: fdiv. has no '(' 
+		txt.sub!('  Rc=1)', '  (Rc=1)') if txt.include? 'fdiv.'		# typo: fdiv. has no '('
 		if txt =~ /(.*\S)\s*\((\w+=.*)\)/
 			txt = $1
 			$2.split.each { |e|
@@ -71,7 +71,7 @@ def make_instr(bins, bits, text)
 		end
 		raise "bad args #{args.inspect} (#{curfields.inspect}) in #{txt}" if args.include? nil
 		$opcodes << [opname, curbin, args]
-		
+
 		n = (opname.inspect << ',').ljust(10) + '0x%08X' % curbin
 		n << ', ' if not args.empty?
 		puts "\taddop " + n + args.map { |e| e.inspect }.join(', ')
@@ -171,22 +171,22 @@ end
 #  2 - Virtual Environment
 #  3 - Operating Environment
 Dir['PPC_Vers202_Book?_public.pdf'].sort.each { |book|
-    $stderr.puts book if $stderr.tty?
-    pdf = PDF.read book
-    pagecount = pdf.trailer['Root']['Pages']['Count'] || 0
-    curpage = 0
-    pdf.each_page { |p|
-	$stderr.print "#{curpage+=1}/#{pagecount} \r" if $stderr.tty?
-	p.clip_lines(50, 740)
-	list = p.lines.flatten
+	$stderr.puts book if $stderr.tty?
+	pdf = PDF.read book
+	pagecount = pdf.trailer['Root']['Pages']['Count'] || 0
+	curpage = 0
+	pdf.each_page { |p|
+		$stderr.print "#{curpage+=1}/#{pagecount} \r" if $stderr.tty?
+		p.clip_lines(50, 740)
+		list = p.lines.flatten
 
-	# split columns
-	sp1, sp2 = list.partition { |l| l.x < 288 }
+		# split columns
+		sp1, sp2 = list.partition { |l| l.x < 288 }
 
-	parse_page(sp1)
-	parse_page(sp2)
-    }
-    $stderr.print "           \r" if $stderr.tty?
+		parse_page(sp1)
+		parse_page(sp2)
+	}
+	$stderr.print "           \r" if $stderr.tty?
 }
 
 epilog()

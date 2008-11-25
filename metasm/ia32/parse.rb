@@ -15,10 +15,10 @@ class ModRM
 	# must be called before SegReg parser (which could match only the seg part of a modrm)
 	def self.parse(lexer, otok)
 		tok = otok
-		
+
 		# read operand size specifier
 		if tok and tok.type == :string and tok.raw =~ /^(?:byte|[dqo]?word|_(\d+)bits)$/
-			ptsz = 
+			ptsz =
 			if $1
 				$1.to_i
 			else
@@ -171,7 +171,7 @@ end
 	def parse_argument(lexer)
 		# reserved names (registers/segments etc)
 		@args_token ||= (Argument.double_list + Argument.simple_list).map { |a| a.s_to_i.keys }.flatten.inject({}) { |h, e| h.update e => true }
-		 
+
 		lexer.skip_space
 		return if not tok = lexer.readtok
 

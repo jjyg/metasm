@@ -28,11 +28,11 @@ class Ia32
 	end
 
 	# only most common instructions from the 386 instruction set
-	# inexhaustive list : 
+	# inexhaustive list :
 	# no aaa, arpl, mov crX, call/jmp/ret far, in/out, bts, xchg...
 	def init_386_common_only
 		init_cpu_constants
-		
+
 		addop_macro1 'adc', 2
 		addop_macro1 'add', 0
 		addop_macro1 'and', 4, :u
@@ -216,7 +216,7 @@ class Ia32
 		addop('xchg',  [0x90], :reg, {}, :reg_eax) { |o| o.args.reverse! }	# xchg eax, ebx == xchg ebx, eax)
 		addop 'xchg',  [0x86], :mrmw
 		addop 'xlat',  [0xD7]
-	
+
 # pfx:  addrsz = 0x67, lock = 0xf0, opsz = 0x66, repnz = 0xf2, rep/repz = 0xf3
 #	cs/nojmp = 0x2E, ds/jmp = 0x3E, es = 0x26, fs = 0x64, gs = 0x65, ss = 0x36
 		# undocumented opcodes
@@ -233,7 +233,7 @@ class Ia32
 
 	def init_387_only
 		init_cpu_constants
-		
+
 		addop 'f2xm1', [0xD9, 0xF0]
 		addop 'fabs',  [0xD9, 0xE1]
 		addop_macrofpu1 'fadd',  0
@@ -272,7 +272,7 @@ class Ia32
 		addop('fld', [0xDD, 0x00], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 64 }
 		addop('fld', [0xDB, 0x28], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 80 }
 		addop 'fld', [0xD9, 0xC0], :regfp
-		
+
 		addop('fldcw',  [0xD9, 0x28], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
 		addop 'fldenv', [0xD9, 0x20], nil, {:modrmA => [1, 0]}, :modrmA
 		addop 'fld1',   [0xD9, 0xE8]
@@ -325,7 +325,7 @@ class Ia32
 		addop 'fyl2xp1',[0xD9, 0xF9]
 		addop 'fwait',  [0x9B]
 	end
-	
+
 	def init_486_only
 		init_cpu_constants
 		# TODO add new segments (fs/gs) ?
@@ -333,11 +333,11 @@ class Ia32
 
 	def init_pentium_only
 		init_cpu_constants
-		
+
 		addop 'cmpxchg8b', [0x0F, 0xC7], 1
 		# lock cmpxchg8b eax
 		#addop 'f00fbug', [0xF0, 0x0F, 0xC7, 0xC8]
-		
+
 		# mmx
 		addop 'emms',  [0x0F, 0x77]
 		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm }
@@ -367,10 +367,10 @@ class Ia32
 		addop_macrogg 1..3, 'punpckl', [0x0F, 0x60], :mrmmmx
 		addop 'pxor',  [0x0F, 0xEF], :mrmmmx
 	end
-	
+
 	def init_p6_only
 		addop_macrotttn 'cmov', [0x0F, 0x40], :mrm
-		
+
 		%w{b e be u}.each_with_index { |tt, i|
 			addop 'fcmov' +tt, [0xDA, 0xC0 | (i << 3)], :regfp
 			addop 'fcmovn'+tt, [0xDB, 0xC0 | (i << 3)], :regfp
@@ -381,7 +381,7 @@ class Ia32
 		addop 'sysenter',[0x0F, 0x34]
 		addop 'sysexit', [0x0F, 0x35]
 	end
-	
+
 	def init_3dnow_only
 		init_cpu_constants
 
@@ -410,24 +410,24 @@ class Ia32
 		addop 'andps',   [0x0F, 0xA4], :mrmxmm
 		addop_macrossps 'cmpps', [0x0F, 0xC2], :mrmxmm
 		addop 'comiss',  [0x0F, 0x2F], :mrmxmm
-		
+
 		[['pi2ps', 0x2A], ['ps2pi', 0x2D], ['tps2pi', 0x2C]].each { |str, bin|
 			addop('cvt' << str, [0x0F, bin], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrmmmx }
 			addop('cvt' << str.tr('p', 's'), [0x0F, bin], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrm ; o.props[:needpfx] = 0xF3 }
 		}
-		
+
 		addop_macrossps 'divps', [0x0F, 0x5E], :mrmxmm
 		addop 'ldmxcsr', [0x0F, 0xAE, 0x10], nil,  {:modrmA => [2, 0]}, :modrmA
 		addop_macrossps 'maxps', [0x0F, 0x5F], :mrmxmm
 		addop_macrossps 'minps', [0x0F, 0x5D], :mrmxmm
 		addop 'movaps',  [0x0F, 0x28], :mrmxmm, {:d => [1, 0]}
-		
+
 		# movhlps(reg, reg){nomem} == movlps(reg, mrm){no restriction}...
 		addop 'movhlps', [0x0F, 0x12], :mrmxmm, {:d => [1, 0]}
 		addop 'movlps',  [0x0F, 0x12], :mrmxmm, {:d => [1, 0]}
 		addop 'movlhps', [0x0F, 0x16], :mrmxmm, {:d => [1, 0]}
 		addop 'movhps',  [0x0F, 0x16], :mrmxmm, {:d => [1, 0]}
-		
+
 		addop 'movmskps',[0x0F, 0x50, 0xC0], nil, {:reg => [2, 3], :regxmm => [2, 0]}, :regxmm, :reg
 		addop('movss',   [0x0F, 0x10], :mrmxmm, {:d => [1, 0]}) { |o| o.props[:needpfx] = 0xF3 }
 		addop 'movups',  [0x0F, 0x10], :mrmxmm, {:d => [1, 0]}
@@ -443,7 +443,7 @@ class Ia32
 		addop 'unpckhps',[0x0F, 0x15], :mrmxmm
 		addop 'unpcklps',[0x0F, 0x14], :mrmxmm
 		addop 'xorps',   [0x0F, 0x57], :mrmxmm
-		
+
 		# start of integer instruction (accept opsz override prefix to access xmm)
 		addop('pavgb',   [0x0F, 0xE0], :mrmmmx) { |o| o.props[:xmmx] = true }
 		addop('pavgw',   [0x0F, 0xE3], :mrmmmx) { |o| o.props[:xmmx] = true }
@@ -475,7 +475,7 @@ class Ia32
 		@opcode_list.each { |o| o.props[:xmmx] = true if o.args.include? :regmmx and o.args.include? :modrmmmx }
 
 		# TODO <..blabla...integer...blabla..>
-		
+
 		# nomem
 		addop 'clflush', [0x0F, 0xAE, 0x38], nil, {:modrm => [2, 0]}, :modrm	# mrmA ?
 		addop('maskmovdqu', [0x0F, 0xF7], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
@@ -496,7 +496,7 @@ class Ia32
 		addop('haddps',   [0x0F, 0x7C], :mrmxmm) { |o| o.props[:needpfx] = 0xF2 }
 		addop('hsubpd',   [0x0F, 0x7D], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('hsubps',   [0x0F, 0x7D], :mrmxmm) { |o| o.props[:needpfx] = 0xF2 }
-		
+
 		addop 'monitor',  [0x0F, 0x01, 0xC8]
 		addop 'mwait',    [0x0F, 0x01, 0xC9]
 
@@ -528,7 +528,7 @@ class Ia32
 	end
 
 
-	# 
+	#
 	# CPU family dependencies
 	#
 
@@ -565,7 +565,7 @@ class Ia32
 		init_pentium
 		init_p6_only
 	end
-		
+
 	def init_sse
 		init_p6
 		init_sse_only
@@ -597,7 +597,7 @@ class Ia32
 	#
 	# addop_* macros
 	#
-	
+
 	def addop_macro1(name, num, immtype=:i)
 		addop name, [(num << 3) | 4], nil, {:w => [0, 0]}, :reg_eax, immtype
 		addop name, [num << 3], :mrmw, {:d => [0, 1]}
@@ -624,7 +624,7 @@ class Ia32
 			else
 				b[0] |= i
 			end
-			
+
 			e.each { |k| addop(name + k, b.dup, hint, fields.dup, *props, &blk) }
 		}
 	end
@@ -652,7 +652,7 @@ class Ia32
 		addop_macrofpu2 name, n, 1
 		addop(name, [0xDF, 0x28|(n<<3)], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 64 }
 	end
-	
+
 	def addop_macrogg(ggrng, name, bin, *args, &blk)
 		ggrng.each { |gg|
 			bindup = bin.dup
@@ -661,7 +661,7 @@ class Ia32
 			addop name+sfx, bindup, *args, &blk
 		}
 	end
-	
+
 	def addop_macrommx(ggrng, name, val)
 		addop_macrogg ggrng, name, [0x0F, 0xC0 | (val << 4)], :mrmmmx
 		addop_macrogg ggrng, name, [0x0F, 0x70, 0xC0 | (val << 4)], nil, {:regmmx => [2, 0]}, :u8
@@ -683,7 +683,7 @@ class Ia32
 
 		case hint
 		when nil
-		
+
 		when :mrm, :mrmw, :mrmA
 			h = (hint == :mrmA ? :modrmA : :modrm)
 			op.fields[:reg]   = [bin.length, 3]
@@ -697,12 +697,12 @@ class Ia32
 		when :regfp
 			op.fields[:regfp] = [bin.length-1, 0]
 			argprops.unshift :regfp, :regfp0
-		
+
 		when Integer		# mod/m, reg == opcode extension = hint
 			op.fields[:modrm] = [bin.length, 0]
 			op.bin << (hint << 3)
 			argprops.unshift :modrm
-			
+
 		when :mrmmmx
 			op.fields[:regmmx] = [bin.length, 3]
 			op.fields[:modrm] = [bin.length, 0]
@@ -712,7 +712,7 @@ class Ia32
 			op.fields[:regxmm] = [bin.length, 3]
 			op.fields[:modrm] = [bin.length, 0]
 			bin << 0
-			argprops.unshift :regxmm, :modrmxmm	
+			argprops.unshift :regxmm, :modrmxmm
 		else
 			raise SyntaxError, "invalid hint #{hint.inspect} for #{name}"
 		end
@@ -724,17 +724,17 @@ class Ia32
 
 		(argprops & @valid_props).each { |p| op.props[p] = true }
 		argprops -= @valid_props
-		
+
 		op.args.concat(argprops & @valid_args)
 		argprops -= @valid_args
-		
+
 		raise "Invalid opcode definition: #{name}: unknown #{argprops.inspect}" unless argprops.empty?
-		
+
 		yield op if block_given?
 
 		argprops = (op.props.keys - @valid_props) + (op.args - @valid_args) + (op.fields.keys - @fields_mask.keys)
 		raise "Invalid opcode customisation: #{name}: #{argprops.inspect}" unless argprops.empty?
-		
+
 		addop_post(op)
 	end
 

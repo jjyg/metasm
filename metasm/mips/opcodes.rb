@@ -46,7 +46,7 @@ end
 
 		addop 'ase_jalx', 0b011101 << 26, :i26
 		addop 'ase011110', 0b011110 << 26, :i26
-		# TODO add all special/regimm/... 
+		# TODO add all special/regimm/...
 	end
 
 	def init_mips32
@@ -130,7 +130,7 @@ end
 		addop 'sllv', 0b000100, :rd, :rt, :rs
 		addop 'srlv', 0b000110, :rd, :rt, :rs
 		addop 'srav', 0b000111, :rd, :rt, :rs
-		
+
 		addop 'jr',   0b001000, :rs, :setip, :stopexec			# hint field ?
 		addop 'jr.hb',0b001000 | (1<<10), :rs, :setip, :stopexec
 		addop 'jalr', 0b001001 | (31<<11), :rs, :setip, :stopexec, :saveip	# rd = r31 implicit
@@ -163,7 +163,7 @@ end
 		addop 'not',  0b100111, :rd, :rt			# nor $0
 		addop 'not',  0b100111, :rd, :rs
 		addop 'nor',  0b100111, :rd, :rs, :rt
-	
+
 		addop 'slt',  0b101010, :rd, :rs, :rt			# rs<rt ? rd<-1 : rd<-0
 		addop 'sltu', 0b101011, :rd, :rs, :rt
 
@@ -243,12 +243,12 @@ end
 end
 __END__
 	def macro_addop_cop1(name, bin, *aprops)
-		flds = [ :rt, :fs ] 
+		flds = [ :rt, :fs ]
 		addop name, :cop1, bin, 'rt, fs', flds, *aprops
 	end
-	
+
 	def macro_addop_cop1_precision(name, type, bin, fmt, *aprops)
-		flds = [ :ft, :fs, :fd ] 
+		flds = [ :ft, :fs, :fd ]
 		addop name+'.'+(type.to_s[5,7]), type, bin, fmt, flds, *aprops
 	end
 
@@ -265,14 +265,14 @@ __END__
 		# ---------------------------------------------------------------
 		# COP0, field rs
 		# ---------------------------------------------------------------
-		
+
 		addop 'mfc0', :cop0, 0b00000, 'rt, rd, sel', [ :rt, :rd, :sel ]
 		addop 'mtc0', :cop0, 0b00100, 'rt, rd, sel', [ :rt, :rd, :sel ]
-	
+
 		# ---------------------------------------------------------------
 		# COP0 when rs=C0
 		# ---------------------------------------------------------------
-		 
+
 		macro_addop_cop0_c0 'tlbr',  0b000001
 		macro_addop_cop0_c0 'tlbwi', 0b000010
 		macro_addop_cop0_c0 'tlwr',  0b000110
@@ -280,11 +280,11 @@ __END__
 		macro_addop_cop0_c0 'eret',  0b011000
 		macro_addop_cop0_c0 'deret', 0b011111
 		macro_addop_cop0_c0 'wait',  0b100000
-		
+
 		# ---------------------------------------------------------------
 		# COP1, field rs
 		# ---------------------------------------------------------------
-		
+
 		macro_addop_cop1 'mfc1', 0b00000
 		macro_addop_cop1 'cfc1', 0b00010
 		macro_addop_cop1 'mtc1', 0b00100
@@ -294,23 +294,23 @@ __END__
 		addop "bc1fl", :cop1, 0b01000, 'cc, off', [ :cc, :off ], :diff_bits, [ 16, 3, 2 ]
 		addop "bc1t",  :cop1, 0b01000, 'cc, off', [ :cc, :off ], :diff_bits, [ 16, 3, 1 ]
 		addop "bc1tl", :cop1, 0b01000, 'cc, off', [ :cc, :off ], :diff_bits, [ 16, 3, 3 ]
-		
+
 		# ---------------------------------------------------------------
 		# COP1, field rs=S/D
 		# ---------------------------------------------------------------
 
 		[ :cop1_s, :cop1_d ].each do |type|
 		type_str = type.to_s[5,7]
-		
-		macro_addop_cop1_precision 'add',  type, 0b000000, 'fd, fs, ft' 
-		macro_addop_cop1_precision 'sub',  type, 0b000001, 'fd, fs, ft' 
-		macro_addop_cop1_precision 'mul',  type, 0b000010, 'fd, fs, ft' 
+
+		macro_addop_cop1_precision 'add',  type, 0b000000, 'fd, fs, ft'
+		macro_addop_cop1_precision 'sub',  type, 0b000001, 'fd, fs, ft'
+		macro_addop_cop1_precision 'mul',  type, 0b000010, 'fd, fs, ft'
 		macro_addop_cop1_precision 'abs',  type, 0b000101, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'mov',  type, 0b000110, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'neg',  type, 0b000111, 'fd, fs', :ft_zero
-		
-		macro_addop_cop1_precision 'movz', type, 0b010010, 'fd, fs, ft' 
-		macro_addop_cop1_precision 'movn', type, 0b010011, 'fd, fs, ft' 
+
+		macro_addop_cop1_precision 'movz', type, 0b010010, 'fd, fs, ft'
+		macro_addop_cop1_precision 'movn', type, 0b010011, 'fd, fs, ft'
 
 		addop "movf.#{type_str}", type, 0b010001, 'fd, fs, cc', [ :cc, :fs, :fd ], :diff_bits, [ 16, 1, 0 ]
 		addop "movt.#{type_str}", type, 0b010001, 'fd, fs, cc', [ :cc, :fs, :fd ], :diff_bits, [ 16, 1, 1 ]
@@ -320,26 +320,26 @@ __END__
 			[ :ft, :fs, :cc ]
 		end
 		end
-		
+
 		# S and D Without PS
-		
+
 		[:cop1_s, :cop1_d].each do |type|
-		macro_addop_cop1_precision 'div',  type, 0b000011, 'fd, fs, ft' 
+		macro_addop_cop1_precision 'div',  type, 0b000011, 'fd, fs, ft'
 		macro_addop_cop1_precision 'sqrt', type, 0b000100, 'fd, fs', :ft_zero
-		
+
 		macro_addop_cop1_precision 'round.w', type, 0b001100, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'trunc.w', type, 0b001101, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'ceil.w',  type, 0b001110, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'floor.w', type, 0b001111, 'fd, fs', :ft_zero
-		
+
 		end
 
 		# COP2 is not decoded (pretty useless)
-		
+
 		[:cop1_d,:cop1_w].each { |type| macro_addop_cop1_precision 'cvt.s', type, 0b100000, 'fd, fs', :ft_zero }
 		[:cop1_s,:cop1_w].each { |type| macro_addop_cop1_precision 'cvt.d', type, 0b100001, 'fd, fs', :ft_zero }
 		[:cop1_s,:cop1_d].each { |type| macro_addop_cop1_precision 'cvt.w', type, 0b100100, 'fd, fs', :ft_zero }
-		
+
 		[ :normal, :special, :regimm, :special2, :cop0, :cop0_c0, :cop1, :cop1_s,
 		  :cop1_d, :cop1_w ].each \
 			{ |t| @@opcodes_by_class[t] = opcode_list.find_all { |o| o.type == t } }
@@ -348,14 +348,14 @@ __END__
 	# Initialize the instruction set with the MIPS32 Instruction Set Release 2
 	def init_mips64
 		init_mips32
-			
+
 		#SPECIAL
 		macro_addop_special "rotr",  0b000010, 'rd, rt, sa', :diff_bits, [ 26, 1, 1 ]
 		macro_addop_special "rotrv", 0b000110, 'rd, rt, rs', :diff_bits, [ 6, 1, 1 ]
-		
+
 		# REGIMM
 		addop "synci", :regimm, 0b11111, '', {:base => [5,21], :off => [16, 0] }
-		
+
 		# ---------------------------------------------------------------
 		# SPECIAL3 opcode encoding of function field
 		# ---------------------------------------------------------------
@@ -366,7 +366,7 @@ __END__
 									:msb => [5, 11], :lsb => [5, 6] }
 
 		addop "rdhwr", :special3, 0b111011, 'rt, rd', { :rt => [5, 16], :rd => [5, 11] }
-		
+
 		addop "wsbh", :bshfl, 0b00010, 'rd, rt', { :rt => [5, 16], :rd => [5, 11] }
 		addop "seb",  :bshfl, 0b10000, 'rd, rt', { :rt => [5, 16], :rd => [5, 11] }
 		addop "seh",  :bshfl, 0b11000, 'rd, rt', { :rt => [5, 16], :rd => [5, 11] }
@@ -379,40 +379,40 @@ __END__
 		addop "wdpgpr", :cop0, 0b01110, 'rt, rd', {:rt => [5, 16], :rd => [5, 11] }
 		addop "di",     :cop0, 0b01011, '', {}, :diff_bits, [ 5, 1 , 0]
 		addop "ei",     :cop0, 0b01011, '', {}, :diff_bits, [ 5, 1 , 1]
-		
+
 		# ---------------------------------------------------------------
 		# COP1, field rs
 		# ---------------------------------------------------------------
-		
+
 		macro_addop_cop1 "mfhc1", 0b00011
 		macro_addop_cop1 "mthc1", 0b00111
 
 		# Floating point
-		
+
 		[:cop1_s, :cop1_d].each do |type|
 		macro_addop_cop1_precision 'round.l', type, 0b001000, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'trunc.l', type, 0b001001, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'ceil.l',  type, 0b001010, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'floor.l', type, 0b001011, 'fd, fs', :ft_zero
-		
+
 		macro_addop_cop1_precision 'recip', type, 0b010101, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'rsqrt', type, 0b010110, 'fd, fs', :ft_zero
-		
+
 		macro_addop_cop1_precision 'cvt.l', type, 0b100101, 'fd, fs', :ft_zero
 		end
 		macro_addop_cop1_precision 'cvt.ps', :cop1_s, 0b100110, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'cvt.s', :cop1_l, 0b100000, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'cvt.d', :cop1_l, 0b100000, 'fd, fs', :ft_zero
-		
-		macro_addop_cop1_precision 'add',  :cop1_ps, 0b000000, 'fd, fs, ft' 
-		macro_addop_cop1_precision 'sub',  :cop1_ps, 0b000001, 'fd, fs, ft' 
-		macro_addop_cop1_precision 'mul',  :cop1_ps, 0b000010, 'fd, fs, ft' 
+
+		macro_addop_cop1_precision 'add',  :cop1_ps, 0b000000, 'fd, fs, ft'
+		macro_addop_cop1_precision 'sub',  :cop1_ps, 0b000001, 'fd, fs, ft'
+		macro_addop_cop1_precision 'mul',  :cop1_ps, 0b000010, 'fd, fs, ft'
 		macro_addop_cop1_precision 'abs',  :cop1_ps, 0b000101, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'mov',  :cop1_ps, 0b000110, 'fd, fs', :ft_zero
 		macro_addop_cop1_precision 'neg',  :cop1_ps, 0b000111, 'fd, fs', :ft_zero
-		
-		macro_addop_cop1_precision 'movz', :cop1_ps, 0b010010, 'fd, fs, ft' 
-		macro_addop_cop1_precision 'movn', :cop1_ps, 0b010011, 'fd, fs, ft' 
+
+		macro_addop_cop1_precision 'movz', :cop1_ps, 0b010010, 'fd, fs, ft'
+		macro_addop_cop1_precision 'movn', :cop1_ps, 0b010011, 'fd, fs, ft'
 
 		addop "movf.#{:cop1_ps_str}", :cop1_ps, 0b010001, 'fd, fs, cc', [ :cc, :fs, :fd ]
 		addop "movt.#{:cop1_ps_str}", :cop1_ps, 0b010001, 'fd, fs, cc', [ :cc, :fs, :fd ]
@@ -422,7 +422,7 @@ __END__
 			[ :ft, :fs, :cc ]
 
 		# TODO: COP1X
-		
+
 		[ :special3, :bshfl, :cop1_l, :cop1_ps ].each \
 			{ |t| @@opcodes_by_class[t] = opcode_list.find_all { |o| o.type == t } }
 	end
@@ -437,11 +437,11 @@ __END__
 		fields_spec.clear
 		opcode_list.clear
 	end
-	
+
 end
 	# Array containing all the supported opcodes
-	attr_reader :opcode_list	
-	
+	attr_reader :opcode_list
+
 	init_mips32
 end
 

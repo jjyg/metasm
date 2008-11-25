@@ -67,11 +67,11 @@ hooks = {}
 prepare_hook = proc { |mpe, base, export|
 	hooklabel = sc.new_label('hook')
 	namelabel = sc.new_label('name')
-	
+
 	# this will overwrite the function entrypoint
 	target = base + export.target
 	hooks[target] = Shellcode.new(sc.cpu).share_namespace(sc).parse("jmp #{hooklabel}").assemble.encoded
-	
+
 	# backup the overwritten instructions
 	# retrieve instructions until their length is >= our hook length
 	mpe.encoded.ptr = export.target
@@ -88,7 +88,7 @@ prepare_hook = proc { |mpe, base, export|
 	end
 	puts "overwritten at #{export.name}:", overwritten, '' if $DEBUG
 	resumeaddr = target + sz
-	
+
 	# append the call-specific shellcode to the main hook code
 	sc.cursource << Label.new(hooklabel)
 	sc.parse <<EOS
@@ -101,7 +101,7 @@ EOS
 	sc.cursource << Label.new(namelabel)
 	sc.parse "dw #{export.name.inspect}, 0"
 }
-	
+
 msgboxw = nil
 # decode interesting libraries from address space
 pr.modules[1..-1].each { |m|
@@ -134,12 +134,12 @@ pr.modules[1..-1].each { |m|
 
 		# ensure the exported thing is in the .text section
 		next if e.target < text.virtaddr or e.target >= text.virtaddr + text.virtsize
-		
+
 		# prepare the hook
 		prepare_hook[mpe, m.addr, e]
 	}
 }
-	
+
 raise 'Did not find MessageBoxW !' if not msgboxw
 
 puts 'linking...'

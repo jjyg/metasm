@@ -5,7 +5,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # this script reads a list of elf files, and lists its dependencies recursively
 # libraries are searched in LD_LIBRARY_PATH, /usr/lib and /lib
 # includes the elf interpreter

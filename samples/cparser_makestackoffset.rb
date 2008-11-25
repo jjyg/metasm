@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # This script takes a C header or a path to a Visual Studio install and
 # outputs a ruby source file defining StackOffsets, a hash used by the disassembler
 # In verbose mode (ruby -v), instead dumps the parsed header (+ warnings)
@@ -46,7 +46,7 @@ puts 'StackOffsets = {'
 align = proc { |val| (val + cp.typesize[:ptr] - 1) / cp.typesize[:ptr] * cp.typesize[:ptr] }
 puts funcs.find_all { |f| f.attributes and f.attributes.include? 'stdcall' and f.type.args }.sort_by { |f| f.name }.map { |f|
 	"#{f.name.inspect} => #{f.type.args.inject(0) { |sum, arg| sum + align[cp.sizeof(arg)] }}"
-     }.join(",\n")
+}.join(",\n")
 puts '}'
 puts 'end'
 else

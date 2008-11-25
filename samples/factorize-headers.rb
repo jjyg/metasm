@@ -3,7 +3,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # this exemple illustrates the use of the cparser/preprocessor #factorize functionnality:
 # we write some code using standard headers, and the factorize call on CParser
 # gives us back the macro/C definitions that we use in our code, so that we can

@@ -29,7 +29,7 @@ class Shellcode < ExeFormat
 	def parse_parser_instruction(instr)
 		case instr.raw.downcase
 		when '.base_addr'
-                        # ".base_addr <expression>"
+			# ".base_addr <expression>"
 			# expression should #reduce to integer
 			@lexer.skip_space
 			raise instr, 'syntax error' if not @base_addr = Expression.parse(@lexer).reduce

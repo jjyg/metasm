@@ -20,7 +20,7 @@ class MIPS
 		end
 	end
 
-        def parse_argument(pgm)
+	def parse_argument(pgm)
 		pgm.skip_space
 		return if not tok = pgm.nexttok
 		if tok.type == :string and Reg.s_to_i[tok.raw]

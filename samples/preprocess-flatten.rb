@@ -4,7 +4,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # this file takes preprocessor files as arguments
 # it preprocesses their content and dump the result to stdout
 # it also dumps all macro definitions

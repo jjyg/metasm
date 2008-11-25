@@ -3,7 +3,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # this is a linux/x86 debugger with a console interface
 #
 
@@ -68,6 +68,7 @@ module Ansi
 	}
 	def self.getkey
 		c = $stdin.getc
+		raise 'nonblocking $stdin?' if not c
 		return c if c != ?\e
 		c = $stdin.getc
 		if c != ?[ and c != ?O
@@ -193,7 +194,7 @@ class LinDebug
 		end
 		$stdout.puts @promptlog.last
 	end
-	
+
 	def update
 		csy, csx = @console_height-1, @promptpos+2
 		$stdout.write Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt + Ansi.set_cursor_pos(csy, csx)
@@ -430,7 +431,7 @@ class LinDebug
 			end
 		end
 	end
-	
+
 	def updatecodeptr
 		@codeptr ||= @rs.regs_cache['eip']
 		if @codeptr > @rs.regs_cache['eip'] or @codeptr < @rs.regs_cache['eip'] - 6*@win_code_height
@@ -630,7 +631,7 @@ class LinDebug
 			@rs.breakpoints.each { |addr, oct| @rs[addr] = oct }
 			@rs.breakpoints.clear
 			if @rs.regs_cache['dr7'] & 0xff != 0
-				@rs.dr7 = 0 
+				@rs.dr7 = 0
 				@rs.readregs
 			end
 		}
@@ -639,7 +640,7 @@ class LinDebug
 		@command['db'] = proc { |lex, int| @datafmt = 'db' ; @dataptr = int[] || return }
 		@command['dw'] = proc { |lex, int| @datafmt = 'dw' ; @dataptr = int[] || return }
 		@command['dd'] = proc { |lex, int| @datafmt = 'dd' ; @dataptr = int[] || return }
-		@command['r'] =  proc { |lex, int| 
+		@command['r'] =  proc { |lex, int|
 			r = lex.readtok.raw
 			nil while ntok = lex.readtok and ntok.type == :space
 			if r == 'fl'

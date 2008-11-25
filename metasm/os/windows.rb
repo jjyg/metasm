@@ -55,9 +55,9 @@ module WinAPI
 	end
 
 	extend self	# any other way to dynamically create singleton methods ?
-	
+
 	# raw api function
-	
+
 	if defined? Win32API
 	new_api 'kernel32', 'CloseHandle', 'I I'
 	new_api 'kernel32', 'ContinueDebugEvent', 'III I'
@@ -84,10 +84,10 @@ module WinAPI
 	new_api 'user32', 'PostMessageA', 'IIII I'
 	new_api 'user32', 'MessageBoxA', 'IPPI I'
 	end
-	
-	
+
+
 	# constants
-	
+
 	CONTEXT_i386 = 0x00010000
 	CONTEXT86_CONTROL  = (CONTEXT_i386 | 0x0001) # SS:ESP, CS:EIP, FLAGS, EBP */
 	CONTEXT86_INTEGER  = (CONTEXT_i386 | 0x0002) # EAX, EBX, ECX, EDX, ESI, EDI */
@@ -127,7 +127,7 @@ module WinAPI
 
 
 	# higher level functions
-	
+
 	# try to enable debug privilege in current process
 	def self.get_debug_privilege
 		htok = [0].pack('L')
@@ -395,7 +395,7 @@ class WinDbg
 	def debugloop_step(debugevent)
 		code, pid, tid = debugevent.unpack('LLL')
 		info = debugevent[[0,0,0].pack('LLL').length..-1]
-		
+
 		cont = \
 		case code
 		when WinAPI::EXCEPTION_DEBUG_EVENT

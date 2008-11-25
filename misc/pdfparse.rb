@@ -85,7 +85,7 @@ class PDF
 	def readhdr
 		@hdr = @str[@off, @off = @str.index("\n", @off)]
 	end
-	
+
 	# reads the pdf trailer
 	# XXX the xref table referenced here may be the first of the file, so we suppose the last is just before the 'trailer' command..
 	def readtrailer
@@ -290,7 +290,7 @@ class PDF
 					raise 'no endobj' if readcmd != 'endobj'
 				when 'R'
 					i = Ref.new(self, g, i)
-				else @off = poff 
+				else @off = poff
 				end
 			end
 			i
@@ -501,7 +501,7 @@ end if $VERBOSE
 			when '': break
 			when /\A-?\d+(?:\.\d+)?/: tok = $&.to_f
 			when /\A\((?:\\.|[^\\)])*\)/: tok = $&
-			when /\A\[(?:[^\](]*\((?:\\.|[^\\)])*\))*[^]]*\]/: tok = $&
+			when /\A\[(?:[^\](]*\((?:\\.|[^\\)])*\))*[^\]]*\]/: tok = $&
 			when /\A[a-zA-Z0-9_*]+/: tok = $&.to_sym rescue nil
 			when /\A\S+/, /\A\s+/
 			end
@@ -577,7 +577,7 @@ BX /GS2 gs EX
 0 Tw
 @charspc = charspc
 [(This is 12-point )10(T)41(imes. )
-	18(This sentence will appear near 
+	18(This sentence will appear near
 	the top of page one.)]TJ
 ET
 endstream

@@ -133,7 +133,7 @@ class MZ < ExeFormat
 	def decode_header
 		@header.decode self
 	end
-	
+
 	# decodes the relocation table
 	def decode_relocs
 		@relocs.clear

@@ -206,7 +206,7 @@ module C
 				raise parser if not tok = parser.skipspaces
 				break if tok.type == :punct and tok.raw == '}'
 				parser.unreadtok tok
-	
+
 				raise tok, 'invalid struct member type' if not basetype = Variable.parse_type(parser, scope)
 				loop do
 					member = basetype.dup
@@ -214,9 +214,9 @@ module C
 					# raise parser if not member.name	# can be useful while hacking: struct foo {int; int*; int iwant;};
 					raise member.backtrace, 'member redefinition' if member.name and @members.find { |m| m.name == member.name }
 					@members << member
-	
+
 					raise tok || parser if not tok = parser.skipspaces or tok.type != :punct
-	
+
 					if tok.raw == ':'	# bits
 						raise tok, 'bad type for bitslice' if not member.type.integral?
 						bits = nil
@@ -227,7 +227,7 @@ module C
 						(@bits ||= [])[@members.length-1] = bits
 						raise tok || parser, '"," or ";" expected' if not tok = parser.skipspaces or tok.type != :punct
 					end
-	
+
 					case tok.raw
 					when ';'; break
 					when ','
@@ -337,10 +337,10 @@ module C
 			loop do
 				raise parser if not tok = parser.skipspaces
 				break if tok.type == :punct and tok.raw == '}'
-	
+
 				name = tok.raw
 				raise tok, 'bad enum name' if tok.type != :string or Keyword[name] or (?0..?9).include?(name[0])
-	
+
 				raise parser if not tok = parser.skipspaces
 				if tok.type == :punct and tok.raw == '='
 					raise tok || parser if not val = CExpression.parse(parser, scope, false) or not val = val.reduce(parser) or not tok = parser.skipspaces
@@ -350,7 +350,7 @@ module C
 				raise tok, "enum value #{name} redefinition" if scope.symbol[name] and scope.symbol[name] != val
 				@members[name] = val
 				scope.symbol[name] = val
-	
+
 				if tok.type == :punct and tok.raw == '}'
 					break
 				elsif tok.type == :punct and tok.raw == ','
@@ -595,7 +595,7 @@ module C
 		def initialize(body, backtrace, output, input, clobber, volatile)
 			@body, @backtrace, @output, @input, @clobber, @volatile = body, backtrace, output, input, clobber, volatile
 		end
-		
+
 		def self.parse(parser, scope)
 			if tok = parser.skipspaces and tok.type == :string and (tok.raw == 'volatile' or tok.raw == '__volatile__')
 				volatile = true
@@ -713,14 +713,13 @@ module C
 		# creates a new CParser, parses all top-level statements
 		def self.parse(text)
 			c = new
-			caller.first =~ /^(.*?):(\d+)/
-	                c.parse text, $1, $2.to_i+1
+	                c.parse text
 			raise c.lexer.readtok || c, 'invalid definition' if not c.lexer.eos?
 			c
 		end
-	
+
 		# parses the current lexer content (or the text arg) for toplevel definitions
-		def parse(text=nil, filename='unknown', lineno=1)
+		def parse(text=nil, filename='<unk>', lineno=1)
 			@lexer.feed text, filename, lineno if text
 			nil while not @lexer.eos? and (parse_definition(@toplevel) or parse_toplevel_statement(@toplevel))
 			sanity_checks
@@ -743,7 +742,7 @@ module C
 				:char => 1, :float => 4, :double => 8, :longdouble => 12 }
 			send model
 		end
-	
+
 		def ilp16
 			# XXX check this
 			@typesize.update :short => 2, :ptr => 2,
@@ -770,7 +769,7 @@ module C
 			@typesize.update :short => 2, :ptr => 8,
 				:int => 4, :long => 8, :longlong => 8
 		end
-	
+
 		attr_accessor :auto_predeclare_unknown_structs
 		def parse_pragma_callback(otok)
 			case otok.raw
@@ -800,7 +799,7 @@ module C
 					@pragma_pack = @pragma_pack_stack.pop
 					@pragma_pack = v2.raw.to_i if v2 and v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
 					raise v2, 'bad pack value' if pragma_pack == 0
-				elsif v1.raw =~ /^\d+$/  
+				elsif v1.raw =~ /^\d+$/
 					raise v2, '2nd arg unexpected' if v2
 					@pragma_pack = v1.raw.to_i
 					raise v1, 'bad pack value' if @pragma_pack == 0
@@ -836,7 +835,7 @@ module C
 				@lexer.define_weak('__signed', 'signed')
 				@lexer.define_weak('__volatile', 'volatile')
 				@lexer.nodefine_strong('__REDIRECT_NTH')	# booh gnu
-				@lexer.hooked_include['stddef.h'] = <<EOH 
+				@lexer.hooked_include['stddef.h'] = <<EOH
 #if !defined (_STDDEF_H) || defined(__need_NULL) || defined(__need_ptrdiff_t) || defined(__need_size_t) || defined(__need_wint_t)
 #if !defined(__need_NULL) && !defined(__need_ptrdiff_t) && !defined(__need_size_t) && !defined(__need_wint_t)
  #define _STDDEF_H
@@ -865,7 +864,7 @@ module C
  #undef NULL
  #ifndef __cplusplus
   #define NULL ((void *)0)
- #else 
+ #else
   #define NULL 0
  #endif  /* C++ */
  #undef	__need_NULL
@@ -890,13 +889,13 @@ EOH
 			else @prev_pragma_callback[otok]
 			end
 		end
-	
+
 		# C sanity checks
 		def sanity_checks
 			return if not $VERBOSE
 			#  TODO
 		end
-	
+
 		# checks that the types are compatible (variable predeclaration, function argument..)
 		# strict = false for func call/assignment (eg char compatible with int -- but int is incompatible with char)
 		def check_compatible_type(tok, oldtype, newtype, strict = false, checked = [])
@@ -904,13 +903,13 @@ EOH
 			newtype = newtype.untypedef
 			oldtype = BaseType.new(:int) if oldtype.kind_of? Enum
 			newtype = BaseType.new(:int) if newtype.kind_of? Enum
-	
+
 			puts tok.exception('type qualifier mismatch').message if $VERBOSE and oldtype.qualifier.to_a.uniq.length > newtype.qualifier.to_a.uniq.length
-	
+
 			# avoid infinite recursion
 			return if checked.include? oldtype
 			checked = checked + [oldtype]
-	
+
 		    begin
 			case newtype
 			when Function
@@ -967,12 +966,12 @@ EOH
 			raise $!, $!.message + " incompatible type #{oname} to #{nname}"
 		    end
 		end
-	
+
 		# allows 'raise self'
 		def exception(msg='EOF unexpected')
 			@lexer.exception msg
 		end
-	
+
 		# reads a token, convert 'L"foo"' to a :quoted
 		def readtok_longstr
 			if t = @lexer.readtok and t.type == :string and t.raw == 'L' and
@@ -992,7 +991,7 @@ EOH
 			end
 		end
 		private :readtok_longstr
-	
+
 		# reads a token from self.lexer
 		# concatenates strings, merges spaces/eol to ' ', handles wchar strings
 		def readtok
@@ -1006,7 +1005,7 @@ EOH
 					t.raw = ' '
 					nil while nt = @lexer.readtok and (nt.type == :eol or nt.type == :space)
 					@lexer.unreadtok nt
-	
+
 				when :quoted
 					# merge consecutive :quoted
 					t = t.dup
@@ -1028,17 +1027,17 @@ EOH
 			end
 			t
 		end
-	
+
 		def unreadtok(tok)
 			@unreadtoks << tok if tok
 		end
-	
+
 		# returns the next non-space/non-eol token
 		def skipspaces
 			nil while t = readtok and t.type == :space
 			t
 		end
-	
+
 		# returns the size of a type in bytes
 		def sizeof(var, type=var.type)
 			# XXX double-check class apparition order ('when' checks inheritance)
@@ -1085,14 +1084,14 @@ EOH
 				sizeof(var, type.type)
 			end
 		end
-	
+
 		# parses variable/function definition/declaration/initialization
 		# populates scope.symbols and scope.struct
 		# raises on redefinitions
 		# returns false if no definition found
 		def parse_definition(scope)
 			return false if not basetype = Variable.parse_type(self, scope, true)
-	
+
 			# check struct predeclaration
 			tok = skipspaces
 			if tok and tok.type == :punct and tok.raw == ';' and basetype.type and
@@ -1100,14 +1099,14 @@ EOH
 				return true
 			else unreadtok tok
 			end
-	
+
 			nofunc = false
 			loop do
 				var = basetype.dup
 				var.parse_declarator(self, scope)
-	
+
 				raise var.backtrace if not var.name	# barrel roll
-	
+
 				if prev = scope.symbol[var.name]
 					if prev.kind_of? TypeDef and var.storage == :typedef
 						check_compatible_type(var.backtrace, prev.type, var.type, true)
@@ -1132,9 +1131,9 @@ EOH
 					var.attributes = attrs if attrs
 				end
 				scope.statements << Declaration.new(var) unless var.kind_of? TypeDef
-	
+
 				raise tok || self, 'punctuation expected' if not tok = skipspaces or tok.type != :punct
-	
+
 				case tok.raw
 				when '{'
 					# function body
@@ -1151,7 +1150,7 @@ EOH
 						end
 						body.symbol[v.name] = v	# XXX will need special check in stack allocator
 					}
-	
+
 					loop do
 						raise tok || self, var.backtrace.exception('"}" expected for end of function') if not tok = skipspaces
 						break if tok.type == :punct and tok.raw == '}'
@@ -1177,7 +1176,7 @@ EOH
 				else
 					scope.symbol[var.name] = var
 				end
-	
+
 				case tok.raw
 				when ','; nofunc = true
 				when ';'; break
@@ -1200,11 +1199,11 @@ EOH
 				true
 			end
 		end
-	
+
 		# returns a statement or raise
 		def parse_statement(scope, nest)
 			raise self, 'statement expected' if not tok = skipspaces
-	
+
 			if tok.type == :punct and tok.raw == '{'
 				body = Block.new scope
 				loop do
@@ -1222,13 +1221,13 @@ EOH
 				unreadtok tok
 				raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
 				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
-	
+
 				if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
 					puts tok.exception("statement with no effect : #{expr}")
 				end
 				return expr
 			end
-	
+
 			case tok.raw
 			when 'if'
 				If.parse      self, scope, nest
@@ -1279,7 +1278,7 @@ EOH
 					unreadtok tok
 					raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
 					raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
-	
+
 					if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
 						puts tok.exception("statement with no effect : #{expr}")
 					end
@@ -1303,7 +1302,7 @@ EOH
 					parser.unreadtok tok
 					break
 				end
-	
+
 				case tok.raw
 				when 'const', 'volatile'
 					qualifier << tok.raw.to_sym
@@ -1350,10 +1349,10 @@ EOH
 						parser.unreadtok tok
 					end
 				end
-	
+
 				break
 			end
-	
+
 			if not var.type
 				raise tok || parser, 'bad type name' if not qualifier.empty? or var.storage
 				nil
@@ -1363,7 +1362,7 @@ EOH
 				var
 			end
 		end
-	
+
 		# parses a structure/union/enum declaration
 		def parse_type_struct(parser, scope)
 			@type.parse_attributes(parser)
@@ -1415,10 +1414,10 @@ EOH
 			else
 				raise tok || parser, 'struct name or "{" expected'
 			end
-	
+
 			@type.parse_members(parser, scope)
 		end
-	
+
 		# parses int/long int/long long/double etc
 		def parse_type_base(parser, scope)
 			specifier = []
@@ -1444,7 +1443,7 @@ EOH
 					break
 				end
 			end
-	
+
 			case name
 			when :double	# long double
 				if specifier == [:long]
@@ -1475,7 +1474,7 @@ EOH
 			else		# none
 				raise tok || parser, 'invalid type' if not specifier.empty?
 			end
-	
+
 			@type = BaseType.new(name, *specifier)
 			@type.qualifier = qualifier if not qualifier.empty?
 		end
@@ -1542,7 +1541,7 @@ EOH
 						not @type.members and @storage != :typedef and @storage != :extern	# gcc uses an undefined extern struct just to cast it later (_IO_FILE_plus)
 			end
 		end
-	
+
 		# parses array/function type
 		def parse_declarator_postfix(parser, scope)
 			if tok = parser.skipspaces and tok.type == :punct and tok.raw == '['
@@ -1587,13 +1586,13 @@ EOH
 						else
 							parser.unreadtok tok
 						end
-	
+
 						raise tok if not v = Variable.parse_type(parser, scope)
 						v.storage = storage if storage
 						v.parse_declarator(parser, scope)
 						v.type = Pointer.new(v.type.type) if v.type.kind_of? Array
 						v.type = Pointer.new(v.type) if v.type.kind_of? Function
-	
+
 						t.type.args << v if not v.type.kind_of? BaseType or v.type.name != :void
 						if tok = parser.skipspaces and tok.type == :punct and tok.raw == ','
 							raise tok, '")" expected' if t.type.args.last != v		# last arg of type :void
@@ -1728,7 +1727,7 @@ EOH
 					return CExpression.new(l, @op, r, @type) if not l.kind_of?(::Numeric) or not r.kind_of?(::Numeric)
 					l.send(@op, r)
 				end
-				
+
 				# overflow
 				case t.name
 				when :char, :short, :int, :long, :longlong, :__int8, :__int16, :__int32, :__int64
@@ -1959,7 +1958,7 @@ EOH
 				when '+', '-', '&', '!', '~', '*', '--', '++', '&&'
 					# unary prefix
 					# may have been read ahead
-					
+
 					raise parser if not ntok = parser.readtok
 					# check for -- ++ &&
 					if ntok.type == :punct and ntok.raw == tok.raw and %w[+ - &].include?(tok.raw)
@@ -2011,7 +2010,7 @@ EOH
 			end
 			val
 		end
-		
+
 		# parse postfix forms (postincrement, array index, struct member dereference)
 		def parse_value_postfix(parser, scope, val)
 			tok = parser.skipspaces
@@ -2102,7 +2101,7 @@ EOH
 			opstack = []
 			stack = []
 
-			popstack = proc { 
+			popstack = proc {
 				r, l = stack.pop, stack.pop
 				case op = opstack.pop
 				when :'?:'
@@ -2232,8 +2231,8 @@ EOH
 	#
 	# Dumper : objects => C source
 	#
-	
-	class Parser	
+
+	class Parser
 		# returns a big string containing all definitions from headers used in the source (including macros)
 		def factorize(src)
 			factorize_init
@@ -2245,25 +2244,25 @@ EOH
 		def factorize_init
 			@lexer.traced_macros = []
 		end
-	
+
 		def factorize_final
 			# now find all types/defs not coming from the standard headers
 			# all
 			all = @toplevel.struct.values + @toplevel.symbol.values
 			all -= all.grep(::Integer)	# Enum values
-	
+
 			# list of definitions of user-defined objects
 			userdefined = all.find_all { |t|
 				t.backtrace.backtrace.grep(::String).grep(/^</).empty?
 			}
-	
+
 			@toplevel.statements.clear	# don't want all Declarations
-	
+
 			# a macro is fine too
 			@lexer.dump_macros(@lexer.traced_macros, false) + "\n\n" +
 			dump_definitions(userdefined, userdefined)
 		end
-	
+
 		# returns a big string representing the definitions of all terms appearing in +list+, excluding +exclude+
 		# includes dependencies
 		def dump_definitions(list, exclude=[])
@@ -2281,14 +2280,14 @@ EOH
 			end
 			exclude.each { |t| todo_deps.delete t ; todo_rndr.delete t }
 			todo_deps.each_key { |t| todo_deps[t] -= exclude }
-	
+
 			all = @toplevel.struct.values + @toplevel.symbol.values
 			all -= all.grep(::Integer)	# Enum values
-	
+
 			r, dep = @toplevel.dump_reorder(all, todo_rndr, todo_deps)
 			r.join("\n")
 		end
-	
+
 		def to_s
 			@toplevel.dump(nil)[0].join("\n")
 		end
@@ -2587,7 +2586,7 @@ EOH
 			r.last << ' '
 			@type.dump_declarator([(name ? @name.dup : '') << dump_attributes], scope, r, dep)
 		end
-		
+
 		def dump_initializer(init, scope, r=[''], dep=[])
 			@type.dump_initializer(init, scope, r, dep)
 		end
@@ -2801,7 +2800,7 @@ EOH
 		def dump(scope, r=[''], dep=[])
 			r.last << 'return '
 			r, dep = CExpression.dump(@value, scope, r, dep)
-			r.last.chop! if r.last[-1] == ?\ 
+			r.last.chop! if r.last[-1] == ?\ 	# the space character
 			r.last << ';'
 			[r, dep]
 		end
@@ -2881,7 +2880,7 @@ EOH
 				end
 				r.last << '('
 			end
-			r, dep = 
+			r, dep = \
 			case e
 			when ::Numeric; r.last << e.to_s ; [r, dep]
 			when ::String; r.last << e.inspect ; [r, dep]

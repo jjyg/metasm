@@ -28,7 +28,7 @@ class CPU
 			lexer.skip_space_eol
 		end
 		return if not tok
-	
+
 		# allow '.' in opcode name
 		tok = tok.dup
 		while ntok = lexer.nexttok and ntok.type == :punct and ntok.raw == '.'
@@ -101,7 +101,7 @@ class AsmPreprocessor < Preprocessor
 	# handles local labels
 	class Macro
 		attr_accessor :name, :args, :body, :labels
-		
+
 		def initialize(name)
 			@name = name
 			@args, @body, @labels = [], [], []
@@ -442,6 +442,7 @@ class ExeFormat
 			@lexer.skip_space
 			if ntok = @lexer.readtok and ntok.type == :string and ntok.raw.downcase == 'dup'
 				raise ntok, 'need immediate count expression' unless (count = i.reduce).kind_of? ::Integer
+				@lexer.skip_space
 				raise ntok, 'syntax error, ( expected' if not ntok = @lexer.readtok or ntok.type != :punct or ntok.raw != '('
 				content = []
 				loop do
@@ -618,7 +619,7 @@ class Expression
 					raise tok, 'bad float' if not ntok or ntok.type != :string or ntok.raw !~ /^[0-9_]*(e[0-9_]*)?[fl]?$/i
 					ntok = lexer.readtok
 				end
-				
+
 				if tok.raw.downcase[-1] == ?e
 					# read signed exponent
 					tok.raw << ntok.raw if ntok
@@ -643,7 +644,7 @@ class Expression
 
 		# parses an integer/a float, sets its tok.value, consumes&aggregate necessary following tokens (point, mantissa..)
 		# handles $/$$ special asm label name
-		# XXX for binary, use _ delimiter or 0b prefix, or start with 0 : 1b may conflict with backward local anonymous label reference 
+		# XXX for binary, use _ delimiter or 0b prefix, or start with 0 : 1b may conflict with backward local anonymous label reference
 		def parse_intfloat(lexer, tok)
 			if not tok.value and tok.raw == '$'
 				if not (l = lexer.program.cursource.last).kind_of? Label
@@ -733,9 +734,9 @@ class Expression
 				until opstack.empty? or OP_PRIO[op.value][opstack.last]
 					stack << new(opstack.pop, stack.pop, stack.pop)
 				end
-				
+
 				opstack << op.value
-				
+
 				raise op, 'need rhs' if not e = parse_value(lexer)
 
 				stack << e

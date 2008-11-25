@@ -3,7 +3,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # this exemple illustrates the use of the PTrace32 class to implement a pytstop-like functionnality
 # Works on linux/x86
 #

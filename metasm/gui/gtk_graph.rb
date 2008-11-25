@@ -300,7 +300,7 @@ class GraphViewWidget < Gtk::HBox
 		@width = @height = 20
 
 		set_font 'courier 10'
-		
+
 		@drawarea.set_events Gdk::Event::ALL_EVENTS_MASK	# receive click/keys
 		set_can_focus true			# receive keys
 
@@ -386,7 +386,7 @@ class GraphViewWidget < Gtk::HBox
 			redraw
 		end
 	end
-	
+
 	def mousemove(ev)
 		return if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
 
@@ -505,7 +505,7 @@ class GraphViewWidget < Gtk::HBox
 
 		# TODO do this somewhere else
 		#@curcontext.auto_arrange_boxes if not @curcontext.box.empty? and @curcontext.box.all? { |b| b.x == 0 and b.y == 0 }
-		
+
 		# TODO MergedBoxes
 
 		# arrows
@@ -516,13 +516,13 @@ class GraphViewWidget < Gtk::HBox
 				paint_arrow(w, gc, b, tb)
 			}
 		}
-		
+
 		# XXX reorder boxes ? (for zorder) (eg. on focus)
 		@shown_boxes = []
 		@curcontext.box.each { |b|
 			next if b.x >= @curcontext.view_x+w_w/@zoom or b.y >= @curcontext.view_y+w_h/@zoom or b.x+b.w <= @curcontext.view_x or b.y+b.h <= @curcontext.view_y
 			@shown_boxes << b
-			
+
 			paint_box(w, gc, b)
 		}
 	end
@@ -991,7 +991,7 @@ class GraphViewWidget < Gtk::HBox
 	def get_cursor_pos
 		[current_address, @caret_x]
 	end
-	
+
 	# queue redraw of the whole GUI visible area
 	def redraw
 		return if not @drawarea.window
@@ -1007,7 +1007,7 @@ class GraphViewWidget < Gtk::HBox
 		@drawarea.modify_bg Gtk::STATE_NORMAL, @color[:bg]
 		gui_update
 	end
-	
+
 	# change the font of the listing
 	# arg is a Gtk Fontdescription string (eg 'courier 10')
 	def set_font(descr)

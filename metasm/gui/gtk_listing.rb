@@ -105,10 +105,10 @@ class AsmListingWidget < Gtk::HBox
 		}
 	end
 
-	# 
+	#
 	# methods used as Gtk callbacks
 	#
-	
+
 	# TODO right click
 	def click(ev)
 		@caret_x = (ev.x-1).to_i / @font_width
@@ -356,7 +356,7 @@ class AsmListingWidget < Gtk::HBox
 			arrs[col].each { |y1, y2, slot|
 				x1 = w_w-1
 				x2 = w_w-4 - slot*slot_w - slot_w/2
-				
+
 				w.draw_line(gc, x1, y1, x2, y1) if y1 != 0 and y1 != w_h-1
 				w.draw_line(gc, x2, y1, x2, y2)
 				w.draw_line(gc, x2, y2, x1, y2) if y2 != 0 and y2 != w_h-1
@@ -439,7 +439,7 @@ class AsmListingWidget < Gtk::HBox
 		@vscroll.adjustment.value, @caret_x, @caret_y = p
 		update_caret
 	end
-	
+
 	# change the font of the listing
 	# arg is a Gtk Fontdescription string (eg 'courier 10')
 	def set_font(descr)

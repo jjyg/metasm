@@ -3,7 +3,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # shows the preprocessor path to find a specific line
 # usage: ruby chdr-find.rb 'regex pattern' list of files.h
 #

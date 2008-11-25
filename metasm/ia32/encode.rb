@@ -55,7 +55,7 @@ class Ia32
 			end
 
 			ret.data[0] |= reg << 3
-			
+
 			if imm
 				case Expression.in_range?(imm, :i8)
 				when true
@@ -123,7 +123,7 @@ class Ia32
 
 				imm ||= 0 if b.val == 5
 				if imm
-					case Expression.in_range?(imm, :i8)		
+					case Expression.in_range?(imm, :i8)
 					when true
 						ret.data[0] |= 1 << 6
 						[ret << Expression.encode_immediate(imm, :i8, endianness)]
@@ -161,7 +161,7 @@ class Ia32
 			base[fld[0]] |= v << fld[1]
 		}
 
-		# 
+		#
 		# handle prefixes and bit fields
 		#
 		pfx = i.prefix.map { |k, v|
@@ -209,7 +209,7 @@ class Ia32
 		# addrsize override / segment override
 		if mrm = i.args.grep(ModRM).first
 			if (mrm.b and mrm.b.sz != @size) or (mrm.i and mrm.i.sz != @size)
-				pfx << 0x67 
+				pfx << 0x67
 				adsz = 48 - @size
 			end
 			pfx << "\x26\x2E\x36\x3E\x64\x65"[mrm.seg.val] if mrm.seg

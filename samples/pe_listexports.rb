@@ -3,7 +3,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # this script takes a list of dll filenames as arguments, and outputs each lib export
 # libname, followed by the list of the exported symbol names, in a format usable
 # by the PE class autoimport functionnality (see metasm/os/windows.rb)

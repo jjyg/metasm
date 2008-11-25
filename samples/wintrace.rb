@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # this is a simple executable tracer for Windows using the
 # Metasm windows debug api abstraction
 # all callbacks are full ruby, so this is extremely slow !

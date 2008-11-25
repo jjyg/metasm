@@ -171,7 +171,7 @@ class InstructionBlock
 	def bin_length
 		(di = @list.last) ? di.block_offset + di.bin_length : 0
 	end
-	
+
 	# splits the current block into a new one with all di from address addr to end
 	# caller is responsible for rebacktracing new.bt_for to regenerate correct old.btt/new.btt
 	def split(addr)
@@ -460,7 +460,7 @@ class EncodedData
 		@ptr += len
 		str
 	end
-	
+
 	# decodes an immediate value from self.ptr, advances ptr
 	# returns an Expression on relocation, or an ::Integer
 	# if ptr has a relocation but the type/endianness does not match, the reloc is ignored and a warning is issued
@@ -479,9 +479,9 @@ end
 
 class Expression
 	def self.decode_imm(str, type, endianness)
-                val = 0
-                case endianness
-                when :little; str.reverse
+		val = 0
+		case endianness
+		when :little; str.reverse
 		when :big; str
 		end.unpack('C*').each { |b| val = (val << 8) | b }
 		val = val - (1 << (INT_SIZE[type])) if type.to_s[0] == ?i and val >> (INT_SIZE[type]-1) == 1	# XXX booh
@@ -620,7 +620,7 @@ class Disassembler
 	# bool, true to check write xrefs on each instr disasm (default true)
 	attr_accessor :check_smc
 	# list of [addr to disassemble, (optional)who jumped to it, (optional)got there by a subfunction return]
-	attr_accessor :addrs_todo 
+	attr_accessor :addrs_todo
 	# hash address => binding
 	attr_accessor :address_binding
 	# number of blocks to backtrace before aborting if no result is found (defaults to class.backtrace_maxblocks, 50 by default)
@@ -1014,7 +1014,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				di, delay = delay_slot
 				if delay == 0 or not di_addr
 					backtrace_xrefs_di_x(di)
-					if di.opcode.props[:stopexec] or not di_addr; return 
+					if di.opcode.props[:stopexec] or not di_addr; return
 					else break
 					end
 				end
@@ -1262,7 +1262,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# all values returned are from backtrace_check_found (which may generate xrefs, labels, addrs to dasm)
 	# options:
 	#  :include_start => start backtracking including start_addr
-	#  :from_subfuncret => 
+	#  :from_subfuncret =>
 	#  :origin => origin to set for xrefs when resolution is successful
 	#  :orig_expr => initial expression
 	#  :type => xref type (:r, :w, :x, :addr)  when :x, the results are added to #addrs_todo
@@ -1302,7 +1302,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 puts "  not backtracking stack address #{expr}" if debug_backtrace
 			return []
 		end
-		
+
 		if type == :r or type == :w
 			max_complexity = max_complexity_data
 			maxdepth = @backtrace_maxblocks_data if backtrace_maxblocks_data and maxdepth > @backtrace_maxblocks_data
@@ -1314,7 +1314,7 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 		elsif maxdepth <= 0
 			return [Expression::Unknown]
 		end
-		
+
 		# create initial backtracked_for
 		if type and origin == start_addr and di
 			btt = BacktraceTrace.new(expr, origin, origexpr, type, len, maxdepth-1)
@@ -1421,7 +1421,7 @@ puts "   already backtraced" if debug_backtrace
 						btt.from_subfuncret = true if h[:sfret] == :subfuncret
 						if backtrace_check_funcret(btt, h[:from], h[:to])
 puts "   function returns to caller" if debug_backtrace
-							next false 
+							next false
 						end
 						update_btf[x.block.backtracked_for, btt]
 					end

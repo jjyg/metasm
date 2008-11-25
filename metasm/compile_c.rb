@@ -136,7 +136,7 @@ module C
 
 			@source.join("\n")
 		end
-		
+
 		# compiles a C function +func+ to asm source into the array of strings +str+
 		# in a first pass the stack variable offsets are computed,
 		# then each statement is compiled in turn
@@ -147,13 +147,13 @@ module C
 			# TODO offset of arguments
 			# TODO nested function
 			c_init_state(func)
-			
+
 			# hide the full @source while compiling, then add prolog/epilog (saves 1 pass)
 			@source << '' << "#{func.name}:"
 			presource, @source = @source, []
 
 			c_block(func.initializer)
-			
+
 			tmpsource, @source = @source, presource
 			c_prolog
 			@source.concat tmpsource
@@ -238,13 +238,13 @@ module C
 		def c_idata(data, align)
 			w = data.type.align(@parser)
 			@source << ".align #{align = w}" if w > align
-			
+
 			@source << data.name.dup
 			len = c_idata_inner(data.type, data.initializer)
 			len %= w
 			len == 0 ? w : len
 		end
-		
+
 		# dumps an anonymous variable definition, appending to the last line of source
 		# source.last is a label name or is empty before calling here
 		# return the length of the data written
@@ -256,7 +256,7 @@ module C
 					@source.last << ':' if not @source.last.empty?
 					return 0
 				end
-				
+
 				@source.last <<
 				case type.name
 				when :__int8;  ' db '
@@ -268,11 +268,11 @@ module C
 				when :longdouble; ' dfld '
 				else raise "unknown idata type #{type.inspect} #{value.inspect}"
 				end
-				
+
 				@source.last << c_idata_inner_cexpr(value)
-				
+
 				@parser.typesize[type.name]
-				
+
 			when Struct
 				@source.last << ':' if not @source.last.empty?
 				value = [0] * type.members.length if value == 0
@@ -284,9 +284,9 @@ module C
 					sz += flen
 					@source << ".align #{type.align}" if flen % type.align != 0
 				}
-				
+
 				sz
-				
+
 			when Union
 				@source.last << ':' if not @source.last.empty?
 				len = sizeof(nil, type)
@@ -296,26 +296,26 @@ module C
 				raise "empty union initializer" if not idx
 				wlen = c_idata_inner(type.members[idx].type, value[idx])
 				@source << "db #{'0' * (len - wlen) * ', '}" if wlen < len
-				
+
 				len
-				
+
 			when Array
 				if value.kind_of? CExpression and not value.op and value.rexpr.kind_of? ::String
 					elen = sizeof(nil, value.type.type)
-					@source.last << 
+					@source.last <<
 					case elen
 					when 1; ' db '
 					when 2; ' dw '
 					else raise 'bad char* type ' + value.inspect
 					end << value.rexpr.inspect
-					
+
 					len = type.length || (value.rexpr.length+1)
 					if len > value.rexpr.length
 						@source.last << (', 0' * (len - value.rexpr.length))
 					end
-					
+
 					elen * len
-					
+
 				elsif value.kind_of? ::Array
 					@source.last << ':' if not @source.last.empty?
 					len = type.length || value.length
@@ -327,14 +327,14 @@ module C
 					if len > 0
 						@source << " db #{len * sizeof(nil, type.type)} dup(0)"
 					end
-					
+
 					sizeof(nil, type.type) * len
-					
+
 				else raise "unknown static array initializer #{value.inspect}"
 				end
 			end
 		end
-		
+
 		def c_idata_inner_cexpr(expr)
 			expr = expr.reduce(@parser) if expr.kind_of? CExpression
 			case expr
@@ -383,7 +383,7 @@ module C
 			else raise 'unhandled initializer ' + expr.inspect
 			end
 		end
-		
+
 		def c_udata(data, align)
 			@source << "#{data.name} "
 			@source.last <<
@@ -417,7 +417,7 @@ module C
 			b
 		end
 	end
-	
+
 	class Block
 		# precompile all statements, then simplifies symbols/structs types
 		def precompile(compiler, scope=nil)
@@ -892,7 +892,7 @@ module C
 				@name = scope.nonauto_label[@name] ||= compiler.new_label(@name)
 			end
 			scope.statements << self
-			if statement 
+			if statement
 				@statement.precompile(compiler, scope)
 				@statement = nil
 			end

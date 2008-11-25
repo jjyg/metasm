@@ -128,7 +128,7 @@ class Preprocessor
 		end
 
 		# applies a preprocessor macro
-		# parses arguments if needed 
+		# parses arguments if needed
 		# macros are lazy
 		# fills tokens.expanded_from
 		# returns an array of tokens
@@ -296,7 +296,6 @@ class Preprocessor
 						end
 					end
 				}
-				
 			end
 			if invalid_body
 				puts "W: #{lexer.filename}:#{lexer.lineno}, in #{@name.raw}: #{invalid_body}" if $VERBOSE
@@ -502,7 +501,7 @@ class Preprocessor
 	Trigraph = {	?= => ?#, ?) => ?], ?! => ?|,
 			?( => ?[, ?' => ?^, ?> => ?},
 			?/ => ?\\,?< => ?{, ?- => ?~ }
-	
+
 	# reads one character from self.text
 	# updates self.lineno
 	# handles trigraphs and \-continued lines
@@ -895,7 +894,7 @@ class Preprocessor
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
 			raise cmd, 'nested too deeply' if backtrace.length > 200	# gcc
-	
+
 			# allow preprocessing
 			nil while tok = readtok and tok.type == :space
 			raise tok || cmd, 'pp syntax error' if not tok or (tok.type != :quoted and (tok.type != :punct or tok.raw != '<'))
@@ -1020,7 +1019,7 @@ class Preprocessor
 		# skip #ifndef'd parts of the source
 		state = 1	# just seen :eol
 		while @ifelse_nesting.last == :discard or @ifelse_nesting.last == :discard_all
-			begin 
+			begin
 				tok = skipspc[]
 			rescue ParseError
 				# react as gcc -E: <"> unterminated in #if 0 => ok, </*> unterminated => error (the " will fail at eol)
@@ -1098,7 +1097,7 @@ class Preprocessor
 				end
 				raise tok if not ntok or ntok.type != :string
 				tok.value = lexer.definition[ntok.raw] ? 1 : 0
-				return 
+				return
 			end
 
 			Expression.parse_num_value(lexer, tok)
@@ -1164,9 +1163,9 @@ class Preprocessor
 				until opstack.empty? or Expression::OP_PRIO[op.value][opstack.last]
 					stack << Expression.new(opstack.pop, stack.pop, stack.pop)
 				end
-				
+
 				opstack << op.value
-				
+
 				raise op, 'need rhs' if not e = parse_value(lexer)
 
 				stack << e

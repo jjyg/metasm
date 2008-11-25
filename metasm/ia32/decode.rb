@@ -52,7 +52,7 @@ class Ia32
 
 				end
 			}
-		
+
 			new adsz, opsz, s, i, b, imm, seg
 		end
 	end
@@ -84,7 +84,7 @@ class Ia32
 
 			b   = op.bin[0]
 			msk = op.bin_mask[0]
-			
+
 			for i in b..(b | (255^msk))
 				next if i & msk != b & msk
 				lookaside[i] << op
@@ -111,8 +111,8 @@ class Ia32
 				v = byte & 7
 			end
 			instr.prefix[:seg] = SegReg.new(v)
-			
-			instr.prefix[:jmphint] = ((byte & 0x10) == 0x10)	
+
+			instr.prefix[:jmphint] = ((byte & 0x10) == 0x10)
 		else
 			return false
 		end
@@ -176,7 +176,7 @@ class Ia32
 		else
 			adsz = @size
 		end
-		
+
 		op.args.each { |a|
 			mmxsz = ((op.props[:xmmx] && pfx[:opsz]) ? 128 : 64)
 			di.instruction.args << case a
@@ -290,8 +290,8 @@ class Ia32
 		}
 		mask = proc { |di| (1 << opsz[di])-1 }	# 32bits => 0xffff_ffff
 		sign = proc { |v, di| Expression[[[v, :&, mask[di]], :>>, opsz[di]-1], :'!=', 0] }
-		
-    		opcode_list.map { |ol| ol.name }.uniq.sort.each { |op|
+
+		opcode_list.map { |ol| ol.name }.uniq.sort.each { |op|
 			binding = case op
 			when 'mov', 'movsx', 'movzx', 'movd', 'movq'; proc { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'lea'; proc { |di, a0, a1| { a0 => a1.target } }
@@ -324,10 +324,10 @@ class Ia32
 			when 'cdq'; proc { |di| { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz[di]-1], :&, 1]] } }
 			when 'push', 'push.i16'
 				proc { |di, a0| { :esp => Expression[:esp, :-, opsz[di]/8],
-      					Indirection[:esp, opsz[di]/8, di.address] => Expression[a0] } }
+					Indirection[:esp, opsz[di]/8, di.address] => Expression[a0] } }
 			when 'pop'
 				proc { |di, a0| { :esp => Expression[:esp, :+, opsz[di]/8],
-      					a0 => Indirection[:esp, opsz[di]/8, di.address] } }
+					a0 => Indirection[:esp, opsz[di]/8, di.address] } }
 			when 'pushfd'
 				# TODO Unknown per bit
 				proc { |di|
@@ -407,7 +407,7 @@ class Ia32
 					eax = Reg.new(0, 8*sz).symbolic
 					dir = :+
 					if di.block and (di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil)
-						dir = :- 
+						dir = :-
 					end
 					pesi = Indirection[:esi, sz, di.address]
 					pedi = Indirection[:edi, sz, di.address]
@@ -457,7 +457,7 @@ class Ia32
 				}
 			when 'nop', 'pause', 'wait', 'cmp', 'test'; proc { |di, *a| {} }
 			end
-	
+
 			# add eflags side-effects
 
 			full_binding = case op
@@ -466,7 +466,7 @@ class Ia32
 					e_op = { 'adc' => :+, 'add' => :+, 'and' => :&, 'cmp' => :-, 'or' => :|, 'sbb' => :-, 'sub' => :-, 'xor' => :^, 'test' => :& }[op]
 					res = Expression[[a0, :&, mask[di]], e_op, [a1, :&, mask[di]]]
 					res = Expression[res, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
-	
+
 					ret = (binding ? binding[di, a0, a1] : {})
 					ret[:eflag_z] = Expression[[res, :&, mask[di]], :==, 0]
 					ret[:eflag_s] = sign[res, di]
@@ -508,7 +508,7 @@ class Ia32
 					ret
 				}
 			end
-	
+
 			@backtrace_binding[op] ||= full_binding || binding if full_binding || binding
 		}
 	end
@@ -611,7 +611,7 @@ class Ia32
 				thunklast = di.block.list.last.address
 			end
 		end
-			
+
 		bt_val = proc { |r|
 			next if not retaddrlist
 			bt = []
@@ -800,11 +800,11 @@ class Ia32
 			off = Expression[[:esp, :+, s_off], :-, e_expr.target].reduce
 			case off
 			when Expression
-                                bd = off.externals.grep(/^autostackoffset_/).inject({}) { |bd, xt| bd.update xt => @size/8 }
-                                bd.delete s_off
+				bd = off.externals.grep(/^autostackoffset_/).inject({}) { |bd, xt| bd.update xt => @size/8 }
+				bd.delete s_off
 				if off.bind(bd).reduce == @size/8
-                                	# all __cdecl
-       					off = @size/8 
+					# all __cdecl
+					off = @size/8
 				else
 					# check if all calls are to the same extern func
 					bd.delete_if { |k, v| k !~ /^autostackoffset_#{Expression[funcaddr]}_/ }
@@ -816,27 +816,27 @@ class Ia32
 			when Integer
 				if off < @size/8 or off > 20*@size/8 or (off % (@size/8)) != 0
 					puts "autostackoffset: ignoring off #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
-					off = :unknown 
+					off = :unknown
 				end
-                        end
+			end
 
-                        bind = bind.merge :esp => Expression[:esp, :+, off] if off != :unknown
-                        if funcaddr != :default
-                                if not off.kind_of? ::Integer
-                                        #XXX we allow the current function to return, so we should handle the func backtracking its :esp
-                                        #(and other register that are saved and restored in epilog)
-                                        puts "stackoff #{dasm.decoded[calladdr]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
-                                else
-                                        puts "autostackoffset: found #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
-                                        dasm.function[funcaddr].btbind_callback = nil
-                                        dasm.function[funcaddr].backtrace_binding = bind
+			bind = bind.merge :esp => Expression[:esp, :+, off] if off != :unknown
+			if funcaddr != :default
+				if not off.kind_of? ::Integer
+					#XXX we allow the current function to return, so we should handle the func backtracking its :esp
+					#(and other register that are saved and restored in epilog)
+					puts "stackoff #{dasm.decoded[calladdr]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
+				else
+					puts "autostackoffset: found #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
+					dasm.function[funcaddr].btbind_callback = nil
+					dasm.function[funcaddr].backtrace_binding = bind
 
 					# rebacktrace the return address, so that other unknown funcs that depend on us are solved
 					dasm.backtrace(Indirection[:esp, @size/8, origin], origin, :origin => origin)
-                                end
-                        else
+				end
+			else
 				if off.kind_of? ::Integer and dasm.decoded[calladdr]
-                                        puts "autostackoffset: found #{off-@size/8} for #{dasm.decoded[calladdr]}" if $VERBOSE
+					puts "autostackoffset: found #{off-@size/8} for #{dasm.decoded[calladdr]}" if $VERBOSE
 					di = dasm.decoded[calladdr]
 					di.comment.delete_if { |c| c =~ /^stackoff=/ } if di.comment
 					di.add_comment "stackoff=#{off-@size/8}"
@@ -849,26 +849,23 @@ class Ia32
 					dasm.decoded[calladdr].add_comment "stackoff=#{off-@size/8}"
 				end
 
-                                puts "stackoff #{dasm.decoded[calladdr]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
-                        end
+				puts "stackoff #{dasm.decoded[calladdr]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
+			end
 
-                        bind
-                }
-        end
+			bind
+		}
+	end
 
 	# the :default backtracked_for callback
 	# returns empty unless funcaddr is not default or calladdr is a call or a jmp
-        def disassembler_default_btfor_callback
-                proc { |dasm, btfor, funcaddr, calladdr|
-                        if funcaddr != :default
-                                btfor
-                        elsif di = dasm.decoded[calladdr] and (di.opcode.name == 'call' or di.opcode.name == 'jmp')
-                                btfor
-                        else
-				[]
-                        end
-                }
-        end
+	def disassembler_default_btfor_callback
+		proc { |dasm, btfor, funcaddr, calladdr|
+			if funcaddr != :default; btfor
+			elsif di = dasm.decoded[calladdr] and (di.opcode.name == 'call' or di.opcode.name == 'jmp'); btfor
+			else []
+			end
+		}
+	end
 
 	# returns a DecodedFunction suitable for :default
 	# uses disassembler_default_bt{for/bind}_callback

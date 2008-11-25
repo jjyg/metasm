@@ -5,7 +5,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # in this file, we open an existing PE, add some code to its last section and
 # patch the entrypoint so that we are executed at program start
 #

@@ -17,7 +17,7 @@ class SerialStruct
 	ENUM=4
 	BITS=5
 
-    class << self
+class << self
 	# defines a new field
 	# adds an accessor
 	def new_field(name, decode, encode, defval, enum=nil, bits=nil)
@@ -33,18 +33,18 @@ class SerialStruct
 	def new_int_field(*types)
 		recv = class << self ; self ; end
 		types.each { |type|
-      			recv.send(:define_method, type) { |name, *args|
+			recv.send(:define_method, type) { |name, *args|
 				new_field(name, "decode_#{type}".to_sym, "encode_#{type}".to_sym, args[0] || 0, args[1])
-       			}
-       
+			}
+
 			# shortcut to define multiple fields of this type with default values
-       			recv.send(:define_method, "#{type}s") { |*names|
+			recv.send(:define_method, "#{type}s") { |*names|
 				names.each { |name| send type, name }
-		 	}
+			}
 		}
 	end
-	
-    	# standard fields:
+
+	# standard fields:
 
 	# a fixed-size memory chunk
 	def mem(name, len, defval='')
@@ -55,7 +55,7 @@ class SerialStruct
 		e = proc { |exe, me, val| val[0, len].ljust(len, 0.chr) }
 		d = proc { |exe, me| v = exe.encoded.read(len) ; v = v[0, v.index(0)] if v.index(0) ; v }
 		new_field(name, d, e, defval)
-       	end
+	end
 	# 0-terminated string
 	def strz(name, defval='')
 		d = proc { |exe, me|
@@ -126,7 +126,7 @@ class SerialStruct
 		idx = (after ? @@fields[self].index(fld_get(after)) : -1)
 		@@fields[self].insert(idx, [nil, b])
 	end
-    end	# class methods
+end	# class methods
 
 	# standard int fields
 	new_int_field :byte, :half, :word
@@ -150,13 +150,13 @@ class SerialStruct
 		klass = struct_specialized(exe) if respond_to? :struct_specialized
 		raise "SerialStruct: no fields for #{klass}" if $DEBUG and not @@fields[klass]
 		@@fields[klass]
-       	end
+	end
 
 	# decodes the fields from the exe
 	def decode(exe)
 		struct_fields(exe).each { |f|
 			case d = f[DECODE]
-  			when Symbol; val = exe.send(d)
+			when Symbol; val = exe.send(d)
 			when Array; val = exe.send(*d)
 			when Proc; val = d[exe, self]
 			when nil; next

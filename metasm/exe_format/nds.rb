@@ -149,7 +149,7 @@ class NDS < ExeFormat
 		@encoded.ptr = @header.iconoff
 		@icon = Icon.decode(self)
 	end
-	
+
 	def decode
 		decode_header
 		decode_icon

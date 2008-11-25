@@ -26,7 +26,7 @@ class Ia32 < CPU
 
 			@i_to_s = Hash[*a.flatten]
 			@s_to_i = @i_to_s.invert
-			
+
 			class_eval {
 				attr_accessor :val
 				def initialize(v)
@@ -53,30 +53,30 @@ class Ia32 < CPU
 		end
 
 	end
-	
+
 
 	class SegReg < Argument
 		simple_map((0..5).zip(%w(es cs ss ds fs gs)))
 	end
-	
+
 	class DbgReg < Argument
 		simple_map [0, 1, 2, 3, 6, 7].map { |i| [i, "dr#{i}"] }
 	end
-	
+
 	class CtrlReg < Argument
 		simple_map [0, 2, 3, 4].map { |i| [i, "cr#{i}"] }
 	end
-	
+
 	class FpReg < Argument
 		simple_map((0..7).map { |i| [i, "ST(#{i})"] } << [nil, 'ST'])
 	end
-	
+
 	class SimdReg < Argument
 		double_map  64 => (0..7).map { |n| "mm#{n}" },
 			   128 => (0..7).map { |n| "xmm#{n}" }
 		def symbolic ; to_s.to_sym end
 	end
-	
+
 	class Reg < Argument
 		double_map  8 => %w{ al  cl  dl  bl  ah  ch  dh  bh},
 			   16 => %w{ ax  cx  dx  bx  sp  bp  si  di},
@@ -97,7 +97,7 @@ class Ia32 < CPU
 			end
 		end
 	end
-	
+
 	class Farptr < Argument
 		attr_reader :seg, :addr
 		def initialize(seg, addr)
@@ -118,12 +118,12 @@ class Ia32 < CPU
 			2 => [ [0, :i32], [1, :i32], [2, :i32], [3, :i32], [:sib, :i32], [5, :i32], [6, :i32], [7, :i32] ]
 		    }
 		}
-	
-		
+
+
 		attr_accessor :adsz, :sz
 		attr_accessor :seg
 		attr_accessor :s, :i, :b, :imm
-	
+
 		def initialize(adsz, sz, s, i, b, imm, seg = nil)
 			@adsz, @sz = adsz, sz
 			@s, @i = s, i if i
@@ -152,8 +152,9 @@ class Ia32 < CPU
 
 	def tune_cparser(cp)
 		super
-		cp.lexer.define('_M_IX86', 500) if not cp.lexer.definition['_M_IX86']
-		cp.lexer.define('_X86_') if not cp.lexer.definition['_X86_']
+		cp.lexer.define_weak('_M_IX86', 500)
+		cp.lexer.define_weak('_X86_')
+		cp.lexer.define_weak('__i386__')
 	end
 end
 

@@ -25,7 +25,7 @@ class MIPS
 
 			b   = op.bin >> 24
 			msk = op.bin_mask >> 24
-			
+
 			for i in b..(b | (255^msk))
 				next if i & msk != b & msk
 				lookaside[i] << op
@@ -169,7 +169,7 @@ class MIPS
 	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist)
 		retaddrlist.map! { |retaddr| dasm.decoded[retaddr] ? dasm.decoded[retaddr].block.list.last.address : retaddr }
 		b = f.backtrace_binding
-		
+
 		bt_val = proc { |r|
 			bt = []
 			retaddrlist.each { |retaddr|
@@ -179,7 +179,7 @@ class MIPS
 			b[r] = ((bt.length == 1) ? bt.first : Expression::Unknown)
 		}
 		Reg.i_to_s.values.map { |r| r.to_sym }.each(&bt_val)
-		
+
 		puts "update_func_bind: #{Expression[faddr]} has sp -> #{b[:$sp]}" if not f.need_finalize and not Expression[b[:$sp], :-, :$sp].reduce.kind_of?(::Integer) if $VERBOSE
 	end
 
@@ -191,18 +191,18 @@ class MIPS
 		Expression[expr].expr_externals.include? :$sp
 	end
 
-        def replace_instr_arg_immediate(i, old, new)
-                i.args.map! { |a|
-                        case a
-                        when Expression; a == old ? new : Expression[a.bind(old => new).reduce]
-                        when Memref
-                                a.offset = (a.offset == old ? new : Expression[a.offset.bind(old => new).reduce]) if a.offset
-                                a
-                        else a
-                        end
-                }
-        end
-	
+	def replace_instr_arg_immediate(i, old, new)
+		i.args.map! { |a|
+			case a
+			when Expression; a == old ? new : Expression[a.bind(old => new).reduce]
+			when Memref
+				a.offset = (a.offset == old ? new : Expression[a.offset.bind(old => new).reduce]) if a.offset
+				a
+			else a
+			end
+		}
+	end
+
 	# make the target of the call know the value of $t9 (specified by the ABI)
 	# XXX hackish
 	def backtrace_found_result(dasm, di, expr, type, len)

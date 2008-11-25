@@ -54,7 +54,7 @@ class ExeFormat
 		minoff = 0
 		maxbinding = {}
 		maxoff = 0
-	
+
 		ary.each { |elem|
 			case elem
 			when Array
@@ -164,7 +164,7 @@ class ExeFormat
 
 		# now we can resolve all relocations
 		# for linear expressions of internal variables (ie differences of labels from the ary):
-		#  - calc target numeric bounds, and reject relocs not accepting worst case value 
+		#  - calc target numeric bounds, and reject relocs not accepting worst case value
 		#  - else reject all but largest place available
 		# then chose the shortest overall EData left
 		ary.map! { |elem|

@@ -5,7 +5,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# 
+#
 # this exemple illustrates the use of the PTrace32 class to hijack a syscall in a running process
 # the next syscall made is patched to run the syscall with the arguments of our choice, then
 # run the original intended syscall

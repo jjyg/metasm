@@ -50,7 +50,7 @@ class COFF < ExeFormat
 		0x200 => 'NO_ISOLATION', 0x400 => 'NO_SEH', 0x800 => 'NO_BIND',
 		0x2000 => 'WDM_DRIVER', 0x8000 => 'TERMINAL_SERVER_AWARE'
 	}
-	
+
 	BASE_RELOCATION_TYPE = { 0 => 'ABSOLUTE', 1 => 'HIGH', 2 => 'LOW', 3 => 'HIGHLOW',
 		4 => 'HIGHADJ', 5 => 'MIPS_JMPADDR', 9 => 'MIPS_JMPADDR16', 10 => 'DIR64'
 	}
@@ -160,7 +160,7 @@ class COFF < ExeFormat
 			attr_accessor :forwarder_lib, :forwarder_ordinal, :forwarder_name, :target, :name_p, :name, :ordinal
 		end
 	end
-	
+
 	# contains the name of dynamic libraries required by the program, and the function to import from them
 	class ImportDirectory < SerialStruct
 		words :ilt_p, :timestamp, :firstforwarder, :libname_p, :iat_p
@@ -171,7 +171,7 @@ class COFF < ExeFormat
 			attr_accessor :ordinal, :hint, :hintname_p, :name, :target, :thunk
 		end
 	end
-	
+
 	# tree-like structure, holds all misc data the program might need (icons, cursors, version information)
 	# conventionnally structured in a 3-level depth structure:
 	#  I resource type (icon/cursor/etc, see +TYPES+)
@@ -236,7 +236,7 @@ class COFF < ExeFormat
 		attr_accessor :libname
 	end
 
-	
+
 	# for the icon, the one that appears in the explorer is
 	#  (NT) the one with the lowest ID
 	#  (98) the first to appear in the table
@@ -391,7 +391,7 @@ end
 
 class Strings < Array
 	attr_reader :size
-	
+
 	def initialize(raw, offset)
 		@size = bin(raw[offset..offset+3])
 		endoffset = offset + @size

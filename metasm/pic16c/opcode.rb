@@ -45,12 +45,12 @@ class Pic16c
 		addop 'subwf', 0b00_0010_0000_0000, :f, :d
 		addop 'swapf', 0b00_1110_0000_0000, :f, :d
 		addop 'xorwf', 0b00_0110_0000_0000, :f, :d
-		
+
 		addop 'bcf',   0b01_0000_0000_0000, :f, :b
 		addop 'bsf',   0b01_0100_0000_0000, :f, :b
 		addop 'btfsc', 0b01_1000_0000_0000, :f, :b, :setip
 		addop 'btfss', 0b01_1100_0000_0000, :f, :b, :setip
-		
+
 		addop 'addlw', 0b11_1110_0000_0000, :k		# 00_000x_0000_0000
 		addop 'andlw', 0b11_1001_0000_0000, :k
 		addop 'call',  0b10_0000_0000_0000, :klong, :setip, :stopexec, :saveip

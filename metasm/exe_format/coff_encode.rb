@@ -126,7 +126,7 @@ class COFF
 					edata['nametable'] << e.name << 0
 				end
 			}
-			
+
 			# sorted by alignment directives
 			%w[edata addrtable namptable ord_table libname nametable].inject(EncodedData.new) { |ed, name| ed << edata[name] }
 		end
@@ -403,10 +403,10 @@ class COFF
 		else
 			ordiat = iat
 		end
-		
+
 		@directory['iat'] = [label_at(ordiat.first, 0, 'iat'),
 			Expression[label_at(ordiat.last, ordiat.last.virtsize, 'iat_end'), :-, label_at(ordiat.first, 0)]]
-	
+
 		iat_s = nil
 
 		plt = Section.new
@@ -823,7 +823,7 @@ class COFF
 			e.target = exportlabel || exportname
 			@export.exports << e
 			check_eol[]
-		
+
 		when '.import'
 			# .import <libname|"libname"> <imported sym|"imported sym"> [label of plt thunk|nil] [label of iat element if != symname]
 			libname = readstr[]
@@ -853,7 +853,7 @@ class COFF
 			id.imports << i
 
 			check_eol[]
-			
+
 		when '.entrypoint'
 			# ".entrypoint <somelabel/expression>" or ".entrypoint" (here)
 			@lexer.skip_space
@@ -885,8 +885,8 @@ class COFF
 
 	# try to resolve automatically COFF import tables from self.sections.encoded.relocations
 	# and WindowsExports::EXPORT
-	# if the relocation target is '<symbolname>' or 'iat_<symbolname>, link to the IAT address, if it is '<symbolname> + <expr>', 
-	# link to a thunk (plt-like) 
+	# if the relocation target is '<symbolname>' or 'iat_<symbolname>, link to the IAT address, if it is '<symbolname> + <expr>',
+	# link to a thunk (plt-like)
 	def autoimport
 		return if not defined? WindowsExports
 		autoexports = WindowsExports::EXPORT.dup

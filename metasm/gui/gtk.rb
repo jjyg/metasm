@@ -48,7 +48,7 @@ class DisasmWidget < Gtk::VBox
 		@dasm.callback_prebacktrace ||= proc { Gtk.main_iteration_do(false) }
 
 		#pack_start iconbar, dasm_working_flag ?
-		
+
 		@notebook = Gtk::Notebook.new
 		# hex view
 		pack_start @notebook
@@ -162,10 +162,10 @@ class DisasmWidget < Gtk::VBox
 			else
 				listwindow(title, list) { |i| focus_addr(i[0], nil, true) }
 			end
-			
+
 		when GDK_space
 			focus_addr(curview.current_address, 1-@notebook.page)
-			
+
 		when 0x20..0x7e # normal kbd (use ascii code)
 			# quiet
 			return false
@@ -181,7 +181,7 @@ class DisasmWidget < Gtk::VBox
 		end
 	    end		# ctrl/alt
 		true
-        end
+	end
 
 	def focus_addr(addr, page=nil, quiet=false)
 		page ||= @notebook.page
@@ -194,7 +194,7 @@ class DisasmWidget < Gtk::VBox
 				when /h$/: addr = '0x' + addr[0...-1]
 				when /[a-f]/i: addr = '0x' + addr
 				end
-				begin 
+				begin
 					addr = Integer(addr)
 				rescue ::ArgumentError
 					messagebox "Invalid address #{addr}" if not quiet
@@ -351,7 +351,7 @@ class ListWindow < Gtk::Dialog
 			tvc.set_cell_data_func(crt) { |_tvc, _crt, model, iter| _crt.text = iter[i] }
 			treeview.append_column tvc
 		}
-		
+
 		list.each { |e|
 			iter = treeview.model.append
 			e.each_with_index { |v, i| iter[i] = v.to_s }

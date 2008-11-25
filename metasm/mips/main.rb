@@ -15,8 +15,8 @@ class MIPS < CPU
 		@s_to_i = {}
 		@i_to_s = {}
 		(0..31).each { |i| @s_to_i["r#{i}"] = @s_to_i["$r#{i}"] = @s_to_i["$#{i}"] = i }
-		%w[zero at v0 v1 a0 a1 a2 a3 
-		     t0 t1 t2 t3 t4 t5 t6 t7 
+		%w[zero at v0 v1 a0 a1 a2 a3
+		     t0 t1 t2 t3 t4 t5 t6 t7
 		     s0 s1 s2 s3 s4 s5 s6 s7
 		     t8 t9 k0 k1 gp sp fp ra].each_with_index { |r, i| @s_to_i[r] = @s_to_i['$'+r] = i ; @i_to_s[i] = '$'+r }
 
@@ -34,7 +34,7 @@ class MIPS < CPU
 			attr_reader :s_to_i
 		end
 		@s_to_i = (0..31).inject({}) { |h, i| h.update "f#{i}" => i, "$f#{i}" => i }
-		
+
 		attr_accessor :i
 		def initialize(i)
 			@i = i

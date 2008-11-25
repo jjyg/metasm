@@ -115,7 +115,7 @@ class COFF
 				end
 
 				@imports = []
-				
+
 				ord_mask = 1 << (coff.optheader.signature == 'PE+' ? 63 : 31)
 				addrs.each { |a|
 					i = Import.new
@@ -149,7 +149,7 @@ class COFF
 
 			(@nr_names+@nr_id).times {
  				e = Entry.new
-				
+
  				e_id = coff.decode_word(edata)
  				e_ptr = coff.decode_word(edata)
 

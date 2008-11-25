@@ -5,7 +5,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-# 
+#
 # quick demonstration that the disassembler's backtracker works
 #
 

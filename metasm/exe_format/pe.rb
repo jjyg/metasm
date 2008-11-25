@@ -164,10 +164,10 @@ EOS
 typedef unsigned long DWORD;
 typedef unsigned short WORD;
 typedef struct {
-        DWORD cb; char *lpReserved, *lpDesktop, *lpTitle;
-        DWORD dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+	DWORD cb; char *lpReserved, *lpDesktop, *lpTitle;
+	DWORD dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
 	WORD wShowWindow, cbReserved2; char *lpReserved2;
-        void *hStdInput, *hStdOutput, *hStdError;
+	void *hStdInput, *hStdOutput, *hStdError;
 } STARTUPINFO;
 
 __stdcall void *GetModuleHandleA(const char *lpModuleName);
@@ -220,7 +220,7 @@ EOS
 			a.each { |aa|
 				next if aa == Expression::Unknown
 				l = dasm.auto_label_at(aa, 'seh', 'loc', 'sub')
-				dasm.addrs_todo << [aa] 
+				dasm.addrs_todo << [aa]
 			}
 			super
 		else
