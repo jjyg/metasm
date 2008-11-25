@@ -1804,6 +1804,9 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		# try to keep the bin_length of original block
 		wantlen = tdi.address + tdi.bin_length - fdi.address
 		wantlen -= by.grep(DecodedInstruction).inject(0) { |len, di| len + di.bin_length }
+		ldi = by.last
+		ldi = DecodedInstruction.new(ldi) if ldi.kind_of? Instruction
+		wantlen = by.grep(Instruction).length if wantlen < 0 or (ldi and ldi.opcode.props[:setip])
 		by.map! { |di|
 			if di.kind_of? Instruction
 				di = DecodedInstruction.new(di)
