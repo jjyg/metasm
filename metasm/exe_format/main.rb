@@ -58,10 +58,7 @@ class ExeFormat
 	end
 
 	# creates a new object using the specified cpu, parses the asm source, and assemble
-	def self.assemble(cpu, source, file=nil, lineno=nil)
-		caller.first =~ /^(.*?):(\d+)/
-		lineno ||= file ? 1 : $2.to_i+1
-		file ||= $1
+	def self.assemble(cpu, source, file='<unk>', lineno=1)
 		e = new(cpu)
 		puts 'parsing asm' if $VERBOSE
 		e.parse(source, file, lineno)
@@ -75,10 +72,7 @@ class ExeFormat
 	end
 
 	# creates a new object using the specified cpu, parse/compile/assemble the C source
-	def self.compile_c(cpu, source, file=nil, lineno=nil)
-		caller.first =~ /^(.*?):(\d+)/
-		lineno ||= file ? 1 : $2.to_i+1
-		file ||= $1
+	def self.compile_c(cpu, source, file='<unk>', lineno=1)
 		e = new(cpu)
 		cp = cpu.new_cparser
 		puts 'parsing C' if $VERBOSE
