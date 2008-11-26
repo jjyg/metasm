@@ -57,12 +57,18 @@ PatternMacros = {
 
 # instructions are separated by ' ; '
 # instruction must be '<simple regexp matching opcode> <arbitrary regexp>'
-# patterns should not span more than 2 blocks
 # in the pattern target, %1-%9 are used for backreferences from the regexp match
 Patterns = {
 	'nop ; (.*)' => '%1',	# concat 'nop' into following instruction
 	'mov (%r|esp), \1' => 'nop',
 	'lea (%r|esp), dword ptr \[\1(?:\+0)?\]' => 'nop',
+	'(.*)' => proc { |dasm, list| # remove 'jmp imm' preceding us without interfering with running dasm
+		if pdi = prev_di(dasm, list.last) and pdi.opcode.name == 'jmp' and
+				pdi.instruction.args[0].kind_of? Metasm::Expression
+			dasm.replace_instrs(pdi.address, pdi.address, [])
+		end
+		nil
+	},
 	#'call %i ; pop (%r)' => proc { |dasm, list| "mov %1, #{list.first.next_addr}" },
 } if not defined? Patterns
 
@@ -74,6 +80,8 @@ Patterns = {
 def self.expand_regexp(str)
 	case str
 	when nil, '', '.*'; return [str.to_s]
+	when /^\\\./
+		l1, p2 = ['.'], $'
 	when /^(\w+)(\?)?/
  		s1, q, p2 = $1, $2, $'
 		l1 = (q ? [s1, s1.chop] : [s1])
@@ -160,7 +168,7 @@ def self.newinstr_callback(dasm, di)
 		if tree[:pattern]
 			strs = di_seq.map { |pdi| pdi.instruction.to_s }
 			break if tree[:pattern].find { |pat|
-				if match = /#{pat}/.match(strs.join(' ; '))
+				if match = /^#{pat}$/.match(strs.join(' ; '))
 					newinstrs = Patterns[pat]
 					newinstrs = newinstrs[dasm, di_seq] if newinstrs.kind_of? Proc
 					newinstrs = nil if newinstrs == di_seq
@@ -188,6 +196,11 @@ def self.newinstr_callback(dasm, di)
 			# nop ; jmp => jmp
 			newinstrs.shift if newinstrs.length >= 2 and newinstrs.first.kind_of? Metasm::Instruction and newinstrs.first.opname == 'nop'
 		end
+
+		# remove instructions from the match to have only 2 linked blocks passed to replace_instrs
+		unused = di_seq[1..-2] || []
+		dasm.replace_instrs(unused.shift.address, unused.shift.address, []) while unused.length > 1
+		dasm.replace_instrs(unused.first.address, unused.first.address, []) if not unused.empty?
 
 		# patch the dasm graph
 		if blk = dasm.replace_instrs(lastdi.address, di.address, newinstrs)
