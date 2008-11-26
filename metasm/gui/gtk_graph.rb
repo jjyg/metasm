@@ -951,6 +951,7 @@ class GraphViewWidget < Gtk::HBox
 				@curcontext.keep_split ||= []
 				@curcontext.keep_split << a
 				gui_update
+				focus_addr a
 			end
 
 		else
