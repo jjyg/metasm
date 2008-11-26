@@ -193,7 +193,7 @@ def self.newinstr_callback(dasm, di)
 		if blk = dasm.replace_instrs(lastdi.address, di.address, newinstrs)
 			puts ' deobfuscate', di_seq, ' into', newinstrs, ' ---' if $DEBUG
 			# recurse, keep the last generated di to return to caller as replacement
-			blk.list.each { |bdi| di = newinstr_callback(dasm, bdi) || di }
+			newinstrs.each { |bdi| di = newinstr_callback(dasm, bdi) || di }
 		else
 			di = nil
 		end
@@ -215,4 +215,4 @@ end
 Deobfuscate.init
 
 # setup the newinstr callback
-dasm.callback_newinstr = proc { |di| Deobfuscate.newinstr_callback(dasm, di) }
+dasm.callback_newinstr = proc { |di| Deobfuscate.newinstr_callback(dasm, di) } if defined? dasm
