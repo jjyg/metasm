@@ -33,6 +33,8 @@ class Ia32 < CPU
 					raise Exception, "invalid #{self.class} #{v}" unless self.class.i_to_s[v]
 					@val = v
 				end
+
+				def self.from_str(s) new(@s_to_i[s]) end
 			}
 		end
 
@@ -48,6 +50,11 @@ class Ia32 < CPU
 					raise Exception, "invalid #{self.class} #{sz}/#{v}" unless self.class.i_to_s[sz] and self.class.i_to_s[sz][v]
 					@val = v
 					@sz = sz
+				end
+
+				def self.from_str(s)
+					raise "Bad #{name} #{s.inspect}" if not x = @s_to_i[s]
+					new(*x)
 				end
 			}
 		end
@@ -95,6 +102,11 @@ class Ia32 < CPU
 			else
 				Sym[@val]
 			end
+		end
+
+		# checks if two registers have bits in common
+		def share?(other)
+			other.val % (other.sz >> 1) == @val % (@sz >> 1) and (other.sz != @sz or @sz != 8 or other.val == @val)
 		end
 	end
 

@@ -81,7 +81,7 @@ class ModRM
 				o
 			when String
 				if Reg.s_to_i.has_key? o
-					Reg.new(*Reg.s_to_i[o])
+					Reg.from_str(o)
 				else o
 				end
 			else o
