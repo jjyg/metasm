@@ -231,7 +231,9 @@ class Ia32
 				pfx[:rep] = 'repnz'
 			end
 		when :z
-			if di.opcode.props[:stropz]
+			if di.opcode.props[:strop]
+				pfx[:rep] = 'rep'
+			elsif di.opcode.props[:stropz]
 				pfx[:rep] = 'repz'
 			end
 		end
