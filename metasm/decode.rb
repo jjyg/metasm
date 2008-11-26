@@ -647,6 +647,8 @@ class Disassembler
 	attr_accessor :callback_stopaddr
 	# callback called before each backtrace that may take some time
 	attr_accessor :callback_prebacktrace
+	# callback called once all addresses have been disassembled
+	attr_accessor :callback_finished
 
 	@@backtrace_maxblocks = 50
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
@@ -827,6 +829,7 @@ class Disassembler
 		@entrypoints ||= []
 		if @addrs_todo.empty? and entrypoints.empty?
 			post_disassemble
+			@callback_finished[] if callback_finished
 			puts 'disassembly finished' if $VERBOSE
 			return false
 		elsif @addrs_todo.empty?
@@ -1847,8 +1850,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			}
 		else
 			# merge with adjacent blocks
-			merge_blocks(fdi.block, @decoded[fdi.block.to_normal.first].block) if @decoded[fdi.block.to_normal.to_a.first]
-			merge_blocks(@decoded[fdi.block.from_normal.first].block, fdi.block) if @decoded[fdi.block.from_normal.to_a.first]
+			merge_blocks(fdi.block, fdi.block.to_normal.first) if @decoded[fdi.block.to_normal.to_a.first]
+			merge_blocks(fdi.block.from_normal.first, fdi.block) if @decoded[fdi.block.from_normal.to_a.first]
 		end
 
 		fdi.block if not by.empty?
@@ -1856,8 +1859,16 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 	# merge two instruction blocks if they form a simple chain and are adjacent
 	# returns true if merged
-	def merge_blocks(b1, b2)
-		if b1 and b2 and b1.list.last.next_addr == b2.address and
+	def merge_blocks(b1, b2, allow_nonadjacent = false)
+		if b1 and not b1.kind_of? InstructionBlock
+			return if not @decoded[b1].kind_of? DecodedInstruction
+			b1 = @decoded[b1].block 
+		end
+ 		if b2 and not b2.kind_of? InstructionBlock
+ 			return if not @decoded[b2].kind_of? DecodedInstruction
+			b2 = @decoded[b2].block
+		end
+		if b1 and b2 and (allow_nonadjacent or b1.list.last.next_addr == b2.address) and
 				b1.to_normal.to_a == [b2.address] and b2.from_normal.to_a.length == 1 and	# that handles delay_slot
 				b1.to_subfuncret.to_a == [] and b2.from_subfuncret.to_a == [] and
 				b1.to_indirect.to_a == [] and b2.from_indirect.to_a == []
