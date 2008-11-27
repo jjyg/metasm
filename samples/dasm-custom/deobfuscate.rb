@@ -199,11 +199,12 @@ def self.newinstr_callback(dasm, di)
 
 		# remove instructions from the match to have only 2 linked blocks passed to replace_instrs
 		unused = di_seq[1..-2] || []
+		unused.delete_if { |udi| udi.block.address == di_seq[0].block.address or udi.block.address == di_seq[-1].block.address }
 		dasm.replace_instrs(unused.shift.address, unused.shift.address, []) while unused.length > 1
 		dasm.replace_instrs(unused.first.address, unused.first.address, []) if not unused.empty?
 
 		# patch the dasm graph
-		if blk = dasm.replace_instrs(lastdi.address, di.address, newinstrs)
+		if dasm.replace_instrs(lastdi.address, di.address, newinstrs)
 			puts ' deobfuscate', di_seq, ' into', newinstrs, ' ---' if $DEBUG
 			# recurse, keep the last generated di to return to caller as replacement
 			newinstrs.each { |bdi| di = newinstr_callback(dasm, bdi) || di }

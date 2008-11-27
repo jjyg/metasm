@@ -1825,7 +1825,29 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		tb.list.each { |di| @decoded.delete di.address }
 		tb.list.clear
 		by.each { |di| fb.add_di di }
-		by.reverse_each { |di| @decoded[di.address] = di }	# handle 0 bin_length
+		by.each_with_index { |di, i|
+			if odi = @decoded[di.address] and odi.kind_of? DecodedInstruction
+				# collision, hopefully with another deobfuscation run ?
+				if by[i..-1].all? { |mydi| mydi.to_s == @decoded[mydi.address].to_s }
+					puts "replace_instrs: merge at  #{di}" if $DEBUG
+					by[i..-1] = by[i..-1].map { |xdi| @decoded[xdi.address] }
+					by[i..-1].each { fb.list.pop }
+					split_block(odi.block, odi.address)
+					tb.to_normal = [di.address]
+					(odi.block.from_normal ||= []) << to
+					odi.block.from_normal.uniq!
+					break
+				else
+					#raise "replace_instrs: collision  #{di}  vs  #{odi}"
+					puts "replace_instrs: collision  #{di}  vs  #{odi}" if $VERBOSE
+					while @decoded[di.address].kind_of? DecodedInstruction	# find free space.. raise ?
+						di.address += 1	# XXX use floats ?
+						di.bin_length -= 1
+					end
+				end
+			end
+			@decoded[di.address] = di
+		}
 		@addrs_done.delete_if { |ad| normalize(ad[0]) == tb.address or ad[1] == tb.address }
 		@addrs_done.delete_if { |ad| normalize(ad[0]) == fb.address or ad[1] == fb.address } if by.empty? and tb.address != fb.address
 
@@ -1850,8 +1872,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			}
 		else
 			# merge with adjacent blocks
-			merge_blocks(fb, fb.to_normal.first) if @decoded[fb.to_normal.to_a.first]
-			merge_blocks(fb.from_normal.first, fb) if @decoded[fb.from_normal.to_a.first]
+			merge_blocks(fb, fb.to_normal.first) if fb.to_normal.to_a.length == 1 and @decoded[fb.to_normal.first].kind_of? DecodedInstruction
+			merge_blocks(fb.from_normal.first, fb) if fb.from_normal.to_a.length == 1 and @decoded[fb.from_normal.first].kind_of? DecodedInstruction
 		end
 
 		fb if not by.empty?
