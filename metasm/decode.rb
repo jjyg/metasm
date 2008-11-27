@@ -1802,10 +1802,12 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		# create DecodedInstruction from Instructions in 'by' if needed
 		split_block(fdi.block, fdi.address)
 		split_block(tdi.block, tdi.block.list[tdi.block.list.index(tdi)+1].address) if tdi != tdi.block.list.last
+		fb = fdi.block
+		tb = tdi.block
 
 		# generate DecodedInstr from Instrs
 		# try to keep the bin_length of original block
-		wantlen = tdi.address + tdi.bin_length - fdi.address
+		wantlen = tdi.address + tdi.bin_length - fb.address
 		wantlen -= by.grep(DecodedInstruction).inject(0) { |len, di| len + di.bin_length }
 		ldi = by.last
 		ldi = DecodedInstruction.new(ldi) if ldi.kind_of? Instruction
@@ -1818,43 +1820,41 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			di
 		}
 
-
-		if not by.empty?
-			fdi.block.list.each { |di| @decoded.delete di.address }
-			fdi.block.list.clear
-			@addrs_done.delete_if { |ad| normalize(ad[0]) == tdi.block.address }
-			tdi.block.list.each { |di| @decoded.delete di.address }
-			tdi.block.list.clear
-			by.each { |di| fdi.block.add_di di ; @decoded[di.address] = di }
-			fdi = fdi.block.list.first
-		end
+		fb.list.each { |di| @decoded.delete di.address }
+		fb.list.clear
+		tb.list.each { |di| @decoded.delete di.address }
+		tb.list.clear
+		by.each { |di| fb.add_di di }
+		by.reverse_each { |di| @decoded[di.address] = di }	# handle 0 bin_length
+		@addrs_done.delete_if { |ad| normalize(ad[0]) == tb.address or ad[1] == tb.address }
+		@addrs_done.delete_if { |ad| normalize(ad[0]) == fb.address or ad[1] == fb.address } if by.empty? and tb.address != fb.address
 
 		# update to_normal/from_normal
-		fdi.block.to_normal = tdi.block.to_normal
-		fdi.block.to_normal.to_a.each { |newto|
+		fb.to_normal = tb.to_normal
+		fb.to_normal.to_a.each { |newto|
 			# other paths may already point to newto, we must only update the relevant entry
 			if @decoded[newto].kind_of? DecodedInstruction and idx = @decoded[newto].block.from_normal.to_a.index(to)
 				if by.empty?
-					@decoded[newto].block.from_normal[idx..idx] = fdi.block.from_normal.to_a
+					@decoded[newto].block.from_normal[idx..idx] = fb.from_normal.to_a
 				else
-					@decoded[newto].block.from_normal[idx] = fdi.block.list.last.address
+					@decoded[newto].block.from_normal[idx] = fb.list.last.address
 				end
 			end
 		}
 
 		if by.empty?
-			fdi.block.from_normal.to_a.each { |newfrom|
+			fb.from_normal.to_a.each { |newfrom|
 				if @decoded[newfrom].kind_of? DecodedInstruction and idx = @decoded[newfrom].block.to_normal.to_a.index(from)
-					@decoded[newfrom].block.to_normal[idx..idx] = tdi.block.to_normal.to_a
+					@decoded[newfrom].block.to_normal[idx..idx] = tb.to_normal.to_a
 				end
 			}
 		else
 			# merge with adjacent blocks
-			merge_blocks(fdi.block, fdi.block.to_normal.first) if @decoded[fdi.block.to_normal.to_a.first]
-			merge_blocks(fdi.block.from_normal.first, fdi.block) if @decoded[fdi.block.from_normal.to_a.first]
+			merge_blocks(fb, fb.to_normal.first) if @decoded[fb.to_normal.to_a.first]
+			merge_blocks(fb.from_normal.first, fb) if @decoded[fb.from_normal.to_a.first]
 		end
 
-		fdi.block if not by.empty?
+		fb if not by.empty?
 	end
 
 	# merge two instruction blocks if they form a simple chain and are adjacent
@@ -1875,6 +1875,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			b2.list.each { |di| b1.add_di di }
 			b1.to_normal = b2.to_normal
 			b2.list.clear
+			@addrs_done.delete_if { |ad| normalize(ad[0]) == b2.address }
 			true
 		end
 	end
