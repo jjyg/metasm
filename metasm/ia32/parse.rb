@@ -265,8 +265,9 @@ end
 		when :modrmxmm; arg.class == ModRM   or (arg.class == SimdReg and arg.sz == 128)
 		when :regxmm;   arg.class == SimdReg and arg.sz == 128
 		when :i8, :u8, :u16
-			arg.kind_of? Expression and
-			Expression.in_range?(arg, spec) != false	# true or nil allowed
+			arg.kind_of? Expression
+			# and Expression.in_range?(arg, spec) != false	# true or nil allowed
+			# jz 0x28282828 may fit in :i8 depending on instr addr
 		else raise EncodeError, "Internal error: unknown argument specification #{spec.inspect}"
 		end
 	end
