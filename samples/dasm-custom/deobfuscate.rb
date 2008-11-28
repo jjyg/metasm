@@ -216,6 +216,23 @@ def self.newinstr_callback(dasm, di)
 	di
 end
 
+# call newinstr_callback on all existing instructions of dasm
+def self.deobfuscate_existing(dasm)
+	dasm.each_instructionblock { |b|
+		b.list.dup.each { |di| newinstr_callback(dasm, di) }
+	}
+end
+
+# calls dasm.merge_blocks(true) on all instruction blocks to merge sequences of blocks
+def self.merge_blocks(dasm)
+	dasm.each_instructionblock { |b|
+		pv = dasm.decoded[b.from_normal.to_a.first]
+		if pv.kind_of? Metasm::DecodedInstruction and not pv.block.list.last.opcode.props[:setip] and
+				b.from_normal.length == 1 and pv.block.to_normal.to_a.length == 1
+			dasm.merge_blocks(pv.block, b, true)
+		end
+	}
+end
 end
 
 if $DEBUG
