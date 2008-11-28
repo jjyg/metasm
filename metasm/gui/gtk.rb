@@ -245,6 +245,22 @@ class DisasmWidget < Gtk::VBox
 		@views.each { |v| v.gui_update }
 	end
 
+	def keep_focus_while
+		curaddr = curaddr
+		yield
+		focus_addr curaddr if curaddr
+	end
+
+	# returns the address of the item under the cursor in current view
+	def curaddr
+		curview.current_address
+	end
+
+	# returns the object under the cursor in current view (@dasm.decoded[curaddr])
+	def curobj
+		@dasm.decoded[curaddr]
+	end
+
 	def messagebox(str, title=nil)
 		MessageBox.new(toplevel, str, title)
 	end
