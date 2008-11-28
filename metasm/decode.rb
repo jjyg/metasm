@@ -634,9 +634,9 @@ class Disassembler
 	attr_accessor :comment
 	# bool, set to true (default) if functions with undetermined binding should be assumed to return with ABI-conforming binding (conserve frame ptr)
 	attr_accessor :funcs_stdabi
-	# callback called whenever a new address is to be appended to the list of addresses to disassemble (except subfunction returns)
-	# this method must return the address to append ; or nil if no address is to be appended, or an array of addresses.
-	# it is invoked with arguments (target address found, address of origininating instruction)
+	# callback called whenever an instruction will backtrace :x (before the backtrace is started)
+	# arguments: |addr of origin, array of exprs to backtrace|
+	# must return the replacement array, nil == []
 	attr_accessor :callback_newaddr
 	# called whenever an instruction is decoded and added to an instruction block. arg: the new decoded instruction
 	# returns the new di to consider (nil to end block)
@@ -1027,12 +1027,13 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			end
 		}
 
-		if not callback_newaddr or di_addr = @callback_newaddr[di_addr, block.list.last.address]
-			[di_addr].flatten.compact.each { |di_addr|
-				block.add_to di_addr
-				@addrs_todo << [di_addr, block.list.last.address]
-			}
-		end
+		ar = [di_addr]
+		ar = @callback_newaddr[block.list.last.address, ar] || [] if callback_newaddr
+		ar.each { |di_addr|
+			block.add_to di_addr
+			@addrs_todo << [di_addr, block.list.last.address]
+		}
+
 		block
 	end
 
@@ -1056,7 +1057,9 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 	# trace xrefs for execution
 	def backtrace_xrefs_di_x(di)
-		@program.get_xrefs_x(self, di).each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x) }
+		ar = @program.get_xrefs_x(self, di)
+		ar = @callback_newaddr[di.address, ar] || [] if callback_newaddr
+		ar.each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x) }
 	end
 
 	# checks if the function starting at funcaddr is an external function thunk (eg jmp [SomeExtFunc])
@@ -1773,17 +1776,15 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		end
 
 		# XXX all this should be done in  backtrace() { <here> }
-		if type == :x and origin and (not callback_newaddr or n = @callback_newaddr[n, origin])
-			[n].flatten.compact.each { |n|
-				if detached
-					o = @decoded[origin] ? origin : di ? di.address : nil	# lib function callback have origin == libfuncname, so we must find a block somewhere else
-					origin = nil
-					@decoded[o].block.add_to_indirect(normalize(n)) if @decoded[o] and not unk
-				else
-					@decoded[origin].block.add_to_normal(normalize(n)) if @decoded[origin] and not unk
-				end
-				@addrs_todo << [n, origin]
-			}
+		if type == :x and origin
+			if detached
+				o = @decoded[origin] ? origin : di ? di.address : nil	# lib function callback have origin == libfuncname, so we must find a block somewhere else
+				origin = nil
+				@decoded[o].block.add_to_indirect(normalize(n)) if @decoded[o] and not unk
+			else
+				@decoded[origin].block.add_to_normal(normalize(n)) if @decoded[origin] and not unk
+			end
+			@addrs_todo << [n, origin]
 		end
 	end
 
