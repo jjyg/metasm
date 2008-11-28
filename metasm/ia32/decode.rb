@@ -880,5 +880,83 @@ class Ia32
 		f.btfor_callback  = disassembler_default_btfor_callback
 		f
 	end
+
+	# computes the binding of the sequence of code starting at entry
+	# the binding is a hash showing the value of modified elements at the
+	# end of the code sequence, relative to their value at entry
+	# the elements are all the registers and the memory written to
+	# if finish is nil, the binding will include :ip, which is the address
+	# the binding will not include memory access from subfunctions
+	# to be executed next (if it exists)
+	# entry should be an entrypoint of the disassembler if finish is nil
+	# the code sequence must have only one end, with no to_normal
+	def code_binding(dasm, entry, finish=nil)
+		entry = dasm.normalize(entry)
+		finish = dasm.normalize(finish) if finish
+		lastdi = nil
+		binding = {}
+		bt = proc { |from, expr, inc_start|
+			ret = dasm.backtrace(Expression[expr], from, :snapshot_addr => entry, :include_start => inc_start)
+			ret.length == 1 ? ret.first : Expression::Unknown
+		}
+
+		# walk blocks, search for finish, scan memory writes
+		todo = [entry]
+		done = [Expression::Unknown]
+		while addr = todo.pop
+			addr = dasm.normalize(addr)
+			next if done.include? addr or addr == finish or not dasm.decoded[addr].kind_of? DecodedInstruction
+			done << addr
+			b = dasm.decoded[addr].block
+
+			next if b.list.find { |di|
+				a = di.address
+				if a == finish
+					lastdi = b.list[b.list.index(di) - 1]
+					true
+				else
+					# check writes from the instruction
+					get_xrefs_w(dasm, di).each { |waddr, len|
+						# we want the ptr expressed with reg values at entry
+						ptr = bt[a, waddr, false]
+						binding[Indirection[ptr, len, a]] = bt[a, Indirection[waddr, len, a], true]
+					}
+					false
+				end
+			}
+
+			hasnext = false
+			b.each_to_samefunc(dasm) { |t|
+				hasnext = true
+				todo << t
+			}
+
+			# check end of sequence
+			if not hasnext
+				raise "two-ended code_binding #{lastdi} & #{b.list.last}" if lastdi
+				lastdi = b.list.last
+				if lastdi.opcode.props[:setip]
+					e = get_xrefs_x(dasm, lastdi)
+					raise 'bad code_binding ending' if e.to_a.length != 1 or not lastdi.opcode.props[:stopexec]
+					binding[:ip] = bt[lastdi.address, e.first, false]
+				elsif not lastdi.opcode.props[:stopexec]
+					binding[:ip] = lastdi.next_addr
+				end
+			end
+		end
+
+		# add register binding
+		raise "no code_binding end" if not lastdi and not finish
+		[:eax, :ebx, :ecx, :edx, :esp, :ebp, :esi, :edi].each { |reg|
+			binding[reg] = 
+				if lastdi; bt[lastdi.address, reg, true]
+				else bt[finish, reg, false]
+				end
+		}
+
+		binding.delete_if { |k, v| Expression[k] == Expression[v] }
+
+		binding
+	end
 end
 end

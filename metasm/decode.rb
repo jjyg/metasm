@@ -729,9 +729,9 @@ class Disassembler
 	# returns the canonical form of addr (absolute address integer or label of start of section + section offset)
 	def normalize(addr)
 		return addr if not addr or addr == :default
-		e = Expression[addr].bind(@old_prog_binding).bind(@prog_binding).reduce
-		e %= 1 << @cpu.size if e.kind_of? Integer
-		e
+		addr = Expression[addr].bind(@old_prog_binding).bind(@prog_binding).reduce if not addr.kind_of? Integer
+		addr %= 1 << @cpu.size if addr.kind_of? Integer
+		addr
 	end
 
 	# returns [edata, edata_base] or nil
@@ -968,6 +968,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		raise if not block.list.empty?
 		di_addr = block.address
 		delay_slot = nil
+		di = nil
 
 		# try not to run for too long
 		# loop usage: break if the block continues to the following instruction, else return
@@ -1029,10 +1030,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 		ar = [di_addr]
 		ar = @callback_newaddr[block.list.last.address, ar] || [] if callback_newaddr
-		ar.each { |di_addr|
-			block.add_to di_addr
-			@addrs_todo << [di_addr, block.list.last.address]
-		}
+		ar.each { |di_addr| backtrace(di_addr, di.address, :origin => di.address, :type => :x) }
 
 		block
 	end
@@ -1903,6 +1901,12 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			@addrs_done.delete_if { |ad| normalize(ad[0]) == b2.address }
 			true
 		end
+	end
+
+	# computes the binding of a code sequence
+	# just a forwarder to CPU#code_binding
+	def code_binding(*a)
+		@cpu.code_binding(self, *a)
 	end
 
 
