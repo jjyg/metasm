@@ -729,7 +729,9 @@ class Disassembler
 	# returns the canonical form of addr (absolute address integer or label of start of section + section offset)
 	def normalize(addr)
 		return addr if not addr or addr == :default
-		Expression[addr].bind(@old_prog_binding).bind(@prog_binding).reduce
+		e = Expression[addr].bind(@old_prog_binding).bind(@prog_binding).reduce
+		e %= 1 << @cpu.size if e.kind_of? Integer
+		e
 	end
 
 	# returns [edata, edata_base] or nil
