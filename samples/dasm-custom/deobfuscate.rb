@@ -190,7 +190,7 @@ def self.newinstr_callback(dasm, di)
 		# replace %1-%9 by the matched substrings
 		newinstrs = newinstrs.gsub(/%(\d)/) { match.captures[$1.to_i-1] }.split(' ; ').map { |str| dasm.cpu.parse_instruction(str) } if newinstrs.kind_of? String
 		if newinstrs.last.kind_of? Metasm::Instruction and newinstrs.last.opname != 'jmp' and
-				di_seq.inject(-di.bin_length) { |len, i| len + i.bin_length } + lastdi.address != di.address
+				lastdi.address + di_seq.inject(-di.bin_length) { |len, i| len + i.bin_length } != di.address
 			# ensure that the last instr ends the same place as the original last instr (to allow disassemble_block to continue)
 			newinstrs << dasm.cpu.parse_instruction("jmp #{Metasm::Expression[di.next_addr]}")
 			# nop ; jmp => jmp
