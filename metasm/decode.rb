@@ -723,7 +723,7 @@ class Disassembler
 	end
 
 	def each_instructionblock
-		@decoded.sort.each { |addr, di| yield di.block if di.kind_of? DecodedInstruction and di.block.list.first == di }
+		@decoded.each { |addr, di| yield di.block if di.kind_of? DecodedInstruction and di.block.list.first == di }
 	end
 
 	# returns the canonical form of addr (absolute address integer or label of start of section + section offset)
@@ -1727,13 +1727,14 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# creates xrefs, updates addrs_todo, updates instr args
 	def backtrace_found_result(expr, di, type, origin, len, detached)
 		n = normalize(expr)
-		add_xref(n, Xref.new(type, origin, len)) if origin != :default and origin != Expression::Unknown
+		fallthrough = true if type == :x and o = @decoded[origin] and o.kind_of? DecodedInstruction and not o.opcode.props[:stopexec] and n == o.next_addr
+		add_xref(n, Xref.new(type, origin, len)) if origin != :default and origin != Expression::Unknown and not fallthrough
 		unk = true if n == Expression::Unknown
 
 		add_xref(n, Xref.new(:addr, di.address)) if di and di.address != origin and not unk
 		base = { nil => 'loc', 1 => 'byte', 2 => 'word', 4 => 'dword' }[len] || 'xref'
 		base = 'sub' if @function[n]
-		n = Expression[auto_label_at(n, base, 'xref') || n]
+		n = Expression[auto_label_at(n, base, 'xref') || n] if not fallthrough
 
 		# update instr args
 		# TODO trace expression evolution to allow handling of
