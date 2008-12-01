@@ -1176,7 +1176,12 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					next if f_obj == false
 					f_obj ||= w_obj
 					f_loopdetect ||= w_loopdetect
-					todo << [f_obj, f_addr, f_type, f_loopdetect + [[f_obj, f_addr, f_type]] ]
+					# only count non-trivial paths in loopdetect (ignore linear links)
+					add_detect = [[f_obj, f_addr, f_type]]
+					add_detect = [] if w_di.block.from_subfuncret.to_a == [] and w_di.block.from_normal == [f_addr] and
+				       			@decoded[f_addr].kind_of? DecodedInstruction and tmp = @decoded[f_addr].block and
+							tmp.to_normal == [w_di.address] and tmp.to_subfuncret.to_a == []
+					todo << [f_obj, f_addr, f_type, f_loopdetect + add_detect ]
 				}
 				yield :end, w_obj, :addr => w_addr, :loopdetect => w_loopdetect if not hadsomething
 			elsif @function[w_addr] and w_addr != :default and w_addr != Expression::Unknown
