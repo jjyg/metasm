@@ -341,6 +341,8 @@ end
 class Indirection < ExpressionType
 	# Expression (the pointer)
 	attr_accessor :target
+	alias pointer target
+	alias pointer= target=
 	# length in bytes of data referenced
 	attr_accessor :len
 	# address of the instruction who generated the indirection

@@ -457,6 +457,28 @@ class Ia32
 					end
 					ret
 				}
+			when 'fstenv'
+			       	proc { |di, a0|
+					# stores the address of the last non-control fpu instr run
+					lastfpuinstr = di.block.list[0...di.block.list.index(di)].reverse.find { |pdi|
+						case pdi.opcode.name
+						when /fn?init|fn?clex|fldcw|fn?st[cs]w|fn?stenv|fldenv|fn?save|frstor|f?wait/
+						when /^f/; true
+						end
+					} if di.block
+					lastfpuinstr = lastfpuinstr.address if lastfpuinstr
+					ret = {}
+					ptr = a0.pointer
+					save_at = proc { |off, val| ret[Indirection[a0.target + off, 4, di.address]] = val }
+					save_at[0, Expression::Unknown]
+					save_at[4, Expression::Unknown]
+					save_at[8, Expression::Unknown]
+					save_at[12, lastfpuinstr || Expression::Unknown]
+					save_at[16, Expression::Unknown]
+					save_at[20, Expression::Unknown]
+					save_at[24, Expression::Unknown]
+					ret
+				}
 			when 'nop', 'pause', 'wait', 'cmp', 'test'; proc { |di, *a| {} }
 			end
 
