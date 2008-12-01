@@ -290,10 +290,9 @@ class LinuxRemoteString < VirtualString
 	# returns a virtual string proxying the specified process memory range
 	# reads are cached (4096 aligned bytes read at once), from /proc/pid/mem
 	# writes are done directly by ptrace
-	# XXX could fallback to ptrace if no /proc/pid...
 	def initialize(pid, addr_start=0, length=0xffff_ffff, ptrace=nil)
 		@pid = pid
-		@readfd = File.open("/proc/#@pid/mem")
+		@readfd = File.open("/proc/#@pid/mem") rescue nil
 		@ptrace = ptrace if ptrace
 		@invalid_addr = false
 		super(addr_start, length)
@@ -317,6 +316,7 @@ class LinuxRemoteString < VirtualString
 	end
 
 	def get_page(addr)
+		return do_ptrace { |pt| pt.readmem(addr, 4096) } if not readfd
 		@readfd.pos = addr
 		# target must be stopped
 		do_ptrace {
