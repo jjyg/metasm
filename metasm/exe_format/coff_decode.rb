@@ -147,6 +147,7 @@ class COFF
 
 			@entries = []
 
+			nrnames = @nr_names if $DEBUG
 			(@nr_names+@nr_id).times {
  				e = Entry.new
 
