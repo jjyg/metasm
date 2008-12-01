@@ -494,19 +494,19 @@ class Expression < ExpressionType
 				if    r.rexpr == l; r.lexpr
 				elsif r.lexpr == l; r.rexpr
 				end
-			elsif r.kind_of? Expression and l.kind_of? Integer; Expression[r, @op, l].reduce_rec
+			elsif l.kind_of? Integer; Expression[r, @op, l].reduce_rec
+			elsif l.kind_of? Expression and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
 			end
 		elsif @op == :&
 			if l == 0 or r == 0; 0
 			elsif r == 1 and l.kind_of? Expression and [:'==', :'!=', :<, :>, :<=, :>=].include? l.op
 				l
 			elsif l == r; l
-			elsif r.kind_of? Expression and l.kind_of? Integer; Expression[r, @op, l].reduce_rec
-			# (a &^| b) & i
-			elsif l.kind_of? Expression and [:|, :&, :^].include? l.op and r.kind_of? Integer
-				ll = l.lexpr
-				ll = Expression[ll, :&, r] if l.op != :&
-				Expression[ll, l.op, [l.rexpr, :&, r]].reduce_rec
+			elsif l.kind_of? Integer; Expression[r, @op, l].reduce_rec
+			elsif l.kind_of? Expression and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
+			# (a ^| b) & i
+			elsif l.kind_of? Expression and [:|, :^].include? l.op and r.kind_of? Integer
+				Expression[[l.lexpr, :&, r], l.op, [l.rexpr, :&, r]].reduce_rec
 			# rol/ror composition
 			elsif r.kind_of? ::Integer and l.kind_of? Expression and l.op == :|
 				m = Expression[[['var', :sh_op, 'amt'], :|, ['var', :inv_sh_op, 'inv_amt']], :&, 'mask']
@@ -535,12 +535,15 @@ class Expression < ExpressionType
 			elsif r == 0; l
 			elsif l == -1 or r == -1; -1
 			elsif l == r; l
-			elsif r.kind_of? Expression and l.kind_of? Integer; Expression[r, @op, l].reduce_rec
+			elsif l.kind_of? Integer; Expression[r, @op, l].reduce_rec
+			elsif l.kind_of? Expression and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
 			end
 		elsif @op == :*
 			if    l == 0 or r == 0; 0
 			elsif l == 1; r
 			elsif r == 1; l
+			elsif r.kind_of? Integer; Expression[r, @op, l].reduce_rec
+			elsif r.kind_of? Expression and r.op == @op; Expression[[l, @op, r.lexpr], @op, r.rexpr].reduce_rec
 			end
 		elsif @op == :-
 			if l == :unknown or r == :unknown; :unknown
@@ -568,9 +571,8 @@ class Expression < ExpressionType
 					# 1+a => a+1
 					Expression[r, :+, l].reduce_rec
 				end
-			elsif l.kind_of? Expression and l.op == :+
 				# (a+b)+foo => a+(b+foo)
-				Expression[l.lexpr, :+, [l.rexpr, :+, r]].reduce_rec
+			elsif l.kind_of? Expression and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
 			elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
 				Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
 			else
