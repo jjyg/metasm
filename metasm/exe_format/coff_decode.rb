@@ -339,8 +339,10 @@ class COFF
 
 	# decodes a section content (allows simpler LoadedPE override)
 	def decode_section_body(s)
-		s.encoded = @encoded[s.rawaddr, [s.rawsize, s.virtsize].min]
-		s.encoded.virtsize = s.virtsize
+		raw = EncodedData.align_size(s.rawsize, 0x200)
+		virt = EncodedData.align_size(s.virtsize, 0x1000)
+		s.encoded = @encoded[s.rawaddr, [raw, virt].min]
+		s.encoded.virtsize = virt
 	end
 
 	# decodes COFF export table from directory
