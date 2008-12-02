@@ -34,8 +34,9 @@ class AsmListingWidget < Gtk::HBox
 		# TODO listing hscroll (viewport?)
 
 		@arrows_widget.set_size_request 40, 0	# TODO resizer
-		@vscroll.adjustment.lower = @dasm.sections.keys.min
-		@vscroll.adjustment.upper = @dasm.sections.keys.max + @dasm.sections[@dasm.sections.keys.max].length
+		ks = @dasm.sections.keys.grep(Integer)
+		@vscroll.adjustment.lower = ks.min
+		@vscroll.adjustment.upper = ks.max + @dasm.sections[ks.max].length
 		@vscroll.adjustment.step_increment = 1
 		@vscroll.adjustment.page_increment = 10
 		@vscroll.adjustment.value = @dasm.prog_binding['entrypoint'] || @vscroll.adjustment.lower

@@ -443,27 +443,17 @@ class GraphViewWidget < Gtk::HBox
 
 	# if the target is a call to a subfunction, open a new window with the graph of this function (popup)
 	def rightclick(ev)
-		b = find_box_xy(ev.x, ev.y)
-		ly = (@curcontext.view_y+ev.y-b.y*@zoom - 1).to_i / @font_height if b
-		if b and di = @dasm.decoded[oldaddr = b[:line_address][ly]]
-			di.block.each_to_otherfunc(@dasm) { |t|
-				t = @dasm.normalize(t)
-				next if not t.kind_of? Integer or @curcontext.box.find { |bb| bb.id == t }
-				popup = Gtk::Window.new
-				popup.title = "metasm dasm: #{Expression[t]} (popup)"
-				popwidg = DisasmWidget.new(@dasm, @parent_widget.entrypoints)
-				class << popwidg
-					def keypress(ev)
-						if ev.keyval == Gdk::Keyval::GDK_Escape; terminate ; toplevel.destroy
-						else super
-						end
-					end
-				end
-				popup.add popwidg
-				popup.set_default_size 500, 500 # XXX find good size
-				popup.show_all
-				popwidg.focus_addr t, 1
-			}
+		if b = find_box_xy(ev.x, ev.y) and @zoom >= 0.90 and @zoom <= 1.1
+			click(ev)
+			@mousemove_origin = nil
+			popup = Gtk::Window.new
+			popup.title = "metasm dasm: #{@hl_word}"
+			popwidg = DisasmWidget.new(@dasm, @parent_widget.entrypoints)
+			popwidg.terminate
+			popup.add popwidg
+			popup.set_default_size 500, 500 # XXX find good size
+			popup.show_all
+			popwidg.focus_addr @hl_word, 1
 		end
 	end
 
