@@ -27,11 +27,10 @@ class ExeFormat
 			when Instruction
 				case i = cpu.encode_instruction(self, e)
 				when Array
-					if i.length == 1
-						ary.last << i.first
-					else
-						# ambiguity !
-						ary << i << EncodedData.new
+					case i.length
+					when 0; raise EncodeError, "failed to encode #{e}"
+					when 1; ary.last << i.first
+					else ary << i << EncodedData.new # to solve later
 					end
 				else
 					ary.last << i
@@ -302,9 +301,15 @@ class CPU
 		oplist = opcode_list_byname[i.opname].to_a.find_all { |o|
 			o.args.length == i.args.length and
 			o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
-		}
+		}.map { |op|
+			begin
+				encode_instr_op(program, i, op)
+			rescue EncodeError
+			end
+		}.compact.flatten
 		raise EncodeError, "no matching opcode found for #{i}" if oplist.empty?
-		oplist.map { |op| encode_instr_op(program, i, op) }.flatten.each { |ed| ed.reloc.each_value { |v| v.backtrace = i.backtrace } }
+		oplist.each { |ed| ed.reloc.each_value { |v| v.backtrace = i.backtrace } }
+		oplist
 	end
 end
 end

@@ -1072,7 +1072,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		count = 0
 		while @decoded[addr].kind_of? DecodedInstruction
 			count += 1
-			return if count > 20
+			return if count > 5
 			b = @decoded[addr].block
 			if b.to_subfuncret and not b.to_subfuncret.empty?
 				return if b.to_subfuncret.length != 1

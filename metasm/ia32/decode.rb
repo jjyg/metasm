@@ -645,6 +645,8 @@ class Ia32
 			}
 			if bt.length != 1
 				b[r] = Expression::Unknown
+			elsif bt.first == Expression[r]
+				b.delete r
 			else
 				b[r] = bt.first
 			end
