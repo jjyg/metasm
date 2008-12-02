@@ -260,16 +260,19 @@ end
 class Expression
 	def encode(type, endianness, backtrace=nil)
 		case val = reduce
-		when Integer; EncodedData.new Expression.encode_immediate(val, type, endianness, backtrace)
+		when Integer; EncodedData.new Expression.encode_imm(val, type, endianness, backtrace)
 		else          EncodedData.new(0.chr*(INT_SIZE[type]/8), :reloc => {0 => Relocation.new(self, type, endianness, backtrace)})
 		end
 	end
 
-	def self.encode_immediate(val, type, endianness, backtrace=nil)
+	class << self
+	def encode_imm(val, type, endianness, backtrace=nil)
 		raise "unsupported endianness #{endianness.inspect}" unless [:big, :little].include? endianness
 		raise(EncodeError, "immediate overflow 0x#{val.to_s 16} #{(Backtrace::backtrace_str(backtrace) if backtrace)}") if not in_range?(val, type)
 		s = (0...INT_SIZE[type]/8).map { |i| (val >> (8*i)) & 0xff }.pack('C*')
 		endianness != :little ? s.reverse : s
+	end
+	alias encode_immediate encode_imm
 	end
 end
 
@@ -281,7 +284,7 @@ class Data
 		when String
 			# db 'foo' => 'foo' # XXX could be optimised, but should not be significant
 			# dw 'foo' => "f\0o\0o\0" / "\0f\0o\0o"
-			@data.unpack('C*').inject(EncodedData.new) { |ed, chr| ed << Expression.encode_immediate(chr, INT_TYPE[@type], endianness, @backtrace) }
+			@data.unpack('C*').inject(EncodedData.new) { |ed, chr| ed << Expression.encode_imm(chr, INT_TYPE[@type], endianness, @backtrace) }
 		when Expression
 			@data.encode INT_TYPE[@type], endianness
 		when Array

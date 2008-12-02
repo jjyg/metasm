@@ -60,10 +60,10 @@ class Ia32
 				case Expression.in_range?(imm, :i8)
 				when true
 					ret.data[0] |= 1 << 6
-					[ret << Expression.encode_immediate(imm, :i8, endianness)]
+					[ret << Expression.encode_imm(imm, :i8, endianness)]
 				when false
 					ret.data[0] |= 2 << 6
-					[ret << Expression.encode_immediate(imm, :i16, endianness)]
+					[ret << Expression.encode_imm(imm, :i16, endianness)]
 				when nil
 					retl = ret.dup
 					ret.data[0] |= 1 << 6
@@ -126,10 +126,10 @@ class Ia32
 					case Expression.in_range?(imm, :i8)
 					when true
 						ret.data[0] |= 1 << 6
-						[ret << Expression.encode_immediate(imm, :i8, endianness)]
+						[ret << Expression.encode_imm(imm, :i8, endianness)]
 					when false
 						ret.data[0] |= 2 << 6
-						[ret << Expression.encode_immediate(imm, :a32, endianness)]
+						[ret << Expression.encode_imm(imm, :a32, endianness)]
 					when nil
 						rets = ret.dup
 						rets.data[0] |= 1 << 6

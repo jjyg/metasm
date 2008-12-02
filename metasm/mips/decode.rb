@@ -213,8 +213,8 @@ class MIPS
 	end
 
 	# branch.*likely has no delay slot
-	def delay_slot(di)
-		(di.opcode.name[0] == ?b and di.opcode.name[-1] == ?l) ? 0 : 1
+	def delay_slot(di=nil)
+		(di and di.opcode.name[0] == ?b and di.opcode.name[-1] == ?l) ? 0 : 1
 	end
 
 	def disassembler_default_func

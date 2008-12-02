@@ -477,6 +477,7 @@ class EncodedData
 		end
 		Expression.decode_imm(read(Expression::INT_SIZE[type]/8), type, endianness)
 	end
+	alias decode_immediate decode_imm
 end
 
 class Expression
@@ -583,7 +584,7 @@ class CPU
 	end
 
 	# number of instructions following a jump that are still executed
-	def delay_slot(di)
+	def delay_slot(di=nil)
 		0
 	end
 
@@ -1734,7 +1735,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# creates xrefs, updates addrs_todo, updates instr args
 	def backtrace_found_result(expr, di, type, origin, len, detached)
 		n = normalize(expr)
-		fallthrough = true if type == :x and o = @decoded[origin] and o.kind_of? DecodedInstruction and not o.opcode.props[:stopexec] and n == o.next_addr
+		fallthrough = true if type == :x and o = @decoded[origin] and o.kind_of? DecodedInstruction and not o.opcode.props[:stopexec] and n == o.block.list.last.next_addr	# delay_slot
 		add_xref(n, Xref.new(type, origin, len)) if origin != :default and origin != Expression::Unknown and not fallthrough
 		unk = true if n == Expression::Unknown
 

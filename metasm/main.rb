@@ -685,7 +685,7 @@ class Relocation
 
 	# fixup the encodeddata with value (reloc starts at off)
 	def fixup(edata, off, value)
-		str = Expression.encode_immediate(value, @type, @endianness, @backtrace)
+		str = Expression.encode_imm(value, @type, @endianness, @backtrace)
 		edata.fill off
 		edata.data[off, str.length] = str
 	end
