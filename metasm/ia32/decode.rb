@@ -905,13 +905,13 @@ class Ia32
 		f
 	end
 
-	# computes the binding of the sequence of code starting at entry
+	# computes the binding of the sequence of code starting at entry included
 	# the binding is a hash showing the value of modified elements at the
 	# end of the code sequence, relative to their value at entry
 	# the elements are all the registers and the memory written to
 	# if finish is nil, the binding will include :ip, which is the address
-	# the binding will not include memory access from subfunctions
 	# to be executed next (if it exists)
+	# the binding will not include memory access from subfunctions
 	# entry should be an entrypoint of the disassembler if finish is nil
 	# the code sequence must have only one end, with no to_normal
 	def code_binding(dasm, entry, finish=nil)
@@ -952,7 +952,11 @@ class Ia32
 			hasnext = false
 			b.each_to_samefunc(dasm) { |t|
 				hasnext = true
-				todo << t
+				if t == finish
+					lastdi = b.list.last
+				else
+					todo << t
+				end
 			}
 
 			# check end of sequence

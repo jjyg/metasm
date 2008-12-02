@@ -751,9 +751,9 @@ class Disassembler
 			if addr.op == :+ and addr.rexpr.kind_of? ::Integer and addr.lexpr.kind_of? ::String and e = @sections[addr.lexpr]
 				e.ptr = addr.rexpr
 				[e, Expression[addr.lexpr]]
-			elsif addr.op == :+ and addr.rexpr.kind_of? ::String and not addr.lexpr and e = @sections[addr]
+			elsif addr.op == :+ and addr.rexpr.kind_of? ::String and not addr.lexpr and e = @sections[addr.rexpr]
 				e.ptr = 0
-				[e, addr]
+				[e, addr.rexpr]
 			end
 		end
 	end
@@ -979,6 +979,20 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			# check collision into a known block
 			break if @decoded[di_addr]
 
+			# check self-modifying code
+			if @check_smc
+				#(-7...di.bin_length).each { |off|	# uncomment to check for unaligned rewrites
+				waddr = di_addr		#di_addr + off
+				each_xref(waddr, :w) { |x|
+					#next if off + x.len < 0
+					puts "W: disasm: self-modifying code at #{Expression[waddr]}" if $VERBOSE
+					@comment[di_addr] = "overwritten by #{@decoded[x.origin] || Expression[x.origin]}"
+					@callback_selfmodifying[di_addr] if callback_selfmodifying
+					return
+				}
+				#}
+			end
+
 			# decode instruction
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
 			if not di = @cpu.decode_instruction(block.edata, di_addr)
@@ -989,20 +1003,6 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			@decoded[di_addr] = di
 			block.add_di di
 			puts di if $DEBUG
-
-			# check self-modifying code
-			if @check_smc
-				#(-7...di.bin_length).each { |off|	# uncomment to check for unaligned rewrites
-				waddr = di_addr		#di_addr + off
-				each_xref(waddr, :w) { |x|
-					#next if off + x.len < 0
-					puts "W: disasm: self-modifying code at #{Expression[waddr]}" if $VERBOSE
-					di.add_comment "overwritten by #{@decoded[x.origin] || Expression[x.origin]}"
-					@callback_selfmodifying[di_addr] if callback_selfmodifying
-					return
-				}
-				#}
-			end
 
 			di = @callback_newinstr[di] if callback_newinstr
 			return if not di
@@ -1758,7 +1758,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 		# add comment
 		if type and @decoded[origin] # and not @decoded[origin].instruction.args.include? n
-			@decoded[origin].add_comment "#{type}#{len}:#{n}"
+			@decoded[origin].add_comment "#{type}#{len}:#{n}" if not fallthrough
 		end
 
 		# check if target is a string
