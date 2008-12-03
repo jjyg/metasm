@@ -79,6 +79,7 @@ class ExeFormat
 		cp.parse(source, file, lineno)
 		puts 'compiling C' if $VERBOSE
 		asm_source = cpu.new_ccompiler(cp, e).compile
+		puts asm_source if $DEBUG
 		puts 'parsing asm' if $VERBOSE
 		e.parse(asm_source, 'C compiler output', 1)
 		puts 'assembling' if $VERBOSE

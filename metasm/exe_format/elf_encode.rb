@@ -876,12 +876,14 @@ class ELF
 	def parse_parser_instruction(instr)
 		readstr = proc {
 			@lexer.skip_space
+			t = nil
 			raise instr, "string expected, found #{t.raw.inspect if t}" if not t = @lexer.readtok or (t.type != :string and t.type != :quoted)
 			t.value || t.raw
 		}
 		check_eol = proc {
 			@lexer.skip_space
-			raise instr, "eol expected, found #{t.raw.inspect}" if t = @lexer.nexttok and t.type != :eol
+			t = nil
+			raise instr, "eol expected, found #{t.raw.inspect if t}" if t = @lexer.nexttok and t.type != :eol
 		}
 
 		case instr.raw.downcase
