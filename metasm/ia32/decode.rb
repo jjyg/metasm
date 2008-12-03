@@ -972,17 +972,19 @@ class Ia32
 				end
 			end
 		end
+		binding.delete_if { |k, v| Expression[k] == Expression[v] }
 
 		# add register binding
 		raise "no code_binding end" if not lastdi and not finish
 		[:eax, :ebx, :ecx, :edx, :esp, :ebp, :esi, :edi].each { |reg|
-			binding[reg] = 
+			val =
 				if lastdi; bt[lastdi.address, reg, true]
 				else bt[finish, reg, false]
 				end
+			next if val == Expression[reg]
+			val = Expression[val, :%, 1<<@size].reduce
+			binding[reg] = Expression[val]
 		}
-
-		binding.delete_if { |k, v| Expression[k] == Expression[v] }
 
 		binding
 	end
