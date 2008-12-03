@@ -37,7 +37,7 @@ class DisasmWidget < Gtk::VBox
 						dasm_working = false
 						gui_update_counter = @gui_update_counter_max
 					end
-				rescue
+				rescue Object
 					messagebox [$!, $!.backtrace].join("\n")
 				end
 				gui_update_counter += 1
@@ -87,7 +87,7 @@ class DisasmWidget < Gtk::VBox
 				begin
 					ret = eval c
 					messagebox ret.inspect[0, 128], 'eval'
-				rescue
+				rescue Object
 					messagebox "#$! #{$!.message}\n#{$!.backtrace.join("\n")}", 'eval error'
 				end
 			}
