@@ -521,8 +521,8 @@ class GraphViewWidget < Gtk::HBox
 		# TODO separate arrows ends by a few pixels (esp incoming vs outgoing)
 		x1, y1 = b1.x+b1.w/2-@curcontext.view_x, b1.y+b1.h-@curcontext.view_y
 		x2, y2 = b2.x+b2.w/2-@curcontext.view_x, b2.y-1-@curcontext.view_y
-		x1 += ((b1.to.length-1)/2 + b1.to.index(b2)) * 4
-		x2 += ((b2.from.length-1)/2 + b2.from.index(b1)) * 4
+		x1 += (-(b1.to.length-1)/2 + b1.to.index(b2)) * 4
+		x2 += (-(b2.from.length-1)/2 + b2.from.index(b1)) * 4
 		margin = 8
 		return if (y1+margin < 0 and y2 < 0) or (y1 > @height/@zoom and y2-margin > @height/@zoom)	# just clip on y
 		margin, x1, y1, x2, y2, b1w, b2w = [margin, x1, y1, x2, y2, b1.w, b2.w].map { |v| v*@zoom }
