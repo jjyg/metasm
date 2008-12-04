@@ -95,7 +95,8 @@ def self.emu(dasm, addr)
 	return if not a_pre
 
 	# expression checking if we get out of the loop
-	loop_again_cond = Metasm::Expression[:ecx, :'!=', 0]
+	loop_again_cond = dasm.cpu.get_jump_condition(dasm.decoded[a_cond])
+	loop_again_cond = Expression[:'!', loop_again_cond] if dasm.decoded[a_cond].next_addr != a_out
 
 	init_bd = {}
 	loop_bd.keys.grep(Symbol).each { |reg|

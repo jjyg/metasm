@@ -537,6 +537,26 @@ class Ia32
 		}
 	end
 
+	# returns the condition (bool Expression) under which a conditionnal jump is taken
+	# returns nil if not a conditionnal jump
+	# backtrace for the condition must include the jump itself (eg loop -> ecx--)
+	def get_jump_condition(di)
+		case di.opcode.name
+		when /^j(.*)/
+			case $1
+			when 'cxz'; Expression[[:ecx, :&, 0xffff], :==, 0]
+			when 'ecxz'; Expression[:ecx, :==, 0]
+			when 'mp'
+			else decode_cc_to_expr($1)
+			end
+		when /^loop(.*)/
+			case $1
+			when 'z', 'e'; Expression[[:ecx, :'!=', 0], :'||', :eflag_z]
+			when 'nz', 'ne'; Expression[[:ecx, :'!=', 0], :'||', [:'!', :eflag_z]]
+			when ''; Expression[:ecx, :'!=', 0]
+			end
+		end
+	end
 
 	def get_backtrace_binding(di)
 		a = di.instruction.args.map { |arg|
