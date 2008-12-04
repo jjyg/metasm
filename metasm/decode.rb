@@ -1920,6 +1920,52 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	end
 
 
+	# takes a graph of decodedinstructions, returns an array of instructions/label equivalent
+	# assume all jump targets have corresponding label in @prog_binding
+	def flatten_graph(entry)
+		ret = []
+		todo = [normalize(entry)]
+		done = []
+		label = {}
+		inv_binding = @prog_binding.invert
+		while addr = todo.pop
+			next if done.include? addr or not @decoded[addr].kind_of? DecodedInstruction
+			done << addr
+			b = @decoded[addr].block
+
+			ret << Label.new(inv_binding[addr]) if inv_binding[addr]
+			ret.concat b.list.map { |di| di.instruction }
+
+			b.each_to_otherfunc(self) { |to|
+				to = normalize to
+				todo.unshift to
+			}
+			b.each_to_samefunc(self) { |to|
+				to = normalize to
+				todo << to
+			}
+
+			if not di = b.list[-1-@cpu.delay_slot] or not di.opcode.props[:stopexec] or di.opcode.props[:saveip]
+				to = b.list.last.next_addr
+				if todo.include? to
+					if done.include? to or not @decoded[to].kind_of? DecodedInstruction
+						if not to_l = inv_binding[to]
+							to_l = auto_label_at(to, 'loc')
+							if done.include? to and idx = ret.index(@decoded[to].block.list.first.instruction)
+								ret.insert(idx, Label.new(to_l))
+							end
+						end
+						ret << @cpu.instr_uncond_jump_to(to_l)
+					else
+						todo << to	# ensure it's next in the listing
+					end
+				end
+			end
+		end
+
+		ret
+	end
+
 	def to_s
 		a = ''
 		dump { |l| a << l << "\n" }

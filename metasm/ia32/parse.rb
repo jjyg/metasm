@@ -298,5 +298,9 @@ end
 			end
 		end
 	end
+
+	def instr_uncond_jump_to(target)
+		parse_instruction("jmp #{target}")
+	end
 end
 end
