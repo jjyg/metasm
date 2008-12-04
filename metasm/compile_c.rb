@@ -1344,6 +1344,11 @@ module C
 					self
 				end
 			else
+				# int+ptr => ptr+int
+				if @op == :+ and @lexpr and @lexpr.type.integral? and @rexpr.type.pointer?
+					@rexpr, @lexpr = @lexpr, @rexpr
+				end
+
 				# handle pointer + 2 == ((char *)pointer) + 2*sizeof(*pointer)
 				if @rexpr and [:'+', :'+=', :'-', :'-='].include? @op and
 						@type.pointer? and @rexpr.type.integral?
