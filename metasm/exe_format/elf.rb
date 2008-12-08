@@ -45,7 +45,7 @@ class ELF < ExeFormat
 		0x9026 => 'ALPHA'
 	}
 
-	FLAGS = Hash.new({}).merge(
+	FLAGS = {
 		'SPARC' => {0x100 => '32PLUS', 0x200 => 'SUN_US1',
 			0x400 => 'HAL_R1', 0x800 => 'SUN_US3',
 			0x8000_0000 => 'LEDATA'},
@@ -53,7 +53,7 @@ class ELF < ExeFormat
 		'MIPS' => {1 => 'NOREORDER', 2 => 'PIC', 4 => 'CPIC',
 			8 => 'XGOT', 16 => '64BIT_WHIRL', 32 => 'ABI2',
 			64 => 'ABI_ON32'}
-	)
+	}
 
 	DYNAMIC_TAG = { 0 => 'NULL', 1 => 'NEEDED', 2 => 'PLTRELSZ', 3 =>
 		'PLTGOT', 4 => 'HASH', 5 => 'STRTAB', 6 => 'SYMTAB', 7 => 'RELA',
@@ -148,7 +148,7 @@ class ELF < ExeFormat
 
 	SYMBOL_VISIBILITY = { 0 => 'DEFAULT', 1 => 'INTERNAL', 2 => 'HIDDEN', 3 => 'PROTECTED' }
 
-	RELOCATION_TYPE = Hash.new({}).merge(	# key are in MACHINE.values
+	RELOCATION_TYPE = {	# key are in MACHINE.values
 		'386' => { 0 => 'NONE', 1 => '32', 2 => 'PC32', 3 => 'GOT32',
 			4 => 'PLT32', 5 => 'COPY', 6 => 'GLOB_DAT',
 			7 => 'JMP_SLOT', 8 => 'RELATIVE', 9 => 'GOTOFF',
@@ -312,7 +312,7 @@ class ELF < ExeFormat
 			15 => 'PC8', 16 => 'DTPMOD64', 17 => 'DTPOFF64',
 			18 => 'TPOFF64', 19 => 'TLSGD', 20 => 'TLSLD',
 			21 => 'DTPOFF32', 22 => 'GOTTPOFF', 23 => 'TPOFF32' }
-	)
+	}
 
 	DEFAULT_INTERP = '/lib/ld-linux.so.2'
 
@@ -335,7 +335,7 @@ class ELF < ExeFormat
 		off :phoff
 		off :shoff
 		word :flags
-		fld_bits(:flags) { |elf, hdr| FLAGS[hdr.machine] }
+		fld_bits(:flags) { |elf, hdr| FLAGS[hdr.machine] || {} }
 		halfs :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
 
 		def self.size elf
@@ -460,13 +460,13 @@ class ELF < ExeFormat
 	class Relocation32 < Relocation
 		addr :offset
 		bitfield :xword, 0 => :type, 8 => :symbol
-		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] }
+		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] || {} }
 		fld_enum(:symbol) { |elf, rel| elf.symbols }
 	end
 	class Relocation64 < Relocation
 		addr :offset
 		bitfield :xword, 0 => :type, 32 => :symbol
-		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] }
+		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] || {} }
 		fld_enum(:symbol) { |elf, rel| elf.symbols }
 	end
 	class RelocationAddend < Relocation
@@ -486,14 +486,14 @@ class ELF < ExeFormat
 	class RelocationAddend32 < RelocationAddend
 		addr :offset
 		bitfield :xword, 0 => :type, 8 => :symbol
-		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] }
+		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] || {} }
 		fld_enum(:symbol) { |elf, rel| elf.symbols }
 		sxword :addend
 	end
 	class RelocationAddend64 < RelocationAddend
 		addr :offset
 		bitfield :xword, 0 => :type, 32 => :symbol
-		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] }
+		fld_enum(:type) { |elf, rel| RELOCATION_TYPE[elf.header.machine] || {} }
 		fld_enum(:symbol) { |elf, rel| elf.symbols }
 		sxword :addend
 	end
