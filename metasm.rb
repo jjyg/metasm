@@ -21,7 +21,7 @@ end
 	require "metasm/#{f}/compile_c" if File.exist? File.join(Metasmdir, 'metasm', f, 'compile_c.rb')
 }
 # executable formats
-%w[mz elf_encode elf_decode pe coff_encode coff_decode shellcode a_out xcoff nds autoexe].each { |f|
+%w[mz elf_encode elf_decode pe coff_encode coff_decode shellcode a_out xcoff nds autoexe macho].each { |f|
 	require "metasm/exe_format/#{f}"
 }
 # os-specific features
