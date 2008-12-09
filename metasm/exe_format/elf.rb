@@ -415,14 +415,14 @@ class ELF < ExeFormat
 
 		def self.size elf
 			x = elf.bitsize >> 3
-			12 + x
+			8 + 2*x
 		end
 	end
 
 	class Symbol32 < Symbol
 		word :name_p
 		addr :value
-		word :size
+		xword :size
 		bitfield :byte, 0 => :type, 4 => :bind
 		fld_enum :type, SYMBOL_TYPE
 		fld_enum :bind, SYMBOL_BIND

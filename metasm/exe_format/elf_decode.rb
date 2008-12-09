@@ -366,7 +366,6 @@ class ELF
 		relocproc = "arch_decode_segments_reloc_#{@header.machine.to_s.downcase}"
 		if not respond_to? relocproc
 			puts "W: Elf: relocs for arch #{@header.machine} unsupported" if $VERBOSE
-			@relocations.each { |r| puts Expression[r.offset] }
 			return
 		end
 		@relocations.each { |r|
@@ -468,6 +467,61 @@ class ELF
 		end
 
 		Metasm::Relocation.new(Expression[target], :u32, @endianness) if target
+	end
+
+	# returns the Metasm::Relocation that should be applied for reloc
+	# self.encoded.ptr must point to the location that will be relocated (for implicit addends)
+	def arch_decode_segments_reloc_x86_64(reloc)
+		if reloc.symbol and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
+			s = @sections.find { |s| s.name and s.offset <= @encoded.ptr and s.offset + s.size > @encoded.ptr }
+			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
+		end
+
+		# decode addend if needed
+		case reloc.type
+		when 'NONE' # no addend
+		else addend = reloc.addend || decode_sword
+		end
+
+		sz = :u64
+		case reloc.type
+		when 'NONE'
+		when 'RELATIVE'
+			# base = @segments.find_all { |s| s.type == 'LOAD' }.map { |s| s.vaddr }.min & 0xffff_f000
+			# compiled to be loaded at seg.vaddr
+			target = addend
+			if o = addr_to_off(target)
+				if not label = @encoded.inv_export[o]
+					label = new_label('xref_%04x' % target)
+					@encoded.add_export label, o
+				end
+				target = label
+			else
+				puts "W: Elf: relocation pointing out of mmaped space #{reloc.inspect}" if $VERBOSE
+			end
+		when 'GLOB_DAT', 'JMP_SLOT', '64', 'PC64', '32', 'PC32'
+			# XXX use versionned version
+			# lazy jmp_slot ?
+			target = 0
+			target = reloc.symbol.name if reloc.symbol.kind_of?(Symbol) and reloc.symbol.name
+			target = Expression[target, :-, reloc.offset] if reloc.type == 'PC64' or reloc.type == 'PC32'
+			target = Expression[target, :+, addend] if addend and addend != 0
+			sz = :u32 if reloc.type == '32' or reloc.type == 'PC32'
+		when 'COPY'
+			# mark the address pointed as a copy of the relocation target
+			if not reloc.symbol or not name = reloc.symbol.name
+				puts "W: Elf: symbol to COPY has no name: #{reloc.inspect}" if $VERBOSE
+				name = ''
+			end
+			name = new_label("copy_of_#{name}")
+			@encoded.add_export name, @encoded.ptr
+			target = nil
+		else
+			puts "W: Elf: unhandled X86_64 reloc #{reloc.inspect}" if $VERBOSE
+			target = nil
+		end
+
+		Metasm::Relocation.new(Expression[target], sz, @endianness) if target
 	end
 
 	# decodes the ELF dynamic tags, interpret them, and decodes symbols and relocs
