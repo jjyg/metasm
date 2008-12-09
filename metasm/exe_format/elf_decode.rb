@@ -480,7 +480,8 @@ class ELF
 		# decode addend if needed
 		case reloc.type
 		when 'NONE' # no addend
-		else addend = reloc.addend || decode_sword
+		when '32', 'PC32'; addend = reloc.addend || decode_sword
+		else addend = reloc.addend || decode_sxword
 		end
 
 		sz = :u64
