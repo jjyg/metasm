@@ -71,7 +71,9 @@ class MachO < ExeFormat
 		0x100 => 'FORCE_FLAT', 0x200 => 'NOMULTIDEFS', 0x400 => 'NOFIXPREBINDING', 0x800 => 'PREBINDABLE',
 		0x1000 => 'ALLMODSBOUND', 0x2000 => 'SUBSECTIONS_VIA_SYMBOLS', 0x4000 => 'CANONICAL', 0x8000 => 'WEAK_DEFINES',
 		0x10000 => 'BINDS_TO_WEAK', 0x20000 => 'ALLOW_STACK_EXECUTION',
-}
+	}
+
+	SEG_PROT = { 1 => 'READ', 2 => 'WRITE', 4 => 'EXECUTE' }
 
 	LOAD_COMMAND = {
 		0x1 => 'SEGMENT', 0x2 => 'SYMTAB', 0x3 => 'SYMSEG', 0x4 => 'THREAD',
@@ -109,7 +111,17 @@ class MachO < ExeFormat
 		attr_accessor :reserved	# word 64bit only
 
 		def set_default_values(m)
-			@ncmds ||= 42
+			@magic ||= case m.size
+				   when 32; 'MAGIC'
+				   when 64; 'MAGIC64'
+				   end
+			@cputype ||= case m.cpu
+				     when Ia32; 'I386'
+				     end
+			@cpusubtype ||= 'ALL'
+			@filetype ||= 'EXECUTE'
+			@ncmds ||= m.commands.length
+			@sizeofcmds ||= m.new_label('sizeofcmds')
 			super
 		end
 
@@ -133,6 +145,20 @@ class MachO < ExeFormat
 			m.encoded.ptr = ptr + @cmdsize - 8
 		end
 
+		def set_default_values(m)
+			@cmd ||= data.class.name.sub(/.*::/, '')
+			@cmdsize ||= 'cmdsize'
+			super
+		end
+
+		def encode(m)
+			ed = super << @data.encode(m)
+			ed.align(m.size >> 3)
+			ed.fixup! @cmdsize => ed.length	if @cmdsize.kind_of? String
+			ed
+		end
+
+
 		class UUID < SerialStruct
 			mem :uuid, 16
 		end
@@ -141,12 +167,32 @@ class MachO < ExeFormat
 			str :name, 16
 			xwords :virtaddr, :virtsize, :fileoff, :filesize
 			words :maxprot, :initprot, :nsects, :flags
+			fld_bits :maxprot, SEG_PROT
+			fld_bits :initprot, SEG_PROT
 			attr_accessor :sections, :encoded
 
 			def decode(m)
 				super
 				@sections = []
-				@nsects.times { @sections << SECTION.decode(m) }
+				@nsects.times { @sections << SECTION.decode(m, self) }
+			end
+
+			def set_default_values(m)
+				# TODO (in the caller?) @encoded = @sections.map { |s| s.encoded }.join
+				@virtaddr ||= m.new_label('virtaddr')
+				@virtsize ||= @encoded.length
+				@fileoff  ||= m.new_label('fileoff')
+				@filesize ||= @encoded.rawsize
+				@sections ||= []
+				@nsects   ||= @sections.length
+				@maxprot  ||= %w[READ WRITE EXECUTE]
+				@initprot ||= %w[READ]
+				super
+			end
+
+			def encode(m)
+				ed = super	# need to call set_default_values before using @sections
+				@sections.inject(ed) { |ed, s| ed << s.encode(m) }
 			end
 		end
 		SEGMENT_64 = SEGMENT
@@ -156,7 +202,18 @@ class MachO < ExeFormat
 			str :segname, 16
 			xwords :addr, :size
 			words :offset, :align, :reloff, :nreloc, :flags, :res1, :res2
-			attr_accessor :sections, :encoded
+			attr_accessor :segment, :encoded
+
+			def decode(m, s)
+				super(m)
+				@segment = s
+			end
+
+			def set_default_values
+				@segname ||= @segment.name
+				# addr, offset, etc = @segment.virtaddr + 42
+				super
+			end
 
 			def decode_inner(m)
 				@encoded = m.encoded[m.addr_to_off(@addr), @size]
@@ -177,15 +234,45 @@ class MachO < ExeFormat
 		class THREAD < SerialStruct
 			words :flavor, :count
 			attr_accessor :ctx
+			
+			def entrypoint(m)
+				@ctx ||= {}
+				case m.header.cputype
+				when 'I386'; @ctx[:eip]
+				when 'POWERPC'; @ctx[:srr0]
+				end
+			end
+
+			def set_entrypoint(m, ep)
+				@ctx ||= {}
+				case m.header.cputype
+				when 'I386'; @ctx[:eip] = ep
+				when 'POWERPC'; @ctx[:srr0] = ep
+				end
+			end
+
+			def ctx_keys(m)
+				case m.header.cputype
+				when 'I386'; %w[eax ebx ecx edx edi esi ebp esp ss eflags eip cs ds es fs gs]
+				when 'POWERPC'; %w[srr0 srr1 r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 cr xer lr ctr mq vrsave]
+				else [*1..@count].map { |i| "reg#{i}" }
+				end.map { |k| k.to_sym }
+			end
+
 			def decode(m)
 				super
-				@ctx = {}
-				regs = 	case m.header.cputype
-				when 'I386'; %w[eax ebx ecx edx edi esi ebp esp ss eflags eip cs ds es fs gs]
-				when 'POWERPC'; %w[srr0 srr1 r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 cr xer lr ctr mq vrsave]	# XXX eip=?
-				else [*1..40].map { |i| "r#{i}" }
-				end
-				@count.times { @ctx[regs.shift.to_sym] = m.decode_word }
+				@ctx = ctx_keys(m)[0, @count].inject({}) { |ctx, r| ctx.update r => m.decode_word }
+			end
+
+			def set_default_values(m)
+				@ctx ||= {}
+				ctx_keys(m).each { |k| @ctx[k] ||= 0 }
+				@count ||= @ctx.length
+				super
+			end
+
+			def encode(m)
+				ctx_keys(m).inject(super) { |ed, r| ed << m.encode_word(@ctx[r]) }
 			end
 		end
 		UNIXTHREAD = THREAD
@@ -322,14 +409,197 @@ class MachO < ExeFormat
 	end
 
 	def get_default_entrypoints
-		@commands.find_all { |cmd| cmd.cmd == 'THREAD' or cmd.cmd == 'UNIXTHREAD' }.map { |cmd| cmd.data.ctx[:eip] || cmd.data.ctx[:srr0] }.compact
+		@commands.find_all { |cmd| cmd.cmd == 'THREAD' or cmd.cmd == 'UNIXTHREAD' }.map { |cmd| cmd.data.entrypoint(self) }
 	end
 
 	def cpu_from_headers
 		case @header.cputype
 		when 'I386'; Ia32.new
-		when 'POWERPC'; 
+		#when 'POWERPC'; 
+		else raise "unsupported cpu #{@header.machine}"
 		end
+	end
+
+	def encode
+		@encoded = EncodedData.new
+
+		if false and maybeyoureallyneedthis
+		seg = LoadCommand::SEGMENT.new
+		seg.name = '__PAGEZERO'
+		seg.encoded = EncodedData.new
+		seg.encoded.virtsize = 0x1000
+		seg.initprot = seg.maxprot = 0
+		@segments.unshift seg
+		end
+
+		# TODO sections -> segments
+		@segments.each { |seg|
+			if not @commands.find { |cmd| cmd.cmd == 'SEGMENT' and cmd.data == seg }
+				cmd = LoadCommand.new
+				cmd.cmd = 'SEGMENT'
+				cmd.data = seg
+				@commands << cmd
+			end
+		}
+
+		binding = {}
+		@encoded << @header.encode(self)
+
+		first = @segments.find { |seg| seg.encoded.rawsize > 0 }
+
+		first.virtsize = new_label('virtsize')
+		first.filesize = new_label('filesize')
+
+		hlen = @encoded.length
+		@commands.each { |cmd| @encoded << cmd.encode(self) }
+		binding[@header.sizeofcmds] = @encoded.length - hlen if @header.sizeofcmds.kind_of? String
+
+		# put header in first segment
+		first.encoded = @encoded << first.encoded
+
+		@encoded = EncodedData.new
+
+		addr = @encoded.length
+		@segments.each { |seg|
+			seg.encoded.align 0x1000
+			binding[seg.virtaddr] = addr
+			binding[seg.virtsize] = seg.encoded.length if seg.filesize.kind_of? String
+			binding[seg.fileoff] = @encoded.length
+			binding[seg.filesize] = seg.encoded.rawsize if seg.filesize.kind_of? String
+			binding.update seg.encoded.binding(addr)
+			@encoded << seg.encoded[0, seg.encoded.rawsize]
+			@encoded.align 0x1000
+			addr += seg.encoded.length
+		}
+
+		@encoded.fixup! binding
+		@encoded.data
+	end
+
+	def parse_init
+		# allow the user to specify a section, falls back to .text if none specified
+		if not defined? @cursource or not @cursource
+			@cursource = Object.new
+			class << @cursource
+				attr_accessor :exe
+				def <<(*a)
+					t = Preprocessor::Token.new(nil)
+					t.raw = '.text'
+					exe.parse_parser_instruction t
+					exe.cursource.send(:<<, *a)
+				end
+			end
+			@cursource.exe = self
+		end
+
+		@source ||= {}
+
+		@header.cputype = case @cpu		# needed by '.entrypoint'
+				  when Ia32; 'I386'
+				  end
+		super
+	end
+
+	# handles macho meta-instructions
+	#
+	# syntax:
+	#   .section "<name>" [<perms>]
+	#     change current section (where normal instruction/data are put)
+	#     perms = list of 'r' 'w' 'x', may be prefixed by 'no'
+	#     shortcuts: .text .data .rodata .bss
+	#   .entrypoint [<label>]
+	#     defines the program entrypoint to the specified label / current location
+	#
+	def parse_parser_instruction(instr)
+		readstr = proc {
+			@lexer.skip_space
+			t = nil
+			raise instr, "string expected, found #{t.raw.inspect if t}" if not t = @lexer.readtok or (t.type != :string and t.type != :quoted)
+			t.value || t.raw
+		}
+		check_eol = proc {
+			@lexer.skip_space
+			t = nil
+			raise instr, "eol expected, found #{t.raw.inspect if t}" if t = @lexer.nexttok and t.type != :eol
+		}
+
+		case instr.raw.downcase
+		when '.text', '.data', '.rodata', '.bss'
+			sname = instr.raw.upcase.sub('.', '__')
+			if not @segments.find { |s| s.kind_of? LoadCommand::SEGMENT and s.name == sname }
+				s = LoadCommand::SEGMENT.new
+				s.name = sname
+				s.encoded = EncodedData.new
+				s.initprot = case sname
+					when '__TEXT'; %w[READ EXECUTE]
+					when '__DATA', '__BSS'; %w[READ WRITE]
+					when '__RODATA'; %w[READ]
+					end
+				s.maxprot = %w[READ WRITE EXECUTE]
+				@segments << s
+			end
+			@cursource = @source[sname] ||= []
+			check_eol[] if instr.backtrace  # special case for magic @cursource
+
+		when '.section'
+			# .section <section name|"section name"> [(no)wxalloc] [base=<expr>]
+			sname = readstr[]
+			if not s = @segments.find { |s| s.name == sname }
+				s = LoadCommand::SEGMENT.new
+				s.name = sname
+				s.encoded = EncodedData.new
+				s.initprot = %w[READ]
+				s.maxprot = %w[READ WRITE EXECUTE]
+				@segments << s
+			end
+			loop do
+				@lexer.skip_space
+				break if not tok = @lexer.nexttok or tok.type != :string
+				case @lexer.readtok.raw.downcase
+				when /^(no)?(r)?(w)?(x)?$/
+					ar = []
+					ar << 'READ' if $2
+					ar << 'WRITE' if $3
+					ar << 'EXECINSTR' if $4
+					if $1; s.initprot -= ar
+					else   s.initprot |= ar
+					end
+				else raise instr, 'unknown specifier'
+				end
+			end
+			@cursource = @source[sname] ||= []
+			check_eol[]
+
+		when '.entrypoint'	# XXX thread-specific
+			# ".entrypoint <somelabel/expression>" or ".entrypoint" (here)
+			@lexer.skip_space
+			if tok = @lexer.nexttok and tok.type == :string
+				raise instr if not entrypoint = Expression.parse(@lexer)
+			else
+				entrypoint = new_label('entrypoint')
+				@cursource << Label.new(entrypoint, instr.backtrace.dup)
+			end
+			if not cmd = @commands.find { |cmd| cmd.cmd == 'THREAD' or cmd.cmd == 'UNIXTHREAD' }
+				cmd = LoadCommand.new
+				cmd.cmd = 'THREAD'
+				cmd.data = LoadCommand::THREAD.new
+				cmd.data.ctx = {}
+				@commands << cmd
+			end
+			cmd.data.set_entrypoint(self, entrypoint)
+			check_eol[]
+
+		else super
+		end
+	end
+
+	# assembles the hash self.source to a section array
+	def assemble
+		@source.each { |k, v|
+			raise "no segment named #{k} ?" if not s = @segments.find { |s| s.name == k }
+			s.encoded << assemble_sequence(v, @cpu)
+			v.clear
+		}
 	end
 end
 
@@ -373,6 +643,7 @@ class UniversalBinary < ExeFormat
 		}
 	end
 
-	def [](i) @archive[i].encoded if @archive[i] end
+	def [](i) AutoExe.decode(@archive[i].encoded) if @archive[i] end
+	def <<(exe) @archive << exe end
 end
 end

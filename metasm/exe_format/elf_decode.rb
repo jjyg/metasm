@@ -588,7 +588,7 @@ class ELF
 		case @header.machine
 		when '386'; Ia32.new
 		when 'MIPS'; MIPS.new @endianness
-		else raise "unknown cpu #{@header.machine}"
+		else raise "unsupported cpu #{@header.machine}"
 		end
 	end
 
