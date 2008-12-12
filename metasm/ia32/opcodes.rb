@@ -146,7 +146,8 @@ class Ia32
 		addop_macrostr 'ins',   [0x6C], :strop
 		addop 'into',  [0xCE]
 		addop 'invd',  [0x0F, 0x08]
-		addop 'invlpg',[0x0F, 0x01], 7
+		addop 'invlpg',[0x0F, 0x01, 7<<3], :modrmA
+		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm }
 		addop 'iret',  [0xCF], nil,  {}, :stopexec, :setip
 		addop 'iretd', [0xCF], nil,  {}, :stopexec, :setip
 		addop('jcxz',  [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 16 }
@@ -160,7 +161,7 @@ class Ia32
 		addop 'lfs',   [0x0F, 0xB4], :mrmA
 		addop 'lgs',   [0x0F, 0xB5], :mrmA
 		addop 'lgdt',  [0x0F, 0x01], 2
-		addop 'lidt',  [0x0F, 0x01, 0x18], nil,  {:modrmA => [2, 0]}, :modrmA
+		addop 'lidt',  [0x0F, 0x01, 3<<3], :modrmA
 		addop 'lldt',  [0x0F, 0x00], 2
 		addop 'lmsw',  [0x0F, 0x01], 6
 # prefix	addop 'lock',  [0xF0]
@@ -197,8 +198,8 @@ class Ia32
 		addop 'retf',  [0xCA], nil,  {}, :stopexec, :u16, :setip
 		addop 'rsm',   [0x0F, 0xAA]
 		addop 'sahf',  [0x9E]
-		addop 'sgdt',  [0x0F, 0x01, 0x00], nil,  {:modrmA => [2, 0]}, :modrmA
-		addop 'sidt',  [0x0F, 0x01, 0x08], nil,  {:modrmA => [2, 0]}, :modrmA
+		addop 'sgdt',  [0x0F, 0x01, 0<<3], :modrmA
+		addop 'sidt',  [0x0F, 0x01, 1<<3], :modrmA
 		addop 'sldt',  [0x0F, 0x00], 0
 		addop 'smsw',  [0x0F, 0x01], 4
 		addop 'stc',   [0xF9]
@@ -238,11 +239,10 @@ class Ia32
 		addop 'fabs',  [0xD9, 0xE1]
 		addop_macrofpu1 'fadd',  0
 		addop 'faddp', [0xDE, 0xC0], :regfp
-		addop('fbld',  [0xDF, 0x20], nil,  {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 80 }
-		addop('fbstp', [0xDF, 0x30], nil,  {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 80 }
+		addop('fbld',  [0xDF, 4<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 80 }
+		addop('fbstp', [0xDF, 6<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 80 }
 		addop 'fchs',  [0xD9, 0xE0], nil,  {}, :regfp0
 		addop 'fnclex',      [0xDB, 0xE2]
-		addop 'fclex', [0x9B, 0xDB, 0xE2]
 		addop_macrofpu1 'fcom',  2
 		addop_macrofpu1 'fcomp', 3
 		addop 'fcompp',[0xDE, 0xD9]
@@ -264,17 +264,16 @@ class Ia32
 		addop_macrofpu2 'fidivr',7
 		addop 'fincstp', [0xD9, 0xF7]
 		addop 'fninit',      [0xDB, 0xE3]
-		addop 'finit', [0x9B, 0xDB, 0xE3]
 		addop_macrofpu2 'fist', 2, 1
 		addop_macrofpu3 'fild', 0
 		addop_macrofpu3 'fistp',3
-		addop('fld', [0xD9, 0x00], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 32 }
-		addop('fld', [0xDD, 0x00], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 64 }
-		addop('fld', [0xDB, 0x28], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 80 }
+		addop('fld', [0xD9, 0<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 32 }
+		addop('fld', [0xDD, 0<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 64 }
+		addop('fld', [0xDB, 5<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 80 }
 		addop 'fld', [0xD9, 0xC0], :regfp
 
-		addop('fldcw',  [0xD9, 0x28], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
-		addop 'fldenv', [0xD9, 0x20], nil, {:modrmA => [1, 0]}, :modrmA
+		addop('fldcw',  [0xD9, 5<<8], :modrmA) { |o| o.props[:argsz] = 16 }
+		addop 'fldenv', [0xD9, 4<<8], :modrmA
 		addop 'fld1',   [0xD9, 0xE8]
 		addop 'fldl2t', [0xD9, 0xE9]
 		addop 'fldl2e', [0xD9, 0xEA]
@@ -290,25 +289,23 @@ class Ia32
 		addop 'fprem1', [0xD9, 0xF5]
 		addop 'fptan',  [0xD9, 0xF2]
 		addop 'frndint',[0xD9, 0xFC]
-		addop 'frstor', [0xDD, 0x20], nil, {:modrmA => [1, 0]}, :modrmA
-		addop 'fnsave', [0xDD, 0x30], nil, {:modrmA => [1, 0]}, :modrmA
+		addop 'frstor', [0xDD, 4<<3], :modrmA
+		addop 'fnsave', [0xDD, 6<<3], :modrmA
+		addop('fnstcw', [0xD9, 7<<3], :modrmA) { |o| o.props[:argsz] = 16 }
+		addop 'fnstenv',[0xD9, 6<<3], :modrmA
 		addop 'fnstsw', [0xDF, 0xE0]
-		addop('fnstsw', [0xDD, 0x38], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
+		addop('fnstsw', [0xDD, 7<<3], :modrmA) { |o| o.props[:argsz] = 16 }
 		addop 'fscale', [0xD9, 0xFD]
 		addop 'fsin',   [0xD9, 0xFE]
 		addop 'fsincos',[0xD9, 0xFB]
 		addop 'fsqrt',  [0xD9, 0xFA]
-		addop('fst',  [0xD9, 0x10], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 32 }
-		addop('fst',  [0xDD, 0x10], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 64 }
+		addop('fst',  [0xD9, 2<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 32 }
+		addop('fst',  [0xDD, 2<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 64 }
 		addop 'fst',  [0xD9, 0xD0], :regfp
-		addop('fstp', [0xD9, 0x18], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 32 }
-		addop('fstp', [0xDD, 0x18], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 64 }
-		addop('fstp', [0xDB, 0x38], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 80 }
+		addop('fstp', [0xD9, 3<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 32 }
+		addop('fstp', [0xDD, 3<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 64 }
+		addop('fstp', [0xDB, 7<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 80 }
 		addop 'fstp', [0xDD, 0xD8], :regfp
-		addop('fstcw',  [0xD9, 0x38], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
-		addop 'fstenv', [0xD9, 0x30], nil, {:modrmA => [1, 0]}, :modrmA
-		addop 'fstsw',  [0x9B, 0xDF, 0xE0]
-		addop('fstsw',  [0x9B, 0xDD, 0x38], nil, {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
 		addop_macrofpu1 'fsub',  4
 		addop 'fsubp',  [0xDE, 0xE8], :regfp
 		addop_macrofpu1 'fsubp', 5
@@ -323,6 +320,14 @@ class Ia32
 		addop 'fxtract',[0xD9, 0xF4]
 		addop 'fyl2x',  [0xD9, 0xF1]
 		addop 'fyl2xp1',[0xD9, 0xF9]
+		# fwait prefix
+		addop 'fclex',  [0x9B, 0xDB, 0xE2]
+		addop 'finit',  [0x9B, 0xDB, 0xE3]
+		addop 'fsave',  [0x9B, 0xDD, 6<<3], :modrmA
+		addop('fstcw',  [0x9B, 0xD9, 7<<3], :modrmA) { |o| o.props[:argsz] = 16 }
+		addop 'fstenv', [0x9B, 0xD9, 6<<3], :modrmA
+		addop 'fstsw',  [0x9B, 0xDF, 0xE0]
+		addop('fstsw',  [0x9B, 0xDD, 7<<3], :modrmA) { |o| o.props[:argsz] = 16 }
 		addop 'fwait',  [0x9B]
 	end
 
@@ -376,8 +381,8 @@ class Ia32
 			addop 'fcmovn'+tt, [0xDB, 0xC0 | (i << 3)], :regfp
 		}
 		addop 'fcomi', [0xDB, 0xF0], :regfp
-		addop('fxrstor', [0x0F, 0xAE, 0x08], nil, {:modrmA => [2, 0]}, :modrmA) { |o| o.props[:argsz] = 512*8 }
-		addop('fxsave',  [0x0F, 0xAE, 0x00], nil, {:modrmA => [2, 0]}, :modrmA) { |o| o.props[:argsz] = 512*8 }
+		addop('fxrstor', [0x0F, 0xAE, 1<<3], :modrmA) { |o| o.props[:argsz] = 512*8 }
+		addop('fxsave',  [0x0F, 0xAE, 0<<3], :modrmA) { |o| o.props[:argsz] = 512*8 }
 		addop 'sysenter',[0x0F, 0x34]
 		addop 'sysexit', [0x0F, 0x35]
 	end
@@ -398,8 +403,8 @@ class Ia32
 		addop '3dnow', [0x0F, 0x0F], :mrmmmx, {}, :u8
 
 		addop 'femms', [0x0F, 0x0E]
-		addop 'prefetch', [0x0F, 0x0D, 0x00], nil, {:modrmA => [2, 0] }, :modrmA
-		addop 'prefetchw', [0x0F, 0x0D, 0x08], nil, {:modrmA => [2, 0] }, :modrmA
+		addop 'prefetch',  [0x0F, 0x0D, 0<<3], :modrmA
+		addop 'prefetchw', [0x0F, 0x0D, 1<<3], :modrmA
 	end
 
 	def init_sse_only
@@ -417,7 +422,7 @@ class Ia32
 		}
 
 		addop_macrossps 'divps', [0x0F, 0x5E], :mrmxmm
-		addop 'ldmxcsr', [0x0F, 0xAE, 0x10], nil,  {:modrmA => [2, 0]}, :modrmA
+		addop 'ldmxcsr', [0x0F, 0xAE, 2<<3], :modrmA
 		addop_macrossps 'maxps', [0x0F, 0x5F], :mrmxmm
 		addop_macrossps 'minps', [0x0F, 0x5D], :mrmxmm
 		addop 'movaps',  [0x0F, 0x28], :mrmxmm, {:d => [1, 0]}
@@ -437,7 +442,7 @@ class Ia32
 		addop_macrossps 'rsqrtps',[0x0F, 0x52], :mrmxmm
 		addop 'shufps',  [0x0F, 0xC6], :mrmxmm, {}, :u8
 		addop_macrossps 'sqrtps', [0x0F, 0x51], :mrmxmm
-		addop 'stmxcsr', [0x0F, 0xAE, 0x18], nil, {:modrmA => [2, 0]}, :modrmA
+		addop 'stmxcsr', [0x0F, 0xAE, 3<<3], :modrmA
 		addop_macrossps 'subps', [0x0F, 0x5C], :mrmxmm
 		addop 'ucomiss', [0x0F, 0x2E], :mrmxmm
 		addop 'unpckhps',[0x0F, 0x15], :mrmxmm
@@ -460,10 +465,10 @@ class Ia32
 		addop('maskmovq',[0x0F, 0xF7], :mrmmmx) { |o| o.props[:xmmx] = true } # nomem
 		addop('movntq',  [0x0F, 0xE7], :mrmmmx) { |o| o.props[:xmmx] = true }
 		addop 'movntps', [0x0F, 0x2B], :mrmxmm
-		addop 'prefetcht0', [0x0F, 0x18, 0x08], nil, {:modrmA => [2, 0]}, :modrmA
-		addop 'prefetcht1', [0x0F, 0x18, 0x10], nil, {:modrmA => [2, 0]}, :modrmA
-		addop 'prefetcht2', [0x0F, 0x18, 0x18], nil, {:modrmA => [2, 0]}, :modrmA
-		addop 'prefetchnta',[0x0F, 0x18, 0x00], nil, {:modrmA => [2, 0]}, :modrmA
+		addop 'prefetcht0', [0x0F, 0x18, 1<<3], :modrmA
+		addop 'prefetcht1', [0x0F, 0x18, 2<<3], :modrmA
+		addop 'prefetcht2', [0x0F, 0x18, 3<<3], :modrmA
+		addop 'prefetchnta',[0x0F, 0x18, 0<<3], :modrmA
 		addop 'sfence',  [0x0F, 0xAE, 0xF8]
 	end
 
@@ -477,7 +482,7 @@ class Ia32
 		# TODO <..blabla...integer...blabla..>
 
 		# nomem
-		addop 'clflush', [0x0F, 0xAE, 0x38], nil, {:modrm => [2, 0]}, :modrm	# mrmA ?
+		addop 'clflush', [0x0F, 0xAE, 7<<3], :modrmA
 		addop('maskmovdqu', [0x0F, 0xF7], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('movntpd', [0x0F, 0x2B], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('movntdq', [0x0F, 0xE7], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
@@ -500,9 +505,9 @@ class Ia32
 		addop 'monitor',  [0x0F, 0x01, 0xC8]
 		addop 'mwait',    [0x0F, 0x01, 0xC9]
 
-		addop('fisttp',   [0xDF, 0x08], nil,  {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 16 }
-		addop('fisttp',   [0xDB, 0x08], nil,  {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 32 }
-		addop('fisttp',   [0xDD, 0x08], nil,  {:modrmA => [1, 0]}, :modrmA) { |o| o.props[:argsz] = 64 }
+		addop('fisttp',   [0xDF, 1<<3], :modrmA) { |o| o.props[:argsz] = 16 }
+		addop('fisttp',   [0xDB, 1<<3], :modrmA) { |o| o.props[:argsz] = 32 }
+		addop('fisttp',   [0xDD, 1<<3], :modrmA) { |o| o.props[:argsz] = 64 }
 		addop('lddqu',    [0x0F, 0xF0], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrmA ; o.props[:needpfx] = 0xF2 }
 		addop('movddup',  [0x0F, 0x12], :mrmxmm) { |o| o.props[:needpfx] = 0xF2 }
 		addop('movshdup', [0x0F, 0x16], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
@@ -513,18 +518,38 @@ class Ia32
 		init_cpu_constants
 
 		addop 'vmcall',   [0x0F, 0x01, 0xC1]
-
-		# 64bits only, if I trust intel manuals..
-		addop('vmclear',  [0x66, 0x0F, 0xC7, 6<<3], nil, {:modrmA => [3, 0]}, :modrmA) { |o| o.props[:argsz] = 64 }
 		addop 'vmlaunch', [0x0F, 0x01, 0xC2]
 		addop 'vmresume', [0x0F, 0x01, 0xC3]
-		addop('vmptrld',  [0x0F, 0xC7, 6<<3], nil, {:modrmA => [2, 0]}, :modrmA) { |o| o.props[:argsz] = 64 }
-		addop('vmptrrst', [0x0F, 0xC7, 7<<3], nil, {:modrmA => [2, 0]}, :modrmA) { |o| o.props[:argsz] = 64 }
-		addop 'vmread',   [0x0F, 0x78], :mrm
+		addop 'vmxoff',   [0x0F, 0x01, 0xC4]
 		addop 'vmread',   [0x0F, 0x78], :mrm
 		addop 'vmwrite',  [0x0F, 0x79], :mrm
-		addop 'vmxoff',   [0x0F, 0x01, 0xC4]
-		addop('vmxon',    [0xF3, 0x0F, 0xC7, 6<<3], nil, {:modrmA => [3, 0]}, :modrmA) { |o| o.props[:argsz] = 64 }
+		addop('vmclear',  [0x0F, 0xC7, 6<<3], :modrmA) { |o| o.props[:argsz] = 64 ; o.props[:needpfx] = 0x66 }
+		addop('vmxon',    [0x0F, 0xC7, 6<<3], :modrmA) { |o| o.props[:argsz] = 64 ; o.props[:needpfx] = 0xF3 }
+		addop('vmptrld',  [0x0F, 0xC7, 6<<3], :modrmA) { |o| o.props[:argsz] = 64 }
+		addop('vmptrrst', [0x0F, 0xC7, 7<<3], :modrmA) { |o| o.props[:argsz] = 64 }
+		addop('invept',   [0x0F, 0x38, 0x80], :mrmA) { |o| o.props[:needpfx] = 0x66 }
+		addop('invvpid',  [0x0F, 0x38, 0x81], :mrmA) { |o| o.props[:needpfx] = 0x66 }
+
+		addop 'getsec',   [0x0F, 0x37]
+
+		addop('movbe',    [0x0F, 0x38, 0xF0], :mrm, { :d => [2, 0] }) { |o| o.args.reverse! }
+		addop 'xgetbv', [0x0F, 0x01, 0xD0]
+		addop 'xsetbv', [0x0F, 0x01, 0xD1]
+		addop 'xrstor', [0x0F, 0xAE, 5<<3], :modrmA
+		addop 'xsave',  [0x0F, 0xAE, 4<<3], :modrmA
+		addop 'nop', [0x0F, 0x1F], 0	# which family does this belong to ?
+	end
+
+	def init_sse42_only
+		init_cpu_constants
+
+		addop('crc32', [0x0F, 0x38, 0xF0], :mrmw) { |o| o.props[:needpfx] = 0xF2 }
+		addop('pcmpestrm', [0x0F, 0x3A, 0x60], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pcmpestri', [0x0F, 0x3A, 0x61], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pcmpistrm', [0x0F, 0x3A, 0x62], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pcmpistri', [0x0F, 0x3A, 0x63], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pcmpgtq', [0x0F, 0x38, 0x37], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('popcnt',  [0x0F, 0xB8], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
 	end
 
 
@@ -585,9 +610,10 @@ class Ia32
 		init_sse3
 		init_vmx_only
 	end
-
+	
 	def init_all
 		init_vmx
+		init_sse42_only
 		init_3dnow_only
 	end
 
@@ -640,17 +666,17 @@ class Ia32
 	end
 
 	def addop_macrofpu1(name, n)
-		addop(name, [0xD8, n<<3], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 32 }
-		addop(name, [0xDC, n<<3], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 64 }
+		addop(name, [0xD8, n<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 32 }
+		addop(name, [0xDC, n<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 64 }
 		addop name, [0xD8, 0xC0|(n<<3)], :regfp, {:d => [0, 2]}
 	end
 	def addop_macrofpu2(name, n, n2=0)
-		addop(name, [0xDE|n2, n<<3], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 16 }
-		addop(name, [0xDA|n2, n<<3], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 32 }
+		addop(name, [0xDE|n2, n<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 16 }
+		addop(name, [0xDA|n2, n<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 32 }
 	end
 	def addop_macrofpu3(name, n)
 		addop_macrofpu2 name, n, 1
-		addop(name, [0xDF, 0x28|(n<<3)], nil, {:modrmA => [1, 0]}, :modrmA, :regfp0) { |o| o.props[:argsz] = 64 }
+		addop(name, [0xDF, 0x28|(n<<3)], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 64 }
 	end
 
 	def addop_macrogg(ggrng, name, bin, *args, &blk)
@@ -697,6 +723,9 @@ class Ia32
 		when :regfp
 			op.fields[:regfp] = [bin.length-1, 0]
 			argprops.unshift :regfp, :regfp0
+		when :modrmA
+			op.fields[:modrmA] = [bin.length-1, 0]
+			argprops << :modrmA
 
 		when Integer		# mod/m, reg == opcode extension = hint
 			op.fields[:modrm] = [bin.length, 0]

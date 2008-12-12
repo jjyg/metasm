@@ -457,7 +457,7 @@ class Ia32
 					end
 					ret
 				}
-			when 'fstenv'
+			when 'fstenv', 'fnstenv'
 			       	proc { |di, a0|
 					# stores the address of the last non-control fpu instr run
 					lastfpuinstr = di.block.list[0...di.block.list.index(di)].reverse.find { |pdi|

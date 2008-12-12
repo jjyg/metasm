@@ -171,7 +171,7 @@ class Ia32
 			when :rep;  {'repnz' => 0xf2, 'repz' => 0xf3, 'rep' => 0xf2}[v] # TODO
 			end
 		}.pack 'C*'
-		pfx << op.props[:needpfx].pack('C*') if op.props[:needpfx]
+		pfx << op.props[:needpfx] if op.props[:needpfx]
 
 		# opsize override (:w field)
 		if op.name == 'movsx' or op.name == 'movzx'
