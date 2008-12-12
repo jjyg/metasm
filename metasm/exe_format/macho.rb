@@ -95,7 +95,7 @@ class MachO < ExeFormat
 	class Header < SerialStruct
 		words :magic, :cputype, :cpusubtype, :filetype, :ncmds, :sizeofcmds, :flags
 		fld_enum :magic, MAGIC
-		decode_hook { |m, h|
+		decode_hook(:cputype) { |m, h|
 			case h.magic
 			when 'MAGIC'; m.size = 32
 			when 'CIGAM'; m.size = 32 ; m.endianness = { :big => :little, :little => :big }[m.endianness] ; h.magic[0, 5] = h.magic[0, 5].reverse
@@ -415,8 +415,8 @@ class MachO < ExeFormat
 	def cpu_from_headers
 		case @header.cputype
 		when 'I386'; Ia32.new
-		#when 'POWERPC'; 
-		else raise "unsupported cpu #{@header.machine}"
+		when 'POWERPC'; PowerPC.new
+		else raise "unsupported cpu #{@header.cputype}"
 		end
 	end
 

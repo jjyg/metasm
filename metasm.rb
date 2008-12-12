@@ -13,8 +13,8 @@ else
 end
 
 # cpu architectures
-%w[ia32 mips].each { |f|
-	require "metasm/#{f}/render"
+%w[ia32 mips ppc].each { |f|
+	require "metasm/#{f}/render" if File.exist? File.join(Metasmdir, 'metasm', f, 'render.rb')
 	require "metasm/#{f}/parse"
 	require "metasm/#{f}/encode"
 	require "metasm/#{f}/decode"
