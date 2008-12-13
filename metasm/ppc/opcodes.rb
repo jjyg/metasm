@@ -34,9 +34,9 @@ class PowerPC
 		# :bi & 0b11100 is the condition register to use, shift&mask == :bfa. Defaults to cr0
 		# bo values
 		# no cc (10000 != 0)
-		addop_branch(nbase,       bin|(0b10100<<21), :ign_bo_zzz, *argprops)
-		addop_branch(nbase+'dz',  bin|(0b10010<<21), :ign_bo_at2, *argprops) if not argprops.include? :ctr
-		addop_branch(nbase+'dnz', bin|(0b10000<<21), :ign_bo_at2, *argprops) if not argprops.include? :ctr
+		addop_branch(nbase,       bin|(0b10100<<21), :ign_bo_zzz, :stopexec, *argprops)
+		addop_branch(nbase+'dz',  bin|(0b10010<<21), :ign_bo_at2, :stopexec, *argprops) if not argprops.include? :ctr
+		addop_branch(nbase+'dnz', bin|(0b10000<<21), :ign_bo_at2, :stopexec, *argprops) if not argprops.include? :ctr
 
 		# conditionnal
 		%w[lt gt eq so].each_with_index { |cd, i|
@@ -88,7 +88,7 @@ class PowerPC
 			:nb => 11, :oe => 10, :ra => 16, :rb => 11, :rc => 0, :rs => 21,
 			:rt => 21, :sh => 11, :sh_ => 1, :si => 0, :spr => 11, :sr => 16,
 			:tbr => 11, :th => 21, :to => 21, :u => 12, :ui => 0,
-			:ign_bo_zzz => 21, :ign_bo_z => 21, :ign_bo_at => 21, :ign_bo_at2 => 21,
+			:ign_bo_zzz => 16, :ign_bo_z => 21, :ign_bo_at => 21, :ign_bo_at2 => 16,
 		}
 
 		@fields_mask = {
@@ -100,7 +100,7 @@ class PowerPC
 			:nb => 31, :oe => 1, :ra => 31, :rb => 31, :rc => 1, :rs => 31,
 			:rt => 31, :sh => 31, :sh_ => 1, :si => 0xFFFF, :spr => 0x3FF, :sr => 15,
 			:tbr => 0x3FF, :th => 15, :to => 31, :u => 15, :ui => 0xFFFF,
-			:ign_bo_zzz => 0b1011, :ign_bo_z => 1, :ign_bo_at => 3, :ign_bo_at2 => 0b1001,
+			:ign_bo_zzz => 0b101111111, :ign_bo_z => 1, :ign_bo_at => 3, :ign_bo_at2 => 0b100111111,
 		}
 		@fields_shift[:ra_i16]  = @fields_shift[:ra_i16s] = @fields_shift[:ra_i16q] = 0
 		@fields_mask[:ra_i16]  = (@fields_mask[:d]  << @fields_shift[:d]) | (@fields_mask[:ra] << @fields_shift[:ra])
@@ -388,6 +388,19 @@ class PowerPC
 		addop 'mtsrin', 0x7C0001E4, :rs, :rb
 		addop 'mfsr',   0x7C0004A6, :rt, :sr
 		addop 'mfsrin', 0x7C000526, :rt, :rb
+
+		# pseudo-instructions
+		addop 'mr', :pseudo, :ra, :rb
+		addop 'not', :pseudo, :ra
+		addop 'not', :pseudo, :ra, :rb
+		@opcode_list.each { |op|
+			if op.name =~ /^addi/
+				addop op.name.sub('add', 'sub'), :pseudo, *op.args
+			end
+			if op.name =~ /^(add|sub|xor|and|or|div|mul|nand)/ and op.args.length == 3
+				addop op.name, :pseudo, *op.args[1..-1]
+			end
+		}
 	end
 end
 end

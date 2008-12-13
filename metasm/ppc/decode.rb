@@ -11,6 +11,7 @@ module Metasm
 class PowerPC
 	def build_opcode_bin_mask(op)
 		# bit = 0 if can be mutated by an field value, 1 if fixed by opcode
+		next if not op.bin.kind_of? Integer
 		op.bin_mask = 0
 		op.args.each { |f|
 			op.bin_mask |= @fields_mask[f] << @fields_shift[f]
@@ -21,6 +22,7 @@ class PowerPC
 	def build_bin_lookaside
 		lookaside = Array.new(256) { [] }
 		@opcode_list.each { |op|
+			next if not op.bin.kind_of? Integer
 			build_opcode_bin_mask op
 
 			b   = op.bin >> 24
@@ -67,7 +69,7 @@ class PowerPC
 				i = field_val[{:ra_i16 => :d, :ra_i16s => :ds, :ra_i16q => :dq}[a]]
 			       	Memref.new GPR.new(field_val[:ra]), Expression[i]
 			when :bd, :d, :ds, :dq, :si, :ui, :li, :sh, :ma, :mb, :me, :ma_, :mb_, :me_; Expression[field_val[a]]
-			when :ign_bo_zzz, :ign_bo_z, :ign_bo_at, :ign_bo_at2, :aa, :lk, :oe, :rc, :l; next
+			when :ign_bo_zzz, :ign_bo_z, :ign_bo_at, :ign_bo_at2, :ign_bi, :aa, :lk, :oe, :rc, :l; next
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
@@ -106,7 +108,7 @@ class PowerPC
 	# assumes edata.ptr points just after the instruction (as decode_instr_op left it)
 	# do not call twice on the same di !
  	def decode_instr_interpret(di, addr)
-		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.opcode.name[0] != ?t
+		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.opcode.name[0] != ?t and di.opcode.name[-1] != ?a
 			arg = Expression[addr, :+, di.instruction.args.last].reduce
 			di.instruction.args[-1] = Expression[arg]
 		end
@@ -174,8 +176,44 @@ class PowerPC
 		@backtrace_binding ||= {}
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
 			binding = case op
-			when 'nop', /^b/; proc { |di, *a| {} }
-			when 'addi'; proc { |di, *a| { a[0] => Expression[a[-2], :+, a[-1]] } }
+			when 'mr', 'li', 'la'; proc { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'lis'; proc { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
+			when 'mtctr'; proc { |di, a0| { :ctr => Expression[a0] } }
+			when 'mfctr'; proc { |di, a0| { a0 => Expression[:ctr] } }
+			when 'mtlr'; proc { |di, a0| { :lr => Expression[a0] } }
+			when 'mflr'; proc { |di, a0| { a0 => Expression[:lr] } }
+			when 'lwzu'; proc { |di, a0, m|
+				ret = { a0 => Expression[m] }
+				ptr = m.pointer.externals.grep(Symbol).first
+				ret[ptr] = m.pointer if ptr != a0
+				ret
+		       	}
+			when 'lwz'; proc { |di, a0, m| { a0 => Expression[m] } }
+			when 'stwu'; proc { |di, a0, m|
+				{ m => Expression[a0], m.pointer.externals.grep(Symbol).first => m.pointer }
+		       	}
+			when 'stw'; proc { |di, a0, m| { m => Expression[a0] } }
+			when 'rlwinm'; proc { |di, a0, a1, sh, mb, me|
+				mb, me = mb.reduce, me.reduce
+				cpmsk = (1<<@size) - 1
+				a1 = Expression[a1, :&, cpmsk]
+				rol = Expression[[a1, :<<, sh], :|, [a1, :>>, [@size, :-, sh]]]
+				if mb == me+1
+					msk = cpmsk
+				elsif mb < me+1
+					msk = (((1 << ((me+1)-mb)) - 1) << (@size-(me+1)))
+				else
+					msk = (((1 << (mb-(me+1))) - 1) << (@size-mb)) ^ cpmsk
+				end
+				{ a0 => Expression[Expression[rol, :&, msk].reduce] }
+			}
+
+			when 'add', 'addi', 'add.', 'addi.'; proc { |di, *a| { a[0] => Expression[a[-2], :+, a[-1]] } }
+			when 'addis', 'addis.'; proc { |di, *a| { a[0] => Expression[a[-2], :+, [a[-1], :<<, 16]] } }
+			when 'sub', 'subi', 'sub.', 'subi.'; proc { |di, *a| { a[0] => Expression[a[-2], :-, a[-1]] } }
+			when 'subis', 'subis.'; proc { |di, *a| { a[0] => Expression[a[-2], :-, [a[-1], :<<, 16]] } }
+			when /^b.*la?$/; proc { |di, *a| { :lr => Expression[di.next_addr] } }
+			when 'nop', /^cmp/, /^b/; proc { |di, *a| {} }
 			end
 
 			@backtrace_binding[op] ||= binding if binding
