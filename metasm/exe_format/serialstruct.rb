@@ -224,7 +224,7 @@ end	# class methods
 			v = instance_variable_get(iv)
 			case v
 			when Integer; v = '0x%X'%v if v >= 0x100
-			when String; v = (v.length > 32 ? v[0, 30].inspect + '...' : v.inspect)
+			when String; v = (v.length > 64 ? v[0, 62].inspect + '...' : v.inspect)
 			# TODO when EncodedData
 			else v = v.inspect
 			end

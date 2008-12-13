@@ -83,7 +83,9 @@ class MachO < ExeFormat
 		0x11 => 'ROUTINES', 0x12 => 'SUB_FRAMEWORK', 0x13 => 'SUB_UMBRELLA', 0x14 => 'SUB_CLIENT',
 		0x15 => 'SUB_LIBRARY', 0x16 => 'TWOLEVEL_HINTS', 0x17 => 'PREBIND_CKSUM',
 		0x8000_0018 => 'LOAD_WEAK_DYLIB', 0x19 => 'SEGMENT_64', 0x1a => 'ROUTINES_64',
-		0x8000_0000 => 'REQ_DYLD',
+		0x1b => 'UUID', 0x8000_001c => 'RPATH', 0x1d => 'CODE_SIGNATURE', 0x1e => 'CODE_SEGMENT_SPLIT_INFO',
+		0x8000_001f => 'REEXPORT_DYLIB',
+		#0x8000_0000 => 'REQ_DYLD',
 	}
 
 	SYM_TYPE = { 0 => 'UNDF', 1 => 'EXT', 2 => 'ABS', 0xa => 'INDR', 0xe => 'SECT', 0x1e => 'TYPE', 0xe0 => 'STAB' }
@@ -139,8 +141,8 @@ class MachO < ExeFormat
 		def decode(m)
 			super
 			ptr = m.encoded.ptr
-			if @cmd.kind_of? String and klass = self.class.const_get(@cmd)
-				@data = klass.decode(m)
+			if @cmd.kind_of? String and self.class.constants.include? @cmd
+				@data = self.class.const_get(@cmd).decode(m)
 			end
 			m.encoded.ptr = ptr + @cmdsize - 8
 		end
@@ -321,6 +323,10 @@ class MachO < ExeFormat
 		SUB_UMBRELLA = STRING
 		SUB_LIBRARY = STRING
 		SUB_CLIENT = STRING
+
+		class CODE_SIGNATURE < SerialStruct
+			mem :sig, 8
+		end
 	end
 
 	class Symbol < SerialStruct
@@ -378,6 +384,7 @@ class MachO < ExeFormat
 	def decode
 		decode_header
 		decode_symbols
+		decode_relocations
 		@segments.each { |s| decode_segment s }
 	end
 
@@ -396,6 +403,9 @@ class MachO < ExeFormat
 		@symbols.each { |s|
 			# TODO @encoded.add_label s.name, addr_to_off(s.value) if s.type == 'SECT'
 		}
+	end
+
+	def decode_relocations
 	end
 
 	def decode_segment(s)
