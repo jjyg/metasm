@@ -36,7 +36,7 @@ class Ia32
 				return [EncodedData.new << (6 | (reg << 3)) << @imm.encode(:u16, endianness)]
 			end
 
-			imm = @imm.reduce if imm
+			imm = @imm.reduce if @imm
 			imm = nil if imm == 0
 			ret = EncodedData.new
 			ret <<
