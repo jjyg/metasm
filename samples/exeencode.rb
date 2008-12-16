@@ -6,11 +6,16 @@
 
 #
 # this sample shows how to compile an ELF file
+# use --exe PE to compile a PE
+# use --cpu MIPS, --16, --be to change the CPU
 # either from C or ASM source
 #
 
 require 'metasm'
 require 'optparse'
+
+execlass ||= Metasm::ELF
+cpu ||= Metasm::Ia32.new
 
 outfilename = 'a.out'
 type = nil
@@ -20,6 +25,12 @@ OptionParser.new { |opt|
 	opt.on('--asm') { type = 'asm' }
 	opt.on('-v', '-W') { $VERBOSE=true }
 	opt.on('-d') { $DEBUG=$VERBOSE=true }
+	opt.on('-e class', '--exe class') { |c| execlass = Metasm.const_get(c) }
+	opt.on('--cpu cpu') { |c| cpu = Metasm.const_get(c).new }
+	# must come after --cpu in commandline
+	opt.on('--16') { cpu.size = 16 }
+	opt.on('--le') { cpu.endianness = :little }
+	opt.on('--be') { cpu.endianness = :big }
 }.parse!
 
 if file = ARGV.shift
@@ -30,9 +41,9 @@ else
 end
 
 if type == 'c'
-	elf = Metasm::ELF.compile_c(Metasm::Ia32.new, src)
+	elf = execlass.compile_c(cpu, src)
 else
-	elf = Metasm::ELF.assemble(Metasm::Ia32.new, src)
+	elf = execlass.assemble(cpu, src)
 end
 elf.encode_file(outfilename)
 
