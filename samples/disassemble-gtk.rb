@@ -19,6 +19,7 @@ OptionParser.new { |opt|
 	opt.on('--no-data-trace', 'do not backtrace memory read/write accesses') { opts[:nodatatrace] = true }
 	opt.on('--debug-backtrace', 'enable backtrace-related debug messages (very verbose)') { opts[:debugbacktrace] = true }
 	opt.on('--custom <hookfile>', 'eval a ruby script hookfile') { |h| (opts[:hookfile] ||= []) << h }
+	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
 	opt.on('-d', '--debug') { $DEBUG = true }
@@ -42,6 +43,7 @@ dasm.parse_c_file opts[:cheader] if opts[:cheader]
 dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 dasm.debug_backtrace = true if opts[:debugbacktrace]
 opts[:hookfile].to_a.each { |f| eval File.read(f) }
+opts[:hookstr].to_a.each { |f| eval f }
 
 ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
 
