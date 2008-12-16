@@ -1490,7 +1490,7 @@ puts '  backtrace result: ' + result.map { |r| Expression[r] }.join(', ') if deb
 	def backtrace_check_funcret(btt, funcaddr, instraddr)
 		if di = @decoded[instraddr] and @function[funcaddr] and btt.type == :x and
 				not btt.from_subfuncret and
-				@cpu.backtrace_is_function_return(btt.expr) and
+				@cpu.backtrace_is_function_return(btt.expr, @decoded[btt.origin]) and
 				retaddr = backtrace_emu_instr(di, btt.expr) and
 				not need_backtrace(retaddr)
 puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if debug_backtrace
@@ -1570,7 +1570,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	def backtrace_check_found(expr, di, origin, type, len, maxdepth, detached)
 		# only entrypoints or block starts called by a :saveip are checked for being a function
 		# want to execute [esp] from a block start
-		if type == :x and di and di == di.block.list.first and @cpu.backtrace_is_function_return(expr) and (
+		if type == :x and di and di == di.block.list.first and @cpu.backtrace_is_function_return(expr, @decoded[origin]) and (
 			# which is an entrypoint..
 			(not di.block.from_normal and not di.block.from_subfuncret) or
 			# ..or called from a saveip

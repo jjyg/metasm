@@ -599,18 +599,20 @@ class Ia32
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
 
+		sz = @size
+		sz = 48 - sz if di.instruction.prefix and di.instruction.prefix[:opsz]
 		case di.opcode.name
-		when 'ret'; return [Indirection[:esp, @size/8, di.address]]
+		when 'ret'; return [Indirection[:esp, sz/8, di.address]]
 		when 'jmp'
 			a = di.instruction.args.first
-			if a.kind_of? ModRM and a.imm and a.s == @size/8 and not a.b and s = dasm.get_section_at(Expression[a.imm, :-, 3*@size/8])
+			if a.kind_of? ModRM and a.imm and a.s == sz/8 and not a.b and s = dasm.get_section_at(Expression[a.imm, :-, 3*sz/8])
 				# jmp table
 				ret = [Expression[a.symbolic(di.address)]]
 				v = -3
 				loop do
-					diff = Expression[s[0].decode_imm("u#@size".to_sym, @endianness), :-, di.address].reduce
+					diff = Expression[s[0].decode_imm("u#{sz}".to_sym, @endianness), :-, di.address].reduce
 					if diff.kind_of? ::Integer and diff.abs < 4096
-						ret << Indirection[[a.imm, :+, v*@size/8], @size/8, di.address]
+						ret << Indirection[[a.imm, :+, v*sz/8], sz/8, di.address]
 					elsif v > 0
 						break
 					end
@@ -622,7 +624,7 @@ class Ia32
 
 		case tg = di.instruction.args.first
 		when ModRM
-			tg.sz ||= @size if tg.kind_of? ModRM
+			tg.sz ||= sz if tg.kind_of? ModRM
 			[Expression[tg.symbolic(di.address)]]
 		when Reg; [Expression[tg.symbolic]]
 		when Expression, ::Integer; [Expression[tg]]
@@ -635,7 +637,9 @@ class Ia32
 	# checks if expr is a valid return expression matching the :saveip instruction
 	def backtrace_is_function_return(expr, di=nil)
 		expr = Expression[expr].reduce_rec
-		expr.kind_of? Indirection and expr.len == @size/8 and expr.target == Expression[:esp]
+		sz = @size
+		sz = 48 - sz if di and di.instruction.prefix and di.instruction.prefix[:opsz]
+		expr.kind_of? Indirection and expr.len == sz/8 and expr.target == Expression[:esp]
 	end
 
 	# updates the function backtrace_binding
