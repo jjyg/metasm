@@ -141,7 +141,10 @@ class Ia32
 				  (fld = op.fields[:modrmA] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
 				  (sz  = op.props[:opsz]    and ((pfx[:opsz] and @size != 48-sz) or
 					(not pfx[:opsz] and @size != sz))) or
-				  (pfx = op.props[:needpfx] and not (pfx[:list] || []).include? pfx)
+				  (ndpfx = op.props[:needpfx] and not (pfx[:list] || []).include? ndpfx) or
+				  # return non-ambiguous opcode (eg push.i16 in 32bit mode) / sync with addop_post in opcode.rb
+				  ((op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret') and not op.props[:opsz] and pfx[:opsz]) or
+				  ((op.props[:strop] or op.props[:stropz]) and (not op.props[:adsz] or op.props[:adsz] == @size) and pfx[:adsz])
 				 )
 			}
 
@@ -188,7 +191,7 @@ class Ia32
 			when :regmmx; SimdReg.new field_val[a], mmxsz
 			when :regxmm; SimdReg.new field_val[a], 128
 
-			when :farptr; Farptr.decode edata, @endianness, adsz
+			when :farptr; Farptr.decode edata, @endianness, opsz
 			when :i8, :u8, :u16; Expression[edata.decode_imm(a, @endianness)]
 			when :i; Expression[edata.decode_imm("#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym, @endianness)]
 
@@ -293,7 +296,7 @@ class Ia32
 		mask = proc { |di| (1 << opsz[di])-1 }	# 32bits => 0xffff_ffff
 		sign = proc { |v, di| Expression[[[v, :&, mask[di]], :>>, opsz[di]-1], :'!=', 0] }
 
-		opcode_list.map { |ol| ol.name }.uniq.sort.each { |op|
+		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
 			binding = case op
 			when 'mov', 'movsx', 'movzx', 'movd', 'movq'; proc { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'lea'; proc { |di, a0, a1| { a0 => a1.target } }
@@ -324,7 +327,7 @@ class Ia32
 			when 'sar', 'shl', 'sal'; proc { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz[di], 32].max]] } }
 			when 'shr'; proc { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz[di]]] } }
 			when 'cdq'; proc { |di| { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz[di]-1], :&, 1]] } }
-			when 'push', 'push.i16'
+			when 'push'
 				proc { |di, a0| { :esp => Expression[:esp, :-, opsz[di]/8],
 					Indirection[:esp, opsz[di]/8, di.address] => Expression[a0] } }
 			when 'pop'
@@ -567,7 +570,7 @@ class Ia32
 			end
 		}
 
-		if binding = @backtrace_binding[di.instruction.opname]
+		if binding = @backtrace_binding[di.opcode.basename]
 			bd = binding[di, *a]
 			# handle modifications to al/ah etc
 			bd.keys.grep(Expression).each { |e|
@@ -601,7 +604,7 @@ class Ia32
 
 		sz = @size
 		sz = 48 - sz if di.instruction.prefix and di.instruction.prefix[:opsz]
-		case di.opcode.name
+		case di.opcode.basename
 		when 'ret'; return [Indirection[:esp, sz/8, di.address]]
 		when 'jmp'
 			a = di.instruction.args.first
@@ -808,7 +811,7 @@ class Ia32
 				bind = bind.merge(:esp => Expression[:esp, :+, off])
 				break bind
 			end
-			break bind if not odi = dasm.decoded[origin] or odi.opcode.name != 'ret'
+			break bind if not odi = dasm.decoded[origin] or odi.opcode.basename != 'ret'
 			expr = expr.reduce_rec if expr.kind_of? Expression
 			break bind unless expr.kind_of? Indirection and expr.origin == origin
 			break bind unless expr.externals.reject { |e| e =~ /^autostackoffset_/ } == [:esp]
@@ -816,7 +819,7 @@ class Ia32
 			# scan from calladdr for the probable parent function start
 			func_start = nil
 			dasm.backtrace_walk(true, calladdr, false, false, nil, maxdepth) { |ev, foo, h|
-				if ev == :up and h[:sfret] != :subfuncret and di = dasm.decoded[h[:to]] and di.opcode.name == 'call'
+				if ev == :up and h[:sfret] != :subfuncret and di = dasm.decoded[h[:to]] and di.opcode.basename == 'call'
 					func_start = h[:from]
 					break
 				elsif ev == :end

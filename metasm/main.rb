@@ -97,6 +97,10 @@ class Opcode
 		@fields = {}
 		@props = {}
 	end
+
+	def basename
+		@name.sub(/\..*/, '')
+	end
 end
 
 # defines an attribute self.backtrace (array of filename/lineno)

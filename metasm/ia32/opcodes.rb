@@ -83,9 +83,7 @@ class Ia32
 		addop 'pop',   [0x8F], 0
 		addop 'push',  [0x50], :reg
 		addop 'push',  [0xFF], 6
-		addop('push.i16', [0x68], nil, {}, :i) { |o| o.props[:opsz] = 16 }	# order matters !
-		addop 'push',  [0x68], nil,  {:s => [0, 1]}, :i				# order matters !
-		addop('push.i32', [0x68], nil, {}, :i) { |o| o.props[:opsz] = 32 }	# order matters !
+		addop 'push',  [0x68], nil,  {:s => [0, 1]}, :i
 		addop 'ret',   [0xC3], nil,  {}, :stopexec, :setip
 		addop 'ret',   [0xC2], nil,  {}, :stopexec, :u16, :setip
 		addop_macro3 'rol', 0
@@ -810,7 +808,30 @@ class Ia32
 			dop.args.delete :regfp0
 			addop_post dop
 		end
+
 		@opcode_list << op
+
+		if op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret'
+			# define opsz-override version for ambiguous opcodes
+			op16 = dupe[op]
+			op16.name << '.i16'
+			op16.props[:opsz] = 16
+			@opcode_list << op16
+			op32 = dupe[op]
+			op32.name << '.i32'
+			op32.props[:opsz] = 32
+			@opcode_list << op32
+		elsif op.props[:strop] or op.props[:stropz]
+			# define adsz-override version for ambiguous opcodes (TODO allow movsd edi / movsd di)
+			op16 = dupe[op]
+			op16.name << '.a16'
+			op16.props[:adsz] = 16
+			@opcode_list << op16
+			op32 = dupe[op]
+			op32.name << '.a32'
+			op32.props[:adsz] = 32
+			@opcode_list << op32
+		end
 	end
 end
 end

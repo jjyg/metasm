@@ -213,6 +213,9 @@ class Ia32
 				adsz = 48 - @size
 			end
 			pfx << "\x26\x2E\x36\x3E\x64\x65"[mrm.seg.val] if mrm.seg
+		elsif op.props[:adsz] and @size == 48 - op.props[:adsz]
+			pfx << 0x67
+			adsz = 48 - @size
 		end
 		adsz ||= @size
 
@@ -255,7 +258,7 @@ class Ia32
 
 		postponed.each { |oa, ia|
 			case oa
-			when :farptr; ed = ia.encode(@endianness, "a#{adsz}".to_sym)
+			when :farptr; ed = ia.encode(@endianness, "a#{opsz}".to_sym)
 			when :modrm, :modrmA, :modrmmmx, :modrmxmm
 				if ia.kind_of? ModRM
 					ed = ia.encode(regval, @endianness)
