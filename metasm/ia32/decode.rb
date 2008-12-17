@@ -579,7 +579,12 @@ class Ia32
 					reg = e.lexpr
 					reg = reg.lexpr if reg.kind_of? Expression and reg.op == :>> and shift = reg.rexpr and shift.kind_of? Integer
 					next if not reg.kind_of? Symbol
-					raise "backtrace_binding: conflict for #{di}: #{e} vs #{reg}" if bd.has_key? reg
+					if bd.has_key? reg
+						# xchg ah, al ; pop sp..
+						puts "backtrace: conflict for #{di}: #{e} vs #{reg}" if $VERBOSE
+						bd[reg] = Expression::Unknown
+						next
+					end
 					val = bd.delete e
 					mask <<= shift if shift
 					invmask = mask ^ 0xffff_ffff

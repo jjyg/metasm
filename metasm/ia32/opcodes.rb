@@ -214,6 +214,7 @@ class Ia32
 		addop 'xchg',  [0x90], :reg, {}, :reg_eax
 		addop('xchg',  [0x90], :reg, {}, :reg_eax) { |o| o.args.reverse! }	# xchg eax, ebx == xchg ebx, eax)
 		addop 'xchg',  [0x86], :mrmw
+		addop('xchg',  [0x86], :mrmw) { |o| o.args.reverse! }
 		addop 'xlat',  [0xD7]
 
 # pfx:  addrsz = 0x67, lock = 0xf0, opsz = 0x66, repnz = 0xf2, rep/repz = 0xf3
