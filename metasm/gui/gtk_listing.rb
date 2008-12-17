@@ -209,6 +209,8 @@ class AsmListingWidget < Gtk::HBox
 			y += @font_height
 		}
 
+		invb = @dasm.prog_binding.invert
+
 		# draw text until screen is full
 		# builds arrows_addr with addresses
 		while y < w_h
@@ -253,7 +255,7 @@ class AsmListingWidget < Gtk::HBox
 				end
 			elsif curaddr < @vscroll.adjustment.upper
 				# TODO real data display (dwords, xrefs, strings..)
-				if label = @dasm.prog_binding.index(curaddr) and @dasm.xrefs[curaddr]
+				if label = invb[curaddr] and @dasm.xrefs[curaddr]
 					render[Expression[curaddr].to_s + '    ', :address]
 					render[label + ' ', :label]
 				else
@@ -264,9 +266,60 @@ class AsmListingWidget < Gtk::HBox
 					render[Expression[curaddr].to_s + '    ', :address]
 				end
 				s = @dasm.get_section_at(curaddr)
-				render['db '+((s and s[0].data.length > s[0].ptr) ? Expression[s[0].read(1)[0]].to_s : '?'), :instruction]
+				len = 64
+				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or invb[curaddr+l] } || len
+				if s and s[0].data.length > s[0].ptr
+					str = s[0].read(len).unpack('C*')
+					if asc = str.inject('') { |asc, c|
+						case c
+						when 0x20..0x7e; asc << c
+						else break asc
+						end
+					} and asc.length > 3
+						dat = "db #{asc.inspect}"
+						aoff = asc.length
+					elsif rep = str.inject(0) { |rep, c|
+						case c
+						when str[0]; rep+1
+						else break rep
+						end
+					} and rep > 4
+						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]})"
+						aoff = rep
+					elsif @dasm.xrefs[curaddr]
+						comment = []
+						@dasm.each_xref(curaddr) { |xref|
+							len = xref.len
+							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}"
+						}
+						len = 1 if len != 2 and len != 4
+						dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]}"
+						aoff = len
+					else
+						dat = "db #{Expression[str[0]]}"
+						aoff = 1
+					end
+				else
+					if @dasm.xrefs[curaddr]
+						comment = []
+						@dasm.each_xref(curaddr) { |xref|
+							len = xref.len
+							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}"
+						}
+						len = 1 if len != 2 and len != 4
+						dat = "#{%w[x db dw x dd][len]} ?"
+						aoff = len
+					else
+						len = [len, s[0].length-s[0].ptr].min
+						dat = "#{len} dup(?)"
+						aoff = len
+					end
+				end
+				render[dat.ljust(comment ? 24 : 0), :instruction]
+				render[' ; ' + comment.join(' '), :comment] if comment
+				comment = nil
 				nl[]
-				curaddr += 1
+				curaddr += aoff
 			else
 				nl[]
 			end
