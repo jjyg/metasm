@@ -28,7 +28,7 @@ OptionParser.new { |opt|
 	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--benchmark') { opts[:benchmark] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
-	opt.on('-d', '--debug') { $DEBUG = true }
+	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
 }.parse!(ARGV)
 
 exename = ARGV.shift

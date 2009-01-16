@@ -22,7 +22,7 @@ OptionParser.new { |opt|
 	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
-	opt.on('-d', '--debug') { $DEBUG = true }
+	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
 }.parse!(ARGV)
 
 require 'metasm/gui/gtk'	# windows version of gtk.rb raises on unknown cli args...

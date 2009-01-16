@@ -180,7 +180,7 @@ class MIPS
 		}
 		Reg.i_to_s.values.map { |r| r.to_sym }.each(&bt_val)
 
-		puts "update_func_bind: #{Expression[faddr]} has sp -> #{b[:$sp]}" if not f.need_finalize and not Expression[b[:$sp], :-, :$sp].reduce.kind_of?(::Integer) if $VERBOSE
+		puts "update_func_bind: #{Expression[faddr]} has sp -> #{b[:$sp]}" if not Expression[b[:$sp], :-, :$sp].reduce.kind_of?(::Integer) if $VERBOSE
 	end
 
 	def backtrace_is_function_return(expr, di=nil)

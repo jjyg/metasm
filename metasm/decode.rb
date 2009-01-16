@@ -296,6 +296,8 @@ end
 # a factorized subfunction as seen by the disassembler
 class DecodedFunction
 	# when backtracking an instruction that calls us, use this binding and then the instruction's
+	# the binding is lazily filled up for non-external functions, register by register, when
+	# a backtraced expression depends on it
 	attr_accessor :backtrace_binding
 	# same as InstructionBlock#backtracked_for
 	# includes the expression responsible of the function return (eg [esp] on ia32)
@@ -307,15 +309,17 @@ class DecodedFunction
 	attr_accessor :btbind_callback
 	# a proc called for dynamic backtracked_for
 	attr_accessor :btfor_callback
-	# bool, if true the full function binding is incomplete
-	attr_accessor :need_finalize
+	# bool, if false the function is actually being disassembled
+	attr_accessor :finalized
 
 	# if btbind_callback is defined, calls it with args [dasm, binding, funcaddr, calladdr, expr, origin, maxdepth]
-	# else return backtrace_binding
+	# else update lazily the binding from expr.externals, and return backtrace_binding
 	def get_backtrace_binding(dasm, funcaddr, calladdr, expr, origin, maxdepth)
 		if btbind_callback
 			@btbind_callback[dasm, @backtrace_binding, funcaddr, calladdr, expr, origin, maxdepth]
 		else
+			unk_regs = expr.externals.grep(Symbol).uniq - @backtrace_binding.keys - [:unknown]
+			dasm.cpu.backtrace_update_function_binding(dasm, funcaddr, self, return_address, *unk_regs) if not unk_regs.empty?
 			@backtrace_binding
 		end
 	end
@@ -886,8 +890,8 @@ class Disassembler
 		if from and from_subfuncret and @decoded[from].kind_of? DecodedInstruction
 			@decoded[from].block.each_to_normal { |subfunc|
 				subfunc = normalize(subfunc)
-				next if not f = @function[subfunc] or not f.need_finalize
-				f.need_finalize = false
+				next if not f = @function[subfunc] or f.finalized
+				f.finalized = true
 puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				@cpu.backtrace_update_function_binding(self, subfunc, f, f.return_address)
 				if not f.return_address
@@ -1451,19 +1455,19 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 
 oldexpr = expr
 				case ev
-				when :di; expr = backtrace_emu_instr(h[:di], expr)
-				when :func; expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr, origin, maxdepth-h[:loopdetect].length)
-				if snapshot_addr and snapshot_addr == h[:funcaddr]
-puts "  backtrace: recursive function #{Expression[h[:funcaddr]]}" if debug_backtrace
-					next false
-				end
-				end
-puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" if debug_backtrace and expr != oldexpr
-				if ev == :di
+				when :di
+					expr = backtrace_emu_instr(h[:di], expr)
 					bt_log << [ev, expr, oldexpr, h[:di]] if bt_log and expr != oldexpr
-				else
+				when :func
+					expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr, origin, maxdepth-h[:loopdetect].length)
+					if snapshot_addr and snapshot_addr == h[:funcaddr]
+						# XXX recursiveness detection needs to be fixed						
+puts "  backtrace: recursive function #{Expression[h[:funcaddr]]}" if debug_backtrace
+						next false
+					end
 					bt_log << [ev, expr, oldexpr, h[:addr], h[:funcaddr]] if bt_log and expr != oldexpr
 				end
+puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" if debug_backtrace and expr != oldexpr
 				if mindepth <= h[:loopdetect].length and vals = backtrace_check_found(expr, h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached)
 					if snapshot_addr
 						expr = StoppedExpr.new vals
@@ -1495,7 +1499,7 @@ puts '  backtrace result: ' + result.map { |r| Expression[r] }.join(', ') if deb
 				not need_backtrace(retaddr)
 puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if debug_backtrace
 			di.block.add_to_subfuncret normalize(retaddr)
-			if @function[funcaddr].need_finalize
+			if not @function[funcaddr].finalized
 				# the function is not fully disassembled: arrange for the retaddr to be
 				#  disassembled only after the subfunction is finished
 				# for that we walk the code from the call, mark each block start, and insert the sfret
@@ -1584,7 +1588,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 				f = @function[addr] = DecodedFunction.new
 				puts "found new function #{l} at #{Expression[addr]}" if $VERBOSE
 			end
-			f.need_finalize = true
+			f.finalized = false
 
 			if @decoded[origin]
 				f.return_address ||= []
@@ -1594,8 +1598,6 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 			end
 
 			f.backtracked_for |= @decoded[addr].block.backtracked_for.find_all { |btt| not btt.address }
-			@cpu.backtrace_update_function_binding(self, addr, f, [origin])
-puts "backtrace function binding for #{l}:", f.backtrace_binding.map { |k, v| " #{k} -> #{v}" }.sort if $DEBUG
 		end
 
 		return if need_backtrace(expr)
@@ -1918,6 +1920,22 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# just a forwarder to CPU#code_binding
 	def code_binding(*a)
 		@cpu.code_binding(self, *a)
+	end
+
+	# returns the list of addresses of the blocks inside the function, optionnally including subfunctions
+	def function_blocks(faddr, include_subfuncs=false)
+		faddr = @function.index(faddr) if faddr.kind_of? DecodedFunction
+		faddr = normalize(faddr)
+		todo = [faddr]
+		done = []
+		while addr = todo.pop
+			next if done.include? addr or not @decoded[addr].kind_of? DecodedInstruction
+			done << addr
+			b = @decoded[addr].block
+			b.each_to_samefunc( self) { |t| todo << normalize(t) }
+			b.each_to_otherfunc(self) { |t| todo << normalize(t) } if include_subfuncs
+		end
+		done
 	end
 
 

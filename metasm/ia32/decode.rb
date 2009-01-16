@@ -651,8 +651,9 @@ class Ia32
 	end
 
 	# updates the function backtrace_binding
+	# if the function is big and no specific register is given, do nothing (the binding will be lazily updated later, on demand)
 	# XXX assume retaddrlist is either a list of addr of ret or a list with a single entry which is an external function name (thunk)
-	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist)
+	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist, *wantregs)
 		b = f.backtrace_binding
 
 		# XXX handle retaddrlist for multiple/mixed thunks
@@ -677,18 +678,20 @@ class Ia32
 			}
 			if bt.length != 1
 				b[r] = Expression::Unknown
-			elsif bt.first == Expression[r]
-				b.delete r
 			else
 				b[r] = bt.first
 			end
 		}
-		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each(&bt_val)
 
-		return if f.need_finalize
+		if not wantregs.empty?
+			wantregs.each(&bt_val)
+		else
+			return if dasm.function_blocks(faddr, true).length >= 20
+			[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each(&bt_val)
+		end
 
 		sz = @size/8
-		if b[:ebp] != Expression[:ebp]
+		if b[:ebp] and b[:ebp] != Expression[:ebp]
 			# may be a custom 'enter' function (eg recent Visual Studio)
 			# TODO put all memory writes in the binding ?
 			[[:ebp], [:esp, :+, 1*sz], [:esp, :+, 2*sz], [:esp, :+, 3*sz]].each { |ptr|
@@ -698,18 +701,18 @@ class Ia32
 			}
 		end
 		if dasm.funcs_stdabi
-			if b[:esp] == Expression::Unknown and not f.btbind_callback
+			if b[:esp] and b[:esp] == Expression::Unknown and not f.btbind_callback
 				puts "update_func_bind: #{Expression[faddr]} has esp -> unknown, use dynamic callback" if $DEBUG
 				f.btbind_callback = disassembler_default_btbind_callback
 			end
 			[:ebp, :ebx, :esi, :edi].each { |reg|
-				if b[reg] == Expression::Unknown
+				if b[reg] and b[reg] == Expression::Unknown
 					puts "update_func_bind: #{Expression[faddr]} has #{reg} -> unknown, presume it is preserved" if $DEBUG
 					b[reg] = Expression[reg]
 				end
 			}
 		else
-			if b[:esp] != prevesp and not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer)
+			if b[:esp] and b[:esp] != prevesp and not Expression[b[:esp], :-, :esp].reduce.kind_of?(::Integer)
 				puts "update_func_bind: #{Expression[faddr]} has esp -> #{b[:esp]}" if $DEBUG
 			end
 		end
@@ -717,13 +720,13 @@ class Ia32
 		# rename some functions
 		# TODO database and real signatures
 		rename =
-		if Expression[b[:eax], :-, faddr].reduce == 0
+		if b[:eax] and Expression[b[:eax], :-, faddr].reduce == 0
 			'geteip' # metasm pic linker
-		elsif Expression[b[:eax], :-, :eax].reduce == 0 and Expression[b[:ebx], :-, Indirection[:esp, sz, nil]].reduce == 0
+		elsif b[:eax] and b[:ebx] and  Expression[b[:eax], :-, :eax].reduce == 0 and Expression[b[:ebx], :-, Indirection[:esp, sz, nil]].reduce == 0
 			'get_pc_thunk_ebx' # elf pic convention
-		elsif Expression[b[:esp], :-, [:esp, :-, [Indirection[[:esp, :+, 2*sz], sz, nil], :+, 0x18]]].reduce == 0
+		elsif b[:esp] and Expression[b[:esp], :-, [:esp, :-, [Indirection[[:esp, :+, 2*sz], sz, nil], :+, 0x18]]].reduce == 0
 			'__SEH_prolog'
-		elsif Expression[b[:esp], :-, [:ebp, :+, sz]].reduce == 0 and Expression[b[:ebx], :-, Indirection[[:esp, :+, 4*sz], sz, nil]].reduce == 0
+		elsif b[:esp] and b[:ebx] and Expression[b[:esp], :-, [:ebp, :+, sz]].reduce == 0 and Expression[b[:ebx], :-, Indirection[[:esp, :+, 4*sz], sz, nil]].reduce == 0
 			'__SEH_epilog'
 		end
 		dasm.auto_label_at(faddr, rename, 'loc', 'sub') if rename
