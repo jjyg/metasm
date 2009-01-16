@@ -671,6 +671,7 @@ class Ia32
 
 		bt_val = proc { |r|
 			next if not retaddrlist
+			b[r] = Expression::Unknown	# TODO :pending or something ? (for recursive lazy functions)
 			bt = []
 			retaddrlist.each { |retaddr|
 				bt |= dasm.backtrace(Expression[r], (thunklast ? thunklast : retaddr),
@@ -686,8 +687,10 @@ class Ia32
 		if not wantregs.empty?
 			wantregs.each(&bt_val)
 		else
-			return if dasm.function_blocks(faddr, true).length >= 20
-			[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp].each(&bt_val)
+			[:ebp, :esp].each(&bt_val)
+			if dasm.function_blocks(faddr, true).length < 20
+				[:eax, :ebx, :ecx, :edx, :esi, :edi].each(&bt_val)
+			end
 		end
 
 		sz = @size/8
