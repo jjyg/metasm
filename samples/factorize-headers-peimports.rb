@@ -28,7 +28,7 @@ opts[:vspath] ||= ARGV.shift
 raise 'need a path to the headers' if not opts[:vspath]
 
 opts[:vspath].chop! if opts[:vspath][-1] == '/'
-opts[:vspath][-3..-1] = '' if opts[:vspath][-3..-1] == '/VC'
+opts[:vspath] = opts[:vspath][0...-3] if opts[:vspath][-3..-1] == '/VC'
 
 pe.decode_imports
 funcnames = pe.imports.map { |id| id.imports.map { |i| i.name } }.flatten.compact.uniq.sort

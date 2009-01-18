@@ -112,9 +112,10 @@ module WinAPI
 	OUTPUT_DEBUG_STRING_EVENT = 8
 	PAGE_READONLY = 0x02
 	PAGE_EXECUTE_READWRITE = 0x40
-	PROCESS_ALL_ACCESS = 0x1FFFFF
+	PROCESS_ALL_ACCESS = 0x1F0FFF
 	PROCESS_QUERY_INFORMATION = 0x400
 	PROCESS_VM_READ = 0x10
+	PROCESS_VM_WRITE = 0x20
 	RIP_EVENT = 9
 	SE_DEBUG_NAME = 'SeDebugPrivilege'
 	SE_PRIVILEGE_ENABLED = 0x2
@@ -139,7 +140,7 @@ module WinAPI
 		# priv.Privileges[0].Luid = luid;
 		# priv.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 		priv = luid.unpack('LL').unshift(1).push(SE_PRIVILEGE_ENABLED).pack('LLLL')
-		return if not adjusttokenprivileges(htok.unpack('L').first, 0, priv, priv.length, nil, nil)
+		return if not adjusttokenprivileges(htok.unpack('L').first, 0, priv, 0, nil, nil)
 
 		true
 	end
@@ -150,7 +151,11 @@ module WinAPI
 		int = [0].pack('L')
 		return if not enumprocesses(tab, tab.length, int)
 		pids = tab[0, int.unpack('L').first].unpack('L*')
-		pids.map { |pid|
+		begin
+		 # temporarily hide errors from openprocess(system_process) when VERBOSE
+		 oldverb, $VERBOSE = $VERBOSE, false
+
+		 pids.map { |pid|
 			pr = Process.new
 			pr.pid = pid
 			if handle = openprocess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid)
@@ -170,12 +175,15 @@ module WinAPI
 				closehandle(handle)
 			end
 			pr
-		}
+		 }
+		ensure
+			$VERBOSE = oldverb
+		end
 	end
 
 	# returns the Process whose pid is name (numeric) or first module path includes name (string)
 	def self.find_process(name)
-		list_processes.find { |pr| pr.pid == name or (pr.modules.first.path.include? name.to_s rescue false) }
+		list_processes.find { |pr| pr.pid == name or (m = pr.modules.to_a.first and m.path.include? name.to_s) }
 	end
 end
 
@@ -186,7 +194,7 @@ class WindowsRemoteString < VirtualString
 		else
 			handle = WinAPI.openprocess(WinAPI::PROCESS_ALL_ACCESS, 0, pid)
 			if not handle
-				puts "cannot openprocess ALL_ACCESS pid #{pid}" if $VERBOSE
+				puts "cannot openprocess ALL_ACCESS pid #{pid}, try ro" if $VERBOSE
 				handle = WinAPI.openprocess(WinAPI::PROCESS_VM_READ, 0, pid)
 			end
 		end
