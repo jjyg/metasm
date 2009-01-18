@@ -72,6 +72,7 @@ module WinAPI
 	new_api 'kernel32', 'OpenProcess', 'III I'
 	new_api 'kernel32', 'ReadProcessMemory', 'IIPIP I'
 	new_api 'kernel32', 'SetThreadContext', 'IP I'
+	new_api 'kernel32', 'TerminateProcess', 'II I'
 	new_api 'kernel32', 'VirtualAllocEx', 'IIIII I'
 	new_api 'kernel32', 'WaitForDebugEvent', 'PI I'
 	new_api 'kernel32', 'WriteProcessMemory', 'IIPIP I'

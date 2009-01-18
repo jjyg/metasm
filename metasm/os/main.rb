@@ -27,6 +27,7 @@ class VirtualString
 
 		return nil if from > length or (from == length and not len)
 		len = length - from if len and from + len > length
+		return '' if len == 0
 
 		read_range(from, len)
 	end
