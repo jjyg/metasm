@@ -271,7 +271,7 @@ class LoadedPE < PE
 
 	# reads a loaded PE from memory, returns a PE object
 	# dumps the header, optheader and all sections ; try to rebuild IAT (#memdump_imports)
-	def self.memdump(memory, baseaddr, entrypoint = nil)
+	def self.memdump(memory, baseaddr, entrypoint = nil, iat_p=nil)
 		loaded = LoadedPE.load memory[baseaddr, 0x1000_0000]
 		loaded.load_address = baseaddr
 		loaded.decode
@@ -291,63 +291,106 @@ class LoadedPE < PE
 			dump.sections << ss
 		}
 
-		loaded.memdump_imports(memory, dump)
+		loaded.memdump_imports(memory, dump, iat_p)
 
 		dump
 	end
 
 	# rebuilds an IAT from the loaded pe and the memory
-	# for each loaded iat, find the matching dll in memory
-	# for each loaded iat entry, retrieve the exported name from the loaded dll
-	# then build the dump iat
-	# scans page by page backward from the first iat address for the loaded dll (must not be forwarded)
+	#  for each loaded iat, find the matching dll in memory
+	#  for each loaded iat entry, retrieve the exported name from the loaded dll
+	# OR
+	#  from a base iat address in memory (unk_iat_p, rva), retrieve the 1st dll, find
+	#  all iat pointers/forwarders to this dll, on failure try to find another dll
+	#  allows gaps of 5 invalid pointers between libraries
+	# dll found by scanning pages 16 by 16 backward from the first iat address (XXX the 1st must not be forwarded)
 	# TODO bound imports
-	def memdump_imports(memory, dump)
+	def memdump_imports(memory, dump, unk_iat_p=nil)
+		puts 'rebuilding imports...' if $VERBOSE
+		if unk_iat_p
+			# read iat data from unk_iat_p
+			iat_p = unk_iat_p
+		else
+			return if not imports
+			# read iat data from @imports
+			imports = @imports.dup
+			imports.each { |id| id.iat = id.iat.dup }
+			iat_p = imports.first.iat_p	# used for iat_p
+		end
+
+		failcnt = 0		# bad pointers in iat table (unk_ only)
 		dump.imports ||= []
-		@imports.each { |id|
-			next if not id.iat or not id.iat.first
-			addr = id.iat.first & ~0xffff
-			256.times { break if memory[addr, 2] == 'MZ' ; addr -= 0x10000 }
-			next if memory[addr, 2] != 'MZ'
-			loaded_dll = LoadedPE.load memory[addr, 0x1000_0000]
-			loaded_dll.load_address = addr
-			loaded_dll.decode_header
-			loaded_dll.decode_exports
-			next if not loaded_dll.export
+		loaded_dll = nil	# the dll from who we're importing the current importdirectory
+		ptrsz = (@optheader.signature == 'PE+' ? 8 : 4)
+		cache = []	# optimize forwarder target search
+		loop do
+			if unk_iat_p
+				# read imported pointer from the table
+				ptr = decode_xword(EncodedData.new(memory[@load_address + iat_p, ptrsz]))
+				iat_p += ptrsz
+			else
+				# read imported pointer from the import structure
+				while not ptr = imports.first.iat.shift
+					load_dll = nil
+					imports.shift
+					break if imports.empty?
+					iat_p = imports.first.iat_p
+				end
+				break if imports.empty?
+				iat_p += ptrsz
+			end
 
-			dump_id = ImportDirectory.new
-			dump_id.libname = loaded_dll.export.libname
-			dump_id.imports = []
-			dump_id.iat_p = id.iat_p
-
-			id.iat.each { |ptr|
-				if not e = loaded_dll.export.exports.find { |e| e.target == ptr - loaded_dll.load_address }
-					# check for forwarder
-					# XXX won't handle forwarder to forwarder
+			if not loaded_dll or not e = loaded_dll.export.exports.find { |e| loaded_dll.label_rva(e.target) == ptr - loaded_dll.load_address }
+				# points to unknown space
+				# find pointed module start
+				if not dll = cache.find { |dll| ptr >= dll.load_address and ptr < dll.load_address + dll.optheader.image_size }
 					addr = ptr & ~0xffff
-					256.times { break if memory[addr, 2] == 'MZ' ; addr -= 0x10000 }
+					256.times { break if memory[addr, 2] == 'MZ' or addr < 0x10000 ; addr -= 0x10000 }
 					if memory[addr, 2] == 'MZ'
-						f_dll = LoadedPE.load memory[addr, 0x1000_0000]
-						f_dll.decode_header ; f_dll.decode_exports
-						if f_dll.export and ee = f_dll.export.exports.find { |ee| ee.target == ptr - addr }
-							e = loaded_dll.export.exports.find { |e| e.forwarder_name == ee.name }
-						end
-					end
-					if not e
-						dump_id = nil
-						break
+						dll = LoadedPE.load memory[addr, 0x1000_0000]
+						dll.load_address = addr
+						dll.decode_header
+						dll.decode_exports
+						cache << dll
 					end
 				end
-				dump_id.imports << ImportDirectory::Import.new
-				if e.name
-					dump_id.imports.last.name = e.name
+				if dll and dll.export and e = dll.export.exports.find { |e| dll.label_rva(e.target) == ptr - dll.load_address }
+					if loaded_dll and ee = loaded_dll.export.exports.find { |ee| ee.forwarder_name == e.name }
+						# it's a forwarder from the current loaded_dll
+						puts "forwarder #{ee.name} -> #{dll.export.libname}!#{e.name}" if $DEBUG
+						e = ee
+					else
+						# new library, start a new importdirectory
+						# XXX if 1st import is forwarded, loaded_dll will points to the bad module...
+						loaded_dll = dll
+						id = ImportDirectory.new
+						id.libname = loaded_dll.export.libname
+						puts "lib #{id.libname}" if $VERBOSE
+						id.imports = []
+						id.iat_p = iat_p - ptrsz
+						dump.imports << id
+					end
 				else
-					dump_id.imports.last.ordinal = e.ordinal
+					puts 'unknown ptr %x' % ptr if $DEBUG
+					# allow holes in the unk_iat_p table
+					break if not unk_iat_p or failcnt > 4
+					failcnt += 1
+					next
 				end
-			}
+				failcnt = 0
+			end
 
-			dump.imports << dump_id if dump_id
-		} if @imports
+			# dumped last importdirectory is correct, append the import field
+ 			i = ImportDirectory::Import.new
+			if e.name
+				puts e.name if $DEBUG
+				i.name = e.name
+			else
+				puts "##{e.ordinal}" if $DEBUG
+				i.ordinal = e.ordinal
+			end
+			dump.imports.last.imports << i
+		end
 	end
 end
 end
