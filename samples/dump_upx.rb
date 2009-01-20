@@ -16,16 +16,14 @@
 require 'metasm'
 include Metasm
 
-# TerminateProcess prototype: 2 arguments (int, int) ; return value = int
-WinAPI.new_api 'kernel32', 'TerminateProcess', 'II I'
-
 class UPXUnpacker < WinDbg
 	# loads the file
 	# find the oep by disassembling
 	# run it until the oep
 	# dump the memory image
-	def initialize(file, dumpfile)
+	def initialize(file, dumpfile, iat_rva=nil)
 		@dumpfile = dumpfile || 'upx-dumped.exe'
+		@iat = iat_rva
 
 		pe = PE.decode_file(file)
 		puts 'disassembling UPX loader...'
@@ -69,14 +67,17 @@ class UPXUnpacker < WinDbg
 				get_context(pid, tid)[:eip] == @oep
 			puts 'oep breakpoint hit !'
 			puts 'dumping...'
+			begin
 			# dump the loaded pe to a genuine PE object
-			dump = LoadedPE.memdump @mem[pid], @baseaddr, @oep
+			dump = LoadedPE.memdump @mem[pid], @baseaddr, @oep, @iat
 			# the UPX loader unpacks everything in the first section which is marked read-only in the PE header, we must make it writeable
 			dump.sections.first.characteristics = %w[MEM_READ MEM_WRITE MEM_EXECUTE]
 			# write the PE file
 			dump.encode_file @dumpfile
+			ensure
 			# kill the process
 			WinAPI.terminateprocess(@hprocess[pid], 0)
+			end
 			puts 'done.'
 			WinAPI::DBG_CONTINUE
 		else
@@ -86,5 +87,6 @@ class UPXUnpacker < WinDbg
 end
 
 if __FILE__ == $0
-	UPXUnpacker.new(ARGV.shift, ARGV.shift)
+	# packed [unpacked] [iat rva]
+	UPXUnpacker.new(ARGV.shift, ARGV.shift, (Integer(ARGV.shift) rescue nil))
 end

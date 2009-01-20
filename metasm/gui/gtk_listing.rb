@@ -253,7 +253,7 @@ class AsmListingWidget < Gtk::HBox
 				else
 					curaddr += [di.bin_length, 1].max
 				end
-			elsif curaddr < @vscroll.adjustment.upper
+			elsif curaddr < @vscroll.adjustment.upper and s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
 				# TODO real data display (dwords, xrefs, strings..)
 				if label = invb[curaddr] and @dasm.xrefs[curaddr]
 					render[Expression[curaddr].to_s + '    ', :address]
@@ -265,8 +265,8 @@ class AsmListingWidget < Gtk::HBox
 					end
 					render[Expression[curaddr].to_s + '    ', :address]
 				end
-				s = @dasm.get_section_at(curaddr)
-				len = 64
+				len = 256
+				len -= curaddr % 256 if curaddr.kind_of? Integer
 				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or invb[curaddr+l] } || len
 				if s and s[0].data.length > s[0].ptr
 					str = s[0].read(len).unpack('C*')
@@ -289,10 +289,10 @@ class AsmListingWidget < Gtk::HBox
 					elsif @dasm.xrefs[curaddr]
 						comment = []
 						@dasm.each_xref(curaddr) { |xref|
-							len = xref.len
+							len = xref.len if xref.len
 							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}"
 						}
-						len = 1 if len != 2 and len != 4
+						len = 1 if (len != 2 and len != 4) or len < 1
 						dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]}"
 						aoff = len
 					else
@@ -303,15 +303,15 @@ class AsmListingWidget < Gtk::HBox
 					if @dasm.xrefs[curaddr]
 						comment = []
 						@dasm.each_xref(curaddr) { |xref|
-							len = xref.len
+							len = xref.len if xref.len
 							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}"
 						}
-						len = 1 if len != 2 and len != 4
+						len = 1 if (len != 2 and len != 4) or len < 1
 						dat = "#{%w[x db dw x dd][len]} ?"
 						aoff = len
 					else
 						len = [len, s[0].length-s[0].ptr].min
-						dat = "#{len} dup(?)"
+						dat = "#{Expression[len]} dup(?)"
 						aoff = len
 					end
 				end
@@ -322,6 +322,7 @@ class AsmListingWidget < Gtk::HBox
 				curaddr += aoff
 			else
 				nl[]
+				curaddr += 1
 			end
 		end
 

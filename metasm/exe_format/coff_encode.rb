@@ -181,14 +181,14 @@ class COFF
 			@imports.each { |i|
 				edata['iat'].last.add_export i.target, edata['iat'].last.virtsize if i.target
 				if i.ordinal
-					edata['ilt'] << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
-					edata['iat'].last << coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
+					ptr = coff.encode_xword(Expression[i.ordinal, :|, ord_mask])
 				else
 					edata['nametable'].align 2
-					edata['ilt'] << coff.encode_xword(rva_end['nametable'])
-					edata['iat'].last << coff.encode_xword(rva_end['nametable'])
+					ptr = coff.encode_xword(rva_end['nametable'])
 					edata['nametable'] << coff.encode_half(i.hint || 0) << i.name << 0
 				end
+				edata['ilt'] << ptr
+				edata['iat'].last << ptr
 			}
 			edata['ilt'] << coff.encode_xword(0)
 			edata['iat'].last << coff.encode_xword(0)

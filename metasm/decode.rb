@@ -486,12 +486,10 @@ end
 
 class Expression
 	def self.decode_imm(str, type, endianness)
-		val = 0
-		case endianness
-		when :little; str.reverse
-		when :big; str
-		end.unpack('C*').each { |b| val = (val << 8) | b }
-		val = val - (1 << (INT_SIZE[type])) if type.to_s[0] == ?i and val >> (INT_SIZE[type]-1) == 1	# XXX booh
+		str = str[0, INT_SIZE[type]/8]
+		str = str.reverse if endianness == :little
+		val = str.unpack('C*').inject(0) { |val, b| (val << 8) | b }
+		val = make_signed(val, INT_SIZE[type]) if type.to_s[0] == ?i
 		val
 	end
 
@@ -990,7 +988,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				each_xref(waddr, :w) { |x|
 					#next if off + x.len < 0
 					puts "W: disasm: self-modifying code at #{Expression[waddr]}" if $VERBOSE
-					@comment[di_addr] = "overwritten by #{@decoded[x.origin] || Expression[x.origin]}"
+					@comment[di_addr] = "overwritten by #{@decoded[x.origin]}"
 					@callback_selfmodifying[di_addr] if callback_selfmodifying
 					return
 				}
