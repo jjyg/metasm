@@ -143,7 +143,9 @@ class COFF
 	class ImportDirectory
 		# encodes all import directories + iat
 		def self.encode(coff, ary)
-			edata = {}
+			edata = { 'iat' => [] }
+			%w[idata ilt nametable].each { |name| edata[name] = EncodedData.new }
+
 			ary.each { |i| i.encode(coff, edata) }
 
 			it = edata['idata'] <<
@@ -162,8 +164,6 @@ class COFF
 
 		# encodes an import directory + iat + names in the edata hash received as arg
 		def encode(coff, edata)
-			%w[idata ilt nametable].each { |name| edata[name] ||= EncodedData.new }
-			edata['iat'] ||= []
 			edata['iat'] << EncodedData.new
 			# edata['ilt'] = edata['iat']
 			label = proc { |n| coff.label_at(edata[n], 0, n) }
@@ -405,7 +405,7 @@ class COFF
 		end
 
 		@directory['iat'] = [label_at(ordiat.first, 0, 'iat'),
-			Expression[label_at(ordiat.last, ordiat.last.virtsize, 'iat_end'), :-, label_at(ordiat.first, 0)]]
+			Expression[label_at(ordiat.last, ordiat.last.virtsize, 'iat_end'), :-, label_at(ordiat.first, 0)]] if not ordiat.empty?
 
 		iat_s = nil
 
