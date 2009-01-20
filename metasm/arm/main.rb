@@ -1,5 +1,5 @@
 #    This file is part of Metasm, the Ruby assembly manipulation suite
-#    Copyright (C) 2007 Yoann GUILLOT
+#    Copyright (C) 2008 Yoann GUILLOT
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
@@ -10,10 +10,13 @@ module Metasm
 class ARM < CPU
 	class Reg
 		class << self
-			attr_reader :s_to_i
+			attr_reader :s_to_i, :i_to_s
 		end
-		@s_to_i = { 'sp' => 13, 'lr' => 14, 'pc' => 15 }
-		(0..15).each { |i| @s_to_i["r#{i}"] = @s_to_i["$r#{i}"] = i }
+		@i_to_s = %w[r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 sl fp ip sp lr pc]
+		@s_to_i = { 'wr' => 7, 'sb' => 9, 'sl' => 10, 'fp' => 11, 'ip' => 12, 'sp' => 13, 'lr' => 14, 'pc' => 15 }
+		15.times { |i| @s_to_i["r#{i}"] = i }
+		4.times { |i| @s_to_i["a#{i+1}"] = i }
+		8.times { |i| @s_to_i["v#{i+1}"] = i+4 }
 
 		attr_reader :i
 		def initialize(i)
@@ -32,8 +35,11 @@ class ARM < CPU
 		super()
 		@endianness = endianness
 		@size = 32
-		init
+		init_latest
 	end
+end
+
+class ARM_THUMB < ARM
 end
 end
 
