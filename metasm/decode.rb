@@ -1084,7 +1084,10 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				return if not b.to_normal or b.to_normal.length != 1
 				# check that the subfunction is simple (eg get_eip)
 				return if not sf = @function[normalize(b.to_normal.first)]
-				return if not btb = sf.backtrace_binding or btb.length > 2 or btb.values.include? Expression::Unknown
+				return if not btb = sf.backtrace_binding
+				btb = btb.dup
+				btb.delete_if { |k, v| Expression[k] == Expression[v] }
+			       	return if btb.length > 2 or btb.values.include? Expression::Unknown
 			else
 				return if not b.to_normal or b.to_normal.length != 1
 				addr = normalize(b.to_normal.first)
