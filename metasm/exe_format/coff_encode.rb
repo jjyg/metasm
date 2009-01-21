@@ -828,7 +828,15 @@ class COFF
 			# .import <libname|"libname"> <imported sym|"imported sym"> [label of plt thunk|nil] [label of iat element if != symname]
 			libname = readstr[]
 			i = ImportDirectory::Import.new
-			i.name = readstr[]
+
+			@lexer.skip_space
+			raise instr, 'string expected' if not tok = @lexer.readtok or (tok.type != :string and tok.type != :quoted)
+			if tok.type == :string and (?0..?9).include? tok.raw[0]
+				i.ordinal = Integer(tok.raw)
+			else
+				i.name = tok.value || tok.raw
+			end
+
 			@lexer.skip_space
 			if tok = @lexer.readtok and tok.type == :string
 				i.thunk = tok.raw if tok.raw != 'nil'
@@ -838,7 +846,7 @@ class COFF
 			if tok and tok.type == :string
 				i.target = tok.raw
 			else
-				i.target = ((i.thunk == i.name) ? ('iat_' + i.name) : i.name)
+				i.target = ((i.thunk == i.name) ? ('iat_' + i.name) : (i.name ? i.name : (i.thunk ? 'iat_' + i.thunk : raise(instr, 'need iat label'))))
 				@lexer.unreadtok tok
 			end
 			raise tok, 'import target exists' if i.target != new_label(i.target)
