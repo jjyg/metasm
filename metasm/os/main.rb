@@ -60,9 +60,17 @@ class VirtualString
 		write_range(from, val)
 	end
 
-	# returns the full raw data (if not too big)
+	# returns the full raw data
 	def realstring
-		raise 'realstring too big' if length > 0x1000000
+		ret = ''
+		addr = 0
+		len = length
+		while len > @pagelength
+			ret << self[addr, @pagelength]
+			addr += @pagelength
+			len -= @pagelength
+		end
+		ret << self[addr, len]
 	end
 
 	# alias to realstring
@@ -83,11 +91,6 @@ class VirtualString
 	end
 
 	# avoid triggering realstring from method_missing if possible
-	def length
-		raise "implement this!"
-	end
-
-	# avoid triggering realstring from method_missing if possible
 	def empty?
 		length == 0
 	end
@@ -95,7 +98,8 @@ class VirtualString
 	# avoid triggering realstring from method_missing if possible
 	# heavily used in to find 0-terminated strings in ExeFormats
 	def index(chr, base=0)
-		if i = self[base, 64].index(chr) or i = self[base, 4096].index(chr)
+		return if base >= length or base <= -length
+		if i = self[base, 64].index(chr) or i = self[base, @pagelength].index(chr)
 			base + i
 		else
 			realstring.index(chr, base)
@@ -117,6 +121,7 @@ class VirtualString
 		@length = length
 		@pagecache = []
 		@pagecache_len = 4
+		@pagelength ||= 4096	# must be (1 << x)
 	end
 
 	# invalidates the page cache
@@ -124,7 +129,7 @@ class VirtualString
 		@pagecache.clear
 	end
 
-	# returns the 4096-bytes page starting at addr
+	# returns the @pagelength-bytes page starting at addr
 	# return nil if the page is invalid/inaccessible
 	# addr is page-aligned by the caller
 	# addr is absolute
@@ -133,28 +138,29 @@ class VirtualString
 
 	# searches the cache for a page containing addr, updates if not found
 	def cache_get_page(addr)
-		addr &= 0xffff_ffff_ffff_f000
+		addr &= ~(@pagelength-1)
 		@pagecache.each { |c|
 			if addr == c[0]
+				# most recently used first
 				@pagecache.unshift @pagecache.delete(c) if c != @pagecache[0]
 				return c
 			end
 		}
 		@pagecache.pop if @pagecache.length >= @pagecache_len
-		@pagecache.unshift [addr, get_page(addr) || 0.chr*4096]
+		@pagecache.unshift [addr, get_page(addr) || 0.chr*@pagelength]
 		@pagecache.first
 	end
 
 	# reads a range from the page cache
-	# returns a new VirtualString (using dup) if the request is bigger than 4096 bytes
+	# returns a new VirtualString (using dup) if the request is bigger than @pagelength bytes
 	def read_range(from, len)
 		from += @addr_start
 		base, page = cache_get_page(from)
 		if not len
 			page[from - base]
-		elsif len <= 4096
+		elsif len <= @pagelength
 			s = page[from - base, len]
-			if from+len-base > 4096		# request crosses a page boundary
+			if from+len-base > @pagelength		# request crosses a page boundary
 				base, page = cache_get_page(from+len)
 				s << page[0, from+len-base]
 			end
@@ -210,7 +216,7 @@ class VirtualFile < VirtualString
 	# reads an aligned page from the file, at file offset addr
 	def get_page(addr)
 		@fd.pos = addr
-		@fd.read 4096
+		@fd.read @pagelength
 	end
 
 	# overwrite a section of the file
@@ -221,7 +227,6 @@ class VirtualFile < VirtualString
 
 	# returns the full content of the file
 	def realstring
-		super
 		@fd.pos = @addr_start
 		@fd.read(@length)
 	end

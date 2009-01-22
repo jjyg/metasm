@@ -229,7 +229,6 @@ class WindowsRemoteString < VirtualString
 	end
 
 	def realstring
-		super
 		s = 0.chr * @length
 		WinAPI.readprocessmemory(@handle, @addr_start, s, @length, 0)
 		s

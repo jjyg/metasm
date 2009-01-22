@@ -329,7 +329,6 @@ class LinuxRemoteString < VirtualString
 	end
 
 	def realstring
-		super
 		@readfd.pos = @addr_start
 		do_ptrace { @readfd.read @length }
 	end
