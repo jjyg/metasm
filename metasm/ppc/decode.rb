@@ -243,8 +243,8 @@ class PowerPC
 		return [] if not di.opcode.props[:setip]
 
 		arg = case di.instruction.opname
-		      when 'bctr'; :ctr
-		      when 'blr'; :lr
+		      when 'bctr', 'bctrl'; :ctr
+		      when 'blr', 'blrl'; :lr
 		      else di.instruction.args.last
 		      end
 
