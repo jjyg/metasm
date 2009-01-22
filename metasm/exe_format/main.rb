@@ -21,6 +21,11 @@ class ExeFormat
 		e
 	end
 
+	# same as load, used by AutoExe
+	def self.autoexe_load(*x)
+		load(*x)
+	end
+
 	# same as +load+, but from a file
 	# uses VirtualFile if available
 	def self.load_file(path, *a)

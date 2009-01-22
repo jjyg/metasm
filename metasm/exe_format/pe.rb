@@ -11,7 +11,7 @@ require 'metasm/exe_format/coff_decode'
 
 module Metasm
 class PE < COFF
-	PESIG = "PE\0\0"
+	MAGIC = "PE\0\0"	# 0x50450000
 
 	attr_accessor :coff_offset, :signature, :mz
 
@@ -28,7 +28,7 @@ class PE < COFF
 		@encoded.ptr = 0x3c
 		@encoded.ptr = decode_word
 		@signature = @encoded.read(4)
-		raise InvalidExeFormat, "Invalid PE signature #{@signature.inspect}" if @signature != PESIG
+		raise InvalidExeFormat, "Invalid PE signature #{@signature.inspect}" if @signature != MAGIC
 		@coff_offset = @encoded.ptr
 		if @mz.encoded.empty?
 			@mz.encoded << @encoded[0, @coff_offset-4]
@@ -93,7 +93,7 @@ EOMZSTUB
 		@encoded << @mz.encoded.dup
 
 		# append the PE signature
-		@signature ||= PESIG
+		@signature ||= MAGIC
 		@encoded << @signature
 
 		super
@@ -345,8 +345,8 @@ class LoadedPE < PE
 				# find pointed module start
 				if not dll = cache.find { |dll| ptr >= dll.load_address and ptr < dll.load_address + dll.optheader.image_size }
 					addr = ptr & ~0xffff
-					256.times { break if memory[addr, 2] == 'MZ' or addr < 0x10000 ; addr -= 0x10000 }
-					if memory[addr, 2] == 'MZ'
+					256.times { break if memory[addr, 2] == MZ::MAGIC or addr < 0x10000 ; addr -= 0x10000 }
+					if memory[addr, 2] == MZ::MAGIC
 						dll = LoadedPE.load memory[addr, 0x1000_0000]
 						dll.load_address = addr
 						dll.decode_header

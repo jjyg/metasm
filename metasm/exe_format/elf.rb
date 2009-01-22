@@ -8,6 +8,7 @@ require 'metasm/exe_format/main'
 
 module Metasm
 class ELF < ExeFormat
+	MAGIC = "\x7fELF"	# 0x7f454c46
 	CLASS = { 0 => 'NONE', 1 => '32', 2 => '64', 200 => '64_icc' }
 	DATA  = { 0 => 'NONE', 1 => 'LSB', 2 => 'MSB' }
 	VERSION = { 0 => 'INVALID', 1 => 'CURRENT' }
@@ -321,7 +322,7 @@ class ELF < ExeFormat
 	end
 
 	class Header < SerialStruct
-		mem :magic, 4, "\x7fELF"
+		mem :magic, 4, MAGIC
 		byte :e_class, 0, CLASS
 		byte :data, 0, DATA
 		byte :i_version, 'CURRENT', VERSION

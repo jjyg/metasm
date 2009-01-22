@@ -13,13 +13,13 @@ class UnknownSignature < InvalidExeFormat ; end
 def self.load(str, *a)
 	s = str
 	s = str.data if s.kind_of? EncodedData
-	execlass_from_signature(s).load(str, *a)
+	execlass_from_signature(s).autoexe_load(str, *a)
 end
 def self.execlass_from_signature(raw)
-	if raw[0, 4] == "\x7fELF"; ELF
-	elsif raw[0, 4] == "\xca\xfe\xba\xbe"; UniversalBinary
-	elsif ["\xfe\xed\xfa\xce", "\xfe\xef\xfa\xcf", "\xce\xfa\xed\xfe", "\xcf\xfa\xef\xfe"].include? raw[0, 4]; MachO
-	elsif off = raw[0x3c, 4].to_s.unpack('V').first and off < raw.length and raw[off, 4] == "PE\0\0"; PE
+	if raw[0, 4] == ELF::MAGIC; ELF
+	elsif raw[0, 2] == MZ::MAGIC and off = raw[0x3c, 4].to_s.unpack('V').first and off < raw.length and raw[off, 4] == PE::MAGIC; PE
+	elsif raw[0, 4] == UniversalBinary::MAGIC; UniversalBinary
+	elsif MachO::MAGICS.include? raw[0, 4]; MachO
 	else raise UnknownSignature, "unrecognized executable file format #{raw[0, 4].unpack('H*').first.inspect}"
 	end
 end

@@ -10,8 +10,12 @@ require 'metasm/decode'
 
 module Metasm
 class MachO < ExeFormat
-	MAGIC = { 0xfeedface => 'MAGIC',   0xcefaedfe => 'CIGAM',
-	          0xfeedfacf => 'MAGIC64', 0xcffaedfe => 'CIGAM64' }
+	MAGIC = "\xfe\xed\xfa\xce"	# 0xfeedface
+	CIGAM = MAGIC.reverse		# 0xcefaedfe
+	MAGIC64 = "\xfe\xed\xfa\xcf"	# 0xfeedfacf
+	CIGAM64 = MAGIC64.reverse	# 0xcffaedfe
+
+	MAGICS = [MAGIC, CIGAM, MAGIC64, CIGAM64]
 
 	CPU = {
 		1 => 'VAX', 2 => 'ROMP',
@@ -88,24 +92,26 @@ class MachO < ExeFormat
 		#0x8000_0000 => 'REQ_DYLD',
 	}
 
-	SYM_TYPE = { 0 => 'UNDF', 1 => 'EXT', 2 => 'ABS', 0xa => 'INDR', 0xe => 'SECT', 0x1e => 'TYPE', 0xe0 => 'STAB' }
+	SYM_SCOPE = { 0 => 'LOCAL', 1 => 'GLOBAL' }
+	SYM_TYPE = { 0 => 'UNDF', 2/2 => 'ABS', 0xa/2 => 'INDR', 0xe/2 => 'SECT', 0x1e/2 => 'TYPE' }
+	SYM_STAB = { }
 
 	class SerialStruct < SerialStruct
 		new_int_field :xword
 	end
 
 	class Header < SerialStruct
-		words :magic, :cputype, :cpusubtype, :filetype, :ncmds, :sizeofcmds, :flags
-		fld_enum :magic, MAGIC
-		decode_hook(:cputype) { |m, h|
+		mem :magic, 4
+		decode_hook { |m, h|
 			case h.magic
-			when 'MAGIC'; m.size = 32
-			when 'CIGAM'; m.size = 32 ; m.endianness = { :big => :little, :little => :big }[m.endianness] ; h.magic[0, 5] = h.magic[0, 5].reverse
-			when 'MAGIC64'; m.size = 64
-			when 'CIGAM64'; m.size = 64 ; m.endianness = { :big => :little, :little => :big }[m.endianness] ; h.magic[0, 5] = h.magic[0, 5].reverse
-			else raise InvalidExeFormat, "Invalid Mach-O signature #{h.magic.inspect}"
+			when MAGIC; m.size = 32 ; m.endianness = :big
+			when CIGAM; m.size = 32 ; m.endianness = :little
+			when MAGIC64; m.size = 64 ; m.endianness = :big
+			when CIGAM64; m.size = 64 ; m.endianness = :little
+			else raise InvalidExeFormat, "Invalid Mach-O signature #{h.magic.unpack('H*').first.inspect}"
 			end
 		}
+		words :cputype, :cpusubtype, :filetype, :ncmds, :sizeofcmds, :flags
 		fld_enum :cputype, CPU
 		fld_enum(:cpusubtype) { |m, h| SUBCPU[h.cputype] || {} }
 		fld_enum :filetype, FILETYPE
@@ -113,9 +119,11 @@ class MachO < ExeFormat
 		attr_accessor :reserved	# word 64bit only
 
 		def set_default_values(m)
-			@magic ||= case m.size
-				   when 32; 'MAGIC'
-				   when 64; 'MAGIC64'
+			@magic ||= case [m.size, m.endianness]
+				   when [32, :big]; MAGIC
+				   when [32, :little]; CIGAM
+				   when [64, :big]; MAGIC64
+				   when [64, :little]; CIGAM64
 				   end
 			@cputype ||= case m.cpu
 				     when Ia32; 'I386'
@@ -331,16 +339,19 @@ class MachO < ExeFormat
 
 	class Symbol < SerialStruct
 		word :nameoff
-		byte :type
+		bitfield :byte, 0 => :scope, 1 => :type, 5 => :stab
+		fld_enum :scope, SYM_SCOPE
+		fld_enum :type, SYM_TYPE
+		fld_enum :stab, SYM_STAB
 		byte :sect
 		half :desc
 		xword :value
 		attr_accessor :name
-		fld_enum :type, SYM_TYPE	# XXX seems wrong
 
 		def decode(m, buf=nil)
 			super(m)
-			@name = buf[@nameoff...buf.index(0, @nameoff)] if buf
+			idx = buf.index(0, @nameoff) if buf
+			@name = @name = buf[@nameoff..idx-1] if idx
 		end
 	end
 
@@ -383,9 +394,9 @@ class MachO < ExeFormat
 
 	def decode
 		decode_header
+		@segments.each { |s| decode_segment s}
 		decode_symbols
 		decode_relocations
-		@segments.each { |s| decode_segment s }
 	end
 
 	def decode_symbols
@@ -401,7 +412,9 @@ class MachO < ExeFormat
 			end
 		}
 		@symbols.each { |s|
-			# TODO @encoded.add_label s.name, addr_to_off(s.value) if s.type == 'SECT'
+			next if s.value == 0 or not s.name
+			next if not seg = @segments.find { |seg| s.value >= seg.virtaddr and s.value < seg.virtaddr + seg.virtsize }
+			seg.encoded.add_export(s.name, s.value - seg.virtaddr)
 		}
 	end
 
@@ -612,20 +625,20 @@ class MachO < ExeFormat
 		}
 	end
 end
+MACHO = MachO
 
 
 
 class UniversalBinary < ExeFormat
-	MAGIC = { 0xcafebabe => 'MAGIC' }
+	MAGIC = "\xca\xfe\xba\xbe"	# 0xcafebabe
 
 	class Header < SerialStruct
-		words :magic, :nfat_arch
-		fld_enum :magic, MAGIC
+		mem :magic, 4
+		word :nfat_arch
 
 		def decode(u)
 			super
-			puts '%x' % @magic if @magic.kind_of? Integer
-			raise InvalidExeFormat, "Invalid UniversalBinary signature #{@magic.inspect}" if @magic != 'MAGIC'
+			raise InvalidExeFormat, "Invalid UniversalBinary signature #{@magic.unpack('H*').first.inspect}" if @magic != MAGIC
 		end
 	end
 	class FatArch < SerialStruct
@@ -655,5 +668,15 @@ class UniversalBinary < ExeFormat
 
 	def [](i) AutoExe.decode(@archive[i].encoded) if @archive[i] end
 	def <<(exe) @archive << exe end
+
+	def self.autoexe_load(*a)
+		ub = super
+		ub.decode
+		# TODO have a global callback or whatever to prompt the user
+		# which file he wants to load in the dasm
+		puts "UniversalBinary: using 1st archive member" if $VERBOSE
+		AutoExe.load(ub.archive[0].encoded)
+	end
+
 end
 end
