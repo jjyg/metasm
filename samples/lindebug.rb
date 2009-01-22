@@ -145,12 +145,12 @@ class LinDebug
 		:normal => Ansi.color(:white, :black, :normal), :hilight => Ansi.color(:blue, :white, :normal),
 		:status => Ansi.color(:black, :cyan)}
 
-	attr_accessor :dataptr, :codeptr, :rs, :promptlog
+	attr_accessor :dataptr, :codeptr, :rs, :promptlog, :command
 	def initialize(rs)
 		@rs = rs
 		@rs.logger = self
-		@dataptr = 0
 		@datafmt = 'db'
+		@watch = nil
 
 		@prompthistlen = 20
 		@prompthistory = []
@@ -159,13 +159,18 @@ class LinDebug
 		@promptbuf = ''
 		@promptpos = 0
 		@log_off = 0
+		@console_width = 80
 
 		@focus = :prompt
 		@command = {}
 		load_commands
 		trap('WINCH') { resize }
+	end
 
-		stack = @rs[@rs.regs_cache['esp'], 0x1000].unpack('L*')
+	def init_rs
+		@dataptr = @rs.regs_cache['eip']	# avoid initial faults
+
+		stack = @rs[@rs.regs_cache['esp'], 0x1000].to_str.unpack('L*')
 		stack.shift	# argc
 		stack.shift until stack.empty? or stack.first == 0	# argv
 		stack.shift
@@ -182,6 +187,7 @@ class LinDebug
 		begin
 			begin
 				init_screen
+				init_rs
 				main_loop_inner
 			rescue Errno::ESRCH
 				log "target does not exist anymore"
@@ -196,8 +202,14 @@ class LinDebug
 	end
 
 	def update
-		csy, csx = @console_height-1, @promptpos+2
-		$stdout.write Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt + Ansi.set_cursor_pos(csy, csx)
+		return if @updating ||= false
+		@updating = true
+		begin
+			csy, csx = @console_height-1, @promptpos+2
+			$stdout.write Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt + Ansi.set_cursor_pos(csy, csx)
+		ensure
+			@updating = false
+ 		end
 	end
 
 	def updateregs
@@ -252,7 +264,7 @@ class LinDebug
 			base = addr & 0xffff_f000
 			8.times {
 				sig = @rs[base, 4]
-				if sig == "\x7fELF"
+				if sig == Metasm::ELF::MAGIC
 					@rs.loadsyms(base, base.to_s(16))
 					break
 				end
@@ -358,18 +370,23 @@ class LinDebug
 			@win_code_height = @console_height/2 - 4
 		end
 		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2) - 1
-		update
+		update if @running
 	end
 
 	def log(str)
 		raise str.inspect if not str.kind_of? ::String
+		if str.length > @console_width
+			# word wrap
+			str.scan(/.{0,#@console_width}/) { |str| log str }
+			return
+		end
 		@promptlog << str
 		@promptlog.shift if @promptlog.length > @promptloglen
 	end
 
 	def puts(*s)
 		s.each { |s| log s.to_s }
-		update rescue nil
+		update rescue super
 	end
 
 	def mem_binding(expr)
@@ -441,7 +458,7 @@ class LinDebug
 			addrs = []
 			while addr < @rs.regs_cache['eip']
 				addrs << addr
-				o = @rs.mnemonic_di(addr).bin_length
+				o = ((di = @rs.mnemonic_di(addr)) ? di.bin_length : 0)
 				addr += ((o == 0) ? 1 : o)
 			end
 			if addrs.length > @win_code_height-4
@@ -783,14 +800,13 @@ end
 
 
 if $0 == __FILE__
-	begin
-		require 'samples/rubstop'
-	rescue LoadError
-		if not defined? Rubstop
-			$: << File.dirname(__FILE__)
-			require 'rubstop'
-			$:.pop
+	if not defined? Rubstop
+		if ARGV.first =~ /:/
+			stub = 'gdbclient'
+		else
+			stub = 'rubstop'
 		end
+		require File.join(File.dirname(__FILE__), stub)
 	end
 
 	LinDebug.new(Rubstop.new(ARGV.join(' '))).main_loop
