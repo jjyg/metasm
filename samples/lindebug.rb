@@ -161,6 +161,7 @@ class LinDebug
 		@log_off = 0
 		@console_width = 80
 
+		@running = false
 		@focus = :prompt
 		@command = {}
 		load_commands
@@ -168,7 +169,7 @@ class LinDebug
 	end
 
 	def init_rs
-		@dataptr = @rs.regs_cache['eip']	# avoid initial faults
+		@codeptr = @dataptr = @rs.regs_cache['eip']	# avoid initial faults
 
 		stack = @rs[@rs.regs_cache['esp'], 0x1000].to_str.unpack('L*')
 		stack.shift	# argc
@@ -202,7 +203,7 @@ class LinDebug
 	end
 
 	def update
-		return if @updating ||= false
+		return if @updating ||= false or not @running
 		@updating = true
 		begin
 			csy, csx = @console_height-1, @promptpos+2
@@ -370,7 +371,7 @@ class LinDebug
 			@win_code_height = @console_height/2 - 4
 		end
 		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2) - 1
-		update if @running
+		update
 	end
 
 	def log(str)
@@ -386,6 +387,7 @@ class LinDebug
 
 	def puts(*s)
 		s.each { |s| log s.to_s }
+		super if not @running
 		update rescue super
 	end
 

@@ -64,15 +64,20 @@ class Rubstop
 
 		5.times {
 			@io.write buf
-			ack = @io.read(1)
-			case ack
-			when '+'
-				return true
-			when '-'
-				log "gdb_send: ack neg" if $DEBUG
-			else
-				log "gdb_send: ack unknown #{ack.inspect}" if $DEBUG
-			       	break
+			loop do
+				if not IO.select([@io], nil, nil, 10)
+					log "gdb_send: ack timeout" if $DEBUG
+					break
+				end
+				raise Errno::EPIPE if not ack = @io.read(1)
+				case ack
+				when '+'
+					return true
+				when '-'
+					log "gdb_send: ack neg" if $DEBUG
+					break
+				when nil; return
+				end
 			end
 		}
 		log "send error (no ack)"
@@ -86,7 +91,7 @@ class Rubstop
 		cs = ''
 		while state != :done
 			# XXX timeout etc
-			c = @io.read(1)
+			raise Errno::EPIPE if not c = @io.read(1)
 			case state
 			when :nosync
 				if c == '$'
@@ -207,8 +212,6 @@ class Rubstop
 		return '' if len == 0
 		if mem = gdb_msg('m', hexl(addr) << ',' << hexl(len))
 			unhex(unrle(mem))
-		else
-		#	0.chr * len
 		end
 	end
 
