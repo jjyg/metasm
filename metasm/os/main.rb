@@ -147,7 +147,7 @@ class VirtualString
 			end
 		}
 		@pagecache.pop if @pagecache.length >= @pagecache_len
-		@pagecache.unshift [addr, get_page(addr) || 0.chr*@pagelength]
+		@pagecache.unshift [addr, get_page(addr).to_s.ljust(@pagelength, 0.chr)[0, @pagelength]]
 		@pagecache.first
 	end
 
