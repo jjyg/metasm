@@ -206,7 +206,7 @@ class Graph
 			groups.reverse.find { |g|
 				next if not g2 = g.to.find { |g2| (g2.to.length == 1 and g.to.include?(g2.to.first)) or
 					(not strict and g2.to.empty?)  }
-				next if strict and g2.from != [g]
+				next if strict and g2.from != [g] or g.to.length != 2
 				g2.h += 16 ; g2.y -= 8
 				align_vt[[g, g2]]
 				move_group[g2, -g2.x+8, 0]
@@ -214,6 +214,33 @@ class Graph
 				true
 			}
 		}
+
+		# if (a || b) c;
+		# the 'else' case handles '&& else', and && is two if/then nested
+		group_or = proc {
+			groups.find { |g|
+				next if g.to.length != 2
+				g2 = g.to[0]
+				g2 = g.to[1] if not g2.to.include? g.to[1]
+				thn = (g.to & g2.to).first
+				next if g2.to.length != 2 or not thn or thn.to.length != 1
+				els = (g2.to - [thn]).first
+				if thn.to == [els]
+					els = nil
+				else
+					next if els.to != thn.to
+					align_hz[[thn, els]]
+					thn = merge_groups[[thn, els]]
+				end
+				thn.h += 16 ; thn.y -= 8
+				align_vt[[g, g2, thn]]
+				move_group[g2, -g2.x, 0]
+				move_group[thn, thn.x-8, 0] if not els
+				merge_groups[[g, g2, thn]]
+				true
+			}
+		}
+
 
 		# loop with exit 1 -> 2, 3 & 2 -> 1
 		group_loop = proc {
@@ -254,7 +281,7 @@ puts 'unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map
 
 		# known, clean patterns
 		group_clean = proc {
-			group_columns[] or group_lines[true] or group_ifthen[true] or group_loop[]
+			group_columns[] or group_lines[true] or group_ifthen[true] or group_loop[] or group_or[]
 		}
 		# approximations
 		group_unclean = proc {
