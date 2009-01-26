@@ -953,12 +953,14 @@ class ELF
 		when '.global', '.weak', '.local', '.symbol'
 			if instr.raw == '.symbol'
 				bind = readstr[]
+			else
+				bind = instr.raw[1..-1]
 			end
 
 			s = Symbol.new
 			s.name = readstr[]
 			s.type = 'FUNC'
-			s.bind = (bind || instr.raw[1..-1]).upcase
+			s.bind = bind.upcase
 			# define s.section ? should check the section exporting s.target, but it may not be defined now
 
 			# parse pseudo instruction arguments
@@ -989,6 +991,14 @@ class ELF
 					ntok = @lexer.readtok
 					raise "syntax error: symbol type expected, found #{ntok.raw.inspect if ntok}" if not ntok or ntok.type != :string or not SYMBOL_TYPE.index(ntok.raw)
 					s.type = ntok.raw
+				when 'size'
+					@lexer.skip_space
+					ntok = @lexer.readtok
+					raise "syntax error: = expected, found #{ntok.raw.inspect if ntok}" if not ntok or ntok.type != :punct or ntok.raw != '='
+					@lexer.skip_space
+					ntok = @lexer.readtok
+					raise "syntax error: symbol size expected, found #{ntok.raw.inspect if ntok}" if not ntok or ntok.type != :string or not ntok.raw =~ /^\d+$/
+					s.size = ntok.raw.to_i
 				else
 					if not s.value
 						s.value = ntok.raw
@@ -999,6 +1009,7 @@ class ELF
 					end
 				end
 			end
+			s.value ||= s.name if not s.shndx and not s.thunk
 			s.shndx ||= 1 if s.value
 			@symbols << s
 
