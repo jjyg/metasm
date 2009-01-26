@@ -317,6 +317,8 @@ class DecodedFunction
 	def get_backtrace_binding(dasm, funcaddr, calladdr, expr, origin, maxdepth)
 		if btbind_callback
 			@btbind_callback[dasm, @backtrace_binding, funcaddr, calladdr, expr, origin, maxdepth]
+		elsif backtrace_binding and dest = @backtrace_binding[:thunk] and target = dasm.function[dest]
+			target.get_backtrace_binding(dasm, funcaddr, calladdr, expr, origin, maxdepth)
 		else
 			unk_regs = expr.externals.grep(Symbol).uniq - @backtrace_binding.keys - [:unknown]
 			dasm.cpu.backtrace_update_function_binding(dasm, funcaddr, self, return_address, *unk_regs) if not unk_regs.empty?
@@ -1089,11 +1091,21 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				btb.delete_if { |k, v| Expression[k] == Expression[v] }
 			       	return if btb.length > 2 or btb.values.include? Expression::Unknown
 			else
-				return if not b.to_normal or b.to_normal.length != 1
-				addr = normalize(b.to_normal.first)
+				return if not bt = b.to_normal
+				if (bt - [:default]).length == 1
+					addr = :default
+					break
+				elsif bt.length != 1
+					return
+				end
+				addr = normalize(bt.first)
 			end
 		end
 		fname = Expression[addr].reduce_rec
+		if funcaddr != addr and f = @function[funcaddr]
+			# forward get_backtrace_binding to target
+			f.backtrace_binding = { :thunk => addr }
+		end
 		return if not fname.kind_of? ::String
 		l = auto_label_at(funcaddr, 'sub')
 		return if l[0, 4] != 'sub_'
