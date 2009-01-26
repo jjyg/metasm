@@ -818,7 +818,7 @@ class CCompiler < C::Compiler
 			when C::BaseType
 				case t = arg.type.name
 				when :__int8
-					a = make_volatile(a) if a.kind_of? ModRM
+					a = make_volatile(a, arg.type) if a.kind_of? ModRM
 					unuse a
 					instr 'push', a
 				when :__int16
