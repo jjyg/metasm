@@ -413,14 +413,28 @@ class Expression < ExpressionType
 		self
 	end
 
+	# reduce_proc is a callback called after the standard reduction procedure for custom algorithms
+	# the proc may return a new expression or nil (to keep the old expr)
+	def self.reduce_proc(&b)
+		block_given? ? @@reduce_proc = b : @@reduce_proc
+	end
+	def self.reduce_proc=(p)
+		@@reduce_proc = p
+	end
+	@@reduce_proc = nil
+
 	# returns a simplified copy of self
 	# can return an +Expression+ or a +Numeric+, may return self
 	# see +reduce_rec+ for simplifications description
-	def reduce
-		case e = reduce_rec
+	# if given a block, it will temporarily overwrite the global @@reduce_proc XXX THIS IS NOT THREADSAFE
+	def reduce(&b)
+		old_rp, @@reduce_proc = @@reduce_proc, b if b
+		ret = case e = reduce_rec
 		when Expression, Numeric; e
 		else Expression[e]
 		end
+		@@reduce_proc = old_rp if b
+		ret
 	end
 
 	# resolves logic operations (true || false, etc)
@@ -605,7 +619,7 @@ class Expression < ExpressionType
 			end
 		end
 
-		case v
+		ret = case v
 		when nil
 			# no dup if no new value
 			(r == :unknown or l == :unknown) ? :unknown :
@@ -614,6 +628,14 @@ class Expression < ExpressionType
 			(v.lexpr == :unknown or v.rexpr == :unknown) ? :unknown : v
 		else v
 		end
+		if @@reduce_proc and ret.kind_of? ExpressionType and newret = @@reduce_proc[ret] and newret != ret
+			if newret.kind_of? ExpressionType
+				ret = newret.reduce_rec
+			else
+				ret = newret
+			end
+		end
+		ret
 	end
 
 	# a pattern-matching method
