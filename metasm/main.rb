@@ -415,6 +415,7 @@ class Expression < ExpressionType
 
 	# reduce_proc is a callback called after the standard reduction procedure for custom algorithms
 	# the proc may return a new expression or nil (to keep the old expr)
+	# exemple: proc { |e| e.lexpr if e.kind_of? Expression and e.op == :& and e.rexpr == 0xffff_ffff }
 	def self.reduce_proc(&b)
 		block_given? ? @@reduce_proc = b : @@reduce_proc
 	end
@@ -428,12 +429,15 @@ class Expression < ExpressionType
 	# see +reduce_rec+ for simplifications description
 	# if given a block, it will temporarily overwrite the global @@reduce_proc XXX THIS IS NOT THREADSAFE
 	def reduce(&b)
-		old_rp, @@reduce_proc = @@reduce_proc, b if b
-		ret = case e = reduce_rec
-		when Expression, Numeric; e
-		else Expression[e]
+		begin
+			old_rp, @@reduce_proc = @@reduce_proc, b if b
+			ret = case e = reduce_rec
+			when Expression, Numeric; e
+			else Expression[e]
+			end
+		ensure
+			@@reduce_proc = old_rp if b
 		end
-		@@reduce_proc = old_rp if b
 		ret
 	end
 
