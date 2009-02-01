@@ -607,7 +607,7 @@ module C
 				body = ''
 				if tok.type == :punct and tok.raw == '{'
 					loop do
-						raise ftok, 'unterminated asm block' if not tok = parser.readtok
+						raise ftok, 'unterminated asm block' if not tok = parser.lexer.readtok
 						break if tok.type == :punct and tok.raw == '}'
 						case tok.type
 						when :space; body << ' '
@@ -624,15 +624,15 @@ module C
 						end
 					end
 				else
-					parser.unreadtok tok
+					parser.lexer.unreadtok tok
 					loop do
-						break if not tok = parser.readtok or tok.type == :eol
+						break if not tok = parser.lexer.readtok or tok.type == :eol
 						case tok.type
 						when :space; body << ' '
 						when :punct
 							case tok.raw
 							when '}'
-								parser.unreadtok tok
+								parser.lexer.unreadtok tok
 								break
 							else body << tok.raw
 							end
