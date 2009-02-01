@@ -50,6 +50,7 @@ end
 	end
 
 	def init_mips32
+		@opcode_list = []
 		@fields_mask.update :rs => 0x1f, :rt => 0x1f, :rd => 0x1f, :sa => 0x1f,
 			:i16 => 0xffff, :i26 => 0x3ffffff, :rs_i16 => 0x3e0ffff, :it => 0x1f,
 			:ft => 0x1f, :idm1 => 0x1f, :idb => 0x1f, :sel => 7, :i20 => 0xfffff #, :i32 => 0

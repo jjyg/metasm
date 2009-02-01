@@ -24,6 +24,7 @@ class ARM
 	end
 
 	def init_arm
+		@opcode_list = []
 		@fields_mask.update :rs => 0x1f, :rt => 0x1f, :rd => 0x1f, :sa => 0x1f,
 			:i16 => 0xffff, :i26 => 0x3ffffff, :rs_i16 => 0x3e0ffff, :it => 0x1f,
 			:ft => 0x1f, :i32 => 0

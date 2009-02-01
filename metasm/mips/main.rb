@@ -60,8 +60,12 @@ class MIPS < CPU
 		@endianness = endianness
 		@size = 32
 		@fields_shift = {}
-		send("init_#{family}")
-		init_backtrace_binding
+		@family = family
+	end
+
+	def init_opcode_list
+		send("init_#@family")
+		@opcode_list
 	end
 end
 end

@@ -78,7 +78,7 @@ class Ia32
 		# sets up a hash byte value => list of opcodes that may match
 		# opcode.bin_mask is built here
 		lookaside = Array.new(256) { [] }
-		@opcode_list.each { |op|
+		opcode_list.each { |op|
 
 			build_opcode_bin_mask op
 
@@ -282,7 +282,10 @@ class Ia32
 	end
 
 	# hash opcode_name => proc { |dasm, di, *symbolic_args| instr_binding }
-	attr_accessor :backtrace_binding
+	def backtrace_binding
+		@backtrace_binding ||= init_backtrace_binding
+	end
+	def backtrace_binding=(b) @backtrace_binding = b end
 
 	# populate the @backtrace_binding hash with default values
 	def init_backtrace_binding
@@ -538,6 +541,7 @@ class Ia32
 
 			@backtrace_binding[op] ||= full_binding || binding if full_binding || binding
 		}
+		@backtrace_binding
 	end
 
 	# returns the condition (bool Expression) under which a conditionnal jump is taken
@@ -570,7 +574,7 @@ class Ia32
 			end
 		}
 
-		if binding = @backtrace_binding[di.opcode.basename]
+		if binding = backtrace_binding[di.opcode.basename]
 			bd = binding[di, *a]
 			# handle modifications to al/ah etc
 			bd.keys.grep(Expression).each { |e|

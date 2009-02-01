@@ -20,7 +20,7 @@ class MIPS
 
 	def build_bin_lookaside
 		lookaside = Array.new(256) { [] }
-		@opcode_list.each { |op|
+		opcode_list.each { |op|
 			build_opcode_bin_mask op
 
 			b   = op.bin >> 24
@@ -93,7 +93,10 @@ class MIPS
 	end
 
 	# hash opname => proc { |di, *sym_args| binding }
-	attr_accessor :backtrace_binding
+	def backtrace_binding
+		@backtrace_binding ||= init_backtrace_binding
+	end
+	def backtrace_binding=(b) @backtrace_binding = b end
 
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
@@ -128,6 +131,7 @@ class MIPS
 
 			@backtrace_binding[op] ||= binding if binding
 		}
+		@backtrace_binding
 	end
 
 	def get_backtrace_binding(di)
@@ -139,7 +143,7 @@ class MIPS
 			end
 		}
 
-		binding = if binding = @backtrace_binding[di.instruction.opname]
+		binding = if binding = backtrace_binding[di.instruction.opname]
 			binding[di, *a]
 		else
 			if di.instruction.opname[0] == ?b and di.opcode.props[:setip]

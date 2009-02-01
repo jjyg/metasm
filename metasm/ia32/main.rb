@@ -158,8 +158,12 @@ class Ia32 < CPU
 		super()
 		@endianness = :little
 		@size = size
-		send "init_#{family}"
-		init_backtrace_binding
+		@family = family
+	end
+
+	def init_opcode_list
+		send("init_#@family")
+		@opcode_list
 	end
 
 	def tune_cparser(cp)

@@ -9,6 +9,7 @@ require 'metasm/ia32/main'
 module Metasm
 class Ia32
 	def init_cpu_constants
+		@opcode_list ||= []
 		@fields_mask.update :w => 1, :s => 1, :d => 1, :modrm => 0xc7,
 			:reg => 7, :eeec => 7, :eeed => 7, :seg2 => 3, :seg3 => 7,
 			:regfp => 7, :regmmx => 7, :regxmm => 7

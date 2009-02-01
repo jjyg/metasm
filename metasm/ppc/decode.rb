@@ -21,7 +21,7 @@ class PowerPC
 
 	def build_bin_lookaside
 		lookaside = Array.new(256) { [] }
-		@opcode_list.each { |op|
+		opcode_list.each { |op|
 			next if not op.bin.kind_of? Integer
 			build_opcode_bin_mask op
 
@@ -170,7 +170,10 @@ class PowerPC
 	end
 
 	# hash opname => proc { |di, *sym_args| binding }
-	attr_accessor :backtrace_binding
+	def backtrace_binding
+		@backtrace_binding ||= init_backtrace_binding
+	end
+	def backtrace_binding=(b) @backtrace_binding = b end
 
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
@@ -218,6 +221,7 @@ class PowerPC
 
 			@backtrace_binding[op] ||= binding if binding
 		}
+		@backtrace_binding
 	end
 
 	def get_backtrace_binding(di)
@@ -229,7 +233,7 @@ class PowerPC
 			end
 		}
 
-		binding = if binding = @backtrace_binding[di.instruction.opname]
+		binding = if binding = backtrace_binding[di.instruction.opname]
 			binding[di, *a]
 		else
 			puts "unknown instruction to emu #{di}" if $VERBOSE

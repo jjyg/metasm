@@ -79,6 +79,7 @@ class PowerPC
 	end
 
 	def init
+		@opcode_list = []
 		@fields_shift = {
 			:aa => 1, :ba => 16, :bb => 11, :bd => 2, :bf => 23, :bfa => 18,
 			:bh => 11, :bt => 21, :d => 0, :dq => 4,

@@ -20,26 +20,25 @@ class EncodeError < Exception ; end
 # holds context of a processor
 # endianness, current mode, opcode list...
 class CPU
-	attr_accessor :valid_args, :valid_props, :fields_mask, :opcode_list
+	attr_accessor :valid_args, :valid_props, :fields_mask
 	attr_accessor :endianness, :size
 	attr_accessor :generate_PIC
+	
+	def opcode_list
+		@opcode_list ||= init_opcode_list
+	end
+	def opcode_list=(l) @opcode_list = l end
 
 	def initialize
 		@fields_mask = {}
 		@valid_args  = []
 		@valid_props = [:setip, :saveip, :stopexec]
-		@opcode_list = []
 		@generate_PIC = true
 	end
 
 	# returns a hash opcode_name => array of opcodes with this name
 	def opcode_list_byname
-		@opcode_list_byname ||= @opcode_list.inject({}) { |h, o| (h[o.name] ||= []) << o ; h }
-	end
-
-	# assume that all subfunction calls returns (may fXXk up disasm backtracker)
-	def make_call_return
-		@opcode_list.each { |o| o.props.delete :stopexec if o.props[:saveip] }
+		@opcode_list_byname ||= opcode_list.inject({}) { |h, o| (h[o.name] ||= []) << o ; h }
 	end
 
 	# sets up the C parser : standard macro definitions, type model (size of int etc)

@@ -107,8 +107,10 @@ class PowerPC < CPU
 		super()
 		@endianness = :big
 		@size = 32
+	end
+
+	def init_opcode_list
 		init
-		init_backtrace_binding
 	end
 
 	def render_instruction(i)
