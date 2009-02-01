@@ -36,7 +36,13 @@ if not exename
 	exit if not exename
 end
 
-exe = Metasm::AutoExe.orshellcode.decode_file(exename)
+if exename =~ /^live:(.*)/
+	raise 'no such live target' if not target = Metasm::OS.current.find_process($1)
+	p target if $VERBOSE
+	exe = Metasm::Shellcode.decode(target.memory, Metasm::Ia32.new)
+else
+	exe = Metasm::AutoExe.orshellcode(Metasm::Ia32.new).decode_file(exename)
+end
 dasm = exe.init_disassembler
 
 dasm.parse_c_file opts[:cheader] if opts[:cheader]

@@ -36,7 +36,13 @@ exename = ARGV.shift
 t0 = Time.now if opts[:benchmark]
 
 # load the file
-exe = AutoExe.orshellcode.decode_file exename
+if exename =~ /^live:(.*)/
+	raise 'no such live target' if not target = OS.current.find_process($1)
+	p target if $VERBOSE
+	exe = Shellcode.decode(target.memory, Ia32.new)
+else
+	exe = AutoExe.orshellcode(Ia32.new).decode_file(exename)
+end
 # set options
 dasm = exe.init_disassembler
 makeint = proc { |addr|
