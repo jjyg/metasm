@@ -83,6 +83,6 @@ class Tracer < Metasm::WinDbg
 end
 
 if $0 == __FILE__
-	Metasm::WinAPI.get_debug_privilege
+	Metasm::WinOS.get_debug_privilege
 	Tracer.new ARGV.shift.dup
 end

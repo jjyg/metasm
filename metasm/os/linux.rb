@@ -233,6 +233,37 @@ class PTrace32
 	end
 end
 
+class LinOS < OS
+	class Process < Process
+		def memory
+			@memory ||= LinuxRemoteString.new(pid)
+		end
+		def memory=(m) @memory = m end
+	end
+
+class << self
+	# returns an array of Processes, with pid/module listing
+	def list_processes
+		Dir.entries('/proc').grep(/^\d+$/).map { |pid|
+			pr = Process.new
+			pr.pid = pid.to_i
+			pr.modules = []
+			File.read("/proc/#{pid}/maps").each_line { |map|
+				case map
+				when /^(........)-.* (\/.*)/
+					next if pr.modules.find { |m| m.path == $2 }
+					m = Process::Module.new
+					m.addr = $1.to_i(16)
+					m.path = $2
+					pr.modules << m
+				end
+			}
+			pr
+		}
+	end
+end
+end
+
 class LinuxRemoteString < VirtualString
 	attr_accessor :pid, :readfd, :invalid_addr
 	attr_accessor :ptrace

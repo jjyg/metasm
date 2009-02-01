@@ -15,23 +15,20 @@
 # usage: ruby w32hook-advance.rb notepad
 # use ruby -d to impress your friends :)
 #
+# XXX obsolete, should replace all virtallocex etc by WinOS calls
 
 require 'metasm'
 
 include Metasm
-include WinAPI
 
 # open target
-WinAPI.get_debug_privilege
-if not pr = WinAPI.find_process((Integer(ARGV.first) rescue ARGV.first))
+WinOS.get_debug_privilege
+if not pr = WinOS.find_process(ARGV.first)
 	# display list of running processes and exit
-	puts WinAPI.list_processes.sort_by { |pr| pr.pid }.map { |pr| "#{pr.pid}: #{File.basename(pr.modules.first.path) rescue nil}" }
+	puts WinOS.list_processes.sort_by { |pr| pr.pid }
 	exit
 end
-raise 'cannot open target process' if not handle = WinAPI.openprocess(PROCESS_ALL_ACCESS, 0, pr.pid)
-
-# virtual mapping of remote process memory
-remote_mem = WindowsRemoteString.new(handle)
+raise 'cannot open target process' if not pr.handle
 
 # the main shellcode
 sc = Shellcode.assemble Ia32.new, <<EOS
@@ -107,7 +104,7 @@ msgboxw = nil
 pr.modules[1..-1].each { |m|
 	# search for messageboxw
 	if m.path =~ /user32/i
-		mpe = LoadedPE.load remote_mem[m.addr, 0x1000000]
+		mpe = LoadedPE.load pr.memory[m.addr, 0x1000000]
 		mpe.decode_header
 		mpe.decode_exports
 		mpe.export.exports.each { |e| msgboxw = m.addr + mpe.label_rva(e.target) if e.name == 'MessageBoxW' }
@@ -117,7 +114,7 @@ pr.modules[1..-1].each { |m|
 	puts "handling #{File.basename m.path}" if $VERBOSE
 
 	if not mpe
-		mpe = LoadedPE.load remote_mem[m.addr, 0x1000000]
+		mpe = LoadedPE.load pr.memory[m.addr, 0x1000000]
 		mpe.decode_header
 		mpe.decode_exports
 	end
@@ -147,7 +144,7 @@ sc.assemble
 puts 'done'
 
 # allocate memory for our code
-raise 'remote allocation failed' if not injected_addr = WinAPI.virtualallocex(handle, 0, sc.encoded.length, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+raise 'remote allocation failed' if not injected_addr = WinAPI.virtualallocex(pr.handle, 0, sc.encoded.length, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
 
 puts "Injecting hooks at #{'%x' % injected_addr}"
 
@@ -159,14 +156,14 @@ binding.update sc.encoded.binding(injected_addr)
 # fixup
 sc.encoded.fixup(binding)
 # inject
-remote_mem[injected_addr, sc.encoded.data.length] = sc.encoded.data
+pr.memory[injected_addr, sc.encoded.data.length] = sc.encoded.data
 
 # now overwrite entry points
 hooks.each { |addr, edata|
 	edata.fixup(binding)
-	remote_mem[addr, edata.data.length] = edata.data
+	pr.memory[addr, edata.data.length] = edata.data
 }
 
 puts 'done'
 
-WinAPI.closehandle(handle)
+WinAPI.closehandle(pr.handle)

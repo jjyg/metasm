@@ -12,17 +12,8 @@ end
 
 module Metasm
 module WinAPI
-	class Process
-		attr_accessor :pid, :modules
-		class Module
-			attr_accessor :path, :addr
-		end
-		def to_s
-			"pid #{pid}:".ljust(6) + ((@modules and @modules.first and @modules.first.path) ? File.basename(@modules.first.path) : '<unknown>')
-		end
-	end
-
-	def self.last_error_msg
+class << self
+	def last_error_msg
 		message = ' '*512
 		errno = getlasterror()
 		if formatmessage(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
@@ -34,7 +25,7 @@ module WinAPI
 		message
 	end
 
-	def self.new_api(lib, name, args, zero_is_err = true)
+	def new_api(lib, name, args, zero_is_err = true)
 		args = args.delete(' ').split(//)
 		retval = args.pop
 		begin
@@ -43,7 +34,8 @@ module WinAPI
 			puts "no export #{name} found in #{lib}" if $VERBOSE
  			return
 		end
-		define_method(name.downcase) { |*a|
+		# booh this is fugly
+		class << self ; self ; end.send(:define_method, name.downcase) { |*a|
 			r = const_get(name).call(*a)
 			if r == 0 and zero_is_err
 				puts "WinAPI: Error in #{name}: #{last_error_msg}" if $VERBOSE
@@ -53,24 +45,22 @@ module WinAPI
 			end
 		}
 	end
-
-	extend self	# any other way to dynamically create singleton methods ?
-
-	# raw api function
+end	# class << self
 
 	if defined? Win32API
 	new_api 'kernel32', 'CloseHandle', 'I I'
 	new_api 'kernel32', 'ContinueDebugEvent', 'III I'
 	new_api 'kernel32', 'CreateProcessA', 'PPPPIIPPPP I'
+	new_api 'kernel32', 'CreateRemoteThread', 'IPIIIIP I'
 	new_api 'kernel32', 'DebugActiveProcess', 'I I'
-	new_api 'kernel32', 'DebugSetProcessKillOnExit', 'I I' rescue nil	# may not exist
+	new_api 'kernel32', 'DebugSetProcessKillOnExit', 'I I'
 	new_api 'kernel32', 'FormatMessage', 'IPIIPIP I', false
 	new_api 'kernel32', 'GetCurrentProcess', 'I'
 	new_api 'kernel32', 'GetThreadContext', 'IP I'
 	new_api 'kernel32', 'GetLastError', 'I', false
 	new_api 'kernel32', 'GetProcessId', 'I I'
 	new_api 'kernel32', 'OpenProcess', 'III I'
-	new_api 'kernel32', 'ReadProcessMemory', 'IIPIP I'
+	new_api 'kernel32', 'ReadProcessMemory', 'IIPIP I', false	# only to disable "only part of ReadProcMem was completed"
 	new_api 'kernel32', 'SetThreadContext', 'IP I'
 	new_api 'kernel32', 'TerminateProcess', 'II I'
 	new_api 'kernel32', 'VirtualAllocEx', 'IIIII I'
@@ -85,9 +75,6 @@ module WinAPI
 	new_api 'user32', 'PostMessageA', 'IIII I'
 	new_api 'user32', 'MessageBoxA', 'IPPI I'
 	end
-
-
-	# constants
 
 	CONTEXT_i386 = 0x00010000
 	CONTEXT86_CONTROL  = (CONTEXT_i386 | 0x0001) # SS:ESP, CS:EIP, FLAGS, EBP */
@@ -126,31 +113,43 @@ module WinAPI
 	TOKEN_ADJUST_PRIVILEGES = 0x20
 	TOKEN_QUERY = 0x8
 	UNLOAD_DLL_DEBUG_EVENT = 7
+end
 
+class WinOS < OS
+	class Process < Process
+		# on-demand cached openprocess(ALL_ACCESS) handle
+		def handle
+			@handle ||= WinAPI.openprocess(WinAPI::PROCESS_ALL_ACCESS, 0, @pid)
+		end
+		def handle=(h) @handle = h end
+		def memory
+			@memory ||= WindowsRemoteString.new(handle)
+		end
+		def memory=(m) @memory = m end
+	end
 
-	# higher level functions
-
+class << self
 	# try to enable debug privilege in current process
-	def self.get_debug_privilege
+	def get_debug_privilege
 		htok = [0].pack('L')
-		return if not openprocesstoken(getcurrentprocess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, htok)
+		return if not WinAPI.openprocesstoken(WinAPI.getcurrentprocess(), WinAPI::TOKEN_ADJUST_PRIVILEGES | WinAPI::TOKEN_QUERY, htok)
 		luid = [0, 0].pack('LL')
-		return if not lookupprivilegevaluea(nil, SE_DEBUG_NAME, luid)
+		return if not WinAPI.lookupprivilegevaluea(nil, WinAPI::SE_DEBUG_NAME, luid)
 
 		# priv.PrivilegeCount = 1;
 		# priv.Privileges[0].Luid = luid;
 		# priv.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-		priv = luid.unpack('LL').unshift(1).push(SE_PRIVILEGE_ENABLED).pack('LLLL')
-		return if not adjusttokenprivileges(htok.unpack('L').first, 0, priv, 0, nil, nil)
+		priv = luid.unpack('LL').unshift(1).push(WinAPI::SE_PRIVILEGE_ENABLED).pack('LLLL')
+		return if not WinAPI.adjusttokenprivileges(htok.unpack('L').first, 0, priv, 0, nil, nil)
 
 		true
 	end
 
 	# returns an array of Processes, with pid/module listing
-	def self.list_processes
+	def list_processes
 		tab = ' '*4096
 		int = [0].pack('L')
-		return if not enumprocesses(tab, tab.length, int)
+		return if not WinAPI.enumprocesses(tab, tab.length, int)
 		pids = tab[0, int.unpack('L').first].unpack('L*')
 		begin
 		 # temporarily hide errors from openprocess(system_process) when VERBOSE
@@ -159,21 +158,21 @@ module WinAPI
 		 pids.map { |pid|
 			pr = Process.new
 			pr.pid = pid
-			if handle = openprocess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid)
+			if handle = WinAPI.openprocess(WinAPI::PROCESS_QUERY_INFORMATION | WinAPI::PROCESS_VM_READ, 0, pid)
 				mod = ' '*4096
 				ret = [0].pack('L')
-				if enumprocessmodules(handle, mod, mod.length, ret)
+				if WinAPI.enumprocessmodules(handle, mod, mod.length, ret)
 					pr.modules = []
 					mod[0, ret.unpack('L').first].unpack('L*').each { |mod|
 						path = ' ' * 512
 						m = Process::Module.new
 						m.addr = mod
-						len = getmodulefilenameex(handle, mod, path, path.length)
+						len = WinAPI.getmodulefilenameex(handle, mod, path, path.length)
 						m.path = path[0, len]
 						pr.modules << m
 					}
 				end
-				closehandle(handle)
+				WinAPI.closehandle(handle)
 			end
 			pr
 		 }
@@ -182,10 +181,63 @@ module WinAPI
 		end
 	end
 
-	# returns the Process whose pid is name (numeric) or first module path includes name (string)
-	def self.find_process(name)
-		list_processes.find { |pr| pr.pid == name or (m = pr.modules.to_a.first and m.path.include? name.to_s) }
+	# Injects a shellcode into the memory space of targetproc
+	# target is a WinOS::Process
+	# shellcode may be a String (raw shellcode) or an EncodedData
+	# With an EncodedData, unresolved relocations are solved using
+	# exports of modules from the target address space ; also the
+	# shellcode need not be position-independant.
+	def inject_shellcode(target, shellcode)
+		raise 'cannot open target memory' if not remote_mem = target.memory
+#h1, h2 = remote_mem[0x301fd94, 4], remote_mem[0x301ffa8, 4]
+#p h1.unpack('H*'), h2.unpack('H*')
+#exit
+		return if not injectaddr = WinAPI.virtualallocex(target.handle, 0, shellcode.length,
+				WinAPI::MEM_COMMIT | WinAPI::MEM_RESERVE, WinAPI::PAGE_EXECUTE_READWRITE)
+		puts 'remote buffer at %x' % injectaddr if $VERBOSE
+
+		if shellcode.kind_of? EncodedData
+			fixup_shellcode_relocs(shellcode, target, remote_mem)
+			shellcode.fixup! shellcode.binding(injectaddr)
+			r = shellcode.reloc.values.map { |r| r.target }
+			raise "unresolved shellcode relocs #{r.join(', ')}" if not r.empty?
+			shellcode = shellcode.data
+		end
+
+		# inject the shellcode
+		remote_mem[injectaddr, shellcode.length] = shellcode
+
+		injectaddr
 	end
+
+	def fixup_shellcode_relocs(shellcode, target, remote_mem)
+		ext = shellcode.reloc_externals
+		binding = {}
+		while e = ext.pop
+			next if binding[e]
+			next if not lib = WindowsExports::EXPORT[e]	# XXX could scan all exports... LoadLibrary ftw
+			next if not m = target.modules.find { |m| m.path.downcase.include? lib.downcase }
+			lib = LoadedPE.load(remote_mem[m.addr, 0x1000_0000])
+			lib.decode_header
+			lib.decode_exports
+			lib.export.exports.each { |e|
+				next if not e.name or not e.target
+				binding[e.name] = m.addr + lib.label_rva(e.target)
+			}
+			shellcode.fixup! binding
+		end
+	end
+
+	def createthread(target, startaddr)
+		WinAPI.createremotethread(target.handle, 0, 0, startaddr, 0, 0, 0)
+	end
+
+	# calls inject_shellcode and createthread
+	def inject_run_shellcode(target, shellcode)
+		raise "failed to inject shellcode" if not addr = inject_shellcode(target, shellcode)
+		createthread(target, addr)
+	end
+end	# class << self
 end
 
 class WindowsRemoteString < VirtualString
@@ -201,7 +253,7 @@ class WindowsRemoteString < VirtualString
 		end
 		raise "OpenProcess(#{pid}): #{WinAPI.last_error_msg}" if not handle
 
-		new handle
+		new(handle)
 	end
 
 	attr_accessor :handle

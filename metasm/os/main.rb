@@ -5,12 +5,51 @@
 
 
 module Metasm
+# this module regroups OS-related functions
+# (eg. find_process, inject_shellcode)
+# a 'class' just to be able to inherit from it...
+class OS
+	class Process
+		attr_accessor :pid, :modules
+		class Module
+			attr_accessor :path, :addr
+		end
+		def to_s
+			mod = File.basename(@modules.first.path) if modules and @modules.first and @modules.first.path
+			"#{pid}: ".ljust(6) << (mod || '<unknown>')
+		end
+		def inspect
+			'<Process:' + ["pid: #@pid", @modules.map { |m| " #{'%X' % m.addr} #{m.path}" }].join("\n") + '>'
+		end
+	end
+
+	# returns the Process whose pid is name (numeric) or first module path includes name (string)
+	def self.find_process(name)
+		case name
+		when nil
+		when Integer
+			list_processes.find { |pr| pr.pid == name }
+		else
+			list_processes.find { |pr| m = pr.modules.to_a.first and m.path.include? name.to_s } or
+				(find_process(Integer(name)) if name =~ /^(0x[0-9a-f]+|[0-9]+)$/i)
+		end
+	end
+
+	# return the platform-specific version
+	def self.current
+		case RUBY_PLATFORM
+		when /mswin32/; WinOS
+		when /linux/; LinOS
+		end
+	end
+end
+
 # This class implements an objects that behaves like a regular string, but
 # whose real data is dynamically fetched or generated on demand
 # its size is immutable
 # implements a page cache
-# substrings are Strings (small substring) or a sub-VirtualString
-#  (a kind of 'window' on the original VString, when the substring length is > 4096)
+# substrings are Strings (small substring) or another VirtualString
+# (a kind of 'window' on the original VString, when the substring length is > 4096)
 class VirtualString
 	# formats parameters for reading
 	def [](from, len=nil)
