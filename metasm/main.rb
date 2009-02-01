@@ -819,6 +819,12 @@ class EncodedData
 		@export.inject({}) { |binding, (n, o)| binding.update n => Expression[base, :+, o] }
 	end
 
+	# returns an array of variables that needs to be defined for a complete #fixup
+	# ie the list of externals for all relocations
+	def reloc_externals
+		@reloc.values.map { |r| r.target.externals }.flatten.uniq - @export.keys
+	end
+
 	# returns the offset where the relocation for target t is to be applied
 	def offset_of_reloc(t)
 		t = Expression[t]
