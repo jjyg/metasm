@@ -270,6 +270,7 @@ class AsmListingWidget < Gtk::HBox
 				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or invb[curaddr+l] } || len
 				if s and s[0].data.length > s[0].ptr
 					str = s[0].read(len).unpack('C*')
+					s[0].ptr -= len
 					if asc = str.inject('') { |asc, c|
 						case c
 						when 0x20..0x7e; asc << c
@@ -286,12 +287,13 @@ class AsmListingWidget < Gtk::HBox
 					} and rep > 4
 						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]})"
 						aoff = rep
-					elsif @dasm.xrefs[curaddr]
+					elsif @dasm.xrefs[curaddr] # or (curaddr & 3 == 0 and (len = 4))
 						comment = []
 						@dasm.each_xref(curaddr) { |xref|
 							len = xref.len if xref.len
-							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}"
+							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}" if xref.origin
 						}
+						comment = nil if comment.empty?
 						len = 1 if (len != 2 and len != 4) or len < 1
 						dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]}"
 						aoff = len
