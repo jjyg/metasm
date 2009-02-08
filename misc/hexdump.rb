@@ -21,9 +21,8 @@ class String
 def hexdump(ctx={})
 	fmt = ctx[:fmt] ||= ['c', 'd', 'a']
 	ctx[:pos] ||= 0
-	ctx[:lastline] ||= []
-	ctx[:lastdup]
-	scan(/.{1,16}/) { |s|
+	ctx[:linelen] ||= 16
+	scan(/.{1,#{ctx[:linelen]}}/m) { |s|
 		if s != ctx[:lastline]
 			ctx[:lastdup] = false
 			print '%04x  ' % ctx[:pos]
