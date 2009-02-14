@@ -33,7 +33,7 @@ class PowerPC < CPU
 	# special purpose reg
 	class SPR < Reg
 		class << self
-			attr_reader :s_to_i, :i_to_s
+			attr_accessor :s_to_i, :i_to_s
 		end
 		@s_to_i = {'xer' => 1, 'lr' => 8, 'ctr' => 9, 'dec' => 22, 'srr0' => 26, 'srr1' => 27,
 			'sprg0' => 272, 'sprg1' => 273, 'sprg2' => 274, 'sprg3' => 275, 'pvr' => 287}

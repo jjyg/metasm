@@ -8,7 +8,7 @@ require 'metasm/os/main'
 
 module Metasm
 class PTrace32
-	attr_reader :buf, :pid
+	attr_accessor :buf, :pid
 
 	def self.open(target)
 		ptrace = new(target)

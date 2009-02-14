@@ -441,7 +441,7 @@ __END__
 
 end
 	# Array containing all the supported opcodes
-	attr_reader :opcode_list
+	attr_accessor :opcode_list
 
 	init_mips32
 end

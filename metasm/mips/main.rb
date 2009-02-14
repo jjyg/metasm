@@ -10,7 +10,7 @@ module Metasm
 class MIPS < CPU
 	class Reg
 		class << self
-			attr_reader :s_to_i, :i_to_s
+			attr_accessor :s_to_i, :i_to_s
 		end
 		@s_to_i = {}
 		@i_to_s = {}
@@ -31,7 +31,7 @@ class MIPS < CPU
 
 	class FpReg
 		class << self
-			attr_reader :s_to_i
+			attr_accessor :s_to_i
 		end
 		@s_to_i = (0..31).inject({}) { |h, i| h.update "f#{i}" => i, "$f#{i}" => i }
 

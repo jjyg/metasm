@@ -15,16 +15,18 @@ class Ia32 < CPU
 		@double_list = []
 		class << self
 			# for Argument
-			attr_reader :simple_list, :double_list
+			attr_accessor :simple_list, :double_list
 			# for subclasses
-			attr_reader :i_to_s, :s_to_i
+			attr_accessor :i_to_s, :s_to_i
 		end
 
 		private
 		def self.simple_map(a)
 			Argument.simple_list << self
 
+			# { 1 => 'dr1' }
 			@i_to_s = Hash[*a.flatten]
+			# { 'dr1' => 1 }
 			@s_to_i = @i_to_s.invert
 
 			class_eval {
@@ -41,8 +43,10 @@ class Ia32 < CPU
 		def self.double_map(h)
 			Argument.double_list << self
 
+			# { 32 => { 1 => 'ecx' } }
 			@i_to_s = h
-			@s_to_i = {} ; h.each { |sz, hh| hh.each_with_index { |r, i| @s_to_i[r] = [i, sz] } }
+			# { 'ecx' => [1, 32] }
+			@s_to_i = {} ; @i_to_s.each { |sz, hh| hh.each_with_index { |r, i| @s_to_i[r] = [i, sz] } }
 
 			class_eval {
 				attr_accessor :val, :sz
@@ -91,6 +95,7 @@ class Ia32 < CPU
 			  #64 => %w{rax rcx rdx rbx rsp rbp rsi rdi}
 
 		Sym = @i_to_s[32].map { |s| s.to_sym }
+
 		def symbolic
 			s = Sym[@val]
 			if @sz == 8 and to_s[-1] == ?h
@@ -100,7 +105,7 @@ class Ia32 < CPU
 			elsif @sz == 16
 				Expression[s, :&, 0xffff]
 			else
-				Sym[@val]
+				s
 			end
 		end
 
@@ -111,7 +116,7 @@ class Ia32 < CPU
 	end
 
 	class Farptr < Argument
-		attr_reader :seg, :addr
+		attr_accessor :seg, :addr
 		def initialize(seg, addr)
 			@seg, @addr = seg, addr
 		end

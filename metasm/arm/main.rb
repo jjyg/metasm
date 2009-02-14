@@ -10,7 +10,7 @@ module Metasm
 class ARM < CPU
 	class Reg
 		class << self
-			attr_reader :s_to_i, :i_to_s
+			attr_accessor :s_to_i, :i_to_s
 		end
 		@i_to_s = %w[r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 sl fp ip sp lr pc]
 		@s_to_i = { 'wr' => 7, 'sb' => 9, 'sl' => 10, 'fp' => 11, 'ip' => 12, 'sp' => 13, 'lr' => 14, 'pc' => 15 }
@@ -18,14 +18,14 @@ class ARM < CPU
 		4.times { |i| @s_to_i["a#{i+1}"] = i }
 		8.times { |i| @s_to_i["v#{i+1}"] = i+4 }
 
-		attr_reader :i
+		attr_accessor :i
 		def initialize(i)
 			@i = i
 		end
 	end
 
 #	class Memref
-#		attr_reader :base, :offset
+#		attr_accessor :base, :offset
 #		def initialize(base, offset)
 #			@base, @offset = base, offset
 #		end

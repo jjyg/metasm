@@ -289,11 +289,11 @@ end
 
 class WinDbg
 	# pid => VirtualString
-	attr_reader :mem
+	attr_accessor :mem
 	# pid => handle
-	attr_reader :hprocess
+	attr_accessor :hprocess
 	# pid => (tid => handle)
-	attr_reader :hthread
+	attr_accessor :hthread
 
 	# creates a new debugger for target (a PID or an exe filename)
 	def initialize(target, debug_children = false)
@@ -374,56 +374,56 @@ class WinDbg
 
 	# classes for debug informations
 	class ExceptionInfo
-		attr_reader :code, :flags, :recordptr, :addr, :nparam, :info, :firstchance
+		attr_accessor :code, :flags, :recordptr, :addr, :nparam, :info, :firstchance
 		def initialize(str)
 			@code, @flags, @recordptr, @addr, @nparam, @info, @firstchance = str.unpack('LLLLLC60L')
 		end
 	end
 	class CreateThreadInfo
-		attr_reader :hthread, :threadlocalbase, :startaddr
+		attr_accessor :hthread, :threadlocalbase, :startaddr
 		def initialize(str)
 			@hthread, @threadlocalbase, @startaddr = str.unpack('LLL')
 		end
 	end
 	class CreateProcessInfo
-		attr_reader :hfile, :hprocess, :hthread, :imagebase, :debugfileoff, :debugfilesize, :threadlocalbase, :startaddr, :imagename, :unicode
+		attr_accessor :hfile, :hprocess, :hthread, :imagebase, :debugfileoff, :debugfilesize, :threadlocalbase, :startaddr, :imagename, :unicode
 		def initialize(str)
 			@hfile, @hprocess, @hthread, @imagebase, @debugfileoff, @debugfilesize, @threadlocalbase,
 				@startaddr, @imagename, @unicode = str.unpack('LLLLLLLLLS')
 		end
 	end
 	class ExitThreadInfo
-		attr_reader :exitcode
+		attr_accessor :exitcode
 		def initialize(str)
 			@exitcode = *str.unpack('L')
 		end
 	end
 	class ExitProcessInfo
-		attr_reader :exitcode
+		attr_accessor :exitcode
 		def initialize(str)
 			@exitcode = *str.unpack('L')
 		end
 	end
 	class LoadDllInfo
-		attr_reader :hfile, :imagebase, :debugfileoff, :debugfilesize, :imagename, :unicode
+		attr_accessor :hfile, :imagebase, :debugfileoff, :debugfilesize, :imagename, :unicode
 		def initialize(str)
 			@hfile, @imagebase, @debugfileoff, @debugfilesize, @imagename, @unicode = str.unpack('LLLLLS')
 		end
 	end
 	class UnloadDllInfo
-		attr_reader :imagebase
+		attr_accessor :imagebase
 		def initialize(str)
 			@imagebase = *str.unpack('L')
 		end
 	end
 	class OutputDebugStringInfo
-		attr_reader :ptr, :unicode, :length
+		attr_accessor :ptr, :unicode, :length
 		def initialize(str)
 			@ptr, @unicode, @length = str.unpack('LSS')
 		end
 	end
 	class RipInfo
-		attr_reader :error, :type
+		attr_accessor :error, :type
 		def initialize(str)
 			@error, @type = str.unpack('LL')
 		end

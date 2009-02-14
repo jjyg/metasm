@@ -180,7 +180,7 @@ end
 
 # a name for a location
 class Label
-	attr_reader :name
+	attr_accessor :name
 
 	include Backtrace
 
@@ -739,10 +739,8 @@ class EncodedData
 	attr_accessor :virtsize
 	# arbitrary pointer, often used when decoding immediates
 	# may be initialized with an export value
-	attr_reader   :ptr
-	def ptr=(p)
-		@ptr = @export[p] || p
-	end
+	attr_reader   :ptr	# custom writer
+	def ptr=(p) @ptr = @export[p] || p end
 
 	# opts' keys in :reloc, :export, :virtsize, defaults to empty/empty/data.length
 	def initialize(data = '', opts={})

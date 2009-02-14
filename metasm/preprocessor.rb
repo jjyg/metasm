@@ -321,7 +321,7 @@ class Preprocessor
 		def args ; end
 		def body ; [@name] end
 
-		attr_reader :name
+		attr_accessor :name
 		def initialize(raw)
 			@name = Token.new(nil)
 			@name.type = :string

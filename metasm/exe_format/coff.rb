@@ -374,7 +374,7 @@ end
 __END__
 
 class Symbols
-	attr_reader :name, :value, :sectionnumber, :type, :storageclass, :nbaux, :aux
+	attr_accessor :name, :value, :sectionnumber, :type, :storageclass, :nbaux, :aux
 # name: if the first 4 bytes are null, the 4 next are the index to the name in the string table
 
 	def initialize(raw, offset)
@@ -390,7 +390,7 @@ class Symbols
 end
 
 class Strings < Array
-	attr_reader :size
+	attr_accessor :size
 
 	def initialize(raw, offset)
 		@size = bin(raw[offset..offset+3])
