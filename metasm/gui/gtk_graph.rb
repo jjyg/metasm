@@ -963,10 +963,10 @@ class GraphViewWidget < Gtk::HBox
 			@zoom = 1.0
 			redraw
 		when GDK_Insert		# split curbox at @caret_y
-			if @caret_box and a = @caret_box[:line_address][@caret_y] and @dasm.decoded[a] and @dasm.decoded[a].block.address != a
+			if @caret_box and a = @caret_box[:line_address][@caret_y] and @dasm.decoded[a]
 				@dasm.split_block(@dasm.decoded[a].block, a)
 				@curcontext.keep_split ||= []
-				@curcontext.keep_split << a
+				@curcontext.keep_split |= [a]
 				gui_update
 				focus_addr a
 			end
