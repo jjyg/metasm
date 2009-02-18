@@ -928,6 +928,18 @@ class Preprocessor
 			if not @pragma_once[path || ipath]
 				@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
 
+				# gcc-style autodetect
+				# XXX the headers we already parsed may have needed a prepare_gcc...
+ 				# maybe restart parsing ?
+				if ipath == 'stddef.h' and not path and not @hooked_include[ipath]
+					tk = tok.dup
+					tk.raw = 'prepare_gcc'
+					@pragma_callback[tk]
+					if @hooked_include[ipath]
+						puts "metasm pp: autodetected gcc-style headers" if $VERBOSE
+					end
+				end
+
 				if @hooked_include[ipath]
 					path = '<hooked>/'+ipath
 					puts "metasm preprocessor: including #{path}" if $DEBUG
