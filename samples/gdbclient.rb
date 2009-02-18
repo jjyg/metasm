@@ -65,8 +65,7 @@ class Rubstop
 		5.times {
 			@io.write buf
 			loop do
-				if not IO.select([@io], nil, nil, 10)
-					log "gdb_send: ack timeout" if $DEBUG
+				if not IO.select([@io], nil, nil, 1)
 					break
 				end
 				raise Errno::EPIPE if not ack = @io.read(1)
@@ -109,7 +108,7 @@ class Rubstop
 			when :csum2
 				cs << c
 				state = :done
-				if cs != gdb_csum(buf)
+				if cs.downcase != gdb_csum(buf).downcase
 					log "transmit error"
 					@io.write '-'
 					return
@@ -167,7 +166,7 @@ class Rubstop
 	# decode an rle hex-encoded buffer
 	def unhex(buf)
 		buf = '0' + buf if buf.length % 1 == 1
-	       	[buf].pack('H*')
+		[buf].pack('H*')
 	end
 
 	# on-demand local cache of registers
@@ -337,6 +336,8 @@ class Rubstop
 		@singleshot = {}
 		@wantbp = nil
 		@symbols = {}
+		@symbols_len = {}
+		@filemap = {}
 
 		gdb_setup
 	end
@@ -348,27 +349,89 @@ class Rubstop
 		#gdb_msg('q', 'C')
 	end
 
+	def set_hwbp(type, addr, len=1, set=true)
+		set = (set ? 'Z' : 'z')
+		type = { 'r' => '3', 'w' => '2', 'x' => '1' }[type] || raise("invalid hwbp type #{type}")
+		gdb_msg(set, type << ',' << hexl(addr) << ',' << hexl(len))
+		true
+	end
+
+	def unset_hwbp(type, addr, len=1)
+		set_hwbp(type, addr, len, false)
+	end
+
 
 	def findfilemap(s)
-		'???'
+		@filemap.keys.find { |k| @filemap[k][0] <= s and @filemap[k][1] > s } || '???'
 	end
 
 	def findsymbol(k)
-		'???!%08x' % k
-	end
-
-	def set_hwbp(type, addr, len=1)
-		log 'not implemented'
-		false
+		file = findfilemap(k) + '!'
+		if s = @symbols.keys.find { |s| s <= k and s + @symbols_len[s] > k }
+			file + @symbols[s] + (s == k ? '' : "+#{(k-s).to_s(16)}")
+		else
+			file + ('%08x' % k)
+		end
 	end
 
 	def loadsyms(baseaddr, name)
+		@loadedsyms ||= {}
+		return if @loadedsyms[name] or self[baseaddr, 4] != "\x7fELF"
+		@loadedsyms[name] = true
+
+		e = Metasm::LoadedELF.load self[baseaddr, 0x100_0000]
+		e.load_address = baseaddr
+		begin
+			e.decode
+			#e = Metasm::ELF.decode_file name rescue return         # read from disk
+		rescue
+			log "failed to load symbols from #{name}: #$!"
+			($!.backtrace - caller).each { |l| log l.chomp }
+			@filemap[baseaddr.to_s(16)] = [baseaddr, baseaddr+0x1000]
+			return
+		end
+
+		if e.tag['SONAME']
+			name = e.tag['SONAME']
+			return if name and @loadedsyms[name]
+			@loadedsyms[name] = true
+		end
+
+		last_s = e.segments.reverse.find { |s| s.type == 'LOAD' }
+		vlen = last_s.vaddr + last_s.memsz
+		vlen -= baseaddr if e.header.type == 'EXEC'
+		@filemap[name] = [baseaddr, baseaddr + vlen]
+
+		oldsyms = @symbols.length
+		e.symbols.each { |s|                           
+			next if not s.name or s.shndx == 'UNDEF'
+			sname = s.name
+			sname = 'weak_'+sname if s.bind == 'WEAK'
+			sname = 'local_'+sname if s.bind == 'LOCAL'
+			v = s.value
+			v = baseaddr + v if v < baseaddr
+			@symbols[v] = sname
+			@symbols_len[v] = s.size
+		}
+		if e.header.type == 'EXEC' and e.header.entry >= baseaddr and e.header.entry < baseaddr + vlen
+			@symbols[e.header.entry] = 'entrypoint'
+			@symbols_len[e.header.entry] = 1
+		end
+		log "loaded #{@symbols.length-oldsyms} symbols from #{name} at #{'%08x' % baseaddr}"
 	end
 
-	def loadallsyms
+	# scan val at the beginning of each page (custom gdb msg)
+	def pageheadsearch(val)
+		resp = gdb_msg('qy', hexl(val))
+		unhex(resp).unpack('L*')
 	end
 
 	def scansyms
+		# TODO use qSymbol or something
+		pageheadsearch("\x7fELF".unpack('L').first).each { |addr| loadsyms(addr, '%08x'%addr) }
+	end
+
+	def loadallsyms
 	end
 
 	def backtrace

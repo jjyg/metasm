@@ -93,6 +93,18 @@ class Rubstop < Metasm::PTrace32
 		@symbols_len = {}
 		@filemap = {}
 		@has_pax = false
+
+		stack = self[regs_cache['esp'], 0x1000].to_str.unpack('L*')
+		stack.shift	# argc
+		stack.shift until stack.empty? or stack.first == 0	# argv
+		stack.shift
+		stack.shift until stack.empty? or stack.first == 0	# envp
+		stack.shift
+		stack.shift until stack.empty? or stack.shift == 3	# find PHDR ptr in auxv
+		if phdr = stack.shift
+			phdr &= 0xffff_f000
+			loadsyms phdr, phdr.to_s(16)
+		end
 	end
 
 	def readregs
