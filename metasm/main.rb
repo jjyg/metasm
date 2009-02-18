@@ -302,12 +302,13 @@ class Expression < ExpressionType
 	}
 	INT_MIN  = {:u8 => 0,    :u16 => 0,      :u32 => 0, :u64 => 0,
 		    :i8 =>-0x80, :i16 =>-0x8000, :i32 =>-0x80000000, :i64 => -0x8000_0000_0000_0000,
-		    :a8 =>-0x80, :a16 =>-0x8000, :a32 =>-0x80000000, :a64 => -0x8000_0000_0000_0000
 	}
 	INT_MAX  = {:u8 => 0xff, :u16 => 0xffff, :u32 => 0xffffffff, :u64 => 0xffff_ffff_ffff_ffff,
 		    :i8 => 0x7f, :i16 => 0x7fff, :i32 => 0x7fffffff, :i64 => 0x7fff_ffff_ffff_ffff,
-		    :a8 => 0xff, :a16 => 0xffff, :a32 => 0xffffffff, :a64 => 0xffff_ffff_ffff_ffff
 	}
+	# :a types allow silent truncating on overflow
+	INT_MIN[:a8] = INT_MIN[:a16] = INT_MIN[:a32] = INT_MIN[:a64] = -1/0.0
+	INT_MAX[:a8] = INT_MAX[:a16] = INT_MAX[:a32] = INT_MAX[:a64] =  1/0.0
 
 	# alternative constructor
 	# in operands order, and allows nesting using sub-arrays
