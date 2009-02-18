@@ -48,8 +48,8 @@ class Rubstop < Metasm::PTrace32
 	end
 
 	def stepover
-		i = curinstr.instruction
-		if i.opname == 'call' or (i.prefix and i.prefix[:rep])
+		i = curinstr.instruction if curinstr
+		if i and (i.opname == 'call' or (i.prefix and i.prefix[:rep]))
 			eaddr = @regs_cache['eip'] + curinstr.bin_length
 			bpx eaddr, true
 			cont
