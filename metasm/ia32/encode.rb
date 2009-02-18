@@ -189,11 +189,11 @@ class Ia32
 			end
 
 		else
-			opsz = nil
+			opsz = op.props[:argsz]
 			oi.each { |oa, ia|
 				case oa
 				when :reg, :reg_eax, :modrm, :modrmA, :mrm_imm
-					raise EncodeError, "Incompatible arg size in #{i}" if (ia.sz and opsz and opsz != ia.sz) or (ia.sz == 8 and not op.fields[:w])
+					raise EncodeError, "Incompatible arg size in #{i}" if (ia.sz and opsz and opsz != ia.sz) or (ia.sz == 8 and not op.fields[:w] and opsz != 8)
 					opsz = ia.sz
 				end
 			}

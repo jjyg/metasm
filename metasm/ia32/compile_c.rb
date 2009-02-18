@@ -453,7 +453,7 @@ class CCompiler < C::Compiler
 			end
 			if @exeformat.cpu.opcode_list_byname['setz']
 				instr 'setz', Reg.new(r.val, 8)
-				instr 'and', r, Expression[0xff]
+				instr 'and', r, Expression[1]
 			else
 				instr 'mov', r, Expression[1]
 				label = new_label('setcc')
@@ -785,7 +785,8 @@ class CCompiler < C::Compiler
 			end
 			opcc = getcc(expr.op, expr.type)
 			if @exeformat.cpu.opcode_list_byname['set'+opcc]
-				instr 'set'+opcc, l
+				instr 'set'+opcc, Reg.new(l.val, 8)
+				instr 'and', l, 1
 			else
 				instr 'mov', l, Expression[1]
 				label = new_label('setcc')
