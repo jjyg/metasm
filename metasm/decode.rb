@@ -1092,7 +1092,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			       	return if btb.length > 2 or btb.values.include? Expression::Unknown
 			else
 				return if not bt = b.to_normal
-				if (bt - [:default]).length == 1
+				if bt.include? :default
 					addr = :default
 					break
 				elsif bt.length != 1
