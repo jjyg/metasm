@@ -817,65 +817,58 @@ module C
 					@lexer.unreadtok tok
 				end
 			when 'prepare_visualstudio'
-				@auto_predeclare_unknown_structs = true
-				@lexer.define_weak('_WIN32')
-				@lexer.define_weak('_WIN32_WINNT', 0x500)
-				@lexer.define_weak('_INTEGRAL_MAX_BITS', 64)
-				@lexer.define_weak('__w64')
-				@lexer.define_weak('_cdecl', '__cdecl')	# typo ? seen in winreg.h
-				@lexer.define_weak('_fastcall', '__fastcall')	# typo ? seen in ntddk.h
-				@lexer.define_weak('_MSC_VER', 1300)	# handle '#pragma once' and _declspec(noreturn)
-				@lexer.define_weak('__forceinline', '__inline')
-				@lexer.define_weak('__ptr32')	# needed with msc_ver 1300, don't understand their use
-				@lexer.define_weak('__ptr64')
+				prepare_visualstudio
 			when 'prepare_gcc'
-				@lexer.define_weak('__GNUC__', 2)	# otherwise __attribute__ is defined to void..
-				@lexer.define_weak('__STDC__')
-				@lexer.define_weak('__const', 'const')
-				@lexer.define_weak('__signed', 'signed')
-				@lexer.define_weak('__volatile', 'volatile')
-				@lexer.nodefine_strong('__REDIRECT_NTH')	# booh gnu
-				@lexer.hooked_include['stddef.h'] = <<EOH
-#if !defined (_STDDEF_H) || defined(__need_NULL) || defined(__need_ptrdiff_t) || defined(__need_size_t) || defined(__need_wint_t)
-#if !defined(__need_NULL) && !defined(__need_ptrdiff_t) && !defined(__need_size_t) && !defined(__need_wint_t)
- #define _STDDEF_H
-#endif
-#if defined(_STDDEF_H) || defined(__need_ptrdiff_t)
- #define __PTRDIFF_TYPE__ long int
- typedef __PTRDIFF_TYPE__ ptrdiff_t;
- #undef __need_ptrdiff_t
-#endif
-#if defined(_STDDEF_H) || defined(__need_size_t)
- #define __SIZE_TYPE__ long unsigned int
- typedef __SIZE_TYPE__ size_t;
- #undef __need_size_t
-#endif
-#if defined(_STDDEF_H) || defined(__need_wint_t)
- #define __WINT_TYPE__ unsigned int
- typedef __WINT_TYPE__ wint_t;
- #undef __need_wint_t
-#endif
-#if defined(_STDDEF_H) || defined(__need_wchar_t)
- #define __WCHAR_TYPE__ int
- typedef __WCHAR_TYPE__ wchar_t;
- #undef __need_wchar_t
-#endif
-#if defined (_STDDEF_H) || defined (__need_NULL)
- #undef NULL
- #ifndef __cplusplus
-  #define NULL ((void *)0)
- #else
-  #define NULL 0
- #endif  /* C++ */
- #undef	__need_NULL
-#endif
-#ifdef _STDDEF_H
- #define offsetof(TYPE, MEMBER) __builtin_offsetof (TYPE, MEMBER)
-#endif
+				prepare_gcc
+			else @prev_pragma_callback[otok]
+			end
+		end
+
+		def prepare_visualstudio
+			@auto_predeclare_unknown_structs = true
+			@lexer.define_weak('_WIN32')
+			@lexer.define_weak('_WIN32_WINNT', 0x500)
+			@lexer.define_weak('_INTEGRAL_MAX_BITS', 64)
+			@lexer.define_weak('__w64')
+			@lexer.define_weak('_cdecl', '__cdecl')	# typo ? seen in winreg.h
+			@lexer.define_weak('_fastcall', '__fastcall')	# typo ? seen in ntddk.h
+			@lexer.define_weak('_MSC_VER', 1300)	# handle '#pragma once' and _declspec(noreturn)
+			@lexer.define_weak('__forceinline', '__inline')
+			@lexer.define_weak('__ptr32')	# needed with msc_ver 1300, don't understand their use
+			@lexer.define_weak('__ptr64')
+		end
+
+		def prepare_gcc
+			@lexer.define_weak('__GNUC__', 2)	# otherwise __attribute__ is defined to void..
+			@lexer.define_weak('__STDC__')
+			@lexer.define_weak('__const', 'const')
+			@lexer.define_weak('__signed', 'signed')
+			@lexer.define_weak('__volatile', 'volatile')
+			@lexer.nodefine_strong('__REDIRECT_NTH')	# booh gnu
+			@lexer.hooked_include['stddef.h'] = <<EOH
+/* simplified, define all at first invocation. may break things... */
+#undef __need_ptrdiff_t
+#undef __need_size_t
+#undef __need_wint_t
+#undef __need_wchar_t
+#undef __need_NULL
+#undef NULL
+#if !defined (_STDDEF_H)
+#define _STDDEF_H
+#define __PTRDIFF_TYPE__ long int
+typedef __PTRDIFF_TYPE__ ptrdiff_t;
+#define __SIZE_TYPE__ long unsigned int
+typedef __SIZE_TYPE__ size_t;
+#define __WINT_TYPE__ unsigned int
+typedef __WINT_TYPE__ wint_t;
+#define __WCHAR_TYPE__ int
+typedef __WCHAR_TYPE__ wchar_t;
+#define NULL 0
+#define offsetof(TYPE, MEMBER) __builtin_offsetof (TYPE, MEMBER)
 #endif
 EOH
-				# TODO va_args
-				@lexer.hooked_include['stdarg.h'] = <<EOH
+			# TODO va_args
+			@lexer.hooked_include['stdarg.h'] = <<EOH
 // TODO
 typedef void* __gnuc_va_list;
 /*
@@ -886,8 +879,6 @@ typedef void* va_list;
 #define va_copy(d, s)
 */
 EOH
-			else @prev_pragma_callback[otok]
-			end
 		end
 
 		# C sanity checks
