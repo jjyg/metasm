@@ -268,7 +268,7 @@ class Expression
 	class << self
 	def encode_imm(val, type, endianness, backtrace=nil)
 		raise "unsupported endianness #{endianness.inspect}" unless [:big, :little].include? endianness
-		raise(EncodeError, "immediate overflow 0x#{val.to_s 16} #{(Backtrace::backtrace_str(backtrace) if backtrace)}") if not in_range?(val, type)
+		raise(EncodeError, "immediate overflow #{type.inspect} #{Expression[val]} #{(Backtrace::backtrace_str(backtrace) if backtrace)}") if not in_range?(val, type)
 		s = (0...INT_SIZE[type]/8).map { |i| (val >> (8*i)) & 0xff }.pack('C*')
 		endianness != :little ? s.reverse : s
 	end
@@ -301,6 +301,7 @@ class CPU
 	# uses +#parse_arg_valid?+ to find the opcode whose signature matches with the instruction
 	# uses +encode_instr_op+ (arch-specific)
 	def encode_instruction(program, i)
+		errmsg = ''
 		oplist = opcode_list_byname[i.opname].to_a.find_all { |o|
 			o.args.length == i.args.length and
 			o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }
@@ -308,9 +309,11 @@ class CPU
 			begin
 				encode_instr_op(program, i, op)
 			rescue EncodeError
+				errmsg = " (#{$!.message})"
+				nil
 			end
 		}.compact.flatten
-		raise EncodeError, "no matching opcode found for #{i}" if oplist.empty?
+		raise EncodeError, "no matching opcode found for #{i}#{errmsg}" if oplist.empty?
 		oplist.each { |ed| ed.reloc.each_value { |v| v.backtrace = i.backtrace } }
 		oplist
 	end
