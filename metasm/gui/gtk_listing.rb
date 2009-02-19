@@ -267,27 +267,12 @@ class AsmListingWidget < Gtk::HBox
 				end
 				len = 256
 				len -= curaddr % 256 if curaddr.kind_of? Integer
-				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or invb[curaddr+l] } || len
-				if s and s[0].data.length > s[0].ptr
+				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or invb[curaddr+l] or s[0].reloc[s[0].ptr+l] } || len
+				if s[0].data.length > s[0].ptr
 					str = s[0].read(len).unpack('C*')
 					s[0].ptr -= len
-					if asc = str.inject('') { |asc, c|
-						case c
-						when 0x20..0x7e; asc << c
-						else break asc
-						end
-					} and asc.length > 3
-						dat = "db #{asc.inspect}"
-						aoff = asc.length
-					elsif rep = str.inject(0) { |rep, c|
-						case c
-						when str[0]; rep+1
-						else break rep
-						end
-					} and rep > 4
-						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]})"
-						aoff = rep
-					elsif @dasm.xrefs[curaddr] # or (curaddr & 3 == 0 and (len = 4))
+					if @dasm.xrefs[curaddr] or rel = s[0].reloc[s[0].ptr] # or (curaddr & 3 == 0 and (len = 4))
+						len = Expression::INT_SIZE[rel.type] if rel
 						comment = []
 						@dasm.each_xref(curaddr) { |xref|
 							len = xref.len if xref.len
@@ -297,6 +282,22 @@ class AsmListingWidget < Gtk::HBox
 						len = 1 if (len != 2 and len != 4) or len < 1
 						dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]}"
 						aoff = len
+					elsif rep = str.inject(0) { |rep, c|
+						case c
+						when str[0]; rep+1
+						else break rep
+						end
+					} and rep > 4
+						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]})"
+						aoff = rep
+					elsif asc = str.inject('') { |asc, c|
+						case c
+						when 0x20..0x7e; asc << c
+						else break asc
+						end
+					} and asc.length > 3
+						dat = "db #{asc.inspect}"
+						aoff = asc.length
 					else
 						dat = "db #{Expression[str[0]]}"
 						aoff = 1
