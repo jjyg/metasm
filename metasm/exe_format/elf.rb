@@ -87,6 +87,29 @@ class ELF < ExeFormat
 	DYNAMIC_TAG_LOPROC = 0x7000_0000
 	DYNAMIC_TAG_HIPROC = 0x7fff_ffff
 
+	# for tags between DT_LOPROC and DT_HIPROC, use DT_PROC[header.machine][tag-DT_LOPROC]
+	DYNAMIC_TAG_PROC = {
+		'MIPS' => {
+			1 => 'RLD_VERSION', 2 => 'TIME_STAMP', 3 => 'ICHECKSUM',
+			4 => 'IVERSION', 5 => 'M_FLAGS', 6 => 'BASE_ADDRESS', 7 => 'MSYM',
+			8 => 'CONFLICT', 9 => 'LIBLIST', 0x0a => 'LOCAL_GOTNO',
+			0x0b => 'CONFLICTNO', 0x10 => 'LIBLISTNO', 0x11 => 'SYMTABNO',
+			0x12 => 'UNREFEXTNO', 0x13 => 'GOTSYM', 0x14 => 'HIPAGENO',
+			0x16 => 'RLD_MAP', 0x17 => 'DELTA_CLASS', 0x18 => 'DELTA_CLASS_NO',
+			0x19 => 'DELTA_INSTANCE', 0x1a => 'DELTA_INSTANCE_NO',
+			0x1b => 'DELTA_RELOC', 0x1c => 'DELTA_RELOC_NO', 0x1d => 'DELTA_SYM',
+			0x1e => 'DELTA_SYM_NO', 0x20 => 'DELTA_CLASSSYM', 0x21 => 'DELTA_CLASSSYM_NO',
+			0x22 => 'CXX_FLAGS', 0x23 => 'PIXIE_INIT', 0x24 => 'SYMBOL_LIB',
+			0x25 => 'LOCALPAGE_GOTIDX', 0x26 => 'LOCAL_GOTIDX',
+			0x27 => 'HIDDEN_GOTIDX', 0x28 => 'PROTECTED_GOTIDX',
+			0x29 => 'OPTIONS', 0x2a => 'INTERFACE', 0x2b => 'DYNSTR_ALIGN',
+			0x2c => 'INTERFACE_SIZE', 0x2d => 'RLD_TEXT_RESOLVE_ADDR',
+			0x2e => 'PERF_SUFFIX', 0x2f => 'COMPACT_SIZE',
+			0x30 => 'GP_VALUE', 0x31 => 'AUX_DYNAMIC',
+		}
+	}
+
+
 	DYNAMIC_FLAGS = { 1 => 'ORIGIN', 2 => 'SYMBOLIC', 4 => 'TEXTREL',
 		8 => 'BIND_NOW', 0x10 => 'STATIC_TLS' }
 	DYNAMIC_FLAGS_1 = { 1 => 'NOW', 2 => 'GLOBAL', 4 => 'GROUP',

@@ -199,7 +199,13 @@ class ELF
 		loop do
 			tag = decode_sxword
 			val = decode_xword
-			case tag = int_to_hash(tag, DYNAMIC_TAG)
+			if tag >= DYNAMIC_TAG_LOPROC and tag < DYNAMIC_TAG_HIPROC
+				tag = int_to_hash(tag-DYNAMIC_TAG_LOPROC, DYNAMIC_TAG_PROC[@header.machine] || {})
+				tag += DYNAMIC_TAG_LOPROC if tag.kind_of? Integer
+			else
+				tag = int_to_hash(tag, DYNAMIC_TAG)
+			end
+			case tag
 			when 'NULL'
 				@tag[tag] = val
 				break
