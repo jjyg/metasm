@@ -77,6 +77,7 @@ end
 		addop 'lui',  0b001111 << 26, :rt, :i16			# load upper
 #		addop 'li',   (0b001111 << 26) << 32 | (0b001101 << 26), :rt_64, :i32			# lui + ori
 
+		addop 'b',    0b000100 << 26, :i16, :setip, :stopexec	# bz $zero
 		addop 'bz',   0b000100 << 26, :rs, :i16, :setip		# == 0	(beq $0)
 		addop 'bz',   0b000100 << 26, :rt, :i16, :setip		# == 0
 		addop 'bnz',  0b000101 << 26, :rs, :i16, :setip		# != 0
