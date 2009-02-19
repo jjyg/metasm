@@ -62,6 +62,17 @@ class ELF
 		addr - s.vaddr + s.offset if s
 	end
 
+	# return the address of a label
+	def label_addr(name)
+		if name.kind_of? Integer
+			name
+		elsif s = @segments.find { |s| s.encoded and s.encoded.export[name] }
+			s.vaddr + s.encoded.export[name]
+		elsif o = @encoded.export[name] and s = @segments.find { |s| s.offset <= o and s.offset + s.filesz > o }
+			s.vaddr + o - s.offset
+		end
+	end
+
 	# make an export of +self.encoded+, returns the label name if successful
 	def add_label(name, addr)
 		if not o = addr_to_off(addr)
@@ -389,6 +400,18 @@ class ELF
 				@encoded.reloc[o] = rel
 			end
 		}
+
+		if @header.machine == 'MIPS' and @tag['PLTGOT'] and @tag['GOTSYM'] and @tag['LOCAL_GOTNO']
+			puts "emulating mips PLT-like relocs" if $VERBOSE
+			wsz = @bitsize/8
+			dyntab = label_addr(@tag['PLTGOT']) - (@tag['GOTSYM'] - @tag['LOCAL_GOTNO']) * wsz
+			dt_o = addr_to_off(dyntab)
+			@symbols.each_with_index { |sym, i|
+				next if i < @tag['GOTSYM'] or not sym.name
+				r = Metasm::Relocation.new(Expression[sym.name], "u#@bitsize".to_sym, @endianness)
+				@encoded.reloc[dt_o + wsz*i] = r
+			}
+		end
 	end
 
 	# returns the Metasm::Relocation that should be applied for reloc

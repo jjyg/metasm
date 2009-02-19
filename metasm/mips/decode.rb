@@ -103,6 +103,10 @@ class MIPS
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
 			binding = case op
 			when 'break'
+			when /^b.*al$/; proc { |di, *a|
+				# XXX $ra is set only if branch is taken...
+				{ :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] }
+			}
 			when 'nop', 'j', 'jr', /^b/; proc { |di, *a| {} }
 			when 'lui'; proc { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
 			when 'add', 'addu', 'addi', 'addiu'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :+, a2] } }	# XXX addiu $sp, -40h should be addiu $sp, 0xffc0 from the books, but..
@@ -170,19 +174,22 @@ class MIPS
 		end]]
 	end
 
-	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist)
-		retaddrlist.map! { |retaddr| dasm.decoded[retaddr] ? dasm.decoded[retaddr].block.list.last.address : retaddr }
+	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist, *wantregs)
+		retaddrlist.map! { |retaddr| dasm.decoded[retaddr] ? dasm.decoded[retaddr].block.list.last.address : retaddr } if retaddrlist
 		b = f.backtrace_binding
 
 		bt_val = proc { |r|
+			next if not retaddrlist
 			bt = []
+			b[r] = Expression::Unknown	# break recursive dep
 			retaddrlist.each { |retaddr|
 				bt |= dasm.backtrace(Expression[r], retaddr,
 					:include_start => true, :snapshot_addr => faddr, :origin => retaddr)
 			}
 			b[r] = ((bt.length == 1) ? bt.first : Expression::Unknown)
 		}
-		Reg.i_to_s.values.map { |r| r.to_sym }.each(&bt_val)
+		wantregs = Reg.i_to_s.values if wantregs.empty?
+		wantregs.map { |r| r.to_sym }.each(&bt_val)
 
 		puts "update_func_bind: #{Expression[faddr]} has sp -> #{b[:$sp]}" if not Expression[b[:$sp], :-, :$sp].reduce.kind_of?(::Integer) if $VERBOSE
 	end
@@ -223,8 +230,8 @@ class MIPS
 
 	def disassembler_default_func
 		df = DecodedFunction.new
-		# from http://www.cs.rpi.edu/~chrisc/COURSES/CSCI-4250/FALL-2004/MIPS-regs.html
 		df.backtrace_binding = %w[v0 v1 a0 a1 a2 a3 t0 t1 t2 t3 t4 t5 t6 t7 t8 t9 at k0 k1].inject({}) { |h, r| h.update "$#{r}".to_sym => Expression::Unknown }
+		df.backtrace_binding.update %w[gp sp fp ra s0 s1 s2 s3 s4 s5 s6 s7].inject({}) { |h, r| h.update "$#{r}".to_sym => "$#{r}".to_sym }
 		df.backtracked_for = [BacktraceTrace.new(Expression[:$ra], :default, Expression[:$ra], :x)]
 		df.btfor_callback = proc { |dasm, btfor, funcaddr, calladdr|
 			if funcaddr != :default
