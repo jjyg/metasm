@@ -308,11 +308,6 @@ class LinuxRemoteString < VirtualString
 			end
 		}
 	end
-
-	def realstring
-		@readfd.pos = @addr_start
-		do_ptrace { @readfd.read @length }
-	end
 end
 
 class GNUExports
