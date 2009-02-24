@@ -168,8 +168,8 @@ class Ia32
 		addop 'lsl',   [0x0F, 0x03], :mrm
 		addop 'lss',   [0x0F, 0xB2], :mrmA
 		addop 'ltr',   [0x0F, 0x00], 3
-		addop 'mov',   [0x0F, 0x20, 0xC0], :reg, {:d => [1, 1], :eeec => [2, 3]}, :eeec
-		addop 'mov',   [0x0F, 0x21, 0xC0], :reg, {:d => [1, 1], :eeed => [2, 3]}, :eeed
+		addop('mov',   [0x0F, 0x20, 0xC0], :reg, {:d => [1, 1], :eeec => [2, 3]}, :eeec) { |op| op.args.reverse! }
+		addop('mov',   [0x0F, 0x21, 0xC0], :reg, {:d => [1, 1], :eeed => [2, 3]}, :eeed) { |op| op.args.reverse! }
 		addop('mov',   [0x8C], 0,    {:d => [0, 1], :seg3 => [1, 3]}, :seg3) { |op| op.args.reverse! }
 		addop 'out',   [0xE6], nil,  {:w => [0, 0]}, :reg_eax, :u8
 		addop 'out',   [0xE6], nil,  {:w => [0, 0]}, :u8
