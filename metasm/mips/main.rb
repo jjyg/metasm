@@ -31,8 +31,9 @@ class MIPS < CPU
 
 	class FpReg
 		class << self
-			attr_accessor :s_to_i
+			attr_accessor :s_to_i, :i_to_s
 		end
+		@i_to_s = (0..31).map { |i| "$f#{i}" }
 		@s_to_i = (0..31).inject({}) { |h, i| h.update "f#{i}" => i, "$f#{i}" => i }
 
 		attr_accessor :i
