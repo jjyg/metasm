@@ -352,8 +352,11 @@ class COFF
 			@export = ExportDirectory.decode(self)
 			@export.exports.to_a.each { |e|
 				if e.name and sect_at_rva(e.target)
-					e.target = @cursection.encoded.add_export e.name
+					name = e.name
+				elsif e.ordinal and sect_at_rva(e.target)
+					name = "ord_#{@export.libname}_#{e.ordinal}"
 				end
+				e.target = @cursection.encoded.add_export new_label(name) if name
 			}
 		end
 	end
@@ -369,9 +372,14 @@ class COFF
 					ptr = @cursection.encoded.ptr
 					id.imports.each { |i|
 						if i.name
-							r = Metasm::Relocation.new(Expression[i.name], :u32, @endianness)
+							name = i.name
+						elsif i.ordinal
+							name = new_label "ord_#{id.libname}_#{i.ordinal}"
+						end
+						if name
+							r = Metasm::Relocation.new(Expression[name], :u32, @endianness)
 							@cursection.encoded.reloc[ptr] = r
-							@cursection.encoded.add_export 'iat_'+i.name, ptr, true
+							@cursection.encoded.add_export 'iat_'+name, ptr, true
 						end
 						ptr += iatlen
 					}
