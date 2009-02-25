@@ -362,7 +362,8 @@ class LinDebug
 		update
 	end
 
-	def log(str)
+	def log(*str)
+		str.each { |str|
 		raise str.inspect if not str.kind_of? ::String
 		if str.length > @console_width
 			# word wrap
@@ -371,6 +372,7 @@ class LinDebug
 		end
 		@promptlog << str
 		@promptlog.shift if @promptlog.length > @promptloglen
+		}
 	end
 
 	def puts(*s)
@@ -589,7 +591,7 @@ class LinDebug
 						@promptpos = poss.first.length+1
 					end
 				end
-			when ?\n; @histptr = nil ; exec_prompt rescue log "error: #$!"
+			when ?\n; @histptr = nil ; exec_prompt rescue log "error: #$!", *$!.backtrace
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = k.chr
 				@promptpos += 1
@@ -634,13 +636,7 @@ class LinDebug
 			}
 		}
 		@command['bc'] = proc { |lex, int|
-			@rs.wantbp = nil if @rs.wantbp == @rs.regs_cache['eip']
-			@rs.breakpoints.each { |addr, oct| @rs[addr] = oct }
-			@rs.breakpoints.clear
-			if @rs.regs_cache['dr7'] & 0xff != 0
-				@rs.dr7 = 0
-				@rs.readregs
-			end
+			@rs.clearbreaks
 		}
 		@command['bt'] = proc { |lex, int| @rs.backtrace.each { |t| puts t } }
 		@command['d'] =  proc { |lex, int| @dataptr = int[] || return }
@@ -692,17 +688,30 @@ class LinDebug
 			end
 			log "has_pax now #{@rs.has_pax}"
 		}
-		@command['loadsyms'] = proc { |lex, int| @rs.loadallsyms }
+		@command['loadsyms'] = proc { |lex, int|
+			mapfile = ''
+			mapfile << ntok.raw while ntok = lex.readtok
+			if mapfile != ''
+				@rs.loadmap mapfile
+			else
+				@rs.loadallsyms
+			end
+		}
 		@command['scansyms'] = proc { |lex, int| @rs.scansyms }
 		@command['sym'] = proc { |lex, int|
 			sym = ''
 			sym << ntok.raw while ntok = lex.readtok
-			s = @rs.symbols.values.grep(/#{sym}/)
+			s = []
+			log '0'
+		       	@rs.symbols.each { |k, v|
+				s << k if v =~ /#{sym}/
+			}
+			log '1'
 			if s.empty?
 				log "unknown symbol #{sym}"
 			else
-				s = @rs.symbols.keys.find_all { |k| s.include? @rs.symbols[k] }
 				s.sort.each { |s| log "#{'%08x' % s} #{@rs.symbols_len[s].to_s.ljust 6} #{@rs.findsymbol(s)}" }
+				log '2'
 			end
 		}
 		@command['delsym'] = proc { |lex, int|

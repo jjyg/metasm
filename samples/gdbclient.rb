@@ -117,7 +117,7 @@ class Rubstop
 		end
 		@io.write '+'
 
-		if buf =~ /^E\d\d$/
+		if buf =~ /^E..$/
 			log "error #{buf}"
 			return
 		end
@@ -218,7 +218,7 @@ class Rubstop
 	def setmem(addr, data)
 		len = data.length
 		return if len == 0
-		gdb_msg('M', hexl(addr) << ',' << hexl(len) << ':' << rle(hex(data)))
+		raise 'writemem error' if not gdb_msg('M', hexl(addr) << ',' << hexl(len) << ':' << rle(hex(data)))
 	end
 
 	# read arbitrary blocks of memory (chunks to getmem)
@@ -257,10 +257,24 @@ class Rubstop
 		@mem.invalidate
 	end
 
+	def log_stopped(msg)
+		case msg[0]
+		when ?T
+			sig = [msg[1, 2]].pack('H*')[0]
+			misc = msg[3..-1].split(';').inject({}) { |h, s| k, v = s.split(':', 2) ; h.update k => (v || true) }
+			str = "stopped by signal #{sig}"
+			str = "thread #{[misc['thread']].pack('H*').unpack('N').first} #{str}" if misc['thread']
+			log str
+		when ?S
+			sig = [msg[1, 2]].pack('H*')[0]
+			log "stopped by signal #{sig}"
+		end
+	end
+
 	def cont
 		pre_run
 		do_singlestep if @wantbp
-		gdb_msg('c')
+		rmsg = gdb_msg('c')
 		post_run
 		ccaddr = eip-1
 		if @breakpoints[ccaddr] and self[ccaddr, 1] == "\xcc"
@@ -268,7 +282,9 @@ class Rubstop
 			mem.invalidate
 			self.eip = ccaddr
 			@wantbp = ccaddr if not @singleshot.delete ccaddr
+			sync_regs
 		end
+		log_stopped rmsg
 	end
 
 	def singlestep
@@ -367,7 +383,7 @@ class Rubstop
 
 	def findsymbol(k)
 		file = findfilemap(k) + '!'
-		if s = @symbols.keys.find { |s| s <= k and s + @symbols_len[s] > k }
+		if s = @symbols[k] ? k : @symbols.keys.find { |s| s < k and s + @symbols_len[s].to_i > k }
 			file + @symbols[s] + (s == k ? '' : "+#{(k-s).to_s(16)}")
 		else
 			file + ('%08x' % k)
@@ -415,7 +431,6 @@ class Rubstop
 		}
 		if e.header.type == 'EXEC' and e.header.entry >= baseaddr and e.header.entry < baseaddr + vlen
 			@symbols[e.header.entry] = 'entrypoint'
-			@symbols_len[e.header.entry] = 1
 		end
 		log "loaded #{@symbols.length-oldsyms} symbols from #{name} at #{'%08x' % baseaddr}"
 	end
@@ -431,7 +446,59 @@ class Rubstop
 		pageheadsearch("\x7fELF".unpack('L').first).each { |addr| loadsyms(addr, '%08x'%addr) }
 	end
 
+	# use qSymbol to retrieve a symbol value (uint)
+	def request_symbol(name)
+		resp = gdb_msg('qSymbol:', hex(name))
+		if resp and a = resp.split(':')[1]
+			unhex(a).unpack('N').first
+		end
+	end
+
 	def loadallsyms
+		# kgdb: read kernel symbols from 'module_list'
+		# too bad module_list is not in ksyms
+		if mod = request_symbol('module_list')
+			int_at = proc { |addr, off| @mem[addr+off, 4].unpack('L').first }
+			mod_size = proc { int_at[mod, 0] }
+			mod_next = proc { int_at[mod, 4] }
+			mod_nsym = proc { int_at[mod, 0x18] }	# most portable. yes.
+			mod_syms = proc { int_at[mod, 0x20] }
+
+			read_strz = proc { |addr|
+				if i = @mem.index(0, addr)
+					@mem[addr...i]
+				end
+			}
+
+			while mod != 0
+				symtab = [[]]
+
+				@mem[mod_syms[], mod_nsym[]*8].to_str.unpack('L*').each { |i|
+					# make a list of couples
+					if symtab.last.length < 2
+						symtab.last << i
+					else
+						symtab << [i]
+					end
+				}
+
+				symtab.each { |v, n|
+ 					n = read_strz[n]
+					# ||= to keep symbol precedence order (1st match wins)
+					@symbols[v] ||= n
+				}
+
+				mod = mod_next[]
+			end
+		end
+	end
+
+	def loadmap(mapfile)
+		# file fmt: addr type name eg 'c01001ba t setup_idt'
+		File.read(mapfile).each { |l|
+			addr, type, name = l.chomp.split
+			@symbols[addr.to_i(16)] = name
+		}
 	end
 
 	def backtrace

@@ -194,7 +194,7 @@ class Rubstop < Metasm::PTrace32
 
 	def findsymbol(k)
 		file = findfilemap(k) + '!'
-		if s = @symbols.keys.find { |s| s <= k and s + @symbols_len[s] > k }
+		if s = @symbols[k] ? k : @symbols.keys.find { |s| s < k and s + @symbols_len[s].to_i > k }
 			file + @symbols[s] + (s == k ? '' : "+#{(k-s).to_s(16)}")
 		else
 			file + ('%08x' % k)
@@ -218,6 +218,16 @@ class Rubstop < Metasm::PTrace32
 		self.dr7 = @regs_cache['dr7'] | (1 << (2*dr))
 		readregs
 		true
+	end
+
+	def clearbreaks
+		@wantbp = nil if @wantbp == @regs_cache['eip']
+		@breakpoints.each { |addr, oct| self[addr, 1] = oct }
+		@breakpoints.clear
+		if @regs_cache['dr7'] & 0xff != 0
+			self.dr7 = 0
+			readregs
+		end
 	end
 
 	def loadsyms(baseaddr, name)
@@ -261,7 +271,6 @@ class Rubstop < Metasm::PTrace32
 		}
 		if e.header.type == 'EXEC'
 			@symbols[e.header.entry] = 'entrypoint'
-			@symbols_len[e.header.entry] = 1
 		end
 		log "loaded #{@symbols.length-oldsyms} symbols from #{name} at #{'%08x' % baseaddr}"
 	end
@@ -270,6 +279,14 @@ class Rubstop < Metasm::PTrace32
 		File.read("/proc/#{@pid}/maps").each { |l|
 			name = l.split[5]
 			loadsyms l.to_i(16), name if name and name[0] == ?/
+		}
+	end
+
+	def loadmap(mapfile)
+		# file fmt: addr type name eg 'c01001ba t setup_idt'
+		File.read(mapfile).each { |l|
+			addr, type, name = l.chomp.split
+			@symbols[addr.to_i(16)] = name
 		}
 	end
 
