@@ -254,6 +254,17 @@ class Graph
 			}
 		}
 
+		# same single from or to
+		group_halflines = proc {
+			groups.find { |g|
+				next if not (ary = g.from.find_all { |gg| gg.to == [g] } and ary.length > 1) and
+					not (ary = g.to.find_all { |gg| gg.from == [g] } and ary.length > 1)
+				align_hz[ary]
+				merge_groups[ary]
+				true
+			}
+		}
+
 
 		# unknown pattern, group as we can..
 		group_other = proc {
@@ -264,9 +275,9 @@ class Graph
 			g1.each { |g| maketree[[g]] }
 			break true if cntpre != groups.inject(0) { |cntpre, g| cntpre + g.to.length }
 
-puts 'unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.inspect}" }
 			g2 = g1.map { |g| g.to }.flatten.uniq - g1
 
+puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.inspect}" }
 			align_vt[g1]
 			g1 = merge_groups[g1]
 			g1.w += 128 ; g1.x -= 64
@@ -285,7 +296,7 @@ puts 'unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map
 		}
 		# approximations
 		group_unclean = proc {
-			group_lines[false] or group_ifthen[false] or group_other[]
+			group_lines[false] or group_ifthen[false] or group_halflines[] or group_other[]
 		}
 
 		nil while group_clean[] or group_unclean[]
