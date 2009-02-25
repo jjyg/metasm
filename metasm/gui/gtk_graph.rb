@@ -95,17 +95,14 @@ class Graph
 		}
 
 		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
-		# will fail in some cases (a-b-c a-c c-b will cut b-c if a-c is walked first..)
 		maketree = proc { |path|
 			path.last.to.delete_if { |g|
 				if path.include? g
 					g.from.delete path.last
 					true
-				else
-					maketree[path+[g]]
-					false
 				end
 			}
+			path.last.to.each { |g| maketree[path+[g]] }
 		}
 
 		# concat all ary boxes into its 1st element, remove trailing groups from 'groups'
@@ -166,11 +163,13 @@ class Graph
 		# scan groups for a line pattern (multiple groups with same to & same from)
 		group_lines = proc { |strict|
 			groups.find { |g|
-				ary = groups.find_all { |gg|
+				ary = g.from.map { |gg| gg.to }.flatten.uniq.find_all { |gg|
+					gg != g and
 					(gg.from - g.from).empty? and (g.from - gg.from).empty? and
 					(strict ? ((gg.to - g.to).empty? and (g.to - gg.to).empty?) : (g.to & gg.to).first)
 				}
-				next if ary.length <= 1
+				next if ary.empty?
+				ary << g
 				dy = 16*ary.map { |g| g.to.length + g.from.length }.inject { |a, b| a+b }
 				ary.each { |g| g.h += dy ; g.y -= dy/2 }
 				align_hz[ary]
@@ -268,16 +267,10 @@ class Graph
 
 		# unknown pattern, group as we can..
 		group_other = proc {
-			next if groups.length == 1
-			g1 = groups.find_all { |g| g.from.empty? }
-			g1 << groups.first if g1.empty?
-			cntpre = groups.inject(0) { |cntpre, g| cntpre + g.to.length }
-			g1.each { |g| maketree[[g]] }
-			break true if cntpre != groups.inject(0) { |cntpre, g| cntpre + g.to.length }
-
-			g2 = g1.map { |g| g.to }.flatten.uniq - g1
-
 puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.inspect}" }
+			g1 = groups.find_all { |g| g.from.empty? }
+			g1 << groups[rand(groups.length)] if g1.empty?
+			g2 = g1.map { |g| g.to }.flatten.uniq - g1
 			align_vt[g1]
 			g1 = merge_groups[g1]
 			g1.w += 128 ; g1.x -= 64
@@ -290,6 +283,15 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 			true
 		}
 
+		# walk graph from roots, cut backward links
+		trim_graph = proc {
+			g1 = groups.find_all { |g| g.from.empty? }
+			g1 << groups.first if g1.empty?
+			cntpre = groups.inject(0) { |cntpre, g| cntpre + g.to.length }
+			g1.each { |g| maketree[[g]] }
+			true if cntpre != groups.inject(0) { |cntpre, g| cntpre + g.to.length }
+		}
+
 		# known, clean patterns
 		group_clean = proc {
 			group_columns[] or group_lines[true] or group_ifthen[true] or group_loop[] or group_or[]
@@ -299,7 +301,7 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 			group_lines[false] or group_ifthen[false] or group_halflines[] or group_other[]
 		}
 
-		nil while group_clean[] or group_unclean[]
+	       	nil while groups.length > 1 and (group_clean[] or trim_graph[] or group_unclean[])
 
 		@box.each { |b|
 			b.to = b.to.sort_by { |bt| bt.x }
