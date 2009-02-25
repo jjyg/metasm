@@ -372,14 +372,14 @@ class COFF
 					ptr = @cursection.encoded.ptr
 					id.imports.each { |i|
 						if i.name
-							name = i.name
+							name = new_label i.name
 						elsif i.ordinal
 							name = new_label "ord_#{id.libname}_#{i.ordinal}"
 						end
 						if name
 							r = Metasm::Relocation.new(Expression[name], :u32, @endianness)
 							@cursection.encoded.reloc[ptr] = r
-							@cursection.encoded.add_export 'iat_'+name, ptr, true
+							@cursection.encoded.add_export new_label('iat_'+name), ptr, true
 						end
 						ptr += iatlen
 					}
