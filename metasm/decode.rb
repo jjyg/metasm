@@ -305,7 +305,6 @@ class DecodedFunction
 	# addresses of instruction causing the function to return
 	attr_accessor :return_address
 	# a proc called for dynamic backtrace_binding generation
-	# XXX TODO handle propagation (eg GetProcAddress thunk)
 	attr_accessor :btbind_callback
 	# a proc called for dynamic backtracked_for
 	attr_accessor :btfor_callback

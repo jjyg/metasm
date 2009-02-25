@@ -831,6 +831,11 @@ class Ia32
 			break bind unless expr.kind_of? Indirection and expr.origin == origin
 			break bind unless expr.externals.reject { |e| e =~ /^autostackoffset_/ } == [:esp]
 
+			curfunc = dasm.function[funcaddr]
+			if curfunc.backtrace_binding and tk = curfunc.backtrace_binding[:thunk] and dasm.function[tk]
+				curfunc = dasm.function[tk]
+			end
+
 			# scan from calladdr for the probable parent function start
 			func_start = nil
 			dasm.backtrace_walk(true, calladdr, false, false, nil, maxdepth) { |ev, foo, h|
@@ -851,8 +856,8 @@ class Ia32
 			if off = @dasm_func_default_off[[dasm, calladdr]]
 				bind = bind.merge(:esp => Expression[:esp, :+, off])
 				break bind
-			elsif not dasm.function[funcaddr].btbind_callback
-				break dasm.function[funcaddr].backtrace_binding
+			elsif not curfunc.btbind_callback
+				break curfunc.backtrace_binding
 			end
 			e_expr = list.find { |e_expr|
 				# TODO cleanup this
@@ -896,8 +901,8 @@ class Ia32
 					puts "stackoff #{dasm.decoded[calladdr]} | #{Expression[func_start]} | #{expr} | #{e_expr} | #{off}" if dasm.debug_backtrace
 				else
 					puts "autostackoffset: found #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
-					dasm.function[funcaddr].btbind_callback = nil
-					dasm.function[funcaddr].backtrace_binding = bind
+					curfunc.btbind_callback = nil
+					curfunc.backtrace_binding = bind
 
 					# rebacktrace the return address, so that other unknown funcs that depend on us are solved
 					dasm.backtrace(Indirection[:esp, @size/8, origin], origin, :origin => origin)
