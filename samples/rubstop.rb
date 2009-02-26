@@ -286,10 +286,17 @@ class Rubstop < Metasm::PTrace32
 
 	def loadmap(mapfile)
 		# file fmt: addr type name eg 'c01001ba t setup_idt'
+		minaddr = maxaddr = nil
 		File.read(mapfile).each { |l|
 			addr, type, name = l.chomp.split
-			@symbols[addr.to_i(16)] = name
+			addr = addr.to_i(16)
+			minaddr = addr if not minaddr or minaddr > addr
+			maxaddr = addr if not maxaddr or maxaddr < addr
+			@symbols[addr] = name
 		}
+		if minaddr
+			@filemap[minaddr.to_s(16)] = [minaddr, maxaddr+1]
+		end
 	end
 
 	def scansyms

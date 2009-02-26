@@ -79,7 +79,7 @@ class Rubstop
 				end
 			end
 		}
-		log "send error (no ack)"
+		log "send error #{cmd.inspect} (no ack)"
 		false
 	end
 
@@ -117,8 +117,9 @@ class Rubstop
 		end
 		@io.write '+'
 
-		if buf =~ /^E..$/
-			log "error #{buf}"
+		if buf =~ /^E(..)$/
+			e = $1.to_i(16)
+			log "error #{e} (#{Metasm::PTrace32::ERRNO.index(e)})"
 			return
 		end
 		log "gdb_readresp: got #{buf[0, 64].inspect}#{'...' if buf.length > 64}" if $DEBUG
@@ -165,6 +166,7 @@ class Rubstop
 	def hex(buf) buf.unpack('H*').first end
 	# decode an rle hex-encoded buffer
 	def unhex(buf)
+		buf = buf[/^[a-fA-F0-9]*/]
 		buf = '0' + buf if buf.length % 1 == 1
 		[buf].pack('H*')
 	end
@@ -179,9 +181,18 @@ class Rubstop
 	def readregs
 		sync_regs
 		if buf = gdb_msg('g')
+			regs = unhex(unrle(buf))
+			if regs.length < GDBREGS.length*4
+				# retry once, was probably a response to something else
+				puts "bad regs size!" if $DEBUG
+				buf = gdb_msg('g')
+				regs = unhex(unrle(buf)) if buf
+				if not buf or regs.length < GDBREGS.length*4
+					raise "regs buffer recv is too short !"
+				end
+			end
 			@regs_dirty = false
-			regs = unhex(unrle(buf)).unpack('L*')
-			@regs_cache = Hash[GDBREGS.zip(regs)]
+			@regs_cache = Hash[GDBREGS.zip(regs.unpack('L*'))]
 		end
 		@curinstr = nil if @regs_cache['eip'] != @oldregs['eip']
 	end
@@ -372,9 +383,13 @@ class Rubstop
 
 	def gdb_setup
 		#gdb_msg('q', 'Supported')
-		#gdb_msg('?')
-		#gdb_msg('H', 'c-1')
-		#gdb_msg('q', 'C')
+		#gdb_msg('Hc', '-1')
+		#gdb_msg('qC')
+		if not gdb_msg('?')
+			log "nobody on the line, waiting for someone to wake up"
+			IO.select([@io], nil, nil, nil)
+			log "who's there ?"
+		end
 	end
 
 	def set_hwbp(type, addr, len=1, set=true)
@@ -511,10 +526,17 @@ class Rubstop
 
 	def loadmap(mapfile)
 		# file fmt: addr type name eg 'c01001ba t setup_idt'
+		minaddr = maxaddr = nil
 		File.read(mapfile).each { |l|
 			addr, type, name = l.chomp.split
-			@symbols[addr.to_i(16)] = name
+			addr = addr.to_i(16)
+			minaddr = addr if not minaddr or minaddr > addr
+			maxaddr = addr if not maxaddr or maxaddr < addr
+			@symbols[addr] = name
 		}
+		if minaddr
+			@filemap[minaddr.to_s(16)] = [minaddr, maxaddr+1]
+		end
 	end
 
 	def backtrace

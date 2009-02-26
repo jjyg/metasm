@@ -204,11 +204,40 @@ class LinDebug
 		$stdout.puts @promptlog.last
 	end
 
+	# optimize string to display to stdout
+	# currently only skips unchanged lines
+	# could also match end of lines (spaces), but would need to check for color codes etc
+	def optimize_screen(buf)
+	end
+
+	# display the text buffer screenlines to the screen, leaves the cursor at (cursx, cursy), converts cursor pos from 0-base to 1-base
+	# screenlines is a big text buffer with 1 line per tobeshown screen line (e.g. no Ansi cursor pos)
+	# screenlines must be screen wide
+	def display_screen(screenlines, cursx, cursy)
+
+		@oldscreenbuf ||= []
+		lines = screenlines.to_a
+		oldlines = @oldscreenbuf
+		@oldscreenbuf = lines
+		screenlines = lines.zip(oldlines).map { |l, ol| l == ol ? "\n" : l }.join
+
+		while screenlines[-1] == ?\n
+			screenlines.chop!
+		end
+		starty = 1
+		while screenlines[0] == ?\n
+			screenlines = screenlines[1..-1]
+			starty += 1
+		end
+
+		$stdout.write Ansi.set_cursor_pos(starty, 1) + screenlines + Ansi.set_cursor_pos(cursy+1, cursx+1)
+
+		$stdout.flush
+	end
+
 	def update
 		return if not @running
-		csy, csx = @console_height-1, @promptpos+2
-		$stdout.write Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt + Ansi.set_cursor_pos(csy, csx)
-		$stdout.flush
+		display_screen updateregs + updatedata + updatecode + updateprompt, @promptpos+1, @console_height-2
 	end
 
 	def updateregs
@@ -270,18 +299,21 @@ class LinDebug
 		if @rs.findfilemap(addr) == '???'
 			base = addr & 0xffff_f000
 			@noelfsig ||= {}	# cache elfmagic notfound
-			self.statusline = " scanning for elf header at #{'%08X' % base}"
-			128.times {
-				@statusline = " scanning for elf header at #{'%08X' % base}"
-				if not @noelfsig[base] and @rs[base, 4] == Metasm::ELF::MAGIC
-					@rs.loadsyms(base, base.to_s(16))
-					break
-				else
-					@noelfsig[base] = true	# XXX an elf may be mmaped here later..
-				end
-				base -= 0x1000
-			}
-			self.statusline = nil
+			if not @noelfsig[base]
+				self.statusline = " scanning for elf header at #{'%08X' % base}"
+				128.times {
+					@statusline = " scanning for elf header at #{'%08X' % base}"
+					if not @noelfsig[base] and @rs[base, 4] == Metasm::ELF::MAGIC
+						@rs.loadsyms(base, base.to_s(16))
+						break
+					else
+						@noelfsig[base] = true	# XXX an elf may be mmaped here later..
+					end
+					base -= 0x1000
+					break if base < 0
+				}
+				self.statusline = nil
+			end
 		end
 
 		text = ''
@@ -289,9 +321,7 @@ class LinDebug
 		title = @rs.findsymbol(addr)
 		pre  = [@console_width-100, 6].max
 		post = @console_width - (pre + title.length + 2)
-		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post)
-		text << Color[:normal]
-		text << "\n"
+		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post) << Color[:normal] << "\n"
 
 		cnt = @win_code_height
 		while (cnt -= 1) > 0
@@ -337,8 +367,7 @@ class LinDebug
 		title = @rs.findsymbol(addr)
 		pre  = [@console_width-100, 6].max
 		post = @console_width - (pre + title.length + 2)
-		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post)
-		text << Color[:normal]
+		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post) << Color[:normal] << "\n"
 
 		cnt = @win_data_height
 		while (cnt -= 1) > 0
@@ -374,7 +403,7 @@ class LinDebug
 			text << Ansi::ClearLineAfter << "\n"
 		}
 		text << ':' << @promptbuf << Ansi::ClearLineAfter << "\n"
-		text << Color[:status] << statusline.ljust(@console_width) << Color[:normal]
+		text << Color[:status] << statusline.chomp.ljust(@console_width) << Color[:normal]
 	end
 
 	def statusline
@@ -394,12 +423,14 @@ class LinDebug
 			@win_code_height = @console_height/2 - 4
 		end
 		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2) - 1
+		@oldscreenbuf = []
 		update
 	end
 
 	def log(*str)
 		str.each { |str|
 		raise str.inspect if not str.kind_of? ::String
+		str.chomp!
 		if str.length > @console_width
 			# word wrap
 			str.scan(/.{0,#@console_width}/) { |str| log str }
@@ -500,24 +531,34 @@ class LinDebug
 	end
 
 	def singlestep
+		self.statusline = ' target singlestepping...'
 		@rs.singlestep
 		updatecodeptr
+		@statusline = nil
 	end
 	def stepover
+		self.statusline = ' target running...'
 		@rs.stepover
 		updatecodeptr
+		@statusline = nil
 	end
 	def cont(*a)
+		self.statusline = ' target running...'
 		@rs.cont(*a)
 		updatecodeptr
+		@statusline = nil
 	end
 	def stepout
+		self.statusline = ' target running...'
 		@rs.stepout
 		updatecodeptr
+		@statusline = nil
 	end
 	def syscall
+		self.statusline = ' target running to next syscall...'
 		@rs.syscall
 		updatecodeptr
+		@statusline = nil
 	end
 
 	def main_loop_inner
@@ -713,7 +754,12 @@ class LinDebug
 		@command['singlestep'] = proc { |lex, int| singlestep }
 		@command['stepover']   = proc { |lex, int| stepover }
 		@command['stepout']    = proc { |lex, int| stepout }
-		@command['g'] = proc { |lex, int| @rs.bpx int[], true ; cont }
+		@command['g'] = proc { |lex, int|
+			target = int[]
+			@rs.singlestep if @rs.regs_cache['eip'] == target
+			@rs.bpx target, true
+			cont
+		}
 		@command['u'] = proc { |lex, int| @codeptr = int[] || break }
 		@command['has_pax'] = proc { |lex, int|
 			if tok = lex.readtok
@@ -834,6 +880,12 @@ end
 
 
 if $0 == __FILE__
+	require 'optparse'
+	filemap = nil
+	OptionParser.new { |opt|
+		opt.on('-m map', '--map filemap') { |f| filemap = f }
+	}.parse!(ARGV)
+
 	if not defined? Rubstop
 		if ARGV.first =~ /:/
 			stub = 'gdbclient'
@@ -843,5 +895,7 @@ if $0 == __FILE__
 		require File.join(File.dirname(__FILE__), stub)
 	end
 
-	LinDebug.new(Rubstop.new(ARGV.join(' '))).main_loop
+	rs = Rubstop.new(ARGV.join(' '))
+	rs.loadmap(filemap) if filemap
+	LinDebug.new(rs).main_loop
 end
