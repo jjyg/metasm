@@ -172,6 +172,11 @@ class PTrace32
 		faccessat pselect6 ppoll unshare set_robust_list get_robust_list splice sync_file_range tee vmsplice
 		move_pages getcpu epoll_pwait utimensat signalfd timerfd eventfd].inject({}) { |h, sc| h.update sc => h.length }
 
+	# include/asm-generic/errno-base.h
+	ERRNO = %w[ERR0 EPERM ENOENT ESRCH EINTR EIO ENXIO E2BIG ENOEXEC EBADF ECHILD EAGAIN ENOMEM EACCES EFAULT
+		ENOTBLK EBUSY EEXIST EXDEV ENODEV ENOTDIR EISDIR EINVAL ENFILE EMFILE ENOTTY ETXTBSY EFBIG ENOSPC
+		ESPIPE EROFS EMLINK EPIPE EDOM ERANGE].inject({}) { |h, e| h.update e => h.length }
+
 	def ptrace(req, pid, addr, data)
 		addr = [addr].pack('L').unpack('l').first if addr >= 0x8000_0000
 		Kernel.syscall(26, req, pid, addr, data)
