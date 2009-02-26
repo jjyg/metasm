@@ -145,6 +145,20 @@ class LinDebug
 		:normal => Ansi.color(:white, :black, :normal), :hilight => Ansi.color(:blue, :white, :normal),
 		:status => Ansi.color(:black, :cyan)}
 
+	# yields but keep from reentring (return defretval in this case)
+	def once(name, defretval=nil)
+		@once ||= {}
+		if not @once[name]
+			@once[name] = true
+			begin
+				defretval = yield
+			ensure
+				@once[name] = false
+			end
+		end
+		defretval
+	end
+
 	attr_accessor :dataptr, :codeptr, :rs, :promptlog, :command
 	def initialize(rs)
 		@rs = rs
@@ -191,17 +205,17 @@ class LinDebug
 	end
 
 	def update
-		return if @updating ||= false or not @running
-		@updating = true
-		begin
-			csy, csx = @console_height-1, @promptpos+2
-			$stdout.write Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt + Ansi.set_cursor_pos(csy, csx)
-		ensure
-			@updating = false
- 		end
+		return if not @running
+		csy, csx = @console_height-1, @promptpos+2
+		$stdout.write Ansi.set_cursor_pos(0, 0) + updateregs + updatedata + updatecode + updateprompt + Ansi.set_cursor_pos(csy, csx)
+		$stdout.flush
 	end
 
 	def updateregs
+		once(:updateregs, "\n\n") { _updateregs }
+	end
+
+	def _updateregs
 		text = ''
 		text << ' '
 		x = 1
@@ -240,6 +254,10 @@ class LinDebug
 	end
 
 	def updatecode
+		once(:updatecode, "...\n"*@win_code_height) { _updatecode }
+	end
+
+	def _updatecode
 		if @codeptr
 			addr = @codeptr
 		elsif @rs.oldregs['eip'] and @rs.oldregs['eip'] < @rs.regs_cache['eip'] and @rs.oldregs['eip'] + 8 >= @rs.regs_cache['eip']
@@ -251,14 +269,19 @@ class LinDebug
 
 		if @rs.findfilemap(addr) == '???'
 			base = addr & 0xffff_f000
-			8.times {
-				sig = @rs[base, 4]
-				if sig == Metasm::ELF::MAGIC
+			@noelfsig ||= {}	# cache elfmagic notfound
+			self.statusline = " scanning for elf header at #{'%08X' % base}"
+			128.times {
+				@statusline = " scanning for elf header at #{'%08X' % base}"
+				if not @noelfsig[base] and @rs[base, 4] == Metasm::ELF::MAGIC
 					@rs.loadsyms(base, base.to_s(16))
 					break
+				else
+					@noelfsig[base] = true	# XXX an elf may be mmaped here later..
 				end
 				base -= 0x1000
 			}
+			self.statusline = nil
 		end
 
 		text = ''
@@ -302,6 +325,10 @@ class LinDebug
 	end
 
 	def updatedata
+		once(:updatedata, "...\n"*@win_data_height) { _updatedata }
+	end
+
+	def _updatedata
 		@dataptr &= 0xffff_ffff
 		addr = @dataptr
 
@@ -331,6 +358,10 @@ class LinDebug
 	end
 
 	def updateprompt
+		once(:updateprompt, "\n"*@win_prpt_height) { _updateprompt }
+	end
+
+	def _updateprompt
 		text = ''
 		text << Color[:border] << Ansi.hline(@console_width) << Color[:normal] << "\n"
 
@@ -347,7 +378,11 @@ class LinDebug
 	end
 
 	def statusline
-		'    Enter a command (help for help)'
+		@statusline ||= '    Enter a command (help for help)'
+	end
+	def statusline=(s)
+		@statusline = s
+		update
 	end
 
 	def resize

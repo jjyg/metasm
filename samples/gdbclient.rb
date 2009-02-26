@@ -43,9 +43,9 @@ end
 
 class Rubstop
 	EFLAGS = {0 => 'c', 2 => 'p', 4 => 'a', 6 => 'z', 7 => 's', 9 => 'i', 10 => 'd', 11 => 'o'}
-	GDBREGS = %w[eax ecx edx ebx esp ebp esi edi eip eflags cs ss ds es fs gs]
+	GDBREGS = %w[eax ecx edx ebx esp ebp esi edi eip eflags cs ss ds es fs gs]	# XXX [77] = 'orig_eax'
 	# define accessors for registers
-	GDBREGS.each { |reg|
+	GDBREGS.compact.each { |reg|
 		define_method(reg) { regs_cache[reg] }
 		define_method(reg + '=') { |v| regs_cache[reg] = v ; regs_dirty }
 	}
@@ -257,7 +257,17 @@ class Rubstop
 		@mem.invalidate
 	end
 
+	def quiet
+		@quiet = true
+		begin
+			yield
+		ensure
+			@quiet = false
+		end
+	end
+
 	def log_stopped(msg)
+		return if @quiet ||= false
 		case msg[0]
 		when ?T
 			sig = [msg[1, 2]].pack('H*')[0]
@@ -306,15 +316,17 @@ class Rubstop
 		if i and (i.opname == 'call' or (i.prefix and i.prefix[:rep]))
 			eaddr = eip + curinstr.bin_length
 			bpx eaddr, true
-			cont
+			quiet { cont }
 		else
 			singlestep
 		end
 	end
 
 	def stepout
-		stepover until curinstr.opcode.name == 'ret'
+		stepover until curinstr and curinstr.opcode.name == 'ret'
 		singlestep
+	rescue Interrupt
+		log 'interrupted'
 	end
 
 	def bpx(addr, singleshot=false)
@@ -367,7 +379,7 @@ class Rubstop
 
 	def set_hwbp(type, addr, len=1, set=true)
 		set = (set ? 'Z' : 'z')
-		type = { 'r' => '3', 'w' => '2', 'x' => '1' }[type] || raise("invalid hwbp type #{type}")
+		type = { 'r' => '3', 'w' => '2', 'x' => '1', 's' => '0' }[type] || raise("invalid hwbp type #{type}")
 		gdb_msg(set, type << ',' << hexl(addr) << ',' << hexl(len))
 		true
 	end
@@ -395,6 +407,7 @@ class Rubstop
 		return if @loadedsyms[name] or self[baseaddr, 4] != "\x7fELF"
 		@loadedsyms[name] = true
 
+		set_status " loading symbols from #{name}..."
 		e = Metasm::LoadedELF.load self[baseaddr, 0x100_0000]
 		e.load_address = baseaddr
 		begin
@@ -405,6 +418,8 @@ class Rubstop
 			($!.backtrace - caller).each { |l| log l.chomp }
 			@filemap[baseaddr.to_s(16)] = [baseaddr, baseaddr+0x1000]
 			return
+		rescue Interrupt
+			log "interrupted"
 		end
 
 		if e.tag['SONAME']
@@ -432,6 +447,7 @@ class Rubstop
 		if e.header.type == 'EXEC' and e.header.entry >= baseaddr and e.header.entry < baseaddr + vlen
 			@symbols[e.header.entry] = 'entrypoint'
 		end
+		set_status nil
 		log "loaded #{@symbols.length-oldsyms} symbols from #{name} at #{'%08x' % baseaddr}"
 	end
 
@@ -516,6 +532,18 @@ class Rubstop
 	def log(s)
 		@logger ||= $stdout
 		@logger.puts s
+	end
+
+	# set a temporary status info (nil for default value)
+	def set_status(s)
+		@logger ||= $stdout
+		if @logger != $stdout
+			@logger.statusline = s
+		else
+			s ||= ' '*72
+			@logger.print s + "\r"
+			@logger.flush
+		end
 	end
 
 	def checkbp ; end

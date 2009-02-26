@@ -235,6 +235,7 @@ class Rubstop < Metasm::PTrace32
 		return if @loadedsyms[name] or self[baseaddr, 4] != "\x7fELF"
 		@loadedsyms[name] = true
 
+		set_status " loading symbols from #{name}..."
 		e = Metasm::LoadedELF.load self[baseaddr, 0x100_0000]
 		e.load_address = baseaddr
 		begin
@@ -272,6 +273,7 @@ class Rubstop < Metasm::PTrace32
 		if e.header.type == 'EXEC'
 			@symbols[e.header.entry] = 'entrypoint'
 		end
+		set_status nil
 		log "loaded #{@symbols.length-oldsyms} symbols from #{name} at #{'%08x' % baseaddr}"
 	end
 
@@ -324,6 +326,18 @@ class Rubstop < Metasm::PTrace32
 	def log(s)
 		@logger ||= $stdout
 		@logger.puts s
+	end
+
+	# set a temporary status info (nil for default value)
+	def set_status(s)
+		@logger ||= $stdout
+		if @logger != $stdout
+			@logger.statusline = s
+		else
+			s ||= ' '*72
+			@logger.print s + "\r"
+			@logger.flush
+		end
 	end
 end
 
