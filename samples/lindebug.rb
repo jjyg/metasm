@@ -299,7 +299,7 @@ class LinDebug
 		if @rs.findfilemap(addr) == '???'
 			base = addr & 0xffff_f000
 			@noelfsig ||= {}	# cache elfmagic notfound
-			if not @noelfsig[base]
+			if not @noelfsig[base] and base < 0xc000_0000
 				self.statusline = " scanning for elf header at #{'%08X' % base}"
 				128.times {
 					@statusline = " scanning for elf header at #{'%08X' % base}"

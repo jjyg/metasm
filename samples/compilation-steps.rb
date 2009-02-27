@@ -1,6 +1,6 @@
 require 'metasm'
 
-src = <<EOS
+src = ARGV.empty? ? <<EOS : ARGF.read
 void foo(int);
 void bla()
 {
