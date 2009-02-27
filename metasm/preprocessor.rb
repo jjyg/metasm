@@ -999,8 +999,9 @@ class Preprocessor
 			when 'include_dir', 'include_path'
 				nil while dir = readtok and dir.type == :space
 				raise cmd, 'qstring expected' if not dir or dir.type != :quoted
-				raise cmd, 'invalid path' if not ::File.directory? dir.value
-				@include_search_path.unshift dir.value
+				dir = ::File.expand_path dir.value
+				raise cmd, 'invalid path' if not ::File.directory? dir
+				@include_search_path.unshift dir
 
 			when 'push_macro', 'pop_macro'
 				@pragma_macro_stack ||= []
