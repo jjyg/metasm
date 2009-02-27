@@ -35,8 +35,9 @@ else
 #endif
 EOS
 end
+stub << "#line 0\n"
 
 # to trace only pp macros (using eg an asm source), use Preprocessor#factorize instead
 
-puts Ia32.new.new_cparser.factorize(stub + File.read(file))
+puts Ia32.new.new_cparser.factorize(stub + File.read(file), file)
 

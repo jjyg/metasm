@@ -2225,9 +2225,9 @@ EOH
 
 	class Parser
 		# returns a big string containing all definitions from headers used in the source (including macros)
-		def factorize(src)
+		def factorize(*a)
 			factorize_init
-			parse(src)
+			parse(*a)
 			raise @lexer.readtok || self, 'eof expected' if not @lexer.eos?
 			factorize_final
 		end

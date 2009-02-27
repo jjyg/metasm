@@ -863,7 +863,7 @@ class CCompiler < C::Compiler
 					instr 'sub', esp, typesize[t]
 					instr 'fstp', ModRM.new(@cpusz, (t == :longdouble ? 80 : (t == :double ? 64 : 32)), nil, nil, esp, nil)
 				end
-			when Union
+			when C::Union
 				raise 'want a modrm ! ' + a.inspect if not a.kind_of? ModRM
 				al = typesize[:ptr]
 				argsz = (sizeof(arg) + al - 1) / al * al
