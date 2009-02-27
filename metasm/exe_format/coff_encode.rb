@@ -879,6 +879,12 @@ class COFF
 			@optheader.image_base = base
 			check_eol[]
 
+		when '.subsystem'
+			@lexer.skip_space
+			raise instr if not tok = @lexer.readtok
+			@optheader.subsystem = tok.raw
+			check_eol[]
+
 		else super
 		end
 	end
