@@ -430,7 +430,7 @@ class LinDebug
 	def log(*str)
 		str.each { |str|
 		raise str.inspect if not str.kind_of? ::String
-		str.chomp!
+		str = str.chomp
 		if str.length > @console_width
 			# word wrap
 			str.scan(/.{0,#@console_width}/) { |str| log str }
