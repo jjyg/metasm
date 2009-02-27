@@ -349,6 +349,9 @@ class CCompiler < C::Compiler
 				c_cexpr_inner_l(expr)
 			end
 		end
+	rescue
+		raise if caller[1...-1].grep(/c_cexpr_inner/).first
+		raise $!.message + " (#{expr})"
 	end
 
 	# compile a CExpression with no lexpr

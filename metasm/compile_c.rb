@@ -198,6 +198,7 @@ module C
 			block.statements.each { |stmt|
 				case stmt
 				when Declaration
+					next if stmt.var.type.kind_of? Function
 					off = c_reserve_stack_var(stmt.var, off)
 					@state.offset[stmt.var] = off
 				when Block

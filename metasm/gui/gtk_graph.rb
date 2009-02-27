@@ -274,6 +274,7 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 			align_vt[g1]
 			g1 = merge_groups[g1]
 			g1.w += 128 ; g1.x -= 64
+			next if g2.empty?
 			align_vt[g2]
 			g2 = merge_groups[g2]
 			g2.w += 128 ; g2.x -= 64

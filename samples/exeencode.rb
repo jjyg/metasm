@@ -41,9 +41,9 @@ else
 end
 
 if type == 'c'
-	exe = $execlass.compile_c($cpu, src)
+	exe = $execlass.compile_c($cpu, src, file)
 else
-	exe = $execlass.assemble($cpu, src)
+	exe = $execlass.assemble($cpu, src, file)
 end
 exe.encode_file(outfilename)
 
