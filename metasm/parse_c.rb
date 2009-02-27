@@ -924,7 +924,7 @@ EOH
 				raise tok if not oldtype.kind_of? Pointer
 				hasvoid = true if (t = newtype.type.untypedef).kind_of? BaseType and t.name == :void
 				hasvoid = true if (t = oldtype.type.untypedef).kind_of? BaseType and t.name == :void	# struct foo *f = NULL;
-				if strict or not hasvoid
+				if strict and not hasvoid
 					check_compatible_type tok, oldtype.type, newtype.type, strict, checked
 				end
 			when Union
