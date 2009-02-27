@@ -564,7 +564,7 @@ class COFF
 			case target
 			when 'exe';  %w[EXECUTABLE_IMAGE]
 			when 'dll';  %w[EXECUTABLE_IMAGE DLL]
-			when 'kmod'; %w[EXECUTABLE_IMAGE]
+			when 'kmod', 'sys'; %w[EXECUTABLE_IMAGE]
 			when 'obj';  []
 			end
 		tmp << 'x32BIT_MACHINE'		# XXX
