@@ -381,6 +381,7 @@ class Ia32
 						ret[r] = Indirection[Expression[:esp, :+, st_off].reduce, opsz[di]/8, di.address]
 						st_off += opsz[di]/8
 					}
+					ret[:esp] = Expression[:esp, :+, st_off]	# esp is not popped
 					ret
 				}
 			when 'call'

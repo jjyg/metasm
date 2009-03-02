@@ -135,6 +135,8 @@ class LinDebug
 
 	def fini_screen
 		Ansi.set_term_canon(false)
+		$stdout.write Ansi.color(:normal, :reset)
+		$stdout.flush
 	end
 
 	def win_data_start; 2 end
