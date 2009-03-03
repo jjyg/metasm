@@ -249,27 +249,27 @@ end
 		when :i;        arg.kind_of? Expression
 		when :imm_val1; arg.kind_of? Expression and arg.reduce == 1
 		when :imm_val3; arg.kind_of? Expression and arg.reduce == 3
-		when :reg_eax;  arg.class == Reg     and arg.val == 0
-		when :reg_cl;   arg.class == Reg     and arg.val == 1 and arg.sz == 8
-		when :reg_dx;   arg.class == Reg     and arg.val == 2 and arg.sz == 16
-		when :seg3;     arg.class == SegReg
-		when :seg3A;    arg.class == SegReg  and arg.val > 3
-		when :seg2;     arg.class == SegReg  and arg.val < 4
-		when :seg2A;    arg.class == SegReg  and arg.val < 4 and arg.val != 1
-		when :eeec;     arg.class == CtrlReg
-		when :eeed;     arg.class == DbgReg
-		when :modrmA;   arg.class == ModRM
-		when :mrm_imm;  arg.class == ModRM   and not arg.s and not arg.i and not arg.b
-		when :farptr;   arg.class == Farptr
-		when :regfp;    arg.class == FpReg
-		when :regfp0;   arg.class == FpReg   and (arg.val == nil or arg.val == 0)	# XXX optional argument
-		when :modrmmmx; arg.class == ModRM   or (arg.class == SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx])))
-		when :regmmx;   arg.class == SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx]))
-		when :modrmxmm; arg.class == ModRM   or (arg.class == SimdReg and arg.sz == 128)
-		when :regxmm;   arg.class == SimdReg and arg.sz == 128
+		when :reg_eax;  arg.kind_of? Reg     and arg.val == 0
+		when :reg_cl;   arg.kind_of? Reg     and arg.val == 1 and arg.sz == 8
+		when :reg_dx;   arg.kind_of? Reg     and arg.val == 2 and arg.sz == 16
+		when :seg3;     arg.kind_of? SegReg
+		when :seg3A;    arg.kind_of? SegReg  and arg.val > 3
+		when :seg2;     arg.kind_of? SegReg  and arg.val < 4
+		when :seg2A;    arg.kind_of? SegReg  and arg.val < 4 and arg.val != 1
+		when :eeec;     arg.kind_of? CtrlReg
+		when :eeed;     arg.kind_of? DbgReg
+		when :modrmA;   arg.kind_of? ModRM
+		when :mrm_imm;  arg.kind_of? ModRM   and not arg.s and not arg.i and not arg.b
+		when :farptr;   arg.kind_of? Farptr
+		when :regfp;    arg.kind_of? FpReg
+		when :regfp0;   arg.kind_of? FpReg   and (arg.val == nil or arg.val == 0)	# XXX optional argument
+		when :modrmmmx; arg.kind_of? ModRM   or (arg.kind_of? SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx])))
+		when :regmmx;   arg.kind_of? SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx]))
+		when :modrmxmm; arg.kind_of? ModRM   or (arg.kind_of? SimdReg and arg.sz == 128)
+		when :regxmm;   arg.kind_of? SimdReg and arg.sz == 128
 		when :i8, :u8, :u16
-			arg.kind_of? Expression
-			# and Expression.in_range?(arg, spec) != false	# true or nil allowed
+			arg.kind_of? Expression and
+			(o.props[:setip] or Expression.in_range?(arg, spec) != false)	# true or nil allowed
 			# jz 0x28282828 may fit in :i8 depending on instr addr
 		else raise EncodeError, "Internal error: unknown argument specification #{spec.inspect}"
 		end

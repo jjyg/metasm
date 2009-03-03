@@ -12,7 +12,7 @@ class ARM
 	def parse_arg_valid?(op, sym, arg)
 		# special case for lw reg, imm32(reg) ? (pseudo-instr, need to convert to 'lui t0, up imm32  ori t0 down imm32  add t0, reg  lw reg, 0(t0)
 		case sym
-		when :rs, :rt, :rd;   arg.class == Reg
+		when :rs, :rt, :rd; arg.kind_of? Reg
 		end
 	end
 
