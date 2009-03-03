@@ -173,27 +173,14 @@ class Ia32
 		}.pack 'C*'
 		pfx << op.props[:needpfx] if op.props[:needpfx]
 
-		# opsize override (:w field)
 		if op.name == 'movsx' or op.name == 'movzx'
-			case [i.args[0].sz, i.args[1].sz]
-			when [32, 16]
-				set_field[base, :w, 1]
-				pfx << 0x66 if @size == 16
-			when [16, 16]
-				set_field[base, :w, 1]
-				pfx << 0x66 if @size == 32
-			when [32, 8]
-				pfx << 0x66 if @size == 16
-			when [16, 8]
-				pfx << 0x66 if @size == 32
-			end
-
+			pfx << 0x66 if @size == 48-i.args[0].sz
 		else
 			opsz = op.props[:argsz]
 			oi.each { |oa, ia|
 				case oa
 				when :reg, :reg_eax, :modrm, :modrmA, :mrm_imm
-					raise EncodeError, "Incompatible arg size in #{i}" if (ia.sz and opsz and opsz != ia.sz) or (ia.sz == 8 and not op.fields[:w] and opsz != 8)
+					raise EncodeError, "Incompatible arg size in #{i}" if ia.sz and opsz and opsz != ia.sz
 					opsz = ia.sz
 				end
 			}
@@ -201,8 +188,6 @@ class Ia32
 			if op.props[:opsz] and @size == 48 - op.props[:opsz]
 				opsz = op.props[:opsz]
 			end
-
-			set_field[base, :w, 1] if op.fields[:w] and opsz != 8
 		end
 		opsz ||= @size
 

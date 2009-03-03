@@ -785,6 +785,16 @@ class Ia32
 			addop_post op
 
 			return
+		elsif wf = op.fields.delete(:w)
+			# hardcode the bit
+			dop = dupe[op]
+			dop.props[:argsz] = 8
+			addop_post dop
+
+			op.bin[wf[0]] |= 1 << wf[1]
+			addop_post op
+
+			return
 		elsif sf = op.fields.delete(:s)
 			# add explicit choice versions, with lower precedence (so that disassembling will return the general version)
 			# eg "jmp", "jmp.i8", "jmp.i"

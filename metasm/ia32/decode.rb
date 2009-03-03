@@ -166,8 +166,8 @@ class Ia32
 			end
 		}
 
-		if field_val[:w] == 0
-			opsz = 8
+		if op.props[:argsz]
+			opsz = op.props[:argsz]
 		elsif pfx[:opsz]
 			opsz = 48 - @size
 		else
@@ -196,7 +196,7 @@ class Ia32
 			when :i; Expression[edata.decode_imm("#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym, @endianness)]
 
 			when :mrm_imm;  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx[:seg]
-			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, (op.props[:argsz] || opsz), pfx[:seg]
+			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx[:seg]
 			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx[:seg], SimdReg
 			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg
 

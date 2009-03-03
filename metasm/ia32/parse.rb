@@ -224,28 +224,28 @@ end
 
 	# check if the argument matches the opcode's argument spec
 	def parse_arg_valid?(o, spec, arg)
+		if o.name ==  'movsx' or o.name == 'movzx'
+			if not arg.kind_of? Reg and not arg.kind_of? ModRM
+ 				return
+			elsif not arg.sz
+				puts "ambiguous arg size for indirection in #{o.name}" if $VERBOSE
+				return
+			elsif spec == :reg	# reg=dst, modrm=src (smaller)
+				return (arg.kind_of? Reg and arg.sz >= 16)
+			elsif o.props[:argsz]
+				return arg.sz == o.props[:argsz]
+			else
+				return arg.sz <= 16
+			end
+		end
+
 		if s = o.props[:argsz] and (arg.kind_of? Reg or arg.kind_of? ModRM)
 			return arg.sz == s
 		end
 
 		case spec
-		when :reg
-			arg.class == Reg and
-				if not o.fields[:w] or o.name == 'movsx' or o.name == 'movzx'
-					# we know the prototype of movsx: :reg is the large param
-					# no al/bl/bh/etc allowed
-					arg.sz >= 16
-				else true
-				end
-		when :modrm
-			(arg.class == ModRM   or arg.class == Reg) and
-				if not o.fields[:w]
-					!arg.sz or arg.sz >= 16
-				elsif o.name == 'movsx' or o.name == 'movzx'
-					# we know the prototype of movsx: :modrm is the small param
-					!arg.sz or arg.sz <= 16
-				else true
-				end
+		when :reg; arg.kind_of? Reg
+		when :modrm; (arg.kind_of? ModRM or arg.kind_of? Reg) and (!arg.sz or arg.sz >= 16)
 		when :i;        arg.kind_of? Expression
 		when :imm_val1; arg.kind_of? Expression and arg.reduce == 1
 		when :imm_val3; arg.kind_of? Expression and arg.reduce == 3
