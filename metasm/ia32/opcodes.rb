@@ -273,8 +273,8 @@ class Ia32
 		addop('fld', [0xDB, 5<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 80 }
 		addop 'fld', [0xD9, 0xC0], :regfp
 
-		addop('fldcw',  [0xD9, 5<<8], :modrmA) { |o| o.props[:argsz] = 16 }
-		addop 'fldenv', [0xD9, 4<<8], :modrmA
+		addop('fldcw',  [0xD9, 5<<3], :modrmA) { |o| o.props[:argsz] = 16 }
+		addop 'fldenv', [0xD9, 4<<3], :modrmA
 		addop 'fld1',   [0xD9, 0xE8]
 		addop 'fldl2t', [0xD9, 0xE9]
 		addop 'fldl2e', [0xD9, 0xEA]
