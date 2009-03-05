@@ -14,11 +14,12 @@ def self.const_missing(c, fallback=nil)
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',
 		'UniversalBinary' => 'MachO', 'COFFArchive' => 'COFF',
 		'PTrace32' => 'LinOS', 'GNUExports' => 'LinOS',
+		'LoadedELF' => 'ELF', 'LoadedPE' => 'PE',
 		'LinuxRemoteString' => 'LinOS',
 		'WinAPI' => 'WinOS', 'WindowsExports' => 'WinOS',
 		'WindowsRemoteString' => 'WinOS', 'WinDbg' => 'WinOS',
 		'VirtualFile' => 'OS', 'VirtualString' => 'OS',
-		'EncodedData' => 'Expression',
+		'EncodedData' => 'Expression', 'ExpressionType' => 'Expression',
 	}[c.to_s] || c.to_s
 
 	files = {
@@ -33,6 +34,7 @@ def self.const_missing(c, fallback=nil)
 		'GtkGui' => 'gui/gtk',
 		'OS' => 'os/main',
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
+		'Preprocessor' => 'preprocessor',
 		'Disassembler' => 'decode', 'Expression' => ['main', 'encode', 'decode'],
 	}[cst]
 
@@ -57,7 +59,11 @@ end
 class << Object
 alias premetasm_const_missing const_missing
 def const_missing(c)
-	if name =~ /^Metasm::/ or ancestors.include? Metasm	# RHAAAAAAAAAAAAA
+	# RHAAAAAAAAAAA
+	# we want Metasm.const_missing to be used only for classes in the Metasm module
+	# so either a subclass (eg Metasm::PE => #name starts with 'Metasm::')
+	# or the Metasm module itself, when it is included elsewhere (ancestors check)
+	if name =~ /^Metasm::/ or ancestors.include? Metasm
 		Metasm.const_missing(c, method(:premetasm_const_missing))
 	else
 		premetasm_const_missing(c)
