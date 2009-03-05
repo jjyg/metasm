@@ -401,7 +401,14 @@ class COFF
 			@certificates = []
 			@cursection = self
 			@encoded.ptr = ct[0]
-			(ct[1]/8).times { @certificates << @encoded.data[decode_word, decode_word] }
+			off_end = ct[0]+ct[1]
+			while @encoded.ptr < off_end
+				certlen = decode_word
+				certrev = decode_half
+				certtype = decode_half
+				certdat = @encoded.read(certlen)
+				@certificates << [certrev, certtype, certdat]
+			end
 		end
 	end
 
