@@ -25,7 +25,7 @@ def self.execlass_from_signature(raw)
 end
 def self.orshellcode(cpu)
 	# here we create an anonymous subclass of AutoExe whose #exe_from_sig is patched to return a Shellcode if no signature is recognized (instead of raise()ing)
-	c = Class.new(self)
+	c = ::Class.new(self)
 	# yeeehaa
 	class << c ; self ; end.send(:define_method, :execlass_from_signature) { |raw|
 		begin

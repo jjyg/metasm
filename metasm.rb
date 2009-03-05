@@ -7,9 +7,8 @@
 Metasmdir = File.dirname(__FILE__)
 
 module Metasm
-
-def const_missing(c) Metasm.const_missing(c) end
-def self.const_missing(c)
+def self.const_missing(c, fallback=nil)
+	#puts "const_missing #{c.inspect}"
 	# constant defined in the same file as another
 	cst = {
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',
@@ -37,9 +36,10 @@ def self.const_missing(c)
 		'Disassembler' => 'decode', 'Expression' => ['main', 'encode', 'decode'],
 	}[cst]
 
-	return super if not files	# XXX does it work if another module included defines const_missing?
+	return(fallback ? fallback[c] : super(c)) if not files
 
 	files = [files] if files.kind_of? ::String
+	#puts "autorequire #{files.join(', ')}"
 
 	# temporarily put the current file directory in the ruby include path
 	if not $:.include? Metasmdir
@@ -51,10 +51,16 @@ def self.const_missing(c)
 
 	const_get c
 end
+end
 
-# without this, include Metasm => const_missing magick doesn't work anymore
-# this will probably break x.const_missing..
-def self.included(x)
-	x.class_eval 'def self.const_missing(c) Metasm.const_missing(c) end'
+# needed for subclasses (e.g. Metasm::PE, to avoid Metasm::PE::Ia32: const not found)
+class << Object
+alias premetasm_const_missing const_missing
+def const_missing(c)
+	if name =~ /^Metasm::/ or ancestors.include? Metasm	# RHAAAAAAAAAAAAA
+		Metasm.const_missing(c, method(:premetasm_const_missing))
+	else
+		premetasm_const_missing(c)
+	end
 end
 end
