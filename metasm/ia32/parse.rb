@@ -239,13 +239,15 @@ end
 			end
 		end
 
+		cond = true
 		if s = o.props[:argsz] and (arg.kind_of? Reg or arg.kind_of? ModRM)
-			return arg.sz == s
+			cond = (arg.sz == s)
 		end
 
+		cond and
 		case spec
 		when :reg; arg.kind_of? Reg
-		when :modrm; (arg.kind_of? ModRM or arg.kind_of? Reg) and (!arg.sz or arg.sz >= 16)
+		when :modrm; (arg.kind_of? ModRM or arg.kind_of? Reg) and (!arg.sz or arg.sz >= 16 or o.props[:argsz])
 		when :i;        arg.kind_of? Expression
 		when :imm_val1; arg.kind_of? Expression and arg.reduce == 1
 		when :imm_val3; arg.kind_of? Expression and arg.reduce == 3
