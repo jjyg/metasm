@@ -480,12 +480,32 @@ class Expression < ExpressionType
 				l.send(@op, r)
 			end
 
-		# shortcircuit
-		elsif l == 0 and @op == :'&&'
-			0
-		elsif l.kind_of?(::Numeric) and l != 0 and @op == :'||'
-			1
-
+		elsif @op == :'&&'
+			if l == 0	# shortcircuit eval
+				0
+			elsif l == 1
+				Expression[r, :'!=', 0].reduce_rec
+			elsif r == 0	# (no sideeffects) && 0 => 0
+				sideeffect = proc { |e|
+					if e.kind_of? Expression
+						not [:+, :-, :*, :/, :&, :|, :^, :>, :<, :>>, :<<, :'==', :'!=', :<=, :>=, :'&&', :'||'].include?(e.op) or
+						sideeffect[e.lexpr] or sideeffect[e.rexpr]
+					elsif e.kind_of? ExpressionType
+						true	# fail safe
+					else
+						false
+					end
+				}
+				0 if not sideeffect[l]
+			end
+		elsif @op == :'||'
+			if l.kind_of? ::Numeric and l != 0	# shortcircuit eval
+				1
+			elsif l == 0
+				Expression[r, :'!=', 0].reduce_rec
+			elsif r == 0
+				Expression[l, :'!=', 0].reduce_rec
+			end
 		elsif @op == :>> or @op == :<<
 			if l == 0; 0
 			elsif r == 0; l
@@ -502,10 +522,14 @@ class Expression < ExpressionType
 				Expression[r.lexpr, op, r.rexpr].reduce_rec
 			end
 		elsif @op == :==
-			if r == 0 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
+			if l == r; 1
+			elsif r == 0 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
 				Expression[l.lexpr, op, l.rexpr].reduce_rec
 			elsif r == 1 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
 				l
+			end
+		elsif @op == :'!='
+			if l == r; 0
 			end
 		elsif @op == :^
 			if l == :unknown or r == :unknown; :unknown
