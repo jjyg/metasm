@@ -501,6 +501,12 @@ class Expression < ExpressionType
 			if r.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[r.op]
 				Expression[r.lexpr, op, r.rexpr].reduce_rec
 			end
+		elsif @op == :==
+			if r == 0 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
+				Expression[l.lexpr, op, l.rexpr].reduce_rec
+			elsif r == 1 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
+				l
+			end
 		elsif @op == :^
 			if l == :unknown or r == :unknown; :unknown
 			elsif l == 0; r
@@ -566,6 +572,13 @@ class Expression < ExpressionType
 			elsif r == 1; l
 			elsif r.kind_of? Integer; Expression[r, @op, l].reduce_rec
 			elsif r.kind_of? Expression and r.op == @op; Expression[[l, @op, r.lexpr], @op, r.rexpr].reduce_rec
+			end
+		elsif @op == :/
+			if r == 0
+			elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :+ and l.rexpr.kind_of? Integer and l.rexpr % r == 0
+				Expression[[l.lexpr, :/, r], :+, l.rexpr/r].reduce_rec
+			elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :* and l.lexpr % r == 0
+				Expression[l.lexpr/r, :*, l.rexpr].reduce_rec
 			end
 		elsif @op == :-
 			if l == :unknown or r == :unknown; :unknown
