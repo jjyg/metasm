@@ -27,6 +27,7 @@ OptionParser.new { |opt|
 	opt.on('--custom <hookfile>', 'eval a ruby script hookfile') { |h| (opts[:hookfile] ||= []) << h }
 	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--benchmark') { opts[:benchmark] = true }
+	opt.on('--decompile') { opts[:decompile] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
 }.parse!(ARGV)
@@ -70,14 +71,24 @@ begin
 rescue Interrupt
 	puts $!, $!.backtrace
 end
-
 t2 = Time.now if opts[:benchmark]
+
+if opts[:decompile]
+	dcmp = Decompiler.new(dasm)
+	dasm.entrypoints.each { |ep|
+		dcmp.decompile_func(ep)
+	}
+	tdc = Time.now if opts[:benchmark]
+end
+
 # output
 if opts[:outfile]
 	File.open(opts[:outfile], 'w') { |fd|
+		fd.puts dcmp.c_parser if opts[:decompile]
 		dasm.dump(!opts[:nodata]) { |l| fd.puts l }
 	}
 else
+	puts dcmp.c_parser if opts[:decompile]
 	dasm.dump(!opts[:nodata])
 end
 
@@ -93,4 +104,4 @@ todate = proc { |f|
 	end
 }
 
-puts "durations\n load   #{todate[t1-t0]}\n dasm   #{todate[t2-t1]}\n output #{todate[t3-t2]}\n total  #{todate[t3-t0]}" if opts[:benchmark]
+puts "durations\n load   #{todate[t1-t0]}\n dasm   #{todate[t2-t1]}#{"\n decomp "+todate[tdc-t2] if tdc}\n output #{todate[t3-(tdc||t2)]}\n total  #{todate[t3-t0]}" if opts[:benchmark]

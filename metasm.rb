@@ -36,6 +36,7 @@ def self.const_missing(c, fallback=nil)
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
 		'Preprocessor' => 'preprocessor',
 		'Disassembler' => 'decode', 'Expression' => ['main', 'encode', 'decode'],
+		'Decompiler' => 'decompile',
 	}[cst]
 
 	return(fallback ? fallback[c] : super(c)) if not files
