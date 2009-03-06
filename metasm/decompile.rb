@@ -30,6 +30,7 @@ class Decompiler
 		@c_parser.toplevel.symbol[func.name] = func
 
 		# find decodedinstruction blocks constituing the function
+		# TODO merge sequencial blocks with useless jmp (poeut) to improve dependency graph later
 		myblocks = decompile_func_listblocks(entry)
 
 		puts "finding vars..." if $VERBOSE
@@ -44,7 +45,7 @@ class Decompiler
 		scope = func.initializer = C::Block.new(@c_parser.toplevel)
 		# di blocks => raw c statements, declare variables
 		stmts = decompile_blocks(myblocks, deps, scope)
-		
+
 		# scope contains only declarations for now
 		scope.statements = scope.statements.sort_by { |sm| sm.var.name[4..-1].to_s.to_i(16) }
 
@@ -70,7 +71,7 @@ class Decompiler
 		decompile_remove_labels(scope)
 
 		case ret = scope.statements.last
-		when C::CExpression: puts "no return at end of func"
+		when C::CExpression; puts "no return at end of func"
 		when C::Return
 			if not ret.value
 				scope.statements.pop
@@ -81,6 +82,25 @@ class Decompiler
 
 		# infer variable types
 		decompile_c_types(scope)
+
+		# add unused args to arglist to preserve the func ABI
+		# XXX shouldn't use the arg_XX form
+		argoff = varname_to_stackoff('arg_0')
+		args = []
+		func.type.args.each { |a|
+			# XXX misalignment ?
+			curoff = varname_to_stackoff(a.name)
+			while curoff > argoff
+				wantarg = C::Variable.new
+				wantarg.name = stackoff_to_varname(argoff).to_s
+				wantarg.type = C::BaseType.new(:int)
+				args << wantarg
+				scope.symbol[wantarg.name] = wantarg
+				argoff += @dasm.cpu.size/8
+			end
+			args << a
+		}
+		func.type.args = args
 
 		@c_parser.toplevel.statements << C::Declaration.new(func)
 	end
@@ -99,7 +119,7 @@ class Decompiler
 			di.block.each_to { |ta, type|
 				next if type == :indirect
 				ta = dasm.normalize ta
-				if @dasm.function[ta]	# and di.block.to_subfuncret # XXX __attribute__((noreturn)) ?
+				if @dasm.function[ta] and type != :subfuncret	# and di.block.to_subfuncret # XXX __attribute__((noreturn)) ?
 					decompile_func(ta) if ta != entry
 				else
 					@dasm.auto_label_at(ta, 'label') if blocks.find { |aa, at| aa == ta }
@@ -124,19 +144,13 @@ class Decompiler
 				end
 			when Indirection
 				# XXX this includes never used vars (eg slots used to
- 				# save reg across the whole function) and subfunction
- 				# args slots ; they will be filtered out later
+				# save reg across the whole function) and subfunction
+				# args slots ; they will be filtered out later
 				p_ini = @dasm.backtrace(e.target, di.address, :include_start => i_s, :snapshot_addr => funcstart).first
 				stackoff = Expression[p_ini, :-, :esp].reduce	# TODO move to ia32/decompile
 				if stackoff.kind_of? Integer
 					# XXX lose ind.length ?
-					if stackoff > 0
-						'arg_%X' % ( stackoff-@dasm.cpu.size/8)	#  4 => arg_0,  8 => arg_4..
-					elsif stackoff == 0
-						'retaddr'
-					else
-						'var_%X' % (-stackoff-@dasm.cpu.size/8)	# -4 => var_0, -8 => var_4..
-					end.to_sym
+					stackoff_to_varname(stackoff)
 				else
 					Indirection[tovar[di, e.target, i_s], e.len]
 				end
@@ -156,28 +170,81 @@ class Decompiler
 		}
 	end
 
+	# give a name to a stackoffset (relative to start of func)
+	# 4 => :arg_0, -8 => :var_4 etc
+	def stackoff_to_varname(off)
+		if off > 0
+			'arg_%X' % ( off-@dasm.cpu.size/8)	#  4 => arg_0,  8 => arg_4..
+		elsif off == 0
+			'retaddr'
+		else
+			'var_%X' % (-off-@dasm.cpu.size/8)	# -4 => var_0, -8 => var_4..
+		end.to_sym
+	end
+
+	def varname_to_stackoff(var)
+		case var.to_s
+		when /^arg_(.*)/;  $1.to_i(16) + @dasm.cpu.size/8
+		when /^var_(.*)/; -$1.to_i(16) - @dasm.cpu.size/8
+		when 'retaddr'; 0
+		end
+	end
+
 	# list variable dependency for each block, remove useless writes
 	# returns { blockaddr => [list of vars that are needed by a following block] }
 	def decompile_func_finddeps(blocks)
 		deps_r = {} ; deps_w = {} ; deps_to = {}
+		deps_subfunc = {} ; deps_subfuncw = {}	# things read/written by subfuncs
 
-		# find read/writes
+		# find read/writes by each block
 		blocks.each { |b, to|
 			deps_r[b] = [] ; deps_w[b] = [] ; deps_to[b] = to
+			deps_subfunc[b] = [] ; deps_subfuncw[b] = []
 
-			@dasm.decoded[b].block.list.each { |di|
+			blk = @dasm.decoded[b].block
+			blk.list.each { |di|
 				a = di.backtrace_binding.values
 				w = di.backtrace_binding.keys
 				deps_r[b] |= a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - deps_w[b]
 				deps_w[b] |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
 			}
+			stackoff = nil
+			blk.each_to_normal { |t|
+				t = backtrace_target(t, blk.list.last.address)
+				next if not t = @c_parser.toplevel.symbol[t]
+				stackoff ||= Expression[@dasm.backtrace(:esp, blk.list.last.address, :snapshot_addr => blocks.first[0]).first, :-, :esp].reduce
+
+				# things that are needed by the subfunction
+				args = t.type.args.map { |a| a.type }
+				if t.attributes.to_a.include? 'fastcall'
+					deps_subfunc[b] |= [:ecx, :edx]
+					# XXX the two first args with size <= int are not necessarily nr 0 and nr 1..
+					args.shift ; args.shift
+				end
+				off = stackoff
+				args.each { |a|
+					# XXX assume all args are sizeof() <= int
+					# TODO if the arg is a struct/pointer, the func also depends on the data pointed to
+					deps_subfunc[b] |= [stackoff_to_varname(off)]
+					off += @dasm.cpu.size/8
+				}
+			}
+			if stackoff
+				deps_r[b] |= deps_subfunc[b] - deps_w[b]
+				deps_w[b] |= deps_subfuncw[b] = [:eax, :ecx, :edx]
+			end
+			if to.empty?
+				deps_subfunc[b] |= [:eax]	# current function return value
+			end
 		}
 
-		# remove useless writes (rewritten w/o read)
-		# XXX function arguments, structure on stack, lea bla,[ebp-14h]...
+		# remove writes from a block if no following block read the value
 		deps_w.each { |b, deps|
-			next if b =~ /^(var_|arg_)/
 			deps.delete_if { |dep|
+				next true if dep == :esp		# never relevant (cross fingers)
+				#next if dep.to_s =~ /^(var_|arg_)/	# keep stack sync
+				next if deps_subfunc[b].include? dep	# arg to a function called by the block
+				next true if deps_subfuncw[b].include? dep	# thing written by the function
 				ret = true
 				done = []
 				todo = deps_to[b].dup
@@ -200,6 +267,7 @@ class Decompiler
 
 	def decompile_blocks(myblocks, deps, scope, nextaddr = nil)
 		stmts = []
+		func_entry = myblocks.first[0]
 		until myblocks.empty?
 			b, to = myblocks.shift
 			if l = @dasm.prog_binding.index(b)
@@ -248,33 +316,48 @@ class Decompiler
 					# conditional jump
 					# XXX switch/indirect/multiple jmp
 					commit[]
-					n = @dasm.backtrace(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address).first 
-					n = @dasm.prog_binding.index(n) || n
-					n = Expression[n].reduce_rec
+					n = backtrace_target(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address)
 					stmts << C::If.new(ceb[@dasm.cpu.decode_cc_to_expr(di.opcode.name[1..-1])], C::Goto.new(n))
 					to.delete @dasm.normalize(n)
 					next
 				end
-				
+
 				case di.opcode.name
 				when 'ret'
 					commit[]
 					stmts << C::Return.new(nil)
 				when 'call'	# :saveip
-					n = @dasm.backtrace(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address).first 
-					n = @dasm.prog_binding.index(n) || n
-
+					n = backtrace_target(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address)
 					args = []
-					# TODO find args
-					#while i = ops.last and i.first.kind_of? Indirection and o = Expression[i.first.target, :-, :esp].reduce and o.kind_of? ::Integer
-					#	args[o/4] = ops.pop.last
-					#end
-					#while i = args.index(nil)
-					#	args[i] = (ops.assoc(Indirection[[:esp, :+, 4*i], 4].reduce_rec) || [0, 0])[1]
-					#	ops.delete [Indirection[[:esp, :+, 4*i], 4].reduce_rec, args[i]]
-					#end
+					if t = @c_parser.toplevel.symbol[n] and t.type.args
+						# XXX see remarks in #finddeps
+						stackoff = Expression[@dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry), :-, :esp].reduce
+						args_todo = t.type.args.dup
+						args = []
+						if t.attributes.to_a.include? 'fastcall'
+							a = args_todo.shift
+							mask = (1 << (8*@c_parser.sizeof(a))) - 1
+							args << ceb[:ecx, :&, mask]
+							binding.delete :ecx
+
+							a = args_todo.shift
+							mask = (1 << (8*@c_parser.sizeof(a))) - 1	# char => dl
+							args << ceb[:edx, :&, mask]
+							binding.delete :edx
+						end
+						args_todo.each { |a|
+							if stackoff.kind_of? Integer
+								var = stackoff_to_varname(stackoff)
+								stackoff += @dasm.cpu.size/8
+							else
+								var = 0
+							end
+							args << ceb[var]
+							binding.delete var
+						}
+					end
 					commit[]
-					next if not di.block.to_subfuncret
+					#next if not di.block.to_subfuncret
 
 					if n.kind_of? ::String
 						if not ts[n]
@@ -285,7 +368,7 @@ class Decompiler
 							@c_parser.toplevel.statements << C::Declaration.new(ts[n])
 						end
 						commit[]
-						stmts << C::CExpression.new(ts[n], :funcall, args.map { |a| ceb[a] }, ts[n].type.type)
+						stmts << C::CExpression.new(ts[n], :funcall, args, ts[n].type.type)
 					else
 						# indirect funcall
 						fptr = ceb[n]
@@ -294,12 +377,11 @@ class Decompiler
 						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto)) if not fptr.kind_of? C::CExpression	# cast
 						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto))
 						commit[]
-						stmts << C::CExpression.new(fptr, :funcall, args.map { |a| ceb[a] }, proto.type)
+						stmts << C::CExpression.new(fptr, :funcall, args, proto.type)
 					end
 				when 'jmp'
 					if di.block.to_normal.to_a.length > 1
-						n = @dasm.backtrace(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address).first 
-						n = @dasm.prog_binding.index(n) || n
+						n = backtrace_target(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address)
 						fptr = ceb[n]
 						binding.delete n
 						proto = C::Function.new(C::BaseType.new(:void))
@@ -308,7 +390,8 @@ class Decompiler
 						commit[]
 						stmts << C::CExpression.new(fptr, :funcall, [], proto.type)
 					end
-				# XXX bouh
+					# XXX bouh
+					# TODO need to know for which instructions the bt_binding is accurate
 				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq'
 					di.backtrace_binding.each { |k, v|
 						if k.kind_of? ::Symbol or (k.kind_of? Indirection and Expression[k.target, :-, :esp].reduce.kind_of? ::Integer)
@@ -346,6 +429,15 @@ class Decompiler
 		stmts
 	end
 
+	# backtraces an expression from addr
+	# returns an integer, a label name, or an Expression
+	def backtrace_target(expr, addr)
+		if n = @dasm.backtrace(expr, addr).first
+			n = Expression[n].reduce_rec
+			@dasm.prog_binding.index(n) || n
+		end
+	end
+
 	# turns an Expression to a CExpression, create+declares needed variables in scope
 	def decompile_cexpr(e, scope)
 		case e
@@ -354,9 +446,9 @@ class Decompiler
 				r = e.rexpr
 				r.op, r.rexpr = :-, -r.rexpr if r.op == :+ and r.rexpr.kind_of? Integer and r.rexpr < 0
 				case r.op
-				when :+: e = Expression[e.lexpr, :'+=', r.rexpr]	# cannot ++ until we have the type (ptr etc)
-				when :-: e = Expression[e.lexpr, :'-=', r.rexpr]
-				when :^: e = Expression[e.lexpr, :'^=', r.rexpr]
+				when :+; e = Expression[e.lexpr, :'+=', r.rexpr]	# cannot ++ until we have the type (ptr etc)
+				when :-; e = Expression[e.lexpr, :'-=', r.rexpr]
+				when :^; e = Expression[e.lexpr, :'^=', r.rexpr]
 				end
 			end
 			if e.op == :'=' and e.lexpr.kind_of? ::String and e.lexpr =~ /^dummy_metasm_/
@@ -367,6 +459,9 @@ class Decompiler
 				decompile_cexpr(Expression[e.lexpr, :-, -e.rexpr], scope)
 			elsif (e.op == :== or e.op == :'!=') and e.rexpr == 0 and e.lexpr.kind_of? Expression and e.lexpr.op == :+
 				decompile_cexpr(Expression[e.lexpr.lexpr, e.op, [:-, e.lexpr.rexpr]].reduce, scope)
+			elsif (e.op == :== or e.op == :'!=') and e.rexpr == 0 and l = e.lexpr and l.kind_of? Expression and
+				l.op == :& and l.rexpr == 1 and l = l.lexpr and l.op == :>> and l.rexpr == @dasm.cpu.size-1
+				decompile_cexpr(Expression[l.lexpr, ((e.op == :==) ? :>= : :<), 0].reduce, scope)
 			elsif e.lexpr
 				a = decompile_cexpr(e.lexpr, scope)
 				C::CExpression.new(a, e.op, decompile_cexpr(e.rexpr, scope), a.type)
@@ -399,7 +494,8 @@ class Decompiler
 			s
 		when ::Integer
 			C::CExpression.new(nil, nil, e, C::BaseType.new(:int))
-		when C::CExpression: e
+		when C::CExpression
+			e
 		else puts "decompile_cexpr unhandled #{e.inspect}" ; C::CExpression.new(nil, nil, e, C::BaseType.new(:void))
 		end
 	end
@@ -418,7 +514,7 @@ class Decompiler
 				decompile_walk(scope) { |s|
 					if s.kind_of? C::Block and l = s.statements.grep(C::Label).find { |l| l.name == g.target }
 						case nt = s.statements[s.statements.index(l)..-1].find { |ss| not ss.kind_of? C::Label }
-						when C::Goto: ret = nt
+						when C::Goto; ret = nt
 						end
 					end
 				}
@@ -462,6 +558,9 @@ class Decompiler
 			if ce.kind_of? C::CExpression and nop = { :== => :'!=', :'!=' => :==, :> => :<=, :>= => :<, :< => :>=, :<= => :>, :'!' => :'!' }[ce.op]
 				if nop == :'!'
 					ce.rexpr
+				elsif nop == :== and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and
+					ce.lexpr.kind_of? C::CExpression and [:==, :'!=', :>, :<, :>=, :<=, :'!'].include? ce.lexpr.op
+					ce.lexpr
 				else
 					C::CExpression.new(ce.lexpr, nop, ce.rexpr, ce.type)
 				end
@@ -509,9 +608,9 @@ class Decompiler
 				if s.belse
 					bes = s.belse.statements
 					while not bts.empty?
-						if bts.last.kind_of? C::Label: ary.unshift bts.pop
-						elsif bes.last.kind_of? C::Label: ary.unshift bes.pop
-						elsif bts.last.to_s == bes.last.to_s: ary.unshift bes.pop ; bts.pop
+						if bts.last.kind_of? C::Label; ary.unshift bts.pop
+						elsif bes.last.kind_of? C::Label; ary.unshift bes.pop
+						elsif bts.last.to_s == bes.last.to_s; ary.unshift bes.pop ; bts.pop
 						else break
 						end
 					end
@@ -519,16 +618,16 @@ class Decompiler
 					# if () { a; } else { b; } => if () { a; } else b;
 					# if () { a; } else {} => if () { a; }
 					case bes.length
-					when 0: s.belse = nil
-					when 1: s.belse = bes.first
+					when 0; s.belse = nil
+					when 1; s.belse = bes.first
 					end
 				end
 
 				# if () {} else { a; } => if (!) { a; }
 				# if () { a; } => if () a;
 				case bts.length
-				when 0: s.test, s.bthen, s.belse = negate[s.test], s.belse, nil if s.belse
-				when 1: s.bthen = bts.first
+				when 0; s.test, s.bthen, s.belse = negate[s.test], s.belse, nil if s.belse
+				when 1; s.bthen = bts.first
 				end
 			end
 			ret << s
@@ -667,11 +766,11 @@ class Decompiler
 	# yields each statement (recursive)
 	def decompile_walk(scope, &b)
 		case scope
-		when ::Array: scope.each { |s| decompile_walk(s, &b) }
+		when ::Array; scope.each { |s| decompile_walk(s, &b) }
 		when C::Statement
 			yield scope
 			case scope
-			when C::Block: decompile_walk(scope.statements, &b)
+			when C::Block; decompile_walk(scope.statements, &b)
 			when C::If
 				yield scope.test
 				decompile_walk(scope.bthen, &b)
