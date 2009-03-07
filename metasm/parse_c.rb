@@ -770,7 +770,6 @@ module C
 				:int => 4, :long => 8, :longlong => 8
 		end
 
-		attr_accessor :auto_predeclare_unknown_structs
 		def parse_pragma_callback(otok)
 			case otok.raw
 			when 'pack'
@@ -806,8 +805,6 @@ module C
 				else raise otok
 				end
 				# the caller checks for :eol
-			when 'auto_predeclare_unknown_structs'
-				@auto_predeclare_unknown_structs = true
 			when 'warning'
 				if $DEBUG
 					@prev_pragma_callback[otok]
@@ -825,7 +822,6 @@ module C
 		end
 
 		def prepare_visualstudio
-			@auto_predeclare_unknown_structs = true
 			@lexer.define_weak('_WIN32')
 			@lexer.define_weak('_WIN32_WINNT', 0x500)
 			@lexer.define_weak('_INTEGRAL_MAX_BITS', 64)
@@ -1390,11 +1386,9 @@ EOH
 						# check that the structure exists
 						# do not check it is declared (may be a pointer)
 						struct = scope.struct_ancestors[name]
-						if not struct and parser.auto_predeclare_unknown_structs
-							puts "auto-predeclaring #{@type.class.name.downcase[/(?:.*::)?(.*)/,1]} #{@type.name}" if $VERBOSE
-							struct = scope.struct[name] = @type
-						end
-						raise tok, 'unknown struct' if not struct or not struct.kind_of?(@type.class)
+						# allow incomplete types, usage as var type will raise later
+						struct = scope.struct[name] = @type if not struct
+						raise tok, 'unknown struct' if not struct.kind_of?(@type.class)
 						(struct.attributes ||= []).concat @type.attributes if @type.attributes
 						(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier
 						@type = struct
@@ -1537,7 +1531,7 @@ EOH
 			if not rec
 				raise @backtrace, 'void type is invalid' if name and (t = @type.untypedef).kind_of? BaseType and
 						t.name == :void and @storage != :typedef
-				raise @backtrace, "uninitialized structure #{@type.name}" if (@type.kind_of? Union or @type.kind_of? Enum) and
+				raise @backtrace, "incomplete type #{@type.name}" if (@type.kind_of? Union or @type.kind_of? Enum) and
 						not @type.members and @storage != :typedef and @storage != :extern	# gcc uses an undefined extern struct just to cast it later (_IO_FILE_plus)
 			end
 		end
@@ -2033,9 +2027,10 @@ EOH
 						CExpression.new(val, tok.raw.to_sym, nil, val.type)
 					when '->'
 						raise tok, 'not a pointer' if not val.type.pointer?
-						raise tok, 'invalid member' if not tok = parser.skipspaces or tok.type != :string
 						type = val.type.untypedef.type.untypedef
-						raise tok, 'invalid member' if not type.kind_of? Union or not type.members or not m = type.findmember(tok.raw)
+						raise tok, 'bad pointer' if not type.kind_of? Union
+						raise tok, 'incomplete type' if not type.members
+						raise tok, 'invalid member' if not tok = parser.skipspaces or tok.type != :string or not m = type.findmember(tok.raw)
 						CExpression.new(val, :'->', tok.raw, m.type)
 					end
 				when '.'
@@ -2044,8 +2039,8 @@ EOH
 						parser.unreadtok ntok
 						nil
 					else
-						raise 'uninitialized structure' if not type.members
-						raise ntok, "bad struct member #{ntok.raw} not in #{type.members.map { |m| m.name }.inspect}" if not m = type.findmember(ntok.raw)
+						raise ntok, 'incomplete type' if not type.members
+						raise ntok, 'invalid member' if not m = type.findmember(ntok.raw)
 						CExpression.new(val, :'.', ntok.raw, m.type)
 					end
 				when '['
