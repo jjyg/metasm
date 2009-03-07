@@ -54,8 +54,10 @@ src = <<EOS
 #{opts[:path].map { |i| ' #pragma include_dir ' + i.inspect }.join("\n")}
 #{'#pragma prepare_visualstudio' if opts[:vs]}
 #{'#pragma prepare_gcc' if opts[:gcc]}
+#pragma no_warn_redefinition
 #endif
 
+#{opts[:defs].map { |k, v| "#define #{k} #{v}" }.join("\n")}
 #{opts[:hdrs].map { |h| "#include <#{h}>" }.join("\n")}
 EOS
 
@@ -68,7 +70,7 @@ outfd = (opts[:outfile] ? File.open(opts[:outfile], 'w') : $stdout)
 # delete imports not present in the header files
 funcnames.delete_if { |f|
 	if not parser.toplevel.symbol[f]
-		outfd.puts "// #{f.inspect} is not defined in the headers"
+		puts "// #{f.inspect} is not defined in the headers"
 		true
 	end
 }
