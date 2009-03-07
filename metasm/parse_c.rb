@@ -1123,7 +1123,7 @@ EOH
 				end
 				scope.statements << Declaration.new(var) unless var.kind_of? TypeDef
 
-				raise tok || self, 'punctuation expected' if not tok = skipspaces or tok.type != :punct
+				raise tok || self, 'punctuation expected' if not tok = skipspaces or (tok.type != :punct and not %w[asm __asm __asm__].include? tok.raw)
 
 				case tok.raw
 				when '{'
@@ -1153,6 +1153,15 @@ EOH
 					if $VERBOSE and not body.statements.last.kind_of? Return and not body.statements.last.kind_of? Asm
 						puts tok.exception('missing function return value').message if not var.type.type.kind_of? BaseType or var.type.type.name != :void
 					end
+					break
+				when 'asm', '__asm', '__asm__'
+					# GCC function redirection
+					# void foo(void) __asm__("bar");  =>  when code uses 'foo', silently redirect to 'bar' instead
+					raise tok if nofunc or not var.kind_of? Variable or not var.type.kind_of? Function
+					# most of the time, 'bar' is not defined anywhere, so we support it only
+					# to allow parsing of headers using it, hoping noone will actually use them
+					unused = Asm.parse(self, scope)
+					puts "unsupported gcc-style __asm__ function redirect #{var.name.inspect} => #{unused.body.inspect}" if $VERBOSE
 					break
 				when '='
 					# variable initialization
