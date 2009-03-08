@@ -71,3 +71,9 @@ def const_missing(c)
 	end
 end
 end
+
+# remove an 1.9 warning, couldn't find a compatible way...
+if {}.respond_to? :key
+	puts "using ruby1.9 workaround for Hash.index" if $VERBOSE
+	class Hash ; alias index key end
+end
