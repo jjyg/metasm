@@ -43,7 +43,7 @@ funcs = cp.toplevel.symbol.values.grep(C::Variable).reject { |v| v.initializer o
 
 puts 'module Metasm'
 puts 'StackOffsets = {'
-align = proc { |val| (val + cp.typesize[:ptr] - 1) / cp.typesize[:ptr] * cp.typesize[:ptr] }
+align = lambda { |val| (val + cp.typesize[:ptr] - 1) / cp.typesize[:ptr] * cp.typesize[:ptr] }
 puts funcs.find_all { |f| f.attributes and f.attributes.include? 'stdcall' and f.type.args }.sort_by { |f| f.name }.map { |f|
 	"#{f.name.inspect} => #{f.type.args.inject(0) { |sum, arg| sum + align[cp.sizeof(arg)] }}"
 }.join(",\n")

@@ -162,7 +162,7 @@ class Ia32
 		bseq = edata.read(op.bin.length).unpack('C*')		# decode_findopcode ensures that data >= op.length
 		pfx = di.instruction.prefix || {}
 
-		field_val = proc { |f|
+		field_val = lambda { |f|
 			if fld = op.fields[f]
 				(bseq[fld[0]] >> fld[1]) & @fields_mask[f]
 			end
@@ -283,7 +283,7 @@ class Ia32
 		end
 	end
 
-	# hash opcode_name => proc { |dasm, di, *symbolic_args| instr_binding }
+	# hash opcode_name => lambda { |dasm, di, *symbolic_args| instr_binding }
 	def backtrace_binding
 		@backtrace_binding ||= init_backtrace_binding
 	end
@@ -293,21 +293,21 @@ class Ia32
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 
-		opsz = proc { |di|
+		opsz = lambda { |di|
 			ret = @size
 			ret = 48 - ret if di.instruction.prefix and di.instruction.prefix[:opsz]
 			ret
 		}
-		mask = proc { |di| (1 << opsz[di])-1 }	# 32bits => 0xffff_ffff
-		sign = proc { |v, di| Expression[[[v, :&, mask[di]], :>>, opsz[di]-1], :'!=', 0] }
+		mask = lambda { |di| (1 << opsz[di])-1 }	# 32bits => 0xffff_ffff
+		sign = lambda { |v, di| Expression[[[v, :&, mask[di]], :>>, opsz[di]-1], :'!=', 0] }
 
 		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
 			binding = case op
-			when 'mov', 'movsx', 'movzx', 'movd', 'movq'; proc { |di, a0, a1| { a0 => Expression[a1] } }
-			when 'lea'; proc { |di, a0, a1| { a0 => a1.target } }
-			when 'xchg'; proc { |di, a0, a1| { a0 => Expression[a1], a1 => Expression[a0] } }
+			when 'mov', 'movsx', 'movzx', 'movd', 'movq'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'lea'; lambda { |di, a0, a1| { a0 => a1.target } }
+			when 'xchg'; lambda { |di, a0, a1| { a0 => Expression[a1], a1 => Expression[a0] } }
 			when 'add', 'sub', 'or', 'xor', 'and', 'pxor', 'adc', 'sbb'
-				proc { |di, a0, a1|
+				lambda { |di, a0, a1|
 					e_op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^, 'pxor' => :^, 'adc' => :+, 'sbb' => :- }[op]
 					ret = Expression[a0, e_op, a1]
 					ret = Expression[ret, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
@@ -316,12 +316,12 @@ class Ia32
 					ret = Expression[ret.reduce] if not a0.kind_of? Indirection
 					{ a0 => ret }
 				}
-			when 'inc'; proc { |di, a0| { a0 => Expression[a0, :+, 1] } }
-			when 'dec'; proc { |di, a0| { a0 => Expression[a0, :-, 1] } }
-			when 'not'; proc { |di, a0| { a0 => Expression[a0, :^, mask[di]] } }
-			when 'neg'; proc { |di, a0| { a0 => Expression[:-, a0] } }
+			when 'inc'; lambda { |di, a0| { a0 => Expression[a0, :+, 1] } }
+			when 'dec'; lambda { |di, a0| { a0 => Expression[a0, :-, 1] } }
+			when 'not'; lambda { |di, a0| { a0 => Expression[a0, :^, mask[di]] } }
+			when 'neg'; lambda { |di, a0| { a0 => Expression[:-, a0] } }
 			when 'rol', 'ror'
-				proc { |di, a0, a1|
+				lambda { |di, a0, a1|
 					e_op = (op[2] == ?r ? :>> : :<<)
 					inv_op = {:<< => :>>, :>> => :<< }[e_op]
 					sz = [a1, :%, opsz[di]]
@@ -329,20 +329,20 @@ class Ia32
 					# ror a, b  =>  (a >> b) | (a << (32-b))
 					{ a0 => Expression[[[a0, e_op, sz], :|, [a0, inv_op, isz]], :&, mask[di]] }
 				}
-			when 'sar', 'shl', 'sal'; proc { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz[di], 32].max]] } }
-			when 'shr'; proc { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz[di]]] } }
-			when 'cdq'; proc { |di| { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz[di]-1], :&, 1]] } }
+			when 'sar', 'shl', 'sal'; lambda { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz[di], 32].max]] } }
+			when 'shr'; lambda { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz[di]]] } }
+			when 'cdq'; lambda { |di| { :edx => Expression[0xffff_ffff, :*, [[:eax, :>>, opsz[di]-1], :&, 1]] } }
 			when 'push'
-				proc { |di, a0| { :esp => Expression[:esp, :-, opsz[di]/8],
+				lambda { |di, a0| { :esp => Expression[:esp, :-, opsz[di]/8],
 					Indirection[:esp, opsz[di]/8, di.address] => Expression[a0] } }
 			when 'pop'
-				proc { |di, a0| { :esp => Expression[:esp, :+, opsz[di]/8],
+				lambda { |di, a0| { :esp => Expression[:esp, :+, opsz[di]/8],
 					a0 => Indirection[:esp, opsz[di]/8, di.address] } }
 			when 'pushfd'
 				# TODO Unknown per bit
-				proc { |di|
+				lambda { |di|
 					efl = Expression[0x202]
-					bts = proc { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
+					bts = lambda { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
 					bts[0, :eflag_c]
 					bts[6, :eflag_z]
 					bts[7, :eflag_s]
@@ -350,22 +350,22 @@ class Ia32
 					{ :esp => Expression[:esp, :-, opsz[di]/8], Indirection[:esp, opsz[di]/8, di.address] => efl }
 			       	}
 			when 'popfd'
-				proc { |di| bt = proc { |pos| Expression[[Indirection[:esp, opsz[di]/8, di.address], :>>, pos], :&, 1] }
+				lambda { |di| bt = lambda { |pos| Expression[[Indirection[:esp, opsz[di]/8, di.address], :>>, pos], :&, 1] }
 					{ :esp => Expression[:esp, :+, opsz[di]/8], :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7], :eflag_o => bt[11] } }
 			when 'sahf'
-				proc { |di| bt = proc { |pos| Expression[[:eax, :>>, pos], :&, 1] }
+				lambda { |di| bt = lambda { |pos| Expression[[:eax, :>>, pos], :&, 1] }
 					{ :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7] } }
 			when 'lahf'
-				proc { |di|
+				lambda { |di|
 					efl = Expression[2]
-					bts = proc { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
+					bts = lambda { |pos, v| efl = Expression[efl, :|, [[v, :&, 1], :<<, pos]] }
 					bts[0, :eflag_c] #bts[2, :eflag_p] #bts[4, :eflag_a]
 					bts[6, :eflag_z]
 					bts[7, :eflag_s]
 					{ :eax => efl }
 				}
 			when 'pushad'
-				proc { |di|
+				lambda { |di|
 					ret = {}
 					st_off = 0
 					[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
@@ -376,7 +376,7 @@ class Ia32
 					ret
 				}
 			when 'popad'
-				proc { |di|
+				lambda { |di|
 					ret = {}
 					st_off = 0
 					[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi].reverse_each { |r|
@@ -387,12 +387,12 @@ class Ia32
 					ret
 				}
 			when 'call'
-				proc { |di, a0| { :esp => Expression[:esp, :-, opsz[di]/8],
+				lambda { |di, a0| { :esp => Expression[:esp, :-, opsz[di]/8],
 					Indirection[:esp, opsz[di]/8, di.address] => Expression[Expression[di.address, :+, di.bin_length].reduce] } }
-			when 'ret'; proc { |di, *a| { :esp => Expression[:esp, :+, [opsz[di]/8, :+, a[0] || 0]] } }
-			when 'loop', 'loopz', 'loopnz'; proc { |di, a0| { :ecx => Expression[:ecx, :-, 1] } }
+			when 'ret'; lambda { |di, *a| { :esp => Expression[:esp, :+, [opsz[di]/8, :+, a[0] || 0]] } }
+			when 'loop', 'loopz', 'loopnz'; lambda { |di, a0| { :ecx => Expression[:ecx, :-, 1] } }
 			when 'enter'
-				proc { |di, a0, a1|
+				lambda { |di, a0, a1|
 					depth = a1.reduce % 32
 					b = { Indirection[:esp, opsz[di]/8, di.address] => Expression[:ebp], :ebp => Expression[:esp, :-, opsz[di]/8],
 							:esp => Expression[:esp, :-, a0.reduce + ((opsz[di]/8) * depth)] }
@@ -400,18 +400,18 @@ class Ia32
 						b[Indirection[[:esp, :-, i*opsz[di]/8], opsz[di]/8, di.address]] = Indirection[[:ebp, :-, i*opsz[di]/8], opsz[di]/8, di.address] }
 					b
 				}
-			when 'leave'; proc { |di| { :ebp => Indirection[[:ebp], opsz[di]/8, di.address], :esp => Expression[:ebp, :+, opsz[di]/8] } }
-			when 'aaa'; proc { |di| { :eax => Expression::Unknown } }
+			when 'leave'; lambda { |di| { :ebp => Indirection[[:ebp], opsz[di]/8, di.address], :esp => Expression[:ebp, :+, opsz[di]/8] } }
+			when 'aaa'; lambda { |di| { :eax => Expression::Unknown } }
 			when 'imul'
-				proc { |di, *a|
+				lambda { |di, *a|
 					if a[2]; e = Expression[a[1], :*, a[2]]
 					else e = Expression[[a[0], :*, a[1]], :&, (1 << (di.instruction.args.first.sz || opsz[di])) - 1]
 					end
 					{ a[0] => e }
 				}
-			when 'rdtsc'; proc { |di| { :eax => Expression::Unknown, :edx => Expression::Unknown } }
+			when 'rdtsc'; lambda { |di| { :eax => Expression::Unknown, :edx => Expression::Unknown } }
 			when /^(stos|movs|lods|scas|cmps)[bwd]$/
-				proc { |di|
+				lambda { |di|
 					op =~ /^(stos|movs|lods|scas|cmps)([bwd])$/
 					e_op = $1
 					sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
@@ -451,15 +451,15 @@ class Ia32
 						end
 					end
 				}
-			when 'clc'; proc { |di| { :eflag_c => Expression[0] } }
-			when 'stc'; proc { |di| { :eflag_c => Expression[1] } }
-			when 'cmc'; proc { |di| { :eflag_c => Expression[:'!', :eflag_c] } }
-			when 'cld'; proc { |di| { :eflag_d => Expression[0] } }
-			when 'std'; proc { |di| { :eflag_d => Expression[1] } }
-			when 'setalc'; proc { |di| { Reg.new(0, 8).symbolic => Expression[:eflag_c, :*, 0xff] } }
-			when /^set/; proc { |di, a0| { a0 => Expression[decode_cc_to_expr(op[/^set(.*)/, 1])] } }
+			when 'clc'; lambda { |di| { :eflag_c => Expression[0] } }
+			when 'stc'; lambda { |di| { :eflag_c => Expression[1] } }
+			when 'cmc'; lambda { |di| { :eflag_c => Expression[:'!', :eflag_c] } }
+			when 'cld'; lambda { |di| { :eflag_d => Expression[0] } }
+			when 'std'; lambda { |di| { :eflag_d => Expression[1] } }
+			when 'setalc'; lambda { |di| { Reg.new(0, 8).symbolic => Expression[:eflag_c, :*, 0xff] } }
+			when /^set/; lambda { |di, a0| { a0 => Expression[decode_cc_to_expr(op[/^set(.*)/, 1])] } }
 			when /^j/
-				proc { |di, a0|
+				lambda { |di, a0|
 					ret = { 'dummy_metasm_0' => Expression[a0] }	# mark modr/m as read
 					if fl = decode_cc_to_expr(op[/^j(.*)/, 1]) and fl != Expression::Unknown
 						ret['dummy_metasm_1'] = fl	# mark eflags as read
@@ -467,7 +467,7 @@ class Ia32
 					ret
 				}
 			when 'fstenv', 'fnstenv'
-			       	proc { |di, a0|
+			       	lambda { |di, a0|
 					# stores the address of the last non-control fpu instr run
 					lastfpuinstr = di.block.list[0...di.block.list.index(di)].reverse.find { |pdi|
 						case pdi.opcode.name
@@ -478,7 +478,7 @@ class Ia32
 					lastfpuinstr = lastfpuinstr.address if lastfpuinstr
 					ret = {}
 					ptr = a0.pointer
-					save_at = proc { |off, val| ret[Indirection[a0.target + off, 4, di.address]] = val }
+					save_at = lambda { |off, val| ret[Indirection[a0.target + off, 4, di.address]] = val }
 					save_at[0, Expression::Unknown]
 					save_at[4, Expression::Unknown]
 					save_at[8, Expression::Unknown]
@@ -488,14 +488,14 @@ class Ia32
 					save_at[24, Expression::Unknown]
 					ret
 				}
-			when 'nop', 'pause', 'wait', 'cmp', 'test'; proc { |di, *a| {} }
+			when 'nop', 'pause', 'wait', 'cmp', 'test'; lambda { |di, *a| {} }
 			end
 
 			# add eflags side-effects
 
 			full_binding = case op
 			when 'adc', 'add', 'and', 'cmp', 'or', 'sbb', 'sub', 'xor', 'test'
-				proc { |di, a0, a1|
+				lambda { |di, a0, a1|
 					e_op = { 'adc' => :+, 'add' => :+, 'and' => :&, 'cmp' => :-, 'or' => :|, 'sbb' => :-, 'sub' => :-, 'xor' => :^, 'test' => :& }[op]
 					res = Expression[[a0, :&, mask[di]], e_op, [a1, :&, mask[di]]]
 					res = Expression[res, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
@@ -516,7 +516,7 @@ class Ia32
 					ret
 				}
 			when 'inc', 'dec', 'neg', 'shl', 'shr', 'sar', 'ror', 'rol', 'rcr', 'rcl', 'shld', 'shrd'
-				proc { |di, a0, *a|
+				lambda { |di, a0, *a|
 					ret = (binding ? binding[di, a0, *a] : {})
 					res = ret[a0] || Expression::Unknown
 					ret[:eflag_z] = Expression[[res, :&, mask[di]], :==, 0]
@@ -535,7 +535,7 @@ class Ia32
 					ret
 				}
 			when 'imul', 'mul', 'idiv', 'div', /^(scas|cmps)[bwdq]$/
-				proc { |di, *a|
+				lambda { |di, *a|
 					ret = (binding ? binding[di, *a] : {})
 					ret[:eflag_z] = ret[:eflag_s] = ret[:eflag_c] = ret[:eflag_o] = Expression::Unknown
 					ret
@@ -676,7 +676,7 @@ class Ia32
 			end
 		end
 
-		bt_val = proc { |r|
+		bt_val = lambda { |r|
 			next if not retaddrlist
 			b[r] = Expression::Unknown	# TODO :pending or something ? (for recursive lazy functions)
 			bt = []
@@ -770,7 +770,7 @@ class Ia32
 		df = DecodedFunction.new
 		orig ||= Expression[sym.name]
 
-		new_bt = proc { |expr, rlen|
+		new_bt = lambda { |expr, rlen|
 			df.backtracked_for << BacktraceTrace.new(expr, orig, expr, rlen ? :r : :x, rlen)
 		}
 
@@ -810,7 +810,7 @@ class Ia32
 		df
 	end
 
-	# the proc for the :default backtrace_binding callback of the disassembler
+	# the lambda for the :default backtrace_binding callback of the disassembler
 	# tries to determine the stack offset of unprototyped functions
 	# working:
 	#   checks that origin is a ret, that expr is an indirection from :esp and that expr.origin is the ret
@@ -823,7 +823,7 @@ class Ia32
 	# if the stack offset is found and funcaddr is a string, fixup the static binding and remove the dynamic binding
 	# TODO dynamise thunks bt_for & bt_cb
 	def disassembler_default_btbind_callback
-		proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
+		lambda { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
 			@dasm_func_default_off ||= {}
 			if off = @dasm_func_default_off[[dasm, calladdr]]
 				bind = bind.merge(:esp => Expression[:esp, :+, off])
@@ -935,7 +935,7 @@ class Ia32
 	# the :default backtracked_for callback
 	# returns empty unless funcaddr is not default or calladdr is a call or a jmp
 	def disassembler_default_btfor_callback
-		proc { |dasm, btfor, funcaddr, calladdr|
+		lambda { |dasm, btfor, funcaddr, calladdr|
 			if funcaddr != :default; btfor
 			elsif di = dasm.decoded[calladdr] and (di.opcode.name == 'call' or di.opcode.name == 'jmp'); btfor
 			else []
@@ -969,7 +969,7 @@ class Ia32
 		finish = dasm.normalize(finish) if finish
 		lastdi = nil
 		binding = {}
-		bt = proc { |from, expr, inc_start|
+		bt = lambda { |from, expr, inc_start|
 			ret = dasm.backtrace(Expression[expr], from, :snapshot_addr => entry, :include_start => inc_start)
 			ret.length == 1 ? ret.first : Expression::Unknown
 		}

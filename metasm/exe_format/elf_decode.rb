@@ -664,7 +664,7 @@ EOC
 			d.function[Expression['abort']] = @cpu.decode_c_function_prototype(d.c_parser, 'abort')
 			d.function[Expression['__stack_chk_fail']] = @cpu.decode_c_function_prototype(d.c_parser, '__stack_chk_fail')
 			d.c_parser = old_cp
-			dls.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
+			dls.btbind_callback = lambda { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
 				sz = @cpu.size/8
 				raise 'dlsym call error' if not dasm.decoded[calladdr]
 				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)

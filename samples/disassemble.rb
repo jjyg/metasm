@@ -46,7 +46,7 @@ else
 end
 # set options
 dasm = exe.init_disassembler
-makeint = proc { |addr|
+makeint = lambda { |addr|
 	case addr
 	when /^[0-9].*h/; addr.to_i(16)
 	when /^[0-9]/; Integer(addr)
@@ -94,7 +94,7 @@ end
 
 t3 = Time.now if opts[:benchmark]
 
-todate = proc { |f|
+todate = lambda { |f|
 	if f > 5400
 		"#{f.to_i/3600}h#{(f.to_i%3600)/60}mn"
 	elsif f > 90

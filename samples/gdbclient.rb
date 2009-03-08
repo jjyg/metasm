@@ -489,13 +489,13 @@ class Rubstop
 		# kgdb: read kernel symbols from 'module_list'
 		# too bad module_list is not in ksyms
 		if mod = request_symbol('module_list')
-			int_at = proc { |addr, off| @mem[addr+off, 4].unpack('L').first }
-			mod_size = proc { int_at[mod, 0] }
-			mod_next = proc { int_at[mod, 4] }
-			mod_nsym = proc { int_at[mod, 0x18] }	# most portable. yes.
-			mod_syms = proc { int_at[mod, 0x20] }
+			int_at = lambda { |addr, off| @mem[addr+off, 4].unpack('L').first }
+			mod_size = lambda { int_at[mod, 0] }
+			mod_next = lambda { int_at[mod, 4] }
+			mod_nsym = lambda { int_at[mod, 0x18] }	# most portable. yes.
+			mod_syms = lambda { int_at[mod, 0x20] }
 
-			read_strz = proc { |addr|
+			read_strz = lambda { |addr|
 				if i = @mem.index(0, addr)
 					@mem[addr...i]
 				end

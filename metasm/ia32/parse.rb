@@ -73,7 +73,7 @@ class ModRM
 		raise(otok, 'bad modrm') if not content or not ntok = lexer.readtok or ntok.type != :punct or ntok.raw != ']'
 
 		# converts matching externals to Regs in an expression
-		regify = proc { |o|
+		regify = lambda { |o|
 			case o
 			when Expression
 				o.lexpr = regify[o.lexpr]
@@ -91,7 +91,7 @@ class ModRM
 		s = i = b = imm = nil
 
 		# assigns the Regs in the expression to base or index field of the modrm
-		walker = proc { |o|
+		walker = lambda { |o|
 			case o
 			when nil
 			when Reg

@@ -61,7 +61,7 @@ class XCoff < ExeFormat
 		xwords :tsize, :dsize, :bsize, :entry, :text_start, :data_start, :toc
 		halfs :snentry, :sntext, :sndata, :sntoc, :snloader, :snbss, :aligntext, :aligndata, :modtype, :cpu
 		xwords :maxstack, :maxdata
-		new_field(:res, proc { |exe, me| exe.encoded.read(exe.intsize == 32 ? 8 : 120) }, proc { |exe, me, val| val }, '')
+		new_field(:res, lambda { |exe, me| exe.encoded.read(exe.intsize == 32 ? 8 : 120) }, lambda { |exe, me, val| val }, '')
 
 
 		def self.size(xcoff)

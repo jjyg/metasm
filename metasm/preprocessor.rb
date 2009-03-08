@@ -84,8 +84,8 @@ class Preprocessor
 		# modifies the list, returns an array of list of tokens/nil
 		# handles nesting
 		def self.parse_arglist(lexer, list=nil)
-			readtok = proc { list ? list.shift : lexer.readtok(false) }
-			unreadtok = proc { |t| list ? (list.unshift(t) if t) : lexer.unreadtok(t) }
+			readtok = lambda { list ? list.shift : lexer.readtok(false) }
+			unreadtok = lambda { |t| list ? (list.unshift(t) if t) : lexer.unreadtok(t) }
 			tok = nil
 			unreadlist = []
 			unreadlist << tok while tok = readtok[] and tok.type == :space
@@ -398,7 +398,7 @@ class Preprocessor
 		@warn_redefinition = true
 		@hooked_include = {}
 		@pragma_once = {}
-		@pragma_callback = proc { |otok|
+		@pragma_callback = lambda { |otok|
 			tok = otok
 			str = tok.raw.dup
 			str << tok.raw while tok = readtok and tok.type != :eol
@@ -444,7 +444,7 @@ class Preprocessor
 	def dump_macros(list, comment = true)
 		depend = {}
 		# build dependency graph (we can output macros in any order, but it's more human-readable)
-		walk = proc { |mname|
+		walk = lambda { |mname|
 			depend[mname] ||= []
 			@definition[mname].body.each { |t|
 				name = t.raw
@@ -463,7 +463,7 @@ class Preprocessor
 		while not depend.empty?
 			todo_now = depend.keys.find_all { |k| (depend[k] - [k]).empty? }
 			if todo_now.empty?
-				dep_cycle = proc { |ary|
+				dep_cycle = lambda { |ary|
 					deps = depend[ary.last]
 					if deps.include? ary.first; ary
 					elsif (deps-ary).find { |d| deps = dep_cycle[ary + [d]] }; deps
@@ -782,7 +782,7 @@ class Preprocessor
 	def preprocessor_directive(cmd, ocmd = cmd)
 		# read spaces, returns the next token
 		# XXX for all commands that may change @ifelse_nesting, ensure last element is :testing to disallow any other preprocessor directive to be run in a bad environment (while looking ahead)
-		skipspc = proc {
+		skipspc = lambda {
 			loop do
 				tok = readtok_nopp
 				break tok if not tok or tok.type != :space

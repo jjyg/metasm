@@ -133,7 +133,7 @@ class Decompiler
 
 	# patches instruction's backtrace_binding to replace [frame+X] => :varX
 	def decompile_makestackvars(funcstart, blocks)
-		tovar = proc { |di, e, i_s|
+		tovar = lambda { |di, e, i_s|
 			case e
 			when Expression
 				r = tovar[di, e.rexpr, i_s]
@@ -279,17 +279,17 @@ class Decompiler
 			# reg binding (reg => value, values.externals = regs at block start)
 			binding = {}
 			# Expr => CExpr
-			ce  = proc { |*e|
+			ce  = lambda { |*e|
 				e = Expression[Expression[*e].reduce]
 				decompile_cexpr(e, scope)
 			}
 			# Expr => Expr.bind(binding) => CExpr
-			ceb = proc { |*e| ce[Expression[*e].bind(binding)] }
+			ceb = lambda { |*e| ce[Expression[*e].bind(binding)] }
 			# shortcut to global funcname => Var (ext functions, e.g. malloc)
 			ts = @c_parser.toplevel.symbol
 
 			# dumps a CExprs that implements an assignment to a reg (uses ops[], patches op => [reg, nil])
-			commit = proc {
+			commit = lambda {
 				#ops.each { |r, v| stmts << ce[r, :'=', v] }	# doesn't work, ops may have internal/circular deps
 				#binding = {}
 				deps[b].map { |k|
@@ -507,7 +507,7 @@ class Decompiler
 	def decompile_simplify_goto(scope)
 		cntr = -1
 
-		simpler_goto = proc { |g|
+		simpler_goto = lambda { |g|
 			case ret = g
 			when C::Goto
 				# return a new goto
@@ -554,7 +554,7 @@ class Decompiler
 	# recurses to then/else content
 	def decompile_cseq_if(ary, scope)
 		# helper to negate the if condition
-		negate = proc { |ce|
+		negate = lambda { |ce|
 			if ce.kind_of? C::CExpression and nop = { :== => :'!=', :'!=' => :==, :> => :<=, :>= => :<, :< => :>=, :<= => :>, :'!' => :'!' }[ce.op]
 				if nop == :'!'
 					ce.rexpr
@@ -637,7 +637,7 @@ class Decompiler
 
 	def decompile_cseq_while(ary)
 		# find the next instruction that is not a label
-		ni = proc { |l| ary[ary.index(l)..-1].find { |s| not s.kind_of? C::Label } }
+		ni = lambda { |l| ary[ary.index(l)..-1].find { |s| not s.kind_of? C::Label } }
 		ary.each { |s|
 			case s
 			when C::Label

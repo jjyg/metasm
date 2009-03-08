@@ -239,7 +239,7 @@ EOS
 			gpa = @cpu.decode_c_function_prototype(d.c_parser, 'GetProcAddress')
 			d.c_parser = old_cp
 			@getprocaddr_unknown = []
-			gpa.btbind_callback = proc { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
+			gpa.btbind_callback = lambda { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
 				break bind if @getprocaddr_unknown.include? [dasm, calladdr] or not Expression[expr].externals.include? :eax
 				sz = @cpu.size/8
 				break bind if not dasm.decoded[calladdr]

@@ -62,14 +62,14 @@ Patterns = {
 	'nop ; (.*)' => '%1',	# concat 'nop' into following instruction
 	'mov (%r|esp), \1' => 'nop',
 	'lea (%r|esp), dword ptr \[\1(?:\+0)?\]' => 'nop',
-	'(.*)' => proc { |dasm, list| # remove 'jmp imm' preceding us without interfering with running dasm
+	'(.*)' => lambda { |dasm, list| # remove 'jmp imm' preceding us without interfering with running dasm
 		if pdi = prev_di(dasm, list.last) and pdi.opcode.name == 'jmp' and
 				pdi.instruction.args[0].kind_of? Metasm::Expression
 			dasm.replace_instrs(pdi.address, pdi.address, [])
 		end
 		nil
 	},
-	#'call %i ; pop (%r)' => proc { |dasm, list| "mov %1, #{list.first.next_addr}" },
+	#'call %i ; pop (%r)' => lambda { |dasm, list| "mov %1, #{list.first.next_addr}" },
 } if not defined? Patterns
 
 
@@ -148,7 +148,7 @@ end
 def self.newinstr_callback(dasm, di)
 	# compute the merged subtree of t1 and t2
 	# merges patterns if found
-	mergetree = proc { |t1, t2|
+	mergetree = lambda { |t1, t2|
 		if t1 and t2
 			case t1
 			when Array; t1 + t2
@@ -246,4 +246,4 @@ end
 Deobfuscate.init
 
 # setup the newinstr callback
-dasm.callback_newinstr = proc { |di| Deobfuscate.newinstr_callback(dasm, di) } if defined? dasm
+dasm.callback_newinstr = lambda { |di| Deobfuscate.newinstr_callback(dasm, di) } if defined? dasm

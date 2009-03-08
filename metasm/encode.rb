@@ -133,7 +133,7 @@ class ExeFormat
 		}
 
 		# checks an expression linearity
-		check_linear = proc { |expr|
+		check_linear = lambda { |expr|
 			expr = expr.reduce if expr.kind_of? Expression
 			while expr.kind_of? Expression
 				case expr.op
@@ -172,7 +172,7 @@ class ExeFormat
 				# for each external, compute numeric target values using minbinding[external] and maxbinding[external]
 				# this gives us all extrem values for linear expressions
 				target_bounds = {}
-				rec_checkminmax = proc { |idx, target, binding, extlist|
+				rec_checkminmax = lambda { |idx, target, binding, extlist|
 					if extlist.empty?
 						(target_bounds[idx] ||= []) << target.bind(binding).reduce
 					else
@@ -222,7 +222,7 @@ class ExeFormat
 		edata = EncodedData.new
 
 		# fills edata with repetitions of data until targetsize
-		fillwith = proc { |targetsize, data|
+		fillwith = lambda { |targetsize, data|
 			if data
 				while edata.virtsize + data.virtsize <= targetsize
 					edata << data

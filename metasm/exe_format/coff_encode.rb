@@ -45,7 +45,7 @@ class COFF
 			@link_ver_maj ||= 1
 			@link_ver_min ||= 0
 			@sect_align   ||= 0x1000
-			align = proc { |sz| EncodedData.align_size(sz, @sect_align) }
+			align = lambda { |sz| EncodedData.align_size(sz, @sect_align) }
 			@code_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_CODE' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@data_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_DATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@udata_size   ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_UDATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
@@ -92,9 +92,9 @@ class COFF
 			%w[edata addrtable namptable ord_table libname nametable].each { |name|
 				edata[name] = EncodedData.new
 			}
-			label = proc { |n| coff.label_at(edata[n], 0, n) }
-			rva = proc { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
-			rva_end = proc { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
+			label = lambda { |n| coff.label_at(edata[n], 0, n) }
+			rva = lambda { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
+			rva_end = lambda { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
 
 			@libname_p = rva['libname']
 			@num_exports = @exports.length
@@ -166,9 +166,9 @@ class COFF
 		def encode(coff, edata)
 			edata['iat'] << EncodedData.new
 			# edata['ilt'] = edata['iat']
-			label = proc { |n| coff.label_at(edata[n], 0, n) }
-			rva = proc { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
-			rva_end = proc { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
+			label = lambda { |n| coff.label_at(edata[n], 0, n) }
+			rva = lambda { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
+			rva_end = lambda { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
 
 			@libname_p = rva_end['nametable']
 			@ilt_p = rva_end['ilt']
@@ -253,11 +253,11 @@ class COFF
 				return subtables.inject(EncodedData.new) { |sum, n| sum << edata[n] }
 			end
 
-			label = proc { |n| coff.label_at(edata[n], 0, n) }
+			label = lambda { |n| coff.label_at(edata[n], 0, n) }
 			# data 'rva' are real rvas (from start of COFF)
-			rva_end = proc { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
+			rva_end = lambda { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
 			# names and table 'rva' are relative to the beginning of the resource directory
-			off_end = proc { |n| Expression[[label[n], :-, coff.label_at(edata['table'], 0)], :+, edata[n].virtsize] }
+			off_end = lambda { |n| Expression[[label[n], :-, coff.label_at(edata['table'], 0)], :+, edata[n].virtsize] }
 
 			# build name_w if needed
 			@entries.each { |e| e.name_w = e.name.unpack('C*').pack('v*') if e.name and not e.name_w }
@@ -443,7 +443,7 @@ class COFF
 	def arch_encode_thunk(edata, import)
 		case @cpu
 		when Ia32
-			shellcode = proc { |c| Shellcode.new(@cpu).share_namespace(self).parse(c).assemble.encoded }
+			shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).parse(c).assemble.encoded }
 			if @cpu.generate_PIC
 				# sections starts with a helper function that returns the address of metasm_intern_geteip in eax (PIC)
 				if not @sections.find { |s| s.encoded and s.encoded.export['metasm_intern_geteip'] } and edata.empty?
@@ -734,12 +734,12 @@ class COFF
 	#    specifies the COFF prefered load address, base is an immediate expression
 	#
 	def parse_parser_instruction(instr)
-		readstr = proc {
+		readstr = lambda {
 			@lexer.skip_space
 			raise instr, 'string expected' if not t = @lexer.readtok or (t.type != :string and t.type != :quoted)
 			t.value || t.raw
 		}
-		check_eol = proc {
+		check_eol = lambda {
 			@lexer.skip_space
 			raise instr, 'eol expected' if t = @lexer.nexttok and t.type != :eol
 		}

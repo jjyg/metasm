@@ -453,7 +453,7 @@ module C
 		def precompile_optimize_inner(list, step)
 			lastgoto = nil
 			hadref = false
-			walk = proc { |expr|
+			walk = lambda { |expr|
 				next if not expr.kind_of? CExpression
 				# gcc's unary && support
 				if not expr.op and not expr.lexpr and expr.rexpr.kind_of? Label
@@ -657,8 +657,8 @@ module C
 
 	class If
 		def precompile(compiler, scope)
-			expr = proc { |e| e.kind_of?(CExpression) ? e : CExpression.new(nil, nil, e, e.type) }
-			neg = proc { |e|
+			expr = lambda { |e| e.kind_of?(CExpression) ? e : CExpression.new(nil, nil, e, e.type) }
+			neg = lambda { |e|
 				op = e.op if e.kind_of? CExpression
 				case op
 				when :'!'
@@ -826,9 +826,9 @@ module C
 			@body.break_label = compiler.new_label('switch_break')
 			@body.precompile(compiler)
 			default = @body.break_label
-			# recursive proc to change Case to Labels
+			# recursive lambda to change Case to Labels
 			# dynamically creates the If sequence
-			walk = proc { |blk|
+			walk = lambda { |blk|
 				blk.statements.each_with_index { |s, i|
 					case s
 					when Case
@@ -1112,7 +1112,7 @@ module C
 					locals = @lexpr.type.args.zip(@rexpr).inject({}) { |h, (fa, a)|
 						h.update fa => CExpression.new(nil, nil, a, fa.type).precompile_inner(compiler, scope)
 					}
-					copy_inline_ce = proc { |ce|
+					copy_inline_ce = lambda { |ce|
 						case ce
 						when CExpression; CExpression.new(copy_inline_ce[ce.lexpr], ce.op, copy_inline_ce[ce.rexpr], ce.type)
 						when Variable; locals[ce] || ce
@@ -1120,7 +1120,7 @@ module C
 						else ce
 						end
 					}
-					copy_inline = proc { |stmt, scp|
+					copy_inline = lambda { |stmt, scp|
 						case stmt
 						when Block
 							b = Block.new(scp)
@@ -1405,7 +1405,7 @@ module C
 
 				CExpression.precompile_type(compiler, scope, self)
 
-				isnumeric = proc { |e_| e_.kind_of?(::Numeric) or (e_.kind_of? CExpression and
+				isnumeric = lambda { |e_| e_.kind_of?(::Numeric) or (e_.kind_of? CExpression and
 					not e_.lexpr and not e_.op and e_.rexpr.kind_of? ::Numeric) }
 
 				# calc numeric

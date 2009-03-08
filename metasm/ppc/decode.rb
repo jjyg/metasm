@@ -52,7 +52,7 @@ class PowerPC
 		di.instruction.opname = op.name
 		val = edata.decode_imm(:u32, @endianness)
 
-		field_val = proc { |f|
+		field_val = lambda { |f|
 			r = (val >> @fields_shift[f]) & @fields_mask[f]
 			case f
 			when :bd, :d, :ds, :dq, :si, :ui; r = Expression.make_signed(r<<@fields_shift[f], 16)
@@ -121,7 +121,7 @@ class PowerPC
 		retaddrlist.map! { |retaddr| dasm.decoded[retaddr] ? dasm.decoded[retaddr].block.list.last.address : retaddr }
 		b = f.backtrace_binding
 
-		bt_val = proc { |r|
+		bt_val = lambda { |r|
 			bt = []
 			retaddrlist.each { |retaddr|
 				bt |= dasm.backtrace(Expression[r], retaddr,
@@ -158,7 +158,7 @@ class PowerPC
 		df = DecodedFunction.new
 		df.backtrace_binding = (0..31).inject({}) { |h, r| h.update "r#{r}".to_sym => Expression::Unknown if r != 1 }
 		df.backtracked_for = [BacktraceTrace.new(Expression[:lr], :default, Expression[:lr], :x)]
-		df.btfor_callback = proc { |dasm, btfor, funcaddr, calladdr|
+		df.btfor_callback = lambda { |dasm, btfor, funcaddr, calladdr|
 			if funcaddr != :default
 				btfor
 			elsif di = dasm.decoded[calladdr] and di.opcode.props[:saveip]
@@ -169,7 +169,7 @@ class PowerPC
 		df
 	end
 
-	# hash opname => proc { |di, *sym_args| binding }
+	# hash opname => lambda { |di, *sym_args| binding }
 	def backtrace_binding
 		@backtrace_binding ||= init_backtrace_binding
 	end
@@ -179,24 +179,24 @@ class PowerPC
 		@backtrace_binding ||= {}
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
 			binding = case op
-			when 'mr', 'li', 'la'; proc { |di, a0, a1| { a0 => Expression[a1] } }
-			when 'lis'; proc { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
-			when 'mtctr'; proc { |di, a0| { :ctr => Expression[a0] } }
-			when 'mfctr'; proc { |di, a0| { a0 => Expression[:ctr] } }
-			when 'mtlr'; proc { |di, a0| { :lr => Expression[a0] } }
-			when 'mflr'; proc { |di, a0| { a0 => Expression[:lr] } }
-			when 'lwzu'; proc { |di, a0, m|
+			when 'mr', 'li', 'la'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'lis'; lambda { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
+			when 'mtctr'; lambda { |di, a0| { :ctr => Expression[a0] } }
+			when 'mfctr'; lambda { |di, a0| { a0 => Expression[:ctr] } }
+			when 'mtlr'; lambda { |di, a0| { :lr => Expression[a0] } }
+			when 'mflr'; lambda { |di, a0| { a0 => Expression[:lr] } }
+			when 'lwzu'; lambda { |di, a0, m|
 				ret = { a0 => Expression[m] }
 				ptr = m.pointer.externals.grep(Symbol).first
 				ret[ptr] = m.pointer if ptr != a0
 				ret
 		       	}
-			when 'lwz'; proc { |di, a0, m| { a0 => Expression[m] } }
-			when 'stwu'; proc { |di, a0, m|
+			when 'lwz'; lambda { |di, a0, m| { a0 => Expression[m] } }
+			when 'stwu'; lambda { |di, a0, m|
 				{ m => Expression[a0], m.pointer.externals.grep(Symbol).first => m.pointer }
 		       	}
-			when 'stw'; proc { |di, a0, m| { m => Expression[a0] } }
-			when 'rlwinm'; proc { |di, a0, a1, sh, mb, me|
+			when 'stw'; lambda { |di, a0, m| { m => Expression[a0] } }
+			when 'rlwinm'; lambda { |di, a0, a1, sh, mb, me|
 				mb, me = mb.reduce, me.reduce
 				cpmsk = (1<<@size) - 1
 				a1 = Expression[a1, :&, cpmsk]
@@ -211,12 +211,12 @@ class PowerPC
 				{ a0 => Expression[Expression[rol, :&, msk].reduce] }
 			}
 
-			when 'add', 'addi', 'add.', 'addi.'; proc { |di, *a| { a[0] => Expression[a[-2], :+, a[-1]] } }
-			when 'addis', 'addis.'; proc { |di, *a| { a[0] => Expression[a[-2], :+, [a[-1], :<<, 16]] } }
-			when 'sub', 'subi', 'sub.', 'subi.'; proc { |di, *a| { a[0] => Expression[a[-2], :-, a[-1]] } }
-			when 'subis', 'subis.'; proc { |di, *a| { a[0] => Expression[a[-2], :-, [a[-1], :<<, 16]] } }
-			when /^b.*la?$/; proc { |di, *a| { :lr => Expression[di.next_addr] } }
-			when 'nop', /^cmp/, /^b/; proc { |di, *a| {} }
+			when 'add', 'addi', 'add.', 'addi.'; lambda { |di, *a| { a[0] => Expression[a[-2], :+, a[-1]] } }
+			when 'addis', 'addis.'; lambda { |di, *a| { a[0] => Expression[a[-2], :+, [a[-1], :<<, 16]] } }
+			when 'sub', 'subi', 'sub.', 'subi.'; lambda { |di, *a| { a[0] => Expression[a[-2], :-, a[-1]] } }
+			when 'subis', 'subis.'; lambda { |di, *a| { a[0] => Expression[a[-2], :-, [a[-1], :<<, 16]] } }
+			when /^b.*la?$/; lambda { |di, *a| { :lr => Expression[di.next_addr] } }
+			when 'nop', /^cmp/, /^b/; lambda { |di, *a| {} }
 			end
 
 			@backtrace_binding[op] ||= binding if binding

@@ -12,7 +12,7 @@ class MIPS
 	private
 	def encode_instr_op(exe, instr, op)
 		base = op.bin
-		set_field = proc { |f, v|
+		set_field = lambda { |f, v|
 			base |= (v & @fields_mask[f]) << @fields_shift[f]
 		}
 

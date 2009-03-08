@@ -413,30 +413,30 @@ class Expression < ExpressionType
 		self
 	end
 
-	# reduce_proc is a callback called after the standard reduction procedure for custom algorithms
-	# the proc may return a new expression or nil (to keep the old expr)
-	# exemple: proc { |e| e.lexpr if e.kind_of? Expression and e.op == :& and e.rexpr == 0xffff_ffff }
-	def self.reduce_proc(&b)
-		block_given? ? @@reduce_proc = b : @@reduce_proc
+	# reduce_lambda is a callback called after the standard reduction procedure for custom algorithms
+	# the lambda may return a new expression or nil (to keep the old expr)
+	# exemple: lambda { |e| e.lexpr if e.kind_of? Expression and e.op == :& and e.rexpr == 0xffff_ffff }
+	def self.reduce_lambda(&b)
+		block_given? ? @@reduce_lambda = b : @@reduce_lambda
 	end
-	def self.reduce_proc=(p)
-		@@reduce_proc = p
+	def self.reduce_lambda=(p)
+		@@reduce_lambda = p
 	end
-	@@reduce_proc = nil
+	@@reduce_lambda = nil
 
 	# returns a simplified copy of self
 	# can return an +Expression+ or a +Numeric+, may return self
 	# see +reduce_rec+ for simplifications description
-	# if given a block, it will temporarily overwrite the global @@reduce_proc XXX THIS IS NOT THREADSAFE
+	# if given a block, it will temporarily overwrite the global @@reduce_lambda XXX THIS IS NOT THREADSAFE
 	def reduce(&b)
 		begin
-			old_rp, @@reduce_proc = @@reduce_proc, b if b
+			old_rp, @@reduce_lambda = @@reduce_lambda, b if b
 			ret = case e = reduce_rec
 			when Expression, Numeric; e
 			else Expression[e]
 			end
 		ensure
-			@@reduce_proc = old_rp if b
+			@@reduce_lambda = old_rp if b
 		end
 		ret
 	end
@@ -486,7 +486,7 @@ class Expression < ExpressionType
 			elsif l == 1
 				Expression[r, :'!=', 0].reduce_rec
 			elsif r == 0	# (no sideeffects) && 0 => 0
-				sideeffect = proc { |e|
+				sideeffect = lambda { |e|
 					if e.kind_of? Expression
 						not [:+, :-, :*, :/, :&, :|, :^, :>, :<, :>>, :<<, :'==', :'!=', :<=, :>=, :'&&', :'||'].include?(e.op) or
 						sideeffect[e.lexpr] or sideeffect[e.rexpr]
@@ -640,7 +640,7 @@ class Expression < ExpressionType
 				neg_l = l.rexpr if l.kind_of? Expression and l.op == :-
 
 				# recursive search & replace -lexpr by 0
-				simplifier = proc { |cur|
+				simplifier = lambda { |cur|
 					if (neg_l and neg_l == cur) or (cur.kind_of? Expression and cur.op == :- and not cur.lexpr and cur.rexpr == l)
 						# -l found
 						0
@@ -669,7 +669,7 @@ class Expression < ExpressionType
 			(v.lexpr == :unknown or v.rexpr == :unknown) ? :unknown : v
 		else v
 		end
-		if @@reduce_proc and ret.kind_of? ExpressionType and newret = @@reduce_proc[ret] and newret != ret
+		if @@reduce_lambda and ret.kind_of? ExpressionType and newret = @@reduce_lambda[ret] and newret != ret
 			if newret.kind_of? ExpressionType
 				ret = newret.reduce_rec
 			else

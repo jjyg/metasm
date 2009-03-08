@@ -52,7 +52,7 @@ class MIPS
 		di.instruction.opname = op.name
 		val = edata.decode_imm(:u32, @endianness)
 
-		field_val = proc { |f|
+		field_val = lambda { |f|
 			r = (val >> @fields_shift[f]) & @fields_mask[f]
 			# XXX do that cleanly (Expr.decode_imm)
 			case f
@@ -92,7 +92,7 @@ class MIPS
 		di
 	end
 
-	# hash opname => proc { |di, *sym_args| binding }
+	# hash opname => lambda { |di, *sym_args| binding }
 	def backtrace_binding
 		@backtrace_binding ||= init_backtrace_binding
 	end
@@ -103,34 +103,34 @@ class MIPS
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
 			binding = case op
 			when 'break'
-			when /^b.*al$/; proc { |di, *a|
+			when /^b.*al$/; lambda { |di, *a|
 				# XXX $ra is set only if branch is taken...
 				{ :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] }
 			}
-			when 'nop', 'j', 'jr', /^b/; proc { |di, *a| {} }
-			when 'lui'; proc { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
-			when 'add', 'addu', 'addi', 'addiu'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :+, a2] } }	# XXX addiu $sp, -40h should be addiu $sp, 0xffc0 from the books, but..
-			when 'sub', 'subu'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :-, a2] } }
-			when 'slt', 'slti'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :<, a2] } }
-			when 'and', 'andi'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :&, a2] } }
-			when 'or', 'ori';   proc { |di, a0, a1, a2|   { a0 => Expression[a1, :|, a2] } }
-			when 'nor'; proc { |di, a0, a1, a2| { a0 => Expression[:~, [a1, :|, a2]] } }
-			when 'xor'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :^, a2] } }
-			when 'sll', 'sllv'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :>>, a2] } }
-			when 'srl', 'srlv', 'sra', 'srav'; proc { |di, a0, a1, a2| { a0 => Expression[a1, :<<, a2] } }	# XXX sign-extend
-			when 'lw';        proc { |di, a0, a1| { a0 => Expression[a1] } }
-			when 'sw';        proc { |di, a0, a1| { a1 => Expression[a0] } }
-			when 'lh', 'lhu'; proc { |di, a0, a1| { a0 => Expression[a1] } }	# XXX sign-extend
-			when 'sh';        proc { |di, a0, a1| { a1 => Expression[a0] } }
-			when 'lb', 'lbu'; proc { |di, a0, a1| { a0 => Expression[a1] } }
-			when 'sb';        proc { |di, a0, a1| { a1 => Expression[a0] } }
-			when /^slti?u?/;  proc { |di, a0, a1, a2| { a0 => Expression[a1, :<, a2] } }	# XXX signedness
-			when 'mfhi'; proc { |di, a0| { a0 => Expression[:hi] } }
-			when 'mflo'; proc { |di, a0| { a0 => Expression[:lo] } }
-			when 'mult'; proc { |di, a0, a1| { :hi => Expression[[a0, :*, a1], :>>, 32], :lo => Expression[[a0, :*, a1], :&, 0xffff_ffff] } }
-			when 'div';  proc { |di, a0, a1| { :hi => Expression[a0, :%, a1], :lo => Expression[a0, :/, a1] } }
-			when 'jal', 'jalr'; proc { |di, a0| { :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] } }
-			when 'li', 'mov'; proc { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'nop', 'j', 'jr', /^b/; lambda { |di, *a| {} }
+			when 'lui'; lambda { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
+			when 'add', 'addu', 'addi', 'addiu'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :+, a2] } }	# XXX addiu $sp, -40h should be addiu $sp, 0xffc0 from the books, but..
+			when 'sub', 'subu'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :-, a2] } }
+			when 'slt', 'slti'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :<, a2] } }
+			when 'and', 'andi'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :&, a2] } }
+			when 'or', 'ori';   lambda { |di, a0, a1, a2|   { a0 => Expression[a1, :|, a2] } }
+			when 'nor'; lambda { |di, a0, a1, a2| { a0 => Expression[:~, [a1, :|, a2]] } }
+			when 'xor'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :^, a2] } }
+			when 'sll', 'sllv'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :>>, a2] } }
+			when 'srl', 'srlv', 'sra', 'srav'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :<<, a2] } }	# XXX sign-extend
+			when 'lw';        lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'sw';        lambda { |di, a0, a1| { a1 => Expression[a0] } }
+			when 'lh', 'lhu'; lambda { |di, a0, a1| { a0 => Expression[a1] } }	# XXX sign-extend
+			when 'sh';        lambda { |di, a0, a1| { a1 => Expression[a0] } }
+			when 'lb', 'lbu'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'sb';        lambda { |di, a0, a1| { a1 => Expression[a0] } }
+			when /^slti?u?/;  lambda { |di, a0, a1, a2| { a0 => Expression[a1, :<, a2] } }	# XXX signedness
+			when 'mfhi'; lambda { |di, a0| { a0 => Expression[:hi] } }
+			when 'mflo'; lambda { |di, a0| { a0 => Expression[:lo] } }
+			when 'mult'; lambda { |di, a0, a1| { :hi => Expression[[a0, :*, a1], :>>, 32], :lo => Expression[[a0, :*, a1], :&, 0xffff_ffff] } }
+			when 'div';  lambda { |di, a0, a1| { :hi => Expression[a0, :%, a1], :lo => Expression[a0, :/, a1] } }
+			when 'jal', 'jalr'; lambda { |di, a0| { :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] } }
+			when 'li', 'mov'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			end
 
 			@backtrace_binding[op] ||= binding if binding
@@ -178,7 +178,7 @@ class MIPS
 		retaddrlist.map! { |retaddr| dasm.decoded[retaddr] ? dasm.decoded[retaddr].block.list.last.address : retaddr } if retaddrlist
 		b = f.backtrace_binding
 
-		bt_val = proc { |r|
+		bt_val = lambda { |r|
 			next if not retaddrlist
 			bt = []
 			b[r] = Expression::Unknown	# break recursive dep
@@ -233,7 +233,7 @@ class MIPS
 		df.backtrace_binding = %w[v0 v1 a0 a1 a2 a3 t0 t1 t2 t3 t4 t5 t6 t7 t8 t9 at k0 k1].inject({}) { |h, r| h.update "$#{r}".to_sym => Expression::Unknown }
 		df.backtrace_binding.update %w[gp sp fp ra s0 s1 s2 s3 s4 s5 s6 s7].inject({}) { |h, r| h.update "$#{r}".to_sym => "$#{r}".to_sym }
 		df.backtracked_for = [BacktraceTrace.new(Expression[:$ra], :default, Expression[:$ra], :x)]
-		df.btfor_callback = proc { |dasm, btfor, funcaddr, calladdr|
+		df.btfor_callback = lambda { |dasm, btfor, funcaddr, calladdr|
 			if funcaddr != :default
 				btfor
 			elsif di = dasm.decoded[calladdr] and di.opcode.props[:saveip] and di.instruction.to_s != 'jr $ra'

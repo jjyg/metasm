@@ -184,8 +184,8 @@ end
 if defined? dasm
 # setup the smc callbacks
 list = []
-dasm.callback_selfmodifying = proc { |addr| list << addr }
-dasm.callback_finished = proc {
+dasm.callback_selfmodifying = lambda { |addr| list << addr }
+dasm.callback_finished = lambda {
 	while addr = list.pop
 		SMC.emu(dasm, addr) and SMC.redirect(dasm, addr)
 	end

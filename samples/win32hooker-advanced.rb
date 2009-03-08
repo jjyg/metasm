@@ -61,7 +61,7 @@ EOS
 
 # this is where we store every function hook
 hooks = {}
-prepare_hook = proc { |mpe, base, export|
+prepare_hook = lambda { |mpe, base, export|
 	hooklabel = sc.new_label('hook')
 	namelabel = sc.new_label('name')
 

@@ -20,7 +20,7 @@ def _printadv(a)
 end
 
 # the recursive scanning procedure
-iter = proc { |f|
+iter = lambda { |f|
 	if File.symlink? f
 	elsif File.directory? f
 		# show where we are & recurse

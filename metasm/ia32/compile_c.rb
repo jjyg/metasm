@@ -938,7 +938,7 @@ class CCompiler < C::Compiler
 		# optimizes *2 -> <<1
 		if r.kind_of? Expression and (rr = r.reduce).kind_of? ::Integer
 			if type.integral?
-				log2 = proc { |v|
+				log2 = lambda { |v|
 					# TODO lol
 					i = 0
 					i += 1 while (1 << i) < v

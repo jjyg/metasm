@@ -18,7 +18,7 @@ class Ia32
 		} }
 		@double_list.each { |c| c.class_eval {
 			def render ; [self.class.i_to_s[@sz][@val]] end
-			def context ; {'set sz' => proc { |s| @sz = s }} end
+			def context ; {'set sz' => lambda { |s| @sz = s }} end
 		} }
 	end
 
@@ -55,8 +55,8 @@ class Ia32
 		end
 
 		def context
-			{'set targetsz' => proc { |s| @sz = s },
-			 'set seg' => proc { |s| @seg = Seg.new s }
+			{'set targetsz' => lambda { |s| @sz = s },
+			 'set seg' => lambda { |s| @seg = Seg.new s }
 			}
 		end
 	end
@@ -77,16 +77,16 @@ class Ia32
 		h = {}
 		op = opcode_list_byname[i.opname].first
 		if i.prefix and i.prefix[:rep]
-			h['toogle repz'] = proc { i.prefix[:rep] = {'repnz' => 'repz', 'repz' => 'repnz'}[i.prefix[:rep]] } if op.props[:stropz]
-			h['rm rep']      = proc { i.prefix.delete :rep }
+			h['toogle repz'] = lambda { i.prefix[:rep] = {'repnz' => 'repz', 'repz' => 'repnz'}[i.prefix[:rep]] } if op.props[:stropz]
+			h['rm rep']      = lambda { i.prefix.delete :rep }
 		else
-			h['set rep']     = proc { (i.prefix ||= {})[:rep] = 'rep'  } if op.props[:strop]
-			h['set rep']     = proc { (i.prefix ||= {})[:rep] = 'repz' } if op.props[:stropz]
+			h['set rep']     = lambda { (i.prefix ||= {})[:rep] = 'rep'  } if op.props[:strop]
+			h['set rep']     = lambda { (i.prefix ||= {})[:rep] = 'repz' } if op.props[:stropz]
 		end
 		if i.args.find { |a| a.kind_of? ModRM and a.seg }
-			h['rm seg'] = proc { i.args.find { |a| a.kind_of? ModRM and a.seg }.seg = nil }
+			h['rm seg'] = lambda { i.args.find { |a| a.kind_of? ModRM and a.seg }.seg = nil }
 		end
-		h['toggle lock'] = proc { (i.prefix ||= {})[:lock] = !i.prefix[:lock] }
+		h['toggle lock'] = lambda { (i.prefix ||= {})[:lock] = !i.prefix[:lock] }
 		h
 	end
 end

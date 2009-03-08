@@ -481,7 +481,7 @@ class LinDebug
 		@prompthistory.shift if @prompthistory.length > @prompthistlen
 		@promptbuf = ''
 		@promptpos = @promptbuf.length
-		argint = proc {
+		argint = lambda {
 			begin
 				raise if not e = ExprParser.parse(lex)
 			rescue
@@ -680,29 +680,29 @@ class LinDebug
 
 	def load_commands
 		ntok = nil
-		@command['kill'] = proc { |lex, int|
+		@command['kill'] = lambda { |lex, int|
 			@rs.kill
 			@running = false
 			log 'killed'
 		}
-		@command['quit'] = @command['detach'] = @command['exit'] = proc { |lex, int|
+		@command['quit'] = @command['detach'] = @command['exit'] = lambda { |lex, int|
 			@rs.detach
 			@running = false
 		}
-		@command['closeui'] = proc { |lex, int|
+		@command['closeui'] = lambda { |lex, int|
 			@rs.logger = nil
 			@running = false
 		}
-		@command['bpx'] = proc { |lex, int|
+		@command['bpx'] = lambda { |lex, int|
 			addr = int[]
 			@rs.bpx addr
 		}
-		@command['bphw'] = proc { |lex, int|
+		@command['bphw'] = lambda { |lex, int|
 			type = lex.readtok.raw
 			addr = int[]
 			@rs.set_hwbp type, addr
 		}
-		@command['bl'] = proc { |lex, int|
+		@command['bl'] = lambda { |lex, int|
 			log "bpx at #{@rs.findsymbol(@rs.wantbp)}" if @rs.wantbp.kind_of? ::Integer
 			@rs.breakpoints.sort.each { |addr, oct|
 				log "bpx at #{@rs.findsymbol(addr)}"
@@ -713,15 +713,15 @@ class LinDebug
 				end
 			}
 		}
-		@command['bc'] = proc { |lex, int|
+		@command['bc'] = lambda { |lex, int|
 			@rs.clearbreaks
 		}
-		@command['bt'] = proc { |lex, int| @rs.backtrace.each { |t| puts t } }
-		@command['d'] =  proc { |lex, int| @dataptr = int[] || return }
-		@command['db'] = proc { |lex, int| @datafmt = 'db' ; @dataptr = int[] || return }
-		@command['dw'] = proc { |lex, int| @datafmt = 'dw' ; @dataptr = int[] || return }
-		@command['dd'] = proc { |lex, int| @datafmt = 'dd' ; @dataptr = int[] || return }
-		@command['r'] =  proc { |lex, int|
+		@command['bt'] = lambda { |lex, int| @rs.backtrace.each { |t| puts t } }
+		@command['d'] =  lambda { |lex, int| @dataptr = int[] || return }
+		@command['db'] = lambda { |lex, int| @datafmt = 'db' ; @dataptr = int[] || return }
+		@command['dw'] = lambda { |lex, int| @datafmt = 'dw' ; @dataptr = int[] || return }
+		@command['dd'] = lambda { |lex, int| @datafmt = 'dd' ; @dataptr = int[] || return }
+		@command['r'] =  lambda { |lex, int|
 			r = lex.readtok.raw
 			nil while ntok = lex.readtok and ntok.type == :space
 			if r == 'fl'
@@ -745,25 +745,25 @@ class LinDebug
 				log "#{r} = #{@rs.regs_cache[r]}"
 			end
 		}
-		@command['run'] = @command['cont'] = proc { |lex, int|
+		@command['run'] = @command['cont'] = lambda { |lex, int|
 			if tok = lex.readtok
 				lex.unreadtok tok
 				cont int[]
 			else cont
 			end
 		}
-		@command['syscall']    = proc { |lex, int| syscall }
-		@command['singlestep'] = proc { |lex, int| singlestep }
-		@command['stepover']   = proc { |lex, int| stepover }
-		@command['stepout']    = proc { |lex, int| stepout }
-		@command['g'] = proc { |lex, int|
+		@command['syscall']    = lambda { |lex, int| syscall }
+		@command['singlestep'] = lambda { |lex, int| singlestep }
+		@command['stepover']   = lambda { |lex, int| stepover }
+		@command['stepout']    = lambda { |lex, int| stepout }
+		@command['g'] = lambda { |lex, int|
 			target = int[]
 			@rs.singlestep if @rs.regs_cache['eip'] == target
 			@rs.bpx target, true
 			cont
 		}
-		@command['u'] = proc { |lex, int| @codeptr = int[] || break }
-		@command['has_pax'] = proc { |lex, int|
+		@command['u'] = lambda { |lex, int| @codeptr = int[] || break }
+		@command['has_pax'] = lambda { |lex, int|
 			if tok = lex.readtok
 				lex.unreadtok tok
 				@rs.has_pax = (int[] != 0)
@@ -771,7 +771,7 @@ class LinDebug
 			end
 			log "has_pax now #{@rs.has_pax}"
 		}
-		@command['loadsyms'] = proc { |lex, int|
+		@command['loadsyms'] = lambda { |lex, int|
 			mapfile = ''
 			mapfile << ntok.raw while ntok = lex.readtok
 			if mapfile != ''
@@ -780,8 +780,8 @@ class LinDebug
 				@rs.loadallsyms
 			end
 		}
-		@command['scansyms'] = proc { |lex, int| @rs.scansyms }
-		@command['sym'] = proc { |lex, int|
+		@command['scansyms'] = lambda { |lex, int| @rs.scansyms }
+		@command['sym'] = lambda { |lex, int|
 			sym = ''
 			sym << ntok.raw while ntok = lex.readtok
 			s = []
@@ -797,12 +797,12 @@ class LinDebug
 				log '2'
 			end
 		}
-		@command['delsym'] = proc { |lex, int|
+		@command['delsym'] = lambda { |lex, int|
 			addr = int[]
 			log "deleted #{@rs.symbols.delete addr}"
 			@rs.symbols_len.delete addr
 		}
-		@command['addsym'] = proc { |lex, int|
+		@command['addsym'] = lambda { |lex, int|
 			name = lex.readtok.raw
 			addr = int[]
 			if t = lex.readtok
@@ -813,7 +813,7 @@ class LinDebug
 			end
 			@rs.symbols[addr] = name
 		}
-		@command['help'] = proc { |lex, int|
+		@command['help'] = lambda { |lex, int|
 			log 'commands: (addr/values are things like dword ptr [ebp+(4*byte [eax])] ), type <tab> to see all commands'
 			log ' bpx <addr>'
 			log ' bphw [r|w|x] <addr>: debug register breakpoint'
@@ -842,20 +842,20 @@ class LinDebug
 			log ' F12: step out (til next ret)'
 			log ' pgup/pgdown: move command history'
 		}
-		@command['reload'] = proc { |lex, int| load $0 ; load_commands }
-		@command['ruby'] = proc { |lex, int|
+		@command['reload'] = lambda { |lex, int| load $0 ; load_commands }
+		@command['ruby'] = lambda { |lex, int|
 			str = ''
 			str << ntok.raw while ntok = lex.readtok
 			instance_eval str
 		}
-		@command['maps'] = proc { |lex, int|
+		@command['maps'] = lambda { |lex, int|
 			@rs.filemap.sort_by { |f, (b, e)| b }.each { |f, (b, e)|
 				log "#{f.ljust 20} #{'%08x' % b} - #{'%08x' % e}"
 			}
 		}
-		@command['resize'] = proc { |lex, int| resize }
-		@command['watch'] = proc { |lex, int| @watch = ExprParser.parse(lex) ; updatedataptr }
-		@command['wd'] = proc { |lex, int|
+		@command['resize'] = lambda { |lex, int| resize }
+		@command['watch'] = lambda { |lex, int| @watch = ExprParser.parse(lex) ; updatedataptr }
+		@command['wd'] = lambda { |lex, int|
 			@focus = :data
 			if tok = lex.readtok
 				lex.unreadtok tok
@@ -863,7 +863,7 @@ class LinDebug
 				resize
 			end
 		}
-		@command['wc'] = proc { |lex, int|
+		@command['wc'] = lambda { |lex, int|
 			@focus = :code
 			if tok = lex.readtok
 				lex.unreadtok tok
@@ -871,12 +871,12 @@ class LinDebug
 				resize
 			end
 		}
-		@command['wp'] = proc { |lex, int| @focus = :prompt }
-		@command['?'] = proc { |lex, int|
+		@command['wp'] = lambda { |lex, int| @focus = :prompt }
+		@command['?'] = lambda { |lex, int|
 			val = int[]
 			log "#{val} 0x#{val.to_s(16)} #{[val].pack('L').inspect}"
 		}
-		@command['.'] = proc { |lex, int| @codeptr = nil }
+		@command['.'] = lambda { |lex, int| @codeptr = nil }
 	end
 end
 

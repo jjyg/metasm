@@ -78,7 +78,7 @@ class NDS < ExeFormat
 			tree = tree.first
 
 			# flatten the tree to a list of fullpath
-			iter = proc { |ar, cur|
+			iter = lambda { |ar, cur|
 				ret = []
 				ar.each { |elem|
 					case elem

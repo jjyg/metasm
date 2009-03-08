@@ -173,7 +173,7 @@ class AsmListingWidget < Gtk::HBox
 
 		# renders a string at current cursor position with a color
 		# must not include newline
-		render = proc { |str, color|
+		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
 			next if y >= w_h or x >= w_w
 			fullstr << str
@@ -199,7 +199,7 @@ class AsmListingWidget < Gtk::HBox
 			x += @layout.pixel_size[0]
 		}
 		# newline: current line is fully rendered, update @line_address/@line_text etc
-		nl = proc {
+		nl = lambda {
 			next if y >= w_h
 			@line_text[line] = fullstr
 			@line_address[line] = curaddr
@@ -359,7 +359,7 @@ class AsmListingWidget < Gtk::HBox
 		slot_alloc = {}	# [y1, y2] => x slot	-- y1 <= y2
 		# find a free x slot for the vertical side of the arrow
 		max = (w_w-6)/3
-		find_free = proc { |y1, y2|
+		find_free = lambda { |y1, y2|
 			y1, y2 = y2, y1 if y2 < y1
 			slot_alloc[[y1, y2]] = (0...max).find { |off|
 				not slot_alloc.find { |(oy1, oy2), oo|

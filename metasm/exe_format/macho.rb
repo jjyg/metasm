@@ -534,13 +534,13 @@ class MachO < ExeFormat
 	#     defines the program entrypoint to the specified label / current location
 	#
 	def parse_parser_instruction(instr)
-		readstr = proc {
+		readstr = lambda {
 			@lexer.skip_space
 			t = nil
 			raise instr, "string expected, found #{t.raw.inspect if t}" if not t = @lexer.readtok or (t.type != :string and t.type != :quoted)
 			t.value || t.raw
 		}
-		check_eol = proc {
+		check_eol = lambda {
 			@lexer.skip_space
 			t = nil
 			raise instr, "eol expected, found #{t.raw.inspect if t}" if t = @lexer.nexttok and t.type != :eol

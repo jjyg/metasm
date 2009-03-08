@@ -48,21 +48,21 @@ class << self
 
 	# a fixed-size memory chunk
 	def mem(name, len, defval='')
-		new_field(name, proc { |exe, me| exe.encoded.read(len) }, proc { |exe, me, val| val[0, len].ljust(len, 0.chr) }, defval)
+		new_field(name, lambda { |exe, me| exe.encoded.read(len) }, lambda { |exe, me, val| val[0, len].ljust(len, 0.chr) }, defval)
 	end
 	# a fixed-size string, 0-padded
 	def str(name, len, defval='')
-		e = proc { |exe, me, val| val[0, len].ljust(len, 0.chr) }
-		d = proc { |exe, me| v = exe.encoded.read(len) ; v = v[0, v.index(?\0)] if v.index(?\0) ; v }
+		e = lambda { |exe, me, val| val[0, len].ljust(len, 0.chr) }
+		d = lambda { |exe, me| v = exe.encoded.read(len) ; v = v[0, v.index(?\0)] if v.index(?\0) ; v }
 		new_field(name, d, e, defval)
 	end
 	# 0-terminated string
 	def strz(name, defval='')
-		d = proc { |exe, me|
+		d = lambda { |exe, me|
 		       	ed = exe.encoded
 			ed.read(ed.data.index(?\0, ed.ptr)+1).chop
 		}
-		e = proc { |exe, me, val| val + 0.chr }
+		e = lambda { |exe, me, val| val + 0.chr }
 		new_field(name, d, e, defval)
 	end
 
@@ -90,9 +90,9 @@ class << self
 		# could use a me.instance_variable..
 
 		# decode the value in a temp var
-		d = proc { |exe, me| @bitfield_val = exe.send("decode_#{inttype}") }
+		d = lambda { |exe, me| @bitfield_val = exe.send("decode_#{inttype}") }
 		# reset a temp var
-		e = proc { |exe, me, val| @bitfield_val = 0 ; nil }
+		e = lambda { |exe, me, val| @bitfield_val = 0 ; nil }
 		new_field(nil, d, e, nil)
 
 		h = h.sort
@@ -104,16 +104,16 @@ class << self
 			nxt = h[i+1]
 			mask = (nxt ? (1 << (nxt[0]-off))-1 : -1)
 			# read the field value from the temp var
-			d = proc { |exe, me| (@bitfield_val >> off) & mask }
+			d = lambda { |exe, me| (@bitfield_val >> off) & mask }
 			# update the temp var with the field value, return nil
-			e = proc { |exe, me, val| @bitfield_val |= (val & mask) << off ; nil }
+			e = lambda { |exe, me, val| @bitfield_val |= (val & mask) << off ; nil }
 		       	new_field(name, d, e, 0)
 		}
 
 		# free the temp var
-		d = proc { |exe, me| @bitfield_val = nil }
+		d = lambda { |exe, me| @bitfield_val = nil }
 		# return encoded temp var
-		e = proc { |exe, me, val|
+		e = lambda { |exe, me, val|
 			val = @bitfield_val
 			@bitfield_val = nil
 			exe.send("encode_#{inttype}", val)

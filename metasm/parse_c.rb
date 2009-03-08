@@ -735,7 +735,7 @@ module C
 		def initialize(lexer = nil, model=:ilp32)
 			@lexer = lexer || Preprocessor.new
 			@prev_pragma_callback = @lexer.pragma_callback
-			@lexer.pragma_callback = proc { |tok| parse_pragma_callback(tok) }
+			@lexer.pragma_callback = lambda { |tok| parse_pragma_callback(tok) }
 			@toplevel = Block.new(nil)
 			@unreadtoks = []
 			@typesize = { :void => 0, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8,
@@ -2096,7 +2096,7 @@ EOH
 			opstack = []
 			stack = []
 
-			popstack = proc {
+			popstack = lambda {
 				r, l = stack.pop, stack.pop
 				case op = opstack.pop
 				when :'?:'
@@ -2338,7 +2338,7 @@ EOH
 			end
 
 			# predeclare structs involved in cyclic dependencies
-			dep_cycle = proc { |ary|
+			dep_cycle = lambda { |ary|
 				# sexyness inside (c)
 				deps = todo_deps[ary.last]
 				if deps.include? ary.first; ary

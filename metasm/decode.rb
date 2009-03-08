@@ -304,9 +304,9 @@ class DecodedFunction
 	attr_accessor :backtracked_for
 	# addresses of instruction causing the function to return
 	attr_accessor :return_address
-	# a proc called for dynamic backtrace_binding generation
+	# a lambda called for dynamic backtrace_binding generation
 	attr_accessor :btbind_callback
-	# a proc called for dynamic backtracked_for
+	# a lambda called for dynamic backtracked_for
 	attr_accessor :btfor_callback
 	# bool, if false the function is actually being disassembled
 	attr_accessor :finalized
@@ -1172,7 +1172,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		done = []
 
 		# updates todo with the addresses to backtrace next
-		walk_up = proc { |w_obj, w_addr, w_loopdetect|
+		walk_up = lambda { |w_obj, w_addr, w_loopdetect|
 			if w_loopdetect.length > maxdepth
 				yield :maxdepth, w_obj, :addr => w_addr, :loopdetect => w_loopdetect
 			elsif stopaddr and stopaddr.include?(w_addr)
@@ -1430,7 +1430,7 @@ puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#
 
 				if origin and type
 					# update backtracked_for
-					update_btf = proc { |btf, new_btt|
+					update_btf = lambda { |btf, new_btt|
 						# returns true if btf was modified
 						if i = btf.index(new_btt)
 							btf[i] = new_btt if btf[i].maxdepth < new_btt.maxdepth
@@ -1659,7 +1659,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 
 		ret = []
 
-		decode_imm = proc { |addr, len|
+		decode_imm = lambda { |addr, len|
 			edata, foo = get_section_at(addr)
 			if edata
 				Expression[ edata.decode_imm("u#{8*len}".to_sym, @cpu.endianness) ]
@@ -2010,7 +2010,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# dumps the source, optionnally including data
 	# yields (defaults puts) each line
 	def dump(dump_data=true, &b)
-		b ||= proc { |l| puts l }
+		b ||= lambda { |l| puts l }
 		@sections.sort.each { |addr, edata|
 			blockoffs = @decoded.values.map { |di| Expression[di.block.address, :-, addr].reduce if di.kind_of? DecodedInstruction and di.block_head? }.grep(::Integer).sort.reject { |o| o < 0 or o >= edata.length }
 			b[@program.dump_section_header(addr, edata)]
@@ -2044,7 +2044,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 	# dumps a block of decoded instructions
 	def dump_block(block, &b)
-		b ||= proc { |l| puts l }
+		b ||= lambda { |l| puts l }
 		block = @decoded[block].block if @decoded[block]
 		dump_block_header(block, &b)
 		block.list.each { |di| b[di.show] }
@@ -2052,7 +2052,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 	# shows the xrefs/labels at block start
 	def dump_block_header(block, &b)
-		b ||= proc { |l| puts l }
+		b ||= lambda { |l| puts l }
 		xr = []
 		each_xref(block.address) { |x|
 			case x.type
@@ -2078,7 +2078,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# returns the next offset to display
 	# TODO array-style data access
 	def dump_data(addr, edata, off, &b)
-		b ||= proc { |l| puts l }
+		b ||= lambda { |l| puts l }
 		if l = @prog_binding.index(addr)
 			l = (l + ' ').ljust(16)
 		else l = ''

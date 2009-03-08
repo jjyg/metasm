@@ -202,7 +202,7 @@ EOS
 	end
 
 	def test_floats
-		t_float = proc { |txt|
+		t_float = lambda { |txt|
 			text = <<EOS
 #if #{txt}
 1
@@ -226,8 +226,8 @@ EOS
 	end
 
 	def test_errors
-		test_err = proc { |txt| assert_raise(Metasm::ParseError) { p = load(txt, caller.first) ; p.readtok until p.eos? } }
-		t_float = proc { |txt| assert_raise(Metasm::ParseError) { p = load("#if #{txt}\n#endif", caller.first) ; p.readtok } }
+		test_err = lambda { |txt| assert_raise(Metasm::ParseError) { p = load(txt, caller.first) ; p.readtok until p.eos? } }
+		t_float = lambda { |txt| assert_raise(Metasm::ParseError) { p = load("#if #{txt}\n#endif", caller.first) ; p.readtok } }
 		test_err["\"abc\n\""]
 		test_err['"abc\x"']
 		test_err['/*']

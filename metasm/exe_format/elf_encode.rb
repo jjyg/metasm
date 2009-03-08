@@ -131,7 +131,7 @@ class ELF
 	# sorted insert of a new section to self.sections according to its permission (for segment merging)
 	def encode_add_section s
 		# order: r rx rw noalloc
-		rank = proc { |sec|
+		rank = lambda { |sec|
 			f = sec.flags
 			sec.type == 'NULL' ? -2 : sec.addr ? -1 :
 			f.include?('ALLOC') ? !f.include?('WRITE') ? !f.include?('EXECINSTR') ? 0 : 1 : 2 : 3
@@ -377,7 +377,7 @@ class ELF
 				# dd some_func_got_default	# lazily rewritten to the real addr of some_func by jmp dlresolve_inplace
 				# 				# base_relocated ?
 
-				shellcode = proc { |c| Shellcode.new(@cpu).share_namespace(self).parse(c).assemble.encoded }
+				shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).parse(c).assemble.encoded }
 				base = @cpu.generate_PIC ? 'ebx' : '_PLT_GOT'
 				if not plt ||= @sections.find { |s| s.type == 'PROGBITS' and s.name == '.plt' }
 					plt = Section.new
@@ -453,14 +453,14 @@ class ELF
 		end
 		dynamic.encoded = EncodedData.new('', :export => {'_DYNAMIC' => 0})
 
-		encode_tag = proc { |k, v|
+		encode_tag = lambda { |k, v|
 			dynamic.encoded <<
 			encode_sxword(int_from_hash(k, DYNAMIC_TAG)) <<
 			encode_xword(v)
 		}
 
 		# find or create string in strtab
-		add_str = proc { |n|
+		add_str = lambda { |n|
 			if n and n != '' and not ret = strtab.encoded.data.index(n + 0.chr)
 				ret = strtab.encoded.virtsize
 				strtab.encoded << n << 0
@@ -640,7 +640,7 @@ class ELF
 			encode_segments_dynamic
 		end
 
-		prot_match = proc { |seg, sec|
+		prot_match = lambda { |seg, sec|
 			(sec.include?('WRITE') == seg.include?('W')) # and (sec.include?('EXECINSTR') == seg.include?('X'))
 		}
 
@@ -874,13 +874,13 @@ class ELF
 	#     append to the DT_*_ARRAYs
 	#
 	def parse_parser_instruction(instr)
-		readstr = proc {
+		readstr = lambda {
 			@lexer.skip_space
 			t = nil
 			raise instr, "string expected, found #{t.raw.inspect if t}" if not t = @lexer.readtok or (t.type != :string and t.type != :quoted)
 			t.value || t.raw
 		}
-		check_eol = proc {
+		check_eol = lambda {
 			@lexer.skip_space
 			t = nil
 			raise instr, "eol expected, found #{t.raw.inspect if t}" if t = @lexer.nexttok and t.type != :eol

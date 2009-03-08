@@ -95,7 +95,7 @@ class Graph
 		}
 
 		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
-		maketree = proc { |path|
+		maketree = lambda { |path|
 			path.last.to.delete_if { |g|
 				if path.include? g
 					g.from.delete path.last
@@ -107,7 +107,7 @@ class Graph
 
 		# concat all ary boxes into its 1st element, remove trailing groups from 'groups'
 		# updates from/to
-		merge_groups = proc { |ary|
+		merge_groups = lambda { |ary|
 			bg = Box.new(nil, [])
 			bg.x, bg.y = ary.map { |g| g.x }.min, ary.map { |g| g.y }.min
 			bg.w, bg.h = ary.map { |g| g.x+g.w }.max - bg.x, ary.map { |g| g.y+g.h }.max - bg.y
@@ -127,19 +127,19 @@ class Graph
 		}
 
 		# move all boxes within group of dx, dy
-		move_group = proc { |g, dx, dy|
+		move_group = lambda { |g, dx, dy|
 			g.content.each { |b| b.x += dx ; b.y += dy }
 			g.x += dx ; g.y += dy
 		}
 
-		align_hz = proc { |ary|
+		align_hz = lambda { |ary|
 			nx = ary.map { |g| g.w }.inject(0) { |a, b| a+b } / -2
 			ary.each { |g|
 				move_group[g, nx-g.x, 0]
 				nx += g.w
 			}
 		}
-		align_vt = proc { |ary|
+		align_vt = lambda { |ary|
 			ny = ary.map { |g| g.h }.inject(0) { |a, b| a+b } / -2
 			ary.each { |g|
 				move_group[g, 0, ny-g.y]
@@ -148,7 +148,7 @@ class Graph
 		}
 
 		# scan groups for a column pattern (head has 1 'to' which from == [head])
-		group_columns = proc {
+		group_columns = lambda {
 			groups.find { |g|
 				next if g.from.length == 1 and g.from.first.to.length == 1
 				ary = [g]
@@ -161,7 +161,7 @@ class Graph
 		}
 
 		# scan groups for a line pattern (multiple groups with same to & same from)
-		group_lines = proc { |strict|
+		group_lines = lambda { |strict|
 			groups.find { |g1|
 				ary = g1.from.map { |gg| gg.to }.flatten.uniq.find_all { |gg|
 					gg != g1 and
@@ -201,7 +201,7 @@ class Graph
 		}
 
 		# scan groups for a if/then pattern (1 -> 2 -> 3 & 1 -> 3)
-		group_ifthen = proc { |strict|
+		group_ifthen = lambda { |strict|
 			groups.reverse.find { |g|
 				next if not g2 = g.to.find { |g2_| (g2_.to.length == 1 and g.to.include?(g2_.to.first)) or
 					(not strict and g2_.to.empty?)  }
@@ -216,7 +216,7 @@ class Graph
 
 		# if (a || b) c;
 		# the 'else' case handles '&& else', and && is two if/then nested
-		group_or = proc {
+		group_or = lambda {
 			groups.find { |g|
 				next if g.to.length != 2
 				g2 = g.to[0]
@@ -242,7 +242,7 @@ class Graph
 
 
 		# loop with exit 1 -> 2, 3 & 2 -> 1
-		group_loop = proc {
+		group_loop = lambda {
 			groups.find { |g|
 				next if not g2 = g.to.sort_by { |g2_| g2_.h }.find { |g2_| g2_.to == [g] or (g2_.to.empty? and g2_.from == [g]) }
 				g2.h += 16
@@ -254,7 +254,7 @@ class Graph
 		}
 
 		# same single from or to
-		group_halflines = proc {
+		group_halflines = lambda {
 			groups.find { |g|
 				next if !(ary = g.from.find_all { |gg| gg.to == [g] } and ary.length > 1) and
 					!(ary = g.to.find_all { |gg| gg.from == [g] } and ary.length > 1)
@@ -266,7 +266,7 @@ class Graph
 
 
 		# unknown pattern, group as we can..
-		group_other = proc {
+		group_other = lambda {
 puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.inspect}" }
 			g1 = groups.find_all { |g| g.from.empty? }
 			g1 << groups[rand(groups.length)] if g1.empty?
@@ -285,7 +285,7 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 		}
 
 		# walk graph from roots, cut backward links
-		trim_graph = proc {
+		trim_graph = lambda {
 			g1 = groups.find_all { |g| g.from.empty? }
 			g1 << groups.first if g1.empty?
 			cntpre = groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
@@ -294,11 +294,11 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 		}
 
 		# known, clean patterns
-		group_clean = proc {
+		group_clean = lambda {
 			group_columns[] or group_lines[true] or group_ifthen[true] or group_loop[] or group_or[]
 		}
 		# approximations
-		group_unclean = proc {
+		group_unclean = lambda {
 			group_lines[false] or group_ifthen[false] or group_halflines[] or group_other[]
 		}
 
@@ -643,7 +643,7 @@ class GraphViewWidget < Gtk::HBox
 
 		# renders a string at current cursor position with a color
 		# must not include newline
-		render = proc { |str, color|
+		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
 			next if y >= w_h or x >= w_w
 			if @hl_word
@@ -667,7 +667,7 @@ class GraphViewWidget < Gtk::HBox
 			x += @layout.pixel_size[0]
 		}
 		# newline: current line is fully rendered, update line_address/line_text etc
-		nl = proc {
+		nl = lambda {
 			x = (b.x - @curcontext.view_x + 1)*@zoom
 			y += @font_height
 		}
@@ -780,8 +780,8 @@ class GraphViewWidget < Gtk::HBox
 			fullstr = ''
 			curaddr = nil
 			line = 0
-			render = proc { |str| fullstr << str }
-			nl = proc {
+			render = lambda { |str| fullstr << str }
+			nl = lambda {
 				b[:line_address][line] = curaddr
 				b[:line_text][line] = fullstr
 				fullstr = ''

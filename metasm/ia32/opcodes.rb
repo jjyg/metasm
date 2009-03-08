@@ -770,7 +770,7 @@ class Ia32
 
 	# this recursive method is in charge of Opcode duplication (eg to hardcode some flag)
 	def addop_post(op)
-		dupe = proc { |o|
+		dupe = lambda { |o|
 			dop = Opcode.new o.name.dup
 			dop.bin, dop.fields, dop.props, dop.args = o.bin.dup, o.fields.dup, o.props.dup, o.args.dup
 			dop

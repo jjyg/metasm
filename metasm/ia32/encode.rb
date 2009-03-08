@@ -156,7 +156,7 @@ class Ia32
 	def encode_instr_op(program, i, op)
 		base      = op.bin.pack('C*')
 		oi        = op.args.zip(i.args)
-		set_field = proc { |f, v|
+		set_field = lambda { |f, v|
 			fld = op.fields[f]
 			base[fld[0]] |= v << fld[1]
 		}

@@ -12,7 +12,7 @@ module Metasm
 module GtkGui
 class DisasmWidget < Gtk::VBox
 	attr_accessor :dasm, :entrypoints, :views, :gui_update_counter_max, :notebook
-	# hash key_val => proc { |keyb_ev| true if handled }
+	# hash key_val => lambda { |keyb_ev| true if handled }
 	attr_accessor :keyboard_callback
 
 	def initialize(dasm, ep=[])
@@ -49,7 +49,7 @@ class DisasmWidget < Gtk::VBox
 			true
 		}
 
-		@dasm.callback_prebacktrace ||= proc { Gtk.main_iteration_do(false) }
+		@dasm.callback_prebacktrace ||= lambda { Gtk.main_iteration_do(false) }
 
 		#pack_start iconbar, dasm_working_flag ?
 

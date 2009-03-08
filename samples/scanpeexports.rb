@@ -28,7 +28,7 @@ def _printadv(a)
 end
 
 # the recursive scanning procedure
-iter = proc { |f, match|
+iter = lambda { |f, match|
 	if File.directory? f
 		# show where we are & recurse
 		_printadv f

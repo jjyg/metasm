@@ -126,7 +126,7 @@ class COFF < ExeFormat
 		bytes :link_ver_maj, :link_ver_min
 		words :code_size, :data_size, :udata_size, :entrypoint, :base_of_code
 		# base_of_data does not exist in PE+
-		new_field(:base_of_data, proc { |exe, hdr| exe.decode_word if hdr.signature != 'PE+' }, proc { |exe, hdr, val| exe.encode_word(val) if hdr.signature != 'PE+' }, 0)
+		new_field(:base_of_data, lambda { |exe, hdr| exe.decode_word if hdr.signature != 'PE+' }, lambda { |exe, hdr, val| exe.encode_word(val) if hdr.signature != 'PE+' }, 0)
 		# NT-specific fields
 		xword :image_base
 		words :sect_align, :file_align
