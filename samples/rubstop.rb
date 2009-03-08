@@ -25,7 +25,7 @@ class Rubstop < Metasm::PTrace32
 	def cont(signal=0)
 		@ssdontstopbp = nil
 		singlestep(true) if @wantbp
-		super
+		super(signal)
 		::Process.waitpid(@pid)
 		return if child.exited?
 		@oldregs.update @regs_cache
@@ -67,7 +67,7 @@ class Rubstop < Metasm::PTrace32
 	def syscall
 		@ssdontstopbp = nil
 		singlestep(true) if @wantbp
-		super
+		super()
 		::Process.waitpid(@pid)
 		return if child.exited?
 		@oldregs.update @regs_cache
@@ -78,7 +78,7 @@ class Rubstop < Metasm::PTrace32
 	attr_accessor :pgm, :regs_cache, :breakpoints, :singleshot, :wantbp,
 		:symbols, :symbols_len, :filemap, :has_pax, :oldregs
 	def initialize(*a)
-		super
+		super(*a)
 		@pgm = Metasm::ExeFormat.new Metasm::Ia32.new
 		@pgm.encoded = Metasm::EncodedData.new Metasm::LinuxRemoteString.new(@pid)
 		@pgm.encoded.data.ptrace = self
@@ -145,7 +145,7 @@ class Rubstop < Metasm::PTrace32
 				@ssdontstopbp = nil
 			end
 		elsif @regs_cache['dr6'] & 15 != 0
-			dr = (0..3).find { |dr| @regs_cache['dr6'] & (1 << dr) != 0 }
+			dr = (0..3).find { |dr_| @regs_cache['dr6'] & (1 << dr_) != 0 }
 			@wantbp = "dr#{dr}" if not @singleshot.delete @regs_cache['eip']
 			self.dr6 = 0
 			self.dr7 = @regs_cache['dr7'] & (0xffff_ffff ^ (3 << (2*dr)))
@@ -194,7 +194,7 @@ class Rubstop < Metasm::PTrace32
 
 	def findsymbol(k)
 		file = findfilemap(k) + '!'
-		if s = @symbols[k] ? k : @symbols.keys.find { |s| s < k and s + @symbols_len[s].to_i > k }
+		if s = @symbols[k] ? k : @symbols.keys.find { |s_| s_ < k and s_ + @symbols_len[s_].to_i > k }
 			file + @symbols[s] + (s == k ? '' : "+#{(k-s).to_s(16)}")
 		else
 			file + ('%08x' % k)
@@ -202,7 +202,7 @@ class Rubstop < Metasm::PTrace32
 	end
 
 	def set_hwbp(type, addr, len=1)
-		dr = (0..3).find { |dr| @regs_cache['dr7'] & (1 << (2*dr)) == 0 and @wantbp != "dr#{dr}" }
+		dr = (0..3).find { |dr_| @regs_cache['dr7'] & (1 << (2*dr_)) == 0 and @wantbp != "dr#{dr}" }
 		if not dr
 			log 'no debug reg available :('
 			return false

@@ -51,14 +51,14 @@ class ELF
 	alias decode_off  decode_xword
 
 	def readstr(str, off)
-		if off > 0 and i = str.index(0, off) rescue false	# LoadedElf with arbitrary pointer...
+		if off > 0 and i = str.index(?\0, off) rescue false	# LoadedElf with arbitrary pointer...
 			str[off...i]
 		end
 	end
 
 	# transforms a virtual address to a file offset, from mmaped segments addresses
 	def addr_to_off addr
-		s = @segments.find { |s| s.type == 'LOAD' and s.vaddr <= addr and s.vaddr + s.memsz > addr } if addr
+		s = @segments.find { |s_| s_.type == 'LOAD' and s_.vaddr <= addr and s_.vaddr + s_.memsz > addr } if addr
 		addr - s.vaddr + s.offset if s
 	end
 
@@ -66,9 +66,9 @@ class ELF
 	def label_addr(name)
 		if name.kind_of? Integer
 			name
-		elsif s = @segments.find { |s| s.encoded and s.encoded.export[name] }
+		elsif s = @segments.find { |s_| s_.encoded and s_.encoded.export[name] }
 			s.vaddr + s.encoded.export[name]
-		elsif o = @encoded.export[name] and s = @segments.find { |s| s.offset <= o and s.offset + s.filesz > o }
+		elsif o = @encoded.export[name] and s = @segments.find { |s_| s_.offset <= o and s_.offset + s_.filesz > o }
 			s.vaddr + o - s.offset
 		end
 	end
@@ -196,10 +196,10 @@ class ELF
 	# read dynamic tags array
 	def decode_tags(off = nil)
 		if not off
-			if s = @segments.find { |s| s.type == 'DYNAMIC' }
+			if s = @segments.find { |s_| s_.type == 'DYNAMIC' }
 				# this way it also works with LoadedELF
 				off = addr_to_off(s.vaddr)
-			elsif s = @sections.find { |s| s.type == 'DYNAMIC' }
+			elsif s = @sections.find { |s_| s_.type == 'DYNAMIC' }
 				# if no DYNAMIC segment, assume we decode an ET_REL from file
 				off = s.offset
 			end
@@ -326,7 +326,7 @@ class ELF
 			if s.name and s.shndx != 'UNDEF' and %w[NOTYPE OBJECT FUNC].include?(s.type)
 				if not o = addr_to_off(s.value)
 					# allow to point to end of segment
-					if not seg = @segments.find { |seg| seg.type == 'LOAD' and seg.vaddr + seg.memsz == s.value }	# check end
+					if not seg = @segments.find { |seg_| seg_.type == 'LOAD' and seg_.vaddr + seg_.memsz == s.value }	# check end
 						puts "W: Elf: symbol points to unmmaped space (#{s.inspect})" if $VERBOSE and s.shndx != 'ABS'
 						next
 					end
@@ -418,7 +418,7 @@ class ELF
 	# self.encoded.ptr must point to the location that will be relocated (for implicit addends)
 	def arch_decode_segments_reloc_386(reloc)
 		if reloc.symbol and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
-			s = @sections.find { |s| s.name and s.offset <= @encoded.ptr and s.offset + s.size > @encoded.ptr }
+			s = @sections.find { |s_| s_.name and s_.offset <= @encoded.ptr and s_.offset + s_.size > @encoded.ptr }
 			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
 		end
 
@@ -473,7 +473,7 @@ class ELF
 	# self.encoded.ptr must point to the location that will be relocated (for implicit addends)
 	def arch_decode_segments_reloc_mips(reloc)
 		if reloc.symbol and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
-			s = @sections.find { |s| s.name and s.offset <= @encoded.ptr and s.offset + s.size > @encoded.ptr }
+			s = @sections.find { |s_| s_.name and s_.offset <= @encoded.ptr and s_.offset + s_.size > @encoded.ptr }
 			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
 		end
 
@@ -502,7 +502,7 @@ class ELF
 	# self.encoded.ptr must point to the location that will be relocated (for implicit addends)
 	def arch_decode_segments_reloc_x86_64(reloc)
 		if reloc.symbol and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
-			s = @sections.find { |s| s.name and s.offset <= @encoded.ptr and s.offset + s.size > @encoded.ptr }
+			s = @sections.find { |s_| s_.name and s_.offset <= @encoded.ptr and s_.offset + s_.size > @encoded.ptr }
 			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
 		end
 
@@ -633,15 +633,15 @@ class ELF
 	end
 
 	def dump_section_header(addr, edata)
-		if s = @segments.find { |s| s.vaddr == addr }
+		if s = @segments.find { |s_| s_.vaddr == addr }
 			"\n// ELF segment at #{Expression[addr]}, flags = #{s.flags.sort.join(', ')}"
-		else super
+		else super(addr, edata)
 		end
 	end
 
 	# returns a disassembler with a special decodedfunction for dlsym, __libc_start_main, and a default function (i386 only)
 	def init_disassembler
-		d = super
+		d = super()
 		d.backtrace_maxblocks_data = 4
 		case @cpu
 		when Ia32
@@ -668,7 +668,7 @@ EOC
 				sz = @cpu.size/8
 				raise 'dlsym call error' if not dasm.decoded[calladdr]
 				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)
-				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(0) and i > sz	# try to avoid ordinals
+				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(?\0) and i > sz	# try to avoid ordinals
 					bind = bind.merge :eax => Expression[fn[0, i]]
 				end
 				bind

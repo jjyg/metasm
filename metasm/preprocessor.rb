@@ -287,8 +287,8 @@ class Preprocessor
 				if @args.map { |a| a.raw }.uniq.length != @args.length
 					invalid_body ||= 'duplicate macro parameter'
 				end
-				@body.each_with_index { |tok, i|
-					if tok.type == :punct and tok.raw == '#'
+				@body.each_with_index { |tok_, i|
+					if tok_.type == :punct and tok_.raw == '#'
 						a = @body[i+1]
 						a = @body[i+2] if not a or a.type == :space
 						if not a.type == :string or (not @args.find { |aa| aa.raw == a.raw } and (not varargs or a.raw != '__VA_ARGS__'))

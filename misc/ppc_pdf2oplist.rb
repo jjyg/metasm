@@ -30,7 +30,7 @@ def make_instr(bins, bits, text)
 		msk = (1 << len) - 1
 		case val
 		when '/', '//', '///'	# reserved field, value unspecified
-		when /^\d+$/: bin |= val.to_i << off	# constant field
+		when /^\d+$/; bin |= val.to_i << off	# constant field
 		when /^[A-Za-z]+$/
 			fld = val.downcase.to_sym
 			fld = "#{fld}_".to_sym while $field_mask[fld] and ($field_mask[fld] != msk or $field_shift[fld] != off)
@@ -50,13 +50,13 @@ def make_instr(bins, bits, text)
 			$2.split.each { |e|
  				raise e if e !~ /(\w+)=(\d+)/
 				name, val = $1.downcase, $2.to_i
-				raise "bad bit #{name} in #{txt}" if not fld = curfields.find { |fld| fld.to_s.delete('_') == name }
+				raise "bad bit #{name} in #{txt}" if not fld = curfields.find { |fld_| fld_.to_s.delete('_') == name }
 				curfields.delete fld
 				curbin |= val << $field_shift[fld]
 			}
 		end
 		opname, args = txt.split(/\s+/, 2)
-		args = args.to_s.downcase.split(/\s*,\s*/).map { |arg| fld = curfields.find { |fld| fld.to_s.delete('_') == arg } ; curfields.delete fld ; fld }
+		args = args.to_s.downcase.split(/\s*,\s*/).map { |arg| fld = curfields.find { |fld_| fld_.to_s.delete('_') == arg } ; curfields.delete fld ; fld }
 		if args.include? nil and curfields.length == 2 and (curfields - [:ra, :d]).empty?
 			args[args.index(nil)] = :ra_i16
 			curfields.clear
@@ -83,7 +83,7 @@ end
 # should be implemented in the parser/displayer instead of opcode list
 # manual work needed for eg conditionnal jumps
 def make_alias(newop, newargs, oldop, oldargs)
-	raise "unknown alias #{newop} => #{oldop}" if not op = $opcodes.reverse.find { |op| op[0] == oldop }
+	raise "unknown alias #{newop} => #{oldop}" if not op = $opcodes.reverse.find { |op_| op_[0] == oldop }
 	op2 = op.dup
 	op2[0] = newop
 	oldargs.each_with_index { |oa, i|
@@ -147,8 +147,8 @@ def parse_page(lines)
 			make_instr(encoding, bitindices, text)
 		elsif l.str.include? 'Special Registers Altered'
 			if not $foundop
-				puts ilist.map { |l| "(#{l.y}) #{l.str}" }
-				puts lines.map { |l| "(#{l.y}) #{l.str}" } if ilist.empty?
+				puts ilist.map { |l_| "(#{l_.y}) #{l_.str}" }
+				puts lines.map { |l_| "(#{l_.y}) #{l_.str}" } if ilist.empty?
 				raise 'nofoundop'
 			else
 				$foundop = false

@@ -13,7 +13,7 @@ class COFF
 		# decodes a COFF optional header from coff.cursection
 		# also decodes directories in coff.directory
 		def decode(coff)
-			super
+			super(coff)
 
 			nrva = @numrva
 			if @numrva > DIRECTORIES.length
@@ -34,7 +34,7 @@ class COFF
 
 	class Section
 		def decode(coff)
-			super
+			super(coff)
 			coff.decode_section_body(self)
 		end
 	end
@@ -42,7 +42,7 @@ class COFF
 	class ExportDirectory
 		# decodes a COFF export table from coff.cursection
 		def decode(coff)
-			super
+			super(coff)
 
 			if coff.sect_at_rva(@libname_p)
 				@libname = coff.decode_strz
@@ -110,8 +110,8 @@ class COFF
 
 			if coff.sect_at_rva(@ilt_p) || coff.sect_at_rva(@iat_p)
 				addrs = []
-				while (a = coff.decode_xword) != 0
-					addrs << a
+				while (a_ = coff.decode_xword) != 0
+					addrs << a_
 				end
 
 				@imports = []
@@ -206,7 +206,7 @@ class COFF
 	class RelocationTable
 		# decodes a relocation table from coff.encoded.ptr
 		def decode(coff)
-			super
+			super(coff)
 			len = coff.decode_word
 			len -= 8
 			if len < 0 or len % 2 != 0
@@ -223,7 +223,7 @@ class COFF
 
 	class TLSDirectory
 		def decode(coff)
-			super
+			super(coff)
 
 			if coff.sect_at_va(@callback_p)
 				@callbacks = []
@@ -238,7 +238,7 @@ class COFF
 
 	class LoadConfig
 		def decode(coff)
-			super
+			super(coff)
 
 			if @sehcount >= 0 and @sehcount < 100 and (@signature == 0x40 or @signature == 0x48) and coff.sect_at_va(@sehtable_p)
 				@safeseh = []
@@ -274,7 +274,7 @@ class COFF
 	def decode_half( edata = @cursection.encoded) ; edata.decode_imm(:u16, @endianness) end
 	def decode_word( edata = @cursection.encoded) ; edata.decode_imm(:u32, @endianness) end
 	def decode_xword(edata = @cursection.encoded) ; edata.decode_imm((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
-	def decode_strz( edata = @cursection.encoded) ; if i = edata.data.index(0, edata.ptr) ; edata.read(i+1-edata.ptr).chop ; end ; end
+	def decode_strz( edata = @cursection.encoded) ; if i = edata.data.index(?\0, edata.ptr) ; edata.read(i+1-edata.ptr).chop ; end ; end
 
 	# converts an RVA (offset from base address of file when loaded in memory) to the section containing it using the section table
 	# updates @cursection and @cursection.encoded.ptr to point to the specified address
@@ -283,10 +283,10 @@ class COFF
 	def sect_at_rva(rva)
 		return if not rva or rva <= 0
 		if sections and not @sections.empty?
-			if s = @sections.find { |s| s.virtaddr <= rva and s.virtaddr + s.virtsize > rva }
+			if s = @sections.find { |s_| s_.virtaddr <= rva and s_.virtaddr + s_.virtsize > rva }
 				s.encoded.ptr = rva - s.virtaddr
 				@cursection = s
-			elsif rva < @sections.map { |s| s.virtaddr }.min
+			elsif rva < @sections.map { |s_| s_.virtaddr }.min
 				@encoded.ptr = rva
 				@cursection = self
 			end
@@ -303,7 +303,7 @@ class COFF
 	def label_rva(name)
 		if name.kind_of? Integer
 			name
-		elsif s = @sections.find { |s| s.encoded.export[name] }
+		elsif s = @sections.find { |s_| s_.encoded.export[name] }
 			s.virtaddr + s.encoded.export[name]
 		else
 		       @encoded.export[name]
@@ -528,9 +528,9 @@ class COFF
 	end
 
 	def dump_section_header(addr, edata)
-		s = @sections.find { |s| s.virtaddr == addr-@optheader.image_base }
+		s = @sections.find { |s_| s_.virtaddr == addr-@optheader.image_base }
 		s ? "\n.section #{s.name.inspect} base=#{Expression[addr]}" :
-		addr == @optheader.image_base ? "// exe header at #{Expression[addr]}" : super
+		addr == @optheader.image_base ? "// exe header at #{Expression[addr]}" : super(addr, edata)
 	end
 end
 
@@ -539,7 +539,7 @@ class COFFArchive
 		def decode(ar)
 			@offset = ar.encoded.ptr
 
-			super
+			super(ar)
 
 			@name.strip!
 			@date = @date.to_i
@@ -558,7 +558,7 @@ class COFFArchive
 
 	def decode_half ; @encoded.decode_imm(:u16, :little) end
 	def decode_word ; @encoded.decode_imm(:u32, :little) end
-	def decode_strz(edata = @encoded) ; i = edata.data.index(0, edata.ptr) ; edata.read(i+1-ta.ptr).chop end
+	def decode_strz(edata = @encoded) ; i = edata.data.index(?\0, edata.ptr) ; edata.read(i+1-ta.ptr).chop end
 
 	def decode_first_linker
 		offsets = []

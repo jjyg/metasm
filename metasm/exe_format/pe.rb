@@ -35,7 +35,7 @@ class PE < COFF
 			@mz.encoded.ptr = 0
 			@mz.decode_header
 		end
-		super
+		super()
 	end
 
 	# creates a default MZ file to be used in the PE header
@@ -96,7 +96,7 @@ EOMZSTUB
 		@signature ||= MAGIC
 		@encoded << @signature
 
-		super
+		super(*a)
 	end
 
 	# a returns a new PE with only minimal information copied:
@@ -222,15 +222,15 @@ EOS
 				l = dasm.auto_label_at(aa, 'seh', 'loc', 'sub')
 				dasm.addrs_todo << [aa]
 			}
-			super
+			super(dasm, di)
 		else
-			super
+			super(dasm, di)
 		end
 	end
 
 	# returns a disassembler with a special decodedfunction for GetProcAddress (i386 only), and the default func
 	def init_disassembler
-		d = super
+		d = super()
 		d.backtrace_maxblocks_data = 4
 		if @cpu.kind_of? Ia32
 			old_cp = d.c_parser
@@ -244,7 +244,7 @@ EOS
 				sz = @cpu.size/8
 				break bind if not dasm.decoded[calladdr]
 				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)
-				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(0) and i > sz	# try to avoid ordinals
+				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(?\0) and i > sz	# try to avoid ordinals
 					bind = bind.merge :eax => Expression[fn[0, i]]
 				else
 					@getprocaddr_unknown << [dasm, calladdr]
@@ -340,10 +340,10 @@ class LoadedPE < PE
 				iat_p += ptrsz
 			end
 
-			if not loaded_dll or not e = loaded_dll.export.exports.find { |e| loaded_dll.label_rva(e.target) == ptr - loaded_dll.load_address }
+			if not loaded_dll or not e = loaded_dll.export.exports.find { |e_| loaded_dll.label_rva(e_.target) == ptr - loaded_dll.load_address }
 				# points to unknown space
 				# find pointed module start
-				if not dll = cache.find { |dll| ptr >= dll.load_address and ptr < dll.load_address + dll.optheader.image_size }
+				if not dll = cache.find { |dll_| ptr >= dll_.load_address and ptr < dll_.load_address + dll_.optheader.image_size }
 					addr = ptr & ~0xffff
 					256.times { break if memory[addr, 2] == MZ::MAGIC or addr < 0x10000 ; addr -= 0x10000 }
 					if memory[addr, 2] == MZ::MAGIC
@@ -354,8 +354,8 @@ class LoadedPE < PE
 						cache << dll
 					end
 				end
-				if dll and dll.export and e = dll.export.exports.find { |e| dll.label_rva(e.target) == ptr - dll.load_address }
-					if loaded_dll and ee = loaded_dll.export.exports.find { |ee| ee.forwarder_name == e.name }
+				if dll and dll.export and e = dll.export.exports.find { |e_| dll.label_rva(e_.target) == ptr - dll.load_address }
+					if loaded_dll and ee = loaded_dll.export.exports.find { |ee_| ee_.forwarder_name == e.name }
 						# it's a forwarder from the current loaded_dll
 						puts "forwarder #{ee.name} -> #{dll.export.libname}!#{e.name}" if $DEBUG
 						e = ee

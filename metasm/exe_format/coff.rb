@@ -338,7 +338,7 @@ class COFF < ExeFormat
 		else 'UNKNOWN'
 		end
 
-		super
+		super(cpu)
 	end
 end
 

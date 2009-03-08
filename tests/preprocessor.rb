@@ -146,21 +146,21 @@ EOS
 			File.unlink('tests/prepro_testinclude.asm') rescue nil
 		end
 
-		helper_preparse(<<EOS, 'in') { |p| p.hooked_include['bla.h'] = '#define out in' }
+		helper_preparse(<<EOS, 'in') { |p_| p_.hooked_include['bla.h'] = '#define out in' }
 #include <bla.h>
 out
 EOS
-		helper_preparse(<<EOS, 'in') { |p| p.define('out', 'in') }
+		helper_preparse(<<EOS, 'in') { |p_| p_.define('out', 'in') }
 out
 EOS
-		helper_preparse(<<EOS, 'in') { |p| p.define_strong('out', 'in') }
+		helper_preparse(<<EOS, 'in') { |p_| p_.define_strong('out', 'in') }
 out
 EOS
-		helper_preparse(<<EOS, 'in') { |p| p.define_strong('out', 'in') }
+		helper_preparse(<<EOS, 'in') { |p_| p_.define_strong('out', 'in') }
 #define out poil
 out
 EOS
-		helper_preparse(<<EOS, 'in') { |p| p.define('out', 'in') ; p.define_weak('out', 'poil') }
+		helper_preparse(<<EOS, 'in') { |p_| p_.define('out', 'in') ; p_.define_weak('out', 'poil') }
 out
 EOS
 		p = load <<EOS

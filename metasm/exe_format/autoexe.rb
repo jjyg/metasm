@@ -29,7 +29,7 @@ def self.orshellcode(cpu)
 	# yeeehaa
 	class << c ; self ; end.send(:define_method, :execlass_from_signature) { |raw|
 		begin
-			super
+			super(raw)
 		rescue UnknownSignature
 			Shellcode.withcpu(cpu)
 		end

@@ -15,7 +15,7 @@ require 'metasm-shell'
 
 class Tracer < Metasm::WinDbg
 	def initialize(*a)
-		super
+		super(*a)
 		@label = {}
 		@prog = Metasm::ExeFormat.new(Metasm::Ia32.new)
 		debugloop
@@ -23,7 +23,7 @@ class Tracer < Metasm::WinDbg
 	end
 
 	def handler_newprocess(pid, tid, info)
-		ret = super
+		ret = super(pid, tid, info)
 		# need to call super first
 		# super calls newthread
 		hide_debugger(pid, tid, info)
@@ -31,7 +31,7 @@ class Tracer < Metasm::WinDbg
 	end
 
 	def handler_newthread(pid, tid, info)
-		ret = super
+		ret = super(pid, tid, info)
 		do_singlestep(pid, tid)
 		ret
 	end
@@ -41,7 +41,7 @@ class Tracer < Metasm::WinDbg
 		case info.code
 		when Metasm::WinAPI::STATUS_SINGLE_STEP
 			Metasm::WinAPI::DBG_CONTINUE
-		else super
+		else super(pid, tid, info)
 		end
 	end
 
@@ -55,7 +55,7 @@ class Tracer < Metasm::WinDbg
 			next if not r = pe.label_rva(e.target)
 			@label[info.imagebase + r] = libname + '!' + (e.name || "ord_#{e.ordinal}")
 		}
-		super
+		super(pid, tid, info)
 	end
 
 	# dumps the opcode at eip, sets the trace flag

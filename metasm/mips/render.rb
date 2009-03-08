@@ -31,8 +31,8 @@ class MIPS
 				# jmp foo is stored as jmp foo - bar ; bar:
 				r << a.lexpr
 			else
-				i.args.each { |a|
-					r << a << ', '
+				i.args.each { |a_|
+					r << a_ << ', '
 				}
 				r.pop
 			end

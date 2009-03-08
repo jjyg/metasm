@@ -53,14 +53,14 @@ class << self
 	# a fixed-size string, 0-padded
 	def str(name, len, defval='')
 		e = proc { |exe, me, val| val[0, len].ljust(len, 0.chr) }
-		d = proc { |exe, me| v = exe.encoded.read(len) ; v = v[0, v.index(0)] if v.index(0) ; v }
+		d = proc { |exe, me| v = exe.encoded.read(len) ; v = v[0, v.index(?\0)] if v.index(?\0) ; v }
 		new_field(name, d, e, defval)
 	end
 	# 0-terminated string
 	def strz(name, defval='')
 		d = proc { |exe, me|
 		       	ed = exe.encoded
-			ed.read(ed.data.index(0, ed.ptr)+1).chop
+			ed.read(ed.data.index(?\0, ed.ptr)+1).chop
 		}
 		e = proc { |exe, me, val| val + 0.chr }
 		new_field(name, d, e, defval)

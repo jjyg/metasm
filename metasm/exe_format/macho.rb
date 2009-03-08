@@ -132,11 +132,11 @@ class MachO < ExeFormat
 			@filetype ||= 'EXECUTE'
 			@ncmds ||= m.commands.length
 			@sizeofcmds ||= m.new_label('sizeofcmds')
-			super
+			super(m)
 		end
 
 		def decode(m)
-			super
+			super(m)
 			@reserved = m.decode_word if m.size == 64
 		end
 	end
@@ -147,7 +147,7 @@ class MachO < ExeFormat
 		attr_accessor :data
 
 		def decode(m)
-			super
+			super(m)
 			ptr = m.encoded.ptr
 			if @cmd.kind_of? String and self.class.constants.include? @cmd
 				@data = self.class.const_get(@cmd).decode(m)
@@ -158,11 +158,11 @@ class MachO < ExeFormat
 		def set_default_values(m)
 			@cmd ||= data.class.name.sub(/.*::/, '')
 			@cmdsize ||= 'cmdsize'
-			super
+			super(m)
 		end
 
 		def encode(m)
-			ed = super << @data.encode(m)
+			ed = super(m) << @data.encode(m)
 			ed.align(m.size >> 3)
 			ed.fixup! @cmdsize => ed.length	if @cmdsize.kind_of? String
 			ed
@@ -182,7 +182,7 @@ class MachO < ExeFormat
 			attr_accessor :sections, :encoded
 
 			def decode(m)
-				super
+				super(m)
 				@sections = []
 				@nsects.times { @sections << SECTION.decode(m, self) }
 			end
@@ -197,12 +197,12 @@ class MachO < ExeFormat
 				@nsects   ||= @sections.length
 				@maxprot  ||= %w[READ WRITE EXECUTE]
 				@initprot ||= %w[READ]
-				super
+				super(m)
 			end
 
 			def encode(m)
-				ed = super	# need to call set_default_values before using @sections
-				@sections.inject(ed) { |ed, s| ed << s.encode(m) }
+				ed = super(m)	# need to call set_default_values before using @sections
+				@sections.inject(ed) { |ed_, s| ed_ << s.encode(m) }
 			end
 		end
 		SEGMENT_64 = SEGMENT
@@ -222,7 +222,7 @@ class MachO < ExeFormat
 			def set_default_values
 				@segname ||= @segment.name
 				# addr, offset, etc = @segment.virtaddr + 42
-				super
+				super()
 			end
 
 			def decode_inner(m)
@@ -270,7 +270,7 @@ class MachO < ExeFormat
 			end
 
 			def decode(m)
-				super
+				super(m)
 				@ctx = ctx_keys(m)[0, @count].inject({}) { |ctx, r| ctx.update r => m.decode_word }
 			end
 
@@ -278,11 +278,11 @@ class MachO < ExeFormat
 				@ctx ||= {}
 				ctx_keys(m).each { |k| @ctx[k] ||= 0 }
 				@count ||= @ctx.length
-				super
+				super(m)
 			end
 
 			def encode(m)
-				ctx_keys(m).inject(super) { |ed, r| ed << m.encode_word(@ctx[r]) }
+				ctx_keys(m).inject(super(m)) { |ed, r| ed << m.encode_word(@ctx[r]) }
 			end
 		end
 		UNIXTHREAD = THREAD
@@ -293,9 +293,9 @@ class MachO < ExeFormat
 
 			def decode(m)
 				ptr = m.encoded.ptr
-				super
+				super(m)
 				ptr = m.encoded.ptr = ptr + @stroff - 8
-				@str = m.encoded.read(m.encoded[ptr..-1].data.index(0) || 0)
+				@str = m.encoded.read(m.encoded[ptr..-1].data.index(?\0) || 0)
 			end
 		end
 
@@ -350,7 +350,7 @@ class MachO < ExeFormat
 
 		def decode(m, buf=nil)
 			super(m)
-			idx = buf.index(0, @nameoff) if buf
+			idx = buf.index(?\0, @nameoff) if buf
 			@name = @name = buf[@nameoff..idx-1] if idx
 		end
 	end
@@ -372,7 +372,7 @@ class MachO < ExeFormat
 	attr_accessor :symbols
 
 	def initialize(cpu=nil)
-		super
+		super(cpu)
 		@endianness ||= cpu ? cpu.endianness : :little
 		@size ||= cpu ? cpu.size : 32
 		@header = Header.new
@@ -413,7 +413,7 @@ class MachO < ExeFormat
 		}
 		@symbols.each { |s|
 			next if s.value == 0 or not s.name
-			next if not seg = @segments.find { |seg| s.value >= seg.virtaddr and s.value < seg.virtaddr + seg.virtsize }
+			next if not seg = @segments.find { |seg_| s.value >= seg_.virtaddr and s.value < seg_.virtaddr + seg_.virtsize }
 			seg.encoded.add_export(s.name, s.value - seg.virtaddr)
 		}
 	end
@@ -447,12 +447,12 @@ class MachO < ExeFormat
 		@encoded = EncodedData.new
 
 		if false and maybeyoureallyneedthis
-		seg = LoadCommand::SEGMENT.new
-		seg.name = '__PAGEZERO'
-		seg.encoded = EncodedData.new
-		seg.encoded.virtsize = 0x1000
-		seg.initprot = seg.maxprot = 0
-		@segments.unshift seg
+		segz = LoadCommand::SEGMENT.new
+		segz.name = '__PAGEZERO'
+		segz.encoded = EncodedData.new
+		segz.encoded.virtsize = 0x1000
+		segz.initprot = segz.maxprot = 0
+		@segments.unshift segz
 		end
 
 		# TODO sections -> segments
@@ -520,7 +520,7 @@ class MachO < ExeFormat
 		@header.cputype = case @cpu		# needed by '.entrypoint'
 				  when Ia32; 'I386'
 				  end
-		super
+		super()
 	end
 
 	# handles macho meta-instructions
@@ -567,7 +567,7 @@ class MachO < ExeFormat
 		when '.section'
 			# .section <section name|"section name"> [(no)wxalloc] [base=<expr>]
 			sname = readstr[]
-			if not s = @segments.find { |s| s.name == sname }
+			if not s = @segments.find { |s_| s_.name == sname }
 				s = LoadCommand::SEGMENT.new
 				s.name = sname
 				s.encoded = EncodedData.new
@@ -602,7 +602,7 @@ class MachO < ExeFormat
 				entrypoint = new_label('entrypoint')
 				@cursource << Label.new(entrypoint, instr.backtrace.dup)
 			end
-			if not cmd = @commands.find { |cmd| cmd.cmd == 'THREAD' or cmd.cmd == 'UNIXTHREAD' }
+			if not cmd = @commands.find { |cmd_| cmd_.cmd == 'THREAD' or cmd_.cmd == 'UNIXTHREAD' }
 				cmd = LoadCommand.new
 				cmd.cmd = 'THREAD'
 				cmd.data = LoadCommand::THREAD.new
@@ -612,14 +612,14 @@ class MachO < ExeFormat
 			cmd.data.set_entrypoint(self, entrypoint)
 			check_eol[]
 
-		else super
+		else super(instr)
 		end
 	end
 
 	# assembles the hash self.source to a section array
 	def assemble
 		@source.each { |k, v|
-			raise "no segment named #{k} ?" if not s = @segments.find { |s| s.name == k }
+			raise "no segment named #{k} ?" if not s = @segments.find { |s_| s_.name == k }
 			s.encoded << assemble_sequence(v, @cpu)
 			v.clear
 		}
@@ -637,7 +637,7 @@ class UniversalBinary < ExeFormat
 		word :nfat_arch
 
 		def decode(u)
-			super
+			super(u)
 			raise InvalidExeFormat, "Invalid UniversalBinary signature #{@magic.unpack('H*').first.inspect}" if @magic != MAGIC
 		end
 	end
@@ -654,7 +654,7 @@ class UniversalBinary < ExeFormat
 	attr_accessor :endianness, :encoded, :header, :archive
 	def initialize
 		@endianness = :big
-		super
+		super()
 	end
 
 	def decode
@@ -670,7 +670,7 @@ class UniversalBinary < ExeFormat
 	def <<(exe) @archive << exe end
 
 	def self.autoexe_load(*a)
-		ub = super
+		ub = super(*a)
 		ub.decode
 		# TODO have a global callback or whatever to prompt the user
 		# which file he wants to load in the dasm

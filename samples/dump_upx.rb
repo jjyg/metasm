@@ -52,7 +52,7 @@ class UPXUnpacker < WinDbg
 
 	# when the initial thread is created, set a hardware breakpoint to the entrypoint
 	def handler_newthread(pid, tid, info)
-		 super
+		 super(pid, tid, info)
 		 puts "oep breakpoint set..."
 		 ctx = get_context(pid, tid)
 		 ctx[:dr0] = @oep
@@ -81,7 +81,7 @@ class UPXUnpacker < WinDbg
 			puts 'done.'
 			WinAPI::DBG_CONTINUE
 		else
-			super
+			super(pid, tid, info)
 		end
 	end	
 end

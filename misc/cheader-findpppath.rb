@@ -11,7 +11,7 @@
 def gets
 	l = $ungets
 	$ungets = nil
-	l || super
+	l || super()
 end
 
 def parse(root=false)
@@ -27,7 +27,7 @@ def parse(root=false)
 			else
 				want = true
 				rr = r.pop
-				ret.concat r.map { |l| (l[0,3] == '#el' ? ' ' : '    ') << l }
+				ret.concat r.map { |l_| (l_[0,3] == '#el' ? ' ' : '    ') << l_ }
 				ret << rr
 			end
 		when /^#el/

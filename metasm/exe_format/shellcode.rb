@@ -22,7 +22,7 @@ class Shellcode < ExeFormat
 
 	def parse_init
 		@cursource = @source
-		super
+		super()
 	end
 
 	# allows definition of the base address
@@ -34,7 +34,7 @@ class Shellcode < ExeFormat
 			@lexer.skip_space
 			raise instr, 'syntax error' if not @base_addr = Expression.parse(@lexer).reduce
 			raise instr, 'syntax error' if tok = @lexer.nexttok and tok.type != :eol
-		else super
+		else super(instr)
 		end
 	end
 
@@ -76,7 +76,7 @@ class Shellcode < ExeFormat
 	end
 
 	def init_disassembler
-		d = super
+		d = super()
 		d.function[:default] = @cpu.disassembler_default_func
 		d
 	end

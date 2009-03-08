@@ -151,7 +151,7 @@ end
 			else
 				raise instr, 'invalid cpu mode'
 			end
-		else super
+		else super(lexer, instr)
 		end
 	end
 
@@ -284,7 +284,7 @@ end
 				i.args.unshift i.args.first.dup
 			end
 		end
-		super
+		super(i)
 	end
 
 	# fixup the ptsz of a modrm argument, defaults to other argument size or current cpu mode

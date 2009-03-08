@@ -24,7 +24,7 @@ class COFF
 	class OptionalHeader
 		# encodes an Optional header and the directories
 		def encode(coff)
-			opth = super
+			opth = super(coff)
 
 			DIRECTORIES[0, @numrva].each { |d|
 				if d = coff.directory[d]
@@ -68,7 +68,7 @@ class COFF
 			@heap_commit  ||= 0x1000
 			@numrva       ||= DIRECTORIES.length
 
-			super
+			super(coff)
 		end
 	end
 
@@ -81,7 +81,7 @@ class COFF
 			@rawsize  ||= coff.new_label('sect_rawsize')
 			@rawaddr  ||= coff.new_label('sect_rawaddr')
 
-			super
+			super(coff)
 		end
 	end
 
@@ -103,7 +103,7 @@ class COFF
 			@names_p = rva['namptable']
 			@ord_p = rva['ord_table']
 
-			edata['edata'] << super
+			edata['edata'] << super(coff)
 
 			edata['libname'] << @libname << 0
 
@@ -136,7 +136,7 @@ class COFF
 			@libname ||= 'metalib'
 			@ordinal_base ||= 1
 
-			super
+			super(coff)
 		end
 	end
 
@@ -204,7 +204,7 @@ class COFF
 			}
 			cblist << coff.encode_xword(0)
 
-			dir = super
+			dir = super(coff)
 
 			[dir, cblist]
 		end
@@ -213,14 +213,14 @@ class COFF
 			@start_va ||= 0
 			@end_va ||= @start_va
 
-			super
+			super(coff)
 		end
 	end
 
 	class RelocationTable
 		# encodes a COFF relocation table
 		def encode(coff)
-			rel = super << coff.encode_word(8 + 2*@relocs.length)
+			rel = super(coff) << coff.encode_word(8 + 2*@relocs.length)
 			@relocs.each { |r| rel << r.encode(coff) }
 			rel
 		end
@@ -237,7 +237,7 @@ class COFF
 				@relocs << r
 			end
 
-			super
+			super(coff)
 		end
 	end
 
@@ -357,7 +357,7 @@ class COFF
 			else
 				secs.delete_if { |ss| ss.characteristics.include? 'MEM_SHARED' }
 			end
-			secs.delete_if { |ss| ss.virtsize.kind_of?(::Integer) or ss.rawsize.kind_of?(::Integer) or secs[secs.index(ss)+1..-1].find { |ss| ss.virtaddr.kind_of?(::Integer) } }
+			secs.delete_if { |ss| ss.virtsize.kind_of?(::Integer) or ss.rawsize.kind_of?(::Integer) or secs[secs.index(ss)+1..-1].find { |ss_| ss_.virtaddr.kind_of?(::Integer) } }
 
 			# try to find superset of characteristics
 			if target = secs.find { |ss| (ss.characteristics & char) == char }
@@ -415,7 +415,7 @@ class COFF
 		plt.characteristics = %w[MEM_READ MEM_EXECUTE]
 
 		@imports.zip(iat) { |id, it|
-			if id.iat_p.kind_of? Integer and s = @sections.find { |s| s.virtaddr <= id.iat_p and s.virtaddr + (s.virtsize || s.encoded.virtsize) > id.iat_p }
+			if id.iat_p.kind_of? Integer and s = @sections.find { |s_| s_.virtaddr <= id.iat_p and s_.virtaddr + (s_.virtsize || s_.encoded.virtsize) > id.iat_p }
 				id.iat = it	# will be fixed up after encode_section
 			else
 				# XXX should not be mixed (for @directory['iat'][1])
@@ -476,7 +476,7 @@ class COFF
 			rt.relocs = []
 			@relocations << rt
 		end
-		relocs = @relocations.inject(EncodedData.new) { |edata, rt| edata << rt.encode(self) }
+		relocs = @relocations.inject(EncodedData.new) { |edata, rt_| edata << rt_.encode(self) }
 
 		@directory['base_relocation_table'] = [label_at(relocs, 0, 'reloc_table'), relocs.virtsize]
 
@@ -701,7 +701,7 @@ class COFF
 			@cursource.coff = self
 		end
 		@source ||= {}
-		super
+		super()
 	end
 
 	# handles compiler meta-instructions
@@ -763,7 +763,7 @@ class COFF
 		when '.section'
 			# .section <section name|"section name"> [(no)r w x shared discard] [base=<expr>]
 			sname = readstr[]
-			if not s = @sections.find { |s| s.name == sname }
+			if not s = @sections.find { |s_| s_.name == sname }
 				s = Section.new
 				s.name = sname
 				s.encoded = EncodedData.new
@@ -852,7 +852,7 @@ class COFF
 			raise tok, 'import target exists' if i.target != new_label(i.target)
 
 			@imports ||= []
-			if not id = @imports.find { |id| id.libname == libname }
+			if not id = @imports.find { |id_| id_.libname == libname }
 				id = ImportDirectory.new
 				id.libname = libname
 				id.imports = []
@@ -875,7 +875,7 @@ class COFF
 			check_eol[]
 
 		when '.image_base'
-			raise instr if not base = Expression.parse(@lexer) or not (base = base.reduce).kind_of?(::Integer)
+			raise instr if not base = Expression.parse(@lexer) or !(base = base.reduce).kind_of?(::Integer)
 			@optheader.image_base = base
 			check_eol[]
 
@@ -885,13 +885,13 @@ class COFF
 			@optheader.subsystem = tok.raw
 			check_eol[]
 
-		else super
+		else super(instr)
 		end
 	end
 
 	def assemble
 		@source.each { |k, v|
-			raise "no section named #{k} ?" if not s = @sections.find { |s| s.name == k }
+			raise "no section named #{k} ?" if not s = @sections.find { |s_| s_.name == k }
 			s.encoded << assemble_sequence(v, @cpu)
 			v.clear
 		}
@@ -920,13 +920,13 @@ class COFF
 				next if not dll = autoexports[sym]
 				@imports ||= []
 				next if @imports.find { |id| id.imports.find { |ii| ii.name == sym } }
-				if not id = @imports.find { |id| id.libname =~ /^#{dll}(\.dll)?$/i }
+				if not id = @imports.find { |id_| id_.libname =~ /^#{dll}(\.dll)?$/i }
 					id = ImportDirectory.new
 					id.libname = dll
 					id.imports = []
 					@imports << id
 				end
-				if not i = id.imports.find { |i| i.name == sym }
+				if not i = id.imports.find { |i_| i_.name == sym }
 					i = ImportDirectory::Import.new
 					i.name = sym
 					id.imports << i

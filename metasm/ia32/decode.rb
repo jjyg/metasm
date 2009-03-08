@@ -126,7 +126,9 @@ class Ia32
 		di = DecodedInstruction.new self
 		while edata.ptr < edata.data.length
 			pfx = di.instruction.prefix || {}
-			return di if di.opcode = @bin_lookaside[edata.data[edata.ptr]].find { |op|
+			byte = edata.data[edata.ptr]
+			byte = byte.ord if byte.kind_of? ::String	# 1.9
+			return di if di.opcode = @bin_lookaside[byte].find { |op|
 				# fetch the relevant bytes from edata
 				bseq = edata.data[edata.ptr, op.bin.length].unpack('C*')
 
@@ -141,7 +143,7 @@ class Ia32
 				  (fld = op.fields[:modrmA] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
 				  (sz  = op.props[:opsz]    and ((pfx[:opsz] and @size != 48-sz) or
 					(not pfx[:opsz] and @size != sz))) or
-				  (ndpfx = op.props[:needpfx] and not (pfx[:list] || []).include? ndpfx) or
+				  (ndpfx = op.props[:needpfx] and not pfx[:list].to_a.include? ndpfx) or
 				  # return non-ambiguous opcode (eg push.i16 in 32bit mode) / sync with addop_post in opcode.rb
 				  ((op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret') and not op.props[:opsz] and pfx[:opsz]) or
 				  ((op.props[:strop] or op.props[:stropz]) and (not op.props[:adsz] or op.props[:adsz] == @size) and pfx[:adsz])
@@ -860,11 +862,11 @@ class Ia32
 			elsif not curfunc.btbind_callback
 				break curfunc.backtrace_binding
 			end
-			e_expr = list.find { |e_expr|
+			e_expr = list.find { |e_expr_|
 				# TODO cleanup this
-				e_expr = Expression[e_expr].reduce_rec
-				next if not e_expr.kind_of? Indirection
-				off = Expression[[:esp, :+, s_off], :-, e_expr.target].reduce
+				e_expr_ = Expression[e_expr_].reduce_rec
+				next if not e_expr_.kind_of? Indirection
+				off = Expression[[:esp, :+, s_off], :-, e_expr_.target].reduce
 				off.kind_of? Integer and off >= @size/8 and off < 10*@size/8 and (off % (@size/8)) == 0
 			} || list.first
 
@@ -874,7 +876,7 @@ class Ia32
 			off = Expression[[:esp, :+, s_off], :-, e_expr.target].reduce
 			case off
 			when Expression
-				bd = off.externals.grep(/^autostackoffset_/).inject({}) { |bd, xt| bd.update xt => @size/8 }
+				bd = off.externals.grep(/^autostackoffset_/).inject({}) { |bd_, xt| bd_.update xt => @size/8 }
 				bd.delete s_off
 				if off.bind(bd).reduce == @size/8
 					# all __cdecl

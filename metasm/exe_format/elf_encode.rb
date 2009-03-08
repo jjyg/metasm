@@ -26,7 +26,7 @@ class ELF
 			@shentsize ||= Section.size(elf)
 			@shnum     ||= elf.sections.length
 
-			super
+			super(elf)
 		end
 	end
 
@@ -41,7 +41,7 @@ class ELF
 			@entsize ||= @addralign
 			@link = elf.sections.index(@link) if link.kind_of? Section
 			@info = elf.sections.index(@info) if info.kind_of? Section
-			super
+			super(elf)
 		end
 
 		# defines the @name_p field from @name and elf.section[elf.header.shstrndx]
@@ -75,7 +75,7 @@ class ELF
 			end
 			@paddr  ||= @vaddr if vaddr
 
-			super
+			super(elf)
 		end
 	end
 
@@ -290,14 +290,14 @@ class ELF
 
 		list = @relocations.find_all { |r| r.type != 'JMP_SLOT' and not r.addend }
 		if not list.empty?
-			if not @tag['TEXTREL'] and s = @sections.find { |s|
-				s.encoded and e = s.encoded.inv_export[0] and not s.flags.include? 'WRITE' and
+			if not @tag['TEXTREL'] and s = @sections.find { |s_|
+				s_.encoded and e = s_.encoded.inv_export[0] and not s_.flags.include? 'WRITE' and
 				list.find { |r| Expression[r.offset, :-, e].reduce.kind_of? ::Integer }
 				# TODO need to check with r.offset.bind(elf_binding)
 			}
 				@tag['TEXTREL'] = 0
 			end
-			if not rel = @sections.find { |s| s.type == 'REL' and s.name == '.rel.dyn' }
+			if not rel = @sections.find { |s_| s_.type == 'REL' and s_.name == '.rel.dyn' }
 				rel = Section.new
 				rel.name = '.rel.dyn'
 				rel.type = 'REL'
@@ -315,7 +315,7 @@ class ELF
 
 		list = @relocations.find_all { |r| r.type != 'JMP_SLOT' and r.addend }
 		if not list.empty?
-			if not rela = @sections.find { |s| s.type == 'RELA' and s.name == '.rela.dyn' }
+			if not rela = @sections.find { |s_| s_.type == 'RELA' and s_.name == '.rela.dyn' }
 				rela = Section.new
 				rela.name = '.rela.dyn'
 				rela.type = 'RELA'
@@ -648,9 +648,9 @@ class ELF
 		# assume addr-bound sections come first in @sections, and are addr-ordered
 		@sections.each { |sec|
 			if sec.flags and sec.flags.include? 'ALLOC'
-				if sec.addr or not seg = @segments.find { |seg| seg.type == 'LOAD' and not seg.memsz and prot_match[seg.flags, sec.flags] and
-						not @segments[@segments.index(seg)+1..-1].find { |sseg|
-							sseg.type == 'LOAD' and o = Expression[sseg.vaddr, :-, [seg.vaddr, :+, seg.encoded.length+sec.encoded.length]].reduce and o.kind_of? ::Integer and o < 0
+				if sec.addr or not seg = @segments.find { |seg_| seg_.type == 'LOAD' and not seg_.memsz and prot_match[seg_.flags, sec.flags] and
+						not @segments[@segments.index(seg_)+1..-1].find { |sseg|
+							sseg.type == 'LOAD' and o = Expression[sseg.vaddr, :-, [seg_.vaddr, :+, seg_.encoded.length+sec.encoded.length]].reduce and o.kind_of? ::Integer and o < 0
 						} }
 					seg = Segment.new
 					seg.type = 'LOAD'
@@ -671,9 +671,9 @@ class ELF
 		}
 		# ensure PT_INTERP is mapped if present
 		if interp = @segments.find { |i| i.type == 'INTERP' }
-			if not seg = @segments.find { |seg| seg.type == 'LOAD' and not seg.memsz and interp.flags & seg.flags == interp.flags and
-					not @segments[@segments.index(seg)+1..-1].find { |sseg|
-						sseg.type == 'LOAD' and o = Expression[sseg.vaddr, :-, [seg.vaddr, :+, seg.encoded.length+interp.encoded.length]].reduce and o.kind_of? ::Integer and o < 0
+			if not seg = @segments.find { |seg_| seg_.type == 'LOAD' and not seg_.memsz and interp.flags & seg_.flags == interp.flags and
+					not @segments[@segments.index(seg_)+1..-1].find { |sseg|
+						sseg.type == 'LOAD' and o = Expression[sseg.vaddr, :-, [seg_.vaddr, :+, seg_.encoded.length+interp.encoded.length]].reduce and o.kind_of? ::Integer and o < 0
 					} }
 				seg = Segment.new
 				seg.type = 'LOAD'
@@ -691,7 +691,7 @@ class ELF
 		end
 
 		# ensure last PT_LOAD is writeable (used for bss)
-		seg = @segments.reverse.find { |seg| seg.type == 'LOAD' }
+		seg = @segments.reverse.find { |seg_| seg_.type == 'LOAD' }
 		if not seg or not seg.flags.include? 'W'
 			seg = Segment.new
 			seg.type = 'LOAD'
@@ -714,7 +714,7 @@ class ELF
 
 		# use variables in the first segment descriptor, to allow fixup later
 		# (when we'll be able to include the program header)
-		if first_seg = @segments.find { |seg| seg.type == 'LOAD' }
+		if first_seg = @segments.find { |seg_| seg_.type == 'LOAD' }
 			first_seg_oaddr = first_seg.vaddr	# section's vaddr depend on oaddr
 			first_seg_off = first_seg.offset
 			first_seg.vaddr  = new_label('segvaddr')
@@ -723,7 +723,7 @@ class ELF
 			first_seg.filesz = new_label('segfilsz')
 		end
 
-		if first_seg and not @segments.find { |seg| seg.type == 'PHDR' }
+		if first_seg and not @segments.find { |seg_| seg_.type == 'PHDR' }
 			phdr = Segment.new
 			phdr.type = 'PHDR'
 			phdr.flags = first_seg.flags
@@ -734,7 +734,7 @@ class ELF
 		end
 
 		# encode section&program headers
-		if @segments.find { |seg| seg.type == 'INTERP' }
+		if @segments.find { |seg_| seg_.type == 'INTERP' }
 			st = @sections.inject(EncodedData.new) { |edata, s| edata << s.encode(self) }
 		else
 			@header.shoff = @header.shnum = @header.shstrndx = 0
@@ -770,24 +770,24 @@ class ELF
 			binding[first_seg.filesz] = first_seg.encoded.rawsize
 		end
 
-		@segments.each { |seg|
-			next if not seg.encoded
-			if seg.vaddr.kind_of? ::Integer
-				raise "cannot put segment at address #{Expression[seg.vaddr]} (now at #{Expression[addr]})" if seg.vaddr < addr
-				addr = seg.vaddr
+		@segments.each { |seg_|
+			next if not seg_.encoded
+			if seg_.vaddr.kind_of? ::Integer
+				raise "cannot put segment at address #{Expression[seg_.vaddr]} (now at #{Expression[addr]})" if seg_.vaddr < addr
+				addr = seg_.vaddr
 			else
-				binding[seg.vaddr] = addr
+				binding[seg_.vaddr] = addr
 			end
-			# ensure seg.vaddr & page_size == seg.offset & page_size
+			# ensure seg_.vaddr & page_size == seg_.offset & page_size
 			@encoded.virtsize += (addr - @encoded.virtsize) & 0xfff
-			binding.update seg.encoded.binding(addr)
-			binding[seg.offset] = @encoded.length
-			seg.encoded.align 8
-			@encoded << seg.encoded[0, seg.encoded.rawsize]
-			addr += seg.encoded.length
+			binding.update seg_.encoded.binding(addr)
+			binding[seg_.offset] = @encoded.length
+			seg_.encoded.align 8
+			@encoded << seg_.encoded[0, seg_.encoded.rawsize]
+			addr += seg_.encoded.length
 
 			# page break for memory permission enforcement
-			if @segments[@segments.index(seg)+1..-1].find { |seg| seg.encoded and seg.vaddr.kind_of? ::Integer }
+			if @segments[@segments.index(seg_)+1..-1].find { |seg__| seg__.encoded and seg__.vaddr.kind_of? ::Integer }
 				addr += 0x1000 - (addr & 0xfff) if addr & 0xfff != 0 # minimize memory size
 			else
 				addr += 0x1000 # minimize file size
@@ -835,7 +835,7 @@ class ELF
 		@segments.unshift seg
 
 		@source ||= {}
-		super
+		super()
 	end
 
 	# handles elf meta-instructions
@@ -908,7 +908,7 @@ class ELF
 		when '.section'
 			# .section <section name|"section name"> [(no)wxalloc] [base=<expr>]
 			sname = readstr[]
-			if not s = @sections.find { |s| s.name == sname }
+			if not s = @sections.find { |s_| s_.name == sname }
 				s = Section.new
 				s.type = 'PROGBITS'
 				s.name = sname
@@ -1027,7 +1027,7 @@ class ELF
 			# required ELF interpreter
 			interp = ((instr.raw == '.nointerp') ? 'nil' : readstr[])
 
-			@segments.delete_if { |s| s.type == 'INTERP' }
+			@segments.delete_if { |s_| s_.type == 'INTERP' }
 			case interp.downcase
 			when 'nil', 'no', 'none'
 			else
@@ -1045,7 +1045,7 @@ class ELF
 			# PT_GNU_STACK marking
 			mode = readstr[]
 
-			@segments.delete_if { |s| s.type == 'GNU_STACK' }
+			@segments.delete_if { |s_| s_.type == 'GNU_STACK' }
 			s = Segment.new
 			s.type = 'GNU_STACK'
 			case mode
@@ -1079,21 +1079,21 @@ class ELF
 				@lexer.readtok
 			end
 
-		else super
+		else super(instr)
 		end
 	end
 
 	# assembles the hash self.source to a section array
 	def assemble
 		@source.each { |k, v|
-			raise "no section named #{k} ?" if not s = @sections.find { |s| s.name == k }
+			raise "no section named #{k} ?" if not s = @sections.find { |s_| s_.name == k }
 			s.encoded << assemble_sequence(v, @cpu)
 			v.clear
 		}
 	end
 
 	def encode_file(path, *a)
-		ret = super
+		ret = super(path, *a)
 		File.chmod(0755, path) if @header.type == 'EXEC'
 		ret
 	end

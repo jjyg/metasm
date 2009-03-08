@@ -13,8 +13,7 @@ class Object
 	# dumps to stdout the path to find some targets ( array of objects to match with == )
 	def scan_for(targets, path, done={})
 		done[object_id] = self if done.empty?
-		t = nil
-		if targets.find { |t| self == t }
+		if t = targets.find { |t_| self == t_ }
 			puts "found #{t} at #{path}"
 		end
 		scan_iter { |v, p|

@@ -156,7 +156,7 @@ class Ia32
 	def encode_instr_op(program, i, op)
 		base      = op.bin.pack('C*')
 		oi        = op.args.zip(i.args)
-		set_field = proc { |base, f, v|
+		set_field = proc { |f, v|
 			fld = op.fields[f]
 			base[fld[0]] |= v << fld[1]
 		}
@@ -222,7 +222,7 @@ class Ia32
 			end
 		}
 
-		if not (op.args & [:modrm, :modrmA, :modrmxmm, :modrmmmx]).empty?
+		if !(op.args & [:modrm, :modrmA, :modrmxmm, :modrmmmx]).empty?
 			# reg field of modrm
 			regval = (base[-1] >> 3) & 7
 			base.chop!

@@ -36,7 +36,7 @@ class AOut < ExeFormat
 		words :text, :data, :bss, :syms, :entry, :trsz, :drsz
 
 		def decode(aout)
-			super
+			super(aout)
 
 			case @magic
 			when 'OMAGIC', 'NMAGIC', 'ZMAGIC', 'QMAGIC'
@@ -51,7 +51,7 @@ class AOut < ExeFormat
 			@text ||= aout.text.length + (@magic == 'QMAGIC' ? 32 : 0) if aout.text
 			@data ||= aout.data.length if aout.data
 
-			super
+			super(aout)
 		end
 	end
 
@@ -73,7 +73,7 @@ class AOut < ExeFormat
 
 		def decode(aout, strings=nil)
 			super(aout)
-			@name = strings[@name_p...(strings.index(0, @name_p))] if strings
+			@name = strings[@name_p...(strings.index(?\0, @name_p))] if strings
 		end
 
 		def set_default_values(aout, strings=nil)
@@ -83,7 +83,7 @@ class AOut < ExeFormat
 					strings << @name << 0
 				end
 			end
-			super
+			super(aout, strings)
 		end
 	end
 
@@ -99,7 +99,7 @@ class AOut < ExeFormat
 		@header = Header.new
 		@text = EncodedData.new
 		@data = EncodedData.new
-		super
+		super(cpu)
 	end
 
 	def decode_header
@@ -154,7 +154,7 @@ class AOut < ExeFormat
 		@textsrc ||= []
 		@datasrc ||= []
 		@cursource ||= @textsrc
-		super
+		super()
 	end
 
 	def parse_parser_instruction(instr)
@@ -171,7 +171,7 @@ class AOut < ExeFormat
 				@cursource << Label.new(entrypoint, instr.backtrace.dup)
 			end
 			@header.entry = entrypoint
-		else super
+		else super(instr)
 		end
 	end
 

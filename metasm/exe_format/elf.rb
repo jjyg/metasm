@@ -561,7 +561,7 @@ class ELF < ExeFormat
 			@endianness = :little
 			@bitsize = 32
 		end
-		super
+		super(cpu)
 	end
 end
 end

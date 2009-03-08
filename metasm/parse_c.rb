@@ -187,11 +187,11 @@ module C
 		def align(parser) @members.map { |m| m.type.align(parser) }.max end
 
 		def findmember(name)
-			if m = @members.find { |m| m.name == name }
+			if m = @members.find { |m_| m_.name == name }
 				return m
 			else
-				@members.each { |m|
-					if t = m.type.untypedef and t.kind_of? Union and mm = t.findmember(name)
+				@members.each { |m_|
+					if t = m_.type.untypedef and t.kind_of? Union and mm = t.findmember(name)
 						return mm
 					end
 				}
@@ -221,7 +221,7 @@ module C
 						raise tok, 'bad type for bitslice' if not member.type.integral?
 						bits = nil
 						raise tok, "bad bit count #{bits.inspect}" if not bits = CExpression.parse(parser, scope, false) or
-							not bits.constant? or not (bits = bits.reduce(parser)).kind_of? ::Integer
+							not bits.constant? or !(bits = bits.reduce(parser)).kind_of? ::Integer
 						#raise tok, 'need more bits' if bits > 8*parser.sizeof(member)
 						# WORD wReserved:17; => yay windows.h
 						(@bits ||= [])[@members.length-1] = bits
@@ -255,7 +255,7 @@ module C
 				ret
 			else
 				parser.unreadtok tok
-				super
+				super(parser, scope)
 			end
 		end
 
@@ -264,7 +264,7 @@ module C
 			if nt = parser.skipspaces and nt.type == :punct and nt.raw == '.' and
 					nnt = parser.skipspaces and nnt.type == :string and
 					m = findmember(nnt.raw)
-				raise nnt, 'unhandled initializer' if not nidx = @members.index(@members.find { |m| m.name == nnt.raw })	# TODO
+				raise nnt, 'unhandled indirect initializer' if not nidx = @members.index(@members.find { |m_| m_.name == nnt.raw })	# TODO
 				value = value[idx] ||= [] if not root
 				idx = nidx
 				@members[idx].type.parse_initializer_designator(parser, scope, value, idx, false)
@@ -313,7 +313,7 @@ module C
 		end
 
 		def parse_members(parser, scope)
-			super
+			super(parser, scope)
 			if defined? @attributes and @attributes
 				if @attributes.include? 'packed'
 					@pack = 1
@@ -402,7 +402,7 @@ module C
 				ret
 			else
 				parser.unreadtok tok
-				super
+				super(parser, scope)
 			end
 		end
 
@@ -2268,7 +2268,7 @@ EOH
 				todo_rndr[t], todo_deps[t] = t.dump_def(@toplevel)
 			}
 			# c.toplevel.anonymous_enums.to_a.each { |t| todo_rndr[t], todo_deps[t] = t.dump_def(c.toplevel) }
-			while not (ar = (todo_deps.values.flatten - todo_deps.keys)).empty?
+			while !(ar = (todo_deps.values.flatten - todo_deps.keys)).empty?
 				ar.each { |t|
 					todo_rndr[t], todo_deps[t] = t.dump_def(@toplevel)
 				}
@@ -2508,7 +2508,7 @@ EOH
 			@type.dump_declarator(decl, scope, r, dep)
 		end
 		def dump_initializer(init, scope, r=[''], dep=[])
-			return super if not init.kind_of? ::Array
+			return super(init, scope, r, dep) if not init.kind_of? ::Array
 			r.last << '{ '
 			showname = false
 			init.each_with_index { |v, i|
@@ -2618,7 +2618,7 @@ EOH
 		end
 
 		def dump_initializer(init, scope, r=[''], dep=[])
-			return super if not init.kind_of? ::Array
+			return super(init, scope, r, dep) if not init.kind_of? ::Array
 			r.last << '{ '
 			showname = false
 			@members.zip(init) { |m, i|
@@ -2643,14 +2643,14 @@ EOH
 	class Struct
 		def dump_def(scope, r=[''], dep=[])
 			if pack
-				r, dep = super
+				r, dep = super(scope, r, dep)
 				r.last <<
 				if @pack == 1; (attributes and @attributes.include? 'packed') ? '' : " __attribute__((packed))"
 				else (attributes and @attributes.include? "pack(#@pack)") ? '' : " __attribute__((pack(#@pack)))"
 				end
 				[r, dep]
 			else
-				super
+				super(scope, r, dep)
 			end
 		end
 	end
@@ -2694,7 +2694,7 @@ EOH
 				r.last << k
 				dep |= [scope.struct_ancestors[@name]]
 				[r, dep]
-			else super
+			else super(init, scope, r, dep)
 			end
 		end
 	end

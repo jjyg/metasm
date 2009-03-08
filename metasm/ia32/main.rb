@@ -172,7 +172,7 @@ class Ia32 < CPU
 	end
 
 	def tune_cparser(cp)
-		super
+		super(cp)
 		cp.lexer.define_weak('_M_IX86', 500)
 		cp.lexer.define_weak('_X86_')
 		cp.lexer.define_weak('__i386__')

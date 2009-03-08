@@ -345,7 +345,7 @@ class Decompiler
 							args << ceb[:edx, :&, mask]
 							binding.delete :edx
 						end
-						args_todo.each { |a|
+						args_todo.each {
 							if stackoff.kind_of? Integer
 								var = stackoff_to_varname(stackoff)
 								stackoff += @dasm.cpu.size/8
@@ -512,7 +512,7 @@ class Decompiler
 			when C::Goto
 				# return a new goto
 				decompile_walk(scope) { |s|
-					if s.kind_of? C::Block and l = s.statements.grep(C::Label).find { |l| l.name == g.target }
+					if s.kind_of? C::Block and l = s.statements.grep(C::Label).find { |l_| l_.name == g.target }
 						case nt = s.statements[s.statements.index(l)..-1].find { |ss| not ss.kind_of? C::Label }
 						when C::Goto; ret = nt
 						end
@@ -575,7 +575,7 @@ class Decompiler
 		inner_labels = ary.grep(C::Label).map { |l| l.name }
 		while s = ary.shift
 			# "forward" ifs only
-			if s.kind_of? C::If and s.bthen.kind_of? C::Goto and l = ary.grep(C::Label).find { |l| l.name == s.bthen.target }
+			if s.kind_of? C::If and s.bthen.kind_of? C::Goto and l = ary.grep(C::Label).find { |l_| l_.name == s.bthen.target }
 				# if {goto l;} a; l: => if (!) {a;}
 				s.test = negate[s.test]
 				s.bthen = C::Block.new(scope)
@@ -590,7 +590,7 @@ class Decompiler
 				end
 
 				# if { a; goto l; } b; l: => if {a;} else {b;}
-				if bts.last.kind_of? C::Goto and l = ary.grep(C::Label).find { |l| l.name == bts.last.target }
+				if bts.last.kind_of? C::Goto and l = ary.grep(C::Label).find { |l_| l_.name == bts.last.target }
 					s.belse = C::Block.new(scope)
 					s.belse.statements = decompile_cseq_if(ary[0...ary.index(l)], scope)
 					ary[0...ary.index(l)] = []
@@ -598,7 +598,7 @@ class Decompiler
 				end
 
 				# if { a; l: b; goto any;} c; goto l; => if { a; } else { c; } b; goto any;
-				if not s.belse and (bts.last.kind_of? C::Goto or bts.last.kind_of? C::Return) and g = ary.grep(C::Goto).first and l = bts.grep(C::Label).find { |l| l.name == g.target }
+				if not s.belse and (bts.last.kind_of? C::Goto or bts.last.kind_of? C::Return) and g = ary.grep(C::Goto).first and l = bts.grep(C::Label).find { |l_| l_.name == g.target }
 					s.belse = C::Block.new(scope)
 					s.belse.statements = decompile_cseq_if(ary[0...ary.index(g)], scope)
 					ary[0..ary.index(g)], bts[bts.index(l)..-1] = bts[bts.index(l)..-1], []
@@ -677,7 +677,7 @@ class Decompiler
 		types = {}
 
 		# scan for var = int
-		decompile_walk(scope) { |ce| decompile_walk_ce(ce) { |ce|
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
 			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and ce.rexpr.rexpr.abs < 0x10000
 				v = ce.lexpr
 				if v.kind_of? C::Variable and v.storage != :register
@@ -692,7 +692,7 @@ class Decompiler
 		} }
 
 		# scan for *(bla*)x
-		decompile_walk(scope) { |ce| decompile_walk_ce(ce) { |ce|
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? C::CExpression
 				p = ce.rexpr.rexpr
 				if p.op == nil and p.rexpr.kind_of? C::Variable and p.rexpr.storage != :register
@@ -710,7 +710,7 @@ class Decompiler
 		types.each { |k, v| scope.symbol[k].type = v }
 		# pass 2: fix indirections & pointer addition
 		# TODO (char)toto == 42 => toto == 'A'
-		decompile_walk(scope) { |ce| decompile_walk_ce(ce) { |ce|
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
 			# *(bla*)x => *x, *(bla*)(x+2) => x[2/sizeof(*x)]
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? C::CExpression
 				p = ce.rexpr.rexpr
@@ -759,7 +759,7 @@ class Decompiler
 			decompile_walk_ce(ce.lexpr, &b)
 			decompile_walk_ce(ce.rexpr, &b)
 		when ::Array
-			ce.each { |ce| decompile_walk(ce, &b) }
+			ce.each { |ce_| decompile_walk(ce_, &b) }
 		end
 	end
 

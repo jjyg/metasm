@@ -50,7 +50,7 @@ loop do
 					[depth-d, depth]
 				end
 			}.each { |dc1, dc2|
-				next if not (0...synclen).all? { |i| file1[count1 + dc1 + i] == file2[count2 + dc2 + i] }
+				next if !(0...synclen).all? { |i| file1[count1 + dc1 + i] == file2[count2 + dc2 + i] }
 
 				puts "@#{(count1-ctxlen).to_s 16} #{(count2-ctxlen).to_s 16}"
 				show ' ', file1[count1-ctxlen, ctxlen].inspect

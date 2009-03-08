@@ -37,7 +37,7 @@ class NDS < ExeFormat
 		attr_accessor :files, :fat
 
 		def decode(x)
-			super
+			super(x)
 
 			# decode the files section
 			# it is just the tree structure of a file hierarchy
@@ -112,12 +112,12 @@ class NDS < ExeFormat
 		attr_accessor :title_jap_short, :title_eng_short, :title_fre_short, :title_ger_short, :title_ita_short, :title_spa_short
 
 		def decode(exe)
-			super
+			super(exe)
 
 			%w[jap eng fre ger ita spa].each { |lang|
 				str = instance_variable_get("@title_#{lang}")
 				uchrs = str.unpack('v*')
-				str = str[0, uchrs.index(0)*2]
+				str = str[0, uchrs.index(?\0)*2]
 				instance_variable_set("@title_#{lang}", str)
 				str = str.unpack('v*').pack('C*')
 				instance_variable_set("@title_#{lang}_short", str)

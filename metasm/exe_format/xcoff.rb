@@ -52,7 +52,7 @@ class XCoff < ExeFormat
 			@symptr ||= xcoff.symbols ? xcoff.new_label('symptr') : 0
 			@nsym   ||= xcoff.symbols ? xcoff.symbols.length : 0
 			@opthdr ||= xcoff.optheader ? OptHeader.size(xcoff) : 0
-			super
+			super(xcoff)
 		end
 	end
 
@@ -76,7 +76,7 @@ class XCoff < ExeFormat
 			@sntoc   ||= 3
 			@snloader||= 4
 			@snbss   ||= 5
-			super
+			super(xcoff)
 		end
 	end
 
@@ -92,7 +92,7 @@ class XCoff < ExeFormat
 			@paddr  ||= @vaddr
 			@size   ||= @encoded ? @encoded.size : 0
 			@scnptr ||= xcoff.new_label('s_scnptr')
-			super
+			super(xcoff)
 		end
 	end
 
@@ -119,7 +119,7 @@ class XCoff < ExeFormat
 			@intsize = 32
 			@endianness = :little
 		end
-		super
+		super(cpu)
 	end
 
 	def decode_header(off = 0)

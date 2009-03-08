@@ -127,8 +127,8 @@ class PDF
 		buf = ''
 		loop do
 			case c = @str[@off, 1]
-			when '+', '-': break if not buf.empty?
-			when '.': break if buf.include? '.'
+			when '+', '-'; break if not buf.empty?
+			when '.'; break if buf.include? '.'
 			when '0'..'9'
 			else break
 			end
@@ -148,16 +148,16 @@ class PDF
 			loop do
 				@off += 1
 				case c = @str[@off, 1]
-				when '(': nest += 1 ; buf << c
-				when ')': nest -= 1 ; break if nest < 0 ; buf << c
+				when '('; nest += 1 ; buf << c
+				when ')'; nest -= 1 ; break if nest < 0 ; buf << c
 				when '\\'
 					@off += 1
 					case c = @str[@off, 1]
-					when 'n': buf << ?\n
-					when 'r': buf << ?\r
-					when 't': buf << ?\t
-					when 'b': buf << ?\b
-					when '0'..'7':
+					when 'n'; buf << ?\n
+					when 'r'; buf << ?\r
+					when 't'; buf << ?\t
+					when 'b'; buf << ?\b
+					when '0'..'7'
 						if ('0'..'7').include?(cc = @str[@off+1, 1])
 						@off += 1 ; c << cc
 						if ('0'..'7').include?(cc = @str[@off+1, 1])
@@ -165,10 +165,10 @@ class PDF
 						end
 						end
 						buf << c.to_i(8)
-					when nil: break
+					when nil; break
 					else buf << c
 					end
-				when nil: break
+				when nil; break
 				else buf << c
 				end
 			end
@@ -176,7 +176,7 @@ class PDF
 			loop do
 				@off += 1
 				case c = @str[@off, 1]
-				when '0'..'9', 'a'..'f', 'A'..'F': buf << c
+				when '0'..'9', 'a'..'f', 'A'..'F'; buf << c
 				when ' ', "\n", "\r", "\t"
 				else break
 				end
@@ -196,8 +196,8 @@ class PDF
 		loop do
 			@off += 1
 			case c = @str[@off, 1]
-			when '#': buf << @str[@off+1, 2].to_i(16) ; @off += 2
-			when nil, /[\s\(\)\{\}<>\[\]\/]/: break
+			when '#'; buf << @str[@off+1, 2].to_i(16) ; @off += 2
+			when nil, /[\s\(\)\{\}<>\[\]\/]/; break
 			else buf << c
 			end
 		end
@@ -232,7 +232,7 @@ class PDF
 		buf = ''
 		loop do
 			case c = @str[@off, 1]
-			when nil, /[\s\(\)\{\}<>\[\]\/%]/: break
+			when nil, /[\s\(\)\{\}<>\[\]\/%]/; break
 			else buf << c
 			end
 			@off += 1
@@ -275,9 +275,9 @@ class PDF
 	# updates @xrefs if the object is indirect
 	def readany
 		case @str[@off, 1]
-		when nil: return
-		when '/': readname
-		when '+', '-': readint
+		when nil; return
+		when '/'; readname
+		when '+', '-'; readint
 		when '0'..'9'
 			i = readint
 			if ('0'..'9').include?(@str[@off, 1])
@@ -294,8 +294,8 @@ class PDF
 				end
 			end
 			i
-		when '[': readarray
-		when '(': readstr
+		when '['; readarray
+		when '('; readstr
 		when '<'
  			if @str[@off+1, 1] == '<'
 				h = readhash
@@ -311,8 +311,8 @@ class PDF
 			end
 		else
 			case c = readcmd
-			when 'true', 'false', 'null': c.to_sym
-			when 'xref': readxrtable ; (@trailer ||= {}).update readhash if readcmd == 'trailer' ; readint if readcmd == 'startxref' ; :xref
+			when 'true', 'false', 'null'; c.to_sym
+			when 'xref'; readxrtable ; (@trailer ||= {}).update readhash if readcmd == 'trailer' ; readint if readcmd == 'startxref' ; :xref
 			else raise "unknown cmd #{c.inspect}"
 			end
 		end
@@ -321,7 +321,7 @@ class PDF
 	def skipspc
 		while @off < @str.length
 			case @str[@off, 1]
-			when '%': @off += 1 until @str[@off, 1] == "\n" or @off >= @str.length
+			when '%'; @off += 1 until @str[@off, 1] == "\n" or @off >= @str.length
 			when ' ', "\n", "\r", "\t"
 			else break
 			end
@@ -344,8 +344,8 @@ class PDF
 		end
 		depth -= 1
 		case obj
-		when Hash: obj = obj.dup ; obj.each { |k, v| obj[k] = deref(v, depth) }
-		when Array: obj = obj.dup ; obj.each_with_index { |v, i| obj[i] = deref(v, depth) }
+		when Hash; obj = obj.dup ; obj.each { |k, v| obj[k] = deref(v, depth) }
+		when Array; obj = obj.dup ; obj.each_with_index { |v, i| obj[i] = deref(v, depth) }
 		end if depth > 0
 		obj
 	end
@@ -420,7 +420,7 @@ class PSPage
 				end
 
 				# octal escape sequence: leave as is (actual char depends on font)
-				if bs and (?0..?7).include? b: @str << ?\\ end
+				if bs and (?0..?7).include? b; @str << ?\\ end
 
 				bs = false
 				if char
@@ -463,13 +463,13 @@ puts "(#{x}, #{y} #{fontx}, #{fonty}) #@str" if $VERBOSE
 		linelead = -12
 		ps2tok(str) { |t|
 case t
-when Float, String: print "#{t} "
+when Float, String; print "#{t} "
 else puts t
 end if $VERBOSE
 			case t
-			when Float, String: stack << t		# be postfix !
-			when :BT: intext = true ; @lines << []	# begin text
-			when :ET: intext = false		# end text
+			when Float, String; stack << t		# be postfix !
+			when :BT; intext = true ; @lines << []	# begin text
+			when :ET; intext = false		# end text
 			when :Tj, :TJ	# print line
 				@lines.last << Line.new(stack.pop, curx, cury, fontx, fonty, charspc, wordspc)
 			when :Td, :TD	# move cursor
@@ -498,11 +498,11 @@ end if $VERBOSE
 	def ps2tok(str)
 		loop do
 			case str
-			when '': break
-			when /\A-?\d+(?:\.\d+)?/: tok = $&.to_f
-			when /\A\((?:\\.|[^\\)])*\)/: tok = $&
-			when /\A\[(?:[^\](]*\((?:\\.|[^\\)])*\))*[^\]]*\]/: tok = $&
-			when /\A[a-zA-Z0-9_*]+/: tok = $&.to_sym rescue nil
+			when ''; break
+			when /\A-?\d+(?:\.\d+)?/; tok = $&.to_f
+			when /\A\((?:\\.|[^\\)])*\)/; tok = $&
+			when /\A\[(?:[^\](]*\((?:\\.|[^\\)])*\))*[^\]]*\]/; tok = $&
+			when /\A[a-zA-Z0-9_*]+/; tok = $&.to_sym rescue nil
 			when /\A\S+/, /\A\s+/
 			end
 			str = str[$&.length..-1]

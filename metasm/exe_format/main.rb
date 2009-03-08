@@ -12,8 +12,6 @@ require 'metasm/exe_format/serialstruct'
 
 module Metasm
 class ExeFormat
-	attr_accessor :cpu, :encoded
-
 	# creates a new instance, populates self.encoded with the supplied string
 	def self.load(str, *a)
 		e = new(*a)
@@ -155,7 +153,7 @@ module IntToHash
 	# converts an array of flag constants to its numeric value using the hash
 	# {1 => 'toto', 2 => 'tata'}: ['toto', 'tata'] => 3, 'toto' => 2, 42 => 42
 	def bits_from_hash(val, hash)
-		val.kind_of?(Array) ? val.inject(0) { |val, bitname| val | int_from_hash(bitname, hash) } : int_from_hash(val, hash)
+		val.kind_of?(Array) ? val.inject(0) { |val_, bitname| val_ | int_from_hash(bitname, hash) } : int_from_hash(val, hash)
 	end
 
 	# converts a numeric value to the corresponding constant name using the hash

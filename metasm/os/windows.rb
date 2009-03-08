@@ -19,7 +19,7 @@ class << self
 		if formatmessage(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
 			message = 'unknown error %x' % errno
 		else
-			message = message[0, message.index(0)] if message.index(0)
+			message = message[0, message.index(?\0)] if message.index(?\0)
 			message.chomp!
 		end
 		message
@@ -159,11 +159,11 @@ class << self
 			pr = Process.new
 			pr.pid = pid
 			if handle = WinAPI.openprocess(WinAPI::PROCESS_QUERY_INFORMATION | WinAPI::PROCESS_VM_READ, 0, pid)
-				mod = ' '*4096
+				mods = ' '*4096
 				ret = [0].pack('L')
-				if WinAPI.enumprocessmodules(handle, mod, mod.length, ret)
+				if WinAPI.enumprocessmodules(handle, mods, mods.length, ret)
 					pr.modules = []
-					mod[0, ret.unpack('L').first].unpack('L*').each { |mod|
+					mods[0, ret.unpack('L').first].unpack('L*').each { |mod|
 						path = ' ' * 512
 						m = Process::Module.new
 						m.addr = mod
@@ -199,7 +199,7 @@ class << self
 		if shellcode.kind_of? EncodedData
 			fixup_shellcode_relocs(shellcode, target, remote_mem)
 			shellcode.fixup! shellcode.binding(injectaddr)
-			r = shellcode.reloc.values.map { |r| r.target }
+			r = shellcode.reloc.values.map { |r_| r_.target }
 			raise "unresolved shellcode relocs #{r.join(', ')}" if not r.empty?
 			shellcode = shellcode.data
 		end
@@ -216,13 +216,13 @@ class << self
 		while e = ext.pop
 			next if binding[e]
 			next if not lib = WindowsExports::EXPORT[e]	# XXX could scan all exports... LoadLibrary ftw
-			next if not m = target.modules.find { |m| m.path.downcase.include? lib.downcase }
+			next if not m = target.modules.find { |m_| m_.path.downcase.include? lib.downcase }
 			lib = LoadedPE.load(remote_mem[m.addr, 0x1000_0000])
 			lib.decode_header
 			lib.decode_exports
-			lib.export.exports.each { |e|
-				next if not e.name or not e.target
-				binding[e.name] = m.addr + lib.label_rva(e.target)
+			lib.export.exports.each { |e_|
+				next if not e_.name or not e_.target
+				binding[e_.name] = m.addr + lib.label_rva(e_.target)
 			}
 			shellcode.fixup! binding
 		end
@@ -568,7 +568,7 @@ class WinDbg
 		ptr = @mem[pid][ptr, 4].unpack('L').first
 		str = @mem[pid][ptr, 512]
 		str = str.unpack('S*').pack('C*') if unicode != 0
-		str = str[0, str.index(0)] if str.index(0)
+		str = str[0, str.index(?\0)] if str.index(?\0)
 		str
 	end
 end

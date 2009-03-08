@@ -23,7 +23,7 @@ while src = todo.shift
 	# could do a simple ELF.decode_file, but this is quicker
 	elf = Metasm::ELF.decode_file_header(src)
 
-	if s = elf.segments.find { |s| s.type == 'INTERP' }
+	if s = elf.segments.find { |s_| s_.type == 'INTERP' }
 		interp = elf.encoded[s.offset, s.filesz].data.chomp("\0")
 		if not done.include? interp
 			puts interp
@@ -37,7 +37,7 @@ while src = todo.shift
 	done.concat deps
 
 	deps.each { |dep|
-		if not path = paths.find { |path| File.exist? File.join(path, dep) }
+		if not path = paths.find { |path_| File.exist? File.join(path_, dep) }
 			$stderr.puts "cannot find #{dep} for #{src}"
 		else
 			todo << File.join(path, dep)

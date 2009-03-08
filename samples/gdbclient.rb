@@ -140,7 +140,7 @@ class Rubstop
 		rng.each_with_index { |r, i|
 			if r.include? invalid
 				replace = [r.begin..invalid-1, invalid+1..r.end]
-				replace.delete_if { |r| r.begin > r.end }
+				replace.delete_if { |r_| r_.begin > r_.end }
 				rng[i, 1] = replace
 			end
 		}
@@ -410,7 +410,7 @@ class Rubstop
 
 	def findsymbol(k)
 		file = findfilemap(k) + '!'
-		if s = @symbols[k] ? k : @symbols.keys.find { |s| s < k and s + @symbols_len[s].to_i > k }
+		if s = @symbols[k] ? k : @symbols.keys.find { |s_| s_ < k and s_ + @symbols_len[s_].to_i > k }
 			file + @symbols[s] + (s == k ? '' : "+#{(k-s).to_s(16)}")
 		else
 			file + ('%08x' % k)

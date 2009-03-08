@@ -180,7 +180,7 @@ class DisasmWidget < Gtk::VBox
 			# quiet
 			return false
 		else
-			c = Gdk::Keyval.constants.find { |c| Gdk::Keyval.const_get(c) == ev.keyval }
+			c = Gdk::Keyval.constants.find { |c_| Gdk::Keyval.const_get(c_) == ev.keyval }
 			p [:unknown_keypress, ev.keyval, c, ev.state]
 			return false
 		end
@@ -196,8 +196,8 @@ class DisasmWidget < Gtk::VBox
 				addr = @dasm.prog_binding[addr]
 			elsif (?0..?9).include? addr[0]
 				case addr
-				when /h$/: addr = '0x' + addr[0...-1]
-				when /[a-f]/i: addr = '0x' + addr
+				when /h$/; addr = '0x' + addr[0...-1]
+				when /[a-f]/i; addr = '0x' + addr
 				end
 				begin
 					addr = Integer(addr)

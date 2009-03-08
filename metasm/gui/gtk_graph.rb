@@ -162,14 +162,14 @@ class Graph
 
 		# scan groups for a line pattern (multiple groups with same to & same from)
 		group_lines = proc { |strict|
-			groups.find { |g|
-				ary = g.from.map { |gg| gg.to }.flatten.uniq.find_all { |gg|
-					gg != g and
-					(gg.from - g.from).empty? and (g.from - gg.from).empty? and
-					(strict ? ((gg.to - g.to).empty? and (g.to - gg.to).empty?) : (g.to & gg.to).first)
+			groups.find { |g1|
+				ary = g1.from.map { |gg| gg.to }.flatten.uniq.find_all { |gg|
+					gg != g1 and
+					(gg.from - g1.from).empty? and (g1.from - gg.from).empty? and
+					(strict ? ((gg.to - g1.to).empty? and (g1.to - gg.to).empty?) : (g1.to & gg.to).first)
 				}
 				next if ary.empty?
-				ary << g
+				ary << g1
 				dy = 16*ary.map { |g| g.to.length + g.from.length }.inject { |a, b| a+b }
 				ary.each { |g| g.h += dy ; g.y -= dy/2 }
 				align_hz[ary]
@@ -203,8 +203,8 @@ class Graph
 		# scan groups for a if/then pattern (1 -> 2 -> 3 & 1 -> 3)
 		group_ifthen = proc { |strict|
 			groups.reverse.find { |g|
-				next if not g2 = g.to.find { |g2| (g2.to.length == 1 and g.to.include?(g2.to.first)) or
-					(not strict and g2.to.empty?)  }
+				next if not g2 = g.to.find { |g2_| (g2_.to.length == 1 and g.to.include?(g2_.to.first)) or
+					(not strict and g2_.to.empty?)  }
 				next if strict and g2.from != [g] or g.to.length != 2
 				g2.h += 16 ; g2.y -= 8
 				align_vt[[g, g2]]
@@ -244,7 +244,7 @@ class Graph
 		# loop with exit 1 -> 2, 3 & 2 -> 1
 		group_loop = proc {
 			groups.find { |g|
-				next if not g2 = g.to.sort_by { |g2| g2.h }.find { |g2| g2.to == [g] or (g2.to.empty? and g2.from == [g]) }
+				next if not g2 = g.to.sort_by { |g2_| g2_.h }.find { |g2_| g2_.to == [g] or (g2_.to.empty? and g2_.from == [g]) }
 				g2.h += 16
 				align_vt[[g, g2]]
 				move_group[g2, g2.x-8, 0]
@@ -256,8 +256,8 @@ class Graph
 		# same single from or to
 		group_halflines = proc {
 			groups.find { |g|
-				next if not (ary = g.from.find_all { |gg| gg.to == [g] } and ary.length > 1) and
-					not (ary = g.to.find_all { |gg| gg.from == [g] } and ary.length > 1)
+				next if !(ary = g.from.find_all { |gg| gg.to == [g] } and ary.length > 1) and
+					!(ary = g.to.find_all { |gg| gg.from == [g] } and ary.length > 1)
 				align_hz[ary]
 				merge_groups[ary]
 				true
@@ -288,9 +288,9 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 		trim_graph = proc {
 			g1 = groups.find_all { |g| g.from.empty? }
 			g1 << groups.first if g1.empty?
-			cntpre = groups.inject(0) { |cntpre, g| cntpre + g.to.length }
+			cntpre = groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
 			g1.each { |g| maketree[[g]] }
-			true if cntpre != groups.inject(0) { |cntpre, g| cntpre + g.to.length }
+			true if cntpre != groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
 		}
 
 		# known, clean patterns
@@ -759,9 +759,9 @@ class GraphViewWidget < Gtk::HBox
 			else
 				box = ctx.new_box a, :addresses => [], :line_text => {}, :line_address => {}
 			end
-			@dasm.decoded[a].block.list.each { |di|
-				box[:addresses] << di.address
-				addr2box[di.address] = box
+			@dasm.decoded[a].block.list.each { |di_|
+				box[:addresses] << di_.address
+				addr2box[di_.address] = box
 			}
 			todo.concat block_rel[a]
 		end
@@ -839,9 +839,9 @@ class GraphViewWidget < Gtk::HBox
 				if @caret_x > 0
 					@caret_x -= 1
 					update_caret
-				elsif b = @curcontext.box.sort_by { |b| -b.x }.find { |b| b.x < @caret_box.x and
-						b.y < @caret_box.y+@caret_y*@font_height and
-						b.y+b.h > @caret_box.y+(@caret_y+1)*@font_height }
+				elsif b = @curcontext.box.sort_by { |b_| -b_.x }.find { |b_| b_.x < @caret_box.x and
+						b_.y < @caret_box.y+@caret_y*@font_height and
+						b_.y+b_.h > @caret_box.y+(@caret_y+1)*@font_height }
 					@caret_x = (b.w/@font_width).to_i
 					@caret_y += ((@caret_box.y-b.y)/@font_height).to_i
 					@caret_box = b
@@ -860,9 +860,9 @@ class GraphViewWidget < Gtk::HBox
 				if @caret_y > 0
 					@caret_y -= 1
 					update_caret
-				elsif b = @curcontext.box.sort_by { |b| -b.y }.find { |b| b.y < @caret_box.y and
-						b.x < @caret_box.x+@caret_x*@font_width and
-						b.x+b.w > @caret_box.x+(@caret_x+1)*@font_width }
+				elsif b = @curcontext.box.sort_by { |b_| -b_.y }.find { |b_| b_.y < @caret_box.y and
+						b_.x < @caret_box.x+@caret_x*@font_width and
+						b_.x+b_.w > @caret_box.x+(@caret_x+1)*@font_width }
 					@caret_x += ((@caret_box.x-b.x)/@font_width).to_i
 					@caret_y = b[:line_text].keys.max
 					@caret_box = b
@@ -881,9 +881,9 @@ class GraphViewWidget < Gtk::HBox
 				if @caret_x <= @caret_box[:line_text].values.map { |s| s.length }.max
 					@caret_x += 1
 					update_caret
-				elsif b = @curcontext.box.sort_by { |b| b.x }.find { |b| b.x > @caret_box.x and
-						b.y < @caret_box.y+@caret_y*@font_height and
-						b.y+b.h > @caret_box.y+(@caret_y+1)*@font_height }
+				elsif b = @curcontext.box.sort_by { |b_| b_.x }.find { |b_| b_.x > @caret_box.x and
+						b_.y < @caret_box.y+@caret_y*@font_height and
+						b_.y+b_.h > @caret_box.y+(@caret_y+1)*@font_height }
 					@caret_x = 0
 					@caret_y += ((@caret_box.y-b.y)/@font_height).to_i
 					@caret_box = b
@@ -902,9 +902,9 @@ class GraphViewWidget < Gtk::HBox
 				if @caret_y < @caret_box[:line_text].length-1
 					@caret_y += 1
 					update_caret
-				elsif b = @curcontext.box.sort_by { |b| b.y }.find { |b| b.y > @caret_box.y and
-						b.x < @caret_box.x+@caret_x*@font_width and
-						b.x+b.w > @caret_box.x+(@caret_x+1)*@font_width }
+				elsif b = @curcontext.box.sort_by { |b_| b_.y }.find { |b_| b_.y > @caret_box.y and
+						b_.x < @caret_box.x+@caret_x*@font_width and
+						b_.x+b_.w > @caret_box.x+(@caret_x+1)*@font_width }
 					@caret_x += ((@caret_box.x-b.x)/@font_width).to_i
 					@caret_y = 0
 					@caret_box = b
@@ -939,8 +939,8 @@ class GraphViewWidget < Gtk::HBox
 				@caret_x = 0
 				update_caret
 			else
-				@curcontext.view_x = @curcontext.box.map { |b| b.x }.min-10
-				@curcontext.view_y = @curcontext.box.map { |b| b.y }.min-10
+				@curcontext.view_x = @curcontext.box.map { |b_| b_.x }.min-10
+				@curcontext.view_y = @curcontext.box.map { |b_| b_.y }.min-10
 				redraw
 			end
 		when GDK_End
@@ -948,16 +948,16 @@ class GraphViewWidget < Gtk::HBox
 				@caret_x = @caret_box[:line_text][@caret_y].length
 				update_caret
 			else
-				@curcontext.view_x = [@curcontext.box.map { |b| b.x+b.w }.max-@width/@zoom+10, @curcontext.box.map { |b| b.x }.min-10].max
-				@curcontext.view_y = [@curcontext.box.map { |b| b.y+b.h }.max-@height/@zoom+10, @curcontext.box.map { |b| b.y }.min-10].max
+				@curcontext.view_x = [@curcontext.box.map { |b_| b_.x+b_.w }.max-@width/@zoom+10, @curcontext.box.map { |b_| b_.x }.min-10].max
+				@curcontext.view_y = [@curcontext.box.map { |b_| b_.y+b_.h }.max-@height/@zoom+10, @curcontext.box.map { |b_| b_.y }.min-10].max
 				redraw
 			end
 
 		when GDK_Delete
-			@selected_boxes.each { |b|
-				@curcontext.box.delete b
-				b.from.each { |bb| bb.to.delete b }
-				b.to.each { |bb| bb.from.delete b }
+			@selected_boxes.each { |b_|
+				@curcontext.box.delete b_
+				b_.from.each { |bb| bb.to.delete b_ }
+				b_.to.each { |bb| bb.from.delete b_ }
 			}
 			redraw
 
@@ -1063,7 +1063,7 @@ class GraphViewWidget < Gtk::HBox
 		end
 
 		# move window / change curcontext
-		if b = @curcontext.box.find { |b| b[:line_address].index(addr) }
+		if b = @curcontext.box.find { |b_| b_[:line_address].index(addr) }
 			@caret_box, @caret_x, @caret_y = b, 0, b[:line_address].index(addr)
 			focus_xy(b.x, b.y + @caret_y*@font_height)
 			update_caret
@@ -1073,7 +1073,7 @@ class GraphViewWidget < Gtk::HBox
 			gui_update
 			return if not @curcontext.box.first
 			# find an address that can be shown if addr is not
-			if not @curcontext.box.find { |b| b[:line_address].index(addr) }
+			if not @curcontext.box.find { |b_| b_[:line_address].index(addr) }
 				addr = @curcontext.box.first[:line_address].values.first
 			end
 			return focus_addr(addr, false)

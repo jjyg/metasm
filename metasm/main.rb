@@ -277,7 +277,7 @@ class ExeFormat
 	# share self.unique_labels_cache with other, checks for conflicts, returns self
 	def share_namespace(other)
 		return self if other.unique_labels_cache.equal? @unique_labels_cache
-		raise "share_ns #{(other.unique_labels_cache.keys & @unique_labels_cache.keys).inspect}" if not (other.unique_labels_cache.keys & @unique_labels_cache.keys).empty?
+		raise "share_ns #{(other.unique_labels_cache.keys & @unique_labels_cache.keys).inspect}" if !(other.unique_labels_cache.keys & @unique_labels_cache.keys).empty?
 		@unique_labels_cache.update other.unique_labels_cache
 		other.unique_labels_cache = @unique_labels_cache
 		self
@@ -946,11 +946,11 @@ class EncodedData
 		@reloc.each { |o, r|
 			ret.reloc[o - from] = r if o >= from and o + r.length <= from+len
 		}
-		@export.each { |e, o|
-			ret.export[e] = o - from if o >= from and o <= from+len		# XXX include end ?
+		@export.each { |e_, o|
+			ret.export[e_] = o - from if o >= from and o <= from+len		# XXX include end ?
 		}
-		@inv_export.each { |o, e|
-			ret.inv_export[o-from] = e if o >= from and o <= from+len
+		@inv_export.each { |o, e_|
+			ret.inv_export[o-from] = e_ if o >= from and o <= from+len
 		}
 		ret
 	end

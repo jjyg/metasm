@@ -37,7 +37,7 @@ class MZ < ExeFormat
 		end
 
 		def decode(mz)
-			super
+			super(mz)
 			raise InvalidExeFormat, "Invalid MZ signature #{h.magic.inspect}" if @magic != MAGIC
 		end
 	end
@@ -79,7 +79,7 @@ class MZ < ExeFormat
 	# sets up @cursource
 	def parse_init
 		@cursource = @source
-		super
+		super()
 	end
 
 	# encodes the header and the relocation table, return them in an array, with the body.

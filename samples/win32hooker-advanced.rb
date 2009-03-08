@@ -25,7 +25,7 @@ include Metasm
 WinOS.get_debug_privilege
 if not pr = WinOS.find_process(ARGV.first)
 	# display list of running processes and exit
-	puts WinOS.list_processes.sort_by { |pr| pr.pid }
+	puts WinOS.list_processes.sort_by { |pr_| pr_.pid }
 	exit
 end
 raise 'cannot open target process' if not pr.handle

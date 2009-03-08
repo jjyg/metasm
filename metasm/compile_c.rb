@@ -904,7 +904,7 @@ module C
 		def precompile(compiler, scope)
 			@expr = CExpression.precompile_inner(compiler, scope, @expr)
 			@exprup = CExpression.precompile_inner(compiler, scope, @exprup) if exprup
-			super
+			super(compiler, scope)
 		end
 	end
 
@@ -1116,7 +1116,7 @@ module C
 						case ce
 						when CExpression; CExpression.new(copy_inline_ce[ce.lexpr], ce.op, copy_inline_ce[ce.rexpr], ce.type)
 						when Variable; locals[ce] || ce
-						when ::Array; ce.map { |e| copy_inline_ce[e] }
+						when ::Array; ce.map { |e_| copy_inline_ce[e_] }
 						else ce
 						end
 					}
@@ -1170,7 +1170,7 @@ module C
 					@lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
 					types = t.args.map { |a| a.type }
 					# cast args to func prototype
-					@rexpr.map! { |e| (types.empty? ? e : CExpression.new(nil, nil, e, types.shift)).precompile_inner(compiler, scope) }
+					@rexpr.map! { |e_| (types.empty? ? e_ : CExpression.new(nil, nil, e_, types.shift)).precompile_inner(compiler, scope) }
 					CExpression.precompile_type(compiler, scope, self)
 					self
 				end
@@ -1405,8 +1405,8 @@ module C
 
 				CExpression.precompile_type(compiler, scope, self)
 
-				isnumeric = proc { |e| e.kind_of?(::Numeric) or (e.kind_of? CExpression and
-					not e.lexpr and not e.op and e.rexpr.kind_of? ::Numeric) }
+				isnumeric = proc { |e_| e_.kind_of?(::Numeric) or (e_.kind_of? CExpression and
+					not e_.lexpr and not e_.op and e_.rexpr.kind_of? ::Numeric) }
 
 				# calc numeric
 				# XXX do not simplify operations involving variables (for type overflow etc)

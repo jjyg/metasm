@@ -95,7 +95,7 @@ def self.expand_regexp(str)
 		l1 << '' if q
 	else raise "bad pattern #{str.inspect}"
 	end
- 	expand_regexp(p2).map { |s2| l1.map { |s1| s1 + s2 } }.flatten.uniq
+ 	expand_regexp(p2).map { |s2| l1.map { |s1_| s1_ + s2 } }.flatten.uniq
 end
 
 # find the instr preceding adi ; follows from_normal if it is a single element array

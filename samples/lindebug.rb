@@ -108,7 +108,7 @@ class ExprParser < Metasm::Expression
 				nil while ntok = lex.readtok and ntok.type == :space if ntok and ntok.raw == ']'
 				lex.unreadtok ntok
 			end
-		else super
+		else super(lex, tok)
 		end
 	end
 	def self.parse_value(lex)
@@ -120,7 +120,7 @@ class ExprParser < Metasm::Expression
 			tt.raw = 'dword'
 			lex.unreadtok tt
 		end
-		super
+		super(lex)
 	end
 end
 
@@ -429,13 +429,13 @@ class LinDebug
 		update
 	end
 
-	def log(*str)
-		str.each { |str|
+	def log(*strs)
+		strs.each { |str|
 		raise str.inspect if not str.kind_of? ::String
 		str = str.chomp
 		if str.length > @console_width
 			# word wrap
-			str.scan(/.{0,#@console_width}/) { |str| log str }
+			str.scan(/.{0,#@console_width}/) { |str_| log str_ }
 			return
 		end
 		@promptlog << str
@@ -444,9 +444,9 @@ class LinDebug
 	end
 
 	def puts(*s)
-		s.each { |s| log s.to_s }
-		super if not @running
-		update rescue super
+		s.each { |s_| log s_.to_s }
+		super(*s) if not @running
+		update rescue super(*s)
 	end
 
 	def mem_binding(expr)
@@ -793,7 +793,7 @@ class LinDebug
 			if s.empty?
 				log "unknown symbol #{sym}"
 			else
-				s.sort.each { |s| log "#{'%08x' % s} #{@rs.symbols_len[s].to_s.ljust 6} #{@rs.findsymbol(s)}" }
+				s.sort.each { |s_| log "#{'%08x' % s_} #{@rs.symbols_len[s_].to_s.ljust 6} #{@rs.findsymbol(s_)}" }
 				log '2'
 			end
 		}

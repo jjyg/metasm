@@ -71,7 +71,7 @@ class AsmListingWidget < Gtk::HBox
 		@vscroll.adjustment.signal_connect('value_changed') { |adj|
 			# align on @decoded boundary
 			addr = adj.value.to_i
-			if off = (0..16).find { |off| di = @dasm.decoded[addr-off] and di.respond_to? :bin_length and di.bin_length > off } and off != 0
+			if off = (0..16).find { |off_| di = @dasm.decoded[addr-off_] and di.respond_to? :bin_length and di.bin_length > off_ } and off != 0
 				@vscroll.adjustment.value = addr-off
 			else
 				@line_address.clear	# make paint_listing call update_caret when done (hl_word etc)
@@ -245,7 +245,7 @@ class AsmListingWidget < Gtk::HBox
 				nl[]
 
 				# instr overlapping
-				if off = (1...di.bin_length).find { |off| @dasm.decoded[curaddr + off] }
+				if off = (1...di.bin_length).find { |off_| @dasm.decoded[curaddr + off_] }
 					nl[]
 					curaddr += off
 					render["// ------ overlap (#{di.bin_length - off}) ------", :comment]
@@ -282,18 +282,18 @@ class AsmListingWidget < Gtk::HBox
 						len = 1 if (len != 2 and len != 4) or len < 1
 						dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]}"
 						aoff = len
-					elsif rep = str.inject(0) { |rep, c|
+					elsif rep = str.inject(0) { |rep_, c|
 						case c
-						when str[0]; rep+1
-						else break rep
+						when str[0]; rep_+1
+						else break rep_
 						end
 					} and rep > 4
 						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]})"
 						aoff = rep
-					elsif asc = str.inject('') { |asc, c|
+					elsif asc = str.inject('') { |asc_, c|
 						case c
-						when 0x20..0x7e; asc << c
-						else break asc
+						when 0x20..0x7e; asc_ << c
+						else break asc_
 						end
 					} and asc.length > 3
 						dat = "db #{asc.inspect}"
@@ -339,7 +339,7 @@ class AsmListingWidget < Gtk::HBox
 		# convert arrows_addr to @arrows (with line numbers)
 		# updates @arrows_widget if @arrows changed
 		prev_arrows = @arrows
-		addr_line = @line_address.sort.inject({}) { |h, (l, a)| h.update a => l }	# addr => last line (di)
+		addr_line = @line_address.sort.inject({}) { |h, (l, a_)| h.update a_ => l }	# addr => last line (di)
 		@arrows = arrows_addr.uniq.sort.map { |from, to|
 			[(addr_line[from] || (from < curaddr ? :up : :down)),
 			 (addr_line[ to ] || ( to  < curaddr ? :up : :down))]

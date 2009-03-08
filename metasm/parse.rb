@@ -539,7 +539,7 @@ class Expression
 			end
 
 			return if tok.value
-			return if tok.raw[0] != ?. and not (?0..?9).include? tok.raw[0]
+			return if tok.raw[0] != ?. and !(?0..?9).include? tok.raw[0]
 
 			case tr = tok.raw.downcase
 			when /^0b([01][01_]*)$/, /^([01][01_]*)b$/
@@ -647,14 +647,16 @@ class Expression
 		# XXX for binary, use _ delimiter or 0b prefix, or start with 0 : 1b may conflict with backward local anonymous label reference
 		def parse_intfloat(lexer, tok)
 			if not tok.value and tok.raw == '$'
-				if not (l = lexer.program.cursource.last).kind_of? Label
+				l = lexer.program.cursource.last
+				if not l.kind_of? Label
 					l = Label.new(lexer.program.new_label('instr_start'))
 					l.backtrace = tok.backtrace.dup
 					lexer.program.cursource << l
 				end
 				tok.value = l.name
 			elsif not tok.value and tok.raw == '$$'
-				if not (l = lexer.program.cursource.first).kind_of? Label
+				l = lexer.program.cursource.first
+				if not l.kind_of? Label
 					l = Label.new(lexer.program.new_label('section_start'))
 					l.backtrace = tok.backtrace.dup
 					lexer.program.cursource.unshift l

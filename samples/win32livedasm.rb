@@ -12,7 +12,7 @@ include Metasm
 # open target
 WinOS.get_debug_privilege
 if not pr = WinOS.find_process(ARGV.first)
-	puts WinOS.list_processes.sort_by { |pr| pr.pid }
+	puts WinOS.list_processes.sort_by { |pr_| pr_.pid }
 	exit
 end
 

@@ -14,9 +14,9 @@ if not base = ARGV.shift
 	puts 'base dir ?'
 	base = gets.chomp
 end
-if not match = ARGV.shift
+if not pat = ARGV.shift
 	puts 'pattern ?'
-	match = gets.chomp
+	pat = gets.chomp
 	puts 'searching...'
 end
 
@@ -54,7 +54,7 @@ iter = proc { |f, match|
 }
 
 # go
-iter[base, match]
+iter[base, pat]
 
 if RUBY_PLATFORM =~ /win32/i
 	_puts "press [enter] to exit"

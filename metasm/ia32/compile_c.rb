@@ -69,7 +69,7 @@ class CCompiler < C::Compiler
 
 
 	def initialize(*a)
-		super
+		super(*a)
 		@cpusz = @exeformat.cpu.size
 		@regnummax = (@cpusz == 64 ? 15 : 7)
 	end
@@ -115,8 +115,8 @@ class CCompiler < C::Compiler
 
 	# removes elements from @state.inuse, free @state.used if unreferenced
 	# must be the exact object present in inuse
-	def unuse(*val)
-		val.each { |val|
+	def unuse(*vals)
+		vals.each { |val|
 			val = val.modrm if val.kind_of? Address
 			@state.inuse.delete val
 		}
@@ -408,8 +408,8 @@ class CCompiler < C::Compiler
 			r
 		when :&
 			raise 'bad precompiler ' + expr.to_s if not expr.rexpr.kind_of? C::Variable
-			@state.cache.each { |r, c|
-				return inuse(r) if c.kind_of? Address and c.target == expr.rexpr
+			@state.cache.each { |r_, c|
+				return inuse(r_) if c.kind_of? Address and c.target == expr.rexpr
 			}
 			r = c_cexpr_inner(expr.rexpr)
 			raise 'bad lvalue' if not r.kind_of? ModRM

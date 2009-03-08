@@ -125,7 +125,7 @@ class VirtualString
 			puts "Using VirtualString.realstring for #{m} from:", caller if $DEBUG
 			realstring.freeze.send(m, *args, &b)
 		else
-			super
+			super(m, *args, &b)
 		end
 	end
 

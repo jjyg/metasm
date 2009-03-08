@@ -70,7 +70,7 @@ class DecodedInstruction
 
 	# returns a copy of the DecInstr, with duplicated #instruction ("deep_copy")
 	def dup
-		new = super
+		new = super()
 		new.instruction = @instruction.dup
 		new
 	end
@@ -451,7 +451,9 @@ class EncodedData
 	def get_byte
 		@ptr += 1
 		if @ptr <= @data.length
-			@data[ptr-1]
+			b = @data[ptr-1]
+			b = b.ord if b.kind_of? ::String	# 1.9
+			b
 		elsif @ptr <= @virtsize
 			0
 		end
@@ -489,7 +491,7 @@ class Expression
 	def self.decode_imm(str, type, endianness)
 		str = str[0, INT_SIZE[type]/8]
 		str = str.reverse if endianness == :little
-		val = str.unpack('C*').inject(0) { |val, b| (val << 8) | b }
+		val = str.unpack('C*').inject(0) { |val_, b| (val_ << 8) | b }
 		val = make_signed(val, INT_SIZE[type]) if type.to_s[0] == ?i
 		val
 	end
@@ -1037,7 +1039,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 		ar = [di_addr]
 		ar = @callback_newaddr[block.list.last.address, ar] || [] if callback_newaddr
-		ar.each { |di_addr| backtrace(di_addr, di.address, :origin => di.address, :type => :x) }
+		ar.each { |di_addr_| backtrace(di_addr_, di.address, :origin => di.address, :type => :x) }
 
 		block
 	end
@@ -1255,7 +1257,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				}
 			elsif di
 				# XXX should interpolate index if di is not in block.list, but what if the addresses are not Comparable ?
-				di.block.list[0..(di.block.list.index(di) || -1)].reverse_each { |di|
+				di.block.list[0..(di.block.list.index(di) || -1)].reverse_each { |di_|
+					di = di_	# XXX not sure..
 					if stopaddr and ea = di.next_addr and stopaddr.include?(ea)
 						yield :stopaddr, obj, :addr => ea, :loopdetect => loopdetect
 						break
@@ -1363,7 +1366,8 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 
 puts "backtracking #{type} #{expr} from #{di || Expression[start_addr || 0]} for #{@decoded[origin]}" if debug_backtrace or $DEBUG
 		bt_log << [:start, expr, start_addr] if bt_log
-		backtrace_walk(expr, start_addr, include_start, from_subfuncret, snapshot_addr, maxdepth) { |ev, expr, h|
+		backtrace_walk(expr, start_addr, include_start, from_subfuncret, snapshot_addr, maxdepth) { |ev, expr_, h|
+			expr = expr_
 			case ev
 			when :unknown_addr, :maxdepth
 puts "  backtrace end #{ev} #{expr}" if debug_backtrace
@@ -1554,10 +1558,10 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 
 	# static resolution of indirections
 	def resolve(expr)
-		binding = Expression[expr].expr_indirections.inject(@prog_binding.merge(@old_prog_binding)) { |binding, ind|
+		binding = Expression[expr].expr_indirections.inject(@prog_binding.merge(@old_prog_binding)) { |binding_, ind|
 			e, b = get_section_at(resolve(ind.target))
 			return expr if not e
-			binding.merge ind => Expression[ e.decode_imm("u#{8*ind.len}".to_sym, @cpu.endianness) ]
+			binding_.merge ind => Expression[ e.decode_imm("u#{8*ind.len}".to_sym, @cpu.endianness) ]
 		}
 		Expression[expr].bind(binding).reduce
 	end
@@ -1566,7 +1570,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# it checks for the presence of a symbol (not :unknown), which means it depends on some register value
 	def need_backtrace(expr)
 		return if expr.kind_of? ::Integer
-		not (expr.externals.grep(::Symbol) - [:unknown]).empty?
+		!(expr.externals.grep(::Symbol) - [:unknown]).empty?
 	end
 
 	# returns an array of expressions, or nil if expr needs more backtrace
@@ -1700,7 +1704,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 							# found a path avoiding the :w xrefs, read the encoded initial value
 							ret |= [decode_imm[ptr, ind.len]]
 						else
-							bd = expr.expr_indirections.inject({}) { |h, i| h.update i => decode_imm[i.target, i.len] }
+							bd = expr.expr_indirections.inject({}) { |h_, i| h_.update i => decode_imm[i.target, i.len] }
 							ret |= [Expression[expr.bind(bd).reduce]]
 						end
 					else
@@ -1783,10 +1787,10 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			when 1; str = s[0].read(32).unpack('C*')
 			when 2; str = s[0].read(64).unpack('v*')
 			end
-			str = str.inject('') { |str, c|
+			str = str.inject('') { |str_, c|
 				case c
-				when 0x20..0x7e, ?\n, ?\r, ?\t; str << c
-				else break str
+				when 0x20..0x7e, ?\n, ?\r, ?\t; str_ << c
+				else break str_
 				end
 			}
 			if str.length >= 4
@@ -2129,9 +2133,9 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			break if vals.length == dups and vals.uniq.length > 1
 			vals << edata.decode_imm("u#{elemlen*8}".to_sym, @cpu.endianness)
 			addr += elemlen
-			if i = (1-elemlen..0).find { |i|
-				t = addr + i
-				@xrefs[t] or @decoded[t] or edata.reloc[edata.ptr+i] or edata.inv_export[edata.ptr+i]
+			if i = (1-elemlen..0).find { |i_|
+				t = addr + i_
+				@xrefs[t] or @decoded[t] or edata.reloc[edata.ptr+i_] or edata.inv_export[edata.ptr+i_]
 			}
 				edata.ptr += i
 				addr += i
@@ -2147,16 +2151,16 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		end
 
 		# recognize strings
-		vals = vals.inject([]) { |vals, value|
+		vals = vals.inject([]) { |vals_, value|
 			if (elemlen == 1 or elemlen == 2)
 				case value
 				when 0x20..0x7e, 0x0a, 0x0d
-					if vals.last.kind_of? ::String; vals.last << value ; vals
-					else vals << value.chr
+					if vals_.last.kind_of? ::String; vals_.last << value ; vals_
+					else vals_ << value.chr
 					end
-				else vals << value
+				else vals_ << value
 				end
-			else vals << value
+			else vals_ << value
 			end
 		}
 

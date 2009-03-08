@@ -33,7 +33,7 @@ iter = proc { |f|
 		begin
 			elf = Metasm::ELF.decode_file_header(f)
 			next if not elf.segments or elf.header.type == 'REL'
-			seg = elf.segments.find { |seg| seg.type == 'GNU_STACK' }
+			seg = elf.segments.find { |seg_| seg_.type == 'GNU_STACK' }
 			if not seg
 				_puts "PT_GNU_STACK absent : #{f}"
 			elsif seg.flags.include? 'X'
