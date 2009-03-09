@@ -110,7 +110,7 @@ EOS
 		e.fixup!('toto' => 42)
 		assert_raise(Metasm::EncodeError) { e.fixup('tata' => 192349129) }
 		e.fixup('tata' => -12)
-		assert_equal(30, e.data[1])
+		assert_equal(30.chr[0], e.data[1])
 		assert_equal(1, e.reloc.length)
 		assert_equal(2, e.offset_of_reloc('tutu'))
 		assert_equal(2, e.offset_of_reloc(Metasm::Expression[:+, 'tutu']))
@@ -127,6 +127,6 @@ def:
 db 12 dup(?, 3 dup('x'))
 abc:
 EOS
-		assert_equal(12*4, eee.data[0])
+		assert_equal((12*4).chr[0], eee.data[0])
 	end
 end

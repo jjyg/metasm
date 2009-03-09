@@ -54,23 +54,33 @@ class Ia32
 			else raise InvalidModRM, 'invalid modrm16'
 			end
 
-			ret.data[0] |= reg << 3
+			# add bits in the first octet of ret.data (1.9 compatibility layer)
+			or_bits = lambda { |v|	# rape me
+				if ret.data[0].kind_of? Integer
+					ret.data[0] |= v
+				else
+					ret.data[0] = (ret.data[0].ord | v).chr
+				end
+			}
+
+			or_bits[reg << 3]
 
 			if imm
 				case Expression.in_range?(imm, :i8)
 				when true
-					ret.data[0] |= 1 << 6
+					or_bits[1 << 6]
 					[ret << Expression.encode_imm(imm, :i8, endianness)]
 				when false
-					ret.data[0] |= 2 << 6
-					[ret << Expression.encode_imm(imm, :i16, endianness)]
+					or_bits[2 << 6]
+					[ret << Expression.encode_imm(imm, :a16, endianness)]
 				when nil
-					retl = ret.dup
-					ret.data[0] |= 1 << 6
-					retl.data[0] |= 2 << 6
+					rets = ret.dup
+					or_bits[1<<6]
 					ret << @imm.encode(:i8, endianness)
-					retl << @imm.encode(:i16, endianness)
-					[retl, ret]
+					ret, rets = rets, ret	# or_bits uses ret
+					or_bits[2<<6]
+					ret << @imm.encode(:a16, endianness)
+					[ret, rets]
 				end
 			else
 				[ret]
@@ -87,14 +97,23 @@ class Ia32
 
 			ret = EncodedData.new << (reg << 3)
 
+			# add bits in the first octet of ret.data (1.9 compatibility layer)
+			or_bits = lambda { |v|	# rape me
+				if ret.data[0].kind_of? Integer
+					ret.data[0] |= v
+				else
+					ret.data[0] = (ret.data[0].ord | v).chr
+				end
+			}
+
 			if not self.b and not self.i
-				ret.data[0] |= 5
+				or_bits[5]
 				[ret << @imm.encode(:u32, endianness)]
 
 			elsif not self.b and self.s != 1
 				# sib with no b
 				raise EncodeError, "Invalid ModRM #{self}" if @i.val == 4
-				ret.data[0] |= 4
+				or_bits[4]
 				s = {8=>3, 4=>2, 2=>1}[@s]
 				imm = self.imm || Expression[0]
 				[ret << ((s << 6) | (@i.val << 3) | 5) << imm.encode(:a32, endianness)]
@@ -106,11 +125,11 @@ class Ia32
 					# no sib byte (except for [esp])
 					b = self.b || self.i
 
-					ret.data[0] |= b.val
+					or_bits[b.val]
 					ret << 0x24 if b.val == 4
 				else
 					# sib
-					ret.data[0] |= 4
+					or_bits[4]
 
 					i, b = @i, @b
 					b, i = i, b if @s == 1 and (i.val == 4 or b.val == 5)
@@ -125,16 +144,17 @@ class Ia32
 				if imm
 					case Expression.in_range?(imm, :i8)
 					when true
-						ret.data[0] |= 1 << 6
+						or_bits[1<<6]
 						[ret << Expression.encode_imm(imm, :i8, endianness)]
 					when false
-						ret.data[0] |= 2 << 6
+						or_bits[2<<6]
 						[ret << Expression.encode_imm(imm, :a32, endianness)]
 					when nil
 						rets = ret.dup
-						rets.data[0] |= 1 << 6
-						rets << @imm.encode(:i8, endianness)
-						ret.data[0] |= 2 << 6
+						or_bits[1<<6]
+						ret << @imm.encode(:i8, endianness)
+						rets, ret = ret, rets	# or_bits[] modifies ret directly
+						or_bits[2<<6]
 						ret << @imm.encode(:a32, endianness)
 						[ret, rets]
 					end
@@ -154,7 +174,7 @@ class Ia32
 	# returns all forms of the encoding of instruction i using opcode op
 	# program may be used to create a new label for relative jump/call
 	def encode_instr_op(program, i, op)
-		base      = op.bin.pack('C*')
+		base      = op.bin.dup
 		oi        = op.args.zip(i.args)
 		set_field = lambda { |f, v|
 			fld = op.fields[f]
@@ -197,7 +217,7 @@ class Ia32
 				pfx << 0x67
 				adsz = 48 - @size
 			end
-			pfx << "\x26\x2E\x36\x3E\x64\x65"[mrm.seg.val] if mrm.seg
+			pfx << [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][mrm.seg.val] if mrm.seg
 		elsif op.props[:adsz] and @size == 48 - op.props[:adsz]
 			pfx << 0x67
 			adsz = 48 - @size
@@ -213,7 +233,7 @@ class Ia32
 			case oa
 			when :reg, :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regmmx, :regxmm
 				# field arg
-				set_field[base, oa, ia.val]
+				set_field[oa, ia.val]
 				pfx << 0x66 if oa == :regmmx and op.props[:xmmx] and ia.sz == 128
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0
 				# implicit
@@ -225,7 +245,7 @@ class Ia32
 		if !(op.args & [:modrm, :modrmA, :modrmxmm, :modrmmmx]).empty?
 			# reg field of modrm
 			regval = (base[-1] >> 3) & 7
-			base.chop!
+			base.pop
 		end
 
 		# convert label name for jmp/call/loop to relative offset
@@ -239,7 +259,7 @@ class Ia32
 		#
 		# append other arguments
 		#
-		ret = EncodedData.new(pfx + base)
+		ret = EncodedData.new(pfx + base.pack('C*'))
 
 		postponed.each { |oa, ia|
 			case oa
