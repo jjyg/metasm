@@ -526,7 +526,7 @@ class ELF
 	# creates the undef symbol list from the section.encoded.reloc and a list of known exported symbols (e.g. from libc)
 	# also populates @tag['NEEDED']
 	def automagic_symbols
-		return if not defined? GNUExports
+		GNUExports rescue return	# autorequire
 		autoexports = GNUExports::EXPORT.dup
 		@sections.each { |s|
 			next if not s.encoded

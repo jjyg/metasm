@@ -902,7 +902,7 @@ class COFF
 	# if the relocation target is '<symbolname>' or 'iat_<symbolname>, link to the IAT address, if it is '<symbolname> + <expr>',
 	# link to a thunk (plt-like)
 	def autoimport
-		return if not defined? WindowsExports
+		WindowsExports rescue return	# autorequire
 		autoexports = WindowsExports::EXPORT.dup
 		@sections.each { |s|
 			next if not s.encoded
