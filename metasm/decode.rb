@@ -671,6 +671,7 @@ class Disassembler
 	# parses a C string for function prototypes
 	def parse_c(str)
 		@c_parser ||= @cpu.new_cparser
+		@c_parser.lexer.define_weak('__METASM__DECODE__')
 		@c_parser.parse(str)
 	end
 
@@ -2080,6 +2081,14 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	def dump_data(addr, edata, off, &b)
 		b ||= lambda { |l| puts l }
 		if l = @prog_binding.index(addr)
+			l = nil
+			@prog_binding.keys.sort.each { |name|
+ 				# show aliases sorted, keep last in 'l' to display inline
+				if @prog_binding[name] == addr
+					b["#{l}:"] if l
+					l = name
+				end
+			}
 			l = (l + ' ').ljust(16)
 		else l = ''
 		end
@@ -2101,19 +2110,14 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		# dup(?)
 		if off >= edata.data.length
 			dups = edata.virtsize - off
-			tmp = nil
-			if @prog_binding.values.find { |a|
+			@prog_binding.each_value { |a|
 				tmp = Expression[a, :-, addr].reduce
-				tmp.kind_of? ::Integer and tmp > 0 and tmp < dups
+				dups = tmp if tmp.kind_of? ::Integer and tmp > 0 and tmp < dups
 			}
-				dups = tmp
-			end
-			if @xrefs.keys.find { |a|
+			@xrefs.each_key { |a|
 				tmp = Expression[a, :-, addr].reduce
-				tmp.kind_of? ::Integer and tmp > 0 and tmp < dups
+				dups = tmp if tmp.kind_of? ::Integer and tmp > 0 and tmp < dups
 			}
-				dups = tmp
-			end
 			dups /= elemlen
 			dups = 1 if dups < 1
 			b[(l + "#{dups} dup(?)").ljust(48) << cmt]
