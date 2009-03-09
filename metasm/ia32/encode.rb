@@ -40,7 +40,7 @@ class Ia32
 			imm = nil if imm == 0
 			ret = EncodedData.new
 			ret <<
-			case [@b.val, (@s.val if s)]
+			case [@b.val, (@i.val if i)]
 			when [3, 6], [6, 3]; 0
 			when [3, 7], [7, 3]; 1
 			when [5, 6], [6, 5]; 2
