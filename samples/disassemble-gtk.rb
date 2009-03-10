@@ -7,6 +7,21 @@
 
 #
 # this script disassembles an executable (elf/pe) using the GTK front-end
+# use live:bla to open a running process whose filename contains 'bla'
+# asks for a binary to open if the cmdline is empty
+#
+# key binding (non exhaustive):
+#  Enter to follow a label (the current hilighted word)
+#  Esc to return to the previous position
+#  Space to switch between listing and graph views
+#  'c' to start disassembling from the cursor position
+#  'g' to go to a specific address (label/042h)
+#  'l' to list known labels
+#  'f' to list known functions
+#  'x' to list xrefs to current address
+#  'n' to rename a label (current word or current address)
+#  ctrl+'r' to run arbitrary ruby code in the context of the GtkGui objet (access to 'dasm', 'curaddr')
+#  ctrl+mousewheel to zoom in graph view ; also doubleclick on the background ('fit to window'/'reset zoom')
 #
 
 require 'metasm'

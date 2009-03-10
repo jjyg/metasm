@@ -88,8 +88,11 @@ if opts[:outfile]
 		dasm.dump(!opts[:nodata]) { |l| fd.puts l }
 	}
 else
-	puts dcmp.c_parser if opts[:decompile]
-	dasm.dump(!opts[:nodata])
+	if opts[:decompile]
+		puts dcmp.c_parser
+	else
+		dasm.dump(!opts[:nodata])
+	end
 end
 
 t3 = Time.now if opts[:benchmark]
