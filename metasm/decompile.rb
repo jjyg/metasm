@@ -19,7 +19,7 @@ class Decompiler
 		# create a new toplevel function to hold our code
 		func = C::Variable.new
 		func.name = @dasm.auto_label_at(entry, 'func')
-		func.type = C::Function.new C::BaseType.new(:void)
+		func.type = C::Function.new C::BaseType.new(:int)
 		if @c_parser.toplevel.symbol[func.name]
 			if not @c_parser.toplevel.statements.grep(C::Declaration).find { |decl| decl.var.name == func.name }
 				# recursive dependency: declare prototype
@@ -33,30 +33,16 @@ class Decompiler
 		# TODO merge sequencial blocks with useless jmp (poeut) to improve dependency graph later
 		myblocks = decompile_func_listblocks(entry)
 
-		puts "finding vars..." if $VERBOSE
-		# [esp+8] => arg_4
+		# [esp+8] => [:frameptr+8]
 		decompile_makestackvars entry, myblocks.map { |b, to| @dasm.decoded[b].block }
 
-		puts "finding deps..." if $VERBOSE
-		# find stack variable dependencies
+		# find registry dependencies between blocks
 		deps = decompile_func_finddeps(myblocks)
 
 		puts "do decomp" if $VERBOSE
 		scope = func.initializer = C::Block.new(@c_parser.toplevel)
 		# di blocks => raw c statements, declare variables
 		stmts = decompile_blocks(myblocks, deps, scope)
-
-		# scope contains only declarations for now
-		scope.statements = scope.statements.sort_by { |sm| sm.var.name[4..-1].to_s.to_i(16) }
-
-		# find func prototype
-		func.type.args = []
-		scope.statements.dup.each { |sm|
-			if sm.var.name =~ /arg_([0-9a-f]+)/i
-				func.type.args << scope.statements.delete(sm).var
-			end
-		}
-		func.type.args = func.type.args.sort_by { |sm| sm.name[/arg_([0-9a-f]+)/i, 1].to_i(16) }
 
 		# populate statements
 		scope.statements.concat stmts
@@ -83,24 +69,40 @@ class Decompiler
 		# infer variable types
 		decompile_c_types(scope)
 
-		# add unused args to arglist to preserve the func ABI
-		# XXX shouldn't use the arg_XX form
-		argoff = varname_to_stackoff('arg_0')
+		optimize(scope)
+
+		# make function prototype with local arg_XX
 		args = []
-		func.type.args.each { |a|
+		decl = []
+		scope.statements.delete_if { |sm|
+			next if not sm.kind_of? C::Declaration
+			case sm.var.name
+			when /^arg_(.*)/
+				args << sm.var
+			else
+				decl << sm
+			end
+			true
+		}
+		# reorder declarations
+		scope.statements[0, 0] = decl.sort_by { |sm| sm.var.name =~ /^var_(.*)/ ? $1.to_i(16) : -1 }
+
+		# ensure arglist has no hole (name even unused arg)
+		func.type.args = []
+		argoff = varname_to_stackoff('arg_0')
+		args.sort_by { |sm| sm.name[/arg_([0-9a-f]+)/i, 1].to_i(16) }.each { |a|
 			# XXX misalignment ?
 			curoff = varname_to_stackoff(a.name)
 			while curoff > argoff
 				wantarg = C::Variable.new
 				wantarg.name = stackoff_to_varname(argoff).to_s
 				wantarg.type = C::BaseType.new(:int)
-				args << wantarg
+				func.type.args << wantarg
 				scope.symbol[wantarg.name] = wantarg
 				argoff += @dasm.cpu.size/8
 			end
-			args << a
+			func.type.args << a
 		}
-		func.type.args = args
 
 		@c_parser.toplevel.statements << C::Declaration.new(func)
 	end
@@ -120,6 +122,8 @@ class Decompiler
 				next if type == :indirect
 				ta = dasm.normalize ta
 				if @dasm.function[ta] and type != :subfuncret	# and di.block.to_subfuncret # XXX __attribute__((noreturn)) ?
+					f = dasm.auto_label_at(ta, 'func')
+					ta = dasm.normalize($1) if f =~ /^thunk_(.*)/
 					decompile_func(ta) if ta != entry
 				else
 					@dasm.auto_label_at(ta, 'label') if blocks.find { |aa, at| aa == ta }
@@ -131,43 +135,44 @@ class Decompiler
 		blocks
 	end
 
-	# patches instruction's backtrace_binding to replace [frame+X] => :varX
+	# patches instruction's backtrace_binding to replace things referring to a static stack offset from func start by :frameptr+off
 	def decompile_makestackvars(funcstart, blocks)
 		tovar = lambda { |di, e, i_s|
+			# need to backtrace every single reg ? must limit backtrace (maxdepth/complexity)
+			# create an addr_binding[allregs] at each block start ? ondemand ?
+			# we backtrace only to check for :esp, we could forward trace it instead once and for all ?
 			case e
-			when Expression
-				r = tovar[di, e.rexpr, i_s]
-				if r.kind_of? ::Symbol and e.op == :+ and not e.lexpr
-					r
-				else
-					Expression[tovar[di, e.lexpr, i_s], e.op, r]
-				end
-			when Indirection
-				# XXX this includes never used vars (eg slots used to
-				# save reg across the whole function) and subfunction
-				# args slots ; they will be filtered out later
-				p_ini = @dasm.backtrace(e.target, di.address, :include_start => i_s, :snapshot_addr => funcstart).first
-				stackoff = Expression[p_ini, :-, :esp].reduce	# TODO move to ia32/decompile
-				if stackoff.kind_of? Integer
-					# XXX lose ind.length ?
-					stackoff_to_varname(stackoff)
-				else
-					Indirection[tovar[di, e.target, i_s], e.len]
+			when Expression; Expression[tovar[di, e.lexpr, i_s], e.op, tovar[di, e.rexpr, i_s]].reduce
+			when Indirection; Indirection[tovar[di, e.target, i_s], e.len]
+			when :frameptr; e
+			when ::Symbol
+				vals = @dasm.backtrace(e, di.address, :snapshot_addr => funcstart, :include_start => i_s)
+				if vals.length == 1 and (o = Expression[vals.first, :-, :esp].reduce).kind_of?(::Integer)
+					Expression[:frameptr, :+, o].reduce
+				else e
 				end
 			else e
 			end
 		}
 
+		# must not change bt_bindings until everything is backtracked
+		# TODO update function binding (lazy bt_binding)
+		# TODO do not touch di.bt_bind, create something alongside / run this directly in decomp_cexpr
+		repl_bind = {}	# di => bt_bd
 		blocks.each { |block|
 			block.list.each { |di|
-				bd = @dasm.cpu.get_backtrace_binding(di)
+				bd = di.backtrace_binding ||= @dasm.cpu.get_backtrace_binding(di)
+				newbd = repl_bind[di] = {}
 				bd.each { |k, v|
-					# think about push/pop: key need to include_start, value don't
-					bd[tovar[di, k, true]] = Expression[tovar[di, v, false]]
+					# think about push/pop: keys need to include_start, value don't # TODO think again
+					k = tovar[di, k, true] if k.kind_of? Indirection
+					next if Expression[k, :-, :frameptr].reduce.kind_of? ::Integer
+					newbd[k] = tovar[di, v, false]
 				}
-				di.backtrace_binding = bd
 			}
 		}
+
+		repl_bind.each { |di, bd| di.backtrace_binding = bd }
 	end
 
 	# give a name to a stackoffset (relative to start of func)
@@ -204,7 +209,14 @@ class Decompiler
 			blk = @dasm.decoded[b].block
 			blk.list.each { |di|
 				a = di.backtrace_binding.values
-				w = di.backtrace_binding.keys
+				w = []
+				di.backtrace_binding.keys.each { |k|
+					case k
+					when ::Symbol; w |= [k]
+					else a |= Expression[k].externals	# if dword [eax] <- 42, eax is read
+					end
+				}
+				
 				deps_r[b] |= a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - deps_w[b]
 				deps_w[b] |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
 			}
@@ -221,28 +233,20 @@ class Decompiler
 					# XXX the two first args with size <= int are not necessarily nr 0 and nr 1..
 					args.shift ; args.shift
 				end
-				off = stackoff
-				args.each { |a|
-					# XXX assume all args are sizeof() <= int
-					# TODO if the arg is a struct/pointer, the func also depends on the data pointed to
-					deps_subfunc[b] |= [stackoff_to_varname(off)]
-					off += @dasm.cpu.size/8
-				}
 			}
 			if stackoff
 				deps_r[b] |= deps_subfunc[b] - deps_w[b]
 				deps_w[b] |= deps_subfuncw[b] = [:eax, :ecx, :edx]
 			end
 			if to.empty?
-				deps_subfunc[b] |= [:eax]	# current function return value
+				# XXX returned value
+				deps_subfunc[b] |= [:eax]
 			end
 		}
 
 		# remove writes from a block if no following block read the value
 		deps_w.each { |b, deps|
 			deps.delete_if { |dep|
-				next true if dep == :esp		# never relevant (cross fingers)
-				#next if dep.to_s =~ /^(var_|arg_)/	# keep stack sync
 				next if deps_subfunc[b].include? dep	# arg to a function called by the block
 				next true if deps_subfuncw[b].include? dep	# thing written by the function
 				ret = true
@@ -315,6 +319,7 @@ class Decompiler
 				if di.opcode.props[:setip] and not di.opcode.props[:stopexec]
 					# conditional jump
 					# XXX switch/indirect/multiple jmp
+					# TODO handle loop/jecxz
 					commit[]
 					n = backtrace_target(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address)
 					stmts << C::If.new(ceb[@dasm.cpu.decode_cc_to_expr(di.opcode.name[1..-1])], C::Goto.new(n))
@@ -331,10 +336,10 @@ class Decompiler
 					args = []
 					if t = @c_parser.toplevel.symbol[n] and t.type.args
 						# XXX see remarks in #finddeps
-						stackoff = Expression[@dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry), :-, :esp].reduce
+						stackoff = Expression[@dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry), :-, :esp].bind(:esp => :frameptr).reduce
 						args_todo = t.type.args.dup
 						args = []
-						if t.attributes.to_a.include? 'fastcall'
+						if t.attributes.to_a.include? 'fastcall'	# XXX DRY
 							a = args_todo.shift
 							mask = (1 << (8*@c_parser.sizeof(a))) - 1
 							args << ceb[:ecx, :&, mask]
@@ -347,7 +352,7 @@ class Decompiler
 						end
 						args_todo.each {
 							if stackoff.kind_of? Integer
-								var = stackoff_to_varname(stackoff)
+								var = Indirection[[:frameptr, :+, stackoff], @dasm.cpu.size/8]
 								stackoff += @dasm.cpu.size/8
 							else
 								var = 0
@@ -368,7 +373,7 @@ class Decompiler
 							@c_parser.toplevel.statements << C::Declaration.new(ts[n])
 						end
 						commit[]
-						stmts << C::CExpression.new(ts[n], :funcall, args, ts[n].type.type)
+						fc = C::CExpression.new(ts[n], :funcall, args, ts[n].type.type)
 					else
 						# indirect funcall
 						fptr = ceb[n]
@@ -377,8 +382,9 @@ class Decompiler
 						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto)) if not fptr.kind_of? C::CExpression	# cast
 						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto))
 						commit[]
-						stmts << C::CExpression.new(fptr, :funcall, args, proto.type)
+						fc = C::CExpression.new(fptr, :funcall, args, proto.type)
 					end
+					stmts << C::CExpression.new(ce[:eax], :'=', fc, fc.type)
 				when 'jmp'
 					if di.block.to_normal.to_a.length > 1
 						n = backtrace_target(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address)
@@ -391,7 +397,7 @@ class Decompiler
 						stmts << C::CExpression.new(fptr, :funcall, [], proto.type)
 					end
 					# XXX bouh
-					# TODO need to know for which instructions the bt_binding is accurate
+					# TODO mark instructions for which bt_binding is accurate
 				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq'
 					di.backtrace_binding.each { |k, v|
 						if k.kind_of? ::Symbol or (k.kind_of? Indirection and Expression[k.target, :-, :esp].reduce.kind_of? ::Integer)
@@ -434,7 +440,9 @@ class Decompiler
 	def backtrace_target(expr, addr)
 		if n = @dasm.backtrace(expr, addr).first
 			n = Expression[n].reduce_rec
-			@dasm.prog_binding.index(n) || n
+			n = @dasm.prog_binding.index(n) || n
+			n = $1 if n.kind_of? ::String and n =~ /^thunk_(.*)/
+			n
 		end
 	end
 
@@ -474,16 +482,17 @@ class Decompiler
 		when Indirection
 			# XXX int *p ; p + 4*z  =>  p + z
 			p = decompile_cexpr(e.target, scope)
-			p = C::CExpression.new(nil, nil, p, C::Pointer.new(C::BaseType.new(e.len == 4 ? :int : :char)))
+			p = C::CExpression.new(nil, nil, p, C::Pointer.new(C::BaseType.new("__int#{e.len*8}".to_sym)))
 			p = C::CExpression.new(nil, nil, p, p.type) if not p.rexpr.kind_of? C::CExpression
 			C::CExpression.new(nil, :*, p, p.type.type)
 		when ::Symbol, ::String
 			name = e.to_s
 			if not s = scope.symbol_ancestors[name]
 				s = C::Variable.new
-				s.type = C::BaseType.new(:int)
+				s.type = C::BaseType.new(:__int32)
 				if e.kind_of? ::String
-					s.storage = :extern
+					# XXX may be string constant (as in printf("foo"))
+					s.storage = :static
 				elsif name[0,4] != 'var_' and name[0,4] != 'arg_'
 					s.storage = :register
 				end
@@ -673,111 +682,297 @@ class Decompiler
 	end
 
 	def decompile_c_types(scope)
-		# pass 1: find variables type
+		# TODO handle aliases (mem+regs) (reverse liveness?) XXX this would take place in make_stack_vars
+		# XXX walk { walk {} } too much, optimize
+
+		# types = { off => type of *(frameptr+off) }
 		types = {}
 
-		# scan for var = int
+		# TODO make all this standalone, to call it whenever the user updates one type through UI
+
+		# returns o if e is like 'frameptr+o'
+		frameoff = lambda { |e|
+			e = e.rexpr while e.kind_of? C::CExpression and not e.op
+			next if not e.kind_of? C::CExpression or (e.op != :+ and e.op != :-)
+			e.op == :- ? -e.rexpr.rexpr : e.rexpr.rexpr if e.lexpr.kind_of? C::Variable and e.lexpr.name == 'frameptr' and
+					e.rexpr.kind_of? C::CExpression and not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
+		}
+
+		# returns o if e is like '*(frameptr+o)'
+		framepoff = lambda { |e|
+			e = e.rexpr while e.kind_of? C::CExpression and not e.op
+			next if not e.kind_of? C::CExpression or e.op != :* or e.lexpr
+			frameoff[e.rexpr]
+		}
+
+		propagate_type = nil	# fwd declaration
+
+		# check if a newly found type for o is better than current type
+		# order: foo* > void* > foo
+		# propagate_type if type is updated
+		better_type = lambda { |t0, t1|
+			t1 == C::BaseType.new(:void) or (t0.pointer? and t1.kind_of? C::BaseType) or t0.untypedef.kind_of? C::Union or
+				(t0.pointer? and t1.pointer? and better_type[t0.untypedef.type, t1.untypedef.type])
+		}
+		update_type = lambda { |o, t|
+			if not t0 = types[o] or better_type[t, t0]
+				types[o] = t
+				next if t == t0
+				propagate_type[o, t]
+				t = t.untypedef
+				if t.kind_of? C::Struct
+					t.members.each { |m|
+						mo = t.offsetof(@c_parser, m.name)
+						next if mo == 0
+						update_type[o+mo, m.type]
+					}
+				end
+			end
+		}
+
+		# try to update the type of a stack offset from knowing the type of an expr (through dereferences etc)
+		known_type = lambda { |e, t|
+			while e.kind_of? C::CExpression
+				e = e.rexpr while e.kind_of? C::CExpression and not e.op
+				break if not e.kind_of? C::CExpression
+				if o = framepoff[e]
+					update_type[o, t]
+				elsif o = frameoff[e] and t.pointer?
+					update_type[o, t.untypedef.type]
+				elsif e.op == :* and not e.lexpr
+					e = e.rexpr
+					t = C::Pointer.new(t)
+					next
+				end
+				break
+			end
+		}
+
+		# we found a type for a stackoff, propagate it through affectations
+		propagate_type = lambda { |off, type|
+			decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+				# TODO bla = (int)bar + 2  =>  bla is int
+				next if ce.op != :'='
+
+				t = type
+				l = ce.lexpr
+				while l.kind_of? C::CExpression and l.op == :* and not l.lexpr
+					if off == frameoff[l.rexpr]
+						known_type[ce.rexpr, t]
+						break
+					elsif t.pointer?
+						l = l.rexpr
+						t = t.untypedef.type
+					else break
+					end
+				end
+
+				t = type
+				r = ce.rexpr
+				while r.kind_of? C::CExpression and r.op == :* and not r.lexpr
+					if off == frameoff[r.rexpr]
+						known_type[ce.lexpr, t]
+						break
+					elsif t.pointer?
+						r = r.rexpr
+						t = t.untypedef.type
+					else break
+					end
+				end
+			} }
+		}
+
+		# XXX struct foo { int bla } x; y = x;  =>  y = int or foo ?
+
+		# try to find appropriate type for stack offsets ; afterwards this will lead to stack variable creation
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
 			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and ce.rexpr.rexpr.abs < 0x10000
-				v = ce.lexpr
-				if v.kind_of? C::Variable and v.storage != :register
-					types[v.name] ||= ce.rexpr.type
-				end
-			elsif ce.op == :'=' and ce.rexpr.kind_of? C::Variable and types[ce.rexpr.name]
-				v = ce.lexpr
-				if v.kind_of? C::Variable and v.storage != :register
-					types[v.name] ||= types[ce.rexpr.name]
-				end
+				# var = int
+				known_type[ce.lexpr, ce.rexpr.type]
+			elsif ce.op == :funcall
+				# cast func args to arg prototypes
+				# TODO return value
+				ce.lexpr.type.args.to_a.zip(ce.rexpr).each { |proto, arg| known_type[arg, proto.type] }
 			end
 		} }
 
-		# scan for *(bla*)x
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
-			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? C::CExpression
-				p = ce.rexpr.rexpr
-				if p.op == nil and p.rexpr.kind_of? C::Variable and p.rexpr.storage != :register
-					types[p.rexpr.name] ||= ce.rexpr.type
-				elsif p.op == :+ and p.lexpr
-					if p.lexpr.kind_of? C::Variable and p.lexpr.storage != :register and ((p.rexpr.kind_of? C::Variable and types[p.rexpr.name] and types[p.rexpr.name].integral?) or (p.rexpr.kind_of? C::CExpression and not p.rexpr.op and p.rexpr.rexpr.kind_of? ::Integer))
-						types[p.lexpr.name] ||= ce.rexpr.type
-					elsif p.rexpr.kind_of? C::Variable and p.rexpr.storage != :register and p.lexpr.kind_of? C::Variable and types[p.lexpr.name] and types[p.lexpr.name].integral?
-						types[p.rexpr.name] ||= ce.rexpr.type
-					end
-				end
-			end
-		} }
+		# offsets have types now
 
-		types.each { |k, v| scope.symbol[k].type = v }
-		# pass 2: fix indirections & pointer addition
-		# TODO (char)toto == 42 => toto == 'A'
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
-			# *(bla*)x => *x, *(bla*)(x+2) => x[2/sizeof(*x)]
-			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? C::CExpression
-				p = ce.rexpr.rexpr
-				if p.op == nil and p.rexpr.kind_of? C::Variable and p.rexpr.storage != :register and types[p.rexpr.name] == ce.rexpr.type
-					ce.rexpr = p
-					#ce.op = :[]
-					#ce.lexpr = p
-					#ce.rexpr = C::CExpression.new(nil, nil, 0, C::BaseType.new(:int))
-				elsif p.op == :+ and p.lexpr
-					if p.lexpr.kind_of? C::Variable and types[p.lexpr.name] == ce.rexpr.type
-						ptr = p.lexpr
-						idx = p.rexpr
-					elsif p.rexpr.kind_of? C::Variable and types[p.rexpr.name] == ce.rexpr.type
-						ptr = p.rexpr
-						idx = p.lexpr
-					else next
-					end
-					ce.op = :[]
-					ce.lexpr = ptr
-					if idx.kind_of? C::CExpression and not idx.op and idx.rexpr.kind_of? ::Integer
-						ce.rexpr = idx
-						idx.rexpr /= @c_parser.sizeof(ce)
-					else
-						sz = @c_parser.sizeof(ce)
-						ce.rexpr = (sz == 1 ? idx : C::CExpression.new(idx, :/, C::CExpression.new(nil, nil, sz, idx.type), idx.type))
-					end
-				end
-			elsif ce.op == :'+=' and ce.lexpr.kind_of? C::Variable and types[ce.lexpr.name] and types[ce.lexpr.name].kind_of? C::Pointer
-				if ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer
-					ce.rexpr.rexpr /= @c_parser.sizeof(ce)
+		# remove offsets to struct members
+		# off => [structoff, membername, membertype]
+		memb = {}
+		types.dup.each { |o, t|
+			t = t.untypedef
+			if t.kind_of? C::Struct
+				t.members.each { |tm|
+					moff = t.offsetof(@c_parser, tm.name)
+					next if moff == 0	# XXX &struct = &struct.1stmemb
+					types.delete(o+moff)
+					memb[o+moff] = [o, tm.name, tm.type]
+				}
+			end
+		}
+
+		# patch local variables into the CExprs, incl unknown offsets
+		# off => Var
+		vars = {}
+		varat = lambda { |off|
+			if not vars[off]
+				if s = memb[off]
+					v = C::CExpression.new(varat[s[0]], :'.', s[1], s[2])
 				else
-					sz = @c_parser.sizeof(ce)
-					ce.rexpr = C::CExpression.new(ce.rexpr, :/, C::CExpression.new(nil, nil, sz, ce.rexpr.type), ce.rexpr.type) if sz != 1
+					v = C::Variable.new
+					v.type = types[off] || C::BaseType.new(:int)
+					v.name = stackoff_to_varname(off).to_s
+					scope.statements << C::Declaration.new(v)
+					scope.symbol[v.name] = v
 				end
+				vars[off] = v
 			end
+			vars[off]
+		}
+
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+			o = nil
+			if ce.op == :funcall
+				ce.rexpr.map! { |re|
+					if o = framepoff[re]; varat[o]
+					elsif o = frameoff[re]; C::CExpression.new(nil, :&, varat[o], C::Pointer.new(varat[o].type))
+					else re
+					end
+				}
+			end
+			ce.lexpr = varat[o] if o = framepoff[ce.lexpr]
+			ce.rexpr = varat[o] if o = framepoff[ce.rexpr]
+			ce.lexpr = C::CExpression.new(nil, :&, varat[o], C::Pointer.new(varat[o].type)) if o = frameoff[ce.lexpr]
+			ce.rexpr = C::CExpression.new(nil, :&, varat[o], C::Pointer.new(varat[o].type)) if o = frameoff[ce.rexpr]
 		} }
 
-		# TODO var++
+		# fix pointer arithmetic, use struct member access
+
+		cast = lambda { |e, t|
+			e = C::CExpression.new(nil, nil, e, e.type) if not e.kind_of? C::CExpression
+			C::CExpression.new(nil, nil, e, t)
+		}
+
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+			next if not ce.kind_of? C::CExpression
+			if ce.op == :* and not ce.lexpr and ce.rexpr.type.pointer? and ce.rexpr.type.untypedef.type.untypedef.kind_of? C::Struct
+				# *structptr => structptr->member
+				s = ce.rexpr.type.untypedef.type.untypedef
+				m = s.members.find { |m_| s.offsetof(@c_parser, m_.name) == 0 }
+				ce.lexpr = ce.rexpr
+				ce.op = :'->'
+				ce.rexpr = m.name
+				ce.type = m.type
+				next
+			end
+
+			next if not ce.lexpr or not ce.lexpr.type.pointer?
+			if ce.lexpr.type.untypedef.type.untypedef.kind_of? C::Struct and ce.op == :+ and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer and
+					s = ce.lexpr.type.untypedef.type.untypedef and
+					o = ce.rexpr.rexpr and
+					m = s.members.find { |m_| s.offsetof(@c_parser, m_.name) == o }
+				# structptr + 4 => &structptr->member
+				ce.rexpr = C::CExpression.new(ce.lexpr, :'->', m.name, m.type)
+				ce.lexpr = nil
+				ce.op = :&
+				ce.type = C::Pointer.new(m.type)
+			elsif [:+, :-, :'+=', :'-='].include? ce.op and ce.rexpr.kind_of? C::CExpression and ((not ce.rexpr.op and i = ce.rexpr.rexpr) or
+					(ce.rexpr.op == :* and i = ce.rexpr.lexpr and ((i.kind_of? C::CExpression and not i.op and i = i.rexpr) or true))) and i.kind_of? ::Integer and psz = @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) and i % psz == 0
+				# ptr += 4 => ptr += 1
+				if not ce.rexpr.op
+					ce.rexpr.rexpr /= psz
+				else
+					ce.rexpr.lexpr.rexpr /= psz
+					if ce.rexpr.lexpr.rexpr == 1
+						ce.rexpr = ce.rexpr.rexpr
+					end
+				end
+
+			elsif (ce.op == :+ or ce.op == :-)
+				# ptr+x => ((int)ptr)+x
+				ce.lexpr = cast[ce.lexpr, C::BaseType.new(:int)]
+			end
+		} }
 	end
 
-	# yield each CExpr member (recursive, allows arrays)
-	def decompile_walk_ce(ce, &b)
+	def optimize(scope)
+		sametype = lambda { |t1, t2|
+			t1 = t1.untypedef
+			t2 = t2.untypedef
+			t1 == t2 or
+			(t1.kind_of? C::BaseType and t1.integral? and ((t2.kind_of? C::BaseType and t2.integral?) or t2.pointer?) and @c_parser.sizeof(nil, t1) == @c_parser.sizeof(nil, t2)) or
+			(t1.pointer? and t2.pointer? and sametype[t1.type, t2.type])
+		}
+
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
+			# x += 1 => ++x
+			if ce.op == :'+=' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
+				ce.lexpr, ce.op, ce.rexpr = nil, :'++', ce.lexpr
+			end
+
+			# (foo)bla => bla if bla of type foo
+			if not ce.op and ce.rexpr.kind_of? C::CExpression and sametype[ce.type, ce.rexpr.type]
+				ce.lexpr, ce.op, ce.rexpr, ce.type = ce.rexpr.lexpr, ce.rexpr.op, ce.rexpr.rexpr, ce.rexpr.type
+			end
+
+			# *&bla => bla if types ok
+			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.type, ce.rexpr.rexpr.type]
+				ce.lexpr, ce.op, ce.rexpr, ce.type = ce.rexpr.rexpr.lexpr, ce.rexpr.rexpr.op, ce.rexpr.rexpr.rexpr, ce.rexpr.rexpr.type
+			end
+		} }
+
+		# TODO a = b ; func(a) ; <a never reused before reattribution>  => func(b)
+		# need an ordered graph a la DecodedBlock
+
+		# remove unreferenced local vars
+		used = {}
+		funcenter = nil
+		decompile_walk(scope) { |ce_|
+			if ce_.kind_of? C::CExpression and ce_.op == :'=' and ce_.lexpr.kind_of? C::Variable and
+					ce_.rexpr.kind_of? C::Variable and ce_.lexpr.name == 'var_0' and ce_.rexpr.name == 'ebp'	# push ebp; mov ebp, esp
+				funcenter = ce_
+				next
+			end
+		decompile_walk_ce(ce_) { |ce|
+			# XXX :funcall, [Variable] => not walked
+			used[ce.rexpr.name] = true if ce.rexpr.kind_of? C::Variable
+			used[ce.lexpr.name] = true if ce.lexpr.kind_of? C::Variable
+		} }
+		scope.statements.delete funcenter if funcenter and not used['ebp']
+		scope.statements.delete_if { |sm| sm.kind_of? C::Declaration and not used[sm.var.name] }
+		scope.symbol.delete_if { |n, v| not used[n] }
+	end
+
+	# yield each CExpr member (recursive, allows arrays, order: self(!post), lexpr, rexpr, self(post))
+	def decompile_walk_ce(ce, post=false, &b)
 		case ce
 		when C::CExpression
-			yield ce
-			decompile_walk_ce(ce.lexpr, &b)
-			decompile_walk_ce(ce.rexpr, &b)
+			yield ce if not post
+			decompile_walk_ce(ce.lexpr, post, &b)
+			decompile_walk_ce(ce.rexpr, post, &b)
+			yield ce if post
 		when ::Array
-			ce.each { |ce_| decompile_walk(ce_, &b) }
+			ce.each { |ce_| decompile_walk_ce(ce_, post, &b) }
 		end
 	end
 
 	# yields each statement (recursive)
-	def decompile_walk(scope, &b)
+	def decompile_walk(scope, post=false, &b)
 		case scope
-		when ::Array; scope.each { |s| decompile_walk(s, &b) }
+		when ::Array; scope.each { |s| decompile_walk(s, post, &b) }
 		when C::Statement
 			yield scope
 			case scope
-			when C::Block; decompile_walk(scope.statements, &b)
+			when C::Block; decompile_walk(scope.statements, post, &b)
 			when C::If
 				yield scope.test
-				decompile_walk(scope.bthen, &b)
-				decompile_walk(scope.belse, &b) if scope.belse
+				decompile_walk(scope.bthen, post, &b)
+				decompile_walk(scope.belse, post, &b) if scope.belse
 			when C::While
 				yield scope.test
-				decompile_walk(scope.body, &b)
+				decompile_walk(scope.body, post, &b)
 			end
 		end
 	end
