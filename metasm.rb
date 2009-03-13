@@ -19,7 +19,6 @@ def self.const_missing(c, fallback=nil)
 		'WinAPI' => 'WinOS', 'WindowsExports' => 'WinOS',
 		'WindowsRemoteString' => 'WinOS', 'WinDbg' => 'WinOS',
 		'VirtualFile' => 'OS', 'VirtualString' => 'OS',
-		'EncodedData' => 'Expression', 'ExpressionType' => 'Expression',
 	}[c.to_s] || c.to_s
 
 	files = {
@@ -32,10 +31,7 @@ def self.const_missing(c, fallback=nil)
 		'AOut' => 'exe_format/a_out', 'MachO' => 'exe_format/macho',
 		'NDS' => 'exe_format/nds', 'XCoff' => 'exe_format/xcoff',
 		'GtkGui' => 'gui/gtk',
-		'OS' => 'os/main',
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
-		'Preprocessor' => 'preprocessor',
-		'Disassembler' => 'decode', 'Expression' => ['main', 'encode', 'decode'],
 		'Decompiler' => 'decompile',
 	}[cst]
 
@@ -44,15 +40,21 @@ def self.const_missing(c, fallback=nil)
 	files = [files] if files.kind_of? ::String
 	#puts "autorequire #{files.join(', ')}"
 
+	files.each { |f| require File.join('metasm', f) }
+
+	const_get c
+end
+
+def self.require(f)
 	# temporarily put the current file directory in the ruby include path
 	if not $:.include? Metasmdir
 		incdir = Metasmdir
 		$: << incdir
 	end
-	files.each { |f| require File.join('metasm', f) }
-	$:.delete incdir if incdir
 
-	const_get c
+	super(f)
+
+	$:.delete incdir if incdir
 end
 end
 
@@ -71,6 +73,14 @@ def const_missing(c)
 	end
 end
 end
+
+# load core files by default (too many classes to check for otherwise)
+Metasm.require 'metasm/encode'
+Metasm.require 'metasm/decode'
+Metasm.require 'metasm/main'
+Metasm.require 'metasm/exe_format/main'
+Metasm.require 'metasm/os/main'
+
 
 # remove an 1.9 warning, couldn't find a compatible way...
 if {}.respond_to? :key
