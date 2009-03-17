@@ -238,7 +238,7 @@ end
 if $DEBUG
 # update DecodedInstr.to_s to include instr length
 class Metasm::DecodedInstruction
-	def to_s ; "#{Metasm::Expression[address]} +#{bin_length} #{instruction}" end
+	def to_s ; "#{Metasm::Expression[address] if address} +#{bin_length} #{instruction}" end
 end
 end
 

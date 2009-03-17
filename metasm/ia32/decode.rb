@@ -388,7 +388,7 @@ class Ia32
 				}
 			when 'call'
 				lambda { |di, a0| { :esp => Expression[:esp, :-, opsz[di]/8],
-					Indirection[:esp, opsz[di]/8, di.address] => Expression[Expression[di.address, :+, di.bin_length].reduce] } }
+					Indirection[:esp, opsz[di]/8, di.address] => Expression[di.next_addr] } }
 			when 'ret'; lambda { |di, *a| { :esp => Expression[:esp, :+, [opsz[di]/8, :+, a[0] || 0]] } }
 			when 'loop', 'loopz', 'loopnz'; lambda { |di, a0| { :ecx => Expression[:ecx, :-, 1] } }
 			when 'enter'

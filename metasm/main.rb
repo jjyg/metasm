@@ -416,8 +416,11 @@ class Expression < ExpressionType
 	# reduce_lambda is a callback called after the standard reduction procedure for custom algorithms
 	# the lambda may return a new expression or nil (to keep the old expr)
 	# exemple: lambda { |e| e.lexpr if e.kind_of? Expression and e.op == :& and e.rexpr == 0xffff_ffff }
+	# returns old lambda
 	def self.reduce_lambda(&b)
-		block_given? ? @@reduce_lambda = b : @@reduce_lambda
+		old = @@reduce_lambda
+		@@reduce_lambda = b if block_given?
+		old
 	end
 	def self.reduce_lambda=(p)
 		@@reduce_lambda = p

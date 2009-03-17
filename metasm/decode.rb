@@ -36,11 +36,12 @@ class DecodedInstruction
 		else @instruction = Instruction.new(arg)
 		end
 		@bin_length = 0
-		@address = addr
+		@address = addr if addr
 	end
 
+	def next_addr=(a) @next_addr = a end
 	def next_addr
-		address + @bin_length if address
+		(@next_addr ||= nil) || (address + @bin_length) if address
 	end
 
 	def block_head?
@@ -1851,6 +1852,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			di
 		}
 
+#puts "  ** patch next_addr to #{Expression[tb.list.last.next_addr]}" if not by.empty? and by.last.opcode.props[:saveip]
+		by.last.next_addr = tb.list.last.next_addr if not by.empty? and by.last.opcode.props[:saveip]
 		fb.list.each { |di| @decoded.delete di.address }
 		fb.list.clear
 		tb.list.each { |di| @decoded.delete di.address }
