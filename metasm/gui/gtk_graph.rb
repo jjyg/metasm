@@ -57,17 +57,6 @@ class Graph
 		b
 	end
 
-	# checks if a box is reachable from another following a 'to' chain
-	# TODO cache a cantreach b (all allowed)
-	def can_reach(src, dst, allow=@box)
-		src.to.each { |f|
-			next if not allow.include? f
-			return true if dst == f
-			return true if can_reach(f, dst, allow-[src])
-		}
-		false
-	end
-
 	# place boxes in a good-looking layout
 	def auto_arrange_boxes
 		return if @box.empty?
@@ -95,14 +84,52 @@ class Graph
 		}
 
 		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
-		maketree = lambda { |path|
-			path.last.to.delete_if { |g|
-				if path.include? g
-					g.from.delete path.last
-					true
-				end
+		madetree = false
+		maketree = lambda { |roots|
+			next if madetree
+			madetree = true
+
+			maxdepth = {}	# max arc count to reach this box from graph start (excl loop)
+
+			trim = lambda { |g, from|
+				# unlink g from (part of) its from
+				from.each { |gg| gg.to.delete g }
+				g.from -= from
 			}
-			path.last.to.each { |g| maketree[path+[g]] }
+
+			walk = lambda { |g|
+				# score
+				parentdepth = g.from.map { |gg| maxdepth[gg] }
+				if parentdepth.empty?
+					# root
+					maxdepth[g] = 0
+				elsif parentdepth.include? nil
+					# not farthest parent found / loop
+					next
+				# elsif maxdepth[g] => ?
+				else
+					maxdepth[g] = parentdepth.max + 1
+				end
+				g.to.each { |gg| walk[gg] }
+			}
+
+			roots.each { |g| trim[g, g.from] }
+			roots.each { |g| walk[g] }
+			
+			# handle loops now (unmarked nodes)
+			while unmarked = groups - maxdepth.keys and not unmarked.empty?
+				if g = unmarked.find { |g_| g_.from.find { |gg| maxdepth[gg] } }
+					# loop head
+					trim[g, g.from.find_all { |gg| not maxdepth[gg] }]	# XXX not quite sure for this
+					walk[g]
+				else
+					# disconnected subgraph
+					g = unmarked.find { |g_| g_.from.empty? } || unmarked.first
+					trim[g, g.from]
+					maxdepth[g] = 0
+					walk[g]
+				end
+			end
 		}
 
 		# concat all ary boxes into its 1st element, remove trailing groups from 'groups'
@@ -290,7 +317,8 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 			g1 << groups.first if g1.empty?
 			cntpre = groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
 			g1.each { |g| maketree[[g]] }
-			true if cntpre != groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
+			cntpost = groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
+			true if cntpre != cntpost
 		}
 
 		# known, clean patterns
@@ -302,7 +330,7 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 			group_lines[false] or group_ifthen[false] or group_halflines[] or group_other[]
 		}
 
-	       	nil while groups.length > 1 and (group_clean[] or trim_graph[] or group_unclean[])
+		nil while groups.length > 1 and (group_clean[] or trim_graph[] or group_unclean[])
 
 		@box.each { |b|
 			b.to = b.to.sort_by { |bt| bt.x }
