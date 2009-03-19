@@ -669,7 +669,13 @@ class LinDebug
 						@promptpos = poss.first.length+1
 					end
 				end
-			when ?\n; @histptr = nil ; exec_prompt rescue log "error: #$!", *$!.backtrace
+			when ?\n
+				@histptr = nil
+				begin
+					exec_prompt
+				rescue Exception
+					log "error: #$!", *$!.backtrace
+				end
 			when 0x20..0x7e
 				@promptbuf[@promptpos, 0] = k.chr
 				@promptpos += 1
@@ -716,7 +722,7 @@ class LinDebug
 		@command['bc'] = lambda { |lex, int|
 			@rs.clearbreaks
 		}
-		@command['bt'] = lambda { |lex, int| @rs.backtrace.each { |t| puts t } }
+		@command['bt'] = lambda { |lex, int| @rs.backtrace { |t| puts t } }
 		@command['d'] =  lambda { |lex, int| @dataptr = int[] || return }
 		@command['db'] = lambda { |lex, int| @datafmt = 'db' ; @dataptr = int[] || return }
 		@command['dw'] = lambda { |lex, int| @datafmt = 'dw' ; @dataptr = int[] || return }

@@ -540,11 +540,21 @@ class Rubstop
 	end
 
 	def backtrace
-		bt = []
-		bt << findsymbol(eip)
+		s = findsymbol(eip)
+		if block_given?
+			yield s
+		else
+			bt = []
+			bt << s
+		end
 		fp = ebp
 		while fp >= esp and fp <= esp+0x100000
-			bt << findsymbol(self[fp+4, 4].unpack('L').first)
+			s = findsymbol(self[fp+4, 4].unpack('L').first)
+			if block_given?
+				yield s
+			else
+				bt << s
+			end
 			fp = self[fp, 4].unpack('L').first
 		end
 		bt

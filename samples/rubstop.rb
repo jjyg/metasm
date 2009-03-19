@@ -312,11 +312,21 @@ class Rubstop < Metasm::PTrace32
 	end
 
 	def backtrace
-		bt = []
-		bt << findsymbol(@regs_cache['eip'])
+		s = findsymbol(@regs_cache['eip'])
+		if block_given?
+			yield s
+		else
+			bt = []
+			bt << s
+		end
 		fp = @regs_cache['ebp']
 		while fp >= @regs_cache['esp'] and fp <= @regs_cache['esp']+0x10000
-			bt << findsymbol(self[fp+4, 4].unpack('L').first)
+			s = findsymbol(self[fp+4, 4].unpack('L').first)
+			if block_given?
+				yield s
+			else
+				bt << s
+			end
 			fp = self[fp, 4].unpack('L').first
 		end
 		bt
