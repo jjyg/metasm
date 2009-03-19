@@ -7,8 +7,7 @@
 Metasmdir = File.dirname(__FILE__)
 
 module Metasm
-def self.const_missing(c, fallback=nil)
-	#puts "const_missing #{c.inspect}"
+def self.fix_const_missing(c)
 	# constant defined in the same file as another
 	cst = {
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',
@@ -35,11 +34,11 @@ def self.const_missing(c, fallback=nil)
 		'Decompiler' => 'decompile',
 	}[cst]
 
-	return(fallback ? fallback[c] : super(c)) if not files
+	return if not files
 
 	files = [files] if files.kind_of? ::String
-	#puts "autorequire #{files.join(', ')}"
 
+	#puts "autorequire #{files.join(', ')}"
 	files.each { |f| require File.join('metasm', f) }
 
 	const_get c
@@ -58,16 +57,13 @@ def self.require(f)
 end
 end
 
-# needed for subclasses (e.g. Metasm::PE, to avoid Metasm::PE::Ia32: const not found)
-class << Object
+# handle subclasses, nested modules etc (e.g. Metasm::PE, to avoid Metasm::PE::Ia32: const not found)
+class Module
 alias premetasm_const_missing const_missing
 def const_missing(c)
-	# RHAAAAAAAAAAA
-	# we want Metasm.const_missing to be used only for classes in the Metasm module
-	# so either a subclass (eg Metasm::PE => #name starts with 'Metasm::')
-	# or the Metasm module itself, when it is included elsewhere (ancestors check)
-	if name =~ /^Metasm::/ or ancestors.include? Metasm
-		Metasm.const_missing(c, method(:premetasm_const_missing))
+	# Object.const_missing => Module#const_missing and not the other way around
+	if name =~ /^Metasm(::|$)/ or ancestors.include? Metasm and cst = Metasm.fix_const_missing(c)
+		cst
 	else
 		premetasm_const_missing(c)
 	end
