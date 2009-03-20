@@ -36,7 +36,7 @@ class Graph
 		clear
 	end
 
-	# empty @box, @view_x, @view_y
+	# empty @box
 	def clear
 		@box = []
 	end
@@ -796,6 +796,7 @@ class GraphViewWidget < Gtk::HBox
 
 		# link boxes
 		ctx.box.each { |b|
+			next if not @dasm.decoded[b[:addresses].last]
 			a = @dasm.decoded[b[:addresses].last].block.address
 			next if not block_rel[a]
 			block_rel[a].each { |t|
@@ -827,7 +828,7 @@ class GraphViewWidget < Gtk::HBox
 					nl[]
 				end
 			}
-			b.w = b[:line_text].values.map { |str| str.length }.max * @font_width + 2
+			b.w = b[:line_text].values.map { |str| str.length }.max.to_i * @font_width + 2
 			b.w += 1 if b.w % 2 == 0	# ensure boxes have odd width -> vertical arrows are straight
 			b.h = line * @font_height + 2
 		}
@@ -1112,11 +1113,11 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def focus_xy(x, y)
-		if @curcontext.view_x*@zoom + @width < x or @curcontext.view_x*@zoom > x
+		if not @curcontext.view_x or @curcontext.view_x*@zoom + @width*3/4 < x or @curcontext.view_x*@zoom > x
 			@curcontext.view_x = (x - @width/5)/@zoom
 			redraw
 		end
-		if @curcontext.view_y*@zoom + @height < y or @curcontext.view_y*@zoom > y
+		if not @curcontext.view_y or @curcontext.view_y*@zoom + @height < y or @curcontext.view_y*@zoom > y
 			@curcontext.view_y = (y - @height/5)/@zoom
 			redraw
 		end
