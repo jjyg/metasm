@@ -2015,7 +2015,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# yields (defaults puts) each line
 	def dump(dump_data=true, &b)
 		b ||= lambda { |l| puts l }
-		@sections.sort.each { |addr, edata|
+		@sections.sort_by { |addr, edata| addr.kind_of?(::Integer) ? addr : 0 }.each { |addr, edata|
+			addr = Expression[addr] if addr.kind_of? ::String
 			blockoffs = @decoded.values.map { |di| Expression[di.block.address, :-, addr].reduce if di.kind_of? DecodedInstruction and di.block_head? }.grep(::Integer).sort.reject { |o| o < 0 or o >= edata.length }
 			b[@program.dump_section_header(addr, edata)]
 			if not dump_data and edata.length > 16*1024 and blockoffs.empty?
