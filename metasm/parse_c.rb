@@ -250,6 +250,7 @@ module C
 						idx = parse_initializer_designator(parser, scope, ret, idx, true)
 						raise tok || parser, '"," or "}" expected' if not tok = parser.skipspaces or tok.type != :punct or (tok.raw != '}' and tok.raw != ',')
 						break if tok.raw == '}'
+						raise tok, 'struct is smaller than that' if idx >= @members.length
 					end
 				end
 				ret
@@ -267,7 +268,7 @@ module C
 				raise nnt, 'unhandled indirect initializer' if not nidx = @members.index(@members.find { |m_| m_.name == nnt.raw })	# TODO
 				value = value[idx] ||= [] if not root
 				idx = nidx
-				@members[idx].type.parse_initializer_designator(parser, scope, value, idx, false)
+				@members[idx].type.untypedef.parse_initializer_designator(parser, scope, value, idx, false)
 			else
 				parser.unreadtok nnt
 				if root
@@ -397,6 +398,7 @@ module C
 						# allow int x[] = {1, 2, 3, };
 						break if tok = parser.skipspaces and tok.type == :punct and tok.raw == '}'
 						parser.unreadtok tok
+						raise tok, 'array is smaller than that' if length and idx >= @length
 					end
 				end
 				ret
@@ -412,7 +414,8 @@ module C
 				value = value[idx] ||= [] if not root
 				raise nt, 'const expected' if not idx = CExpression.parse(parser, scope) or not idx.constant? or not idx = idx.reduce(parser) or not idx.kind_of? ::Integer
 				raise nt || parser, '"]" expected' if not nt = parser.skipspaces or nt.type != :punct or nt.raw != ']'
-				@type.parse_initializer_designator(parser, scope, value, idx, false)
+				raise nt, 'array is smaller than that' if length and idx >= @length
+				@type.untypedef.parse_initializer_designator(parser, scope, value, idx, false)
 			else
 				if root
 					parser.unreadtok nt
