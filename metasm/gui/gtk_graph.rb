@@ -1085,8 +1085,6 @@ class GraphViewWidget < Gtk::HBox
 	# start or an entrypoint is found, then the graph is created from there
 	# will call gui_update then
 	def focus_addr(addr, can_update_context=true)
-		@zoom = 1.0
-
 		if not @dasm.decoded[addr].kind_of? DecodedInstruction
 			return
 		end
@@ -1094,6 +1092,10 @@ class GraphViewWidget < Gtk::HBox
 		# move window / change curcontext
 		if b = @curcontext.box.find { |b_| b_[:line_address].index(addr) }
 			@caret_box, @caret_x, @caret_y = b, 0, b[:line_address].index(addr)
+			@curcontext.view_x += (@width/2 / @zoom - @width/2)
+			@curcontext.view_y += (@height/2 / @zoom - @height/2)
+			@zoom = 1.0
+
 			focus_xy(b.x, b.y + @caret_y*@font_height)
 			update_caret
 		elsif can_update_context
@@ -1117,7 +1119,7 @@ class GraphViewWidget < Gtk::HBox
 			@curcontext.view_x = (x - @width/5)/@zoom
 			redraw
 		end
-		if not @curcontext.view_y or @curcontext.view_y*@zoom + @height < y or @curcontext.view_y*@zoom > y
+		if not @curcontext.view_y or @curcontext.view_y*@zoom + @height*3/4 < y or @curcontext.view_y*@zoom > y
 			@curcontext.view_y = (y - @height/5)/@zoom
 			redraw
 		end
