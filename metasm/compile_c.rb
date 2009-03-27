@@ -250,9 +250,10 @@ module C
 		# source.last is a label name or is empty before calling here
 		# return the length of the data written
 		def c_idata_inner(type, value)
-			value ||= 0
 			case type
 			when BaseType
+				value ||= 0
+
 				if type.name == :void
 					@source.last << ':' if not @source.last.empty?
 					return 0
@@ -275,8 +276,8 @@ module C
 				@parser.typesize[type.name]
 
 			when Struct
+				value ||= []
 				@source.last << ':' if not @source.last.empty?
-				value = [0] * type.members.length if value == 0
 				raise "unknown struct initializer #{value.inspect}" if not value.kind_of? ::Array
 				sz = 0
 				type.members.zip(value).each { |m, v|
@@ -289,11 +290,11 @@ module C
 				sz
 
 			when Union
+				value ||= []
 				@source.last << ':' if not @source.last.empty?
 				len = sizeof(nil, type)
-				value = [0] if value == 0
 				raise "unknown union initializer #{value.inspect}" if not value.kind_of? ::Array
-				idx = value.rindex(value.compact.last)
+				idx = value.rindex(value.compact.last) || 0
 				raise "empty union initializer" if not idx
 				wlen = c_idata_inner(type.members[idx].type, value[idx])
 				@source << "db #{'0' * (len - wlen) * ', '}" if wlen < len
@@ -301,6 +302,7 @@ module C
 				len
 
 			when Array
+				value ||= []
 				if value.kind_of? CExpression and not value.op and value.rexpr.kind_of? ::String
 					elen = sizeof(nil, value.type.type)
 					@source.last <<
