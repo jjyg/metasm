@@ -1165,11 +1165,13 @@ class CCompiler < C::Compiler
 		when :'!'
 			r = c_cexpr_inner(expr.rexpr)
 			r = make_volatile(r, expr.rexpr.type)
+			unuse r
 			instr 'test', r, r
 			instr 'jz', Expression[target]
 		else
 			r = c_cexpr_inner(expr)
 			r = make_volatile(r, expr.type)
+			unuse r
 			instr 'test', r, r
 			instr 'jnz', Expression[target]
 		end
