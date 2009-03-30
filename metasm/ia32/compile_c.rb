@@ -890,7 +890,9 @@ class CCompiler < C::Compiler
 			ptr = c_cexpr_inner(expr.lexpr)
 			unuse ptr
 			instr 'call', ptr
-			if not expr.lexpr.type.attributes.to_a.include? 'stdcall' and (not expr.lexpr.kind_of? C::Variable or not expr.lexpr.attributes.to_a.include? 'stdcall')
+			f = expr.lexpr
+			f = f.rexpr while f.kind_of? C::CExpression and not f.op and f.type == f.rexpr.type
+			if not f.type.attributes.to_a.include? 'stdcall' and (not f.kind_of?(C::Variable) or not f.attributes.to_a.include? 'stdcall')
 				al = typesize[:ptr]
 				argsz = expr.rexpr.inject(0) { |sum, a| sum + (sizeof(a) + al - 1) / al * al }
 				instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0

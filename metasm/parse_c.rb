@@ -2038,7 +2038,10 @@ EOH
 					when '*'
 						raise tok, 'expr expected' if not val = parse_value(parser, scope)
 						raise tok, 'not a pointer' if not val.type.pointer?
-						val = CExpression.new(nil, tok.raw.to_sym, val, val.type.untypedef.type)
+						newtype = val.type.untypedef.type
+						if not newtype.untypedef.kind_of? Function	# *fptr == fptr
+							val = CExpression.new(nil, tok.raw.to_sym, val, val.type.untypedef.type)
+						end
 					when '~', '!', '+', '-'
 						raise tok, 'expr expected' if not val = parse_value(parser, scope)
 						raise tok, 'type not arithmetic' if not val.type.arithmetic?
@@ -2054,10 +2057,12 @@ EOH
 				parser.unreadtok tok
 				return
 			end
-			if val.kind_of? Variable or val.kind_of? CExpression and val.type.kind_of? Function
-				# function == functionpointer
-				val = CExpression.new(nil, :'&', val, Pointer.new(val.type))
+
+			if val.kind_of? Variable and val.type.kind_of? Function
+				# void (*bla)() = printf;  =>  ...= &printf;
+				val = CExpression.new(nil, :&, val, Pointer.new(val.type))
 			end
+
 			val
 		end
 
