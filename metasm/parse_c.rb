@@ -50,7 +50,7 @@ module C
 	module Attributes
 		attr_accessor :attributes
 
-		PREFIXED = %w[cdecl stdcall fastcall inline]
+		DECLSPECS = %w[cdecl stdcall fastcall inline naked thiscall]
 
 		# parses a sequence of __attribute__((anything)) into self.attributes (array of string)
 		def parse_attributes(parser, allow_declspec = false)
@@ -73,14 +73,14 @@ module C
 					elsif tok.type == :punct and tok.raw == '('
 						nest += 1
 					elsif nest == 0 and tok.type == :punct and tok.raw == ','
-						raise tok || parser if not allow_declspec and %w[inline stdcall fastcall cdecl naked].include? attrib
+						raise tok || parser if not allow_declspec and DECLSPECS.include? attrib
 						(@attributes ||= []) << attrib
 						attrib = ''
 						next
 					end
 					attrib << tok.raw
 				end
-				raise tok || parser if not allow_declspec and %w[inline stdcall fastcall cdecl naked].include? attrib
+				raise tok || parser if not allow_declspec and DECLSPECS.include? attrib
 			    when 'inline', '__inline', '__inline__', '__stdcall', '__fastcall', '__cdecl'
 				break if not allow_declspec
 				attrib = keyword.delete '_'
@@ -266,7 +266,10 @@ module C
 					nnt = parser.skipspaces and nnt.type == :string and
 					m = findmember(nnt.raw)
 				raise nnt, 'unhandled indirect initializer' if not nidx = @members.index(@members.find { |m_| m_.name == nnt.raw })	# TODO
-				value = value[idx] ||= [] if not root
+				if not root
+					value[idx] ||= []	# AryRecorder may change [] to AryRec.new, can't do v = v[i] ||= []
+					value = value[idx]
+				end
 				idx = nidx
 				@members[idx].type.untypedef.parse_initializer_designator(parser, scope, value, idx, false)
 			else
@@ -408,14 +411,64 @@ module C
 			end
 		end
 
-		# parses a designator+initializer eg '[12] = 4' or '[42].bla = 16' or (root ? '4' : '=4')
+		# this class is a hack to support [1 ... 4] array initializer
+		# it stores the effects of subsequent initializers (eg [1 ... 4].toto[48].bla[2 ... 57] = 12)
+		# which are later played back on the range
+		class AryRecorder
+			attr_accessor :log
+			def initialize
+				@log = []
+			end
+
+			def []=(idx, val)
+				val = self.class.new if val == []
+				@log[idx] = val
+			end
+
+			def [](idx)
+				@log[idx]
+			end
+
+			def playback_idx(i)
+				case v = @log[i]
+				when self.class; v.playback
+				else v
+				end
+			end
+
+			def playback(ary=[])
+				@log.each_with_index { |v, i| ary[i] = playback_idx(i) }
+				ary
+			end
+		end
+
+		# parses a designator+initializer eg '[12] = 4' or '[42].bla = 16' or '[3 ... 8] = 28'
 		def parse_initializer_designator(parser, scope, value, idx, root=true)
+			# root = true for 1st invocation (x = { 4 }) => immediate value allowed
+			#  or false for recursive invocations (x = { .y = 4 }) => need '=' sign before immediate
 			if nt = parser.skipspaces and nt.type == :punct and nt.raw == '['
-				value = value[idx] ||= [] if not root
+				if not root
+					value[idx] ||= []	# AryRecorder may change [] to AryRec.new, can't do v = v[i] ||= []
+					value = value[idx]
+				end
 				raise nt, 'const expected' if not idx = CExpression.parse(parser, scope) or not idx.constant? or not idx = idx.reduce(parser) or not idx.kind_of? ::Integer
-				raise nt || parser, '"]" expected' if not nt = parser.skipspaces or nt.type != :punct or nt.raw != ']'
-				raise nt, 'array is smaller than that' if length and idx >= @length
+				nt = parser.skipspaces
+				if nt and nt.type == :punct and nt.raw == '.'	# range
+					raise nt || parser, '".." expected' if not nt = parser.skipspaces or nt.type != :punct or nt.raw != '.'
+					raise nt || parser,  '"." expected' if not nt = parser.skipspaces or nt.type != :punct or nt.raw != '.'
+					raise nt, 'const expected' if not eidx = CExpression.parse(parser, scope) or not eidx.constant? or not eidx = eidx.reduce(parser) or not eidx.kind_of? ::Integer
+					raise nt, 'bad range' if eidx < idx
+					nt = parser.skipspaces
+					realvalue = value
+					value = AryRecorder.new
+				end
+				raise nt || parser, '"]" expected' if not nt or nt.type != :punct or nt.raw != ']'
+				raise nt, 'array is smaller than that' if length and (eidx||idx) >= @length
 				@type.untypedef.parse_initializer_designator(parser, scope, value, idx, false)
+				if eidx
+					(idx..eidx).each { |i| realvalue[i] = value.playback_idx(idx) }
+					idx = eidx	# next default value = eidx+1 (eg int x[] = { [1 ... 3] = 4, 5 } => x[4] = 5)
+				end
 			else
 				if root
 					parser.unreadtok nt
@@ -2417,13 +2470,13 @@ EOH
 	module Attributes
 		def dump_attributes
 			if attributes
-				(attributes - PREFIXED).map { |a| " __attribute__((#{a}))" }.join
+				(attributes - DECLSPECS).map { |a| " __attribute__((#{a}))" }.join
 			else ''
 			end
 		end
 		def dump_attributes_pre
 			if attributes
-				(attributes & PREFIXED).map { |a| "__#{a} " }.join
+				(attributes & DECLSPECS).map { |a| "__#{a} " }.join
 			else ''
 			end
 		end

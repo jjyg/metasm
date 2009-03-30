@@ -284,7 +284,7 @@ module C
 					@source << ''
 					flen = c_idata_inner(m.type, v)
 					sz += flen
-					@source << ".align #{type.align}" if flen % type.align != 0
+					@source << ".align #{type.align(@parser)}" if flen % type.align(@parser) != 0
 				}
 
 				sz
