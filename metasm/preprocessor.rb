@@ -670,7 +670,7 @@ class Preprocessor
 							tok.raw << c
 						end
 						oct.oct
-					else b	# raise tok, 'unknown escape sequence'
+					else c	# raise tok, 'unknown escape sequence'
 					end
 				when ?\n; ungetchar ; raise tok, 'unterminated string'
 				else tok.value << c
