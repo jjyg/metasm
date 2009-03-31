@@ -57,6 +57,9 @@ class ExeFormat
 		ary.each { |elem|
 			case elem
 			when Array
+				if elem.all? { |ed| ed.kind_of? EncodedData and ed.reloc.empty? }
+					elem = [elem.sort_by { |ed| ed.length }.first]
+				end
 				elem.each { |e|
 					e.export.each { |label, off|
 						minbinding[label] = Expression[startlabel, :+, minoff + off]
