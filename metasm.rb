@@ -73,6 +73,7 @@ end
 # load core files by default (too many classes to check for otherwise)
 Metasm.require 'metasm/encode'
 Metasm.require 'metasm/decode'
+Metasm.require 'metasm/render'
 Metasm.require 'metasm/main'
 Metasm.require 'metasm/exe_format/main'
 Metasm.require 'metasm/os/main'
