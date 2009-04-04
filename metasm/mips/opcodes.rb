@@ -186,8 +186,10 @@ end
 		addop 'tltiu',(1<<26) | (0b01011<<16), :rs, :i16, :setip
 		addop 'teqi', (1<<26) | (0b01100<<16), :rs, :i16, :setip
 		addop 'tnei', (1<<26) | (0b01110<<16), :rs, :i16, :setip
-		addop 'bltzal', (1<<26) | (0b10000<<16), :rs, :i16, :setip
-		addop 'bgezal', (1<<26) | (0b10001<<16), :rs, :i16, :setip
+		addop 'bltzal', (1<<26) | (0b10000<<16), :i16, :setip, :stopexec, :saveip	# bltzal $zero => unconditionnal
+		addop 'bltzal', (1<<26) | (0b10000<<16), :rs, :i16, :setip, :saveip
+		addop 'bgezal', (1<<26) | (0b10001<<16), :i16, :setip, :stopexec, :saveip	# bgezal $zero => unconditionnal
+		addop 'bgezal', (1<<26) | (0b10001<<16), :rs, :i16, :setip, :saveip
 
 
 		# special2
