@@ -196,6 +196,7 @@ class DisasmWidget < Gtk::VBox
 				addr = @dasm.prog_binding[addr]
 			elsif (?0..?9).include? addr[0]
 				case addr
+				when /^0x/i
 				when /h$/; addr = '0x' + addr[0...-1]
 				when /[a-f]/i; addr = '0x' + addr
 				end
