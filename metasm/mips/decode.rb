@@ -103,7 +103,7 @@ class MIPS
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
 			binding = case op
 			when 'break'
-			when 'bltzal', 'bgtzal'; lambda { |di, *a|
+			when 'bltzal', 'bgezal'; lambda { |di, *a|
 				# XXX $ra is set only if branch is taken...
 				{ :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] }
 			}
@@ -226,7 +226,7 @@ class MIPS
 
 	def delay_slot(di=nil)
 		# branch.*likely has no delay slot
-		# bltzal/bgtzal are 'link', not 'likely', hence the check for -2
+		# bltzal/bgezal are 'link', not 'likely', hence the check for -2
 		(di and di.opcode.name[0] == ?b and di.opcode.name[-1] == ?l and di.opcode.name[-2] != ?a) ? 0 : 1
 	end
 
