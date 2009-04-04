@@ -1189,6 +1189,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				w_di.block.each_from { |f_addr, f_type|
 					next if f_type == :indirect
 					hadsomething = true
+					f_addr = @decoded[f_addr].block.list.last.address if @decoded[f_addr].kind_of? DecodedInstruction	# delay slot
 					if l = w_loopdetect.find { |l_obj, l_addr, l_type| l_addr == f_addr and l_type == f_type }
 						f_obj = yield(:loop, w_obj, :looptrace => w_loopdetect[w_loopdetect.index(l)..-1], :loopdetect => w_loopdetect)
 						if f_obj and f_obj != w_obj	# should avoid infinite loops
@@ -1212,18 +1213,20 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				next if done.include? [w_obj, w_addr]
 				oldlen = todo.length
 				each_xref(w_addr, :x) { |x|
+					f_addr = x.origin
+					f_addr = @decoded[f_addr].block.list.last.address if @decoded[f_addr].kind_of? DecodedInstruction	# delay slot
 					if l = w_loopdetect.find { |l_obj, l_addr, l_type| l_addr == w_addr }
 						f_obj = yield(:loop, w_obj, :looptrace => w_loopdetect[w_loopdetect.index(l)..-1], :loopdetect => w_loopdetect)
 						if f_obj and f_obj != w_obj
 							f_loopdetect = w_loopdetect[0...w_loopdetect.index(l)]
 						end
 					else
-						f_obj = yield(:up, w_obj, :from => w_addr, :to => x.origin, :sfret => :normal, :loopdetect => w_loopdetect)
+						f_obj = yield(:up, w_obj, :from => w_addr, :to => f_addr, :sfret => :normal, :loopdetect => w_loopdetect)
 					end
 					next if f_obj == false
 					f_obj ||= w_obj
 					f_loopdetect ||= w_loopdetect
-					todo << [f_obj, x.origin, :normal, f_loopdetect + [[f_obj, x.origin, :normal]] ]
+					todo << [f_obj, f_addr, :normal, f_loopdetect + [[f_obj, f_addr, :normal]] ]
 				}
 				yield :end, w_obj, :addr => w_addr, :loopdetect => w_loopdetect if todo.length == oldlen
 			else
