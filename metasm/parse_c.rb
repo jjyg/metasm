@@ -839,8 +839,8 @@ module C
 					nil while v2 = @lexer.readtok and v2.type == :space
 					nil while rp = @lexer.readtok and rp.type == :space
 				end
-				raise cmd if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
-				raise cmd if (v1 and v1.type != :string) or (v2 and (v2.type != :string or v2.raw =~ /[^\d]/))
+				raise otok if not rp or lp.type != :punct or rp.type != :punct or lp.raw != '(' or rp.raw != ')'
+				raise otok if (v1 and v1.type != :string) or (v2 and (v2.type != :string or v2.raw =~ /[^\d]/))
 				if not v1
 					@pragma_pack = nil
 				elsif v1.raw == 'push'
