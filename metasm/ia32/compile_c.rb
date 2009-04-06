@@ -1015,7 +1015,7 @@ class CCompiler < C::Compiler
 				instr op, l, r
 			else
 				# XXX bouh
-				r = make_volatile(r, type)
+				r = make_volatile(r, C::BaseType.new(:__int8, :unsigned))
 				unuse r
 				if r.val != 1
 					ecx = Reg.new(1, 32)
