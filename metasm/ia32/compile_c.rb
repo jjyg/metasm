@@ -359,13 +359,9 @@ class CCompiler < C::Compiler
 		case expr.op
 		when nil
 			r = c_cexpr_inner(expr.rexpr)
-			if expr.rexpr.kind_of? C::CExpression and expr.type.kind_of? C::BaseType and expr.rexpr.type.kind_of? C::BaseType
+			if (expr.rexpr.kind_of? C::CExpression or expr.rexpr.kind_of? C::Variable) and
+					expr.type.kind_of? C::BaseType and expr.rexpr.type.kind_of? C::BaseType
 				r = c_cexpr_inner_cast(expr, r)
-			elsif r.kind_of? ModRM
-				unuse r
-				r = r.dup
-				inuse r
-				r.sz = sizeof(expr)*8
 			end
 			r
 		when :+
@@ -583,7 +579,7 @@ class CCompiler < C::Compiler
 						inuse high
 						low = findreg(32)
 						unuse high
-						op = (r.sz == 32 ? 'mov' : (expr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
+						op = (r.sz == 32 ? 'mov' : (expr.rexpr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
 						instr op, low, r
 						r = low
 					end
@@ -597,7 +593,7 @@ class CCompiler < C::Compiler
 				elsif not r.kind_of? Reg or r.sz != @cpusz
 					unuse r
 					reg = inuse findreg
-					op = (r.sz == reg.sz ? 'mov' : (expr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
+					op = (r.sz == reg.sz ? 'mov' : (expr.rexpr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
 					instr op, reg, r
 					r = reg
 				end
@@ -664,7 +660,8 @@ class CCompiler < C::Compiler
 								end
 							end
 						end
-						r = c_cexpr_inner_arith(r1, :*, r2, rexpr.type)
+						r = make_volatile(r1, rexpr.type)
+						c_cexpr_inner_arith(r, :*, r2, rexpr.type)
 					else
 						r = c_cexpr_inner(rexpr)
 					end

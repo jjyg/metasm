@@ -2022,7 +2022,9 @@ EOH
 						val = parse_value(parser, scope)
 						if val.kind_of? CExpression and val.op == :& and not val.lexpr and
 							(val.rexpr.kind_of? Variable or val.rexpr.kind_of? CExpression) and val.rexpr.type.kind_of? Function
-							# function == function pointer
+							# &&function == &function
+						elsif (val.kind_of? CExpression or val.kind_of? Variable) and val.type.kind_of? Array
+							# &ary = ary
 						else
 							raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val)
 							raise val.backtrace, 'cannot take addr of register' if val.kind_of? Variable and val.storage == :register
