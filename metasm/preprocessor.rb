@@ -1088,7 +1088,7 @@ class Preprocessor
 				op = op.dup
 				op.raw << ntok.raw
 			# ok
-			when '^', '+', '-', '*', '/', '%', '>>', '<<', '>=', '<=', '||', '&&', '|', '&', '!=', '=='
+			when '^', '+', '-', '*', '/', '%', '>>', '<<', '>=', '<=', '||', '&&', '!=', '=='
 			# unknown
 			else
 				lexer.unreadtok tok
