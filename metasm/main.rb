@@ -364,12 +364,12 @@ class Expression < ExpressionType
 	# will not match 1+2 and 2+1
 	def ==(o)
 		# shortcircuit recursion
-		o.object_id == object_id or (o.class == self.class and [o.op, o.rexpr, o.lexpr] == [@op, @rexpr, @lexpr])
+		o.object_id == object_id or (o.class == self.class and @op == o.op and @lexpr == o.lexpr and @rexpr == o.rexpr)
 	end
 
 	# make it useable as Hash key (see +==+)
 	def hash
-		[@lexpr, @op, @rexpr].hash
+		(@lexpr.hash + @op.hash + @rexpr.hash) & 0x7fff_ffff
 	end
 	alias eql? ==
 
