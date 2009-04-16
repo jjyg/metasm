@@ -633,6 +633,11 @@ class ELF
 	# TODO support mapped PHDR, obey section-specified base address, handle NOBITS
 	def encode(type='EXEC')
 		@header.type ||= type
+		@header.machine ||= case @cpu
+				when Ia32; '386'
+				when MIPS; 'MIPS'
+				end
+
 		@encoded = EncodedData.new
 		if @segments.find { |i| i.type == 'INTERP' }
 			automagic_symbols
