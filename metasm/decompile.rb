@@ -87,7 +87,7 @@ class Decompiler
 		# reorder declarations
 		scope.statements[0, 0] = decl.sort_by { |sm| sm.var.name =~ /^var_(.*)/ ? $1.to_i(16) : -1 }
 
-		# ensure arglist has no hole (name even unused arg)
+		# ensure arglist has no hole (add unused arg to arglist)
 		func.type.args = []
 		argoff = varname_to_stackoff('arg_0')
 		args.sort_by { |sm| sm.name[/arg_([0-9a-f]+)/i, 1].to_i(16) }.each { |a|
@@ -102,6 +102,7 @@ class Decompiler
 				argoff += @dasm.cpu.size/8
 			end
 			func.type.args << a
+			argoff += @dasm.cpu.size/8
 		}
 
 		@c_parser.toplevel.statements << C::Declaration.new(func)
@@ -398,7 +399,7 @@ class Decompiler
 					end
 					# XXX bouh
 					# TODO mark instructions for which bt_binding is accurate
-				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq'
+				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq', 'leave'
 					di.backtrace_binding.each { |k, v|
 						if k.kind_of? ::Symbol or (k.kind_of? Indirection and Expression[k.target, :-, :esp].reduce.kind_of? ::Integer)
 							ops << [k, v]
@@ -555,7 +556,7 @@ class Decompiler
 	# changes ifgoto, goto to while/ifelse..
 	def decompile_match_controlseq(scope)
 		scope.statements = decompile_cseq_if(scope.statements, scope)
-		decompile_cseq_while(scope.statements)
+		decompile_cseq_while(scope.statements, scope)
 	end
 
 	# ifgoto => ifthen
@@ -644,26 +645,49 @@ class Decompiler
 		ret
 	end
 
-	def decompile_cseq_while(ary)
+	def decompile_cseq_while(ary, scope)
 		# find the next instruction that is not a label
 		ni = lambda { |l| ary[ary.index(l)..-1].find { |s| not s.kind_of? C::Label } }
+		negate = lambda { |ce|
+			if ce.kind_of? C::CExpression and nop = { :== => :'!=', :'!=' => :==, :> => :<=, :>= => :<, :< => :>=, :<= => :>, :'!' => :'!' }[ce.op]
+				if nop == :'!'
+					ce.rexpr
+				elsif nop == :== and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and
+					ce.lexpr.kind_of? C::CExpression and [:==, :'!=', :>, :<, :>=, :<=, :'!'].include? ce.lexpr.op
+					ce.lexpr
+				else
+					C::CExpression.new(ce.lexpr, nop, ce.rexpr, ce.type)
+				end
+			else
+				C::CExpression.new(nil, :'!', ce, C::BaseType.new(:int))
+			end
+		}
+
 		ary.each { |s|
 			case s
 			when C::Label
-				if ss = ni[s] and ss.kind_of? C::If and not ss.belse and ss.bthen.kind_of? C::Block and ss.bthen.statements.last.kind_of? C::Goto and ss.bthen.statements.last.target == s.name
-					ss.bthen.statements.pop
-					if l = ary[ary.index(ss)+1] and l.kind_of? C::Label
-						ss.bthen.statements.grep(C::If).each { |i|
-							i.bthen = C::Break.new if i.bthen.kind_of? C::Goto and i.bthen.target == l.name
-						}
+				if ss = ni[s] and ss.kind_of? C::If and not ss.belse and ss.bthen.kind_of? C::Block
+					if ss.bthen.statements.last.kind_of? C::Goto and ss.bthen.statements.last.target == s.name
+						ss.bthen.statements.pop
+						if l = ary[ary.index(ss)+1] and l.kind_of? C::Label
+							ss.bthen.statements.grep(C::If).each { |i|
+								i.bthen = C::Break.new if i.bthen.kind_of? C::Goto and i.bthen.target == l.name
+							}
+						end
+						ary[ary.index(ss)] = C::While.new(ss.test, ss.bthen)
+					elsif ss.bthen.statements.last.kind_of? C::Return and g = ary[ary.index(s)+1..-1].find { |_s| _s.kind_of? C::Goto and _s.target == s.name }
+						wb = C::Block.new(scope)
+						wb.statements = decompile_cseq_while(ary[ary.index(ss)+1...ary.index(g)], scope)
+						w = C::While.new(negate[ss.test], wb)
+						ary[ary.index(ss)..ary.index(g)] = [w, *ss.bthen.statements]
+						retry	# modify while #each
 					end
-					ary[ary.index(ss)] = C::While.new(ss.test, ss.bthen)
 				end
 			when C::If
-				decompile_cseq_while(s.bthen.statements) if s.bthen.kind_of? C::Block
-				decompile_cseq_while(s.belse.statements) if s.belse.kind_of? C::Block
+				decompile_cseq_while(s.bthen.statements, scope) if s.bthen.kind_of? C::Block
+				decompile_cseq_while(s.belse.statements, scope) if s.belse.kind_of? C::Block
 			when C::While
-				decompile_cseq_while(s.body.statements) if s.body.kind_of? C::Block
+				decompile_cseq_while(s.body.statements, scope) if s.body.kind_of? C::Block
 			end
 		}
 	end
@@ -793,6 +817,8 @@ class Decompiler
 				# cast func args to arg prototypes
 				# TODO return value
 				ce.lexpr.type.args.to_a.zip(ce.rexpr).each { |proto, arg| known_type[arg, proto.type] }
+			elsif ce.op == :*
+				known_type[ce.rexpr, C::Pointer.new(ce.type)]
 			end
 		} }
 
