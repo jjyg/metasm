@@ -685,6 +685,7 @@ class Decompiler
 			end
 		}
 
+		finished = false ; while not finished ; finished = true # 1.9 does not support 'retry'
 		ary.each { |s|
 			case s
 			when C::Label
@@ -702,7 +703,8 @@ class Decompiler
 						wb.statements = decompile_cseq_while(ary[ary.index(ss)+1...ary.index(g)], scope)
 						w = C::While.new(negate[ss.test], wb)
 						ary[ary.index(ss)..ary.index(g)] = [w, *ss.bthen.statements]
-						retry	# modify while #each
+						#retry
+						finished = false ; break
 					end
 				end
 			when C::If
@@ -712,6 +714,8 @@ class Decompiler
 				decompile_cseq_while(s.body.statements, scope) if s.body.kind_of? C::Block
 			end
 		}
+		end
+		ary
 	end
 
 	def decompile_remove_labels(scope)
@@ -790,6 +794,10 @@ class Decompiler
 					e = e.rexpr
 					t = C::Pointer.new(t)
 					next
+				elsif e.op == :+ and e.rexpr.kind_of? C::CExpression and not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
+					# (int)*(x+2) === (int) *x
+					e = e.lexpr
+					next
 				end
 				break
 			end
@@ -838,7 +846,7 @@ class Decompiler
 
 		# try to find appropriate type for stack offsets ; afterwards this will lead to stack variable creation
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
-			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and ce.rexpr.rexpr.abs < 0x10000
+			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and ce.rexpr.rexpr.abs < 0x10000 and (not ce.lexpr.kind_of? C::CExpression or ce.lexpr.op != :'*' or ce.lexpr.lexpr)
 				# var = int
 				known_type[ce.lexpr, ce.rexpr.type]
 			elsif ce.op == :funcall
@@ -943,10 +951,12 @@ class Decompiler
 						ce.rexpr = ce.rexpr.rexpr
 					end
 				end
+				ce.type = ce.lexpr.type
 
 			elsif (ce.op == :+ or ce.op == :-)
 				# ptr+x => ((int)ptr)+x
 				ce.lexpr = cast[ce.lexpr, C::BaseType.new(:int)]
+				ce.type = ce.lexpr.type
 			end
 		} }
 	end
@@ -1038,6 +1048,7 @@ class Decompiler
 			(t1.pointer? and t2.pointer? and sametype[t1.type, t2.type])
 		}
 
+		future_array = []
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
 			# x += 1 => ++x
 			if (ce.op == :'+=' or ce.op == :'-=') and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
@@ -1053,7 +1064,22 @@ class Decompiler
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.type, ce.rexpr.rexpr.type]
 				ce.lexpr, ce.op, ce.rexpr, ce.type = ce.rexpr.rexpr.lexpr, ce.rexpr.rexpr.op, ce.rexpr.rexpr.rexpr, ce.rexpr.rexpr.type
 			end
+
+			# int *ptr; *(ptr + 4) => ptr[4]
+			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :+ and var = ce.rexpr.lexpr and var.kind_of? C::Variable and var.type.pointer?
+				ce.lexpr, ce.op, ce.rexpr = ce.rexpr.lexpr, :'[]', ce.rexpr.rexpr
+				future_array << var.name
+			end
 		} }
+
+		# if there is a ptr[4], change all *ptr to ptr[0] for consistency
+		# do this after the first pass, which may change &*ptr to ptr
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::Variable and future_array.include? ce.rexpr.name
+				ce.lexpr, ce.op, ce.rexpr = ce.rexpr, :'[]', C::CExpression.new(nil, nil, 0, C::BaseType.new(:int))
+			end
+		} } if not future_array.empty?
+
 
 		# dataflow optimization
 		# checks if a stmt :read or :write a variable
@@ -1281,11 +1307,11 @@ class Decompiler
 						end
 					}
 					if not stmt_access[nt, var, :write]
-						update_todo[nt]
+						update_todo[nt] if nt
 						while i = todo.pop
 							next if done.include? i
 							done << i
-							nnt = scope.statements[i]
+							next if not nnt = scope.statements[i]
 							reused = true if stmt_access[nnt, var, :read]
 							break if reused
 							update_todo[nnt] if not stmt_access[nnt, var, :write]
@@ -1333,11 +1359,11 @@ class Decompiler
 						end
 					}
 					if not stmt_access[nt, var, :write]
-						update_todo[nt]
+						update_todo[nt] if nt
 						while i = todo.pop
 							next if done.include? i
 							done << i
-							nnt = scope.statements[i]
+							next if not nnt = scope.statements[i]
 							reused = true if stmt_access[nnt, var, :read]
 							break if reused
 							update_todo[nnt] if not stmt_access[nnt, var, :write]
