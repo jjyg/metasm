@@ -3,6 +3,9 @@ require 'metasm/parse_c'
 
 module Metasm
 class Decompiler
+	# TODO add methods to C::CExpr
+	AssignOp = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'^=', :'&=', :'|=', :'>>=', :'<<=']
+
 	attr_accessor :dasm, :c_parser
 
 	def initialize(dasm, cp = dasm.c_parser)
@@ -39,16 +42,21 @@ class Decompiler
 		# find registry dependencies between blocks
 		deps = decompile_func_finddeps(myblocks)
 
-		puts "do decomp" if $VERBOSE
 		scope = func.initializer = C::Block.new(@c_parser.toplevel)
 		# di blocks => raw c statements, declare variables
 		stmts = decompile_blocks(myblocks, deps, scope)
-
 		# populate statements
 		scope.statements.concat stmts
+		# TODO check ABI conformance between func start&end (saved regs, stack offset...)
+
+		# infer variable types
+		decompile_c_types(scope)
 
 		# goto bla ; bla: goto blo => goto blo ;; goto bla ; bla: return => return
 		decompile_simplify_goto(scope)
+
+		# cleanup C
+		optimize(scope)
 
 		# change if() goto to if, if/else, while
 		decompile_match_controlseq(scope)
@@ -57,7 +65,7 @@ class Decompiler
 		decompile_remove_labels(scope)
 
 		case ret = scope.statements.last
-		when C::CExpression; puts "no return at end of func"
+		when C::CExpression; puts "no return at end of func" if $VERBOSE
 		when C::Return
 			if not ret.value
 				scope.statements.pop
@@ -65,11 +73,6 @@ class Decompiler
 				func.type.type = C::BaseType.new(:int)
 			end
 		end
-
-		# infer variable types
-		decompile_c_types(scope)
-
-		optimize(scope)
 
 		# make function prototype with local arg_XX
 		args = []
@@ -104,6 +107,8 @@ class Decompiler
 			func.type.args << a
 			argoff += @dasm.cpu.size/8
 		}
+
+		decompile_optimize_ctrl(scope)
 
 		@c_parser.toplevel.statements << C::Declaration.new(func)
 	end
@@ -331,7 +336,7 @@ class Decompiler
 				case di.opcode.name
 				when 'ret'
 					commit[]
-					stmts << C::Return.new(nil)
+					stmts << C::Return.new(scope.symbol['eax'])
 				when 'call'	# :saveip
 					n = backtrace_target(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address)
 					args = []
@@ -486,11 +491,20 @@ class Decompiler
 			p = C::CExpression.new(nil, nil, p, C::Pointer.new(C::BaseType.new("__int#{e.len*8}".to_sym)))
 			p = C::CExpression.new(nil, nil, p, p.type) if not p.rexpr.kind_of? C::CExpression
 			C::CExpression.new(nil, :*, p, p.type.type)
-		when ::Symbol, ::String
+		when ::Integer
+			C::CExpression.new(nil, nil, e, C::BaseType.new(:int))
+		when C::CExpression
+			e
+		else
+			# XXX where does ::String come from ?
 			name = e.to_s
 			if not s = scope.symbol_ancestors[name]
 				s = C::Variable.new
 				s.type = C::BaseType.new(:__int32)
+				if not e.kind_of? ::Symbol and not e.kind_of? ::String
+					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
+					s.type.qualifier = [:volatile]
+				end
 				if e.kind_of? ::String
 					# XXX may be string constant (as in printf("foo"))
 					s.storage = :static
@@ -502,11 +516,6 @@ class Decompiler
 				scope.statements << C::Declaration.new(s)
 			end
 			s
-		when ::Integer
-			C::CExpression.new(nil, nil, e, C::BaseType.new(:int))
-		when C::CExpression
-			e
-		else puts "decompile_cexpr unhandled #{e.inspect}" ; C::CExpression.new(nil, nil, e, C::BaseType.new(:void))
 		end
 	end
 
@@ -557,6 +566,19 @@ class Decompiler
 	def decompile_match_controlseq(scope)
 		scope.statements = decompile_cseq_if(scope.statements, scope)
 		decompile_cseq_while(scope.statements, scope)
+	end
+
+	# optimize if() { a; } to if() a;
+	def decompile_optimize_ctrl(scope)
+		decompile_walk(scope) { |ce|
+			case ce
+			when C::If
+				ce.bthen = ce.bthen.statements.first if ce.bthen.kind_of? C::Block and ce.bthen.statements.length == 1
+				ce.belse = ce.belse.statements.first if ce.belse.kind_of? C::Block and ce.belse.statements.length == 1
+			when C::While
+				ce.body = ce.body.statements.first if ce.body.kind_of? C::Block and ce.body.statements.length == 1
+			end
+		}
 	end
 
 	# ifgoto => ifthen
@@ -629,7 +651,7 @@ class Decompiler
 					# if () { a; } else {} => if () { a; }
 					case bes.length
 					when 0; s.belse = nil
-					when 1; s.belse = bes.first
+					#when 1; s.belse = bes.first
 					end
 				end
 
@@ -637,7 +659,7 @@ class Decompiler
 				# if () { a; } => if () a;
 				case bts.length
 				when 0; s.test, s.bthen, s.belse = negate[s.test], s.belse, nil if s.belse
-				when 1; s.bthen = bts.first
+				#when 1; s.bthen = bts.first	# later (allows simpler handling in _while)
 				end
 			end
 			ret << s
@@ -675,7 +697,7 @@ class Decompiler
 							}
 						end
 						ary[ary.index(ss)] = C::While.new(ss.test, ss.bthen)
-					elsif ss.bthen.statements.last.kind_of? C::Return and g = ary[ary.index(s)+1..-1].find { |_s| _s.kind_of? C::Goto and _s.target == s.name }
+					elsif ss.bthen.statements.last.kind_of? C::Return and g = ary[ary.index(s)+1..-1].reverse.find { |_s| _s.kind_of? C::Goto and _s.target == s.name }
 						wb = C::Block.new(scope)
 						wb.statements = decompile_cseq_while(ary[ary.index(ss)+1...ary.index(g)], scope)
 						w = C::While.new(negate[ss.test], wb)
@@ -736,7 +758,8 @@ class Decompiler
 		# propagate_type if type is updated
 		better_type = lambda { |t0, t1|
 			t1 == C::BaseType.new(:void) or (t0.pointer? and t1.kind_of? C::BaseType) or t0.untypedef.kind_of? C::Union or
-				(t0.pointer? and t1.pointer? and better_type[t0.untypedef.type, t1.untypedef.type])
+			(t0.kind_of? C::BaseType and t1.kind_of? C::BaseType and (@c_parser.typesize[t0.name] > @c_parser.typesize[t1.name] or (t0.name == t1.name and t0.qualifier))) or
+			(t0.pointer? and t1.pointer? and better_type[t0.untypedef.type, t1.untypedef.type])
 		}
 		update_type = lambda { |o, t|
 			if not t0 = types[o] or better_type[t, t0]
@@ -775,6 +798,11 @@ class Decompiler
 		# we found a type for a stackoff, propagate it through affectations
 		propagate_type = lambda { |off, type|
 			decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+				# char x; x & 255 => uchar x
+				if ce.op == :'&' and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
+					known_type[ce.lexpr, C::BaseType.new(ce.lexpr.type.name, :unsigned)]
+				end
+
 				# TODO bla = (int)bar + 2  =>  bla is int
 				next if ce.op != :'='
 
@@ -923,7 +951,85 @@ class Decompiler
 		} }
 	end
 
+	# to be run with scope = function body with only CExpr/Decl/Label/Goto/IfGoto/Return, with correct variables types
+	# will transform += 1 to ++, inline them to prev/next statement ('x++; if (x)..' => 'if (++x)..')
+ 	# remove useless variables ('int i;', i never used or 'i = 1; j = i;', i never read after => 'j = 1;')
+	# remove useless casts ('(int)i' with 'int i;' => 'i')
+	# also removes 'enter' traduction ('var_0 = ebp;' => '')
 	def optimize(scope)
+		# TODO remove unnecessary & (eg char x; x&255 => x)
+		# TODO if all occurences of __int32 x are x&255, change type to __int8
+
+		# replace all occurence of var var by expr exp in stmt
+		replace_var = lambda { |stmt, var, newexp, skip_assign|
+			case stmt
+			when C::Return
+				if stmt.value.kind_of? C::Variable and stmt.value.name == var.name
+					stmt.value = newexp
+				elsif stmt.value.kind_of? C::CExpression
+					stmt = stmt.value
+				end
+			when C::If
+				if stmt.test.kind_of? C::Variable and stmt.test.name == var.name
+					stmt.test = newexp
+				elsif stmt.test.kind_of? C::CExpression
+					stmt = stmt.test
+				end
+			end
+
+			if stmt.kind_of? C::CExpression
+				walk = lambda { |exp|
+					next if not exp.kind_of? C::CExpression
+					if exp.lexpr.kind_of? C::Variable and exp.lexpr.name == var.name
+						exp.lexpr = newexp if not skip_assign or exp.op != :'='
+					else walk[exp.lexpr]
+					end
+					case exp.op
+					when :funcall
+						exp.rexpr.each_with_index { |a, i|
+							if a.kind_of? C::Variable and a.name == var.name
+								exp.rexpr[i] = newexp
+							else walk[a]
+							end
+						}
+					else
+						if exp.rexpr.kind_of? C::Variable and exp.rexpr.name == var.name
+							exp.rexpr = newexp
+						else walk[exp.rexpr]
+						end
+					end
+				}
+				walk[stmt]
+			end
+		}
+
+		# handling of var overlapping (eg __int32 var_10; __int8 var_F)
+		varinfo = {}
+		scope.symbol.each_value { |var|
+			off = varname_to_stackoff(var.name)
+			next if not off
+			len = @c_parser.sizeof(var)
+			varinfo[var] = [off, len]
+		}
+		varinfo.each { |v1, (o1, l1)|
+			next if not v1.type.integral?
+			varinfo.each { |v2, (o2, l2)|
+				next if v1.name == v2.name or o1 >= o2+l2 or o1+l1 <= o2 or l1 > l2 or (l2 == l1 and o2 > o1)
+				# v1 => *(&v2+delta)
+				# XXX o1 may overlap o2 AND another...
+				p = C::CExpression.new(nil, :&,  v2, C::Pointer.new(v2.type))
+				p = C::CExpression.new(nil, nil, p, C::Pointer.new(C::BaseType.new(:__int8))) if v2.type != C::BaseType.new(:__int8)
+				o = C::CExpression.new(nil, nil, o1-o2, C::BaseType.new(:__int32))
+				p = C::CExpression.new(p,   :+,  o, p.type)
+				p = C::CExpression.new(nil, nil, p, C::Pointer.new(v1.type)) if v1.type != p.type.type
+				p = C::CExpression.new(nil, :*,  p, v1.type)
+				scope.statements.each { |stmt|
+					replace_var[stmt, v1, p, false]
+				}
+			}
+		
+		}
+
 		sametype = lambda { |t1, t2|
 			t1 = t1.untypedef
 			t2 = t2.untypedef
@@ -934,8 +1040,8 @@ class Decompiler
 
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
 			# x += 1 => ++x
-			if ce.op == :'+=' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
-				ce.lexpr, ce.op, ce.rexpr = nil, :'++', ce.lexpr
+			if (ce.op == :'+=' or ce.op == :'-=') and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
+				ce.lexpr, ce.op, ce.rexpr = nil, {:'+=' => :'++', :'-=' => :'--'}[ce.op], ce.lexpr
 			end
 
 			# (foo)bla => bla if bla of type foo
@@ -949,8 +1055,306 @@ class Decompiler
 			end
 		} }
 
-		# TODO a = b ; func(a) ; <a never reused before reattribution>  => func(b)
-		# need an ordered graph a la DecodedBlock
+		# dataflow optimization
+		# checks if a stmt :read or :write a variable
+		stmt_access = lambda { |st, var, access|
+			case st
+			when nil; false
+			when ::Array; st.find { |elem| stmt_access[elem, var, access] }
+			when C::Declaration, C::Label, C::Goto, ::Numeric, ::String; false
+			when C::Variable; access == :read and var.name == st.name
+			when C::Return; stmt_access[st.value, var, access]
+			when C::If; stmt_access[st.test, var, access] or stmt_access[st.bthen, var, access] or stmt_access[st.belse, var, access]
+			when C::CExpression
+				if access == :read
+					if st.op == :'='
+						(not st.lexpr.kind_of?(C::Variable) and stmt_access[st.lexpr, var, access]) or
+						stmt_access[st.rexpr, var, access]
+					elsif st.op == :'&' and not st.lexpr and st.rexpr.kind_of? C::Variable
+					else stmt_access[st.lexpr, var, access] or stmt_access[st.rexpr, var, access]
+					end
+				else
+					if st.op == :'++' or st.op == :'--'
+						e = st.lexpr || st.rexpr
+						e.kind_of?(C::Variable) ? var.name == e.name : stmt_access[e, var, access]
+					elsif AssignOp.include? st.op
+						# *(foo=42) = 28;
+						e = st.lexpr
+						stmt_access[st.rexpr, var, access] or
+						(e.kind_of?(C::Variable) ? var.name == e.name : stmt_access[e, var, access])
+					else stmt_access[st.lexpr, var, access] or stmt_access[st.rexpr, var, access]
+					end
+				end
+			when C::Asm; true	# failsafe
+			else raise "decomp: internal error, optimize dataflow found #{st.class}"
+			end
+		}
+
+		# count how many times a var is read in an expr
+		cnt = lambda { |exp, var|
+			case exp
+			when nil, ::Numeric, ::String; 0
+			when ::Array; exp.inject(0) { |c, _e| c + cnt[_e, var] }
+			when C::CExpression
+				c = cnt[exp.rexpr, var]
+				if exp.op != :'=' or not exp.lexpr.kind_of? C::Variable
+					c += cnt[exp.lexpr, var]
+				end
+				c
+			when C::Variable; exp.name == var.name ? 1 : 0
+			end
+		}
+		
+		# checks if an expr has sideeffects (var modification/funcall/mem dereference/read volatile/out of scope)
+		sideeffect = lambda { |exp|
+			case exp
+			when nil, ::Numeric, ::String; false
+			when ::Array; exp.any? { |_e| sideeffect[_e] }
+			when C::Variable; not scope.symbol[exp.name] or exp.type.qualifier.to_a.include? :volatile
+			when C::CExpression; (exp.op == :* and not exp.lexpr) or exp.op == :funcall or exp.op == :'++' or exp.op == :'--' or AssignOp.include?(exp.op) or sideeffect[exp.lexpr] or sideeffect[exp.rexpr]
+			else true	# failsafe
+			end
+		}
+
+		# walk
+		finished = false
+		while not finished
+			finished = true
+			scope.statements.delete_if { |st|
+				next if not st.kind_of? C::CExpression
+
+				sti = scope.statements.index(st)
+				nt = scope.statements[sti+1]
+
+				# TODO reorder ++a; ++b; if(a)
+				# TODO refactor this
+				if (st.op == :'++' or st.op == :'--') and not st.lexpr and st.rexpr.kind_of? C::Variable and
+					var = scope.symbol[st.rexpr.name] and not var.type.qualifier.to_a.include? :volatile
+					# ++i; if(i) => if(++i)    *i=4; ++i => *i++=4
+					if stmt_access[nt, var, :read] and e = case nt
+						when C::Return; nt.value
+						when C::If; nt.test
+						when C::CExpression; nt
+						end
+						found = false
+						walk = lambda { |exp|
+							# walk in evaluation order, replace 1st occurence
+							next if found or not exp.kind_of? C::CExpression
+							if AssignOp.include? exp.op
+								if exp.rexpr.kind_of? C::Variable and exp.rexpr.name == var.name
+									found = true
+									exp.rexpr == st
+								else walk[exp.rexpr]
+								end
+								if exp.lexpr.kind_of? C::Variable
+									throw :failed if exp.op != :'='
+								else walk[exp.lexpr]
+								end
+							elsif exp.op == :funcall
+								# XXX evaluation order ?
+								exp.rexpr.each_with_index { |a, i|
+									if a.kind_of? C::Variable and a.name == var.name
+										next if found
+										found = true
+										exp.rexpr[i] = st
+									else
+										walk[a]
+									end
+								}
+								next if found
+								if exp.lexpr.kind_of? C::Variable and exp.lexpr.name == var.name
+									found = true
+									exp.lexpr = st
+								else walk[exp.lexpr]
+								end
+							elsif exp.op == :'&&' or exp.op == :'||'
+								walk[exp.lexpr]
+							elsif exp.op == :'&' and not exp.lexpr and exp.rexpr.kind_of? C::Variable
+							else
+								if exp.lexpr.kind_of? C::Variable and exp.lexpr.name == var.name
+									found = true
+									exp.lexpr = st
+								else walk[exp.lexpr]
+								end
+								next if found
+								if exp.rexpr.kind_of? C::Variable and exp.rexpr.name == var.name
+									found = true
+									exp.rexpr = st
+								else walk[exp.rexpr]
+								end
+							end
+						}
+						catch(:failed) { walk[e] }
+						finished = false if found
+						next true if found
+					end
+					pt = scope.statements[sti-1]
+					if stmt_access[pt, var, :read] and pt.kind_of? C::CExpression
+						found = false
+						st = C::CExpression.new(st.rexpr, st.op, nil, st.type) 
+						walk = lambda { |exp|
+							# walk in inverse of evaluation order, replace 1st occurence
+							next if found or not exp.kind_of? C::CExpression
+							if AssignOp.include? exp.op
+								if exp.lexpr.kind_of? C::Variable
+									throw :failed if exp.op != :'='
+								else walk[exp.lexpr]
+								end
+								next if found
+								if exp.rexpr.kind_of? C::Variable and exp.rexpr.name == var.name
+									found = true
+									exp.rexpr == st
+								else walk[exp.rexpr]
+								end
+							elsif exp.op == :funcall
+								# XXX evaluation order ?
+								exp.rexpr.reverse.each_with_index { |a, i|
+									i = exp.rexpr.length - i - 1
+									if a.kind_of? C::Variable and a.name == var.name
+										next if found
+										found = true
+										exp.rexpr[i] = st
+									else
+										walk[a]
+									end
+								}
+								next if found
+								if exp.lexpr.kind_of? C::Variable and exp.lexpr.name == var.name
+									found = true
+									exp.lexpr = st
+								else walk[exp.lexpr]
+								end
+							elsif exp.op == :'&&' or exp.op == :'||'
+								throw :failed
+							elsif exp.op == :'&' and not exp.lexpr and exp.rexpr.kind_of? C::Variable
+							else
+								if exp.rexpr.kind_of? C::Variable and exp.rexpr.name == var.name
+									found = true
+									exp.rexpr = st
+								else walk[exp.rexpr]
+								end
+								next if found
+								if exp.lexpr.kind_of? C::Variable and exp.lexpr.name == var.name
+									found = true
+									exp.lexpr = st
+								else walk[exp.lexpr]
+								end
+							end
+						}
+						catch(:failed) { walk[pt] }
+						finished = false if found
+						next true if found
+					end
+				end
+
+				next if st.op != :'=' or not st.lexpr.kind_of? C::Variable or
+					not var = scope.symbol[st.lexpr.name] or var.type.qualifier.to_a.include?(:volatile)
+				# we have a local variable assignment
+				if stmt_access[nt, var, :read]
+					# x=1 ; f(x) => f(1)
+
+					# check if nt uses var more than once
+					e = case nt
+					when C::Return; nt.value
+					when C::If; nt.test
+					when C::CExpression; nt
+					end
+					next if cnt[e, var] != 1
+					
+					# check if var is reused later (assume function graph in only goto/ifgoto)
+					# assume there is no ? : construct
+					reused = false
+					todo = []
+					done = []
+					update_todo = lambda { |s|
+						case s
+						when C::Goto
+							ns = scope.statements.find { |_s| _s.kind_of? C::Label and _s.name == s.target }
+							reused = true if not ns		# failsafe on out of scope jump
+							todo << scope.statements.index(ns) if ns
+						when C::If
+							update_todo[s.bthen]
+							todo << scope.statements.index(s)+1
+						when C::Return
+						else
+							todo << scope.statements.index(s)+1
+						end
+					}
+					if not stmt_access[nt, var, :write]
+						update_todo[nt]
+						while i = todo.pop
+							next if done.include? i
+							done << i
+							nnt = scope.statements[i]
+							reused = true if stmt_access[nnt, var, :read]
+							break if reused
+							update_todo[nnt] if not stmt_access[nnt, var, :write]
+						end
+					end
+					next if reused
+
+					# check for conflicting sideeffects (eg x = foo(); bar(baz(), x) => fail ; bar(x, baz()) => ok)
+					e = e.rexpr if e.kind_of? C::CExpression and e.op == :'='
+					if sideeffect[st.rexpr] and e.kind_of? C::CExpression and e.op == :funcall
+						conflict = false
+						e.rexpr.each { |a|
+							if sideeffect[a]
+								conflict = true
+								break
+							elsif stmt_access[a, var, :read]
+								break
+							end
+						}
+						next if conflict
+					end
+
+					# remove the assignment and replace the value in nt
+					replace_var[nt, var, st.rexpr, true]
+
+					finished = false
+					true
+				else
+					# check if this value is ever used
+					reused = false
+					todo = []
+					done = []
+					update_todo = lambda { |s|
+						case s
+						when C::Goto
+							ns = scope.statements.find { |_s| _s.kind_of? C::Label and _s.name == s.target }
+							reused = true if not ns		# failsafe on out of scope jump
+							todo << scope.statements.index(ns) if ns
+						when C::If
+							update_todo[s.bthen]
+							todo << scope.statements.index(s)+1
+						when C::Return
+						else
+							todo << scope.statements.index(s)+1
+						end
+					}
+					if not stmt_access[nt, var, :write]
+						update_todo[nt]
+						while i = todo.pop
+							next if done.include? i
+							done << i
+							nnt = scope.statements[i]
+							reused = true if stmt_access[nnt, var, :read]
+							break if reused
+							update_todo[nnt] if not stmt_access[nnt, var, :write]
+						end
+					end
+					next if reused
+
+					scope.statements[sti] = st.rexpr
+					# TODO remove whole statement if no sideeffects
+
+					if st.rexpr.kind_of? C::Variable
+						finished = false
+						true
+					end
+				end
+			}
+		end
 
 		# remove unreferenced local vars
 		used = {}
