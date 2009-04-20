@@ -147,7 +147,7 @@ class Ia32
 		addop 'into',  [0xCE]
 		addop 'invd',  [0x0F, 0x08]
 		addop 'invlpg',[0x0F, 0x01, 7<<3], :modrmA
-		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm }
+		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm ; o.args.reverse! }
 		addop 'iret',  [0xCF], nil,  {}, :stopexec, :setip
 		addop 'iretd', [0xCF], nil,  {}, :stopexec, :setip
 		addop('jcxz',  [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 16 }
