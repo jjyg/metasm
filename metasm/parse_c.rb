@@ -1802,6 +1802,28 @@ EOH
 			end
 		end
 
+		def ==(o)
+			self.class == o.class and op == o.op and lexpr == o.lexpr and rexpr == o.rexpr
+		end
+
+		# returns a CExpr negating this one (eg 'x' => '!x', 'a > b' => 'a <= b'...)
+		def negate
+			if nop = { :== => :'!=', :'!=' => :==, :> => :<=, :>= => :<, :< => :>=, :<= => :>, :'!' => :'!' }[@op]
+				if nop == :'!'
+					@rexpr
+				elsif nop == :== and @rexpr.kind_of? CExpression and not @rexpr.op and @rexpr.rexpr == 0 and
+						@lexpr.kind_of? CExpression and [:==, :'!=', :>, :<, :>=, :<=, :'!'].include? @lexpr.op
+					# (a > b) != 0  =>  (a > b)
+					@lexpr
+				else
+					CExpression.new(ce.lexpr, nop, ce.rexpr, ce.type)
+				end
+			#elsif nop = { :|| => :&&, :&& => :|| }[@op]
+			else
+				CExpression.new(nil, :'!', ce, BaseType.new(:int))
+			end
+		end
+
 		def walk
 			case @op
 			when :funcall, :'?:'
