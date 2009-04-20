@@ -1816,11 +1816,11 @@ EOH
 					# (a > b) != 0  =>  (a > b)
 					@lexpr
 				else
-					CExpression.new(ce.lexpr, nop, ce.rexpr, ce.type)
+					CExpression.new(@lexpr, nop, @rexpr, @type)
 				end
 			#elsif nop = { :|| => :&&, :&& => :|| }[@op]
 			else
-				CExpression.new(nil, :'!', ce, BaseType.new(:int))
+				CExpression.new(nil, :'!', self, BaseType.new(:int))
 			end
 		end
 

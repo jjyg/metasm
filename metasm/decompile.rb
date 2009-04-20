@@ -699,10 +699,16 @@ class Decompiler
 						wb = C::Block.new(scope)
 						wb.statements = decompile_cseq_while(ary[ary.index(ss)+1...ary.index(g)], scope)
 						w = C::While.new(negate[ss.test], wb)
-						ary[ary.index(ss)..ary.index(g)] = [w, *ss.bthen.statements]
-						#retry
-						finished = false ; break
+						ary[ary.index(ss)+1..ary.index(g)] = [w, *ss.bthen.statements]
+						finished = false ; break	#retry
 					end
+				end
+				if g = ary[ary.index(s)+1..-1].reverse.find { |_s| _s.kind_of? C::Goto and _s.target == s.name }
+					wb = C::Block.new(scope)
+					wb.statements = decompile_cseq_while(ary[ary.index(s)+1...ary.index(g)], scope)
+					w = C::While.new(C::CExpression.new(nil, nil, 1, C::BaseType.new(:int)), wb)
+					ary[ary.index(s)+1..ary.index(g)] = [w]
+					finished = false ; break	#retry
 				end
 			when C::If
 				decompile_cseq_while(s.bthen.statements, scope) if s.bthen.kind_of? C::Block
@@ -712,7 +718,44 @@ class Decompiler
 			end
 		}
 		end
-		ary
+
+		# break/continue
+		# XXX if (foo) while (bar) goto bla; bla:  should => break
+		walk = lambda { |e, brk, cnt|
+			case e
+			when C::Block
+				walk[e.statements, brk, cnt]
+				e
+			when ::Array
+				e.each_with_index { |st, i|
+					case st
+					when C::While
+						l1 = e[i+1].name if e[i+1].kind_of? C::Label
+						l2 = e[i-1].name if e[i-1].kind_of? C::Label
+						st.body = walk[st.body, l1, l2]
+					else
+						e[i] = walk[st, brk, cnt]
+					end
+				}
+				e
+			when C::If
+				e.bthen = walk[e.bthen, brk, cnt] if e.bthen
+				e.belse = walk[e.belse, brk, cnt] if e.bthen
+				e
+			when C::While
+				e.body = walk[e.body, nil, nil]
+				e
+			when C::Goto
+				if e.target == brk
+					C::Break.new
+				elsif e.target == cnt
+					C::Continue.new
+				else e
+				end
+			else e
+			end
+		}
+		walk[ary, nil, nil]
 	end
 
 	def decompile_remove_labels(scope)
@@ -725,6 +768,12 @@ class Decompiler
 				end
 				notfound
 			}
+		}
+		decompile_walk(scope) { |s|
+			next if not s.kind_of? C::While
+			if s.body.kind_of? C::Block and s.body.statements.last.kind_of? C::Continue
+				s.body.statements.pop
+			end
 		}
 	end
 
