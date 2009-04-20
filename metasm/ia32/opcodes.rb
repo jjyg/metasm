@@ -346,7 +346,7 @@ class Ia32
 
 		# mmx
 		addop 'emms',  [0x0F, 0x77]
-		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm }
+		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm ; o.args.reverse! }
 		addop('movq',  [0x0F, 0x6F], :mrmmmx, {:d => [1, 4]}) { |o| o.args.reverse! }	# TODO check ohter mrmmmx
 		addop 'packssdw', [0x0F, 0x6B], :mrmmmx
 		addop 'packsswb', [0x0F, 0x63], :mrmmmx
