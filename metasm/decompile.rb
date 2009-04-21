@@ -143,6 +143,7 @@ class Decompiler
 
 	# patches instruction's backtrace_binding to replace things referring to a static stack offset from func start by :frameptr+off
 	def decompile_makestackvars(funcstart, blocks)
+		blockstart = nil
 		tovar = lambda { |di, e, i_s|
 			# need to backtrace every single reg ? must limit backtrace (maxdepth/complexity)
 			# create an addr_binding[allregs] at each block start ? ondemand ?
@@ -152,33 +153,70 @@ class Decompiler
 			when Indirection; Indirection[tovar[di, e.target, i_s], e.len]
 			when :frameptr; e
 			when ::Symbol
+				vals = @dasm.backtrace(e, di.address, :snapshot_addr => blockstart, :include_start => i_s)
+				# backtrace only to blockstart first
+				if vals.length == 1 and ee = vals.first and ee.kind_of? Expression and ee.externals == [:frameptr]
+					ee
+				else
+				# fallback on full run (could restart from blockstart with ee, but may reevaluate addr_binding..
 				vals = @dasm.backtrace(e, di.address, :snapshot_addr => funcstart, :include_start => i_s)
-				if vals.length == 1 and (o = Expression[vals.first, :-, :esp].reduce).kind_of?(::Integer)
-					Expression[:frameptr, :+, o].reduce
+				if vals.length == 1 and ee = vals.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
+						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
+ 					ee
 				else e
+				end
 				end
 			else e
 			end
 		}
 
+		oldfuncbd = @dasm.address_binding[funcstart]
+		@dasm.address_binding[funcstart] = { :esp => :frameptr }
+		patched_binding = [funcstart]
+		ebp_frame = true
+
 		# must not change bt_bindings until everything is backtracked
 		# TODO update function binding (lazy bt_binding)
-		# TODO do not touch di.bt_bind, create something alongside / run this directly in decomp_cexpr
+		# TODO do not touch di.bt_bind, create something alongside / run this directly in decomp_cexpr (or just clear everything when done)
 		repl_bind = {}	# di => bt_bd
 		blocks.each { |block|
+			blockstart = block.address
+			if not @dasm.address_binding[blockstart]
+				# calc binding of esp/ebp at begin of each block (kind of forward trace)
+				patched_binding << blockstart
+				@dasm.address_binding[blockstart] = {}
+				foo = @dasm.backtrace(:esp, blockstart, :snapshot_addr => funcstart)
+				if foo.length == 1 and ee = foo.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
+						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
+					@dasm.address_binding[blockstart][:esp] = ee
+				end
+				if ebp_frame == true
+				foo = @dasm.backtrace(:ebp, blockstart, :snapshot_addr => funcstart)
+				if foo.length == 1 and ee = foo.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
+						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
+					@dasm.address_binding[blockstart][:ebp] = ee
+				else
+					ebp_frame = false
+				end
+				end
+			end
+
 			block.list.each { |di|
 				bd = di.backtrace_binding ||= @dasm.cpu.get_backtrace_binding(di)
 				newbd = repl_bind[di] = {}
 				bd.each { |k, v|
 					# think about push/pop: keys need to include_start, value don't # TODO think again
 					k = tovar[di, k, true] if k.kind_of? Indirection
-					next if Expression[k, :-, :frameptr].reduce.kind_of? ::Integer
+					next if k == Expression[:frameptr] or (k.kind_of? Expression and k.lexpr == :frameptr and k.op == :+ and k.rexpr.kind_of? ::Integer)
 					newbd[k] = tovar[di, v, false]
 				}
 			}
 		}
 
 		repl_bind.each { |di, bd| di.backtrace_binding = bd }
+
+		patched_binding.each { |a| @dasm.address_binding.delete a }
+		@dasm.address_binding[funcstart] = oldfuncbd if oldfuncbd
 	end
 
 	# give a name to a stackoffset (relative to start of func)
