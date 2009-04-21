@@ -1196,11 +1196,6 @@ class Decompiler
 
 		future_array = []
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
-			# x += 1 => ++x
-			if (ce.op == :'+=' or ce.op == :'-=') and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
-				ce.lexpr, ce.op, ce.rexpr = nil, {:'+=' => :'++', :'-=' => :'--'}[ce.op], ce.lexpr
-			end
-
 			# (foo)(bar)x => (foo)x
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression
 				ce.rexpr = ce.rexpr.rexpr
@@ -1214,6 +1209,18 @@ class Decompiler
 			# *&bla => bla if types ok
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.type, ce.rexpr.rexpr.type]
 				ce.lexpr, ce.op, ce.rexpr, ce.type = ce.rexpr.rexpr.lexpr, ce.rexpr.rexpr.op, ce.rexpr.rexpr.rexpr, ce.rexpr.rexpr.type
+			end
+
+			# int x + 0xffffffff -> x-1
+			if (ce.op == :+ or ce.op == :- or ce.op == :'+=' or ce.op == :'-=') and ce.lexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
+					ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr)))-1
+				ce.op = {:+ => :-, :- => :+, :'+=' => :'-=', :'-=' => :'+='}[ce.op]
+				ce.rexpr.rexpr = 1
+			end
+
+			# x += 1 => ++x
+			if (ce.op == :'+=' or ce.op == :'-=') and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
+				ce.lexpr, ce.op, ce.rexpr = nil, {:'+=' => :'++', :'-=' => :'--'}[ce.op], ce.lexpr
 			end
 
 			# int *ptr; *(ptr + 4) => ptr[4]
@@ -1311,6 +1318,13 @@ class Decompiler
 			scope.statements.length.times { |sti|
 				sti -= ndel	# account for delete_at while each
 				st = scope.statements[sti]
+
+				# if (x != 0) => if (x)
+				if st.kind_of? C::If and st.test.kind_of? C::CExpression and st.test.op == :'!=' and
+						st.test.rexpr.kind_of? C::CExpression and not st.test.rexpr.op and st.test.rexpr.rexpr == 0
+					st.test = st.test.lexpr
+				end
+
 				next if not st.kind_of? C::CExpression
 
 				nt = scope.statements[sti+1]
@@ -1482,6 +1496,7 @@ class Decompiler
 					end
 				end
 
+
 				next if st.op != :'=' or not st.lexpr.kind_of? C::Variable or
 					not var = scope.symbol[st.lexpr.name] or var.type.qualifier.to_a.include?(:volatile)
 
@@ -1598,9 +1613,15 @@ class Decompiler
 			}
 		end
 
-		# remove unreferenced local vars
 		used = {}
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+			# --x+1 => x--
+			if (ce.op == :+ or ce.op == :-) and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == {:+ => :'--', :- => :'++'}[ce.op] and ce.lexpr.rexpr and
+					ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
+				ce.lexpr, ce.op, ce.rexpr = ce.lexpr.rexpr, ce.lexpr.op, nil
+			end
+
+			# remove unreferenced local vars
 			# XXX :funcall, [Variable] => not walked
 			used[ce.rexpr.name] = true if ce.rexpr.kind_of? C::Variable
 			used[ce.lexpr.name] = true if ce.lexpr.kind_of? C::Variable
