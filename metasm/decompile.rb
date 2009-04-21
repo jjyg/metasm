@@ -1270,6 +1270,7 @@ class Decompiler
 			if ce.op == :& and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :'.' and s = ce.rexpr.lexpr.type and
 					s.kind_of? C::Struct and s.offsetof(@c_parser, ce.rexpr.rexpr) == 0
 				ce.rexpr = ce.rexpr.lexpr
+				ce.type = C::Pointer.new(ce.rexpr.type)
 			end
 		} }
 
