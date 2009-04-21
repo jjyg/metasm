@@ -469,13 +469,29 @@ class Decompiler
 				when 'lgdt'
 					if not @c_parser.toplevel.struct['segment_descriptor']
 						@c_parser.parse('struct segment_descriptor { __int16 limit; __int16 base0_16; __int8 base16_24; __int8 flags1; __int8 flags2_limit_16_20; __int8 base24_32; };')
-						@c_parser.parse('struct segment_table { __int16 size; struct segment_descriptor *table; } __attribute__((packed(2)));')
+						@c_parser.parse('struct segment_table { __int16 size; struct segment_descriptor *table; } __attribute__((pack(2)));')
 					end
 					if not @c_parser.toplevel.symbol['intrinsic_lgdt']
 						@c_parser.parse('void intrinsic_lgdt(struct segment_table *);')
 					end
-					arg = di.backtrace_binding.keys.grep(Indirection).first.pointer
+					arg = (di.backtrace_binding.keys.grep(Indirection).first.pointer rescue 0)
 					stmts << C::CExpression.new(@c_parser.toplevel.symbol['intrinsic_lgdt'], :funcall, [ceb[arg]], C::BaseType.new(:void))
+				when 'lidt'
+					if not @c_parser.toplevel.struct['interrupt_descriptor']
+						@c_parser.parse('struct interrupt_descriptor { __int16 offset0_16; __int16 segment; __int16 flags; __int16 offset16_32; };')
+						@c_parser.parse('struct interrupt_table { __int16 size; struct interrupt_descriptor *table; } __attribute__((pack(2)));')
+					end
+					if not @c_parser.toplevel.symbol['intrinsic_lidt']
+						@c_parser.parse('void intrinsic_lidt(struct interrupt_table *);')
+					end
+					arg = (di.backtrace_binding.keys.grep(Indirection).first.pointer rescue 0)
+					stmts << C::CExpression.new(@c_parser.toplevel.symbol['intrinsic_lidt'], :funcall, [ceb[arg]], C::BaseType.new(:void))
+				when 'ltr', 'lldt'
+					if not @c_parser.toplevel.symbol["intrinsic_#{di.opcode.name}"]
+						@c_parser.parse("void intrinsic_#{di.opcode.name}(int);")
+					end
+					arg = di.backtrace_binding.keys.first
+					stmts << C::CExpression.new(@c_parser.toplevel.symbol["intrinsic_#{di.opcode.name}"], :funcall, [ceb[arg]], C::BaseType.new(:void))
 				else
 					commit[]
 					stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil)
@@ -531,8 +547,8 @@ class Decompiler
 				decompile_cexpr(Expression[e.lexpr, :-, -e.rexpr], scope)
 			elsif (e.op == :== or e.op == :'!=') and e.rexpr == 0 and e.lexpr.kind_of? Expression and e.lexpr.op == :+
 				decompile_cexpr(Expression[e.lexpr.lexpr, e.op, [:-, e.lexpr.rexpr]].reduce, scope)
-			elsif (e.op == :== or e.op == :'!=') and e.rexpr == 0 and l = e.lexpr and l.kind_of? Expression and
-				l.op == :& and l.rexpr == 1 and l = l.lexpr and l.op == :>> and l.rexpr == @dasm.cpu.size-1
+			elsif (e.op == :== or e.op == :'!=') and e.rexpr == 0 and l = e.lexpr and l.kind_of? Expression and l.op == :& and
+					l.rexpr == 1 and l = l.lexpr and l.kind_of? Expression and l.op == :>> and l.rexpr == @dasm.cpu.size-1
 				decompile_cexpr(Expression[l.lexpr, ((e.op == :==) ? :>= : :<), 0].reduce, scope)
 			elsif e.lexpr
 				a = decompile_cexpr(e.lexpr, scope)
@@ -901,10 +917,21 @@ class Decompiler
 					e = e.rexpr
 					t = C::Pointer.new(t)
 					next
-				elsif e.op == :+ and e.rexpr.kind_of? C::CExpression and not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
-					# (int)*(x+2) === (int) *x
-					e = e.lexpr
-					next
+				elsif e.op == :+ and e.lexpr and e.rexpr.kind_of? C::CExpression
+					if not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
+						# (int)*(x+2) === (int) *x
+						e = e.lexpr
+						next
+					elsif t.pointer?
+ 						if e.lexpr.kind_of? C::Variable
+							e = e.lexpr
+							next
+						elsif e.lexpr.kind_of? C::CExpression and [:*, :<<, :>>, :&].include? e.lexpr.op
+							e.lexpr, e.rexpr = e.rexpr, e.lexpr
+							e = e.lexpr
+							next
+						end
+					end
 				end
 				break
 			end
@@ -961,7 +988,7 @@ class Decompiler
 				# cast func args to arg prototypes
 				# TODO return value
 				ce.lexpr.type.args.to_a.zip(ce.rexpr).each { |proto, arg| known_type[arg, proto.type] }
-			elsif ce.op == :*
+			elsif ce.op == :* and not ce.lexpr
 				known_type[ce.rexpr, C::Pointer.new(ce.type)]
 			end
 		} }
@@ -1032,7 +1059,7 @@ class Decompiler
 
 		# fix pointer arithmetic, use struct member access
 
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
 			next if not ce.kind_of? C::CExpression
 			if ce.op == :* and not ce.lexpr and ce.rexpr.type.pointer? and ce.rexpr.type.untypedef.type.untypedef.kind_of? C::Struct
 				s = ce.rexpr.type.untypedef.type.untypedef
@@ -1089,12 +1116,12 @@ class Decompiler
 			elsif (ce.op == :+ or ce.op == :-) and @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) != 1
 				# ptr+x => (ptrtype*)(((__int8*)ptr)+x)
 				# XXX create struct ?
-				ce.rexpr = C::CExpression.new(nil, nil, ce.rexpr, C::BaseType.new(:int)) if ce.rexpr.type != C::BaseType.new(:int)
+				ce.rexpr = C::CExpression.new(nil, nil, ce.rexpr, C::BaseType.new(:int)) if not ce.rexpr.type.integral?
 				if @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) != 1
 					ptype = ce.lexpr.type
 					ce.lexpr = C::CExpression.new(nil, nil, ce.lexpr, ce.lexpr.type) if not ce.lexpr.kind_of? C::CExpression
 					ce.lexpr = C::CExpression.new(nil, nil, ce.lexpr, C::Pointer.new(C::BaseType.new(:__int8)))
-					ce.lexpr, ce.op, ce.rexpr, type = nil, nil, C::CExpression.new(ce.lexpr, ce.op, ce.rexpr, ce.type), ptype
+					ce.lexpr, ce.op, ce.rexpr, ce.type = nil, nil, C::CExpression.new(ce.lexpr, ce.op, ce.rexpr, ce.lexpr.type), ptype
 				end
 			end
 		} }
@@ -1113,7 +1140,6 @@ class Decompiler
 	# remove useless casts ('(int)i' with 'int i;' => 'i')
 	# also removes 'enter' traduction ('var_0 = ebp;' => '')
 	def optimize(scope)
-		# TODO remove unnecessary & (eg char x; x&255 => x)
 		# TODO if all occurences of __int32 x are x&255, change type to __int8
 
 		# replace all occurence of var var by expr exp in stmt
@@ -1231,13 +1257,19 @@ class Decompiler
 
 			# char x; x & 255 => x
 			if ce.op == :& and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
-				ce.lexpr, ce.op, ce.rexpr = ce.lexpr.lexpr, ce.lexpr.op, ce.lexpr.rexpr
+				ce.lexpr, ce.op, ce.rexpr = nil, nil, ce.lexpr
 			end
 
 			# x = x | 4 => x |= 4
 			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.lexpr == ce.lexpr and [:|, :&, :^, :+, :-, :>>, :<<].include? ce.rexpr.op
 				ce.op = (ce.rexpr.op.to_s + '=').to_sym
 				ce.rexpr = ce.rexpr.rexpr
+			end
+
+			# &struct.1stmember => &struct
+			if ce.op == :& and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :'.' and s = ce.rexpr.lexpr.type and
+					s.kind_of? C::Struct and s.offsetof(@c_parser, ce.rexpr.rexpr) == 0
+				ce.rexpr = ce.rexpr.lexpr
 			end
 		} }
 
@@ -1520,6 +1552,7 @@ class Decompiler
 				# we have a local variable assignment
 				if stmt_access[nt, var, :read]
 					# x=1 ; f(x) => f(1)
+					# TODO reg eax = var0; var4 = eax; var8 = eax;  =>  rm eax
 
 					# check if nt uses var more than once
 					e = case nt
