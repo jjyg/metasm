@@ -1257,6 +1257,7 @@ class Decompiler
 		}
 
 		# walk
+		swapcount = scope.statements.length/4+1	# avoids infinite statement swapping around
 		finished = false ; while not finished ; finished = true
 			ndel = 0
 			scope.statements.length.times { |sti|
@@ -1266,7 +1267,6 @@ class Decompiler
 
 				nt = scope.statements[sti+1]
 
-				# TODO reorder ++a; ++b; if(a)
 				# TODO refactor this
 				if (st.op == :'++' or st.op == :'--') and not st.lexpr and st.rexpr.kind_of? C::Variable and
 					var = scope.symbol[st.rexpr.name] and not var.type.qualifier.to_a.include? :volatile
@@ -1331,6 +1331,26 @@ class Decompiler
 							ndel += 1
 							next
 						end
+
+					# reorder a++; b++; if (a) => swap a & b
+					# XXX infinite loop ? (a++; b++; if (cantsolve(a, b)))
+					elsif swapcount > 0 and ri = (sti+1..sti+10).find { |ri_|
+						case n = scope.statements[ri_]
+						when C::CExpression; e = n
+						when C::If; e = n.test
+						when C::Return; e = n.value
+						else break
+						end
+						if stmt_access[e, var, :access]
+							true
+						elsif not n.kind_of? C::CExpression or stmt_access[e, var, :write]
+							break
+						end
+					} and ri != sti+1
+						swapcount -= 1
+						scope.statements[ri-1], scope.statements[sti] = scope.statements[sti], scope.statements[ri-1]
+						finished = false
+						next	# next ? update sti ? (break bad on infinite loop)
 					end
 
 					pt = scope.statements[sti-1]
@@ -1393,6 +1413,24 @@ class Decompiler
 							ndel += 1
 							next
 						end
+
+					elsif swapcount > 0 and ri = [*sti-10...sti].reverse.find { |ri_|
+						case n = scope.statements[ri_]
+						when C::CExpression; e = n
+						when C::If; e = n.test
+						when C::Return; e = n.value
+						else break
+						end
+						if stmt_access[e, var, :access]
+							true
+						elsif not n.kind_of? C::CExpression or stmt_access[e, var, :write]
+							break
+						end
+					} and ri != sti-1
+						swapcount -= 1 
+						scope.statements[ri+1], scope.statements[sti] = scope.statements[sti], scope.statements[ri+1]
+						finished = false
+						next	# next ? update sti ? (break bad on infinite loop)
 					end
 				end
 
@@ -1466,6 +1504,23 @@ class Decompiler
 					scope.statements.delete_at(sti)
 					ndel += 1
 					next
+				elsif swapcount > 0 and ri = (sti+1..sti+10).find { |ri_|
+					case n = scope.statements[ri_]
+					when C::CExpression; e = n
+					when C::If; e = n.test
+					when C::Return; e = n.value
+					else break
+					end
+					if stmt_access[e, var, :access]
+						true
+					elsif not n.kind_of? C::CExpression or stmt_access[e, var, :write]
+						break
+					end
+				} and ri != sti+1
+					swapcount -= 1
+					scope.statements[ri-1], scope.statements[sti] = scope.statements[sti], scope.statements[ri-1]
+					finished = false
+					next	# next ? update sti ? (break bad on infinite loop)
 				else
 					# check if this value is ever used
 					reused = false
