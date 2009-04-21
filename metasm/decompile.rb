@@ -17,7 +17,6 @@ class Decompiler
 	def decompile_func(entry)
 		entry = @dasm.normalize entry
 		return if not @dasm.decoded[entry]
-		puts "decompiling #{Expression[entry]}" if $VERBOSE
 
 		# create a new toplevel function to hold our code
 		func = C::Variable.new
@@ -31,6 +30,7 @@ class Decompiler
 			return
 		end
 		@c_parser.toplevel.symbol[func.name] = func
+		puts "decompiling #{Expression[entry]}" if $VERBOSE
 
 		# find decodedinstruction blocks constituing the function
 		# TODO merge sequencial blocks with useless jmp (poeut) to improve dependency graph later
@@ -342,7 +342,7 @@ class Decompiler
 					args = []
 					if t = @c_parser.toplevel.symbol[n] and t.type.args
 						# XXX see remarks in #finddeps
-						stackoff = Expression[@dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry), :-, :esp].bind(:esp => :frameptr).reduce
+						stackoff = Expression[@dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry), :-, :esp].bind(:esp => :frameptr).reduce rescue nil
 						args_todo = t.type.args.dup
 						args = []
 						if t.attributes.to_a.include? 'fastcall'	# XXX DRY
@@ -420,7 +420,7 @@ class Decompiler
 					binding.update update
 				when 'lgdt'
 					if not @c_parser.toplevel.struct['segment_descriptor']
-						@c_parser.parse('struct segment_descriptor { __int16 base0_16; __int16 limit; __int8 base24_32; __int8 flags1; __int8 flags2; __int8 base16_24; /* __int16 base0_16; __int16 limit; */ };')
+						@c_parser.parse('struct segment_descriptor { __int16 limit; __int16 base0_16; __int8 base16_24; __int8 flags1; __int8 flags2_limit_16_20; __int8 base24_32; };')
 						@c_parser.parse('struct segment_table { __int16 size; struct segment_descriptor *table; } __attribute__((packed(2)));')
 					end
 					if not @c_parser.toplevel.symbol['intrinsic_lgdt']
@@ -699,15 +699,15 @@ class Decompiler
 						wb = C::Block.new(scope)
 						wb.statements = decompile_cseq_while(ary[ary.index(ss)+1...ary.index(g)], scope)
 						w = C::While.new(negate[ss.test], wb)
-						ary[ary.index(ss)+1..ary.index(g)] = [w, *ss.bthen.statements]
+						ary[ary.index(ss)..ary.index(g)] = [w, *ss.bthen.statements]
 						finished = false ; break	#retry
 					end
 				end
-				if g = ary[ary.index(s)+1..-1].reverse.find { |_s| _s.kind_of? C::Goto and _s.target == s.name }
+				if g = ary[ary.index(s)..-1].reverse.find { |_s| _s.kind_of? C::Goto and _s.target == s.name }
 					wb = C::Block.new(scope)
-					wb.statements = decompile_cseq_while(ary[ary.index(s)+1...ary.index(g)], scope)
+					wb.statements = decompile_cseq_while(ary[ary.index(s)...ary.index(g)], scope)
 					w = C::While.new(C::CExpression.new(nil, nil, 1, C::BaseType.new(:int)), wb)
-					ary[ary.index(s)+1..ary.index(g)] = [w]
+					ary[ary.index(s)..ary.index(g)] = [w]
 					finished = false ; break	#retry
 				end
 			when C::If
@@ -920,7 +920,16 @@ class Decompiler
 
 		# offsets have types now
 		vartypes.each { |v, t|
+			q = scope.symbol[v].type.qualifier
 			scope.symbol[v].type = t
+			t.qualifier = q if q
+		}
+
+		# remove qualifier from special variables forwarded to auto vars
+		types.each { |o, t|
+			next if not t.qualifier
+			types[o] = t.dup
+			types[o].qualifier = nil
 		}
 
 		# remove offsets to struct members
@@ -1248,10 +1257,11 @@ class Decompiler
 		}
 
 		# walk
-		finished = false
-		while not finished
-			finished = true
-			scope.statements.each_with_index { |st, sti|
+		finished = false ; while not finished ; finished = true
+			ndel = 0
+			scope.statements.length.times { |sti|
+				sti -= ndel	# account for delete_at while each
+				st = scope.statements[sti]
 				next if not st.kind_of? C::CExpression
 
 				nt = scope.statements[sti+1]
@@ -1318,7 +1328,8 @@ class Decompiler
 						if found
 							finished = false
 							scope.statements.delete_at(sti)
-							break
+							ndel += 1
+							next
 						end
 					end
 
@@ -1379,7 +1390,8 @@ class Decompiler
 						if found
 							finished = false
 							scope.statements.delete_at(sti)
-							break
+							ndel += 1
+							next
 						end
 					end
 				end
@@ -1452,7 +1464,8 @@ class Decompiler
 
 					finished = false
 					scope.statements.delete_at(sti)
-					break
+					ndel += 1
+					next
 				else
 					# check if this value is ever used
 					reused = false
@@ -1467,12 +1480,16 @@ class Decompiler
 					end
 					next if reused
 
+					# useless cast
+					st.rexpr = st.rexpr.rexpr while st.rexpr.kind_of? C::CExpression and not st.rexpr.op
+
 					scope.statements[sti] = st.rexpr
 
 					if not sideeffect[st.rexpr]
 						finished = false
 						scope.statements.delete_at(sti)
-						break
+						ndel += 1
+						next
 					end
 				end
 			}
@@ -1480,19 +1497,11 @@ class Decompiler
 
 		# remove unreferenced local vars
 		used = {}
-		funcenter = nil
-		decompile_walk(scope) { |ce_|
-			if ce_.kind_of? C::CExpression and ce_.op == :'=' and ce_.lexpr.kind_of? C::Variable and
-					ce_.rexpr.kind_of? C::Variable and ce_.lexpr.name == 'var_0' and ce_.rexpr.name == 'ebp'	# push ebp; mov ebp, esp
-				funcenter = ce_
-				next
-			end
-		decompile_walk_ce(ce_) { |ce|
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
 			# XXX :funcall, [Variable] => not walked
 			used[ce.rexpr.name] = true if ce.rexpr.kind_of? C::Variable
 			used[ce.lexpr.name] = true if ce.lexpr.kind_of? C::Variable
 		} }
-		scope.statements.delete funcenter if funcenter and not used['ebp']
 		scope.statements.delete_if { |sm| sm.kind_of? C::Declaration and not used[sm.var.name] }
 		scope.symbol.delete_if { |n, v| not used[n] }
 	end
