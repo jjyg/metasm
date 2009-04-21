@@ -1015,7 +1015,7 @@ class Decompiler
 			if t.kind_of? C::Struct
 				t.members.each { |tm|
 					moff = t.offsetof(@c_parser, tm.name)
-					next if moff == 0	# XXX &struct = &struct.1stmemb
+					next if moff == 0
 					types.delete(o+moff)
 					memb[o+moff] = [o, tm.name, tm.type]
 				}
@@ -1222,16 +1222,6 @@ class Decompiler
 
 		future_array = []
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
-			# (foo)(bar)x => (foo)x
-			if not ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression
-				ce.rexpr = ce.rexpr.rexpr
-			end
-
-			# (foo)bla => bla if bla of type foo
-			if not ce.op and ce.rexpr.kind_of? C::CExpression and sametype[ce.type, ce.rexpr.type]
-				ce.lexpr, ce.op, ce.rexpr, ce.type = ce.rexpr.lexpr, ce.rexpr.op, ce.rexpr.rexpr, ce.rexpr.type
-			end
-
 			# *&bla => bla if types ok
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.type, ce.rexpr.rexpr.type]
 				ce.lexpr, ce.op, ce.rexpr, ce.type = ce.rexpr.rexpr.lexpr, ce.rexpr.rexpr.op, ce.rexpr.rexpr.rexpr, ce.rexpr.rexpr.type
@@ -1266,11 +1256,27 @@ class Decompiler
 				ce.rexpr = ce.rexpr.rexpr
 			end
 
+			# (foo)(bar)x => (foo)x
+			if not ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression
+				ce.rexpr = ce.rexpr.rexpr
+			end
+
+			# (foo)bla => bla if bla of type foo
+			if not ce.op and ce.rexpr.kind_of? C::CExpression and sametype[ce.type, ce.rexpr.type]
+				ce.lexpr, ce.op, ce.rexpr, ce.type = ce.rexpr.lexpr, ce.rexpr.op, ce.rexpr.rexpr, ce.rexpr.type
+			end
+
 			# &struct.1stmember => &struct
 			if ce.op == :& and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :'.' and s = ce.rexpr.lexpr.type and
 					s.kind_of? C::Struct and s.offsetof(@c_parser, ce.rexpr.rexpr) == 0
 				ce.rexpr = ce.rexpr.lexpr
 				ce.type = C::Pointer.new(ce.rexpr.type)
+			end
+
+			# *(1stmember*)&struct => struct.1stmember
+			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression and
+					ce.rexpr.rexpr.op == :& and s = ce.rexpr.rexpr.rexpr.type and s.kind_of? C::Struct and s.members.first and sametype[ce.type, s.members.first.type]
+				ce.lexpr, ce.op, ce.rexpr = ce.rexpr.rexpr.rexpr, :'.', s.members.first.name
 			end
 		} }
 
@@ -1428,7 +1434,6 @@ class Decompiler
 						end
 
 					# reorder a++; b++; if (a) => swap a & b
-					# XXX infinite loop ? (a++; b++; if (cantsolve(a, b)))
 					elsif swapcount > 0 and ri = (sti+1..sti+10).find { |ri_|
 						case n = scope.statements[ri_]
 						when C::CExpression; e = n
@@ -1601,14 +1606,16 @@ class Decompiler
 					scope.statements.delete_at(sti)
 					ndel += 1
 					next
-				elsif swapcount > 0 and ri = (sti+1..sti+10).find { |ri_|
+				elsif swapcount > 0 and not sideeffect[st.rexpr] and ri = (sti+1..sti+10).find { |ri_|
 					case n = scope.statements[ri_]
 					when C::CExpression; e = n
 					when C::If; e = n.test
 					when C::Return; e = n.value
 					else break
 					end
-					if stmt_access[e, var, :access]
+					if e.op != :'=' or not e.rexpr.kind_of? C::Variable or e.rexpr.name == var.name or sideeffect[e.rexpr]
+						break
+					elsif stmt_access[e, var, :access]
 						true
 					elsif not n.kind_of? C::CExpression or stmt_access[e, var, :write]
 						break
