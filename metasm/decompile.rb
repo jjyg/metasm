@@ -116,6 +116,7 @@ class Decompiler
 	# return an array of [address of block start, list of block to]]
 	# decompile subfunctions
 	def decompile_func_listblocks(entry)
+		@autofuncs ||= []
 		blocks = []
 		entry = dasm.normalize entry
 		todo = [entry]
@@ -127,6 +128,15 @@ class Decompiler
 			di.block.each_to { |ta, type|
 				next if type == :indirect
 				ta = dasm.normalize ta
+				if type != :subfuncret and not @dasm.function[ta] and
+						(not @dasm.function[entry] or @autofuncs.include? entry) and
+						di.block.list.last.opcode.props[:saveip]
+					# noreturn function?
+					@autofuncs << ta
+					@dasm.function[ta] = DecodedFunction.new
+					puts "autofunc #{Expression[ta]}" if $VERBOSE
+				end
+				
 				if @dasm.function[ta] and type != :subfuncret	# and di.block.to_subfuncret # XXX __attribute__((noreturn)) ?
 					f = dasm.auto_label_at(ta, 'func')
 					ta = dasm.normalize($1) if f =~ /^thunk_(.*)/
