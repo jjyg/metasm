@@ -152,8 +152,8 @@ class Ia32
 		addop 'iretd', [0xCF], nil,  {}, :stopexec, :setip
 		addop('jcxz',  [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 16 }
 		addop('jecxz', [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 32 }
-		addop 'jmp',   [0xEA], nil,  {}, :farptr, :stopexec
-		addop 'jmpf',  [0xFF], 5,    {}, :stopexec		# reg ?
+		addop 'jmp',   [0xEA], nil,  {}, :farptr, :setip, :stopexec
+		addop 'jmpf',  [0xFF], 5,    {}, :stopexec, :setip		# reg ?
 		addop 'lahf',  [0x9F]
 		addop 'lar',   [0x0F, 0x02], :mrm
 		addop 'lds',   [0xC5], :mrmA

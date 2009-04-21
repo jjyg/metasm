@@ -643,6 +643,7 @@ class Ia32
 			[Expression[tg.symbolic(di.address)]]
 		when Reg; [Expression[tg.symbolic]]
 		when Expression, ::Integer; [Expression[tg]]
+		when Farptr; tg.seg.reduce < 0x30 ? [tg.addr] : [Expression[[tg.seg, :*, 0x10], :+, tg.addr]]
 		else
 			puts "unhandled setip at #{di.address} #{di.instruction}" if $DEBUG
 			[]
