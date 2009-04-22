@@ -1807,6 +1807,9 @@ EOH
 		end
 
 		# returns a CExpr negating this one (eg 'x' => '!x', 'a > b' => 'a <= b'...)
+		def self.negate(e)
+			e.kind_of?(self) ? e.negate : CExpression.new(nil, :'!', e, BaseType.new(:int))
+		end
 		def negate
 			if nop = { :== => :'!=', :'!=' => :==, :> => :<=, :>= => :<, :< => :>=, :<= => :>, :'!' => :'!' }[@op]
 				if nop == :'!'
@@ -1818,7 +1821,8 @@ EOH
 				else
 					CExpression.new(@lexpr, nop, @rexpr, @type)
 				end
-			#elsif nop = { :|| => :&&, :&& => :|| }[@op]
+			elsif nop = { :'||' => :'&&', :'&&' => :'||' }[@op]
+				CExpression.new(CExpression.negate(@lexpr), nop, CExpression.negate(@rexpr), @type)
 			else
 				CExpression.new(nil, :'!', self, BaseType.new(:int))
 			end

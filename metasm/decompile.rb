@@ -644,39 +644,46 @@ class Decompiler
 
 	# optimize if() { a; } to if() a;
 	def decompile_optimize_ctrl(scope)
+		# while (1) { a; if(b) { c; return; }; d; }  =>  while (1) { a; if (b) break; d; } c;
+		while st = scope.statements.last and st.kind_of? C::While and st.test.kind_of? C::CExpression and
+				not st.test.op and st.test.rexpr == 1 and st.body.kind_of? C::Block
+			break if not i = st.body.statements.find { |ist|
+				ist.kind_of? C::If and not ist.belse and ist.bthen.kind_of? C::Block and ist.bthen.statements.last.kind_of? C::Return
+			}
+			scope.statements.concat i.bthen.statements
+			i.bthen = C::Break.new
+		end
 		decompile_walk(scope) { |ce|
 			case ce
 			when C::If
 				ce.bthen = ce.bthen.statements.first if ce.bthen.kind_of? C::Block and ce.bthen.statements.length == 1
 				ce.belse = ce.belse.statements.first if ce.belse.kind_of? C::Block and ce.belse.statements.length == 1
-			when C::While
+			when C::While, C::DoWhile
 				ce.body = ce.body.statements.first if ce.body.kind_of? C::Block and ce.body.statements.length == 1
 			end
 		}
+		decompile_remove_labels(scope)
 	end
 
 	# ifgoto => ifthen
 	# ary is an array of statements where we try to find if () {} [else {}]
 	# recurses to then/else content
 	def decompile_cseq_if(ary, scope)
-		# helper to negate the if condition
-		negate = lambda { |ce|
-			if ce.kind_of? C::CExpression
-				ce.negate
-			else
-				C::CExpression.new(nil, :'!', ce, C::BaseType.new(:int))
-			end
-		}
-
 		# the array of decompiled statements to use as replacement
 		ret = []
 		# list of labels appearing in ary
 		inner_labels = ary.grep(C::Label).map { |l| l.name }
 		while s = ary.shift
+			while s.kind_of? C::If and s.bthen.kind_of? C::Goto and not s.belse and ary.first.kind_of? C::If and ary.first.bthen.kind_of? C::Goto and
+					not ary.first.belse and s.bthen.target == ary.first.bthen.target
+				# if (a) goto x; if (b) goto x; => if (a || b) goto x;
+				s.test = C::CExpression.new(s.test, :'||', ary.shift.test, s.test.type)
+			end
+
 			# "forward" ifs only
 			if s.kind_of? C::If and s.bthen.kind_of? C::Goto and l = ary.grep(C::Label).find { |l_| l_.name == s.bthen.target }
 				# if {goto l;} a; l: => if (!) {a;}
-				s.test = negate[s.test]
+				s.test = C::CExpression.negate s.test
 				s.bthen = C::Block.new(scope)
 				s.bthen.statements = decompile_cseq_if(ary[0...ary.index(l)], scope)
 				bts = s.bthen.statements
@@ -684,7 +691,7 @@ class Decompiler
 
 				# if { a; goto outer; } b; return; => if (!) { b; return; } a; goto outer;
 				if bts.last.kind_of? C::Goto and not inner_labels.include? bts.last.target and g = ary.find { |ss| ss.kind_of? C::Goto or ss.kind_of? C::Return } and g.kind_of? C::Return
-					s.test = negate[s.test]
+					s.test = C::CExpression.negate s.test
 					ary[0..ary.index(g)], bts[0..-1] = bts, ary[0..ary.index(g)]
 				end
 
@@ -725,7 +732,7 @@ class Decompiler
 				# if () {} else { a; } => if (!) { a; }
 				# if () { a; } => if () a;
 				case bts.length
-				when 0; s.test, s.bthen, s.belse = negate[s.test], s.belse, nil if s.belse
+				when 0; s.test, s.bthen, s.belse = C::CExpression.negate(s.test), s.belse, nil if s.belse
 				#when 1; s.bthen = bts.first	# later (allows simpler handling in _while)
 				end
 			end
@@ -737,13 +744,6 @@ class Decompiler
 	def decompile_cseq_while(ary, scope)
 		# find the next instruction that is not a label
 		ni = lambda { |l| ary[ary.index(l)..-1].find { |s| not s.kind_of? C::Label } }
-		negate = lambda { |ce|
-			if ce.kind_of? C::CExpression
-				ce.negate
-			else
-				C::CExpression.new(nil, :'!', ce, C::BaseType.new(:int))
-			end
-		}
 
 		# TODO XXX get rid of #index
 		finished = false ; while not finished ; finished = true # 1.9 does not support 'retry'
@@ -762,7 +762,7 @@ class Decompiler
 					elsif ss.bthen.statements.last.kind_of? C::Return and g = ary[ary.index(s)+1..-1].reverse.find { |_s| _s.kind_of? C::Goto and _s.target == s.name }
 						wb = C::Block.new(scope)
 						wb.statements = decompile_cseq_while(ary[ary.index(ss)+1...ary.index(g)], scope)
-						w = C::While.new(negate[ss.test], wb)
+						w = C::While.new(C::CExpression.negate(ss.test), wb)
 						ary[ary.index(ss)..ary.index(g)] = [w, *ss.bthen.statements]
 						finished = false ; break	#retry
 					end
@@ -774,10 +774,17 @@ class Decompiler
 					ary[ary.index(s)..ary.index(g)] = [w]
 					finished = false ; break	#retry
 				end
+				if g = ary[ary.index(s)..-1].reverse.find { |_s| _s.kind_of? C::If and not _s.belse and _s.bthen.kind_of? C::Goto and _s.bthen.target == s.name }
+					wb = C::Block.new(scope)
+					wb.statements = decompile_cseq_while(ary[ary.index(s)...ary.index(g)], scope)
+					w = C::DoWhile.new(g.test, wb)
+					ary[ary.index(s)..ary.index(g)] = [w]
+					finished = false ; break	#retry
+				end
 			when C::If
 				decompile_cseq_while(s.bthen.statements, scope) if s.bthen.kind_of? C::Block
 				decompile_cseq_while(s.belse.statements, scope) if s.belse.kind_of? C::Block
-			when C::While
+			when C::While, C::DoWhile
 				decompile_cseq_while(s.body.statements, scope) if s.body.kind_of? C::Block
 			end
 		}
@@ -793,7 +800,7 @@ class Decompiler
 			when ::Array
 				e.each_with_index { |st, i|
 					case st
-					when C::While
+					when C::While, C::DoWhile
 						l1 = e[i+1].name if e[i+1].kind_of? C::Label
 						l2 = e[i-1].name if e[i-1].kind_of? C::Label
 						st.body = walk[st.body, l1, l2]
@@ -806,7 +813,7 @@ class Decompiler
 				e.bthen = walk[e.bthen, brk, cnt] if e.bthen
 				e.belse = walk[e.belse, brk, cnt] if e.bthen
 				e
-			when C::While
+			when C::While, C::DoWhile
 				e.body = walk[e.body, nil, nil]
 				e
 			when C::Goto
@@ -1220,6 +1227,7 @@ class Decompiler
 			(t1.pointer? and t2.pointer? and sametype[t1.type, t2.type])
 		}
 
+		# most of this is a CExpr#reduce
 		future_array = []
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
 			# *&bla => bla if types ok
@@ -1248,6 +1256,25 @@ class Decompiler
 			# char x; x & 255 => x
 			if ce.op == :& and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
 				ce.lexpr, ce.op, ce.rexpr = nil, nil, ce.lexpr
+			end
+
+			# a-b == 0  =>  a == b
+			if (ce.op == :== or ce.op == :'!=') and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and
+					ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :- and ce.lexpr.lexpr
+				ce.lexpr, ce.rexpr = ce.lexpr.lexpr, ce.lexpr.rexpr
+			end
+
+			# (a < b) | (a == b)  =>  a <= b
+			if ce.op == :| and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :== and ce.lexpr.kind_of? C::CExpression and
+					(ce.lexpr.op == :< or ce.lexpr.op == :>) and ce.lexpr.lexpr == ce.rexpr.lexpr and ce.lexpr.rexpr == ce.rexpr.rexpr
+				ce.op = {:< => :<=, :> => :>=}[ce.lexpr.op]
+				ce.lexpr, ce.rexpr = ce.lexpr.lexpr, ce.lexpr.rexpr
+			end
+
+			# !(bool) => bool
+			if ce.op == :'!' and ce.rexpr.kind_of? C::CExpression and [:'==', :'!=', :<, :>, :<=, :>=, :'||', :'&&', :'!'].include? ce.rexpr.op
+				s = ce.rexpr.negate
+				ce.lexpr, ce.op, ce.rexpr = s.lexpr, s.op, s.rexpr
 			end
 
 			# x = x | 4 => x |= 4
@@ -1696,7 +1723,7 @@ class Decompiler
 				yield scope.test
 				decompile_walk(scope.bthen, post, &b)
 				decompile_walk(scope.belse, post, &b) if scope.belse
-			when C::While
+			when C::While, C::DoWhile
 				yield scope.test
 				decompile_walk(scope.body, post, &b)
 			end
