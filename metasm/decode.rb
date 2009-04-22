@@ -1424,8 +1424,8 @@ puts "  bt loop at #{Expression[t[0][1]]}: #{oldexpr} => #{expr} (#{t.map { |z| 
 puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if debug_backtrace
 				bt_log << [:up, expr, oldexpr, h[:from], h[:to]] if bt_log
 
-				if expr != oldexpr and vals = backtrace_check_found(expr,
-						nil, origin, type, len, maxdepth-h[:loopdetect].length, detached)
+				if expr != oldexpr and vals = backtrace_check_found(expr, @decoded[h[:from]],
+						origin, type, len, maxdepth-h[:loopdetect].length, detached)
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 						next expr
