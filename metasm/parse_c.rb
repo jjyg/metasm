@@ -1732,14 +1732,18 @@ EOH
 					if @op == :'!='; l != r ? 1 : 0
 					else l.send(@op, r) ? 1 : 0
 					end
-				else CExpression.new(l, @op, r, @type)
+				else
+					l = CExpression.new(nil, nil, l, BaseType.new(:int)) if l.kind_of? ::Integer
+					r = CExpression.new(nil, nil, r, BaseType.new(:int)) if r.kind_of? ::Integer
+				       	CExpression.new(l, @op, r, @type)
 				end
 			when :'.'
 				le = CExpression.reduce(parser, @lexpr)
 				if le.kind_of? Variable and le.initializer.kind_of? ::Array
 					midx = le.type.members.index(le.type.members.find { |m| m.name == @rexpr })
 					CExpression.reduce(parser, le.initializer[midx] || 0)
-				else CExpression.new(le, @op, @rexpr, @type)
+				else
+					CExpression.new(le, @op, @rexpr, @type)
 				end
 			when :'?:'
 				case c = CExpression.reduce(parser, @lexpr)
@@ -1774,7 +1778,11 @@ EOH
 					end
 				else
 					l = CExpression.reduce(parser, @lexpr)
-					return CExpression.new(l, @op, r, @type) if not l.kind_of?(::Numeric) or not r.kind_of?(::Numeric)
+				       	if not l.kind_of?(::Numeric) or not r.kind_of?(::Numeric)
+						l = CExpression.new(nil, nil, l, BaseType.new(:int)) if l.kind_of? ::Integer
+						r = CExpression.new(nil, nil, r, BaseType.new(:int)) if r.kind_of? ::Integer
+						return CExpression.new(l, @op, r, @type)
+					end
 					l.send(@op, r)
 				end
 
@@ -1793,11 +1801,17 @@ EOH
 				end
 			when :funcall
 				l = CExpression.reduce(parser, @lexpr)
-				r = @rexpr.map { |rr| CExpression.reduce(parser, rr) }
+				r = @rexpr.map { |rr|
+					rr = CExpression.reduce(parser, rr)
+					rr = CExpression.new(nil, nil, rr, BaseType.new(:int)) if rr.kind_of? ::Integer
+					rr
+				}
 				CExpression.new(l, @op, r, @type)
 			else
 				l = CExpression.reduce(parser, @lexpr) if @lexpr
 				r = CExpression.reduce(parser, @rexpr) if @rexpr
+				l = CExpression.new(nil, nil, l, BaseType.new(:int)) if l.kind_of? ::Integer
+				r = CExpression.new(nil, nil, r, BaseType.new(:int)) if r.kind_of? ::Integer
 				CExpression.new(l, @op, r, @type)
 			end
 		end
@@ -3059,11 +3073,11 @@ EOH
 					r, dep = CExpression.dump(@rexpr[1], scope, r, dep, true)
 				else
 					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and
-						@lexpr.lexpr and OP_PRIO[@op] != OP_PRIO[@lexpr.op]))
+						@lexpr.lexpr and OP_PRIO[@op] != OP_PRIO[@lexpr.op] and OP_PRIO[@lexpr.op]))
 					r.last << ' ' << @op.to_s << ' '
 					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and
 						OP_PRIO[@op] != OP_PRIO[:'='] and
-						@rexpr.lexpr and OP_PRIO[@op] != OP_PRIO[@rexpr.op]))
+						@rexpr.lexpr and OP_PRIO[@op] != OP_PRIO[@rexpr.op] and OP_PRIO[@rexpr.op]))
 				end
 			end
 			r.last << ')' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
