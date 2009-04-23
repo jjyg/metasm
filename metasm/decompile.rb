@@ -232,13 +232,13 @@ class Decompiler
 	# give a name to a stackoffset (relative to start of func)
 	# 4 => :arg_0, -8 => :var_4 etc
 	def stackoff_to_varname(off)
-		if off > @dasm.cpu.size/8
+		if off >= @dasm.cpu.size/8
 			'arg_%X' % ( off-@dasm.cpu.size/8)	#  4 => arg_0,  8 => arg_4..
 		elsif off > 0
 			'arg_0%X' % off
 		elsif off == 0
 			'retaddr'
-		elsif off < -@dasm.cpu.size/8
+		elsif off <= -@dasm.cpu.size/8
 			'var_%X' % (-off-@dasm.cpu.size/8)	# -4 => var_0, -8 => var_4..
 		else
 			'var_0%X' % -off
@@ -247,8 +247,8 @@ class Decompiler
 
 	def varname_to_stackoff(var)
 		case var.to_s
-		when /^arg_0(.*)/;  $1.to_i(16)
-		when /^var_0(.*)/; -$1.to_i(16)
+		when /^arg_0(.+)/;  $1.to_i(16)
+		when /^var_0(.+)/; -$1.to_i(16)
 		when /^arg_(.*)/;  $1.to_i(16) + @dasm.cpu.size/8
 		when /^var_(.*)/; -$1.to_i(16) - @dasm.cpu.size/8
 		when 'retaddr'; 0
@@ -1658,15 +1658,15 @@ class Decompiler
 					end
 				}
 
+				if st.rexpr.kind_of? C::Variable or (st.rexpr.kind_of? C::CExpression and not st.rexpr.op and
+						(st.rexpr.rexpr.kind_of? C::Variable or st.rexpr.rexpr.kind_of? ::Integer)) and
+						not stmt_access(nt, var, :write)
+					trivial = true
+				end
+
 				# we have a local variable assignment
 				if stmt_access(nt, var, :read)
 					# x=1 ; f(x) => f(1)
-					if st.rexpr.kind_of? C::Variable or (st.rexpr.kind_of? C::CExpression and not st.rexpr.op and
-							(st.rexpr.rexpr.kind_of? C::Variable or st.rexpr.rexpr.kind_of? ::Integer)) and
-							not stmt_access(nt, var, :write)
-						trivial = true
-					end
-
 					# check if nt uses var more than once
 					e = case nt
 					when C::Return; nt.value
@@ -1678,12 +1678,14 @@ class Decompiler
 					# check if var is reused later (assume function graph in only goto/ifgoto)
 					# assume there is no ? : construct
 					reused = false
+					trivial = false if nt.kind_of? C::If
 					if not stmt_access(nt, var, :write)
 						update_todo[nt, sti+1] if nt
 						while i = todo.pop
 							next if done.include? i
 							done << i
 							next if not nnt = scope.statements[i]
+							trivial = false if nnt.kind_of? C::If
 							reused = true if stmt_access(nnt, var, :read)
 							break if reused
 							update_todo[nnt, i] if not stmt_access(nnt, var, :write)
@@ -1729,11 +1731,9 @@ class Decompiler
 					when C::Return; e = n.value
 					else break
 					end
-					if e.op != :'=' or not e.rexpr.kind_of? C::Variable or e.rexpr.name == var.name or sideeffect(e.rexpr, scope)
-						break
-					elsif stmt_access(e, var, :access)
+					if stmt_access(e, var, :access)
 						true
-					elsif not n.kind_of? C::CExpression or stmt_access(e, var, :write)
+					elsif not n.kind_of? C::CExpression or stmt_access(e, var, :write) or (not trivial and sideeffect(e, scope))
 						break
 					end
 				} and ri != sti+1
