@@ -2415,6 +2415,8 @@ EOH
 	end
 
 	class Block
+		def to_s() dump(nil)[0].join("\n") end
+
 		# return array of c source lines and array of dependencies (objects)
 		def dump(scp, r=[''], dep=[])
 			mydefs = @symbol.values.grep(TypeDef) + @struct.values + anonymous_enums.to_a
