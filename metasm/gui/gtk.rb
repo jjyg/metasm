@@ -7,6 +7,7 @@
 require 'gtk2'
 require 'metasm/gui/gtk_listing'
 require 'metasm/gui/gtk_graph'
+require 'metasm/gui/gtk_decomp'
 
 module Metasm
 module GtkGui
@@ -62,8 +63,10 @@ class DisasmWidget < Gtk::VBox
 
 		@views << AsmListingWidget.new(@dasm, self)
 		@views << GraphViewWidget.new(@dasm, self)
+		@views << CdecompListingWidget.new(@dasm, self)
 		@notebook.append_page(@views[0], Gtk::Label.new('listing'))
 		@notebook.append_page(@views[1], Gtk::Label.new('graph'))
+		@notebook.append_page(@views[2], Gtk::Label.new('decomp'))
 
 		@notebook.focus_child = curview
 	end
@@ -169,7 +172,9 @@ class DisasmWidget < Gtk::VBox
 			end
 
 		when GDK_space
-			focus_addr(curview.current_address, 1-@notebook.page)
+			focus_addr(curview.current_address, ((@notebook.page == 1) ? 0 : 1))
+		when GDK_Tab
+			focus_addr(curview.current_address, ((@notebook.page == 2) ? 0 : 2))
 
 		when 0x20..0x7e # normal kbd (use ascii code)
 			# quiet
