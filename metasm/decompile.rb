@@ -381,6 +381,33 @@ class Decompiler
 					next
 				end
 
+				if di.opcode.name == 'mov'
+					a1, a2 = di.instruction.args
+					case a1
+					when Ia32::CtrlReg, Ia32::DbgReg, Ia32::SegReg
+						sz = a1.kind_of?(Ia32::SegReg) ? 16 : 32
+						if not @c_parser.toplevel.symbol["intrinsic_set_#{a1}"]
+							@c_parser.parse("void intrinsic_set_#{a1}(__int#{sz});")
+						end
+						f = @c_parser.toplevel.symbol["intrinsic_set_#{a1}"]
+						a2 = a2.symbolic
+						a2 = [a2, :&, 0xffff] if sz == 16
+						stmts << C::CExpression.new(f, :funcall, [ceb[a2]], f.type.type)
+						next
+					end
+					case a2
+					when Ia32::CtrlReg, Ia32::DbgReg, Ia32::SegReg
+						if not @c_parser.toplevel.symbol["intrinsic_get_#{a2}"]
+							sz = a2.kind_of?(Ia32::SegReg) ? 16 : 32
+							@c_parser.parse("__int#{sz} intrinsic_get_#{a2}(void);")
+						end
+						f = @c_parser.toplevel.symbol["intrinsic_get_#{a2}"]
+						t = f.type.type
+						stmts << C::CExpression.new(ceb[a1.symbolic], :'=', C::CExpression.new(f, :funcall, [], t), t)
+						next
+					end
+				end
+
 				case di.opcode.name
 				when 'ret'
 					commit[]
@@ -546,26 +573,10 @@ class Decompiler
 	def decompile_cexpr(e, scope)
 		case e
 		when Expression
-			if e.op == :'=' and e.rexpr.kind_of? Expression and e.rexpr.lexpr == e.lexpr
-				r = e.rexpr
-				r.op, r.rexpr = :-, -r.rexpr if r.op == :+ and r.rexpr.kind_of? Integer and r.rexpr < 0
-				case r.op
-				when :+; e = Expression[e.lexpr, :'+=', r.rexpr]	# cannot ++ until we have the type (ptr etc)
-				when :-; e = Expression[e.lexpr, :'-=', r.rexpr]
-				when :^; e = Expression[e.lexpr, :'^=', r.rexpr]
-				end
-			end
 			if e.op == :'=' and e.lexpr.kind_of? ::String and e.lexpr =~ /^dummy_metasm_/
 				decompile_cexpr(e.rexpr, scope)
-			elsif e.op == :'&' and e.rexpr == 0xffff_ffff
-				decompile_cexpr(e.lexpr, scope)
 			elsif e.op == :+ and e.rexpr.kind_of? ::Integer and e.rexpr < 0
 				decompile_cexpr(Expression[e.lexpr, :-, -e.rexpr], scope)
-			elsif (e.op == :== or e.op == :'!=') and e.rexpr == 0 and e.lexpr.kind_of? Expression and e.lexpr.op == :+
-				decompile_cexpr(Expression[e.lexpr.lexpr, e.op, [:-, e.lexpr.rexpr]].reduce, scope)
-			elsif (e.op == :== or e.op == :'!=') and e.rexpr == 0 and l = e.lexpr and l.kind_of? Expression and l.op == :& and
-					l.rexpr == 1 and l = l.lexpr and l.kind_of? Expression and l.op == :>> and l.rexpr == @dasm.cpu.size-1
-				decompile_cexpr(Expression[l.lexpr, ((e.op == :==) ? :>= : :<), 0].reduce, scope)
 			elsif e.lexpr
 				a = decompile_cexpr(e.lexpr, scope)
 				C::CExpression.new(a, e.op, decompile_cexpr(e.rexpr, scope), a.type)
@@ -576,7 +587,6 @@ class Decompiler
 				C::CExpression.new(nil, e.op, a, a.type)
 			end
 		when Indirection
-			# XXX int *p ; p + 4*z  =>  p + z
 			p = decompile_cexpr(e.target, scope)
 			p = C::CExpression.new(nil, nil, p, C::Pointer.new(C::BaseType.new("__int#{e.len*8}".to_sym)))
 			p = C::CExpression.new(nil, nil, p, p.type) if not p.rexpr.kind_of? C::CExpression
@@ -591,15 +601,20 @@ class Decompiler
 			if not s = scope.symbol_ancestors[name]
 				s = C::Variable.new
 				s.type = C::BaseType.new(:__int32)
-				if not e.kind_of? ::Symbol and not e.kind_of? ::String
-					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
-					s.type.qualifier = [:volatile]
-				end
 				if e.kind_of? ::String
 					# XXX may be string constant (as in printf("foo"))
 					s.storage = :static
-				elsif name[0,4] != 'var_' and name[0,4] != 'arg_'
+				elsif o = varname_to_stackoff(name)
+					case o % 4	# keep var aligned
+					when 1, 3; s.type = C::BaseType.new(:__int8)
+					when 2; s.type = C::BaseType.new(:__int16)
+					end
+				else
 					s.storage = :register
+				end
+				if not e.kind_of? ::Symbol and not e.kind_of? ::String
+					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
+					s.type.qualifier = [:volatile]
 				end
 				s.name = name
 				scope.symbol[s.name] = s
@@ -934,6 +949,7 @@ class Decompiler
 					propagate_type[o, t]
 				end
 			elsif not t0 = types[o] or better_type[t, t0]
+				next if (t.integral? or t.pointer?) and o % @c_parser.sizeof(nil, t) != 0	# keep vars aligned
 				types[o] = t
 				next if t == t0
 				propagate_type[o, t]
@@ -1087,18 +1103,27 @@ class Decompiler
 			vars[off]
 		}
 
+		maycast = lambda { |v, e|
+			if @c_parser.sizeof(v) != @c_parser.sizeof(e)
+				p = C::CExpression.new(nil, :&, v, C::Pointer.new(v.type))
+				p = C::CExpression.new(nil, nil, p, C::Pointer.new(e.type))
+				v = C::CExpression.new(nil, :*, p, e.type)
+			end
+			v
+		}
+
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
 			o = nil
 			if ce.op == :funcall
 				ce.rexpr.map! { |re|
-					if o = framepoff[re]; varat[o]
+					if o = framepoff[re]; maycast[varat[o], re]
 					elsif o = frameoff[re]; C::CExpression.new(nil, :&, varat[o], C::Pointer.new(varat[o].type))
 					else re
 					end
 				}
 			end
-			ce.lexpr = varat[o] if o = framepoff[ce.lexpr]
-			ce.rexpr = varat[o] if o = framepoff[ce.rexpr]
+			ce.lexpr = maycast[varat[o], ce.lexpr] if o = framepoff[ce.lexpr]
+			ce.rexpr = maycast[varat[o], ce.rexpr] if o = framepoff[ce.rexpr]
 			ce.lexpr = C::CExpression.new(nil, :&, varat[o], C::Pointer.new(varat[o].type)) if o = frameoff[ce.lexpr]
 			ce.rexpr = C::CExpression.new(nil, :&, varat[o], C::Pointer.new(varat[o].type)) if o = frameoff[ce.rexpr]
 		} }
@@ -1142,9 +1167,7 @@ class Decompiler
 				else
 					ce.rexpr = C::CExpression.new(ce.lexpr, :'->', m.name, m.type)
 				end
-				ce.lexpr = nil
-				ce.op = :&
-				ce.type = C::Pointer.new(m.type)
+				ce.lexpr, ce.op, ce.type = nil, :&, C::Pointer.new(m.type)
 			elsif [:+, :-, :'+=', :'-='].include? ce.op and ce.rexpr.kind_of? C::CExpression and ((not ce.rexpr.op and i = ce.rexpr.rexpr) or
 					(ce.rexpr.op == :* and i = ce.rexpr.lexpr and ((i.kind_of? C::CExpression and not i.op and i = i.rexpr) or true))) and
 					i.kind_of? ::Integer and psz = @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) and i % psz == 0
@@ -1169,13 +1192,6 @@ class Decompiler
 					ce.lexpr = C::CExpression.new(nil, nil, ce.lexpr, C::Pointer.new(C::BaseType.new(:__int8)))
 					ce.lexpr, ce.op, ce.rexpr, ce.type = nil, nil, C::CExpression.new(ce.lexpr, ce.op, ce.rexpr, ce.lexpr.type), ptype
 				end
-			end
-		} }
-
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
-			if ce.kind_of? C::CExpression and ce.op == :'=' and ce.lexpr.type.pointer? and ce.rexpr.type != ce.lexpr.type
-				ce.rexpr = C::CExpression.new(nil, nil, ce.rexpr, ce.lexpr.type)
-				ce.type = ce.lexpr.type
 			end
 		} }
 	end
@@ -1296,7 +1312,9 @@ class Decompiler
 			end
 
 			# char x; x & 255 => x
-			if ce.op == :& and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
+			if ce.op == :& and ce.lexpr and (ce.lexpr.type.integral? or ce.lexpr.type.pointer?) and ce.rexpr.kind_of? C::CExpression and
+					not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer and m = (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1 and
+					ce.rexpr.rexpr & m == m
 				ce.lexpr, ce.op, ce.rexpr, ce.type = nil, nil, ce.lexpr, ce.lexpr.type
 			end
 
@@ -1727,6 +1745,7 @@ class Decompiler
 					# useless cast
 					st.rexpr = st.rexpr.rexpr while st.rexpr.kind_of? C::CExpression and not st.rexpr.op
 
+
 					scope.statements[sti] = st.rexpr
 
 					if not sideeffect(st.rexpr, scope)
@@ -1740,7 +1759,7 @@ class Decompiler
 		end
 
 		used = {}
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
 			# redo some simplification that may become available after variable propagation
 			if ce.op == :& and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
 				ce.lexpr, ce.op, ce.rexpr, ce.type = nil, nil, ce.lexpr, ce.lexpr.type
@@ -1752,6 +1771,13 @@ class Decompiler
 
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and ce.type == ce.rexpr.type
 				ce.lexpr, ce.op, ce.rexpr = ce.rexpr.lexpr, ce.rexpr.op, ce.rexpr.rexpr
+			end
+
+			# a & 3 & 1
+			while (ce.op == :& or ce.op == :|) and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer and
+					ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == ce.op and ce.lexpr.lexpr and
+					ce.lexpr.rexpr.kind_of? C::CExpression and ce.lexpr.rexpr.rexpr.kind_of? ::Integer
+				ce.lexpr, ce.rexpr.rexpr = ce.lexpr.lexpr, ce.lexpr.rexpr.rexpr.send(ce.op, ce.rexpr.rexpr)
 			end
 
 			# x = x | 4 => x |= 4
@@ -1766,15 +1792,15 @@ class Decompiler
 			end
 
 			# --x+1 => x--
-			if (ce.op == :+ or ce.op == :-) and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == {:+ => :'--', :- => :'++'}[ce.op] and ce.lexpr.rexpr and
-					ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
+			if (ce.op == :+ or ce.op == :-) and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == {:+ => :'--', :- => :'++'}[ce.op] and
+					ce.lexpr.rexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
 				ce.lexpr, ce.op, ce.rexpr = ce.lexpr.rexpr, ce.lexpr.op, nil
 			end
 
 			# remove unreferenced local vars
-			# XXX :funcall, [Variable] => not walked
 			used[ce.rexpr.name] = true if ce.rexpr.kind_of? C::Variable
 			used[ce.lexpr.name] = true if ce.lexpr.kind_of? C::Variable
+			ce.rexpr.each { |v| used[v.name] = true if v.kind_of? C::Variable } if ce.rexpr.kind_of?(::Array)
 		} }
 		scope.statements.delete_if { |sm| sm.kind_of? C::Declaration and not used[sm.var.name] }
 		scope.symbol.delete_if { |n, v| not used[n] }
@@ -1808,6 +1834,8 @@ class Decompiler
 			when C::While, C::DoWhile
 				yield scope.test
 				decompile_walk(scope.body, post, &b)
+			when C::Return
+				yield scope.value
 			end
 		end
 	end
