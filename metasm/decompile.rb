@@ -479,7 +479,7 @@ class Decompiler
 					end
 					# XXX bouh
 					# TODO mark instructions for which bt_binding is accurate
-				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq', 'leave'
+				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq', 'leave', 'nop'
 					di.backtrace_binding.each { |k, v|
 						if k.kind_of? ::Symbol or (k.kind_of? Indirection and Expression[k.target, :-, :esp].reduce.kind_of? ::Integer)
 							ops << [k, v]
@@ -535,6 +535,11 @@ class Decompiler
 					port = di.instruction.args.grep(Expression).first || :edx
 					f = @c_parser.toplevel.symbol["intrinsic_in#{sz}"]
 					stmts << C::CExpression.new(ceb[:eax], :'=', C::CExpression.new(f, :funcall, [ceb[port]], f.type.type), f.type.type)
+				when 'sti', 'cli'
+					if not @c_parser.toplevel.symbol["intrinsic_#{di.opcode.name}"]
+						@c_parser.parse("void intrinsic_#{di.opcode.name}(void);")
+					end
+					stmts << C::CExpression.new(@c_parser.toplevel.symbol["intrinsic_#{di.opcode.name}"], :funcall, [], C::BaseType.new(:void))
 				else
 					commit[]
 					stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil)
