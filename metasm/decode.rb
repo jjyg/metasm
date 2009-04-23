@@ -2194,5 +2194,10 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 		edata.ptr
 	end
+
+	def decompile(addr)
+		parse_c '' if not c_parser
+		Decompiler.new(self).decompile_func(addr)
+	end
 end
 end
