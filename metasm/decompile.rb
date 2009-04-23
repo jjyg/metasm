@@ -232,17 +232,23 @@ class Decompiler
 	# give a name to a stackoffset (relative to start of func)
 	# 4 => :arg_0, -8 => :var_4 etc
 	def stackoff_to_varname(off)
-		if off > 0
+		if off > @dasm.cpu.size/8
 			'arg_%X' % ( off-@dasm.cpu.size/8)	#  4 => arg_0,  8 => arg_4..
+		elsif off > 0
+			'arg_0%X' % off
 		elsif off == 0
 			'retaddr'
-		else
+		elsif off < -@dasm.cpu.size/8
 			'var_%X' % (-off-@dasm.cpu.size/8)	# -4 => var_0, -8 => var_4..
+		else
+			'var_0%X' % -off
 		end.to_sym
 	end
 
 	def varname_to_stackoff(var)
 		case var.to_s
+		when /^arg_0(.*)/;  $1.to_i(16)
+		when /^var_0(.*)/; -$1.to_i(16)
 		when /^arg_(.*)/;  $1.to_i(16) + @dasm.cpu.size/8
 		when /^var_(.*)/; -$1.to_i(16) - @dasm.cpu.size/8
 		when 'retaddr'; 0
@@ -283,7 +289,7 @@ class Decompiler
 				# things that are needed by the subfunction
 				args = t.type.args.map { |a| a.type }
 				if t.attributes.to_a.include? 'fastcall'
-					deps_subfunc[b] |= [:ecx, :edx]
+					deps_subfunc[b] |= [:ecx, :edx][0, args.length]
 					# XXX the two first args with size <= int are not necessarily nr 0 and nr 1..
 					args.shift ; args.shift
 				end
@@ -421,15 +427,17 @@ class Decompiler
 						args_todo = t.type.args.dup
 						args = []
 						if t.attributes.to_a.include? 'fastcall'	# XXX DRY
-							a = args_todo.shift
-							mask = (1 << (8*@c_parser.sizeof(a))) - 1
-							args << ceb[:ecx, :&, mask]
-							binding.delete :ecx
+							if a = args_todo.shift
+								mask = (1 << (8*@c_parser.sizeof(a))) - 1
+								args << ceb[:ecx, :&, mask]
+								binding.delete :ecx
+							end
 
-							a = args_todo.shift
-							mask = (1 << (8*@c_parser.sizeof(a))) - 1	# char => dl
-							args << ceb[:edx, :&, mask]
-							binding.delete :edx
+							if a = args_todo.shift
+								mask = (1 << (8*@c_parser.sizeof(a))) - 1	# char => dl
+								args << ceb[:edx, :&, mask]
+								binding.delete :edx
+							end
 						end
 						args_todo.each {
 							if stackoff.kind_of? Integer
