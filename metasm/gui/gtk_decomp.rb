@@ -8,7 +8,7 @@ require 'gtk2'
 module Metasm
 module GtkGui
 class CdecompListingWidget < Gtk::DrawingArea
-	attr_accessor :hl_word, :curfunc
+	attr_accessor :hl_word, :curaddr
 
 	# construction method
 	def initialize(dasm, parent_widget)
@@ -19,7 +19,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 		@layout = Pango::Layout.new Gdk::Pango.context
 		@color = {}
 		@line_text = []
-		@curfunc = nil
+		@curaddr = nil
 
 		super()
 
@@ -34,6 +34,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			when Gdk::Event::Type::BUTTON_PRESS
 				case ev.button
 				when 1; click(ev)
+				when 3; rightclick(ev)
 				end
 			when Gdk::Event::Type::BUTTON2_PRESS
 				case ev.button
@@ -64,10 +65,28 @@ class CdecompListingWidget < Gtk::DrawingArea
 		}
 	end
 
+	def curfunc
+		@dasm.c_parser and @dasm.c_parser.toplevel.symbol[@curaddr]
+	end
+
 	def click(ev)
 		@caret_x = (ev.x-1).to_i / @font_width
 		@caret_y = ev.y.to_i / @font_height
 		update_caret
+	end
+
+	def rightclick(ev)
+		click(ev)
+		if @dasm.c_parser and @dasm.c_parser.toplevel.symbol[@hl_word]
+			popup = Gtk::Window.new
+			popup.title = "metasm dasm: #{@hl_word}"
+			popwidg = DisasmWidget.new(@dasm, @parent_widget.entrypoints)
+			popwidg.terminate
+			popup.add popwidg
+			popup.set_default_size 600, 300
+			popup.show_all
+			popwidg.focus_addr @hl_word, 2
+		end
 	end
 
 	def doubleclick(ev)
@@ -98,7 +117,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			x += @layout.pixel_size[0]
 		}
 
-		if @dasm.c_parser and f = @dasm.c_parser.toplevel.symbol[@curfunc] and f.initializer.kind_of? C::Block
+		if f = curfunc and f.initializer.kind_of? C::Block
 			keyword_re = /\b(#{C::Keyword.keys.join('|')})\b/
 			intrinsic_re = /\b(intrinsic_\w+)\b/
 			lv = f.initializer.symbol.keys
@@ -172,8 +191,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@caret_x = 80
 			update_caret
 		when GDK_n
-			f = @dasm.c_parser.toplevel.symbol[@curfunc].initializer
-			n = hl_word
+			f = curfunc.initializer
+			n = @hl_word
 			if f.symbol[n] or f.outer.symbol[n]
 				@parent_widget.inputbox("new name for #{n}") { |v|
 					next if v !~ /^[a-z_][a-z_0-9]*$/i
@@ -182,7 +201,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 					elsif f.outer.symbol[n]
 						@dasm.rename_label(n, v)
 						s = f.outer.symbol[v] = f.outer.symbol.delete(n)
-						@curfunc = v if @curfunc == n
+						@curaddr = v if @curaddr == n
 					end
 					s.name = v
 					redraw
@@ -196,7 +215,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 	end
 
 	def get_cursor_pos
-		[@curfunc, @caret_x, @caret_y]
+		[@curaddr, @caret_x, @caret_y]
 	end
 
 	def set_cursor_pos(p)
@@ -243,6 +262,13 @@ class CdecompListingWidget < Gtk::DrawingArea
 	# focus on addr
 	# returns true on success (address exists & decompiled)
 	def focus_addr(addr)
+		if @dasm.c_parser and @dasm.c_parser.toplevel.symbol[addr]
+			@curaddr = addr
+			@caret_x = @caret_y = 0
+			redraw
+			return true
+		end
+
 		# scan up to func start/entrypoint
 		todo = [addr]
 		done = []
@@ -258,27 +284,27 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@dasm.decoded[addr].block.each_from_samefunc(@dasm) { |na| empty = false ; todo << na }
 			break if empty
 		end
-		return true if @curfunc == addr
+		return true if @curaddr == addr
 		return if not l = @dasm.prog_binding.index(addr)
 		if not @dasm.c_parser or not f = @dasm.c_parser.toplevel.symbol[l]
 			@decompiling ||= false
 			return false if @decompiling
 			@decompiling = true
-			@curfunc = l
+			@curaddr = l
 			redraw
 			@dasm.decompile(addr)
 			@decompiling = false
 			f = @dasm.c_parser.toplevel.symbol[l]
 		end
 		return if not f or not f.type.kind_of? C::Function
-		@curfunc = l
+		@curaddr = l
 		@caret_x = @caret_y = 0
 		redraw
 		true
 	end
 
 	def redraw
-		if @dasm.c_parser and f = @dasm.c_parser.toplevel.symbol[@curfunc]
+		if f = curfunc
 			@line_text = f.dump_def(@dasm.c_parser.toplevel)[0].map { |l| l.gsub("\t", ' '*8) }
 		else
 			@line_text = ['please wait']
@@ -288,7 +314,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 
 	# returns the address of the data under the cursor
 	def current_address
-		@curfunc
+		@curaddr
 	end
 
 	def gui_update
