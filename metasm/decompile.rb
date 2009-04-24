@@ -155,9 +155,6 @@ class Decompiler
 	def decompile_makestackvars(funcstart, blocks)
 		blockstart = nil
 		tovar = lambda { |di, e, i_s|
-			# need to backtrace every single reg ? must limit backtrace (maxdepth/complexity)
-			# create an addr_binding[allregs] at each block start ? ondemand ?
-			# we backtrace only to check for :esp, we could forward trace it instead once and for all ?
 			case e
 			when Expression; Expression[tovar[di, e.lexpr, i_s], e.op, tovar[di, e.rexpr, i_s]].reduce
 			when Indirection; Indirection[tovar[di, e.target, i_s], e.len]
@@ -165,7 +162,10 @@ class Decompiler
 			when ::Symbol
 				vals = @dasm.backtrace(e, di.address, :snapshot_addr => blockstart, :include_start => i_s)
 				# backtrace only to blockstart first
-				if vals.length == 1 and ee = vals.first and ee.kind_of? Expression and ee.externals == [:frameptr]
+				if vals.length == 1 and ee = vals.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
+						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer) or
+						(not ee.lexpr and ee.op == :+ and ee.rexpr.kind_of? Indirection and eep = ee.rexpr.pointer and
+						(eep == Expression[:frameptr] or (eep.lexpr == :frameptr and eep.op == :+ and eep.rexpr.kind_of? ::Integer))))
 					ee
 				else
 				# fallback on full run (could restart from blockstart with ee, but may reevaluate addr_binding..
@@ -409,7 +409,8 @@ class Decompiler
 						end
 						f = @c_parser.toplevel.symbol["intrinsic_get_#{a2}"]
 						t = f.type.type
-						stmts << C::CExpression.new(ceb[a1.symbolic], :'=', C::CExpression.new(f, :funcall, [], t), t)
+						binding.delete a1.symbolic
+						stmts << C::CExpression.new(ce[a1.symbolic], :'=', C::CExpression.new(f, :funcall, [], t), t)
 						next
 					end
 				end
@@ -417,7 +418,7 @@ class Decompiler
 				case di.opcode.name
 				when 'ret'
 					commit[]
-					stmts << C::Return.new(scope.symbol['eax'])
+					stmts << C::Return.new(ceb[:eax])
 				when 'call'	# :saveip
 					n = backtrace_target(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address)
 					args = []
@@ -473,6 +474,7 @@ class Decompiler
 						commit[]
 						fc = C::CExpression.new(fptr, :funcall, args, proto.type)
 					end
+					binding.delete :eax
 					stmts << C::CExpression.new(ce[:eax], :'=', fc, fc.type)
 				when 'jmp'
 					if di.block.to_normal.to_a.length > 1
@@ -489,7 +491,7 @@ class Decompiler
 					# TODO mark instructions for which bt_binding is accurate
 				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq', 'leave', 'nop'
 					di.backtrace_binding.each { |k, v|
-						if k.kind_of? ::Symbol or (k.kind_of? Indirection and Expression[k.target, :-, :esp].reduce.kind_of? ::Integer)
+						if k.kind_of? ::Symbol
 							ops << [k, v]
 						else
 							stmts << ceb[k, :'=', v]
@@ -542,7 +544,8 @@ class Decompiler
 					end
 					port = di.instruction.args.grep(Expression).first || :edx
 					f = @c_parser.toplevel.symbol["intrinsic_in#{sz}"]
-					stmts << C::CExpression.new(ceb[:eax], :'=', C::CExpression.new(f, :funcall, [ceb[port]], f.type.type), f.type.type)
+					binding.delete :eax
+					stmts << C::CExpression.new(ce[:eax], :'=', C::CExpression.new(f, :funcall, [ceb[port]], f.type.type), f.type.type)
 				when 'sti', 'cli'
 					if not @c_parser.toplevel.symbol["intrinsic_#{di.opcode.name}"]
 						@c_parser.parse("void intrinsic_#{di.opcode.name}(void);")
@@ -1686,7 +1689,7 @@ class Decompiler
 							done << i
 							next if not nnt = scope.statements[i]
 							trivial = false if nnt.kind_of? C::If
-							reused = true if stmt_access(nnt, var, :read)
+							reused = true if stmt_access(nnt, var, :access)
 							break if reused
 							update_todo[nnt, i] if not stmt_access(nnt, var, :write)
 						end
