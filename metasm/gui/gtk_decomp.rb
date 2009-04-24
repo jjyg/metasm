@@ -8,7 +8,7 @@ require 'gtk2'
 module Metasm
 module GtkGui
 class CdecompListingWidget < Gtk::DrawingArea
-	attr_accessor :hl_word
+	attr_accessor :hl_word, :curfunc
 
 	# construction method
 	def initialize(dasm, parent_widget)
@@ -50,7 +50,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			  :red => 'f00', :darkred => '800', :palered => 'fcc',
 			  :green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
 			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
+			  :yellow => 'cc0', :darkyellow => '660', :paleyellow => 'ff0',
 			}.each { |tag, val|
 				@color[tag] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
 			}
@@ -59,7 +59,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 
 			# map functionnality => color
 			set_color_association :text => :black, :keyword => :blue, :caret => :black,
-			  :bg => :white, :hl_word => :palered
+			  :bg => :white, :hl_word => :palered, :localvar => :darkred, :globalvar => :darkgreen,
+			  :intrinsic => :darkyellow
 		}
 	end
 
@@ -80,8 +81,6 @@ class CdecompListingWidget < Gtk::DrawingArea
 		a = allocation
 		w_w, w_h = a.x + a.width, a.y + a.height
 
-		# current line text buffer
-		fullstr = ''
 		# current line number
 		line = 0
 		# current cursor position
@@ -93,16 +92,48 @@ class CdecompListingWidget < Gtk::DrawingArea
 		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
 			next if y >= w_h or x >= w_w
-			fullstr << str
 			@layout.text = str
 			gc.set_foreground @color[color]
 			w.draw_layout(gc, x, y, @layout)
 			x += @layout.pixel_size[0]
 		}
 
+		if @dasm.c_parser and f = @dasm.c_parser.toplevel.symbol[@curfunc] and f.initializer.kind_of? C::Block
+			keyword_re = /\b(#{C::Keyword.keys.join('|')})\b/
+			intrinsic_re = /\b(intrinsic_\w+)\b/
+			lv = f.initializer.symbol.keys
+			lv << '00' if lv.empty?
+			localvar_re = /\b(#{lv.join('|')})\b/
+			globalvar_re = /\b(#{f.initializer.outer.symbol.keys.join('|')})\b/
+		end
+
 		# draw text until screen is full
 		while y < w_h and l = @line_text[line]
-			render[l, :text]
+			if f
+				while l and l.length > 0
+					if (i_k = (l =~ keyword_re)) == 0
+						m = $1.length
+						col = :keyword
+					elsif (i_i = (l =~ intrinsic_re)) == 0
+						m = $1.length
+						col = :intrinsic
+					elsif (i_l = (l =~ localvar_re)) == 0
+						m = $1.length
+						col = :localvar
+					elsif (i_g = (l =~ globalvar_re)) == 0
+						m = $1.length
+						col = :globalvar
+					else
+						m = ([i_k, i_i, i_l, i_g, l.length] - [nil, false]).min
+						col = :text
+					end
+					render[l[0, m], col]
+					l = l[m..-1]
+				end
+			else
+				render[l, :text]
+			end
+
 			y += @layout.pixel_size[1]
 			x = 0
 			line += 1
@@ -141,7 +172,23 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@caret_x = 80
 			update_caret
 		when GDK_n
-			@parent_widget.messagebox('real soon!')
+			f = @dasm.c_parser.toplevel.symbol[@curfunc].initializer
+			n = hl_word
+			if f.symbol[n] or f.outer.symbol[n]
+				@parent_widget.inputbox("new name for #{n}") { |v|
+					next if v !~ /^[a-z_][a-z_0-9]*$/i
+					if f.symbol[n]
+						s = f.symbol[v] = f.symbol.delete(n)
+					elsif f.outer.symbol[n]
+						@dasm.rename_label(n, v)
+						s = f.outer.symbol[v] = f.outer.symbol.delete(n)
+						@curfunc = v if @curfunc == n
+					end
+					s.name = v
+					redraw
+				}
+			end
+		# TODO retype a var & propagate 
 		else
 			return @parent_widget.keypress(ev)
 		end
@@ -196,23 +243,31 @@ class CdecompListingWidget < Gtk::DrawingArea
 	# focus on addr
 	# returns true on success (address exists & decompiled)
 	def focus_addr(addr)
-		addr = @dasm.normalize(addr)
-		return if not @dasm.decoded[addr].kind_of? DecodedInstruction
 		# scan up to func start/entrypoint
 		todo = [addr]
 		done = []
 		ep = @dasm.entrypoints.inject({}) { |h, e| h.update @dasm.normalize(e) => true }
 		while addr = todo.pop
-			next if done.include?(addr) or not @dasm.decoded[addr].kind_of? DecodedInstruction
+			addr = @dasm.normalize(addr)
+			next if not @dasm.decoded[addr].kind_of? DecodedInstruction
 			addr = @dasm.decoded[addr].block.address
+			next if done.include?(addr) or not @dasm.decoded[addr].kind_of? DecodedInstruction
 			done << addr
 			break if @dasm.function[addr] or ep[addr]
-			@dasm.decoded[addr].block.each_from_samefunc(@dasm) { |na| todo << na }
+			empty = true
+			@dasm.decoded[addr].block.each_from_samefunc(@dasm) { |na| empty = false ; todo << na }
+			break if empty
 		end
 		return true if @curfunc == addr
 		return if not l = @dasm.prog_binding.index(addr)
 		if not @dasm.c_parser or not f = @dasm.c_parser.toplevel.symbol[l]
+			@decompiling ||= false
+			return false if @decompiling
+			@decompiling = true
+			@curfunc = l
+			redraw
 			@dasm.decompile(addr)
+			@decompiling = false
 			f = @dasm.c_parser.toplevel.symbol[l]
 		end
 		return if not f or not f.type.kind_of? C::Function
@@ -223,9 +278,12 @@ class CdecompListingWidget < Gtk::DrawingArea
 	end
 
 	def redraw
-		return if not @dasm.c_parser or not f = @dasm.c_parser.toplevel.symbol[@curfunc]
-		@line_text = f.dump_def(@dasm.c_parser.toplevel)[0].map { |l| l.gsub("\t", ' '*8) }
-		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false
+		if @dasm.c_parser and f = @dasm.c_parser.toplevel.symbol[@curfunc]
+			@line_text = f.dump_def(@dasm.c_parser.toplevel)[0].map { |l| l.gsub("\t", ' '*8) }
+		else
+			@line_text = ['please wait']
+		end
+		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
 	end
 
 	# returns the address of the data under the cursor

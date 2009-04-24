@@ -363,6 +363,7 @@ class ListWindow < Gtk::Dialog
 	# the first array is the column names
 	# each item double-clicked yields the block with the selected iterator
 	def initialize(owner, title, list)
+		# TODO clickable column headers
 		owner ||= Gtk::Window.toplevels.first
 		super(title, owner, Gtk::Dialog::DESTROY_WITH_PARENT)
 
@@ -394,7 +395,7 @@ class ListWindow < Gtk::Dialog
 
 		remove vbox
 		add Gtk::ScrolledWindow.new.add(treeview)
-		toplevel.set_default_size 200, 100
+		toplevel.set_default_size cols.length*120, 400
 
 		show_all
 		present
@@ -419,7 +420,7 @@ class MainWindow < Gtk::Window
 		end
 		@dasm_widget = DisasmWidget.new(dasm, ep)
 		add @dasm_widget
-		set_default_size 700, 500
+		set_default_size 700, 600
 		show_all
 	end
 end
