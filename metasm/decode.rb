@@ -1203,9 +1203,10 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					f_loopdetect ||= w_loopdetect
 					# only count non-trivial paths in loopdetect (ignore linear links)
 					add_detect = [[f_obj, f_addr, f_type]]
-					add_detect = [] if w_di.block.from_subfuncret.to_a == [] and w_di.block.from_normal == [f_addr] and
-				       			@decoded[f_addr].kind_of? DecodedInstruction and tmp = @decoded[f_addr].block and
-							tmp.to_normal == [w_di.address] and tmp.to_subfuncret.to_a == []
+					add_detect = [] if @decoded[f_addr].kind_of? DecodedInstruction and tmp = @decoded[f_addr].block and
+							(w_di.block.from_subfuncret.to_a == [] and w_di.block.from_normal == [f_addr] and
+							 tmp.to_normal == [w_di.address] and tmp.to_subfuncret.to_a == []) or
+							(w_di.block.from_subfuncret == [f_addr] and tmp.to_subfuncret == [w_di.address])
 					todo << [f_obj, f_addr, f_type, f_loopdetect + add_detect ]
 				}
 				yield :end, w_obj, :addr => w_addr, :loopdetect => w_loopdetect if not hadsomething
