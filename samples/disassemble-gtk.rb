@@ -44,31 +44,32 @@ require 'metasm/gui/gtk'	# windows version of gtk.rb raises on unknown cli args.
 
 exename = ARGV.shift
 
-if not exename
-	w = Metasm::GtkGui::OpenFile.new(nil, 'chose target binary') { |t| exename = t }
-	w.signal_connect('destroy') { Gtk.main_quit }
-	Gtk.main
-	exit if not exename
-end
-
 if exename =~ /^live:(.*)/
 	raise 'no such live target' if not target = Metasm::OS.current.find_process($1)
 	p target if $VERBOSE
 	exe = Metasm::Shellcode.decode(target.memory, Metasm::Ia32.new)
-else
+elsif exename
 	exe = Metasm::AutoExe.orshellcode(Metasm::Ia32.new).decode_file(exename)
 end
-dasm = exe.init_disassembler
 
-dasm.parse_c_file opts[:cheader] if opts[:cheader]
-dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
-dasm.debug_backtrace = true if opts[:debugbacktrace]
+if exe
+	dasm = exe.init_disassembler
+
+	dasm.parse_c_file opts[:cheader] if opts[:cheader]
+	dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
+	dasm.debug_backtrace = true if opts[:debugbacktrace]
+end
+
 opts[:hookfile].to_a.each { |f| eval File.read(f) }
 opts[:hookstr].to_a.each { |f| eval f }
-
 ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
 
-w = Metasm::GtkGui::MainWindow.new("#{exename} - metasm disassembler").display(dasm, ep)
-w.dasm_widget.focus_addr ep.first if not ep.empty?
-w.signal_connect('destroy') { Gtk.main_quit }
+w = Metasm::GtkGui::MainWindow.new("#{exename} - metasm disassembler")
+
+if dasm
+	w.display(dasm, ep)
+	w.dasm_widget.focus_addr ep.first if not ep.empty?
+else
+	w.show_all
+end
 Gtk.main

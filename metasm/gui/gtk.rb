@@ -344,11 +344,30 @@ class OpenFile < Gtk::FileChooserDialog
 		signal_connect('response') { |win, id|
 			if id == Gtk::Dialog::RESPONSE_ACCEPT
 				file = filename
-				destroy
-				yield file
-			else
-				destroy
 			end
+			destroy
+			yield file if file
+			true
+		}
+
+		show_all
+		present
+	end
+end
+
+class SaveFile < Gtk::FileChooserDialog
+	# shows an asynchronous FileChooser window, yields the chosen filename
+	# TODO save last path
+	def initialize(owner, title)
+		owner ||= Gtk::Window.toplevels.first
+		super(title, owner, Gtk::FileChooser::ACTION_SAVE, nil,
+		[Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_CANCEL], [Gtk::Stock::SAVE, Gtk::Dialog::RESPONSE_ACCEPT])
+		signal_connect('response') { |win, id|
+			if id == Gtk::Dialog::RESPONSE_ACCEPT
+				file = filename
+			end
+			destroy
+			yield file if file
 			true
 		}
 
@@ -406,22 +425,125 @@ class ListWindow < Gtk::Dialog
 end
 
 class MainWindow < Gtk::Window
-	attr_accessor :dasm_widget
+	attr_accessor :dasm_widget, :menu
 	def initialize(title = 'metasm disassembler')
 		super()
+
+		(@@mainwindow_list ||= []) << self
+		signal_connect('destroy') {
+			# TODO kill all my popups
+			@@mainwindow_list.delete self
+			Gtk.main_quit if @@mainwindow_list.empty?
+		}
+
 		self.title = title
 		@dasm_widget = nil
+		build_menu
+		@vbox = Gtk::VBox.new
+		add @vbox
+		@vbox.add @menu, 'expand' => false
+		set_default_size 700, 600
 	end
 
 	def display(dasm, ep=[])
 		if @dasm_widget
 			@dasm_widget.terminate
-			remove @dasm_widget
+			@vbox.remove @dasm_widget
 		end
 		@dasm_widget = DisasmWidget.new(dasm, ep)
-		add @dasm_widget
-		set_default_size 700, 600
+		@vbox.add @dasm_widget
 		show_all
+	end
+
+	def build_menu
+		@menu = Gtk::MenuBar.new
+		filemenu = Gtk::Menu.new
+
+		addsubmenu(filemenu, 'open') {
+			OpenFile.new(self, 'chose target binary') { |exename|
+				exe = Metasm::AutoExe.orshellcode(Metasm::Ia32.new).decode_file(exename)
+				(@dasm_widget ? MainWindow.new : self).display(exe.init_disassembler)
+			}
+		}
+
+		addsubmenu(filemenu, 'open live') {
+			InputBox.new(self, 'chose target') { |target|
+				if not target = Metasm::OS.current.find_process(target)
+					MessageBox.new(self, 'no such target')
+				else
+					exe = Metasm::Shellcode.decode(target.memory, Metasm::Ia32.new)
+					(@dasm_widget ? MainWindow.new : self).display(exe.init_disassembler)
+				end
+			}
+		}
+
+		addsubmenu(filemenu, 'close') {
+			if @dasm_widget
+				@dasm_widget.terminate
+				@vbox.remove @dasm_widget
+				@dasm_widget = nil
+			end
+		}
+
+		if false
+			# TODO patch Dasm
+		addsubmenu(filemenu, 'save map') {
+			SaveFile.new(self, 'chose map file') { |file|
+				File.open(file, 'w') { |fd|
+					fd.puts @dasm_widget.dasm.save_map
+				} if @dasm_widget
+			} if @dasm_widget
+		}
+		addsubmenu(filemenu, 'load map') {
+			OpenFile.new(self, 'chose map file') { |file|
+				@dasm_widget.dasm.load_map(File.read(file)) if @dasm_widget
+			} if @dasm_widget
+		}
+		end
+
+		addsubmenu(filemenu, 'save C') {
+			SaveFile.new(self, 'chose C file') { |file|
+				File.open(file, 'w') { |fd|
+					fd.puts @dasm_widget.dasm.c_parser
+				} if @dasm_widget
+			} if @dasm_widget
+		}
+		addsubmenu(filemenu, 'load C') {
+			OpenFile.new(self, 'chose C file') { |file|
+				@dasm_widget.dasm.parse_c(File.read(file)) if @dasm_widget
+			} if @dasm_widget
+		}
+		# 'reset C' ?
+
+		# TODO save (map + comments + ...)
+
+		addsubmenu(filemenu, 'exit') { destroy } # post_quit_message ?
+
+		filemenu_i = Gtk::MenuItem.new('file')
+		filemenu_i.set_submenu filemenu
+		@menu.append filemenu_i
+
+		# 'run ruby code'
+		# 'load ruby plugin'
+		# 'list functions'
+		# 'list labels'
+		# 'start dasm here'
+		# options -> maxbacktrace(_data), change CPU..
+		# factorize headers
+	end
+
+	def addsubmenu(menu, name, &action)
+		item = Gtk::MenuItem.new(name)
+		item.signal_connect('activate') { protect { action.call } }
+		menu.append item
+	end
+
+	def protect
+		begin
+			yield
+		rescue Object
+			MessageBox.new(self, $!.message, $!.class)
+		end
 	end
 end
 
