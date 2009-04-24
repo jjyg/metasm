@@ -1136,7 +1136,7 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def current_address
-		@caret_box[:line_address][@caret_y] if @caret_box
+		@caret_box ? @caret_box[:line_address][@caret_y] : @curcontext.root_addrs.first
 	end
 end
 end
