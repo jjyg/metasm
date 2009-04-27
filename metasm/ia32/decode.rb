@@ -1033,7 +1033,7 @@ class Ia32
 				else bt[finish, reg, false]
 				end
 			next if val == Expression[reg]
-			val = Expression[val, :&, (1<<@size)-1].reduce
+			val = Expression[val, :&, 0xffff_ffff].reduce #( 1<<@size)-1  # 16bit code may use e.g. edi
 			binding[reg] = Expression[val]
 		}
 
