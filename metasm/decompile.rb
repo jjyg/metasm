@@ -14,6 +14,7 @@ class Decompiler
 	end
 
 	# decompile a function, decompiling subfunctions as needed
+	# may return :restart, which means that the decompilation should restart from the entrypoint (and bubble up) (eg a new codepath is found which may changes dependency in blocks etc)
 	def decompile_func(entry)
 		entry = @dasm.normalize entry
 		return if not @dasm.decoded[entry]
@@ -32,6 +33,7 @@ class Decompiler
 		@c_parser.toplevel.symbol[func.name] = func
 		puts "decompiling #{Expression[entry]}" if $VERBOSE
 
+		while catch(:restart) {
 		# find decodedinstruction blocks constituing the function
 		# TODO merge sequencial blocks with useless jmp (poeut) to improve dependency graph later
 		myblocks = decompile_func_listblocks(entry)
@@ -109,8 +111,13 @@ class Decompiler
 		}
 
 		decompile_optimize_ctrl(scope)
+		} == :restart
+			retval = :restart
+		end
 
 		@c_parser.toplevel.statements << C::Declaration.new(func)
+
+		retval
 	end
 
 	# return an array of [address of block start, list of block to]]
@@ -140,7 +147,8 @@ class Decompiler
 				if @dasm.function[ta] and type != :subfuncret	# and di.block.to_subfuncret # XXX __attribute__((noreturn)) ?
 					f = dasm.auto_label_at(ta, 'func')
 					ta = dasm.normalize($1) if f =~ /^thunk_(.*)/
-					decompile_func(ta) if ta != entry
+					ret = decompile_func(ta) if ta != entry
+					throw :restart, :restart if ret == :restart
 				else
 					@dasm.auto_label_at(ta, 'label') if blocks.find { |aa, at| aa == ta }
 					blocks.last[1] |= [ta]
@@ -276,6 +284,7 @@ class Decompiler
 					else a |= Expression[k].externals	# if dword [eax] <- 42, eax is read
 					end
 				}
+				a << :eax if di.opcode.name == 'ret'
 				
 				deps_r[b] |= a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - deps_w[b]
 				deps_w[b] |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
@@ -343,14 +352,9 @@ class Decompiler
 			# reg binding (reg => value, values.externals = regs at block start)
 			binding = {}
 			# Expr => CExpr
-			ce  = lambda { |*e|
-				e = Expression[Expression[*e].reduce]
-				decompile_cexpr(e, scope)
-			}
+			ce  = lambda { |*e| decompile_cexpr(Expression[Expression[*e].reduce], scope) }
 			# Expr => Expr.bind(binding) => CExpr
 			ceb = lambda { |*e| ce[Expression[*e].bind(binding)] }
-			# shortcut to global funcname => Var (ext functions, e.g. malloc)
-			ts = @c_parser.toplevel.symbol
 
 			# dumps a CExprs that implements an assignment to a reg (uses ops[], patches op => [reg, nil])
 			commit = lambda {
@@ -455,15 +459,15 @@ class Decompiler
 					#next if not di.block.to_subfuncret
 
 					if n.kind_of? ::String
-						if not ts[n]
+						if not f = @c_parser.toplevel.symbol[n]
 							# internal functions are predeclared, so this one is extern
-							ts[n] = C::Variable.new
-							ts[n].name = n
-							ts[n].type = C::Function.new C::BaseType.new(:int)
-							@c_parser.toplevel.statements << C::Declaration.new(ts[n])
+							f = @c_parser.toplevel.symbol[n] = C::Variable.new
+							f.name = n
+							f.type = C::Function.new C::BaseType.new(:int)
+							@c_parser.toplevel.statements << C::Declaration.new(f)
 						end
 						commit[]
-						fc = C::CExpression.new(ts[n], :funcall, args, ts[n].type.type)
+						fc = C::CExpression.new(f, :funcall, args, f.type.type)
 					else
 						# indirect funcall
 						fptr = ceb[n]
@@ -477,18 +481,35 @@ class Decompiler
 					binding.delete :eax
 					stmts << C::CExpression.new(ce[:eax], :'=', fc, fc.type)
 				when 'jmp'
-					if di.block.to_normal.to_a.length > 1
-						n = backtrace_target(@dasm.cpu.get_xrefs_x(@dasm, di).first, di.address)
+					#if di.comment.to_a.include? 'switch'
+					#	n = di.instruction.args.first.symbolic
+					#	fptr = ceb[n]
+					#	binding.delete n
+					#	commit[]
+					#	sw = C::Switch.new(fptr, C::Block.new(scope))
+					#	di.block.to_normal.to_a.each { |addr|
+					#		addr = @dasm.normalize addr
+					#		to.delete addr
+					#		next if not l = @dasm.prog_binding.index(addr)
+					#		sw.body.statements << C::Goto.new(l)
+ 					#	}
+					#	stmts << sw
+					if not di.instruction.args.first.kind_of? Expression
+						n = di.instruction.args.first.symbolic
 						fptr = ceb[n]
 						binding.delete n
 						proto = C::Function.new(C::BaseType.new(:void))
 						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto)) if not fptr.kind_of? C::CExpression	# cast
 						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto))
 						commit[]
-						stmts << C::CExpression.new(fptr, :funcall, [], proto.type)
+						ret = C::Return.new(C::CExpression.new(fptr, :funcall, [], proto.type))
+						class << ret ; attr_accessor :from_instr end
+						ret.from_instr = di
+						stmts << ret
+						to = []
 					end
-					# XXX bouh
-					# TODO mark instructions for which bt_binding is accurate
+				# XXX bouh
+				# TODO mark instructions for which bt_binding is accurate
 				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq', 'leave', 'nop'
 					di.backtrace_binding.each { |k, v|
 						if k.kind_of? ::Symbol
@@ -560,7 +581,7 @@ class Decompiler
 
 			case to.length
 			when 0
-				if not myblocks.empty? and @dasm.decoded[b].block.list.last.instruction.opname != 'ret'
+				if not myblocks.empty? and not %w[ret jmp].include? @dasm.decoded[b].block.list.last.instruction.opname
 					puts "  block #{Expression[b]} has no to and don't end in ret"
 				end
 			when 1
@@ -687,6 +708,7 @@ class Decompiler
 	def decompile_match_controlseq(scope)
 		scope.statements = decompile_cseq_if(scope.statements, scope)
 		decompile_cseq_while(scope.statements, scope)
+		decompile_cseq_switch(scope)
 	end
 
 	# optimize if() { a; } to if() a;
@@ -898,6 +920,42 @@ class Decompiler
 			end
 		}
 		walk[ary, nil, nil]
+	end
+
+	def decompile_cseq_switch(scope)
+		uncast = lambda { |e| e = e.rexpr while e.kind_of? C::CExpression and not e.op ; e }
+		decompile_walk(scope) { |s|
+			# XXX pfff...
+			next if not s.kind_of? C::If
+			# if (v < 12) return ((void(*)())(tableaddr+4*v))();
+			t = s.bthen
+			t = t.statements.first if t.kind_of? C::Block and t.statements.length == 1
+			next if not t.kind_of? C::Return or not t.respond_to? :from_instr
+			next if t.from_instr.comment.to_a.include? 'switch'
+			next if not t.value.kind_of? C::CExpression or t.value.op != :funcall or t.value.rexpr != [] or not t.value.lexpr.kind_of? C::CExpression or t.value.lexpr.op
+			p = uncast[t.value.lexpr.rexpr]
+			next if p.op != :* or p.lexpr
+			p = uncast[p.rexpr]
+			next if p.op != :+
+			r, l = uncast[p.rexpr], uncast[p.lexpr]
+			r, l = l, r if r.kind_of? C::CExpression
+			next if not r.kind_of? ::Integer or not l.kind_of? C::CExpression or l.op != :* or not l.lexpr
+			lr, ll = uncast[l.rexpr], uncast[l.lexpr]
+			lr, ll = ll, lr if not ll.kind_of? ::Integer
+			next if ll != @c_parser.sizeof(nil, C::Pointer.new(C::BaseType.new(:void)))
+			base, index = r, lr
+			if s.test.kind_of? C::CExpression and (s.test.op == :<= or s.test.op == :<) and s.test.lexpr == index and
+					s.test.rexpr.kind_of? C::CExpression and not s.test.rexpr.op and s.test.rexpr.rexpr.kind_of? ::Integer
+				t.from_instr.add_comment 'switch'
+				sup = s.test.rexpr.rexpr
+				rng = ((s.test.op == :<) ? (0...sup) : (0..sup))
+				from = t.from_instr.address
+				rng.map { |i| @dasm.backtrace(Indirection[base+ll*i, ll, from], from, :type => :x, :origin => from, :maxdepth => 0) }
+				@dasm.disassemble
+				throw :restart, :restart
+			end
+			puts "unhandled switch() at #{t.from_instr}" if $VERBOSE
+		}
 	end
 
 	def decompile_remove_labels(scope)
@@ -1402,6 +1460,7 @@ class Decompiler
 		when C::Variable; access != :write and var.name == st.name
 		when C::Return; stmt_access st.value, var, access
 		when C::If; stmt_access(st.test, var, access) or stmt_access(st.bthen, var, access) or stmt_access(st.belse, var, access)
+		when C::Block; stmt_access(st.statements, var, access)
 		when C::CExpression
 			if access != :write
 				if st.op == :'='
