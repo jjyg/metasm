@@ -1,12 +1,11 @@
 #    This file is part of Metasm, the Ruby assembly manipulation suite
-#    Copyright (C) 2007 Yoann GUILLOT
+#    Copyright (C) 2009 Yoann GUILLOT
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 #
 # this exemple illustrates the use of the cparser/preprocessor #factorize functionnality:
-# it generates code that references to the functions imported by a windows executable, and
-# factorizes the windows headers through them
+# it generates code that references to the functions imported by a windows executable
 # usage: factorize-imports.rb <exe> <path to visual studio installation> [<additional func names>... !<func to exclude>]
 #
 
@@ -14,21 +13,28 @@ require 'metasm'
 include Metasm
 
 require 'optparse'
-opts = {}
+opts = { :hdrs => [], :defs => {}, :path => [] }
 OptionParser.new { |opt|
-	opt.on('--ddk') { opts[:ddk] = true }
 	opt.on('-o outfile') { |f| opts[:outfile] = f }
-	opt.on('-I additional_header') { |f| (opts[:add_hdrs] ||= []) << f }
-	opt.on('--exe executable', '--pe executable') { |f| opts[:pe] = f }
-	opt.on('--vs path', '--vspath path') { |f| opts[:vspath] = f }
+	opt.on('-H additional_header') { |f| opts[:hdrs] << f }
+	opt.on('--exe executable') { |f| opts[:exe] = f }
+	opt.on('-I path', '--includepath path') { |f| opts[:path] << f }
+	opt.on('-D var') { |f| k, v = f.split('=', 2) ; opts[:defs].update k => (v || '') }
+	opt.on('--ddk') { opts[:ddk] = true }
+	opt.on('--vspath path') { |f| opts[:vspath] = f }
 }.parse!(ARGV)
 
-pe = PE.decode_file_header(opts[:pe] || ARGV.shift)
-opts[:vspath] ||= ARGV.shift
-raise 'need a path to the headers' if not opts[:vspath]
-
-opts[:vspath].chop! if opts[:vspath][-1] == '/'
-opts[:vspath] = opts[:vspath][0...-3] if opts[:vspath][-3..-1] == '/VC'
+pe = PE.decode_file_header(opts[:exe] || ARGV.shift)
+if opts[:vspath] ||= ARGV.shift
+	opts[:vspath] = opts[:vspath].tr('\\', '/')
+	opts[:vspath] = opts[:vspath].chop if opts[:vspath][-1] == ?/
+	if opts[:ddk]
+		opts[:path] << opts[:vspath]
+	else
+		opts[:vspath] = opts[:vspath][0...-3] if opts[:vspath][-3..-1] == '/VC'
+		opts[:path] << (opts[:vspath]+'/VC/platformsdk/include') << (opts[:vspath]+'/VC/include')
+	end
+end
 
 pe.decode_imports
 funcnames = pe.imports.map { |id| id.imports.map { |i| i.name } }.flatten.compact.uniq.sort
@@ -41,20 +47,7 @@ ARGV.each { |n|
 	end
 }
 
-src = <<EOS + opts[:add_hdrs].to_a.map { |h| "#include <#{h}>\n" }.join
-#define DDK #{opts[:ddk] ? 1 : 0}
-#ifdef __METASM__
- #if DDK
-  #pragma include_dir #{opts[:vspath].inspect}
- #else
-  #pragma include_dir #{(opts[:vspath]+'/VC/platformsdk/include').inspect}
-  #pragma include_dir #{(opts[:vspath]+'/VC/include').inspect}
- #endif
- #pragma prepare_visualstudio
- #pragma no_warn_redefinition
- #define _WIN32_WINNT 0x0600	// vista
-#endif
-
+src = <<EOS + opts[:hdrs].to_a.map { |h| "#include <#{h}>\n" }.join
 #if DDK
  #define NO_INTERLOCKED_INTRINSICS
  typedef struct _CONTEXT CONTEXT;	// needed by ntddk.h, but this will pollute the factorized output..
@@ -70,8 +63,16 @@ src = <<EOS + opts[:add_hdrs].to_a.map { |h| "#include <#{h}>\n" }.join
 EOS
 
 parser = Ia32.new.new_cparser
+parser.prepare_visualstudio
+pp = parser.lexer
+pp.warn_redefinition = false
+pp.define('_WIN32_WINNT', '0x0600')
+pp.define('DDK') if opts[:ddk]
+pp.include_search_path = opts[:path]
+opts[:defs].each { |k, v| pp.define k, v }
 parser.factorize_init
 parser.parse src
+
 
 # delete imports not present in the header files
 funcnames.delete_if { |f|
@@ -81,7 +82,7 @@ funcnames.delete_if { |f|
 	end
 }
 
-parser.parse 'void *fnptr[] = { ' + funcnames.map { |f| '&'+f }.join(', ') + ' };'
+parser.parse "void *fnptr[] = { #{funcnames.map { |f| '&'+f }.join(', ')} };"
 
 outfd = (opts[:outfile] ? File.open(opts[:outfile], 'w') : $stdout)
 outfd.puts parser.factorize_final
