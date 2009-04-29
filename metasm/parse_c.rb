@@ -2950,17 +2950,19 @@ EOH
 			r.last << '('
 			r.last << @body.inspect
 			if @output or @input or @clobber
-				r << ': '
-				if @output
+				if @output and @output != []
 					# TODO
-					r.last << '/* todo */'
+					r << ': /* todo */'
+				else
+					r.last << ' :'
 				end
 			end
 			if @input or @clobber
-				r << ': '
-				if @input
+				if @input and @input != []
 					# TODO
-					r.last << '/* todo */'
+					r << ': /* todo */'
+				else
+					r.last << ' :'
 				end
 			end
 			if @clobber
