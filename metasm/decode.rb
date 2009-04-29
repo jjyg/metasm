@@ -864,6 +864,14 @@ class Disassembler
 		}
 		@function.each { |addr, f|
 			next if not di = @decoded[addr]
+			if not f.finalized
+				f.finalized = true
+puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
+				@cpu.backtrace_update_function_binding(self, addr, f, f.return_address)
+				if not f.return_address
+					detect_function_thunk(addr)
+				end
+			end
 			@comment[addr] ||= []
 			bd = f.backtrace_binding.reject { |k, v| Expression[k] == Expression[v] or Expression[v] == Expression::Unknown }
 			unk = f.backtrace_binding.map { |k, v| k if v == Expression::Unknown }.compact
