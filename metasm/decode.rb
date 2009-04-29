@@ -2037,27 +2037,30 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				b["// [#{edata.length} data bytes]"]
 				next
 			end
-			unk_off = 0
+			unk_off = 0	# last off displayed
 			# blocks.sort_by { |b| b.addr }.each { |b|
-			edata.length.times { |i|
-				if di = @decoded[addr+i] and di.kind_of? DecodedInstruction and di.block_head?
+			while unk_off < edata.length
+				if unk_off == blockoffs.first
+					blockoffs.shift
+					di = @decoded[addr+unk_off]
 					if unk_off != di.block.edata_ptr
 						b["\n// ------ overlap (#{unk_off-di.block.edata_ptr}) ------"]
 					elsif di.block.from_normal.kind_of? ::Array
 						b["\n"]
 					end
 					dump_block(di.block, &b)
-					unk_off = i + [di.block.bin_length, 1].max
-				elsif i >= unk_off
-					next_off = blockoffs.find { |bo| bo > i } || edata.length
-					if dump_data or next_off - i < 16
+					unk_off += [di.block.bin_length, 1].max
+					unk_off = blockoffs.first if blockoffs.first and unk_off > blockoffs.first
+				else
+					next_off = blockoffs.first || edata.length
+					if dump_data or next_off - unk_off < 16
 						unk_off = dump_data(addr + unk_off, edata, unk_off, &b)
 					else
-						b["// [#{next_off - i} data bytes]"]
+						b["// [#{next_off - unk_off} data bytes]"]
 						unk_off = next_off
 					end
 				end
-			}
+			end
 		}
 	end
 
