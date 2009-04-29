@@ -296,7 +296,7 @@ class Decompiler
 				stackoff ||= Expression[@dasm.backtrace(:esp, blk.list.last.address, :snapshot_addr => blocks.first[0]).first, :-, :esp].reduce
 
 				# things that are needed by the subfunction
-				args = t.type.args.map { |a| a.type }
+				args = t.type.args.to_a.map { |a| a.type }
 				if t.attributes.to_a.include? 'fastcall'
 					deps_subfunc[b] |= [:ecx, :edx][0, args.length]
 					# XXX the two first args with size <= int are not necessarily nr 0 and nr 1..
@@ -392,6 +392,7 @@ class Decompiler
 				end
 
 				if di.opcode.name == 'mov'
+					# mov cr0 etc
 					a1, a2 = di.instruction.args
 					case a1
 					when Ia32::CtrlReg, Ia32::DbgReg, Ia32::SegReg
@@ -494,7 +495,11 @@ class Decompiler
 					#		sw.body.statements << C::Goto.new(l)
  					#	}
 					#	stmts << sw
-					if not di.instruction.args.first.kind_of? Expression
+					a = di.instruction.args.first
+					if a.kind_of? Expression
+					elsif not a.respond_to? :symbolic
+						stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil)
+					else
 						n = di.instruction.args.first.symbolic
 						fptr = ceb[n]
 						binding.delete n
@@ -732,7 +737,7 @@ class Decompiler
 						ce.bthen = ce.bthen.statements.first
 					when 0
  						if not ce.belse and i = ce.bthen.outer.statements.index(ce)
-							ce.body.outer.statements[i] = ce.test	# TODO remove sideeffectless parts
+							ce.bthen.outer.statements[i] = ce.test	# TODO remove sideeffectless parts
 						end
 					end
 				end
@@ -1481,7 +1486,12 @@ class Decompiler
 				else stmt_access(st.lexpr, var, access) or stmt_access(st.rexpr, var, access)
 				end
 			end
-		when C::Asm; true	# failsafe
+		when C::Asm
+			if access == :write
+				st.output == [] ? false : true
+			else
+				st.input == [] ? false : true
+			end
 		else puts "unhandled #{st.class} in stmt_access" ; true
 		end
 	end
