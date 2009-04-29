@@ -660,27 +660,8 @@ module C
 	class If
 		def precompile(compiler, scope)
 			expr = lambda { |e| e.kind_of?(CExpression) ? e : CExpression.new(nil, nil, e, e.type) }
-			neg = lambda { |e|
-				op = e.op if e.kind_of? CExpression
-				case op
-				when :'!'
-					expr[e.rexpr]
-				when :'&&', :'||'
-					break CExpression.new(nil, :'!', e, BaseType.new(:int)) if not e.lexpr
-					e.op = { :'&&' => :'||', :'||' => :'&&' }[op]
-					e.lexpr = neg[e.lexpr]
-					e.rexpr = neg[e.rexpr]
-					e
-				when :>, :<, :>=, :<=, :==, :'!='
-					e.op = { :> => :<=, :< => :>=, :>= => :<, :<= => :>,
-						:== => :'!=', :'!=' => :== }[op]
-					e
-				else
-					CExpression.new(nil, :'!', e, BaseType.new(:int))
-				end
-			}
 
-			if @bthen.kind_of? Goto
+			if @bthen.kind_of? Goto or @bthen.kind_of? Break or @bthen.kind_of? Continue
 				# if () goto l; else b; => if () goto l; b;
 				if belse
 					t1 = @belse
@@ -689,7 +670,7 @@ module C
 
 				# need to convert user-defined Goto target !
 				@bthen.precompile(compiler, scope)
-				scope.statements.pop
+				@bthen = scope.statements.pop	# break => goto break_label
 			elsif belse
 				# if () a; else b; => if () goto then; b; goto end; then: a; end:
 				t1 = @belse
@@ -703,7 +684,7 @@ module C
 				t1 = @bthen
 				l2 = compiler.new_label('if_end')
 				@bthen = Goto.new(l2)
-				@test = neg[@test]
+				@test = CExpression.negate(@test)
 			end
 
 			@test = expr[@test]
@@ -711,7 +692,7 @@ module C
 			when :'&&'
 				# if (c1 && c2) goto a; => if (!c1) goto b; if (c2) goto a; b:
 				l1 = compiler.new_label('if_nand')
-				If.new(neg[@test.lexpr], Goto.new(l1)).precompile(compiler, scope)
+				If.new(CExpression.negate(@test.lexpr), Goto.new(l1)).precompile(compiler, scope)
 				@test = expr[@test.rexpr]
 				precompile(compiler, scope)
 			when :'||'
@@ -762,8 +743,7 @@ module C
 			Label.new(@body.continue_label).precompile(compiler, scope)
 
 			if test
-				nottest = CExpression.new(nil, :'!', @test, BaseType.new(:int))
-				If.new(nottest, Goto.new(@body.break_label)).precompile(compiler, scope)
+				If.new(CExpression.negate(@test), Goto.new(@body.break_label)).precompile(compiler, scope)
 			end
 
 			@body.precompile(compiler, scope)
@@ -785,8 +765,7 @@ module C
 
 			Label.new(@body.continue_label).precompile(compiler, scope)
 
-			nottest = CExpression.new(nil, :'!', @test, BaseType.new(:int))
-			If.new(nottest, Goto.new(@body.break_label)).precompile(compiler, scope)
+			If.new(CExpression.negate(@test), Goto.new(@body.break_label)).precompile(compiler, scope)
 
 			@body.precompile(compiler, scope)
 
@@ -1201,7 +1180,7 @@ module C
 							@op = nil
 							@rexpr = @rexpr.rexpr
 						else
-							@op = :'=='
+							@op = :'!='
 							@lexpr = @rexpr.rexpr
 							@rexpr = CExpression.new(nil, nil, 0, @lexpr.type)
 						end
