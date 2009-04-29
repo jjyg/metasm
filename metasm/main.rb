@@ -605,6 +605,8 @@ class Expression < ExpressionType
 			elsif r == 1; l
 			elsif r.kind_of? Integer; Expression[r, @op, l].reduce_rec
 			elsif r.kind_of? Expression and r.op == @op; Expression[[l, @op, r.lexpr], @op, r.rexpr].reduce_rec
+			elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :* and r.lexpr.kind_of? Integer; Expression[l*r.lexpr, :*, r.rexpr].reduce_rec	# XXX need & regsize..
+			elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :+ and r.rexpr.kind_of? Integer; Expression[[l, :*, r.lexpr], :+, l*r.rexpr].reduce_rec
 			end
 		elsif @op == :/
 			if r == 0
