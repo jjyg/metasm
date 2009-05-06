@@ -476,14 +476,15 @@ class EncodedData
 	# if ptr has a relocation but the type/endianness does not match, the reloc is ignored and a warning is issued
 	# TODO arg type => sign+len
 	def decode_imm(type, endianness)
+		raise "invalid imm type #{type.inspect}" if not isz = Expression::INT_SIZE[type]
 		if rel = @reloc[@ptr]
-			if Expression::INT_SIZE[rel.type] == Expression::INT_SIZE[type] and rel.endianness == endianness
+			if Expression::INT_SIZE[rel.type] == isz and rel.endianness == endianness
 				@ptr += rel.length
 				return rel.target
 			end
 			puts "W: Immediate type/endianness mismatch, ignoring relocation #{rel.target.inspect} (wanted #{type.inspect})" if $DEBUG
 		end
-		Expression.decode_imm(read(Expression::INT_SIZE[type]/8), type, endianness)
+		Expression.decode_imm(read(isz/8), type, endianness)
 	end
 	alias decode_immediate decode_imm
 end

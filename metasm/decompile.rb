@@ -77,22 +77,6 @@ class Decompiler
 		# cleanup C
 		optimize(scope)
 
-		# change if() goto to if, if/else, while
-		decompile_match_controlseq(scope)
-
-		# remove unreferenced labels
-		decompile_remove_labels(scope)
-
-		case ret = scope.statements.last
-		when C::CExpression; puts "no return at end of func" if $VERBOSE
-		when C::Return
-			if not ret.value
-				scope.statements.pop
-			else
-				func.type.type = ret.value.type
-			end
-		end
-
 		# make function prototype with local arg_XX
 		args = []
 		decl = []
@@ -128,10 +112,53 @@ class Decompiler
 			argoff += @dasm.cpu.size/8
 		}
 
+		# change if() goto to if, if/else, while
+		decompile_match_controlseq(scope)
+
+		optimize_vars(scope)
+
 		decompile_optimize_ctrl(scope)
 
-		# TODO reoptimize_var (var propagation may have been blocked by now-removed labels)
-		optimize_vars(scope)
+		case ret = scope.statements.last
+		when C::CExpression; puts "no return at end of func" if $VERBOSE
+		when C::Return
+			if not ret.value
+				scope.statements.pop
+			else
+				func.type.type = ret.value.type
+			end
+		end
+	end
+
+	def new_global_var(addr, type)
+		return if not type.pointer?
+
+		# TODO check overlap with alreadydefined globals
+
+		ptype = type.untypedef.type
+		name = case tsz = @c_parser.sizeof(nil, type)
+		when 1; 'byte'
+		when 2; 'word'
+		when 4; 'dword'
+		else 'global'
+		end
+		name = @dasm.auto_label_at(addr, name)
+
+		if not var = @c_parser.toplevel.symbol[name]
+			var = C::Variable.new
+			var.name = name
+			var.type = ptype
+			@c_parser.toplevel.symbol[var.name] = var
+			@c_parser.toplevel.statements << C::Declaration.new(var)
+			if s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
+				var.initializer = C::CExpression.new(nil, nil, s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness), ptype)
+			end
+		end
+
+		# TODO patch existing references to addr ? (or would they have already triggered new_global_var?)
+
+		# return the object to use to replace the raw addr
+		C::CExpression.new(nil, :&, var, type)
 	end
 
 	# return an array of [address of block start, list of block to]]
@@ -690,7 +717,7 @@ class Decompiler
 				decompile_walk(scope) { |s|
 					if s.kind_of? C::Block and l = s.statements.grep(C::Label).find { |l_| l_.name == g.target }
 						case nt = s.statements[s.statements.index(l)..-1].find { |ss| not ss.kind_of? C::Label }
-						when C::Goto; ret = nt
+						when C::Goto, C::Return; ret = nt
 						end
 					end
 				}
@@ -717,6 +744,8 @@ class Decompiler
 				s.bthen = simpler_goto[s.bthen]
 			end
 		}
+
+		decompile_remove_labels(scope)
 	end
 
 	# changes ifgoto, goto to while/ifelse..
@@ -728,6 +757,8 @@ class Decompiler
 
 	# optimize if() { a; } to if() a;
 	def decompile_optimize_ctrl(scope)
+		decompile_remove_labels(scope)
+
 		# while (1) { a; if(b) { c; return; }; d; }  =>  while (1) { a; if (b) break; d; } c;
 		while st = scope.statements.last and st.kind_of? C::While and st.test.kind_of? C::CExpression and
 				not st.test.op and st.test.rexpr == 1 and st.body.kind_of? C::Block
@@ -737,6 +768,7 @@ class Decompiler
 			scope.statements.concat i.bthen.statements
 			i.bthen = C::Break.new
 		end
+
 		decompile_walk(scope) { |ce|
 			case ce
 			when C::If
@@ -770,7 +802,6 @@ class Decompiler
 				end
 			end
 		}
-		decompile_remove_labels(scope)
 	end
 
 	# ifgoto => ifthen
@@ -1022,6 +1053,17 @@ class Decompiler
 		scopevar = lambda { |e|
 			e.name if e.kind_of? C::Variable and scope.symbol[e.name]
 		}
+		globalvar = lambda { |e|
+			e if e.kind_of? ::Integer and @dasm.get_section_at(e)
+		}
+		update_global_type = lambda { |e, t|
+			if ne = new_global_var(e, t)
+				decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+					ce.lexpr = ne if ce.lexpr == e
+					ce.rexpr = ne if ce.rexpr == e
+				} }
+			end
+		}
 
 		propagate_type = nil	# fwd declaration
 
@@ -1063,6 +1105,8 @@ class Decompiler
 				e = e.rexpr while e.kind_of? C::CExpression and not e.op
 				if o = scopevar[e]
 					update_type[o, t]
+				elsif o = globalvar[e]
+					update_global_type[o, t]
 				elsif not e.kind_of? C::CExpression
 					break
 				elsif o = framepoff[e]
@@ -1100,7 +1144,7 @@ class Decompiler
 		propagate_type = lambda { |off, type|
 			decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
 				# char x; x & 255 => uchar x
-				if ce.op == :'&' and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
+				if ce.op == :'&' and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
 					known_type[ce.lexpr, C::BaseType.new(ce.lexpr.type.name, :unsigned)]
 				end
 
@@ -1530,7 +1574,7 @@ class Decompiler
 		case st
 		when nil; false
 		when ::Array; st.find { |elem| stmt_access elem, var, access }
-		when C::Declaration, C::Label, C::Goto, ::Numeric, ::String; false
+		when C::Declaration, C::Label, C::Goto, C::Break, C::Continue, ::Numeric, ::String; false
 		when C::Variable; access != :write and var.name == st.name
 		when C::Return; stmt_access st.value, var, access
 		when C::If; stmt_access(st.test, var, access) or stmt_access(st.bthen, var, access) or stmt_access(st.belse, var, access)

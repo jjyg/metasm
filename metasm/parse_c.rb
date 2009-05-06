@@ -2953,7 +2953,7 @@ EOH
 				if @output and @output != []
 					# TODO
 					r << ': /* todo */'
-				else
+				elsif (@input and @input != []) or (@clobber and @clobber != [])
 					r.last << ' :'
 				end
 			end
@@ -2961,11 +2961,11 @@ EOH
 				if @input and @input != []
 					# TODO
 					r << ': /* todo */'
-				else
+				elsif @clobber and @clobber != []
 					r.last << ' :'
 				end
 			end
-			if @clobber
+			if @clobber and @clobber != []
 				r << (': ' << @clobber.map { |c| c.inspect }.join(', '))
 			end
 			r.last << ');'
