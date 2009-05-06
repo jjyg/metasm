@@ -353,7 +353,8 @@ class Rubstop
 	end
 
 	def detach
-		# TODO
+		# TODO clear breakpoints
+		gdb_send('D')
 	end
 
 	attr_accessor :pgm, :breakpoints, :singleshot, :wantbp,
