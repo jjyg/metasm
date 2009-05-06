@@ -1675,7 +1675,7 @@ class Decompiler
 							finished = false
 							scope.statements.delete_at(sti)
 							ndel += 1
-							next
+							redo
 						end
 
 					# reorder a++; b++; if (a) => swap a & b
@@ -1693,9 +1693,9 @@ class Decompiler
 						end
 					} and ri != sti+1
 						swapcount -= 1
-						scope.statements[ri-1], scope.statements[sti] = scope.statements[sti], scope.statements[ri-1]
+						scope.statements.insert(ri-1, scope.statements.delete_at(sti))
 						finished = false
-						next	# next ? update sti ? (break bad on infinite loop)
+						redo
 					end
 
 					pt = scope.statements[sti-1]
@@ -1756,7 +1756,7 @@ class Decompiler
 							finished = false
 							scope.statements.delete_at(sti)
 							ndel += 1
-							next
+							redo
 						end
 
 					elsif swapcount > 0 and ri = [*sti-10...sti].reverse.find { |ri_|
@@ -1773,9 +1773,9 @@ class Decompiler
 						end
 					} and ri != sti-1
 						swapcount -= 1 
-						scope.statements[ri+1] = scope.statements.delete_at(sti)
+						scope.statements.insert(ri+1, scope.statements.delete_at(sti))
 						finished = false
-						next	# next ? update sti ? (break bad on infinite loop)
+						break
 					end
 				end
 
@@ -1874,6 +1874,7 @@ class Decompiler
 					else
 						scope.statements.delete_at(sti)
 						ndel += 1
+						redo
 					end
 					next
 				elsif swapcount > 0 and not sideeffect(st.rexpr, scope) and ri = (sti+1..sti+10).find { |ri_|
@@ -1892,9 +1893,9 @@ class Decompiler
 					end
 				} and ri != sti+1
 					swapcount -= 1
-					scope.statements[ri-1, 0] = scope.statements.delete_at(sti)
+					scope.statements.insert(ri-1, scope.statements.delete_at(sti))
 					finished = false
-					next	# next ? update sti ? (break bad on infinite loop)
+					redo
 				else
 					# check if this value is ever used
 					reused = false
@@ -1910,8 +1911,8 @@ class Decompiler
 					next if reused
 
 					# useless cast
+					# TODO suppress other sideeffectless toplevel CExpr
 					st.rexpr = st.rexpr.rexpr while st.rexpr.kind_of? C::CExpression and not st.rexpr.op and st.rexpr.kind_of? C::CExpression
-
 
 					scope.statements[sti] = st.rexpr
 
@@ -1919,7 +1920,7 @@ class Decompiler
 						finished = false
 						scope.statements.delete_at(sti)
 						ndel += 1
-						next
+						redo
 					end
 				end
 			}
