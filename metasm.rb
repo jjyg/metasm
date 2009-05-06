@@ -29,6 +29,7 @@ def self.fix_const_missing(c)
 		'Shellcode' => 'exe_format/shellcode', 'AutoExe' => 'exe_format/autoexe',
 		'AOut' => 'exe_format/a_out', 'MachO' => 'exe_format/macho',
 		'NDS' => 'exe_format/nds', 'XCoff' => 'exe_format/xcoff',
+		'Bflt' => 'exe_format/bflt',
 		'GtkGui' => 'gui/gtk',
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
 		'Decompiler' => 'decompile',
