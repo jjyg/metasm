@@ -56,7 +56,9 @@ end
 if $to_string
 	p exe.encode_string
 elsif $to_cstring
-	puts '"' + exe.encode_string.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
+	exe.encode_string.scan(/.{1,19}/m) { |l|
+		puts '"' + l.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
+	}
 else
 	exe.encode_file(outfilename)
 end
