@@ -760,7 +760,69 @@ module C
 		# a Type
 		attr_accessor :type
 		def initialize(l, o, r, t)
+			raise "invalid CExpr #{[l, o, r, t].inspect}" if (o and not o.kind_of? ::Symbol) or not t.kind_of? Type
 			@lexpr, @op, @rexpr, @type = l, o, r, t
+		end
+		
+		# recursive constructor with automatic type inference
+		# e.g. CExpression[foo, :+, [:*, bar]]
+		# assumes root args are correctly typed (eg *foo => foo must be a pointer)
+		# take care to use [int] with immediates, e.g. CExpression[foo, :+, [2]]
+		# CExpr[some_cexpr] returns some_cexpr
+		def self.[](*args)
+			# sub-arrays in args are to be passed to self.[] recursively (syntaxic sugar)
+			splat = lambda { |e| e.kind_of?(::Array) ? self[*e] : e }
+
+			args.shift while args.first == nil	# CExpr[nil, :&, bla] => CExpr[:&, bla]
+
+			case args.length
+			when 4
+ 				new(splat[args[0]], args[1], splat[args[2]], args[3])
+			when 3
+				op = args[1]
+				x1 = splat[args[0]]
+				if op == :funcall or op == :'?:'
+					x2 = args[2].map { |a| splat[a] } if x2
+				else
+					x2 = splat[args[2]]
+				end
+
+				case op
+				when :funcall; new(x1, op, x2, x1.type.untypedef.type)
+				when :[]; new(x1, op, x2, x1.type.untypedef.type)
+				when :+; new(x1, op, x2, (x2.type.pointer? ? x2.type : x1.type))
+				when :-; new(x1, op, x2, ((x1.type.pointer? and x2.type.pointer?) ? BaseType.new(:int) : x2.type.pointer? ? x2.type : x1.type))
+				when :'&&', :'||', :==, :'!=', :>, :<, :<=, :>=; new(x1, op, x2, BaseType.new(:int))
+				when :'.', :'->'
+					t = x1.type.untypedef
+					t = t.type.untypedef if op == :'->'
+					raise "parse error CExpr[*#{args.inspect}]" if not t.kind_of? Union or not m = t.members.find { |m_| m_.name == x2 }
+					new(x1, op, x2, m.type)
+				when :'?:'; new(x1, op, x2, x2[0].type)
+				when :','; new(x1, op, x2, x2.type)
+				else new(x1, op, x2, x1.type)
+				end
+			when 2
+				x0 = splat[args[0]]
+				x1 = splat[args[1]]
+				if x1.kind_of? Type; new(nil, nil, x0, x1)	# (cast)r
+				elsif x0 == :*; new(nil, x0, x1, x1.type.untypedef.type)	# *r
+				elsif x0 == :&; new(nil, x0, x1, Pointer.new(x1.type))	# &r
+				elsif x0 == :'!'; new(nil, x0, x1, BaseType.new(:int))	# &r
+				elsif x1.kind_of? ::Symbol; new(x0, x1, nil, x0.type)	# l++
+				else new(nil, x0, x1, x1.type)	# +r
+				end
+			when 1
+				x = splat[args[0]]
+				case x
+				when CExpression; x
+				when ::Integer; new(nil, nil, x, BaseType.new(:int))	# XXX range => __int64 ?
+				when ::Float; new(nil, nil, x, BaseType.new(:double))
+				when ::String; new(nil, nil, x, Pointer.new(BaseType.new(:char)))
+				else new(nil, nil, x, x.type)
+				end
+			else raise "parse error CExpr[*#{args.inspect}]"
+			end
 		end
 	end
 
@@ -1822,7 +1884,7 @@ EOH
 
 		# returns a CExpr negating this one (eg 'x' => '!x', 'a > b' => 'a <= b'...)
 		def self.negate(e)
-			e.kind_of?(self) ? e.negate : CExpression.new(nil, :'!', e, BaseType.new(:int))
+			e.kind_of?(self) ? e.negate : CExpression[:'!', e]
 		end
 		def negate
 			if nop = { :== => :'!=', :'!=' => :==, :> => :<=, :>= => :<, :< => :>=, :<= => :>, :'!' => :'!' }[@op]
@@ -1838,7 +1900,7 @@ EOH
 			elsif nop = { :'||' => :'&&', :'&&' => :'||' }[@op]
 				CExpression.new(CExpression.negate(@lexpr), nop, CExpression.negate(@rexpr), @type)
 			else
-				CExpression.new(nil, :'!', self, BaseType.new(:int))
+				CExpression[:'!', self]
 			end
 		end
 
@@ -1974,7 +2036,7 @@ EOH
 						when ?f; type = :float
 						end
 					end
-					val = CExpression.new(nil, nil, val, BaseType.new(type))
+					val = CExpression[val, BaseType.new(type)]
 
 				when ::Integer
 					# parse suffix
@@ -1987,7 +2049,7 @@ EOH
 						type = :longlong if suffix.count('l') == 2
 						type = :long if suffix.count('l') == 1
 					end
-					val = CExpression.new(nil, nil, val, BaseType.new(type, *specifier))
+					val = CExpression[val, BaseType.new(type, *specifier)]
 				else raise parser, "internal error #{val.inspect}"
 				end
 
@@ -1995,9 +2057,9 @@ EOH
 				if tok.raw[0] == ?'
 					# XXX should only warn...
 					raise tok, 'invalid character constant' if tok.value.length > 1
-					val = CExpression.new(nil, nil, tok.value[0], BaseType.new(:int))
+					val = CExpression[tok.value[0], BaseType.new(:int)]
 				else
-					val = CExpression.new(nil, nil, tok.value, Pointer.new(BaseType.new(tok.raw[0, 2] == 'L"' ? :short : :char)))
+					val = CExpression[tok.value, Pointer.new(BaseType.new(tok.raw[0, 2] == 'L"' ? :short : :char))]
 					val = parse_value_postfix(parser, scope, val)
 				end
 
@@ -2013,15 +2075,14 @@ EOH
 						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 						raise ntok, 'expr expected' if not val = parse_value(parser, scope)	# parses postfix too
 						raise ntok, 'unable to cast a struct' if val.type.untypedef.kind_of? Union
-						val = CExpression.new(nil, nil, val, val.type) if not val.kind_of? CExpression
-						val = CExpression.new(nil, nil, val, v.type)
+						val = CExpression[[val], v.type]
 					# check compound statement expression
 					elsif ntok = parser.skipspaces and ntok.type == :punct and ntok.raw == '{'
 						parser.unreadtok ntok
 						blk = parser.parse_statement(scope, [:expression]) # XXX nesting ?
 						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 						type = blk.statements.last.kind_of?(CExpression) ? blk.statements.last.type : BaseType.new(:void)
-						val = CExpression.new(nil, nil, blk, type)
+						val = CExpression[blk, type]
 					else
 						parser.unreadtok ntok
 						if not val = parse(parser, scope)
@@ -2043,7 +2104,7 @@ EOH
 					when ?l; type = :longdouble
 					when ?f; type = :float
 					end
-					val = CExpression.new(nil, nil, val, BaseType.new(type))
+					val = CExpression.new[val, BaseType.new(type)]
 
 				when '+', '-', '&', '!', '~', '*', '--', '++', '&&'
 					# unary prefix
@@ -2102,7 +2163,7 @@ EOH
 
 			if val.kind_of? Variable and val.type.kind_of? Function
 				# void (*bla)() = printf;  =>  ...= &printf;
-				val = CExpression.new(nil, :&, val, Pointer.new(val.type))
+				val = CExpression[:&, val]
 			end
 
 			val
@@ -2273,8 +2334,8 @@ EOH
 					case op
 					when :'>', :'>=', :'<', :'<=', :'==', :'!='
 						# cast both sides
-						l = CExpression.new(nil, nil, l, type) if l.type != type
-						r = CExpression.new(nil, nil, r, type) if r.type != type
+						l = CExpression[l, type] if l.type != type
+						r = CExpression[r, type] if r.type != type
 						stack << CExpression.new(l, op, r, BaseType.new(:int))
 					else
 						# promote result
@@ -2320,7 +2381,7 @@ EOH
 				popstack[]
 			end
 
-			stack.first.kind_of?(CExpression) ? stack.first : CExpression.new(nil, nil, stack.first, stack.first.type)
+			CExpression[stack.first]
 		end
 	end
 	end

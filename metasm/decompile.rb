@@ -136,7 +136,7 @@ class Decompiler
 		# TODO check overlap with alreadydefined globals
 
 		ptype = type.untypedef.type
-		name = case tsz = @c_parser.sizeof(nil, type)
+		name = case tsz = @c_parser.sizeof(nil, ptype)
 		when 1; 'byte'
 		when 2; 'word'
 		when 4; 'dword'
@@ -151,14 +151,14 @@ class Decompiler
 			@c_parser.toplevel.symbol[var.name] = var
 			@c_parser.toplevel.statements << C::Declaration.new(var)
 			if s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
-				var.initializer = C::CExpression.new(nil, nil, s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness), ptype)
+				var.initializer = C::CExpression[s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness), ptype]
 			end
 		end
 
 		# TODO patch existing references to addr ? (or would they have already triggered new_global_var?)
 
 		# return the object to use to replace the raw addr
-		C::CExpression.new(nil, :&, var, type)
+		C::CExpression[:&, var]
 	end
 
 	# return an array of [address of block start, list of block to]]
@@ -297,20 +297,18 @@ class Decompiler
 				decompile_cexpr(Expression[e.lexpr, :-, -e.rexpr], scope)
 			elsif e.lexpr
 				a = decompile_cexpr(e.lexpr, scope)
-				C::CExpression.new(a, e.op, decompile_cexpr(e.rexpr, scope), a.type)
+				C::CExpression[a, e.op, decompile_cexpr(e.rexpr, scope)]
 			elsif e.op == :+
 				decompile_cexpr(e.rexpr, scope)
 			else
 				a = decompile_cexpr(e.rexpr, scope)
-				C::CExpression.new(nil, e.op, a, a.type)
+				C::CExpression[e.op, a]
 			end
 		when Indirection
 			p = decompile_cexpr(e.target, scope)
-			p = C::CExpression.new(nil, nil, p, C::Pointer.new(C::BaseType.new("__int#{e.len*8}".to_sym)))
-			p = C::CExpression.new(nil, nil, p, p.type) if not p.rexpr.kind_of? C::CExpression
-			C::CExpression.new(nil, :*, p, p.type.type)
+			C::CExpression[:*, [[p], C::Pointer.new(C::BaseType.new("__int#{e.len*8}".to_sym))]]
 		when ::Integer
-			C::CExpression.new(nil, nil, e, C::BaseType.new(:int))
+			C::CExpression[e]
 		when C::CExpression
 			e
 		else
@@ -585,7 +583,7 @@ class Decompiler
 				if g = ary[ary.index(s)..-1].reverse.find { |_s| _s.kind_of? C::Goto and _s.target == s.name }
 					wb = C::Block.new(scope)
 					wb.statements = decompile_cseq_while(ary[ary.index(s)...ary.index(g)], wb)
-					w = C::While.new(C::CExpression.new(nil, nil, 1, C::BaseType.new(:int)), wb)
+					w = C::While.new(C::CExpression[1], wb)
 					ary[ary.index(s)..ary.index(g)] = [w]
 					finished = false ; break	#retry
 				end
@@ -884,9 +882,7 @@ class Decompiler
 
 		maycast = lambda { |v, e|
 			if @c_parser.sizeof(v) != @c_parser.sizeof(e)
-				p = C::CExpression.new(nil, :&, v, C::Pointer.new(v.type))
-				p = C::CExpression.new(nil, nil, p, C::Pointer.new(e.type))
-				v = C::CExpression.new(nil, :*, p, e.type)
+				v = C::CExpression[:*, [[:&, v], C::Pointer.new(e.type)]]
 			end
 			v
 		}
@@ -896,14 +892,14 @@ class Decompiler
 			when ce.op == :funcall
 				ce.rexpr.map! { |re|
 					if o = framepoff[re]; maycast[varat[o], re]
-					elsif o = frameoff[re]; C::CExpression.new(nil, :&, varat[o], C::Pointer.new(varat[o].type))
+					elsif o = frameoff[re]; C::CExpression[:&, varat[o]]
 					else re
 					end
 				}
 			when o = framepoff[ce.lexpr]; ce.lexpr = maycast[varat[o], ce.lexpr]
 			when o = framepoff[ce.rexpr]; ce.rexpr = maycast[varat[o], ce.rexpr]
-			when o = frameoff[ce.lexpr]; ce.lexpr = C::CExpression.new(nil, :&, varat[o], C::Pointer.new(varat[o].type))
-			when o = frameoff[ce.rexpr]; ce.rexpr = C::CExpression.new(nil, :&, varat[o], C::Pointer.new(varat[o].type))
+			when o = frameoff[ce.lexpr]; ce.lexpr = C::CExpression[:&, varat[o]]
+			when o = frameoff[ce.rexpr]; ce.rexpr = C::CExpression[:&, varat[o]]
 			when o = framepoff[ce]
 				e = maycast[varat[o], ce]
 				if e.kind_of? C::CExpression
@@ -950,8 +946,7 @@ class Decompiler
 				s = ce.rexpr.type.untypedef.type.untypedef
 				m = s.members.find { |m_| s.offsetof(@c_parser, m_.name) == 0 }
 				if @c_parser.sizeof(m) != @c_parser.sizeof(ce)
-					ce.rexpr = C::CExpression.new(nil, nil, ce.rexpr, C::Pointer.new(s))
-					ce.rexpr = C::CExpression.new(nil, nil, ce.rexpr, C::Pointer.new(ce.type))
+					ce.rexpr = C::CExpression[[ce.rexpr, C::Pointer.new(s)], C::Pointer.new(ce.type)]
 					next
 				end
 				# *structptr => structptr->member
@@ -979,11 +974,9 @@ class Decompiler
 					o -= tabidx * @c_parser.sizeof(nil, s) and m = s.members.find { |m_| s.offsetof(@c_parser, m_.name) == o }
 				# structptr + 4 => &structptr->member
 				if tabidx != 0
-					tabidx = C::CExpression.new(nil, nil, tabidx, C::BaseType.new(:int))
-					ce.rexpr = C::CExpression.new(ce.lexpr, :'[]', tabidx, ce.lexpr.type.untypedef.type)
-					ce.rexpr = C::CExpression.new(ce.rexpr, :'.', m.name, m.type)
+					ce.rexpr = C::CExpression[[ce.lexpr, :'[]', [tabidx]], :'.', m.name]
 				else
-					ce.rexpr = C::CExpression.new(ce.lexpr, :'->', m.name, m.type)
+					ce.rexpr = C::CExpression[ce.lexpr, :'->', m.name]
 				end
 				ce.lexpr, ce.op, ce.type = nil, :&, C::Pointer.new(m.type)
 			elsif [:+, :-, :'+=', :'-='].include? ce.op and ce.rexpr.kind_of? C::CExpression and ((not ce.rexpr.op and i = ce.rexpr.rexpr) or
@@ -1003,11 +996,10 @@ class Decompiler
 			elsif (ce.op == :+ or ce.op == :-) and @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) != 1
 				# ptr+x => (ptrtype*)(((__int8*)ptr)+x)
 				# XXX create struct ?
-				ce.rexpr = C::CExpression.new(nil, nil, ce.rexpr, C::BaseType.new(:int)) if not ce.rexpr.type.integral?
+				ce.rexpr = C::CExpression[ce.rexpr, C::BaseType.new(:int)] if not ce.rexpr.type.integral?
 				if @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) != 1
 					ptype = ce.lexpr.type
-					ce.lexpr = C::CExpression.new(nil, nil, ce.lexpr, ce.lexpr.type) if not ce.lexpr.kind_of? C::CExpression
-					ce.lexpr = C::CExpression.new(nil, nil, ce.lexpr, C::Pointer.new(C::BaseType.new(:__int8)))
+					ce.lexpr = C::CExpression[[ce.lexpr], C::Pointer.new(C::BaseType.new(:__int8))]
 					ce.lexpr, ce.op, ce.rexpr, ce.type = nil, nil, C::CExpression.new(ce.lexpr, ce.op, ce.rexpr, ce.lexpr.type), ptype
 				end
 			end
@@ -1078,12 +1070,11 @@ class Decompiler
 				next if v1.name == v2.name or o1 >= o2+l2 or o1+l1 <= o2 or l1 > l2 or (l2 == l1 and o2 > o1)
 				# v1 => *(&v2+delta)
 				# XXX o1 may overlap o2 AND another (int32 v_10; int32 v_E; int32 v_C;)
-				p = C::CExpression.new(nil, :&,  v2, C::Pointer.new(v2.type))
-				p = C::CExpression.new(nil, nil, p, C::Pointer.new(C::BaseType.new(:__int8))) if v2.type != C::BaseType.new(:__int8)
-				o = C::CExpression.new(nil, nil, o1-o2, C::BaseType.new(:__int32))
-				p = C::CExpression.new(p,   :+,  o, p.type)
-				p = C::CExpression.new(nil, nil, p, C::Pointer.new(v1.type)) if v1.type != p.type.type
-				p = C::CExpression.new(nil, :*,  p, v1.type)
+				p = C::CExpression[:&, v2]
+				p = C::CExpression[p, C::Pointer.new(C::BaseType.new(:__int8))] if v2.type != C::BaseType.new(:__int8)
+				p = C::CExpression[p, :+,  [o1-o2]]
+				p = C::CExpression[p, C::Pointer.new(v1.type)] if v1.type != p.type.type
+				p = C::CExpression[:*,  p]
 				scope.statements.each { |stmt|
 					replace_var(stmt, v1, p, false)
 				}
@@ -1202,7 +1193,7 @@ class Decompiler
 		# do this after the first pass, which may change &*ptr to ptr
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::Variable and future_array.include? ce.rexpr.name
-				ce.lexpr, ce.op, ce.rexpr = ce.rexpr, :'[]', C::CExpression.new(nil, nil, 0, C::BaseType.new(:int))
+				ce.lexpr, ce.op, ce.rexpr = ce.rexpr, :'[]', C::CExpression[0]
 			end
 		} } if not future_array.empty?
 	end
@@ -1545,9 +1536,8 @@ class Decompiler
 
 					# remove the assignment and replace the value in nt
 					nv = st.rexpr
-					if st.rexpr.kind_of? C::CExpression
-						nv = nv.reduce(@c_parser)
-						nv = C::CExpression.new(nil, nil, nv, C::BaseType.new(:int)) if nv.kind_of? ::Integer
+					if nv.kind_of? C::CExpression
+						nv = C::CExpression[nv.reduce(@c_parser)]
 					end
 					replace_var nt, var, nv
 
