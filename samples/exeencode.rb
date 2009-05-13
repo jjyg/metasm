@@ -62,14 +62,21 @@ else
 end
 
 __END__
-.text
-.entrypoint
-push bla
-push fmt
-call printf
-push 0
-call exit
+#include <asm/unistd_32.h>
+jmp getip
+gotip:
+mov eax, __NR_write
+mov ebx, 1
+pop ecx
+mov edx, strend-str
+int 80h
 
-.data
-bla db "world", 0
-fmt db "Hello, %s !\n", 0
+mov eax, __NR_exit
+mov ebx, 1
+int 80h
+
+getip:
+call gotip
+
+str db "Hello, world!", 0xa
+strend:
