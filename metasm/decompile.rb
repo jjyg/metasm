@@ -934,6 +934,16 @@ class Decompiler
 		varandffff.each { |k, v|
 			scope.symbol[k].type = C::BaseType.new(:__int16, :unsigned) if varuse[k] == v
 		}
+
+		# propagate types to cexprs
+		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
+			if ce.op
+				ce.type = C::CExpression[ce.lexpr, ce.op, ce.rexpr].type
+				if ce.op == :'=' and ce.rexpr.type != ce.type and (not ce.rexpr.type.integral? or not ce.type.integral?)
+					ce.rexpr = C::CExpression[ce.rexpr, ce.type]
+				end
+			end
+		} }
 	end
 
 	# fix pointer arithmetic (eg int foo += 4  =>  int* foo += 1)
@@ -942,6 +952,10 @@ class Decompiler
 	def fix_pointer_arithmetic(scope)
 		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
 			next if not ce.kind_of? C::CExpression
+			if ce.lexpr and ce.lexpr.type.pointer? and [:&, :>>, :<<].include? ce.op
+				ce.lexpr = C::CExpression[[ce.lexpr], C::BaseType.new(:int)]
+			end
+
 			if ce.op == :* and not ce.lexpr and ce.rexpr.type.pointer? and ce.rexpr.type.untypedef.type.untypedef.kind_of? C::Struct
 				s = ce.rexpr.type.untypedef.type.untypedef
 				m = s.members.find { |m_| s.offsetof(@c_parser, m_.name) == 0 }
@@ -1170,9 +1184,6 @@ class Decompiler
 			end
 			if ce.lexpr.kind_of? C::CExpression and not ce.lexpr.op and ce.lexpr.rexpr.kind_of? C::Variable and ce.lexpr.type == ce.lexpr.rexpr.type
 				ce.lexpr = ce.lexpr.rexpr
-			end
-			if ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::Variable and ce.rexpr.type == ce.rexpr.rexpr.type
-				ce.rexpr = ce.rexpr.rexpr
 			end
 
 			# &struct.1stmember => &struct
@@ -1606,12 +1617,24 @@ class Decompiler
 				ce.lexpr, ce.op, ce.rexpr, ce.type = nil, nil, ce.lexpr, ce.lexpr.type
 			end
 
+			# useless casts
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression
 				ce.rexpr = ce.rexpr.rexpr
 			end
-
-			if not ce.op and ce.rexpr.kind_of? C::CExpression and ce.type == ce.rexpr.type
+			if not ce.op and ce.rexpr.kind_of? C::CExpression and (ce.type == ce.rexpr.type or (ce.type.integral? and ce.rexpr.type.integral?))
 				ce.lexpr, ce.op, ce.rexpr = ce.rexpr.lexpr, ce.rexpr.op, ce.rexpr.rexpr
+			end
+			# conditions often are x & 0xffffff which may cast pointers to ints, remove those casts
+			if ce.op == :== and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0
+				ce.lexpr, ce.op, ce.rexpr = nil, :'!', ce.lexpr
+			end
+			if ce.op == :'!' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression
+				ce.rexpr = ce.rexpr.rexpr
+			end
+			if ce.op == :< and ce.rexpr.kind_of? C::CExpression and ce.lexpr.kind_of? C::CExpression and not ce.rexpr.op and not ce.lexpr.op and
+				ce.rexpr.rexpr.kind_of? C::CExpression and ce.rexpr.rexpr.type.pointer? and ce.lexpr.rexpr.kind_of? C::CExpression and ce.lexpr.rexpr.type.pointer?
+				ce.rexpr = ce.rexpr.rexpr
+				ce.lexpr = ce.lexpr.rexpr
 			end
 
 			# a & 3 & 1
