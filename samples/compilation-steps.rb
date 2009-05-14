@@ -1,5 +1,7 @@
 require 'metasm'
 
+pic = ARGV.delete '--pic'
+
 src = ARGV.empty? ? <<EOS : ARGF.read
 void foo(int);
 void bla()
@@ -17,5 +19,5 @@ puts cp, '', ' ----', ''
 
 cp = Metasm::C::Parser.parse src
 cpu = Metasm::Ia32.new
-cpu.generate_PIC = false
+cpu.generate_PIC = false unless pic
 puts cpu.new_ccompiler(cp).compile
