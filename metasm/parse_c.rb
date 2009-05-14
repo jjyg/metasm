@@ -1003,13 +1003,15 @@ EOH
 
 		# checks that the types are compatible (variable predeclaration, function argument..)
 		# strict = false for func call/assignment (eg char compatible with int -- but int is incompatible with char)
+		# output warnings only
 		def check_compatible_type(tok, oldtype, newtype, strict = false, checked = [])
+			return if not $VERBOSE
 			oldtype = oldtype.untypedef
 			newtype = newtype.untypedef
 			oldtype = BaseType.new(:int) if oldtype.kind_of? Enum
 			newtype = BaseType.new(:int) if newtype.kind_of? Enum
 
-			puts tok.exception('type qualifier mismatch').message if $VERBOSE and oldtype.qualifier.to_a.uniq.length > newtype.qualifier.to_a.uniq.length
+			puts tok.exception('type qualifier mismatch').message if oldtype.qualifier.to_a.uniq.length > newtype.qualifier.to_a.uniq.length
 
 			# avoid infinite recursion
 			return if checked.include? oldtype
@@ -1018,12 +1020,12 @@ EOH
 		    begin
 			case newtype
 			when Function
-				raise tok if not oldtype.kind_of? Function
+				raise tok, 'type error' if not oldtype.kind_of? Function
 				check_compatible_type tok, oldtype.type, newtype.type, strict, checked
 				if oldtype.args and newtype.args
 					if oldtype.args.length != newtype.args.length or
 							oldtype.varargs != newtype.varargs
-						raise tok
+						raise tok, 'type error'
 					end
 					oldtype.args.zip(newtype.args) { |oa, na|
 						# begin ; rescue ParseError: raise $!.message + "in parameter #{oa.name}" end
@@ -1032,17 +1034,17 @@ EOH
 				end
 			when Pointer
 				if oldtype.kind_of? BaseType and oldtype.integral?
-					puts tok.exception('making pointer from integer without a cast').message if $VERBOSE
+					puts tok.exception('making pointer from integer without a cast').message
 					return
 				end
-				raise tok if not oldtype.kind_of? Pointer
+				raise tok, 'type error' if not oldtype.kind_of? Pointer
 				hasvoid = true if (t = newtype.type.untypedef).kind_of? BaseType and t.name == :void
 				hasvoid = true if (t = oldtype.type.untypedef).kind_of? BaseType and t.name == :void	# struct foo *f = NULL;
 				if strict and not hasvoid
 					check_compatible_type tok, oldtype.type, newtype.type, strict, checked
 				end
 			when Union
-				raise tok if not oldtype.class == newtype.class
+				raise tok, 'type error' if not oldtype.class == newtype.class
 				if oldtype.members and newtype.members
 					if oldtype.members.length != newtype.members.length
 						raise tok, 'bad member count'
@@ -1053,22 +1055,23 @@ EOH
 					}
 				end
 			when BaseType
-				raise tok if not oldtype.kind_of? BaseType
+				raise tok, 'type error' if not oldtype.kind_of? BaseType
 				if strict
 					if oldtype.name != newtype.name or
 					oldtype.specifier != newtype.specifier
-						raise tok
+						raise tok, 'type error'
 					end
 				else
-					raise tok if @typesize[newtype.name] == 0 and @typesize[oldtype.name] > 0
-					puts tok.exception('type size mismatch, may lose bits') if $VERBOSE and @typesize[oldtype.name] > @typesize[newtype.name]
-					puts tok.exception('sign mismatch').message if $VERBOSE and oldtype.specifier != newtype.specifier and @typesize[newtype.name] == @typesize[oldtype.name]
+					raise tok, 'type error' if @typesize[newtype.name] == 0 and @typesize[oldtype.name] > 0
+					puts tok.exception('type size mismatch, may lose bits').message if @typesize[oldtype.name] > @typesize[newtype.name]
+					puts tok.exception('sign mismatch').message if oldtype.specifier != newtype.specifier and @typesize[newtype.name] == @typesize[oldtype.name]
 				end
 			end
 		    rescue ParseError
-			oname = oldtype.to_s rescue oldtype.class.name
-			nname = newtype.to_s rescue newtype.class.name
-			raise $!, $!.message + " incompatible type #{oname} to #{nname}"
+			raise $! if checked.length != 1	# bubble up
+			oname = (oldtype.to_s rescue oldtype.class.name)
+			nname = (newtype.to_s rescue newtype.class.name)
+			puts $!.message + " incompatible type #{oname} to #{nname}"
 		    end
 		end
 
@@ -1337,7 +1340,7 @@ EOH
 				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 				if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-					puts tok.exception("statement with no effect : #{expr}")
+					puts tok.exception("statement with no effect : #{expr}").message
 				end
 				return expr
 			end
@@ -1394,7 +1397,7 @@ EOH
 					raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
 					if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
-						puts tok.exception("statement with no effect : #{expr}")
+						puts tok.exception("statement with no effect : #{expr}").message
 					end
 					expr
 				end
@@ -2285,7 +2288,7 @@ EOH
 						else raise parser, "cannot do #{op.inspect} on pointers"
 						end
 					elsif l.type.pointer? or r.type.pointer?
-						raise parser, "cannot do #{op.inspect} on pointer" if not [:'+', :'-', :'=', :'+=', :'-='].include? op
+						puts parser.exception("should not #{op.inspect} a pointer").message if $VERBOSE and not [:'+', :'-', :'=', :'+=', :'-=', :==, :'!='].include? op
 						type = l.type.pointer? ? l.type : r.type
 					else
 						# yay integer promotion
