@@ -773,6 +773,16 @@ module C
 			@lexpr, @op, @rexpr, @type = l, o, r, t
 		end
 		
+		# deep copy of the object
+		# recurses only within CExpressions, anything else is copied by reference
+		def deep_dup
+			n = dup
+			n.lexpr = n.lexpr.deep_dup if n.lexpr.kind_of? CExpression
+			n.rexpr = n.rexpr.deep_dup if n.rexpr.kind_of? CExpression
+			n.rexpr = n.rexpr.map { |e| e.kind_of?(CExpression) ? e.deep_dup : e } if n.rexpr.kind_of? ::Array
+			n
+		end
+
 		# recursive constructor with automatic type inference
 		# e.g. CExpression[foo, :+, [:*, bar]]
 		# assumes root args are correctly typed (eg *foo => foo must be a pointer)
@@ -2681,7 +2691,7 @@ EOH
 		def dump_declarator(decl, scope, r=[''], dep=[])
 			decl.last << '()' if decl.last.empty?
 			decl.last << '['
-			decl, dep = CExpression.dump(@length, scope, decl, dep) if @length
+			decl, dep = CExpression.dump(@length, scope, decl, dep) if length
 			decl.last << ']'
 			@type.dump_declarator(decl, scope, r, dep)
 		end
