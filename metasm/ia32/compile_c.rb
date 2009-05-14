@@ -348,7 +348,7 @@ class CCompiler < C::Compiler
 			else
 				c_cexpr_inner_l(expr)
 			end
-		when C::Label; expr.name
+		when C::Label; findvar(C::Variable.new(expr.name, C::Array.new(C::BaseType.new(:void), 1)))
 		else puts "ia32/c_ce_i: unsupported #{expr}" if $VERBOSE
 		end
 	rescue
