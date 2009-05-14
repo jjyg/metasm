@@ -384,6 +384,11 @@ module C
 	class Array < Pointer
 		attr_accessor :length
 
+		def initialize(type=nil, length=nil)
+			super(type)
+			@length = length if length
+		end
+
 		def align(parser) @type.align(parser) end
 
 		def parse_initializer(parser, scope)
@@ -489,6 +494,10 @@ module C
 		attr_accessor :name
 		attr_accessor :storage		# auto register static extern typedef
 		attr_accessor :backtrace	# definition backtrace info (the name token)
+
+		def initialize(name=nil, type=nil)
+			@name, @type = name, type
+		end
 	end
 
 	# found in a block's Statements, used to know the initialization order
