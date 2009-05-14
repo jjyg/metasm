@@ -462,7 +462,11 @@ module C
 					list << expr.rexpr.name
 				else
 					walk[expr.lexpr]
-					walk[expr.rexpr]
+					if expr.rexpr.kind_of? ::Array
+						expr.rexpr.each { |r| walk[r] }
+					else
+						walk[expr.rexpr]
+					end
 				end
 			}
 			@statements.dup.each { |s|

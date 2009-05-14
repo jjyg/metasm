@@ -348,6 +348,8 @@ class CCompiler < C::Compiler
 			else
 				c_cexpr_inner_l(expr)
 			end
+		when C::Label; expr.name
+		else puts "ia32/c_ce_i: unsupported #{expr}" if $VERBOSE
 		end
 	rescue
 		raise if caller[1...-1].grep(/c_cexpr_inner/).first
