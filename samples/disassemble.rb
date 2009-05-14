@@ -75,9 +75,7 @@ t2 = Time.now if opts[:benchmark]
 
 if opts[:decompile]
 	dcmp = Decompiler.new(dasm)
-	dasm.entrypoints.each { |ep|
-		dcmp.decompile_func(ep)
-	}
+	dcmp.decompile(*dasm.entrypoints)
 	tdc = Time.now if opts[:benchmark]
 end
 

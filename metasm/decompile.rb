@@ -14,9 +14,11 @@ class Decompiler
 	end
 
 	# decompile recursively function from an entrypoint, then perform global optimisation (static vars, ...)
+	# should be called once after everything is decompiled (global optimizations may bring bad results otherwise)
+	# use decompile_func for incremental decompilation
 	# returns the c_parser
-	def decompile(entry)
-		decompile_func(entry)
+	def decompile(*entry)
+		entry.each { |f| decompile_func(f) }
 		make_static_vars
 		@c_parser
 	end
@@ -147,18 +149,19 @@ class Decompiler
 		if not var = @c_parser.toplevel.symbol[name]
 			var = C::Variable.new
 			var.name = name
-			var.type = ptype
+			var.type = C::Array.new(ptype)
 			@c_parser.toplevel.symbol[var.name] = var
 			@c_parser.toplevel.statements << C::Declaration.new(var)
 			if s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
-				var.initializer = C::CExpression[s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness), ptype]
+				# XXX initializer = all data til next defined thing (after unaliasing)
+				var.initializer = [C::CExpression[s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness), ptype]]
 			end
 		end
 
 		# TODO patch existing references to addr ? (or would they have already triggered new_global_var?)
 
 		# return the object to use to replace the raw addr
-		C::CExpression[:&, var]
+		var
 	end
 
 	# return an array of [address of block start, list of block to]]
@@ -352,7 +355,11 @@ class Decompiler
 				decompile_walk(scope) { |s|
 					if s.kind_of? C::Block and l = s.statements.grep(C::Label).find { |l_| l_.name == g.target }
 						case nt = s.statements[s.statements.index(l)..-1].find { |ss| not ss.kind_of? C::Label }
-						when C::Goto, C::Return; ret = nt
+						when C::Goto; ret = nt
+						when C::Return
+						       v = nt.value
+						       v = v.deep_dup if v.kind_of? C::CExpression
+					       	       ret = C::Return.new(v)
 						end
 					end
 				}
@@ -698,6 +705,11 @@ class Decompiler
 				decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
 					ce.lexpr = ne if ce.lexpr == e
 					ce.rexpr = ne if ce.rexpr == e
+					if ce.lexpr == ne or ce.rexpr == ne
+						# set ce type according to l/r
+						# TODO set ce.parent type etc
+						ce.type = C::CExpression[ce.lexpr, ce.op, ce.rexpr].type
+					end
 				} }
 			end
 		}
@@ -756,8 +768,12 @@ class Decompiler
 					next
 				elsif e.op == :+ and e.lexpr and e.rexpr.kind_of? C::CExpression
 					if not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
-						# (int)*(x+2) === (int) *x
-						e = e.lexpr
+						if e.rexpr.rexpr < 0x1000	# XXX relocatable + base=0..
+							e = e.lexpr	# (int)*(x+2) === (int) *x
+						elsif globalvar[e.rexpr.rexpr]
+							known_type[e.lexpr, C::BaseType.new(:int)]
+							e = e.rexpr
+						end
 						next
 					elsif t.pointer? and e.lexpr.kind_of? C::CExpression
 						if (e.lexpr.lexpr and [:<<, :>>, :*, :&].include? e.lexpr.op) or
@@ -954,6 +970,10 @@ class Decompiler
 			next if not ce.kind_of? C::CExpression
 			if ce.lexpr and ce.lexpr.type.pointer? and [:&, :>>, :<<].include? ce.op
 				ce.lexpr = C::CExpression[[ce.lexpr], C::BaseType.new(:int)]
+			end
+
+			if ce.op == :+ and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.type.pointer?
+				ce.rexpr, ce.lexpr = ce.lexpr, ce.rexpr
 			end
 
 			if ce.op == :* and not ce.lexpr and ce.rexpr.type.pointer? and ce.rexpr.type.untypedef.type.untypedef.kind_of? C::Struct
@@ -1472,6 +1492,7 @@ class Decompiler
 				todo = []
 				done = []
 				reused = false
+				trivial = nil
 				update_todo = lambda { |s, i|
 					case s
 					when C::Goto
@@ -1481,6 +1502,7 @@ class Decompiler
 					when C::If
 						if s.belse or not s.bthen.kind_of? C::Goto
 							reused = true 
+							trivial = false
 							next
 						end
 						update_todo[s.bthen, nil]
@@ -1517,7 +1539,7 @@ class Decompiler
 					# check if var is reused later (assume function graph in only goto/ifgoto)
 					# assume there is no ? : construct
 					reused = false
-					if not stmt_access(nt, var, :write)
+					if not stmt_access(e, var, :write)
 						update_todo[nt, sti+1] if nt
 						while i = todo.pop
 							next if done.include? i
@@ -1671,6 +1693,69 @@ class Decompiler
 	end
 
 	def make_static_vars
+		# check all global vars (pointers to global data)
+		tl = @c_parser.toplevel
+		vars = tl.symbol.keys.find_all { |k| not tl.symbol[k].type.kind_of? C::Function }
+		countref = Hash.new(0)
+
+		decompile_walk(tl) { |ce_| decompile_walk_ce(ce_) { |ce|
+			# XXX int foo; void bar() { int foo; }  =>  false negative
+			countref[ce.rexpr.name] += 1 if ce.rexpr.kind_of? C::Variable
+			countref[ce.lexpr.name] += 1 if ce.lexpr.kind_of? C::Variable
+		} }
+
+		vars.delete_if { |v| countref[v] == 0 }
+		countref.delete_if { |k, v| not vars.include? k }
+
+		# by default globals are C::Arrays
+		# if all references are *foo, dereference the var type
+		# TODO allow foo to appear (change to &foo) (but still disallow casts/foo+12 etc)
+		countderef = Hash.new(0)
+		decompile_walk(tl) { |ce_| decompile_walk_ce(ce_) { |ce|
+			countderef[ce.rexpr.name] += 1 if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::Variable
+			countderef[ce.rexpr.rexpr.name] += 1 if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
+					# compare type.type cause var is an Array and the cast is a Pointer
+					ce.rexpr.rexpr.kind_of? C::Variable and ce.rexpr.type.type == ce.rexpr.rexpr.type.type rescue nil
+		} }
+		vars.each { |n|
+			if countref[n] == countderef[n]
+				v = tl.symbol[n]
+				target = C::CExpression[:*, [v]]
+				v.type = v.type.type
+				v.initializer = v.initializer.first if v.initializer.kind_of? ::Array
+				decompile_walk(tl) { |ce_| decompile_walk_ce(ce_) { |ce|
+					ce.lexpr = v if ce.lexpr == target
+					ce.rexpr = v if ce.rexpr == target
+					ce.lexpr, ce.op, ce.rexpr = nil, nil, v if ce == target
+				} }
+			end
+		}
+
+		# if a global var appears only in one function, make it a static variable
+		tl.statements.each { |st|
+			next if not st.kind_of? C::Declaration or not st.var.type.kind_of? C::Function or not scope = st.var.initializer
+			localcountref = Hash.new(0)
+			decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+				localcountref[ce.rexpr.name] += 1 if ce.rexpr.kind_of? C::Variable
+				localcountref[ce.lexpr.name] += 1 if ce.lexpr.kind_of? C::Variable
+			} }
+
+			vars.delete_if { |n|
+				next if scope.symbol[n]
+				next if localcountref[n] != countref[n]
+				v = scope.symbol[n] = tl.symbol.delete(n)
+				v.storage = :static
+				tl.statements.delete_if { |d|
+					if d.kind_of? C::Declaration and d.var.name == n
+						scope.statements.unshift d
+						true
+					end
+				}
+				true
+			}
+		}
+
+		vars.sort.each { |v| puts "#{v} #{countref[v]} #{countderef[v]}" }
 	end
 
 	# yield each CExpr member (recursive, allows arrays, order: self(!post), lexpr, rexpr, self(post))
@@ -1705,6 +1790,8 @@ class Decompiler
 				yield scope.value
 			end
 			yield scope if post
+		when C::Declaration
+			decompile_walk(scope.var.initializer, post, &b) if scope.var.initializer
 		end
 	end
 end
