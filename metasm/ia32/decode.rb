@@ -605,7 +605,7 @@ class Ia32
 			# assume nothing except the 1st arg is modified
 			case a[0]
 			when Indirection, Symbol; { a[0] => Expression::Unknown }
-			when Expression; { a[0].externals.first => Expression::Unknown }
+			when Expression; (x = a[0].externals.first) ? { x => Expression::Unknown } : {}
 			else {}
 			end
 		end
