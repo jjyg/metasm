@@ -1939,6 +1939,12 @@ EOH
 			end
 		end
 
+		def complexity
+			cx = 1
+			walk { |e| cx += e.complexity if e.kind_of?(CExpression) }
+			cx
+		end
+
 		RIGHTASSOC = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'&=',
 			:'|=', :'^=', :'<<=', :'>>=', :'?:'
 		].inject({}) { |h, op| h.update op => true }

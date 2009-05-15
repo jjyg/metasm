@@ -1515,7 +1515,7 @@ class Decompiler
 					end
 				}
 
-				if not sideeffect(st.rexpr, scope) and not stmt_access(nt, var, :write)
+				if not sideeffect(st.rexpr, scope) and not stmt_access(nt, var, :write) and st.complexity < 10	# XXX should take complexity of the whole resulting CExpr
 					# var_0 = var_4 + 12;
 					trivial = []	# list of vars var depends on
 					decompile_walk_ce(st.rexpr) { |ce_|
