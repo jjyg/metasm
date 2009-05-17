@@ -1754,8 +1754,6 @@ class Decompiler
 				true
 			}
 		}
-
-		vars.sort.each { |v| puts "#{v} #{countref[v]} #{countderef[v]}" }
 	end
 
 	# yield each CExpr member (recursive, allows arrays, order: self(!post), lexpr, rexpr, self(post))
