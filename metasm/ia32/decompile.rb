@@ -93,10 +93,9 @@ class Ia32
 		}
 
 		# remove writes from a block if no following block read the value
+		dw = {}	# deps_w must be kept intact through the loop, work on a clone
 		deps_w.each { |b, deps|
-			deps.delete_if { |dep|
-				next if deps_subfunc[b].include? dep	# arg to a function called by the block
-				next true if deps_subfuncw[b].include? dep	# thing written by the function
+			dw[b] = deps.reject { |dep|
 				ret = true
 				done = []
 				todo = deps_to[b].dup
@@ -114,7 +113,7 @@ class Ia32
 			}
 		}
 
-		deps_w
+		dw
 	end
 
 	def decompile_blocks(dcmp, myblocks, deps, scope, nextaddr = nil)
