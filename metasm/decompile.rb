@@ -1724,7 +1724,8 @@ class Decompiler
 			next if ce.op != :* or ce.lexpr
 			r = ce.rexpr
 			# compare type.type cause var is an Array and the cast is a Pointer
-			countderef[r.rexpr.name] += 1 if r.kind_of? C::CExpression and not r.op and r.rexpr.kind_of? C::Variable and r.type.type == r.rexpr.type.type rescue nil
+			countderef[r.rexpr.name] += 1 if r.kind_of? C::CExpression and not r.op and r.rexpr.kind_of? C::Variable and
+		       			@c_parser.sizeof(nil, r.type.type) == @c_parser.sizeof(nil, r.rexpr.type.type) rescue nil
 		}
 		vars.each { |n|
 			if countref[n] == countderef[n]
