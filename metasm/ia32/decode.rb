@@ -280,6 +280,8 @@ class Ia32
 		when 'nl', 'ge'; Expression[:eflag_s, :==, :eflag_o]
 		when 'le', 'ng'; Expression[[:eflag_s, :'!=', :eflag_o], :|, :eflag_z]
 		when 'nle', 'g'; Expression[[:eflag_s, :==, :eflag_o], :&, :eflag_z]
+		when 'ecxz'; Expression[:'!', :ecx]
+		when 'cxz'; Expression[:'!', [:ecx, :&, 0xffff]]
 		end
 	end
 

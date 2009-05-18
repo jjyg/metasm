@@ -157,11 +157,16 @@ class Ia32
 				a = di.instruction.args
 				if di.opcode.props[:setip] and not di.opcode.props[:stopexec]
 					# conditional jump
-					# XXX switch/indirect/multiple jmp
-					# TODO handle loop/jecxz
 					commit[]
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
-					stmts << C::If.new(ceb[decode_cc_to_expr(di.opcode.name[1..-1])], C::Goto.new(n))
+					if di.opcode.name =~ /^loop(.+)?/
+						cx = C::CExpression[:'--', ceb[:ecx]]
+						cc = $1 ? C::CExpression[cx, :'&&', ceb[decode_cc_to_expr($1)]] : cx
+					else
+						cc = ceb[decode_cc_to_expr(di.opcode.name[1..-1])]
+					end
+					# XXX switch/indirect/multiple jmp
+					stmts << C::If.new(cc, C::Goto.new(n))
 					to.delete dcmp.dasm.normalize(n)
 					next
 				end
