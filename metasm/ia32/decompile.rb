@@ -296,7 +296,8 @@ class Ia32
 				# XXX bouh
 				# TODO mark instructions for which bt_binding is accurate
 				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq', 'leave', 'nop'
-					di.backtrace_binding.each { |k, v|
+					bd = get_fwdemu_binding(di)
+					bd.each { |k, v|
 						if k.kind_of? ::Symbol #and (not deps[b].include? k or di.block.list[didx+1..-1].find { |ddi| ddi.backtrace_binding[k] })
 							ops << [k, v]
 						else
@@ -305,7 +306,7 @@ class Ia32
 						end
 					}
 					update = {}
-					di.backtrace_binding.each { |k, v|
+					bd.each { |k, v|
 						next if not k.kind_of? ::Symbol
 						update[k] = Expression[Expression[v].bind(binding).reduce]
 					}
