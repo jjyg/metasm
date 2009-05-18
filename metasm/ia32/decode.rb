@@ -619,7 +619,7 @@ class Ia32
 		# XXX handles only a <- a+i for now, this covers all useful cases (except imul eax, eax, 42  jz foobar)
 		fdi.keys.grep(::Symbol).each { |s|
 			val = Expression[fdi[s]]
-			next if val.lexpr != s or (val.op != :+ and val.op != :-) or not val.rexpr.kind_of? ::Integer
+			next if val.lexpr != s or (val.op != :+ and val.op != :-) #or not val.rexpr.kind_of? ::Integer
 			fwd = { s => val }
 			inv = { s => val.dup }
 			inv[s].op = ((inv[s].op == :+) ? :- : :+)
