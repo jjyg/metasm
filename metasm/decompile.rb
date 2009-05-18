@@ -19,7 +19,7 @@ class Decompiler
 	# returns the c_parser
 	def decompile(*entry)
 		entry.each { |f| decompile_func(f) }
-		make_static_vars
+		optimize_global
 		@c_parser
 	end
 
@@ -58,10 +58,10 @@ class Decompiler
 
 		# find decodedinstruction blocks constituing the function
 		# TODO merge sequencial blocks with useless jmp (poeut) to improve dependency graph later
-		myblocks = decompile_func_listblocks(entry)
+		myblocks = listblocks_func(entry)
 
 		# [esp+8] => [:frameptr-12]
-		decompile_makestackvars entry, myblocks.map { |b, to| @dasm.decoded[b].block }
+		makestackvars entry, myblocks.map { |b, to| @dasm.decoded[b].block }
 
 		# find registry dependencies between blocks
 		deps = @dasm.cpu.decompile_func_finddeps(self, myblocks)
@@ -71,7 +71,7 @@ class Decompiler
 		@dasm.cpu.decompile_blocks(self, myblocks, deps, scope)
 
 		# goto bla ; bla: goto blo => goto blo ;; goto bla ; bla: return => return
-		decompile_simplify_goto(scope)
+		simplify_goto(scope)
 
 		# infer variable types
 		decompile_c_types(scope)
@@ -115,11 +115,11 @@ class Decompiler
 		}
 
 		# change if() goto to if, if/else, while
-		decompile_match_controlseq(scope)
+		decompile_controlseq(scope)
 
 		optimize_vars(scope)
 
-		decompile_optimize_ctrl(scope)
+		optimize_ctrl(scope)
 
 		case ret = scope.statements.last
 		when C::CExpression; puts "no return at end of func" if $VERBOSE
@@ -166,7 +166,7 @@ class Decompiler
 
 	# return an array of [address of block start, list of block to]]
 	# decompile subfunctions
-	def decompile_func_listblocks(entry)
+	def listblocks_func(entry)
 		@autofuncs ||= []
 		blocks = []
 		entry = dasm.normalize entry
@@ -217,7 +217,7 @@ class Decompiler
 	end
 
 	# patches instruction's backtrace_binding to replace things referring to a static stack offset from func start by :frameptr+off
-	def decompile_makestackvars(funcstart, blocks)
+	def makestackvars(funcstart, blocks)
 		blockstart = nil
 		tovar = lambda { |di, e, i_s|
 			case e
@@ -265,6 +265,7 @@ class Decompiler
 
 	# give a name to a stackoffset (relative to start of func)
 	# 4 => :arg_0, -8 => :var_4 etc
+	# TODO do not encode off in varname, use a hash in e.g. DecodedFunction (allows user-defined varnames & more robust)
 	def stackoff_to_varname(off)
 		if off >= @dasm.cpu.size/8
 			'arg_%X' % ( off-@dasm.cpu.size/8)	#  4 => arg_0,  8 => arg_4..
@@ -345,14 +346,14 @@ class Decompiler
 	# iterative process, to not infinite loop on b:goto a; a:goto b;
 	# TODO multipass ? (goto a -> goto b -> goto c -> goto d)
 	# remove last return if not useful
-	def decompile_simplify_goto(scope)
+	def simplify_goto(scope)
 		cntr = -1
 
 		simpler_goto = lambda { |g|
 			case ret = g
 			when C::Goto
 				# return a new goto
-				decompile_walk(scope) { |s|
+				walk(scope) { |s|
 					if s.kind_of? C::Block and l = s.statements.grep(C::Label).find { |l_| l_.name == g.target }
 						case nt = s.statements[s.statements.index(l)..-1].find { |ss| not ss.kind_of? C::Label }
 						when C::Goto; ret = nt
@@ -376,7 +377,7 @@ class Decompiler
 			ret
 		}
 
-		decompile_walk(scope) { |s|
+		walk(scope) { |s|
 			case s
 			when C::Block
 				s.statements.each_with_index { |ss, i|
@@ -387,18 +388,19 @@ class Decompiler
 			end
 		}
 
-		decompile_remove_labels(scope)
+		remove_labels(scope)
 	end
 
 	# changes ifgoto, goto to while/ifelse..
-	def decompile_match_controlseq(scope)
+	def decompile_controlseq(scope)
 		scope.statements = decompile_cseq_if(scope.statements, scope)
+		# TODO harmonize _if/_while
 		decompile_cseq_while(scope.statements, scope)
 		decompile_cseq_switch(scope)
 	end
 
 	# optimize if() { a; } to if() a;
-	def decompile_optimize_ctrl(scope)
+	def optimize_ctrl(scope)
 		# break/continue
 		# XXX if (foo) while (bar) goto bla; bla:  should => break
 		walk = lambda { |e, brk, cnt|
@@ -437,7 +439,7 @@ class Decompiler
 		}
 		walk[scope, nil, nil]
 
-		decompile_remove_labels(scope)
+		remove_labels(scope)
 
 		# while (1) { a; if(b) { c; return; }; d; }  =>  while (1) { a; if (b) break; d; } c;
 		while st = scope.statements.last and st.kind_of? C::While and st.test.kind_of? C::CExpression and
@@ -445,18 +447,18 @@ class Decompiler
 			break if not i = st.body.statements.find { |ist|
 				ist.kind_of? C::If and not ist.belse and ist.bthen.kind_of? C::Block and ist.bthen.statements.last.kind_of? C::Return
 			}
-			decompile_walk(i.bthen.statements) { |sst| sst.outer = i.bthen.outer if sst.kind_of? C::Block and sst.outer == i.bthen }
+			walk(i.bthen.statements) { |sst| sst.outer = i.bthen.outer if sst.kind_of? C::Block and sst.outer == i.bthen }
 			scope.statements.concat i.bthen.statements
 			i.bthen = C::Break.new
 		end
 
-		decompile_walk(scope) { |ce|
+		walk(scope) { |ce|
 			case ce
 			when C::If
 				if ce.bthen.kind_of? C::Block
  					case ce.bthen.statements.length
 					when 1
-						decompile_walk(ce.bthen.statements) { |sst| sst.outer = ce.bthen.outer if sst.kind_of? C::Block and sst.outer == ce.bthen }
+						walk(ce.bthen.statements) { |sst| sst.outer = ce.bthen.outer if sst.kind_of? C::Block and sst.outer == ce.bthen }
 						ce.bthen = ce.bthen.statements.first
 					when 0
  						if not ce.belse and i = ce.bthen.outer.statements.index(ce)
@@ -465,14 +467,14 @@ class Decompiler
 					end
 				end
 				if ce.belse.kind_of? C::Block and ce.belse.statements.length == 1
-					decompile_walk(ce.belse.statements) { |sst| sst.outer = ce.belse.outer if sst.kind_of? C::Block and sst.outer == ce.belse }
+					walk(ce.belse.statements) { |sst| sst.outer = ce.belse.outer if sst.kind_of? C::Block and sst.outer == ce.belse }
 					ce.belse = ce.belse.statements.first
 				end
 			when C::While, C::DoWhile
 				if ce.body.kind_of? C::Block
 				       case ce.body.statements.length
 				       when 1
-					       decompile_walk(ce.body.statements) { |sst| sst.outer = ce.body.outer if sst.kind_of? C::Block and sst.outer == ce.body }
+					       walk(ce.body.statements) { |sst| sst.outer = ce.body.outer if sst.kind_of? C::Block and sst.outer == ce.body }
 					       ce.body = ce.body.statements.first
 				       when 0
 					       if ce.kind_of? C::DoWhile and i = ce.body.outer.statements.index(ce)
@@ -612,9 +614,10 @@ class Decompiler
 		ary
 	end
 
+	# TODO
 	def decompile_cseq_switch(scope)
 		uncast = lambda { |e| e = e.rexpr while e.kind_of? C::CExpression and not e.op ; e }
-		decompile_walk(scope) { |s|
+		walk(scope) { |s|
 			# XXX pfff...
 			next if not s.kind_of? C::If
 			# if (v < 12) return ((void(*)())(tableaddr+4*v))();
@@ -648,18 +651,20 @@ class Decompiler
 		}
 	end
 
-	def decompile_remove_labels(scope)
-		decompile_walk(scope) { |s|
+	# remove unused labels
+	def remove_labels(scope)
+		walk(scope) { |s|
 			next if not s.kind_of? C::Block
 			s.statements.delete_if { |l|
 				if l.kind_of? C::Label
 					notfound = true
-					decompile_walk(scope) { |ss| notfound = false if ss.kind_of? C::Goto and ss.target == l.name}
+					walk(scope) { |ss| notfound = false if ss.kind_of? C::Goto and ss.target == l.name}
 				end
 				notfound
 			}
 		}
-		decompile_walk(scope) { |s|
+		# remove implicit continue; at end of loop
+		walk(scope) { |s|
 			next if not s.kind_of? C::While
 			if s.body.kind_of? C::Block and s.body.statements.last.kind_of? C::Continue
 				s.body.statements.pop
@@ -673,8 +678,7 @@ class Decompiler
 		# TODO handle aliases (mem+regs) (reverse liveness?) XXX this would take place in make_stack_vars
 		# TODO allow user-predefined types (args/local vars)
 		# TODO *(int8*)(ptr+8); *(int32*)(ptr+12) => automatic struct
-		# TODO type global vars too
-		# XXX walk { walk {} } too much, optimize
+		# XXX walk { } too much, optimize
 
 		# types = { off => type of *(frameptr+off) }
 		types = {}
@@ -702,7 +706,7 @@ class Decompiler
 		}
 		update_global_type = lambda { |e, t|
 			if ne = new_global_var(e, t)
-				decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+				walk_ce(scope) { |ce|
 					ce.lexpr = ne if ce.lexpr == e
 					ce.rexpr = ne if ce.rexpr == e
 					if ce.lexpr == ne or ce.rexpr == ne
@@ -710,7 +714,7 @@ class Decompiler
 						# TODO set ce.parent type etc
 						ce.type = C::CExpression[ce.lexpr, ce.op, ce.rexpr].type
 					end
-				} }
+				}
 			end
 		}
 
@@ -796,7 +800,7 @@ class Decompiler
 
 		# we found a type for a stackoff, propagate it through affectations
 		propagate_type = lambda { |off, type|
-			decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+			walk_ce(scope) { |ce|
 				# char x; x & 255 => uchar x
 				if ce.op == :'&' and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
 					known_type[ce.lexpr, C::BaseType.new(ce.lexpr.type.name, :unsigned)]
@@ -831,12 +835,12 @@ class Decompiler
 					else break
 					end
 				end
-			} }
+			}
 		}
 
 
 		# put all those macros in use
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+		walk_ce(scope) { |ce|
 			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and ce.rexpr.rexpr.abs < 0x10000 and (not ce.lexpr.kind_of? C::CExpression or ce.lexpr.op != :'*' or ce.lexpr.lexpr)
 				# var = int
 				known_type[ce.lexpr, ce.rexpr.type]
@@ -846,7 +850,7 @@ class Decompiler
 			elsif ce.op == :* and not ce.lexpr
 				known_type[ce.rexpr, C::Pointer.new(ce.type)]
 			end
-		} }
+		}
 
 		# offsets have types now
 		vartypes.each { |v, t|
@@ -904,7 +908,7 @@ class Decompiler
 			v
 		}
 
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+		walk_ce(scope) { |ce|
 			case
 			when ce.op == :funcall
 				ce.rexpr.map! { |re|
@@ -926,7 +930,7 @@ class Decompiler
 				end
 			when o = frameoff[ce]; ce.lexpr, ce.op, ce.rexpr, ce.type = nil, :&, varat[o], C::Pointer.new(varat[o].type)
 			end
-		} }
+		}
 
 		fix_pointer_arithmetic(scope)
 		fix_type_overlap(scope)
@@ -935,7 +939,7 @@ class Decompiler
 		varuse = Hash.new(0)
 		varandff = Hash.new(0)
 		varandffff = Hash.new(0)
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+		walk_ce(scope) { |ce|
 			if ce.op == :& and ce.lexpr.kind_of? C::Variable and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer
 				case ce.rexpr.rexpr
 				when 0xff; varandff[ce.lexpr.name] += 1
@@ -944,7 +948,7 @@ class Decompiler
 			end
 			varuse[ce.lexpr.name] += 1 if ce.lexpr.kind_of? C::Variable
 			varuse[ce.rexpr.name] += 1 if ce.rexpr.kind_of? C::Variable
-		} }
+		}
 		varandff.each { |k, v|
 			scope.symbol[k].type = C::BaseType.new(:__int8, :unsigned) if varuse[k] == v
 		}
@@ -953,21 +957,21 @@ class Decompiler
 		}
 
 		# propagate types to cexprs
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
+		walk_ce(scope, true) { |ce|
 			if ce.op
 				ce.type = C::CExpression[ce.lexpr, ce.op, ce.rexpr].type
 				if ce.op == :'=' and ce.rexpr.type != ce.type and (not ce.rexpr.type.integral? or not ce.type.integral?)
 					ce.rexpr = C::CExpression[ce.rexpr, ce.type]
 				end
 			end
-		} }
+		}
 	end
 
 	# fix pointer arithmetic (eg int foo += 4  =>  int* foo += 1)
 	# use struct member access (eg *(structptr+8)  =>  structptr->bla)
 	# must be run only once, right after type setting
 	def fix_pointer_arithmetic(scope)
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
+		walk_ce(scope, true) { |ce|
 			next if not ce.kind_of? C::CExpression
 			if ce.lexpr and ce.lexpr.type.pointer? and [:&, :>>, :<<].include? ce.op
 				ce.lexpr = C::CExpression[[ce.lexpr], C::BaseType.new(:int)]
@@ -1038,7 +1042,7 @@ class Decompiler
 					ce.lexpr, ce.op, ce.rexpr, ce.type = nil, nil, C::CExpression.new(ce.lexpr, ce.op, ce.rexpr, ce.lexpr.type), ptype
 				end
 			end
-		} }
+		}
 	end
 
 	# replace all occurence of var var by expr exp in stmt (no handling of if body/while/for etc)
@@ -1119,16 +1123,16 @@ class Decompiler
 	end
 
 	# to be run with scope = function body with only CExpr/Decl/Label/Goto/IfGoto/Return, with correct variables types
-	# will transform += 1 to ++, inline them to prev/next statement ('x++; if (x)..' => 'if (++x)..')
+	# will transform += 1 to ++, inline them to prev/next statement ('++x; if (x)..' => 'if (++x)..')
  	# remove useless variables ('int i;', i never used or 'i = 1; j = i;', i never read after => 'j = 1;')
 	# remove useless casts ('(int)i' with 'int i;' => 'i')
-	# also removes 'enter' traduction ('var_0 = ebp;' => '')
 	def optimize(scope)
 		optimize_code(scope)
 		optimize_vars(scope)
 		optimize_vars(scope)	# 1st run may transform i = i+1 into i++ which second run may coalesce into if(i)
 	end
 
+	# simplify cexpressions (char & 255, redundant casts, etc)
 	def optimize_code(scope)
 		sametype = lambda { |t1, t2|
 			t1 = t1.untypedef
@@ -1140,7 +1144,7 @@ class Decompiler
 
 		# most of this is a CExpr#reduce
 		future_array = []
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
+		walk_ce(scope, true) { |ce|
 			# *&bla => bla if types ok
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.rexpr.type.type, ce.rexpr.rexpr.type]
 				if ce.rexpr.rexpr.kind_of? C::CExpression
@@ -1219,15 +1223,23 @@ class Decompiler
 					ce.rexpr.rexpr.op == :& and s = ce.rexpr.rexpr.rexpr.type and s.kind_of? C::Struct and s.members.first and sametype[ce.type, s.members.first.type]
 				ce.lexpr, ce.op, ce.rexpr = ce.rexpr.rexpr.rexpr, :'.', s.members.first.name
 			end
-		} }
+		}
 
 		# if there is a ptr[4], change all *ptr to ptr[0] for consistency
 		# do this after the first pass, which may change &*ptr to ptr
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+		walk_ce(scope) { |ce|
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::Variable and future_array.include? ce.rexpr.name
 				ce.lexpr, ce.op, ce.rexpr = ce.rexpr, :'[]', C::CExpression[0]
 			end
-		} } if not future_array.empty?
+		} if not future_array.empty?
+
+		# if (x != 0) => if (x)
+		walk(scope) { |st|
+			if st.kind_of? C::If and st.test.kind_of? C::CExpression and st.test.op == :'!=' and
+					st.test.rexpr.kind_of? C::CExpression and not st.test.rexpr.op and st.test.rexpr.rexpr == 0
+				st.test = st.test.lexpr
+			end
+		}
 	end
 
 	# checks if a statement :read or :writes a variable
@@ -1285,6 +1297,8 @@ class Decompiler
 	end
 
 	# dataflow optimization
+	# condenses expressions (++x; if (x)  =>  if (++x))
+	# remove local var assignment (x = 1; f(x); x = 2; g(x);  =>  f(1); g(2); etc)
 	def optimize_vars(scope)
 		# count how many times a var is read in an expr
 		cnt = lambda { |exp, var|
@@ -1308,12 +1322,6 @@ class Decompiler
 			scope.statements.length.times { |sti|
 				sti -= ndel	# account for delete_at while each
 				st = scope.statements[sti]
-
-				# if (x != 0) => if (x)
-				if st.kind_of? C::If and st.test.kind_of? C::CExpression and st.test.op == :'!=' and
-						st.test.rexpr.kind_of? C::CExpression and not st.test.rexpr.op and st.test.rexpr.rexpr == 0
-					st.test = st.test.lexpr
-				end
 
 				next if not st.kind_of? C::CExpression
 
@@ -1519,7 +1527,7 @@ class Decompiler
 				if not sideeffect(st.rexpr, scope) and not stmt_access(nt, var, :write) and st.complexity < 10	# XXX should take complexity of the whole resulting CExpr
 					# var_0 = var_4 + 12;
 					trivial = []	# list of vars var depends on
-					decompile_walk_ce(st.rexpr) { |ce_|
+					walk_ce(st.rexpr) { |ce_|
 						trivial << ce_.lexpr if ce_.lexpr.kind_of? C::Variable
 						trivial << ce_.rexpr if ce_.rexpr.kind_of? C::Variable
 					}
@@ -1634,7 +1642,7 @@ class Decompiler
 		end
 
 		used = {}
-		decompile_walk(scope) { |ce_| decompile_walk_ce(ce_, true) { |ce|
+		walk_ce(scope, true) { |ce|
 			# redo some simplification that may become available after variable propagation
 			if ce.op == :& and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
 				ce.lexpr, ce.op, ce.rexpr, ce.type = nil, nil, ce.lexpr, ce.lexpr.type
@@ -1688,22 +1696,22 @@ class Decompiler
 			used[ce.rexpr.name] = true if ce.rexpr.kind_of? C::Variable
 			used[ce.lexpr.name] = true if ce.lexpr.kind_of? C::Variable
 			ce.rexpr.each { |v| used[v.name] = true if v.kind_of? C::Variable } if ce.rexpr.kind_of?(::Array)
-		} }
+		}
 		scope.statements.delete_if { |sm| sm.kind_of? C::Declaration and not used[sm.var.name] }
 		scope.symbol.delete_if { |n, v| not used[n] }
 	end
 
-	def make_static_vars
+	def optimize_global
 		# check all global vars (pointers to global data)
 		tl = @c_parser.toplevel
 		vars = tl.symbol.keys.find_all { |k| not tl.symbol[k].type.kind_of? C::Function }
 		countref = Hash.new(0)
 
-		decompile_walk(tl) { |ce_| decompile_walk_ce(ce_) { |ce|
+		walk_ce(tl) { |ce|
 			# XXX int foo; void bar() { int foo; }  =>  false negative
 			countref[ce.rexpr.name] += 1 if ce.rexpr.kind_of? C::Variable
 			countref[ce.lexpr.name] += 1 if ce.lexpr.kind_of? C::Variable
-		} }
+		}
 
 		vars.delete_if { |v| countref[v] == 0 }
 		countref.delete_if { |k, v| not vars.include? k }
@@ -1712,23 +1720,23 @@ class Decompiler
 		# if all references are *foo, dereference the var type
 		# TODO allow foo to appear (change to &foo) (but still disallow casts/foo+12 etc)
 		countderef = Hash.new(0)
-		decompile_walk(tl) { |ce_| decompile_walk_ce(ce_) { |ce|
-			countderef[ce.rexpr.name] += 1 if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::Variable
-			countderef[ce.rexpr.rexpr.name] += 1 if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
-					# compare type.type cause var is an Array and the cast is a Pointer
-					ce.rexpr.rexpr.kind_of? C::Variable and ce.rexpr.type.type == ce.rexpr.rexpr.type.type rescue nil
-		} }
+		walk_ce(tl) { |ce|
+			next if ce.op != :* or ce.lexpr
+			r = ce.rexpr
+			# compare type.type cause var is an Array and the cast is a Pointer
+			countderef[r.rexpr.name] += 1 if r.kind_of? C::CExpression and not r.op and r.rexpr.kind_of? C::Variable and r.type.type == r.rexpr.type.type rescue nil
+		}
 		vars.each { |n|
 			if countref[n] == countderef[n]
 				v = tl.symbol[n]
 				target = C::CExpression[:*, [v]]
 				v.type = v.type.type
 				v.initializer = v.initializer.first if v.initializer.kind_of? ::Array
-				decompile_walk(tl) { |ce_| decompile_walk_ce(ce_) { |ce|
+				walk_ce(tl) { |ce|
 					ce.lexpr = v if ce.lexpr == target
 					ce.rexpr = v if ce.rexpr == target
 					ce.lexpr, ce.op, ce.rexpr = nil, nil, v if ce == target
-				} }
+				}
 			end
 		}
 
@@ -1736,10 +1744,10 @@ class Decompiler
 		tl.statements.each { |st|
 			next if not st.kind_of? C::Declaration or not st.var.type.kind_of? C::Function or not scope = st.var.initializer
 			localcountref = Hash.new(0)
-			decompile_walk(scope) { |ce_| decompile_walk_ce(ce_) { |ce|
+			walk_ce(scope) { |ce|
 				localcountref[ce.rexpr.name] += 1 if ce.rexpr.kind_of? C::Variable
 				localcountref[ce.lexpr.name] += 1 if ce.lexpr.kind_of? C::Variable
-			} }
+			}
 
 			vars.delete_if { |n|
 				next if scope.symbol[n]
@@ -1758,39 +1766,55 @@ class Decompiler
 	end
 
 	# yield each CExpr member (recursive, allows arrays, order: self(!post), lexpr, rexpr, self(post))
-	def decompile_walk_ce(ce, post=false, &b)
+	# if given a non-CExpr, walks it until it finds a CExpr to yield
+	def walk_ce(ce, post=false, &b)
 		case ce
 		when C::CExpression
 			yield ce if not post
-			decompile_walk_ce(ce.lexpr, post, &b)
-			decompile_walk_ce(ce.rexpr, post, &b)
+			walk_ce(ce.lexpr, post, &b)
+			walk_ce(ce.rexpr, post, &b)
 			yield ce if post
 		when ::Array
-			ce.each { |ce_| decompile_walk_ce(ce_, post, &b) }
+			ce.each { |ce_| walk_ce(ce_, post, &b) }
+		when C::Statement
+			case ce
+			when C::Block; walk_ce(ce.statements, post, &b)
+			when C::If
+				walk_ce(ce.test, post, &b)
+				walk_ce(ce.bthen, post, &b)
+				walk_ce(ce.belse, post, &b) if ce.belse
+			when C::While, C::DoWhile
+				walk_ce(ce.test, post, &b)
+				walk_ce(ce.body, post, &b)
+			when C::Return
+				walk_ce(ce.value, post, &b) if ce.value
+			end
+		when C::Declaration
+			walk_ce(ce.var.initializer, post, &b) if ce.var.initializer
 		end
 	end
 
 	# yields each statement (recursive)
-	def decompile_walk(scope, post=false, &b)
+	def walk(scope, post=false, &b)
 		case scope
-		when ::Array; scope.each { |s| decompile_walk(s, post, &b) }
+		when ::Array; scope.each { |s| walk(s, post, &b) }
 		when C::Statement
 			yield scope if not post
 			case scope
-			when C::Block; decompile_walk(scope.statements, post, &b)
+			when C::Block; walk(scope.statements, post, &b)
 			when C::If
 				yield scope.test
-				decompile_walk(scope.bthen, post, &b)
-				decompile_walk(scope.belse, post, &b) if scope.belse
+				walk(scope.bthen, post, &b)
+				walk(scope.belse, post, &b) if scope.belse
 			when C::While, C::DoWhile
 				yield scope.test
-				decompile_walk(scope.body, post, &b)
+				walk(scope.body, post, &b)
 			when C::Return
 				yield scope.value
 			end
 			yield scope if post
 		when C::Declaration
-			decompile_walk(scope.var.initializer, post, &b) if scope.var.initializer
+			walk(scope.var.initializer, post, &b) if scope.var.initializer
 		end
 	end
 end
