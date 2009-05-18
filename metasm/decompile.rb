@@ -770,11 +770,12 @@ class Decompiler
 					if not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
 						if e.rexpr.rexpr < 0x1000	# XXX relocatable + base=0..
 							e = e.lexpr	# (int)*(x+2) === (int) *x
+							next
 						elsif globalvar[e.rexpr.rexpr]
 							known_type[e.lexpr, C::BaseType.new(:int)]
 							e = e.rexpr
+							next
 						end
-						next
 					elsif t.pointer? and e.lexpr.kind_of? C::CExpression
 						if (e.lexpr.lexpr and [:<<, :>>, :*, :&].include? e.lexpr.op) or
 								(o = framepoff[e.lexpr] and types[o] and types[o].integral? and
