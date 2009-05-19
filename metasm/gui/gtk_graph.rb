@@ -13,6 +13,7 @@ class Graph
 		attr_accessor :id, :x, :y, :w, :h
 		attr_accessor :to, :from # other boxes linked (arrays)
 		attr_accessor :content
+		attr_accessor :direct_to
 		def initialize(id, content=nil)
 			@id = id
 			@x = @y = @w = @h = 0
@@ -415,7 +416,8 @@ class GraphViewWidget < Gtk::HBox
 			set_color_association :bg => :paleblue, :hlbox_bg => :palegrey, :box_bg => :white,
 				:text => :black, :arrow_hl => :red, :comment => :darkblue,
 				:instruction => :black, :label => :darkgreen, :caret => :black, :hl_word => :palered,
-				:cursorline_bg => :paleyellow, :arrow_cond => :darkgreen, :arrow_uncond => :darkblue
+				:cursorline_bg => :paleyellow, :arrow_cond => :darkgreen, :arrow_uncond => :darkblue,
+			       	:arrow_direct => :darkred
 		}
 	end
 
@@ -607,6 +609,8 @@ class GraphViewWidget < Gtk::HBox
 			gc.set_foreground @color[:arrow_hl]
 		elsif b1.to.length == 1
 			gc.set_foreground @color[:arrow_uncond]
+		elsif b1.direct_to == b2.id
+			gc.set_foreground @color[:arrow_direct]
 		else
 			gc.set_foreground @color[:arrow_cond]
 		end
@@ -796,11 +800,12 @@ class GraphViewWidget < Gtk::HBox
 
 		# link boxes
 		ctx.box.each { |b|
-			next if not @dasm.decoded[b[:addresses].last]
-			a = @dasm.decoded[b[:addresses].last].block.address
+			next if not di = @dasm.decoded[b[:addresses].last]
+			a = di.block.address
 			next if not block_rel[a]
 			block_rel[a].each { |t|
 				ctx.link_boxes(b.id, t)
+				b.direct_to = t if t == di.next_addr
 			}
 		}
 
