@@ -412,7 +412,12 @@ module C
 				ret
 			else
 				parser.unreadtok tok
-				super(parser, scope)
+				i = super(parser, scope)
+				if i.kind_of? CExpression and not i.op and i.rexpr.kind_of? String and @length and i.rexpr.length > @length
+					puts tok.exception("initializer is too long (#{i.rexpr.length} for #@length)").message if $VERBOSE
+					i.rexpr = i.rexpr[0, @length]
+				end
+				i
 			end
 		end
 
@@ -1176,12 +1181,14 @@ EOH
 						var = var.rexpr
 					end
 					raise self, 'unknown array size' if not var.kind_of? Variable or not var.initializer
-					case var.initializer
-					when ::String; sizeof(nil, type.type) * var.initializer.length
+					init = var.initializer
+					init = init.rexpr if init.kind_of? C::CExpression and not init.op and init.rexpr.kind_of? ::String
+					case init
+					when ::String; sizeof(nil, type.type) * (init.length + 1)
 					when ::Array
-						v = var.initializer.compact.first
-						v ? (sizeof(nil, type.type) * var.initializer.length) : 0
-					else sizeof(var.initializer)
+						v = init.compact.first
+						v ? (sizeof(nil, type.type) * init.length) : 0
+					else sizeof(init)
 					end
 				when ::Integer; type.length * sizeof(type)
 				when CExpression
