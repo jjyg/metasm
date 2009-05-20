@@ -778,6 +778,12 @@ module C
 			@lexpr, @op, @rexpr, @type = l, o, r, t
 		end
 		
+		# overwrites @lexpr @op @rexpr @type from the arg
+		def replace(o)
+			@lexpr, @op, @rexpr, @type = o.lexpr, o.op, o.rexpr, o.type
+			self
+		end
+
 		# deep copy of the object
 		# recurses only within CExpressions, anything else is copied by reference
 		def deep_dup
