@@ -807,12 +807,18 @@ module C
 
 			case args.length
 			when 4
- 				new(splat[args[0]], args[1], splat[args[2]], args[3])
+				op = args[1]
+				if op == :funcall or op == :'?:'
+					x2 = args[2].map { |a| splat[a] } if args[2]
+				else
+					x2 = splat[args[2]]
+				end
+ 				new(splat[args[0]], op, x2, args[3])
 			when 3
 				op = args[1]
 				x1 = splat[args[0]]
 				if op == :funcall or op == :'?:'
-					x2 = args[2].map { |a| splat[a] } if x2
+					x2 = args[2].map { |a| splat[a] } if args[2]
 				else
 					x2 = splat[args[2]]
 				end
@@ -1924,11 +1930,11 @@ EOH
 		def negate
 			if nop = { :== => :'!=', :'!=' => :==, :> => :<=, :>= => :<, :< => :>=, :<= => :>, :'!' => :'!' }[@op]
 				if nop == :'!'
-					@rexpr
+					CExpression[@rexpr]
 				elsif nop == :== and @rexpr.kind_of? CExpression and not @rexpr.op and @rexpr.rexpr == 0 and
 						@lexpr.kind_of? CExpression and [:==, :'!=', :>, :<, :>=, :<=, :'!'].include? @lexpr.op
 					# (a > b) != 0  =>  (a > b)
-					@lexpr
+					CExpression[@lexpr]
 				else
 					CExpression.new(@lexpr, nop, @rexpr, @type)
 				end
