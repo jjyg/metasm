@@ -166,7 +166,7 @@ class Ia32
 						cc = ceb[decode_cc_to_expr(di.opcode.name[1..-1])]
 					end
 					# XXX switch/indirect/multiple jmp
-					stmts << C::If.new(cc, C::Goto.new(n))
+					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n))
 					to.delete dcmp.dasm.normalize(n)
 					next
 				end
@@ -203,7 +203,7 @@ class Ia32
 				case di.opcode.name
 				when 'ret'
 					commit[]
-					stmts << C::Return.new(ceb[:eax])
+					stmts << C::Return.new(C::CExpression[ceb[:eax]])
 				when 'call'	# :saveip
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					args = []
@@ -244,23 +244,20 @@ class Ia32
 							# internal functions are predeclared, so this one is extern
 							f = dcmp.c_parser.toplevel.symbol[n] = C::Variable.new
 							f.name = n
-							f.type = C::Function.new C::BaseType.new(:int)
+							f.type = C::Function.new(C::BaseType.new(:int))
 							dcmp.c_parser.toplevel.statements << C::Declaration.new(f)
 						end
 						commit[]
-						fc = C::CExpression.new(f, :funcall, args, f.type.type)
 					else
 						# indirect funcall
 						fptr = ceb[n]
 						binding.delete n
-						proto = C::Function.new(C::BaseType.new(:int))
-						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto)) if not fptr.kind_of? C::CExpression	# cast
-						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto))
 						commit[]
-						fc = C::CExpression.new(fptr, :funcall, args, proto.type)
+						proto = C::Function.new(C::BaseType.new(:int))
+						f = C::CExpression[[fptr], proto]
 					end
 					binding.delete :eax
-					stmts << C::CExpression.new(ce[:eax], :'=', fc, fc.type)
+					stmts << C::CExpression[ce[:eax], :'=', [f, :funcall, args], f.type.type]
 				when 'jmp'
 					#if di.comment.to_a.include? 'switch'
 					#	n = di.instruction.args.first.symbolic
@@ -283,11 +280,9 @@ class Ia32
 						n = di.instruction.args.first.symbolic
 						fptr = ceb[n]
 						binding.delete n
-						proto = C::Function.new(C::BaseType.new(:void))
-						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto)) if not fptr.kind_of? C::CExpression	# cast
-						fptr = C::CExpression.new(nil, nil, fptr, C::Pointer.new(proto))
 						commit[]
-						ret = C::Return.new(C::CExpression.new(fptr, :funcall, [], proto.type))
+						proto = C::Function.new(C::BaseType.new(:void))
+						ret = C::Return.new(C::CExpression[[[fptr], C::Pointer.new(proto)], :funcall, []])
 						class << ret ; attr_accessor :from_instr end
 						ret.from_instr = di
 						stmts << ret
