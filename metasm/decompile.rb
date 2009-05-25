@@ -1288,53 +1288,58 @@ class Decompiler
 	end
 
 	# converts C code to a graph of cexprs (nodes = cexprs, edges = codepaths)
-	# returns [label_start, { label => [cexprs] }, { label => [tolabels] }, { label => [fromlabels] }, { label => isblock }]
+	# returns a CGraph
+	class CGraph
+		# exprs: label => [exprs], to: label => [labels], block: label => are exprs standalone (vs If#test), start: 1st label
+		attr_accessor :exprs, :to, :block, :start, :to_optim, :from_optim
+	end
 	def c_to_graph(st)
-		g_exprs = {}	# label => [exprs]
-		g_to = {}	# label => [labels]
-		g_block = {}	# label => is label in a block? (vs If#test)
+		g = CGraph.new
+		g.exprs = {}	# label => [exprs]
+		g.to = {}	# label => [labels]
+		g.block = {}	# label => is label in a block? (vs If#test)
 		anon_label = 0	# when no label is there, use anon_label++
 		# converts C code to a graph of codepath of cexprs
 		to_graph = lambda { |stmt, l_cur, l_after, l_cont, l_break|
 			case stmt
-			when C::Label; g_to[l_cur] = [stmt.name] ; g_to[stmt.name] = [l_after]
-			when C::Goto; g_to[l_cur] = [stmt.target]
-			when C::Continue; g_to[l_cur] = [l_cont]
-			when C::Break; g_to[l_cur] = [l_break]
+			when C::Label; g.to[l_cur] = [stmt.name] ; g.to[stmt.name] = [l_after]
+			when C::Goto; g.to[l_cur] = [stmt.target]
+			when C::Continue; g.to[l_cur] = [l_cont]
+			when C::Break; g.to[l_cur] = [l_break]
 			when C::CExpression
-				g_exprs[l_cur] = [stmt]
-				g_to[l_cur] = [l_after]
+				g.exprs[l_cur] = [stmt]
+				g.to[l_cur] = [l_after]
 			when C::Return
-				g_exprs[l_cur] = [stmt.value] if stmt.value
-				g_to[l_cur] = []
+				g.exprs[l_cur] = [stmt.value] if stmt.value
+				g.to[l_cur] = []
 			when C::Block
 				to_graph[stmt.statements, l_cur, l_after, l_cont, l_break]
 			when ::Array
-				g_exprs[l_cur] = []
-				g_block[l_cur] = true
+				g.exprs[l_cur] = []
+				g.block[l_cur] = true
 				stmt.each_with_index { |s, i|
 					case s
 					when C::Declaration
 					when C::CExpression
-						g_exprs[l_cur] << s
+						g.exprs[l_cur] << s
 					else
 						l = anon_label += 1
 						ll = anon_label += 1
-						g_to[l_cur] = [l]
-						g_block[l_cur] = true
+						g.to[l_cur] = [l]
+						g.block[l_cur] = true
 						to_graph[stmt[i], l, ll, l_cont, l_break]
 						l_cur = ll
-						g_exprs[l_cur] = []
+						g.exprs[l_cur] = []
 					end
 				}
-				g_to[l_cur] = [l_after].compact
+				g.to[l_cur] = [l_after].compact
 			when C::If
-				g_exprs[l_cur] = [stmt.test]
+				g.exprs[l_cur] = [stmt.test]
 				lt = anon_label += 1
 				to_graph[stmt.bthen, lt, l_after, l_cont, l_break]
 				le = anon_label += 1
 				to_graph[stmt.belse, le, l_after, l_cont, l_break]
-				g_to[l_cur] = [lt, le]
+				g.to[l_cur] = [lt, le]
 			when C::While, C::DoWhile
 				la = anon_label += 1
 				if stmt.kind_of? C::DoWhile
@@ -1342,35 +1347,37 @@ class Decompiler
 				else
 					lt, lb = l_cur, la
 				end
-				g_exprs[lt] = [stmt.test]
-				g_to[lt] = [lb, l_after]
+				g.exprs[lt] = [stmt.test]
+				g.to[lt] = [lb, l_after]
 				to_graph[stmt.body, lb, lt, lt, l_after]
-			when C::Asm, nil; g_to[l_cur] = [l_after]
+			when C::Asm, nil; g.to[l_cur] = [l_after]
 			else puts "to_graph unhandled #{stmt.class}: #{stmt}" if $VERBOSE
 			end
 		}
 
-		l_start = anon_label
-		to_graph[st, l_start, nil, nil, nil]
+		g.start = anon_label
+		to_graph[st, g.start, nil, nil, nil]
 
 		# optimize graph
-		g_to.each_value { |v| v.uniq! }
-		g_to.each { |k, v|
-			next if v.length != 1 or g_exprs[k].to_a != [] or v == [k]
-			g_to.each_value { |t| if i = t.index(k) ; t[i] = v.first ; end }
+		g.to_optim = {}
+		g.to.each { |k, v| g.to_optim[k] = v.uniq }
+		g.to_optim.delete_if { |k, v|
+			next if v.length != 1 or g.exprs[k].to_a != [] or v == [k]
+			g.to_optim.each_value { |t| if i = t.index(k) ; t[i] = v.first ; end }
+			true
 		}
 
-		g_from = {}
-		g_to.each { |k, v| v.each { |t| (g_from[t] ||= []) << k } }
+		g.from_optim = {}
+		g.to_optim.each { |k, v| v.each { |t| (g.from_optim[t] ||= []) << k } }
 
-		[l_start, g_exprs, g_to, g_from, g_block]
+		g
 	end
 
 	# dataflow optimization
 	# condenses expressions (++x; if (x)  =>  if (++x))
 	# remove local var assignment (x = 1; f(x); x = 2; g(x);  =>  f(1); g(2); etc)
 	def optimize_vars(scope)
-		l_start, g_exprs, g_to, g_from, g_block = c_to_graph(scope)
+		g = c_to_graph(scope)
 
 		# walks a cexpr in evaluation order (not strictly, but this is not strictly defined anyway..)
 		# returns the first subexpr to read var in ce
@@ -1397,10 +1404,10 @@ class Decompiler
 			next if done.include? label
 			done << label if idx == 0
 
-			idx += 1 while ce = g_exprs[label].to_a[idx] and not ret = find_next_read_ce[ce, var]
+			idx += 1 while ce = g.exprs[label].to_a[idx] and not ret = find_next_read_ce[ce, var]
 			next ret if ret
 
-			to = g_to[label].map { |t|
+			to = g.to_optim[label].map { |t|
 				break [:split] if badlabels.include? t
 				find_next_read_rec[t, 0, var, done, badlabels]
 			}.compact
@@ -1418,19 +1425,19 @@ class Decompiler
 		find_next_read = nil
 		find_prev_read_rec = lambda { |label, idx, var, done|
 			next if done.include? label
-			done << label if idx == g_exprs[label].length-1
+			done << label if idx == g.exprs[label].length-1
 
-			idx -= 1 while idx >= 0 and ce = g_exprs[label].to_a[idx] and not ret = find_next_read_ce[ce, var]
+			idx -= 1 while idx >= 0 and ce = g.exprs[label].to_a[idx] and not ret = find_next_read_ce[ce, var]
 			if ret.kind_of? C::CExpression
 				fwchk = find_next_read[label, idx+1, var]
 				ret = fwchk if not fwchk.kind_of? C::CExpression
 			end
 			next ret if ret
 
-			from = g_from[label].to_a.map { |f|
+			from = g.from_optim[label].to_a.map { |f|
 				# ignore artifacts from graph optimization
-				next if g_exprs[f].to_a == [] and g_to[f].length == 1
-				find_prev_read_rec[f, g_exprs[f].to_a.length-1, var, done]
+				next if g.exprs[f].to_a == [] and g.to_optim[f].length == 1
+				find_prev_read_rec[f, g.exprs[f].to_a.length-1, var, done]
 			}.compact
 
 			next :split if from.include? :split
@@ -1449,11 +1456,11 @@ class Decompiler
 		build_badlabel = lambda { |label|
 			next if badlab[label]
 			badlab[label] = []
-			todo = [l_start]
+			todo = [g.start]
 			while l = todo.pop
 				next if l == label or badlab[label].include? l
 				badlab[label] << l
-				todo.concat g_to[l]
+				todo.concat g.to_optim[l]
 			end
 		}
 
@@ -1461,14 +1468,14 @@ class Decompiler
 		# returns :write if var is written before being read
 		# returns :split if the codepath splits with both subpath reading or codepath merges with another
 		# returns nil if var is never read
-		# idx is the index of the first cexpr at g_exprs[label] to look at
+		# idx is the index of the first cexpr at g.exprs[label] to look at
 		find_next_read = lambda { |label, idx, var|
 			find_next_read_rec[label, idx, var, [], []]
 		}
 		find_prev_read = lambda { |label, idx, var|
 			find_prev_read_rec[label, idx, var, []]
 		}
-		# same as find_next_read, but returns :split if there exist a path from l_start to the read without passing through label
+		# same as find_next_read, but returns :split if there exist a path from g.start to the read without passing through label
 		find_next_read_bl = lambda { |label, idx, var|
 			build_badlabel[label]
 			find_next_read_rec[label, idx, var, [], badlab[label]]
@@ -1476,8 +1483,8 @@ class Decompiler
 
 		# walk each node, optimize data accesses there
 		# replace no more useful exprs by CExpr[nil, nil, nil], those are wiped later.
-		g_exprs.each { |label, exprs|
-			next if not g_block[label]
+		g.exprs.each { |label, exprs|
+			next if not g.block[label]
 			i = 0
 			while i < exprs.length
 				e = exprs[i]
@@ -1562,7 +1569,7 @@ class Decompiler
 						#     we'll just redo a find_next_read like
 						# XXX b = &a; a = 1; *b = 2; foo(a)  unhandled & generate bad C
 						l_i = i
-						while g_exprs[label].to_a.each_with_index { |ce_, n_i|
+						while g.exprs[label].to_a.each_with_index { |ce_, n_i|
 							next if n_i < l_i
 							# count occurences of read v in ce_
 							cnt = 0
@@ -1641,11 +1648,8 @@ class Decompiler
 								break
 							end
 						}
-							may_to = g_to[label].find_all { |to| find_next_read[to, 0, v] }		# ignore branches that will never reuse v
-							if may_to.length == 1 and to = may_to.first and to != label and g_from[to].find_all { |tf|
-								# graph optimization artifacts
-								g_exprs[tf].to_a != [] or g_to[tf].length != 1
-							} == [label]
+							may_to = g.to_optim[label].find_all { |to| find_next_read[to, 0, v] }		# ignore branches that will never reuse v
+							if may_to.length == 1 and to = may_to.first and to != label and g.from_optim[to] == [label]
 								l_i = 0
 								label = to
 							else break
