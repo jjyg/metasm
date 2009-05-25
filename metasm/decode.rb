@@ -867,7 +867,7 @@ class Disassembler
 			next if not di = @decoded[addr]
 			if not f.finalized
 				f.finalized = true
-puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
+puts "  finalize subfunc #{Expression[addr]}" if debug_backtrace
 				@cpu.backtrace_update_function_binding(self, addr, f, f.return_address)
 				if not f.return_address
 					detect_function_thunk(addr)
