@@ -407,10 +407,8 @@ class GraphViewWidget < Gtk::HBox
 			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
 			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
 			}.each { |tag, val|
-				@color[tag] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
+				@color[tag] = color(val)
 			}
-			# register colors
-			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
 
 			# map functionnality => color
 			set_color_association :bg => :paleblue, :hlbox_bg => :palegrey, :box_bg => :white,
@@ -419,6 +417,15 @@ class GraphViewWidget < Gtk::HBox
 				:cursorline_bg => :paleyellow, :arrow_cond => :darkgreen, :arrow_uncond => :darkblue,
 			       	:arrow_direct => :darkred
 		}
+	end
+
+	# val is a 3chr rgb hex string
+	def color(val)
+		if not @color[val]
+			@color[val] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
+			window.colormap.alloc_color(@color[val], true, true)
+		end
+		@color[val]
 	end
 
 	def find_box_xy(x, y)
@@ -588,6 +595,18 @@ class GraphViewWidget < Gtk::HBox
 		}
 	end
 
+	def set_color_arrow(gc, b1, b2)
+		if b1 == @caret_box or b2 == @caret_box
+			gc.set_foreground @color[:arrow_hl]
+		elsif b1.to.length == 1
+			gc.set_foreground @color[:arrow_uncond]
+		elsif b1.direct_to == b2.id
+			gc.set_foreground @color[:arrow_direct]
+		else
+			gc.set_foreground @color[:arrow_cond]
+		end
+	end
+
 	def paint_arrow(w, gc, b1, b2)
 		# TODO separate arrows ends by a few pixels (esp incoming vs outgoing)
 		x1, y1 = b1.x+b1.w/2-@curcontext.view_x, b1.y+b1.h-@curcontext.view_y
@@ -605,15 +624,7 @@ class GraphViewWidget < Gtk::HBox
 		if x2.abs > 0x7000 ; y2 /= x2.abs/0x7000 ; x2 /= x2.abs/0x7000 ; end
 		if y2.abs > 0x7000 ; x2 /= y2.abs/0x7000 ; y2 /= y2.abs/0x7000 ; end
 
-		if b1 == @caret_box or b2 == @caret_box
-			gc.set_foreground @color[:arrow_hl]
-		elsif b1.to.length == 1
-			gc.set_foreground @color[:arrow_uncond]
-		elsif b1.direct_to == b2.id
-			gc.set_foreground @color[:arrow_direct]
-		else
-			gc.set_foreground @color[:arrow_cond]
-		end
+		set_color_arrow(gc, b1, b2)
 		if margin > 1
 			w.draw_line(gc, x1, y1, x1, y1+margin)
 			w.draw_line(gc, x2, y2-margin+1, x2, y2)
@@ -649,14 +660,22 @@ class GraphViewWidget < Gtk::HBox
 		end
 	end
 
-	def paint_box(w, gc, b)
+	def set_color_boxshadow(gc, b)
 		gc.set_foreground @color[:black]
-		w.draw_rectangle(gc, true, (b.x-@curcontext.view_x+3)*@zoom, (b.y-@curcontext.view_y+3)*@zoom, b.w*@zoom, b.h*@zoom)
+	end
+
+	def set_color_box(gc, b)
 		if @selected_boxes.include? b
 			gc.set_foreground @color[:hlbox_bg]
 		else
 			gc.set_foreground @color[:box_bg]
 		end
+	end
+
+	def paint_box(w, gc, b)
+		set_color_boxshadow(gc, b)
+		w.draw_rectangle(gc, true, (b.x-@curcontext.view_x+3)*@zoom, (b.y-@curcontext.view_y+3)*@zoom, b.w*@zoom, b.h*@zoom)
+		set_color_box(gc, b)
 		w.draw_rectangle(gc, true, (b.x-@curcontext.view_x)*@zoom, (b.y-@curcontext.view_y)*@zoom, b.w*@zoom, b.h*@zoom)
 
 		return if @zoom < 0.99 or @zoom > 1.1
