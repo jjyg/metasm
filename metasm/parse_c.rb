@@ -892,7 +892,7 @@ module C
 			@lexer.pragma_callback = lambda { |tok| parse_pragma_callback(tok) }
 			@toplevel = Block.new(nil)
 			@unreadtoks = []
-			@typesize = { :void => 0, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8,
+			@typesize = { :void => 1, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8,
 				:char => 1, :float => 4, :double => 8, :longdouble => 12 }
 			send model
 		end
