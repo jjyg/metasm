@@ -73,6 +73,9 @@ class Decompiler
 		# goto bla ; bla: goto blo => goto blo ;; goto bla ; bla: return => return
 		simplify_goto(scope)
 
+		# use different C vars for any reg used in different domain (allows type to change over time)
+		unalias_vars(scope)
+
 		# infer variable types
 		decompile_c_types(scope)
 
@@ -677,10 +680,159 @@ class Decompiler
 		}
 	end
 
+	# duplicate vars per domain value
+	# eg  eax = 1; foo(eax); eax = 2; bar(eax);  =>  eax = 1; foo(eax) eax_1 = 2; bar(eax_1);
+	#     eax = 1; if (bla) eax = 2; foo(eax);   =>  no change
+	def unalias_vars(scope)
+		g = c_to_graph(scope)
+
+		ce_read = lambda { |ce_, var|
+			walk_ce(ce_) { |ce|
+				case ce.op
+				when :funcall; break true if ce.lexpr == var or ce.rexpr.include? var
+				when :'='; break true if ce.rexpr == var
+				else break true if ce.lexpr == var or ce.rexpr == var
+				end
+			}
+		}
+
+		ce_write = lambda { |ce_, var|
+			walk_ce(ce_) { |ce|
+				if AssignOp.include? ce.op
+					break true if ce.lexpr == var
+					break true if ce.rexpr == var and (ce.op == :'++' or ce.op == :'--')
+				end
+			}
+		}
+
+		patch = lambda { |oldvar, occurences|
+			next if occurences.empty?
+
+			n_i = 0
+			n_i += 1 while scope.symbol_ancestors[newvarname = "#{oldvar.name}_#{n_i}"]
+
+			nv = C::Variable.new
+			nv.name = newvarname
+			nv.storage = oldvar.storage
+			nv.type = oldvar.type
+			scope.statements << C::Declaration.new(nv)
+			scope.symbol[newvarname] = nv
+
+			occurences.each { |e|
+				walk_ce(e) { |ce|
+					case ce.op
+					when :funcall
+						ce.lexpr = nv if ce.lexpr == oldvar
+						ce.rexpr.each_with_index { |a, i| ce.rexpr[i] = nv if a == oldvar }
+					else
+						ce.lexpr = nv if ce.lexpr == oldvar
+						ce.rexpr = nv if ce.rexpr == oldvar
+					end
+				}
+			}
+
+		}
+
+		# list of labels accessible from g.start without going through label
+		badlab = {}
+		badlabel = lambda { |label|
+			if not badlab[label]
+				badlab[label] = []
+				todo = [g.start]
+				while l = todo.pop
+					next if l == label or badlab[label].include? l
+					badlab[label] << l
+					todo.concat g.to_optim[l]
+				end
+			end
+			badlab[label]
+		}
+
+		# reachable labels from a point in the graph
+		can_reach = lambda { |start, want, forbid|
+			todo = g.to_optim[start].to_a.dup
+			done = []
+			while l = todo.pop
+				next if done.include? l
+				done << l
+				break true if want.include? l
+				todo.concat g.to_optim[l].to_a if not forbid.include? l
+			end
+		}
+
+		check_domain = lambda { |var, label, idx, badlabels|
+			ce = g.exprs[label][idx]
+			next if ce_read[ce, var]
+
+			init_label = label
+			readers = []
+			writers = []
+			occurences = [ce]	# list all appearances of var for this domain (to patch)
+			idx += 1
+			todo = [label]
+			done = []
+			postponed = []
+			done_p = []
+			while (label = todo.pop and not done.include? label) or ppd = postponed.pop
+				if not label or done.include? label
+					next if done_p.include? ppd
+					done_p << ppd
+					label, idx = ppd
+					next if not can_reach[label, readers, writers]
+					# the written var belongs to the same domain (maybe not, but it's best to include too much than not enough)
+					writers.delete label
+					occurences << g.exprs[label][idx]
+					idx += 1
+				end
+				done << label if idx == 0
+				case while ce = g.exprs[label].to_a[idx]
+					if ce_read[ce, var]
+						break :abort if badlabels.include? label	# not a domain
+						occurences << ce
+						readers << label
+					elsif ce_write[ce, var]
+						# eax=1; if() goto l1; eax=2; goto l2; l1: nop; l2: ebx=eax;
+						# postpone this path until all readers are found, then check if it merges with one
+						writers << label
+						break :postpone
+					end
+					idx += 1
+				end
+				when :abort
+					occurences.clear
+					break
+				when :postpone
+					postponed << [label, idx]
+				else
+					todo.concat g.to_optim[label]
+				end
+				idx = 0
+			end
+
+			patch[var, occurences]
+		}
+
+		walk = lambda { |var|
+			done = []
+			todo = [g.start]
+			while label = todo.pop and not done.include? label
+				done << label
+				idx = 0
+				while ce = g.exprs[label].to_a[idx]
+					check_domain[var, label, idx, badlabel[label]] if ce_write[ce, var]
+					idx += 1
+				end
+				todo.concat g.to_optim[label].to_a
+			end
+		}
+
+		scope.symbol.dup.each_value { |var| walk[var] }
+	end
+
 	# assign type to stackframe offsets, replace fptr-12 by var_8
 	# types are found by subfunction argument types / indirections, and propagated through assignments
 	def decompile_c_types(scope)
-		# TODO handle aliases (mem+regs) (reverse liveness?) XXX this would take place in make_stack_vars
+		# TODO handle aliases on stack
 		# TODO allow user-predefined types (args/local vars)
 		# TODO *(int8*)(ptr+8); *(int32*)(ptr+12) => automatic struct
 		# XXX walk { } too much, optimize
