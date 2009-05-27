@@ -257,7 +257,9 @@ class Ia32
 						f = C::CExpression[[fptr], proto]
 					end
 					binding.delete :eax
-					stmts << C::CExpression[ce[:eax], :'=', [f, :funcall, args], f.type.type]
+					e = C::CExpression[f, :funcall, args]
+					e = C::CExpression[ce[:eax], :'=', e, f.type.type] if deps[b].include? :eax
+					stmts << e
 				when 'jmp'
 					#if di.comment.to_a.include? 'switch'
 					#	n = di.instruction.args.first.symbolic
