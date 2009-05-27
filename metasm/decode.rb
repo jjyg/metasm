@@ -2208,6 +2208,25 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		edata.ptr
 	end
 
+	# exports the addr => symbol map (see load_map)
+	def save_map
+		@prog_binding.map { |l, o|
+			type = @decoded[o].kind_of?(DecodedInstruction) ? 'c' : 'd'	# XXX
+			o = o.to_s(16) if o.kind_of? ::Integer
+			"#{o} #{type} #{l}"
+		}
+	end
+
+	# loads a map file (addr => symbol)
+	# fmt: addr type name eg 'c01001ba t setup_idt' (type unused/unknown)
+	def load_map(str)
+		str.each { |l|
+			addr, type, name = l.chomp.split
+                        addr = addr.to_i(16)
+			set_label_at(addr, name)
+                }
+	end
+
 	def decompile(addr)
 		parse_c '' if not c_parser
 		Decompiler.new(self).decompile_func(addr)

@@ -485,8 +485,6 @@ class MainWindow < Gtk::Window
 			end
 		}
 
-		if false
-			# TODO patch Dasm
 		addsubmenu(filemenu, 'save map') {
 			SaveFile.new(self, 'chose map file') { |file|
 				File.open(file, 'w') { |fd|
@@ -499,7 +497,6 @@ class MainWindow < Gtk::Window
 				@dasm_widget.dasm.load_map(File.read(file)) if @dasm_widget
 			} if @dasm_widget
 		}
-		end
 
 		addsubmenu(filemenu, 'save C') {
 			SaveFile.new(self, 'chose C file') { |file|
