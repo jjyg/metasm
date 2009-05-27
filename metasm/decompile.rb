@@ -1438,8 +1438,6 @@ class Decompiler
 			next ret if ret
 
 			from = g.from_optim[label].to_a.map { |f|
-				# ignore artifacts from graph optimization
-				next if g.exprs[f].to_a == [] and g.to_optim[f].length == 1
 				find_prev_read_rec[f, g.exprs[f].to_a.length-1, var, done]
 			}.compact
 
@@ -1571,8 +1569,9 @@ class Decompiler
 						# XXX x = 1; if () { x = 2; } foo(x)  =!>  foo(1)  (find_next_read will return this)
 						#     we'll just redo a find_next_read like
 						# XXX b = &a; a = 1; *b = 2; foo(a)  unhandled & generate bad C
+						l_l = label
 						l_i = i
-						while g.exprs[label].to_a.each_with_index { |ce_, n_i|
+						while g.exprs[l_l].to_a.each_with_index { |ce_, n_i|
 							next if n_i < l_i
 							# count occurences of read v in ce_
 							cnt = 0
@@ -1600,7 +1599,7 @@ class Decompiler
 							when 1	# good
 								break if e.complexity > 10 and ce_.complexity > 3	# try to keep the C readable
 								# x = 1; y = x; z = x;  =>  cannot suppress x
-								nr = find_next_read[label, n_i+1, v]
+								nr = find_next_read[l_l, n_i+1, v]
 								break if (nr.kind_of? C::CExpression or nr == :split) and not walk_ce(ce_) { |ce| break true if ce.op == :'=' and ce.lexpr == v }
 							else break	# a = 1; b = a + a  => fail
 							end
@@ -1651,10 +1650,10 @@ class Decompiler
 								break
 							end
 						}
-							may_to = g.to_optim[label].find_all { |to| find_next_read[to, 0, v] }		# ignore branches that will never reuse v
-							if may_to.length == 1 and to = may_to.first and to != label and g.from_optim[to] == [label]
+							may_to = g.to_optim[l_l].find_all { |to| find_next_read[to, 0, v] }		# ignore branches that will never reuse v
+							if may_to.length == 1 and to = may_to.first and to != l_l and g.from_optim[to] == [l_l]
 								l_i = 0
-								label = to
+								l_l = to
 							else break
 							end
 						end
