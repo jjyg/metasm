@@ -284,7 +284,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@dasm.decoded[addr].block.each_from_samefunc(@dasm) { |na| empty = false ; todo << na }
 			break if empty
 		end
-		return true if @curaddr == addr
+		return true if addr and @curaddr == addr
 		return if not l = @dasm.prog_binding.index(addr)
 		if not @dasm.c_parser or not f = @dasm.c_parser.toplevel.symbol[l]
 			@decompiling ||= false
