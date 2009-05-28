@@ -507,16 +507,21 @@ class MainWindow < Gtk::Window
 
 	def build_menu
 		@menu = Gtk::MenuBar.new
+		@accel_group = Gtk::AccelGroup.new
+		add_accel_group(@accel_group)
+
+		# accelerators work only for the main window (with the menu), no subwindows which need the keyboard_*
+		# XXX kb_callback can't override an accelerator there..
+
 		filemenu = Gtk::Menu.new
 
-		addsubmenu(filemenu, 'open') {
+		addsubmenu(filemenu, 'OPEN', '^o') {
 			OpenFile.new(self, 'chose target binary') { |exename|
 				exe = Metasm::AutoExe.orshellcode(Metasm::Ia32.new).decode_file(exename)
 				(@dasm_widget ? MainWindow.new : self).display(exe.init_disassembler)
 			}
 		}
-
-		addsubmenu(filemenu, 'open live') {
+		addsubmenu(filemenu, 'OPEN', 'Open _live') {
 			# TODO list existing targets
 			InputBox.new(self, 'chose target') { |target|
 				if not target = Metasm::OS.current.find_process(target)
@@ -527,106 +532,112 @@ class MainWindow < Gtk::Window
 				end
 			}
 		}
-
-		addsubmenu(filemenu, 'close') {
+		addsubmenu(filemenu, 'CLOSE') {
 			if @dasm_widget
 				@dasm_widget.terminate
 				@vbox.remove @dasm_widget
 				@dasm_widget = nil
 			end
 		}
-		filemenu.append(Gtk::MenuItem.new)
-
-		addsubmenu(filemenu, 'save map') {
+		addsubmenu(filemenu)
+		addsubmenu(filemenu, 'Save map') {
 			SaveFile.new(self, 'chose map file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm.save_map
 				} if @dasm_widget
 			} if @dasm_widget
 		}
-		addsubmenu(filemenu, 'load map') {
+		addsubmenu(filemenu, 'Load map') {
 			OpenFile.new(self, 'chose map file') { |file|
 				@dasm_widget.dasm.load_map(File.read(file)) if @dasm_widget
 			} if @dasm_widget
 		}
 
-		addsubmenu(filemenu, 'save C') {
+		addsubmenu(filemenu, 'Save C') {
 			SaveFile.new(self, 'chose C file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm.c_parser
 				} if @dasm_widget
 			} if @dasm_widget
 		}
-		addsubmenu(filemenu, 'load C') {
+		addsubmenu(filemenu, 'Load C') {
 			OpenFile.new(self, 'chose C file') { |file|
 				@dasm_widget.dasm.parse_c(File.read(file)) if @dasm_widget
 			} if @dasm_widget
 		}
-
-		filemenu.append(Gtk::MenuItem.new)
-
+		addsubmenu(filemenu)
+		addsubmenu(filemenu, 'QUIT') { destroy } # post_quit_message ?
 		# TODO fullsave (map + comments + cur focus_addr + binary? ...)
 
-		addsubmenu(filemenu, 'exit') { destroy } # post_quit_message ?
-
-		filemenu_i = Gtk::MenuItem.new('file')
-		filemenu_i.set_submenu filemenu
-		@menu.append filemenu_i
+		addsubmenu(@menu, filemenu, '_File')
 
 		# TODO proper use of accelerators
 		options = Gtk::Menu.new
-		addsubmenucheck(options, 'verbose  (v)', $VERBOSE) { |ck| $VERBOSE = ck.active? }
-		addsubmenucheck(options, 'debug', $DEBUG) { |ck| $DEBUG = ck.active? }
-		addsubmenucheck(options, 'debug backtrace') { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
-		options.append(Gtk::MenuItem.new)
-		addsubmenucheck(options, 'forbid decompile types') { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_types = ck.active? }
-		addsubmenucheck(options, 'forbid decompile while') { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_while = ck.active? }
-		addsubmenucheck(options, 'forbid decomp optimize') { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
-		addsubmenucheck(options, 'forbid decomp optimdata') { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
+		addsubmenu(options, '_Verbose', :check, $VERBOSE, 'v') { |ck| $VERBOSE = ck.active? ; puts "#{'not ' if not $VERBOSE}verbose" }
+		addsubmenu(options, '_Debug', :check, $DEBUG) { |ck| $DEBUG = ck.active? }
+		addsubmenu(options, 'Debug _backtrace', :check) { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
+		addsubmenu(options)
+		addsubmenu(options, 'Forbid decompile _types', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_types = ck.active? }
+		addsubmenu(options, 'Forbid decompile _while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_while = ck.active? }
+		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
+		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
 		# TODO maxbacktrace{_data}, change CPU..
 		# factorize headers
 
-		options_i = Gtk::MenuItem.new('options')
-		options_i.set_submenu options
-		@menu.append options_i
+		addsubmenu(@menu, options, '_Options')
 
 		actions = Gtk::Menu.new
-		addsubmenu(actions, 'disassemble here  (c)') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
-		addsubmenu(actions, 'follow  (Enter)') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }
-		addsubmenu(actions, 'jmp back  (Esc)') { @dasm_widget.focus_addr_back }
-		addsubmenu(actions, 'goto  (g)') { @dasm_widget.prompt_goto }
-		addsubmenu(actions, 'list functions  (f)') { @dasm_widget.list_functions }
-		addsubmenu(actions, 'list labels  (l)') { @dasm_widget.list_labels }
-		addsubmenu(actions, 'list xrefs  (x)') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
-		addsubmenu(actions, 'rename label  (n)') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
-		addsubmenu(actions, 'decompile  (r)') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
-		addsubmenucheck(actions, 'pause dasm  (p)') { |ck| ck.active = !@dasm_widget.playpause_dasm }
-		addsubmenu(actions, 'run ruby snippet  (^r)') { @dasm_widget.prompt_run_ruby }
-		addsubmenu(actions, 'run ruby plugin') {
+		addsubmenu(actions, '_Disassemble here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
+		i = addsubmenu(actions, '_Follow') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }
+		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Return, 0, Gtk::ACCEL_VISIBLE)
+		i = addsubmenu(actions, 'Jmp _back') { @dasm_widget.focus_addr_back }
+		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Escape, 0, Gtk::ACCEL_VISIBLE)
+		addsubmenu(actions, '_Goto', 'g') { @dasm_widget.prompt_goto }
+		addsubmenu(actions, 'List _functions', 'f') { @dasm_widget.list_functions }
+		addsubmenu(actions, 'List _labels', 'l') { @dasm_widget.list_labels }
+		addsubmenu(actions, 'List _xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'Re_name label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'Deco_mpile', 'r') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, '_Pause dasm', 'p', :check) { |ck| ck.active = !@dasm_widget.playpause_dasm }
+		addsubmenu(actions, 'Run _ruby snippet', '^r') { @dasm_widget.prompt_run_ruby }
+		addsubmenu(actions, 'Run ruby plug_in') {
 			openfile('ruby plugin') { |f|
 				protect { @dasm_widget.instance_eval(File.read(f)) }
 			}
 		}
 
-		actions_i = Gtk::MenuItem.new('actions')
-		actions_i.set_submenu actions
-		@menu.append actions_i
+		addsubmenu(@menu, actions, '_Actions')
 
 		view = Gtk::Menu.new
 		# TODO radiobtn lst/hex/graph/decomp
 	end
 
-	def addsubmenu(menu, name, &action)
-		item = Gtk::MenuItem.new(name)
-		item.signal_connect('activate') { protect { action.call(item) } }
-		menu.append item
-	end
+	def addsubmenu(menu, *args, &action)
+		stock = (Gtk::Stock.constants.map { |c| c.to_s } & args).first
+		args.delete stock if stock
+		accel = args.grep(/^\^?\w$/).first
+		args.delete accel if accel
+		check = args.delete :check
+		submenu = args.grep(Gtk::Menu).first
+		args.delete submenu if submenu
+		label = args.shift
 
-	def addsubmenucheck(menu, name, init_check=false, &action)
-		item = Gtk::CheckMenuItem.new(name)
-		item.active = init_check
-		item.signal_connect('activate') { protect { action.call(item) } }
+		if stock
+			item = Gtk::ImageMenuItem.new(Gtk::Stock.const_get(stock))	# XXX 1.9 ?
+			item.label = label if label
+		elsif check
+			item = Gtk::CheckMenuItem.new(label)
+			item.active = args.shift
+		elsif label
+			item = Gtk::MenuItem.new(label)
+		else
+			item = Gtk::MenuItem.new
+		end
+		item.set_submenu(submenu) if submenu
+		item.add_accelerator('activate', @accel_group, accel[-1], (accel[0] == ?^ ? Gdk::Window::CONTROL_MASK : 0), Gtk::ACCEL_VISIBLE) if accel	# XXX 1.9 ?
+		item.signal_connect('activate') { protect { action.call(item) } } if action
 		menu.append item
+		item
 	end
 
 	def protect
