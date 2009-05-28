@@ -7,7 +7,7 @@ class Decompiler
 	AssignOp = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'^=', :'&=', :'|=', :'>>=', :'<<=', :'++', :'--']
 
 	attr_accessor :dasm, :c_parser
-	attr_accessor :forbid_optimize_dataflow, :forbid_optimize_code, :forbid_decompile_while, :forbid_decompile_types
+	attr_accessor :forbid_optimize_dataflow, :forbid_optimize_code, :forbid_decompile_while, :forbid_decompile_types, :forbid_optimize_labels
 
 	def initialize(dasm, cp = dasm.c_parser)
 		@dasm = dasm
@@ -107,7 +107,7 @@ class Decompiler
 			curoff = varname_to_stackoff(a.name)
 			while curoff > argoff
 				wantarg = C::Variable.new
-				wantarg.name = stackoff_to_varname(argoff).to_s
+				wantarg.name = stackoff_to_varname(argoff)
 				wantarg.type = C::BaseType.new(:int)
 				wantarg.attributes = ['unused']
 				func.type.args << wantarg
@@ -122,6 +122,10 @@ class Decompiler
 		decompile_controlseq(scope)
 
 		optimize_vars(scope)
+
+		remove_unreferenced_vars(scope)
+
+		simplify_varname_noalias(scope)
 
 		optimize_ctrl(scope)
 
@@ -286,7 +290,7 @@ class Decompiler
 			'var_%X' % (-off-@dasm.cpu.size/8)	# -4 => var_0, -8 => var_4..
 		else
 			'var_0%X' % -off
-		end.to_sym
+		end
 	end
 
 	def varname_to_stackoff(var)
@@ -664,6 +668,8 @@ class Decompiler
 
 	# remove unused labels
 	def remove_labels(scope)
+		return if forbid_optimize_labels
+
 		walk(scope) { |s|
 			next if not s.kind_of? C::Block
 			s.statements.delete_if { |l|
@@ -712,7 +718,7 @@ class Decompiler
 			next if occurences.empty?
 
 			n_i = 0
-			n_i += 1 while scope.symbol_ancestors[newvarname = "#{oldvar.name}_#{n_i}"]
+			n_i += 1 while scope.symbol_ancestors[newvarname = "#{oldvar.name}_a#{n_i}"]
 
 			nv = C::Variable.new
 			nv.name = newvarname
@@ -832,15 +838,47 @@ class Decompiler
 		scope.symbol.dup.each_value { |var| walk[var] }
 	end
 
-	# assign type to stackframe offsets, replace fptr-12 by var_8
-	# types are found by subfunction argument types / indirections, and propagated through assignments
+	# revert the unaliasing namechange of vars where no alias subsists
+	def simplify_varname_noalias(scope)
+		names = scope.symbol.keys
+		names.delete_if { |k|
+			next if not b = k[/^(.*)_a\d+$/, 1]
+			if not names.find { |n| n != k and (n == b or n[/^(.*)_a\d+$/, 1] == b) }
+				scope.symbol[b] = scope.symbol.delete(k)
+				scope.symbol[b].name = b
+			end
+		}
+	end
+
+	# patch scope to transform :frameoff-x into &var_x
+	def namestackvars(scope)
+		off2var = {}
+		walk_ce(scope) { |e|
+			next if e.op != :+ and e.op != :-
+			next if not e.lexpr.kind_of? C::Variable or e.lexpr.name != 'frameptr'
+			next if not e.rexpr.kind_of? C::CExpression or e.rexpr.op or not e.rexpr.rexpr.kind_of? ::Integer
+			off = e.rexpr.rexpr
+			off = -off if e.op == :-
+			if not v = off2var[off]
+				v = off2var[off] = C::Variable.new
+				v.type = C::BaseType.new(:void)
+				v.name = stackoff_to_varname(off)
+				v.stackoff = off
+				scope.symbol[v.name] = v
+				scope.statements << C::Declaration.new(v)
+			end
+			e.replace C::CExpression[:&, v]
+		}
+	end
+
+	# assign type to vars (regs, stack & global)
+	# types are found by subfunction argument types & indirections, and propagated through assignments etc
 	def decompile_c_types(scope)
 		return if forbid_decompile_types
 
 		# TODO handle aliases on stack
 		# TODO allow user-predefined types (args/local vars)
 		# TODO *(int8*)(ptr+8); *(int32*)(ptr+12) => automatic struct
-		# XXX walk { } too much, optimize
 
 		# types = { off => type of *(frameptr+off) }
 		types = {}
@@ -867,6 +905,7 @@ class Decompiler
 			e if e.kind_of? ::Integer and @dasm.get_section_at(e)
 		}
 		update_global_type = lambda { |e, t|
+			# TODO check for better_type (&rename?)
 			if ne = new_global_var(e, t)
 				walk_ce(scope) { |ce|
 					ce.lexpr = ne if ce.lexpr == e
@@ -1856,8 +1895,7 @@ class Decompiler
 			st.statements.delete_if { |e| e.kind_of? C::CExpression and not e.lexpr and not e.op and not e.rexpr }
 		}
 
-		# reoptimize cexprs, remove unused vars
-		used = {}
+		# reoptimize cexprs
 		walk_ce(scope, true) { |ce|
 			# redo some simplification that may become available after variable propagation
 			# int8 & 255  =>  int8
@@ -1908,13 +1946,17 @@ class Decompiler
 					ce.lexpr.rexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
 				ce.lexpr, ce.op, ce.rexpr = ce.lexpr.rexpr, ce.lexpr.op, nil
 			end
+		}
+	end
 
+	def remove_unreferenced_vars(scope)
+		used = {}
+		walk_ce(scope) { |ce|
 			# remove unreferenced local vars
 			used[ce.rexpr.name] = true if ce.rexpr.kind_of? C::Variable
 			used[ce.lexpr.name] = true if ce.lexpr.kind_of? C::Variable
 			ce.rexpr.each { |v| used[v.name] = true if v.kind_of? C::Variable } if ce.rexpr.kind_of?(::Array)
 		}
-
 		scope.statements.delete_if { |sm| sm.kind_of? C::Declaration and not used[sm.var.name] }
 		scope.symbol.delete_if { |n, v| not used[n] }
 	end
