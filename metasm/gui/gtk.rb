@@ -628,7 +628,7 @@ class MainWindow < Gtk::Window
 		begin
 			yield
 		rescue Object
-			MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class)
+			MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class.name)
 		end
 	end
 end
