@@ -247,7 +247,13 @@ class DisasmWidget < Gtk::VBox
 		if @dasm.prog_binding[old] or old = @dasm.prog_binding.index(addr)
 			inputbox("new name for #{old}") { |v| @dasm.rename_label(old, v) ; gui_update }
 		else
-			inputbox("label name for #{Expression[addr]}") { |v| @dasm.set_label_at(addr, v) ; gui_update }
+			inputbox("label name for #{Expression[addr]}") { |v|
+				@dasm.set_label_at(addr, v)
+				if di = @dasm.decoded[addr]
+					@dasm.split_block(di.block, di.address)
+				end
+				gui_update
+			}
 		end
 	end
 
@@ -581,6 +587,7 @@ class MainWindow < Gtk::Window
 		addsubmenu(options, 'Forbid decompile _while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_while = ck.active? }
 		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
 		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
+		addsubmenu(options, 'Forbid decomp optim_labels', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck.active? }
 		# TODO maxbacktrace{_data}, change CPU..
 		# factorize headers
 
@@ -624,7 +631,12 @@ class MainWindow < Gtk::Window
 
 		if stock
 			item = Gtk::ImageMenuItem.new(Gtk::Stock.const_get(stock))	# XXX 1.9 ?
-			item.label = label if label
+			begin
+				item.label = label if label
+			rescue
+				# some version of gtk has no label=..
+				item = Gtk::MenuItem.new(label) if label
+			end
 		elsif check
 			item = Gtk::CheckMenuItem.new(label)
 			item.active = args.shift
