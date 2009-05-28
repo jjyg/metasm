@@ -75,126 +75,30 @@ class DisasmWidget < Gtk::VBox
 		Gtk.idle_remove @gtk_idle_handle
 	end
 
+
 	def curview
 		@views[@notebook.page]
 	end
 
-	include Gdk::Keyval
-	def keypress(ev)
-		return true if @keyboard_callback[ev.keyval] and @keyboard_callback[ev.keyval].call(ev)
-	    case ev.state & Gdk::Window::CONTROL_MASK
-	    when Gdk::Window::CONTROL_MASK
-		case ev.keyval
-		when GDK_r	# run arbitrary ruby
-			inputbox('ruby code to eval()') { |c|
-				begin
-					ret = eval c
-					messagebox ret.inspect[0, 128], 'eval'
-				rescue Object
-					messagebox "#$! #{$!.message}\n#{$!.backtrace.join("\n")}", 'eval error'
-				end
-			}
-		end
-	    when 0
-		case ev.keyval
-		when GDK_Return, GDK_KP_Enter
-			focus_addr curview.hl_word
-		when GDK_Escape
-			focus_addr_back
-		when GDK_c	# disassemble from this point
-				# if points to a call, make it return
-			return if not addr = curview.current_address
-			if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip] and not @dasm.decoded[addr + di.bin_length]
-				di.block.add_to_subfuncret(addr+di.bin_length)
-				@dasm.addrs_todo << [addr + di.bin_length, addr, true]
-			else
-				@dasm.addrs_todo << [addr]
-			end
-		when GDK_f	# list functions
-			list = [['name', 'addr']]
-			@dasm.function.keys.each { |f|
-				addr = @dasm.normalize(f)
-				next if not @dasm.decoded[addr]
-				list << [@dasm.prog_binding.index(addr), Expression[addr]]
-			}
-			title = "list of functions"
-			listwindow(title, list) { |i| focus_addr i[1] }
-		when GDK_g	# jump to address
-			inputbox('address to go') { |v| focus_addr v }
-		when GDK_h	# parses a C header
-			openfile('open C header') { |f|
-				@dasm.parse_c_file(f) rescue messagebox("#{$!}\n#{$!.backtrace}")
-			}
-		when GDK_l	# list labels
-			list = [['name', 'addr']]
-			@dasm.prog_binding.each { |k, v|
-				list << [k, Expression[@dasm.normalize(v)]]
-			}
-			listwindow("list of labels", list) { |i| focus_addr i[1] }
-		when GDK_n	# name/rename a label
-			if not curview.hl_word or not addr = @dasm.prog_binding[curview.hl_word]
-				return if not addr = curview.current_address
-			end
-			if old = @dasm.prog_binding.index(addr)
-				inputbox("new name for #{old}") { |v| @dasm.rename_label(old, v) ; gui_update }
-			else
-				inputbox("label name for #{Expression[addr]}") { |v| @dasm.set_label_at(addr, v) ; gui_update }
-			end
-		when GDK_p	# pause/play disassembler
-			@dasm_pause ||= []
-			if @dasm_pause.empty? and @dasm.addrs_todo.empty?
-			elsif @dasm_pause.empty?
-				@dasm_pause = @dasm.addrs_todo.dup
-				@dasm.addrs_todo.clear
-				puts "dasm paused (#{@dasm_pause.length})"
-			else
-				@dasm.addrs_todo.concat @dasm_pause
-				@dasm_pause.clear
-				puts "dasm restarted (#{@dasm.addrs_todo.length})"
-			end
-		when GDK_v	# toggle verbose flag
-			$VERBOSE = ! $VERBOSE
-			puts "verbose #$VERBOSE"
-		when GDK_x      # show xrefs to the current address
-			return if not addr = @dasm.prog_binding[curview.hl_word] || curview.current_address
-			list = [['address', 'type', 'instr']]
-			@dasm.each_xref(addr) { |xr|
-				list << [Expression[xr.origin], "#{xr.type}#{xr.len}"]
-				if di = @dasm.decoded[xr.origin] and di.kind_of? DecodedInstruction
-					list.last << di.instruction
-				end
-			}
-			title = "list of xrefs to #{Expression[addr]}"
-			if list.length == 1
-				messagebox "no xref to #{Expression[addr]}"
-			else
-				listwindow(title, list) { |i| focus_addr(i[0], nil, true) }
-			end
-
-		when GDK_space
-			focus_addr(curview.current_address, ((@notebook.page == 1) ? 0 : 1))
-		when GDK_Tab
-			focus_addr(curview.current_address, ((@notebook.page == 2) ? 0 : 2))
-
-		when 0x20..0x7e # normal kbd (use ascii code)
-			# quiet
-			return false
-		when GDK_Shift_L, GDK_Shift_R, GDK_Control_L, GDK_Control_R,
-				GDK_Alt_L, GDK_Alt_R, GDK_Meta_L, GDK_Meta_R,
-				GDK_Super_L, GDK_Super_R, GDK_Menu
-			# quiet
-			return false
-		else
-			c = Gdk::Keyval.constants.find { |c_| Gdk::Keyval.const_get(c_) == ev.keyval }
-			p [:unknown_keypress, ev.keyval, c, ev.state]
-			return false
-		end
-	    end		# ctrl/alt
-		true
+	# returns the address of the item under the cursor in current view
+	def curaddr
+		curview.current_address
 	end
+
+	# returns the object under the cursor in current view (@dasm.decoded[curaddr])
+	def curobj
+		@dasm.decoded[curaddr]
+	end
+
+	# returns the address of the label under the cursor or the address of the line of the cursor
+	def pointed_addr
+		@dasm.prog_binding[curview.hl_word] || curview.current_address
+	end
+
 
 	def focus_addr(addr, page=nil, quiet=false)
 		page ||= @notebook.page
+		page = { :listing => 0, :graph => 1, :decompile => 2 }[page] || page
 		case addr
 		when ::String
 			if @dasm.prog_binding[addr]
@@ -257,14 +161,160 @@ class DisasmWidget < Gtk::VBox
 		focus_addr curaddr if curaddr
 	end
 
-	# returns the address of the item under the cursor in current view
-	def curaddr
-		curview.current_address
+	# disassemble from this point
+	# if points to a call, make it return
+	def disassemble(addr)
+		if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip] and not @dasm.decoded[addr + di.bin_length]
+			@dasm.function[addr] = DecodedFunction.new	# TODO default btbind cb
+			di.block.add_to_subfuncret(addr+di.bin_length)
+			@dasm.addrs_todo << [addr + di.bin_length, addr, true]
+		elsif addr
+			@dasm.addrs_todo << [addr]
+		end
 	end
 
-	# returns the object under the cursor in current view (@dasm.decoded[curaddr])
-	def curobj
-		@dasm.decoded[curaddr]
+	# (re)decompile
+	def decompile(addr)
+		if @dasm.c_parser and var = @dasm.c_parser.toplevel.symbol[addr] and var.type.kind_of? C::Function
+			@dasm.c_parser.toplevel.statements.delete_if { |st| st.kind_of? C::Declaration and st.var == var }
+			@dasm.c_parser.toplevel.symbol.delete addr
+		end
+		focus_addr(addr, :decompile)
+	end
+
+	def list_functions
+		list = [['name', 'addr']]
+		@dasm.function.keys.each { |f|
+			addr = @dasm.normalize(f)
+			next if not @dasm.decoded[addr]
+			list << [@dasm.prog_binding.index(addr), Expression[addr]]
+		}
+		title = "list of functions"
+		listwindow(title, list) { |i| focus_addr i[1] }
+	end
+
+	def list_labels
+		list = [['name', 'addr']]
+		@dasm.prog_binding.each { |k, v|
+			list << [k, Expression[@dasm.normalize(v)]]
+		}
+		listwindow("list of labels", list) { |i| focus_addr i[1] }
+	end
+
+	def list_xrefs(addr)
+		list = [['address', 'type', 'instr']]
+		@dasm.each_xref(addr) { |xr|
+			list << [Expression[xr.origin], "#{xr.type}#{xr.len}"]
+			if di = @dasm.decoded[xr.origin] and di.kind_of? DecodedInstruction
+				list.last << di.instruction
+			end
+		}
+		if list.length == 1
+			messagebox "no xref to #{Expression[addr]}" if addr
+		else
+			listwindow("list of xrefs to #{Expression[addr]}", list) { |i| focus_addr(i[0], nil, true) }
+		end
+	end
+
+	# jump to address
+	def prompt_goto
+		# TODO history, completion
+		inputbox('address to go') { |v| focus_addr v }
+	end
+
+	def prompt_parse_c_file
+		# parses a C header
+		openfile('open C header') { |f|
+			@dasm.parse_c_file(f) rescue messagebox("#{$!}\n#{$!.backtrace}")
+		}
+	end
+
+	# run arbitrary ruby
+	def prompt_run_ruby
+		inputbox('ruby code to eval()') { |c|
+			begin
+				ret = eval c
+				messagebox ret.inspect[0, 128], 'eval'
+			rescue Object
+				messagebox "#$! #{$!.message}\n#{$!.backtrace.join("\n")}", 'eval error'
+			end
+		}
+	end
+
+	# prompts for a new name for addr
+	def rename_label(addr)
+		old = addr
+		if @dasm.prog_binding[old] or old = @dasm.prog_binding.index(addr)
+			inputbox("new name for #{old}") { |v| @dasm.rename_label(old, v) ; gui_update }
+		else
+			inputbox("label name for #{Expression[addr]}") { |v| @dasm.set_label_at(addr, v) ; gui_update }
+		end
+	end
+
+	# pause/play disassembler
+	# returns true if playing
+	# this empties @dasm.addrs_todo, the dasm may still continue to work if this msg is
+	#  handled during an instr decoding/backtrace (the backtrace may generate new addrs_todo)
+	def playpause_dasm
+		@dasm_pause ||= []
+		if @dasm_pause.empty? and @dasm.addrs_todo.empty?
+			true
+		elsif @dasm_pause.empty?
+			# XXX filter addrs_todo pointing to existing @decoded ? (resolve dangling if_then, but may rebacktrace)
+			@dasm_pause = @dasm.addrs_todo.dup
+			@dasm.addrs_todo.clear
+			puts "dasm paused (#{@dasm_pause.length})"
+		else
+			@dasm.addrs_todo.concat @dasm_pause
+			@dasm_pause.clear
+			puts "dasm restarted (#{@dasm.addrs_todo.length})"
+			true
+		end
+	end
+
+	def toggle_view(idx)
+		idx = { :listing => 0, :graph => 1, :decompile => 2 }[idx] || idx
+		default = (idx == 0 ? 1 : 0)
+	       	focus_addr(curview.current_address, ((@notebook.page == idx) ? default : idx))
+	end
+
+	include Gdk::Keyval
+	def keypress(ev)
+		return true if @keyboard_callback[ev.keyval] and @keyboard_callback[ev.keyval].call(ev)
+		case ev.state & Gdk::Window::CONTROL_MASK
+		when Gdk::Window::CONTROL_MASK
+			case ev.keyval
+			when GDK_r; prompt_run_ruby
+			end
+		when 0
+			case ev.keyval
+			when GDK_Return, GDK_KP_Enter; focus_addr curview.hl_word
+			when GDK_Escape; focus_addr_back
+			when GDK_c; disassemble(curview.current_address)
+			when GDK_f; list_functions
+			when GDK_g; prompt_goto
+			when GDK_l; list_labels
+			when GDK_n; rename_label(pointed_addr)
+			when GDK_p; playpause_dasm
+			when GDK_r; decompile(curview.current_address)
+			when GDK_v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag
+			when GDK_x; list_xrefs(pointed_addr)
+
+			when GDK_space; toggle_view(:graph)
+			when GDK_Tab;   toggle_view(:decompile)
+
+			when 0x20..0x7e; return false	# quiet
+			when GDK_Shift_L, GDK_Shift_R, GDK_Control_L, GDK_Control_R,
+				GDK_Alt_L, GDK_Alt_R, GDK_Meta_L, GDK_Meta_R,
+				GDK_Super_L, GDK_Super_R, GDK_Menu
+				return false	# quiet
+			else
+				c = Gdk::Keyval.constants.find { |c_| Gdk::Keyval.const_get(c_) == ev.keyval }
+				p [:unknown_keypress, ev.keyval, c, ev.state] if $VERBOSE	# dev helper
+				return false
+			end
+		end		# ctrl/alt
+		true
 	end
 
 	def messagebox(str, title=nil)
@@ -467,6 +517,7 @@ class MainWindow < Gtk::Window
 		}
 
 		addsubmenu(filemenu, 'open live') {
+			# TODO list existing targets
 			InputBox.new(self, 'chose target') { |target|
 				if not target = Metasm::OS.current.find_process(target)
 					MessageBox.new(self, 'no such target')
@@ -484,6 +535,7 @@ class MainWindow < Gtk::Window
 				@dasm_widget = nil
 			end
 		}
+		filemenu.append(Gtk::MenuItem.new)
 
 		addsubmenu(filemenu, 'save map') {
 			SaveFile.new(self, 'chose map file') { |file|
@@ -510,9 +562,10 @@ class MainWindow < Gtk::Window
 				@dasm_widget.dasm.parse_c(File.read(file)) if @dasm_widget
 			} if @dasm_widget
 		}
-		# 'reset C' ?
 
-		# TODO save (map + comments + ...)
+		filemenu.append(Gtk::MenuItem.new)
+
+		# TODO fullsave (map + comments + cur focus_addr + binary? ...)
 
 		addsubmenu(filemenu, 'exit') { destroy } # post_quit_message ?
 
@@ -520,18 +573,54 @@ class MainWindow < Gtk::Window
 		filemenu_i.set_submenu filemenu
 		@menu.append filemenu_i
 
-		# 'run ruby code'
-		# 'load ruby plugin'
-		# 'list functions'
-		# 'list labels'
-		# 'start dasm here'
-		# options -> maxbacktrace(_data), change CPU..
+		# TODO proper use of accelerators
+		options = Gtk::Menu.new
+		addsubmenucheck(options, 'verbose  (v)', $VERBOSE) { |ck| $VERBOSE = ck.active? }
+		addsubmenucheck(options, 'debug', $DEBUG) { |ck| $DEBUG = ck.active? }
+		addsubmenucheck(options, 'debug backtrace') { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
+		# TODO maxbacktrace{_data}, change CPU..
 		# factorize headers
+
+		options_i = Gtk::MenuItem.new('options')
+		options_i.set_submenu options
+		@menu.append options_i
+
+		actions = Gtk::Menu.new
+		addsubmenu(actions, 'disassemble here  (c)') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, 'follow  (Enter)') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }
+		addsubmenu(actions, 'jmp back  (Esc)') { @dasm_widget.focus_addr_back }
+		addsubmenu(actions, 'goto  (g)') { @dasm_widget.prompt_goto }
+		addsubmenu(actions, 'list functions  (f)') { @dasm_widget.list_functions }
+		addsubmenu(actions, 'list labels  (l)') { @dasm_widget.list_labels }
+		addsubmenu(actions, 'list xrefs  (x)') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'rename label  (n)') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'decompile  (r)') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
+		addsubmenucheck(actions, 'pause dasm  (p)') { |ck| ck.active = !@dasm_widget.playpause_dasm }
+		addsubmenu(actions, 'run ruby snippet  (^r)') { @dasm_widget.prompt_run_ruby }
+		addsubmenu(actions, 'run ruby plugin') {
+			openfile('ruby plugin') { |f|
+				protect { @dasm_widget.instance_eval(File.read(f)) }
+			}
+		}
+
+		actions_i = Gtk::MenuItem.new('actions')
+		actions_i.set_submenu actions
+		@menu.append actions_i
+
+		view = Gtk::Menu.new
+		# TODO radiobtn lst/hex/graph/decomp
 	end
 
 	def addsubmenu(menu, name, &action)
 		item = Gtk::MenuItem.new(name)
-		item.signal_connect('activate') { protect { action.call } }
+		item.signal_connect('activate') { protect { action.call(item) } }
+		menu.append item
+	end
+
+	def addsubmenucheck(menu, name, init_check=false, &action)
+		item = Gtk::CheckMenuItem.new(name)
+		item.active = init_check
+		item.signal_connect('activate') { protect { action.call(item) } }
 		menu.append item
 	end
 
@@ -539,7 +628,7 @@ class MainWindow < Gtk::Window
 		begin
 			yield
 		rescue Object
-			MessageBox.new(self, $!.message, $!.class)
+			MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class)
 		end
 	end
 end
