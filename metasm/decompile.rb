@@ -7,6 +7,7 @@ class Decompiler
 	AssignOp = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'^=', :'&=', :'|=', :'>>=', :'<<=', :'++', :'--']
 
 	attr_accessor :dasm, :c_parser
+	attr_accessor :forbid_optimize_dataflow, :forbid_optimize_code, :forbid_decompile_while, :forbid_decompile_types
 
 	def initialize(dasm, cp = dasm.c_parser)
 		@dasm = dasm
@@ -572,6 +573,8 @@ class Decompiler
 	end
 
 	def decompile_cseq_while(ary, scope)
+		return if forbid_decompile_while
+
 		# find the next instruction that is not a label
 		ni = lambda { |l| ary[ary.index(l)..-1].find { |s| not s.kind_of? C::Label } }
 
@@ -832,6 +835,8 @@ class Decompiler
 	# assign type to stackframe offsets, replace fptr-12 by var_8
 	# types are found by subfunction argument types / indirections, and propagated through assignments
 	def decompile_c_types(scope)
+		return if forbid_decompile_types
+
 		# TODO handle aliases on stack
 		# TODO allow user-predefined types (args/local vars)
 		# TODO *(int8*)(ptr+8); *(int32*)(ptr+12) => automatic struct
@@ -1284,6 +1289,8 @@ class Decompiler
 
 	# simplify cexpressions (char & 255, redundant casts, etc)
 	def optimize_code(scope)
+		return if forbid_optimize_code
+
 		sametype = lambda { |t1, t2|
 			t1 = t1.untypedef
 			t2 = t2.untypedef
@@ -1532,6 +1539,8 @@ class Decompiler
 	# condenses expressions (++x; if (x)  =>  if (++x))
 	# remove local var assignment (x = 1; f(x); x = 2; g(x);  =>  f(1); g(2); etc)
 	def optimize_vars(scope)
+		return if forbid_optimize_dataflow
+
 		g = c_to_graph(scope)
 
 		# walks a cexpr in evaluation order (not strictly, but this is not strictly defined anyway..)

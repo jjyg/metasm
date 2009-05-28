@@ -2227,9 +2227,11 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
                 }
 	end
 
+	attr_accessor :decompiler
 	def decompile(addr)
 		parse_c '' if not c_parser
-		Decompiler.new(self).decompile_func(addr)
+		@decompiler ||= Decompiler.new(self)
+		@decompiler.decompile_func(addr)
 	end
 end
 end

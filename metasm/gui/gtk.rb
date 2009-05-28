@@ -578,6 +578,11 @@ class MainWindow < Gtk::Window
 		addsubmenucheck(options, 'verbose  (v)', $VERBOSE) { |ck| $VERBOSE = ck.active? }
 		addsubmenucheck(options, 'debug', $DEBUG) { |ck| $DEBUG = ck.active? }
 		addsubmenucheck(options, 'debug backtrace') { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
+		options.append(Gtk::MenuItem.new)
+		addsubmenucheck(options, 'forbid decompile types') { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_types = ck.active? }
+		addsubmenucheck(options, 'forbid decompile while') { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_while = ck.active? }
+		addsubmenucheck(options, 'forbid decomp optimize') { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
+		addsubmenucheck(options, 'forbid decomp optimdata') { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
 		# TODO maxbacktrace{_data}, change CPU..
 		# factorize headers
 
