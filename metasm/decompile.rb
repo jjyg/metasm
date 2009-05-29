@@ -2,6 +2,7 @@ require 'metasm/decode'
 require 'metasm/parse_c'
 
 module Metasm
+class C::Variable; attr_accessor :stackoff; end
 class Decompiler
 	# TODO add methods to C::CExpr
 	AssignOp = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'^=', :'&=', :'|=', :'>>=', :'<<=', :'++', :'--']
@@ -74,6 +75,8 @@ class Decompiler
 		# goto bla ; bla: goto blo => goto blo ;; goto bla ; bla: return => return
 		simplify_goto(scope)
 
+		namestackvars(scope)
+
 		# use different C vars for any reg used in different domain (allows type to change over time)
 		unalias_vars(scope)
 
@@ -97,14 +100,14 @@ class Decompiler
 			true
 		}
 		# reorder declarations
-		scope.statements[0, 0] = decl.sort_by { |sm| sm.var.name =~ /^var_(.*)/ ? $1.to_i(16) : -1 }
+		scope.statements[0, 0] = decl.sort_by { |sm| [-sm.var.stackoff.to_i, sm.var.name] }
 
 		# ensure arglist has no hole (create&add unreferenced args)
 		func.type.args = []
-		argoff = varname_to_stackoff('arg_0')
+		argoff = @c_parser.typesize[:ptr]
 		args.sort_by { |sm| sm.name[/arg_([0-9a-f]+)/i, 1].to_i(16) }.each { |a|
 			# XXX misalignment ?
-			curoff = varname_to_stackoff(a.name)
+			curoff = a.stackoff
 			while curoff > argoff
 				wantarg = C::Variable.new
 				wantarg.name = stackoff_to_varname(argoff)
@@ -112,10 +115,10 @@ class Decompiler
 				wantarg.attributes = ['unused']
 				func.type.args << wantarg
 				scope.symbol[wantarg.name] = wantarg
-				argoff += @dasm.cpu.size/8
+				argoff += @c_parser.typesize[:ptr]
 			end
 			func.type.args << a
-			argoff += @dasm.cpu.size/8
+			argoff += @c_parser.typesize[:ptr]
 		}
 
 		# change if() goto to if, if/else, while
@@ -280,29 +283,13 @@ class Decompiler
 	# 4 => :arg_0, -8 => :var_4 etc
 	# TODO do not encode off in varname, use a hash in e.g. DecodedFunction (allows user-defined varnames & more robust)
 	def stackoff_to_varname(off)
-		if off >= @dasm.cpu.size/8
-			'arg_%X' % ( off-@dasm.cpu.size/8)	#  4 => arg_0,  8 => arg_4..
-		elsif off > 0
-			'arg_0%X' % off
-		elsif off == 0
-			'retaddr'
-		elsif off <= -@dasm.cpu.size/8
-			'var_%X' % (-off-@dasm.cpu.size/8)	# -4 => var_0, -8 => var_4..
-		else
-			'var_0%X' % -off
+		if off >= @c_parser.typesize[:ptr]; 'arg_%X' % ( off-@c_parser.typesize[:ptr])	#  4 => arg_0,  8 => arg_4..
+		elsif off > 0; 'arg_0%X' % off
+		elsif off == 0; 'retaddr'
+		elsif off <= -@dasm.cpu.size/8; 'var_%X' % (-off-@dasm.cpu.size/8)	# -4 => var_0, -8 => var_4..
+		else 'var_0%X' % -off
 		end
 	end
-
-	def varname_to_stackoff(var)
-		case var.to_s
-		when /^arg_0(.+)/;  $1.to_i(16)
-		when /^var_0(.+)/; -$1.to_i(16)
-		when /^arg_(.*)/;  $1.to_i(16) + @dasm.cpu.size/8
-		when /^var_(.*)/; -$1.to_i(16) - @dasm.cpu.size/8
-		when 'retaddr'; 0
-		end
-	end
-
 
 	# turns an Expression to a CExpression, create+declares needed variables in scope
 	def decompile_cexpr(e, scope)
@@ -333,19 +320,11 @@ class Decompiler
 			if not s = scope.symbol_ancestors[name]
 				s = C::Variable.new
 				s.type = C::BaseType.new(:__int32)
-				if e.kind_of? ::String
-					s.storage = :static
-				elsif o = varname_to_stackoff(name)
-					case o % 4	# keep var aligned
-					when 1, 3; s.type = C::BaseType.new(:__int8)
-					when 2; s.type = C::BaseType.new(:__int16)
-					end
-				else
-					s.storage = :register
-				end
-				if not e.kind_of? ::Symbol and not e.kind_of? ::String
+				case e
+				when ::String; s.storage = :static
+				when ::Symbol; s.storage = :register
+				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
-					s.type.qualifier = [:volatile]
 				end
 				s.name = name
 				scope.symbol[s.name] = s
@@ -695,12 +674,24 @@ class Decompiler
 	def unalias_vars(scope)
 		g = c_to_graph(scope)
 
+		isvar = lambda { |ce, var|
+			if var.stackoff
+				next unless ce.kind_of? C::CExpression and ce.op == :* and not ce.lexpr
+				ce = ce.rexpr
+				ce = ce.rexpr while ce.kind_of? C::CExpression and not ce.op
+				next unless ce.kind_of? C::CExpression and ce.op == :& and not ce.lexpr
+				ce = ce.rexpr
+			end
+			ce == var
+		}
+
 		ce_read = lambda { |ce_, var|
+			isvar[ce_, var] or
 			walk_ce(ce_) { |ce|
 				case ce.op
-				when :funcall; break true if ce.lexpr == var or ce.rexpr.include? var
-				when :'='; break true if ce.rexpr == var
-				else break true if ce.lexpr == var or ce.rexpr == var
+				when :funcall; break true if isvar[ce.lexpr, var] or ce.rexpr.find { |a| isvar[a, var] }
+				when :'='; break true if isvar[ce.rexpr, var]
+				else break true if isvar[ce.lexpr, var] or isvar[ce.rexpr, var]
 				end
 			}
 		}
@@ -708,8 +699,8 @@ class Decompiler
 		ce_write = lambda { |ce_, var|
 			walk_ce(ce_) { |ce|
 				if AssignOp.include? ce.op
-					break true if ce.lexpr == var
-					break true if ce.rexpr == var and (ce.op == :'++' or ce.op == :'--')
+					break true if isvar[ce.lexpr, var]
+					break true if isvar[ce.rexpr, var] and (ce.op == :'++' or ce.op == :'--')
 				end
 			}
 		}
@@ -720,12 +711,10 @@ class Decompiler
 			n_i = 0
 			n_i += 1 while scope.symbol_ancestors[newvarname = "#{oldvar.name}_a#{n_i}"]
 
-			nv = C::Variable.new
+			nv = oldvar.dup
 			nv.name = newvarname
-			nv.storage = oldvar.storage
-			nv.type = oldvar.type
 			scope.statements << C::Declaration.new(nv)
-			scope.symbol[newvarname] = nv
+			scope.symbol[nv.name] = nv
 
 			occurences.each { |e|
 				walk_ce(e) { |ce|
@@ -876,30 +865,24 @@ class Decompiler
 	def decompile_c_types(scope)
 		return if forbid_decompile_types
 
-		# TODO handle aliases on stack
-		# TODO allow user-predefined types (args/local vars)
+		# TODO allow user-predefined types (args/local vars) (XXX how does that mix with aliases ?)
 		# TODO *(int8*)(ptr+8); *(int32*)(ptr+12) => automatic struct
 
-		# types = { off => type of *(frameptr+off) }
+		# name => type
 		types = {}
-		vartypes = {}
 
-		# returns o if e is like 'frameptr+o'
-		frameoff = lambda { |e|
-			e = e.rexpr while e.kind_of? C::CExpression and not e.op
-			next if not e.kind_of? C::CExpression or (e.op != :+ and e.op != :-)
-			e.op == :- ? -e.rexpr.rexpr : e.rexpr.rexpr if e.lexpr.kind_of? C::Variable and e.lexpr.name == 'frameptr' and
-					e.rexpr.kind_of? C::CExpression and not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
-		}
-
-		# returns o if e is like '*(frameptr+o)'
-		framepoff = lambda { |e|
-			e = e.rexpr while e.kind_of? C::CExpression and not e.op
-			next if not e.kind_of? C::CExpression or e.op != :* or e.lexpr
-			frameoff[e.rexpr]
+		pscopevar = lambda { |e|
+			e = e.rexpr while e.kind_of? C::CExpression and not e.op and e.rexpr.kind_of? C::CExpression
+			if e.kind_of? C::CExpression and e.op == :& and not e.lexpr and e.rexpr.kind_of? C::Variable
+				e.rexpr.name if scope.symbol[e.rexpr.name]
+			end
 		}
 		scopevar = lambda { |e|
-			e.name if e.kind_of? C::Variable and scope.symbol[e.name]
+			if e.kind_of? C::Variable and scope.symbol[e.name]
+				e.name
+			elsif e.kind_of? C::CExpression and e.op == :* and not e.lexpr
+				pscopevar[e.rexpr]
+			end
 		}
 		globalvar = lambda { |e|
 			e if e.kind_of? ::Integer and @dasm.get_section_at(e)
@@ -929,31 +912,27 @@ class Decompiler
 			(t0.kind_of? C::BaseType and t1.kind_of? C::BaseType and (@c_parser.typesize[t0.name] > @c_parser.typesize[t1.name] or (t0.name == t1.name and t0.qualifier))) or
 			(t0.pointer? and t1.pointer? and better_type[t0.untypedef.type, t1.untypedef.type])
 		}
-		update_type = lambda { |o, t|
-			if not o.kind_of? ::Integer
-				if not t0 = vartypes[o] or better_type[t, t0]
-					vartypes[o] = t
-					next if t == t0
-					propagate_type[o, t]
-				end
-			elsif not t0 = types[o] or better_type[t, t0]
-				#puts "#{o} => #{t}"
-				next if (t.integral? or t.pointer?) and o % @c_parser.sizeof(nil, t) != 0	# keep vars aligned
-				types[o] = t
-				next if t == t0
-				propagate_type[o, t]
-				t = t.untypedef
-				if t.kind_of? C::Struct
-					t.members.each { |m|
-						mo = t.offsetof(@c_parser, m.name)
-						next if mo == 0
-						update_type[o+mo, m.type]
+		update_type = lambda { |n, t|
+			o = scope.symbol[n].stackoff
+			next if t0 = types[n] and not better_type[t, t0]
+			next if o and (t.integral? or t.pointer?) and o % @c_parser.sizeof(nil, t) != 0 # keep vars aligned
+			types[n] = t
+			next if t == t0
+			propagate_type[n, t]
+			next if not o
+			t = t.untypedef
+			if t.kind_of? C::Struct
+				t.members.each { |m|
+					mo = t.offsetof(@c_parser, m.name)
+					next if mo == 0
+					scope.symbol.each { |vn, vv|
+						update_type[vn, m.type] if vv.stackoff == o+mo
 					}
-				end
+				}
 			end
 		}
 
-		# try to update the type of a stack offset from knowing the type of an expr (through dereferences etc)
+		# try to update the type of a var from knowing the type of an expr (through dereferences etc)
 		known_type = lambda { |e, t|
 			loop do
 				e = e.rexpr while e.kind_of? C::CExpression and not e.op
@@ -962,10 +941,7 @@ class Decompiler
 				elsif o = globalvar[e]
 					update_global_type[o, t]
 				elsif not e.kind_of? C::CExpression
-					break
-				elsif o = framepoff[e]
-					update_type[o, t]
-				elsif o = frameoff[e] and t.pointer?
+				elsif o = pscopevar[e] and t.pointer?
 					update_type[o, t.untypedef.type]
 				elsif e.op == :* and not e.lexpr
 					e = e.rexpr
@@ -983,13 +959,13 @@ class Decompiler
 						end
 					elsif t.pointer? and e.lexpr.kind_of? C::CExpression
 						if (e.lexpr.lexpr and [:<<, :>>, :*, :&].include? e.lexpr.op) or
-								(o = framepoff[e.lexpr] and types[o] and types[o].integral? and
-								 !(o = framepoff[e.rexpr] and types[o] and types[o].integral?))
+								(o = scopevar[e.lexpr] and types[o] and types[o].integral? and
+								 !(o = scopevar[e.rexpr] and types[o] and types[o].integral?))
 							e.lexpr, e.rexpr = e.rexpr, e.lexpr
 							e = e.lexpr
 							next
-						elsif o = framepoff[e.rexpr] and types[o] and types[o].integral? and
-								!(o = framepoff[e.lexpr] and types[o] and types[o].integral?)
+						elsif o = scopevar[e.rexpr] and types[o] and types[o].integral? and
+								!(o = scopevar[e.lexpr] and types[o] and types[o].integral?)
 							e = e.lexpr
 							next
 						end
@@ -999,8 +975,8 @@ class Decompiler
 			end
 		}
 
-		# we found a type for a stackoff, propagate it through affectations
-		propagate_type = lambda { |off, type|
+		# we found a type for a var, propagate it through affectations
+		propagate_type = lambda { |var, type|
 			walk_ce(scope) { |ce|
 				# char x; x & 255 => uchar x
 				if ce.op == :'&' and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
@@ -1013,7 +989,7 @@ class Decompiler
 				t = type
 				l = ce.lexpr
 				while l.kind_of? C::CExpression and l.op == :* and not l.lexpr
-					if off == frameoff[l.rexpr] || scopevar[l.rexpr]
+					if var == pscopevar[l.rexpr]
 						known_type[ce.rexpr, t]
 						break
 					elsif t.pointer?
@@ -1027,7 +1003,7 @@ class Decompiler
 				t = type
 				r = ce.rexpr
 				while r.kind_of? C::CExpression and r.op == :* and not r.lexpr
-					if off == frameoff[r.rexpr] || scopevar[r.rexpr]
+					if var == pscopevar[r.rexpr]
 						known_type[ce.lexpr, t]
 						break
 					elsif t.pointer?
@@ -1036,9 +1012,10 @@ class Decompiler
 					else break
 					end
 				end
+
+				# TODO int *x; *x = *y; ?
 			}
 		}
-
 
 		# put all those macros in use
 		walk_ce(scope) { |ce|
@@ -1054,52 +1031,41 @@ class Decompiler
 		}
 
 		# offsets have types now
-		vartypes.each { |v, t|
+		types.each { |v, t|
 			# keep var type qualifiers
 			q = scope.symbol[v].type.qualifier
 			scope.symbol[v].type = t
 			t.qualifier = q if q
 		}
 
-		# remove qualifier from special variables forwarded to auto vars
-		types.each { |o, t|
-			next if not t.qualifier
-			types[o] = t.dup
-			types[o].qualifier = nil
-		}
 
 		# remove offsets to struct members
+		# XXX this defeats antialiasing
 		# off => [structoff, membername, membertype]
 		memb = {}
-		types.dup.each { |o, t|
+		types.dup.each { |n, t|
+			v = scope.symbol[n]
+			next if not o = v.stackoff
 			t = t.untypedef
 			if t.kind_of? C::Struct
 				t.members.each { |tm|
 					moff = t.offsetof(@c_parser, tm.name)
 					next if moff == 0
-					types.delete(o+moff)
-					memb[o+moff] = [o, tm.name, tm.type]
+					types.delete_if { |vv, tt| scope.symbol[vv].stackoff == o+moff }
+					memb[o+moff] = [v, tm.name, tm.type]
 				}
 			end
 		}
 
 		# patch local variables into the CExprs, incl unknown offsets
-		# off => Var
-		vars = {}
-		varat = lambda { |off|
-			if not vars[off]
-				if s = memb[off]
-					v = C::CExpression.new(varat[s[0]], :'.', s[1], s[2])
-				else
-					v = C::Variable.new
-					v.type = types[off] || C::BaseType.new(:int)
-					v.name = stackoff_to_varname(off).to_s
-					scope.statements << C::Declaration.new(v)
-					scope.symbol[v.name] = v
-				end
-				vars[off] = v
+		varat = lambda { |n|
+			v = scope.symbol[n]
+			if s = memb[v.stackoff]
+				v = C::CExpression[s[0], :'.', s[1], s[2]]
+			else
+				v.type = types[n] || C::BaseType.new(:int)
 			end
-			vars[off]
+			v
 		}
 
 		maycast = lambda { |v, e|
@@ -1108,22 +1074,29 @@ class Decompiler
 			end
 			v
 		}
+		maycast_p = lambda { |v, e|
+			if not e.type.pointer? or @c_parser.sizeof(v) != @c_parser.sizeof(nil, e.type.untypedef.type)
+				C::CExpression[[:&, v], e.type]
+			else
+				C::CExpression[:&, v]
+			end
+		}
 
 		walk_ce(scope) { |ce|
 			case
 			when ce.op == :funcall
 				ce.rexpr.map! { |re|
-					if o = framepoff[re]; C::CExpression[maycast[varat[o], re]]
-					elsif o = frameoff[re]; C::CExpression[:&, varat[o]]
+					if o = scopevar[re]; C::CExpression[maycast[varat[o], re]]
+					elsif o = pscopevar[re]; C::CExpression[maycast_p[varat[o], re]]
 					else re
 					end
 				}
-			when o = framepoff[ce.lexpr]; ce.lexpr = maycast[varat[o], ce.lexpr]
-			when o = framepoff[ce.rexpr]; ce.rexpr = maycast[varat[o], ce.rexpr]
-			when o = frameoff[ce.lexpr]; ce.lexpr = C::CExpression[:&, varat[o]]
-			when o = frameoff[ce.rexpr]; ce.rexpr = C::CExpression[:&, varat[o]]
-			when o = framepoff[ce]; ce.replace C::CExpression[maycast[varat[o], ce]]
-			when o = frameoff[ce]; ce.replace C::CExpression[:&, varat[o]]
+			when o = scopevar[ce.lexpr]; ce.lexpr = maycast[varat[o], ce.lexpr]
+			when o = scopevar[ce.rexpr]; ce.rexpr = maycast[varat[o], ce.rexpr]
+			when o = pscopevar[ce.lexpr]; ce.lexpr = maycast_p[varat[o], ce.lexpr]
+			when o = pscopevar[ce.rexpr]; ce.rexpr = maycast_p[varat[o], ce.rexpr]
+			when o = scopevar[ce]; ce.replace C::CExpression[maycast[varat[o], ce]]
+			when o = pscopevar[ce]; ce.replace C::CExpression[maycast_p[varat[o], ce]]
 			end
 		}
 
@@ -1167,7 +1140,6 @@ class Decompiler
 	# must be run only once, right after type setting
 	def fix_pointer_arithmetic(scope)
 		walk_ce(scope, true) { |ce|
-			next if not ce.kind_of? C::CExpression
 			if ce.lexpr and ce.lexpr.type.pointer? and [:&, :>>, :<<].include? ce.op
 				ce.lexpr = C::CExpression[[ce.lexpr], C::BaseType.new(:int)]
 			end
@@ -1292,22 +1264,27 @@ class Decompiler
 	def fix_type_overlap(scope)
 		varinfo = {}
 		scope.symbol.each_value { |var|
-			off = varname_to_stackoff(var.name)
-			next if not off
+			next if not off = var.stackoff
 			len = @c_parser.sizeof(var)
 			varinfo[var] = [off, len]
 		}
 		varinfo.each { |v1, (o1, l1)|
 			next if not v1.type.integral?
 			varinfo.each { |v2, (o2, l2)|
-				next if v1.name == v2.name or o1 >= o2+l2 or o1+l1 <= o2 or l1 > l2 or (l2 == l1 and o2 > o1)
+				next if v1.name == v2.name or o1 >= o2+l2 or o1+l1 <= o2 or l1 > l2 or (l2 == l1 and o2 >= o1)
 				# v1 => *(&v2+delta)
 				# XXX o1 may overlap o2 AND another (int32 v_10; int32 v_E; int32 v_C;)
-				p = C::CExpression[:&, v2]
-				p = C::CExpression[p, C::Pointer.new(C::BaseType.new(:__int8))] if v2.type != C::BaseType.new(:__int8)
-				p = C::CExpression[p, :+,  [o1-o2]]
-				p = C::CExpression[p, C::Pointer.new(v1.type)] if v1.type != p.type.type
-				p = C::CExpression[:*,  p]
+				# TODO XXX overlap on alias => reference which alias ?  realias ?
+				t2 = v2.type.untypedef
+				if t2.kind_of? C::Struct and m = t2.members.find { |m_| t2.offsetof(@c_parser, m_.name) == o2-o1 } and @c_parser.sizeof(v1) == @c_parser.sizeof(m)
+					p = C::CExpression[[v2, :'.', m.name], v1.type]
+				else
+					p = C::CExpression[:&, v2]
+					p = C::CExpression[p, C::Pointer.new(C::BaseType.new(:__int8))] if v2.type != C::BaseType.new(:__int8)
+					p = C::CExpression[p, :+,  [o1-o2]]
+					p = C::CExpression[p, C::Pointer.new(v1.type)] if v1.type != p.type.type
+					p = C::CExpression[:*,  p]
+				end
 				scope.statements.each { |stmt|
 					replace_var(stmt, v1, p, false)
 				}
