@@ -564,6 +564,35 @@ class Decompiler
 				#when 1; s.bthen = bts.first	# later (allows simpler handling in _while)
 				end
 			end
+
+			# l1: l2: if () goto l1; goto l2;  =>  if(!) goto l2; goto l1;
+			if s.kind_of? C::If
+				ls = s.bthen
+				ls = ls.statements.last if ls.kind_of? C::Block
+				if ls.kind_of? C::Goto
+					if li = inner_labels.index(ls.target)
+						table = inner_labels
+					else
+						table = ary.map { |st| st.name if st.kind_of? C::Label }.compact.reverse
+						li = table.index(ls.target) || table.length
+					end
+					g = ary.find { |ss|
+						break if ss.kind_of? C::Return
+						next if not ss.kind_of? C::Goto
+						table.index(ss.target).to_i > li
+					}
+					if g
+						s.test = C::CExpression.negate s.test
+						if not s.bthen.kind_of? C::Block
+							ls = C::Block.new(scope)
+							ls.statements << s.bthen
+							s.bthen = ls
+						end
+						ary[0..ary.index(g)], s.bthen.statements = s.bthen.statements, decompile_cseq_if(ary[0..ary.index(g)], scope)
+					end
+				end
+			end
+
 			ret << s
 		end
 		ret
@@ -1652,7 +1681,7 @@ class Decompiler
 			while l = todo.pop
 				next if l == label or badlab[label].include? l
 				badlab[label] << l
-				todo.concat g.to_optim[l]
+				todo.concat g.to_optim[l].to_a
 			end
 		}
 
@@ -1908,7 +1937,7 @@ class Decompiler
 			if ce.op == :'!' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression
 				ce.rexpr = ce.rexpr.rexpr
 			end
-			if ce.op == :< and ce.rexpr.kind_of? C::CExpression and ce.lexpr.kind_of? C::CExpression and not ce.rexpr.op and not ce.lexpr.op and
+			if [:<, :<=, :>, :>=].include? ce.op and ce.rexpr.kind_of? C::CExpression and ce.lexpr.kind_of? C::CExpression and not ce.rexpr.op and not ce.lexpr.op and
 				ce.rexpr.rexpr.kind_of? C::CExpression and ce.rexpr.rexpr.type.pointer? and ce.lexpr.rexpr.kind_of? C::CExpression and ce.lexpr.rexpr.type.pointer?
 				ce.rexpr = ce.rexpr.rexpr
 				ce.lexpr = ce.lexpr.rexpr

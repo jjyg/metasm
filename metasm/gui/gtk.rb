@@ -125,9 +125,9 @@ class DisasmWidget < Gtk::VBox
 		return if page == @notebook.page and addr == curview.current_address
 		oldpos = [@notebook.page, curview.get_cursor_pos]
 		@notebook.page = page
-		if (curview.focus_addr(addr) rescue nil) or (0...@views.length).find { |v|
+		if curview.focus_addr(addr) or (0...@views.length).find { |v|
 			o_p = @views[v].get_cursor_pos
-			if (@views[v].focus_addr(addr) rescue nil)
+			if @views[v].focus_addr(addr)
 				@notebook.page = v
 				true
 			else
@@ -321,6 +321,8 @@ class DisasmWidget < Gtk::VBox
 			end
 		end		# ctrl/alt
 		true
+	rescue Object
+		messagebox [$!.message, $!.backtrace].join("\n"), $!.class.name
 	end
 
 	def messagebox(str, title=nil)
