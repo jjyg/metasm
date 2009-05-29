@@ -256,7 +256,7 @@ class CCompiler < C::Compiler
 					unuse e2l, e2h
 				else
 					unuse e
-					if (sz = typesize[type.name]*8) < @cpusz or sz < rsz
+					if (sz = typesize[type.name]*8) < @cpusz or sz < rsz or e.sz < rsz
 						e2 = inuse findreg(rsz)
 						op = ((type.specifier == :unsigned) ? 'movzx' : 'movsx')
 						op = 'mov' if e.sz == e2.sz
