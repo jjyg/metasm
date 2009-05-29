@@ -259,6 +259,7 @@ class CCompiler < C::Compiler
 					if (sz = typesize[type.name]*8) < @cpusz or sz < rsz
 						e2 = inuse findreg(rsz)
 						op = ((type.specifier == :unsigned) ? 'movzx' : 'movsx')
+						op = 'mov' if e.sz == e2.sz
 					else
 						e2 = inuse findreg(sz)
 						op = 'mov'

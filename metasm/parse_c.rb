@@ -2315,6 +2315,7 @@ EOH
 				when :','
 					stack << CExpression.new(l, op, r, r.type)
 				when :'='
+					parser.check_compatible_type(parser, r.type, l.type)
 					stack << CExpression.new(l, op, r, l.type)
 				when :'&&', :'||'
 					stack << CExpression.new(l, op, r, BaseType.new(:int))
