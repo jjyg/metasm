@@ -477,6 +477,20 @@ class Decompiler
 				end
 			end
 		}
+		walk(scope) { |ce|
+			next if not ce.kind_of? C::Block
+			st = ce.statements
+			st.length.times { |n|
+				while st[n].kind_of? C::If and st[n+1].kind_of? C::If and not st[n].belse and not st[n+1].belse and (
+						(st[n].bthen.kind_of? C::Return and st[n+1].bthen.kind_of? C::Return and st[n].bthen.value == st[n+1].bthen.value) or
+						(st[n].bthen.kind_of? C::Break and st[n+1].bthen.kind_of? C::Break) or
+						(st[n].bthen.kind_of? C::Continue and st[n+1].bthen.kind_of? C::Continue))
+					# if (a) return x; if (b) return x; => if (a || b) return x;
+					st[n].test = C::CExpression[st[n].test, :'||', st[n+1].test]
+					st.delete_at(n+1)
+				end
+			}
+		}
 	end
 
 	# ifgoto => ifthen
