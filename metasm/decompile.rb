@@ -126,11 +126,13 @@ class Decompiler
 
 		optimize_vars(scope)
 
+		optimize_ctrl(scope)
+		
+		optimize_vars(scope)
+
 		remove_unreferenced_vars(scope)
 
 		simplify_varname_noalias(scope)
-
-		optimize_ctrl(scope)
 
 		case ret = scope.statements.last
 		when C::CExpression; puts "no return at end of func" if $VERBOSE
@@ -736,7 +738,11 @@ class Decompiler
 				when :'='; break true if isvar[ce.rexpr, var]
 				else break true if isvar[ce.lexpr, var] or isvar[ce.rexpr, var]
 				end
-			}
+			} or (var.stackoff and cnt = 0 and !walk_ce(ce_) { |ce|	# ptr to var
+				cnt -= 1 if ce.op == :'=' and isvar[ce.lexpr, var]
+				cnt += 1 if ce.lexpr == var
+				cnt += 1 if ce.rexpr == var
+			} and cnt > 0)
 		}
 
 		ce_write = lambda { |ce_, var|
@@ -783,7 +789,7 @@ class Decompiler
 				while l = todo.pop
 					next if l == label or badlab[label].include? l
 					badlab[label] << l
-					todo.concat g.to_optim[l]
+					todo.concat g.to_optim[l].to_a
 				end
 			end
 			badlab[label]
@@ -814,8 +820,11 @@ class Decompiler
 			done = []
 			postponed = []
 			done_p = []
-			while (label = todo.pop and not done.include? label) or ppd = postponed.pop
-				if not label or done.include? label
+			while label = todo.pop or ppd = postponed.pop
+				if label
+					next if done.include? label
+					done << label if idx == 0
+				else
 					next if done_p.include? ppd
 					done_p << ppd
 					label, idx = ppd
@@ -825,7 +834,6 @@ class Decompiler
 					occurences << g.exprs[label][idx]
 					idx += 1
 				end
-				done << label if idx == 0
 				case while ce = g.exprs[label].to_a[idx]
 					if ce_read[ce, var]
 						break :abort if badlabels.include? label	# not a domain
@@ -845,7 +853,7 @@ class Decompiler
 				when :postpone
 					postponed << [label, idx]
 				else
-					todo.concat g.to_optim[label]
+					todo.concat g.to_optim[label].to_a
 				end
 				idx = 0
 			end
@@ -1582,10 +1590,15 @@ class Decompiler
 		# optimize graph
 		g.to_optim = {}
 		g.to.each { |k, v| g.to_optim[k] = v.uniq }
+		g.exprs.delete_if { |k, v| v == [] }
 		g.to_optim.delete_if { |k, v|
-			next if v.length != 1 or g.exprs[k].to_a != [] or v == [k]
-			g.to_optim.each_value { |t| if i = t.index(k) ; t[i] = v.first ; end }
-			true
+			if v.length == 1 and not g.exprs[k] and v != [k]
+				g.to_optim.each_value { |t| if i = t.index(k) ; t[i] = v.first ; end }
+				true
+			elsif v.length == 0 and not g.exprs[k]
+				g.to_optim.each_value { |t| t.delete k }
+				true
+			end
 		}
 
 		g.from_optim = {}
@@ -1870,7 +1883,8 @@ class Decompiler
 								break
 							end
 						}
-							may_to = g.to_optim[l_l].find_all { |to| find_next_read[to, 0, v] }		# ignore branches that will never reuse v
+							# ignore branches that will never reuse v
+							may_to = g.to_optim[l_l].find_all { |to| find_next_read[to, 0, v].kind_of? C::CExpression }
 							if may_to.length == 1 and to = may_to.first and to != l_l and g.from_optim[to] == [l_l]
 								l_i = 0
 								l_l = to
