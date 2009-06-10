@@ -1643,7 +1643,7 @@ class Decompiler
 			idx += 1 while ce = g.exprs[label].to_a[idx] and not ret = find_next_read_ce[ce, var]
 			next ret if ret
 
-			to = g.to_optim[label].map { |t|
+			to = g.to_optim[label].to_a.map { |t|
 				break [:split] if badlabels.include? t
 				find_next_read_rec[t, 0, var, done, badlabels]
 			}.compact
