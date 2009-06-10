@@ -27,6 +27,12 @@ module C
 		# list of unique labels generated (to recognize user-defined ones)
 		attr_accessor :auto_label_list
 
+		attr_accessor :curexpr
+		# allows 'raise self' (eg struct.offsetof)
+		def exception(msg='EOF unexpected')
+			ParseError.new "near #@curexpr: #{msg}"
+		end
+
 		# creates a new CCompiler from an ExeFormat and a C Parser
 		def initialize(parser, exeformat=ExeFormat.new, source=[])
 			@parser, @exeformat, @source = parser, exeformat, source
@@ -426,7 +432,10 @@ module C
 		def precompile(compiler, scope=nil)
 			stmts = @statements.dup
 			@statements.clear
-			stmts.each { |st| st.precompile(compiler, self) }
+			stmts.each { |st|
+				compiler.curexpr = st
+				st.precompile(compiler, self)
+			}
 
 			# cleanup declarations
 			@symbol.delete_if { |n, s| not s.kind_of? Variable }
