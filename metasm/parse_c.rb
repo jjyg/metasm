@@ -293,6 +293,20 @@ module C
 		def offsetof(parser, name)
 			raise parser, 'undefined structure' if not @members
 			raise parser, 'unknown structure member' if not findmember(name)
+
+			if not @members.find { |m| m.name == name }
+				# indirect member (name of a member of an anonymous substruct)
+				bla = self
+				off = 0
+				while sm = bla.members.find { |m| m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name) }
+					off += bla.offsetof(parser, sm.name) if bla.kind_of? Struct
+					bla = sm.type.untypedef
+				end
+				off += bla.offsetof(parser, name) if bla.kind_of? Struct
+				return off
+			end
+				
+
 			raise parser, 'unhandled indirect offsetof' if not @members.find { |m| m.name == name }	# TODO
 			al = align(parser)
 			off = 0
