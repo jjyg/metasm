@@ -723,6 +723,7 @@ module C
 						Label.new(l2, nil).precompile(compiler, scope) if l2
 						Label.new(l3, nil).precompile(compiler, scope) if l3
 					else
+						scope.statements << @bthen
 						Label.new(l1, nil).precompile(compiler, scope) if l1
 						Label.new(l2, nil).precompile(compiler, scope) if l2
 						t2.precompile(compiler, scope) if t2
