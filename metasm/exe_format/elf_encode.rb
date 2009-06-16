@@ -45,13 +45,14 @@ class ELF
 		end
 
 		# defines the @name_p field from @name and elf.section[elf.header.shstrndx]
-		# creates .shstrndx if needed
+		# creates .shstrtab if needed
 		def make_name_p elf
 			return 0 if not name or @name == ''
 			if elf.header.shstrndx.to_i == 0
 				sn = Section.new
-				sn.name = '.shstrndx'
+				sn.name = '.shstrtab'
 				sn.type = 'STRTAB'
+				sn.flags = []
 				sn.addralign = 1
 				sn.encoded = EncodedData.new << 0
 				elf.header.shstrndx = elf.sections.length
@@ -541,9 +542,9 @@ class ELF
 					symname = r.target.reduce_rec
 				end
 				next if not dll = autoexports[symname]
-				@tag['NEEDED'] ||= []
-				@tag['NEEDED'] |= [dll]
 				if not @symbols.find { |sym| sym.name == symname }
+					@tag['NEEDED'] ||= []
+					@tag['NEEDED'] |= [dll]
 					sym = Symbol.new
 					sym.shndx = 'UNDEF'
 					sym.type = 'FUNC'
@@ -639,7 +640,7 @@ class ELF
 				end
 
 		@encoded = EncodedData.new
-		if @segments.find { |i| i.type == 'INTERP' }
+		if @header.type != 'EXEC' or @segments.find { |i| i.type == 'INTERP' }
 			automagic_symbols
 			create_relocations
 			encode_segments_dynamic
@@ -739,7 +740,7 @@ class ELF
 		end
 
 		# encode section&program headers
-		if @segments.find { |seg_| seg_.type == 'INTERP' }
+		if @header.shnum != 0
 			st = @sections.inject(EncodedData.new) { |edata, s| edata << s.encode(self) }
 		else
 			@header.shoff = @header.shnum = @header.shstrndx = 0
@@ -1027,6 +1028,8 @@ class ELF
 			# exported library name
 			@tag['SONAME'] = readstr[]
 			check_eol[]
+			@segments.delete_if { |s_| s_.type == 'INTERP' }
+			@header.type = 'DYN'
 
 		when '.interp', '.nointerp'
 			# required ELF interpreter
@@ -1035,6 +1038,7 @@ class ELF
 			@segments.delete_if { |s_| s_.type == 'INTERP' }
 			case interp.downcase
 			when 'nil', 'no', 'none'
+				@header.shnum = 0
 			else
 				seg = Segment.new
 				seg.type = 'INTERP'
