@@ -857,6 +857,7 @@ module C
 				x1 = splat[args[1]]
 				if x1.kind_of? Type; new(nil, nil, x0, x1)	# (cast)r
 				elsif x0 == :*; new(nil, x0, x1, x1.type.untypedef.type)	# *r
+				elsif x0 == :& and x1.kind_of? CExpression and x1.type.kind_of? C::Array; new(nil, nil, x1, Pointer.new(x1.type))
 				elsif x0 == :&; new(nil, x0, x1, Pointer.new(x1.type))	# &r
 				elsif x0 == :'!'; new(nil, x0, x1, BaseType.new(:int))	# &r
 				elsif x1.kind_of? ::Symbol; new(x0, x1, nil, x0.type)	# l++

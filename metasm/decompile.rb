@@ -1370,7 +1370,7 @@ class Decompiler
 		future_array = []
 		walk_ce(scope, true) { |ce|
 			# *&bla => bla if types ok
-			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.rexpr.type.type, ce.rexpr.rexpr.type]
+			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.rexpr.type.untypedef.type, ce.rexpr.rexpr.type]
 				ce.replace C::CExpression[ce.rexpr.rexpr]
 			end
 
@@ -1460,48 +1460,6 @@ class Decompiler
 				st.test = C::CExpression[st.test.lexpr]
 			end
 		}
-	end
-
-	# checks if a statement :read or :writes a variable
-	# :access is like :read, but counts &var too
-	def stmt_access(st, var, access)
-		case st
-		when nil; false
-		when ::Array; st.find { |elem| stmt_access elem, var, access }
-		when C::Declaration, C::Label, C::Goto, C::Break, C::Continue, ::Numeric, ::String; false
-		when C::Variable; access != :write and var.name == st.name
-		when C::Return; stmt_access st.value, var, access
-		when C::If; stmt_access(st.test, var, access) or stmt_access(st.bthen, var, access) or stmt_access(st.belse, var, access)
-		when C::While, C::DoWhile, C::Switch; stmt_access(st.test, var, access) or stmt_access(st.body, var, access)
-		when C::Block; stmt_access(st.statements, var, access)
-		when C::CExpression
-			if access != :write
-				if st.op == :'='
-					(not st.lexpr.kind_of?(C::Variable) and stmt_access(st.lexpr, var, access)) or
-					stmt_access(st.rexpr, var, access)
-				elsif access == :read and st.op == :'&' and not st.lexpr and st.rexpr.kind_of? C::Variable
-				else stmt_access(st.lexpr, var, access) or stmt_access(st.rexpr, var, access)
-				end
-			else
-				if st.op == :'++' or st.op == :'--'
-					e = st.lexpr || st.rexpr
-					e.kind_of?(C::Variable) ? var.name == e.name : stmt_access(e, var, access)
-				elsif AssignOp.include? st.op
-					# *(foo=42) = 28;
-					e = st.lexpr
-					stmt_access(st.rexpr, var, access) or
-					(e.kind_of?(C::Variable) ? var.name == e.name : stmt_access(e, var, access))
-				else stmt_access(st.lexpr, var, access) or stmt_access(st.rexpr, var, access)
-				end
-			end
-		when C::Asm
-			if access == :write
-				st.output == [] ? false : true
-			else
-				st.input == [] ? false : true
-			end
-		else puts "unhandled #{st.class} in stmt_access" ; true
-		end
 	end
 
 	# checks if an expr has sideeffects (funcall, var assignment, mem dereference, use var out of scope if specified)
