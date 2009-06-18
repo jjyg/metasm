@@ -125,6 +125,7 @@ class Ia32
 		addop_macro2 'btr', 2
 		addop_macro2 'bts', 1
 		addop 'call',  [0x9A], nil,  {}, :stopexec, :setip, :farptr, :saveip
+		addop 'callf', [0x9A], nil,  {}, :stopexec, :setip, :farptr, :saveip
 		addop 'callf', [0xFF], 3,    {}, :stopexec, :setip, :saveip
 		addop 'clc',   [0xF8]
 		addop 'cld',   [0xFC]
@@ -153,6 +154,7 @@ class Ia32
 		addop('jcxz',  [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 16 }
 		addop('jecxz', [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 32 }
 		addop 'jmp',   [0xEA], nil,  {}, :farptr, :setip, :stopexec
+		addop 'jmpf',  [0xEA], nil,  {}, :farptr, :setip, :stopexec
 		addop 'jmpf',  [0xFF], 5,    {}, :stopexec, :setip		# reg ?
 		addop 'lahf',  [0x9F]
 		addop 'lar',   [0x0F, 0x02], :mrm
