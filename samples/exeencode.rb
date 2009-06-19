@@ -26,6 +26,7 @@ OptionParser.new { |opt|
 	opt.on('-o file', 'output filename') { |f| outfilename = f }
 	opt.on('--c', 'parse source as a C file') { type = 'c' }
 	opt.on('--asm', 'parse asm as an ASM file') { type = 'asm' }
+	opt.on('--stdin', 'parse source on stdin') { ARGV << '-' }
 	opt.on('-v', '-W', 'verbose') { $VERBOSE=true }
 	opt.on('-d', 'debug') { $DEBUG=$VERBOSE=true }
 	opt.on('-D var=val', 'define a preprocessor macro') { |v| v0, v1 = v.split('=', 2) ; macros[v0] = v1 }
@@ -40,9 +41,13 @@ OptionParser.new { |opt|
 }.parse!
 
 if file = ARGV.shift
-	src = macros.map { |k, v| "#define #{k} #{v}\n" }.join
-	src << File.read(file)
 	type ||= 'c' if file =~ /\.c$/
+	src = macros.map { |k, v| "#define #{k} #{v}\n" }.join
+	if file == '-'
+		src << $stdin.read
+	else
+		src << File.read(file)
+	end
 else
 	src = DATA.read	# the text after __END__
 end
@@ -56,7 +61,9 @@ end
 if $to_string
 	p exe.encode_string
 elsif $to_cstring
-	exe.encode_string.scan(/.{1,19}/m) { |l|
+	str = exe.encode_string
+	puts "unsigned char sc[#{str.length}] = "
+	str.scan(/.{1,19}/m) { |l|
 		puts '"' + l.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
 	}
 else
