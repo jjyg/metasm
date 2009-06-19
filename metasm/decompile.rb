@@ -168,8 +168,13 @@ class Decompiler
 			@c_parser.toplevel.symbol[var.name] = var
 			@c_parser.toplevel.statements << C::Declaration.new(var)
 			if s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
-				# XXX initializer = all data til next defined thing (after unaliasing)
-				var.initializer = [C::CExpression[s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness), ptype]]
+				# TODO do not overlap other statics (but labels may refer to elements of the array...)
+				data = (0..256).map { s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness) }
+				if (tsz == 1 or tsz == 2) and eos = data.index(0) and (0..3).all? { |i| data[i] >= 0x20 and data[i] < 0x7f }	# printable str
+					# XXX 0x80 with ruby1.9...
+					var.initializer = C::CExpression[data[0, eos].pack('C*'), C::Pointer.new(ptype)] rescue nil
+				end
+				var.initializer ||= data.map { |v| C::CExpression[v, ptype] }
 			end
 		end
 
@@ -253,8 +258,8 @@ class Decompiler
 				else
 				# fallback on full run (could restart from blockstart with ee, but may reevaluate addr_binding..
 				vals = cache[[e, i_s, 1]] ||= @dasm.backtrace(e, di.address, :snapshot_addr => funcstart, :include_start => i_s)
-				if vals.length == 1 and ee = vals.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
-						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
+				if vals.length == 1 and ee = vals.first and (ee.reduce.kind_of? Integer or (ee.kind_of? Expression and (ee == Expression[:frameptr] or
+						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))))
  					ee
 				else e
 				end
@@ -1893,7 +1898,8 @@ class Decompiler
 			end
 
 			# useless casts
-			if not ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression
+			if not ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and (ce.rexpr.rexpr.kind_of? C::CExpression or
+					(ce.type.pointer? and ce.rexpr.rexpr == 0))
 				ce.rexpr = ce.rexpr.rexpr
 			end
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and (ce.type == ce.rexpr.type or (ce.type.integral? and ce.rexpr.type.integral?))
@@ -2002,14 +2008,27 @@ class Decompiler
 			vars.delete_if { |n|
 				next if scope.symbol[n]
 				next if localcountref[n] != countref[n]
-				v = scope.symbol[n] = tl.symbol.delete(n)
-				v.storage = :static
-				tl.statements.delete_if { |d|
-					if d.kind_of? C::Declaration and d.var.name == n
-						scope.statements.unshift d
-						true
-					end
-				}
+				v = tl.symbol.delete(n)
+				tl.statements.delete_if { |d| d.kind_of? C::Declaration and d.var.name == n }
+
+				if countref[n] == 1 and v.initializer.kind_of? C::CExpression and v.initializer.rexpr.kind_of? String
+					walk_ce(scope) { |ce|
+						if ce.rexpr.kind_of? C::Variable and ce.rexpr.name == n
+							if not ce.op
+								ce.replace v.initializer
+							else
+								ce.rexpr = v.initializer
+							end
+						elsif ce.lexpr.kind_of? C::Variable and ce.lexpr.name == n
+							ce.lexpr = v.initializer
+						end
+					}
+				else
+					v.storage = :static
+					scope.symbol[v.name] = v
+					scope.statements.unshift C::Declaration.new(v)
+				end
+
 				true
 			}
 		}
