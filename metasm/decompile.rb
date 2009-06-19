@@ -1151,8 +1151,8 @@ class Decompiler
 			end
 		}
 
-		fix_pointer_arithmetic(scope)
 		fix_type_overlap(scope)
+		fix_pointer_arithmetic(scope)
 
 		# if int32 var_4 is always var_4 & 255, change type to int8
 		varuse = Hash.new(0)
@@ -1190,6 +1190,45 @@ class Decompiler
 	# use struct member access (eg *(structptr+8)  =>  structptr->bla)
 	# must be run only once, right after type setting
 	def fix_pointer_arithmetic(scope)
+		# struct foo { int i; int j; struct { int k; int l; } m; };     bla+12 => &bla->m.l
+		# st is a struct, ptr is an expr pointing to a struct, off is a numeric offset from ptr
+		# TODO unions
+		structoffset = lambda { |st, ptr, off|
+			tabidx = off / @c_parser.sizeof(nil, st)
+			off -= tabidx * @c_parser.sizeof(nil, st)
+
+			suboff = 0
+			submemb = lambda { |sm| sm.name ? sm : sm.kind_of?(C::Union) ? sm.members.map { |ssm| submemb[ssm] } : [] }
+			mbs = st.members.map { |m| submemb[m] }.flatten 
+			if not sm = mbs.find { |m|
+				mo = st.offsetof(@c_parser, m.name)
+				suboff = off - mo
+				true if mo <= off and mo+@c_parser.sizeof(m) > off
+			}
+				# not in a member, just derivate from the struct ptr
+				ptr = C::CExpression[:&, [ptr, :'[]', [tabidx]]] if tabidx != 0
+				C::CExpression[[[ptr], C::Pointer.new(C::BaseType.new(:__int8))], :+, [off]]
+				#C::CExpression[[[ptr], C::Pointer.new(C::BaseType.new(:__int8))], :+, off + tabidx * @c_parser.sizeof(nil, st)]
+			else
+				if tabidx != 0
+					ptr = C::CExpression[[ptr, :'[]', [tabidx]], :'.', sm.name]
+				else
+					ptr = C::CExpression[ptr, :'->', sm.name]
+				end
+				ptr = C::CExpression[ptr, :'[]', [0]] if ptr.type.untypedef.kind_of? C::Array	# foo.bar[0].baz better than foo.bar->baz
+				ptr = C::CExpression[:&, ptr]
+				if suboff != 0
+					st = sm.type.untypedef
+					if st.pointer? and st.type.untypedef.kind_of? C::Struct
+						ptr = structoffset[st.type.untypedef, ptr, suboff]
+					else
+						ptr = C::CExpression[[ptr, C::Pointer.new(C::BaseType.new(:__int8))], :+, [suboff]]
+					end
+				end
+				ptr
+			end
+		}
+
 		walk_ce(scope, true) { |ce|
 			if ce.lexpr and ce.lexpr.type.pointer? and [:&, :>>, :<<].include? ce.op
 				ce.lexpr = C::CExpression[[ce.lexpr], C::BaseType.new(:int)]
@@ -1224,17 +1263,15 @@ class Decompiler
 				ce.type = ce.lexpr.type
 			end
 
+			if ce.op == :& and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :* and not ce.rexpr.lexpr
+				ce.replace C::CExpression[ce.rexpr.rexpr]
+			end
+
 			next if not ce.lexpr or not ce.lexpr.type.pointer?
-			if ce.op == :+ and ce.lexpr.type.untypedef.type.untypedef.kind_of? C::Struct and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
-					ce.rexpr.rexpr.kind_of? ::Integer and s = ce.lexpr.type.untypedef.type.untypedef and
-					o = ce.rexpr.rexpr and tabidx = o / @c_parser.sizeof(nil, s) and
-					o -= tabidx * @c_parser.sizeof(nil, s) and m = s.members.find { |m_| s.offsetof(@c_parser, m_.name) == o }
+			if ce.op == :+ and (s = ce.lexpr.type.untypedef.type.untypedef).kind_of? C::Struct and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
+					ce.rexpr.rexpr.kind_of? ::Integer and o = ce.rexpr.rexpr and x = structoffset[s, ce.lexpr, o]
 				# structptr + 4 => &structptr->member
-				if tabidx != 0
-					ce.replace C::CExpression[:&, [[ce.lexpr, :'[]', [tabidx]], :'.', m.name]]
-				else
-					ce.replace C::CExpression[:&, [ce.lexpr, :'->', m.name]]
-				end
+				ce.replace x
 			elsif [:+, :-, :'+=', :'-='].include? ce.op and ce.rexpr.kind_of? C::CExpression and ((not ce.rexpr.op and i = ce.rexpr.rexpr) or
 					(ce.rexpr.op == :* and i = ce.rexpr.lexpr and ((i.kind_of? C::CExpression and not i.op and i = i.rexpr) or true))) and
 					i.kind_of? ::Integer and psz = @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) and i % psz == 0
@@ -1262,56 +1299,8 @@ class Decompiler
 		}
 	end
 
-	# replace all occurence of var var by expr exp in stmt (no handling of if body/while/for etc)
-	def replace_var(stmt, var, newexp, skip_assign=true)
-		case stmt
-		when C::Return
-			if stmt.value.kind_of? C::Variable and stmt.value.name == var.name
-				stmt.value = newexp
-			elsif stmt.value.kind_of? C::CExpression
-				stmt = stmt.value
-			end
-		when C::If
-			if stmt.test.kind_of? C::Variable and stmt.test.name == var.name
-				stmt.test = newexp
-			elsif stmt.test.kind_of? C::CExpression
-				stmt = stmt.test
-			end
-		when C::While, C::DoWhile, C::Switch
-			if stmt.test.kind_of? C::Variable and stmt.test.name == var.name
-				stmt.test = newexp
-			elsif stmt.test.kind_of? C::CExpression
-				stmt = stmt.test
-			end
-		end
-
-		if stmt.kind_of? C::CExpression
-			walk = lambda { |exp|
-				next if not exp.kind_of? C::CExpression
-				if exp.lexpr.kind_of? C::Variable and exp.lexpr.name == var.name
-					exp.lexpr = newexp if not skip_assign or exp.op != :'='
-				else walk[exp.lexpr]
-				end
-				case exp.op
-				when :funcall
-					exp.rexpr.each_with_index { |a, i|
-						if a.kind_of? C::Variable and a.name == var.name
-							exp.rexpr[i] = newexp
-						else walk[a]
-						end
-					}
-				else
-					if exp.rexpr.kind_of? C::Variable and exp.rexpr.name == var.name
-						exp.rexpr = newexp
-					else walk[exp.rexpr]
-					end
-				end
-			}
-			walk[stmt]
-		end
-	end
-
-	# handling of var overlapping (eg __int32 var_10; __int8 var_F  =>  replace all var_F by *((int8*)&var_10 + 1))
+	# handling of var overlapping (eg __int32 var_10; __int8 var_F  =>  replace all var_F by *(&var_10 + 1))
+	# must be done before fix_pointer_arithmetic
 	def fix_type_overlap(scope)
 		varinfo = {}
 		scope.symbol.each_value { |var|
@@ -1319,25 +1308,21 @@ class Decompiler
 			len = @c_parser.sizeof(var)
 			varinfo[var] = [off, len]
 		}
+
 		varinfo.each { |v1, (o1, l1)|
 			next if not v1.type.integral?
 			varinfo.each { |v2, (o2, l2)|
+				# XXX o1 may overlap o2 AND another (int32 v_10; int32 v_E; int32 v_C;)
+				# TODO should check stuff with aliasing domains
 				next if v1.name == v2.name or o1 >= o2+l2 or o1+l1 <= o2 or l1 > l2 or (l2 == l1 and o2 >= o1)
 				# v1 => *(&v2+delta)
-				# XXX o1 may overlap o2 AND another (int32 v_10; int32 v_E; int32 v_C;)
-				# TODO XXX overlap on alias => reference which alias ?  realias ?
-				t2 = v2.type.untypedef
-				if t2.kind_of? C::Struct and m = t2.members.find { |m_| t2.offsetof(@c_parser, m_.name) == o2-o1 } and @c_parser.sizeof(v1) == @c_parser.sizeof(m)
-					p = C::CExpression[[v2, :'.', m.name], v1.type]
-				else
-					p = C::CExpression[:&, v2]
-					p = C::CExpression[p, C::Pointer.new(C::BaseType.new(:__int8))] if v2.type != C::BaseType.new(:__int8)
-					p = C::CExpression[p, :+,  [o1-o2]]
-					p = C::CExpression[p, C::Pointer.new(v1.type)] if v1.type != p.type.type
-					p = C::CExpression[:*,  p]
-				end
-				scope.statements.each { |stmt|
-					replace_var(stmt, v1, p, false)
+				p = C::CExpression[:&, v2]
+				p = C::CExpression[p, :+,  [o1-o2]]
+				p = C::CExpression[p, C::Pointer.new(v1.type)] if v1.type != p.type.type
+				p = C::CExpression[:*, p]
+				walk_ce(scope) { |ce|
+					ce.lexpr = p if ce.lexpr == v1
+					ce.rexpr = p if ce.rexpr == v1
 				}
 			}
 		
@@ -1438,10 +1423,22 @@ class Decompiler
 				ce.type = C::Pointer.new(ce.rexpr.type)
 			end
 
-			# *(1stmember*)&struct => struct.1stmember
-			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression and
-					ce.rexpr.rexpr.op == :& and s = ce.rexpr.rexpr.rexpr.type and s.kind_of? C::Struct and s.members.first and sametype[ce.type, s.members.first.type]
-				ce.lexpr, ce.op, ce.rexpr = ce.rexpr.rexpr.rexpr, :'.', s.members.first.name
+			# (1stmember*)structptr => &structptr->1stmember	TODO anonymous substruct..
+			if not ce.op and ce.type.pointer? and ce.rexpr.type.pointer? and (s = ce.rexpr.type.untypedef.type.untypedef).kind_of? C::Struct and
+					m = s.members.first and m.name and sametype[ce.type.untypedef.type, m.type]
+				if ce.rexpr.kind_of? C::CExpression and ((ce.rexpr.op == :'.' and s = ce.rexpr.lexpr.type) or (ce.rexpr.op == :'->' and
+							s = ce.rexpr.lexpr.type.untypedef.type)) and s.members.find { |om| om.name == ce.rexpr.rexpr and om.type.kind_of? C::Array }
+					# ary->bla => ary[0].bla
+					ce.replace C::CExpression[:&, [[ce.rexpr, :'[]', [0]], :'.', m.name]]
+				else
+					ce.replace C::CExpression[:&, [ce.rexpr, :'->', m.name]]
+				end
+			end
+
+			# (&foo)->bar => foo.bar
+			if ce.op == :'->' and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :& and not ce.lexpr.lexpr
+				ce.lexpr = ce.lexpr.rexpr
+				ce.op = :'.'
 			end
 		}
 

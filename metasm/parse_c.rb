@@ -307,7 +307,6 @@ module C
 			end
 				
 
-			raise parser, 'unhandled indirect offsetof' if not @members.find { |m| m.name == name }	# TODO
 			al = align(parser)
 			off = 0
 			bit_off = 0
@@ -845,7 +844,7 @@ module C
 				when :'&&', :'||', :==, :'!=', :>, :<, :<=, :>=; new(x1, op, x2, BaseType.new(:int))
 				when :'.', :'->'
 					t = x1.type.untypedef
-					t = t.type.untypedef if op == :'->'
+					t = t.type.untypedef if op == :'->' and x1.type.pointer?
 					raise "parse error CExpr[*#{args.inspect}]" if not t.kind_of? Union or not m = t.members.find { |m_| m_.name == x2 }
 					new(x1, op, x2, m.type)
 				when :'?:'; new(x1, op, x2, x2[0].type)
@@ -857,7 +856,7 @@ module C
 				x1 = splat[args[1]]
 				if x1.kind_of? Type; new(nil, nil, x0, x1)	# (cast)r
 				elsif x0 == :*; new(nil, x0, x1, x1.type.untypedef.type)	# *r
-				elsif x0 == :& and x1.kind_of? CExpression and x1.type.kind_of? C::Array; new(nil, nil, x1, Pointer.new(x1.type))
+				elsif x0 == :& and x1.kind_of? CExpression and x1.type.kind_of? C::Array; new(nil, nil, x1, Pointer.new(x1.type.type))
 				elsif x0 == :&; new(nil, x0, x1, Pointer.new(x1.type))	# &r
 				elsif x0 == :'!'; new(nil, x0, x1, BaseType.new(:int))	# &r
 				elsif x1.kind_of? ::Symbol; new(x0, x1, nil, x0.type)	# l++

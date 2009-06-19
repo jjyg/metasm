@@ -84,7 +84,7 @@ class Ia32
 		addop 'pop',   [0x8F], 0
 		addop 'push',  [0x50], :reg
 		addop 'push',  [0xFF], 6
-		addop 'push',  [0x68], nil,  {:s => [0, 1]}, :i
+		addop 'push',  [0x68], nil,  {:s => [0, 1]}, :u
 		addop 'ret',   [0xC3], nil,  {}, :stopexec, :setip
 		addop 'ret',   [0xC2], nil,  {}, :stopexec, :u16, :setip
 		addop_macro3 'rol', 0
