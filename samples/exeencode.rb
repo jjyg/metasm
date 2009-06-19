@@ -62,10 +62,10 @@ if $to_string
 	p exe.encode_string
 elsif $to_cstring
 	str = exe.encode_string
-	puts "unsigned char sc[#{str.length}] = "
-	str.scan(/.{1,19}/m) { |l|
-		puts '"' + l.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
-	}
+	var = File.basename(file)[/^\w+/] || 'sc'	# derive varname from filename
+	puts "unsigned char #{var}[#{str.length}] = ", str.scan(/.{1,19}/m).map { |l|
+		'"' + l.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
+	}.join("\n") + ';'
 else
 	exe.encode_file(outfilename)
 end
