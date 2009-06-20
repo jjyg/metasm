@@ -1308,7 +1308,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# backtraces the value of an expression from start_addr
 	# updates blocks backtracked_for if type is set
 	# uses backtrace_walk
-	# all values returned are from backtrace_check_found (which may generate xrefs, labels, addrs to dasm)
+	# all values returned are from backtrace_check_found (which may generate xrefs, labels, addrs to dasm) unless :no_check is specified
 	# options:
 	#  :include_start => start backtracking including start_addr
 	#  :from_subfuncret =>
@@ -1323,7 +1323,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	#  :max_complexity{_data} => maximum complexity of the expression before aborting its backtrace
 	#  :log => Array, will be updated with the backtrace evolution
 	#  :only_upto => backtrace only to update bt_for for current block & previous ending at only_upto
-	# XXX origin/type/len/detached -> BacktraceTrace ?
+	#  :no_check => don't use backtrace_check_found (will not backtrace indirection static values)
+	#  :terminals => array of symbols with constant value (stop backtracking if all symbols in the expr are terminals) (only supported with no_check)
 	def backtrace(expr, start_addr, nargs={})
 		include_start   = nargs.delete :include_start
 		from_subfuncret = nargs.delete :from_subfuncret
@@ -1338,6 +1339,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		max_complexity_data = nargs.delete(:max_complexity) || 8
 		bt_log          = nargs.delete :log	# array to receive the ongoing backtrace info
 		only_upto       = nargs.delete :only_upto
+		no_check        = nargs.delete :no_check
+		terminals       = nargs.delete(:terminals) || []
 		raise ArgumentError, "invalid argument to backtrace #{nargs.keys.inspect}" if not nargs.empty?
 
 		expr = Expression[expr]
@@ -1357,9 +1360,10 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 			maxdepth = @backtrace_maxblocks_data if backtrace_maxblocks_data and maxdepth > @backtrace_maxblocks_data
 		end
 
-		if result = backtrace_check_found(expr, di, origin, type, len, maxdepth, detached)
-			# no need to update backtrace_for
-			return result
+		if vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) : backtrace_check_found(expr,
+				di, origin, type, len, maxdepth, detached))
+			# no need to update backtracked_for
+			return vals
 		elsif maxdepth <= 0
 			return [Expression::Unknown]
 		end
@@ -1394,8 +1398,10 @@ puts "  backtrace end #{ev} #{expr}" if debug_backtrace
 					expr = backtrace_emu_blockup(h[:addr], expr)
 puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if debug_backtrace
 					bt_log << [:up, expr, oldexpr, h[:addr],  :end] if bt_log and expr != oldexpr
-					if expr != oldexpr and not snapshot_addr and vals = backtrace_check_found(expr,
-							nil, origin, type, len, maxdepth-h[:loopdetect].length, detached)
+					if expr != oldexpr and not snapshot_addr and vals = (no_check ?
+							(!need_backtrace(expr, terminals) and [expr]) :
+							backtrace_check_found(expr, nil, origin, type, len,
+								maxdepth-h[:loopdetect].length, detached))
 						result |= vals
 						next
 					end
@@ -1434,8 +1440,9 @@ puts "  bt loop at #{Expression[t[0][1]]}: #{oldexpr} => #{expr} (#{t.map { |z| 
 puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if debug_backtrace
 				bt_log << [:up, expr, oldexpr, h[:from], h[:to]] if bt_log
 
-				if expr != oldexpr and vals = backtrace_check_found(expr, @decoded[h[:from]],
-						origin, type, len, maxdepth-h[:loopdetect].length, detached)
+				if expr != oldexpr and vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) :
+						backtrace_check_found(expr, @decoded[h[:from]], origin, type, len,
+							maxdepth-h[:loopdetect].length, detached))
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 						next expr
@@ -1501,7 +1508,8 @@ puts "  backtrace: recursive function #{Expression[h[:funcaddr]]}" if debug_back
 					bt_log << [ev, expr, oldexpr, h[:addr], h[:funcaddr]] if bt_log and expr != oldexpr
 				end
 puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" if debug_backtrace and expr != oldexpr
-				if vals = backtrace_check_found(expr, h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached)
+				if vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) : backtrace_check_found(expr,
+						h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached))
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 					else
@@ -1585,9 +1593,9 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 
 	# returns true if the expression needs more backtrace
 	# it checks for the presence of a symbol (not :unknown), which means it depends on some register value
-	def need_backtrace(expr)
+	def need_backtrace(expr, terminals=[])
 		return if expr.kind_of? ::Integer
-		!(expr.externals.grep(::Symbol) - [:unknown]).empty?
+		!(expr.externals.grep(::Symbol) - [:unknown] - terminals).empty?
 	end
 
 	# returns an array of expressions, or nil if expr needs more backtrace

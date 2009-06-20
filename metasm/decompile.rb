@@ -174,7 +174,7 @@ class Decompiler
 					# XXX 0x80 with ruby1.9...
 					var.initializer = C::CExpression[data[0, eos].pack('C*'), C::Pointer.new(ptype)] rescue nil
 				end
-				var.initializer ||= data.map { |v| C::CExpression[v, ptype] }
+				var.initializer ||= data.map { |v| C::CExpression[v, C::BaseType.new(:int)] } unless (data - [0]).empty?
 			end
 		end
 
@@ -248,7 +248,8 @@ class Decompiler
 			when :frameptr; e
 			when ::Symbol
 				cache.clear if cache_di != di ; cache_di = di
-				vals = cache[[e, i_s, 0]] ||= @dasm.backtrace(e, di.address, :snapshot_addr => blockstart, :include_start => i_s)
+				vals = cache[[e, i_s, 0]] ||= @dasm.backtrace(e, di.address, :snapshot_addr => blockstart,
+						:include_start => i_s, :no_check => true, :terminals => [:frameptr])
 				# backtrace only to blockstart first
 				if vals.length == 1 and ee = vals.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
 						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer) or
@@ -257,8 +258,10 @@ class Decompiler
 					ee
 				else
 				# fallback on full run (could restart from blockstart with ee, but may reevaluate addr_binding..
-				vals = cache[[e, i_s, 1]] ||= @dasm.backtrace(e, di.address, :snapshot_addr => funcstart, :include_start => i_s)
-				if vals.length == 1 and ee = vals.first and (ee.reduce.kind_of? Integer or (ee.kind_of? Expression and (ee == Expression[:frameptr] or
+				vals = cache[[e, i_s, 1]] ||= @dasm.backtrace(e, di.address, :snapshot_addr => funcstart,
+						:include_start => i_s, :no_check => true, :terminals => [:frameptr])
+				if vals.length == 1 and ee = vals.first and (ee.reduce.kind_of? Integer or
+						(ee.kind_of? Expression and (ee == Expression[:frameptr] or
 						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))))
  					ee
 				else e
