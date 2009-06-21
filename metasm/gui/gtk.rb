@@ -5,6 +5,7 @@
 
 
 require 'gtk2'
+require 'metasm/gui/gtk_hex'
 require 'metasm/gui/gtk_listing'
 require 'metasm/gui/gtk_opcodes'
 require 'metasm/gui/gtk_graph'
@@ -48,6 +49,7 @@ class DisasmWidget < Gtk::VBox
 		addview[GraphViewWidget, :graph]
 		addview[CdecompListingWidget, :decomp]
 		addview[AsmOpcodeWidget, :opcodes]
+		addview[HexWidget, :hex]
 
 		@notebook.focus_child = curview
 	end
@@ -237,7 +239,7 @@ class DisasmWidget < Gtk::VBox
 	# jump to address
 	def prompt_goto
 		# TODO history, completion
-		inputbox('address to go') { |v| focus_addr v }
+		inputbox('address to go', :text => Expression[curaddr]) { |v| focus_addr v }
 	end
 
 	def prompt_parse_c_file
@@ -263,9 +265,9 @@ class DisasmWidget < Gtk::VBox
 	def rename_label(addr)
 		old = addr
 		if @dasm.prog_binding[old] or old = @dasm.prog_binding.index(addr)
-			inputbox("new name for #{old}") { |v| @dasm.rename_label(old, v) ; gui_update }
+			inputbox("new name for #{old}", :text => old) { |v| @dasm.rename_label(old, v) ; gui_update }
 		else
-			inputbox("label name for #{Expression[addr]}") { |v|
+			inputbox("label name for #{Expression[addr]}", :text => Expression[addr]) { |v|
 				@dasm.set_label_at(addr, v)
 				if di = @dasm.decoded[addr]
 					@dasm.split_block(di.block, di.address)
@@ -670,6 +672,7 @@ class MainWindow < Gtk::Window
 		addsubmenu(views, '_Graph') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :graph) }
 		addsubmenu(views, 'De_compiled') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :decompile) }
 		addsubmenu(views, 'Raw _opcodes') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :opcodes) }
+		addsubmenu(views, '_Hex') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :hex) }
 
 		addsubmenu(@menu, views, '_Views')
 	end

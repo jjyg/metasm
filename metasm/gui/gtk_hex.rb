@@ -7,21 +7,30 @@ require 'gtk2'
 
 module Metasm
 module GtkGui
-class AsmOpcodeWidget < Gtk::DrawingArea
-	attr_accessor :hl_word
+class HexWidget < Gtk::DrawingArea
+	# data_size = size of data in bytes (1 => chars, 4 => dwords..)
+	# line_size = nr of bytes shown per line
+	attr_accessor :show_address, :show_data, :show_ascii,
+		:data_sign, :data_size, :data_hex,
+		:line_size, :viewaddr
 
-	# construction method
 	def initialize(dasm, parent_widget)
 		@dasm = dasm
 		@parent_widget = parent_widget
-		@hl_word = nil
 		@caret_x = @caret_y = 0	# caret position in characters coordinates (column/line)
 		@oldcaret_x = @oldcaret_y = 42
+		@focus_zone = :hex
 		@layout = Pango::Layout.new Gdk::Pango.context
 		@color = {}
 		@viewaddr = @dasm.prog_binding['entrypoint'] || @dasm.section.keys.min
-		@line_text = {}
-		@line_address = {}
+		@show_address = @show_data = @show_ascii = true
+		@data_sign = false
+		@data_size = 1
+		@data_hex = true
+		@line_size = 16
+		@num_lines = 2	# size of widget in lines
+
+		@write_pending = {}	# addr -> newvalue ?
 
 		super()
 
@@ -47,11 +56,13 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 			end
 		}
 		signal_connect('size_allocate') { |w, alloc| # resize
-			lines = alloc.height / @font_height
+			@num_lines = alloc.height / @font_height
 			cols = alloc.width / @font_width
-			@caret_y = lines-1 if @caret_y >= lines
+			@caret_y = @num_lines-1 if @caret_y >= @num_lines
 			@caret_x = cols-1 if @caret_x >= cols
+			@line_size = 16	# TODO
 		}
+		# TODO disable windows' menu accelerators
 		signal_connect('key_press_event') { |w, ev| # keyboard
 			keypress(ev)
 		}
@@ -72,9 +83,9 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
 
 			# map functionnality => color
-			set_color_association :comment => :darkblue, :label => :darkgreen, :text => :black,
-			  :instruction => :black, :address => :blue, :caret => :black,
-			  :listing_bg => :white, :cursorline_bg => :paleyellow, :hl_word => :palered
+			set_color_association :ascii => :black, :data => :black,
+			  :address => :blue, :caret => :black, :bg => :white,
+			  :write_pending => :darkred
 		}
 	end
 
@@ -85,53 +96,30 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	end
 
 	def rightclick(ev)
-		click(ev)
-		@parent_widget.clone_window(@hl_word, :opcodes)
+		@data_size = {1 => 2, 2 => 4, 4 => 1}[@data_size]
+		redraw
 	end
 
 	def doubleclick(ev)
-		@parent_widget.focus_addr(@hl_word)
+		rightclick(ev)	# TODO something else ?
 	end
 
 	def mouse_wheel(ev)
 		case ev.direction
 		when Gdk::EventScroll::Direction::UP
-			(allocation.height/@font_height/2).times { scrollup }
+			@viewaddr -= allocation.height/@font_height/@line_size/2
+			redraw
 			true
 		when Gdk::EventScroll::Direction::DOWN
-			(allocation.height/@font_height/2).times { scrolldown }
+			@viewaddr += allocation.height/@font_height/@line_size/2
+			redraw
 			true
 		end
 	end
 
-	def di_at(addr)
-		s = @dasm.get_section_at(addr) and s[0].ptr < s[0].length and @dasm.cpu.decode_instruction(s[0], addr)
-	end
-
-	def scrollup
-		# keep current instrs in sync
-		16.times { |o|
-			o += 1
-			if di = di_at(@viewaddr-o) and di.bin_length == o
-				@viewaddr -= o
-				@line_address = {}
-				redraw
-				return
-			end
-		}
-		@viewaddr -= 1
-		@line_address = {}
-		redraw
-	end
-
-	def scrolldown
-		if di = di_at(@viewaddr)
-			@viewaddr += di.bin_length
-		else
-			@viewaddr += 1
-		end
-		@line_address = {}
-		redraw
+	# returns 1 line of data
+	def data_at(addr, len=@line_size)
+		s = @dasm.get_section_at(addr) and s[0].ptr < s[0].length and s[0].read(len)
 	end
 
 	def paint
@@ -142,88 +130,47 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 		w_w = a.width
 		w_h = a.height
 
-		# draw caret line background
-		gc.set_foreground @color[:cursorline_bg]
-		w.draw_rectangle(gc, true, 0, @caret_y*@font_height, w_w, @font_height)
-
-		want_update_caret = true if @line_address == {}
-
-		# map lineno => address shown
-		@line_address = Hash.new(-1)
-		# map lineno => raw text
-		@line_text = Hash.new('')
-
-		# current address drawing
 		curaddr = @viewaddr
-		# current line text buffer
-		fullstr = ''
-		# current line number
-		line = 0
 		# current window position
 		x = 1
 		y = 0
+		@num_lines = 0
 
 		# renders a string at current cursor position with a color
 		# must not include newline
 		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
 			next if y >= w_h or x >= w_w
-			fullstr << str
 			# TODO selection
-			if @hl_word
-				stmp = str
-				pre_x = 0
-				while stmp =~ /^(.*?)(\b#{Regexp.escape @hl_word}\b)/
-					s1, s2 = $1, $2
-					@layout.text = s1
-					pre_x += @layout.pixel_size[0]
-					@layout.text = s2
-					hl_x = @layout.pixel_size[0]
-					gc.set_foreground @color[:hl_word]
-					w.draw_rectangle(gc, true, x+pre_x, y, hl_x, @font_height)
-					pre_x += hl_x
-					stmp = stmp[s1.length+s2.length..-1]
-				end
-			end
 			@layout.text = str
 			gc.set_foreground @color[color]
 			w.draw_layout(gc, x, y, @layout)
 			x += @layout.pixel_size[0]
 		}
-		# newline: current line is fully rendered, update @line_address/@line_text etc
 		nl = lambda {
 			next if y >= w_h
-			@line_text[line] = fullstr
-			@line_address[line] = curaddr
-			fullstr = ''
-			line += 1
+			@num_lines += 1
 			x = 1
 			y += @font_height
 		}
 
-		invb = @dasm.prog_binding.invert
-
 		# draw text until screen is full
 		while y < w_h
-			if label = invb[curaddr]
-				nl[]
-				@dasm.prog_binding.keys.sort.each { |name|
-					next if not @dasm.prog_binding[name] == curaddr
-					render["#{name}:", :label]
-					nl[]
-				}
-			end
-			render["#{Expression[curaddr]}    ", :address]
+			render["#{Expression[curaddr]} ".rjust(10, '0'), :address] if @show_address
 
-			if di = di_at(curaddr)
-				render[di.instruction.to_s, :instruction]
-				curaddr += di.bin_length
-			else
-				if s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
-					render["db #{Expression[s[0].read(1).unpack('C')]}", :instruction]
-				end
-				curaddr += 1
+			if d = data_at(curaddr)
+				# TODO write_pending, data_hex, unsigned etc
+				#case @data_size
+				h = d.unpack('C*').map { |b| '%02x' % b }
+				str = ''
+				d.unpack('C*').each_with_index { |b, i|
+					str << ' ' if i % 4 == 0
+					str << ('%02x ' % b)
+				} if @show_data
+				str << '  ' << d.gsub(/[^\x20-\x7e]/, '.') if @show_ascii
+				render[str, :data]
 			end
+			curaddr += @line_size
 			nl[]
 		end
 
@@ -233,8 +180,6 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 		cx = @caret_x*@font_width+1
 		cy = @caret_y*@font_height
 		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
-
-		update_caret if want_update_caret
 	end
 
 	include Gdk::Keyval
@@ -251,32 +196,41 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 			if @caret_y >= 1
 				@caret_y -= 1
 			else
-				scrollup
+				@viewaddr -= @line_size
+				redraw
 			end
 			update_caret
 		when GDK_Right
-			if @caret_x <= @line_text.values.map { |s| s.length }.max
-				@caret_x += 1
-				update_caret
-			end
+			@caret_x += 1
+			update_caret
 		when GDK_Down
-			if @caret_y < @line_text.length-3
+			if @caret_y < @num_lines-2
 				@caret_y += 1
 			else
-				scrolldown
+				@viewaddr += @line_size
+				redraw
 			end
 			update_caret
 		when GDK_Page_Up
-			(allocation.height/@font_height/2).times { scrollup }
+			@viewaddr -= (@num_lines/2)*@line_size
+			redraw
 		when GDK_Page_Down
-			@viewaddr = @line_address.fetch(@line_address.length/2, @viewaddr+15)
+			@viewaddr += (@num_lines/2)*@line_size
 			redraw
 		when GDK_Home
 			@caret_x = 0
 			update_caret
 		when GDK_End
-			@caret_x = @line_text[@caret_y].length
+			@caret_x = 5000
 			update_caret
+
+		# TODO
+		#when Tab
+		#	switch @focus_zone
+		#when 0x20..0x7e
+		#	write
+		#when Enter
+		#	commit
 
 		else
 			return @parent_widget.keypress(ev)
@@ -285,11 +239,11 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	end
 
 	def get_cursor_pos
-		[@viewaddr, @caret_x, @caret_y]
+		[@viewaddr, @caret_x, @caret_y, @focus_zone]
 	end
 
 	def set_cursor_pos(p)
-		@viewaddr, @caret_x, @caret_y = p
+		@viewaddr, @caret_x, @caret_y, @focus_zone = p
 		redraw
 		update_caret
 	end
@@ -309,7 +263,7 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	# check #initialize/sig('realize') for initial function/color list
 	def set_color_association(hash)
 		hash.each { |k, v| @color[k] = @color[v] }
-		modify_bg Gtk::STATE_NORMAL, @color[:listing_bg]
+		modify_bg Gtk::STATE_NORMAL, @color[:bg]
 		redraw
 	end
 
@@ -319,23 +273,19 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	end
 
 	# hint that the caret moved
-	# redraws the caret, change the hilighted word, redraw if needed
+	# bind it to the current active area & redraw it
 	def update_caret
-		return if not l = @line_text[@caret_y]
-		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
-		word = nil if word == ''
-		if @hl_word != word or @oldcaret_y != @caret_y
-			@hl_word = word
-			redraw
-		else
-			return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
-			x = @oldcaret_x*@font_width+1
-			y = @oldcaret_y*@font_height
-			window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
-			x = @caret_x*@font_width+1
-			y = @caret_y*@font_height
-			window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
-		end
+		@caret_x = 10 if @caret_x < 10
+		@caret_x = 10+16*3+4+18 if @caret_x > 10+16*3+4+18
+		# TODO skip spaces between hex digits ?
+
+		return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
+		x = @oldcaret_x*@font_width+1
+		y = @oldcaret_y*@font_height
+		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
+		x = @caret_x*@font_width+1
+		y = @caret_y*@font_height
+		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
 
 		@oldcaret_x = @caret_x
 		@oldcaret_y = @caret_y
@@ -344,13 +294,15 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	# focus on addr
 	# returns true on success (address exists)
 	def focus_addr(addr)
-		if l = @line_address.index(addr) and l < @line_address.keys.max - 4
-			@caret_y, @caret_x = @line_address.keys.find_all { |k| @line_address[k] == addr }.max, 0
-		elsif @dasm.get_section_at(addr)
-			@viewaddr, @caret_x, @caret_y = addr, 0, 0
-			redraw
+		if addr >= @viewaddr and addr < @viewaddr+(@num_lines-2)*@line_size
+			# TODO
+			@caret_x = 10 + 3*((addr-@viewaddr) % @line_size)
+			@caret_y = (addr-@viewaddr) / @line_size
 		else
-			return
+			@viewaddr = addr&0xffff_fff0
+			@caret_x = 10 + 3*((addr-@viewaddr) % @line_size)
+			@caret_y = 0
+			redraw
 		end
 		update_caret
 		true
@@ -358,7 +310,7 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 
 	# returns the address of the data under the cursor
 	def current_address
-		@line_address[@caret_y]
+		@viewaddr + @caret_y*@line_size	# XXX @caret_x
 	end
 
 	def gui_update

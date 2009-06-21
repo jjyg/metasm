@@ -148,7 +148,8 @@ class AsmListingWidget < Gtk::HBox
 		gc = Gdk::GC.new(w)
 
 		a = @listing_widget.allocation
-		w_w, w_h = a.x + a.width, a.y + a.height
+		w_w = a.width
+		w_h = a.height
 
 		# draw caret line background
 		gc.set_foreground @color[:cursorline_bg]
@@ -453,7 +454,7 @@ class AsmListingWidget < Gtk::HBox
 				update_caret
 			end
 		when GDK_Down
-			if @caret_y < @line_text.length-2 or (@caret_y < @line_text.length - 1 and @vscroll.adjustment.value == @vscroll.adjustment.upper)
+			if @caret_y < @line_text.length-3 or (@caret_y < @line_text.length - 2 and @vscroll.adjustment.value == @vscroll.adjustment.upper)
 				@caret_y += 1
 			else
 				off = 1
