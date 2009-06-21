@@ -6,6 +6,7 @@
 
 require 'gtk2'
 require 'metasm/gui/gtk_listing'
+require 'metasm/gui/gtk_opcodes'
 require 'metasm/gui/gtk_graph'
 require 'metasm/gui/gtk_decomp'
 
@@ -22,7 +23,6 @@ class DisasmWidget < Gtk::VBox
 
 		@dasm = dasm
 		@entrypoints = ep
-		@views = []
 		@pos_history = []
 		@keyboard_callback = {}
 		@clones = [self]
@@ -36,12 +36,18 @@ class DisasmWidget < Gtk::VBox
 		@notebook.show_border = false
 		@notebook.show_tabs = false
 
-		@views << AsmListingWidget.new(@dasm, self)
-		@views << GraphViewWidget.new(@dasm, self)
-		@views << CdecompListingWidget.new(@dasm, self)
-		@notebook.append_page(@views[0], Gtk::Label.new('listing'))
-		@notebook.append_page(@views[1], Gtk::Label.new('graph'))
-		@notebook.append_page(@views[2], Gtk::Label.new('decomp'))
+		@views = []
+		@view_index = {}
+		addview = lambda { |widget, name|
+			@view_index[name] = @views.length
+			@views << widget.new(@dasm, self)
+			@notebook.append_page(@views.last, Gtk::Label.new(name.to_s))
+		}
+
+		addview[AsmListingWidget, :listing]
+		addview[GraphViewWidget, :graph]
+		addview[CdecompListingWidget, :decomp]
+		addview[AsmOpcodeWidget, :opcodes]
 
 		@notebook.focus_child = curview
 	end
@@ -106,7 +112,7 @@ class DisasmWidget < Gtk::VBox
 
 	def focus_addr(addr, page=nil, quiet=false)
 		page ||= @notebook.page
-		page = { :listing => 0, :graph => 1, :decompile => 2 }[page] || page
+		page = @view_index[page] || page
 		case addr
 		when ::String
 			if @dasm.prog_binding[addr]
@@ -291,7 +297,7 @@ class DisasmWidget < Gtk::VBox
 	end
 
 	def toggle_view(idx)
-		idx = { :listing => 0, :graph => 1, :decompile => 2 }[idx] || idx
+		idx = @view_index[idx] || idx
 		default = (idx == 0 ? 1 : 0)
 	       	focus_addr(curview.current_address, ((@notebook.page == idx) ? default : idx))
 	end
@@ -348,29 +354,30 @@ class DisasmWidget < Gtk::VBox
 		popup
 	end
 
-	def messagebox(str, title=nil)
-		MessageBox.new(toplevel, str, title)
+	def messagebox(*a)
+		MessageBox.new(toplevel, *a)
 	end
 
-	def inputbox(str, title=nil, &b)
-		InputBox.new(toplevel, str, &b)
+	def inputbox(*a, &b)
+		InputBox.new(toplevel, *a, &b)
 	end
 
-	def openfile(title, &b)
-		OpenFile.new(toplevel, title, &b)
+	def openfile(*a, &b)
+		OpenFile.new(toplevel, *a, &b)
 	end
 
-	def listwindow(title, list, &b)
-		ListWindow.new(toplevel, title, list, &b)
+	def listwindow(*a, &b)
+		ListWindow.new(toplevel, *a, &b)
 	end
 end
 
 class MessageBox < Gtk::MessageDialog
 	# shows a message box (non-modal)
-	def initialize(owner, str, title=nil)
+	def initialize(owner, str, opts={})
 		owner ||= Gtk::Window.toplevels.first
+		opts = {:title => opts} if opts.kind_of? String
 		super(owner, Gtk::Dialog::DESTROY_WITH_PARENT, INFO, BUTTONS_CLOSE, str)
-		self.title = title if title
+		self.title = opts[:title] if opts[:title]
 		signal_connect('response') { destroy }
 		show_all
 		present		# bring the window to the foreground & set focus
@@ -380,14 +387,19 @@ end
 class InputBox < Gtk::Dialog
 	# shows a simplitic input box (eg window with a 1-line textbox + OK button), yields the text
 	# TODO history, dropdown, autocomplete, contexts, 3D stereo surround, etc
-	def initialize(owner, str, title=nil)
+	def initialize(owner, str, opts={})
 		owner ||= Gtk::Window.toplevels.first
 		super(nil, owner, Gtk::Dialog::DESTROY_WITH_PARENT,
 			[Gtk::Stock::OK, Gtk::Dialog::RESPONSE_ACCEPT], [Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_REJECT])
-		self.title = title if title
+		self.title = opts[:title] if opts[:title]
 
 		label = Gtk::Label.new(str)
 		text  = Gtk::TextView.new
+		if opts[:text]
+			text.buffer.text = opts[:text].to_s
+			text.buffer.move_mark('selection_bound', text.buffer.start_iter)
+			text.buffer.move_mark('insert', text.buffer.end_iter)
+		end
 
 		text.signal_connect('key_press_event') { |w, ev|
 			case ev.keyval
@@ -398,9 +410,9 @@ class InputBox < Gtk::Dialog
 
 		signal_connect('response') { |win, id|
 			if id == RESPONSE_ACCEPT
-				text = text.buffer.text
+				resp = text.buffer.text
 				destroy
-				yield text
+				yield resp
 			else
 				destroy
 			end
@@ -605,22 +617,6 @@ class MainWindow < Gtk::Window
 
 		addsubmenu(@menu, filemenu, '_File')
 
-		# TODO proper use of accelerators
-		options = Gtk::Menu.new
-		addsubmenu(options, '_Verbose', :check, $VERBOSE, 'v') { |ck| $VERBOSE = ck.active? ; puts "#{'not ' if not $VERBOSE}verbose" }
-		addsubmenu(options, '_Debug', :check, $DEBUG) { |ck| $DEBUG = ck.active? }
-		addsubmenu(options, 'Debug _backtrace', :check) { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
-		addsubmenu(options)
-		addsubmenu(options, 'Forbid decompile _types', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_types = ck.active? }
-		addsubmenu(options, 'Forbid decompile _while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_while = ck.active? }
-		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
-		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
-		addsubmenu(options, 'Forbid decomp optim_labels', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck.active? }
-		# TODO maxbacktrace{_data}, change CPU..
-		# factorize headers
-
-		addsubmenu(@menu, options, '_Options')
-
 		actions = Gtk::Menu.new
 		addsubmenu(actions, '_Disassemble here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
 		i = addsubmenu(actions, '_Follow') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }
@@ -643,8 +639,39 @@ class MainWindow < Gtk::Window
 
 		addsubmenu(@menu, actions, '_Actions')
 
-		view = Gtk::Menu.new
-		# TODO radiobtn lst/hex/graph/decomp
+		options = Gtk::Menu.new
+		addsubmenu(options, '_Verbose', :check, $VERBOSE, 'v') { |ck| $VERBOSE = ck.active? ; puts "#{'not ' if not $VERBOSE}verbose" }
+		addsubmenu(options, '_Debug', :check, $DEBUG) { |ck| $DEBUG = ck.active? }
+		addsubmenu(options, 'Debug _backtrace', :check) { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
+		addsubmenu(options, 'Backtrace limit') {
+			InputBox.new(self, 'max blocks to backtrace', :text => @dasm_widget.dasm.backtrace_maxblocks ) { |target|
+				protect { @dasm_widget.dasm.backtrace_maxblocks = Integer(target) } if not target.empty?
+			}
+		}
+		addsubmenu(options, 'Backtrace limit (data)') {
+			InputBox.new(self, 'max blocks to backtrace data (-1 to never start)',
+					:text => @dasm_widget.dasm.backtrace_maxblocks_data ) { |target|
+				protect { @dasm_widget.dasm.backtrace_maxblocks_data = Integer(target) } if not target.empty?
+			}
+		}
+		addsubmenu(options)
+		addsubmenu(options, 'Forbid decompile _types', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_types = ck.active? }
+		addsubmenu(options, 'Forbid decompile _while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_while = ck.active? }
+		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
+		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
+		addsubmenu(options, 'Forbid decomp optim_labels', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck.active? }
+		# TODO CPU type, size, endian...
+		# factorize headers
+
+		addsubmenu(@menu, options, '_Options')
+
+		views = Gtk::Menu.new
+		addsubmenu(views, 'Dis_assembly') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :listing) }
+		addsubmenu(views, '_Graph') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :graph) }
+		addsubmenu(views, 'De_compiled') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :decompile) }
+		addsubmenu(views, 'Raw _opcodes') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :opcodes) }
+
+		addsubmenu(@menu, views, '_Views')
 	end
 
 	def addsubmenu(menu, *args, &action)
