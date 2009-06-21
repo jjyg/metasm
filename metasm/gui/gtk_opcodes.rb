@@ -150,7 +150,7 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 
 		want_update_caret = true if @line_address == {}
 
-		# map lineno => adress shown
+		# map lineno => address shown
 		@line_address = Hash.new(-1)
 		# map lineno => raw text
 		@line_text = Hash.new('')

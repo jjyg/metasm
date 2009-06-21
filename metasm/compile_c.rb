@@ -1005,7 +1005,7 @@ module C
 					# union or 1st struct member
 					@rexpr = lexpr
 				end
-				if @type.kind_of? Array # Array member type is already an adress
+				if @type.kind_of? Array # Array member type is already an address
 				else
 					@rexpr = CExpression.new(nil, :*, @rexpr, @rexpr.type)
 				end

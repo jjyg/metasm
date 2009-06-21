@@ -33,7 +33,7 @@ class CCompiler < C::Compiler
 		attr_accessor :abi_flushregs_call
 
 		# +used+ includes ebp if true
-		# nil if ebp is not reserved for stack variable adressing
+		# nil if ebp is not reserved for stack variable addressing
 		# Reg if used
 		attr_accessor :saved_ebp
 
@@ -1259,7 +1259,7 @@ class CCompiler < C::Compiler
 		end
 	end
 
-	# adds the metasm_intern_geteip function, which returns its own adress in eax (used for PIC adressing)
+	# adds the metasm_intern_geteip function, which returns its own address in eax (used for PIC addressing)
 	def c_program_epilog
 		if defined? @need_geteip_stub and @need_geteip_stub
 			eax = Reg.new(0, @cpusz)
