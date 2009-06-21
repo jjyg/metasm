@@ -1644,7 +1644,8 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 		return if need_backtrace(expr)
 
 puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expression[origin] if origin}" if debug_backtrace
-		result = backtrace_value(expr, maxdepth)
+		# keep the ori pointer in the results to emulate volatile memory (eg decompiler prefers this)
+		result = (backtrace_value(expr, maxdepth) + [expr]).uniq
 
 		# create xrefs/labels
 		result.each { |e|
