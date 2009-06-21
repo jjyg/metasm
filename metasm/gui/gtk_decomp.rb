@@ -78,14 +78,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 	def rightclick(ev)
 		click(ev)
 		if @dasm.c_parser and @dasm.c_parser.toplevel.symbol[@hl_word]
-			popup = Gtk::Window.new
-			popup.title = "metasm dasm: #{@hl_word}"
-			popwidg = DisasmWidget.new(@dasm, @parent_widget.entrypoints)
-			popwidg.terminate
-			popup.add popwidg
-			popup.set_default_size 600, 300
-			popup.show_all
-			popwidg.focus_addr @hl_word, 2
+			@parent_widget.clone_window(@hl_word, :decompile)
 		end
 	end
 

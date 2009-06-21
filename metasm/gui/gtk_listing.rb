@@ -119,14 +119,7 @@ class AsmListingWidget < Gtk::HBox
 
 	def rightclick(ev)
 		click(ev)
-		popup = Gtk::Window.new
-		popup.title = "metasm dasm: #{@hl_word}"
-		popwidg = DisasmWidget.new(@dasm, @parent_widget.entrypoints)
-		popwidg.terminate
-		popup.add popwidg
-		popup.set_default_size 500, 500
-		popup.show_all
-		popwidg.focus_addr @hl_word, :listing
+		@parent_widget.clone_window(@hl_word, :listing)
 	end
 
 	def doubleclick(ev)
@@ -439,19 +432,7 @@ class AsmListingWidget < Gtk::HBox
 	end
 
 	include Gdk::Keyval
-	# keyboard binding
 	# basic navigation (arrows, pgup etc)
-	# dasm navigation
-	#  enter => go to label definition
-	#  esc => jump back
-	# dasm interaction
-	#  c => start disassembling from here
-	#  g => prompt for an address to jump to
-	#  h => prompt for a C header file to read
-	#  n => rename a label
-	#  p => pause/play disassembler
-	#  x => show xrefs
-	#
 	def keypress(ev)
 		case ev.keyval
 		when GDK_Left

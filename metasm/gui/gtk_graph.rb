@@ -524,14 +524,7 @@ class GraphViewWidget < Gtk::HBox
 		if b = find_box_xy(ev.x, ev.y) and @zoom >= 0.90 and @zoom <= 1.1
 			click(ev)
 			@mousemove_origin = nil
-			popup = Gtk::Window.new
-			popup.title = "metasm dasm: #{@hl_word}"
-			popwidg = DisasmWidget.new(@dasm, @parent_widget.entrypoints)
-			popwidg.terminate
-			popup.add popwidg
-			popup.set_default_size 500, 500 # XXX find good size
-			popup.show_all
-			popwidg.focus_addr @hl_word, 1
+			@parent_widget.clone_window(@hl_word, :graph)
 		end
 	end
 

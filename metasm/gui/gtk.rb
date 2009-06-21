@@ -15,6 +15,7 @@ class DisasmWidget < Gtk::VBox
 	attr_accessor :dasm, :entrypoints, :views, :gui_update_counter_max, :notebook
 	# hash key_val => lambda { |keyb_ev| true if handled }
 	attr_accessor :keyboard_callback
+	attr_accessor :clones, :gtk_idle_handle
 
 	def initialize(dasm, ep=[])
 		super()
@@ -23,9 +24,30 @@ class DisasmWidget < Gtk::VBox
 		@entrypoints = ep
 		@views = []
 		@pos_history = []
-		@gui_update_counter_max = 100
 		@keyboard_callback = {}
+		@clones = [self]
 
+		#pack_start iconbar, dasm_working_flag ?
+
+		@notebook = Gtk::Notebook.new
+		# hex view
+		pack_start @notebook
+
+		@notebook.show_border = false
+		@notebook.show_tabs = false
+
+		@views << AsmListingWidget.new(@dasm, self)
+		@views << GraphViewWidget.new(@dasm, self)
+		@views << CdecompListingWidget.new(@dasm, self)
+		@notebook.append_page(@views[0], Gtk::Label.new('listing'))
+		@notebook.append_page(@views[1], Gtk::Label.new('graph'))
+		@notebook.append_page(@views[2], Gtk::Label.new('decomp'))
+
+		@notebook.focus_child = curview
+	end
+
+	def start_disassembling
+		@gui_update_counter_max = 100
 		gui_update_counter = 0
 		dasm_working = false
 		@gtk_idle_handle = Gtk.idle_add {
@@ -51,28 +73,14 @@ class DisasmWidget < Gtk::VBox
 		}
 
 		@dasm.callback_prebacktrace ||= lambda { Gtk.main_iteration_do(false) }
-
-		#pack_start iconbar, dasm_working_flag ?
-
-		@notebook = Gtk::Notebook.new
-		# hex view
-		pack_start @notebook
-
-		@notebook.show_border = false
-		@notebook.show_tabs = false
-
-		@views << AsmListingWidget.new(@dasm, self)
-		@views << GraphViewWidget.new(@dasm, self)
-		@views << CdecompListingWidget.new(@dasm, self)
-		@notebook.append_page(@views[0], Gtk::Label.new('listing'))
-		@notebook.append_page(@views[1], Gtk::Label.new('graph'))
-		@notebook.append_page(@views[2], Gtk::Label.new('decomp'))
-
-		@notebook.focus_child = curview
 	end
 
 	def terminate
-		Gtk.idle_remove @gtk_idle_handle
+		@clones.delete self
+		if @clones.empty? and @gtk_idle_handle
+			Gtk.idle_remove @gtk_idle_handle
+			@gtk_idle_handle = nil
+		end
 	end
 
 
@@ -152,6 +160,10 @@ class DisasmWidget < Gtk::VBox
 	end
 
 	def gui_update
+		@clones.each { |c| c.do_gui_update }
+	end
+
+	def do_gui_update
 		@views.each { |v| v.gui_update }
 	end
 
@@ -325,6 +337,17 @@ class DisasmWidget < Gtk::VBox
 		messagebox [$!.message, $!.backtrace].join("\n"), $!.class.name
 	end
 
+	# creates a new dasm window with the same disassembler object, focus it on addr#win
+	def clone_window(*focus)
+		popup = MainWindow.new
+		popup.display(@dasm, @entrypoints, :dont_dasm => true)
+		w = popup.dasm_widget
+		w.clones = @clones.concat w.clones
+		w.gtk_idle_handle = @gtk_idle_handle
+		w.focus_addr(*focus)
+		popup
+	end
+
 	def messagebox(str, title=nil)
 		MessageBox.new(toplevel, str, title)
 	end
@@ -489,7 +512,7 @@ class MainWindow < Gtk::Window
 
 		(@@mainwindow_list ||= []) << self
 		signal_connect('destroy') {
-			# TODO kill all my popups
+			@dasm_widget.terminate if @dasm_widget
 			@@mainwindow_list.delete self
 			Gtk.main_quit if @@mainwindow_list.empty?
 		}
@@ -503,23 +526,26 @@ class MainWindow < Gtk::Window
 		set_default_size 700, 600
 	end
 
-	def display(dasm, ep=[])
+	def display(dasm, ep=[], opts={})
 		if @dasm_widget
 			@dasm_widget.terminate
 			@vbox.remove @dasm_widget
 		end
 		@dasm_widget = DisasmWidget.new(dasm, ep)
 		@vbox.add @dasm_widget
+		@dasm_widget.start_disassembling unless opts[:dont_dasm]
 		show_all
 	end
 
 	def build_menu
+		# TODO dynamic checkboxes (check $VERBOSE when opening the options menu to (un)set the mark)
+
 		@menu = Gtk::MenuBar.new
 		@accel_group = Gtk::AccelGroup.new
 		add_accel_group(@accel_group)
 
-		# accelerators work only for the main window (with the menu), no subwindows which need the keyboard_*
-		# XXX kb_callback can't override an accelerator there..
+		# XXX accelerators have precedence over keystroke handling:
+		#  kb_callback can't override an accelerator defined there..
 
 		filemenu = Gtk::Menu.new
 
