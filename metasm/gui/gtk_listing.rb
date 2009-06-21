@@ -54,6 +54,7 @@ class AsmListingWidget < Gtk::HBox
 			when Gdk::Event::Type::BUTTON_PRESS
 				case ev.button
 				when 1; click(ev)
+				when 3; rightclick(ev)
 				end
 			when Gdk::Event::Type::BUTTON2_PRESS
 				case ev.button
@@ -110,11 +111,22 @@ class AsmListingWidget < Gtk::HBox
 	# methods used as Gtk callbacks
 	#
 
-	# TODO right click
 	def click(ev)
 		@caret_x = (ev.x-1).to_i / @font_width
 		@caret_y = ev.y.to_i / @font_height
 		update_caret
+	end
+
+	def rightclick(ev)
+		click(ev)
+		popup = Gtk::Window.new
+		popup.title = "metasm dasm: #{@hl_word}"
+		popwidg = DisasmWidget.new(@dasm, @parent_widget.entrypoints)
+		popwidg.terminate
+		popup.add popwidg
+		popup.set_default_size 500, 500
+		popup.show_all
+		popwidg.focus_addr @hl_word, :listing
 	end
 
 	def doubleclick(ev)
@@ -150,7 +162,7 @@ class AsmListingWidget < Gtk::HBox
 		w.draw_rectangle(gc, true, 0, @caret_y*@font_height, w_w, @font_height)
 
 		# TODO scroll line-by-line when an addr is displayed on multiple lines (eg labels/comments)
-		# TODO selection & current word hilight
+		# TODO selection
 		curaddr = @vscroll.adjustment.value.to_i
 
 		want_update_caret = true if @line_address == {}
@@ -254,17 +266,19 @@ class AsmListingWidget < Gtk::HBox
 					curaddr += [di.bin_length, 1].max
 				end
 			elsif curaddr < @vscroll.adjustment.upper and s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
-				# TODO real data display (dwords, xrefs, strings..)
-				if label = invb[curaddr] and @dasm.xrefs[curaddr]
-					render[Expression[curaddr].to_s + '    ', :address]
-					render[label + ' ', :label]
-				else
-					if label
-						render[label+':', :label]
+				if label = invb[curaddr]
+					l_list = @dasm.prog_binding.keys.sort.find_all { |name| @dasm.prog_binding[name] == curaddr }
+					label = (l_list.pop if @dasm.xrefs[curaddr])
+					nl[] if not l_list.empty?
+					l_list.each { |name|
+						render["#{name}:", :label]
 						nl[]
-					end
-					render[Expression[curaddr].to_s + '    ', :address]
+					}
 				end
+				render["#{Expression[curaddr]}    ", :address]
+				render["#{label} ", :label] if label
+
+				# TODO real data display (dwords, xrefs, strings..)
 				len = 256
 				len -= curaddr % 256 if curaddr.kind_of? Integer
 				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or invb[curaddr+l] or s[0].reloc[s[0].ptr+l] } || len
