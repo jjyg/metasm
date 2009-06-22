@@ -47,7 +47,7 @@ class DisasmWidget < Gtk::VBox
 
 		addview[AsmListingWidget, :listing]
 		addview[GraphViewWidget, :graph]
-		addview[CdecompListingWidget, :decomp]
+		addview[CdecompListingWidget, :decompile]
 		addview[AsmOpcodeWidget, :opcodes]
 		addview[HexWidget, :hex]
 
