@@ -772,6 +772,7 @@ class Disassembler
 	def auto_label_at(addr, base='xref', *rewritepfx)
 		addr = Expression[addr].reduce
 		addrstr = "#{base}_#{Expression[addr]}"
+		return if addrstr !~ /^\w+$/
 		e, b = get_section_at(addr)
 		if not e
 			l = Expression[addr].reduce_rec if Expression[addr].reduce_rec.kind_of? ::String
@@ -1644,8 +1645,10 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 		return if need_backtrace(expr)
 
 puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expression[origin] if origin}" if debug_backtrace
+		result = backtrace_value(expr, maxdepth)
 		# keep the ori pointer in the results to emulate volatile memory (eg decompiler prefers this)
-		result = (backtrace_value(expr, maxdepth) + [expr]).uniq
+		result << expr if not type
+		result.uniq!
 
 		# create xrefs/labels
 		result.each { |e|

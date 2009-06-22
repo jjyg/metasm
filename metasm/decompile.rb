@@ -169,7 +169,11 @@ class Decompiler
 			@c_parser.toplevel.statements << C::Declaration.new(var)
 			if s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
 				# TODO do not overlap other statics (but labels may refer to elements of the array...)
-				data = (0..256).map { s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness) }
+				data = (0..256).map {
+					v = s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness)
+					v = decompile_cexpr(v, @c_parser.toplevel) if v.kind_of? Expression	# relocation
+					v
+				}
 				if (tsz == 1 or tsz == 2) and eos = data.index(0) and (0..3).all? { |i| data[i] >= 0x20 and data[i] < 0x7f }	# printable str
 					# XXX 0x80 with ruby1.9...
 					var.initializer = C::CExpression[data[0, eos].pack('C*'), C::Pointer.new(ptype)] rescue nil
@@ -229,6 +233,7 @@ class Decompiler
 	# XXX '(GetProcAddr("foo"))()' should not decompile to 'foo()'
 	def backtrace_target(expr, addr)
 		if n = @dasm.backtrace(expr, addr).first
+			return expr if n == Expression::Unknown
 			n = Expression[n].reduce_rec
 			n = @dasm.prog_binding.index(n) || n
 			n = $1 if n.kind_of? ::String and n =~ /^thunk_(.*)/

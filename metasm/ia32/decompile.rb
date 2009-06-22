@@ -76,6 +76,7 @@ class Ia32
 			blk.each_to_normal { |t|
 				t = dcmp.backtrace_target(t, blk.list.last.address)
 				next if not t = dcmp.c_parser.toplevel.symbol[t]
+				t.type = C::Function.new(C::BaseType.new(:int)) if not t.type.kind_of? C::Function	# XXX this may seem a bit extreme, and yes, it is.
 				stackoff ||= Expression[dcmp.dasm.backtrace(:esp, blk.list.last.address, :snapshot_addr => blocks.first[0]).first, :-, :esp].reduce
 
 				# things that are needed by the subfunction
