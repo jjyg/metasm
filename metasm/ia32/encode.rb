@@ -190,13 +190,13 @@ class Ia32
 			when :lock; 0xf0
 			when :rep;  {'repnz' => 0xf2, 'repz' => 0xf3, 'rep' => 0xf2}[v] # TODO
 			end
-		}.pack 'C*'
+		}.compact.pack 'C*'
 		pfx << op.props[:needpfx] if op.props[:needpfx]
 
 		if op.name == 'movsx' or op.name == 'movzx'
 			pfx << 0x66 if @size == 48-i.args[0].sz
 		else
-			opsz = op.props[:argsz]
+			opsz = op.props[:argsz] || i.prefix[:sz]
 			oi.each { |oa, ia|
 				case oa
 				when :reg, :reg_eax, :modrm, :modrmA, :mrm_imm

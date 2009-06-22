@@ -164,6 +164,8 @@ end
 		when 'rep';            i.prefix[:rep] = 'rep'
 		when 'repe', 'repz';   i.prefix[:rep] = 'repz'
 		when 'repne', 'repnz'; i.prefix[:rep] = 'repnz'
+		when 'code16';         i.prefix[:sz] = 16
+		when 'code32';         i.prefix[:sz] = 32
 		end
 	end
 
@@ -298,7 +300,7 @@ end
 				else
 					# this is also the size of ctrlreg/dbgreg etc
 					# XXX fpu/simd ?
-					m.sz = @size
+					m.sz = i.prefix[:sz] || @size
 				end
 			end
 		end
