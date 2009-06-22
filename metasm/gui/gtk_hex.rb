@@ -107,11 +107,11 @@ class HexWidget < Gtk::DrawingArea
 	def mouse_wheel(ev)
 		case ev.direction
 		when Gdk::EventScroll::Direction::UP
-			@viewaddr -= allocation.height/@font_height/@line_size/2
+			@viewaddr -= allocation.height/@font_height/2*@line_size
 			redraw
 			true
 		when Gdk::EventScroll::Direction::DOWN
-			@viewaddr += allocation.height/@font_height/@line_size/2
+			@viewaddr += allocation.height/@font_height/2*@line_size
 			redraw
 			true
 		end
@@ -154,22 +154,31 @@ class HexWidget < Gtk::DrawingArea
 			y += @font_height
 		}
 
+		xd = x_data
+		xa = x_ascii
 		# draw text until screen is full
 		while y < w_h
-			render["#{Expression[curaddr]} ".rjust(10, '0'), :address] if @show_address
+			render["#{Expression[curaddr]}".rjust(9, '0'), :address] if @show_address
 
-			if d = data_at(curaddr)
-				# TODO write_pending, data_hex, unsigned etc
-				#case @data_size
-				h = d.unpack('C*').map { |b| '%02x' % b }
-				str = ''
-				d.unpack('C*').each_with_index { |b, i|
-					str << ' ' if i % 4 == 0
-					str << ('%02x ' % b)
-				} if @show_data
-				str << '  ' << d.gsub(/[^\x20-\x7e]/, '.') if @show_ascii
-				render[str, :data]
+			d = data_at(curaddr).to_s
+			if @show_data
+				x = xd
+				# XXX non-hex display ? (signed int, float..)
+				case @data_size
+				when 1; pak = 'C*'
+				when 2; pak = (@dasm.cpu.endianness == :little ? 'v*' : 'n*')
+				when 4; pak = (@dasm.cpu.endianness == :little ? 'V*' : 'N*')
+				end
+				d.unpack(pak).each_with_index { |b, i|
+					render[' ', :data] if i % 4 == 0
+					# TODO write_pending
+					render["%0#{@data_size*2}x " % b, :data]
+				}
 			end
+			x = xa
+			# TODO write_pending
+			render[d.gsub(/[^\x20-\x7e]/, '.'), :ascii] if @show_ascii
+
 			curaddr += @line_size
 			nl[]
 		end
@@ -180,6 +189,14 @@ class HexWidget < Gtk::DrawingArea
 		cx = @caret_x*@font_width+1
 		cy = @caret_y*@font_height
 		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+	end
+
+	def x_data
+		@show_address ? 10*@font_width : 0
+	end
+
+	def x_ascii
+		x_data + (@show_data ? @line_size*2 + @line_size/@data_size + @line_size/@data_size/4 + 1 : 0) * @font_width
 	end
 
 	include Gdk::Keyval
