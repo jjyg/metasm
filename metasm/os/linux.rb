@@ -448,6 +448,40 @@ libc.so.6
  xdr_rmtcall_args xdr_rmtcallres xdr_short xdr_sizeof xdr_string xdr_u_char xdr_u_hyper xdr_u_int xdr_u_long xdr_u_longlong_t xdr_u_quad_t xdr_u_short
  xdr_uint16_t xdr_uint32_t xdr_uint64_t xdr_uint8_t xdr_union xdr_unixcred xdr_vector xdr_void xdr_wrapstring xdrmem_create xdrrec_create xdrrec_endofrecord
  xdrrec_eof xdrrec_skiprecord xdrstdio_create xencrypt xprt_register xprt_unregister
+ _Exit _IO_fprintf __close __connect __ctype_get_mb_cur_max __fcntl __getdelim __isascii_l __lseek __nanosleep __open __open64 __pread64 __pwrite64 __read
+ __send __sigaction __toascii_l __vsnprintf __vsscanf __wait __write __xpg_sigpause _flushlbf _longjmp accept access addmntent adjtime adjtimex advance
+ argp_error argp_failure argp_help argp_parse argp_state_help argp_usage argz_add argz_add_sep argz_append argz_count argz_create argz_create_sep argz_extract
+ argz_insert argz_next argz_replace argz_stringify asctime_r asprintf backtrace backtrace_symbols backtrace_symbols_fd bcmp bind_textdomain_codeset
+ bindtextdomain brk bsd_signal btowc bzero calloc canonicalize_file_name cfree chdir chmod clearenv clone close closedir connect copysign copysignf copysignl
+ creat dcgettext dcngettext dgettext dl_iterate_phdr dngettext dup dup2 duplocale eaccess endmntent endutent erand48_r error error_at_line euidaccess execve
+ fchdir fchmod fchown fcloseall fcntl fdatasync fdopendir feof ferror fflush ffsl fgetc fgetc_unlocked fgetgrent_r fgetpwent_r fgets fgetspent_r fgetwc
+ fgetwc_unlocked fileno_unlocked finite finitef finitel flock flockfile fopen64 fork fpathconf fputs fread freelocale frexp frexpf frexpl fstatfs fstatfs64
+ fstatvfs64 fsync ftell ftruncate ftruncate64 ftrylockfile funlockfile futimes fwprintf fwrite get_avphys_pages get_nprocs get_nprocs_conf get_phys_pages getc
+ getc_unlocked getcontext getcwd getdate_r getdelim getdtablesize getegid geteuid getgid getgroups gethostname getitimer getline getmntent_r getnetgrent_r
+ getpagesize getpeername getpgid getppid getpt getpw getresgid getresuid getrusage gets getsockopt gettext gettimeofday getuid getutent getutent_r getutid
+ getutid_r getutline getutline_r getwc getwc_unlocked glob_pattern_p gmtime_r gnu_get_libc_release gnu_get_libc_version group_member gsignal hasmntopt hdestroy
+ imaxabs imaxdiv index inet_aton initstate initstate_r ioctl isalnum_l isalpha_l isatty isblank_l iscntrl_l isctype isdigit_l isgraph_l isinf isinff isinfl
+ islower_l isnan isnanf isnanl isprint_l ispunct_l isspace_l isupper_l iswalnum iswalnum_l iswalpha iswalpha_l iswblank iswblank_l iswcntrl iswcntrl_l iswctype
+ iswctype_l iswdigit iswdigit_l iswgraph iswgraph_l iswlower iswlower_l iswprint iswprint_l iswpunct iswpunct_l iswspace iswspace_l iswupper iswupper_l
+ iswxdigit iswxdigit_l isxdigit_l jrand48_r kill lchown lckpwdf lcong48_r ldexp ldexpf ldexpl link llseek localtime_r longjmp lseek lseek64 makecontext
+ mallinfo malloc_get_state malloc_set_state malloc_stats malloc_trim malloc_usable_size mallopt mbrlen mbrtowc mbsinit mbsnrtowcs mbsrtowcs mcount memalign
+ memccpy memchr memrchr mkdir mmap mmap64 modf modff modfl modify_ldt moncontrol monstartup mount mprotect mremap msgrcv msgsnd msync munmap nanosleep
+ newlocale ngettext nl_langinfo_l nrand48_r ntohl ntohs ntp_adjtime obstack_printf obstack_vprintf on_exit open open64 openat openat64 opendir pathconf pause
+ personality pipe pipe2 poll posix_memalign posix_openpt prctl pread pread64 profil pselect pthread_setcancelstate ptsname_r putc puts pututline pvalloc pwrite
+ pwrite64 random random_r rawmemchr re_comp re_compile_fastmap re_compile_pattern re_exec re_match re_match_2 re_search re_search_2 re_set_registers
+ re_set_syntax read readahead readdir readdir_r readlink readv recv recvfrom recvmsg regcomp regerror regfree register_printf_function remap_file_pages
+ res_init rindex rmdir sbrk scalbln scalblnf scalblnl scalbn scalbnf scalbnl sched_get_priority_max sched_get_priority_min sched_getparam sched_getscheduler
+ sched_rr_get_interval sched_setparam sched_setscheduler sched_yield seed48_r select send sendmsg sendto setbuffer setcontext setenv setgid setitimer setmntent
+ setpgid setregid setresgid setresuid setreuid setsid setstate setstate_r settimeofday setuid setutent setvbuf sgetspent_r shutdown sigaction sigaltstack
+ sigblock siglongjmp signal sigpause sigprocmask sigqueue sigreturn sigsetmask sigsuspend sigtimedwait sigvec sigwait sigwaitinfo sleep snprintf socket
+ socketpair sprofil srand srand48_r srandom srandom_r ssignal statfs statfs64 statvfs64 step stpcpy stpncpy strcasecmp strcasecmp_l strcasestr strchrnul
+ strcoll_l strdup strerror_r strfmon_l strftime_l strncasecmp strncasecmp_l strndup strptime_l strsep strtod_l strtof_l strtok_r strtol_l strtold_l strtoll_l
+ strtoq strtoul_l strtoull_l strtouq strverscmp strxfrm_l swapcontext swapoff swapon symlink sysconf sysctl system sysv_signal tcdrain tcgetattr tdelete
+ tdestroy textdomain tfind timelocal times tolower_l toupper_l towctrans towctrans_l towlower_l towupper_l truncate tsearch ttyname_r twalk tzset ulckpwdf
+ ulimit umask umount umount2 uname ungetc unlink unsetenv updwtmp uselocale utimes utmpname valloc vasprintf vdprintf vfork vfscanf vfwprintf vfwscanf vscanf
+ vsnprintf vsprintf vsscanf vswprintf wait wait3 wait4 waitid waitpid wcpcpy wcpncpy wcrtomb wcscasecmp wcscasecmp_l wcscat wcschrnul wcscoll wcscoll_l
+ wcsftime_l wcslen wcsncasecmp wcsncasecmp_l wcsncpy wcsnlen wcsnrtombs wcsrtombs wcstod_l wcstof_l wcstol_l wcstold_l wcstoll_l wcstoq wcstoul_l wcstoull_l
+ wcstouq wcswcs wcsxfrm_l wctrans wctrans_l wctype wctype_l wmemcpy wmemmove wmempcpy write writev
 EOL
 	curlibname = nil
 	data.each_line { |l|

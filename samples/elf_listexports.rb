@@ -11,13 +11,16 @@
 
 require 'metasm'
 
+bd = 'GLOBAL'
+bd = 'WEAK' if ARGV.delete '--weak'
+
 ARGV.each { |f|
 	e = Metasm::ELF.decode_file(f)
 	next if not e.tag['SONAME']
 	puts e.tag['SONAME']
 	line = ''
 	e.symbols.find_all { |s|
-		s.name and s.type == 'FUNC' and s.shndx != 'UNDEF' and s.bind == 'GLOBAL'
+		s.name and s.type == 'FUNC' and s.shndx != 'UNDEF' and s.bind == bd
 	}.map { |s| ' ' << s.name }.sort.each { |s|
 		if line.length + s.length >= 160
 			puts line
