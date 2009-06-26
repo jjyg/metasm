@@ -7,7 +7,7 @@
 Metasmdir = File.dirname(__FILE__)
 
 module Metasm
-def self.fix_const_missing(c)
+def self.const_missing(c)
 	# constant defined in the same file as another
 	cst = {
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',
@@ -63,7 +63,7 @@ class Module
 alias premetasm_const_missing const_missing
 def const_missing(c)
 	# Object.const_missing => Module#const_missing and not the other way around
-	if name =~ /^Metasm(::|$)/ or ancestors.include? Metasm and cst = Metasm.fix_const_missing(c)
+	if (name =~ /^Metasm(::|$)/ or ancestors.include? Metasm) and cst = Metasm.const_missing(c)
 		cst
 	else
 		premetasm_const_missing(c)
