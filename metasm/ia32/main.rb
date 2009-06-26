@@ -7,9 +7,12 @@
 require 'metasm/main'
 
 module Metasm
+
+# The ia32 aka x86 CPU
+# currently limited to 16 and 32bit modes
 class Ia32 < CPU
 
-	# some ruby magic
+	# some ruby magic to declare classes with index -> name association (registers)
 	class Argument
 		@simple_list = []
 		@double_list = []
@@ -21,6 +24,7 @@ class Ia32 < CPU
 		end
 
 		private
+		# index -> name, name -> index
 		def self.simple_map(a)
 			Argument.simple_list << self
 
@@ -40,6 +44,7 @@ class Ia32 < CPU
 			}
 		end
 
+		# size -> (index -> name), name -> [index, size]
 		def self.double_map(h)
 			Argument.double_list << self
 
@@ -66,28 +71,34 @@ class Ia32 < CPU
 	end
 
 
+	# segment register: es, cs, ss, ds, fs, gs
 	class SegReg < Argument
 		simple_map((0..5).zip(%w(es cs ss ds fs gs)))
 	end
 
+	# debug register (dr0..dr3, dr6, dr7)
 	class DbgReg < Argument
 		simple_map [0, 1, 2, 3, 6, 7].map { |i| [i, "dr#{i}"] }
 	end
 
+	# control register (cr0, cr2, cr3, cr4)
 	class CtrlReg < Argument
 		simple_map [0, 2, 3, 4].map { |i| [i, "cr#{i}"] }
 	end
 
+	# floating point registers
 	class FpReg < Argument
 		simple_map((0..7).map { |i| [i, "ST(#{i})"] } << [nil, 'ST'])
 	end
 
+	# a single operation multiple data register (mm0..mm7, xmm0..xmm7)
 	class SimdReg < Argument
 		double_map  64 => (0..7).map { |n| "mm#{n}" },
 			   128 => (0..7).map { |n| "xmm#{n}" }
 		def symbolic ; to_s.to_sym end
 	end
 
+	# general purpose registers, all sizes
 	class Reg < Argument
 		double_map  8 => %w{ al  cl  dl  bl  ah  ch  dh  bh},
 			   16 => %w{ ax  cx  dx  bx  sp  bp  si  di},
@@ -96,6 +107,10 @@ class Ia32 < CPU
 
 		Sym = @i_to_s[32].map { |s| s.to_sym }
 
+		# returns a symbolic representation of the register:
+		# eax => :eax
+		# cx => :ecx & 0xffff
+		# ah => (:eax >> 8) & 0xff
 		def symbolic
 			s = Sym[@val]
 			if @sz == 8 and to_s[-1] == ?h
@@ -115,6 +130,8 @@ class Ia32 < CPU
 		end
 	end
 
+	# a far pointer
+	# an immediate (numeric) pointer and an immediate segment selector
 	class Farptr < Argument
 		attr_accessor :seg, :addr
 		def initialize(seg, addr)
@@ -122,7 +139,10 @@ class Ia32 < CPU
 		end
 	end
 
+	# ModRM represents indirections in x86 (eg dword ptr [eax+4*ebx+12h])
 	class ModRM < Argument
+		# valid combinaisons for a modrm
+		# ints are reg indexes, symbols are immediates, except :sib 
 		Sum = {
 		    16 => {
 			0 => [ [3, 6], [3, 7], [5, 6], [5, 7], [6], [7], [:i16], [3] ],
@@ -141,6 +161,10 @@ class Ia32 < CPU
 		attr_accessor :seg
 		attr_accessor :s, :i, :b, :imm
 
+		# creates a new ModRM with the specified attributes:
+		# - adsz (16/32), sz (8/16/32: byte ptr, word ptr, dword ptr)
+		# - s, i, b, imm
+		# - segment selector override
 		def initialize(adsz, sz, s, i, b, imm, seg = nil)
 			@adsz, @sz = adsz, sz
 			@s, @i = s, i if i
@@ -149,6 +173,9 @@ class Ia32 < CPU
 			@seg = seg if seg
 		end
 
+		# returns the symbolic representation of the ModRM (ie an Indirection)
+		# segment selectors are represented as eg "segment_base_fs"
+		# not present when same as implicit (ds:edx, ss:esp)
 		def symbolic(orig=nil)
 			p = nil
 			p = Expression[p, :+, @b.symbolic] if b
@@ -159,18 +186,31 @@ class Ia32 < CPU
 		end
 	end
 
-	def initialize(family = :latest, size = 32)
+
+	# Create a new instance of an Ia32 cpu
+	# arguments (any order)
+	# - size in bits (16, 32) [32]
+	# - instruction set (386, 486, pentium...) [latest]
+	# - endianness [:little]
+	def initialize(*a)
 		super()
-		@endianness = :little
-		@size = size
-		@family = family
+		@size = (a & [16, 32, 64]).first || 32
+		a -= @size
+		@endianness = (a & [:big, :little]).first || :little
+		a -= @endianness
+		@family = a.pop || :latest
+		raise "Invalid arguments #{a.inspect}" if not a.empty?
+		raise "Invalid Ia32 family #{@family.inspect}" if not respond_to?("init_#@family")
 	end
 
+	# initializes the @opcode_list according to @family
 	def init_opcode_list
 		send("init_#@family")
 		@opcode_list
 	end
 
+	# defines some C parser preprocessor macros to say who we are:
+	# _M_IX86 = 500, _X86_, __i386__
 	def tune_cparser(cp)
 		super(cp)
 		cp.lexer.define_weak('_M_IX86', 500)
