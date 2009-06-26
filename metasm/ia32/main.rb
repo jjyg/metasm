@@ -195,9 +195,9 @@ class Ia32 < CPU
 	def initialize(*a)
 		super()
 		@size = (a & [16, 32, 64]).first || 32
-		a -= @size
+		a.delete @size
 		@endianness = (a & [:big, :little]).first || :little
-		a -= @endianness
+		a.delete @endianness
 		@family = a.pop || :latest
 		raise "Invalid arguments #{a.inspect}" if not a.empty?
 		raise "Invalid Ia32 family #{@family.inspect}" if not respond_to?("init_#@family")
