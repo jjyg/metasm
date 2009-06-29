@@ -19,9 +19,11 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 		@oldcaret_x = @oldcaret_y = 42
 		@layout = Pango::Layout.new Gdk::Pango.context
 		@color = {}
-		@viewaddr = @dasm.prog_binding['entrypoint'] || @dasm.section.keys.min
+		@view_addr = @dasm.prog_binding['entrypoint'] || @dasm.sections.keys.min
 		@line_text = {}
 		@line_address = {}
+		@view_min = @dasm.sections.keys.min rescue nil
+		@view_max = @dasm.sections.map { |s, e| s + e.length }.max rescue nil
 
 		super()
 
@@ -109,26 +111,28 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	end
 
 	def scrollup
+		return if @view_min and @view_addr < @view_min
 		# keep current instrs in sync
 		16.times { |o|
 			o += 1
-			if di = di_at(@viewaddr-o) and di.bin_length == o
-				@viewaddr -= o
+			if di = di_at(@view_addr-o) and di.bin_length == o
+				@view_addr -= o
 				@line_address = {}
 				redraw
 				return
 			end
 		}
-		@viewaddr -= 1
+		@view_addr -= 1
 		@line_address = {}
 		redraw
 	end
 
 	def scrolldown
-		if di = di_at(@viewaddr)
-			@viewaddr += di.bin_length
+		return if @view_max and @view_addr >= @view_max
+		if di = di_at(@view_addr)
+			@view_addr += di.bin_length
 		else
-			@viewaddr += 1
+			@view_addr += 1
 		end
 		@line_address = {}
 		redraw
@@ -154,7 +158,7 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 		@line_text = Hash.new('')
 
 		# current address drawing
-		curaddr = @viewaddr
+		curaddr = @view_addr
 		# current line text buffer
 		fullstr = ''
 		# current line number
@@ -216,11 +220,11 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 			render["#{Expression[curaddr]}    ", :address]
 
 			if di = di_at(curaddr)
-				render[di.instruction.to_s, :instruction]
+				render["#{di.instruction} ", :instruction]
 				curaddr += di.bin_length
 			else
 				if s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
-					render["db #{Expression[s[0].read(1).unpack('C')]}", :instruction]
+					render["db #{Expression[s[0].read(1).unpack('C')]} ", :instruction]
 				end
 				curaddr += 1
 			end
@@ -269,7 +273,7 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 		when GDK_Page_Up
 			(allocation.height/@font_height/2).times { scrollup }
 		when GDK_Page_Down
-			@viewaddr = @line_address.fetch(@line_address.length/2, @viewaddr+15)
+			@view_addr = @line_address.fetch(@line_address.length/2, @view_addr+15)
 			redraw
 		when GDK_Home
 			@caret_x = 0
@@ -285,11 +289,11 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	end
 
 	def get_cursor_pos
-		[@viewaddr, @caret_x, @caret_y]
+		[@view_addr, @caret_x, @caret_y]
 	end
 
 	def set_cursor_pos(p)
-		@viewaddr, @caret_x, @caret_y = p
+		@view_addr, @caret_x, @caret_y = p
 		redraw
 		update_caret
 	end
@@ -347,7 +351,7 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 		if l = @line_address.index(addr) and l < @line_address.keys.max - 4
 			@caret_y, @caret_x = @line_address.keys.find_all { |k| @line_address[k] == addr }.max, 0
 		elsif @dasm.get_section_at(addr)
-			@viewaddr, @caret_x, @caret_y = addr, 0, 0
+			@view_addr, @caret_x, @caret_y = addr, 0, 0
 			redraw
 		else
 			return
@@ -362,6 +366,8 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	end
 
 	def gui_update
+		@view_min = @dasm.sections.keys.min rescue nil
+		@view_max = @dasm.sections.map { |s, e| s + e.length }.max rescue nil
 		redraw
 	end
 end

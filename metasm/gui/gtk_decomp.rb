@@ -265,7 +265,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 		# scan up to func start/entrypoint
 		todo = [addr]
 		done = []
-		ep = @dasm.entrypoints.inject({}) { |h, e| h.update @dasm.normalize(e) => true }
+		ep = @dasm.entrypoints.to_a.inject({}) { |h, e| h.update @dasm.normalize(e) => true }
 		while addr = todo.pop
 			addr = @dasm.normalize(addr)
 			next if not @dasm.decoded[addr].kind_of? DecodedInstruction

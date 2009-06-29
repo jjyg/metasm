@@ -141,7 +141,7 @@ class DisasmWidget < Gtk::VBox
 		return if page == @notebook.page and addr == curview.current_address
 		oldpos = [@notebook.page, curview.get_cursor_pos]
 		@notebook.page = page
-		if curview.focus_addr(addr) or (0...@views.length).find { |v|
+		if curview.focus_addr(addr) or [oldpos[0], *0...@views.length].find { |v|
 			o_p = @views[v].get_cursor_pos
 			if @views[v].focus_addr(addr)
 				@notebook.page = v
@@ -301,7 +301,7 @@ class DisasmWidget < Gtk::VBox
 	def toggle_view(idx)
 		idx = @view_index[idx] || idx
 		default = (idx == 0 ? 1 : 0)
-	       	focus_addr(curview.current_address, ((@notebook.page == idx) ? default : idx))
+		focus_addr(curview.current_address, ((@notebook.page == idx) ? default : idx))
 	end
 
 	include Gdk::Keyval
