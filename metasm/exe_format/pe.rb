@@ -269,6 +269,10 @@ class LoadedPE < PE
 		s.encoded = @encoded[s.virtaddr, s.virtsize]
 	end
 
+	# no need to decode relocations on an already mapped image
+	def decode_relocs
+	end
+
 	# reads a loaded PE from memory, returns a PE object
 	# dumps the header, optheader and all sections ; try to rebuild IAT (#memdump_imports)
 	def self.memdump(memory, baseaddr, entrypoint = nil, iat_p=nil)
