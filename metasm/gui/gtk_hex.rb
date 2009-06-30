@@ -66,7 +66,6 @@ class HexWidget < Gtk::DrawingArea
 		signal_connect('size_allocate') { |w, alloc| # resize
 			autofit(alloc.width, alloc.height)
 		}
-		# TODO disable windows' menu accelerators
 		signal_connect('key_press_event') { |w, ev| # keyboard
 			keypress(ev)
 		}

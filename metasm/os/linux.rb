@@ -171,6 +171,8 @@ class PTrace32
 		mknodat  fchownat  futimesat  fstatat64  unlinkat  renameat  linkat  symlinkat  readlinkat  fchmodat
 		faccessat pselect6 ppoll unshare set_robust_list get_robust_list splice sync_file_range tee vmsplice
 		move_pages getcpu epoll_pwait utimensat signalfd timerfd eventfd].inject({}) { |h, sc| h.update sc => h.length }
+	
+	NR_PTRACE = SYSCALLNR['ptrace']
 
 	# include/asm-generic/errno-base.h
 	ERRNO = %w[ERR0 EPERM ENOENT ESRCH EINTR EIO ENXIO E2BIG ENOEXEC EBADF ECHILD EAGAIN ENOMEM EACCES EFAULT
@@ -179,7 +181,7 @@ class PTrace32
 
 	def ptrace(req, pid, addr, data)
 		addr = [addr].pack('L').unpack('l').first if addr >= 0x8000_0000
-		Kernel.syscall(26, req, pid, addr, data)
+		Kernel.syscall(NR_PTRACE, req, pid, addr, data)
 	end
 
 	def traceme
