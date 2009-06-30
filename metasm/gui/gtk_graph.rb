@@ -862,23 +862,9 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	include Gdk::Keyval
-	# keyboard binding
-	# basic navigation (arrows, pgup etc)
-	# dasm navigation
-	#  enter => go to label definition
-	#  esc => jump back
-	# dasm interaction
-	#  c => start disassembling from here
-	#  g => prompt for an address to jump to
-	#  h => prompt for a C header file to read
-	#  n => rename a label
-	#  p => pause/play disassembler
-	#  x => show xrefs
-	#
-	# TODO arrows => change caret_box
-	# TODO non-navigation commands are global, get it out of the widget
 	def keypress(ev)
-		return @parent_widget.keypress(ev) if ev.state & Gdk::Window::CONTROL_MASK != 0
+		return @parent_widget.keypress(ev) if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+
 		case ev.keyval
 		when GDK_Left
 			if @caret_box
@@ -1015,9 +1001,8 @@ class GraphViewWidget < Gtk::HBox
 		when GDK_u
 			puts 'update'
 			gui_update
-			redraw
 			puts 'update done'
-		when GDK_1
+		when GDK_1	# (numeric) zoom to 1:1
 			@curcontext.view_x += (@width/2 / @zoom - @width/2)
 			@curcontext.view_y += (@height/2 / @zoom - @height/2)
 			@zoom = 1.0

@@ -245,6 +245,8 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	# keyboard binding
 	# basic navigation (arrows, pgup etc)
 	def keypress(ev)
+		return @parent_widget.keypress(ev) if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+
 		case ev.keyval
 		when GDK_Left
 			if @caret_x >= 1
