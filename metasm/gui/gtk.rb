@@ -558,9 +558,6 @@ class MainWindow < Gtk::Window
 		@accel_group = Gtk::AccelGroup.new
 		add_accel_group(@accel_group)
 
-		# XXX accelerators have precedence over keystroke handling:
-		#  kb_callback can't override an accelerator defined there..
-
 		filemenu = Gtk::Menu.new
 
 		addsubmenu(filemenu, 'OPEN', '^o') {
@@ -618,6 +615,11 @@ class MainWindow < Gtk::Window
 		# TODO fullsave (map + comments + cur focus_addr + binary? ...)
 
 		addsubmenu(@menu, filemenu, '_File')
+
+		# a fake unreferenced accel group, so that the shortcut keys appear in the menu, but the widget keypress is responsible
+		# of handling them (otherwise this would take precedence and :hex couldn't get 'c' etc)
+		# but ^o still works (must work even without DasmWidget loaded)
+		@accel_group = Gtk::AccelGroup.new
 
 		actions = Gtk::Menu.new
 		addsubmenu(actions, '_Disassemble here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }

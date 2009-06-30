@@ -156,8 +156,14 @@ class HexWidget < Gtk::DrawingArea
 	end
 
 	# returns 1 line of data
-	def data_at(addr)
-		@raw_data_cache[addr] ||= (s = @dasm.get_section_at(addr) and s[0].ptr < s[0].length and s[0].read(@line_size))
+	def data_at(addr, len=@line_size)
+		if len == @line_size and l = @raw_data_cache[addr]
+			l
+		elsif s = @dasm.get_section_at(addr) and s[0].ptr < s[0].length
+			l = s[0].read(len)
+			@raw_data_cache[addr] = l if len == @line_size
+			l
+		end
 	end
 
 	def paint
@@ -198,6 +204,14 @@ class HexWidget < Gtk::DrawingArea
 			render["#{Expression[curaddr]}".rjust(9, '0'), :address] if @show_address
 
 			d = data_at(curaddr).to_s
+			wp = {}
+			d.length.times { |o|
+				if c = @write_pending[curaddr+o]
+					wp[o] = true
+					d = d.dup
+					d[o, 1] = c.chr
+				end
+			}
 			if @show_data
 				x = xd
 				# XXX non-hex display ? (signed int, float..)
@@ -206,15 +220,25 @@ class HexWidget < Gtk::DrawingArea
 				when 2; pak = (@endianness == :little ? 'v*' : 'n*')
 				when 4; pak = (@endianness == :little ? 'V*' : 'N*')
 				end
+				awp = {} ; wp.each_key { |k| awp[k/@data_size] = true }
 				d.unpack(pak).each_with_index { |b, i|
-					# TODO write_pending
-					render["%0#{@data_size*2}x " % b, :data]
+					col = awp[i] ? :write_pending : :data
+					render["%0#{@data_size*2}x " % b, col]
 					render[' ', :data] if i % 4 == 3
 				}
 			end
 			x = xa
-			# TODO write_pending
-			render[d.gsub(/[^\x20-\x7e]/, '.'), :ascii] if @show_ascii
+			if @show_ascii
+				d = d.gsub(/[^\x20-\x7e]/, '.')
+				if wp.empty?
+					render[d, :ascii]
+				else
+					d.length.times { |o|
+						col = wp[o] ? :write_pending : :ascii
+						render[d[o, 1], col]
+					}
+				end
+			end
 
 			curaddr += @line_size
 			nl[]
@@ -235,6 +259,8 @@ class HexWidget < Gtk::DrawingArea
 			cy = @caret_y*@font_height
 			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
 		end
+
+		@oldcaret_x, @oldcaret_y, @oldcaret_x_data, @oldfocus_zone = @caret_x, @caret_y, @caret_x_data, @focus_zone
 	end
 
 	# char x of start of data zone
@@ -259,62 +285,16 @@ class HexWidget < Gtk::DrawingArea
 	def keypress(ev)
 		case ev.keyval
 		when GDK_Left
-			if @focus_zone == :hex
-				if @caret_x_data > 0
-					@caret_x_data -= 1
-				else
-					@caret_x_data = @data_size*2-1
-					@caret_x -= @data_size
-				end
-			else
-				@caret_x -= 1
-			end
-			if @caret_x < 0
-				@caret_x += @line_size
-				if @caret_y > 0
-					@caret_y -= 1
-				elsif not @view_min or @view_addr > @view_min
-					@view_addr -= @line_size
-					redraw
-				end
-			end
+			key_left
 			update_caret
 		when GDK_Right
-			if @focus_zone == :hex
-				if @caret_x_data < @data_size*2-1
-					@caret_x_data += 1
-				else
-					@caret_x_data = 0
-					@caret_x += @data_size
-				end
-			else
-				@caret_x += 1
-			end
-			if @caret_x >= @line_size
-				@caret_x = 0
-				if @caret_y < @num_lines-2
-					@caret_y += 1
-				elsif not @view_max or @view_addr < @view_max
-					@view_addr += @line_size
-					redraw
-				end
-			end
+			key_right
 			update_caret
 		when GDK_Up
-			if @caret_y > 0
-				@caret_y -= 1
-			elsif not @view_min or @view_addr > @view_min
-				@view_addr -= @line_size
-				redraw
-			end
+			key_up
 			update_caret
 		when GDK_Down
-			if @caret_y < @num_lines-2
-				@caret_y += 1
-			elsif not @view_max or @view_addr < @view_max
-				@view_addr += @line_size
-				redraw
-			end
+			key_down
 			update_caret
 		when GDK_Page_Up
 			if not @view_min or @view_addr > @view_min
@@ -333,18 +313,118 @@ class HexWidget < Gtk::DrawingArea
 			@caret_x = @line_size-1
 			update_caret
 
-		# TODO
-		#when Tab
-		#	switch @focus_zone
-		#when 0x20..0x7e
-		#	write
-		#when Enter
-		#	commit
+		when 0x20..0x7e
+			if @focus_zone == :hex
+				case v = ev.keyval
+				when 0x20; v = nil	# keep current value
+				when ?0..?9; v -= ?0
+				when ?a..?f; v -= ?a-10
+				when ?A..?F; v -= ?A-10
+				else return true
+				end
+				oo = @caret_x_data/2
+				oo = @data_size - oo - 1 if @endianness == :little
+				baddr = current_address + oo
+				o = 4*((@caret_x_data+1) % 2)
+				@write_pending[baddr] ||= data_at(baddr, 1)[0] if v
+				@write_pending[baddr] = (@write_pending[baddr] & ~(0xf << o) | (v << o)) if v
+			else
+				@write_pending[current_address] = ev.keyval
+			end
+			key_right
+			redraw
+		when GDK_Tab
+			switch_focus_zone
+			update_caret
+		when GDK_Return, GDK_KP_Enter
+			commit_writes
+			redraw
+		when GDK_Escape
+			@write_pending.clear
+			redraw
 
 		else
 			return @parent_widget.keypress(ev)
 		end
 		true
+	end
+
+	def key_left
+		if @focus_zone == :hex
+			if @caret_x_data > 0
+				@caret_x_data -= 1
+			else
+				@caret_x_data = @data_size*2-1
+				@caret_x -= @data_size
+			end
+		else
+			@caret_x -= 1
+		end
+		if @caret_x < 0
+			@caret_x += @line_size
+			key_up
+		end
+	end
+
+	def key_right
+		if @focus_zone == :hex
+			if @caret_x_data < @data_size*2-1
+				@caret_x_data += 1
+			else
+				@caret_x_data = 0
+				@caret_x += @data_size
+			end
+		else
+			@caret_x += 1
+		end
+		if @caret_x >= @line_size
+			@caret_x = 0
+			key_down
+		end
+	end
+
+	def key_up
+		if @caret_y > 0
+			@caret_y -= 1
+		elsif not @view_min or @view_addr > @view_min
+			@view_addr -= @line_size
+			redraw
+		else
+			@caret_x = @caret_x_data = 0
+		end
+	end
+
+	def key_down
+		if @caret_y < @num_lines-2
+			@caret_y += 1
+		elsif not @view_max or @view_addr < @view_max
+			@view_addr += @line_size
+			redraw
+		else
+			@caret_x = @line_size-1		# XXX partial final line... (01 23 45         bla    )
+			@caret_x_data = @data_size*2-1
+		end
+	end
+
+	def switch_focus_zone(n=nil)
+		n ||= { :hex => :ascii, :ascii => :hex }[@focus_zone]
+		@caret_x = @caret_x / @data_size * @data_size if n == :hex
+		@caret_x_data = 0
+		@focus_zone = n
+	end
+
+	def commit_writes
+		a = s = nil
+		@write_pending.each { |k, v|
+			if not s or k < a or k >= a + s.length
+				s, a = @dasm.get_section_at(k)
+			end
+			next if not s
+			s[k-a] = v
+		}
+		@write_pending.clear
+	rescue
+		@parent_widget.messagebox($!, $!.class.to_s)
 	end
 
 	def get_cursor_pos
@@ -394,10 +474,7 @@ class HexWidget < Gtk::DrawingArea
 			y *= @font_height
 			window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
 		}
-		@oldcaret_x = @caret_x
-		@oldcaret_y = @caret_y
-		@oldcaret_x_data = @caret_x_data
-		@oldfocus_zone = @focus_zone
+		@oldcaret_x, @oldcaret_y, @oldcaret_x_data, @oldfocus_zone = @caret_x, @caret_y, @caret_x_data, @focus_zone
 	end
 
 	# focus on addr
