@@ -28,12 +28,7 @@ class DisasmWidget < Gtk::VBox
 		@keyboard_callback = {}
 		@clones = [self]
 
-		#pack_start iconbar, dasm_working_flag ?
-
 		@notebook = Gtk::Notebook.new
-		# hex view
-		pack_start @notebook
-
 		@notebook.show_border = false
 		@notebook.show_tabs = false
 
@@ -52,6 +47,8 @@ class DisasmWidget < Gtk::VBox
 		addview[HexWidget, :hex]
 
 		@notebook.focus_child = curview
+
+		pack_start @notebook
 	end
 
 	def start_disassembling
@@ -477,7 +474,6 @@ class ListWindow < Gtk::Dialog
 	# the first array is the column names
 	# each item double-clicked yields the block with the selected iterator
 	def initialize(owner, title, list)
-		# TODO clickable column headers
 		owner ||= Gtk::Window.toplevels.first
 		super(title, owner, Gtk::Dialog::DESTROY_WITH_PARENT)
 
@@ -490,6 +486,7 @@ class ListWindow < Gtk::Dialog
 		cols.each_with_index { |col, i|
 			crt = Gtk::CellRendererText.new
 			tvc = Gtk::TreeViewColumn.new(col, crt)
+			tvc.sort_column_id = i
 			tvc.set_cell_data_func(crt) { |_tvc, _crt, model, iter| _crt.text = iter[i] }
 			treeview.append_column tvc
 		}
@@ -690,11 +687,11 @@ class MainWindow < Gtk::Window
 		label = args.shift
 
 		if stock
-			item = Gtk::ImageMenuItem.new(Gtk::Stock.const_get(stock))	# XXX 1.9 ?
+			item = Gtk::ImageMenuItem.new(Gtk::Stock.const_get(stock))
 			begin
 				item.label = label if label
 			rescue
-				# some version of gtk has no label=..
+				# in some version of gtk, no #label=
 				item = Gtk::MenuItem.new(label) if label
 			end
 		elsif check
