@@ -28,6 +28,7 @@ OptionParser.new { |opt|
 	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--benchmark') { opts[:benchmark] = true }
 	opt.on('--decompile') { opts[:decompile] = true }
+	opt.on('--map <mapfile>') { |f| opts[:map] = f }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
 }.parse!(ARGV)
@@ -53,6 +54,7 @@ makeint = lambda { |addr|
 	else dasm.normalize(addr)
 	end
 }
+dasm.load_map opts[:map] if opts[:map]
 dasm.parse_c_file opts[:cheader] if opts[:cheader]
 dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 dasm.debug_backtrace = true if opts[:debugbacktrace]

@@ -2230,12 +2230,24 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	end
 
 	# loads a map file (addr => symbol)
-	# fmt: addr type name eg 'c01001ba t setup_idt' (type unused/unknown)
+	# understands:
+	#  standard map files (eg linux-kernel.map: <addr> <type> <name>, e.g. 'c01001ba t setup_idt')
+	#  ida map files (<sectionidx>:<sectionoffset> <name>)
+	# arg is either the map itself or the filename of the map (if it contains no newline)
 	def load_map(str)
-		str.each { |l|
-			addr, type, name = l.chomp.split
-                        addr = addr.to_i(16)
-			set_label_at(addr, name)
+		str = File.read(str) rescue nil if not str.index("\n")
+		sks = @sections.keys.sort
+		str.each_line { |l|
+			case l.strip
+			when /^([0-9A-F]+)\s+(\w+)\s+(\w+)/i	# kernel.map style
+				set_label_at($1.to_i(16), $3)
+			when /^([0-9A-F]+):([0-9A-F]+)\s+([a-z_]\w+)/i	# IDA style
+				# we do not have section load order, let's just hope that the addresses are sorted (and sortable..)
+				#  could check the 1st part of the file, with section sizes, but it is not very convenient
+				# the regexp is so that we skip the 1st part with section descriptions
+				# in the file, section 1 is the 1st section ; we have an additionnal section (exe header) which fixes the 0-index
+				set_label_at(sks[$1.to_i(16)] + $2.to_i(16), $3)
+			end
                 }
 	end
 
