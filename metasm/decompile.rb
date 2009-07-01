@@ -679,9 +679,9 @@ class Decompiler
 			next if t.from_instr.comment.to_a.include? 'switch'
 			next if not t.value.kind_of? C::CExpression or t.value.op != :funcall or t.value.rexpr != [] or not t.value.lexpr.kind_of? C::CExpression or t.value.lexpr.op
 			p = uncast[t.value.lexpr.rexpr]
-			next if p.op != :* or p.lexpr
+			next if not p.kind_of? C::CExpression or p.op != :* or p.lexpr
 			p = uncast[p.rexpr]
-			next if p.op != :+
+			next if not p.kind_of? C::CExpression or p.op != :+
 			r, l = uncast[p.rexpr], uncast[p.lexpr]
 			r, l = l, r if r.kind_of? C::CExpression
 			next if not r.kind_of? ::Integer or not l.kind_of? C::CExpression or l.op != :* or not l.lexpr
@@ -967,6 +967,7 @@ class Decompiler
 		}
 
 		propagate_type = nil	# fwd declaration
+		propagating = []	# recursion guard (x = &x)
 
 		# check if a newly found type for o is better than current type
 		# order: foo* > void* > foo
@@ -977,12 +978,15 @@ class Decompiler
 			(t0.pointer? and t1.pointer? and better_type[t0.untypedef.type, t1.untypedef.type])
 		}
 		update_type = lambda { |n, t|
+			next if propagating.include? n
 			o = scope.symbol[n].stackoff
 			next if t0 = types[n] and not better_type[t, t0]
 			next if o and (t.integral? or t.pointer?) and o % @c_parser.sizeof(nil, t) != 0 # keep vars aligned
 			types[n] = t
 			next if t == t0
+			propagating << n
 			propagate_type[n, t]
+			propagating.delete n
 			next if not o
 			t = t.untypedef
 			if t.kind_of? C::Struct
