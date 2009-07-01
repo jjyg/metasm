@@ -1333,7 +1333,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		origexpr        = nargs.delete :orig_expr
 		type            = nargs.delete :type
 		len             = nargs.delete :len
-		snapshot_addr   = nargs.delete :snapshot_addr
+		snapshot_addr   = nargs.delete(:snapshot_addr) || nargs.delete(:stopaddr)
 		maxdepth        = nargs.delete(:maxdepth) || @backtrace_maxblocks
 		detached        = nargs.delete :detached
 		max_complexity  = nargs.delete(:max_complexity) || 40
