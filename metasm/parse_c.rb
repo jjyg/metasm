@@ -172,8 +172,9 @@ module C
 		attr_accessor :args		# [name, Variable]
 		attr_accessor :varargs		# true/false
 
-		def initialize(type=nil)
+		def initialize(type=nil, args=nil)
 			@type = type
+			@args = args if args
 		end
 
 		def base ; @type.base ; end
