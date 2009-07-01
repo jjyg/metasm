@@ -678,6 +678,13 @@ class Expression
 			return if not tok
 			case tok.type
 			when :string
+				# ignores the 'offset' word if followed by a string
+				if not tok.value and tok.raw.downcase == 'offset'
+					nil while ntok = lexer.readtok and ntok.type == :space
+					if ntok.type == :string; tok = ntok
+					else lexer.unreadtok ntok
+					end
+				end
 				parse_intfloat(lexer, tok)
 				val = tok.value || tok.raw
 			when :quoted

@@ -28,7 +28,7 @@ class Shellcode < ExeFormat
 	# allows definition of the base address
 	def parse_parser_instruction(instr)
 		case instr.raw.downcase
-		when '.base_addr'
+		when '.base', '.baseaddr', '.base_addr'
 			# ".base_addr <expression>"
 			# expression should #reduce to integer
 			@lexer.skip_space

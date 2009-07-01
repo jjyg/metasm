@@ -289,7 +289,7 @@ class Data
 			# dw 'foo' => "f\0o\0o\0" / "\0f\0o\0o"
 			@data.unpack('C*').inject(EncodedData.new) { |ed, chr| ed << Expression.encode_imm(chr, INT_TYPE[@type], endianness, @backtrace) }
 		when Expression
-			@data.encode INT_TYPE[@type], endianness
+			@data.encode INT_TYPE[@type], endianness, @backtrace
 		when Array
 			@data.inject(EncodedData.new) { |ed, d| ed << d.encode(endianness) }
 		end
