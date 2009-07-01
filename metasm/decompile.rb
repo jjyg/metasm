@@ -34,7 +34,7 @@ class Decompiler
 		# create a new toplevel function to hold our code
 		func = C::Variable.new
 		func.name = @dasm.auto_label_at(entry, 'func')
-		func.type = C::Function.new C::BaseType.new(:int)
+		func.type = C::Function.new C::BaseType.new(:int), []
 		if @c_parser.toplevel.symbol[func.name]
 			if not @c_parser.toplevel.statements.grep(C::Declaration).find { |decl| decl.var.name == func.name }
 				# recursive dependency: declare prototype
@@ -43,13 +43,15 @@ class Decompiler
 			return
 		end
 		@c_parser.toplevel.symbol[func.name] = func
-		puts "decompiling #{Expression[entry]}" if $VERBOSE
+		puts "decompiling #{func.name}" if $VERBOSE
 
 		while catch(:restart) { do_decompile_func(entry, func) } == :restart
 			retval = :restart
 		end
 
 		@c_parser.toplevel.statements << C::Declaration.new(func)
+
+		puts " decompiled #{func.name}" if $VERBOSE
 
 		retval
 	end
@@ -66,11 +68,11 @@ class Decompiler
 		makestackvars entry, myblocks.map { |b, to| @dasm.decoded[b].block }
 
 		# find registry dependencies between blocks
-		deps = @dasm.cpu.decompile_func_finddeps(self, myblocks)
+		deps = @dasm.cpu.decompile_func_finddeps(self, myblocks, func)
 
 		scope = func.initializer = C::Block.new(@c_parser.toplevel)
 		# di blocks => raw c statements, declare variables
-		@dasm.cpu.decompile_blocks(self, myblocks, deps, scope)
+		@dasm.cpu.decompile_blocks(self, myblocks, deps, func)
 
 		# goto bla ; bla: goto blo => goto blo ;; goto bla ; bla: return => return
 		simplify_goto(scope)
@@ -87,12 +89,11 @@ class Decompiler
 		optimize(scope)
 
 		# make function prototype with local arg_XX
-		args = []
+		args = func.type.args
 		decl = []
 		scope.statements.delete_if { |sm|
 			next if not sm.kind_of? C::Declaration
-			case sm.var.name
-			when /^arg_(.*)/
+			if sm.var.stackoff.to_i > 0
 				args << sm.var
 			else
 				decl << sm
@@ -105,9 +106,12 @@ class Decompiler
 		# ensure arglist has no hole (create&add unreferenced args)
 		func.type.args = []
 		argoff = @c_parser.typesize[:ptr]
-		args.sort_by { |sm| sm.name[/arg_([0-9a-f]+)/i, 1].to_i(16) }.each { |a|
+		args.sort_by { |sm| sm.stackoff.to_i }.each { |a|
 			# XXX misalignment ?
-			curoff = a.stackoff
+			if not curoff = a.stackoff
+				func.type.args << a	# __fastcall
+				next
+			end
 			while curoff > argoff
 				wantarg = C::Variable.new
 				wantarg.name = stackoff_to_varname(argoff)
@@ -133,6 +137,8 @@ class Decompiler
 		remove_unreferenced_vars(scope)
 
 		simplify_varname_noalias(scope)
+
+		@dasm.cpu.decompile_check_abi(self, entry, func)
 
 		case ret = scope.statements.last
 		when C::CExpression; puts "no return at end of func" if $VERBOSE
@@ -528,7 +534,7 @@ class Decompiler
 				# if {goto l;} a; l: => if (!) {a;}
 				s.test = C::CExpression.negate s.test
 				s.bthen = C::Block.new(scope)
-				s.bthen.statements = decompile_cseq_if(ary[0...ary.index(l)], s.bthen)
+				s.bthen.statements = decompile_cseq_if(ary[0..ary.index(l)], s.bthen)
 				bts = s.bthen.statements
 				ary[0...ary.index(l)] = []
 

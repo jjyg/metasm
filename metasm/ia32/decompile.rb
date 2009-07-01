@@ -48,14 +48,14 @@ class Ia32
 
 	# list variable dependency for each block, remove useless writes
 	# returns { blockaddr => [list of vars that are needed by a following block] }
-	def decompile_func_finddeps(dcmp, blocks)
+	def decompile_func_finddeps(dcmp, blocks, func)
 		deps_r = {} ; deps_w = {} ; deps_to = {}
-		deps_subfunc = {} ; deps_subfuncw = {}	# things read/written by subfuncs
+		deps_subfunc = {} 	# things read/written by subfuncs
 
 		# find read/writes by each block
 		blocks.each { |b, to|
 			deps_r[b] = [] ; deps_w[b] = [] ; deps_to[b] = to
-			deps_subfunc[b] = [] ; deps_subfuncw[b] = []
+			deps_subfunc[b] = []
 
 			blk = dcmp.dasm.decoded[b].block
 			blk.list.each { |di|
@@ -67,7 +67,7 @@ class Ia32
 					else a |= Expression[k].externals	# if dword [eax] <- 42, eax is read
 					end
 				}
-				a << :eax if di.opcode.name == 'ret'
+				a << :eax if di.opcode.name == 'ret'		# standard ABI
 				
 				deps_r[b] |= a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - deps_w[b]
 				deps_w[b] |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
@@ -80,21 +80,55 @@ class Ia32
 				stackoff ||= Expression[dcmp.dasm.backtrace(:esp, blk.list.last.address, :snapshot_addr => blocks.first[0]).first, :-, :esp].reduce
 
 				# things that are needed by the subfunction
-				args = t.type.args.to_a.map { |a| a.type }
 				if t.attributes.to_a.include? 'fastcall'
-					deps_subfunc[b] |= [:ecx, :edx][0, args.length]
-					# XXX the two first args with size <= int are not necessarily nr 0 and nr 1..
-					args.shift ; args.shift
+					a = t.type.args.to_a
+					dep = [:ecx, :edx]
+					dep.shift if not a[0] or a[0].attributes.to_a.include? 'unused'
+					dep.pop   if not a[1] or a[1].attributes.to_a.include? 'unused'
+					deps_subfunc[b] |= dep
 				end
 			}
 			if stackoff	# last block instr == subfunction call
 				deps_r[b] |= deps_subfunc[b] - deps_w[b]
-				deps_w[b] |= deps_subfuncw[b] = [:eax, :ecx, :edx]
+				deps_w[b] |= [:eax, :ecx, :edx]			# standard ABI
 			end
 		}
 
+
+
+		# find regs read and never written (must have been set by caller and are part of the func ABI)
+		uninitialized = lambda { |b, r, done|
+			from = deps_to.keys.find_all { |f| deps_to[f].include? b } - done
+			from.empty? or from.find { |f|
+				!deps_w[f].include?(r) and uninitialized[f, r, done + [b]]
+			}
+		}
+
+		regargs = []
+		deps_r.each { |b, deps|
+			# XXX filter using ABI otherwise we get false positive for "push esi  <func body>  pop esi  ret"
+			deps &= [:eax, :ecx, :edx]
+			# XXX false positive if the func returns void (eg func: ret)
+			deps -= [:eax] if dcmp.dasm.decoded[b].block.list.last.opcode.name == 'ret'
+			deps -= regargs
+			regargs |= deps.find_all { |r| uninitialized[b, r, [b]] }
+		}
+		if regargs.include? :ecx or regargs.include? :edx
+			# TODO handle things like normal() { dl = 42; fastcall(0, 42); }  =>  normal decompiled as fastcall (dl reads edx)
+			# TODO check why decompile_types doesn't update ecx/edx types
+			(func.attributes ||= []) << 'fastcall'
+			func.type.args << C::Variable.new('ecx', C::BaseType.new(:int))
+			(func.type.args.last.attributes ||= []) << 'unused' if not regargs.include? :ecx
+			func.type.args << C::Variable.new('edx', C::BaseType.new(:int))
+			(func.type.args.last.attributes ||= []) << 'unused' if not regargs.include? :edx
+			regargs -= [:ecx, :edx]
+		end
+		if not regargs.empty?
+			(func.attributes ||= []) << "regargs:#{regargs.inspect}"
+		end
+
 		# remove writes from a block if no following block read the value
-		dw = {}	# deps_w must be kept intact through the loop, work on a clone
+		dw = {}
 		deps_w.each { |b, deps|
 			dw[b] = deps.reject { |dep|
 				ret = true
@@ -117,8 +151,11 @@ class Ia32
 		dw
 	end
 
-	def decompile_blocks(dcmp, myblocks, deps, scope, nextaddr = nil)
+	def decompile_blocks(dcmp, myblocks, deps, func, nextaddr = nil)
+		scope = func.initializer
+		func.type.args.each { |a| scope.symbol[a.name] = a }
 		stmts = scope.statements
+		blocks_toclean = myblocks.dup
 		func_entry = myblocks.first[0]
 		until myblocks.empty?
 			b, to = myblocks.shift
@@ -376,11 +413,41 @@ class Ia32
 		end
 
 		# cleanup di.bt_binding (we set :frameptr etc in those, this may confuse the dasm)
-		myblocks.each { |b_, to_|
+		blocks_toclean.each { |b_, to_|
 			dcmp.dasm.decoded[b_].block.list.each { |di|
 				di.backtrace_binding = nil
 			}
 	       	}
+	end
+	
+	def decompile_check_abi(dcmp, entry, func)
+		a = func.type.args
+		if func.attributes.to_a.include? 'fastcall' and (not a[0] or a[0].attributes.to_a.include? 'unused') and (not a[1] or a[1].attributes.to_a.include? 'unused')
+			a.shift ; a.shift
+			func.attributes.delete 'fastcall'
+			func.attributes << 'stdcall' if not a.empty?
+		elsif func.attributes.to_a.include? 'fastcall' and a.length == 2 and a.last.attributes.to_a.include? 'unused'
+			a.pop
+		end
+
+		if not f = dcmp.dasm.function[entry] or not f.return_address
+			(func.attributes ||= []) << 'noreturn'
+		else
+			adj = f.return_address.map { |ra| dcmp.dasm.backtrace(:esp, ra, :include_start => true, :stopaddr => entry) }.flatten.uniq
+			if adj.length == 1 and so = Expression[adj.first, :-, :esp].reduce and so.kind_of? ::Integer
+				so /= dcmp.dasm.cpu.size/8
+				so -= 1
+				case so
+				when 0
+				when a.find_all { |fa| fa.stackoff }.length
+					(func.attributes ||= []) << 'stdcall' if not func.attributes.to_a.include? 'fastcall'
+				else
+					(func.attributes ||= []) << "stackoff:#{so}"
+				end
+			else
+				(func.attributes ||= []) << "breakstack:#{adj.inspect}"
+			end
+		end
 	end
 end
 end
