@@ -14,6 +14,8 @@ module GtkGui
 # TODO cli ? (bpx, r fl z, ...)
 # TODO nonblocking @dbg ? (@dbg.continue -> still poke memory / run cmds)
 # TODO customize child widgets (listing: persistent hilight of current instr, show/set breakpoints, ...)
+# TODO mark changed register values after singlestep
+# TODO handle debugee fork()
 class DbgWidget < Gtk::DrawingArea
 	attr_accessor :dbg, :registers
 
@@ -76,13 +78,17 @@ class DbgWidget < Gtk::DrawingArea
 			set_color_association :label => :blue, :data => :black, :writepending => :darkred,
 					:caret => :black, :bg => :white, :inactive => :palegrey
 		}
+	end
 
-		spawn_1stchild
-		new_child(:opcodes, @dbg.pc_reg)
-		new_child(:hex, @dbg.sp_reg)
-
-		# setup the gui idle callback to disassemble pending entrypoints
-		@children.first.dasm_widget.start_disassembling
+	def start
+		title = (toplevel.title rescue 'debugger')
+		spawn_1stchild(title+' - memory', :hex, 0)
+		new_child(title+' - listing', :opcodes, @dbg.pc_reg)
+		stk = new_child(title+' - stack', :hex, @dbg.sp_reg)
+		w = stk.widget(:hex)
+		w.data_size = 4
+		w.view_addr -= w.line_size*3
+		w.caret_y += 3
 	end
 
 	def click(ev)
@@ -119,12 +125,6 @@ class DbgWidget < Gtk::DrawingArea
 			w.draw_layout(gc, x, y, @layout)
 			x += @layout.pixel_size[0]
 		}
-		nl = lambda {
-			next if y >= w_h
-			@num_lines += 1
-			x = 1
-			y += @font_height
-		}
 
 		xd = x_data*@font_width
 		@registers.each { |reg|
@@ -133,7 +133,8 @@ class DbgWidget < Gtk::DrawingArea
 			x = xd
 			col = @dbg.running? ? :inactive : @write_pending[reg] ? :write_pending : :data
 			render["%0#{@data_size*2}x " % v, col]
-			nl[]
+			x = 1
+			y += @font_height
 		}
 
 		# draw caret
@@ -239,6 +240,13 @@ class DbgWidget < Gtk::DrawingArea
 		}
 	end
 
+	def pre_dbg_run
+	end
+
+	def post_dbg_run
+		gui_update
+	end
+
 	def commit_writes
 		@write_pending.each { |k, v| @dbg.set_reg_value(k, v) }
 		@write_pending.clear
@@ -295,20 +303,19 @@ class DbgWidget < Gtk::DrawingArea
 		redraw
 	end
 
-	def spawn_1stchild
-		child = MainWindow.new
-		w = child.display(@dbg.dasm)
-		register_child(child)
-		w.focus_addr(@dbg.dasm.prog_binding.keys.first || 0)
+	def spawn_1stchild(title, page, addr)
+		child = MainWindow.new(title)
+		w = child.display(@dbg.disassembler)
+		w.focus_addr(addr, page)
 		register_child(child)
 	end
 
 	# opens a new window with a DasmWidget on the same dasm, store it in @children
-	def new_child(page=:hex, watchpoint=nil)
-		child = @children.first.dasm_widget.clone_window
-		register_child(child, watchpoint)
+	def new_child(title, page=:hex, watchpoint=nil)
 		addr = watchpoint ? @dbg.resolve_expr(watchpoint) : 'entrypoint'
-		child.dasm_widget.focus_addr(addr, page, true)
+		child = @children.first.dasm_widget.clone_window(addr, page)
+		child.title = title
+		register_child(child, watchpoint)
 		child
 	end
 
@@ -334,6 +341,7 @@ class DbgWindow < MainWindow
 		@dbg_widget = DbgWidget.new(dbg)
 		@vbox.add @dbg_widget
 		show_all
+		@dbg_widget.start
 		@dbg_widget
 	end
 
