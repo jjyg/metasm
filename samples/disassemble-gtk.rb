@@ -48,7 +48,7 @@ exename = ARGV.shift
 if exename =~ /^live:(.*)/
 	raise 'no such live target' if not target = Metasm::OS.current.find_process($1)
 	p target if $VERBOSE
-	exe = Metasm::Shellcode.decode(target.memory, Metasm::Ia32.new)
+	w = Metasm::GtkGui::DbgWindow.new(target.debugger, target.modules[0].path.dup)
 elsif exename
 	exe = Metasm::AutoExe.orshellcode(Metasm::Ia32.new).decode_file(exename)
 end
@@ -66,7 +66,7 @@ opts[:hookfile].to_a.each { |f| eval File.read(f) }
 opts[:hookstr].to_a.each { |f| eval f }
 ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
 
-w = Metasm::GtkGui::MainWindow.new("#{exename} - metasm disassembler")
+w ||= Metasm::GtkGui::MainWindow.new("#{exename} - metasm disassembler")
 
 if dasm
 	w.display(dasm, ep)
