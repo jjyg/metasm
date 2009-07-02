@@ -83,6 +83,9 @@ class DisasmWidget < Gtk::VBox
 		end
 	end
 
+	def widget(idx)
+		@views[@view_index[idx] || idx]
+	end
 
 	def curview
 		@views[@notebook.page]
@@ -544,6 +547,11 @@ class MainWindow < Gtk::Window
 		@dasm_widget.start_disassembling unless opts[:dont_dasm]
 		show_all
 		@dasm_widget
+	end
+
+	# returns the specified widget from the @dasm_widget (idx in :hex, :listing, :graph etc)
+	def widget(idx=nil)
+		idx && @dasm_widget ? @dasm_widget.widget(idx) : @dasm_widget
 	end
 
 	def build_menu
