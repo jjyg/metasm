@@ -104,6 +104,21 @@ class CdecompListingWidget < Gtk::DrawingArea
 		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
 			next if y >= w_h or x >= w_w
+			if @hl_word
+				stmp = str
+				pre_x = 0
+				while stmp =~ /^(.*?)(\b#{Regexp.escape @hl_word}\b)/
+					s1, s2 = $1, $2
+					@layout.text = s1
+					pre_x += @layout.pixel_size[0]
+					@layout.text = s2
+					hl_w = @layout.pixel_size[0]
+					gc.set_foreground @color[:hl_word]
+					w.draw_rectangle(gc, true, x+pre_x, y, hl_w, @font_height)
+					pre_x += hl_w
+					stmp = stmp[s1.length+s2.length..-1]
+				end
+			end
 			@layout.text = str
 			gc.set_foreground @color[color]
 			w.draw_layout(gc, x, y, @layout)
@@ -147,7 +162,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			end
 
 			y += @layout.pixel_size[1]
-			x = 0
+			x = 1
 			line += 1
 		end
 
@@ -156,6 +171,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 		cx = @caret_x*@font_width+1
 		cy = @caret_y*@font_height
 		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+
+		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 	end
 
 	include Gdk::Keyval
@@ -248,7 +265,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 		word = nil if word == ''
 		if @hl_word != word
 			@hl_word = word
-			#redraw
+			redraw
 		end
 	end
 
