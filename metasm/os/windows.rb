@@ -126,6 +126,10 @@ class WinOS < OS
 			@memory ||= WindowsRemoteString.new(handle)
 		end
 		def memory=(m) @memory = m end
+		def debugger
+			@debugger ||= WinDbg.new(@pid)
+		end
+		def debugger=(d) @debugger = d end
 	end
 
 class << self

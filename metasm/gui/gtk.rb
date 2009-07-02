@@ -5,11 +5,6 @@
 
 
 require 'gtk2'
-require 'metasm/gui/gtk_hex'
-require 'metasm/gui/gtk_listing'
-require 'metasm/gui/gtk_opcodes'
-require 'metasm/gui/gtk_graph'
-require 'metasm/gui/gtk_decomp'
 
 module Metasm
 module GtkGui
@@ -537,6 +532,8 @@ class MainWindow < Gtk::Window
 		set_default_size 700, 600
 	end
 
+	# sets up a DisasmWidget as main widget of the window, replaces the current if it exists
+	# returns the widget
 	def display(dasm, ep=[], opts={})
 		if @dasm_widget
 			@dasm_widget.terminate
@@ -546,6 +543,7 @@ class MainWindow < Gtk::Window
 		@vbox.add @dasm_widget
 		@dasm_widget.start_disassembling unless opts[:dont_dasm]
 		show_all
+		@dasm_widget
 	end
 
 	def build_menu
@@ -563,14 +561,14 @@ class MainWindow < Gtk::Window
 				(@dasm_widget ? MainWindow.new : self).display(exe.init_disassembler)
 			}
 		}
-		addsubmenu(filemenu, 'OPEN', 'Open _live') {
+		addsubmenu(filemenu, '_Debug') {
 			# TODO list existing targets
+			# TODO gdbserver
 			InputBox.new(self, 'chose target') { |target|
 				if not target = Metasm::OS.current.find_process(target)
 					MessageBox.new(self, 'no such target')
 				else
-					exe = Metasm::Shellcode.decode(target.memory, Metasm::Ia32.new)
-					(@dasm_widget ? MainWindow.new : self).display(exe.init_disassembler)
+					DbgWindow.new(target.debugger)
 				end
 			}
 		}
@@ -720,3 +718,11 @@ end
 
 end
 end
+
+require 'metasm/gui/gtk_hex'
+require 'metasm/gui/gtk_listing'
+require 'metasm/gui/gtk_opcodes'
+require 'metasm/gui/gtk_graph'
+require 'metasm/gui/gtk_decomp'
+require 'metasm/gui/gtk_debug'
+
