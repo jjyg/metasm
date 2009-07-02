@@ -10,6 +10,17 @@ module GtkGui
 class CdecompListingWidget < Gtk::DrawingArea
 	attr_accessor :hl_word, :curaddr
 
+	# OMGH4X returns a scrolledwindow/viewport/decompwidget
+	def self.new(*a)
+		n = super(*a)
+		c = Gtk::ScrolledWindow.new.add_with_viewport(n)
+		c.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC)
+		class << c
+			def method_missing(*a, &b) child.child.send(*a, &b) end
+		end
+		c
+	end
+
 	# construction method
 	def initialize(dasm, parent_widget)
 		@dasm = dasm
@@ -173,6 +184,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
 
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
+
+		set_size_request(@line_text.map { |l| l.length }.max.to_i * @font_width, @line_text.length * @font_height)
 	end
 
 	include Gdk::Keyval
@@ -195,10 +208,10 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@caret_y += 1
 			update_caret
 		when GDK_Home
-			@caret_x = 0
+			@caret_x = @line_text[@caret_y].to_s[/^\s*/].length
 			update_caret
 		when GDK_End
-			@caret_x = 80
+			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
 		when GDK_n
 			f = curfunc.initializer
