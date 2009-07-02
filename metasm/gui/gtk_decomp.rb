@@ -18,6 +18,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 		class << c
 			def method_missing(*a, &b) child.child.send(*a, &b) end
 		end
+		n.set_scroll c
 		c
 	end
 
@@ -185,7 +186,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 
-		set_size_request(@line_text.map { |l| l.length }.max.to_i * @font_width, @line_text.length * @font_height)
+		set_size_request((@line_text.map { |l| l.length }.max.to_i + 1) * @font_width, (@line_text.length + 1)* @font_height)
 	end
 
 	include Gdk::Keyval
@@ -202,11 +203,15 @@ class CdecompListingWidget < Gtk::DrawingArea
 				update_caret
 			end
 		when GDK_Right
-			@caret_x += 1
-			update_caret
+			if @caret_x < @line_text[@caret_y].to_s.length
+				@caret_x += 1
+				update_caret
+			end
 		when GDK_Down
-			@caret_y += 1
-			update_caret
+			if @caret_y < @line_text.length
+				@caret_y += 1
+				update_caret
+			end
 		when GDK_Home
 			@caret_x = @line_text[@caret_y].to_s[/^\s*/].length
 			update_caret
@@ -270,6 +275,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 		x = @caret_x*@font_width+1
 		y = @caret_y*@font_height
 		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
+		@scroll.hadjustment.clamp_page(x-1, x+@font_width)
+		@scroll.vadjustment.clamp_page(y, y+@font_height)
 		@oldcaret_x = @caret_x
 		@oldcaret_y = @caret_y
 
@@ -280,6 +287,10 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@hl_word = word
 			redraw
 		end
+	end
+
+	def set_scroll(sc)
+		@scroll = sc
 	end
 
 	# focus on addr
