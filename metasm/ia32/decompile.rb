@@ -114,8 +114,6 @@ class Ia32
 			regargs |= deps.find_all { |r| uninitialized[b, r, [b]] }
 		}
 		if regargs.include? :ecx or regargs.include? :edx
-			# TODO handle things like normal() { dl = 42; fastcall(0, 42); }  =>  normal decompiled as fastcall (dl reads edx)
-			# TODO check why decompile_types doesn't update ecx/edx types
 			func.add_attribute 'fastcall'
 			func.type.args << C::Variable.new('ecx', C::BaseType.new(:int))
 			func.type.args.last.add_attribute 'unused' if not regargs.include? :ecx
@@ -253,12 +251,14 @@ class Ia32
 						if t.has_attribute('fastcall')	# XXX DRY
 							if a = args_todo.shift
 								mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1
+								mask = 0 if a.has_attribute('unused')
 								args << ceb[:ecx, :&, mask]
 								binding.delete :ecx
 							end
 
 							if a = args_todo.shift
 								mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1	# char => dl
+								mask = 0 if a.has_attribute('unused')
 								args << ceb[:edx, :&, mask]
 								binding.delete :edx
 							end

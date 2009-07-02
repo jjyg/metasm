@@ -1970,8 +1970,10 @@ class Decompiler
 			used[ce.lexpr.name] = true if ce.lexpr.kind_of? C::Variable
 			ce.rexpr.each { |v| used[v.name] = true if v.kind_of? C::Variable } if ce.rexpr.kind_of?(::Array)
 		}
-		scope.statements.delete_if { |sm| sm.kind_of? C::Declaration and not used[sm.var.name] }
-		scope.symbol.delete_if { |n, v| not used[n] }
+		unused = scope.symbol.keys.find_all { |n| not used[n] }
+		unused.each { |v| scope.symbol[v].add_attribute 'unused' }	# fastcall args need it
+		scope.statements.delete_if { |sm| sm.kind_of? C::Declaration and unused.include? sm.var.name }
+		scope.symbol.delete_if { |n, v| unused.include? n }
 	end
 
 	def optimize_global
