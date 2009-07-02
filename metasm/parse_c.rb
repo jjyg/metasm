@@ -74,7 +74,7 @@ module C
 						nest += 1
 					elsif nest == 0 and tok.type == :punct and tok.raw == ','
 						raise tok || parser if not allow_declspec and DECLSPECS.include? attrib
-						(@attributes ||= []) << attrib
+						add_attribute attrib
 						attrib = ''
 						next
 					end
@@ -86,9 +86,19 @@ module C
 				attrib = keyword.delete '_'
 			    else break
 			    end
-			    (@attributes ||= []) << attrib
+			    add_attribute(attrib)
 			end
 			parser.unreadtok tok
+		end
+
+		# checks if the object has an attribute in its attribute list
+		def has_attribute(attr)
+			attributes.to_a.include? attr
+		end
+
+		# adds an attribute to the object attribute list if it is not already in it
+		def add_attribute(attr)
+			(@attributes ||= []) << attr  if not has_attribute(attr)
 		end
 	end
 
@@ -1730,10 +1740,10 @@ EOH
 			elsif tok and tok.type == :punct and tok.raw == '('
 				# function prototype
 				# void __attribute__((noreturn)) func() => attribute belongs to func
-				if @type and @type.attributes.to_a.include? 'noreturn'
+				if @type and @type.has_attribute('noreturn')
 					@type.attributes.delete 'noreturn'
 					@type.attributes = nil if @type.attributes.empty?
-					(@attributes ||= []) << 'noreturn'
+					add_attribute 'noreturn'
 				end
 				t = self
 				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
