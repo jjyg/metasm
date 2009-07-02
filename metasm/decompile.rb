@@ -1769,7 +1769,7 @@ class Decompiler
 						depend_vars = []
 						walk_ce(C::CExpression[r]) { |ce|
 							isfunc = true if ce.op == :func and (not ce.lexpr.kind_of? C::Variable or
-									not ce.lexpr.attributes.to_a.include? 'pure')	# XXX is there a C attr for func depending only on staticvars+param ?
+									not ce.lexpr.has_attribute('pure'))	# XXX is there a C attr for func depending only on staticvars+param ?
 							depend_vars << ce.lexpr if ce.lexpr.kind_of? C::Variable
 							depend_vars << ce.rexpr if ce.rexpr.kind_of? C::Variable
 							depend_vars << ce if ce.lvalue?

@@ -80,11 +80,11 @@ class Ia32
 				stackoff ||= Expression[dcmp.dasm.backtrace(:esp, blk.list.last.address, :snapshot_addr => blocks.first[0]).first, :-, :esp].reduce
 
 				# things that are needed by the subfunction
-				if t.attributes.to_a.include? 'fastcall'
+				if t.has_attribute('fastcall')
 					a = t.type.args.to_a
 					dep = [:ecx, :edx]
-					dep.shift if not a[0] or a[0].attributes.to_a.include? 'unused'
-					dep.pop   if not a[1] or a[1].attributes.to_a.include? 'unused'
+					dep.shift if not a[0] or a[0].has_attribute('unused')
+					dep.pop   if not a[1] or a[1].has_attribute('unused')
 					deps_subfunc[b] |= dep
 				end
 			}
@@ -116,15 +116,15 @@ class Ia32
 		if regargs.include? :ecx or regargs.include? :edx
 			# TODO handle things like normal() { dl = 42; fastcall(0, 42); }  =>  normal decompiled as fastcall (dl reads edx)
 			# TODO check why decompile_types doesn't update ecx/edx types
-			(func.attributes ||= []) << 'fastcall'
+			func.add_attribute 'fastcall'
 			func.type.args << C::Variable.new('ecx', C::BaseType.new(:int))
-			(func.type.args.last.attributes ||= []) << 'unused' if not regargs.include? :ecx
+			func.type.args.last.add_attribute 'unused' if not regargs.include? :ecx
 			func.type.args << C::Variable.new('edx', C::BaseType.new(:int))
-			(func.type.args.last.attributes ||= []) << 'unused' if not regargs.include? :edx
+			func.type.args.last.add_attribute 'unused' if not regargs.include? :edx
 			regargs -= [:ecx, :edx]
 		end
 		if not regargs.empty?
-			(func.attributes ||= []) << "regargs:#{regargs.inspect}"
+			func.add_attribute "regargs:#{regargs.inspect}"
 		end
 
 		# remove writes from a block if no following block read the value
@@ -250,7 +250,7 @@ class Ia32
 						stackoff = Expression[dcmp.dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry), :-, :esp].bind(:esp => :frameptr).reduce rescue nil
 						args_todo = t.type.args.dup
 						args = []
-						if t.attributes.to_a.include? 'fastcall'	# XXX DRY
+						if t.has_attribute('fastcall')	# XXX DRY
 							if a = args_todo.shift
 								mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1
 								args << ceb[:ecx, :&, mask]
@@ -422,16 +422,16 @@ class Ia32
 	
 	def decompile_check_abi(dcmp, entry, func)
 		a = func.type.args
-		if func.attributes.to_a.include? 'fastcall' and (not a[0] or a[0].attributes.to_a.include? 'unused') and (not a[1] or a[1].attributes.to_a.include? 'unused')
+		if func.has_attribute('fastcall') and (not a[0] or a[0].has_attribute('unused')) and (not a[1] or a[1].has_attribute('unused'))
 			a.shift ; a.shift
 			func.attributes.delete 'fastcall'
 			func.attributes << 'stdcall' if not a.empty?
-		elsif func.attributes.to_a.include? 'fastcall' and a.length == 2 and a.last.attributes.to_a.include? 'unused'
+		elsif func.has_attribute('fastcall') and a.length == 2 and a.last.has_attribute('unused')
 			a.pop
 		end
 
 		if not f = dcmp.dasm.function[entry] or not f.return_address
-			(func.attributes ||= []) << 'noreturn'
+			func.add_attribute 'noreturn'
 		else
 			adj = f.return_address.map { |ra| dcmp.dasm.backtrace(:esp, ra, :include_start => true, :stopaddr => entry) }.flatten.uniq
 			if adj.length == 1 and so = Expression[adj.first, :-, :esp].reduce and so.kind_of? ::Integer
@@ -440,12 +440,12 @@ class Ia32
 				case so
 				when 0
 				when a.find_all { |fa| fa.stackoff }.length
-					(func.attributes ||= []) << 'stdcall' if not func.attributes.to_a.include? 'fastcall'
+					func.add_attribute 'stdcall' if not func.has_attribute('fastcall')
 				else
-					(func.attributes ||= []) << "stackoff:#{so}"
+					func.add_attribute "stackoff:#{so}"
 				end
 			else
-				(func.attributes ||= []) << "breakstack:#{adj.inspect}"
+				func.add_attribute "breakstack:#{adj.inspect}"
 			end
 		end
 	end
