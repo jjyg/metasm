@@ -16,8 +16,10 @@ class CdecompListingWidget < Gtk::DrawingArea
 		c = Gtk::ScrolledWindow.new.add_with_viewport(n)
 		c.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC)
 		class << c
-			def method_missing(*a, &b) child.child.send(*a, &b) end
+			attr_accessor :proxy
+			def method_missing(*a, &b) @proxy.send(*a, &b) end
 		end
+		c.proxy = n
 		n.set_scroll c
 		c
 	end
