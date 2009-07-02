@@ -9,6 +9,7 @@ module Metasm
 # (eg. find_process, inject_shellcode)
 # a 'class' just to be able to inherit from it...
 class OS
+	# represents a running process with a few information, and defines methods to get more interaction (#memory, #debugger)
 	class Process
 		attr_accessor :pid, :modules
 		class Module
@@ -23,7 +24,7 @@ class OS
 		end
 	end
 
-	# returns the Process whose pid is name (numeric) or first module path includes name (string)
+	# returns the Process whose pid is name (if name is an Integer) or first module path includes name (string)
 	def self.find_process(name)
 		case name
 		when nil
@@ -222,6 +223,7 @@ class VirtualString
 	#end
 end
 
+# on-demand reading of a file
 class VirtualFile < VirtualString
 	# returns a new VirtualFile of the whole file content (defaults readonly)
 	# returns a String if the file is small (<4096o) and readonly access
@@ -270,4 +272,31 @@ class VirtualFile < VirtualString
 		@fd.read(@length)
 	end
 end
+
+# this class implements a high-level debugging API (abstract superclass)
+class Debugger
+	attr_accessor :memory, :cpu, :disassembler, :pid, :tid
+
+	# initializes the disassembler from @cpu and @memory
+	def initialize
+		@disassembler = Shellcode.decode(EncodedData.new(@memory), @cpu).init_disassembler
+	end
+
+	# resolves an expression involving register values and/or memory indirection using the current context
+	# uses #register_list, #get_reg_value, @mem, @cpu
+	def resolve_expr(e)
+		bd = register_list.inject({}) { |h, r| h.update r => get_reg_value(r) }
+		Expression[e].bind(bd).reduce { |i|
+			if i.kind_of? Indirection and p = i.pointer.reduce and p.kind_of? ::Integer
+				p &= (1 << @cpu.size) - 1 if p < 0
+				Expression.decode_imm(@memory, i.len, @cpu, p)
+			end
+		}
+	end
+
+	def invalidate
+		@memory.invalidate
+	end
+end
+
 end

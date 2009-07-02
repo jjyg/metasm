@@ -127,7 +127,7 @@ class WinOS < OS
 		end
 		def memory=(m) @memory = m end
 		def debugger
-			@debugger ||= WinDbg.new(@pid)
+			@debugger ||= WinDebugger.new(@pid)
 		end
 		def debugger=(d) @debugger = d end
 	end
@@ -291,7 +291,7 @@ class WindowsRemoteString < VirtualString
 	end
 end
 
-class WinDbg
+class WinDbgAPI
 	# pid => VirtualString
 	attr_accessor :mem
 	# pid => handle
@@ -345,6 +345,11 @@ class WinDbg
 		def initialize(hthread, flags)
 			@hthread = hthread
 			@ctx = 0.chr * (OFFSETS.values.max + 4 + 512)
+			@flags = flags
+			update
+		end
+
+		def update(flags=@flags)
 			set_val(:ctxflags, flags)
 			WinAPI.getthreadcontext(@hthread, @ctx)
 		end
@@ -436,53 +441,72 @@ class WinDbg
 	# returns a string suitable for use as a debugevent structure
 	def debugevent_alloc
 		# on wxpsp2, debugevent is at most 24*uint
-		([0]*30).pack('L*')
+		[0].pack('L')*30
 	end
 
 	# waits for debug events
 	# dispatches to the different handler_*
-	# custom handlers should call the default version
-	def debugloop
-		debugevent = debugevent_alloc
+	# custom handlers should call the default version (especially for newprocess/newthread/endprocess/endthread)
+	# if given a block, yields { |pid, tid, code, rawinfo| }
+	# if the block returns something not numeric, dispatch_debugevent is called
+	def loop
+		raw = debugevent_alloc
 		while not @mem.empty?
-			return if not WinAPI.waitfordebugevent(debugevent, WinAPI::INFINITE)
-			debugloop_step(debugevent)
+			return if not ev = waitfordebugevent(raw)
+			ret = nil
+			ret = yield(*ev) if block_given?
+			ret = dispatch_debugevent(*ev) if not ret.kind_of? ::Integer
+			continuedebugevent(ev[0], ev[1], ret)
 		end
 	end
 
-	# handles one debug event
-	# arg is a packed string containing a debugevent structure
-	# usage:
-	#  de = debugevent_alloc
-	#  waitfordebugevent(de, <timeout>)
-	#  debugloop_step(de)
-	def debugloop_step(debugevent)
-		code, pid, tid = debugevent.unpack('LLL')
-		info = debugevent[[0,0,0].pack('LLL').length..-1]
-
-		cont = \
-		case code
-		when WinAPI::EXCEPTION_DEBUG_EVENT
-			handler_exception pid, tid, ExceptionInfo.new(info)
-		when WinAPI::CREATE_PROCESS_DEBUG_EVENT
-			handler_newprocess pid, tid, CreateProcessInfo.new(info)
-		when WinAPI::CREATE_THREAD_DEBUG_EVENT
-			handler_newthread pid, tid, CreateThreadInfo.new(info)
-		when WinAPI::EXIT_PROCESS_DEBUG_EVENT
-			handler_endprocess pid, tid, ExitProcessInfo.new(info)
-		when WinAPI::EXIT_THREAD_DEBUG_EVENT
-			handler_endthread pid, tid, ExitThreadInfo.new(info)
-		when WinAPI::LOAD_DLL_DEBUG_EVENT
-			handler_loaddll pid, tid, LoadDllInfo.new(info)
-		when WinAPI::UNLOAD_DLL_DEBUG_EVENT
-			handler_unloaddll pid, tid, UnloadDllInfo.new(info)
-		when WinAPI::OUTPUT_DEBUG_STRING_EVENT
-			handler_debugstring pid, tid, OutputDebugStringInfo.new(info)
-		when WinAPI::RIP_EVENT
-			handler_rip pid, tid, RipInfo.new(info)
+	# waits for a debug event (will put the current [debugger] process to sleep)
+	# returns [pid, tid, eventcode, eventdata] or nil
+	def waitfordebugevent(raw = debugevent_alloc, timeout = WinAPI::INFINITE)
+		if WinAPI.waitfordebugevent(raw, WinAPI::INFINITE)
+			code, pid, tid, info = raw.unpack('LLLa*')
+			info = decode_info(code, info)
+			[pid, tid, code, info]
 		end
+	end
 
+	# tells the target pid:tid to resume
+	def continuedebugevent(pid, tid, cont=WinAPI::DBG_CONTINUE)
 		WinAPI.continuedebugevent(pid, tid, cont)
+	end
+
+	# casts a raw info to the corresponding object according to code
+	def decode_info(code, info)
+		c = {
+			WinAPI::EXCEPTION_DEBUG_EVENT => ExceptionInfo,
+			WinAPI::CREATE_PROCESS_DEBUG_EVENT => CreateProcessInfo,
+			WinAPI::CREATE_THREAD_DEBUG_EVENT => CreateThreadInfo,
+			WinAPI::EXIT_PROCESS_DEBUG_EVENT => ExitProcessInfo,
+			WinAPI::EXIT_THREAD_DEBUG_EVENT => ExitThreadInfo,
+			WinAPI::LOAD_DLL_DEBUG_EVENT => LoadDllInfo,
+			WinAPI::UNLOAD_DLL_DEBUG_EVENT => UnloadDllInfo,
+			WinAPI::OUTPUT_DEBUG_STRING_EVENT => OutputDebugStringInfo,
+			WinAPI::RIP_EVENT => RipInfo,
+		}[code]
+		c ? c.new(info) : info
+	end
+
+	# handles one debug event
+	# calls the corresponding handler
+	# returns the handler return value
+	def dispatch_debugevent(pid, tid, code, info)
+		case code
+		when WinAPI::EXCEPTION_DEBUG_EVENT;      handler_exception   pid, tid, info
+		when WinAPI::CREATE_PROCESS_DEBUG_EVENT; handler_newprocess  pid, tid, info
+		when WinAPI::CREATE_THREAD_DEBUG_EVENT;  handler_newthread   pid, tid, info
+		when WinAPI::EXIT_PROCESS_DEBUG_EVENT;   handler_endprocess  pid, tid, info
+		when WinAPI::EXIT_THREAD_DEBUG_EVENT;    handler_endthread   pid, tid, info
+		when WinAPI::LOAD_DLL_DEBUG_EVENT;       handler_loaddll     pid, tid, info
+		when WinAPI::UNLOAD_DLL_DEBUG_EVENT;     handler_unloaddll   pid, tid, info
+		when WinAPI::OUTPUT_DEBUG_STRING_EVENT;  handler_debugstring pid, tid, info
+		when WinAPI::RIP_EVENT;                  handler_rip         pid, tid, info
+		else                                     handler_unknown     pid, tid, code, info
+		end
 	end
 
 	def handler_exception(pid, tid, info)
@@ -557,12 +581,17 @@ class WinDbg
 	def handler_debugstring(pid, tid, info)
 		str = @mem[pid][@mem[pid][info.ptr, 4], info.length]
 		str = str.unpack('S*').pack('C*') if info.unicode != 0
-		puts "wdbg: #{pid}:#{tid} debugstring #{str.inspect}"
+		puts "wdbg: #{pid}:#{tid} debugstring #{str.inspect}" if $DEBUG
 		WinAPI::DBG_CONTINUE
 	end
 
 	def handler_rip(pid, tid, info)
-		puts "wdbg: #{pid}:#{tid} rip"
+		puts "wdbg: #{pid}:#{tid} rip" if $DEBUG
+		WinAPI::DBG_CONTINUE
+	end
+
+	def handler_unknown(pid, tid, code, raw)
+		puts "wdbg: #{pid}:#{tid} unknown debugevent #{'0x%X' % code} #{raw.inspect}" if $DEBUG
 		WinAPI::DBG_CONTINUE
 	end
 
@@ -574,6 +603,59 @@ class WinDbg
 		str = str.unpack('S*').pack('C*') if unicode != 0
 		str = str[0, str.index(?\0)] if str.index(?\0)
 		str
+	end
+end
+
+# this class implements a high-level API over the Windows debugging primitives
+class WinDebugger < Debugger
+	attr_accessor :dbg
+	def initialize(pid)
+		@dbg = WinDbgAPI.new(pid)
+		@pid = @dbg.mem.keys.first
+		# TODO get current cpu (x64)
+		@cpu = Ia32.new
+		@memory = @dbg.mem[@pid]
+		# get a valid @tid (for reg values etc)
+		@dbg.loop { |pid, tid, code, info|
+			if pid == @pid and code == WinAPI::CREATE_THREAD_DEBUG_EVENT
+				@dbg.handler_newthread pid, tid, info
+				@tid = tid
+				break
+			end
+		}
+
+		super()
+	end
+
+	def running?
+		false
+	end
+
+	def tid=(tid)
+		super(tid)
+		@ctx = nil
+	end
+
+	def register_list
+		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp, :eip]
+	end
+
+	def pc_reg ; :eip ; end
+	def sp_reg ; :esp ; end
+
+	def ctx
+		@ctx ||= @dbg.get_context(@pid, @tid)
+	end
+	def invalidate
+		@ctx = nil
+		super()
+	end
+
+	def get_reg_value(r)
+		ctx[r]
+	end
+	def set_reg_value(r, v)
+		ctx[r] = v
 	end
 end
 
