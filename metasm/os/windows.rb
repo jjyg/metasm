@@ -657,6 +657,17 @@ class WinDebugger < Debugger
 	def set_reg_value(r, v)
 		ctx[r] = v
 	end
+
+	def continue
+		invalidate
+		@dbg.continuedebugevent(@pid, @tid)
+		@dbg.loop { |pid, tid, code, info|
+			if pid == @pid and code == WinAPI::EXCEPTION_DEBUG_EVENT
+				@tid = tid
+				break
+			end
+		}
+	end
 end
 
 class WindowsExports
