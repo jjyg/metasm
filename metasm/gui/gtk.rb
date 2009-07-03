@@ -663,7 +663,7 @@ class MainWindow < Gtk::Window
 		}
 		addsubmenu(options)
 		addsubmenu(options, 'Forbid decompile _types', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_types = ck.active? }
-		addsubmenu(options, 'Forbid decompile _while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_while = ck.active? }
+		addsubmenu(options, 'Forbid decompile _if/while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_ifwhile = ck.active? }
 		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
 		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
 		addsubmenu(options, 'Forbid decomp optim_labels', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck.active? }

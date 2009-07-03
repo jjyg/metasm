@@ -8,7 +8,7 @@ class Decompiler
 	AssignOp = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'^=', :'&=', :'|=', :'>>=', :'<<=', :'++', :'--']
 
 	attr_accessor :dasm, :c_parser
-	attr_accessor :forbid_optimize_dataflow, :forbid_optimize_code, :forbid_decompile_while, :forbid_decompile_types, :forbid_optimize_labels
+	attr_accessor :forbid_optimize_dataflow, :forbid_optimize_code, :forbid_decompile_ifwhile, :forbid_decompile_types, :forbid_optimize_labels
 
 	def initialize(dasm, cp = dasm.c_parser)
 		@dasm = dasm
@@ -518,6 +518,7 @@ class Decompiler
 	# ary is an array of statements where we try to find if () {} [else {}]
 	# recurses to then/else content
 	def decompile_cseq_if(ary, scope)
+		return ary if forbid_decompile_ifwhile
 		# the array of decompiled statements to use as replacement
 		ret = []
 		# list of labels appearing in ary
@@ -620,7 +621,7 @@ class Decompiler
 	end
 
 	def decompile_cseq_while(ary, scope)
-		return if forbid_decompile_while
+		return if forbid_decompile_ifwhile
 
 		# find the next instruction that is not a label
 		ni = lambda { |l| ary[ary.index(l)..-1].find { |s| not s.kind_of? C::Label } }

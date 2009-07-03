@@ -93,6 +93,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 		click(ev)
 		if @dasm.c_parser and @dasm.c_parser.toplevel.symbol[@hl_word]
 			@parent_widget.clone_window(@hl_word, :decompile)
+		elsif @hl_word
+			@parent_widget.clone_window(@hl_word)
 		end
 	end
 
