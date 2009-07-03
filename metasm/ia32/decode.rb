@@ -49,13 +49,13 @@ class Ia32
 
 				when :i8, :i16, :i32
 					imm = Expression[edata.decode_imm(a, endianness)]
-					if a == :i32 and imm.reduce.kind_of? Integer and imm.reduce < -0x10_0000
-						# probably a base address -> unsigned
-						imm = Expression[imm.reduce & 0xffff_ffff]
-					end
-
 				end
 			}
+
+			if imm and imm.reduce.kind_of? Integer and imm.reduce < -0x10_0000
+				# probably a base address -> unsigned
+				imm = Expression[imm.reduce & ((1 << (adsz || 32)) - 1)]
+			end
 
 			new adsz, opsz, s, i, b, imm, seg
 		end
