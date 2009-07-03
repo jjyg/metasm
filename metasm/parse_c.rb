@@ -32,10 +32,11 @@ module C
 		attr_accessor :statements	# array of Statement/Declaration
 		attr_accessor :anonymous_enums	# array of anonymous Enum
 
-		def initialize(outer)
-			@symbol, @struct = {}, {}
-			@statements = []
+		def initialize(outer, statements=[], symbol={}, struct={})
 			@outer = outer
+			@statements = statements
+			@symbol = symbol
+			@struct = struct
 		end
 
 		def struct_ancestors

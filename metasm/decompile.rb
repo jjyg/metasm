@@ -355,50 +355,78 @@ class Decompiler
 		end
 	end
 
-	# simplify goto -> goto
-	# iterative process, to not infinite loop on b:goto a; a:goto b;
-	# TODO multipass ? (goto a -> goto b -> goto c -> goto d)
-	# remove last return if not useful
+	# simplify goto -> goto / goto -> return
 	def simplify_goto(scope)
-		cntr = -1
+		if scope.statements[-1].kind_of? C::Return and not scope.statements[-2].kind_of? C::Label
+			scope.statements.insert(-2, C::Label.new("ret_label"))
+		end
 
-		simpler_goto = lambda { |g|
-			case ret = g
+		jumpto = {}
+		walk(scope) { |s|
+			next if not s.kind_of? C::Block
+			s.statements.each_with_index { |ss, i|
+				case ss
+				when C::Goto, C::Return
+					while l = s.statements[i -= 1] and l.kind_of? C::Label
+						jumpto[l.name] = ss
+					end
+				end
+			}
+		}
+
+		simpler = lambda { |s|
+			case s
 			when C::Goto
-				# return a new goto
-				walk(scope) { |s|
-					if s.kind_of? C::Block and l = s.statements.grep(C::Label).find { |l_| l_.name == g.target }
-						case nt = s.statements[s.statements.index(l)..-1].find { |ss| not ss.kind_of? C::Label }
-						when C::Goto; ret = nt
-						when C::Return
-						       v = nt.value
-						       v = v.deep_dup if v.kind_of? C::CExpression
-					       	       ret = C::Return.new(v)
-						end
-					end
-				}
+				jumpto[s.target].dup if jumpto[s.target]
 			when C::Return
-				# XXX if () { return } else { return }
-				lr = scope.statements.last
-				if g != lr and lr.kind_of? C::Return and g.value == lr.value
-					if not scope.statements[-2].kind_of? C::Label
-						scope.statements.insert(-2, C::Label.new("ret_#{cntr += 1}", nil))
-					end
-					ret = C::Goto.new(scope.statements[-2].name)
+				if scope.statements[-1].kind_of? C::Return and s.value == scope.statements[-1].value and s != scope.statements[-1]
+					C::Goto.new(scope.statements[-2].name)
 				end
 			end
-			ret
 		}
 
 		walk(scope) { |s|
 			case s
 			when C::Block
 				s.statements.each_with_index { |ss, i|
-					s.statements[i] = simpler_goto[ss]
+					if sp = simpler[ss]
+						ss = s.statements[i] = sp
+					end
 				}
 			when C::If
-				s.bthen = simpler_goto[s.bthen]
+				if sp = simpler[s.bthen]
+					s.bthen = sp
+				end
 			end
+		}
+
+		# remove unreferenced labels
+		remove_labels(scope)
+
+		walk(scope) { |s|
+			next if not s.kind_of? C::Block
+			del = false
+			# remove dead code  goto a; goto b; if (0) { z: bla; }  => rm goto b
+			s.statements.delete_if { |st|
+				case st
+				when C::Goto, C::Return
+					olddel = del
+					del = true
+					olddel
+				else
+					del = false
+				end
+			}
+			# if () { goto x; } x:
+			s.statements.each_with_index { |ss, i|
+				if ss.kind_of? C::If
+					t = ss.bthen
+					t = t.statements.first if t.kind_of? C::Block
+					if t.kind_of? C::Goto and s.statements[i+1].kind_of? C::Label and s.statements[i+1].name == t.target
+						ss.bthen = C::Block.new(scope)
+					end
+				end
+			}
 		}
 
 		remove_labels(scope)
@@ -406,14 +434,20 @@ class Decompiler
 
 	# changes ifgoto, goto to while/ifelse..
 	def decompile_controlseq(scope)
+		# TODO replace all this crap by a method using the graph representation
 		scope.statements = decompile_cseq_if(scope.statements, scope)
-		# TODO harmonize _if/_while
+		remove_labels(scope)
+		scope.statements = decompile_cseq_if(scope.statements, scope)
+		remove_labels(scope)
+		# TODO harmonize _if/_while api (if returns a replacement, while patches)
 		decompile_cseq_while(scope.statements, scope)
 		decompile_cseq_switch(scope)
 	end
 
 	# optimize if() { a; } to if() a;
 	def optimize_ctrl(scope)
+		simplify_goto(scope)
+
 		# break/continue
 		# XXX if (foo) while (bar) goto bla; bla:  should => break
 		walk = lambda { |e, brk, cnt|
@@ -524,20 +558,52 @@ class Decompiler
 		# list of labels appearing in ary
 		inner_labels = ary.grep(C::Label).map { |l| l.name }
 		while s = ary.shift
-			while s.kind_of? C::If and s.bthen.kind_of? C::Goto and not s.belse and ary.first.kind_of? C::If and ary.first.bthen.kind_of? C::Goto and
-					not ary.first.belse and s.bthen.target == ary.first.bthen.target
-				# if (a) goto x; if (b) goto x; => if (a || b) goto x;
-				s.test = C::CExpression.new(s.test, :'||', ary.shift.test, s.test.type)
+			# recurse if it's not the first run
+			if s.kind_of? C::If
+				s.bthen.statements = decompile_cseq_if(s.bthen.statements, s.bthen) if s.bthen.kind_of? C::Block
+				s.belse.statements = decompile_cseq_if(s.belse.statements, s.belse) if s.belse.kind_of? C::Block
 			end
 
-			# "forward" ifs only
+			# if (a) goto x; if (b) goto x; => if (a || b) goto x;
+			while s.kind_of? C::If and s.bthen.kind_of? C::Goto and not s.belse and ary.first.kind_of? C::If and ary.first.bthen.kind_of? C::Goto and
+					not ary.first.belse and s.bthen.target == ary.first.bthen.target
+				s.test = C::CExpression[s.test, :'||', ary.shift.test]
+			end
+
+			# if (a) goto x; b; x:  => if (!a) { b; }
 			if s.kind_of? C::If and s.bthen.kind_of? C::Goto and l = ary.grep(C::Label).find { |l_| l_.name == s.bthen.target }
 				# if {goto l;} a; l: => if (!) {a;}
 				s.test = C::CExpression.negate s.test
 				s.bthen = C::Block.new(scope)
 				s.bthen.statements = decompile_cseq_if(ary[0..ary.index(l)], s.bthen)
-				bts = s.bthen.statements
+				s.bthen.statements.pop	# remove l: from bthen, it is in ary (was needed in bthen for inner ifs)
 				ary[0...ary.index(l)] = []
+			end
+
+			if s.kind_of? C::If and (s.bthen.kind_of? C::Block or s.bthen.kind_of? C::Goto)
+				s.bthen = C::Block.new(scope, [s.bthen]) if s.bthen.kind_of? C::Goto
+
+				bts = s.bthen.statements
+
+				# if (a) if (b) { c; }  => if (a && b) { c; }
+				if bts.length == 1 and bts.first.kind_of? C::If and not bts.first.belse
+					s.test = C::CExpression[s.test, :'&&', bts.first.test]
+					bts = bts.first.bthen
+					bts = s.bthen.statements = bts.kind_of?(C::Block) ? bts.statements : [bts]
+				end
+
+				# if (a) { if (b) goto c; d; } c:  => if (a && !b) { d; }
+				if bts.first.kind_of? C::If and l = bts.first.bthen and (l = l.kind_of?(C::Block) ? l.statements.first : l) and l.kind_of? C::Goto and ary[0].kind_of? C::Label and l.target == ary[0].name
+					s.test = C::CExpression[s.test, :'&&', C::CExpression.negate(bts.first.test)]
+					if e = bts.shift.belse
+						bts.unshift e
+					end
+				end
+
+				# if () { goto a; } a:
+				if bts.last.kind_of? C::Goto and ary[0].kind_of? C::Label and bts.last.target == ary[0].name
+					bts.pop
+				end
 
 				# if { a; goto outer; } b; return; => if (!) { b; return; } a; goto outer;
 				if bts.last.kind_of? C::Goto and not inner_labels.include? bts.last.target and g = ary.find { |ss| ss.kind_of? C::Goto or ss.kind_of? C::Return } and g.kind_of? C::Return
@@ -714,16 +780,17 @@ class Decompiler
 	def remove_labels(scope)
 		return if forbid_optimize_labels
 
+		used = []
+		walk(scope) { |ss|
+			used |= [ss.target] if ss.kind_of? C::Goto
+		}
 		walk(scope) { |s|
 			next if not s.kind_of? C::Block
 			s.statements.delete_if { |l|
-				if l.kind_of? C::Label
-					notfound = true
-					walk(scope) { |ss| notfound = false if ss.kind_of? C::Goto and ss.target == l.name}
-				end
-				notfound
+				l.kind_of? C::Label and not used.include? l.name
 			}
 		}
+
 		# remove implicit continue; at end of loop
 		walk(scope) { |s|
 			next if not s.kind_of? C::While
