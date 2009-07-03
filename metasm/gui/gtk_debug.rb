@@ -75,7 +75,7 @@ class DbgWidget < Gtk::DrawingArea
 			}
 			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
 
-			set_color_association :label => :blue, :data => :black, :writepending => :darkred,
+			set_color_association :label => :blue, :data => :black, :write_pending => :darkred,
 					:caret => :black, :bg => :white, :inactive => :palegrey
 		}
 	end
@@ -194,7 +194,7 @@ class DbgWidget < Gtk::DrawingArea
 
 			if v
 				# XXX if a reg overflows @data_size (eg xmm), the offset is wrong
-				oo = 4*(@data_size*2-(@caret_x-x_data))
+				oo = 4*(@data_size*2-@caret_x-1)
 				reg = @registers[@caret_y]
 				ov = @write_pending[reg] || @dbg.get_reg_value(reg)
 				ov &= ~(0xf << oo)
@@ -281,13 +281,13 @@ class DbgWidget < Gtk::DrawingArea
 		return if not window
 		return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
 
-		x = @oldcaret_x * @font_width
+		x = (x_data + @oldcaret_x) * @font_width + 1
 		y = @oldcaret_y * @font_height
-		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), fals
+		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
 
-		x = @caret_x * @font_width
+		x = (x_data + @caret_x) * @font_width + 1
 		y = @caret_y * @font_height
-		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), fals
+		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
 
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 	end
@@ -331,7 +331,7 @@ class DbgWindow < MainWindow
 	attr_accessor :dbg_widget
 	def initialize(dbg = nil, title='metasm debugger')
 		super(title)
-		set_default_size 300, 500
+		set_default_size 200, 300
 		display(dbg) if dbg
 	end
 
@@ -359,6 +359,8 @@ class DbgWindow < MainWindow
 		addsubmenu(dbgmenu, 'detach target') { @dbg.detach }	# destroy ?
 		addsubmenu(dbgmenu)
 		addsubmenu(dbgmenu, 'QUIT') { destroy }
+
+		addsubmenu(@menu, dbgmenu, '_Actions')
 	end
 end
 

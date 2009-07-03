@@ -221,14 +221,13 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 
 			if di = di_at(curaddr)
 				render["#{di.instruction} ", :instruction]
-				curaddr += di.bin_length
 			else
 				if s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
 					render["db #{Expression[s[0].read(1).unpack('C')]} ", :instruction]
 				end
-				curaddr += 1
 			end
 			nl[]
+			curaddr += di ? di.bin_length : 1
 		end
 
 		# draw caret

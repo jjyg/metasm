@@ -339,7 +339,7 @@ class HexWidget < Gtk::DrawingArea
 			update_caret
 		when GDK_Return, GDK_KP_Enter
 			commit_writes
-			redraw
+			gui_update
 		when GDK_Escape
 			@write_pending.clear
 			redraw
