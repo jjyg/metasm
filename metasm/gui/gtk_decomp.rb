@@ -177,7 +177,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 				render[l, :text]
 			end
 
-			y += @layout.pixel_size[1]
+			y += @font_height
 			x = 1
 			line += 1
 		end
@@ -194,6 +194,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 	end
 
 	include Gdk::Keyval
+	# n: rename variable
+	# t: retype variable (persistent)
 	def keypress(ev)
 		case ev.keyval
 		when GDK_Left
@@ -222,13 +224,14 @@ class CdecompListingWidget < Gtk::DrawingArea
 		when GDK_End
 			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
-		when GDK_n
+		when GDK_n	# rename local/global variable
 			f = curfunc.initializer
 			n = @hl_word
 			if f.symbol[n] or f.outer.symbol[n]
 				@parent_widget.inputbox("new name for #{n}") { |v|
 					next if v !~ /^[a-z_][a-z_0-9]*$/i
 					if f.symbol[n]
+						# TODO add/update comment to the asm instrs
 						s = f.symbol[v] = f.symbol.delete(n)
 					elsif f.outer.symbol[n]
 						@dasm.rename_label(n, v)
@@ -239,7 +242,19 @@ class CdecompListingWidget < Gtk::DrawingArea
 					redraw
 				}
 			end
-		# TODO retype a var & propagate 
+		when GDK_t
+			f = curfunc.initializer
+			n = @hl_word
+			if s = f.symbol[n] || f.outer.symbol[n]
+				@parent_widget.inputbox("new type for #{n}", s.type.to_s) { |t|
+					# TODO persistence (store it in
+					#  @dasm.function[@curaddr].stackoff_type[v.stackoff] or whatever
+					#  patch #decompile to use it)
+					# put t in a preprocessor and make @dasm.c_parser parse the type as a cast
+					# update the var, redecompile (noauto for batch?)
+					@parent_widget.messagebox("unimplemented - sorry")
+				}
+			end
 		else
 			return @parent_widget.keypress(ev)
 		end
