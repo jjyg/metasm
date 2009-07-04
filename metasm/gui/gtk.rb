@@ -427,15 +427,19 @@ class InputBox < Gtk::Dialog
 end
 
 class OpenFile < Gtk::FileChooserDialog
+	@@currentfolder = nil
 	# shows an asynchronous FileChooser window, yields the chosen filename
 	# TODO save last path
-	def initialize(owner, title)
+	def initialize(owner, title, opts={})
 		owner ||= Gtk::Window.toplevels.first
 		super(title, owner, Gtk::FileChooser::ACTION_OPEN, nil,
 		[Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_CANCEL], [Gtk::Stock::OPEN, Gtk::Dialog::RESPONSE_ACCEPT])
+		f = opts[:path] || @@currentfolder
+		self.current_folder = f if f
 		signal_connect('response') { |win, id|
 			if id == Gtk::Dialog::RESPONSE_ACCEPT
 				file = filename
+				@@currentfolder = File.dirname(file)
 			end
 			destroy
 			yield file if file
@@ -448,15 +452,20 @@ class OpenFile < Gtk::FileChooserDialog
 end
 
 class SaveFile < Gtk::FileChooserDialog
+	@@currentfolder = nil
+
 	# shows an asynchronous FileChooser window, yields the chosen filename
 	# TODO save last path
-	def initialize(owner, title)
+	def initialize(owner, title, opts={})
 		owner ||= Gtk::Window.toplevels.first
 		super(title, owner, Gtk::FileChooser::ACTION_SAVE, nil,
 		[Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_CANCEL], [Gtk::Stock::SAVE, Gtk::Dialog::RESPONSE_ACCEPT])
+		f = opts[:path] || @@currentfolder
+		self.current_folder = f if f
 		signal_connect('response') { |win, id|
 			if id == Gtk::Dialog::RESPONSE_ACCEPT
 				file = filename
+				@@currentfolder = File.dirname(file)
 			end
 			destroy
 			yield file if file
