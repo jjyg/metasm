@@ -554,6 +554,7 @@ class AsmListingWidget < Gtk::HBox
 	# may scroll the window
 	# returns true on success (address exists)
 	def focus_addr(addr)
+		return if not addr = @parent_widget.normalize(addr)
 		if l = @line_address.index(addr) and l < @line_address.keys.max - 4
 			@caret_y, @caret_x = @line_address.keys.find_all { |k| @line_address[k] == addr }.max, 0
 		elsif addr >= @vscroll.adjustment.lower and addr <= @vscroll.adjustment.upper

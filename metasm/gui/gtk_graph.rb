@@ -1087,6 +1087,7 @@ class GraphViewWidget < Gtk::HBox
 	# start or an entrypoint is found, then the graph is created from there
 	# will call gui_update then
 	def focus_addr(addr, can_update_context=true)
+		return if not addr = @parent_widget.normalize(addr)
 		if not @dasm.decoded[addr].kind_of? DecodedInstruction
 			return
 		end

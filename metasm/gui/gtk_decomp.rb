@@ -322,6 +322,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 			return true
 		end
 
+		return if not addr = @parent_widget.normalize(addr)
+
 		# scan up to func start/entrypoint
 		todo = [addr]
 		done = []

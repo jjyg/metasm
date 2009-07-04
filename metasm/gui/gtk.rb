@@ -107,9 +107,7 @@ class DisasmWidget < Gtk::VBox
 	end
 
 
-	def focus_addr(addr, page=nil, quiet=false)
-		page ||= @notebook.page
-		page = @view_index[page] || page
+	def normalize(addr)
 		case addr
 		when ::String
 			if @dasm.prog_binding[addr]
@@ -117,22 +115,28 @@ class DisasmWidget < Gtk::VBox
 			elsif (?0..?9).include? addr[0]
 				case addr
 				when /^0x/i
-				when /h$/; addr = '0x' + addr[0...-1]
+				when /h$/i; addr = '0x' + addr[0...-1]
 				when /[a-f]/i; addr = '0x' + addr
+				when /^[0-9]+$/
+					addr = '0x' + addr if not @dasm.get_section_at(addr.to_i) and
+								  @dasm.get_section_at(addr.to_i(16))
 				end
 				begin
 					addr = Integer(addr)
 				rescue ::ArgumentError
-					messagebox "Invalid address #{addr}" if not quiet
 					return
 				end
 			else
-				messagebox "Invalid address #{addr}" if not quiet
 				return
 			end
-		when nil; return
 		end
+		addr
+	end
 
+	def focus_addr(addr, page=nil, quiet=false)
+		page ||= @notebook.page
+		page = @view_index[page] || page
+		return if not addr
 		return if page == @notebook.page and addr == curview.current_address
 		oldpos = [@notebook.page, curview.get_cursor_pos]
 		@notebook.page = page
@@ -149,7 +153,7 @@ class DisasmWidget < Gtk::VBox
 			@pos_history << oldpos
 			true
 		else
-			messagebox "Invalid address #{Expression[addr]}" if not quiet
+			messagebox "Invalid address #{addr}" if not quiet
 			focus_addr_back oldpos
 			false
 		end

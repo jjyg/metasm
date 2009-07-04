@@ -481,6 +481,7 @@ class HexWidget < Gtk::DrawingArea
 	# focus on addr
 	# returns true on success (address exists)
 	def focus_addr(addr)
+		return if not addr = @parent_widget.normalize(addr)
 		return if @view_min and (addr < @view_min or addr > @view_max)
 		if addr < @view_addr or addr >= @view_addr+(@num_lines-2)*@line_size
 			@view_addr = addr&0xffff_fff0
