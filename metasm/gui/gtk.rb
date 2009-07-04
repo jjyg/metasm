@@ -276,14 +276,16 @@ class DisasmWidget < Gtk::VBox
 	# returns true if playing
 	# this empties @dasm.addrs_todo, the dasm may still continue to work if this msg is
 	#  handled during an instr decoding/backtrace (the backtrace may generate new addrs_todo)
+	# addresses in addrs_todo pointing to existing decoded instructions are left to create a prettier graph
 	def playpause_dasm
 		@dasm_pause ||= []
 		if @dasm_pause.empty? and @dasm.addrs_todo.empty?
 			true
 		elsif @dasm_pause.empty?
-			# XXX filter addrs_todo pointing to existing @decoded ? (resolve dangling if_then, but may rebacktrace)
 			@dasm_pause = @dasm.addrs_todo.dup
 			@dasm.addrs_todo.clear
+			@dasm.addrs_todo.concat @dasm_pause.find_all { |a, *b| @dasm.decoded[@dasm.normalize(a)] }
+			@dasm_pause -= @dasm.addrs_todo
 			puts "dasm paused (#{@dasm_pause.length})"
 		else
 			@dasm.addrs_todo.concat @dasm_pause
