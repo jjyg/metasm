@@ -318,7 +318,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 		if @dasm.c_parser and @dasm.c_parser.toplevel.symbol[addr]
 			@curaddr = addr
 			@caret_x = @caret_y = 0
-			redraw
+			gui_update
 			return true
 		end
 
@@ -339,31 +339,14 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@dasm.decoded[addr].block.each_from_samefunc(@dasm) { |na| empty = false ; todo << na }
 			break if empty
 		end
-		return true if addr and @curaddr == addr
 		return if not l = @dasm.prog_binding.index(addr)
-		if not @dasm.c_parser or not f = @dasm.c_parser.toplevel.symbol[l]
-			@decompiling ||= false
-			return false if @decompiling
-			@decompiling = true
-			@curaddr = l
-			redraw
-			@dasm.decompile(addr)
-			@decompiling = false
-			f = @dasm.c_parser.toplevel.symbol[l]
-		end
-		return if not f or not f.type.kind_of? C::Function
 		@curaddr = l
 		@caret_x = @caret_y = 0
-		redraw
+		gui_update
 		true
 	end
 
 	def redraw
-		if f = curfunc
-			@line_text = f.dump_def(@dasm.c_parser.toplevel)[0].map { |l| l.gsub("\t", ' '*8) }
-		else
-			@line_text = ['please wait']
-		end
 		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
 	end
 
@@ -373,6 +356,18 @@ class CdecompListingWidget < Gtk::DrawingArea
 	end
 
 	def gui_update
+		if not curfunc and not @decompiling ||= false
+			@line_text = ['please wait']
+			redraw
+			@decompiling = true
+			@dasm.decompile(@curaddr)
+			@decompiling = false
+		end
+		if curfunc
+			@line_text = curfunc.dump_def(@dasm.c_parser.toplevel)[0].map { |l| l.gsub("\t", ' '*8) }
+			@oldcaret_x = @caret_x + 1
+			update_caret
+		end
 		redraw
 	end
 end
