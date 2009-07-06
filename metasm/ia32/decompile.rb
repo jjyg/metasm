@@ -296,7 +296,7 @@ class Ia32
 					end
 					binding.delete :eax
 					e = C::CExpression[f, :funcall, args]
-					e = C::CExpression[ce[:eax], :'=', e, f.type.type] if deps[b].include? :eax
+					e = C::CExpression[ce[:eax], :'=', e, f.type.type] if deps[b].include? :eax and f.type.type != C::BaseType.new(:void)
 					stmts << e
 				when 'jmp'
 					#if di.comment.to_a.include? 'switch'
@@ -431,7 +431,7 @@ class Ia32
 		end
 
 		if not f = dcmp.dasm.function[entry] or not f.return_address
-			func.add_attribute 'noreturn'
+			#func.add_attribute 'noreturn'
 		else
 			adj = f.return_address.map { |ra| dcmp.dasm.backtrace(:esp, ra, :include_start => true, :stopaddr => entry) }.flatten.uniq
 			if adj.length == 1 and so = Expression[adj.first, :-, :esp].reduce and so.kind_of? ::Integer
@@ -442,7 +442,7 @@ class Ia32
 				when a.find_all { |fa| fa.stackoff }.length
 					func.add_attribute 'stdcall' if not func.has_attribute('fastcall')
 				else
-					func.add_attribute "stackoff:#{so}"
+					func.add_attribute "stackoff:#{so*dcmp.dasm.cpu.size/8}"
 				end
 			else
 				func.add_attribute "breakstack:#{adj.inspect}"

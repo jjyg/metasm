@@ -27,6 +27,8 @@
 require 'metasm'
 require 'optparse'
 
+$VERBOSE = true
+
 # parse arguments
 opts = {}
 OptionParser.new { |opt|
@@ -37,7 +39,8 @@ OptionParser.new { |opt|
 	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--map <mapfile>') { |f| opts[:map] = f }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
-	opt.on('-v', '--verbose') { $VERBOSE = true }
+	opt.on('-v', '--verbose') { $VERBOSE = true }	# default
+	opt.on('-q', '--no-verbose') { $VERBOSE = false }
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
 }.parse!(ARGV)
 

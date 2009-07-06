@@ -3,6 +3,8 @@ require 'metasm/parse_c'
 
 module Metasm
 class C::Variable; attr_accessor :stackoff; end
+class C::Block; attr_accessor :stackoff_type, :stackoff_name; end
+class DecodedFunction; attr_accessor :stackoff_type, :stackoff_name; end
 class Decompiler
 	# TODO add methods to C::CExpr
 	AssignOp = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'^=', :'&=', :'|=', :'>>=', :'<<=', :'++', :'--']
@@ -71,6 +73,11 @@ class Decompiler
 		deps = @dasm.cpu.decompile_func_finddeps(self, myblocks, func)
 
 		scope = func.initializer = C::Block.new(@c_parser.toplevel)
+		if df = @dasm.function[entry]
+			scope.stackoff_name = df.stackoff_name ||= {}
+			scope.stackoff_type = df.stackoff_type ||= {}
+		end
+
 		# di blocks => raw c statements, declare variables
 		@dasm.cpu.decompile_blocks(self, myblocks, deps, func)
 
@@ -114,7 +121,7 @@ class Decompiler
 			end
 			while curoff > argoff
 				wantarg = C::Variable.new
-				wantarg.name = stackoff_to_varname(argoff)
+				wantarg.name = scope.stackoff_name[argoff] || stackoff_to_varname(argoff)
 				wantarg.type = C::BaseType.new(:int)
 				wantarg.attributes = ['unused']
 				func.type.args << wantarg
@@ -156,9 +163,31 @@ class Decompiler
 	def new_global_var(addr, type)
 		return if not type.pointer?
 
+
 		# TODO check overlap with alreadydefined globals
 
 		ptype = type.untypedef.type
+		if ptype.kind_of? C::Function
+			addr = @dasm.normalize(addr)
+			name = @dasm.auto_label_at(addr, 'sub')
+			if @dasm.get_section_at(addr)
+				@dasm.disassemble(addr) if not @dasm.decoded[addr]
+				f = @dasm.function[addr] ||= DecodedFunction.new
+				f.stackoff_name ||= {}
+				f.stackoff_type ||= {}
+				if not @c_parser.toplevel.symbol[name]
+					aoff = @c_parser.typesize[:ptr]
+					ptype.args.to_a.each { |a|
+						f.stackoff_type[aoff] ||= a.type
+						f.stackoff_name[aoff] ||= a.name if a.name
+						aoff += @c_parser.sizeof(a)	# ary ?
+					}
+					decompile_func(addr)
+				# else redecompile with new prototye ?
+				end
+			end
+		end
+
 		name = case tsz = @c_parser.sizeof(nil, ptype)
 		when 1; 'byte'
 		when 2; 'word'
@@ -302,7 +331,6 @@ class Decompiler
 
 	# give a name to a stackoffset (relative to start of func)
 	# 4 => :arg_0, -8 => :var_4 etc
-	# TODO do not encode off in varname, use a hash in e.g. DecodedFunction (allows user-defined varnames & more robust)
 	def stackoff_to_varname(off)
 		if off >= @c_parser.typesize[:ptr]; 'arg_%X' % ( off-@c_parser.typesize[:ptr])	#  4 => arg_0,  8 => arg_4..
 		elsif off > 0; 'arg_0%X' % off
@@ -980,20 +1008,32 @@ class Decompiler
 	# patch scope to transform :frameoff-x into &var_x
 	def namestackvars(scope)
 		off2var = {}
+		newvar = lambda { |o, n|
+			if not v = off2var[o]
+				v = off2var[o] = C::Variable.new
+				v.type = C::BaseType.new(:void)
+				v.name = n
+				v.stackoff = o
+				scope.symbol[v.name] = v
+				scope.statements << C::Declaration.new(v)
+			end
+			v
+		}
+
+		scope.stackoff_name.each { |o, n|
+			newvar[o, n]
+		}
+		scope.stackoff_type.each { |o, n|
+			newvar[o, stackoff_to_varname(o)]
+		}
+
 		walk_ce(scope) { |e|
 			next if e.op != :+ and e.op != :-
 			next if not e.lexpr.kind_of? C::Variable or e.lexpr.name != 'frameptr'
 			next if not e.rexpr.kind_of? C::CExpression or e.rexpr.op or not e.rexpr.rexpr.kind_of? ::Integer
 			off = e.rexpr.rexpr
 			off = -off if e.op == :-
-			if not v = off2var[off]
-				v = off2var[off] = C::Variable.new
-				v.type = C::BaseType.new(:void)
-				v.name = stackoff_to_varname(off)
-				v.stackoff = off
-				scope.symbol[v.name] = v
-				scope.statements << C::Declaration.new(v)
-			end
+			v = newvar[off, stackoff_to_varname(off)]
 			e.replace C::CExpression[:&, v]
 		}
 	end
@@ -1003,7 +1043,6 @@ class Decompiler
 	def decompile_c_types(scope)
 		return if forbid_decompile_types
 
-		# TODO allow user-predefined types (args/local vars) (XXX how does that mix with aliases ?)
 		# TODO *(int8*)(ptr+8); *(int32*)(ptr+12) => automatic struct
 
 		# name => type
@@ -1160,6 +1199,13 @@ class Decompiler
 		}
 
 		# put all those macros in use
+		# use user-defined types first
+		scope.symbol.each_value { |v|
+			next if not v.kind_of? C::Variable or not v.stackoff or not t = scope.stackoff_type[v.stackoff]
+			known_type[v, t]
+		}
+
+		# try to infer types from C semantics
 		walk_ce(scope) { |ce|
 			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and ce.rexpr.rexpr.abs < 0x10000 and (not ce.lexpr.kind_of? C::CExpression or ce.lexpr.op != :'*' or ce.lexpr.lexpr)
 				# var = int

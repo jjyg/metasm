@@ -141,7 +141,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			x += @layout.pixel_size[0]
 		}
 
-		if f = curfunc and f.initializer.kind_of? C::Block
+		if f = curfunc and f.kind_of? C::Variable and f.initializer.kind_of? C::Block
 			keyword_re = /\b(#{C::Keyword.keys.join('|')})\b/
 			intrinsic_re = /\b(intrinsic_\w+)\b/
 			lv = f.initializer.symbol.keys
@@ -225,28 +225,32 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
 		when GDK_n	# rename local/global variable
-			f = curfunc.initializer
+			f = curfunc.initializer if curfunc and curfunc.initializer.kind_of? C::Block
 			n = @hl_word
-			if f.symbol[n] or f.outer.symbol[n]
-				@parent_widget.inputbox("new name for #{n}") { |v|
-					next if v !~ /^[a-z_][a-z_0-9]*$/i
-					if f.symbol[n]
+			if (f and f.symbol[n]) or @dasm.c_parser.toplevel.symbol[n]
+				@parent_widget.inputbox("new name for #{n}", :text => n) { |v|
+					if v !~ /^[a-z_$][a-z_0-9$]*$/i
+						@parent_widget.messagebox("invalid name #{v.inspect} !")
+						next
+					end
+					if f and f.symbol[n]
 						# TODO add/update comment to the asm instrs
 						s = f.symbol[v] = f.symbol.delete(n)
+						f.stackoff_name[s.stackoff] = v if s.stackoff
 					elsif f.outer.symbol[n]
 						@dasm.rename_label(n, v)
 						s = f.outer.symbol[v] = f.outer.symbol.delete(n)
 						@curaddr = v if @curaddr == n
 					end
 					s.name = v
-					redraw
+					gui_update
 				}
 			end
 		when GDK_t
-			f = curfunc.initializer
+			f = curfunc.initializer if curfunc and curfunc.initializer.kind_of? C::Block
 			n = @hl_word
-			if s = f.symbol[n] || f.outer.symbol[n]
-				@parent_widget.inputbox("new type for #{n}", s.type.to_s) { |t|
+			if (f and s = f.symbol[n]) or s = @dasm.c_parser.toplevel.symbol[n]
+				@parent_widget.inputbox("new type for #{n}", :text => s.type.to_s) { |t|
 					# TODO persistence (store it in
 					#  @dasm.function[@curaddr].stackoff_type[v.stackoff] or whatever
 					#  patch #decompile to use it)
