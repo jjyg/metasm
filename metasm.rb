@@ -11,6 +11,7 @@ def self.const_missing(c)
 	# constant defined in the same file as another
 	cst = {
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',
+		'X64' => 'X86_64',
 		'UniversalBinary' => 'MachO', 'COFFArchive' => 'COFF',
 		'PTrace32' => 'LinOS', 'GNUExports' => 'LinOS',
 		'LoadedELF' => 'ELF', 'LoadedPE' => 'PE',
@@ -22,6 +23,7 @@ def self.const_missing(c)
 
 	files = {
 		'Ia32' => 'ia32', 'MIPS' => 'mips', 'PowerPC' => 'ppc',
+		'X86_64' => 'x86_64',
 		'C' => ['parse_c', 'compile_c'],
 		'MZ' => 'exe_format/mz', 'PE' => 'exe_format/pe',
 		'ELF' => ['exe_format/elf_encode', 'exe_format/elf_decode'],

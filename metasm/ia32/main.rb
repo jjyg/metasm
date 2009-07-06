@@ -14,11 +14,7 @@ class Ia32 < CPU
 
 	# some ruby magic to declare classes with index -> name association (registers)
 	class Argument
-		@simple_list = []
-		@double_list = []
 		class << self
-			# for Argument
-			attr_accessor :simple_list, :double_list
 			# for subclasses
 			attr_accessor :i_to_s, :s_to_i
 		end
@@ -26,8 +22,6 @@ class Ia32 < CPU
 		private
 		# index -> name, name -> index
 		def self.simple_map(a)
-			Argument.simple_list << self
-
 			# { 1 => 'dr1' }
 			@i_to_s = Hash[*a.flatten]
 			# { 'dr1' => 1 }
@@ -46,8 +40,6 @@ class Ia32 < CPU
 
 		# size -> (index -> name), name -> [index, size]
 		def self.double_map(h)
-			Argument.double_list << self
-
 			# { 32 => { 1 => 'ecx' } }
 			@i_to_s = h
 			# { 'ecx' => [1, 32] }
@@ -194,13 +186,19 @@ class Ia32 < CPU
 	# - endianness [:little]
 	def initialize(*a)
 		super()
-		@size = (a & [16, 32, 64]).first || 32
+		@size = (a & [16, 32]).first || 32
 		a.delete @size
 		@endianness = (a & [:big, :little]).first || :little
 		a.delete @endianness
 		@family = a.pop || :latest
 		raise "Invalid arguments #{a.inspect}" if not a.empty?
 		raise "Invalid Ia32 family #{@family.inspect}" if not respond_to?("init_#@family")
+	end
+
+	# wrapper to transparently forward Ia32.new(64) to X86_64.new
+	def self.new(*a)
+		return X86_64.new(*a) if a.include? 64 and not self.kind_of? X86_64
+		super(*a)
 	end
 
 	# initializes the @opcode_list according to @family
@@ -211,12 +209,22 @@ class Ia32 < CPU
 
 	# defines some C parser preprocessor macros to say who we are:
 	# _M_IX86 = 500, _X86_, __i386__
-	def tune_cparser(cp)
+	# pass any value in nodefine to just call super w/o defining anything of our own
+	def tune_cparser(cp, nodefine = false)
 		super(cp)
+		return if nodefine
 		cp.lexer.define_weak('_M_IX86', 500)
 		cp.lexer.define_weak('_X86_')
 		cp.lexer.define_weak('__i386__')
 	end
+
+	# returns a Reg object if the arg is a valid register (eg 'ax' => Reg.new(0, 16))
+	# returns nil if str is invalid
+	def str_to_reg(str)
+		Reg.from_str(str) if Reg.s_to_i.has_key? str
+	end
 end
+
+X86 = Ia32
 
 end

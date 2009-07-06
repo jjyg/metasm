@@ -12,15 +12,15 @@ module Metasm
 class Ia32
 	class Argument
 		include Renderable
-
-		@simple_list.each { |c| c.class_eval {
-			def render ; [self.class.i_to_s[@val]] end
-		} }
-		@double_list.each { |c| c.class_eval {
-			def render ; [self.class.i_to_s[@sz][@val]] end
-			def context ; {'set sz' => lambda { |s| @sz = s }} end
-		} }
 	end
+
+	[SegReg, DbgReg, CtrlReg, FpReg].each { |c| c.class_eval {
+		def render ; [self.class.i_to_s[@val]] end
+	} }
+	[Reg, SimdReg].each { |c| c.class_eval {
+		def render ; [self.class.i_to_s[@sz][@val]] end
+		def context ; {'set sz' => lambda { |s| @sz = s }} end
+	} }
 
 	class Farptr
 		def render
@@ -41,10 +41,7 @@ class Ia32
 
 		def render
 			r = []
-			# is 'dword ptr' needed ?
-#			if not instr or not instr.args.grep(Reg).find {|a| a.sz == @sz}
 			r << ( qualifier(@sz) << ' ptr ' )
-#			end
 			r << @seg << ':' if seg
 
 			e = nil
@@ -56,8 +53,7 @@ class Ia32
 
 		def context
 			{'set targetsz' => lambda { |s| @sz = s },
-			 'set seg' => lambda { |s| @seg = Seg.new s }
-			}
+			 'set seg' => lambda { |s| @seg = Seg.new s }}
 		end
 	end
 
