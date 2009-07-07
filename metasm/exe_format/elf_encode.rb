@@ -635,6 +635,7 @@ class ELF
 	def encode(type='EXEC')
 		@header.type ||= type
 		@header.machine ||= case @cpu
+				when X86_64; 'X86_64'
 				when Ia32; '386'
 				when MIPS; 'MIPS'
 				end

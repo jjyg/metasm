@@ -615,6 +615,7 @@ class ELF
 	# returns a metasm CPU object corresponding to +header.machine+
 	def cpu_from_headers
 		case @header.machine
+		when 'X86_64'; X86_64.new
 		when '386'; Ia32.new
 		when 'MIPS'; MIPS.new @endianness
 		else raise "unsupported cpu #{@header.machine}"
