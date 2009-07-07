@@ -183,7 +183,7 @@ class Decompiler
 					ptype.args.to_a.each { |a|
 						f.stackoff_type[aoff] ||= a.type
 						f.stackoff_name[aoff] ||= a.name if a.name
-						aoff += @c_parser.sizeof(a)	# ary ?
+						aoff += sizeof(a)	# ary ?
 					}
 					decompile_func(addr)
 				# else redecompile with new prototye ?
@@ -191,7 +191,7 @@ class Decompiler
 			end
 		end
 
-		name = case tsz = @c_parser.sizeof(nil, ptype)
+		name = case tsz = sizeof(nil, ptype)
 		when 1; 'byte'
 		when 2; 'word'
 		when 4; 'dword'
@@ -791,7 +791,7 @@ class Decompiler
 			next if not r.kind_of? ::Integer or not l.kind_of? C::CExpression or l.op != :* or not l.lexpr
 			lr, ll = uncast[l.rexpr], uncast[l.lexpr]
 			lr, ll = ll, lr if not ll.kind_of? ::Integer
-			next if ll != @c_parser.sizeof(nil, C::Pointer.new(C::BaseType.new(:void)))
+			next if ll != sizeof(nil, C::Pointer.new(C::BaseType.new(:void)))
 			base, index = r, lr
 			if s.test.kind_of? C::CExpression and (s.test.op == :<= or s.test.op == :<) and s.test.lexpr == index and
 					s.test.rexpr.kind_of? C::CExpression and not s.test.rexpr.op and s.test.rexpr.rexpr.kind_of? ::Integer
@@ -1093,7 +1093,7 @@ class Decompiler
 			next if propagating.include? n
 			o = scope.symbol[n].stackoff
 			next if t0 = types[n] and not better_type[t, t0]
-			next if o and (t.integral? or t.pointer?) and o % @c_parser.sizeof(nil, t) != 0 # keep vars aligned
+			next if o and (t.integral? or t.pointer?) and o % sizeof(nil, t) != 0 # keep vars aligned
 			types[n] = t
 			next if t == t0
 			propagating << n
@@ -1159,7 +1159,7 @@ class Decompiler
 		propagate_type = lambda { |var, type|
 			walk_ce(scope) { |ce|
 				# char x; x & 255 => uchar x
-				if ce.op == :'&' and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
+				if ce.op == :'&' and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*sizeof(ce.lexpr))) - 1
 					known_type[ce.lexpr, C::BaseType.new(ce.lexpr.type.name, :unsigned)]
 				end
 
@@ -1256,13 +1256,13 @@ class Decompiler
 		}
 
 		maycast = lambda { |v, e|
-			if @c_parser.sizeof(v) != @c_parser.sizeof(e)
+			if sizeof(v) != sizeof(e)
 				v = C::CExpression[:*, [[:&, v], C::Pointer.new(e.type)]]
 			end
 			v
 		}
 		maycast_p = lambda { |v, e|
-			if not e.type.pointer? or @c_parser.sizeof(v) != @c_parser.sizeof(nil, e.type.untypedef.type)
+			if not e.type.pointer? or sizeof(v) != sizeof(nil, e.type.untypedef.type)
 				C::CExpression[[:&, v], e.type]
 			else
 				C::CExpression[:&, v]
@@ -1330,8 +1330,8 @@ class Decompiler
 		# st is a struct, ptr is an expr pointing to a struct, off is a numeric offset from ptr
 		# TODO unions
 		structoffset = lambda { |st, ptr, off|
-			tabidx = off / @c_parser.sizeof(nil, st)
-			off -= tabidx * @c_parser.sizeof(nil, st)
+			tabidx = off / sizeof(nil, st)
+			off -= tabidx * sizeof(nil, st)
 
 			suboff = 0
 			submemb = lambda { |sm| sm.name ? sm : sm.kind_of?(C::Union) ? sm.members.map { |ssm| submemb[ssm] } : [] }
@@ -1339,12 +1339,12 @@ class Decompiler
 			if not sm = mbs.find { |m|
 				mo = st.offsetof(@c_parser, m.name)
 				suboff = off - mo
-				true if mo <= off and mo+@c_parser.sizeof(m) > off
+				true if mo <= off and mo+sizeof(m) > off
 			}
 				# not in a member, just derivate from the struct ptr
 				ptr = C::CExpression[:&, [ptr, :'[]', [tabidx]]] if tabidx != 0
 				C::CExpression[[[ptr], C::Pointer.new(C::BaseType.new(:__int8))], :+, [off]]
-				#C::CExpression[[[ptr], C::Pointer.new(C::BaseType.new(:__int8))], :+, off + tabidx * @c_parser.sizeof(nil, st)]
+				#C::CExpression[[[ptr], C::Pointer.new(C::BaseType.new(:__int8))], :+, off + tabidx * sizeof(nil, st)]
 			else
 				if tabidx != 0
 					ptr = C::CExpression[[ptr, :'[]', [tabidx]], :'.', sm.name]
@@ -1377,7 +1377,7 @@ class Decompiler
 			if ce.op == :* and not ce.lexpr and ce.rexpr.type.pointer? and ce.rexpr.type.untypedef.type.untypedef.kind_of? C::Struct
 				s = ce.rexpr.type.untypedef.type.untypedef
 				m = s.members.find { |m_| s.offsetof(@c_parser, m_.name) == 0 }
-				if @c_parser.sizeof(m) != @c_parser.sizeof(ce)
+				if sizeof(m) != sizeof(ce)
 					ce.rexpr = C::CExpression[[ce.rexpr, C::Pointer.new(s)], C::Pointer.new(ce.type)]
 					next
 				end
@@ -1410,7 +1410,7 @@ class Decompiler
 				ce.replace x
 			elsif [:+, :-, :'+=', :'-='].include? ce.op and ce.rexpr.kind_of? C::CExpression and ((not ce.rexpr.op and i = ce.rexpr.rexpr) or
 					(ce.rexpr.op == :* and i = ce.rexpr.lexpr and ((i.kind_of? C::CExpression and not i.op and i = i.rexpr) or true))) and
-					i.kind_of? ::Integer and psz = @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) and i % psz == 0
+					i.kind_of? ::Integer and psz = sizeof(nil, ce.lexpr.type.untypedef.type) and i % psz == 0
 				# ptr += 4 => ptr += 1
 				if not ce.rexpr.op
 					ce.rexpr.rexpr /= psz
@@ -1422,11 +1422,11 @@ class Decompiler
 				end
 				ce.type = ce.lexpr.type
 
-			elsif (ce.op == :+ or ce.op == :-) and @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) != 1
+			elsif (ce.op == :+ or ce.op == :-) and sizeof(nil, ce.lexpr.type.untypedef.type) != 1
 				# ptr+x => (ptrtype*)(((__int8*)ptr)+x)
 				# XXX create struct ?
 				ce.rexpr = C::CExpression[ce.rexpr, C::BaseType.new(:int)] if not ce.rexpr.type.integral?
-				if @c_parser.sizeof(nil, ce.lexpr.type.untypedef.type) != 1
+				if sizeof(nil, ce.lexpr.type.untypedef.type) != 1
 					ptype = ce.lexpr.type
 					p = C::CExpression[[ce.lexpr], C::Pointer.new(C::BaseType.new(:__int8))]
 					ce.replace C::CExpression[[p, ce.op, ce.rexpr, p.type], ptype]
@@ -1441,7 +1441,7 @@ class Decompiler
 		varinfo = {}
 		scope.symbol.each_value { |var|
 			next if not off = var.stackoff
-			len = @c_parser.sizeof(var)
+			len = sizeof(var)
 			varinfo[var] = [off, len]
 		}
 
@@ -1483,7 +1483,7 @@ class Decompiler
 			t1 = t1.untypedef
 			t2 = t2.untypedef
 			t1 == t2 or
-			(t1.kind_of? C::BaseType and t1.integral? and t2.kind_of? C::BaseType and t2.integral? and @c_parser.sizeof(nil, t1) == @c_parser.sizeof(nil, t2)) or
+			(t1.kind_of? C::BaseType and t1.integral? and t2.kind_of? C::BaseType and t2.integral? and sizeof(nil, t1) == sizeof(nil, t2)) or
 			(t1.pointer? and t2.pointer? and sametype[t1.type, t2.type])
 		}
 
@@ -1497,7 +1497,7 @@ class Decompiler
 
 			# int x + 0xffffffff -> x-1
 			if (ce.op == :+ or ce.op == :- or ce.op == :'+=' or ce.op == :'-=') and ce.lexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
-					ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr)))-1
+					ce.rexpr.rexpr == (1 << (8*sizeof(ce.lexpr)))-1
 				ce.op = {:+ => :-, :- => :+, :'+=' => :'-=', :'-=' => :'+='}[ce.op]
 				ce.rexpr.rexpr = 1
 			end
@@ -1510,7 +1510,7 @@ class Decompiler
 
 			# char x; x & 255 => x
 			if ce.op == :& and ce.lexpr and (ce.lexpr.type.integral? or ce.lexpr.type.pointer?) and ce.rexpr.kind_of? C::CExpression and
-					not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer and m = (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1 and
+					not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer and m = (1 << (8*sizeof(ce.lexpr))) - 1 and
 					ce.rexpr.rexpr & m == m
 				ce.replace C::CExpression[ce.lexpr]
 			end
@@ -2024,7 +2024,7 @@ class Decompiler
 		walk_ce(scope, true) { |ce|
 			# redo some simplification that may become available after variable propagation
 			# int8 & 255  =>  int8
-			if ce.op == :& and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*@c_parser.sizeof(ce.lexpr))) - 1
+			if ce.op == :& and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*sizeof(ce.lexpr))) - 1
 				ce.replace C::CExpression[ce.lexpr]
 			end
 
@@ -2113,7 +2113,7 @@ class Decompiler
 			r = ce.rexpr
 			# compare type.type cause var is an Array and the cast is a Pointer
 			countderef[r.rexpr.name] += 1 if r.kind_of? C::CExpression and not r.op and r.rexpr.kind_of? C::Variable and
-		       			@c_parser.sizeof(nil, r.type.type) == @c_parser.sizeof(nil, r.rexpr.type.type) rescue nil
+		       			sizeof(nil, r.type.type) == sizeof(nil, r.rexpr.type.type) rescue nil
 		}
 		vars.each { |n|
 			if countref[n] == countderef[n]
@@ -2219,6 +2219,12 @@ class Decompiler
 		when C::Declaration
 			walk(scope.var.initializer, post, &b) if scope.var.initializer
 		end
+	end
+
+	# forwards to @c_parser, handles cast to Array (these should not happen btw...)
+	def sizeof(var, type=var.type)
+		return @c_parser.typesize[:ptr] if type.kind_of? C::Array and not var.kind_of? C::Variable
+		@c_parser.sizeof(var, type)
 	end
 end
 end
