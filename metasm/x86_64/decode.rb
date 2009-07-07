@@ -42,7 +42,7 @@ class X86_64
 				b = Reg.new(m, adsz)
 			end
 
-			case mod
+			case m
 			when 0; itype = :i32 if m == 5
 			when 1; itype = :i8
 			when 2; itype = :i32
@@ -161,11 +161,15 @@ class X86_64
 	end
 
 	def opsz(di)
-		if di.instruction.prefix[:rex_w]; 64
-		elsif di.instruction.prefix[:opsz]; 16
-		elsif di.opcode.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/; 64
+		if di and di.instruction.prefix and di.instruction.prefix[:rex_w]; 64
+		elsif di and di.instruction.prefix and di.instruction.prefix[:opsz]; 16
+		elsif di and di.opcode.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/; 64
 		else 32
 		end
+	end
+
+	def register_symbols
+		[:rax, :rcx, :rdx, :rbx, :rsp, :rbp, :rsi, :rdi, :r8, :r9, :r10, :r11, :r12, :r13, :r14, :r15]
 	end
 
 	# populate the @backtrace_binding hash with default values

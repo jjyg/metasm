@@ -197,7 +197,7 @@ class Ia32 < CPU
 
 	# wrapper to transparently forward Ia32.new(64) to X86_64.new
 	def self.new(*a)
-		return X86_64.new(*a) if a.include? 64 and not self.kind_of? X86_64
+		return X86_64.new(*a) if a.include? 64 and self == Ia32
 		super(*a)
 	end
 

@@ -4,6 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
+require 'metasm/x86_64/main'
 require 'metasm/ia32/opcodes'
 
 module Metasm
@@ -16,7 +17,7 @@ class X86_64
 
 	def init_386_common_only
 		super()
-		@opcode_list.delete_if { |o| o.bin == [0x40] }	# now REX prefix
+		@opcode_list.delete_if { |o| o.bin[0].to_i & 0xf0 == 0x40 }	# now REX prefix
 		# TODO XXX mov i64 ?
 	end
 
@@ -24,6 +25,7 @@ class X86_64
 	def init_x8664_only
 		# TODO XXX mov i64 ?
 		# should undef all those
+		init_386_common_only
 		init_386_only
 		# 387 is dead!
 		init_486_only
@@ -32,7 +34,6 @@ class X86_64
 		init_sse_only
 		init_sse2_only
 
-		@opcode_list.delete_if { |o| o.bin == [0x40] }	# now REX prefix
 		@opcode_list.delete_if { |o| o.args.include? :modrmmx }	# mmx is dead!
 		@opcode_list.delete_if { |o| o.name == 'loadall' }
 

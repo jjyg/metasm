@@ -150,7 +150,7 @@ class X86_64
 				adsz = 32	# XXX used only with mrm_imm (mov eax, [addr])
 			end
 			pfx << [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][mrm.seg.val] if mrm.seg
-		elsif op.props[:adsz] and and op.propz[:adsz] == 32
+		elsif op.props[:adsz] and op.propz[:adsz] == 32
 			pfx << 0x67
 			adsz = 32
 		end
