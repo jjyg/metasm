@@ -18,6 +18,7 @@ class Ia32
 		ebp_frame = true
 
 		# pretrace esp and ebp for each function block (cleared later)
+		# TODO with more than 1 unknown __stdcall ext func per path, esp -> unknown, which makes very ugly C (*esp-- = 12...); add heuristics ?
 		blocks.each { |block|
 			blockstart = block.address
 			if not dasm.address_binding[blockstart]

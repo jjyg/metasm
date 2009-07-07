@@ -76,6 +76,9 @@ class Decompiler
 		if df = @dasm.function[entry]
 			scope.stackoff_name = df.stackoff_name ||= {}
 			scope.stackoff_type = df.stackoff_type ||= {}
+		else
+			scope.stackoff_name = {}
+			scope.stackoff_type = {}
 		end
 
 		# di blocks => raw c statements, declare variables
@@ -1020,12 +1023,8 @@ class Decompiler
 			v
 		}
 
-		scope.stackoff_name.each { |o, n|
-			newvar[o, n]
-		}
-		scope.stackoff_type.each { |o, n|
-			newvar[o, stackoff_to_varname(o)]
-		}
+		scope.stackoff_name.each { |o, n| newvar[o, n] }
+		scope.stackoff_type.each { |o, t| newvar[o, stackoff_to_varname(o)] }
 
 		walk_ce(scope) { |e|
 			next if e.op != :+ and e.op != :-

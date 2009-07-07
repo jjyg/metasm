@@ -85,7 +85,9 @@ end
 if opts[:outfile]
 	File.open(opts[:outfile], 'w') { |fd|
 		fd.puts dcmp.c_parser if opts[:decompile]
+		fd.puts "#if 0" if opts[:decompile]
 		dasm.dump(!opts[:nodata]) { |l| fd.puts l }
+		fd.puts "#endif" if opts[:decompile]
 	}
 else
 	if opts[:decompile]
