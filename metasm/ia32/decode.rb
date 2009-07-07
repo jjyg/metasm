@@ -408,7 +408,7 @@ class Ia32
 					b
 				}
 			when 'leave'; lambda { |di| { ebp => Indirection[[ebp], opsz(di)/8, di.address], esp => Expression[ebp, :+, opsz(di)/8] } }
-			when 'aaa'; lambda { |di| { eax => Expression::Unknown } }
+			when 'aaa'; lambda { |di| { eax => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when 'imul'
 				lambda { |di, *a|
 					if a[2]; e = Expression[a[1], :*, a[2]]
@@ -416,7 +416,7 @@ class Ia32
 					end
 					{ a[0] => e }
 				}
-			when 'rdtsc'; lambda { |di| { eax => Expression::Unknown, edx => Expression::Unknown } }
+			when 'rdtsc'; lambda { |di| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when /^(stos|movs|lods|scas|cmps)[bwd]$/
 				lambda { |di|
 					op =~ /^(stos|movs|lods|scas|cmps)([bwd])$/
@@ -531,7 +531,7 @@ class Ia32
 					case op
 					when 'neg'; ret[:eflag_c] = Expression[[res, :&, mask[di]], :'!=', 0]
 					when 'inc', 'dec'	# don't touch carry flag
-					else ret[:eflag_c] = Expression::Unknown
+					else ret[:eflag_c] = Expression::Unknown	# :incomplete_binding ?
 					end
 					ret[:eflag_o] = case op
 					when 'inc'; Expression[[a0, :&, mask[di]], :==, mask[di] >> 1]
@@ -544,7 +544,7 @@ class Ia32
 			when 'imul', 'mul', 'idiv', 'div', /^(scas|cmps)[bwdq]$/
 				lambda { |di, *a|
 					ret = (binding ? binding[di, *a] : {})
-					ret[:eflag_z] = ret[:eflag_s] = ret[:eflag_c] = ret[:eflag_o] = Expression::Unknown
+					ret[:eflag_z] = ret[:eflag_s] = ret[:eflag_c] = ret[:eflag_o] = Expression::Unknown	# :incomplete_binding ?
 					ret
 				}
 			end
@@ -608,7 +608,7 @@ class Ia32
 			when Indirection, Symbol; { a[0] => Expression::Unknown }
 			when Expression; (x = a[0].externals.first) ? { x => Expression::Unknown } : {}
 			else {}
-			end
+			end.update(:incomplete_binding => Expression[1])
 		end
 	end
 

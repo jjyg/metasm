@@ -329,24 +329,6 @@ class Ia32
 						stmts << ret
 						to = []
 					end
-				# XXX bouh
-				# TODO mark instructions for which bt_binding is accurate
-				when 'push', 'pop', 'mov', 'add', 'sub', 'or', 'xor', 'and', 'not', 'mul', 'div', 'idiv', 'imul', 'shr', 'shl', 'sar', 'test', 'cmp', 'inc', 'dec', 'lea', 'movzx', 'movsx', 'neg', 'cdq', 'leave', 'nop'
-					bd = get_fwdemu_binding(di)
-					bd.each { |k, v|
-						if k.kind_of? ::Symbol #and (not deps[b].include? k or di.block.list[didx+1..-1].find { |ddi| ddi.backtrace_binding[k] })
-							ops << [k, v]
-						else
-							stmts << ceb[k, :'=', v]
-							binding.delete k
-						end
-					}
-					update = {}
-					bd.each { |k, v|
-						next if not k.kind_of? ::Symbol
-						update[k] = Expression[Expression[v].bind(binding).reduce]
-					}
-					binding.update update
 				when 'lgdt'
 					if not dcmp.c_parser.toplevel.struct['segment_descriptor']
 						dcmp.c_parser.parse('struct segment_descriptor { __int16 limit; __int16 base0_16; __int8 base16_24; __int8 flags1; __int8 flags2_limit_16_20; __int8 base24_32; };')
@@ -393,8 +375,26 @@ class Ia32
 				when 'sti', 'cli'
 					stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil)
 				else
-					commit[]
-					stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil)
+					bd = get_fwdemu_binding(di)
+					if di.backtrace_binding[:incomplete_binding]
+						commit[]
+						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil)
+					else
+						bd.each { |k, v|
+							if k.kind_of? ::Symbol #and (not deps[b].include? k or di.block.list[didx+1..-1].find { |ddi| ddi.backtrace_binding[k] })
+								ops << [k, v]
+							else
+								stmts << ceb[k, :'=', v]
+								binding.delete k
+							end
+						}
+						update = {}
+						bd.each { |k, v|
+							next if not k.kind_of? ::Symbol
+							update[k] = Expression[Expression[v].bind(binding).reduce]
+						}
+						binding.update update
+					end
 				end
 			}
 			commit[]
