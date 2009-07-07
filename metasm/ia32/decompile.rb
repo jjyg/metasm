@@ -29,13 +29,14 @@ class Ia32
 						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
 					dasm.address_binding[blockstart][:esp] = ee
 				end
-				next if not ebp_frame
-				foo = dasm.backtrace(:ebp, blockstart, :snapshot_addr => funcstart)
-				if foo.length == 1 and ee = foo.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
-						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
-					dasm.address_binding[blockstart][:ebp] = ee
-				else
-					ebp_frame = false	# func does not use ebp as frame ptr, no need to bt for later blocks
+				if ebp_frame
+					foo = dasm.backtrace(:ebp, blockstart, :snapshot_addr => funcstart)
+					if foo.length == 1 and ee = foo.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
+							(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
+						dasm.address_binding[blockstart][:ebp] = ee
+					else
+						ebp_frame = false	# func does not use ebp as frame ptr, no need to bt for later blocks
+					end
 				end
 			end
 
