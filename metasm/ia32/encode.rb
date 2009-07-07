@@ -23,6 +23,7 @@ class Ia32
 		# caller is responsible for setting the adsz
 		# returns an array, 1 element per possible immediate size (for un-reduce()able Expression)
 		def encode(reg = 0, endianness = :little)
+			reg = reg.val if reg.kind_of? Argument
 			case @adsz
 			when 16; encode16(reg, endianness)
 			when 32; encode32(reg, endianness)

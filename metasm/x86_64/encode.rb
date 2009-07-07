@@ -12,12 +12,7 @@ module Metasm
 class X86_64
 	class ModRM
 		def encode(reg = 0, endianness = :little)
-			# 0 => [ [0      ], [1      ], [2      ], [3      ], [:sib      ], [:i32   ], [6      ], [7      ] ], \
-			# 1 => [ [0, :i8 ], [1, :i8 ], [2, :i8 ], [3, :i8 ], [:sib, :i8 ], [5, :i8 ], [6, :i8 ], [7, :i8 ] ], \
-			# 2 => [ [0, :i32], [1, :i32], [2, :i32], [3, :i32], [:sib, :i32], [5, :i32], [6, :i32], [7, :i32] ]
-			#
-			# b => 0  1  2  3  4  5+i|i 6  7
-			# i => 0  1  2  3 nil   5   6  7
+			reg = reg.val if reg.kind_of? Argument
 
 			ret = EncodedData.new << (reg << 3)
 
@@ -31,16 +26,25 @@ class X86_64
 			}
 
 			if not self.b and not self.i
+				# imm only, use sib
+				or_bits[4]
+				imm = self.imm || Expression[0]
+				[ret << ((4 << 3) | 5) << imm.encode(:i32, endianness)]
+
+			elsif self.b.val == 16	# rip+imm
+				# TODO [1*rip+28]
+				raise if self.i	# XXX check
 				or_bits[5]
-				[ret << @imm.encode(:u32, endianness)]
+				imm = self.imm || Expression[0]
+				[ret << imm.encode(:i32, endianness)]
 
 			elsif not self.b and self.s != 1
 				# sib with no b
-				raise EncodeError, "Invalid ModRM #{self}" if @i.val == 4
+				raise EncodeError, "Invalid ModRM #{self}" if @i.val == 4	# XXX 12 ?
 				or_bits[4]
 				s = {8=>3, 4=>2, 2=>1}[@s]
 				imm = self.imm || Expression[0]
-				[ret << ((s << 6) | (@i.val << 3) | 5) << imm.encode(:a32, endianness)]
+				[ret << ((s << 6) | (@i.val_enc << 3) | 5) << imm.encode(:i32, endianness)]
 			else
 				imm = @imm.reduce if self.imm
 				imm = nil if imm == 0
@@ -49,8 +53,8 @@ class X86_64
 					# no sib byte (except for [esp])
 					b = self.b || self.i
 
-					or_bits[b.val]
-					ret << 0x24 if b.val == 4
+					or_bits[b.val_enc]
+					ret << 0x24 if b.val == 4	# XXX val_enc ?
 				else
 					# sib
 					or_bits[4]
@@ -61,10 +65,10 @@ class X86_64
 					raise EncodeError, "Invalid ModRM #{self}" if i.val == 4
 
 					s = {8=>3, 4=>2, 2=>1, 1=>0}[@s]
-					ret << ((s << 6) | (i.val << 3) | b.val)
+					ret << ((s << 6) | (i.val_enc << 3) | b.val_enc)
 				end
 
-				imm ||= 0 if b.val == 5
+				imm ||= 0 if b.val_enc == 5
 				if imm
 					case Expression.in_range?(imm, :i8)
 					when true
@@ -111,8 +115,13 @@ class X86_64
 		}.compact.pack 'C*'
 		pfx << op.props[:needpfx] if op.props[:needpfx]
 
+		rex_w = rex_r = rex_x = rex_b = nil
 		if op.name == 'movsx' or op.name == 'movzx'
-			pfx << 0x66 if @size == 48-i.args[0].sz
+			case i.args[0].sz
+			when 64; rex_w = 1
+			when 32
+			when 16; pfx << 0x66
+			end
 		else
 			opsz = op.props[:argsz] || i.prefix[:sz]
 			oi.each { |oa, ia|
@@ -122,23 +131,28 @@ class X86_64
 					opsz = ia.sz
 				end
 			}
-			pfx << 0x66 if (opsz and @size == 48 - opsz) or (op.props[:opsz] and op.props[:opsz] != @size)
-			if op.props[:opsz] and @size == 48 - op.props[:opsz]
-				opsz = op.props[:opsz]
+			opsz = op.props[:opsz] if op.props[:opsz]	# XXX ?
+			case opsz
+			when 64; rex_w = 1	# TODO check autopromoted opcodes (push etc)
+			when 32
+			when 16; pfx << 0x66
 			end
 		end
 		opsz ||= @size
 
-		# addrsize override / segment override
+		# addrsize override / segment override / rex_bx
 		if mrm = i.args.grep(ModRM).first
-			if (mrm.b and mrm.b.sz != @size) or (mrm.i and mrm.i.sz != @size)
+			mrm.encode(0, @endianness)	# may reorder b/i, which must be correct for rex
+			rex_b = 1 if mrm.b and mrm.b.val_rex.to_i > 0
+			rex_x = 1 if mrm.i and mrm.i.val_rex.to_i > 0
+			if (mrm.b and mrm.b.sz == 32) or (mrm.i and mrm.i.sz == 32)
 				pfx << 0x67
-				adsz = 48 - @size
+				adsz = 32	# XXX used only with mrm_imm (mov eax, [addr])
 			end
 			pfx << [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][mrm.seg.val] if mrm.seg
-		elsif op.props[:adsz] and @size == 48 - op.props[:adsz]
+		elsif op.props[:adsz] and and op.propz[:adsz] == 32
 			pfx << 0x67
-			adsz = 48 - @size
+			adsz = 32
 		end
 		adsz ||= @size
 
@@ -149,10 +163,12 @@ class X86_64
 		postponed = []
 		oi.each { |oa, ia|
 			case oa
-			when :reg, :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regmmx, :regxmm
-				# field arg
-				set_field[oa, ia.val]
-				pfx << 0x66 if oa == :regmmx and op.props[:xmmx] and ia.sz == 128
+			when :reg
+				set_field[oa, ia.val_enc]
+				rex_r = ia.val_rex	# TODO ah bh vs rex
+			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regxmm
+				set_field[oa, ia.val & 7]
+				rex_r = 1 if ia.val > 7
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0
 				# implicit
 			else
@@ -160,7 +176,7 @@ class X86_64
 			end
 		}
 
-		if !(op.args & [:modrm, :modrmA, :modrmxmm, :modrmmmx]).empty?
+		if !(op.args & [:modrm, :modrmA, :modrmxmm]).empty?
 			# reg field of modrm
 			regval = (base[-1] >> 3) & 7
 			base.pop
@@ -174,9 +190,14 @@ class X86_64
 			postponed.first[1] = Expression[target, :-, postlabel]
 		end
 
-		#
-		# append other arguments
-		#
+		if rex_w or rex_r or rex_b or rex_x
+			rex ||= 0x40
+			rex |= 1 if rex_b.to_i > 0
+			rex |= 2 if rex_x.to_i > 0
+			rex |= 4 if rex_r.to_i > 0
+			rex |= 8 if rex_w.to_i > 0
+		end
+		pfx << rex if rex
 		ret = EncodedData.new(pfx + base.pack('C*'))
 
 		postponed.each { |oa, ia|
@@ -189,9 +210,7 @@ class X86_64
 						if ed.length > 1
 							# we know that no opcode can have more than 1 modrm
 							ary = []
-							ed.each { |m|
-								ary << (ret.dup << m)
-							}
+							ed.each { |m| ary << (ret.dup << m) }
 							ret = ary
 							next
 						else
@@ -202,8 +221,8 @@ class X86_64
 					ed = ModRM.encode_reg(ia, regval)
 				end
 			when :mrm_imm; ed = ia.imm.encode("a#{adsz}".to_sym, @endianness)
-			when :i8, :u8, :u16; ed = ia.encode(oa, @endianness)
-			when :i; ed = ia.encode("a#{opsz}".to_sym, @endianness)
+			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; ed = ia.encode(oa, @endianness)
+			when :i; ed = ia.encode(:i32, @endianness)	# XXX :a32 ?
 			else raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"
 			end
 

@@ -59,6 +59,22 @@ class X86_64 < Ia32
 			# XXX TODO wtf does formula this do ?
 			other.val % (other.sz >> 1) == @val % (@sz >> 1) and (other.sz != @sz or @sz != 8 or other.val == @val)
 		end
+
+		# returns the part of @val to encode in an instruction field
+		def val_enc
+			if @sz == 8 and @val >= 16; @val-12	# ah, bh, ch, dh
+			elsif @val >= 16			# rip
+			else @val & 7				# others
+			end
+		end
+
+		# returns the part of @val to encode in an instruction's rex prefix
+		def val_rex
+			if @sz == 8 and @val >= 16		# ah, bh, ch, dh: rex forbidden
+			elsif @val >= 16			# rip
+			else @val >> 3				# others
+			end
+		end
 	end
 
 	# ModRM represents indirections (eg dword ptr [eax+4*ebx+12h])
@@ -71,6 +87,11 @@ class X86_64 < Ia32
 		# sib: i 4 => no index, b 5 => no base
 	end
 
+	# TODO rtfm, same with CtrlReg
+	# debug register: dr4? dr5? dr8..15 ?
+	#class DbgReg < DbgReg
+	#	simple_map (0..15).map { |i| [i, "dr#{i}"] }
+	#end
 
 	# Create a new instance of an X86 cpu
 	# arguments (any order)
