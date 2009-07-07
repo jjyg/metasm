@@ -464,7 +464,7 @@ class Ia32
 			when 'cld'; lambda { |di| { :eflag_d => Expression[0] } }
 			when 'std'; lambda { |di| { :eflag_d => Expression[1] } }
 			when 'setalc'; lambda { |di| { Reg.new(0, 8).symbolic => Expression[:eflag_c, :*, 0xff] } }
-			when /^set/; lambda { |di, a0| { a0 => Expression[decode_cc_to_expr(op[/^set(.*)/, 1])] } }
+			when /^set/; lambda { |di, *a| { a[0] => Expression[decode_cc_to_expr(op[/^set(.*)/, 1])] } }
 			when /^j/
 				lambda { |di, a0|
 					ret = { 'dummy_metasm_0' => Expression[a0] }	# mark modr/m as read
