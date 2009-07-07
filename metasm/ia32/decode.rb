@@ -146,7 +146,7 @@ class Ia32
 				  (fld = op.fields[:seg3A]  and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg3A] < 4) or
 				  (fld = op.fields[:seg3A] || op.fields[:seg3] and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg3] > 5) or
 				  (fld = op.fields[:modrmA] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
-				  (sz = op.props[:opsz] and opsz(di) != sz)
+				  (sz = op.props[:opsz] and opsz(di) != sz) or
 				  (ndpfx = op.props[:needpfx] and not pfx[:list].to_a.include? ndpfx) or
 				  # return non-ambiguous opcode (eg push.i16 in 32bit mode) / sync with addop_post in opcode.rb
 				  ((op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret') and not op.props[:opsz] and pfx[:opsz]) or
