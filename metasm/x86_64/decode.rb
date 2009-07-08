@@ -129,7 +129,7 @@ class X86_64
 		}
 
 		# sil => bh
-		di.instruction.args.each { |a| a.val += 12 if a.sz == 8 and not pfx[:rex] and a.val >= 4 and a.val <= 8 }
+		di.instruction.args.each { |a| a.val += 12 if a.kind_of? Reg and a.sz == 8 and not pfx[:rex] and a.val >= 4 and a.val <= 8 }
 
 		di.bin_length += edata.ptr - before_ptr
 

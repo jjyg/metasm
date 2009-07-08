@@ -62,7 +62,7 @@ class X86_64
 	# TODO check ah vs dil/r15
 	# XXX imm range?
 	def parse_arg_valid?(o, spec, arg)
-		return if arg.kind_of? ModRM and ((arg.b and arg.b.val == 16 and arg.i) or (ret.i and ret.i.val == 16 and (ret.b or ret.s != 1)))
+		return if arg.kind_of? ModRM and ((arg.b and arg.b.val == 16 and arg.i) or (arg.i and arg.i.val == 16 and (arg.b or arg.s != 1)))
 		return if arg.kind_of? Reg and arg.sz >= 32 and arg.val == 16	# eip/rip only in modrm
 		#return if o.props[:only64] and arg.respond_to? :sz and arg.sz == 32	# TODO use :only64 in the opcode_list (push pop etc)
 		super(o, spec, arg)
