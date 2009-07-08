@@ -70,12 +70,12 @@ class Ia32 < CPU
 
 	# debug register (dr0..dr3, dr6, dr7)
 	class DbgReg < Argument
-		simple_map [0, 1, 2, 3, 6, 7].map { |i| [i, "dr#{i}"] }
+		simple_map (0..7).map { |i| [i, "dr#{i}"] }
 	end
 
 	# control register (cr0, cr2, cr3, cr4)
 	class CtrlReg < Argument
-		simple_map [0, 2, 3, 4].map { |i| [i, "cr#{i}"] }
+		simple_map (0..7).map { |i| [i, "cr#{i}"] }
 	end
 
 	# floating point registers

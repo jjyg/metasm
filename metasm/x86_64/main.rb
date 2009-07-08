@@ -11,8 +11,7 @@ module Metasm
 
 # The x86_64, 64-bit extension of the x86 CPU (x64, em64t, amd64...)
 class X86_64 < Ia32
-	# SegReg, DbgReg, CtrlReg, Farptr unchanged
-	# XXX check farptrs (no segmentation etc)
+	# SegReg, Farptr unchanged
 
 	# no more floating point registers (use sse*)
 	FpReg = nil
@@ -87,11 +86,13 @@ class X86_64 < Ia32
 		# sib: i 4 => no index, b 5 => no base
 	end
 
-	# TODO rtfm, same with CtrlReg
-	# debug register: dr4? dr5? dr8..15 ?
-	#class DbgReg < DbgReg
-	#	simple_map (0..15).map { |i| [i, "dr#{i}"] }
-	#end
+	class DbgReg < DbgReg
+		simple_map (0..15).map { |i| [i, "dr#{i}"] }
+	end
+
+	class CtrlReg < CtrlReg
+		simple_map (0..15).map { |i| [i, "cr#{i}"] }
+	end
 
 	# Create a new instance of an X86 cpu
 	# arguments (any order)
