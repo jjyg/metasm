@@ -10,40 +10,46 @@ require 'metasm/decode'
 module Metasm
 class X86_64
 	class ModRM
-		def self.decode(edata, byte, endianness, adsz, opsz, seg=nil, regclass=Reg)
+		def self.decode(edata, byte, endianness, adsz, opsz, seg=nil, regclass=Reg, pfx={})
 			m = (byte >> 6) & 3
 			rm = byte & 7
 
 			if m == 3
+				rm |= 8 if pfx[:rex_b]
 				return regclass.new(rm, opsz)
 			end
+
+			adsz ||= 64
 
 			# mod 0/1/2 m 4 => sib
 			# mod 0 m 5 => rip+imm
 			# sib: i 4 => no index, b 5 => no base
 
 			s = i = b = imm = nil
-			if m == 4	# XXX or 12 ? (ignore REX.B)
+			if rm == 4	# XXX pfx[:rex_b] ?
 				sib = edata.get_byte.to_i
 
 				ii = (sib >> 3) & 7
-				if ii != 4
+				if ii != 4	# XXX pfx[:rex_x] ?
+					ii |= 8 if pfx[:rex_x]
 					s = 1 << ((sib >> 6) & 3)
 					i = Reg.new(ii, adsz)
 				end
 
 				bb = sib & 7
-				if bb != 5 or mod != 0	# XXX check with m == 1 or 2
+				if bb != 5 or m != 0	# XXX pfx[:rex_b] ?
+					bb |= 8 if pfx[:rex_b]
 					b = Reg.new(bb, adsz)
 				end
-			elsif m == 5	# XXX REX.B ?
-				b = Reg.new(16, 64) if mod == 0		# XXX mod ? adsz ?
+			elsif rm == 5 and m == 0	# rip XXX pfx[:rex_b] ?
+				b = Reg.new(16, adsz)
+				m = 2	# :i32 follows
 			else
-				b = Reg.new(m, adsz)
+				rm |= 8 if pfx[:rex_b]
+				b = Reg.new(rm, adsz)
 			end
 
 			case m
-			when 0; itype = :i32 if m == 5
 			when 1; itype = :i8
 			when 2; itype = :i32
 			end
@@ -51,7 +57,7 @@ class X86_64
 
 			if imm and imm.reduce.kind_of? Integer and imm.reduce < -0x100_0000
 				# probably a base address -> unsigned
-				imm = Expression[imm.reduce & ((1 << (adsz || 32)) - 1)]
+				imm = Expression[imm.reduce & ((1 << adsz) - 1)]
 			end
 
 			new adsz, opsz, s, i, b, imm, seg
@@ -85,7 +91,7 @@ class X86_64
 		}
 		field_val_r = lambda { |f|
 			v = field_val[f]
-			v |= 0x10 if v and pfx[:rex_r]
+			v |= 8 if v and pfx[:rex_r]
 			v
 		}
 
@@ -98,8 +104,6 @@ class X86_64
 			when :eeec;   CtrlReg.new field_val_r[a]
 			when :eeed;   DbgReg.new  field_val_r[a]
 			when :seg2, :seg2A, :seg3, :seg3A; SegReg.new field_val[a]
-			#when :regfp;  FpReg.new   field_val[a]
-			#when :regmmx; SimdReg.new field_val[a], mmxsz
 			when :regxmm; SimdReg.new field_val_r[a], 128
 
 			when :farptr; Farptr.decode edata, @endianness, opsz
@@ -110,10 +114,9 @@ class X86_64
 				v &= 0xffff_ffff_ffff_ffff if opsz == 64 and op.props[:unsigned_imm] and v.kind_of? Integer
 				Expression[v]
 
-			when :mrm_imm;  ModRM.decode edata, 5, @endianness, adsz, opsz, pfx[:seg]	# mov eax, [addr] TODO XXX this decodes to rip+imm, also test i32/i64
-			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx[:seg]
-			#when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx[:seg], SimdReg
-			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg
+			when :mrm_imm;  ModRM.new(adsz, opsz, nil, nil, nil, Expression[edata.decode_imm("a#{adsz}".to_sym, @endianness)], prx[:seg])	# XXX manuals say :a64, test it
+			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx[:seg], Reg, pfx
+			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg, pfx
 
 			when :imm_val1; Expression[1]
 			when :imm_val3; Expression[3]
@@ -124,6 +127,9 @@ class X86_64
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
+
+		# sil => bh
+		di.instruction.args.each { |a| a.val += 12 if a.sz == 8 and not pfx[:rex] and a.val >= 4 and a.val <= 8 }
 
 		di.bin_length += edata.ptr - before_ptr
 
@@ -170,37 +176,6 @@ class X86_64
 
 	def register_symbols
 		[:rax, :rcx, :rdx, :rbx, :rsp, :rbp, :rsi, :rdi, :r8, :r9, :r10, :r11, :r12, :r13, :r14, :r15]
-	end
-
-	# populate the @backtrace_binding hash with default values
-	def init_backtrace_binding
-		super
-		mask = lambda { |di| (1 << opsz(di))-1 }
-		sign = lambda { |v, di| Expression[[[v, :&, mask[di]], :>>, opsz(di)-1], :'!=', 0] }
-
-		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
-			#binding = case op
-			# TODO virtualize :eax :ebx etc so that we get :rax here without needing to copy everything
-			#when 'sar', 'shl', 'sal'; lambda { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz[di], 32].max]] } } 32 => 64 ?
-			#when 'enter'; depth = a1.reduce % 32
-			#when 'fstenv', 'fnstenv'	# XXX push i32 ? lastfpuinstr at same offset ?
-			#end
-			#@backtrace_binding[op] ||= full_binding || binding if full_binding || binding
-		}
-		@backtrace_binding
-	end
-
-	def aoeuaoeuget_backtrace_binding(di)
-					val = bd.delete e
-					mask <<= shift if shift
-					invmask = mask ^ 0xffff_ffff
-					val = Expression[val, :<<, shift] if shift
-					bd[reg] = Expression[[reg, :&, invmask], :|, [val, :&, mask]]
-	end
-
-	# returns true if the expression is an address on the stack
-	def backtrace_is_stack_address(expr)
-		Expression[expr].expr_externals.include? :rsp
 	end
 end
 end
