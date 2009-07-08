@@ -58,13 +58,22 @@ class X86_64
 		end
 	end
 
+	def parse_instruction_checkproto(i)
+		# check ah vs rex prefix
+		return if i.args.find { |a| a.kind_of? Reg and a.sz == 8 and a.val >= 16 and
+				op = opcode_list.find { |op_| op_.name == i.opname } and
+				((not op.props[:auto64] and i.args.find { |aa| aa.respond_to? :sz and aa.sz == 64 }) or
+				 i.args.find { |aa| aa.kind_of? Reg and aa.val >= 8 and aa.val < 16 } or	# XXX mov ah, cr12...
+				 i.args.grep(ModRM).find { |aa| (aa.b and aa.b.val >= 8 and aa.b.val < 16) or (aa.i and aa.i.val >= 8 and aa.i.val < 16) })
+			}
+		super(i)
+	end
+
 	# check if the argument matches the opcode's argument spec
-	# TODO check ah vs dil/r15
-	# XXX imm range?
 	def parse_arg_valid?(o, spec, arg)
 		return if arg.kind_of? ModRM and ((arg.b and arg.b.val == 16 and arg.i) or (arg.i and arg.i.val == 16 and (arg.b or arg.s != 1)))
 		return if arg.kind_of? Reg and arg.sz >= 32 and arg.val == 16	# eip/rip only in modrm
-		#return if o.props[:only64] and arg.respond_to? :sz and arg.sz == 32	# TODO use :only64 in the opcode_list (push pop etc)
+		return if o.props[:auto64] and arg.respond_to? :sz and arg.sz == 322
 		super(o, spec, arg)
 	end
 end

@@ -11,6 +11,11 @@ require 'metasm/encode'
 module Metasm
 class X86_64
 	class ModRM
+		def self.encode_reg(reg, mregval = 0)
+			v = reg.kind_of?(Reg) ? reg.val_enc : reg.val & 7
+			0xc0 | (mregval << 3) | v
+		end
+
 		def encode(reg = 0, endianness = :little)
 			reg = reg.val if reg.kind_of? Ia32::Argument
 
@@ -121,7 +126,7 @@ class X86_64
 			when 16; pfx << 0x66
 			end
 		else
-			opsz = op.props[:argsz] || i.prefix[:sz]
+			opsz = op.props[:argsz] || i.prefix[:sz] || (64 if op.props[:auto64])	# XXX test push ax
 			oi.each { |oa, ia|
 				case oa
 				when :reg, :reg_eax, :modrm, :modrmA, :mrm_imm
@@ -131,7 +136,7 @@ class X86_64
 			}
 			opsz = op.props[:opsz] if op.props[:opsz]	# XXX ?
 			case opsz
-			when 64; rex_w = 1	# TODO check autopromoted opcodes (push etc)
+			when 64; rex_w = 1 if not op.props[:auto64]
 			when 32
 			when 16; pfx << 0x66
 			end
@@ -143,16 +148,11 @@ class X86_64
 			mrm.encode(0, @endianness)	# may reorder b/i, which must be correct for rex
 			rex_b = 1 if mrm.b and mrm.b.val_rex.to_i > 0
 			rex_x = 1 if mrm.i and mrm.i.val_rex.to_i > 0
-			if (mrm.b and mrm.b.sz == 32) or (mrm.i and mrm.i.sz == 32)
-				pfx << 0x67
-				adsz = 32	# XXX used only with mrm_imm (mov eax, [addr])
-			end
+			pfx << 0x67 if (mrm.b and mrm.b.sz == 32) or (mrm.i and mrm.i.sz == 32)
 			pfx << [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][mrm.seg.val] if mrm.seg
 		elsif op.props[:adsz] and op.propz[:adsz] == 32
 			pfx << 0x67
-			adsz = 32
 		end
-		adsz ||= @size
 
 
 		#
@@ -163,12 +163,29 @@ class X86_64
 			case oa
 			when :reg
 				set_field[oa, ia.val_enc]
-				rex_r = ia.val_rex	# TODO ah bh vs rex
+				if op.fields[:reg][1] == 3
+					rex_r = ia.val_rex
+				else
+					rex_b = ia.val_rex
+				end
 			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regxmm
 				set_field[oa, ia.val & 7]
 				rex_r = 1 if ia.val > 7
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0
 				# implicit
+			when :modrm, :modrmA, :modrmmmx, :modrmxmm
+				# postpone, but we must set rex now
+				case ia
+				when ModRM
+					ia.encode(0, @endianness)	# could swap b/i
+					rex_x = ia.i.val_rex if ia.i
+					rex_b = ia.b.val_rex if ia.b
+				when Reg
+					rex_b = ia.val_rex
+				else
+					rex_b = ia.val >> 3
+				end
+				postponed << [oa, ia]
 			else
 				postponed << [oa, ia]
 			end
@@ -188,7 +205,7 @@ class X86_64
 			postponed.first[1] = Expression[target, :-, postlabel]
 		end
 
-		if rex_w or rex_r or rex_b or rex_x
+		if rex_w == 1 or rex_r == 1 or rex_b == 1 or rex_x == 1 or i.args.grep(Reg).find { |r| r.sz == 8 and r.val >= 4 and r.val < 8 }
 			rex ||= 0x40
 			rex |= 1 if rex_b.to_i > 0
 			rex |= 2 if rex_x.to_i > 0
@@ -218,7 +235,7 @@ class X86_64
 				else
 					ed = ModRM.encode_reg(ia, regval)
 				end
-			when :mrm_imm; ed = ia.imm.encode("a#{adsz}".to_sym, @endianness)
+			when :mrm_imm; ed = ia.imm.encode("a#{o.props[:adsz] || 64}".to_sym, @endianness)
 			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; ed = ia.encode(oa, @endianness)
 			when :i
 				type = opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : :a32

@@ -91,7 +91,7 @@ class X86_64
 		}
 		field_val_r = lambda { |f|
 			v = field_val[f]
-			v |= 8 if v and pfx[:rex_r]
+			v |= 8 if v and (op.fields[f][1] == 3 ? pfx[:rex_r] : pfx[:rex_b])	# gruick ?
 			v
 		}
 
@@ -169,7 +169,7 @@ class X86_64
 	def opsz(di)
 		if di and di.instruction.prefix and di.instruction.prefix[:rex_w]; 64
 		elsif di and di.instruction.prefix and di.instruction.prefix[:opsz]; 16
-		elsif di and di.opcode.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/; 64
+		elsif di and di.opcode.props[:auto64]; 64
 		else 32
 		end
 	end

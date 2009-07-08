@@ -17,9 +17,10 @@ class X86_64
 
 	def init_386_common_only
 		super()
-		@valid_props |= [:imm64]
+		@valid_props |= [:imm64, :auto64]
 		@opcode_list.delete_if { |o| o.bin[0].to_i & 0xf0 == 0x40 }	# now REX prefix
 		@opcode_list.each { |o| o.props[:imm64] = true if o.bin == [0xB8] }	# mov reg, <true imm64>
+		@opcode_list.each { |o| o.props[:auto64] = true if o.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/ }	# operate in 64bit ignoring rex_w
 	end
 
 	# all x86_64 cpu understand <= sse2 instrs
@@ -94,12 +95,8 @@ class X86_64
 			op64.name << '.i64'
 			op64.props[:opsz] = 64
 			@opcode_list << op64
-		elsif op.props[:strop] or op.props[:stropz]
+		elsif op.props[:strop] or op.props[:stropz] or op.args.include? :mrm_imm
 			# define adsz-override version for ambiguous opcodes (movsq)
-			op16 = dupe[op]
-			op16.name << '.a16'
-			op16.props[:adsz] = 16
-			@opcode_list << op16
 			op32 = dupe[op]
 			op32.name << '.a32'
 			op32.props[:adsz] = 32
