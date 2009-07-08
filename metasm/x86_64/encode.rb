@@ -12,7 +12,7 @@ module Metasm
 class X86_64
 	class ModRM
 		def encode(reg = 0, endianness = :little)
-			reg = reg.val if reg.kind_of? Argument
+			reg = reg.val if reg.kind_of? Ia32::Argument
 
 			ret = EncodedData.new << (reg << 3)
 
@@ -31,9 +31,9 @@ class X86_64
 				imm = self.imm || Expression[0]
 				[ret << ((4 << 3) | 5) << imm.encode(:i32, endianness)]
 
-			elsif self.b.val == 16	# rip+imm
-				# TODO [1*rip+28]
-				raise if self.i	# XXX check
+			elsif self.b.val == 16 or self.i.val == 16	# rip+imm	(rip == addr of the octet after the current instr)
+				# should have been filtered by #parse, but just in case
+				raise "invalid rip addressing #{self}" if (self.i and self.b) or (self.s and self.s != 1)
 				or_bits[5]
 				imm = self.imm || Expression[0]
 				[ret << imm.encode(:i32, endianness)]
@@ -51,24 +51,22 @@ class X86_64
 
 				if not self.i or (not self.b and self.s == 1)
 					# no sib byte (except for [esp])
-					b = self.b || self.i
-
-					or_bits[b.val_enc]
-					ret << 0x24 if b.val == 4	# XXX val_enc ?
+					@s, @i, @b = nil, nil, @s if not self.b
+					or_bits[@b.val_enc]
+					ret << 0x24 if @b.val_enc == 4	# XXX val_enc ?
 				else
 					# sib
 					or_bits[4]
 
-					i, b = @i, @b
-					b, i = i, b if @s == 1 and (i.val == 4 or b.val == 5)
+					@b, @i = @i, @b if @s == 1 and (@i.val_enc == 4 or @b.val_enc == 5)
 
-					raise EncodeError, "Invalid ModRM #{self}" if i.val == 4
+					raise EncodeError, "Invalid ModRM #{self}" if @i.val == 4
 
 					s = {8=>3, 4=>2, 2=>1, 1=>0}[@s]
-					ret << ((s << 6) | (i.val_enc << 3) | b.val_enc)
+					ret << ((s << 6) | (@i.val_enc << 3) | @b.val_enc)
 				end
 
-				imm ||= 0 if b.val_enc == 5
+				imm ||= 0 if @b.val_enc == 5
 				if imm
 					case Expression.in_range?(imm, :i8)
 					when true
