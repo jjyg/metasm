@@ -17,8 +17,9 @@ class X86_64
 
 	def init_386_common_only
 		super()
+		@valid_props |= [:imm64]
 		@opcode_list.delete_if { |o| o.bin[0].to_i & 0xf0 == 0x40 }	# now REX prefix
-		# TODO XXX mov i64 ?
+		@opcode_list.each { |o| o.props[:imm64] = true if o.bin == [0xB8] }	# mov reg, <true imm64>
 	end
 
 	# all x86_64 cpu understand <= sse2 instrs

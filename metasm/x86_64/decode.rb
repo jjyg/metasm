@@ -105,7 +105,7 @@ class X86_64
 			when :farptr; Farptr.decode edata, @endianness, opsz
 			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; Expression[edata.decode_imm(a, @endianness)]
 			when :i		# 64bit constants are sign-extended from :i32
-				type = (opsz == 64 ? :i32 : op.props[:unsigned_imm] ? :a32 : :i32)
+				type = (opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : op.props[:unsigned_imm] ? :a32 : :i32)
  				v = edata.decode_imm(type, @endianness)
 				v &= 0xffff_ffff_ffff_ffff if opsz == 64 and op.props[:unsigned_imm] and v.kind_of? Integer
 				Expression[v]
