@@ -41,7 +41,7 @@ class Ia32
 
 		def render
 			r = []
-			r << ( qualifier(@sz) << ' ptr ' )
+			r << ( qualifier(@sz) << ' ptr ' ) if @sz
 			r << @seg << ':' if seg
 
 			e = nil
