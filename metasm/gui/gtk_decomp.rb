@@ -344,6 +344,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			break if empty
 		end
 		return if not l = @dasm.prog_binding.index(addr)
+		l = @dasm.auto_label_at(addr)	# if l has multiple names, auto_label_at will give the good one
 		@curaddr = l
 		@caret_x = @caret_y = 0
 		gui_update

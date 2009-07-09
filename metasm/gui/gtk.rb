@@ -194,7 +194,7 @@ class DisasmWidget < Gtk::VBox
 
 	# (re)decompile
 	def decompile(addr)
-		if @dasm.c_parser and var = @dasm.c_parser.toplevel.symbol[addr] and var.type.kind_of? C::Function
+		if @dasm.c_parser and var = @dasm.c_parser.toplevel.symbol[addr] and (var.type.kind_of? C::Function or @dasm.decoded[@dasm.normalize(addr)].kind_of? DecodedInstruction)
 			@dasm.c_parser.toplevel.statements.delete_if { |st| st.kind_of? C::Declaration and st.var == var }
 			@dasm.c_parser.toplevel.symbol.delete addr
 			widget(:decompile).curaddr = nil
