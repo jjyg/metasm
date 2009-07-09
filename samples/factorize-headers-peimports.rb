@@ -6,25 +6,29 @@
 #
 # this exemple illustrates the use of the cparser/preprocessor #factorize functionnality:
 # it generates code that references to the functions imported by a windows executable
-# usage: factorize-imports.rb <exe> <path to visual studio installation> [<additional func names>... !<func to exclude>]
+# usage: factorize-imports.rb <exe> <exe2> <path to visual studio installation> [<additional func names>... ^<func to exclude>]
 #
 
 require 'metasm'
 include Metasm
 
 require 'optparse'
-opts = { :hdrs => [], :defs => {}, :path => [] }
+opts = { :hdrs => [], :defs => {}, :path => [], :exe => [] }
 OptionParser.new { |opt|
 	opt.on('-o outfile') { |f| opts[:outfile] = f }
 	opt.on('-H additional_header') { |f| opts[:hdrs] << f }
-	opt.on('--exe executable') { |f| opts[:exe] = f }
+	opt.on('-e exe', '--exe executable') { |f| opts[:exe] << f }
 	opt.on('-I path', '--includepath path') { |f| opts[:path] << f }
 	opt.on('-D var') { |f| k, v = f.split('=', 2) ; opts[:defs].update k => (v || '') }
 	opt.on('--ddk') { opts[:ddk] = true }
 	opt.on('--vspath path') { |f| opts[:vspath] = f }
 }.parse!(ARGV)
 
-pe = PE.decode_file_header(opts[:exe] || ARGV.shift)
+ARGV.delete_if { |e|
+	next if not File.file? e
+	opts[:exe] << e
+}
+
 if opts[:vspath] ||= ARGV.shift
 	opts[:vspath] = opts[:vspath].tr('\\', '/')
 	opts[:vspath] = opts[:vspath].chop if opts[:vspath][-1] == ?/
@@ -36,11 +40,14 @@ if opts[:vspath] ||= ARGV.shift
 	end
 end
 
-pe.decode_imports
-funcnames = pe.imports.map { |id| id.imports.map { |i| i.name } }.flatten.compact.uniq.sort
+funcnames = opts[:exe].map { |e|
+	pe = PE.decode_file_header(e)
+	pe.decode_imports
+	pe.imports.map { |id| id.imports.map { |i| i.name } }
+}.flatten.compact.uniq.sort
 
 ARGV.each { |n|
-	if n[0] == ?!
+	if n[0] == ?! or n[0] == ?- or n[0] == ?^
 		funcnames.delete n[1..-1]
 	else
 		funcnames |= [n]
