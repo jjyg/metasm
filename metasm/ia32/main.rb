@@ -63,17 +63,17 @@ class Ia32 < CPU
 	end
 
 
-	# segment register: es, cs, ss, ds, fs, gs
+	# segment register: es, cs, ss, ds, fs, gs and the theoretical segr6/7
 	class SegReg < Argument
-		simple_map((0..5).zip(%w(es cs ss ds fs gs)))
+		simple_map((0..7).zip(%w(es cs ss ds fs gs segr6 segr7)))
 	end
 
-	# debug register (dr0..dr3, dr6, dr7)
+	# debug register (dr0..dr3, dr6, dr7), and theoretical dr4/5
 	class DbgReg < Argument
 		simple_map((0..7).map { |i| [i, "dr#{i}"] })
 	end
 
-	# control register (cr0, cr2, cr3, cr4)
+	# control register (cr0, cr2, cr3, cr4) and theoretical cr1/5/6/7
 	class CtrlReg < Argument
 		simple_map((0..7).map { |i| [i, "cr#{i}"] })
 	end
@@ -95,7 +95,6 @@ class Ia32 < CPU
 		double_map  8 => %w{ al  cl  dl  bl  ah  ch  dh  bh},
 			   16 => %w{ ax  cx  dx  bx  sp  bp  si  di},
 			   32 => %w{eax ecx edx ebx esp ebp esi edi}
-			  #64 => %w{rax rcx rdx rbx rsp rbp rsi rdi}
 
 		Sym = @i_to_s[32].map { |s| s.to_sym }
 
