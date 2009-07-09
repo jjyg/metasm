@@ -87,11 +87,11 @@ class X86_64 < Ia32
 	end
 
 	class DbgReg < DbgReg
-		simple_map (0..15).map { |i| [i, "dr#{i}"] }
+		simple_map((0..15).map { |i| [i, "dr#{i}"] })
 	end
 
 	class CtrlReg < CtrlReg
-		simple_map (0..15).map { |i| [i, "cr#{i}"] }
+		simple_map((0..15).map { |i| [i, "cr#{i}"] })
 	end
 
 	# Create a new instance of an X86 cpu
