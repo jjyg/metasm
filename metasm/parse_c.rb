@@ -1715,9 +1715,9 @@ EOH
 			parse_declarator_postfix(parser, scope)
 			if not rec
 				raise @backtrace, 'void type is invalid' if name and (t = @type.untypedef).kind_of? BaseType and
-						t.name == :void and @storage != :typedef
+						t.name == :void and storage != :typedef
 				raise @backtrace, "incomplete type #{@type.name}" if (@type.kind_of? Union or @type.kind_of? Enum) and
-						not @type.members and @storage != :typedef and @storage != :extern	# gcc uses an undefined extern struct just to cast it later (_IO_FILE_plus)
+						not @type.members and storage != :typedef and storage != :extern	# gcc uses an undefined extern struct just to cast it later (_IO_FILE_plus)
 			end
 		end
 

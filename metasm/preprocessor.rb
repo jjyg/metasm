@@ -496,6 +496,7 @@ class Preprocessor
 		@filename = "\"#{filename}\""
 		@lineno = lineno
 		@pos = 0
+		@queue = []
 		self
 	end
 

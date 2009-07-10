@@ -26,7 +26,7 @@ class PE < COFF
 	def decode_header
 		@cursection ||= self
 		@encoded.ptr = 0x3c
-		@encoded.ptr = decode_word
+		@encoded.ptr = decode_word(@encoded)
 		@signature = @encoded.read(4)
 		raise InvalidExeFormat, "Invalid PE signature #{@signature.inspect}" if @signature != MAGIC
 		@coff_offset = @encoded.ptr

@@ -2328,7 +2328,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 	# allows us to be AutoExe.loaded
 	def self.autoexe_load(f, &b)
-		load(f, &b)
+		d = load(f, &b)
 		d.program
 	end
 
@@ -2345,6 +2345,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		raise 'Not a metasm save file' if str[0, 12].chomp != 'Metasm.dasm'
 		off = 12
 		pp = Preprocessor.new
+		app = AsmPreprocessor.new
 		while off < str.length
 			i = str.index("\n", off) || str.length
 			type, len = str[off..i].chomp.split
@@ -2359,7 +2360,6 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				reinitialize exe
 				exe.disassembler = self
 				exe.init_disassembler
-				@cpu = exe.cpu
 			when 'map'
 				load_map data
 			when 'decoded'
@@ -2368,7 +2368,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 						next if l !~ /^([^,]*),(\d*) ([^;]*)(?: ; (.*))?/
 						a, len, instr, cmt = $1, $2, $3, $4
 						a = Expression.parse(pp.feed!(a)).reduce
-						instr = @cpu.parse_instruction(pp.feed!(instr))
+						instr = @cpu.parse_instruction(app.feed!(instr))
 						di = DecodedInstruction.new(instr, a)
 						di.bin_length = len.to_i
 						di.add_comment cmt if cmt
@@ -2379,7 +2379,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				}
 			when 'blocks'
 				data.each_line { |l|
-					bla = l.split(';').map { |sl| sl.split(',') }
+					bla = l.chomp.split(';').map { |sl| sl.split(',') }
 					begin
 						a = Expression.parse(pp.feed!(bla.shift[0])).reduce
 						b = InstructionBlock.new(b, get_section_at(a)[0])
@@ -2401,11 +2401,16 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 						@function[a] = DecodedFunction.new
 						# TODO
 					rescue
-						puts "load: bad function #{l.inspect}" if $VERBOSE
+						puts "load: bad function #{l.inspect} #$!" if $VERBOSE
 					end
 				}
 			when 'c'
-				parse_c(data)
+				begin
+					# TODO parse_invalid_c, split per function, whatever
+					parse_c(data)
+				rescue
+					puts "load: bad C #$!" if $VERBOSE
+				end
 			#when 'xrefs'
 			#when 'trace'
 			else

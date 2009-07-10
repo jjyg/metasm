@@ -114,6 +114,7 @@ class ExeFormat
 	def init_disassembler
 		@cpu ||= cpu_from_headers
 		@disassembler ||= Disassembler.new(self)
+		@disassembler.cpu ||= @cpu
 		each_section { |edata, base| @disassembler.add_section edata, base }
 		@disassembler
 	end
