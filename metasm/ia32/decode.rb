@@ -213,12 +213,16 @@ class Ia32
 		di.bin_length += edata.ptr - before_ptr
 
 		if op.name == 'movsx' or op.name == 'movzx'
-			if opsz == 8
+			if di.opcode.props[:argsz] == 8
 				di.instruction.args[1].sz = 8
 			else
 				di.instruction.args[1].sz = 16
 			end
-			di.instruction.args[0].sz = opsz(di)
+			if pfx[:opsz]
+				di.instruction.args[0].sz = 48-@size
+			else
+				di.instruction.args[0].sz = @size
+			end
 		end
 
 		pfx.delete :seg
@@ -295,7 +299,7 @@ class Ia32
 	def opsz(di)
 		ret = @size
 		ret = di.opcode.props[:argsz] if di and di.opcode.props[:argsz]
-		ret = 48 - ret if di and di.instruction.prefix and di.instruction.prefix[:opsz]
+		ret = 48 - ret if di and not di.opcode.props[:argsz] and di.instruction.prefix and di.instruction.prefix[:opsz]
 		ret
 	end
 
