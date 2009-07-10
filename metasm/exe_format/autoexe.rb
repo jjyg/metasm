@@ -17,16 +17,17 @@ PEMAGIC = "PE\0\0"
 MACHOMAGICS = ["\xfe\xed\xfa\xce", "\xce\xfa\xed\xfe", "\xfe\xed\xfa\xcf", "\xcf\xfa\xed\xfe"]
 UNIVMAGIC = "\xca\xfe\xba\xbe"
 
-def self.load(str, *a)
+def self.load(str, *a, &b)
 	s = str
 	s = str.data if s.kind_of? EncodedData
-	execlass_from_signature(s).autoexe_load(str, *a)
+	execlass_from_signature(s).autoexe_load(str, *a, &b)
 end
 def self.execlass_from_signature(raw)
 	if raw[0, 4] == ELFMAGIC; ELF
 	elsif raw[0, 2] == MZMAGIC and off = raw[0x3c, 4].to_s.unpack('V').first and off < raw.length and raw[off, 4] == PEMAGIC; PE
 	elsif raw[0, 4] == UNIVMAGIC; UniversalBinary
 	elsif MACHOMAGICS.include? raw[0, 4]; MachO
+	elsif raw[0, 11] == 'Metasm.dasm'; Disassembler
 	else raise UnknownSignature, "unrecognized executable file format #{raw[0, 4].unpack('H*').first.inspect}"
 	end
 end

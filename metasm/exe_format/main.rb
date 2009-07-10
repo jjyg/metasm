@@ -13,49 +13,54 @@ require 'metasm/exe_format/serialstruct'
 module Metasm
 class ExeFormat
 	# creates a new instance, populates self.encoded with the supplied string
-	def self.load(str, *a)
-		e = new(*a)
+	def self.load(str, *a, &b)
+		e = new(*a, &b)
 		e.encoded << str
 		e
 	end
 
 	# same as load, used by AutoExe
-	def self.autoexe_load(*x)
-		load(*x)
+	def self.autoexe_load(*x, &b)
+		load(*x, &b)
 	end
+
+	attr_accessor :filename
 
 	# same as +load+, but from a file
 	# uses VirtualFile if available
-	def self.load_file(path, *a)
+	def self.load_file(path, *a, &b)
+		e =
 		if defined? VirtualFile
-			load(VirtualFile.read(path), *a)
+			load(VirtualFile.read(path), *a, &b)
 		else
-			File.open(path, 'rb') { |fd| load(fd.read, *a) }
+			File.open(path, 'rb') { |fd| load(fd.read, *a, &b) }
 		end
+		e.filename = path
+		e
 	end
 
 	# +load_file+ then decode
-	def self.decode_file(path, *a)
-		e = load_file(path, *a)
+	def self.decode_file(path, *a, &b)
+		e = load_file(path, *a, &b)
 		e.decode
 		e
 	end
 
 	# +load_file+ then decode header
-	def self.decode_file_header(path, *a)
-		e = load_file(path, *a)
+	def self.decode_file_header(path, *a, &b)
+		e = load_file(path, *a, &b)
 		e.decode_header
 		e
 	end
 
-	def self.decode(raw, *a)
-		e = load(raw, *a)
+	def self.decode(raw, *a, &b)
+		e = load(raw, *a, &b)
 		e.decode
 		e
 	end
 
-	def self.decode_header(raw, *a)
-		e = load(raw, *a)
+	def self.decode_header(raw, *a, &b)
+		e = load(raw, *a, &b)
 		e.decode_header
 		e
 	end
@@ -108,7 +113,7 @@ class ExeFormat
 	# if it does not exist, creates one, and feeds it with the exe sections
 	def init_disassembler
 		@cpu ||= cpu_from_headers
-		@disassembler = Disassembler.new(self)
+		@disassembler ||= Disassembler.new(self)
 		each_section { |edata, base| @disassembler.add_section edata, base }
 		@disassembler
 	end

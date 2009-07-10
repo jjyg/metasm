@@ -485,6 +485,12 @@ class Preprocessor
 	# starts a new lexer, with the specified initial filename/line number (for backtraces)
 	def feed(text, filename='unknown', lineno=1)
 		raise self, 'cannot start new text, did not finish current source' if not eos?
+		feed!(text, filename, lineno)
+	end
+
+	# starts a new lexer, with the specified initial filename/line number (for backtraces)
+	# discards old text/whatever
+	def feed!(text, filename='unknown', lineno=1)
 		@text = text
 		# @filename[-1] used in trace_macros to distinguish generic/specific files
 		@filename = "\"#{filename}\""

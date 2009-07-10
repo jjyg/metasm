@@ -684,6 +684,11 @@ class Disassembler
 
 	# creates a new disassembler
 	def initialize(program, cpu=program.cpu)
+		reinitialize(program, cpu)
+	end
+
+	# resets the program
+	def reinitialize(program, cpu=program.cpu)
 		@program = program
 		@cpu = cpu
 		@sections = {}
@@ -2263,9 +2268,154 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	def decompiler=(dc)
 		@decompiler = dc
 	end
-
 	def decompile(addr)
 		decompiler.decompile_func(addr)
+	end
+
+	# saves the dasm state in a file
+	def save_file(file)
+		tmpfile = file + '.tmp'
+		File.open(tmpfile, 'w') { |fd|
+			fd.puts 'Metasm.dasm'
+			save_io(fd)
+		}
+		File.rename tmpfile, file
+	end
+
+	# saves the dasm state to an IO
+	def save_io(fd)
+		t = @program.filename.to_s	# XXX custom cpu/non AutoExe file ?
+		fd.puts "binarypath #{t.length}", t
+
+		t = save_map.join("\n")
+		fd.puts "map #{t.length}", t
+
+		t = @decoded.map { |a, d|
+			next if not d.kind_of? DecodedInstruction
+			"#{Expression[a]},#{d.bin_length} #{d.instruction}#{" ; #{d.comment}" if d.comment}"
+		}.compact.sort.join("\n")
+		fd.puts "decoded #{t.length}", t
+
+		bl = @decoded.values.map { |d|
+			d.block if d.kind_of? DecodedInstruction and d.address == d.block.address
+		}.compact
+		t = bl.map { |b|
+			[Expression[b.address],
+			 b.list.map { |d| Expression[d.address] }.join(','),
+			 b.to_normal.to_a.map { |t| Expression[t] }.join(','),
+			 b.to_subfuncret.to_a.map { |t| Expression[t] }.join(','),
+			 b.to_indirect.to_a.map { |t| Expression[t] }.join(','),
+			 b.from_normal.to_a.map { |t| Expression[t] }.join(','),
+			 b.from_subfuncret.to_a.map { |t| Expression[t] }.join(','),
+			 b.from_indirect.to_a.map { |t| Expression[t] }.join(','),
+			].join(';')
+		}.sort.join("\n")
+		fd.puts "blocks #{t.length}", t
+
+		t = @function.map { |a, f| Expression[a].to_s }.sort.join("\n")
+		# TODO binding ?
+		fd.puts "funcs #{t.length}", t
+
+		#t = ''
+		#fd.puts "xrefs #{t.length}", t
+
+		t = @c_parser.to_s
+		fd.puts "c #{t.length}", t
+
+		#t = bl.map { |b| b.backtracked_for }
+		#fd.puts "trace #{t.length}" , t
+	end
+
+	# allows us to be AutoExe.loaded
+	def self.autoexe_load(f, &b)
+		load(f, &b)
+		d.program
+	end
+
+	# loads a disassembler from a saved file
+	def self.load(str, &b)
+		d = new(nil, nil)
+		d.load(str, &b)
+		d
+	end
+
+	# loads the dasm state from a savefile content
+	# will yield unknown segments / binarypath notfound
+	def load(str)
+		raise 'Not a metasm save file' if str[0, 12].chomp != 'Metasm.dasm'
+		off = 12
+		pp = Preprocessor.new
+		while off < str.length
+			i = str.index("\n", off) || str.length
+			type, len = str[off..i].chomp.split
+			off = i+1
+			data = str[off, len.to_i]
+			off += len.to_i
+			case type
+			when nil, ''
+			when 'binarypath'
+				data = yield(type, data) if not File.exist? data and block_given?
+				exe = AutoExe.decode_file(data)
+				reinitialize exe
+				exe.disassembler = self
+				exe.init_disassembler
+				@cpu = exe.cpu
+			when 'map'
+				load_map data
+			when 'decoded'
+				data.each_line { |l|
+					begin
+						next if l !~ /^([^,]*),(\d*) ([^;]*)(?: ; (.*))?/
+						a, len, instr, cmt = $1, $2, $3, $4
+						a = Expression.parse(pp.feed!(a)).reduce
+						instr = @cpu.parse_instruction(pp.feed!(instr))
+						di = DecodedInstruction.new(instr, a)
+						di.bin_length = len.to_i
+						di.add_comment cmt if cmt
+						@decoded[a] = di
+					rescue
+						puts "load: bad di #{i.inspect}" if $VERBOSE
+					end
+				}
+			when 'blocks'
+				data.each_line { |l|
+					bla = l.split(';').map { |sl| sl.split(',') }
+					begin
+						a = Expression.parse(pp.feed!(bla.shift[0])).reduce
+						b = InstructionBlock.new(b, get_section_at(a)[0])
+						bla.shift.each { |e|
+							a = Expression.parse(pp.feed!(e)).reduce
+							b.add_di(@decoded[a])
+						}
+						bla.zip([:to_normal, :to_subfuncret, :to_indirect, :from_normal, :from_subfuncret, :from_indirect]).each { |l, s|
+							b.send("#{s}=", l.map { |e| Expression.parse(pp.feed!(e)).reduce }) if not l.empty?
+						}
+					rescue
+						puts "load: bad block #{l.inspect}" if $VERBOSE
+					end
+				}
+			when 'funcs'
+				data.each_line { |l|
+					begin
+						a = Expression.parse(pp.feed!(l)).reduce
+						@function[a] = DecodedFunction.new
+						# TODO
+					rescue
+						puts "load: bad function #{l.inspect}" if $VERBOSE
+					end
+				}
+			when 'c'
+				parse_c(data)
+			#when 'xrefs'
+			#when 'trace'
+			else
+				if block_given?
+					yield(type, data)
+				else
+					puts "load: unsupported section #{type.inspect}" if $VERBOSE
+				end
+			end
+		end
 	end
 end
 end
