@@ -618,6 +618,7 @@ class ELF
 		when 'X86_64'; X86_64.new
 		when '386'; Ia32.new
 		when 'MIPS'; MIPS.new @endianness
+		when 'PPC'; PPC.new
 		else raise "unsupported cpu #{@header.machine}"
 		end
 	end

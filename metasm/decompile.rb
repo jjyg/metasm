@@ -12,6 +12,36 @@ module Metasm
 class C::Variable; attr_accessor :stackoff; end
 class C::Block; attr_accessor :stackoff_type, :stackoff_name; end
 class DecodedFunction; attr_accessor :stackoff_type, :stackoff_name; end
+
+class CPU
+	def decompile_check_abi(dcmp, entry, func)
+	end
+
+	def get_fwdemu_binding(di)
+		fdi = di.backtrace_binding ||= get_backtrace_binding(di)
+		# find self-updated regs & revert them in simultaneous affectations
+		# XXX handles only a <- a+i for now, this covers all useful cases (except imul eax, eax, 42  jz foobar)
+		fdi.keys.grep(::Symbol).each { |s|
+			val = Expression[fdi[s]]
+			next if val.lexpr != s or (val.op != :+ and val.op != :-) #or not val.rexpr.kind_of? ::Integer
+			fwd = { s => val }
+			inv = { s => val.dup }
+			inv[s].op = ((inv[s].op == :+) ? :- : :+)
+			nxt = {}
+			fdi.each { |k, v|
+				if k == s
+					nxt[k] = v
+				else
+					k = k.bind(fwd).reduce_rec if k.kind_of? Indirection
+					nxt[k] = Expression[Expression[v].bind(inv).reduce_rec]
+				end
+			}
+			fdi = nxt
+		}
+		fdi
+	end
+end
+
 class Decompiler
 	# TODO add methods to C::CExpr
 	AssignOp = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'^=', :'&=', :'|=', :'>>=', :'<<=', :'++', :'--']
