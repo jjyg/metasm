@@ -8,12 +8,12 @@
 #
 # this script disassembles an executable (elf/pe) using the GTK front-end
 # use live:bla to open a running process whose filename contains 'bla'
-# asks for a binary to open if the cmdline is empty
 #
 # key binding (non exhaustive):
 #  Enter to follow a label (the current hilighted word)
 #  Esc to return to the previous position
 #  Space to switch between listing and graph views
+#  Tab to decompile (on already disassembled code)
 #  'c' to start disassembling from the cursor position
 #  'g' to go to a specific address (label/042h)
 #  'l' to list known labels
@@ -37,7 +37,7 @@ OptionParser.new { |opt|
 	opt.on('--debug-backtrace', 'enable backtrace-related debug messages (very verbose)') { opts[:debugbacktrace] = true }
 	opt.on('--custom <hookfile>', 'eval a ruby script hookfile') { |h| (opts[:hookfile] ||= []) << h }
 	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
-	opt.on('--map <mapfile>') { |f| opts[:map] = f }
+	opt.on('--map <mapfile>', 'load a map file (addr <-> name association)') { |f| opts[:map] = f }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-v', '--verbose') { $VERBOSE = true }	# default
 	opt.on('-q', '--no-verbose') { $VERBOSE = false }
@@ -54,6 +54,7 @@ if exename =~ /^live:(.*)/
 	w = Metasm::GtkGui::DbgWindow.new(target.debugger, target.modules[0].path.dup)
 elsif exename
 	exe = Metasm::AutoExe.orshellcode(Metasm::Ia32.new).decode_file(exename)
+	# XXX should call MainWindow.new.openfile(exename) for dasm savefile callback but it needs Gtk.main
 end
 
 if exe

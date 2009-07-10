@@ -570,6 +570,23 @@ class MainWindow < Gtk::Window
 		idx && @dasm_widget ? @dasm_widget.widget(idx) : @dasm_widget
 	end
 
+	def openfile(path)
+		exe = Metasm::AutoExe.orshellcode(Metasm::Ia32.new).decode_file(path) { |type, str|
+			# Disassembler save file will use this callback with unhandled sections / invalid binary file path
+			case type
+			when 'binarypath'
+				ret = nil
+				of = OpenFile.new(self, "please locate #{str}") { |f| ret = f }
+				done = false
+				of.signal_connect_after('response') { done = true }	# must use another callback to handle 'cancel'
+				sleep 0.1 while not done	# block until popup is closed
+				break if not ret		# what will this do ?
+				ret
+			end
+		}
+		(@dasm_widget ? MainWindow.new : self).display(exe.init_disassembler)
+	end
+
 	def build_menu
 		# TODO dynamic checkboxes (check $VERBOSE when opening the options menu to (un)set the mark)
 
@@ -581,8 +598,7 @@ class MainWindow < Gtk::Window
 
 		addsubmenu(filemenu, 'OPEN', '^o') {
 			OpenFile.new(self, 'chose target binary') { |exename|
-				exe = Metasm::AutoExe.orshellcode(Metasm::Ia32.new).decode_file(exename)
-				(@dasm_widget ? MainWindow.new : self).display(exe.init_disassembler)
+				openfile(exename)
 			}
 		}
 		addsubmenu(filemenu, '_Debug') {
