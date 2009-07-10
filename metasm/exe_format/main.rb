@@ -35,14 +35,14 @@ class ExeFormat
 		else
 			File.open(path, 'rb') { |fd| load(fd.read, *a, &b) }
 		end
-		e.filename = path
+		e.filename ||= path
 		e
 	end
 
 	# +load_file+ then decode
 	def self.decode_file(path, *a, &b)
 		e = load_file(path, *a, &b)
-		e.decode
+		e.decode if not e.disassembler
 		e
 	end
 

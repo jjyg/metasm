@@ -2275,15 +2275,14 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# saves the dasm state in a file
 	def save_file(file)
 		tmpfile = file + '.tmp'
-		File.open(tmpfile, 'w') { |fd|
-			fd.puts 'Metasm.dasm'
-			save_io(fd)
-		}
+		File.open(tmpfile, 'w') { |fd| save_io(fd) }
 		File.rename tmpfile, file
 	end
 
 	# saves the dasm state to an IO
 	def save_io(fd)
+		fd.puts 'Metasm.dasm'
+
 		t = @program.filename.to_s	# XXX custom cpu/non AutoExe file ?
 		fd.puts "binarypath #{t.length}", t
 
@@ -2312,7 +2311,9 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		}.sort.join("\n")
 		fd.puts "blocks #{t.length}", t
 
-		t = @function.map { |a, f| Expression[a].to_s }.sort.join("\n")
+		t = @function.map { |a, f|
+			Expression[a].to_s if @decoded[a]
+		}.compact.sort.join("\n")
 		# TODO binding ?
 		fd.puts "funcs #{t.length}", t
 
@@ -2382,7 +2383,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 					bla = l.chomp.split(';').map { |sl| sl.split(',') }
 					begin
 						a = Expression.parse(pp.feed!(bla.shift[0])).reduce
-						b = InstructionBlock.new(b, get_section_at(a)[0])
+						b = InstructionBlock.new(a, get_section_at(a)[0])
 						bla.shift.each { |e|
 							a = Expression.parse(pp.feed!(e)).reduce
 							b.add_di(@decoded[a])

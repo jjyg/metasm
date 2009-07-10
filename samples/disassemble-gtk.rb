@@ -52,9 +52,9 @@ if exename =~ /^live:(.*)/
 	raise 'no such live target' if not target = Metasm::OS.current.find_process($1)
 	p target if $VERBOSE
 	w = Metasm::GtkGui::DbgWindow.new(target.debugger, target.modules[0].path.dup)
-elsif exename
-	exe = Metasm::AutoExe.orshellcode(Metasm::Ia32.new).decode_file(exename)
-	# XXX should call MainWindow.new.openfile(exename) for dasm savefile callback but it needs Gtk.main
+else
+	w = Metasm::GtkGui::MainWindow.new("#{exename + ' - ' if exename}metasm disassembler")
+	exe = w.loadfile(exename) if exename
 end
 
 if exe
@@ -69,8 +69,6 @@ end
 opts[:hookfile].to_a.each { |f| eval File.read(f) }
 opts[:hookstr].to_a.each { |f| eval f }
 ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
-
-w ||= Metasm::GtkGui::MainWindow.new("#{exename} - metasm disassembler")
 
 if dasm
 	w.display(dasm, ep)
