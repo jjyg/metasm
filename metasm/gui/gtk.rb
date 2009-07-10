@@ -598,11 +598,11 @@ class MainWindow < Gtk::Window
 
 		addsubmenu(filemenu, 'OPEN', '^o') {
 			OpenFile.new(self, 'chose target binary') { |exename|
-				openfile(exename)
+				protect { openfile(exename) }
 			}
 		}
 		addsubmenu(filemenu, '_Debug') {
-			# TODO list existing targets
+			# TODO list existing targets (inputbox + listbox, reuseable for _goto..)
 			# TODO gdbserver
 			InputBox.new(self, 'chose target') { |target|
 				if not target = Metasm::OS.current.find_process(target)
@@ -612,6 +612,13 @@ class MainWindow < Gtk::Window
 				end
 			}
 		}
+
+		addsubmenu(filemenu, 'SAVE', '^s') {
+			OpenFile.new(self, 'chose save file') { |file|
+				protect { @dasm_widget.dasm.save_file(file) }
+			} if @dasm_widget
+		}
+
 		addsubmenu(filemenu, 'CLOSE') {
 			if @dasm_widget
 				@dasm_widget.terminate
@@ -620,31 +627,33 @@ class MainWindow < Gtk::Window
 			end
 		}
 		addsubmenu(filemenu)
-		addsubmenu(filemenu, 'Save map') {
+
+		iomenu = Gtk::Menu.new
+		addsubmenu(iomenu, 'Load _map') {
+			OpenFile.new(self, 'chose map file') { |file|
+				@dasm_widget.dasm.load_map(File.read(file)) if @dasm_widget
+			} if @dasm_widget
+		}
+		addsubmenu(iomenu, 'S_ave map') {
 			SaveFile.new(self, 'chose map file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm.save_map
 				} if @dasm_widget
 			} if @dasm_widget
 		}
-		addsubmenu(filemenu, 'Load map') {
-			OpenFile.new(self, 'chose map file') { |file|
-				@dasm_widget.dasm.load_map(File.read(file)) if @dasm_widget
-			} if @dasm_widget
-		}
-
-		addsubmenu(filemenu, 'Save C') {
+		addsubmenu(iomenu, 'Save _C') {
 			SaveFile.new(self, 'chose C file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm.c_parser
 				} if @dasm_widget
 			} if @dasm_widget
 		}
-		addsubmenu(filemenu, 'Load C') {
+		addsubmenu(filemenu, 'Load _C') {
 			OpenFile.new(self, 'chose C file') { |file|
 				@dasm_widget.dasm.parse_c(File.read(file)) if @dasm_widget
 			} if @dasm_widget
 		}
+		addsubmenu(filemenu, '_i/o', iomenu)
 		addsubmenu(filemenu)
 		addsubmenu(filemenu, 'QUIT') { destroy } # post_quit_message ?
 		# TODO fullsave (map + comments + cur focus_addr + binary? ...)
