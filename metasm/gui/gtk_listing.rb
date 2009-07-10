@@ -260,6 +260,7 @@ class AsmListingWidget < Gtk::HBox
 					curaddr += [di.bin_length, 1].max
 				end
 			elsif curaddr < @vscroll.adjustment.upper and s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
+				@dasm.comment[curaddr].each { |c| render['// ' + c, :comment] ; nl[] } if @dasm.comment[curaddr]
 				if label = invb[curaddr]
 					l_list = @dasm.prog_binding.keys.sort.find_all { |name| @dasm.prog_binding[name] == curaddr }
 					label = (l_list.pop if @dasm.xrefs[curaddr])

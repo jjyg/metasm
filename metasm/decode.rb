@@ -2291,9 +2291,14 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 		t = @decoded.map { |a, d|
 			next if not d.kind_of? DecodedInstruction
-			"#{Expression[a]},#{d.bin_length} #{d.instruction}#{" ; #{d.comment}" if d.comment}"
+			"#{Expression[a]},#{d.bin_length} #{d.instruction}#{" ; #{d.comment.join(' ')}" if d.comment}"
 		}.compact.sort.join("\n")
 		fd.puts "decoded #{t.length}", t
+
+		t = @comment.map { |a, c|
+			c.map { |l| l.chomp }.join("\n").split("\n").map { |lc| "#{Expression[a]} #{lc.chomp}" }
+		}.join("\n")
+		fd.puts "comment #{t.length}", t
 
 		bl = @decoded.values.map { |d|
 			d.block if d.kind_of? DecodedInstruction and d.address == d.block.address
@@ -2366,7 +2371,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			when 'decoded'
 				data.each_line { |l|
 					begin
-						next if l !~ /^([^,]*),(\d*) ([^;]*)(?: ; (.*))?/
+						next if l !~ /^([^,]*),(\d*) ([^;]*)(?:; (.*))?/
 						a, len, instr, cmt = $1, $2, $3, $4
 						a = Expression.parse(pp.feed!(a)).reduce
 						instr = @cpu.parse_instruction(app.feed!(instr))
@@ -2403,6 +2408,17 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 						# TODO
 					rescue
 						puts "load: bad function #{l.inspect} #$!" if $VERBOSE
+					end
+				}
+			when 'comment'
+				data.each_line { |l|
+					begin
+						a, c = l.split(' ', 2)
+						a = Expression.parse(pp.feed!(a)).reduce
+						@comment[a] ||= []
+						@comment[a] |= [c]
+					rescue
+						puts "load: bad comment #{l.inspect} #$!" if $VERBOSE
 					end
 				}
 			when 'c'

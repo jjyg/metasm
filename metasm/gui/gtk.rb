@@ -180,6 +180,24 @@ class DisasmWidget < Gtk::VBox
 		yield
 		focus_addr curaddr if curaddr
 	end
+	
+	# add/change a comment @addr
+	def add_comment(addr)
+		cmt = @dasm.comment[addr].to_a.join(' ')
+		if @dasm.decoded[addr].kind_of? DecodedInstruction
+			cmt += @dasm.decoded[addr].comment.to_a.join(' ')
+		end
+		inputbox("new comment for #{Expression[addr]}", :text => cmt) { |c|
+			c = c.split("\n")
+			c = nil if c == []
+			if @dasm.decoded[addr].kind_of? DecodedInstruction
+				@dasm.decoded[addr].comment = c
+			else
+				@dasm.comment[addr] = c
+			end
+			gui_update
+		}
+	end
 
 	# disassemble from this point
 	# if points to a call, make it return
@@ -328,6 +346,7 @@ class DisasmWidget < Gtk::VBox
 			when GDK_r; decompile(curview.current_address)
 			when GDK_v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag
 			when GDK_x; list_xrefs(pointed_addr)
+			when GDK_semicolon; add_comment(curview.current_address)
 
 			when GDK_space; toggle_view(:graph)
 			when GDK_Tab;   toggle_view(:decompile)
