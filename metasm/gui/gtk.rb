@@ -135,6 +135,7 @@ class DisasmWidget < Gtk::VBox
 
 	def focus_addr(addr, page=nil, quiet=false)
 		page ||= @notebook.page
+		page = 0 if page == -1
 		page = @view_index[page] || page
 		return if not addr
 		return if page == @notebook.page and addr == curview.current_address
