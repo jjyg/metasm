@@ -313,6 +313,8 @@ class Decompiler
 			n = @dasm.prog_binding.index(n) || n
 			n = $1 if n.kind_of? ::String and n =~ /^thunk_(.*)/
 			n
+		else
+			expr
 		end
 	end
 
