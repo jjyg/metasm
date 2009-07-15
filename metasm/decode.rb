@@ -2234,7 +2234,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	def save_map
 		@prog_binding.map { |l, o|
 			type = @decoded[o].kind_of?(DecodedInstruction) ? 'c' : 'd'	# XXX
-			o = o.to_s(16) if o.kind_of? ::Integer
+			o = o.to_s(16).rjust(8, '0') if o.kind_of? ::Integer
 			"#{o} #{type} #{l}"
 		}
 	end
@@ -2322,8 +2322,19 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		# TODO binding ?
 		fd.puts "funcs #{t.length}", t
 
-		#t = ''
-		#fd.puts "xrefs #{t.length}", t
+		t = @xrefs.map { |a, x|
+			a = ':default' if a == :default
+			a = ':unknown' if a == Expression::Unknown
+			# XXX origin
+			case x
+			when nil
+			when Xref
+				[Expression[a], x.type, x.len, (Expression[x.origin] if x.origin)].join(',')
+			when Array
+				x.map { |x_| [Expression[a], x_.type, x_.len, (Expression[x_.origin] if x_.origin)].join(',') }
+			end
+		}.compact.join("\n")
+		fd.puts "xrefs #{t.length}", t
 
 		t = @c_parser.to_s
 		fd.puts "c #{t.length}", t
@@ -2428,7 +2439,23 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				rescue
 					puts "load: bad C #$!" if $VERBOSE
 				end
-			#when 'xrefs'
+			when 'xrefs'
+				data.each_line { |l|
+					begin
+						a, t, l_, o_ = l.chomp.split(',')
+						case a
+						when ':default'; a = :default
+						when ':unknown'; a = Expression::Unknown
+						else a = Expression.parse(pp.feed!(a)).reduce
+						end
+						t = t.to_sym
+						l = l_.to_i if l_ != ''
+						o = Expression.parse(pp.feed!(o_)).reduce if o_ != ''	# :default/:unknown ?
+						add_xref(a, Xref.new(t, o, l))
+					rescue 
+						puts "load: bad xref #{l.inspect} #$!" if $VERBOSE
+					end
+				}
 			#when 'trace'
 			else
 				if block_given?
