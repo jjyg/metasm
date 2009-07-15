@@ -447,7 +447,11 @@ class Decompiler
 		simpler = lambda { |s|
 			case s
 			when C::Goto
-				jumpto[s.target].dup if jumpto[s.target]
+				if jumpto[s.target]
+					r = jumpto[s.target].dup
+					r.value = r.value.reduce(@c_parser) if r.kind_of? C::Return and r.value	# deep_dup
+					r
+				end
 			when C::Return
 				if scope.statements[-1].kind_of? C::Return and s.value == scope.statements[-1].value and s != scope.statements[-1]
 					C::Goto.new(scope.statements[-2].name)
