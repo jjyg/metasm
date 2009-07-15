@@ -40,6 +40,7 @@ class DisasmWidget < Gtk::VBox
 		addview[CdecompListingWidget, :decompile]
 		addview[AsmOpcodeWidget, :opcodes]
 		addview[HexWidget, :hex]
+		addview[CoverageWidget, :coverage]
 
 		@notebook.focus_child = curview
 
@@ -696,6 +697,7 @@ class MainWindow < Gtk::Window
 		addsubmenu(actions, 'List _xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
 		addsubmenu(actions, 'Re_name label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
 		addsubmenu(actions, 'Deco_mpile', 'r') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, '_Comment', ';') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, '_Pause dasm', 'p', :check) { |ck| ck.active = !@dasm_widget.playpause_dasm }
 		addsubmenu(actions, 'Run _ruby snippet', '^r') { @dasm_widget.prompt_run_ruby }
 		addsubmenu(actions, 'Run ruby plug_in') {
@@ -738,6 +740,7 @@ class MainWindow < Gtk::Window
 		addsubmenu(views, 'De_compiled') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :decompile) }
 		addsubmenu(views, 'Raw _opcodes') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :opcodes) }
 		addsubmenu(views, '_Hex') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :hex) }
+		addsubmenu(views, 'Co_verage') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :coverage) }
 
 		addsubmenu(@menu, views, '_Views')
 	end
@@ -790,6 +793,7 @@ end
 require 'metasm/gui/gtk_hex'
 require 'metasm/gui/gtk_listing'
 require 'metasm/gui/gtk_opcodes'
+require 'metasm/gui/gtk_coverage'
 require 'metasm/gui/gtk_graph'
 require 'metasm/gui/gtk_decomp'
 require 'metasm/gui/gtk_debug'
