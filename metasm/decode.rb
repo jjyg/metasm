@@ -2444,16 +2444,16 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			when 'xrefs'
 				data.each_line { |l|
 					begin
-						a, t, l_, o_ = l.chomp.split(',')
+						a, t, len_, o_ = l.chomp.split(',')
 						case a
 						when ':default'; a = :default
 						when ':unknown'; a = Expression::Unknown
 						else a = Expression.parse(pp.feed!(a)).reduce
 						end
 						t = t.to_sym
-						l = l_.to_i if l_ != ''
+						len = len_.to_i if len_ != ''
 						o = Expression.parse(pp.feed!(o_)).reduce if o_ != ''	# :default/:unknown ?
-						add_xref(a, Xref.new(t, o, l))
+						add_xref(a, Xref.new(t, o, len))
 					rescue 
 						puts "load: bad xref #{l.inspect} #$!" if $VERBOSE
 					end
