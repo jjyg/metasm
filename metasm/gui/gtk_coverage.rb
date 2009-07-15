@@ -8,6 +8,8 @@ require 'gtk2'
 module Metasm
 module GtkGui
 class CoverageWidget < Gtk::DrawingArea
+	attr_accessor :sections, :pixel_w, :pixel_h
+
 	# TODO wheel -> zoom, dblclick/rightclick -> clone clickaddr, :dasm, dragdrop -> scroll?(zoomed)
 	def initialize(dasm, parent_widget)
 		@dasm = dasm
@@ -111,64 +113,55 @@ class CoverageWidget < Gtk::DrawingArea
 
 		# find how much bytes we must stuff per pixel so that it fits in the window
 		# TODO cache the value
-		byte_per_col = @col_height
-		loop do
-			has = cols
-			@sections.each { |a, l, seq|
-				has -= (l + byte_per_col - 1) / byte_per_col
-			}
-			break if has >= 0
-			byte_per_col *= 2
-		end
-
+		bytes = @sections.map { |a, l, seq| l }.inject(0) { |a, b| a+b }
+		@byte_per_col = 2*bytes / cols / @col_height * @col_height
+		@byte_per_col = @col_height if @byte_per_col < @col_height
 
 		x = 0
 		y = ybase = 8
 
-		# 1 5
-		# 2 6
-		# 3 ...
-		# 4
-
 		# draws a rectangle covering h1 to h2 in y, of width w
 		# advances x as needed
-		draw_rect = lambda { |h1, h2, w|
+		draw_rect = lambda { |h1, h2, rw|
 			h2 += 1
-			w.draw_rectangle(gc, true, x, ybase+@pixel_h*h2-1, @pixel_w*w-1, @pixel_h*(h2-h1)-1)
-			w -= 1 if h2 != @col_height
-			x += w*@pixel_w
+			w.draw_rectangle(gc, true, x, ybase+@pixel_h*h1, @pixel_w*rw, @pixel_h*(h2-h1))
+			rw -= 1 if h2 != @col_height
+			x += rw*@pixel_w
 		}
 
 		# draws rectangles to cover o1 to o2
 		draw = lambda { |o1, o2|
-			o1 /= byte_per_col / @col_height
-			o2 /= byte_per_col / @col_height
-			next if o1 <= o2
+			next if o1 > o2
+			o1_ = o1
+
+			o1 /= @byte_per_col / @col_height
+			o2 /= @byte_per_col / @col_height
 
 			o11 = o1 % @col_height
 			o12 = o1 / @col_height
 			o21 = o2 % @col_height
 			o22 = o2 / @col_height
 
+			p11 = ((o1_ - 1) / @byte_per_col / @col_height) % @col_height
+			x -= @pixel_w if o11 == @col_height-1 and o11 == p11
+
 			if o11 > 0
 				draw_rect[o11, (o12 == o22 ? o21 : @col_height-1), 1]
 				next if o12 == o22
+				o12 += 1
 			end
 
-			o22 += 1 if o21 == 0
 			if o12 < o22
 				draw_rect[0, @col_height-1, o22-o12]
 			end
 
-			if o21 > 0
-				draw_rect[0, o21, 1]
-			end
+			draw_rect[0, o21, 1]
 		}
 
 		@sections.each { |a, l, seq|
 			curoff = 0
 			xstart = x
-			seq += [[l, l]]	if not seq[-1] or seq[-1][1] < l	# to draw last data
+			seq += [[l, l-1]]	if not seq[-1] or seq[-1][1] < l	# to draw last data
 			seq.each { |o, oe|
 				gc.set_foreground @color[:data]
 				draw[curoff, o-1]
@@ -182,8 +175,10 @@ class CoverageWidget < Gtk::DrawingArea
 			co = @curaddr-a
 			if co >= 0 and co < l
 				gc.set_foreground @color[:caret]
-				x = xstart
-				draw[co, co+byte_per_col/@col_height]
+				prevx = x
+				x = xstart + (co/@byte_per_col)*@pixel_w
+				draw_rect[0, @col_height-1, 1]
+				x = prevx
 			end
 
 			# TODO save section offsets to click.ev -> addr
@@ -225,9 +220,9 @@ class CoverageWidget < Gtk::DrawingArea
 	# focus on addr
 	# returns true on success (address exists)
 	def focus_addr(addr)
-		return if not addr = @parent_widget.normalize(addr)
+		return if not addr = @parent_widget.normalize(addr) or not @dasm.get_section_at(addr)
 		@curaddr = addr
-		redraw
+		gui_update
 		true
 	end
 
@@ -239,15 +234,19 @@ class CoverageWidget < Gtk::DrawingArea
 	def gui_update
 		# ary of section [addr, len, codespan]
 		# codespan is an ary of [code_off_start, code_off_end] (sorted by off)
-		@sections = @dasm.sections.map { |ed, a|
+		@sections = @dasm.sections.map { |a, ed|
 			a = Expression[a].reduce
 			l = ed.length
+			if a.kind_of? Integer
+				l += a % 32
+				a -= a % 32
+			end
 			acc = []
 			# stuff with addr-section_addr is to handle non-numeric section addrs (eg elf ET_REL)
 			@dasm.decoded.keys.map { |da| da-a rescue nil }.grep(Integer).grep(0..l).sort.each { |o|
 				da = @dasm.decoded[a+o]
 				next if not da.kind_of? DecodedInstruction
-				oe = o + da.length
+				oe = o + da.bin_length
 				if acc[-1] and acc[-1][1] >= o
 					# handle di overlapping
 					acc[-1][1] = oe if acc[-1][1] < oe
@@ -257,6 +256,7 @@ class CoverageWidget < Gtk::DrawingArea
 			}
 			[a, l, acc]
 		}
+		@sections = @sections.sort if @sections.all? { |a, l, s| a.kind_of? Integer }
 		redraw
 	end
 end
