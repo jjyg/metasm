@@ -196,6 +196,11 @@ class Graph
 					(gg.from - g1.from).empty? and (g1.from - gg.from).empty? and
 					(strict ? ((gg.to - g1.to).empty? and (g1.to - gg.to).empty?) : (g1.to & gg.to).first)
 				}
+				ary = g1.to.map { |gg| gg.from }.flatten.uniq.find_all { |gg|
+					gg != g1 and
+					(gg.to - g1.to).empty? and (g1.to - gg.to).empty? and
+					(strict ? ((gg.from - g1.from).empty? and (g1.from - gg.from).empty?) : (g1.from & gg.from).first)
+				} if ary.empty?
 				next if ary.empty?
 				ary << g1
 				dy = 16*ary.map { |g| g.to.length + g.from.length }.inject { |a, b| a+b }

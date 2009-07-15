@@ -18,8 +18,9 @@ class CoverageWidget < Gtk::DrawingArea
 		@curaddr = 0
 		@view_width = 0
 		@view_height = 0
-		@pixel_w = @pixel_h = 1	# use a font ?
+		@pixel_w = @pixel_h = 2	# use a font ?
 		@sections = []
+		@section_x = []
 
 		super()
 
@@ -75,9 +76,13 @@ class CoverageWidget < Gtk::DrawingArea
 	end
 
 	def click(ev)
-		# TODO
-		ev.x.to_i
-		ev.y.to_i
+		x, y = ev.x.to_i, ev.y.to_i
+		@sections.zip(@section_x).each { |(a, l, seq), (sx, sxe)|
+			if x >= sx and x <= sxe
+				@curaddr = a + (x-sx)/@pixel_w*@byte_per_col
+				redraw
+			end
+		}
 	end
 
 	def rightclick(ev)
@@ -85,7 +90,8 @@ class CoverageWidget < Gtk::DrawingArea
 	end
 
 	def doubleclick(ev)
-		# TODO clonewindow(addr, :listing)
+		click(ev)
+		@parent_widget.clone_window(@curaddr, :listing)
 	end
 
 	def mouse_wheel(ev)
@@ -117,7 +123,7 @@ class CoverageWidget < Gtk::DrawingArea
 		@byte_per_col = 2*bytes / cols / @col_height * @col_height
 		@byte_per_col = @col_height if @byte_per_col < @col_height
 
-		x = 0
+		x = 2*@pixel_w
 		y = ybase = 8
 
 		# draws a rectangle covering h1 to h2 in y, of width w
@@ -158,9 +164,10 @@ class CoverageWidget < Gtk::DrawingArea
 			draw_rect[0, o21, 1]
 		}
 
+		@section_x = []
 		@sections.each { |a, l, seq|
 			curoff = 0
-			xstart = x
+			@section_x << [x]
 			seq += [[l, l-1]]	if not seq[-1] or seq[-1][1] < l	# to draw last data
 			seq.each { |o, oe|
 				gc.set_foreground @color[:data]
@@ -169,19 +176,17 @@ class CoverageWidget < Gtk::DrawingArea
 				draw[o, oe]
 				curoff = oe+1
 			}
+			@section_x[-1] << x
 			x += @spacing*@pixel_w
+		}
 
-			# caret
+		@sections.zip(@section_x).each { |(a, l, seq), (sx, sxe)|
 			co = @curaddr-a
 			if co >= 0 and co < l
 				gc.set_foreground @color[:caret]
-				prevx = x
-				x = xstart + (co/@byte_per_col)*@pixel_w
+				x = sx + (co/@byte_per_col)*@pixel_w
 				draw_rect[0, @col_height-1, 1]
-				x = prevx
 			end
-
-			# TODO save section offsets to click.ev -> addr
 		}
 	end
 
