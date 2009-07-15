@@ -2317,7 +2317,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		fd.puts "blocks #{t.length}", t
 
 		t = @function.map { |a, f|
-			Expression[a].to_s if @decoded[a]
+			next if not @decoded[a]
+			[a, *f.return_address.to_a].map { |e| Expression[e] }.join(',')
 		}.compact.sort.join("\n")
 		# TODO binding ?
 		fd.puts "funcs #{t.length}", t
@@ -2414,8 +2415,9 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			when 'funcs'
 				data.each_line { |l|
 					begin
-						a = Expression.parse(pp.feed!(l)).reduce
+						a, *r = l.split(',').map { |e| Expression.parse(pp.feed!(e)).reduce }
 						@function[a] = DecodedFunction.new
+						@function[a].return_address = r if not r.empty?
 						# TODO
 					rescue
 						puts "load: bad function #{l.inspect} #$!" if $VERBOSE
