@@ -23,7 +23,8 @@ OptionParser.new { |opt|
 	opt.on('--debug-backtrace', 'enable backtrace-related debug messages (very verbose)') { opts[:debugbacktrace] = true }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-o <outfile>', '--output <outfile>', 'save the assembly listing in the specified file (defaults to stdout)') { |h| opts[:outfile] = h }
-	opt.on('-s <addrlist>', '--stop <addrlist>', '--stopaddr <addrlist>', 'do not disassemble past these addresses') { |h| opts[:stopaddr] ||= [] ; opts[:stopaddr] |= h.split ',' }
+	opt.on('-s <savefile>', 'save the disassembler state after disasm') { |h| opts[:savefile] = h }
+	opt.on('-S <addrlist>', '--stop <addrlist>', '--stopaddr <addrlist>', 'do not disassemble past these addresses') { |h| opts[:stopaddr] ||= [] ; opts[:stopaddr] |= h.split ',' }
 	opt.on('--custom <hookfile>', 'eval a ruby script hookfile') { |h| (opts[:hookfile] ||= []) << h }
 	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--benchmark') { opts[:benchmark] = true }
@@ -76,10 +77,13 @@ end
 t2 = Time.now if opts[:benchmark]
 
 if opts[:decompile]
+	dasm.save_file(opts[:savefile]) if opts[:savefile]
 	dcmp = Decompiler.new(dasm)
 	dcmp.decompile(*dasm.entrypoints)
 	tdc = Time.now if opts[:benchmark]
 end
+
+dasm.save_file(opts[:savefile]) if opts[:savefile]
 
 # output
 if opts[:outfile]
