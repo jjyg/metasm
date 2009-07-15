@@ -522,7 +522,8 @@ class COFF
 		ep.concat @tls.callbacks.to_a if tls
 		ep << (@optheader.image_base + label_rva(@optheader.entrypoint))
 		@export.exports.each { |e|
-			ep << (@optheader.image_base + label_rva(e.target)) if not e.forwarder_lib
+			next if e.forwarder_lib or not e.target
+			ep << (@optheader.image_base + label_rva(e.target))
 		} if export
 		ep
 	end
