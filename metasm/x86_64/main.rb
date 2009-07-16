@@ -109,14 +109,14 @@ class X86_64 < Ia32
 		raise "Invalid X86_64 family #{@family.inspect}" if not respond_to?("init_#@family")
 	end
 
-	# defines some C parser preprocessor macros to say who we are:
+	# defines some preprocessor macros to say who we are:
 	# TODO
-	def tune_cparser(cp)
-		super(cp, :itsmeX64)	# ask Ia32's to just call super()
+	def tune_prepro(pp)
+		super(pp, :itsmeX64)	# ask Ia32's to just call super()
 		# TODO
-		#cp.lexer.define_weak('_M_IX86', 500)
-		#cp.lexer.define_weak('_X86_')
-		#cp.lexer.define_weak('__i386__')
+		#pp.define_weak('_M_IX86', 500)
+		#pp.define_weak('_X86_')
+		#pp.define_weak('__i386__')
 	end
 
 	def str_to_reg(str)

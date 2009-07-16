@@ -915,12 +915,14 @@ module C
 		end
 
 		attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
+		attr_accessor :endianness
 		def initialize(lexer = nil, model=:ilp32)
 			@lexer = lexer || Preprocessor.new
 			@prev_pragma_callback = @lexer.pragma_callback
 			@lexer.pragma_callback = lambda { |tok| parse_pragma_callback(tok) }
 			@toplevel = Block.new(nil)
 			@unreadtoks = []
+			@endianness = :big	# used only to decode multibyte char constants
 			@typesize = { :void => 1, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8,
 				:char => 1, :float => 4, :double => 8, :longdouble => 12 }
 			send model
@@ -1785,7 +1787,7 @@ EOH
 						end
 					end
 				end
-				parse_attributes(parser)	# should be type.attrs, but this should be more existing-compiler-compatible
+				parse_attributes(parser, true)	# should be type.attrs, but this should be more existing-compiler-compatible
 			else
 				parser.unreadtok tok
 				return
@@ -2132,9 +2134,8 @@ EOH
 
 			when :quoted
 				if tok.raw[0] == ?'
-					# XXX should only warn...
-					raise tok, 'invalid character constant' if tok.value.length > 1
-					val = CExpression[tok.value[0], BaseType.new(:int)]
+					raise tok, 'invalid character constant' if not [1, 2, 4, 8].include? tok.value.length	# TODO 0fill
+					val = CExpression[Expression.decode_imm(tok.value, tok.value.length, parser.endianness), BaseType.new(:int)]
 				else
 					val = CExpression[tok.value, Pointer.new(BaseType.new(tok.raw[0, 2] == 'L"' ? :short : :char))]
 					val = parse_value_postfix(parser, scope, val)

@@ -18,7 +18,7 @@ class CPU
 	# returns an +Instruction+ or raise a ParseError
 	# if the parameter is a String, a custom AsmPP is built - XXX it will not be able to create labels (eg jmp 1b / jmp $)
 	def parse_instruction(lexer)
-		lexer = AsmPreprocessor.new(lexer) if lexer.kind_of? String
+		lexer = new_asmprepro(lexer) if lexer.kind_of? String
 
 		i = Instruction.new self
 
@@ -87,6 +87,12 @@ class CPU
 	# XXX handle HLA here ?
 	def parse_parser_instruction(lexer, instr)
 		raise instr, 'unknown parser instruction'
+	end
+
+	def new_asmprepro(str='', exe=nil)
+		pp = AsmPreprocessor.new(str, exe)
+		tune_prepro(pp)
+		pp
 	end
 end
 
@@ -283,7 +289,7 @@ class ExeFormat
 	# parses an asm source file to an array of Instruction/Data/Align/Offset/Padding
 	def parse(text, file='<ruby>', lineno=0)
 		parse_init
-		@lexer ||= AsmPreprocessor.new('', self)
+		@lexer ||= @cpu.new_asmprepro('', self)
 		@lexer.feed text, file, lineno
 		lasteol = true
 

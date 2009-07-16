@@ -71,7 +71,7 @@ else
 end
 
 __END__
-#include <asm/unistd_32.h>
+#include <asm/unistd.h>
 jmp getip
 gotip:
 mov eax, __NR_write

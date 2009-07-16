@@ -206,15 +206,15 @@ class Ia32 < CPU
 		@opcode_list
 	end
 
-	# defines some C parser preprocessor macros to say who we are:
+	# defines some preprocessor macros to say who we are:
 	# _M_IX86 = 500, _X86_, __i386__
 	# pass any value in nodefine to just call super w/o defining anything of our own
-	def tune_cparser(cp, nodefine = false)
-		super(cp)
+	def tune_prepro(pp, nodefine = false)
+		super(pp)
 		return if nodefine
-		cp.lexer.define_weak('_M_IX86', 500)
-		cp.lexer.define_weak('_X86_')
-		cp.lexer.define_weak('__i386__')
+		pp.define_weak('_M_IX86', 500)
+		pp.define_weak('_X86_')
+		pp.define_weak('__i386__')
 	end
 
 	# returns a Reg object if the arg is a valid register (eg 'ax' => Reg.new(0, 16))

@@ -44,9 +44,14 @@ class CPU
 	# sets up the C parser : standard macro definitions, type model (size of int etc)
 	def tune_cparser(cp)
 		cp.send "ilp#@size"
+		cp.endianness = @endianness
 		cp.lexer.define('_STDC', 1) if not cp.lexer.definition['_STDC']
-		# TODO cp.lexer.define('BIGENDIAN')
 		# TODO gcc -dM -E - </dev/null
+		tune_prepro(cp.lexer)
+	end
+
+	def tune_prepro(pp)
+		# TODO pp.define('BIGENDIAN')
 		# TODO ExeFormat-specific definitions
 	end
 
