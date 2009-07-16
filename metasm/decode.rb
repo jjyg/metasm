@@ -1959,7 +1959,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		loop do
 			di = @decoded[addr]
 			di.block.list.each { |ddi| addrs << ddi.address }
-			break if di.block.to_subfuncret.to_a != [] or di.block.to_normal.to_a.length == 1
+			break if di.block.to_subfuncret.to_a != [] or di.block.to_normal.to_a.length != 1
 			addr = di.block.to_normal.first
 		end
 		addrs.each { |a| @decoded.delete a }
