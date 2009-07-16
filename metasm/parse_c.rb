@@ -51,7 +51,7 @@ module C
 	module Attributes
 		attr_accessor :attributes
 
-		DECLSPECS = %w[cdecl stdcall fastcall inline naked thiscall]
+		DECLSPECS = %w[cdecl stdcall fastcall inline naked thiscall noreturn]
 
 		# parses a sequence of __attribute__((anything)) into self.attributes (array of string)
 		def parse_attributes(parser, allow_declspec = false)
@@ -81,7 +81,7 @@ module C
 					end
 					attrib << tok.raw
 				end
-				raise tok || parser if not allow_declspec and DECLSPECS.include? attrib
+				raise tok || parser, "attr #{attrib.inspect} not allowed here" if not allow_declspec and DECLSPECS.include? attrib
 			    when 'inline', '__inline', '__inline__', '__stdcall', '__fastcall', '__cdecl'
 				break if not allow_declspec
 				attrib = keyword.delete '_'
@@ -359,6 +359,9 @@ module C
 		attr_accessor :backtrace
 
 		def align(parser) BaseType.new(:int).align(parser) end
+
+		def arithmetic?; true end
+		def integral?; true end
 
 		def parse_members(parser, scope)
 			val = -1
@@ -1539,7 +1542,7 @@ EOH
 				nil
 			else
 				(var.type.qualifier ||= []).concat qualifier if not qualifier.empty?
-				var.type.parse_attributes(parser)
+				var.type.parse_attributes(parser, true)
 				var
 			end
 		end
@@ -1741,10 +1744,11 @@ EOH
 			elsif tok and tok.type == :punct and tok.raw == '('
 				# function prototype
 				# void __attribute__((noreturn)) func() => attribute belongs to func
-				if @type and @type.has_attribute('noreturn')
-					@type.attributes.delete 'noreturn'
+				if @type and dspec = @type.attributes.to_a & Attributes::DECLSPECS and not dspec.empty?
+					@type.attributes -= dspec
 					@type.attributes = nil if @type.attributes.empty?
-					add_attribute 'noreturn'
+					@attributes ||= []
+					@attributes |= dspec
 				end
 				t = self
 				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
