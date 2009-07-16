@@ -33,7 +33,7 @@ if opts[:vspath] ||= ARGV.shift
 	opts[:vspath] = opts[:vspath].tr('\\', '/')
 	opts[:vspath] = opts[:vspath].chop if opts[:vspath][-1] == ?/
 	if opts[:ddk]
-		opts[:path] << opts[:vspath]
+		opts[:path] << (opts[:vspath]+'/ddk') << (opts[:vspath]+'/api') << (opts[:vspath]+'/crt')
 	else
 		opts[:vspath] = opts[:vspath][0...-3] if opts[:vspath][-3..-1] == '/VC'
 		opts[:path] << (opts[:vspath]+'/VC/platformsdk/include') << (opts[:vspath]+'/VC/include')
@@ -55,11 +55,13 @@ ARGV.each { |n|
 }
 
 src = <<EOS + opts[:hdrs].to_a.map { |h| "#include <#{h}>\n" }.join
-#if DDK
+#ifdef DDK
  #define NO_INTERLOCKED_INTRINSICS
  typedef struct _CONTEXT CONTEXT;	// needed by ntddk.h, but this will pollute the factorized output..
  typedef CONTEXT *PCONTEXT;
  #define dllimport stdcall		// wtff
+ #define SORTPP_PASS			// C_ASSERT proprocessor assert..
+ #define _MSC_EXTENSIONS		// __volatile stuff
  #include <ntddk.h>
  #include <stdio.h>
 #else
