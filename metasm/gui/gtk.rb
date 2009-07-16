@@ -222,6 +222,16 @@ class DisasmWidget < Gtk::VBox
 		focus_addr(addr, :decompile)
 	end
 
+	def toggle_data(addr)
+		next if @dasm.decoded[addr] or not @dasm.get_section_at(addr)
+		@dasm.add_xref(addr, Xref.new(nil, nil, 1)) if not @dasm.xrefs[addr]
+		@dasm.each_xref(addr) { |x|
+			x.len = {1 => 2, 2 => 4, 4 => 1}[x.len]
+			break
+		}
+		gui_update
+	end
+
 	def list_functions
 		list = [['name', 'addr']]
 		@dasm.function.keys.each { |f|
@@ -258,8 +268,20 @@ class DisasmWidget < Gtk::VBox
 
 	# jump to address
 	def prompt_goto
-		# TODO history, completion
-		inputbox('address to go', :text => Expression[curaddr]) { |v| focus_addr v }
+		inputbox('address to go', :text => Expression[curaddr]) { |v|
+			if not focus_addr(v, nil, true)
+				labels = @dasm.prog_binding.map { |k, vv|
+ 					[k, Expression[@dasm.normalize(vv)]] if k.downcase.include? v.downcase
+				}.compact
+				case labels.length
+				when 0; focus_addr(v)
+				when 1; focus_addr(labels[0][0])
+				else
+					labels.unshift ['name', 'addr']
+					listwindow("list of labels", labels) { |i| focus_addr i[1] }
+				end
+			end
+		}
 	end
 
 	def prompt_parse_c_file
@@ -339,6 +361,7 @@ class DisasmWidget < Gtk::VBox
 			when GDK_Return, GDK_KP_Enter; focus_addr curview.hl_word
 			when GDK_Escape; focus_addr_back
 			when GDK_c; disassemble(curview.current_address)
+			when GDK_d; toggle_data(curview.current_address)
 			when GDK_f; list_functions
 			when GDK_g; prompt_goto
 			when GDK_l; list_labels
@@ -686,7 +709,7 @@ class MainWindow < Gtk::Window
 		@accel_group = Gtk::AccelGroup.new
 
 		actions = Gtk::Menu.new
-		addsubmenu(actions, '_Disassemble here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, 'Disassemble here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
 		i = addsubmenu(actions, '_Follow') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Return, 0, Gtk::ACCEL_VISIBLE)
 		i = addsubmenu(actions, 'Jmp _back') { @dasm_widget.focus_addr_back }
@@ -698,6 +721,8 @@ class MainWindow < Gtk::Window
 		addsubmenu(actions, 'Re_name label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
 		addsubmenu(actions, 'Deco_mpile', 'r') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, '_Comment', ';') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, '_Undefine') { @dasm_widget.dasm.undefine_from(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, '_Data', 'd') { @dasm_widget.toggle_data(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, '_Pause dasm', 'p', :check) { |ck| ck.active = !@dasm_widget.playpause_dasm }
 		addsubmenu(actions, 'Run _ruby snippet', '^r') { @dasm_widget.prompt_run_ruby }
 		addsubmenu(actions, 'Run ruby plug_in') {
@@ -712,12 +737,12 @@ class MainWindow < Gtk::Window
 		addsubmenu(options, '_Verbose', :check, $VERBOSE, 'v') { |ck| $VERBOSE = ck.active? ; puts "#{'not ' if not $VERBOSE}verbose" }
 		addsubmenu(options, '_Debug', :check, $DEBUG) { |ck| $DEBUG = ck.active? }
 		addsubmenu(options, 'Debug _backtrace', :check) { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
-		addsubmenu(options, 'Backtrace limit') {
+		addsubmenu(options, 'Backtrace limi_t') {
 			InputBox.new(self, 'max blocks to backtrace', :text => @dasm_widget.dasm.backtrace_maxblocks ) { |target|
 				protect { @dasm_widget.dasm.backtrace_maxblocks = Integer(target) } if not target.empty?
 			}
 		}
-		addsubmenu(options, 'Backtrace limit (data)') {
+		addsubmenu(options, 'Backtrace _limit (data)') {
 			InputBox.new(self, 'max blocks to backtrace data (-1 to never start)',
 					:text => @dasm_widget.dasm.backtrace_maxblocks_data ) { |target|
 				protect { @dasm_widget.dasm.backtrace_maxblocks_data = Integer(target) } if not target.empty?

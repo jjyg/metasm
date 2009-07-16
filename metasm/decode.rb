@@ -980,7 +980,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	end
 
 	# splits an InstructionBlock, updates the blocks backtracked_for
-	def split_block(block, address)
+	def split_block(block, address=nil)
+		block, address = @decoded[block].block, block if not address
 		return block if address == block.address
 		new_b = block.split address
 		new_b.backtracked_for.dup.each { |btt|
@@ -1948,6 +1949,28 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		end
 
 		fb if not by.empty?
+	end
+
+	# undefine a sequence of decodedinstructions from an address, stops at first non-linear branch
+	def undefine_from(addr)
+		return if not @decoded[addr].kind_of? DecodedInstruction
+		split_block(addr)
+		addrs = []
+		loop do
+			di = @decoded[addr]
+			di.block.list.each { |ddi| addrs << ddi.address }
+			break if di.block.to_subfuncret.to_a != [] or di.block.to_normal.to_a.length == 1
+			addr = di.block.to_normal.first
+		end
+		addrs.each { |a| @decoded.delete a }
+		@xrefs.delete_if { |a, x|
+			if not x.kind_of? Array
+				true if x and addrs.include? x.origin
+			else
+				x.delete_if { |xx| addrs.include? xx.origin }
+				true if x.empty?
+			end
+		}
 	end
 
 	# merge two instruction blocks if they form a simple chain and are adjacent
