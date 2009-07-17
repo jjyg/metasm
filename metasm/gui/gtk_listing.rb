@@ -275,7 +275,6 @@ class AsmListingWidget < Gtk::HBox
 
 				# TODO real data display (dwords, xrefs, strings..)
 				len = 256
-				len -= curaddr % 256 if curaddr.kind_of? Integer
 				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or invb[curaddr+l] or s[0].reloc[s[0].ptr+l] } || len
 				if s[0].data.length > s[0].ptr
 					str = s[0].read(len).unpack('C*')
@@ -288,15 +287,26 @@ class AsmListingWidget < Gtk::HBox
 							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}" if xref.origin
 						}
 						comment = nil if comment.empty?
-						len = 1 if (len != 2 and len != 4) or len < 1
-						dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]} "
-						aoff = len
+						if len == 1 and asc = str.inject('') { |asc_, c|
+								case c
+								when 0x20..0x7e; asc_ << c
+								else break asc_
+								end
+							} and asc.length > 3
+							dat = "db #{asc.inspect} "
+							aoff = asc.length
+						else
+							len = 1 if (len != 2 and len != 4) or len < 1
+							dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]} "
+							aoff = len
+						end
 					elsif rep = str.inject(0) { |rep_, c|
 						case c
 						when str[0]; rep_+1
 						else break rep_
 						end
 					} and rep > 4
+						rep -= curaddr % 256 if rep == 256 and curaddr.kind_of? Integer
 						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]}) "
 						aoff = rep
 					elsif asc = str.inject('') { |asc_, c|
@@ -323,6 +333,7 @@ class AsmListingWidget < Gtk::HBox
 						aoff = len
 					else
 						len = [len, s[0].length-s[0].ptr].min
+						len -= curaddr % 256 if len == 256 and curaddr.kind_of? Integer
 						dat = "#{Expression[len]} dup(?) "
 						aoff = len
 					end
