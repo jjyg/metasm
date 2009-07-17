@@ -93,7 +93,7 @@ if opts[:outfile]
 		dasm.dump(!opts[:nodata]) { |l| fd.puts l }
 		fd.puts "#endif" if opts[:decompile]
 	}
-else
+elsif not opts[:savefile]
 	if opts[:decompile]
 		puts dcmp.c_parser
 	else
