@@ -107,7 +107,17 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 	end
 
 	def di_at(addr)
-		s = @dasm.get_section_at(addr) and s[0].ptr < s[0].length and @dasm.cpu.decode_instruction(s[0], addr)
+		s = @dasm.get_section_at(addr) and s[0].ptr < s[0].length and update_di_args(@dasm.cpu.decode_instruction(s[0], addr))
+	end
+
+	def update_di_args(di)
+		if di
+			di.instruction.args.map! { |e|
+				next e if not e.kind_of? Expression
+				@dasm.get_label_at(e) || e
+			}
+		end
+		di
 	end
 
 	def scrollup

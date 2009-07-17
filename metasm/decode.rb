@@ -799,6 +799,12 @@ class Disassembler
 		l
 	end
 
+	# returns the label associated to an addr, or nil if none exist
+	def get_label_at(addr)
+		e, b = get_section_at(addr)
+		e.inv_export[e.ptr] if e
+	end
+
 	# sets the label for the specified address
 	# returns nil if the address is not mapped
 	def set_label_at(addr, name)
