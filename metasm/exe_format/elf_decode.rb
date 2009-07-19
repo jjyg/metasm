@@ -293,6 +293,27 @@ class ELF
 		}
 	end
 
+	# marks a symbol as @encoded.export (from s.value, using segments)
+	def decode_symbol_export(s)
+		if s.name and s.shndx != 'UNDEF' and %w[NOTYPE OBJECT FUNC].include?(s.type)
+			if not o = addr_to_off(s.value)
+				# allow to point to end of segment
+				if not seg = @segments.find { |seg_| seg_.type == 'LOAD' and seg_.vaddr + seg_.memsz == s.value }	# check end
+					puts "W: Elf: symbol points to unmmaped space (#{s.inspect})" if $VERBOSE and s.shndx != 'ABS'
+					next
+				end
+				# LoadedELF would have returned an addr_to_off = addr
+				o = s.value - seg.vaddr + seg.offset
+			end
+			name = s.name
+			while @encoded.export[name] and @encoded.export[name] != o
+				puts "W: Elf: symbol #{name} already seen at #{'%X' % @encoded.export[name]} - now at #{'%X' % o}) (may be a different version definition)" if $VERBOSE
+				name += '_'	# do not modify inplace
+			end
+			@encoded.add_export name, o
+		end
+	end
+
 	# read symbol table, and mark all symbols found as exports of self.encoded
 	# tables locations are found in self.tags
 	# XXX symbol count is found from the hash table, this may not work with GNU_HASH only binaries
@@ -321,29 +342,31 @@ class ELF
 		sym_count.times {
 			s = Symbol.decode(self, strtab)
 			@symbols << s
-
-			# mark in @encoded.export
-			if s.name and s.shndx != 'UNDEF' and %w[NOTYPE OBJECT FUNC].include?(s.type)
-				if not o = addr_to_off(s.value)
-					# allow to point to end of segment
-					if not seg = @segments.find { |seg_| seg_.type == 'LOAD' and seg_.vaddr + seg_.memsz == s.value }	# check end
-						puts "W: Elf: symbol points to unmmaped space (#{s.inspect})" if $VERBOSE and s.shndx != 'ABS'
-						next
-					end
-					# LoadedELF would have returned an addr_to_off = addr
-					o = s.value - seg.vaddr + seg.offset
-				end
-				name = s.name
-				while @encoded.export[name] and @encoded.export[name] != o
-					puts "W: Elf: symbol #{name} already seen at #{'%X' % @encoded.export[name]} - now at #{'%X' % o}) (may be a different version definition)" if $VERBOSE
-					name += '_'	# do not modify inplace
-				end
-				@encoded.add_export name, o
-			end
+			decode_symbol_export(s)
 		}
 
 		check_symbols_hash if $VERBOSE
 		check_symbols_gnu_hash if $VERBOSE
+	end
+
+	# decodes the .symtab section
+	# currently for ET_EXEC/DYN only
+	def decode_sections_symbols
+		@symbols ||= []
+		@sections.to_a.each { |sec|
+			next if sec.type != 'SYMTAB'
+			strtab = @sections[sec.link]
+			strtab = @encoded[strtab.offset, strtab.size].data
+			@encoded.ptr = sec.offset
+			syms = []
+			(sec.size/Symbol.size(self)).times { syms << Symbol.decode(self, strtab) }
+			syms.each { |s|
+				next if s.shndx == 'UNDEF'
+				next if @symbols.find { |ss| ss.name == s.name }
+				@symbols << s
+				decode_symbol_export(s)
+			}
+		}
 	end
 
 	# decode relocation tables (REL, RELA, JMPREL) from @tags
@@ -568,6 +591,7 @@ class ELF
 	# decodes the dynamic segment, fills segments.encoded
 	def decode_segments
 		decode_segments_dynamic
+		decode_sections_symbols
 		@segments.each { |s|
 			case s.type
 			when 'LOAD', 'INTERP'
