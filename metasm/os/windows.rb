@@ -640,8 +640,13 @@ class WinDebugger < Debugger
 		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp, :eip]
 	end
 
-	def pc_reg ; :eip ; end
-	def sp_reg ; :esp ; end
+	# reg => regsize (bits, 1 for flags)
+	def register_size
+		Hash.new(32)
+	end
+
+	def register_pc ; :eip ; end
+	def register_sp ; :esp ; end
 
 	def ctx
 		@ctx ||= @dbg.get_context(@pid, @tid)

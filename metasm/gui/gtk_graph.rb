@@ -259,8 +259,11 @@ class Graph
 				els = (g2.to - [thn]).first
 				if thn.to == [els]
 					els = nil
+				elsif els.to != thn.to
+					align_vt[[g, g2]]
+					merge_groups[[g, g2]]
+					break true
 				else
-					next if els.to != thn.to
 					align_hz[[thn, els]]
 					thn = merge_groups[[thn, els]]
 				end

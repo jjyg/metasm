@@ -15,37 +15,48 @@ module GtkGui
 # TODO customize child widgets (listing: persistent hilight of current instr, show/set breakpoints, ...)
 # TODO mark changed register values after singlestep
 # TODO handle debugee fork()
-class DbgWidget < Gtk::Layout
+class DbgWidget < Gtk::VBox
 	def initialize(dbg)
-		# slave windows (disassembly, memory hex..)
-		@children = []
-		# child => expression
-		@watchpoint = {}
+		super()
+
 		@dbg = dbg
 
 		setup_keyboard_cb
 
-		super()
+		@regs = DbgRegWidget.new(self, dbg)
+		@code = DisasmWidget.new(dbg.disassembler)
+		@mem = DisasmWidget.new(dbg.disassembler)
+		@code.start_disassembling
 
-		signal_connect('size_allocate') { |w, alloc| # resize
-			autofit(alloc.width, alloc.height)
+		@code.keyboard_callback = @keyboard_cb
+		@mem.keyboard_callback = @keyboard_cb
+
+		self.spacing = 2
+		add @regs, 'expand' => false
+		add @mem
+		add @code
+
+		# 1st child should be clonable (dasm)
+		@children = [@code, @mem, @regs]
+		@watchpoint = { @code => @dbg.register_pc }
+
+		signal_connect('size_allocate') { |w, alloc|
+			resize(alloc.width, alloc.height)
 		}
 
-		@reg = DbgRegWidget.new(self, dbg)
-		put(@reg, 0, 0)
+		signal_connect('realize') {
+			@code.focus_addr(0, :opcodes)
+			@mem.focus_addr(0, :hex)
+			gui_update
+		}
 
-		title = (toplevel.title rescue 'debugger')
-		spawn_1stchild(title+' - memory', :hex, 0)
-		new_child(title+' - listing', :opcodes, @dbg.pc_reg)
-		@children << @reg
-		stk = new_child(title+' - stack', :hex, @dbg.sp_reg)
-		w = stk.widget(:hex)
-		w.data_size = 4
-		w.view_addr -= w.line_size*3
-		w.caret_y += 3
+		set_size_request(640, 480)
+
+		# XXX mem has always the focus
 	end
 
-	def autofit(w, h)
+	def resize(w, h)
+		@regs.set_width_request w
 	end
 
 	include Gdk::Keyval
@@ -76,6 +87,7 @@ class DbgWidget < Gtk::Layout
 	end
 
 	def pre_dbg_run
+		@regs.pre_dbg_run
 	end
 
 	def post_dbg_run
@@ -90,7 +102,6 @@ class DbgWidget < Gtk::Layout
 				c.focus_addr @dbg.resolve_expr(wp), nil, true
 			end
 		}
-		redraw
 	end
 
 	def spawn_1stchild(title, page, addr)
@@ -134,8 +145,9 @@ class DbgRegWidget < Gtk::DrawingArea
 		@write_pending = {}	# addr -> newvalue (bytewise)
 
 		@registers = @dbg.register_list
-		@register_size = Hash.new(32) #@dbg.register_size	# in bits, 1 for flags
+		@register_size = @dbg.register_size	# in bits, 1 for flags
 		@reg_cache = Hash.new(0)
+		@reg_cache_old = {}
 	
 		super()
 
@@ -174,6 +186,7 @@ class DbgRegWidget < Gtk::DrawingArea
 			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
 
 			set_color_association :label => :black, :data => :blue, :write_pending => :darkred,
+				       	:changed => :darkgreen,
 					:caret => :black, :bg => :white, :inactive => :palegrey
 		}
 
@@ -220,7 +233,8 @@ class DbgRegWidget < Gtk::DrawingArea
 			render[reg.to_s, :label]
 			v = @write_pending[reg] || @reg_cache[reg]
 			x = xd
-			col = running ? :inactive : @write_pending[reg] ? :write_pending : :data
+			col = @write_pending[reg] ? :write_pending : @reg_cache_old.fetch(reg, v) != v ? :changed : :data
+			col = :inactive if running
 			render["%0#{@register_size[reg]/4}x " % v, col]
 			y += @font_height
 		}
@@ -232,8 +246,11 @@ class DbgRegWidget < Gtk::DrawingArea
 		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
 
 		@oldcaret_x, @oldcaret_reg = @caret_x, @caret_reg
+	end
 
-		set_height_request(y+1)
+	def set_width_request(w)
+		super(w)
+		set_height_request(@registers.length * @font_height)
 	end
 
 	# char x of start of reg value zone
@@ -308,6 +325,10 @@ class DbgRegWidget < Gtk::DrawingArea
 			return @parent_widget.keypress(ev)
 		end
 		true
+	end
+
+	def pre_dbg_run
+		@reg_cache_old = @reg_cache.dup if @reg_cache
 	end
 
 	def commit_writes

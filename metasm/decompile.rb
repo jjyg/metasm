@@ -213,6 +213,7 @@ class Decompiler
 			if @dasm.get_section_at(addr)
 				@dasm.disassemble(addr) if not @dasm.decoded[addr]
 				f = @dasm.function[addr] ||= DecodedFunction.new
+				# TODO detect thunks (__noreturn)
 				f.stackoff_name ||= {}
 				f.stackoff_type ||= {}
 				if not @c_parser.toplevel.symbol[name]
