@@ -699,6 +699,7 @@ class Disassembler
 		@prog_binding = {}
 		@old_prog_binding = {}
 		@addrs_todo = []
+		@addrs_done = []
 		@address_binding = {}
 		@backtrace_maxblocks = @@backtrace_maxblocks
 		@comment = {}
@@ -903,7 +904,6 @@ puts "  finalize subfunc #{Expression[addr]}" if debug_backtrace
 	# adds next addresses to handle to addrs_todo
 	# if @function[:default] exists, jumps to unknows locations are interpreted as to @function[:default]
 	def disassemble_step
-		@addrs_done ||= []
 		return if not todo = @addrs_todo.pop or @addrs_done.include? todo
 		@addrs_done << todo if todo[1]
 
@@ -1961,13 +1961,14 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# undefine a sequence of decodedinstructions from an address, stops at first non-linear branch
 	def undefine_from(addr)
 		return if not @decoded[addr].kind_of? DecodedInstruction
+		@comment.delete addr if @function.delete addr
 		split_block(addr)
 		addrs = []
-		loop do
-			di = @decoded[addr]
+		while di = @decoded[addr] and di.kind_of? DecodedInstruction
 			di.block.list.each { |ddi| addrs << ddi.address }
 			break if di.block.to_subfuncret.to_a != [] or di.block.to_normal.to_a.length != 1
 			addr = di.block.to_normal.first
+			break if @decoded[addr].kind_of? DecodedInstruction and @decoded[addr].block.from_normal.to_a.length != 1
 		end
 		addrs.each { |a| @decoded.delete a }
 		@xrefs.delete_if { |a, x|
@@ -1978,6 +1979,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				true if x.empty?
 			end
 		}
+		@addrs_done.delete_if { |ad| addrs.include? normalize(ad[0]) }
 	end
 
 	# merge two instruction blocks if they form a simple chain and are adjacent
@@ -2475,15 +2477,15 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			when 'xrefs'
 				data.each_line { |l|
 					begin
-						a, t, len_, o_ = l.chomp.split(',')
+						a, t, len, o = l.chomp.split(',')
 						case a
 						when ':default'; a = :default
 						when ':unknown'; a = Expression::Unknown
 						else a = Expression.parse(pp.feed!(a)).reduce
 						end
 						t = t.to_sym
-						len = len_.to_i if len_ != ''
-						o = Expression.parse(pp.feed!(o_)).reduce if o_ != ''	# :default/:unknown ?
+						len = (len != '' ? len.to_i : nil)
+						o = (o != '' ? Expression.parse(pp.feed!(o)).reduce : nil)	# :default/:unknown ?
 						add_xref(a, Xref.new(t, o, len))
 					rescue 
 						puts "load: bad xref #{l.inspect} #$!" if $VERBOSE

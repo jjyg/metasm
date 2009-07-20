@@ -800,6 +800,7 @@ class GraphViewWidget < Gtk::HBox
 		# populate boxes
 		addr2box = {}
 		todo = ctx.root_addrs.dup
+		todo.delete_if { |t| not @dasm.decoded[t].kind_of? DecodedInstruction }	# undefined func start
 		done = []
 		while a = todo.shift
 			next if done.include? a
