@@ -777,6 +777,13 @@ class Disassembler
 		end
 	end
 
+	# reads len raw bytes from the mmaped address space
+	def read_raw_data(addr, len)
+		if e = get_section_at(addr)
+			e[0].read(len)
+		end
+	end
+
 	# returns the label at the specified address, creates it if needed using "prefix_addr"
 	# renames the existing label if it is in the form rewritepfx_addr
 	# returns nil if the address is not known and is not a string
