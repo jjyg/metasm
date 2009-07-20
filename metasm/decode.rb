@@ -2447,6 +2447,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 						a, *r = l.split(',').map { |e| Expression.parse(pp.feed!(e)).reduce }
 						@function[a] = DecodedFunction.new
 						@function[a].return_address = r if not r.empty?
+						@function[a].finalized = true
 						# TODO
 					rescue
 						puts "load: bad function #{l.inspect} #$!" if $VERBOSE
