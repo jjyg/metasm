@@ -240,23 +240,30 @@ class CdecompListingWidget < Gtk::DrawingArea
 					elsif f.outer.symbol[n]
 						@dasm.rename_label(n, v)
 						s = f.outer.symbol[v] = f.outer.symbol.delete(n)
-						@curaddr = v if @curaddr == n
+						@curaddr = v if @curaddr == n                   
 					end
 					s.name = v
 					gui_update
 				}
 			end
-		when GDK_t
+		when GDK_t	# change variable type (you'll want to redecompile after that)
 			f = curfunc.initializer if curfunc and curfunc.initializer.kind_of? C::Block
 			n = @hl_word
-			if (f and s = f.symbol[n]) or s = @dasm.c_parser.toplevel.symbol[n]
-				@parent_widget.inputbox("new type for #{n}", :text => s.type.to_s) { |t|
-					# TODO persistence (store it in
-					#  @dasm.function[@curaddr].stackoff_type[v.stackoff] or whatever
-					#  patch #decompile to use it)
-					# put t in a preprocessor and make @dasm.c_parser parse the type as a cast
-					# update the var, redecompile (noauto for batch?)
-					@parent_widget.messagebox("unimplemented - sorry")
+			cp = @dasm.c_parser
+			if (f and s = f.symbol[n]) or s = cp.toplevel.symbol[n]
+				@parent_widget.inputbox("new type for #{n}", :text => s.dump_def(cp.toplevel)[0].to_s) { |t|
+					begin
+						# TODO change type of current function => change retaddr/args types
+						cp.lexer.feed(t)
+						raise 'bad type' if not v = C::Variable.parse_type(cp, cp.toplevel)
+						v.parse_declarator(cp, cp.toplevel)
+						f.stackoff_type[s.stackoff] = v.type if s.stackoff
+						s.type = v.type
+						gui_update
+					rescue
+						@parent_widget.messagebox([$!.message, $!.backtrace].join("\n"), "error")
+					end
+					cp.readtok until cp.eos?
 				}
 			end
 		else

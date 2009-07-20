@@ -1202,6 +1202,10 @@ EOH
 			t
 		end
 
+		def eos?
+			@unreadtoks.empty? and @lexer.eos?
+		end
+
 		def unreadtok(tok)
 			@unreadtoks << tok if tok
 		end
@@ -1669,9 +1673,9 @@ EOH
 		# rec for internal use only
 		def parse_declarator(parser, scope, rec = false)
 			parse_attributes(parser, true)
-			raise parser if not tok = parser.skipspaces
+			tok = parser.skipspaces
 			# read upto name
-			if tok.type == :punct and tok.raw == '*'
+			if tok and tok.type == :punct and tok.raw == '*'
 				ptr = Pointer.new
 				ptr.parse_attributes(parser)
 				while ntok = parser.skipspaces and ntok.type == :string
@@ -1689,10 +1693,10 @@ EOH
 				ptr.type = t.type
 				t.type = ptr
 				return
-			elsif tok.type == :punct and tok.raw == '('
+			elsif tok and tok.type == :punct and tok.raw == '('
 				parse_declarator(parser, scope, true)
 				raise tok || parser, '")" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
-			elsif tok.type == :string
+			elsif tok and tok.type == :string
 				case tok.raw
 				when 'const', 'volatile'
 					(@type.qualifier ||= []) << tok.raw.to_sym
@@ -1710,7 +1714,7 @@ EOH
 				parse_attributes(parser, true)
 			else
 				# unnamed
-				raise tok if name or name == false
+				raise tok || parser if name or name == false
 				@name = false
 				@backtrace = tok
 				parser.unreadtok tok
