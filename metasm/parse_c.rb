@@ -16,7 +16,7 @@ module C
 			void int float double char  signed unsigned long short
 			case continue break return default  __attribute__
 			asm __asm __asm__ sizeof typeof
-			__declspec __cdecl __stdcall __fastcall
+			__declspec __cdecl __stdcall __fastcall __noreturn
 			inline __inline __inline__ __volatile__
 			__int8 __int16 __int32 __int64
 			__builtin_offsetof
@@ -82,10 +82,11 @@ module C
 					attrib << tok.raw
 				end
 				raise tok || parser, "attr #{attrib.inspect} not allowed here" if not allow_declspec and DECLSPECS.include? attrib
-			    when 'inline', '__inline', '__inline__', '__stdcall', '__fastcall', '__cdecl'
-				break if not allow_declspec
-				attrib = keyword.delete '_'
-			    else break
+			    else
+				    if allow_declspec and DECLSPECS.include? keyword.gsub('_', '')
+					    attrib = keyword.gsub('_', '')
+				    else break
+				    end
 			    end
 			    add_attribute(attrib)
 			end
@@ -895,16 +896,14 @@ module C
 	class Parser
 		# creates a new CParser, parses all top-level statements
 		def self.parse(text)
-			c = new
-	                c.parse text
-			raise c.lexer.readtok || c, 'invalid definition' if not c.lexer.eos?
-			c
+			new.parse text
 		end
 
 		# parses the current lexer content (or the text arg) for toplevel definitions
 		def parse(text=nil, filename='<unk>', lineno=1)
 			@lexer.feed text, filename, lineno if text
 			nil while not @lexer.eos? and (parse_definition(@toplevel) or parse_toplevel_statement(@toplevel))
+			raise @lexer.readtok || self, 'invalid definition' if not @lexer.eos?
 			sanity_checks
 			self
 		end

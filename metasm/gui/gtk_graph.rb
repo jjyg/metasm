@@ -249,7 +249,7 @@ class Graph
 
 		# if (a || b) c;
 		# the 'else' case handles '&& else', and && is two if/then nested
-		group_or = lambda {
+		group_or = lambda { |strict|
 			groups.find { |g|
 				next if g.to.length != 2
 				g2 = g.to[0]
@@ -260,6 +260,7 @@ class Graph
 				if thn.to == [els]
 					els = nil
 				elsif els.to != thn.to
+					next if strict
 					align_vt[[g, g2]]
 					merge_groups[[g, g2]]
 					break true
@@ -332,11 +333,11 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 
 		# known, clean patterns
 		group_clean = lambda {
-			group_columns[] or group_lines[true] or group_ifthen[true] or group_loop[] or group_or[]
+			group_columns[] or group_lines[true] or group_ifthen[true] or group_loop[] or group_or[true]
 		}
 		# approximations
 		group_unclean = lambda {
-			group_lines[false] or group_ifthen[false] or group_halflines[] or group_other[]
+			group_lines[false] or group_or[false] or group_ifthen[false] or group_halflines[] or group_other[]
 		}
 
 		nil while groups.length > 1 and (group_clean[] or trim_graph[] or group_unclean[])

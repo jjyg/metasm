@@ -1020,7 +1020,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				each_xref(waddr, :w) { |x|
 					#next if off + x.len < 0
 					puts "W: disasm: self-modifying code at #{Expression[waddr]}" if $VERBOSE
-					@comment[di_addr] = "overwritten by #{@decoded[x.origin]}"
+					@comment[di_addr] ||= []
+					@comment[di_addr] |= ["overwritten by #{@decoded[x.origin]}"]
 					@callback_selfmodifying[di_addr] if callback_selfmodifying
 					return
 				}
