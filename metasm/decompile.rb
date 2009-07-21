@@ -796,7 +796,7 @@ class Decompiler
 					ary[ary.index(s)..ary.index(g)] = [w]
 					finished = false ; break	#retry
 				end
-				if g = ary[ary.index(s)..-1].reverse.find { |_s| _s.kind_of? C::If and not _s.belse and _s.bthen.kind_of? C::Goto and _s.bthen.target == s.name }
+				if g = ary[ary.index(s)..-1].reverse.find { |_s| _s.kind_of? C::If and not _s.belse and gt = _s.bthen and (gt = gt.kind_of?(C::Block) && gt.statements.length == 1 ? gt.statements.first : gt) and gt.kind_of? C::Goto and gt.target == s.name }
 					wb = C::Block.new(scope)
 					wb.statements = decompile_cseq_while(ary[ary.index(s)...ary.index(g)], wb)
 					w = C::DoWhile.new(g.test, wb)
