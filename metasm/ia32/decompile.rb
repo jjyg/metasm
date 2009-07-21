@@ -387,18 +387,14 @@ class Ia32
 						commit[]
 						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil)
 					else
-						bd.each { |k, v|
-							if k.kind_of? ::Symbol #and (not deps[b].include? k or di.block.list[didx+1..-1].find { |ddi| ddi.backtrace_binding[k] })
-								ops << [k, v]
-							else
-								stmts << ceb[k, :'=', v]
-								binding.delete k
-							end
-						}
 						update = {}
 						bd.each { |k, v|
-							next if not k.kind_of? ::Symbol
-							update[k] = Expression[Expression[v].bind(binding).reduce]
+							if k.kind_of? ::Symbol and not deps[b].include? k
+								ops << [k, v]
+								update[k] = Expression[Expression[v].bind(binding).reduce]
+							else
+								stmts << ceb[k, :'=', v]
+							end
 						}
 						binding.update update
 					end

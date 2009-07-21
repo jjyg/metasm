@@ -413,7 +413,7 @@ class Decompiler
 				s = C::Variable.new
 				s.type = C::BaseType.new(:__int32)
 				case e
-				when ::String; s.storage = :static
+				when ::String; scope = @c_parser.toplevel	# edata relocation
 				when ::Symbol; s.storage = :register
 				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
@@ -940,6 +940,7 @@ class Decompiler
 				}
 			}
 
+			nv
 		}
 
 		# list of labels accessible from g.start without going through label
@@ -971,12 +972,20 @@ class Decompiler
 
 		check_domain = lambda { |var, label, idx, badlabels|
 			ce = g.exprs[label][idx]
-			next if ce_read[ce, var]
 
 			init_label = label
 			readers = []
 			writers = []
-			occurences = [ce]	# list all appearances of var for this domain (to patch)
+			wronly  = []	# var = var+1 at start of domain (patch only lexpr)
+			rdonly  = []	# var = var+1 at end of domain (patch only rexpr)
+			occurences = []	# list all appearances of var for this domain (to patch)
+			if not ce_read[ce, var]
+				occurences << ce
+			elsif ce.op == :'=' and ce.lexpr == var and not ce_write[ce.rexpr, var]
+				wronly << ce
+			else
+				next
+			end
 			idx += 1
 			todo = [label]
 			done = []
@@ -993,13 +1002,21 @@ class Decompiler
 					next if not can_reach[label, readers, writers]
 					# the written var belongs to the same domain (maybe not, but it's best to include too much than not enough)
 					writers.delete label
+					rdonly.delete_if { |e| e.object_id == g.exprs[label][idx].object_id }
+					wronly.delete_if { |e| e.object_id == g.exprs[label][idx].object_id }
 					occurences << g.exprs[label][idx]
 					idx += 1
 				end
 				case while ce = g.exprs[label].to_a[idx]
 					if ce_read[ce, var]
 						break :abort if badlabels.include? label	# not a domain
-						occurences << ce
+						if ce.op == :'=' and ce.lexpr == var and not ce_write[ce.rexpr, var]
+							rdonly << ce
+							writers << label
+							break :postpone
+						else
+							occurences << ce
+						end
 						readers << label
 					elsif ce_write[ce, var]
 						# eax=1; if() goto l1; eax=2; goto l2; l1: nop; l2: ebx=eax;
@@ -1020,7 +1037,9 @@ class Decompiler
 				idx = 0
 			end
 
-			patch[var, occurences]
+			nv = patch[var, occurences + rdonly]
+			rdonly.each { |e| e.lexpr = var }
+			wronly.each { |e| e.lexpr = nv }
 		}
 
 		walk = lambda { |var|
@@ -1098,6 +1117,7 @@ class Decompiler
 			end
 		}
 		scopevar = lambda { |e|
+			e = e.rexpr if e.kind_of? C::CExpression and not e.op
 			if e.kind_of? C::Variable and scope.symbol[e.name]
 				e.name
 			elsif e.kind_of? C::CExpression and e.op == :* and not e.lexpr
@@ -1105,11 +1125,26 @@ class Decompiler
 			end
 		}
 		globalvar = lambda { |e|
-			e if e.kind_of? ::Integer and @dasm.get_section_at(e)
+			e = e.rexpr if e.kind_of? C::CExpression and not e.op
+			if e.kind_of? ::Integer and @dasm.get_section_at(e)
+				e
+			elsif e.kind_of? C::Variable and not scope.symbol[e.name] and @c_parser.toplevel.symbol[e.name] and @dasm.get_section_at(e.name)
+				e.name
+			end
 		}
+
+		# check if a newly found type for o is better than current type
+		# order: foo* > void* > foo
+		better_type = lambda { |t0, t1|
+			t1 == C::BaseType.new(:void) or (t0.pointer? and t1.kind_of? C::BaseType) or t0.untypedef.kind_of? C::Union or
+			(t0.kind_of? C::BaseType and t1.kind_of? C::BaseType and (@c_parser.typesize[t0.name] > @c_parser.typesize[t1.name] or (t0.name == t1.name and t0.qualifier))) or
+			(t0.pointer? and t1.pointer? and better_type[t0.untypedef.type, t1.untypedef.type])
+		}
+
 		update_global_type = lambda { |e, t|
-			# TODO check for better_type (&rename?)
 			if ne = new_global_var(e, t)
+				ne.type = t if better_type[t, ne.type]	# TODO patch existing scopes using ne
+									# TODO rename (dword_xx -> byte_xx etc)
 				walk_ce(scope) { |ce|
 					ce.lexpr = ne if ce.lexpr == e
 					ce.rexpr = ne if ce.rexpr == e
@@ -1124,15 +1159,8 @@ class Decompiler
 
 		propagate_type = nil	# fwd declaration
 		propagating = []	# recursion guard (x = &x)
-
-		# check if a newly found type for o is better than current type
-		# order: foo* > void* > foo
+		# check if need to change the type of a var
 		# propagate_type if type is updated
-		better_type = lambda { |t0, t1|
-			t1 == C::BaseType.new(:void) or (t0.pointer? and t1.kind_of? C::BaseType) or t0.untypedef.kind_of? C::Union or
-			(t0.kind_of? C::BaseType and t1.kind_of? C::BaseType and (@c_parser.typesize[t0.name] > @c_parser.typesize[t1.name] or (t0.name == t1.name and t0.qualifier))) or
-			(t0.pointer? and t1.pointer? and better_type[t0.untypedef.type, t1.untypedef.type])
-		}
 		update_type = lambda { |n, t|
 			next if propagating.include? n
 			o = scope.symbol[n].stackoff
@@ -1159,7 +1187,7 @@ class Decompiler
 		# try to update the type of a var from knowing the type of an expr (through dereferences etc)
 		known_type = lambda { |e, t|
 			loop do
-				e = e.rexpr while e.kind_of? C::CExpression and not e.op
+				e = e.rexpr while e.kind_of? C::CExpression and not e.op and e.type == t
 				if o = scopevar[e]
 					update_type[o, t]
 				elsif o = globalvar[e]
@@ -1190,13 +1218,9 @@ class Decompiler
 						e.lexpr, e.rexpr = e.rexpr, e.lexpr	# swap
 						e = e.lexpr
 						next
-					elsif t.pointer? and e.lexpr.type.integral? and e.rexpr.op == :* and e.rexpr.lexpr and
-							e.rexpr.lexpr.kind_of? C::CExpression and not e.rexpr.lexpr.op and
-							e.rexpr.lexpr.rexpr == sizeof(nil, t.untypedef.type)
-							puts "kt #{e.lexpr} #{t}"
-						known_type[e.lexpr, t]
-					elsif o = scopevar[e.rexpr] and types[o] and types[o].integral? and
-							!(o = scopevar[e.lexpr] and types[o] and types[o].integral?)
+					elsif t.pointer? and ((e.rexpr.kind_of? C::CExpression and e.rexpr.lexpr and [:<<, :>>, :*, :&].include? e.rexpr.op) or
+							(o = scopevar[e.rexpr] and types[o] and types[o].integral? and
+							!(o = scopevar[e.lexpr] and types[o] and types[o].integral?)))
 						e = e.lexpr
 						next
 					end
@@ -1208,12 +1232,16 @@ class Decompiler
 		# we found a type for a var, propagate it through affectations
 		propagate_type = lambda { |var, type|
 			walk_ce(scope) { |ce|
-				# char x; x & 255 => uchar x
-				if ce.op == :'&' and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*sizeof(ce.lexpr))) - 1
-					known_type[ce.lexpr, C::BaseType.new(ce.lexpr.type.name, :unsigned)]
-				end
-
 				next if ce.op != :'='
+
+				if ce.lexpr.kind_of? C::Variable and ce.lexpr.name == var
+					known_type[ce.rexpr, type]
+					next
+				end
+				if ce.rexpr.kind_of? C::Variable and ce.rexpr.name == var
+					known_type[ce.lexpr, type]
+					next
+				end
 
 				# int **x; y = **x  =>  int y
 				t = type
@@ -1255,17 +1283,27 @@ class Decompiler
 		}
 
 		# try to infer types from C semantics
+		later = []
 		walk_ce(scope) { |ce|
-			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and ce.rexpr.rexpr.abs < 0x10000 and (not ce.lexpr.kind_of? C::CExpression or ce.lexpr.op != :'*' or ce.lexpr.lexpr)
+			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and
+					ce.rexpr.rexpr.abs < 0x10000 and (not ce.lexpr.kind_of? C::CExpression or ce.lexpr.op != :'*' or ce.lexpr.lexpr)
 				# var = int
 				known_type[ce.lexpr, ce.rexpr.type]
 			elsif ce.op == :funcall and ce.lexpr.type.kind_of? C::Function
 				# cast func args to arg prototypes
 				ce.lexpr.type.args.to_a.zip(ce.rexpr).each { |proto, arg| known_type[arg, proto.type] }
 			elsif ce.op == :* and not ce.lexpr
+				if e = ce.rexpr and e.kind_of? C::CExpression and not e.op and e = e.rexpr and e.kind_of? C::CExpression and
+						e.op == :& and not e.lexpr and e.rexpr.kind_of? C::Variable and e.rexpr.stackoff
+					# skip *(__int32*)&var_12 for now, avoid saying var12 is an int if it may be a ptr or anything
+					later << [ce.rexpr, C::Pointer.new(ce.type)]
+					next
+				end
 				known_type[ce.rexpr, C::Pointer.new(ce.type)]
 			end
 		}
+
+		later.each { |ce, t| known_type[ce, t] }
 
 		# offsets have types now
 		types.each { |v, t|
@@ -2076,6 +2114,11 @@ class Decompiler
 			# int8 & 255  =>  int8
 			if ce.op == :& and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == (1 << (8*sizeof(ce.lexpr))) - 1
 				ce.replace C::CExpression[ce.lexpr]
+			end
+
+			# int *ptr; *(ptr + 4) => ptr[4]
+			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :+ and var = ce.rexpr.lexpr and var.kind_of? C::Variable and var.type.pointer?
+				ce.lexpr, ce.op, ce.rexpr = ce.rexpr.lexpr, :'[]', ce.rexpr.rexpr
 			end
 
 			# useless casts
