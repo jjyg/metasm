@@ -429,7 +429,7 @@ class Ia32
 		if func.has_attribute('fastcall') and (not a[0] or a[0].has_attribute('unused')) and (not a[1] or a[1].has_attribute('unused'))
 			a.shift ; a.shift
 			func.attributes.delete 'fastcall'
-			func.attributes << 'stdcall' if not a.empty?
+			func.add_attribute 'stdcall' if not a.empty?
 		elsif func.has_attribute('fastcall') and a.length == 2 and a.last.has_attribute('unused')
 			a.pop
 		end
@@ -443,7 +443,7 @@ class Ia32
 				so -= 1
 				case so
 				when 0
-				when a.find_all { |fa| fa.stackoff }.length
+				when a.map { |fa| (fa.stackoff.to_i + dcmp.c_parser.typesize[:ptr]-1) / dcmp.c_parser.typesize[:ptr] }.max.to_i
 					func.add_attribute 'stdcall' if not func.has_attribute('fastcall')
 				else
 					func.add_attribute "stackoff:#{so*dcmp.dasm.cpu.size/8}"

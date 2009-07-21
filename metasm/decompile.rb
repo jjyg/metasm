@@ -1056,7 +1056,7 @@ class Decompiler
 			end
 		}
 
-		scope.symbol.dup.each_value { |var| walk[var] }
+		scope.symbol.dup.each_value { |var| walk[var] unless var.stackoff.to_i > 0 }
 	end
 
 	# revert the unaliasing namechange of vars where no alias subsists
@@ -2129,6 +2129,17 @@ class Decompiler
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and (ce.type == ce.rexpr.type or (ce.type.integral? and ce.rexpr.type.integral?))
 				ce.replace ce.rexpr
 			end
+			# (((int) i >> 31) & 1)  =>  i < 0
+			if ce.op == :& and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1 and
+					ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :>> and ce.lexpr.rexpr.kind_of? C::CExpression and
+					not ce.lexpr.rexpr.op and ce.lexpr.rexpr.rexpr == sizeof(ce.lexpr.lexpr) * 8 - 1
+				ce.replace C::CExpression[ce.lexpr.lexpr, :<, [0]]
+			end
+			# (a > 0) != 0
+			if ce.op == :'!=' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and ce.lexpr.kind_of? C::CExpression and
+					[:<, :<=, :>, :>=, :'==', :'!=', :'!'].include? ce.lexpr.op
+				ce.replace ce.lexpr
+			end
 			# conditions often are x & 0xffffff which may cast pointers to ints, remove those casts
 			if ce.op == :== and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0
 				ce.replace C::CExpression[:'!', ce.lexpr]
@@ -2185,7 +2196,7 @@ class Decompiler
 	def optimize_global
 		# check all global vars (pointers to global data)
 		tl = @c_parser.toplevel
-		vars = tl.symbol.keys.find_all { |k| not tl.symbol[k].type.kind_of? C::Function }
+		vars = tl.symbol.keys.find_all { |k| tl.symbol[k].kind_of? C::Variable and not tl.symbol[k].type.kind_of? C::Function }
 		countref = Hash.new(0)
 
 		walk_ce(tl) { |ce|
@@ -2318,7 +2329,7 @@ class Decompiler
 	def sizeof(var, type=var.type)
 		var, type = nil, var if var.kind_of? C::Type
 		return @c_parser.typesize[:ptr] if type.kind_of? C::Array and not var.kind_of? C::Variable
-		@c_parser.sizeof(var, type)
+		@c_parser.sizeof(var, type) rescue -1
 	end
 end
 end
