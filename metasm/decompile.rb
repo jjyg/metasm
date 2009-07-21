@@ -427,8 +427,8 @@ class Decompiler
 	end
 
 	# simplify goto -> goto / goto -> return
-	def simplify_goto(scope)
-		if scope.statements[-1].kind_of? C::Return and not scope.statements[-2].kind_of? C::Label
+	def simplify_goto(scope, keepret = false)
+		if not keepret and scope.statements[-1].kind_of? C::Return and not scope.statements[-2].kind_of? C::Label
 			scope.statements.insert(-2, C::Label.new("ret_label"))
 		end
 
@@ -454,7 +454,7 @@ class Decompiler
 					r
 				end
 			when C::Return
-				if scope.statements[-1].kind_of? C::Return and s.value == scope.statements[-1].value and s != scope.statements[-1]
+				if not keepret and scope.statements[-1].kind_of? C::Return and s.value == scope.statements[-1].value and s != scope.statements[-1]
 					C::Goto.new(scope.statements[-2].name)
 				end
 			end
@@ -521,7 +521,7 @@ class Decompiler
 
 	# optimize if() { a; } to if() a;
 	def optimize_ctrl(scope)
-		simplify_goto(scope)
+		simplify_goto(scope, true)
 
 		# break/continue
 		# XXX if (foo) while (bar) goto bla; bla:  should => break
@@ -1171,6 +1171,9 @@ class Decompiler
 					e = e.rexpr
 					t = C::Pointer.new(t)
 					next
+				elsif t.pointer? and e.op == :+ and e.lexpr.kind_of? C::CExpression and e.lexpr.type.integral? and e.rexpr.kind_of? C::Variable
+					e.lexpr, e.rexpr = e.rexpr, e.lexpr
+					next
 				elsif e.op == :+ and e.lexpr and e.rexpr.kind_of? C::CExpression
 					if not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
 						if e.rexpr.rexpr < 0x1000	# XXX relocatable + base=0..
@@ -1181,18 +1184,21 @@ class Decompiler
 							e = e.rexpr
 							next
 						end
-					elsif t.pointer? and e.lexpr.kind_of? C::CExpression
-						if (e.lexpr.lexpr and [:<<, :>>, :*, :&].include? e.lexpr.op) or
-								(o = scopevar[e.lexpr] and types[o] and types[o].integral? and
-								 !(o = scopevar[e.rexpr] and types[o] and types[o].integral?))
-							e.lexpr, e.rexpr = e.rexpr, e.lexpr
-							e = e.lexpr
-							next
-						elsif o = scopevar[e.rexpr] and types[o] and types[o].integral? and
-								!(o = scopevar[e.lexpr] and types[o] and types[o].integral?)
-							e = e.lexpr
-							next
-						end
+					elsif t.pointer? and (e.lexpr.kind_of? C::CExpression and e.lexpr.lexpr and [:<<, :>>, :*, :&].include? e.lexpr.op) or
+							(o = scopevar[e.lexpr] and types[o] and types[o].integral? and
+							 !(o = scopevar[e.rexpr] and types[o] and types[o].integral?))
+						e.lexpr, e.rexpr = e.rexpr, e.lexpr	# swap
+						e = e.lexpr
+						next
+					elsif t.pointer? and e.lexpr.type.integral? and e.rexpr.op == :* and e.rexpr.lexpr and
+							e.rexpr.lexpr.kind_of? C::CExpression and not e.rexpr.lexpr.op and
+							e.rexpr.lexpr.rexpr == sizeof(nil, t.untypedef.type)
+							puts "kt #{e.lexpr} #{t}"
+						known_type[e.lexpr, t]
+					elsif o = scopevar[e.rexpr] and types[o] and types[o].integral? and
+							!(o = scopevar[e.lexpr] and types[o] and types[o].integral?)
+						e = e.lexpr
+						next
 					end
 				end
 				break
@@ -2267,6 +2273,7 @@ class Decompiler
 
 	# forwards to @c_parser, handles cast to Array (these should not happen btw...)
 	def sizeof(var, type=var.type)
+		var, type = nil, var if var.kind_of? C::Type
 		return @c_parser.typesize[:ptr] if type.kind_of? C::Array and not var.kind_of? C::Variable
 		@c_parser.sizeof(var, type)
 	end

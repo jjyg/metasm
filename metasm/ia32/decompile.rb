@@ -110,10 +110,14 @@ class Ia32
 		deps_r.each { |b, deps|
 			# XXX filter using ABI otherwise we get false positive for "push esi  <func body>  pop esi  ret"
 			deps &= [:eax, :ecx, :edx]
-			# XXX false positive if the func returns void (eg func: ret)
-			deps -= [:eax] if dcmp.dasm.decoded[b].block.list.last.opcode.name == 'ret'
 			deps -= regargs
-			regargs |= deps.find_all { |r| uninitialized[b, r, [b]] }
+			uinit = deps.find_all { |r| uninitialized[b, r, [b]] }
+			if uinit.include? :eax and dcmp.dasm.decoded[b].block.list.last.opcode.name == 'ret'
+				# XXX false positive if the func returns void (eg func: ret)
+				uinit -= [:eax]
+				func.type.type = C::BaseType.new(:void)
+			end
+			regargs |= uinit
 		}
 		if regargs.include? :ecx or regargs.include? :edx
 			func.add_attribute 'fastcall'
@@ -241,7 +245,9 @@ class Ia32
 				case di.opcode.name
 				when 'ret'
 					commit[]
-					stmts << C::Return.new(C::CExpression[ceb[:eax]])
+					ret = nil
+					ret = C::CExpression[ceb[:eax]] unless func.type.type.kind_of? C::BaseType and func.type.type.name == :void
+					stmts << C::Return.new(ret)
 				when 'call'	# :saveip
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					args = []

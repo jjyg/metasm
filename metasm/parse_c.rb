@@ -1217,7 +1217,9 @@ EOH
 		end
 
 		# returns the size of a type in bytes
-		def sizeof(var, type=var.type)
+		def sizeof(var, type=nil)
+			var, type = nil, var if var.kind_of? Type and not type
+			type ||= var.type
 			# XXX double-check class apparition order ('when' checks inheritance)
 			case type
 			when Array
