@@ -223,7 +223,7 @@ class DisasmWidget < Gtk::VBox
 	end
 
 	def toggle_data(addr)
-		next if @dasm.decoded[addr] or not @dasm.get_section_at(addr)
+		return if @dasm.decoded[addr] or not @dasm.get_section_at(addr)
 		@dasm.add_xref(addr, Xref.new(nil, nil, 1)) if not @dasm.xrefs[addr]
 		@dasm.each_xref(addr) { |x|
 			x.len = {1 => 2, 2 => 4, 4 => 1}[x.len]
