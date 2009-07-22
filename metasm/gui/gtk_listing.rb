@@ -334,7 +334,7 @@ class AsmListingWidget < Gtk::HBox
 					else
 						len = [len, s[0].length-s[0].ptr].min
 						len -= curaddr % 256 if len == 256 and curaddr.kind_of? Integer
-						dat = "#{Expression[len]} dup(?) "
+						dat = "db #{Expression[len]} dup(?) "
 						aoff = len
 					end
 				end
