@@ -31,6 +31,13 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(assemble("jmp $"), "\xeb\xfe")
 	end
 
+	def test_mrmsz
+		assert_equal(assemble("mov [eax], ebx"), "\x89\x18")
+		assert_equal(assemble("mov [eax], bl"), "\x88\x18")
+		assert_equal(assemble("mov ebx, [eax]"), "\x8b\x18")
+		assert_equal(assemble("mov bl, [eax]"), "\x8a\x18")
+	end
+
 	def test_err
 		assert_raise(Metasm::ParseError) { assemble("add eax") }
 		assert_raise(Metasm::ParseError) { assemble("add add, ebx") }

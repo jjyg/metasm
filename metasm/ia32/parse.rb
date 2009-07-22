@@ -236,8 +236,7 @@ end
 
 		cond = true
 		if s = o.props[:argsz] and (arg.kind_of? Reg or arg.kind_of? ModRM)
-			arg.sz ||= s
-			cond = (arg.sz == s)
+			cond = (!arg.sz or arg.sz == s)
 		end
 
 		cond and
