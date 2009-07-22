@@ -958,13 +958,27 @@ class Decompiler
 		}
 
 		# reachable labels from a point in the graph
-		can_reach = lambda { |start, want, forbid|
+		# stops following a path var is written in it
+		can_reach = lambda { |start, idx, want, forbid, var|
 			todo = g.to_optim[start].to_a.dup
 			done = []
 			while l = todo.pop
 				next if done.include? l
 				done << l
 				break true if want.include? l
+				e = g.exprs[l]
+				e = e[idx..-1].to_a if l == start
+				next if e.find { |ce|
+					if ce_read[ce, var]
+						if ce.op == :'=' and ce.lexpr == var and not ce_write[ce.rexpr, var]
+							true
+						else
+							break
+						end
+					elsif ce_write[ce, var]
+						true
+					end
+				}
 				todo.concat g.to_optim[l].to_a if not forbid.include? l
 			end
 		}
@@ -998,7 +1012,7 @@ class Decompiler
 					next if done_p.include? ppd
 					done_p << ppd
 					label, idx = ppd
-					next if not can_reach[label, readers, writers]
+					next if not can_reach[label, idx+1, readers, writers, var]
 					# the written var belongs to the same domain (maybe not, but it's best to include too much than not enough)
 					writers.delete label
 					rdonly.delete_if { |e| e.object_id == g.exprs[label][idx].object_id }
@@ -1012,6 +1026,7 @@ class Decompiler
 						if ce.op == :'=' and ce.lexpr == var and not ce_write[ce.rexpr, var]
 							rdonly << ce
 							writers << label
+							readers << label
 							break :postpone
 						else
 							occurences << ce
@@ -1894,7 +1909,7 @@ class Decompiler
 		}
 
 		# walk each node, optimize data accesses there
-		# replace no more useful exprs by CExpr[nil, nil, nil], those are wiped later.
+		# replace no longer useful exprs with CExpr[nil, nil, nil], those are wiped later.
 		g.exprs.each { |label, exprs|
 			next if not g.block[label]
 			i = 0
