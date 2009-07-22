@@ -327,6 +327,7 @@ class Ia32
 					ret = Expression[ret.reduce] if not a0.kind_of? Indirection
 					{ a0 => ret }
 				}
+			when 'xadd'; lambda { |di, a0, a1| { a0 => Expression[a0, :+, a1], a1 => Expression[a0] } }
 			when 'inc'; lambda { |di, a0| { a0 => Expression[a0, :+, 1] } }
 			when 'dec'; lambda { |di, a0| { a0 => Expression[a0, :-, 1] } }
 			when 'not'; lambda { |di, a0| { a0 => Expression[a0, :^, mask[di]] } }
@@ -508,9 +509,9 @@ class Ia32
 			# add eflags side-effects
 
 			full_binding = case op
-			when 'adc', 'add', 'and', 'cmp', 'or', 'sbb', 'sub', 'xor', 'test'
+			when 'adc', 'add', 'and', 'cmp', 'or', 'sbb', 'sub', 'xor', 'test', 'xadd'
 				lambda { |di, a0, a1|
-					e_op = { 'adc' => :+, 'add' => :+, 'and' => :&, 'cmp' => :-, 'or' => :|, 'sbb' => :-, 'sub' => :-, 'xor' => :^, 'test' => :& }[op]
+					e_op = { 'adc' => :+, 'add' => :+, 'xadd' => :+, 'and' => :&, 'cmp' => :-, 'or' => :|, 'sbb' => :-, 'sub' => :-, 'xor' => :^, 'test' => :& }[op]
 					res = Expression[[a0, :&, mask[di]], e_op, [a1, :&, mask[di]]]
 					res = Expression[res, e_op, :eflag_c] if op == 'adc' or op == 'sbb'
 

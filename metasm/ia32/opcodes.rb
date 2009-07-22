@@ -214,7 +214,7 @@ class Ia32
 		addop 'wait',  [0x9B]
 		addop 'wbinvd',[0x0F, 0x09]
 		addop 'wrmsr', [0x0F, 0x30]
-		addop 'xadd',  [0x0F, 0xC0], :mrmw
+		addop('xadd',  [0x0F, 0xC0], :mrmw) { |o| o.args.reverse! }
 		addop 'xchg',  [0x90], :reg, {}, :reg_eax
 		addop('xchg',  [0x90], :reg, {}, :reg_eax) { |o| o.args.reverse! }	# xchg eax, ebx == xchg ebx, eax)
 		addop 'xchg',  [0x86], :mrmw
