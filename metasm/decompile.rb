@@ -343,9 +343,8 @@ class Decompiler
 				# fallback on full run (could restart from blockstart with ee, but may reevaluate addr_binding..
 				vals = cache[[e, i_s, 1]] ||= @dasm.backtrace(e, di.address, :snapshot_addr => funcstart,
 						:include_start => i_s, :no_check => true, :terminals => [:frameptr])
-				if vals.length == 1 and ee = vals.first and (ee.reduce.kind_of? Integer or
-						(ee.kind_of? Expression and (ee == Expression[:frameptr] or
-						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))))
+				if vals.length == 1 and ee = vals.first and (ee.kind_of? Expression and (ee == Expression[:frameptr] or
+						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer)))
  					ee
 				else e
 				end
