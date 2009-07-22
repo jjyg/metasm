@@ -300,7 +300,7 @@ class ELF
 				# allow to point to end of segment
 				if not seg = @segments.find { |seg_| seg_.type == 'LOAD' and seg_.vaddr + seg_.memsz == s.value }	# check end
 					puts "W: Elf: symbol points to unmmaped space (#{s.inspect})" if $VERBOSE and s.shndx != 'ABS'
-					next
+					return
 				end
 				# LoadedELF would have returned an addr_to_off = addr
 				o = s.value - seg.vaddr + seg.offset
