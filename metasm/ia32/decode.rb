@@ -434,6 +434,7 @@ class Ia32
 					pesi = Indirection[esi, sz, di.address]
 					pedi = Indirection[edi, sz, di.address]
 					pfx = di.instruction.prefix || {}
+					bd =
 					case e_op
 					when 'movs'
 						case pfx[:rep]
@@ -461,6 +462,8 @@ class Ia32
 						else { edi => Expression::Unknown, esi => Expression::Unknown, ecx => Expression::Unknown }
 						end
 					end
+					bd[:incomplete_binding] = Expression[1] if pfx[:rep]
+					bd
 				}
 			when 'clc'; lambda { |di| { :eflag_c => Expression[0] } }
 			when 'stc'; lambda { |di| { :eflag_c => Expression[1] } }
