@@ -131,7 +131,7 @@ class Ia32
 		while edata.ptr < edata.data.length
 			pfx = di.instruction.prefix || {}
 			byte = edata.data[edata.ptr]
-			byte = byte.ord if byte.kind_of? ::String	# 1.9
+			byte = byte.unpack('C').first if byte.kind_of? ::String	# 1.9
 			return di if di.opcode = @bin_lookaside[byte].find { |op|
 				# fetch the relevant bytes from edata
 				bseq = edata.data[edata.ptr, op.bin.length].unpack('C*')

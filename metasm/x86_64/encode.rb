@@ -26,7 +26,7 @@ class X86_64
 				if ret.data[0].kind_of? Integer
 					ret.data[0] |= v
 				else
-					ret.data[0] = (ret.data[0].ord | v).chr
+					ret.data[0] = (ret.data[0].unpack('C').first | v).chr
 				end
 			}
 

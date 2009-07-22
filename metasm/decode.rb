@@ -453,7 +453,7 @@ class EncodedData
 		@ptr += 1
 		if @ptr <= @data.length
 			b = @data[ptr-1]
-			b = b.ord if b.kind_of? ::String	# 1.9
+			b = b.unpack('C').first if b.kind_of? ::String	# 1.9
 			b
 		elsif @ptr <= @virtsize
 			0
