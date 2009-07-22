@@ -1548,7 +1548,7 @@ EOH
 				raise tok || parser, 'bad type name' if not qualifier.empty? or var.storage
 				nil
 			else
-				(var.type.qualifier ||= []).concat qualifier if not qualifier.empty?
+				var.type.qualifier = var.type.qualifier.to_a | qualifier if not qualifier.empty?
 				var.type.parse_attributes(parser, true)
 				var
 			end
