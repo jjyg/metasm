@@ -1238,7 +1238,7 @@ EOH
 						v ? (sizeof(nil, type.type) * init.length) : 0
 					else sizeof(init)
 					end
-				when ::Integer; type.length * sizeof(type)
+				when ::Integer; type.length * sizeof(type.type)
 				when CExpression
 					len = type.length.reduce(self)
 					raise self, 'unknown array size' if not len.kind_of? ::Integer
