@@ -874,227 +874,230 @@ class Decompiler
 		}
 	end
 
+	# checks if expr is a var (var or *&var)
+	def isvar(ce, var)
+		if var.stackoff
+			return unless ce.kind_of? C::CExpression and ce.op == :* and not ce.lexpr
+			ce = ce.rexpr
+			ce = ce.rexpr while ce.kind_of? C::CExpression and not ce.op
+			return unless ce.kind_of? C::CExpression and ce.op == :& and not ce.lexpr
+			ce = ce.rexpr
+		end
+		ce == var
+	end
+
+	# checks if expr reads var
+	def ce_read(ce_, var)
+		isvar(ce_, var) or
+		walk_ce(ce_) { |ce|
+			case ce.op
+			when :funcall; break true if isvar(ce.lexpr, var) or ce.rexpr.find { |a| isvar(a, var) }
+			when :'='; break true if isvar(ce.rexpr, var)	# XXX *&var = 2: wont break here, and will match on next walk_ce recursion
+			else break true if isvar(ce.lexpr, var) or isvar(ce.rexpr, var)
+			end
+		} or (var.stackoff and (cnt = 0 ; walk_ce(ce_) { |ce|	# ptr to var	# XXX doesn't seam to resolve the *&v = 2 problem
+			cnt -= 1 if ce.op == :'=' and isvar(ce.lexpr, var)
+			cnt += 1 if ce.lexpr == var
+			cnt += 1 if ce.rexpr == var
+		} ; cnt > 0))
+	end
+
+	# checks if expr writes var
+	def ce_write(ce_, var)
+		walk_ce(ce_) { |ce|
+			break true if AssignOp.include?(ce.op) and (isvar(ce.lexpr, var) or
+				(((ce.op == :'++' or ce.op == :'--') and isvar(ce.rexpr, var))))
+		}
+	end
+
+	# patches a set of exprs, replacing oldce by newce
+	def ce_patch(exprs, oldce, newce)
+		walk_ce(exprs) { |ce|
+			case ce.op
+			when :funcall
+				ce.lexpr = newce if ce.lexpr == oldce
+				ce.rexpr.each_with_index { |a, i| ce.rexpr[i] = newce if a == oldce }
+			else
+				ce.lexpr = newce if ce.lexpr == oldce
+				ce.rexpr = newce if ce.rexpr == oldce
+			end
+		}
+	end
+
+
 	# duplicate vars per domain value
 	# eg  eax = 1; foo(eax); eax = 2; bar(eax);  =>  eax = 1; foo(eax) eax_1 = 2; bar(eax_1);
 	#     eax = 1; if (bla) eax = 2; foo(eax);   =>  no change
 	def unalias_vars(scope)
 		g = c_to_graph(scope)
 
-		isvar = lambda { |ce, var|
-			if var.stackoff
-				next unless ce.kind_of? C::CExpression and ce.op == :* and not ce.lexpr
-				ce = ce.rexpr
-				ce = ce.rexpr while ce.kind_of? C::CExpression and not ce.op
-				next unless ce.kind_of? C::CExpression and ce.op == :& and not ce.lexpr
-				ce = ce.rexpr
-			end
-			ce == var
-		}
-
-		ce_read = lambda { |ce_, var|
-			isvar[ce_, var] or
-			walk_ce(ce_) { |ce|
-				case ce.op
-				when :funcall; break true if isvar[ce.lexpr, var] or ce.rexpr.find { |a| isvar[a, var] }
-				when :'='; break true if isvar[ce.rexpr, var]
-				else break true if isvar[ce.lexpr, var] or isvar[ce.rexpr, var]
-				end
-			} or (var.stackoff and cnt = 0 and !walk_ce(ce_) { |ce|	# ptr to var
-				cnt -= 1 if ce.op == :'=' and isvar[ce.lexpr, var]
-				cnt += 1 if ce.lexpr == var
-				cnt += 1 if ce.rexpr == var
-			} and cnt > 0)
-		}
-
-		ce_write = lambda { |ce_, var|
-			walk_ce(ce_) { |ce|
-				if AssignOp.include? ce.op
-					break true if isvar[ce.lexpr, var]
-					break true if isvar[ce.rexpr, var] and (ce.op == :'++' or ce.op == :'--')
-				end
-			}
-		}
-
-		patch = lambda { |oldvar, occurences, nv|
-			if not nv
-				n_i = 0
-				n_i += 1 while scope.symbol_ancestors[newvarname = "#{oldvar.name}_a#{n_i}"]
-
-				nv = oldvar.dup
-				nv.name = newvarname
-				scope.statements << C::Declaration.new(nv)
-				scope.symbol[nv.name] = nv
-			end
-
-			occurences.each { |e|
-				walk_ce(e) { |ce|
-					case ce.op
-					when :funcall
-						ce.lexpr = nv if ce.lexpr == oldvar
-						ce.rexpr.each_with_index { |a, i| ce.rexpr[i] = nv if a == oldvar }
-					else
-						ce.lexpr = nv if ce.lexpr == oldvar
-						ce.rexpr = nv if ce.rexpr == oldvar
-					end
-				}
-			}
-
-			nv
-		}
-
 		# find the domains of var aliases
-		walk = lambda { |var|
-			# [label, index] of references to var (reading it, writing it, ro/wo it (eg eax = *eax => eax_0 = *eax_1))
-			read = {}
-			write = {}
-			ro = {}
-			wo = {}
+		scope.symbol.dup.each_value { |var|
+			next if var.stackoff.to_i > 0
+			unalias_var(var, scope, g)
+		}
+	end
 
-			# list of [l, i] for which domain is not known
-			unchecked = []
+	# duplicates a var per domain value
+	def unalias_var(var, scope, g = c_to_graph(scope))
+		# [label, index] of references to var (reading it, writing it, ro/wo it (eg eax = *eax => eax_0 = *eax_1))
+		read = {}
+		write = {}
+		ro = {}
+		wo = {}
 
-			# mark all exprs of the graph
-			g.exprs.each { |label, exprs|
-				exprs.each_with_index { |ce, i|
-					if ce_read[ce, var]
-						if ce.op == :'=' and ce.lexpr == var and not ce_write[ce.rexpr, var]
-							(ro[label] ||= []) << i
-							(wo[label] ||= []) << i
-							unchecked << [label, i, :up] << [label, i, :down]
-						else
-							(read[label] ||= []) << i
-							unchecked << [label, i]
-						end
-					elsif ce_write[ce, var]
-						(write[label] ||= []) << i
+		# list of [l, i] for which domain is not known
+		unchecked = []
+
+		# mark all exprs of the graph
+		g.exprs.each { |label, exprs|
+			exprs.each_with_index { |ce, i|
+				if ce_read(ce, var)
+					if ce.op == :'=' and ce.lexpr == var and not ce_write(ce.rexpr, var)
+						(ro[label] ||= []) << i
+						(wo[label] ||= []) << i
+						unchecked << [label, i, :up] << [label, i, :down]
+					else
+						(read[label] ||= []) << i
 						unchecked << [label, i]
 					end
-				}
-			}
-
-			# stuff when filling the domain (flood algorithm)
-			dom = dom_ro = dom_wo = todo_up = todo_down = nil
-
-			# flood by walking the graph up from [l, i] (excluded)
-			# marks stuff do walk down
-			walk_up = lambda { |l,  i|
-				todo_w = [[l, i-1]]
-				done_w = []
-				while o = todo_w.pop
-					next if done_w.include? o
-					done_w << o
-					l, i = o
-					loop do
-						if read[l].to_a.include? i
-							# XXX not optimal (should mark only the uppest read)
-							todo_down |= [[l, i]] if not dom.include? [l, i]
-							dom |= [[l, i]]
-						elsif write[l].to_a.include? i
-							todo_down |= [[l, i]] if not dom.include? [l, i]
-							dom |= [[l, i]]
-							break
-						elsif wo[l].to_a.include? i
-							todo_down |= [[l, i]] if not dom_wo.include? [l, i, :down]
-							dom_wo |= [[l, i, :down]]
-							break
-						end
-						i -= 1
-						if i < 0
-							g.from_optim[l].to_a.each { |ll|
-								todo_w << [ll, g.exprs[ll].to_a.length-1]
-							}
-							break
-						end
-					end
+				elsif ce_write(ce, var)
+					(write[label] ||= []) << i
+					unchecked << [label, i]
 				end
 			}
+		}
 
-			# flood by walking the graph down from [l, i] (excluded)
-			# malks stuff to walk up
-			walk_down = lambda { |l, i|
-				todo_w = [[l, i+1]]
-				done_w = []
-				while o = todo_w.pop
-					next if done_w.include? o
-					done_w << o
-					l, i = o
-					loop do
-						if read[l].to_a.include? i
-							todo_up |= [[l, i]] if not dom.include? [l, i]
-							dom |= [[l, i]]
-						elsif write[l].to_a.include? i
-							break
-						elsif ro[l].to_a.include? i
-							todo_up |= [[l, i]] if not dom_ro.include? [l, i, :up]
-							dom_ro |= [[l, i, :up]]
-							break
-						end
-						i += 1
-						if i >= g.exprs[l].to_a.length
-							g.to_optim[l].to_a.each { |ll|
-								todo_w << [ll, 0]
-							}
-							break
-						end
+		# stuff when filling the domain (flood algorithm)
+		dom = dom_ro = dom_wo = todo_up = todo_down = nil
+
+		# flood by walking the graph up from [l, i] (excluded)
+		# marks stuff do walk down
+		walk_up = lambda { |l,  i|
+			todo_w = [[l, i-1]]
+			done_w = []
+			while o = todo_w.pop
+				next if done_w.include? o
+				done_w << o
+				l, i = o
+				loop do
+					if read[l].to_a.include? i
+						# XXX not optimal (should mark only the uppest read)
+						todo_down |= [[l, i]] if not dom.include? [l, i]
+						dom |= [[l, i]]
+					elsif write[l].to_a.include? i
+						todo_down |= [[l, i]] if not dom.include? [l, i]
+						dom |= [[l, i]]
+						break
+					elsif wo[l].to_a.include? i
+						todo_down |= [[l, i]] if not dom_wo.include? [l, i, :down]
+						dom_wo |= [[l, i, :down]]
+						break
+					end
+					i -= 1
+					if i < 0
+						g.from_optim[l].to_a.each { |ll|
+							todo_w << [ll, g.exprs[ll].to_a.length-1]
+						}
+						break
 					end
 				end
-			}
-
-			# check it out
-			while o = unchecked.shift
-				dom = []
-				dom_ro = []
-				dom_wo = []
-
-				todo_up = []
-				todo_down = []
-
-				# init
-				if read[o[0]].to_a.include? o[1]
-					todo_up << o
-					todo_down << o
-					dom << o
-				elsif write[o[0]].to_a.include? o[1]
-					todo_down << o
-					dom << o
-				elsif o[2] == :up
-					todo_up << o
-					dom_ro << o
-				elsif o[2] == :down
-					todo_down << o
-					dom_wo << o
-				else raise
-				end
-
-				# loop
-				while todo_up.first or todo_down.first
-					todo_up.each { |oo| walk_up[oo[0], oo[1]] }
-					todo_up.clear
-
-					todo_down.each { |oo| walk_down[oo[0], oo[1]] }
-					todo_down.clear
-				end
-
-				# patch
-				exprs = dom.map { |oo| g.exprs[oo[0]][oo[1]] }
-				nv = patch[var, exprs, nil]
-				exprs = dom_ro.map { |oo|
-					ce = g.exprs[oo[0]][oo[1]]
-					if ce.rexpr.kind_of? C::CExpression
-						ce.rexpr
-					else	# patch ourself
-						ce.rexpr = nv
-						nil
-					end
-				}.compact
-				patch[var, exprs, nv]
-				dom_wo.each { |oo| g.exprs[oo[0]][oo[1]].lexpr = nv }
-
-				unchecked -= dom + dom_wo + dom_ro
 			end
 		}
 
-		scope.symbol.dup.each_value { |var| walk[var] unless var.stackoff.to_i > 0 }
+		# flood by walking the graph down from [l, i] (excluded)
+		# malks stuff to walk up
+		walk_down = lambda { |l, i|
+			todo_w = [[l, i+1]]
+			done_w = []
+			while o = todo_w.pop
+				next if done_w.include? o
+				done_w << o
+				l, i = o
+				loop do
+					if read[l].to_a.include? i
+						todo_up |= [[l, i]] if not dom.include? [l, i]
+						dom |= [[l, i]]
+					elsif write[l].to_a.include? i
+						break
+					elsif ro[l].to_a.include? i
+						todo_up |= [[l, i]] if not dom_ro.include? [l, i, :up]
+						dom_ro |= [[l, i, :up]]
+						break
+					end
+					i += 1
+					if i >= g.exprs[l].to_a.length
+						g.to_optim[l].to_a.each { |ll|
+							todo_w << [ll, 0]
+						}
+						break
+					end
+				end
+			end
+		}
+
+		# check it out
+		while o = unchecked.shift
+			dom = []
+			dom_ro = []
+			dom_wo = []
+
+			todo_up = []
+			todo_down = []
+
+			# init
+			if read[o[0]].to_a.include? o[1]
+				todo_up << o
+				todo_down << o
+				dom << o
+			elsif write[o[0]].to_a.include? o[1]
+				todo_down << o
+				dom << o
+			elsif o[2] == :up
+				todo_up << o
+				dom_ro << o
+			elsif o[2] == :down
+				todo_down << o
+				dom_wo << o
+			else raise
+			end
+
+			# loop
+			while todo_up.first or todo_down.first
+				todo_up.each { |oo| walk_up[oo[0], oo[1]] }
+				todo_up.clear
+
+				todo_down.each { |oo| walk_down[oo[0], oo[1]] }
+				todo_down.clear
+			end
+
+			# patch
+			n_i = 0
+			n_i += 1 while scope.symbol_ancestors[newvarname = "#{var.name}_a#{n_i}"]
+
+			nv = var.dup
+			nv.name = newvarname
+			scope.statements << C::Declaration.new(nv)
+			scope.symbol[nv.name] = nv
+
+			exprs = dom.map { |oo| g.exprs[oo[0]][oo[1]] }
+			ce_patch(exprs, var, nv)
+
+			exprs = dom_ro.map { |oo|
+				ce = g.exprs[oo[0]][oo[1]]
+				if ce.rexpr.kind_of? C::CExpression
+					ce.rexpr
+				else	# patch ourself
+					ce.rexpr = nv
+					nil
+				end
+			}.compact
+			ce_patch(exprs, var, nv)
+
+			dom_wo.each { |oo| g.exprs[oo[0]][oo[1]].lexpr = nv }
+
+			unchecked -= dom + dom_wo + dom_ro
+		end
 	end
 
 	# revert the unaliasing namechange of vars where no alias subsists
@@ -1996,6 +1999,26 @@ class Decompiler
 
 				elsif e.op == :'=' and v = e.lexpr and v.kind_of? C::Variable and scope.symbol[v.name] and
 						not v.type.qualifier.to_a.include? :volatile and not find_next_read_ce[e.rexpr, v]
+
+					if e.rexpr.kind_of? C::CExpression and iv = e.rexpr.reduce(@c_parser) and iv.kind_of? ::Integer
+						rewritten = false
+						readers = []
+						g.exprs.each { |l, el|
+							el.each_with_index { |ce, ci|
+								if ce_write(ce, v) and [label, i-1] != [l, ci]
+									rewritten = true
+									break
+								elsif ce_read(ce, v)
+									readers << ce
+								end
+							} if not rewritten
+						}
+						if not rewritten
+							ce_patch(readers, v, C::CExpression[iv])
+							e.lexpr = e.op = e.rexpr = nil
+							next
+						end
+					end
 
 					case nr = find_next_read[label, i, v]
 					when C::CExpression
