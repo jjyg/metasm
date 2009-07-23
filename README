@@ -17,6 +17,14 @@ There are three approaches to an ExeFormat:
  - manipulating the file structure
 
 
+Ready-to-use scripts can be found in the samples/ subdirectory, check the
+comments in the scripts headers. You can also try the --help argument if
+you're feeling lucky.
+
+
+Here is a short overview of the Metasm internals.
+
+
 Assembly:
 
 When compiling, you start from a source text (ruby String, consisting
