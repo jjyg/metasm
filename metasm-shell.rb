@@ -4,6 +4,18 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+# modifies the standard ruby class String to add #decode and #encode methods
+# they will respectively disassemble binary data / assemble asm source
+# the default CPU is x86 32bits, change it using eg String.cpu = Metasm::MIPS.new(:big) (mips bigendian)
+#
+# it also defines the toplevel 'asm' method, that will start an interactive
+# assembler shell (type in assembly statements, they are shown assembled in binary escaped form)
+#
+# eg:
+# ruby metasm-shell
+# > nop ; nop
+# "\x90\x90"
+# > exit
 
 require 'metasm'
 
@@ -51,6 +63,12 @@ def asm
 	puts 'type "exit" or "quit" to quit', 'use ";" for newline', ''
 	while (print "asm> " ; $stdout.flush ; l = gets)
 		break if %w[quit exit].include? l.chomp
+		if l.chomp == 'help'
+			puts "Metasm assembly shell: type in opcodes to see their binary form",
+				"You can use ';' to type multi-line stuff",
+				"e.g. 'nop nop' will display \"\\x90\\x90\""
+			next
+		end
 	
 		begin
 			data = l.gsub(';', "\n")
