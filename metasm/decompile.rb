@@ -915,16 +915,16 @@ class Decompiler
 			}
 		}
 
-		patch = lambda { |oldvar, occurences|
-			next if occurences.empty?
+		patch = lambda { |oldvar, occurences, nv|
+			if not nv
+				n_i = 0
+				n_i += 1 while scope.symbol_ancestors[newvarname = "#{oldvar.name}_a#{n_i}"]
 
-			n_i = 0
-			n_i += 1 while scope.symbol_ancestors[newvarname = "#{oldvar.name}_a#{n_i}"]
-
-			nv = oldvar.dup
-			nv.name = newvarname
-			scope.statements << C::Declaration.new(nv)
-			scope.symbol[nv.name] = nv
+				nv = oldvar.dup
+				nv.name = newvarname
+				scope.statements << C::Declaration.new(nv)
+				scope.symbol[nv.name] = nv
+			end
 
 			occurences.each { |e|
 				walk_ce(e) { |ce|
@@ -942,131 +942,155 @@ class Decompiler
 			nv
 		}
 
-		# list of labels accessible from g.start without going through label
-		badlab = {}
-		badlabel = lambda { |label|
-			if not badlab[label]
-				badlab[label] = []
-				todo = [g.start]
-				while l = todo.pop
-					next if l == label or badlab[label].include? l
-					badlab[label] << l
-					todo.concat g.to_optim[l].to_a
-				end
-			end
-			badlab[label]
-		}
+		# find the domains of var aliases
+		walk = lambda { |var|
+			# [label, index] of references to var (reading it, writing it, ro/wo it (eg eax = *eax => eax_0 = *eax_1))
+			read = {}
+			write = {}
+			ro = {}
+			wo = {}
 
-		# reachable labels from a point in the graph
-		# stops following a path var is written in it
-		can_reach = lambda { |start, idx, want, forbid, var|
-			todo = g.to_optim[start].to_a.dup
-			done = []
-			while l = todo.pop
-				next if done.include? l
-				done << l
-				break true if want.include? l
-				e = g.exprs[l]
-				e = e[idx..-1].to_a if l == start
-				next if e.find { |ce|
+			# list of [l, i] for which domain is not known
+			unchecked = []
+
+			# mark all exprs of the graph
+			g.exprs.each { |label, exprs|
+				exprs.each_with_index { |ce, i|
 					if ce_read[ce, var]
 						if ce.op == :'=' and ce.lexpr == var and not ce_write[ce.rexpr, var]
-							true
+							(ro[label] ||= []) << i
+							(wo[label] ||= []) << i
+							unchecked << [label, i, :up] << [label, i, :down]
 						else
-							break
+							(read[label] ||= []) << i
+							unchecked << [label, i]
 						end
 					elsif ce_write[ce, var]
-						true
+						(write[label] ||= []) << i
+						unchecked << [label, i]
 					end
 				}
-				todo.concat g.to_optim[l].to_a if not forbid.include? l
-			end
-		}
+			}
 
-		check_domain = lambda { |var, label, idx, badlabels|
-			ce = g.exprs[label][idx]
+			# stuff when filling the domain (flood algorithm)
+			dom = dom_ro = dom_wo = todo_up = todo_down = nil
 
-			init_label = label
-			readers = []
-			writers = []
-			wronly  = []	# var = var+1 at start of domain (patch only lexpr)
-			rdonly  = []	# var = var+1 at end of domain (patch only rexpr)
-			occurences = []	# list all appearances of var for this domain (to patch)
-			if not ce_read[ce, var]
-				occurences << ce
-			elsif ce.op == :'=' and ce.lexpr == var and not ce_write[ce.rexpr, var]
-				wronly << ce
-			else
-				next
-			end
-			idx += 1
-			todo = [label]
-			done = []
-			postponed = []
-			done_p = []
-			while label = todo.pop or ppd = postponed.pop
-				if label
-					next if done.include? label
-					done << label if idx == 0
-				else
-					next if done_p.include? ppd
-					done_p << ppd
-					label, idx = ppd
-					next if not can_reach[label, idx+1, readers, writers, var]
-					# the written var belongs to the same domain (maybe not, but it's best to include too much than not enough)
-					writers.delete label
-					rdonly.delete_if { |e| e.object_id == g.exprs[label][idx].object_id }
-					wronly.delete_if { |e| e.object_id == g.exprs[label][idx].object_id }
-					occurences << g.exprs[label][idx]
-					idx += 1
-				end
-				case while ce = g.exprs[label].to_a[idx]
-					if ce_read[ce, var]
-						break :abort if badlabels.include? label	# not a domain
-						if ce.op == :'=' and ce.lexpr == var and not ce_write[ce.rexpr, var]
-							rdonly << ce
-							writers << label
-							readers << label
-							break :postpone
-						else
-							occurences << ce
+			# flood by walking the graph up from [l, i] (excluded)
+			# marks stuff do walk down
+			walk_up = lambda { |l,  i|
+				todo_w = [[l, i-1]]
+				done_w = []
+				while o = todo_w.pop
+					next if done_w.include? o
+					done_w << o
+					l, i = o
+					loop do
+						if read[l].to_a.include? i
+							# XXX not optimal (should mark only the uppest read)
+							todo_down |= [[l, i]] if not dom.include? [l, i]
+							dom |= [[l, i]]
+						elsif write[l].to_a.include? i
+							todo_down |= [[l, i]] if not dom.include? [l, i]
+							dom |= [[l, i]]
+							break
+						elsif wo[l].to_a.include? i
+							todo_down |= [[l, i]] if not dom_wo.include? [l, i, :down]
+							dom_wo |= [[l, i, :down]]
+							break
 						end
-						readers << label
-					elsif ce_write[ce, var]
-						# eax=1; if() goto l1; eax=2; goto l2; l1: nop; l2: ebx=eax;
-						# postpone this path until all readers are found, then check if it merges with one
-						writers << label
-						break :postpone
+						i -= 1
+						if i < 0
+							g.from_optim[l].to_a.each { |ll|
+								todo_w << [ll, g.exprs[ll].to_a.length-1]
+							}
+							break
+						end
 					end
-					idx += 1
 				end
-				when :abort
-					occurences.clear
-					break
-				when :postpone
-					postponed << [label, idx]
-				else
-					todo.concat g.to_optim[label].to_a
-				end
-				idx = 0
-			end
+			}
 
-			nv = patch[var, occurences + rdonly]
-			rdonly.each { |e| e.lexpr = var }
-			wronly.each { |e| e.lexpr = nv }
-		}
-
-		walk = lambda { |var|
-			done = []
-			todo = [g.start]
-			while label = todo.pop and not done.include? label
-				done << label
-				idx = 0
-				while ce = g.exprs[label].to_a[idx]
-					check_domain[var, label, idx, badlabel[label]] if ce_write[ce, var]
-					idx += 1
+			# flood by walking the graph down from [l, i] (excluded)
+			# malks stuff to walk up
+			walk_down = lambda { |l, i|
+				todo_w = [[l, i+1]]
+				done_w = []
+				while o = todo_w.pop
+					next if done_w.include? o
+					done_w << o
+					l, i = o
+					loop do
+						if read[l].to_a.include? i
+							todo_up |= [[l, i]] if not dom.include? [l, i]
+							dom |= [[l, i]]
+						elsif write[l].to_a.include? i
+							break
+						elsif ro[l].to_a.include? i
+							todo_up |= [[l, i]] if not dom_ro.include? [l, i, :up]
+							dom_ro |= [[l, i, :up]]
+							break
+						end
+						i += 1
+						if i >= g.exprs[l].to_a.length
+							g.to_optim[l].to_a.each { |ll|
+								todo_w << [ll, 0]
+							}
+							break
+						end
+					end
 				end
-				todo.concat g.to_optim[label].to_a
+			}
+
+			# check it out
+			while o = unchecked.shift
+				dom = []
+				dom_ro = []
+				dom_wo = []
+
+				todo_up = []
+				todo_down = []
+
+				# init
+				if read[o[0]].to_a.include? o[1]
+					todo_up << o
+					todo_down << o
+					dom << o
+				elsif write[o[0]].to_a.include? o[1]
+					todo_down << o
+					dom << o
+				elsif o[2] == :up
+					todo_up << o
+					dom_ro << o
+				elsif o[2] == :down
+					todo_down << o
+					dom_wo << o
+				else raise
+				end
+
+				# loop
+				while todo_up.first or todo_down.first
+					todo_up.each { |oo| walk_up[oo[0], oo[1]] }
+					todo_up.clear
+
+					todo_down.each { |oo| walk_down[oo[0], oo[1]] }
+					todo_down.clear
+				end
+
+				# patch
+				exprs = dom.map { |oo| g.exprs[oo[0]][oo[1]] }
+				nv = patch[var, exprs, nil]
+				exprs = dom_ro.map { |oo|
+					ce = g.exprs[oo[0]][oo[1]]
+					if ce.rexpr.kind_of? C::CExpression
+						ce.rexpr
+					else	# patch ourself
+						ce.rexpr = nv
+						nil
+					end
+				}.compact
+				patch[var, exprs, nv]
+				dom_wo.each { |oo| g.exprs[oo[0]][oo[1]].lexpr = nv }
+
+				unchecked -= dom + dom_wo + dom_ro
 			end
 		}
 
