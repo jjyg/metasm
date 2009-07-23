@@ -876,8 +876,8 @@ class Decompiler
 
 	# checks if expr is a var (var or *&var)
 	def isvar(ce, var)
-		if var.stackoff
-			return unless ce.kind_of? C::CExpression and ce.op == :* and not ce.lexpr
+		if var.stackoff and ce.kind_of? C::CExpression
+			return unless ce.op == :* and not ce.lexpr
 			ce = ce.rexpr
 			ce = ce.rexpr while ce.kind_of? C::CExpression and not ce.op
 			return unless ce.kind_of? C::CExpression and ce.op == :& and not ce.lexpr
@@ -895,11 +895,11 @@ class Decompiler
 			when :'='; break true if isvar(ce.rexpr, var)	# XXX *&var = 2: wont break here, and will match on next walk_ce recursion
 			else break true if isvar(ce.lexpr, var) or isvar(ce.rexpr, var)
 			end
-		} or (var.stackoff and (cnt = 0 ; walk_ce(ce_) { |ce|	# ptr to var	# XXX doesn't seam to resolve the *&v = 2 problem
-			cnt -= 1 if ce.op == :'=' and isvar(ce.lexpr, var)
-			cnt += 1 if ce.lexpr == var
-			cnt += 1 if ce.rexpr == var
-		} ; cnt > 0))
+		} #or (var.stackoff and (cnt = 0 ; walk_ce(ce_) { |ce|	# ptr to var	# XXX doesn't seam to resolve the *&v = 2 problem
+		#	cnt -= 1 if ce.op == :'=' and isvar(ce.lexpr, var)
+		#	cnt += 1 if ce.lexpr == var
+		#	cnt += 1 if ce.rexpr == var
+		#} ; cnt > 0))
 	end
 
 	# checks if expr writes var
@@ -2033,7 +2033,7 @@ class Decompiler
 							isfunc = true if ce.op == :func and (not ce.lexpr.kind_of? C::Variable or
 									not ce.lexpr.has_attribute('pure'))	# XXX is there a C attr for func depending only on staticvars+param ?
 							depend_vars << ce.lexpr if ce.lexpr.kind_of? C::Variable
-							depend_vars << ce.rexpr if ce.rexpr.kind_of? C::Variable
+							depend_vars << ce.rexpr if ce.rexpr.kind_of? C::Variable and (ce.lexpr or ce.op != :&)	# a = &v; v = 12; func(a) => func(&v)
 							depend_vars << ce if ce.lvalue?
 							depend_vars.concat(ce.rexpr.grep(C::Variable)) if ce.rexpr.kind_of? ::Array
 						}
