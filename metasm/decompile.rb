@@ -412,7 +412,8 @@ class Decompiler
 				s = C::Variable.new
 				s.type = C::BaseType.new(:__int32)
 				case e
-				when ::String; scope = @c_parser.toplevel	# edata relocation
+				when ::String	# edata relocation
+					return new_global_var(e, C::Pointer.new(C::BaseType.new(:__int8)))	# type from relocation type ?
 				when ::Symbol; s.storage = :register
 				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
