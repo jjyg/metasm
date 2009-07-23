@@ -892,14 +892,11 @@ class Decompiler
 		walk_ce(ce_) { |ce|
 			case ce.op
 			when :funcall; break true if isvar(ce.lexpr, var) or ce.rexpr.find { |a| isvar(a, var) }
-			when :'='; break true if isvar(ce.rexpr, var)	# XXX *&var = 2: wont break here, and will match on next walk_ce recursion
+			when :'='; break true if isvar(ce.rexpr, var)
+				break ce_read(ce.rexpr, var) if isvar(ce.lexpr, var)	# *&var = 2
 			else break true if isvar(ce.lexpr, var) or isvar(ce.rexpr, var)
 			end
-		} #or (var.stackoff and (cnt = 0 ; walk_ce(ce_) { |ce|	# ptr to var	# XXX doesn't seam to resolve the *&v = 2 problem
-		#	cnt -= 1 if ce.op == :'=' and isvar(ce.lexpr, var)
-		#	cnt += 1 if ce.lexpr == var
-		#	cnt += 1 if ce.rexpr == var
-		#} ; cnt > 0))
+		}
 	end
 
 	# checks if expr writes var
@@ -953,7 +950,7 @@ class Decompiler
 		g.exprs.each { |label, exprs|
 			exprs.each_with_index { |ce, i|
 				if ce_read(ce, var)
-					if ce.op == :'=' and ce.lexpr == var and not ce_write(ce.rexpr, var)
+					if ce.op == :'=' and isvar(ce.lexpr, var) and not ce_write(ce.rexpr, var)
 						(ro[label] ||= []) << i
 						(wo[label] ||= []) << i
 						unchecked << [label, i, :up] << [label, i, :down]
@@ -1080,21 +1077,23 @@ class Decompiler
 			scope.statements << C::Declaration.new(nv)
 			scope.symbol[nv.name] = nv
 
-			exprs = dom.map { |oo| g.exprs[oo[0]][oo[1]] }
-			ce_patch(exprs, var, nv)
-
-			exprs = dom_ro.map { |oo|
+			dom.each { |oo| ce_patch(g.exprs[oo[0]][oo[1]], var, nv) }
+			dom_ro.each { |oo|
 				ce = g.exprs[oo[0]][oo[1]]
 				if ce.rexpr.kind_of? C::CExpression
-					ce.rexpr
-				else	# patch ourself
+					ce_patch(ce.rexpr, var, nv)
+				else
 					ce.rexpr = nv
-					nil
 				end
-			}.compact
-			ce_patch(exprs, var, nv)
-
-			dom_wo.each { |oo| g.exprs[oo[0]][oo[1]].lexpr = nv }
+			}
+			dom_wo.each { |oo|
+				ce = g.exprs[oo[0]][oo[1]]
+				if ce.lexpr.kind_of? C::CExpression
+					ce_patch(ce.lexpr, var, nv)
+				else
+					ce.lexpr = nv
+				end
+			}
 
 			unchecked -= dom + dom_wo + dom_ro
 		end
