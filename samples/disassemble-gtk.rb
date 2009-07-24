@@ -38,6 +38,7 @@ OptionParser.new { |opt|
 	opt.on('--custom <hookfile>', 'eval a ruby script hookfile') { |h| (opts[:hookfile] ||= []) << h }
 	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--map <mapfile>', 'load a map file (addr <-> name association)') { |f| opts[:map] = f }
+	opt.on('--fast', 'dasm cli args with disassemble_fast_deep') { opts[:fast] = true }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-v', '--verbose') { $VERBOSE = true }	# default
 	opt.on('-q', '--no-verbose') { $VERBOSE = false }
@@ -57,6 +58,8 @@ else
 	exe = w.loadfile(exename) if exename
 end
 
+ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
+
 if exe
 	dasm = exe.init_disassembler
 
@@ -64,11 +67,11 @@ if exe
 	dasm.parse_c_file opts[:cheader] if opts[:cheader]
 	dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 	dasm.debug_backtrace = true if opts[:debugbacktrace]
+	dasm.disassemble_fast_deep(*ep) if opts[:fast]
 end
 
 opts[:hookfile].to_a.each { |f| eval File.read(f) }
 opts[:hookstr].to_a.each { |f| eval f }
-ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
 
 if dasm
 	w.display(dasm, ep)

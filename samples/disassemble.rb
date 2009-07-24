@@ -30,6 +30,7 @@ OptionParser.new { |opt|
 	opt.on('--benchmark') { opts[:benchmark] = true }
 	opt.on('--decompile') { opts[:decompile] = true }
 	opt.on('--map <mapfile>') { |f| opts[:map] = f }
+	opt.on('--fast', 'use disassemble_fast (no backtracking)') { opts[:fast] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
 }.parse!(ARGV)
@@ -66,10 +67,11 @@ opts[:hookstr].to_a.each { |f| eval f }
 t1 = Time.now if opts[:benchmark]
 # do the work
 begin
+	method = opts[:fast] ? :disassemble_fast : :disassemble
 	if ARGV.empty?
-		exe.disassemble
+		exe.send(method)
 	else
-		exe.disassemble(*ARGV.map { |addr| makeint[addr] })
+		exe.send(method, *ARGV.map { |addr| makeint[addr] })
 	end
 rescue Interrupt
 	puts $!, $!.backtrace

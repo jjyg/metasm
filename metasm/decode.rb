@@ -1083,6 +1083,9 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 	# disassembles_fast from a list of entrypoints, also dasm subfunctions
 	def disassemble_fast_deep(*entrypoints)
+		@entrypoints ||= []
+		@entrypoints |= entrypoints
+
 		while ep = entrypoints.pop
 			ep = normalize(ep)
 			if not @decoded[ep]
