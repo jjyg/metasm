@@ -33,6 +33,7 @@ class CoverageWidget < Gtk::DrawingArea
 		signal_connect('button_press_event') { |w, ev|
 			case ev.event_type
 			when Gdk::Event::Type::BUTTON_PRESS
+				grab_focus
 				case ev.button
 				when 1; click(ev)
 				when 3; rightclick(ev)
