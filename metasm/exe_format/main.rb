@@ -127,9 +127,10 @@ class ExeFormat
 		init_disassembler if not disassembler
 		entrypoints = get_default_entrypoints if entrypoints.empty?
 		@disassembler.disassemble(*entrypoints)
+		@disassembler
 	end
 
-	# disassembles the specified entrypoints
+	# disassembles the specified entrypoints without backtracking
 	# initializes the disassembler if needed
 	# uses get_default_entrypoints if the argument list is empty
 	# returns the disassembler
@@ -137,6 +138,7 @@ class ExeFormat
 		init_disassembler if not disassembler
 		entrypoints = get_default_entrypoints if entrypoints.empty?
 		@disassembler.disassemble_fast_deep(*entrypoints)
+		@disassembler
 	end
 
 	# returns a list of entrypoints to disassemble (program entrypoint, exported functions...)

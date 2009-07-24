@@ -1139,6 +1139,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			if func
 				l = auto_label_at(addr, 'sub', 'loc', 'xref')
 				puts "found new function #{l} at #{Expression[addr]}" if $VERBOSE
+				# XXX use default_btbind_callback ?
 				@function[addr] = DecodedFunction.new
 			end
 		end
