@@ -289,7 +289,7 @@ class InstructionBlock
 	def each_to_otherfunc(dasm)
 		each_to { |to, type|
 			to = dasm.normalize(to)
-			yield to if type == :indirect or dasm.function[to]
+			yield to if type == :indirect or dasm.function[to] or not dasm.decoded[to]
 		}
 	end
 end
@@ -1079,6 +1079,117 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		ar.each { |di_addr_| backtrace(di_addr_, di.address, :origin => di.address, :type => :x) }
 
 		block
+	end
+
+	# disassembles_fast from a list of entrypoints, also dasm subfunctions
+	def disassemble_fast_deep(*entrypoints)
+		while ep = entrypoints.pop
+			ep = normalize(ep)
+			if not @decoded[ep]
+				disassemble_fast ep
+				next if not @decoded[ep].kind_of? DecodedInstruction
+				# look for subfuncs
+				todo = [ep]
+				done = []
+				while a = todo.pop
+					a = normalize(a)
+					next if done.include? a or not @decoded[a].kind_of? DecodedInstruction
+					done << a
+					@decoded[a].block.each_to_otherfunc(self) { |aa| entrypoints << aa }
+					@decoded[a].block.each_to_samefunc(self) { |aa| todo << aa }
+				end
+			end
+		end
+	end
+
+	# disassembles fast from a list of entrypoints
+	# see disassemble_fast_step
+	def disassemble_fast(*entrypoints)
+		disassemble_fast_step(entrypoints) until entrypoints.empty?
+	end
+
+	# disassembles one block from the ary, see disassemble_fast_block
+	def disassemble_fast_step(todo)
+		return if not x = todo.pop
+		x = [x] if not x.kind_of? Array
+		addr, from, from_subfuncret = x
+
+		addr = normalize(addr)
+
+		if di = @decoded[addr]
+			if di.kind_of? DecodedInstruction
+				split_block(di.block, di.address) if not di.block_head?
+				di.block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
+			end
+		elsif s = get_section_at(addr)
+			block = InstructionBlock.new(normalize(addr), s[0])
+			block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
+			todo.concat disassemble_fast_block(block)
+		end
+
+		# mark as Function if called from a :saveip
+		if @decoded[addr].kind_of? DecodedInstruction and not @function[addr]
+			func = false
+			each_xref(addr, :x) { |x|
+				func = true if @decoded[x.origin].kind_of? DecodedInstruction and @decoded[x.origin].opcode.props[:saveip]
+			}
+			if func
+				l = auto_label_at(addr, 'sub', 'loc', 'xref')
+				puts "found new function #{l} at #{Expression[addr]}" if $VERBOSE
+				@function[addr] = DecodedFunction.new
+			end
+		end
+	end
+
+	# disassembles fast a new instruction block at block.address (must be normalized)
+	# does not recurse into subfunctions
+	# assumes all :saveip returns
+	# does not backtrace stuff
+	# returns a todo-style ary
+	# assumes @addrs_todo is empty
+	def disassemble_fast_block(block)
+		di_addr = block.address
+		delay_slot = nil
+		di = nil
+		ret = []
+
+		100.times {
+			break if @decoded[di_addr]
+
+			# decode instruction
+			block.edata.ptr = di_addr - block.address + block.edata_ptr
+			if not di = @cpu.decode_instruction(block.edata, di_addr)
+				return ret
+			end
+
+			@decoded[di_addr] = di
+			block.add_di di
+			di_addr = di.next_addr
+
+			if di.opcode.props[:stopexec] or di.opcode.props[:setip]
+				if di.opcode.props[:saveip]
+					di.block.add_to_subfuncret(di_addr)
+					ret << [di_addr, di.address, true]
+				end
+				if di.opcode.props[:setip]
+					@program.get_xrefs_x(self, di).each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x, :maxdepth => 0) }
+					ret.concat @addrs_todo if not di.opcode.props[:saveip]
+				end
+				delay_slot ||= [di, @cpu.delay_slot(di)]
+				@addrs_todo = []
+			end
+
+			if delay_slot
+				if delay_slot[1] <= 0
+					return ret if delay_slot[0].opcode.props[:stopexec]
+					break
+				end
+				delay_slot[1] -= 1
+			end
+		}
+
+		di.block.add_to_normal(di_addr)
+		ret << [di_addr, di.address]
 	end
 
 	# trace whose xrefs this di is responsible of

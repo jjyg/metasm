@@ -212,6 +212,18 @@ class DisasmWidget < Gtk::VBox
 		end
 	end
 
+	# disassemble fast from this point (don't dasm subfunctions, don't backtrace)
+	def disassemble_fast(addr)
+		@dasm.disassemble_fast(addr)
+		gui_update
+	end
+
+	# disassemble fast & deep from this point (don't backtrace, but still dasm subfuncs)
+	def disassemble_fast_deep(addr)
+		@dasm.disassemble_fast_deep(addr)
+		gui_update
+	end
+
 	# (re)decompile
 	def decompile(addr)
 		if @dasm.c_parser and var = @dasm.c_parser.toplevel.symbol[addr] and (var.type.kind_of? C::Function or @dasm.decoded[@dasm.normalize(addr)].kind_of? DecodedInstruction)
@@ -361,6 +373,7 @@ class DisasmWidget < Gtk::VBox
 			when GDK_Return, GDK_KP_Enter; focus_addr curview.hl_word
 			when GDK_Escape; focus_addr_back
 			when GDK_c; disassemble(curview.current_address)
+			when GDK_C; disassemble_fast(curview.current_address)
 			when GDK_d; toggle_data(curview.current_address)
 			when GDK_f; list_functions
 			when GDK_g; prompt_goto
@@ -709,7 +722,11 @@ class MainWindow < Gtk::Window
 		@accel_group = Gtk::AccelGroup.new
 
 		actions = Gtk::Menu.new
-		addsubmenu(actions, 'Disassemble here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
+		dasm = Gtk::Menu.new
+		addsubmenu(dasm, 'Disassemble from here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
+		addsubmenu(dasm, 'Disassemble fast from here', 'C') { @dasm_widget.disassemble_fast(@dasm_widget.curview.current_address) }
+		addsubmenu(dasm, 'Disassemble fast & deep from here') { @dasm_widget.disassemble_fast_deep(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, dasm, 'Disassemble')
 		i = addsubmenu(actions, '_Follow') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Return, 0, Gtk::ACCEL_VISIBLE)
 		i = addsubmenu(actions, 'Jmp _back') { @dasm_widget.focus_addr_back }
