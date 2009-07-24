@@ -732,6 +732,7 @@ class MainWindow < Gtk::Window
 		actions = Gtk::Menu.new
 		dasm = Gtk::Menu.new
 		addsubmenu(dasm, '_Disassemble from here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
+		@accel_group = Gtk::AccelGroup.new	# ok, so an old gtk segfaults with an accelerator containing both c and C..
 		addsubmenu(dasm, 'Disassemble _fast from here', 'C') { @dasm_widget.disassemble_fast(@dasm_widget.curview.current_address) }
 		addsubmenu(dasm, 'Disassemble fast & dee_p from here') { @dasm_widget.disassemble_fast_deep(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, dasm, '_Disassemble')
