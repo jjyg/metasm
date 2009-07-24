@@ -1,18 +1,140 @@
-disasm:
- find a way to recognize non-returning subfunction (eg thunk_exit)
- DecodedData (dword, string, array, structs? ...)
- make exe.decode generate DecodedData ? (for elf symbols, import names etc)
- handle function-local stack space (esp+XX) -> private, nobacktrace
- handle function-local labels (also rename local stack vars offsets)
- forward register tracking ? with weak values ?
- path-specific backtracking ( foo: call a ; a: jmp retloc ; bar: call b ; b: jmp retloc ; retloc: ret ; call foo ; ret : last ret trackback should only reach a:)
- function signatures (a la FLIRT?)
+List of TODO items, by section, in random order
 
-ia32: emu fpu, handle 64bits
-encode: SplitReloc for pseudo-instrs (mips li => reloc high :a16 + reloc low :a16), use Reloc.encode(edata, off) or sumthin for edata.fixup
-mips: find a way to have a 'li' instruction that resolve as 'loadlow' or 'loadhigh+orlow'
-optimizer/deoptimizer (asm/dasm): reorder instructions
-compile: optimize (jmp -> jmp, non-volatile vars, ..), support intrinsics?
-debug: unify windows/linux API, support hw dbg registers uses (bpx/r/w..)
-gui: debugger, hexedit, C code navigation
-elf: symbol versions
+Ia32
+ emu fpu
+ improve compiler (a/b, a%b, ...)
+ decompile rep movsd
+ add all sse2 instrs
+ realmode
+
+X86_64
+ compiler
+ decompiler
+ debugger
+
+CPU
+ ARM
+ Sparc
+ Cell
+
+Parser
+ Allow single-file multiplexer (C code + Asm + asm16bit + ...)
+
+C parser
+ allow parse invalid C (to load decompiled code)
+
+Assembler
+ Handle cpu pseudo-instrs (mips 'li' -> load high + or low)
+ SplitReloc? (for pseudo-instrs)
+ Ia32 GAS syntax
+ move PE/ELF autoimport data in a data/ folder
+ Make the autoimport depend on the target platform and not on the exeformat
+ Write a sample with runtime shellcode linking (Messageboxa => scan peb etc)
+ Encode FPU constants
+ 
+Disasm
+ Fast_dasm
+  no recursion
+  no backtrace
+  all saveip returns (with :default bt_bind?)
+  useful when e.g. debugging to have a quick graph
+ DecodedData
+ Exe decoding generate decodeddata ?
+ Function-local namespace (esp+12 -> esp+var_42)
+ Recognize __noreturn thunks
+ Fix thunk detection (thunk: mov ecx, 42  jmp [iat_thiscall] is not a thunk)
+ Test with ET_REL style exe
+ Store stuff out of mem (to handle big binaries)
+ Better :default usage
+  good on call eax, but not on <600k instrs> ret
+  use binary personality ?
+ FLIRT-style func signatures
+ Improve backtrace -> patch di.instr.args exprs
+ path-specific backtracking ( foo: call a ; a: jmp retloc ; bar: call b ; b: jmp retloc ; retloc: ret ; call foo ; ret : last ret trackback should only reach a:)
+ Decode pseudo/macro-instrs (mips 'li')
+ Deoptimizer (instr reordering for readability)
+ Optimizer (deobfuscating)
+ Better plugin support
+ Per-instr context (mix cell/ppc, x86 32/16bits..)
+
+Compiler
+ Optimizer
+ Register allocator
+ Instr reordering
+ Asm intrinsics
+ Asm inline
+ inline functions
+ Separate partial compilation + linking (src1.c -> obj1.o, src2.c -> obj2.o, obj1.o+obj2.o -> bin)
+ Make generic compiler from cpu.instr_binding ?
+  create a cpu.what_instr_has_binding(:a => (:a + :b)) => 'add a, b' ?
+ Shellcode compiler (exit() => mov eax, 1  int 80h inline)
+ 
+Decompiler
+ Support updating function prototype
+ Fix decompiling on loaded savefile
+ Rewrite cpu-specific to really dumb
+  Just translate di.binding to C
+   maybe w/ trivial var dependency check for unused regs, but beware :incomplete instrs deps
+  Check interdependency ('xadd')
+ Move frame pointer checks / stack var detection to C code
+ Update asm listing from info in C (stack vars, stack var names..)
+ Handle renaming/retyping register vars / aliases
+ Handle switch() / computed goto
+ Fix inline asm reg dependencies
+ Handle direct syscalls (mov eax, 1  int 80h => exit())
+ Autodecode structs
+ FPU
+ Handle/hide compiler-generated stuff (getip, stack cookie setup/check..)
+
+Debugger
+ finish Win rewrite
+ same with linux, abstract X86
+ OSX
+ have a cpu-specific part (hwbp, singlestep?)
+ Detour-style functionnality to patch binary code (also static to patch exe files?)
+ Move constants in a data/ folder (ptrace reg numbers, syscalls, etc)
+ Generic remote process manip
+  create blank state
+  linux virtualallocex
+  pax-compatible code patch through mmap
+ Allow loading symbols from mapped binaries (libs)
+ Remote debugging (client and server, +small standalone C client)
+
+ExeFormat
+ Handle minor editing without decode/reencode (eg patch ELF entrypoint)
+
+ELF
+ test encoding openbsd binaries
+ handle symbol versions
+ handle ET_REL
+ LoadedELF.dump
+
+MachO
+ fix encoder
+
+PE
+ fix resource decoder
+ resource editor ?
+ rc compiler ?
+
+GUI
+ fix navbar drawing
+ debugger
+  fix kbd focus
+  specialize widgets
+   persistent current instr hilighting
+   show breakpoints
+   show jump direction from current flag values
+  make a console widget (sice-style cli)
+ patch: assembler (a la hexedit)
+ Hexedit: allow VirtualFile 'reopen rw'
+ Abstract GTK away
+ have a win32 native and a console backend
+ better graph positionning fallback
+ zoom font when zooming graph
+ copy/paste, selection
+ map some part of the binary & debug it (map a PE on a linux host & run it)
+
+Ruby
+ make a ruby parser, ruby2c / jit
+
