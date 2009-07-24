@@ -360,6 +360,14 @@ class DisasmWidget < Gtk::VBox
 		focus_addr(curview.current_address, ((@notebook.page == idx) ? default : idx))
 	end
 
+	# undefines the whole function body
+	def undefine_function(addr)
+		list = []
+		@dasm.each_function_block(addr) { |b| list << b }
+		list.each { |b| @dasm.undefine_from(b) }
+		gui_update
+	end
+
 	include Gdk::Keyval
 	def keypress(ev)
 		return true if @keyboard_callback[ev.keyval] and @keyboard_callback[ev.keyval].call(ev)
@@ -723,26 +731,27 @@ class MainWindow < Gtk::Window
 
 		actions = Gtk::Menu.new
 		dasm = Gtk::Menu.new
-		addsubmenu(dasm, 'Disassemble from here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
-		addsubmenu(dasm, 'Disassemble fast from here', 'C') { @dasm_widget.disassemble_fast(@dasm_widget.curview.current_address) }
-		addsubmenu(dasm, 'Disassemble fast & deep from here') { @dasm_widget.disassemble_fast_deep(@dasm_widget.curview.current_address) }
-		addsubmenu(actions, dasm, 'Disassemble')
-		i = addsubmenu(actions, '_Follow') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }
+		addsubmenu(dasm, '_Disassemble from here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
+		addsubmenu(dasm, 'Disassemble _fast from here', 'C') { @dasm_widget.disassemble_fast(@dasm_widget.curview.current_address) }
+		addsubmenu(dasm, 'Disassemble fast & dee_p from here') { @dasm_widget.disassemble_fast_deep(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, dasm, '_Disassemble')
+		i = addsubmenu(actions, 'Follow') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Return, 0, Gtk::ACCEL_VISIBLE)
-		i = addsubmenu(actions, 'Jmp _back') { @dasm_widget.focus_addr_back }
+		i = addsubmenu(actions, 'Jmp back') { @dasm_widget.focus_addr_back }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Escape, 0, Gtk::ACCEL_VISIBLE)
-		addsubmenu(actions, '_Goto', 'g') { @dasm_widget.prompt_goto }
-		addsubmenu(actions, 'List _functions', 'f') { @dasm_widget.list_functions }
-		addsubmenu(actions, 'List _labels', 'l') { @dasm_widget.list_labels }
-		addsubmenu(actions, 'List _xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
-		addsubmenu(actions, 'Re_name label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
-		addsubmenu(actions, 'Deco_mpile', 'r') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
-		addsubmenu(actions, '_Comment', ';') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, 'Goto', 'g') { @dasm_widget.prompt_goto }
+		addsubmenu(actions, 'List functions', 'f') { @dasm_widget.list_functions }
+		addsubmenu(actions, 'List labels', 'l') { @dasm_widget.list_labels }
+		addsubmenu(actions, 'List xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'Rename label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'Decompile', 'r') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, 'Comment', ';') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, '_Undefine') { @dasm_widget.dasm.undefine_from(@dasm_widget.curview.current_address) }
-		addsubmenu(actions, '_Data', 'd') { @dasm_widget.toggle_data(@dasm_widget.curview.current_address) }
-		addsubmenu(actions, '_Pause dasm', 'p', :check) { |ck| ck.active = !@dasm_widget.playpause_dasm }
-		addsubmenu(actions, 'Run _ruby snippet', '^r') { @dasm_widget.prompt_run_ruby }
-		addsubmenu(actions, 'Run ruby plug_in') {
+		addsubmenu(actions, 'Unde_fine function') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, 'Data', 'd') { @dasm_widget.toggle_data(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, 'Pause dasm', 'p', :check) { |ck| ck.active = !@dasm_widget.playpause_dasm }
+		addsubmenu(actions, 'Run ruby snippet', '^r') { @dasm_widget.prompt_run_ruby }
+		addsubmenu(actions, 'Run _ruby plugin') {
 			openfile('ruby plugin') { |f|
 				protect { @dasm_widget.instance_eval(File.read(f)) }
 			}
@@ -752,7 +761,7 @@ class MainWindow < Gtk::Window
 
 		options = Gtk::Menu.new
 		addsubmenu(options, '_Verbose', :check, $VERBOSE, 'v') { |ck| $VERBOSE = ck.active? ; puts "#{'not ' if not $VERBOSE}verbose" }
-		addsubmenu(options, '_Debug', :check, $DEBUG) { |ck| $DEBUG = ck.active? }
+		addsubmenu(options, 'Debu_g', :check, $DEBUG) { |ck| $DEBUG = ck.active? }
 		addsubmenu(options, 'Debug _backtrace', :check) { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
 		addsubmenu(options, 'Backtrace limi_t') {
 			InputBox.new(self, 'max blocks to backtrace', :text => @dasm_widget.dasm.backtrace_maxblocks ) { |target|
@@ -770,7 +779,7 @@ class MainWindow < Gtk::Window
 		addsubmenu(options, 'Forbid decompile _if/while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_ifwhile = ck.active? }
 		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
 		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
-		addsubmenu(options, 'Forbid decomp optim_labels', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck.active? }
+		addsubmenu(options, 'Forbid decomp optimlab_els', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck.active? }
 		# TODO CPU type, size, endian...
 		# factorize headers
 

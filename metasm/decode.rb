@@ -853,6 +853,44 @@ class Disassembler
 		new
 	end
 
+	# finds the start of a function from the address of an instruction
+	def find_function_start(addr)
+		addr = addr.address if addr.kind_of? DecodedInstruction
+		todo = [addr]
+		done = []
+		func = nil
+		while a = todo.pop
+			a = normalize(a)
+			di = @decoded[a]
+			next if done.include? a or not di.kind_of? DecodedInstruction
+			a = di.block.address
+			done << a
+			break a if @function[a]
+			l = []
+			di.block.each_from_samefunc(self) { |f| l << f }
+			break a if l.empty?
+			todo.concat l
+		end
+	end
+
+	# iterates over the blocks of a function, yields each func block address
+	def each_function_block(addr)
+		addr = addr.address if addr.kind_of? DecodedInstruction
+		addr = find_function_start(addr) if not @function[addr]
+		todo = [addr]
+		done = []
+		while a = todo.pop
+			a = normalize(a)
+			di = @decoded[a]
+			next if done.include? a or not di.kind_of? DecodedInstruction
+			a = di.block.address
+			done << a
+			p a
+			yield a
+			di.block.each_to_samefunc(self) { |f| todo << f }
+		end
+	end
+
 	# decodes instructions from an entrypoint, (tries to) follows code flow
 	def disassemble(*entrypoints)
 		nil while disassemble_mainiter(entrypoints)
