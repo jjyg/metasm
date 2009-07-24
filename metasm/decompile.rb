@@ -311,7 +311,7 @@ class Decompiler
 		if n = @dasm.backtrace(expr, addr).first
 			return expr if n == Expression::Unknown
 			n = Expression[n].reduce_rec
-			n = @dasm.prog_binding.index(n) || n
+			n = @dasm.get_label_at(n) || n
 			n = $1 if n.kind_of? ::String and n =~ /^thunk_(.*)/
 			n
 		else

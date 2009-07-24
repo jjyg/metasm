@@ -249,7 +249,7 @@ class DisasmWidget < Gtk::VBox
 		@dasm.function.keys.each { |f|
 			addr = @dasm.normalize(f)
 			next if not @dasm.decoded[addr]
-			list << [@dasm.prog_binding.index(addr), Expression[addr]]
+			list << [@dasm.get_label_at(addr), Expression[addr]]
 		}
 		title = "list of functions"
 		listwindow(title, list) { |i| focus_addr i[1] }
@@ -318,7 +318,7 @@ class DisasmWidget < Gtk::VBox
 	# prompts for a new name for addr
 	def rename_label(addr)
 		old = addr
-		if @dasm.prog_binding[old] or old = @dasm.prog_binding.index(addr)
+		if @dasm.prog_binding[old] or old = @dasm.get_label_at(addr)
 			inputbox("new name for #{old}", :text => old) { |v| @dasm.rename_label(old, v) ; gui_update }
 		else
 			inputbox("label name for #{Expression[addr]}", :text => Expression[addr]) { |v|

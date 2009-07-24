@@ -744,7 +744,7 @@ class GraphViewWidget < Gtk::HBox
 				nl[]
 			else
 				# TODO real data display (dwords, xrefs, strings..)
-				if label = @dasm.prog_binding.index(curaddr) and @dasm.xrefs[curaddr]
+				if label = @dasm.get_label_at(curaddr) and @dasm.xrefs[curaddr]
 					render[Expression[curaddr].to_s + '    ', :black]
 					render[label + ' ', :label]
 				else

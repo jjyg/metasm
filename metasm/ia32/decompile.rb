@@ -163,7 +163,7 @@ class Ia32
 		func_entry = myblocks.first[0]
 		until myblocks.empty?
 			b, to = myblocks.shift
-			if l = dcmp.dasm.prog_binding.index(b)
+			if l = dcmp.dasm.get_label_at(b)
 				stmts << C::Label.new(l)
 			end
 
@@ -316,7 +316,7 @@ class Ia32
 					#	di.block.to_normal.to_a.each { |addr|
 					#		addr = dcmp.dasm.normalize addr
 					#		to.delete addr
-					#		next if not l = dcmp.dasm.prog_binding.index(addr)
+					#		next if not l = dcmp.dasm.get_label_at(addr)
 					#		sw.body.statements << C::Goto.new(l)
  					#	}
 					#	stmts << sw

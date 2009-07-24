@@ -350,8 +350,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@dasm.decoded[addr].block.each_from_samefunc(@dasm) { |na| empty = false ; todo << na }
 			break if empty
 		end
-		return if not l = @dasm.prog_binding.index(addr)
-		l = @dasm.auto_label_at(addr)	# if l has multiple names, auto_label_at will give the good one
+		return if not l = @dasm.get_label_at(addr)
 		@curaddr = l
 		@caret_x = @caret_y = 0
 		gui_update

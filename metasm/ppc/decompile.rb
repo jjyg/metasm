@@ -101,7 +101,7 @@ class PowerPC
 		func_entry = myblocks.first[0]
 		until myblocks.empty?
 			b, to = myblocks.shift
-			if l = dcmp.dasm.prog_binding.index(b)
+			if l = dcmp.dasm.get_label_at(b)
 				stmts << C::Label.new(l)
 			end
 
