@@ -19,12 +19,13 @@ CPU
 
 Parser
  Allow single-file multiplexer (C code + Asm + asm16bit + ...)
+ Fix the asm prepro comment issue: '; a /* b\n c ; */' should see 'c'
 
 C parser
  allow parse invalid C (to load decompiled code)
 
 Assembler
- Handle cpu pseudo-instrs (mips 'li' -> load high + or low)
+ Handle cpu pseudo-instrs (mips 'li' -> lui high + ori low)
  SplitReloc? (for pseudo-instrs)
  Ia32 GAS syntax
  move PE/ELF autoimport data in a data/ folder
@@ -42,7 +43,7 @@ Disasm
  Store stuff out of mem (to handle big binaries)
  Better :default usage
   good on call eax, but not on <600k instrs> ret
-  use binary personality ?
+  use binary personality ? (uses call vs uses pushret..)
  FLIRT-style func signatures
  Improve backtrace -> patch di.instr.args exprs
  path-specific backtracking ( foo: call a ; a: jmp retloc ; bar: call b ; b: jmp retloc ; retloc: ret ; call foo ; ret : last ret trackback should only reach a:)
@@ -50,7 +51,7 @@ Disasm
  Deoptimizer (instr reordering for readability)
  Optimizer (deobfuscating)
  Better plugin support
- Per-instr context (mix cell/ppc, x86 32/16bits..)
+ Per-instr context (allows to mix cell/ppc, x86 32/16bits..)
 
 Compiler
  Optimizer
@@ -80,6 +81,7 @@ Decompiler
  Autodecode structs
  FPU
  Handle/hide compiler-generated stuff (getip, stack cookie setup/check..)
+ Handle call 1f ; 1: pop eax
 
 Debugger
  finish Win rewrite
@@ -121,14 +123,15 @@ GUI
    show breakpoints
    show jump direction from current flag values
   make a console widget (sice-style cli)
- patch: assembler (a la hexedit)
+  use dasm_fast on eip
+ instruction patch (a la hexedit)
  Hexedit: allow VirtualFile 'reopen rw'
  Abstract GTK away
  have a win32 native and a console backend
  better graph positionning fallback
  zoom font when zooming graph
  copy/paste, selection
- map some part of the binary & debug it (map a PE on a linux host & run it)
+ map (part of) the binary & debug it (map a PE on a linux host & run it)
 
 Ruby
  make a ruby parser, ruby2c / jit
