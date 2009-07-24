@@ -1215,7 +1215,7 @@ class Decompiler
 			next if not o
 			t = t.untypedef
 			if t.kind_of? C::Struct
-				t.members.each { |m|
+				t.members.to_a.each { |m|
 					mo = t.offsetof(@c_parser, m.name)
 					next if mo == 0
 					scope.symbol.each { |vn, vv|
@@ -1364,7 +1364,7 @@ class Decompiler
 			next if not o = v.stackoff
 			t = t.untypedef
 			if t.kind_of? C::Struct
-				t.members.each { |tm|
+				t.members.to_a.each { |tm|
 					moff = t.offsetof(@c_parser, tm.name)
 					next if moff == 0
 					types.delete_if { |vv, tt| scope.symbol[vv].stackoff == o+moff }
@@ -1463,8 +1463,8 @@ class Decompiler
 			off -= tabidx * sizeof(nil, st)
 
 			suboff = 0
-			submemb = lambda { |sm| sm.name ? sm : sm.kind_of?(C::Union) ? sm.members.map { |ssm| submemb[ssm] } : [] }
-			mbs = st.members.map { |m| submemb[m] }.flatten 
+			submemb = lambda { |sm| sm.name ? sm : sm.kind_of?(C::Union) ? sm.members.to_a.map { |ssm| submemb[ssm] } : [] }
+			mbs = st.members.to_a.map { |m| submemb[m] }.flatten 
 			if not sm = mbs.find { |m|
 				mo = st.offsetof(@c_parser, m.name)
 				suboff = off - mo
@@ -1505,7 +1505,7 @@ class Decompiler
 
 			if ce.op == :* and not ce.lexpr and ce.rexpr.type.pointer? and ce.rexpr.type.untypedef.type.untypedef.kind_of? C::Struct
 				s = ce.rexpr.type.untypedef.type.untypedef
-				m = s.members.find { |m_| s.offsetof(@c_parser, m_.name) == 0 }
+				m = s.members.to_a.find { |m_| s.offsetof(@c_parser, m_.name) == 0 }
 				if sizeof(m) != sizeof(ce)
 					ce.rexpr = C::CExpression[[ce.rexpr, C::Pointer.new(s)], C::Pointer.new(ce.type)]
 					next
@@ -1518,7 +1518,7 @@ class Decompiler
 				next
 			elsif ce.op == :'=' and ce.lexpr.type.untypedef.kind_of? C::Struct
 				s = ce.lexpr.type.untypedef
-				m = s.members.find { |m_| s.offsetof(@c_parser, m_.name) == 0 }
+				m = s.members.to_a.find { |m_| s.offsetof(@c_parser, m_.name) == 0 }
 				ce.lexpr = C::CExpression.new(ce.lexpr, :'.', m.name, m.type)
 				ce.type = m.type
 				next
@@ -1690,7 +1690,7 @@ class Decompiler
 
 			# (1stmember*)structptr => &structptr->1stmember	TODO anonymous substruct..
 			if not ce.op and ce.type.pointer? and ce.rexpr.type.pointer? and (s = ce.rexpr.type.untypedef.type.untypedef).kind_of? C::Struct and
-					m = s.members.first and m.name and sametype[ce.type.untypedef.type, m.type]
+					m = s.members.to_a.first and m.name and sametype[ce.type.untypedef.type, m.type]
 				if ce.rexpr.kind_of? C::CExpression and ((ce.rexpr.op == :'.' and s = ce.rexpr.lexpr.type) or (ce.rexpr.op == :'->' and
 							s = ce.rexpr.lexpr.type.untypedef.type)) and s.members.find { |om| om.name == ce.rexpr.rexpr and om.type.kind_of? C::Array }
 					# ary->bla => ary[0].bla
