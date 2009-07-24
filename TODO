@@ -33,11 +33,6 @@ Assembler
  Encode FPU constants
  
 Disasm
- Fast_dasm
-  no recursion
-  no backtrace
-  all saveip returns (with :default bt_bind?)
-  useful when e.g. debugging to have a quick graph
  DecodedData
  Exe decoding generate decodeddata ?
  Function-local namespace (esp+12 -> esp+var_42)
