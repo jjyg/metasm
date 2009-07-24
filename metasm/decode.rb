@@ -2262,7 +2262,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		if not xr.empty?
 			b["\n// Xrefs: #{xr[0, 8].join(' ')}#{' ...' if xr.length > 8}"]
 		end
-		if @prog_binding.index(block.address)
+		if block.edata.inv_export[block.edata_ptr]
 			b["\n"] if xr.empty?
 			@prog_binding.keys.sort.each { |name| b["#{name}:"] if @prog_binding[name] == block.address }
 		end
@@ -2278,7 +2278,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# TODO array-style data access
 	def dump_data(addr, edata, off, &b)
 		b ||= lambda { |l| puts l }
-		if l = @prog_binding.index(addr)
+		if l = edata.inv_export[off]
 			l = nil
 			@prog_binding.keys.sort.each { |name|
  				# show aliases sorted, keep last in 'l' to display inline
