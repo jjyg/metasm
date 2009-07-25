@@ -16,6 +16,7 @@ module GtkGui
 # TODO mark changed register values after singlestep
 # TODO handle debugee fork()
 class DbgWidget < Gtk::VBox
+	attr_accessor :dbg, :console, :regs, :code, :mem
 	def initialize(dbg)
 		super()
 
@@ -23,9 +24,10 @@ class DbgWidget < Gtk::VBox
 
 		setup_keyboard_cb
 
+		@console = DbgConsoleWidget.new(self, dbg)
 		@regs = DbgRegWidget.new(self, dbg)
 		@code = DisasmWidget.new(dbg.disassembler)
-		@mem = DisasmWidget.new(dbg.disassembler)
+		@mem  = DisasmWidget.new(dbg.disassembler)
 		@code.start_disassembling
 
 		@code.keyboard_callback = @keyboard_cb
@@ -33,8 +35,9 @@ class DbgWidget < Gtk::VBox
 
 		self.spacing = 2
 		add @regs, 'expand' => false
-		add @mem
-		add @code
+		add @mem, 'expand' => false
+		add @code, 'expand' => false
+		add @console
 
 		# 1st child should be clonable (dasm)
 		@children = [@code, @mem, @regs]
@@ -48,9 +51,13 @@ class DbgWidget < Gtk::VBox
 			@code.focus_addr(0, :opcodes)
 			@mem.focus_addr(0, :hex)
 			gui_update
+
+			modify_bg Gtk::STATE_NORMAL, Gdk::Color.new(0, 0xffff, 0)
 		}
 
 		set_size_request(640, 480)
+		@mem.set_height_request(150)
+		@code.set_height_request(150)
 
 		# XXX mem has always the focus
 	end
@@ -378,13 +385,247 @@ class DbgRegWidget < Gtk::DrawingArea
 
 		x = (x_data + @oldcaret_x) * @font_width + 1
 		y = @oldcaret_reg * @font_height
-		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
+		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 
 		x = (x_data + @caret_x) * @font_width + 1
 		y = @caret_reg * @font_height
-		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
+		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 
 		@oldcaret_x, @oldcaret_reg = @caret_x, @caret_reg
+	end
+
+end
+
+
+# a widget that displays logs of the debugger, and a cli interface to the dbg
+class DbgConsoleWidget < Gtk::DrawingArea
+	attr_accessor :dbg, :history, :log, :statusline
+
+	def initialize(parent, dbg)
+		@parent_widget = parent
+		@dbg = dbg
+
+		@caret_x = 0
+		@oldcaret_x = 42
+		@layout = Pango::Layout.new Gdk::Pango.context
+		@layout_stat = Pango::Layout.new Gdk::Pango.context
+		@color = {}
+		@history = []
+		@log = []
+		@curline = ''
+		@statusline = 'kikoo'
+
+		super()
+
+		set_font 'courier 10'
+
+		# receive mouse/kbd events
+		set_events Gdk::Event::ALL_EVENTS_MASK
+		set_can_focus true
+
+		# callbacks
+		signal_connect('expose_event') { paint ; true }
+		signal_connect('button_press_event') { |w, ev|
+			case ev.event_type
+			when Gdk::Event::Type::BUTTON_PRESS
+				grab_focus
+				case ev.button
+				when 1; click(ev)
+				when 3; rightclick(ev)
+				end
+			when Gdk::Event::Type::BUTTON2_PRESS
+				case ev.button
+				when 1; doubleclick(ev)
+				end
+			end
+		}
+		# TODO mousewheel to scroll history?
+		signal_connect('key_press_event') { |w, ev| keypress(ev) }
+		signal_connect('realize') { # one-time initialize
+			# raw color declaration
+			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
+			  :red => 'f00', :darkred => '800', :palered => 'fcc',
+			  :green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
+			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
+			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
+			  :olive => '088',
+			}.each { |tag, val|
+				@color[tag] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
+			}
+			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
+
+			set_color_association :log => :palegrey, :curline => :white,
+				:caret => :yellow, :bg => :black,
+				:status => :black, :status_bg => :olive
+
+			grab_focus
+		}
+
+		gui_update
+	end
+
+	def click(ev)
+		@caret_x = (ev.x-1).to_i / @font_width - 1
+		@caret_x = [[@caret_x, 0].max, @curline.length].min
+		update_caret
+	end
+
+	def rightclick(ev)
+	end
+
+	def doubleclick(ev)
+	end
+
+	def paint
+		w = window
+		gc = Gdk::GC.new(w)
+
+		x = 1
+		y = 0
+
+		a = allocation
+		w_w = a.width
+		w_h = a.height
+
+		render = lambda { |str, color|
+			@layout.text = str
+			gc.set_foreground @color[color]
+			y -= @font_height
+			w.draw_layout(gc, 1, y, @layout)
+		}
+
+		y = w_h
+		gc.set_foreground @color[:status_bg]
+		@layout_stat.text = @statusline
+	       	y -= @layout_stat.pixel_size[1]
+		w.draw_rectangle(gc, true, 0, y, w_w, @layout_stat.pixel_size[1])
+		gc.set_foreground @color[:status]
+		w.draw_layout(gc, 1+@font_width, y, @layout_stat)
+
+		render[':' + @curline, :curline]
+		@caret_y = y
+
+		log.reverse.each { |l|
+			render[l, :log]
+			break if y < 0
+		}
+
+		# draw caret
+		gc.set_foreground @color[:caret]
+		cx = (@caret_x+1)*@font_width+1
+		cy = @caret_y
+		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+
+		@oldcaret_x = @caret_x
+	end
+
+	include Gdk::Keyval
+	# keyboard binding
+	# basic navigation (arrows, pgup etc)
+	def keypress(ev)
+		case ev.keyval
+		when GDK_Left
+			if @caret_x > 0
+				@caret_x -= 1
+				update_caret
+			end
+		when GDK_Right
+			if @caret_x < @curline.length
+				@caret_x += 1
+				update_caret
+			end
+		when GDK_Up
+			# TODO history
+		when GDK_Down
+			# TODO history
+		when GDK_Home
+			@caret_x = 0
+			update_caret
+		when GDK_End
+			@caret_x = @curline.length
+			update_caret
+		when GDK_Tab
+			# anything, to prevent other_widget.grab_focus
+
+		when 0x20..0x7e
+			@curline[@caret_x, 0] = ev.keyval.chr
+			@caret_x += 1
+			redraw
+		when GDK_Return, GDK_KP_Enter
+			handle_command
+		when GDK_Escape
+		else
+			return @parent_widget.keypress(ev)
+		end
+		true
+	end
+
+	def handle_command
+		return if @curline == ''
+		cmd = @curline
+		add_log(":#@curline")
+		@curline = ''
+		@caret_x = 0
+
+		# TODO rip samples/lindebug.rb
+		# TODO history & stuff
+		case cmd
+		when /^d (.*)/
+  			@parent_widget.mem.focus_addr($1)
+		else add_log 'lol'
+		end
+
+		redraw
+	end
+
+	def add_log(l)
+		@log << l
+		@log.shift if log.length > 40
+	end
+
+	# change the font of the listing
+	# arg is a Gtk Fontdescription string (eg 'courier 10')
+	def set_font(descr)
+		@layout.font_description = Pango::FontDescription.new(descr)
+		@layout_stat.font_description = Pango::FontDescription.new(descr)
+		@layout_stat.font_description.weight = Pango::WEIGHT_BOLD
+		@layout.text = 'x'
+		@font_width, @font_height = @layout.pixel_size
+		redraw
+	end
+
+	# change the color association
+	# arg is a hash function symbol => color symbol
+	# color must be allocated
+	# check #initialize/sig('realize') for initial function/color list
+	def set_color_association(hash)
+		hash.each { |k, v| @color[k] = @color[v] }
+		modify_bg Gtk::STATE_NORMAL, @color[:bg]
+		redraw
+	end
+
+	# redraw the whole widget
+	def redraw
+		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
+	end
+
+	def gui_update
+		redraw
+	end
+
+	# hint that the caret moved
+	def update_caret
+		return if not window
+		return if @oldcaret_x == @caret_x
+
+		x = (@oldcaret_x+1) * @font_width + 1
+		y = @caret_y
+		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
+
+		x = (@caret_x+1) * @font_width + 1
+		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
+
+		@oldcaret_x = @caret_x
 	end
 
 end
