@@ -302,10 +302,10 @@ class CdecompListingWidget < Gtk::DrawingArea
 		return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
 		x = @oldcaret_x*@font_width+1
 		y = @oldcaret_y*@font_height
-		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
+		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 		x = @caret_x*@font_width+1
 		y = @caret_y*@font_height
-		window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
+		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 		@scroll.hadjustment.clamp_page(x-1, x+@font_width)
 		@scroll.vadjustment.clamp_page(y, y+@font_height)
 		@oldcaret_x = @caret_x

@@ -474,7 +474,7 @@ class HexWidget < Gtk::DrawingArea
 		a.each { |x, y|
 			x *= @font_width
 			y *= @font_height
-			window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
+			window.invalidate Gdk::Rectangle.new(x, y, 2, @font_height), false
 		}
 		@oldcaret_x, @oldcaret_y, @oldcaret_x_data, @oldfocus_zone = @caret_x, @caret_y, @caret_x_data, @focus_zone
 	end

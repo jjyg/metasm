@@ -549,10 +549,10 @@ class AsmListingWidget < Gtk::HBox
 			return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
 			x = @oldcaret_x*@font_width+1
 			y = @oldcaret_y*@font_height
-			@listing_widget.window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
+			@listing_widget.window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 			x = @caret_x*@font_width+1
 			y = @caret_y*@font_height
-			@listing_widget.window.invalidate Gdk::Rectangle.new(x-1, y, x+1, y+@font_height), false
+			@listing_widget.window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 			if @arrows.find { |f, t| f == @caret_y or t == @caret_y or f == @oldcaret_y or t == @oldcaret_y }
 				@arrows_widget.window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false
 			end
