@@ -446,13 +446,13 @@ class COFF
 		when 'HIGHLOW'
 			addr = decode_word
 			if s = sect_at_va(addr)
-				label = label_at(s.encoded, s.encoded.ptr, 'xref_%04x' % addr)
+				label = label_at(s.encoded, s.encoded.ptr, "xref_#{Expression[addr]}")
 				Metasm::Relocation.new(Expression[label], :u32, @endianness)
 			end
 		when 'DIR64'
 			addr = decode_xword
 			if s = sect_at_va(addr)
-				label = label_at(s.encoded, s.encoded.ptr, 'xref_%04x' % addr)
+				label = label_at(s.encoded, s.encoded.ptr, "xref_#{Expression[addr]}")
 				Metasm::Relocation.new(Expression[label], :u64, @endianness)
 			end
 		else puts "W: COFF: Unsupported i386 relocation #{r.inspect}" if $VERBOSE

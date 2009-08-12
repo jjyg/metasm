@@ -60,7 +60,7 @@ class Decompiler
 	# returns the c_parser
 	def decompile(*entry)
 		entry.each { |f| decompile_func(f) }
-		optimize_global
+		finalize
 		@c_parser
 	end
 
@@ -202,14 +202,14 @@ class Decompiler
 
 	def new_global_var(addr, type)
 		return if not type.pointer?
+		addr = @dasm.normalize(addr)
 
 
 		# TODO check overlap with alreadydefined globals
 
 		ptype = type.untypedef.type
 		if ptype.kind_of? C::Function
-			addr = @dasm.normalize(addr)
-			name = @dasm.auto_label_at(addr, 'sub')
+			name = @dasm.auto_label_at(addr, 'sub', 'xref', 'byte', 'word', 'dword', 'unk')
 			if @dasm.get_section_at(addr)
 				@dasm.disassemble(addr) if not @dasm.decoded[addr]
 				f = @dasm.function[addr] ||= DecodedFunction.new
@@ -233,9 +233,9 @@ class Decompiler
 		when 1; 'byte'
 		when 2; 'word'
 		when 4; 'dword'
-		else 'global'
+		else 'unk'
 		end
-		name = @dasm.auto_label_at(addr, name)
+		name = @dasm.auto_label_at(addr, name, 'xref', 'byte', 'word', 'dword', 'unk')
 
 		if not var = @c_parser.toplevel.symbol[name]
 			var = C::Variable.new
@@ -1186,6 +1186,7 @@ class Decompiler
 			if ne = new_global_var(e, t)
 				ne.type = t if better_type[t, ne.type]	# TODO patch existing scopes using ne
 									# TODO rename (dword_xx -> byte_xx etc)
+				e = scope.symbol_ancestors[e] || e if e.kind_of? String	# exe reloc
 				walk_ce(scope) { |ce|
 					ce.lexpr = ne if ce.lexpr == e
 					ce.rexpr = ne if ce.rexpr == e
@@ -2252,6 +2253,11 @@ class Decompiler
 		unused.each { |v| scope.symbol[v].add_attribute 'unused' }	# fastcall args need it
 		scope.statements.delete_if { |sm| sm.kind_of? C::Declaration and unused.include? sm.var.name }
 		scope.symbol.delete_if { |n, v| unused.include? n }
+	end
+
+	def finalize
+		optimize_global
+		true
 	end
 
 	def optimize_global

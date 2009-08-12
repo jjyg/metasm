@@ -800,7 +800,8 @@ class Disassembler
 			e.add_export l, e.ptr
 			@prog_binding[l] = b + e.ptr
 		elsif rewritepfx.find { |p| base != p and addrstr.sub(base, p) == l }
-			newl = @program.new_label(addrstr)
+			newl = addrstr
+			newl = @program.new_label(newl) unless @old_prog_binding[newl] and @old_prog_binding[newl] == @prog_binding[l]	# avoid _uuid when a -> b -> a
 			rename_label l, newl
 			l = newl
 		end

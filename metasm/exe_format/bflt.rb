@@ -104,9 +104,9 @@ class Bflt < ExeFormat
 			section.ptr = r-base
 			target = decode_word(section)
 			if target >= @header.entry and target < @header.data_start
-				target = label_at(@text, target - @header.entry, 'xref_%04x' % target)
+				target = label_at(@text, target - @header.entry, "xref_#{Expression[target]}")
 			elsif target >= @header.data_start and target < @header.bss_end
-				target = label_at(@data, target - @header.data_start, 'xref_%04x' % target)
+				target = label_at(@data, target - @header.data_start, "xref_#{Expression[target]}")
 			else
 				puts "out of bounds reloc target at #{Expression[r]}" if $VERBOSE
 				next
