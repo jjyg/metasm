@@ -413,7 +413,21 @@ class Decompiler
 				s.type = C::BaseType.new(:__int32)
 				case e
 				when ::String	# edata relocation
-					return new_global_var(e, C::Pointer.new(C::BaseType.new(:__int8)))	# type from relocation type ?
+					if not s = @c_parser.toplevel.symbol[e]
+						# find type by checking size of reloc
+						# cache: reloc target -> reloc length
+						@invrelocsize_cache ||= nil
+						if not @invrelocsize_cache
+							@invrelocsize_cache = {}
+							@dasm.sections.each { |addr, sec|
+								sec.reloc.each { |off, rel| @invrelocsize_cache[rel.target] = rel.length }
+							}
+						end
+						t = "__int#{@invrelocsize_cache[Expression[e]].to_i*8}".to_sym
+						t = :__int8 if not @c_parser.typesize[t]
+						s = new_global_var(e, C::Array.new(C::BaseType.new(t)))
+					end
+					return s
 				when ::Symbol; s.storage = :register
 				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
