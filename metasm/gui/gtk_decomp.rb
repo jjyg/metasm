@@ -251,17 +251,34 @@ class CdecompListingWidget < Gtk::DrawingArea
 			f = curfunc.initializer if curfunc and curfunc.initializer.kind_of? C::Block
 			n = @hl_word
 			cp = @dasm.c_parser
-			if (f and s = f.symbol[n]) or s = cp.toplevel.symbol[n]
-				@parent_widget.inputbox("new type for #{n}", :text => s.dump_def(cp.toplevel)[0].to_s) { |t|
+			if (f and s = f.symbol[n]) or s = cp.toplevel.symbol[n] or s = cp.toplevel.symbol[@curaddr]
+				s_ = s.dup
+				s_.initializer = nil	# for static var, avoid dumping the initializer in the textbox
+				@parent_widget.inputbox("new type for #{n}", :text => s_.dump_def(cp.toplevel)[0].to_s) { |t|
 					begin
-						# TODO change type of current function => change retaddr/args types
 						cp.lexer.feed(t)
 						raise 'bad type' if not v = C::Variable.parse_type(cp, cp.toplevel)
 						v.parse_declarator(cp, cp.toplevel)
-						f.stackoff_type[s.stackoff] = v.type if s.stackoff
-						s.type = v.type
+						if f and s == curfunc
+							# updated type of current function: update args
+							vt = v.type.untypedef
+							vt = vt.type.untypedef if vt.kind_of? C::Pointer
+							raise 'function forever !' if not vt.kind_of? C::Function
+							# TODO _declspec
+							ao = 1
+							vt.args.to_a.each { |a|
+								ao = (ao + cp.typesize[:ptr] - 1) / cp.typesize[:ptr] * cp.typesize[:ptr]
+								f.stackoff_name[ao] = a.name if a.name
+								f.stackoff_type[ao] = a.type
+								ao += cp.sizeof(a)
+							}
+							curfunc.type.type = vt.type	# TODO put this in stackoff_ or something persistant
+						else
+							f.stackoff_type[s.stackoff] = v.type if s.stackoff
+							s.type = v.type
+						end
 						gui_update
-					rescue
+					rescue Object
 						@parent_widget.messagebox([$!.message, $!.backtrace].join("\n"), "error")
 					end
 					cp.readtok until cp.eos?

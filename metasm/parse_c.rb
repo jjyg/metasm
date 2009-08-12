@@ -2706,8 +2706,12 @@ EOH
 	end
 	class Type
 		def dump_initializer(init, scope, r=[''], dep=[])
-			if init.kind_of? ::Numeric
+			case init
+			when ::Numeric
 				r.last << init.to_s
+				[r, dep]
+			when ::Array
+				r.last << init.inspect
 				[r, dep]
 			else init.dump_inner(scope, r, dep)
 			end
