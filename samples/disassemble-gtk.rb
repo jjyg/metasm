@@ -40,6 +40,7 @@ OptionParser.new { |opt|
 	opt.on('--map <mapfile>', 'load a map file (addr <-> name association)') { |f| opts[:map] = f }
 	opt.on('--fast', 'dasm cli args with disassemble_fast_deep') { opts[:fast] = true }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
+	opt.on('-a', '--autoload', 'loads all relevant files with same filename (.h, .map..)') { opts[:autoload] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }	# default
 	opt.on('-q', '--no-verbose') { $VERBOSE = false }
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
@@ -55,7 +56,14 @@ if exename =~ /^live:(.*)/
 	w = Metasm::GtkGui::DbgWindow.new(target.debugger, target.modules[0].path.dup)
 else
 	w = Metasm::GtkGui::MainWindow.new("#{exename + ' - ' if exename}metasm disassembler")
-	exe = w.loadfile(exename) if exename
+	if exename
+		exe = w.loadfile(exename)
+		if opts[:autoload]
+			basename = exename.sub(/\.\w\w?\w?$/, '')
+			opts[:map] ||= basename + '.map' if File.exist?(basename + '.map')
+			opts[:cheader] ||= basename + '.h' if File.exist?(basename + '.h')
+		end
+	end
 end
 
 ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }

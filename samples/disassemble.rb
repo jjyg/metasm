@@ -30,6 +30,7 @@ OptionParser.new { |opt|
 	opt.on('--benchmark') { opts[:benchmark] = true }
 	opt.on('--decompile') { opts[:decompile] = true }
 	opt.on('--map <mapfile>') { |f| opts[:map] = f }
+	opt.on('-a', '--autoload', 'loads all relevant files with same filename (.h, .map..)') { opts[:autoload] = true }
 	opt.on('--fast', 'use disassemble_fast (no backtracking)') { opts[:fast] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
@@ -46,6 +47,11 @@ if exename =~ /^live:(.*)/
 	exe = Shellcode.decode(target.memory, Ia32.new)
 else
 	exe = AutoExe.orshellcode(Ia32.new).decode_file(exename)
+	if opts[:autoload]
+		basename = exename.sub(/\.\w\w?\w?$/, '')
+		opts[:map] ||= basename + '.map' if File.exist?(basename + '.map')
+		opts[:cheader] ||= basename + '.h' if File.exist?(basename + '.h')
+	end
 end
 # set options
 dasm = exe.init_disassembler
