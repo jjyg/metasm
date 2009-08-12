@@ -2001,22 +2001,35 @@ class Decompiler
 				elsif e.op == :'=' and v = e.lexpr and v.kind_of? C::Variable and scope.symbol[v.name] and
 						not v.type.qualifier.to_a.include? :volatile and not find_next_read_ce[e.rexpr, v]
 
-					if e.rexpr.kind_of? C::CExpression and iv = e.rexpr.reduce(@c_parser) and iv.kind_of? ::Integer
+					# reduce trivial static assignments
+					if (e.rexpr.kind_of? C::CExpression and iv = e.rexpr.reduce(@c_parser) and iv.kind_of? ::Integer) or
+					   (e.rexpr.kind_of? C::CExpression and e.rexpr.op == :& and not e.rexpr.lexpr) or
+					   (e.rexpr.kind_of? C::Variable and e.rexpr.type.kind_of? C::Array)
 						rewritten = false
 						readers = []
+						discard = [e]
 						g.exprs.each { |l, el|
 							el.each_with_index { |ce, ci|
 								if ce_write(ce, v) and [label, i-1] != [l, ci]
-									rewritten = true
-									break
+									if ce == e
+										discard << ce
+									else
+										rewritten = true
+										break
+									end
 								elsif ce_read(ce, v)
+									if walk_ce(ce) { |_ce| break true if _ce.op == :& and not _ce.lexpr and _ce.rexpr == v }
+										# i = 2 ; j = &i  =!>  j = &2
+										rewritten = true
+										break
+									end
 									readers << ce
 								end
 							} if not rewritten
 						}
 						if not rewritten
-							ce_patch(readers, v, C::CExpression[iv])
-							e.lexpr = e.op = e.rexpr = nil
+							ce_patch(readers, v, C::CExpression[iv || e.rexpr])
+							discard.each { |d| d.lexpr = d.op = d.rexpr = nil }
 							next
 						end
 					end
