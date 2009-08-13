@@ -253,7 +253,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			cp = @dasm.c_parser
 			if (f and s = f.symbol[n]) or s = cp.toplevel.symbol[n] or s = cp.toplevel.symbol[@curaddr]
 				s_ = s.dup
-				s_.initializer = nil	# for static var, avoid dumping the initializer in the textbox
+				s_.initializer = nil if s.kind_of? C::Variable	# for static var, avoid dumping the initializer in the textbox
 				@parent_widget.inputbox("new type for #{n}", :text => s_.dump_def(cp.toplevel)[0].to_s) { |t|
 					begin
 						cp.lexer.feed(t)
