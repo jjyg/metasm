@@ -39,6 +39,7 @@ OptionParser.new { |opt|
 	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--map <mapfile>', 'load a map file (addr <-> name association)') { |f| opts[:map] = f }
 	opt.on('--fast', 'dasm cli args with disassemble_fast_deep') { opts[:fast] = true }
+	opt.on('--decompile') { opts[:decompile] = true }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-a', '--autoload', 'loads all relevant files with same filename (.h, .map..)') { opts[:autoload] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }	# default
@@ -76,6 +77,7 @@ if exe
 	dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 	dasm.debug_backtrace = true if opts[:debugbacktrace]
 	dasm.disassemble_fast_deep(*ep) if opts[:fast]
+	dasm.callback_finished = lambda { w.dasm_widget.focus_addr w.dasm_widget.curaddr, :decompile } if opts[:decompile]
 end
 
 opts[:hookfile].to_a.each { |f| eval File.read(f) }
