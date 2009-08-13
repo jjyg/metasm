@@ -906,8 +906,8 @@ class Disassembler
 		@entrypoints ||= []
 		if @addrs_todo.empty? and entrypoints.empty?
 			post_disassemble
-			@callback_finished[] if callback_finished
 			puts 'disassembly finished' if $VERBOSE
+			@callback_finished[] if callback_finished
 			return false
 		elsif @addrs_todo.empty?
 			ep = entrypoints.shift

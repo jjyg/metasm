@@ -77,7 +77,7 @@ if exe
 	dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 	dasm.debug_backtrace = true if opts[:debugbacktrace]
 	dasm.disassemble_fast_deep(*ep) if opts[:fast]
-	dasm.callback_finished = lambda { w.dasm_widget.focus_addr w.dasm_widget.curaddr, :decompile } if opts[:decompile]
+	dasm.callback_finished = lambda { w.dasm_widget.focus_addr w.dasm_widget.curaddr, :decompile ; dasm.decompiler.finalize } if opts[:decompile]
 end
 
 opts[:hookfile].to_a.each { |f| eval File.read(f) }
