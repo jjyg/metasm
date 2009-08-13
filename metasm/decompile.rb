@@ -123,7 +123,7 @@ class Decompiler
 
 		simplify_goto(scope)
 		namestackvars(scope)
-		unalias_vars(scope)
+		unalias_vars(scope, func)
 		decompile_c_types(scope)
 		optimize(scope)
 		cleanup_var_decl(scope, func)
@@ -900,12 +900,12 @@ class Decompiler
 	# duplicate vars per domain value
 	# eg  eax = 1; foo(eax); eax = 2; bar(eax);  =>  eax = 1; foo(eax) eax_1 = 2; bar(eax_1);
 	#     eax = 1; if (bla) eax = 2; foo(eax);   =>  no change
-	def unalias_vars(scope)
+	def unalias_vars(scope, func)
 		g = c_to_graph(scope)
 
 		# find the domains of var aliases
 		scope.symbol.dup.each_value { |var|
-			next if var.stackoff.to_i > 0
+			next if var.stackoff.to_i > 0 or func.type.args.include? var	# __fastcall reg
 			unalias_var(var, scope, g)
 		}
 	end
