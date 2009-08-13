@@ -121,70 +121,19 @@ class Decompiler
 		# di blocks => raw c statements, declare variables
 		@dasm.cpu.decompile_blocks(self, myblocks, deps, func)
 
-		# goto bla ; bla: goto blo => goto blo ;; goto bla ; bla: return => return
 		simplify_goto(scope)
-
 		namestackvars(scope)
-
-		# use different C vars for any reg used in different domain (allows type to change over time)
 		unalias_vars(scope)
-
-		# infer variable types
 		decompile_c_types(scope)
-
-		# cleanup C
 		optimize(scope)
-
-		# make function prototype with local arg_XX
-		args = func.type.args
-		decl = []
-		scope.statements.delete_if { |sm|
-			next if not sm.kind_of? C::Declaration
-			if sm.var.stackoff.to_i > 0
-				args << sm.var
-			else
-				decl << sm
-			end
-			true
-		}
-		# reorder declarations
-		scope.statements[0, 0] = decl.sort_by { |sm| [-sm.var.stackoff.to_i, sm.var.name] }
-
-		# ensure arglist has no hole (create&add unreferenced args)
-		func.type.args = []
-		argoff = @c_parser.typesize[:ptr]
-		args.sort_by { |sm| sm.stackoff.to_i }.each { |a|
-			# XXX misalignment ?
-			if not curoff = a.stackoff
-				func.type.args << a	# __fastcall
-				next
-			end
-			while curoff > argoff
-				wantarg = C::Variable.new
-				wantarg.name = scope.stackoff_name[argoff] || stackoff_to_varname(argoff)
-				wantarg.type = C::BaseType.new(:int)
-				wantarg.attributes = ['unused']
-				func.type.args << wantarg
-				scope.symbol[wantarg.name] = wantarg
-				argoff += @c_parser.typesize[:ptr]
-			end
-			func.type.args << a
-			argoff += @c_parser.typesize[:ptr]
-		}
-
-		# change if() goto to if, if/else, while
+		cleanup_var_decl(scope, func)
 		decompile_controlseq(scope)
-
 		optimize_vars(scope)
-
 		optimize_ctrl(scope)
-		
 		optimize_vars(scope)
-
 		remove_unreferenced_vars(scope)
-
 		simplify_varname_noalias(scope)
-
+		rename_variables(scope)
 		@dasm.cpu.decompile_check_abi(self, entry, func)
 
 		case ret = scope.statements.last
@@ -2415,6 +2364,97 @@ class Decompiler
 				true
 			}
 		}
+	end
+
+	# reorder statements to put decl first, move assignments to decl, move args to func prototype
+	def cleanup_var_decl(scope, func)
+		args = func.type.args
+		decl = []
+		scope.statements.delete_if { |sm|
+			next if not sm.kind_of? C::Declaration
+			if sm.var.stackoff.to_i > 0
+				args << sm.var
+			else
+				decl << sm
+			end
+			true
+		}
+
+		# move trivial affectations to initialiser
+		# XXX a = 1 ; b = a ; a = 2
+		go = true	# break from delete_if does not delete..
+		scope.statements.delete_if { |st|
+			if go and st.kind_of? C::CExpression and st.op == :'=' and st.rexpr.kind_of? C::CExpression and not st.rexpr.op and
+					st.rexpr.rexpr.kind_of? ::Integer and st.lexpr.kind_of? C::Variable and scope.symbol[st.lexpr.name]
+				st.lexpr.initializer = st.rexpr
+			else
+				go = false
+			end
+		}
+
+		# reorder declarations
+		scope.statements[0, 0] = decl.sort_by { |sm| [-sm.var.stackoff.to_i, sm.var.name] }
+
+		# ensure arglist has no hole (create&add unreferenced args)
+		func.type.args = []
+		argoff = @c_parser.typesize[:ptr]
+		args.sort_by { |sm| sm.stackoff.to_i }.each { |a|
+			# XXX misalignment ?
+			if not curoff = a.stackoff
+				func.type.args << a	# __fastcall
+				next
+			end
+			while curoff > argoff
+				wantarg = C::Variable.new
+				wantarg.name = scope.stackoff_name[argoff] || stackoff_to_varname(argoff)
+				wantarg.type = C::BaseType.new(:int)
+				wantarg.attributes = ['unused']
+				func.type.args << wantarg
+				scope.symbol[wantarg.name] = wantarg
+				argoff += @c_parser.typesize[:ptr]
+			end
+			func.type.args << a
+			argoff += @c_parser.typesize[:ptr]
+		}
+	end
+
+	# rename local variables from subfunc arg names
+	def rename_variables(scope)
+		funcs = []
+		cntrs = []
+		cmpi = []
+
+		walk_ce(scope) { |ce|
+			funcs << ce if ce.op == :funcall
+			cntrs << (ce.lexpr || ce.rexpr) if ce.op == :'++'
+			cmpi << ce.lexpr if [:<, :>, :<=, :>=, :==, :'!='].include? ce.op and ce.rexpr.kind_of? C::CExpression and ce.rexpr.rexpr.kind_of? ::Integer
+		}
+
+		rename = lambda { |var, name|
+			var = var.rexpr if var.kind_of? C::CExpression and not var.op
+			next if not var.kind_of? C::Variable or not scope.symbol[var.name] or not name
+			next if (var.name !~ /^(var|arg)_/ and not var.storage == :register) or not scope.symbol[var.name] or name =~ /^(var|arg)_/
+			s = scope.symbol_ancestors
+			n = name
+			i = 0
+			n = name + "#{i+=1}" while s[n]
+			scope.symbol[n] = scope.symbol.delete(var.name)
+			var.name = n
+		}
+
+		funcs.each { |ce|
+			next if not ce.lexpr.kind_of? C::Variable or not ce.lexpr.type.kind_of? C::Function
+			ce.rexpr.to_a.zip(ce.lexpr.type.args.to_a).each { |a, fa| rename[a, fa.name] if fa }
+		}
+		funcs.each { |ce|
+			next if not ce.lexpr.kind_of? C::Variable or not ce.lexpr.type.kind_of? C::Function
+			ce.rexpr.to_a.zip(ce.lexpr.type.args.to_a).each { |a, fa|
+				next if not a.kind_of? C::CExpression or a.op != :& or a.lexpr
+				next if not fa or not fa.name
+				rename[a.rexpr, fa.name.sub(/^l?p/, '')]
+			}
+		}
+		(cntrs & cmpi).each { |v| rename[v, 'cntr'] }
 	end
 
 	# yield each CExpr member (recursive, allows arrays, order: self(!post), lexpr, rexpr, self(post))
