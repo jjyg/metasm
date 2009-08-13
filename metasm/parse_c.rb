@@ -318,7 +318,7 @@ module C
 				off += bla.offsetof(parser, name) if bla.kind_of? Struct
 				return off
 			end
-				
+
 
 			al = align(parser)
 			off = 0
@@ -870,6 +870,7 @@ module C
 			when 2
 				x0 = splat[args[0]]
 				x1 = splat[args[1]]
+				x0, x1 = x1, x0 if x0.kind_of? Type
 				if x1.kind_of? Type; new(nil, nil, x0, x1)	# (cast)r
 				elsif x0 == :*; new(nil, x0, x1, x1.type.untypedef.type)	# *r
 				elsif x0 == :& and x1.kind_of? CExpression and x1.type.kind_of? C::Array; new(nil, nil, x1, Pointer.new(x1.type.type))
@@ -1801,6 +1802,12 @@ EOH
 		end
 	end
 
+	class Variable
+		def ===(o)
+			self == o or (o.class == CExpression and not o.op and o.rexpr == self)
+		end
+	end
+
 	class CExpression
 		def self.lvalue?(e)
 			e.kind_of?(self) ? e.lvalue? : (e.kind_of? Variable and e.name)
@@ -1958,6 +1965,11 @@ EOH
 
 		def ==(o)
 			self.class == o.class and op == o.op and lexpr == o.lexpr and rexpr == o.rexpr
+		end
+	
+		def ===(o)
+			(self.class == o.class and op == o.op and lexpr === o.lexpr and rexpr === o.rexpr) or
+			(o.class == Variable and not @op and @rexpr == o)
 		end
 
 		# returns a CExpr negating this one (eg 'x' => '!x', 'a > b' => 'a <= b'...)

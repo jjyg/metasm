@@ -1651,7 +1651,7 @@ class Decompiler
 			end
 
 			# int x + 0xffffffff -> x-1
-			if (ce.op == :+ or ce.op == :- or ce.op == :'+=' or ce.op == :'-=') and ce.lexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
+			if ce.lexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and [:+, :-, :'+=', :'-=', :'!=', :==, :>, :<, :>=, :<=].include? ce.op and
 					ce.rexpr.rexpr == (1 << (8*sizeof(ce.lexpr)))-1
 				ce.op = {:+ => :-, :- => :+, :'+=' => :'-=', :'-=' => :'+='}[ce.op]
 				ce.rexpr.rexpr = 1
@@ -1683,13 +1683,43 @@ class Decompiler
 			end
 
 			# a-b == 0  =>  a == b
-			if [:==, :'!=', :<, :>, :<=, :>=].include? ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and
+			if ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and [:==, :'!=', :<, :>, :<=, :>=].include? ce.op and
 					ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :- and ce.lexpr.lexpr
 				ce.lexpr, ce.rexpr = ce.lexpr.lexpr, ce.lexpr.rexpr
 			end
 
-			# (a < b) != ( [(a < 0) == (b >= 0)] && [(a < 0) != (a < b)] )  =>  jl
-			# TODO
+			# (a > 0) != 0
+			if ce.op == :'!=' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and ce.lexpr.kind_of? C::CExpression and
+					[:<, :<=, :>, :>=, :'==', :'!=', :'!'].include? ce.lexpr.op
+				ce.replace ce.lexpr
+			end
+
+			# (a < b) != ( [(a < 0) == !(b < 0)] && [(a < 0) != (a < b)] )  =>  jl
+			# a<b  =>  true if !r  =>  a<0 == b<0  or a>=0  =>  a>=0 or b>=0
+			# a>=b =>  true if  r  =>  a<0 == b>=0 and a<0  =>  a<0 and b>=0
+
+			# x != (a && (b != x))  =>  [x && (!a || b)] || [!x && !(!a || b)]
+			if ce.op == :'!=' and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :< and ce.rexpr.kind_of? C::CExpression and
+					ce.rexpr.op == :'&&' and ce.rexpr.rexpr.kind_of? C::CExpression and ce.rexpr.rexpr.op == :'!=' and
+					ce.rexpr.rexpr.rexpr == ce.lexpr and not walk_ce(ce) { |ce_| break true if ce_.op == :funcall }
+				x, a, b = ce.lexpr, ce.rexpr.lexpr, ce.rexpr.rexpr.lexpr
+				ce.replace C::CExpression[ [x, :'&&', [[:'!',a],:'||',b]] , :'||',  [[:'!', x], :'&&', [:'!', [[:'!',a],:'||',b]]] ]
+				optimize_code(ce)
+			end
+			# (a != b) || a  =>  a || b
+			if ce.op == :'||' and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :'!=' and ce.lexpr.lexpr == ce.rexpr and not walk_ce(ce) { |ce_| break true if ce_.op == :funcall }
+				ce.lexpr, ce.rexpr = ce.rexpr, ce.lexpr.rexpr
+				optimize_code(ce)
+			end
+			# (a<b) && !(a>=0 && b<0)  ||  (a>=b) && (a>=0 && b<0)  =>  (signed)a < (signed)b
+			if ce.op == :'||' and ce.lexpr.kind_of? C::CExpression and ce.rexpr.kind_of? C::CExpression and ce.lexpr.op == :'&&' and ce.rexpr.op == :'&&' and
+					ce.lexpr.lexpr.kind_of? C::CExpression and ce.lexpr.lexpr.op == :<
+				a, b = ce.lexpr.lexpr.lexpr, ce.lexpr.lexpr.rexpr
+				if ce.lexpr.rexpr === C::CExpression[[a, :'>=', [0]], :'&&', [b, :'<', [0]]].negate and
+						ce.rexpr.lexpr === ce.lexpr.lexpr.negate and ce.rexpr.rexpr === ce.lexpr.rexpr.negate
+					ce.replace C::CExpression[a, :'<', b]
+				end
+			end
 
 			# (a < b) | (a == b)  =>  a <= b
 			if ce.op == :| and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :== and ce.lexpr.kind_of? C::CExpression and
@@ -1698,10 +1728,14 @@ class Decompiler
 				ce.lexpr, ce.rexpr = ce.lexpr.lexpr, ce.lexpr.rexpr
 			end
 
+			# a == 0  =>  !a
+			if ce.op == :== and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0
+				ce.lexpr, ce.op, ce.rexpr = nil, :'!', ce.lexpr
+			end
+
 			# !(bool) => bool
 			if ce.op == :'!' and ce.rexpr.kind_of? C::CExpression and [:'==', :'!=', :<, :>, :<=, :>=, :'||', :'&&', :'!'].include? ce.rexpr.op
-				s = ce.rexpr.negate
-				ce.lexpr, ce.op, ce.rexpr = s.lexpr, s.op, s.rexpr
+				ce.replace ce.rexpr.negate
 			end
 
 			# (foo)(bar)x => (foo)x
