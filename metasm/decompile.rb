@@ -1664,8 +1664,15 @@ class Decompiler
 				ce.op, ce.rexpr = :-, ce.rexpr.rexpr
 			end
 
+			# (((int) i >> 31) & 1)  =>  i < 0
+			if ce.op == :& and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1 and
+					ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :>> and ce.lexpr.rexpr.kind_of? C::CExpression and
+					not ce.lexpr.rexpr.op and ce.lexpr.rexpr.rexpr == sizeof(ce.lexpr.lexpr) * 8 - 1
+				ce.replace C::CExpression[ce.lexpr.lexpr, :<, [0]]
+			end
+
 			# a-b == 0  =>  a == b
-			if (ce.op == :== or ce.op == :'!=') and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and
+			if [:==, :'!=', :<, :>, :<=, :>=].include? ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and
 					ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :- and ce.lexpr.lexpr
 				ce.lexpr, ce.rexpr = ce.lexpr.lexpr, ce.lexpr.rexpr
 			end
@@ -1704,7 +1711,8 @@ class Decompiler
 			end
 
 			# (1stmember*)structptr => &structptr->1stmember	TODO anonymous substruct..
-			if not ce.op and ce.type.pointer? and ce.rexpr.type.pointer? and (s = ce.rexpr.type.untypedef.type.untypedef).kind_of? C::Struct and
+			if not ce.op and ce.type.pointer? and (ce.rexpr.kind_of? C::CExpression or ce.rexpr.kind_of? C::Variable) and
+					ce.rexpr.type.pointer? and (s = ce.rexpr.type.untypedef.type.untypedef).kind_of? C::Struct and
 					m = s.members.to_a.first and m.name and sametype[ce.type.untypedef.type, m.type]
 				if ce.rexpr.kind_of? C::CExpression and ((ce.rexpr.op == :'.' and s = ce.rexpr.lexpr.type) or (ce.rexpr.op == :'->' and
 							s = ce.rexpr.lexpr.type.untypedef.type)) and s.members.find { |om| om.name == ce.rexpr.rexpr and om.type.kind_of? C::Array }
@@ -2229,13 +2237,15 @@ class Decompiler
 					[:<, :<=, :>, :>=, :'==', :'!=', :'!'].include? ce.lexpr.op
 				ce.replace ce.lexpr
 			end
-			# conditions often are x & 0xffffff which may cast pointers to ints, remove those casts
+			# a == 0  =>  !a
 			if ce.op == :== and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0
 				ce.replace C::CExpression[:'!', ce.lexpr]
 			end
+			# !(int)a  =>  !a
 			if ce.op == :'!' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression
 				ce.rexpr = ce.rexpr.rexpr
 			end
+			# (int)a < (int)b  =>  a < b	TODO uint <-> int
 			if [:<, :<=, :>, :>=].include? ce.op and ce.rexpr.kind_of? C::CExpression and ce.lexpr.kind_of? C::CExpression and not ce.rexpr.op and not ce.lexpr.op and
 				ce.rexpr.rexpr.kind_of? C::CExpression and ce.rexpr.rexpr.type.pointer? and ce.lexpr.rexpr.kind_of? C::CExpression and ce.lexpr.rexpr.type.pointer?
 				ce.rexpr = ce.rexpr.rexpr
