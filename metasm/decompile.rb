@@ -588,9 +588,19 @@ class Decompiler
 			i.bthen = C::Break.new
 		end
 
+		patch_test = lambda { |ce|
+			ce = ce.rexpr if ce.kind_of? C::CExpression and ce.op == :'!'
+			# if (a+1)  =>  if (a != -1)
+			if ce.kind_of? C::CExpression and (ce.op == :+ or ce.op == :-) and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer
+				ce.rexpr.rexpr = -ce.rexpr.rexpr if ce.op == :+
+				ce.op = :'!='
+			end
+		}
+
 		walk(scope) { |ce|
 			case ce
 			when C::If
+				patch_test[ce.test]
 				if ce.bthen.kind_of? C::Block
  					case ce.bthen.statements.length
 					when 1
@@ -607,6 +617,7 @@ class Decompiler
 					ce.belse = ce.belse.statements.first
 				end
 			when C::While, C::DoWhile
+				patch_test[ce.test]
 				if ce.body.kind_of? C::Block
 				       case ce.body.statements.length
 				       when 1
@@ -1677,6 +1688,9 @@ class Decompiler
 				ce.lexpr, ce.rexpr = ce.lexpr.lexpr, ce.lexpr.rexpr
 			end
 
+			# (a < b) != ( [(a < 0) == (b >= 0)] && [(a < 0) != (a < b)] )  =>  jl
+			# TODO
+
 			# (a < b) | (a == b)  =>  a <= b
 			if ce.op == :| and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :== and ce.lexpr.kind_of? C::CExpression and
 					(ce.lexpr.op == :< or ce.lexpr.op == :>) and ce.lexpr.lexpr == ce.rexpr.lexpr and ce.lexpr.rexpr == ce.rexpr.rexpr
@@ -2225,12 +2239,6 @@ class Decompiler
 			end
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and (ce.type == ce.rexpr.type or (ce.type.integral? and ce.rexpr.type.integral?))
 				ce.replace ce.rexpr
-			end
-			# (((int) i >> 31) & 1)  =>  i < 0
-			if ce.op == :& and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1 and
-					ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :>> and ce.lexpr.rexpr.kind_of? C::CExpression and
-					not ce.lexpr.rexpr.op and ce.lexpr.rexpr.rexpr == sizeof(ce.lexpr.lexpr) * 8 - 1
-				ce.replace C::CExpression[ce.lexpr.lexpr, :<, [0]]
 			end
 			# (a > 0) != 0
 			if ce.op == :'!=' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and ce.lexpr.kind_of? C::CExpression and
