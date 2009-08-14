@@ -254,10 +254,11 @@ class CdecompListingWidget < Gtk::DrawingArea
 			if (f and s = f.symbol[n]) or s = cp.toplevel.symbol[n] or s = cp.toplevel.symbol[@curaddr]
 				s_ = s.dup
 				s_.initializer = nil if s.kind_of? C::Variable	# for static var, avoid dumping the initializer in the textbox
+				s_.attributes &= C::Attributes::DECLSPECS if s_.attributes
 				@parent_widget.inputbox("new type for #{s.name}", :text => s_.dump_def(cp.toplevel)[0].to_s) { |t|
 					begin
 						cp.lexer.feed(t)
-						raise 'bad type' if not v = C::Variable.parse_type(cp, cp.toplevel)
+						raise 'bad type' if not v = C::Variable.parse_type(cp, cp.toplevel, true)
 						v.parse_declarator(cp, cp.toplevel)
 						if s.type.kind_of? C::Function and s.initializer and s.initializer.decompdata
 							# updated type of a decompiled func: update stack
@@ -273,6 +274,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 								ao += cp.sizeof(a)
 							}
 							s.initializer.decompdata[:return_type] = vt.type
+							s.type = v.type
 						else
 							f.decompdata[:stackoff_type][s.stackoff] = v.type if f and s.stackoff
 							s.type = v.type

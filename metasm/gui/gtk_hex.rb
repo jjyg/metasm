@@ -318,18 +318,17 @@ class HexWidget < Gtk::DrawingArea
 		when 0x20..0x7e
 			if @focus_zone == :hex
 				case v = ev.keyval
-				when 0x20; v = nil	# keep current value
 				when ?0..?9; v -= ?0
 				when ?a..?f; v -= ?a-10
 				when ?A..?F; v -= ?A-10
-				else return true
+				else return @parent_widget.keypress(ev)
 				end
 				oo = @caret_x_data/2
 				oo = @data_size - oo - 1 if @endianness == :little
 				baddr = current_address + oo
 				o = 4*((@caret_x_data+1) % 2)
-				@write_pending[baddr] ||= data_at(baddr, 1)[0] if v
-				@write_pending[baddr] = (@write_pending[baddr] & ~(0xf << o) | (v << o)) if v
+				@write_pending[baddr] ||= data_at(baddr, 1)[0]
+				@write_pending[baddr] = (@write_pending[baddr] & ~(0xf << o) | (v << o))
 			else
 				@write_pending[current_address] = ev.keyval
 			end
@@ -342,8 +341,12 @@ class HexWidget < Gtk::DrawingArea
 			commit_writes
 			gui_update
 		when GDK_Escape
-			@write_pending.clear
-			redraw
+			if not @write_pending.empty?
+				@write_pending.clear
+				redraw
+			else
+				return @parent_widget.keypress(ev)	# focus_back
+			end
 
 		else
 			return @parent_widget.keypress(ev)

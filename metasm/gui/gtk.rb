@@ -13,6 +13,7 @@ class DisasmWidget < Gtk::VBox
 	# hash key_val => lambda { |keyb_ev| true if handled }
 	attr_accessor :keyboard_callback
 	attr_accessor :clones, :gtk_idle_handle
+	attr_accessor :pos_history, :pos_history_redo
 
 	def initialize(dasm, ep=[])
 		super()
@@ -20,6 +21,7 @@ class DisasmWidget < Gtk::VBox
 		@dasm = dasm
 		@entrypoints = ep
 		@pos_history = []
+		@pos_history_redo = []
 		@keyboard_callback = {}
 		@clones = [self]
 
@@ -152,20 +154,32 @@ class DisasmWidget < Gtk::VBox
 				false
 			end
 		}
-			@pos_history << oldpos
+			@pos_history << oldpos unless oldpos[0] == -1	# ignore start focus_addr
+			@pos_history_redo.clear
 			true
 		else
 			messagebox "Invalid address #{addr}" if not quiet
-			focus_addr_back oldpos
+			@notebook.page = oldpos[0]
+			curview.set_cursor_pos oldpos[1]
 			false
 		end
 	end
 
 	def focus_addr_back(val = @pos_history.pop)
 		return if not val
+		@pos_history_redo << [@notebook.page, curview.get_cursor_pos]
 		@notebook.page = val[0]
 		curview.set_cursor_pos val[1]
 		true
+	end
+
+	def focus_addr_redo
+		# undo focus_addr_back
+		if val = @pos_history_redo.pop
+			@pos_history << [@notebook.page, curview.get_cursor_pos]
+			@notebook.page = val[0]
+			curview.set_cursor_pos val[1]
+		end
 	end
 
 	def gui_update
@@ -374,6 +388,7 @@ class DisasmWidget < Gtk::VBox
 		case ev.state & Gdk::Window::CONTROL_MASK
 		when Gdk::Window::CONTROL_MASK
 			case ev.keyval
+			when GDK_Return, GDK_KP_Enter; focus_addr_redo
 			when GDK_r; prompt_run_ruby
 			when GDK_C; disassemble_fast_deep(curview.current_address)
 			end
@@ -741,6 +756,8 @@ class MainWindow < Gtk::Window
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Return, 0, Gtk::ACCEL_VISIBLE)
 		i = addsubmenu(actions, 'Jmp back') { @dasm_widget.focus_addr_back }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Escape, 0, Gtk::ACCEL_VISIBLE)
+		i = addsubmenu(actions, 'Undo jmp back') { @dasm_widget.focus_addr_redo }
+		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Return, Gdk::Window::CONTROL_MASK, Gtk::ACCEL_VISIBLE)
 		addsubmenu(actions, 'Goto', 'g') { @dasm_widget.prompt_goto }
 		addsubmenu(actions, 'List functions', 'f') { @dasm_widget.list_functions }
 		addsubmenu(actions, 'List labels', 'l') { @dasm_widget.list_labels }
