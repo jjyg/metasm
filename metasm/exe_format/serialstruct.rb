@@ -153,10 +153,10 @@ end	# class methods
 	end
 
 	# decodes the fields from the exe
-	def decode(exe)
+	def decode(exe, *args)
 		struct_fields(exe).each { |f|
 			case d = f[DECODE]
-			when Symbol; val = exe.send(d)
+			when Symbol; val = exe.send(d, *args)
 			when Array; val = exe.send(*d)
 			when Proc; val = d[exe, self]
 			when nil; next

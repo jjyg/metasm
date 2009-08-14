@@ -143,7 +143,7 @@ class COFF
 
 	class ResourceDirectory
 		def decode(coff, edata = coff.cursection.encoded, startptr = edata.ptr)
-			super(coff)
+			super(coff, edata)
 
 			@entries = []
 
@@ -154,12 +154,17 @@ class COFF
  				e_id = coff.decode_word(edata)
  				e_ptr = coff.decode_word(edata)
 
+				if not e_id.kind_of? Integer or not e_ptr.kind_of? Integer
+					puts 'W: COFF: relocs in the rsrc directory?' if $VERBOSE
+					next
+				end
+
 				tmp = edata.ptr
 
 				if (e_id >> 31) == 1
 					if $DEBUG
 						nrnames -= 1
-						puts "W: COFF: rsrc has invalid id #{id}" if nrnames < 0
+						puts "W: COFF: rsrc has invalid id #{e_id}" if nrnames < 0
 					end
 					e.name_p = e_id & 0x7fff_ffff
 					edata.ptr = startptr + e.name_p
@@ -170,7 +175,7 @@ class COFF
 					end
 				else
 					if $DEBUG
-						puts "W: COFF: rsrc has invalid id #{id}" if nrnames > 0
+						puts "W: COFF: rsrc has invalid id #{e_id}" if nrnames > 0
 					end
 					e.id = e_id
 				end
@@ -178,7 +183,7 @@ class COFF
 				if (e_ptr >> 31) == 1	# subdir
 					e.subdir_p = e_ptr & 0x7fff_ffff
 					if startptr + e.subdir_p >= edata.length
-						puts 'invalid resource structure: directory too far' if $VERBOSE
+						puts 'W: COFF: invalid resource structure: directory too far' if $VERBOSE
 					else
 						edata.ptr = startptr + e.subdir_p
 						e.subdir = ResourceDirectory.new
@@ -194,6 +199,9 @@ class COFF
 
 					if coff.sect_at_rva(e.data_p)
 						e.data = coff.cursection.encoded.read(sz)
+					else
+						puts 'W: COFF: invalid resource body offset' if $VERBOSE
+						break
 					end
 				end
 

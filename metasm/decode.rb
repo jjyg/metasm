@@ -466,7 +466,7 @@ class EncodedData
 	def read(len=@virtsize-@ptr)
 		len = @virtsize-@ptr if len > @virtsize-@ptr
 		str = (@ptr < @data.length) ? @data[@ptr, len] : ''
-		str = str.ljust(len, "\0") if str.length < len
+		str = str.to_str.ljust(len, "\0") if str.length < len
 		@ptr += len
 		str
 	end
