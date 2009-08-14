@@ -237,7 +237,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 					if f and f.symbol[n]
 						# TODO add/update comment to the asm instrs
 						s = f.symbol[v] = f.symbol.delete(n)
-						f.stackoff_name[s.stackoff] = v if s.stackoff
+						f.decompdata[:stackoff_name][s.stackoff] = v if s.stackoff
 					elsif f.outer.symbol[n]
 						@dasm.rename_label(n, v)
 						s = f.outer.symbol[v] = f.outer.symbol.delete(n)
@@ -254,13 +254,13 @@ class CdecompListingWidget < Gtk::DrawingArea
 			if (f and s = f.symbol[n]) or s = cp.toplevel.symbol[n] or s = cp.toplevel.symbol[@curaddr]
 				s_ = s.dup
 				s_.initializer = nil if s.kind_of? C::Variable	# for static var, avoid dumping the initializer in the textbox
-				@parent_widget.inputbox("new type for #{n}", :text => s_.dump_def(cp.toplevel)[0].to_s) { |t|
+				@parent_widget.inputbox("new type for #{s.name}", :text => s_.dump_def(cp.toplevel)[0].to_s) { |t|
 					begin
 						cp.lexer.feed(t)
 						raise 'bad type' if not v = C::Variable.parse_type(cp, cp.toplevel)
 						v.parse_declarator(cp, cp.toplevel)
-						if f and s == curfunc
-							# updated type of current function: update args
+						if s.type.kind_of? C::Function and s.initializer and s.initializer.decompdata
+							# updated type of a decompiled func: update stack
 							vt = v.type.untypedef
 							vt = vt.type.untypedef if vt.kind_of? C::Pointer
 							raise 'function forever !' if not vt.kind_of? C::Function
@@ -268,13 +268,13 @@ class CdecompListingWidget < Gtk::DrawingArea
 							ao = 1
 							vt.args.to_a.each { |a|
 								ao = (ao + cp.typesize[:ptr] - 1) / cp.typesize[:ptr] * cp.typesize[:ptr]
-								f.stackoff_name[ao] = a.name if a.name
-								f.stackoff_type[ao] = a.type
+								s.initializer.decompdata[:stackoff_name][ao] = a.name if a.name
+								s.initializer.decompdata[:stackoff_type][ao] = a.type
 								ao += cp.sizeof(a)
 							}
-							curfunc.type.type = vt.type	# TODO put this in stackoff_ or something persistant
+							s.initializer.decompdata[:return_type] = vt.type
 						else
-							f.stackoff_type[s.stackoff] = v.type if s.stackoff
+							f.decompdata[:stackoff_type][s.stackoff] = v.type if f and s.stackoff
 							s.type = v.type
 						end
 						gui_update

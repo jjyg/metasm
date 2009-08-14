@@ -69,7 +69,7 @@ class Ia32
 					else a |= Expression[k].externals	# if dword [eax] <- 42, eax is read
 					end
 				}
-				a << :eax if di.opcode.name == 'ret'		# standard ABI
+				a << :eax if di.opcode.name == 'ret' and (not func.type.kind_of? C::BaseType or func.type.type.name != :void)	# standard ABI
 				
 				deps_r[b] |= a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - deps_w[b]
 				deps_w[b] |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]

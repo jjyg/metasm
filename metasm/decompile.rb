@@ -10,8 +10,8 @@ require 'metasm/parse_c'
 
 module Metasm
 class C::Variable; attr_accessor :stackoff; end
-class C::Block; attr_accessor :stackoff_type, :stackoff_name; end
-class DecodedFunction; attr_accessor :stackoff_type, :stackoff_name; end
+class C::Block; attr_accessor :decompdata; end
+class DecodedFunction; attr_accessor :decompdata; end
 
 class CPU
 	def decompile_check_abi(dcmp, entry, func)
@@ -73,7 +73,12 @@ class Decompiler
 		# create a new toplevel function to hold our code
 		func = C::Variable.new
 		func.name = @dasm.auto_label_at(entry, 'func')
-		func.type = C::Function.new C::BaseType.new(:int), []
+		if f = @dasm.function[entry] and f.decompdata and f.decompdata[:return_type]
+			rettype = f.decompdata[:return_type]
+		else
+			rettype = C::BaseType.new(:int)
+		end
+		func.type = C::Function.new rettype, []
 		if @c_parser.toplevel.symbol[func.name]
 			if not @c_parser.toplevel.statements.grep(C::Declaration).find { |decl| decl.var.name == func.name }
 				# recursive dependency: declare prototype
@@ -111,11 +116,9 @@ class Decompiler
 
 		scope = func.initializer = C::Block.new(@c_parser.toplevel)
 		if df = @dasm.function[entry]
-			scope.stackoff_name = df.stackoff_name ||= {}
-			scope.stackoff_type = df.stackoff_type ||= {}
+			scope.decompdata = df.decompdata ||= {:stackoff_type => {}, :stackoff_name => {}}
 		else
-			scope.stackoff_name = {}
-			scope.stackoff_type = {}
+			scope.decompdata ||= {:stackoff_type => {}, :stackoff_name => {}}
 		end
 
 		# di blocks => raw c statements, declare variables
@@ -160,16 +163,16 @@ class Decompiler
 		if ptype.kind_of? C::Function
 			name = @dasm.auto_label_at(addr, 'sub', 'xref', 'byte', 'word', 'dword', 'unk')
 			if @dasm.get_section_at(addr)
-				@dasm.disassemble(addr) if not @dasm.decoded[addr]
+				@dasm.disassemble(addr) if not @dasm.decoded[addr]	# TODO disassemble_fast ?
 				f = @dasm.function[addr] ||= DecodedFunction.new
 				# TODO detect thunks (__noreturn)
-				f.stackoff_name ||= {}
-				f.stackoff_type ||= {}
+				f.decompdata ||= { :stackoff_type => {}, :stackoff_name => {} }
 				if not @c_parser.toplevel.symbol[name]
-					aoff = @c_parser.typesize[:ptr]
+					aoff = 1
 					ptype.args.to_a.each { |a|
-						f.stackoff_type[aoff] ||= a.type
-						f.stackoff_name[aoff] ||= a.name if a.name
+				       		aoff = (aoff + @c_parser.typesize[:ptr] - 1) / @c_parser.typesize[:ptr] * @c_parser.typesize[:ptr]
+						f.decompdata[:stackoff_type][aoff] ||= a.type
+						f.decompdata[:stackoff_name][aoff] ||= a.name if a.name
 						aoff += sizeof(a)	# ary ?
 					}
 					decompile_func(addr)
@@ -1101,8 +1104,8 @@ class Decompiler
 			v
 		}
 
-		scope.stackoff_name.each { |o, n| newvar[o, n] }
-		scope.stackoff_type.each { |o, t| newvar[o, stackoff_to_varname(o)] }
+		scope.decompdata[:stackoff_name].each { |o, n| newvar[o, n] }
+		scope.decompdata[:stackoff_type].each { |o, t| newvar[o, stackoff_to_varname(o)] }
 
 		walk_ce(scope) { |e|
 			next if e.op != :+ and e.op != :-
@@ -1117,6 +1120,7 @@ class Decompiler
 
 	# assign type to vars (regs, stack & global)
 	# types are found by subfunction argument types & indirections, and propagated through assignments etc
+	# TODO when updating the type of a var, update the type of all cexprs where it appears
 	def decompile_c_types(scope)
 		return if forbid_decompile_types
 
@@ -1294,7 +1298,7 @@ class Decompiler
 		# put all those macros in use
 		# use user-defined types first
 		scope.symbol.each_value { |v|
-			next if not v.kind_of? C::Variable or not v.stackoff or not t = scope.stackoff_type[v.stackoff]
+			next if not v.kind_of? C::Variable or not v.stackoff or not t = scope.decompdata[:stackoff_type][v.stackoff]
 			known_type[v, t]
 		}
 
@@ -2406,7 +2410,7 @@ class Decompiler
 			end
 			while curoff > argoff
 				wantarg = C::Variable.new
-				wantarg.name = scope.stackoff_name[argoff] || stackoff_to_varname(argoff)
+				wantarg.name = scope.decompdata[:stackoff_name][argoff] || stackoff_to_varname(argoff)
 				wantarg.type = C::BaseType.new(:int)
 				wantarg.attributes = ['unused']
 				func.type.args << wantarg
