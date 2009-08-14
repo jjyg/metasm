@@ -375,6 +375,7 @@ class DisasmWidget < Gtk::VBox
 		when Gdk::Window::CONTROL_MASK
 			case ev.keyval
 			when GDK_r; prompt_run_ruby
+			when GDK_C; disassemble_fast_deep(curview.current_address)
 			end
 		when 0
 			case ev.keyval

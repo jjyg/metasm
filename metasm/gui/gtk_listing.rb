@@ -15,7 +15,7 @@ class AsmListingWidget < Gtk::HBox
 		@dasm = dasm
 		@parent_widget = parent_widget
 		@arrows = []	# array of [linefrom, lineto] (may be :up or :down for offscreen)
-		@line_address = {}
+		@line_address = []
 		@line_text = {}
 		@hl_word = nil
 		@caret_x = @caret_y = 0	# caret position in characters coordinates (column/line)
@@ -128,16 +128,15 @@ class AsmListingWidget < Gtk::HBox
 	end
 
 	def mouse_wheel(ev)
+		va = @vscroll.adjustment
 		case ev.direction
 		when Gdk::EventScroll::Direction::UP
 			# TODO scroll up exactly win_height/2 lines
 			# at least cache page_down addresses
-			@vscroll.adjustment.value -= @vscroll.adjustment.page_increment
+			va.value -= va.page_increment
 			true
 		when Gdk::EventScroll::Direction::DOWN
-			pgdown = @line_address[@line_address.keys.max.to_i/2]
-			pgdown = @vscroll.adjustment.value + @vscroll.adjustment.page_increment if pgdown == -1
-			@vscroll.adjustment.value = pgdown
+			va.value = @line_address[@line_address.length/2] || va.value + va.page_increment
 			true
 		end
 	end
@@ -160,12 +159,12 @@ class AsmListingWidget < Gtk::HBox
 		# TODO selection
 		curaddr = @vscroll.adjustment.value.to_i
 
-		want_update_caret = true if @line_address == {}
+		want_update_caret = true if @line_address.empty?
 
 		# map lineno => address shown
-		@line_address = Hash.new(-1)
+		@line_address.clear
 		# map lineno => raw text
-		@line_text = Hash.new('')
+		@line_text.clear
 
 		# current line text buffer
 		fullstr = ''
@@ -264,7 +263,7 @@ class AsmListingWidget < Gtk::HBox
 				@dasm.comment[curaddr].each { |c| render['// ' + c, :comment] ; nl[] } if @dasm.comment[curaddr]
 				if label = invb[curaddr]
 					l_list = @dasm.prog_binding.keys.sort.find_all { |name| @dasm.prog_binding[name] == curaddr }
-					label = (l_list.pop if @dasm.xrefs[curaddr])
+					label = l_list.pop
 					nl[] if not l_list.empty?
 					l_list.each { |name|
 						render["#{name}:", :label]
@@ -275,13 +274,14 @@ class AsmListingWidget < Gtk::HBox
 				render["#{label} ", :label] if label
 
 				# TODO real data display (dwords, xrefs, strings..)
+				# TODO cache len for the screen (when most lines are db 1 db 2 db 3)
 				len = 256
 				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or invb[curaddr+l] or s[0].reloc[s[0].ptr+l] } || len
 				if s[0].data.length > s[0].ptr
 					str = s[0].read(len).unpack('C*')
 					s[0].ptr -= len
 					if @dasm.xrefs[curaddr] or rel = s[0].reloc[s[0].ptr] # or (curaddr & 3 == 0 and (len = 4))
-						len = Expression::INT_SIZE[rel.type] if rel
+						len = rel.length if rel
 						comment = []
 						@dasm.each_xref(curaddr) { |xref|
 							len = xref.len if xref.len
@@ -360,7 +360,8 @@ class AsmListingWidget < Gtk::HBox
 		# convert arrows_addr to @arrows (with line numbers)
 		# updates @arrows_widget if @arrows changed
 		prev_arrows = @arrows
-		addr_line = @line_address.sort.inject({}) { |h, (l, a_)| h.update a_ => l }	# addr => last line (di)
+		addr_line = {}		# addr => last line (di)
+		@line_address.each_with_index { |a, l| addr_line[a] = l }
 		@arrows = arrows_addr.uniq.sort.map { |from, to|
 			[(addr_line[from] || (from < curaddr ? :up : :down)),
 			 (addr_line[ to ] || ( to  < curaddr ? :up : :down))]
@@ -372,7 +373,7 @@ class AsmListingWidget < Gtk::HBox
 
 	# draws the @arrows defined in paint_listing
 	def paint_arrows
-		return if @arrows.empty? or @line_address[@caret_y] == -1
+		return if @arrows.empty? or not @line_address[@caret_y]
 		w = @arrows_widget.window
 		gc = Gdk::GC.new(w)
 		w_w, w_h = @arrows_widget.allocation.width, @arrows_widget.allocation.height
@@ -424,7 +425,7 @@ class AsmListingWidget < Gtk::HBox
 
 			col = :arrow_dn
 			col = :arrow_up if y1 > y2
-			col = :arrow_hl if @line_address[from] == @line_address[@caret_y] or @line_address[to] == @line_address[@caret_y]
+			col = :arrow_hl if (from.kind_of? Integer and @line_address[from] == @line_address[@caret_y]) or (to.kind_of? Integer and @line_address[to] == @line_address[@caret_y])
 			arrs[col] << [y1, y2, find_free[y1, y2]]
 		}
 
@@ -450,6 +451,7 @@ class AsmListingWidget < Gtk::HBox
 	def keypress(ev)
 		return @parent_widget.keypress(ev) if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
 
+		va = @vscroll.adjustment
 		case ev.keyval
 		when GDK_Left
 			if @caret_x >= 1
@@ -457,41 +459,39 @@ class AsmListingWidget < Gtk::HBox
 				update_caret
 			end
 		when GDK_Up
-			if @caret_y > 1 or (@caret_y == 1 and @vscroll.adjustment.value == @vscroll.adjustment.lower)
+			if @caret_y > 1 or (@caret_y == 1 and va.value == va.lower)
 				@caret_y -= 1
 			else
-				@vscroll.adjustment.value -= 1
+				va.value -= 1
 			end
 			update_caret
 		when GDK_Right
-			if @caret_x < @line_text.values.map { |s| s.length }.max
+			if @caret_x < @line_text[@caret_y].to_s.length
 				@caret_x += 1
 				update_caret
 			end
 		when GDK_Down
-			if @caret_y < @line_text.length-3 or (@caret_y < @line_text.length - 2 and @vscroll.adjustment.value == @vscroll.adjustment.upper)
+			if @caret_y < @line_text.length-3 or (@caret_y < @line_text.length - 2 and va.value == va.upper)
 				@caret_y += 1
 			else
-				off = 1
-				if a = @line_address[0] and @dasm.decoded[a].kind_of? DecodedInstruction
-					off = @dasm.decoded[a].bin_length
+				if a = @line_address[0] and na = @line_address.find { |na_| na_ != a }
+					va.value = na
+				else
+					va.value += 1
 				end
-				@vscroll.adjustment.value += off
 			end
 			update_caret
 		when GDK_Page_Up
-			@vscroll.adjustment.value -= @vscroll.adjustment.page_increment
+			va.value -= va.page_increment
 			update_caret
 		when GDK_Page_Down
-			pgdown = @line_address[@line_address.length/2]
-			pgdown = @vscroll.adjustment.value + @vscroll.adjustment.page_increment if pgdown == -1
-			@vscroll.adjustment.value = pgdown
+			va.value = @line_address[@line_address.length/2] || va.value + va.page_increment
 			update_caret
 		when GDK_Home
 			@caret_x = 0
 			update_caret
 		when GDK_End
-			@caret_x = @line_text[@caret_y].length
+			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
 
 		else
@@ -568,8 +568,8 @@ class AsmListingWidget < Gtk::HBox
 	# returns true on success (address exists)
 	def focus_addr(addr)
 		return if not addr = @parent_widget.normalize(addr)
-		if l = @line_address.index(addr) and l < @line_address.keys.max - 4
-			@caret_y, @caret_x = @line_address.keys.find_all { |k| @line_address[k] == addr }.max, 0
+		if l = @line_address.index(addr) and l < @line_address.length - 4
+			@caret_y, @caret_x = @line_address.rindex(addr), 0
 		elsif addr >= @vscroll.adjustment.lower and addr <= @vscroll.adjustment.upper
 			@vscroll.adjustment.value, @caret_x, @caret_y = addr, 0, 0
 		else
@@ -581,7 +581,7 @@ class AsmListingWidget < Gtk::HBox
 
 	# returns the address of the data under the cursor
 	def current_address
-		@line_address[@caret_y]
+		@line_address[@caret_y] || -1
 	end
 
 	def gui_update
