@@ -886,7 +886,6 @@ class Disassembler
 			next if done.include? a or not di.kind_of? DecodedInstruction
 			a = di.block.address
 			done << a
-			p a
 			yield a
 			di.block.each_to_samefunc(self) { |f| todo << f }
 		end
