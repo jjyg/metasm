@@ -288,14 +288,15 @@ class AsmListingWidget < Gtk::HBox
 							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}" if xref.origin
 						}
 						comment = nil if comment.empty?
-						if len == 1 and asc = str.inject('') { |asc_, c|
+						str = str.pack('C*').unpack(@dasm.cpu.endianness == :big ? 'n*' : 'v*') if len == 2
+						if (len == 1 or len == 2) and asc = str.inject('') { |asc_, c|
 								case c
 								when 0x20..0x7e; asc_ << c
 								else break asc_
 								end
-							} and asc.length > 3
-							dat = "db #{asc.inspect} "
-							aoff = asc.length
+							} and asc.length >= 1
+							dat = "d#{len == 1 ? 'b' : 'w'} #{asc.inspect} "
+							aoff = asc.length * len
 						else
 							len = 1 if (len != 2 and len != 4) or len < 1
 							dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]} "

@@ -319,6 +319,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 	# redraws the caret, change the hilighted word, redraw if needed
 	def update_caret
 		return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
+		return if not window
 		x = @oldcaret_x*@font_width+1
 		y = @oldcaret_y*@font_height
 		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
