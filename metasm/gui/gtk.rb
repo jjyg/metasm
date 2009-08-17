@@ -629,7 +629,8 @@ class MainWindow < Gtk::Window
 		@vbox = Gtk::VBox.new
 		add @vbox
 		@vbox.add @menu, 'expand' => false
-		set_default_size 700, 600
+		s = Gdk::Screen.default
+		set_default_size s.width*3/4, s.height*3/4
 	end
 
 	# sets up a DisasmWidget as main widget of the window, replaces the current if it exists
