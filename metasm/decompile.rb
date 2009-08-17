@@ -101,11 +101,7 @@ class Decompiler
 	end
 
 	def do_decompile_func(entry, func)
-		# TODO check ABI conformance between func start&end (saved regs, stack offset, __declspec, ...)
-		# TODO handle jmp tables
-
-		# find decodedinstruction blocks constituing the function
-		# TODO merge sequencial blocks with useless jmp (poeut) to improve dependency graph later
+		# find decodedinstruction graph of the function, decompile subfuncs
 		myblocks = listblocks_func(entry)
 
 		# [esp+8] => [:frameptr-12]

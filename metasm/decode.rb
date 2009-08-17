@@ -697,7 +697,7 @@ class Disassembler
 		@function = {}
 		@check_smc = true
 		@prog_binding = {}
-		@old_prog_binding = {}
+		@old_prog_binding = {}	# same as prog_binding, but keep old var names
 		@addrs_todo = []
 		@addrs_done = []
 		@address_binding = {}
@@ -720,8 +720,12 @@ class Disassembler
 
 		@sections[base] = encoded
 		encoded.binding(base).each { |k, v|
-			@prog_binding[k] = v.reduce
+			@old_prog_binding[k] = @prog_binding[k] = v.reduce
 		}
+
+		# invalidate inverse relocation cache
+		@inv_section_reloc = nil
+
 		self
 	end
 
@@ -751,7 +755,7 @@ class Disassembler
 	# returns the canonical form of addr (absolute address integer or label of start of section + section offset)
 	def normalize(addr)
 		return addr if not addr or addr == :default
-		addr = Expression[addr].bind(@old_prog_binding).bind(@prog_binding).reduce if not addr.kind_of? Integer
+		addr = Expression[addr].bind(@old_prog_binding).reduce if not addr.kind_of? Integer
 		addr %= 1 << [@cpu.size, 32].max if addr.kind_of? Integer
 		addr
 	end
@@ -798,7 +802,7 @@ class Disassembler
 		elsif not l = e.inv_export[e.ptr]
 			l = @program.new_label(addrstr)
 			e.add_export l, e.ptr
-			@prog_binding[l] = b + e.ptr
+			@old_prog_binding[l] = @prog_binding[l] = b + e.ptr
 		elsif rewritepfx.find { |p| base != p and addrstr.sub(base, p) == l }
 			newl = addrstr
 			newl = @program.new_label(newl) unless @old_prog_binding[newl] and @old_prog_binding[newl] == @prog_binding[l]	# avoid _uuid when a -> b -> a
@@ -823,7 +827,7 @@ class Disassembler
 		elsif not l = e.inv_export[e.ptr]
 			l = @program.new_label(name)
 			e.add_export l, e.ptr
-			@prog_binding[l] = b + e.ptr
+			@old_prog_binding[l] = @prog_binding[l] = b + e.ptr
 		elsif l != name
 			l = rename_label l, @program.new_label(name)
 		end
@@ -843,14 +847,38 @@ class Disassembler
 		if e
 			e.add_export new, e.export[old], true
 		end
-		@old_prog_binding[old] = @prog_binding[old]
-		@prog_binding[new] = @prog_binding.delete(old)
+		@old_prog_binding[new] = @prog_binding[new] = @prog_binding.delete(old)
 		@addrs_todo.each { |at|
 			case at[0]
 			when old; at[0] = new
 			when Expression; at[0] = at[0].bind(old => new)
 			end
 		}
+
+		# update section_edata.reloc
+		if not @inv_section_reloc ||= nil
+			# label -> list of relocs that refers to it
+			@inv_section_reloc = {}
+			@sections.each { |b, e|
+				e.reloc.each { |o, r|
+					r.target.externals.grep(::String).each { |ext|
+						(@inv_section_reloc[ext] ||= []) << [b, e, o, r]
+					}
+				}
+			}
+		end
+		if @inv_section_reloc[old]
+			@inv_section_reloc[old].each { |b, e, o, r|
+				(0..16).each { |off|
+					if di = @decoded[Expression[b]+o-off] and di.bin_length > off
+						@cpu.replace_instr_arg_immediate(di.instruction, old, new)
+					end
+				}
+				r.target = r.target.bind(old => new)
+			}
+			@inv_section_reloc[new] = @inv_section_reloc.delete(old)
+		end
+
 		new
 	end
 
@@ -1762,7 +1790,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 
 	# static resolution of indirections
 	def resolve(expr)
-		binding = Expression[expr].expr_indirections.inject(@prog_binding.merge(@old_prog_binding)) { |binding_, ind|
+		binding = Expression[expr].expr_indirections.inject(@old_prog_binding) { |binding_, ind|
 			e, b = get_section_at(resolve(ind.target))
 			return expr if not e
 			binding_.merge ind => Expression[ e.decode_imm("u#{8*ind.len}".to_sym, @cpu.endianness) ]
