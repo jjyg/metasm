@@ -891,6 +891,11 @@ class Disassembler
 			@inv_section_reloc[new] = @inv_section_reloc.delete(old)
 		end
 
+		if @c_parser and @c_parser.toplevel.symbol[old]
+			@c_parser.toplevel.symbol[new] = @c_parser.toplevel.symbol.delete(old)
+			@c_parser.toplevel.symbol[new].name = new
+		end
+
 		new
 	end
 

@@ -251,12 +251,12 @@ class Ia32
 				when 'call'	# :saveip
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					args = []
-					if t = dcmp.c_parser.toplevel.symbol[n] and t.type.args
+					if f = dcmp.c_parser.toplevel.symbol[n] and f.type.kind_of? C::Function and f.type.args
 						# XXX see remarks in #finddeps
 						stackoff = Expression[dcmp.dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry), :-, :esp].bind(:esp => :frameptr).reduce rescue nil
-						args_todo = t.type.args.dup
+						args_todo = f.type.args.dup
 						args = []
-						if t.has_attribute('fastcall')	# XXX DRY
+						if f.has_attribute('fastcall')	# XXX DRY
 							if a = args_todo.shift
 								mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1
 								mask = 0 if a.has_attribute('unused')
@@ -285,23 +285,20 @@ class Ia32
 					commit[]
 					#next if not di.block.to_subfuncret
 
-					if n.kind_of? ::String
-						if not f = dcmp.c_parser.toplevel.symbol[n]
-							# internal functions are predeclared, so this one is extern
-							f = dcmp.c_parser.toplevel.symbol[n] = C::Variable.new
-							f.name = n
-							f.type = C::Function.new(C::BaseType.new(:int))
-							dcmp.c_parser.toplevel.statements << C::Declaration.new(f)
-						end
-						commit[]
-					else
+					if not n.kind_of? ::String or (f and not f.type.kind_of? C::Function)
 						# indirect funcall
 						fptr = ceb[n]
 						binding.delete n
-						commit[]
 						proto = C::Function.new(C::BaseType.new(:int))
 						f = C::CExpression[[fptr], proto]
+					elsif not f
+						# internal functions are predeclared, so this one is extern
+						f = dcmp.c_parser.toplevel.symbol[n] = C::Variable.new
+						f.name = n
+						f.type = C::Function.new(C::BaseType.new(:int))
+						dcmp.c_parser.toplevel.statements << C::Declaration.new(f)
 					end
+					commit[]
 					binding.delete :eax
 					e = C::CExpression[f, :funcall, args]
 					e = C::CExpression[ce[:eax], :'=', e, f.type.type] if deps[b].include? :eax and f.type.type != C::BaseType.new(:void)

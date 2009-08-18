@@ -237,13 +237,12 @@ class CdecompListingWidget < Gtk::DrawingArea
 					if f and f.symbol[n]
 						# TODO add/update comment to the asm instrs
 						s = f.symbol[v] = f.symbol.delete(n)
+						s.name = v
 						f.decompdata[:stackoff_name][s.stackoff] = v if s.stackoff
-					elsif f.outer.symbol[n]
+					elsif @dasm.c_parser.toplevel.symbol[n]
 						@dasm.rename_label(n, v)
-						s = f.outer.symbol[v] = f.outer.symbol.delete(n)
 						@curaddr = v if @curaddr == n                   
 					end
-					s.name = v
 					gui_update
 				}
 			end

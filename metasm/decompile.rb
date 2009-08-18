@@ -149,13 +149,11 @@ class Decompiler
 	end
 
 	def new_global_var(addr, type)
-		return if not type.pointer?
 		addr = @dasm.normalize(addr)
-
 
 		# TODO check overlap with alreadydefined globals
 
-		ptype = type.untypedef.type
+		ptype = type.untypedef.type if type.pointer?
 		if ptype.kind_of? C::Function
 			name = @dasm.auto_label_at(addr, 'sub', 'xref', 'byte', 'word', 'dword', 'unk')
 			if @dasm.get_section_at(addr)
@@ -177,7 +175,7 @@ class Decompiler
 			end
 		end
 
-		name = case tsz = sizeof(nil, ptype)
+		name = case (type.pointer? && tsz = sizeof(nil, ptype))
 		when 1; 'byte'
 		when 2; 'word'
 		when 4; 'dword'
@@ -188,21 +186,21 @@ class Decompiler
 		if not var = @c_parser.toplevel.symbol[name]
 			var = C::Variable.new
 			var.name = name
-			var.type = C::Array.new(ptype)
+			var.type = type.pointer? ? C::Array.new(ptype) : type
 			@c_parser.toplevel.symbol[var.name] = var
 			@c_parser.toplevel.statements << C::Declaration.new(var)
-			if s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
-				# TODO do not overlap other statics (but labels may refer to elements of the array...)
-				data = (0..256).map {
-					v = s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness)
-					v = decompile_cexpr(v, @c_parser.toplevel) if v.kind_of? Expression	# relocation
-					v
-				}
-				if (tsz == 1 or tsz == 2) and eos = data.index(0) and (0..3).all? { |i| data[i] >= 0x20 and data[i] < 0x7f }	# printable str
-					# XXX 0x80 with ruby1.9...
-					var.initializer = C::CExpression[data[0, eos].pack('C*'), C::Pointer.new(ptype)] rescue nil
-				end
-				var.initializer ||= data.map { |v| C::CExpression[v, C::BaseType.new(:int)] } unless (data - [0]).empty?
+		end
+		if type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
+			# TODO do not overlap other statics (but labels may refer to elements of the array...)
+			data = (0..256).map {
+				v = s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness)
+				v = decompile_cexpr(v, @c_parser.toplevel) if v.kind_of? Expression	# relocation
+				v
+			}
+			var.initializer = data.map { |v| C::CExpression[v, C::BaseType.new(:int)] } unless (data - [0]).empty?
+			if (tsz == 1 or tsz == 2) and eos = data.index(0) and (0..3).all? { |i| data[i] >= 0x20 and data[i] < 0x7f }	# printable str
+				# XXX 0x80 with ruby1.9...
+				var.initializer = C::CExpression[data[0, eos].pack('C*'), C::Pointer.new(ptype)] rescue nil
 			end
 		end
 
@@ -360,22 +358,8 @@ class Decompiler
 				s = C::Variable.new
 				s.type = C::BaseType.new(:__int32)
 				case e
-				when ::String	# edata relocation
-					if not s = @c_parser.toplevel.symbol[e]
-						# find type by checking size of reloc
-						# cache: reloc target -> reloc length
-						@invrelocsize_cache ||= nil
-						if not @invrelocsize_cache
-							@invrelocsize_cache = {}
-							@dasm.sections.each { |addr, sec|
-								sec.reloc.each { |off, rel| @invrelocsize_cache[rel.target] = rel.length }
-							}
-						end
-						t = "__int#{@invrelocsize_cache[Expression[e]].to_i*8}".to_sym
-						t = :__int8 if not @c_parser.typesize[t]
-						s = new_global_var(e, C::Array.new(C::BaseType.new(t)))
-					end
-					return s
+				when ::String	# edata relocation (rel.length = size of pointer)
+					return @c_parser.toplevel.symbol[e] || new_global_var(e, C::BaseType.new(:int))
 				when ::Symbol; s.storage = :register
 				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
