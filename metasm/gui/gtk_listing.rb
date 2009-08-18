@@ -16,12 +16,14 @@ class AsmListingWidget < Gtk::HBox
 		@parent_widget = parent_widget
 		@arrows = []	# array of [linefrom, lineto] (may be :up or :down for offscreen)
 		@line_address = []
-		@line_text = {}
+		@line_text = []
+		@line_text_color = []
 		@hl_word = nil
 		@caret_x = @caret_y = 0	# caret position in characters coordinates (column/line)
 		@oldcaret_x = @oldcaret_y = 42
 		@layout = Pango::Layout.new Gdk::Pango.context
 		@color = {}
+		@want_update_line_text = @want_update_caret = true
 
 		super()
 
@@ -76,8 +78,7 @@ class AsmListingWidget < Gtk::HBox
 			if off = (0..16).find { |off_| di = @dasm.decoded[addr-off_] and di.respond_to? :bin_length and di.bin_length > off_ } and off != 0
 				@vscroll.adjustment.value = addr-off
 			else
-				@line_address.clear	# make paint_listing call update_caret when done (hl_word etc)
-				redraw
+				gui_update
 			end
 		}
 		signal_connect('key_press_event') { |w, ev| # keyboard
@@ -157,33 +158,16 @@ class AsmListingWidget < Gtk::HBox
 
 		# TODO scroll line-by-line when an addr is displayed on multiple lines (eg labels/comments)
 		# TODO selection
-		curaddr = @vscroll.adjustment.value.to_i
 
-		want_update_caret = true if @line_address.empty?
-
-		# map lineno => address shown
-		@line_address.clear
-		# map lineno => raw text
-		@line_text.clear
-
-		# current line text buffer
-		fullstr = ''
-		# current line number
-		line = 0
 		# current window position
 		x = 1
 		y = 0
-
-		# list of arrows to draw ([addr_from, addr_to])
-		arrows_addr = []
 
 		# renders a string at current cursor position with a color
 		# must not include newline
 		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
-			next if y >= w_h or x >= w_w
-			fullstr << str
-			# TODO selection
+			next if not str or y >= w_h or x >= w_w
 			if @hl_word
 				stmp = str
 				pre_x = 0
@@ -204,172 +188,24 @@ class AsmListingWidget < Gtk::HBox
 			w.draw_layout(gc, x, y, @layout)
 			x += @layout.pixel_size[0]
 		}
-		# newline: current line is fully rendered, update @line_address/@line_text etc
-		nl = lambda {
-			next if y >= w_h
-			@line_text[line] = fullstr
-			@line_address[line] = curaddr
-			fullstr = ''
-			line += 1
+
+		update_line_text if @want_update_line_text
+		update_caret if @want_update_caret
+
+		@line_text_color.each { |a|
+			render[a[0], :address]
+			render[a[1], :label]
+			render[a[2], :instruction]
+			render[a[3], :comment]
 			x = 1
 			y += @font_height
 		}
 
-		invb = @dasm.prog_binding.invert
-
-		# draw text until screen is full
-		# builds arrows_addr with addresses
-		while y < w_h
-			if di = @dasm.decoded[curaddr] and di.kind_of? DecodedInstruction
-				# a decoded instruction : check if it's a block start
-				if di.block.list.first == di
-					# render dump_block_header, add a few colors
-					b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
-					b_header.each { |l| l.chomp!
-						col = :comment
-						col = :label if l[0, 2] != '//' and l[-1] == ?:
-						render[l, col]
-						nl[]
-					}
-					di.block.each_from_samefunc(@dasm) { |addr|
-						addr = @dasm.normalize addr
-						next if not addr.kind_of? ::Integer or (@dasm.decoded[addr].kind_of? DecodedInstruction and addr + @dasm.decoded[addr].bin_length == curaddr)
-						arrows_addr << [addr, curaddr]
-					}
-				end
-				if di.block.list.last == di
-					di.block.each_to_samefunc(@dasm) { |addr|
-						addr = @dasm.normalize addr
-						next if not addr.kind_of? ::Integer or (addr == curaddr + di.bin_length and
-								(not di.opcode.props[:saveip] or di.block.to_subfuncret))
-						arrows_addr << [curaddr, addr]
-					}
-				end
-				render["#{Expression[di.address]}    ", :address]
-				render["#{di.instruction} ".ljust(di.comment ? 24 : 0), :instruction]
-				render[' ; ' + di.comment.join(' '), :comment] if di.comment
-				nl[]
-
-				# instr overlapping
-				if off = (1...di.bin_length).find { |off_| @dasm.decoded[curaddr + off_] }
-					nl[]
-					curaddr += off
-					render["// ------ overlap (#{di.bin_length - off}) ------", :comment]
-					nl[]
-				else
-					curaddr += [di.bin_length, 1].max
-				end
-			elsif curaddr < @vscroll.adjustment.upper and s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
-				@dasm.comment[curaddr].each { |c| render['// ' + c, :comment] ; nl[] } if @dasm.comment[curaddr]
-				if label = invb[curaddr]
-					l_list = @dasm.prog_binding.keys.sort.find_all { |name| @dasm.prog_binding[name] == curaddr }
-					label = l_list.pop
-					nl[] if not l_list.empty?
-					l_list.each { |name|
-						render["#{name}:", :label]
-						nl[]
-					}
-				end
-				render["#{Expression[curaddr]}    ", :address]
-				render["#{label} ", :label] if label
-
-				# TODO real data display (dwords, xrefs, strings..)
-				# TODO cache len for the screen (when most lines are db 1 db 2 db 3)
-				len = 256
-				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or invb[curaddr+l] or s[0].reloc[s[0].ptr+l] } || len
-				if s[0].data.length > s[0].ptr
-					str = s[0].read(len).unpack('C*')
-					s[0].ptr -= len
-					if @dasm.xrefs[curaddr] or rel = s[0].reloc[s[0].ptr] # or (curaddr & 3 == 0 and (len = 4))
-						len = rel.length if rel
-						comment = []
-						@dasm.each_xref(curaddr) { |xref|
-							len = xref.len if xref.len
-							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}" if xref.origin
-						}
-						comment = nil if comment.empty?
-						str = str.pack('C*').unpack(@dasm.cpu.endianness == :big ? 'n*' : 'v*') if len == 2
-						if (len == 1 or len == 2) and asc = str.inject('') { |asc_, c|
-								case c
-								when 0x20..0x7e; asc_ << c
-								else break asc_
-								end
-							} and asc.length >= 1
-							dat = "d#{len == 1 ? 'b' : 'w'} #{asc.inspect} "
-							aoff = asc.length * len
-						else
-							len = 1 if (len != 2 and len != 4) or len < 1
-							dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]} "
-							aoff = len
-						end
-					elsif rep = str.inject(0) { |rep_, c|
-						case c
-						when str[0]; rep_+1
-						else break rep_
-						end
-					} and rep > 4
-						rep -= curaddr % 256 if rep == 256 and curaddr.kind_of? Integer
-						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]}) "
-						aoff = rep
-					elsif asc = str.inject('') { |asc_, c|
-						case c
-						when 0x20..0x7e; asc_ << c
-						else break asc_
-						end
-					} and asc.length > 3
-						dat = "db #{asc.inspect} "
-						aoff = asc.length
-					else
-						dat = "db #{Expression[str[0]]} "
-						aoff = 1
-					end
-				else
-					if @dasm.xrefs[curaddr]
-						comment = []
-						@dasm.each_xref(curaddr) { |xref|
-							len = xref.len if xref.len
-							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]} "
-						}
-						len = 1 if (len != 2 and len != 4) or len < 1
-						dat = "#{%w[x db dw x dd][len]} ? "
-						aoff = len
-					else
-						len = [len, s[0].length-s[0].ptr].min
-						len -= curaddr % 256 if len == 256 and curaddr.kind_of? Integer
-						dat = "db #{Expression[len]} dup(?) "
-						aoff = len
-					end
-				end
-				render[dat.ljust(comment ? 24 : 0), :instruction]
-				render[' ; ' + comment.join(' '), :comment] if comment
-				comment = nil
-				nl[]
-				curaddr += aoff
-			else
-				nl[]
-				curaddr += 1
-			end
-		end
-
 		# draw caret
-		# TODO selection
 		gc.set_foreground @color[:caret]
 		cx = @caret_x*@font_width+1
 		cy = @caret_y*@font_height
 		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
-
-		# convert arrows_addr to @arrows (with line numbers)
-		# updates @arrows_widget if @arrows changed
-		prev_arrows = @arrows
-		addr_line = {}		# addr => last line (di)
-		@line_address.each_with_index { |a, l| addr_line[a] = l }
-		@arrows = arrows_addr.uniq.sort.map { |from, to|
-			[(addr_line[from] || (from < curaddr ? :up : :down)),
-			 (addr_line[ to ] || ( to  < curaddr ? :up : :down))]
-		}
-		@arrows_widget.window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if prev_arrows != @arrows
-
-		update_caret if want_update_caret
 	end
 
 	# draws the @arrows defined in paint_listing
@@ -484,10 +320,8 @@ class AsmListingWidget < Gtk::HBox
 			update_caret
 		when GDK_Page_Up
 			va.value -= va.page_increment
-			update_caret
 		when GDK_Page_Down
 			va.value = @line_address[@line_address.length/2] || va.value + va.page_increment
-			update_caret
 		when GDK_Home
 			@caret_x = 0
 			update_caret
@@ -516,7 +350,7 @@ class AsmListingWidget < Gtk::HBox
 		@layout.font_description = Pango::FontDescription.new(descr)
 		@layout.text = 'x'
 		@font_width, @font_height = @layout.pixel_size
-		redraw
+		gui_update
 	end
 
 	# change the color association
@@ -527,7 +361,7 @@ class AsmListingWidget < Gtk::HBox
 		hash.each { |k, v| @color[k] = @color[v] }
 		@listing_widget.modify_bg Gtk::STATE_NORMAL, @color[:listing_bg]
 		@arrows_widget.modify_bg Gtk::STATE_NORMAL, @color[:arrows_bg]
-		redraw
+		gui_update
 	end
 
 	# redraw the whole widget
@@ -537,14 +371,25 @@ class AsmListingWidget < Gtk::HBox
 		@arrows_widget.window.invalidate  Gdk::Rectangle.new(0, 0, 100000, 100000), false
 	end
 
-	# hint that the caret moved
-	# redraws the caret, change the hilighted word, redraw if needed
-	def update_caret
+	# update @hl_word from caret coords & @line_text, return nil if unchanged
+	def update_hl_word
+		# TODO gui_update changes @line_text, redraw just redraws, update_caret scans @line_text for @hl_word if changed & redraw curline with :curline_bg
 		return if not l = @line_text[@caret_y]
 		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
 		word = nil if word == ''
-		if @hl_word != word or @oldcaret_y != @caret_y
-			@hl_word = word
+		@hl_word = word if @hl_word != word
+	end
+
+	# hint that the caret moved
+	# redraws the caret, change the hilighted word, redraw if needed
+	def update_caret
+		if @want_update_line_text
+			@want_update_caret = true
+			return
+		end
+		return if not @line_text[@caret_y]
+		@want_update_caret = false
+		if update_hl_word or @oldcaret_y != @caret_y or true
 			redraw
 		else
 			return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
@@ -585,7 +430,181 @@ class AsmListingWidget < Gtk::HBox
 		@line_address[@caret_y] || -1
 	end
 
+	# reads @dasm to update @line_text_color/@line_text/@line_address/@arrows
+	def update_line_text
+		return if not w = @listing_widget.window
+
+		@want_update_line_text = false
+
+		a = @listing_widget.allocation
+		w_h = (a.height + @font_height - 1) / @font_height
+
+		curaddr = @vscroll.adjustment.value.to_i
+
+		@line_address.clear
+		@line_text.clear
+		@line_text_color.clear	# list of [addr, label, text, comment]
+
+		line = 0
+
+		# list of arrows to draw ([addr_from, addr_to])
+		arrows_addr = []
+
+		str_c = []
+
+		nl = lambda {
+			@line_address[line] = curaddr
+			@line_text[line] = str_c.join
+			@line_text_color[line] = str_c
+			str_c = []
+			line += 1
+		}
+
+		while line < w_h
+			if di = @dasm.decoded[curaddr] and di.kind_of? DecodedInstruction
+				if di.block_head?
+					# render dump_block_header, add a few colors
+					b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
+					b_header.each { |l|
+						cmt = (l[0, 2] == '//' or l[-1] != ?:)
+						str_c[cmt ? 3 : 1] = l.chomp	# cmt || label
+						nl[]
+					}
+					# ary
+					di.block.each_from_samefunc(@dasm) { |addr|
+						addr = @dasm.normalize addr
+						next if not addr.kind_of? ::Integer or (@dasm.decoded[addr].kind_of? DecodedInstruction and @dasm.decoded[addr].next_addr == curaddr)
+						arrows_addr << [addr, curaddr]
+					}
+				end
+				if di.block.list.last == di
+					di.block.each_to_samefunc(@dasm) { |addr|
+						addr = @dasm.normalize addr
+						next if not addr.kind_of? ::Integer or (di.next_addr == addr and
+								(not di.opcode.props[:saveip] or di.block.to_subfuncret))
+						arrows_addr << [curaddr, addr]
+					}
+				end
+				str_c << "#{Expression[di.address]}    "
+				str_c << nil
+				str_c << "#{di.instruction} ".ljust(di.comment ? 24 : 0)
+				str_c << " ; #{di.comment.join(' ')}" if di.comment
+				nl[]
+
+				# instr overlapping
+				if off = (1...di.bin_length).find { |off_| @dasm.decoded[curaddr + off_] }
+					nl[]
+					curaddr += off
+					str_c[3] = "// ------ overlap (#{di.bin_length - off}) ------"
+					nl[]
+				else
+					curaddr += [di.bin_length, 1].max
+				end
+			elsif curaddr < @vscroll.adjustment.upper and s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
+				@dasm.comment[curaddr].each { |c| str_c[3] = "// #{c}" ; nl[] } if @dasm.comment[curaddr]
+				if label = s[0].inv_export[s[0].ptr]
+					l_list = @dasm.prog_binding.keys.sort.find_all { |name| @dasm.prog_binding[name] == curaddr }
+					label = l_list.pop
+					nl[] if not l_list.empty?
+					l_list.each { |name|
+						str_c[1] = "#{name}:"
+						nl[]
+					}
+				end
+				str_c << "#{Expression[curaddr]}    "
+				str_c << ("#{label} " if label)
+
+				# TODO cache len for next line (when most lines are db 1 db 2 db 3)
+				len = 256
+				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or s[0].inv_export[s[0].ptr+l] or s[0].reloc[s[0].ptr+l] } || len
+				comment = nil
+				if s[0].data.length > s[0].ptr
+					str = s[0].read(len).unpack('C*')
+					s[0].ptr -= len		# we may not display the whole bunch, ptr is advanced later
+					if @dasm.xrefs[curaddr] or rel = s[0].reloc[s[0].ptr]
+						len = rel.length if rel
+						comment = []
+						@dasm.each_xref(curaddr) { |xref|
+							len = xref.len if xref.len
+							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}" if xref.origin
+						}
+						comment = nil if comment.empty?
+						str = str.pack('C*').unpack(@dasm.cpu.endianness == :big ? 'n*' : 'v*') if len == 2
+						if (len == 1 or len == 2) and asc = str.inject('') { |asc_, c|
+								case c
+								when 0x20..0x7e; asc_ << c
+								else break asc_
+								end
+							} and asc.length >= 1
+							dat = "#{len == 1 ? 'db' : 'dw'} #{asc.inspect} "
+							aoff = asc.length * len
+						else
+							len = 1 if (len != 2 and len != 4) or len < 1
+							dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]} "
+							aoff = len
+						end
+					elsif rep = str.inject(0) { |rep_, c|
+						case c
+						when str[0]; rep_+1
+						else break rep_
+						end
+					} and rep > 4
+						rep -= curaddr % 256 if rep == 256 and curaddr.kind_of? Integer
+						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]}) "
+						aoff = rep
+					elsif asc = str.inject('') { |asc_, c|
+						case c
+						when 0x20..0x7e; asc_ << c
+						else break asc_
+						end
+					} and asc.length > 3
+						dat = "db #{asc.inspect} "
+						aoff = asc.length
+					else
+						dat = "db #{Expression[str[0]]} "
+						aoff = 1
+					end
+				else
+					if @dasm.xrefs[curaddr]
+						comment = []
+						@dasm.each_xref(curaddr) { |xref|
+							len = xref.len if xref.len
+							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]} "
+						}
+						len = 1 if (len != 2 and len != 4) or len < 1
+						dat = "#{%w[x db dw x dd][len]} ? "
+						aoff = len
+					else
+						len = [len, s[0].length-s[0].ptr].min
+						len -= curaddr % 256 if len == 256 and curaddr.kind_of? Integer
+						dat = "db #{Expression[len]} dup(?) "
+						aoff = len
+					end
+				end
+				str_c << dat.ljust(comment ? 24 : 0)
+				str_c << " ; #{comment.join(' ')}" if comment
+				nl[]
+				curaddr += aoff
+			else
+				nl[]
+				curaddr += 1
+			end
+		end
+
+		# convert arrows_addr to @arrows (with line numbers)
+		# updates @arrows_widget if @arrows changed
+		prev_arrows = @arrows
+		addr_line = {}		# addr => last line (di)
+		@line_address.each_with_index { |a, l| addr_line[a] = l }
+		@arrows = arrows_addr.uniq.sort.map { |from, to|
+			[(addr_line[from] || (from < curaddr ? :up : :down)),
+			 (addr_line[ to ] || ( to  < curaddr ? :up : :down))]
+		}
+		@arrows_widget.window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if prev_arrows != @arrows
+	end
+
 	def gui_update
+		@want_update_line_text = true
 		redraw
 	end
 end
