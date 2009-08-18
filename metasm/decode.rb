@@ -723,8 +723,14 @@ class Disassembler
 			@old_prog_binding[k] = @prog_binding[k] = v.reduce
 		}
 
-		# invalidate inverse relocation cache
-		@inv_section_reloc = nil
+		# update section_edata.reloc
+		# label -> list of relocs that refers to it
+		@inv_section_reloc = {}
+		@sections.each { |b, e|
+			e.reloc.each { |o, r|
+				r.target.externals.grep(::String).each { |ext| (@inv_section_reloc[ext] ||= []) << [b, e, o, r] }
+			}
+		}
 
 		self
 	end
@@ -741,11 +747,29 @@ class Disassembler
 	# yields each xref to a given address, optionnaly restricted to a type
 	def each_xref(addr, type=nil)
 		addr = normalize addr
-		case @xrefs[addr]
-		when nil
-		when ::Array; @xrefs[addr].each { |x| yield x if not type or x.type == type }
-		else yield @xrefs[addr] if not type or @xrefs[addr].type == type
+
+		x = @xrefs[addr]
+		x = case x
+		    when nil; []
+		    when ::Array; x.dup
+		    else [x]
+		    end
+
+		x.delete_if { |x_| x_.type != type } if type
+
+		# add pseudo-xrefs for exe relocs
+		if (not type or type == :reloc) and l = get_label_at(addr) and a = @inv_section_reloc[l]
+			a.each { |b, e, o, r|
+				addr = Expression[b]+o
+				# ignore relocs embedded in an already-listed instr
+				x << Xref.new(:reloc, addr) if not x.find { |x_|
+					next if not x_.origin or not @decoded[x_.origin].kind_of? DecodedInstruction
+					(addr - x_.origin rescue 50) < @decoded[x_.origin].bin_length
+				}
+			}
 		end
+
+		x.each { |x_| yield x_ }
 	end
 
 	def each_instructionblock
@@ -855,18 +879,6 @@ class Disassembler
 			end
 		}
 
-		# update section_edata.reloc
-		if not @inv_section_reloc ||= nil
-			# label -> list of relocs that refers to it
-			@inv_section_reloc = {}
-			@sections.each { |b, e|
-				e.reloc.each { |o, r|
-					r.target.externals.grep(::String).each { |ext|
-						(@inv_section_reloc[ext] ||= []) << [b, e, o, r]
-					}
-				}
-			}
-		end
 		if @inv_section_reloc[old]
 			@inv_section_reloc[old].each { |b, e, o, r|
 				(0..16).each { |off|
