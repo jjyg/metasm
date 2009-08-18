@@ -190,7 +190,7 @@ class Decompiler
 			@c_parser.toplevel.symbol[var.name] = var
 			@c_parser.toplevel.statements << C::Declaration.new(var)
 		end
-		if type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
+		if type.untypedef.kind_of? C::Array and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
 			# TODO do not overlap other statics (but labels may refer to elements of the array...)
 			data = (0..256).map {
 				v = s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness)

@@ -81,7 +81,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 	end
 
 	def curfunc
-		@dasm.c_parser and @dasm.c_parser.toplevel.symbol[@curaddr]
+		@dasm.c_parser and (@dasm.c_parser.toplevel.symbol[@curaddr] or @dasm.c_parser.toplevel.struct[@curaddr])
 	end
 
 	def click(ev)
@@ -247,7 +247,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 				}
 			end
 		when GDK_t	# change variable type (you'll want to redecompile after that)
-			f = curfunc.initializer if curfunc and curfunc.initializer.kind_of? C::Block
+			f = curfunc.initializer if curfunc.kind_of? C::Variable and curfunc.initializer.kind_of? C::Block
 			n = @hl_word
 			cp = @dasm.c_parser
 			if (f and s = f.symbol[n]) or s = cp.toplevel.symbol[n] or s = cp.toplevel.symbol[@curaddr]
@@ -346,7 +346,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 	# focus on addr
 	# returns true on success (address exists & decompiled)
 	def focus_addr(addr)
-		if @dasm.c_parser and @dasm.c_parser.toplevel.symbol[addr]
+		if @dasm.c_parser and (@dasm.c_parser.toplevel.symbol[addr] or @dasm.c_parser.toplevel.struct[addr])
 			@curaddr = addr
 			@caret_x = @caret_y = 0
 			gui_update
