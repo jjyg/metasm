@@ -303,7 +303,7 @@ class AsmListingWidget < Gtk::HBox
 		a = current_address
 		if not @dasm.get_section_at(a)
 			a = @dasm.sections.map { |k, e| k }.find_all { |k| k < a }.max
-			a += @dasm.get_section_at(a)[1].length - 1 if a
+			a += @dasm.get_section_at(a)[0].length - 1 if a
 		elsif @dasm.decoded[a].kind_of? DecodedInstruction
 			while @dasm.decoded[a].kind_of? DecodedInstruction
 				a = @dasm.decoded[a].block.list.first.address
