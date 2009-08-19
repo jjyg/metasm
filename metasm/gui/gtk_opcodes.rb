@@ -222,8 +222,7 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 		while y < w_h
 			if label = invb[curaddr]
 				nl[]
-				@dasm.prog_binding.keys.sort.each { |name|
-					next if not @dasm.prog_binding[name] == curaddr
+				@dasm.label_alias[curaddr].each { |name|
 					render["#{name}:", :label]
 					nl[]
 				}
