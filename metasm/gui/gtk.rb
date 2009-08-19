@@ -277,6 +277,14 @@ class DisasmWidget < Gtk::VBox
 		listwindow("list of labels", list) { |i| focus_addr i[1] }
 	end
 
+	def list_sections
+		list = [['name', 'addr', 'length']]
+		@dasm.sections.each { |k, v|
+			list << [@dasm.get_label_at(k), Expression[@dasm.normalize(k)], Expression[v.length]]
+		}
+		listwindow("list of sections", list) { |i| focus_addr i[1] }
+	end
+
 	def list_xrefs(addr)
 		list = [['address', 'type', 'instr']]
 		@dasm.each_xref(addr) { |xr|
@@ -813,6 +821,7 @@ class MainWindow < Gtk::Window
 		addsubmenu(views, 'Raw _opcodes') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :opcodes) }
 		addsubmenu(views, '_Hex') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :hex) }
 		addsubmenu(views, 'Co_verage') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :coverage) }
+		addsubmenu(views, '_Sections') { @dasm_widget.list_sections }
 
 		addsubmenu(@menu, views, '_Views')
 	end
