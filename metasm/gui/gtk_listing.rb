@@ -283,10 +283,55 @@ class AsmListingWidget < Gtk::HBox
 		}
 	end
 
+	# if curaddr points to an instruction, find the next data, else find the next instruction
+	def move_to_next
+		a = current_address
+		if not @dasm.get_section_at(a)
+			a = @dasm.sections.map { |k, e| k }.find_all { |k| k > a }.min
+		elsif @dasm.decoded[a].kind_of? DecodedInstruction
+			while @dasm.decoded[a].kind_of? DecodedInstruction
+				a = @dasm.decoded[a].block.list.last.next_addr
+			end
+		else
+			a = @dasm.decoded.keys.find_all { |k| k > a }.min
+		end
+		@parent_widget.focus_addr(a) if a
+	end
+
+	# see move_to_next
+	def move_to_prev
+		a = current_address
+		if not @dasm.get_section_at(a)
+			a = @dasm.sections.map { |k, e| k }.find_all { |k| k < a }.max
+			a += @dasm.get_section_at(a)[1].length - 1 if a
+		elsif @dasm.decoded[a].kind_of? DecodedInstruction
+			while @dasm.decoded[a].kind_of? DecodedInstruction
+				a = @dasm.decoded[a].block.list.first.address
+				if off = (1..16).find { |off_|
+						@dasm.decoded[a-off_].kind_of? DecodedInstruction and
+						@dasm.decoded[a-off_].next_addr == a }
+					a -= off
+				else
+					a -= 1
+				end
+			end
+		else
+			a = @dasm.decoded.keys.find_all { |k| k < a }.max
+		end
+		@parent_widget.focus_addr(a) if a
+	end
+
 	include Gdk::Keyval
 	# basic navigation (arrows, pgup etc)
 	def keypress(ev)
-		return @parent_widget.keypress(ev) if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+		if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+			case ev.keyval
+			when GDK_n; move_to_next
+			when GDK_p; move_to_prev
+			else return @parent_widget.keypress(ev)
+			end
+			return true
+		end
 
 		va = @vscroll.adjustment
 		case ev.keyval
