@@ -719,6 +719,7 @@ class Disassembler
 		end
 
 		@sections[base] = encoded
+		@label_alias_cache = nil
 		encoded.binding(base).each { |k, v|
 			@old_prog_binding[k] = @prog_binding[k] = v.reduce
 		}
@@ -826,6 +827,7 @@ class Disassembler
 		elsif not l = e.inv_export[e.ptr]
 			l = @program.new_label(addrstr)
 			e.add_export l, e.ptr
+			@label_alias_cache = nil
 			@old_prog_binding[l] = @prog_binding[l] = b + e.ptr
 		elsif rewritepfx.find { |p| base != p and addrstr.sub(base, p) == l }
 			newl = addrstr
@@ -851,6 +853,7 @@ class Disassembler
 		elsif not l = e.inv_export[e.ptr]
 			l = @program.new_label(name)
 			e.add_export l, e.ptr
+			@label_alias_cache = nil
 			@old_prog_binding[l] = @prog_binding[l] = b + e.ptr
 		elsif l != name
 			l = rename_label l, @program.new_label(name)
@@ -871,6 +874,7 @@ class Disassembler
 		if e
 			e.add_export new, e.export[old], true
 		end
+		@label_alias_cache = nil
 		@old_prog_binding[new] = @prog_binding[new] = @prog_binding.delete(old)
 		@addrs_todo.each { |at|
 			case at[0]
@@ -897,6 +901,17 @@ class Disassembler
 		end
 
 		new
+	end
+
+	# returns a hash associating addr => list of labels at this addr
+	def label_alias
+		if not @label_alias_cache
+			@label_alias_cache = {}
+			@prog_binding.each { |k, v|
+				(@label_alias_cache[v] ||= []) << k
+			}
+		end
+		@label_alias_cache
 	end
 
 	# finds the start of a function from the address of an instruction
@@ -2347,7 +2362,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		end
 		if block.edata.inv_export[block.edata_ptr]
 			b["\n"] if xr.empty?
-			@prog_binding.keys.sort.each { |name| b["#{name}:"] if @prog_binding[name] == block.address }
+			label_alias[block.address].each { |name| b["#{name}:"] }
 		end
 		if c = @comment[block.address]
 			c.each { |l| b["// #{l}"] }
