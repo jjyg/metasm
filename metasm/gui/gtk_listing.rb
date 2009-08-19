@@ -573,7 +573,7 @@ class AsmListingWidget < Gtk::HBox
 						@dasm.each_xref(curaddr) { |xref|
 							len = xref.len if xref.len
 							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}" if xref.origin
-						}
+						} if @dasm.xrefs[curaddr]
 						comment = nil if comment.empty?
 						str = str.pack('C*').unpack(@dasm.cpu.endianness == :big ? 'n*' : 'v*') if len == 2
 						if (len == 1 or len == 2) and asc = str.inject('') { |asc_, c|
