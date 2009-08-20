@@ -580,8 +580,7 @@ class Ia32
 	def get_backtrace_binding(di)
 		a = di.instruction.args.map { |arg|
 			case arg
-			when ModRM; arg.symbolic(di.address)
-			when Reg, SimdReg; arg.symbolic
+			when ModRM, Reg, SimdReg; arg.symbolic(di)
 			else arg
 			end
 		}
@@ -630,7 +629,7 @@ class Ia32
 			a = di.instruction.args.first
 			if a.kind_of? ModRM and a.imm and a.s == sz/8 and not a.b and s = dasm.get_section_at(Expression[a.imm, :-, 3*sz/8])
 				# jmp table
-				ret = [Expression[a.symbolic(di.address)]]
+				ret = [Expression[a.symbolic(di)]]
 				v = -3
 				loop do
 					diff = Expression[s[0].decode_imm("u#{sz}".to_sym, @endianness), :-, di.address].reduce
@@ -648,8 +647,8 @@ class Ia32
 		case tg = di.instruction.args.first
 		when ModRM
 			tg.sz ||= sz if tg.kind_of? ModRM
-			[Expression[tg.symbolic(di.address)]]
-		when Reg; [Expression[tg.symbolic]]
+			[Expression[tg.symbolic(di)]]
+		when Reg; [Expression[tg.symbolic(di)]]
 		when Expression, ::Integer; [Expression[tg]]
 		when Farptr; tg.seg.reduce < 0x30 ? [tg.addr] : [Expression[[tg.seg, :*, 0x10], :+, tg.addr]]
 		else

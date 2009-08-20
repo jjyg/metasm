@@ -37,8 +37,9 @@ class X86_64 < Ia32
 		# cx => :rcx & 0xffff
 		# ah => (:rax >> 8) & 0xff
 		# XXX in x64, 32bits operations are zero-extended to 64bits (eg mov rax, 0x1234_ffff_ffff ; add eax, 1 => rax == 0
-		def symbolic
+		def symbolic(di=nil)
 			s = Sym[@val]
+			s = di.next_addr if s == :rip and di
 			if @sz == 8 and to_s[-1] == ?h
 				Expression[[Sym[@val-16], :>>, 8], :&, 0xff]
 			elsif @sz == 8

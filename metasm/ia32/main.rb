@@ -87,7 +87,7 @@ class Ia32 < CPU
 	class SimdReg < Argument
 		double_map  64 => (0..7).map { |n| "mm#{n}" },
 			   128 => (0..7).map { |n| "xmm#{n}" }
-		def symbolic ; to_s.to_sym end
+		def symbolic(di=nil) ; to_s.to_sym end
 	end
 
 	# general purpose registers, all sizes
@@ -102,7 +102,7 @@ class Ia32 < CPU
 		# eax => :eax
 		# cx => :ecx & 0xffff
 		# ah => (:eax >> 8) & 0xff
-		def symbolic
+		def symbolic(di=nil)
 			s = Sym[@val]
 			if @sz == 8 and to_s[-1] == ?h
 				Expression[[Sym[@val-4], :>>, 8], :&, 0xff]
@@ -167,13 +167,13 @@ class Ia32 < CPU
 		# returns the symbolic representation of the ModRM (ie an Indirection)
 		# segment selectors are represented as eg "segment_base_fs"
 		# not present when same as implicit (ds:edx, ss:esp)
-		def symbolic(orig=nil)
+		def symbolic(di=nil)
 			p = nil
-			p = Expression[p, :+, @b.symbolic] if b
-			p = Expression[p, :+, [@s, :*, @i.symbolic]] if i
+			p = Expression[p, :+, @b.symbolic(di)] if b
+			p = Expression[p, :+, [@s, :*, @i.symbolic(di)]] if i
 			p = Expression[p, :+, @imm] if imm
 			p = Expression["segment_base_#@seg", :+, p] if seg and seg.val != ((b && (@b.val == 4 || @b.val == 5)) ? 2 : 3)
-			Indirection[p.reduce, @sz/8, orig]
+			Indirection[p.reduce, @sz/8, (di.address if di)]
 		end
 	end
 

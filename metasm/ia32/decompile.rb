@@ -223,7 +223,7 @@ class Ia32
 							dcmp.c_parser.parse("void intrinsic_set_#{a1}(__int#{sz});")
 						end
 						f = dcmp.c_parser.toplevel.symbol["intrinsic_set_#{a1}"]
-						a2 = a2.symbolic
+						a2 = a2.symbolic(di)
 						a2 = [a2, :&, 0xffff] if sz == 16
 						stmts << C::CExpression.new(f, :funcall, [ceb[a2]], f.type.type)
 						next
@@ -236,8 +236,8 @@ class Ia32
 						end
 						f = dcmp.c_parser.toplevel.symbol["intrinsic_get_#{a2}"]
 						t = f.type.type
-						binding.delete a1.symbolic
-						stmts << C::CExpression.new(ce[a1.symbolic], :'=', C::CExpression.new(f, :funcall, [], t), t)
+						binding.delete a1.symbolic(di)
+						stmts << C::CExpression.new(ce[a1.symbolic(di)], :'=', C::CExpression.new(f, :funcall, [], t), t)
 						next
 					end
 				end
@@ -305,7 +305,7 @@ class Ia32
 					stmts << e
 				when 'jmp'
 					#if di.comment.to_a.include? 'switch'
-					#	n = di.instruction.args.first.symbolic
+					#	n = di.instruction.args.first.symbolic(di)
 					#	fptr = ceb[n]
 					#	binding.delete n
 					#	commit[]
@@ -322,7 +322,7 @@ class Ia32
 					elsif not a.respond_to? :symbolic
 						stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil)
 					else
-						n = di.instruction.args.first.symbolic
+						n = di.instruction.args.first.symbolic(di)
 						fptr = ceb[n]
 						binding.delete n
 						commit[]
