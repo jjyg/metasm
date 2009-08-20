@@ -41,7 +41,11 @@ class Ia32
 		addop 'call',  [0xE8], nil,  {}, :stopexec, :setip, :i, :saveip
 		addop 'call',  [0xFF], 2,    {}, :stopexec, :setip, :saveip
 		addop('cbw',   [0x98]) { |o| o.props[:opsz] = 16 }
+		addop('cwde',  [0x98]) { |o| o.props[:opsz] = 32 }
+		addop('cdqe',  [0x98]) { |o| o.props[:opsz] = 64 }
+		addop('cwd',   [0x99]) { |o| o.props[:opsz] = 16 }
 		addop('cdq',   [0x99]) { |o| o.props[:opsz] = 32 }
+		addop('cqo',   [0x99]) { |o| o.props[:opsz] = 64 }
 		addop_macro1 'cmp', 7
 		addop_macrostr 'cmps',  [0xA6], :stropz
 		addop 'dec',   [0x48], :reg
@@ -134,8 +138,6 @@ class Ia32
 		addop 'cmc',   [0xF5]
 		addop('cmpxchg',[0x0F, 0xB0], :mrmw) { |o| o.args.reverse! }
 		addop 'cpuid', [0x0F, 0xA2]
-		addop('cwd',   [0x99]) { |o| o.props[:opsz] = 16 }
-		addop('cwde',  [0x98]) { |o| o.props[:opsz] = 32 }
 		addop 'daa',   [0x27]
 		addop 'das',   [0x2F]
 		addop 'hlt',   [0xF4], nil, {}, :stopexec

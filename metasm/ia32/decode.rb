@@ -343,7 +343,10 @@ class Ia32
 				}
 			when 'sar', 'shl', 'sal'; lambda { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz(di), 32].max]] } }
 			when 'shr'; lambda { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz(di)]] } }
-			when 'cdq'; lambda { |di| { edx => Expression[0xffff_ffff, :*, [[eax, :>>, opsz(di)-1], :&, 1]] } }
+			when 'cwd', 'cdq', 'cqo'; lambda { |di| { Expression[edx, :&, mask[di]] => Expression[mask[di], :*, sign[eax, di]] } }
+			when 'cbw', 'cwde', 'cdqe'; lambda { |di|
+				o2 = opsz(di)/2 ; m2 = (1 << o2) - 1
+				{ Expression[eax, :&, mask[di]] => Expression[[eax, :&, m2], :|, [m2 << o2, :*, [[eax, :>>, o2-1], :&, 1]]] } }
 			when 'push'
 				lambda { |di, a0| { esp => Expression[esp, :-, opsz(di)/8],
 					Indirection[esp, opsz(di)/8, di.address] => Expression[a0] } }
@@ -602,9 +605,13 @@ class Ia32
 					end
 					val = bd.delete e
 					mask <<= shift if shift
-					invmask = mask ^ 0xffff_ffff	# opsz ?
-					val = Expression[val, :<<, shift] if shift
-					bd[reg] = Expression[[reg, :&, invmask], :|, [val, :&, mask]]
+					invmask = mask ^ (@size == 64 ? 0xffff_ffff_ffff_ffff : 0xffff_ffff)
+					if invmask == 0
+						bd[reg] = val
+					else
+						val = Expression[val, :<<, shift] if shift
+						bd[reg] = Expression[[reg, :&, invmask], :|, [val, :&, mask]]
+					end
 				end
 			}
 			bd
