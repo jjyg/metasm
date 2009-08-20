@@ -578,7 +578,7 @@ class AsmListingWidget < Gtk::HBox
 						str = str.pack('C*').unpack(@dasm.cpu.endianness == :big ? 'n*' : 'v*') if len == 2
 						if (len == 1 or len == 2) and asc = str.inject('') { |asc_, c|
 								case c
-								when 0x20..0x7e; asc_ << c
+								when 0x20..0x7e, 9, 10, 13; asc_ << c
 								else break asc_
 								end
 							} and asc.length >= 1
@@ -600,7 +600,7 @@ class AsmListingWidget < Gtk::HBox
 						aoff = rep
 					elsif asc = str.inject('') { |asc_, c|
 						case c
-						when 0x20..0x7e; asc_ << c
+						when 0x20..0x7e, 9, 10, 13; asc_ << c
 						else break asc_
 						end
 					} and asc.length > 3
