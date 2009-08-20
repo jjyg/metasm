@@ -2026,7 +2026,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		unk = true if n == Expression::Unknown
 
 		add_xref(n, Xref.new(:addr, di.address)) if di and di.address != origin and not unk
-		base = { nil => 'loc', 1 => 'byte', 2 => 'word', 4 => 'dword' }[len] || 'xref'
+		base = { nil => 'loc', 1 => 'byte', 2 => 'word', 4 => 'dword', 8 => 'qword' }[len] || 'xref'
 		base = 'sub' if @function[n]
 		n = Expression[auto_label_at(n, base, 'xref') || n] if not fallthrough
 		n = Expression[n]
