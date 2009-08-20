@@ -678,7 +678,7 @@ void *dlsym(int, char *);	// has special callback
 // gcc's entrypoint, need pointers to reach main exe code (last callback)
 void __libc_start_main(void(*)(), int, int, void(*)(), void(*)()) __attribute__((noreturn));
 // standard noreturn, optimized by gcc
-void __attribute__ ((noreturn)) exit(int);
+void __attribute__((noreturn)) exit(int);
 void _exit __attribute__((noreturn))(int);
 void abort(void) __attribute__((noreturn));
 void __stack_chk_fail __attribute__((noreturn))(void);
@@ -693,14 +693,19 @@ EOC
 			dls.btbind_callback = lambda { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
 				sz = @cpu.size/8
 				raise 'dlsym call error' if not dasm.decoded[calladdr]
-				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)
+				if @cpu.kind_of? X86_64
+					arg2 = :rsi
+				else
+					arg2 = Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr)
+				end
+				fnaddr = dasm.backtrace(arg2, calladdr, :include_start => true, :maxdepth => maxdepth)
 				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(?\0) and i > sz	# try to avoid ordinals
-					bind = bind.merge :eax => Expression[fn[0, i]]
+					bind = bind.merge @cpu.register_symbols[0] => Expression[fn[0, i]]
 				end
 				bind
 			}
 			df = d.function[:default] = @cpu.disassembler_default_func
-			df.backtrace_binding[:esp] = Expression[:esp, :+, 4]
+			df.backtrace_binding[@cpu.register_symbols[4]] = Expression[@cpu.register_symbols[4], :+, @cpu.size/8]
 			df.btbind_callback = nil
 		when MIPS
 			(d.address_binding[@header.entry] ||= {})[:$t9] ||= Expression[@header.entry]

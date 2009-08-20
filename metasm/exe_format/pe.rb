@@ -232,20 +232,29 @@ EOS
 	def init_disassembler
 		d = super()
 		d.backtrace_maxblocks_data = 4
-		if @cpu.kind_of? Ia32
+		case @cpu
+		when Ia32
 			old_cp = d.c_parser
 			d.c_parser = nil
 			d.parse_c '__stdcall void *GetProcAddress(int, char *);'
+			d.c_parser.lexer.define_weak('__MS_X86_64_ABI__') if @cpu.kind_of? X86_64
 			gpa = @cpu.decode_c_function_prototype(d.c_parser, 'GetProcAddress')
 			d.c_parser = old_cp
+			d.parse_c ''
+			d.c_parser.lexer.define_weak('__MS_X86_64_ABI__') if @cpu.kind_of? X86_64
 			@getprocaddr_unknown = []
 			gpa.btbind_callback = lambda { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
 				break bind if @getprocaddr_unknown.include? [dasm, calladdr] or not Expression[expr].externals.include? :eax
 				sz = @cpu.size/8
 				break bind if not dasm.decoded[calladdr]
-				fnaddr = dasm.backtrace(Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr), calladdr, :include_start => true, :maxdepth => maxdepth)
+				if @cpu.kind_of? X86_64
+					arg2 = :rdx
+				else
+					arg2 = Indirection[[:esp, :+, 2*sz], sz, calladdr]
+				end
+				fnaddr = dasm.backtrace(arg2, calladdr, :include_start => true, :maxdepth => maxdepth)
 				if fnaddr.kind_of? ::Array and fnaddr.length == 1 and s = dasm.get_section_at(fnaddr.first) and fn = s[0].read(64) and i = fn.index(?\0) and i > sz	# try to avoid ordinals
-					bind = bind.merge :eax => Expression[fn[0, i]]
+					bind = bind.merge @cpu.register_symbols[0] => Expression[fn[0, i]]
 				else
 					@getprocaddr_unknown << [dasm, calladdr]
 					puts "unknown func name for getprocaddress from #{Expression[calladdr]}" if $VERBOSE

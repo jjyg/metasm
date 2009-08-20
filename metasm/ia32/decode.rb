@@ -660,7 +660,7 @@ class Ia32
 	# checks if expr is a valid return expression matching the :saveip instruction
 	def backtrace_is_function_return(expr, di=nil)
 		expr = Expression[expr].reduce_rec
-		expr.kind_of? Indirection and expr.len == opsz(di)/8 and expr.target == Expression[register_symbols[4]]
+		expr.kind_of? Indirection and expr.len == @size/8 and expr.target == Expression[register_symbols[4]]
 	end
 
 	# updates the function backtrace_binding
@@ -709,6 +709,12 @@ class Ia32
 			end
 		end
 
+		backtrace_update_function_binding_check(dasm, faddr, f, b)
+
+		b
+	end
+
+	def backtrace_update_function_binding_check(dasm, faddr, f, b)
 		sz = @size/8
 		if b[ebp] and b[ebp] != Expression[ebp]
 			# may be a custom 'enter' function (eg recent Visual Studio)
@@ -749,8 +755,6 @@ class Ia32
 			'__SEH_epilog'
 		end
 		dasm.auto_label_at(faddr, rename, 'loc', 'sub') if rename
-
-		b
 	end
 
 	# returns true if the expression is an address on the stack
@@ -775,8 +779,6 @@ class Ia32
 	# TODO rebacktrace already decoded functions (load a header file after dasm finished)
 	# TODO walk structs args
 	def decode_c_function_prototype(cp, sym, orig=nil)
-		eax, ecx, edx, ebx, esp, ebp, esi, edi = register_symbols
-
 		sym = cp.toplevel.symbol[sym] if sym.kind_of?(::String)
 		df = DecodedFunction.new
 		orig ||= Expression[sym.name]
@@ -786,36 +788,39 @@ class Ia32
 		}
 
 		# return instr emulation
-		new_bt[Indirection[esp, @size/8, orig], nil] if not sym.attributes.to_a.include? 'noreturn'
+		new_bt[Indirection[:esp, @size/8, orig], nil] if not sym.attributes.to_a.include? 'noreturn'
 
 		# register dirty (XXX assume standard ABI)
-		df.backtrace_binding.update eax => Expression::Unknown, ecx => Expression::Unknown, edx => Expression::Unknown
+		[:eax, :ecx, :edx].each { |r|
+			df.backtrace_binding.update r => Expression::Unknown
+		}
 
 		# emulate ret <n>
 		al = cp.typesize[:ptr]
 		if sym.attributes.to_a.include? 'stdcall'
 			argsz = sym.type.args.to_a.inject(al) { |sum, a| sum += (cp.sizeof(a) + al - 1) / al * al }
-			df.backtrace_binding[esp] = Expression[esp, :+, argsz]
+			df.backtrace_binding[:esp] = Expression[:esp, :+, argsz]
 		else
-			df.backtrace_binding[esp] = Expression[esp, :+, al]
+			df.backtrace_binding[:esp] = Expression[:esp, :+, al]
 		end
 
 		# scan args for function pointers
 		# TODO walk structs/unions..
 		stackoff = al
 		sym.type.args.to_a.each { |a|
+			p = Indirection[[:esp, :+, stackoff], al, orig]
+			stackoff += (cp.sizeof(a) + al - 1) / al * al
 			if a.type.untypedef.kind_of? C::Pointer
 				pt = a.type.untypedef.type.untypedef
 				if pt.kind_of? C::Function
-					new_bt[Indirection[[esp, :+, stackoff], al, orig], nil]
+					new_bt[p, nil]
 					df.backtracked_for.last.detached = true
 				elsif pt.kind_of? C::Struct
-					new_bt[Indirection[[esp, :+, stackoff], al, orig], al]
+					new_bt[p, al]
 				else
-					new_bt[Indirection[[esp, :+, stackoff], al, orig], cp.sizeof(nil, pt)]
+					new_bt[p, cp.sizeof(nil, pt)]
 				end
 			end
-			stackoff += (cp.sizeof(a) + al - 1) / al * al
 		}
 
 		df

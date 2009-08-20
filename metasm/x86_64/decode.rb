@@ -177,5 +177,66 @@ class X86_64
 	def register_symbols
 		[:rax, :rcx, :rdx, :rbx, :rsp, :rbp, :rsi, :rdi, :r8, :r9, :r10, :r11, :r12, :r13, :r14, :r15]
 	end
+	
+	# returns a DecodedFunction from a parsed C function prototype
+	def decode_c_function_prototype(cp, sym, orig=nil)
+		sym = cp.toplevel.symbol[sym] if sym.kind_of?(::String)
+		df = DecodedFunction.new
+		orig ||= Expression[sym.name]
+
+		new_bt = lambda { |expr, rlen|
+			df.backtracked_for << BacktraceTrace.new(expr, orig, expr, rlen ? :r : :x, rlen)
+		}
+
+		# return instr emulation
+		new_bt[Indirection[:rsp, @size/8, orig], nil] if not sym.attributes.to_a.include? 'noreturn'
+
+		# register dirty (MS standard ABI)
+		[:rax, :rcx, :rdx, :r8, :r9, :r10, :r11].each { |r|
+			df.backtrace_binding.update r => Expression::Unknown
+		}
+
+		if cp.lexer.definition['__MS_X86_64_ABI__']
+			reg_args = [:rcx, :rdx, :r8, :r9]
+		else
+			reg_args = [:rdi, :rsi, :rdx, :rcx, :r8, :r9]
+		end
+
+		# emulate ret <n>
+		al = cp.typesize[:ptr]
+		if sym.attributes.to_a.include? 'stdcall'
+			argsz = sym.type.args[reg_args.length..-1].to_a.inject(al) { |sum, a| sum += (cp.sizeof(a) + al - 1) / al * al }
+			df.backtrace_binding[:rsp] = Expression[:rsp, :+, argsz]
+		else
+			df.backtrace_binding[:rsp] = Expression[:rsp, :+, al]
+		end
+
+		# scan args for function pointers
+		# TODO walk structs/unions..
+		stackoff = al
+		sym.type.args.to_a.zip(reg_args).each { |a, r|
+			if not r
+				r = Indirection[[:rsp, :+, stackoff], al, orig]
+				stackoff += (cp.sizeof(a) + al - 1) / al * al
+			end
+			if a.type.untypedef.kind_of? C::Pointer
+				pt = a.type.untypedef.type.untypedef
+				if pt.kind_of? C::Function
+					new_bt[r, nil]
+					df.backtracked_for.last.detached = true
+				elsif pt.kind_of? C::Struct
+					new_bt[r, al]
+				else
+					new_bt[r, cp.sizeof(nil, pt)]
+				end
+			end
+		}
+
+		df
+	end
+
+	def backtrace_update_function_binding_check(dasm, faddr, f, b)
+		# TODO save regs according to ABI
+	end
 end
 end
