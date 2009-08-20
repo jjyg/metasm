@@ -39,9 +39,10 @@ class Ia32
 			}.fetch(sz) { |k| "_#{sz}bits" }
 		end
 
+		attr_accessor :instruction
 		def render
 			r = []
-			r << ( qualifier(@sz) << ' ptr ' ) if @sz
+			r << ( qualifier(@sz) << ' ptr ' ) if @sz and (not instruction or not @instruction.args.find { |a| a.kind_of? Reg and a.sz == @sz })
 			r << @seg << ':' if seg
 
 			e = nil
@@ -63,6 +64,7 @@ class Ia32
 		r << i.prefix[:rep] << ' ' if i.prefix and i.prefix[:rep]
 		r << i.opname
 		i.args.each { |a|
+			a.instruction = i if a.kind_of? ModRM
 			r << (r.last == i.opname ? ' ' : ', ') << a
 		}
 		r
