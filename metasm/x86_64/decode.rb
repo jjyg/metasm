@@ -37,7 +37,9 @@ class X86_64
 				end
 
 				bb = sib & 7
-				if bb != 5 or m != 0	# XXX pfx[:rex_b] ?
+				if bb == 5 and m == 0 # XXX pfx[:rex_b] ?
+					m = 2	# :i32 follows
+				else
 					bb |= 8 if pfx[:rex_b]
 					b = Reg.new(bb, adsz)
 				end
