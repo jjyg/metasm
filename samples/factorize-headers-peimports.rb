@@ -43,6 +43,10 @@ end
 funcnames = opts[:exe].map { |e|
 	pe = PE.decode_file_header(e)
 	pe.decode_imports
+	if not pe.imports
+		puts "#{e} has no imports"
+		next
+	end
 	pe.imports.map { |id| id.imports.map { |i| i.name } }
 }.flatten.compact.uniq.sort
 
@@ -53,6 +57,7 @@ ARGV.each { |n|
 		funcnames |= [n]
 	end
 }
+exit if funcnames.empty?
 
 src = <<EOS + opts[:hdrs].to_a.map { |h| "#include <#{h}>\n" }.join
 #ifdef DDK
