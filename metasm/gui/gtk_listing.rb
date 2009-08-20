@@ -585,8 +585,8 @@ class AsmListingWidget < Gtk::HBox
 							dat = "#{len == 1 ? 'db' : 'dw'} #{asc.inspect} "
 							aoff = asc.length * len
 						else
-							len = 1 if (len != 2 and len != 4) or len < 1
-							dat = "#{%w[x db dw x dd][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]} "
+							len = 1 if (len != 2 and len != 4 and len != 8) or len < 1
+							dat = "#{%w[x db dw x dd x x x dq][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]} "
 							aoff = len
 						end
 					elsif rep = str.inject(0) { |rep_, c|
@@ -617,8 +617,8 @@ class AsmListingWidget < Gtk::HBox
 							len = xref.len if xref.len
 							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]} "
 						}
-						len = 1 if (len != 2 and len != 4) or len < 1
-						dat = "#{%w[x db dw x dd][len]} ? "
+						len = 1 if (len != 2 and len != 4 and len != 8) or len < 1
+						dat = "#{%w[x db dw x dd x x x dq][len]} ? "
 						aoff = len
 					else
 						len = [len, s[0].length-s[0].ptr].min
