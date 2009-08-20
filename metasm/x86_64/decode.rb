@@ -95,7 +95,7 @@ class X86_64
 			v
 		}
 
-		opsz = op.props[:argsz] || (pfx[:rex_w] ? 64 : pfx[:opsz] ? 16 : 32)
+		opsz = op.props[:argsz] || (pfx[:rex_w] || op.props[:auto64] ? 64 : pfx[:opsz] ? 16 : 32)
 		adsz = pfx[:adsz] ? 32 : 64
 
 		op.args.each { |a|

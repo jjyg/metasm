@@ -372,7 +372,7 @@ class Indirection < ExpressionType
 	alias == eql?
 
 	def to_s
-		qual = {1 => 'byte', 2 => 'word', 4 => 'dword'}[@len] || "_#{len*8}bits"
+		qual = {1 => 'byte', 2 => 'word', 4 => 'dword', 8 => 'qword'}[@len] || "_#{len*8}bits"
 		"#{qual} ptr [#{target}]"
 	end
 
