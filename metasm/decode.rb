@@ -884,7 +884,7 @@ class Disassembler
 		}
 
 		if @inv_section_reloc[old]
-			@inv_section_reloc[old].each { |b, e, o, r|
+			@inv_section_reloc[old].each { |b, e_, o, r|
 				(0..16).each { |off|
 					if di = @decoded[Expression[b]+o-off] and di.bin_length > off
 						@cpu.replace_instr_arg_immediate(di.instruction, old, new)
@@ -1231,8 +1231,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		# mark as Function if called from a :saveip
 		if @decoded[addr].kind_of? DecodedInstruction and not @function[addr]
 			func = false
-			each_xref(addr, :x) { |x|
-				func = true if @decoded[x.origin].kind_of? DecodedInstruction and @decoded[x.origin].opcode.props[:saveip]
+			each_xref(addr, :x) { |x_|
+				func = true if @decoded[x_.origin].kind_of? DecodedInstruction and @decoded[x_.origin].opcode.props[:saveip]
 			}
 			if func
 				l = auto_label_at(addr, 'sub', 'loc', 'xref')
@@ -2558,12 +2558,12 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		t = bl.map { |b|
 			[Expression[b.address],
 			 b.list.map { |d| Expression[d.address] }.join(','),
-			 b.to_normal.to_a.map { |t| Expression[t] }.join(','),
-			 b.to_subfuncret.to_a.map { |t| Expression[t] }.join(','),
-			 b.to_indirect.to_a.map { |t| Expression[t] }.join(','),
-			 b.from_normal.to_a.map { |t| Expression[t] }.join(','),
-			 b.from_subfuncret.to_a.map { |t| Expression[t] }.join(','),
-			 b.from_indirect.to_a.map { |t| Expression[t] }.join(','),
+			 b.to_normal.to_a.map { |t_| Expression[t_] }.join(','),
+			 b.to_subfuncret.to_a.map { |t_| Expression[t_] }.join(','),
+			 b.to_indirect.to_a.map { |t_| Expression[t_] }.join(','),
+			 b.from_normal.to_a.map { |t_| Expression[t_] }.join(','),
+			 b.from_subfuncret.to_a.map { |t_| Expression[t_] }.join(','),
+			 b.from_indirect.to_a.map { |t_| Expression[t_] }.join(','),
 			].join(';')
 		}.sort.join("\n")
 		fd.puts "blocks #{t.length}", t
@@ -2657,8 +2657,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 							a = Expression.parse(pp.feed!(e)).reduce
 							b.add_di(@decoded[a])
 						}
-						bla.zip([:to_normal, :to_subfuncret, :to_indirect, :from_normal, :from_subfuncret, :from_indirect]).each { |l, s|
-							b.send("#{s}=", l.map { |e| Expression.parse(pp.feed!(e)).reduce }) if not l.empty?
+						bla.zip([:to_normal, :to_subfuncret, :to_indirect, :from_normal, :from_subfuncret, :from_indirect]).each { |l_, s|
+							b.send("#{s}=", l_.map { |e| Expression.parse(pp.feed!(e)).reduce }) if not l_.empty?
 						}
 					rescue
 						puts "load: bad block #{l.inspect}" if $VERBOSE
