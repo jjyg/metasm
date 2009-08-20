@@ -36,7 +36,7 @@ class X86_64
 		init_sse_only
 		init_sse2_only
 
-		@opcode_list.delete_if { |o| o.args.include? :modrmmx }	# mmx is dead!
+		@opcode_list.delete_if { |o| o.args.include? :modrmmmx }	# mmx is dead!
 		@opcode_list.delete_if { |o| o.name == 'loadall' }
 
 		addop 'syscall', [0x0F, 0x05]
