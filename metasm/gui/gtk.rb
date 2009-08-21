@@ -330,7 +330,7 @@ class DisasmWidget < Gtk::VBox
 		inputbox('ruby code to eval()') { |c|
 			begin
 				ret = eval c
-				messagebox ret.inspect[0, 128], 'eval'
+				messagebox ret.inspect[0, 512], 'eval'
 			rescue Object
 				messagebox "#$! #{$!.message}\n#{$!.backtrace.join("\n")}", 'eval error'
 			end
@@ -809,6 +809,7 @@ class MainWindow < Gtk::Window
 		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
 		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
 		addsubmenu(options, 'Forbid decomp optimlab_els', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck.active? }
+		addsubmenu(options, 'Decompiler recurse', :check, true) { |ck| @dasm_widget.dasm.decompiler.recurse = ck.active? }
 		# TODO CPU type, size, endian...
 		# factorize headers
 

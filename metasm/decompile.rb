@@ -48,9 +48,11 @@ class Decompiler
 
 	attr_accessor :dasm, :c_parser
 	attr_accessor :forbid_optimize_dataflow, :forbid_optimize_code, :forbid_decompile_ifwhile, :forbid_decompile_types, :forbid_optimize_labels
+	attr_accessor :recurse
 
 	def initialize(dasm, cp = dasm.c_parser)
 		@dasm = dasm
+		@recurse = true
 		@c_parser = cp || @dasm.cpu.new_cparser
 	end
 
@@ -156,7 +158,7 @@ class Decompiler
 		ptype = type.untypedef.type if type.pointer?
 		if ptype.kind_of? C::Function
 			name = @dasm.auto_label_at(addr, 'sub', 'xref', 'byte', 'word', 'dword', 'unk')
-			if @dasm.get_section_at(addr)
+			if @dasm.get_section_at(addr) and @recurse
 				@dasm.disassemble(addr) if not @dasm.decoded[addr]	# TODO disassemble_fast ?
 				f = @dasm.function[addr] ||= DecodedFunction.new
 				# TODO detect thunks (__noreturn)
@@ -238,7 +240,7 @@ class Decompiler
 				if @dasm.function[ta] and type != :subfuncret
 					f = dasm.auto_label_at(ta, 'func')
 					ta = dasm.normalize($1) if f =~ /^thunk_(.*)/
-					ret = decompile_func(ta) if ta != entry
+					ret = decompile_func(ta) if ta != entry and @recurse
 					throw :restart, :restart if ret == :restart
 				else
 					@dasm.auto_label_at(ta, 'label') if blocks.find { |aa, at| aa == ta }
