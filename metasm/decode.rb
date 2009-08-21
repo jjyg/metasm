@@ -1465,9 +1465,9 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					# only count non-trivial paths in loopdetect (ignore linear links)
 					add_detect = [[f_obj, f_addr, f_type]]
 					add_detect = [] if @decoded[f_addr].kind_of? DecodedInstruction and tmp = @decoded[f_addr].block and
-							(w_di.block.from_subfuncret.to_a == [] and w_di.block.from_normal == [f_addr] and
+							((w_di.block.from_subfuncret.to_a == [] and w_di.block.from_normal == [f_addr] and
 							 tmp.to_normal == [w_di.address] and tmp.to_subfuncret.to_a == []) or
-							(w_di.block.from_subfuncret == [f_addr] and tmp.to_subfuncret == [w_di.address])
+							(w_di.block.from_subfuncret == [f_addr] and tmp.to_subfuncret == [w_di.address]))
 					todo << [f_obj, f_addr, f_type, f_loopdetect + add_detect ]
 				}
 				yield :end, w_obj, :addr => w_addr, :loopdetect => w_loopdetect if not hadsomething
@@ -1505,7 +1505,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		while not todo.empty?
 			obj, addr, type, loopdetect = todo.pop
 			di = @decoded[addr]
-			if type == :subfuncret
+			if di and type == :subfuncret
 				di.block.each_to_normal { |sf|
 					next if not f = @function[normalize(sf)]
 					s_obj = yield(:func, obj, :func => f, :funcaddr => sf, :addr => addr, :loopdetect => loopdetect)
@@ -2212,7 +2212,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				true if x.empty?
 			end
 		}
-		@addrs_done.delete_if { |ad| addrs.include? normalize(ad[0]) }
+		@addrs_done.delete_if { |ad| !(addrs & [normalize(ad[0]), normalize(ad[1])]).empty? }
 	end
 
 	# merge two instruction blocks if they form a simple chain and are adjacent
