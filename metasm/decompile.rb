@@ -1167,6 +1167,7 @@ class Decompiler
 		update_type = lambda { |n, t|
 			next if propagating.include? n
 			o = scope.symbol[n].stackoff
+			next if o and scope.decompdata[:stackoff_type][o] and t != scope.decompdata[:stackoff_type][o]
 			next if t0 = types[n] and not better_type[t, t0]
 			next if o and (t.integral? or t.pointer?) and o % sizeof(nil, t) != 0 # keep vars aligned
 			types[n] = t
@@ -1405,8 +1406,8 @@ class Decompiler
 		# propagate types to cexprs
 		walk_ce(scope, true) { |ce|
 			if ce.op
-				ce.type = C::CExpression[ce.lexpr, ce.op, ce.rexpr].type
-				if ce.op == :'=' and ce.rexpr.type != ce.type and (not ce.rexpr.type.integral? or not ce.type.integral?)
+				ce.type = C::CExpression[ce.lexpr, ce.op, ce.rexpr].type rescue next
+				if ce.op == :'=' and ce.rexpr and ce.rexpr.type != ce.type and (not ce.rexpr.type.integral? or not ce.type.integral?)
 					ce.rexpr = C::CExpression[ce.rexpr, ce.type]
 				end
 			end
@@ -1427,7 +1428,7 @@ class Decompiler
 			suboff = 0
 			submemb = lambda { |sm| sm.name ? sm : sm.kind_of?(C::Union) ? sm.members.to_a.map { |ssm| submemb[ssm] } : [] }
 			mbs = st.members.to_a.map { |m| submemb[m] }.flatten 
-			if not sm = mbs.find { |m|
+			if ptr.type.untypedef.type.untypedef != st or not sm = mbs.find { |m|
 				mo = st.offsetof(@c_parser, m.name)
 				suboff = off - mo
 				true if mo <= off and mo+sizeof(m) > off
