@@ -1169,7 +1169,7 @@ class Decompiler
 			o = scope.symbol[n].stackoff
 			next if o and scope.decompdata[:stackoff_type][o] and t != scope.decompdata[:stackoff_type][o]
 			next if t0 = types[n] and not better_type[t, t0]
-			next if o and (t.integral? or t.pointer?) and o % sizeof(nil, t) != 0 # keep vars aligned
+			next if o and (t.integral? or t.pointer?) and o % sizeof(t) != 0 # keep vars aligned
 			types[n] = t
 			next if t == t0
 			propagating << n
@@ -1208,7 +1208,7 @@ class Decompiler
 					next
 				elsif e.op == :+ and e.lexpr and e.rexpr.kind_of? C::CExpression
 					if not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
-						if e.rexpr.rexpr < 0x1000	# XXX relocatable + base=0..
+						if t.pointer? and e.rexpr.rexpr < 0x1000 and (e.rexpr.rexpr % sizeof(t.untypedef.type)) == 0	# XXX relocatable + base=0..
 							e = e.lexpr	# (int)*(x+2) === (int) *x
 							next
 						elsif globalvar[e.rexpr.rexpr]
@@ -1295,7 +1295,7 @@ class Decompiler
 				known_type[ce.lexpr, ce.rexpr.type]
 			elsif ce.op == :funcall and ce.lexpr.type.kind_of? C::Function
 				# cast func args to arg prototypes
-				ce.lexpr.type.args.to_a.zip(ce.rexpr).each { |proto, arg| known_type[arg, proto.type] }
+				ce.lexpr.type.args.to_a.zip(ce.rexpr).each_with_index { |(proto, arg), i| ce.rexpr[i] = C::CExpression[arg, proto.type] ; known_type[arg, proto.type] }
 			elsif ce.op == :* and not ce.lexpr
 				if e = ce.rexpr and e.kind_of? C::CExpression and not e.op and e = e.rexpr and e.kind_of? C::CExpression and
 						e.op == :& and not e.lexpr and e.rexpr.kind_of? C::Variable and e.rexpr.stackoff
@@ -1361,7 +1361,7 @@ class Decompiler
 			end
 		}
 
-		walk_ce(scope) { |ce|
+		walk_ce(scope, true) { |ce|
 			case
 			when ce.op == :funcall
 				ce.rexpr.map! { |re|
@@ -1372,6 +1372,7 @@ class Decompiler
 				}
 			when o = scopevar[ce.lexpr]; ce.lexpr = maycast[varat[o], ce.lexpr]
 			when o = scopevar[ce.rexpr]; ce.rexpr = maycast[varat[o], ce.rexpr]
+				ce.rexpr = C::CExpression[ce.rexpr] if not ce.op and ce.rexpr.kind_of? C::Variable
 			when o = pscopevar[ce.lexpr]; ce.lexpr = maycast_p[varat[o], ce.lexpr]
 			when o = pscopevar[ce.rexpr]; ce.rexpr = maycast_p[varat[o], ce.rexpr]
 			when o = scopevar[ce]; ce.replace C::CExpression[maycast[varat[o], ce]]
@@ -2500,8 +2501,9 @@ class Decompiler
 	end
 
 	# forwards to @c_parser, handles cast to Array (these should not happen btw...)
-	def sizeof(var, type=var.type)
-		var, type = nil, var if var.kind_of? C::Type
+	def sizeof(var, type=nil)
+		var, type = nil, var if var.kind_of? C::Type and not type
+		type ||= var.type
 		return @c_parser.typesize[:ptr] if type.kind_of? C::Array and not var.kind_of? C::Variable
 		@c_parser.sizeof(var, type) rescue -1
 	end
