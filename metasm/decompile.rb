@@ -192,7 +192,7 @@ class Decompiler
 			@c_parser.toplevel.symbol[var.name] = var
 			@c_parser.toplevel.statements << C::Declaration.new(var)
 		end
-		if type.untypedef.kind_of? C::Array and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
+		if type.untypedef.kind_of? C::Pointer and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
 			# TODO do not overlap other statics (but labels may refer to elements of the array...)
 			data = (0..256).map {
 				v = s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness)
@@ -204,6 +204,7 @@ class Decompiler
 				# XXX 0x80 with ruby1.9...
 				var.initializer = C::CExpression[data[0, eos].pack('C*'), C::Pointer.new(ptype)] rescue nil
 			end
+			var.initializer = nil if var.initializer.kind_of? ::Array and not type.untypedef.kind_of? C::Array
 		end
 
 		# TODO patch existing references to addr ? (or would they have already triggered new_global_var?)
