@@ -1185,10 +1185,23 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		@entrypoints |= entrypoints
 
 		while ep = entrypoints.pop
+			ep, from = ep
 			ep = normalize(ep)
 			if not @decoded[ep]
 				disassemble_fast ep
-				next if not @decoded[ep].kind_of? DecodedInstruction
+				if not @decoded[ep].kind_of? DecodedInstruction
+					if not from or @function[ep]
+					elsif c_parser and name = Expression[ep].reduce_rec and name.kind_of? ::String and s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
+						@function[ep] = @cpu.decode_c_function_prototype(@c_parser, s)
+					elsif @function[:default]
+						if name = Expression[ep].reduce_rec and name.kind_of? ::String
+							@function[ep] = @function[:default].dup
+						elsif @decoded[from]
+							@decoded[from].block.add_to :default
+						end
+					end
+					next
+				end
 				# look for subfuncs
 				todo = [ep]
 				done = []
@@ -1196,7 +1209,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					a = normalize(a)
 					next if done.include? a or not @decoded[a].kind_of? DecodedInstruction
 					done << a
-					@decoded[a].block.each_to_otherfunc(self) { |aa| entrypoints << aa }
+					@decoded[a].block.each_to_otherfunc(self) { |aa| entrypoints << [aa, @decoded[a].block.list.last.address] }
 					@decoded[a].block.each_to_samefunc(self) { |aa| todo << aa }
 				end
 			end
