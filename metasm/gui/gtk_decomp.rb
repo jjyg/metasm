@@ -255,6 +255,15 @@ class CdecompListingWidget < Gtk::DrawingArea
 				s_.initializer = nil if s.kind_of? C::Variable	# for static var, avoid dumping the initializer in the textbox
 				s_.attributes &= C::Attributes::DECLSPECS if s_.attributes
 				@parent_widget.inputbox("new type for #{s.name}", :text => s_.dump_def(cp.toplevel)[0].to_s) { |t|
+					if t == ''
+						if s.type.kind_of? C::Function and s.initializer and s.initializer.decompdata
+							s.initializer.decompdata[:stackoff_type].clear
+							s.initializer.decompdata.delete :return_type
+						elsif s.kind_of? C::Variable and s.stackoff
+							f.decompdata[:stackoff_type].delete s.stackoff
+						end
+						next
+					end
 					begin
 						cp.lexer.feed(t)
 						raise 'bad type' if not v = C::Variable.parse_type(cp, cp.toplevel, true)
@@ -275,7 +284,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 							s.initializer.decompdata[:return_type] = vt.type
 							s.type = v.type
 						else
-							f.decompdata[:stackoff_type][s.stackoff] = v.type if f and s.stackoff
+							f.decompdata[:stackoff_type][s.stackoff] = v.type if f and s.kind_of? C::Variable and s.stackoff
 							s.type = v.type
 						end
 						gui_update
