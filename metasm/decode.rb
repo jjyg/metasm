@@ -1226,7 +1226,6 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# disassembles one block from the ary, see disassemble_fast_block
 	def disassemble_fast_step(todo)
 		return if not x = todo.pop
-		x = [x] if not x.kind_of? Array
 		addr, from, from_subfuncret = x
 
 		addr = normalize(addr)
@@ -1283,13 +1282,14 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			di_addr = di.next_addr
 
 			if di.opcode.props[:stopexec] or di.opcode.props[:setip]
-				if di.opcode.props[:saveip]
-					di.block.add_to_subfuncret(di_addr)
-					ret << [di_addr, di.address, true]
-				end
 				if di.opcode.props[:setip]
 					@program.get_xrefs_x(self, di).each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x, :maxdepth => 0) }
 					ret.concat @addrs_todo if not di.opcode.props[:saveip]
+				end
+				if di.opcode.props[:saveip]
+					di.block.add_to_subfuncret(di_addr)
+					ret << [di_addr, di.address, true]
+					di.block.add_to_normal :default if not di.block.to_normal and @function[:default]
 				end
 				delay_slot ||= [di, @cpu.delay_slot(di)]
 				@addrs_todo = []
