@@ -935,7 +935,7 @@ class Disassembler
 	end
 
 	# iterates over the blocks of a function, yields each func block address
-	def each_function_block(addr)
+	def each_function_block(addr, incl_subfuncs = false)
 		addr = addr.address if addr.kind_of? DecodedInstruction
 		addr = find_function_start(addr) if not @function[addr]
 		todo = [addr]
@@ -948,6 +948,7 @@ class Disassembler
 			done << a
 			yield a
 			di.block.each_to_samefunc(self) { |f| todo << f }
+			di.block.each_to_otherfunc(self) { |f| todo << f } if incl_subfuncs
 		end
 	end
 

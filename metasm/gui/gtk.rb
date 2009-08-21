@@ -383,9 +383,9 @@ class DisasmWidget < Gtk::VBox
 	end
 
 	# undefines the whole function body
-	def undefine_function(addr)
+	def undefine_function(addr, incl_subfuncs = false)
 		list = []
-		@dasm.each_function_block(addr) { |b| list << b }
+		@dasm.each_function_block(addr, incl_subfuncs) { |b| list << b }
 		list.each { |b| @dasm.undefine_from(b) }
 		gui_update
 	end
@@ -777,6 +777,7 @@ class MainWindow < Gtk::Window
 		addsubmenu(actions, 'Comment', ';') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, '_Undefine') { @dasm_widget.dasm.undefine_from(@dasm_widget.curview.current_address) ; @dasm_widget.gui_update }
 		addsubmenu(actions, 'Unde_fine function') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, 'Undefine function & _subfuncs') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address, true) }
 		addsubmenu(actions, 'Data', 'd') { @dasm_widget.toggle_data(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Pause dasm', 'p', :check) { |ck| ck.active = !@dasm_widget.playpause_dasm }
 		addsubmenu(actions, 'Run ruby snippet', '^r') { @dasm_widget.prompt_run_ruby }
