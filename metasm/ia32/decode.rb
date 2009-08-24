@@ -756,9 +756,11 @@ class Ia32
 			'geteip' # metasm pic linker
 		elsif b[:eax] and b[:ebx] and  Expression[b[:eax], :-, :eax].reduce == 0 and Expression[b[:ebx], :-, Indirection[:esp, sz, nil]].reduce == 0
 			'get_pc_thunk_ebx' # elf pic convention
-		elsif b[:esp] and Expression[b[:esp], :-, [:esp, :-, [Indirection[[:esp, :+, 2*sz], sz, nil], :+, 0x18]]].reduce == 0
+		elsif b[:esp] and Expression[b[:esp], :-, [:esp, :-, Indirection[[:esp, :+, 2*sz], sz]]].reduce.kind_of? ::Integer and
+				dasm.decoded[faddr].block.list.find { |di| di.backtrace_binding[Indirection['segment_base_fs', sz]] }
 			'__SEH_prolog'
-		elsif b[:esp] and b[:ebx] and Expression[b[:esp], :-, [:ebp, :+, sz]].reduce == 0 and Expression[b[:ebx], :-, Indirection[[:esp, :+, 4*sz], sz, nil]].reduce == 0
+		elsif b[:esp] == Expression[:ebp, :+, sz] and
+				dasm.decoded[faddr].block.list.find { |di| di.backtrace_binding[Indirection['segment_base_fs', sz]] }
 			'__SEH_epilog'
 		end
 		dasm.auto_label_at(faddr, rename, 'loc', 'sub') if rename
@@ -795,7 +797,7 @@ class Ia32
 		}
 
 		# return instr emulation
-		new_bt[Indirection[:esp, @size/8, orig], nil] if not sym.attributes.to_a.include? 'noreturn'
+		new_bt[Indirection[:esp, @size/8, orig], nil] if not sym.has_attribute 'noreturn'
 
 		# register dirty (XXX assume standard ABI)
 		[:eax, :ecx, :edx].each { |r|
@@ -804,12 +806,13 @@ class Ia32
 
 		# emulate ret <n>
 		al = cp.typesize[:ptr]
-		if sym.attributes.to_a.include? 'stdcall'
-			argsz = sym.type.args.to_a.inject(al) { |sum, a| sum += (cp.sizeof(a) + al - 1) / al * al }
-			df.backtrace_binding[:esp] = Expression[:esp, :+, argsz]
-		else
-			df.backtrace_binding[:esp] = Expression[:esp, :+, al]
+		stackoff = al
+		if sym.has_attribute 'fastcall'
+			stackoff = sym.type.args.to_a[2..-1].to_a.inject(al) { |sum, a| sum += (cp.sizeof(a) + al - 1) / al * al }
+		elsif sym.has_attribute 'stdcall'
+			stackoff = sym.type.args.to_a.inject(al) { |sum, a| sum += (cp.sizeof(a) + al - 1) / al * al }
 		end
+		df.backtrace_binding[:esp] = Expression[:esp, :+, stackoff]
 
 		# scan args for function pointers
 		# TODO walk structs/unions..
