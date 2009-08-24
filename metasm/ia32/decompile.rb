@@ -205,27 +205,40 @@ class Ia32
 					if a = args_todo.shift
 						mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1
 						mask = 0 if a.has_attribute('unused')
-						args << ceb[:ecx, :&, mask]
-						binding.delete :ecx
+						args << Expression[:ecx, :&, mask]
 					end
-						if a = args_todo.shift
+					if a = args_todo.shift
 						mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1	# char => dl
 						mask = 0 if a.has_attribute('unused')
-						args << ceb[:edx, :&, mask]
-						binding.delete :edx
+						args << Expression[:edx, :&, mask]
 					end
 				end
 				args_todo.each {
 					if stackoff.kind_of? Integer
-						var = Indirection[[:frameptr, :+, stackoff], @size/8]
+						args << Indirection[[:frameptr, :+, stackoff], @size/8]
 						stackoff += @size/8
 					else
-						var = 0
+						args << Expression[0]
 					end
-					args << ceb[var]
-					binding.delete var
 				}
-				args
+
+				if f.type.varargs and f.type.args.last.type.pointer? and stackoff.kind_of? Integer
+					# check if last arg is a fmtstring
+					bt = dcmp.dasm.backtrace(args.last, di.address, :snapshot_addr => func_entry, :include_start => true)
+					if bt.length == 1 and s = dcmp.dasm.get_section_at(bt.first)
+						fmt = s[0].read(512)
+						fmt = fmt.unpack('v*').pack('C*') if dcmp.sizeof(f.type.args.last.type.untypedef.type) == 2
+						if fmt.index(0)
+							fmt = fmt[0...fmt.index(0)]
+							fmt.gsub('%%', '').count('%').times {	# XXX %.*s etc..
+								args << Indirection[[:frameptr, :+, stackoff], @size/8]
+								stackoff += @size/8
+							}
+						end
+					end
+				end
+
+				args.map { |e| ceb[e] }
 			}
 
 			# go !
