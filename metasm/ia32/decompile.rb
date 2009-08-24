@@ -194,6 +194,40 @@ class Ia32
 				}
 			}
 
+			# returns an array to use as funcall arguments
+			get_func_args = lambda { |di, f|
+				# XXX see remarks in #finddeps
+				bt = dcmp.dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry, :include_start => true)
+				stackoff = Expression[[bt, :+, @size/8], :-, :esp].bind(:esp => :frameptr).reduce rescue nil
+				args_todo = f.type.args.dup
+				args = []
+				if f.has_attribute('fastcall')	# XXX DRY
+					if a = args_todo.shift
+						mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1
+						mask = 0 if a.has_attribute('unused')
+						args << ceb[:ecx, :&, mask]
+						binding.delete :ecx
+					end
+						if a = args_todo.shift
+						mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1	# char => dl
+						mask = 0 if a.has_attribute('unused')
+						args << ceb[:edx, :&, mask]
+						binding.delete :edx
+					end
+				end
+				args_todo.each {
+					if stackoff.kind_of? Integer
+						var = Indirection[[:frameptr, :+, stackoff], @size/8]
+						stackoff += @size/8
+					else
+						var = 0
+					end
+					args << ceb[var]
+					binding.delete var
+				}
+				args
+			}
+
 			# go !
 			dcmp.dasm.decoded[b].block.list.each_with_index { |di, didx|
 				a = di.instruction.args
@@ -252,35 +286,7 @@ class Ia32
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					args = []
 					if f = dcmp.c_parser.toplevel.symbol[n] and f.type.kind_of? C::Function and f.type.args
-						# XXX see remarks in #finddeps
-						stackoff = Expression[dcmp.dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry), :-, :esp].bind(:esp => :frameptr).reduce rescue nil
-						args_todo = f.type.args.dup
-						args = []
-						if f.has_attribute('fastcall')	# XXX DRY
-							if a = args_todo.shift
-								mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1
-								mask = 0 if a.has_attribute('unused')
-								args << ceb[:ecx, :&, mask]
-								binding.delete :ecx
-							end
-
-							if a = args_todo.shift
-								mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1	# char => dl
-								mask = 0 if a.has_attribute('unused')
-								args << ceb[:edx, :&, mask]
-								binding.delete :edx
-							end
-						end
-						args_todo.each {
-							if stackoff.kind_of? Integer
-								var = Indirection[[:frameptr, :+, stackoff], @size/8]
-								stackoff += @size/8
-							else
-								var = 0
-							end
-							args << ceb[var]
-							binding.delete var
-						}
+						args = get_func_args[di, f]
 					end
 					commit[]
 					#next if not di.block.to_subfuncret
@@ -326,8 +332,15 @@ class Ia32
 						fptr = ceb[n]
 						binding.delete n
 						commit[]
-						proto = C::Function.new(C::BaseType.new(:void))
-						ret = C::Return.new(C::CExpression[[[fptr], C::Pointer.new(proto)], :funcall, []])
+						if fptr.kind_of? C::CExpression and fptr.type.pointer? and fptr.type.untypedef.type.kind_of? C::Function
+							proto = fptr.type.untypedef.type
+							args = get_func_args[di, fptr.type]
+						else
+							proto = C::Function.new(C::BaseType.new(:void))
+							fptr = C::CExpression[[fptr], C::Pointer.new(proto)]
+							args = []
+						end
+						ret = C::Return.new(C::CExpression[fptr, :funcall, args])
 						class << ret ; attr_accessor :from_instr end
 						ret.from_instr = di
 						stmts << ret

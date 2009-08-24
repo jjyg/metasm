@@ -192,7 +192,7 @@ class Decompiler
 			@c_parser.toplevel.symbol[var.name] = var
 			@c_parser.toplevel.statements << C::Declaration.new(var)
 		end
-		if type.untypedef.kind_of? C::Pointer and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz
+		if type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz and (not var.type.pointer? or sizeof(var.type.untypedef.type) != sizeof(type.untypedef.type) or not var.initializer)
 			# TODO do not overlap other statics (but labels may refer to elements of the array...)
 			data = (0..256).map {
 				v = s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness)
@@ -203,6 +203,12 @@ class Decompiler
 			if (tsz == 1 or tsz == 2) and eos = data.index(0) and (0..3).all? { |i| data[i] >= 0x20 and data[i] < 0x7f }	# printable str
 				# XXX 0x80 with ruby1.9...
 				var.initializer = C::CExpression[data[0, eos].pack('C*'), C::Pointer.new(ptype)] rescue nil
+			end
+			if var.initializer.kind_of? ::Array and i = var.initializer.first and i.kind_of? C::CExpression and not i.op and i.rexpr.kind_of? C::Variable and
+					i.rexpr.type.kind_of? C::Function and not @dasm.get_section_at(@dasm.normalize(i.rexpr.name))	# iat_ExternalFunc
+				i.type = i.rexpr.type
+				type = var.type = C::Array.new(C::Pointer.new(i.type))
+				var.initializer = [i]
 			end
 			var.initializer = nil if var.initializer.kind_of? ::Array and not type.untypedef.kind_of? C::Array
 		end
@@ -332,25 +338,27 @@ class Decompiler
 	end
 
 	# turns an Expression to a CExpression, create+declares needed variables in scope
-	def decompile_cexpr(e, scope)
+	def decompile_cexpr(e, scope, itype=nil)
 		case e
 		when Expression
 			if e.op == :'=' and e.lexpr.kind_of? ::String and e.lexpr =~ /^dummy_metasm_/
-				decompile_cexpr(e.rexpr, scope)
+				decompile_cexpr(e.rexpr, scope, itype)
 			elsif e.op == :+ and e.rexpr.kind_of? ::Integer and e.rexpr < 0
-				decompile_cexpr(Expression[e.lexpr, :-, -e.rexpr], scope)
+				decompile_cexpr(Expression[e.lexpr, :-, -e.rexpr], scope, itype)
 			elsif e.lexpr
-				a = decompile_cexpr(e.lexpr, scope)
-				C::CExpression[a, e.op, decompile_cexpr(e.rexpr, scope)]
+				a = decompile_cexpr(e.lexpr, scope, itype)
+				C::CExpression[a, e.op, decompile_cexpr(e.rexpr, scope, itype)]
 			elsif e.op == :+
-				decompile_cexpr(e.rexpr, scope)
+				decompile_cexpr(e.rexpr, scope, itype)
 			else
-				a = decompile_cexpr(e.rexpr, scope)
+				a = decompile_cexpr(e.rexpr, scope, itype)
 				C::CExpression[e.op, a]
 			end
 		when Indirection
-			p = decompile_cexpr(e.target, scope)
-			C::CExpression[:*, [[p], C::Pointer.new(C::BaseType.new("__int#{e.len*8}".to_sym))]]
+			itype = C::Pointer.new(C::BaseType.new("__int#{e.len*8}".to_sym))
+			p = decompile_cexpr(e.target, scope, itype)
+			p = C::CExpression[[p], itype] if not p.type.kind_of? C::Pointer
+			C::CExpression[:*, p]
 		when ::Integer
 			C::CExpression[e]
 		when C::CExpression
@@ -362,7 +370,7 @@ class Decompiler
 				s.type = C::BaseType.new(:__int32)
 				case e
 				when ::String	# edata relocation (rel.length = size of pointer)
-					return @c_parser.toplevel.symbol[e] || new_global_var(e, C::BaseType.new(:int))
+					return @c_parser.toplevel.symbol[e] || new_global_var(e, itype || C::BaseType.new(:int))
 				when ::Symbol; s.storage = :register
 				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
@@ -1293,9 +1301,12 @@ class Decompiler
 					ce.rexpr.rexpr.abs < 0x10000 and (not ce.lexpr.kind_of? C::CExpression or ce.lexpr.op != :'*' or ce.lexpr.lexpr)
 				# var = int
 				known_type[ce.lexpr, ce.rexpr.type]
-			elsif ce.op == :funcall and ce.lexpr.type.kind_of? C::Function
+			elsif ce.op == :funcall
+				f = ce.lexpr.type
+				f = f.untypedef.type if f.pointer?
+				next if not f.kind_of? C::Function
 				# cast func args to arg prototypes
-				ce.lexpr.type.args.to_a.zip(ce.rexpr).each_with_index { |(proto, arg), i| ce.rexpr[i] = C::CExpression[arg, proto.type] ; known_type[arg, proto.type] }
+				f.args.to_a.zip(ce.rexpr).each_with_index { |(proto, arg), i| ce.rexpr[i] = C::CExpression[arg, proto.type] ; known_type[arg, proto.type] }
 			elsif ce.op == :* and not ce.lexpr
 				if e = ce.rexpr and e.kind_of? C::CExpression and not e.op and e = e.rexpr and e.kind_of? C::CExpression and
 						e.op == :& and not e.lexpr and e.rexpr.kind_of? C::Variable and e.rexpr.stackoff
