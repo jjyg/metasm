@@ -228,8 +228,8 @@ class Ia32
 					if bt.length == 1 and s = dcmp.dasm.get_section_at(bt.first)
 						fmt = s[0].read(512)
 						fmt = fmt.unpack('v*').pack('C*') if dcmp.sizeof(f.type.args.last.type.untypedef.type) == 2
-						if fmt.index(0)
-							fmt = fmt[0...fmt.index(0)]
+						if fmt.index(?\0)
+							fmt = fmt[0...fmt.index(?\0)]
 							fmt.gsub('%%', '').count('%').times {	# XXX %.*s etc..
 								args << Indirection[[:frameptr, :+, stackoff], @size/8]
 								stackoff += @size/8
