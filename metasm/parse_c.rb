@@ -1467,7 +1467,12 @@ EOH
 				Asm.parse self, scope
 			else
 				if ntok = skipspaces and ntok.type == :punct and ntok.raw == ':'
-					Label.new tok.raw, parse_statement(scope, nest)
+					begin
+						st = parse_statement(scope, nest)
+					rescue ParseError
+						puts "label without statement, #{$!.message}" if $VERBOSE
+					end
+					Label.new tok.raw, st
 				else
 					unreadtok ntok
 					unreadtok tok
@@ -2400,7 +2405,9 @@ EOH
 							lts = parser.typesize[lt.name]
 							rts = parser.typesize[rt.name]
 							its = parser.typesize[:int]
-							if    lts >  rts and lts >= its
+							if not lts or not rts
+								type = BaseType.new(:int)
+							elsif lts >  rts and lts >= its
 								type = lt
 							elsif rts >  lts and rts >= its
 								type = rt

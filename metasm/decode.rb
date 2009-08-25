@@ -672,14 +672,14 @@ class Disassembler
 
 	# parses a C header file, from which function prototypes will be converted to DecodedFunction when found in the code flow
 	def parse_c_file(file)
-		parse_c File.read(file)
+		parse_c File.read(file), file
 	end
 
 	# parses a C string for function prototypes
-	def parse_c(str)
+	def parse_c(str, filename=nil, lineno=1)
 		@c_parser ||= @cpu.new_cparser
 		@c_parser.lexer.define_weak('__METASM__DECODE__')
-		@c_parser.parse(str)
+		@c_parser.parse(str, filename, lineno)
 	end
 
 	# creates a new disassembler
@@ -2704,10 +2704,11 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			when 'c'
 				begin
 					# TODO parse_invalid_c, split per function, whatever
-					parse_c(data)
+					parse_c(data, 'savefile#c')
 				rescue
-					puts "load: bad C #$!" if $VERBOSE
+					puts "load: bad C #$!", $!.backtrace if $VERBOSE
 				end
+				@c_parser.readtok until @c_parser.eos?
 			when 'xrefs'
 				data.each_line { |l|
 					begin
