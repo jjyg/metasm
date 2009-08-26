@@ -246,6 +246,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 					gui_update
 				}
 			end
+		when GDK_r
+			@parent_widget.decompile(@curaddr)
 		when GDK_t	# change variable type (you'll want to redecompile after that)
 			f = curfunc.initializer if curfunc.kind_of? C::Variable and curfunc.initializer.kind_of? C::Block
 			n = @hl_word

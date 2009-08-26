@@ -13,6 +13,20 @@ module Renderable
 	def to_s
 		render.join
 	end
+
+	# yields each Expr seen in #render (recursive)
+	def each_expr
+		r = proc { |e|
+			case e
+			when Expression
+				yield e
+				r[e.lexpr] ; r[e.rexpr]
+			when Renderable
+				e.render.each { |re| r[re] }
+			end
+		}
+		r[self]
+	end
 end
 
 
@@ -50,6 +64,7 @@ end
 
 class Expression
 	include Renderable
+	attr_accessor :render_info
 	def render
 		return Expression[@lexpr, :-, -@rexpr].render if @op == :+ and @rexpr.kind_of?(::Numeric) and @rexpr < 0
 		l, r = [@lexpr, @rexpr].map { |e|
@@ -58,10 +73,15 @@ class Expression
 					neg = true
 					e = -e
 				end
-				if e < 10; e = e.to_s
-				else e = '%xh' % e
+				if render_info and @render_info[:char] and [9,10,13,*0x20..0x7e].include?(e)
+					if e == ?'.ord; e = "'\\''"
+					else e = e.chr.inspect.gsub('"', "'")
+					end
+				elsif e < 10; e = e.to_s
+				else
+					e = '%xh' % e
+					e = '0' << e unless (?0..?9).include? e[0]
 				end
-				e = '0' << e unless (?0..?9).include? e[0]
 				e = '-' << e if neg
 			end
 			e

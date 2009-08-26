@@ -5,6 +5,7 @@
 
 
 require 'metasm/main'
+require 'metasm/render'
 
 
 module Metasm
@@ -60,8 +61,11 @@ class DecodedInstruction
 		end
 	end
 
-	def to_s
-		"#{Expression[address] if address} #{@instruction}"
+	include Renderable
+	def render
+		ret = []
+		ret << Expression[address] << ' ' if address
+		ret << @instruction
 	end
 
 	def add_comment(c)
@@ -2741,6 +2745,14 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				end
 			end
 		end
+	end
+
+	def toggle_expr_char(o)
+		return if not o.kind_of? Renderable
+		o.each_expr { |e|
+			e.render_info ||= {}
+			e.render_info[:char] = !e.render_info[:char]
+		}
 	end
 end
 end

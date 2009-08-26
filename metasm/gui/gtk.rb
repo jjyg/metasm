@@ -376,6 +376,11 @@ class DisasmWidget < Gtk::VBox
 		end
 	end
 
+	def toggle_expr_char(o)
+		@dasm.toggle_expr_char(o)
+		gui_update
+	end
+
 	def toggle_view(idx)
 		idx = @view_index[idx] || idx
 		default = (idx == 0 ? 1 : 0)
@@ -413,7 +418,7 @@ class DisasmWidget < Gtk::VBox
 			when GDK_l; list_labels
 			when GDK_n; rename_label(pointed_addr)
 			when GDK_p; playpause_dasm
-			when GDK_r; decompile(curview.current_address)
+			when GDK_r; toggle_expr_char(curobj)
 			when GDK_v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag
 			when GDK_x; list_xrefs(pointed_addr)
 			when GDK_semicolon; add_comment(curview.current_address)
