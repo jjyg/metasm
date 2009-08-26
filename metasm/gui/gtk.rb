@@ -115,7 +115,7 @@ class DisasmWidget < Gtk::VBox
 		when ::String
 			if @dasm.prog_binding[addr]
 				addr = @dasm.prog_binding[addr]
-			elsif (?0..?9).include? addr[0]
+			elsif (?0..?9).include? addr[0] or (?a..?f).include? addr.downcase[0]
 				case addr
 				when /^0x/i
 				when /h$/i; addr = '0x' + addr[0...-1]
