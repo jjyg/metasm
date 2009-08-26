@@ -497,7 +497,7 @@ class Rubstop
 			mod_syms = lambda { int_at[mod, 0x20] }
 
 			read_strz = lambda { |addr|
-				if i = @mem.index(0, addr)
+				if i = @mem.index(?\0, addr)
 					@mem[addr...i]
 				end
 			}

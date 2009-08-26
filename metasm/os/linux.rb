@@ -268,9 +268,9 @@ class << self
 					m.path = $2
 					pr.modules << m
 				end
-			}
+			} rescue next
 			pr
-		}
+		}.compact
 	end
 end
 end

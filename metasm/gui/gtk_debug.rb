@@ -11,7 +11,7 @@ module GtkGui
 # TODO disassemble_simple @eip on unknown instr ? (would need invalidation for selfmodifying code)
 # TODO statusline? ('break due to signal 11', ...)
 # TODO cli ? (bpx, r fl z, ...)
-# TODO nonblocking @dbg ? (@dbg.continue -> still poke memory / run cmds)
+# TODO nonblocking @dbg ? (@dbg.continue -> still poke memory / run cmds, handle multiple threads)
 # TODO customize child widgets (listing: persistent hilight of current instr, show/set breakpoints, ...)
 # TODO mark changed register values after singlestep
 # TODO handle debugee fork()
@@ -55,7 +55,7 @@ class DbgWidget < Gtk::VBox
 			modify_bg Gtk::STATE_NORMAL, Gdk::Color.new(0, 0xffff, 0)
 		}
 
-		set_size_request(640, 480)
+		set_size_request(640, 600)
 		@mem.set_height_request(150)
 		@code.set_height_request(150)
 
@@ -75,21 +75,9 @@ class DbgWidget < Gtk::VBox
 	attr_accessor :keyboard_cb
 	def setup_keyboard_cb
 		@keyboard_cb = {
-			GDK_F5 => lambda {
-				pre_dbg_run
-				@dbg.continue
-				post_dbg_run
-			},
-			GDK_F10 => lambda {
-				pre_dbg_run
-				@dbg.step_over
-				post_dbg_run
-			},
-			GDK_F11 => lambda {
-				pre_dbg_run
-				@dbg.step_into
-				post_dbg_run
-			},
+			GDK_F5 => lambda { dbg_continue },
+			GDK_F10 => lambda { dbg_stepover },
+			GDK_F11 => lambda { dbg_stepinto },
 		}
 	end
 
@@ -99,6 +87,24 @@ class DbgWidget < Gtk::VBox
 
 	def post_dbg_run
 		gui_update
+	end
+
+	def dbg_continue
+		pre_dbg_run
+		@dbg.continue
+		post_dbg_run
+	end
+
+	def dbg_stepover
+		pre_dbg_run
+		@dbg.step_over
+		post_dbg_run
+	end
+
+	def dbg_stepinto
+		pre_dbg_run
+		@dbg.step_into
+		post_dbg_run
 	end
 
 	def gui_update
@@ -413,7 +419,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		@history = []
 		@log = []
 		@curline = ''
-		@statusline = 'kikoo'
+		@statusline = 'type \'help\' for help'
 
 		super()
 
@@ -460,6 +466,8 @@ class DbgConsoleWidget < Gtk::DrawingArea
 
 			grab_focus
 		}
+
+		init_commands
 
 		gui_update
 	end
@@ -523,6 +531,14 @@ class DbgConsoleWidget < Gtk::DrawingArea
 	# keyboard binding
 	# basic navigation (arrows, pgup etc)
 	def keypress(ev)
+		case ev.state & Gdk::Window::CONTROL_MASK
+		when 0
+			keypress_simple(ev)
+		end
+	end
+
+	# no ctrl-key
+	def keypress_simple(ev)
 		case ev.keyval
 		when GDK_Left
 			if @caret_x > 0
@@ -545,19 +561,80 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			@caret_x = @curline.length
 			update_caret
 		when GDK_Tab
-			# anything, to prevent other_widget.grab_focus
+			# autocomplete
+			if @caret_x > 0 and not @curline[0, @caret_x].index(?\ ) and st = @curline[0, @caret_x] and not @commands[st]
+				keys = @commands.keys.find_all { |k| k[0, st.length] == st }
+				while st.length < keys.first.to_s.length and keys.all? { |k| k[0, st.length+1] == keys.first[0, st.length+1] }
+					st << keys.first[st.length]
+					@curline[@caret_x, 0] = st[-1, 1]
+					@caret_x += 1
+				end
+				redraw
+			end
 
 		when 0x20..0x7e
 			@curline[@caret_x, 0] = ev.keyval.chr
 			@caret_x += 1
+			st = @curline.split.first
+			if @commands[st]
+				@statusline = "#{st}: should add a short description here"
+			else
+				keys = @commands.keys.find_all { |k| k[0, st.length] == st } if st
+				if keys and not keys.empty?
+					@statusline = keys.sort.join(' ')
+				else
+					@statusline = 'type \'help\' for help'
+				end
+			end
 			redraw
 		when GDK_Return, GDK_KP_Enter
 			handle_command
 		when GDK_Escape
-		else
-			return @parent_widget.keypress(ev)
+		when GDK_Delete
+			if @caret_x < @curline.length
+				@curline[@caret_x, 1] = ''
+				redraw
+			end
+		when GDK_BackSpace
+			if @caret_x > 0
+				@caret_x -= 1
+				@curline[@caret_x, 1] = ''
+				redraw
+			end
+		else return @parent_widget.keypress(ev)
 		end
 		true
+	end
+
+	attr_accessor :commands
+	def new_command(*cmd, &b)
+		cmd.each { |c| @commands[c] = b }
+	end
+
+	def init_commands
+		@commands = {}
+		new_command('help') { |arg| # TODO help <subject>
+			add_log @commands.keys.sort.join(' ')
+		}
+		new_command('d') { |arg| # TODO parse_expr, allow 'd memcpy+4*[eax]'
+			@parent_widget.mem.focus_addr(arg)
+		}
+		new_command('u') { |arg|
+			@parent_widget.code.focus_addr(arg)
+		}
+		new_command('.') { |arg|
+			@parent_widget.code.focus_addr(@dbg.resolve_expr(@dbg.register_pc))
+		}
+		new_command('wc') { |arg| # TODO check min/max size
+			@parent_widget.code.set_height_request(Integer(arg)*@font_height) rescue nil
+		}
+		new_command('wd') { |arg|
+			@parent_widget.mem.set_height_request(Integer(arg)*@font_height) rescue nil
+		}
+		new_command('continue') { |arg|
+			@parent_widget.dbg_continue
+		}
+		new_command('exit', 'quit') { Gtk.main_quit }	# TODO how do I close a window ?
 	end
 
 	def handle_command
@@ -569,10 +646,15 @@ class DbgConsoleWidget < Gtk::DrawingArea
 
 		# TODO rip samples/lindebug.rb
 		# TODO history & stuff
-		case cmd
-		when /^d (.*)/
-  			@parent_widget.mem.focus_addr($1)
-		else add_log 'lol'
+		cn = cmd.split.first
+		if not @commands[cn]
+			a = @commands.keys.find_all { |k| k[0, cn.length] == cn }
+			cn = a.first if a.length == 1
+		end
+		if pc = @commands[cn] 
+			pc[cmd.split(/\s+/, 2).last]
+		else
+			add_log 'unknown command'
 		end
 
 		redraw

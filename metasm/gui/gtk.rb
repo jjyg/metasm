@@ -399,6 +399,7 @@ class DisasmWidget < Gtk::VBox
 			when GDK_Return, GDK_KP_Enter; focus_addr_redo
 			when GDK_r; prompt_run_ruby
 			when GDK_C; disassemble_fast_deep(curview.current_address)
+			else return false
 			end
 		when 0
 			case ev.keyval
