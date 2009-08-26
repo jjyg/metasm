@@ -246,6 +246,10 @@ class LinOS < OS
 			@memory ||= LinuxRemoteString.new(pid)
 		end
 		def memory=(m) @memory = m end
+		def debugger
+			@debugger ||= LinDebugger.new(@pid)
+		end
+		def debugger=(d) @debugger = d end
 	end
 
 class << self
@@ -269,6 +273,60 @@ class << self
 		}
 	end
 end
+end
+
+# this class implements a high-level API over the Windows debugging primitives
+class LinDebugger < Debugger
+	attr_accessor :dbg
+	def initialize(pid)
+		@dbg = PTrace32.new(pid)
+		@pid = pid
+		# TODO get current cpu (x64)
+		@cpu = Ia32.new
+		@memory = LinuxRemoteString.new(@pid)
+		@memory.ptrace = @dbg
+		@running = false
+		@reg_cache = {}
+		super()
+	end
+
+	def running?
+		@running
+	end
+
+	def register_list
+		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp, :orig_eax, :eip]
+	end
+
+	# reg => regsize (bits, 1 for flags)
+	def register_size
+		Hash.new(32)
+	end
+
+	def register_pc ; :eip ; end
+	def register_sp ; :esp ; end
+
+	def invalidate
+		@reg_cache = {}	# TODO check if this is needed (gui/gtk may cache already)
+		super()
+	end
+
+	def get_reg_value(r)
+		@reg_cache[r] ||= @dbg.peekusr(PTrace32::REGS_I386[r.to_s.upcase]) & 0xffff_ffff
+	end
+	def set_reg_value(r, v)
+		@reg_cache[r] = v
+		v = [v].pack('L').unpack('l').first if v >= 0x8000_0000
+		@dbg.pokeusr(PTrace32::REGS_I386[r.to_s.upcase], v)
+	end
+
+	def continue
+		invalidate
+		@running = true
+		@dbg.cont
+		::Process.waitpid(@pid)
+		@running = false
+	end
 end
 
 class LinuxRemoteString < VirtualString
