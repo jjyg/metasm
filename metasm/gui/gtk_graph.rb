@@ -354,7 +354,7 @@ end
 
 
 class GraphViewWidget < Gtk::HBox
-	attr_accessor :hl_word
+	attr_accessor :hl_word, :caret_box, :caret_x, :caret_y
 
 	def initialize(dasm, parent_widget)
 		@dasm = dasm
@@ -867,6 +867,10 @@ class GraphViewWidget < Gtk::HBox
 
 		if boxcnt != ctx.box.length or arrcnt != ctx.box.inject(0) { |s, b| s + b.to.length + b.from.length }
 			zoom_all
+		elsif @caret_box	# update @caret_box with a box at the same place
+			bx = @caret_box.x + @caret_box.w/2
+			by = @caret_box.y + @caret_box.h/2
+			@caret_box = ctx.box.find { |cb| cb.x < bx and cb.x+cb.w > bx and cb.y < by and cb.y+cb.h > by }
 		end
 
 		redraw
