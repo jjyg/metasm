@@ -2178,9 +2178,15 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		}
 
 		if by.empty?
+			tb.to_subfuncret = nil if tb.to_subfuncret == []
 			fb.from_normal.to_a.each { |newfrom|
 				if @decoded[newfrom].kind_of? DecodedInstruction and idx = @decoded[newfrom].block.to_normal.to_a.index(from)
-					@decoded[newfrom].block.to_normal[idx..idx] = tb.to_normal.to_a
+					@decoded[newfrom].block.to_normal[idx..idx] = tb.to_subfuncret || tb.to_normal.to_a
+				end
+			}
+			fb.from_subfuncret.to_a.each { |newfrom|
+				if @decoded[newfrom].kind_of? DecodedInstruction and idx = @decoded[newfrom].block.to_subfuncret.to_a.index(from)
+					@decoded[newfrom].block.to_subfuncret[idx..idx] = tb.to_subfuncret || tb.to_normal.to_a
 				end
 			}
 		else
