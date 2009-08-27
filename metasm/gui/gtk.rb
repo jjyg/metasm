@@ -278,11 +278,11 @@ class DisasmWidget < Gtk::VBox
 	end
 
 	def list_sections
-		list = [['name', 'addr', 'length']]
-		@dasm.sections.each { |k, v|
-			list << [@dasm.get_label_at(k), Expression[@dasm.normalize(k)], Expression[v.length]]
+		list = [['addr', 'length', 'name', 'info']]
+		@dasm.section_info.each { |n,a,l,i|
+			list << [Expression[a], Expression[l], n, i]
 		}
-		listwindow("list of sections", list) { |i| focus_addr i[1] }
+		listwindow("list of sections", list) { |i| focus_addr i[0] if i[0] != '0' or @dasm.get_section_at(0) }
 	end
 
 	def list_xrefs(addr)

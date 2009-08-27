@@ -717,6 +717,19 @@ EOC
 		end
 		d
 	end
+
+	# returns an array of [name, addr, length, info]
+	def section_info
+		if @sections
+			@sections[1..-1].map { |s|
+				[s.name, s.addr, s.size, s.flags.join(',')]
+			}
+		else
+			@segments.map { |s|
+				[nil, s.vaddr, s.memsz, s.flags.join(',')]
+			}
+		end
+	end
 end
 
 class LoadedELF < ELF

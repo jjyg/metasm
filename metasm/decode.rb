@@ -956,6 +956,20 @@ class Disassembler
 		end
 	end
 
+	# returns info on sections, from @program if supported
+	# returns an array of [name, addr, length, info]
+	def section_info
+		if @program.respond_to? :section_info
+			@program.section_info
+		else
+			list = []
+			@sections.each { |k, v|
+				list << [get_label_at(k), normalize(k), v.length, nil]
+			}
+			list
+		end
+	end
+
 	# decodes instructions from an entrypoint, (tries to) follows code flow
 	def disassemble(*entrypoints)
 		nil while disassemble_mainiter(entrypoints)

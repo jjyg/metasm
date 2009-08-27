@@ -541,6 +541,14 @@ class COFF
 		s ? "\n.section #{s.name.inspect} base=#{Expression[addr]}" :
 		addr == @optheader.image_base ? "// exe header at #{Expression[addr]}" : super(addr, edata)
 	end
+
+	# returns an array of [name, addr, length, info]
+	def section_info
+		[['header', @optheader.image_base, @optheader.headers_size, nil]] +
+		@sections.map { |s|
+			[s.name, @optheader.image_base + s.virtaddr, s.virtsize, s.characteristics.join(',')]
+		}
+	end
 end
 
 class COFFArchive
