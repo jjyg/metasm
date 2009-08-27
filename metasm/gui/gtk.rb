@@ -821,7 +821,7 @@ class MainWindow < Gtk::Window
 		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
 		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
 		addsubmenu(options, 'Forbid decomp optimlab_els', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck.active? }
-		addsubmenu(options, 'Decompiler recurse', :check, true) { |ck| @dasm_widget.dasm.decompiler.recurse = ck.active? }
+		addsubmenu(options, 'Decompiler recurse', :check, true) { |ck| @dasm_widget.dasm.decompiler.recurse = (ck.active? ? 1/0.0 : 1) }	# XXX race if changed while decompiling
 		# TODO CPU type, size, endian...
 		# factorize headers
 

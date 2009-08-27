@@ -48,11 +48,12 @@ class Decompiler
 
 	attr_accessor :dasm, :c_parser
 	attr_accessor :forbid_optimize_dataflow, :forbid_optimize_code, :forbid_decompile_ifwhile, :forbid_decompile_types, :forbid_optimize_labels
+	# recursive flag: for each subfunction, recurse is decremented, when 0 only the prototype is decompiled, when <0 nothing is done
 	attr_accessor :recurse
 
 	def initialize(dasm, cp = dasm.c_parser)
 		@dasm = dasm
-		@recurse = true
+		@recurse = 1/0.0	# Infinity
 		@c_parser = cp || @dasm.cpu.new_cparser
 	end
 
@@ -69,6 +70,7 @@ class Decompiler
 	# decompile a function, decompiling subfunctions as needed
 	# may return :restart, which means that the decompilation should restart from the entrypoint (and bubble up) (eg a new codepath is found which may changes dependency in blocks etc)
 	def decompile_func(entry)
+		return if @recurse < 0
 		entry = @dasm.normalize entry
 		return if not @dasm.decoded[entry]
 
@@ -81,10 +83,17 @@ class Decompiler
 			rettype = C::BaseType.new(:int)
 		end
 		func.type = C::Function.new rettype, []
-		if @c_parser.toplevel.symbol[func.name]
+		if @c_parser.toplevel.symbol[func.name] and @recurse > 0
 			if not @c_parser.toplevel.statements.grep(C::Declaration).find { |decl| decl.var.name == func.name }
 				# recursive dependency: declare prototype
-				@c_parser.toplevel.statements << C::Declaration.new(func)
+				puts "function #{func.name} is recursive: predecompiling for prototype" if $VERBOSE
+				pre_recurse = @recurse
+				@recurse = 0
+				decompile_func(entry)
+				@recurse = pre_recurse
+				if not dcl = @c_parser.toplevel.statements.grep(C::Declaration).find { |decl| decl.var.name == func.name }
+					@c_parser.toplevel.statements << C::Declaration.new(func)
+				end
 			end
 			return
 		end
@@ -95,11 +104,20 @@ class Decompiler
 			retval = :restart
 		end
 
+		@c_parser.toplevel.symbol[func.name] = func	# recursive func prototype could have overwritten us
 		@c_parser.toplevel.statements << C::Declaration.new(func)
 
 		puts " decompiled #{func.name}" if $VERBOSE
 
 		retval
+	end
+
+	# calls decompile_func with recurse -= 1 (internal use)
+	def decompile_func_rec(entry)
+		@recurse -= 1
+		decompile_func(entry)
+	ensure
+		@recurse += 1
 	end
 
 	def do_decompile_func(entry, func)
@@ -128,13 +146,15 @@ class Decompiler
 		decompile_c_types(scope)
 		optimize(scope)
 		cleanup_var_decl(scope, func)
-		decompile_controlseq(scope)
-		optimize_vars(scope)
-		optimize_ctrl(scope)
-		optimize_vars(scope)
-		remove_unreferenced_vars(scope)
-		simplify_varname_noalias(scope)
-		rename_variables(scope)
+		if @recurse > 0
+			decompile_controlseq(scope)
+			optimize_vars(scope)
+			optimize_ctrl(scope)
+			optimize_vars(scope)
+			remove_unreferenced_vars(scope)
+			simplify_varname_noalias(scope)
+			rename_variables(scope)
+		end
 		@dasm.cpu.decompile_check_abi(self, entry, func)
 
 		case ret = scope.statements.last
@@ -148,6 +168,11 @@ class Decompiler
 				func.type.type = v.type
 			end
 		end
+
+		if @recurse == 0
+			# we need only the prototype
+			func.initializer = nil
+		end
 	end
 
 	def new_global_var(addr, type)
@@ -158,7 +183,7 @@ class Decompiler
 		ptype = type.untypedef.type if type.pointer?
 		if ptype.kind_of? C::Function
 			name = @dasm.auto_label_at(addr, 'sub', 'xref', 'byte', 'word', 'dword', 'unk')
-			if @dasm.get_section_at(addr) and @recurse
+			if @dasm.get_section_at(addr) and @recurse > 0
 				@dasm.disassemble(addr) if not @dasm.decoded[addr]	# TODO disassemble_fast ?
 				f = @dasm.function[addr] ||= DecodedFunction.new
 				# TODO detect thunks (__noreturn)
@@ -171,7 +196,7 @@ class Decompiler
 						f.decompdata[:stackoff_name][aoff] ||= a.name if a.name
 						aoff += sizeof(a)	# ary ?
 					}
-					decompile_func(addr)
+					decompile_func_rec(addr)
 				# else redecompile with new prototye ?
 				end
 			end
@@ -247,7 +272,7 @@ class Decompiler
 				if @dasm.function[ta] and type != :subfuncret
 					f = dasm.auto_label_at(ta, 'func')
 					ta = dasm.normalize($1) if f =~ /^thunk_(.*)/
-					ret = decompile_func(ta) if ta != entry and @recurse
+					ret = decompile_func_rec(ta) if (ta != entry or di.block.to_subfuncret)
 					throw :restart, :restart if ret == :restart
 				else
 					@dasm.auto_label_at(ta, 'label') if blocks.find { |aa, at| aa == ta }
@@ -1316,6 +1341,9 @@ class Decompiler
 					next
 				end
 				known_type[ce.rexpr, C::Pointer.new(ce.type)]
+			elsif not ce.op and ce.type.pointer? and ce.type.untypedef.type.kind_of? C::Function
+				# cast to fptr: must be a fptr
+				known_type[ce.rexpr, ce.type]
 			end
 		}
 
@@ -2224,6 +2252,12 @@ class Decompiler
 			end
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and (ce.type == ce.rexpr.type or (ce.type.integral? and ce.rexpr.type.integral?))
 				ce.replace ce.rexpr
+			end
+			# useless casts (type)*((oeua)Ptype)
+			if not ce.op and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :* and not ce.rexpr.lexpr and ce.rexpr.rexpr.kind_of? C::CExpression and not ce.rexpr.rexpr.op and
+					p = ce.rexpr.rexpr.rexpr and (p.kind_of? C::CExpression or p.kind_of? C::Variable) and p.type.pointer? and ce.type == p.type.untypedef.type
+				ce.op = ce.rexpr.op
+				ce.rexpr = ce.rexpr.rexpr.rexpr
 			end
 			# (a > 0) != 0
 			if ce.op == :'!=' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and ce.lexpr.kind_of? C::CExpression and
