@@ -199,7 +199,7 @@ class Ia32
 				# XXX see remarks in #finddeps
 				bt = dcmp.dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry, :include_start => true)
 				stackoff = Expression[[bt, :+, @size/8], :-, :esp].bind(:esp => :frameptr).reduce rescue nil
-				args_todo = f.type.args.dup
+				args_todo = f.type.args.to_a.dup
 				args = []
 				if f.has_attribute('fastcall')	# XXX DRY
 					if a = args_todo.shift

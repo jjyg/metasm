@@ -1175,6 +1175,7 @@ class Decompiler
 		update_type = lambda { |n, t|
 			next if propagating.include? n
 			o = scope.symbol[n].stackoff
+			next if not o and t.untypedef.kind_of? C::Union
 			next if o and scope.decompdata[:stackoff_type][o] and t != scope.decompdata[:stackoff_type][o]
 			next if t0 = types[n] and not better_type[t, t0]
 			next if o and (t.integral? or t.pointer?) and o % sizeof(t) != 0 # keep vars aligned
