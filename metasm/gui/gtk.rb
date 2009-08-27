@@ -410,6 +410,11 @@ class DisasmWidget < Gtk::VBox
 			case ev.keyval
 			when GDK_Return, GDK_KP_Enter; focus_addr curview.hl_word
 			when GDK_Escape; focus_addr_back
+			when GDK_slash; inputbox('search word') { |w|
+				next unless curview.respond_to? :hl_word
+				curview.hl_word = w 
+				curview.redraw
+			} if curview.respond_to? :hl_word
 			when GDK_c; disassemble(curview.current_address)
 			when GDK_C; disassemble_fast(curview.current_address)
 			when GDK_d; toggle_data(curview.current_address)

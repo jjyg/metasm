@@ -18,6 +18,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 		class << c
 			attr_accessor :proxy
 			def method_missing(*a, &b) @proxy.send(*a, &b) end
+			def respond_to?(a) super(a) or @proxy.respond_to?(a) end
 		end
 		c.proxy = n
 		n.set_scroll c
@@ -198,6 +199,13 @@ class CdecompListingWidget < Gtk::DrawingArea
 	# n: rename variable
 	# t: retype variable (persistent)
 	def keypress(ev)
+		case ev.state & Gdk::Window::CONTROL_MASK
+		when 0; keypress_simple(ev)
+		else @parent_widget.keypress(ev)
+		end
+	end
+
+	def keypress_simple(ev)
 		case ev.keyval
 		when GDK_Left
 			if @caret_x >= 1
@@ -246,7 +254,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 					gui_update
 				}
 			end
-		when GDK_r
+		when GDK_r # redecompile
 			@parent_widget.decompile(@curaddr)
 		when GDK_t	# change variable type (you'll want to redecompile after that)
 			f = curfunc.initializer if curfunc.kind_of? C::Variable and curfunc.initializer.kind_of? C::Block
