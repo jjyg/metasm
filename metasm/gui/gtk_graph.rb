@@ -233,6 +233,8 @@ class Graph
 			}
 		}
 
+		group_inv_if = {}
+
 		# scan groups for a if/then pattern (1 -> 2 -> 3 & 1 -> 3)
 		group_ifthen = lambda { |strict|
 			groups.reverse.find { |g|
@@ -241,7 +243,9 @@ class Graph
 				next if strict and g2.from != [g] or g.to.length != 2
 				g2.h += 16 ; g2.y -= 8
 				align_vt[[g, g2]]
-				move_group[g2, -g2.x+8, 0]
+				dx = -g2.x+8
+				dx -= g2.w+16 if group_inv_if[g]
+				move_group[g2, dx, 0]
 				merge_groups[[g, g2]]
 				true
 			}
@@ -321,8 +325,36 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 			true
 		}
 
+		# check constructs with multiple blocks with to to end block (a la break;)
+		ign_break = lambda {
+			can_reach = lambda { |b1, b2, term|
+				next if b1 == term
+				done = [term]
+				todo = b1.to.dup
+				while t = todo.pop
+					next if done.include? t
+					done << t
+					break true if t == b2
+					todo.concat t.to
+				end
+			}
+			can_reach_unidir = lambda { |b1, b2, term| can_reach[b1, b2, term] and not can_reach[b2, b1, term] }
+			groups.find { |g|
+				f2 = nil
+				if g.from.length > 2 and f3 = g.from.find { |f| f.to == [g] } and f1 = g.from.find { |f|
+					f2 = g.from.find { |ff| can_reach_unidir[ff, f3, g] and can_reach_unidir[f, ff, g] }
+				}
+					group_inv_if[f1] = true
+					g.from.delete f2
+					f2.to.delete g
+					true
+				end
+			}
+		}
+
 		# walk graph from roots, cut backward links
 		trim_graph = lambda {
+			next true if ign_break[]
 			g1 = groups.find_all { |g| g.from.empty? }
 			g1 << groups.first if g1.empty?
 			cntpre = groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
