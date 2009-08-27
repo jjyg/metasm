@@ -300,6 +300,11 @@ class Ia32
 					args = []
 					if f = dcmp.c_parser.toplevel.symbol[n] and f.type.kind_of? C::Function and f.type.args
 						args = get_func_args[di, f]
+					elsif @dasm_func_default_off and o = @dasm_func_default_off[[dcmp.dasm, di.address]] and o.kind_of? Integer and o > @size/8
+						f = C::Variable.new
+						f.type = C::Function.new(C::BaseType.new(:int), [])
+						((o/(@size/8))-1).times { f.type.args << C::Variable.new(nil,C::BaseType.new(:int)) }
+						args = get_func_args[di, f]
 					end
 					commit[]
 					#next if not di.block.to_subfuncret
@@ -309,7 +314,8 @@ class Ia32
 						fptr = ceb[n]
 						binding.delete n
 						proto = C::Function.new(C::BaseType.new(:int))
-						f = C::CExpression[[fptr], proto]
+						proto = f.type if f and f.type.kind_of? C::Function
+						f = C::CExpression[[fptr], C::Pointer.new(proto)]
 					elsif not f
 						# internal functions are predeclared, so this one is extern
 						f = dcmp.c_parser.toplevel.symbol[n] = C::Variable.new

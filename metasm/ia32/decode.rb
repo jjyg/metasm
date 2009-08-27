@@ -902,8 +902,7 @@ class Ia32
 			break bind unless e_expr.kind_of? Indirection
 
 			off = Expression[[esp, :+, s_off], :-, e_expr.target].reduce
-			case off
-			when Expression
+			if off.kind_of? Expression
 				bd = off.externals.grep(/^autostackoffset_/).inject({}) { |bd_, xt| bd_.update xt => @size/8 }
 				bd.delete s_off
 				if off.bind(bd).reduce == @size/8
@@ -917,7 +916,8 @@ class Ia32
 						off = off.bind(bd).reduce / (bd.length + 1)
 					end
 				end
-			when Integer
+			end
+			if off.kind_of? Integer
 				if off < @size/8 or off > 20*@size/8 or (off % (@size/8)) != 0
 					puts "autostackoffset: ignoring off #{off} for #{Expression[funcaddr]} from #{dasm.decoded[calladdr]}" if $VERBOSE
 					off = :unknown
