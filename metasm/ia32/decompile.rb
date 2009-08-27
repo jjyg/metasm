@@ -100,8 +100,8 @@ class Ia32
 
 		# find regs read and never written (must have been set by caller and are part of the func ABI)
 		uninitialized = lambda { |b, r, done|
-			from = deps_to.keys.find_all { |f| deps_to[f].include? b } - done
-			from.empty? or from.find { |f|
+			from = deps_to.keys.find_all { |f| deps_to[f].include? b }
+			from.empty? or (from-done).find { |f|
 				!deps_w[f].include?(r) and uninitialized[f, r, done + [b]]
 			}
 		}
@@ -111,7 +111,7 @@ class Ia32
 			# XXX filter using ABI otherwise we get false positive for "push esi  <func body>  pop esi  ret"
 			deps &= [:eax, :ecx, :edx]
 			deps -= regargs
-			uinit = deps.find_all { |r| uninitialized[b, r, [b]] }
+			uinit = deps.find_all { |r| uninitialized[b, r, []] }
 			if uinit.include? :eax and dcmp.dasm.decoded[b].block.list.last.opcode.name == 'ret'
 				# XXX false positive if the func returns void (eg func: ret)
 				uinit -= [:eax]
