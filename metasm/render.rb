@@ -69,15 +69,23 @@ class Expression
 		return Expression[@lexpr, :-, -@rexpr].render if @op == :+ and @rexpr.kind_of?(::Numeric) and @rexpr < 0
 		l, r = [@lexpr, @rexpr].map { |e|
 			if e.kind_of? Integer
+				if render_info and @render_info[:char]
+					ee = e
+					v = []
+					while ee > 0
+						v << (ee & 0xff)
+						ee >>= 8
+					end
+					if not v.empty? and v.all? { |c| c < 0x7f }
+						# XXX endianness
+						next "'" + v.pack('C*').inspect.gsub("'") { '\\\'' }[1...-1] + "'"
+					end
+				end
 				if e < 0
 					neg = true
 					e = -e
 				end
-				if render_info and @render_info[:char] and [9,10,13,*0x20..0x7e].include?(e)
-					if e == ?'.ord; e = "'\\''"
-					else e = e.chr.inspect.gsub('"', "'")
-					end
-				elsif e < 10; e = e.to_s
+				if e < 10; e = e.to_s
 				else
 					e = '%xh' % e
 					e = '0' << e unless (?0..?9).include? e[0]
