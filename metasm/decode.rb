@@ -2188,9 +2188,20 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			# other paths may already point to newto, we must only update the relevant entry
 			if @decoded[newto].kind_of? DecodedInstruction and idx = @decoded[newto].block.from_normal.to_a.index(to)
 				if by.empty?
-					@decoded[newto].block.from_normal[idx..idx] = fb.from_normal.to_a
+					@decoded[newto].block.from_normal[idx,1] = fb.from_normal.to_a
 				else
 					@decoded[newto].block.from_normal[idx] = fb.list.last.address
+				end
+			end
+		}
+
+		fb.to_subfuncret = tb.to_subfuncret
+		fb.to_subfuncret.to_a.each { |newto|
+			if @decoded[newto].kind_of? DecodedInstruction and idx = @decoded[newto].block.from_subfuncret.to_a.index(to)
+				if by.empty?
+					@decoded[newto].block.from_subfuncret[idx,1] = fb.from_subfuncret.to_a
+				else
+					@decoded[newto].block.from_subfuncret[idx] = fb.list.last.address
 				end
 			end
 		}
