@@ -1970,6 +1970,7 @@ class Decompiler
 						scope.symbol[v.name] and not v.type.qualifier.to_a.include? :volatile
 					next if !(pos = :post and oe = find_next_read_bl[label, i, v] and oe.kind_of? C::CExpression) and
 				   		!(pos = :prev and oe = find_prev_read[label, i-2, v] and oe.kind_of? C::CExpression)
+					next if oe.op == :& and not oe.lexpr	# no &(++eax)
 
 					# merge pre/postincrement into next/prev var usage
 					# find_prev_read must fwd check when it finds something, to avoid
