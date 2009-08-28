@@ -213,10 +213,10 @@ class Ia32
 						args << Expression[:edx, :&, mask]
 					end
 				end
-				args_todo.each {
+				args_todo.each { |a_|
 					if stackoff.kind_of? Integer
 						args << Indirection[[:frameptr, :+, stackoff], @size/8]
-						stackoff += @size/8
+						stackoff += [dcmp.sizeof(a_), @size/8].max
 					else
 						args << Expression[0]
 					end

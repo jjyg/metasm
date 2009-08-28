@@ -190,7 +190,9 @@ class Decompiler
 				f = @dasm.function[addr] ||= DecodedFunction.new
 				# TODO detect thunks (__noreturn)
 				f.decompdata ||= { :stackoff_type => {}, :stackoff_name => {} }
-				if not @c_parser.toplevel.symbol[name]
+				if not s = @c_parser.toplevel.symbol[name] or not s.initializer or not s.type.untypedef.kind_of? C::Function
+					@c_parser.toplevel.symbol.delete name
+					@c_parser.toplevel.statements.delete_if { |ts| ts.kind_of? C::Declaration and ts.var.name == name }
 					aoff = 1
 					ptype.args.to_a.each { |a|
 				       		aoff = (aoff + @c_parser.typesize[:ptr] - 1) / @c_parser.typesize[:ptr] * @c_parser.typesize[:ptr]
@@ -1486,9 +1488,9 @@ class Decompiler
 			 mbs.find { |m| mo[m] <= off and mo[m]+sizeof(m) > off }
 			ptr = C::CExpression[:&, m_ptr[sm]]
 			off -= mo[sm]
-			st = sm.type.untypedef
-			if st.pointer? and st.type.untypedef.kind_of? C::Union
-				structoffset(st.type.untypedef, ptr, off, msz)
+			sst = sm.type.untypedef
+			if sst.pointer? and sst.type.untypedef.kind_of? C::Union and (mo[sm] != 0 or tabidx != 0 or sst.type.untypedef != st)	# TODO fix infinite recursion on mutually recursive ptrs
+				structoffset(sst.type.untypedef, ptr, off, msz)
 			elsif off != 0
 				C::CExpression[[ptr, C::Pointer.new(C::BaseType.new(:__int8))], :+, [off]]
 			else
