@@ -1486,10 +1486,11 @@ class Decompiler
 
 		if  sm = mbs.find { |m| mo[m] == off and (not msz or sizeof(m) == msz) } ||
 			 mbs.find { |m| mo[m] <= off and mo[m]+sizeof(m) > off }
-			ptr = C::CExpression[:&, m_ptr[sm]]
 			off -= mo[sm]
 			sst = sm.type.untypedef
-			if sst.pointer? and sst.type.untypedef.kind_of? C::Union and (mo[sm] != 0 or tabidx != 0 or sst.type.untypedef != st)	# TODO fix infinite recursion on mutually recursive ptrs
+			return ptr if mo[sm] == 0 and sst.pointer? and sst.type.untypedef == st	# TODO fix infinite recursion on mutually recursive ptrs
+			ptr = C::CExpression[:&, m_ptr[sm]]
+			if sst.pointer? and sst.type.untypedef.kind_of? C::Union
 				structoffset(sst.type.untypedef, ptr, off, msz)
 			elsif off != 0
 				C::CExpression[[ptr, C::Pointer.new(C::BaseType.new(:__int8))], :+, [off]]
@@ -1748,7 +1749,7 @@ class Decompiler
 			# (1stmember*)structptr => &structptr->1stmember
 			if not ce.op and ce.type.pointer? and (ce.rexpr.kind_of? C::CExpression or ce.rexpr.kind_of? C::Variable) and ce.rexpr.type.pointer? and
 					s = ce.rexpr.type.untypedef.type.untypedef and s.kind_of? C::Union and ce.type.untypedef.type != s
-				ce.replace structoffset(s, ce.rexpr, 0, sizeof(ce.type.untypedef.type))
+				ce.replace C::CExpression[structoffset(s, ce.rexpr, 0, sizeof(ce.type.untypedef.type))]
 			end
 
 			# (&foo)->bar => foo.bar
