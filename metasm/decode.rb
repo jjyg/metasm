@@ -1811,6 +1811,16 @@ puts '  backtrace result: ' + result.map { |r| Expression[r] }.join(', ') if deb
 				not need_backtrace(retaddr)
 puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if debug_backtrace
 			di.block.add_to_subfuncret normalize(retaddr)
+			if @decoded[funcaddr].kind_of? DecodedInstruction
+				# check that all callers :saveip returns (eg recursive call that was resolved
+				# before we found funcaddr was a function)
+				@decoded[funcaddr].block.each_from_normal { |fm|
+					if @decoded[fm].kind_of? DecodedInstruction and @decoded[fm].opcode.props[:saveip] and
+							not @decoded[fm].block.to_subfuncret
+						backtrace_check_funcret(btt, funcaddr, fm)
+					end
+				}
+			end
 			if not @function[funcaddr].finalized
 				# the function is not fully disassembled: arrange for the retaddr to be
 				#  disassembled only after the subfunction is finished
