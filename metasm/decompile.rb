@@ -145,6 +145,7 @@ class Decompiler
 		unalias_vars(scope, func)
 		decompile_c_types(scope)
 		optimize(scope)
+		remove_unreferenced_vars(scope)
 		cleanup_var_decl(scope, func)
 		if @recurse > 0
 			decompile_controlseq(scope)
@@ -180,7 +181,7 @@ class Decompiler
 
 		# TODO check overlap with alreadydefined globals
 
-		ptype = type.untypedef.type if type.pointer?
+		ptype = type.untypedef.type.untypedef if type.pointer?
 		if ptype.kind_of? C::Function
 			name = @dasm.auto_label_at(addr, 'sub', 'xref', 'byte', 'word', 'dword', 'unk')
 			if @dasm.get_section_at(addr) and @recurse > 0
@@ -208,7 +209,8 @@ class Decompiler
 		when 4; 'dword'
 		else 'unk'
 		end
-		name = @dasm.auto_label_at(addr, name, 'xref', 'byte', 'word', 'dword', 'unk')
+		name = 'stru' if ptype.kind_of? C::Union
+		name = @dasm.auto_label_at(addr, name, 'xref', 'byte', 'word', 'dword', 'unk', 'stru')
 
 		if not var = @c_parser.toplevel.symbol[name]
 			var = C::Variable.new
@@ -1449,55 +1451,54 @@ class Decompiler
 			if ce.op
 				ce.type = C::CExpression[ce.lexpr, ce.op, ce.rexpr].type rescue next
 				if ce.op == :'=' and ce.rexpr and ce.rexpr.type != ce.type and (not ce.rexpr.type.integral? or not ce.type.integral?)
-					ce.rexpr = C::CExpression[ce.rexpr, ce.type]
+					ce.rexpr = C::CExpression[[ce.rexpr], ce.type]
 				end
 			end
 		}
+	end
+
+	# struct foo { int i; int j; struct { int k; int l; } m; };     bla+12 => &bla->m.l
+	# st is a struct, ptr is an expr pointing to a struct, off is a numeric offset from ptr, msz is the size of the pointed member (nil ignored)
+	def structoffset(st, ptr, off, msz)
+		tabidx = off / sizeof(st)
+		off -= tabidx * sizeof(st)
+		ptr = C::CExpression[[ptr], C::Pointer.new(st)] if ptr.type.untypedef.type.untypedef != st
+		ptr = C::CExpression[:&, [ptr, :'[]', [tabidx]]] if tabidx != 0 or ptr.type.untypedef.kind_of? C::Array
+		m_ptr = lambda { |m|
+			if ptr.kind_of? C::CExpression and ptr.op == :& and not ptr.lexpr
+			       C::CExpression[ptr.rexpr, :'.', m.name]
+			else
+			       C::CExpression[ptr, :'->', m.name]
+			end
+		}
+
+		submemb = lambda { |sm| sm.name ? sm : sm.type.kind_of?(C::Union) ? sm.type.members.to_a.map { |ssm| submemb[ssm] } : nil }
+		mbs = st.members.to_a.map { |m| submemb[m] }.flatten.compact
+		mo = mbs.inject({}) { |h, m| h.update m => st.offsetof(@c_parser, m.name) }
+
+		if  sm = mbs.find { |m| mo[m] == off and (not msz or sizeof(m) == msz) } ||
+			 mbs.find { |m| mo[m] <= off and mo[m]+sizeof(m) > off }
+			ptr = C::CExpression[:&, m_ptr[sm]]
+			off -= mo[sm]
+			st = sm.type.untypedef
+			if st.pointer? and st.type.untypedef.kind_of? C::Union
+				structoffset(st.type.untypedef, ptr, off, msz)
+			elsif off != 0
+				C::CExpression[[ptr, C::Pointer.new(C::BaseType.new(:__int8))], :+, [off]]
+			else
+				ptr
+			end
+		elsif off != 0
+			C::CExpression[[[ptr], C::Pointer.new(C::BaseType.new(:__int8))], :+, [off]]
+		else
+			ptr
+		end
 	end
 
 	# fix pointer arithmetic (eg int foo += 4  =>  int* foo += 1)
 	# use struct member access (eg *(structptr+8)  =>  structptr->bla)
 	# must be run only once, right after type setting
 	def fix_pointer_arithmetic(scope)
-		# struct foo { int i; int j; struct { int k; int l; } m; };     bla+12 => &bla->m.l
-		# st is a struct, ptr is an expr pointing to a struct, off is a numeric offset from ptr
-		# TODO unions
-		structoffset = lambda { |st, ptr, off|
-			tabidx = off / sizeof(nil, st)
-			off -= tabidx * sizeof(nil, st)
-
-			suboff = 0
-			submemb = lambda { |sm| sm.name ? sm : sm.kind_of?(C::Union) ? sm.members.to_a.map { |ssm| submemb[ssm] } : [] }
-			mbs = st.members.to_a.map { |m| submemb[m] }.flatten 
-			if ptr.type.untypedef.type.untypedef != st or not sm = mbs.find { |m|
-				mo = st.offsetof(@c_parser, m.name)
-				suboff = off - mo
-				true if mo <= off and mo+sizeof(m) > off
-			}
-				# not in a member, just derivate from the struct ptr
-				ptr = C::CExpression[:&, [ptr, :'[]', [tabidx]]] if tabidx != 0
-				C::CExpression[[[ptr], C::Pointer.new(C::BaseType.new(:__int8))], :+, [off]]
-				#C::CExpression[[[ptr], C::Pointer.new(C::BaseType.new(:__int8))], :+, off + tabidx * sizeof(nil, st)]
-			else
-				if tabidx != 0
-					ptr = C::CExpression[[ptr, :'[]', [tabidx]], :'.', sm.name]
-				else
-					ptr = C::CExpression[ptr, :'->', sm.name]
-				end
-				ptr = C::CExpression[ptr, :'[]', [0]] if ptr.type.untypedef.kind_of? C::Array	# foo.bar[0].baz better than foo.bar->baz
-				ptr = C::CExpression[:&, ptr]
-				if suboff != 0
-					st = sm.type.untypedef
-					if st.pointer? and st.type.untypedef.kind_of? C::Struct
-						ptr = structoffset[st.type.untypedef, ptr, suboff]
-					else
-						ptr = C::CExpression[[ptr, C::Pointer.new(C::BaseType.new(:__int8))], :+, [suboff]]
-					end
-				end
-				ptr
-			end
-		}
-
 		walk_ce(scope, true) { |ce|
 			if ce.lexpr and ce.lexpr.type.pointer? and [:&, :>>, :<<].include? ce.op
 				ce.lexpr = C::CExpression[[ce.lexpr], C::BaseType.new(:int)]
@@ -1537,10 +1538,10 @@ class Decompiler
 			end
 
 			next if not ce.lexpr or not ce.lexpr.type.pointer?
-			if ce.op == :+ and (s = ce.lexpr.type.untypedef.type.untypedef).kind_of? C::Struct and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
-					ce.rexpr.rexpr.kind_of? ::Integer and o = ce.rexpr.rexpr and x = structoffset[s, ce.lexpr, o]
+			if ce.op == :+ and (s = ce.lexpr.type.untypedef.type.untypedef).kind_of? C::Union and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
+					ce.rexpr.rexpr.kind_of? ::Integer and o = ce.rexpr.rexpr
 				# structptr + 4 => &structptr->member
-				ce.replace x
+				ce.replace structoffset(s, ce.lexpr, o, nil)
 			elsif [:+, :-, :'+=', :'-='].include? ce.op and ce.rexpr.kind_of? C::CExpression and ((not ce.rexpr.op and i = ce.rexpr.rexpr) or
 					(ce.rexpr.op == :* and i = ce.rexpr.lexpr and ((i.kind_of? C::CExpression and not i.op and i = i.rexpr) or true))) and
 					i.kind_of? ::Integer and psz = sizeof(nil, ce.lexpr.type.untypedef.type) and i % psz == 0
@@ -1736,17 +1737,10 @@ class Decompiler
 				ce.type = C::Pointer.new(ce.rexpr.type)
 			end
 
-			# (1stmember*)structptr => &structptr->1stmember	TODO anonymous substruct..
-			if not ce.op and ce.type.pointer? and (ce.rexpr.kind_of? C::CExpression or ce.rexpr.kind_of? C::Variable) and
-					ce.rexpr.type.pointer? and (s = ce.rexpr.type.untypedef.type.untypedef).kind_of? C::Struct and
-					m = s.members.to_a.first and m.name and sametype[ce.type.untypedef.type, m.type]
-				if ce.rexpr.kind_of? C::CExpression and ((ce.rexpr.op == :'.' and s = ce.rexpr.lexpr.type) or (ce.rexpr.op == :'->' and
-							s = ce.rexpr.lexpr.type.untypedef.type)) and s.members.find { |om| om.name == ce.rexpr.rexpr and om.type.kind_of? C::Array }
-					# ary->bla => ary[0].bla
-					ce.replace C::CExpression[:&, [[ce.rexpr, :'[]', [0]], :'.', m.name]]
-				else
-					ce.replace C::CExpression[:&, [ce.rexpr, :'->', m.name]]
-				end
+			# (1stmember*)structptr => &structptr->1stmember
+			if not ce.op and ce.type.pointer? and (ce.rexpr.kind_of? C::CExpression or ce.rexpr.kind_of? C::Variable) and ce.rexpr.type.pointer? and
+					s = ce.rexpr.type.untypedef.type.untypedef and s.kind_of? C::Union and ce.type.untypedef.type != s
+				ce.replace structoffset(s, ce.rexpr, 0, sizeof(ce.type.untypedef.type))
 			end
 
 			# (&foo)->bar => foo.bar
