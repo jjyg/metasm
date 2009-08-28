@@ -90,6 +90,7 @@ class Decompiler
 				puts "function #{func.name} is recursive: predecompiling for prototype" if $VERBOSE
 				pre_recurse = @recurse
 				@recurse = 0
+				@c_parser.toplevel.symbol.delete func.name
 				decompile_func(entry)
 				@recurse = pre_recurse
 				if not dcl = @c_parser.toplevel.statements.grep(C::Declaration).find { |decl| decl.var.name == func.name }
