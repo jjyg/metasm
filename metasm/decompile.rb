@@ -83,7 +83,8 @@ class Decompiler
 			rettype = C::BaseType.new(:int)
 		end
 		func.type = C::Function.new rettype, []
-		if @c_parser.toplevel.symbol[func.name] and @recurse > 0
+		if @c_parser.toplevel.symbol[func.name]
+			return if @recurse == 0
 			if not @c_parser.toplevel.statements.grep(C::Declaration).find { |decl| decl.var.name == func.name }
 				# recursive dependency: declare prototype
 				puts "function #{func.name} is recursive: predecompiling for prototype" if $VERBOSE
@@ -219,7 +220,9 @@ class Decompiler
 			@c_parser.toplevel.symbol[var.name] = var
 			@c_parser.toplevel.statements << C::Declaration.new(var)
 		end
-		if type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz and (not var.type.pointer? or sizeof(var.type.untypedef.type) != sizeof(type.untypedef.type) or not var.initializer)
+		if ptype.kind_of? C::Union and type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length
+			# TODO struct init, array, fptrs..
+		elsif type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz and (not var.type.pointer? or sizeof(var.type.untypedef.type) != sizeof(type.untypedef.type) or not var.initializer)
 			# TODO do not overlap other statics (but labels may refer to elements of the array...)
 			data = (0..256).map {
 				v = s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness)
@@ -1186,7 +1189,10 @@ class Decompiler
 				walk_ce(scope) { |ce|
 					ce.lexpr = ne if ce.lexpr == e
 					ce.rexpr = ne if ce.rexpr == e
-					if ce.lexpr == ne or ce.rexpr == ne
+					if ce.op == :* and not ce.lexpr and ce.rexpr == ne and ne.type.pointer? and ne.type.untypedef.type.untypedef.kind_of? C::Union
+						# *struct -> struct->bla
+						ce.rexpr = structoffset(ne.type.untypedef.type.untypedef, ce.rexpr, 0, sizeof(ce.type))
+					elsif ce.lexpr == ne or ce.rexpr == ne
 						# set ce type according to l/r
 						# TODO set ce.parent type etc
 						ce.type = C::CExpression[ce.lexpr, ce.op, ce.rexpr].type
@@ -2338,8 +2344,12 @@ class Decompiler
 		# TODO allow foo to appear (change to &foo) (but still disallow casts/foo+12 etc)
 		countderef = Hash.new(0)
 		walk_ce(tl) { |ce|
-			next if ce.op != :* or ce.lexpr
-			r = ce.rexpr
+			if ce.op == :* and not ce.lexpr
+				r = ce.rexpr
+			elsif ce.op == :'->'
+				r = C::CExpression[ce.lexpr]
+			else next
+			end
 			# compare type.type cause var is an Array and the cast is a Pointer
 			countderef[r.rexpr.name] += 1 if r.kind_of? C::CExpression and not r.op and r.rexpr.kind_of? C::Variable and
 		       			sizeof(nil, r.type.type) == sizeof(nil, r.rexpr.type.type) rescue nil
@@ -2351,7 +2361,11 @@ class Decompiler
 				v.type = v.type.type
 				v.initializer = v.initializer.first if v.initializer.kind_of? ::Array
 				walk_ce(tl) { |ce|
-					ce.lexpr = v if ce.lexpr == target
+					if ce.op == :'->' and C::CExpression[ce.lexpr] == C::CExpression[v]
+						ce.op = :'.' 
+					elsif ce.lexpr == target
+						ce.lexpr = v
+					end
 					ce.rexpr = v if ce.rexpr == target
 					ce.lexpr, ce.op, ce.rexpr = nil, nil, v if ce == target
 				}
