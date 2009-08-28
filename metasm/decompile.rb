@@ -1748,7 +1748,7 @@ class Decompiler
 
 			# (1stmember*)structptr => &structptr->1stmember
 			if not ce.op and ce.type.pointer? and (ce.rexpr.kind_of? C::CExpression or ce.rexpr.kind_of? C::Variable) and ce.rexpr.type.pointer? and
-					s = ce.rexpr.type.untypedef.type.untypedef and s.kind_of? C::Union and ce.type.untypedef.type != s
+					s = ce.rexpr.type.untypedef.type.untypedef and s.kind_of? C::Union and ce.type.untypedef.type.untypedef != s
 				ce.replace C::CExpression[structoffset(s, ce.rexpr, 0, sizeof(ce.type.untypedef.type))]
 			end
 
