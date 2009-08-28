@@ -212,6 +212,19 @@ module C
 			nil
 		end
 
+		def offsetof(parser, name)
+			raise parser, 'undefined union' if not @members
+			raise parser, 'unknown union member' if not findmember(name)
+
+			if @members.find { |m| m.name == name }
+				0
+			else
+				@members.find { |m|
+					m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
+				}.type.untypedef.offsetof(parser, name)
+			end
+		end
+
 		def parse_members(parser, scope)
 			@members = []
 			# parse struct/union members in definition
@@ -307,25 +320,18 @@ module C
 			raise parser, 'undefined structure' if not @members
 			raise parser, 'unknown structure member' if not findmember(name)
 
-			if not @members.find { |m| m.name == name }
-				# indirect member (name of a member of an anonymous substruct)
-				bla = self
-				off = 0
-				while sm = bla.members.find { |m| m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name) }
-					off += bla.offsetof(parser, sm.name) if bla.kind_of? Struct
-					bla = sm.type.untypedef
-				end
-				off += bla.offsetof(parser, name) if bla.kind_of? Struct
-				return off
-			end
-
+			indirect = true if not @members.find { |m| m.name == name }
 
 			al = align(parser)
 			off = 0
 			bit_off = 0
 			@members.each_with_index { |m, i|
-				break if m.name == name
-				if bits and b = @bits[i]
+				if m.name == name
+					break
+				elsif indirect and m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
+					off += m.type.untypedef.offsetof(parser, name)
+					break
+				elsif bits and b = @bits[i]
 					isz = parser.typesize[:int]
 					if bit_off + b > 8*isz
 						bit_off = 0
@@ -864,7 +870,7 @@ module C
 				when :'.', :'->'
 					t = x1.type.untypedef
 					t = t.type.untypedef if op == :'->' and x1.type.pointer?
-					raise "parse error CExpr[*#{args.inspect}]" if not t.kind_of? Union or not m = t.members.find { |m_| m_.name == x2 }
+					raise "parse error: #{t} has no member #{x2}" if not t.kind_of? Union or not m = t.findmember(x2)
 					new(x1, op, x2, m.type)
 				when :'?:'; new(x1, op, x2, x2[0].type)
 				when :','; new(x1, op, x2, x2.type)
