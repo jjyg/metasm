@@ -167,7 +167,7 @@ class Decompiler
 				scope.statements.pop
 			else
 				v = ret.value
-				v = v.rexpr if v.kind_of? C::CExpression and not v.op and (v.rexpr.kind_of? C::CExpression or v.rexpr.kind_of? C::Variable)
+				v = v.rexpr if v.kind_of? C::CExpression and not v.op and v.rexpr.kind_of? C::Typed
 				func.type.type = v.type
 			end
 		end
@@ -183,7 +183,7 @@ class Decompiler
 
 		# TODO check overlap with alreadydefined globals
 
-		ptype = type.untypedef.type.untypedef if type.pointer?
+		ptype = type.pointed.untypedef if type.pointer?
 		if ptype.kind_of? C::Function
 			name = @dasm.auto_label_at(addr, 'sub', 'xref', 'byte', 'word', 'dword', 'unk')
 			if @dasm.get_section_at(addr) and @recurse > 0
@@ -225,7 +225,7 @@ class Decompiler
 		end
 		if ptype.kind_of? C::Union and type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length
 			# TODO struct init, array, fptrs..
-		elsif type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz and (not var.type.pointer? or sizeof(var.type.untypedef.type) != sizeof(type.untypedef.type) or not var.initializer)
+		elsif type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz and (not var.type.pointer? or sizeof(var.type.pointed) != sizeof(type.pointed) or not var.initializer)
 			# TODO do not overlap other statics (but labels may refer to elements of the array...)
 			data = (0..256).map {
 				v = s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness)
@@ -1181,7 +1181,7 @@ class Decompiler
 		better_type = lambda { |t0, t1|
 			t1 == C::BaseType.new(:void) or (t0.pointer? and t1.kind_of? C::BaseType) or t0.untypedef.kind_of? C::Union or
 			(t0.kind_of? C::BaseType and t1.kind_of? C::BaseType and (@c_parser.typesize[t0.name] > @c_parser.typesize[t1.name] or (t0.name == t1.name and t0.qualifier))) or
-			(t0.pointer? and t1.pointer? and better_type[t0.untypedef.type, t1.untypedef.type])
+			(t0.pointer? and t1.pointer? and better_type[t0.pointed, t1.pointed])
 		}
 
 		update_global_type = lambda { |e, t|
@@ -1192,9 +1192,9 @@ class Decompiler
 				walk_ce(scope) { |ce|
 					ce.lexpr = ne if ce.lexpr == e
 					ce.rexpr = ne if ce.rexpr == e
-					if ce.op == :* and not ce.lexpr and ce.rexpr == ne and ne.type.pointer? and ne.type.untypedef.type.untypedef.kind_of? C::Union
+					if ce.op == :* and not ce.lexpr and ce.rexpr == ne and ne.type.pointer? and ne.type.pointed.untypedef.kind_of? C::Union
 						# *struct -> struct->bla
-						ce.rexpr = structoffset(ne.type.untypedef.type.untypedef, ce.rexpr, 0, sizeof(ce.type))
+						ce.rexpr = structoffset(ne.type.pointed.untypedef, ce.rexpr, 0, sizeof(ce.type))
 					elsif ce.lexpr == ne or ce.rexpr == ne
 						# set ce type according to l/r
 						# TODO set ce.parent type etc
@@ -1243,7 +1243,7 @@ class Decompiler
 					update_global_type[o, t]
 				elsif not e.kind_of? C::CExpression
 				elsif o = pscopevar[e] and t.pointer?
-					update_type[o, t.untypedef.type]
+					update_type[o, t.pointed]
 				elsif e.op == :* and not e.lexpr
 					e = e.rexpr
 					t = C::Pointer.new(t)
@@ -1253,7 +1253,7 @@ class Decompiler
 					next
 				elsif e.op == :+ and e.lexpr and e.rexpr.kind_of? C::CExpression
 					if not e.rexpr.op and e.rexpr.rexpr.kind_of? ::Integer
-						if t.pointer? and e.rexpr.rexpr < 0x1000 and (e.rexpr.rexpr % sizeof(t.untypedef.type)) == 0	# XXX relocatable + base=0..
+						if t.pointer? and e.rexpr.rexpr < 0x1000 and (e.rexpr.rexpr % sizeof(t.pointed)) == 0	# XXX relocatable + base=0..
 							e = e.lexpr	# (int)*(x+2) === (int) *x
 							next
 						elsif globalvar[e.rexpr.rexpr]
@@ -1301,7 +1301,7 @@ class Decompiler
 						break
 					elsif t.pointer?
 						l = l.rexpr
-						t = t.untypedef.type
+						t = t.pointed
 					else break
 					end
 				end
@@ -1315,7 +1315,7 @@ class Decompiler
 						break
 					elsif t.pointer?
 						r = r.rexpr
-						t = t.untypedef.type
+						t = t.pointed
 					else break
 					end
 				end
@@ -1334,13 +1334,13 @@ class Decompiler
 		# try to infer types from C semantics
 		later = []
 		walk_ce(scope) { |ce|
-			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and
-					ce.rexpr.rexpr.abs < 0x10000 and (not ce.lexpr.kind_of? C::CExpression or ce.lexpr.op != :'*' or ce.lexpr.lexpr)
+			if ce.op == :'=' and ce.rexpr.kind_of? C::CExpression and (ce.rexpr.op == :funcall or (ce.rexpr.op == nil and ce.rexpr.rexpr.kind_of? ::Integer and
+					ce.rexpr.rexpr.abs < 0x10000 and (not ce.lexpr.kind_of? C::CExpression or ce.lexpr.op != :'*' or ce.lexpr.lexpr)))
 				# var = int
 				known_type[ce.lexpr, ce.rexpr.type]
 			elsif ce.op == :funcall
 				f = ce.lexpr.type
-				f = f.untypedef.type if f.pointer?
+				f = f.pointed if f.pointer?
 				next if not f.kind_of? C::Function
 				# cast func args to arg prototypes
 				f.args.to_a.zip(ce.rexpr).each_with_index { |(proto, arg), i| ce.rexpr[i] = C::CExpression[arg, proto.type] ; known_type[arg, proto.type] }
@@ -1352,7 +1352,7 @@ class Decompiler
 					next
 				end
 				known_type[ce.rexpr, C::Pointer.new(ce.type)]
-			elsif not ce.op and ce.type.pointer? and ce.type.untypedef.type.kind_of? C::Function
+			elsif not ce.op and ce.type.pointer? and ce.type.pointed.kind_of? C::Function
 				# cast to fptr: must be a fptr
 				known_type[ce.rexpr, ce.type]
 			end
@@ -1405,7 +1405,7 @@ class Decompiler
 			v
 		}
 		maycast_p = lambda { |v, e|
-			if not e.type.pointer? or sizeof(v) != sizeof(nil, e.type.untypedef.type)
+			if not e.type.pointer? or sizeof(v) != sizeof(nil, e.type.pointed)
 				C::CExpression[[:&, v], e.type]
 			else
 				C::CExpression[:&, v]
@@ -1471,8 +1471,11 @@ class Decompiler
 	def structoffset(st, ptr, off, msz)
 		tabidx = off / sizeof(st)
 		off -= tabidx * sizeof(st)
-		ptr = C::CExpression[[ptr], C::Pointer.new(st)] if ptr.type.untypedef.type.untypedef != st
 		ptr = C::CExpression[:&, [ptr, :'[]', [tabidx]]] if tabidx != 0 or ptr.type.untypedef.kind_of? C::Array
+		return ptr if off == 0 and (not msz or 	# avoid infinite recursion with eg chained list
+				(ptr.kind_of? C::CExpression and ((ptr.op == :& and not ptr.lexpr and s=ptr.rexpr) or (ptr.op == :'.' and s=ptr)) and
+				not s.type.untypedef.kind_of? C::Union))
+
 		m_ptr = lambda { |m|
 			if ptr.kind_of? C::CExpression and ptr.op == :& and not ptr.lexpr
 			       C::CExpression[ptr.rexpr, :'.', m.name]
@@ -1481,6 +1484,7 @@ class Decompiler
 			end
 		}
 
+		# recursive proc to list all named members, including in anonymous substructs
 		submemb = lambda { |sm| sm.name ? sm : sm.type.kind_of?(C::Union) ? sm.type.members.to_a.map { |ssm| submemb[ssm] } : nil }
 		mbs = st.members.to_a.map { |m| submemb[m] }.flatten.compact
 		mo = mbs.inject({}) { |h, m| h.update m => st.offsetof(@c_parser, m.name) }
@@ -1489,16 +1493,14 @@ class Decompiler
 			 mbs.find { |m| mo[m] <= off and mo[m]+sizeof(m) > off }
 			off -= mo[sm]
 			sst = sm.type.untypedef
-			return ptr if mo[sm] == 0 and sst.pointer? and sst.type.untypedef == st	# TODO fix infinite recursion on mutually recursive ptrs
+			#return ptr if mo[sm] == 0 and sst.pointer? and sst.type.untypedef == st	# TODO fix infinite recursion on mutually recursive ptrs
 			ptr = C::CExpression[:&, m_ptr[sm]]
-			if sst.pointer? and sst.type.untypedef.kind_of? C::Union
-				structoffset(sst.type.untypedef, ptr, off, msz)
-			elsif off != 0
-				C::CExpression[[ptr, C::Pointer.new(C::BaseType.new(:__int8))], :+, [off]]
-			else
-				ptr
+			if sst.kind_of? C::Union
+				return structoffset(sst, ptr, off, msz)
 			end
-		elsif off != 0
+		end
+
+		if off != 0
 			C::CExpression[[[ptr], C::Pointer.new(C::BaseType.new(:__int8))], :+, [off]]
 		else
 			ptr
@@ -1518,8 +1520,8 @@ class Decompiler
 				ce.rexpr, ce.lexpr = ce.lexpr, ce.rexpr
 			end
 
-			if ce.op == :* and not ce.lexpr and ce.rexpr.type.pointer? and ce.rexpr.type.untypedef.type.untypedef.kind_of? C::Struct
-				s = ce.rexpr.type.untypedef.type.untypedef
+			if ce.op == :* and not ce.lexpr and ce.rexpr.type.pointer? and ce.rexpr.type.pointed.untypedef.kind_of? C::Struct
+				s = ce.rexpr.type.pointed.untypedef
 				m = s.members.to_a.find { |m_| s.offsetof(@c_parser, m_.name) == 0 }
 				if sizeof(m) != sizeof(ce)
 					ce.rexpr = C::CExpression[[ce.rexpr, C::Pointer.new(s)], C::Pointer.new(ce.type)]
@@ -1548,13 +1550,13 @@ class Decompiler
 			end
 
 			next if not ce.lexpr or not ce.lexpr.type.pointer?
-			if ce.op == :+ and (s = ce.lexpr.type.untypedef.type.untypedef).kind_of? C::Union and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
+			if ce.op == :+ and (s = ce.lexpr.type.pointed.untypedef).kind_of? C::Union and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and
 					ce.rexpr.rexpr.kind_of? ::Integer and o = ce.rexpr.rexpr
 				# structptr + 4 => &structptr->member
 				ce.replace structoffset(s, ce.lexpr, o, nil)
 			elsif [:+, :-, :'+=', :'-='].include? ce.op and ce.rexpr.kind_of? C::CExpression and ((not ce.rexpr.op and i = ce.rexpr.rexpr) or
 					(ce.rexpr.op == :* and i = ce.rexpr.lexpr and ((i.kind_of? C::CExpression and not i.op and i = i.rexpr) or true))) and
-					i.kind_of? ::Integer and psz = sizeof(nil, ce.lexpr.type.untypedef.type) and i % psz == 0
+					i.kind_of? ::Integer and psz = sizeof(nil, ce.lexpr.type.pointed) and i % psz == 0
 				# ptr += 4 => ptr += 1
 				if not ce.rexpr.op
 					ce.rexpr.rexpr /= psz
@@ -1566,11 +1568,11 @@ class Decompiler
 				end
 				ce.type = ce.lexpr.type
 
-			elsif (ce.op == :+ or ce.op == :-) and sizeof(nil, ce.lexpr.type.untypedef.type) != 1
+			elsif (ce.op == :+ or ce.op == :-) and sizeof(nil, ce.lexpr.type.pointed) != 1
 				# ptr+x => (ptrtype*)(((__int8*)ptr)+x)
 				# XXX create struct ?
 				ce.rexpr = C::CExpression[ce.rexpr, C::BaseType.new(:int)] if not ce.rexpr.type.integral?
-				if sizeof(nil, ce.lexpr.type.untypedef.type) != 1
+				if sizeof(nil, ce.lexpr.type.pointed) != 1
 					ptype = ce.lexpr.type
 					p = C::CExpression[[ce.lexpr], C::Pointer.new(C::BaseType.new(:__int8))]
 					ce.replace C::CExpression[[p, ce.op, ce.rexpr, p.type], ptype]
@@ -1635,7 +1637,7 @@ class Decompiler
 		future_array = []
 		walk_ce(scope, true) { |ce|
 			# *&bla => bla if types ok
-			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.rexpr.type.untypedef.type, ce.rexpr.rexpr.type]
+			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.rexpr.type.pointed, ce.rexpr.rexpr.type]
 				ce.replace C::CExpression[ce.rexpr.rexpr]
 			end
 
@@ -1748,9 +1750,9 @@ class Decompiler
 			end
 
 			# (1stmember*)structptr => &structptr->1stmember
-			if not ce.op and ce.type.pointer? and (ce.rexpr.kind_of? C::CExpression or ce.rexpr.kind_of? C::Variable) and ce.rexpr.type.pointer? and
-					s = ce.rexpr.type.untypedef.type.untypedef and s.kind_of? C::Union and ce.type.untypedef.type.untypedef != s
-				ce.replace C::CExpression[structoffset(s, ce.rexpr, 0, sizeof(ce.type.untypedef.type))]
+			if not ce.op and ce.type.pointer? and not ce.type.pointed.void? and ce.rexpr.kind_of? C::Typed and ce.rexpr.type.pointer? and
+					s = ce.rexpr.type.pointed.untypedef and s.kind_of? C::Union and ce.type.pointed.untypedef != s
+				ce.replace C::CExpression[structoffset(s, ce.rexpr, 0, sizeof(ce.type.pointed))]
 			end
 
 			# (&foo)->bar => foo.bar
@@ -2056,7 +2058,7 @@ class Decompiler
 
 					# reduce trivial static assignments
 					if (e.rexpr.kind_of? C::CExpression and iv = e.rexpr.reduce(@c_parser) and iv.kind_of? ::Integer) or
-					   (e.rexpr.kind_of? C::CExpression and e.rexpr.op == :& and not e.rexpr.lexpr) or
+					   (e.rexpr.kind_of? C::CExpression and e.rexpr.op == :& and not e.rexpr.lexpr and e.rexpr.lexpr.kind_of? C::Variable) or
 					   (e.rexpr.kind_of? C::Variable and e.rexpr.type.kind_of? C::Array)
 						rewritten = false
 						readers = []
@@ -2259,7 +2261,7 @@ class Decompiler
 			end
 			# useless casts (type)*((oeua)Ptype)
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :* and not ce.rexpr.lexpr and ce.rexpr.rexpr.kind_of? C::CExpression and not ce.rexpr.rexpr.op and
-					p = ce.rexpr.rexpr.rexpr and (p.kind_of? C::CExpression or p.kind_of? C::Variable) and p.type.pointer? and ce.type == p.type.untypedef.type
+					p = ce.rexpr.rexpr.rexpr and p.kind_of? C::Typed and p.type.pointer? and ce.type == p.type.pointed
 				ce.op = ce.rexpr.op
 				ce.rexpr = ce.rexpr.rexpr.rexpr
 			end
@@ -2416,6 +2418,8 @@ class Decompiler
 
 	# reorder statements to put decl first, move assignments to decl, move args to func prototype
 	def cleanup_var_decl(scope, func)
+		scope.symbol.each_value { |v| v.type = C::BaseType.new(:int) if v.type.void? }
+
 		args = func.type.args
 		decl = []
 		scope.statements.delete_if { |sm|
