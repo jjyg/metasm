@@ -34,6 +34,7 @@ class Graph
 	def initialize(id)
 		@id = id
 		@root_addrs = []
+		@view_x = @view_y = -0xfff_ffff
 		clear
 	end
 
