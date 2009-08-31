@@ -315,7 +315,7 @@ class Decompiler
 		tovar = lambda { |di, e, i_s|
 			case e
 			when Expression; Expression[tovar[di, e.lexpr, i_s], e.op, tovar[di, e.rexpr, i_s]].reduce
-			when Indirection; Indirection[tovar[di, e.target, i_s], e.len]
+			when Indirection; Indirection[tovar[di, e.target, i_s], e.len, e.origin]
 			when :frameptr; e
 			when ::Symbol
 				cache.clear if cache_di != di ; cache_di = di
@@ -1752,7 +1752,8 @@ class Decompiler
 			# (1stmember*)structptr => &structptr->1stmember
 			if not ce.op and ce.type.pointer? and not ce.type.pointed.void? and ce.rexpr.kind_of? C::Typed and ce.rexpr.type.pointer? and
 					s = ce.rexpr.type.pointed.untypedef and s.kind_of? C::Union and ce.type.pointed.untypedef != s
-				ce.replace C::CExpression[structoffset(s, ce.rexpr, 0, sizeof(ce.type.pointed))]
+				ce.rexpr = C::CExpression[structoffset(s, ce.rexpr, 0, sizeof(ce.type.pointed))]
+				ce.replace ce.rexpr if not ce.type.pointed.untypedef.kind_of? C::Function or (ce.rexpr.type.pointer? and ce.rexpr.type.pointed.untypedef.kind_of? C::Function)	# XXX ugly
 			end
 
 			# (&foo)->bar => foo.bar
