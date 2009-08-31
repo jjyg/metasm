@@ -25,6 +25,9 @@ module C
 	class Statement
 	end
 
+	module Typed	# allows quick testing whether an object is an CExpr or a Variable
+	end
+
 	class Block < Statement
 		attr_accessor :symbol	# hash name => Type/Variable/enum value
 		attr_accessor :struct	# hash name => Struct/Union/Enum
@@ -112,6 +115,7 @@ module C
 		def arithmetic? ; false end
 		def integral? ;   false end
 		def float? ;      false end
+		def void? ;       false end
 		def base ;        self  end
 		def untypedef ;   self  end
 
@@ -141,6 +145,7 @@ module C
 		def integral? ; [:char, :short, :int, :long, :longlong, :ptr,
 			:__int8, :__int16, :__int32, :__int64].include? @name end
 		def float? ; [:float, :double, :longdouble].include? @name end
+		def void? ; @name == :void end
 		def align(parser) @name == :double ? 4 : parser.typesize[@name] end
 
 		def initialize(name, *specs)
@@ -176,8 +181,10 @@ module C
 		def arithmetic? ; @type.arithmetic?   end
 		def integral? ;   @type.integral?     end
 		def float? ;      @type.float?        end
+		def void? ;       @type.void?         end
 		def untypedef ;   @type.untypedef     end
 		def align(parser) @type.align(parser) end	# XXX __attribute__ ?
+		def pointed ;     @type.pointed       end
 	end
 	class Function < Type
 		attr_accessor :type		# return type
@@ -411,6 +418,7 @@ module C
 		def arithmetic? ; true ; end
 		def base ; @type.base ; end
 		def align(parser) BaseType.new(:ptr).align(parser) end
+		def pointed ; @type end
 
 		def ==(o)
 			o.class == self.class and o.type == self.type
@@ -529,6 +537,8 @@ module C
 
 	class Variable
 		include Attributes
+		include Typed
+
 		attr_accessor :type
 		attr_accessor :initializer	# CExpr	/ Block (for Functions)
 		attr_accessor :name
@@ -802,6 +812,8 @@ module C
 	end
 
 	class CExpression < Statement
+		include Typed
+
 		# may be :,, :., :'->', :funcall (function, [arglist]), :[] (array indexing), nil (cast)
 		attr_accessor :op
 		# nil/CExpr/Variable/Label/::String( = :quoted/struct member name)/::Integer/::Float/Block
