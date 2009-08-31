@@ -475,6 +475,17 @@ class DisasmWidget < Gtk::VBox
 	end
 end
 
+module GtkProtect
+	def protect
+		begin
+			yield
+		rescue Object
+			MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class.name)
+			puts $!.message, $!.backtrace	# also dump on stdout, for c/c
+		end
+	end
+end
+
 class MessageBox < Gtk::MessageDialog
 	# shows a message box (non-modal)
 	def initialize(owner, str, opts={})
@@ -489,6 +500,8 @@ class MessageBox < Gtk::MessageDialog
 end
 
 class InputBox < Gtk::Dialog
+	include GtkProtect
+
 	# shows a simplitic input box (eg window with a 1-line textbox + OK button), yields the text
 	# TODO history, dropdown, autocomplete, contexts, 3D stereo surround, etc
 	def initialize(owner, str, opts={})
@@ -516,7 +529,7 @@ class InputBox < Gtk::Dialog
 			if id == RESPONSE_ACCEPT
 				resp = text.buffer.text
 				destroy
-				yield resp
+				protect { yield resp }
 			else
 				destroy
 			end
@@ -532,6 +545,8 @@ class InputBox < Gtk::Dialog
 end
 
 class OpenFile < Gtk::FileChooserDialog
+	include GtkProtect
+
 	@@currentfolder = nil
 	# shows an asynchronous FileChooser window, yields the chosen filename
 	# TODO save last path
@@ -547,7 +562,7 @@ class OpenFile < Gtk::FileChooserDialog
 				@@currentfolder = File.dirname(file)
 			end
 			destroy
-			yield file if file
+			protect { yield file } if file
 			true
 		}
 
@@ -557,6 +572,8 @@ class OpenFile < Gtk::FileChooserDialog
 end
 
 class SaveFile < Gtk::FileChooserDialog
+	include GtkProtect
+
 	@@currentfolder = nil
 
 	# shows an asynchronous FileChooser window, yields the chosen filename
@@ -573,7 +590,7 @@ class SaveFile < Gtk::FileChooserDialog
 				@@currentfolder = File.dirname(file)
 			end
 			destroy
-			yield file if file
+			protect { yield file } if file
 			true
 		}
 
@@ -583,6 +600,8 @@ class SaveFile < Gtk::FileChooserDialog
 end
 
 class ListWindow < Gtk::Dialog
+	include GtkProtect
+
 	# shows a window with a list of items
 	# the list is an array of arrays, displayed as String
 	# the first array is the column names
@@ -614,7 +633,7 @@ class ListWindow < Gtk::Dialog
 
 		treeview.signal_connect('cursor_changed') { |x|
 			if iter = treeview.selection.selected
-				yield iter
+				protect { yield iter }
 			end
 		}
 
@@ -631,6 +650,8 @@ class ListWindow < Gtk::Dialog
 end
 
 class MainWindow < Gtk::Window
+	include GtkProtect
+
 	attr_accessor :dasm_widget, :menu
 	def initialize(title = 'metasm disassembler')
 		super()
@@ -698,7 +719,7 @@ class MainWindow < Gtk::Window
 
 		addsubmenu(filemenu, 'OPEN', '^o') {
 			OpenFile.new(self, 'chose target binary') { |exename|
-				protect { loadfile(exename) }
+				loadfile(exename)
 			}
 		}
 		addsubmenu(filemenu, '_Debug') {
@@ -715,7 +736,7 @@ class MainWindow < Gtk::Window
 
 		addsubmenu(filemenu, 'SAVE', '^s') {
 			OpenFile.new(self, 'chose save file') { |file|
-				protect { @dasm_widget.dasm.save_file(file) }
+				@dasm_widget.dasm.save_file(file)
 			} if @dasm_widget
 		}
 
@@ -793,8 +814,8 @@ class MainWindow < Gtk::Window
 		addsubmenu(actions, 'Pause dasm', 'p', :check) { |ck| ck.active = !@dasm_widget.playpause_dasm }
 		addsubmenu(actions, 'Run ruby snippet', '^r') { @dasm_widget.prompt_run_ruby }
 		addsubmenu(actions, 'Run _ruby plugin') {
-			openfile('ruby plugin') { |f|
-				protect { @dasm_widget.instance_eval(File.read(f)) }
+			OpenFile.new(self, 'ruby plugin') { |f|
+				@dasm_widget.instance_eval(File.read(f))
 			}
 		}
 
@@ -806,13 +827,13 @@ class MainWindow < Gtk::Window
 		addsubmenu(options, 'Debug _backtrace', :check) { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
 		addsubmenu(options, 'Backtrace li_mit') {
 			InputBox.new(self, 'max blocks to backtrace', :text => @dasm_widget.dasm.backtrace_maxblocks ) { |target|
-				protect { @dasm_widget.dasm.backtrace_maxblocks = Integer(target) } if not target.empty?
+				@dasm_widget.dasm.backtrace_maxblocks = Integer(target) if not target.empty?
 			}
 		}
 		addsubmenu(options, 'Backtrace _limit (data)') {
 			InputBox.new(self, 'max blocks to backtrace data (-1 to never start)',
 					:text => @dasm_widget.dasm.backtrace_maxblocks_data ) { |target|
-				protect { @dasm_widget.dasm.backtrace_maxblocks_data = Integer(target) } if not target.empty?
+				@dasm_widget.dasm.backtrace_maxblocks_data = Integer(target) if not target.empty?
 			}
 		}
 		addsubmenu(options)
@@ -870,14 +891,6 @@ class MainWindow < Gtk::Window
 		item.signal_connect('activate') { protect { action.call(item) } } if action
 		menu.append item
 		item
-	end
-
-	def protect
-		begin
-			yield
-		rescue Object
-			MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class.name)
-		end
 	end
 end
 
