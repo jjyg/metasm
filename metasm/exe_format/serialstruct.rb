@@ -216,20 +216,21 @@ end	# class methods
 		s
 	end
 
+	def dump(e, a)
+		case e
+		when Integer; e >= 0x100 ? '0x%X'%e : e
+		when String; e.length > 64 ? e[0, 62].inspect+'...' : e.inspect
+		when Array; '[' + e.map { |i| dump(i, a) }.join(', ') + ']'
+		when SerialStruct; a.include?(e) ? '...' : e.to_s(a)
+		else e.inspect
+		end
+	end
+
 	# displays the struct content, ordered by fields
-	def to_s
+	def to_s(a=[])
 		ivs = instance_variables.map { |iv| iv.to_sym }
 		ivs = (struct_fields.to_a.map { |f| f[NAME] }.compact & ivs) | ivs
-		"<#{self.class} " + ivs.map { |iv|
-			v = instance_variable_get(iv)
-			case v
-			when Integer; v = '0x%X'%v if v >= 0x100
-			when String; v = (v.length > 64 ? v[0, 62].inspect + '...' : v.inspect)
-			# TODO when EncodedData
-			else v = v.inspect
-			end
-		       	"#{iv}=#{v}"
-		}.join(' ') + ">"
+		"<#{self.class} " + ivs.map { |iv| "#{iv}=#{dump(instance_variable_get(iv), a+[self])}" }.join(' ') + ">"
 	end
 end
 end
