@@ -476,11 +476,15 @@ class DisasmWidget < Gtk::VBox
 end
 
 module GtkProtect
+	@@lasterror = Time.now
 	def protect
 		begin
 			yield
 		rescue Object
 			puts $!.message, $!.backtrace	# also dump on stdout, for c/c
+			delay = Time.now-@@lasterror
+			sleep 1-delay if delay < 1	# msgbox flood protection
+			@@lasterror = Time.now
 			MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class.name)
 		end
 	end
@@ -489,6 +493,7 @@ end
 class MessageBox < Gtk::MessageDialog
 	# shows a message box (non-modal)
 	def initialize(owner, str, opts={})
+		owner = nil if owner and owner.destroyed?
 		owner ||= Gtk::Window.toplevels.first
 		opts = {:title => opts} if opts.kind_of? String
 		super(owner, Gtk::Dialog::DESTROY_WITH_PARENT, INFO, BUTTONS_CLOSE, str)
