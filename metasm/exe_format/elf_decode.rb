@@ -49,6 +49,7 @@ class ELF
 	def decode_sxword(edata= @encoded) edata.decode_imm((@bitsize == 32 ? :i32 : :i64), @endianness) end
 	alias decode_addr decode_xword
 	alias decode_off  decode_xword
+	def decode_strz( edata = @encoded) if i = edata.data.index(?\0, edata.ptr) ; edata.read(i+1-edata.ptr).chop end end
 
 	def readstr(str, off)
 		if off > 0 and i = str.index(?\0, off) rescue false	# LoadedElf with arbitrary pointer...
@@ -577,6 +578,105 @@ class ELF
 		Metasm::Relocation.new(Expression[target], sz, @endianness) if target
 	end
 
+	class DwarfDebug
+		# decode a DWARF2 'compilation unit'
+		def decode(elf, info, abbrev, str)
+			super(elf, info)
+			len = @cu_len-7	# @cu_len is size from end of @cu_len field, so we substract ptsz/tag/abroff
+			info.ptr += len	# advance for caller
+			info = info[info.ptr-len, len]	# we'll work on our segment
+			abbrev.ptr = @abbrev_off
+
+			return if abbrev.ptr >= abbrev.length or info.ptr >= info.length
+
+			idx_abbroff = {}
+
+			# returns a list of siblings at current abbrev.ptr
+			decode_tree = lambda { |parent|
+				siblings = []
+				loop {
+					info_idx = elf.decode_leb(info)
+					break siblings if info_idx == 0
+					abbrev.ptr = idx_abbroff[info_idx] if idx_abbroff[info_idx]
+					idx_abbroff[info_idx] ||= abbrev.ptr
+					n = DwarfDebug::Node.decode(elf, info, abbrev, str, idx_abbroff)
+					idx_abbroff[info_idx+1] ||= abbrev.ptr
+					siblings << n
+					n.children = decode_tree[n] if n.has_child == 1
+					n.parent = parent
+					break n if not parent
+				}
+			}
+			@tree = decode_tree[nil]
+		end
+
+		class Node
+			def decode(elf, info, abbrev, str, idx_abbroff)
+				super(elf, abbrev)
+				return if @index == 0
+				@attributes = []
+				loop {
+					a = Attribute.decode(elf, abbrev)
+					break if a.attr == 0 and a.form == 0
+					if a.form == 'INDIRECT'	# actual form tag is stored in info
+						a.form = elf.decode_leb(info)
+						a.form = DWARF_FORM[a.form] || a.form	# XXX INDIRECT again ?
+					end
+					a.data = case a.form
+					when 'ADDR'; elf.decode_xword(info)	# should use dbg.ptr_sz
+					when 'DATA1', 'REF1', 'BLOCK1', 'FLAG'; elf.decode_byte(info)
+					when 'DATA2', 'REF2', 'BLOCK2'; elf.decode_half(info)
+					when 'DATA4', 'REF4', 'BLOCK4'; elf.decode_word(info)
+					when 'DATA8', 'REF8', 'BLOCK8'; elf.decode_word(info) | (elf.decode_word(info) << 32)
+					when 'SDATA', 'UDATA', 'REF_UDATA', 'BLOCK'; elf.decode_leb(info)
+					when 'STRING'; elf.decode_strz(info)
+					when 'STRP'; str.ptr = elf.decode_word(info) ; elf.decode_strz(str)
+					end
+					case a.form
+					when /^REF/
+					when /^BLOCK/; a.data = info.read(a.data)
+					end
+					@attributes << a
+				}
+			end
+		end
+	end
+
+	# decode an ULEB128 (dwarf2): read bytes while high bit is set, littleendian
+	def decode_leb(ed = @encoded)
+		v = s = 0
+		loop {
+			b = ed.read(1).unpack('C').first.to_i
+			v |= (b & 0x7f) << s
+			s += 7
+			break v if (b&0x80) == 0
+		}
+	end
+
+	# decodes the debugging information if available
+	# only a subset of DWARF2/3 is handled right now
+	# most info taken from http://ratonland.org/?entry=39 & libdwarf/dwarf.h
+	def decode_debug
+		return if not @sections
+
+		# assert presence of DWARF sections
+		info = @sections.find { |sec| sec.name == '.debug_info' }
+		abbrev = @sections.find { |sec| sec.name == '.debug_abbrev' }
+		str = @sections.find { |sec| sec.name == '.debug_str' }
+		return if not info or not abbrev
+
+		# section -> content
+		info = @encoded[info.offset, info.size]
+		abbrev = @encoded[abbrev.offset, abbrev.size]
+		str = @encoded[str.offset, str.size] if str
+
+		@debug = []
+
+		while info.ptr < info.length
+			@debug << DwarfDebug.decode(self, info, abbrev, str)
+		end
+	end
+
 	# decodes the ELF dynamic tags, interpret them, and decodes symbols and relocs
 	def decode_segments_dynamic
 		return if not dynamic = @segments.find { |s| s.type == 'DYNAMIC' }
@@ -592,6 +692,7 @@ class ELF
 	def decode_segments
 		decode_segments_dynamic
 		decode_sections_symbols
+		#decode_debug	# too many info, decode on demand
 		@segments.each { |s|
 			case s.type
 			when 'LOAD', 'INTERP'
