@@ -480,8 +480,8 @@ module GtkProtect
 		begin
 			yield
 		rescue Object
-			MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class.name)
 			puts $!.message, $!.backtrace	# also dump on stdout, for c/c
+			MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class.name)
 		end
 	end
 end
