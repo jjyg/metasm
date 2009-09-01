@@ -1753,7 +1753,10 @@ class Decompiler
 			if not ce.op and ce.type.pointer? and not ce.type.pointed.void? and ce.rexpr.kind_of? C::Typed and ce.rexpr.type.pointer? and
 					s = ce.rexpr.type.pointed.untypedef and s.kind_of? C::Union and ce.type.pointed.untypedef != s
 				ce.rexpr = C::CExpression[structoffset(s, ce.rexpr, 0, sizeof(ce.type.pointed))]
-				ce.replace ce.rexpr if not ce.type.pointed.untypedef.kind_of? C::Function or (ce.rexpr.type.pointer? and ce.rexpr.type.pointed.untypedef.kind_of? C::Function)	# XXX ugly
+				#ce.replace ce.rexpr if not ce.type.pointed.untypedef.kind_of? C::Function or (ce.rexpr.type.pointer? and ce.rexpr.type.pointed.untypedef.kind_of? C::Function)	# XXX ugly
+				# int32* v1 = (int32*)pstruct;
+				# z = v1+4	if v1 is not cast, the + is invalid (sizeof pointed changes)
+				# TODO when finding type of pstruct, set type of v1 accordingly
 			end
 
 			# (&foo)->bar => foo.bar
