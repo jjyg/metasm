@@ -831,6 +831,31 @@ EOC
 			}
 		end
 	end
+
+	def module_name
+		@tag and @tag['SONAME']
+	end
+
+	def module_address
+		@segments.map { |s_| s_.vaddr if s_.type == 'LOAD' }.compact.min || 0
+	end
+
+	def module_size
+		return 0 if not s = @segments.to_a.reverse.map { |s_| s_.vaddr + s_.memsz if s_.type == 'LOAD' }.compact.max
+		s.vaddr + s.memsz - module_address
+	end
+
+	def module_symbols
+		syms = []
+		syms << ['entrypoint', @header.entrypoint] if @header.entrypoint != 0 or @header.type == 'EXEC'
+		m_addr = module_address
+		@symbols.each { |s|
+			next if not s.name or s.shndx == 'UNDEF'
+			pfx = %w[LOCAL WEAK].include?(s.bind) ? s.bind.downcase + '_' : ''
+			syms << [pfx+s.name, s.value-m_addr, s.size]
+		}
+		syms
+	end
 end
 
 class LoadedELF < ELF

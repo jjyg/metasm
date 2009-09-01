@@ -266,6 +266,24 @@ EOS
 		end
 		d
 	end
+
+	def module_name
+		@export and @export.libname
+	end
+
+	def module_address
+		@optheader.image_base
+	end
+
+	def module_size
+		@sections.map { |s_| s_.virtaddr + s_.virtsize }.max || 0
+	end
+
+	def module_symbols
+		syms = [['entrypoint', @optheader.entrypoint]]
+		@export.exports.to_a.each { |e| syms << [e.name, label_rva(e.target)] } if @export
+		syms
+	end
 end
 
 # an instance of a PE file, loaded in memory
