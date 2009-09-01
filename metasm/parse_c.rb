@@ -3248,8 +3248,11 @@ EOH
 				when :'[]'
 					r, dep = CExpression.dump(@lexpr, scope, r, dep, true)
 					r.last << '['
-					if lexpr.kind_of? Variable and rexpr.kind_of? CExpression and not rexpr.op and rexpr.rexpr.kind_of? ::Integer and
-					       		lexpr.attributes.to_a.find { |a| a =~ /^indexenum:(.*)/ } and enum = scope.struct_ancestors[$1] and
+					l = lexpr if lexpr.kind_of? Variable
+					l = lexpr.lexpr.type.untypedef.findmember(lexpr.rexpr) if lexpr.kind_of? CExpression and lexpr.op == :'.'
+					l = lexpr.lexpr.type.pointed.untypedef.findmember(lexpr.rexpr) if lexpr.kind_of? CExpression and lexpr.op == :'->'
+					if l and l.attributes and rexpr.kind_of? CExpression and not rexpr.op and rexpr.rexpr.kind_of? ::Integer and
+					       		l.attributes.find { |a| a =~ /^indexenum:(.*)/ } and enum = scope.struct_ancestors[$1] and
 							l = enum.members.index(rexpr.rexpr)
 						r.last << l
 						dep |= [enum]
