@@ -38,6 +38,7 @@ OptionParser.new { |opt|
 	opt.on('--16', 'set cpu in 16bit mode') { $cpu.size = 16 }
 	opt.on('--le', 'set cpu in little-endian mode') { $cpu.endianness = :little }
 	opt.on('--be', 'set cpu in big-endian mode') { $cpu.endianness = :big }
+	opt.on('-fno-pic', 'generate position-dependant code') { $cpu.generate_PIC = false }
 }.parse!
 
 if file = ARGV.shift
