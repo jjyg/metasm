@@ -275,7 +275,7 @@ class << self
 end
 end
 
-# this class implements a high-level API over the Windows debugging primitives
+# this class implements a high-level API over the ptrace debugging primitives
 class LinDebugger < Debugger
 	attr_accessor :dbg
 	def initialize(pid)
@@ -285,47 +285,119 @@ class LinDebugger < Debugger
 		@cpu = Ia32.new
 		@memory = LinuxRemoteString.new(@pid)
 		@memory.ptrace = @dbg
-		@running = false
-		@reg_cache = {}
+		@has_pax = false
 		super()
 	end
 
-	def running?
-		@running
-	end
-
+	REGLIST = [:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp, :orig_eax, :eip]
 	def register_list
-		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp, :orig_eax, :eip]
+		REGLIST
 	end
 
 	# reg => regsize (bits, 1 for flags)
+	REGSZ = Hash.new(32)
 	def register_size
-		Hash.new(32)
+		REGSZ
 	end
 
 	def register_pc ; :eip ; end
 	def register_sp ; :esp ; end
 
-	def invalidate
-		@reg_cache = {}	# TODO check if this is needed (gui/gtk may cache already)
-		super()
-	end
-
 	def get_reg_value(r)
-		@reg_cache[r] ||= @dbg.peekusr(PTrace32::REGS_I386[r.to_s.upcase]) & 0xffff_ffff
+		@dbg.peekusr(PTrace32::REGS_I386[r.to_s.upcase]) & 0xffff_ffff
 	end
 	def set_reg_value(r, v)
-		@reg_cache[r] = v
 		v = [v].pack('L').unpack('l').first if v >= 0x8000_0000
 		@dbg.pokeusr(PTrace32::REGS_I386[r.to_s.upcase], v)
 	end
 
-	def continue
-		invalidate
-		@running = true
-		@dbg.cont
+	def update_waitpid
+		if $?.exited?
+			@state = :dead
+			@info = "status #{$?.exitstatus}"
+		elsif $?.signaled?
+			@state = :dead
+			@info = "signal #{$?.termsig} #{Signal.list.index($?.termsig)}"
+		elsif $?.stopped?
+			@state = :stopped
+			@info = "signal #{$?.stopsig} #{Signal.list.index($?.stopsig)}"
+		else
+			@state = :stopped
+			@info = "unknown #{$?.inspect}"
+		end
+	end
+
+	def do_check_target
+		return unless ::Process.waitpid(@pid, ::Process::WNOHANG)
+		update_waitpid
+	rescue Errno::ECHILD
+		@state = :dead
+		@info = ''
+	end
+
+	def do_wait_target
 		::Process.waitpid(@pid)
-		@running = false
+		update_waitpid
+	rescue Errno::ECHILD
+		@state = :dead
+		@info = ''
+	end
+
+	def do_continue
+		@dbg.cont
+	end
+
+	def do_singlestep
+		@dbg.singlestep
+	end
+
+	def need_stepover(di)
+		di and (di.instruction.prefix[:rep] or di.opcode.props[:saveip])
+	end
+
+	def bpx(*a)
+		return hwbp(*a) if @has_pax
+		super(*a)
+	end
+
+	def enable_bp(addr)
+		return if not b = @breakpoint[addr]
+		b.state = :active
+		case b.type
+		when :bpx
+			begin
+				b.info ||= @memory[addr, 1]
+				@memory[addr, 1] = "\xcc"
+			rescue Errno::EIO
+				@memory[addr, 1]	# check if we can read
+				# if yes, it's a PaX-style config
+				@has_pax = true
+				b.type = :hw
+				b.info = nil
+				enable_bp(addr)
+			end
+		when :hw
+			# TODO dr7 etc
+		end
+	end
+
+	def disable_bp(addr)
+		return if not b = @breakpoint[addr]
+		b.state = :inactive
+		case b.type
+		when :bpx
+			@memory[addr, 1] = b.info
+		when :hw
+		end
+	end
+
+	def check_post_run
+		addr = pc
+		if @state == :stopped and @info =~ /TRAP/ and @memory[addr-1, 1] == "\xcc"
+			addr -= 1
+			set_reg_value(register_pc, addr)
+		end
+		super()
 	end
 end
 
