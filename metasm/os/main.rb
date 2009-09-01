@@ -173,7 +173,7 @@ class VirtualString
 	# return nil if the page is invalid/inaccessible
 	# addr is page-aligned by the caller
 	# addr is absolute
-	#def get_page(addr)
+	#def get_page(addr, len=@pagelength)
 	#end
 
 	# searches the cache for a page containing addr, updates if not found
@@ -255,9 +255,9 @@ class VirtualFile < VirtualString
 	end
 
 	# reads an aligned page from the file, at file offset addr
-	def get_page(addr)
+	def get_page(addr, len=@pagelength)
 		@fd.pos = addr
-		@fd.read @pagelength
+		@fd.read len
 	end
 
 	# overwrite a section of the file

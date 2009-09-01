@@ -278,9 +278,9 @@ class WindowsRemoteString < VirtualString
 		WinAPI.writeprocessmemory(@handle, addr, data, data.length, nil)
 	end
 
-	def get_page(addr)
-		page = 0.chr*4096
-		WinAPI.readprocessmemory(@handle, addr, page, 4096, 0)
+	def get_page(addr, len=@pagelength)
+		page = 0.chr*len
+			WinAPI.readprocessmemory(@handle, addr, page, len, 0)
 		page
 	end
 

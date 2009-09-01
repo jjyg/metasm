@@ -361,13 +361,13 @@ class LinuxRemoteString < VirtualString
 		do_ptrace { |ptrace| ptrace.writemem(addr, data) }
 	end
 
-	def get_page(addr)
-		return do_ptrace { |pt| pt.readmem(addr, 4096) } if not readfd
+	def get_page(addr, len=@pagelength)
+		return do_ptrace { |pt| pt.readmem(addr, len) } if not readfd
 		@readfd.pos = addr
 		# target must be stopped
 		do_ptrace {
 			begin
-				@readfd.read 4096
+				@readfd.read len
 			rescue Errno::EIO
 				nil
 			end
