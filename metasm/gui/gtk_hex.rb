@@ -15,7 +15,7 @@ class HexWidget < Gtk::DrawingArea
 		:data_size, :line_size, :endianness,
 		#:data_sign, :data_hex,
 		:caret_x, :caret_y, :caret_x_data, :focus_zone,
-		:view_addr, :write_pending
+		:view_addr, :write_pending, :hl_word
 
 	def initialize(dasm, parent_widget)
 		@dasm = dasm
@@ -159,8 +159,9 @@ class HexWidget < Gtk::DrawingArea
 	def data_at(addr, len=@line_size)
 		if len == @line_size and l = @raw_data_cache[addr]
 			l
-		elsif s = @dasm.get_section_at(addr) and s[0].ptr < s[0].length
-			l = s[0].read(len)
+		elsif s = @dasm.get_section_at(addr).to_a[0] and s.ptr < s.length and (not s.data.respond_to? :page_invalid? or
+				not (s.data.page_invalid?(s.ptr) and s.data.page_invalid?(s.ptr+len-1)))
+			l = s.read(len)
 			@raw_data_cache[addr] = l if len == @line_size
 			l
 		end
@@ -199,20 +200,23 @@ class HexWidget < Gtk::DrawingArea
 
 		xd = x_data*@font_width
 		xa = x_ascii*@font_width
+		hexfmt = "%0#{@data_size*2}x "
+		wp_win = {} #@write_pending
+		@write_pending.keys.grep(curaddr...curaddr+(w_h/@font_height+1)*@line_size).each { |k| wp_win[k] = @write_pending[k] } if not @write_pending.empty?
 		# draw text until screen is full
 		while y < w_h
 			render["#{Expression[curaddr]}".rjust(9, '0'), :address] if @show_address
 
-			d = data_at(curaddr).to_s
+			d = data_at(curaddr)
 			wp = {}
 			d.length.times { |o|
-				if c = @write_pending[curaddr+o]
+				if c = wp_win[curaddr+o]
 					wp[o] = true
 					d = d.dup
 					d[o, 1] = c.chr
 				end
-			}
-			if @show_data
+			} if d
+			if @show_data and d
 				x = xd
 				# XXX non-hex display ? (signed int, float..)
 				case @data_size
@@ -221,14 +225,26 @@ class HexWidget < Gtk::DrawingArea
 				when 4; pak = (@endianness == :little ? 'V*' : 'N*')
 				end
 				awp = {} ; wp.each_key { |k| awp[k/@data_size] = true }
-				d.unpack(pak).each_with_index { |b, i|
-					col = awp[i] ? :write_pending : :data
-					render["%0#{@data_size*2}x " % b, col]
-					render[' ', :data] if i % 4 == 3
-				}
+				i = 0
+				if awp.empty?
+					s = ''
+					d.unpack(pak).each { |b|
+						s << (hexfmt % b)
+						s << ' ' if i & 3 == 3
+						i += 1
+					}
+					render[s, :data]
+				else
+					d.unpack(pak).each { |b|
+						col = awp[i] ? :write_pending : :data
+						render[hexfmt % b, col]
+						render[' ', :data] if i & 3 == 3
+						i+=1
+					}
+				end
 			end
-			x = xa
-			if @show_ascii
+			if @show_ascii and d
+				x = xa
 				d = d.gsub(/[^\x20-\x7e]/, '.')
 				if wp.empty?
 					render[d, :ascii]
@@ -326,8 +342,9 @@ class HexWidget < Gtk::DrawingArea
 				oo = @caret_x_data/2
 				oo = @data_size - oo - 1 if @endianness == :little
 				baddr = current_address + oo
+				return @parent_widget.keypress(ev) if not d = data_at(baddr, 1)
 				o = 4*((@caret_x_data+1) % 2)
-				@write_pending[baddr] ||= data_at(baddr, 1)[0]
+				@write_pending[baddr] ||= d[0]
 				@write_pending[baddr] = (@write_pending[baddr] & ~(0xf << o) | (v << o))
 			else
 				@write_pending[current_address] = ev.keyval
