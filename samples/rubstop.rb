@@ -75,13 +75,15 @@ class Rubstop < Metasm::PTrace32
 		checkbp
 	end
 
+	def state; :stopped end
+
 	attr_accessor :pgm, :regs_cache, :breakpoints, :singleshot, :wantbp,
 		:symbols, :symbols_len, :filemap, :has_pax, :oldregs
 	def initialize(*a)
 		super(*a)
 		@pgm = Metasm::ExeFormat.new Metasm::Ia32.new
 		@pgm.encoded = Metasm::EncodedData.new Metasm::LinuxRemoteString.new(@pid)
-		@pgm.encoded.data.ptrace = self
+		@pgm.encoded.data.dbg = self
 		@regs_cache = {}
 		@oldregs = {}
 		readregs

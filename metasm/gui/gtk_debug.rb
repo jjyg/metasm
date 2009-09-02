@@ -240,7 +240,7 @@ class DbgRegWidget < Gtk::DrawingArea
 			x += @layout.pixel_size[0]
 		}
 
-		running = @dbg.running?
+		running = (@dbg.state == :running)
 		xd = x_data*@font_width
 		@registers.each { |reg|
 			x = 1
@@ -569,41 +569,49 @@ class DbgConsoleWidget < Gtk::DrawingArea
 					@curline[@caret_x, 0] = st[-1, 1]
 					@caret_x += 1
 				end
+				update_status_cmd
 				redraw
 			end
 
 		when 0x20..0x7e
 			@curline[@caret_x, 0] = ev.keyval.chr
 			@caret_x += 1
-			st = @curline.split.first
-			if @commands[st]
-				@statusline = "#{st}: should add a short description here"
-			else
-				keys = @commands.keys.find_all { |k| k[0, st.length] == st } if st
-				if keys and not keys.empty?
-					@statusline = keys.sort.join(' ')
-				else
-					@statusline = 'type \'help\' for help'
-				end
-			end
+			update_status_cmd
 			redraw
 		when GDK_Return, GDK_KP_Enter
 			handle_command
+			update_status_cmd
 		when GDK_Escape
 		when GDK_Delete
 			if @caret_x < @curline.length
 				@curline[@caret_x, 1] = ''
+				update_status_cmd
 				redraw
 			end
 		when GDK_BackSpace
 			if @caret_x > 0
 				@caret_x -= 1
 				@curline[@caret_x, 1] = ''
+				update_status_cmd
 				redraw
 			end
 		else return @parent_widget.keypress(ev)
 		end
 		true
+	end
+
+	def update_status_cmd
+		st = @curline.split.first
+		if @commands[st]
+			@statusline = "#{st}: should add a short description here"
+		else
+			keys = @commands.keys.find_all { |k| k[0, st.length] == st } if st
+			if keys and not keys.empty?
+				@statusline = keys.sort.join(' ')
+			else
+				@statusline = 'type \'help\' for help'
+			end
+		end
 	end
 
 	attr_accessor :commands

@@ -280,7 +280,7 @@ class WindowsRemoteString < VirtualString
 
 	def get_page(addr, len=@pagelength)
 		page = 0.chr*len
-			WinAPI.readprocessmemory(@handle, addr, page, len, 0)
+		return if WinAPI.readprocessmemory(@handle, addr, page, len, 0) == 0
 		page
 	end
 

@@ -261,7 +261,7 @@ class << self
 			pr.modules = []
 			File.read("/proc/#{pid}/maps").each_line { |map|
 				case map
-				when /^(........)-.* (\/.*)/
+				when /^(........(?:........)?)-.* (\/.*)/
 					next if pr.modules.find { |m| m.path == $2 }
 					m = Process::Module.new
 					m.addr = $1.to_i(16)
@@ -277,15 +277,16 @@ end
 
 # this class implements a high-level API over the ptrace debugging primitives
 class LinDebugger < Debugger
-	attr_accessor :dbg
+	attr_accessor :ptrace
 	def initialize(pid)
-		@dbg = PTrace32.new(pid)
+		@ptrace = PTrace32.new(pid)
 		@pid = pid
 		# TODO get current cpu (x64)
 		@cpu = Ia32.new
 		@memory = LinuxRemoteString.new(@pid)
-		@memory.ptrace = @dbg
+		@memory.dbg = self
 		@has_pax = false
+		@reg_val_cache = {}
 		super()
 	end
 
@@ -303,12 +304,20 @@ class LinDebugger < Debugger
 	def register_pc ; :eip ; end
 	def register_sp ; :esp ; end
 
+	def invalidate
+		@reg_val_cache.clear
+		super()
+	end
+
 	def get_reg_value(r)
-		@dbg.peekusr(PTrace32::REGS_I386[r.to_s.upcase]) & 0xffff_ffff
+		return @reg_val_cache[r] || 0 if @state != :stopped
+		@reg_val_cache[r] ||= @ptrace.peekusr(PTrace32::REGS_I386[r.to_s.upcase]) & 0xffff_ffff
 	end
 	def set_reg_value(r, v)
-		v = [v].pack('L').unpack('l').first if v >= 0x8000_0000
-		@dbg.pokeusr(PTrace32::REGS_I386[r.to_s.upcase], v)
+		@reg_val_cache[r] = v & 0xffff_ffff
+		return if @state != :stopped
+		v = v-0x1_0000_0000 if v >= 0x8000_0000
+		@ptrace.pokeusr(PTrace32::REGS_I386[r.to_s.upcase], v)
 	end
 
 	def update_waitpid
@@ -344,11 +353,11 @@ class LinDebugger < Debugger
 	end
 
 	def do_continue
-		@dbg.cont
+		@ptrace.cont
 	end
 
 	def do_singlestep
-		@dbg.singlestep
+		@ptrace.singlestep
 	end
 
 	def need_stepover(di)
@@ -403,26 +412,34 @@ end
 
 class LinuxRemoteString < VirtualString
 	attr_accessor :pid, :readfd, :invalid_addr
-	attr_accessor :ptrace
+	attr_accessor :dbg
 
 	# returns a virtual string proxying the specified process memory range
 	# reads are cached (4096 aligned bytes read at once), from /proc/pid/mem
 	# writes are done directly by ptrace
-	def initialize(pid, addr_start=0, length=0xffff_ffff, ptrace=nil)
+	def initialize(pid, addr_start=0, length=0xffff_ffff, dbg=nil)
 		@pid = pid
 		@readfd = File.open("/proc/#@pid/mem") rescue nil
-		@ptrace = ptrace if ptrace
+		@dbg = dbg if dbg
 		@invalid_addr = false
 		super(addr_start, length)
 	end
 
 	def dup(addr = @addr_start, len = @length)
-		self.class.new(@pid, addr, len, ptrace)
+		self.class.new(@pid, addr, len, dbg)
 	end
 
 	def do_ptrace
-		if ptrace
-			yield @ptrace
+		if dbg
+			if @dbg.state == :running
+				Process.kill(Signal.list['STOP'], @pid)
+				Process.waitpid(@pid)
+				r = yield @dbg.ptrace
+				@dbg.ptrace.cont
+				r
+			else
+				yield @dbg.ptrace
+			end
 		else
 			PTrace32.open(@pid) { |ptrace| yield ptrace }
 		end

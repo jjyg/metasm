@@ -162,6 +162,12 @@ class VirtualString
 		@pagecache = []
 		@pagecache_len = 4
 		@pagelength ||= 4096	# must be (1 << x)
+		@invalid_page_addr = nil
+	end
+
+	# returns wether a page is valid or not
+	def page_invalid?(addr)
+		cache_get_page(addr)[2]
 	end
 
 	# invalidates the page cache
@@ -179,16 +185,22 @@ class VirtualString
 	# searches the cache for a page containing addr, updates if not found
 	def cache_get_page(addr)
 		addr &= ~(@pagelength-1)
+		i = 0
 		@pagecache.each { |c|
 			if addr == c[0]
 				# most recently used first
-				@pagecache.unshift @pagecache.delete(c) if c != @pagecache[0]
+				@pagecache.unshift @pagecache.delete_at(i) if i != 0
 				return c
 			end
+			i += 1
 		}
 		@pagecache.pop if @pagecache.length >= @pagecache_len
-		@pagecache.unshift [addr, get_page(addr).to_s.ljust(@pagelength, 0.chr)[0, @pagelength]]
-		@pagecache.first
+		c = [addr]
+		p = get_page(addr)
+		c << p.to_s.ljust(@pagelength, "\0")
+		c << true if not p
+		@pagecache.unshift c
+		c
 	end
 
 	# reads a range from the page cache
@@ -313,7 +325,6 @@ class Debugger
 	end
 
 	def check_pre_run(addr=pc)
-		invalidate
 		@breakpoint.each { |a, b|
 			next if a == addr or b.state != :inactive
 			enable_bp(a)
@@ -322,6 +333,7 @@ class Debugger
 	end
 
 	def check_post_run
+		invalidate
 		addr = pc
 		@breakpoint.each { |a, b|
 			next if a != addr or b.state != :active
