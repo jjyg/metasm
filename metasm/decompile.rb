@@ -225,7 +225,8 @@ class Decompiler
 		end
 		if ptype.kind_of? C::Union and type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length
 			# TODO struct init, array, fptrs..
-		elsif type.pointer? and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and [1, 2, 4].include? tsz and (not var.type.pointer? or sizeof(var.type.pointed) != sizeof(type.pointed) or not var.initializer)
+		elsif type.pointer? and not type.pointed.untypedef.kind_of? C::Function and s = @dasm.get_section_at(name) and s[0].ptr < s[0].length and
+				[1, 2, 4].include? tsz and (not var.type.pointer? or sizeof(var.type.pointed) != sizeof(type.pointed) or not var.initializer)
 			# TODO do not overlap other statics (but labels may refer to elements of the array...)
 			data = (0..256).map {
 				v = s[0].decode_imm("u#{tsz*8}".to_sym, @dasm.cpu.endianness)

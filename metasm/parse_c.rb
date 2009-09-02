@@ -3235,7 +3235,7 @@ EOH
 					end
 				else
 					r.last << @op.to_s
-					r, dep = CExpression.dump(@rexpr, scope, r, dep, true)
+					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? C::CExpression and @rexpr.lexpr))
 				end
 			elsif not @rexpr
 				r, dep = CExpression.dump(@lexpr, scope, r, dep)
@@ -3275,12 +3275,9 @@ EOH
 					r.last << ' : '
 					r, dep = CExpression.dump(@rexpr[1], scope, r, dep, true)
 				else
-					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and
-						@lexpr.lexpr and OP_PRIO[@op] != OP_PRIO[@lexpr.op] and OP_PRIO[@lexpr.op]))
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and @lexpr.lexpr and @lexpr.op != @op))
 					r.last << ' ' << @op.to_s << ' '
-					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and
-						OP_PRIO[@op] != OP_PRIO[:'='] and
-						@rexpr.lexpr and OP_PRIO[@op] != OP_PRIO[@rexpr.op] and OP_PRIO[@rexpr.op]))
+					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and @rexpr.lexpr and @rexpr.op != @op))
 				end
 			end
 			r.last << ')' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
