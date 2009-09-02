@@ -353,15 +353,19 @@ class LinDebugger < Debugger
 	end
 
 	def do_continue
+		return if @state != :stopped
+		@state = :running
 		@ptrace.cont
 	end
 
 	def do_singlestep
+		return if @state != :stopped
+		@state = :running
 		@ptrace.singlestep
 	end
 
 	def need_stepover(di)
-		di and (di.instruction.prefix[:rep] or di.opcode.props[:saveip])
+		di and ((di.instruction.prefix and di.instruction.prefix[:rep]) or di.opcode.props[:saveip])
 	end
 
 	def bpx(*a)
@@ -402,7 +406,9 @@ class LinDebugger < Debugger
 
 	def check_post_run
 		addr = pc
+		@memory.invalidate
 		if @state == :stopped and @info =~ /TRAP/ and @memory[addr-1, 1] == "\xcc"
+			# FIXME
 			addr -= 1
 			set_reg_value(register_pc, addr)
 		end

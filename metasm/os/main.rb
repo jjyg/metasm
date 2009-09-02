@@ -291,7 +291,7 @@ class Debugger
 		attr_accessor :oneshot, :state, :type, :info
 	end
 
-	attr_accessor :memory, :cpu, :disassembler, :state, :info
+	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint
 	attr_accessor :modulemap, :symbols, :symbols_len
 
 	# initializes the disassembler from @cpu and @memory
@@ -307,7 +307,14 @@ class Debugger
 	# resolves an expression involving register values and/or memory indirection using the current context
 	# uses #register_list, #get_reg_value, @mem, @cpu
 	def resolve_expr(e)
-		bd = register_list.inject({}) { |h, r| h.update r => get_reg_value(r) }
+		bd = {}
+		Expression[e].externals.each { |ex|
+			next if bd[ex]
+			case ex
+			when ::Symbol; bd[ex] = get_reg_value(ex)
+			when ::String; bd[ex] = @symbols.index(ex) || 0
+			end
+		}
 		Expression[e].bind(bd).reduce { |i|
 			if i.kind_of? Indirection and p = i.pointer.reduce and p.kind_of? ::Integer
 				p &= (1 << @cpu.size) - 1 if p < 0
@@ -329,7 +336,6 @@ class Debugger
 			next if a == addr or b.state != :inactive
 			enable_bp(a)
 		}
-		@state = :running
 	end
 
 	def check_post_run
@@ -396,6 +402,11 @@ class Debugger
 		b.type = :bpx
 		@breakpoint[addr] = b
 		enable_bp(addr)
+	end
+
+	def remove_breakpoint(addr)
+		disable_bp(addr)
+		@breakpoint.delete addr
 	end
 
 	# returns the name of the module containing addr

@@ -16,7 +16,7 @@ module GtkGui
 # TODO mark changed register values after singlestep
 # TODO handle debugee fork()
 class DbgWidget < Gtk::VBox
-	attr_accessor :dbg, :console, :regs, :code, :mem
+	attr_accessor :dbg, :console, :regs, :code, :mem, :win
 	def initialize(dbg)
 		super()
 
@@ -75,9 +75,9 @@ class DbgWidget < Gtk::VBox
 	attr_accessor :keyboard_cb
 	def setup_keyboard_cb
 		@keyboard_cb = {
-			GDK_F5 => lambda { dbg_continue },
-			GDK_F10 => lambda { dbg_stepover },
-			GDK_F11 => lambda { dbg_stepinto },
+			GDK_F5 => lambda { @win.protect { dbg_continue } },
+			GDK_F10 => lambda { @win.protect { dbg_stepover } },
+			GDK_F11 => lambda { @win.protect { dbg_singlestep } },
 		}
 	end
 
@@ -85,8 +85,14 @@ class DbgWidget < Gtk::VBox
 		@regs.pre_dbg_run
 	end
 
-	def post_dbg_run
+	def post_dbg_run(update_status = true)
 		gui_update
+		Gtk.idle_add {
+			next true if not @dbg.check_target
+			@console.add_log "target #{@dbg.state} #{@dbg.info}" if update_status
+			gui_update
+			false
+		}
 	end
 
 	def dbg_continue
@@ -97,17 +103,22 @@ class DbgWidget < Gtk::VBox
 
 	def dbg_stepover
 		pre_dbg_run
-		@dbg.step_over
-		post_dbg_run
+		@dbg.stepover
+		post_dbg_run(false)
 	end
 
-	def dbg_stepinto
+	def dbg_singlestep
 		pre_dbg_run
-		@dbg.step_into
-		post_dbg_run
+		@dbg.singlestep
+		post_dbg_run(false)
+	end
+
+	def redraw
+		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
 	end
 
 	def gui_update
+		redraw
 		@children.each { |c|
 			c = c.dasm_widget if c.kind_of? Gtk::Window
 			c.gui_update rescue next
@@ -405,7 +416,7 @@ end
 
 # a widget that displays logs of the debugger, and a cli interface to the dbg
 class DbgConsoleWidget < Gtk::DrawingArea
-	attr_accessor :dbg, :history, :log, :statusline
+	attr_accessor :dbg, :cmd_history, :log, :statusline, :commands, :cmd_help
 
 	def initialize(parent, dbg)
 		@parent_widget = parent
@@ -416,10 +427,13 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		@layout = Pango::Layout.new Gdk::Pango.context
 		@layout_stat = Pango::Layout.new Gdk::Pango.context
 		@color = {}
-		@history = []
 		@log = []
+		@log_length = 400
 		@curline = ''
 		@statusline = 'type \'help\' for help'
+		@cmd_history = ['']
+		@cmd_history_length = 80	# number of past commands to remember
+		@cmd_histptr = nil
 
 		super()
 
@@ -551,9 +565,31 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				update_caret
 			end
 		when GDK_Up
-			# TODO history
+			if not @cmd_histptr
+				@cmd_history << @curline
+				@cmd_histptr = 2
+			else
+				@cmd_histptr += 1
+				@cmd_histptr = 1 if @cmd_histptr > @cmd_history.length
+			end
+			@curline = @cmd_history[-@cmd_histptr].dup
+			@caret_x = @curline.length
+			update_status_cmd
+			redraw
+
 		when GDK_Down
-			# TODO history
+			if not @cmd_histptr
+				@cmd_history << @curline
+				@cmd_histptr = @cmd_history.length
+			else
+				@cmd_histptr -= 1
+				@cmd_histptr = @cmd_history.length if @cmd_histptr < 1
+			end
+			@curline = @cmd_history[-@cmd_histptr].dup
+			@caret_x = @curline.length
+			update_status_cmd
+			redraw
+
 		when GDK_Home
 			@caret_x = 0
 			update_caret
@@ -579,6 +615,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			update_status_cmd
 			redraw
 		when GDK_Return, GDK_KP_Enter
+			@cmd_histptr = nil
 			handle_command
 			update_status_cmd
 		when GDK_Escape
@@ -603,7 +640,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 	def update_status_cmd
 		st = @curline.split.first
 		if @commands[st]
-			@statusline = "#{st}: should add a short description here"
+			@statusline = "#{st}: #{@cmd_help[st]}"
 		else
 			keys = @commands.keys.find_all { |k| k[0, st.length] == st } if st
 			if keys and not keys.empty?
@@ -614,53 +651,170 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		end
 	end
 
-	attr_accessor :commands
 	def new_command(*cmd, &b)
-		cmd.each { |c| @commands[c] = b }
+		hlp = cmd.pop if cmd.last.include? ' '
+		cmd.each { |c|
+			@cmd_help[c] = hlp || 'nodoc'
+			@commands[c] = lambda { |*a|
+				@parent_widget.win.protect { b.call(*a) }
+			}
+		}
+	end
+
+	class IndExpression < Expression
+		class << self
+		def parse_value(lexer)
+			sz = nil
+			ptr = nil
+			loop do
+				nil while tok = lexer.readtok and tok.type == :space
+				return if not tok
+				case tok.raw
+				when 'qword'; sz=8
+				when 'dword'; sz=4
+				when 'word'; sz=2
+				when 'byte'; sz=1
+				when 'ptr'
+				when '['
+					ptr = parse(lexer)
+					nil while tok = lexer.readtok and tok.type == :space
+					raise tok || lexer, '] expected' if tok.raw != ']'
+					break
+				else
+					lexer.unreadtok tok
+					break
+				end
+			end
+			raise lexer, 'invalid indirection' if sz and not ptr
+			if ptr
+				sz ||= 4
+				Indirection[ptr, sz]
+			else super(lexer)
+			end
+		end
+
+		def parse_intfloat(lexer, tok)
+			case tok.raw
+			when /^([0-9]+)$/; tok.value = $1.to_i
+			when /^0x([0-9a-f]+)$/i, /^([0-9a-f]+)h?$/i; tok.value = $1.to_i(16)
+			when /^0b([01]+)$/i; tok.value = $1.to_i(2)
+			end
+		end
+		end
+	end
+
+	# parses the expression contained in arg, updates arg to point after the expr
+	def parse_expr(arg)
+		pp = Preprocessor.new(arg)
+		return if not e = IndExpression.parse(pp)
+
+		# update arg
+		len = pp.pos
+		pp.queue.each { |t| len -= t.raw.length }
+		arg[0, len] = ''
+
+		# resolve ambiguous symbol names/hex values
+		bd = {}
+		e.externals.each { |ex|
+			if not v = @dbg.register_list.find { |r| ex.downcase == r.to_s.downcase } || @dbg.symbols.index(ex)
+				lst = @dbg.symbols.values.find_all { |s| s.downcase.include? ex.downcase }
+				case lst.length
+				when 0
+					if ex =~ /^[0-9a-f]+$/i
+						v = ex.to_s(16)
+					else
+						add_log "unknown symbol name #{ex}"
+						raise "unknown symbol name #{ex}"
+					end
+				when 1
+					v = lst.first
+					add_log "using #{v} for #{ex}"
+				else
+					add_log "ambiguous #{ex}: #{v.join(', ')} ?"
+					raise "ambiguous symbol name #{ex}"
+				end
+			end
+			bd[ex] = v
+		}
+		e = e.bind(bd)
+
+		e
+	end
+
+	def solve_expr(arg)
+		@dbg.resolve_expr(parse_expr(arg))
 	end
 
 	def init_commands
 		@commands = {}
-		new_command('help') { |arg| # TODO help <subject>
-			add_log @commands.keys.sort.join(' ')
+		@cmd_help = {}
+		p = @parent_widget
+		new_command('help') { add_log @commands.keys.sort.join(' ') } # TODO help <subject>
+		new_command('d', 'focus data window on an address') { |arg| p.mem.focus_addr(solve_expr(arg)) }
+		new_command('db', 'display bytes in data window') { p.mem.curview.data_size = 1 ; p.mem.gui_update }
+		new_command('dw', 'display bytes in data window') { p.mem.curview.data_size = 2 ; p.mem.gui_update }
+		new_command('dd', 'display bytes in data window') { p.mem.curview.data_size = 4 ; p.mem.gui_update }
+		new_command('u', 'focus code window on an address') { |arg| p.code.focus_addr(solve_expr(arg)) }
+		new_command('.', 'focus code window on current address') { p.code.focus_addr(solve_expr(@dbg.register_pc.to_s)) }
+		new_command('wc', 'set code window height') { |arg| p.code.set_height_request(Integer(arg)*@font_height) }	# TODO check size against window
+		new_command('wd', 'set data window height') { |arg| p.mem.set_height_request(Integer(arg)*@font_height) }
+		new_command('continue', 'run', 'let the target run until something occurs') { p.dbg_continue(arg) }
+		new_command('stepinto', 'singlestep', 'run a single instruction of the target') { p.dbg_singlestep }
+		new_command('stepover', 'run a single instruction of the target, do not enter into subfunctions') { p.dbg_stepover }
+		new_command('stepout', 'stepover until getting out of the current function') { p.dbg_stepout }
+		new_command('bpx', 'set a breakpoint') { |arg| @dbg.bpx(solve_expr(arg)) }	# TODO conditions
+		new_command('hwbp', 'set a hardware breakpoint') { |arg| @dbg.hwbp(solve_expr(arg)) }
+		new_command('refresh', 'update the target memory/register cache') { @dbg.invalidate ; redraw }
+		new_command('bl', 'list breakpoints') {
+			i = -1
+			@dbg.breakpoint.sort.each { |a, b|
+				add_log "#{i+=1} #{Expression[a]} #{b.type} #{b.state}"
+			}
 		}
-		new_command('d') { |arg| # TODO parse_expr, allow 'd memcpy+4*[eax]'
-			@parent_widget.mem.focus_addr(arg)
+		new_command('bc', 'clear breakpoints') { |arg|
+			if arg == '*'
+				@dbg.breakpoint.keys.each { |i| @dbg.remove_breakpoint(i) }
+			else
+				next if not i = solve_expr(arg)
+				i = @dbg.breakpoint.sort[i][0] if i < @dbg.breakpoint.length
+				@dbg.remove_breakpoint(i)
+			end
 		}
-		new_command('u') { |arg|
-			@parent_widget.code.focus_addr(arg)
+		new_command('kill', 'kill the target') { |arg| @dbg.kill(arg) }
+		new_command('g', 'wait until target reaches the specified address') { |arg|
+			@dbg.bpx(solve_expr(arg), true)
+			p.dbg_continue
 		}
-		new_command('.') { |arg|
-			@parent_widget.code.focus_addr(@dbg.resolve_expr(@dbg.register_pc))
+		new_command('r', 'read/write the content of a register') { |arg|
+			reg, val = arg.split(/\s+/, 2)
+			if reg == 'fl'
+				@dbg.set_reg_value(val.to_sym, @dbg.get_reg_value(val.to_sym) == 0 ? 1 : 0)
+			elsif not val
+				add_log "#{r} = #{Expression[@dbg.get_reg_value(r.to_sym)]}"
+			else
+				val = solve_expr(val)
+				@dbg.set_reg_value(reg.to_sym, val)
+			end
 		}
-		new_command('wc') { |arg| # TODO check min/max size
-			@parent_widget.code.set_height_request(Integer(arg)*@font_height) rescue nil
-		}
-		new_command('wd') { |arg|
-			@parent_widget.mem.set_height_request(Integer(arg)*@font_height) rescue nil
-		}
-		new_command('continue') { |arg|
-			@parent_widget.dbg_continue
-		}
-		new_command('exit', 'quit') { Gtk.main_quit }	# TODO how do I close a window ?
+		new_command('exit', 'quit', 'quit the debugger interface') { Gtk.main_quit }	# TODO how do I close a window ?
 	end
 
 	def handle_command
-		return if @curline == ''
-		cmd = @curline
 		add_log(":#@curline")
+		return if @curline == ''
+		@cmd_history << @curline
+		@cmd_history.shift if @cmd_history.length > @cmd_history_length
+		cmd = @curline
 		@curline = ''
 		@caret_x = 0
 
-		# TODO rip samples/lindebug.rb
-		# TODO history & stuff
 		cn = cmd.split.first
 		if not @commands[cn]
 			a = @commands.keys.find_all { |k| k[0, cn.length] == cn }
 			cn = a.first if a.length == 1
 		end
 		if pc = @commands[cn] 
-			pc[cmd.split(/\s+/, 2).last]
+			pc[cmd.split(/\s+/, 2)[1].to_s]
 		else
 			add_log 'unknown command'
 		end
@@ -670,7 +824,8 @@ class DbgConsoleWidget < Gtk::DrawingArea
 
 	def add_log(l)
 		@log << l
-		@log.shift if log.length > 40
+		@log.shift if log.length > @log_length
+		redraw
 	end
 
 	# change the font of the listing
@@ -717,14 +872,13 @@ class DbgConsoleWidget < Gtk::DrawingArea
 
 		@oldcaret_x = @caret_x
 	end
-
 end
 
 class DbgWindow < MainWindow
 	attr_accessor :dbg_widget
 	def initialize(dbg = nil, title='metasm debugger')
 		super(title)
-		set_default_size 200, 300
+		#set_default_size 200, 300
 		display(dbg) if dbg
 	end
 
@@ -732,6 +886,7 @@ class DbgWindow < MainWindow
 	def display(dbg)
 		@vbox.remove @dbg_widget if dbg_widget
 		@dbg_widget = DbgWidget.new(dbg)
+		@dbg_widget.win = self
 		@vbox.add @dbg_widget
 		show_all
 		@dbg_widget
