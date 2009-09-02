@@ -187,6 +187,7 @@ class Decompiler
 		if ptype.kind_of? C::Function
 			name = @dasm.auto_label_at(addr, 'sub', 'xref', 'byte', 'word', 'dword', 'unk')
 			if @dasm.get_section_at(addr) and @recurse > 0
+				puts "found function pointer to #{name}" if $VERBOSE
 				@dasm.disassemble(addr) if not @dasm.decoded[addr]	# TODO disassemble_fast ?
 				f = @dasm.function[addr] ||= DecodedFunction.new
 				# TODO detect thunks (__noreturn)
@@ -1465,7 +1466,8 @@ class Decompiler
 		walk_ce(scope, true) { |ce|
 			if ce.op
 				ce.type = C::CExpression[ce.lexpr, ce.op, ce.rexpr].type rescue next
-				if ce.op == :'=' and ce.rexpr and ce.rexpr.type != ce.type and (not ce.rexpr.type.integral? or not ce.type.integral?)
+				if ce.op == :'=' and ce.rexpr.kind_of? C::Typed and ce.rexpr.type != ce.type and (not ce.rexpr.type.integral? or not ce.type.integral?)
+					known_type[ce.rexpr, ce.type] if ce.type.pointer? and ce.type.pointed.untypedef.kind_of? C::Function	# localvar = &struct with fptr
 					ce.rexpr = C::CExpression[[ce.rexpr], ce.type]
 				end
 			elsif ce.type.pointer? and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sizeof(ce.rexpr.rexpr.type) == sizeof(ce.type.pointed)
@@ -1648,6 +1650,11 @@ class Decompiler
 		# most of this is a CExpr#reduce
 		future_array = []
 		walk_ce(scope, true) { |ce|
+			# (whatever)0 => 0
+			if not ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0
+				ce.replace ce.rexpr
+			end
+
 			# *&bla => bla if types ok
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sametype[ce.rexpr.type.pointed, ce.rexpr.rexpr.type]
 				ce.replace C::CExpression[ce.rexpr.rexpr]
