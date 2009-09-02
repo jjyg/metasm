@@ -76,6 +76,7 @@ class Rubstop < Metasm::PTrace32
 	end
 
 	def state; :stopped end
+	def ptrace; self end
 
 	attr_accessor :pgm, :regs_cache, :breakpoints, :singleshot, :wantbp,
 		:symbols, :symbols_len, :filemap, :has_pax, :oldregs

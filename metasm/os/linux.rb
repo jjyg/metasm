@@ -179,64 +179,64 @@ class PTrace32
 		ENOTBLK EBUSY EEXIST EXDEV ENODEV ENOTDIR EISDIR EINVAL ENFILE EMFILE ENOTTY ETXTBSY EFBIG ENOSPC
 		ESPIPE EROFS EMLINK EPIPE EDOM ERANGE].inject({}) { |h, e| h.update e => h.length }
 
-	def ptrace(req, pid, addr, data)
+	def sys_ptrace(req, pid, addr, data)
 		addr = [addr].pack('L').unpack('l').first if addr >= 0x8000_0000
 		Kernel.syscall(NR_PTRACE, req, pid, addr, data)
 	end
 
 	def traceme
-		ptrace(COMMAND['TRACEME'],  0, 0, 0)
+		sys_ptrace(COMMAND['TRACEME'],  0, 0, 0)
 	end
 
 	def peektext(addr)
-		ptrace(COMMAND['PEEKTEXT'], @pid, addr, @bufptr)
+		sys_ptrace(COMMAND['PEEKTEXT'], @pid, addr, @bufptr)
 		@buf
 	end
 
 	def peekdata(addr)
-		ptrace(COMMAND['PEEKDATA'], @pid, addr, @bufptr)
+		sys_ptrace(COMMAND['PEEKDATA'], @pid, addr, @bufptr)
 		@buf
 	end
 
 	def peekusr(addr)
-		ptrace(COMMAND['PEEKUSR'],  @pid, 4*addr, @bufptr)
+		sys_ptrace(COMMAND['PEEKUSR'],  @pid, 4*addr, @bufptr)
 		bufval
 	end
 
 	def poketext(addr, data)
-		ptrace(COMMAND['POKETEXT'], @pid, addr, data.unpack('l').first)
+		sys_ptrace(COMMAND['POKETEXT'], @pid, addr, data.unpack('l').first)
 	end
 
 	def pokedata(addr, data)
-		ptrace(COMMAND['POKEDATA'], @pid, addr, data.unpack('l').first)
+		sys_ptrace(COMMAND['POKEDATA'], @pid, addr, data.unpack('l').first)
 	end
 
 	def pokeusr(addr, data)
-		ptrace(COMMAND['POKEUSR'],  @pid, 4*addr, data)
+		sys_ptrace(COMMAND['POKEUSR'],  @pid, 4*addr, data)
 	end
 
 	def cont(sig = 0)
-		ptrace(COMMAND['CONT'], @pid, 0, sig)
+		sys_ptrace(COMMAND['CONT'], @pid, 0, sig)
 	end
 
 	def kill
-		ptrace(COMMAND['KILL'], @pid, 0, 0)
+		sys_ptrace(COMMAND['KILL'], @pid, 0, 0)
 	end
 
 	def singlestep(sig = 0)
-		ptrace(COMMAND['SINGLESTEP'], @pid, 0, sig)
+		sys_ptrace(COMMAND['SINGLESTEP'], @pid, 0, sig)
 	end
 
 	def syscall
-		ptrace(COMMAND['SYSCALL'], @pid, 0, 0)
+		sys_ptrace(COMMAND['SYSCALL'], @pid, 0, 0)
 	end
 
 	def attach
-		ptrace(COMMAND['ATTACH'], @pid, 0, 0)
+		sys_ptrace(COMMAND['ATTACH'], @pid, 0, 0)
 	end
 
 	def detach
-		ptrace(COMMAND['DETACH'], @pid, 0, 0)
+		sys_ptrace(COMMAND['DETACH'], @pid, 0, 0)
 	end
 end
 
