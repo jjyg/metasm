@@ -178,7 +178,7 @@ class Decompiler
 		end
 	end
 
-	def new_global_var(addr, type)
+	def new_global_var(addr, type, scope=nil)
 		addr = @dasm.normalize(addr)
 
 		# TODO check overlap with alreadydefined globals
@@ -192,7 +192,7 @@ class Decompiler
 				# TODO detect thunks (__noreturn)
 				f.decompdata ||= { :stackoff_type => {}, :stackoff_name => {} }
 				if not s = @c_parser.toplevel.symbol[name] or not s.initializer or not s.type.untypedef.kind_of? C::Function
-					@c_parser.toplevel.symbol.delete name
+					os = @c_parser.toplevel.symbol.delete name
 					@c_parser.toplevel.statements.delete_if { |ts| ts.kind_of? C::Declaration and ts.var.name == name }
 					aoff = 1
 					ptype.args.to_a.each { |a|
@@ -202,6 +202,11 @@ class Decompiler
 						aoff += sizeof(a)	# ary ?
 					}
 					decompile_func_rec(addr)
+					s = @c_parser.toplevel.symbol[name]
+					walk_ce([@c_parser.toplevel, scope]) { |ce|
+						ce.lexpr = s if ce.lexpr == os
+						ce.rexpr = s if ce.rexpr == os
+					} if os and s	# update existing references to old instance
 				# else redecompile with new prototye ?
 				end
 			end
@@ -404,7 +409,7 @@ class Decompiler
 				s.type = C::BaseType.new(:__int32)
 				case e
 				when ::String	# edata relocation (rel.length = size of pointer)
-					return @c_parser.toplevel.symbol[e] || new_global_var(e, itype || C::BaseType.new(:int))
+					return @c_parser.toplevel.symbol[e] || new_global_var(e, itype || C::BaseType.new(:int), scope)
 				when ::Symbol; s.storage = :register
 				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
@@ -1186,7 +1191,7 @@ class Decompiler
 		}
 
 		update_global_type = lambda { |e, t|
-			if ne = new_global_var(e, t)
+			if ne = new_global_var(e, t, scope)
 				ne.type = t if better_type[t, ne.type]	# TODO patch existing scopes using ne
 									# TODO rename (dword_xx -> byte_xx etc)
 				e = scope.symbol_ancestors[e] || e if e.kind_of? String	# exe reloc
@@ -1463,6 +1468,8 @@ class Decompiler
 				if ce.op == :'=' and ce.rexpr and ce.rexpr.type != ce.type and (not ce.rexpr.type.integral? or not ce.type.integral?)
 					ce.rexpr = C::CExpression[[ce.rexpr], ce.type]
 				end
+			elsif ce.type.pointer? and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :& and not ce.rexpr.lexpr and sizeof(ce.rexpr.rexpr.type) == sizeof(ce.type.pointed)
+				ce.type = ce.rexpr.type
 			end
 		}
 	end
@@ -1629,7 +1636,11 @@ class Decompiler
 		sametype = lambda { |t1, t2|
 			t1 = t1.untypedef
 			t2 = t2.untypedef
+			t1 = t1.pointed.untypedef if t1.pointer? and t1.pointed.untypedef.kind_of? C::Function
+			t2 = t2.pointed.untypedef if t2.pointer? and t2.pointed.untypedef.kind_of? C::Function
 			t1 == t2 or
+			(t1.kind_of? C::Function and t2.kind_of? C::Function and sametype[t1.type, t2.type] and t1.args.length == t2.args.length and
+			 	t1.args.zip(t2.args).all? { |st1, st2| sametype[st1.type, st2.type] }) or
 			(t1.kind_of? C::BaseType and t1.integral? and t2.kind_of? C::BaseType and t2.integral? and sizeof(nil, t1) == sizeof(nil, t2)) or
 			(t1.pointer? and t2.pointer? and sametype[t1.type, t2.type])
 		}
@@ -1712,6 +1723,18 @@ class Decompiler
 					ce.replace C::CExpression[a, :'<', b]
 				end
 			end
+			# a && 1
+			if (ce.op == :'||' or ce.op == :'&&') and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer
+				if ((ce.op == :'||' and ce.rexpr.rexpr == 0) or (ce.op == :'&&' and ce.rexpr.rexpr != 0))
+					ce.replace C::CExpression[ce.lexpr]
+				elsif not walk_ce(ce) { |ce_| break true if ce.op == :funcall }	 # cannot wipe if sideeffect
+					ce.replace C::CExpression[[ce.op == :'||' ? 1 : 0]]
+				end
+			end
+			# (b < c || b >= c)
+			if (ce.op == :'||' or ce.op == :'&&') and C::CExpression.negate(ce.lexpr) == C::CExpression[ce.rexpr]
+				ce.replace C::CExpression[[(ce.op == :'||') ? 1 : 0]]
+			end
 
 			# (a < b) | (a == b)  =>  a <= b
 			if ce.op == :| and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :== and ce.lexpr.kind_of? C::CExpression and
@@ -1725,6 +1748,10 @@ class Decompiler
 				ce.lexpr, ce.op, ce.rexpr = nil, :'!', ce.lexpr
 			end
 
+			if ce.op == :'!' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer
+				ce.replace C::CExpression[[ce.rexpr.rexpr == 0 ? 1 : 0]]
+			end
+
 			# !(bool) => bool
 			if ce.op == :'!' and ce.rexpr.kind_of? C::CExpression and [:'==', :'!=', :<, :>, :<=, :>=, :'||', :'&&', :'!'].include? ce.rexpr.op
 				ce.replace ce.rexpr.negate
@@ -1733,14 +1760,6 @@ class Decompiler
 			# (foo)(bar)x => (foo)x
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? C::CExpression
 				ce.rexpr = ce.rexpr.rexpr
-			end
-
-			# (foo)bla => bla if bla of type foo
-			if not ce.op and ce.rexpr.kind_of? C::CExpression and sametype[ce.type, ce.rexpr.type]
-				ce.lexpr, ce.op, ce.rexpr = ce.rexpr.lexpr, ce.rexpr.op, ce.rexpr.rexpr
-			end
-			if ce.lexpr.kind_of? C::CExpression and not ce.lexpr.op and ce.lexpr.rexpr.kind_of? C::Variable and ce.lexpr.type == ce.lexpr.rexpr.type
-				ce.lexpr = ce.lexpr.rexpr
 			end
 
 			# &struct.1stmember => &struct
@@ -1764,6 +1783,20 @@ class Decompiler
 			if ce.op == :'->' and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :& and not ce.lexpr.lexpr
 				ce.lexpr = ce.lexpr.rexpr
 				ce.op = :'.'
+			end
+
+			# (foo)bla => bla if bla of type foo
+			if not ce.op and ce.rexpr.kind_of? C::Typed and sametype[ce.type, ce.rexpr.type]
+				ce.replace C::CExpression[ce.rexpr]
+			end
+			if ce.lexpr.kind_of? C::CExpression and not ce.lexpr.op and ce.lexpr.rexpr.kind_of? C::Variable and ce.lexpr.type == ce.lexpr.rexpr.type
+				ce.lexpr = ce.lexpr.rexpr
+			end
+
+			if ce.op == :'=' and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :* and not ce.lexpr.lexpr and ce.lexpr.rexpr.kind_of? C::CExpression and not ce.lexpr.rexpr.op and
+					ce.lexpr.rexpr.type.pointed != ce.rexpr.type
+				ce.lexpr.rexpr.type = C::Pointer.new(ce.rexpr.type)
+				optimize_code(ce.lexpr)
 			end
 		}
 
