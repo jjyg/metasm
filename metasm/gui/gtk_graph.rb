@@ -794,7 +794,7 @@ class GraphViewWidget < Gtk::HBox
 			end
 		}
 
-		if b == @caret_box
+		if b == @caret_box and focus?
 			gc.set_foreground @color[:caret]
 			cx = (b.x - @curcontext.view_x + 1)*@zoom + @caret_x*@font_width
 			cy = (b.y - @curcontext.view_y + 1)*@zoom + @caret_y*@font_height

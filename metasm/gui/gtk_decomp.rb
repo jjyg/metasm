@@ -184,12 +184,14 @@ class CdecompListingWidget < Gtk::DrawingArea
 			line += 1
 		end
 
-		# draw caret
-		gc.set_foreground @color[:caret]
-		cx = @caret_x*@font_width+1
-		cy = @caret_y*@font_height
-		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
-
+		if focus?
+			# draw caret
+			gc.set_foreground @color[:caret]
+			cx = @caret_x*@font_width+1
+			cy = @caret_y*@font_height
+			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+		end
+	
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 
 		set_size_request((@line_text.map { |l| l.length }.max.to_i + 1) * @font_width, (@line_text.length + 1)* @font_height)

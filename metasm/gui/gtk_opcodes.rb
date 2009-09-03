@@ -240,12 +240,14 @@ class AsmOpcodeWidget < Gtk::DrawingArea
 			curaddr += di ? di.bin_length : 1
 		end
 
-		# draw caret
-		# TODO selection
-		gc.set_foreground @color[:caret]
-		cx = @caret_x*@font_width+1
-		cy = @caret_y*@font_height
-		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+		if focus?
+			# draw caret
+			# TODO selection
+			gc.set_foreground @color[:caret]
+			cx = @caret_x*@font_width+1
+			cy = @caret_y*@font_height
+			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+		end
 
 		update_caret if want_update_caret
 	end

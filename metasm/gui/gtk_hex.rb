@@ -263,14 +263,14 @@ class HexWidget < Gtk::DrawingArea
 		# draw caret
 		# TODO selection
 		if @show_data
-			gc.set_foreground @color[@focus_zone == :hex ? :caret : :caret_mirror]
+			gc.set_foreground @color[focus? && @focus_zone == :hex ? :caret : :caret_mirror]
 			cx = (x_data + x_data_cur)*@font_width+1
 			cy = @caret_y*@font_height
 			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
 		end
 
 		if @show_ascii
-			gc.set_foreground @color[@focus_zone == :ascii ? :caret : :caret_mirror]
+			gc.set_foreground @color[focus? && @focus_zone == :ascii ? :caret : :caret_mirror]
 			cx = (x_ascii + @caret_x)*@font_width+1
 			cy = @caret_y*@font_height
 			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
