@@ -478,15 +478,13 @@ end
 module GtkProtect
 	@@lasterror = Time.now
 	def protect
-		begin
-			yield
-		rescue Object
-			puts $!.message, $!.backtrace	# also dump on stdout, for c/c
-			delay = Time.now-@@lasterror
-			sleep 1-delay if delay < 1	# msgbox flood protection
-			@@lasterror = Time.now
-			MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class.name)
-		end
+		yield
+	rescue Object
+		puts $!.message, $!.backtrace	# also dump on stdout, for c/c
+		delay = Time.now-@@lasterror
+		sleep 1-delay if delay < 1	# msgbox flood protection
+		@@lasterror = Time.now
+		MessageBox.new(self, [$!.message, $!.backtrace].join("\n"), $!.class.name)
 	end
 end
 
