@@ -68,16 +68,17 @@ class DbgWidget < Gtk::VBox
 
 	include Gdk::Keyval
 	def keypress(ev)
-		return if not @keyboard_cb[ev.keyval] or not @keyboard_cb[ev.keyval][ev]
-		true
+		return true if @keyboard_cb[ev.keyval] and @keyboard_cb[ev.keyval][ev]
 	end
 
 	attr_accessor :keyboard_cb
 	def setup_keyboard_cb
+		@c = 0
 		@keyboard_cb = {
 			GDK_F5 => lambda { @win.protect { dbg_continue } },
 			GDK_F10 => lambda { @win.protect { dbg_stepover } },
 			GDK_F11 => lambda { @win.protect { dbg_singlestep } },
+			GDK_Tab => lambda { puts "kb_cb tab #{@c += 1}" },
 		}
 	end
 
@@ -85,11 +86,12 @@ class DbgWidget < Gtk::VBox
 		@regs.pre_dbg_run
 	end
 
-	def post_dbg_run(update_status = true)
+	def post_dbg_run
 		gui_update
 		Gtk.idle_add {
-			next true if not @dbg.check_target
-			@console.add_log "target #{@dbg.state} #{@dbg.info}" if update_status
+			next true if not @dbg.check_target and @dbg.state == :running
+			@dbg.disassembler.sections.clear if @dbg.state == :dead
+			@console.add_log "target #{@dbg.state} #{@dbg.info}" if @dbg.info !~ /TRAP/
 			gui_update
 			false
 		}
@@ -287,6 +289,7 @@ class DbgRegWidget < Gtk::DrawingArea
 	# keyboard binding
 	# basic navigation (arrows, pgup etc)
 	def keypress(ev)
+		return @parent_widget.keypress(ev) if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
 		case ev.keyval
 		when GDK_Left
 			if @caret_x > 0
@@ -546,8 +549,8 @@ class DbgConsoleWidget < Gtk::DrawingArea
 	# basic navigation (arrows, pgup etc)
 	def keypress(ev)
 		case ev.state & Gdk::Window::CONTROL_MASK
-		when 0
-			keypress_simple(ev)
+		when 0; keypress_simple(ev)
+		else; @parent_widget.keypress(ev)
 		end
 	end
 
@@ -742,7 +745,8 @@ class DbgConsoleWidget < Gtk::DrawingArea
 	end
 
 	def solve_expr(arg)
-		@dbg.resolve_expr(parse_expr(arg))
+		return if not e = parse_expr(arg)
+		@dbg.resolve_expr(e)
 	end
 
 	def init_commands
@@ -764,7 +768,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		new_command('stepout', 'stepover until getting out of the current function') { p.dbg_stepout }
 		new_command('bpx', 'set a breakpoint') { |arg| @dbg.bpx(solve_expr(arg)) }	# TODO conditions
 		new_command('hwbp', 'set a hardware breakpoint') { |arg| @dbg.hwbp(solve_expr(arg)) }
-		new_command('refresh', 'update the target memory/register cache') { @dbg.invalidate ; redraw }
+		new_command('refresh', 'update', 'update the target memory/register cache') { @dbg.invalidate ; p.gui_update }
 		new_command('bl', 'list breakpoints') {
 			i = -1
 			@dbg.breakpoint.sort.each { |a, b|
@@ -790,13 +794,18 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			if reg == 'fl'
 				@dbg.set_reg_value(val.to_sym, @dbg.get_reg_value(val.to_sym) == 0 ? 1 : 0)
 			elsif not val
-				add_log "#{r} = #{Expression[@dbg.get_reg_value(r.to_sym)]}"
+				add_log "#{reg} = #{Expression[@dbg.get_reg_value(reg.to_sym)]}"
 			else
 				val = solve_expr(val)
 				@dbg.set_reg_value(reg.to_sym, val)
 			end
 		}
-		new_command('exit', 'quit', 'quit the debugger interface') { Gtk.main_quit }	# TODO how do I close a window ?
+		new_command('?', 'display a value') { |arg|
+			v = solve_expr(arg)
+			add_log "#{v} 0x#{v.to_s(16)} #{[v].pack('L').inspect}"
+		}
+		new_command('exit', 'quit', 'quit the debugger interface') { p.win.destroy }
+		new_command('ruby', 'execute arbitrary ruby code') { |arg| eval arg }
 	end
 
 	def handle_command
@@ -818,12 +827,10 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		else
 			add_log 'unknown command'
 		end
-
-		redraw
 	end
 
 	def add_log(l)
-		@log << l
+		@log << l.to_s
 		@log.shift if log.length > @log_length
 		redraw
 	end
@@ -880,6 +887,7 @@ class DbgWindow < MainWindow
 		super(title)
 		#set_default_size 200, 300
 		display(dbg) if dbg
+		Gtk::Settings.default.gtk_menu_bar_accel = nil	# disable F10 -> popup menubar
 	end
 
 	# show a new DbgWidget
@@ -902,8 +910,8 @@ class DbgWindow < MainWindow
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F10, 0, Gtk::ACCEL_VISIBLE)
 		i = addsubmenu(dbgmenu, 'step into') { @dbg_widget.keyboard_cb[Gdk::Keyval::GDK_F11][] }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F11, 0, Gtk::ACCEL_VISIBLE)
-		addsubmenu(dbgmenu, 'kill target') { @dbg.kill }	# destroy ?
-		addsubmenu(dbgmenu, 'detach target') { @dbg.detach }	# destroy ?
+		addsubmenu(dbgmenu, 'kill target') { @dbg_widget.dbg.kill }	# destroy ?
+		addsubmenu(dbgmenu, 'detach target') { @dbg_widget.dbg.detach }	# destroy ?
 		addsubmenu(dbgmenu)
 		addsubmenu(dbgmenu, 'QUIT') { destroy }
 

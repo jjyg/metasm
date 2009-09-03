@@ -20,7 +20,7 @@ class OS
 			"#{pid}: ".ljust(6) << (mod || '<unknown>')
 		end
 		def inspect
-			'<Process:' + ["pid: #@pid", @modules.map { |m| " #{'%X' % m.addr} #{m.path}" }].join("\n") + '>'
+			'<Process:' + ["pid: #@pid", modules.map { |m| " #{'%X' % m.addr} #{m.path}" }].join("\n") + '>'
 		end
 	end
 
@@ -34,6 +34,15 @@ class OS
 			list_processes.find { |pr| m = pr.modules.to_a.first and m.path.include? name.to_s } or
 				(find_process(Integer(name)) if name =~ /^(0x[0-9a-f]+|[0-9]+)$/i)
 		end
+	end
+
+	# create a new debuggee process stopped at start
+	def self.create_process(path)
+		dbg = create_debugger(path)
+		pr = find_process(dbg.pid)
+		pr.debugger = dbg
+		pr.memory = dbg.memory
+		pr
 	end
 
 	# return the platform-specific version
@@ -288,10 +297,10 @@ end
 # this class implements a high-level debugging API (abstract superclass)
 class Debugger
 	class Breakpoint
-		attr_accessor :oneshot, :state, :type, :info
+		attr_accessor :oneshot, :state, :type, :info, :condition
 	end
 
-	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint
+	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint, :pid
 	attr_accessor :modulemap, :symbols, :symbols_len
 
 	# initializes the disassembler from @cpu and @memory

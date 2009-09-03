@@ -185,6 +185,10 @@ class << self
 		end
 	end
 
+	def create_debugger(path)
+		WinDebugger.new(path)
+	end
+
 	# Injects a shellcode into the memory space of targetproc
 	# target is a WinOS::Process
 	# shellcode may be a String (raw shellcode) or an EncodedData

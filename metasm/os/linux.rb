@@ -247,43 +247,47 @@ class LinOS < OS
 		end
 		def memory=(m) @memory = m end
 		def debugger
-			@debugger ||= LinDebugger.new(@pid)
+			@debugger ||= LinDebugger.new(@pid, memory)
 		end
 		def debugger=(d) @debugger = d end
+		def modules
+			@modules ||= File.readlines("/proc/#{pid}/maps").inject([]) { |list, map|
+				case map
+				when /^(........(?:........)?)-.* (\/.*)/
+					next list if list.find { |m| m.path == $2 }
+					m = Module.new
+					m.addr = $1.to_i(16)
+					m.path = $2
+					list << m
+				else list
+				end
+			} rescue []
+		end
 	end
 
-class << self
 	# returns an array of Processes, with pid/module listing
-	def list_processes
+	def self.list_processes
 		Dir.entries('/proc').grep(/^\d+$/).map { |pid|
 			pr = Process.new
 			pr.pid = pid.to_i
-			pr.modules = []
-			File.read("/proc/#{pid}/maps").each_line { |map|
-				case map
-				when /^(........(?:........)?)-.* (\/.*)/
-					next if pr.modules.find { |m| m.path == $2 }
-					m = Process::Module.new
-					m.addr = $1.to_i(16)
-					m.path = $2
-					pr.modules << m
-				end
-			} rescue next
 			pr
-		}.compact
+		}
 	end
-end
+
+	def self.create_debugger(path)
+		LinDebugger.new(path)
+	end
 end
 
 # this class implements a high-level API over the ptrace debugging primitives
 class LinDebugger < Debugger
 	attr_accessor :ptrace
-	def initialize(pid)
+	def initialize(pid, mem=nil)
 		@ptrace = PTrace32.new(pid)
-		@pid = pid
+		@pid = @ptrace.pid
 		# TODO get current cpu (x64)
 		@cpu = Ia32.new
-		@memory = LinuxRemoteString.new(@pid)
+		@memory = mem || LinuxRemoteString.new(@pid)
 		@memory.dbg = self
 		@has_pax = false
 		@reg_val_cache = {}
@@ -355,12 +359,14 @@ class LinDebugger < Debugger
 	def do_continue
 		return if @state != :stopped
 		@state = :running
+		@info = 'continue'
 		@ptrace.cont
 	end
 
 	def do_singlestep
 		return if @state != :stopped
 		@state = :running
+		@info = 'singlestep'
 		@ptrace.singlestep
 	end
 
@@ -405,10 +411,9 @@ class LinDebugger < Debugger
 	end
 
 	def check_post_run
+		invalidate
 		addr = pc
-		@memory.invalidate
 		if @state == :stopped and @info =~ /TRAP/ and @memory[addr-1, 1] == "\xcc"
-			# FIXME
 			addr -= 1
 			set_reg_value(register_pc, addr)
 		end
