@@ -311,25 +311,19 @@ class Debugger
 		@symbols_len = {}
 		@breakpoint = {}
 		@state = :stopped
+		@log_proc = nil
 	end
 
-	# resolves an expression involving register values and/or memory indirection using the current context
-	# uses #register_list, #get_reg_value, @mem, @cpu
-	def resolve_expr(e)
-		bd = {}
-		Expression[e].externals.each { |ex|
-			next if bd[ex]
-			case ex
-			when ::Symbol; bd[ex] = get_reg_value(ex)
-			when ::String; bd[ex] = @symbols.index(ex) || 0
-			end
-		}
-		Expression[e].bind(bd).reduce { |i|
-			if i.kind_of? Indirection and p = i.pointer.reduce and p.kind_of? ::Integer
-				p &= (1 << @cpu.size) - 1 if p < 0
-				Expression.decode_imm(@memory, i.len, @cpu, p)
-			end
-		}
+	def set_log_proc(l=nil, &b)
+		@log_proc = l || b
+	end
+
+	def puts(*a)
+		if @log_proc
+			a.each { @log_proc[a] }
+		else
+			super(*a)
+		end
 	end
 
 	def invalidate
@@ -340,14 +334,16 @@ class Debugger
 		get_reg_value(register_pc)
 	end
 
-	def check_pre_run(addr=pc)
+	def check_pre_run(addr=nil)
+		invalidate
+		addr = pc
 		@breakpoint.each { |a, b|
 			next if a == addr or b.state != :inactive
 			enable_bp(a)
 		}
 	end
 
-	def check_post_run
+	def check_post_run(addr=nil)
 		invalidate
 		addr = pc
 		@breakpoint.each { |a, b|
@@ -369,15 +365,13 @@ class Debugger
 		t
 	end
 
-	def continue
-		addr = pc
-		check_pre_run(addr)
-		if @breakpoint[addr]
-			stepover
+	def continue(*a)
+		while @breakpoint[pc]
+			do_singlestep	# XXX *a ?
 			do_waittarget	# TODO async wait if curinstr is syscall(sleep 3600)...
-			check_pre_run
 		end
-		do_continue
+		check_pre_run	# re-set bp
+		do_continue(*a)
 	end
 
 	def singlestep
@@ -389,10 +383,17 @@ class Debugger
 		di and di.opcode.props[:saveip]
 	end
 
+	def di_at(addr)
+		if not di = @disassembler.decoded[addr]
+			return if not s = @disassembler.get_section_at(addr)
+			di = @cpu.decode_instruction(s[0], addr)
+		end
+		di
+	end
+
 	def stepover
-		addr = pc
-		check_pre_run(addr)
-		di = @disassembler.decoded[addr] || @cpu.decode_instruction(@disassembler.get_section_at(addr)[0], addr)
+		check_pre_run
+		di = di_at(pc)
 		if need_stepover(di)
 			bpx di.next_addr, true
 			do_continue
@@ -401,16 +402,37 @@ class Debugger
 		end
 	end
 
-	def bpx(addr, oneshot=false)
+	def end_stepout(di)
+		di and di.instruction.opname == 'ret'
+	end
+
+	# stepover until finding the last instruction of the function
+	def stepout
+		while not end_stepout(di_at(pc))
+			stepover
+			wait_target
+		end
+		do_singlestep
+	end
+
+	def add_bp(addr, type, oneshot, cond)
 		if @breakpoint[addr]
 			@breakpoint[addr].oneshot = false if not oneshot
 			return
 		end
 		b = Breakpoint.new
 		b.oneshot = oneshot
-		b.type = :bpx
+		b.type = type
 		@breakpoint[addr] = b
 		enable_bp(addr)
+	end
+
+	def bpx(addr, oneshot=false, cond=nil)
+		add_bp(addr, :bpx, oneshot, cond)
+	end
+
+	def hwbp(addr, oneshot=false, cond=nil)
+		add_bp(addr, :hwbp, oneshot, cond)
 	end
 
 	def remove_breakpoint(addr)
@@ -455,17 +477,24 @@ class Debugger
 			return
 		end
 
-		name = e.module_name || name
-		return if @loadedsyms[name]
-		@loadedsyms[name] = true
+		if n = e.module_name and n != name
+			name = n
+			return if @loadedsyms[name]
+			@loadedsyms[name] = true
+		end
+
 		@modulemap[name] = [addr, addr+e.module_size]
+
+		sl = @symbols.length
 		e.module_symbols.each { |n, a, l|
 			a += addr
+			@disassembler.set_label_at(a, n)
 			@symbols[a] = n
 			if l and l > 1; @symbols_len[a] = l
 			else @symbols_len.delete a	# we may overwrite an existing symbol, keep len in sync
 			end
 		}
+		puts "loaded #{@symbols.length - sl} symbols from #{name}" if $VERBOSE
 
 		true
 	end
@@ -476,6 +505,109 @@ class Debugger
 			loadsyms(addr)
 			addr += 0x1000
 		end
+	end
+
+	def loadallsyms
+		OS.current.find_process(@pid).modules.to_a.each { |m| loadsyms(m.addr, m.path) }
+	end
+
+	# an Expression whose ::parser handles indirection (byte ptr [foobar])
+	class IndExpression < Expression
+		class << self
+		def parse_value(lexer)
+			sz = nil
+			ptr = nil
+			loop do
+				nil while tok = lexer.readtok and tok.type == :space
+				return if not tok
+				case tok.raw
+				when 'qword'; sz=8
+				when 'dword'; sz=4
+				when 'word'; sz=2
+				when 'byte'; sz=1
+				when 'ptr'
+				when '['
+					ptr = parse(lexer)
+					nil while tok = lexer.readtok and tok.type == :space
+					raise tok || lexer, '] expected' if tok.raw != ']'
+					break
+				else
+					lexer.unreadtok tok
+					break
+				end
+			end
+			raise lexer, 'invalid indirection' if sz and not ptr
+			if ptr; Indirection[ptr, sz]	# if sz is nil, default cpu pointersz is set in resolve_expr
+			else super(lexer)
+			end
+		end
+
+		def parse_intfloat(lexer, tok)
+			case tok.raw
+			when /^([0-9]+)$/; tok.value = $1.to_i
+			when /^0x([0-9a-f]+)$/i, /^([0-9a-f]+)h?$/i; tok.value = $1.to_i(16)
+			when /^0b([01]+)$/i; tok.value = $1.to_i(2)
+			end
+		end
+		end
+	end
+
+	# parses the expression contained in arg, updates arg to point after the expr
+	def parse_expr(arg)
+		pp = Preprocessor.new(arg)
+		return if not e = IndExpression.parse(pp)
+
+		# update arg
+		len = pp.pos
+		pp.queue.each { |t| len -= t.raw.length }
+		arg[0, len] = ''
+
+		# resolve ambiguous symbol names/hex values
+		bd = {}
+		e.externals.each { |ex|
+			if not v = register_list.find { |r| ex.downcase == r.to_s.downcase } || symbols.index(ex)
+				lst = symbols.values.find_all { |s| s.downcase.include? ex.downcase }
+				case lst.length
+				when 0
+					if ex =~ /^[0-9a-f]+$/i
+						v = ex.to_s(16)
+					else
+						puts "unknown symbol name #{ex}"
+						raise "unknown symbol name #{ex}"
+					end
+				when 1
+					v = symbols.index(lst.first)
+					puts "using #{lst.first} for #{ex}"
+				else
+					puts "ambiguous #{ex}: #{lst.join(', ')} ?"
+					raise "ambiguous symbol name #{ex}"
+				end
+			end
+			bd[ex] = v
+		}
+		e = e.bind(bd)
+
+		e
+	end
+
+	# resolves an expression involving register values and/or memory indirection using the current context
+	# uses #register_list, #get_reg_value, @mem, @cpu
+	def resolve_expr(e)
+		bd = {}
+		Expression[e].externals.each { |ex|
+			next if bd[ex]
+			case ex
+			when ::Symbol; bd[ex] = get_reg_value(ex)
+			when ::String; bd[ex] = @symbols.index(ex) || 0
+			end
+		}
+		Expression[e].bind(bd).reduce { |i|
+			if i.kind_of? Indirection and p = i.pointer.reduce and p.kind_of? ::Integer
+				i.len ||= @cpu.size/8
+				p &= (1 << @cpu.size) - 1 if p < 0
+				Expression.decode_imm(@memory, i.len, @cpu, p)
+			end
+		}
 	end
 end
 

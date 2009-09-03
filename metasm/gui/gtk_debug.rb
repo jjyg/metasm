@@ -64,6 +64,19 @@ class DbgWidget < Gtk::VBox
 
 	def resize(w, h)
 		@regs.set_width_request w
+		return
+
+		# TODO FIXME
+		h = h / 3 * 3
+		@oldheight ||= h
+		dh = @oldheight-h
+		if dh != 0
+			@mem.set_height_request(@mem.allocation.height + dh/3)
+			@code.set_height_request(@code.allocation.height + dh/3)
+			@console.set_height_request(@console.allocation.height - 2*dh/3)
+sleep 0.01
+		end
+		true
 	end
 
 	include Gdk::Keyval
@@ -73,12 +86,22 @@ class DbgWidget < Gtk::VBox
 
 	attr_accessor :keyboard_cb
 	def setup_keyboard_cb
-		@c = 0
 		@keyboard_cb = {
-			GDK_F5 => lambda { @win.protect { dbg_continue } },
-			GDK_F10 => lambda { @win.protect { dbg_stepover } },
-			GDK_F11 => lambda { @win.protect { dbg_singlestep } },
-			GDK_Tab => lambda { puts "kb_cb tab #{@c += 1}" },
+			GDK_F5 => lambda { @win.protect { dbg_continue ; true } },
+			GDK_F10 => lambda { @win.protect { dbg_stepover ; true } },
+			GDK_F11 => lambda { @win.protect { dbg_singlestep ; true } },
+			GDK_F12 => lambda { @win.protect { dbg_stepout ; true } },
+#			GDK_Tab => lambda { |ev|
+#				if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+#p ev.state	# seem we don't receive c-s-tab..
+#					trans = { @console => @regs, @regs => @mem, @mem => @code, @code => @console }
+##					trans = trans.invert if ev.state & Gdk::Window::SHIFT_MASK == Gdk::Window::SHIFT_MASK
+#					t = trans.find { |k, v| k.focus? } || [@console]
+#					t.last.grab_focus
+#					redraw
+#					true
+#				end
+#			},
 		}
 	end
 
@@ -91,29 +114,23 @@ class DbgWidget < Gtk::VBox
 		Gtk.idle_add {
 			next true if not @dbg.check_target and @dbg.state == :running
 			@dbg.disassembler.sections.clear if @dbg.state == :dead
-			@console.add_log "target #{@dbg.state} #{@dbg.info}" if @dbg.info !~ /TRAP/
+			@console.add_log "target #{@dbg.state} #{@dbg.info}" if @dbg.info
 			gui_update
 			false
 		}
 	end
 
-	def dbg_continue
+	def wrap_run
 		pre_dbg_run
-		@dbg.continue
+		yield
 		post_dbg_run
 	end
 
-	def dbg_stepover
-		pre_dbg_run
-		@dbg.stepover
-		post_dbg_run(false)
-	end
+	def dbg_continue(*a) wrap_run { @dbg.continue(*a) } end
+	def dbg_singlestep(*a) wrap_run { @dbg.singlestep(*a) } end
+	def dbg_stepover(*a) wrap_run { @dbg.stepover(*a) } end
+	def dbg_stepout(*a) wrap_run { @dbg.stepout(*a) } end
 
-	def dbg_singlestep
-		pre_dbg_run
-		@dbg.singlestep
-		post_dbg_run(false)
-	end
 
 	def redraw
 		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
@@ -254,7 +271,7 @@ class DbgRegWidget < Gtk::DrawingArea
 		}
 
 		running = (@dbg.state == :running)
-		xd = x_data*@font_width
+		xd = x_data*@font_width + 1
 		@registers.each { |reg|
 			x = 1
 			render[reg.to_s, :label]
@@ -266,11 +283,13 @@ class DbgRegWidget < Gtk::DrawingArea
 			y += @font_height
 		}
 
-		# draw caret
-		gc.set_foreground @color[:caret]
-		cx = (x_data + @caret_x)*@font_width+1
-		cy = @caret_reg*@font_height
-		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+		if focus?
+			# draw caret
+			gc.set_foreground @color[:caret]
+			cx = (x_data + @caret_x)*@font_width+1
+			cy = @caret_reg*@font_height
+			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+		end
 
 		@oldcaret_x, @oldcaret_reg = @caret_x, @caret_reg
 	end
@@ -424,6 +443,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 	def initialize(parent, dbg)
 		@parent_widget = parent
 		@dbg = dbg
+		@dbg.set_log_proc { |l| add_log l }
 
 		@caret_x = 0
 		@oldcaret_x = 42
@@ -521,25 +541,36 @@ class DbgConsoleWidget < Gtk::DrawingArea
 
 		y = w_h
 		gc.set_foreground @color[:status_bg]
-		@layout_stat.text = @statusline
-	       	y -= @layout_stat.pixel_size[1]
-		w.draw_rectangle(gc, true, 0, y, w_w, @layout_stat.pixel_size[1])
+	       	y -= @font_height_stat
+		w.draw_rectangle(gc, true, 0, y, w_w, @font_height_stat)
 		gc.set_foreground @color[:status]
-		w.draw_layout(gc, 1+@font_width, y, @layout_stat)
+		@layout_stat.text = "#{@dbg.state} #{@dbg.info}"
+		w.draw_layout(gc, w_w - @layout_stat.pixel_size[0] - 1, y, @layout_stat)
+		@layout_stat.text = @statusline
+		w.draw_layout(gc, 1+@font_width_stat, y, @layout_stat)
 
-		render[':' + @curline, :curline]
+		w_w_c = w_w/@font_width
+		if @caret_x < w_w_c-1
+			render[':' + @curline, :curline]
+		else
+			render['~' + @curline[@caret_x-w_w_c+2, w_w_c], :curline]
+		end
 		@caret_y = y
 
 		log.reverse.each { |l|
-			render[l, :log]
+			l.scan(/.{1,#{w_w/@font_width}}/).reverse_each { |l_|
+				render[l_, :log]
+			}
 			break if y < 0
 		}
 
-		# draw caret
-		gc.set_foreground @color[:caret]
-		cx = (@caret_x+1)*@font_width+1
-		cy = @caret_y
-		w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+		if focus?
+			# draw caret
+			gc.set_foreground @color[:caret]
+			cx = [@caret_x+1, w_w_c-1].min*@font_width+1
+			cy = @caret_y
+			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+		end
 
 		@oldcaret_x = @caret_x
 	end
@@ -664,88 +695,8 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		}
 	end
 
-	class IndExpression < Expression
-		class << self
-		def parse_value(lexer)
-			sz = nil
-			ptr = nil
-			loop do
-				nil while tok = lexer.readtok and tok.type == :space
-				return if not tok
-				case tok.raw
-				when 'qword'; sz=8
-				when 'dword'; sz=4
-				when 'word'; sz=2
-				when 'byte'; sz=1
-				when 'ptr'
-				when '['
-					ptr = parse(lexer)
-					nil while tok = lexer.readtok and tok.type == :space
-					raise tok || lexer, '] expected' if tok.raw != ']'
-					break
-				else
-					lexer.unreadtok tok
-					break
-				end
-			end
-			raise lexer, 'invalid indirection' if sz and not ptr
-			if ptr
-				sz ||= 4
-				Indirection[ptr, sz]
-			else super(lexer)
-			end
-		end
-
-		def parse_intfloat(lexer, tok)
-			case tok.raw
-			when /^([0-9]+)$/; tok.value = $1.to_i
-			when /^0x([0-9a-f]+)$/i, /^([0-9a-f]+)h?$/i; tok.value = $1.to_i(16)
-			when /^0b([01]+)$/i; tok.value = $1.to_i(2)
-			end
-		end
-		end
-	end
-
-	# parses the expression contained in arg, updates arg to point after the expr
-	def parse_expr(arg)
-		pp = Preprocessor.new(arg)
-		return if not e = IndExpression.parse(pp)
-
-		# update arg
-		len = pp.pos
-		pp.queue.each { |t| len -= t.raw.length }
-		arg[0, len] = ''
-
-		# resolve ambiguous symbol names/hex values
-		bd = {}
-		e.externals.each { |ex|
-			if not v = @dbg.register_list.find { |r| ex.downcase == r.to_s.downcase } || @dbg.symbols.index(ex)
-				lst = @dbg.symbols.values.find_all { |s| s.downcase.include? ex.downcase }
-				case lst.length
-				when 0
-					if ex =~ /^[0-9a-f]+$/i
-						v = ex.to_s(16)
-					else
-						add_log "unknown symbol name #{ex}"
-						raise "unknown symbol name #{ex}"
-					end
-				when 1
-					v = lst.first
-					add_log "using #{v} for #{ex}"
-				else
-					add_log "ambiguous #{ex}: #{v.join(', ')} ?"
-					raise "ambiguous symbol name #{ex}"
-				end
-			end
-			bd[ex] = v
-		}
-		e = e.bind(bd)
-
-		e
-	end
-
 	def solve_expr(arg)
-		return if not e = parse_expr(arg)
+		return if not e = @dbg.parse_expr(arg)
 		@dbg.resolve_expr(e)
 	end
 
@@ -762,7 +713,17 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		new_command('.', 'focus code window on current address') { p.code.focus_addr(solve_expr(@dbg.register_pc.to_s)) }
 		new_command('wc', 'set code window height') { |arg| p.code.set_height_request(Integer(arg)*@font_height) }	# TODO check size against window
 		new_command('wd', 'set data window height') { |arg| p.mem.set_height_request(Integer(arg)*@font_height) }
-		new_command('continue', 'run', 'let the target run until something occurs') { p.dbg_continue(arg) }
+		new_command('width', 'set window width (chars)') { |arg|
+			if a = solve_expr(arg); p.win.resize(a*@font_width, p.win.size[1])
+			else add_log "width #{p.win.size[0]/@font_width}"
+			end
+		}
+		new_command('height', 'set window height (chars)') { |arg|
+			if a = solve_expr(arg); p.win.resize(p.win.size[0], a*@font_height)
+			else add_log "height #{p.win.size[1]/@font_height}"
+			end
+		}
+		new_command('continue', 'run', 'let the target run until something occurs') { |arg| p.dbg_continue(arg) }
 		new_command('stepinto', 'singlestep', 'run a single instruction of the target') { p.dbg_singlestep }
 		new_command('stepover', 'run a single instruction of the target, do not enter into subfunctions') { p.dbg_stepover }
 		new_command('stepout', 'stepover until getting out of the current function') { p.dbg_stepout }
@@ -784,7 +745,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				@dbg.remove_breakpoint(i)
 			end
 		}
-		new_command('kill', 'kill the target') { |arg| @dbg.kill(arg) }
+		new_command('kill', 'kill the target') { |arg| @dbg.kill(arg) ; p.post_dbg_run }
 		new_command('g', 'wait until target reaches the specified address') { |arg|
 			@dbg.bpx(solve_expr(arg), true)
 			p.dbg_continue
@@ -806,6 +767,26 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		}
 		new_command('exit', 'quit', 'quit the debugger interface') { p.win.destroy }
 		new_command('ruby', 'execute arbitrary ruby code') { |arg| eval arg }
+		new_command('loadsyms', 'load symbols from a mapped module') { |arg|
+			if arg = solve_expr(arg)
+				@dbg.loadsyms(arg)
+			else
+				@dbg.loadallsyms
+			end
+		}
+		new_command('scansyms', 'scan target memory for loaded modules') {
+			scan_addr = 0
+			Gtk.idle_add {
+				if scan_addr <= 0xffff_f000	# cpu.size?
+					@dbg.loadsyms(scan_addr)
+					scan_addr += 0x1000
+					true
+				else
+					add_log 'scan finished'
+					nil
+				end
+			}
+		}
 	end
 
 	def handle_command
@@ -839,10 +820,12 @@ class DbgConsoleWidget < Gtk::DrawingArea
 	# arg is a Gtk Fontdescription string (eg 'courier 10')
 	def set_font(descr)
 		@layout.font_description = Pango::FontDescription.new(descr)
-		@layout_stat.font_description = Pango::FontDescription.new(descr)
-		@layout_stat.font_description.weight = Pango::WEIGHT_BOLD
 		@layout.text = 'x'
 		@font_width, @font_height = @layout.pixel_size
+		@layout_stat.font_description = Pango::FontDescription.new(descr)
+		@layout_stat.font_description.weight = Pango::WEIGHT_BOLD
+		@layout_stat.text = 'x'
+		@font_width_stat, @font_height_stat = @layout_stat.pixel_size
 		redraw
 	end
 
@@ -869,13 +852,17 @@ class DbgConsoleWidget < Gtk::DrawingArea
 	def update_caret
 		return if not window
 		return if @oldcaret_x == @caret_x
-
-		x = (@oldcaret_x+1) * @font_width + 1
+		w_w = allocation.width - @font_width
+		x1 = (@oldcaret_x+1) * @font_width + 1
+		x2 = (@caret_x+1) * @font_width + 1
 		y = @caret_y
-		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 
-		x = (@caret_x+1) * @font_width + 1
-		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
+		if x1 > w_w or x2 > w_w
+			window.invalidate Gdk::Rectangle.new(0, y, 100000, @font_height), false
+		else
+			window.invalidate Gdk::Rectangle.new(x1-1, y, 2, @font_height), false
+			window.invalidate Gdk::Rectangle.new(x2-1, y, 2, @font_height), false
+		end
 
 		@oldcaret_x = @caret_x
 	end

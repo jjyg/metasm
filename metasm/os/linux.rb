@@ -327,13 +327,14 @@ class LinDebugger < Debugger
 	def update_waitpid
 		if $?.exited?
 			@state = :dead
-			@info = "status #{$?.exitstatus}"
+			@info = "exitcode #{$?.exitstatus}"
 		elsif $?.signaled?
 			@state = :dead
 			@info = "signal #{$?.termsig} #{Signal.list.index($?.termsig)}"
 		elsif $?.stopped?
 			@state = :stopped
 			@info = "signal #{$?.stopsig} #{Signal.list.index($?.stopsig)}"
+			@info = nil if @info =~ /TRAP/	# standard breakpoint exception
 		else
 			@state = :stopped
 			@info = "unknown #{$?.inspect}"
@@ -345,7 +346,6 @@ class LinDebugger < Debugger
 		update_waitpid
 	rescue Errno::ECHILD
 		@state = :dead
-		@info = ''
 	end
 
 	def do_wait_target
@@ -353,7 +353,6 @@ class LinDebugger < Debugger
 		update_waitpid
 	rescue Errno::ECHILD
 		@state = :dead
-		@info = ''
 	end
 
 	def do_continue
@@ -372,6 +371,16 @@ class LinDebugger < Debugger
 
 	def need_stepover(di)
 		di and ((di.instruction.prefix and di.instruction.prefix[:rep]) or di.opcode.props[:saveip])
+	end
+
+	def break
+		kill('CHLD')
+	end
+
+	def kill(sig=nil)
+		sig = 9 if not sig or sig == ''
+		sig = Signal.list[sig] || sig.to_i
+		Process.kill(sig, @pid)
 	end
 
 	def bpx(*a)
@@ -413,7 +422,7 @@ class LinDebugger < Debugger
 	def check_post_run
 		invalidate
 		addr = pc
-		if @state == :stopped and @info =~ /TRAP/ and @memory[addr-1, 1] == "\xcc"
+		if @state == :stopped and not @info and @memory[addr-1, 1] == "\xcc"
 			addr -= 1
 			set_reg_value(register_pc, addr)
 		end
@@ -468,7 +477,7 @@ class LinuxRemoteString < VirtualString
 		do_ptrace {
 			begin
 				@readfd.read len
-			rescue Errno::EIO
+			rescue Errno::EIO, Errno::ESRCH
 				nil
 			end
 		}
