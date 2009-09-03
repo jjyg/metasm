@@ -371,7 +371,7 @@ class Indirection < ExpressionType
 		h[self] || Indirection.new(@target.bind(h), @len, @origin)
 	end
 
-	def hash ; @target.hash^@len end
+	def hash ; @target.hash^@len.to_i end
 	def eql?(o) o.class == self.class and [o.target, o.len] == [@target, @len] end
 	alias == eql?
 
@@ -2787,6 +2787,23 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		o.each_expr { |e|
 			e.render_info ||= {}
 			e.render_info[:char] = !e.render_info[:char]
+		}
+	end
+
+	# call this function on a function entrypoint if the function is in fact a __noreturn
+	# will cut the to_subfuncret of callers
+	def fix_noreturn(o)
+		each_xref(o, :x) { |a|
+			a = normalize(a.origin)
+			next if not @decoded[a].kind_of? DecodedInstruction or not @decoded[a].opcode.props[:saveip]
+			# XXX should check if caller also becomes __noreturn
+			@decoded[a].block.each_to_subfuncret { |to|
+				to = normalize(to)
+				next if not @decoded[to].kind_of? DecodedInstruction or not @decoded[to].block.from_subfuncret
+				@decoded[to].block.from_subfuncret.delete_if { |aa| normalize(aa) == a }
+				@decoded[to].block.from_subfuncret = nil if @decoded[to].block.from_subfuncret.empty?
+			}
+			@decoded[a].block.to_subfuncret = nil
 		}
 	end
 end
