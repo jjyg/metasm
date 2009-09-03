@@ -842,12 +842,12 @@ EOC
 
 	def module_size
 		return 0 if not s = @segments.to_a.reverse.map { |s_| s_.vaddr + s_.memsz if s_.type == 'LOAD' }.compact.max
-		s.vaddr + s.memsz - module_address
+		s - module_address
 	end
 
 	def module_symbols
 		syms = []
-		syms << ['entrypoint', @header.entrypoint] if @header.entrypoint != 0 or @header.type == 'EXEC'
+		syms << ['entrypoint', @header.entry] if @header.entry != 0 or @header.type == 'EXEC'
 		m_addr = module_address
 		@symbols.each { |s|
 			next if not s.name or s.shndx == 'UNDEF'
