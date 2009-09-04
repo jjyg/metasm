@@ -60,10 +60,10 @@ class Graph
 	end
 
 	# place boxes in a good-looking layout
-	def auto_arrange_init
+	def auto_arrange_init(list=@box)
 		# groups is an array of box groups
 		# all groups are centered on the origin
-		@groups = @box.map { |b|
+		@groups = list.map { |b|
 			b.x = -b.w/2
 			b.y = -b.h/2
 			g = Box.new(nil, [b])
@@ -79,8 +79,8 @@ class Graph
 		# no self references
 		# a box is in one and only one group in 'groups'
 		@groups.each { |g|
-			g.to   = g.content.first.to.map   { |t| @groups[@box.index(t)] } - [g]
-			g.from = g.content.first.from.map { |f| @groups[@box.index(f)] } - [g]
+			g.to   = g.content.first.to.map   { |t| next if not t = list.index(t) ; @groups[t] }.compact - [g]
+			g.from = g.content.first.from.map { |f| next if not f = list.index(f) ; @groups[f] }.compact - [g]
 		}
 
 		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
@@ -1109,7 +1109,7 @@ class GraphViewWidget < Gtk::HBox
 			@curcontext.clear
 			gui_update
 		when GDK_S
-			@curcontext.auto_arrange_init
+			@curcontext.auto_arrange_init(@selected_boxes.empty? ? @curcontext.box : @selected_boxes)
 			zoom_all
 			redraw
 		when GDK_T
