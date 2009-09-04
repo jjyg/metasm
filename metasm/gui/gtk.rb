@@ -217,10 +217,14 @@ class DisasmWidget < Gtk::VBox
 	# disassemble from this point
 	# if points to a call, make it return
 	def disassemble(addr)
-		if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip] and not @dasm.decoded[addr + di.bin_length]
-			@dasm.function[addr] = DecodedFunction.new	# TODO default btbind cb
-			di.block.add_to_subfuncret(addr+di.bin_length)
-			@dasm.addrs_todo << [addr + di.bin_length, addr, true]
+		if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip]
+			di.block.each_to_normal { |t|
+				t = @dasm.normalize t
+				next if not @dasm.decoded[t]
+				@dasm.function[t] ||= @dasm.function[:default] ? @dasm.function[:default].dup : DecodedFunction.new
+			}
+			di.block.add_to_subfuncret(di.next_addr)
+			@dasm.addrs_todo << [di.next_addr, addr, true]
 		elsif addr
 			@dasm.addrs_todo << [addr]
 		end

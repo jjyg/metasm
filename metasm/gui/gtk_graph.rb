@@ -669,8 +669,8 @@ class GraphViewWidget < Gtk::HBox
 		# XXX precalc ?
 
 		@curcontext.box.each { |b|
-			b.to = b.to.sort_by { |bt| bt.x }
-			b.from = b.from.sort_by { |bt| bt.x }
+			b.to = b.to.sort_by { |bt| bt.x+bt.w/2 }
+			b.from = b.from.sort_by { |bt| bt.x+bt.w/2 }
 		}
 		@curcontext.box.each { |b|
 			b.to.each { |bt|
@@ -1106,8 +1106,6 @@ class GraphViewWidget < Gtk::HBox
 			gui_update
 		when GDK_R
 			load __FILE__
-			@curcontext.clear
-			gui_update
 		when GDK_S
 			@curcontext.auto_arrange_init(@selected_boxes.empty? ? @curcontext.box : @selected_boxes)
 			zoom_all

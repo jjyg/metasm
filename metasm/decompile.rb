@@ -1641,8 +1641,8 @@ class Decompiler
 			t1 = t1.pointed.untypedef if t1.pointer? and t1.pointed.untypedef.kind_of? C::Function
 			t2 = t2.pointed.untypedef if t2.pointer? and t2.pointed.untypedef.kind_of? C::Function
 			t1 == t2 or
-			(t1.kind_of? C::Function and t2.kind_of? C::Function and sametype[t1.type, t2.type] and t1.args.length == t2.args.length and
-			 	t1.args.zip(t2.args).all? { |st1, st2| sametype[st1.type, st2.type] }) or
+			(t1.kind_of? C::Function and t2.kind_of? C::Function and sametype[t1.type, t2.type] and t1.args.to_a.length == t2.args.to_a.length and
+			 	t1.args.to_a.zip(t2.args.to_a).all? { |st1, st2| sametype[st1.type, st2.type] }) or
 			(t1.kind_of? C::BaseType and t1.integral? and t2.kind_of? C::BaseType and t2.integral? and sizeof(nil, t1) == sizeof(nil, t2)) or
 			(t1.pointer? and t2.pointer? and sametype[t1.type, t2.type])
 		}
