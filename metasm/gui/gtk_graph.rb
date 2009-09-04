@@ -374,11 +374,6 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 		}
 
 		nil while groups.length > 1 and (group_clean[] or trim_graph[] or group_unclean[])
-
-		@box.each { |b|
-			b.to = b.to.sort_by { |bt| bt.x }
-			b.from = b.from.sort_by { |bt| bt.x }
-		}
 	end
 end
 
@@ -551,13 +546,12 @@ class GraphViewWidget < Gtk::HBox
 		elsif b
 			@selected_boxes = [b] if not @selected_boxes.include? b
 			@caret_box = b
-			@caret_x = (@curcontext.view_x+ev.x-b.x*@zoom - 1).to_i / @font_width
-			@caret_y = (@curcontext.view_y+ev.y-b.y*@zoom - 1).to_i / @font_height
+			@caret_x = (@curcontext.view_x+ev.x/@zoom-b.x-1).to_i / @font_width
+			@caret_y = (@curcontext.view_y+ev.y/@zoom-b.y-1).to_i / @font_height
 			update_caret
 		else
 			@selected_boxes = []
 			@caret_box = nil
-			#@hl_word = nil
 		end
 		redraw
 	end
@@ -607,21 +601,27 @@ class GraphViewWidget < Gtk::HBox
 		gc = Gdk::GC.new(w)
 		w_w, w_h = @width, @height
 
-		# TODO do this somewhere else
-		#@curcontext.auto_arrange_boxes if not @curcontext.box.empty? and @curcontext.box.all? { |b| b.x == 0 and b.y == 0 }
-
-		# TODO MergedBoxes
+		update_graph if @want_update_graph
+		@want_update_graph = nil
+		if @want_focus_addr and @curcontext.box.find { |b_| b_[:line_address].index(@want_focus_addr) }
+			focus_addr(@want_focus_addr, false)
+			@want_focus_addr = nil
+		end
 
 		# arrows
 		# draw first to stay under the boxes
 		# XXX precalc ?
+
 		@curcontext.box.each { |b|
-			b.to.each { |tb|
-				paint_arrow(w, gc, b, tb)
+			b.to = b.to.sort_by { |bt| bt.x }
+			b.from = b.from.sort_by { |bt| bt.x }
+		}
+		@curcontext.box.each { |b|
+			b.to.each { |bt|
+				paint_arrow(w, gc, b, bt)
 			}
 		}
 
-		# XXX reorder boxes ? (for zorder) (eg. on focus)
 		@shown_boxes = []
 		@curcontext.box.each { |b|
 			next if b.x >= @curcontext.view_x+w_w/@zoom or b.y >= @curcontext.view_y+w_h/@zoom or b.x+b.w <= @curcontext.view_x or b.y+b.h <= @curcontext.view_y
@@ -644,7 +644,6 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def paint_arrow(w, gc, b1, b2)
-		# TODO separate arrows ends by a few pixels (esp incoming vs outgoing)
 		x1, y1 = b1.x+b1.w/2-@curcontext.view_x, b1.y+b1.h-@curcontext.view_y
 		x2, y2 = b2.x+b2.w/2-@curcontext.view_x, b2.y-1-@curcontext.view_y
 		x1 += (-(b1.to.length-1)/2 + b1.to.index(b2)) * 4
@@ -714,19 +713,19 @@ class GraphViewWidget < Gtk::HBox
 		set_color_box(gc, b)
 		w.draw_rectangle(gc, true, (b.x-@curcontext.view_x)*@zoom, (b.y-@curcontext.view_y)*@zoom, b.w*@zoom, b.h*@zoom)
 
-		return if @zoom < 0.99 or @zoom > 1.1
-		# TODO dynamic font size ?
+		if @caret_box == b
+			gc.set_foreground @color[:cursorline_bg]
+			w.draw_rectangle(gc, true, (b.x-@curcontext.view_x)*@zoom, (1+b.y-@curcontext.view_y+@caret_y*@font_height)*@zoom, b.w*@zoom, @font_height*@zoom)
+		end
 
 		# current text position
 		x = (b.x - @curcontext.view_x + 1)*@zoom
 		y = (b.y - @curcontext.view_y + 1)*@zoom
-		w_w = (b.x - @curcontext.view_x)*@zoom + b.w - @font_width
-		w_h = (b.y - @curcontext.view_y)*@zoom + b.h - @font_height
+		w_w = (b.x - @curcontext.view_x + b.w - @font_width)*@zoom
+		w_h = (b.y - @curcontext.view_y + b.h - @font_height)*@zoom
 
-		if @caret_box == b
-			gc.set_foreground @color[:cursorline_bg]
-			w.draw_rectangle(gc, true, x-1, y+@caret_y*@font_height, b.w*@zoom-2, @font_height)
-		end
+		return if @zoom < 0.99 or @zoom > 1.1
+		# TODO dynamic font size ?
 
 		# renders a string at current cursor position with a color
 		# must not include newline
@@ -743,7 +742,7 @@ class GraphViewWidget < Gtk::HBox
 					@layout.text = s2
 					hl_x = @layout.pixel_size[0]
 					gc.set_foreground @color[:hl_word]
-					w.draw_rectangle(gc, true, x+pre_x, y, hl_x, @font_height)
+					w.draw_rectangle(gc, true, x+pre_x, y, hl_x, @font_height*@zoom)
 					pre_x += hl_x
 					stmp = stmp[s1.length+s2.length..-1]
 				end
@@ -756,61 +755,59 @@ class GraphViewWidget < Gtk::HBox
 		# newline: current line is fully rendered, update line_address/line_text etc
 		nl = lambda {
 			x = (b.x - @curcontext.view_x + 1)*@zoom
-			y += @font_height
+			y += @font_height*@zoom
 		}
 
-		b[:addresses].each { |addr|
-			curaddr = addr
-			if di = @dasm.decoded[curaddr] and di.kind_of? DecodedInstruction
-				# a decoded instruction : check if it's a block start
-				if di.block.list.first == di
-					# render dump_block_header, add a few colors
-					b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
-					b_header.each { |l| l.chomp!
-						col = :comment
-						col = :label if l[0, 2] != '//' and l[-1] == ?:
-						render[l, col]
-						nl[]
-					}
-				end
-				render[di.instruction.to_s.ljust(di.comment ? 24 : 0), :instruction]
-				render[' ; ' + di.comment.join(' ')[0, 64], :comment] if di.comment
-				nl[]
-			else
-				# TODO real data display (dwords, xrefs, strings..)
-				if label = @dasm.get_label_at(curaddr) and @dasm.xrefs[curaddr]
-					render[Expression[curaddr].to_s + '    ', :black]
-					render[label + ' ', :label]
-				else
-					if label
-						render[label+':', :label]
-						nl[]
-					end
-					render[Expression[curaddr].to_s + '    ', :black]
-				end
-				s = @dasm.get_section_at(curaddr)
-				render['db '+((s and s[0].data.length > s[0].ptr) ? Expression[s[0].read(1)[0]].to_s : '?'), :instruction]
-				nl[]
-			end
+		b[:line_text_col].each { |list|
+			list.each_with_index { |t, c|
+				next if not t
+				c = [:instruction, :comment, :label, :text][c]
+				render[t, c]
+			}
+			nl[]
 		}
 
 		if b == @caret_box and focus?
 			gc.set_foreground @color[:caret]
-			cx = (b.x - @curcontext.view_x + 1)*@zoom + @caret_x*@font_width
-			cy = (b.y - @curcontext.view_y + 1)*@zoom + @caret_y*@font_height
-			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+			cx = (b.x - @curcontext.view_x + 1 + @caret_x*@font_width)*@zoom
+			cy = (b.y - @curcontext.view_y + 1 + @caret_y*@font_height)*@zoom
+			w.draw_line(gc, cx, cy, cx, cy+(@font_height-1)*@zoom)
 		end
+	end
+
+	def gui_update
+		@want_update_graph = true
+		redraw
 	end
 
 	#
 	# rebuild the code flow graph from @curcontext.roots
 	# recalc the boxes w/h
 	#
-	def gui_update(ctx=@curcontext)
+	def update_graph
+		ctx = @curcontext
+
 		boxcnt = ctx.box.length
 		arrcnt = ctx.box.inject(0) { |s, b| s + b.to.length + b.from.length }
 		ctx.clear
 
+		build_ctx(ctx)
+
+		ctx.auto_arrange_boxes
+
+		return if ctx != @curcontext
+
+		if boxcnt != ctx.box.length or arrcnt != ctx.box.inject(0) { |s, b| s + b.to.length + b.from.length }
+			zoom_all
+		elsif @caret_box	# update @caret_box with a box at the same place
+			bx = @caret_box.x + @caret_box.w/2
+			by = @caret_box.y + @caret_box.h/2
+			@caret_box = ctx.box.find { |cb| cb.x < bx and cb.x+cb.w > bx and cb.y < by and cb.y+cb.h > by }
+		end
+	end
+
+	# create the graph objects in ctx
+	def build_ctx(ctx)
 		# graph : block -> following blocks in same function
 		block_rel = {}
 
@@ -845,7 +842,7 @@ class GraphViewWidget < Gtk::HBox
 					lst.next_addr == a and (not lst.opcode.props[:saveip] or lst.block.to_subfuncret)
 				box = addr2box[from.first]
 			else
-				box = ctx.new_box a, :addresses => [], :line_text => {}, :line_address => {}
+				box = ctx.new_box a, :addresses => [], :line_text_col => [], :line_address => []
 			end
 			@dasm.decoded[a].block.list.each { |di_|
 				box[:addresses] << di_.address
@@ -865,48 +862,51 @@ class GraphViewWidget < Gtk::HBox
 			}
 		}
 
-		# calc box dimensions
+		# calc box dimensions/text
 		ctx.box.each { |b|
-			fullstr = ''
+			colstr = []
 			curaddr = nil
 			line = 0
-			render = lambda { |str| fullstr << str }
+			render = lambda { |str, col|
+				col = [:instruction, :comment, :label, :text].index(col) || 0
+				colstr[col] = str
+			}
 			nl = lambda {
 				b[:line_address][line] = curaddr
-				b[:line_text][line] = fullstr
-				fullstr = ''
+				b[:line_text_col][line] = colstr
+				colstr = []
 				line += 1
 			}
 			b[:addresses].each { |addr|
 				curaddr = addr
 				if di = @dasm.decoded[curaddr] and di.kind_of? DecodedInstruction
-					if di.block.list.first == di
+					if di.block_head?
+						# render dump_block_header, add a few colors
 						b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
-						b_header.each { |l| render[l.chomp] ; nl[] }
+						b_header.strip.each { |l| l.chomp!
+							col = :comment
+							col = :label if l[0, 2] != '//' and l[-1] == ?:
+							render[l, col]
+							nl[]
+						}
 					end
-					render[di.instruction.to_s.ljust(di.comment ? 24 : 0)]
-					render[' ; ' + di.comment.join(' ')[0, 64]] if di.comment
+					render[di.instruction.to_s.ljust(di.comment ? 24 : 0), :instruction]
+					render[' ; ' + di.comment.join(' ')[0, 64], :comment] if di.comment
+					nl[]
+				else
+					# TODO real data display (dwords, xrefs, strings..)
+					if label = @dasm.get_label_at(curaddr)
+						render[label + ' ', :label]
+					end
+					s = @dasm.get_section_at(curaddr)
+					render['db '+((s and s[0].data.length > s[0].ptr) ? Expression[s[0].read(1)[0]].to_s : '?'), :text]
 					nl[]
 				end
 			}
-			b.w = b[:line_text].values.map { |str| str.length }.max.to_i * @font_width + 2
+			b.w = b[:line_text_col].map { |str| str.join.length }.max.to_i * @font_width + 2
 			b.w += 1 if b.w % 2 == 0	# ensure boxes have odd width -> vertical arrows are straight
 			b.h = line * @font_height + 2
 		}
-
-		ctx.auto_arrange_boxes
-
-		return if ctx != @curcontext
-
-		if boxcnt != ctx.box.length or arrcnt != ctx.box.inject(0) { |s, b| s + b.to.length + b.from.length }
-			zoom_all
-		elsif @caret_box	# update @caret_box with a box at the same place
-			bx = @caret_box.x + @caret_box.w/2
-			by = @caret_box.y + @caret_box.h/2
-			@caret_box = ctx.box.find { |cb| cb.x < bx and cb.x+cb.w > bx and cb.y < by and cb.y+cb.h > by }
-		end
-
-		redraw
 	end
 
 	include Gdk::Keyval
@@ -944,7 +944,7 @@ class GraphViewWidget < Gtk::HBox
 						b_.x < @caret_box.x+@caret_x*@font_width and
 						b_.x+b_.w > @caret_box.x+(@caret_x+1)*@font_width }
 					@caret_x += ((@caret_box.x-b.x)/@font_width).to_i
-					@caret_y = b[:line_text].keys.max
+					@caret_y = b[:line_address].length-1
 					@caret_box = b
 					update_caret
 					redraw
@@ -958,7 +958,7 @@ class GraphViewWidget < Gtk::HBox
 			end
 		when GDK_Right
 			if @caret_box
-				if @caret_x <= @caret_box[:line_text].values.map { |s| s.length }.max
+				if @caret_x <= @caret_box[:line_text_col].map { |s| s.join.length }.max
 					@caret_x += 1
 					update_caret
 				elsif b = @curcontext.box.sort_by { |b_| b_.x }.find { |b_| b_.x > @caret_box.x and
@@ -979,7 +979,7 @@ class GraphViewWidget < Gtk::HBox
 			end
 		when GDK_Down
 			if @caret_box
-				if @caret_y < @caret_box[:line_text].length-1
+				if @caret_y < @caret_box[:line_address].length-1
 					@caret_y += 1
 					update_caret
 				elsif b = @curcontext.box.sort_by { |b_| b_.y }.find { |b_| b_.y > @caret_box.y and
@@ -1008,7 +1008,7 @@ class GraphViewWidget < Gtk::HBox
 			end
 		when GDK_Page_Down
 			if @caret_box
-				@caret_y = @caret_box[:line_text].length-1
+				@caret_y = @caret_box[:line_address].length-1
 				update_caret
 			else
 				@curcontext.view_y += @height/4/@zoom
@@ -1025,7 +1025,7 @@ class GraphViewWidget < Gtk::HBox
 			end
 		when GDK_End
 			if @caret_box
-				@caret_x = @caret_box[:line_text][@caret_y].length
+				@caret_x = @caret_box[:line_text_col][@caret_y].to_s.length
 				update_caret
 			else
 				@curcontext.view_x = [@curcontext.box.map { |b_| b_.x+b_.w }.max-@width/@zoom+10, @curcontext.box.map { |b_| b_.x }.min-10].max
@@ -1142,7 +1142,7 @@ class GraphViewWidget < Gtk::HBox
 
 		# move window / change curcontext
 		if b = @curcontext.box.find { |b_| b_[:line_address].index(addr) }
-			@caret_box, @caret_x, @caret_y = b, 0, b[:line_address].index(addr)
+			@caret_box, @caret_x, @caret_y = b, 0, b[:line_address].rindex(addr)
 			@curcontext.view_x += (@width/2 / @zoom - @width/2)
 			@curcontext.view_y += (@height/2 / @zoom - @height/2)
 			@zoom = 1.0
@@ -1152,13 +1152,8 @@ class GraphViewWidget < Gtk::HBox
 		elsif can_update_context
 			@curcontext = Graph.new 'testic'
 			@curcontext.root_addrs = dasm_find_roots(addr)
+			@want_focus_addr = addr
 			gui_update
-			return if not @curcontext.box.first
-			# find an address that can be shown if addr is not
-			if not @curcontext.box.find { |b_| b_[:line_address].index(addr) }
-				addr = @curcontext.box.first[:line_address].values.first
-			end
-			return focus_addr(addr, false)
 		else
 			return
 		end
@@ -1179,7 +1174,8 @@ class GraphViewWidget < Gtk::HBox
 	# hint that the caret moved
 	# redraw, change the hilighted word
 	def update_caret
-		return if not @caret_box or not @caret_x or not l = @caret_box[:line_text][@caret_y]
+		return if not @caret_box or not @caret_x or not l = @caret_box[:line_text_col][@caret_y]
+		l = l.join
 		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
 		word = nil if word == ''
 		@hl_word = word
