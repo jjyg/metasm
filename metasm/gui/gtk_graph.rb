@@ -60,12 +60,10 @@ class Graph
 	end
 
 	# place boxes in a good-looking layout
-	def auto_arrange_boxes
-		return if @box.empty?
-
+	def auto_arrange_init
 		# groups is an array of box groups
 		# all groups are centered on the origin
-		groups = @box.map { |b|
+		@groups = @box.map { |b|
 			b.x = -b.w/2
 			b.y = -b.h/2
 			g = Box.new(nil, [b])
@@ -80,16 +78,21 @@ class Graph
 		# must always point to something that is in the 'groups' array
 		# no self references
 		# a box is in one and only one group in 'groups'
-		groups.each { |g|
-			g.to   = g.content.first.to.map   { |t| groups[@box.index(t)] } - [g]
-			g.from = g.content.first.from.map { |f| groups[@box.index(f)] } - [g]
+		@groups.each { |g|
+			g.to   = g.content.first.to.map   { |t| @groups[@box.index(t)] } - [g]
+			g.from = g.content.first.from.map { |f| @groups[@box.index(f)] } - [g]
 		}
 
 		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
-		madetree = false
+		@madetree = false
+	end
+
+	def auto_arrange_step
+		groups = @groups
+		return if groups.length <= 1
 		maketree = lambda { |roots|
-			next if madetree
-			madetree = true
+			next if @madetree
+			@madetree = true
 
 			maxdepth = {}	# max arc count to reach this box from graph start (excl loop)
 
@@ -150,7 +153,7 @@ class Graph
 			bg.from -= ary
 			bg.from.each { |f| f.to = f.to - ary + [bg] }
 			idx = ary.map { |g| groups.index(g) }.min
-			groups = groups - ary
+			groups = @groups = groups - ary
 			groups.insert(idx, bg)
 			bg
 		}
@@ -162,11 +165,20 @@ class Graph
 		}
 
 		align_hz = lambda { |ary|
+			# if we have one of the block much bigger than the others, put it on the far right
+			big = ary.sort_by { |g| g.h }.last
+			if (ary-[big]).all? { |g| g.h < big.h/3 }
+				ary -= [big]
+			else
+				big = nil
+			end
 			nx = ary.map { |g| g.w }.inject(0) { |a, b| a+b } / -2
+			nx *= 2 if big and ary.length == 1	# just put the parent on the separation of the 2 child
 			ary.each { |g|
 				move_group[g, nx-g.x, 0]
 				nx += g.w
 			}
+			move_group[big, nx-big.x, 0] if big
 		}
 		align_vt = lambda { |ary|
 			ny = ary.map { |g| g.h }.inject(0) { |a, b| a+b } / -2
@@ -297,13 +309,13 @@ class Graph
 
 		# same single from or to
 		group_halflines = lambda {
-			groups.find { |g|
-				next if !(ary = g.from.find_all { |gg| gg.to == [g] } and ary.length > 1) and
-					!(ary = g.to.find_all { |gg| gg.from == [g] } and ary.length > 1)
+			ary = nil
+			if groups.find { |g| ary = g.from.find_all { |gg| gg.to == [g] } and ary.length > 1 } or
+			   groups.find { |g| ary = g.to.find_all { |gg| gg.from == [g] } and ary.length > 1 }
 				align_hz[ary]
 				merge_groups[ary]
 				true
-			}
+			end
 		}
 
 
@@ -342,12 +354,18 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 			can_reach_unidir = lambda { |b1, b2, term| can_reach[b1, b2, term] and not can_reach[b2, b1, term] }
 			groups.find { |g|
 				f2 = nil
-				if g.from.length > 2 and f3 = g.from.find { |f| f.to == [g] } and f1 = g.from.find { |f|
-					f2 = g.from.find { |ff| can_reach_unidir[ff, f3, g] and can_reach_unidir[f, ff, g] }
-				}
+				if (g.from.length > 2 and f3 = g.from.find { |f| f.to == [g] } and f1 = g.from.find { |f|
+					f2 = g.from.find { |ff| can_reach_unidir[ff, f3, g] and can_reach_unidir[f, ff, g] }}) or
+				   (g.to.length > 2 and f3 = g.to.find { |f| f.from == [g] } and f1 = g.to.find { |f|
+					f2 = g.to.find { |ff| can_reach_unidir[f3, ff, g] and can_reach_unidir[ff, f, g] }})
 					group_inv_if[f1] = true
-					g.from.delete f2
-					f2.to.delete g
+					if f3.to == [g]
+						g.from.delete f2
+						f2.to.delete g
+					else
+						g.to.delete f2
+						f2.from.delete g
+					end
 					true
 				end
 			}
@@ -370,10 +388,47 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 		}
 		# approximations
 		group_unclean = lambda {
-			group_lines[false] or group_or[false] or group_ifthen[false] or group_halflines[] or group_other[]
+			group_lines[false] or group_or[false] or group_halflines[false] or group_ifthen[false] or group_other[]
 		}
 
-		nil while groups.length > 1 and (group_clean[] or trim_graph[] or group_unclean[])
+		group_clean[] or trim_graph[] or group_unclean[]
+	end
+
+	# the boxes have been almost put in place, here we soften a little the result & arrange some qwirks
+	def auto_arrange_post
+		# entrypoint should be above other boxes, same for exitpoints
+		@box.each { |b|
+			if b.from == []
+				chld = b.to
+				chld = @box - [b] if not @box.find { |bb| bb != b and bb.from == [] }
+				chld.each { |t| b.y = t.y - b.h - 16 if t.y < b.y+b.h }
+			end
+			if b.to == []
+				chld = b.from
+				chld = @box - [b] if not @box.find { |bb| bb != b and bb.to == [] }
+				chld.each { |f| b.y = f.y + f.h + 16 if f.y+f.h > b.y }
+			end
+		}
+
+		@box[0,0].each { |b|
+			# TODO elastic positionning (ignore up arrows ?) & collision detection (box vs box and box vs arrow)
+			f = b.from[0]
+			t = b.to[0]
+			if b.to.length == 1 and b.from.length == 1 and b.y+b.h<t.y and b.y>f.y+f.h
+				wx = (t.x+t.w/2 + f.x+f.w/2)/2 - b.w/2
+				wy = (t.y + f.y+f.h)/2 - b.h/2
+				b.x += (wx-b.x)/5
+				b.y += (wy-b.y)/5
+			end
+		}
+
+	end
+
+	def auto_arrange_boxes
+		auto_arrange_init
+		nil while @groups.length > 1 and auto_arrange_step
+		@groups = []
+		auto_arrange_post
 	end
 end
 
@@ -606,6 +661,7 @@ class GraphViewWidget < Gtk::HBox
 		if @want_focus_addr and @curcontext.box.find { |b_| b_[:line_address].index(@want_focus_addr) }
 			focus_addr(@want_focus_addr, false)
 			@want_focus_addr = nil
+			#zoom_all
 		end
 
 		# arrows
@@ -1047,13 +1103,31 @@ class GraphViewWidget < Gtk::HBox
 			redraw
 			puts 'autoarrange done'
 		when GDK_u
-			puts 'update'
 			gui_update
-			puts 'update done'
+		when GDK_R
+			load __FILE__
+			@curcontext.clear
+			gui_update
+		when GDK_S
+			@curcontext.auto_arrange_init
+			zoom_all
+			redraw
+		when GDK_T
+			@curcontext.auto_arrange_step
+			zoom_all
+			redraw
+		when GDK_L
+			@curcontext.auto_arrange_post
+			zoom_all
+			redraw
 		when GDK_1	# (numeric) zoom to 1:1
-			@curcontext.view_x += (@width/2 / @zoom - @width/2)
-			@curcontext.view_y += (@height/2 / @zoom - @height/2)
-			@zoom = 1.0
+			if @zoom == 1.0
+				zoom_all
+			else
+				@curcontext.view_x += (@width/2 / @zoom - @width/2)
+				@curcontext.view_y += (@height/2 / @zoom - @height/2)
+				@zoom = 1.0
+			end
 			redraw
 		when GDK_Insert		# split curbox at @caret_y
 			if @caret_box and a = @caret_box[:line_address][@caret_y] and @dasm.decoded[a]
