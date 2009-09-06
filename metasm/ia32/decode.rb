@@ -797,7 +797,11 @@ class Ia32
 		}
 
 		# return instr emulation
-		new_bt[Indirection[:esp, @size/8, orig], nil] if not sym.has_attribute 'noreturn'
+		if sym.has_attribute 'noreturn'
+			df.noreturn = true
+		else
+			new_bt[Indirection[:esp, @size/8, orig], nil]
+		end
 
 		# register dirty (XXX assume standard ABI)
 		[:eax, :ecx, :edx].each { |r|

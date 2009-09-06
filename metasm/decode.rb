@@ -315,6 +315,8 @@ class DecodedFunction
 	attr_accessor :btfor_callback
 	# bool, if false the function is actually being disassembled
 	attr_accessor :finalized
+	# bool, if true the function does not return (eg exit() or ExitProcess())
+	attr_accessor :noreturn
 
 	# if btbind_callback is defined, calls it with args [dasm, binding, funcaddr, calladdr, expr, origin, maxdepth]
 	# else update lazily the binding from expr.externals, and return backtrace_binding
@@ -335,6 +337,8 @@ class DecodedFunction
 	def get_backtracked_for(dasm, funcaddr, calladdr)
 		if btfor_callback
 			@btfor_callback[dasm, @backtracked_for, funcaddr, calladdr]
+		elsif backtrace_binding and dest = @backtrace_binding[:thunk] and target = dasm.function[dest]
+			target.get_backtracked_for(dasm, funcaddr, calladdr)
 		else
 			@backtracked_for
 		end
@@ -1203,46 +1207,23 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		@entrypoints ||= []
 		@entrypoints |= entrypoints
 
-		while ep = entrypoints.pop
-			ep, from = ep
-			ep = normalize(ep)
-			if not @decoded[ep]
-				disassemble_fast ep
-				if not @decoded[ep].kind_of? DecodedInstruction
-					if not from or @function[ep]
-					elsif c_parser and name = Expression[ep].reduce_rec and name.kind_of? ::String and s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
-						@function[ep] = @cpu.decode_c_function_prototype(@c_parser, s)
-					elsif @function[:default]
-						if name = Expression[ep].reduce_rec and name.kind_of? ::String
-							@function[ep] = @function[:default].dup
-						elsif @decoded[from]
-							@decoded[from].block.add_to :default
-						end
-					end
-					next
-				end
-				# look for subfuncs
-				todo = [ep]
-				done = []
-				while a = todo.pop
-					a = normalize(a)
-					next if done.include? a or not @decoded[a].kind_of? DecodedInstruction
-					done << a
-					@decoded[a].block.each_to_otherfunc(self) { |aa| entrypoints << [aa, @decoded[a].block.list.last.address] }
-					@decoded[a].block.each_to_samefunc(self) { |aa| todo << aa }
-				end
-			end
-		end
+		entrypoints.each { |ep| do_disassemble_fast_deep(normalize(ep)) }
+	end
+
+	def do_disassemble_fast_deep(ep)
+		disassemble_fast(ep) { |fa|
+			do_disassemble_fast_deep(normalize(fa))
+		}
 	end
 
 	# disassembles fast from a list of entrypoints
 	# see disassemble_fast_step
-	def disassemble_fast(*entrypoints)
-		disassemble_fast_step(entrypoints) until entrypoints.empty?
+	def disassemble_fast(*entrypoints, &b)
+		disassemble_fast_step(entrypoints, &b) until entrypoints.empty?
 	end
 
 	# disassembles one block from the ary, see disassemble_fast_block
-	def disassemble_fast_step(todo)
+	def disassemble_fast_step(todo, &b)
 		return if not x = todo.pop
 		addr, from, from_subfuncret = x
 
@@ -1256,7 +1237,13 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		elsif s = get_section_at(addr)
 			block = InstructionBlock.new(normalize(addr), s[0])
 			block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
-			todo.concat disassemble_fast_block(block)
+			todo.concat disassemble_fast_block(block, &b)
+		elsif name = Expression[addr].reduce_rec and name.kind_of? ::String and not @function[addr]
+			if c_parser and s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
+				@function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
+			elsif @function[:default]
+				@function[addr] = @function[:default].dup
+			end
 		end
 
 		# mark as Function if called from a :saveip
@@ -1267,20 +1254,22 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			}
 			if func
 				l = auto_label_at(addr, 'sub', 'loc', 'xref')
-				puts "found new function #{l} at #{Expression[addr]}" if $VERBOSE
 				# XXX use default_btbind_callback ?
 				@function[addr] = DecodedFunction.new
+				detect_function_thunk(addr)
+				puts "found new function #{get_label_at(addr)} at #{Expression[addr]}" if $VERBOSE
 			end
 		end
 	end
 
 	# disassembles fast a new instruction block at block.address (must be normalized)
 	# does not recurse into subfunctions
-	# assumes all :saveip returns
-	# does not backtrace stuff
+	# assumes all :saveip returns, except those pointing to a subfunc with noreturn
+	# yields subfunction addresses (targets of :saveip)
+	# only backtrace for :x with maxdepth 1 (ie handles only basic push+ret)
 	# returns a todo-style ary
 	# assumes @addrs_todo is empty
-	def disassemble_fast_block(block)
+	def disassemble_fast_block(block, &b)
 		di_addr = block.address
 		delay_slot = nil
 		di = nil
@@ -1301,16 +1290,18 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 			if di.opcode.props[:stopexec] or di.opcode.props[:setip]
 				if di.opcode.props[:setip]
-					@program.get_xrefs_x(self, di).each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x, :maxdepth => 0) }
-					ret.concat @addrs_todo if not di.opcode.props[:saveip]
+					@addrs_todo = []
+					@program.get_xrefs_x(self, di).each { |expr|
+						backtrace(expr, di.address, :origin => di.address, :type => :x, :maxdepth => 1)
+					}
 				end
 				if di.opcode.props[:saveip]
-					di.block.add_to_subfuncret(di_addr)
-					ret << [di_addr, di.address, true]
-					di.block.add_to_normal :default if not di.block.to_normal and @function[:default]
+					ret.concat disassemble_fast_block_subfunc(di, &b)
+				else
+					ret.concat @addrs_todo
 				end
-				delay_slot ||= [di, @cpu.delay_slot(di)]
 				@addrs_todo = []
+				delay_slot ||= [di, @cpu.delay_slot(di)]
 			end
 
 			if delay_slot
@@ -1324,6 +1315,36 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 		di.block.add_to_normal(di_addr)
 		ret << [di_addr, di.address]
+	end
+
+	# handles when disassemble_fast encounters a call to a subfunction
+	def disassemble_fast_block_subfunc(di)
+		funcs = di.block.to_normal.to_a
+		do_ret = funcs.empty?
+		ret = []
+		funcs.each { |fa|
+			fa = normalize(fa)
+			yield fa if block_given?
+			if f = @function[fa] and bf = f.get_backtracked_for(self, fa, di.address) and not bf.empty?
+				# this includes retaddr unless f is noreturn
+				bf.each { |btt|
+					next if btt.type != :x
+					@addrs_todo = []
+					backtrace(btt.expr, di.address, :include_start => true,
+						  :origin => btt.origin, :orig_expr => btt.orig_expr,
+						  :type => :x, :detached => btt.detached, :maxdepth => 1)
+					ret.concat @addrs_todo
+				}
+			elsif not f or not f.noreturn
+				do_ret = true
+			end
+		}
+		if do_ret
+			di.block.add_to_subfuncret(di.next_addr)
+			ret << [di.next_addr, di.address, true]
+			di.block.add_to_normal :default if not di.block.to_normal and @function[:default]
+		end
+		ret
 	end
 
 	# trace whose xrefs this di is responsible of
@@ -1361,8 +1382,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		count = 0
 		while @decoded[addr].kind_of? DecodedInstruction
 			count += 1
-			return if count > 5
 			b = @decoded[addr].block
+			return if count > 5 or b.list.length > 4
 			if b.to_subfuncret and not b.to_subfuncret.empty?
 				return if b.to_subfuncret.length != 1
 				addr = normalize(b.to_subfuncret.first)
@@ -1388,6 +1409,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		if funcaddr != addr and f = @function[funcaddr]
 			# forward get_backtrace_binding to target
 			f.backtrace_binding = { :thunk => addr }
+			f.noreturn = true if @function[addr] and @function[addr].noreturn
 		end
 		return if not fname.kind_of? ::String
 		l = auto_label_at(funcaddr, 'sub')
