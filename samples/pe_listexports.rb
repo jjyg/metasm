@@ -12,7 +12,7 @@
 require 'metasm'
 
 ARGV.each { |f|
-	pe = Metasm::PE.decode_file_header(f)
+	pe = Metasm::PE.decode_file_header(f) rescue next
 	pe.decode_exports
 	next if not pe.export or not pe.export.libname
 	puts pe.export.libname.sub(/\.dll$/i, '')
