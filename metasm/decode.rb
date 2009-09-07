@@ -1286,6 +1286,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 			@decoded[di_addr] = di
 			block.add_di di
+			puts di if $DEBUG
 			di_addr = di.next_addr
 
 			if di.opcode.props[:stopexec] or di.opcode.props[:setip]
@@ -1296,11 +1297,12 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					}
 				end
 				if di.opcode.props[:saveip]
+					@addrs_todo = []
 					ret.concat disassemble_fast_block_subfunc(di, &b)
 				else
 					ret.concat @addrs_todo
+					@addrs_todo = []
 				end
-				@addrs_todo = []
 				delay_slot ||= [di, @cpu.delay_slot(di)]
 			end
 
@@ -1329,11 +1331,12 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				# this includes retaddr unless f is noreturn
 				bf.each { |btt|
 					next if btt.type != :x
-					@addrs_todo = []
-					backtrace(btt.expr, di.address, :include_start => true,
-						  :origin => btt.origin, :orig_expr => btt.orig_expr,
-						  :type => :x, :detached => btt.detached, :maxdepth => 1)
-					ret.concat @addrs_todo
+					bt = backtrace(btt.expr, di.address, :include_start => true, :origin => btt.origin, :maxdepth => 1)
+					if btt.detached
+						ret.concat bt	# callback argument
+					elsif bt.find { |a| normalize(a) == di.next_addr }
+						do_ret = true
+					end
 				}
 			elsif not f or not f.noreturn
 				do_ret = true
