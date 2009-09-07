@@ -297,7 +297,7 @@ end
 # this class implements a high-level debugging API (abstract superclass)
 class Debugger
 	class Breakpoint
-		attr_accessor :oneshot, :state, :type, :info, :condition
+		attr_accessor :oneshot, :state, :type, :info, :condition, :action
 	end
 
 	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint, :pid
@@ -334,7 +334,7 @@ class Debugger
 		get_reg_value(register_pc)
 	end
 
-	def check_pre_run(addr=nil)
+	def check_pre_run
 		invalidate
 		addr = pc
 		@breakpoint.each { |a, b|
@@ -343,19 +343,32 @@ class Debugger
 		}
 	end
 
-	def check_post_run(addr=nil)
+	def check_post_run(pre_state=nil)
 		invalidate
 		addr = pc
 		@breakpoint.each { |a, b|
 			next if a != addr or b.state != :active
 			disable_bp(a)
 		}
-		@breakpoint.delete(addr) if @breakpoint[addr] and @breakpoint[addr].oneshot
+		if b = @breakpoint[addr]
+			if b.condition
+				cond = resolve_expr(b.condition)
+				if cond == 0
+					continue if pre_state == 'continue'
+					return	# don't delete if we're singlestepping
+				end
+			end
+			@breakpoint.delete(addr) if b.oneshot
+			if b.action
+				b.action.call :addr => addr, :bp => b, :dbg => self, :pre_state => pre_state
+			end
+		end
 	end
 
 	def check_target
+		pre_state = @info
 		t = do_check_target
-		check_post_run if @state == :stopped
+		check_post_run(pre_state) if @state == :stopped
 		t
 	end
 
@@ -415,24 +428,29 @@ class Debugger
 		do_singlestep
 	end
 
-	def add_bp(addr, type, oneshot, cond)
-		if @breakpoint[addr]
-			@breakpoint[addr].oneshot = false if not oneshot
+	def add_bp(addr, type, oneshot, cond, act)
+		if b = @breakpoint[addr]
+			b.oneshot = false if not oneshot
+			raise 'bp type conflict' if type != b.type
+			raise 'bp condition conflict' if cond != b.condition
+			raise 'bp action conflict' if act != b.action
 			return
 		end
 		b = Breakpoint.new
 		b.oneshot = oneshot
 		b.type = type
+		b.condition = cond if cond
+		b.action = act if act
 		@breakpoint[addr] = b
 		enable_bp(addr)
 	end
 
-	def bpx(addr, oneshot=false, cond=nil)
-		add_bp(addr, :bpx, oneshot, cond)
+	def bpx(addr, oneshot=false, cond=nil, &action)
+		add_bp(addr, :bpx, oneshot, cond, action)
 	end
 
-	def hwbp(addr, oneshot=false, cond=nil)
-		add_bp(addr, :hwbp, oneshot, cond)
+	def hwbp(addr, oneshot=false, cond=nil, &action)
+		add_bp(addr, :hwbp, oneshot, cond, action)
 	end
 
 	def remove_breakpoint(addr)

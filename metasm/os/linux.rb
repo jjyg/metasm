@@ -419,14 +419,14 @@ class LinDebugger < Debugger
 		end
 	end
 
-	def check_post_run
+	def check_post_run(*a)
 		invalidate
 		addr = pc
 		if @state == :stopped and not @info and @memory[addr-1, 1] == "\xcc"
 			addr -= 1
 			set_reg_value(register_pc, addr)
 		end
-		super()
+		super(*a)
 	end
 end
 
