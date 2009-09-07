@@ -437,7 +437,7 @@ end
 
 
 class GraphViewWidget < Gtk::HBox
-	attr_accessor :hl_word, :caret_box, :caret_x, :caret_y
+	attr_accessor :hl_word, :caret_box, :caret_x, :caret_y, :curcontext
 
 	def initialize(dasm, parent_widget)
 		@dasm = dasm
