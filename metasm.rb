@@ -19,6 +19,7 @@ def self.const_missing(c)
 		'WinAPI' => 'WinOS', 'WindowsExports' => 'WinOS',
 		'WindowsRemoteString' => 'WinOS', 'WinDbg' => 'WinOS',
 		'VirtualFile' => 'OS', 'VirtualString' => 'OS',
+		'GdbRemoteString' => 'GdbClient', 'GdbRemoteDebugger' => 'GdbClient',
 	}[c.to_s] || c.to_s
 
 	files = {
@@ -34,6 +35,7 @@ def self.const_missing(c)
 		'Bflt' => 'exe_format/bflt',
 		'GtkGui' => 'gui/gtk',
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
+		'GdbClient' => 'os/remote',
 		'Decompiler' => 'decompile',
 	}[cst]
 
