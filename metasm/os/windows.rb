@@ -319,7 +319,7 @@ class WinDbgAPI
 			processinfo = [0, 0, 0, 0].pack('L*')
 			flags = WinAPI::DEBUG_PROCESS
 			flags |= WinAPI::DEBUG_ONLY_THIS_PROCESS if not debug_children
-			raise "CreateProcess: #{WinAPI.last_error_msg}" if not h = WinAPI.createprocessa(target, nil, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
+			raise "CreateProcess: #{WinAPI.last_error_msg}" if not h = WinAPI.createprocessa(nil, target, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
 			hprocess, hthread, pid, tid = processinfo.unpack('LLLL')
 			WinAPI.closehandle(hthread)
 			@mem[pid] = WindowsRemoteString.new(hprocess) # need @mem not empty (terminate condition of debugloop)
@@ -578,7 +578,7 @@ class WinDbgAPI
 	end
 
 	def handler_unloaddll(pid, tid, info)
-		puts "wdbg: #{pid}:#{tid} unloaddll #{'0x%08X' % info.imagebase}"
+		puts "wdbg: #{pid}:#{tid} unloaddll #{'0x%08X' % info.imagebase}" if $DEBUG
 		WinAPI::DBG_CONTINUE
 	end
 
