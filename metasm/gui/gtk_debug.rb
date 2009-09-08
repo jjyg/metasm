@@ -101,9 +101,13 @@ sleep 0.01
 	end
 
 	def post_dbg_run
-		#redraw		# avoid flicker on singlestep
+		want_redraw = true
 		Gtk.idle_add {
-			next true if not @dbg.check_target and @dbg.state == :running
+			if not @dbg.check_target and @dbg.state == :running
+				redraw if want_redraw
+				want_redraw = false
+				next true
+			end
 			@dbg.disassembler.sections.clear if @dbg.state == :dead
 			@console.add_log "target #{@dbg.state} #{@dbg.info}" if @dbg.info
 			@dbg.disassembler.disassemble_fast(@dbg.pc)
