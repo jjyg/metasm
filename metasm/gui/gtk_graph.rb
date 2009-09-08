@@ -1147,10 +1147,15 @@ class GraphViewWidget < Gtk::HBox
 		todo = [addr]
 		done = []
 		roots = []
+		default_root = nil
 		while a = todo.shift
 			a = @dasm.normalize(a)
-			next if done.include? a
 			next if not b = @dasm.decoded[a] or not b.kind_of? DecodedInstruction or not b = b.block
+			a = b.address
+			if done.include? a
+				default_root ||= a
+				next
+			end
 			done << a
 			newf = []
 			b.each_from_samefunc(@dasm) { |f| newf << f }
@@ -1160,6 +1165,7 @@ class GraphViewWidget < Gtk::HBox
 				todo.concat newf
 			end
 		end
+		roots << default_root if roots.empty? and default_root
 
 		roots
 	end
