@@ -46,7 +46,7 @@ class AsmListingWidget < Gtk::HBox
 
 		# receive mouse/kbd events
 		@listing_widget.set_events Gdk::Event::ALL_EVENTS_MASK
-		set_can_focus true
+		@listing_widget.set_can_focus true
 
 		# callbacks
 		@arrows_widget.signal_connect('expose_event') { paint_arrows ; true }
@@ -54,7 +54,7 @@ class AsmListingWidget < Gtk::HBox
 		@listing_widget.signal_connect('button_press_event') { |w, ev|
 			case ev.event_type
 			when Gdk::Event::Type::BUTTON_PRESS
-				grab_focus
+				@listing_widget.grab_focus
 				case ev.button
 				when 1; click(ev)
 				when 3; rightclick(ev)
@@ -201,7 +201,7 @@ class AsmListingWidget < Gtk::HBox
 			y += @font_height
 		}
 
-		if focus?
+		if @listing_widget.focus?
 			# draw caret
 			gc.set_foreground @color[:caret]
 			cx = @caret_x*@font_width+1
