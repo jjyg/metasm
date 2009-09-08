@@ -281,7 +281,10 @@ EOS
 
 	def module_symbols
 		syms = [['entrypoint', @optheader.entrypoint]]
-		@export.exports.to_a.each { |e| syms << [e.name, label_rva(e.target)] } if @export
+		@export.exports.to_a.each { |e|
+			next if not e.target
+			syms << [e.name, label_rva(e.target)]
+		} if @export
 		syms
 	end
 end
