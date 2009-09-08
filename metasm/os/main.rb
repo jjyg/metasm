@@ -297,7 +297,7 @@ end
 # this class implements a high-level debugging API (abstract superclass)
 class Debugger
 	class Breakpoint
-		attr_accessor :oneshot, :state, :type, :info, :condition, :action
+		attr_accessor :oneshot, :state, :type, :info, :condition, :action, :mtype, :mlen
 	end
 
 	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint, :pid
@@ -389,9 +389,9 @@ class Debugger
 		do_continue(*a)
 	end
 
-	def singlestep
+	def singlestep(*a)
 		check_pre_run
-		do_singlestep
+		do_singlestep(*a)
 	end
 
 	def need_stepover(di)
@@ -430,7 +430,7 @@ class Debugger
 		do_singlestep
 	end
 
-	def add_bp(addr, type, oneshot, cond, act)
+	def add_bp(addr, type, oneshot, cond, act, mtype=nil, mlen=nil)
 		if b = @breakpoint[addr]
 			b.oneshot = false if not oneshot
 			raise 'bp type conflict' if type != b.type
@@ -443,6 +443,8 @@ class Debugger
 		b.type = type
 		b.condition = cond if cond
 		b.action = act if act
+		b.mtype = mtype if mtype
+		b.mlen = mlen if mlen
 		@breakpoint[addr] = b
 		enable_bp(addr)
 	end
@@ -451,13 +453,17 @@ class Debugger
 		add_bp(addr, :bpx, oneshot, cond, action)
 	end
 
-	def hwbp(addr, oneshot=false, cond=nil, &action)
-		add_bp(addr, :hwbp, oneshot, cond, action)
+	def hwbp(addr, type=:x, len=1, oneshot=false, cond=nil, &action)
+		add_bp(addr, :hwbp, oneshot, cond, action, type, len)
 	end
 
 	def remove_breakpoint(addr)
 		disable_bp(addr)
 		@breakpoint.delete addr
+	end
+
+	def detach
+		@breakpoint.each_key { |a| disable_bp(addr) }
 	end
 
 	# returns the name of the module containing addr

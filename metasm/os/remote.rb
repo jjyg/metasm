@@ -194,7 +194,7 @@ class GdbClient
 	end
 
 	def break
-		raise 'unimplemented'
+		@io.write("\3")
 	end
 
 	def kill
@@ -353,6 +353,12 @@ class GdbRemoteDebugger < Debugger
 
 	def do_check_target
 		return if @state == :dead
+		t = Time.now
+		@last_check_target ||= t
+		if @state == :running and t - @last_check_target > 1
+			@gdb.io.write '$?#' << @gdb.gdb_csum('?')
+			@last_check_target = t
+		end
 		return unless i = @gdb.check_target(0)
 		@state, @info = i[:state], i[:info]
 		@info = nil if @info =~ /TRAP/
@@ -364,18 +370,20 @@ class GdbRemoteDebugger < Debugger
 		@info = nil if @info =~ /TRAP/
 	end
 
-	def do_continue
+	def do_continue(*a)
 		return if @state != :stopped
 		@state = :running
 		@info = 'continue'
 		@gdb.continue
+		@last_check_target = Time.now
 	end
 
-	def do_singlestep
+	def do_singlestep(*a)
 		return if @state != :stopped
 		@state = :running
 		@info = 'singlestep'
 		@gdb.singlestep
+		@last_check_target = Time.now
 	end
 
 	def need_stepover(di)
@@ -392,6 +400,13 @@ class GdbRemoteDebugger < Debugger
 		@state = :dead
 		@info = 'killed'
 	end
+
+	def detach
+		super()	# remove breakpoints & stuff
+		@gdb.detach
+		@state = :dead
+		@info = 'detached'
+	end
 	
 	# set to true to use the gdb msg to handle bpx, false to set 0xcc ourself
 	attr_accessor :gdb_bpx
@@ -407,8 +422,7 @@ class GdbRemoteDebugger < Debugger
 				@memory[addr, 1] = "\xcc"
 			end
 		when :hw
-			b.access ||= 'x'
-			@gdb.set_hwbp(b.access, addr, b.length)
+			@gdb.set_hwbp(b.mtype, addr, b.mlen)
 		end
 	end
 
@@ -423,7 +437,7 @@ class GdbRemoteDebugger < Debugger
 				@memory[addr, 1] = b.info
 			end
 		when :hw
-			@gdb.unset_hwbp(b.access, addr, b.length)
+			@gdb.unset_hwbp(b.mtype, addr, b.mlen)
 		end
 	end
 

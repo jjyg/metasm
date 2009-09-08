@@ -130,7 +130,7 @@ sleep 0.01
 	def dbg_continue(*a) wrap_run { @dbg.continue(*a) } end
 	def dbg_singlestep(*a) wrap_run { @dbg.singlestep(*a) } end
 	def dbg_stepover(*a) wrap_run { @dbg.stepover(*a) } end
-	def dbg_stepout(*a) wrap_run { @dbg.stepout(*a) } end
+	def dbg_stepout(*a) wrap_run { @dbg.stepout(*a) } end	# TODO idle_add etc
 
 
 	def redraw
@@ -702,7 +702,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			when 'code_addr', 'codeptr'
 				@parent_widget.code.curaddr
 			when 'data_addr', 'dataptr'
-				@parent_widget.data.curaddr
+				@parent_widget.mem.curaddr
 			end
 		}
 		@dbg.resolve_expr(e)
@@ -753,7 +753,9 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				@dbg.remove_breakpoint(i)
 			end
 		}
+		new_command('break', 'interrupt a running target') { |arg| @dbg.break ; p.post_dbg_run }
 		new_command('kill', 'kill the target') { |arg| @dbg.kill(arg) ; p.post_dbg_run }
+		new_command('detach', 'detach from the target') { @dbg.detach ; p.post_dbg_run }
 		new_command('g', 'wait until target reaches the specified address') { |arg|
 			@dbg.bpx(solve_expr(arg), true)
 			p.dbg_continue
