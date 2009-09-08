@@ -190,6 +190,10 @@ class DisasmWidget < Gtk::VBox
 		@views.each { |v| v.gui_update }
 	end
 
+	def redraw
+		curview.redraw
+	end
+
 	def keep_focus_while
 		curaddr = curaddr
 		yield
