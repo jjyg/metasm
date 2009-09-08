@@ -47,31 +47,44 @@ class GdbClient
 		false
 	end
 
+	def quiet_during
+		pq = quiet
+		@quiet = true
+		yield
+	ensure
+		@quiet = pq
+	end
+
 	# return buf, or nil on error / csum error
-	def gdb_readresp
-		state = :nosync
-		buf = ''
-		cs = ''
-		while state != :done
-			# XXX timeout etc
+	# waits IO.select(timeout) between each char
+	def gdb_readresp(timeout=nil)
+		@recv_ctx ||= {}
+		@recv_ctx[:state] ||= :nosync
+		buf = nil
+
+		while @recv_ctx
+			return unless IO.select([@io], nil, nil, timeout)
 			raise Errno::EPIPE if not c = @io.read(1)
-			case state
+			case @recv_ctx[:state]
 			when :nosync
 				if c == '$'
-					state = :data
+					@recv_ctx[:state] = :data
+					@recv_ctx[:buf] = ''
 				end
 			when :data
 				if c == '#'
-					state = :csum1
+					@recv_ctx[:state] = :csum1
+					@recv_ctx[:cs] = ''
 				else
-					buf << c
+					@recv_ctx[:buf] << c
 				end
 			when :csum1
-				cs << c
-				state = :csum2
+				@recv_ctx[:cs] << c
+				@recv_ctx[:state] = :csum2
 			when :csum2
-				cs << c
-				state = :done
+				cs = @recv_ctx[:cs] << c
+				buf = @recv_ctx[:buf]
+				@recv_ctx = nil
 				if cs.downcase != gdb_csum(buf).downcase
 					log "transmit error"
 					@io.write '-'
@@ -135,7 +148,6 @@ class GdbClient
 
 	# retrieve remote regs
 	def read_regs
-		sync_regs
 		if buf = gdb_msg('g')
 			regs = unhex(unrle(buf))
 			if regs.length < GDBREGS.length*4
@@ -161,7 +173,7 @@ class GdbClient
 	# read memory (small blocks prefered)
 	def getmem(addr, len)
 		return '' if len == 0
-		if mem = gdb_msg('m', hexl(addr) << ',' << hexl(len))
+		if mem = quiet_during { gdb_msg('m', hexl(addr) << ',' << hexl(len)) }
 			unhex(unrle(mem))
 		end
 	end
@@ -173,31 +185,17 @@ class GdbClient
 		raise 'writemem error' if not gdb_msg('M', hexl(addr) << ',' << hexl(len) << ':' << rle(hex(data)))
 	end
 
-	def log_stopped(msg)
-		return if @quiet ||= false
-		case msg[0]
-		when ?T
-			sig = [msg[1, 2]].pack('H*')[0]
-			misc = msg[3..-1].split(';').inject({}) { |h, s| k, v = s.split(':', 2) ; h.update k => (v || true) }
-			str = "stopped by signal #{sig}"
-			str = "thread #{[misc['thread']].pack('H*').unpack('N').first} #{str}" if misc['thread']
-			log str
-		when ?S
-			sig = [msg[1, 2]].pack('H*')[0]
-			log "stopped by signal #{sig}"
-		end
-	end
-
 	def continue
-		gdb_msg('c')
+		gdb_send('c')
 	end
 
 	def singlestep
-		gdb_msg('s')
+		gdb_send('s')
 	end
 
-	#def bpx(addr)
-	#end
+	def break
+		raise 'unimplemented'
+	end
 
 	def kill
 		gdb_send('k')
@@ -220,7 +218,7 @@ class GdbClient
 	end
 
 	def gdb_setup
-		#gdb_msg('q', 'Supported')
+		gdb_msg('q', 'Supported')
 		#gdb_msg('Hc', '-1')
 		#gdb_msg('qC')
 		if not gdb_msg('?')
@@ -232,7 +230,7 @@ class GdbClient
 
 	def set_hwbp(type, addr, len=1, set=true)
 		set = (set ? 'Z' : 'z')
-		type = { 'r' => '3', 'w' => '2', 'x' => '1', 's' => '0' }[type] || raise("invalid hwbp type #{type}")
+		type = { 'r' => '3', 'w' => '2', 'x' => '1', 's' => '0' }[type.to_s] || raise("invalid bp type #{type.inspect}")
 		gdb_msg(set, type << ',' << hexl(addr) << ',' << hexl(len))
 		true
 	end
@@ -249,17 +247,25 @@ class GdbClient
 		end
 	end
 
-	def check_target(timeout=nil)
-		@checkbuf ||= nil
-		if IO.select([@io], nil, nil, timeout)
-			@checkbuf ||= ''
-			@checkbuf << @io.read(1) while IO.select([@io], nil, nil, 0)
-			# see gdb_readresp
+	def check_target(timeout=0)
+		return if not msg = gdb_readresp(timeout)
+		case msg[0]
+		when ?T
+			sig = unhex(msg[1, 2])[0]
+			ret = { :state => :stopped, :info => "signal #{sig} #{Signal.list.index(sig) rescue nil}" }	# XXX windows host & signame?
+			ret.update msg[3..-1].split(';').inject({}) { |h, s| k, v = s.split(':', 2) ; h.update k => (v || true) }	# 'thread' -> pid
+		when ?S
+			sig = unhex(msg[1, 2])[0]
+			{ :state => :stopped, :info => "signal #{sig} #{Signal.list.index(sig) rescue nil}" }
+		else
+			log "check_target: unhandled #{msg.inspect}"
+			{ :state => :unknown }
 		end
 	end
 
-	attr_accessor :logger
+	attr_accessor :logger, :quiet
 	def log(s)
+		return if quiet
 		@logger ||= $stdout
 		@logger.puts s
 	end
@@ -290,8 +296,8 @@ class GdbRemoteString < VirtualString
 		@gdb.setmem(addr+off, data[off, len])
 	end
 
-	def get_page(addr)
-		@gdb.getmem(addr, @pagelength)
+	def get_page(addr, len=@pagelength)
+		@gdb.getmem(addr, len)
 	end
 end
 
@@ -324,6 +330,7 @@ class GdbRemoteDebugger < Debugger
 	def register_sp ; :esp ; end
 
 	def invalidate
+		sync_regs
 		@reg_val_cache.clear
 		super()
 	end
@@ -331,7 +338,7 @@ class GdbRemoteDebugger < Debugger
 	def get_reg_value(r)
 		return @reg_val_cache[r] || 0 if @state != :stopped
 		sync_regs
-		@reg_val_cache = @gdb.readregs || {} if @reg_val_cache.empty?
+		@reg_val_cache = @gdb.read_regs || {} if @reg_val_cache.empty?
 		@reg_val_cache[r] || 0
 	end
 	def set_reg_value(r, v)
@@ -339,14 +346,22 @@ class GdbRemoteDebugger < Debugger
 		@regs_dirty = true
 	end
 
+	def sync_regs
+		@gdb.send_regs(@reg_val_cache) if @regs_dirty and not @reg_val_cache.empty?
+		@regs_dirty = false
+	end
+
 	def do_check_target
+		return if @state == :dead
 		return unless i = @gdb.check_target(0)
-		@state, @info = i
+		@state, @info = i[:state], i[:info]
+		@info = nil if @info =~ /TRAP/
 	end
 
 	def do_wait_target
 		return unless i = @gdb.check_target(nil)
-		@state, @info = i
+		@state, @info = i[:state], i[:info]
+		@info = nil if @info =~ /TRAP/
 	end
 
 	def do_continue
@@ -368,24 +383,32 @@ class GdbRemoteDebugger < Debugger
 	end
 
 	def break
-		#kill('CHLD')
+		@gdb.break
 	end
 
 	def kill(sig=nil)
-		#sig = 9 if not sig or sig == ''
-		#sig = Signal.list[sig] || sig.to_i
-		@gdb.kill #(sig)
+		# TODO signal nr
+		@gdb.kill
+		@state = :dead
+		@info = 'killed'
 	end
-
+	
+	# set to true to use the gdb msg to handle bpx, false to set 0xcc ourself
+	attr_accessor :gdb_bpx
 	def enable_bp(addr)
 		return if not b = @breakpoint[addr]
 		b.state = :active
 		case b.type
 		when :bpx
-			b.info ||= @memory[addr, 1]
-			@memory[addr, 1] = "\xcc"
+			if gdb_bpx
+				@gdb.set_hwbp('s', addr, 1)
+			else
+				b.info ||= @memory[addr, 1]
+				@memory[addr, 1] = "\xcc"
+			end
 		when :hw
-			@gdb.set_hwbp(addr, b.access, b.length)
+			b.access ||= 'x'
+			@gdb.set_hwbp(b.access, addr, b.length)
 		end
 	end
 
@@ -394,10 +417,19 @@ class GdbRemoteDebugger < Debugger
 		b.state = :inactive
 		case b.type
 		when :bpx
-			@memory[addr, 1] = b.info
+			if gdb_bpx
+				@gdb.unset_hwbp('s', addr, 1)
+			else
+				@memory[addr, 1] = b.info
+			end
 		when :hw
-			@gdb.unset_hwbp(addr, b.access, b.length)
+			@gdb.unset_hwbp(b.access, addr, b.length)
 		end
+	end
+
+	def check_pre_run(*a)
+		sync_regs
+		super(*a)
 	end
 
 	def check_post_run(*a)

@@ -311,6 +311,7 @@ class Debugger
 		@symbols_len = {}
 		@breakpoint = {}
 		@state = :stopped
+		@info = nil
 		@log_proc = nil
 	end
 
@@ -328,6 +329,7 @@ class Debugger
 
 	def invalidate
 		@memory.invalidate
+		#@disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate } if @disassembler
 	end
 
 	def pc
@@ -589,6 +591,7 @@ class Debugger
 				when 0
 					if ex =~ /^[0-9a-f]+$/i
 						v = ex.to_s(16)
+					elsif block_given? and v = yield(ex)
 					else
 						puts "unknown symbol name #{ex}"
 						raise "unknown symbol name #{ex}"

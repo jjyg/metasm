@@ -49,15 +49,17 @@ OptionParser.new { |opt|
 
 require 'metasm/gui/gtk'	# windows version of gtk.rb raises on unknown cli args...
 
-exename = ARGV.shift
-
-if exename =~ /^live:(.*)/
+case exename = ARGV.shift
+when /^live:(.*)/
 	t = $1
 	t = t.to_i if $1 =~ /^[0-9]+$/
 	os = Metasm::OS.current
 	raise 'no such target' if not target = os.find_process(t) || os.create_process(t)
 	p target if $VERBOSE
 	w = Metasm::GtkGui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path} - metasm debugger")
+when /^(tcp:|udp:)?.*:/
+	dbg = Metasm::GdbRemoteDebugger.new(exename)
+	w = Metasm::GtkGui::DbgWindow.new(dbg, "remote - metasm debugger")
 else
 	w = Metasm::GtkGui::MainWindow.new("#{exename + ' - ' if exename}metasm disassembler")
 	if exename

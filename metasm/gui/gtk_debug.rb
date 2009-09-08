@@ -29,6 +29,7 @@ class DbgWidget < Gtk::VBox
 		@code = DisasmWidget.new(dbg.disassembler)
 		@mem  = DisasmWidget.new(dbg.disassembler)
 		@code.start_disassembling
+		@dbg.disassembler.disassemble_fast(@dbg.pc)
 
 		@code.keyboard_callback = @keyboard_cb
 		@mem.keyboard_callback = @keyboard_cb
@@ -48,7 +49,7 @@ class DbgWidget < Gtk::VBox
 		}
 
 		signal_connect('realize') {
-			@code.focus_addr(0, :opcodes)
+			@code.focus_addr(@dbg.resolve_expr(@watchpoint[@code]), :graph)
 			@mem.focus_addr(0, :hex)
 			gui_update
 
@@ -64,7 +65,7 @@ class DbgWidget < Gtk::VBox
 
 	def resize(w, h)
 		@regs.set_width_request w
-		return
+		return if true
 
 		# TODO FIXME
 		h = h / 3 * 3
@@ -91,17 +92,7 @@ sleep 0.01
 			GDK_F10 => lambda { @win.protect { dbg_stepover ; true } },
 			GDK_F11 => lambda { @win.protect { dbg_singlestep ; true } },
 			GDK_F12 => lambda { @win.protect { dbg_stepout ; true } },
-#			GDK_Tab => lambda { |ev|
-#				if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-#p ev.state	# seem we don't receive c-s-tab..
-#					trans = { @console => @regs, @regs => @mem, @mem => @code, @code => @console }
-##					trans = trans.invert if ev.state & Gdk::Window::SHIFT_MASK == Gdk::Window::SHIFT_MASK
-#					t = trans.find { |k, v| k.focus? } || [@console]
-#					t.last.grab_focus
-#					redraw
-#					true
-#				end
-#			},
+			GDK_period => lambda { @console.grab_focus },
 		}
 	end
 
@@ -110,12 +101,18 @@ sleep 0.01
 	end
 
 	def post_dbg_run
-		gui_update
+		#redraw		# avoid flicker on singlestep
 		Gtk.idle_add {
 			next true if not @dbg.check_target and @dbg.state == :running
 			@dbg.disassembler.sections.clear if @dbg.state == :dead
 			@console.add_log "target #{@dbg.state} #{@dbg.info}" if @dbg.info
-			gui_update
+			@dbg.disassembler.disassemble_fast(@dbg.pc)
+			@children.each { |c|
+				if wp = @watchpoint[c]
+					c.focus_addr @dbg.resolve_expr(wp), nil, true
+				end
+			}
+			redraw
 			false
 		}
 	end
@@ -134,16 +131,15 @@ sleep 0.01
 
 	def redraw
 		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
+		@console.redraw
+		@children.each { |c| c.redraw }
 	end
 
 	def gui_update
-		redraw
+		@console.redraw
 		@children.each { |c|
 			c = c.dasm_widget if c.kind_of? Gtk::Window
 			c.gui_update rescue next
-			if wp = @watchpoint[c]
-				c.focus_addr @dbg.resolve_expr(wp), nil, true
-			end
 		}
 	end
 
@@ -270,7 +266,7 @@ class DbgRegWidget < Gtk::DrawingArea
 			x += @layout.pixel_size[0]
 		}
 
-		running = (@dbg.state == :running)
+		running = (@dbg.state != :stopped)
 		xd = x_data*@font_width + 1
 		@registers.each { |reg|
 			x = 1
@@ -348,7 +344,7 @@ class DbgRegWidget < Gtk::DrawingArea
 			when ?0..?9; v -= ?0
 			when ?a..?f; v -= ?a-10
 			when ?A..?F; v -= ?A-10
-			else return true
+			else return @parent_widget.keypress(ev)
 			end
 
 			reg = @registers[@caret_reg]
@@ -409,11 +405,11 @@ class DbgRegWidget < Gtk::DrawingArea
 
 	# redraw the whole widget
 	def redraw
+		@reg_cache = @registers.inject({}) { |h, r| h.update r => @dbg.get_reg_value(r) }
 		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
 	end
 
 	def gui_update
-		@reg_cache = @registers.inject({}) { |h, r| h.update r => @dbg.get_reg_value(r) }
 		redraw
 	end
 
@@ -695,8 +691,16 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		}
 	end
 
+	# arg str -> expr value, with special codeptr/dataptr = code/data.curaddr
 	def solve_expr(arg)
-		return if not e = @dbg.parse_expr(arg)
+		return if not e = @dbg.parse_expr(arg) { |e|
+			case e.downcase
+			when 'code_addr', 'codeptr'
+				@parent_widget.code.curaddr
+			when 'data_addr', 'dataptr'
+				@parent_widget.data.curaddr
+			end
+		}
 		@dbg.resolve_expr(e)
 	end
 
@@ -762,7 +766,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			end
 		}
 		new_command('?', 'display a value') { |arg|
-			v = solve_expr(arg)
+			next if not v = solve_expr(arg)
 			add_log "#{v} 0x#{v.to_s(16)} #{[v].pack('L').inspect}"
 		}
 		new_command('exit', 'quit', 'quit the debugger interface') { p.win.destroy }
@@ -775,14 +779,19 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			end
 		}
 		new_command('scansyms', 'scan target memory for loaded modules') {
-			scan_addr = 0
+			if defined? @scan_addr and @scan_addr
+				add_log 'scanning @%08x' % @scan_addr
+				next
+			end
+			@scan_addr = 0
 			Gtk.idle_add {
-				if scan_addr <= 0xffff_f000	# cpu.size?
-					@dbg.loadsyms(scan_addr)
-					scan_addr += 0x1000
+				if @scan_addr <= 0xffff_f000	# cpu.size?
+					@dbg.loadsyms(@scan_addr)
+					@scan_addr += 0x1000
 					true
 				else
-					add_log 'scan finished'
+					add_log 'scansyms finished'
+					@scan_addr = nil
 					nil
 				end
 			}

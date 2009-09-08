@@ -513,6 +513,8 @@ end
 class InputBox < Gtk::Dialog
 	include GtkProtect
 
+	attr_accessor :label, :text
+
 	# shows a simplitic input box (eg window with a 1-line textbox + OK button), yields the text
 	# TODO history, dropdown, autocomplete, contexts, 3D stereo surround, etc
 	def initialize(owner, str, opts={})
@@ -521,8 +523,8 @@ class InputBox < Gtk::Dialog
 			[Gtk::Stock::OK, Gtk::Dialog::RESPONSE_ACCEPT], [Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_REJECT])
 		self.title = opts[:title] if opts[:title]
 
-		label = Gtk::Label.new(str)
-		text  = Gtk::TextView.new
+		@label = Gtk::Label.new(str)
+		@text  = Gtk::TextView.new
 		if opts[:text]
 			text.buffer.text = opts[:text].to_s
 			text.buffer.move_mark('selection_bound', text.buffer.start_iter)
@@ -617,7 +619,7 @@ class ListWindow < Gtk::Dialog
 	# the list is an array of arrays, displayed as String
 	# the first array is the column names
 	# each item double-clicked yields the block with the selected iterator
-	def initialize(owner, title, list)
+	def initialize(owner, title, list, h={})
 		owner ||= Gtk::Window.toplevels.first
 		super(title, owner, Gtk::Dialog::DESTROY_WITH_PARENT)
 
@@ -647,13 +649,16 @@ class ListWindow < Gtk::Dialog
 				protect { yield iter }
 			end
 		}
+		treeview.signal_connect('row_activated') { destroy }
 
 		remove vbox
 		add Gtk::ScrolledWindow.new.add(treeview)
 		toplevel.set_default_size cols.length*120, 400
 
-		show_all
-		present
+		if not h[:noshow]
+			show_all
+			present
+		end
 
 		# so that the 1st line is not selected by default
 		treeview.selection.mode = Gtk::SELECTION_SINGLE
@@ -734,13 +739,33 @@ class MainWindow < Gtk::Window
 			}
 		}
 		addsubmenu(filemenu, '_Debug') {
-			# TODO list existing targets (inputbox + listbox, reuseable for _goto..)
-			# TODO gdbserver
-			InputBox.new(self, 'chose target') { |target|
-				if not target = Metasm::OS.current.find_process(target)
-					MessageBox.new(self, 'no such target')
-				else
+			l = nil
+			i = InputBox.new(self, 'chose target') { |name|
+				i = nil ; l.destroy if l and not l.destroyed?
+				if target = Metasm::OS.current.find_process(name)
 					DbgWindow.new(target.debugger)
+				elsif name =~ /:/
+					DbgWindow.new(GdbRemoteDebugger.new(name))
+				else
+					MessageBox.new(self, 'no such target')
+				end
+			}
+
+			# build process list in bg (exe name resolution takes a few seconds)
+			list = [['pid', 'name']]
+			list_pr = Metasm::OS.current.list_processes
+			Gtk.idle_add {
+				if pr = list_pr.shift
+					path = pr.modules.first.path if pr.modules and pr.modules.first
+					#path ||= '<unk>'	# if we can't retrieve exe name, can't debug the process
+					list << [pr.pid, path] if path
+					true
+				elsif i
+					l = ListWindow.new(self, 'running processes', list, :noshow => true) { |e| i.text.buffer.text = e[0] }
+					l.move(l.position[0] + l.size[0], l.position[1])
+					l.show_all
+					i.present
+					false
 				end
 			}
 		}
