@@ -48,21 +48,21 @@ class Ia32
 		(dbg.get_reg_value(:eflags) >> DBG_FLAGS[f]) & 1
 	end
 	def dbg_set_flag(dbg, f)
-		f = dbg.get_reg_value(:eflags)
-		f |= 1 << DBG_FLAGS[f]
-		dbg.set_reg_value(:eflags, f)
+		fl = dbg.get_reg_value(:eflags)
+		fl |= 1 << DBG_FLAGS[f]
+		dbg.set_reg_value(:eflags, fl)
 	end
 	def dbg_unset_flag(dbg, f)
-		f = dbg.get_reg_value(:eflags)
-		f &= ~(1 << DBG_FLAGS[f])
-		dbg.set_reg_value(:eflags, f)
+		fl = dbg.get_reg_value(:eflags)
+		fl &= ~(1 << DBG_FLAGS[f])
+		dbg.set_reg_value(:eflags, fl)
 	end
 
 	def dbg_enable_singlestep(dbg)
-		dbg_set_flag(:t)
+		dbg_set_flag(dbg, :t)
 	end
 	def dbg_disable_singlestep(dbg)
-		dbg_unset_flag(:t)
+		dbg_unset_flag(dbg, :t)
 	end
 
 	def dbg_enable_bp(dbg, addr, bp)

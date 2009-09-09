@@ -501,8 +501,7 @@ class WinDbgAPI
 		case code
 		when WinAPI::CREATE_PROCESS_DEBUG_EVENT; prehandler_newprocess pid, tid, info
 		when WinAPI::CREATE_THREAD_DEBUG_EVENT;  prehandler_newthread  pid, tid, info
-		when WinAPI::EXIT_PROCESS_DEBUG_EVENT;   prehandler_endprocess pid, tid, info
-		when WinAPI::EXIT_THREAD_DEBUG_EVENT;    prehandler_endthread  pid, tid, info
+		# can't prehandle_endprocess/thread, the handler runs after us and may need the handles
 		end
 	end
 
@@ -539,6 +538,8 @@ class WinDbgAPI
 		when WinAPI::STATUS_BREAKPOINT
 			# we must ack ntdll interrupts on process start
 			# but we should not mask process-generated exceptions by default..
+			WinAPI::DBG_CONTINUE
+		when WinAPI::STATUS_SINGLE_STEP
 			WinAPI::DBG_CONTINUE
 		else
 			WinAPI::DBG_EXCEPTION_NOT_HANDLED
@@ -582,11 +583,13 @@ class WinDbgAPI
 
 	def handler_endprocess(pid, tid, info)
 		puts "wdbg: #{pid}:#{tid} process died" if $DEBUG
+		prehandler_endprocess(pid, tid, info)
 		WinAPI::DBG_CONTINUE
 	end
 
 	def handler_endthread(pid, tid, info)
 		puts "wdbg: #{pid}:#{tid} thread died" if $DEBUG
+		prehandler_endthread(pid, tid, info)
 		WinAPI::DBG_CONTINUE
 	end
 
@@ -598,6 +601,7 @@ class WinDbgAPI
 			str = (dll.export ? dll.export.libname : read_str_indirect(pid, info.imagename, info.unicode))
 			puts "wdbg: #{pid}:#{tid} loaddll #{str.inspect} at #{'0x%08X' % info.imagebase}"
 		end
+		WinAPI.closehandle(info.hfile)
 		WinAPI::DBG_CONTINUE
 	end
 
@@ -649,13 +653,12 @@ class WinDebugger < Debugger
 		@cpu = Ia32.new
 		@memory = @dbg.mem[@pid]
 		# get a valid @tid (for reg values etc)
+		super()
 		@dbg.loop { |pid, tid, code, info|
-			update_dbgev(ev)
+			update_dbgev([pid, tid, code, info])
 			break if code == WinAPI::CREATE_THREAD_DEBUG_EVENT
 		}
 		@continuecode = WinAPI::DBG_CONTINUE	#WinAPI::DBG_EXCEPTION_NOT_HANDLED
-
-		super()
 	end
 
 	def tid=(tid)
@@ -679,6 +682,18 @@ class WinDebugger < Debugger
 		ctx[r] = v
 	end
 
+	def enable_bp(addr)
+		return if not b = @breakpoint[addr]
+		@cpu.dbg_enable_bp(self, addr, b)
+		b.state = :active
+	end
+
+	def disable_bp(addr)
+		return if not b = @breakpoint[addr]
+		@cpu.dbg_disable_bp(self, addr, b)
+		b.state = :inactive
+	end
+
 	def do_continue
 		@cpu.dbg_disable_singlestep(self)
 		@dbg.continuedebugevent(@pid, @tid, @continuecode)
@@ -696,7 +711,7 @@ class WinDebugger < Debugger
 	end
 
 	def do_check_target
-		ev = waitfordebugevent(debugevent_alloc, 0)
+		ev = @dbg.waitfordebugevent(@dbg.debugevent_alloc, 0)
 		update_dbgev(ev)
 	end
 
@@ -706,6 +721,11 @@ class WinDebugger < Debugger
 			update_dbgev(ev)
 			break if @state != :running
 		} if @state == :running
+	end
+
+	def check_post_run(*a)
+		@cpu.dbg_check_post_run(self)
+		super(*a)
 	end
 
 	def update_dbgev(ev)
@@ -727,7 +747,7 @@ class WinDebugger < Debugger
 				end
 				@state = :stopped
 				@info = "access violation at #{Expression[info.addr]}"
-			when WinAPI::STATUS_BREAKPOINT
+			when WinAPI::STATUS_BREAKPOINT, WinAPI::STATUS_SINGLE_STEP
 				@state = :stopped
 				@info = nil
 			else
@@ -739,15 +759,15 @@ class WinDebugger < Debugger
 			@state = :stopped
 			@info = "thread #{tid} created"
 		when WinAPI::EXIT_THREAD_DEBUG_EVENT
-			@state = :stopped
+			@state = :dead
 			@info = "thread #{tid} died, exitcode #{info.exitcode}"
 		when WinAPI::EXIT_PROCESS_DEBUG_EVENT
 			@state = :dead
 			@info = "process died, exitcode #{info.exitcode}"
-		when WinAPI::LOAD_DLL_DEBUG_EVENT
-			loadsyms(info.imagebase)
-			@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
-			return
+		#when WinAPI::LOAD_DLL_DEBUG_EVENT
+		#	loadsyms(info.imagebase)
+		#	@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
+		#	return
 		else return
 		end
 		@tid = tid
