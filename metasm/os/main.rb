@@ -398,7 +398,7 @@ class Debugger
 	end
 
 	def need_stepover(di)
-		@cpu.dbg_need_stepover(self, di.address, di)
+		di and @cpu.dbg_need_stepover(self, di.address, di)
 	end
 
 	def di_at(addr)
@@ -421,7 +421,7 @@ class Debugger
 	end
 
 	def end_stepout(di)
-		@cpu.dbg_end_stepout(self, di.address, di)
+		di and @cpu.dbg_end_stepout(self, di.address, di)
 	end
 
 	# stepover until finding the last instruction of the function
