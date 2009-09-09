@@ -801,14 +801,17 @@ class Disassembler
 			if s =  @sections.find { |b, e| b.kind_of? ::Integer and addr >= b and addr < b + e.length } ||
 				@sections.find { |b, e| b.kind_of? ::Integer and addr == b + e.length }		# end label
 				s[1].ptr = addr - s[0]
+				return if s[1].data.respond_to?(:page_invalid?) and s[1].data.page_invalid?(s[1].ptr)
 				[s[1], s[0]]
 			end
 		when Expression
 			if addr.op == :+ and addr.rexpr.kind_of? ::Integer and addr.lexpr.kind_of? ::String and e = @sections[addr.lexpr]
 				e.ptr = addr.rexpr
+				return if e.data.respond_to?(:page_invalid?) and e.data.page_invalid?(e.ptr)
 				[e, Expression[addr.lexpr]]
 			elsif addr.op == :+ and addr.rexpr.kind_of? ::String and not addr.lexpr and e = @sections[addr.rexpr]
 				e.ptr = 0
+				return if e.data.respond_to?(:page_invalid?) and e.data.page_invalid?(e.ptr)
 				[e, addr.rexpr]
 			end
 		end

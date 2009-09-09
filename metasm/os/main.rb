@@ -176,7 +176,7 @@ class VirtualString
 
 	# returns wether a page is valid or not
 	def page_invalid?(addr)
-		cache_get_page(addr)[2]
+		cache_get_page(@addr_start+addr)[2]
 	end
 
 	# invalidates the page cache
