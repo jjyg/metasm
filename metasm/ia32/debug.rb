@@ -126,7 +126,7 @@ class Ia32
 		if dbg.state == :stopped and not dbg.info
  			dbg.invalidate
 			eip = dbg.pc
-			if bg.breakpoint[eip-1] and dbg.memory[eip-1, 1] == "\xcc"
+			if dbg.breakpoint[eip-1] and dbg.memory[eip-1, 1] == "\xcc"
 				# if we were singlestepping, we would have removed the 0xcc before running, so this was a continue, and we must fix eip.
 				dbg.pc = eip-1
 			end

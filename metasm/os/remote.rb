@@ -430,5 +430,9 @@ class GdbRemoteDebugger < Debugger
 		@cpu.dbg_check_post_run(self) if not gdb_bpx
 		super(*a)
 	end
+
+	def loadallsyms
+		puts 'loadallsyms unsupported'
+	end
 end
 end
