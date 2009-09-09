@@ -467,9 +467,10 @@ class WinDbgAPI
 	# waits for a debug event (will put the current [debugger] process to sleep)
 	# returns [pid, tid, eventcode, eventdata] or nil
 	def waitfordebugevent(raw = debugevent_alloc, timeout = WinAPI::INFINITE)
-		if WinAPI.waitfordebugevent(raw, WinAPI::INFINITE)
+		if WinAPI.waitfordebugevent(raw, timeout)
 			code, pid, tid, info = raw.unpack('LLLa*')
 			info = decode_info(code, info)
+			predispatch_debugevent(pid, tid, code, info)
 			[pid, tid, code, info]
 		end
 	end
@@ -493,6 +494,16 @@ class WinDbgAPI
 			WinAPI::RIP_EVENT => RipInfo,
 		}[code]
 		c ? c.new(info) : info
+	end
+
+	# update this object internal state from debug events (new thread/process)
+	def predispatch_debugevent(pid, tid, code, info)
+		case code
+		when WinAPI::CREATE_PROCESS_DEBUG_EVENT; prehandler_newprocess pid, tid, info
+		when WinAPI::CREATE_THREAD_DEBUG_EVENT;  prehandler_newthread  pid, tid, info
+		when WinAPI::EXIT_PROCESS_DEBUG_EVENT;   prehandler_endprocess pid, tid, info
+		when WinAPI::EXIT_THREAD_DEBUG_EVENT;    prehandler_endthread  pid, tid, info
+		end
 	end
 
 	# handles one debug event
@@ -534,35 +545,48 @@ class WinDbgAPI
 		end
 	end
 
+	def prehandler_newprocess(pid, tid, info)
+		@mem[pid] ||= WindowsRemoteString.new(info.hprocess)
+		@hprocess[pid] = info.hprocess
+		prehandler_newthread(pid, tid, info)
+	end
+
+	def prehandler_newthread(pid, tid, info)
+		@hthread[pid] ||= {}
+		@hthread[pid][tid] = info.hthread
+	end
+
+	def prehandler_endthread(pid, tid, info)
+		WinAPI.closehandle @hthread[pid][tid]
+		@hthread[pid].delete tid
+	end
+
+	def prehandler_endprocess(pid, tid, info)
+		WinAPI.closehandle @hprocess[pid]
+		@hprocess.delete pid
+		@hthread.delete pid
+		@mem.delete pid
+	end
+
 	def handler_newprocess(pid, tid, info)
 		str = read_str_indirect(pid, info.imagename, info.unicode)
 		puts "wdbg: #{pid}:#{tid} new process #{str.inspect} at #{'0x%08X' % info.imagebase}" if $DEBUG
-		@mem[pid] ||= WindowsRemoteString.new(info.hprocess)
-		@hprocess[pid] = info.hprocess
 		handler_newthread(pid, tid, info)
 		WinAPI::DBG_CONTINUE
 	end
 
 	def handler_newthread(pid, tid, info)
 		puts "wdbg: #{pid}:#{tid} new thread at #{'0x%08X' % info.startaddr}" if $DEBUG
-		@hthread[pid] ||= {}
-		@hthread[pid][tid] = info.hthread
 		WinAPI::DBG_CONTINUE
 	end
 
 	def handler_endprocess(pid, tid, info)
 		puts "wdbg: #{pid}:#{tid} process died" if $DEBUG
-		@mem.delete pid
-		WinAPI.closehandle @hprocess[pid]
-		@hprocess.delete pid
-		@hthread.delete pid
 		WinAPI::DBG_CONTINUE
 	end
 
 	def handler_endthread(pid, tid, info)
 		puts "wdbg: #{pid}:#{tid} thread died" if $DEBUG
-		WinAPI.closehandle @hthread[pid][tid]
-		@hthread[pid].delete tid
 		WinAPI::DBG_CONTINUE
 	end
 
@@ -583,19 +607,17 @@ class WinDbgAPI
 	end
 
 	def handler_debugstring(pid, tid, info)
-		str = @mem[pid][@mem[pid][info.ptr, 4], info.length]
-		str = str.unpack('S*').pack('C*') if info.unicode != 0
-		puts "wdbg: #{pid}:#{tid} debugstring #{str.inspect}" if $DEBUG
+		puts "wdbg: #{pid}:#{tid} debugstring #{read_str_indirect(pid, info.ptr, info.unicode)}" if $VERBOSE
 		WinAPI::DBG_CONTINUE
 	end
 
 	def handler_rip(pid, tid, info)
-		puts "wdbg: #{pid}:#{tid} rip" if $DEBUG
+		puts "wdbg: #{pid}:#{tid} rip" if $VERBOSE
 		WinAPI::DBG_CONTINUE
 	end
 
 	def handler_unknown(pid, tid, code, raw)
-		puts "wdbg: #{pid}:#{tid} unknown debugevent #{'0x%X' % code} #{raw.inspect}" if $DEBUG
+		puts "wdbg: #{pid}:#{tid} unknown debugevent #{'0x%X' % code} #{raw.inspect}" if $VERBOSE
 		WinAPI::DBG_CONTINUE
 	end
 
@@ -608,6 +630,12 @@ class WinDbgAPI
 		str = str[0, str.index(?\0)] if str.index(?\0)
 		str
 	end
+
+	attr_accessor :logger
+	def puts(s)
+		@logger ||= $stdout
+		@logger.puts s
+	end
 end
 
 # this class implements a high-level API over the Windows debugging primitives
@@ -615,24 +643,19 @@ class WinDebugger < Debugger
 	attr_accessor :dbg
 	def initialize(pid)
 		@dbg = WinDbgAPI.new(pid)
+		@dbg.logger = self
 		@pid = @dbg.mem.keys.first
 		# TODO get current cpu (x64)
 		@cpu = Ia32.new
 		@memory = @dbg.mem[@pid]
 		# get a valid @tid (for reg values etc)
 		@dbg.loop { |pid, tid, code, info|
-			if pid == @pid and code == WinAPI::CREATE_THREAD_DEBUG_EVENT
-				@dbg.handler_newthread pid, tid, info
-				@tid = tid
-				break
-			end
+			update_dbgev(ev)
+			break if code == WinAPI::CREATE_THREAD_DEBUG_EVENT
 		}
+		@continuecode = WinAPI::DBG_CONTINUE	#WinAPI::DBG_EXCEPTION_NOT_HANDLED
 
 		super()
-	end
-
-	def running?
-		false
 	end
 
 	def tid=(tid)
@@ -640,21 +663,10 @@ class WinDebugger < Debugger
 		@ctx = nil
 	end
 
-	def register_list
-		[:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp, :eip]
-	end
-
-	# reg => regsize (bits, 1 for flags)
-	def register_size
-		Hash.new(32)
-	end
-
-	def register_pc ; :eip ; end
-	def register_sp ; :esp ; end
-
 	def ctx
 		@ctx ||= @dbg.get_context(@pid, @tid)
 	end
+
 	def invalidate
 		@ctx = nil
 		super()
@@ -667,15 +679,78 @@ class WinDebugger < Debugger
 		ctx[r] = v
 	end
 
-	def continue
+	def do_continue
+		@cpu.dbg_disable_singlestep(self)
+		@dbg.continuedebugevent(@pid, @tid, @continuecode)
 		invalidate
-		@dbg.continuedebugevent(@pid, @tid)
-		@dbg.loop { |pid, tid, code, info|
-			if pid == @pid and code == WinAPI::EXCEPTION_DEBUG_EVENT
-				@tid = tid
-				break
+		@state = :running
+		@info = 'continue'
+	end
+
+	def do_singlestep
+		@cpu.dbg_enable_singlestep(self)
+		@dbg.continuedebugevent(@pid, @tid, @continuecode)
+		invalidate
+		@state = :running
+		@info = 'singlestep'
+	end
+
+	def do_check_target
+		ev = waitfordebugevent(debugevent_alloc, 0)
+		update_dbgev(ev)
+	end
+
+
+	def do_wait_target
+		@dbg.loop { |ev|
+			update_dbgev(ev)
+			break if @state != :running
+		} if @state == :running
+	end
+
+	def update_dbgev(ev)
+		return if not ev
+		pid, tid, code, info = ev
+		return if pid != @pid
+		@continuecode = WinAPI::DBG_CONTINUE
+		case code
+		when WinAPI::EXCEPTION_DEBUG_EVENT
+			# attr :code, :flags, :recordptr, :addr, :nparam, :info, :firstchance
+			case info.code
+			when WinAPI::STATUS_ACCESS_VIOLATION
+				# fix fs bug in xpsp1
+				if @cpu.kind_of? Ia32 and ctx = get_context(pid, tid) and ctx[:fs] != 0x3b
+					puts "wdbg: #{pid}:#{tid} fix fs bug" if $DEBUG
+					ctx[:fs] = 0x3b
+					@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
+					return
+				end
+				@state = :stopped
+				@info = "access violation at #{Expression[info.addr]}"
+			when WinAPI::STATUS_BREAKPOINT
+				@state = :stopped
+				@info = nil
+			else
+				@state = :stopped
+				@info = "unknown #{info.inspect}"
+				@continuecode = WinAPI::DBG_EXCEPTION_NOT_HANDLED
 			end
-		}
+		when WinAPI::CREATE_THREAD_DEBUG_EVENT
+			@state = :stopped
+			@info = "thread #{tid} created"
+		when WinAPI::EXIT_THREAD_DEBUG_EVENT
+			@state = :stopped
+			@info = "thread #{tid} died, exitcode #{info.exitcode}"
+		when WinAPI::EXIT_PROCESS_DEBUG_EVENT
+			@state = :dead
+			@info = "process died, exitcode #{info.exitcode}"
+		when WinAPI::LOAD_DLL_DEBUG_EVENT
+			loadsyms(info.imagebase)
+			@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
+			return
+		else return
+		end
+		@tid = tid
 	end
 end
 

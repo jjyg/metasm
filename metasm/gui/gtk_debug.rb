@@ -737,7 +737,11 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		new_command('stepout', 'stepover until getting out of the current function') { p.dbg_stepout }
 		new_command('bpx', 'set a breakpoint') { |arg| @dbg.bpx(solve_expr(arg)) }	# TODO conditions
 		new_command('hwbp', 'set a hardware breakpoint') { |arg| @dbg.hwbp(solve_expr(arg)) }
-		new_command('refresh', 'update', 'update the target memory/register cache') { @dbg.invalidate ; p.gui_update }
+		new_command('refresh', 'update', 'update the target memory/register cache') {
+			@dbg.invalidate
+			@dbg.disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate }
+			p.gui_update
+		}
 		new_command('bl', 'list breakpoints') {
 			i = -1
 			@dbg.breakpoint.sort.each { |a, b|

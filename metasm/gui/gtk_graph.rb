@@ -1118,6 +1118,27 @@ class GraphViewWidget < Gtk::HBox
 			@curcontext.auto_arrange_post
 			zoom_all
 			redraw
+		when GDK_V
+			@selected_boxes.each { |b|
+				dx = (b.from+b.to).map { |bb| bb.x+bb.w/2 - b.x-b.w/2 }
+				dx = dx.inject(0) { |s, xx| s+xx }/dx.length
+				if dx > 0
+					xmax = b.from.map { |bb| bb.x if b.from.find { |bbb|
+						bbb.x+bbb.w/2 < bb.x+bb.w/2 and bbb.y+bbb.h < bb.y
+					} }.compact.min
+					bx = b.x+dx
+					bx = [bx, xmax-b.w/2-8].min if xmax
+					b.x = bx if bx > b.x
+				else
+					xmin = b.from.map { |bb| bb.x+bb.w if b.from.find { |bbb|
+						bbb.x+bbb.w/2 < bb.x+bb.w/2 and bbb.y+bbb.h < bb.y
+					} }.compact.max
+					bx = b.x+dx
+					bx = [bx, xmin+b.w/2+8].max if xmin
+					b.x = bx if bx < b.x
+				end
+			}
+			redraw
 		when GDK_1	# (numeric) zoom to 1:1
 			if @zoom == 1.0
 				zoom_all

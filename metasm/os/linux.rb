@@ -285,7 +285,7 @@ class LinDebugger < Debugger
 	def initialize(pid, mem=nil)
 		@ptrace = PTrace32.new(pid)
 		@pid = @ptrace.pid
-		# TODO get current cpu (x64)
+		# TODO get current cpu (x64) - parse a LoadedELF?
 		@cpu = Ia32.new
 		@memory = mem || LinuxRemoteString.new(@pid)
 		@memory.dbg = self
@@ -293,20 +293,6 @@ class LinDebugger < Debugger
 		@reg_val_cache = {}
 		super()
 	end
-
-	REGLIST = [:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp, :orig_eax, :eip]
-	def register_list
-		REGLIST
-	end
-
-	# reg => regsize (bits, 1 for flags)
-	REGSZ = Hash.new(32)
-	def register_size
-		REGSZ
-	end
-
-	def register_pc ; :eip ; end
-	def register_sp ; :esp ; end
 
 	def invalidate
 		@reg_val_cache.clear
@@ -383,49 +369,40 @@ class LinDebugger < Debugger
 		Process.kill(sig, @pid)
 	end
 
-	def bpx(*a)
-		return hwbp(*a) if @has_pax
-		super(*a)
+	def bpx(addr, *a)
+		return hwbp(addr, :x, 1, *a) if @has_pax
+		super(addr, *a)
 	end
 
 	def enable_bp(addr)
 		return if not b = @breakpoint[addr]
-		b.state = :active
 		case b.type
 		when :bpx
 			begin
-				b.info ||= @memory[addr, 1]
-				@memory[addr, 1] = "\xcc"
+				@cpu.dbg_enable_bp(self, addr, b)
 			rescue Errno::EIO
 				@memory[addr, 1]	# check if we can read
 				# if yes, it's a PaX-style config
 				@has_pax = true
 				b.type = :hw
-				b.info = nil
-				enable_bp(addr)
+				b.mtype = :x
+				b.mlen = 1
+				@cpu.dbg_enable_bp(self, addr, b)
 			end
 		when :hw
-			# TODO dr7 etc
+			@cpu.dbg_enable_bp(self, addr, b)
 		end
+		b.state = :active
 	end
 
 	def disable_bp(addr)
 		return if not b = @breakpoint[addr]
+		@cpu.dbg_disable_bp(self, addr, b)
 		b.state = :inactive
-		case b.type
-		when :bpx
-			@memory[addr, 1] = b.info
-		when :hw
-		end
 	end
 
 	def check_post_run(*a)
-		invalidate
-		addr = pc
-		if @state == :stopped and not @info and @memory[addr-1, 1] == "\xcc"
-			addr -= 1
-			set_reg_value(register_pc, addr)
-		end
+		@cpu.dbg_check_post_run(self)
 		super(*a)
 	end
 end

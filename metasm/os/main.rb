@@ -297,7 +297,7 @@ end
 # this class implements a high-level debugging API (abstract superclass)
 class Debugger
 	class Breakpoint
-		attr_accessor :oneshot, :state, :type, :info, :condition, :action, :mtype, :mlen
+		attr_accessor :oneshot, :state, :type, :previous, :condition, :action, :mtype, :mlen
 	end
 
 	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint, :pid
@@ -329,11 +329,14 @@ class Debugger
 
 	def invalidate
 		@memory.invalidate
-		#@disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate } if @disassembler
 	end
 
 	def pc
 		get_reg_value(register_pc)
+	end
+
+	def pc=(v)
+		set_reg_value(register_pc, v)
 	end
 
 	def check_pre_run
@@ -395,7 +398,7 @@ class Debugger
 	end
 
 	def need_stepover(di)
-		di and di.opcode.props[:saveip]
+		@cpu.dbg_need_stepover(self, di.address, di)
 	end
 
 	def di_at(addr)
@@ -418,7 +421,7 @@ class Debugger
 	end
 
 	def end_stepout(di)
-		di and di.instruction.opname == 'ret'
+		@cpu.dbg_end_stepout(self, di.address, di)
 	end
 
 	# stepover until finding the last instruction of the function
@@ -453,8 +456,8 @@ class Debugger
 		add_bp(addr, :bpx, oneshot, cond, action)
 	end
 
-	def hwbp(addr, type=:x, len=1, oneshot=false, cond=nil, &action)
-		add_bp(addr, :hwbp, oneshot, cond, action, type, len)
+	def hwbp(addr, mtype=:x, mlen=1, oneshot=false, cond=nil, &action)
+		add_bp(addr, :hw, oneshot, cond, action, mtype, mlen)
 	end
 
 	def remove_breakpoint(addr)
@@ -464,6 +467,44 @@ class Debugger
 
 	def detach
 		@breakpoint.each_key { |a| disable_bp(addr) }
+	end
+
+	def register_list
+		@cpu.dbg_register_list
+	end
+
+	def register_size
+		@cpu.dbg_register_size
+	end
+
+	def register_pc
+		@cpu.dbg_register_pc
+	end
+
+	def register_flags
+		@cpu.dbg_register_flags
+	end
+
+	def flag_list
+		@cpu.dbg_flag_list
+	end
+
+	def get_flag_value(f)
+		@cpu.dbg_get_flag(self, f)
+	end
+	alias get_flag get_flag_value
+
+
+	def set_flag_value(f, v)
+		v != 0 ? set_flag(f) : unset_flag(f)
+	end
+
+	def set_flag(f)
+		@cpu.dbg_set_flag(self, f)
+	end
+
+	def unset_flag(f)
+		@cpu.dbg_unset_flag(self, f)
 	end
 
 	# returns the name of the module containing addr

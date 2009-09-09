@@ -10,7 +10,6 @@ require 'socket'
 module Metasm
 # lowlevel interface to the gdbserver protocol
 class GdbClient
-	EFLAGS = {0 => 'c', 2 => 'p', 4 => 'a', 6 => 'z', 7 => 's', 9 => 'i', 10 => 'd', 11 => 'o'}
 	# XXX x64/other arch
 	GDBREGS = %w[eax ecx edx ebx esp ebp esi edi eip eflags cs ss ds es fs gs].map { |r| r.to_sym }	# XXX [77] = 'orig_eax'
 
@@ -315,20 +314,6 @@ class GdbRemoteDebugger < Debugger
 		super()
 	end
 
-	REGLIST = [:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp, :eip]
-	def register_list
-		REGLIST
-	end
-
-	# reg => regsize (bits, 1 for flags)
-	REGSZ = Hash.new(32)
-	def register_size
-		REGSZ
-	end
-
-	def register_pc ; :eip ; end
-	def register_sp ; :esp ; end
-
 	def invalidate
 		sync_regs
 		@reg_val_cache.clear
@@ -386,10 +371,6 @@ class GdbRemoteDebugger < Debugger
 		@last_check_target = Time.now
 	end
 
-	def need_stepover(di)
-		di and ((di.instruction.prefix and di.instruction.prefix[:rep]) or di.opcode.props[:saveip])
-	end
-
 	def break
 		@gdb.break
 	end
@@ -418,8 +399,7 @@ class GdbRemoteDebugger < Debugger
 			if gdb_bpx
 				@gdb.set_hwbp('s', addr, 1)
 			else
-				b.info ||= @memory[addr, 1]
-				@memory[addr, 1] = "\xcc"
+				@cpu.dbg_enable_bp(self, addr, b)
 			end
 		when :hw
 			@gdb.set_hwbp(b.mtype, addr, b.mlen)
@@ -434,7 +414,7 @@ class GdbRemoteDebugger < Debugger
 			if gdb_bpx
 				@gdb.unset_hwbp('s', addr, 1)
 			else
-				@memory[addr, 1] = b.info
+				@cpu.dbg_disable_bp(self, addr, b)
 			end
 		when :hw
 			@gdb.unset_hwbp(b.mtype, addr, b.mlen)
@@ -447,12 +427,7 @@ class GdbRemoteDebugger < Debugger
 	end
 
 	def check_post_run(*a)
-		invalidate
-		addr = pc
-		if @state == :stopped and not @info and @memory[addr-1, 1] == "\xcc"
-			addr -= 1
-			set_reg_value(register_pc, addr)
-		end
+		@cpu.dbg_check_post_run(self) if not gdb_bpx
 		super(*a)
 	end
 end
