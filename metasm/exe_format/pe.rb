@@ -268,7 +268,7 @@ EOS
 	end
 
 	def module_name
-		@export and @export.libname
+		export and @export.libname
 	end
 
 	def module_address
@@ -283,8 +283,9 @@ EOS
 		syms = [['entrypoint', @optheader.entrypoint]]
 		@export.exports.to_a.each { |e|
 			next if not e.target
-			syms << [e.name, label_rva(e.target)]
-		} if @export
+			name = e.name || "ord_#{e.ordinal}"
+			syms << [name, label_rva(e.target)]
+		} if export
 		syms
 	end
 end
