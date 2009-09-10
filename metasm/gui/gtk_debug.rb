@@ -482,12 +482,12 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		@layout_stat = Pango::Layout.new Gdk::Pango.context
 		@color = {}
 		@log = []
-		@log_length = 400
+		@log_length = 4000
 		@log_offset = 0
 		@curline = ''
 		@statusline = 'type \'help\' for help'
 		@cmd_history = ['']
-		@cmd_history_length = 80	# number of past commands to remember
+		@cmd_history_length = 200	# number of past commands to remember
 		@cmd_histptr = nil
 
 		super()
@@ -872,7 +872,8 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			}
 		}
 		new_command('symbol', 'display information on symbols') { |arg|
-			@dbg.symbols.map { |k, v| [k, v] if v.include? arg.to_s }.compact.sort_by { |k, v| v }.each { |k, v|
+			arg = arg.to_s.downcase
+			@dbg.symbols.map { |k, v| [k, v] if v.downcase.include? arg }.compact.sort_by { |k, v| v }.each { |k, v|
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
