@@ -56,7 +56,8 @@ class GdbClient
 
 	# return buf, or nil on error / csum error
 	# waits IO.select(timeout) between each char
-	def gdb_readresp(timeout=nil)
+	# outstr is used internally only to handle multiline output string
+	def gdb_readresp(timeout=nil, outstr=nil)
 		@recv_ctx ||= {}
 		@recv_ctx[:state] ||= :nosync
 		buf = nil
@@ -84,22 +85,33 @@ class GdbClient
 				cs = @recv_ctx[:cs] << c
 				buf = @recv_ctx[:buf]
 				@recv_ctx = nil
-				if cs.downcase != gdb_csum(buf).downcase
+				if cs.downcase == gdb_csum(buf).downcase
+					@io.write '+'
+				else
 					log "transmit error"
 					@io.write '-'
 					return
 				end
 			end
 		end
-		@io.write '+'
 
-		if buf =~ /^E(..)$/
+		case buf
+		when /^E(..)$/
 			e = $1.to_i(16)
 			log "error #{e} (#{PTrace32::ERRNO.index(e)})"
 			return
+		when /^O([0-9a-fA-F]*)$/
+			if not outstr
+				first = true
+				outstr = ''
+			end
+			outstr << unhex($1)
+			ret = gdb_readresp(timeout, outstr)
+			outstr.split("\n").each { |e| log 'gdb: ' + e } if first
+			return ret
 		end
-		puts "gdb_readresp: got #{buf[0, 64].inspect}#{'...' if buf.length > 64}" if $DEBUG
 
+		puts "gdb_readresp: got #{buf[0, 64].inspect}#{'...' if buf.length > 64}" if $DEBUG
 		buf
 	end
 
@@ -172,7 +184,7 @@ class GdbClient
 	# read memory (small blocks prefered)
 	def getmem(addr, len)
 		return '' if len == 0
-		if mem = quiet_during { gdb_msg('m', hexl(addr) << ',' << hexl(len)) }
+		if mem = quiet_during { gdb_msg('m', hexl(addr) << ',' << hexl(len)) } and mem != ''
 			unhex(unrle(mem))
 		end
 	end
@@ -202,6 +214,11 @@ class GdbClient
 
 	def detach
 		gdb_send('D')
+	end
+
+	# monitor, aka remote command
+	def rcmd(cmd)
+		gdb_msg('qRcmd,' + hex(cmd))
 	end
 
 	attr_accessor :io
@@ -433,6 +450,10 @@ class GdbRemoteDebugger < Debugger
 
 	def loadallsyms
 		puts 'loadallsyms unsupported'
+	end
+
+	def ui_command_setup(ui)
+		ui.new_command('monitor', 'send a remote command to run on the target') { |arg| @gdb.rcmd(arg) }
 	end
 end
 end

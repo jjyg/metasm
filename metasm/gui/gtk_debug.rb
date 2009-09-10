@@ -600,8 +600,12 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			end
 		when GDK_Up
 			if not @cmd_histptr
-				@cmd_history << @curline
-				@cmd_histptr = 2
+				if @curline != ''
+					@cmd_history << @curline
+					@cmd_histptr = 2
+				else
+					@cmd_histptr = 1
+				end
 			else
 				@cmd_histptr += 1
 				@cmd_histptr = 1 if @cmd_histptr > @cmd_history.length
@@ -613,7 +617,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 
 		when GDK_Down
 			if not @cmd_histptr
-				@cmd_history << @curline
+				@cmd_history << @curline if @curline != ''
 				@cmd_histptr = @cmd_history.length
 			else
 				@cmd_histptr -= 1
@@ -806,6 +810,8 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				end
 			}
 		}
+
+		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup
 	end
 
 	def handle_command
