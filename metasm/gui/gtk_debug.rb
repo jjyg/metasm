@@ -181,9 +181,11 @@ class DbgRegWidget < Gtk::DrawingArea
 		@write_pending = {}	# addr -> newvalue (bytewise)
 
 		@registers = @dbg.register_list
-		@register_size = @dbg.register_size	# in bits, 1 for flags
+		@flags = @dbg.flag_list
+		@register_size = Hash.new(1) ; @registers.each { |r| @register_size[r] = @dbg.register_size[r]/4 }
 		@reg_cache = Hash.new(0)
 		@reg_cache_old = {}
+		@reg_pos = []	# list of x y w h vx of the reg drawing on widget, vx is x of value
 	
 		super()
 
@@ -231,10 +233,14 @@ class DbgRegWidget < Gtk::DrawingArea
 	end
 
 	def click(ev)
-		@caret_x = [(ev.x-1).to_i / @font_width - x_data, 0].max
-		@caret_reg = [ev.y.to_i / @font_height, @registers.length-1].min
-		@caret_x = [@caret_x, @register_size[@registers[@caret_reg]]/4-1].min
-		update_caret
+		if p = @reg_pos.find { |x, y, w, h, vx| x <= ev.x and x+w >= ev.x and y <= ev.y and y+h >= ev.y }
+			@caret_reg = @reg_pos.index(p)
+			@caret_x = ((ev.x - p[4]) / @font_width).to_i
+			rs = @register_size[@registers[@caret_reg]]
+			@caret_x = rs-1 if @caret_x > rs-1
+			@caret_x = 0 if @caret_x < 0
+			update_caret
+		end
 	end
 
 	def rightclick(ev)
@@ -263,38 +269,48 @@ class DbgRegWidget < Gtk::DrawingArea
 			x += @layout.pixel_size[0]
 		}
 
+		@reg_pos = []
 		running = (@dbg.state != :stopped)
-		xd = x_data*@font_width + 1
 		@registers.each { |reg|
-			x = 1
-			render[reg.to_s, :label]
+			strlen = reg.to_s.length + 1 + @register_size[reg]
+			if x + strlen*@font_width >= w_w
+				x = 1
+				y += @font_height
+			end
+			@reg_pos << [x, y, (strlen+1)*@font_width, @font_height, x+(reg.to_s.length+1)*@font_width]
+
+			render["#{reg}=", :label]
 			v = @write_pending[reg] || @reg_cache[reg]
-			x = xd
-			col = @write_pending[reg] ? :write_pending : @reg_cache_old.fetch(reg, v) != v ? :changed : :data
-			col = :inactive if running
-			render["%0#{@register_size[reg]/4}x " % v, col]
-			y += @font_height
+			col = running ? :inactive : @write_pending[reg] ? :write_pending : @reg_cache_old.fetch(reg, v) != v ? :changed : :data
+			render["%0#{@register_size[reg]}x " % v, col]
+			x += @font_width	# space
+		}
+
+		@flags.each { |reg|
+			if x + @font_width >= w_w	# XXX nowrap flags ?
+				x = 1
+				y += @font_height
+			end
+			@reg_pos << [x, y, @font_width, @font_height, x]
+
+			v = @write_pending[reg] || @reg_cache[reg]
+			col = running ? :inactive : @write_pending[reg] ? :write_pending : @reg_cache_old.fetch(reg, v) != v ? :changed : :data
+			v = v == 0 ? reg.to_s.downcase : reg.to_s.upcase
+			render[v, col]
+			x += @font_width	# space
 		}
 
 		if focus?
 			# draw caret
 			gc.set_foreground @color[:caret]
-			cx = (x_data + @caret_x)*@font_width+1
-			cy = @caret_reg*@font_height
+			cx = @reg_pos[@caret_reg][4] + @caret_x*@font_width + 1
+			cy = @reg_pos[@caret_reg][1]
 			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
 		end
 
 		@oldcaret_x, @oldcaret_reg = @caret_x, @caret_reg
-	end
 
-	def set_width_request(w)
-		super(w)
-		set_height_request(@registers.length * @font_height)
-	end
-
-	# char x of start of reg value zone
-	def x_data
-		10
+		set_height_request(y+@font_height)
 	end
 
 	include Gdk::Keyval
@@ -309,31 +325,40 @@ class DbgRegWidget < Gtk::DrawingArea
 				update_caret
 			end
 		when GDK_Right
-			if @caret_x < @register_size[@registers[@caret_reg]]/4-1
+			if @caret_x < @register_size[@registers[@caret_reg]]-1
 				@caret_x += 1
 				update_caret
 			end
 		when GDK_Up
 			if @caret_reg > 0
 				@caret_reg -= 1
-				update_caret
+			else
+				@caret_reg = @register.length+@flags.length-1
 			end
+			@caret_x = 0
+			update_caret
 		when GDK_Down
-			if @caret_reg < @registers.length-1
+			if @caret_reg < @registers.length+@flags.length-1
 				@caret_reg += 1
-				update_caret
+			else
+				@caret_reg = 0
 			end
+			@caret_x = 0
+			update_caret
 		when GDK_Home
 			@caret_x = 0
 			update_caret
 		when GDK_End
-			@caret_x = @register_size[@registers[@caret_reg]]/4-1
+			@caret_x = @register_size[@registers[@caret_reg]]-1
 			update_caret
 		when GDK_Tab
-			if @caret_reg < @registers.length-1
+			if @caret_reg < @registers.length+@flags.length-1
 				@caret_reg += 1
-				update_caret
+			else
+				@caret_reg = 0
 			end
+			@caret_x = 0
+			update_caret
 
 		when 0x20..0x7e
 			case v = ev.keyval
@@ -344,17 +369,23 @@ class DbgRegWidget < Gtk::DrawingArea
 			else return @parent_widget.keypress(ev)
 			end
 
-			reg = @registers[@caret_reg]
-			rsz = @register_size[reg]	# TODO flags
-			if v
-				oo = 4*(rsz/4-@caret_x-1)
+			reg = @registers[@caret_reg] || @flags[@caret_reg-@registers.length]
+			rsz = @register_size[reg]
+			if v and rsz != 1
+				oo = 4*(rsz-@caret_x-1)
 				ov = @write_pending[reg] || @reg_cache[reg]
 				ov &= ~(0xf << oo)
 				ov |= v << oo
 				@write_pending[reg] = ov
+			elsif v and (v == 0 or v == 1)	# TODO change z flag by typing 'z' or 'Z'
+				@write_pending[reg] = v
+				rsz = 1
 			end
 			
-			if @caret_x < rsz/4-1
+			if rsz == 1
+				@caret_reg += 1
+				@caret_reg = @registers.length if @caret_reg >= @registers.length + @flags.length
+			elsif @caret_x < rsz-1
 				@caret_x += 1
 			else
 				@caret_x = 0
@@ -377,7 +408,13 @@ class DbgRegWidget < Gtk::DrawingArea
 	end
 
 	def commit_writes
-		@write_pending.each { |k, v| @dbg.set_reg_value(k, v) }
+		@write_pending.each { |k, v|
+			if @registers.index(k)
+				@dbg.set_reg_value(k, v)
+			else
+				@dbg.set_flag_value(k, v)
+			end
+		}
 		@write_pending.clear
 	end
 
@@ -403,6 +440,7 @@ class DbgRegWidget < Gtk::DrawingArea
 	# redraw the whole widget
 	def redraw
 		@reg_cache = @registers.inject({}) { |h, r| h.update r => @dbg.get_reg_value(r) }
+		@flags.each { |f| @reg_cache[f] = @dbg.get_flag_value(f) }
 		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
 	end
 
@@ -415,12 +453,12 @@ class DbgRegWidget < Gtk::DrawingArea
 		return if not window
 		return if @oldcaret_x == @caret_x and @oldcaret_reg == @caret_reg
 
-		x = (x_data + @oldcaret_x) * @font_width + 1
-		y = @oldcaret_reg * @font_height
+		x = @reg_pos[@oldcaret_reg][4] + @oldcaret_x*@font_width + 1
+		y = @reg_pos[@oldcaret_reg][1]
 		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 
-		x = (x_data + @caret_x) * @font_width + 1
-		y = @caret_reg * @font_height
+		x = @reg_pos[@caret_reg][4] + @caret_x*@font_width + 1
+		y = @reg_pos[@caret_reg][1]
 		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 
 		@oldcaret_x, @oldcaret_reg = @caret_x, @caret_reg
@@ -794,13 +832,13 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		new_command('r', 'read/write the content of a register') { |arg|
 			reg, val = arg.split(/\s+/, 2)
 			if reg == 'fl'
-				@dbg.set_reg_value(val.to_sym, @dbg.get_reg_value(val.to_sym) == 0 ? 1 : 0)
+				@dbg.toggle_flag(val.to_sym)
 			elsif not val
 				add_log "#{reg} = #{Expression[@dbg.get_reg_value(reg.to_sym)]}"
 			else
-				val = solve_expr(val)
-				@dbg.set_reg_value(reg.to_sym, val)
+				@dbg.set_reg_value(reg.to_sym, solve_expr(val))
 			end
+			p.regs.gui_update
 		}
 		new_command('?', 'display a value') { |arg|
 			next if not v = solve_expr(arg)

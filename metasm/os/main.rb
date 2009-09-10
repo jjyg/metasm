@@ -494,9 +494,12 @@ class Debugger
 	end
 	alias get_flag get_flag_value
 
-
 	def set_flag_value(f, v)
 		v != 0 ? set_flag(f) : unset_flag(f)
+	end
+
+	def toggle_flag(f)
+		set_flag_value(f, 1-get_flag_value(f))
 	end
 
 	def set_flag(f)
