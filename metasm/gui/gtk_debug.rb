@@ -452,6 +452,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		@color = {}
 		@log = []
 		@log_length = 400
+		@log_offset = 0
 		@curline = ''
 		@statusline = 'type \'help\' for help'
 		@cmd_history = ['']
@@ -482,8 +483,8 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				end
 			end
 		}
-		# TODO mousewheel to scroll history?
 		signal_connect('key_press_event') { |w, ev| keypress(ev) }
+		signal_connect('scroll_event') { |w, ev| mousewheel(ev) }
 		signal_connect('realize') { # one-time initialize
 			# raw color declaration
 			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
@@ -519,6 +520,17 @@ class DbgConsoleWidget < Gtk::DrawingArea
 	end
 
 	def doubleclick(ev)
+	end
+
+	def mousewheel(ev)
+		case ev.direction
+		when Gdk::EventScroll::Direction::UP
+			@log_offset += 3
+			redraw
+		when Gdk::EventScroll::Direction::DOWN
+			@log_offset -= 3
+			redraw
+		end
 	end
 
 	def paint
@@ -557,12 +569,22 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		end
 		@caret_y = y
 
-		log.reverse.each { |l|
+		l_nr = -1
+		lastline = nil
+		@log_offset = 0 if @log_offset < 0
+		@log.reverse.each { |l|
 			l.scan(/.{1,#{w_w/@font_width}}/).reverse_each { |l_|
+				lastline = l_
+				l_nr += 1
+				next if l_nr < @log_offset
 				render[l_, :log]
 			}
 			break if y < 0
 		}
+		if lastline and l_nr < @log_offset
+			render[lastline, :log]
+			@log_offset = l_nr-1
+		end
 
 		if focus?
 			# draw caret
@@ -634,6 +656,14 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		when GDK_End
 			@caret_x = @curline.length
 			update_caret
+
+		when GDK_Page_Up
+			@log_offset += allocation.height/@font_height - 3
+			redraw
+		when GDK_Page_Down
+			@log_offset -= allocation.height/@font_height - 3
+			redraw
+
 		when GDK_Tab
 			# autocomplete
 			if @caret_x > 0 and not @curline[0, @caret_x].index(?\ ) and st = @curline[0, @caret_x] and not @commands[st]
@@ -819,6 +849,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		return if @curline == ''
 		@cmd_history << @curline
 		@cmd_history.shift if @cmd_history.length > @cmd_history_length
+		@log_offset = 0
 		cmd = @curline
 		@curline = ''
 		@caret_x = 0
