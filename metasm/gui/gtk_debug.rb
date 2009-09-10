@@ -8,12 +8,9 @@ require 'gtk2'
 module Metasm
 module GtkGui
 
-# TODO disassemble_simple @eip on unknown instr ? (would need invalidation for selfmodifying code)
-# TODO statusline? ('break due to signal 11', ...)
-# TODO cli ? (bpx, r fl z, ...)
-# TODO nonblocking @dbg ? (@dbg.continue -> still poke memory / run cmds, handle multiple threads)
+# TODO invalidate dbg.disassembler on selfmodifying code
+# TODO handle multiple threads, reattach, etc
 # TODO customize child widgets (listing: persistent hilight of current instr, show/set breakpoints, ...)
-# TODO mark changed register values after singlestep
 # TODO handle debugee fork()
 class DbgWidget < Gtk::VBox
 	attr_accessor :dbg, :console, :regs, :code, :mem, :win
@@ -36,17 +33,16 @@ class DbgWidget < Gtk::VBox
 
 		self.spacing = 2
 		add @regs, 'expand' => false
-		add @mem, 'expand' => false
-		add @code, 'expand' => false
+		add @mem
+		add @code
 		add @console
+
 
 		# 1st child should be clonable (dasm)
 		@children = [@code, @mem, @regs]
 		@watchpoint = { @code => @dbg.register_pc }
 
-		signal_connect('size_allocate') { |w, alloc|
-			resize(alloc.width, alloc.height)
-		}
+		signal_connect('size_request') { |w, alloc| resize(*alloc) }
 
 		signal_connect('realize') {
 			@code.focus_addr(@dbg.resolve_expr(@watchpoint[@code]), :graph)
@@ -56,27 +52,12 @@ class DbgWidget < Gtk::VBox
 			modify_bg Gtk::STATE_NORMAL, Gdk::Color.new(0, 0xffff, 0)
 		}
 
-		set_size_request(640, 600)
-		@mem.set_height_request(150)
-		@code.set_height_request(150)
-
-		# XXX mem has always the focus
+		@mem.set_height_request(1)
+		@code.set_height_request(1)
 	end
 
 	def resize(w, h)
 		@regs.set_width_request w
-		return if true
-
-		# TODO FIXME
-		h = h / 3 * 3
-		@oldheight ||= h
-		dh = @oldheight-h
-		if dh != 0
-			@mem.set_height_request(@mem.allocation.height + dh/3)
-			@code.set_height_request(@code.allocation.height + dh/3)
-			@console.set_height_request(@console.allocation.height - 2*dh/3)
-sleep 0.01
-		end
 		true
 	end
 
@@ -168,6 +149,18 @@ sleep 0.01
 		@children << child
 		child.dasm_widget.keyboard_callback = @keyboard_cb
 		@watchpoint[child] = watchpoint if watchpoint
+	end
+
+	def resize_child(cld, size)
+		pk = query_child_packing(cld)
+		if size <= 0
+			pk[0] = true
+			size = 1
+		else
+			pk[0] = false
+		end
+		set_child_packing(cld, *pk)
+		cld.set_height_request(size)
 	end
 end
 
@@ -753,8 +746,8 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		new_command('dd', 'display bytes in data window') { p.mem.curview.data_size = 4 ; p.mem.gui_update }
 		new_command('u', 'focus code window on an address') { |arg| p.code.focus_addr(solve_expr(arg)) }
 		new_command('.', 'focus code window on current address') { p.code.focus_addr(solve_expr(@dbg.register_pc.to_s)) }
-		new_command('wc', 'set code window height') { |arg| p.code.set_height_request(Integer(arg)*@font_height) }	# TODO check size against window
-		new_command('wd', 'set data window height') { |arg| p.mem.set_height_request(Integer(arg)*@font_height) }
+		new_command('wc', 'set code window height') { |arg| p.resize_child(p.code, arg.to_i*@font_height) }
+		new_command('wd', 'set data window height') { |arg| p.resize_child(p.mem, arg.to_i*@font_height) }
 		new_command('width', 'set window width (chars)') { |arg|
 			if a = solve_expr(arg); p.win.resize(a*@font_width, p.win.size[1])
 			else add_log "width #{p.win.size[0]/@font_width}"
@@ -887,6 +880,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		@layout_stat.font_description.weight = Pango::WEIGHT_BOLD
 		@layout_stat.text = 'x'
 		@font_width_stat, @font_height_stat = @layout_stat.pixel_size
+		set_height_request(2*@font_height)
 		redraw
 	end
 
