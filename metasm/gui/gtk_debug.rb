@@ -795,7 +795,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		new_command('kill', 'kill the target') { |arg| @dbg.kill(arg) ; p.post_dbg_run }
 		new_command('detach', 'detach from the target') { @dbg.detach ; p.post_dbg_run }
 		new_command('g', 'wait until target reaches the specified address') { |arg|
-			@dbg.bpx(solve_expr(arg), true)
+			@dbg.bpx(solve_expr(arg), true) if arg
 			p.dbg_continue
 		}
 		new_command('r', 'read/write the content of a register') { |arg|
@@ -838,6 +838,11 @@ class DbgConsoleWidget < Gtk::DrawingArea
 					@scan_addr = nil
 					nil
 				end
+			}
+		}
+		new_command('symbol', 'display information on symbols') { |arg|
+			@dbg.symbols.map { |k, v| [k, v] if v.include? arg.to_s }.compact.sort_by { |k, v| v }.each { |k, v|
+				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
 
