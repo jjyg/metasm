@@ -1221,8 +1221,13 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 	# disassembles fast from a list of entrypoints
 	# see disassemble_fast_step
-	def disassemble_fast(*entrypoints, &b)
-		disassemble_fast_step(entrypoints, &b) until entrypoints.empty?
+	def disassemble_fast(entrypoint, maxdepth=-1, &b)
+		ep = [entrypoint]
+		until ep.empty?
+			disassemble_fast_step(ep, &b)
+			maxdepth -= 1
+			ep.delete_if { |a| not @decoded[normalize(a[0])] } if maxdepth == 0
+		end
 	end
 
 	# disassembles one block from the ary, see disassemble_fast_block
