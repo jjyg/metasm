@@ -87,8 +87,9 @@ end	# class << self
 	CREATE_THREAD_DEBUG_EVENT = 2
 	DBG_CONTINUE = 0x00010002
 	DBG_EXCEPTION_NOT_HANDLED = 0x80010001
-	DEBUG_ONLY_THIS_PROCESS = 0x00000002
 	DEBUG_PROCESS = 0x00000001
+	DEBUG_ONLY_THIS_PROCESS = 0x00000002
+	CREATE_SUSPENDED = 0x00000004
 	EXCEPTION_DEBUG_EVENT = 1
 	EXIT_PROCESS_DEBUG_EVENT = 5
 	EXIT_THREAD_DEBUG_EVENT = 4
@@ -317,7 +318,7 @@ class WinDbgAPI
 			# *(int*)&startupinfo = sizeof(startupinfo);
 			startupinfo = [17*[0].pack('L').length, *([0]*16)].pack('L*')
 			processinfo = [0, 0, 0, 0].pack('L*')
-			flags = WinAPI::DEBUG_PROCESS
+			flags = WinAPI::DEBUG_PROCESS | WinAPI::CREATE_SUSPENDED
 			flags |= WinAPI::DEBUG_ONLY_THIS_PROCESS if not debug_children
 			raise "CreateProcess: #{WinAPI.last_error_msg}" if not h = WinAPI.createprocessa(nil, target, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
 			hprocess, hthread, pid, tid = processinfo.unpack('LLLL')
