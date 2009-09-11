@@ -541,7 +541,8 @@ class Debugger
 		begin
 			e = cls.load @memory[addr, 0x1000_0000]
 			e.load_address = addr
-			e.decode
+			e.decode_header
+			e.decode_exports
 		rescue
 			@modulemap[addr.to_s(16)] = [addr, addr+0x1000]
 			return

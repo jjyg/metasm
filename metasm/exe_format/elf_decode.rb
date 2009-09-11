@@ -722,6 +722,10 @@ class ELF
 		}
 	end
 
+	def decode_exports
+		decode_segments_dynamic
+	end
+
 	# decodes the elf header, and depending on the elf type, decode segments or sections
 	def decode
 		decode_header
