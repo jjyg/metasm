@@ -717,7 +717,7 @@ class WinDebugger < Debugger
 
 
 	def do_wait_target
-		@dbg.loop { |ev|
+		@dbg.loop { |*ev|
 			update_dbgev(ev)
 			break if @state != :running
 		} if @state == :running
