@@ -386,7 +386,7 @@ class Debugger
 	def continue(*a)
 		while @breakpoint[pc]
 			do_singlestep	# XXX *a ?
-			do_waittarget	# TODO async wait if curinstr is syscall(sleep 3600)...
+			do_wait_target	# TODO async wait if curinstr is syscall(sleep 3600)...
 		end
 		check_pre_run	# re-set bp
 		do_continue(*a)
