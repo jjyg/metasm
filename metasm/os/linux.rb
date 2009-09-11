@@ -341,14 +341,14 @@ class LinDebugger < Debugger
 		@state = :dead
 	end
 
-	def do_continue
+	def do_continue(*a)
 		return if @state != :stopped
 		@state = :running
 		@info = 'continue'
 		@ptrace.cont
 	end
 
-	def do_singlestep
+	def do_singlestep(*a)
 		return if @state != :stopped
 		@state = :running
 		@info = 'singlestep'

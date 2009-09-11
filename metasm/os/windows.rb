@@ -694,7 +694,7 @@ class WinDebugger < Debugger
 		b.state = :inactive
 	end
 
-	def do_continue
+	def do_continue(*a)
 		@cpu.dbg_disable_singlestep(self)
 		@dbg.continuedebugevent(@pid, @tid, @continuecode)
 		invalidate
@@ -702,7 +702,7 @@ class WinDebugger < Debugger
 		@info = 'continue'
 	end
 
-	def do_singlestep
+	def do_singlestep(*a)
 		@cpu.dbg_enable_singlestep(self)
 		@dbg.continuedebugevent(@pid, @tid, @continuecode)
 		invalidate
