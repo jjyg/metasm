@@ -739,7 +739,7 @@ class WinDebugger < Debugger
 			case info.code
 			when WinAPI::STATUS_ACCESS_VIOLATION
 				# fix fs bug in xpsp1
-				if @cpu.kind_of? Ia32 and ctx = get_context(pid, tid) and ctx[:fs] != 0x3b
+				if @cpu.kind_of? Ia32 and ctx = @dbg.get_context(pid, tid) and ctx[:fs] != 0x3b
 					puts "wdbg: #{pid}:#{tid} fix fs bug" if $DEBUG
 					ctx[:fs] = 0x3b
 					@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
