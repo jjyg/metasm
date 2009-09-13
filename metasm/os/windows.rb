@@ -361,7 +361,8 @@ class WinDbgAPI
 
 		# returns the value of an unsigned int register
 		def [](reg)
-			@ctx[OFFSETS[reg], 4].unpack('L').first
+			raise "invalid register #{reg.inspect}" if not o = OFFSETS[reg]
+			@ctx[o, 4].unpack('L').first
 		end
 
 		# updates the value of an unsigned int register
@@ -372,7 +373,8 @@ class WinDbgAPI
 
 		# updates the local copy of the context, do not commit
 		def set_val(reg, value)
-			@ctx[OFFSETS[reg], 4] = [value].pack('L')
+			raise "invalid register #{reg.inspect}" if not o = OFFSETS[reg]
+			@ctx[o, 4] = [value].pack('L')
 		end
 
 		# updates the thread registers from the local copy
@@ -559,12 +561,10 @@ class WinDbgAPI
 	end
 
 	def prehandler_endthread(pid, tid, info)
-		WinAPI.closehandle @hthread[pid][tid]
 		@hthread[pid].delete tid
 	end
 
 	def prehandler_endprocess(pid, tid, info)
-		WinAPI.closehandle @hprocess[pid]
 		@hprocess.delete pid
 		@hthread.delete pid
 		@mem.delete pid

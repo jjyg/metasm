@@ -602,6 +602,12 @@ class Debugger
 					nil while tok = lexer.readtok and tok.type == :space
 					raise tok || lexer, '] expected' if tok.raw != ']'
 					break
+				when '*'
+					ptr = parse(lexer)
+					break
+				when ':'
+					n = lexer.readtok
+					return n.raw.to_sym
 				else
 					lexer.unreadtok tok
 					break
@@ -620,6 +626,24 @@ class Debugger
 			when /^0b([01]+)$/i; tok.value = $1.to_i(2)
 			end
 		end
+
+		def readop(lexer)
+			if t0 = lexer.readtok and t0.raw == '-' and t1 = lexer.readtok and t1.raw == '>'
+				op = t0.dup
+				op.raw << t1.raw
+				op.value = op.raw.to_sym
+				op
+			else
+				lexer.unreadtok t1
+				lexer.unreadtok t0
+				super(lexer)
+			end
+		end
+
+		def new(op, r, l)
+			return Indirection[[l, :+, r], nil] if op == :'->'
+			super(op, r, l)
+		end
 		end
 	end
 
@@ -635,7 +659,7 @@ class Debugger
 
 		# resolve ambiguous symbol names/hex values
 		bd = {}
-		e.externals.each { |ex|
+		e.externals.grep(String).each { |ex|
 			if not v = register_list.find { |r| ex.downcase == r.to_s.downcase } || symbols.index(ex)
 				lst = symbols.values.find_all { |s| s.downcase.include? ex.downcase }
 				case lst.length

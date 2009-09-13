@@ -333,7 +333,7 @@ class DbgRegWidget < Gtk::DrawingArea
 			if @caret_reg > 0
 				@caret_reg -= 1
 			else
-				@caret_reg = @register.length+@flags.length-1
+				@caret_reg = @registers.length+@flags.length-1
 			end
 			@caret_x = 0
 			update_caret
@@ -852,6 +852,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			else
 				@dbg.loadallsyms
 			end
+			p.gui_update
 		}
 		new_command('scansyms', 'scan target memory for loaded modules') {
 			if defined? @scan_addr and @scan_addr
@@ -867,13 +868,14 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				else
 					add_log 'scansyms finished'
 					@scan_addr = nil
+					p.gui_update
 					nil
 				end
 			}
 		}
 		new_command('symbol', 'display information on symbols') { |arg|
 			arg = arg.to_s.downcase
-			@dbg.symbols.map { |k, v| [k, v] if v.downcase.include? arg }.compact.sort_by { |k, v| v }.each { |k, v|
+			@dbg.symbols.map { |k, v| [k, @dbg.addrname(k)] if v.downcase.include? arg }.compact.sort_by { |k, v| v.downcase }.each { |k, v|
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
