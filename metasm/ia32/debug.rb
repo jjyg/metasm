@@ -8,22 +8,6 @@ require 'metasm/ia32/opcodes'
 
 module Metasm
 class Ia32
-	def pre_singlestep(dbg)
-		fl = dbg.get_register(:eflags)
-		if not fl & 42 > 0
-			fl |= 42
-			dbg.set_register(:eflags)
-		end
-	end
-
-	def post_singlestep(dbg)
-	end
-
-	def post_run(dbg)
-		if dbg.mem[:eip-1] == 0xcc
-		end
-	end
-
 	def dbg_register_pc
 		:eip
 	end
@@ -103,7 +87,7 @@ class Ia32
 
 	def dbg_enable_bphw(dbg, addr, bp)
 		nr = dbg_alloc_bphw(dbg, addr, bp)
-		dr7 = dbg.get_register_value(:dr7)
+		dr7 = dbg.get_reg_value(:dr7)
 		l = { 1 => 0, 2 => 1, 4 => 3, 8 => 2 }[bp.mlen]
 		rw = { :x => 0, :w => 1, :r => 3 }[bp.mtype]
 		raise "enable_bphw: invalid breakpoint #{bp.inspect}" if not l or not rw
@@ -111,15 +95,15 @@ class Ia32
 		dr7 |= ((l << 2) | rw) << (16+4*nr)	# set drN len/rw
 		dr7 |= 3 << (2*nr)	# enable global/local drN
 
-		dbg.set_register_value("dr#{nr}".to_sym, addr)
-		dbg.set_register_value(:dr7, dr7)
+		dbg.set_reg_value("dr#{nr}".to_sym, addr)
+		dbg.set_reg_value(:dr7, dr7)
 	end
 
 	def dbg_disable_bphw(dbg, addr, bp)
 		nr = dbg_alloc_bphw(dbg, addr, bp)
-		dr7 = dbg.get_register_value(:dr7)
+		dr7 = dbg.get_reg_value(:dr7)
 		dr7 &= ~(3 << (2*nr))
-		dbg.set_register_value(:dr7, dr7)
+		dbg.set_reg_value(:dr7, dr7)
 	end
 
 	def dbg_check_post_run(dbg)

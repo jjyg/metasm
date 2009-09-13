@@ -761,15 +761,17 @@ class DbgConsoleWidget < Gtk::DrawingArea
 	end
 
 	# arg str -> expr value, with special codeptr/dataptr = code/data.curaddr
-	def solve_expr(arg)
-		return if not e = @dbg.parse_expr(arg) { |e|
+	def parse_expr(arg)
+		@dbg.parse_expr(arg) { |e|
 			case e.downcase
-			when 'code_addr', 'codeptr'
-				@parent_widget.code.curaddr
-			when 'data_addr', 'dataptr'
-				@parent_widget.mem.curaddr
+			when 'code_addr', 'codeptr'; @parent_widget.code.curaddr
+			when 'data_addr', 'dataptr'; @parent_widget.mem.curaddr
 			end
 		}
+	end
+
+	def solve_expr(arg)
+		return if not e = parse_expr(arg)
 		@dbg.resolve_expr(e)
 	end
 
@@ -800,8 +802,37 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		new_command('stepinto', 'singlestep', 'run a single instruction of the target') { p.dbg_singlestep }
 		new_command('stepover', 'run a single instruction of the target, do not enter into subfunctions') { p.dbg_stepover }
 		new_command('stepout', 'stepover until getting out of the current function') { p.dbg_stepout }
-		new_command('bpx', 'set a breakpoint') { |arg| @dbg.bpx(solve_expr(arg)) }	# TODO conditions
-		new_command('hwbp', 'set a hardware breakpoint') { |arg| @dbg.hwbp(solve_expr(arg)) }
+		new_command('bpx', 'set a breakpoint') { |arg|
+			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
+			e, c, a = $1, ($2 || $4), $3
+			cd = parse_expr(c) if c
+			cb = lambda { a.split(';').each { |aaa| run_command(aaa) } } if a
+			@dbg.bpx(solve_expr(e), false, cd, &cb)
+		}
+		new_command('hwbp', 'set a hardware breakpoint') { |arg|
+			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
+			e, c, a = $1, ($2 || $4), $3
+			cd = parse_expr(c) if c
+			cb = lambda { a.split(';').each { |aaa| run_command(aaa) } } if a
+			@dbg.hwbp(solve_expr(e), :x, 1, false, cd, &cb)
+		}
+		new_command('bpm', 'set a hardware memory breakpoint') { |arg|
+			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
+			e, c, a = $1, ($2 || $4), $3
+			cd = parse_expr(c) if c
+			cb = lambda { a.split(';').each { |aaa| run_command(aaa) } } if a
+			exp = solve_expr(e)
+			mode = e.strip.downcase == 'w' ? :w : :r	# mlen ?
+			@dbg.hwbp(exp, mode, 1, false, cd, &cb)
+		}
+		new_command('g', 'wait until target reaches the specified address') { |arg|
+			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
+			e, c, a = $1, ($2 || $4), $3
+			cd = parse_expr(c) if c
+			cb = lambda { a.split(';').each { |aaa| run_command(aaa) } } if a
+			@dbg.bpx(solve_expr(e), true, cd, &cb) if arg
+			p.dbg_continue
+		}
 		new_command('refresh', 'update', 'update the target memory/register cache') {
 			@dbg.invalidate
 			@dbg.disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate }
@@ -810,7 +841,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		new_command('bl', 'list breakpoints') {
 			i = -1
 			@dbg.breakpoint.sort.each { |a, b|
-				add_log "#{i+=1} #{Expression[a]} #{b.type} #{b.state}"
+				add_log "#{i+=1} #{Expression[a]} #{b.type} #{b.state}#{" if #{b.condition}" if b.condition}#{' do {}' if b.action}"
 			}
 		}
 		new_command('bc', 'clear breakpoints') { |arg|
@@ -825,10 +856,6 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		new_command('break', 'interrupt a running target') { |arg| @dbg.break ; p.post_dbg_run }
 		new_command('kill', 'kill the target') { |arg| @dbg.kill(arg) ; p.post_dbg_run }
 		new_command('detach', 'detach from the target') { @dbg.detach ; p.post_dbg_run }
-		new_command('g', 'wait until target reaches the specified address') { |arg|
-			@dbg.bpx(solve_expr(arg), true) if arg
-			p.dbg_continue
-		}
 		new_command('r', 'read/write the content of a register') { |arg|
 			reg, val = arg.split(/\s+/, 2)
 			if reg == 'fl'
@@ -879,6 +906,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
+		# TODO 'macro', 'map', 'thread'
 
 		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup
 	end
@@ -893,6 +921,10 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		@curline = ''
 		@caret_x = 0
 
+		run_command(cmd)
+	end
+
+	def run_command(cmd)
 		cn = cmd.split.first
 		if not @commands[cn]
 			a = @commands.keys.find_all { |k| k[0, cn.length] == cn }
