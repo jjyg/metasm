@@ -53,6 +53,7 @@ end	# class << self
 	new_api 'kernel32', 'CreateProcessA', 'PPPPIIPPPP I'
 	new_api 'kernel32', 'CreateRemoteThread', 'IPIIIIP I'
 	new_api 'kernel32', 'DebugActiveProcess', 'I I'
+	new_api 'kernel32', 'DebugBreakProcess', 'I I'
 	new_api 'kernel32', 'DebugSetProcessKillOnExit', 'I I'
 	new_api 'kernel32', 'FormatMessage', 'IPIIPIP I', false
 	new_api 'kernel32', 'GetCurrentProcess', 'I'
@@ -61,7 +62,9 @@ end	# class << self
 	new_api 'kernel32', 'GetProcessId', 'I I'
 	new_api 'kernel32', 'OpenProcess', 'III I'
 	new_api 'kernel32', 'ReadProcessMemory', 'IIPIP I', false	# only to disable "only part of ReadProcMem was completed"
+	new_api 'kernel32', 'ResumeThread', 'I I', false
 	new_api 'kernel32', 'SetThreadContext', 'IP I'
+	new_api 'kernel32', 'SuspendThread', 'I I', false
 	new_api 'kernel32', 'TerminateProcess', 'II I'
 	new_api 'kernel32', 'VirtualAllocEx', 'IIIII I'
 	new_api 'kernel32', 'WaitForDebugEvent', 'PI I'
@@ -198,9 +201,6 @@ class << self
 	# shellcode need not be position-independant.
 	def inject_shellcode(target, shellcode)
 		raise 'cannot open target memory' if not remote_mem = target.memory
-#h1, h2 = remote_mem[0x301fd94, 4], remote_mem[0x301ffa8, 4]
-#p h1.unpack('H*'), h2.unpack('H*')
-#exit
 		return if not injectaddr = WinAPI.virtualallocex(target.handle, 0, shellcode.length,
 				WinAPI::MEM_COMMIT | WinAPI::MEM_RESERVE, WinAPI::PAGE_EXECUTE_READWRITE)
 		puts 'remote buffer at %x' % injectaddr if $VERBOSE
@@ -636,6 +636,11 @@ class WinDbgAPI
 		str
 	end
 
+	def break(pid)
+		WinAPI.debugbreakprocess(@hprocess[pid])
+	end
+
+
 	attr_accessor :logger
 	def puts(s)
 		@logger ||= $stdout
@@ -722,6 +727,10 @@ class WinDebugger < Debugger
 			update_dbgev(ev)
 			break if @state != :running
 		} if @state == :running
+	end
+
+	def break
+		@dbg.break(@pid)
 	end
 
 	def check_post_run(*a)

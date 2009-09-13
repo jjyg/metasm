@@ -56,7 +56,7 @@ when /^live:(.*)/
 	os = Metasm::OS.current
 	raise 'no such target' if not target = os.find_process(t) || os.create_process(t)
 	p target if $VERBOSE
-	w = Metasm::GtkGui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path} - metasm debugger")
+	w = Metasm::GtkGui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path rescue nil} - metasm debugger")
 when /^(tcp:|udp:)?.*:/
 	dbg = Metasm::GdbRemoteDebugger.new(exename)
 	w = Metasm::GtkGui::DbgWindow.new(dbg, "remote - metasm debugger")

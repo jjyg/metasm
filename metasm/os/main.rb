@@ -20,7 +20,7 @@ class OS
 			"#{pid}: ".ljust(6) << (mod || '<unknown>')
 		end
 		def inspect
-			'<Process:' + ["pid: #@pid", modules.map { |m| " #{'%X' % m.addr} #{m.path}" }].join("\n") + '>'
+			'<Process:' + ["pid: #@pid", modules.to_a.map { |m| " #{'%X' % m.addr} #{m.path}" }].join("\n") + '>'
 		end
 	end
 
