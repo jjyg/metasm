@@ -437,16 +437,13 @@ class Expression < ExpressionType
 	# see +reduce_rec+ for simplifications description
 	# if given a block, it will temporarily overwrite the global @@reduce_lambda XXX THIS IS NOT THREADSAFE
 	def reduce(&b)
-		begin
-			old_rp, @@reduce_lambda = @@reduce_lambda, b if b
-			ret = case e = reduce_rec
-			when Expression, Numeric; e
-			else Expression[e]
-			end
-		ensure
-			@@reduce_lambda = old_rp if b
+		old_rp, @@reduce_lambda = @@reduce_lambda, b if b
+		case e = reduce_rec
+		when Expression, Numeric; e
+		else Expression[e]
 		end
-		ret
+	ensure
+		@@reduce_lambda = old_rp if b
 	end
 
 	# resolves logic operations (true || false, etc)
@@ -459,6 +456,11 @@ class Expression < ExpressionType
 	def reduce_rec
 		l = @lexpr.kind_of?(ExpressionType) ? @lexpr.reduce_rec : @lexpr
 		r = @rexpr.kind_of?(ExpressionType) ? @rexpr.reduce_rec : @rexpr
+
+		if @@reduce_lambda
+			l = @@reduce_lambda[l] || l if not @lexpr.kind_of? Expression
+			r = @@reduce_lambda[r] || r if not @rexpr.kind_of? Expression
+		end
 
 		v =
 		if r.kind_of?(::Numeric) and (l == nil or l.kind_of?(::Numeric))
