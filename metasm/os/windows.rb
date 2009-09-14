@@ -15,7 +15,7 @@ module WinAPI
 class << self
 	def last_error_msg
 		message = ' '*512
-		errno = getlasterror()
+		errno = getlasterror
 		if formatmessage(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
 			message = 'unknown error %x' % errno
 		else
@@ -38,7 +38,7 @@ class << self
 		class << self ; self ; end.send(:define_method, name.downcase) { |*a|
 			r = const_get(name).call(*a)
 			if r == 0 and zero_is_err
-				puts "WinAPI: Error in #{name}: #{last_error_msg}" if $VERBOSE
+				puts "WinAPI: Error in #{name}: #{last_error_msg}" if $VERBOSE and (not zero_is_err.kind_of?(Proc) or zero_is_err[])
 				nil
 			else
 				r
@@ -61,13 +61,13 @@ end	# class << self
 	new_api 'kernel32', 'GetLastError', 'I', false
 	new_api 'kernel32', 'GetProcessId', 'I I'
 	new_api 'kernel32', 'OpenProcess', 'III I'
-	new_api 'kernel32', 'ReadProcessMemory', 'IIPIP I', false	# only to disable "only part of ReadProcMem was completed"
+	new_api 'kernel32', 'ReadProcessMemory', 'IIPIP I', lambda { getlasterror != ERROR_PARTIAL_COPY }
 	new_api 'kernel32', 'ResumeThread', 'I I', false
 	new_api 'kernel32', 'SetThreadContext', 'IP I'
 	new_api 'kernel32', 'SuspendThread', 'I I', false
 	new_api 'kernel32', 'TerminateProcess', 'II I'
 	new_api 'kernel32', 'VirtualAllocEx', 'IIIII I'
-	new_api 'kernel32', 'WaitForDebugEvent', 'PI I'
+	new_api 'kernel32', 'WaitForDebugEvent', 'PI I', lambda { getlasterror != ERROR_SEM_TIMEOUT }
 	new_api 'kernel32', 'WriteProcessMemory', 'IIPIP I'
 	new_api 'advapi32', 'OpenProcessToken', 'IIP I'
 	new_api 'advapi32', 'LookupPrivilegeValueA', 'PPP I'
@@ -93,6 +93,8 @@ end	# class << self
 	DEBUG_PROCESS = 0x00000001
 	DEBUG_ONLY_THIS_PROCESS = 0x00000002
 	CREATE_SUSPENDED = 0x00000004
+	ERROR_SEM_TIMEOUT = 121
+	ERROR_PARTIAL_COPY = 299
 	EXCEPTION_DEBUG_EVENT = 1
 	EXIT_PROCESS_DEBUG_EVENT = 5
 	EXIT_THREAD_DEBUG_EVENT = 4
@@ -285,7 +287,7 @@ class WindowsRemoteString < VirtualString
 
 	def get_page(addr, len=@pagelength)
 		page = 0.chr*len
-		return if WinAPI.readprocessmemory(@handle, addr, page, len, 0) == 0
+		return if not WinAPI.readprocessmemory(@handle, addr, page, len, 0)
 		page
 	end
 
@@ -318,7 +320,7 @@ class WinDbgAPI
 			# *(int*)&startupinfo = sizeof(startupinfo);
 			startupinfo = [17*[0].pack('L').length, *([0]*16)].pack('L*')
 			processinfo = [0, 0, 0, 0].pack('L*')
-			flags = WinAPI::DEBUG_PROCESS | WinAPI::CREATE_SUSPENDED
+			flags = WinAPI::DEBUG_PROCESS
 			flags |= WinAPI::DEBUG_ONLY_THIS_PROCESS if not debug_children
 			raise "CreateProcess: #{WinAPI.last_error_msg}" if not h = WinAPI.createprocessa(nil, target, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
 			hprocess, hthread, pid, tid = processinfo.unpack('LLLL')
@@ -658,11 +660,16 @@ class WinDebugger < Debugger
 		# TODO get current cpu (x64)
 		@cpu = Ia32.new
 		@memory = @dbg.mem[@pid]
-		# get a valid @tid (for reg values etc)
 		super()
+		# get a valid @tid (for reg values etc)
 		@dbg.loop { |pid, tid, code, info|
 			update_dbgev([pid, tid, code, info])
-			break if code == WinAPI::CREATE_THREAD_DEBUG_EVENT
+			case code
+			when WinAPI::CREATE_THREAD_DEBUG_EVENT, WinAPI::CREATE_PROCESS_DEBUG_EVENT
+				@tid = tid
+
+				break
+			end
 		}
 		@continuecode = WinAPI::DBG_CONTINUE	#WinAPI::DBG_EXCEPTION_NOT_HANDLED
 	end
@@ -730,7 +737,13 @@ class WinDebugger < Debugger
 	end
 
 	def break
-		@dbg.break(@pid)
+		@dbg.break(@pid) if @state == :running
+	end
+
+	def kill(*a)
+		WinAPI.terminateprocess(@dbg.hprocess[@pid], 0)
+		@status = :dead
+		@info = 'killed'
 	end
 
 	def check_post_run(*a)
@@ -769,16 +782,15 @@ class WinDebugger < Debugger
 			@state = :stopped
 			@info = "thread #{tid} created"
 		when WinAPI::EXIT_THREAD_DEBUG_EVENT
-			@state = :dead
+			@state = :stopped
 			@info = "thread #{tid} died, exitcode #{info.exitcode}"
 		when WinAPI::EXIT_PROCESS_DEBUG_EVENT
 			@state = :dead
 			@info = "process died, exitcode #{info.exitcode}"
-		#when WinAPI::LOAD_DLL_DEBUG_EVENT
-		#	loadsyms(info.imagebase)
-		#	@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
-		#	return
-		else return
+		else
+			# loadsyms(info.imagebase) if code == WinAPI::LOAD_DLL_DEBUG_EVENT
+			@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
+			return
 		end
 		@tid = tid
 	end
