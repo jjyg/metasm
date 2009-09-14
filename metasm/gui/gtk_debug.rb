@@ -906,6 +906,9 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
+		new_command('bt', 'backtrace', 'show a stack trace from current pc') {
+			@dbg.cpu.dbg_backtrace(@dbg) { |a, s| add_log s }
+		}
 		# TODO 'macro', 'map', 'thread'
 
 		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup

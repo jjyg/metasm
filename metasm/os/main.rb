@@ -519,7 +519,16 @@ class Debugger
 	def addrname(addr)
 		findmodule(addr) + '!' +
 		if s = @symbols[addr] ? addr : @symbols_len.keys.find { |s_| s_ < addr and s_ + @symbols_len[s_] > addr }
-			@symbols[addr] + (addr == s ? '' : ('+%x' % (addr-s)))
+			@symbols[s] + (addr == s ? '' : ('+%x' % (addr-s)))
+		else '%08x' % addr
+		end
+	end
+
+	# same as addrname, but check prev addresses if no symbol matches
+	def addrname!(addr)
+		findmodule(addr) + '!' +
+		if s = @symbols[addr] ? addr : @symbols_len.keys.find { |s_| s_ < addr and s_ + @symbols_len[s_] > addr } || @symbols.keys.sort.find_all { |s_| s_ < addr and s_ + 0x10000 > addr }.max
+			@symbols[s] + (addr == s ? '' : ('+%x' % (addr-s)))
 		else '%08x' % addr
 		end
 	end
