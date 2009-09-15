@@ -27,6 +27,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 
 	# construction method
 	def initialize(dasm, parent_widget)
+		bug_me_not = Decompiler	# sometimes gtk fails to autorequire dcmp during expose_event, do it now
 		@dasm = dasm
 		@parent_widget = parent_widget
 		@hl_word = nil
