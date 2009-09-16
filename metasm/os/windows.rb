@@ -383,6 +383,12 @@ class WinDbgAPI
 		def commit
 			WinAPI.setthreadcontext(@hthread, @ctx)
 		end
+
+		def to_hash
+			h = {}
+			OFFSETS.each_key { |k| h[k] = self[k] }
+			h
+		end
 	end
 
 	# returns the specified thread context
