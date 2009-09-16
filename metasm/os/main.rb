@@ -689,7 +689,7 @@ class Debugger
 				case lst.length
 				when 0
 					if ex =~ /^[0-9a-f]+$/i and @disassembler.get_section_at(ex.to_i(16))
-						v = ex.to_s(16)
+						v = ex.to_i(16)
 					else
 						puts "unknown symbol name #{ex}"
 						raise "unknown symbol name #{ex}"
