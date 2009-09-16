@@ -379,9 +379,12 @@ class Indirection < ExpressionType
 	def eql?(o) o.class == self.class and [o.target, o.len] == [@target, @len] end
 	alias == eql?
 
-	def to_s
+	include Renderable
+	def render
+		ret = []
 		qual = {1 => 'byte', 2 => 'word', 4 => 'dword', 8 => 'qword'}[len] || "_#{len*8}bits" if len
-		"#{qual} ptr [#{target}]"
+		ret << "#{qual} ptr " if qual
+		ret << '[' << @target << ']'
 	end
 
 	# returns the complexity of the expression (number of externals +1 per indirection)
@@ -873,6 +876,24 @@ class Disassembler
 			l = rename_label l, @program.new_label(name)
 		end
 		l
+	end
+
+	# remove a label at address addr
+	def del_label_at(addr, name=get_label_at(addr))
+		e, b = get_section_at(addr)
+		if e and e.inv_export[e.ptr]
+			e.del_export name, e.ptr
+			@label_alias_cache = nil
+		end
+		each_xref(addr) { |xr|
+			next if not xr.origin or not o = @decoded[xr.origin] or not o.kind_of? Renderable
+			o.each_expr { |e|
+				e.lexpr = addr if e.lexpr == name
+				e.rexpr = addr if e.rexpr == name
+			}
+		}
+		@old_prog_binding.delete name
+		@prog_binding.delete name
 	end
 
 	# changes a label to another, updates referring instructions etc
@@ -2819,11 +2840,32 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		end
 	end
 
+	# change Expression display mode for current object o to display integers as char constants
 	def toggle_expr_char(o)
 		return if not o.kind_of? Renderable
 		o.each_expr { |e|
 			e.render_info ||= {}
-			e.render_info[:char] = !e.render_info[:char]
+			e.render_info[:char] = e.render_info[:char] ? nil : @cpu.endianness
+		}
+	end
+
+	# patch Expressions in current object to include label names when available
+	# XXX should we also create labels ?
+	def toggle_expr_offset(o)
+		return if not o.kind_of? Renderable
+		o.each_expr { |e|
+			if n = @prog_binding[e.lexpr]
+				e.lexpr = n
+			elsif e.lexpr.kind_of? ::Integer and n = get_label_at(e.lexpr)
+				add_xref(normalize(e.lexpr), Xref.new(:addr, o.address)) if o.respond_to? :address
+				e.lexpr = n
+			end
+			if n = @prog_binding[e.rexpr]
+				e.rexpr = n
+			elsif e.rexpr.kind_of? ::Integer and n = get_label_at(e.rexpr)
+				add_xref(normalize(e.rexpr), Xref.new(:addr, o.address)) if o.respond_to? :address
+				e.rexpr = n
+			end
 		}
 	end
 

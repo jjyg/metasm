@@ -106,7 +106,11 @@ class DisasmWidget < Gtk::VBox
 
 	# returns the address of the label under the cursor or the address of the line of the cursor
 	def pointed_addr
-		@dasm.prog_binding[curview.hl_word] || curview.current_address
+		hl = curview.hl_word
+		if hl =~ /^[0-9].*h$/ and a = hl.to_i(16) and @dasm.get_section_at(a)
+			return a
+		end
+		@dasm.prog_binding[hl] || curview.current_address
 	end
 
 
@@ -260,7 +264,7 @@ class DisasmWidget < Gtk::VBox
 		return if @dasm.decoded[addr] or not @dasm.get_section_at(addr)
 		@dasm.add_xref(addr, Xref.new(nil, nil, 1)) if not @dasm.xrefs[addr]
 		@dasm.each_xref(addr) { |x|
-			x.len = {1 => 2, 2 => 4, 4 => 8, 8 => 1}[x.len]
+			x.len = {1 => 2, 2 => 4, 4 => 8}[x.len] || 1
 			break
 		}
 		gui_update
@@ -296,6 +300,7 @@ class DisasmWidget < Gtk::VBox
 	def list_xrefs(addr)
 		list = [['address', 'type', 'instr']]
 		@dasm.each_xref(addr) { |xr|
+			next if not xr.origin
 			list << [Expression[xr.origin], "#{xr.type}#{xr.len}"]
 			if di = @dasm.decoded[xr.origin] and di.kind_of? DecodedInstruction
 				list.last << di.instruction
@@ -349,11 +354,19 @@ class DisasmWidget < Gtk::VBox
 	def rename_label(addr)
 		old = addr
 		if @dasm.prog_binding[old] or old = @dasm.get_label_at(addr)
-			inputbox("new name for #{old}", :text => old) { |v| @dasm.rename_label(old, v) ; gui_update }
+			inputbox("new name for #{old}", :text => old) { |v|
+				if v == ''
+					@dasm.del_label_at(addr)
+				else
+					@dasm.rename_label(old, v)
+				end
+				gui_update
+			}
 		else
 			inputbox("label name for #{Expression[addr]}", :text => Expression[addr]) { |v|
+				next if v == ''
 				@dasm.set_label_at(addr, v)
-				if di = @dasm.decoded[addr]
+				if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction
 					@dasm.split_block(di.block, di.address)
 				end
 				gui_update
@@ -386,6 +399,11 @@ class DisasmWidget < Gtk::VBox
 
 	def toggle_expr_char(o)
 		@dasm.toggle_expr_char(o)
+		gui_update
+	end
+
+	def toggle_expr_offset(o)
+		@dasm.toggle_expr_offset(o)
 		gui_update
 	end
 
@@ -430,6 +448,7 @@ class DisasmWidget < Gtk::VBox
 			when GDK_g; prompt_goto
 			when GDK_l; list_labels
 			when GDK_n; rename_label(pointed_addr)
+			when GDK_o; toggle_expr_offset(curobj)
 			when GDK_p; playpause_dasm
 			when GDK_r; toggle_expr_char(curobj)
 			when GDK_v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag

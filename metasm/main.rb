@@ -815,6 +815,15 @@ class EncodedData
 		end
 	end
 
+	def del_export(label, off=@ptr)
+		@export.delete label
+		if e = @export.index(off)
+			@inv_export[off] = e
+		else
+			@inv_export.delete off
+		end
+	end
+
 	# returns the size of raw data, that is [data.length, last relocation end].max
 	def rawsize
 		[@data.length, *@reloc.map { |off, rel| off + rel.length } ].max

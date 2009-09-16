@@ -66,7 +66,6 @@ class Expression
 	include Renderable
 	attr_accessor :render_info
 	def render
-		return Expression[@lexpr, :-, -@rexpr].render if @op == :+ and @rexpr.kind_of?(::Numeric) and @rexpr < 0
 		l, r = [@lexpr, @rexpr].map { |e|
 			if e.kind_of? Integer
 				if render_info and @render_info[:char]
@@ -76,6 +75,7 @@ class Expression
 						v << (ee & 0xff)
 						ee >>= 8
 					end
+					v.reverse! if @render_info[:char] == :big
 					if not v.empty? and v.all? { |c| c < 0x7f }
 						# XXX endianness
 						next "'" + v.pack('C*').inspect.gsub("'") { '\\\'' }[1...-1] + "'"
@@ -99,6 +99,11 @@ class Expression
 		nosq[:-] = [:*]
 		r = ['(', r, ')'] if @rexpr.kind_of? Expression and not nosq[@op].to_a.include?(@rexpr.op)
 		op = @op if l or @op != :+
+		if op == :+
+			r0 = [r].flatten.first
+			r0 = r0.render.flatten.first if r0.kind_of? Renderable
+			op = nil if (r0.kind_of? Integer and r < 0) or (r0.kind_of? String and r0[0] == ?-) or r0 == :-
+		end
 		[l, op, r].compact
 	end
 end
