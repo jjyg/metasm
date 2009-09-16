@@ -397,6 +397,18 @@ class Debugger
 		do_singlestep(*a)
 	end
 
+	def run
+		continue
+	end
+
+	# keep the debugee running until it's dead
+	def run_forever
+		while @state != :dead
+			run
+			wait_target
+		end
+	end
+
 	def need_stepover(di)
 		di and @cpu.dbg_need_stepover(self, di.address, di)
 	end
