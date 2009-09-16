@@ -650,6 +650,8 @@ class Disassembler
 	attr_accessor :backtrace_maxblocks
 	# maximum backtrace length for :r/:w, defaults to backtrace_maxblocks
 	attr_accessor :backtrace_maxblocks_data
+	# max bt length for backtrace_fast blocks, default=0
+	attr_accessor :backtrace_maxblocks_fast
 	# a cparser that parsed some C header files, prototypes are converted to DecodedFunction when jumped to
 	attr_accessor :c_parser
 	# hash address => array of strings
@@ -710,6 +712,7 @@ class Disassembler
 		@addrs_done = []
 		@address_binding = {}
 		@backtrace_maxblocks = @@backtrace_maxblocks
+		@backtrace_maxblocks_fast = 0
 		@comment = {}
 		@funcs_stdabi = true
 	end
@@ -1302,7 +1305,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				if di.opcode.props[:setip]
 					@addrs_todo = []
 					@program.get_xrefs_x(self, di).each { |expr|
-						backtrace(expr, di.address, :origin => di.address, :type => :x, :maxdepth => 1)
+						backtrace(expr, di.address, :origin => di.address, :type => :x, :maxdepth => @backtrace_maxblocks_fast)
 					}
 				end
 				if di.opcode.props[:saveip]
@@ -1340,7 +1343,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				# this includes retaddr unless f is noreturn
 				bf.each { |btt|
 					next if btt.type != :x
-					bt = backtrace(btt.expr, di.address, :include_start => true, :origin => btt.origin, :maxdepth => 1)
+					bt = backtrace(btt.expr, di.address, :include_start => true, :origin => btt.origin, :maxdepth => [@backtrace_maxblocks_fast, 1].max)
 					if btt.detached
 						ret.concat bt	# callback argument
 					elsif bt.find { |a| normalize(a) == di.next_addr }
