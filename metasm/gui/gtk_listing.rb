@@ -24,6 +24,7 @@ class AsmListingWidget < Gtk::HBox
 		@layout = Pango::Layout.new Gdk::Pango.context
 		@color = {}
 		@want_update_line_text = @want_update_caret = true
+		@wantaddr = nil
 
 		super()
 
@@ -132,12 +133,23 @@ class AsmListingWidget < Gtk::HBox
 		va = @vscroll.adjustment
 		case ev.direction
 		when Gdk::EventScroll::Direction::UP
-			# TODO scroll up exactly win_height/2 lines
-			# at least cache page_down addresses
-			va.value -= va.page_increment
+			# TODO handle block start (multiline) / data aggregation (db 100h dup(?), strings..)
+			up = lambda { |a|
+				a -= 1
+				if off = (0..16).find { |off_| di = @dasm.decoded[a-off_] and di.respond_to? :bin_length and di.bin_length > off_ }
+					a -= off
+				end
+				a
+			}
+			va.value = up[up[up[va.value]]]
+			@wantaddr = @line_address[@caret_y]
 			true
 		when Gdk::EventScroll::Direction::DOWN
-			va.value = @line_address[@line_address.length/2] || va.value + va.page_increment
+			# scroll down 4 lines, or more if the 1st lines have the same addr (eg block start)
+			a = @line_address[4..-1].find { |v| v > @line_address[0] } if @line_address[4]
+			#@caret_y -= @line_address.index(a) if a and @caret_y > @line_address.index(a)
+			@wantaddr = @line_address[@caret_y]
+			va.value = a || (va.value + va.page_increment)
 			true
 		end
 	end
@@ -151,10 +163,6 @@ class AsmListingWidget < Gtk::HBox
 		a = @listing_widget.allocation
 		w_w = a.width
 		w_h = a.height
-
-		# draw caret line background
-		gc.set_foreground @color[:cursorline_bg]
-		w.draw_rectangle(gc, true, 0, @caret_y*@font_height, w_w, @font_height)
 
 		# TODO scroll line-by-line when an addr is displayed on multiple lines (eg labels/comments)
 		# TODO selection
@@ -191,6 +199,10 @@ class AsmListingWidget < Gtk::HBox
 
 		update_line_text if @want_update_line_text
 		update_caret if @want_update_caret
+
+		# draw caret line background
+		gc.set_foreground @color[:cursorline_bg]
+		w.draw_rectangle(gc, true, 0, @caret_y*@font_height, w_w, @font_height)
 
 		@line_text_color.each { |a|
 			render[a[0], :address]
@@ -420,7 +432,6 @@ class AsmListingWidget < Gtk::HBox
 
 	# update @hl_word from caret coords & @line_text, return nil if unchanged
 	def update_hl_word
-		# TODO gui_update changes @line_text, redraw just redraws, update_caret scans @line_text for @hl_word if changed & redraw curline with :curline_bg
 		return if not l = @line_text[@caret_y]
 		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
 		word = nil if word == ''
@@ -464,7 +475,7 @@ class AsmListingWidget < Gtk::HBox
 		if l = @line_address.index(addr) and l < @line_address.length - 4
 			@caret_y, @caret_x = @line_address.rindex(addr), 0
 		elsif addr >= @vscroll.adjustment.lower and addr <= @vscroll.adjustment.upper
-			@vscroll.adjustment.value, @caret_x, @caret_y = addr, 0, 0
+			@vscroll.adjustment.value, @wantaddr, @caret_x, @caret_y = addr, addr, 0, 0
 		else
 			return
 		end
@@ -638,6 +649,8 @@ class AsmListingWidget < Gtk::HBox
 				curaddr += 1
 			end
 		end
+		@caret_y = @line_address.rindex(@wantaddr) || @caret_y if @wantaddr
+		@wantaddr = nil
 
 		# convert arrows_addr to @arrows (with line numbers)
 		# updates @arrows_widget if @arrows changed
