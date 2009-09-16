@@ -859,7 +859,8 @@ class MainWindow < Gtk::Window
 		addsubmenu(actions, 'List labels', 'l') { @dasm_widget.list_labels }
 		addsubmenu(actions, 'List xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
 		addsubmenu(actions, 'Rename label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
-		addsubmenu(actions, 'Decompile', 'r') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
+		i = addsubmenu(actions, 'Decompile') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
+		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Tab, 0, Gtk::ACCEL_VISIBLE)
 		addsubmenu(actions, 'Decompile finali_ze') { @dasm_widget.dasm.decompiler.finalize ; @dasm_widget.gui_update }
 		addsubmenu(actions, 'Comment', ';') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, '_Undefine') { @dasm_widget.dasm.undefine_from(@dasm_widget.curview.current_address) ; @dasm_widget.gui_update }
