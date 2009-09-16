@@ -322,6 +322,7 @@ class WinDbgAPI
 			processinfo = [0, 0, 0, 0].pack('L*')
 			flags = WinAPI::DEBUG_PROCESS
 			flags |= WinAPI::DEBUG_ONLY_THIS_PROCESS if not debug_children
+			target = target.dup if target.frozen?
 			raise "CreateProcess: #{WinAPI.last_error_msg}" if not h = WinAPI.createprocessa(nil, target, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
 			hprocess, hthread, pid, tid = processinfo.unpack('LLLL')
 			WinAPI.closehandle(hthread)
@@ -748,7 +749,7 @@ class WinDebugger < Debugger
 
 	def kill(*a)
 		WinAPI.terminateprocess(@dbg.hprocess[@pid], 0)
-		@status = :dead
+		@state = :dead
 		@info = 'killed'
 	end
 
