@@ -761,18 +761,22 @@ class MainWindow < Gtk::Window
 			l = nil
 			i = InputBox.new(self, 'chose target') { |name|
 				i = nil ; l.destroy if l and not l.destroyed?
-				if target = Metasm::OS.current.find_process(name)
-					DbgWindow.new(target.debugger)
-				elsif name =~ /:/
-					DbgWindow.new(GdbRemoteDebugger.new(name))
+				if pr = OS.current.find_process(name)
+					target = pr.debugger
+				elsif name =~ /^..+:/	# don't match c:\kikoo
+					target = GdbRemoteDebugger.new(name)
+				elsif pr = OS.current.create_process(name)
+					target = pr.debugger
 				else
 					MessageBox.new(self, 'no such target')
+					next
 				end
+				DbgWindow.new(target)
 			}
 
 			# build process list in bg (exe name resolution takes a few seconds)
 			list = [['pid', 'name']]
-			list_pr = Metasm::OS.current.list_processes
+			list_pr = OS.current.list_processes
 			Gtk.idle_add {
 				if pr = list_pr.shift
 					path = pr.modules.first.path if pr.modules and pr.modules.first
