@@ -637,7 +637,7 @@ class Debugger
 		def parse_intfloat(lexer, tok)
 			case tok.raw
 			when /^([0-9]+)$/; tok.value = @cb_hex ? @cb_hex[$1] : $1.to_i
-			when /^0x([0-9a-f]+)$/i, /^([0-9a-f]+)h?$/i; tok.value = $1.to_i(16)
+			when /^0x([0-9a-f]+)$/i, /^([0-9a-f]+)h$/i; tok.value = $1.to_i(16)
 			when /^0b([01]+)$/i; tok.value = $1.to_i(2)
 			end
 		end
@@ -683,13 +683,13 @@ class Debugger
 		# resolve ambiguous symbol names/hex values
 		bd = {}
 		e.externals.grep(String).each { |ex|
-			if not v = register_list.find { |r| ex.downcase == r.to_s.downcase } || symbols.index(ex)
+			if not v = register_list.find { |r| ex.downcase == r.to_s.downcase } ||
+						(block_given? && yield(ex)) || symbols.index(ex)
 				lst = symbols.values.find_all { |s| s.downcase.include? ex.downcase }
 				case lst.length
 				when 0
-					if ex =~ /^[0-9a-f]+$/i
+					if ex =~ /^[0-9a-f]+$/i and @disassembler.get_section_at(ex.to_i(16))
 						v = ex.to_s(16)
-					elsif block_given? and v = yield(ex)
 					else
 						puts "unknown symbol name #{ex}"
 						raise "unknown symbol name #{ex}"
