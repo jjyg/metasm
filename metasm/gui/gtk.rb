@@ -867,7 +867,15 @@ class MainWindow < Gtk::Window
 		addsubmenu(actions, 'Undefine function & _subfuncs') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address, true) }
 		addsubmenu(actions, 'Data', 'd') { @dasm_widget.toggle_data(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Pause dasm', 'p', :check) { |ck| ck.active = !@dasm_widget.playpause_dasm }
-		addsubmenu(actions, 'Run ruby snippet', '^r') { @dasm_widget.prompt_run_ruby }
+		addsubmenu(actions, 'Run ruby snippet', '^r') {
+			if @dasm_widget
+				@dasm_widget.prompt_run_ruby
+			else
+				InputBox.new(self, 'code to eval') { |c|
+					protect { MessageBox.new self, eval(c).inspect[0, 512], 'eval' }
+				}
+			end
+		}
 		addsubmenu(actions, 'Run _ruby plugin') {
 			OpenFile.new(self, 'ruby plugin') { |f|
 				@dasm_widget.instance_eval(File.read(f))
