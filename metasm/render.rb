@@ -101,8 +101,8 @@ class Expression
 		op = @op if l or @op != :+
 		if op == :+
 			r0 = [r].flatten.first
-			r0 = r0.render.flatten.first if r0.kind_of? Renderable
-			op = nil if (r0.kind_of? Integer and r < 0) or (r0.kind_of? String and r0[0] == ?-) or r0 == :-
+			r0 = r0.render.flatten.first while r0.kind_of? Renderable
+			op = nil if (r0.kind_of? Integer and r0 < 0) or (r0.kind_of? String and r0[0] == ?-) or r0 == :-
 		end
 		[l, op, r].compact
 	end
