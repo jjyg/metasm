@@ -938,10 +938,13 @@ class Decompiler
 	def unalias_vars(scope, func)
 		g = c_to_graph(scope)
 
+		# unalias func args first, they may include __attr__((out)) needed by the others
+		funcalls = []
+		walk_ce(scope) { |ce| funcalls << ce if ce.op == :funcall }
+		vars = scope.symbol.values.sort_by { |v| walk_ce(funcalls) { |ce| break true if ce.rexpr == v } ? 0 : 1 }
+
 		# find the domains of var aliases
-		scope.symbol.dup.each_value { |var|
-			unalias_var(var, scope, g)
-		}
+		vars.each { |var| unalias_var(var, scope, g) }
 	end
 
 	# duplicates a var per domain value
@@ -956,6 +959,7 @@ class Decompiler
 		unchecked = []
 
 		# mark all exprs of the graph
+		# TODO handle var_14 __attribute__((out)) = &curvar <=> curvar write
 		g.exprs.each { |label, exprs|
 			exprs.each_with_index { |ce, i|
 				if ce_read(ce, var)
@@ -1109,6 +1113,14 @@ class Decompiler
 					ce.lexpr = nv
 				end
 			}
+
+			# check if the var is only used as an __out__ parameter
+			if false and dom_ro.empty? and dom_wo.empty? and dom.length == 2 and	# TODO
+					arg.has_attribute('out') and not arg.has_attribute('in')
+				# *(int32*)&var_10 = &var_4;
+				# set_pointed_value(*(int32*)&var_10);  =>  writeonly var_4, may start a new domain
+				nv.add_attribute('out')
+			end
 		end
 	end
 
