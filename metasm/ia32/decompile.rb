@@ -122,9 +122,9 @@ class Ia32
 		if regargs.include? :ecx or regargs.include? :edx
 			func.add_attribute 'fastcall'
 			func.type.args << C::Variable.new('ecx', C::BaseType.new(:int))
-			func.type.args.last.add_attribute 'unused' if not regargs.include? :ecx
+			#func.type.args.last.add_attribute 'unused' if not regargs.include? :ecx
 			func.type.args << C::Variable.new('edx', C::BaseType.new(:int))
-			func.type.args.last.add_attribute 'unused' if not regargs.include? :edx
+			#func.type.args.last.add_attribute 'unused' if not regargs.include? :edx
 			regargs -= [:ecx, :edx]
 		end
 		if not regargs.empty?
@@ -459,18 +459,7 @@ class Ia32
 	def decompile_check_abi(dcmp, entry, func)
 		a = func.type.args
 		if func.has_attribute('fastcall') and (not a[0] or a[0].has_attribute('unused')) and (not a[1] or a[1].has_attribute('unused'))
-			v = a.shift
-			if func.initializer.symbol[v.name]
-				v.attributes.delete 'unused'
-				v.storage = :register
-				func.initializer.statements.insert(0, C::Declaration.new(v))
-			end
-			v = a.shift
-			if func.initializer.symbol[v.name]
-				v.attributes.delete 'unused'
-				v.storage = :register
-				func.initializer.statements.insert(0, C::Declaration.new(v))
-			end
+			a.shift ; a.shift
 			func.attributes.delete 'fastcall'
 			func.add_attribute 'stdcall' if not a.empty?
 		elsif func.has_attribute('fastcall') and a.length == 2 and a.last.has_attribute('unused')

@@ -940,7 +940,6 @@ class Decompiler
 
 		# find the domains of var aliases
 		scope.symbol.dup.each_value { |var|
-			next if var.stackoff.to_i > 0 or func.type.args.include? var	# __fastcall reg
 			unalias_var(var, scope, g)
 		}
 	end
@@ -976,7 +975,7 @@ class Decompiler
 		}
 
 		# stuff when filling the domain (flood algorithm)
-		dom = dom_ro = dom_wo = todo_up = todo_down = nil
+		dom = dom_ro = dom_wo = todo_up = todo_down = func_top = nil
 
 		# flood by walking the graph up from [l, i] (excluded)
 		# marks stuff do walk down
@@ -1006,6 +1005,7 @@ class Decompiler
 						g.from_optim[l].to_a.each { |ll|
 							todo_w << [ll, g.exprs[ll].to_a.length-1]
 						}
+						func_top = true if g.from_optim[l].to_a.empty?
 						break
 					end
 				end
@@ -1048,6 +1048,7 @@ class Decompiler
 			dom = []
 			dom_ro = []
 			dom_wo = []
+			func_top = false
 
 			todo_up = []
 			todo_down = []
@@ -1078,6 +1079,10 @@ class Decompiler
 				todo_down.clear
 			end
 
+			unchecked -= dom + dom_wo + dom_ro
+
+			next if func_top
+
 			# patch
 			n_i = 0
 			n_i += 1 while scope.symbol_ancestors[newvarname = "#{var.name}_a#{n_i}"]
@@ -1104,8 +1109,6 @@ class Decompiler
 					ce.lexpr = nv
 				end
 			}
-
-			unchecked -= dom + dom_wo + dom_ro
 		end
 	end
 
@@ -2471,7 +2474,7 @@ class Decompiler
 		decl = []
 		scope.statements.delete_if { |sm|
 			next if not sm.kind_of? C::Declaration
-			if sm.var.stackoff.to_i > 0
+			if sm.var.stackoff.to_i > 0 and sm.var.name !~ /_a(\d+)$/	# aliased vars: use 1st domain only
 				args << sm.var
 			else
 				decl << sm
