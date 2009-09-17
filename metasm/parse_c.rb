@@ -2195,7 +2195,7 @@ EOH
 						raise tok, 'bad cast' if v.name != false
 						raise ntok || tok, 'no ")" found' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 						raise ntok, 'expr expected' if not val = parse_value(parser, scope)	# parses postfix too
-						raise ntok, 'unable to cast a struct' if val.type.untypedef.kind_of? Union
+						#raise ntok, 'unable to cast a struct' if val.type.untypedef.kind_of? Union
 						val = CExpression[[val], v.type]
 					# check compound statement expression
 					elsif ntok = parser.skipspaces and ntok.type == :punct and ntok.raw == '{'

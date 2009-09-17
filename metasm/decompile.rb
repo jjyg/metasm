@@ -804,7 +804,8 @@ class Decompiler
 					ary[ary.index(s)..ary.index(g)] = [w]
 					finished = false ; break	#retry
 				end
-				if g = ary[ary.index(s)..-1].reverse.find { |_s| _s.kind_of? C::If and not _s.belse and gt = _s.bthen and (gt = gt.kind_of?(C::Block) && gt.statements.length == 1 ? gt.statements.first : gt) and gt.kind_of? C::Goto and gt.target == s.name }
+				if g = ary[ary.index(s)..-1].reverse.find { |_s| _s.kind_of? C::If and not _s.belse and gt = _s.bthen and
+						(gt = gt.kind_of?(C::Block) && gt.statements.length == 1 ? gt.statements.first : gt) and gt.kind_of? C::Goto and gt.target == s.name }
 					wb = C::Block.new(scope)
 					wb.statements = decompile_cseq_while(ary[ary.index(s)...ary.index(g)], wb)
 					w = C::DoWhile.new(g.test, wb)
@@ -1771,7 +1772,7 @@ class Decompiler
 
 			# &struct.1stmember => &struct
 			if ce.op == :& and not ce.lexpr and ce.rexpr.kind_of? C::CExpression and ce.rexpr.op == :'.' and s = ce.rexpr.lexpr.type and
-					s.kind_of? C::Struct and s.offsetof(@c_parser, ce.rexpr.rexpr) == 0
+					s.kind_of? C::Union and s.offsetof(@c_parser, ce.rexpr.rexpr) == 0
 				ce.rexpr = ce.rexpr.lexpr
 				ce.type = C::Pointer.new(ce.rexpr.type)
 			end
@@ -1780,7 +1781,8 @@ class Decompiler
 			if not ce.op and ce.type.pointer? and not ce.type.pointed.void? and ce.rexpr.kind_of? C::Typed and ce.rexpr.type.pointer? and
 					s = ce.rexpr.type.pointed.untypedef and s.kind_of? C::Union and ce.type.pointed.untypedef != s
 				ce.rexpr = C::CExpression[structoffset(s, ce.rexpr, 0, sizeof(ce.type.pointed))]
-				#ce.replace ce.rexpr if not ce.type.pointed.untypedef.kind_of? C::Function or (ce.rexpr.type.pointer? and ce.rexpr.type.pointed.untypedef.kind_of? C::Function)	# XXX ugly
+				#ce.replace ce.rexpr if not ce.type.pointed.untypedef.kind_of? C::Function or (ce.rexpr.type.pointer? and
+				#ce.rexpr.type.pointed.untypedef.kind_of? C::Function)	# XXX ugly
 				# int32* v1 = (int32*)pstruct;
 				# z = v1+4	if v1 is not cast, the + is invalid (sizeof pointed changes)
 				# TODO when finding type of pstruct, set type of v1 accordingly
@@ -1800,8 +1802,8 @@ class Decompiler
 				ce.lexpr = ce.lexpr.rexpr
 			end
 
-			if ce.op == :'=' and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :* and not ce.lexpr.lexpr and ce.lexpr.rexpr.kind_of? C::CExpression and not ce.lexpr.rexpr.op and
-					ce.lexpr.rexpr.type.pointed != ce.rexpr.type
+			if ce.op == :'=' and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :* and not ce.lexpr.lexpr and ce.lexpr.rexpr.kind_of? C::CExpression and
+					not ce.lexpr.rexpr.op and ce.lexpr.rexpr.type.pointed != ce.rexpr.type
 				ce.lexpr.rexpr.type = C::Pointer.new(ce.rexpr.type)
 				optimize_code(ce.lexpr)
 			end
