@@ -578,10 +578,10 @@ class Debugger
 		@modulemap[name] = [addr, addr+e.module_size]
 
 		sl = @symbols.length
-		e.module_symbols.each { |n, a, l|
+		e.module_symbols.each { |n_, a, l|
 			a += addr
-			@disassembler.set_label_at(a, n)
-			@symbols[a] = n
+			@disassembler.set_label_at(a, n_)
+			@symbols[a] = n_
 			if l and l > 1; @symbols_len[a] = l
 			else @symbols_len.delete a	# we may overwrite an existing symbol, keep len in sync
 			end

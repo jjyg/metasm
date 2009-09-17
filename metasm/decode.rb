@@ -880,9 +880,9 @@ class Disassembler
 
 	# remove a label at address addr
 	def del_label_at(addr, name=get_label_at(addr))
-		e, b = get_section_at(addr)
-		if e and e.inv_export[e.ptr]
-			e.del_export name, e.ptr
+		ed, b = get_section_at(addr)
+		if ed and ed.inv_export[ed.ptr]
+			ed.del_export name, ed.ptr
 			@label_alias_cache = nil
 		end
 		each_xref(addr) { |xr|
