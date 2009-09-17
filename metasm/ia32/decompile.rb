@@ -459,7 +459,18 @@ class Ia32
 	def decompile_check_abi(dcmp, entry, func)
 		a = func.type.args
 		if func.has_attribute('fastcall') and (not a[0] or a[0].has_attribute('unused')) and (not a[1] or a[1].has_attribute('unused'))
-			a.shift ; a.shift
+			v = a.shift
+			if func.initializer.symbol[v.name]
+				v.attributes.delete 'unused'
+				v.storage = :register
+				func.initializer.statements.insert(0, C::Declaration.new(v))
+			end
+			v = a.shift
+			if func.initializer.symbol[v.name]
+				v.attributes.delete 'unused'
+				v.storage = :register
+				func.initializer.statements.insert(0, C::Declaration.new(v))
+			end
 			func.attributes.delete 'fastcall'
 			func.add_attribute 'stdcall' if not a.empty?
 		elsif func.has_attribute('fastcall') and a.length == 2 and a.last.has_attribute('unused')
