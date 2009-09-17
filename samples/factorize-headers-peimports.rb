@@ -82,22 +82,28 @@ pp = parser.lexer
 pp.warn_redefinition = false
 pp.define('_WIN32_WINNT', '0x0600')
 pp.define('DDK') if opts[:ddk]
+pp.define_strong('IN', '__attribute__((in))')
+pp.define_strong('__in', '__attribute__((in))')
+pp.define_strong('OUT', '__attribute__((out))')
+pp.define_strong('__out', '__attribute__((out))')
 pp.include_search_path = opts[:path]
 opts[:defs].each { |k, v| pp.define k, v }
 parser.factorize_init
 parser.parse src
 
 
+outfd = (opts[:outfile] ? File.open(opts[:outfile], 'w') : $stdout)
+
 # delete imports not present in the header files
 funcnames.delete_if { |f|
 	if not parser.toplevel.symbol[f]
 		puts "// #{f.inspect} is not defined in the headers"
+		outfd.puts "// #{f.inspect} is not defined in the headers" if opts[:outfile]
 		true
 	end
 }
 
 parser.parse "void *fnptr[] = { #{funcnames.map { |f| '&'+f }.join(', ')} };"
 
-outfd = (opts[:outfile] ? File.open(opts[:outfile], 'w') : $stdout)
 outfd.puts parser.factorize_final
 outfd.close

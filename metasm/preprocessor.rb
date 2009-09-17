@@ -759,7 +759,10 @@ class Preprocessor
 		t.type = :string
 		t.raw = name.dup
 		@definition[name] = Macro.new(t)
-		if value
+		if value.kind_of? ::String and eos?
+			feed(value, btfile, btlineno)
+			@definition[name].body << readtok until eos?
+		elsif value	# XXX won't split multi-token defs..
 			t = Token.new([btfile, btlineno])
 			t.type = :string
 			t.raw = value.to_s
