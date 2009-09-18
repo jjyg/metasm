@@ -531,9 +531,9 @@ class Decompiler
 				e.each_with_index { |st, i|
 					case st
 					when C::While, C::DoWhile
-						l1 = e[i+1].name if e[i+1].kind_of? C::Label
-						l2 = e[i-1].name if e[i-1].kind_of? C::Label
-						e[i] = walk[st, l1, l2]
+						l1 = (e[i+1].name if e[i+1].kind_of? C::Label)
+						l2 = (e[i-1].name if e[i-1].kind_of? C::Label)
+						e[i].body = walk[st.body, l1, l2]
 					else
 						e[i] = walk[st, brk, cnt]
 					end
@@ -541,7 +541,7 @@ class Decompiler
 				e
 			when C::If
 				e.bthen = walk[e.bthen, brk, cnt] if e.bthen
-				e.belse = walk[e.belse, brk, cnt] if e.bthen
+				e.belse = walk[e.belse, brk, cnt] if e.belse
 				e
 			when C::While, C::DoWhile
 				e.body = walk[e.body, nil, nil]
