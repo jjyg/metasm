@@ -1092,6 +1092,7 @@ class Decompiler
 			n_i += 1 while scope.symbol_ancestors[newvarname = "#{var.name}_a#{n_i}"]
 
 			nv = var.dup
+			nv.attributes = nv.attributes.dup if nv.attributes
 			nv.name = newvarname
 			scope.statements << C::Declaration.new(nv)
 			scope.symbol[nv.name] = nv

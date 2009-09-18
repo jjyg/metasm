@@ -89,6 +89,11 @@ class Ia32
 					dep.pop   if not a[1] or a[1].has_attribute('unused')
 					deps_subfunc[b] |= dep
 				end
+				t.type.args.to_a.each { |arg|
+					if reg = arg.has_attribute('register')
+						deps_subfunc[b] |= [reg.to_sym]
+					end
+				}
 			}
 			if stackoff	# last block instr == subfunction call
 				deps_r[b] |= deps_subfunc[b] - deps_w[b]
@@ -108,8 +113,6 @@ class Ia32
 
 		regargs = []
 		deps_r.each { |b, deps|
-			# XXX filter using ABI otherwise we get false positive for "push esi  <func body>  pop esi  ret"
-			deps &= [:eax, :ecx, :edx]
 			deps -= regargs
 			uinit = deps.find_all { |r| uninitialized[b, r, []] }
 			if uinit.include? :eax and dcmp.dasm.decoded[b].block.list.last.opcode.name == 'ret'
@@ -119,17 +122,12 @@ class Ia32
 			end
 			regargs |= uinit
 		}
-		if regargs.include? :ecx or regargs.include? :edx
-			func.add_attribute 'fastcall'
-			func.type.args << C::Variable.new('ecx', C::BaseType.new(:int))
-			#func.type.args.last.add_attribute 'unused' if not regargs.include? :ecx
-			func.type.args << C::Variable.new('edx', C::BaseType.new(:int))
-			#func.type.args.last.add_attribute 'unused' if not regargs.include? :edx
-			regargs -= [:ecx, :edx]
-		end
-		if not regargs.empty?
-			func.add_attribute "regargs:#{regargs.inspect}"
-		end
+		# TODO honor user-defined prototype if available (eg no, really, eax is not read in this function returning al)
+		regargs.sort_by { |r| r.to_s }.each { |r|
+			a = C::Variable.new(r.to_s, C::BaseType.new(:int, :unsigned))
+			a.add_attribute("register(#{r})")
+			func.type.args << a
+		}
 
 		# remove writes from a block if no following block read the value
 		dw = {}
@@ -214,7 +212,9 @@ class Ia32
 					end
 				end
 				args_todo.each { |a_|
-					if stackoff.kind_of? Integer
+					if r = a_.has_attribute_var('register')
+						args << Expression[r.to_sym]
+					elsif stackoff.kind_of? Integer
 						args << Indirection[[:frameptr, :+, stackoff], @size/8]
 						stackoff += [dcmp.sizeof(a_), @size/8].max
 					else
@@ -457,13 +457,16 @@ class Ia32
 	end
 	
 	def decompile_check_abi(dcmp, entry, func)
-		a = func.type.args
-		if func.has_attribute('fastcall') and (not a[0] or a[0].has_attribute('unused')) and (not a[1] or a[1].has_attribute('unused'))
-			a.shift ; a.shift
-			func.attributes.delete 'fastcall'
-			func.add_attribute 'stdcall' if not a.empty?
-		elsif func.has_attribute('fastcall') and a.length == 2 and a.last.has_attribute('unused')
-			a.pop
+		a = func.type.args || []
+		a.delete_if { |arg| arg.has_attribute_var('register') and arg.has_attribute('unused') }
+		ra =  a.map { |arg| arg.has_attribute_var('register') }.compact
+		if (a.length == 1 and ra == ['ecx']) or (a.length >= 2 and ra.sort == ['ecx', 'edx'])
+			func.add_attribute 'fastcall'
+			# reorder args
+			ecx = a.find { |arg| arg.has_attribute_var('register') == 'ecx' }
+			edx = a.find { |arg| arg.has_attribute_var('register') == 'edx' }
+			a.insert(0, a.delete(ecx))
+			a.insert(1, a.delete(edx)) if edx
 		end
 
 		if not f = dcmp.dasm.function[entry] or not f.return_address

@@ -105,6 +105,11 @@ module C
 		def add_attribute(attr)
 			(@attributes ||= []) << attr  if not has_attribute(attr)
 		end
+
+		# checks if the object has an attributes a la __attribute__((attr(stuff))), returns 'stuff' (raw, no split on ',' or anything)
+		def has_attribute_var(attr)
+			$1 if attributes.to_a.find { |a| a =~ /^#{attr}\((.*)\)$/ }
+		end
 	end
 
 	class Type
@@ -3251,10 +3256,10 @@ EOH
 					l = lexpr if lexpr.kind_of? Variable
 					l = lexpr.lexpr.type.untypedef.findmember(lexpr.rexpr) if lexpr.kind_of? CExpression and lexpr.op == :'.'
 					l = lexpr.lexpr.type.pointed.untypedef.findmember(lexpr.rexpr) if lexpr.kind_of? CExpression and lexpr.op == :'->'
+					# honor __attribute__((indexenum(enumname)))
 					if l and l.attributes and rexpr.kind_of? CExpression and not rexpr.op and rexpr.rexpr.kind_of? ::Integer and
-					       		l.attributes.find { |a| a =~ /^indexenum:(.*)/ } and enum = scope.struct_ancestors[$1] and
-							l = enum.members.index(rexpr.rexpr)
-						r.last << l
+					       		n = l.has_attribute_var('indexenum') and enum = scope.struct_ancestors[n] and i = enum.members.index(rexpr.rexpr)
+						r.last << i
 						dep |= [enum]
 					else
 						r, dep = CExpression.dump(@rexpr, scope, r, dep)
