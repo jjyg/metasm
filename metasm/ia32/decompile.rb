@@ -472,7 +472,7 @@ class Ia32
 		if not f = dcmp.dasm.function[entry] or not f.return_address
 			#func.add_attribute 'noreturn'
 		else
-			adj = f.return_address.map { |ra| dcmp.dasm.backtrace(:esp, ra, :include_start => true, :stopaddr => entry) }.flatten.uniq
+			adj = f.return_address.map { |ra_| dcmp.dasm.backtrace(:esp, ra_, :include_start => true, :stopaddr => entry) }.flatten.uniq
 			if adj.length == 1 and so = Expression[adj.first, :-, :esp].reduce and so.kind_of? ::Integer
 				so /= dcmp.dasm.cpu.size/8
 				so -= 1

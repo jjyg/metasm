@@ -178,6 +178,29 @@ class Decompiler
 		end
 	end
 
+	# redecompile a function, redecompiles functions calling it if its prototype changed
+	def redecompile(name)
+		@c_parser.toplevel.statements.delete_if { |st| st.kind_of? C::Declaration and st.var.name == name }
+		oldvar = @c_parser.toplevel.symbol.delete name
+
+		decompile_func(name)
+
+		if oldvar and newvar = @c_parser.toplevel.symbol[name] and oldvar.type.kind_of? C::Function and newvar.type.kind_of? C::Function
+			o, n = oldvar.type, newvar.type
+			if o.type != n.type or o.args.to_a.length != n.args.to_a.length or o.args.to_a.zip(n.args.to_a).find { |oa, na| oa.type != na.type }
+				# XXX a may depend on b and c, and b may depend on c -> redecompile c twice
+				# XXX if the dcmp is unstable, may also infinite loop on mutually recursive funcs..
+				@c_parser.toplevel.statements.dup.each { |st|
+					next if not st.kind_of? C::Declaration
+					next if not st.var.initializer
+					next if st.var.name == name
+					next if not walk_ce(st) { |ce| break true if ce.op == :funcall and ce.lexpr.kind_of? C::Variable and ce.lexpr.name == name }
+					redecompile(st.var.name)
+				}
+			end
+		end
+	end
+
 	def new_global_var(addr, type, scope=nil)
 		addr = @dasm.normalize(addr)
 
