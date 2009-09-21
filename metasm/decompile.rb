@@ -434,7 +434,7 @@ class Decompiler
 				case e
 				when ::String	# edata relocation (rel.length = size of pointer)
 					return @c_parser.toplevel.symbol[e] || new_global_var(e, itype || C::BaseType.new(:int), scope)
-				when ::Symbol; s.storage = :register
+				when ::Symbol; s.storage = :register ; s.add_attribute("register(#{name})")
 				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
 				end
@@ -1115,6 +1115,7 @@ class Decompiler
 			n_i += 1 while scope.symbol_ancestors[newvarname = "#{var.name}_a#{n_i}"]
 
 			nv = var.dup
+			nv.storage = :register if nv.has_attribute_var('register')
 			nv.attributes = nv.attributes.dup if nv.attributes
 			nv.name = newvarname
 			scope.statements << C::Declaration.new(nv)

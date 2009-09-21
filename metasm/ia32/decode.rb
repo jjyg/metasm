@@ -260,8 +260,9 @@ class Ia32
 	# return the list of registers as symbols in the order used by pushad
 	# for use in backtrace and stuff, for compatibility with x64
 	# esp is [4]
+	REG_SYMS = [:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi]
 	def register_symbols
-		[:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi]
+		REG_SYMS
 	end
 
 	# interprets a condition code (in an opcode name) as an expression involving backtracked eflags
@@ -987,6 +988,12 @@ class Ia32
 		f.btfor_callback  = disassembler_default_btfor_callback
 		f
 	end
+
+	# returns a hash { :retval => r, :changed => [] }
+	def abi_funcall
+		{ :retval => register_symbols[0], :changed => register_symbols[0, 3] }
+	end
+
 
 	# computes the binding of the sequence of code starting at entry included
 	# the binding is a hash showing the value of modified elements at the
