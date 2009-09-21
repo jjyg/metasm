@@ -2807,9 +2807,11 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			when 'c'
 				begin
 					# TODO parse_invalid_c, split per function, whatever
+					parse_c('')
+					@c_parser.allow_bad_c = true
 					parse_c(data, 'savefile#c')
 				rescue
-					puts "load: bad C: #$!" if $VERBOSE
+					puts "load: bad C: #$!", $!.backtrace if $VERBOSE
 				end
 				@c_parser.readtok until @c_parser.eos?
 			when 'xrefs'

@@ -426,6 +426,7 @@ class Ia32
 								update[k] = Expression[Expression[v].bind(binding).reduce]
 							else
 								stmts << ceb[k, :'=', v]
+								stmts.pop if stmts.last.kind_of? C::Variable	# [:eflag_s, :=, :unknown].reduce
 							end
 						}
 						binding.update update

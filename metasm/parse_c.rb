@@ -942,6 +942,7 @@ module C
 
 		attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
 		attr_accessor :endianness
+		attr_accessor :allow_bad_c
 		def initialize(lexer = nil, model=:ilp32)
 			@lexer = lexer || Preprocessor.new
 			@prev_pragma_callback = @lexer.pragma_callback
@@ -2253,27 +2254,27 @@ EOH
 						elsif (val.kind_of? CExpression or val.kind_of? Variable) and val.type.kind_of? Array
 							# &ary = ary
 						else
-							raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val)
-							raise val.backtrace, 'cannot take addr of register' if val.kind_of? Variable and val.storage == :register
+							raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val) and not parser.allow_bad_c
+							raise val.backtrace, 'cannot take addr of register' if val.kind_of? Variable and val.storage == :register and not parser.allow_bad_c
 							val = CExpression.new(nil, tok.raw.to_sym, val, Pointer.new(val.type))
 						end
 					when '++', '--'
 						val = parse_value(parser, scope)
-						raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val)
+						raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val) and not parser.allow_bad_c
 						val = CExpression.new(nil, tok.raw.to_sym, val, val.type)
 					when '&&'
 						raise tok, 'label name expected' if not val = parser.skipspaces or val.type != :string
 						val = CExpression.new(nil, nil, Label.new(val.raw, nil), Pointer.new(BaseType.new(:void)))
 					when '*'
 						raise tok, 'expr expected' if not val = parse_value(parser, scope)
-						raise tok, 'not a pointer' if not val.type.pointer?
-						newtype = val.type.untypedef.type
+						raise tok, 'not a pointer' if not val.type.pointer? and not parser.allow_bad_c
+						newtype = val.type.pointer? ? val.type.pointed : BaseType.new(:int)
 						if not newtype.untypedef.kind_of? Function	# *fptr == fptr
-							val = CExpression.new(nil, tok.raw.to_sym, val, val.type.untypedef.type)
+							val = CExpression.new(nil, tok.raw.to_sym, val, newtype)
 						end
 					when '~', '!', '+', '-'
 						raise tok, 'expr expected' if not val = parse_value(parser, scope)
-						raise tok, 'type not arithmetic' if not val.type.arithmetic?
+						raise tok, 'type not arithmetic' if not val.type.arithmetic? and not parser.allow_bad_c
 						val = CExpression.new(nil, tok.raw.to_sym, val, val.type)
 						val.type = BaseType.new(:int) if tok.raw == '!'
 					else raise tok, 'internal error'
@@ -2316,8 +2317,9 @@ EOH
 						raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val)
 						CExpression.new(val, tok.raw.to_sym, nil, val.type)
 					when '->'
+						# XXX allow_bad_c..
 						raise tok, 'not a pointer' if not val.type.pointer?
-						type = val.type.untypedef.type.untypedef
+						type = val.type.pointed.untypedef
 						raise tok, 'bad pointer' if not type.kind_of? Union
 						raise tok, 'incomplete type' if not type.members
 						raise tok, 'invalid member' if not tok = parser.skipspaces or tok.type != :string or not m = type.findmember(tok.raw)
@@ -2400,8 +2402,8 @@ EOH
 					stack << CExpression.new(l, op, r, BaseType.new(:int))
 				else
 					# XXX struct == struct ?
-					raise parser, "invalid type #{l.type} #{l} for #{op.inspect}" if not l.type.arithmetic?
-					raise parser, "invalid type #{r.type} #{r} for #{op.inspect}" if not r.type.arithmetic?
+					raise parser, "invalid type #{l.type} #{l} for #{op.inspect}" if not l.type.arithmetic? and not parser.allow_bad_c
+					raise parser, "invalid type #{r.type} #{r} for #{op.inspect}" if not r.type.arithmetic? and not parser.allow_bad_c
 
 					if l.type.pointer? and r.type.pointer?
 						type = \
@@ -2409,7 +2411,7 @@ EOH
 						when :'-'; BaseType.new(:long)	# addr_t or sumthin ?
 						when :'-='; l.type
 						when :'>', :'>=', :'<', :'<=', :'==', :'!='; BaseType.new(:long)
-						else raise parser, "cannot do #{op.inspect} on pointers"
+						else raise parser, "cannot do #{op.inspect} on pointers" unless parser.allow_bad_c ; l.type
 						end
 					elsif l.type.pointer? or r.type.pointer?
 						puts parser.exception("should not #{op.inspect} a pointer").message if $VERBOSE and not [:'+', :'-', :'=', :'+=', :'-=', :==, :'!='].include? op
