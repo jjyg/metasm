@@ -983,10 +983,12 @@ class Decompiler
 
 		# mark all exprs of the graph
 		# TODO handle var_14 __attribute__((out)) = &curvar <=> curvar write
+		r = var.has_attribute_var('register')
 		g.exprs.each { |label, exprs|
 			exprs.each_with_index { |ce, i|
 				if ce_read(ce, var)
-					if ce.op == :'=' and isvar(ce.lexpr, var) and not ce_write(ce.rexpr, var)
+					if (ce.op == :'=' and isvar(ce.lexpr, var) and not ce_write(ce.rexpr, var)) or
+					   (ce.op == :funcall and r and not ce_write(ce.lexpr, var) and not ce_write(ce.rexpr, var) and @dasm.cpu.abi_funcall[:changed].include?(r.to_sym))
 						(ro[label] ||= []) << i
 						(wo[label] ||= []) << i
 						unchecked << [label, i, :up] << [label, i, :down]
@@ -1124,7 +1126,7 @@ class Decompiler
 			dom.each { |oo| ce_patch(g.exprs[oo[0]][oo[1]], var, nv) }
 			dom_ro.each { |oo|
 				ce = g.exprs[oo[0]][oo[1]]
-				if ce.rexpr.kind_of? C::CExpression
+				if ce.op == :funcall or ce.rexpr.kind_of? C::CExpression
 					ce_patch(ce.rexpr, var, nv)
 				else
 					ce.rexpr = nv
@@ -1132,7 +1134,8 @@ class Decompiler
 			}
 			dom_wo.each { |oo|
 				ce = g.exprs[oo[0]][oo[1]]
-				if ce.lexpr.kind_of? C::CExpression
+				if ce.op == :funcall
+				elsif ce.lexpr.kind_of? C::CExpression
 					ce_patch(ce.lexpr, var, nv)
 				else
 					ce.lexpr = nv
