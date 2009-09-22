@@ -482,7 +482,7 @@ class Ia32
 				so /= dcmp.dasm.cpu.size/8
 				so -= 1
 				if so > argsz
-					aso = a.last.stackoff.to_i + dcmp.c_parser.typesize[:ptr]
+					aso = a.empty? ? 0 : a.last.stackoff.to_i + dcmp.c_parser.typesize[:ptr]
 					(so-argsz).times {
 						a << C::Variable.new(dcmp.stackoff_to_varname(aso), C::BaseType.new(:int))
 						a.last.add_attribute('unused')
