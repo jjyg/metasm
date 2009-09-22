@@ -2343,7 +2343,7 @@ class Decompiler
 
 			# useless casts
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and (ce.rexpr.rexpr.kind_of? C::CExpression or
-					(ce.type.pointer? and ce.rexpr.rexpr == 0))
+					(ce.type.pointer? and ce.rexpr.rexpr == 0 and not ce.type.pointed.untypedef.kind_of? C::Union))	# keep ((struct*)0)->memb
 				ce.rexpr = ce.rexpr.rexpr
 			end
 			if not ce.op and ce.rexpr.kind_of? C::CExpression and (ce.type == ce.rexpr.type or (ce.type.integral? and ce.rexpr.type.integral?))

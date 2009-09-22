@@ -475,11 +475,24 @@ class Ia32
 		else
 			adj = f.return_address.map { |ra_| dcmp.dasm.backtrace(:esp, ra_, :include_start => true, :stopaddr => entry) }.flatten.uniq
 			if adj.length == 1 and so = Expression[adj.first, :-, :esp].reduce and so.kind_of? ::Integer
+				argsz = a.map { |fa|
+					next if not fa.stackoff
+					(fa.stackoff + [dcmp.sizeof(fa), dcmp.c_parser.typesize[:ptr]].max-1) / dcmp.c_parser.typesize[:ptr]
+				}.compact.max.to_i
 				so /= dcmp.dasm.cpu.size/8
 				so -= 1
+				if so > argsz
+					aso = a.last.stackoff.to_i + dcmp.c_parser.typesize[:ptr]
+					(so-argsz).times {
+						a << C::Variable.new(dcmp.stackoff_to_varname(aso), C::BaseType.new(:int))
+						a.last.add_attribute('unused')
+						aso += dcmp.sizeof(a.last)
+					}
+					argsz = so
+				end
 				case so
 				when 0
-				when a.map { |fa| (fa.stackoff.to_i + dcmp.c_parser.typesize[:ptr]-1) / dcmp.c_parser.typesize[:ptr] }.max.to_i
+				when argsz
 					func.add_attribute 'stdcall' if not func.has_attribute('fastcall')
 				else
 					func.add_attribute "stackoff:#{so*dcmp.dasm.cpu.size/8}"
