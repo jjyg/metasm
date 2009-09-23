@@ -1157,6 +1157,7 @@ class Decompiler
 		names = scope.symbol.keys
 		names.delete_if { |k|
 			next if not b = k[/^(.*)_a\d+$/, 1]
+			next if scope.symbol[k].stackoff.to_i > 0
 			if not names.find { |n| n != k and (n == b or n[/^(.*)_a\d+$/, 1] == b) }
 				scope.symbol[b] = scope.symbol.delete(k)
 				scope.symbol[b].name = b
