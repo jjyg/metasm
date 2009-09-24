@@ -413,6 +413,38 @@ class Ia32
 					stmts << C::CExpression.new(ce[:eax], :'=', C::CExpression.new(f, :funcall, [ceb[port]], f.type.type), f.type.type)
 				when 'sti', 'cli'
 					stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil)
+				when /^(mov|sto|lod)s([bwdq])/
+					op, sz = $1, $2
+					commit[]
+					sz = { 'b' => 1, 'w' => 2, 'd' => 4, 'q' => 8 }[sz]
+					pt = C::Pointer.new(C::BaseType.new("__int#{sz*8}".to_sym))
+
+					blk = C::Block.new(scope)
+					case op
+					when 'mov'
+						blk.statements << C::CExpression[[:*, [[ceb[:edi]], pt]], :'=', [:*, [[ceb[:esi]], pt]]]
+						blk.statements << C::CExpression[ceb[:edi], :'=', [ceb[:edi], :+, [sz]]]
+						blk.statements << C::CExpression[ceb[:esi], :'=', [ceb[:esi], :+, [sz]]]
+					when 'sto'
+						blk.statements << C::CExpression[[:*, [[ceb[:edi]], pt]], :'=', ceb[:eax]]
+						blk.statements << C::CExpression[ceb[:edi], :'=', [ceb[:edi], :+, [sz]]]
+					when 'lod'
+						blk.statements << C::CExpression[ceb[:eax], :'=', [:*, [[ceb[:esi]], pt]]]
+						blk.statements << C::CExpression[ceb[:esi], :'=', [ceb[:esi], :+, [sz]]]
+					#when 'sca'
+					#when 'cmp'
+					end
+
+					case (di.instruction.prefix || {})[:rep]
+					when nil
+						stmts.concat blk.statements
+					when 'rep'
+						blk.statements << C::CExpression[ceb[:ecx], :'=', [ceb[:ecx], :-, [1]]]
+						stmts << C::While.new(C::CExpression[ceb[:ecx]], blk)
+					#when 'repz'	# sca/cmp only
+					#when 'repnz'
+					end
+					next
 				else
 					bd = get_fwdemu_binding(di)
 					if di.backtrace_binding[:incomplete_binding]
