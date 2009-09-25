@@ -102,26 +102,52 @@ class Ia32
 		}
 
 
+		bt = blocks.transpose
+		roots = bt[0] - bt[1].flatten	# XXX jmp 1stblock ?
 
 		# find regs read and never written (must have been set by caller and are part of the func ABI)
 		uninitialized = lambda { |b, r, done|
-			from = deps_to.keys.find_all { |f| deps_to[f].include? b }
-			from.empty? or (from-done).find { |f|
-				!deps_w[f].include?(r) and uninitialized[f, r, done + [b]]
-			}
+			if not deps_r[b]
+			elsif deps_r[b].include?(r)
+				blk = dcmp.dasm.decoded[b].block
+				bw = []
+				rdi = blk.list.find { |di|
+					a = di.backtrace_binding.values
+					w = []
+					di.backtrace_binding.keys.each { |k|
+						case k
+						when ::Symbol; w |= [k]
+						else a |= Expression[k].externals	# if dword [eax] <- 42, eax is read
+						end
+					}
+					a << :eax if di.opcode.name == 'ret' and (not func.type.kind_of? C::BaseType or func.type.type.name != :void)	# standard ABI
+					
+					next true if (a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - bw).include? r
+					bw |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
+					false
+				}
+				if r == :eax and (rdi || blk.list.last).opcode.name == 'ret'
+					func.type.type = C::BaseType.new(:void)
+					false
+				elsif rdi and rdi.backtrace_binding[r]
+					false	# mov al, 42 ; ret  -> don't regarg eax
+				else
+					true
+				end
+			elsif deps_w[b].include?(r)
+			else
+				done << b
+				(deps_to[b] - done).find { |tb| uninitialized[tb, r, done] }
+			end
 		}
 
 		regargs = []
-		deps_r.each { |b, deps|
-			deps -= regargs
-			uinit = deps.find_all { |r| uninitialized[b, r, []] }
-			if uinit.include? :eax and dcmp.dasm.decoded[b].block.list.last.opcode.name == 'ret'
-				# XXX false positive if the func returns void (eg func: ret)
-				uinit -= [:eax]
-				func.type.type = C::BaseType.new(:void)
+		register_symbols.each { |r|
+			if roots.find { |root| uninitialized[root, r, []] }
+				regargs << r
 			end
-			regargs |= uinit
 		}
+
 		# TODO honor user-defined prototype if available (eg no, really, eax is not read in this function returning al)
 		regargs.sort_by { |r| r.to_s }.each { |r|
 			a = C::Variable.new(r.to_s, C::BaseType.new(:int, :unsigned))
