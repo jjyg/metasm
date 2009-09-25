@@ -1571,7 +1571,7 @@ class Decompiler
 				ce.lexpr = C::CExpression[[ce.lexpr], C::BaseType.new(:int)]
 			end
 
-			if ce.op == :+ and ce.lexpr and ce.lexpr.type.integral? and ce.rexpr.type.pointer?
+			if ce.op == :+ and ce.lexpr and ((ce.lexpr.type.integral? and ce.rexpr.type.pointer?) or (ce.rexpr.type.pointer? and ce.rexpr.type.pointed.untypedef.kind_of? C::Union))
 				ce.rexpr, ce.lexpr = ce.lexpr, ce.rexpr
 			end
 
