@@ -86,8 +86,7 @@ t2 = Time.now if opts[:benchmark]
 
 if opts[:decompile]
 	dasm.save_file(opts[:savefile]) if opts[:savefile]
-	dcmp = Decompiler.new(dasm)
-	dcmp.decompile(*dasm.entrypoints)
+	dasm.decompile(*dasm.entrypoints)
 	tdc = Time.now if opts[:benchmark]
 end
 
@@ -96,14 +95,14 @@ dasm.save_file(opts[:savefile]) if opts[:savefile]
 # output
 if opts[:outfile]
 	File.open(opts[:outfile], 'w') { |fd|
-		fd.puts dcmp.c_parser if opts[:decompile]
+		fd.puts dasm.c_parser if opts[:decompile]
 		fd.puts "#if 0" if opts[:decompile]
 		dasm.dump(!opts[:nodata]) { |l| fd.puts l }
 		fd.puts "#endif" if opts[:decompile]
 	}
 elsif not opts[:savefile]
 	if opts[:decompile]
-		puts dcmp.c_parser
+		puts dasm.c_parser
 	else
 		dasm.dump(!opts[:nodata])
 	end

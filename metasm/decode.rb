@@ -2637,7 +2637,10 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	def decompiler=(dc)
 		@decompiler = dc
 	end
-	def decompile(addr)
+	def decompile(*addr)
+		decompiler.decompile(*addr)
+	end
+	def decompile_func(addr)
 		decompiler.decompile_func(addr)
 	end
 
