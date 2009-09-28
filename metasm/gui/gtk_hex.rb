@@ -507,7 +507,7 @@ class HexWidget < Gtk::DrawingArea
 		if addr < @view_addr or addr >= @view_addr+(@num_lines-2)*@line_size
 			@view_addr = addr&0xffff_fff0
 		end
-		@caret_x = addr % @line_size
+		@caret_x = (addr-@view_addr) % @line_size
 		@caret_x_data = 0
 		@caret_y = (addr-@view_addr) / @line_size
 		@focus_zone = :ascii
