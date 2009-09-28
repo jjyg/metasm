@@ -779,6 +779,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		@commands = {}
 		@cmd_help = {}
 		p = @parent_widget
+		dasm = @dbg.disassembler
 		new_command('help') { add_log @commands.keys.sort.join(' ') } # TODO help <subject>
 		new_command('d', 'focus data window on an address') { |arg| p.mem.focus_addr(solve_expr(arg)) }
 		new_command('db', 'display bytes in data window') { p.mem.curview.data_size = 1 ; p.mem.gui_update }
@@ -869,7 +870,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		}
 		new_command('?', 'display a value') { |arg|
 			next if not v = solve_expr(arg)
-			add_log "#{v} 0x#{v.to_s(16)} #{[v].pack('L').inspect}"
+			add_log "#{v} 0x#{v.to_s(16)} #{[v].pack('L').inspect} #{@dbg.addrname!(v)}"
 		}
 		new_command('exit', 'quit', 'quit the debugger interface') { p.win.destroy }
 		new_command('ruby', 'execute arbitrary ruby code') { |arg| eval arg }
@@ -906,8 +907,18 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
-		new_command('bt', 'backtrace', 'show a stack trace from current pc') {
-			@dbg.cpu.dbg_backtrace(@dbg) { |a, s| add_log s }
+		new_command('bt', 'backtrace', 'bt [limit] - show a stack trace from current pc') { |arg|
+			arg = solve_expr(arg) if arg
+			arg = 500 if not arg.kind_of? ::Integer
+			@dbg.cpu.dbg_backtrace(@dbg, arg) { |a, s| add_log "#{Expression[a]} #{s}" }
+		}
+		new_command('dasm', 'disassemble_fast', 'disassembles from an address') { |arg|
+			addr = solve_expr(arg)
+			dasm.disassemble_fast(addr)
+			dasm.each_function_block(addr).sort.each { |a|
+				next if not di = dasm.decoded[dasm.normalize(a)] or not di.kind_of? DecodedInstruction
+				dasm.dump_block(di.block) { |l| add_log l }
+			}
 		}
 		# TODO 'macro', 'map', 'thread'
 

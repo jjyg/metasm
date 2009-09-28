@@ -126,14 +126,15 @@ class Ia32
 	end
 
 	# return (yield) a list of [addr, symbolic name]
-	def dbg_backtrace(dbg)
+	def dbg_backtrace(dbg, rec=500)
 		ret = []
 		s = dbg.addrname!(dbg.pc)
 		yield(dbg.pc, s) if block_given?
 		ret << [dbg.pc, s]
 		fp = dbg.get_reg_value(:ebp)
 		stack = dbg.get_reg_value(:esp)
-		while fp >= stack and fp <= stack+0x10000
+		while fp >= stack and fp <= stack+0x10000 and rec != 0
+			rec -= 1
 			ra = dbg.resolve_expr Indirection[fp+4, 4]
 			s = dbg.addrname!(ra)
 			yield(ra, s) if block_given?
