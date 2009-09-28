@@ -427,7 +427,14 @@ class Decompiler
 				C::CExpression[e.op, a]
 			end
 		when Indirection
-			itype = C::Pointer.new(C::BaseType.new("__int#{e.len*8}".to_sym))
+			case e.len
+			when 1, 2, 4, 8
+				bt = C::BaseType.new("__int#{e.len*8}".to_sym)
+			else
+				bt = C::Struct.new
+				bt.members = [C::Variable.new('data', C::Array.new(C::BaseType.new(:__int8), e.len))]
+			end
+			itype = C::Pointer.new(bt)
 			p = decompile_cexpr(e.target, scope, itype)
 			p = C::CExpression[[p], itype] if not p.type.kind_of? C::Pointer
 			C::CExpression[:*, p]
