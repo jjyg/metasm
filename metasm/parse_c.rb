@@ -211,6 +211,10 @@ module C
 
 		def align(parser) @members.map { |m| m.type.align(parser) }.max end
 
+		def ==(o)
+			o.class == self.class and o.members.to_a.map { |m| m.type } == self.members.to_a.map { |m| m.type } and o.attributes == self.attributes
+		end
+
 		def findmember(name)
 			if m = @members.find { |m_| m_.name == name }
 				return m
