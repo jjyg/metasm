@@ -981,10 +981,11 @@ class Disassembler
 			next if done.include? a or not di.kind_of? DecodedInstruction
 			a = di.block.address
 			done << a
-			yield a
+			yield a if block_given?
 			di.block.each_to_samefunc(self) { |f| todo << f }
 			di.block.each_to_otherfunc(self) { |f| todo << f } if incl_subfuncs
 		end
+		done
 	end
 
 	# returns info on sections, from @program if supported
@@ -1278,7 +1279,11 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			end
 		end
 
-		# mark as Function if called from a :saveip
+		disassemble_fast_checkfunc(addr)
+	end
+
+	# check if an addr has an xref :x from a :saveip, if so mark as Function
+	def disassemble_fast_checkfunc(addr)
 		if @decoded[addr].kind_of? DecodedInstruction and not @function[addr]
 			func = false
 			each_xref(addr, :x) { |x_|
@@ -1359,6 +1364,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		ret = []
 		funcs.each { |fa|
 			fa = normalize(fa)
+			disassemble_fast_checkfunc(fa)
 			yield fa if block_given?
 			if f = @function[fa] and bf = f.get_backtracked_for(self, fa, di.address) and not bf.empty?
 				# this includes retaddr unless f is noreturn
