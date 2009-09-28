@@ -413,7 +413,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@line_text = ['please wait']
 			redraw
 			@decompiling = true
-			@dasm.decompile(@curaddr)
+			@dasm.decompile_func(@curaddr)
 			@decompiling = false
 		end
 		if curfunc

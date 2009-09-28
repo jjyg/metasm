@@ -204,7 +204,16 @@ class Decompiler
 	def new_global_var(addr, type, scope=nil)
 		addr = @dasm.normalize(addr)
 
-		# TODO check overlap with alreadydefined globals
+		# check preceding structure we're hitting
+		# TODO check what we step over when defining a new static struct
+		0x100.times { |i_|
+			next if not n = @dasm.get_label_at(addr-i_)
+			next if not v = @c_parser.toplevel.symbol[n]
+			next if not v.type.pointer? or not v.type.pointed.untypedef.kind_of? C::Union
+			break if i_ == 0	# XXX it crashes later if we dont break here
+			next if sizeof(v.type.pointed) <= i_
+			return structoffset(v.type.pointed.untypedef, C::CExpression[v], i_, nil)
+		}
 
 		ptype = type.pointed.untypedef if type.pointer?
 		if ptype.kind_of? C::Function
