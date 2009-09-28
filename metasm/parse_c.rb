@@ -166,7 +166,8 @@ module C
 		end
 
 		def ==(o)
-			o.class == self.class and o.name == self.name and o.specifier == self.specifier and o.attributes == self.attributes
+			o.object_id == self.object_id or
+			(o.class == self.class and o.name == self.name and o.specifier == self.specifier and o.attributes == self.attributes)
 		end
 	end
 	class TypeDef < Type
@@ -212,7 +213,8 @@ module C
 		def align(parser) @members.map { |m| m.type.align(parser) }.max end
 
 		def ==(o)
-			o.class == self.class and o.members.to_a.map { |m| m.type } == self.members.to_a.map { |m| m.type } and o.attributes == self.attributes
+			o.object_id == self.object_id or
+			(o.class == self.class and o.members.to_a.map { |m| m.type } == self.members.to_a.map { |m| m.type } and o.attributes == self.attributes)
 		end
 
 		def findmember(name)
@@ -2000,7 +2002,8 @@ EOH
 		end
 
 		def ==(o)
-			self.class == o.class and op == o.op and lexpr == o.lexpr and rexpr == o.rexpr
+			o.object_id == self.object_id or
+			(self.class == o.class and op == o.op and lexpr == o.lexpr and rexpr == o.rexpr)
 		end
 	
 		def ===(o)
