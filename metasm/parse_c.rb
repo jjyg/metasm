@@ -213,6 +213,7 @@ module C
 		def align(parser) @members.map { |m| m.type.align(parser) }.max end
 
 		def ==(o)
+			# if we dont compare names, infinite recursion on mylinkedlist == otherlinkedlist
 			o.object_id == self.object_id or
 			(o.class == self.class and o.name == self.name and o.members.to_a.map { |m| m.type } == self.members.to_a.map { |m| m.type } and o.attributes == self.attributes)
 		end

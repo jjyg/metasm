@@ -5,7 +5,6 @@
 
 
 require 'metasm/ia32/opcodes'
-require 'metasm/ia32/parse'
 require 'metasm/encode'
 
 module Metasm

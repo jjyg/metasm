@@ -5,7 +5,6 @@
 
 
 require 'metasm/x86_64/opcodes'
-require 'metasm/x86_64/parse'
 require 'metasm/encode'
 
 module Metasm
