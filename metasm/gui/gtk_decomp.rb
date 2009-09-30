@@ -289,7 +289,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 							# TODO _declspec
 							ao = 1
 							vt.args.to_a.each { |a|
-								ao = (ao + cp.typesize[:ptr] - 1) / cp.typesize[:ptr] * cp.typesize[:ptr]
+								next if a.has_attribute_var('register')
+								ao = (ao + [cp.sizeof(a), cp.typesize[:ptr]].max - 1) / cp.typesize[:ptr] * cp.typesize[:ptr]
 								s.initializer.decompdata[:stackoff_name][ao] = a.name if a.name
 								s.initializer.decompdata[:stackoff_type][ao] = a.type
 								ao += cp.sizeof(a)
