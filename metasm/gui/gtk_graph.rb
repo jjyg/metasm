@@ -769,16 +769,27 @@ class GraphViewWidget < Gtk::HBox
 		set_color_box(gc, b)
 		w.draw_rectangle(gc, true, (b.x-@curcontext.view_x)*@zoom, (b.y-@curcontext.view_y)*@zoom, b.w*@zoom, b.h*@zoom)
 
-		if @caret_box == b
-			gc.set_foreground @color[:cursorline_bg]
-			w.draw_rectangle(gc, true, (b.x-@curcontext.view_x)*@zoom, (1+b.y-@curcontext.view_y+@caret_y*@font_height)*@zoom, b.w*@zoom, @font_height*@zoom)
-		end
-
 		# current text position
 		x = (b.x - @curcontext.view_x + 1)*@zoom
 		y = (b.y - @curcontext.view_y + 1)*@zoom
 		w_w = (b.x - @curcontext.view_x + b.w - @font_width)*@zoom
 		w_h = (b.y - @curcontext.view_y + b.h - @font_height)*@zoom
+
+		if @parent_widget.bg_color_callback
+			ly = 0
+			b[:line_address].each { |a|
+				if c = @parent_widget.bg_color_callback[a]
+					gc.set_foreground color(c)
+					w.draw_rectangle(gc, true, (b.x-@curcontext.view_x)*@zoom, (1+b.y-@curcontext.view_y+ly*@font_height)*@zoom, b.w*@zoom, @font_height*@zoom)
+				end
+				ly += 1
+			}
+		end
+
+		if @caret_box == b
+			gc.set_foreground @color[:cursorline_bg]
+			w.draw_rectangle(gc, true, (b.x-@curcontext.view_x)*@zoom, (1+b.y-@curcontext.view_y+@caret_y*@font_height)*@zoom, b.w*@zoom, @font_height*@zoom)
+		end
 
 		return if @zoom < 0.99 or @zoom > 1.1
 		# TODO dynamic font size ?

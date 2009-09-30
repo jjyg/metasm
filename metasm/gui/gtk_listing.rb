@@ -96,10 +96,8 @@ class AsmListingWidget < Gtk::HBox
 			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
 			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
 			}.each { |tag, val|
-				@color[tag] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
+				@color[tag] = color(val)
 			}
-			# register colors
-			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
 
 			# map functionnality => color
 			set_color_association :comment => :darkblue, :label => :darkgreen, :text => :black,
@@ -110,9 +108,13 @@ class AsmListingWidget < Gtk::HBox
 		}
 	end
 
-	#
-	# methods used as Gtk callbacks
-	#
+	def color(val)
+		if not @color[val]
+			@color[val] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
+			window.colormap.alloc_color(@color[val], true, true)
+		end
+		@color[val]
+	end
 
 	def click(ev)
 		@caret_x = (ev.x-1).to_i / @font_width
@@ -199,6 +201,17 @@ class AsmListingWidget < Gtk::HBox
 
 		update_line_text if @want_update_line_text
 		update_caret if @want_update_caret
+
+		if @parent_widget.bg_color_callback
+			ly = 0
+			@line_address.each { |a|
+				if c = @parent_widget.bg_color_callback[a]
+					gc.set_foreground color(c)
+					w.draw_rectangle(gc, true, 0, ly*@font_height, w_w, @font_height)
+				end
+				ly += 1
+			}
+		end
 
 		# draw caret line background
 		gc.set_foreground @color[:cursorline_bg]

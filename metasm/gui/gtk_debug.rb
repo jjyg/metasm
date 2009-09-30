@@ -28,6 +28,14 @@ class DbgWidget < Gtk::VBox
 		@code.start_disassembling
 		@dbg.disassembler.disassemble_fast(@dbg.pc)
 
+		@code.bg_color_callback = lambda { |a|
+			if a == @dbg.pc
+				'f88'
+			# TODO breakpoints & stuff
+			# TODO cache @dbg.pc etc ? (called for each line rendered...)
+			end
+		}
+
 		@code.keyboard_callback = @keyboard_cb
 		@mem.keyboard_callback = @keyboard_cb
 
