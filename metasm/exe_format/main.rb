@@ -108,13 +108,16 @@ class ExeFormat
 	def c_set_default_entrypoint
 	end
 
-	attr_accessor :disassembler
+	attr_writer :disassembler	# custom reader
+	def disassembler
+		@disassembler ||= init_disassembler
+	end
+
 	# returns the exe disassembler
 	# if it does not exist, creates one, and feeds it with the exe sections
 	def init_disassembler
-		@cpu ||= cpu_from_headers
 		@disassembler ||= Disassembler.new(self)
-		@disassembler.cpu ||= @cpu
+		@disassembler.cpu ||= cpu
 		each_section { |edata, base| @disassembler.add_section edata, base }
 		@disassembler
 	end
@@ -124,9 +127,8 @@ class ExeFormat
 	# uses get_default_entrypoints if the argument list is empty
 	# returns the disassembler
 	def disassemble(*entrypoints)
-		init_disassembler if not disassembler
 		entrypoints = get_default_entrypoints if entrypoints.empty?
-		@disassembler.disassemble(*entrypoints)
+		disassembler.disassemble(*entrypoints)
 		@disassembler
 	end
 
@@ -135,9 +137,8 @@ class ExeFormat
 	# uses get_default_entrypoints if the argument list is empty
 	# returns the disassembler
 	def disassemble_fast(*entrypoints)
-		init_disassembler if not disassembler
 		entrypoints = get_default_entrypoints if entrypoints.empty?
-		@disassembler.disassemble_fast_deep(*entrypoints)
+		disassembler.disassemble_fast_deep(*entrypoints)
 		@disassembler
 	end
 
