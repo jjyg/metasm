@@ -42,7 +42,7 @@ class ExeFormat
 	# +load_file+ then decode
 	def self.decode_file(path, *a, &b)
 		e = load_file(path, *a, &b)
-		e.decode if not e.disassembler
+		e.decode if not e.instance_variables.map { |iv| iv.to_s }.include?("@disassembler")
 		e
 	end
 
