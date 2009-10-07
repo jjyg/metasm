@@ -3,6 +3,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+require 'metasm/main'
 
 module Metasm
 # this module regroups OS-related functions
@@ -478,7 +479,7 @@ class Debugger
 	end
 
 	def detach
-		@breakpoint.each_key { |a| disable_bp(addr) }
+		@breakpoint.each_key { |a| disable_bp(a) }
 	end
 
 	def register_list

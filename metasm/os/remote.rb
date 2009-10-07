@@ -170,7 +170,7 @@ class GdbClient
 					raise "regs buffer recv is too short !"
 				end
 			end
-			Hash[GDBREGS.zip(regs.unpack('L*'))]
+			Hash[*GDBREGS.zip(regs.unpack('L*')).flatten]
 		end
 	end
 
