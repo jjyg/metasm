@@ -64,7 +64,7 @@ class CPU
 
 	# returns a new C::Compiler
 	def new_ccompiler(parser, exe=ExeFormat.new)
-		exe.cpu ||= self
+		exe.cpu = self if not exe.instance_variable_get("@cpu")
 		C::Compiler.new(parser, exe)
 	end
 end

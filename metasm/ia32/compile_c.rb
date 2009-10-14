@@ -1278,7 +1278,7 @@ class CCompiler < C::Compiler
 end
 
 	def new_ccompiler(parser, exe=ExeFormat.new)
-		exe.cpu ||= self
+		exe.cpu = self if not exe.instance_variable_get("@cpu")
 		CCompiler.new(parser, exe)
 	end
 end
