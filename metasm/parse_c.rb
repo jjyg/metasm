@@ -346,6 +346,8 @@ module C
 			bit_off = 0
 			@members.each_with_index { |m, i|
 				if m.name == name
+					mal = [m.type.align(parser), al].min
+					off = (off + mal - 1) / mal * mal
 					break
 				elsif indirect and m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
 					off += m.type.untypedef.offsetof(parser, name)
@@ -370,9 +372,9 @@ module C
 		def parse_members(parser, scope)
 			super(parser, scope)
 			if defined? @attributes and @attributes
-				if @attributes.include? 'packed'
+				if has_attribute 'packed'
 					@pack = 1
-				elsif p = @attributes.grep(/^pack\(\d+\)$/).first
+				elsif p = has_attribute_var('pack')
 					@pack = p[/\d+/].to_i
 				end
 			end
