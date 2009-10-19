@@ -209,6 +209,59 @@ class COFF
 				@entries << e
 			}
 		end
+
+		def decode_version(coff)
+			vers = {}
+
+			decode_tllv = lambda { |ed, state|
+				sptr = ed.ptr
+				len, vlen, type = coff.decode_half(ed), coff.decode_half(ed), coff.decode_half(ed)
+				tagname = ''
+				while c = coff.decode_half(ed) and c != 0
+					tagname << (c&255)
+				end
+				ed.ptr = (ed.ptr + 3) / 4 * 4
+
+				case state
+				when 0
+					raise if tagname != 'VS_VERSION_INFO'
+					dat = ed.read(vlen)
+					dat.unpack('V*').zip([:signature, :strucversion, :fileversionm, :fileversionl, :prodversionm, :prodversionl, :fileflagsmask, :fileflags, :fileos, :filetype, :filesubtype, :filedatem, :filedatel]) { |v, k| vers[k] = v }
+					raise if vers[:signature] != 0xfeef04bd
+					vers.delete :signature
+					nstate = 1
+				when 1
+					nstate = case tagname
+					when 'StringFileInfo'; :strtable
+					when 'VarFileInfo'; :var
+					else raise
+					end
+				when :strtable
+					nstate = :str
+				when :str
+					val = ed.read(vlen*2).unpack('v*')
+					val.pop if val[-1] == 0
+					val = val.pack('C*') if val.all? { |c_| c_ > 0 and  c_ < 256 } 
+					vers[tagname] = val
+				when :var
+					val = ed.read(vlen).unpack('V*')
+					vers[tagname] = val
+				end
+
+				ed.ptr = (ed.ptr + 3) / 4 * 4
+				while ed.ptr < sptr+len
+					decode_tllv[ed, nstate]
+					ed.ptr = (ed.ptr + 3) / 4 * 4
+				end
+			}
+
+			return if not e = @entries.find { |e_| e_.id == TYPE.index('VERSION') }
+			ed = EncodedData.new(e.subdir.entries.first.subdir.entries.first.data)
+			decode_tllv[ed, 0]
+
+			vers
+		#rescue
+		end
 	end
 
 	class RelocationTable
@@ -401,6 +454,12 @@ class COFF
 		if @directory['resource_table'] and sect_at_rva(@directory['resource_table'][0])
 			@resource = ResourceDirectory.decode(self)
 		end
+	end
+
+	# decode the VERSION information from the resources (file version, os, copyright etc)
+	def decode_version
+		decode_resources if not resource
+		resource.decode_version(self)
 	end
 
 	# decodes certificate table

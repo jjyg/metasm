@@ -840,6 +840,10 @@ class EncodedData
 		@virtsize == 0
 	end
 
+	def eos?
+		ptr.to_i >= @virtsize
+	end
+
 	# returns a copy of itself, with reloc/export duped (but not deep)
 	def dup
 		self.class.new @data.dup, :reloc => @reloc.dup, :export => @export.dup, :virtsize => @virtsize
