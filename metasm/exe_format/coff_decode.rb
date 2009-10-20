@@ -210,7 +210,7 @@ class COFF
 			}
 		end
 
-		def decode_version(coff)
+		def decode_version(coff, lang=nil)
 			vers = {}
 
 			decode_tllv = lambda { |ed, state|
@@ -229,6 +229,9 @@ class COFF
 					dat.unpack('V*').zip([:signature, :strucversion, :fileversionm, :fileversionl, :prodversionm, :prodversionl, :fileflagsmask, :fileflags, :fileos, :filetype, :filesubtype, :filedatem, :filedatel]) { |v, k| vers[k] = v }
 					raise if vers[:signature] != 0xfeef04bd
 					vers.delete :signature
+					vers[:fileversion] = (vers.delete(:fileversionm) << 32) | vers.delete(:fileversionl)
+					vers[:prodversion] = (vers.delete(:prodversionm) << 32) | vers.delete(:prodversionl)
+					vers[:filedate] = (vers.delete(:filedatem) << 32) | vers.delete(:filedatel)
 					nstate = 1
 				when 1
 					nstate = case tagname
@@ -256,7 +259,9 @@ class COFF
 			}
 
 			return if not e = @entries.find { |e_| e_.id == TYPE.index('VERSION') }
-			ed = EncodedData.new(e.subdir.entries.first.subdir.entries.first.data)
+			e = e.subdir.entries.first.subdir
+			e = e.entries.find { |e_| e_.id == lang } || e.entries.first
+			ed = EncodedData.new(e.data)
 			decode_tllv[ed, 0]
 
 			vers
@@ -457,9 +462,9 @@ class COFF
 	end
 
 	# decode the VERSION information from the resources (file version, os, copyright etc)
-	def decode_version
+	def decode_version(lang=0x409)
 		decode_resources if not resource
-		resource.decode_version(self)
+		resource.decode_version(self, lang)
 	end
 
 	# decodes certificate table
