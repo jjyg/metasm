@@ -613,7 +613,7 @@ class Decompiler
 		patch_test = lambda { |ce|
 			ce = ce.rexpr if ce.kind_of? C::CExpression and ce.op == :'!'
 			# if (a+1)  =>  if (a != -1)
-			if ce.kind_of? C::CExpression and (ce.op == :+ or ce.op == :-) and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer
+			if ce.kind_of? C::CExpression and (ce.op == :+ or ce.op == :-) and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr.kind_of? ::Integer and ce.lexpr
 				ce.rexpr.rexpr = -ce.rexpr.rexpr if ce.op == :+
 				ce.op = :'!='
 			end
