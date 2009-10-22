@@ -2110,8 +2110,8 @@ class Decompiler
 				# needs also int & 0xffffffff -> int, *&var  etc (decomp_type? optim_type?)
 				if (e.op == :'++' or e.op == :'--') and v = (e.lexpr || e.rexpr) and v.kind_of? C::Variable and
 						scope.symbol[v.name] and not v.type.qualifier.to_a.include? :volatile
-					next if !(pos = :post and oe = find_next_read_bl[label, i, v] and oe.kind_of? C::CExpression) and
-				   		!(pos = :prev and oe = find_prev_read[label, i-2, v] and oe.kind_of? C::CExpression)
+					next if !((pos = :post) and (oe = find_next_read_bl[label, i, v]) and oe.kind_of? C::CExpression) and
+				   		!((pos = :prev) and (oe = find_prev_read[label, i-2, v]) and oe.kind_of? C::CExpression)
 					next if oe.op == :& and not oe.lexpr	# no &(++eax)
 
 					# merge pre/postincrement into next/prev var usage
