@@ -640,7 +640,7 @@ class Ia32
 				ret = [Expression[a.symbolic(di)]]
 				v = -3
 				loop do
-					diff = Expression[s[0].decode_imm("u#{sz}".to_sym, @endianness), :-, di.address].reduce
+					diff = Expression[dasm.normalize(s[0].decode_imm("u#{sz}".to_sym, @endianness)), :-, di.address].reduce
 					if diff.kind_of? ::Integer and diff.abs < 4096
 						ret << Indirection[[a.imm, :+, v*sz/8], sz/8, di.address]
 					elsif v > 0
