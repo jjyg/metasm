@@ -633,15 +633,16 @@ class Ia32
 		sz = opsz(di)
 		case di.opcode.basename
 		when 'ret'; return [Indirection[register_symbols[4], sz/8, di.address]]
-		when 'jmp'
+		when 'jmp', 'call'
 			a = di.instruction.args.first
 			if a.kind_of? ModRM and a.imm and a.s == sz/8 and not a.b and s = dasm.get_section_at(Expression[a.imm, :-, 3*sz/8])
 				# jmp table
 				ret = [Expression[a.symbolic(di)]]
 				v = -3
 				loop do
-					diff = Expression[dasm.normalize(s[0].decode_imm("u#{sz}".to_sym, @endianness)), :-, di.address].reduce
-					if diff.kind_of? ::Integer and diff.abs < 4096
+					ptr = dasm.normalize s[0].decode_imm("u#{sz}".to_sym, @endianness)
+					diff = Expression[ptr, :-, di.address].reduce
+					if (diff.kind_of? ::Integer and diff.abs < 4096) or (di.opcode.basename == 'call' and ptr != 0 and dasm.get_section_at(ptr))
 						ret << Indirection[[a.imm, :+, v*sz/8], sz/8, di.address]
 					elsif v > 0
 						break
