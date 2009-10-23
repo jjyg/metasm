@@ -928,6 +928,9 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				dasm.dump_block(di.block) { |l| add_log l }
 			}
 		}
+		new_command('save_hist', 'save the command buffer to a file') { |arg|
+			File.open(arg, 'w') { |fd| fd.puts @log }
+		}
 		# TODO 'macro', 'map', 'thread'
 
 		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup
