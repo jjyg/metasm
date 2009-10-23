@@ -915,10 +915,10 @@ class DbgConsoleWidget < Gtk::DrawingArea
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
-		new_command('bt', 'backtrace', 'bt [limit] - show a stack trace from current pc') { |arg|
+		new_command('bt', 'backtrace', 'stacktrace', 'bt [limit] - show a stack trace from current pc') { |arg|
 			arg = solve_expr(arg) if arg
 			arg = 500 if not arg.kind_of? ::Integer
-			@dbg.cpu.dbg_backtrace(@dbg, arg) { |a, s| add_log "#{Expression[a]} #{s}" }
+			@dbg.stacktrace(arg) { |a, s| add_log "#{Expression[a]} #{s}" }
 		}
 		new_command('dasm', 'disassemble_fast', 'disassembles from an address') { |arg|
 			addr = solve_expr(arg)

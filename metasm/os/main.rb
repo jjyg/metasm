@@ -741,6 +741,11 @@ class Debugger
 			end
 		}
 	end
+
+	# return/yield an array of [addr, addr symbolic name] corresponding to the current stack trace
+	def stacktrace(maxdepth=500, &b)
+		@cpu.dbg_stacktrace(self, maxdepth, &b)
+	end
 end
 
 end

@@ -126,7 +126,7 @@ class Ia32
 	end
 
 	# return (yield) a list of [addr, symbolic name]
-	def dbg_backtrace(dbg, rec=500)
+	def dbg_stacktrace(dbg, rec=500)
 		ret = []
 		s = dbg.addrname!(dbg.pc)
 		yield(dbg.pc, s) if block_given?
