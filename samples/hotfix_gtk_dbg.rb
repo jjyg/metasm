@@ -33,15 +33,18 @@ dbg.wait_target
 
 while dbg.state == :stopped
 	puts "target #{dbg.state} #{dbg.info}" if $VERBOSE
-	eax = dbg.get_reg_value(:eax)
-	if eax > 0 and eax < 4096 and di = dbg.di_at(dbg.pc) and di.to_s =~ /\[eax\]/
+	if di = dbg.di_at(dbg.pc) and di.to_s =~ /\[(...)\]/ and reg = $1.downcase.to_sym and regval = dbg.get_reg_value(reg) and regval > 0 and regval < 4096
 		bt = dbg.stacktrace(2)
-		dbg.disassembler.disassemble_fast_deep(bt[1][0]-5)
-		di = dbg.disassembler.decoded[dbg.pc]
-		if from = dbg.disassembler.decoded[di.block.from_normal.first] and from.block.list[-2].to_s =~ /test eax, eax/
-			puts "fix almost null deref #{di} (eax=#{eax})" if $VERBOSE
-			dbg.set_reg_value(:eax, 0)
+		calladdr = bt[1][0]-5
+		dbg.disassembler.disassemble_fast(calladdr)
+		call = dbg.di_at(calladdr)
+		dbg.disassembler.disassemble_fast(call.instruction.args.first.reduce) rescue nil
+		if di = dbg.disassembler.decoded[dbg.pc] and from = dbg.disassembler.decoded[di.block.from_normal.first] and from.block.list[-2].to_s =~ /test #{reg}, #{reg}/
+			puts "fix almost null deref #{di} (#{reg}=#{regval})" if $VERBOSE
+			dbg.set_reg_value(reg, 0)
 			dbg.set_reg_value(:eip, from.block.list[-2].address)
+		else
+			dbg.kill	# dont infinite loop ( TODO just dont handle the exception)
 		end
 	end
 	dbg.continue
