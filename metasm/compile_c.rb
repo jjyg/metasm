@@ -284,13 +284,16 @@ module C
 			when Struct
 				value ||= []
 				@source.last << ':' if not @source.last.empty?
+				# could .align here, but if there is our label name just before, it should have been .aligned too..
 				raise "unknown struct initializer #{value.inspect}" if not value.kind_of? ::Array
 				sz = 0
 				type.members.zip(value).each { |m, v|
+					if m.name and wsz = type.offsetof(@parser, m.name) and sz < wsz
+						@source << "db #{wsz-sz} dup(?)"
+					end
 					@source << ''
 					flen = c_idata_inner(m.type, v)
 					sz += flen
-					@source << ".align #{type.align(@parser)}" if flen % type.align(@parser) != 0
 				}
 
 				sz
