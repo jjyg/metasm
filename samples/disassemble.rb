@@ -25,8 +25,9 @@ OptionParser.new { |opt|
 	opt.on('-o <outfile>', '--output <outfile>', 'save the assembly listing in the specified file (defaults to stdout)') { |h| opts[:outfile] = h }
 	opt.on('-s <savefile>', 'save the disassembler state after disasm') { |h| opts[:savefile] = h }
 	opt.on('-S <addrlist>', '--stop <addrlist>', '--stopaddr <addrlist>', 'do not disassemble past these addresses') { |h| opts[:stopaddr] ||= [] ; opts[:stopaddr] |= h.split ',' }
-	opt.on('--custom <hookfile>', 'eval a ruby script hookfile') { |h| (opts[:hookfile] ||= []) << h }
-	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
+	opt.on('-P <plugin>', '--plugin <plugin>', 'load a metasm disassembler plugin') { |h| (opts[:plugin] ||= []) << h }
+	opt.on('--post-plugin <plugin>', 'load a metasm disassembler plugin after disassembly is finished') { |h| (opts[:post_plugin] ||= []) << h }
+	opt.on('-e <code>', '--eval <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--benchmark') { opts[:benchmark] = true }
 	opt.on('--decompile') { opts[:decompile] = true }
 	opt.on('--map <mapfile>') { |f| opts[:map] = f }
@@ -67,7 +68,7 @@ dasm.parse_c_file opts[:cheader] if opts[:cheader]
 dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 dasm.debug_backtrace = true if opts[:debugbacktrace]
 opts[:stopaddr].to_a.each { |addr| dasm.decoded[makeint[addr]] = true }
-opts[:hookfile].to_a.each { |f| eval File.read(f) }
+opts[:plugin].to_a.each { |p| dasm.load_plugin p }
 opts[:hookstr].to_a.each { |f| eval f }
 
 t1 = Time.now if opts[:benchmark]
@@ -89,6 +90,8 @@ if opts[:decompile]
 	dasm.decompile(*dasm.entrypoints)
 	tdc = Time.now if opts[:benchmark]
 end
+
+opts[:post_plugin].to_a.each { |p| dasm.load_plugin p }
 
 dasm.save_file(opts[:savefile]) if opts[:savefile]
 

@@ -6,6 +6,7 @@
 
 #
 # This file tries to handle simple self-modifying code patterns
+# To be used as a --plugin for a Disassembler object
 #
 
 module SMC
@@ -181,8 +182,9 @@ def self.redirect(dasm, addr)
 end
 end
 
-if defined? dasm
+if self.kind_of? Metasm::Disassembler
 # setup the smc callbacks
+dasm = self
 list = []
 dasm.callback_selfmodifying = lambda { |addr| list << addr }
 dasm.callback_finished = lambda {

@@ -677,6 +677,8 @@ class Disassembler
 	attr_accessor :callback_prebacktrace
 	# callback called once all addresses have been disassembled
 	attr_accessor :callback_finished
+	# pointer to the gui widget we're displayed in
+	attr_accessor :gui
 
 	@@backtrace_maxblocks = 50
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
@@ -2924,6 +2926,10 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			ret << find_call_site[a.origin]
 		}
 		ret.compact.uniq
+	end
+
+	def load_plugin(plugin_filename)
+		instance_eval File.read(plugin_filename)
 	end
 end
 end

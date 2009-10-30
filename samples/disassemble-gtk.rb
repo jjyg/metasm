@@ -35,8 +35,8 @@ OptionParser.new { |opt|
 	opt.banner = 'Usage: disassemble-gtk.rb [options] <executable> [<entrypoints>]'
 	opt.on('--no-data-trace', 'do not backtrace memory read/write accesses') { opts[:nodatatrace] = true }
 	opt.on('--debug-backtrace', 'enable backtrace-related debug messages (very verbose)') { opts[:debugbacktrace] = true }
-	opt.on('--custom <hookfile>', 'eval a ruby script hookfile') { |h| (opts[:hookfile] ||= []) << h }
-	opt.on('--eval <code>', '-e <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
+	opt.on('-P <plugin>', '--plugin <plugin>', 'load a metasm disassembler plugin') { |h| (opts[:plugin] ||= []) << h }
+	opt.on('-e <code>', '--eval <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--map <mapfile>', 'load a map file (addr <-> name association)') { |f| opts[:map] = f }
 	opt.on('--fast', 'dasm cli args with disassemble_fast_deep') { opts[:fast] = true }
 	opt.on('--decompile') { opts[:decompile] = true }
@@ -85,12 +85,12 @@ if exe
 	dasm.callback_finished = lambda { w.dasm_widget.focus_addr w.dasm_widget.curaddr, :decompile ; dasm.decompiler.finalize } if opts[:decompile]
 end
 
-opts[:hookfile].to_a.each { |f| eval File.read(f) }
 opts[:hookstr].to_a.each { |f| eval f }
 
 if dasm
 	w.display(dasm, ep)
 	w.dasm_widget.focus_addr ep.first if not ep.empty?
+	opts[:plugin].to_a.each { |p| dasm.load_plugin(p) }
 else
 	w.show_all
 end

@@ -6,13 +6,13 @@
 
 #
 # To use your own patterns, create a script that defines Deobfuscate::Patterns, then eval() this file.
-# Use your script as argument to --custom.
+# Use your script as argument to --plugin
 #
-# This script is to be used with the --custom option of samples/disassemble(-gtk).rb
+# This script is to be used with the --plugin option of samples/disassemble(-gtk).rb
 # It holds methods to ease the definition of instruction patterns that are to be replaced
 # by another arbitrary instruction sequence, using mostly a regexp syntax
 #
-# The pattern search&replace is done every time the disassembler, found in variable 'dasm',
+# The pattern search&replace is done every time the disassembler
 # finds a new instruction, through the callback_newinstr callback.
 #
 # The patterns can use shortcuts for frequently-used regexps (like 'any machine registers'),
@@ -49,7 +49,7 @@ module Deobfuscate
 PatternMacros = {
 	'%i' => '(?:-|loc_|sub_|xref_)?[0-9][0-9a-fA-F]*h?',
 	'%r' => '(?:[re]?[abcd]x|[re]?[sd]i|[re]?bp|[abcd][lh])',
-	'%m' => '(?:dword ptr \[.*?\]|eax|ebx|ecx|edx|edi|esi|ebp)',
+	'%m' => '(?:(?:dword ptr )?\[.*?\]|eax|ebx|ecx|edx|edi|esi|ebp)',
 } if not defined? PatternMacros
 
 
@@ -61,7 +61,7 @@ PatternMacros = {
 Patterns = {
 	'nop ; (.*)' => '%1',	# concat 'nop' into following instruction
 	'mov (%r|esp), \1' => 'nop',
-	'lea (%r|esp), dword ptr \[\1(?:\+0)?\]' => 'nop',
+	'lea (%r|esp), (?:dword ptr )?\[\1(?:\+0)?\]' => 'nop',
 	'(.*)' => lambda { |dasm, list| # remove 'jmp imm' preceding us without interfering with running dasm
 		if pdi = prev_di(dasm, list.last) and pdi.opcode.name == 'jmp' and
 				pdi.instruction.args[0].kind_of? Metasm::Expression
@@ -245,5 +245,8 @@ end
 # do the pattern precalc
 Deobfuscate.init
 
+if self.kind_of? Metasm::Disassembler
+dasm = self
 # setup the newinstr callback
-dasm.callback_newinstr = lambda { |di| Deobfuscate.newinstr_callback(dasm, di) } if defined? dasm
+dasm.callback_newinstr = lambda { |di| Deobfuscate.newinstr_callback(dasm, di) }
+end

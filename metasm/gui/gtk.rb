@@ -20,6 +20,7 @@ class DisasmWidget < Gtk::VBox
 		super()
 
 		@dasm = dasm
+		@dasm.gui = self
 		@entrypoints = ep
 		@pos_history = []
 		@pos_history_redo = []
@@ -344,6 +345,17 @@ class DisasmWidget < Gtk::VBox
 			begin
 				ret = eval c
 				messagebox ret.inspect[0, 512], 'eval'
+			rescue Object
+				messagebox "#$! #{$!.message}\n#{$!.backtrace.join("\n")}", 'eval error'
+			end
+		}
+	end
+
+	# run ruby plugin
+	def prompt_run_ruby_plugin
+		openfile('ruby plugin') { |f|
+			begin
+				@dasm.load_plugin(f)
 			rescue Object
 				messagebox "#$! #{$!.message}\n#{$!.backtrace.join("\n")}", 'eval error'
 			end
@@ -881,11 +893,7 @@ class MainWindow < Gtk::Window
 				}
 			end
 		}
-		addsubmenu(actions, 'Run _ruby plugin') {
-			OpenFile.new(self, 'ruby plugin') { |f|
-				@dasm_widget.instance_eval(File.read(f))
-			}
-		}
+		addsubmenu(actions, 'Run _ruby plugin') { @dasm_widget.prompt_run_ruby_plugin }
 
 		addsubmenu(@menu, actions, '_Actions')
 
