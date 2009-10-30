@@ -1863,7 +1863,7 @@ class Decompiler
 			end
 
 			if ce.op == :'=' and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == :* and not ce.lexpr.lexpr and ce.lexpr.rexpr.kind_of? C::CExpression and
-					not ce.lexpr.rexpr.op and ce.lexpr.rexpr.type.pointed != ce.rexpr.type
+					not ce.lexpr.rexpr.op and ce.lexpr.rexpr.type.pointer? and ce.lexpr.rexpr.type.pointed != ce.rexpr.type
 				ce.lexpr.rexpr.type = C::Pointer.new(ce.rexpr.type)
 				optimize_code(ce.lexpr)
 			end

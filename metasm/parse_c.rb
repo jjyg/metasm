@@ -1339,7 +1339,7 @@ EOH
 						if prev.kind_of? ::Integer	# enum value
 							prev = (scope.struct.values.grep(Enum) + scope.anonymous_enums.to_a).find { |e| e.members.index(prev) }
 						end
-						raise var.backtrace, "redefinition, previous is #{prev.backtrace.exception(nil).message}"
+						raise var.backtrace, "redefinition, previous is #{prev.backtrace.exception(nil).message rescue :unknown}"
 					else
 						check_compatible_type var.backtrace, prev.type, var.type, true
 						(var.attributes ||= []).concat prev.attributes if prev.attributes
