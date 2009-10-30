@@ -2896,5 +2896,34 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			@decoded[a].block.to_subfuncret = nil
 		}
 	end
+
+	# find the addresses of calls calling the address, handles thunks
+	def call_sites(funcaddr)
+		find_call_site = proc { |a|
+			until not di = @decoded[a] or not di.kind_of? DecodedInstruction
+				if di.opcode.props[:saveip]
+					cs = di.address
+					break
+				end
+				if di.block.from_subfuncret.to_a.first
+					while di.block.from_subfuncret.to_a.length == 1
+						a = di.block.from_subfuncret[0]
+						break if not @decoded[a].kind_of? DecodedInstruction
+						a = @decoded[a].block.list.first.address
+						di = @decoded[a]
+					end
+				end
+				break if di.block.from_subfuncret.to_a.first
+				break if di.block.from_normal.to_a.length != 1
+				a = di.block.from_normal.first
+			end
+			cs
+		}
+		ret = []
+		each_xref(normalize(funcaddr), :x) { |a|
+			ret << find_call_site[a.origin]
+		}
+		ret.compact.uniq
+	end
 end
 end
