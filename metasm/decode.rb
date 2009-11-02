@@ -1807,10 +1807,7 @@ puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#
 					btt = BacktraceTrace.new(expr, origin, origexpr, type, len, maxdepth-h[:loopdetect].length-1)
 					btt.detached = true if detached
 					if x = @decoded[h[:from]] and x.kind_of? DecodedInstruction
-						if not update_btf[x.block.backtracked_for, btt]
-puts "   already backtraced" if debug_backtrace
-							next false
-						end
+						update_btf[x.block.backtracked_for, btt]
 					end
 					if x = @function[h[:from]] and h[:from] != :default
 						update_btf[x.backtracked_for, btt]
@@ -1823,7 +1820,10 @@ puts "   already backtraced" if debug_backtrace
 puts "   function returns to caller" if debug_backtrace
 							next false
 						end
-						update_btf[x.block.backtracked_for, btt]
+						if not update_btf[x.block.backtracked_for, btt]
+puts "   already backtraced" if debug_backtrace
+							next false
+						end
 					end
 				end
 				expr
