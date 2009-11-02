@@ -1241,8 +1241,12 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	end
 
 	def do_disassemble_fast_deep(ep)
-		disassemble_fast(ep) { |fa|
-			do_disassemble_fast_deep(normalize(fa))
+		disassemble_fast(ep) { |fa, di|
+			fa = normalize(fa)
+			do_disassemble_fast_deep(fa)
+			if di and @decoded[fa].kind_of? DecodedInstruction
+				@decoded[fa].block.add_from_normal(di.address)
+			end
 		}
 	end
 
@@ -1367,7 +1371,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		funcs.each { |fa|
 			fa = normalize(fa)
 			disassemble_fast_checkfunc(fa)
-			yield fa if block_given?
+			yield fa, di if block_given?
 			if f = @function[fa] and bf = f.get_backtracked_for(self, fa, di.address) and not bf.empty?
 				# this includes retaddr unless f is noreturn
 				bf.each { |btt|
