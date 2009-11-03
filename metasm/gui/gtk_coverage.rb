@@ -67,7 +67,7 @@ class CoverageWidget < Gtk::DrawingArea
 			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
 
 			# map functionnality => color
-			set_color_association :caret => :yellow, :bg => :palegrey,
+			set_color_association :caret => :yellow, :caret_col => :darkyellow, :bg => :palegrey,
 				:code => :red, :data => :blue
 		}
 	end
@@ -77,7 +77,7 @@ class CoverageWidget < Gtk::DrawingArea
 	end
 
 	def click(ev)
-		x, y = ev.x.to_i, ev.y.to_i
+		x, y = ev.x.to_i-1, ev.y.to_i-1
 		@sections.zip(@section_x).each { |(a, l, seq), (sx, sxe)|
 			if x >= sx and x <= sxe
 				@curaddr = a + (x-sx)/@pixel_w*@byte_per_col
@@ -111,21 +111,21 @@ class CoverageWidget < Gtk::DrawingArea
 		@view_width = w_w = a.width
 		@view_height = w_h = a.height
 
-		@col_height = 32
-		@spacing = 4	# TODO dynamic, wrap, stuff
+		@spacing = 4	# pixels left for borders / inter-section
 
-		cols = @view_width/@pixel_w
-		cols -= (@sections.length - 1) * @spacing
+		@col_height = w_h / @pixel_h - 2*@spacing	# pixels per column
+
+		cols = @view_width/@pixel_w - 2*@spacing
+		cols -= (@sections.length-1) * (@spacing+1)	# space+1: last col of each section may be only 1byte long
 		cols = 64 if cols < 64
 
 		# find how much bytes we must stuff per pixel so that it fits in the window
-		# TODO cache the value
 		bytes = @sections.map { |a, l, seq| l }.inject(0) { |a, b| a+b }
-		@byte_per_col = 2*bytes / cols / @col_height * @col_height
+		@byte_per_col = (bytes / cols + @col_height) / @col_height * @col_height
 		@byte_per_col = @col_height if @byte_per_col < @col_height
 
-		x = 2*@pixel_w
-		y = ybase = 8
+		x = @spacing*@pixel_w
+		ybase = @spacing*@pixel_h
 
 		# draws a rectangle covering h1 to h2 in y, of width w
 		# advances x as needed
@@ -149,7 +149,7 @@ class CoverageWidget < Gtk::DrawingArea
 			o21 = o2 % @col_height
 			o22 = o2 / @col_height
 
-			p11 = ((o1_ - 1) / @byte_per_col / @col_height) % @col_height
+			p11 = (o1_ - 1) / (@byte_per_col / @col_height) % @col_height
 			x -= @pixel_w if o11 == @col_height-1 and o11 == p11
 
 			if o11 > 0
@@ -169,7 +169,7 @@ class CoverageWidget < Gtk::DrawingArea
 		@sections.each { |a, l, seq|
 			curoff = 0
 			@section_x << [x]
-			seq += [[l, l-1]]	if not seq[-1] or seq[-1][1] < l	# to draw last data
+			seq += [[l, l-1]] if not seq[-1] or seq[-1][1] < l	# to draw last data
 			seq.each { |o, oe|
 				gc.set_foreground @color[:data]
 				draw[curoff, o-1]
@@ -177,16 +177,21 @@ class CoverageWidget < Gtk::DrawingArea
 				draw[o, oe]
 				curoff = oe+1
 			}
-			@section_x[-1] << x
+			@section_x.last << x
 			x += @spacing*@pixel_w
 		}
 
 		@sections.zip(@section_x).each { |(a, l, seq), (sx, sxe)|
 			co = @curaddr-a
 			if co >= 0 and co < l
-				gc.set_foreground @color[:caret]
+				gc.set_foreground @color[:caret_col]
 				x = sx + (co/@byte_per_col)*@pixel_w
-				draw_rect[0, @col_height-1, 1]
+				draw_rect[-@spacing, -1, 1]
+				draw_rect[@col_height, @col_height+@spacing, 1]
+				gc.set_foreground @color[:caret]
+				y = (co*@col_height/@byte_per_col) % @col_height
+				y = (co % @byte_per_col) / (@byte_per_col/@col_height)
+				draw_rect[y, y, 1]
 			end
 		}
 	end
