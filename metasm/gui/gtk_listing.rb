@@ -474,6 +474,7 @@ class AsmListingWidget < Gtk::HBox
 				@arrows_widget.window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false
 			end
 		end
+		@parent_widget.focus_changed_callback[] if @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
 
 		@oldcaret_x = @caret_x
 		@oldcaret_y = @caret_y
@@ -489,6 +490,7 @@ class AsmListingWidget < Gtk::HBox
 			@caret_y, @caret_x = @line_address.rindex(addr), 0
 		elsif addr >= @vscroll.adjustment.lower and addr <= @vscroll.adjustment.upper
 			@vscroll.adjustment.value, @wantaddr, @caret_x, @caret_y = addr, addr, 0, 0
+			@line_address[@caret_y] = @vscroll.adjustment.value
 		else
 			return
 		end

@@ -21,6 +21,7 @@ class CoverageWidget < Gtk::DrawingArea
 		@pixel_w = @pixel_h = 2	# use a font ?
 		@sections = []
 		@section_x = []
+		@slave = nil	# another dasmwidget whose curaddr is kept sync
 
 		super()
 
@@ -79,8 +80,9 @@ class CoverageWidget < Gtk::DrawingArea
 	def click(ev)
 		x, y = ev.x.to_i-1, ev.y.to_i-1
 		@sections.zip(@section_x).each { |(a, l, seq), (sx, sxe)|
-			if x >= sx and x <= sxe
-				@curaddr = a + (x-sx)/@pixel_w*@byte_per_col
+			if x >= sx and x < sxe+@pixel_w
+				@curaddr = a + (x-sx)/@pixel_w*@byte_per_col + (y/@pixel_h-@spacing)*@byte_per_col/@col_height
+				@slave.focus_addr(@curaddr) if @slave rescue @slave=nil
 				redraw
 			end
 		}
@@ -92,7 +94,9 @@ class CoverageWidget < Gtk::DrawingArea
 
 	def doubleclick(ev)
 		click(ev)
-		@parent_widget.clone_window(@curaddr, :listing)
+		cw = @parent_widget.clone_window(@curaddr, :listing)
+		@slave = cw.dasm_widget
+		@slave.focus_changed_callback = lambda { redraw rescue @slave.focus_changed_callback = nil }
 	end
 
 	def mouse_wheel(ev)
@@ -104,6 +108,8 @@ class CoverageWidget < Gtk::DrawingArea
 	end
 
 	def paint
+		@curaddr = @slave.curaddr if @slave and @slave.curaddr rescue @slave=nil
+
 		w = window
 		gc = Gdk::GC.new(w)
 
@@ -207,6 +213,7 @@ class CoverageWidget < Gtk::DrawingArea
 
 	def set_cursor_pos(p)
 		@curaddr = p
+		@slave.focus_addr(@curaddr) if @slave rescue @slave=nil
 		redraw
 	end
 
@@ -233,6 +240,7 @@ class CoverageWidget < Gtk::DrawingArea
 	def focus_addr(addr)
 		return if not addr = @parent_widget.normalize(addr) or not @dasm.get_section_at(addr)
 		@curaddr = addr
+		@slave.focus_addr(@curaddr) if @slave rescue @slave=nil
 		gui_update
 		true
 	end

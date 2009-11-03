@@ -1289,6 +1289,7 @@ class GraphViewWidget < Gtk::HBox
 		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
 		word = nil if word == ''
 		@hl_word = word
+		@parent_widget.focus_changed_callback[] if @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
 		redraw
 	end
 

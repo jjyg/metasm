@@ -15,6 +15,7 @@ class DisasmWidget < Gtk::VBox
 	attr_accessor :clones, :gtk_idle_handle
 	attr_accessor :pos_history, :pos_history_redo
 	attr_accessor :bg_color_callback	# proc { |address|  "rgb" # "00f" -> blue }
+	attr_accessor :focus_changed_callback
 
 	def initialize(dasm, ep=[])
 		super()
