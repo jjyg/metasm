@@ -46,6 +46,10 @@ while dbg.state == :stopped
 		else
 			dbg.kill	# dont infinite loop ( TODO just dont handle the exception)
 		end
+	elsif dbg.info =~ /SEGV/
+		puts "unhandled segfault #{di}..." if $VERBOSE
+		# yep, this actually works
+		dbg.set_reg_value(:eip, di.next_addr)
 	end
 	dbg.continue
 	puts "target running" if $VERBOSE
