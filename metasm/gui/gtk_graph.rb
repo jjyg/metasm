@@ -436,7 +436,7 @@ end
 
 
 
-class GraphViewWidget < Gtk::HBox
+class GraphViewWidget < Gtk::DrawingArea
 	attr_accessor :hl_word, :caret_box, :caret_x, :caret_y, :curcontext
 
 	def initialize(dasm, parent_widget)
@@ -456,21 +456,18 @@ class GraphViewWidget < Gtk::HBox
 
 		super()
 
-		@drawarea = Gtk::DrawingArea.new
-		pack_start @drawarea
-
 		@width = @height = 20
 
 		set_font 'courier 10'
 
-		@drawarea.set_events Gdk::Event::ALL_EVENTS_MASK	# receive click/keys
+		set_events Gdk::Event::ALL_EVENTS_MASK	# receive click/keys
 		set_can_focus true			# receive keys
 
-		@drawarea.signal_connect('expose_event') { paint ; true }
-		@drawarea.signal_connect('motion_notify_event') { |w, ev|
+		signal_connect('expose_event') { paint ; true }
+		signal_connect('motion_notify_event') { |w, ev|
 			mousemove(ev) if @mousemove_origin
 		}
-		@drawarea.signal_connect('size_allocate') { |w, ev| @width, @height = ev.width, ev.height }
+		signal_connect('size_allocate') { |w, ev| @width, @height = ev.width, ev.height }
 		signal_connect('button_press_event') { |w, ev|
 			case ev.event_type
 			when Gdk::Event::BUTTON_PRESS
@@ -652,7 +649,7 @@ class GraphViewWidget < Gtk::HBox
 	end
 
 	def paint
-		w = @drawarea.window
+		w = window
 		gc = Gdk::GC.new(w)
 		w_w, w_h = @width, @height
 
@@ -1215,8 +1212,8 @@ class GraphViewWidget < Gtk::HBox
 
 	# queue redraw of the whole GUI visible area
 	def redraw
-		return if not @drawarea.window
-		@drawarea.window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false
+		return if not window
+		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false
 	end
 
 	# change the color association
@@ -1225,7 +1222,7 @@ class GraphViewWidget < Gtk::HBox
 	# check #initialize/sig('realize') for initial function/color list
 	def set_color_association(hash)
 		hash.each { |k, v| @color[k] = @color[v] }
-		@drawarea.modify_bg Gtk::STATE_NORMAL, @color[:bg]
+		modify_bg Gtk::STATE_NORMAL, @color[:bg]
 		gui_update
 	end
 
