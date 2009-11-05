@@ -8,34 +8,22 @@ require 'gtk2'
 module Metasm
 module GtkGui
 class CdecompListingWidget < Gtk::DrawingArea
-	attr_accessor :hl_word, :curaddr
+	attr_accessor :hl_word, :curaddr, :caret_x, :caret_y, :tabwidth
 
-	# OMGH4X returns a scrolledwindow/viewport/decompwidget
-	def self.new(*a)
-		n = super(*a)
-		c = Gtk::ScrolledWindow.new.add_with_viewport(n)
-		c.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC)
-		class << c
-			attr_accessor :proxy
-			def method_missing(*a, &b) @proxy.send(*a, &b) end
-			def respond_to?(a) super(a) or @proxy.respond_to?(a) end
-		end
-		c.proxy = n
-		n.set_scroll c
-		c
-	end
-
-	# construction method
 	def initialize(dasm, parent_widget)
 		bug_me_not = Decompiler	# sometimes gtk fails to autorequire dcmp during expose_event, do it now
 		@dasm = dasm
 		@parent_widget = parent_widget
 		@hl_word = nil
 		@oldcaret_x = @oldcaret_y = @caret_x = @caret_y = 0	# caret position in characters coordinates (column/line)
+		@view_x = @view_y = 0	# coord of corner of view in characters
+		@width = @height = 1	# widget size in chars
 		@layout = Pango::Layout.new Gdk::Pango.context
 		@color = {}
 		@line_text = []
+		@line_text_col = []	# each line is [[:col, 'text'], [:col, 'text']]
 		@curaddr = nil
+		@tabwidth = 8
 
 		super()
 
@@ -62,6 +50,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 		signal_connect('key_press_event') { |w, ev| # keyboard
 			keypress(ev)
 		}
+		signal_connect('size_allocate') { redraw }
 		signal_connect('realize') { # one-time initialize
 			# raw color declaration
 			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
@@ -110,10 +99,22 @@ class CdecompListingWidget < Gtk::DrawingArea
 		gc = Gdk::GC.new(w)
 
 		a = allocation
-		w_w, w_h = a.x + a.width, a.y + a.height
+		@width = a.width/@font_width
+		@height = a.height/@font_height
 
-		# current line number
-		line = 0
+		# adjust viewport to cursor
+		sz_x = @line_text.map { |l| l.length }.max.to_i + 1
+		sz_y = @line_text.length.to_i + 1
+		@view_x = @caret_x - @width + 1 if @caret_x > @view_x + @width - 1
+		@view_x = @caret_x if @caret_x < @view_x
+		@view_x = sz_x - @width - 1 if @view_x >= sz_x - @width
+		@view_x = 0 if @view_x < 0
+
+		@view_y = @caret_y - @height + 1 if @caret_y > @view_y + @height - 1
+		@view_y = @caret_y if @caret_y < @view_y
+		@view_y = sz_y - @height - 1 if @view_y >= sz_y - @height
+		@view_y = 0 if @view_y < 0
+
 		# current cursor position
 		x = 1
 		y = 0
@@ -122,7 +123,6 @@ class CdecompListingWidget < Gtk::DrawingArea
 		# must not include newline
 		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
-			next if y >= w_h or x >= w_w
 			if @hl_word
 				stmp = str
 				pre_x = 0
@@ -144,58 +144,30 @@ class CdecompListingWidget < Gtk::DrawingArea
 			x += @layout.pixel_size[0]
 		}
 
-		if f = curfunc and f.kind_of? C::Variable and f.initializer.kind_of? C::Block
-			keyword_re = /\b(#{C::Keyword.keys.join('|')})\b/
-			intrinsic_re = /\b(intrinsic_\w+)\b/
-			lv = f.initializer.symbol.keys
-			lv << '00' if lv.empty?
-			localvar_re = /\b(#{lv.join('|')})\b/
-			globalvar_re = /\b(#{f.initializer.outer.symbol.keys.join('|')})\b/
-		end
-
-		# draw text until screen is full
-		while y < w_h and l = @line_text[line]
-			if f
-				while l and l.length > 0
-					if (i_k = (l =~ keyword_re)) == 0
-						m = $1.length
-						col = :keyword
-					elsif (i_i = (l =~ intrinsic_re)) == 0
-						m = $1.length
-						col = :intrinsic
-					elsif (i_l = (l =~ localvar_re)) == 0
-						m = $1.length
-						col = :localvar
-					elsif (i_g = (l =~ globalvar_re)) == 0
-						m = $1.length
-						col = :globalvar
-					else
-						m = ([i_k, i_i, i_l, i_g, l.length] - [nil, false]).min
-						col = :text
-					end
-					render[l[0, m], col]
-					l = l[m..-1]
+		@line_text_col[@view_y, @height + 1].each { |l|
+			cx = 0
+			l.each { |c, t|
+				cx += t.length
+				if cx-t.length > @view_x + @width + 1
+				elsif cx < @view_x
+				else
+					t = t[(@view_x - cx + t.length)..-1] if cx-t.length < @view_x
+					render[t, c]
 				end
-			else
-				render[l, :text]
-			end
-
-			y += @font_height
+			}
 			x = 1
-			line += 1
-		end
+			y += @font_height
+		}
 
 		if focus?
 			# draw caret
 			gc.set_foreground @color[:caret]
-			cx = @caret_x*@font_width+1
-			cy = @caret_y*@font_height
+			cx = (@caret_x-@view_x)*@font_width+1
+			cy = (@caret_y-@view_y)*@font_height
 			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
 		end
 	
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
-
-		set_size_request((@line_text.map { |l| l.length }.max.to_i + 1) * @font_width, (@line_text.length + 1)* @font_height)
 	end
 
 	include Gdk::Keyval
@@ -342,14 +314,15 @@ class CdecompListingWidget < Gtk::DrawingArea
 	def update_caret
 		return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
 		return if not window
-		x = @oldcaret_x*@font_width+1
-		y = @oldcaret_y*@font_height
+
+		redraw if @caret_x < @view_x or @caret_x >= @view_x + @width or @caret_y < @view_y or @caret_y >= @view_y + @height
+
+		x = (@oldcaret_x-@view_x)*@font_width+1
+		y = (@oldcaret_y-@view_y)*@font_height
 		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
-		x = @caret_x*@font_width+1
-		y = @caret_y*@font_height
+		x = (@caret_x-@view_x)*@font_width+1
+		y = (@caret_y-@view_y)*@font_height
 		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
-		@scroll.hadjustment.clamp_page(x-1, x+@font_width)
-		@scroll.vadjustment.clamp_page(y, y+@font_height)
 		@oldcaret_x = @caret_x
 		@oldcaret_y = @caret_y
 
@@ -360,10 +333,6 @@ class CdecompListingWidget < Gtk::DrawingArea
 			@hl_word = word
 			redraw
 		end
-	end
-
-	def set_scroll(sc)
-		@scroll = sc
 	end
 
 	# focus on addr
@@ -410,16 +379,60 @@ class CdecompListingWidget < Gtk::DrawingArea
 		@curaddr
 	end
 
+	def update_line_text
+		@line_text = curfunc.dump_def(@dasm.c_parser.toplevel)[0].map { |l| l.gsub("\t", ' '*@tabwidth) }
+		@line_text_col = []
+
+		if f = curfunc and f.kind_of? C::Variable and f.initializer.kind_of? C::Block
+			keyword_re = /\b(#{C::Keyword.keys.join('|')})\b/
+			intrinsic_re = /\b(intrinsic_\w+)\b/
+			lv = f.initializer.symbol.keys
+			lv << '00' if lv.empty?
+			localvar_re = /\b(#{lv.join('|')})\b/
+			globalvar_re = /\b(#{f.initializer.outer.symbol.keys.join('|')})\b/
+		end
+
+		@line_text.each { |l|
+			lc = []
+			if f
+				while l and l.length > 0
+					if (i_k = (l =~ keyword_re)) == 0
+						m = $1.length
+						col = :keyword
+					elsif (i_i = (l =~ intrinsic_re)) == 0
+						m = $1.length
+						col = :intrinsic
+					elsif (i_l = (l =~ localvar_re)) == 0
+						m = $1.length
+						col = :localvar
+					elsif (i_g = (l =~ globalvar_re)) == 0
+						m = $1.length
+						col = :globalvar
+					else
+						m = ([i_k, i_i, i_l, i_g, l.length] - [nil, false]).min
+						col = :text
+					end
+					lc << [col, l[0, m]]
+					l = l[m..-1]
+				end
+			else
+				lc << [:text, l]
+			end
+			@line_text_col << lc
+		}
+	end
+
 	def gui_update
 		if not curfunc and not @decompiling ||= false
 			@line_text = ['please wait']
+			@line_text_col = [[[:text, 'please wait']]]
 			redraw
 			@decompiling = true
 			@dasm.decompile_func(@curaddr)
 			@decompiling = false
 		end
 		if curfunc
-			@line_text = curfunc.dump_def(@dasm.c_parser.toplevel)[0].map { |l| l.gsub("\t", ' '*8) }
+			update_line_text
 			@oldcaret_x = @caret_x + 1
 			update_caret
 		end
