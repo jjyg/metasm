@@ -7,8 +7,8 @@ require 'gtk2'
 
 module Metasm
 module GtkGui
-class AsmListingWidget < Gtk::HBox
-	attr_accessor :hl_word
+class AsmListingWidget < Gtk::DrawingArea
+	attr_accessor :hl_word, :arrow_zone_w
 
 	# construction method
 	def initialize(dasm, parent_widget)
@@ -25,37 +25,26 @@ class AsmListingWidget < Gtk::HBox
 		@color = {}
 		@want_update_line_text = @want_update_caret = true
 		@wantaddr = nil
+		@arrow_zone_w = 40
 
 		super()
 
-		@arrows_widget = Gtk::DrawingArea.new
-		@listing_widget = Gtk::DrawingArea.new
-		@vscroll = Gtk::VScrollbar.new
-		pack_start @arrows_widget, false, false
-		pack_start @listing_widget
-		pack_end @vscroll, false, false
-		# TODO listing hscroll (viewport?)
-
-		@arrows_widget.set_size_request 40, 0	# TODO resizer
-		ks = @dasm.sections.keys.grep(Integer)
-		@vscroll.adjustment.lower = ks.min
-		@vscroll.adjustment.upper = ks.max + @dasm.sections[ks.max].length
-		@vscroll.adjustment.step_increment = 1
-		@vscroll.adjustment.page_increment = 10
-		@vscroll.adjustment.value = @dasm.prog_binding['entrypoint'] || @vscroll.adjustment.lower
+		addrs = @dasm.sections.keys.grep(Integer)
+		@minaddr = addrs.min
+		@maxaddr = addrs.max + @dasm.sections[addrs.max].length rescue nil
+		@startaddr = @dasm.prog_binding['entrypoint'] || @minaddr || 0
 		set_font 'courier 10'
 
 		# receive mouse/kbd events
-		@listing_widget.set_events Gdk::Event::ALL_EVENTS_MASK
-		@listing_widget.set_can_focus true
+		set_events Gdk::Event::ALL_EVENTS_MASK
+		set_can_focus true
 
 		# callbacks
-		@arrows_widget.signal_connect('expose_event') { paint_arrows ; true }
-		@listing_widget.signal_connect('expose_event') { paint_listing ; true }
-		@listing_widget.signal_connect('button_press_event') { |w, ev|
+		signal_connect('expose_event') { paint ; true }
+		signal_connect('button_press_event') { |w, ev|
 			case ev.event_type
 			when Gdk::Event::Type::BUTTON_PRESS
-				@listing_widget.grab_focus
+				grab_focus
 				case ev.button
 				when 1; click(ev)
 				when 3; rightclick(ev)
@@ -66,21 +55,13 @@ class AsmListingWidget < Gtk::HBox
 				end
 			end
 		}
-		@listing_widget.signal_connect('size_allocate') { |w, alloc| # resize
+		signal_connect('size_allocate') { |w, alloc| # resize
 			lines = alloc.height / @font_height
-			cols = alloc.width / @font_width
+			cols = (alloc.width-@arrow_zone_w) / @font_width
 			@caret_y = lines-1 if @caret_y >= lines
 			@caret_x = cols-1 if @caret_x >= cols
-			@vscroll.adjustment.page_increment = lines/2
-		}
-		@vscroll.adjustment.signal_connect('value_changed') { |adj|
-			# align on @decoded boundary
-			addr = adj.value.to_i
-			if off = (0..16).find { |off_| di = @dasm.decoded[addr-off_] and di.respond_to? :bin_length and di.bin_length > off_ } and off != 0
-				@vscroll.adjustment.value = addr-off
-			else
-				gui_update
-			end
+			redraw
+			true
 		}
 		signal_connect('key_press_event') { |w, ev| # keyboard
 			keypress(ev)
@@ -108,6 +89,17 @@ class AsmListingWidget < Gtk::HBox
 		}
 	end
 
+	def adjust_startaddr(off=0, update = true)
+		@startaddr += off
+		@startaddr = @maxaddr - 1 if @startaddr >= @maxaddr
+		if off = (0..16).find { |off_| di = @dasm.decoded[@startaddr-off_] and di.respond_to? :bin_length and di.bin_length > off_ } and off != 0
+			# align on @decoded boundary
+			@startaddr -= off
+		end
+		@startaddr = @minaddr if @startaddr < @minaddr
+		gui_update if update
+	end
+
 	def color(val)
 		if not @color[val]
 			@color[val] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
@@ -117,7 +109,7 @@ class AsmListingWidget < Gtk::HBox
 	end
 
 	def click(ev)
-		@caret_x = (ev.x-1).to_i / @font_width
+		@caret_x = (ev.x-1-@arrow_zone_w).to_i / @font_width
 		@caret_y = ev.y.to_i / @font_height
 		update_caret
 	end
@@ -132,45 +124,43 @@ class AsmListingWidget < Gtk::HBox
 	end
 
 	def mouse_wheel(ev)
-		va = @vscroll.adjustment
 		case ev.direction
 		when Gdk::EventScroll::Direction::UP
 			# TODO handle block start (multiline) / data aggregation (db 100h dup(?), strings..)
-			up = lambda { |a|
-				a -= 1
-				if off = (0..16).find { |off_| di = @dasm.decoded[a-off_] and di.respond_to? :bin_length and di.bin_length > off_ }
-					a -= off
-				end
-				a
-			}
-			va.value = up[up[up[va.value]]]
 			@wantaddr = @line_address[@caret_y]
+			adjust_startaddr(-1, false)
+			adjust_startaddr(-1, false)
+			adjust_startaddr(-1, false)
+			adjust_startaddr(-1)
 			true
 		when Gdk::EventScroll::Direction::DOWN
-			# scroll down 4 lines, or more if the 1st lines have the same addr (eg block start)
-			a = @line_address[4..-1].find { |v| v > @line_address[0] } if @line_address[4]
-			#@caret_y -= @line_address.index(a) if a and @caret_y > @line_address.index(a)
+			# scroll down 4 lines, or more if all the 4 1st lines have the same addr (eg block start)
 			@wantaddr = @line_address[@caret_y]
-			va.value = a || (va.value + va.page_increment)
+			a = @line_address[4..-1].find { |v| v > @line_address[0] } if @line_address[4]
+			@startaddr = a || (@startaddr + 4)
+			adjust_startaddr
 			true
 		end
 	end
 
-	# renders the disassembler in the @listing_widget using @vscroll.adjustment.value
-	# creates the @arrows needed by #paint_arrows
-	def paint_listing
-		w = @listing_widget.window
+	# renders the disassembler from @startaddr
+	def paint
+		w = window
 		gc = Gdk::GC.new(w)
 
-		a = @listing_widget.allocation
+		a = allocation
 		w_w = a.width
 		w_h = a.height
+
+		# arrow bg
+		gc.set_foreground @color[:arrows_bg]
+		w.draw_rectangle(gc, true, 0, 0, @arrow_zone_w, w_h)
 
 		# TODO scroll line-by-line when an addr is displayed on multiple lines (eg labels/comments)
 		# TODO selection
 
 		# current window position
-		x = 1
+		x = @arrow_zone_w + 1
 		y = 0
 
 		# renders a string at current cursor position with a color
@@ -222,25 +212,27 @@ class AsmListingWidget < Gtk::HBox
 			render[a[1], :label]
 			render[a[2], :instruction]
 			render[a[3], :comment]
-			x = 1
+			x = @arrow_zone_w + 1
 			y += @font_height
 		}
 
-		if @listing_widget.focus?
+		if focus?
 			# draw caret
 			gc.set_foreground @color[:caret]
-			cx = @caret_x*@font_width+1
+			cx = @arrow_zone_w + @caret_x*@font_width+1
 			cy = @caret_y*@font_height
 			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
 		end
+
+		paint_arrows
 	end
 
 	# draws the @arrows defined in paint_listing
 	def paint_arrows
-		return if @arrows.empty? or not @line_address[@caret_y]
-		w = @arrows_widget.window
+		return if @arrows.empty? or not @line_address[0]
+		w = window
 		gc = Gdk::GC.new(w)
-		w_w, w_h = @arrows_widget.allocation.width, @arrows_widget.allocation.height
+		w_w, w_h = @arrow_zone_w, allocation.height
 
 		slot_alloc = {}	# [y1, y2] => x slot	-- y1 <= y2
 		# find a free x slot for the vertical side of the arrow
@@ -360,7 +352,6 @@ class AsmListingWidget < Gtk::HBox
 			return true
 		end
 
-		va = @vscroll.adjustment
 		case ev.keyval
 		when GDK_Left
 			if @caret_x >= 1
@@ -368,10 +359,10 @@ class AsmListingWidget < Gtk::HBox
 				update_caret
 			end
 		when GDK_Up
-			if @caret_y > 1 or (@caret_y == 1 and va.value == va.lower)
+			if @caret_y > 1 or (@caret_y == 1 and @startaddr == @minaddr)
 				@caret_y -= 1
 			else
-				va.value -= 1
+				adjust_startaddr(-1)
 			end
 			update_caret
 		when GDK_Right
@@ -380,20 +371,22 @@ class AsmListingWidget < Gtk::HBox
 				update_caret
 			end
 		when GDK_Down
-			if @caret_y < @line_text.length-3 or (@caret_y < @line_text.length - 2 and va.value == va.upper)
+			if @caret_y < @line_address.length-3 or (@caret_y < @line_address.length - 2 and @startaddr == @maxaddr)
 				@caret_y += 1
 			else
 				if a = @line_address[0] and na = @line_address.find { |na_| na_ != a }
-					va.value = na
+					@startaddr = na
+					gui_update
 				else
-					va.value += 1
+					adjust_startaddr(1)
 				end
 			end
 			update_caret
 		when GDK_Page_Up
-			va.value -= va.page_increment
+			adjust_startaddr(-15)
 		when GDK_Page_Down
-			va.value = @line_address[@line_address.length/2] || va.value + va.page_increment
+			@startaddr = @line_address[@line_address.length/2] || @startaddr + 15
+			gui_update
 		when GDK_Home
 			@caret_x = 0
 			update_caret
@@ -408,12 +401,12 @@ class AsmListingWidget < Gtk::HBox
 	end
 
 	def get_cursor_pos
-		[@vscroll.adjustment.value, @caret_x, @caret_y]
+		[@startaddr, @caret_x, @caret_y]
 	end
 
 	def set_cursor_pos(p)
-		@vscroll.adjustment.value, @caret_x, @caret_y = p
-		update_caret
+		@startaddr, @caret_x, @caret_y = p
+		gui_update
 	end
 
 	# change the font of the listing
@@ -431,16 +424,14 @@ class AsmListingWidget < Gtk::HBox
 	# check #initialize/sig('realize') for initial function/color list
 	def set_color_association(hash)
 		hash.each { |k, v| @color[k] = @color[v] }
-		@listing_widget.modify_bg Gtk::STATE_NORMAL, @color[:listing_bg]
-		@arrows_widget.modify_bg Gtk::STATE_NORMAL, @color[:arrows_bg]
+		modify_bg Gtk::STATE_NORMAL, @color[:listing_bg]
 		gui_update
 	end
 
 	# redraw the whole widget
 	def redraw
-		return if not @listing_widget.window
-		@listing_widget.window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false
-		@arrows_widget.window.invalidate  Gdk::Rectangle.new(0, 0, 100000, 100000), false
+		return if not window
+		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false
 	end
 
 	# update @hl_word from caret coords & @line_text, return nil if unchanged
@@ -464,14 +455,14 @@ class AsmListingWidget < Gtk::HBox
 			redraw
 		else
 			return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
-			x = @oldcaret_x*@font_width+1
+			x = @arrow_zone_w + @oldcaret_x*@font_width+1
 			y = @oldcaret_y*@font_height
-			@listing_widget.window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
-			x = @caret_x*@font_width+1
+			window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
+			x = @arrow_zone_w + @caret_x*@font_width+1
 			y = @caret_y*@font_height
-			@listing_widget.window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
+			window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
 			if @arrows.find { |f, t| f == @caret_y or t == @caret_y or f == @oldcaret_y or t == @oldcaret_y }
-				@arrows_widget.window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false
+				window.invalidate Gdk::Rectangle.new(0, 0, @arrow_zone_w, 100000), false
 			end
 		end
 		@parent_widget.focus_changed_callback[] if @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
@@ -488,9 +479,11 @@ class AsmListingWidget < Gtk::HBox
 		return if not addr = @parent_widget.normalize(addr)
 		if l = @line_address.index(addr) and l < @line_address.length - 4
 			@caret_y, @caret_x = @line_address.rindex(addr), 0
-		elsif addr >= @vscroll.adjustment.lower and addr <= @vscroll.adjustment.upper
-			@vscroll.adjustment.value, @wantaddr, @caret_x, @caret_y = addr, addr, 0, 0
-			@line_address[@caret_y] = @vscroll.adjustment.value
+		elsif addr >= @minaddr and addr <= @maxaddr
+			@startaddr, @caret_x, @caret_y = addr, 0, 0
+			adjust_startaddr
+			@wantaddr = @startaddr
+			@line_address[@caret_y] = @startaddr	# so that right after focus_addr(42) ; self.current_address => 42 (coverage sync)
 		else
 			return
 		end
@@ -505,14 +498,18 @@ class AsmListingWidget < Gtk::HBox
 
 	# reads @dasm to update @line_text_color/@line_text/@line_address/@arrows
 	def update_line_text
-		return if not w = @listing_widget.window
+		return if not w = window
+
+		addrs = @dasm.sections.keys.grep(Integer)
+		@minaddr = addrs.min
+		@maxaddr = addrs.max + @dasm.sections[addrs.max].length rescue nil
 
 		@want_update_line_text = false
 
-		a = @listing_widget.allocation
+		a = allocation
 		w_h = (a.height + @font_height - 1) / @font_height
 
-		curaddr = @vscroll.adjustment.value.to_i
+		curaddr = @startaddr
 
 		@line_address.clear
 		@line_text.clear
@@ -574,7 +571,7 @@ class AsmListingWidget < Gtk::HBox
 				else
 					curaddr += [di.bin_length, 1].max
 				end
-			elsif curaddr < @vscroll.adjustment.upper and s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
+			elsif curaddr < @maxaddr and s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
 				@dasm.comment[curaddr].each { |c| str_c[3] = "// #{c}" ; nl[] } if @dasm.comment[curaddr]
 				if label = s[0].inv_export[s[0].ptr]
 					l_list = @dasm.label_alias[curaddr].sort
@@ -664,6 +661,7 @@ class AsmListingWidget < Gtk::HBox
 				curaddr += 1
 			end
 		end
+		@line_address[w_h..-1] = [] if @line_address.length >= w_h
 		@caret_y = @line_address.rindex(@wantaddr) || @caret_y if @wantaddr
 		@wantaddr = nil
 
@@ -676,7 +674,7 @@ class AsmListingWidget < Gtk::HBox
 			[(addr_line[from] || (from < curaddr ? :up : :down)),
 			 (addr_line[ to ] || ( to  < curaddr ? :up : :down))]
 		}
-		@arrows_widget.window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if prev_arrows != @arrows
+		window.invalidate Gdk::Rectangle.new(0, 0, @arrow_zone_w, 100000), false if prev_arrows != @arrows
 	end
 
 	def gui_update
