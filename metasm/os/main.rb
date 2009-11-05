@@ -750,8 +750,12 @@ class Debugger
 	# accepts a range or begin/end address to read memory, or a register name
 	def [](arg0, arg1=nil)
 		if arg1
+			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
+			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
 			@memory[arg0, arg1]
 		elsif arg0.kind_of? ::Range
+			arg0.begin = resolve_expr(arg0.begin) if not arg0.begin.kind_of? ::Integer	# cannot happen, invalid ruby Range
+			arg0.end = resolve_expr(arg0.end) if not arg0.end.kind_of? ::Integer
 			@memory[arg0]
 		else
 			get_reg_value(arg0)
@@ -762,8 +766,12 @@ class Debugger
 	def []=(arg0, arg1, val=nil)
 		arg1, val = arg2, val if not val
 		if arg1
+			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
+			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
 			@memory[arg0, arg1] = val
 		elsif arg0.kind_of? ::Range
+			arg0.begin = resolve_expr(arg0.begin) if not arg0.begin.kind_of? ::Integer	# cannot happen, invalid ruby Range
+			arg0.end = resolve_expr(arg0.end) if not arg0.end.kind_of? ::Integer
 			@memory[arg0] = val
 		else
 			set_reg_value(arg0, val)
