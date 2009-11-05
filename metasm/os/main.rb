@@ -746,6 +746,29 @@ class Debugger
 	def stacktrace(maxdepth=500, &b)
 		@cpu.dbg_stacktrace(self, maxdepth, &b)
 	end
+
+	# accepts a range or begin/end address to read memory, or a register name
+	def [](arg0, arg1=nil)
+		if arg1
+			@memory[arg0, arg1]
+		elsif arg0.kind_of? ::Range
+			@memory[arg0]
+		else
+			get_reg_value(arg0)
+		end
+	end
+
+	# accepts a range or begin/end address to write memory, or a register name
+	def []=(arg0, arg1, val=nil)
+		arg1, val = arg2, val if not val
+		if arg1
+			@memory[arg0, arg1] = val
+		elsif arg0.kind_of? ::Range
+			@memory[arg0] = val
+		else
+			set_reg_value(arg0, val)
+		end
+	end
 end
 
 end
