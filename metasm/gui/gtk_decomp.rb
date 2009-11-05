@@ -50,6 +50,9 @@ class CdecompListingWidget < Gtk::DrawingArea
 		signal_connect('key_press_event') { |w, ev| # keyboard
 			keypress(ev)
 		}
+		signal_connect('scroll_event') { |w, ev| # mouse wheel
+			mouse_wheel(ev)
+		}
 		signal_connect('size_allocate') { redraw }
 		signal_connect('realize') { # one-time initialize
 			# raw color declaration
@@ -76,8 +79,8 @@ class CdecompListingWidget < Gtk::DrawingArea
 	end
 
 	def click(ev)
-		@caret_x = (ev.x-1).to_i / @font_width
-		@caret_y = ev.y.to_i / @font_height
+		@caret_x = (ev.x-1).to_i / @font_width + @view_x
+		@caret_y = ev.y.to_i / @font_height + @view_y
 		update_caret
 	end
 
@@ -92,6 +95,26 @@ class CdecompListingWidget < Gtk::DrawingArea
 
 	def doubleclick(ev)
 		@parent_widget.focus_addr(@hl_word)
+	end
+
+	def mouse_wheel(ev)
+		case ev.direction
+		when Gdk::EventScroll::Direction::UP
+			if @caret_y > 0
+				@view_y -= 4
+				@caret_y -= 4
+				@caret_y = 0 if @caret_y < 0
+				redraw
+			end
+			true
+		when Gdk::EventScroll::Direction::DOWN
+			if @caret_y < @line_text.length - 1
+				@view_y += 4
+				@caret_y += 4
+				redraw
+			end
+			true
+		end
 	end
 
 	def paint
