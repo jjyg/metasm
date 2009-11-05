@@ -936,6 +936,10 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup
 	end
 
+	def wrap_run(&b)
+		@parent_widget.wrap_run(&b)
+	end
+
 	def handle_command
 		add_log(":#@curline")
 		return if @curline == ''

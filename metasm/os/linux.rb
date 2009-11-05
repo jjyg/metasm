@@ -319,6 +319,10 @@ class LinDebugger < Debugger
 			@info = "signal #{$?.termsig} #{Signal.list.index($?.termsig)}"
 		elsif $?.stopped?
 			@state = :stopped
+			if @info == 'syscall'
+				@info = "syscall #{@ptrace.class::SYSCALLNR.index(get_reg_value(:orig_eax))}"
+				return
+			end
 			@info = "signal #{$?.stopsig} #{Signal.list.index($?.stopsig)}"
 			@info = nil if @info =~ /TRAP/	# standard breakpoint exception
 		else
@@ -374,6 +378,14 @@ class LinDebugger < Debugger
 		super(addr, *a)
 	end
 
+	def syscall
+		return if @state != :stopped
+		check_pre_run
+		@state = :running
+		@info = 'syscall'
+		@ptrace.syscall
+	end
+
 	def enable_bp(addr)
 		return if not b = @breakpoint[addr]
 		case b.type
@@ -404,6 +416,10 @@ class LinDebugger < Debugger
 	def check_post_run(*a)
 		@cpu.dbg_check_post_run(self)
 		super(*a)
+	end
+
+	def ui_command_setup(ui)
+		ui.new_command('syscall', 'waits for the target to do a syscall using PT_SYSCALL') { |arg| ui.wrap_run { syscall } }
 	end
 end
 
