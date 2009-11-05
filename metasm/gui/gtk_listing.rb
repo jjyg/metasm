@@ -7,86 +7,35 @@ require 'gtk2'
 
 module Metasm
 module GtkGui
-class AsmListingWidget < Gtk::DrawingArea
-	attr_accessor :hl_word, :arrow_zone_w
+class AsmListingWidget < DrawableWidget
+	attr_accessor :arrow_zone_w
 
-	# construction method
-	def initialize(dasm, parent_widget)
-		@dasm = dasm
-		@parent_widget = parent_widget
+	def initialize_widget
 		@arrows = []	# array of [linefrom, lineto] (may be :up or :down for offscreen)
 		@line_address = []
 		@line_text = []
 		@line_text_color = []
-		@hl_word = nil
-		@caret_x = @caret_y = 0	# caret position in characters coordinates (column/line)
-		@oldcaret_x = @oldcaret_y = 42
-		@layout = Pango::Layout.new Gdk::Pango.context
-		@color = {}
 		@want_update_line_text = @want_update_caret = true
 		@wantaddr = nil
 		@arrow_zone_w = 40
-
-		super()
 
 		addrs = @dasm.sections.keys.grep(Integer)
 		@minaddr = addrs.min
 		@maxaddr = addrs.max + @dasm.sections[addrs.max].length rescue nil
 		@startaddr = @dasm.prog_binding['entrypoint'] || @minaddr || 0
-		set_font 'courier 10'
 
-		# receive mouse/kbd events
-		set_events Gdk::Event::ALL_EVENTS_MASK
-		set_can_focus true
-
-		# callbacks
-		signal_connect('expose_event') { paint ; true }
-		signal_connect('button_press_event') { |w, ev|
-			case ev.event_type
-			when Gdk::Event::Type::BUTTON_PRESS
-				grab_focus
-				case ev.button
-				when 1; click(ev)
-				when 3; rightclick(ev)
-				end
-			when Gdk::Event::Type::BUTTON2_PRESS
-				case ev.button
-				when 1; doubleclick(ev)
-				end
-			end
-		}
-		signal_connect('size_allocate') { |w, alloc| # resize
-			lines = alloc.height / @font_height
-			cols = (alloc.width-@arrow_zone_w) / @font_width
-			@caret_y = lines-1 if @caret_y >= lines
-			@caret_x = cols-1 if @caret_x >= cols
-			redraw
-			true
-		}
-		signal_connect('key_press_event') { |w, ev| # keyboard
-			keypress(ev)
-		}
-		signal_connect('scroll_event') { |w, ev| # mouse wheel
-			mouse_wheel(ev)
-		}
-		signal_connect('realize') { # one-time initialize
-			# raw color declaration
-			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
-			  :red => 'f00', :darkred => '800', :palered => 'fcc',
-			  :green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
-			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
-			}.each { |tag, val|
-				@color[tag] = color(val)
-			}
-
-			# map functionnality => color
-			set_color_association :comment => :darkblue, :label => :darkgreen, :text => :black,
+		@default_color_association = { :comment => :darkblue, :label => :darkgreen, :text => :black,
 			  :instruction => :black, :address => :blue, :caret => :black,
-			  :listing_bg => :white, :cursorline_bg => :paleyellow, :hl_word => :palered,
-			  :arrows_bg => :palegrey,
-			  :arrow_up => :darkblue, :arrow_dn => :darkyellow, :arrow_hl => :red
-		}
+			  :background => :white, :cursorline_bg => :paleyellow, :hl_word => :palered,
+			  :arrows_bg => :palegrey, :arrow_up => :darkblue, :arrow_dn => :darkyellow, :arrow_hl => :red }
+	end
+
+	def resized(w, h)
+		col = w/@font_width
+		lin = h/@font_height
+		@caret_x = col-1 if @caret_x >= col
+		@caret_y = lin-1 if @caret_y >= lin and lin > 0
+		redraw
 	end
 
 	def adjust_startaddr(off=0, update = true)
@@ -100,46 +49,35 @@ class AsmListingWidget < Gtk::DrawingArea
 		gui_update if update
 	end
 
-	def color(val)
-		if not @color[val]
-			@color[val] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
-			window.colormap.alloc_color(@color[val], true, true)
-		end
-		@color[val]
+	def click(x, y)
+		set_caret_from_click(x - @arrow_zone_w, y)
 	end
 
-	def click(ev)
-		@caret_x = (ev.x-1-@arrow_zone_w).to_i / @font_width
-		@caret_y = ev.y.to_i / @font_height
-		update_caret
-	end
-
-	def rightclick(ev)
-		click(ev)
+	def rightclick(x, y)
+		click(x, y)
 		@parent_widget.clone_window(@hl_word, :listing)
 	end
 
-	def doubleclick(ev)
+	def doubleclick(x, y)
+		click(x, y)
 		@parent_widget.focus_addr(@hl_word)
 	end
 
-	def mouse_wheel(ev)
-		case ev.direction
-		when Gdk::EventScroll::Direction::UP
+	def mouse_wheel(dir)
+		case dir
+		when :up
 			# TODO handle block start (multiline) / data aggregation (db 100h dup(?), strings..)
 			@wantaddr = @line_address[@caret_y]
 			adjust_startaddr(-1, false)
 			adjust_startaddr(-1, false)
 			adjust_startaddr(-1, false)
 			adjust_startaddr(-1)
-			true
-		when Gdk::EventScroll::Direction::DOWN
+		when :down
 			# scroll down 4 lines, or more if all the 4 1st lines have the same addr (eg block start)
 			@wantaddr = @line_address[@caret_y]
 			a = @line_address[4..-1].find { |v| v > @line_address[0] } if @line_address[4]
 			@startaddr = a || (@startaddr + 4)
 			adjust_startaddr
-			true
 		end
 	end
 
@@ -148,9 +86,8 @@ class AsmListingWidget < Gtk::DrawingArea
 		w = window
 		gc = Gdk::GC.new(w)
 
-		a = allocation
-		w_w = a.width
-		w_h = a.height
+		w_w = width
+		w_h = height
 
 		# arrow bg
 		gc.set_foreground @color[:arrows_bg]
@@ -409,39 +346,6 @@ class AsmListingWidget < Gtk::DrawingArea
 		gui_update
 	end
 
-	# change the font of the listing
-	# arg is a Gtk Fontdescription string (eg 'courier 10')
-	def set_font(descr)
-		@layout.font_description = Pango::FontDescription.new(descr)
-		@layout.text = 'x'
-		@font_width, @font_height = @layout.pixel_size
-		gui_update
-	end
-
-	# change the color association
-	# arg is a hash function symbol => color symbol
-	# color must be allocated
-	# check #initialize/sig('realize') for initial function/color list
-	def set_color_association(hash)
-		hash.each { |k, v| @color[k] = @color[v] }
-		modify_bg Gtk::STATE_NORMAL, @color[:listing_bg]
-		gui_update
-	end
-
-	# redraw the whole widget
-	def redraw
-		return if not window
-		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false
-	end
-
-	# update @hl_word from caret coords & @line_text, return nil if unchanged
-	def update_hl_word
-		return if not l = @line_text[@caret_y]
-		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
-		word = nil if word == ''
-		@hl_word = word if @hl_word != word
-	end
-
 	# hint that the caret moved
 	# redraws the caret, change the hilighted word, redraw if needed
 	def update_caret
@@ -451,18 +355,16 @@ class AsmListingWidget < Gtk::DrawingArea
 		end
 		return if not @line_text[@caret_y]
 		@want_update_caret = false
-		if update_hl_word or @oldcaret_y != @caret_y or true
+		if update_hl_word(@line_text[@caret_y], @caret_x) or @oldcaret_y != @caret_y or true
 			redraw
 		else
 			return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
-			x = @arrow_zone_w + @oldcaret_x*@font_width+1
-			y = @oldcaret_y*@font_height
-			window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
-			x = @arrow_zone_w + @caret_x*@font_width+1
-			y = @caret_y*@font_height
-			window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
+
+			invalidate_caret(@oldcaret_x, @oldcaret_y, @arrow_zone_w, 0)
+			invalidate_caret(@caret_x, @caret_y, @arrow_zone_w, 0)
+
 			if @arrows.find { |f, t| f == @caret_y or t == @caret_y or f == @oldcaret_y or t == @oldcaret_y }
-				window.invalidate Gdk::Rectangle.new(0, 0, @arrow_zone_w, 100000), false
+				invalidate(0, 0, @arrow_zone_w, 1000000)
 			end
 		end
 		@parent_widget.focus_changed_callback[] if @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
@@ -506,8 +408,7 @@ class AsmListingWidget < Gtk::DrawingArea
 
 		@want_update_line_text = false
 
-		a = allocation
-		w_h = (a.height + @font_height - 1) / @font_height
+		w_h = (height + @font_height - 1) / @font_height
 
 		curaddr = @startaddr
 
@@ -674,7 +575,7 @@ class AsmListingWidget < Gtk::DrawingArea
 			[(addr_line[from] || (from < curaddr ? :up : :down)),
 			 (addr_line[ to ] || ( to  < curaddr ? :up : :down))]
 		}
-		window.invalidate Gdk::Rectangle.new(0, 0, @arrow_zone_w, 100000), false if prev_arrows != @arrows
+		invalidate(0, 0, @arrow_zone_w, 100000) if prev_arrows != @arrows
 	end
 
 	def gui_update

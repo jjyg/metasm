@@ -8,6 +8,7 @@ require 'gtk2'
 
 module Metasm
 module GtkGui
+# the main disassembler widget: this is a container for all the lower-level widgets that actually render the dasm state
 class DisasmWidget < Gtk::VBox
 	attr_accessor :dasm, :entrypoints, :views, :gui_update_counter_max, :notebook
 	# hash key_val => lambda { |keyb_ev| true if handled }
@@ -512,6 +513,176 @@ class DisasmWidget < Gtk::VBox
 
 	def listwindow(*a, &b)
 		ListWindow.new(toplevel, *a, &b)
+	end
+end
+
+class DrawableWidget < Gtk::DrawingArea
+	attr_accessor :dasm, :parent_widget, :caret_x, :caret_y, :hl_word
+	def initialize(dasm, parent_widget)
+		@dasm = dasm
+		@parent_widget = parent_widget
+
+		@caret_x = @caret_y = 0		# text cursor position
+		@oldcaret_x = @oldcaret_y = 1
+		@hl_word = nil
+
+		@layout = Pango::Layout.new Gdk::Pango.context	# text rendering
+
+		@color = {}
+
+		super()
+
+		# receive keyboard/mouse signals
+		set_events Gdk::Event::ALL_EVENTS_MASK
+		set_can_focus true
+		set_font 'courier 10'
+
+		# define event callbacks
+		signal_connect('expose_event') { paint ; true }
+		signal_connect('size_allocate') { |w, alloc| resized(alloc.width, alloc.height) ; true }
+		signal_connect('button_press_event') { |w, ev|
+			case ev.event_type
+			when Gdk::Event::Type::BUTTON_PRESS
+				grab_focus
+				case ev.button
+				when 1; click(ev.x, ev.y)
+				when 3; rightclick(ev.x, ev.y)
+				end
+			when Gdk::Event::Type::BUTTON2_PRESS
+				case ev.button
+				when 1; doubleclick(ev.x, ev.y)
+				end
+			end
+		}
+		signal_connect('key_press_event') { |w, ev|
+			# TODO keypress_ctrl etc
+			keypress(ev)
+			true
+		}
+		signal_connect('scroll_event') { |w, ev|
+			dir = {
+				Gdk::EventScroll::Direction::UP => :up,
+				Gdk::EventScroll::Direction::DOWN => :down
+			}[ev.direction]
+			mouse_wheel(dir) if dir
+			true
+		}
+		signal_connect('realize') {
+			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
+			  :red => 'f00', :darkred => '800', :palered => 'fcc',
+			  :green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
+			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
+			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
+			}.each { |tag, val|
+				@color[tag] = color(val)
+			}
+
+			set_color_association @default_color_association
+
+			initialize_visible
+		}
+
+		initialize_widget
+	end
+
+
+	# create a color from a 'rgb' description
+	def color(val)
+		if not @color[val]
+			@color[val] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
+			window.colormap.alloc_color(@color[val], true, true)
+		end
+		@color[val]
+	end
+
+	def set_caret_from_click(x, y)
+		@caret_x = (x-1).to_i / @font_width
+		@caret_y = y.to_i / @font_height
+		update_caret
+	end
+
+	# change the font of the widget
+	# arg is a Gtk Fontdescription string (eg 'courier 10')
+	def set_font(descr)
+		@layout.font_description = Pango::FontDescription.new(descr)
+		@layout.text = 'x'
+		@font_width, @font_height = @layout.pixel_size
+		gui_update
+	end
+
+	# change the color association
+	# arg is a hash function symbol => color symbol
+	# color must be allocated
+	# check #initialize/sig('realize') for initial function/color list
+	def set_color_association(hash)
+		hash.each { |k, v| @color[k] = @color[v] }
+		modify_bg Gtk::STATE_NORMAL, @color[:background]
+		gui_update
+	end
+
+	# update @hl_word from a line & offset, return nil if unchanged
+	def update_hl_word(line, offset)
+		return if not line
+		word = line[0...offset].to_s[/\w*$/] << line[offset..-1].to_s[/^\w*/]
+		word = nil if word == ''
+		@hl_word = word if @hl_word != word
+	end
+
+	# invalidate the whole widget area
+	def redraw
+		invalidate(0, 0, 1000000, 1000000)
+	end
+
+	def invalidate_caret(cx, cy, x=0, y=0)
+		invalidate(x + cx*@font_width, y, 2, @font_height)
+	end
+
+	def invalidate(x, y, w, h)
+		return if not window
+		window.invalidate Gdk::Rectangle.new(x, y, w, h), false
+	end
+
+	def width
+		allocation.width
+	end
+
+	def height
+		allocation.height
+	end
+
+	# subclass methods
+
+	# called once on object creation
+	def initialize_widget
+	end
+
+	# called once, when the widget is visible
+	def initialize_visible
+	end
+
+	# update the caret position, change the hilighted word etc
+	def update_caret
+	end
+
+	def click(x, y)
+	end
+
+	def rightclick(x, y)
+	end
+
+	def doubleclick(x, y)
+	end
+
+	def mouse_wheel(dir)
+	end
+
+	def mouse_wheel_ctrl(dir)
+	end
+
+	def keypress(key)
+	end
+
+	def keypress_ctrl(key)
 	end
 end
 
