@@ -3,125 +3,60 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-require 'gtk2'
-
 module Metasm
 module GtkGui
-class CoverageWidget < Gtk::DrawingArea
+class CoverageWidget < DrawableWidget
 	attr_accessor :sections, :pixel_w, :pixel_h
 
-	# TODO wheel -> zoom, dblclick/rightclick -> clone clickaddr, :dasm, dragdrop -> scroll?(zoomed)
-	def initialize(dasm, parent_widget)
-		@dasm = dasm
-		@parent_widget = parent_widget
-		@color = {}
+	# TODO wheel -> zoom, dragdrop -> scroll?(zoomed)
+	def initialize_widget
 		@curaddr = 0
-		@view_width = 0
-		@view_height = 0
 		@pixel_w = @pixel_h = 2	# use a font ?
 		@sections = []
 		@section_x = []
 		@slave = nil	# another dasmwidget whose curaddr is kept sync
 
-		super()
-
-		# receive mouse/kbd events
-		set_events Gdk::Event::ALL_EVENTS_MASK
-		set_can_focus true
-
-		# callbacks
-		signal_connect('expose_event') { paint ; true }
-		signal_connect('button_press_event') { |w, ev|
-			case ev.event_type
-			when Gdk::Event::Type::BUTTON_PRESS
-				grab_focus
-				case ev.button
-				when 1; click(ev)
-				when 3; rightclick(ev)
-				end
-			when Gdk::Event::Type::BUTTON2_PRESS
-				case ev.button
-				when 1; doubleclick(ev)
-				end
-			end
-		}
-		signal_connect('size_allocate') { |w, alloc| # resize
-			autofit(alloc.width, alloc.height)
-		}
-		signal_connect('key_press_event') { |w, ev| # keyboard
-			keypress(ev)
-		}
-		signal_connect('scroll_event') { |w, ev| # mouse wheel
-			mouse_wheel(ev)
-		}
-		signal_connect('realize') { # one-time initialize
-			# raw color declaration
-			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
-			  :red => 'f00', :darkred => '800', :palered => 'fcc',
-			  :green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
-			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
-			}.each { |tag, val|
-				@color[tag] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
-			}
-			# register colors
-			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
-
-			# map functionnality => color
-			set_color_association :caret => :yellow, :caret_col => :darkyellow, :bg => :palegrey,
-				:code => :red, :data => :blue
-		}
+		@default_color_association = { :caret => :yellow, :caret_col => :darkyellow,
+			:background => :palegrey, :code => :red, :data => :blue }
 	end
 
-	def autofit(w, h)
-		redraw
-	end
-
-	def click(ev)
-		x, y = ev.x.to_i-1, ev.y.to_i-1
+	def click(x, y)
+		x, y = x.to_i - 1, y.to_i
 		@sections.zip(@section_x).each { |(a, l, seq), (sx, sxe)|
 			if x >= sx and x < sxe+@pixel_w
 				@curaddr = a + (x-sx)/@pixel_w*@byte_per_col + (y/@pixel_h-@spacing)*@byte_per_col/@col_height
 				@slave.focus_addr(@curaddr) if @slave rescue @slave=nil
 				redraw
+				break
 			end
 		}
 	end
 
-	def rightclick(ev)
-		doubleclick(ev)
-	end
-
-	def doubleclick(ev)
-		click(ev)
+	def doubleclick(x, y)
+		click(x, y)
 		cw = @parent_widget.clone_window(@curaddr, :listing)
 		@slave = cw.dasm_widget
 		@slave.focus_changed_callback = lambda { redraw rescue @slave.focus_changed_callback = nil }
 	end
+	alias rightclick doubleclick
 
-	def mouse_wheel(ev)
+	def mouse_wheel(dir)
 		# TODO zoom ?
-		case ev.direction
-		when Gdk::EventScroll::Direction::UP
-		when Gdk::EventScroll::Direction::DOWN
+		case dir
+		when :up
+		when :down
 		end
 	end
 
 	def paint
 		@curaddr = @slave.curaddr if @slave and @slave.curaddr rescue @slave=nil
 
-		w = window
-		gc = Gdk::GC.new(w)
-
-		a = allocation
-		@view_width = w_w = a.width
-		@view_height = w_h = a.height
-
 		@spacing = 4	# pixels left for borders / inter-section
 
-		@col_height = w_h / @pixel_h - 2*@spacing	# pixels per column
+		@col_height = height/@pixel_h - 2*@spacing	# pixels per column
+		@col_height = 1 if @col_height < 1
 
-		cols = @view_width/@pixel_w - 2*@spacing
+		cols = width/@pixel_w - 2*@spacing
 		cols -= (@sections.length-1) * (@spacing+1)	# space+1: last col of each section may be only 1byte long
 		cols = 64 if cols < 64
 
@@ -137,7 +72,7 @@ class CoverageWidget < Gtk::DrawingArea
 		# advances x as needed
 		draw_rect = lambda { |h1, h2, rw|
 			h2 += 1
-			w.draw_rectangle(gc, true, x, ybase+@pixel_h*h1, @pixel_w*rw, @pixel_h*(h2-h1))
+			draw_rectangle(x, ybase+@pixel_h*h1, @pixel_w*rw, @pixel_h*(h2-h1))
 			rw -= 1 if h2 != @col_height
 			x += rw*@pixel_w
 		}
@@ -177,9 +112,9 @@ class CoverageWidget < Gtk::DrawingArea
 			@section_x << [x]
 			seq += [[l, l-1]] if not seq[-1] or seq[-1][1] < l	# to draw last data
 			seq.each { |o, oe|
-				gc.set_foreground @color[:data]
+				draw_color :data
 				draw[curoff, o-1]
-				gc.set_foreground @color[:code]
+				draw_color :code
 				draw[o, oe]
 				curoff = oe+1
 			}
@@ -190,21 +125,16 @@ class CoverageWidget < Gtk::DrawingArea
 		@sections.zip(@section_x).each { |(a, l, seq), (sx, sxe)|
 			co = @curaddr-a
 			if co >= 0 and co < l
-				gc.set_foreground @color[:caret_col]
+				draw_color :caret_col
 				x = sx + (co/@byte_per_col)*@pixel_w
 				draw_rect[-@spacing, -1, 1]
 				draw_rect[@col_height, @col_height+@spacing, 1]
-				gc.set_foreground @color[:caret]
+				draw_color :caret
 				y = (co*@col_height/@byte_per_col) % @col_height
 				y = (co % @byte_per_col) / (@byte_per_col/@col_height)
 				draw_rect[y, y, 1]
 			end
 		}
-	end
-
-	include Gdk::Keyval
-	def keypress(ev)
-		return @parent_widget.keypress(ev)
 	end
 
 	def get_cursor_pos
@@ -215,24 +145,6 @@ class CoverageWidget < Gtk::DrawingArea
 		@curaddr = p
 		@slave.focus_addr(@curaddr) if @slave rescue @slave=nil
 		redraw
-	end
-
-	def set_font(descr)
-	end
-
-	# change the color association
-	# arg is a hash function symbol => color symbol
-	# color must be allocated
-	# check #initialize/sig('realize') for initial function/color list
-	def set_color_association(hash)
-		hash.each { |k, v| @color[k] = @color[v] }
-		modify_bg Gtk::STATE_NORMAL, @color[:bg]
-		redraw
-	end
-
-	# redraw the whole widget
-	def redraw
-		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
 	end
 
 	# focus on addr

@@ -754,6 +754,10 @@ class DrawableWidget < Gtk::DrawingArea
 		allocation.height
 	end
 
+	def resized(w, h)
+		redraw
+	end
+
 	def keypress(key)
 	end
 
