@@ -33,7 +33,7 @@ class AsmListingWidget < DrawableWidget
 		lin = h/@font_height
 		@caret_x = col-1 if @caret_x >= col
 		@caret_y = lin-1 if @caret_y >= lin and lin > 0
-		redraw
+		gui_update
 	end
 
 	def adjust_startaddr(off=0, update = true)

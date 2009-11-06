@@ -569,17 +569,35 @@ class DrawableWidget < Gtk::DrawingArea
 	# keypress event keyval traduction table
 	Keyboard_trad = Gdk::Keyval.constants.grep(/^GDK_/).inject({}) { |h, cst|
 		v = Gdk::Keyval.const_get(cst)
-		key = cst.to_s.sub(/^GDK_/, '')
+		key = cst.to_s.sub(/^GDK_/, '').sub(/^KP_/, '')
 		if key.length == 1
 			key = key[0]	# ?a, ?b etc
 		else
-			case key
-			when 'Escape'; key = 'esc'
-			when 'Page_Up'; key = 'pgup'
-			when 'Page_Down'; key = 'pgdown'
-			when 'KP_Enter', 'Return'; key = 'enter'
-			end
 			key = key.downcase.to_sym
+			key = {
+			:page_up => :pgup, :page_down => :pgdown,
+			:escape => :esc, :return => :enter,
+
+			:asciitilde => ?~, :quoteleft => ?`,
+			:exclam => ?!, :at => ?@,
+			:numbersign => ?#, :dollar => ?$,
+			:percent => ?%, :asciicircum => ?^,
+			:ampersand => ?&, :asterisk => ?*,
+			:parenleft => ?(, :parenright => ?),
+			:bracketleft => ?[, :bracketright => ?],
+			:braceleft => ?{, :braceright => ?},
+			:less  => ?<, :greater  => ?>,
+			:quotedbl => ?", :quoteright => ?',
+			:coma => ?,, :period => ?.,
+			:colon => ?:, :semicolon => ?;,
+			:slash => ?/, :equal => ?=,
+			:plus => ?+, :minus => ?-,
+			:question => ??, :backslash => ?\\,
+			:underscore  => ?_, :bar => ?|,
+			:comma => ?,,
+			:divide => ?/, :multiply => ?*,
+			:subtract => ?-, :add => ?+
+			}.fetch(key, key)
 		end
 
 		h.update v => key
