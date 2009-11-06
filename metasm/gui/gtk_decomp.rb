@@ -3,89 +3,37 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-require 'gtk2'
-
 module Metasm
 module GtkGui
-class CdecompListingWidget < Gtk::DrawingArea
-	attr_accessor :hl_word, :curaddr, :caret_x, :caret_y, :tabwidth
+class CdecompListingWidget < DrawableWidget
+	attr_accessor :curaddr, :tabwidth
 
-	def initialize(dasm, parent_widget)
+	def initialize_widget
 		bug_me_not = Decompiler	# sometimes gtk fails to autorequire dcmp during expose_event, do it now
-		@dasm = dasm
-		@parent_widget = parent_widget
-		@hl_word = nil
-		@oldcaret_x = @oldcaret_y = @caret_x = @caret_y = 0	# caret position in characters coordinates (column/line)
 		@view_x = @view_y = 0	# coord of corner of view in characters
 		@width = @height = 1	# widget size in chars
-		@layout = Pango::Layout.new Gdk::Pango.context
-		@color = {}
 		@line_text = []
 		@line_text_col = []	# each line is [[:col, 'text'], [:col, 'text']]
 		@curaddr = nil
 		@tabwidth = 8
 
-		super()
-
-		# receive mouse/kbd events
-		set_events Gdk::Event::ALL_EVENTS_MASK
-		set_can_focus true
-		set_font 'courier 10'
-
-		signal_connect('expose_event') { paint ; true }
-		signal_connect('button_press_event') { |w, ev|
-			case ev.event_type
-			when Gdk::Event::Type::BUTTON_PRESS
-				grab_focus
-				case ev.button
-				when 1; click(ev)
-				when 3; rightclick(ev)
-				end
-			when Gdk::Event::Type::BUTTON2_PRESS
-				case ev.button
-				when 1; doubleclick(ev)
-				end
-			end
-		}
-		signal_connect('key_press_event') { |w, ev| # keyboard
-			keypress(ev)
-		}
-		signal_connect('scroll_event') { |w, ev| # mouse wheel
-			mouse_wheel(ev)
-		}
-		signal_connect('size_allocate') { redraw }
-		signal_connect('realize') { # one-time initialize
-			# raw color declaration
-			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
-			  :red => 'f00', :darkred => '800', :palered => 'fcc',
-			  :green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
-			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			  :yellow => 'cc0', :darkyellow => '660', :paleyellow => 'ff0',
-			}.each { |tag, val|
-				@color[tag] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
-			}
-			# register colors
-			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
-
-			# map functionnality => color
-			set_color_association :text => :black, :keyword => :blue, :caret => :black,
-			  :bg => :white, :hl_word => :palered, :localvar => :darkred, :globalvar => :darkgreen,
-			  :intrinsic => :darkyellow
-		}
+		@default_color_association = { :text => :black, :keyword => :blue, :caret => :black,
+			  :background => :white, :hl_word => :palered, :localvar => :darkred,
+			  :globalvar => :darkgreen, :intrinsic => :darkyellow }
 	end
 
 	def curfunc
 		@dasm.c_parser and (@dasm.c_parser.toplevel.symbol[@curaddr] or @dasm.c_parser.toplevel.struct[@curaddr])
 	end
 
-	def click(ev)
-		@caret_x = (ev.x-1).to_i / @font_width + @view_x
-		@caret_y = ev.y.to_i / @font_height + @view_y
+	def click(x, y)
+		@caret_x = (x-1).to_i / @font_width + @view_x
+		@caret_y = y.to_i / @font_height + @view_y
 		update_caret
 	end
 
-	def rightclick(ev)
-		click(ev)
+	def rightclick(x, y)
+		click(x, y)
 		if @dasm.c_parser and @dasm.c_parser.toplevel.symbol[@hl_word]
 			@parent_widget.clone_window(@hl_word, :decompile)
 		elsif @hl_word
@@ -93,37 +41,32 @@ class CdecompListingWidget < Gtk::DrawingArea
 		end
 	end
 
-	def doubleclick(ev)
+	def doubleclick(x, y)
+		click(x, y)
 		@parent_widget.focus_addr(@hl_word)
 	end
 
-	def mouse_wheel(ev)
-		case ev.direction
-		when Gdk::EventScroll::Direction::UP
+	def mouse_wheel(dir)
+		case dir
+		when :up
 			if @caret_y > 0
 				@view_y -= 4
 				@caret_y -= 4
 				@caret_y = 0 if @caret_y < 0
-				redraw
 			end
-			true
-		when Gdk::EventScroll::Direction::DOWN
+		when :down
 			if @caret_y < @line_text.length - 1
 				@view_y += 4
 				@caret_y += 4
 				redraw
 			end
-			true
 		end
+		redraw
 	end
 
 	def paint
-		w = window
-		gc = Gdk::GC.new(w)
-
-		a = allocation
-		@width = a.width/@font_width
-		@height = a.height/@font_height
+		@width = width/@font_width
+		@height = height/@font_height
 
 		# adjust viewport to cursor
 		sz_x = @line_text.map { |l| l.length }.max.to_i + 1
@@ -151,20 +94,15 @@ class CdecompListingWidget < Gtk::DrawingArea
 				pre_x = 0
 				while stmp =~ /^(.*?)(\b#{Regexp.escape @hl_word}\b)/
 					s1, s2 = $1, $2
-					@layout.text = s1
-					pre_x += @layout.pixel_size[0]
-					@layout.text = s2
-					hl_w = @layout.pixel_size[0]
-					gc.set_foreground @color[:hl_word]
-					w.draw_rectangle(gc, true, x+pre_x, y, hl_w, @font_height)
+					pre_x += s1.length*@font_width
+					hl_w = s2.length*@font_width
+					draw_rectangle_color(:hl_word, x+pre_x, y, hl_w, @font_height)
 					pre_x += hl_w
 					stmp = stmp[s1.length+s2.length..-1]
 				end
 			end
-			@layout.text = str
-			gc.set_foreground @color[color]
-			w.draw_layout(gc, x, y, @layout)
-			x += @layout.pixel_size[0]
+			draw_string_color(color, x, y, str)
+			x += str.length * @font_width
 		}
 
 		@line_text_col[@view_y, @height + 1].each { |l|
@@ -184,54 +122,43 @@ class CdecompListingWidget < Gtk::DrawingArea
 
 		if focus?
 			# draw caret
-			gc.set_foreground @color[:caret]
 			cx = (@caret_x-@view_x)*@font_width+1
 			cy = (@caret_y-@view_y)*@font_height
-			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+			draw_line_color(:caret, cx, cy, cx, cy+@font_height-1)
 		end
 	
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 	end
 
-	include Gdk::Keyval
-	# n: rename variable
-	# t: retype variable (persistent)
-	def keypress(ev)
-		case ev.state & Gdk::Window::CONTROL_MASK
-		when 0; keypress_simple(ev)
-		else @parent_widget.keypress(ev)
-		end
-	end
-
-	def keypress_simple(ev)
-		case ev.keyval
-		when GDK_Left
+	def keypress(key)
+		case key
+		when :left
 			if @caret_x >= 1
 				@caret_x -= 1
 				update_caret
 			end
-		when GDK_Up
+		when :up
 			if @caret_y > 0
 				@caret_y -= 1
 				update_caret
 			end
-		when GDK_Right
+		when :right
 			if @caret_x < @line_text[@caret_y].to_s.length
 				@caret_x += 1
 				update_caret
 			end
-		when GDK_Down
+		when :down
 			if @caret_y < @line_text.length
 				@caret_y += 1
 				update_caret
 			end
-		when GDK_Home
+		when :home
 			@caret_x = @line_text[@caret_y].to_s[/^\s*/].length
 			update_caret
-		when GDK_End
+		when :end
 			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
-		when GDK_n	# rename local/global variable
+		when ?n	# rename local/global variable
 			f = curfunc.initializer if curfunc and curfunc.initializer.kind_of? C::Block
 			n = @hl_word
 			if (f and f.symbol[n]) or @dasm.c_parser.toplevel.symbol[n]
@@ -252,9 +179,9 @@ class CdecompListingWidget < Gtk::DrawingArea
 					gui_update
 				}
 			end
-		when GDK_r # redecompile
+		when ?r # redecompile
 			@parent_widget.decompile(@curaddr)
-		when GDK_t	# change variable type (you'll want to redecompile after that)
+		when ?t	# change variable type (you'll want to redecompile after that)
 			f = curfunc.initializer if curfunc.kind_of? C::Variable and curfunc.initializer.kind_of? C::Block
 			n = @hl_word
 			cp = @dasm.c_parser
@@ -304,7 +231,7 @@ class CdecompListingWidget < Gtk::DrawingArea
 				}
 			end
 		else
-			return @parent_widget.keypress(ev)
+			return false
 		end
 		true
 	end
@@ -319,35 +246,14 @@ class CdecompListingWidget < Gtk::DrawingArea
 		update_caret
 	end
 
-	def set_font(descr)
-		@layout.font_description = Pango::FontDescription.new(descr)
-		@layout.text = 'x'
-		@font_width, @font_height = @layout.pixel_size
-		redraw
-	end
-
-	def set_color_association(hash)
-		hash.each { |k, v| @color[k] = @color[v] }
-		modify_bg Gtk::STATE_NORMAL, @color[:bg]
-		redraw
-	end
-
 	# hint that the caret moved
 	# redraws the caret, change the hilighted word, redraw if needed
 	def update_caret
-		return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
-		return if not window
-
 		redraw if @caret_x < @view_x or @caret_x >= @view_x + @width or @caret_y < @view_y or @caret_y >= @view_y + @height
 
-		x = (@oldcaret_x-@view_x)*@font_width+1
-		y = (@oldcaret_y-@view_y)*@font_height
-		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
-		x = (@caret_x-@view_x)*@font_width+1
-		y = (@caret_y-@view_y)*@font_height
-		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
-		@oldcaret_x = @caret_x
-		@oldcaret_y = @caret_y
+		invalidate_caret(@oldcaret_x-@view_x, @oldcaret_y-@view_y)
+		invalidate_caret(@caret_x-@view_x, @caret_y-@view_y)
+		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 
 		return if not l = @line_text[@caret_y]
 		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
@@ -391,10 +297,6 @@ class CdecompListingWidget < Gtk::DrawingArea
 		@caret_x = @caret_y = 0
 		gui_update
 		true
-	end
-
-	def redraw
-		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
 	end
 
 	# returns the address of the data under the cursor
@@ -456,7 +358,6 @@ class CdecompListingWidget < Gtk::DrawingArea
 		end
 		if curfunc
 			update_line_text
-			@oldcaret_x = @caret_x + 1
 			update_caret
 		end
 		redraw

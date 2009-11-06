@@ -599,11 +599,6 @@ class DrawableWidget < Gtk::DrawingArea
 
 		super()
 
-		# receive keyboard/mouse signals
-		set_events Gdk::Event::ALL_EVENTS_MASK
-		set_can_focus true
-		set_font 'courier 10'
-
 		# events callbacks
 		signal_connect('expose_event') {
 			@w = window ; @gc = Gdk::GC.new(@w)
@@ -687,6 +682,11 @@ class DrawableWidget < Gtk::DrawingArea
 		}
 
 		initialize_widget
+
+		# receive keyboard/mouse signals
+		set_events Gdk::Event::ALL_EVENTS_MASK
+		set_can_focus true
+		set_font 'courier 10'
 	end
 
 
@@ -738,7 +738,7 @@ class DrawableWidget < Gtk::DrawingArea
 	end
 
 	def invalidate_caret(cx, cy, x=0, y=0)
-		invalidate(x + cx*@font_width, y, 2, @font_height)
+		invalidate(x + cx*@font_width, y + cy*@font_height, 2, @font_height)
 	end
 
 	def invalidate(x, y, w, h)
