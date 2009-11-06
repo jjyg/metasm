@@ -3,8 +3,6 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-require 'gtk2'
-
 module Metasm
 module GtkGui
 class AsmListingWidget < DrawableWidget

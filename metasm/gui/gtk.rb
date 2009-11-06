@@ -441,7 +441,7 @@ class DisasmWidget < Gtk::VBox
 		case key
 		when :enter; focus_addr_redo
 		when ?r; prompt_run_ruby
-		when ?c; disassemble_fast_deep(curview.current_address)
+		when ?C; disassemble_fast_deep(curview.current_address)
 		else return false
 		end
 		true
@@ -617,6 +617,10 @@ class DrawableWidget < Gtk::DrawingArea
 		}
 
 		signal_connect('button_press_event') { |w, ev|
+			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+				next click_ctrl(ev.x, ev.y) if ev.event_type == Gdk::Event::Type::BUTTON_PRESS and ev.button == 1 and respond_to? :click_ctrl
+				next
+			end
 			case ev.event_type
 			when Gdk::Event::Type::BUTTON_PRESS
 				grab_focus
@@ -652,7 +656,7 @@ class DrawableWidget < Gtk::DrawingArea
 			else next
 			end
 			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-				mouse_wheel_ctrl(dir) if respond_to? :mouse_wheel_ctrl
+				mouse_wheel_ctrl(dir, ev.x, ev.y) if respond_to? :mouse_wheel_ctrl
 			else
 				mouse_wheel(dir)
 			end
