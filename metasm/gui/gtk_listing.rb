@@ -83,18 +83,27 @@ class AsmListingWidget < DrawableWidget
 
 	# renders the disassembler from @startaddr
 	def paint
-		w = window
-		gc = Gdk::GC.new(w)
-
 		w_w = width
 		w_h = height
 
 		# arrow bg
-		gc.set_foreground @color[:arrows_bg]
-		w.draw_rectangle(gc, true, 0, 0, @arrow_zone_w, w_h)
+		draw_rectangle_color(:arrows_bg, 0, 0, @arrow_zone_w, w_h)
 
 		# TODO scroll line-by-line when an addr is displayed on multiple lines (eg labels/comments)
 		# TODO selection
+
+		update_line_text if @want_update_line_text
+		update_caret if @want_update_caret
+
+		if @parent_widget.bg_color_callback
+			ly = 0
+			@line_address.each { |a|
+				if c = @parent_widget.bg_color_callback[a]
+					draw_rectangle_color(c, 0, ly*@font_height, w_w, @font_height)
+				end
+				ly += 1
+			}
+		end
 
 		# current window position
 		x = @arrow_zone_w + 1
@@ -110,39 +119,19 @@ class AsmListingWidget < DrawableWidget
 				pre_x = 0
 				while stmp =~ /^(.*?)(\b#{Regexp.escape @hl_word}\b)/
 					s1, s2 = $1, $2
-					@layout.text = s1
-					pre_x += @layout.pixel_size[0]
-					@layout.text = s2
-					hl_x = @layout.pixel_size[0]
-					gc.set_foreground @color[:hl_word]
-					w.draw_rectangle(gc, true, x+pre_x, y, hl_x, @font_height)
+					pre_x += s1.length * @font_width
+					hl_x = s2.length * @font_width
+					draw_rectangle_color(:hl_word, x+pre_x, y, hl_x, @font_height)
 					pre_x += hl_x
 					stmp = stmp[s1.length+s2.length..-1]
 				end
 			end
-			@layout.text = str
-			gc.set_foreground @color[color]
-			w.draw_layout(gc, x, y, @layout)
-			x += @layout.pixel_size[0]
+			draw_string_color(color, x, y, str)
+			x += str.length * @font_width
 		}
 
-		update_line_text if @want_update_line_text
-		update_caret if @want_update_caret
-
-		if @parent_widget.bg_color_callback
-			ly = 0
-			@line_address.each { |a|
-				if c = @parent_widget.bg_color_callback[a]
-					gc.set_foreground color(c)
-					w.draw_rectangle(gc, true, 0, ly*@font_height, w_w, @font_height)
-				end
-				ly += 1
-			}
-		end
-
 		# draw caret line background
-		gc.set_foreground @color[:cursorline_bg]
-		w.draw_rectangle(gc, true, 0, @caret_y*@font_height, w_w, @font_height)
+		draw_rectangle_color(:cursorline_bg, 0, @caret_y*@font_height, w_w, @font_height)
 
 		@line_text_color.each { |a|
 			render[a[0], :address]
@@ -154,11 +143,9 @@ class AsmListingWidget < DrawableWidget
 		}
 
 		if focus?
-			# draw caret
-			gc.set_foreground @color[:caret]
 			cx = @arrow_zone_w + @caret_x*@font_width+1
 			cy = @caret_y*@font_height
-			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+			draw_line_color(:caret, cx, cy, cx, cy+@font_height-1)
 		end
 
 		paint_arrows
@@ -167,9 +154,7 @@ class AsmListingWidget < DrawableWidget
 	# draws the @arrows defined in paint_listing
 	def paint_arrows
 		return if @arrows.empty? or not @line_address[0]
-		w = window
-		gc = Gdk::GC.new(w)
-		w_w, w_h = @arrow_zone_w, allocation.height
+		w_w, w_h = @arrow_zone_w, height
 
 		slot_alloc = {}	# [y1, y2] => x slot	-- y1 <= y2
 		# find a free x slot for the vertical side of the arrow
@@ -218,23 +203,24 @@ class AsmListingWidget < DrawableWidget
 
 			col = :arrow_dn
 			col = :arrow_up if y1 > y2
-			col = :arrow_hl if (from.kind_of? Integer and @line_address[from] == @line_address[@caret_y]) or (to.kind_of? Integer and @line_address[to] == @line_address[@caret_y])
+			col = :arrow_hl if (from.kind_of? Integer and @line_address[from] == @line_address[@caret_y]) or
+					(to.kind_of? Integer and @line_address[to] == @line_address[@caret_y])
 			arrs[col] << [y1, y2, find_free[y1, y2]]
 		}
 
 		slot_w = (w_w-4)/slot_alloc.values.uniq.length
 		# draw arrows (hl last to overwrite)
 		[:arrow_dn, :arrow_up, :arrow_hl].each { |col|
-			gc.set_foreground @color[col]
+			draw_color(col)
 			arrs[col].each { |y1, y2, slot|
 				x1 = w_w-1
 				x2 = w_w-4 - slot*slot_w - slot_w/2
 
-				w.draw_line(gc, x1, y1, x2, y1) if y1 != 0 and y1 != w_h-1
-				w.draw_line(gc, x2, y1, x2, y2)
-				w.draw_line(gc, x2, y2, x1, y2) if y2 != 0 and y2 != w_h-1
-				w.draw_line(gc, x1, y2, x1-3, y2-3) if y2 != 0 and y2 != w_h-1
-				w.draw_line(gc, x1, y2, x1-3, y2+3) if y2 != 0 and y2 != w_h-1
+				draw_line(x1, y1, x2, y1) if y1 != 0 and y1 != w_h-1
+				draw_line(x2, y1, x2, y2)
+				draw_line(x2, y2, x1, y2) if y2 != 0 and y2 != w_h-1
+				draw_line(x1, y2, x1-3, y2-3) if y2 != 0 and y2 != w_h-1
+				draw_line(x1, y2, x1-3, y2+3) if y2 != 0 and y2 != w_h-1
 			}
 		}
 	end
@@ -277,37 +263,33 @@ class AsmListingWidget < DrawableWidget
 		@parent_widget.focus_addr(a) if a
 	end
 
-	include Gdk::Keyval
-	# basic navigation (arrows, pgup etc)
-	def keypress(ev)
-		if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-			case ev.keyval
-			when GDK_n; move_to_next
-			when GDK_p; move_to_prev
-			else return @parent_widget.keypress(ev)
-			end
-			return true
+	def keypress_ctrl(key)
+		case key
+		when ?n; move_to_next ; true
+		when ?p; move_to_prev ; true
 		end
+	end
 
-		case ev.keyval
-		when GDK_Left
+	def keypress(key)
+		case key
+		when :left
 			if @caret_x >= 1
 				@caret_x -= 1
 				update_caret
 			end
-		when GDK_Up
+		when :up
 			if @caret_y > 1 or (@caret_y == 1 and @startaddr == @minaddr)
 				@caret_y -= 1
 			else
 				adjust_startaddr(-1)
 			end
 			update_caret
-		when GDK_Right
+		when :right
 			if @caret_x < @line_text[@caret_y].to_s.length
 				@caret_x += 1
 				update_caret
 			end
-		when GDK_Down
+		when :down
 			if @caret_y < @line_address.length-3 or (@caret_y < @line_address.length - 2 and @startaddr == @maxaddr)
 				@caret_y += 1
 			else
@@ -319,20 +301,18 @@ class AsmListingWidget < DrawableWidget
 				end
 			end
 			update_caret
-		when GDK_Page_Up
+		when :pgup
 			adjust_startaddr(-15)
-		when GDK_Page_Down
+		when :pgdown
 			@startaddr = @line_address[@line_address.length/2] || @startaddr + 15
 			gui_update
-		when GDK_Home
+		when :home
 			@caret_x = 0
 			update_caret
-		when GDK_End
+		when :end
 			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
-
-		else
-			return @parent_widget.keypress(ev)
+		else return
 		end
 		true
 	end

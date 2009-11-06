@@ -12,7 +12,7 @@ module GtkGui
 class DisasmWidget < Gtk::VBox
 	attr_accessor :dasm, :entrypoints, :views, :gui_update_counter_max, :notebook
 	# hash key_val => lambda { |keyb_ev| true if handled }
-	attr_accessor :keyboard_callback
+	attr_accessor :keyboard_callback, :keyboard_callback_ctrl
 	attr_accessor :clones, :gtk_idle_handle
 	attr_accessor :pos_history, :pos_history_redo
 	attr_accessor :bg_color_callback	# proc { |address|  "rgb" # "00f" -> blue }
@@ -27,6 +27,7 @@ class DisasmWidget < Gtk::VBox
 		@pos_history = []
 		@pos_history_redo = []
 		@keyboard_callback = {}
+		@keyboard_callback_ctrl = {}
 		@clones = [self]
 
 		@notebook = Gtk::Notebook.new
@@ -435,8 +436,55 @@ class DisasmWidget < Gtk::VBox
 		gui_update
 	end
 
+	def keypress_ctrl(key)
+		return true if @keyboard_callback_ctrl[key] and @keyboard_callback_ctrl[key].call(key)
+		case key
+		when :enter; focus_addr_redo
+		when ?r; prompt_run_ruby
+		when ?c; disassemble_fast_deep(curview.current_address)
+		else return false
+		end
+		true
+	end
+
+	def keypress(key)
+return keypress_old(key) if key.class != :x.class and key.class != ?x.class
+		return true if @keyboard_callback[key] and @keyboard_callback[key].call(key)
+		case key
+		when :enter; focus_addr curview.hl_word
+		when :esc; focus_addr_back
+		when :slash; inputbox('search word') { |w|
+				next unless curview.respond_to? :hl_word
+				curview.hl_word = w 
+				curview.redraw
+			} if curview.respond_to? :hl_word
+		when ?c; disassemble(curview.current_address)
+		when ?C; disassemble_fast(curview.current_address)
+		when ?d; toggle_data(curview.current_address)
+		when ?f; list_functions
+		when ?g; prompt_goto
+		when ?l; list_labels
+		when ?n; rename_label(pointed_addr)
+		when ?o; toggle_expr_offset(curobj)
+		when ?p; playpause_dasm
+		when ?r; toggle_expr_char(curobj)
+		when ?v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag
+		when ?x; list_xrefs(pointed_addr)
+		when :semicolon; add_comment(curview.current_address)
+
+		when :space; toggle_view(:graph)
+		when :tab;   toggle_view(:decompile)
+		else
+			p key if $DEBUG
+			return false
+		end
+		true
+	rescue Object
+		messagebox [$!.message, $!.backtrace].join("\n"), $!.class.name
+	end
+
 	include Gdk::Keyval
-	def keypress(ev)
+	def keypress_old(ev)
 		return true if @keyboard_callback[ev.keyval] and @keyboard_callback[ev.keyval].call(ev)
 		case ev.state & Gdk::Window::CONTROL_MASK
 		when Gdk::Window::CONTROL_MASK
@@ -484,9 +532,8 @@ class DisasmWidget < Gtk::VBox
 			end
 		end		# ctrl/alt
 		true
-	rescue Object
-		messagebox [$!.message, $!.backtrace].join("\n"), $!.class.name
 	end
+
 
 	# creates a new dasm window with the same disassembler object, focus it on addr#win
 	def clone_window(*focus)
@@ -518,6 +565,26 @@ end
 
 class DrawableWidget < Gtk::DrawingArea
 	attr_accessor :dasm, :parent_widget, :caret_x, :caret_y, :hl_word
+
+	# keypress event keyval traduction table
+	Keyboard_trad = Gdk::Keyval.constants.grep(/^GDK_/).inject({}) { |h, cst|
+		v = Gdk::Keyval.const_get(cst)
+		key = cst.to_s.sub(/^GDK_/, '')
+		if key.length == 1
+			key = key[0]	# ?a, ?b etc
+		else
+			case key
+			when 'Escape'; key = 'esc'
+			when 'Page_Up'; key = 'pgup'
+			when 'Page_Down'; key = 'pgdown'
+			when 'KP_Enter', 'Return'; key = 'enter'
+			end
+			key = key.downcase.to_sym
+		end
+
+		h.update v => key
+	}
+
 	def initialize(dasm, parent_widget)
 		@dasm = dasm
 		@parent_widget = parent_widget
@@ -537,36 +604,69 @@ class DrawableWidget < Gtk::DrawingArea
 		set_can_focus true
 		set_font 'courier 10'
 
-		# define event callbacks
-		signal_connect('expose_event') { paint ; true }
-		signal_connect('size_allocate') { |w, alloc| resized(alloc.width, alloc.height) ; true }
+		# events callbacks
+		signal_connect('expose_event') {
+			@w = window ; @gc = Gdk::GC.new(@w)
+			paint
+			@w = @gc = nil
+			true
+		}
+
+		signal_connect('size_allocate') { |w, alloc|
+			resized(alloc.width, alloc.height)
+		}
+
 		signal_connect('button_press_event') { |w, ev|
 			case ev.event_type
 			when Gdk::Event::Type::BUTTON_PRESS
 				grab_focus
 				case ev.button
-				when 1; click(ev.x, ev.y)
-				when 3; rightclick(ev.x, ev.y)
+				when 1; click(ev.x, ev.y) if respond_to? :click
+				when 3; rightclick(ev.x, ev.y) if respond_to? :rightclick
 				end
 			when Gdk::Event::Type::BUTTON2_PRESS
 				case ev.button
-				when 1; doubleclick(ev.x, ev.y)
+				when 1; doubleclick(ev.x, ev.y) if respond_to? :doubleclick
 				end
 			end
 		}
-		signal_connect('key_press_event') { |w, ev|
-			# TODO keypress_ctrl etc
-			keypress(ev)
-			true
-		}
+
+		signal_connect('motion_notify_event') { |w, ev|
+			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+				mousemove_ctrl(ev.x, ev.y) if respond_to? :mousemove_ctrl
+			else
+				mousemove(ev.x, ev.y)
+			end
+		} if respond_to? :mousemove
+
+		signal_connect('button_release_event') { |w, ev|
+			if ev.button == 1
+				mouserelease(ev.x, ev.y)
+			end
+		} if respond_to? :mouserelease
+
 		signal_connect('scroll_event') { |w, ev|
-			dir = {
-				Gdk::EventScroll::Direction::UP => :up,
-				Gdk::EventScroll::Direction::DOWN => :down
-			}[ev.direction]
-			mouse_wheel(dir) if dir
-			true
+			dir = case ev.direction
+			when Gdk::EventScroll::Direction::UP; :up
+			when Gdk::EventScroll::Direction::DOWN; :down
+			else next
+			end
+			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+				mouse_wheel_ctrl(dir) if respond_to? :mouse_wheel_ctrl
+			else
+				mouse_wheel(dir)
+			end
+		} if respond_to? :mouse_wheel
+
+		signal_connect('key_press_event') { |w, ev|
+			key = Keyboard_trad[ev.keyval]
+			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+				keypress_ctrl(key) or @parent_widget.keypress_ctrl(key)
+			else
+				keypress(key) or @parent_widget.keypress(key)
+			end
 		}
+
 		signal_connect('realize') {
 			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
 			  :red => 'f00', :darkred => '800', :palered => 'fcc',
@@ -579,7 +679,7 @@ class DrawableWidget < Gtk::DrawingArea
 
 			set_color_association @default_color_association
 
-			initialize_visible
+			initialize_visible if respond_to? :initialize_visible
 		}
 
 		initialize_widget
@@ -650,39 +750,42 @@ class DrawableWidget < Gtk::DrawingArea
 		allocation.height
 	end
 
-	# subclass methods
-
-	# called once on object creation
-	def initialize_widget
-	end
-
-	# called once, when the widget is visible
-	def initialize_visible
-	end
-
-	# update the caret position, change the hilighted word etc
-	def update_caret
-	end
-
-	def click(x, y)
-	end
-
-	def rightclick(x, y)
-	end
-
-	def doubleclick(x, y)
-	end
-
-	def mouse_wheel(dir)
-	end
-
-	def mouse_wheel_ctrl(dir)
-	end
-
 	def keypress(key)
 	end
 
 	def keypress_ctrl(key)
+	end
+
+	def draw_color(col)
+		@gc.set_foreground color(col)
+	end
+
+	def draw_rectangle(x, y, w, h)
+		@w.draw_rectangle(@gc, true, x, y, w, h)
+	end
+
+	def draw_rectangle_color(col, x, y, w, h)
+		draw_color(col)
+		draw_rectangle(x, y, w, h)
+	end
+
+	def draw_line(x, y, ex, ey)
+		@w.draw_line(@gc, x, y, ex, ey)
+	end
+
+	def draw_line_color(col, x, y, ex, ey)
+		draw_color(col)
+		draw_line(x, y, ex, ey)
+	end
+
+	def draw_string(x, y, str)
+		@layout.text = str
+		@w.draw_layout(@gc, x, y, @layout)
+	end
+
+	def draw_string_color(col, x, y, str)
+		draw_color(col)
+		draw_string(x, y, str)
 	end
 end
 
