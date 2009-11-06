@@ -21,8 +21,8 @@ class DbgWidget < Gtk::VBox
 
 		setup_keyboard_cb
 
-		@console = DbgConsoleWidget.new(self, dbg)
-		@regs = DbgRegWidget.new(self, dbg)
+		@console = DbgConsoleWidget.new(dbg, self)
+		@regs = DbgRegWidget.new(dbg, self)
 		@code = DisasmWidget.new(dbg.disassembler)
 		@mem  = DisasmWidget.new(dbg.disassembler)
 		@code.start_disassembling
@@ -69,19 +69,21 @@ class DbgWidget < Gtk::VBox
 		true
 	end
 
-	include Gdk::Keyval
-	def keypress(ev)
-		return true if @keyboard_cb[ev.keyval] and @keyboard_cb[ev.keyval][ev]
+	def keypress(key)
+		return true if @keyboard_cb[key] and @keyboard_cb[key][key]
+	end
+
+	def keypress_ctrl(key)
 	end
 
 	attr_accessor :keyboard_cb
 	def setup_keyboard_cb
 		@keyboard_cb = {
-			GDK_F5 => lambda { @win.protect { dbg_continue ; true } },
-			GDK_F10 => lambda { @win.protect { dbg_stepover ; true } },
-			GDK_F11 => lambda { @win.protect { dbg_singlestep ; true } },
-			GDK_F12 => lambda { @win.protect { dbg_stepout ; true } },
-			GDK_period => lambda { @console.grab_focus },
+			:f5 => lambda { @win.protect { dbg_continue ; true } },
+			:f10 => lambda { @win.protect { dbg_stepover ; true } },
+			:f11 => lambda { @win.protect { dbg_singlestep ; true } },
+			:f12 => lambda { @win.protect { dbg_stepout ; true } },
+			?. => lambda { @console.grab_focus },
 		}
 	end
 
@@ -125,6 +127,7 @@ class DbgWidget < Gtk::VBox
 	def redraw
 		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
 		@console.redraw
+		@regs.gui_update
 		@children.each { |c| c.redraw }
 	end
 
@@ -175,17 +178,15 @@ end
 
 # a widget that displays values of registers of a Debugger
 # also controls the Debugger and commands slave windows (showing listing & memory)
-class DbgRegWidget < Gtk::DrawingArea
+class DbgRegWidget < DrawableWidget
 	attr_accessor :dbg
 
-	def initialize(parent, dbg)
-		@parent_widget = parent
-		@dbg = dbg
+	def initialize_widget
+		@dbg = @dasm	# default param to #initialize..
+		@dasm = nil
 
 		@caret_x = @caret_reg = 0
 		@oldcaret_x = @oldcaret_reg = 42
-		@layout = Pango::Layout.new Gdk::Pango.context
-		@color = {}
 		@write_pending = {}	# addr -> newvalue (bytewise)
 
 		@registers = @dbg.register_list
@@ -195,55 +196,19 @@ class DbgRegWidget < Gtk::DrawingArea
 		@reg_cache_old = {}
 		@reg_pos = []	# list of x y w h vx of the reg drawing on widget, vx is x of value
 	
-		super()
+		@default_color_association = { :label => :black, :data => :blue, :write_pending => :darkred,
+				       	:changed => :darkgreen, :caret => :black, :background => :white,
+					:inactive => :palegrey }
+	end
 
-		set_font 'courier 10'
-
-		# receive mouse/kbd events
-		set_events Gdk::Event::ALL_EVENTS_MASK
-		set_can_focus true
-
-		# callbacks
-		signal_connect('expose_event') { paint ; true }
-		signal_connect('button_press_event') { |w, ev|
-			case ev.event_type
-			when Gdk::Event::Type::BUTTON_PRESS
-				grab_focus
-				case ev.button
-				when 1; click(ev)
-				when 3; rightclick(ev)
-				end
-			when Gdk::Event::Type::BUTTON2_PRESS
-				case ev.button
-				when 1; doubleclick(ev)
-				end
-			end
-		}
-		signal_connect('key_press_event') { |w, ev| keypress(ev) }
-		signal_connect('realize') { # one-time initialize
-			# raw color declaration
-			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
-			  :red => 'f00', :darkred => '800', :palered => 'fcc',
-			  :green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
-			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
-			}.each { |tag, val|
-				@color[tag] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
-			}
-			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
-
-			set_color_association :label => :black, :data => :blue, :write_pending => :darkred,
-				       	:changed => :darkgreen,
-					:caret => :black, :bg => :white, :inactive => :palegrey
-		}
-
+	def initialize_visible
 		gui_update
 	end
 
-	def click(ev)
-		if p = @reg_pos.find { |x, y, w, h, vx| x <= ev.x and x+w >= ev.x and y <= ev.y and y+h >= ev.y }
+	def click(ex, ey)
+		if p = @reg_pos.find { |x, y, w, h, vx| x <= ex and x+w >= ex and y <= ey and y+h >= ey }
 			@caret_reg = @reg_pos.index(p)
-			@caret_x = ((ev.x - p[4]) / @font_width).to_i
+			@caret_x = ((ex - p[4]) / @font_width).to_i
 			rs = @register_size[@registers[@caret_reg]]
 			@caret_x = rs-1 if @caret_x > rs-1
 			@caret_x = 0 if @caret_x < 0
@@ -251,30 +216,24 @@ class DbgRegWidget < Gtk::DrawingArea
 		end
 	end
 
-	def rightclick(ev)
-		doubleclick(ev)	# XXX
+	def rightclick(x, y)
+		doubleclick(x, y)	# XXX
 	end
 
-	def doubleclick(ev)
+	def doubleclick(x, y)
 		gui_update	# XXX
 	end
 
 	def paint
-		w = window
-		gc = Gdk::GC.new(w)
-
 		curaddr = 0
 		x = 1
 		y = 0
 
-		a = allocation
-		w_w = a.width
+		w_w = width
 
 		render = lambda { |str, color|
-			@layout.text = str
-			gc.set_foreground @color[color]
-			w.draw_layout(gc, x, y, @layout)
-			x += @layout.pixel_size[0]
+			draw_string_color(color, x, y, str)
+			x += str.length * @font_width
 		}
 
 		@reg_pos = []
@@ -310,34 +269,32 @@ class DbgRegWidget < Gtk::DrawingArea
 
 		if focus?
 			# draw caret
-			gc.set_foreground @color[:caret]
-			cx = @reg_pos[@caret_reg][4] + @caret_x*@font_width + 1
+			cx = @reg_pos[@caret_reg][4] + @caret_x*@font_width
 			cy = @reg_pos[@caret_reg][1]
-			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+			draw_line_color(:caret, cx, cy, cx, cy+@font_height-1)
 		end
 
 		@oldcaret_x, @oldcaret_reg = @caret_x, @caret_reg
 
+		# TODO
 		set_height_request(y+@font_height)
 	end
 
-	include Gdk::Keyval
 	# keyboard binding
 	# basic navigation (arrows, pgup etc)
-	def keypress(ev)
-		return @parent_widget.keypress(ev) if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-		case ev.keyval
-		when GDK_Left
+	def keypress(key)
+		case key
+		when :left
 			if @caret_x > 0
 				@caret_x -= 1
 				update_caret
 			end
-		when GDK_Right
+		when :right
 			if @caret_x < @register_size[@registers[@caret_reg]]-1
 				@caret_x += 1
 				update_caret
 			end
-		when GDK_Up
+		when :up
 			if @caret_reg > 0
 				@caret_reg -= 1
 			else
@@ -345,7 +302,7 @@ class DbgRegWidget < Gtk::DrawingArea
 			end
 			@caret_x = 0
 			update_caret
-		when GDK_Down
+		when :down
 			if @caret_reg < @registers.length+@flags.length-1
 				@caret_reg += 1
 			else
@@ -353,13 +310,13 @@ class DbgRegWidget < Gtk::DrawingArea
 			end
 			@caret_x = 0
 			update_caret
-		when GDK_Home
+		when :home
 			@caret_x = 0
 			update_caret
-		when GDK_End
+		when :end
 			@caret_x = @register_size[@registers[@caret_reg]]-1
 			update_caret
-		when GDK_Tab
+		when :tab
 			if @caret_reg < @registers.length+@flags.length-1
 				@caret_reg += 1
 			else
@@ -367,14 +324,16 @@ class DbgRegWidget < Gtk::DrawingArea
 			end
 			@caret_x = 0
 			update_caret
+		when :backspace
+			# TODO
 
 		when 0x20..0x7e
-			case v = ev.keyval
+			case v = key
 			when 0x20; v = nil	# keep current value
 			when ?0..?9; v -= ?0
 			when ?a..?f; v -= ?a-10
 			when ?A..?F; v -= ?A-10
-			else return @parent_widget.keypress(ev)
+			else return false
 			end
 
 			reg = @registers[@caret_reg] || @flags[@caret_reg-@registers.length]
@@ -399,14 +358,13 @@ class DbgRegWidget < Gtk::DrawingArea
 				@caret_x = 0
 			end
 			redraw
-		when GDK_Return, GDK_KP_Enter
+		when :enter
 			commit_writes
 			redraw
-		when GDK_Escape
+		when :esc
 			@write_pending.clear
 			redraw
-		else
-			return @parent_widget.keypress(ev)
+		else return false
 		end
 		true
 	end
@@ -426,33 +384,9 @@ class DbgRegWidget < Gtk::DrawingArea
 		@write_pending.clear
 	end
 
-	# change the font of the listing
-	# arg is a Gtk Fontdescription string (eg 'courier 10')
-	def set_font(descr)
-		@layout.font_description = Pango::FontDescription.new(descr)
-		@layout.text = 'x'
-		@font_width, @font_height = @layout.pixel_size
-		redraw
-	end
-
-	# change the color association
-	# arg is a hash function symbol => color symbol
-	# color must be allocated
-	# check #initialize/sig('realize') for initial function/color list
-	def set_color_association(hash)
-		hash.each { |k, v| @color[k] = @color[v] }
-		modify_bg Gtk::STATE_NORMAL, @color[:bg]
-		redraw
-	end
-
-	# redraw the whole widget
-	def redraw
+	def gui_update
 		@reg_cache = @registers.inject({}) { |h, r| h.update r => @dbg.get_reg_value(r) }
 		@flags.each { |f| @reg_cache[f] = @dbg.get_flag_value(f) }
-		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
-	end
-
-	def gui_update
 		redraw
 	end
 
@@ -461,13 +395,8 @@ class DbgRegWidget < Gtk::DrawingArea
 		return if not window
 		return if @oldcaret_x == @caret_x and @oldcaret_reg == @caret_reg
 
-		x = @reg_pos[@oldcaret_reg][4] + @oldcaret_x*@font_width + 1
-		y = @reg_pos[@oldcaret_reg][1]
-		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
-
-		x = @reg_pos[@caret_reg][4] + @caret_x*@font_width + 1
-		y = @reg_pos[@caret_reg][1]
-		window.invalidate Gdk::Rectangle.new(x-1, y, 2, @font_height), false
+		invalidate_caret(@oldcaret_x, 0, *@reg_pos[@oldcaret_reg].values_at(4, 1))
+		invalidate_caret(@caret_x, 0, *@reg_pos[@caret_reg].values_at(4, 1))
 
 		@oldcaret_x, @oldcaret_reg = @caret_x, @caret_reg
 	end
@@ -476,19 +405,15 @@ end
 
 
 # a widget that displays logs of the debugger, and a cli interface to the dbg
-class DbgConsoleWidget < Gtk::DrawingArea
+class DbgConsoleWidget < DrawableWidget
 	attr_accessor :dbg, :cmd_history, :log, :statusline, :commands, :cmd_help
 
-	def initialize(parent, dbg)
-		@parent_widget = parent
-		@dbg = dbg
+	def initialize_widget
+		@dbg = @dasm
+		@dasm = nil
 		@dbg.set_log_proc { |l| add_log l }
 
-		@caret_x = 0
-		@oldcaret_x = 42
 		@layout = Pango::Layout.new Gdk::Pango.context
-		@layout_stat = Pango::Layout.new Gdk::Pango.context
-		@color = {}
 		@log = []
 		@log_length = 4000
 		@log_offset = 0
@@ -498,115 +423,55 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		@cmd_history_length = 200	# number of past commands to remember
 		@cmd_histptr = nil
 
-		super()
-
-		set_font 'courier 10'
-
-		# receive mouse/kbd events
-		set_events Gdk::Event::ALL_EVENTS_MASK
-		set_can_focus true
-
-		# callbacks
-		signal_connect('expose_event') { paint ; true }
-		signal_connect('button_press_event') { |w, ev|
-			case ev.event_type
-			when Gdk::Event::Type::BUTTON_PRESS
-				grab_focus
-				case ev.button
-				when 1; click(ev)
-				when 3; rightclick(ev)
-				end
-			when Gdk::Event::Type::BUTTON2_PRESS
-				case ev.button
-				when 1; doubleclick(ev)
-				end
-			end
-		}
-		signal_connect('key_press_event') { |w, ev| keypress(ev) }
-		signal_connect('scroll_event') { |w, ev| mousewheel(ev) }
-		signal_connect('realize') { # one-time initialize
-			# raw color declaration
-			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
-			  :red => 'f00', :darkred => '800', :palered => 'fcc',
-			  :green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
-			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
-			  :olive => '088',
-			}.each { |tag, val|
-				@color[tag] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
-			}
-			@color.each_value { |c| window.colormap.alloc_color(c, true, true) }
-
-			set_color_association :log => :palegrey, :curline => :white,
-				:caret => :yellow, :bg => :black,
-				:status => :black, :status_bg => :olive
-
-			grab_focus
-		}
+		@default_color_association = { :log => :palegrey, :curline => :white, :caret => :yellow,
+			:background => :black, :status => :black, :status_bg => '088' }
 
 		init_commands
+	end
 
+	def initialize_visible
+		grab_focus
 		gui_update
 	end
 
-	def click(ev)
-		@caret_x = (ev.x-1).to_i / @font_width - 1
+	def click(x, y)
+		@caret_x = (x-1).to_i / @font_width - 1
 		@caret_x = [[@caret_x, 0].max, @curline.length].min
 		update_caret
 	end
 
-	def rightclick(ev)
-	end
-
-	def doubleclick(ev)
-	end
-
-	def mousewheel(ev)
-		case ev.direction
-		when Gdk::EventScroll::Direction::UP
-			@log_offset += 3
-			redraw
-		when Gdk::EventScroll::Direction::DOWN
-			@log_offset -= 3
-			redraw
+	def mouse_wheel(dir)
+		case dir
+		when :up; @log_offset += 3
+		when :down; @log_offset -= 3
 		end
+		redraw
 	end
 
 	def paint
-		w = window
-		gc = Gdk::GC.new(w)
-
-		x = 1
-		y = 0
-
-		a = allocation
-		w_w = a.width
-		w_h = a.height
+		y = height
 
 		render = lambda { |str, color|
-			@layout.text = str
-			gc.set_foreground @color[color]
+			draw_string_color(color, 1, y, str)
 			y -= @font_height
-			w.draw_layout(gc, 1, y, @layout)
 		}
 
-		y = w_h
-		gc.set_foreground @color[:status_bg]
-	       	y -= @font_height_stat
-		w.draw_rectangle(gc, true, 0, y, w_w, @font_height_stat)
-		gc.set_foreground @color[:status]
-		@layout_stat.text = "#{@dbg.state} #{@dbg.info}"
-		w.draw_layout(gc, w_w - @layout_stat.pixel_size[0] - 1, y, @layout_stat)
-		@layout_stat.text = @statusline
-		w.draw_layout(gc, 1+@font_width_stat, y, @layout_stat)
+		w_w = width
+
+	       	y -= @font_height
+		draw_rectangle_color(:status_bg, 0, y, w_w, @font_height)
+		str = "#{@dbg.state} #{@dbg.info}"
+		draw_string_color(:status, w_w-str.length*@font_width-1, y, str)
+		draw_string_color(:status, 1+@font_width, y, @statusline)
+	       	y -= @font_height
 
 		w_w_c = w_w/@font_width
+		@caret_y = y
 		if @caret_x < w_w_c-1
 			render[':' + @curline, :curline]
 		else
 			render['~' + @curline[@caret_x-w_w_c+2, w_w_c], :curline]
 		end
-		@caret_y = y
 
 		l_nr = -1
 		lastline = nil
@@ -626,40 +491,27 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		end
 
 		if focus?
-			# draw caret
-			gc.set_foreground @color[:caret]
 			cx = [@caret_x+1, w_w_c-1].min*@font_width+1
 			cy = @caret_y
-			w.draw_line(gc, cx, cy, cx, cy+@font_height-1)
+			draw_line_color(:caret, cx, cy, cx, cy+@font_height-1)
 		end
 
 		@oldcaret_x = @caret_x
 	end
 
-	include Gdk::Keyval
-	# keyboard binding
-	# basic navigation (arrows, pgup etc)
-	def keypress(ev)
-		case ev.state & Gdk::Window::CONTROL_MASK
-		when 0; keypress_simple(ev)
-		else; @parent_widget.keypress(ev)
-		end
-	end
-
-	# no ctrl-key
-	def keypress_simple(ev)
-		case ev.keyval
-		when GDK_Left
+	def keypress(key)
+		case key
+		when :left
 			if @caret_x > 0
 				@caret_x -= 1
 				update_caret
 			end
-		when GDK_Right
+		when :right
 			if @caret_x < @curline.length
 				@caret_x += 1
 				update_caret
 			end
-		when GDK_Up
+		when :up
 			if not @cmd_histptr
 				if @curline != ''
 					@cmd_history << @curline
@@ -676,7 +528,7 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			update_status_cmd
 			redraw
 
-		when GDK_Down
+		when :down
 			if not @cmd_histptr
 				@cmd_history << @curline if @curline != ''
 				@cmd_histptr = @cmd_history.length
@@ -689,21 +541,21 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			update_status_cmd
 			redraw
 
-		when GDK_Home
+		when :home
 			@caret_x = 0
 			update_caret
-		when GDK_End
+		when :end
 			@caret_x = @curline.length
 			update_caret
 
-		when GDK_Page_Up
+		when :pgup
 			@log_offset += allocation.height/@font_height - 3
 			redraw
-		when GDK_Page_Down
+		when :pgdown
 			@log_offset -= allocation.height/@font_height - 3
 			redraw
 
-		when GDK_Tab
+		when :tab
 			# autocomplete
 			if @caret_x > 0 and not @curline[0, @caret_x].index(?\ ) and st = @curline[0, @caret_x] and not @commands[st]
 				keys = @commands.keys.find_all { |k| k[0, st.length] == st }
@@ -717,29 +569,30 @@ class DbgConsoleWidget < Gtk::DrawingArea
 			end
 
 		when 0x20..0x7e
-			@curline[@caret_x, 0] = ev.keyval.chr
+			@curline[@caret_x, 0] = key.chr
 			@caret_x += 1
 			update_status_cmd
 			redraw
-		when GDK_Return, GDK_KP_Enter
+
+		when :enter
 			@cmd_histptr = nil
 			handle_command
 			update_status_cmd
-		when GDK_Escape
-		when GDK_Delete
+		when :esc
+		when :delete
 			if @caret_x < @curline.length
 				@curline[@caret_x, 1] = ''
 				update_status_cmd
 				redraw
 			end
-		when GDK_BackSpace
+		when :backspace
 			if @caret_x > 0
 				@caret_x -= 1
 				@curline[@caret_x, 1] = ''
 				update_status_cmd
 				redraw
 			end
-		else return @parent_widget.keypress(ev)
+		else return false
 		end
 		true
 	end
@@ -972,35 +825,6 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		redraw
 	end
 
-	# change the font of the listing
-	# arg is a Gtk Fontdescription string (eg 'courier 10')
-	def set_font(descr)
-		@layout.font_description = Pango::FontDescription.new(descr)
-		@layout.text = 'x'
-		@font_width, @font_height = @layout.pixel_size
-		@layout_stat.font_description = Pango::FontDescription.new(descr)
-		@layout_stat.font_description.weight = Pango::WEIGHT_BOLD
-		@layout_stat.text = 'x'
-		@font_width_stat, @font_height_stat = @layout_stat.pixel_size
-		set_height_request(2*@font_height)
-		redraw
-	end
-
-	# change the color association
-	# arg is a hash function symbol => color symbol
-	# color must be allocated
-	# check #initialize/sig('realize') for initial function/color list
-	def set_color_association(hash)
-		hash.each { |k, v| @color[k] = @color[v] }
-		modify_bg Gtk::STATE_NORMAL, @color[:bg]
-		redraw
-	end
-
-	# redraw the whole widget
-	def redraw
-		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
-	end
-
 	def gui_update
 		redraw
 	end
@@ -1015,10 +839,10 @@ class DbgConsoleWidget < Gtk::DrawingArea
 		y = @caret_y
 
 		if x1 > w_w or x2 > w_w
-			window.invalidate Gdk::Rectangle.new(0, y, 100000, @font_height), false
+			invalidate(0, y, 100000, @font_height)
 		else
-			window.invalidate Gdk::Rectangle.new(x1-1, y, 2, @font_height), false
-			window.invalidate Gdk::Rectangle.new(x2-1, y, 2, @font_height), false
+			invalidate(x1-1, y, 2, @font_height)
+			invalidate(x2-1, y, 2, @font_height)
 		end
 
 		@oldcaret_x = @caret_x

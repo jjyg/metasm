@@ -448,12 +448,11 @@ class DisasmWidget < Gtk::VBox
 	end
 
 	def keypress(key)
-return keypress_old(key) if key.class != :x.class and key.class != ?x.class
 		return true if @keyboard_callback[key] and @keyboard_callback[key].call(key)
 		case key
 		when :enter; focus_addr curview.hl_word
 		when :esc; focus_addr_back
-		when :slash; inputbox('search word') { |w|
+		when ?/; inputbox('search word') { |w|
 				next unless curview.respond_to? :hl_word
 				curview.hl_word = w 
 				curview.redraw
@@ -470,9 +469,9 @@ return keypress_old(key) if key.class != :x.class and key.class != ?x.class
 		when ?r; toggle_expr_char(curobj)
 		when ?v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag
 		when ?x; list_xrefs(pointed_addr)
-		when :semicolon; add_comment(curview.current_address)
+		when ?;; add_comment(curview.current_address)
 
-		when :space; toggle_view(:graph)
+		when ?\ ; toggle_view(:graph)
 		when :tab;   toggle_view(:decompile)
 		else
 			p key if $DEBUG
@@ -482,58 +481,6 @@ return keypress_old(key) if key.class != :x.class and key.class != ?x.class
 	rescue Object
 		messagebox [$!.message, $!.backtrace].join("\n"), $!.class.name
 	end
-
-	include Gdk::Keyval
-	def keypress_old(ev)
-		return true if @keyboard_callback[ev.keyval] and @keyboard_callback[ev.keyval].call(ev)
-		case ev.state & Gdk::Window::CONTROL_MASK
-		when Gdk::Window::CONTROL_MASK
-			case ev.keyval
-			when GDK_Return, GDK_KP_Enter; focus_addr_redo
-			when GDK_r; prompt_run_ruby
-			when GDK_C; disassemble_fast_deep(curview.current_address)
-			else return false
-			end
-		when 0
-			case ev.keyval
-			when GDK_Return, GDK_KP_Enter; focus_addr curview.hl_word
-			when GDK_Escape; focus_addr_back
-			when GDK_slash; inputbox('search word') { |w|
-				next unless curview.respond_to? :hl_word
-				curview.hl_word = w 
-				curview.redraw
-			} if curview.respond_to? :hl_word
-			when GDK_c; disassemble(curview.current_address)
-			when GDK_C; disassemble_fast(curview.current_address)
-			when GDK_d; toggle_data(curview.current_address)
-			when GDK_f; list_functions
-			when GDK_g; prompt_goto
-			when GDK_l; list_labels
-			when GDK_n; rename_label(pointed_addr)
-			when GDK_o; toggle_expr_offset(curobj)
-			when GDK_p; playpause_dasm
-			when GDK_r; toggle_expr_char(curobj)
-			when GDK_v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag
-			when GDK_x; list_xrefs(pointed_addr)
-			when GDK_semicolon; add_comment(curview.current_address)
-
-			when GDK_space; toggle_view(:graph)
-			when GDK_Tab;   toggle_view(:decompile)
-
-			when 0x20..0x7e; return false	# quiet
-			when GDK_Shift_L, GDK_Shift_R, GDK_Control_L, GDK_Control_R,
-				GDK_Alt_L, GDK_Alt_R, GDK_Meta_L, GDK_Meta_R,
-				GDK_Super_L, GDK_Super_R, GDK_Menu
-				return false	# quiet
-			else
-				c = Gdk::Keyval.constants.find { |c_| Gdk::Keyval.const_get(c_) == ev.keyval }
-				p [:unknown_keypress, ev.keyval, c, ev.state] if $VERBOSE	# dev helper
-				return false
-			end
-		end		# ctrl/alt
-		true
-	end
-
 
 	# creates a new dasm window with the same disassembler object, focus it on addr#win
 	def clone_window(*focus)
@@ -578,6 +525,7 @@ class DrawableWidget < Gtk::DrawingArea
 			:page_up => :pgup, :page_down => :pgdown,
 			:escape => :esc, :return => :enter,
 
+			:space => ?\ ,
 			:asciitilde => ?~, :quoteleft => ?`,
 			:exclam => ?!, :at => ?@,
 			:numbersign => ?#, :dollar => ?$,
@@ -737,7 +685,7 @@ class DrawableWidget < Gtk::DrawingArea
 	# color must be allocated
 	# check #initialize/sig('realize') for initial function/color list
 	def set_color_association(hash)
-		hash.each { |k, v| @color[k] = @color[v] }
+		hash.each { |k, v| @color[k] = color(v) }
 		modify_bg Gtk::STATE_NORMAL, @color[:background]
 		gui_update
 	end
