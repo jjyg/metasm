@@ -1164,10 +1164,8 @@ class GraphViewWidget < DrawableWidget
 	def update_caret
 		return if not @caret_box or not @caret_x or not l = @caret_box[:line_text_col][@caret_y]
 		l = l.join
-		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
-		word = nil if word == ''
-		@hl_word = word
 		@parent_widget.focus_changed_callback[] if @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
+		update_hl_word(l, @caret_x)
 		redraw
 	end
 

@@ -230,14 +230,9 @@ class AsmOpcodeWidget < DrawableWidget
 	# hint that the caret moved
 	# redraws the caret, change the hilighted word, redraw if needed
 	def update_caret
-		return if not l = @line_text[@caret_y]
-		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
-		word = nil if word == ''
-		if @hl_word != word or @oldcaret_y != @caret_y
-			@hl_word = word
-			redraw
-		else
-			return if @oldcaret_x == @caret_x and @oldcaret_y == @caret_y
+		if update_hl_word(@line_text[@caret_y], @caret_x) or @caret_y != @oldcaret_y
+			redraw 
+		elsif @oldcaret_x != @caret_x
 			invalidate_caret(@oldcaret_x, @oldcaret_y)
 			invalidate_caret(@caret_x, @caret_y)
 		end

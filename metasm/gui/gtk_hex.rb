@@ -125,8 +125,8 @@ class HexWidget < DrawableWidget
 			x += str.length * @font_width
 		}
 
-		xd = x_data*@font_width
-		xa = x_ascii*@font_width
+		xd = x_data*@font_width + 1
+		xa = x_ascii*@font_width + 1
 		hexfmt = "%0#{@data_size*2}x "
 		wp_win = {} # @write_pending clipped to current window
 		@write_pending.keys.grep(curaddr...curaddr+(w_h/@font_height+1)*@line_size).each { |k| wp_win[k] = @write_pending[k] } if not @write_pending.empty?

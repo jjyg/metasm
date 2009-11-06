@@ -255,13 +255,7 @@ class CdecompListingWidget < DrawableWidget
 		invalidate_caret(@caret_x-@view_x, @caret_y-@view_y)
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 
-		return if not l = @line_text[@caret_y]
-		word = l[0...@caret_x].to_s[/\w*$/] << l[@caret_x..-1].to_s[/^\w*/]
-		word = nil if word == ''
-		if @hl_word != word
-			@hl_word = word
-			redraw
-		end
+		redraw if update_hl_word(@line_text[@caret_y], @caret_x)
 	end
 
 	# focus on addr
