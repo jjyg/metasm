@@ -27,14 +27,10 @@ def scanfuncstart(addr)
 end
 
 if gui
-	oldcb = gui.keyboard_callback[?P]
-	gui.keyboard_callback[?P] = lambda { |ev|
-		if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-			if o = scanfuncstart(gui.curaddr)
-				gui.focus_addr(o)
-			end
-			true
-		elsif oldcb; oldcb[ev]
+	gui.keyboard_callback_ctrl[?P] = lambda {
+		if o = scanfuncstart(gui.curaddr)
+			gui.focus_addr(o)
 		end
+		true
 	}
 end
