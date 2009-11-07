@@ -883,6 +883,23 @@ class GraphViewWidget < DrawableWidget
 		}
 	end
 
+	def keypress_ctrl(key)
+		case key
+		when ?f
+			@parent_widget.inputbox('text to search (regex)') { |pat|
+				re = /#{pat}/i
+				found = []
+				@curcontext.box.each { |b|
+					b[:line_text_col].zip(b[:line_address]) { |l, a|
+						found << a if l.join =~ re
+					}
+				}
+				list = [['addr', 'instr']] + found.map { |a| [Expression[a], @dasm.decoded[a].instruction] }
+				@parent_widget.listwindow("search result for /#{pat}/i", list) { |i| @parent_widget.focus_addr i[0] }
+			}
+		end
+	end
+
 	def keypress(key)
 		case key
 		when :left
