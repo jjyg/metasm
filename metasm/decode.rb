@@ -961,8 +961,8 @@ class Disassembler
 			a = normalize(a)
 			di = @decoded[a]
 			next if done.include? a or not di.kind_of? DecodedInstruction
-			a = di.block.address
 			done << a
+			a = di.block.address
 			break a if @function[a]
 			l = []
 			di.block.each_from_samefunc(self) { |f| l << f }
