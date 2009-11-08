@@ -1099,6 +1099,25 @@ typedef void* va_list;
 #define va_copy(d, s)
 */
 EOH
+			@lexer.hooked_include['limits.h'] = <<EOH
+#define CHAR_BIT      8
+#define SCHAR_MIN     (-128)
+#define SCHAR_MAX     127
+#define UCHAR_MAX     255
+#ifdef __CHAR_UNSIGNED__
+#   define CHAR_MIN     0
+#   define CHAR_MAX     UCHAR_MAX
+#else
+#   define CHAR_MIN     SCHAR_MIN
+#   define CHAR_MAX     SCHAR_MAX
+#endif
+#define UINT_MAX       #{(1 << (8*@typesize[:int]))-1}U
+#define INT_MAX       (UINT_MAX >> 1)
+#define INT_MIN       (-INT_MAX - 1)
+#define ULONG_MAX       #{(1 << (8*@typesize[:long]))-1}UL
+#define LONG_MAX       (ULONG_MAX >> 1L)
+#define LONG_MIN       (-LONG_MAX - 1L)
+EOH
 		end
 
 		# C sanity checks

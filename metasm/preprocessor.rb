@@ -1001,7 +1001,7 @@ class Preprocessor
 		eol = nil
 		raise eol if eol = skipspc[] and eol.type != :eol
 		unreadtok eol
-		return if cmd.raw == 'include_next' and not path	# XXX
+		return if cmd.raw == 'include_next' and not path and not @hooked_include[ipath]	# XXX
 
 		if not @pragma_once[path || ipath]
 			@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
