@@ -54,12 +54,8 @@ void rb_define_method(VALUE, char *, VALUE (*)(), int);
 
 // TODO setup those vars auto or define a standard .import/.export (elf/pe/macho)
 #ifdef METASM_TARGET_ELF
-asm .global "rb_cObject" undef type=NOTYPE;
+asm .global "rb_cObject" undef type=NOTYPE;		// TODO fix elf encoder to not need this
 asm .global "rb_eRuntimeError" undef type=NOTYPE;
-asm .global "rb_intern" undef;
-asm .global "rb_const_get" undef;
-asm .global "rb_raise" undef;
-asm .global "rb_define_method" undef;
 #endif
 EOS
 
