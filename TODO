@@ -3,7 +3,6 @@ List of TODO items, by section, in random order
 Ia32
  emu fpu
  improve compiler (a/b, a%b, ...)
- decompile rep movsd
  add all sse2 instrs
  realmode
 
@@ -30,7 +29,6 @@ Assembler
  Ia32 GAS syntax
  move PE/ELF autoimport data in a data/ folder
  Make the autoimport depend on the target platform and not on the exeformat
- Write a sample with runtime shellcode linking (Messageboxa => scan peb etc)
  Encode FPU constants
  
 Disasm
@@ -50,7 +48,6 @@ Disasm
  Decode pseudo/macro-instrs (mips 'li')
  Deoptimizer (instr reordering for readability)
  Optimizer (deobfuscating)
- Better plugin support
  Per-instr context (allows to mix cell/ppc, x86 32/16bits..)
 
 Compiler
@@ -66,7 +63,6 @@ Compiler
  Shellcode compiler (exit() => mov eax, 1  int 80h inline)
  
 Decompiler
- Support updating function prototype
  Fix decompiling on loaded savefile
  Rewrite cpu-specific to really dumb
   Just translate di.binding to C
@@ -82,20 +78,20 @@ Decompiler
  FPU
  Handle/hide compiler-generated stuff (getip, stack cookie setup/check..)
  Handle call 1f ; 1: pop eax
+ More user control (force/forbid register arg, return type, etc)
 
 Debugger
- finish Win rewrite
- same with linux, abstract X86
  OSX
- have a cpu-specific part (hwbp, singlestep?)
  Detour-style functionnality to patch binary code (also static to patch exe files?)
  Move constants in a data/ folder (ptrace reg numbers, syscalls, etc)
  Generic remote process manip
   create blank state
   linux virtualallocex
   pax-compatible code patch through mmap
- Allow loading symbols from mapped binaries (libs)
- Remote debugging (client and server, +small standalone C client)
+ Remote debugging (small standalone C client)
+ Support symsrv.dll (ms symbol server info)
+ Support debugee function call (gdb 'call')
+ Manipulate memory through C struct casts
 
 ExeFormat
  Handle minor editing without decode/reencode (eg patch ELF entrypoint)
@@ -105,25 +101,21 @@ ELF
  handle symbol versions
  handle ET_REL
  LoadedELF.dump
+ Check relocation encoding (eg samples/dynamic_ruby with cpu.generate_PIC=false)
 
 MachO
  fix encoder
 
 PE
- fix resource decoder
  resource editor ?
  rc compiler ?
 
 GUI
- fix navbar drawing
  debugger
-  fix kbd focus
   specialize widgets
-   persistent current instr hilighting
    show breakpoints
    show jump direction from current flag values
   make a console widget (sice-style cli)
-  use dasm_fast on eip
  instruction patch (a la hexedit)
  Hexedit: allow VirtualFile 'reopen rw'
  Abstract GTK away
@@ -135,4 +127,4 @@ GUI
 
 Ruby
  make a ruby parser, ruby2c / jit
-
+ Or instead of a ruby parser, just read the interpreter memory & dump/recompile the loaded AST for specific funcs
