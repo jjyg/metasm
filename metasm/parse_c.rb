@@ -1805,6 +1805,7 @@ EOH
 				if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
 					parser.unreadtok tok
 					t.type.args = []
+					oldstyle = false	# int func(a, b) int a; double b; { stuff; }
 					loop do
 						raise parser if not tok = parser.skipspaces
 						if tok.type == :punct and tok.raw == '.'	# variadic function
@@ -1819,19 +1820,43 @@ EOH
 							parser.unreadtok tok
 						end
 
-						raise tok if not v = Variable.parse_type(parser, scope)
-						v.storage = storage if storage
-						v.parse_declarator(parser, scope)
-						v.type = Pointer.new(v.type.type) if v.type.kind_of? Array
-						v.type = Pointer.new(v.type) if v.type.kind_of? Function
+						if oldstyle or not v = Variable.parse_type(parser, scope)
+							raise tok if not @name	# no oldstyle in casts
+							tok = parser.skipspaces
+							oldstyle ||= [tok]	# arg to raise() later
+							oldstyle << tok.raw
+						else
+							v.storage = storage if storage
+							v.parse_declarator(parser, scope)
+							v.type = Pointer.new(v.type.type) if v.type.kind_of? Array
+							v.type = Pointer.new(v.type) if v.type.kind_of? Function
 
-						t.type.args << v if not v.type.kind_of? BaseType or v.type.name != :void
+							t.type.args << v if not v.type.kind_of? BaseType or v.type.name != :void
+						end
+
 						if tok = parser.skipspaces and tok.type == :punct and tok.raw == ','
-							raise tok, '")" expected' if t.type.args.last != v		# last arg of type :void
+							raise tok, '")" expected' if v and t.type.args.last != v	# last arg of type :void
 						elsif tok and tok.type == :punct and tok.raw == ')'
 							break
 						else raise tok || parser, '"," or ")" expected'
 						end
+					end
+					if oldstyle
+						parse_attributes(parser, true)
+						ra = oldstyle.shift
+						oldstyle.length.times {
+							raise ra, "invalid prototype" if not v = Variable.parse_type(parser, scope)
+							v.parse_declarator(parser, scope)
+							raise parser, '";" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ';'
+							v.type = Pointer.new(v.type.type) if v.type.kind_of? Array
+							v.type = Pointer.new(v.type) if v.type.kind_of? Function
+							raise parser, "unknown arg #{v.name.inspect}" if not i = oldstyle.index(v.name)
+							t.type.args[i] = v
+						}
+						raise parser, "invalid oldstyle prototype for #@name" if t.type.args.compact.length != oldstyle.length
+						parse_attributes(parser, true)
+						raise parser, '"{" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '{'
+						parser.unreadtok tok
 					end
 				end
 				parse_attributes(parser, true)	# should be type.attrs, but this should be more existing-compiler-compatible
