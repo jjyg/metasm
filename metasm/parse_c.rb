@@ -716,12 +716,13 @@ module C
 
 	# inline asm statement
 	class Asm < Statement
+		include Attributes
 		attr_accessor :body		# asm source (::String)
 		attr_accessor :output, :input, :clobber	# I/O, gcc-style (::Array)
 		attr_accessor :backtrace	# body Token
 		attr_accessor :volatile
 
-		def initialize(body, backtrace, output, input, clobber, volatile)
+		def initialize(body, backtrace, output=nil, input=nil, clobber=nil, volatile=nil)
 			@body, @backtrace, @output, @input, @clobber, @volatile = body, backtrace, output, input, clobber, volatile
 		end
 
@@ -781,47 +782,48 @@ module C
 			raise tok || parser, '"(" expected' if not tok or tok.type != :punct or tok.raw != '('
 			raise tok || parser, 'qstring expected' if not tok = parser.skipspaces or tok.type != :quoted
 			body = tok
+			ret = new body.value, body
 			tok = parser.skipspaces
 			raise tok || parser, '":" or ")" expected' if not tok or tok.type != :punct or (tok.raw != ':' and tok.raw != ')')
 
 			if tok.raw == ':'
-				output = []
+				ret.output = []
 				raise parser if not tok = parser.skipspaces
 				while tok.type == :quoted
 					type = tok.value
 					raise tok, 'expr expected' if not var = CExpression.parse_value(parser, scope)
-					output << [type, var]
+					ret.output << [type, var]
 					raise tok || parser, '":" or "," or ")" expected' if not tok = parser.skipspaces or tok.type != :punct or (tok.raw != ',' and tok.raw != ')' and tok.raw != ':')
 					break if tok.raw == ':' or tok.raw == ')'
 					raise tok || parser, 'qstring expected' if not tok = parser.skipspaces or tok.type != :quoted
 				end
 			end
 			if tok.raw == ':'
-				input = []
+				ret.input = []
 				raise parser if not tok = parser.skipspaces
 				while tok.type == :quoted
 					type = tok.value
 					raise tok, 'expr expected' if not var = CExpression.parse_value(parser, scope)
-					input << [type, var]
+					ret.input << [type, var]
 					raise tok || parser, '":" or "," or ")" expected' if not tok = parser.skipspaces or tok.type != :punct or (tok.raw != ',' and tok.raw != ')' and tok.raw != ':')
 					break if tok.raw == ':' or tok.raw == ')'
 					raise tok || parser, 'qstring expected' if not tok = parser.skipspaces or tok.type != :quoted
 				end
 			end
 			if tok.raw == ':'
-				clobber = []
+				ret.clobber = []
 				raise parser if not tok = parser.skipspaces
 				while tok.type == :quoted
-					clobber << tok.value
+					ret.clobber << tok.value
 					raise tok || parser, '"," or ")" expected' if not tok = parser.skipspaces or tok.type != :punct or (tok.raw != ',' and tok.raw != ')')
 					break if tok.raw == ')'
 					raise tok || parser, 'qstring expected' if not tok = parser.skipspaces or tok.type != :quoted
 				end
 			end
 			raise tok || parser, '")" expected' if not tok or tok.type != :punct or tok.raw != ')'
+			ret.parse_attributes(parser)
 			raise tok || parser, '";" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ';'
-
-			new body.value, body, output, input, clobber, volatile
+			ret
 		end
 	end
 
@@ -1062,6 +1064,7 @@ module C
 			@lexer.define_weak('__signed', 'signed')
 			@lexer.define_weak('__volatile', 'volatile')
 			@lexer.nodefine_strong('__REDIRECT_NTH')	# booh gnu
+			@lexer.nodefine_strong('alloca')		# TODO __builtin_alloca
 			@lexer.hooked_include['stddef.h'] = <<EOH
 /* simplified, define all at first invocation. may break things... */
 #undef __need_ptrdiff_t
@@ -1334,7 +1337,7 @@ EOH
 						var = prev
 					elsif not prev.kind_of?(Variable) or
 							prev.initializer or
-							prev.storage != var.storage or
+							(prev.storage != :extern and prev.storage != var.storage) or
 							(scope != @toplevel and prev.storage != :static)
 						if prev.kind_of? ::Integer	# enum value
 							prev = (scope.struct.values.grep(Enum) + scope.anonymous_enums.to_a).find { |e| e.members.index(prev) }

@@ -900,7 +900,7 @@ class Preprocessor
 				unreadtok eol
 			end
 
-		when 'include'
+		when 'include', 'include_next'
 			return if @ifelse_nesting.last and @ifelse_nesting.last != :accept
 
 			directive_include(cmd, skipspc)
@@ -987,8 +987,13 @@ class Preprocessor
 			raise cmd, 'pp syntax error, unterminated path' if not tok
 			if ipath[0] != ?/
 				path = nil
-				if not @include_search_path.find { |d| ::File.exist?(path = ::File.join(d, ipath)) } ||
-					@include_search_path.find { |d| path = file_exist_nocase(::File.join(d, ipath)) }
+				isp = @include_search_path
+				if cmd.raw == 'include_next'
+					raise self, 'include_next sux' if not idx = isp.find { |d| @filename[1, d.length] == d }
+					isp = isp[isp.index(idx)+1..-1]
+				end
+				if not isp.find { |d| ::File.exist?(path = ::File.join(d, ipath)) } ||
+					isp.find { |d| path = file_exist_nocase(::File.join(d, ipath)) }
 					path = nil
 				end
 			end
@@ -996,6 +1001,7 @@ class Preprocessor
 		eol = nil
 		raise eol if eol = skipspc[] and eol.type != :eol
 		unreadtok eol
+		return if cmd.raw == 'include_next' and not path	# XXX
 
 		if not @pragma_once[path || ipath]
 			@backtrace << [@filename, @lineno, @text, @pos, @queue, @ifelse_nesting.length]
