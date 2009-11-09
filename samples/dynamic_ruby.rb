@@ -9,9 +9,9 @@
 require 'metasm'
 
 
+module Metasm
 class RubyHack
-	# basic C defs for ruby internals
-	# TODO check against ruby1.9
+	# basic C defs for ruby internals - 1.8 only !
 	RUBY_H = <<EOS
 
 typedef unsigned long VALUE;
@@ -50,6 +50,7 @@ int rb_intern(char *);
 VALUE rb_const_get(VALUE, int);
 VALUE rb_raise(VALUE, char*);
 void rb_define_method(VALUE, char *, VALUE (*)(), int);
+void rb_define_singleton_method(VALUE, char *, VALUE (*)(), int);
 
 
 // TODO setup those vars auto or define a standard .import/.export (elf/pe/macho)
@@ -62,8 +63,12 @@ EOS
 	# create and load a ruby module that allows
 	# to use a ruby string as the binary code implementing a ruby method
 	# enable the use of .load_binary_method(class, methodname, string)
-	def setup_binary_to_method
-		c_source = '#define METASM_TARGET_ELF' + RUBY_H + <<EOS
+	def self.load_bootstrap
+		c_source = <<EOS
+#define METASM_TARGET_ELF
+
+#{RUBY_H}
+
 void mprotect(int, int, int);
 asm .global mprotect undef;
 
@@ -73,7 +78,7 @@ static VALUE set_class_method_raw(VALUE metasm, VALUE klass, VALUE methname, VAL
 		rb_raise(rb_eRuntimeError, "method name not 0termined");
 
 	char *raw = RString(rawcode)->ptr;
-	mprotect(raw & 0xfffff000, ((raw+RString(rawcode)->len+0xfff) & 0x1000) - (raw&0x1000), 7);	// RWX
+	mprotect(raw & 0xfffff000, ((raw+RString(rawcode)->len+0xfff) & 0xfffff000) - (raw&0xfffff000), 7);	// RWX
 	rb_define_method(klass, RString(methname)->ptr, RString(rawcode)->ptr, FIX2LONG(nparams));
 	return Qtrue;
 }
@@ -82,7 +87,7 @@ int Init_metasm_binload(void)
 {
 	VALUE metasm = rb_const_get(rb_cObject, rb_intern("Metasm"));
 	VALUE rubyhack = rb_const_get(metasm, rb_intern("RubyHack"));
-	rb_define_method(rubyhack, "set_class_method_raw", set_class_method_raw, 4);
+	rb_define_singleton_method(rubyhack, "set_class_method_raw", set_class_method_raw, 4);
 	return 0;
 }
 asm .global Init_metasm_binload;
@@ -92,12 +97,13 @@ asm .nointerp;
 asm .pt_gnu_stack rw;
 EOS
 		
-		Metasm::ELF.compile_c(Metasm::Ia32.new, c_source).encode_file('metasm_binload.so')
+		ELF.compile_c(Ia32.new, c_source).encode_file('metasm_binload.so')
 		require 'metasm_binload'
-		File.unlink('metasm_binload.so')
+		File.unlink('metasm_binload.so') if not $DEBUG
 		# TODO Windows support
 		# TODO PaX support (write + mmap, in user-configurable dir?)
 	end
+	load_bootstrap
 
 	# sets up rawopcodes as the method implementation for class klass
 	# rawopcodes must implement the expected ABI or things will break horribly
@@ -107,8 +113,7 @@ EOS
 	# -2     self, arg_ary
 	# -1     argc, VALUE*argv, self
 	# >=0    self, arg0, arg1..
-	def set_method_binary(klass, methodname, rawopcodes, nargs=-2)
-		setup_binary_to_method if not respond_to? :set_class_method_raw
+	def self.set_method_binary(klass, methodname, rawopcodes, nargs=-2)
 		(@@prevent_gc ||= {})[[klass, methodname]] = rawopcodes
 		set_class_method_raw(klass, methodname, rawopcodes, nargs)
 
@@ -116,9 +121,10 @@ EOS
 	end
 
 	# same as load_binary_method but with an object and not a class
-	def set_object_method_binary(obj, *a)
+	def self.set_object_method_binary(obj, *a)
 		set_method_binary((class << obj ; self ; end), *a)
 	end
+end
 end
 
 
@@ -140,7 +146,10 @@ pop ecx
 loop again
 EOS
 
-src = RubyHack::RUBY_H + <<EOS
+src = <<EOS
+
+#{Metasm::RubyHack::RUBY_H}
+
 void doit(int, char*, int);
 VALUE foo(VALUE self, VALUE count, VALUE str) {
 	doit(FIX2LONG(count), RString(str)->ptr, RString(str)->len);
@@ -150,13 +159,12 @@ VALUE foo(VALUE self, VALUE count, VALUE str) {
 void doit(int count, char *str, int strlen) {
 	asm(#{src_asm.inspect});
 }
-
 EOS
 
 m = Metasm::Shellcode.compile_c(Metasm::Ia32.new, src).encode_string
 
 o = Object.new
-RubyHack.new.set_object_method_binary(o, 'bar', m, 2)
+Metasm::RubyHack.set_object_method_binary(o, 'bar', m, 2)
 
 puts "test1"
 o.bar(4, "blabla\n")
