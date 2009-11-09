@@ -10,10 +10,9 @@ require 'metasm'
 
 
 module Metasm
-class RubyHack
+module RubyHack
 	# basic C defs for ruby internals - 1.8 only !
 	RUBY_H = <<EOS
-
 typedef unsigned long VALUE;
 
 struct st_table;
@@ -46,6 +45,12 @@ extern VALUE rb_eRuntimeError;
 #define Qtrue  ((VALUE)2)
 #define Qnil   ((VALUE)4)
 #define FIX2LONG(x) (((long)x) >> 1)
+
+VALUE rb_uint2inum(unsigned long);
+unsigned long rb_num2ulong(VALUE);
+
+VALUE rb_str_new(const char* ptr, long len);	// alloc + memcpy + 0term
+
 int rb_intern(char *);
 VALUE rb_const_get(VALUE, int);
 VALUE rb_raise(VALUE, char*);
@@ -72,7 +77,7 @@ EOS
 void mprotect(int, int, int);
 asm .global mprotect undef;
 
-static VALUE set_class_method_raw(VALUE metasm, VALUE klass, VALUE methname, VALUE rawcode, VALUE nparams)
+static VALUE set_class_method_raw(VALUE self, VALUE klass, VALUE methname, VALUE rawcode, VALUE nparams)
 {
 	if (RString(methname)->ptr[RString(methname)->len] != 0)
 		rb_raise(rb_eRuntimeError, "method name not 0termined");
@@ -83,11 +88,51 @@ static VALUE set_class_method_raw(VALUE metasm, VALUE klass, VALUE methname, VAL
 	return Qtrue;
 }
 
+static VALUE memory_read(VALUE self, VALUE addr, VALUE len)
+{
+	return rb_str_new((char*)rb_num2ulong(addr), rb_num2ulong(len));
+}
+
+static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
+{
+	char *src = RString(val)->ptr;
+	char *dst = (char*)rb_num2ulong(addr);
+	unsigned long len = RString(val)->len;
+	while (len--)
+		*dst++ = *src++;
+	return val;
+}
+
+static VALUE memory_read_int(VALUE self, VALUE addr)
+{
+	return rb_uint2inum(*(unsigned long*)rb_num2ulong(addr));
+}
+
+static VALUE memory_write_int(VALUE self, VALUE addr, VALUE val)
+{
+	*(unsigned long*)rb_num2ulong(addr) = rb_num2ulong(val);
+	return val;
+}
+
+extern void *dlsym(void *handle, char *symname);
+#define RTLD_DEFAULT 0
+asm .global dlsym undef;
+
+static VALUE dl_dlsym(VALUE self, VALUE symname)
+{
+	return rb_uint2inum(dlsym(RTLD_DEFAULT, RString(symname)->ptr));
+}
+
 int Init_metasm_binload(void)
 {
 	VALUE metasm = rb_const_get(rb_cObject, rb_intern("Metasm"));
 	VALUE rubyhack = rb_const_get(metasm, rb_intern("RubyHack"));
 	rb_define_singleton_method(rubyhack, "set_class_method_raw", set_class_method_raw, 4);
+	rb_define_singleton_method(rubyhack, "memory_read", memory_read, 2);
+	rb_define_singleton_method(rubyhack, "memory_write", memory_write, 2);
+	rb_define_singleton_method(rubyhack, "memory_read_int", memory_read_int, 1);
+	rb_define_singleton_method(rubyhack, "memory_write_int", memory_write_int, 2);
+	rb_define_singleton_method(rubyhack, "dlsym", dl_dlsym, 1);
 	return 0;
 }
 asm .global Init_metasm_binload;
@@ -123,6 +168,31 @@ EOS
 	# same as load_binary_method but with an object and not a class
 	def self.set_object_method_binary(obj, *a)
 		set_method_binary((class << obj ; self ; end), *a)
+	end
+
+	def self.object_pointer(obj)
+		(obj.object_id << 1) & 0xffffffff
+	end
+
+	def self.[](a, l=nil)
+		if a.kind_of? Range
+			memory_read(a.begin, a.end-a.begin+(a.exclude_end? ? 0 : 1))
+		elsif l
+			memory_read(a, l)
+		else
+			memory_read_int(a)
+		end
+	end
+
+	def self.[]=(a, l, v=nil)
+		l, v = v, l if not v
+		if a.kind_of? Range
+			memory_write(a.begin, v)
+		elsif l
+			memory_write(a, v)
+		else
+			memory_write_int(a, v)
+		end
 	end
 end
 end

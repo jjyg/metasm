@@ -373,11 +373,11 @@ class LinDebug
 
 		cnt = @win_data_height
 		while (cnt -= 1) > 0
-			raw = @rs[addr, 16]
+			raw = @rs[addr, 16].to_s
 			text << ('%04X' % @rs.regs_cache['ds']) << ':' << ('%08X' % addr) << '  '
 			case @datafmt
 			when 'db'; text << raw[0,8].unpack('C*').map { |c| '%02x ' % c }.join << ' ' <<
-				   raw[8,8].unpack('C*').map { |c| '%02x ' % c }.join
+				   raw[8,8].to_s.unpack('C*').map { |c| '%02x ' % c }.join
 			when 'dw'; text << raw.unpack('S*').map { |c| '%04x ' % c }.join
 			when 'dd'; text << raw.unpack('L*').map { |c| '%08x ' % c }.join
 			end
