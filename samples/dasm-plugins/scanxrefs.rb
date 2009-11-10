@@ -11,7 +11,7 @@ def scanxrefs(target)
 		raw = edata.data.to_str
 		(0..raw.length-4).each { |off|
 			r = raw[off, 4].unpack('V').first
-			ans << (s_addr + off) if r + off+4 + s_addr == target or r == target
+			ans << (s_addr + off) if (r + off+4 + s_addr)&0xffffffff == target or r == target
 		}
 	}
 	ans
