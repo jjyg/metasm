@@ -256,7 +256,7 @@ EOS
 			[type, {:fptr => v1,	# c func pointer
 				:arity => v2}]
 		when :scope
-			[type, {:localnr => memory_read_int(v1),	# nr of local vars
+			[type, {:localnr => memory_read_int(v1),	# nr of local vars (+2 for $_/$~)
 				:cref => v2},	# node, starting point for const resolution
 				read_node(v3)]
 		when :call, :fcall, :vcall
@@ -274,8 +274,7 @@ EOS
 		when :iasgn, :dasgn, :dasgn_curr, :gasgn, :cvasgn
 			[type, v1.id2name, read_node(v2)]
 		when :masgn
-			# TODO what is this ?
-			[type, v1, v3, read_node(v2)]
+			[type, read_node(v1), read_node(v2)]	# multiple assignment: a, b = 42 / lambda { |x, y| }.call(1, 2)
 		when :attrasgn
 			[type, ((v1 == 1) ? :self : read_node(v1)), v2.id2name, read_node(v3)]
 		when :lvar
@@ -290,19 +289,25 @@ EOS
 			[type, id2ref(v1)]
 		when :args	# specialcased by rb_call0, invalid in rb_eval
 			cnt = v3	# nr of required args, copied directly to local_vars
-			rest = read_node(v2)	# catchall arg in def foo(rq1, rq2, *rest)
 			opt = read_node(v1)	# :block to execute for each missing arg / with N optargs specified, skip N 1st statements
-			[type, cnt, rest, opt]
+			rest = read_node(v2)	# catchall arg in def foo(rq1, rq2, *rest)
+			[type, cnt, opt, rest]
 		when :and, :or
-			[type, read_node(v1), read_node(v2)]
+			[type, read_node(v1), read_node(v2)]	# shortcircuit
 		when :not
 			[type, read_node(v2)]
-		when :nil, :true, :false, :self, :redo, :retry
+		when :nil, :true, :false, :self
+			[type]
+		when :redo, :retry
 			[type]
 		when :case, :when
 			[type, read_node(v1), read_node(v2), read_node(v3)]
 		when :iter
-			[type, v1, v2, read_node(v3)]
+			# save a block for the following funcall
+			args = read_node(v1)	# assignments with nil, not realized, just to store the arg list (multi args -> :masgn)
+			body = read_node(v2)	# the body statements (multi -> :block)
+			subj = read_node(v3)	# the stuff which is passed the block, probably a :call
+			[type, args, body, subj]
 		when :while
 			[type, read_node(v1), read_node(v2), v3]
 		when :return, :break, :next
