@@ -4,6 +4,8 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 # This sample hacks in the ruby interpreter to allow dynamic loading of shellcodes as object methods
+# Also it allows raw modifications to the ruby interpreter memory, for all kind of purposes
+# Includes methods to dump the ruby parser AST from the interpreter memory
 # elf/linux/x86 only
 
 require 'metasm'
@@ -11,6 +13,7 @@ require 'metasm'
 
 module Metasm
 module RubyHack
+	CACHEDIR = File.expand_path('~/.metasm/jit_cache/')
 	# basic C defs for ruby internals - 1.8 only !
 	RUBY_H = <<EOS
 typedef unsigned long VALUE;
@@ -39,6 +42,16 @@ struct string {
 };
 #define RString(x) ((struct string *)(x))
 
+struct node {
+	long flags;
+	char *file;
+	long a1;
+	long a2;
+	long a3;
+};
+#define FL_USHIFT 11
+#define nd_type(n) ((((struct node*)n)->flags >> FL_USHIFT) & 0xff)
+
 extern VALUE rb_cObject;
 extern VALUE rb_eRuntimeError;
 #define Qfalse ((VALUE)0)
@@ -56,6 +69,8 @@ VALUE rb_const_get(VALUE, int);
 VALUE rb_raise(VALUE, char*);
 void rb_define_method(VALUE, char *, VALUE (*)(), int);
 void rb_define_singleton_method(VALUE, char *, VALUE (*)(), int);
+int rb_to_id(VALUE);
+struct node* rb_method_node(VALUE klass, int id);
 
 
 // TODO setup those vars auto or define a standard .import/.export (elf/pe/macho)
@@ -64,6 +79,30 @@ asm .global "rb_cObject" undef type=NOTYPE;		// TODO fix elf encoder to not need
 asm .global "rb_eRuntimeError" undef type=NOTYPE;
 #endif
 EOS
+        NODETYPE = [
+		:method, :fbody, :cfunc, :scope, :block,
+		:if, :case, :when, :opt_n, :while,
+		:until, :iter, :for, :break, :next,
+		:redo, :retry, :begin, :rescue, :resbody,
+		:ensure, :and, :or, :not, :masgn,
+		:lasgn, :dasgn, :dasgn_curr, :gasgn, :iasgn,
+		:cdecl, :cvasgn, :cvdecl, :op_asgn1, :op_asgn2,
+		:op_asgn_and, :op_asgn_or, :call, :fcall, :vcall,
+		:super, :zsuper, :array, :zarray, :hash,
+		:return, :yield, :lvar, :dvar, :gvar, # 50
+		:ivar, :const, :cvar, :nth_ref, :back_ref,
+		:match, :match2, :match3, :lit, :str,
+		:dstr, :xstr, :dxstr, :evstr, :dregx,
+		:dregx_once, :args, :argscat, :argspush, :splat,
+		:to_ary, :svalue, :block_arg, :block_pass, :defn,
+		:defs, :alias, :valias, :undef, :class,
+		:module, :sclass, :colon2, :colon3, :cref,
+		:dot2, :dot3, :flip2, :flip3, :attrset,
+		:self, :nil, :true, :false, :defined,
+		:newline, :postexe, :alloca, :dmethod, :bmethod, # 100
+		:memo, :ifunc, :dsym, :attrasgn, :last
+	]
+
 
 	# create and load a ruby module that allows
 	# to use a ruby string as the binary code implementing a ruby method
@@ -123,6 +162,16 @@ static VALUE dl_dlsym(VALUE self, VALUE symname)
 	return rb_uint2inum(dlsym(RTLD_DEFAULT, RString(symname)->ptr));
 }
 
+static VALUE get_method_node_ptr(VALUE self, VALUE klass, VALUE id)
+{
+	return rb_uint2inum(rb_method_node(klass, rb_to_id(id)));
+}
+
+static VALUE id2ref(VALUE self, VALUE id)
+{
+	return rb_num2ulong(id);
+}
+
 int Init_metasm_binload(void)
 {
 	VALUE metasm = rb_const_get(rb_cObject, rb_intern("Metasm"));
@@ -132,7 +181,9 @@ int Init_metasm_binload(void)
 	rb_define_singleton_method(rubyhack, "memory_write", memory_write, 2);
 	rb_define_singleton_method(rubyhack, "memory_read_int", memory_read_int, 1);
 	rb_define_singleton_method(rubyhack, "memory_write_int", memory_write_int, 2);
+	rb_define_singleton_method(rubyhack, "get_method_node_ptr", get_method_node_ptr, 2);
 	rb_define_singleton_method(rubyhack, "dlsym", dl_dlsym, 1);
+	rb_define_singleton_method(rubyhack, "id2ref", id2ref, 1);
 	return 0;
 }
 asm .global Init_metasm_binload;
@@ -142,9 +193,14 @@ asm .nointerp;
 asm .pt_gnu_stack rw;
 EOS
 		
-		ELF.compile_c(Ia32.new, c_source).encode_file('metasm_binload.so')
-		require 'metasm_binload'
-		File.unlink('metasm_binload.so') if not $DEBUG
+		`mkdir -p #{CACHEDIR}` if not File.directory? CACHEDIR
+		stat = File.stat(__FILE__)	# may be relative, do it before chdir
+		Dir.chdir(CACHEDIR) {
+			if not File.exist? 'metasm_binload.so' or File.stat('metasm_binload.so').mtime < stat.mtime
+				ELF.compile_c(Ia32.new, c_source).encode_file('metasm_binload.so')
+			end
+			require 'metasm_binload'
+		}
 		# TODO Windows support
 		# TODO PaX support (write + mmap, in user-configurable dir?)
 	end
@@ -174,6 +230,91 @@ EOS
 		(obj.object_id << 1) & 0xffffffff
 	end
 
+	def self.read_node(ptr, cur=nil)
+		return if ptr == 0
+
+
+		type = NODETYPE[(memory_read_int(ptr) >> 11) & 0xff]
+		v1 = memory_read_int(ptr+8)
+		v2 = memory_read_int(ptr+12)
+		v3 = memory_read_int(ptr+16)
+#puts "%x %x %x" % [v1, v2, v3]
+
+		case type
+		when :block, :array, :hash
+			cur = nil if cur and cur[0] != type
+			cur ||= [type]
+			cur << read_node(v1)
+			n = read_node(v3, cur)
+			raise "block->next = #{n.inspect}" if n and n[0] != type
+			cur
+		when :newline
+			read_node(v3)	# debug/trace usage only
+		when :if
+			[type, read_node(v1), read_node(v2), read_node(v3)]
+		when :cfunc
+			[type, {:fptr => v1,	# c func pointer
+				:arity => v2}]
+		when :scope
+			[type, {:localnr => memory_read_int(v1),	# nr of local vars
+				:cref => v2},	# node, starting point for const resolution
+				read_node(v3)]
+		when :call, :fcall, :vcall
+			# TODO check fcall/vcall
+			ret = [type, read_node(v1), v2.id2name]
+			if args = read_node(v3)
+				raise "#{ret.inspect} with args != array: #{args.inspect}" if args[0] != :array
+				ret.concat args[1..-1]
+			end
+			ret
+		when :zarray
+			[:array, []]
+		when :lasgn
+			[type, v3, read_node(v2)]
+		when :iasgn, :dasgn, :dasgn_curr, :gasgn, :cvasgn
+			[type, v1.id2name, read_node(v2)]
+		when :masgn
+			# TODO what is this ?
+			[type, v1, v3, read_node(v2)]
+		when :attrasgn
+			[type, ((v1 == 1) ? :self : read_node(v1)), v2.id2name, read_node(v3)]
+		when :lvar
+			[type, v3]
+		when :ivar, :dvar, :gvar, :cvar, :const
+			[type, v1.id2name]
+		when :str
+			# cannot use _id2ref here, probably the parser does not use standard alloced objects
+			s = memory_read(memory_read_int(v1+12), memory_read_int(v1+16))
+			[type, s]
+		when :lit
+			[type, id2ref(v1)]
+		when :args	# specialcased by rb_call0, invalid in rb_eval
+			cnt = v3	# nr of required args, copied directly to local_vars
+			rest = read_node(v2)	# catchall arg in def foo(rq1, rq2, *rest)
+			opt = read_node(v1)	# :block to execute for each missing arg / with N optargs specified, skip N 1st statements
+			[type, cnt, rest, opt]
+		when :and, :or
+			[type, read_node(v1), read_node(v2)]
+		when :not
+			[type, read_node(v2)]
+		when :nil, :true, :false, :self, :redo, :retry
+			[type]
+		when :case, :when
+			[type, read_node(v1), read_node(v2), read_node(v3)]
+		when :iter
+			[type, v1, v2, read_node(v3)]
+		when :while
+			[type, read_node(v1), read_node(v2), v3]
+		when :return, :break, :next
+			[type, read_node(v1)]
+		when :colon3	# ::Stuff
+			[type, v2.id2name]
+		else
+			puts "unhandled #{type.inspect}"
+			[type, v1, v2, v3]
+		end
+	end
+
 	def self.[](a, l=nil)
 		if a.kind_of? Range
 			memory_read(a.begin, a.end-a.begin+(a.exclude_end? ? 0 : 1))
@@ -201,6 +342,11 @@ end
 
 
 if __FILE__ == $0
+
+demo = ARGV.empty? ? :inlineasm : :dump_ruby_ast
+
+case demo	# chose your use case !
+when :inlineasm
 
 # cnt.times { sys_write str }
 src_asm = <<EOS
@@ -240,5 +386,18 @@ puts "test1"
 o.bar(4, "blabla\n")
 puts "test2"
 o.bar(2, "foo\n")
+
+
+
+when :dump_ruby_ast
+
+abort 'need <class> <method> args' if ARGV.length != 2
+c = Metasm.const_get(ARGV.shift)
+m = ARGV.shift
+ptr = Metasm::RubyHack.get_method_node_ptr(c, m)
+require 'pp'
+pp Metasm::RubyHack.read_node(ptr)
+
+end
 
 end
