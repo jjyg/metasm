@@ -118,9 +118,6 @@ asm .global mprotect undef;
 
 static VALUE set_class_method_raw(VALUE self, VALUE klass, VALUE methname, VALUE rawcode, VALUE nparams)
 {
-	if (RString(methname)->ptr[RString(methname)->len] != 0)
-		rb_raise(rb_eRuntimeError, "method name not 0termined");
-
 	char *raw = RString(rawcode)->ptr;
 	mprotect(raw & 0xfffff000, ((raw+RString(rawcode)->len+0xfff) & 0xfffff000) - (raw&0xfffff000), 7);	// RWX
 	rb_define_method(klass, RString(methname)->ptr, RString(rawcode)->ptr, FIX2LONG(nparams));
@@ -197,13 +194,23 @@ EOS
 		stat = File.stat(__FILE__)	# may be relative, do it before chdir
 		Dir.chdir(CACHEDIR) {
 			if not File.exist? 'metasm_binload.so' or File.stat('metasm_binload.so').mtime < stat.mtime
-				ELF.compile_c(Ia32.new, c_source).encode_file('metasm_binload.so')
+				compile_c(c_source, ELF).encode_file('metasm_binload.so')
 			end
 			require 'metasm_binload'
 		}
 		# TODO Windows support
 		# TODO PaX support (write + mmap, in user-configurable dir?)
 	end
+
+	def self.cpu
+		# TODO check runtime environment etc
+		@cpu ||= Ia32.new
+	end
+
+	def self.compile_c(c_src, exeformat=Shellcode)
+		exeformat.compile_c(cpu, c_src)
+	end
+
 	load_bootstrap
 
 	# sets up rawopcodes as the method implementation for class klass
@@ -214,11 +221,16 @@ EOS
 	# -2     self, arg_ary
 	# -1     argc, VALUE*argv, self
 	# >=0    self, arg0, arg1..
-	def self.set_method_binary(klass, methodname, rawopcodes, nargs=-2)
-		(@@prevent_gc ||= {})[[klass, methodname]] = rawopcodes
-		set_class_method_raw(klass, methodname, rawopcodes, nargs)
-
-		# TODO rawopcodes = EncodedData, put a dlsym hook in the setup_module & resolve extern calls (rb_* ...)
+	def self.set_method_binary(klass, methodname, raw, nargs=-2)
+		if raw.kind_of? EncodedData
+			baseaddr = memory_read_int((raw.data.object_id << 1) + 12)
+			bd = raw.binding(baseaddr)
+			raw.reloc_externals.uniq.each { |ext| bd[ext] = dlsym(ext) or raise "unknown symbol #{ext}" }
+			raw.fixup(bd)
+			raw = raw.data
+		end
+		(@@prevent_gc ||= {})[[klass, methodname]] = raw
+		set_class_method_raw(klass, methodname.to_s, raw, nargs)
 	end
 
 	# same as load_binary_method but with an object and not a class
@@ -340,6 +352,32 @@ EOS
 			memory_write_int(a, v)
 		end
 	end
+
+	def self.compile_ruby(klass, meth)
+		ptr = get_method_node_ptr(klass, meth)
+		ast = read_node(ptr)
+		require 'pp'
+		pp ast
+		return if not c = ruby_ast_to_c(ast)
+		puts c
+		raw = compile_c(c).encoded
+		set_method_binary(klass, meth, raw, klass.instance_method(meth).arity)
+	end
+
+	def self.ruby_ast_to_c(ast)
+		x = <<EOS
+#{RUBY_H}
+VALUE m(VALUE self) {
+	int i = 0;
+	int j = 0;
+	//asm("int 3");
+	for (j=0; j < 20000000 ; j++)
+		++i;
+	return rb_uint2inum(i);
+	//return (i << 1) | 1;
+}
+EOS
+	end
 end
 end
 
@@ -348,7 +386,7 @@ end
 
 if __FILE__ == $0
 
-demo = ARGV.empty? ? :inlineasm : :dump_ruby_ast
+demo = ARGV.empty? ? :test_jit : :dump_ruby_ast
 
 case demo	# chose your use case !
 when :inlineasm
@@ -382,7 +420,7 @@ void doit(int count, char *str, int strlen) {
 }
 EOS
 
-m = Metasm::Shellcode.compile_c(Metasm::Ia32.new, src).encode_string
+m = Metasm::RubyHack.compile_c(src).encode_string
 
 o = Object.new
 Metasm::RubyHack.set_object_method_binary(o, 'bar', m, 2)
@@ -403,6 +441,24 @@ ptr = Metasm::RubyHack.get_method_node_ptr(c, m)
 require 'pp'
 pp Metasm::RubyHack.read_node(ptr)
 
+when :test_jit
+
+
+class Foo
+	def bla
+		i = 0
+		20_000_000.times { i += 1 }
+		i
+	end
+end
+
+t0 = Time.now
+Metasm::RubyHack.compile_ruby(Foo, :bla)
+t1 = Time.now
+p Foo.new.bla
+t2 = Time.now
+
+puts "compile %.3fs  run %.3fs" % [t1-t0, t2-t1]
 end
 
 end
