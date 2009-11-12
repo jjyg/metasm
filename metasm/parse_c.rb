@@ -2638,6 +2638,15 @@ EOH
 			r.join("\n")
 		end
 
+		# returns a string containing the C definition of the toplevel function funcname, with its dependencies
+		def dump_definition(funcname)
+			oldst = @toplevel.statements
+			@toplevel.statements = []
+			dump_definitions([@toplevel.symbol[funcname]])
+		ensure
+			@toplevel.statements = oldst
+		end
+
 		def to_s
 			@toplevel.dump(nil)[0].join("\n")
 		end
