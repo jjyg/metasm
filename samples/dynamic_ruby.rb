@@ -118,7 +118,7 @@ asm .global mprotect undef;
 
 static VALUE set_class_method_raw(VALUE self, VALUE klass, VALUE methname, VALUE rawcode, VALUE nparams)
 {
-	char *raw = RString(rawcode)->ptr;
+	int raw = (int)RString(rawcode)->ptr;
 	mprotect(raw & 0xfffff000, ((raw+RString(rawcode)->len+0xfff) & 0xfffff000) - (raw&0xfffff000), 7);	// RWX
 	rb_define_method(klass, RString(methname)->ptr, RString(rawcode)->ptr, FIX2LONG(nparams));
 	return Qtrue;
@@ -126,14 +126,14 @@ static VALUE set_class_method_raw(VALUE self, VALUE klass, VALUE methname, VALUE
 
 static VALUE memory_read(VALUE self, VALUE addr, VALUE len)
 {
-	return rb_str_new((char*)rb_num2ulong(addr), rb_num2ulong(len));
+	return rb_str_new((char*)rb_num2ulong(addr), (int)rb_num2ulong(len));
 }
 
 static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 {
 	char *src = RString(val)->ptr;
 	char *dst = (char*)rb_num2ulong(addr);
-	unsigned long len = RString(val)->len;
+	int len = RString(val)->len;
 	while (len--)
 		*dst++ = *src++;
 	return val;
@@ -150,18 +150,18 @@ static VALUE memory_write_int(VALUE self, VALUE addr, VALUE val)
 	return val;
 }
 
-extern void *dlsym(void *handle, char *symname);
+extern void *dlsym(int handle, char *symname);
 #define RTLD_DEFAULT 0
 asm .global dlsym undef;
 
 static VALUE dl_dlsym(VALUE self, VALUE symname)
 {
-	return rb_uint2inum(dlsym(RTLD_DEFAULT, RString(symname)->ptr));
+	return rb_uint2inum((unsigned)dlsym(RTLD_DEFAULT, RString(symname)->ptr));
 }
 
 static VALUE get_method_node_ptr(VALUE self, VALUE klass, VALUE id)
 {
-	return rb_uint2inum(rb_method_node(klass, rb_to_id(id)));
+	return rb_uint2inum((unsigned)rb_method_node(klass, rb_to_id(id)));
 }
 
 static VALUE id2ref(VALUE self, VALUE id)
@@ -250,7 +250,6 @@ EOS
 		v1 = memory_read_int(ptr+8)
 		v2 = memory_read_int(ptr+12)
 		v3 = memory_read_int(ptr+16)
-#puts "%x %x %x" % [v1, v2, v3]
 
 		case type
 		when :block, :array, :hash
@@ -365,18 +364,78 @@ EOS
 	end
 
 	def self.ruby_ast_to_c(ast)
-		x = <<EOS
-#{RUBY_H}
-VALUE m(VALUE self) {
-	int i = 0;
-	int j = 0;
-	//asm("int 3");
-	for (j=0; j < 20000000 ; j++)
-		++i;
-	return rb_uint2inum(i);
-	//return (i << 1) | 1;
-}
-EOS
+		return if ast[0] != :scope
+		cp = cpu.new_cparser
+		cp.parse RUBY_H
+		cp.parse 'void meth(VALUE self) { }'
+		cp.toplevel.symbol['meth'].type.type = cp.toplevel.symbol['VALUE']
+		scope = cp.toplevel.symbol['meth'].initializer
+		ast[1][:localnr].times { |lnr|
+			next if lnr < 2	# TODO check usage of $~ / $_
+			# TODO skip args
+			# TODO analyse to find numeric locals (to avoid useless INT2FIX)
+			l = C::Variable.new("local_#{lnr}", cp.toplevel.symbol['VALUE'])
+			l.initializer = C::CExpression[[nil.object_id], l.type]
+			scope.symbol[l.name] = l
+			scope.statements << C::Declaration.new(l)
+		}
+		scope.statements << C::Return.new(do_ast_to_c(ast[2], scope))
+		cp.dump_definition('meth')
+	end
+
+	def self.do_ast_to_c(ast, scope)
+		ret = 
+		case ast.to_a[0]
+		when :block
+			ast[1..-1].map { |a| do_ast_to_c(a, scope) }.last
+		when :lasgn
+			l = scope.symbol_ancestors["local_#{ast[1]}"]
+			scope.statements << C::CExpression[l, :'=', do_ast_to_c(ast[2], scope)]
+			l
+		when :lvar
+			scope.symbol_ancestors["local_#{ast[1]}"]
+		when :lit
+			case ast[1]
+			when Fixnum
+				ast[1].object_id
+			else
+				# rb_intern() etc
+				nil.object_id
+			end
+		when :iter
+			b_args, b_body, b_recv = ast[1, 3]
+			if b_recv[0] == :call and b_recv[2] == 'times'	# TODO check its Fixnum#times
+				recv = do_ast_to_c(b_recv[1], scope)
+				cntr = C::Variable.new("cntr", C::BaseType.new(:int))	# TODO uniq name etc
+				cntr.initializer = C::CExpression[[0]]
+				init = C::Block.new(scope)
+				init.symbol[cntr.name] = cntr
+				body = C::Block.new(init)
+				scope.statements << C::For.new(init, C::CExpression[cntr, :<, [recv, :>>, 1]], C::CExpression[:'++', cntr], body)
+				body.symbol[cntr.name] = cntr
+				do_ast_to_c(b_body, body)
+				recv
+			else
+				puts "unsupported #{ast.inspect}"
+				nil.object_id
+			end
+		when :call
+			case ast[2]
+			when '+'
+				# TODO Fixnum check
+				C::CExpression[[[[do_ast_to_c(ast[1], scope), :>>, 1], :+, [do_ast_to_c(ast[3], scope), :>>, 1]], :<<, 1], :|, 1]
+			else
+				puts "unsupported #{ast.inspect}"
+				nil.object_id
+			end
+		when nil, :nil, :args
+			nil.object_id
+		else
+			puts "unsupported #{ast.inspect}"
+			nil.object_id
+		end
+		ret = [ret] if ret.kind_of? Integer
+		C::CExpression[ret, scope.symbol_ancestors['VALUE']]
 	end
 end
 end
