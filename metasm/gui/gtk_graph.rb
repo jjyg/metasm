@@ -435,14 +435,15 @@ end
 
 
 class GraphViewWidget < DrawableWidget
-	attr_accessor :caret_box, :curcontext, :zoom
+	attr_accessor :caret_box, :curcontext, :zoom, :margin
 
 	def initialize_widget
 		@caret_box = nil
 		@selected_boxes = []
 		@shown_boxes = []
-		@mousemove_origin = nil
+		@mousemove_origin = @mousemove_origin_ctrl = nil
 		@curcontext = Graph.new(nil)
+		@margin = 8
 		@zoom = 1.0
 		@default_color_association = { :background => :paleblue, :hlbox_bg => :palegrey, :box_bg => :white,
 				:text => :black, :arrow_hl => :red, :comment => :darkblue,
@@ -459,7 +460,7 @@ class GraphViewWidget < DrawableWidget
 	def find_box_xy(x, y)
 		x = @curcontext.view_x+x/@zoom
 		y = @curcontext.view_y+y/@zoom
-		@shown_boxes.to_a.reverse.find { |b| b.x <= x+@zoom and b.x+b.w >= x and b.y <= y+@zoom and b.y+b.h >= y }
+		@shown_boxes.to_a.reverse.find { |b| b.x <= x and b.x+b.w > x and b.y <= y-1 and b.y+b.h > y+1 }
 	end
 
 	def mouse_wheel_ctrl(dir, x, y)
@@ -509,6 +510,18 @@ class GraphViewWidget < DrawableWidget
 	def mouserelease(x, y)
 		mousemove(x, y)
 		@mousemove_origin = nil
+
+		if @mousemove_origin_ctrl
+			x1 = @curcontext.view_x + @mousemove_origin_ctrl[0]/@zoom
+			x2 = x1 + (x - @mousemove_origin_ctrl[0])/@zoom
+			x1, x2 = x2, x1 if x1 > x2
+			y1 = @curcontext.view_y + @mousemove_origin_ctrl[1]/@zoom
+			y2 = y1 + (y - @mousemove_origin_ctrl[1])/@zoom
+			y1, y2 = y2, y1 if y1 > y2
+			@selected_boxes |= @curcontext.box.find_all { |b| b.x >= x1 and b.x + b.w <= x2 and b.y >= y1 and b.y + b.h <= y2 }
+			redraw
+			@mousemove_origin_ctrl = nil
+		end
 	end
 
 	def click_ctrl(x, y)
@@ -519,6 +532,8 @@ class GraphViewWidget < DrawableWidget
 				@selected_boxes << b
 			end
 			redraw
+		else
+			@mousemove_origin_ctrl = [x, y]
 		end
 	end
 
@@ -554,6 +569,7 @@ class GraphViewWidget < DrawableWidget
 			else
 				@parent_widget.focus_addr b[:addresses].first
 			end
+		elsif doubleclick_check_arrow(x, y)
 		elsif @zoom == 1.0
 			zoom_all
 		else
@@ -562,6 +578,35 @@ class GraphViewWidget < DrawableWidget
 			@zoom = 1.0
 		end
 		redraw
+	end
+
+	# check if the user clicked on the beginning/end of an arrow, if so focus on the other end
+	def doubleclick_check_arrow(x, y)
+		return if @margin*@zoom < 2
+		x = @curcontext.view_x+x/@zoom
+		y = @curcontext.view_y+y/@zoom
+		sx = nil
+		if bt = @shown_boxes.to_a.reverse.find { |b|
+			y >= b.y+b.h-1 and y <= b.y+b.h-1+@margin+2 and
+			sx = b.x+b.w/2 - b.to.length/2 * @margin/2 and
+		       	x >= sx-@margin/2 and x <= sx+b.to.length*@margin/2	# should be margin/4, but add a little comfort margin
+		}
+			idx = (x-sx+@margin/4).to_i / (@margin/2)
+			idx = 0 if idx < 0
+			idx = bt.to.length-1 if idx >= bt.to.length
+			@parent_widget.focus_addr bt.to[idx][:line_address][0]
+			true
+		elsif bf = @shown_boxes.to_a.reverse.find { |b|
+			y >= b.y-@margin-2 and y <= b.y and
+			sx = b.x+b.w/2 - b.from.length/2 * @margin/2 and
+		       	x >= sx-@margin/2 and x <= sx+b.from.length*@margin/2
+		}
+			idx = (x-sx+@margin/4).to_i / (@margin/2)
+			idx = 0 if idx < 0
+			idx = bf.from.length-1 if idx >= bf.from.length
+			@parent_widget.focus_addr bf.from[idx][:line_address][-1]
+			true
+		end
 	end
 
 	# update the zoom & view_xy to show the whole graph in the window
@@ -620,9 +665,9 @@ class GraphViewWidget < DrawableWidget
 	def paint_arrow(b1, b2)
 		x1, y1 = b1.x+b1.w/2-@curcontext.view_x, b1.y+b1.h-@curcontext.view_y
 		x2, y2 = b2.x+b2.w/2-@curcontext.view_x, b2.y-1-@curcontext.view_y
-		x1 += (-(b1.to.length-1)/2 + b1.to.index(b2)) * 4
-		x2 += (-(b2.from.length-1)/2 + b2.from.index(b1)) * 4
-		margin = 8
+		margin = @margin
+		x1 += (-(b1.to.length-1)/2 + b1.to.index(b2)) * margin/2
+		x2 += (-(b2.from.length-1)/2 + b2.from.index(b1)) * margin/2
 		return if (y1+margin < 0 and y2 < 0) or (y1 > height/@zoom and y2-margin > height/@zoom)	# just clip on y
 		margin, x1, y1, x2, y2, b1w, b2w = [margin, x1, y1, x2, y2, b1.w, b2.w].map { |v| v*@zoom }
 
@@ -1059,14 +1104,14 @@ class GraphViewWidget < DrawableWidget
 						bbb.x+bbb.w/2 < bb.x+bb.w/2 and bbb.y+bbb.h < bb.y
 					} }.compact.min
 					bx = b.x+dx
-					bx = [bx, xmax-b.w/2-8].min if xmax
+					bx = [bx, xmax-b.w/2-@margin].min if xmax
 					b.x = bx if bx > b.x
 				else
 					xmin = b.from.map { |bb| bb.x+bb.w if b.from.find { |bbb|
 						bbb.x+bbb.w/2 < bb.x+bb.w/2 and bbb.y+bbb.h < bb.y
 					} }.compact.max
 					bx = b.x+dx
-					bx = [bx, xmin+b.w/2+8].max if xmin
+					bx = [bx, xmin+b.w/2+@margin].max if xmin
 					b.x = bx if bx < b.x
 				end
 			}
