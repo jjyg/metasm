@@ -65,6 +65,7 @@ unsigned long rb_num2ulong(VALUE);
 VALUE rb_str_new(const char* ptr, long len);	// alloc + memcpy + 0term
 
 int rb_intern(char *);
+VALUE rb_funcall(VALUE recv, int id, int nargs, ...);
 VALUE rb_const_get(VALUE, int);
 VALUE rb_raise(VALUE, char*);
 void rb_define_method(VALUE, char *, VALUE (*)(), int);
@@ -421,12 +422,11 @@ EOS
 			end
 		when :call
 			case ast[2]
-			when '+'
+			when 'oaeu+'
 				# TODO Fixnum check
 				C::CExpression[[[[do_ast_to_c(ast[1], scope), :>>, 1], :+, [do_ast_to_c(ast[3], scope), :>>, 1]], :<<, 1], :|, 1]
 			else
-				puts "unsupported #{ast.inspect}"
-				nil.object_id
+				C::CExpression[scope.symbol_ancestors['rb_funcall'], :funcall, [do_ast_to_c(ast[1], scope), [scope.symbol_ancestors['rb_intern'], :funcall, [ast[2]]], [ast.length-3], *ast[3..-1].map { |a| do_ast_to_c(a, scope) }]]
 			end
 		when nil, :nil, :args
 			nil.object_id
