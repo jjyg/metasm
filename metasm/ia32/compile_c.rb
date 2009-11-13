@@ -889,6 +889,7 @@ class CCompiler < C::Compiler
 		else
 			ptr = c_cexpr_inner(expr.lexpr)
 			unuse ptr
+			ptr = make_volatile(ptr, expr.lexpr.type) if ptr.kind_of? Address
 			instr 'call', ptr
 			f = expr.lexpr
 			f = f.rexpr while f.kind_of? C::CExpression and not f.op and f.type == f.rexpr.type

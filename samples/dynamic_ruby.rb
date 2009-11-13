@@ -72,6 +72,7 @@ void rb_define_method(VALUE, char *, VALUE (*)(), int);
 void rb_define_singleton_method(VALUE, char *, VALUE (*)(), int);
 int rb_to_id(VALUE);
 struct node* rb_method_node(VALUE klass, int id);
+VALUE rb_str_new(char*, int);
 
 
 // TODO setup those vars auto or define a standard .import/.export (elf/pe/macho)
@@ -371,42 +372,70 @@ EOS
 		cp.parse 'void meth(VALUE self) { }'
 		cp.toplevel.symbol['meth'].type.type = cp.toplevel.symbol['VALUE']
 		scope = cp.toplevel.symbol['meth'].initializer
+		RubyCompiler.new(cp).compile(ast, scope)
+		cp.dump_definition('meth')
+	end
+end
+
+class RubyCompiler
+	def initialize(cp)
+		@cp = cp
+	end
+
+	def compile(ast, scope)
+		@scope = scope
 		ast[1][:localnr].times { |lnr|
 			next if lnr < 2	# TODO check usage of $~ / $_
-			# TODO skip args
+			# TODO args
 			# TODO analyse to find numeric locals (to avoid useless INT2FIX)
-			l = C::Variable.new("local_#{lnr}", cp.toplevel.symbol['VALUE'])
+			l = C::Variable.new("local_#{lnr}", value)
 			l.initializer = C::CExpression[[nil.object_id], l.type]
 			scope.symbol[l.name] = l
 			scope.statements << C::Declaration.new(l)
 		}
-		scope.statements << C::Return.new(do_ast_to_c(ast[2], scope))
-		cp.dump_definition('meth')
+		scope.statements << C::Return.new(ast_to_c(ast[2], scope))
 	end
 
-	def self.do_ast_to_c(ast, scope)
+	def value
+		@cp.toplevel.symbol['VALUE']
+	end
+
+	def local(n)
+		@scope.symbol["local_#{n}"]
+	end
+
+	def rb_intern(n)
+		C::CExpression[@cp.toplevel.symbol['rb_intern'], :funcall, [n]]
+	end
+
+	def rb_funcall(recv, meth, *args)
+		C::CExpression[@cp.toplevel.symbol['rb_funcall'], :funcall, [recv, rb_intern(meth), [args.length], *args]]
+	end
+
+	def ast_to_c(ast, scope)
 		ret = 
 		case ast.to_a[0]
 		when :block
-			ast[1..-1].map { |a| do_ast_to_c(a, scope) }.last
+			ast[1..-1].map { |a| ast_to_c(a, scope) }.last
 		when :lasgn
-			l = scope.symbol_ancestors["local_#{ast[1]}"]
-			scope.statements << C::CExpression[l, :'=', do_ast_to_c(ast[2], scope)]
+			l = local(ast[1])
+			scope.statements << C::CExpression[l, :'=', ast_to_c(ast[2], scope)]
 			l
 		when :lvar
-			scope.symbol_ancestors["local_#{ast[1]}"]
+			local(ast[1])
 		when :lit
 			case ast[1]
-			when Fixnum
+			when Symbol
+				rb_intern(ast[1])
+			else	# true/false/nil/fixnum
 				ast[1].object_id
-			else
-				# rb_intern() etc
-				nil.object_id
 			end
+		when :str
+			C::CExpression[@cp.toplevel.symbol['rb_str_new'], :funcall, [ast[1], [ast[1].length]]]
 		when :iter
 			b_args, b_body, b_recv = ast[1, 3]
 			if b_recv[0] == :call and b_recv[2] == 'times'	# TODO check its Fixnum#times
-				recv = do_ast_to_c(b_recv[1], scope)
+				recv = ast_to_c(b_recv[1], scope)
 				cntr = C::Variable.new("cntr", C::BaseType.new(:int))	# TODO uniq name etc
 				cntr.initializer = C::CExpression[[0]]
 				init = C::Block.new(scope)
@@ -414,19 +443,30 @@ EOS
 				body = C::Block.new(init)
 				scope.statements << C::For.new(init, C::CExpression[cntr, :<, [recv, :>>, 1]], C::CExpression[:'++', cntr], body)
 				body.symbol[cntr.name] = cntr
-				do_ast_to_c(b_body, body)
+				ast_to_c(b_body, body)
 				recv
 			else
 				puts "unsupported #{ast.inspect}"
 				nil.object_id
 			end
 		when :call
+			f = rb_funcall(ast_to_c(ast[1], scope), ast[2], *ast[3..-1].map { |a| ast_to_c(a, scope) })
 			case ast[2]
-			when 'oaeu+'
-				# TODO Fixnum check
-				C::CExpression[[[[do_ast_to_c(ast[1], scope), :>>, 1], :+, [do_ast_to_c(ast[3], scope), :>>, 1]], :<<, 1], :|, 1]
+			when '+', '-'
+				tmp = C::Variable.new('tmp', value)
+				if not scope.symbol_ancestors['tmp']
+					scope.symbol['tmp'] = tmp
+					scope.statements << C::Declaration.new(tmp)
+				end
+				a1 = [ast_to_c(ast[1], scope), C::BaseType.new(:int)]
+				a3 = [ast_to_c(ast[3], scope), C::BaseType.new(:int)]
+				scope.statements <<
+				C::If.new(C::CExpression[[a1, :&, a3], :&, 1],	# XXX overflow to Bignum
+					  C::CExpression[tmp, :'=', [a1, ast[2].to_sym, [a3, :-, [1]]]],
+					  C::CExpression[tmp, :'=', f])
+				tmp
 			else
-				C::CExpression[scope.symbol_ancestors['rb_funcall'], :funcall, [do_ast_to_c(ast[1], scope), [scope.symbol_ancestors['rb_intern'], :funcall, [ast[2]]], [ast.length-3], *ast[3..-1].map { |a| do_ast_to_c(a, scope) }]]
+				f
 			end
 		when nil, :nil, :args
 			nil.object_id
@@ -435,7 +475,7 @@ EOS
 			nil.object_id
 		end
 		ret = [ret] if ret.kind_of? Integer
-		C::CExpression[ret, scope.symbol_ancestors['VALUE']]
+		C::CExpression[ret, value]
 	end
 end
 end
