@@ -522,7 +522,7 @@ class DrawableWidget < Gtk::DrawingArea
 		else
 			key = key.downcase.to_sym
 			key = {
-			:page_up => :pgup, :page_down => :pgdown,
+			:page_up => :pgup, :page_down => :pgdown, :next => :pgdown,
 			:escape => :esc, :return => :enter,
 
 			:space => ?\ ,
