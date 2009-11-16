@@ -252,6 +252,7 @@ class COFF
 				end
 
 				ed.ptr = (ed.ptr + 3) / 4 * 4
+				len = ed.length-sptr if len > ed.length-sptr
 				while ed.ptr < sptr+len
 					decode_tllv[ed, nstate]
 					ed.ptr = (ed.ptr + 3) / 4 * 4
