@@ -47,7 +47,7 @@ if exename =~ /^live:(.*)/
 	p target if $VERBOSE
 	exe = Shellcode.decode(target.memory, Ia32.new)
 else
-	exe = AutoExe.orshellcode(Ia32.new).decode_file(exename)
+	exe = AutoExe.orshellcode { Ia32.new }.decode_file(exename)
 	if opts[:autoload]
 		basename = exename.sub(/\.\w\w?\w?$/, '')
 		opts[:map] ||= basename + '.map' if File.exist?(basename + '.map')

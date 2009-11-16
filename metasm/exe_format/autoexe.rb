@@ -31,7 +31,7 @@ def self.execlass_from_signature(raw)
 	else raise UnknownSignature, "unrecognized executable file format #{raw[0, 4].unpack('H*').first.inspect}"
 	end
 end
-def self.orshellcode(cpu)
+def self.orshellcode(cpu=nil, &b)
 	# here we create an anonymous subclass of AutoExe whose #exe_from_sig is patched to return a Shellcode if no signature is recognized (instead of raise()ing)
 	c = ::Class.new(self)
 	# yeeehaa
@@ -39,7 +39,7 @@ def self.orshellcode(cpu)
 		begin
 			super(raw)
 		rescue UnknownSignature
-			Shellcode.withcpu(cpu)
+			Shellcode.withcpu(cpu || b[raw])
 		end
 	}
 	c
