@@ -1226,11 +1226,11 @@ end
 end
 end
 
-require 'metasm/gui/gtk_hex'
-require 'metasm/gui/gtk_listing'
-require 'metasm/gui/gtk_opcodes'
-require 'metasm/gui/gtk_coverage'
-require 'metasm/gui/gtk_graph'
-require 'metasm/gui/gtk_decomp'
+require 'metasm/gui/dasm_hex'
+require 'metasm/gui/dasm_listing'
+require 'metasm/gui/dasm_opcodes'
+require 'metasm/gui/dasm_coverage'
+require 'metasm/gui/dasm_graph'
+require 'metasm/gui/dasm_decomp'
 require 'metasm/gui/gtk_debug'
 
