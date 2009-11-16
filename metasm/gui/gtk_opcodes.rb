@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 module Metasm
-module GtkGui
+module Gui
 class AsmOpcodeWidget < DrawableWidget
 	def initialize_widget
 		@line_text = {}

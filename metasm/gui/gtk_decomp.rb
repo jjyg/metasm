@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 module Metasm
-module GtkGui
+module Gui
 class CdecompListingWidget < DrawableWidget
 	attr_accessor :curaddr, :tabwidth
 

@@ -20,7 +20,7 @@
 #  'f' to list known functions
 #  'x' to list xrefs to current address
 #  'n' to rename a label (current word or current address)
-#  ctrl+'r' to run arbitrary ruby code in the context of the GtkGui objet (access to 'dasm', 'curaddr')
+#  ctrl+'r' to run arbitrary ruby code in the context of the Gui objet (access to 'dasm', 'curaddr')
 #  ctrl+mousewheel to zoom in graph view ; also doubleclick on the background ('fit to window'/'reset zoom')
 #
 
@@ -47,8 +47,6 @@ OptionParser.new { |opt|
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
 }.parse!(ARGV)
 
-require 'metasm/gui/gtk'	# windows version of gtk.rb raises on unknown cli args...
-
 case exename = ARGV.shift
 when /^live:(.*)/
 	t = $1
@@ -56,12 +54,12 @@ when /^live:(.*)/
 	os = Metasm::OS.current
 	raise 'no such target' if not target = os.find_process(t) || os.create_process(t)
 	p target if $VERBOSE
-	w = Metasm::GtkGui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path rescue nil} - metasm debugger")
+	w = Metasm::Gui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path rescue nil} - metasm debugger")
 when /^(tcp:|udp:)?..+:/
 	dbg = Metasm::GdbRemoteDebugger.new(exename)
-	w = Metasm::GtkGui::DbgWindow.new(dbg, "remote - metasm debugger")
+	w = Metasm::Gui::DbgWindow.new(dbg, "remote - metasm debugger")
 else
-	w = Metasm::GtkGui::MainWindow.new("#{exename + ' - ' if exename}metasm disassembler")
+	w = Metasm::Gui::MainWindow.new("#{exename + ' - ' if exename}metasm disassembler")
 	if exename
 		exe = w.loadfile(exename)
 		if opts[:autoload]
@@ -94,4 +92,4 @@ if dasm
 else
 	w.show_all
 end
-Gtk.main
+Metasm::Gui.main

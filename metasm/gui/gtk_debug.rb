@@ -6,7 +6,7 @@
 require 'gtk2'
 
 module Metasm
-module GtkGui
+module Gui
 
 # TODO invalidate dbg.disassembler on selfmodifying code
 # TODO handle multiple threads, reattach, etc

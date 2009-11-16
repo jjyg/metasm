@@ -1,0 +1,1 @@
+require 'metasm/gui/gtk'

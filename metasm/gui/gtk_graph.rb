@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 module Metasm
-module GtkGui
+module Gui
 class Graph
 	# one box, has a text, an id, and a list of other boxes to/from
 	class Box

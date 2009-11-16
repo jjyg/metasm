@@ -7,7 +7,7 @@
 require 'gtk2'
 
 module Metasm
-module GtkGui
+module Gui
 # the main disassembler widget: this is a container for all the lower-level widgets that actually render the dasm state
 class DisasmWidget < Gtk::VBox
 	attr_accessor :dasm, :entrypoints, :views, :gui_update_counter_max, :notebook
@@ -1217,6 +1217,10 @@ class MainWindow < Gtk::Window
 		menu.append item
 		item
 	end
+end
+
+def self.main
+	Gtk.main
 end
 
 end

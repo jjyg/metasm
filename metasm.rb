@@ -33,7 +33,7 @@ def self.const_missing(c)
 		'AOut' => 'exe_format/a_out', 'MachO' => 'exe_format/macho',
 		'NDS' => 'exe_format/nds', 'XCoff' => 'exe_format/xcoff',
 		'Bflt' => 'exe_format/bflt',
-		'GtkGui' => 'gui/gtk',
+		'Gui' => 'gui',
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
 		'GdbClient' => 'os/remote',
 		'Decompiler' => 'decompile',
@@ -43,7 +43,6 @@ def self.const_missing(c)
 
 	files = [files] if files.kind_of? ::String
 
-	#puts "autorequire #{files.join(', ')}"
 	files.each { |f| require File.join('metasm', f) }
 
 	const_get c
@@ -86,6 +85,6 @@ Metasm.require 'metasm/os/main'
 
 # remove an 1.9 warning, couldn't find a compatible way...
 if {}.respond_to? :key
-	puts "using ruby1.9 workaround for Hash.index" if $VERBOSE
+	puts "using ruby1.9 workaround for Hash.index" if $DEBUG
 	class Hash ; alias index key end
 end

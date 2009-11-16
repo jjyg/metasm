@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 module Metasm
-module GtkGui
+module Gui
 class HexWidget < DrawableWidget
 	# data_size = size of data in bytes (1 => chars, 4 => dwords..)
 	# line_size = nr of bytes shown per line
