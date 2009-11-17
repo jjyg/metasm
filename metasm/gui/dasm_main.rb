@@ -407,6 +407,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when :esc; focus_addr_back
 		when ?/; inputbox('search word') { |w|
 				next unless curview.respond_to? :hl_word
+				next if w == ''
 				curview.hl_word = w 
 				curview.redraw
 			}
