@@ -140,7 +140,7 @@ class DbgWidget < Gtk::VBox
 	end
 
 	def spawn_1stchild(title, page, addr)
-		child = MainWindow.new(title)
+		child = DasmWindow.new(title)
 		w = child.display(@dbg.disassembler)
 		w.focus_addr(addr, page)
 		register_child(child)
@@ -751,7 +751,7 @@ class DbgConsoleWidget < DrawableWidget
 			@scan_addr = 0
 			Gtk.idle_add {
 				if @scan_addr <= 0xffff_f000	# cpu.size?
-					@dbg.loadsyms(@scan_addr)
+					protect { @dbg.loadsyms(@scan_addr) }
 					@scan_addr += 0x1000
 					true
 				else
@@ -849,29 +849,31 @@ class DbgConsoleWidget < DrawableWidget
 	end
 end
 
-class DbgWindow < MainWindow
+class DbgWindow < Window
 	attr_accessor :dbg_widget
-	def initialize(dbg = nil, title='metasm debugger')
-		super(title)
-		#set_default_size 200, 300
+	def initialize_window(dbg = nil, title='metasm debugger')
+		(@@mainwindow_list ||= []) << self
+
+		self.title = title
 		display(dbg) if dbg
-		Gtk::Settings.default.gtk_menu_bar_accel = nil	# disable F10 -> popup menubar
+	end
+
+	def destroy_window
+		@@mainwindow_list.delete self
+		Gui.main_quit if @@mainwindow_list.empty?
 	end
 
 	# show a new DbgWidget
 	def display(dbg)
-		@vbox.remove @dbg_widget if dbg_widget
 		@dbg_widget = DbgWidget.new(dbg)
 		@dbg_widget.win = self
-		@vbox.add @dbg_widget
-		show_all
+		self.widget = @dbg_widget
 		@dbg_widget
 	end
 
 	def build_menu
-		@menu = Gtk::MenuBar.new
-		@accel_group = Gtk::AccelGroup.new
-		dbgmenu = Gtk::Menu.new
+		dbgmenu = new_menu
+		hack_accel_group
 		i = addsubmenu(dbgmenu, 'continue') { @dbg_widget.keyboard_cb[Gdk::Keyval::GDK_F5][] }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F5, 0, Gtk::ACCEL_VISIBLE)	# just to display the shortcut
 		i = addsubmenu(dbgmenu, 'step over') { @dbg_widget.keyboard_cb[Gdk::Keyval::GDK_F10][] }

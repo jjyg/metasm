@@ -59,7 +59,7 @@ when /^(tcp:|udp:)?..+:/
 	dbg = Metasm::GdbRemoteDebugger.new(exename)
 	w = Metasm::Gui::DbgWindow.new(dbg, "remote - metasm debugger")
 else
-	w = Metasm::Gui::MainWindow.new("#{exename + ' - ' if exename}metasm disassembler")
+	w = Metasm::Gui::DasmWindow.new("#{exename + ' - ' if exename}metasm disassembler")
 	if exename
 		exe = w.loadfile(exename)
 		if opts[:autoload]
