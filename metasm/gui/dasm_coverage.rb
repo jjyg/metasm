@@ -6,10 +6,13 @@
 module Metasm
 module Gui
 class CoverageWidget < DrawableWidget
-	attr_accessor :sections, :pixel_w, :pixel_h
+	attr_accessor :dasm, :sections, :pixel_w, :pixel_h
 
 	# TODO wheel -> zoom, dragdrop -> scroll?(zoomed)
-	def initialize_widget
+	def initialize_widget(dasm, parent_widget)
+		@dasm = dasm
+		@parent_widget = parent_widget
+
 		@curaddr = 0
 		@pixel_w = @pixel_h = 2	# use a font ?
 		@sections = []

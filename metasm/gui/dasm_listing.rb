@@ -6,9 +6,12 @@
 module Metasm
 module Gui
 class AsmListingWidget < DrawableWidget
-	attr_accessor :arrow_zone_w
+	attr_accessor :dasm, :arrow_zone_w
 
-	def initialize_widget
+	def initialize_widget(dasm, parent_widget)
+		@dasm = dasm
+		@parent_widget = parent_widget
+
 		@arrows = []	# array of [linefrom, lineto] (may be :up or :down for offscreen)
 		@line_address = []
 		@line_text = []

@@ -6,7 +6,12 @@
 module Metasm
 module Gui
 class AsmOpcodeWidget < DrawableWidget
-	def initialize_widget
+	attr_accessor :dasm
+	
+	def initialize_widget(dasm, parent_widget)
+		@dasm = dasm
+		@parent_widget = parent_widget
+
 		@line_text = {}
 		@line_address = {}
 		@view_min = @dasm.sections.keys.min rescue nil

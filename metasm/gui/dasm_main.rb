@@ -14,6 +14,7 @@ class DisasmWidget < ContainerChoiceWidget
 	attr_accessor :pos_history, :pos_history_redo
 	attr_accessor :bg_color_callback	# proc { |address|  "rgb" # "00f" -> blue }
 	attr_accessor :focus_changed_callback
+	attr_accessor :parent_widget
 
 	def initialize_widget(dasm, ep=[])
 		@dasm = dasm
@@ -24,6 +25,7 @@ class DisasmWidget < ContainerChoiceWidget
 		@keyboard_callback = {}
 		@keyboard_callback_ctrl = {}
 		@clones = [self]
+		@parent_widget = nil
 
 		addview :listing,   AsmListingWidget.new(@dasm, self)
 		addview :graph,     GraphViewWidget.new(@dasm, self)
@@ -31,6 +33,8 @@ class DisasmWidget < ContainerChoiceWidget
 		addview :opcodes,   AsmOpcodeWidget.new(@dasm, self)
 		addview :hex,       HexWidget.new(@dasm, self)
 		addview :coverage,  CoverageWidget.new(@dasm, self)
+
+		view(:listing).grab_focus
 	end
 
 	def start_disassembling
@@ -390,18 +394,18 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 
 	def keypress_ctrl(key)
-		return true if @keyboard_callback_ctrl[key] and @keyboard_callback_ctrl[key].call(key)
+		return true if @keyboard_callback_ctrl[key] and @keyboard_callback_ctrl[key][key]
 		case key
 		when :enter; focus_addr_redo
 		when ?r; prompt_run_ruby
 		when ?C; disassemble_fast_deep(curaddr)
-		else return false
+		else return @parent_widget ? @parent_widget.keypress_ctrl(key) : false
 		end
 		true
 	end
 
 	def keypress(key)
-		return true if @keyboard_callback[key] and @keyboard_callback[key].call(key)
+		return true if @keyboard_callback[key] and @keyboard_callback[key][key]
 		case key
 		when :enter; focus_addr curview.hl_word
 		when :esc; focus_addr_back
@@ -429,7 +433,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when :tab; toggle_view(:decompile)
 		else
 			p key if $DEBUG
-			return false
+			return @parent_widget ? @parent_widget.keypress(key) : false
 		end
 		true
 	end

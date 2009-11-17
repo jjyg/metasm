@@ -435,9 +435,12 @@ end
 
 
 class GraphViewWidget < DrawableWidget
-	attr_accessor :caret_box, :curcontext, :zoom, :margin
+	attr_accessor :dasm, :caret_box, :curcontext, :zoom, :margin
 
-	def initialize_widget
+	def initialize_widget(dasm, parent_widget)
+		@dasm = dasm
+		@parent_widget = parent_widget
+
 		@caret_box = nil
 		@selected_boxes = []
 		@shown_boxes = []

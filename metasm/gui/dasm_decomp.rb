@@ -6,9 +6,12 @@
 module Metasm
 module Gui
 class CdecompListingWidget < DrawableWidget
-	attr_accessor :curaddr, :tabwidth
+	attr_accessor :dasm, :curaddr, :tabwidth
 
-	def initialize_widget
+	def initialize_widget(dasm, parent_widget)
+		@dasm = dasm
+		@parent_widget = parent_widget
+
 		bug_me_not = Decompiler	# sometimes gtk fails to autorequire dcmp during expose_event, do it now
 		@view_x = @view_y = 0	# coord of corner of view in characters
 		@width = @height = 1	# widget size in chars

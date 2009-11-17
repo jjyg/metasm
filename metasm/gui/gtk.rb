@@ -125,7 +125,7 @@ end
 class DrawableWidget < Gtk::DrawingArea
 	include Msgbox
 
-	attr_accessor :dasm, :parent_widget, :caret_x, :caret_y, :hl_word
+	attr_accessor :parent_widget, :caret_x, :caret_y, :hl_word
 
 	# keypress event keyval traduction table
 	Keyboard_trad = Gdk::Keyval.constants.grep(/^GDK_/).inject({}) { |h, cst|
@@ -165,9 +165,8 @@ class DrawableWidget < Gtk::DrawingArea
 		h.update v => key
 	}
 
-	def initialize(dasm, parent_widget)
-		@dasm = dasm
-		@parent_widget = parent_widget
+	def initialize(*a)
+		@parent_widget = nil
 
 		@caret_x = @caret_y = 0		# text cursor position
 		@oldcaret_x = @oldcaret_y = 1
@@ -240,9 +239,9 @@ class DrawableWidget < Gtk::DrawingArea
 		signal_connect('key_press_event') { |w, ev|
 			key = Keyboard_trad[ev.keyval]
 			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-				keypress_ctrl(key) or @parent_widget.keypress_ctrl(key)
+				keypress_ctrl(key) or (@parent_widget and @parent_widget.keypress_ctrl(key))
 			else
-				keypress(key) or @parent_widget.keypress(key)
+				keypress(key) or (@parent_widget and @parent_widget.keypress(key))
 			end
 		}
 
@@ -261,7 +260,7 @@ class DrawableWidget < Gtk::DrawingArea
 			initialize_visible if respond_to? :initialize_visible
 		}
 
-		initialize_widget
+		initialize_widget(*a)
 
 		# receive keyboard/mouse signals
 		set_events Gdk::Event::ALL_EVENTS_MASK

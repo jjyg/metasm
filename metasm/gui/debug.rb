@@ -12,17 +12,22 @@ module Gui
 # TODO handle debugee fork()
 class DbgWidget < ContainerVBoxWidget
 	attr_accessor :dbg, :console, :regs, :code, :mem, :win
+	attr_accessor :parent_widget, :keyboard_callback, :keyboard_callback_ctrl
 	def initialize_widget(dbg)
 		@dbg = dbg
-
-		setup_keyboard_cb
 
 		@console = DbgConsoleWidget.new(dbg, self)
 		@regs = DbgRegWidget.new(dbg, self)
 		@code = DisasmWidget.new(dbg.disassembler)
+		@code.parent_widget = self
 		@mem  = DisasmWidget.new(dbg.disassembler)
+		@mem.parent_widget = self
 		@code.start_disassembling
 		@dbg.disassembler.disassemble_fast(@dbg.pc)
+
+		@keyboard_callback = {}
+		@keyboard_callback_ctrl = {}
+		@parent_widget = nil
 
 		@code.bg_color_callback = lambda { |a|
 			if a == @dbg.pc
@@ -31,9 +36,6 @@ class DbgWidget < ContainerVBoxWidget
 			end
 		}
 		# TODO popup menu, set bp, goto here, show arg in memdump..
-
-		@code.keyboard_callback = @keyboard_cb
-		@mem.keyboard_callback = @keyboard_cb
 
 		add @regs, 'expand' => false	# XXX
 		add @mem
@@ -45,12 +47,8 @@ class DbgWidget < ContainerVBoxWidget
 
 		@mem.set_height_request(1)
 		@code.set_height_request(1)
-	end
-
-	def initialize_visible
 		@code.focus_addr(@dbg.resolve_expr(@watchpoint[@code]), :graph)
 		@mem.focus_addr(0, :hex)
-		gui_update
 	end
 
 	def resize(w, h)
@@ -59,21 +57,21 @@ class DbgWidget < ContainerVBoxWidget
 	end
 
 	def keypress(key)
-		return true if @keyboard_cb[key] and @keyboard_cb[key][key]
+		return true if @keyboard_callback[key] and @keyboard_callback[key][key]
+		case key
+		when :f5;  protect { dbg_continue }
+		when :f10; protect { dbg_stepover }
+		when :f11; protect { dbg_singlestep }
+		when :f12; protect { dbg_stepout }
+		when ?.; @console.grab_focus
+		else return @parent_widget ? @parent_widget.keypress(key) : false
+		end
+		true
 	end
 
 	def keypress_ctrl(key)
-	end
-
-	attr_accessor :keyboard_cb
-	def setup_keyboard_cb
-		@keyboard_cb = {
-			:f5  => lambda { protect { dbg_continue ; true } },
-			:f10 => lambda { protect { dbg_stepover ; true } },
-			:f11 => lambda { protect { dbg_singlestep ; true } },
-			:f12 => lambda { protect { dbg_stepout ; true } },
-			?.   => lambda { @console.grab_focus },
-		}
+		return true if @keyboard_callback_ctrl[key] and @keyboard_callback_ctrl[key][key]
+		return @parent_widget ? @parent_widget.keypress_ctrl(key) : false
 	end
 
 	def pre_dbg_run
@@ -112,7 +110,6 @@ class DbgWidget < ContainerVBoxWidget
 	def dbg_stepover(*a) wrap_run { @dbg.stepover(*a) } end
 	def dbg_stepout(*a) wrap_run { @dbg.stepout(*a) } end	# TODO idle_add etc
 
-
 	def redraw
 		@console.redraw
 		@regs.gui_update
@@ -144,9 +141,9 @@ end
 class DbgRegWidget < DrawableWidget
 	attr_accessor :dbg
 
-	def initialize_widget
-		@dbg = @dasm	# default param to #initialize..
-		@dasm = nil
+	def initialize_widget(dbg, parent_widget)
+		@dbg = dbg
+		@parent_widget = parent_widget
 
 		@caret_x = @caret_reg = 0
 		@oldcaret_x = @oldcaret_reg = 42
@@ -371,10 +368,9 @@ end
 class DbgConsoleWidget < DrawableWidget
 	attr_accessor :dbg, :cmd_history, :log, :statusline, :commands, :cmd_help
 
-	def initialize_widget
-		@dbg = @dasm
-		@dasm = nil
-		@dbg.set_log_proc { |l| add_log l }
+	def initialize_widget(dbg, parent_widget)
+		@dbg = dbg
+		@parent_widget = parent_widget
 
 		@log = []
 		@log_length = 4000
@@ -384,6 +380,8 @@ class DbgConsoleWidget < DrawableWidget
 		@cmd_history = ['']
 		@cmd_history_length = 200	# number of past commands to remember
 		@cmd_histptr = nil
+
+		@dbg.set_log_proc { |l| add_log l }
 
 		@default_color_association = { :log => :palegrey, :curline => :white, :caret => :yellow,
 			:background => :black, :status => :black, :status_bg => '088' }
@@ -608,8 +606,20 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('dd', 'display bytes in data window') { p.mem.curview.data_size = 4 ; p.mem.gui_update }
 		new_command('u', 'focus code window on an address') { |arg| p.code.focus_addr(solve_expr(arg)) }
 		new_command('.', 'focus code window on current address') { p.code.focus_addr(solve_expr(@dbg.register_pc.to_s)) }
-		new_command('wc', 'set code window height') { |arg| p.resize_child(p.code, arg.to_i*@font_height) }
-		new_command('wd', 'set data window height') { |arg| p.resize_child(p.mem, arg.to_i*@font_height) }
+		new_command('wc', 'set code window height') { |arg|
+			if arg == ''
+				p.code.curview.grab_focus
+			else
+				p.resize_child(p.code, arg.to_i*@font_height)
+			end
+		}
+		new_command('wd', 'set data window height') { |arg|
+			if arg == ''
+				p.mem.curview.grab_focus
+			else
+				p.resize_child(p.mem, arg.to_i*@font_height)
+			end
+		}
 		new_command('width', 'set window width (chars)') { |arg|
 			if a = solve_expr(arg); p.win.resize(a*@font_width, p.win.size[1])
 			else add_log "width #{p.win.size[0]/@font_width}"
@@ -827,11 +837,11 @@ class DbgWindow < Window
 	def build_menu
 		dbgmenu = new_menu
 		hack_accel_group
-		i = addsubmenu(dbgmenu, 'continue') { @dbg_widget.keyboard_cb[:f5][] }
+		i = addsubmenu(dbgmenu, 'continue') { @dbg_widget.dbg_continue }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F5, 0, Gtk::ACCEL_VISIBLE)	# just to display the shortcut
-		i = addsubmenu(dbgmenu, 'step over') { @dbg_widget.keyboard_cb[:f10][] }
+		i = addsubmenu(dbgmenu, 'step over') { @dbg_widget.dbg_stepover }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F10, 0, Gtk::ACCEL_VISIBLE)
-		i = addsubmenu(dbgmenu, 'step into') { @dbg_widget.keyboard_cb[:f11][] }
+		i = addsubmenu(dbgmenu, 'step into') { @dbg_widget.dbg_singlestep }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F11, 0, Gtk::ACCEL_VISIBLE)
 		addsubmenu(dbgmenu, 'kill target') { @dbg_widget.dbg.kill }	# destroy ?
 		addsubmenu(dbgmenu, 'detach target') { @dbg_widget.dbg.detach }	# destroy ?

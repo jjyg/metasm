@@ -9,13 +9,16 @@ class HexWidget < DrawableWidget
 	# data_size = size of data in bytes (1 => chars, 4 => dwords..)
 	# line_size = nr of bytes shown per line
 	# view_addr = addr of 1st byte to display
-	attr_accessor :show_address, :show_data, :show_ascii,
+	attr_accessor :dasm, :show_address, :show_data, :show_ascii,
 		:data_size, :line_size, :endianness,
 		#:data_sign, :data_hex,
 		:caret_x_data, :focus_zone,
 		:view_addr, :write_pending
 
-	def initialize_widget
+	def initialize_widget(dasm, parent_widget)
+		@dasm = dasm
+		@parent_widget = parent_widget
+
 		# @caret_x = caret position in octets
 		# in hex, round to nearest @data_size and add @caret_x_data (nibbles)
 		@caret_x_data = 0
