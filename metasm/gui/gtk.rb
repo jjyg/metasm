@@ -653,5 +653,5 @@ require 'metasm/gui/dasm_opcodes'
 require 'metasm/gui/dasm_coverage'
 require 'metasm/gui/dasm_graph'
 require 'metasm/gui/dasm_decomp'
-require 'metasm/gui/gtk_debug'
+require 'metasm/gui/debug'
 
