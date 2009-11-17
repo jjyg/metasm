@@ -382,7 +382,7 @@ class AsmListingWidget < DrawableWidget
 
 		addrs = @dasm.sections.keys.grep(Integer)
 		@minaddr = addrs.min
-		@maxaddr = addrs.max + @dasm.sections[addrs.max].length rescue nil
+		@maxaddr = addrs.max + @dasm.sections[addrs.max].length rescue -1
 
 		@want_update_line_text = false
 

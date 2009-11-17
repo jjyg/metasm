@@ -3,8 +3,6 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-require 'gtk2'
-
 module Metasm
 module Gui
 
@@ -12,11 +10,9 @@ module Gui
 # TODO handle multiple threads, reattach, etc
 # TODO customize child widgets (listing: persistent hilight of current instr, show/set breakpoints, ...)
 # TODO handle debugee fork()
-class DbgWidget < Gtk::VBox
+class DbgWidget < ContainerVBoxWidget
 	attr_accessor :dbg, :console, :regs, :code, :mem, :win
-	def initialize(dbg)
-		super()
-
+	def initialize_widget(dbg)
 		@dbg = dbg
 
 		setup_keyboard_cb
@@ -31,37 +27,30 @@ class DbgWidget < Gtk::VBox
 		@code.bg_color_callback = lambda { |a|
 			if a == @dbg.pc
 				'f88'
-			# TODO breakpoints & stuff
-			# TODO cache @dbg.pc etc ? (called for each line rendered...)
+				# TODO breakpoints & stuff
 			end
 		}
+		# TODO popup menu, set bp, goto here, show arg in memdump..
 
 		@code.keyboard_callback = @keyboard_cb
 		@mem.keyboard_callback = @keyboard_cb
 
-		self.spacing = 2
-		add @regs, 'expand' => false
+		add @regs, 'expand' => false	# XXX
 		add @mem
 		add @code
 		add @console
 
-
-		# 1st child should be clonable (dasm)
 		@children = [@code, @mem, @regs]
 		@watchpoint = { @code => @dbg.register_pc }
 
-		signal_connect('size_request') { |w, alloc| resize(*alloc) }
-
-		signal_connect('realize') {
-			@code.focus_addr(@dbg.resolve_expr(@watchpoint[@code]), :graph)
-			@mem.focus_addr(0, :hex)
-			gui_update
-
-			modify_bg Gtk::STATE_NORMAL, Gdk::Color.new(0, 0xffff, 0)
-		}
-
 		@mem.set_height_request(1)
 		@code.set_height_request(1)
+	end
+
+	def initialize_visible
+		@code.focus_addr(@dbg.resolve_expr(@watchpoint[@code]), :graph)
+		@mem.focus_addr(0, :hex)
+		gui_update
 	end
 
 	def resize(w, h)
@@ -79,11 +68,11 @@ class DbgWidget < Gtk::VBox
 	attr_accessor :keyboard_cb
 	def setup_keyboard_cb
 		@keyboard_cb = {
-			:f5 => lambda { @win.protect { dbg_continue ; true } },
-			:f10 => lambda { @win.protect { dbg_stepover ; true } },
-			:f11 => lambda { @win.protect { dbg_singlestep ; true } },
-			:f12 => lambda { @win.protect { dbg_stepout ; true } },
-			?. => lambda { @console.grab_focus },
+			:f5  => lambda { protect { dbg_continue ; true } },
+			:f10 => lambda { protect { dbg_stepover ; true } },
+			:f11 => lambda { protect { dbg_singlestep ; true } },
+			:f12 => lambda { protect { dbg_stepout ; true } },
+			?.   => lambda { @console.grab_focus },
 		}
 	end
 
@@ -93,7 +82,7 @@ class DbgWidget < Gtk::VBox
 
 	def post_dbg_run
 		want_redraw = true
-		Gtk.idle_add {
+		Gui.idle_add {
 			if not @dbg.check_target and @dbg.state == :running
 				redraw if want_redraw
 				want_redraw = false
@@ -125,7 +114,6 @@ class DbgWidget < Gtk::VBox
 
 
 	def redraw
-		window.invalidate Gdk::Rectangle.new(0, 0, 100000, 100000), false if window
 		@console.redraw
 		@regs.gui_update
 		@children.each { |c| c.redraw }
@@ -133,35 +121,10 @@ class DbgWidget < Gtk::VBox
 
 	def gui_update
 		@console.redraw
-		@children.each { |c|
-			c = c.dasm_widget if c.kind_of? Gtk::Window
-			c.gui_update rescue next
-		}
+		@children.each { |c| c.gui_update }
 	end
 
-	def spawn_1stchild(title, page, addr)
-		child = DasmWindow.new(title)
-		w = child.display(@dbg.disassembler)
-		w.focus_addr(addr, page)
-		register_child(child)
-	end
-
-	# opens a new window with a DasmWidget on the same dasm, store it in @children
-	def new_child(title, page=:hex, watchpoint=nil)
-		addr = watchpoint ? @dbg.resolve_expr(watchpoint) : 'entrypoint'
-		child = @children.first.dasm_widget.clone_window(addr, page)
-		child.title = title
-		register_child(child, watchpoint)
-		child
-	end
-
-	# stores child in @children, register its @keyboard_cb
-	def register_child(child, watchpoint=nil)
-		@children << child
-		child.dasm_widget.keyboard_callback = @keyboard_cb
-		@watchpoint[child] = watchpoint if watchpoint
-	end
-
+	# XXX
 	def resize_child(cld, size)
 		pk = query_child_packing(cld)
 		if size <= 0
@@ -413,7 +376,6 @@ class DbgConsoleWidget < DrawableWidget
 		@dasm = nil
 		@dbg.set_log_proc { |l| add_log l }
 
-		@layout = Pango::Layout.new Gdk::Pango.context
 		@log = []
 		@log_length = 4000
 		@log_offset = 0
@@ -615,9 +577,7 @@ class DbgConsoleWidget < DrawableWidget
 		hlp = cmd.pop if cmd.last.include? ' '
 		cmd.each { |c|
 			@cmd_help[c] = hlp || 'nodoc'
-			@commands[c] = lambda { |*a|
-				@parent_widget.win.protect { b.call(*a) }
-			}
+			@commands[c] = lambda { |*a| protect { b.call(*a) } }
 		}
 	end
 
@@ -749,7 +709,7 @@ class DbgConsoleWidget < DrawableWidget
 				next
 			end
 			@scan_addr = 0
-			Gtk.idle_add {
+			Gui.idle_add {
 				if @scan_addr <= 0xffff_f000	# cpu.size?
 					protect { @dbg.loadsyms(@scan_addr) }
 					@scan_addr += 0x1000
@@ -852,15 +812,8 @@ end
 class DbgWindow < Window
 	attr_accessor :dbg_widget
 	def initialize_window(dbg = nil, title='metasm debugger')
-		(@@mainwindow_list ||= []) << self
-
 		self.title = title
 		display(dbg) if dbg
-	end
-
-	def destroy_window
-		@@mainwindow_list.delete self
-		Gui.main_quit if @@mainwindow_list.empty?
 	end
 
 	# show a new DbgWidget
@@ -874,11 +827,11 @@ class DbgWindow < Window
 	def build_menu
 		dbgmenu = new_menu
 		hack_accel_group
-		i = addsubmenu(dbgmenu, 'continue') { @dbg_widget.keyboard_cb[Gdk::Keyval::GDK_F5][] }
+		i = addsubmenu(dbgmenu, 'continue') { @dbg_widget.keyboard_cb[:f5][] }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F5, 0, Gtk::ACCEL_VISIBLE)	# just to display the shortcut
-		i = addsubmenu(dbgmenu, 'step over') { @dbg_widget.keyboard_cb[Gdk::Keyval::GDK_F10][] }
+		i = addsubmenu(dbgmenu, 'step over') { @dbg_widget.keyboard_cb[:f10][] }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F10, 0, Gtk::ACCEL_VISIBLE)
-		i = addsubmenu(dbgmenu, 'step into') { @dbg_widget.keyboard_cb[Gdk::Keyval::GDK_F11][] }
+		i = addsubmenu(dbgmenu, 'step into') { @dbg_widget.keyboard_cb[:f11][] }
 		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F11, 0, Gtk::ACCEL_VISIBLE)
 		addsubmenu(dbgmenu, 'kill target') { @dbg_widget.dbg.kill }	# destroy ?
 		addsubmenu(dbgmenu, 'detach target') { @dbg_widget.dbg.detach }	# destroy ?

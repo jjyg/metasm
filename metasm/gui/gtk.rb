@@ -74,7 +74,11 @@ class ContainerChoiceWidget < Gtk::Notebook
 		self.show_tabs = false
 		@views = {}
 		@view_indexes = []
+
+		signal_connect('realize') { initialize_visible } if respond_to? :initialize_visible
+
 		initialize_widget(*a)
+
 		show_all
 	end
 
@@ -99,6 +103,22 @@ class ContainerChoiceWidget < Gtk::Notebook
 	def curview_index
 		return if page == -1
 		@view_indexes[page]
+	end
+end
+
+class ContainerVBoxWidget < Gtk::VBox
+	include Msgbox
+
+	def initialize(*a)
+		super()
+
+		signal_connect('realize') { initialize_visible } if respond_to? :initialize_visible
+
+		signal_connect('size_request') { |w, alloc| resize(*alloc) } if respond_to? :resize
+
+		self.spacing = 2
+
+		initialize_widget(*a)
 	end
 end
 
@@ -539,6 +559,8 @@ class Window < Gtk::Window
 
 		Gtk::Settings.default.gtk_menu_bar_accel = nil	# disable F10 -> focus menubar
 
+		(@@mainwindow_list ||= []) << self
+
 		initialize_window(*a)
 		build_menu
 
@@ -546,6 +568,8 @@ class Window < Gtk::Window
 	end
 
 	def destroy_window
+		@@mainwindow_list.delete self
+		Gui.main_quit if @@mainwindow_list.empty?	# XXX we don't call main_start ourself..
 	end
 
 	def widget=(w)

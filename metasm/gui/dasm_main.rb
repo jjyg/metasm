@@ -448,24 +448,19 @@ end
 class DasmWindow < Window
 	attr_accessor :dasm_widget, :menu
 	def initialize_window(title = 'metasm disassembler')
-		(@@mainwindow_list ||= []) << self
-
 		self.title = title
 		@dasm_widget = nil
 	end
 
 	def destroy_window
 		@dasm_widget.terminate if @dasm_widget
-		@@mainwindow_list.delete self
-		Gui.main_quit if @@mainwindow_list.empty?
+		super()
 	end
 
 	# sets up a DisasmWidget as main widget of the window, replaces the current if it exists
 	# returns the widget
 	def display(dasm, ep=[], opts={})
-		if @dasm_widget
-			@dasm_widget.terminate
-		end
+		@dasm_widget.terminate if @dasm_widget
 		@dasm_widget = DisasmWidget.new(dasm, ep)
 		self.widget = @dasm_widget
 		@dasm_widget.start_disassembling unless opts[:dont_dasm]
