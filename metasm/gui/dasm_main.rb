@@ -592,19 +592,15 @@ class DasmWindow < Window
 		addsubmenu(dasm, 'Disassemble _fast from here', 'C') { @dasm_widget.disassemble_fast(@dasm_widget.curview.current_address) }
 		addsubmenu(dasm, 'Disassemble fast & dee_p from here') { @dasm_widget.disassemble_fast_deep(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, dasm, '_Disassemble')
-		i = addsubmenu(actions, 'Follow') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }	# XXX
-		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Return, 0, Gtk::ACCEL_VISIBLE)
-		i = addsubmenu(actions, 'Jmp back') { @dasm_widget.focus_addr_back }
-		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Escape, 0, Gtk::ACCEL_VISIBLE)
-		i = addsubmenu(actions, 'Undo jmp back') { @dasm_widget.focus_addr_redo }
-		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Return, Gdk::Window::CONTROL_MASK, Gtk::ACCEL_VISIBLE)
+		addsubmenu(actions, 'Follow', '<enter>') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }	# XXX
+		addsubmenu(actions, 'Jmp back', '<esc>') { @dasm_widget.focus_addr_back }
+		addsubmenu(actions, 'Undo jmp back', '^<enter>') { @dasm_widget.focus_addr_redo }
 		addsubmenu(actions, 'Goto', 'g') { @dasm_widget.prompt_goto }
 		addsubmenu(actions, 'List functions', 'f') { @dasm_widget.list_functions }
 		addsubmenu(actions, 'List labels', 'l') { @dasm_widget.list_labels }
 		addsubmenu(actions, 'List xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
 		addsubmenu(actions, 'Rename label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
-		i = addsubmenu(actions, 'Decompile') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
-		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_Tab, 0, Gtk::ACCEL_VISIBLE)
+		addsubmenu(actions, 'Decompile', '<tab>') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Decompile finali_ze') { @dasm_widget.dasm.decompiler.finalize ; @dasm_widget.gui_update }
 		addsubmenu(actions, 'Comment', ';') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, '_Undefine') { @dasm_widget.dasm.undefine_from(@dasm_widget.curview.current_address) ; @dasm_widget.gui_update }

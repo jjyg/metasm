@@ -89,7 +89,5 @@ if dasm
 	w.display(dasm, ep)
 	w.dasm_widget.focus_addr ep.first if not ep.empty?
 	opts[:plugin].to_a.each { |p| dasm.load_plugin(p) }
-else
-	w.show_all
 end
 Metasm::Gui.main

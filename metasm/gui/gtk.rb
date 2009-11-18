@@ -589,7 +589,7 @@ class Window < Gtk::Window
 	def addsubmenu(menu, *args, &action)
 		stock = (Gtk::Stock.constants.map { |c| c.to_s } & args).first
 		args.delete stock if stock
-		accel = args.grep(/^\^?\w$/).first
+		accel = args.grep(/^\^?(\w|<\w+>)$/).first
 		args.delete accel if accel
 		check = args.delete :check
 		submenu = args.grep(Gtk::Menu).first
@@ -613,7 +613,19 @@ class Window < Gtk::Window
 			item = Gtk::MenuItem.new
 		end
 		item.set_submenu(submenu) if submenu
-		item.add_accelerator('activate', @accel_group, accel[-1], (accel[0] == ?^ ? Gdk::Window::CONTROL_MASK : 0), Gtk::ACCEL_VISIBLE) if accel	# XXX 1.9 ?
+
+		if accel
+			key = accel[-1]
+			if key == ?>
+				key = case accel[/<(.*)>/, 1]
+				when 'enter'; Gdk::Keyval::GDK_Return
+				when 'esc'; Gdk::Keyval::GDK_Escape
+				when 'tab'; Gdk::Keyval::GDK_Tab
+				else ??
+				end
+			end
+			item.add_accelerator('activate', @accel_group, key, (accel[0] == ?^ ? Gdk::Window::CONTROL_MASK : 0), Gtk::ACCEL_VISIBLE)
+		end
 		item.signal_connect('activate') { protect { action.call(item) } } if action
 		menu.append item
 		item
