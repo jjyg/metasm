@@ -181,46 +181,44 @@ class DrawableWidget < Gtk::DrawingArea
 		# events callbacks
 		signal_connect('expose_event') {
 			@w = window ; @gc = Gdk::GC.new(@w)
-			paint
+			protect { paint }
 			@w = @gc = nil
 			true
 		}
 
 		signal_connect('size_allocate') { |w, alloc|
-			resized(alloc.width, alloc.height)
+			protect { resized(alloc.width, alloc.height) }
 		}
 
 		signal_connect('button_press_event') { |w, ev|
 			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-				next click_ctrl(ev.x, ev.y) if ev.event_type == Gdk::Event::Type::BUTTON_PRESS and ev.button == 1 and respond_to? :click_ctrl
+				next protect { click_ctrl(ev.x, ev.y) } if ev.event_type == Gdk::Event::Type::BUTTON_PRESS and ev.button == 1 and respond_to? :click_ctrl
 				next
 			end
 			case ev.event_type
 			when Gdk::Event::Type::BUTTON_PRESS
 				grab_focus
 				case ev.button
-				when 1; click(ev.x, ev.y) if respond_to? :click
-				when 3; rightclick(ev.x, ev.y) if respond_to? :rightclick
+				when 1; protect { click(ev.x, ev.y) } if respond_to? :click
+				when 3; protect { rightclick(ev.x, ev.y) } if respond_to? :rightclick
 				end
 			when Gdk::Event::Type::BUTTON2_PRESS
 				case ev.button
-				when 1; doubleclick(ev.x, ev.y) if respond_to? :doubleclick
+				when 1; protect { doubleclick(ev.x, ev.y) } if respond_to? :doubleclick
 				end
 			end
 		}
 
 		signal_connect('motion_notify_event') { |w, ev|
 			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-				mousemove_ctrl(ev.x, ev.y) if respond_to? :mousemove_ctrl
+				protect { mousemove_ctrl(ev.x, ev.y) } if respond_to? :mousemove_ctrl
 			else
-				mousemove(ev.x, ev.y)
+				protect { mousemove(ev.x, ev.y) }
 			end
 		} if respond_to? :mousemove
 
 		signal_connect('button_release_event') { |w, ev|
-			if ev.button == 1
-				mouserelease(ev.x, ev.y)
-			end
+			protect { mouserelease(ev.x, ev.y) } if ev.button == 1
 		} if respond_to? :mouserelease
 
 		signal_connect('scroll_event') { |w, ev|
@@ -230,18 +228,18 @@ class DrawableWidget < Gtk::DrawingArea
 			else next
 			end
 			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-				mouse_wheel_ctrl(dir, ev.x, ev.y) if respond_to? :mouse_wheel_ctrl
+				protect { mouse_wheel_ctrl(dir, ev.x, ev.y) } if respond_to? :mouse_wheel_ctrl
 			else
-				mouse_wheel(dir)
+				protect { mouse_wheel(dir) }
 			end
 		} if respond_to? :mouse_wheel
 
 		signal_connect('key_press_event') { |w, ev|
 			key = Keyboard_trad[ev.keyval]
 			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
-				keypress_ctrl(key) or (@parent_widget and @parent_widget.keypress_ctrl(key))
+				protect { keypress_ctrl(key) or (@parent_widget and @parent_widget.keypress_ctrl(key)) }
 			else
-				keypress(key) or (@parent_widget and @parent_widget.keypress(key))
+				protect { keypress(key) or (@parent_widget and @parent_widget.keypress(key)) }
 			end
 		}
 
