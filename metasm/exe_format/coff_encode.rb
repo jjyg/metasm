@@ -399,7 +399,7 @@ class COFF
 		encode_append_section s
 
 		if @imports.first and @imports.first.iat_p.kind_of? Integer
-			ordiat = @imports.zip(iat).sort_by { |id, it| id.iat_p }.map { |id, it| it }
+			ordiat = @imports.zip(iat).sort_by { |id, it| id.iat_p.kind_of?(Integer) ? id.iat_p : 1<<65 }.map { |id, it| it }
 		else
 			ordiat = iat
 		end
