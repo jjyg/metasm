@@ -11,7 +11,6 @@
 #
 
 require 'metasm'
-require 'metasm-shell'
 
 # read original file
 raise 'need a target filename' if not target = ARGV.shift
@@ -23,7 +22,7 @@ pe.header.time = pe_orig.header.time
 
 has_mb = pe.imports.find { |id| id.imports.find { |i| i.name == 'MessageBoxA' } } ? 1 : 0
 # hook code to run on start
-newcode = <<EOS.encode_edata
+newcode = Metasm::Shellcode.assemble(pe.cpu, <<EOS).encoded
 hook_entrypoint:
 pushad
 #if ! #{has_mb}

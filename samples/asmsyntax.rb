@@ -6,9 +6,8 @@
 # this script show the assembler syntax understood by the framework
 
 require 'metasm'
-require 'metasm-shell'
 
-edata = <<EOS.encode_edata
+edata = Metasm::Shellcode.assemble(Metasm::Ia32.new, <<EOS).encoded
 #line 12	// preprocessor directive (useful in case of syntax error)
 
 // data specification

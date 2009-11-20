@@ -5,7 +5,7 @@
 
 
 require 'metasm'
-require 'metasm-shell'
+Metasm.require 'samples/metasm-shell'
 
 include Metasm
 

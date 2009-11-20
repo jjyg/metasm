@@ -11,7 +11,7 @@
 #
 
 require 'metasm'
-require 'metasm-shell'
+Metasm.require 'samples/metasm-shell'
 
 class Tracer < Metasm::WinDbg
 	def initialize(*a)
