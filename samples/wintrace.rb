@@ -13,27 +13,23 @@
 require 'metasm'
 Metasm.require 'samples/metasm-shell'
 
-class Tracer < Metasm::WinDbg
+class Tracer < Metasm::WinDbgAPI
 	def initialize(*a)
 		super(*a)
 		@label = {}
 		@prog = Metasm::ExeFormat.new(Metasm::Ia32.new)
-		debugloop
+		loop
 		puts 'finished'
 	end
 
 	def handler_newprocess(pid, tid, info)
-		ret = super(pid, tid, info)
-		# need to call super first
-		# super calls newthread
 		hide_debugger(pid, tid, info)
-		ret
+		Metasm::WinAPI::DBG_CONTINUE
 	end
 
 	def handler_newthread(pid, tid, info)
-		ret = super(pid, tid, info)
 		do_singlestep(pid, tid)
-		ret
+		Metasm::WinAPI::DBG_CONTINUE
 	end
 
 	def handler_exception(pid, tid, info)
@@ -51,10 +47,13 @@ class Tracer < Metasm::WinDbg
 		pe.decode_header
 		pe.decode_exports
 		libname = read_str_indirect(pid, info.imagename, info.unicode)
-		pe.export.exports.each { |e|
-			next if not r = pe.label_rva(e.target)
-			@label[info.imagebase + r] = libname + '!' + (e.name || "ord_#{e.ordinal}")
-		}
+		if pe.export
+			libname = pe.export.libname if libname == ''
+			pe.export.exports.each { |e|
+				next if not r = pe.label_rva(e.target)
+				@label[info.imagebase + r] = libname + '!' + (e.name || "ord_#{e.ordinal}")
+			}
+		end
 		super(pid, tid, info)
 	end
 
@@ -83,6 +82,11 @@ class Tracer < Metasm::WinDbg
 end
 
 if $0 == __FILE__
+	if ARGV.empty?
+		# display list of running processes if no target found
+		puts Metasm::WinOS.list_processes.sort_by { |pr_| pr_.pid }
+		abort 'target needed'
+	end
 	Metasm::WinOS.get_debug_privilege
 	Tracer.new ARGV.shift.dup
 end
