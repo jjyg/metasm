@@ -1331,6 +1331,10 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			@decoded[di_addr] = di
 			block.add_di di
 			puts di if $DEBUG
+
+			di = @callback_newinstr[di] if callback_newinstr
+			return ret if not di
+
 			di_addr = di.next_addr
 
 			if di.opcode.props[:stopexec] or di.opcode.props[:setip]
