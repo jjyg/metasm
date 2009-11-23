@@ -17,7 +17,8 @@ def self.const_missing(c)
 		'LoadedELF' => 'ELF', 'LoadedPE' => 'PE',
 		'LinuxRemoteString' => 'LinOS',
 		'WinAPI' => 'WinOS', 'WindowsExports' => 'WinOS',
-		'WindowsRemoteString' => 'WinOS', 'WinDbg' => 'WinOS',
+		'WindowsRemoteString' => 'WinOS', 'WinDbgAPI' => 'WinOS',
+		'WinDebugger' => 'WinOS',
 		'VirtualFile' => 'OS', 'VirtualString' => 'OS',
 		'GdbRemoteString' => 'GdbClient', 'GdbRemoteDebugger' => 'GdbClient',
 	}[c.to_s] || c.to_s
