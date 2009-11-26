@@ -909,7 +909,7 @@ class Disassembler
 		}
 		e, l = get_section_at(old)
 		if e
-			e.add_export new, e.export[old], true
+			e.add_export new, e.export.delete(old), true
 		end
 		@label_alias_cache = nil
 		@old_prog_binding[new] = @prog_binding[new] = @prog_binding.delete(old)
