@@ -473,6 +473,7 @@ class WinDbgAPI
 			ret = nil
 			ret = yield(*ev) if block_given?
 			ret = dispatch_debugevent(*ev) if not ret.kind_of? ::Integer
+			ret = WinAPI::DBG_CONTINUE if not ret.kind_of? ::Integer
 			continuedebugevent(ev[0], ev[1], ret)
 		end
 	end
