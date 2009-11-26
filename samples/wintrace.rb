@@ -82,11 +82,11 @@ class Tracer < Metasm::WinDbgAPI
 end
 
 if $0 == __FILE__
+	Metasm::WinOS.get_debug_privilege
 	if ARGV.empty?
 		# display list of running processes if no target found
 		puts Metasm::WinOS.list_processes.sort_by { |pr_| pr_.pid }
 		abort 'target needed'
 	end
-	Metasm::WinOS.get_debug_privilege
 	Tracer.new ARGV.shift.dup
 end
