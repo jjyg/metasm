@@ -625,7 +625,7 @@ class Debugger
 					raise tok || lexer, '] expected' if tok.raw != ']'
 					break
 				when '*'
-					ptr = parse(lexer)
+					ptr = parse_value(lexer)
 					break
 				when ':'
 					n = lexer.readtok
