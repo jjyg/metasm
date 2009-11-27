@@ -653,9 +653,9 @@ class WinDbgAPI
 
 
 	attr_accessor :logger
-	def puts(s)
+	def puts(*s)
 		@logger ||= $stdout
-		@logger.puts s
+		@logger.puts(*s)
 	end
 end
 

@@ -9,7 +9,7 @@
 require 'metasm'
 
 dll = 'C:\\Program Files\\Debugging Tools For Windows (x86)\\dbghelp.dll'
-SYMOPT = 2|0x80000|8	# undname no_prompt no_cpp
+SYMOPT = 4|0x80000	# defered_load no_prompt
 Metasm::WinAPI.new_api dll, 'SymInitialize', 'III I'
 Metasm::WinAPI.new_api dll, 'SymGetOptions', 'I'
 Metasm::WinAPI.new_api dll, 'SymSetOptions', 'I I'
@@ -39,31 +39,25 @@ class Tracer < Metasm::WinDbgAPI
 		pe = Metasm::LoadedPE.load(@mem[pid][info.imagebase, 0x1000000])
 		pe.decode_header
 		pe.decode_exports
-		if pe.export
-			libname = read_str_indirect(pid, info.imagename, info.unicode)
-			libname = pe.export.libname if libname == ''
-			puts "loaddll: #{libname} @#{'%x' % info.imagebase}"
-			h = @hprocess[pid]
-			Metasm::WinAPI.symloadmodule64(h, 0, libname, 0, info.imagebase, 0, pe.optheader.image_size)
-
-			puts "<enum"
-			symstruct = [0x58].pack('L') + 0.chr*4*18*0 + [2000].pack('L')*19	# sizeof(struct), ..., sizeof(name[])
-			text = pe.sections.find { |s| s.name == '.text' }
-			text.rawsize.times { |o|
-				sym = symstruct + 0.chr*2000	# name right after the struct
-				off = 0.chr*8
-				if Metasm::WinAPI.symfromaddr(h, info.imagebase+text.virtaddr+o, 0, off, sym)
-					off = off.unpack('L').first
-					if off == 0
-						symnamelen = sym[18*4, 4].unpack('L').first
-						puts "#{'%x' % (text.virtaddr+o)} -> #{sym[80, symnamelen].inspect}"
-						p sym.gsub("\0", '.').gsub(/\.+$/, '') if $DEBUG
-					end
-				end
-				puts "%x/%x" % [o, text.rawsize] if o & 0xffff == 0
-			}
-			puts "enum>"
-		end
+		return if not pe.export
+		libname = pe.export.libname
+		puts "loaddll: #{libname} @#{'%x' % info.imagebase}"
+		h = @hprocess[pid]
+		Metasm::WinAPI.symloadmodule64(h, 0, libname, 0, info.imagebase, 0, pe.optheader.image_size)
+		# XXX struct should be 0x50 wide but Value is 8 aligned despite pack(4)
+		symstruct = [0x58].pack('L') + 0.chr*4*19 + [512].pack('L')	# sizeofstruct, ..., nameszmax
+		text = pe.sections.find { |s| s.name == '.text' }
+		# XXX should SymEnumSymbols, but win32api callbacks sucks
+		text.rawsize.times { |o|
+			sym = symstruct + 0.chr*512	# name concat'ed after the struct
+			off = 0.chr*8
+			if Metasm::WinAPI.symfromaddr(h, info.imagebase+text.virtaddr+o, 0, off, sym) and off.unpack('L').first == 0
+				symnamelen = sym[19*4, 4].unpack('L').first
+				puts ' %x %s' % [text.virtaddr+o, sym[0x54, symnamelen]]
+			end
+			puts '  %x/%x' % [o, text.rawsize] if $VERBOSE and o & 0xffff == 0
+		}
+		puts
 	end
 end
 
@@ -74,5 +68,9 @@ if $0 == __FILE__
 		puts Metasm::WinOS.list_processes.sort_by { |pr_| pr_.pid }
 		abort 'target needed'
 	end
-	Tracer.new ARGV.shift.dup
+	pid = ARGV.shift.dup
+	if pr = Metasm::WinOS.find_process(pid)
+		pid = pr.pid
+	end
+	Tracer.new pid
 end
