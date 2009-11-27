@@ -2427,6 +2427,37 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		ret
 	end
 
+	# returns a demangled C++ name
+	# from wgcc-2.2.2/undecorate.cpp
+	def demangle_cppname(name)
+		ret = name
+		if name[0] == ??
+			name = name[1..-1]
+			if name[0] == ??
+				name = name[1..-1]
+				op = name[0, 1]
+				op = name[0, 2] if op == '_'
+				if op = {
+	'2' => "new", '3' => "delete", '4' => "=", '5' => ">>", '6' => "<<", '7' => "!", '8' => "==", '9' => "!=",
+	'A' => "[]", 'C' => "->", 'D' => "*", 'E' => "++", 'F' => "--", 'G' => "-", 'H' => "+", 'I' => "&",
+	'J' => "->*", 'K' => "/", 'L' => "%", 'M' => "<", 'N' => "<=", 'O' => ">", 'P' => ">=", 'Q' => ",",
+	'R' => "()", 'S' => "~", 'T' => "^", 'U' => "|", 'V' => "&&", 'W' => "||", 'X' => "*=", 'Y' => "+=",
+	'Z' => "-=", '_0' => "/=", '_1' => "%=", '_2' => ">>=", '_3' => "<<=", '_4' => "&=", '_5' => "|=", '_6' => "^=",
+	'_7' => "`vftable'", '_8' => "`vbtable'", '_9' => "`vcall'", '_A' => "`typeof'", '_B' => "`local static guard'",
+	'_C' => "`string'", '_D' => "`vbase destructor'", '_E' => "`vector deleting destructor'", '_F' => "`default constructor closure'",
+	'_G' => "`scalar deleting destructor'", '_H' => "`vector constructor iterator'", '_I' => "`vector destructor iterator'",
+	'_J' => "`vector vbase constructor iterator'", '_K' => "`virtual displacement map'", '_L' => "`eh vector constructor iterator'",
+	'_M' => "`eh vector destructor iterator'", '_N' => "`eh vector vbase constructor iterator'", '_O' => "`copy constructor closure'",
+	'_S' => "`local vftable'", '_T' => "`local vftable constructor closure'", '_U' => "new[]", '_V' => "delete[]",
+	'_X' => "`placement delete closure'", '_Y' => "`placement delete[] closure'"}[op]
+					ret = op[0] == ?` ? op[1..-2] : "op_#{op}"
+				end
+			end
+		end
+		# TODO
+		ret
+	end
+
 	def to_s
 		a = ''
 		dump { |l| a << l << "\n" }
