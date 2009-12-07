@@ -7,9 +7,8 @@
 Metasmdir = File.dirname(__FILE__)
 
 module Metasm
-def self.const_missing(c)
 	# constant defined in the same file as another
-	cst = {
+	Const_autorequire_equiv = {
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',
 		'X64' => 'X86_64',
 		'UniversalBinary' => 'MachO', 'COFFArchive' => 'COFF',
@@ -21,9 +20,10 @@ def self.const_missing(c)
 		'WinDebugger' => 'WinOS',
 		'VirtualFile' => 'OS', 'VirtualString' => 'OS',
 		'GdbRemoteString' => 'GdbClient', 'GdbRemoteDebugger' => 'GdbClient',
-	}[c.to_s] || c.to_s
+	}
 
-	files = {
+	Const_autorequire = {
+		'CPU' => ['encode', 'decode', 'render', 'main', 'exe_format/main', 'os/main'],
 		'Ia32' => 'ia32', 'MIPS' => 'mips', 'PowerPC' => 'ppc',
 		'X86_64' => 'x86_64',
 		'C' => ['parse_c', 'compile_c'],
@@ -38,13 +38,16 @@ def self.const_missing(c)
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
 		'GdbClient' => 'os/remote',
 		'Decompiler' => 'decompile',
-	}[cst]
+	}
 
+def self.const_missing(c)
+	cst = Const_autorequire_equiv[c.to_s] || c.to_s
+
+	files = Const_autorequire[cst]
 	return if not files
-
 	files = [files] if files.kind_of? ::String
 
-	files.each { |f| require File.join('metasm', f) }
+	files.each { |f| require ::File.join('metasm', f) }
 
 	const_get c
 end
@@ -76,13 +79,7 @@ end
 end
 
 # load core files by default (too many classes to check for otherwise)
-Metasm.require 'metasm/encode'
-Metasm.require 'metasm/decode'
-Metasm.require 'metasm/render'
-Metasm.require 'metasm/main'
-Metasm.require 'metasm/exe_format/main'
-Metasm.require 'metasm/os/main'
-
+Metasm::CPU
 
 # remove an 1.9 warning, couldn't find a compatible way...
 if {}.respond_to? :key
