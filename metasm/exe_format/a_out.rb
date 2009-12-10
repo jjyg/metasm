@@ -175,7 +175,8 @@ class AOut < ExeFormat
 		end
 	end
 
-	def assemble
+	def assemble(*a)
+		parse(*a) if not a.empty?
 		@text << assemble_sequence(@textsrc, @cpu)
 		@textsrc.clear
 		@data << assemble_sequence(@datasrc, @cpu)

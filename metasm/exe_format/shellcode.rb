@@ -57,15 +57,19 @@ class Shellcode < ExeFormat
 	# clears self.source
 	# the optional parameter may contain a binding used to fixup! self.encoded
 	# uses self.base_addr if it exists
-	def assemble(binding={})
+	def assemble(*a)
+		parse(*a) if not a.empty?
 		@encoded << assemble_sequence(@source, @cpu)
 		@source.clear
+		encode
+	end
+
+	def encode(binding={})
 		@encoded.fixup! binding
 		@encoded.fixup @encoded.binding(@base_addr)
 		@encoded.fill @encoded.rawsize
 		self
 	end
-	alias encode assemble
 
 	def decode
 	end

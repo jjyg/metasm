@@ -43,7 +43,7 @@ class PE < COFF
 	def encode_default_mz_header
 		# XXX use single-quoted source, to avoid ruby interpretation of \r\n
 		@mz.cpu = Ia32.new(386, 16)
-		@mz.parse <<'EOMZSTUB'
+		@mz.assemble <<'EOMZSTUB'
 	db "Needs Win32!\r\n$"
 .entrypoint
 	push cs
@@ -54,7 +54,6 @@ class PE < COFF
 	mov  ax, 4c01h    ; exit with code in al
 	int  21h
 EOMZSTUB
-		@mz.assemble
 
 		mzparts = @mz.pre_encode
 
@@ -149,8 +148,7 @@ __stdcall int DllEntryPoint(void *handle, unsigned long reason, void *reserved) 
 	return ret;
 }
 EOS
-			parse(@cpu.new_ccompiler(cp, self).compile)
-			assemble
+			assemble(@cpu.new_ccompiler(cp, self).compile)
 			@optheader.entrypoint = 'DllEntryPoint'
 		elsif @sections.find { |s| s.encoded.export['WinMain'] }
 			cp = @cpu.new_cparser
@@ -199,8 +197,7 @@ int main(void) {
 	return ret;
 }
 EOS
-			parse(@cpu.new_ccompiler(cp, self).compile)
-			assemble
+			assemble(@cpu.new_ccompiler(cp, self).compile)
 			@optheader.entrypoint = 'main'
 		end
 	end

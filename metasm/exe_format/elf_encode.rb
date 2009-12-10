@@ -378,7 +378,7 @@ class ELF
 				# dd some_func_got_default	# lazily rewritten to the real addr of some_func by jmp dlresolve_inplace
 				# 				# base_relocated ?
 
-				shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).parse(c).assemble.encoded }
+				shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).assemble(c).encoded }
 				base = @cpu.generate_PIC ? 'ebx' : '_PLT_GOT'
 				if not plt ||= @sections.find { |s| s.type == 'PROGBITS' and s.name == '.plt' }
 					plt = Section.new
@@ -1094,7 +1094,8 @@ class ELF
 	end
 
 	# assembles the hash self.source to a section array
-	def assemble
+	def assemble(*a)
+		parse(*a) if not a.empty?
 		@source.each { |k, v|
 			raise "no section named #{k} ?" if not s = @sections.find { |s_| s_.name == k }
 			s.encoded << assemble_sequence(v, @cpu)

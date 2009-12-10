@@ -68,10 +68,7 @@ class ExeFormat
 	# creates a new object using the specified cpu, parses the asm source, and assemble
 	def self.assemble(cpu, source, file='<unk>', lineno=1)
 		e = new(cpu)
-		puts 'parsing asm' if $VERBOSE
-		e.parse(source, file, lineno)
-		puts 'assembling' if $VERBOSE
-		e.assemble
+		e.assemble(source, file, lineno)
 		e
 	end
 
@@ -79,19 +76,19 @@ class ExeFormat
 		assemble(cpu, File.read(filename), filename, 1)
 	end
 
+	def compile_c(source, file='<unk>', lineno=1)
+		cp = @cpu.new_cparser
+		cp.parse(source, file, lineno)
+		asm_source = @cpu.new_ccompiler(cp, self).compile
+		puts asm_source if $DEBUG
+		parse(asm_source, 'C compiler output', 1)
+		assemble
+	end
+
 	# creates a new object using the specified cpu, parse/compile/assemble the C source
 	def self.compile_c(cpu, source, file='<unk>', lineno=1)
 		e = new(cpu)
-		cp = cpu.new_cparser
-		puts 'parsing C' if $VERBOSE
-		cp.parse(source, file, lineno)
-		puts 'compiling C' if $VERBOSE
-		asm_source = cpu.new_ccompiler(cp, e).compile
-		puts asm_source if $DEBUG
-		puts 'parsing asm' if $VERBOSE
-		e.parse(asm_source, 'C compiler output', 1)
-		puts 'assembling' if $VERBOSE
-		e.assemble
+		e.compile_c(source, file, lineno)
 		e.c_set_default_entrypoint
 		e
 	end

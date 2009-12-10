@@ -72,6 +72,8 @@ class Module
 alias premetasm_const_missing const_missing
 def const_missing(c)
 	# Object.const_missing => Module#const_missing and not the other way around
+	# XXX should use Module.nesting, but ruby sucks arse
+	# e.g. module Metasm ; module Bla ; class << self ; Ia32 ; end ; end ; end -> fail
 	if (name =~ /^Metasm(::|$)/ or ancestors.include? Metasm) and cst = Metasm.const_missing(c)
 		cst
 	else

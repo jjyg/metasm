@@ -443,7 +443,7 @@ class COFF
 	def arch_encode_thunk(edata, import)
 		case @cpu
 		when Ia32
-			shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).parse(c).assemble.encoded }
+			shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).assemble(c).encoded }
 			if @cpu.generate_PIC
 				# sections starts with a helper function that returns the address of metasm_intern_geteip in eax (PIC)
 				if not @sections.find { |s| s.encoded and s.encoded.export['metasm_intern_geteip'] } and edata.empty?
@@ -889,7 +889,8 @@ class COFF
 		end
 	end
 
-	def assemble
+	def assemble(*a)
+		parse(*a) if not a.empty?
 		@source.each { |k, v|
 			raise "no section named #{k} ?" if not s = @sections.find { |s_| s_.name == k }
 			s.encoded << assemble_sequence(v, @cpu)

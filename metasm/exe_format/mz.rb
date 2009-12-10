@@ -69,7 +69,8 @@ class MZ < ExeFormat
 	end
 
 	# assembles the source in the body, clears the source
-	def assemble
+	def assemble(*a)
+		parse(*a) if not a.empty?
 		@body << assemble_sequence(@source, @cpu)
 		@body.fixup @body.binding
 		# XXX should create @relocs here

@@ -617,7 +617,8 @@ class MachO < ExeFormat
 	end
 
 	# assembles the hash self.source to a section array
-	def assemble
+	def assemble(*a)
+		parse(*a) if not a.empty?
 		@source.each { |k, v|
 			raise "no segment named #{k} ?" if not s = @segments.find { |s_| s_.name == k }
 			s.encoded << assemble_sequence(v, @cpu)
