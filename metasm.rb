@@ -4,9 +4,11 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-Metasmdir = File.dirname(__FILE__)
-
 module Metasm
+	# root directory for metasm files
+	# used by some scripts, eg to find samples/dasm-plugin directory
+	Metasmdir = File.dirname(__FILE__)
+
 	# constant defined in the same file as another
 	Const_autorequire_equiv = {
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',

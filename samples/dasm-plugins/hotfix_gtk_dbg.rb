@@ -14,6 +14,6 @@ if (!Process.fork)
 	ARGV.clear
 	ARGV << mypid
 	$VERBOSE = false
-	Kernel.load Metasmdir+'/samples/hotfix_gtk_dbg.rb'
+	Kernel.load File.join(Metasmdir, 'samples', 'hotfix_gtk_dbg.rb')
 	exit!
 end
