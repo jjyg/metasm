@@ -644,6 +644,8 @@ libc.so.6
  vsnprintf vsprintf vsscanf vswprintf wait wait3 wait4 waitid waitpid wcpcpy wcpncpy wcrtomb wcscasecmp wcscasecmp_l wcscat wcschrnul wcscoll wcscoll_l
  wcsftime_l wcslen wcsncasecmp wcsncasecmp_l wcsncpy wcsnlen wcsnrtombs wcsrtombs wcstod_l wcstof_l wcstol_l wcstold_l wcstoll_l wcstoq wcstoul_l wcstoull_l
  wcstouq wcswcs wcsxfrm_l wctrans wctrans_l wctype wctype_l wmemcpy wmemmove wmempcpy write writev
+libdl.so.2
+ dladdr dladdr1 dlclose dlerror dlinfo dlmopen dlopen dlopen dlsym dlvsym
 libruby1.8.so.1.8
  Init_Array Init_Bignum Init_Binding Init_Comparable Init_Dir Init_Enumerable Init_Enumerator Init_Exception Init_File Init_GC Init_Hash Init_IO Init_Math
  Init_Numeric Init_Object Init_Precision Init_Proc Init_Random Init_Range Init_Regexp Init_String Init_Struct Init_Thread Init_Time Init_eval Init_ext
