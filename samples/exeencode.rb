@@ -21,6 +21,7 @@ $cpu ||= Metasm::Ia32.new
 
 outfilename = 'a.out'
 type = nil
+etype = :bin
 macros = {}
 OptionParser.new { |opt|
 	opt.on('-o file', 'output filename') { |f| outfilename = f }
@@ -39,6 +40,7 @@ OptionParser.new { |opt|
 	opt.on('--le', 'set cpu in little-endian mode') { $cpu.endianness = :little }
 	opt.on('--be', 'set cpu in big-endian mode') { $cpu.endianness = :big }
 	opt.on('-fno-pic', 'generate position-dependant code') { $cpu.generate_PIC = false }
+	opt.on('--shared', 'generate shared library') { etype = :lib }
 }.parse!
 
 if file = ARGV.shift
@@ -68,7 +70,7 @@ elsif $to_cstring
 		'"' + l.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
 	}.join("\n") + ';'
 else
-	exe.encode_file(outfilename)
+	exe.encode_file(outfilename, etype)
 end
 
 __END__
