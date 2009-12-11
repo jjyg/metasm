@@ -325,7 +325,7 @@ class CCompiler < C::Compiler
 		[el, eh]
 	end
 
-	# returns the instruction prefix for a comparison operator
+	# returns the instruction suffix for a comparison operator
 	def getcc(op, type)
 		case op
 		when :'=='; 'z'
@@ -954,7 +954,7 @@ class CCompiler < C::Compiler
 					when :%; return c_cexpr_inner_arith(l, :&, Expression[rr-1], type)
 					end
 				else
-					# TODO :/ => *(r^(-1)), *3..
+					# TODO /r => *(r^(-1)), *3 => stuff with magic constants..
 				end
 			elsif type.float?
 				case op
@@ -1041,10 +1041,39 @@ class CCompiler < C::Compiler
 				instr 'imul', l, r
 			end
 			unuse r
-		when 'div'
-			raise # TODO
-		when 'mod'
-			raise # TODO
+		when 'div', 'mod'
+			lv = l.val if l.kind_of? Reg
+			eax = Reg.from_str 'eax'
+			edx = Reg.from_str 'edx'
+			if @state.used.include? eax.val and lv != eax.val
+				instr 'push', eax
+				saved_eax = true
+			end
+			if @state.used.include? edx.val
+				instr 'push', edx
+				saved_edx = true
+			end
+
+			instr 'mov', eax, l if lv != eax.val
+
+			if type.specifier == :unsigned
+				instr 'mov', edx, Expression[0]
+				instr 'div', r
+			else
+				instr 'mov', edx, eax
+				instr 'sar', edx, Expression[0x1f]
+				instr 'idiv', r
+			end
+			unuse r
+
+			if op == 'div'
+				instr 'mov', l, eax if lv != eax.val
+			else
+				instr 'mov', l, edx if lv != edx.val
+			end
+
+			instr 'pop', edx if saved_edx
+			instr 'pop', eax if saved_eax
 		end
 	end
 
