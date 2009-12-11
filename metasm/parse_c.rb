@@ -1706,8 +1706,9 @@ EOH
 					raise tok || parser, 'invalid specifier list'
 				end
 			when :int	# short, long, long long X signed, unsigned
-				specifier = specifier - [:long] + [:longlong] if (specifier & [:long]).length == 2
-				if (specifier & [:signed, :unsigned]).length > 1 or (specifier & [:short, :long, :longlong]).length > 1
+				# Array#count not available on old ruby (eg 1.8.4), so use ary.len - (ary-stuff).len
+				specifier = specifier - [:long] + [:longlong] if specifier.length - (specifier-[:long]).length == 2
+				if specifier.length - (specifier-[:signed, :unsigned]).length > 1 or specifier.length - (specifier-[:short, :long, :longlong]).length > 1
 					raise tok || parser, 'invalid specifier list'
 				else
 					name = (specifier & [:longlong, :long, :short])[0] || :int
