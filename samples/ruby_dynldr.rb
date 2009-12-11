@@ -368,6 +368,7 @@ class << self
 	def new_api_c(proto, fromlib=nil)
 		cp = host_cpu.new_cparser
 		cp.parse(proto)
+		sc = class << self ; self ; end
 
 		cp.toplevel.symbol.each_value { |v|
 			lib = fromlib || lib_from_sym(v.name)
@@ -377,7 +378,7 @@ class << self
 			if not v.type.kind_of? C::Function
 				# not a function, simply return the symbol address
 				# TODO struct/table access through hash/array ?
-				define_method(v.name.downcase) { addr }
+				sc.send(:define_method, v.name.downcase) { addr }
 				next
 			end
 			next if v.initializer	# inline & stuff
@@ -386,8 +387,8 @@ class << self
 			flags |= 1 if v.has_attribute('stdcall')
 			flags |= 2 if v.has_attribute('fastcall')
 			# TODO int64/float
-			define_method(v.name.downcase) { |*a|
-				raise ArgumentError, "bad arg count for #{v.name}: #{a.length} for #{v.type.args.length}" if a.length != v.type.args.length
+			sc.send(:define_method, v.name.downcase) { |*a|
+				raise ArgumentError, "bad arg count for #{v.name}: #{a.length} for #{v.type.args.length}" if a.length != v.type.args.length and not v.type.varargs
 				auto_cb = []	# list of automatic C callbacks generated from lambdas
 				a = v.type.args.zip(a).map { |fa, ra| convert_arg_rb2c(cp, fa, ra, auto_cb) }.flatten
 				raw_invoke(addr, a, flags)
