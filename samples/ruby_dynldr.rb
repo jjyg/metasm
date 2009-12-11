@@ -391,7 +391,6 @@ class << self
 			sc.send(:define_method, v.name.downcase) { |*a|
 				raise ArgumentError, "bad arg count for #{v.name}: #{a.length} for #{v.type.args.length}" if a.length != v.type.args.length and not v.type.varargs
 				auto_cb = []	# list of automatic C callbacks generated from lambdas
-				fargs = v.type.args
 				a = a.zip(v.type.args).map { |ra, fa| convert_arg_rb2c(cp, fa, ra, auto_cb) }.flatten
 				ret = raw_invoke(addr, a, flags)
 				auto_cb.each { |cb| callback_free(cb) }
