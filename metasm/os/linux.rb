@@ -420,6 +420,7 @@ class LinDebugger < Debugger
 
 	def ui_command_setup(ui)
 		ui.new_command('syscall', 'waits for the target to do a syscall using PT_SYSCALL') { |arg| ui.wrap_run { syscall } }
+		ui.parent_widget.keyboard_callback[:f6] = lambda { ui.wrap_run { syscall } }
 	end
 end
 

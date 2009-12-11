@@ -16,7 +16,6 @@ class DbgWidget < ContainerVBoxWidget
 	def initialize_widget(dbg)
 		@dbg = dbg
 
-		@console = DbgConsoleWidget.new(dbg, self)
 		@regs = DbgRegWidget.new(dbg, self)
 		@code = DisasmWidget.new(dbg.disassembler)
 		@code.parent_widget = self
@@ -40,7 +39,6 @@ class DbgWidget < ContainerVBoxWidget
 		add @regs, 'expand' => false	# XXX
 		add @mem
 		add @code
-		add @console
 
 		@children = [@code, @mem, @regs]
 		@watchpoint = { @code => @dbg.register_pc }
@@ -49,6 +47,10 @@ class DbgWidget < ContainerVBoxWidget
 		@code.set_height_request(1)
 		@code.focus_addr(@dbg.resolve_expr(@watchpoint[@code]), :graph)
 		@mem.focus_addr(0, :hex)
+
+		# setup invokes backend initialization that may customize this widget - eg kb_callback
+		@console = DbgConsoleWidget.new(dbg, self)
+		add @console
 	end
 
 	def resize(w, h)
