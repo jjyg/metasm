@@ -60,6 +60,7 @@ VALUE rb_ull2inum(unsigned long long);
 unsigned long rb_num2ulong(VALUE);
 VALUE rb_str_new(const char* ptr, long len);	// alloc + memcpy + 0term
 VALUE rb_ary_new2(int len);
+VALUE rb_float_new(double);
 
 int rb_intern(char *);
 VALUE rb_funcall(VALUE recv, int id, int nargs, ...);
@@ -99,7 +100,7 @@ EOS
 __int64 do_invoke(int, int, int*);
 __int64 do_invoke_stdcall(int, int, int*);
 __int64 do_invoke_fastcall(int, int, int*);
-VALUE do_return_float(void);
+double fake_float(void);
 extern int *cb_ret_table;
 extern void *callback_handler;
 extern void *callback_id_0;
@@ -160,7 +161,7 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 		rb_raise(rb_eArgError, "bad args");
 	
 	int flags_v = rb_num2ulong(flags);
-	int ptr_v = rb_num2ulong(flags);
+	int ptr_v = rb_num2ulong(ptr);
 	int i, argsz;
 	int args_c[64];
 	__int64 ret;
@@ -179,7 +180,9 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 	if (flags_v & 4)
 		return rb_ull2inum(ret);
 	else if (flags_v & 8)
-		return do_return_float();
+		// fake_float does nothing, to allow the compiler to use ST(0)
+		// which was in fact set by ptr_v()
+		return rb_float_new(fake_float());
 	else
 		return rb_uint2inum(ret);
 }
@@ -216,9 +219,9 @@ int Init_dynldr(void) __attribute__((export))
 	rb_define_singleton_method(dynldr, "str_ptr", str_ptr, 1);
 	rb_define_singleton_method(dynldr, "sym_addr", sym_addr, 2);
 	rb_define_singleton_method(dynldr, "raw_invoke", invoke, 3);
-	rb_define_const(dynldr, "CALLBACK_TARGET", rb_uint2inum(callback_handler));
-	rb_define_const(dynldr, "CALLBACK_ID_0", rb_uint2inum(callback_id_0));
-	rb_define_const(dynldr, "CALLBACK_ID_1", rb_uint2inum(callback_id_1));
+	rb_define_const(dynldr, "CALLBACK_TARGET", rb_uint2inum(&callback_handler));
+	rb_define_const(dynldr, "CALLBACK_ID_0", rb_uint2inum(&callback_id_0));
+	rb_define_const(dynldr, "CALLBACK_ID_1", rb_uint2inum(&callback_id_1));
 	return 0;
 }
 EOS
@@ -253,7 +256,7 @@ do_invoke_stdcall:
 	mov eax, [ebp+12]
 _do_invoke_copy:
 	// make room for args
-	shr eax, 2
+	shl eax, 2
 	jz _do_invoke_call
 	sub esp, eax
 	// copy args
@@ -272,10 +275,7 @@ _do_invoke_copy:
 _do_invoke_call:
 	call dword ptr [ebp+8]
 	leave
-	ret
-
-do_return_float:
-	call rb_float_new
+fake_float:
 	ret
 
 // entrypoint for callbacks: to the native api, give the addr of some code
@@ -300,8 +300,8 @@ callback_id_0: call callback_handler
 callback_id_1: call callback_handler
 EOS
 
-	# autorequire can't work inside class<<self
-	[Ia32, PE, ELF, C, GNUExports, WindowsExports]
+	# autorequire doesn't work inside class<<self
+	[Ia32, PE, ELF, Shellcode, C, GNUExports, WindowsExports]
 
 class << self
 	# initialization
@@ -386,13 +386,16 @@ class << self
 			flags = 0
 			flags |= 1 if v.has_attribute('stdcall')
 			flags |= 2 if v.has_attribute('fastcall')
-			# TODO int64/float
+			flags |= 4 if v.type.type.integral? and cp.sizeof(nil, v.type.type) == 8
+			flags |= 8 if v.type.type.float?
 			sc.send(:define_method, v.name.downcase) { |*a|
 				raise ArgumentError, "bad arg count for #{v.name}: #{a.length} for #{v.type.args.length}" if a.length != v.type.args.length and not v.type.varargs
 				auto_cb = []	# list of automatic C callbacks generated from lambdas
-				a = v.type.args.zip(a).map { |fa, ra| convert_arg_rb2c(cp, fa, ra, auto_cb) }.flatten
-				raw_invoke(addr, a, flags)
+				fargs = v.type.args
+				a = a.zip(v.type.args).map { |ra, fa| convert_arg_rb2c(cp, fa, ra, auto_cb) }.flatten
+				ret = raw_invoke(addr, a, flags)
 				auto_cb.each { |cb| callback_free(cb) }
+				ret
 			}
 		}
 
@@ -413,7 +416,7 @@ class << self
 		else val.to_i
 		end
 
-		if formal.type.integral? and cp.sizeof(formal) == 64 and host_cpu.size == 32
+		if formal and formal.type.integral? and cp.sizeof(formal) == 8 and host_cpu.size == 32
 			val = [val & 0xffff_ffff, (val >> 32) & 0xffff_ffff]
 			val.reverse! if host_cpu.endianness != :little
 		end
@@ -427,7 +430,7 @@ class << self
 		raise "invalid callback #{id}" if not cb = @callback_table[id]
 
 		rawargs = args.dup
-		ra = cb[:proto].args.map { |fa| convert_arg_c2rb(cb[:cparser], fa, rawargs) }
+		ra = cb[:proto] ? cb[:proto].args.map { |fa| convert_arg_c2rb(cb[:cparser], fa, rawargs) } : []
 
 		# run it
 		ret = cb[:proc][ra]
@@ -470,16 +473,16 @@ class << self
 	# allocates a callback for a given C prototype (C variable, pointer to func accepted)
 	def callback_alloc_c(cp, proto, b)
 		ori = proto
-		proto = proto.type if proto.kind_of? C::Variable
-		proto = proto.pointed while proto.pointer?
+		proto = proto.type if proto and proto.kind_of? C::Variable
+		proto = proto.pointed while proto and proto.pointer?
 		id = callback_find_id
 		cb = {}
 		cb[:id] = id
 		cb[:proc] = b
 		cb[:proto] = proto
 		cb[:cparser] = cp
-		cb[:abi_stackfix] = proto.args.inject(0) { |s, a| s + [cp.sizeof(a), cp.typesize[:ptr]].max } if ori.has_attribute('stdcall')
-		cb[:abi_stackfix] = proto.args[2..-1].to_a.inject(0) { |s, a| s + [cp.sizeof(a), cp.typesize[:ptr]].max } if ori.has_attribute('fastcall')	# supercedes stdcall
+		cb[:abi_stackfix] = proto.args.inject(0) { |s, a| s + [cp.sizeof(a), cp.typesize[:ptr]].max } if ori and ori.has_attribute('stdcall')
+		cb[:abi_stackfix] = proto.args[2..-1].to_a.inject(0) { |s, a| s + [cp.sizeof(a), cp.typesize[:ptr]].max } if ori and ori.has_attribute('fastcall')	# supercedes stdcall
 		@callback_table[id] = cb
 		id
 	end
@@ -566,7 +569,7 @@ EOS
 			virtualfree(addr, 0, MEM_RELEASE)
 		end
 	
-		def self.memory_prot(addr, len, perm)
+		def self.memory_perm(addr, len, perm)
 			perm = { 'r' => PAGE_READONLY, 'rw' => PAGE_READWRITE, 'rx' => PAGE_EXECUTE_READ,
 				'rwx' => PAGE_EXECUTE_READWRITE }[perm.downcase]
 			virtualprotect(addr, len, perm, str_ptr(0.chr*8))
@@ -605,7 +608,7 @@ EOS
 			munmap(addr, @mmaps[addr])
 		end
 	
-		def self.memory_prot(addr, len, perm)
+		def self.memory_perm(addr, len, perm)
 			p = 0
 			p |= PROT_READ if perm =~ /r/i
 			p |= PROT_WRITE if perm =~ /w/i
