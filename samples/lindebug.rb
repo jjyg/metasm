@@ -791,16 +791,13 @@ class LinDebug
 			sym = ''
 			sym << ntok.raw while ntok = lex.readtok
 			s = []
-			log '0'
 		       	@rs.symbols.each { |k, v|
 				s << k if v =~ /#{sym}/
 			}
-			log '1'
 			if s.empty?
 				log "unknown symbol #{sym}"
 			else
 				s.sort.each { |s_| log "#{'%08x' % s_} #{@rs.symbols_len[s_].to_s.ljust 6} #{@rs.findsymbol(s_)}" }
-				log '2'
 			end
 		}
 		@command['delsym'] = lambda { |lex, int|
