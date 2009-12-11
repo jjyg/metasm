@@ -536,10 +536,12 @@ class ELF
 		@sections.each { |s|
 			next if not s.encoded
 			s.encoded.reloc.each_value { |r|
-				if r.target.op == :- and r.target.rexpr.kind_of?(::String) and r.target.lexpr.kind_of?(::String)
-					symname = r.target.lexpr
+				t = Expression[r.target.reduce]
+				if t.op == :+ and t.rexpr.kind_of? Expression and t.rexpr.op == :- and not t.rexpr.lexpr and
+						t.rexpr.rexpr.kind_of?(::String) and t.lexpr.kind_of?(::String)
+					symname = t.lexpr
 				else
-					symname = r.target.reduce_rec
+					symname = t.reduce_rec
 				end
 				next if not dll = autoexports[symname]
 				if not @symbols.find { |sym| sym.name == symname }
@@ -633,7 +635,7 @@ class ELF
 	# link
 	# TODO support mapped PHDR, obey section-specified base address, handle NOBITS
 	def encode(type='EXEC')
-		@header.type ||= type
+		@header.type ||= {:bin => 'EXEC', :lib => 'DYN', :obj => 'REL'}.fetch(type, type)
 		@header.machine ||= case @cpu
 				when X86_64; 'X86_64'
 				when Ia32; '386'
@@ -1107,6 +1109,44 @@ class ELF
 		ret = super(path, *a)
 		File.chmod(0755, path) if @header.type == 'EXEC'
 		ret
+	end
+
+	# defines __ELF__
+	def tune_prepro(l)
+		l.define_weak('__ELF__', 1)
+	end
+
+	# handles C attributes: export, export_as(foo), import, import_from(libc.so.6), init, fini, entrypoint
+	def read_c_attrs(cp)
+		cp.toplevel.symbol.each_value { |v|
+			if v.has_attribute 'export' or ea = v.has_attribute_var('export_as')
+				s = Symbol.new
+				s.name = ea || v.name
+				s.type = v.type.kind_of?(C::Function) ? 'FUNC' : 'NOTYPE'
+				s.bind = 'GLOBAL'
+				s.shndx = 1
+				s.value = v.name
+				@symbols << s
+			end
+			if v.has_attribute 'import' or ln = v.has_attribute_var('import_from')
+				(@tag['NEEDED'] ||= []) << ln if ln and not @tag['NEEDED'].to_a.include? ln
+				s = Symbol.new
+				s.name = v.name
+				s.type = v.type.kind_of?(C::Function) ? 'FUNC' : 'NOTYPE'
+				s.bind = 'GLOBAL'
+				s.shndx = 'UNDEF'
+				@symbols << s
+			end
+			if v.has_attribute 'init'
+				@tag['INIT_ARRAY'] << v.name
+			end
+			if v.has_attribute 'fini'
+				@tag['FINI_ARRAY'] << v.name
+			end
+			if v.has_attribute 'entrypoint'
+				@header.entry = v.name
+			end
+		}
 	end
 
 	def c_set_default_entrypoint

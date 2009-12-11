@@ -72,17 +72,20 @@ class ExeFormat
 		e
 	end
 
+	# same as #assemble, reads asm source from the specified file
 	def self.assemble_file(cpu, filename)
 		assemble(cpu, File.read(filename), filename, 1)
 	end
 
+	# parses a bunch of standalone C code, compile and assemble it
 	def compile_c(source, file='<unk>', lineno=1)
 		cp = @cpu.new_cparser
+		tune_prepro(cp.lexer)
 		cp.parse(source, file, lineno)
+		read_c_attrs cp if respond_to? :read_c_attrs
 		asm_source = @cpu.new_ccompiler(cp, self).compile
 		puts asm_source if $DEBUG
-		parse(asm_source, 'C compiler output', 1)
-		assemble
+		assemble(asm_source, 'C compiler output', 1)
 	end
 
 	# creates a new object using the specified cpu, parse/compile/assemble the C source
@@ -102,6 +105,15 @@ class ExeFormat
 		src << section
 	end
 
+	# prepare a preprocessor before it reads any source, should define macros to identify the fileformat
+	def tune_prepro(l)
+	end
+
+	# this is called once C code is parsed, to handle C attributes like export/import/init etc
+	def read_c_attrs(cp)
+	end
+
+	# should setup a default entrypoint for C code, including preparing args for main() etc
 	def c_set_default_entrypoint
 	end
 

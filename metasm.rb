@@ -83,7 +83,7 @@ end
 end
 
 # load core files by default (too many classes to check for otherwise)
-Metasm::CPU
+Metasm::CPU.class
 
 # remove an 1.9 warning, couldn't find a compatible way...
 if {}.respond_to? :key

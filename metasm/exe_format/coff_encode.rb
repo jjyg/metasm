@@ -558,7 +558,9 @@ class COFF
 
 	# appends the header/optheader/directories/section table to @encoded
 	# initializes some flags based on the target arg ('exe' / 'dll' / 'kmod' / 'obj')
-	def encode_header(target = 'dll')
+	def encode_header(target = 'exe')
+		target = {:bin => 'exe', :lib => 'dll', :obj => 'obj'}.fetch(target, target)
+
 		# setup header flags
 		tmp = %w[LINE_NUMS_STRIPPED LOCAL_SYMS_STRIPPED DEBUG_STRIPPED] +
 			case target
@@ -667,7 +669,7 @@ class COFF
 
 	# encode a COFF file, building export/import/reloc tables if needed
 	# creates the base relocation tables (need for references to IAT not known before)
-	def encode(target = 'exe', want_relocs = (target != 'exe'))
+	def encode(target = 'exe', want_relocs = (target != 'exe' and target != :bin))
 		@encoded = EncodedData.new
 		label_at(@encoded, 0, 'coff_start')
 		autoimport
@@ -895,6 +897,59 @@ class COFF
 			raise "no section named #{k} ?" if not s = @sections.find { |s_| s_.name == k }
 			s.encoded << assemble_sequence(v, @cpu)
 			v.clear
+		}
+	end
+
+	# defines __PE__
+	def tune_prepro(l)
+		r.define_weak('__PE__', 1)
+	end
+
+	# honors C attributes: export, export_as(foo), import_from(kernel32), entrypoint
+	# import by ordinal: extern __stdcall int anyname(int) __attribute__((import_from(ws2_32:28)));
+	# can alias imports with int mygpaddr_alias() attr(import_from(kernel32:GetProcAddr))
+	def read_c_attrs(cp)
+		cp.toplevel.symbol.each_value { |v|
+			if v.has_attribute 'export' or ea = v.has_attribute_var('export_as')
+				@export ||= ExportDirectory.new
+				@export.exports ||= []
+				@export.libname ||= 'metalib'
+				e = ExportDirectory::Export.new
+				e.name = ea || v.name
+				e.target = v.name
+				@export.exports << e
+			end
+			if ln = v.has_attribute_var('import_from')
+				i = ImportDirectory::Import.new
+				if ln.include? ':'
+					ln, name = ln.split(':')
+					begin
+						i.ordinal = Integer(name)
+					rescue ArgumentError
+						i.name = name
+					end
+				else
+					i.name = v.name
+				end
+				if v.type.kind_of? C::Function
+					i.thunk = v.name
+					i.target = 'iat_'+i.thunk
+				else
+					i.target = v.name
+				end
+
+				@imports ||= []
+				if not id = @imports.find { |id_| id_.libname == ln }
+					id = ImportDirectory.new
+					id.libname = ln
+					id.imports = []
+					@imports << id
+				end
+				id.imports << i
+			end
+			if v.has_attribute 'entrypoint'
+				@optheader.entrypoint = v.name
+			end
 		}
 	end
 

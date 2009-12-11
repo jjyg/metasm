@@ -92,6 +92,7 @@ class CPU
 	def new_asmprepro(str='', exe=nil)
 		pp = AsmPreprocessor.new(str, exe)
 		tune_prepro(pp)
+		exe.tune_prepro(pp) if exe
 		pp
 	end
 end
