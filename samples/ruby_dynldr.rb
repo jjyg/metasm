@@ -13,7 +13,7 @@ module Metasm
 module DynLdr
 	# basic C defs for ruby internals - probably 1.8/x86 only
 	RUBY_H = <<EOS
-#line 16
+#line #{__LINE__}
 typedef unsigned long VALUE;
 
 struct rb_string_t {
@@ -41,9 +41,9 @@ struct rb_array_t {
 #define RArray(x) ((struct rb_array_t *)(x))
 
 
-extern VALUE rb_cObject;
-extern VALUE rb_eRuntimeError;
-extern VALUE rb_eArgError;
+extern VALUE rb_cObject __attribute__((import));
+extern VALUE rb_eRuntimeError __attribute__((import));
+extern VALUE rb_eArgError __attribute__((import));
 
 #define Qfalse ((VALUE)0)
 #define Qtrue  ((VALUE)2)
@@ -53,7 +53,7 @@ extern VALUE rb_eArgError;
 #define T_ARRAY  0x09
 #define T_FIXNUM 0x0a
 #define T_MASK   0x3f
-#define TYPE(x) ((int)(x) & 1 ? T_FIXNUM : ((int)(x) & 6) ? 0x40 : RString(x)->flags & T_MASK)
+#define TYPE(x) (((int)(x) & 1) ? T_FIXNUM : (((int)(x) & 3) || ((unsigned int)(x) < 7)) ? 0x40 : RString(x)->flags & T_MASK)
 
 VALUE rb_uint2inum(unsigned long);
 VALUE rb_ull2inum(unsigned long long);
@@ -74,12 +74,26 @@ EOS
 	# generic C source for the native component, ruby glue
 	DYNLDR_C = <<EOS
 #{RUBY_H}
-#line 77
+#line #{__LINE__}
 
-// arch-specific linkage
-int os_load_lib(char *lib);
-int os_load_sym(int lib, char *sym);
-int os_load_sym_ord(int lib, int sym);
+#ifdef __PE__
+ __stdcall int LoadLibraryA(char *);
+ __stdcall int GetProcAddress(int, char *);
+
+ #define os_load_lib(l) LoadLibraryA(l)
+ #define os_load_sym(l, s) GetProcAddress(l, s)
+ #define os_load_sym_ord(l, s) GetProcAddress(l, (char*)s)
+#endif
+
+#ifdef __ELF__
+ #define RTLD_LAZY 1
+ int dlopen(char*, int);
+ int dlsym(int, char*);
+
+ #define os_load_lib(l) dlopen(l, RTLD_LAZY)
+ #define os_load_sym(l, s) dlsym(l, s)
+ #define os_load_sym_ord(l, s) 0
+#endif
 
 // asm linkage
 __int64 do_invoke(int, int, int*);
@@ -286,45 +300,6 @@ callback_id_0: call callback_handler
 callback_id_1: call callback_handler
 EOS
 
-	# windows-specific C (symbol handling)
-	DYNLDR_C_WIN = <<EOS
-__stdcall int LoadLibraryA(char *);
-__stdcall int GetProcAddress(int, char *);
-
-int os_load_lib(char *lib)
-{
-	return LoadLibraryA(lib);
-}
-
-asm("os_load_sym_ord: jmp os_load_sym");
-int os_load_sym(int lib, char *sym)
-{
-	return GetProcAddress(lib, sym);
-}
-EOS
-
-	# GNU-specific C (symbol handling)
-	DYNLDR_C_LIN = <<EOS
-#define RTLD_LAZY 1
-int dlopen(char*, int);
-int dlsym(int, char*);
-
-int os_load_lib(char *lib)
-{
-	return dlopen(lib, RTLD_LAZY);
-}
-
-int os_load_sym(int lib, char *sym)
-{
-	return dlsym(lib, sym);
-}
-
-int os_load_sym_ord(int lib, int ord)
-{
-	return 0;
-}
-EOS
-
 	# autorequire can't work inside class<<self
 	[Ia32, PE, ELF, C, GNUExports, WindowsExports]
 
@@ -345,11 +320,7 @@ class << self
 			exe.assemble  case exe.cpu
 			              when Ia32; DYNLDR_ASM_IA32
 				      end
-			exe.compile_c case exe
-				      when PE; DYNLDR_C_WIN
-				      when ELF; DYNLDR_C_LIN
-				      end
-			exe.encode_file(binmodule)
+			exe.encode_file(binmodule, :lib)
 		end
 
 		require binmodule
