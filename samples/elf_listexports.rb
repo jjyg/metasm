@@ -13,6 +13,7 @@ require 'metasm'
 
 bd = 'GLOBAL'
 bd = 'WEAK' if ARGV.delete '--weak'
+obj = true if ARGV.delete '--obj'
 
 ARGV.each { |f|
 	e = Metasm::ELF.decode_file(f)
@@ -20,7 +21,7 @@ ARGV.each { |f|
 	puts e.tag['SONAME']
 	line = ''
 	e.symbols.find_all { |s|
-		s.name and s.type == 'FUNC' and s.shndx != 'UNDEF' and s.bind == bd
+		s.name and (obj ? s.type != 'FUNC' : s.type == 'FUNC') and s.shndx != 'UNDEF' and s.bind == bd
 	}.map { |s| ' ' << s.name }.sort.each { |s|
 		if line.length + s.length >= 160
 			puts line
