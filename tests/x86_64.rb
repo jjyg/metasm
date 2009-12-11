@@ -52,11 +52,11 @@ class TestX86_64 < Test::Unit::TestCase
 		assert_equal("\xfe\xc4", assemble("inc ah"))
 		assert_equal("\x40\xfe\xc4", assemble("inc spl"))
 		assert_equal("\x41\xfe\xc4", assemble("inc r12b"))
-		op = lambda { |s| disassemble(s).decoded[0].instruction.args.last }
-		assert_equal('al', op["\xfe\xc0"].to_s)
-		assert_equal('ah', op["\xfe\xc4"].to_s)
-		assert_equal('spl', op["\x40\xfe\xc4"].to_s)
-		assert_equal('r12b', op["\x41\xfe\xc4"].to_s)
-		assert_equal('dword ptr [rip+0ch]', op["\x8d\x05\x0c\0\0\0"].to_s)
+		op = lambda { |s| i = disassemble(s).decoded[0].instruction ; i.to_s ; i.args.last.to_s }
+		assert_equal('al', op["\xfe\xc0"])
+		assert_equal('ah', op["\xfe\xc4"])
+		assert_equal('spl', op["\x40\xfe\xc4"])
+		assert_equal('r12b', op["\x41\xfe\xc4"])
+		assert_equal('[rip+0ch]', op["\x8d\x05\x0c\0\0\0"])
 	end
 end
