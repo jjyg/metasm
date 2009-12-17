@@ -1138,10 +1138,10 @@ class ELF
 				@symbols << s
 			end
 			if v.has_attribute 'init'
-				@tag['INIT_ARRAY'] << v.name
+				(@tag['INIT_ARRAY'] ||= []) << v.name
 			end
 			if v.has_attribute 'fini'
-				@tag['FINI_ARRAY'] << v.name
+				(@tag['FINI_ARRAY'] ||= []) << v.name
 			end
 			if v.has_attribute 'entrypoint'
 				@header.entry = v.name
