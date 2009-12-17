@@ -1226,7 +1226,7 @@ EOH
 		private :readtok_longstr
 
 		# reads a token from self.lexer
-		# concatenates strings, merges spaces/eol to ' ', handles wchar strings
+		# concatenates strings, merges spaces/eol to ' ', handles wchar strings, allows $@_ in :string
 		def readtok
 			if not t = @unreadtoks.pop
 				return if not t = readtok_longstr
@@ -1256,6 +1256,14 @@ EOH
 						end
 					end
 					@lexer.unreadtok nt
+				else
+					if (t.type == :punct and (t.raw == '_' or t.raw == '@' or t.raw == '$')) or t.type == :string
+						t = t.dup
+						t.type = :string
+						nt = nil
+						t.raw << nt.raw while nt = @lexer.readtok and ((nt.type == :punct and (nt.raw == '_' or nt.raw == '@' or nt.raw == '$')) or nt.type == :string)
+						@lexer.unreadtok nt
+					end
 				end
 			end
 			t
