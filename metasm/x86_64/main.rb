@@ -124,6 +124,10 @@ class X86_64 < Ia32
 		# X86_64::Reg != Ia32::Reg
 		Reg.from_str(str) if Reg.s_to_i.has_key? str
 	end
+
+	def shortname
+		"x64#{'_be' if @endianness == :big}"
+	end
 end
 
 X64 = X86_64

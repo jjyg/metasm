@@ -222,6 +222,10 @@ class Ia32 < CPU
 	def str_to_reg(str)
 		Reg.from_str(str) if Reg.s_to_i.has_key? str
 	end
+
+	def shortname
+		"ia32#{'_16' if @size == 16}#{'_be' if @endianness == :big}"
+	end
 end
 
 X86 = Ia32

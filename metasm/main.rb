@@ -67,6 +67,10 @@ class CPU
 		exe.cpu = self if not exe.instance_variable_get("@cpu")
 		C::Compiler.new(parser, exe)
 	end
+
+	def shortname
+		name.sub(/.*::/, '').downcase
+	end
 end
 
 # generic CPU, with no instructions, just size/endianness
