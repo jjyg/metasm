@@ -40,6 +40,7 @@ module Metasm
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
 		'GdbClient' => 'os/remote',
 		'Decompiler' => 'decompile',
+		'DynLdr' => 'dynldr',
 	}
 
 def self.const_missing(c)
