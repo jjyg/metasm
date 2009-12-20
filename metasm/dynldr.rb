@@ -398,6 +398,7 @@ EOS
 		sc = class << self ; self ; end
 
 		cp.toplevel.symbol.each_value { |v|
+			next if not v.kind_of? C::Variable	# enums
 			lib = fromlib || lib_from_sym(v.name)
 			addr = sym_addr(lib, v.name)
 			next if addr == 0 or addr == 0xffff_ffff or addr == 0xffffffff_ffffffff
@@ -426,12 +427,12 @@ EOS
 			}
 		}
 
-		# TODO constant definition from macro/enums
-		#cp.parser.definition.each_key { |k|
-		#	if val = cp.macro_numeric_value(k)
-		#		const_set(k.upcase, val)
-		#	end
-		#}
+		# constant definition from macro/enum
+		cp.numeric_constants.each { |k, v|
+			n = k.upcase
+			n = "C#{n}" if n !~ /^[A-Z]/
+			const_set(n, v) if not const_defined?(n) and v.kind_of? Integer
+		}
 	end
 
 	# ruby object -> integer suitable as arg for raw_invoke
@@ -580,15 +581,6 @@ __stdcall int VirtualFree(int addr, int size, int freetype);
 __stdcall int VirtualProtect(int addr, int size, int prot, int *oldprot);
 EOS
 		
-		# TODO get rid of those once macro constant parsing is done
-		MEM_COMMIT  = 0x1000
-		MEM_RESERVE = 0x2000
-		MEM_RELEASE = 0x8000
-		PAGE_READONLY = 0x02
-		PAGE_READWRITE = 0x04
-		PAGE_EXECUTE_READ = 0x20
-		PAGE_EXECUTE_READWRITE = 0x40
-	
 		# allocate some memory suitable for code allocation (ie VirtualAlloc)
 		def self.memory_alloc(sz)
 			virtualalloc(nil, sz, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE)
@@ -621,13 +613,6 @@ int munmap(int addr, int length);
 int mprotect(int addr, int len, int prot);
 EOS
 		
-		PROT_READ = 1
-		PROT_WRITE = 2
-		PROT_EXEC = 4
-
-		MAP_PRIVATE = 2
-		MAP_ANONYMOUS = 0x20
-
 		# allocate some memory suitable for code allocation (ie mmap)
 		def self.memory_alloc(sz)
 			@mmaps ||= {}	# save size for mem_free

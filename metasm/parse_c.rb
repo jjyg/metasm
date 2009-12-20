@@ -1548,6 +1548,40 @@ EOH
 				end
 			end
 		end
+
+		# check if a macro definition has a numeric value
+		# returns this value or nil
+		def macro_numeric(m)
+			d = @lexer.definition[m]
+			return if not d.kind_of? Preprocessor::Macro or d.args or d.varargs
+			# filter metasm-defined vars (eg __PE__ / _M_IX86)
+			return if not d.name or not bt = d.name.backtrace or (bt[0][0] != ?" and bt[0][0] != ?<)
+			raise 'cannot macro_numeric with unparsed data' if not eos?
+			@lexer.feed m
+			if e = CExpression.parse(self, Block.new(@toplevel)) and eos?
+				v = e.reduce(self)
+				return v if v.kind_of? ::Numeric
+			end
+			readtok until eos?
+			nil
+		rescue ParseError
+		end
+
+		# returns all numeric constants defined with their value, either macros or enums
+		def numeric_constants
+			ret = []
+			# macros
+			@lexer.definition.each_key { |k|
+				if v = macro_numeric(k)
+					ret << [k, v]
+				end
+			}
+			# enums
+			@toplevel.symbol.each { |k, v|
+				ret << [k, v] if v.kind_of? ::Numeric
+			}
+			ret
+		end
 	end
 
 	class Variable
