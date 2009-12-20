@@ -371,12 +371,11 @@ module C
 
 		def parse_members(parser, scope)
 			super(parser, scope)
-			if defined? @attributes and @attributes
-				if has_attribute 'packed'
-					@pack = 1
-				elsif p = has_attribute_var('pack')
-					@pack = p[/\d+/].to_i
-				end
+			if has_attribute 'packed'
+				@pack = 1
+			elsif p = has_attribute_var('pack')
+				@pack = p[/\d+/].to_i
+				raise parser, "illegal struct pack(#{p})" if @pack == 0
 			end
 		end
 	end
@@ -1020,7 +1019,7 @@ module C
 					raise v1, 'pack stack empty' if @pragma_pack_stack.empty?
 					@pragma_pack = @pragma_pack_stack.pop
 					@pragma_pack = v2.raw.to_i if v2 and v2.raw	# #pragma pack(pop, 4) => pop stack, but use 4 as pack value (imho)
-					raise v2, 'bad pack value' if pragma_pack == 0
+					raise v2, 'bad pack value' if @pragma_pack == 0
 				elsif v1.raw =~ /^\d+$/
 					raise v2, '2nd arg unexpected' if v2
 					@pragma_pack = v1.raw.to_i
@@ -3024,8 +3023,8 @@ EOH
 			if pack
 				r, dep = super(scope, r, dep)
 				r.last <<
-				if @pack == 1; (attributes and @attributes.include? 'packed') ? '' : " __attribute__((packed))"
-				else (attributes and @attributes.include? "pack(#@pack)") ? '' : " __attribute__((pack(#@pack)))"
+				if @pack == 1; (has_attribute('packed') or has_attribute_var('pack')) ? '' : " __attribute__((packed))"
+				else has_attribute_var('pack') ? '' : " __attribute__((pack(#@pack)))"
 				end
 				[r, dep]
 			else
