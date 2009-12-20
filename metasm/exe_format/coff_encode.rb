@@ -902,7 +902,7 @@ class COFF
 
 	# defines __PE__
 	def tune_prepro(l)
-		r.define_weak('__PE__', 1)
+		l.define_weak('__PE__', 1)
 	end
 
 	# honors C attributes: export, export_as(foo), import_from(kernel32), entrypoint
