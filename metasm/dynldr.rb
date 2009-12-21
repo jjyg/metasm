@@ -40,10 +40,18 @@ struct rb_array_t {
 };
 #define RArray(x) ((struct rb_array_t *)(x))
 
+#ifdef __PE__
+// windows exports data by pointer
+// TODO the compiler should handle these details alone
+#define IMPMOD *
+#else
+#define IMPMOD
+#endif
 
-extern VALUE rb_cObject __attribute__((import));
-extern VALUE rb_eRuntimeError __attribute__((import));
-extern VALUE rb_eArgError __attribute__((import));
+// TODO improve autoimport to handle data imports correctly
+extern VALUE IMPMOD rb_cObject __attribute__((import));
+extern VALUE IMPMOD rb_eRuntimeError __attribute__((import));
+extern VALUE IMPMOD rb_eArgError __attribute__((import));
 
 #define Qfalse ((VALUE)0)
 #define Qtrue  ((VALUE)2)
@@ -127,7 +135,7 @@ static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 static VALUE str_ptr(VALUE self, VALUE str)
 {
 	if (TYPE(str) != T_STRING)
-		rb_raise(rb_eArgError, "Invalid ptr");
+		rb_raise(IMPMOD rb_eArgError, "Invalid ptr");
 	return rb_uint2inum((unsigned int)RString(str)->ptr);
 }
 
@@ -137,9 +145,9 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 	int h, p;
 
 	if (TYPE(lib) != T_STRING)
-		rb_raise(rb_eArgError, "Invalid lib");
+		rb_raise(IMPMOD rb_eArgError, "Invalid lib");
 	if (TYPE(func) != T_STRING && TYPE(func) != T_FIXNUM)
-		rb_raise(rb_eArgError, "Invalid func");
+		rb_raise(IMPMOD rb_eArgError, "Invalid func");
 	
 	h = os_load_lib(RString(lib)->ptr);
 
@@ -158,7 +166,7 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 {
 	if (TYPE(args) != T_ARRAY || RArray(args)->len > 64)
-		rb_raise(rb_eArgError, "bad args");
+		rb_raise(IMPMOD rb_eArgError, "bad args");
 	
 	int flags_v = rb_num2ulong(flags);
 	int ptr_v = rb_num2ulong(ptr);
@@ -214,7 +222,7 @@ static int do_callback_handler(int ori_retaddr, int caller_id, int arg0)
 
 int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// to patch before parsing to match the .so name
 {
-	dynldr = rb_const_get(rb_const_get(rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
+	dynldr = rb_const_get(rb_const_get(IMPMOD rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
 	rb_define_singleton_method(dynldr, "memory_read",  memory_read, 2);
 	rb_define_singleton_method(dynldr, "memory_write", memory_write, 2);
 	rb_define_singleton_method(dynldr, "str_ptr", str_ptr, 1);
