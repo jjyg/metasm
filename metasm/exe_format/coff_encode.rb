@@ -919,7 +919,8 @@ class COFF
 				e.target = v.name
 				@export.exports << e
 			end
-			if ln = v.has_attribute_var('import_from')
+			if v.has_attribute('import') or ln = v.has_attribute_var('import_from')
+				ln ||= WindowsExports::EXPORT[v.name]
 				i = ImportDirectory::Import.new
 				if ln.include? ':'
 					ln, name = ln.split(':')

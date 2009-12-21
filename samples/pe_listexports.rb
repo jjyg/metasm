@@ -21,7 +21,7 @@ ARGV.each { |f|
 		next if not e.name
 		# next if not e.target	# allow forwarders ? (may change name)
 		e = ' ' << e.name
-		if line.length + e.length > 160
+		if line.length + e.length >= 160
 			puts line
 			line = ''
 		end
