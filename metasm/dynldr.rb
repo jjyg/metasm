@@ -399,11 +399,10 @@ EOS
 	# For each toplevel method prototype, it generates a ruby method in this module, the name is lowercased
 	# For each numeric macro/enum, it also generates an uppercase named constant
 	# When such a function is called with a lambda as argument, a callback is created for the duration of the call
-	# and destroyed afterwards ; use callback_alloc to get a callback id with longer life span
+	# and destroyed afterwards ; use callback_alloc_c to get a callback id with longer life span
 	def self.new_api_c(proto, fromlib=nil)
 		cp = host_cpu.new_cparser
 		cp.parse(proto)
-		sc = class << self ; self ; end
 
 		cp.toplevel.symbol.each_value { |v|
 			next if not v.kind_of? C::Variable	# enums
@@ -414,25 +413,13 @@ EOS
 			if not v.type.kind_of? C::Function
 				# not a function, simply return the symbol address
 				# TODO struct/table access through hash/array ?
-				sc.send(:define_method, v.name.downcase) { addr }
+				class << self ; self ; end.send(:define_method, v.name.downcase) { addr }
 				next
 			end
 			next if v.initializer	# inline & stuff
-
-			flags = 0
-			flags |= 1 if v.has_attribute('stdcall')
-			flags |= 2 if v.has_attribute('fastcall')
-			flags |= 4 if v.type.type.integral? and cp.sizeof(nil, v.type.type) == 8
-			flags |= 8 if v.type.type.float?
 			puts "new_api_c: load method #{v.name.downcase} from #{lib}" if $DEBUG
-			sc.send(:define_method, v.name.downcase) { |*a|
-				raise ArgumentError, "bad arg count for #{v.name}: #{a.length} for #{v.type.args.length}" if a.length != v.type.args.length and not v.type.varargs
-				auto_cb = []	# list of automatic C callbacks generated from lambdas
-				a = a.zip(v.type.args).map { |ra, fa| convert_arg_rb2c(cp, fa, ra, auto_cb) }.flatten
-				ret = raw_invoke(addr, a, flags)
-				auto_cb.each { |cb| callback_free(cb) }
-				ret
-			}
+
+			new_caller_for(cp, v, v.name.downcase, addr)
 		}
 
 		# constant definition from macro/enum
@@ -443,11 +430,29 @@ EOS
 		}
 	end
 
+	# define a new method 'name' in the current module to invoke the raw method at addr addr
+	# translates ruby args to raw args using the specified prototype
+	def self.new_caller_for(cp, proto, name, addr)
+		flags = 0
+		flags |= 1 if proto.has_attribute('stdcall')
+		flags |= 2 if proto.has_attribute('fastcall')
+		flags |= 4 if proto.type.type.integral? and cp.sizeof(nil, proto.type.type) == 8
+		flags |= 8 if proto.type.type.float?
+		class << self ; self ; end.send(:define_method, name) { |*a|
+			raise ArgumentError, "bad arg count for #{name}: #{a.length} for #{proto.type.args.length}" if a.length != proto.type.args.length and not proto.type.varargs
+			auto_cb = []	# list of automatic C callbacks generated from lambdas
+			a = a.zip(proto.type.args).map { |ra, fa| convert_arg_rb2c(cp, fa, ra, auto_cb) }.flatten
+			ret = raw_invoke(addr, a, flags)
+			auto_cb.each { |cb| callback_free(cb) }
+			ret
+		}
+	end
+
 	# ruby object -> integer suitable as arg for raw_invoke
 	def self.convert_arg_rb2c(cp, formal, val, auto_cb_list=[])
 		val = case val
 		when String; str_ptr(val)
-		when Proc; cb = callback_alloc_c(cp, formal, val) ; auto_cb_list << cb ; cb
+		when Proc; cb = callback_alloc_cobj(cp, formal, val) ; auto_cb_list << cb ; cb
 		# TODO when Hash, Array; if formal.type.pointed.kind_of? C::Struct; yadda yadda ; end
 		else val.to_i
 		end
@@ -461,7 +466,7 @@ EOS
 	end
 
 	# this method is called from the C part to run the ruby code corresponding to
-	# a given C callback allocated by callback_alloc
+	# a given C callback allocated by callback_alloc_c
 	def self.callback_run(id, args)
 		raise "invalid callback #{'%x' % id} not in #{@callback_table.keys.map { |c| c.to_s(16) }}" if not cb = @callback_table[id]
 
@@ -493,21 +498,26 @@ EOS
 	end
 
 	# allocate a callback for a given C prototype (string)
-	# accepts full C functions (with body)
-	def self.callback_alloc(proto, &b)
+	# accepts full C functions (with body) (only 1 at a time)
+	def self.callback_alloc_c(proto, &b)
 		cp = host_cpu.new_cparser
 		cp.parse(proto)
-		v = cp.toplevel.symbol.values.find_all { |v_| v_.type.kind_of? C::Function }.first
+		v = cp.toplevel.symbol.values.find_all { |v_| v_.kind_of? C::Variable and v_.type.kind_of? C::Function }.first
 		if v.initializer
-			# TODO full C callback
-			raise 'not implemented'
+			sc = Shellcode.compile_c(host_cpu, src)
+			ptr = memory_alloc(sc.encoded.length)
+			sc.base_addr = ptr
+			# TODO fixup external calls
+			memory_write ptr, sc.encode_string
+			memory_perm ptr, sc.encoded.length, 'rwx'
+			ptr
 		else
-			callback_alloc_c(cp, v, b)
+			callback_alloc_cobj(cp, v, b)
 		end
 	end
 
 	# allocates a callback for a given C prototype (C variable, pointer to func accepted)
-	def self.callback_alloc_c(cp, proto, b)
+	def self.callback_alloc_cobj(cp, proto, b)
 		ori = proto
 		proto = proto.type if proto and proto.kind_of? C::Variable
 		proto = proto.pointed while proto and proto.pointer?
@@ -549,6 +559,23 @@ EOS
 			raise 'callback_alloc bouh' if not id = @callback_addrs.find { |a| not @callback_table[a] }
 		end
 		id
+	end
+
+	# compile a bunch of C functions, defines methods in this module to call them
+	def self.new_func_c(src)
+		sc = Shellcode.compile_c(host_cpu, src)
+		ptr = memory_alloc(sc.encoded.length)
+		sc.base_addr = ptr
+		# TODO fixup external calls
+		memory_write ptr, sc.encode_string
+		memory_perm ptr, sc.encoded.length, 'rwx'
+		cp = host_cpu.new_cparser
+		cp.parse(src)	# XXX the Shellcode parser may have defined stuff / interpreted C another way...
+		cp.toplevel.symbol.each_value { |v|
+			next if not v.kind_of? C::Variable or not v.type.kind_of? C::Function or not v.initializer
+			next if not off = sc.encoded.export[v.name]
+			new_caller_for(cp, v, v.name, ptr+off)
+		}
 	end
 
 	# automatically build/load the bin module
