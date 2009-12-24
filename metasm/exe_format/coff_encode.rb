@@ -559,14 +559,14 @@ class COFF
 	# appends the header/optheader/directories/section table to @encoded
 	# initializes some flags based on the target arg ('exe' / 'dll' / 'kmod' / 'obj')
 	def encode_header(target = 'exe')
-		target = {:bin => 'exe', :lib => 'dll', :obj => 'obj'}.fetch(target, target)
+		target = {:bin => 'exe', :lib => 'dll', :obj => 'obj', 'sys' => 'kmod', 'drv' => 'kmod'}.fetch(target, target)
 
 		# setup header flags
 		tmp = %w[LINE_NUMS_STRIPPED LOCAL_SYMS_STRIPPED DEBUG_STRIPPED] +
 			case target
 			when 'exe';  %w[EXECUTABLE_IMAGE]
 			when 'dll';  %w[EXECUTABLE_IMAGE DLL]
-			when 'kmod', 'sys'; %w[EXECUTABLE_IMAGE]
+			when 'kmod'; %w[EXECUTABLE_IMAGE]
 			when 'obj';  []
 			end
 		tmp << 'x32BIT_MACHINE'		# XXX
@@ -910,6 +910,7 @@ class COFF
 	# can alias imports with int mygpaddr_alias() attr(import_from(kernel32:GetProcAddr))
 	def read_c_attrs(cp)
 		cp.toplevel.symbol.each_value { |v|
+			next if not v.kind_of? C::Variable
 			if v.has_attribute 'export' or ea = v.has_attribute_var('export_as')
 				@export ||= ExportDirectory.new
 				@export.exports ||= []

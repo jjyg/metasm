@@ -1119,6 +1119,7 @@ class ELF
 	# handles C attributes: export, export_as(foo), import, import_from(libc.so.6), init, fini, entrypoint
 	def read_c_attrs(cp)
 		cp.toplevel.symbol.each_value { |v|
+			next if not v.kind_of? C::Variable
 			if v.has_attribute 'export' or ea = v.has_attribute_var('export_as')
 				s = Symbol.new
 				s.name = ea || v.name
