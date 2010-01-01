@@ -2,7 +2,6 @@ List of TODO items, by section, in random order
 
 Ia32
  emu fpu
- improve compiler (a/b, a%b, ...)
  add all sse2 instrs
  realmode
 
@@ -19,9 +18,6 @@ CPU
 Parser
  Allow single-file multiplexer (C code + Asm + asm16bit + ...)
  Fix the asm prepro comment issue: '; a /* b\n c ; */' should see 'c'
-
-C parser
- allow parse invalid C (to load decompiled code)
 
 Assembler
  Handle cpu pseudo-instrs (mips 'li' -> lui high + ori low)
@@ -89,7 +85,7 @@ Debugger
   linux virtualallocex
   pax-compatible code patch through mmap
  Remote debugging (small standalone C client)
- Support symsrv.dll (ms symbol server info)
+ Support dbghelp.dll (ms symbol server info)
  Support debugee function call (gdb 'call')
  Manipulate memory through C struct casts
 
@@ -115,10 +111,8 @@ GUI
   specialize widgets
    show breakpoints
    show jump direction from current flag values
-  make a console widget (sice-style cli)
  instruction patch (a la hexedit)
  Hexedit: allow VirtualFile 'reopen rw'
- Abstract GTK away
  have a win32 native and a console backend
  better graph positionning fallback
  zoom font when zooming graph
@@ -126,5 +120,4 @@ GUI
  map (part of) the binary & debug it (map a PE on a linux host & run it)
 
 Ruby
- make a ruby parser, ruby2c / jit
- Or instead of a ruby parser, just read the interpreter memory & dump/recompile the loaded AST for specific funcs
+ compile ruby AST to native optimized code

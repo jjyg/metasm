@@ -1,5 +1,5 @@
 Metasm is a pure ruby lib, and the core (metasm subdir) does not depend on any
-ruby library (except the metasm/gui, which requires gtk2).
+ruby library (except the metasm/gui, which can use gtk2/qt).
 
 So the install is quite simple:
 
@@ -28,10 +28,14 @@ You can also copy the metasm.rb and the metasm subdirectory (the one containing
 ia32.rb and so on) under the ruby library path.
 e.g. cp -a metasm.rb metasm /usr/local/lib/site_ruby/1.8 (linux)
 select metasm.rb and metasm ; copy ; goto D:\apps\ruby18\lib\ruby\1.8\ ; paste
-(replace D:\apps\ruby18 with the directory where you installed ruby)
+(replace D:\apps\ruby18 with the directory where you installed ruby) (win)
 
 Note that metasm may not work well with rubygems, so disable it if you have the
 choice.
+
+For a global installation, if you intend to use the DynLdr class (eg to call
+the native windows API), you should also run the metasm/dynldr.rb script on
+install/update, which will generate an up-to-date dynldr.so binary ruby module.
 
 
 TESTING:
@@ -40,9 +44,9 @@ Once done, open a new session and type "ruby -r metasm -e 'p Metasm::VERSION'"
 at a commandline prompt, it should print a single line with a number in it.
 
 
-GTK GUI:
+GUI:
 
-If you want to use the GTK graphical interface, you need the ruby-gtk2 library.
+If you want to use the graphical interface (dbg/dasm), you need the ruby-gtk2 library.
 Under linux, use your package manager to install ruby-gtk2
 e.g. for debian/ubuntu, type sudo apt-get install libgtk2-ruby
 
@@ -50,8 +54,8 @@ Under windows, you'll need to install the GTK2 and the ruby bindings manually.
 Please follow the instructions at:
 http://ruby-gnome2.sourceforge.jp/hiki.cgi?Install+Guide+for+Windows
 
-To test, try to launch the script metasm/samples/disassemble-gtk.rb (double
+To test, try to launch the script metasm/samples/disassemble-gui.rb (double
 click on it), it should show a program selection window. Type 'c' to start
-disassembling somewhere, and space to change to graph mode (see the file itself
-for more keys)
+disassembling somewhere, and space to change to graph mode (see the script source
+for more key bindings)
 
