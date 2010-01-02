@@ -501,19 +501,21 @@ EOS
 	end
 
 	# allocate a callback for a given C prototype (string)
-	# accepts full C functions (with body) (only 1 at a time)
+	# accepts full C functions (with body) (only 1 at a time) or toplevel 'asm' statement
 	def self.callback_alloc_c(proto, &b)
 		cp = host_cpu.new_cparser
 		cp.parse(proto)
 		v = cp.toplevel.symbol.values.find_all { |v_| v_.kind_of? C::Variable and v_.type.kind_of? C::Function }.first
-		if v.initializer
-			sc = Shellcode.compile_c(host_cpu, src)
+		if (v and v.initializer) or cp.toplevel.statements.find { |st| st.kind_of? C::Asm }
+			sc = Shellcode.compile_c(host_cpu, proto)
 			ptr = memory_alloc(sc.encoded.length)
 			sc.base_addr = ptr
 			# TODO fixup external calls
 			memory_write ptr, sc.encode_string
 			memory_perm ptr, sc.encoded.length, 'rwx'
 			ptr
+		elsif not v
+			raise 'empty prototype'
 		else
 			callback_alloc_cobj(cp, v, b)
 		end
@@ -565,6 +567,8 @@ EOS
 	end
 
 	# compile a bunch of C functions, defines methods in this module to call them
+	# returns the raw pointer to the code page
+	# if given a block, run the block and then undefine all the C functions
 	def self.new_func_c(src)
 		sc = Shellcode.compile_c(host_cpu, src)
 		ptr = memory_alloc(sc.encoded.length)
@@ -574,11 +578,24 @@ EOS
 		memory_perm ptr, sc.encoded.length, 'rwx'
 		cp = host_cpu.new_cparser
 		cp.parse(src)	# XXX the Shellcode parser may have defined stuff / interpreted C another way...
+		defs = []
 		cp.toplevel.symbol.each_value { |v|
 			next if not v.kind_of? C::Variable or not v.type.kind_of? C::Function or not v.initializer
 			next if not off = sc.encoded.export[v.name]
 			new_caller_for(cp, v, v.name, ptr+off)
+			defs << v.name
 		}
+		if block_given?
+			begin
+				ret = yield
+			ensure
+				defs.each { |d| class << self ; self ; end.send(:remove_method, d) }
+				memory_free ptr
+			end
+			ret
+		else
+			ptr
+		end
 	end
 
 	# automatically build/load the bin module
