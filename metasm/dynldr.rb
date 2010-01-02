@@ -404,6 +404,7 @@ EOS
 	# When such a function is called with a lambda as argument, a callback is created for the duration of the call
 	# and destroyed afterwards ; use callback_alloc_c to get a callback id with longer life span
 	def self.new_api_c(proto, fromlib=nil)
+		proto += ';'	# allow 'int foo()'
 		cp = host_cpu.new_cparser
 		cp.parse(proto)
 
@@ -503,6 +504,7 @@ EOS
 	# allocate a callback for a given C prototype (string)
 	# accepts full C functions (with body) (only 1 at a time) or toplevel 'asm' statement
 	def self.callback_alloc_c(proto, &b)
+		proto += ';'	# allow 'int foo()'
 		cp = host_cpu.new_cparser
 		cp.parse(proto)
 		v = cp.toplevel.symbol.values.find_all { |v_| v_.kind_of? C::Variable and v_.type.kind_of? C::Function }.first
