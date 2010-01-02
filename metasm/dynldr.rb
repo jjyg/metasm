@@ -124,6 +124,9 @@ static VALUE memory_read(VALUE self, VALUE addr, VALUE len)
 
 static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 {
+	if (TYPE(val) != T_STRING)
+		rb_raise(IMPMOD rb_eArgError, "mem_write needs a String");
+
 	char *src = RString(val)->ptr;
 	char *dst = (char*)rb_num2ulong(addr);
 	int len = RString(val)->len;
