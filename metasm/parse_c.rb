@@ -1393,8 +1393,8 @@ EOH
 						# put func parameters in func body scope
 						# arg redefinition is checked in parse_declarator
 						if not v.name
-							puts "unnamed argument in definition" if $VERBOSE
-							next	# should raise
+							puts "unnamed argument in definition of #{var.name}" if $DEBUG
+							next	# should raise to be compliant
 						end
 						body.symbol[v.name] = v	# XXX will need special check in stack allocator
 					}
