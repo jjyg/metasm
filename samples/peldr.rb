@@ -78,6 +78,25 @@ class PeLdr
 		end
 	end
 
+	# similar to DL.new_api_c for the mapped PE
+	def new_api_c(proto)
+		proto += ';'    # allow 'int foo()'
+		cp = DL.host_cpu.new_cparser
+		cp.parse(proto)
+		cp.toplevel.symbol.each_value { |v|
+			next if not v.kind_of? Metasm::C::Variable      # enums
+			if e = pe.export.exports.find { |e_| e_.name == v.name and e_.target }
+				DL.new_caller_for(cp, v, v.name.downcase, @load_address + pe.label_rva(e.target))
+			end
+		}
+
+		cp.numeric_constants.each { |k, v|
+			n = k.upcase
+			n = "C#{n}" if n !~ /^[A-Z]/
+			DL.const_set(n, v) if not DL.const_defined?(n) and v.kind_of? Integer
+		}
+	end
+
 	# maps a TEB/PEB in the current process, sets the fs register to point to it
 	def self.setup_teb
 		@@teb = DL.memory_alloc(4096)
@@ -117,26 +136,25 @@ end
 
 if $0 == __FILE__
 	dl = Metasm::DynLdr
+	heap = {}
+	malloc = lambda { |sz| str = 0.chr*sz ; ptr = dl.str_ptr(str) ; heap[ptr] = str ; ptr }
+	lasterr = 0
+
 	l = PeLdr.new('dbghelp.dll')
+	l.hook_import('KERNEL32.dll', 'GetCurrentProcess', '__stdcall int f(void)') { -1 }
+	l.hook_import('KERNEL32.dll', 'GetCurrentProcessId', '__stdcall int f(void)') { Process.pid }
+	l.hook_import('KERNEL32.dll', 'GetCurrentThreadId', '__stdcall int f(void)') { Process.pid }
+	l.hook_import('KERNEL32.dll', 'GetLastError', '__stdcall int f(void)') { lasterr }
+	l.hook_import('KERNEL32.dll', 'GetSystemInfo', '__stdcall void f(void*)') { |ptr|
+		dl.memory_write(ptr, [0, 0x1000, 0x10000, 0x7ffeffff, 1, 1, 586, 0x10000, 0].pack('V*'))
+		1
+	}
 	l.hook_import('KERNEL32.dll', 'GetSystemTimeAsFileTime', '__stdcall void f(void*)') { |ptr|
 		v = ((Time.now - Time.mktime(1971, 1, 1, 0, 0, 0) + 370*365.25*24*60*60) * 1000 * 1000 * 10).to_i
 		dl.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
-		0
-	}
-	l.hook_import('KERNEL32.dll', 'GetCurrentProcessId', '__stdcall int f(void)') { Process.pid }
-	l.hook_import('KERNEL32.dll', 'GetCurrentThreadId', '__stdcall int f(void)') { Process.pid }
-	l.hook_import('KERNEL32.dll', 'GetTickCount', '__stdcall int f(void)') { (Time.now.to_i * 1000) & 0xffff_ffff }
-	l.hook_import('KERNEL32.dll', 'QueryPerformanceCounter', '__stdcall int f(void*)') { |ptr|
-		v = (Time.now.to_f * 1000 * 1000).to_i
-		dl.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
 		1
 	}
-	l.hook_import('KERNEL32.dll', 'InterlockedCompareExchange', '__stdcall int f(int*, int, int)'+
-		'{ asm("mov eax, [ebp+16]  mov ecx, [ebp+12]  mov edx, [ebp+8]  lock cmpxchg [edx], ecx"); }')
-	l.hook_import('KERNEL32.dll', 'InterlockedExchange', '__stdcall int f(int*, int)'+
-		'{ asm("mov eax, [ebp+12]  mov ecx, [ebp+8]  lock xchg [ecx], eax"); }')
-	l.hook_import('KERNEL32.dll', 'InitializeCriticalSectionAndSpinCount', '__stdcall int f(int, int)') { 1 }
-	l.hook_import('KERNEL32.dll', 'GetSystemInfo', '__stdcall void f(void*)') { |ptr| dl.memory_write(ptr, [0, 0x1000, 0x10000, 0x7ffeffff, 1, 1, 586, 0x10000, 0].pack('V*')) ; 0 }
+	l.hook_import('KERNEL32.dll', 'GetTickCount', '__stdcall int f(void)') { (Time.now.to_i * 1000) & 0xffff_ffff }
 	l.hook_import('KERNEL32.dll', 'GetVersion', '__stdcall int f(void)') { 0xa28501 }	# xpsp1 (?)
 	l.hook_import('KERNEL32.dll', 'GetVersionExA', '__stdcall int f(void*)') { |ptr|
 		sz = dl.memory_read(ptr, 4).unpack('V').first
@@ -144,16 +162,128 @@ if $0 == __FILE__
 		dl.memory_write(ptr+4, data[0, sz-4])
 		1
 	}
+	l.hook_import('KERNEL32.dll', 'HeapAlloc', '__stdcall int f(int, int, int)') { |h, f, sz| malloc[sz] }
+	l.hook_import('KERNEL32.dll', 'HeapCreate', '__stdcall int f(int, int, int)') { 1 }
+	l.hook_import('KERNEL32.dll', 'HeapFree', '__stdcall int f(int, int, int)') { |h, f, p| heap.delete p ; 1 }
+	l.hook_import('KERNEL32.dll', 'InterlockedCompareExchange', '__stdcall int f(int*, int, int)'+
+		'{ asm("mov eax, [ebp+16]  mov ecx, [ebp+12]  mov edx, [ebp+8]  lock cmpxchg [edx], ecx"); }')
+	l.hook_import('KERNEL32.dll', 'InterlockedExchange', '__stdcall int f(int*, int)'+
+		'{ asm("mov eax, [ebp+12]  mov ecx, [ebp+8]  lock xchg [ecx], eax"); }')
+	l.hook_import('KERNEL32.dll', 'InitializeCriticalSectionAndSpinCount', '__stdcall int f(int, int)') { 1 }
+	l.hook_import('KERNEL32.dll', 'InitializeCriticalSection', '__stdcall int f(void*)') { 1 }
+	l.hook_import('KERNEL32.dll', 'QueryPerformanceCounter', '__stdcall int f(void*)') { |ptr|
+		v = (Time.now.to_f * 1000 * 1000).to_i
+		dl.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
+		1
+	}
+	l.hook_import('KERNEL32.dll', 'SetLastError', '__stdcall void f(int)') { |i| lasterr = i ; 1 }
+	l.hook_import('KERNEL32.dll', 'TlsAlloc', '__stdcall int f(void)') { 1 }
 
-	heap = {}
-	l.hook_import('msvcrt.dll', 'malloc', 'int f(int)') { |i| str = 0.chr*i ; ptr = dl.str_ptr(str) ; heap[ptr] = str ; ptr }
+	l.hook_import('KERNEL32.dll', 'GetModuleHandleA', '__stdcall int f(char*)') { |ptr|
+		if ptr != 0
+			s = dl.memory_read(ptr, 64)
+			s = s[0, s.index(0)] if s.index(0)
+			puts "GetModHandle #{s.inspect}"
+		end
+		l.load_address
+	}
+	l.hook_import('KERNEL32.dll', 'LoadLibraryA', '__stdcall int f(char*)') { |ptr|
+		s = dl.memory_read(ptr, 64)
+		s = s[0, s.index(0)] if s.index(0)
+		puts "LoadLib #{s.inspect}"
+		l.load_address
+	}
+
 	l.hook_import('msvcrt.dll', 'free', 'void f(int)') { |i| heap.delete i ; 0}
-	l.hook_import('msvcrt.dll', '??2@YAPAXI@Z', 'int f(int)') { |i| next 0 if i > 0x100000 ; str = 0.chr*i ; ptr = dl.str_ptr(str) ; heap[ptr] = str ; ptr }	# simply malloc  -  at some point we're called with a ptr as arg, may be a peldr bug
+	l.hook_import('msvcrt.dll', 'malloc', 'int f(int)') { |i| malloc[i] }
+	l.hook_import('msvcrt.dll', 'memset', 'int f(char* p, int c, int n) { while (n--) p[n] = c; return p; }')
+	l.hook_import('msvcrt.dll', '??2@YAPAXI@Z', 'int f(int)') { |i| next 0 if i > 0x100000 ; malloc[i] } # at some point we're called with a ptr as arg, may be a peldr bug
 	l.hook_import('msvcrt.dll', '_initterm', 'void f(void (**p)(void), void*p2) { while(p < p2) { if (*p) (**p)(); p++; } }')
 	l.hook_import('msvcrt.dll', '_lock', 'void f(int)') { 0 }
 	l.hook_import('msvcrt.dll', '_unlock', 'void f(int)') { 0 }
+	l.hook_import('msvcrt.dll', '_wcslwr', 'int f(__int16* p) { int i=-1; while (p[++i]) p[i] |= 0x20; return p; }')
+	l.hook_import('msvcrt.dll', '_wcsdup', 'int f(__int16* p)') { |p|
+		cp = ''
+		until (wc = dl.memory_read(p, 2)) == 0.chr*2
+			cp << wc
+			p += 2
+		end
+		cp << wc
+		heap[dl.str_ptr(cp)] = cp
+		dl.str_ptr(cp)
+	}
 	l.hook_import('msvcrt.dll', '__dllonexit', 'int f(int, int, int)') { |i, ii, iii| i }
-	l.hook_import('msvcrt.dll', 'memset', 'int f(void*, int, int)') { |ptr, chr, sz| dl.memory_write(ptr, chr.chr*sz) ; ptr }
 
 	l.run_init
+
+	l.new_api_c <<EOS
+#define SYMOPT_CASE_INSENSITIVE         0x00000001
+#define SYMOPT_UNDNAME                  0x00000002
+#define SYMOPT_DEFERRED_LOADS           0x00000004
+#define SYMOPT_NO_CPP                   0x00000008
+#define SYMOPT_LOAD_LINES               0x00000010
+#define SYMOPT_OMAP_FIND_NEAREST        0x00000020
+#define SYMOPT_LOAD_ANYTHING            0x00000040
+#define SYMOPT_IGNORE_CVREC             0x00000080
+#define SYMOPT_NO_UNQUALIFIED_LOADS     0x00000100
+#define SYMOPT_FAIL_CRITICAL_ERRORS     0x00000200
+#define SYMOPT_EXACT_SYMBOLS            0x00000400
+#define SYMOPT_ALLOW_ABSOLUTE_SYMBOLS   0x00000800
+#define SYMOPT_IGNORE_NT_SYMPATH        0x00001000
+#define SYMOPT_INCLUDE_32BIT_MODULES    0x00002000
+#define SYMOPT_PUBLICS_ONLY             0x00004000
+#define SYMOPT_NO_PUBLICS               0x00008000
+#define SYMOPT_AUTO_PUBLICS             0x00010000
+#define SYMOPT_NO_IMAGE_SEARCH          0x00020000
+#define SYMOPT_SECURE                   0x00040000
+#define SYMOPT_NO_PROMPTS               0x00080000
+#define SYMOPT_DEBUG                    0x80000000
+
+typedef int BOOL;
+typedef char CHAR;
+typedef unsigned long DWORD;
+typedef unsigned __int64 DWORD64;
+typedef void *HANDLE;
+typedef unsigned __int64 *PDWORD64;
+typedef void *PVOID;
+typedef unsigned long ULONG;
+typedef unsigned __int64 ULONG64;
+typedef const CHAR *PCSTR;
+typedef CHAR *PSTR;
+
+struct _SYMBOL_INFO {
+        ULONG SizeOfStruct;
+        ULONG TypeIndex;
+        ULONG64 Reserved[2];
+        ULONG info;
+        ULONG Size;
+        ULONG64 ModBase;
+        ULONG Flags;
+        ULONG64 Value;
+        ULONG64 Address;
+        ULONG Register;
+        ULONG Scope;
+        ULONG Tag;
+        ULONG NameLen;
+        ULONG MaxNameLen;
+        CHAR Name[1];
+};
+typedef struct _SYMBOL_INFO *PSYMBOL_INFO;
+
+typedef __stdcall BOOL (*PSYM_ENUMERATESYMBOLS_CALLBACK)(PSYMBOL_INFO pSymInfo, ULONG SymbolSize, PVOID UserContext);
+__stdcall DWORD SymGetOptions(void);
+__stdcall DWORD SymSetOptions(DWORD SymOptions __attribute__((in)));
+__stdcall BOOL SymInitialize(HANDLE hProcess __attribute__((in)), PSTR UserSearchPath __attribute__((in)), BOOL fInvadeProcess __attribute__((in)));
+__stdcall DWORD64 SymLoadModule64(HANDLE hProcess __attribute__((in)), HANDLE hFile __attribute__((in)), PSTR ImageName __attribute__((in)), PSTR ModuleName __attribute__((in)), DWORD64 BaseOfDll __attribute__((in)), DWORD SizeOfDll __attribute__((in)));
+__stdcall BOOL SymSetSearchPath(HANDLE hProcess __attribute__((in)), PSTR SearchPathA __attribute__((in)));
+__stdcall BOOL SymFromAddr(HANDLE hProcess __attribute__((in)), DWORD64 Address __attribute__((in)), PDWORD64 Displacement __attribute__((out)), PSYMBOL_INFO Symbol __attribute__((in)) __attribute__((out)));
+__stdcall BOOL SymEnumSymbols(HANDLE hProcess __attribute__((in)), ULONG64 BaseOfDll __attribute__((in)), PCSTR Mask __attribute__((in)), PSYM_ENUMERATESYMBOLS_CALLBACK EnumSymbolsCallback __attribute__((in)), PVOID UserContext __attribute__((in)));
+EOS
+
+	dl.syminitialize(42, 0, 0)
+	dl.symsetoptions(dl.symgetoptions|dl::SYMOPT_DEFERRED_LOADS|dl::SYMOPT_NO_PROMPTS)
+	sympath = ENV['_NT_SYMBOL_PATH'] || 'srv**/tmp/symbols*http://msdl.microsoft.com/download/symbols'
+	dl.symsetsearchpath(42, sympath)
+
+	# looks good !
 end
