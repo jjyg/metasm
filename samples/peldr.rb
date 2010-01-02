@@ -44,7 +44,7 @@ class PeLdr
 			ptr = @load_address + id.iat_p
 			id.imports.each { |i|
 				n = "#{id.libname}!#{i.name}"
-				cb = DL.callback_alloc_c('void x(void);') { raise "unhandled import #{n}" }
+				cb = DL.callback_alloc_c('void x(void)') { raise "unhandled import #{n}" }
 				DL.memory_write(ptr, [cb].pack('V'))
 				@iat_cb[n] = cb
 				ptr += 4
@@ -53,7 +53,7 @@ class PeLdr
 	end
 
 	# add a specific hook for an IAT function
-	# exemple: hook_import('KERNEL32.dll', 'GetProcAddress', '__stdcall int f(int, char*);') { |h, name| puts "getprocaddr #{name}" ; 0 }
+	# exemple: hook_import('KERNEL32.dll', 'GetProcAddress', '__stdcall int f(int, char*)') { |h, name| puts "getprocaddr #{name}" ; 0 }
 	def hook_import(libname, impname, proto, &b)
 		@pe.imports.to_a.each { |id|
 			next if id.libname != libname
@@ -118,21 +118,42 @@ end
 if $0 == __FILE__
 	dl = Metasm::DynLdr
 	l = PeLdr.new('dbghelp.dll')
-	l.hook_import('KERNEL32.dll', 'GetSystemTimeAsFileTime', '__stdcall void f(void*);') { |ptr|
+	l.hook_import('KERNEL32.dll', 'GetSystemTimeAsFileTime', '__stdcall void f(void*)') { |ptr|
 		v = ((Time.now - Time.mktime(1971, 1, 1, 0, 0, 0) + 370*365.25*24*60*60) * 1000 * 1000 * 10).to_i
 		dl.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
 		0
 	}
-	l.hook_import('KERNEL32.dll', 'GetCurrentProcessId', '__stdcall int f(void);') { Process.pid }
-	l.hook_import('KERNEL32.dll', 'GetCurrentThreadId', '__stdcall int f(void);') { Process.pid }
-	l.hook_import('KERNEL32.dll', 'GetTickCount', '__stdcall int f(void);') { (Time.now.to_i * 1000) & 0xffff_ffff }
-	l.hook_import('KERNEL32.dll', 'QueryPerformanceCounter', '__stdcall int f(void*);') { |ptr|
+	l.hook_import('KERNEL32.dll', 'GetCurrentProcessId', '__stdcall int f(void)') { Process.pid }
+	l.hook_import('KERNEL32.dll', 'GetCurrentThreadId', '__stdcall int f(void)') { Process.pid }
+	l.hook_import('KERNEL32.dll', 'GetTickCount', '__stdcall int f(void)') { (Time.now.to_i * 1000) & 0xffff_ffff }
+	l.hook_import('KERNEL32.dll', 'QueryPerformanceCounter', '__stdcall int f(void*)') { |ptr|
 		v = (Time.now.to_f * 1000 * 1000).to_i
 		dl.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
 		1
 	}
-	l.hook_import('KERNEL32.dll', 'InterlockedCompareExchange', '__stdcall int f(void*, int, int)'+
+	l.hook_import('KERNEL32.dll', 'InterlockedCompareExchange', '__stdcall int f(int*, int, int)'+
 		'{ asm("mov eax, [ebp+16]  mov ecx, [ebp+12]  mov edx, [ebp+8]  lock cmpxchg [edx], ecx"); }')
+	l.hook_import('KERNEL32.dll', 'InterlockedExchange', '__stdcall int f(int*, int)'+
+		'{ asm("mov eax, [ebp+12]  mov ecx, [ebp+8]  lock xchg [ecx], eax"); }')
+	l.hook_import('KERNEL32.dll', 'InitializeCriticalSectionAndSpinCount', '__stdcall int f(int, int)') { 1 }
+	l.hook_import('KERNEL32.dll', 'GetSystemInfo', '__stdcall void f(void*)') { |ptr| dl.memory_write(ptr, [0, 0x1000, 0x10000, 0x7ffeffff, 1, 1, 586, 0x10000, 0].pack('V*')) ; 0 }
+	l.hook_import('KERNEL32.dll', 'GetVersion', '__stdcall int f(void)') { 0xa28501 }	# xpsp1 (?)
+	l.hook_import('KERNEL32.dll', 'GetVersionExA', '__stdcall int f(void*)') { |ptr|
+		sz = dl.memory_read(ptr, 4).unpack('V').first
+		data = [5, 1, 2600, 2, 'Service pack 3', 3, 0].pack('VVVVa128VV')
+		dl.memory_write(ptr+4, data[0, sz-4])
+		1
+	}
+
+	heap = {}
+	l.hook_import('msvcrt.dll', 'malloc', 'int f(int)') { |i| str = 0.chr*i ; ptr = dl.str_ptr(str) ; heap[ptr] = str ; ptr }
+	l.hook_import('msvcrt.dll', 'free', 'void f(int)') { |i| heap.delete i ; 0}
+	l.hook_import('msvcrt.dll', '??2@YAPAXI@Z', 'int f(int)') { |i| next 0 if i > 0x100000 ; str = 0.chr*i ; ptr = dl.str_ptr(str) ; heap[ptr] = str ; ptr }	# simply malloc  -  at some point we're called with a ptr as arg, may be a peldr bug
+	l.hook_import('msvcrt.dll', '_initterm', 'void f(void (**p)(void), void*p2) { while(p < p2) { if (*p) (**p)(); p++; } }')
+	l.hook_import('msvcrt.dll', '_lock', 'void f(int)') { 0 }
+	l.hook_import('msvcrt.dll', '_unlock', 'void f(int)') { 0 }
+	l.hook_import('msvcrt.dll', '__dllonexit', 'int f(int, int, int)') { |i, ii, iii| i }
+	l.hook_import('msvcrt.dll', 'memset', 'int f(void*, int, int)') { |ptr, chr, sz| dl.memory_write(ptr, chr.chr*sz) ; ptr }
 
 	l.run_init
 end
