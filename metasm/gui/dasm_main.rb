@@ -323,6 +323,16 @@ class DisasmWidget < ContainerChoiceWidget
 		openfile('ruby plugin') { |f| @dasm.load_plugin(f) }
 	end
 
+	def rebase(addr=nil)
+		if not addr
+			inputbox('rebase address') { |a| rebase(Integer(a)) }
+		else
+			na = curaddr + dasm.rebase(addr)
+			gui_update
+			focus_addr na
+		end
+	end
+
 	# prompts for a new name for addr
 	def rename_label(addr)
 		old = addr
@@ -599,6 +609,7 @@ class DasmWindow < Window
 		addsubmenu(actions, 'List functions', 'f') { @dasm_widget.list_functions }
 		addsubmenu(actions, 'List labels', 'l') { @dasm_widget.list_labels }
 		addsubmenu(actions, 'List xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'Re_base') { @dasm_widget.rebase }
 		addsubmenu(actions, 'Rename label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
 		addsubmenu(actions, 'Decompile', '<tab>') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Decompile finali_ze') { @dasm_widget.dasm.decompiler.finalize ; @dasm_widget.gui_update }

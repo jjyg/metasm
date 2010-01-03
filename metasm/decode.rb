@@ -2892,6 +2892,65 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		end
 	end
 
+	# change the base address of the loaded binary
+	# better done early (before disassembling anything)
+	# returns the delta
+	def rebase(newaddr)
+		rebase_delta(newaddr - @sections.keys.min)
+	end
+
+	def rebase_delta(delta)
+		fix = lambda { |a|
+			case a
+			when Array
+				a.map! { |e| fix[e] }
+			when Hash
+				tmp = {}
+				a.each { |k, v| tmp[fix[k]] = v }
+				a.replace tmp
+			when Integer
+				a += delta
+			when BacktraceTrace
+				a.origin = fix[a.origin]
+				a.address = fix[a.address]
+			end
+			a
+		}
+
+		fix[@sections]
+		fix[@decoded]
+		fix[@xrefs]
+		fix[@function]
+		fix[@addrs_todo]
+		fix[@addrs_done]
+		fix[@comment]
+		@prog_binding.each_key { |k| @prog_binding[k] = fix[@prog_binding[k]] }
+		@old_prog_binding.each_key { |k| @old_prog_binding[k] = fix[@old_prog_binding[k]] }
+		@label_alias_cache = nil
+
+		@decoded.values.grep(DecodedInstruction).each { |di|
+			if di.block_head?
+				b = di.block
+				b.address += delta
+				fix[b.to_normal]
+				fix[b.to_subfuncret]
+				fix[b.to_indirect]
+				fix[b.from_normal]
+				fix[b.from_subfuncret]
+				fix[b.from_indirect]
+				fix[b.backtracked_for]
+			end
+			di.address = fix[di.address]
+			di.next_addr = fix[di.next_addr]
+		}
+		@function.each_value { |f|
+			f.return_address = fix[f.return_address]
+			fix[f.backtracked_for]
+		}
+		@xrefs.values.flatten.compact.each { |x| x.origin = fix[x.origin] }
+		delta
+	end
+
 	# change Expression display mode for current object o to display integers as char constants
 	def toggle_expr_char(o)
 		return if not o.kind_of? Renderable

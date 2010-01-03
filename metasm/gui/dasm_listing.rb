@@ -383,10 +383,6 @@ class AsmListingWidget < DrawableWidget
 	def update_line_text
 		return if not w = window
 
-		addrs = @dasm.sections.keys.grep(Integer)
-		@minaddr = addrs.min
-		@maxaddr = addrs.max + @dasm.sections[addrs.max].length rescue -1
-
 		@want_update_line_text = false
 
 		w_h = (height + @font_height - 1) / @font_height
@@ -560,6 +556,11 @@ class AsmListingWidget < DrawableWidget
 	end
 
 	def gui_update
+		# allows a focus_addr after an operation that changed section addresses (eg rebase)
+		addrs = @dasm.sections.keys.grep(Integer)
+		@minaddr = addrs.min
+		@maxaddr = addrs.max + @dasm.sections[addrs.max].length rescue -1
+
 		@want_update_line_text = true
 		redraw
 	end
