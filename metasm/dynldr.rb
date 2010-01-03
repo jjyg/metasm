@@ -122,6 +122,11 @@ static VALUE memory_read(VALUE self, VALUE addr, VALUE len)
 	return rb_str_new((char*)rb_num2ulong(addr), (int)rb_num2ulong(len));
 }
 
+static VALUE memory_read_int(VALUE self, VALUE addr)
+{
+	return rb_uint2inum(*(unsigned int*)rb_num2ulong(addr));
+}
+
 static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 {
 	if (TYPE(val) != T_STRING)
@@ -133,6 +138,12 @@ static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 	while (len--)
 		*dst++ = *src++;
 	return val;
+}
+
+static VALUE memory_write_int(VALUE self, VALUE addr, VALUE val)
+{
+	*(unsigned int *)rb_num2ulong(addr) = rb_num2ulong(val);
+	return Qtrue;
 }
 
 static VALUE str_ptr(VALUE self, VALUE str)
@@ -227,7 +238,9 @@ int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// t
 {
 	dynldr = rb_const_get(rb_const_get(IMPMOD rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
 	rb_define_singleton_method(dynldr, "memory_read",  memory_read, 2);
+	rb_define_singleton_method(dynldr, "memory_read_int",  memory_read_int, 1);
 	rb_define_singleton_method(dynldr, "memory_write", memory_write, 2);
+	rb_define_singleton_method(dynldr, "memory_write_int", memory_write_int, 2);
 	rb_define_singleton_method(dynldr, "str_ptr", str_ptr, 1);
 	rb_define_singleton_method(dynldr, "sym_addr", sym_addr, 2);
 	rb_define_singleton_method(dynldr, "raw_invoke", invoke, 3);
@@ -598,6 +611,20 @@ EOS
 		else
 			ptr
 		end
+	end
+
+	# read a 0-terminated string from memory
+	def self.memory_read_strz(ptr, szmax=4096)
+		# read up to the end of the ptr memory page
+		pglim = (ptr + 0x1000) & ~0xfff
+		sz = [pglim-ptr, szmax].min
+		data = memory_read(ptr, sz)
+		return data[0, data.index(0)] if data.index(0)
+		if sz < szmax
+			data = memory_read(ptr, szmax)
+			data = data[0, data.index(0)] if data.index(0)
+		end
+		data
 	end
 
 	# automatically build/load the bin module
