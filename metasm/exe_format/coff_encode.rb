@@ -49,7 +49,7 @@ class COFF
 			@code_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_CODE' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@data_size    ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_DATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
 			@udata_size   ||= coff.sections.find_all { |s| s.characteristics.include? 'CONTAINS_UDATA' }.inject(0) { |sum, s| sum + align[s.virtsize] }
-			@entrypoint = Expression[@entrypoint, :-, coff.label_at(coff.encoded, 0)] if @entrypoint and not @entrypoint.kind_of?(::Integer)
+			@entrypoint = Expression[@entrypoint, :-, coff.label_at(coff.encoded, 0)] if entrypoint and not @entrypoint.kind_of?(::Integer)
 			tmp = coff.sections.find { |s| s.characteristics.include? 'CONTAINS_CODE' }
 			@base_of_code ||= (tmp ? Expression[coff.label_at(tmp.encoded, 0), :-, coff.label_at(coff.encoded, 0)] : 0)
 			tmp = coff.sections.find { |s| s.characteristics.include? 'CONTAINS_DATA' }
@@ -654,7 +654,7 @@ class COFF
 			s = sect_at_rva(id.iat_p)
 			@encoded[s.rawaddr + s.encoded.ptr, id.iat.virtsize] = id.iat
 			binding.update id.iat.binding(baseaddr + id.iat_p)
-		} if @imports
+		} if imports
 
 		@encoded.fill
 		@encoded.fixup! binding
