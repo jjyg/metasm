@@ -14,8 +14,14 @@ class PeLdr
 	DL = Metasm::DynLdr
 
 	# load a PE file, setup basic IAT hooks (raises "unhandled lib!import")
-	def initialize(file)
-		@pe = Metasm::PE.decode_file(file)
+	def initialize(file, hooktype=:iat)
+		if file.kind_of? Metasm::PE
+			@pe = file
+		elsif file[0, 2] == 'MZ' and file.length > 0x3c
+			@pe = Metasm::PE.decode(file)
+		else	# filename
+			@pe = Metasm::PE.decode_file(file)
+		end
 		@load_address = DL.memory_alloc(@pe.optheader.image_size)
 		raise 'malloc' if @load_address == 0xffff_ffff
 		
@@ -33,22 +39,48 @@ class PeLdr
 				if r.type == 'HIGHLOW'
 					ptr = @load_address + base + r.offset
 					old = DL.memory_read(ptr, 4).unpack('V').first
-					DL.memory_write(ptr, [old + off].pack('V'))
+					DL.memory_write_int(ptr, old + off)
 				end
 			}
 		}
 
-		puts "hook IAT" if $DEBUG
 		@iat_cb = {}
-		@pe.imports.to_a.each { |id|
-			ptr = @load_address + id.iat_p
-			id.imports.each { |i|
-				n = "#{id.libname}!#{i.name}"
-				cb = DL.callback_alloc_c('void x(void)') { raise "unhandled import #{n}" }
-				DL.memory_write(ptr, [cb].pack('V'))
-				@iat_cb[n] = cb
+		@eat_cb = {}
+		case hooktype
+		when :iat
+			puts "hook IAT" if $DEBUG
+			@pe.imports.to_a.each { |id|
+				ptr = @load_address + id.iat_p
+				id.imports.each { |i|
+					n = "#{id.libname}!#{i.name}"
+					cb = DL.callback_alloc_c('void x(void)') { raise "unemulated import #{n}" }
+					DL.memory_write_int(ptr, cb)
+					@iat_cb[n] = cb
+					ptr += 4
+				}
+			}
+		when :eat, :exports
+			puts "hook EAT" if $DEBUG
+			ptr = @load_address + @pe.export.func_p
+			@pe.export.exports.each { |e|
+				n = e.name || e.ordinal
+				cb = DL.callback_alloc_c('void x(void)') { raise "unemulated export #{n}" }
+				DL.memory_write_int(ptr, cb)
+				@eat_cb[n] = cb
 				ptr += 4
 			}
+		end
+	end
+
+	# reset original expected memory protections for the sections
+	# the IAT may reside in a readonly section, so call this only after all hook_imports
+	def reprotect_sections
+		@pe.sections.each { |s|
+			p = ''
+			p << 'r' if s.characteristics.include? 'MEM_READ'
+			p << 'w' if s.characteristics.include? 'MEM_WRITE'
+			p << 'x' if s.characteristics.include? 'MEM_EXECUTE'
+			DL.memory_perm(@load_address + s.virtaddr, s.virtsize, p)
 		}
 	end
 
@@ -62,10 +94,25 @@ class PeLdr
 				if i.name == impname
 					DL.callback_free(@iat_cb["#{libname}!#{impname}"])
 					cb = DL.callback_alloc_c(proto, &b)
-					DL.memory_write(ptr, [cb].pack('V'))
+					DL.memory_write_int(ptr, cb)
 				end
 				ptr += 4
 			}
+		}
+	end
+
+	# add a specific hook in the export table
+	# exemple: hook_export('ExportedFunc', '__stdcall int f(int, char*)') { |i, p| blabla ; 1 }
+	def hook_export(name, proto, &b)
+		ptr = @load_address + @pe.export.func_p
+		@pe.export.exports.each { |e|
+			n = e.name || e.ordinal
+			if n == name
+				DL.callback_free(@eat_cb[name])
+				cb = DL.callback_alloc_c(proto, &b)
+				DL.memory_write_int(ptr, cb)
+			end
+			ptr += 4
 		}
 	end
 
@@ -109,7 +156,7 @@ class PeLdr
 
 	# fills a fake TEB structure
 	def self.populate_teb
-		set = lambda { |off, val| DL.memory_write(@@teb+off, [val].pack('V')) }
+		set = lambda { |off, val| DL.memory_write_int(@@teb+off, val) }
 		# the stack will probably never go higher than that whenever in the dll...
 		set[0x4, DL.new_func_c('int get_sp(void) { asm("mov eax, esp  and eax, ~0xfff"); }') { DL.get_sp }]
 		set[0x8, 0x10000]
@@ -118,7 +165,7 @@ class PeLdr
 	end
 
 	def self.populate_peb
-		set = lambda { |off, val| DL.memory_write(@@peb+off, [val].pack('V')) }
+		set = lambda { |off, val| DL.memory_write_int(@@peb+off, val) }
 	end
 
 	# allocate an LDT entry for the teb, returns a value suitable for the fs selector
@@ -141,6 +188,9 @@ if $0 == __FILE__
 	lasterr = 0
 
 	l = PeLdr.new('dbghelp.dll')
+
+	puts 'dbg@%x' % l.load_address
+	l.hook_import('KERNEL32.dll', 'EnterCriticalSection', '__stdcall int f(void*)') { 1 }
 	l.hook_import('KERNEL32.dll', 'GetCurrentProcess', '__stdcall int f(void)') { -1 }
 	l.hook_import('KERNEL32.dll', 'GetCurrentProcessId', '__stdcall int f(void)') { Process.pid }
 	l.hook_import('KERNEL32.dll', 'GetCurrentThreadId', '__stdcall int f(void)') { Process.pid }
@@ -171,6 +221,7 @@ if $0 == __FILE__
 		'{ asm("mov eax, [ebp+12]  mov ecx, [ebp+8]  lock xchg [ecx], eax"); }')
 	l.hook_import('KERNEL32.dll', 'InitializeCriticalSectionAndSpinCount', '__stdcall int f(int, int)') { 1 }
 	l.hook_import('KERNEL32.dll', 'InitializeCriticalSection', '__stdcall int f(void*)') { 1 }
+	l.hook_import('KERNEL32.dll', 'LeaveCriticalSection', '__stdcall int f(void*)') { 1 }
 	l.hook_import('KERNEL32.dll', 'QueryPerformanceCounter', '__stdcall int f(void*)') { |ptr|
 		v = (Time.now.to_f * 1000 * 1000).to_i
 		dl.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
@@ -179,25 +230,10 @@ if $0 == __FILE__
 	l.hook_import('KERNEL32.dll', 'SetLastError', '__stdcall void f(int)') { |i| lasterr = i ; 1 }
 	l.hook_import('KERNEL32.dll', 'TlsAlloc', '__stdcall int f(void)') { 1 }
 
-	l.hook_import('KERNEL32.dll', 'GetModuleHandleA', '__stdcall int f(char*)') { |ptr|
-		if ptr != 0
-			s = dl.memory_read(ptr, 64)
-			s = s[0, s.index(0)] if s.index(0)
-			puts "GetModHandle #{s.inspect}"
-		end
-		l.load_address
-	}
-	l.hook_import('KERNEL32.dll', 'LoadLibraryA', '__stdcall int f(char*)') { |ptr|
-		s = dl.memory_read(ptr, 64)
-		s = s[0, s.index(0)] if s.index(0)
-		puts "LoadLib #{s.inspect}"
-		l.load_address
-	}
-
 	l.hook_import('msvcrt.dll', 'free', 'void f(int)') { |i| heap.delete i ; 0}
 	l.hook_import('msvcrt.dll', 'malloc', 'int f(int)') { |i| malloc[i] }
 	l.hook_import('msvcrt.dll', 'memset', 'int f(char* p, int c, int n) { while (n--) p[n] = c; return p; }')
-	l.hook_import('msvcrt.dll', '??2@YAPAXI@Z', 'int f(int)') { |i| next 0 if i > 0x100000 ; malloc[i] } # at some point we're called with a ptr as arg, may be a peldr bug
+	l.hook_import('msvcrt.dll', '??2@YAPAXI@Z', 'int f(int)') { |i| raise 'fuuu' if i > 0x100000 ; malloc[i] } # at some point we're called with a ptr as arg, may be a peldr bug
 	l.hook_import('msvcrt.dll', '_initterm', 'void f(void (**p)(void), void*p2) { while(p < p2) { if (*p) (**p)(); p++; } }')
 	l.hook_import('msvcrt.dll', '_lock', 'void f(int)') { 0 }
 	l.hook_import('msvcrt.dll', '_unlock', 'void f(int)') { 0 }
@@ -214,7 +250,47 @@ if $0 == __FILE__
 	}
 	l.hook_import('msvcrt.dll', '__dllonexit', 'int f(int, int, int)') { |i, ii, iii| i }
 
-	l.run_init
+	# generate a fake PE which exports stuff found in k32/ntdll, so that dbghelp may find some exports
+	# (it does a GetModuleHandle & parses the PE in memory)
+	if true
+	elist = Metasm::WindowsExports::EXPORT.map { |k, v| k if v =~ /kernel32/i }.compact
+	src = ".libname 'kernel32.dll'\ndummy: int 3\n" + elist.map { |e| ".export #{e.inspect} dummy" }.join("\n")
+	k32 = PeLdr.new Metasm::PE.assemble(l.pe.cpu, src).encode_string(:lib), :eat
+	else
+	k32 = PeLdr.new 'kernel32.dll', :eat
+	end
+	puts 'k32@%x' % k32.load_address
+	k32.reprotect_sections
+
+	if true
+	elist = Metasm::WindowsExports::EXPORT.map { |k, v| k if v =~ /ntdll/i }.compact
+	src = ".libname 'ntdll.dll'\ndummy: int 3\n" + elist.map { |e| ".export #{e.inspect} dummy" }.join("\n")
+	nt = PeLdr.new Metasm::PE.assemble(l.pe.cpu, src).encode_string(:lib), :eat
+	else
+	nt = PeLdr.new 'ntdll.dll', :eat
+	end
+	puts 'nt@%x' % nt.load_address
+	nt.reprotect_sections
+	
+	l.hook_import('KERNEL32.dll', 'GetModuleHandleA', '__stdcall int f(char*)') { |ptr|
+		s = dl.memory_read_strz(ptr) if ptr != 0
+		case s
+		when /kernel32/i; k32.load_address
+		when /ntdll/i; nt.load_address
+		else 0
+		end
+	}
+	l.hook_import('KERNEL32.dll', 'LoadLibraryA', '__stdcall int f(char*)') { |ptr|
+		s = dl.memory_read_strz(ptr)
+		case s
+		when /kernel32/i; k32.load_address
+		when /ntdll/i; nt.load_address
+		else puts "LoadLibrary #{s.inspect}" ; 0
+		end
+	}
+
+
+	l.reprotect_sections
 
 	l.new_api_c <<EOS
 #define SYMOPT_CASE_INSENSITIVE         0x00000001
@@ -280,10 +356,34 @@ __stdcall BOOL SymFromAddr(HANDLE hProcess __attribute__((in)), DWORD64 Address 
 __stdcall BOOL SymEnumSymbols(HANDLE hProcess __attribute__((in)), ULONG64 BaseOfDll __attribute__((in)), PCSTR Mask __attribute__((in)), PSYM_ENUMERATESYMBOLS_CALLBACK EnumSymbolsCallback __attribute__((in)), PVOID UserContext __attribute__((in)));
 EOS
 
+
+	puts 'run_init'
+	l.run_init
+
+	puts 'sym_init'
 	dl.syminitialize(42, 0, 0)
+	puts 'sym_setopt'
 	dl.symsetoptions(dl.symgetoptions|dl::SYMOPT_DEFERRED_LOADS|dl::SYMOPT_NO_PROMPTS)
+	puts 'sym_setsearch'
 	sympath = ENV['_NT_SYMBOL_PATH'] || 'srv**/tmp/symbols*http://msdl.microsoft.com/download/symbols'
 	dl.symsetsearchpath(42, sympath)
 
-	# looks good !
+	puts 'sym_loadmod'
+	tg = PeLdr.new('kernel32.dll')
+	dl.symloadmodule64(42, 0, 0, 0, tg.load_address, 0)
+
+	puts 'walk'
+	symstruct = [0x58].pack('L') + 0.chr*4*19 + [512].pack('L')     # sizeofstruct, ..., nameszmax
+	text = tg.pe.sections.find { |s| s.name == '.text' }
+	# SymEnumSymbols
+	text.rawsize.times { |o|
+		sym = symstruct + 0.chr*512     # name concat'ed after the struct
+		off = 0.chr*8
+		if dl.symfromaddr(42, tg.load_address+text.virtaddr+o, off, sym) and off.unpack('L').first == 0
+			symnamelen = sym[19*4, 4].unpack('L').first
+			puts ' %x %s' % [text.virtaddr+o, sym[0x54, symnamelen].inspect]
+		end
+		puts '  %x/%x' % [o, text.rawsize] if $VERBOSE and o & 0xffff == 0
+	}
+	puts
 end
