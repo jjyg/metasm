@@ -175,7 +175,7 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 
 // invoke a symbol
 // args is an array of Integers
-// flags: 1 stdcall  2 fastcall  4 ret 64bits  8 ret float
+// flags: 1 stdcall  2 fastcall  4 ret_64bits  8 ret_float
 // TODO float args
 static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 {

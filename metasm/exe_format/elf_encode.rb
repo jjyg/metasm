@@ -379,6 +379,8 @@ class ELF
 				# 				# base_relocated ?
 
 				shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).assemble(c).encoded }
+				# in the PIC case, _dlresolve imposes us to use the ebx register (which may not be saved by the calling function..)
+				# also geteip trashes eax, which may interfere with regparm(3)
 				base = @cpu.generate_PIC ? 'ebx' : '_PLT_GOT'
 				if not plt ||= @sections.find { |s| s.type == 'PROGBITS' and s.name == '.plt' }
 					plt = Section.new
@@ -399,7 +401,7 @@ class ELF
 					# create the plt thunk
 					plt.encoded.add_export r.symbol.name+'_plt_thunk', plt.encoded.length
 					if @cpu.generate_PIC
-						plt.encoded << shellcode["call metasm_intern_geteip\nlea ebx, [eax+_PLT_GOT-metasm_intern_geteip]"]
+						plt.encoded << shellcode["call metasm_intern_geteip\nlea #{base}, [eax+_PLT_GOT-metasm_intern_geteip]"]
 					end
 					plt.encoded << shellcode["jmp [#{base} + #{gotplt.encoded.length}]"]
 					plt.encoded.add_export r.symbol.name+'_plt_default', plt.encoded.length

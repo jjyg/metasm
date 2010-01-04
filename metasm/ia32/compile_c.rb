@@ -31,6 +31,8 @@ class CCompiler < C::Compiler
 		attr_accessor :bound
 		# list of reg values that are not kept across function call
 		attr_accessor :abi_flushregs_call
+		# list of regs we can trash without restoring them
+		attr_accessor :abi_trashregs
 
 		# +used+ includes ebp if true
 		# nil if ebp is not reserved for stack variable addressing
@@ -46,6 +48,7 @@ class CCompiler < C::Compiler
 			@inuse = []
 			@bound = {}
 			@abi_flushregs_call = [0, 1, 2]		# eax, ecx, edx (r8 etc ?)
+			@abi_trashregs = [0, 1, 2]
 		end
 	end
 
@@ -810,7 +813,13 @@ class CCompiler < C::Compiler
 		@state.abi_flushregs_call.each { |reg|
 			next if reg == 4
 			next if reg == 5 and @state.saved_ebp
-			next if not @state.used.include? reg
+			if not @state.used.include? reg
+				if not @state.abi_trashregs.include? reg
+					# XXX should exclude other code compiled by us (we wont trash reg)
+					@state.dirty |= [reg]
+				end
+				next
+			end
 			backup << reg
 			instr 'push', Reg.new(reg, [@cpusz, 32].max)
 		}
@@ -826,13 +835,13 @@ class CCompiler < C::Compiler
 					unuse a
 					instr 'push', a
 				when :__int16
+					# XXX __int8 unuse, why not here
 					if @cpusz != 16 and a.kind_of? Reg
 						instr 'push', Reg.new(a.val, @cpusz)
 					else
 						instr 'push', a
 					end
 				when :__int32
-					# XXX 64bits && Reg ?
 					instr 'push', a
 				when :__int64
 					case a
@@ -921,9 +930,11 @@ class CCompiler < C::Compiler
 		backup.reverse_each { |reg|
 			sz = [@cpusz, 32].max
 			if    retreg.kind_of? Composite and reg == 0
+				# XXX wtf ?  and what if retreg.low.val == 2 and it was saved too..
 				instr 'pop', Reg.new(retreg.low.val, sz)
 				instr 'xchg', Reg.new(reg, sz), Reg.new(retreg.low.val, sz)
 			elsif retreg.kind_of? Composite and reg == 2
+				# ..boom !
 				instr 'pop', Reg.new(retreg.high.val, sz)
 				instr 'xchg', Reg.new(reg, sz), Reg.new(retreg.high.val, sz)
 			elsif retreg.kind_of? Reg and reg == 0
@@ -1238,6 +1249,9 @@ class CCompiler < C::Compiler
 
 	def c_init_state(func)
 		@state = State.new(func)
+		# ET_DYN trashes ebx too
+		# XXX hope we're not a Shellcode to be embedded in an ELF..
+		@state.abi_flushregs_call << 3 if @exeformat.kind_of? ELF
 		al = typesize[:ptr]
 		argoff = 2*al
 		func.type.args.each { |a|
@@ -1263,7 +1277,7 @@ class CCompiler < C::Compiler
 			instr 'mov', ebp, esp
 			instr 'sub', esp, Expression[localspc] if localspc > 0
 		end
-		@state.dirty -= @state.abi_flushregs_call	# XXX ABI
+		@state.dirty -= @state.abi_trashregs	# XXX ABI
 		@state.dirty.each { |reg|
 			instr 'push', Reg.new(reg, @cpusz)
 		}
