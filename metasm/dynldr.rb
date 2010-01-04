@@ -627,6 +627,22 @@ EOS
 		data
 	end
 
+	# read a 0-terminated wide string from memory
+	def self.memory_read_wstrz(ptr, szmax=4096)
+		# read up to the end of the ptr memory page
+		pglim = (ptr + 0x1000) & ~0xfff
+		sz = [pglim-ptr, szmax].min
+		data = memory_read(ptr, sz)
+		if i = data.unpack('v*').index(0)
+			return data[0, 2*i]
+		end
+		if sz < szmax
+			data = memory_read(ptr, szmax)
+			data = data[0, 2*i] if i = data.unpack('v*').index(0)
+		end
+		data
+	end
+
 	# automatically build/load the bin module
 	start
 
