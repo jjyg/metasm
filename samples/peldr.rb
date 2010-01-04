@@ -65,7 +65,7 @@ class PeLdr
 			@pe.export.exports.each { |e|
 				n = e.name || e.ordinal
 				cb = DL.callback_alloc_c('void x(void)') { raise "unemulated export #{n}" }
-				DL.memory_write_int(ptr, cb)
+				DL.memory_write_int(ptr, cb - @load_address)	# RVA
 				@eat_cb[n] = cb
 				ptr += 4
 			}
@@ -85,6 +85,7 @@ class PeLdr
 	end
 
 	# add a specific hook for an IAT function
+	# accepts a function pointer in proto
 	# exemple: hook_import('KERNEL32.dll', 'GetProcAddress', '__stdcall int f(int, char*)') { |h, name| puts "getprocaddr #{name}" ; 0 }
 	def hook_import(libname, impname, proto, &b)
 		@pe.imports.to_a.each { |id|
@@ -93,7 +94,12 @@ class PeLdr
 			id.imports.each { |i|
 				if i.name == impname
 					DL.callback_free(@iat_cb["#{libname}!#{impname}"])
-					cb = DL.callback_alloc_c(proto, &b)
+					if proto.kind_of? Integer
+						cb = proto
+					else
+						cb = DL.callback_alloc_c(proto, &b)
+						@iat_cb["#{libname}!#{impname}"] = cb
+					end
 					DL.memory_write_int(ptr, cb)
 				end
 				ptr += 4
@@ -109,8 +115,13 @@ class PeLdr
 			n = e.name || e.ordinal
 			if n == name
 				DL.callback_free(@eat_cb[name])
-				cb = DL.callback_alloc_c(proto, &b)
-				DL.memory_write_int(ptr, cb)
+				if proto.kind_of? Integer
+					cb = proto
+				else
+					cb = DL.callback_alloc_c(proto, &b)
+					@eat_cb[name] = cb
+				end
+				DL.memory_write_int(ptr, cb - @load_address)	# RVA
 			end
 			ptr += 4
 		}
@@ -156,17 +167,22 @@ class PeLdr
 
 	# fills a fake TEB structure
 	def self.populate_teb
+		DL.memory_write(@@teb, 0.chr*4096)
 		set = lambda { |off, val| DL.memory_write_int(@@teb+off, val) }
 		# the stack will probably never go higher than that whenever in the dll...
-		set[0x4, DL.new_func_c('int get_sp(void) { asm("mov eax, esp  and eax, ~0xfff"); }') { DL.get_sp }]
-		set[0x8, 0x10000]
-		set[0x18, @@teb]
-		set[0x30, @@peb]
+		set[0x4, DL.new_func_c('int get_sp(void) { asm("mov eax, esp  and eax, ~0xfff"); }') { DL.get_sp }]	# stack_base
+		set[0x8, 0x10000]	# stack_limit
+		set[0x18, @@teb]	# teb
+		set[0x30, @@peb]	# peb
 	end
 
 	def self.populate_peb
+		DL.memory_write(@@peb, 0.chr*4096)
 		set = lambda { |off, val| DL.memory_write_int(@@peb+off, val) }
 	end
+
+	def self.teb ; @@teb ; end
+	def self.peb ; @@peb ; end
 
 	# allocate an LDT entry for the teb, returns a value suitable for the fs selector
 	def self.allocate_ldt_entry_teb
@@ -174,120 +190,199 @@ class PeLdr
 		# ldt_entry base_addr size_in_pages
 		# 32bits:1 type:2 (0=data) readonly:1 limit_in_pages:1 seg_not_present:1 usable:1
 		struct = [entry, @@teb, 1, 0b1_0_1_0_00_1].pack('VVVV')
-		Kernel.syscall(123, 1, DL.str_ptr(struct), struct.length)
+		Kernel.syscall(123, 1, DL.str_ptr(struct), struct.length)	# __NR_modify_ldt
 		(entry << 3) | 7
 	end
 
 	setup_teb
 end
 
+# generate a fake PE which exports stuff found in k32/ntdll
+# so that other lib may directly scan this PE with their own getprocaddr
+class FakeWinAPI < PeLdr
+	attr_accessor :win_version
+	attr_accessor :exports
+
+	def initialize(elist=nil)
+		@exports = []
+		@win_version = { :major => 5, :minor => 1, :build => 2600, :sp => 'Service pack 3', :sp_major => 3, :sp_minor => 0 }
+
+		# if you know the exact list you need, put it there (much faster)
+		if not elist
+			elist = Metasm::WindowsExports::EXPORT.map { |k, v| k if v =~ /kernel32|ntdll/i }.compact
+			elist |= ['free', 'malloc', 'memset', '??2@YAPAXI@Z', '_initterm', '_lock', '_unlock', '_wcslwr', '_wcsdup', '__dllonexit']
+		end
+
+		src = ".libname 'emu_winapi'\ndummy: int 3\n" + elist.map { |e| ".export #{e.inspect} dummy" }.join("\n")
+		super(Metasm::PE.assemble(Metasm::Ia32.new, src).encode_string(:lib), :eat)	# put 'nil' instead of :eat if all exports are emu
+
+		@heap = {}
+		malloc = lambda { |sz| str = 0.chr*sz ; ptr = DL.str_ptr(str) ; @heap[ptr] = str ; ptr }
+
+		lasterr = 0
+
+		# kernel32
+		hook_export('CloseHandle', '__stdcall int f(int)') { |a| 1 }
+		hook_export('DuplicateHandle', '__stdcall int f(int, int, int, void*, int, int, int)') { |*a| DL.memory_write_int(a[3], a[1]) ; 1 }
+		hook_export('EnterCriticalSection', '__stdcall int f(void*)') { 1 }
+		hook_export('GetCurrentProcess', '__stdcall int f(void)') { -1 }
+		hook_export('GetCurrentProcessId', '__stdcall int f(void)') { Process.pid }
+		hook_export('GetCurrentThreadId', '__stdcall int f(void)') { Process.pid }
+		hook_export('GetEnvironmentVariableW', '__stdcall int f(void*, void*, int)') { |name, resp, sz|
+			next 0 if name == 0
+			s = DL.memory_read_wstrz(name)
+			s = s.unpack('v*').pack('C*') rescue nil
+puts "GetEnv #{s}" if $VERBOSE
+			v = ENV[s].to_s
+			if resp != 0 and v.length*2+2 <= sz
+				DL.memory_write(resp, (v.unpack('C*') << 0).pack('v*'))
+				v.length*2	# 0 if not found
+			else
+				v.length*2+2
+			end
+		}
+		hook_export('GetLastError', '__stdcall int f(void)') { lasterr }
+		hook_export('GetProcAddress', '__stdcall int f(int, char*)') { |h, v|
+			v = DL.memory_read_strz(v) if v >= 0x10000
+puts "GetProcAddr #{'%x' % h}, #{v}" if $VERBOSE
+			@eat_cb[v] or raise "unemulated getprocaddr #{v}"
+		}
+		hook_export('GetSystemInfo', '__stdcall void f(void*)') { |ptr|
+			DL.memory_write(ptr, [0, 0x1000, 0x10000, 0x7ffeffff, 1, 1, 586, 0x10000, 0].pack('V*'))
+			1
+		}
+		hook_export('GetSystemTimeAsFileTime', '__stdcall void f(void*)') { |ptr|
+			v = ((Time.now - Time.mktime(1971, 1, 1, 0, 0, 0) + 370*365.25*24*60*60) * 1000 * 1000 * 10).to_i
+			DL.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
+			1
+		}
+		hook_export('GetTickCount', '__stdcall int f(void)') { (Time.now.to_i * 1000) & 0xffff_ffff }
+		hook_export('GetVersion', '__stdcall int f(void)') { (@win_version[:build] << 16) | (@win_version[:major] << 8) | @win_version[:minor]  }
+		hook_export('GetVersionExA', '__stdcall int f(void*)') { |ptr|
+			sz = DL.memory_read(ptr, 4).unpack('V').first
+			data = [@win_version[:major], @win_version[:minor], @win_version[:build], 2, @win_version[:sp], @win_version[:sp_major], @win_version[:sp_minor]].pack('VVVVa128VV')
+			DL.memory_write(ptr+4, data[0, sz-4])
+			1
+		}
+		hook_export('HeapAlloc', '__stdcall int f(int, int, int)') { |h, f, sz| malloc[sz] }
+		hook_export('HeapCreate', '__stdcall int f(int, int, int)') { 1 }
+		hook_export('HeapFree', '__stdcall int f(int, int, int)') { |h, f, p| @heap.delete p ; 1 }
+		hook_export('InterlockedCompareExchange', '__stdcall int f(int*, int, int)'+
+			'{ asm("mov eax, [ebp+16]  mov ecx, [ebp+12]  mov edx, [ebp+8]  lock cmpxchg [edx], ecx"); }')
+		hook_export('InterlockedExchange', '__stdcall int f(int*, int)'+
+			'{ asm("mov eax, [ebp+12]  mov ecx, [ebp+8]  lock xchg [ecx], eax"); }')
+		hook_export('InitializeCriticalSectionAndSpinCount', '__stdcall int f(int, int)') { 1 }
+		hook_export('InitializeCriticalSection', '__stdcall int f(void*)') { 1 }
+		hook_export('LeaveCriticalSection', '__stdcall int f(void*)') { 1 }
+		hook_export('QueryPerformanceCounter', '__stdcall int f(void*)') { |ptr|
+			v = (Time.now.to_f * 1000 * 1000).to_i
+			DL.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
+			1
+		}
+		hook_export('SetLastError', '__stdcall int f(int)') { |i| lasterr = i ; 1 }
+		hook_export('TlsAlloc', '__stdcall int f(void)') { 1 }
+
+		# ntdll
+		readustring = lambda { |p| DL.memory_read(*DL.memory_read(p, 8).unpack('vvV').values_at(2, 0)) }
+		hook_export('RtlEqualUnicodeString', '__stdcall int f(void*, void*, int)') { |s1, s2, cs|
+			s1 = readustring[s1]
+			s2 = readustring[s2]
+puts "RtlEqualUnicodeString #{s1.unpack('v*').pack('C*').inspect}, #{s2.unpack('v*').pack('C*').inspect}, #{cs}"
+			if cs == 1
+				s1 = s1.downcase
+				s2 = s2.downcase
+			end
+			s1 == s2 ? 1 : 0
+		}
+		hook_export('MultiByteToWideChar', '__stdcall int f(int, int, void*, int, void*, int)') { |cp, fl, ip, is, op, os|
+			is = DL.memory_read_strz(ip).length if is == 0xffff_ffff
+			if os == 0
+				is
+			elsif os >= is*2	# not sure with this..
+				DL.memory_write(op, DL.memory_read(ip, is).unpack('C*').pack('v*'))
+				is
+			else 0
+			end
+
+		}
+
+		# msvcrt
+		hook_export('free', 'void f(int)') { |i| @heap.delete i ; 0}
+		hook_export('malloc', 'int f(int)') { |i| malloc[i] }
+		hook_export('memset', 'char* f(char* p, char c, int n) { while (n--) p[n] = c; return p; }')
+		hook_export('??2@YAPAXI@Z', 'int f(int)') { |i| raise 'fuuu' if i > 0x100000 ; malloc[i] } # at some point we're called with a ptr as arg, may be a peldr bug
+		hook_export('__dllonexit', 'int f(int, int, int)') { |i, ii, iii| i }
+		hook_export('_initterm', 'void f(void (**p)(void), void*p2) { while(p < p2) { if (*p) (**p)(); p++; } }')
+		hook_export('_lock', 'void f(int)') { 0 }
+		hook_export('_unlock', 'void f(int)') { 0 }
+		hook_export('_wcslwr', '__int16* f(__int16* p) { int i=-1; while (p[++i]) p[i] |= 0x20; return p; }')
+		hook_export('_wcsdup', 'int f(__int16* p)') { |p|
+			cp = DL.memory_read_wstrz(p) + "\0\0"
+			p = DL.str_ptr(cp)
+			@heap[p] = cp
+			p
+		}
+	end
+
+	def hook_export(*a, &b)
+		@exports |= [a.first]
+		super(*a, &b)
+	end
+
+	# take another PeLdr and patch its IAT with functions from our @exports (eg our explicit export hooks)
+	def intercept_iat(ldr)
+		ldr.pe.imports.to_a.each { |id|
+			id.imports.each { |i|
+				next if not @exports.include? i.name or not @eat_cb[i.name]
+				ldr.hook_import(id.libname, i.name, @eat_cb[i.name])
+			}
+		}
+	end
+end
+
 if $0 == __FILE__
 	dl = Metasm::DynLdr
-	heap = {}
-	malloc = lambda { |sz| str = 0.chr*sz ; ptr = dl.str_ptr(str) ; heap[ptr] = str ; ptr }
-	lasterr = 0
 
 	l = PeLdr.new('dbghelp.dll')
+	#dl.memory_write(l.load_address + 0x33b10, "\x90\xcc")	# break on SymInitializeW
 
-	puts 'dbg@%x' % l.load_address
-	l.hook_import('KERNEL32.dll', 'EnterCriticalSection', '__stdcall int f(void*)') { 1 }
-	l.hook_import('KERNEL32.dll', 'GetCurrentProcess', '__stdcall int f(void)') { -1 }
-	l.hook_import('KERNEL32.dll', 'GetCurrentProcessId', '__stdcall int f(void)') { Process.pid }
-	l.hook_import('KERNEL32.dll', 'GetCurrentThreadId', '__stdcall int f(void)') { Process.pid }
-	l.hook_import('KERNEL32.dll', 'GetLastError', '__stdcall int f(void)') { lasterr }
-	l.hook_import('KERNEL32.dll', 'GetSystemInfo', '__stdcall void f(void*)') { |ptr|
-		dl.memory_write(ptr, [0, 0x1000, 0x10000, 0x7ffeffff, 1, 1, 586, 0x10000, 0].pack('V*'))
-		1
-	}
-	l.hook_import('KERNEL32.dll', 'GetSystemTimeAsFileTime', '__stdcall void f(void*)') { |ptr|
-		v = ((Time.now - Time.mktime(1971, 1, 1, 0, 0, 0) + 370*365.25*24*60*60) * 1000 * 1000 * 10).to_i
-		dl.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
-		1
-	}
-	l.hook_import('KERNEL32.dll', 'GetTickCount', '__stdcall int f(void)') { (Time.now.to_i * 1000) & 0xffff_ffff }
-	l.hook_import('KERNEL32.dll', 'GetVersion', '__stdcall int f(void)') { 0xa28501 }	# xpsp1 (?)
-	l.hook_import('KERNEL32.dll', 'GetVersionExA', '__stdcall int f(void*)') { |ptr|
-		sz = dl.memory_read(ptr, 4).unpack('V').first
-		data = [5, 1, 2600, 2, 'Service pack 3', 3, 0].pack('VVVVa128VV')
-		dl.memory_write(ptr+4, data[0, sz-4])
-		1
-	}
-	l.hook_import('KERNEL32.dll', 'HeapAlloc', '__stdcall int f(int, int, int)') { |h, f, sz| malloc[sz] }
-	l.hook_import('KERNEL32.dll', 'HeapCreate', '__stdcall int f(int, int, int)') { 1 }
-	l.hook_import('KERNEL32.dll', 'HeapFree', '__stdcall int f(int, int, int)') { |h, f, p| heap.delete p ; 1 }
-	l.hook_import('KERNEL32.dll', 'InterlockedCompareExchange', '__stdcall int f(int*, int, int)'+
-		'{ asm("mov eax, [ebp+16]  mov ecx, [ebp+12]  mov edx, [ebp+8]  lock cmpxchg [edx], ecx"); }')
-	l.hook_import('KERNEL32.dll', 'InterlockedExchange', '__stdcall int f(int*, int)'+
-		'{ asm("mov eax, [ebp+12]  mov ecx, [ebp+8]  lock xchg [ecx], eax"); }')
-	l.hook_import('KERNEL32.dll', 'InitializeCriticalSectionAndSpinCount', '__stdcall int f(int, int)') { 1 }
-	l.hook_import('KERNEL32.dll', 'InitializeCriticalSection', '__stdcall int f(void*)') { 1 }
-	l.hook_import('KERNEL32.dll', 'LeaveCriticalSection', '__stdcall int f(void*)') { 1 }
-	l.hook_import('KERNEL32.dll', 'QueryPerformanceCounter', '__stdcall int f(void*)') { |ptr|
-		v = (Time.now.to_f * 1000 * 1000).to_i
-		dl.memory_write(ptr, [v & 0xffffffff, (v >> 32 & 0xffffffff)].pack('VV'))
-		1
-	}
-	l.hook_import('KERNEL32.dll', 'SetLastError', '__stdcall void f(int)') { |i| lasterr = i ; 1 }
-	l.hook_import('KERNEL32.dll', 'TlsAlloc', '__stdcall int f(void)') { 1 }
+	puts 'dbghelp@%x' % l.load_address if $VERBOSE
 
-	l.hook_import('msvcrt.dll', 'free', 'void f(int)') { |i| heap.delete i ; 0}
-	l.hook_import('msvcrt.dll', 'malloc', 'int f(int)') { |i| malloc[i] }
-	l.hook_import('msvcrt.dll', 'memset', 'int f(char* p, int c, int n) { while (n--) p[n] = c; return p; }')
-	l.hook_import('msvcrt.dll', '??2@YAPAXI@Z', 'int f(int)') { |i| raise 'fuuu' if i > 0x100000 ; malloc[i] } # at some point we're called with a ptr as arg, may be a peldr bug
-	l.hook_import('msvcrt.dll', '_initterm', 'void f(void (**p)(void), void*p2) { while(p < p2) { if (*p) (**p)(); p++; } }')
-	l.hook_import('msvcrt.dll', '_lock', 'void f(int)') { 0 }
-	l.hook_import('msvcrt.dll', '_unlock', 'void f(int)') { 0 }
-	l.hook_import('msvcrt.dll', '_wcslwr', 'int f(__int16* p) { int i=-1; while (p[++i]) p[i] |= 0x20; return p; }')
-	l.hook_import('msvcrt.dll', '_wcsdup', 'int f(__int16* p)') { |p|
-		cp = ''
-		until (wc = dl.memory_read(p, 2)) == 0.chr*2
-			cp << wc
-			p += 2
-		end
-		cp << wc
-		heap[dl.str_ptr(cp)] = cp
-		dl.str_ptr(cp)
-	}
-	l.hook_import('msvcrt.dll', '__dllonexit', 'int f(int, int, int)') { |i, ii, iii| i }
-
-	# generate a fake PE which exports stuff found in k32/ntdll, so that dbghelp may find some exports
-	# (it does a GetModuleHandle & parses the PE in memory)
-	if true
-	elist = Metasm::WindowsExports::EXPORT.map { |k, v| k if v =~ /kernel32/i }.compact
-	src = ".libname 'kernel32.dll'\ndummy: int 3\n" + elist.map { |e| ".export #{e.inspect} dummy" }.join("\n")
-	k32 = PeLdr.new Metasm::PE.assemble(l.pe.cpu, src).encode_string(:lib), :eat
-	else
-	k32 = PeLdr.new 'kernel32.dll', :eat
-	end
-	puts 'k32@%x' % k32.load_address
-	k32.reprotect_sections
-
-	if true
-	elist = Metasm::WindowsExports::EXPORT.map { |k, v| k if v =~ /ntdll/i }.compact
-	src = ".libname 'ntdll.dll'\ndummy: int 3\n" + elist.map { |e| ".export #{e.inspect} dummy" }.join("\n")
-	nt = PeLdr.new Metasm::PE.assemble(l.pe.cpu, src).encode_string(:lib), :eat
-	else
-	nt = PeLdr.new 'ntdll.dll', :eat
-	end
-	puts 'nt@%x' % nt.load_address
-	nt.reprotect_sections
+	wapi = FakeWinAPI.new #%w[CloseHandle DuplicateHandle EnterCriticalSection GetCurrentProcess GetCurrentProcessId GetCurrentThreadId GetEnvironmentVariableW GetLastError GetProcAddress GetSystemInfo GetSystemTimeAsFileTime GetTickCount GetVersion GetVersionExA HeapAlloc HeapCreate HeapFree InterlockedCompareExchange InterlockedExchange InitializeCriticalSectionAndSpinCount InitializeCriticalSection LeaveCriticalSection QueryPerformanceCounter SetLastError TlsAlloc RtlEqualUnicodeString MultiByteToWideChar free malloc memset ??2@YAPAXI@Z __dllonexit _initterm _lock _unlock _wcslwr _wcsdup GetModuleHandleA LoadLibraryA NtQueryObject NtQueryInformationProcess]
+	puts 'wapi@%x' % wapi.load_address if $VERBOSE
 	
-	l.hook_import('KERNEL32.dll', 'GetModuleHandleA', '__stdcall int f(char*)') { |ptr|
+	wapi.hook_export('GetModuleHandleA', '__stdcall int f(char*)') { |ptr|
 		s = dl.memory_read_strz(ptr) if ptr != 0
 		case s
-		when /kernel32/i; k32.load_address
-		when /ntdll/i; nt.load_address
+		when /kernel32|ntdll/i; wapi.load_address
 		else 0
 		end
 	}
-	l.hook_import('KERNEL32.dll', 'LoadLibraryA', '__stdcall int f(char*)') { |ptr|
+	wapi.hook_export('LoadLibraryA', '__stdcall int f(char*)') { |ptr|
 		s = dl.memory_read_strz(ptr)
 		case s
-		when /kernel32/i; k32.load_address
-		when /ntdll/i; nt.load_address
+		when /kernel32|ntdll/i; wapi.load_address
 		else puts "LoadLibrary #{s.inspect}" ; 0
 		end
 	}
+	wapi.hook_export('NtQueryObject', '__stdcall int f(int, int, void*, int, int*)') { |h, type, resp, sz, psz|
+puts "NtQueryObject #{h}, #{type}, #{sz}" if $VERBOSE
+		if h == 42 and type == 2 and sz >= 24
+			dl.memory_write(resp, [14, 16, resp+8].pack('vvV') + "Process\0".unpack('C*').pack('v*'))
+			dl.memory_write_int(psz, 24) if psz != 0
+			0
+		else
+			0x8000_0000
+		end
+	}
+	wapi.hook_export('NtQueryInformationProcess', '__stdcall int f(int, int, void*, int, int*)') { |h, type, resp, sz, psz|
+puts "NtQueryInformationProcess #{h}, #{type}, #{sz}" if $VERBOSE
+		0x8000_0000
+	}
+#puts wapi.exports.join(' ')	# generate arglist for FakeWinAPI.new
+# TODO hook the resolv function of dbghelp to list what it checks
+
+	wapi.intercept_iat(l)
 
 
 	l.reprotect_sections
@@ -382,6 +477,7 @@ EOS
 		if dl.symfromaddr(42, tg.load_address+text.virtaddr+o, off, sym) and off.unpack('L').first == 0
 			symnamelen = sym[19*4, 4].unpack('L').first
 			puts ' %x %s' % [text.virtaddr+o, sym[0x54, symnamelen].inspect]
+break
 		end
 		puts '  %x/%x' % [o, text.rawsize] if $VERBOSE and o & 0xffff == 0
 	}
