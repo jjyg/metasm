@@ -232,9 +232,9 @@ class FakeWinAPI < PeLdr
 			next 0 if name == 0
 			s = DL.memory_read_wstrz(name)
 			s = s.unpack('v*').pack('C*') rescue nil
-puts "GetEnv #{s}" if $VERBOSE
+puts "GetEnv #{s.inspect}" if $VERBOSE
 			v = ENV[s].to_s
-			if resp != 0 and v.length*2+2 <= sz
+			if resp and v.length*2+2 <= sz
 				DL.memory_write(resp, (v.unpack('C*') << 0).pack('v*'))
 				v.length*2	# 0 if not found
 			else
@@ -244,7 +244,7 @@ puts "GetEnv #{s}" if $VERBOSE
 		hook_export('GetLastError', '__stdcall int f(void)') { lasterr }
 		hook_export('GetProcAddress', '__stdcall int f(int, char*)') { |h, v|
 			v = DL.memory_read_strz(v) if v >= 0x10000
-puts "GetProcAddr #{'%x' % h}, #{v}" if $VERBOSE
+puts "GetProcAddr #{'0x%x' % h}, #{v.inspect}" if $VERBOSE
 			@eat_cb[v] or raise "unemulated getprocaddr #{v}"
 		}
 		hook_export('GetSystemInfo', '__stdcall void f(void*)') { |ptr|
@@ -287,7 +287,7 @@ puts "GetProcAddr #{'%x' % h}, #{v}" if $VERBOSE
 		hook_export('RtlEqualUnicodeString', '__stdcall int f(void*, void*, int)') { |s1, s2, cs|
 			s1 = readustring[s1]
 			s2 = readustring[s2]
-puts "RtlEqualUnicodeString #{s1.unpack('v*').pack('C*').inspect}, #{s2.unpack('v*').pack('C*').inspect}, #{cs}"
+puts "RtlEqualUnicodeString #{s1.unpack('v*').pack('C*').inspect}, #{s2.unpack('v*').pack('C*').inspect}, #{cs}" if $VERBOSE
 			if cs == 1
 				s1 = s1.downcase
 				s2 = s2.downcase
@@ -352,7 +352,7 @@ if $0 == __FILE__
 	puts 'wapi@%x' % wapi.load_address if $VERBOSE
 	
 	wapi.hook_export('GetModuleHandleA', '__stdcall int f(char*)') { |ptr|
-		s = dl.memory_read_strz(ptr) if ptr != 0
+		s = dl.memory_read_strz(ptr) if ptr
 		case s
 		when /kernel32|ntdll/i; wapi.load_address
 		else 0
@@ -369,7 +369,7 @@ if $0 == __FILE__
 puts "NtQueryObject #{h}, #{type}, #{sz}" if $VERBOSE
 		if h == 42 and type == 2 and sz >= 24
 			dl.memory_write(resp, [14, 16, resp+8].pack('vvV') + "Process\0".unpack('C*').pack('v*'))
-			dl.memory_write_int(psz, 24) if psz != 0
+			dl.memory_write_int(psz, 24) if psz
 			0
 		else
 			0x8000_0000
@@ -377,7 +377,15 @@ puts "NtQueryObject #{h}, #{type}, #{sz}" if $VERBOSE
 	}
 	wapi.hook_export('NtQueryInformationProcess', '__stdcall int f(int, int, void*, int, int*)') { |h, type, resp, sz, psz|
 puts "NtQueryInformationProcess #{h}, #{type}, #{sz}" if $VERBOSE
-		0x8000_0000
+		if h == 42 and type == 0
+			# reservd peb res res ptr_to_pid
+			peb = 0xdead0000
+			dl.memory_write(resp, [42, peb, 0, 0, resp, 0].pack('V*'))
+			dl.memory_write_int(psz, 24) if psz
+			0
+		else
+			0x8000_0000
+		end
 	}
 #puts wapi.exports.join(' ')	# generate arglist for FakeWinAPI.new
 # TODO hook the resolv function of dbghelp to list what it checks
