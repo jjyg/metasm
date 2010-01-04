@@ -156,8 +156,8 @@ class DisasmWidget < ContainerChoiceWidget
 	def focus_addr_redo
 		# undo focus_addr_back
 		if val = @pos_history_redo.pop
-			@pos_history << [@notebook.page, curview.get_cursor_pos]
-			@notebook.page = val[0]
+			@pos_history << [curview_index, curview.get_cursor_pos]
+			showview val[0]
 			curview.set_cursor_pos val[1]
 		end
 	end
