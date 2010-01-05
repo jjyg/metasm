@@ -96,8 +96,16 @@ class COFF
 			rva = lambda { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
 			rva_end = lambda { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
 
+			# ordinal base: smallest number > 1 to honor ordinals, minimize gaps
+			olist = @exports.map { |e| e.ordinal }.compact
+			# start with lowest ordinal, substract all exports unused to fill ordinal sequence gaps
+			omin = olist.min.to_i
+			gaps = olist.empty? ? 0 : olist.max+1 - olist.min - olist.length
+			noord = @exports.length - olist.length
+			@ordinal_base ||= [omin - (noord - gaps), 1].max
+
 			@libname_p = rva['libname']
-			@num_exports = @exports.length
+			@num_exports = [@exports.length, @exports.map { |e| e.ordinal }.compact.max.to_i - @ordinal_base].max
 			@num_names = @exports.find_all { |e| e.name }.length
 			@func_p = rva['addrtable']
 			@names_p = rva['namptable']
@@ -107,8 +115,15 @@ class COFF
 
 			edata['libname'] << @libname << 0
 
-			# TODO handle e.ordinal (force export table order, or invalidate @ordinal)
-			@exports.sort_by { |e| e.name.to_s }.each { |e|
+			elist = @exports.find_all { |e| e.name and not e.ordinal }.sort_by { |e| e.name }
+			@exports.find_all { |e| e.ordinal }.sort_by { |e| e.ordinal }.each { |e| elist.insert(e.ordinal-@ordinal_base, e) }
+			elist.each { |e|
+				if not e
+					# export by ordinal with gaps
+					# XXX test this value with the windows loader
+					edata['addrtable'] << coff.encode_word(0xffff_ffff)
+					next
+				end
 				if e.forwarder_lib
 					edata['addrtable'] << coff.encode_word(rva_end['nametable'])
 					edata['nametable'] << e.forwarder_lib << ?. <<
@@ -723,9 +738,9 @@ class COFF
 	#    without argument, creates a label used as entrypoint
 	#  .libname "<name>"
 	#    defines the string to be used as exported library name (should be the same as the file name, may omit extension)
-	#  .export "<exported_name>" [<label_name>]
+	#  .export ["<exported_name>"] [<ordinal>] [<label_name>]
 	#    exports the specified label with the specified name (label_name defaults to exported_name)
-	#    TODO export by ordinal
+	#    if exported_name is an unquoted integer, the export is by ordinal. XXX if the ordinal starts with '0', the integer is interpreted as octal
 	#  .import "<libname>" "<import_name>" [<thunk_name>] [<label_name>]
 	#    imports a symbol from a library
 	#    if the thunk name is specified and not 'nil', the compiler will generate a thunk that can be called (in ia32, 'call thunk' == 'call [import_name]')
@@ -804,13 +819,23 @@ class COFF
 			check_eol[]
 
 		when '.export'
-			# .export <export name|"export name"> [label to export if different]
-			exportname = readstr[]
+			# .export <export name|ordinal|"export name"> [ordinal] [label to export if different]
 			@lexer.skip_space
-			if tok = @lexer.readtok and tok.type == :punct and tok.raw == ','
-				@lexer.skip_space
-				tok = @lexer.readtok
+			raise instr, 'string expected' if not tok = @lexer.readtok or (tok.type != :string and tok.type != :quoted)
+			exportname = tok.value || tok.raw
+			if tok.type == :string and (?0..?9).include? tok.raw[0]
+				exportname = Integer(exportname) rescue raise(tok, "bad ordinal value, try quotes #{' or rm leading 0' if exportname[0] == ?0}")
 			end
+
+			@lexer.skip_space
+			tok = @lexer.readtok
+			if tok and tok.type == :string and (?0..?9).include? tok.raw[0]
+				(eord = Integer(tok.raw)) rescue @lexer.unreadtok(tok)
+			else @lexer.unreadtok(tok)
+			end
+
+			@lexer.skip_space
+			tok = @lexer.readtok
 			if tok and tok.type == :string
 				exportlabel = tok.raw
 			else
@@ -819,9 +844,13 @@ class COFF
 
 			@export ||= ExportDirectory.new
 			@export.exports ||= []
-			@export.libname ||= 'metalib'
 			e = ExportDirectory::Export.new
-			e.name = exportname
+			if exportname.kind_of? Integer
+				e.ordinal = exportname
+			else
+				e.name = exportname
+				e.ordinal = eord if eord
+			end
 			e.target = exportlabel || exportname
 			@export.exports << e
 			check_eol[]
@@ -914,9 +943,12 @@ class COFF
 			if v.has_attribute 'export' or ea = v.has_attribute_var('export_as')
 				@export ||= ExportDirectory.new
 				@export.exports ||= []
-				@export.libname ||= 'metalib'
 				e = ExportDirectory::Export.new
-				e.name = ea || v.name
+				begin
+					e.ordinal = Integer(ea || v.name)
+				rescue ArgumentError
+					e.name = ea || v.name
+				end
 				e.target = v.name
 				@export.exports << e
 			end
