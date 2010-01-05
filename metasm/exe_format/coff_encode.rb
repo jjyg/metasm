@@ -741,12 +741,11 @@ class COFF
 	#  .export ["<exported_name>"] [<ordinal>] [<label_name>]
 	#    exports the specified label with the specified name (label_name defaults to exported_name)
 	#    if exported_name is an unquoted integer, the export is by ordinal. XXX if the ordinal starts with '0', the integer is interpreted as octal
-	#  .import "<libname>" "<import_name>" [<thunk_name>] [<label_name>]
+	#  .import "<libname>" "<import_name|ordinal>" [<thunk_name>] [<label_name>]
 	#    imports a symbol from a library
 	#    if the thunk name is specified and not 'nil', the compiler will generate a thunk that can be called (in ia32, 'call thunk' == 'call [import_name]')
 	#      the thunk is position-independent, and should be used instead of the indirect call form, for imported functions
 	#    label_name is the label to attribute to the location that will receive the address of the imported symbol, defaults to import_name (iat_<import_name> if thunk == iname)
-	#    TODO import by ordinal (now must be done manually, using coff.imports[<n>].imports[<nn>].ordinal = <i>)
 	#  .image_base <base>
 	#    specifies the COFF prefered load address, base is an immediate expression
 	#
