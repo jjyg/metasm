@@ -750,6 +750,8 @@ class Debugger
 	# accepts a range or begin/end address to read memory, or a register name
 	def [](arg0, arg1=nil)
 		if arg1
+			arg0 = parse_expr(arg0) if arg0.kind_of? ::String
+			arg1 = parse_expr(arg1) if arg1.kind_of? ::String
 			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
 			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
 			@memory[arg0, arg1]
@@ -766,6 +768,8 @@ class Debugger
 	def []=(arg0, arg1, val=nil)
 		arg1, val = arg2, val if not val
 		if arg1
+			arg0 = parse_expr(arg0) if arg0.kind_of? ::String
+			arg1 = parse_expr(arg1) if arg1.kind_of? ::String
 			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
 			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
 			@memory[arg0, arg1] = val
@@ -776,6 +780,23 @@ class Debugger
 		else
 			set_reg_value(arg0, val)
 		end
+	end
+
+
+	# read an int from the target memory, int of sz bytes (defaults to cpu.size)
+	def memory_read_int(addr, sz=@cpu.size/8)
+		addr = parse_expr(addr) if addr.kind_of? ::String
+		addr = resolve_expr(addr) if not addr.kind_of? ::Integer
+		Expression.decode_imm(@memory, sz, @cpu, addr)
+	end
+
+	# write an int in the target memory
+	def memory_write_int(addr, val, sz=@cpu.size/8)
+		addr = parse_expr(addr) if addr.kind_of? ::String
+		addr = resolve_expr(addr) if not addr.kind_of? ::Integer
+		val = parse_expr(val) if val.kind_of? ::String
+		val = resolve_expr(val) if not val.kind_of? ::Integer
+		@memory[addr, sz] = Expression.encode_imm(val, sz, @cpu)
 	end
 end
 
