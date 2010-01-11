@@ -316,10 +316,12 @@ class Debugger
 		@log_proc = nil
 	end
 
+	# define the lambda to use to log stuff (used by #puts)
 	def set_log_proc(l=nil, &b)
 		@log_proc = l || b
 	end
 
+	# show information to the user, uses log_proc if defined
 	def puts(*a)
 		if @log_proc
 			a.each { @log_proc[a] }
@@ -332,14 +334,19 @@ class Debugger
 		@memory.invalidate
 	end
 
+	# retreive the value of the program counter register
 	def pc
 		get_reg_value(register_pc)
 	end
 
+	# change the value of pc
 	def pc=(v)
 		set_reg_value(register_pc, v)
 	end
 
+	# checks stuff before letting the target run
+	# enables all breakpoints except on pc
+	# invalidates
 	def check_pre_run
 		invalidate
 		addr = pc
@@ -349,6 +356,9 @@ class Debugger
 		}
 	end
 
+	# checks stuff once we get control after the target has run
+	# fixups pc if break was caused by a software breakpoint
+	# disable all breakpoints
 	def check_post_run(pre_state=nil)
 		invalidate
 		addr = pc
@@ -371,6 +381,7 @@ class Debugger
 		end
 	end
 
+	# checks if the running target has stopped (nonblocking)
 	def check_target
 		pre_state = @info
 		t = do_check_target
@@ -378,12 +389,15 @@ class Debugger
 		t
 	end
 
+	# waits until the running target stops (due to a breakpoint or a fault)
 	def wait_target
 		t = do_wait_target
 		check_post_run if @state == :stopped
 		t
 	end
 
+	# resume execution of the target
+	# bypasses a breakpoint on pc if needed
 	def continue(*a)
 		while @breakpoint[pc]
 			do_singlestep	# XXX *a ?
@@ -393,11 +407,13 @@ class Debugger
 		do_continue(*a)
 	end
 
+	# resume execution of the target one instruction at a time
 	def singlestep(*a)
 		check_pre_run
 		do_singlestep(*a)
 	end
 
+	# alias for #continue
 	def run
 		continue
 	end
@@ -410,10 +426,13 @@ class Debugger
 		end
 	end
 
+	# tests if the specified instructions should be stepover() using singlestep or
+	# by putting a software breakpoint after it
 	def need_stepover(di)
 		di and @cpu.dbg_need_stepover(self, di.address, di)
 	end
 
+	# decode the Instruction at the address
 	def di_at(addr)
 		if not di = @disassembler.decoded[addr]
 			return if not s = @disassembler.get_section_at(addr)
@@ -422,6 +441,7 @@ class Debugger
 		di
 	end
 
+	# stepover: singlesteps, but do not enter in subfunctions
 	def stepover
 		check_pre_run
 		di = di_at(pc)
@@ -433,6 +453,7 @@ class Debugger
 		end
 	end
 
+	# checks if an instruction should stop the stepout() (eg it is a return instruction)
 	def end_stepout(di)
 		di and @cpu.dbg_end_stepout(self, di.address, di)
 	end
@@ -446,6 +467,11 @@ class Debugger
 		do_singlestep
 	end
 
+	# adds a breakpoint at an address
+	# type is in :bpx :hw
+	# oneshot = true if the bp should be deleted once it is hit
+	# cond is a condition: on hit, if the condition evaluates to false, ignore the hit
+	# act is the action to do on hit (a lambda)
 	def add_bp(addr, type, oneshot, cond, act, mtype=nil, mlen=nil)
 		if b = @breakpoint[addr]
 			b.oneshot = false if not oneshot
@@ -465,60 +491,77 @@ class Debugger
 		enable_bp(addr)
 	end
 
+	# sets a breakpoint on execution
 	def bpx(addr, oneshot=false, cond=nil, &action)
 		add_bp(addr, :bpx, oneshot, cond, action)
 	end
 
+	# sets a hardware breakpoint
+	# mtype in :r :w :x
+	# mlen is the size of the memory zone to cover
+	# mlen may be constrained by the architecture
 	def hwbp(addr, mtype=:x, mlen=1, oneshot=false, cond=nil, &action)
 		add_bp(addr, :hw, oneshot, cond, action, mtype, mlen)
 	end
 
+	# removes a breakpoint (disable & delete)
 	def remove_breakpoint(addr)
 		disable_bp(addr)
 		@breakpoint.delete addr
 	end
 
+	# detach the debugger: disables all breakpoints
 	def detach
 		@breakpoint.each_key { |a| disable_bp(a) }
 	end
 
+	# list the register names available for the target
 	def register_list
 		@cpu.dbg_register_list
 	end
 
+	# list the size of the registers
 	def register_size
 		@cpu.dbg_register_size
 	end
 
+	# retrieves the name of the register holding the program counter (address of the next instruction)
 	def register_pc
 		@cpu.dbg_register_pc
 	end
 
+	# then name of the register holding the flags
 	def register_flags
 		@cpu.dbg_register_flags
 	end
 
+	# list of flags available in the flag register
 	def flag_list
 		@cpu.dbg_flag_list
 	end
 
+	# retrieve the value of a flag
 	def get_flag_value(f)
 		@cpu.dbg_get_flag(self, f)
 	end
 	alias get_flag get_flag_value
 
+	# change the value of a flag
 	def set_flag_value(f, v)
 		v != 0 ? set_flag(f) : unset_flag(f)
 	end
 
+	# switch the value of a flag (true->false, false->true)
 	def toggle_flag(f)
 		set_flag_value(f, 1-get_flag_value(f))
 	end
 
+	# set the value of the flag to true
 	def set_flag(f)
 		@cpu.dbg_set_flag(self, f)
 	end
 
+	# set the value of the flag to false
 	def unset_flag(f)
 		@cpu.dbg_unset_flag(self, f)
 	end
@@ -581,7 +624,7 @@ class Debugger
 		sl = @symbols.length
 		e.module_symbols.each { |n_, a, l|
 			a += addr
-			@disassembler.set_label_at(a, n_)
+			@disassembler.set_label_at(a, n_, false)
 			@symbols[a] = n_
 			if l and l > 1; @symbols_len[a] = l
 			else @symbols_len.delete a	# we may overwrite an existing symbol, keep len in sync
@@ -592,6 +635,7 @@ class Debugger
 		true
 	end
 
+	# scan the target memory for loaded libraries, load their symbols
 	def scansyms
 		addr = 0
 		while addr <= 0xffff_f000
@@ -600,8 +644,30 @@ class Debugger
 		end
 	end
 
+	# load symbols from all libraries found by the OS module
 	def loadallsyms
 		OS.current.find_process(@pid).modules.to_a.each { |m| loadsyms(m.addr, m.path) }
+	end
+
+	# see Disassembler#load_map
+	def load_map(str, off=0)
+		str = File.read(str) rescue nil if not str.index("\n")
+		sks = @disassembler.sections.keys.sort
+		str.each_line { |l|
+			case l.strip
+			when /^([0-9A-F]+)\s+(\w+)\s+(\w+)/i    # kernel.map style
+				a = $1.to_i(16) + off
+				n = $3
+			when /^([0-9A-F]+):([0-9A-F]+)\s+([a-z_]\w+)/i  # IDA style
+				# see Disassembler for comments
+				a = sks[$1.to_i(16)] + $2.to_i(16) + off
+				n = $3
+			else next
+			end
+			@disassembler.set_label_at(a, n, false)
+			@symbols[a] = n
+		}
+
 	end
 
 	# an Expression whose ::parser handles indirection (byte ptr [foobar])

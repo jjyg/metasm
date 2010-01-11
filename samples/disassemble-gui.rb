@@ -55,6 +55,7 @@ when /^live:(.*)/
 	raise 'no such target' if not target = os.find_process(t) || os.create_process(t)
 	p target if $VERBOSE
 	w = Metasm::Gui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path rescue nil} - metasm debugger")
+	dbg = w.dbg_widget.dbg
 when /^(tcp:|udp:)?..+:/
 	dbg = Metasm::GdbRemoteDebugger.new(exename)
 	w = Metasm::Gui::DbgWindow.new(dbg, "remote - metasm debugger")
@@ -81,6 +82,9 @@ if exe
 	dasm.debug_backtrace = true if opts[:debugbacktrace]
 	dasm.disassemble_fast_deep(*ep) if opts[:fast]
 	dasm.callback_finished = lambda { w.dasm_widget.focus_addr w.dasm_widget.curaddr, :decompile ; dasm.decompiler.finalize } if opts[:decompile]
+elsif dbg
+	dbg.load_map opts[:map] if opts[:map]
+	opts[:plugin].to_a.each { |p| dbg.disassembler.load_plugin(p) }
 end
 
 opts[:hookstr].to_a.each { |f| eval f }
