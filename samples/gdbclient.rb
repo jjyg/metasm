@@ -234,7 +234,7 @@ class Rubstop
 
 	# read arbitrary blocks of memory (chunks to getmem)
 	def [](addr, len)
-		@pgm.encoded[addr, len].data
+		@pgm.encoded[addr, len].data rescue ''
 	end
 
 	# write arbitrary blocks of memory (chunks to getmem)

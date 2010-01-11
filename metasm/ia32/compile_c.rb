@@ -167,6 +167,8 @@ class CCompiler < C::Compiler
 			return ret
 		end
 
+		sz = 8*sizeof(var) rescue nil	# extern char foo[];
+
 		case off = @state.offset[var]
 		when C::CExpression
 			# stack, dynamic address
@@ -176,7 +178,7 @@ class CCompiler < C::Compiler
 		when ::Integer
 			# stack
 			# TODO -fomit-frame-pointer ( => state.cache dependant on stack_offset... )
-			v = ModRM.new(@cpusz, 8*sizeof(var), nil, nil, @state.saved_ebp, Expression[-off])
+			v = ModRM.new(@cpusz, sz, nil, nil, @state.saved_ebp, Expression[-off])
 		when nil
 			# global
 			if @exeformat.cpu.generate_PIC
@@ -208,9 +210,9 @@ class CCompiler < C::Compiler
 
 					@state.cache[reg] = 'metasm_intern_geteip'
 				end
-				v = ModRM.new(@cpusz, 8*sizeof(var), nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
+				v = ModRM.new(@cpusz, sz, nil, nil, reg, Expression[var.name, :-, 'metasm_intern_geteip'])
 			else
-				v = ModRM.new(@cpusz, 8*sizeof(var), nil, nil, nil, Expression[var.name])
+				v = ModRM.new(@cpusz, sz, nil, nil, nil, Expression[var.name])
 			end
 		end
 
