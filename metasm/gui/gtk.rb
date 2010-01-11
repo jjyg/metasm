@@ -126,6 +126,9 @@ class DrawableWidget < Gtk::DrawingArea
 	include Msgbox
 
 	attr_accessor :parent_widget, :caret_x, :caret_y, :hl_word
+	# this hash is used to determine the colors of the GUI elements (background, caret, ...)
+	# modifications to it are only useful before the widget is first rendered (IE before GUI.main)
+	attr_accessor :default_color_association
 
 	# keypress event keyval traduction table
 	Keyboard_trad = Gdk::Keyval.constants.grep(/^GDK_/).inject({}) { |h, cst|
