@@ -650,14 +650,18 @@ class DbgConsoleWidget < DrawableWidget
 			cb = lambda { a.split(';').each { |aaa| run_command(aaa) } } if a
 			@dbg.hwbp(solve_expr(e), :x, 1, false, cd, &cb)
 		}
-		new_command('bpm', 'set a hardware memory breakpoint') { |arg|
+		new_command('bpm', 'set a hardware memory breakpoint: bpm r 0x4800ff 16') { |arg|
 			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
 			e, c, a = $1, ($2 || $4), $3
 			cd = parse_expr(c) if c
 			cb = lambda { a.split(';').each { |aaa| run_command(aaa) } } if a
+			raise 'bad syntax: bpm r|w|x addr [len]' unless e =~ /^([rwx]) (.*)/i
+			mode = $1.downcase.to_sym
+			e = $2
 			exp = solve_expr(e)
-			mode = e.strip.downcase == 'w' ? :w : :r	# mlen ?
-			@dbg.hwbp(exp, mode, 1, false, cd, &cb)
+			len = solve_expr(e) if e != ''
+			len ||= 1
+			@dbg.hwbp(exp, mode, len, false, cd, &cb)
 		}
 		new_command('g', 'wait until target reaches the specified address') { |arg|
 			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
