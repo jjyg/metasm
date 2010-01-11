@@ -859,7 +859,7 @@ class Disassembler
 
 	# returns the label associated to an addr, or nil if none exist
 	def get_label_at(addr)
-		e, b = get_section_at(addr)
+		e, b = get_section_at(addr, false)
 		e.inv_export[e.ptr] if e
 	end
 
@@ -908,7 +908,7 @@ class Disassembler
 			@cpu.replace_instr_arg_immediate(di.instruction, old, new)
 			di.comment.to_a.each { |c| c.gsub!(old, new) }
 		}
-		e, l = get_section_at(old)
+		e, l = get_section_at(old, false)
 		if e
 			e.add_export new, e.export.delete(old), true
 		end
