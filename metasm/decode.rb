@@ -803,23 +803,23 @@ class Disassembler
 
 	# returns [edata, edata_base] or nil
 	# edata.ptr points to addr
-	def get_section_at(addr)
+	def get_section_at(addr, memcheck=true)
 		case addr = normalize(addr)
 		when ::Integer
 			if s =  @sections.find { |b, e| b.kind_of? ::Integer and addr >= b and addr < b + e.length } ||
 				@sections.find { |b, e| b.kind_of? ::Integer and addr == b + e.length }		# end label
 				s[1].ptr = addr - s[0]
-				return if s[1].data.respond_to?(:page_invalid?) and s[1].data.page_invalid?(s[1].ptr)
+				return if memcheck and s[1].data.respond_to?(:page_invalid?) and s[1].data.page_invalid?(s[1].ptr)
 				[s[1], s[0]]
 			end
 		when Expression
 			if addr.op == :+ and addr.rexpr.kind_of? ::Integer and addr.lexpr.kind_of? ::String and e = @sections[addr.lexpr]
 				e.ptr = addr.rexpr
-				return if e.data.respond_to?(:page_invalid?) and e.data.page_invalid?(e.ptr)
+				return if memcheck and e.data.respond_to?(:page_invalid?) and e.data.page_invalid?(e.ptr)
 				[e, Expression[addr.lexpr]]
 			elsif addr.op == :+ and addr.rexpr.kind_of? ::String and not addr.lexpr and e = @sections[addr.rexpr]
 				e.ptr = 0
-				return if e.data.respond_to?(:page_invalid?) and e.data.page_invalid?(e.ptr)
+				return if memcheck and e.data.respond_to?(:page_invalid?) and e.data.page_invalid?(e.ptr)
 				[e, addr.rexpr]
 			end
 		end
@@ -865,9 +865,10 @@ class Disassembler
 
 	# sets the label for the specified address
 	# returns nil if the address is not mapped
-	def set_label_at(addr, name)
+	# memcheck is passed to get_section_at to validate that the address is mapped
+	def set_label_at(addr, name, memcheck=true)
 		addr = Expression[addr].reduce
-		e, b = get_section_at(addr)
+		e, b = get_section_at(addr, memcheck)
 		if not e
 		elsif not l = e.inv_export[e.ptr]
 			l = @program.new_label(name)
@@ -2656,23 +2657,24 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	end
 
 	# loads a map file (addr => symbol)
+	# off is an optionnal offset to add to every address found (for eg rebased binaries)
 	# understands:
 	#  standard map files (eg linux-kernel.map: <addr> <type> <name>, e.g. 'c01001ba t setup_idt')
 	#  ida map files (<sectionidx>:<sectionoffset> <name>)
 	# arg is either the map itself or the filename of the map (if it contains no newline)
-	def load_map(str)
+	def load_map(str, off=0)
 		str = File.read(str) rescue nil if not str.index("\n")
 		sks = @sections.keys.sort
 		str.each_line { |l|
 			case l.strip
 			when /^([0-9A-F]+)\s+(\w+)\s+(\w+)/i	# kernel.map style
-				set_label_at($1.to_i(16), $3)
+				set_label_at($1.to_i(16)+off, $3)
 			when /^([0-9A-F]+):([0-9A-F]+)\s+([a-z_]\w+)/i	# IDA style
 				# we do not have section load order, let's just hope that the addresses are sorted (and sortable..)
 				#  could check the 1st part of the file, with section sizes, but it is not very convenient
 				# the regexp is so that we skip the 1st part with section descriptions
 				# in the file, section 1 is the 1st section ; we have an additionnal section (exe header) which fixes the 0-index
-				set_label_at(sks[$1.to_i(16)] + $2.to_i(16), $3)
+				set_label_at(sks[$1.to_i(16)] + $2.to_i(16) + off, $3)
 			end
                 }
 	end
