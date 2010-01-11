@@ -10,7 +10,7 @@
 require 'metasm'
 
 module Metasm
-module DynLdr
+class DynLdr
 	# basic C defs for ruby internals - probably 1.8/x86 only
 	RUBY_H = <<EOS
 #line #{__LINE__}
@@ -95,6 +95,8 @@ EOS
 #endif
 
 #ifdef __ELF__
+ asm(".pt_gnu_stack rw");
+
  #define RTLD_LAZY 1
  int dlopen(char*, int);
  int dlsym(int, char*);
