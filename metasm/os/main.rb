@@ -473,6 +473,8 @@ class Debugger
 	# cond is a condition: on hit, if the condition evaluates to false, ignore the hit
 	# act is the action to do on hit (a lambda)
 	def add_bp(addr, type, oneshot, cond, act, mtype=nil, mlen=nil)
+		addr = parse_expr(addr) if addr.kind_of? String
+		addr = resolve_expr(addr) if not addr.kind_of? Integer
 		if b = @breakpoint[addr]
 			b.oneshot = false if not oneshot
 			raise 'bp type conflict' if type != b.type
@@ -502,6 +504,13 @@ class Debugger
 	# mlen may be constrained by the architecture
 	def hwbp(addr, mtype=:x, mlen=1, oneshot=false, cond=nil, &action)
 		add_bp(addr, :hw, oneshot, cond, action, mtype, mlen)
+	end
+
+	# set a singleshot breakpoint and waits until we hit it
+	def go(target=nil, cond=nil)
+		bpx(target, true, cond) if target
+		continue
+		wait_target
 	end
 
 	# removes a breakpoint (disable & delete)
