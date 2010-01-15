@@ -116,7 +116,9 @@ class Ia32
 				or_bits[4]
 				s = {8=>3, 4=>2, 2=>1}[@s]
 				imm = self.imm || Expression[0]
-				[ret << ((s << 6) | (@i.val << 3) | 5) << imm.encode(:a32, endianness)]
+				fu = (s << 6) | (@i.val << 3) | 5
+				fu = fu.chr if s >= 2	# rb1.9 encoding fix
+				[ret << fu << imm.encode(:a32, endianness)]
 			else
 				imm = @imm.reduce if self.imm
 				imm = nil if imm == 0
@@ -137,7 +139,9 @@ class Ia32
 					raise EncodeError, "Invalid ModRM #{self}" if i.val == 4
 
 					s = {8=>3, 4=>2, 2=>1, 1=>0}[@s]
-					ret << ((s << 6) | (i.val << 3) | b.val)
+					fu = (s << 6) | (i.val << 3) | b.val
+					fu = fu.chr if s >= 2	# rb1.9 encoding fix
+					ret << fu
 				end
 
 				imm ||= 0 if b.val == 5
