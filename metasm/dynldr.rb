@@ -57,9 +57,26 @@ extern VALUE IMPMOD rb_eArgError __attribute__((import));
 #define Qtrue  ((VALUE)2)
 #define Qnil   ((VALUE)4)
 
-#define T_STRING 0x07
-#define T_ARRAY  0x09
-#define T_FIXNUM 0x0a
+#if #{RUBY_VERSION >= '1.9' ? 1 : 0}
+ #define T_STRING 0x05
+ #define T_ARRAY  0x07
+ #define T_FIXNUM 0x15
+ #define RSTRING_NOEMBED (1<<13)
+ #define STR_PTR(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->ptr : (char*)&RString(o)->len)
+ #define STR_LEN(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->len : (RString(o)->flags >> 14) & 0x1f)
+ #define RARRAY_EMBED (1<<13)
+ #define ARY_PTR(o) ((RArray(o)->flags & RARRAY_EMBED) ? (VALUE*)&RArray(o)->len : RArray(o)->ptr)
+ #define ARY_LEN(o) ((RArray(o)->flags & RARRAY_EMBED) ? ((RArray(o)->flags >> 15) & 3) : RArray(o)->len)
+#else
+ #define T_STRING 0x07
+ #define T_ARRAY  0x09
+ #define T_FIXNUM 0x0a
+ #define STR_PTR(o) (RString(o)->ptr)
+ #define STR_LEN(o) (RString(o)->len)
+ #define ARY_PTR(o) (RArray(o)->ptr)
+ #define ARY_LEN(o) (RArray(o)->len)
+#endif
+
 #define T_MASK   0x3f
 #define TYPE(x) (((int)(x) & 1) ? T_FIXNUM : (((int)(x) & 3) || ((unsigned int)(x) < 7)) ? 0x40 : RString(x)->flags & T_MASK)
 
@@ -134,9 +151,9 @@ static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 	if (TYPE(val) != T_STRING)
 		rb_raise(IMPMOD rb_eArgError, "mem_write needs a String");
 
-	char *src = RString(val)->ptr;
+	char *src = STR_PTR(val);
 	char *dst = (char*)rb_num2ulong(addr);
-	int len = RString(val)->len;
+	int len = STR_LEN(val);
 	while (len--)
 		*dst++ = *src++;
 	return val;
@@ -152,7 +169,7 @@ static VALUE str_ptr(VALUE self, VALUE str)
 {
 	if (TYPE(str) != T_STRING)
 		rb_raise(IMPMOD rb_eArgError, "Invalid ptr");
-	return rb_uint2inum((unsigned int)RString(str)->ptr);
+	return rb_uint2inum((unsigned int)STR_PTR(str));
 }
 
 // load a symbol from a lib byname, byordinal if integral
@@ -165,12 +182,12 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 	if (TYPE(func) != T_STRING && TYPE(func) != T_FIXNUM)
 		rb_raise(IMPMOD rb_eArgError, "Invalid func");
 	
-	h = os_load_lib(RString(lib)->ptr);
+	h = os_load_lib(STR_PTR(lib));
 
 	if (TYPE(func) == T_FIXNUM)
 		p = os_load_sym_ord(h, rb_num2ulong(func));
 	else
-		p = os_load_sym(h, RString(func)->ptr);
+		p = os_load_sym(h, STR_PTR(func));
 
 	return rb_uint2inum(p);
 }
@@ -181,7 +198,7 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 // TODO float args
 static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 {
-	if (TYPE(args) != T_ARRAY || RArray(args)->len > 64)
+	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 64)
 		rb_raise(IMPMOD rb_eArgError, "bad args");
 	
 	int flags_v = rb_num2ulong(flags);
@@ -190,9 +207,9 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 	int args_c[64];
 	__int64 ret;
 
-	argsz = RArray(args)->len;
+	argsz = ARY_LEN(args);
 	for (i=0 ; i<argsz ; i++)
-		args_c[i] = rb_num2ulong(RArray(args)->ptr[i]);
+		args_c[i] = rb_num2ulong(ARY_PTR(args)[i]);
 
 	if (flags_v & 2)
 		ret = do_invoke_fastcall(ptr_v, argsz, args_c);	// supercedes stdcall
@@ -224,14 +241,14 @@ static int do_callback_handler(int ori_retaddr, int caller_id, int arg0)
 
 	// copy our args to a ruby-accessible buffer
 	for (i=0 ; i<8 ; i++)
-		RArray(args)->ptr[i] = rb_uint2inum(*addr++);
-	RArray(args)->len = 8;
+		ARY_PTR(args)[i] = rb_uint2inum(*addr++);
+	RArray(args)->len = 8;	// len == 8, no need to ARY_LEN/EMBED stuff
 
 	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, rb_uint2inum(caller_id), args);
 
 	// dynldr.callback will give us the arity (in bytes) of the callback in args[0]
 	// we just put the stack lifting offset in caller_id for the asm stub to use
-	caller_id = rb_num2ulong(RArray(args)->ptr[0]);
+	caller_id = rb_num2ulong(ARY_PTR(args)[0]);
 	
 	return rb_num2ulong(ret);
 }
@@ -355,7 +372,8 @@ EOS
 	# find the path of the binary module
 	# if none exists, create a path writeable by the current user
 	def self.find_bin_path
-		fname = ['dynldr', host_arch, host_cpu.shortname].join('-') + '.so'
+		fname = ['dynldr', host_arch, host_cpu.shortname,
+			 ('19' if RUBY_VERSION >= '1.9')].compact.join('-') + '.so'
 		dir = File.dirname(__FILE__)
 		binmodule = File.join(dir, fname)
 		if not File.exists? binmodule or File.stat(binmodule).mtime < File.stat(__FILE__).mtime
