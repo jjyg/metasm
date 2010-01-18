@@ -49,8 +49,8 @@ class OS
 	# return the platform-specific version
 	def self.current
 		case RUBY_PLATFORM
-		when /mswin32/; WinOS
-		when /linux/; LinOS
+		when /mswin|mingw/i; WinOS
+		when /linux/i; LinOS
 		end
 	end
 end

@@ -6,7 +6,7 @@
 
 require 'metasm/os/main'
 begin
-require 'Win32API' if RUBY_PLATFORM =~ /mswin/i
+require 'Win32API' if RUBY_PLATFORM =~ /mswin|mingw/i
 rescue LoadError
 end
 

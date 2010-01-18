@@ -411,8 +411,8 @@ EOS
 	# returns whether we run on linux or windows
 	def self.host_arch
 		case RUBY_PLATFORM
-		when /linux/; :linux
-		when /mswin/; :windows
+		when /linux/i; :linux
+		when /mswin|mingw/i; :windows
 		else raise LoadError, "Unsupported host platform #{RUBY_PLATFORM}"
 		end
 	end
