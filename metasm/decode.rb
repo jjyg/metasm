@@ -166,7 +166,8 @@ class InstructionBlock
 	# for internal use only (block splitting): btt with an address
 	attr_accessor :backtracked_for
 
-	def initialize(address, edata, edata_ptr=edata.ptr)
+	def initialize(address, edata, edata_ptr=nil)
+		edata_ptr ||= edata.ptr if edata
 		@address = address
 		@edata, @edata_ptr = edata, edata_ptr
 		@list = []
@@ -797,7 +798,7 @@ class Disassembler
 	def normalize(addr)
 		return addr if not addr or addr == :default
 		addr = Expression[addr].bind(@old_prog_binding).reduce if not addr.kind_of? Integer
-		addr %= 1 << [@cpu.size, 32].max if addr.kind_of? Integer
+		addr %= 1 << [@cpu.size, 32].max if @cpu and addr.kind_of? Integer
 		addr
 	end
 
@@ -2696,7 +2697,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# saves the dasm state in a file
 	def save_file(file)
 		tmpfile = file + '.tmp'
-		File.open(tmpfile, 'w') { |fd| save_io(fd) }
+		File.open(tmpfile, 'wb') { |fd| save_io(fd) }
 		File.rename tmpfile, file
 	end
 
@@ -2704,8 +2705,22 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	def save_io(fd)
 		fd.puts 'Metasm.dasm'
 
-		t = @program.filename.to_s	# XXX custom cpu/non AutoExe file ?
-		fd.puts "binarypath #{t.length}", t
+		if @program.filename
+			t = @program.filename.to_s
+			fd.puts "binarypath #{t.length}", t
+		else
+			t = "#{@cpu.name.sub(/.*::/, '')} #{@cpu.size} #{@cpu.endianness}"
+			fd.puts "cpu #{t.length}", t
+			# XXX will be reloaded as a Shellcode with this CPU, but it may be a custom EXE
+		end
+
+		@sections.each { |a, e|
+			# forget edata exports/relocs
+			# dump at most 16Mo per section
+			t = "#{Expression[a]} #{e.length}\n" +
+				[e.data[0, 2**24].to_str].pack('m*')
+			fd.puts "section #{t.length}", t
+		}
 
 		t = save_map.join("\n")
 		fd.puts "map #{t.length}", t
@@ -2795,10 +2810,27 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			when nil, ''
 			when 'binarypath'
 				data = yield(type, data) if not File.exist? data and block_given?
-				exe = AutoExe.decode_file(data)
-				reinitialize exe
-				exe.disassembler = self
-				exe.init_disassembler
+				reinitialize AutoExe.decode_file(data)
+				@program.disassembler = self
+				@program.init_disassembler
+			when 'cpu'
+				cpuname, size, endianness = data.split
+				cpu = Metasm.const_get(cpuname)
+				raise 'invalid cpu' if not cpu < CPU
+				cpu = cpu.new
+				cpu.size = size.to_i
+				cpu.endianness = endianness.to_sym
+				reinitialize Shellcode.new(cpu)
+				@program.disassembler = self
+				@program.init_disassembler
+			when 'section'
+				info = data[0, data.index("\n", off) || data.length]
+				data = data[info.length, data.length]
+				pp.feed!(info)
+				addr = Expression.parse(pp).reduce
+				len = Expression.parse(pp).reduce
+				edata = EncodedData.new(data.unpack('m*').first, :virtsize => len)
+				add_section(addr, edata)
 			when 'map'
 				load_map data
 			when 'decoded'
@@ -2813,7 +2845,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 						di.add_comment cmt if cmt
 						@decoded[a] = di
 					rescue
-						puts "load: bad di #{i.inspect}" if $VERBOSE
+						puts "load: bad di #{l.inspect}" if $VERBOSE
 					end
 				}
 			when 'blocks'
@@ -2821,7 +2853,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 					bla = l.chomp.split(';').map { |sl| sl.split(',') }
 					begin
 						a = Expression.parse(pp.feed!(bla.shift[0])).reduce
-						b = InstructionBlock.new(a, get_section_at(a)[0])
+						b = InstructionBlock.new(a, get_section_at(a).to_a[0])
 						bla.shift.each { |e|
 							a = Expression.parse(pp.feed!(e)).reduce
 							b.add_di(@decoded[a])
@@ -2865,7 +2897,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 				rescue
 					puts "load: bad C: #$!", $!.backtrace if $VERBOSE
 				end
-				@c_parser.readtok until @c_parser.eos?
+				@c_parser.readtok until @c_parser.eos? if @c_parser
 			when 'xrefs'
 				data.each_line { |l|
 					begin
