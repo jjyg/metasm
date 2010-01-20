@@ -2709,7 +2709,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			t = @program.filename.to_s
 			fd.puts "binarypath #{t.length}", t
 		else
-			t = "#{@cpu.name.sub(/.*::/, '')} #{@cpu.size} #{@cpu.endianness}"
+			t = "#{@cpu.class.name.sub(/.*::/, '')} #{@cpu.size} #{@cpu.endianness}"
 			fd.puts "cpu #{t.length}", t
 			# XXX will be reloaded as a Shellcode with this CPU, but it may be a custom EXE
 		end
