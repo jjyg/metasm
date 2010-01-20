@@ -726,6 +726,7 @@ class Disassembler
 	# adds a section, updates prog_binding
 	# base addr is an Integer or a String (label name for offset 0)
 	def add_section(encoded, base)
+		encoded, base = base, encoded if base.kind_of? EncodedData
 		case base
 		when ::Integer
 		when ::String
