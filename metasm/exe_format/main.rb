@@ -29,12 +29,7 @@ class ExeFormat
 	# same as +load+, but from a file
 	# uses VirtualFile if available
 	def self.load_file(path, *a, &b)
-		e =
-		if defined? VirtualFile
-			load(VirtualFile.read(path), *a, &b)
-		else
-			File.open(path, 'rb') { |fd| load(fd.read, *a, &b) }
-		end
+		e = load(VirtualFile.read(path), *a, &b)
 		e.filename ||= path
 		e
 	end
