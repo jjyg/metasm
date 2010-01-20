@@ -178,7 +178,7 @@ end
 			lexer.skip_space
 			if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == '('
 				lexer.skip_space
-				if not nntok = lexer.readtok or nntok.type != :string or nntok.raw != /^[0-9]$/ or
+				if not nntok = lexer.readtok or nntok.type != :string or nntok.raw !~ /^[0-9]$/ or
 						not ntok = (lexer.skip_space; lexer.readtok) or ntok.type != :punct or ntok.raw != ')'
 					raise tok, 'invalid FP register'
 				else
