@@ -319,7 +319,7 @@ end
 
 # this class implements a high-level API using the gdb-server network debugging protocol
 class GdbRemoteDebugger < Debugger
-	attr_accessor :gdb
+	attr_accessor :gdb, :check_target_timeout
 	def initialize(url, mem=nil)
 		@gdb = GdbClient.new(url)
 		@gdb.logger = self
@@ -328,6 +328,8 @@ class GdbRemoteDebugger < Debugger
 		@memory = mem || GdbRemoteString.new(@gdb)
 		@reg_val_cache = {}
 		@regs_dirty = false
+		# when checking target, if no message seen since this much seconds, send a 'status' query
+		@check_target_timeout = 1
 		super()
 	end
 
@@ -357,7 +359,7 @@ class GdbRemoteDebugger < Debugger
 		return if @state == :dead
 		t = Time.now
 		@last_check_target ||= t
-		if @state == :running and t - @last_check_target > 1
+		if @state == :running and t - @last_check_target > @check_target_timeout
 			@gdb.io.write '$?#' << @gdb.gdb_csum('?')
 			@last_check_target = t
 		end
