@@ -36,12 +36,17 @@ def dasm_all(addrstart, length, method=:disassemble_fast_deep)
 	count = 0
 	off = 0
 	while off < length
-		if di = @decoded[addrstart+off] and di.kind_of? DecodedInstruction
+		addr = addrstart+off
+		if di = @decoded[addr] and di.kind_of? DecodedInstruction
 			if di.block_head?
 				b = di.block
-				if not @function[addrstart+off] and b.from_subfuncret.to_a.empty? and b.from_normal.to_a.empty?
-					puts "dasm_all: found orphan function #{Expression[addrstart+off]}" if $VERBOSE
+				if not @function[addr] and b.from_subfuncret.to_a.empty? and b.from_normal.to_a.empty?
+					l = auto_label_at(addr, 'sub_orph')
+					puts "dasm_all: found orphan function #{l}"
 					@function[addrstart+off] = DecodedFunction.new
+					@function[addrstart+off].finalized = true
+					detect_function_thunk(addr)
+					count += 1
 				end
 			end
 			off += di.bin_length
