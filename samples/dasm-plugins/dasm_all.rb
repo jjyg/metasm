@@ -22,16 +22,36 @@ def dasm_all(addrstart, length, method=:disassemble_fast_deep)
 		else
 			s.ptr = boff+off
 			maydi = cpu.decode_instruction(s, 0)
-			if maydi.instruction.to_s =~ /nop|lea (.*), \[\1(\+0)?\]|int 3/
+			if not maydi
+				off += 1
+			elsif maydi.instruction.to_s =~ /nop|lea (.*), \[\1(?:\+0)?\]|mov (.*), \2|int 3/
 				off += maydi.bin_length
 			else
 				puts "dasm_all: found #{Expression[addrstart+off]}" if $VERBOSE
 				send(method, addrstart+off)
-				off += 1 if not di = @decoded[addrstart + off]
 			end
 		end
 	end
-	# TODO count newly found orphan functions
+
+	count = 0
+	off = 0
+	while off < length
+		if di = @decoded[addrstart+off] and di.kind_of? DecodedInstruction
+			if di.block_head?
+				b = di.block
+				if not @function[addrstart+off] and b.from_subfuncret.to_a.empty? and b.from_normal.to_a.empty?
+					puts "dasm_all: found orphan function #{Expression[addrstart+off]}" if $VERBOSE
+					@function[addrstart+off] = DecodedFunction.new
+				end
+			end
+			off += di.bin_length
+		else
+			off += 1
+		end
+	end
+
+	puts "found #{count} orphan functions" if $VERBOSE
+
 	gui.gui_update if gui
 end
 
