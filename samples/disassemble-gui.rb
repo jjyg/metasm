@@ -86,12 +86,12 @@ elsif dbg
 	dbg.load_map opts[:map] if opts[:map]
 	opts[:plugin].to_a.each { |p| dbg.disassembler.load_plugin(p) }
 end
-
-opts[:hookstr].to_a.each { |f| eval f }
-
 if dasm
 	w.display(dasm, ep)
 	w.dasm_widget.focus_addr ep.first if not ep.empty?
 	opts[:plugin].to_a.each { |p| dasm.load_plugin(p) }
 end
+
+opts[:hookstr].to_a.each { |f| eval f }
+
 Metasm::Gui.main
