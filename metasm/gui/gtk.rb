@@ -178,7 +178,7 @@ class DrawableWidget < Gtk::DrawingArea
 		@layout = Pango::Layout.new Gdk::Pango.context	# text rendering
 
 		@color = {}
-		@default_color_association = {}
+		@default_color_association = {:background => :palegrey}
 
 		super()
 

@@ -196,6 +196,7 @@ Execute Printer Play Sleep Zoom Cancel
 		#@layout = Pango::Layout.new Gdk::Pango.context	# text rendering
 
 		@color = {}
+		@default_color_association = {:background => :palegrey}
 
 		if a.last.kind_of? Qt::Widget
 			super(a.last)
@@ -279,6 +280,13 @@ Execute Printer Play Sleep Zoom Cancel
 		protect { paint }
 		@painter.end
 		@painter = nil
+	end
+
+	def paint
+	end
+
+	def gui_update
+		redraw
 	end
 
 	# create a color from a 'rgb' description
@@ -398,6 +406,9 @@ class Window < Qt::MainWindow
 		build_menu
 
 		show
+	end
+
+	def build_menu
 	end
 
 	def destroy_window
