@@ -8,6 +8,113 @@
 require 'metasm'
 require 'optparse'
 
+module Metasm
+class BinDiffWidget < Metasm::Gui::DrawableWidget
+	attr_accessor :dasm1, :dasm2
+	attr_accessor :status
+
+	def initialize_widget(d1, d2)
+		@dasm1, @dasm2 = d1, d2
+		@status = nil
+	end
+
+	def paint
+		help = "d: dasm_all  f: find funcs  i: match funcs  r: reload"
+		draw_string_color(:grey, @font_width, @font_height, help)
+		draw_string_color(:black, @font_width, 3*@font_height, @status || 'idle')
+	end
+
+	def set_status(st=nil)
+		ost = @status
+		@status = st
+		redraw
+		if block_given?
+			protect { yield }
+			set_status ost
+		end
+	end
+
+	def keypress(key)
+		case key
+		when ?d
+			@dasm1.load_plugin 'dasm_all'
+			@dasm2.load_plugin 'dasm_all'
+
+			set_status('dasm_all 1') {
+				@dasm1.dasm_all_section '.text'
+			}
+
+			set_status('dasm_all 2') {
+				@dasm2.dasm_all_section '.text'
+			}
+		when ?f
+			set_status('find funcs') {
+				@func1 = identify_funcs(@dasm1)
+				@func2 = identify_funcs(@dasm2)
+			}
+		when ?i
+			set_status('match funcs') {
+				match_funcs
+			}
+		when ?r
+			puts 'reload'
+			load __FILE__
+		end
+	end
+
+	def keypress_ctrl(key)
+		case key
+		when ?r
+			inputbox('code to eval') { |c| messagebox eval(c).inspect[0, 512], 'eval' }
+		end
+	end
+
+	# func addr => { funcblock => list of funcblock to }
+	def identify_funcs(dasm)
+		f = {}
+		dasm.function.each_key { |a|
+			next if not dasm.decoded[a]
+			h = f[a] = {}
+			todo = [a]
+			while a = todo.pop
+				next if h[a]
+				h[a] = []
+				if dasm.decoded[a].kind_of? DecodedInstruction
+					dasm.decoded[a].block.each_to_samefunc(dasm) { |ta|
+						todo << ta
+						h[a] << ta
+					}
+				end
+			end
+			Gui.main_iter
+		}
+		f
+	end
+
+	def match_funcs
+		return if not @func1 or not @func2
+		@matches = {}
+
+		@func1.each { |f1|
+			@func2.each { |f2|
+				# TODO identify functions with the same graph layout, then
+				# compare instr mnemonics (args ?  must ignore address constants)
+			}
+		}
+	end
+end
+
+class BinDiffWindow < Gui::Window
+	def initialize_window(d1, d2)
+		self.widget = BinDiffWidget.new(d1, d2)
+	end
+end
+end
+
+# allow reloading the file
+if not defined? $running
+$running = true
+
 $VERBOSE = true
 
 # parse arguments
@@ -60,4 +167,8 @@ opts[:hookstr].to_a.each { |f| eval f }
 
 ep.each { |e| dasm1.disassemble_fast_deep(e) ; dasm2.disassemble_fast_deep(e) }
 
+Metasm::BinDiffWindow.new(dasm1, dasm2)
+
 Metasm::Gui.main
+
+end
