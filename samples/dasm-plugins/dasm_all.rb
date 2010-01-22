@@ -31,6 +31,7 @@ def dasm_all(addrstart, length, method=:disassemble_fast_deep)
 				send(method, addrstart+off)
 			end
 		end
+		Gui.main_iter if gui and off & 15 == 0
 	end
 
 	count = 0
@@ -53,6 +54,7 @@ def dasm_all(addrstart, length, method=:disassemble_fast_deep)
 		else
 			off += 1
 		end
+		Gui.main_iter if gui and off & 15 == 0
 	end
 
 	puts "found #{count} orphan functions" if $VERBOSE
