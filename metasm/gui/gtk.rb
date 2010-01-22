@@ -178,6 +178,7 @@ class DrawableWidget < Gtk::DrawingArea
 		@layout = Pango::Layout.new Gdk::Pango.context	# text rendering
 
 		@color = {}
+		@default_color_association = {}
 
 		super()
 
@@ -312,6 +313,9 @@ class DrawableWidget < Gtk::DrawingArea
 		@hl_word = word if @hl_word != word
 	end
 
+	def paint
+	end
+
 	# invalidate the whole widget area
 	def redraw
 		invalidate(0, 0, 1000000, 1000000)
@@ -342,6 +346,10 @@ class DrawableWidget < Gtk::DrawingArea
 	end
 
 	def keypress_ctrl(key)
+	end
+
+	def gui_update
+		redraw
 	end
 
 	def draw_color(col)
@@ -576,6 +584,9 @@ class Window < Gtk::Window
 		@vbox.remove @child if @child
 		@child = w
 		@vbox.add w
+	end
+
+	def build_menu
 	end
 
 	def new_menu
