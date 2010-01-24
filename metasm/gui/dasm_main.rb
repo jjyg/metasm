@@ -291,19 +291,27 @@ class DisasmWidget < ContainerChoiceWidget
 	# jump to address
 	def prompt_goto
 		inputbox('address to go', :text => Expression[curaddr]) { |v|
-			if not focus_addr(v, nil, true)
-				labels = @dasm.prog_binding.map { |k, vv|
- 					[k, Expression[@dasm.normalize(vv)]] if k.downcase.include? v.downcase
-				}.compact
-				case labels.length
-				when 0; focus_addr(v)
-				when 1; focus_addr(labels[0][0])
-				else
+			focus_addr_autocomplete(v)
+		}
+	end
+
+	def focus_addr_autocomplete(v, show_alt=true)
+		if not focus_addr(v, nil, true)
+			labels = @dasm.prog_binding.map { |k, vv|
+ 				[k, Expression[@dasm.normalize(vv)]] if k.downcase.include? v.downcase
+			}.compact
+			case labels.length
+			when 0; focus_addr(v)
+			when 1; focus_addr(labels[0][0])
+			else
+				if labels.all? { |k, vv| vv == labels[0][1] }
+					focus_addr(labels[0][0])
+				elsif show_alt
 					labels.unshift ['name', 'addr']
 					listwindow("list of labels", labels) { |i| focus_addr i[1] }
 				end
 			end
-		}
+		end
 	end
 
 	def prompt_parse_c_file
