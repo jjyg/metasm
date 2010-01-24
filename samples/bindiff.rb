@@ -19,9 +19,15 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 	end
 
 	def paint
-		help = "d: dasm_all  f: find funcs  i: match funcs  r: reload"
+		help = "d: dasm  f: findfuncs  i: matchfuncs"
 		draw_string_color(:grey, @font_width, @font_height, help)
 		draw_string_color(:black, @font_width, 3*@font_height, @status || 'idle')
+	end
+
+	def gui_update
+		@dasm1.gui.gui_update if @dasm1
+		@dasm2.gui.gui_update if @dasm2
+		redraw
 	end
 
 	def set_status(st=nil)
@@ -36,7 +42,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 
 	def keypress(key)
 		case key
-		when ?d
+		when ?D
 			@dasm1.load_plugin 'dasm_all'
 			@dasm2.load_plugin 'dasm_all'
 
@@ -47,10 +53,24 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 			set_status('dasm_all 2') {
 				@dasm2.dasm_all_section '.text'
 			}
+		when ?d
+			set_status('dasm 1') {
+				@dasm1.disassemble_fast_deep(@dasm1.gui.curaddr)
+			}
+			set_status('dasm 2') {
+				@dasm2.disassemble_fast_deep(@dasm2.gui.curaddr)
+			}
 		when ?f
 			set_status('find funcs') {
-				@func1 = identify_funcs(@dasm1)
-				@func2 = identify_funcs(@dasm2)
+				@func1 = create_funcs(@dasm1)
+				@func2 = create_funcs(@dasm2)
+				@funcstat1 = create_func_stats(@func1, @dasm1)
+				@funcstat2 = create_func_stats(@func2, @dasm2)
+			}
+		when ?g
+			inputbox('address to go', :text => Expression[@dasm1.curaddr]) { |v|
+				@dasm1.gui.focus_addr_autocomplete(v)
+				@dasm2.gui.focus_addr_autocomplete(v)
 			}
 		when ?i
 			set_status('match funcs') {
@@ -70,7 +90,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 	end
 
 	# func addr => { funcblock => list of funcblock to }
-	def identify_funcs(dasm)
+	def create_funcs(dasm)
 		f = {}
 		dasm.function.each_key { |a|
 			next if not dasm.decoded[a]
@@ -91,16 +111,55 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		f
 	end
 
+	def create_func_stats(f, dasm)
+		fs = {}
+		f.each { |a, g|
+			s = fs[a] = {}
+			s[:blocks] = g.length
+
+			s[:edges] = 0	# nr of edges
+			s[:leaves] = 0	# nr of nodes with no successor
+			s[:ext_calls] = 0	# nr of jumps out_of_func
+			s[:loops] = 0	# nr of jump back
+
+			todo = [a]
+			done = {}
+			while aa = todo.pop
+				next if done[aa]
+				done[aa] = true
+				todo.concat g[aa]
+
+				s[:edges] += g[aa].length
+				s[:leaves] += 1 if g[aa].empty?
+				dasm.decoded[aa].block.each_to_otherfunc(dasm) { s[:ext_calls] += 1 }
+				s[:loops] += (g[aa] & done.keys).uniq.length # XXX may depend on the order we walk the graph ?
+			end
+		}
+		fs
+	end
+
 	def match_funcs
 		return if not @func1 or not @func2
-		@matches = {}
+		graph_no_match = {}
+		graph_exact_match = {}
+		graph_many_matches = {}
 
-		@func1.each { |f1|
-			@func2.each { |f2|
-				# TODO identify functions with the same graph layout, then
-				# compare instr mnemonics (args ?  must ignore address constants)
+
+		@funcstat1.each { |a, s|
+			match = []
+			@funcstat2.each { |aa, ss|
+				match << aa if s == ss
 			}
+			case match.length
+			when 0; graph_no_match[a] = true
+			when 1; graph_exact_match[a] = match[0]
+			else graph_many_matches[a] = match
+			end
 		}
+
+		puts "no match: #{graph_no_match.length}, exact: #{graph_exact_match.length}, many: #{graph_many_matches.length}"
+		# TODO identify functions with the same graph layout, then
+		# compare instr mnemonics (args ?  must ignore address constants)
 	end
 end
 
