@@ -13,13 +13,14 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 	attr_accessor :dasm1, :dasm2
 	attr_accessor :status
 
+	COLORS = { :same => '8f8', :similar => 'cfc', :badarg => 'ffc', :badop => 'fcc', :default => '888' }
+
 	def initialize_widget(d1, d2)
 		@dasm1, @dasm2 = d1, d2
 		@dasmcol1 = {}
 		@dasmcol2 = {}
-		col = { :same => 'cfc', :badarg => 'ffc', :badop => 'fcc', :default => 'f88' }
-		@dasm1.gui.bg_color_callback = lambda { |a1| col[@dasmcol1[a1] || :default] }
-		@dasm2.gui.bg_color_callback = lambda { |a2| col[@dasmcol2[a2] || :default] }
+		@dasm1.gui.bg_color_callback = lambda { |a1| COLORS[@dasmcol1[a1] || :default] }
+		@dasm2.gui.bg_color_callback = lambda { |a2| COLORS[@dasmcol2[a2] || :default] }
 		@status = nil
 	end
 
@@ -63,15 +64,21 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		when ?d
 			set_status('dasm 1') {
 				@dasm1.disassemble_fast_deep(@dasm1.gui.curaddr)
+				@dasm1.function[@dasm1.gui.curaddr] = Metasm::DecodedFunction.new
+				@dasm1.gui.focus_addr(@dasm1.gui.curaddr, :graph)
 			}
 			set_status('dasm 2') {
 				@dasm2.disassemble_fast_deep(@dasm2.gui.curaddr)
+				@dasm2.function[@dasm2.gui.curaddr] = Metasm::DecodedFunction.new
+				@dasm2.gui.focus_addr(@dasm2.gui.curaddr, :graph)
 			}
 			gui_update
 		when ?f
 			set_status('find funcs') {
 				@func1 = create_funcs(@dasm1)
+				puts "d1: #{@func1.length} funcs"
 				@func2 = create_funcs(@dasm2)
+				puts "d2: #{@func2.length} funcs"
 				@funcstat1 = create_func_stats(@func1, @dasm1)
 				@funcstat2 = create_func_stats(@func2, @dasm2)
 			}
@@ -85,13 +92,28 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 				match_funcs
 			}
 			gui_update
-			GUI.main_iter
+			Gui.main_iter
 			list = [['addr 1', 'addr 2', 'score']]
-			m.each { |a1, (a2, s)| list << [Expression[a1], Expression[a2], '%.4f' % s] }
-			listwindow("matches", list) { |i| @dasm1.gui.focus_addr i[0] ; @dasm2.gui.focus_addr i[1] }
+			f1 = @func1.keys
+			f2 = @func2.keys
+			m.each { |a1, (a2, s)|
+				list << [(@dasm1.get_label_at(a1) || Expression[a1]), (@dasm2.get_label_at(a2) || Expression[a2]), '%.4f' % s]
+				f1.delete a1
+				f2.delete a2
+			}
+			f1.each { |a1| list << [(@dasm1.get_label_at(a1) || Expression[a1]), '?', 'nomatch'] }
+			f2.each { |a2| list << ['?', (@dasm2.get_label_at(a2) || Expression[a2]), 'nomatch'] }
+			listwindow("matches", list) { |i| @dasm1.gui.focus_addr i[0], nil, true ; @dasm2.gui.focus_addr i[1], nil, true }
+		when ?m
+			s = match_func(@dasm1.gui.curaddr, @dasm2.gui.curaddr, true, true)
+			puts "match score: #{s}"
+			gui_update
+
 		when ?r
 			puts 'reload'
 			load __FILE__
+		when ?Q
+			Gui.main_quit
 		end
 	end
 
@@ -159,11 +181,10 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 			@funcstat2.each { |aa, ss|
 				layout_match[a] << aa if s == ss
 			}
-			GUI.main_iter
+			Gui.main_iter
 		}
 
 		# refine the layout matching with actual function matching
-		# TODO a second pass for instr-level graph coloring once the match is found
 		already_matched = []
 		match = {}
 		match_score = {}
@@ -174,15 +195,16 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 				score = match_func(f1, f2, true)
 				match[f1] = [f2, score]
 			end
+			Gui.main_iter
 		}
 
-		puts "fu #{match.length} - wat #{@func1.length - match.length}"
+		puts "matched #{match.length} - unmatched #{@func1.length - match.length}"
 
 		match
 	end
 
 	# return how much match a func in d1 and a func in d2
-	def match_func(a1, a2, do_colorize=false)
+	def match_func(a1, a2, do_colorize=false, verb=false)
 		f1 = @func1[a1]
 		f2 = @func2[a2]
 		todo1 = [a1]
@@ -190,10 +212,11 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		done1 = []
 		done2 = []
 		score = 0.0	# average of the (local best) match_block scores
+		score += 0.01 if @dasm1.get_label_at(a1) != @dasm2.get_label_at(a2)	# for thunks
 		score_div = [f1.length, f2.length].max.to_f
 		# XXX this is stupid and only good for perfect matches (and even then it may fail)
 		# TODO handle block split etc (eg instr-level diff VS block-level)
-		while a1 = todo1.pop
+		while a1 = todo1.shift
 			next if done1.include? a1
 			t = todo2.map { |a| [a, match_block(@dasm1.decoded[a1].block, @dasm2.decoded[a].block)] }
 			a2 = t.sort_by { |a, s| s }.first
@@ -222,22 +245,21 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		# 3 = some opcode difference
 		# 4 = full block difference
 		score = 0
-		has_same = false
+		score_div = [b1.list.length, b2.list.length].max.to_f
 		# TODO should use a diff-style alg to find similar instrs (here inserting a new instr at begin of block gives score=3)
+		# TODO handle instr swapping too (! this may change the binding)
 		b1.list.zip(b2.list).each { |di1, di2|
 			if not di1 or not di2 or di1.opcode.name != di2.opcode.name
-				score = 3 if score < 3
+				score += 3 / score_div
 			elsif di1.instruction.args.map { |a| a.class } != di2.instruction.args.map { |a| a.class }
-				score = 2 if score < 2
+				score += 2 / score_div
 			elsif di1.instruction.to_s != di2.instruction.to_s
-				score = 1 if score < 1
-				has_same = true
+				score += 1 / score_div
 			else
-				has_same = true
+				score += 0 / score_div
 			end
 		}
-		score = 3 if score < 3 and b1.list.length != b2.list.length
-		score = 4 if score == 3 and not has_same
+		score += (b1.list.length - b2.list.length).abs * 3 / score_div	# block count difference -> +3 per block
 		score
 	end
 
@@ -253,6 +275,9 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 			elsif di1.instruction.args.map { |a| a.class } != di2.instruction.args.map { |a| a.class }
 				@dasmcol1[di1.address] = :badarg
 				@dasmcol2[di2.address] = :badarg
+			elsif di1.instruction.to_s != di2.instruction.to_s
+				@dasmcol1[di1.address] = :similar
+				@dasmcol2[di2.address] = :similar
 			else
 				@dasmcol1[di1.address] = :same
 				@dasmcol2[di2.address] = :same
