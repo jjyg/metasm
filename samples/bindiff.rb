@@ -49,6 +49,10 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 
 	def keypress(key)
 		case key
+		when ?A
+			keypress(?D)
+			keypress(?f)
+			keypress(?i)
 		when ?D
 			@dasm1.load_plugin 'dasm_all'
 			@dasm2.load_plugin 'dasm_all'
@@ -166,6 +170,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 				s[:edges] += g[aa].length
 				s[:leaves] += 1 if g[aa].empty?
 				dasm.decoded[aa].block.each_to_otherfunc(dasm) { s[:ext_calls] += 1 }
+				# TODO rewrite :loops, it counts common epilogue as loops (need to store path & stuff)
 				s[:loops] += (g[aa] & done).uniq.length # XXX may depend on the order we walk the graph ?
 			end
 		}
@@ -246,20 +251,31 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		# 4 = full block difference
 		score = 0
 		score_div = [b1.list.length, b2.list.length].max.to_f
-		# TODO should use a diff-style alg to find similar instrs (here inserting a new instr at begin of block gives score=3)
-		# TODO handle instr swapping too (! this may change the binding)
-		b1.list.zip(b2.list).each { |di1, di2|
-			if not di1 or not di2 or di1.opcode.name != di2.opcode.name
-				score += 3 / score_div
-			elsif di1.instruction.args.map { |a| a.class } != di2.instruction.args.map { |a| a.class }
-				score += 2 / score_div
-			elsif di1.instruction.to_s != di2.instruction.to_s
-				score += 1 / score_div
-			else
-				score += 0 / score_div
-			end
+		common_start = 0
+		common_end = 0
+
+		# basic diff-style: compare start while it's good, then end, then whats left
+		# should handle most simples cases well
+		len = [b1.list.length, b2.list.length].min
+		while common_start < len and (s = match_instr(b1.list[common_start], b2.list[common_start])) <= 1
+			score += s / score_div
+			common_start += 1
+		end
+
+		while common_start+common_end < len and (s = match_instr(b1.list[-1-common_end], b2.list[-1-common_end])) <= 1
+			score += s / score_div
+			common_end += 1
+		end
+
+		# TODO improve the middle part matching (allow insertions/suppressions/swapping)
+		b1.list[common_start..-1-common_end].zip(b2.list[common_start..-1-common_end]).each { |di1, di2|
+			score += match_instr(di1, di2) / score_div
 		}
+
+		yield(common_start, common_end) if block_given?	# used by colorize_blocks
+
 		score += (b1.list.length - b2.list.length).abs * 3 / score_div	# block count difference -> +3 per block
+
 		score
 	end
 
@@ -267,22 +283,29 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		b1 = @dasm1.decoded[a1].block
 		b2 = @dasm2.decoded[a2].block
 
-		has_same = false
-		b1.list.zip(b2.list).each { |di1, di2|
-			if not di1 or not di2 or di1.opcode.name != di2.opcode.name
-				@dasmcol1[di1.address] = :badop if di1
-				@dasmcol2[di2.address] = :badop if di2
-			elsif di1.instruction.args.map { |a| a.class } != di2.instruction.args.map { |a| a.class }
-				@dasmcol1[di1.address] = :badarg
-				@dasmcol2[di2.address] = :badarg
-			elsif di1.instruction.to_s != di2.instruction.to_s
-				@dasmcol1[di1.address] = :similar
-				@dasmcol2[di2.address] = :similar
-			else
-				@dasmcol1[di1.address] = :same
-				@dasmcol2[di2.address] = :same
-			end
+		common_start = common_end = 0
+		match_block(b1, b2) { |a, b| common_start = a ; common_end = b }
+
+		b1.list[0..-1-common_end].zip(b2.list[0..-1-common_end]).each { |di1, di2|
+			next if not di1 or not di2
+			@dasmcol1[di1.address] = @dasmcol2[di2.address] = [:same, :similar, :badarg, :badop][match_instr(di1, di2)]
 		}
+		b1.list[-common_end..-1].zip(b2.list[-common_end..-1]).each { |di1, di2|
+			next if not di1 or not di2
+			@dasmcol1[di1.address] = @dasmcol2[di2.address] = [:same, :similar, :badarg, :badop][match_instr(di1, di2)]
+		}
+	end
+
+	def match_instr(di1, di2)
+		if not di1 or not di2 or di1.opcode.name != di2.opcode.name
+			3
+		elsif di1.instruction.args.map { |a| a.class } != di2.instruction.args.map { |a| a.class }
+			2
+		elsif di1.instruction.to_s != di2.instruction.to_s
+			1
+		else
+			0
+		end
 	end
 end
 
