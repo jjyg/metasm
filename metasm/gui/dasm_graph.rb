@@ -731,9 +731,9 @@ class GraphViewWidget < DrawableWidget
 
 	def paint_box(b)
 		set_color_boxshadow(b)
-		draw_rectangle((b.x-@curcontext.view_x+3)*@zoom, (b.y-@curcontext.view_y+3)*@zoom, b.w*@zoom, b.h*@zoom)
+		draw_rectangle((b.x-@curcontext.view_x+3)*@zoom, (b.y-@curcontext.view_y+4)*@zoom, b.w*@zoom, b.h*@zoom)
 		set_color_box(b)
-		draw_rectangle((b.x-@curcontext.view_x)*@zoom, (b.y-@curcontext.view_y)*@zoom, b.w*@zoom, b.h*@zoom)
+		draw_rectangle((b.x-@curcontext.view_x)*@zoom, (b.y-@curcontext.view_y+1)*@zoom, b.w*@zoom, b.h*@zoom)
 
 		# current text position
 		x = (b.x - @curcontext.view_x + 1)*@zoom
@@ -745,7 +745,7 @@ class GraphViewWidget < DrawableWidget
 			ly = 0
 			b[:line_address].each { |a|
 				if c = @parent_widget.bg_color_callback[a]
-					draw_rectangle_color(c, (b.x-@curcontext.view_x)*@zoom, (1+b.y-@curcontext.view_y+ly*@font_height)*@zoom, b.w*@zoom, @font_height*@zoom)
+					draw_rectangle_color(c, (b.x-@curcontext.view_x)*@zoom, (1+b.y-@curcontext.view_y+ly*@font_height)*@zoom, b.w*@zoom, (@font_height*@zoom).ceil)
 				end
 				ly += 1
 			}
@@ -762,7 +762,7 @@ class GraphViewWidget < DrawableWidget
 		# must not include newline
 		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
-			next if y >= w_h or x >= w_w
+			next if y >= w_h+2 or x >= w_w
 			if @hl_word
 				stmp = str
 				pre_x = 0
@@ -927,7 +927,7 @@ class GraphViewWidget < DrawableWidget
 			}
 			b.w = b[:line_text_col].map { |str| str.join.length }.max.to_i * @font_width + 2
 			b.w += 1 if b.w % 2 == 0	# ensure boxes have odd width -> vertical arrows are straight
-			b.h = line * @font_height + 2
+			b.h = line * @font_height
 		}
 	end
 
