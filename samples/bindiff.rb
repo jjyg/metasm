@@ -10,23 +10,46 @@ require 'optparse'
 
 module Metasm
 class BinDiffWidget < Metasm::Gui::DrawableWidget
-	attr_accessor :dasm1, :dasm2
 	attr_accessor :status
 
 	COLORS = { :same => '8f8', :similar => 'cfc', :badarg => 'fcc', :badop => 'faa', :default => '888' }
 
-	def initialize_widget(d1, d2)
-		@dasm1, @dasm2 = d1, d2
-		@dasmcol1 = {}
-		@dasmcol2 = {}
-		@dasm1.gui.bg_color_callback = lambda { |a1| COLORS[@dasmcol1[a1] || :default] }
-		@dasm2.gui.bg_color_callback = lambda { |a2| COLORS[@dasmcol2[a2] || :default] }
+	def initialize_widget(d1=nil, d2=nil)
+		self.dasm1 = d1 if d1
+		self.dasm2 = d2 if d2
 		@status = nil
 	end
 
+	def dasm1; @dasm1 end
+	def dasm1=(d)
+		@dasm1 = d
+		@func1 = nil
+		@funcstat1 = nil
+		@dasmcol1 = {}
+		@dasm1.gui.bg_color_callback = lambda { |a1| COLORS[@dasmcol1[a1] || :default] }
+		@match_func = nil
+	end
+
+	def dasm2; @dasm2 end
+	def dasm2=(d)
+		@dasm2 = d
+		@func2 = nil
+		@funcstat1 = nil
+		@dasmcol2 = {}
+		@dasm2.gui.bg_color_callback = lambda { |a2| COLORS[@dasmcol2[a2] || :default] }
+		@match_func = nil
+	end
+
+	def curaddr1; @dasm1.gui.curaddr end
+	def curaddr2; @dasm2.gui.curaddr end
+	def curfunc1; @dasm1.find_function_start(curaddr1) end
+	def curfunc2; @dasm2.find_function_start(curaddr2) end
+	def func1; @func1 ||= set_status('funcs 1') { create_funcs(@dasm1) } end
+	def func2; @func2 ||= set_status('funcs 2') { create_funcs(@dasm2) } end
+	def funcstat1; @funcstat1 ||= set_status('func stats 1') { create_funcs_stats(func1, @dasm1) } end
+	def funcstat2; @funcstat2 ||= set_status('func stats 2') { create_funcs_stats(func2, @dasm2) } end
+
 	def paint
-		help = "i: matchfuncs  d: dasm"
-		draw_string_color(:grey, @font_width, @font_height, help)
 		draw_string_color(:black, @font_width, 3*@font_height, @status || 'idle')
 	end
 
@@ -54,67 +77,21 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 			keypress(?f)
 			keypress(?i)
 		when ?D
-			@dasm1.load_plugin 'dasm_all'
-			@dasm2.load_plugin 'dasm_all'
-
-			set_status('dasm_all 1') {
-				@dasm1.dasm_all_section '.text'
-			}
-
-			set_status('dasm_all 2') {
-				@dasm2.dasm_all_section '.text'
-			}
-			gui_update
+			disassemble_all
 		when ?d
-			set_status('dasm 1') {
-				@dasm1.disassemble_fast_deep(@dasm1.gui.curaddr)
-				@dasm1.function[@dasm1.gui.curaddr] = Metasm::DecodedFunction.new
-				@dasm1.gui.focus_addr(@dasm1.gui.curaddr, :graph)
-			}
-			set_status('dasm 2') {
-				@dasm2.disassemble_fast_deep(@dasm2.gui.curaddr)
-				@dasm2.function[@dasm2.gui.curaddr] = Metasm::DecodedFunction.new
-				@dasm2.gui.focus_addr(@dasm2.gui.curaddr, :graph)
-			}
-			gui_update
+			disassemble
 		when ?f
-			set_status('find funcs') {
-				@func1 = create_funcs(@dasm1)
-				puts "d1: #{@func1.length} funcs"
-				@func2 = create_funcs(@dasm2)
-				puts "d2: #{@func2.length} funcs"
-				@funcstat1 = create_funcs_stats(@func1, @dasm1)
-				@funcstat2 = create_funcs_stats(@func2, @dasm2)
-			}
+			funcstat1
+			funcstat2
 		when ?g
 			inputbox('address to go', :text => Expression[@dasm1.gui.curaddr]) { |v|
 				@dasm1.gui.focus_addr_autocomplete(v)
 				@dasm2.gui.focus_addr_autocomplete(v)
 			}
 		when ?i
-			keypress(?f) if not @funcstat2
-
-			m = set_status('match funcs') {
-				match_funcs
-			}
-
-			gui_update
-			Gui.main_iter
-			list = [['addr 1', 'addr 2', 'score']]
-			f1 = @func1.keys
-			f2 = @func2.keys
-			m.each { |a1, (a2, s)|
-				list << [(@dasm1.get_label_at(a1) || Expression[a1]), (@dasm2.get_label_at(a2) || Expression[a2]), '%.4f' % s]
-				f1.delete a1
-				f2.delete a2
-			}
-			f1.each { |a1| list << [(@dasm1.get_label_at(a1) || Expression[a1]), '?', 'nomatch'] }
-			f2.each { |a2| list << ['?', (@dasm2.get_label_at(a2) || Expression[a2]), 'nomatch'] }
-			listwindow("matches", list) { |i| @dasm1.gui.focus_addr i[0], nil, true ; @dasm2.gui.focus_addr i[1], nil, true }
+			show_match_funcs
 		when ?m
-			s = match_func(@dasm1.gui.curaddr, @dasm2.gui.curaddr, true, true)
-			puts "match score: #{s}"
-			gui_update
+			match_one_func(curfunc1, curfunc2)
 
 		when ?r
 			puts 'reload'
@@ -131,6 +108,47 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		when ?r
 			inputbox('code to eval') { |c| messagebox eval(c).inspect[0, 512], 'eval' }
 		end
+	end
+
+	def disassemble_all
+		@dasm1.load_plugin 'dasm_all'
+		@dasm2.load_plugin 'dasm_all'
+		set_status('dasm_all 1') { @dasm1.dasm_all_section '.text' }
+		set_status('dasm_all 2') { @dasm2.dasm_all_section '.text' }
+		gui_update
+	end
+
+	def disassemble
+		set_status('dasm 1') {
+			@dasm1.disassemble_fast_deep(curaddr1)
+			@dasm1.function[curaddr1] = Metasm::DecodedFunction.new
+			@dasm1.gui.focus_addr(curaddr1, :graph)
+		}
+		set_status('dasm 2') {
+			@dasm2.disassemble_fast_deep(curaddr2)
+			@dasm2.function[curaddr2] = Metasm::DecodedFunction.new
+			@dasm2.gui.focus_addr(curaddr2, :graph)
+		}
+		gui_update
+	end
+
+
+	def show_match_funcs
+		match_funcs
+
+		gui_update
+		Gui.main_iter
+		list = [['addr 1', 'addr 2', 'score']]
+		f1 = func1.keys
+		f2 = func2.keys
+		match_funcs.each { |a1, (a2, s)|
+			list << [(@dasm1.get_label_at(a1) || Expression[a1]), (@dasm2.get_label_at(a2) || Expression[a2]), '%.4f' % s]
+			f1.delete a1
+			f2.delete a2
+		}
+		f1.each { |a1| list << [(@dasm1.get_label_at(a1) || Expression[a1]), '?', 'nomatch'] }
+		f2.each { |a2| list << ['?', (@dasm2.get_label_at(a2) || Expression[a2]), 'nomatch'] }
+		listwindow("matches", list) { |i| @dasm1.gui.focus_addr i[0], nil, true ; @dasm2.gui.focus_addr i[1], nil, true }
 	end
 
 	# func addr => { funcblock => list of funcblock to }
@@ -238,41 +256,56 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		done
 	end
 
+	def rematch_funcs
+		@match_funcs = nil
+		match_funcs
+	end
+
 	def match_funcs
-		return if not @funcstat1
+		@match_funcs ||= {}
+
 		layout_match = {}
 
-		@funcstat1.each { |a, s|
+		set_status('match func layout') {
+		funcstat1.each { |a, s|
+			next if @match_funcs[a]
 			layout_match[a] = []
-			@funcstat2.each { |aa, ss|
+			funcstat2.each { |aa, ss|
 				layout_match[a] << aa if s == ss
 			}
 			Gui.main_iter
 		}
+		}
 
+		set_status('match funcs') {
 		# refine the layout matching with actual function matching
 		already_matched = []
-		match = {}
 		match_score = {}
 		layout_match.each { |f1, list|
-			f2 = (list - already_matched).sort_by { |f| match_func(f1, f) }.first
+			f2 = (list - already_matched).sort_by { |f| match_func(f1, f, false, false) }.first
 			if f2
 				already_matched << f2
-				score = match_func(f1, f2, true)
-				match[f1] = [f2, score]
+				score = match_func(f1, f2)
+				@match_funcs[f1] = [f2, score]
 			end
 			Gui.main_iter
 		}
+		}
 
-		puts "matched #{match.length} - unmatched #{@func1.length - match.length}"
+		puts "matched #{@match_funcs.length} - unmatched #{func1.length - @match_funcs.length}"
+		@match_funcs
+	end
 
-		match
+	def match_one_func(a1, a2)
+		s = match_func(a1, a2)
+		puts "match score: #{s}"
+		gui_update
 	end
 
 	# return how much match a func in d1 and a func in d2
-	def match_func(a1, a2, do_colorize=false, verb=false)
-		f1 = @func1[a1]
-		f2 = @func2[a2]
+	def match_func(a1, a2, do_colorize=true, verb=true)
+		f1 = func1[a1]
+		f2 = func2[a2]
 		todo1 = [a1]
 		todo2 = [a2]
 		done1 = []
@@ -371,8 +404,36 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 end
 
 class BinDiffWindow < Gui::Window
-	def initialize_window(d1, d2)
+	def initialize_window(d1=nil, d2=nil)
 		self.widget = BinDiffWidget.new(d1, d2)
+	end
+
+	def build_menu
+		menu = new_menu
+		addsubmenu(menu, 'load file 1') { openfile('file 1') { |f| loadfile1(f) } }
+		addsubmenu(menu, 'load file 2') { openfile('file 2') { |f| loadfile2(f) } }
+		addsubmenu(menu)
+		addsubmenu(menu, '_disassemble from there', 'd') { widget.disassemble }
+		addsubmenu(menu, 'co_mpare functions', 'm') { widget.match_one_func(widget.curfunc1, widget.curfunc2) }
+		addsubmenu(menu, 'compare all funct_ions', 'i') { widget.show_match_funcs }
+		addsubmenu(menu)
+		addsubmenu(menu, '_quit', 'Q') { Gui.main_quit }
+
+		addsubmenu(@menu, '_File', menu)
+	end
+
+	def loadfile1(f)
+		exe = AutoExe.orshellcode { Ia32.new }.decode_file(f)
+		d = exe.init_disassembler
+		Gui::DasmWindow.new("bindiff - 1 - #{f}").display(d)
+		widget.dasm1 = d
+	end
+
+	def loadfile2(f)
+		exe = AutoExe.orshellcode { Ia32.new }.decode_file(f)
+		d = exe.init_disassembler
+		Gui::DasmWindow.new("bindiff - 2 - #{f}").display(d)
+		widget.dasm2 = d
 	end
 end
 end
@@ -398,40 +459,47 @@ OptionParser.new { |opt|
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
 }.parse!(ARGV)
 
-exename1 = ARGV.shift
-w1 = Metasm::Gui::DasmWindow.new("#{exename1} - bindiff1 - metasm disassembler")
-exe1 = w1.loadfile(exename1)
-if opts[:autoload]
-	basename1 = exename1.sub(/\.\w\w?\w?$/, '')
-	opts[:map1] ||= basename1 + '.map' if File.exist?(basename1 + '.map')
-	opts[:cheader] ||= basename1 + '.h' if File.exist?(basename1 + '.h')
+if exename1 = ARGV.shift
+	w1 = Metasm::Gui::DasmWindow.new("#{exename1} - bindiff1 - metasm disassembler")
+	exe1 = w1.loadfile(exename1)
+	if opts[:autoload]
+		basename1 = exename1.sub(/\.\w\w?\w?$/, '')
+		opts[:map1] ||= basename1 + '.map' if File.exist?(basename1 + '.map')
+		opts[:cheader] ||= basename1 + '.h' if File.exist?(basename1 + '.h')
+	end
 end
 
-exename2 = ARGV.shift
-w2 = Metasm::Gui::DasmWindow.new("#{exename2} - bindiff2 - metasm disassembler")
-exe2 = w2.loadfile(exename2)
-if opts[:autoload]
-	basename2 = exename2.sub(/\.\w\w?\w?$/, '')
-	opts[:map2] ||= basename2 + '.map' if File.exist?(basename2 + '.map')
-	opts[:cheader] ||= basename2 + '.h' if File.exist?(basename2 + '.h')
+if exename2 = ARGV.shift
+	w2 = Metasm::Gui::DasmWindow.new("#{exename2} - bindiff2 - metasm disassembler")
+	exe2 = w2.loadfile(exename2)
+	if opts[:autoload]
+		basename2 = exename2.sub(/\.\w\w?\w?$/, '')
+		opts[:map2] ||= basename2 + '.map' if File.exist?(basename2 + '.map')
+		opts[:cheader] ||= basename2 + '.h' if File.exist?(basename2 + '.h')
+	end
 end
 
-dasm1 = exe1.init_disassembler
-dasm1.load_map opts[:map1] if opts[:map1]
-dasm1.parse_c_file opts[:cheader] if opts[:cheader]
-dasm2 = exe2.init_disassembler
-dasm2.load_map opts[:map2] if opts[:map2]
-dasm2.parse_c_file opts[:cheader] if opts[:cheader]
+if exe1
+	dasm1 = exe1.init_disassembler
+	dasm1.load_map opts[:map1] if opts[:map1]
+	dasm1.parse_c_file opts[:cheader] if opts[:cheader]
+end
+
+if exe2
+	dasm2 = exe2.init_disassembler
+	dasm2.load_map opts[:map2] if opts[:map2]
+	dasm2.parse_c_file opts[:cheader] if opts[:cheader]
+end
 
 ep = ARGV.dup
 
-w1.dasm_widget.focus_addr ep.first if not ep.empty?
-w2.dasm_widget.focus_addr ep.first if not ep.empty?
+w1.dasm_widget.focus_addr ep.first if w1 and not ep.empty?
+w2.dasm_widget.focus_addr ep.first if w2 and not ep.empty?
 
-opts[:plugin].to_a.each { |p| dasm1.load_plugin(p) ; dasm2.load_plugin(p) }
+opts[:plugin].to_a.each { |p| dasm1.load_plugin(p) if dasm1 ; dasm2.load_plugin(p) if dasm2 }
 opts[:hookstr].to_a.each { |f| eval f }
 
-ep.each { |e| dasm1.disassemble_fast_deep(e) ; dasm2.disassemble_fast_deep(e) }
+ep.each { |e| dasm1.disassemble_fast_deep(e) if dasm1 ; dasm2.disassemble_fast_deep(e) if dasm2 }
 
 Metasm::BinDiffWindow.new(dasm1, dasm2)
 

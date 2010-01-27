@@ -586,6 +586,10 @@ class Window < Gtk::Window
 		@vbox.add w
 	end
 
+	def widget
+		@child
+	end
+
 	def build_menu
 	end
 
