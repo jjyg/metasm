@@ -715,7 +715,11 @@ class DbgConsoleWidget < DrawableWidget
 			if arg = solve_expr(arg)
 				@dbg.loadsyms(arg)
 			else
-				@dbg.loadallsyms
+				@dbg.loadallsyms { |a|
+					@statusline = "loading symbols from #{Expression[a]}"
+					redraw
+					Gui.main_iter
+				}
 			end
 			p.gui_update
 		}

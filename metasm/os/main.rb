@@ -655,7 +655,10 @@ class Debugger
 
 	# load symbols from all libraries found by the OS module
 	def loadallsyms
-		OS.current.find_process(@pid).modules.to_a.each { |m| loadsyms(m.addr, m.path) }
+		OS.current.find_process(@pid).modules.to_a.each { |m|
+			yield m.addr if block_given?
+			loadsyms(m.addr, m.path)
+		}
 	end
 
 	# see Disassembler#load_map
