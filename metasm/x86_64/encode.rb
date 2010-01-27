@@ -35,7 +35,7 @@ class X86_64
 				imm = self.imm || Expression[0]
 				[ret << ((4 << 3) | 5) << imm.encode(:i32, endianness)]
 
-			elsif self.b.val == 16 or self.i.val == 16	# rip+imm	(rip == addr of the octet after the current instr)
+			elsif (self.b and self.b.val == 16) or (self.i and self.i.val == 16)	# rip+imm	(rip == addr of the octet after the current instr)
 				# should have been filtered by #parse, but just in case
 				raise "invalid rip addressing #{self}" if (self.i and self.b) or (self.s and self.s != 1)
 				or_bits[5]
