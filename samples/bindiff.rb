@@ -13,7 +13,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 	attr_accessor :dasm1, :dasm2
 	attr_accessor :status
 
-	COLORS = { :same => '8f8', :similar => 'cfc', :badarg => 'ffc', :badop => 'fcc', :default => '888' }
+	COLORS = { :same => '8f8', :similar => 'cfc', :badarg => 'fcc', :badop => 'faa', :default => '888' }
 
 	def initialize_widget(d1, d2)
 		@dasm1, @dasm2 = d1, d2
@@ -25,7 +25,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 	end
 
 	def paint
-		help = "d: dasm  f: findfuncs  i: matchfuncs"
+		help = "i: matchfuncs  d: dasm"
 		draw_string_color(:grey, @font_width, @font_height, help)
 		draw_string_color(:black, @font_width, 3*@font_height, @status || 'idle')
 	end
@@ -83,8 +83,8 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 				puts "d1: #{@func1.length} funcs"
 				@func2 = create_funcs(@dasm2)
 				puts "d2: #{@func2.length} funcs"
-				@funcstat1 = create_func_stats(@func1, @dasm1)
-				@funcstat2 = create_func_stats(@func2, @dasm2)
+				@funcstat1 = create_funcs_stats(@func1, @dasm1)
+				@funcstat2 = create_funcs_stats(@func2, @dasm2)
 			}
 		when ?g
 			inputbox('address to go', :text => Expression[@dasm1.gui.curaddr]) { |v|
@@ -92,9 +92,12 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 				@dasm2.gui.focus_addr_autocomplete(v)
 			}
 		when ?i
+			keypress(?f) if not @funcstat2
+
 			m = set_status('match funcs') {
 				match_funcs
 			}
+
 			gui_update
 			Gui.main_iter
 			list = [['addr 1', 'addr 2', 'score']]
@@ -116,6 +119,8 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		when ?r
 			puts 'reload'
 			load __FILE__
+			gui_update
+
 		when ?Q
 			Gui.main_quit
 		end
@@ -133,48 +138,104 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		f = {}
 		dasm.function.each_key { |a|
 			next if not dasm.decoded[a].kind_of? DecodedInstruction
-			h = f[a] = {}
-			todo = [a]
-			while a = todo.pop
-				next if h[a]
-				h[a] = []
-				dasm.decoded[a].block.each_to_samefunc(dasm) { |ta|
-					next if not dasm.decoded[ta].kind_of? DecodedInstruction
-					todo << ta
-					h[a] << ta
-				}
-			end
+			f[a] = create_func(dasm, a)
 			Gui.main_iter
 		}
 		f
 	end
 
-	def create_func_stats(f, dasm)
+	def create_func(dasm, a)
+		h = {}
+		todo = [a]
+		while a = todo.pop
+			next if h[a]
+			h[a] = []
+			dasm.decoded[a].block.each_to_samefunc(dasm) { |ta|
+				next if not dasm.decoded[ta].kind_of? DecodedInstruction
+				todo << ta
+				h[a] << ta
+			}
+		end
+		h
+	end
+
+	def create_funcs_stats(f, dasm)
 		fs = {}
 		f.each { |a, g|
-			s = fs[a] = {}
-			s[:blocks] = g.length
-
-			s[:edges] = 0	# nr of edges
-			s[:leaves] = 0	# nr of nodes with no successor
-			s[:ext_calls] = 0	# nr of jumps out_of_func
-			s[:loops] = 0	# nr of jump back
-
-			todo = [a]
-			done = []
-			while aa = todo.pop
-				next if done.include? aa
-				done << aa
-				todo.concat g[aa]
-
-				s[:edges] += g[aa].length
-				s[:leaves] += 1 if g[aa].empty?
-				dasm.decoded[aa].block.each_to_otherfunc(dasm) { s[:ext_calls] += 1 }
-				# TODO rewrite :loops, it counts common epilogue as loops (need to store path & stuff)
-				s[:loops] += (g[aa] & done).uniq.length # XXX may depend on the order we walk the graph ?
-			end
+			fs[a] = create_func_stats(dasm, a, g)
+			Gui.main_iter
 		}
 		fs
+	end
+
+	def create_func_stats(dasm, a, g)
+		s = {}
+		s[:blocks] = g.length
+
+		s[:edges] = 0	# nr of edges
+		s[:leaves] = 0	# nr of nodes with no successor
+		s[:ext_calls] = 0	# nr of jumps out_of_func
+		s[:loops] = 0	# nr of jump back
+
+		todo = [a]
+		done = []
+		while aa = todo.pop
+			next if done.include? aa
+			done << aa
+			todo.concat g[aa]
+
+			s[:edges] += g[aa].length
+			s[:leaves] += 1 if g[aa].empty?
+			dasm.decoded[aa].block.each_to_otherfunc(dasm) { s[:ext_calls] += 1 }
+		end
+
+		# loop detection
+		# find the longest distance to the root w/o loops
+		g = g.dup
+		while eliminate_one_loop(a, g)
+			s[:loops] += 1
+		end
+
+		s
+	end
+
+	def eliminate_one_loop(a, g)
+		stack = []
+		index = {}
+		reach_index = {}
+		done = false
+
+		curindex = 0
+		
+		trajan = lambda { |e|
+			index[e] = curindex
+			reach_index[e] = curindex
+			curindex += 1
+			stack << e
+			g[e].each { |ne|
+				if not index[ne]
+					trajan[ne]
+					break if done
+					reach_index[e] = [reach_index[e], reach_index[ne]].min
+				elsif stack.include? ne
+					reach_index[e] = [reach_index[e], reach_index[ne]].min
+				end
+			}
+			break if done
+			if index[e] == reach_index[e]
+				if (e == stack.last and not g[e].include? e)
+					stack.pop
+					next
+				end
+				# e is the entry in the loop, cut the loop here
+				tail = reach_index.keys.find { |ee| reach_index[ee] == index[e] and g[ee].include? e }
+				g[tail] -= [e]	# patch g, but don't modify the original g value (ie -= instead of delete)
+				done = true	# one loop found & removed, try again
+			end
+		}
+
+		trajan[a]
+		done
 	end
 
 	def match_funcs
@@ -274,7 +335,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 
 		yield(common_start, common_end) if block_given?	# used by colorize_blocks
 
-		score += (b1.list.length - b2.list.length).abs * 3 / score_div	# block count difference -> +3 per block
+		score += (b1.list.length - b2.list.length).abs * 3 / score_div	# instr count difference -> +3 per instr
 
 		score
 	end
