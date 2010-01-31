@@ -1,6 +1,7 @@
 backend = case ENV['METASM_GUI']
 when 'gtk'; 'gtk'
 when 'qt'; 'qt'
+when 'win32'; 'win32'
 else
 	puts "Unsupported METASM_GUI #{ENV['METASM_GUI'].inspect}" if $VERBOSE and ENV['METASM_GUI']
 	begin
