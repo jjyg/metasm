@@ -305,6 +305,7 @@ puts "RtlEqualUnicodeString #{s1.unpack('v*').pack('C*').inspect}, #{s2.unpack('
 			end
 
 		}
+		hook_export('LdrUnloadDll', '__stdcall int f(int)') { 0 }
 
 		# msvcrt
 		hook_export('free', 'void f(int)') { |i| @heap.delete i ; 0}
@@ -348,7 +349,7 @@ if $0 == __FILE__
 
 	puts 'dbghelp@%x' % l.load_address if $VERBOSE
 
-	wapi = FakeWinAPI.new #%w[CloseHandle DuplicateHandle EnterCriticalSection GetCurrentProcess GetCurrentProcessId GetCurrentThreadId GetEnvironmentVariableW GetLastError GetProcAddress GetSystemInfo GetSystemTimeAsFileTime GetTickCount GetVersion GetVersionExA HeapAlloc HeapCreate HeapFree InterlockedCompareExchange InterlockedExchange InitializeCriticalSectionAndSpinCount InitializeCriticalSection LeaveCriticalSection QueryPerformanceCounter SetLastError TlsAlloc RtlEqualUnicodeString MultiByteToWideChar free malloc memset ??2@YAPAXI@Z __dllonexit _initterm _lock _unlock _wcslwr _wcsdup GetModuleHandleA LoadLibraryA NtQueryObject NtQueryInformationProcess]
+	wapi = FakeWinAPI.new %w[CloseHandle DuplicateHandle EnterCriticalSection GetCurrentProcess GetCurrentProcessId GetCurrentThreadId GetEnvironmentVariableW GetLastError GetProcAddress GetSystemInfo GetSystemTimeAsFileTime GetTickCount GetVersion GetVersionExA HeapAlloc HeapCreate HeapFree InterlockedCompareExchange InterlockedExchange InitializeCriticalSectionAndSpinCount InitializeCriticalSection LeaveCriticalSection QueryPerformanceCounter SetLastError TlsAlloc RtlEqualUnicodeString MultiByteToWideChar free malloc memset ??2@YAPAXI@Z __dllonexit _initterm _lock _unlock _wcslwr _wcsdup GetModuleHandleA LoadLibraryA NtQueryObject NtQueryInformationProcess LdrUnloadDll]
 	puts 'wapi@%x' % wapi.load_address if $VERBOSE
 	
 	wapi.hook_export('GetModuleHandleA', '__stdcall int f(char*)') { |ptr|
