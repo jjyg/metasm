@@ -1565,6 +1565,8 @@ EOH
 			readtok until eos?
 			nil
 		rescue ParseError
+			readtok until eos?
+			nil
 		end
 
 		# returns all numeric constants defined with their value, either macros or enums
