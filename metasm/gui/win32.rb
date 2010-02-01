@@ -447,6 +447,64 @@ typedef struct tagACCEL {
     WORD   cmd;
 } ACCEL, *LPACCEL;
 
+#define IDI_APPLICATION     32512
+#define IDI_HAND            32513
+#define IDI_QUESTION        32514
+#define IDI_EXCLAMATION     32515
+#define IDI_ASTERISK        32516
+#define IDI_WINLOGO         32517
+
+#define IDOK                1
+#define IDCANCEL            2
+#define IDABORT             3
+#define IDRETRY             4
+#define IDIGNORE            5
+#define IDYES               6
+#define IDNO                7
+#define IDCLOSE         8
+#define IDHELP          9
+#define IDTRYAGAIN      10
+#define IDCONTINUE      11
+#define IDTIMEOUT 32000
+
+#define IDC_ARROW           32512
+#define IDC_IBEAM           32513
+#define IDC_WAIT            32514
+#define IDC_CROSS           32515
+#define IDC_UPARROW         32516
+#define IDC_SIZE            32640
+#define IDC_ICON            32641
+#define IDC_SIZENWSE        32642
+#define IDC_SIZENESW        32643
+#define IDC_SIZEWE          32644
+#define IDC_SIZENS          32645
+#define IDC_SIZEALL         32646
+#define IDC_NO              32648
+#define IDC_HAND            32649
+#define IDC_APPSTARTING     32650
+#define IDC_HELP            32651
+
+#define WHITE_BRUSH         0
+#define LTGRAY_BRUSH        1
+#define GRAY_BRUSH          2
+#define DKGRAY_BRUSH        3
+#define BLACK_BRUSH         4
+#define NULL_BRUSH          5
+#define HOLLOW_BRUSH        NULL_BRUSH
+#define WHITE_PEN           6
+#define BLACK_PEN           7
+#define NULL_PEN            8
+#define OEM_FIXED_FONT      10
+#define ANSI_FIXED_FONT     11
+#define ANSI_VAR_FONT       12
+#define SYSTEM_FONT         13
+#define DEVICE_DEFAULT_FONT 14
+#define DEFAULT_PALETTE     15
+#define SYSTEM_FIXED_FONT   16
+#define DEFAULT_GUI_FONT    17
+#define DC_BRUSH            18
+#define DC_PEN              19
+
 
 typedef struct tagMSG {
     HWND hwnd;
@@ -954,26 +1012,34 @@ UpdateWindow(
 EOS
 
 def self.test
-	cls = alloc_struct('WNDCLASSEXA', 
-	:cbsize => cls.size,
-	:lpfnwndproc => alloc_callback_c('__stdcall int wndproc(int, int, int, int)') { |hwnd, msg, wp, lp| test_wndproc(hwnd, msg, wp, lp) },
-	:hicon => loadicon(0, IDI_APPLICATION),
-	:hcursor => loadcursor(0, IDC_ARROW),
+	cls = alloc_c_struct('WNDCLASSEXA', 
+	:cbsize => :size,
+	:lpfnwndproc => callback_alloc_c('__stdcall int wndproc(int, int, int, int)') { |hwnd, msg, wp, lp| test_wndproc(hwnd, msg, wp, lp) },
+	:hicon => loadicona(0, IDI_APPLICATION),
+	:hcursor => loadcursora(0, IDC_ARROW),
 	:hbrbackground => getstockobject(DKGRAY_BRUSH),
 	:lpszclassname => 'flublu',
-	:hiconsm => loadicon(0, IDI_APPLICATION))
+	:hiconsm => loadicona(0, IDI_APPLICATION))
 
+puts 'regclass'
 	registerclassexa(cls)
 
+puts 'createwin'
 	hwnd = createwindowexa(nil, 'flublu', 'lol title', WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0)
+puts 'showwin'
 	showwindow(hwnd, SIZE_RESTORED)
+puts 'updatewin'
 	updatewindow(hwnd)
 
-	msg = alloc_struct('MSG')
+	msg = alloc_c_struct('MSG')
+puts 'getmsg'
 	while getmessagea(msg, 0, 0, 0) != 0
+puts 'translate'
 		translatemessage(msg)
+puts 'dispatch'
 		dispatchmessagea(msg)
 	end
+puts 'done'
 
 	return msg[:wparam]
 end
@@ -982,7 +1048,7 @@ def self.test_wndproc(hwnd, msg, wp, lp)
 	case msg
 	when WM_CREATE
 	when WM_PAINT
-		ps = alloc_struct('PAINTSTRUCT')
+		ps = alloc_c_struct('PAINTSTRUCT')
 		rc = beginpaint(hwnd, ps)
 		# stuff
 		endpaint(hwnd, ps)
@@ -991,7 +1057,7 @@ def self.test_wndproc(hwnd, msg, wp, lp)
 		when ?q, 0x1b; postquitmessage(0)	# 1b = esc
 		end
 	when WM_LBUTTONDOWN
-		r = alloc_struct('RECT', :left => 0, :top => 42, :right => 28, :bottom => 58)
+		r = alloc_c_struct('RECT', :left => 0, :top => 42, :right => 28, :bottom => 58)
 		invalidaterect(hwnd, r, FALSE)	# false/true -> paint background
 		updatewindow(hwnd)
 	when WM_DESTROY
