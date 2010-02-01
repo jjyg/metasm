@@ -349,8 +349,8 @@ EOS
 	# initialization
 	# load (build if needed) the binary module
 	def self.start
-		@callback_addrs = []	# list of all allocated callback addrs (in use or not)
-		@callback_table = {}	# addr -> cb structure (inuse only)
+		@@callback_addrs = []	# list of all allocated callback addrs (in use or not)
+		@@callback_table = {}	# addr -> cb structure (inuse only)
 
 		binmodule = find_bin_path
 
@@ -366,7 +366,7 @@ EOS
 
 		require binmodule
 
-		@callback_addrs << CALLBACK_ID_0 << CALLBACK_ID_1
+		@@callback_addrs << CALLBACK_ID_0 << CALLBACK_ID_1
 	end
 
 	# find the path of the binary module
@@ -445,7 +445,11 @@ EOS
 			next if not v.kind_of? C::Variable	# enums
 			@cp.toplevel.symbol.delete v.name
 			lib = fromlib || lib_from_sym(v.name)
-			addr = sym_addr(lib, v.name)
+			begin
+				addr = sym_addr(lib, v.name)
+			rescue ArgumentError
+				raise "could not find symbol #{v.name.inspect} in #{lib.inspect}"
+			end
 			next if addr == 0 or addr == 0xffff_ffff or addr == 0xffffffff_ffffffff
 
 			if not v.type.kind_of? C::Function
@@ -506,7 +510,7 @@ EOS
 	# this method is called from the C part to run the ruby code corresponding to
 	# a given C callback allocated by callback_alloc_c
 	def self.callback_run(id, args)
-		raise "invalid callback #{'%x' % id} not in #{@callback_table.keys.map { |c| c.to_s(16) }}" if not cb = @callback_table[id]
+		raise "invalid callback #{'%x' % id} not in #{@@callback_table.keys.map { |c| c.to_s(16) }}" if not cb = @@callback_table[id]
 
 		rawargs = args.dup
 		ra = cb[:proto] ? cb[:proto].args.map { |fa| convert_arg_c2rb(cb[:cparser], fa, rawargs) } : []
@@ -576,18 +580,18 @@ EOS
 		cb[:cparser] = cp
 		cb[:abi_stackfix] = proto.args.inject(0) { |s, a| s + [cp.sizeof(a), cp.typesize[:ptr]].max } if ori and ori.has_attribute('stdcall')
 		cb[:abi_stackfix] = proto.args[2..-1].to_a.inject(0) { |s, a| s + [cp.sizeof(a), cp.typesize[:ptr]].max } if ori and ori.has_attribute('fastcall')	# supercedes stdcall
-		@callback_table[id] = cb
+		@@callback_table[id] = cb
 		id
 	end
 
 	# releases a callback id, so that it may be reused by a later callback_alloc
 	def self.callback_free(id)
-		@callback_table.delete id
+		@@callback_table.delete id
 	end
 
 	# finds a free callback id, allocates a new page if needed
 	def self.callback_find_id
-		if not id = @callback_addrs.find { |a| not @callback_table[a] }
+		if not id = @@callback_addrs.find { |a| not @@callback_table[a] }
 			cb_page = memory_alloc(4096)
 			sc = Shellcode.new(host_cpu, cb_page)
 			case sc.cpu
@@ -595,7 +599,7 @@ EOS
 				addr = cb_page
 				nrcb = 128	# TODO should be 4096/5, but the parser/compiler is really too slow
 				nrcb.times {
-					@callback_addrs << addr
+					@@callback_addrs << addr
 					sc.parse "call #{CALLBACK_TARGET}"
 					addr += 5
 				}
@@ -603,7 +607,7 @@ EOS
 			sc.assemble
 			memory_write cb_page, sc.encode_string
 			memory_perm cb_page, 4096, 'rx'
-			raise 'callback_alloc bouh' if not id = @callback_addrs.find { |a| not @callback_table[a] }
+			raise 'callback_alloc bouh' if not id = @@callback_addrs.find { |a| not @@callback_table[a] }
 		end
 		id
 	end
