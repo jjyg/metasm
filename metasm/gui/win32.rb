@@ -3,48 +3,41 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+require 'metasm/dynldr'
 
 module Metasm
 module Gui
 	class Win32Gui < DynLdr
 		new_api_c <<EOS
-#line #{__LINE__}
 typedef char CHAR;
-
-struct HBRUSH__ { int unused; };
-struct HICON__ { int unused; };
-struct HINSTANCE__ { int unused; };
-struct HMENU__ { int unused; };
-struct HWND__ { int unused; };
-
-typedef int INT_PTR;
-typedef long LONG;
-typedef long LONG_PTR;
-typedef unsigned long DWORD;
-typedef unsigned long ULONG_PTR;
-typedef ULONG_PTR DWORD_PTR;
-typedef unsigned int UINT;
-typedef unsigned int UINT_PTR;
-typedef unsigned short WORD;
 typedef unsigned char BYTE;
+typedef unsigned short WORD;
+typedef unsigned int UINT;
+typedef long LONG;
+typedef unsigned long ULONG, DWORD;
 typedef int BOOL;
-typedef WORD ATOM;
-typedef struct HBRUSH__ *HBRUSH;
-typedef struct HICON__ *HICON;
-typedef struct HINSTANCE__ *HINSTANCE;
-typedef struct HMENU__ *HMENU;
-typedef struct HWND__ *HWND;
+
+typedef long LONG_PTR;
+typedef unsigned long ULONG_PTR, DWORD_PTR;
+typedef int INT_PTR;
+typedef unsigned int UINT_PTR;
 typedef LONG_PTR LPARAM;
 typedef const CHAR *LPSTR, *LPCSTR;
 typedef LONG_PTR LRESULT;
 typedef UINT_PTR WPARAM;
-typedef HICON HCURSOR;
 typedef void VOID, *PVOID, *LPVOID;
+
+typedef WORD ATOM;
 typedef void *HANDLE;
-typedef void *HMODULE;
-typedef void *HINSTANCE;
 typedef void *HBITMAP;
+typedef void *HBRUSH;
+typedef void *HCURSOR;
 typedef void *HDC;
+typedef void *HICON;
+typedef void *HINSTANCE;
+typedef void *HMENU;
+typedef void *HMODULE;
+typedef void *HWND;
 
 #define DECLSPEC_IMPORT __declspec(dllimport)
 #define WINUSERAPI DECLSPEC_IMPORT
@@ -183,7 +176,7 @@ typedef struct tagMINMAXINFO {
 #define WM_COMPAREITEM                  0x0039
 #define WM_GETOBJECT                    0x003D
 #define WM_COMPACTING                   0x0041
-#define WM_COMMNOTIFY                   0x0044  /* no longer suported */
+#define WM_COMMNOTIFY                   0x0044
 #define WM_WINDOWPOSCHANGING            0x0046
 #define WM_WINDOWPOSCHANGED             0x0047
 #define WM_POWER                        0x0048
@@ -477,7 +470,6 @@ BOOL
 WINAPI
 TranslateMessage(
     __in CONST MSG *lpMsg);
-
 WINUSERAPI
 LRESULT
 WINAPI
@@ -504,6 +496,14 @@ PostMessageA(
     __in WPARAM wParam,
     __in LPARAM lParam);
 WINUSERAPI
+LRESULT
+WINAPI
+DefWindowProcA(
+    __in HWND hWnd,
+    __in UINT Msg,
+    __in WPARAM wParam,
+    __in LPARAM lParam);
+WINUSERAPI
 VOID
 WINAPI
 PostQuitMessage(
@@ -522,7 +522,6 @@ typedef struct tagWNDCLASSA {
     LPCSTR      lpszMenuName;
     LPCSTR      lpszClassName;
 } WNDCLASSA;
-
 WINUSERAPI
 ATOM
 WINAPI
@@ -543,7 +542,6 @@ typedef struct tagWNDCLASSEXA {
 	LPCSTR lpszClassName;
 	HICON hIconSm;
 } WNDCLASSEXA;
-
 WINUSERAPI
 ATOM
 WINAPI
@@ -812,7 +810,6 @@ typedef struct tagMENUITEMINFOA
     UINT     cch;
     HBITMAP  hbmpItem;
 }   MENUITEMINFOA, *LPMENUITEMINFOA, CONST *LPCMENUITEMINFOA;
-
 WINUSERAPI
 BOOL
 WINAPI
@@ -821,6 +818,7 @@ InsertMenuItemA(
     __in UINT item,
     __in BOOL fByPosition,
     __in LPCMENUITEMINFOA lpmi);
+
 typedef struct tagRECT {
     LONG left;
     LONG top;
@@ -848,6 +846,7 @@ WINAPI
 ReleaseDC(
     __in_opt HWND hWnd,
     __in HDC hDC);
+
 typedef struct tagPAINTSTRUCT {
     HDC         hdc;
     BOOL        fErase;
@@ -896,6 +895,7 @@ MessageBoxA(
     __in_opt LPCSTR lpText,
     __in_opt LPCSTR lpCaption,
     __in UINT uType);
+
 typedef struct tagHELPINFO {      // Structure pointed to by lParam of WM_HELP
     UINT    cbSize;
     int     iContextType;
@@ -918,12 +918,12 @@ typedef struct tagMSGBOXPARAMSA
     MSGBOXCALLBACK      lpfnMsgBoxCallback;
     DWORD       dwLanguageId;
 } MSGBOXPARAMSA, *PMSGBOXPARAMSA, *LPMSGBOXPARAMSA;
-
 WINUSERAPI
 int
 WINAPI
 MessageBoxIndirectA(
     __in CONST MSGBOXPARAMSA * lpmbp);
+
 WINUSERAPI
 BOOL
 WINAPI
@@ -933,10 +933,28 @@ CheckMenuRadioItem(
     __in UINT last,
     __in UINT check,
     __in UINT flags);
+WINUSERAPI
+HICON
+WINAPI
+LoadIconA(
+    __in_opt HINSTANCE hInstance,
+    __in LPCSTR lpIconName);
+WINUSERAPI
+HCURSOR
+WINAPI
+LoadCursorA(
+    __in_opt HINSTANCE hInstance,
+    __in LPCSTR lpCursorName);
+WINAPI PVOID GetStockObject(__in int i);
+WINUSERAPI
+BOOL
+WINAPI
+UpdateWindow(
+    __in HWND hWnd);
 EOS
 
 def self.test
-	cls = alloc_struct('WNDCLASSEX', 
+	cls = alloc_struct('WNDCLASSEXA', 
 	:cbsize => cls.size,
 	:lpfnwndproc => alloc_callback_c('__stdcall int wndproc(int, int, int, int)') { |hwnd, msg, wp, lp| test_wndproc(hwnd, msg, wp, lp) },
 	:hicon => loadicon(0, IDI_APPLICATION),
@@ -945,19 +963,19 @@ def self.test
 	:lpszclassname => 'flublu',
 	:hiconsm => loadicon(0, IDI_APPLICATION))
 
-	registerclassex(cls)
+	registerclassexa(cls)
 
-	hwnd = createwindow('flublu', 'lol title', WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0)
+	hwnd = createwindowexa(nil, 'flublu', 'lol title', WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0)
 	showwindow(hwnd, SIZE_RESTORED)
 	updatewindow(hwnd)
 
 	msg = alloc_struct('MSG')
-	while getmessage(msg, 0, 0, 0) != 0
+	while getmessagea(msg, 0, 0, 0) != 0
 		translatemessage(msg)
-		dispatchmessage(msg)
+		dispatchmessagea(msg)
 	end
 
-	return msg.wparam
+	return msg[:wparam]
 end
 
 def self.test_wndproc(hwnd, msg, wp, lp)
@@ -978,7 +996,7 @@ def self.test_wndproc(hwnd, msg, wp, lp)
 		updatewindow(hwnd)
 	when WM_DESTROY
 		postquitmessage(0)
-	else return defwindowproc(hwnd, msg, wp, lp)
+	else return defwindowproca(hwnd, msg, wp, lp)
 	end
 	0
 end
