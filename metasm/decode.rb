@@ -506,7 +506,7 @@ class Expression
 	# type may be a length in bytes, interpreted as unsigned, or an expression type (eg :u32)
 	# endianness is either an endianness or an object than responds to endianness
 	def self.decode_imm(str, type, endianness, off=0)
-		type = INT_SIZE.keys.find { |k| k.to_s[0] == ?u and INT_SIZE[k] == 8*type } if type.kind_of? ::Integer
+		type = INT_SIZE.keys.find { |k| k.to_s[0] == ?a and INT_SIZE[k] == 8*type } if type.kind_of? ::Integer
 		endianness = endianness.endianness if not endianness.kind_of? ::Symbol
 		str = str[off, INT_SIZE[type]/8]
 		str = str.reverse if endianness == :little
@@ -514,7 +514,9 @@ class Expression
 		val = make_signed(val, INT_SIZE[type]) if type.to_s[0] == ?i
 		val
 	end
-
+	class << self
+		alias decode_immediate decode_imm
+	end
 end
 class CPU
 	# decodes the instruction at edata.ptr, mapped at virtual address off

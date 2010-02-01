@@ -269,7 +269,7 @@ class Expression
 
 	class << self
 	def encode_imm(val, type, endianness, backtrace=nil)
-		type = INT_SIZE.keys.find { |k| k.to_s[0] == ?u and INT_SIZE[k] == 8*type } if type.kind_of? ::Integer
+		type = INT_SIZE.keys.find { |k| k.to_s[0] == ?a and INT_SIZE[k] == 8*type } if type.kind_of? ::Integer
 		endianness = endianness.endianness if not endianness.kind_of? ::Symbol
 		raise "unsupported endianness #{endianness.inspect}" unless [:big, :little].include? endianness
 		raise(EncodeError, "immediate overflow #{type.inspect} #{Expression[val]} #{(Backtrace::backtrace_str(backtrace) if backtrace)}") if not in_range?(val, type)
