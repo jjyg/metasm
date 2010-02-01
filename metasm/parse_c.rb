@@ -218,8 +218,8 @@ module C
 			(o.class == self.class and o.name == self.name and o.members.to_a.map { |m| m.type } == self.members.to_a.map { |m| m.type } and o.attributes == self.attributes)
 		end
 
-		def findmember(name)
-			if m = @members.find { |m_| m_.name == name }
+		def findmember(name, igncase=false)
+			if m = @members.find { |m_| igncase ? m_.name.to_s.downcase == name.downcase : m_.name == name }
 				return m
 			else
 				@members.each { |m_|
