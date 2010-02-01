@@ -438,11 +438,12 @@ EOS
 	# and destroyed afterwards ; use callback_alloc_c to get a callback id with longer life span
 	def self.new_api_c(proto, fromlib=nil)
 		proto += ';'	# allow 'int foo()'
-		cp = host_cpu.new_cparser
-		cp.parse(proto)
+		@cp ||= host_cpu.new_cparser
+		@cp.parse(proto)
 
-		cp.toplevel.symbol.each_value { |v|
+		@cp.toplevel.symbol.dup.each_value { |v|
 			next if not v.kind_of? C::Variable	# enums
+			@cp.toplevel.symbol.delete v.name
 			lib = fromlib || lib_from_sym(v.name)
 			addr = sym_addr(lib, v.name)
 			next if addr == 0 or addr == 0xffff_ffff or addr == 0xffffffff_ffffffff
@@ -456,11 +457,11 @@ EOS
 			next if v.initializer	# inline & stuff
 			puts "new_api_c: load method #{v.name.downcase} from #{lib}" if $DEBUG
 
-			new_caller_for(cp, v, v.name.downcase, addr)
+			new_caller_for(@cp, v, v.name.downcase, addr)
 		}
 
 		# constant definition from macro/enum
-		cp.numeric_constants.each { |k, v|
+		@cp.numeric_constants.each { |k, v|
 			n = k.upcase
 			n = "C#{n}" if n !~ /^[A-Z]/
 			const_set(n, v) if not const_defined?(n) and v.kind_of? Integer
@@ -534,14 +535,19 @@ EOS
 		val
 	end
 
+	def self.cp; @cp ||= nil ; end
+	def self.cp=(c); @cp = c ; end
+
 	# allocate a callback for a given C prototype (string)
 	# accepts full C functions (with body) (only 1 at a time) or toplevel 'asm' statement
 	def self.callback_alloc_c(proto, &b)
 		proto += ';'	# allow 'int foo()'
-		cp = host_cpu.new_cparser
-		cp.parse(proto)
-		v = cp.toplevel.symbol.values.find_all { |v_| v_.kind_of? C::Variable and v_.type.kind_of? C::Function }.first
-		if (v and v.initializer) or cp.toplevel.statements.find { |st| st.kind_of? C::Asm }
+		@cp ||= host_cpu.new_cparser
+		@cp.parse(proto)
+		v = @cp.toplevel.symbol.values.find_all { |v_| v_.kind_of? C::Variable and v_.type.kind_of? C::Function }.first
+		if (v and v.initializer) or @cp.toplevel.statements.find { |st| st.kind_of? C::Asm }
+			@cp.toplevel.statements.delete_if { |st| st.kind_of? C::Asm }
+			@cp.toplevel.symbol.delete v.name if v
 			sc = Shellcode.compile_c(host_cpu, proto)
 			ptr = memory_alloc(sc.encoded.length)
 			sc.base_addr = ptr
@@ -552,7 +558,8 @@ EOS
 		elsif not v
 			raise 'empty prototype'
 		else
-			callback_alloc_cobj(cp, v, b)
+			@cp.toplevel.symbol.delete v.name
+			callback_alloc_cobj(@cp, v, b)
 		end
 	end
 
@@ -611,13 +618,15 @@ EOS
 		# TODO fixup external calls
 		memory_write ptr, sc.encode_string
 		memory_perm ptr, sc.encoded.length, 'rwx'
-		cp = host_cpu.new_cparser
-		cp.parse(src)	# XXX the Shellcode parser may have defined stuff / interpreted C another way...
+		@cp ||= host_cpu.new_cparser
+		@cp.parse(src)	# XXX the Shellcode parser may have defined stuff / interpreted C another way...
 		defs = []
-		cp.toplevel.symbol.each_value { |v|
-			next if not v.kind_of? C::Variable or not v.type.kind_of? C::Function or not v.initializer
+		@cp.toplevel.symbol.dup.each_value { |v|
+			next if not v.kind_of? C::Variable
+			@cp.toplevel.symbol.delete v.name
+			next if not v.type.kind_of? C::Function or not v.initializer
 			next if not off = sc.encoded.export[v.name]
-			new_caller_for(cp, v, v.name, ptr+off)
+			new_caller_for(@cp, v, v.name, ptr+off)
 			defs << v.name
 		}
 		if block_given?
@@ -631,6 +640,59 @@ EOS
 		else
 			ptr
 		end
+	end
+
+	class AllocCStruct < String
+		def initialize(cp, struct)
+			@cp, @struct = cp, struct
+			replace 0.chr*@cp.sizeof(@struct)
+		end
+
+		def [](*a)
+			return super(*a) if not a.first.kind_of? Symbol and not a.first.kind_of? String
+			fld = a.first
+			raise 'not a member' if not f = @struct.findmember(fld.to_s, true)
+			DynLdr.decode_c_value(self, f, @struct.offsetof(@cp, f.name))
+		end
+
+		def []=(*a)
+			return super(*a) if not a.first.kind_of? Symbol and not a.first.kind_of? String
+			fld, val = a
+			raise 'not a member' if not f = @struct.findmember(fld.to_s, true)
+			val = length if val == :size
+			val = DynLdr.encode_c_value(f, val)
+			super(@struct.offsetof(@cp, f.name), val.length, val)
+		end
+	end
+
+	# allocate an AllocStruct to hold a specific struct defined in a previous new_api_c
+	def self.alloc_c_struct(structname, values={})
+		struct = @cp.toplevel.struct[structname.to_s]
+		if not struct
+			struct = @cp.toplevel.symbol[structname.to_s]
+			raise "unknown struct #{structname.inspect}" if not struct
+			struct = struct.type
+			struct = struct.pointed if struct.pointer?
+		end
+		st = AllocCStruct.new(@cp, struct)
+		values.each { |k, v| st[k] = v }
+		st
+	end
+
+	# return the binary version of a ruby value encoded as a C variable
+	# only integral types handled for now
+	def self.encode_c_value(var, val)
+		# TODO encode full struct and stuff
+		val = DynLdr.convert_arg_rb2c(@cp, var, val) if not val.kind_of? Integer
+		Expression.encode_immediate(val, @cp.sizeof(var), @cp.endianness)
+	end
+
+	# decode a C variable
+	# only integral types handled for now
+	def self.decode_c_value(str, var, off=0)
+		val = Expression.decode_immediate(str, @cp.sizeof(var), @cp.endianness, off)
+		val = Expression.make_signed(val, @cp.sizeof(var)*8) if var.kind_of? C::Variable and var.type.integral? and var.type.untypedef.kind_of? C::BaseType and var.type.untypedef.specifier != :unsigned
+		val
 	end
 
 	# read a 0-terminated string from memory
