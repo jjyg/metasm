@@ -447,6 +447,25 @@ typedef struct tagACCEL {
     WORD   cmd;
 } ACCEL, *LPACCEL;
 
+#define FALSE 0
+#define TRUE 1
+
+#define SW_HIDE             0
+#define SW_SHOWNORMAL       1
+#define SW_NORMAL           1
+#define SW_SHOWMINIMIZED    2
+#define SW_SHOWMAXIMIZED    3
+#define SW_MAXIMIZE         3
+#define SW_SHOWNOACTIVATE   4
+#define SW_SHOW             5
+#define SW_MINIMIZE         6
+#define SW_SHOWMINNOACTIVE  7
+#define SW_SHOWNA           8
+#define SW_RESTORE          9
+#define SW_SHOWDEFAULT      10
+#define SW_FORCEMINIMIZE    11
+#define SW_MAX              11
+
 #define IDI_APPLICATION     32512
 #define IDI_HAND            32513
 #define IDI_QUESTION        32514
@@ -1009,6 +1028,40 @@ BOOL
 WINAPI
 UpdateWindow(
     __in HWND hWnd);
+
+#define FORMAT_MESSAGE_ALLOCATE_BUFFER 0x00000100
+#define FORMAT_MESSAGE_IGNORE_INSERTS  0x00000200
+#define FORMAT_MESSAGE_FROM_STRING     0x00000400
+#define FORMAT_MESSAGE_FROM_HMODULE    0x00000800
+#define FORMAT_MESSAGE_FROM_SYSTEM     0x00001000
+#define FORMAT_MESSAGE_ARGUMENT_ARRAY  0x00002000
+#define FORMAT_MESSAGE_MAX_WIDTH_MASK  0x000000FF
+
+WINBASEAPI
+DWORD
+WINAPI
+GetLastError(
+    VOID
+    );
+WINBASEAPI
+VOID
+WINAPI
+SetLastError(
+    __in DWORD dwErrCode
+    );
+WINBASEAPI
+DWORD
+WINAPI
+FormatMessageA(
+    DWORD dwFlags,
+    LPVOID lpSource,
+    DWORD dwMessageId,
+    DWORD dwLanguageId,
+    LPSTR lpBuffer,
+    DWORD nSize,
+    void *Arguments
+    );
+
 EOS
 
 def self.test
@@ -1021,30 +1074,25 @@ def self.test
 	:lpszclassname => 'flublu',
 	:hiconsm => loadicona(0, IDI_APPLICATION))
 
-puts 'regclass'
 	registerclassexa(cls)
 
-puts 'createwin'
 	hwnd = createwindowexa(nil, 'flublu', 'lol title', WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0)
-puts 'showwin'
-	showwindow(hwnd, SIZE_RESTORED)
-puts 'updatewin'
+	showwindow(hwnd, SW_SHOW)
 	updatewindow(hwnd)
 
 	msg = alloc_c_struct('MSG')
-puts 'getmsg'
 	while getmessagea(msg, 0, 0, 0) != 0
-puts 'translate'
 		translatemessage(msg)
-puts 'dispatch'
 		dispatchmessagea(msg)
 	end
-puts 'done'
 
 	return msg[:wparam]
 end
 
+MSGNAME = constants.grep(/WM_/).inject({}) { |h, c| h.update const_get(c) => c }
+
 def self.test_wndproc(hwnd, msg, wp, lp)
+puts "testwproc #{MSGNAME[msg] || msg}"
 	case msg
 	when WM_CREATE
 	when WM_PAINT
