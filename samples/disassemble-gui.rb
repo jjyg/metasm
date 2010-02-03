@@ -40,6 +40,7 @@ OptionParser.new { |opt|
 	opt.on('--map <mapfile>', 'load a map file (addr <-> name association)') { |f| opts[:map] = f }
 	opt.on('--fast', 'dasm cli args with disassemble_fast_deep') { opts[:fast] = true }
 	opt.on('--decompile') { opts[:decompile] = true }
+	opt.on('--gui <gtk|win32|qt>') { |g| require 'metasm/gui/' + g }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-a', '--autoload', 'loads all relevant files with same filename (.h, .map..)') { opts[:autoload] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }	# default
