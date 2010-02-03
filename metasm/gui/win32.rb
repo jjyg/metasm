@@ -7,8 +7,8 @@ require 'metasm/dynldr'
 
 module Metasm
 module Gui
-	class Win32Gui < DynLdr
-		new_api_c <<EOS
+class Win32Gui < DynLdr
+	new_api_c <<EOS
 typedef char CHAR;
 typedef unsigned char BYTE;
 typedef unsigned short WORD;
@@ -480,6 +480,10 @@ typedef struct tagACCEL {
 #define IDTRYAGAIN      10
 #define IDCONTINUE      11
 #define IDTIMEOUT 32000
+
+#define PM_NOREMOVE     0
+#define PM_REMOVE       1
+#define PM_NOYIELD      2
 
 #define IDC_ARROW           32512
 #define IDC_IBEAM           32513
@@ -1056,71 +1060,209 @@ FormatMessageA(
 
 EOS
 
-def self.test
-	cls = alloc_c_struct('WNDCLASSEXA', 
-	:cbsize => :size,
-	:lpfnwndproc => callback_alloc_c('__stdcall int wndproc(int, int, int, int)') { |hwnd, msg, wp, lp| test_wndproc(hwnd, msg, wp, lp) },
-	:hicon => loadicona(0, IDI_APPLICATION),
-	:hcursor => loadcursora(0, IDC_ARROW),
-	:hbrbackground => getstockobject(DKGRAY_BRUSH),
-	:lpszclassname => 'flublu',
-	:hiconsm => loadicona(0, IDI_APPLICATION))
-
-	registerclassexa(cls)
-
-	hwnd = createwindowexa(nil, 'flublu', 'lol title', WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0)
-	showwindow(hwnd, SW_SHOW)
-	updatewindow(hwnd)
-
-	msg = alloc_c_struct('MSG')
-	while getmessagea(msg, 0, 0, 0) != 0
-		translatemessage(msg)
-		dispatchmessagea(msg)
-	end
-
-	return msg[:wparam]
 end
 
-MSGNAME = constants.grep(/WM_/).inject({}) { |h, c| h.update const_get(c) => c }
-
-def self.test_wndproc(hwnd, msg, wp, lp)
-puts "testwproc #{MSGNAME[msg] || msg}"
-	case msg
-	when WM_CREATE
-	when WM_PAINT
-		ps = alloc_c_struct('PAINTSTRUCT')
-		rc = beginpaint(hwnd, ps)
-		# stuff
-		endpaint(hwnd, ps)
-	when WM_CHAR
-		case wp
-		when ?q, 0x1b; postquitmessage(0)	# 1b = esc
-		end
-	when WM_LBUTTONDOWN
-		r = alloc_c_struct('RECT', :left => 0, :top => 42, :right => 28, :bottom => 58)
-		invalidaterect(hwnd, r, FALSE)	# false/true -> paint background
-		updatewindow(hwnd)
-	when WM_DESTROY
-		postquitmessage(0)
-	else return defwindowproca(hwnd, msg, wp, lp)
-	end
-	0
-end
-
-test
-	end
-
-	module Protect
+module Protect
+	@@lasterror = Time.now
+	def protect
+		yield
+	rescue Object
+		puts $!.message, $!.backtrace   # also dump on stdout, for c/c
+		delay = Time.now-@@lasterror
+		sleep 1-delay if delay < 1      # msgbox flood protection
 		@@lasterror = Time.now
-		def protect
-			yield
-		rescue Object
-			puts $!.message, $!.backtrace   # also dump on stdout, for c/c
-			delay = Time.now-@@lasterror
-			sleep 1-delay if delay < 1      # msgbox flood protection
-			@@lasterror = Time.now
-			messagebox([$!.message, $!.backtrace].join("\n"), $!.class.name)
-		end
+		messagebox([$!.message, $!.backtrace].join("\n"), $!.class.name)
 	end
 end
+
+module Msgbox
+	include Protect
+
+	def toplevel
+		if kind_of? Window
+			hwnd
+		elsif respond_to? :parent_hwnd
+			parent_hwnd
+		else
+			0
+		end
+	end
+
+	# shows a message box (non-modal)
+	# args: message, title/optionhash
+	def messagebox(*a)
+		MessageBox.new(toplevel, *a)
+	end
+
+	# asks for user input, yields the result (unless 'cancel' clicked)
+	# args: prompt, :text => default text, :title => title
+	def inputbox(*a)
+		InputBox.new(toplevel, *a) { |*ya| protect { yield(*ya) } }
+	end
+
+	# asks to chose a file to open, yields filename
+	# args: title, :path => path
+	def openfile(*a)
+		OpenFile.new(toplevel, *a) { |*ya| protect { yield(*ya) } }
+	end
+
+	# same as openfile, but for writing a (new) file
+	def savefile(*a)
+		SaveFile.new(toplevel, *a) { |*ya| protect { yield(*ya) } }
+	end
+
+	# displays a popup showing a table, yields the selected row
+	# args: title, [[col0 title, col1 title...], [col0 val0, col1 val0...], [val1], [val2]...]
+	def listwindow(*a)
+		ListWindow.new(toplevel, *a) { |*ya| protect { yield(*ya) } }
+	end
 end
+
+class ContainerChoiceWidget
+	include Msgbox
+
+	attr_accessor :views, :view_indexes
+	def initialize(*a)
+		@views = {}
+		@view_indexes = []
+		@curview = nil
+
+		#on WM_SHOW { initialize_visible }
+		initialize_widget(*a)
+	end
+
+	def view(i)
+		@views[i]
+	end
+
+	def showview(i)
+		@curview = @view_indexes.index(i)
+	end
+
+	def addview(name, w)
+		@view_indexes << name
+		@views[name] = w
+	end
+
+	def curview
+		@curview
+	end
+
+	def curview_index
+		@view_indexes[@curview]
+	end
+
+	def win32gui_forwardto
+		@curview
+	end
+end
+
+class ContainerVBoxWidget
+end
+
+class DrawableWidget
+end
+
+class MessageBox
+end
+
+class InputBox
+end
+
+class OpenFile
+end
+
+class SaveFile
+end
+
+class ListWindow
+end
+
+class Window
+	include Msgbox
+
+	attr_accessor :menu, :hwnd, :widget
+	def initialize(*a)
+		cls = Win32Gui.alloc_c_struct 'WNDCLASSEXA', :cbsize => :size,
+				:hcursor => Win32Gui.loadcursora(0, Win32Gui::IDC_ARROW),
+				:lpszclassname => "w32gui_#{object_id}",
+  				:lpfnwndproc => Win32Gui.callback_alloc_c('__stdcall int wndproc(int, int, int, int)') { |hwnd, msg, wp, lp| windowproc(hwnd, msg, wp, lp) }
+
+		Win32Gui.registerclassexa(cls)
+		
+		@hwnd = Win32Gui.createwindowexa(nil, "w32gui_#{object_id}", 'win32gui window', Win32Gui::WS_OVERLAPPEDWINDOW, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, 0, 0, 0, 0)
+		Win32Gui.showwindow(@hwnd, Win32Gui::SW_SHOW)
+		#Win32Gui.updatewindow(@hwnd)
+	end
+
+	MSGNAME = Win32Gui.constants.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
+	def windowproc(hwnd, msg, wparam, lparam)
+puts "wproc #{hwnd} #{MSGNAME[msg] || msg}"
+		case msg
+		when Win32Gui::WM_CREATE
+			# build_menu now ?
+		when Win32Gui::WM_PAINT
+			ps = Win32Gui.alloc_c_struct('PAINTSTRUCT')
+			rc = Win32Gui.beginpaint(hwnd, ps)
+			# call @widget paint
+			Win32Gui.endpaint(hwnd, ps)
+		when Win32Gui::WM_CHAR
+			case wparam
+			when ?q, 0x1b; Gui.main_quit
+			end
+		when Win32Gui::WM_LBUTTONDOWN
+			r = Win32Gui.alloc_c_struct('RECT', :left => 0, :top => 42, :right => 28, :bottom => 58)
+			Win32Gui.invalidaterect(hwnd, r, Win32Gui::FALSE)	# false/true -> paint background
+			Win32Gui.updatewindow(hwnd)
+		when Win32Gui::WM_DESTROY
+			Gui.main_quit
+		else return Win32Gui.defwindowproca(hwnd, msg, wparam, lparam)
+		end
+		0
+	end
+end
+
+def Gui.main
+	@idle_procs ||= []
+	msg = Win32Gui.alloc_c_struct('MSG')
+	while Win32Gui.getmessagea(msg, 0, 0, 0) != 0
+		Win32Gui.translatemessage(msg)
+		Win32Gui.dispatchmessagea(msg)
+		while not @idle_procs.empty? and Win32Gui.peekmessagea(msg, 0, 0, 0, Win32Gui::PM_NOREMOVE) == 0
+			@idle_procs.delete_if { |ip| not ip.call }
+		end
+	end
+	msg[:wparam]
+end
+
+def Gui.main_quit
+	Win32Gui.postquitmessage(0)
+end
+
+def Gui.main_iter
+	msg = Win32Gui.alloc_c_struct('MSG')
+	while Win32Gui.peekmessagea(msg, 0, 0, 0, Win32Gui::PM_REMOVE) != 0
+		Win32Gui.translatemessage(msg)
+		Win32Gui.dispatchmessagea(msg)
+	end
+end
+
+# add a lambda to be run whenever the messageloop is idle
+# the lambda is removed if it returns nil/false
+def Gui.idle_add(&b)
+	@idle_procs ||= []
+	@idle_procs << b
+end
+
+end
+end
+
+require 'metasm/gui/dasm_main'
+require 'metasm/gui/dasm_hex'
+require 'metasm/gui/dasm_listing'
+require 'metasm/gui/dasm_opcodes'
+require 'metasm/gui/dasm_coverage'
+require 'metasm/gui/dasm_graph'
+require 'metasm/gui/dasm_decomp'
+require 'metasm/gui/debug'
+
