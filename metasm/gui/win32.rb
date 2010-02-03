@@ -49,7 +49,6 @@ typedef void *HWND;
 #define __opt __attribute__((opt))
 #define __inout __in __out
 #define __in_opt __in __opt
-#define __in_opt __in __opt
 #define __out_opt __out __opt
 #define __out_ecount(c) __out
 #define __inout_ecount(c) __inout
@@ -234,9 +233,6 @@ typedef struct tagMDINEXTMENU {
 #define WM_NCRBUTTONDBLCLK              0x00A6
 #define WM_NCMBUTTONDOWN                0x00A7
 #define WM_NCMBUTTONUP                  0x00A8
-#define WM_NCRBUTTONDBLCLK              0x00A6
-#define WM_NCMBUTTONDOWN                0x00A7
-#define WM_NCMBUTTONUP                  0x00A8
 #define WM_NCMBUTTONDBLCLK              0x00A9
 #define WM_NCXBUTTONDOWN                0x00AB
 #define WM_NCXBUTTONUP                  0x00AC
@@ -251,7 +247,6 @@ typedef struct tagMDINEXTMENU {
 #define WM_SYSKEYUP                     0x0105
 #define WM_SYSCHAR                      0x0106
 #define WM_SYSDEADCHAR                  0x0107
-#define WM_KEYLAST                      0x0108
 #define WM_UNICHAR                      0x0109
 #define WM_KEYLAST                      0x0109
 #define UNICODE_NOCHAR                  0xFFFF
