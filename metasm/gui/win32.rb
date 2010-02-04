@@ -37,6 +37,7 @@ typedef void *HICON;
 typedef void *HINSTANCE;
 typedef void *HMENU;
 typedef void *HMODULE;
+typedef void *HPEN;
 typedef void *HWND;
 
 #define DECLSPEC_IMPORT __declspec(dllimport)
@@ -50,6 +51,7 @@ typedef void *HWND;
 #define __inout __in __out
 #define __in_opt __in __opt
 #define __out_opt __out __opt
+#define __in_ecount(c) __in
 #define __out_ecount(c) __out
 #define __inout_ecount(c) __inout
 
@@ -461,6 +463,52 @@ typedef struct tagACCEL {
 #define SW_FORCEMINIMIZE    11
 #define SW_MAX              11
 
+#define MF_INSERT           0x00000000L
+#define MF_CHANGE           0x00000080L
+#define MF_APPEND           0x00000100L
+#define MF_DELETE           0x00000200L
+#define MF_REMOVE           0x00001000L
+#define MF_BYCOMMAND        0x00000000L
+#define MF_BYPOSITION       0x00000400L
+#define MF_SEPARATOR        0x00000800L
+#define MF_ENABLED          0x00000000L
+#define MF_GRAYED           0x00000001L
+#define MF_DISABLED         0x00000002L
+#define MF_UNCHECKED        0x00000000L
+#define MF_CHECKED          0x00000008L
+#define MF_USECHECKBITMAPS  0x00000200L
+#define MF_STRING           0x00000000L
+#define MF_BITMAP           0x00000004L
+#define MF_OWNERDRAW        0x00000100L
+#define MF_POPUP            0x00000010L
+#define MF_MENUBARBREAK     0x00000020L
+#define MF_MENUBREAK        0x00000040L
+#define MF_UNHILITE         0x00000000L
+#define MF_HILITE           0x00000080L
+#define MF_DEFAULT          0x00001000L
+#define MF_SYSMENU          0x00002000L
+#define MF_HELP             0x00004000L
+#define MF_RIGHTJUSTIFY     0x00004000L
+#define MF_MOUSESELECT      0x00008000L
+#define MFT_STRING          MF_STRING
+#define MFT_BITMAP          MF_BITMAP
+#define MFT_MENUBARBREAK    MF_MENUBARBREAK
+#define MFT_MENUBREAK       MF_MENUBREAK
+#define MFT_OWNERDRAW       MF_OWNERDRAW
+#define MFT_RADIOCHECK      0x00000200L
+#define MFT_SEPARATOR       MF_SEPARATOR
+#define MFT_RIGHTORDER      0x00002000L
+#define MFT_RIGHTJUSTIFY    MF_RIGHTJUSTIFY
+// Menu flags for Add/Check/EnableMenuItem
+#define MFS_GRAYED          0x00000003L
+#define MFS_DISABLED        MFS_GRAYED
+#define MFS_CHECKED         MF_CHECKED
+#define MFS_HILITE          MF_HILITE
+#define MFS_ENABLED         MF_ENABLED
+#define MFS_UNCHECKED       MF_UNCHECKED
+#define MFS_UNHILITE        MF_UNHILITE
+#define MFS_DEFAULT         MF_DEFAULT
+
 #define IDI_APPLICATION     32512
 #define IDI_HAND            32513
 #define IDI_QUESTION        32514
@@ -523,6 +571,34 @@ typedef struct tagACCEL {
 #define DC_BRUSH            18
 #define DC_PEN              19
 
+#define BS_SOLID            0
+#define BS_NULL             1
+#define BS_HOLLOW           BS_NULL
+#define BS_HATCHED          2
+#define BS_PATTERN          3
+#define BS_INDEXED          4
+#define BS_DIBPATTERN       5
+#define BS_DIBPATTERNPT     6
+#define BS_PATTERN8X8       7
+#define BS_DIBPATTERN8X8    8
+#define BS_MONOPPATTERN     9
+
+#define HS_HORIZONTAL       0
+#define HS_VERTICAL         1
+#define HS_FDIAGONAL        2
+#define HS_BDIAGONAL        3
+#define HS_CROSS            4
+#define HS_DIAGCROSS        5
+
+#define PS_SOLID            0
+#define PS_DASH             1
+#define PS_DOT              2
+#define PS_DASHDOT          3
+#define PS_DASHDOTDOT       4
+#define PS_NULL             5
+#define PS_INSIDEFRAME      6
+#define PS_USERSTYLE        7
+#define PS_ALTERNATE        8
 
 typedef struct tagMSG {
     HWND hwnd;
@@ -1027,6 +1103,45 @@ BOOL
 WINAPI
 UpdateWindow(
     __in HWND hWnd);
+WINUSERAPI
+BOOL
+WINAPI
+GetClientRect(
+    __in HWND hWnd,
+    __out LPRECT lpRect);
+WINUSERAPI
+BOOL
+WINAPI
+GetWindowRect(
+    __in HWND hWnd,
+    __out LPRECT lpRect);
+WINUSERAPI
+BOOL
+WINAPI
+AdjustWindowRect(
+    __inout LPRECT lpRect,
+    __in DWORD dwStyle,
+    __in BOOL bMenu);
+WINUSERAPI
+BOOL
+WINAPI
+AdjustWindowRectEx(
+    __inout LPRECT lpRect,
+    __in DWORD dwStyle,
+    __in BOOL bMenu,
+    __in DWORD dwExStyle);
+HBRUSH WINAPI CreateSolidBrush(DWORD color);
+HPEN WINAPI CreatePen(int style, int width, DWORD color);
+DWORD WINAPI SetTextColor(__in HDC hdc, __in DWORD color);
+BOOL WINAPI TextOutA( __in HDC hdc, __in int x, __in int y, __in_ecount(c) LPCSTR lpString, __in int c);
+BOOL WINAPI MoveToEx( __in HDC hdc, __in int x, __in int y, __out_opt LPPOINT lppt);
+BOOL WINAPI LineTo( __in HDC hdc, __in int x, __in int y);
+BOOL WINAPI Rectangle(__in HDC hdc, __in int left, __in int top, __in int right, __in int bottom);
+HANDLE WINAPI SelectObject(__in HDC hdc, __in HANDLE h);
+DWORD WINAPI SetBkColor(__in HDC hdc, __in DWORD color);
+DWORD WINAPI SetDCBrushColor(__in HDC hdc, __in DWORD color);
+DWORD WINAPI SetDCPenColor(__in HDC hdc, __in DWORD color);
+int WINAPI FillRect(__in HDC hDC, __in CONST RECT *lprc, __in HBRUSH hbr);
 
 #define FORMAT_MESSAGE_ALLOCATE_BUFFER 0x00000100
 #define FORMAT_MESSAGE_IGNORE_INSERTS  0x00000200
@@ -1038,9 +1153,7 @@ UpdateWindow(
 
 DWORD
 WINAPI
-GetLastError(
-    VOID
-    );
+GetLastError(VOID);
 VOID
 WINAPI
 SetLastError(
@@ -1057,7 +1170,6 @@ FormatMessageA(
     DWORD nSize,
     void *Arguments
     );
-
 EOS
 
 end
@@ -1161,9 +1273,82 @@ class ContainerVBoxWidget
 end
 
 class DrawableWidget
+	def initialize(*a)
+		@color = {}
+		@default_color_association = { :background => :palegrey }
+		{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
+			:red => 'f00', :darkred => '800', :palered => 'fcc',
+			:green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
+			:blue => '00f', :darkblue => '008', :paleblue => 'ccf',
+			:yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
+		}.each { |tag, val|
+			@color[tag] = color(val)
+		}
+
+		initialize_widget(*a)
+		set_font('courier 10')
+		set_color_association(@default_color_association)	# should be called after Gui.main
+	end
+
+	def set_color_association(h)
+		h.each { |k, v| @color[k] = color(v) }
+		gui_update
+	end
+
+	def setfont(fu)
+		hdc = Win32Gui.createdc('DISPLAY', 0, 0, 0)
+		# selectobject(hdc, hfont)
+		sz = Win32Gui.alloc_c_struct('POINT')
+		Win32Gui.gettextextentpoint(hdc, 'x', 1, sz)
+		@font_width = sz[:x]
+		@font_height = sz[:y]
+	end
+
+	def color(col)
+		@color[col] ||= col.sub(/^(\w)(\w)(\w)$/, '\\3\\3\\2\\2\\1\\1').to_i(16)
+	end
+
+	def draw_color(col)
+		col = color(col)
+		Win32Gui.settextcolor(@hdc, col)
+		Win32Gui.setdcpencolor(@hdc, col)
+		Win32Gui.setdcbrushcolor(@hdc, col)
+	end
+
+	def draw_line(x, y, ex, ey)
+		Win32Gui.movetoex(@hdc, x, y, 0)
+		Win32Gui.lineto(@hdc, ex, ey)
+	end
+
+	def draw_line_color(col, x, y, ex, ey)
+		Win32Gui.setdcpencolor(@hdc, col)
+		draw_line(x, y, ex, ey)
+	end
+
+	def draw_rectangle(x, y, w, h)
+		Win32Gui.rectangle(@hdc, x, y, x+w, y+h)
+	end
+
+	def draw_rectangle_color(col, x, y, w, h)
+		Win32Gui.setdcbrushcolor(@hdc, color(col))
+		Win32Gui.setdcpencolor(@hdc, color(col))	# rect border
+		draw_rectangle(x, y, w, h)
+	end
+
+	def draw_string(x, y, text)
+		Win32Gui.textout(@hdc, x, y, text, text.length)
+	end
+
+	def draw_string_color(col, x, y, text)
+		Win32Gui.settextcolor(@hdc, color(col))
+		render_string(x, y, text)
+	end
 end
 
 class MessageBox
+	def initialize(foo, s1, s2)
+		Win32Gui.messageboxa(0, s1, s2, 0)
+	end
 end
 
 class InputBox
@@ -1183,42 +1368,139 @@ class Window
 
 	attr_accessor :menu, :hwnd, :widget
 	def initialize(*a)
+		cname = "metasm_w32gui_#{object_id}"
 		cls = Win32Gui.alloc_c_struct 'WNDCLASSEXA', :cbsize => :size,
 				:hcursor => Win32Gui.loadcursora(0, Win32Gui::IDC_ARROW),
-				:lpszclassname => "w32gui_#{object_id}",
+				:lpszclassname => cname,
   				:lpfnwndproc => Win32Gui.callback_alloc_c('__stdcall int wndproc(int, int, int, int)') { |hwnd, msg, wp, lp| windowproc(hwnd, msg, wp, lp) }
 
 		Win32Gui.registerclassexa(cls)
 		
-		@hwnd = Win32Gui.createwindowexa(nil, "w32gui_#{object_id}", 'win32gui window', Win32Gui::WS_OVERLAPPEDWINDOW, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, 0, 0, 0, 0)
-		Win32Gui.showwindow(@hwnd, Win32Gui::SW_SHOW)
-		#Win32Gui.updatewindow(@hwnd)
+		@hwnd = Win32Gui.createwindowexa(nil, cname, 'win32gui window', Win32Gui::WS_OVERLAPPEDWINDOW, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, 0, 0, 0, 0)
+
+		@controlid = 1	# next free control id for menu items, buttons etc
+		@control_action = {}
+
+		(@@mainwindow_list ||= []) << self
+
+		@widget = nil
+
+		initialize_window(*a)
+
+		@menu = new_menu
+		build_menu
+		Win32Gui.setmenu(@hwnd, @menu)
+
+		Win32Gui.showwindow(@hwnd, Win32Gui::SW_SHOWDEFAULT)
+		Win32Gui.updatewindow(@hwnd)
 	end
 
 	MSGNAME = Win32Gui.constants.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
 	def windowproc(hwnd, msg, wparam, lparam)
-puts "wproc #{hwnd} #{MSGNAME[msg] || msg}"
+puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lparam}"
 		case msg
 		when Win32Gui::WM_CREATE
 			# build_menu now ?
 		when Win32Gui::WM_PAINT
 			ps = Win32Gui.alloc_c_struct('PAINTSTRUCT')
 			rc = Win32Gui.beginpaint(hwnd, ps)
-			# call @widget paint
+			Win32Gui.selectobject(rc, Win32Gui.getstockobject(Win32Gui::DC_BRUSH))
+			Win32Gui.selectobject(rc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
+			if @widget
+				@widget.paint(hwnd, ps, rc, msg, wparam, lparam)
+			else
+				Win32Gui.setdcbrushcolor(rc, 0xdddddd)
+				Win32Gui.setdcpencolor(rc, 0xdddddd)
+				Win32Gui.rectangle(rc, 0, 0, 0xffff, 0xffff)
+			end
 			Win32Gui.endpaint(hwnd, ps)
 		when Win32Gui::WM_CHAR
 			case wparam
-			when ?q, 0x1b; Gui.main_quit
+			when ?q, 0x1b; destroy
 			end
 		when Win32Gui::WM_LBUTTONDOWN
 			r = Win32Gui.alloc_c_struct('RECT', :left => 0, :top => 42, :right => 28, :bottom => 58)
 			Win32Gui.invalidaterect(hwnd, r, Win32Gui::FALSE)	# false/true -> paint background
 			Win32Gui.updatewindow(hwnd)
 		when Win32Gui::WM_DESTROY
-			Gui.main_quit
+			destroy_window
+		when Win32Gui::WM_COMMAND
+			if a = @control_action[wparam]
+				protect { a.call }
+			end
 		else return Win32Gui.defwindowproca(hwnd, msg, wparam, lparam)
 		end
 		0
+	end
+
+	def destroy
+		Win32Gui.sendmessagea(@hwnd, Win32Gui::WM_CLOSE, 0, 0)
+	end
+
+	def destroy_window
+		@@mainwindow_list.delete self
+		Gui.main_quit if @@mainwindow_list.empty?	# XXX we didn't call Gui.main, we shouldn't Gui.main_quit...
+	end
+
+	def new_menu
+		Win32Gui.createmenu()
+	end
+
+	def addsubmenu(menu, *args, &actions)
+		stock = (%w[OPEN SAVE QUIT] & args).first
+		args.delete stock if stock
+		accel = args.grep(/^\^?(\w|<\w+>)$/).first
+		args.delete accel if accel
+		check = args.delete :check
+		submenu = args.grep(Integer).first
+		args.delete submenu if submenu
+		label = args.shift
+
+		label ||= '_' + stock.capitalize if stock
+
+		flags = 0
+
+		flags |= (args.shift ? Win32Gui::MF_CHECKED : Win32Gui::MF_UNCHECKED) if check
+		flags |= Win32Gui::MF_POPUP if submenu
+		if label
+			flags |= Win32Gui::MF_STRING
+			label = label.tr('_', '&')
+		else
+			flags |= Win32Gui::MF_SEPARATOR
+		end
+		#item.set_submenu(submenu) if submenu
+
+		if accel
+			key = accel[-1]
+			if key == ?>
+				key = case accel[/<(.*)>/, 1]
+				when 'enter'; #Gdk::Keyval::GDK_Return
+				when 'esc'; #Gdk::Keyval::GDK_Escape
+				when 'tab'; #Gdk::Keyval::GDK_Tab
+				else ??
+				end || ??
+			end
+			#add_accelerator(accel[0] == ?^ ? CONTROL_MASK : 0)
+		end
+
+		if actions
+			id = @controlid
+			@control_action[id] = actions
+			@controlid += 1
+		end
+
+		Win32Gui.appendmenua(menu, flags, id || submenu, label)
+
+		id	# what do we return for submenus ?
+	end
+
+	def hack_accel_group
+	end
+
+	def title; @title; end
+	def title=(t)
+		@title = t
+		Win32Gui.setwindowtexta(@hwnd, @title)
 	end
 end
 
