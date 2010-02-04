@@ -1408,7 +1408,7 @@ EOH
 						end
 					end
 					if $VERBOSE and not body.statements.last.kind_of? Return and not body.statements.last.kind_of? Asm
-						puts tok.exception('missing function return value').message if not var.type.type.kind_of? BaseType or var.type.type.name != :void
+						puts tok.exception('missing function return value').message if not var.type.type.untypedef.kind_of? BaseType or var.type.type.untypedef.name != :void
 					end
 					break
 				when 'asm', '__asm', '__asm__'
@@ -1479,7 +1479,7 @@ EOH
 				raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
 				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
-				if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
+				if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.untypedef.kind_of? BaseType or expr.type.untypedef.name != :void) and CExpression.constant?(expr)
 					puts tok.exception("statement with no effect : #{expr}").message
 				end
 				return expr
@@ -1541,7 +1541,7 @@ EOH
 					raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
 					raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
 
-					if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.kind_of? BaseType or expr.type.name != :void) and CExpression.constant?(expr)
+					if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.untypedef.kind_of? BaseType or expr.type.untypedef.name != :void) and CExpression.constant?(expr)
 						puts tok.exception("statement with no effect : #{expr}").message
 					end
 					expr
@@ -1897,7 +1897,7 @@ EOH
 							v.type = Pointer.new(v.type.type) if v.type.kind_of? Array
 							v.type = Pointer.new(v.type) if v.type.kind_of? Function
 
-							t.type.args << v if not v.type.kind_of? BaseType or v.type.name != :void
+							t.type.args << v if not v.type.untypedef.kind_of? BaseType or v.type.untypedef.name != :void
 						end
 
 						if tok = parser.skipspaces and tok.type == :punct and tok.raw == ','
