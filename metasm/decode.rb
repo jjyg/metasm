@@ -586,7 +586,7 @@ class CPU
 
 	# updates f.backtrace_binding when a new return address has been found
 	# TODO update also when anything changes inside the function (new loop found etc) - use backtracked_for ?
-	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist)
+	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist, *wantregs)
 	end
 
 	# returns if the expression is an address on the stack
