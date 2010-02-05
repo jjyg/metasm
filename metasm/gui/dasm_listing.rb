@@ -381,8 +381,6 @@ class AsmListingWidget < DrawableWidget
 
 	# reads @dasm to update @line_text_color/@line_text/@line_address/@arrows
 	def update_line_text
-		return if not w = window
-
 		@want_update_line_text = false
 
 		w_h = (height + @font_height - 1) / @font_height

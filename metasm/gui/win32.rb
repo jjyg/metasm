@@ -463,6 +463,20 @@ typedef struct tagACCEL {
 #define SW_FORCEMINIMIZE    11
 #define SW_MAX              11
 
+#define CS_VREDRAW          0x0001
+#define CS_HREDRAW          0x0002
+#define CS_DBLCLKS          0x0008
+#define CS_OWNDC            0x0020
+#define CS_CLASSDC          0x0040
+#define CS_PARENTDC         0x0080
+#define CS_NOCLOSE          0x0200
+#define CS_SAVEBITS         0x0800
+#define CS_BYTEALIGNCLIENT  0x1000
+#define CS_BYTEALIGNWINDOW  0x2000
+#define CS_GLOBALCLASS      0x4000
+#define CS_IME              0x00010000
+#define CS_DROPSHADOW       0x00020000
+
 #define MF_INSERT           0x00000000L
 #define MF_CHANGE           0x00000080L
 #define MF_APPEND           0x00000100L
@@ -633,6 +647,96 @@ typedef struct tagACCEL {
 #define PS_USERSTYLE        7
 #define PS_ALTERNATE        8
 
+#define KF_EXTENDED       0x0100
+#define KF_DLGMODE        0x0800
+#define KF_MENUMODE       0x1000
+#define KF_ALTDOWN        0x2000
+#define KF_REPEAT         0x4000
+#define KF_UP             0x8000
+
+#define VK_LBUTTON        0x01
+#define VK_RBUTTON        0x02
+#define VK_CANCEL         0x03
+#define VK_MBUTTON        0x04
+#define VK_XBUTTON1       0x05
+#define VK_XBUTTON2       0x06
+#define VK_BACK           0x08
+#define VK_TAB            0x09
+#define VK_CLEAR          0x0C
+#define VK_RETURN         0x0D
+#define VK_SHIFT          0x10
+#define VK_CONTROL        0x11
+#define VK_MENU           0x12
+#define VK_PAUSE          0x13
+#define VK_CAPITAL        0x14
+#define VK_ESCAPE         0x1B
+#define VK_CONVERT        0x1C
+#define VK_NONCONVERT     0x1D
+#define VK_ACCEPT         0x1E
+#define VK_MODECHANGE     0x1F
+#define VK_SPACE          0x20
+#define VK_PRIOR          0x21
+#define VK_NEXT           0x22
+#define VK_END            0x23
+#define VK_HOME           0x24
+#define VK_LEFT           0x25
+#define VK_UP             0x26
+#define VK_RIGHT          0x27
+#define VK_DOWN           0x28
+#define VK_SELECT         0x29
+#define VK_PRINT          0x2A
+#define VK_EXECUTE        0x2B
+#define VK_SNAPSHOT       0x2C
+#define VK_INSERT         0x2D
+#define VK_DELETE         0x2E
+#define VK_HELP           0x2F
+// VK_0 - VK_9 are the same as ASCII '0' - '9' (0x30 - 0x39)
+// VK_A - VK_Z are the same as ASCII 'A' - 'Z' (0x41 - 0x5A)
+#define VK_LWIN           0x5B
+#define VK_RWIN           0x5C
+#define VK_APPS           0x5D
+#define VK_SLEEP          0x5F
+#define VK_NUMPAD0        0x60
+#define VK_NUMPAD1        0x61
+#define VK_NUMPAD2        0x62
+#define VK_NUMPAD3        0x63
+#define VK_NUMPAD4        0x64
+#define VK_NUMPAD5        0x65
+#define VK_NUMPAD6        0x66
+#define VK_NUMPAD7        0x67
+#define VK_NUMPAD8        0x68
+#define VK_NUMPAD9        0x69
+#define VK_MULTIPLY       0x6A
+#define VK_ADD            0x6B
+#define VK_SEPARATOR      0x6C
+#define VK_SUBTRACT       0x6D
+#define VK_DECIMAL        0x6E
+#define VK_DIVIDE         0x6F
+#define VK_F1             0x70
+#define VK_F2             0x71
+#define VK_F3             0x72
+#define VK_F4             0x73
+#define VK_F5             0x74
+#define VK_F6             0x75
+#define VK_F7             0x76
+#define VK_F8             0x77
+#define VK_F9             0x78
+#define VK_F10            0x79
+#define VK_F11            0x7A
+#define VK_F12            0x7B
+#define VK_F13            0x7C
+#define VK_F14            0x7D
+#define VK_F15            0x7E
+#define VK_F16            0x7F
+#define VK_F17            0x80
+#define VK_F18            0x81
+#define VK_F19            0x82
+#define VK_F20            0x83
+#define VK_F21            0x84
+#define VK_F22            0x85
+#define VK_F23            0x86
+#define VK_F24            0x87
+
 typedef struct tagMSG {
     HWND hwnd;
     UINT message;
@@ -650,6 +754,15 @@ GetMessageA(
     __in_opt HWND hWnd,
     __in UINT wMsgFilterMin,
     __in UINT wMsgFilterMax);
+WINUSERAPI
+BOOL
+WINAPI
+PeekMessageA(
+    __out LPMSG lpMsg,
+    __in_opt HWND hWnd,
+    __in UINT wMsgFilterMin,
+    __in UINT wMsgFilterMax,
+    __in UINT wRemoveMsg);
 WINUSERAPI
 BOOL
 WINAPI
@@ -693,6 +806,11 @@ VOID
 WINAPI
 PostQuitMessage(
     __in int nExitCode);
+WINUSERAPI
+DWORD
+WINAPI
+GetKeyState(
+    __in int nVirtKey);
 
 typedef __stdcall LRESULT (*WNDPROC)(HWND, UINT, WPARAM, LPARAM);
 typedef struct tagWNDCLASSA {
@@ -801,6 +919,24 @@ WINAPI
 EndDialog(
     __in HWND hDlg,
     __in INT_PTR nResult);
+HDC
+WINAPI
+CreateDCA(
+	__in_opt LPCSTR pwszDriver,
+	__in_opt LPCSTR pwszDevice,
+	__in_opt LPCSTR pszPort,
+	__in_opt LPVOID pdm);
+BOOL
+WINAPI
+DeleteDC(
+	__in HDC hdc);
+BOOL
+WINAPI
+GetTextExtentPointA(
+	__in HDC hdc,
+	__in_ecount(c) LPCSTR lpString,
+	__in int c,
+	__out LPPOINT lpsz);
 WINUSERAPI
 HWND
 WINAPI
@@ -1229,13 +1365,7 @@ module Msgbox
 	include Protect
 
 	def toplevel
-		if kind_of? Window
-			hwnd
-		elsif respond_to? :parent_hwnd
-			parent_hwnd
-		else
-			0
-		end
+		@hwnd || 0
 	end
 
 	# shows a message box (non-modal)
@@ -1268,7 +1398,17 @@ module Msgbox
 	end
 end
 
-class ContainerChoiceWidget
+class WinWidget
+	attr_accessor :parent, :hwnd, :x, :y, :width, :height
+
+	def initialize
+		@parent = nil
+		@hwnd = nil
+		@x = @y = @width = @height = 0
+	end
+end
+
+class ContainerChoiceWidget < WinWidget
 	include Msgbox
 
 	attr_accessor :views, :view_indexes
@@ -1276,9 +1416,16 @@ class ContainerChoiceWidget
 		@views = {}
 		@view_indexes = []
 		@curview = nil
+		@visible = false
 
-		#on WM_SHOW { initialize_visible }
+		super()
+
 		initialize_widget(*a)
+	end
+
+	def initialize_visible_
+		@visible = true
+		@views.each { |k, v| v.initialize_visible_ }
 	end
 
 	def view(i)
@@ -1286,12 +1433,19 @@ class ContainerChoiceWidget
 	end
 
 	def showview(i)
-		@curview = @view_indexes.index(i)
+		@curview = @views[i]
+		@curview.redraw if @curview
 	end
 
 	def addview(name, w)
 		@view_indexes << name
 		@views[name] = w
+		@curview ||= w
+		w.parent = self
+		w.hwnd = @hwnd
+		w.x, w.y, w.width, w.height = @x, @y, @width, @height
+		w.initialize_visible_ if @visible
+		w
 	end
 
 	def curview
@@ -1299,21 +1453,72 @@ class ContainerChoiceWidget
 	end
 
 	def curview_index
-		@view_indexes[@curview]
+		@view_indexes.index(@curview)
 	end
 
-	def win32gui_forwardto
-		@curview
+	%w[click click_ctrl rightclick doubleclick mouse_wheel mouse_wheel_ctrl keypress keypress_ctrl].each { |m|
+		define_method(m) { |*a| @curview.send(m, *a) if @curview and @curview.respond_to? m }
+	}
+
+	def paint_(rc)
+		@curview.paint_(rc) if @curview
+	end
+
+	def resized_(w, h)
+		@width = w
+		@height = h
+		@views.each { |k, v| v.resized_(w, h) }
+	end
+
+	def hwnd=(h)
+		@hwnd = h
+		@views.each { |k, v| v.hwnd = h }
 	end
 end
 
-class ContainerVBoxWidget
+class ContainerVBoxWidget < WinWidget
 end
 
-class DrawableWidget
+module TextWidget
+	def initialize_text
+		@caret_x = @caret_y = 0		# text cursor position
+		@oldcaret_x = @oldcaret_y = 1
+		@hl_word = nil
+	end
+
+	def update_hl_word(line, offset)
+		return if not line
+		word = line[0...offset].to_s[/\w*$/] << line[offset..-1].to_s[/^\w*/]
+		word = nil if word == ''
+		@hl_word = word if @hl_word != word
+	end
+
+	def set_caret_from_click(x, y)
+		@caret_x = (x-1).to_i / @font_width
+		@caret_y = y.to_i / @font_height
+		update_caret
+	end
+
+	def invalidate_caret(cx, cy, x=0, y=0)
+		invalidate(x + cx*@font_width, y + cy*@font_height, 2, @font_height)
+	end
+end
+
+class DrawableWidget < WinWidget
+	include TextWidget
+
 	def initialize(*a)
+puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		@color = {}
 		@default_color_association = { :background => :palegrey }
+
+		super()
+
+		initialize_text
+		initialize_widget(*a)
+	end
+
+	def initialize_visible_
 		{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
 			:red => 'f00', :darkred => '800', :palered => 'fcc',
 			:green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
@@ -1322,10 +1527,9 @@ class DrawableWidget
 		}.each { |tag, val|
 			@color[tag] = color(val)
 		}
-
-		initialize_widget(*a)
-		set_font('courier 10')
 		set_color_association(@default_color_association)	# should be called after Gui.main
+		set_font('courier 10')
+		initialize_visible if respond_to? :initialize_visible
 	end
 
 	def set_color_association(h)
@@ -1333,13 +1537,48 @@ class DrawableWidget
 		gui_update
 	end
 
-	def setfont(fu)
-		hdc = Win32Gui.createdc('DISPLAY', 0, 0, 0)
+	def set_font(todo)
+		hdc = Win32Gui.getdc(@hwnd)
 		# selectobject(hdc, hfont)
 		sz = Win32Gui.alloc_c_struct('POINT')
-		Win32Gui.gettextextentpoint(hdc, 'x', 1, sz)
+		Win32Gui.gettextextentpointa(hdc, 'x', 1, sz)
 		@font_width = sz[:x]
 		@font_height = sz[:y]
+		Win32Gui.releasedc(@hwnd, hdc)
+	end
+
+	def grab_focus
+		@parent.set_focus(self) if @parent and @parent.respond_to? :set_focus
+	end
+	
+	def focus?
+		if @parent and @parent.respond_to? :has_focus?
+			@parent.has_focus?(self)
+		else true
+		end
+	end
+
+	def paint_(hdc)
+		@hdc = hdc
+		# TODO clipto(@x, @y, @width, @height)
+		draw_rectangle_color(:background, 0, 0, @width, @height)
+		paint
+		@hdc = nil
+	end
+
+	def resized_(w, h)
+		@width = w
+		@height = h
+		resized(w, h) if respond_to? :resized
+	end
+
+	def redraw
+		invalidate(0, 0, @width, @height)
+	end
+
+	def invalidate(x, y, w, h)
+		rect = Win32Gui.alloc_c_struct('RECT', :left => @x+x, :right => @x+x+w, :top => @y+y, :bottom => @y+y+h)
+		Win32Gui.invalidaterect(@hwnd, rect, Win32Gui::FALSE)
 	end
 
 	def color(col)
@@ -1354,8 +1593,8 @@ class DrawableWidget
 	end
 
 	def draw_line(x, y, ex, ey)
-		Win32Gui.movetoex(@hdc, x, y, 0)
-		Win32Gui.lineto(@hdc, ex, ey)
+		Win32Gui.movetoex(@hdc, @x+x, @y+y, 0)
+		Win32Gui.lineto(@hdc, @x+ex, @y+ey)
 	end
 
 	def draw_line_color(col, x, y, ex, ey)
@@ -1364,7 +1603,7 @@ class DrawableWidget
 	end
 
 	def draw_rectangle(x, y, w, h)
-		Win32Gui.rectangle(@hdc, x, y, x+w, y+h)
+		Win32Gui.rectangle(@hdc, @x+x, @y+y, @x+x+w, @y+y+h)
 	end
 
 	def draw_rectangle_color(col, x, y, w, h)
@@ -1374,18 +1613,18 @@ class DrawableWidget
 	end
 
 	def draw_string(x, y, text)
-		Win32Gui.textout(@hdc, x, y, text, text.length)
+		Win32Gui.textouta(@hdc, @x+x, @y+y, text, text.length)
 	end
 
 	def draw_string_color(col, x, y, text)
 		Win32Gui.settextcolor(@hdc, color(col))
-		render_string(x, y, text)
+		draw_string(x, y, text)
 	end
 end
 
 class MessageBox
 	def initialize(foo, s1, s2)
-		Win32Gui.messageboxa(0, s1, s2, 0)
+		Win32Gui.messageboxa(foo, s1, s2, 0)
 	end
 end
 
@@ -1404,10 +1643,17 @@ end
 class Window
 	include Msgbox
 
-	attr_accessor :menu, :hwnd, :widget
+	attr_accessor :menu, :hwnd
 	def initialize(*a)
+		@widget = nil
+		@controlid = 1	# next free control id for menu items, buttons etc
+		@control_action = {}
+		(@@mainwindow_list ||= []) << self
+		@visible = false
+
 		cname = "metasm_w32gui_#{object_id}"
 		cls = Win32Gui.alloc_c_struct 'WNDCLASSEXA', :cbsize => :size,
+				:style => Win32Gui::CS_DBLCLKS,
 				:hcursor => Win32Gui.loadcursora(0, Win32Gui::IDC_ARROW),
 				:lpszclassname => cname,
   				:lpfnwndproc => Win32Gui.callback_alloc_c('__stdcall int wndproc(int, int, int, int)') { |hwnd, msg, wp, lp| windowproc(hwnd, msg, wp, lp) }
@@ -1415,13 +1661,6 @@ class Window
 		Win32Gui.registerclassexa(cls)
 		
 		@hwnd = Win32Gui.createwindowexa(nil, cname, 'win32gui window', Win32Gui::WS_OVERLAPPEDWINDOW, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, 0, 0, 0, 0)
-
-		@controlid = 1	# next free control id for menu items, buttons etc
-		@control_action = {}
-
-		(@@mainwindow_list ||= []) << self
-
-		@widget = nil
 
 		initialize_window(*a)
 
@@ -1433,33 +1672,77 @@ class Window
 		Win32Gui.updatewindow(@hwnd)
 	end
 
+	# keypress event keyval traduction table
+	Keyboard_trad = Win32Gui.constants.grep(/^VK_/).inject({}) { |h, cst|
+		v = Win32Gui.const_get(cst)
+		key = cst.to_s.sub(/^VK_/, '').downcase.to_sym
+		h.update v => key
+		h or {	# just kept for reference
+			:page_up => :pgup, :page_down => :pgdown, :next => :pgdown,
+			:escape => :esc, :return => :enter,
+
+			:space => ?\ ,
+			:asciitilde => ?~, :quoteleft => ?`,
+			:exclam => ?!, :at => ?@,
+			:numbersign => ?#, :dollar => ?$,
+			:percent => ?%, :asciicircum => ?^,
+			:ampersand => ?&, :asterisk => ?*,
+			:parenleft => ?(, :parenright => ?),
+			:bracketleft => ?[, :bracketright => ?],
+			:braceleft => ?{, :braceright => ?},
+			:less  => ?<, :greater  => ?>,
+			:quotedbl => ?", :quoteright => ?',
+			:coma => ?,, :period => ?.,
+			:colon => ?:, :semicolon => ?;,
+			:slash => ?/, :equal => ?=,
+			:plus => ?+, :minus => ?-,
+			:question => ??, :backslash => ?\\,
+			:underscore  => ?_, :bar => ?|,
+			:comma => ?,,
+			:divide => ?/, :multiply => ?*,
+			:subtract => ?-, :add => ?+
+		}.fetch(key, key)
+	}
+
 	MSGNAME = Win32Gui.constants.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
 	def windowproc(hwnd, msg, wparam, lparam)
+case msg
+when Win32Gui::WM_NCHITTEST, Win32Gui::WM_SETCURSOR, Win32Gui::WM_MOUSEMOVE
+else
 puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lparam}"
+end
 		case msg
-		when Win32Gui::WM_CREATE
-			# build_menu now ?
+		when Win32Gui::WM_NCHITTEST, Win32Gui::WM_SETCURSOR
+			# most frequent messages (with MOUSEMOVE)
+			return Win32Gui.defwindowproca(hwnd, msg, wparam, lparam)
+		when Win32Gui::WM_MOUSEMOVE, Win32Gui::WM_LBUTTONDOWN, Win32Gui::WM_RBUTTONDOWN,
+			Win32Gui::WM_LBUTTONDBLCLK, Win32Gui::WM_MOUSEWHEEL, Win32Gui::WM_LBUTTONUP
+			mouse_msg(msg, wparam, lparam)
 		when Win32Gui::WM_PAINT
 			ps = Win32Gui.alloc_c_struct('PAINTSTRUCT')
-			rc = Win32Gui.beginpaint(hwnd, ps)
-			Win32Gui.selectobject(rc, Win32Gui.getstockobject(Win32Gui::DC_BRUSH))
-			Win32Gui.selectobject(rc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
+			hdc = Win32Gui.beginpaint(hwnd, ps)
+			Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_BRUSH))
+			Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
 			if @widget
-				@widget.paint(hwnd, ps, rc, msg, wparam, lparam)
+				@widget.paint_(hdc)
 			else
-				Win32Gui.setdcbrushcolor(rc, 0xdddddd)
-				Win32Gui.setdcpencolor(rc, 0xdddddd)
-				Win32Gui.rectangle(rc, 0, 0, 0xffff, 0xffff)
+				Win32Gui.setdcbrushcolor(hdc, 0xdddddd)
+				Win32Gui.setdcpencolor(hdc, 0xdddddd)
+				Win32Gui.rectangle(hdc, 0, 0, 0xffff, 0xffff)
 			end
 			Win32Gui.endpaint(hwnd, ps)
+		when Win32Gui::WM_SIZE
+			@widget.resized_(lparam & 0xffff, (lparam >> 16) & 0xffff) if @widget
+		when Win32Gui::WM_CREATE
+			@visible = true
+			@widget.initialize_visible_ if @widget
 		when Win32Gui::WM_CHAR
-			case wparam
-			when ?q, 0x1b; destroy
+			key = Keyboard_trad[wparam] || wparam
+			if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
+				@widget.keypress_ctrl(key) if @widget
+			else
+				@widget.keypress(key) if @widget
 			end
-		when Win32Gui::WM_LBUTTONDOWN
-			r = Win32Gui.alloc_c_struct('RECT', :left => 0, :top => 42, :right => 28, :bottom => 58)
-			Win32Gui.invalidaterect(hwnd, r, Win32Gui::FALSE)	# false/true -> paint background
-			Win32Gui.updatewindow(hwnd)
 		when Win32Gui::WM_DESTROY
 			destroy_window
 		when Win32Gui::WM_COMMAND
@@ -1469,6 +1752,52 @@ puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lpar
 		else return Win32Gui.defwindowproca(hwnd, msg, wparam, lparam)
 		end
 		0
+	end
+
+	def mouse_msg(msg, wparam, lparam)
+		return if not @widget
+		x = lparam & 0xffff
+		y = (lparam >> 16) & 0xffff
+		ctrl = true if wparam & Win32Gui::MK_CONTROL > 0
+		cmsg =
+		case msg
+		when Win32Gui::WM_MOUSEMOVE
+			:mousemove
+		when Win32Gui::WM_LBUTTONDOWN
+			ctrl ? :click_ctrl : :click
+		when Win32Gui::WM_LBUTTONUP
+			:mouserelease
+		when Win32Gui::WM_RBUTTONDOWN
+			:rightclick
+		when Win32Gui::WM_LBUTTONDBLCLK
+			:doubleclick
+		when Win32Gui::WM_MOUSEWHEEL
+			off = Expression.make_signed(wparam >> 16, 16)
+			dir = off > 0 ? :up : :down
+			if ctrl
+				return(@widget.mouse_wheel_ctrl(dir, x, y) if @widget.respond_to? :wheel_ctrl)
+			else
+				return(@widget.mouse_wheel(dir) if @widget.respond_to? :wheel)
+			end
+		end
+		@widget.send(cmsg, x, y) if cmsg and @widget.respond_to? cmsg
+	end
+
+	def widget ; @widget ; end
+	def widget=(w)
+		@widget = w
+		w.hwnd = @hwnd
+		if @visible
+			@widget.initialize_visible_
+			rect = Win32Gui.alloc_c_struct('RECT')
+			Win32Gui.getclientrect(@hwnd, rect)
+			@widget.resized_(rect[:right], rect[:bottom])
+		end
+		redraw
+	end
+
+	def redraw
+		Win32Gui.invalidaterect(@hwnd, 0, Win32Gui::FALSE)
 	end
 
 	def destroy
@@ -1506,7 +1835,6 @@ puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lpar
 		else
 			flags |= Win32Gui::MF_SEPARATOR
 		end
-		#item.set_submenu(submenu) if submenu
 
 		if accel
 			key = accel[-1]
@@ -1528,8 +1856,6 @@ puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lpar
 		end
 
 		Win32Gui.appendmenua(menu, flags, id || submenu, label)
-
-		id	# what do we return for submenus ?
 	end
 
 	def hack_accel_group
