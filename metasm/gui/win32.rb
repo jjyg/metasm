@@ -932,7 +932,7 @@ DeleteDC(
 	__in HDC hdc);
 BOOL
 WINAPI
-GetTextExtentPointA(
+GetTextExtentPoint32A(
 	__in HDC hdc,
 	__in_ecount(c) LPCSTR lpString,
 	__in int c,
@@ -1145,6 +1145,10 @@ InsertMenuItemA(
     __in BOOL fByPosition,
     __in LPCMENUITEMINFOA lpmi);
 
+#define TRANSPARENT 1
+#define OPAQUE      2
+int WINAPI SetBkMode(__in HDC hdc, __in int mode);
+
 typedef struct tagRECT {
     LONG left;
     LONG top;
@@ -1344,6 +1348,60 @@ FormatMessageA(
     DWORD nSize,
     void *Arguments
     );
+
+#define OFN_READONLY                 0x00000001
+#define OFN_OVERWRITEPROMPT          0x00000002
+#define OFN_HIDEREADONLY             0x00000004
+#define OFN_NOCHANGEDIR              0x00000008
+#define OFN_SHOWHELP                 0x00000010
+#define OFN_ENABLEHOOK               0x00000020
+#define OFN_ENABLETEMPLATE           0x00000040
+#define OFN_ENABLETEMPLATEHANDLE     0x00000080
+#define OFN_NOVALIDATE               0x00000100
+#define OFN_ALLOWMULTISELECT         0x00000200
+#define OFN_EXTENSIONDIFFERENT       0x00000400
+#define OFN_PATHMUSTEXIST            0x00000800
+#define OFN_FILEMUSTEXIST            0x00001000
+#define OFN_CREATEPROMPT             0x00002000
+#define OFN_SHAREAWARE               0x00004000
+#define OFN_NOREADONLYRETURN         0x00008000
+#define OFN_NOTESTFILECREATE         0x00010000
+#define OFN_NONETWORKBUTTON          0x00020000
+#define OFN_NOLONGNAMES              0x00040000     // force no long names for 4.x modules
+#define OFN_EXPLORER                 0x00080000     // new look commdlg
+#define OFN_NODEREFERENCELINKS       0x00100000
+#define OFN_LONGNAMES                0x00200000     // force long names for 3.x modules
+#define OFN_ENABLEINCLUDENOTIFY      0x00400000     // send include message to callback
+#define OFN_ENABLESIZING             0x00800000
+#define OFN_DONTADDTORECENT          0x02000000
+#define OFN_FORCESHOWHIDDEN          0x10000000    // Show All files including System and hidden files
+typedef struct tagOFNA {
+   DWORD        lStructSize;
+   HWND         hwndOwner;
+   HINSTANCE    hInstance;
+   LPCSTR       lpstrFilter;
+   LPSTR        lpstrCustomFilter;
+   DWORD        nMaxCustFilter;
+   DWORD        nFilterIndex;
+   LPSTR        lpstrFile;
+   DWORD        nMaxFile;
+   LPSTR        lpstrFileTitle;
+   DWORD        nMaxFileTitle;
+   LPCSTR       lpstrInitialDir;
+   LPCSTR       lpstrTitle;
+   DWORD        Flags;
+   WORD         nFileOffset;
+   WORD         nFileExtension;
+   LPCSTR       lpstrDefExt;
+   LPARAM       lCustData;
+   LPVOID       lpfnHook;
+   LPCSTR       lpTemplateName;
+   void *       pvReserved;
+   DWORD        dwReserved;
+   DWORD        FlagsEx;
+} OPENFILENAMEA, *LPOPENFILENAMEA;
+BOOL WINAPI GetOpenFileNameA(LPOPENFILENAMEA);
+BOOL WINAPI GetSaveFileNameA(LPOPENFILENAMEA);
 EOS
 
 end
@@ -1456,7 +1514,7 @@ class ContainerChoiceWidget < WinWidget
 		@view_indexes.index(@curview)
 	end
 
-	%w[click click_ctrl rightclick doubleclick mouse_wheel mouse_wheel_ctrl keypress keypress_ctrl].each { |m|
+	%w[click click_ctrl mouserelease mousemove rightclick doubleclick mouse_wheel mouse_wheel_ctrl keypress_ keypress_ctrl_].each { |m|
 		define_method(m) { |*a| @curview.send(m, *a) if @curview and @curview.respond_to? m }
 	}
 
@@ -1541,7 +1599,7 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		hdc = Win32Gui.getdc(@hwnd)
 		# selectobject(hdc, hfont)
 		sz = Win32Gui.alloc_c_struct('POINT')
-		Win32Gui.gettextextentpointa(hdc, 'x', 1, sz)
+		Win32Gui.gettextextentpoint32a(hdc, 'x', 1, sz)
 		@font_width = sz[:x]
 		@font_height = sz[:y]
 		Win32Gui.releasedc(@hwnd, hdc)
@@ -1570,6 +1628,14 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		@width = w
 		@height = h
 		resized(w, h) if respond_to? :resized
+	end
+
+	def keypress_(key)
+		keypress(key) if respond_to? :keypress
+	end
+
+	def keypress_ctrl_(key)
+		keypress_ctrl(key) if respond_to? :keypress_ctrl
 	end
 
 	def redraw
@@ -1623,18 +1689,57 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 end
 
 class MessageBox
-	def initialize(foo, s1, s2)
-		Win32Gui.messageboxa(foo, s1, s2, 0)
+	def initialize(hwnd, msg, opts={})
+		hwnd = 0	# non-modal
+		opts = { :title => opts } if opts.kind_of? String
+		Win32Gui.messageboxa(hwnd, msg, opts[:title], 0)
 	end
 end
 
 class InputBox
+	def initialize(hwnd, prompt, opts={})
+		hwnd = 0
+	end
 end
 
 class OpenFile
+	def initialize(hwnd, title, opts={})
+		hwnd = 0	# non-modal
+		buf = 0.chr*512
+		ofn = Win32Gui.alloc_c_struct 'OPENFILENAMEA',
+			:lstructsize => :size,
+  			:hwndowner => hwnd,
+			:lpstrfilter => "All Files\0*.*\0\0",
+			:lpstrfile => buf,
+			:lpstrtitle => title,
+			:nmaxfile => buf.length,
+			:flags => Win32Gui::OFN_DONTADDTORECENT | Win32Gui::OFN_PATHMUSTEXIST |
+				Win32Gui::OFN_LONGNAMES | Win32Gui::OFN_HIDEREADONLY
+		ofn[:lpstrinitialdir] = opts[:path] if opts[:path]
+		return if Win32Gui.getopenfilenamea(ofn) == 0
+		buf = buf[0, buf.index(0.chr)] if buf.index(0.chr)
+		yield buf if buf != ''
+	end
 end
 
 class SaveFile
+	def initialize(hwnd, title, opts={})
+		hwnd = 0	# non-modal
+		buf = 0.chr*512
+		ofn = Win32Gui.alloc_c_struct 'OPENFILENAMEA',
+			:lstructsize => :size,
+  			:hwndowner => hwnd,
+			:lpstrfilter => "All Files\0*.*\0\0",
+			:lpstrfile => buf,
+			:lpstrtitle => title,
+			:nmaxfile => buf.length,
+			:flags => Win32Gui::OFN_DONTADDTORECENT | Win32Gui::OFN_LONGNAMES |
+				Win32Gui::OFN_HIDEREADONLY | Win32Gui::OFN_OVERWRITEPROMPT
+		ofn[:lpstrinitialdir] = opts[:path] if opts[:path]
+		return if Win32Gui.getsavefilenamea(ofn) == 0
+		buf = buf[0, buf.index(0.chr)] if buf.index(0.chr)
+		yield buf if buf != ''
+	end
 end
 
 class ListWindow
@@ -1723,6 +1828,8 @@ end
 			hdc = Win32Gui.beginpaint(hwnd, ps)
 			Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_BRUSH))
 			Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
+			Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::SYSTEM_FIXED_FONT))
+			Win32Gui.setbkmode(hdc, Win32Gui::TRANSPARENT)
 			if @widget
 				@widget.paint_(hdc)
 			else
@@ -1736,12 +1843,19 @@ end
 		when Win32Gui::WM_CREATE
 			@visible = true
 			@widget.initialize_visible_ if @widget
+		when Win32Gui::WM_KEYDOWN
+			if key = Keyboard_trad[wparam]
+				if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
+					@widget.keypress_ctrl_(key) if @widget
+				else
+					@widget.keypress_(key) if @widget
+				end
+			end
 		when Win32Gui::WM_CHAR
-			key = Keyboard_trad[wparam] || wparam
 			if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
-				@widget.keypress_ctrl(key) if @widget
+				@widget.keypress_ctrl_(wparam) if @widget
 			else
-				@widget.keypress(key) if @widget
+				@widget.keypress_(wparam) if @widget
 			end
 		when Win32Gui::WM_DESTROY
 			destroy_window
@@ -1775,9 +1889,9 @@ end
 			off = Expression.make_signed(wparam >> 16, 16)
 			dir = off > 0 ? :up : :down
 			if ctrl
-				return(@widget.mouse_wheel_ctrl(dir, x, y) if @widget.respond_to? :wheel_ctrl)
+				return(@widget.mouse_wheel_ctrl(dir, x, y) if @widget.respond_to? :mouse_wheel_ctrl)
 			else
-				return(@widget.mouse_wheel(dir) if @widget.respond_to? :wheel)
+				return(@widget.mouse_wheel(dir) if @widget.respond_to? :mouse_wheel)
 			end
 		end
 		@widget.send(cmsg, x, y) if cmsg and @widget.respond_to? cmsg
