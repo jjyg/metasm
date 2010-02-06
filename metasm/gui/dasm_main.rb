@@ -10,7 +10,7 @@ module Gui
 class DisasmWidget < ContainerChoiceWidget
 	attr_accessor :dasm, :entrypoints, :gui_update_counter_max
 	attr_accessor :keyboard_callback, :keyboard_callback_ctrl	# hash key => lambda { |key| true if handled }
-	attr_accessor :clones, :idle_do_dasm
+	attr_accessor :clones
 	attr_accessor :pos_history, :pos_history_redo
 	attr_accessor :bg_color_callback	# proc { |address|  "rgb" # "00f" -> blue }
 	attr_accessor :focus_changed_callback
@@ -26,6 +26,9 @@ class DisasmWidget < ContainerChoiceWidget
 		@keyboard_callback_ctrl = {}
 		@clones = [self]
 		@parent_widget = nil
+		@gui_update_counter_max = 100
+		@dasm.callback_prebacktrace ||= lambda { Gui.main_iter }
+		start_disassemble_bg
 
 		addview :listing,   AsmListingWidget.new(@dasm, self)
 		addview :graph,     GraphViewWidget.new(@dasm, self)
@@ -37,32 +40,24 @@ class DisasmWidget < ContainerChoiceWidget
 		view(:listing).grab_focus
 	end
 
-	def start_disassembling
-		@gui_update_counter_max = 100
+	def start_disassemble_bg
 		gui_update_counter = 0
-		dasm_working = false
-		@idle_do_dasm = true
 		Gui.idle_add {
 			# metasm disassembler loop
 			# update gui once in a while
-			dasm_working = true if not @entrypoints.empty? or not @dasm.addrs_todo.empty?
-			if dasm_working
-				protect {
-					if not @dasm.disassemble_mainiter(@entrypoints)
-						dasm_working = false
-						gui_update_counter = @gui_update_counter_max
-					end
-				}
+			if not @entrypoints.empty? or not @dasm.addrs_todo.empty?
+				protect { @dasm.disassemble_mainiter(@entrypoints) }
 				gui_update_counter += 1
 				if gui_update_counter > @gui_update_counter_max
 					gui_update_counter = 0
 					gui_update
 				end
+				true
+			else
+				gui_update
+				false
 			end
-			@idle_do_dasm
 		}
-
-		@dasm.callback_prebacktrace ||= lambda { Gui.main_iter }
 	end
 
 	def terminate
@@ -212,6 +207,7 @@ class DisasmWidget < ContainerChoiceWidget
 		elsif addr
 			@dasm.addrs_todo << [addr]
 		end
+		start_disassemble_bg
 	end
 
 	# disassemble fast from this point (don't dasm subfunctions, don't backtrace)
@@ -376,14 +372,14 @@ class DisasmWidget < ContainerChoiceWidget
 			true
 		elsif @dasm_pause.empty?
 			@dasm_pause = @dasm.addrs_todo.dup
-			@dasm.addrs_todo.clear
-			@dasm.addrs_todo.concat @dasm_pause.find_all { |a, *b| @dasm.decoded[@dasm.normalize(a)] }
+			@dasm.addrs_todo.replace @dasm_pause.find_all { |a, *b| @dasm.decoded[@dasm.normalize(a)] }
 			@dasm_pause -= @dasm.addrs_todo
 			puts "dasm paused (#{@dasm_pause.length})"
 		else
 			@dasm.addrs_todo.concat @dasm_pause
 			@dasm_pause.clear
 			puts "dasm restarted (#{@dasm.addrs_todo.length})"
+			start_disassemble_bg
 			true
 		end
 	end
@@ -459,10 +455,9 @@ class DisasmWidget < ContainerChoiceWidget
 	# creates a new dasm window with the same disassembler object, focus it on addr#win
 	def clone_window(*focus)
 		return if not popup = DasmWindow.new
-		popup.display(@dasm, @entrypoints, :dont_dasm => true)
+		popup.display(@dasm, @entrypoints)
 		w = popup.dasm_widget
 		w.clones = @clones.concat w.clones
-		w.idle_do_dasm = @idle_do_dasm
 		w.focus_addr(*focus)
 		popup
 	end
@@ -486,7 +481,6 @@ class DasmWindow < Window
 		@dasm_widget.terminate if @dasm_widget
 		@dasm_widget = DisasmWidget.new(dasm, ep)
 		self.widget = @dasm_widget
-		@dasm_widget.start_disassembling unless opts[:dont_dasm]
 		@dasm_widget
 	end
 
