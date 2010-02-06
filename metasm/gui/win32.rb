@@ -1518,7 +1518,7 @@ class ContainerChoiceWidget < WinWidget
 	end
 
 	def curview_index
-		@view_indexes.index(@curview)
+		@views.index(@curview)
 	end
 
 	%w[click click_ctrl mouserelease mousemove rightclick doubleclick mouse_wheel mouse_wheel_ctrl keypress_ keypress_ctrl_].each { |m|
@@ -1648,11 +1648,16 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 	end
 
 	def keypress_(key)
-		keypress(key) if respond_to? :keypress
+		# XXX my gtk api sux
+		if not respond_to? :keypress or not keypress(key)
+			@parent.keypress(key) if @parent.respond_to? :keypress
+		end
 	end
 
 	def keypress_ctrl_(key)
-		keypress_ctrl(key) if respond_to? :keypress_ctrl
+		if not respond_to? :keypress_ctrl or not keypress_ctrl(key)
+			@parent.keypress_ctrl(key) if @parent.respond_to? :keypress_ctrl
+		end
 	end
 
 	def redraw
@@ -1760,6 +1765,8 @@ class SaveFile
 end
 
 class ListWindow
+	def initialize(hwnd, title, list, opts={})
+	end
 end
 
 class Window
@@ -1798,31 +1805,9 @@ class Window
 	Keyboard_trad = Win32Gui.constants.grep(/^VK_/).inject({}) { |h, cst|
 		v = Win32Gui.const_get(cst)
 		key = cst.to_s.sub(/^VK_/, '').downcase.to_sym
-		h.update v => key
-		h or {	# just kept for reference
-			:page_up => :pgup, :page_down => :pgdown, :next => :pgdown,
+		h.update v => {
+			:prior => :pgup, :next => :pgdown,
 			:escape => :esc, :return => :enter,
-
-			:space => ?\ ,
-			:asciitilde => ?~, :quoteleft => ?`,
-			:exclam => ?!, :at => ?@,
-			:numbersign => ?#, :dollar => ?$,
-			:percent => ?%, :asciicircum => ?^,
-			:ampersand => ?&, :asterisk => ?*,
-			:parenleft => ?(, :parenright => ?),
-			:bracketleft => ?[, :bracketright => ?],
-			:braceleft => ?{, :braceright => ?},
-			:less  => ?<, :greater  => ?>,
-			:quotedbl => ?", :quoteright => ?',
-			:coma => ?,, :period => ?.,
-			:colon => ?:, :semicolon => ?;,
-			:slash => ?/, :equal => ?=,
-			:plus => ?+, :minus => ?-,
-			:question => ??, :backslash => ?\\,
-			:underscore  => ?_, :bar => ?|,
-			:comma => ?,,
-			:divide => ?/, :multiply => ?*,
-			:subtract => ?-, :add => ?+
 		}.fetch(key, key)
 	}
 
@@ -1858,12 +1843,14 @@ end
 		when Win32Gui::WM_CREATE
 			@visible = true
 			@widget.initialize_visible_ if @widget
-		when Win32Gui::WM_KEYDOWN
+		when Win32Gui::WM_KEYDOWN, Win32Gui::WM_SYSKEYDOWN
+			# SYSKEYDOWN for f10 (default = activate the menu bar)
 			if key = Keyboard_trad[wparam]
 				if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
 					@widget.keypress_ctrl_(key) if @widget
 				else
 					@widget.keypress_(key) if @widget
+					Win32Gui.defwindowproca(hwnd, msg, wparam, lparam) if key == :f4	# alt+f4
 				end
 			end
 		when Win32Gui::WM_CHAR
@@ -1915,8 +1902,8 @@ end
 	def widget ; @widget ; end
 	def widget=(w)
 		@widget = w
-		w.hwnd = @hwnd
-		if @visible
+		w.hwnd = @hwnd if w
+		if @visible and w
 			@widget.initialize_visible_
 			rect = Win32Gui.alloc_c_struct('RECT')
 			Win32Gui.getclientrect(@hwnd, rect)
@@ -1943,7 +1930,7 @@ end
 	end
 
 	def addsubmenu(menu, *args, &actions)
-		stock = (%w[OPEN SAVE QUIT] & args).first
+		stock = (%w[OPEN SAVE CLOSE QUIT] & args).first
 		args.delete stock if stock
 		accel = args.grep(/^\^?(\w|<\w+>)$/).first
 		args.delete accel if accel

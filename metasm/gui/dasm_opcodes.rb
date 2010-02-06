@@ -48,8 +48,8 @@ class AsmOpcodeWidget < DrawableWidget
 
 	def mouse_wheel(dir)
 		case dir
-		when :up; (allocation.height/@font_height/4).times { scrollup }
-		when :down; (allocation.height/@font_height/4).times { scrolldown }
+		when :up; (height/@font_height/4).times { scrollup }
+		when :down; (height/@font_height/4).times { scrolldown }
 		end
 	end
 
@@ -207,7 +207,7 @@ class AsmOpcodeWidget < DrawableWidget
 			end
 			update_caret
 		when :pgup
-			(allocation.height/@font_height/2).times { scrollup }
+			(height/@font_height/2).times { scrollup }
 		when :pgdown
 			@view_addr = @line_address.fetch(@line_address.length/2, @view_addr+15)
 			redraw

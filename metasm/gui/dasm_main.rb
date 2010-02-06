@@ -561,7 +561,7 @@ class DasmWindow < Window
 		addsubmenu(filemenu, 'CLOSE') {
 			if @dasm_widget
 				@dasm_widget.terminate
-				@vbox.remove @dasm_widget
+				self.widget = nil
 				@dasm_widget = nil
 			end
 		}

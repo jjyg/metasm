@@ -268,7 +268,9 @@ class AsmListingWidget < DrawableWidget
 		case key
 		when ?n; move_to_next ; true
 		when ?p; move_to_prev ; true
+		else return false
 		end
+		true
 	end
 
 	def keypress(key)
@@ -313,7 +315,7 @@ class AsmListingWidget < DrawableWidget
 		when :end
 			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
-		else return
+		else return false
 		end
 		true
 	end

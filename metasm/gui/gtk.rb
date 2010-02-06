@@ -583,7 +583,7 @@ class Window < Gtk::Window
 	def widget=(w)
 		@vbox.remove @child if @child
 		@child = w
-		@vbox.add w
+		@vbox.add w if w
 	end
 
 	def widget

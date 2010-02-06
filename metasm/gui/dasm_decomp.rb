@@ -14,7 +14,7 @@ class CdecompListingWidget < DrawableWidget
 
 		bug_me_not = Decompiler	# sometimes gtk fails to autorequire dcmp during expose_event, do it now
 		@view_x = @view_y = 0	# coord of corner of view in characters
-		@width = @height = 1	# widget size in chars
+		@cwidth = @cheight = 1	# widget size in chars
 		@line_text = []
 		@line_text_col = []	# each line is [[:col, 'text'], [:col, 'text']]
 		@curaddr = nil
@@ -68,20 +68,20 @@ class CdecompListingWidget < DrawableWidget
 	end
 
 	def paint
-		@width = width/@font_width
-		@height = height/@font_height
+		@cwidth = width/@font_width
+		@cheight = height/@font_height
 
 		# adjust viewport to cursor
 		sz_x = @line_text.map { |l| l.length }.max.to_i + 1
 		sz_y = @line_text.length.to_i + 1
-		@view_x = @caret_x - @width + 1 if @caret_x > @view_x + @width - 1
+		@view_x = @caret_x - @cwidth + 1 if @caret_x > @view_x + @cwidth - 1
 		@view_x = @caret_x if @caret_x < @view_x
-		@view_x = sz_x - @width - 1 if @view_x >= sz_x - @width
+		@view_x = sz_x - @cwidth - 1 if @view_x >= sz_x - @cwidth
 		@view_x = 0 if @view_x < 0
 
-		@view_y = @caret_y - @height + 1 if @caret_y > @view_y + @height - 1
+		@view_y = @caret_y - @cheight + 1 if @caret_y > @view_y + @cheight - 1
 		@view_y = @caret_y if @caret_y < @view_y
-		@view_y = sz_y - @height - 1 if @view_y >= sz_y - @height
+		@view_y = sz_y - @cheight - 1 if @view_y >= sz_y - @cheight
 		@view_y = 0 if @view_y < 0
 
 		# current cursor position
@@ -108,11 +108,11 @@ class CdecompListingWidget < DrawableWidget
 			x += str.length * @font_width
 		}
 
-		@line_text_col[@view_y, @height + 1].each { |l|
+		@line_text_col[@view_y, @cheight + 1].each { |l|
 			cx = 0
 			l.each { |c, t|
 				cx += t.length
-				if cx-t.length > @view_x + @width + 1
+				if cx-t.length > @view_x + @cwidth + 1
 				elsif cx < @view_x
 				else
 					t = t[(@view_x - cx + t.length)..-1] if cx-t.length < @view_x
@@ -233,8 +233,7 @@ class CdecompListingWidget < DrawableWidget
 					cp.readtok until cp.eos?
 				}
 			end
-		else
-			return false
+		else return false
 		end
 		true
 	end
@@ -252,7 +251,7 @@ class CdecompListingWidget < DrawableWidget
 	# hint that the caret moved
 	# redraws the caret, change the hilighted word, redraw if needed
 	def update_caret
-		redraw if @caret_x < @view_x or @caret_x >= @view_x + @width or @caret_y < @view_y or @caret_y >= @view_y + @height
+		redraw if @caret_x < @view_x or @caret_x >= @view_x + @cwidth or @caret_y < @view_y or @caret_y >= @view_y + @cheight
 
 		invalidate_caret(@oldcaret_x-@view_x, @oldcaret_y-@view_y)
 		invalidate_caret(@caret_x-@view_x, @caret_y-@view_y)

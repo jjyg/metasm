@@ -945,7 +945,9 @@ class GraphViewWidget < DrawableWidget
 				list = [['addr', 'instr']] + found.map { |a| [Expression[a], @dasm.decoded[a].instruction] }
 				@parent_widget.listwindow("search result for /#{pat}/i", list) { |i| @parent_widget.focus_addr i[0] }
 			}
+		else return false
 		end
+		true
 	end
 
 	def keypress(key)
@@ -1136,8 +1138,7 @@ class GraphViewWidget < DrawableWidget
 				gui_update
 				focus_addr a
 			end
-		else
-			return false
+		else return false
 		end
 		true
 	end
