@@ -642,7 +642,13 @@ class Window < Gtk::Window
 			end
 			item.add_accelerator('activate', @accel_group, key, (accel[0] == ?^ ? Gdk::Window::CONTROL_MASK : 0), Gtk::ACCEL_VISIBLE)
 		end
-		item.signal_connect('activate') { protect { action.call(item) } } if action
+		if action
+			a = action
+			if check
+				a = lambda { item.active = action.call(item.active?) }
+			end
+			item.signal_connect('activate') { protect { a.call(item) } }
+		end
 		menu.append item
 		item
 	end

@@ -1929,7 +1929,7 @@ end
 		Win32Gui.createmenu()
 	end
 
-	def addsubmenu(menu, *args, &actions)
+	def addsubmenu(menu, *args, &action)
 		stock = (%w[OPEN SAVE CLOSE QUIT] & args).first
 		args.delete stock if stock
 		accel = args.grep(/^\^?(\w|<\w+>)$/).first
@@ -1943,7 +1943,10 @@ end
 
 		flags = 0
 
-		flags |= (args.shift ? Win32Gui::MF_CHECKED : Win32Gui::MF_UNCHECKED) if check
+		if check
+			checked = args.shift
+			flags |= (checked ? Win32Gui::MF_CHECKED : Win32Gui::MF_UNCHECKED)
+		end
 		flags |= Win32Gui::MF_POPUP if submenu
 		if label
 			flags |= Win32Gui::MF_STRING
@@ -1965,9 +1968,16 @@ end
 			#add_accelerator(accel[0] == ?^ ? CONTROL_MASK : 0)
 		end
 
-		if actions
+		if action
 			id = @controlid
-			@control_action[id] = actions
+			if not check
+				@control_action[id] = action
+			else
+				@control_action[id] = lambda {
+					checked = action.call(!checked)
+					Win32Gui.checkmenuitem(@menu, id, (checked ? Win32Gui::MF_CHECKED : Win32Gui::MF_UNCHECKED))
+				}
+			end
 			@controlid += 1
 		end
 

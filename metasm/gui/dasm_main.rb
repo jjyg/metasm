@@ -620,7 +620,7 @@ class DasmWindow < Window
 		addsubmenu(actions, 'Unde_fine function') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Undefine function & _subfuncs') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address, true) }
 		addsubmenu(actions, 'Data', 'd') { @dasm_widget.toggle_data(@dasm_widget.curview.current_address) }
-		addsubmenu(actions, 'Pause dasm', 'p', :check) { |ck| ck.active = !@dasm_widget.playpause_dasm }
+		addsubmenu(actions, 'Pause dasm', 'p', :check) { |ck| !@dasm_widget.playpause_dasm }
 		addsubmenu(actions, 'Run ruby snippet', '^r') {
 			if @dasm_widget
 				@dasm_widget.prompt_run_ruby
@@ -633,27 +633,27 @@ class DasmWindow < Window
 		addsubmenu(@menu, actions, '_Actions')
 
 		options = new_menu
-		addsubmenu(options, '_Verbose', :check, $VERBOSE, 'v') { |ck| $VERBOSE = ck.active? ; puts "#{'not ' if not $VERBOSE}verbose" }
-		addsubmenu(options, 'Debu_g', :check, $DEBUG) { |ck| $DEBUG = ck.active? }
-		addsubmenu(options, 'Debug _backtrace', :check) { |ck| @dasm_widget.dasm.debug_backtrace = ck.active? if @dasm_widget }
+		addsubmenu(options, '_Verbose', :check, $VERBOSE, 'v') { |ck| $VERBOSE = ck }
+		addsubmenu(options, 'Debu_g', :check, $DEBUG) { |ck| $DEBUG = ck }
+		addsubmenu(options, 'Debug _backtrace', :check) { |ck| @dasm_widget.dasm.debug_backtrace = ck if @dasm_widget }
 		addsubmenu(options, 'Backtrace li_mit') {
 			inputbox('max blocks to backtrace', :text => @dasm_widget.dasm.backtrace_maxblocks) { |target|
 				@dasm_widget.dasm.backtrace_maxblocks = Integer(target) if not target.empty?
-			}
+			} if @dasm_widget
 		}
 		addsubmenu(options, 'Backtrace _limit (data)') {
 			inputbox('max blocks to backtrace data (-1 to never start)',
 					:text => @dasm_widget.dasm.backtrace_maxblocks_data) { |target|
 				@dasm_widget.dasm.backtrace_maxblocks_data = Integer(target) if not target.empty?
-			}
+			} if @dasm_widget
 		}
 		addsubmenu(options)
-		addsubmenu(options, 'Forbid decompile _types', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_types = ck.active? }
-		addsubmenu(options, 'Forbid decompile _if/while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_ifwhile = ck.active? }
-		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck.active? }
-		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck.active? }
-		addsubmenu(options, 'Forbid decomp optimlab_els', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck.active? }
-		addsubmenu(options, 'Decompiler _recurse', :check, true) { |ck| @dasm_widget.dasm.decompiler.recurse = (ck.active? ? 1/0.0 : 1) }	# XXX race if changed while decompiling
+		addsubmenu(options, 'Forbid decompile _types', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_types = ck }
+		addsubmenu(options, 'Forbid decompile _if/while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_ifwhile = ck }
+		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck }
+		addsubmenu(options, 'Forbid decomp optim_data', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_dataflow = ck }
+		addsubmenu(options, 'Forbid decomp optimlab_els', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_labels = ck }
+		addsubmenu(options, 'Decompiler _recurse', :check, true) { |ck| @dasm_widget.dasm.decompiler.recurse = (ck ? 1/0.0 : 1) ; ck }	# XXX race if changed while decompiling
 		# TODO CPU type, size, endian...
 		# factorize headers
 
