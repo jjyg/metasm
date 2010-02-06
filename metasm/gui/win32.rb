@@ -919,17 +919,34 @@ WINAPI
 EndDialog(
     __in HWND hDlg,
     __in INT_PTR nResult);
-HDC
-WINAPI
-CreateDCA(
-	__in_opt LPCSTR pwszDriver,
-	__in_opt LPCSTR pwszDevice,
-	__in_opt LPCSTR pszPort,
-	__in_opt LPVOID pdm);
-BOOL
-WINAPI
-DeleteDC(
-	__in HDC hdc);
+#define SRCCOPY             (DWORD)0x00CC0020 /* dest = source                   */
+#define SRCPAINT            (DWORD)0x00EE0086 /* dest = source OR dest           */
+#define SRCAND              (DWORD)0x008800C6 /* dest = source AND dest          */
+#define SRCINVERT           (DWORD)0x00660046 /* dest = source XOR dest          */
+#define SRCERASE            (DWORD)0x00440328 /* dest = source AND (NOT dest )   */
+#define NOTSRCCOPY          (DWORD)0x00330008 /* dest = (NOT source)             */
+#define NOTSRCERASE         (DWORD)0x001100A6 /* dest = (NOT src) AND (NOT dest) */
+#define MERGECOPY           (DWORD)0x00C000CA /* dest = (source AND pattern)     */
+#define MERGEPAINT          (DWORD)0x00BB0226 /* dest = (NOT source) OR dest     */
+#define PATCOPY             (DWORD)0x00F00021 /* dest = pattern                  */
+#define PATPAINT            (DWORD)0x00FB0A09 /* dest = DPSnoo                   */
+#define PATINVERT           (DWORD)0x005A0049 /* dest = pattern XOR dest         */
+#define DSTINVERT           (DWORD)0x00550009 /* dest = (NOT dest)               */
+#define BLACKNESS           (DWORD)0x00000042 /* dest = BLACK                    */
+#define WHITENESS           (DWORD)0x00FF0062 /* dest = WHITE                    */
+#define NOMIRRORBITMAP      (DWORD)0x80000000 /* Do not Mirror the bitmap in this call */
+#define CAPTUREBLT          (DWORD)0x40000000 /* Include layered windows */
+BOOL    WINAPI BitBlt(__in HDC hdcDst, __in int x, __in int y, __in int cx, __in int cy, __in_opt HDC hdcSrc, __in int x1, __in int y1, __in DWORD rop);
+HBITMAP WINAPI CreateBitmap(__in int nWidth, __in int nHeight, __in UINT nPlanes, __in UINT nBitCount, __in_opt LPVOID lpBits);
+HBITMAP WINAPI CreateBitmapIndirect(__in LPVOID pbm);
+HBRUSH  WINAPI CreateBrushIndirect(__in LPVOID plbrush);
+HBITMAP WINAPI CreateCompatibleBitmap(__in HDC hdc, __in int cx, __in int cy);
+HBITMAP WINAPI CreateDiscardableBitmap(__in HDC hdc, __in int cx, __in int cy);
+HDC     WINAPI CreateCompatibleDC(__in_opt HDC hdc);
+HDC     WINAPI CreateDCA(__in_opt LPCSTR pwszDriver, __in_opt LPCSTR pwszDevice, __in_opt LPCSTR pszPort, __in_opt LPVOID pdm);
+BOOL    WINAPI DeleteDC(__in HDC hdc);
+HDC     WINAPI GetDC(__in_opt HWND hWnd);
+int     WINAPI ReleaseDC(__in_opt HWND hWnd, __in HDC hDC);
 BOOL
 WINAPI
 GetTextExtentPoint32A(
@@ -1165,17 +1182,6 @@ DrawTextA(
     __in int cchText,
     __inout LPRECT lprc,
     __in UINT format);
-WINUSERAPI
-HDC
-WINAPI
-GetDC(
-    __in_opt HWND hWnd);
-WINUSERAPI
-int
-WINAPI
-ReleaseDC(
-    __in_opt HWND hWnd,
-    __in HDC hDC);
 
 typedef struct tagPAINTSTRUCT {
     HDC         hdc;
@@ -1316,6 +1322,7 @@ BOOL WINAPI MoveToEx( __in HDC hdc, __in int x, __in int y, __out_opt LPPOINT lp
 BOOL WINAPI LineTo( __in HDC hdc, __in int x, __in int y);
 BOOL WINAPI Rectangle(__in HDC hdc, __in int left, __in int top, __in int right, __in int bottom);
 HANDLE WINAPI SelectObject(__in HDC hdc, __in HANDLE h);
+BOOL WINAPI DeleteObject(__in HANDLE ho);
 DWORD WINAPI SetBkColor(__in HDC hdc, __in DWORD color);
 DWORD WINAPI SetDCBrushColor(__in HDC hdc, __in DWORD color);
 DWORD WINAPI SetDCPenColor(__in HDC hdc, __in DWORD color);
@@ -1538,6 +1545,8 @@ class ContainerVBoxWidget < WinWidget
 end
 
 module TextWidget
+	attr_accessor :caret_x, :caret_y, :hl_word
+
 	def initialize_text
 		@caret_x = @caret_y = 0		# text cursor position
 		@oldcaret_x = @oldcaret_y = 1
@@ -1616,11 +1625,19 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		end
 	end
 
-	def paint_(hdc)
-		@hdc = hdc
-		# TODO clipto(@x, @y, @width, @height)
+	def paint_(realhdc)
+		@hdc = Win32Gui.createcompatibledc(realhdc)
+		bmp = Win32Gui.createcompatiblebitmap(realhdc, @width, @height)
+		Win32Gui.selectobject(@hdc, bmp)
+		Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::DC_BRUSH))
+		Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
+		Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::SYSTEM_FIXED_FONT))
+		Win32Gui.setbkmode(@hdc, Win32Gui::TRANSPARENT)
 		draw_rectangle_color(:background, 0, 0, @width, @height)
 		paint
+		Win32Gui.bitblt(realhdc, @x, @y, @width, @height, @hdc, 0, 0, Win32Gui::SRCCOPY)
+		Win32Gui.deleteobject(bmp)
+		Win32Gui.deletedc(@hdc)
 		@hdc = nil
 	end
 
@@ -1659,8 +1676,8 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 	end
 
 	def draw_line(x, y, ex, ey)
-		Win32Gui.movetoex(@hdc, @x+x, @y+y, 0)
-		Win32Gui.lineto(@hdc, @x+ex, @y+ey)
+		Win32Gui.movetoex(@hdc, x, y, 0)
+		Win32Gui.lineto(@hdc, ex, ey)
 	end
 
 	def draw_line_color(col, x, y, ex, ey)
@@ -1669,7 +1686,7 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 	end
 
 	def draw_rectangle(x, y, w, h)
-		Win32Gui.rectangle(@hdc, @x+x, @y+y, @x+x+w, @y+y+h)
+		Win32Gui.rectangle(@hdc, x, y, x+w, y+h)
 	end
 
 	def draw_rectangle_color(col, x, y, w, h)
@@ -1679,7 +1696,7 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 	end
 
 	def draw_string(x, y, text)
-		Win32Gui.textouta(@hdc, @x+x, @y+y, text, text.length)
+		Win32Gui.textouta(@hdc, x, y, text, text.length)
 	end
 
 	def draw_string_color(col, x, y, text)
@@ -1826,15 +1843,13 @@ end
 		when Win32Gui::WM_PAINT
 			ps = Win32Gui.alloc_c_struct('PAINTSTRUCT')
 			hdc = Win32Gui.beginpaint(hwnd, ps)
-			Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_BRUSH))
-			Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
-			Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::SYSTEM_FIXED_FONT))
-			Win32Gui.setbkmode(hdc, Win32Gui::TRANSPARENT)
 			if @widget
 				@widget.paint_(hdc)
 			else
-				Win32Gui.setdcbrushcolor(hdc, 0xdddddd)
-				Win32Gui.setdcpencolor(hdc, 0xdddddd)
+				Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_BRUSH))
+				Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
+				Win32Gui.setdcbrushcolor(hdc, 0x6d6969)
+				Win32Gui.setdcpencolor(hdc, 0x6d6969)
 				Win32Gui.rectangle(hdc, 0, 0, 0xffff, 0xffff)
 			end
 			Win32Gui.endpaint(hwnd, ps)
