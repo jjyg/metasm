@@ -177,6 +177,8 @@ def self.redirect(dasm, addr)
 	dasm.each_instructionblock { |b|
 		next if not b.to_normal.include? addr
 		b.to_normal.map! { |tn| dasm.normalize(tn) == addr ? newto : tn }
+		dasm.add_xref(newto, Metasm::Xref.new(:x, b.list.last.address))
+		b.list.last.add_comment "x:#{newto}"
 		dasm.addrs_todo << [newto, b.list.last.address]
 	}
 end
