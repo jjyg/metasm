@@ -63,6 +63,10 @@ module Msgbox
 	end
 end
 
+# clipboard = Gtk::Clipboard.get(Gdk::Selection::CLIPBOARD)
+# text = clipboard.wait_for_text
+# clipboard.text = 'foo'
+
 # a widget that holds many other widgets, and displays only one of them at a time
 class ContainerChoiceWidget < Gtk::Notebook
 	include Msgbox
@@ -126,8 +130,8 @@ class DrawableWidget < Gtk::DrawingArea
 	include Msgbox
 
 	attr_accessor :parent_widget, :caret_x, :caret_y, :hl_word
-	# this hash is used to determine the colors of the GUI elements (background, caret, ...)
-	# modifications to it are only useful before the widget is first rendered (IE before GUI.main)
+	# this hash is used to determine the colors of the Gui elements (background, caret, ...)
+	# modifications to it are only useful before the widget is first rendered (IE before Gui.main)
 	attr_accessor :default_color_association
 
 	# keypress event keyval traduction table
@@ -666,12 +670,12 @@ class Window < Gtk::Window
 	end
 end
 
-# start the GUI main loop
+# start the Gui main loop
 def self.main
 	Gtk.main
 end
 
-# ends the GUI main loop
+# ends the Gui main loop
 def self.main_quit
 	Gtk.main_quit
 end

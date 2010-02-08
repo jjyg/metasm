@@ -2652,7 +2652,12 @@ end
 class ListWindow < Window
 class LBoxWidget < DrawableWidget
 	def initialize_widget(hwnd, list, opts={}, &b)
-		@list = list.map { |l| l.map { |w| w.to_s } }
+		ccnt = list.first.length
+		@list = list.map { |l|
+			l += ['']*(ccnt - l.length) if l.length < ccnt
+			l = l[0, ccnt] if l.length > ccnt
+			l.map { |w| w.to_s }
+		}
 		# length of the longest element of the column
 		@colwmax = @list.transpose.map { |l| l.map { |w| w.length }.max }
 		@titles = @list.shift
