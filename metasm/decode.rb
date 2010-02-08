@@ -817,7 +817,7 @@ class Disassembler
 				[s[1], s[0]]
 			end
 		when Expression
-			if addr.op == :+ and addr.rexpr.kind_of? ::Integer and addr.lexpr.kind_of? ::String and e = @sections[addr.lexpr]
+			if addr.op == :+ and addr.rexpr.kind_of? ::Integer and addr.rexpr >= 0 and addr.lexpr.kind_of? ::String and e = @sections[addr.lexpr]
 				e.ptr = addr.rexpr
 				return if memcheck and e.data.respond_to?(:page_invalid?) and e.data.page_invalid?(e.ptr)
 				[e, Expression[addr.lexpr]]

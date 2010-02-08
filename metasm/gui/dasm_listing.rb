@@ -374,6 +374,8 @@ class AsmListingWidget < DrawableWidget
 		end
 		update_caret
 		true
+	rescue
+		false
 	end
 
 	# returns the address of the data under the cursor

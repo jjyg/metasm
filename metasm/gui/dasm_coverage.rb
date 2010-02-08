@@ -126,6 +126,8 @@ class CoverageWidget < DrawableWidget
 		}
 
 		@sections.zip(@section_x).each { |(a, l, seq), (sx, sxe)|
+			next if @curaddr.kind_of? Integer and not a.kind_of? Integer
+			next if @curaddr.kind_of? Expression and not a.kind_of? Expression
 			co = @curaddr-a
 			if co >= 0 and co < l
 				draw_color :caret_col

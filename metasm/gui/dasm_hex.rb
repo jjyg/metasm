@@ -4,9 +4,9 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 module Metasm
-module Gui
-class HexWidget < DrawableWidget
-	# data_size = size of data in bytes (1 => chars, 4 => dwords..)
+	module Gui
+		class HexWidget < DrawableWidget
+			# data_size = size of data in bytes (1 => chars, 4 => dwords..)
 	# line_size = nr of bytes shown per line
 	# view_addr = addr of 1st byte to display
 	attr_accessor :dasm, :show_address, :show_data, :show_ascii,
@@ -132,7 +132,12 @@ class HexWidget < DrawableWidget
 		xa = x_ascii*@font_width + 1
 		hexfmt = "%0#{@data_size*2}x "
 		wp_win = {} # @write_pending clipped to current window
-		@write_pending.keys.grep(curaddr...curaddr+(w_h/@font_height+1)*@line_size).each { |k| wp_win[k] = @write_pending[k] } if not @write_pending.empty?
+		if not @write_pending.empty?
+			if curaddr.kind_of? Integer
+				@write_pending.keys.grep(curaddr...curaddr+(w_h/@font_height+1)*@line_size).each { |k| wp_win[k] = @write_pending[k] }
+			else wp_win = @write_pending.dup
+			end
+		end
 		# draw text until screen is full
 		while y < w_h
 			render["#{Expression[curaddr]}".rjust(9, '0'), :address] if @show_address
@@ -420,9 +425,12 @@ class HexWidget < DrawableWidget
 	# returns true on success (address exists)
 	def focus_addr(addr)
 		return if not addr = @parent_widget.normalize(addr)
-		return if @addr_min and (addr < @addr_min or addr > @addr_max)
-		if addr < @view_addr or addr >= @view_addr+(@num_lines-2)*@line_size
-			@view_addr = addr&0xffff_fff0
+		if addr.kind_of? Integer
+			return if @addr_min and (addr < @addr_min or addr > @addr_max)
+			@view_addr = addr&0xffff_fff0 if addr < @view_addr or addr >= @view_addr+(@num_lines-2)*@line_size
+		elsif s = @dasm.get_section_at(addr)
+			@view_addr = Expression[s[1]]
+		else return
 		end
 		@caret_x = (addr-@view_addr) % @line_size
 		@caret_x_data = 0
