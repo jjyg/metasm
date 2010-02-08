@@ -1693,6 +1693,21 @@ class WinWidget
 		@hwnd = nil
 		@x = @y = @width = @height = 0
 	end
+
+	def set_height_request(hr); end
+	def set_width_request(hr); end
+
+	def grab_focus
+		return if not @parent
+		@parent.grab_focus if @parent.respond_to? :grab_focus
+		@parent.set_focus(self) if @parent.respond_to? :set_focus
+	end
+	
+	def focus?
+		return true if not @parent
+		(@parent.respond_to?(:focus?) ? @parent.focus? : true) and
+ 		(@parent.respond_to?(:has_focus?) ? @parent.has_focus?(self) : true)
+	end
 end
 
 class ContainerChoiceWidget < WinWidget
@@ -1752,7 +1767,19 @@ class ContainerChoiceWidget < WinWidget
 	def resized_(w, h)
 		@width = w
 		@height = h
-		@views.each { |k, v| v.resized_(w, h) }
+		@views.each { |k, v|
+			v.x = @x
+			v.y = @y
+			v.resized_(w, h)
+		}
+	end
+
+	def has_focus?(c)
+		c == @views[@focus_idx]
+	end
+
+	def set_focus(c)
+		@focus_idx = @views.index(c)
 	end
 
 	def hwnd=(h)
@@ -1762,6 +1789,81 @@ class ContainerChoiceWidget < WinWidget
 end
 
 class ContainerVBoxWidget < WinWidget
+	def initialize(*a, &b)
+		@views = []
+		@focus_idx = 0
+		@visible = false
+		@wantheight = []
+
+		super()
+
+		initialize_widget(*a, &b)
+	end
+
+	def initialize_visible_
+		@visible = true
+		@views.each { |v| v.initialize_visible_ }
+	end
+
+	def add(w, opts={})
+		@views << w
+		w.parent = self
+		w.hwnd = @hwnd
+		resized_(@width, @height)
+		w.initialize_visible_ if @visible
+	end
+
+	# TODO resize children with mouse
+	%w[click click_ctrl mouserelease mousemove rightclick doubleclick mouse_wheel mouse_wheel_ctrl].each { |m|
+		define_method(m) { |*a|
+			if v = update_focus_y(a[-1])
+				a[-1] -= v.y
+				v.send(m, *a) if v.respond_to? m
+			end
+		}
+	}
+
+	%w[keypress_ keypress_ctrl_].each { |m|
+		define_method(m) { |*a|
+			if v = @views[@focus_idx] and v.respond_to? m
+				v.send(m, *a)
+			end
+		}
+	}
+
+	def paint_(rc)
+		@views.each { |v| v.paint_(rc) }
+	end
+
+	def resized_(w, h)
+		@width = w
+		@height = h
+		y = @y
+		@views.each { |v|
+			v.x = @x
+			v.y = y
+			ch = h/@views.length
+			y += ch
+			v.resized_(w, ch)
+		}
+	end
+
+	def update_focus_y(ty)
+		y = 0
+		@views.each_with_index { |v, i|
+			if ty < y + v.height
+				@focus_idx = i
+				return v
+			end
+			y += v.height
+		}
+		nil
+	end
+
+	def hwnd=(h)
+		@hwnd = h
+		@views.each { |v| v.hwnd = h }
+	end
 end
 
 module TextWidget
@@ -1770,6 +1872,7 @@ module TextWidget
 	def initialize_text
 		@caret_x = @caret_y = 0		# text cursor position
 		@oldcaret_x = @oldcaret_y = 1
+		@font_width = @font_height = 1
 		@hl_word = nil
 	end
 
@@ -1816,15 +1919,24 @@ module TextWidget
 			buf.chomp(0.chr)
 		end
 	end
+
+	def set_font(todo)
+		hdc = Win32Gui.getdc(@hwnd)
+		# selectobject(hdc, hfont)
+		sz = Win32Gui.alloc_c_struct('POINT')
+		Win32Gui.gettextextentpoint32a(hdc, 'x', 1, sz)
+		@font_width = sz[:x]
+		@font_height = sz[:y]
+		Win32Gui.releasedc(@hwnd, hdc)
+	end
 end
 
 class DrawableWidget < WinWidget
 	include TextWidget
 
 	def initialize(*a, &b)
-puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		@color = {}
-		@default_color_association = { :background => :palegrey }
+		@default_color_association = { :background => :winbg }
 
 		super()
 
@@ -1850,27 +1962,6 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 	def set_color_association(h)
 		h.each { |k, v| @color[k] = color(v) }
 		gui_update
-	end
-
-	def set_font(todo)
-		hdc = Win32Gui.getdc(@hwnd)
-		# selectobject(hdc, hfont)
-		sz = Win32Gui.alloc_c_struct('POINT')
-		Win32Gui.gettextextentpoint32a(hdc, 'x', 1, sz)
-		@font_width = sz[:x]
-		@font_height = sz[:y]
-		Win32Gui.releasedc(@hwnd, hdc)
-	end
-
-	def grab_focus
-		@parent.set_focus(self) if @parent and @parent.respond_to? :set_focus
-	end
-	
-	def focus?
-		if @parent and @parent.respond_to? :has_focus?
-			@parent.has_focus?(self)
-		else true
-		end
 	end
 
 	def paint_(realhdc)

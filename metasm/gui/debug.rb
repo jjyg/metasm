@@ -21,7 +21,6 @@ class DbgWidget < ContainerVBoxWidget
 		@code.parent_widget = self
 		@mem  = DisasmWidget.new(dbg.disassembler)
 		@mem.parent_widget = self
-		@code.start_disassembling
 		@dbg.disassembler.disassemble_fast(@dbg.pc)
 
 		@keyboard_callback = {}
@@ -354,7 +353,6 @@ class DbgRegWidget < DrawableWidget
 
 	# hint that the caret moved
 	def update_caret
-		return if not window
 		return if @oldcaret_x == @caret_x and @oldcaret_reg == @caret_reg
 
 		invalidate_caret(@oldcaret_x, 0, *@reg_pos[@oldcaret_reg].values_at(4, 1))
@@ -511,10 +509,10 @@ class DbgConsoleWidget < DrawableWidget
 			update_caret
 
 		when :pgup
-			@log_offset += allocation.height/@font_height - 3
+			@log_offset += height/@font_height - 3
 			redraw
 		when :pgdown
-			@log_offset -= allocation.height/@font_height - 3
+			@log_offset -= height/@font_height - 3
 			redraw
 
 		when :tab
@@ -811,9 +809,8 @@ class DbgConsoleWidget < DrawableWidget
 
 	# hint that the caret moved
 	def update_caret
-		return if not window
 		return if @oldcaret_x == @caret_x
-		w_w = allocation.width - @font_width
+		w_w = width - @font_width
 		x1 = (@oldcaret_x+1) * @font_width + 1
 		x2 = (@caret_x+1) * @font_width + 1
 		y = @caret_y
@@ -847,12 +844,9 @@ class DbgWindow < Window
 	def build_menu
 		dbgmenu = new_menu
 		hack_accel_group
-		i = addsubmenu(dbgmenu, 'continue') { @dbg_widget.dbg_continue }
-		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F5, 0, Gtk::ACCEL_VISIBLE)	# just to display the shortcut
-		i = addsubmenu(dbgmenu, 'step over') { @dbg_widget.dbg_stepover }
-		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F10, 0, Gtk::ACCEL_VISIBLE)
-		i = addsubmenu(dbgmenu, 'step into') { @dbg_widget.dbg_singlestep }
-		i.add_accelerator('activate', @accel_group, Gdk::Keyval::GDK_F11, 0, Gtk::ACCEL_VISIBLE)
+		addsubmenu(dbgmenu, 'continue', '<f5>') { @dbg_widget.dbg_continue }
+		addsubmenu(dbgmenu, 'step over', '<f10>') { @dbg_widget.dbg_stepover }
+		addsubmenu(dbgmenu, 'step into', '<f11>') { @dbg_widget.dbg_singlestep }
 		addsubmenu(dbgmenu, 'kill target') { @dbg_widget.dbg.kill }	# destroy ?
 		addsubmenu(dbgmenu, 'detach target') { @dbg_widget.dbg.detach }	# destroy ?
 		addsubmenu(dbgmenu)

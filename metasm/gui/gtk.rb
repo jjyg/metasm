@@ -643,10 +643,12 @@ class Window < Gtk::Window
 		if accel
 			key = accel[-1]
 			if key == ?>
-				key = case accel[/<(.*)>/, 1]
+				key = accel[/<(.*)>/, 1]
+				key = case key
 				when 'enter'; Gdk::Keyval::GDK_Return
 				when 'esc'; Gdk::Keyval::GDK_Escape
 				when 'tab'; Gdk::Keyval::GDK_Tab
+				when /^f(\d\d?)$/i; Gdk::Keyval.const_get("GDK_#{key.upcase}")
 				else ??
 				end
 			end
