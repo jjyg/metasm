@@ -2536,23 +2536,223 @@ end
 
 class ListWindow < Window
 class LBoxWidget < DrawableWidget
-	def initialize_widget(list, opts={}, &b)
-		@action = b
-
-		@default_color_association = { :background => :winbg }
-
+	def initialize_widget(hwnd, list, opts={}, &b)
 		@list = list.map { |l| l.map { |w| w.to_s } }
+		# length of the longest element of the column
+		@colwmax = @list.transpose.map { |l| l.map { |w| w.length }.max }
 		@titles = @list.shift
+
+		@parent_hwnd = hwnd
+		@action = b
+		# index of the first row displayed
+		@linehead = 0
+		# index of the currently selected row
+		@linesel = nil
+		# ary indicating whether a title label is being clicked
+		@btndown = []
+
+		@default_color_association = { :background => :winbg, :label => :black,
+			:text => :black, :textbg => :white, :btnc1 => :white, :btnc2 => :grey,
+			:textsel => :white, :textselbg => :darkblue }
+	end
+
+	def initialize_visible
+		@colw = @colwmax.map { |w| [w+1, 40].min * @font_width }
+		r1 = Win32Gui.alloc_c_struct('RECT')
+		Win32Gui.getwindowrect(@parent_hwnd, r1)
+		allw = @colw.inject(0) { |a, i| a+i }
+		r2 = Win32Gui.alloc_c_struct('RECT', :left => 0, :top => 0,
+			:right => [allw+8, 80*@font_width].min,
+			:bottom => [@list.length+3, 30].min * @font_height)
+		Win32Gui.adjustwindowrect(r2, Win32Gui::WS_OVERLAPPED, Win32Gui::FALSE)
+		x = r1[:left]+(r1[:right]-r1[:left]-r2[:right]+r2[:left])/2
+		y = r1[:top]+(r1[:bottom]-r1[:top]-r2[:bottom]+r2[:top])/2
+		Win32Gui.movewindow(@hwnd, x, y, r2[:right]-r2[:left], r2[:bottom]-r2[:top], Win32Gui::FALSE)
+	end
+
+	def resized(w, h)
+		p @colw, @colwmax
+		allw = @colw.inject(0) { |a, i| a+i }
+		if w > allw
+			can = w - allw
+			@colw.length.times { |i|
+				cur = @colw[i]
+				want = (@colwmax[i] + 1) * @font_width
+				need = want-cur
+				if need > 0
+					if can < need
+						@colw[i] += can
+						can = 0
+					else
+						@colw[i] = want
+						can -= need
+					end
+				end
+			}
+			redraw
+		end
 	end
 
 	def paint
-		draw_line_color(:black, @width/2, 0, @width/2, @height)
+		x = 0
+		@btnx = []
+		@btny = y = 0
+		#fixedfont = Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::ANSI_VAR_FONT))
+		#sz = Win32Gui.alloc_c_struct('POINT')
+		#Win32Gui.gettextextentpoint32a(@hdc, 'x', 1, sz)
+		#var_font_height = sz[:y]
+		@btnheight = @font_height * 4/3
+		@titles.zip(@colw, @btndown).each { |t, w, d|
+			@btnx << x
+			h = @btnheight-1
+			c1 = d ? :btnc2 : :btnc1
+			c2 = d ? :btnc1 : :btnc2
+			draw_line_color(c1, x, y, x, y+h)
+			draw_line_color(c1, x, y, x+w-1, y)
+			draw_line_color(c2, x+w-1, y+h, x, y+h)
+			draw_line_color(c2, x+w-1, y+h, x+w-1, y)
+
+			cw = w/@font_width-1
+			xo = [(cw-t.length) * @font_width/2, 0].max	# center titles
+			draw_string_color(:label, x+@font_width/2+xo, y+@font_height/6, t[0, cw])
+			x += w
+		}
+		
+		y += @btnheight
+		tl = (@linesel || -1) - @linehead
+		@lineshown = (height-y)/@font_height
+		@list[@linehead, @lineshown + 1].to_a.each { |l|
+			x = @btnx.first
+			ct, cb = :text, :textbg
+			ct, cb = :textsel, :textselbg if tl == 0
+			tl -= 1
+			draw_rectangle_color(cb, x, y, width-2*x, @font_height)
+			l.zip(@colw).each { |t, w|
+				draw_string_color(ct, x+@font_width/2, y, t[0, w/@font_width-1])
+				x += w
+			}
+			y += @font_height
+		}
+	end
+
+	def keypress(key)
+		case key
+		when :up
+			if not @linesel
+				@linesel = @linehead
+			elsif @linesel > 0
+				@linesel -= 1
+				@linehead = @linesel if @linesel < @linehead
+			end
+			redraw
+		when :down
+			if not @linesel
+				@linesel = @linehead
+			elsif @linesel < @list.length-1
+				@linesel += 1
+				@linehead = @linesel - (@lineshown-1) if @linehead < @linesel-(@lineshown-1)
+			end
+			redraw
+		when :home
+			@linesel = 0
+			@linehead = 0
+			redraw
+		when :end
+			@linesel = @list.length-1
+			@linehead = @linesel - (@lineshown-1) if @linehead < @linesel-(@lineshown-1)
+			redraw
+		when :enter
+			if @linesel and @list[@linesel]
+				protect { @action.call(@list[@linesel]) }
+			end
+		when :esc
+			if not @btndown.compact.empty?
+				@btndown = []
+				redraw
+			else
+				destroy
+			end
+		else return false
+		end
+		true
+	end
+
+	def xtobtn(x)
+		if x < @btnx.first
+			return 0
+		elsif x >= @btnx.last + @colw.last
+			return @btnx.length-1
+		else
+			@btnx.zip(@colw).each_with_index { |(bx, bw), i|
+				return i if x >= bx and x < bx+bw
+			}
+		end
+	end
+
+	def click(x, y)
+		Win32Gui.setcapture(@hwnd)
+		if y >= @btny and y < @btny+@btnheight
+			# TODO column resize
+			@btndown[xtobtn(x)] = true
+			redraw
+		elsif y >= @btny+@btnheight
+			cy = @linehead + (y - @btny - @btnheight)/@font_height
+			if cy < @list.length
+				@linesel = cy
+				redraw
+				Gui.main_iter
+				protect { @action.call(@list[@linesel]) }
+			end
+		end
+	end
+
+	def doubleclick(x, y)
+		if y >= @btny+@btnheight
+			cy = @linehead + (y - @btny - @btnheight)/@font_height
+			if cy < @list.length
+				destroy
+				Gui.main_iter
+				protect { @action.call(@list[@linesel]) }
+			end
+		end
+	end
+
+	def mousemove(x, y)
+		if @btndown.compact.first
+			@btndown = []
+			x = Expression.make_signed(x, 16)
+			@btndown[xtobtn(x)] = true
+			redraw
+		end
+	end
+
+	def mouserelease(x, y)
+		Win32Gui.releasecapture
+		if @btndown.compact.first
+			x = Expression.make_signed(x, 16)
+			@btndown = []
+			col = xtobtn(x)
+			cursel = @list[@linesel] if @linesel
+			nlist = @list.sort_by { |a| [a[col], a] }
+			nlist.reverse! if nlist == @list
+			@list = nlist
+			@linehead = 0
+			if cursel
+				@linesel = @list.index(cursel)
+				@linehead = @linesel - (@lineshown-1) if @linehead < @linesel-(@lineshown-1)
+			end
+			redraw
+		end
+	end
+	
+	def destroy
+		@parent.destroy
 	end
 end
 	def initialize_window(hwnd, title, list, opts={}, &b)
 		@@mainwindow_list.delete self
 		self.title = title
-		self.widget = LBoxWidget.new(list, opts, &b)
+		self.widget = LBoxWidget.new(hwnd, list, opts, &b)
 	end
 end
 
