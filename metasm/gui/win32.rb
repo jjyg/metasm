@@ -9,6 +9,7 @@ module Metasm
 module Gui
 class Win32Gui < DynLdr
 	new_api_c <<EOS
+#line #{__LINE__}
 typedef char CHAR;
 typedef unsigned char BYTE;
 typedef unsigned short WORD;
@@ -737,6 +738,143 @@ typedef struct tagACCEL {
 #define VK_F23            0x86
 #define VK_F24            0x87
 
+#define SM_CXSCREEN             0
+#define SM_CYSCREEN             1
+#define SM_CXVSCROLL            2
+#define SM_CYHSCROLL            3
+#define SM_CYCAPTION            4
+#define SM_CXBORDER             5
+#define SM_CYBORDER             6
+#define SM_CXDLGFRAME           7
+#define SM_CYDLGFRAME           8
+#define SM_CYVTHUMB             9
+#define SM_CXHTHUMB             10
+#define SM_CXICON               11
+#define SM_CYICON               12
+#define SM_CXCURSOR             13
+#define SM_CYCURSOR             14
+#define SM_CYMENU               15
+#define SM_CXFULLSCREEN         16
+#define SM_CYFULLSCREEN         17
+#define SM_CYKANJIWINDOW        18
+#define SM_MOUSEPRESENT         19
+#define SM_CYVSCROLL            20
+#define SM_CXHSCROLL            21
+#define SM_DEBUG                22
+#define SM_SWAPBUTTON           23
+#define SM_RESERVED1            24
+#define SM_RESERVED2            25
+#define SM_RESERVED3            26
+#define SM_RESERVED4            27
+#define SM_CXMIN                28
+#define SM_CYMIN                29
+#define SM_CXSIZE               30
+#define SM_CYSIZE               31
+#define SM_CXFRAME              32
+#define SM_CYFRAME              33
+#define SM_CXMINTRACK           34
+#define SM_CYMINTRACK           35
+#define SM_CXDOUBLECLK          36
+#define SM_CYDOUBLECLK          37
+#define SM_CXICONSPACING        38
+#define SM_CYICONSPACING        39
+#define SM_MENUDROPALIGNMENT    40
+#define SM_PENWINDOWS           41
+#define SM_DBCSENABLED          42
+#define SM_CMOUSEBUTTONS        43
+#define SM_CXFIXEDFRAME           SM_CXDLGFRAME  /* ;win40 name change */
+#define SM_CYFIXEDFRAME           SM_CYDLGFRAME  /* ;win40 name change */
+#define SM_CXSIZEFRAME            SM_CXFRAME     /* ;win40 name change */
+#define SM_CYSIZEFRAME            SM_CYFRAME     /* ;win40 name change */
+#define SM_SECURE               44
+#define SM_CXEDGE               45
+#define SM_CYEDGE               46
+#define SM_CXMINSPACING         47
+#define SM_CYMINSPACING         48
+#define SM_CXSMICON             49
+#define SM_CYSMICON             50
+#define SM_CYSMCAPTION          51
+#define SM_CXSMSIZE             52
+#define SM_CYSMSIZE             53
+#define SM_CXMENUSIZE           54
+#define SM_CYMENUSIZE           55
+#define SM_ARRANGE              56
+#define SM_CXMINIMIZED          57
+#define SM_CYMINIMIZED          58
+#define SM_CXMAXTRACK           59
+#define SM_CYMAXTRACK           60
+#define SM_CXMAXIMIZED          61
+#define SM_CYMAXIMIZED          62
+#define SM_NETWORK              63
+#define SM_CLEANBOOT            67
+#define SM_CXDRAG               68
+#define SM_CYDRAG               69
+#define SM_SHOWSOUNDS           70
+#define SM_CXMENUCHECK          71   /* Use instead of GetMenuCheckMarkDimensions()! */
+#define SM_CYMENUCHECK          72
+#define SM_SLOWMACHINE          73
+#define SM_MIDEASTENABLED       74
+#define SM_MOUSEWHEELPRESENT    75
+#define SM_XVIRTUALSCREEN       76
+#define SM_YVIRTUALSCREEN       77
+#define SM_CXVIRTUALSCREEN      78
+#define SM_CYVIRTUALSCREEN      79
+#define SM_CMONITORS            80
+#define SM_SAMEDISPLAYFORMAT    81
+#define SM_IMMENABLED           82
+#define SM_CXFOCUSBORDER        83
+#define SM_CYFOCUSBORDER        84
+#define SM_TABLETPC             86
+#define SM_MEDIACENTER          87
+#define SM_STARTER              88
+#define SM_SERVERR2             89
+#define SM_REMOTESESSION        0x1000
+#define SM_SHUTTINGDOWN         0x2000
+#define SM_REMOTECONTROL        0x2001
+#define SM_CARETBLINKINGENABLED 0x2002
+
+#define QS_KEY              0x0001
+#define QS_MOUSEMOVE        0x0002
+#define QS_MOUSEBUTTON      0x0004
+#define QS_POSTMESSAGE      0x0008
+#define QS_TIMER            0x0010
+#define QS_PAINT            0x0020
+#define QS_SENDMESSAGE      0x0040
+#define QS_HOTKEY           0x0080
+#define QS_ALLPOSTMESSAGE   0x0100
+#define QS_RAWINPUT         0x0400
+#define QS_MOUSE           (QS_MOUSEMOVE | QS_MOUSEBUTTON)
+#define QS_INPUT           (QS_MOUSE | QS_KEY | QS_RAWINPUT)
+#define QS_ALLEVENTS       (QS_INPUT | QS_POSTMESSAGE | QS_TIMER | QS_PAINT | QS_HOTKEY)
+#define QS_ALLINPUT        (QS_ALLEVENTS | QS_SENDMESSAGE)
+
+#define WAIT_TIMEOUT        258L 
+
+#define CF_TEXT             1
+#define CF_BITMAP           2
+#define CF_METAFILEPICT     3
+#define CF_SYLK             4
+#define CF_DIF              5
+#define CF_TIFF             6
+#define CF_OEMTEXT          7
+#define CF_DIB              8
+#define CF_PALETTE          9
+#define CF_PENDATA          10
+#define CF_RIFF             11
+#define CF_WAVE             12
+#define CF_UNICODETEXT      13
+#define CF_ENHMETAFILE      14
+#define CF_HDROP            15
+#define CF_LOCALE           16
+#define CF_DIBV5            17
+
+
+WINUSERAPI
+int
+WINAPI
+GetSystemMetrics(
+    __in int nIndex);
+
 typedef struct tagMSG {
     HWND hwnd;
     UINT message;
@@ -809,8 +947,38 @@ PostQuitMessage(
 WINUSERAPI
 DWORD
 WINAPI
-GetKeyState(
-    __in int nVirtKey);
+MsgWaitForMultipleObjects(
+    __in DWORD nCount,
+    __in_opt CONST HANDLE *pHandles,
+    __in BOOL fWaitAll,
+    __in DWORD dwMilliseconds,
+    __in DWORD dwWakeMask);
+WINUSERAPI DWORD WINAPI GetKeyState(__in int nVirtKey);
+
+WINUSERAPI BOOL WINAPI OpenClipboard(__in_opt HWND hWndNewOwner);
+WINUSERAPI BOOL WINAPI CloseClipboard(VOID);
+WINUSERAPI HANDLE WINAPI SetClipboardData(__in UINT uFormat, __in_opt HANDLE hMem);
+WINUSERAPI HANDLE WINAPI GetClipboardData(__in UINT uFormat);
+WINUSERAPI BOOL WINAPI EmptyClipboard(VOID);
+
+#define GMEM_FIXED          0x0000
+#define GMEM_MOVEABLE       0x0002
+#define GMEM_NOCOMPACT      0x0010
+#define GMEM_NODISCARD      0x0020
+#define GMEM_ZEROINIT       0x0040
+#define GMEM_MODIFY         0x0080
+#define GMEM_DISCARDABLE    0x0100
+#define GMEM_NOT_BANKED     0x1000
+#define GMEM_SHARE          0x2000
+#define GMEM_DDESHARE       0x2000
+#define GMEM_NOTIFY         0x4000
+#define GMEM_LOWER          GMEM_NOT_BANKED
+#define GMEM_INVALID_HANDLE 0x8000
+HANDLE WINAPI GlobalAlloc(__in UINT uFlags, __in DWORD dwBytes);
+DWORD WINAPI GlobalSize(__in HANDLE hMem);
+LPVOID WINAPI GlobalLock(__in HANDLE hMem);
+BOOL WINAPI GlobalUnlock(__in HANDLE hMem);
+HANDLE WINAPI GlobalFree(HANDLE hMem);
 
 typedef __stdcall LRESULT (*WNDPROC)(HWND, UINT, WPARAM, LPARAM);
 typedef struct tagWNDCLASSA {
@@ -954,6 +1122,15 @@ GetTextExtentPoint32A(
 	__in_ecount(c) LPCSTR lpString,
 	__in int c,
 	__out LPPOINT lpsz);
+WINUSERAPI
+int
+WINAPI
+ToAscii(
+	__in UINT uVirtKey,
+	__in UINT uScanCode,
+	__in_opt CONST BYTE *lpKeyState,
+	__out DWORD *lpChar,
+	__in UINT uFlags);
 WINUSERAPI
 HWND
 WINAPI
@@ -1328,6 +1505,10 @@ DWORD WINAPI SetDCBrushColor(__in HDC hdc, __in DWORD color);
 DWORD WINAPI SetDCPenColor(__in HDC hdc, __in DWORD color);
 int WINAPI FillRect(__in HDC hDC, __in CONST RECT *lprc, __in HBRUSH hbr);
 
+WINUSERAPI HWND WINAPI GetCapture(VOID);
+WINUSERAPI HWND WINAPI SetCapture(__in HWND hWnd);
+WINUSERAPI BOOL WINAPI ReleaseCapture(VOID);
+
 #define FORMAT_MESSAGE_ALLOCATE_BUFFER 0x00000100
 #define FORMAT_MESSAGE_IGNORE_INSERTS  0x00000200
 #define FORMAT_MESSAGE_FROM_STRING     0x00000400
@@ -1464,6 +1645,7 @@ module Msgbox
 end
 
 class WinWidget
+	include Msgbox
 	attr_accessor :parent, :hwnd, :x, :y, :width, :height
 
 	def initialize
@@ -1474,10 +1656,8 @@ class WinWidget
 end
 
 class ContainerChoiceWidget < WinWidget
-	include Msgbox
-
 	attr_accessor :views, :view_indexes
-	def initialize(*a)
+	def initialize(*a, &b)
 		@views = {}
 		@view_indexes = []
 		@curview = nil
@@ -1485,7 +1665,7 @@ class ContainerChoiceWidget < WinWidget
 
 		super()
 
-		initialize_widget(*a)
+		initialize_widget(*a, &b)
 	end
 
 	def initialize_visible_
@@ -1569,12 +1749,39 @@ module TextWidget
 	def invalidate_caret(cx, cy, x=0, y=0)
 		invalidate(x + cx*@font_width, y + cy*@font_height, 2, @font_height)
 	end
+
+	def clipboard_copy(buf)
+		Win32Gui.openclipboard(@hwnd)
+		Win32Gui.emptyclipboard
+		if buf and not buf.empty?
+			h = Win32Gui.globalalloc(Win32Gui::GMEM_MOVEABLE, buf.length+1)
+			ptr = Win32Gui.globallock(h)
+			Win32Gui.memory_write(ptr, buf)
+			Win32Gui.globalunlock(h)
+			Win32Gui.setclipboarddata(Win32Gui::CF_TEXT, h)
+			# on(WM_DESTROYCLIPBOARD) { Win32Gui.globalfree(h) }
+		end
+		Win32Gui.closeclipboard
+	end
+
+	def clipboard_paste
+		Win32Gui.openclipboard(@hwnd)
+		h = Win32Gui.getclipboarddata(Win32Gui::CF_TEXT)
+		if h and h != 0 and h != Win32Gui::GMEM_INVALID_HANDLE
+			sz = Win32Gui.globalsize(h)
+			ptr = Win32Gui.globallock(h)
+			buf = Win32Gui.memory_read(ptr, sz)
+			Win32Gui.globalunlock(h)
+			Win32Gui.closeclipboard
+			buf.chomp(0.chr)
+		end
+	end
 end
 
 class DrawableWidget < WinWidget
 	include TextWidget
 
-	def initialize(*a)
+	def initialize(*a, &b)
 puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		@color = {}
 		@default_color_association = { :background => :palegrey }
@@ -1582,7 +1789,7 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		super()
 
 		initialize_text
-		initialize_widget(*a)
+		initialize_widget(*a, &b)
 	end
 
 	def initialize_visible_
@@ -1594,6 +1801,7 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		}.each { |tag, val|
 			@color[tag] = color(val)
 		}
+		@color[:winbg] = 0x6d6969
 		set_color_association(@default_color_association)	# should be called after Gui.main
 		set_font('courier 10')
 		initialize_visible if respond_to? :initialize_visible
@@ -1631,7 +1839,7 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		Win32Gui.selectobject(@hdc, bmp)
 		Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::DC_BRUSH))
 		Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
-		Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::SYSTEM_FIXED_FONT))
+		Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::ANSI_FIXED_FONT))
 		Win32Gui.setbkmode(@hdc, Win32Gui::TRANSPARENT)
 		draw_rectangle_color(:background, 0, 0, @width, @height)
 		paint
@@ -1660,6 +1868,10 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		end
 	end
 
+	def gui_update
+		redraw
+	end
+
 	def redraw
 		invalidate(0, 0, @width, @height)
 	end
@@ -1686,7 +1898,7 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 	end
 
 	def draw_line_color(col, x, y, ex, ey)
-		Win32Gui.setdcpencolor(@hdc, col)
+		Win32Gui.setdcpencolor(@hdc, color(col))
 		draw_line(x, y, ex, ey)
 	end
 
@@ -1708,64 +1920,9 @@ puts "init #{self.class}", caller if self.class.name =~ /AsmList/
 		Win32Gui.settextcolor(@hdc, color(col))
 		draw_string(x, y, text)
 	end
-end
 
-class MessageBox
-	def initialize(hwnd, msg, opts={})
-		hwnd = 0	# non-modal
-		opts = { :title => opts } if opts.kind_of? String
-		Win32Gui.messageboxa(hwnd, msg, opts[:title], 0)
-	end
-end
-
-class InputBox
-	def initialize(hwnd, prompt, opts={})
-		hwnd = 0
-	end
-end
-
-class OpenFile
-	def initialize(hwnd, title, opts={})
-		hwnd = 0	# non-modal
-		buf = 0.chr*512
-		ofn = Win32Gui.alloc_c_struct 'OPENFILENAMEA',
-			:lstructsize => :size,
-  			:hwndowner => hwnd,
-			:lpstrfilter => "All Files\0*.*\0\0",
-			:lpstrfile => buf,
-			:lpstrtitle => title,
-			:nmaxfile => buf.length,
-			:flags => Win32Gui::OFN_DONTADDTORECENT | Win32Gui::OFN_PATHMUSTEXIST |
-				Win32Gui::OFN_LONGNAMES | Win32Gui::OFN_HIDEREADONLY
-		ofn[:lpstrinitialdir] = opts[:path] if opts[:path]
-		return if Win32Gui.getopenfilenamea(ofn) == 0
-		buf = buf[0, buf.index(0.chr)] if buf.index(0.chr)
-		yield buf if buf != ''
-	end
-end
-
-class SaveFile
-	def initialize(hwnd, title, opts={})
-		hwnd = 0	# non-modal
-		buf = 0.chr*512
-		ofn = Win32Gui.alloc_c_struct 'OPENFILENAMEA',
-			:lstructsize => :size,
-  			:hwndowner => hwnd,
-			:lpstrfilter => "All Files\0*.*\0\0",
-			:lpstrfile => buf,
-			:lpstrtitle => title,
-			:nmaxfile => buf.length,
-			:flags => Win32Gui::OFN_DONTADDTORECENT | Win32Gui::OFN_LONGNAMES |
-				Win32Gui::OFN_HIDEREADONLY | Win32Gui::OFN_OVERWRITEPROMPT
-		ofn[:lpstrinitialdir] = opts[:path] if opts[:path]
-		return if Win32Gui.getsavefilenamea(ofn) == 0
-		buf = buf[0, buf.index(0.chr)] if buf.index(0.chr)
-		yield buf if buf != ''
-	end
-end
-
-class ListWindow
-	def initialize(hwnd, title, list, opts={})
+	def kbd_shift
+		Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0
 	end
 end
 
@@ -1773,7 +1930,7 @@ class Window
 	include Msgbox
 
 	attr_accessor :menu, :hwnd
-	def initialize(*a)
+	def initialize(*a, &b)
 		@widget = nil
 		@controlid = 1	# next free control id for menu items, buttons etc
 		@control_action = {}
@@ -1791,11 +1948,13 @@ class Window
 		
 		@hwnd = Win32Gui.createwindowexa(nil, cname, 'win32gui window', Win32Gui::WS_OVERLAPPEDWINDOW, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, 0, 0, 0, 0)
 
-		initialize_window(*a)
+		initialize_window(*a, &b)
 
-		@menu = new_menu
-		build_menu
-		Win32Gui.setmenu(@hwnd, @menu)
+		if respond_to? :build_menu
+			@menu = new_menu
+			build_menu
+			Win32Gui.setmenu(@hwnd, @menu)
+		end
 
 		Win32Gui.showwindow(@hwnd, Win32Gui::SW_SHOWDEFAULT)
 		Win32Gui.updatewindow(@hwnd)
@@ -1808,6 +1967,7 @@ class Window
 		h.update v => {
 			:prior => :pgup, :next => :pgdown,
 			:escape => :esc, :return => :enter,
+			:back => :backspace,
 		}.fetch(key, key)
 	}
 
@@ -1835,11 +1995,19 @@ end
 				Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
 				Win32Gui.setdcbrushcolor(hdc, 0x6d6969)
 				Win32Gui.setdcpencolor(hdc, 0x6d6969)
-				Win32Gui.rectangle(hdc, 0, 0, 0xffff, 0xffff)
+				Win32Gui.rectangle(hdc, 0, 0, @width, @height)
 			end
 			Win32Gui.endpaint(hwnd, ps)
+		when Win32Gui::WM_MOVE
+			rect = Win32Gui.alloc_c_struct('RECT')
+			Win32Gui.getwindowrect(@hwnd, rect)
+			@x, @y, @width, @height = rect[:left], rect[:top], rect[:right]-rect[:left], rect[:bottom]-rect[:top]
 		when Win32Gui::WM_SIZE
+			rect = Win32Gui.alloc_c_struct('RECT')
+			Win32Gui.getwindowrect(@hwnd, rect)
+			@x, @y, @width, @height = rect[:left], rect[:top], rect[:right]-rect[:left], rect[:bottom]-rect[:top]
 			@widget.resized_(lparam & 0xffff, (lparam >> 16) & 0xffff) if @widget
+			redraw
 		when Win32Gui::WM_CREATE
 			@visible = true
 			@widget.initialize_visible_ if @widget
@@ -1855,6 +2023,7 @@ end
 			end
 		when Win32Gui::WM_CHAR
 			if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
+				wparam += ((Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0) ? ?A : ?a) - 1 if wparam < 0x1a
 				@widget.keypress_ctrl_(wparam) if @widget
 			else
 				@widget.keypress_(wparam) if @widget
@@ -1899,10 +2068,25 @@ end
 		@widget.send(cmsg, x, y) if cmsg and @widget.respond_to? cmsg
 	end
 
+	attr_reader :x, :y, :width, :height
+	def x=(newx)
+		Win32Gui.movewindow(@hwnd, newx, @y, @width, @height, Win32Gui::TRUE)
+	end
+	def y=(newy)
+		Win32Gui.movewindow(@hwnd, @x, newy, @width, @height, Win32Gui::TRUE)
+	end
+	def width=(newwidth)
+		Win32Gui.movewindow(@hwnd, @x, @y, newwidth, @height, Win32Gui::TRUE)
+	end
+	def height=(newheight)
+		Win32Gui.movewindow(@hwnd, @x, @y, @width, newheight, Win32Gui::TRUE)
+	end
+
 	def widget ; @widget ; end
 	def widget=(w)
 		@widget = w
 		w.hwnd = @hwnd if w
+		w.parent = self
 		if @visible and w
 			@widget.initialize_visible_
 			rect = Win32Gui.alloc_c_struct('RECT')
@@ -1950,6 +2134,7 @@ end
 		flags |= Win32Gui::MF_POPUP if submenu
 		if label
 			flags |= Win32Gui::MF_STRING
+			label = label.gsub('&', '&&')
 			label = label.tr('_', '&')
 		else
 			flags |= Win32Gui::MF_SEPARATOR
@@ -1957,15 +2142,8 @@ end
 
 		if accel
 			key = accel[-1]
-			if key == ?>
-				key = case accel[/<(.*)>/, 1]
-				when 'enter'; #Gdk::Keyval::GDK_Return
-				when 'esc'; #Gdk::Keyval::GDK_Escape
-				when 'tab'; #Gdk::Keyval::GDK_Tab
-				else ??
-				end || ??
-			end
-			#add_accelerator(accel[0] == ?^ ? CONTROL_MASK : 0)
+			key = accel[/<(.*)>/, 1] if key == ?>
+			label += "\t#{'c-' if accel[0] == ?^}#{key.kind_of?(Integer) ? key.chr : key}"
 		end
 
 		if action
@@ -1994,12 +2172,360 @@ end
 	end
 end
 
+class OpenFile
+	def w32api(arg)
+		Win32Gui.getopenfilenamea(arg)
+	end
+	def w32flags
+		Win32Gui::OFN_PATHMUSTEXIST
+	end
+
+	def initialize(hwnd, title, opts={})
+		hwnd = 0	# non-modal
+		buf = 0.chr*512
+		ofn = Win32Gui.alloc_c_struct 'OPENFILENAMEA',
+			:lstructsize => :size,
+  			:hwndowner => hwnd,
+			:lpstrfilter => "All Files\0*.*\0\0",
+			:lpstrfile => buf,
+			:lpstrtitle => title,
+			:nmaxfile => buf.length,
+			:flags => Win32Gui::OFN_DONTADDTORECENT | Win32Gui::OFN_LONGNAMES |
+				Win32Gui::OFN_HIDEREADONLY | w32flags
+		ofn[:lpstrinitialdir] = opts[:path] if opts[:path]
+		return if w32api(ofn) == 0
+		buf = buf[0, buf.index(0.chr)] if buf.index(0.chr)
+		yield buf if buf != ''
+	end
+end
+
+class SaveFile < OpenFile
+	def w32api(arg)
+		Win32Gui.getsavefilenamea(arg)
+	end
+	def w32flags
+		Win32Gui::OFN_OVERWRITEPROMPT
+	end
+end
+
+class MessageBox
+	def initialize(hwnd, msg, opts={})
+		hwnd = 0	# non-modal
+		opts = { :title => opts } if opts.kind_of? String
+		Win32Gui.messageboxa(hwnd, msg, opts[:title], 0)
+	end
+end
+
+class InputBox < Window
+class IBoxWidget < DrawableWidget
+	def initialize_widget(hwnd, label, opts, &b)
+		@parent_hwnd = hwnd
+		@label = label
+		@action = b
+		@curline = ''
+		@b1down = @b2down = @textdown = false
+		@caret_x_select = nil
+
+		@default_color_association = { :background => :winbg, :label => :black,
+			:text => :black, :textbg => :white, :caret => :black, :btnc1 => :palegrey,
+			:btnc2 => :grey, :textsel => :white, :textselbg => :darkblue }
+	end
+
+	def initialize_visible
+		r1 = Win32Gui.alloc_c_struct('RECT')
+		Win32Gui.getwindowrect(@parent_hwnd, r1)
+		r2 = Win32Gui.alloc_c_struct('RECT', :left => 0, :top => 0, :right => 40*@font_width, :bottom => 8*@font_height)
+		Win32Gui.adjustwindowrect(r2, Win32Gui::WS_OVERLAPPED, Win32Gui::FALSE)
+		x = r1[:left]+(r1[:right]-r1[:left]-r2[:right]+r2[:left])/2
+		y = r1[:top]+(r1[:bottom]-r1[:top]-r2[:bottom]+r2[:top])/2
+		Win32Gui.movewindow(@hwnd, x, y, r2[:right]-r2[:left], r2[:bottom]-r2[:top], Win32Gui::FALSE)
+	end
+
+	def paint
+		y = @font_height/2
+
+		fixedfont = Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::ANSI_VAR_FONT))
+		sz = Win32Gui.alloc_c_struct('POINT')
+		Win32Gui.gettextextentpoint32a(@hdc, 'x', 1, sz)
+		var_font_height = sz[:y]
+		@label.each_line { |l|
+			draw_string_color(:label, @font_width, y, l)
+			y += var_font_height
+		}
+		y += @font_height
+		@texty = y-1
+		@texth = @font_height+1
+
+		y += @font_height*2
+		@by = y
+		@bw = 10*@font_width
+		@bh = @font_height*3/2
+		@bx1 = (@width - 2*@bw - 3*@font_width) / 2
+		@bx2 = @bx1 + 3*@font_width + @bw
+
+		c1 = @b1down ? :btnc2 : :btnc1
+		c2 = @b1down ? :btnc1 : :btnc2
+		draw_string_color(:text, @bx1+4*@font_width, @by+@font_height*3/8, 'Ok')
+		draw_line_color(c1, @bx1, @by, @bx1, @by+@bh)
+		draw_line_color(c1, @bx1, @by, @bx1+@bw, @by)
+		draw_line_color(c2, @bx1+@bw, @by+@bh, @bx1, @by+@bh)
+		draw_line_color(c2, @bx1+@bw, @by+@bh, @bx1+@bw, @by)
+
+		c1 = @b2down ? :btnc2 : :btnc1
+		c2 = @b2down ? :btnc1 : :btnc2
+		draw_string_color(:text, @bx2+3*@font_width, @by+@font_height*3/8, 'Cancel')
+		draw_line_color(c1, @bx2, @by, @bx2, @by+@bh)
+		draw_line_color(c1, @bx2, @by, @bx2+@bw, @by)
+		draw_line_color(c2, @bx2+@bw, @by+@bh, @bx2, @by+@bh)
+		draw_line_color(c2, @bx2+@bw, @by+@bh, @bx2+@bw, @by)
+
+		Win32Gui.selectobject(@hdc, fixedfont)
+		w_c = width/@font_width - 2
+
+		if @caret_x < w_c
+			@textoff = 0
+		else
+			@textoff = @caret_x-w_c+1
+		end
+		draw_rectangle_color(:textbg, @font_width, @texty-1, @width-2*@font_width, @font_height+1)
+		draw_string_color(:text, @font_width+1, @texty, @curline[@textoff, w_c])
+
+		if @caret_x_select
+			c1, c2 = [@caret_x_select, @caret_x].sort
+			c1 = [[c1, @textoff].max, @textoff+w_c].min
+			c2 = [[c2, @textoff].max, @textoff+w_c].min
+			if c1 != c2
+				draw_rectangle_color(:textselbg, @font_width+1+(c1-@textoff)*@font_width, @texty-1, (c2-c1)*@font_width, @font_height+1)
+				draw_string_color(:textsel, @font_width+1+(c1-@textoff)*@font_width, @texty, @curline[c1...c2])
+			end
+		end
+
+		cx = [@caret_x+1, w_c].min*@font_width+1
+		draw_line_color(:caret, cx, @texty, cx, @texty+@font_height-1)
+		@oldcaret_x = @caret_x
+	end
+
+	def keypress_ctrl(key)
+		case key
+		when ?a
+			@caret_x_select = 0
+			@caret_x = @curline.length
+			redraw
+		when ?c
+			if @caret_x_select
+				c1, c2 = [@caret_x, @caret_x_select].sort
+				clipboard_copy @curline[c1...c2]
+			end
+		when ?v
+			cptext = clipboard_paste.to_s
+			cx = @caret_x_select || @caret_x
+			@caret_x_select = nil
+			c1, c2 = [cx, @caret_x].sort
+			@curline[c1...c2] = cptext
+			@caret_x_select = nil
+			@caret_x = c1 + cptext.length
+			redraw
+		when ?x
+			if @caret_x_select
+				c1, c2 = [@caret_x, @caret_x_select].sort
+				clipboard_copy @curline[c1...c2]
+				@curline[c1..c2] = ''
+				@caret_x_select = nil
+				@caret_x = c1
+				redraw
+			end
+		else return false
+		end
+		true
+	end
+
+	def keypress(key)
+		case key
+		when :left
+			if kbd_shift
+				@caret_x_select ||= @caret_x
+			else
+				@caret_x_select = nil
+			end
+			if @caret_x > 0
+				@caret_x -= 1
+				update_caret
+			end
+		when :right
+			if kbd_shift
+				@caret_x_select ||= @caret_x
+			else
+				@caret_x_select = nil
+			end
+			if @caret_x < @curline.length
+				@caret_x += 1
+				update_caret
+			end
+		when :home
+			if kbd_shift
+				@caret_x_select ||= @caret_x
+			else
+				@caret_x_select = nil
+			end
+			@caret_x = 0
+			update_caret
+		when :end
+			if kbd_shift
+				@caret_x_select ||= @caret_x
+			else
+				@caret_x_select = nil
+			end
+			@caret_x = @curline.length
+			update_caret
+		when :enter
+			destroy
+			Gui.main_iter
+			protect { @action.call(@curline) }
+		when :esc
+			if @b1down or @b2down
+				@b1down = @b2down = false
+				redraw
+			else
+				destroy
+			end
+		when ?\x20..?\x7e
+			cx = @caret_x_select || @caret_x
+			@caret_x_select = nil
+			c1, c2 = [cx, @caret_x].sort
+			@curline[c1...c2] = key.chr
+			@caret_x = c1+1
+			redraw
+		when :delete
+			if @caret_x_select
+				c1, c2 = [@caret_x, @caret_x_select].sort
+				@curline[c1...c2] = ''
+				@caret_x_select = nil
+				@caret_x = c1
+				redraw
+			elsif @caret_x < @curline.length
+				@curline[@caret_x, 1] = ''
+				redraw
+			end
+		when :backspace
+			if @caret_x_select
+				c1, c2 = [@caret_x, @caret_x_select].sort
+				@curline[c1...c2] = ''
+				@caret_x_select = nil
+				@caret_x = c1
+				redraw
+			elsif @caret_x > 0
+				@caret_x -= 1
+				@curline[@caret_x, 1] = ''
+				redraw
+			end
+		else return false
+		end
+		true
+	end
+
+	def click(x, y)
+		Win32Gui.setcapture(@hwnd)
+		if y >= @texty and y < @texty+@texth
+			@caret_x_select = nil
+			@caret_x = x.to_i / @font_width - 1 + @textoff
+			@caret_x = [[@caret_x, 0].max, @curline.length].min
+			@textdown = @caret_x
+			update_caret
+		elsif y >= @by and y < @by+@bh
+			if x >= @bx1 and x < @bx1+@bw
+				@b1down = true
+				redraw
+			elsif x >= @bx2 and x < @bx2+@bw
+				@b2down = true
+				redraw
+			end
+		end
+	end
+
+	def mousemove(x, y)
+		if @textdown
+			x = Expression.make_signed(x, 16)
+			x = x.to_i / @font_width - 1 + @textoff
+			x = [[x, 0].max, @curline.length].min
+			if x != @textdown
+				@caret_x_select = @textdown
+				@caret_x = x
+				redraw
+			end
+		end
+	end
+
+	def mouserelease(x, y)
+		Win32Gui.releasecapture
+		if @textdown
+			x = Expression.make_signed(x, 16)
+			x = x.to_i / @font_width - 1 + @textoff
+			x = [[x, 0].max, @curline.length].min
+			if x != @textdown
+				@caret_x_select = @textdown
+				@caret_x = x
+				redraw
+			end
+			@textdown = false
+		elsif @b1down
+			@b1down = false
+			keypress(:enter)
+		elsif @b2down
+			@b2down = false
+			keypress(:esc)
+		end
+	end
+	
+	def update_caret
+		return if @oldcaret_x == @caret_x
+		redraw
+		@oldcaret_x = @caret_x
+	end
+
+	def destroy
+		@parent.destroy
+	end
+end
+	def initialize_window(hwnd, prompt, opts={}, &b)
+		@@mainwindow_list.delete self
+		self.title = opts[:title] ? opts[:title] : 'input'
+		self.widget = IBoxWidget.new(hwnd, prompt, opts, &b)
+	end
+end
+
+class ListWindow < Window
+class LBoxWidget < DrawableWidget
+	def initialize_widget(list, opts={}, &b)
+		@action = b
+
+		@default_color_association = { :background => :winbg }
+
+		@list = list.map { |l| l.map { |w| w.to_s } }
+		@titles = @list.shift
+	end
+
+	def paint
+		draw_line_color(:black, @width/2, 0, @width/2, @height)
+	end
+end
+	def initialize_window(hwnd, title, list, opts={}, &b)
+		@@mainwindow_list.delete self
+		self.title = title
+		self.widget = LBoxWidget.new(list, opts, &b)
+	end
+end
+
 def Gui.main
 	@idle_procs ||= []
 	msg = Win32Gui.alloc_c_struct('MSG')
-	while Win32Gui.getmessagea(msg, 0, 0, 0) != 0
-		Win32Gui.translatemessage(msg)
-		Win32Gui.dispatchmessagea(msg)
+	loop do
+		if Win32Gui.peekmessagea(msg, 0, 0, 0, Win32Gui::PM_NOREMOVE) != 0 or
+				Win32Gui.msgwaitformultipleobjects(0, 0, Win32Gui::FALSE, 500,
+					Win32Gui::QS_ALLINPUT) != Win32Gui::WAIT_TIMEOUT
+			break if Win32Gui.getmessagea(msg, 0, 0, 0) == 0
+			Win32Gui.translatemessage(msg)
+			Win32Gui.dispatchmessagea(msg)
+		end
 		while not @idle_procs.empty? and Win32Gui.peekmessagea(msg, 0, 0, 0, Win32Gui::PM_NOREMOVE) == 0
 			@idle_procs.delete_if { |ip| not ip.call }
 		end
