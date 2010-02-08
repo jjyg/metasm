@@ -4,6 +4,9 @@ when 'qt'; 'qt'
 when 'win32'; 'win32'
 else
 	puts "Unsupported METASM_GUI #{ENV['METASM_GUI'].inspect}" if $VERBOSE and ENV['METASM_GUI']
+	if RUBY_PLATFORM =~ /i.86-mswin32/i
+		'win32'
+	else
 	begin
 		require 'gtk2'
 		'gtk'
@@ -14,6 +17,7 @@ else
 		rescue LoadError
 			raise LoadError, 'No GUI ruby binding installed - please install libgtk2-ruby or libqt4-ruby'
 		end
+	end
 	end
 end
 require "metasm/gui/#{backend}"
