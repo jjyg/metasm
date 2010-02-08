@@ -41,12 +41,12 @@ class AsmListingWidget < DrawableWidget
 
 	def adjust_startaddr(off=0, update = true)
 		@startaddr += off
-		@startaddr = @maxaddr - 1 if @startaddr >= @maxaddr
+		@startaddr = @maxaddr - 1 if @startaddr.kind_of? Integer and @startaddr >= @maxaddr
 		if off = (0..16).find { |off_| di = @dasm.decoded[@startaddr-off_] and di.respond_to? :bin_length and di.bin_length > off_ } and off != 0
 			# align on @decoded boundary
 			@startaddr -= off
 		end
-		@startaddr = @minaddr if @startaddr < @minaddr
+		@startaddr = @minaddr if @startaddr.kind_of? Integer and @startaddr < @minaddr
 		gui_update if update
 	end
 
@@ -76,7 +76,7 @@ class AsmListingWidget < DrawableWidget
 		when :down
 			# scroll down 4 lines, or more if all the 4 1st lines have the same addr (eg block start)
 			@wantaddr = @line_address[@caret_y]
-			a = @line_address[4..-1].find { |v| v > @line_address[0] } if @line_address[4]
+			a = @line_address[4..-1].find { |v| v != @line_address[0] } if @line_address[4]
 			@startaddr = a || (@startaddr + 4)
 			adjust_startaddr
 		end
@@ -364,7 +364,7 @@ class AsmListingWidget < DrawableWidget
 		return if not addr = @parent_widget.normalize(addr)
 		if l = @line_address.index(addr) and l < @line_address.length - 4
 			@caret_y, @caret_x = @line_address.rindex(addr), 0
-		elsif addr >= @minaddr and addr <= @maxaddr
+		elsif addr.kind_of?(Integer) ? (addr >= @minaddr and addr <= @maxaddr) : @dasm.get_section_at(addr)
 			@startaddr, @caret_x, @caret_y = addr, 0, 0
 			adjust_startaddr
 			@wantaddr = @startaddr
@@ -374,8 +374,6 @@ class AsmListingWidget < DrawableWidget
 		end
 		update_caret
 		true
-	rescue
-		false
 	end
 
 	# returns the address of the data under the cursor
@@ -451,7 +449,7 @@ class AsmListingWidget < DrawableWidget
 				else
 					curaddr += [di.bin_length, 1].max
 				end
-			elsif curaddr < @maxaddr and s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
+			elsif s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
 				@dasm.comment[curaddr].each { |c| str_c[3] = "// #{c}" ; nl[] } if @dasm.comment[curaddr]
 				if label = s[0].inv_export[s[0].ptr]
 					l_list = @dasm.label_alias[curaddr].sort
@@ -494,6 +492,15 @@ class AsmListingWidget < DrawableWidget
 							dat = "#{%w[x db dw x dd x x x dq][len]} #{Expression[s[0].decode_imm("u#{len*8}".to_sym, @dasm.cpu.endianness)]} "
 							aoff = len
 						end
+					elsif asc = str.inject('') { |asc_, c|
+						case c
+						when 10; break asc_ << c
+						when 0x20..0x7e, 9, 13; asc_ << c
+						else break asc_
+						end
+					} and asc.length > 3
+						dat = "db #{asc.inspect} "
+						aoff = asc.length
 					elsif rep = str.inject(0) { |rep_, c|
 						case c
 						when str[0]; rep_+1
@@ -503,14 +510,6 @@ class AsmListingWidget < DrawableWidget
 						rep -= curaddr % 256 if rep == 256 and curaddr.kind_of? Integer
 						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]}) "
 						aoff = rep
-					elsif asc = str.inject('') { |asc_, c|
-						case c
-						when 0x20..0x7e, 9, 10, 13; asc_ << c
-						else break asc_
-						end
-					} and asc.length > 3
-						dat = "db #{asc.inspect} "
-						aoff = asc.length
 					else
 						dat = "db #{Expression[str[0]]} "
 						aoff = 1
@@ -551,8 +550,8 @@ class AsmListingWidget < DrawableWidget
 		addr_line = {}		# addr => last line (di)
 		@line_address.each_with_index { |a, l| addr_line[a] = l }
 		@arrows = arrows_addr.uniq.sort.map { |from, to|
-			[(addr_line[from] || (from < curaddr ? :up : :down)),
-			 (addr_line[ to ] || ( to  < curaddr ? :up : :down))]
+			[(addr_line[from] || (from < curaddr ? :up : :down) rescue :up),
+			 (addr_line[ to ] || ( to  < curaddr ? :up : :down) rescue :up)]
 		}
 		invalidate(0, 0, @arrow_zone_w, 100000) if prev_arrows != @arrows
 	end
