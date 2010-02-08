@@ -1996,6 +1996,10 @@ class Window
 			Win32Gui.setmenu(@hwnd, @menu)
 		end
 
+		show
+	end
+
+	def show
 		Win32Gui.showwindow(@hwnd, Win32Gui::SW_SHOWDEFAULT)
 		Win32Gui.updatewindow(@hwnd)
 	end
@@ -2011,13 +2015,13 @@ class Window
 		}.fetch(key, key)
 	}
 
-	MSGNAME = Win32Gui.constants.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
+#	MSGNAME = Win32Gui.constants.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
 	def windowproc(hwnd, msg, wparam, lparam)
-case msg
-when Win32Gui::WM_NCHITTEST, Win32Gui::WM_SETCURSOR, Win32Gui::WM_MOUSEMOVE
-else
-puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lparam}"
-end
+#case msg
+#when Win32Gui::WM_NCHITTEST, Win32Gui::WM_SETCURSOR, Win32Gui::WM_MOUSEMOVE
+#else
+#puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lparam}"
+#end
 		case msg
 		when Win32Gui::WM_NCHITTEST, Win32Gui::WM_SETCURSOR
 			# most frequent messages (with MOUSEMOVE)
@@ -2146,9 +2150,12 @@ end
 	end
 
 	def destroy_window
+		@destroyed = true
 		@@mainwindow_list.delete self
 		Gui.main_quit if @@mainwindow_list.empty?	# XXX we didn't call Gui.main, we shouldn't Gui.main_quit...
 	end
+
+	def destroyed? ; @destroyed ||= false ; end
 
 	def new_menu
 		Win32Gui.createmenu()
@@ -2263,9 +2270,11 @@ class IBoxWidget < DrawableWidget
 		@parent_hwnd = hwnd
 		@label = label
 		@action = b
-		@curline = ''
 		@b1down = @b2down = @textdown = false
-		@caret_x_select = nil
+		@curline = opts[:text].to_s
+		@caret_x_select = 0
+		@caret_x = @curline.length
+		@caret_x_start = 0
 
 		@default_color_association = { :background => :winbg, :label => :black,
 			:text => :black, :textbg => :white, :caret => :black, :btnc1 => :palegrey,
@@ -2323,25 +2332,27 @@ class IBoxWidget < DrawableWidget
 		Win32Gui.selectobject(@hdc, fixedfont)
 		w_c = width/@font_width - 2
 
-		if @caret_x < w_c
-			@textoff = 0
-		else
-			@textoff = @caret_x-w_c+1
+		if @caret_x <= @caret_x_start
+			@caret_x_start = [@caret_x-1, 0].max
+		elsif @caret_x_start > 0 and @curline[@caret_x_start..-1].length < w_c-1
+			@caret_x_start = [@curline.length-w_c+1, 0].max
+		elsif @caret_x_start + w_c <= @caret_x
+			@caret_x_start = [@caret_x-w_c+1, 0].max
 		end
 		draw_rectangle_color(:textbg, @font_width, @texty-1, @width-2*@font_width, @font_height+1)
-		draw_string_color(:text, @font_width+1, @texty, @curline[@textoff, w_c])
+		draw_string_color(:text, @font_width+1, @texty, @curline[@caret_x_start, w_c])
 
 		if @caret_x_select
 			c1, c2 = [@caret_x_select, @caret_x].sort
-			c1 = [[c1, @textoff].max, @textoff+w_c].min
-			c2 = [[c2, @textoff].max, @textoff+w_c].min
+			c1 = [[c1, @caret_x_start].max, @caret_x_start+w_c].min
+			c2 = [[c2, @caret_x_start].max, @caret_x_start+w_c].min
 			if c1 != c2
-				draw_rectangle_color(:textselbg, @font_width+1+(c1-@textoff)*@font_width, @texty-1, (c2-c1)*@font_width, @font_height+1)
-				draw_string_color(:textsel, @font_width+1+(c1-@textoff)*@font_width, @texty, @curline[c1...c2])
+				draw_rectangle_color(:textselbg, @font_width+1+(c1-@caret_x_start)*@font_width, @texty-1, (c2-c1)*@font_width, @font_height+1)
+				draw_string_color(:textsel, @font_width+1+(c1-@caret_x_start)*@font_width, @texty, @curline[c1...c2])
 			end
 		end
 
-		cx = [@caret_x+1, w_c].min*@font_width+1
+		cx = [@caret_x-@caret_x_start+1, w_c].min*@font_width+1
 		draw_line_color(:caret, cx, @texty, cx, @texty+@font_height-1)
 		@oldcaret_x = @caret_x
 	end
@@ -2468,7 +2479,7 @@ class IBoxWidget < DrawableWidget
 		Win32Gui.setcapture(@hwnd)
 		if y >= @texty and y < @texty+@texth
 			@caret_x_select = nil
-			@caret_x = x.to_i / @font_width - 1 + @textoff
+			@caret_x = x.to_i / @font_width - 1 + @caret_x_start
 			@caret_x = [[@caret_x, 0].max, @curline.length].min
 			@textdown = @caret_x
 			update_caret
@@ -2486,7 +2497,7 @@ class IBoxWidget < DrawableWidget
 	def mousemove(x, y)
 		if @textdown
 			x = Expression.make_signed(x, 16)
-			x = x.to_i / @font_width - 1 + @textoff
+			x = x.to_i / @font_width - 1 + @caret_x_start
 			x = [[x, 0].max, @curline.length].min
 			if x != @textdown
 				@caret_x_select = @textdown
@@ -2500,7 +2511,7 @@ class IBoxWidget < DrawableWidget
 		Win32Gui.releasecapture
 		if @textdown
 			x = Expression.make_signed(x, 16)
-			x = x.to_i / @font_width - 1 + @textoff
+			x = x.to_i / @font_width - 1 + @caret_x_start
 			x = [[x, 0].max, @curline.length].min
 			if x != @textdown
 				@caret_x_select = @textdown
@@ -2526,12 +2537,25 @@ class IBoxWidget < DrawableWidget
 	def destroy
 		@parent.destroy
 	end
+
+	def text
+		@curline
+	end
+	def text=(t)
+		@curline = t
+		@caret_x_select = 0
+		@caret_x = t.length
+		redraw
+	end
 end
 	def initialize_window(hwnd, prompt, opts={}, &b)
 		@@mainwindow_list.delete self
 		self.title = opts[:title] ? opts[:title] : 'input'
 		self.widget = IBoxWidget.new(hwnd, prompt, opts, &b)
 	end
+
+	def text ; @widget.text ; end
+	def text=(t) ; @widget.text = t ; end
 end
 
 class ListWindow < Window
@@ -2571,7 +2595,6 @@ class LBoxWidget < DrawableWidget
 	end
 
 	def resized(w, h)
-		p @colw, @colwmax
 		allw = @colw.inject(0) { |a, i| a+i }
 		if w > allw
 			can = w - allw

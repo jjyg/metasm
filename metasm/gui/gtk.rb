@@ -399,7 +399,7 @@ class MessageBox < Gtk::MessageDialog
 end
 
 class InputBox < Gtk::Dialog
-	attr_accessor :label, :text
+	attr_accessor :label, :textwidget
 
 	# shows a simplitic input box (eg window with a 1-line textbox + OK button), yields the text
 	# TODO history, dropdown, autocomplete, contexts, 3D stereo surround, etc
@@ -410,14 +410,14 @@ class InputBox < Gtk::Dialog
 		self.title = opts[:title] if opts[:title]
 
 		@label = Gtk::Label.new(str)
-		@text  = Gtk::TextView.new
+		@textwidget  = Gtk::TextView.new
 		if opts[:text]
-			text.buffer.text = opts[:text].to_s
-			text.buffer.move_mark('selection_bound', text.buffer.start_iter)
-			text.buffer.move_mark('insert', text.buffer.end_iter)
+			@textwidget.buffer.text = opts[:text].to_s
+			@textwidget.buffer.move_mark('selection_bound', @textwidget.buffer.start_iter)
+			@textwidget.buffer.move_mark('insert', @textwidget.buffer.end_iter)
 		end
 
-		text.signal_connect('key_press_event') { |w, ev|
+		@textwidget.signal_connect('key_press_event') { |w, ev|
 			case ev.keyval
 			when Gdk::Keyval::GDK_Escape; response(RESPONSE_REJECT) ; true
 			when Gdk::Keyval::GDK_Return, Gdk::Keyval::GDK_KP_Enter; response(RESPONSE_ACCEPT) ; true
@@ -425,18 +425,21 @@ class InputBox < Gtk::Dialog
 		}
 
 		signal_connect('response') { |win, id|
-			resp = text.buffer.text if id == RESPONSE_ACCEPT
+			resp = @textwidget.buffer.text if id == RESPONSE_ACCEPT
 			destroy
 			yield resp if resp
 			true
 		}
 
 		vbox.pack_start label, false, false, 8
-		vbox.pack_start text, false, false, 8
+		vbox.pack_start @textwidget, false, false, 8
 
 		show_all
 		present
 	end
+
+	def text ; @textwidget.buffer.text ; end
+	def text=(nt) ; @textwidget.buffer.text = nt ; end
 end
 
 class OpenFile < Gtk::FileChooserDialog
@@ -542,6 +545,13 @@ class ListWindow < Gtk::Dialog
 		show_all
 		present
 	end
+
+	def x; position[0]; end
+	def x=(nx); move(nx, position[1]); end
+	def y; position[1]; end
+	def y=(ny); move(position[0], ny); end
+	def width; size[0] ; end
+	def height; size[1] ; end
 end
 
 class Window < Gtk::Window

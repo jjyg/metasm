@@ -538,8 +538,8 @@ class DasmWindow < Window
 					list << [pr.pid, path] if path
 					true
 				elsif i
-					l = listwindow('running processes', list, :noshow => true) { |e| i.text.buffer.text = e[0] }
-					l.move(l.position[0] + l.size[0], l.position[1])
+					l = listwindow('running processes', list, :noshow => true) { |e| i.text = e[0] }
+					l.x += l.width
 					l.show
 					false
 				end
