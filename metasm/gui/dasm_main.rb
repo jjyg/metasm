@@ -42,11 +42,12 @@ class DisasmWidget < ContainerChoiceWidget
 
 	def start_disassemble_bg
 		gui_update_counter = 0
+		run = true
 		Gui.idle_add {
 			# metasm disassembler loop
 			# update gui once in a while
-			if not @entrypoints.empty? or not @dasm.addrs_todo.empty?
-				protect { @dasm.disassemble_mainiter(@entrypoints) }
+			if run or not @entrypoints.empty? or not @dasm.addrs_todo.empty?
+				protect { run = @dasm.disassemble_mainiter(@entrypoints) }
 				gui_update_counter += 1
 				if gui_update_counter > @gui_update_counter_max
 					gui_update_counter = 0
