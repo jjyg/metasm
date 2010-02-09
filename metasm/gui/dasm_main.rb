@@ -316,10 +316,8 @@ class DisasmWidget < ContainerChoiceWidget
 				when :up
 					list.pop
 				when :di
-					list.last[0] = Expression[a[-1].address]
 					list.last << a[1] << a[0]
 				when :func
-					list.last[0] = Expression[a[-2]]
 					list.last << a[1] << a[0]
 				when :found
 					list.pop

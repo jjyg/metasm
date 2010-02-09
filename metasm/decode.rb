@@ -1846,8 +1846,9 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 oldexpr = expr
 				case ev
 				when :di
+					h[:addr] = h[:di].address
 					expr = backtrace_emu_instr(h[:di], expr)
-					bt_log << [ev, expr, oldexpr, h[:di]] if bt_log and expr != oldexpr
+					bt_log << [ev, expr, oldexpr, h[:di], h[:addr]] if bt_log and expr != oldexpr
 				when :func
 					expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr, origin, maxdepth-h[:loopdetect].length)
 					if snapshot_addr and snapshot_addr == h[:funcaddr]
@@ -1855,7 +1856,7 @@ oldexpr = expr
 puts "  backtrace: recursive function #{Expression[h[:funcaddr]]}" if debug_backtrace
 						next false
 					end
-					bt_log << [ev, expr, oldexpr, h[:addr], h[:funcaddr]] if bt_log and expr != oldexpr
+					bt_log << [ev, expr, oldexpr, h[:funcaddr], h[:addr]] if bt_log and expr != oldexpr
 				end
 puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" if debug_backtrace and expr != oldexpr
 				if vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) : backtrace_check_found(expr,
