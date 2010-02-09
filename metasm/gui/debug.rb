@@ -601,9 +601,9 @@ class DbgConsoleWidget < DrawableWidget
 		dasm = @dbg.disassembler
 		new_command('help') { add_log @commands.keys.sort.join(' ') } # TODO help <subject>
 		new_command('d', 'focus data window on an address') { |arg| p.mem.focus_addr(solve_expr(arg)) }
-		new_command('db', 'display bytes in data window') { p.mem.curview.data_size = 1 ; p.mem.gui_update }
-		new_command('dw', 'display bytes in data window') { p.mem.curview.data_size = 2 ; p.mem.gui_update }
-		new_command('dd', 'display bytes in data window') { p.mem.curview.data_size = 4 ; p.mem.gui_update }
+		new_command('db', 'display bytes in data window') { |arg| p.mem.curview.data_size = 1 ; p.mem.gui_update ; @commands['d'][arg] }
+		new_command('dw', 'display bytes in data window') { |arg| p.mem.curview.data_size = 2 ; p.mem.gui_update ; @commands['d'][arg] }
+		new_command('dd', 'display bytes in data window') { |arg| p.mem.curview.data_size = 4 ; p.mem.gui_update ; @commands['d'][arg] }
 		new_command('u', 'focus code window on an address') { |arg| p.code.focus_addr(solve_expr(arg)) }
 		new_command('.', 'focus code window on current address') { p.code.focus_addr(solve_expr(@dbg.register_pc.to_s)) }
 		new_command('wc', 'set code window height') { |arg|
