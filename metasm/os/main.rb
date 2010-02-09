@@ -682,81 +682,9 @@ class Debugger
 
 	end
 
-	# an Expression whose ::parser handles indirection (byte ptr [foobar])
-	class IndExpression < Expression
-		class << self
-		def parse_value(lexer)
-			sz = nil
-			ptr = nil
-			loop do
-				nil while tok = lexer.readtok and tok.type == :space
-				return if not tok
-				case tok.raw
-				when 'qword'; sz=8
-				when 'dword'; sz=4
-				when 'word'; sz=2
-				when 'byte'; sz=1
-				when 'ptr'
-				when '['
-					ptr = parse(lexer)
-					nil while tok = lexer.readtok and tok.type == :space
-					raise tok || lexer, '] expected' if tok.raw != ']'
-					break
-				when '*'
-					ptr = parse_value(lexer)
-					break
-				when ':'
-					n = lexer.readtok
-					return n.raw.to_sym
-				else
-					lexer.unreadtok tok
-					break
-				end
-			end
-			raise lexer, 'invalid indirection' if sz and not ptr
-			if ptr; Indirection[ptr, sz]	# if sz is nil, default cpu pointersz is set in resolve_expr
-			else super(lexer)
-			end
-		end
-
-		def parse(*a, &b)
-			# custom decimal converter
-			@cb_hex = b
-			super(*a)
-		end
-
-		def parse_intfloat(lexer, tok)
-			case tok.raw
-			when /^([0-9]+)$/; tok.value = @cb_hex ? @cb_hex[$1] : $1.to_i
-			when /^0x([0-9a-f]+)$/i, /^([0-9a-f]+)h$/i; tok.value = $1.to_i(16)
-			when /^0b([01]+)$/i; tok.value = $1.to_i(2)
-			end
-		end
-
-		def readop(lexer)
-			if t0 = lexer.readtok and t0.raw == '-' and t1 = lexer.readtok and t1.raw == '>'
-				op = t0.dup
-				op.raw << t1.raw
-				op.value = op.raw.to_sym
-				op
-			else
-				lexer.unreadtok t1
-				lexer.unreadtok t0
-				super(lexer)
-			end
-		end
-
-		def new(op, r, l)
-			return Indirection[[l, :+, r], nil] if op == :'->'
-			super(op, r, l)
-		end
-		end
-	end
-
 	# parses the expression contained in arg, updates arg to point after the expr
 	def parse_expr(arg)
-		pp = Preprocessor.new(arg)
-		return if not e = IndExpression.parse(pp) { |s|
+		return if not e = IndExpression.parse_string(arg) { |s|
 			# handle 400000 -> 0x400000
 			# XXX no way to override and force decimal interpretation..
 			if s.length > 4 and not @disassembler.get_section_at(s.to_i) and @disassembler.get_section_at(s.to_i(16))
@@ -765,11 +693,6 @@ class Debugger
 				s.to_i
 			end
 		}
-
-		# update arg
-		len = pp.pos
-		pp.queue.each { |t| len -= t.raw.length }
-		arg[0, len] = ''
 
 		# resolve ambiguous symbol names/hex values
 		bd = {}
