@@ -115,7 +115,7 @@ class AsmListingWidget < DrawableWidget
 		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
 			next if not str or y >= w_h or x >= w_w
-			if @hl_word
+			if @hl_word and @hl_word != ''
 				stmp = str
 				pre_x = 0
 				while stmp =~ /^(.*?)(\b#{Regexp.escape @hl_word}\b)/

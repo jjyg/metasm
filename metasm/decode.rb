@@ -1864,6 +1864,7 @@ puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" 
 						expr = StoppedExpr.new vals
 					else
 						result |= vals
+						bt_log << [:found, vals, h[:addr]] if bt_log
 						next false
 					end
 				elsif expr.complexity > max_complexity

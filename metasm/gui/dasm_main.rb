@@ -292,6 +292,49 @@ class DisasmWidget < ContainerChoiceWidget
 		}
 	end
 
+	def prompt_backtrace
+		addr = curaddr
+		inputbox('expression to backtrace', :text => curview.hl_word) { |e|
+			expr = IndExpression.parse_string(e)
+			bd = {}
+			registers = @dasm.cpu.dbg_register_list.map { |r| r.to_s }
+			expr.externals.grep(String).each { |w|
+				if registers.include? w.downcase
+					bd[w] = w.downcase.to_sym
+				end
+			}
+			expr = expr.bind(bd).reduce { |e| e.len ||= @dasm.cpu.size/8 if e.kind_of? Indirection ; nil }
+
+			log = []
+			dasm.backtrace(expr, addr, :log => log)
+			list = [['address', 'type', 'old value', 'value']]
+			log.each { |t, *a|
+				list << [Expression[a[-1]], t]
+				case t
+				when :start
+					list.last << a[0]
+				when :up
+					list.pop
+				when :di
+					list.last[0] = Expression[a[-1].address]
+					list.last << a[1] << a[0]
+				when :func
+					list.last[0] = Expression[a[-2]]
+					list.last << a[1] << a[0]
+				when :found
+					list.pop
+					a[0].each { |e| list << [nil, :found, Expression[e]] }
+				else
+					list.last << a[0] << a[1..-1].inspect
+				end
+			}
+			listwindow("backtrace #{expr} from #{Expression[addr]}", list) { |i|
+				a = i[0].empty? ? i[2] : i[0]
+				focus_addr(a, nil, true)
+ 			}
+		}
+	end
+
 	def focus_addr_autocomplete(v, show_alt=true)
 		if not focus_addr(v, nil, true)
 			labels = @dasm.prog_binding.map { |k, vv|
@@ -432,6 +475,7 @@ class DisasmWidget < ContainerChoiceWidget
 				curview.hl_word = w 
 				curview.redraw
 			}
+		when ?b; prompt_backtrace
 		when ?c; disassemble(curview.current_address)
 		when ?C; disassemble_fast(curview.current_address)
 		when ?d; toggle_data(curview.current_address)
@@ -651,10 +695,11 @@ class DasmWindow < Window
 		addsubmenu(actions, 'Jmp back', '<esc>') { @dasm_widget.focus_addr_back }
 		addsubmenu(actions, 'Undo jmp back', '^<enter>') { @dasm_widget.focus_addr_redo }
 		addsubmenu(actions, 'Goto', 'g') { @dasm_widget.prompt_goto }
+		addsubmenu(actions, '_Backtrace', 'b') { @dasm_widget.prompt_backtrace }
 		addsubmenu(actions, 'List functions', 'f') { @dasm_widget.list_functions }
 		addsubmenu(actions, 'List labels', 'l') { @dasm_widget.list_labels }
 		addsubmenu(actions, 'List xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
-		addsubmenu(actions, 'Re_base') { @dasm_widget.rebase }
+		addsubmenu(actions, 'Rebase') { @dasm_widget.rebase }
 		addsubmenu(actions, 'Rename label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
 		addsubmenu(actions, 'Decompile', '<tab>') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Decompile finali_ze') { @dasm_widget.dasm.decompiler.finalize ; @dasm_widget.gui_update }
