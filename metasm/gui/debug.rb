@@ -15,6 +15,10 @@ class DbgWidget < ContainerVBoxWidget
 	attr_accessor :parent_widget, :keyboard_callback, :keyboard_callback_ctrl
 	def initialize_widget(dbg)
 		@dbg = dbg
+		@keyboard_callback = {}
+		@keyboard_callback_ctrl = {}
+		@parent_widget = nil
+
 
 		@regs = DbgRegWidget.new(dbg, self)
 		@code = DisasmWidget.new(dbg.disassembler)
@@ -23,10 +27,6 @@ class DbgWidget < ContainerVBoxWidget
 		@code.parent_widget = self
 		@mem.parent_widget = self
 		@dbg.disassembler.disassemble_fast(@dbg.pc)
-
-		@keyboard_callback = {}
-		@keyboard_callback_ctrl = {}
-		@parent_widget = nil
 
 		@code.bg_color_callback = lambda { |a|
 			if a == @dbg.pc

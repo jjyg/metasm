@@ -133,8 +133,12 @@ class ContainerVBoxWidget < Gtk::VBox
 		else
 			pk[0] = false
 		end
+		return if h == cld.allocation.height
 		set_child_packing(cld, *pk)
 		cld.set_height_request(h)
+	end
+
+	def redraw
 	end
 end
 
