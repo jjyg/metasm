@@ -572,7 +572,6 @@ class Window < Gtk::Window
 
 		@menu = Gtk::MenuBar.new
 		@accel_group = Gtk::AccelGroup.new
-		add_accel_group(@accel_group)
 
 		@vbox.add @menu, 'expand' => false
 		@child = nil
@@ -609,11 +608,6 @@ class Window < Gtk::Window
 
 	def new_menu
 		Gtk::Menu.new
-	end
-
-	def hack_accel_group
-		(@foo ||= []) << @accel_group
-		@accel_group = Gtk::AccelGroup.new
 	end
 
 	def addsubmenu(menu, *args, &action)

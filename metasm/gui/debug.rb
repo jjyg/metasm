@@ -843,7 +843,6 @@ class DbgWindow < Window
 
 	def build_menu
 		dbgmenu = new_menu
-		hack_accel_group
 		addsubmenu(dbgmenu, 'continue', '<f5>') { @dbg_widget.dbg_continue }
 		addsubmenu(dbgmenu, 'step over', '<f10>') { @dbg_widget.dbg_stepover }
 		addsubmenu(dbgmenu, 'step into', '<f11>') { @dbg_widget.dbg_singlestep }

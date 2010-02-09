@@ -412,6 +412,8 @@ class DisasmWidget < ContainerChoiceWidget
 		return true if @keyboard_callback_ctrl[key] and @keyboard_callback_ctrl[key][key]
 		case key
 		when :enter; focus_addr_redo
+		when ?o; w = toplevel ; w.promptopen if w.respond_to? :promptopen
+		when ?s; w = toplevel ; w.promptsave if w.respond_to? :promptsave
 		when ?r; prompt_run_ruby
 		when ?C; disassemble_fast_deep(curaddr)
 		else return @parent_widget ? @parent_widget.keypress_ctrl(key) : false
@@ -464,11 +466,40 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 end
 
+# this widget is loaded in an empty DasmWindow to handle shortcuts
+class NoDasmWidget < DrawableWidget
+	def initialize_widget(window)
+		@window = window
+	end
+
+	def paint
+	end
+
+	def keypress(key)
+		case key
+		when ?v; $VERBOSE = !$VERBOSE
+		when ?d; $DEBUG = !$DEBUG
+		end
+	end
+
+	def keypress_ctrl(key)
+		case key
+		when ?o; @window.promptopen
+		when ?r; @window.promptruby
+		end
+	end
+end
+
 class DasmWindow < Window
 	attr_accessor :dasm_widget, :menu
 	def initialize_window(title = 'metasm disassembler')
 		self.title = title
 		@dasm_widget = nil
+		self.widget = NoDasmWidget.new(self)
+	end
+	
+	def widget=(w)
+		super(w || NoDasmWidget.new(self))
 	end
 
 	def destroy_window
@@ -491,7 +522,7 @@ class DasmWindow < Window
 	end
 
 	def loadfile(path)
-		exe = Metasm::AutoExe.orshellcode { Metasm::Ia32.new }.decode_file(path) { |type, str|
+		exe = AutoExe.orshellcode { Ia32.new }.decode_file(path) { |type, str|
 			# Disassembler save file will use this callback with unhandled sections / invalid binary file path
 			case type
 			when 'binarypath'
@@ -505,59 +536,76 @@ class DasmWindow < Window
 		exe
 	end
 
+	def promptopen
+		openfile('chose target binary') { |exename| loadfile(exename) }
+	end
+
+	def promptdebug
+		l = nil
+		i = inputbox('chose target') { |name|
+			i = nil ; l.destroy if l and not l.destroyed?
+			if pr = OS.current.find_process(name)
+				target = pr.debugger
+			elsif name =~ /^(udp|tcp|.*\d+.*):/i	# don't match c:\kikoo, but allow 127.0.0.1 / [1:2::3]
+				target = GdbRemoteDebugger.new(name)
+			elsif pr = OS.current.create_process(name)
+				target = pr.debugger
+			else
+				messagebox('no such target')
+				next
+			end
+			DbgWindow.new(target)
+			destroy if not @dasm_widget
+		}
+
+		# build process list in bg (exe name resolution takes a few seconds)
+		list = [['pid', 'name']]
+		list_pr = OS.current.list_processes
+		Gui.idle_add {
+			if pr = list_pr.shift
+				path = pr.modules.first.path if pr.modules and pr.modules.first
+				#path ||= '<unk>'	# if we can't retrieve exe name, can't debug the process
+				list << [pr.pid, path] if path
+				true
+			elsif i
+				l = listwindow('running processes', list, :noshow => true) { |e| i.text = e[0] }
+				l.x += l.width
+				l.show
+				false
+			end
+		}
+	end
+
+	def promptsave
+		openfile('chose save file') { |file|
+			@dasm_widget.dasm.save_file(file)
+		} if @dasm_widget
+	end
+
+	def promptruby
+		if @dasm_widget
+			@dasm_widget.prompt_run_ruby
+		else
+			inputbox('code to eval') { |c| messagebox eval(c).inspect[0, 512], 'eval' }
+		end
+	end
+
 	def build_menu
 		# TODO dynamic checkboxes (check $VERBOSE when opening the options menu to (un)set the mark)
 		filemenu = new_menu
 
-		addsubmenu(filemenu, 'OPEN', '^o') {
-			openfile('chose target binary') { |exename| loadfile(exename) }
-		}
-		addsubmenu(filemenu, '_Debug') {
-			l = nil
-			i = inputbox('chose target') { |name|
-				i = nil ; l.destroy if l and not l.destroyed?
-				if pr = OS.current.find_process(name)
-					target = pr.debugger
-				elsif name =~ /^(udp|tcp|.*\d+.*):/i	# don't match c:\kikoo, but allow 127.0.0.1 / [1:2::3]
-					target = GdbRemoteDebugger.new(name)
-				elsif pr = OS.current.create_process(name)
-					target = pr.debugger
-				else
-					messagebox('no such target')
-					next
-				end
-				DbgWindow.new(target)
-			}
+		# a fake unreferenced accel group, so that the shortcut keys appear in the menu, but the widget keypress is responsible
+		# of handling them (otherwise this would take precedence and :hex couldn't get 'c' etc)
+		# but ^o still works (must work even without DasmWidget loaded)
 
-			# build process list in bg (exe name resolution takes a few seconds)
-			list = [['pid', 'name']]
-			list_pr = OS.current.list_processes
-			Gui.idle_add {
-				if pr = list_pr.shift
-					path = pr.modules.first.path if pr.modules and pr.modules.first
-					#path ||= '<unk>'	# if we can't retrieve exe name, can't debug the process
-					list << [pr.pid, path] if path
-					true
-				elsif i
-					l = listwindow('running processes', list, :noshow => true) { |e| i.text = e[0] }
-					l.x += l.width
-					l.show
-					false
-				end
-			}
-		}
-
-		addsubmenu(filemenu, 'SAVE', '^s') {
-			openfile('chose save file') { |file|
-				@dasm_widget.dasm.save_file(file)
-			} if @dasm_widget
-		}
-
+		addsubmenu(filemenu, 'OPEN', '^o') { promptopen }
+		addsubmenu(filemenu, '_Debug') { promptdebug }
+		addsubmenu(filemenu, 'SAVE', '^s') { promptsave }
 		addsubmenu(filemenu, 'CLOSE') {
 			if @dasm_widget
 				@dasm_widget.terminate
-				self.widget = nil
 				@dasm_widget = nil
+				self.widget = nil
 			end
 		}
 		addsubmenu(filemenu)
@@ -593,17 +641,11 @@ class DasmWindow < Window
 
 		addsubmenu(@menu, filemenu, '_File')
 
-		# a fake unreferenced accel group, so that the shortcut keys appear in the menu, but the widget keypress is responsible
-		# of handling them (otherwise this would take precedence and :hex couldn't get 'c' etc)
-		# but ^o still works (must work even without DasmWidget loaded)
-		hack_accel_group	# XXX
-
 		actions = new_menu
 		dasm = new_menu
 		addsubmenu(dasm, '_Disassemble from here', 'c') { @dasm_widget.disassemble(@dasm_widget.curview.current_address) }
-		hack_accel_group	# XXX ok, so an old gtk segfaults with an accelerator containing both c and C..
 		addsubmenu(dasm, 'Disassemble _fast from here', 'C') { @dasm_widget.disassemble_fast(@dasm_widget.curview.current_address) }
-		addsubmenu(dasm, 'Disassemble fast & dee_p from here') { @dasm_widget.disassemble_fast_deep(@dasm_widget.curview.current_address) }
+		addsubmenu(dasm, 'Disassemble fast & dee_p from here', '^C') { @dasm_widget.disassemble_fast_deep(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, dasm, '_Disassemble')
 		addsubmenu(actions, 'Follow', '<enter>') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }	# XXX
 		addsubmenu(actions, 'Jmp back', '<esc>') { @dasm_widget.focus_addr_back }
@@ -622,13 +664,7 @@ class DasmWindow < Window
 		addsubmenu(actions, 'Undefine function & _subfuncs') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address, true) }
 		addsubmenu(actions, 'Data', 'd') { @dasm_widget.toggle_data(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Pause dasm', 'p', :check) { |ck| !@dasm_widget.playpause_dasm }
-		addsubmenu(actions, 'Run ruby snippet', '^r') {
-			if @dasm_widget
-				@dasm_widget.prompt_run_ruby
-			else
-				inputbox('code to eval') { |c| messagebox eval(c).inspect[0, 512], 'eval' }
-			end
-		}
+		addsubmenu(actions, 'Run ruby snippet', '^r') { promptruby }
 		addsubmenu(actions, 'Run _ruby plugin') { @dasm_widget.prompt_run_ruby_plugin }
 
 		addsubmenu(@menu, actions, '_Actions')

@@ -1651,7 +1651,9 @@ module Msgbox
 	include Protect
 
 	def toplevel
-		@hwnd || 0
+		p = self
+		p = p.parent while p.respond_to? :parent and p.parent
+		p
 	end
 
 	# shows a message box (non-modal)
@@ -2222,7 +2224,7 @@ class Window
 	def widget=(w)
 		@widget = w
 		w.hwnd = @hwnd if w
-		w.parent = self
+		w.parent = self if w
 		if @visible and w
 			@widget.initialize_visible_
 			rect = Win32Gui.alloc_c_struct('RECT')
@@ -2301,9 +2303,6 @@ class Window
 		Win32Gui.appendmenua(menu, flags, id || submenu, label)
 	end
 
-	def hack_accel_group
-	end
-
 	def title; @title; end
 	def title=(t)
 		@title = t
@@ -2319,12 +2318,11 @@ class OpenFile
 		Win32Gui::OFN_PATHMUSTEXIST
 	end
 
-	def initialize(hwnd, title, opts={})
-		hwnd = 0	# non-modal
+	def initialize(win, title, opts={})
 		buf = 0.chr*512
 		ofn = Win32Gui.alloc_c_struct 'OPENFILENAMEA',
 			:lstructsize => :size,
-  			:hwndowner => hwnd,
+  			#:hwndowner => win.hwnd,	# 0 for nonmodal
 			:lpstrfilter => "All Files\0*.*\0\0",
 			:lpstrfile => buf,
 			:lpstrtitle => title,
@@ -2348,17 +2346,16 @@ class SaveFile < OpenFile
 end
 
 class MessageBox
-	def initialize(hwnd, msg, opts={})
-		hwnd = 0	# non-modal
+	def initialize(win, msg, opts={})
 		opts = { :title => opts } if opts.kind_of? String
-		Win32Gui.messageboxa(hwnd, msg, opts[:title], 0)
+		Win32Gui.messageboxa(0, msg, opts[:title], 0)
 	end
 end
 
 class InputBox < Window
 class IBoxWidget < DrawableWidget
-	def initialize_widget(hwnd, label, opts, &b)
-		@parent_hwnd = hwnd
+	def initialize_widget(win, label, opts, &b)
+		@parent_hwnd = win.hwnd
 		@label = label
 		@action = b
 		@b1down = @b2down = @textdown = false
@@ -2639,10 +2636,10 @@ class IBoxWidget < DrawableWidget
 		redraw
 	end
 end
-	def initialize_window(hwnd, prompt, opts={}, &b)
+	def initialize_window(win, prompt, opts={}, &b)
 		@@mainwindow_list.delete self
 		self.title = opts[:title] ? opts[:title] : 'input'
-		self.widget = IBoxWidget.new(hwnd, prompt, opts, &b)
+		self.widget = IBoxWidget.new(win, prompt, opts, &b)
 	end
 
 	def text ; @widget.text ; end
@@ -2651,7 +2648,7 @@ end
 
 class ListWindow < Window
 class LBoxWidget < DrawableWidget
-	def initialize_widget(hwnd, list, opts={}, &b)
+	def initialize_widget(win, list, opts={}, &b)
 		ccnt = list.first.length
 		@list = list.map { |l|
 			l += ['']*(ccnt - l.length) if l.length < ccnt
@@ -2662,7 +2659,7 @@ class LBoxWidget < DrawableWidget
 		@colwmax = @list.transpose.map { |l| l.map { |w| w.length }.max }
 		@titles = @list.shift
 
-		@parent_hwnd = hwnd
+		@parent_hwnd = win.hwnd
 		@action = b
 		# index of the first row displayed
 		@linehead = 0
@@ -2868,10 +2865,10 @@ class LBoxWidget < DrawableWidget
 		@parent.destroy
 	end
 end
-	def initialize_window(hwnd, title, list, opts={}, &b)
+	def initialize_window(win, title, list, opts={}, &b)
 		@@mainwindow_list.delete self
 		self.title = title
-		self.widget = LBoxWidget.new(hwnd, list, opts, &b)
+		self.widget = LBoxWidget.new(win, list, opts, &b)
 	end
 end
 

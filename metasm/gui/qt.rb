@@ -397,7 +397,6 @@ class Window < Qt::MainWindow
 		#connect(self, SIGNAL(:destroy)) { destroy_window }
 
 		@menu = menu_bar
-		@menu_accel_hack = false
 
 		screen = Qt::Application.desktop
 		resize screen.width*3/4, screen.height*3/4
@@ -423,11 +422,6 @@ class Window < Qt::MainWindow
 
 	def new_menu
 		Qt::Menu.new
-	end
-
-	def hack_accel_group
-		# TODO still display shortcut in the menu even if they are disabled after this
-		@menu_accel_hack = true
 	end
 
 	def addsubmenu(menu, *args)
@@ -459,7 +453,7 @@ class Window < Qt::MainWindow
 		else
 			menu.add_separator
 		end
-		item.setShortcut accel.sub('^', 'Ctrl+') if accel and not @menu_accel_hack	# XXX check case-sensitiveness
+		item.setShortcut accel.sub('^', 'Ctrl+')
 
 		connect(item, SIGNAL(:triggered)) { protect { yield(item) } } if block_given?
 
