@@ -124,6 +124,18 @@ class ContainerVBoxWidget < Gtk::VBox
 
 		initialize_widget(*a)
 	end
+
+	def resize_child(cld, w, h)
+		pk = query_child_packing(cld)
+		if h <= 0
+			pk[0] = true
+			h = 1
+		else
+			pk[0] = false
+		end
+		set_child_packing(cld, *pk)
+		cld.set_height_request(h)
+	end
 end
 
 class DrawableWidget < Gtk::DrawingArea

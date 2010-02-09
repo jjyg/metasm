@@ -1696,12 +1696,8 @@ class WinWidget
 		@x = @y = @width = @height = 0
 	end
 
-	def set_height_request(hr); end
-	def set_width_request(hr); end
-
 	def grab_focus
 		return if not @parent
-		@parent.grab_focus if @parent.respond_to? :grab_focus
 		@parent.set_focus(self) if @parent.respond_to? :set_focus
 	end
 	
@@ -1709,6 +1705,17 @@ class WinWidget
 		return true if not @parent
 		(@parent.respond_to?(:focus?) ? @parent.focus? : true) and
  		(@parent.respond_to?(:has_focus?) ? @parent.has_focus?(self) : true)
+	end
+
+	def redraw
+		invalidate(0, 0, @width, @height)
+	end
+
+	def invalidate(x, y, w, h)
+		x += @x
+		y += @y
+		rect = Win32Gui.alloc_c_struct('RECT', :left => x, :right => x+w, :top => y, :bottom => y+h)
+		Win32Gui.invalidaterect(@hwnd, rect, Win32Gui::FALSE)
 	end
 end
 
@@ -1795,7 +1802,8 @@ class ContainerVBoxWidget < WinWidget
 		@views = []
 		@focus_idx = 0
 		@visible = false
-		@wantheight = []
+		@wantheight = {}
+		@spacing = 3
 
 		super()
 
@@ -1833,21 +1841,48 @@ class ContainerVBoxWidget < WinWidget
 		}
 	}
 
-	def paint_(rc)
-		@views.each { |v| v.paint_(rc) }
+	def paint_(hdc)
+		# TODO check invalidated rectangle
+		x = @x
+		y = @y
+		Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_BRUSH))
+		Win32Gui.selectobject(hdc, Win32Gui.getstockobject(Win32Gui::DC_PEN))
+		col = Win32Gui.getsyscolor(Win32Gui::COLOR_BTNFACE)
+		Win32Gui.setdcbrushcolor(hdc, col)
+		Win32Gui.setdcpencolor(hdc, col)
+		@views.each { |v|
+			v.paint_(hdc) if v.height > 0
+			y += v.height
+			Win32Gui.rectangle(hdc, x, y, x+@width, y+@spacing)
+			y += @spacing
+		}
+		Win32Gui.rectangle(hdc, x, y, x+@width, y+@height)
 	end
 
 	def resized_(w, h)
 		@width = w
 		@height = h
+		x = @x
 		y = @y
+		freesize = h
+		freesize -= @spacing*(@views.length-1)
+		nrfree = 0
 		@views.each { |v|
-			v.x = @x
-			v.y = y
-			ch = h/@views.length
-			y += ch
-			v.resized_(w, ch)
+			if @wantheight[v]
+				freesize -= @wantheight[v]
+			else
+				nrfree += 1
+			end
 		}
+		freesize = 0 if freesize < 0
+		@views.each { |v|
+			v.x = x
+			v.y = y
+			ch = @wantheight[v] || freesize/nrfree
+			v.resized_(w, ch)
+			y += ch + @spacing
+		}
+		redraw
 	end
 
 	def update_focus_y(ty)
@@ -1865,6 +1900,16 @@ class ContainerVBoxWidget < WinWidget
 	def hwnd=(h)
 		@hwnd = h
 		@views.each { |v| v.hwnd = h }
+	end
+
+	def resize_child(cld, w, h)
+		return if @wantheight[cld] == h
+		if h < 0
+			@wantheight.delete h
+		else
+			@wantheight[cld] = h
+		end
+		resized_(@width, @height)
 	end
 end
 
@@ -2003,15 +2048,6 @@ class DrawableWidget < WinWidget
 
 	def gui_update
 		redraw
-	end
-
-	def redraw
-		invalidate(0, 0, @width, @height)
-	end
-
-	def invalidate(x, y, w, h)
-		rect = Win32Gui.alloc_c_struct('RECT', :left => @x+x, :right => @x+x+w, :top => @y+y, :bottom => @y+y+h)
-		Win32Gui.invalidaterect(@hwnd, rect, Win32Gui::FALSE)
 	end
 
 	def color(col)

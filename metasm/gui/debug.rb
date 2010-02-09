@@ -18,8 +18,9 @@ class DbgWidget < ContainerVBoxWidget
 
 		@regs = DbgRegWidget.new(dbg, self)
 		@code = DisasmWidget.new(dbg.disassembler)
-		@code.parent_widget = self
 		@mem  = DisasmWidget.new(dbg.disassembler)
+		@console = DbgConsoleWidget.new(dbg, self)
+		@code.parent_widget = self
 		@mem.parent_widget = self
 		@dbg.disassembler.disassemble_fast(@dbg.pc)
 
@@ -35,26 +36,17 @@ class DbgWidget < ContainerVBoxWidget
 		}
 		# TODO popup menu, set bp, goto here, show arg in memdump..
 
+		@children = [@code, @mem, @regs]
+
 		add @regs, 'expand' => false	# XXX
 		add @mem
 		add @code
+		add @console
 
-		@children = [@code, @mem, @regs]
 		@watchpoint = { @code => @dbg.register_pc }
 
-		@mem.set_height_request(1)
-		@code.set_height_request(1)
 		@code.focus_addr(@dbg.resolve_expr(@watchpoint[@code]), :graph)
 		@mem.focus_addr(0, :hex)
-
-		# setup invokes backend initialization that may customize this widget - eg kb_callback
-		@console = DbgConsoleWidget.new(dbg, self)
-		add @console
-	end
-
-	def resize(w, h)
-		@regs.set_width_request w
-		true
 	end
 
 	def keypress(key)
@@ -112,6 +104,7 @@ class DbgWidget < ContainerVBoxWidget
 	def dbg_stepout(*a) wrap_run { @dbg.stepout(*a) } end	# TODO idle_add etc
 
 	def redraw
+		super
 		@console.redraw
 		@regs.gui_update
 		@children.each { |c| c.redraw }
@@ -120,19 +113,6 @@ class DbgWidget < ContainerVBoxWidget
 	def gui_update
 		@console.redraw
 		@children.each { |c| c.gui_update }
-	end
-
-	# XXX
-	def resize_child(cld, size)
-		pk = query_child_packing(cld)
-		if size <= 0
-			pk[0] = true
-			size = 1
-		else
-			pk[0] = false
-		end
-		set_child_packing(cld, *pk)
-		cld.set_height_request(size)
 	end
 end
 
@@ -237,8 +217,7 @@ class DbgRegWidget < DrawableWidget
 
 		@oldcaret_x, @oldcaret_reg = @caret_x, @caret_reg
 
-		# TODO
-		set_height_request(y+@font_height)
+		@parent_widget.resize_child(self, width, y+@font_height)
 	end
 
 	# keyboard binding
@@ -610,14 +589,21 @@ class DbgConsoleWidget < DrawableWidget
 			if arg == ''
 				p.code.curview.grab_focus
 			else
-				p.resize_child(p.code, arg.to_i*@font_height)
+				p.resize_child(p.code, width, arg.to_i*@font_height)
 			end
 		}
 		new_command('wd', 'set data window height') { |arg|
 			if arg == ''
 				p.mem.curview.grab_focus
 			else
-				p.resize_child(p.mem, arg.to_i*@font_height)
+				p.resize_child(p.mem, width, arg.to_i*@font_height)
+			end
+		}
+		new_command('wp', 'set console window height') { |arg|
+			if arg == ''
+				grab_focus
+			else
+				p.resize_child(self, width, arg.to_i*@font_height)
 			end
 		}
 		new_command('width', 'set window width (chars)') { |arg|
