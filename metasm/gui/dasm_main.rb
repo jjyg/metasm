@@ -42,7 +42,7 @@ class DisasmWidget < ContainerChoiceWidget
 
 	def start_disassemble_bg
 		gui_update_counter = 0
-		run = true
+		run = false
 		Gui.idle_add {
 			# metasm disassembler loop
 			# update gui once in a while
