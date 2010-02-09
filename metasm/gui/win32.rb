@@ -1826,6 +1826,7 @@ class ContainerVBoxWidget < WinWidget
 
 	def click(x, y)
 		cy = 0
+		pv = []
 		@views.each_with_index { |v, i|
 			if y >= cy and y < cy + v.height
 				@focus_idx = i
@@ -1838,14 +1839,19 @@ class ContainerVBoxWidget < WinWidget
 				@resizing = v
 				Win32Gui.setcapture(@hwnd)
 				@wantheight[@resizing] ||= v.height
+				@tmpwantheight = []
+				pv.each { |vv| @tmpwantheight << vv if not @wantheight[vv] ; @wantheight[vv] ||= vv.height }
+				return
 			end
 			cy += @spacing
+			pv << v
 		}
 	end
 
 	def mousemove(x, y)
 		if @resizing
-			# TODO dynamic resize, but this need fixing other widgets sizes
+			@wantheight[@resizing] = [0, y - @resizing.y].max
+			resized_(@width, @height)
 		elsif v = @views[@focus_idx]
 			v.mousemove(x, y-v.y) if v.respond_to? :mousemove
 		end
@@ -1856,6 +1862,8 @@ class ContainerVBoxWidget < WinWidget
 			Win32Gui.releasecapture
 			@wantheight[@resizing] = [0, y - @resizing.y].max
 			@resizing = nil
+			@tmpwantheight.each { |vv| @wantheight.delete vv }
+			@tmpwantheight = nil
 			resized_(@width, @height)
 		elsif v = @views[@focus_idx]
 			v.mouserelease(x, y-v.y) if v.respond_to? :mouserelease
