@@ -1804,6 +1804,7 @@ class ContainerVBoxWidget < WinWidget
 		@visible = false
 		@wantheight = {}
 		@spacing = 3
+		@resizing = nil
 
 		super()
 
@@ -1823,8 +1824,51 @@ class ContainerVBoxWidget < WinWidget
 		w.initialize_visible_ if @visible
 	end
 
-	# TODO resize children with mouse
-	%w[click click_ctrl mouserelease mousemove rightclick doubleclick mouse_wheel mouse_wheel_ctrl].each { |m|
+	def click(x, y)
+		cy = 0
+		@views.each_with_index { |v, i|
+			if y >= cy and y < cy + v.height
+				@focus_idx = i
+				v.click(x, y-v.y) if v.respond_to? :click
+				return
+			end
+			cy += v.height
+			if y >= cy and y < cy+@spacing
+				vsz = v
+				@resizing = v
+				Win32Gui.setcapture(@hwnd)
+				@wantheight[@resizing] ||= v.height
+			end
+			cy += @spacing
+		}
+	end
+
+	def mousemove(x, y)
+		if @resizing
+			# TODO dynamic resize, but this need fixing other widgets sizes
+		elsif v = @views[@focus_idx]
+			v.mousemove(x, y-v.y) if v.respond_to? :mousemove
+		end
+	end
+
+	def mouserelease(x, y)
+		if @resizing
+			Win32Gui.releasecapture
+			@wantheight[@resizing] = [0, y - @resizing.y].max
+			@resizing = nil
+			resized_(@width, @height)
+		elsif v = @views[@focus_idx]
+			v.mouserelease(x, y-v.y) if v.respond_to? :mouserelease
+		end
+	end
+
+	def mouse_wheel(dir)	# TODO x, y
+		if v = @views[@focus_idx]
+			v.mouse_wheel(dir) if v.respond_to? :mouse_wheel
+		end
+	end
+
+	%w[click_ctrl rightclick doubleclick mouse_wheel_ctrl].each { |m|
 		define_method(m) { |*a|
 			if v = update_focus_y(a[-1])
 				a[-1] -= v.y
@@ -1888,11 +1932,11 @@ class ContainerVBoxWidget < WinWidget
 	def update_focus_y(ty)
 		y = 0
 		@views.each_with_index { |v, i|
-			if ty < y + v.height
+			if ty >= y and ty < y + v.height
 				@focus_idx = i
 				return v
 			end
-			y += v.height
+			y += v.height + @spacing
 		}
 		nil
 	end
@@ -1905,7 +1949,7 @@ class ContainerVBoxWidget < WinWidget
 	def resize_child(cld, w, h)
 		return if @wantheight[cld] == h
 		if h < 0
-			@wantheight.delete h
+			@wantheight.delete cld
 		else
 			@wantheight[cld] = h
 		end
