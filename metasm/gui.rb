@@ -11,12 +11,12 @@ else
 		require 'gtk2'
 		'gtk'
 	rescue LoadError
-		begin
-			require 'Qt4'
-			'qt'
-		rescue LoadError
-			raise LoadError, 'No GUI ruby binding installed - please install libgtk2-ruby or libqt4-ruby'
-		end
+		#begin
+		#	require 'Qt4'
+		#	'qt'
+		#rescue LoadError
+			raise LoadError, 'No GUI ruby binding installed - please install libgtk2-ruby'
+		#end
 	end
 	end
 end
