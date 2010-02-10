@@ -1783,17 +1783,18 @@ class ContainerChoiceWidget < WinWidget
 		}
 	end
 
-	def has_focus?(c)
-		c == @views[@focus_idx]
-	end
-
-	def set_focus(c)
-		@focus_idx = @views.index(c)
-	end
-
 	def hwnd=(h)
 		@hwnd = h
 		@views.each { |k, v| v.hwnd = h }
+	end
+
+	def has_focus?(c)
+		c == @curview
+	end
+
+	def set_focus(c)
+		@curview = c
+		redraw
 	end
 end
 
@@ -1829,7 +1830,10 @@ class ContainerVBoxWidget < WinWidget
 		pv = []
 		@views.each_with_index { |v, i|
 			if y >= cy and y < cy + v.height
-				@focus_idx = i
+				if @focus_idx != i
+					@focus_idx = i
+					redraw
+				end
 				v.click(x, y-v.y) if v.respond_to? :click
 				return
 			end
@@ -1941,7 +1945,10 @@ class ContainerVBoxWidget < WinWidget
 		y = 0
 		@views.each_with_index { |v, i|
 			if ty >= y and ty < y + v.height
-				@focus_idx = i if update_focus
+				if update_focus and @focus_idx != i
+					@focus_idx = i
+					redraw
+				end
 				return v
 			end
 			y += v.height + @spacing
@@ -1962,6 +1969,15 @@ class ContainerVBoxWidget < WinWidget
 			@wantheight[cld] = h
 		end
 		resized_(@width, @height)
+	end
+
+	def has_focus?(c)
+		c == @views[@focus_idx]
+	end
+
+	def set_focus(c)
+		@focus_idx = @views.index(c)
+		redraw
 	end
 end
 
