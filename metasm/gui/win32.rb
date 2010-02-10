@@ -107,7 +107,11 @@ typedef void *HWND;
 #define WS_EX_APPWINDOW         0x00040000L
 #define WS_EX_OVERLAPPEDWINDOW  (WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE)
 #define WS_EX_PALETTEWINDOW     (WS_EX_WINDOWEDGE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
-#define WS_EX_LAYERED           0x00080000
+#define WS_EX_LAYERED           0x00080000L
+#define WS_EX_NOINHERITEDLAYOUT 0x00100000L
+#define WS_EX_LAYOUTRTL         0x00400000L
+#define WS_EX_COMPOSITED        0x02000000L
+#define WS_EX_NOACTIVATE        0x08000000L
 
 #define WM_NULL                         0x0000
 #define WM_CREATE                       0x0001
@@ -2150,6 +2154,7 @@ class DrawableWidget < WinWidget
 	end
 
 	def draw_string(x, y, text)
+		return if not text or text == ''
 		Win32Gui.textouta(@hdc, x, y, text, text.length)
 	end
 
@@ -2183,7 +2188,7 @@ class Window
 
 		Win32Gui.registerclassexa(cls)
 		
-		@hwnd = Win32Gui.createwindowexa(nil, cname, 'win32gui window', Win32Gui::WS_OVERLAPPEDWINDOW, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, Win32Gui::CW_USEDEFAULT, 0, 0, 0, 0)
+		@hwnd = Win32Gui.createwindowexa(win32styleex, cname, 'win32gui window', win32style, Win32Gui::CW_USEDEFAULT, Win32Gui::SW_HIDE, Win32Gui::CW_USEDEFAULT, 0, 0, 0, 0, 0)
 
 		initialize_window(*a, &b)
 
@@ -2195,6 +2200,8 @@ class Window
 
 		show
 	end
+	def win32styleex; 0 ; end
+	def win32style; Win32Gui::WS_OVERLAPPEDWINDOW ; end
 
 	def show
 		Win32Gui.showwindow(@hwnd, Win32Gui::SW_SHOWDEFAULT)
@@ -2212,13 +2219,10 @@ class Window
 		}.fetch(key, key)
 	}
 
-#	MSGNAME = Win32Gui.constants.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
+#MSGNAME = Win32Gui.constants.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
 	def windowproc(hwnd, msg, wparam, lparam)
-#case msg
-#when Win32Gui::WM_NCHITTEST, Win32Gui::WM_SETCURSOR, Win32Gui::WM_MOUSEMOVE
-#else
 #puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lparam}"
-#end
+		@hwnd ||= hwnd		# some messages are sent before createwin returns
 		case msg
 		when Win32Gui::WM_NCHITTEST, Win32Gui::WM_SETCURSOR
 			# most frequent messages (with MOUSEMOVE)
@@ -2254,9 +2258,8 @@ class Window
 			@clientheight = (lparam >> 16) & 0xffff
 			@widget.resized_(lparam & 0xffff, (lparam >> 16) & 0xffff) if @widget
 			redraw
-		when Win32Gui::WM_CREATE
-			@visible = true
-			@widget.initialize_visible_ if @widget
+		when Win32Gui::WM_SHOWWINDOW
+			initialize_visible_
 		when Win32Gui::WM_KEYDOWN, Win32Gui::WM_SYSKEYDOWN
 			# SYSKEYDOWN for f10 (default = activate the menu bar)
 			if key = Keyboard_trad[wparam]
@@ -2312,6 +2315,12 @@ class Window
 			end
 		end
 		@widget.send(cmsg, x, y) if cmsg and @widget.respond_to? cmsg
+	end
+
+	def initialize_visible_
+		return if @visible
+		@visible = true
+		@widget.initialize_visible_ if @widget
 	end
 
 	attr_reader :x, :y, :width, :height
@@ -2419,6 +2428,24 @@ class Window
 	end
 end
 
+class ToolWindow < Window
+	def win32styleex; Win32Gui::WS_EX_TOOLWINDOW ; end
+	def win32style; Win32Gui::WS_POPUP | Win32Gui::WS_SYSMENU | Win32Gui::WS_CAPTION | Win32Gui::WS_THICKFRAME ; end
+
+	def initialize_visible_
+		super
+		# center on the parent from size in initial_size
+		w, h = @widget.initial_size
+		r1 = Win32Gui.alloc_c_struct('RECT')
+		Win32Gui.getwindowrect(@parent.hwnd, r1)
+		r2 = Win32Gui.alloc_c_struct('RECT', :left => 0, :top => 0, :right => w, :bottom => h)
+		Win32Gui.adjustwindowrectex(r2, @parent.win32style, Win32Gui::FALSE, @parent.win32styleex)
+		x = r1[:left]+(r1[:right]-r1[:left]-r2[:right]+r2[:left])/2
+		y = r1[:top ]+(r1[:bottom]-r1[:top]-r2[:bottom]+r2[:top])/2
+		Win32Gui.movewindow(@hwnd, x, y, r2[:right]-r2[:left], r2[:bottom]-r2[:top], Win32Gui::FALSE)
+	end
+end
+
 class OpenFile
 	def w32api(arg)
 		Win32Gui.getopenfilenamea(arg)
@@ -2461,10 +2488,9 @@ class MessageBox
 	end
 end
 
-class InputBox < Window
+class InputBox < ToolWindow
 class IBoxWidget < DrawableWidget
-	def initialize_widget(win, label, opts, &b)
-		@parent_hwnd = win.hwnd
+	def initialize_widget(label, opts, &b)
 		@label = label
 		@action = b
 		@b1down = @b2down = @textdown = false
@@ -2478,14 +2504,8 @@ class IBoxWidget < DrawableWidget
 			:btnc2 => :grey, :textsel => :white, :textselbg => :darkblue }
 	end
 
-	def initialize_visible
-		r1 = Win32Gui.alloc_c_struct('RECT')
-		Win32Gui.getwindowrect(@parent_hwnd, r1)
-		r2 = Win32Gui.alloc_c_struct('RECT', :left => 0, :top => 0, :right => 40*@font_width, :bottom => 8*@font_height)
-		Win32Gui.adjustwindowrect(r2, Win32Gui::WS_OVERLAPPED, Win32Gui::FALSE)
-		x = r1[:left]+(r1[:right]-r1[:left]-r2[:right]+r2[:left])/2
-		y = r1[:top]+(r1[:bottom]-r1[:top]-r2[:bottom]+r2[:top])/2
-		Win32Gui.movewindow(@hwnd, x, y, r2[:right]-r2[:left], r2[:bottom]-r2[:top], Win32Gui::FALSE)
+	def initial_size
+		[40*@font_width, 6*@font_height + @font_height/4]
 	end
 
 	def paint
@@ -2746,18 +2766,19 @@ class IBoxWidget < DrawableWidget
 	end
 end
 	def initialize_window(win, prompt, opts={}, &b)
+		@parent = win
 		@@mainwindow_list.delete self
 		self.title = opts[:title] ? opts[:title] : 'input'
-		self.widget = IBoxWidget.new(win, prompt, opts, &b)
+		self.widget = IBoxWidget.new(prompt, opts, &b)
 	end
 
 	def text ; @widget.text ; end
 	def text=(t) ; @widget.text = t ; end
 end
 
-class ListWindow < Window
+class ListWindow < ToolWindow
 class LBoxWidget < DrawableWidget
-	def initialize_widget(win, list, opts={}, &b)
+	def initialize_widget(list, opts={}, &b)
 		ccnt = list.first.length
 		@list = list.map { |l|
 			l += ['']*(ccnt - l.length) if l.length < ccnt
@@ -2768,7 +2789,6 @@ class LBoxWidget < DrawableWidget
 		@colwmax = @list.transpose.map { |l| l.map { |w| w.length }.max }
 		@titles = @list.shift
 
-		@parent_hwnd = win.hwnd
 		@action = b
 		# index of the first row displayed
 		@linehead = 0
@@ -2782,18 +2802,10 @@ class LBoxWidget < DrawableWidget
 			:textsel => :white, :textselbg => :darkblue }
 	end
 
-	def initialize_visible
+	def initial_size
 		@colw = @colwmax.map { |w| [w+1, 40].min * @font_width }
-		r1 = Win32Gui.alloc_c_struct('RECT')
-		Win32Gui.getwindowrect(@parent_hwnd, r1)
 		allw = @colw.inject(0) { |a, i| a+i }
-		r2 = Win32Gui.alloc_c_struct('RECT', :left => 0, :top => 0,
-			:right => [allw+8, 80*@font_width].min,
-			:bottom => [@list.length+3, 30].min * @font_height)
-		Win32Gui.adjustwindowrect(r2, Win32Gui::WS_OVERLAPPED, Win32Gui::FALSE)
-		x = r1[:left]+(r1[:right]-r1[:left]-r2[:right]+r2[:left])/2
-		y = r1[:top]+(r1[:bottom]-r1[:top]-r2[:bottom]+r2[:top])/2
-		Win32Gui.movewindow(@hwnd, x, y, r2[:right]-r2[:left], r2[:bottom]-r2[:top], Win32Gui::FALSE)
+		[[allw, 80*@font_width].min, [@list.length+1, 30].min * @font_height+2]
 	end
 
 	def resized(w, h)
@@ -2845,8 +2857,8 @@ class LBoxWidget < DrawableWidget
 		
 		y += @btnheight
 		tl = (@linesel || -1) - @linehead
-		@lineshown = (height-y)/@font_height
-		@list[@linehead, @lineshown + 1].to_a.each { |l|
+		@lineshown = @list[@linehead, (height-y)/@font_height+1].length
+		@list[@linehead, @lineshown].to_a.each { |l|
 			x = @btnx.first
 			ct, cb = :text, :textbg
 			ct, cb = :textsel, :textselbg if tl == 0
@@ -2876,6 +2888,29 @@ class LBoxWidget < DrawableWidget
 			elsif @linesel < @list.length-1
 				@linesel += 1
 				@linehead = @linesel - (@lineshown-1) if @linehead < @linesel-(@lineshown-1)
+			end
+			redraw
+		when :pgup
+			off = [@lineshown, [@lineshown/2, 5].max].min
+			if not @linesel
+				@linesel = @linehead
+			elsif @linesel != @linehead
+				@linesel = [@linehead, @linesel-off].max
+			else
+				@linehead = [0, @linehead-off].max
+				@linesel = @linehead
+			end
+			redraw
+		when :pgdown
+			n = @lineshown-1
+			off = [@lineshown, [@lineshown/2, 5].max].min
+			if not @linesel
+				@linesel = @linehead+n
+			elsif @linesel != @linehead+n
+				@linesel = [@linehead+n, @linesel+off].min
+			else
+				@linehead = [@linehead+off, @list.length-n-1].min
+				@linesel = [@linehead+n, @list.length-1].min
 			end
 			redraw
 		when :home
@@ -2975,9 +3010,10 @@ class LBoxWidget < DrawableWidget
 	end
 end
 	def initialize_window(win, title, list, opts={}, &b)
+		@parent = win
 		@@mainwindow_list.delete self
 		self.title = title
-		self.widget = LBoxWidget.new(win, list, opts, &b)
+		self.widget = LBoxWidget.new(list, opts, &b)
 	end
 end
 
