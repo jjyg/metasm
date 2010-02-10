@@ -64,7 +64,7 @@ class AsmListingWidget < DrawableWidget
 		@parent_widget.focus_addr(@hl_word)
 	end
 
-	def mouse_wheel(dir)
+	def mouse_wheel(dir, x, y)
 		case dir
 		when :up
 			# TODO handle block start (multiline) / data aggregation (db 100h dup(?), strings..)

@@ -488,7 +488,7 @@ class GraphViewWidget < DrawableWidget
 		redraw
 	end
 
-	def mouse_wheel(dir)
+	def mouse_wheel(dir, x, y)
 		case dir
 		when :up; @curcontext.view_y -= height/4 / @zoom
 		when :down; @curcontext.view_y += height/4 / @zoom

@@ -265,7 +265,7 @@ Execute Printer Play Sleep Zoom Cancel
 		if ev.modifiers.to_i & Qt::ControlModifier.to_i > 0
 			protect { mouse_wheel_ctrl(dir, ev.x, ev.y) } if respond_to? :mouse_wheel_ctrl
 		else
-			protect { mouse_wheel(dir) } if respond_to? :mouse_wheel
+			protect { mouse_wheel(dir, ev.x, ev.y) } if respond_to? :mouse_wheel
 		end
 	end
 

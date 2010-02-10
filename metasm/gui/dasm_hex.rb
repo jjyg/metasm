@@ -93,7 +93,7 @@ module Metasm
 		redraw
 	end
 
-	def mouse_wheel(dir)
+	def mouse_wheel(dir, x, y)
 		off = height.to_i/@font_height/4*@line_size
 		case dir
 		when :up; @view_addr -= off

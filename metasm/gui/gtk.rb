@@ -254,7 +254,7 @@ class DrawableWidget < Gtk::DrawingArea
 			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
 				protect { mouse_wheel_ctrl(dir, ev.x, ev.y) } if respond_to? :mouse_wheel_ctrl
 			else
-				protect { mouse_wheel(dir) }
+				protect { mouse_wheel(dir, ev.x, ev.y) }
 			end
 		} if respond_to? :mouse_wheel
 

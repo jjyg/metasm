@@ -43,7 +43,7 @@ class CoverageWidget < DrawableWidget
 	end
 	alias rightclick doubleclick
 
-	def mouse_wheel(dir)
+	def mouse_wheel(dir, x, y)
 		# TODO zoom ?
 		case dir
 		when :up

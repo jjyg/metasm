@@ -379,7 +379,7 @@ class DbgConsoleWidget < DrawableWidget
 		update_caret
 	end
 
-	def mouse_wheel(dir)
+	def mouse_wheel(dir, x, y)
 		case dir
 		when :up; @log_offset += 3
 		when :down; @log_offset -= 3

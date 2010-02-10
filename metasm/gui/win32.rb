@@ -1870,25 +1870,27 @@ class ContainerVBoxWidget < WinWidget
 		end
 	end
 
-	def mouse_wheel(dir)	# TODO x, y
-		if v = @views[@focus_idx]
-			v.mouse_wheel(dir) if v.respond_to? :mouse_wheel
-		end
-	end
-
-	%w[click_ctrl rightclick doubleclick mouse_wheel_ctrl].each { |m|
-		define_method(m) { |*a|
-			if v = update_focus_y(a[-1])
-				a[-1] -= v.y
-				v.send(m, *a) if v.respond_to? m
+	%w[click_ctrl rightclick doubleclick].each { |m|
+		define_method(m) { |x, y|
+p [m, x, y]
+			if v = find_view_y(y, true)
+				v.send(m, x, y-v.y) if v.respond_to? m
 			end
 		}
 	}
 
+	%w[mouse_wheel mouse_wheel_ctrl].each { |m|
+		define_method(m) { |d, x, y|
+p [m, x, y]
+			if v = find_view_y(y, false)
+				v.send(m, d, x, y-v.y) if v.respond_to? m
+			end
+		}
+	}
 	%w[keypress_ keypress_ctrl_].each { |m|
-		define_method(m) { |*a|
+		define_method(m) { |k|
 			if v = @views[@focus_idx] and v.respond_to? m
-				v.send(m, *a)
+				v.send(m, k)
 			end
 		}
 	}
@@ -1937,11 +1939,11 @@ class ContainerVBoxWidget < WinWidget
 		redraw
 	end
 
-	def update_focus_y(ty)
+	def find_view_y(ty, update_focus=false)
 		y = 0
 		@views.each_with_index { |v, i|
 			if ty >= y and ty < y + v.height
-				@focus_idx = i
+				@focus_idx = i if update_focus
 				return v
 			end
 			y += v.height + @spacing
@@ -2228,10 +2230,14 @@ class Window
 			rect = Win32Gui.alloc_c_struct('RECT')
 			Win32Gui.getwindowrect(@hwnd, rect)
 			@x, @y, @width, @height = rect[:left], rect[:top], rect[:right]-rect[:left], rect[:bottom]-rect[:top]
+			@clientx = lparam & 0xffff
+			@clienty = (lparam >> 16) & 0xffff
 		when Win32Gui::WM_SIZE
 			rect = Win32Gui.alloc_c_struct('RECT')
 			Win32Gui.getwindowrect(@hwnd, rect)
 			@x, @y, @width, @height = rect[:left], rect[:top], rect[:right]-rect[:left], rect[:bottom]-rect[:top]
+			@clientwidth = lparam & 0xffff
+			@clientheight = (lparam >> 16) & 0xffff
 			@widget.resized_(lparam & 0xffff, (lparam >> 16) & 0xffff) if @widget
 			redraw
 		when Win32Gui::WM_CREATE
@@ -2286,15 +2292,16 @@ class Window
 			off = Expression.make_signed(wparam >> 16, 16)
 			dir = off > 0 ? :up : :down
 			if ctrl
-				return(@widget.mouse_wheel_ctrl(dir, x, y) if @widget.respond_to? :mouse_wheel_ctrl)
+				return(@widget.mouse_wheel_ctrl(dir, x-@clientx, y-@clienty) if @widget.respond_to? :mouse_wheel_ctrl)
 			else
-				return(@widget.mouse_wheel(dir) if @widget.respond_to? :mouse_wheel)
+				return(@widget.mouse_wheel(dir, x-@clientx, y-@clienty) if @widget.respond_to? :mouse_wheel)
 			end
 		end
 		@widget.send(cmsg, x, y) if cmsg and @widget.respond_to? cmsg
 	end
 
 	attr_reader :x, :y, :width, :height
+	attr_reader :clientx, :clienty, :clientwidth, :clientheight
 	def x=(newx)
 		Win32Gui.movewindow(@hwnd, newx, @y, @width, @height, Win32Gui::TRUE)
 	end

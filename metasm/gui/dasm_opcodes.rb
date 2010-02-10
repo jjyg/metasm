@@ -46,7 +46,7 @@ class AsmOpcodeWidget < DrawableWidget
 		@parent_widget.focus_addr(@hl_word)
 	end
 
-	def mouse_wheel(dir)
+	def mouse_wheel(dir, x, y)
 		case dir
 		when :up; (height/@font_height/4).times { scrollup }
 		when :down; (height/@font_height/4).times { scrolldown }
