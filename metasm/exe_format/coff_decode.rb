@@ -389,6 +389,7 @@ class COFF
 	def decode_header
 		@cursection ||= self
 		@encoded.ptr ||= 0
+		@sections = []
 		@header.decode(self)
 		optoff = @encoded.ptr
 		@optheader.decode(self)
