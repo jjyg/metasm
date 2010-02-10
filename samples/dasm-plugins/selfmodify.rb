@@ -175,7 +175,7 @@ end
 def self.redirect(dasm, addr)
 	return if not VirtSections[dasm] or not newto = Metasm::Expression[VirtSections[dasm][addr]]
 	dasm.each_instructionblock { |b|
-		next if not b.to_normal.include? addr
+		next if not b.to_normal.to_a.include? addr
 		b.to_normal.map! { |tn| dasm.normalize(tn) == addr ? newto : tn }
 		dasm.add_xref(newto, Metasm::Xref.new(:x, b.list.last.address))
 		b.list.last.add_comment "x:#{newto}"
