@@ -405,7 +405,19 @@ class DrawableWidget < Gtk::DrawingArea
 	end
 end
 
+module WindowPos
+	def x; position[0]; end
+	def x=(nx); move(nx, position[1]); end
+	def y; position[1]; end
+	def y=(ny); move(position[0], ny); end
+	def width; size[0] ; end
+	def width=(nw); resize(nw, size[1]); end
+	def height; size[1] ; end
+	def height=(nh); resize(size[0], nh); end
+end
+
 class MessageBox < Gtk::MessageDialog
+	include WindowPos
 	def initialize(owner, str, opts={})
 		owner = nil if owner and owner.destroyed?
 		owner ||= Gtk::Window.toplevels.first
@@ -419,6 +431,7 @@ class MessageBox < Gtk::MessageDialog
 end
 
 class InputBox < Gtk::Dialog
+	include WindowPos
 	attr_accessor :label, :textwidget
 
 	# shows a simplitic input box (eg window with a 1-line textbox + OK button), yields the text
@@ -463,6 +476,7 @@ class InputBox < Gtk::Dialog
 end
 
 class OpenFile < Gtk::FileChooserDialog
+	include WindowPos
 	@@currentfolder = nil
 
 	# shows an asynchronous FileChooser window, yields the chosen filename
@@ -489,6 +503,7 @@ class OpenFile < Gtk::FileChooserDialog
 end
 
 class SaveFile < Gtk::FileChooserDialog
+	include WindowPos
 	@@currentfolder = nil
 
 	# shows an asynchronous FileChooser window, yields the chosen filename
@@ -515,6 +530,7 @@ class SaveFile < Gtk::FileChooserDialog
 end
 
 class ListWindow < Gtk::Dialog
+	include WindowPos
 	# shows a window with a list of items
 	# the list is an array of arrays, displayed as String
 	# the first array is the column names
@@ -565,16 +581,10 @@ class ListWindow < Gtk::Dialog
 		show_all
 		present
 	end
-
-	def x; position[0]; end
-	def x=(nx); move(nx, position[1]); end
-	def y; position[1]; end
-	def y=(ny); move(position[0], ny); end
-	def width; size[0] ; end
-	def height; size[1] ; end
 end
 
 class Window < Gtk::Window
+	include WindowPos
 	include Msgbox
 
 	attr_accessor :menu

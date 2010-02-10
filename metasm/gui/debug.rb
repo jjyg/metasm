@@ -607,13 +607,13 @@ class DbgConsoleWidget < DrawableWidget
 			end
 		}
 		new_command('width', 'set window width (chars)') { |arg|
-			if a = solve_expr(arg); p.win.resize(a*@font_width, p.win.size[1])
-			else add_log "width #{p.win.size[0]/@font_width}"
+			if a = solve_expr(arg); p.win.width = a*@font_width
+			else add_log "width #{p.win.width/@font_width}"
 			end
 		}
 		new_command('height', 'set window height (chars)') { |arg|
-			if a = solve_expr(arg); p.win.resize(p.win.size[0], a*@font_height)
-			else add_log "height #{p.win.size[1]/@font_height}"
+			if a = solve_expr(arg); p.win.height = a*@font_height
+			else add_log "height #{p.win.height/@font_height}"
 			end
 		}
 		new_command('continue', 'run', 'let the target run until something occurs') { |arg| p.dbg_continue(arg) }
