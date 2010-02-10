@@ -534,10 +534,14 @@ end
 
 class DasmWindow < Window
 	attr_accessor :dasm_widget, :menu
-	def initialize_window(title = 'metasm disassembler')
+	def initialize_window(title = 'metasm disassembler', dasm=nil, *ep)
 		self.title = title
 		@dasm_widget = nil
-		self.widget = NoDasmWidget.new(self)
+		if dasm
+			display(dasm, ep)
+		else
+			self.widget = NoDasmWidget.new(self)
+		end
 	end
 	
 	def widget=(w)
@@ -551,10 +555,11 @@ class DasmWindow < Window
 
 	# sets up a DisasmWidget as main widget of the window, replaces the current if it exists
 	# returns the widget
-	def display(dasm, ep=[], opts={})
+	def display(dasm, ep=[])
 		@dasm_widget.terminate if @dasm_widget
 		@dasm_widget = DisasmWidget.new(dasm, ep)
 		self.widget = @dasm_widget
+		@dasm_widget.focus_addr(ep.first) if ep.first
 		@dasm_widget
 	end
 
