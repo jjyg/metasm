@@ -1872,7 +1872,6 @@ class ContainerVBoxWidget < WinWidget
 
 	%w[click_ctrl rightclick doubleclick].each { |m|
 		define_method(m) { |x, y|
-p [m, x, y]
 			if v = find_view_y(y, true)
 				v.send(m, x, y-v.y) if v.respond_to? m
 			end
@@ -1881,7 +1880,6 @@ p [m, x, y]
 
 	%w[mouse_wheel mouse_wheel_ctrl].each { |m|
 		define_method(m) { |d, x, y|
-p [m, x, y]
 			if v = find_view_y(y, false)
 				v.send(m, d, x, y-v.y) if v.respond_to? m
 			end
