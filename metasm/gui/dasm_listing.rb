@@ -463,13 +463,12 @@ class AsmListingWidget < DrawableWidget
 				str_c << "#{Expression[curaddr]}    "
 				str_c << ("#{label} " if label)
 
-				# TODO cache len for next line (when most lines are db 1 db 2 db 3)
 				len = 256
-				len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or s[0].inv_export[s[0].ptr+l] or s[0].reloc[s[0].ptr+l] } || len
 				comment = nil
 				if s[0].data.length > s[0].ptr
 					str = s[0].read(len).unpack('C*')
 					s[0].ptr -= len		# we may not display the whole bunch, ptr is advanced later
+					len = str.length
 					if @dasm.xrefs[curaddr] or rel = s[0].reloc[s[0].ptr]
 						len = rel.length if rel
 						comment = []
@@ -478,6 +477,9 @@ class AsmListingWidget < DrawableWidget
 							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}" if xref.origin
 						} if @dasm.xrefs[curaddr]
 						comment = nil if comment.empty?
+						len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or s[0].inv_export[s[0].ptr+l] or s[0].reloc[s[0].ptr+l] } || len
+						str = s[0].read(len).unpack('C*')
+						s[0].ptr -= len		# we may not display the whole bunch, ptr is advanced later
 						str = str.pack('C*').unpack(@dasm.cpu.endianness == :big ? 'n*' : 'v*') if len == 2
 						if (len == 1 or len == 2) and asc = str.inject('') { |asc_, c|
 								case c
@@ -499,6 +501,9 @@ class AsmListingWidget < DrawableWidget
 						else break asc_
 						end
 					} and asc.length > 3
+						len = asc.length
+						len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or s[0].inv_export[s[0].ptr+l] or s[0].reloc[s[0].ptr+l] } || len
+						asc = asc[0, len]
 						dat = "db #{asc.inspect} "
 						aoff = asc.length
 					elsif rep = str.inject(0) { |rep_, c|
@@ -507,6 +512,7 @@ class AsmListingWidget < DrawableWidget
 						else break rep_
 						end
 					} and rep > 4
+						rep = (1..rep).find { |l| @dasm.xrefs[curaddr+l] or s[0].inv_export[s[0].ptr+l] or s[0].reloc[s[0].ptr+l] } || rep
 						rep -= curaddr % 256 if rep == 256 and curaddr.kind_of? Integer
 						dat = "db #{Expression[rep]} dup(#{Expression[str[0]]}) "
 						aoff = rep
