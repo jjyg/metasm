@@ -152,7 +152,7 @@ class AsmOpcodeWidget < DrawableWidget
 		while y < height
 			if label = invb[curaddr]
 				nl[]
-				@dasm.label_alias[curaddr].each { |name|
+				@dasm.label_alias[curaddr].to_a.each { |name|
 					render["#{name}:", :label]
 					nl[]
 				}

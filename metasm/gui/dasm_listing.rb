@@ -452,7 +452,7 @@ class AsmListingWidget < DrawableWidget
 			elsif s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
 				@dasm.comment[curaddr].each { |c| str_c[3] = "// #{c}" ; nl[] } if @dasm.comment[curaddr]
 				if label = s[0].inv_export[s[0].ptr]
-					l_list = @dasm.label_alias[curaddr].sort
+					l_list = @dasm.label_alias[curaddr].to_a.sort
 					label = l_list.pop
 					nl[] if not l_list.empty?
 					l_list.each { |name|
