@@ -113,7 +113,7 @@ GUI
    show jump direction from current flag values
  instruction patch (a la hexedit)
  Hexedit: allow VirtualFile 'reopen rw'
- have a win32 native and a console backend
+ have a console frontend
  better graph positionning fallback
  zoom font when zooming graph
  copy/paste, selection
