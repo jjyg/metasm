@@ -111,6 +111,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 	end
 
 	def disassemble_all
+		@func1 = @func2 = @funcstat1 = @funcstat2 = nil
 		@dasm1.load_plugin 'dasm_all'
 		@dasm2.load_plugin 'dasm_all'
 		set_status('dasm_all 1') { @dasm1.dasm_all_section '.text' }
@@ -119,14 +120,15 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 	end
 
 	def disassemble
+		@func1 = @func2 = @funcstat1 = @funcstat2 = nil
 		set_status('dasm 1') {
 			@dasm1.disassemble_fast_deep(curaddr1)
-			@dasm1.function[curaddr1] = Metasm::DecodedFunction.new
+			@dasm1.function[curaddr1] = DecodedFunction.new
 			@dasm1.gui.focus_addr(curaddr1, :graph)
 		}
 		set_status('dasm 2') {
 			@dasm2.disassemble_fast_deep(curaddr2)
-			@dasm2.function[curaddr2] = Metasm::DecodedFunction.new
+			@dasm2.function[curaddr2] = DecodedFunction.new
 			@dasm2.gui.focus_addr(curaddr2, :graph)
 		}
 		gui_update
@@ -282,12 +284,18 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		already_matched = []
 		match_score = {}
 		layout_match.each { |f1, list|
+puts "matching #{Expression[f1]}" if $VERBOSE
+begin
 			f2 = (list - already_matched).sort_by { |f| match_func(f1, f, false, false) }.first
 			if f2
 				already_matched << f2
 				score = match_func(f1, f2)
 				@match_funcs[f1] = [f2, score]
 			end
+rescue Interrupt
+	puts 'abort this one'
+	sleep 0.2	# allow a 2nd ^c do escalate
+end
 			Gui.main_iter
 		}
 		}
@@ -299,6 +307,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 	def match_one_func(a1, a2)
 		s = match_func(a1, a2)
 		puts "match score: #{s}"
+		@match_funcs[a1] = [a2, s]
 		gui_update
 	end
 
@@ -401,6 +410,20 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 			0
 		end
 	end
+
+	# show in window 1 the match of the function found in win 2
+	def sync1
+		c2 = curfunc2
+		if a1 = match_funcs.find { |k, (a2, s)| a2 == c2 }
+			@dasm1.gui.focus_addr(a1[0])
+		end
+	end
+
+	def sync2
+		if a2 = match_funcs[curfunc1]
+			@dasm2.gui.focus_addr(a2[0])
+		end
+	end
 end
 
 class BinDiffWindow < Gui::Window
@@ -416,6 +439,9 @@ class BinDiffWindow < Gui::Window
 		addsubmenu(menu, '_disassemble from there', 'd') { widget.disassemble }
 		addsubmenu(menu, 'co_mpare functions', 'm') { widget.match_one_func(widget.curfunc1, widget.curfunc2) }
 		addsubmenu(menu, 'compare all funct_ions', 'i') { widget.show_match_funcs }
+		addsubmenu(menu)
+		addsubmenu(menu, 'sync win 2', '2') { widget.sync2 }
+		addsubmenu(menu, 'sync win 1', '1') { widget.sync1 }
 		addsubmenu(menu)
 		addsubmenu(menu, '_quit', 'Q') { Gui.main_quit }
 
