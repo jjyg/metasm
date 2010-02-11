@@ -569,8 +569,8 @@ class DasmWindow < Window
 		idx && @dasm_widget ? @dasm_widget.view(idx) : @dasm_widget
 	end
 
-	def loadfile(path)
-		exe = AutoExe.orshellcode { Ia32.new }.decode_file(path) { |type, str|
+	def loadfile(path, cpu='Ia32')
+		exe = AutoExe.orshellcode { cpu = Metasm.const_get(cpu) if cpu.kind_of? String ; cpu.new }.decode_file(path) { |type, str|
 			# Disassembler save file will use this callback with unhandled sections / invalid binary file path
 			case type
 			when 'binarypath'

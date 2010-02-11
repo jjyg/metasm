@@ -15,7 +15,7 @@ include Metasm
 require 'optparse'
 
 # parse arguments
-opts = {}
+opts = { :sc_cpu => 'Ia32' }
 OptionParser.new { |opt|
 	opt.banner = 'Usage: disassemble.rb [options] <executable> [<entrypoints>]'
 	opt.on('--no-data', 'do not display data bytes') { opts[:nodata] = true }
@@ -23,6 +23,8 @@ OptionParser.new { |opt|
 	opt.on('--debug-backtrace', 'enable backtrace-related debug messages (very verbose)') { opts[:debugbacktrace] = true }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-o <outfile>', '--output <outfile>', 'save the assembly listing in the specified file (defaults to stdout)') { |h| opts[:outfile] = h }
+	opt.on('--cpu <cpu>', 'the CPU class to use for a shellcode (Ia32, X64, ...)') { |c| opts[:sc_cpu] = c }
+	opt.on('--rebase <addr>', 'rebase the loaded file to <addr>') { |a| opts[:rebase] = Integer(a) }
 	opt.on('-s <savefile>', 'save the disassembler state after disasm') { |h| opts[:savefile] = h }
 	opt.on('-S <addrlist>', '--stop <addrlist>', '--stopaddr <addrlist>', 'do not disassemble past these addresses') { |h| opts[:stopaddr] ||= [] ; opts[:stopaddr] |= h.split ',' }
 	opt.on('-P <plugin>', '--plugin <plugin>', 'load a metasm disassembler plugin') { |h| (opts[:plugin] ||= []) << h }
@@ -45,9 +47,10 @@ t0 = Time.now if opts[:benchmark]
 if exename =~ /^live:(.*)/
 	raise 'no such live target' if not target = OS.current.find_process($1)
 	p target if $VERBOSE
-	exe = Shellcode.decode(target.memory, Ia32.new)
+	exe = Shellcode.decode(target.memory, Metasm.const_get(opts[:sc_cpu]).new)
 else
-	exe = AutoExe.orshellcode { Ia32.new }.decode_file(exename)
+	exe = AutoExe.orshellcode { Metasm.const_get(opts[:sc_cpu]).new }.decode_file(exename)
+	exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 	if opts[:autoload]
 		basename = exename.sub(/\.\w\w?\w?$/, '')
 		opts[:map] ||= basename + '.map' if File.exist?(basename + '.map')

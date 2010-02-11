@@ -30,7 +30,7 @@ require 'optparse'
 $VERBOSE = true
 
 # parse arguments
-opts = {}
+opts = { :sc_cpu => 'Ia32' }
 OptionParser.new { |opt|
 	opt.banner = 'Usage: disassemble-gtk.rb [options] <executable> [<entrypoints>]'
 	opt.on('--no-data-trace', 'do not backtrace memory read/write accesses') { opts[:nodatatrace] = true }
@@ -41,6 +41,8 @@ OptionParser.new { |opt|
 	opt.on('--fast', 'dasm cli args with disassemble_fast_deep') { opts[:fast] = true }
 	opt.on('--decompile') { opts[:decompile] = true }
 	opt.on('--gui <gtk|win32|qt>') { |g| require 'metasm/gui/' + g }
+	opt.on('--cpu <cpu>', 'the CPU class to use for a shellcode (Ia32, X64, ...)') { |c| opts[:sc_cpu] = c }
+	opt.on('--rebase <addr>', 'rebase the loaded file to <addr>') { |a| opts[:rebase] = Integer(a) }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-a', '--autoload', 'loads all relevant files with same filename (.h, .map..)') { opts[:autoload] = true }
 	opt.on('-v', '--verbose') { $VERBOSE = true }	# default
@@ -63,7 +65,8 @@ when /^(tcp:|udp:)?..+:/
 else
 	w = Metasm::Gui::DasmWindow.new("#{exename + ' - ' if exename}metasm disassembler")
 	if exename
-		exe = w.loadfile(exename)
+		exe = w.loadfile(exename, opts[:sc_cpu])
+		exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 		if opts[:autoload]
 			basename = exename.sub(/\.\w\w?\w?$/, '')
 			opts[:map] ||= basename + '.map' if File.exist?(basename + '.map')
