@@ -538,6 +538,7 @@ class DasmWindow < Window
 		self.title = title
 		@dasm_widget = nil
 		if dasm
+			ep = ep.first if ep.length == 1 and ep.first.kind_of? Array
 			display(dasm, ep)
 		else
 			self.widget = NoDasmWidget.new(self)
