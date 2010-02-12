@@ -460,7 +460,7 @@ class InputBox < Gtk::Dialog
 		signal_connect('response') { |win, id|
 			resp = @textwidget.buffer.text if id == RESPONSE_ACCEPT
 			destroy
-			yield resp if resp
+			yield resp.strip if resp
 			true
 		}
 

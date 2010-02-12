@@ -297,7 +297,7 @@ class DisasmWidget < ContainerChoiceWidget
 		inputbox('expression to backtrace', :text => curview.hl_word) { |e|
 			expr = IndExpression.parse_string(e)
 			bd = {}
-			registers = @dasm.cpu.dbg_register_list.map { |r| r.to_s }
+			registers = (@dasm.cpu.dbg_register_list.map { |r| r.to_s } rescue [])
 			expr.externals.grep(String).each { |w|
 				if registers.include? w.downcase
 					bd[w] = w.downcase.to_sym

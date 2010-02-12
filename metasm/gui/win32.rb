@@ -2649,7 +2649,7 @@ class IBoxWidget < DrawableWidget
 		when :enter
 			destroy
 			Gui.main_iter
-			protect { @action.call(@curline) }
+			protect { @action.call(@curline.strip) }
 		when :esc
 			if @b1down or @b2down
 				@b1down = @b2down = false
@@ -2935,6 +2935,20 @@ class LBoxWidget < DrawableWidget
 		else return false
 		end
 		true
+	end
+
+	def mouse_wheel(dir, x, y)
+		case dir
+		when :up
+			off = [@lineshown, [@lineshown/2, 5].max].min
+			@linehead = [0, @linehead-off].max
+			redraw
+		when :down
+			n = @lineshown-1
+			off = [@lineshown, [@lineshown/2, 5].max].min
+			@linehead = [@linehead+off, @list.length-n-1].min
+			redraw
+		end
 	end
 
 	def xtobtn(x)
