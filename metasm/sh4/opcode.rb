@@ -90,7 +90,7 @@ class Sh4
 		addop 'bf/s', 0b10001111 << 8, :disp8, :setip, :delay_slot
 		addop 'bra', 0b1010 << 12, :disp12, :setip, :stopexec, :delay_slot
 		addop 'braf', 0b0000 << 12 | 0b00100011, :rn, :setip, :stopexec, :delay_slot
-		addop 'brk', 0b0000000000111011, :setip, :stopexec  # causes a pre-execution BREAK exception
+		addop 'brk', 0b0000000000111011, :stopexec  # causes a pre-execution BREAK exception
 		addop 'bsr', 0b1011 << 12, :disp12, :setip, :saveip, :stopexec, :delay_slot
 		addop 'bsrf', 0b0000 << 12 | 0b00000011, :rn, :setip, :saveip, :stopexec, :delay_slot
 		addop 'bt', 0b10001001 << 8, :disp8, :setip
@@ -367,7 +367,7 @@ class Sh4
 		addop 'trapa', 0b11000011 << 8, :i8, :setip, :stopexec # This instruction causes a pre-execution trap.
 
 		addop 'tst', 0b0010 << 12 | 0b1000, :rm, :rn
-		addop 'tst', 0b11001000 << 8, :i8
+		addop 'tst', 0b11001000 << 8, :i8, :r0
 		addop 'tst.b', 0b11001100 << 8, :i8, :@r0gbr
 
 		addop 'xor', 0b0010 << 12 | 0b1010, :rm, :rn

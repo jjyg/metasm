@@ -121,7 +121,7 @@ class Sh4
 				Memref.new(field_val[a], nil, :post)
 			when :@r0rm
 				Memref.new(GPR.new(0), GPR.new(field_val[:rm]))
-			when :@r0rn
+			when :@r0rn, :@dispr0rn
 				Memref.new(GPR.new(0), GPR.new(field_val[:rn]))
 			when :@disprm
 				Memref.new(field_val[a], GPR.new(field_val[:rm]))
@@ -144,7 +144,7 @@ class Sh4
 		df = DecodedFunction.new
 		df.backtrace_binding = {}
 		15.times { |i| df.backtrace_binding["r#{i}".to_sym] = Expression::Unknown }
-		df.backtracked_for = []
+		df.backtracked_for = [BacktraceTrace.new(Expression[:pr], :default, Expression[:pr], :x)]
 		df.btfor_callback = lambda { |dasm, btfor, funcaddr, calladdr|
 			if funcaddr != :default
 				btfor
@@ -192,9 +192,9 @@ class Sh4
 
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
 			@backtrace_binding[op] ||= case op
-			when 'ldc', 'ldc.l', 'lds', 'lds.l', 'stc', 'stc.l', 'stc.w', 'stc.b'
-				lambda { |di, a0, a1| { a1 => Expression[a0, :&, mask[di]] }}
-			when 'mov', 'mov.l', 'mov.w', 'mov.b'
+			when 'ldc', 'ldc.l', 'lds', 'lds.l', 'stc', 'stc.l', 'mov', 'mov.l', 'sts', 'sts.l'
+				lambda { |di, a0, a1| { a1 => Expression[a0] }}
+			when 'stc.w', 'stc.b', 'mov.w', 'mov.b'
 				lambda { |di, a0, a1| { a1 => Expression[a0, :&, mask[di]] }}
 			when 'movt'; lambda { |di, a0| { a0 => :t_bit }}
 			when 'exts.b', 'exts.w', 'extu.w'
@@ -261,6 +261,8 @@ class Sh4
 			when 'neg' ;  lambda { |di, a0, a1| { a1 => Expression[mask[di], :-, a0] }}
 			when 'negc' ; lambda { |di, a0, a1| { a1 => Expression[[[mask[di], :-, a0], :-, :t_bit], :&, mask[di]] }}
 			when 'not';   lambda { |di, a0, a1| { a1 => Expression[a0, :^, mask[di]] }}
+			when 'nop'; lambda { {} }
+			when /^b/; lambda { {} }	# branches
 			end
 		}
 
@@ -280,6 +282,14 @@ class Sh4
 
 		if binding = backtrace_binding[di.opcode.basename]
 			bd = binding[di, *a] || {}
+			di.instruction.args.grep(Memref).each { |m|
+				if m.post
+					# TODO preincrement/postdecrement
+					bd.each { |k, v| bd[k] = v.bind(r => Expression[r, :+, 1]) }
+					bd[r] ||= Expression[r, :+, 1]
+				end
+			} if false
+			bd
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			{:incomplete_binding => Expression[1]}
@@ -296,7 +306,7 @@ class Sh4
 
 		val = case val
 		      when Reg; val.symbolic
-		      when Memref; arg.symbolic(di.address, di.opcode.props[:memsz]/8)
+		      when Memref; arg.symbolic(di.address, 4)
 		      else val
 		      end
 
@@ -309,6 +319,18 @@ class Sh4
 
 	def delay_slot(di=nil)
 		(di and di.opcode.props[:delay_slot]) ? 1 : 0
+	end
+
+	def replace_instr_arg_immediate(i, old, new)
+		i.args.map! { |a|
+			case a
+			when Expression; a == old ? new : Expression[a.bind(old => new).reduce]
+			when Memref
+				a.base = (a.base == old ? new : Expression[a.base.bind(old => new).reduce]) if a.base.kind_of?(Expression)
+				a
+			else a
+			end
+		}
 	end
 end
 end
