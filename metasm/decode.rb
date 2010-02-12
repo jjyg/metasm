@@ -1377,6 +1377,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		funcs = di.block.to_normal.to_a
 		do_ret = funcs.empty?
 		ret = []
+		na = di.next_addr + di.bin_length * @cpu.delay_slot(di)
 		funcs.each { |fa|
 			fa = normalize(fa)
 			disassemble_fast_checkfunc(fa)
@@ -1388,7 +1389,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					bt = backtrace(btt.expr, di.address, :include_start => true, :origin => btt.origin, :maxdepth => [@backtrace_maxblocks_fast, 1].max)
 					if btt.detached
 						ret.concat bt	# callback argument
-					elsif bt.find { |a| normalize(a) == di.next_addr }
+					elsif bt.find { |a| normalize(a) == na }
 						do_ret = true
 					end
 				}
@@ -1397,8 +1398,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			end
 		}
 		if do_ret
-			di.block.add_to_subfuncret(di.next_addr)
-			ret << [di.next_addr, di.address, true]
+			di.block.add_to_subfuncret(na)
+			ret << [na, di.address, true]
 			di.block.add_to_normal :default if not di.block.to_normal and @function[:default]
 		end
 		ret
