@@ -249,10 +249,11 @@ class Sh4 < CPU
 		attr_accessor :base, :disp, :action
 
 		def initialize(base, offset, action = nil)
+			base = Expression[base] if base.kind_of? Integer
 			@base, @disp, @action = base, offset, action
 		end
 
-		def symbolic(orig, sz)
+		def symbolic(orig=nil, sz=32)
 			b = @base
 			b = b.symbolic if b.kind_of? Reg
 

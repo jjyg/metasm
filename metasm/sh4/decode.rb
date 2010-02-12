@@ -13,30 +13,29 @@ class Sh4
 		op.args.each { |f|
 			op.bin_mask |= @fields_mask[f] << @fields_shift[f]
 		}
-		op.bin_mask = 0xffff ^ op.bin_mask
+		op.bin_mask ^= 0xffff
 	end
 
 	def build_bin_lookaside
-		lookaside = Hash.new { |h,k| h[k] = []}
+		lookaside = (0..0xf).inject({}) { |h, i| h.update i => [] }
 		opcode_list.each { |op|
-			next if not op.bin.kind_of? Integer
 			build_opcode_bin_mask op
-			lookaside[op.bin >> 12] << op
+			lookaside[(op.bin >> 12) & 0xf] << op
 		}
 		lookaside
 	end
 
 	# depending on transfert size mode (sz flag), fmov instructions manipulate single ou double precision values
 	# instruction aliasing appears when sz is not handled
-	def transfer_size_mode(o)
-		return o if o.find { |op| not op.name.include? 'mov' }
-		@transfersz == 0 ? o.select { |op| op.name.include? 'fmov.s' } : o.reject { |op| op.name.include? 'fmov.s' }
+	def transfer_size_mode(list)
+		return list if list.find { |op| not op.name.include? 'mov' }
+		@transfersz == 0 ? list.find_all { |op| op.name.include? 'fmov.s' } : list.reject { |op| op.name.include? 'fmov.s' }
 	end
 
 	# when pr flag is set, floating point instructions are executed as double-precision operations
-	# thus registers pair is used (DRn registers)
-	def precision_mode(o)
-		@fpprecision == o ? o.reject { |op| op.args.include? :drn } : o.select{ |op| op.args.include? :frn }
+	# thus register pair is used (DRn registers)
+	def precision_mode(list)
+		@fpprecision == 0 ? list.reject { |op| op.args.include? :drn } : list.find_all { |op| op.args.include? :frn }
 	end
 
 	def decode_findopcode(edata)
@@ -45,50 +44,49 @@ class Sh4
 		di = DecodedInstruction.new(self)
 		val = edata.decode_imm(:u16, @endianness)
 		edata.ptr -= 2
-		op = @bin_lookaside[val >> 12].select{|opcode| (val & opcode.bin_mask) == opcode.bin}
+		op = @bin_lookaside[(val >> 12) & 0xf].find_all { |opcode| (val & opcode.bin_mask) == opcode.bin }
 
-		op = transfer_size_mode(op) if op.size == 2
-		op = precision_mode(op) if op.size == 2
+		op = transfer_size_mode(op) if op.length == 2
+		op = precision_mode(op) if op.length == 2
 
-		if op == nil or op.size != 1
-			op.each{|opcode| puts "#{opcode.name} - #{opcode.args} - #{Expression[opcode.bin]} - #{Expression[opcode.bin_mask]}"} if op
-			puts "current value: #{Expression[val]}"
-			raise "Die with your boots on !"
-		else
-			op = op.first
+		if op.length > 1
+			puts "current value: #{Expression[val]}, ambiguous matches:",
+			op.map { |opcode| " #{opcode.name} - #{opcode.args.inspect} - #{Expression[opcode.bin]} - #{Expression[opcode.bin_mask]}" }
+			#raise "Sh4 - Internal error"
 		end
 
-		di if di.opcode = op and op
+		if not op.empty?
+			di.opcode = op.first
+			di
+		end
 	end
 
 	def decode_instr_op(edata, di)
 		before_ptr = edata.ptr
 		op = di.opcode
 		di.instruction.opname = op.name
-		di.opcode.props[:memsz] = op.name =~ /(\.l)|(mova)/ ? 32 : op.name =~ /(\.w)/ ? 16 : 8
+		di.opcode.props[:memsz] = (op.name =~ /\.l|mova/ ? 32 : (op.name =~ /\.w/ ? 16 : 8))
 		val = edata.decode_imm(:u16, @endianness)
 
 		field_val = lambda{ |f|
 			r = (val >> @fields_shift[f]) & @fields_mask[f]
 			case f
-			when :@rm, :@rn ,:@_rm, :@_rn, :@rm_, :@rn_; r = GPR.new(r)
+			when :@rm, :@rn ,:@_rm, :@_rn, :@rm_, :@rn_; GPR.new(r)
 			when :@disppc
 				# The effective address is formed by calculating PC+4,
 				# clearing the lowest 2 bits, and adding the zero-extended 8-bit immediate i
 				# multiplied by 4 (32-bit)/ 2 (16-bit) / 1 (8-bit).
 				curaddr = di.address+4
 				curaddr = (curaddr & 0xffff_fffc) if di.opcode.props[:memsz] == 32
-				r = Expression[curaddr+r*(di.opcode.props[:memsz]/8)]
-
-			when :@disprm, :@dispr0rn; r = Expression[(r & 0xf) * (di.opcode.props[:memsz]/8)]
-			when :@disprmrn; r = Expression[(r & 0xf) * 4]
-			when :@dispgbr; r = Expression.make_signed(r, 16)
-			when :disp8; r = Expression[((di.address+4))+2*Expression.make_signed(r, 8)]
-			when :disp12; r = Expression[((di.address+4))+2*Expression.make_signed(r, 12)]
-			when :s8; r = Expression[Expression.make_signed(r, 8)]
+				curaddr+r*(di.opcode.props[:memsz]/8)
+			when :@disprm, :@dispr0rn; (r & 0xf) * (di.opcode.props[:memsz]/8)
+			when :@disprmrn; (r & 0xf) * 4
+			when :@dispgbr; Expression.make_signed(r, 16)
+			when :disp8; di.address+4+2*Expression.make_signed(r, 8)
+			when :disp12; di.address+4+2*Expression.make_signed(r, 12)
+			when :s8; Expression.make_signed(r, 8)
 			else r
 			end
-			r
 		}
 
 		op.args.each { |a|
@@ -130,8 +128,8 @@ class Sh4
 			when :@disprmrn
 				Memref.new(field_val[a], GPR.new(field_val[:rn]))
 
-			when :disppc; field_val[:@disppc]
-			when :s8, :disp8, :disp12; field_val[a]
+			when :disppc; Expression[field_val[:@disppc]]
+			when :s8, :disp8, :disp12; Expression[field_val[a]]
 			when :i16, :i8, :i5; Expression[field_val[a]]
 
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
@@ -145,7 +143,7 @@ class Sh4
 	def disassembler_default_func
 		df = DecodedFunction.new
 		df.backtrace_binding = {}
-		15.times{|i| df.backtrace_binding["r#{i}".to_sym] = Expression::Unknown}
+		15.times { |i| df.backtrace_binding["r#{i}".to_sym] = Expression::Unknown }
 		df.backtracked_for = []
 		df.btfor_callback = lambda { |dasm, btfor, funcaddr, calladdr|
 			if funcaddr != :default
@@ -182,148 +180,88 @@ class Sh4
 
 	def opsz(di)
 		ret = @size
-		ret = 8 if di and di.opcode.name =~ /(\.b)/
-			ret = 16 if di and di.opcode.name =~ /(\.w)/
-			ret
+		ret = 8 if di and di.opcode.name =~ /\.b/
+		ret = 16 if di and di.opcode.name =~ /\.w/
+		ret
 	end
 
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 
-		mask = lambda { |di| (1 << opsz(di))-1 }  # 32bits => 0xffff_ffff
-		sign = lambda { |v, di| Expression[[[v, :&, mask[di]], :>>, opsz(di)-1], :'!=', 0] }
+		mask = lambda { |di| (1 << opsz(di)) - 1 }  # 32bits => 0xffff_ffff
 
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
-			binding = case op
-
-				  when 'ldc', 'ldc.l', 'lds', 'lds.l', 'stc', 'stc.l', 'stc.w', 'stc.b'
-					  lambda { |di, a0, a1| { Expression[a1, :&, mask[di]] => Expression[a0, :&, mask[di]] } }
-
-				  when 'mov', 'mov.l', 'mov.w', 'mov.b'
-					  lambda { |di, a0, a1| { Expression[a1, :&, mask[di]] => Expression[a0, :&, mask[di]] } }
-
-				  when 'movt'; lambda {|di, a0| {a0 => :t_bit}}
-
-				  when 'exts.b', 'exts.w', 'extu.w'
-					  lambda { |di, a0, a1| { a1 => Expression[a0, :&, mask[di]] } }
-
-				  when 'tst'; lambda { |di, a0, a1| { Expression[:t_bit] => Expression[[a0, :^, a1], :==, 0] }}
-
-				  when 'cmp/eq', 'cmp/ge', 'cmp/ge', 'cmp/gt', 'cmp/hi', 'cmp/hs'
-					  lambda { |di, a0, a1| { Expression[:t_bit] => decode_cmp_expr(di, a0, a1) }}
-
-				  when 'cmp/pl', 'cmp/pz'
-					  lambda { |di, a0| { Expression[:t_bit] => decode_cmp_cst(di, a0) }}
-
-				  when 'tst'; lambda { |di, a0, a1|
-					  res = Expression[[a0, :&, mask[di]], :^, [[a1, :&, mask[di]]], :==, 0]
-					  ret = {}
-					  ret[:t_bit] = res
-					  ret
-				  }
-
-				  when 'rte'; lambda {|di| {:pc => :spc , :sr => :ssr }}
-				  when 'rts'; lambda {|di| {:pc => :pr}}
-				  when 'sets'; lambda {|di| {:s_bit => 1}}
-				  when 'sett'; lambda {|di| {:t_bit=> 1}}
-				  when 'clrs'; lambda {|di| {:s_bit => 0}}
-				  when 'clrt'; lambda {|di| {:t_bit => 0}}
-				  when 'clrmac'; lambda {|di| {:macl => 0, :mach => 0}}
-
-				  when 'jmp'; lambda { |di, a0| {:pc => a0}}
-				  when 'jsr'
-					  lambda { |di, a0|
-						  ret = {}
-						  ret[:pc] = Expression[a0]
-						  ret[:pr] = Expression[di.address+2*2]
-						  ret
-					  }
-
-				  when 'dt'; lambda { |di, a0|
-					  res = Expression[a0, :-, 1]
-					  ret  ={}
-					  ret[:a0] = res
-					  ret[:t_bit] = Expression[res, :==, 0]
-					  ret
-				  }
-				  when 'add' ; lambda { |di, a0, a1| { a1 => Expression[a0, :+, a1] } }
-				  when 'addc' ; lambda { |di, a0, a1|
-					  res = Expression[[a0, :&, mask[di]], :+, [[a1, :&, mask[di]], :+, :t_bit]]
-					  ret = {}
-					  ret[a1] = Expression[a0, :+, [a1, :+, :t_bit]]
-					  ret[:t_bit] = Expression[res, :>, mask[di]]
-					  ret
-
-				  }
-				  when 'addv' ; lambda { |di, a0, a1|
-					  res = Expression[[a0, :&, mask[di]], :+, [[a1, :&, mask[di]]]]
-					  ret = {}
-					  ret[a1] = Expression[a0, :+, [a1, :+, :t_bit]]
-					  ret[:t_bit] = Expression[res, :>, mask[di]]
-					  ret
-				  }
-
-				  when 'shll16', 'shll8', 'shll2', 'shll' ; lambda { |di, a0|
-					  shift = di.opcode.name == 'shll16' ? 16 : di.opcode.name == 'shll8' ? 8 : di.opcode.name == 'shll2' ? 2 : 1
-					  { a0 => Expression[a0, :<<, shift] }
-				  }
-				  when 'shlr16', 'shlr8', 'shlr2','shlr'
-					  lambda{|di, a0|
-						  shift = di.opcode.name == 'shlr16' ? 16 : di.opcode.name == 'shlr8' ? 8 : di.opcode.name == 'shlr2' ? 2 : 1
-						  { a0 => Expression[a0, :>>, shift] }
-					  }
-				  when 'rotcl'; lambda{|di, a0|
-					  ret = {}
-					  ret[a0] = Expression[[a0, :<<, 1], :|, :t_bit]
-					  ret[:t_bit] = Expression[a0, :>>, [opsz[di], :-, 1]]
-					  ret
-				  }
-				  when 'rotcr'; lambda{|di, a0|
-					  ret = {}
-					  ret[a0] = Expression[[a0, :>>, 1], :|, :t_bit]
-					  ret[:t_bit] = Expression[a0, :&, 1]
-					  ret
-				  }
-				  when 'rotl'; lambda{|di, a0|
-					  res = {}
-					  shift_bit = [a0, :<<, [opsz[di], :-, 1]]
-					  res[a0] = Expression[[a0, :<<, 1], :|, shift_bit]
-					  res[:t_bit] = shift_bit
-					  res
-				  }
-				  when 'rotr'; lambda{|di, a0|
-					  res = {}
-					  shift_bit = [a0, :>>, [opsz[di], :-, 1]]
-					  res[a0] = Expression[[a0, :>>, 1], :|, shift_bit]
-					  res[:t_bit] = shift_bit
-					  res
-				  }
-				  when 'shal'; lambda{|di, a0|
-					  res = {}
-					  shift_bit = [a0, :<<, [opsz[di], :-, 1]]
-					  res[a0] = Expression[a0, :<<, 1]
-					  res[:t_bit] = shift_bit
-					  res
-				  }
-				  when 'shar'; lambda{|di, a0|
-					  res = {}
-					  shift_bit = Expression[a0, :&, 1]
-					  res[a0] = Expression[a0, :>>, 1]
-					  res[:t_bit] = shift_bit
-					  res
-				  }
-				  when 'sub'; lambda {|di, a0, a1| { a1 => Expression[a0, :-, a1] }}
-				  when 'subc'; lambda {|di, a0, a1| { a1 => Expression[a0, :-, [a1, :-, :t_bit]] }}
-				  when 'and', 'and.b';  ; lambda {|di, a0, a1| { a1 => Expression[[a0, :&, mask[di]], :|, [[a1, :&, mask[di]]]] }}
-				  when 'or', 'or.b' ; lambda {|di, a0, a1| { a1 => Expression[[a0, :|, mask[di]], :|, [[a1, :&, mask[di]]]] }}
-				  when 'xor', 'xor.b' ; lambda {|di, a0, a1| { a1 => Expression[[a0, :|, mask[di]], :^, [[a1, :&, mask[di]]]] }}
-				  when 'add', 'addc', 'addv'; ; lambda { |di, a0, a1| { a1 => Expression[a0, :+, a1] }}
-				  when 'neg' ; lambda {|di, a0, a1| { a1 => Expression[ mask[di], :-, a0] }}
-				  when 'negc' ; lambda {|di, a0, a1| { a1 => Expression[[[mask[di], :-, a0], :-, :t_bit], :&, mask[di]] }}
-				  when 'not'; lambda {|di, a0, a1| { a1 => Expression[a0, :^, mask[di]] }}
-				  end
-
-			@backtrace_binding[op] ||= binding if binding
+			@backtrace_binding[op] ||= case op
+			when 'ldc', 'ldc.l', 'lds', 'lds.l', 'stc', 'stc.l', 'stc.w', 'stc.b'
+				lambda { |di, a0, a1| { a1 => Expression[a0, :&, mask[di]] }}
+			when 'mov', 'mov.l', 'mov.w', 'mov.b'
+				lambda { |di, a0, a1| { a1 => Expression[a0, :&, mask[di]] }}
+			when 'movt'; lambda { |di, a0| { a0 => :t_bit }}
+			when 'exts.b', 'exts.w', 'extu.w'
+				lambda { |di, a0, a1| { a1 => Expression[a0, :&, mask[di]] }}
+			when 'cmp/eq', 'cmp/ge', 'cmp/ge', 'cmp/gt', 'cmp/hi', 'cmp/hs'
+				lambda { |di, a0, a1| { :t_bit => decode_cmp_expr(di, a0, a1) }}
+			when 'cmp/pl', 'cmp/pz'
+				lambda { |di, a0| { :t_bit => decode_cmp_cst(di, a0) }}
+			when 'tst'; lambda { |di, a0, a1| { :t_bit => Expression[[a0, :&, mask[di]], :==, [a1, :&, mask[di]]] }}
+			when 'rte'; lambda { |di| { :pc => :spc , :sr => :ssr }}
+			when 'rts'; lambda { |di| { :pc => :pr }}
+			when 'sets'; lambda { |di| { :s_bit => 1 }}
+			when 'sett'; lambda { |di| { :t_bit => 1 }}
+			when 'clrs'; lambda { |di| { :s_bit => 0 }}
+			when 'clrt'; lambda { |di| { :t_bit => 0 }}
+			when 'clrmac'; lambda { |di| { :macl => 0, :mach => 0 }}
+			when 'jmp'; lambda { |di, a0| { :pc => a0 }}
+			when 'jsr'; lambda { |di, a0| { :pc => Expression[a0], :pr => Expression[di.address+2*2] }}
+			when 'dt'; lambda { |di, a0|
+				res = Expression[a0, :-, 1]
+				{ :a0 => res, :t_bit => Expression[res, :==, 0] }
+			}
+			when 'add' ; lambda { |di, a0, a1| { a1 => Expression[a0, :+, a1] }}
+			when 'addc' ; lambda { |di, a0, a1|
+				res = Expression[[a0, :&, mask[di]], :+, [[a1, :&, mask[di]], :+, :t_bit]]
+				{ a1 => Expression[a0, :+, [a1, :+, :t_bit]], :t_bit => Expression[res, :>, mask[di]] }
+			}
+			when 'addv' ; lambda { |di, a0, a1|
+				res = Expression[[a0, :&, mask[di]], :+, [[a1, :&, mask[di]]]]
+				{ a1 => Expression[a0, :+, [a1, :+, :t_bit]], :t_bit => Expression[res, :>, mask[di]] }
+			}
+			when 'shll16', 'shll8', 'shll2', 'shll' ; lambda { |di, a0|
+				shift = { 'shll16' => 16, 'shll8' => 8, 'shll2' => 2, 'shll' => 1 }[op]
+				{ a0 => Expression[[a0, :<<, shift], :&, 0xffff] }
+			}
+			when 'shlr16', 'shlr8', 'shlr2','shlr'; lambda { |di, a0|
+				shift = { 'shlr16' => 16, 'shlr8' => 8, 'shlr2' => 2, 'shlr' => 1 }[op]
+				{ a0 => Expression[a0, :>>, shift] }
+			}
+			when 'rotcl'; lambda { |di, a0| { a0 => Expression[[a0, :<<, 1], :|, :t_bit], :t_bit => Expression[a0, :>>, [opsz[di], :-, 1]] }}
+			when 'rotcr'; lambda { |di, a0| { a0 => Expression[[a0, :>>, 1], :|, :t_bit], :t_bit => Expression[a0, :&, 1] }}
+			when 'rotl'; lambda { |di, a0|
+				shift_bit = [a0, :<<, [opsz[di], :-, 1]]
+				{ a0 => Expression[[a0, :<<, 1], :|, shift_bit], :t_bit => shift_bit }
+			}
+			when 'rotr'; lambda { |di, a0|
+				shift_bit = [a0, :>>, [opsz[di], :-, 1]]
+				{ a0 => Expression[[a0, :>>, 1], :|, shift_bit], :t_bit => shift_bit }
+			}
+			when 'shal'; lambda { |di, a0|
+				shift_bit = [a0, :<<, [opsz[di], :-, 1]]
+				{ a0 => Expression[a0, :<<, 1], :t_bit => shift_bit }
+			}
+			when 'shar'; lambda { |di, a0|
+				shift_bit = Expression[a0, :&, 1]
+				{ a0 => Expression[a0, :>>, 1], :t_bit => shift_bit }
+			}
+			when 'sub';  lambda { |di, a0, a1| { a1 => Expression[a0, :-, a1] }}
+			when 'subc'; lambda { |di, a0, a1| { a1 => Expression[a0, :-, [a1, :-, :t_bit]] }}
+			when 'and', 'and.b'; lambda { |di, a0, a1| { a1 => Expression[[a0, :&, mask[di]], :|, [[a1, :&, mask[di]]]] }}
+			when 'or', 'or.b';   lambda { |di, a0, a1| { a1 => Expression[[a0, :|, mask[di]], :|, [[a1, :&, mask[di]]]] }}
+			when 'xor', 'xor.b'; lambda { |di, a0, a1| { a1 => Expression[[a0, :|, mask[di]], :^, [[a1, :&, mask[di]]]] }}
+			when 'add', 'addc', 'addv'; lambda { |di, a0, a1| { a1 => Expression[a0, :+, a1] }}
+			when 'neg' ;  lambda { |di, a0, a1| { a1 => Expression[mask[di], :-, a0] }}
+			when 'negc' ; lambda { |di, a0, a1| { a1 => Expression[[[mask[di], :-, a0], :-, :t_bit], :&, mask[di]] }}
+			when 'not';   lambda { |di, a0, a1| { a1 => Expression[a0, :^, mask[di]] }}
+			end
 		}
 
 		@backtrace_binding
@@ -351,15 +289,18 @@ class Sh4
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
 
-		arg = case di.instruction.opname
-		      when 'bf', 'bf/s', 'bt', 'bt/s', 'jmp', 'jsr'
-			      di.instruction.args.last
-		      when 'rts'
-			      :pr
+		val = case di.instruction.opname
+		      when 'rts'; :pr
 		      else di.instruction.args.last
 		      end
 
-		arg.kind_of?(Reg) ? [Expression[arg.symbolic]] : [Expression[arg]]
+		val = case val
+		      when Reg; val.symbolic
+		      when Memref; arg.symbolic(di.address, di.opcode.props[:memsz]/8)
+		      else val
+		      end
+
+		[Expression[val]]
 	end
 
 	def backtrace_is_function_return(expr, di=nil)
@@ -369,6 +310,5 @@ class Sh4
 	def delay_slot(di=nil)
 		(di and di.opcode.props[:delay_slot]) ? 1 : 0
 	end
-
 end
 end

@@ -46,41 +46,34 @@ class Sh4
 			:@dispgbr => 0xff, :@disppc => 0xff,
 			:disp8 => 0xff, :disp12 => 0xfff, :disppc => 0xff,
 
-			# implicit operands
-			:vbr => 0x0, :gbr => 0x0, :sr => 0x0, :ssr => 0x0, :spc => 0x0,
-			:sgr => 0x0, :dbr => 0x0, :mach => 0x0, :macl => 0x0, :pr => 0x0,
-			:fpul => 0x0, :fpscr => 0x0, :dbr => 0x0, :pc => 0x0, :r0 => 0x0, 
-
 			:i8 => 0xff, # zero-extendded 8-bit immediate
 			:s8 => 0xff, # 8-bit displacement s is sign-extended, doubled and added to PC+4
 		}
 
 		@fields_shift = {
-			:rm => 0x4, :rn => 0x8,
-			:@rm => 0x4, :@rn => 0x8,
-			:@rm_ => 0x4, :@rn_ => 0x8,
-			:@_rn => 0x8,
+			:rm => 4, :rn => 8,
+			:@rm => 4, :@rn => 8,
+			:@rm_ => 4, :@rn_ => 8,
+			:@_rn => 8,
 
-			:frm => 0x4, :frn => 0x8,
-			:xdm => 0x5, :xdn => 0x9,
-			:drm => 0x5, :drn => 0x9,
-			:fvm => 0x8, :fvn => 0x10,
+			:frm => 4, :frn => 8,
+			:xdm => 5, :xdn => 9,
+			:drm => 5, :drn => 9,
+			:fvm => 8, :fvn => 10,
 
-			:@r0rm => 0x4, :@r0rn => 0x8,
-			:rm_bank => 0x7, :rn_bank => 0x4,
+			:@r0rm => 4, :@r0rn => 8,
+			:rm_bank => 7, :rn_bank => 4,
 
-			:@disprm => 0x0, :@dispr0rn => 0x0, :@disprmrn => 0x0,
-			:@dispgbr => 0x0, :@disppc => 0x0,
-			:disp8 => 0x0, :disp12 => 0x0, :disppc => 0,
+			:@disprm => 0, :@dispr0rn => 0, :@disprmrn => 0,
+			:@dispgbr => 0, :@disppc => 0,
+			:disp8 => 0, :disp12 => 0, :disppc => 0,
 
-			# implicit operands
-			:vbr => 0x0, :gbr => 0x0, :sr => 0x0, :ssr => 0x0, :spc => 0x0,
-			:sgr => 0x0, :dbr => 0x0, :mach => 0x0, :macl => 0x0, :pr => 0x0,
-			:fpul => 0x0, :fpscr => 0x0, :dbr => 0x0, :pc => 0x0, :r0 => 0x0, 
-
-			:i8 => 0x0,
-			:s8 => 0x0,
+			:i8 => 0,
+			:s8 => 0,
 		}
+
+		# implicit operands
+		[:vbr, :gbr, :sr, :ssr, :spc, :sgr, :dbr, :mach, :macl, :pr, :fpul, :fpscr, :dbr, :pc, :r0].each { |a| @fields_mask[a] = @fields_shift[a] = 0 }
 
 		@valid_props = [:setip, :saveip, :stopexec , :delay_slot]
 
