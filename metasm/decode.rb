@@ -1548,6 +1548,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				w_di.block.each_from { |f_addr, f_type|
 					next if f_type == :indirect
 					hadsomething = true
+					o_f_addr = f_addr
 					f_addr = @decoded[f_addr].block.list.last.address if @decoded[f_addr].kind_of? DecodedInstruction	# delay slot
 					if l = w_loopdetect.find { |l_obj, l_addr, l_type| l_addr == f_addr and l_type == f_type }
 						f_obj = yield(:loop, w_obj, :looptrace => w_loopdetect[w_loopdetect.index(l)..-1], :loopdetect => w_loopdetect)
@@ -1555,7 +1556,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 							f_loopdetect = w_loopdetect[0...w_loopdetect.index(l)]
 						end
 					else
-						f_obj = yield(:up, w_obj, :from => w_addr, :to => f_addr, :sfret => f_type, :loopdetect => w_loopdetect)
+						f_obj = yield(:up, w_obj, :from => w_addr, :to => f_addr, :sfret => f_type, :loopdetect => w_loopdetect, :real_to => o_f_addr)
 					end
 					next if f_obj == false
 					f_obj ||= w_obj
@@ -1574,6 +1575,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				oldlen = todo.length
 				each_xref(w_addr, :x) { |x|
 					f_addr = x.origin
+					o_f_addr = f_addr
 					f_addr = @decoded[f_addr].block.list.last.address if @decoded[f_addr].kind_of? DecodedInstruction	# delay slot
 					if l = w_loopdetect.find { |l_obj, l_addr, l_type| l_addr == w_addr }
 						f_obj = yield(:loop, w_obj, :looptrace => w_loopdetect[w_loopdetect.index(l)..-1], :loopdetect => w_loopdetect)
@@ -1581,7 +1583,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 							f_loopdetect = w_loopdetect[0...w_loopdetect.index(l)]
 						end
 					else
-						f_obj = yield(:up, w_obj, :from => w_addr, :to => f_addr, :sfret => :normal, :loopdetect => w_loopdetect)
+						f_obj = yield(:up, w_obj, :from => w_addr, :to => f_addr, :sfret => :normal, :loopdetect => w_loopdetect, :real_to => o_f_addr)
 					end
 					next if f_obj == false
 					f_obj ||= w_obj
@@ -1825,7 +1827,7 @@ puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#
 						btt = btt.dup
 						btt.address = x.address
 						btt.from_subfuncret = true if h[:sfret] == :subfuncret
-						if backtrace_check_funcret(btt, h[:from], h[:to])
+						if backtrace_check_funcret(btt, h[:from], h[:real_to] || h[:to])
 puts "   function returns to caller" if debug_backtrace
 							next false
 						end
