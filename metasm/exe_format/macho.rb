@@ -26,7 +26,9 @@ class MachO < ExeFormat
 		13 => 'MC88000', 14 => 'SPARC',
 		15 => 'I860', 16 => 'I860_LITTLE',
 		17 => 'RS6000', 18 => 'POWERPC',
-		0x100_0000|18 => 'POWERPC64', #0x100_0000 => 'CPU_ARCH_ABI64',
+		#0x100_0000 => 'CPU_ARCH_ABI64',
+		0x100_0000|7  => 'X86_64',
+		0x100_0000|18 => 'POWERPC64',
 		255 => 'VEO',
 		0xffff_ffff => 'ANY',
 	}
@@ -61,6 +63,10 @@ class MachO < ExeFormat
 		},
 		'VEO' => { 1 => 'VEO_1', 2 => 'VEO_ALL', },
 	}
+	SUBCPU['POWERPC64'] = SUBCPU['POWERPC'].dup
+	SUBCPU['X86_64'] = SUBCPU['I386'].dup
+
+	SUBCPUFLAG = { 0x80 => 'LIB64' }
 
 
 	FILETYPE = {
@@ -111,9 +117,12 @@ class MachO < ExeFormat
 			else raise InvalidExeFormat, "Invalid Mach-O signature #{h.magic.unpack('H*').first.inspect}"
 			end
 		}
-		words :cputype, :cpusubtype, :filetype, :ncmds, :sizeofcmds, :flags
+		word :cputype
+		bitfield :word, 0 => :cpusubtype, 24 => :cpusubtypeflag
+		words :filetype, :ncmds, :sizeofcmds, :flags
 		fld_enum :cputype, CPU
 		fld_enum(:cpusubtype) { |m, h| SUBCPU[h.cputype] || {} }
+		fld_bits :cpusubtypeflag, SUBCPUFLAG
 		fld_enum :filetype, FILETYPE
 		fld_bits :flags, FLAGS
 		attr_accessor :reserved	# word 64bit only
@@ -212,10 +221,12 @@ class MachO < ExeFormat
 			str :segname, 16
 			xwords :addr, :size
 			words :offset, :align, :reloff, :nreloc, :flags, :res1, :res2
+			attr_accessor :res3	# word 64bit only
 			attr_accessor :segment, :encoded
 
 			def decode(m, s)
 				super(m)
+				@res3 = m.decode_word if m.size == 64
 				@segment = s
 			end
 
@@ -249,6 +260,7 @@ class MachO < ExeFormat
 				@ctx ||= {}
 				case m.header.cputype
 				when 'I386'; @ctx[:eip]
+				when 'X86_64'; @ctx[:rip]
 				when 'POWERPC'; @ctx[:srr0]
 				end
 			end
@@ -257,6 +269,7 @@ class MachO < ExeFormat
 				@ctx ||= {}
 				case m.header.cputype
 				when 'I386'; @ctx[:eip] = ep
+				when 'X86_64'; @ctx[:rip] = ep
 				when 'POWERPC'; @ctx[:srr0] = ep
 				end
 			end
@@ -264,6 +277,7 @@ class MachO < ExeFormat
 			def ctx_keys(m)
 				case m.header.cputype
 				when 'I386'; %w[eax ebx ecx edx edi esi ebp esp ss eflags eip cs ds es fs gs]
+				when 'X86_64'; %w[rax rbx rcx rdx rdi rsi rbp rsp r8 r9 r10 r11 r12 r13 r14 r15 rip rflags cs fs gs]
 				when 'POWERPC'; %w[srr0 srr1 r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 cr xer lr ctr mq vrsave]
 				else [*1..@count].map { |i| "reg#{i}" }
 				end.map { |k| k.to_sym }
@@ -271,7 +285,7 @@ class MachO < ExeFormat
 
 			def decode(m)
 				super(m)
-				@ctx = ctx_keys(m)[0, @count].inject({}) { |ctx, r| ctx.update r => m.decode_word }
+				@ctx = ctx_keys(m)[0, @count].inject({}) { |ctx, r| ctx.update r => m.decode_xword }
 			end
 
 			def set_default_values(m)
@@ -288,7 +302,7 @@ class MachO < ExeFormat
 		UNIXTHREAD = THREAD
 
 		class STRING < SerialStruct
-			xword :stroff
+			word :stroff
 			attr_accessor :str
 
 			def decode(m)
@@ -300,16 +314,16 @@ class MachO < ExeFormat
 		end
 
 		class DYLIB < STRING
-			xword :stroff
+			word :stroff
 			words :timestamp, :cur_version, :compat_version
 		end
 		LOAD_DYLIB = DYLIB
 		ID_DYLIB = DYLIB
 
 		class PREBOUND_DYLIB < STRING
-			xword :stroff
+			word :stroff
 			word :nmodules
-			xword :linked_modules
+			word :linked_modules
 		end
 
 		LOAD_DYLINKER = STRING
@@ -387,7 +401,7 @@ class MachO < ExeFormat
 		@commands.each { |cmd|
 			e = cmd.data
 			case cmd.cmd
-			when 'SEGMENT'; @segments << e
+			when 'SEGMENT', 'SEGMENT_64'; @segments << e
 			end
 		}
 	end
@@ -438,6 +452,7 @@ class MachO < ExeFormat
 	def cpu_from_headers
 		case @header.cputype
 		when 'I386'; Ia32.new
+		when 'X86_64'; X86_64.new
 		when 'POWERPC'; PowerPC.new
 		else raise "unsupported cpu #{@header.cputype}"
 		end
@@ -457,9 +472,10 @@ class MachO < ExeFormat
 
 		# TODO sections -> segments
 		@segments.each { |seg|
-			if not @commands.find { |cmd| cmd.cmd == 'SEGMENT' and cmd.data == seg }
+			cname = (@size == 64 ? 'SEGMENT_64' : 'SEGMENT')
+			if not @commands.find { |cmd| cmd.cmd == cname and cmd.data == seg }
 				cmd = LoadCommand.new
-				cmd.cmd = 'SEGMENT'
+				cmd.cmd = cname
 				cmd.data = seg
 				@commands << cmd
 			end
@@ -519,6 +535,8 @@ class MachO < ExeFormat
 
 		@header.cputype = case @cpu		# needed by '.entrypoint'
 				  when Ia32; 'I386'
+				  when X86_64; 'X86_64'
+				  when PowerPC; 'POWERPC'
 				  end
 		super()
 	end
