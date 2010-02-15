@@ -191,7 +191,7 @@ class CdecompListingWidget < DrawableWidget
 				s_ = s.dup
 				s_.initializer = nil if s.kind_of? C::Variable	# for static var, avoid dumping the initializer in the textbox
 				s_.attributes &= C::Attributes::DECLSPECS if s_.attributes
-				@parent_widget.inputbox("new type for #{s.name}", :text => s_.dump_def(cp.toplevel)[0].to_s) { |t|
+				@parent_widget.inputbox("new type for #{s.name}", :text => s_.dump_def(cp.toplevel)[0].join(' ')) { |t|
 					if t == ''
 						if s.type.kind_of? C::Function and s.initializer and s.initializer.decompdata
 							s.initializer.decompdata[:stackoff_type].clear

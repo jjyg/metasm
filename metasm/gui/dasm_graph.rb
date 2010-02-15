@@ -386,7 +386,7 @@ puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)
 		}
 		# approximations
 		group_unclean = lambda {
-			group_lines[false] or group_or[false] or group_halflines[false] or group_ifthen[false] or group_other[]
+			group_lines[false] or group_or[false] or group_halflines[] or group_ifthen[false] or group_other[]
 		}
 
 		group_clean[] or trim_graph[] or group_unclean[]
@@ -905,7 +905,7 @@ class GraphViewWidget < DrawableWidget
 					if di.block_head?
 						# render dump_block_header, add a few colors
 						b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
-						b_header.strip.each { |l| l.chomp!
+						b_header.strip.each_line { |l| l.chomp!
 							col = :comment
 							col = :label if l[0, 2] != '//' and l[-1] == ?:
 							render[l, col]
@@ -1101,23 +1101,23 @@ class GraphViewWidget < DrawableWidget
 			zoom_all
 			redraw
 		when ?V
-			@selected_boxes.each { |b|
-				dx = (b.from+b.to).map { |bb| bb.x+bb.w/2 - b.x-b.w/2 }
+			@selected_boxes.each { |b_|
+				dx = (b_.from+b_.to).map { |bb| bb.x+bb.w/2 - b_.x-b_.w/2 }
 				dx = dx.inject(0) { |s, xx| s+xx }/dx.length
 				if dx > 0
-					xmax = b.from.map { |bb| bb.x if b.from.find { |bbb|
+					xmax = b_.from.map { |bb| bb.x if b_.from.find { |bbb|
 						bbb.x+bbb.w/2 < bb.x+bb.w/2 and bbb.y+bbb.h < bb.y
 					} }.compact.min
-					bx = b.x+dx
-					bx = [bx, xmax-b.w/2-@margin].min if xmax
-					b.x = bx if bx > b.x
+					bx = b_.x+dx
+					bx = [bx, xmax-b_.w/2-@margin].min if xmax
+					b_.x = bx if bx > b_.x
 				else
-					xmin = b.from.map { |bb| bb.x+bb.w if b.from.find { |bbb|
+					xmin = b_.from.map { |bb| bb.x+bb.w if b_.from.find { |bbb|
 						bbb.x+bbb.w/2 < bb.x+bb.w/2 and bbb.y+bbb.h < bb.y
 					} }.compact.max
-					bx = b.x+dx
-					bx = [bx, xmin+b.w/2+@margin].max if xmin
-					b.x = bx if bx < b.x
+					bx = b_.x+dx
+					bx = [bx, xmin+b_.w/2+@margin].max if xmin
+					b_.x = bx if bx < b_.x
 				end
 			}
 			redraw

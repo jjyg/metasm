@@ -4,9 +4,9 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 module Metasm
-	module Gui
-		class HexWidget < DrawableWidget
-			# data_size = size of data in bytes (1 => chars, 4 => dwords..)
+module Gui
+class HexWidget < DrawableWidget
+	# data_size = size of data in bytes (1 => chars, 4 => dwords..)
 	# line_size = nr of bytes shown per line
 	# view_addr = addr of 1st byte to display
 	attr_accessor :dasm, :show_address, :show_data, :show_ascii,
@@ -31,7 +31,7 @@ module Metasm
 		@data_size = 1
 		@line_size = 16
 		@num_lines = 2	# height of widget in lines
-		@write_pending = {}	# addr -> newvalue (bytes)
+		@write_pending = {}	# addr -> newvalue (characters)
 		@endianness = @dasm.cpu.endianness
 		@raw_data_cache = {}	# addr -> raw @line_size data at addr
 		#@data_sign = false
@@ -286,27 +286,6 @@ module Metasm
 				@write_pending.delete current_address
 			end
 			redraw
-
-		when 0x20..0x7e
-			if @focus_zone == :hex
-				case v = key
-				when ?0..?9; v -= ?0
-				when ?a..?f; v -= ?a-10
-				when ?A..?F; v -= ?A-10
-				else return false
-				end
-				oo = @caret_x_data/2
-				oo = @data_size - oo - 1 if @endianness == :little
-				baddr = current_address + oo
-				return false if not d = data_at(baddr, 1)
-				o = 4*((@caret_x_data+1) % 2)
-				@write_pending[baddr] ||= d[0]
-				@write_pending[baddr] = (@write_pending[baddr] & ~(0xf << o) | (v << o))
-			else
-				@write_pending[current_address] = key
-			end
-			key_right
-			redraw
 		when :tab
 			switch_focus_zone
 			update_caret
@@ -319,6 +298,42 @@ module Metasm
 				redraw
 			else return false
 			end
+
+		when ?\x20..?\x7e
+			if @focus_zone == :hex
+				if ?a.kind_of?(String)	# ruby1.9
+					v = key.ord
+					case key
+					when ?0..?9; v -= ?0.ord
+					when ?a..?f; v -= ?a.ord-10
+					when ?A..?F; v -= ?A.ord-10
+					else return false
+					end
+				else
+					case v = key
+					when ?0..?9; v -= ?0
+					when ?a..?f; v -= ?a-10
+					when ?A..?F; v -= ?A-10
+					else return false
+					end
+				end
+
+				oo = @caret_x_data/2
+				oo = @data_size - oo - 1 if @endianness == :little
+				baddr = current_address + oo
+				return false if not d = data_at(baddr, 1)
+				o = 4*((@caret_x_data+1) % 2)
+				@write_pending[baddr] ||= d[0]
+				if ?a.kind_of?(String)
+					@write_pending[baddr] = ((@write_pending[baddr].ord & ~(0xf << o)) | (v << o)).chr
+				else
+					@write_pending[baddr] = (@write_pending[baddr] & ~(0xf << o)) | (v << o)
+				end
+			else
+				@write_pending[current_address] = key
+			end
+			key_right
+			redraw
 		else return false
 		end
 		true

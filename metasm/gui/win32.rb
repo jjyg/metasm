@@ -2272,10 +2272,18 @@ class Window
 			end
 		when Win32Gui::WM_CHAR
 			if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
-				wparam += ((Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0) ? ?A : ?a) - 1 if wparam < 0x1a
-				@widget.keypress_ctrl_(wparam) if @widget
+				shift = (Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0)
+				if ?a.kind_of?(String)
+					wparam += (shift ? ?A.ord : ?a.ord) - 1 if wparam < 0x1a
+					k = wparam.chr
+				else
+					wparam += (shift ? ?A : ?a) - 1 if wparam < 0x1a
+					k = wparam
+				end
+				@widget.keypress_ctrl_(k) if @widget
 			else
-				@widget.keypress_(wparam) if @widget
+				k = (?a.kind_of?(String) ? wparam.chr : wparam)
+				@widget.keypress_(k) if @widget
 			end
 		when Win32Gui::WM_DESTROY
 			destroy_window

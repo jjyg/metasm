@@ -413,7 +413,7 @@ class AsmListingWidget < DrawableWidget
 				if di.block_head?
 					# render dump_block_header, add a few colors
 					b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
-					b_header.each { |l|
+					b_header.each_line { |l|
 						l.chomp!
 						cmt = (l[0, 2] == '//' or l[-1] != ?:)
 						str_c[cmt ? 3 : 1] = l	# cmt || label

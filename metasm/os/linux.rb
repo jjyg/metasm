@@ -433,7 +433,7 @@ class LinuxRemoteString < VirtualString
 	# writes are done directly by ptrace
 	def initialize(pid, addr_start=0, length=0xffff_ffff, dbg=nil)
 		@pid = pid
-		@readfd = File.open("/proc/#@pid/mem") rescue nil
+		@readfd = File.open("/proc/#@pid/mem", 'rb') rescue nil
 		@dbg = dbg if dbg
 		@invalid_addr = false
 		super(addr_start, length)

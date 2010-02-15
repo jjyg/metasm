@@ -303,7 +303,7 @@ class DisasmWidget < ContainerChoiceWidget
 					bd[w] = w.downcase.to_sym
 				end
 			}
-			expr = expr.bind(bd).reduce { |e| e.len ||= @dasm.cpu.size/8 if e.kind_of? Indirection ; nil }
+			expr = expr.bind(bd).reduce { |e_| e_.len ||= @dasm.cpu.size/8 if e_.kind_of? Indirection ; nil }
 
 			log = []
 			dasm.backtrace(expr, addr, :log => log)
@@ -321,7 +321,7 @@ class DisasmWidget < ContainerChoiceWidget
 					list.last << a[1] << a[0]
 				when :found
 					list.pop
-					a[0].each { |e| list << [nil, :found, Expression[e]] }
+					a[0].each { |e_| list << [nil, :found, Expression[e_]] }
 				else
 					list.last << a[0] << a[1..-1].inspect
 				end

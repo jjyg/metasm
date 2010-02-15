@@ -266,14 +266,31 @@ class DbgRegWidget < DrawableWidget
 			update_caret
 		when :backspace
 			# TODO
+		when :enter
+			commit_writes
+			redraw
+		when :esc
+			@write_pending.clear
+			redraw
 
-		when 0x20..0x7e
-			case v = key
-			when 0x20; v = nil	# keep current value
-			when ?0..?9; v -= ?0
-			when ?a..?f; v -= ?a-10
-			when ?A..?F; v -= ?A-10
-			else return false
+		when ?\x20..?\x7e
+			if ?a.kind_of?(String)
+				v = key.ord
+				case key
+				when ?\x20; v = nil	# keep current value
+				when ?0..?9; v -= ?0.ord
+				when ?a..?f; v -= ?a.ord-10
+				when ?A..?F; v -= ?A.ord-10
+				else return false
+				end
+			else
+				case v = key
+				when ?\x20; v = nil
+				when ?0..?9; v -= ?0
+				when ?a..?f; v -= ?a-10
+				when ?A..?F; v -= ?A-10
+				else return false
+				end
 			end
 
 			reg = @registers[@caret_reg] || @flags[@caret_reg-@registers.length]
@@ -297,12 +314,6 @@ class DbgRegWidget < DrawableWidget
 			else
 				@caret_x = 0
 			end
-			redraw
-		when :enter
-			commit_writes
-			redraw
-		when :esc
-			@write_pending.clear
 			redraw
 		else return false
 		end
@@ -507,12 +518,6 @@ class DbgConsoleWidget < DrawableWidget
 				redraw
 			end
 
-		when 0x20..0x7e
-			@curline[@caret_x, 0] = key.chr
-			@caret_x += 1
-			update_status_cmd
-			redraw
-
 		when :enter
 			@cmd_histptr = nil
 			handle_command
@@ -531,6 +536,13 @@ class DbgConsoleWidget < DrawableWidget
 				update_status_cmd
 				redraw
 			end
+
+		when ?\x20..?\x7e
+			@curline[@caret_x, 0] = key.chr
+			@caret_x += 1
+			update_status_cmd
+			redraw
+
 		else return false
 		end
 		true
