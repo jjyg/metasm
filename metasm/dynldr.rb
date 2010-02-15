@@ -468,7 +468,7 @@ EOS
 		@cp.numeric_constants.each { |k, v|
 			n = k.upcase
 			n = "C#{n}" if n !~ /^[A-Z]/
-			const_set(n, v) if not const_defined?(n) and v.kind_of? Integer
+			const_set(n, v) if v.kind_of? Integer and not constants.map { |c| c.to_s }.include?(n)
 		}
 	end
 

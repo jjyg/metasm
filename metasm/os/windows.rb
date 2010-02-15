@@ -671,8 +671,8 @@ class WinDebugger < Debugger
 		@memory = @dbg.mem[@pid]
 		super()
 		# get a valid @tid (for reg values etc)
-		@dbg.loop { |pid, tid, code, info|
-			update_dbgev([pid, tid, code, info])
+		@dbg.loop { |pid_, tid, code, info|
+			update_dbgev([pid_, tid, code, info])
 			case code
 			when WinAPI::CREATE_THREAD_DEBUG_EVENT, WinAPI::CREATE_PROCESS_DEBUG_EVENT
 				@tid = tid
@@ -1503,6 +1503,11 @@ msvcrt-ruby18
  st_init_strtable_with_size st_init_table st_init_table_with_size st_insert st_lookup wait waitpid yyerrflag yynerrs yyval
 EOL
 	curlibname = nil
+	# patch the ruby library name based on the current interpreter
+	if OS.current == WinOS and pr = WinOS.find_process(Process.pid) and
+			rubylib = pr.modules[1..-1].find { |m| m.path =~ /ruby/ }
+		data.sub!(/^msvcrt-ruby18/, File.basename(rubylib.path))
+	end
 	data.each_line { |l|
 		list = l.split
 		curlibname = list.shift if l[0, 1] != ' '
