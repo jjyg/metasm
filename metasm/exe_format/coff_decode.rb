@@ -65,7 +65,7 @@ class COFF
 							e.forwarder_name = name
 						end
 					else
-						e.target = addr
+						e.target = e.target_rva = addr
 					end
 					@exports << e
 				}

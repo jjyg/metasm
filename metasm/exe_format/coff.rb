@@ -157,7 +157,7 @@ class COFF < ExeFormat
 		attr_accessor :libname, :exports
 
 		class Export
-			attr_accessor :forwarder_lib, :forwarder_ordinal, :forwarder_name, :target, :name_p, :name, :ordinal
+			attr_accessor :forwarder_lib, :forwarder_ordinal, :forwarder_name, :target, :target_rva, :name_p, :name, :ordinal
 		end
 	end
 
