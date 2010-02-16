@@ -599,7 +599,16 @@ class Debugger
 	end
 
 	# loads the symbols from a mapped module (each name loaded only once)
-	def loadsyms(addr, name='%08x'%addr)
+	def loadsyms(addr, name='%08x'%addr.to_i)
+		if addr.kind_of? String
+			OS.current.find_process(@pid).modules.to_a.each { |m|
+				if m.path =~ /#{addr}/
+					addr = m.addr
+					name = File.basename m.path
+					break
+				end
+			}
+		end
 		return if not peek = @memory.get_page(addr, 4)
 		if peek == AutoExe::ELFMAGIC
 			cls = LoadedELF
@@ -696,7 +705,7 @@ class Debugger
 
 		# resolve ambiguous symbol names/hex values
 		bd = {}
-		e.externals.grep(String).each { |ex|
+		e.externals.grep(::String).each { |ex|
 			if not v = register_list.find { |r| ex.downcase == r.to_s.downcase } ||
 						(block_given? && yield(ex)) || symbols.index(ex)
 				lst = symbols.values.find_all { |s| s.downcase.include? ex.downcase }
@@ -726,6 +735,7 @@ class Debugger
 	# resolves an expression involving register values and/or memory indirection using the current context
 	# uses #register_list, #get_reg_value, @mem, @cpu
 	def resolve_expr(e)
+		e = parse_expr(e) if e.kind_of? ::String
 		bd = {}
 		Expression[e].externals.each { |ex|
 			next if bd[ex]
@@ -742,6 +752,7 @@ class Debugger
 			end
 		}
 	end
+	alias resolve resolve_expr
 
 	# return/yield an array of [addr, addr symbolic name] corresponding to the current stack trace
 	def stacktrace(maxdepth=500, &b)
@@ -751,15 +762,13 @@ class Debugger
 	# accepts a range or begin/end address to read memory, or a register name
 	def [](arg0, arg1=nil)
 		if arg1
-			arg0 = parse_expr(arg0) if arg0.kind_of? ::String
-			arg1 = parse_expr(arg1) if arg1.kind_of? ::String
 			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
 			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
-			@memory[arg0, arg1]
+			@memory[arg0, arg1].to_str
 		elsif arg0.kind_of? ::Range
 			arg0.begin = resolve_expr(arg0.begin) if not arg0.begin.kind_of? ::Integer	# cannot happen, invalid ruby Range
 			arg0.end = resolve_expr(arg0.end) if not arg0.end.kind_of? ::Integer
-			@memory[arg0]
+			@memory[arg0].to_str
 		else
 			get_reg_value(arg0)
 		end
@@ -769,8 +778,6 @@ class Debugger
 	def []=(arg0, arg1, val=nil)
 		arg1, val = arg2, val if not val
 		if arg1
-			arg0 = parse_expr(arg0) if arg0.kind_of? ::String
-			arg1 = parse_expr(arg1) if arg1.kind_of? ::String
 			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
 			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
 			@memory[arg0, arg1] = val
@@ -786,19 +793,15 @@ class Debugger
 
 	# read an int from the target memory, int of sz bytes (defaults to cpu.size)
 	def memory_read_int(addr, sz=@cpu.size/8)
-		addr = parse_expr(addr) if addr.kind_of? ::String
 		addr = resolve_expr(addr) if not addr.kind_of? ::Integer
 		Expression.decode_imm(@memory, sz, @cpu, addr)
 	end
 
 	# write an int in the target memory
 	def memory_write_int(addr, val, sz=@cpu.size/8)
-		addr = parse_expr(addr) if addr.kind_of? ::String
 		addr = resolve_expr(addr) if not addr.kind_of? ::Integer
-		val = parse_expr(val) if val.kind_of? ::String
 		val = resolve_expr(val) if not val.kind_of? ::Integer
 		@memory[addr, sz] = Expression.encode_imm(val, sz, @cpu)
 	end
 end
-
 end

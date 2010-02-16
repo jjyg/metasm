@@ -242,36 +242,75 @@ end
 
 class LinOS < OS
 	class Process < Process
+		attr_accessor :cmdline
 		def memory
 			@memory ||= LinuxRemoteString.new(pid)
 		end
 		def memory=(m) @memory = m end
+
 		def debugger
 			@debugger ||= LinDebugger.new(@pid, memory)
 		end
 		def debugger=(d) @debugger = d end
+
 		def modules
-			@modules ||= File.readlines("/proc/#{pid}/maps").inject([]) { |list, map|
-				case map
-				when /^(........(?:........)?)-.* (\/.*)/
-					next list if list.find { |m| m.path == $2 }
-					m = Module.new
-					m.addr = $1.to_i(16)
-					m.path = $2
-					list << m
-				else list
-				end
-			} rescue []
+			list = []
+			seen = {}
+			File.readlines("/proc/#{pid}/maps").each { |l|
+				# 08048000-08064000 r-xp 000000 08:01 4234 /usr/bin/true
+				l = l.split
+				next if l.length < 6 or seen[l[-1]]
+				seen[l[-1]] = true
+				m = Module.new
+				m.addr = l[0].to_i(16)
+				m.path = l[-1]
+				list << m
+			}
+			list
+		rescue
+		end
+
+		# return a list of [addr_start, length, perms, file]
+		def mappings
+			list = []
+			File.readlines("/proc/#{pid}/maps").each { |l|
+				l = l.split
+				addrstart, addrend = l[0].split('-').map { |i| i.to_i 16 }
+				list << [addrstart, addrend-addrstart, l[1], l[5]]
+			}
+			list
+		rescue
+		end
+
+		def threads
+			Dir.entries("/proc/#{pid}/task/").grep(/\d+/).map { |tid| tid.to_i }
+	       	rescue
+			# TODO handle pthread stuff (eg 2.4 kernels)
+			[pid]
 		end
 	end
 
 	# returns an array of Processes, with pid/module listing
 	def self.list_processes
 		Dir.entries('/proc').grep(/^\d+$/).map { |pid|
-			pr = Process.new
-			pr.pid = pid.to_i
-			pr
+			open_process(pid.to_i)
 		}
+	end
+
+	# search a Process whose pid/cmdline matches the argument
+	def self.find_process(tg)
+		if tg.kind_of? String and t = list_processes.find { |pr| pr.pid != ::Process.pid and pr.cmdline =~ /#{tg}/ }
+			return t
+		end
+		super(tg)
+	end
+
+	# return a Process for the specified pid (no check done)
+	def self.open_process(pid)
+		pr = Process.new
+		pr.pid = pid
+		pr.cmdline = File.read("/proc/#{pid}/cmdline") rescue nil
+		pr
 	end
 
 	def self.create_debugger(path)

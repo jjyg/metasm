@@ -708,7 +708,7 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('exit', 'quit', 'quit the debugger interface') { p.win.destroy }
 		new_command('ruby', 'execute arbitrary ruby code') { |arg| eval arg }
 		new_command('loadsyms', 'load symbols from a mapped module') { |arg|
-			if arg = solve_expr(arg)
+			if not arg.empty? and arg = (solve_expr(arg.dup) rescue arg)
 				@dbg.loadsyms(arg)
 			else
 				@dbg.loadallsyms { |a|
