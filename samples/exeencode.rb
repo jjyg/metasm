@@ -23,6 +23,7 @@ outfilename = nil
 type = nil
 etype = :bin
 overwrite_outfile = false
+varname = nil
 macros = {}
 OptionParser.new { |opt|
 	opt.on('-o file', 'output filename') { |f| outfilename = f }
@@ -33,8 +34,10 @@ OptionParser.new { |opt|
 	opt.on('-v', '-W', 'verbose') { $VERBOSE=true }
 	opt.on('-d', 'debug') { $DEBUG=$VERBOSE=true }
 	opt.on('-D var=val', 'define a preprocessor macro') { |v| v0, v1 = v.split('=', 2) ; macros[v0] = v1 }
-	opt.on('--cstring', 'encode output as a C string to stdout') { $to_cstring = true }
+	opt.on('--cstring', 'encode output as a C string') { $to_cstring = true }
+	opt.on('--jsstring', 'encode output as a js string') { $to_jsstring = true }
 	opt.on('--string', 'encode output as a string to stdout') { $to_string = true }
+	opt.on('--varname name', 'the variable name for string output') { |v| varname = v }
 	opt.on('-e class', '--exe class', 'use a specific ExeFormat class') { |c| $execlass = Metasm.const_get(c) }
 	opt.on('--cpu cpu', 'use a specific CPU class') { |c| $cpu = Metasm.const_get(c).new }
 	# must come after --cpu in commandline
@@ -63,17 +66,23 @@ else
 	exe = $execlass.assemble($cpu, src, file)
 end
 
-if $to_string or $to_cstring
+if $to_string or $to_cstring or $to_jsstring
 	str = exe.encode_string
 
+	varname ||= File.basename(file.to_s)[/^\w+/] || 'sc'	# derive varname from filename
 	if $to_string
-		str = str.inspect
+		str = "#{varname} = #{str.inspect}"
 	elsif $to_cstring
-		var = File.basename(file)[/^\w+/] || 'sc' rescue 'sc'	# derive varname from filename
-		str = ["unsigned char #{var}[#{str.length}] = "] + str.scan(/.{1,19}/m).map { |l|
+		str = ["unsigned char #{varname}[#{str.length}] = "] + str.scan(/.{1,19}/m).map { |l|
 			'"' + l.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
 		}
 		str.last << ?;
+	elsif $to_jsstring
+		str << 0 if str.length & 1 != 0
+		str = ["#{varname} = "] + str.scan(/.{2,20}/m).map { |l|
+			'"' + l.unpack($cpu.endianness == :little ? 'v*' : 'n*').map { |c| '%%u%04x' % c }.join + '"+'
+		}
+		str.last[-1] = ?;
 	end
 
 	if outfilename
