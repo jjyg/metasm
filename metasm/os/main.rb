@@ -608,6 +608,7 @@ class Debugger
 					break
 				end
 			}
+			return if not addr.kind_of? Integer
 		end
 		return if not peek = @memory.get_page(addr, 4)
 		if peek == AutoExe::ELFMAGIC

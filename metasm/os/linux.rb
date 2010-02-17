@@ -320,7 +320,7 @@ end
 
 # this class implements a high-level API over the ptrace debugging primitives
 class LinDebugger < Debugger
-	attr_accessor :ptrace
+	attr_accessor :ptrace, :pass_exceptions, :continuesignal
 	def initialize(pid, mem=nil)
 		@ptrace = PTrace32.new(pid)
 		@pid = @ptrace.pid
@@ -329,8 +329,25 @@ class LinDebugger < Debugger
 		@memory = mem || LinuxRemoteString.new(@pid)
 		@memory.dbg = self
 		@has_pax = false
+		@continuesignal = 0
+		@pass_exceptions = true
 		@reg_val_cache = {}
 		super()
+		# attach_threads
+	end
+
+	def attach_threads
+		@threads = {}
+		LinOS.open_process(@pid).threads.each { |tid|
+			next if tid == @pid
+			puts "attach thread #{@pid}:#{tid}" if $DEBUG
+			@ptrace.pid = tid
+			@ptrace.attach
+			# waitpid(tid) => ECHLD
+			# waitpid(pid) => hang
+			@threads[tid] = :stopped
+		}
+		@ptrace.pid = @pid
 	end
 
 	def invalidate
@@ -358,12 +375,18 @@ class LinDebugger < Debugger
 			@info = "signal #{$?.termsig} #{Signal.list.index($?.termsig)}"
 		elsif $?.stopped?
 			@state = :stopped
-			if @info == 'syscall'
+			if @info == 'syscall' and Signal.list[$?.stopsig] == 'TRAP'
 				@info = "syscall #{@ptrace.class::SYSCALLNR.index(get_reg_value(:orig_eax))}"
 				return
+				# XXX @info='syscall' & !TRAP => we lose @info='syscall'...
 			end
 			@info = "signal #{$?.stopsig} #{Signal.list.index($?.stopsig)}"
-			@info = nil if @info =~ /TRAP/	# standard breakpoint exception
+			if @info =~ /TRAP/	# just a breakpoint	 TODO TRACESYSGOOD
+				@continuesignal = 0
+				@info = nil
+			else
+				@continuesignal = $?.stopsig
+			end
 		else
 			@state = :stopped
 			@info = "unknown #{$?.inspect}"
@@ -384,18 +407,33 @@ class LinDebugger < Debugger
 		@state = :dead
 	end
 
+	def parse_run_signal(sig)
+		case sig
+		when nil; (@pass_exceptions ? @continuesignal : 0)
+		when Integer; sig 
+		when String, Symbol
+			Signal.list[sig.to_s.upcase.sub(/SIG_?/, '')] || Integer(sig)
+		else
+			raise "invalid continue signal #{sig.inspect}"
+		end
+	rescue ArgumentError
+		raise "invalid continue signal #{sig.inspect}"
+	end
+
 	def do_continue(*a)
 		return if @state != :stopped
 		@state = :running
 		@info = 'continue'
-		@ptrace.cont
+		sig = parse_run_signal(a.first)
+		@ptrace.cont(sig)
 	end
 
 	def do_singlestep(*a)
 		return if @state != :stopped
 		@state = :running
 		@info = 'singlestep'
-		@ptrace.singlestep
+		sig = parse_run_signal(a.first)
+		@ptrace.singlestep(sig)
 	end
 
 	def need_stepover(di)
@@ -454,6 +492,7 @@ class LinDebugger < Debugger
 
 	def check_post_run(*a)
 		@cpu.dbg_check_post_run(self)
+		# TODO stuff with ptrace_tids
 		super(*a)
 	end
 
