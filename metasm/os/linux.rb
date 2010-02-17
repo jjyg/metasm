@@ -375,7 +375,7 @@ class LinDebugger < Debugger
 			@info = "signal #{$?.termsig} #{Signal.list.index($?.termsig)}"
 		elsif $?.stopped?
 			@state = :stopped
-			if @info == 'syscall' and Signal.list[$?.stopsig] == 'TRAP'
+			if @info == 'syscall' and Signal.list['TRAP'] == $?.stopsig
 				@info = "syscall #{@ptrace.class::SYSCALLNR.index(get_reg_value(:orig_eax))}"
 				return
 				# XXX @info='syscall' & !TRAP => we lose @info='syscall'...
