@@ -377,6 +377,7 @@ class LinDebugger < Debugger
 			@state = :stopped
 			if @info == 'syscall' and Signal.list['TRAP'] == $?.stopsig
 				@info = "syscall #{@ptrace.class::SYSCALLNR.index(get_reg_value(:orig_eax))}"
+				@continuesignal = 0
 				return
 				# XXX @info='syscall' & !TRAP => we lose @info='syscall'...
 			end
