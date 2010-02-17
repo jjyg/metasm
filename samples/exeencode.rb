@@ -19,12 +19,14 @@ require 'optparse'
 $execlass ||= Metasm::Shellcode
 $cpu ||= Metasm::Ia32.new
 
-outfilename = 'a.out'
+outfilename = nil
 type = nil
 etype = :bin
+overwrite_outfile = false
 macros = {}
 OptionParser.new { |opt|
 	opt.on('-o file', 'output filename') { |f| outfilename = f }
+	opt.on('-f') { overwrite_outfile = true }
 	opt.on('--c', 'parse source as a C file') { type = 'c' }
 	opt.on('--asm', 'parse asm as an ASM file') { type = 'asm' }
 	opt.on('--stdin', 'parse source on stdin') { ARGV << '-' }
@@ -39,7 +41,7 @@ OptionParser.new { |opt|
 	opt.on('--16', 'set cpu in 16bit mode') { $cpu.size = 16 }
 	opt.on('--le', 'set cpu in little-endian mode') { $cpu.endianness = :little }
 	opt.on('--be', 'set cpu in big-endian mode') { $cpu.endianness = :big }
-	opt.on('-fno-pic', 'generate position-dependant code') { $cpu.generate_PIC = false }
+	opt.on('--fno-pic', 'generate position-dependant code') { $cpu.generate_PIC = false }
 	opt.on('--shared', 'generate shared library') { etype = :lib }
 }.parse!
 
@@ -61,16 +63,31 @@ else
 	exe = $execlass.assemble($cpu, src, file)
 end
 
-if $to_string
-	p exe.encode_string
-elsif $to_cstring
+if $to_string or $to_cstring
 	str = exe.encode_string
-	var = File.basename(file)[/^\w+/] || 'sc'	# derive varname from filename
-	puts "unsigned char #{var}[#{str.length}] = ", str.scan(/.{1,19}/m).map { |l|
-		'"' + l.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
-	}.join("\n") + ';'
+
+	if $to_string
+		str = str.inspect
+	elsif $to_cstring
+		var = File.basename(file)[/^\w+/] || 'sc' rescue 'sc'	# derive varname from filename
+		str = ["unsigned char #{var}[#{str.length}] = "] + str.scan(/.{1,19}/m).map { |l|
+			'"' + l.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
+		}
+		str.last << ?;
+	end
+
+	if outfilename
+		abort "Error: target file #{outfilename.inspect} exists !" if File.exists? outfilename and not overwrite_outfile
+		File.open(outfilename, 'w') { |fd| fd.puts str }
+		puts "saved to file #{outfilename.inspect}"
+	else
+		puts str
+	end
 else
+	outfilename ||= 'a.out'
+	abort "Error: target file #{outfilename.inspect} exists !" if File.exists? outfilename and not overwrite_outfile
 	exe.encode_file(outfilename, etype)
+	puts "saved to file #{outfilename.inspect}"
 end
 
 __END__
