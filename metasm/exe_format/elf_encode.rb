@@ -638,10 +638,10 @@ class ELF
 	# TODO support mapped PHDR, obey section-specified base address, handle NOBITS
 	def encode(type='EXEC')
 		@header.type ||= {:bin => 'EXEC', :lib => 'DYN', :obj => 'REL'}.fetch(type, type)
-		@header.machine ||= case @cpu
-				when X86_64; 'X86_64'
-				when Ia32; '386'
-				when MIPS; 'MIPS'
+		@header.machine ||= case @cpu.shortname
+				when 'x64'; 'X86_64'
+				when 'ia32'; '386'
+				when 'mips'; 'MIPS'
 				end
 
 		@encoded = EncodedData.new

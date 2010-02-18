@@ -332,12 +332,6 @@ class COFF < ExeFormat
 		@endianness = cpu ? cpu.endianness : :little
 		@header = Header.new
 		@optheader = OptionalHeader.new
-		@header.machine = case cpu
-		when nil; 'UNKNOWN'
-		when Ia32; 'I386'
-		else 'UNKNOWN'
-		end
-
 		super(cpu)
 	end
 end

@@ -460,6 +460,10 @@ class COFF
 		when Ia32
 			shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).assemble(c).encoded }
 			if @cpu.generate_PIC
+				if @cpu.size == 64
+					edata << shellcode["#{import.thunk}: jmp [rip+#{import.target}-1f]\n1:"]
+					return
+				end
 				# sections starts with a helper function that returns the address of metasm_intern_geteip in eax (PIC)
 				if not @sections.find { |s| s.encoded and s.encoded.export['metasm_intern_geteip'] } and edata.empty?
 					edata << shellcode["metasm_intern_geteip: call 42f\n42:\npop eax\nsub eax, 42b-metasm_intern_geteip\nret"]
@@ -575,6 +579,11 @@ class COFF
 	# initializes some flags based on the target arg ('exe' / 'dll' / 'kmod' / 'obj')
 	def encode_header(target = 'exe')
 		target = {:bin => 'exe', :lib => 'dll', :obj => 'obj', 'sys' => 'kmod', 'drv' => 'kmod'}.fetch(target, target)
+
+		@header.machine ||= case @cpu.shortname
+				when 'x64'; 'AMD64'
+				when 'ia32'; 'I386'
+				end
 
 		# setup header flags
 		tmp = %w[LINE_NUMS_STRIPPED LOCAL_SYMS_STRIPPED DEBUG_STRIPPED] +

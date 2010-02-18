@@ -69,7 +69,7 @@ class CPU
 	end
 
 	def shortname
-		name.sub(/.*::/, '').downcase
+		self.class.name.sub(/.*::/, '').downcase
 	end
 end
 

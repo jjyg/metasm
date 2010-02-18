@@ -134,9 +134,6 @@ class MachO < ExeFormat
 				   when [64, :big]; MAGIC64
 				   when [64, :little]; CIGAM64
 				   end
-			@cputype ||= case m.cpu
-				     when Ia32; 'I386'
-				     end
 			@cpusubtype ||= 'ALL'
 			@filetype ||= 'EXECUTE'
 			@ncmds ||= m.commands.length
@@ -461,6 +458,8 @@ class MachO < ExeFormat
 	def encode
 		@encoded = EncodedData.new
 
+		init_header_cpu
+
 		if false and maybeyoureallyneedthis
 		segz = LoadCommand::SEGMENT.new
 		segz.name = '__PAGEZERO'
@@ -533,12 +532,17 @@ class MachO < ExeFormat
 
 		@source ||= {}
 
-		@header.cputype = case @cpu		# needed by '.entrypoint'
-				  when Ia32; 'I386'
-				  when X86_64; 'X86_64'
-				  when PowerPC; 'POWERPC'
-				  end
+		init_header_cpu		# for '.entrypoint'
+
 		super()
+	end
+
+	def init_header_cpu
+		@header.cputype ||= case @cpu.shortname
+				    when 'ia32'; 'I386'
+				    when 'x64'; 'X86_64'
+				    when 'powerpc'; 'POWERPC'
+				    end
 	end
 
 	# handles macho meta-instructions
