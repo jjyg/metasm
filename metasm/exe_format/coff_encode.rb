@@ -940,6 +940,7 @@ class COFF
 	# defines __PE__
 	def tune_prepro(l)
 		l.define_weak('__PE__', 1)
+		l.define_weak('__MS_X86_64_ABI__') if @cpu and @cpu.shortname == 'x64'
 	end
 
 	# honors C attributes: export, export_as(foo), import_from(kernel32), entrypoint

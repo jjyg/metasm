@@ -65,6 +65,7 @@ class CCompiler < C::Compiler
 		super(*a)
 		@cpusz = 64
 		@regnummax = 15
+		@label_next = nil
 	end
 
 	# shortcut to add an instruction to the source
@@ -567,8 +568,11 @@ class CCompiler < C::Compiler
 	# compiles a subroutine call
 	def c_cexpr_inner_funcall(expr)
 		backup = []
-		# TODO msdn vs gcc
-		regargs = [1, 2, 8, 9]
+		if @parser.lexer.definition['__MS_X86_64_ABI__']
+			regargs = [1, 2, 8, 9]
+		else
+			regargs = [7, 6, 2, 1, 8, 9]
+		end
 		regargs_used = regargs[0, expr.rexpr.length]
 		(@state.abi_flushregs_call | regargs_used).each { |reg|
 			next if reg == 4
@@ -601,7 +605,6 @@ class CCompiler < C::Compiler
 			regargs_unuse << r if not @state.inuse.include? ra
 			inuse r		# XXX xchg already used regargs ?
 		}
-		regargs_unuse.each { |r| unuse r }
 		instr 'sub', Reg.new(4, 64), Expression[8*regargs.length]	# TODO prealloc that at func start
 
 		if expr.lexpr.kind_of? C::Variable and expr.lexpr.type.kind_of? C::Function
@@ -614,6 +617,7 @@ class CCompiler < C::Compiler
 			f = expr.lexpr
 			f = f.rexpr while f.kind_of? C::CExpression and not f.op and f.type == f.rexpr.type
 		end
+		regargs_unuse.each { |r| unuse r }
 		argsz = [expr.rexpr.length, regargs.length].max * 8
 		instr 'add', Reg.new(4, @cpusz), Expression[argsz]
 
