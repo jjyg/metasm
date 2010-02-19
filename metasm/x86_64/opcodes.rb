@@ -19,8 +19,11 @@ class X86_64
 		super()
 		@valid_props |= [:imm64, :auto64]
 		@opcode_list.delete_if { |o| o.bin[0].to_i & 0xf0 == 0x40 }	# now REX prefix
-		@opcode_list.each { |o| o.props[:imm64] = true if o.bin == [0xB8] }	# mov reg, <true imm64>
-		@opcode_list.each { |o| o.props[:auto64] = true if o.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/ }	# operate in 64bit ignoring rex_w
+		@opcode_list.each { |o|
+			o.props[:imm64] = true if o.bin == [0xB8]	# mov reg, <true imm64>
+			o.props[:auto64] = true if o.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/ # operate in 64bit ignoring rex_w
+		}
+		addop 'movsxd', [0x63], :mrmw
 	end
 
 	# all x86_64 cpu understand <= sse2 instrs
@@ -36,8 +39,11 @@ class X86_64
 		init_sse_only
 		init_sse2_only
 
-		@opcode_list.delete_if { |o| o.args.include? :modrmmmx }	# mmx is dead!
-		@opcode_list.delete_if { |o| o.name == 'loadall' }
+		@opcode_list.delete_if { |o|
+			o.args.include? :modrmmmx or	# mmx is dead!
+			o.name == 'loadall' or
+			o.name == 'arpl'
+		}
 
 		addop 'syscall', [0x0F, 0x05]
 		addop 'sysret',  [0x0F, 0x07]

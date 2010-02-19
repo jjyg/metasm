@@ -122,7 +122,7 @@ class X86_64
 		pfx << op.props[:needpfx] if op.props[:needpfx]
 
 		rex_w = rex_r = rex_x = rex_b = nil
-		if op.name == 'movsx' or op.name == 'movzx'
+		if op.name == 'movsx' or op.name == 'movzx' or op.name == 'movsxd'
 			case i.args[0].sz
 			when 64; rex_w = 1
 			when 32

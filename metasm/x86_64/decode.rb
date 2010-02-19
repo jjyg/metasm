@@ -135,14 +135,19 @@ class X86_64
 
 		di.bin_length += edata.ptr - before_ptr
 
-		if op.name == 'movsx' or op.name == 'movzx'
-			# TODO ?
-			if opsz == 8
+		if op.name == 'movsx' or op.name == 'movzx' or op.name == 'movsxd'
+			if op.name == 'movsxd'
+				di.instruction.args[1].sz = 32
+			elsif opsz == 8
 				di.instruction.args[1].sz = 8
+			elsif op.name == 'movzx' and pfx[:rex_w]
+				di.instruction.args[1].sz = 32
 			else
 				di.instruction.args[1].sz = 16
 			end
-			if pfx[:opsz]
+			if pfx[:rex_w]
+				di.instruction.args[0].sz = 64
+			elsif pfx[:opsz]
 				di.instruction.args[0].sz = 16
 			else
 				di.instruction.args[0].sz = 32

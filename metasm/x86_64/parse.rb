@@ -66,6 +66,7 @@ class X86_64
 				 i.args.find { |aa| aa.kind_of? Reg and aa.val >= 8 and aa.val < 16 } or	# XXX mov ah, cr12...
 				 i.args.grep(ModRM).find { |aa| (aa.b and aa.b.val >= 8 and aa.b.val < 16) or (aa.i and aa.i.val >= 8 and aa.i.val < 16) })
 			}
+		return if i.opname == 'movzx' and [[64, 16], [32, 32], [16, 32]].include? [i.args[0].sz, i.args[1].sz]
 		super(i)
 	end
 
@@ -74,6 +75,18 @@ class X86_64
 		return if arg.kind_of? ModRM and ((arg.b and arg.b.val == 16 and arg.i) or (arg.i and arg.i.val == 16 and (arg.b or arg.s != 1)))
 		return if arg.kind_of? Reg and arg.sz >= 32 and arg.val == 16	# eip/rip only in modrm
 		return if o.props[:auto64] and arg.respond_to? :sz and arg.sz == 32
+		if o.name == 'movsxd'
+			return if not arg.kind_of? Reg and not arg.kind_of? ModRM
+			arg.sz ||= 32
+			if spec == :reg
+				return arg.sz >= 32
+			else
+				return arg.sz == 32
+			end
+		elsif o.name == 'movzx'
+			return if not arg.kind_of? Reg and not arg.kind_of? ModRM
+			return arg.sz <= 32 if spec != :reg and not o.props[:argsz]
+		end
 		super(o, spec, arg)
 	end
 end
