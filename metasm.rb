@@ -12,7 +12,7 @@ module Metasm
 	# constant defined in the same file as another
 	Const_autorequire_equiv = {
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',
-		'X64' => 'X86_64',
+		'X64' => 'X86_64', 'AMD64' => 'X86_64',
 		'UniversalBinary' => 'MachO', 'COFFArchive' => 'COFF',
 		'PTrace32' => 'LinOS', 'GNUExports' => 'LinOS',
 		'LoadedELF' => 'ELF', 'LoadedPE' => 'PE',

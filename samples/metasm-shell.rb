@@ -23,7 +23,10 @@ class String
 	@@cpu = Metasm::Ia32.new
 	class << self
 		def cpu()   @@cpu   end
-		def cpu=(c) @@cpu=c end
+		def cpu=(c)
+			c = Metasm.const_get(c).new if c.kind_of? String
+			@@cpu=c
+		end
 	end
 
 	# encodes the current string as a Shellcode, returns the resulting EncodedData

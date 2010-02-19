@@ -131,5 +131,6 @@ class X86_64 < Ia32
 end
 
 X64 = X86_64
+AMD64 = X86_64
 
 end
