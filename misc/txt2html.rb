@@ -217,9 +217,12 @@ class Txt2Html
 		return if @@done.include? f
 		@@done << f
 
+		raise 'bad path' if (f.split('/') & ['.', '..']).first
+
 		outf = outfilename(f)
 		puts "compiling #{outf}..." if $VERBOSE
 
+		@pathfix = outf.split('/')[0...-1].map { '../' }.join
 		out = compile(File.read(f) + "\n\n")
 		File.open(outf, 'w') { |fd| fd.puts out }
 	end
@@ -327,11 +330,18 @@ class Txt2Html
 					when 'txt'
 						tg = outfilename(lnk)
 						Txt2Html.new(lnk)
-						on << Html::A.new(tg, File.basename(lnk, '.txt').tr('_', ' '))
+						on << Html::A.new(@pathfix + tg, File.basename(lnk, '.txt').tr('_', ' '))
 					when 'jpg', 'png'
 						on << Html::Img.new(lnk)
 					end
 				else
+					if lnk =~ /\.txt$/
+						@@seen_nofile ||= []
+						if not @@seen_nofile.include? lnk
+							@@seen_nofile << lnk
+							puts "reference to missing #{lnk.inspect}"
+						end
+					end
 					on << Html::A.new(lnk, lnk)
 				end
 			end
