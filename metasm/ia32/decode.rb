@@ -315,7 +315,7 @@ class Ia32
 
 		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
 			binding = case op
-			when 'mov', 'movsx', 'movzx', 'movd', 'movq'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'mov', 'movsx', 'movzx', 'movsxd', 'movd', 'movq'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'lea'; lambda { |di, a0, a1| { a0 => a1.target } }
 			when 'xchg'; lambda { |di, a0, a1| { a0 => Expression[a1], a1 => Expression[a0] } }
 			when 'add', 'sub', 'or', 'xor', 'and', 'pxor', 'adc', 'sbb'
@@ -477,6 +477,7 @@ class Ia32
 			when 'std'; lambda { |di| { :eflag_d => Expression[1] } }
 			when 'setalc'; lambda { |di| { Reg.new(0, 8).symbolic => Expression[:eflag_c, :*, 0xff] } }
 			when /^set/; lambda { |di, *a| { a[0] => Expression[decode_cc_to_expr(op[/^set(.*)/, 1])] } }
+			when /^cmov/; lambda { |di, *a| fl = decode_cc_to_expr(op[/^cmov(.*)/, 1]) ; { a[0] => Expression[[fl, :*, a[1]], :|, [[1, :-, fl], :*, a[0]]] } }
 			when /^j/
 				lambda { |di, a0|
 					ret = { 'dummy_metasm_0' => Expression[a0] }	# mark modr/m as read
