@@ -27,6 +27,7 @@ ExeFormats
 * <core/SerialStruct.txt>
 * <core/AutoExe.txt>
 
+* <core/Shellcode.txt>
 * <core/PE.txt>
 * <core/COFF.txt>
 * <core/ELF.txt>
