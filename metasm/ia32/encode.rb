@@ -185,6 +185,8 @@ class Ia32
 			base[fld[0]] |= v << fld[1]
 		}
 
+		size = i.prefix[:sz] || @size
+
 		#
 		# handle prefixes and bit fields
 		#
@@ -198,9 +200,9 @@ class Ia32
 		pfx << op.props[:needpfx] if op.props[:needpfx]
 
 		if op.name == 'movsx' or op.name == 'movzx'
-			pfx << 0x66 if @size == 48-i.args[0].sz
+			pfx << 0x66 if size == 48-i.args[0].sz
 		else
-			opsz = op.props[:argsz] || i.prefix[:sz]
+			opsz = op.props[:argsz]
 			oi.each { |oa, ia|
 				case oa
 				when :reg, :reg_eax, :modrm, :modrmA, :mrm_imm
@@ -208,25 +210,26 @@ class Ia32
 					opsz = ia.sz
 				end
 			}
-			pfx << 0x66 if (opsz and @size == 48 - opsz) or (op.props[:opsz] and op.props[:opsz] != @size)
-			if op.props[:opsz] and @size == 48 - op.props[:opsz]
+			pfx << 0x66 if (opsz and size == 48 - opsz) or (op.props[:opsz] and op.props[:opsz] != size)
+			if op.props[:opsz] and size == 48 - op.props[:opsz]
 				opsz = op.props[:opsz]
 			end
 		end
-		opsz ||= @size
+		opsz ||= size
 
+		if op.props[:adsz] and size == 48 - op.props[:adsz]
+			pfx << 0x67
+			adsz = 48 - size
+		end
+		adsz ||= size
 		# addrsize override / segment override
 		if mrm = i.args.grep(ModRM).first
-			if (mrm.b and mrm.b.sz != @size) or (mrm.i and mrm.i.sz != @size)
+			if not op.props[:adsz] and ((mrm.b and mrm.b.sz != adsz) or (mrm.i and mrm.i.sz != adsz))
 				pfx << 0x67
-				adsz = 48 - @size
+				adsz = 48 - adsz
 			end
 			pfx << [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][mrm.seg.val] if mrm.seg
-		elsif op.props[:adsz] and @size == 48 - op.props[:adsz]
-			pfx << 0x67
-			adsz = 48 - @size
 		end
-		adsz ||= @size
 
 
 		#

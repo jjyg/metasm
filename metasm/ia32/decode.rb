@@ -149,8 +149,8 @@ class Ia32
 				  (sz = op.props[:opsz] and opsz(di) != sz) or
 				  (ndpfx = op.props[:needpfx] and not pfx[:list].to_a.include? ndpfx) or
 				  # return non-ambiguous opcode (eg push.i16 in 32bit mode) / sync with addop_post in opcode.rb
-				  ((op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret') and not op.props[:opsz] and pfx[:opsz]) or
-				  ((op.props[:strop] or op.props[:stropz]) and (not op.props[:adsz] or op.props[:adsz] == @size) and pfx[:adsz])
+				  (pfx[:opsz] and (op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret') and not op.props[:opsz]) or
+				  (pfx[:adsz] and (not op.props[:adsz] or op.props[:adsz] == @size))
 				 )
 			}
 

@@ -24,11 +24,15 @@ class TestIa32 < Test::Unit::TestCase
 	def test_16
 		assert_equal(assemble("push 142", @@cpu16), "\x68\x8e\0")
 		assert_equal(assemble("code16 push 142", @@cpu16), "\x68\x8e\0")
-		assert_equal(assemble("code16 push 142"), "\x66\x68\x8e\0")
+		assert_equal(assemble("code16 push 142"), "\x68\x8e\0")
+		assert_equal(assemble("push.i16 142"), "\x66\x68\x8e\0")
+		assert_equal(assemble("mov eax, 42"), "\xb8\x2a\0\0\0")
+		assert_equal(assemble("code16 mov ax, 42"), "\xb8\x2a\0")
 	end
 
 	def test_jmp
 		assert_equal(assemble("jmp $"), "\xeb\xfe")
+		assert_equal(assemble("jmp.i32 $"), "\xe9\xfb\xff\xff\xff")
 	end
 
 	def test_mrmsz
@@ -36,6 +40,11 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(assemble("mov [eax], bl"), "\x88\x18")
 		assert_equal(assemble("mov ebx, [eax]"), "\x8b\x18")
 		assert_equal(assemble("mov bl, [eax]"), "\x8a\x18")
+		assert_equal(assemble("mov bl, [bx]"), "\x67\x8a\x1f")
+		assert_equal(assemble("mov bl, [bx]", @@cpu16), "\x8a\x1f")
+		assert_equal(assemble("code16 mov bl, [bx]"), "\x8a\x1f")
+		assert_equal(assemble("mov bl, [0]"), "\x8a\x1d\0\0\0\0")
+		assert_equal(assemble("mov.a16 bl, [0]"), "\x67\x8a\x1e\0\0")
 	end
 
 	def test_err
@@ -46,7 +55,7 @@ class TestIa32 < Test::Unit::TestCase
 	end
 
 	def test_C
-		src = "int bla(void) { int i=0; return ++i; }"
+		src = "int bla(void) { volatile int i=0; return ++i; }"
 		assert_equal(Metasm::Shellcode.compile_c(@@cpu32, src).encode_string,
 				["5589E583EC04C745FC00000000FF45FC8B45FC89EC5DC3"].pack('H*'))
 	end

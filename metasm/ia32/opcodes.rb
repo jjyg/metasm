@@ -838,7 +838,8 @@ class Ia32
 			op32.name << '.i32'
 			op32.props[:opsz] = 32
 			@opcode_list << op32
-		elsif op.props[:strop] or op.props[:stropz] or op.args.include? :mrm_imm
+		elsif op.props[:strop] or op.props[:stropz] or op.args.include? :mrm_imm or
+				op.args.include? :modrm or op.args.include? :modrmA
 			# define adsz-override version for ambiguous opcodes (TODO allow movsd edi / movsd di)
 			op16 = dupe[op]
 			op16.name << '.a16'

@@ -128,7 +128,7 @@ class ModRM
 		raise otok, 'mrm: reg in imm' if imm.kind_of? Expression and not imm.externals.grep(Reg).empty?
 
 		# find default address size
-		adsz = b ? b.sz : i ? i.sz : cpu.size
+		adsz = b ? b.sz : i ? i.sz : nil
 		# ptsz may be nil now, will be fixed up later (in parse_instr_fixup) to match another instruction argument's size
 		new adsz, ptsz, s, i, b, imm, seg
 	end
@@ -234,6 +234,8 @@ end
 			end
 		end
 
+		return false if arg.kind_of? ModRM and arg.adsz and o.props[:adsz] and arg.adsz != o.props[:adsz]
+
 		cond = true
 		if s = o.props[:argsz] and (arg.kind_of? Reg or arg.kind_of? ModRM)
 			cond = (!arg.sz or arg.sz == s)
@@ -282,7 +284,7 @@ end
 		super(i)
 	end
 
-	# fixup the ptsz of a modrm argument, defaults to other argument size or current cpu mode
+	# fixup the sz of a modrm argument, defaults to other argument size or current cpu mode
 	def parse_instruction_fixup(i)
 		if m = i.args.grep(ModRM).first and not m.sz
 			if i.opname == 'movzx' or i.opname == 'movsx'
@@ -295,6 +297,13 @@ end
 					# XXX fpu/simd ?
 					m.sz = i.prefix[:sz] || @size
 				end
+			end
+		end
+		if m and not m.adsz
+			if opcode_list_byname[i.opname].all? { |o| o.props[:adsz] }
+				m.adsz = opcode_list_byname[i.opname].first.props[:adsz]
+			else
+				m.adsz = i.prefix[:sz] || @size
 			end
 		end
 	end
