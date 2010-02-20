@@ -11,6 +11,8 @@
 module Html
 class Elem
 	attr_reader :name, :attrs, :content, :style
+
+	IndentAdd = '  '
 	
 	def initialize(name, attrs=nil, content=nil)
 		@name = name
@@ -110,26 +112,49 @@ class Elem
 	def to_s(indent = '')
 		attrs = @attrs.map { |k, v| " #{k}=\"#{v}\"" }.join
 		attrs += ' style="' + @style.map{ |k, v| "#{k}: #{v}" }.join('; ') + '"' unless @style.empty?
-		s = indent + '<' + @name + attrs + (@uniq ? ' />' : '>')
-		s + if @uniq
-			''
+		s = '' << indent << '<' << @name << attrs << (@uniq ? ' />' : '>')
+		if @uniq
+			s
+		elsif @name == 'pre'
+			s << @content.map { |c| c.to_s }.join.chomp << '</pre>'
 		else
 			if length(s) > 80
-				"\n" + @content.map{ |c|
-					if c.class.ancestors.include? Elem
-						c.to_s(indent + '  ') + "\n"
+				sindent = indent + IndentAdd
+				sep = "\n"
+				@content.each { |c|
+					case c
+					when Elem
+						if sep == ''
+							s << c.to_s(sindent).sub(/^\s+/, '')
+						else
+							s << sep << c.to_s(sindent)
+						end
+					when String
+						if c =~ /^\s+/ or (@name == 'p' and c == @content.first)
+							s << sep << sindent << c.sub(/^\s+/, '')
+						else
+							s << c.sub(/\s+(\S+)/, "\n"+sindent+'\\1')
+						end
+						if c !~ /\s+$/
+							sep = ''
+							next
+						end
 					else
-						indent + '  ' + c.to_s + "\n"
+						s << sep << sindent << c.to_s
 					end
-				}.join + indent + '</' + @name + '>'
+					sep = "\n"
+				}
+				sep = "\n" if @name == 'p'
+				sep << indent if sep != ''
+				s << sep << "</#@name>"
 			else
-				@content.map{ |c| c.to_s }.join + '</' + @name + '>'
+				s << @content.map { |c| c.to_s }.join << "</#@name>"
 			end
 		end
 	end
 
 	def inspect
-		"<#{@name}"+@content.map{|c|"\n"+c.inspect}.join+"\n#{@name}>"
+		"<#{@name}"+@content.map{|c|"\n"+c.inspect}.join+"\n/#{@name}>"
 	end
 end	
 
@@ -144,8 +169,8 @@ class Page < Elem
 	end
 
 	def to_s
-		'<?xml version="1.0" encoding="iso-8859-1" ?>'+"\n"+
-		'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/dtd/xhtml11.dtd">'+"\n"+
+		'<?xml version="1.0" encoding="us-ascii" ?>'+"\n"+
+		'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">'+"\n"+
 		super.to_s
 	end
 end
@@ -235,6 +260,7 @@ class Txt2Html
 		prev = ''
 		state = {}
 		out = Html::Page.new
+		out.head << Html::Stylesheet.new(@pathfix + 'style.css')
 		flush = lambda { [:pre, :list, :par].each { |f| state.delete f } ; prev = '' }
 		raw.each_line { |l|
 			case l = l.chomp
@@ -270,7 +296,7 @@ class Txt2Html
 				end
 				lst.add_line compile_string(text)
 
-			when /^\s+(\S+)$/
+			when /^\s+(\S.*)$/
 				# preformatted text
 				if not pre = state[:pre]
 					pre = state[:pre] = Html::Elem.new('pre')
@@ -313,7 +339,7 @@ class Txt2Html
 		on = []
 		o.each { |s|
 			while s.kind_of? String and o1 = s.index('`') and o2 = s.index('`', o1+1)
-				on << s[0...o1] << Html::Elem.new('span').add_style('font-family', 'monospace').add(s[o1+1...o2])
+				on << s[0...o1] << Html::Span.new('quote').add(s[o1+1...o2])
 				s = s[o2+1..-1]
 			end
 			on << s
@@ -352,5 +378,9 @@ class Txt2Html
 end
 
 if __FILE__ == $0
+	if ARGV.empty?
+		Dir.chdir(File.expand_path(File.join(File.dirname(__FILE__), '../doc')))
+		ARGV.concat Dir['**/index.txt']
+	end
 	ARGV.each { |a| Txt2Html.new(a) }
 end
