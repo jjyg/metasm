@@ -150,7 +150,6 @@ class Ia32
 		addop 'into',  [0xCE]
 		addop 'invd',  [0x0F, 0x08]
 		addop 'invlpg',[0x0F, 0x01, 7<<3], :modrmA
-		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm ; o.args.reverse! }
 		addop 'iret',  [0xCF], nil,  {}, :stopexec, :setip
 		addop 'iretd', [0xCF], nil,  {}, :stopexec, :setip
 		addop('jcxz',  [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 16 }
@@ -351,7 +350,7 @@ class Ia32
 		# mmx
 		addop 'emms',  [0x0F, 0x77]
 		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm ; o.args.reverse! }
-		addop('movq',  [0x0F, 0x6F], :mrmmmx, {:d => [1, 4]}) { |o| o.args.reverse! }	# TODO check ohter mrmmmx
+		addop('movq',  [0x0F, 0x6F], :mrmmmx, {:d => [1, 4]}) { |o| o.args.reverse! }
 		addop 'packssdw', [0x0F, 0x6B], :mrmmmx
 		addop 'packsswb', [0x0F, 0x63], :mrmmmx
 		addop 'packuswb', [0x0F, 0x67], :mrmmmx
@@ -430,7 +429,9 @@ class Ia32
 		addop 'ldmxcsr', [0x0F, 0xAE, 2<<3], :modrmA
 		addop_macrossps 'maxps', [0x0F, 0x5F], :mrmxmm
 		addop_macrossps 'minps', [0x0F, 0x5D], :mrmxmm
-		addop 'movaps',  [0x0F, 0x28], :mrmxmm, {:d => [1, 0]}
+		addop('movaps',  [0x0F, 0x28], :mrmxmm, {:d => [1, 0]}) { |o| o.args.reverse! }
+		addop('movd',    [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmxmm)] = :modrm ; o.args.reverse! ; o.props[:needpfx] = 0x66 }
+		addop('movdqa',  [0x0F, 0x6F], :mrmxmm, {:d => [1, 4]}) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 }
 
 		# movhlps(reg, reg){nomem} == movlps(reg, mrm){no restriction}...
 		addop 'movhlps', [0x0F, 0x12], :mrmxmm, {:d => [1, 0]}
@@ -826,7 +827,11 @@ class Ia32
 			addop_post dop
 		end
 
-		@opcode_list << op
+		if op.props[:needpfx] and @opcode_list.find { |oo| oo.name == op.name and not oo.props[:needpfx] }
+			@opcode_list.unshift op
+		else
+			@opcode_list << op
+		end
 
 		if op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret'
 			# define opsz-override version for ambiguous opcodes

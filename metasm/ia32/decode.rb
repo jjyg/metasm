@@ -166,6 +166,12 @@ class Ia32
 		bseq = edata.read(op.bin.length).unpack('C*')		# decode_findopcode ensures that data >= op.length
 		pfx = di.instruction.prefix || {}
 
+		case op.props[:needpfx]
+		when 0x66; pfx.delete :opsz
+		when 0x67; pfx.delete :adsz
+		when 0xF2, 0xF3; pfx.delete :rep
+		end
+
 		field_val = lambda { |f|
 			if fld = op.fields[f]
 				(bseq[fld[0]] >> fld[1]) & @fields_mask[f]

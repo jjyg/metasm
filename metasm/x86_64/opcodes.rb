@@ -41,6 +41,7 @@ class X86_64
 
 		@opcode_list.delete_if { |o|
 			o.args.include? :modrmmmx or	# mmx is dead!
+			o.args.include? :regmmx or	# movd
 			o.name == 'loadall' or
 			o.name == 'arpl'
 		}
@@ -54,17 +55,20 @@ class X86_64
 	def init_sse3
 		init_x8664_only
 		init_sse3_only
+		@opcode_list.delete_if { |o| o.args.include? :modrmmmx }
 	end
 
 	def init_vmx
 		init_sse3
 		init_vmx_only
+		@opcode_list.delete_if { |o| o.args.include? :modrmmmx }
 	end
 	
 	def init_all
 		init_vmx
 		init_sse42_only
 		init_3dnow_only
+		@opcode_list.delete_if { |o| o.args.include? :modrmmmx }
 	end
 
 	alias init_latest init_all
