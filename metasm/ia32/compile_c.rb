@@ -68,6 +68,7 @@ class CCompiler < C::Compiler
 			@modrm, @target = modrm, target
 		end
 		def sz; @modrm.adsz end
+		def to_s; "#<Address: #@modrm>" end
 	end
 
 
@@ -350,9 +351,9 @@ class CCompiler < C::Compiler
 		when C::Variable; findvar(expr)
 		when C::CExpression
 			if not expr.lexpr or not expr.rexpr
-				c_cexpr_inner_nol(expr)
+				inuse c_cexpr_inner_nol(expr)
 			else
-				c_cexpr_inner_l(expr)
+				inuse c_cexpr_inner_l(expr)
 			end
 		when C::Label; findvar(C::Variable.new(expr.name, C::Array.new(C::BaseType.new(:void), 1)))
 		else puts "ia32/c_ce_i: unsupported #{expr}" if $VERBOSE
@@ -728,6 +729,7 @@ class CCompiler < C::Compiler
 					end
 				end
 			end
+			l = make_volatile(l, expr.type) if l.kind_of? Address
 			r ||= c_cexpr_inner(expr.rexpr)
 			c_cexpr_inner_arith(l, expr.op, r, expr.type)
 			l
