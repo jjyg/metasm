@@ -508,6 +508,14 @@ class DisasmWidget < ContainerChoiceWidget
 		w.focus_addr(*focus)
 		popup
 	end
+
+	def dragdropfile(f)
+		case f
+		when /\.(c|h|cpp)$/; @dasm.parse_c_file(f)
+		when /\.map$/; @dasm.load_map(f)
+		else messagebox("unsupported file extension #{f}")
+		end
+	end
 end
 
 # this widget is loaded in an empty DasmWindow to handle shortcuts
@@ -530,6 +538,13 @@ class NoDasmWidget < DrawableWidget
 		case key
 		when ?o; @window.promptopen
 		when ?r; @window.promptruby
+		end
+	end
+
+	def dragdropfile(f)
+		case f
+		when /\.(c|h|cpp)$/; messagebox('load a binary first')
+		else @window.loadfile(f)	# TODO prompt to debug
 		end
 	end
 end

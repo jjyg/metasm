@@ -1636,6 +1636,13 @@ BOOL WINAPI GetOpenFileNameA(LPOPENFILENAMEA);
 BOOL WINAPI GetSaveFileNameA(LPOPENFILENAMEA);
 EOS
 
+	new_api_c <<EOS, 'shell32'
+typedef HANDLE HDROP;
+WINAPI UINT DragQueryFileA(HDROP,UINT,LPSTR,UINT);
+WINAPI BOOL DragQueryPoint(HDROP,LPPOINT);
+WINAPI void DragFinish(HDROP);
+WINAPI void DragAcceptFiles(HWND,BOOL);
+EOS
 end
 
 module Protect
@@ -2198,6 +2205,8 @@ class Window
 			Win32Gui.setmenu(@hwnd, @menu)
 		end
 
+		Win32Gui.dragacceptfiles(@hwnd, Win32Gui::TRUE)
+
 		show
 	end
 	def win32styleex; 0 ; end
@@ -2291,6 +2300,14 @@ class Window
 			if a = @control_action[wparam]
 				protect { a.call }
 			end
+		when Win32Gui::WM_DROPFILES
+			cnt = Win32Gui.dragqueryfilea(wparam, -1, 0, 0)
+			cnt.times { |i|
+				buf = 0.chr*1024
+				len = Win32Gui.dragqueryfilea(wparam, i, buf, buf.length)
+				protect { @widget.dragdropfile(buf[0, len]) } if @widget and @widget.respond_to? :dragdropfile
+			}
+			Win32Gui.dragfinish(wparam)
 		else return Win32Gui.defwindowproca(hwnd, msg, wparam, lparam)
 		end
 		0
@@ -2770,6 +2787,16 @@ class IBoxWidget < DrawableWidget
 		@curline = t
 		@caret_x_select = 0
 		@caret_x = t.length
+		redraw
+	end
+
+	def dragdropfile(f)
+		cx = @caret_x_select || @caret_x
+		@caret_x_select = nil
+		c1, c2 = [cx, @caret_x].sort
+		@curline[c1...c2] = f
+		@caret_x_select = nil
+		@caret_x = c1 + f.length
 		redraw
 	end
 end
