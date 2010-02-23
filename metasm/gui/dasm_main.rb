@@ -490,6 +490,8 @@ class DisasmWidget < ContainerChoiceWidget
 
 		when ?\ ; toggle_view(:graph)
 		when :tab; toggle_view(:decompile)
+		when ?j; curview.keypress(:down)
+		when ?k; curview.keypress(:up)
 		else
 			p key if $DEBUG
 			return @parent_widget ? @parent_widget.keypress(key) : false
