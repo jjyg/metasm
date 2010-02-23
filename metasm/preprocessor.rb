@@ -963,7 +963,7 @@ class Preprocessor
 		raise tok || cmd, 'pp syntax error' if not tok or (tok.type != :quoted and (tok.type != :punct or tok.raw != '<'))
 		if tok.type == :quoted
 			ipath = tok.value
-			if @backtrace.find { |btf, *a| btf[0] == ?< }
+			if @filename[0] == ?< or @backtrace.find { |btf, *a| btf[0] == ?< }
 				# XXX local include from a std include... (kikoo windows.h !)
 				path = nil
 				if not @include_search_path.find { |d| ::File.exist?(path = ::File.join(d, ipath)) } ||
