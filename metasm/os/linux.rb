@@ -378,6 +378,9 @@ class LinDebugger < Debugger
 			if @info == 'syscall' and Signal.list['TRAP'] == $?.stopsig
 				@info = "syscall #{@ptrace.class::SYSCALLNR.index(get_reg_value(:orig_eax))}"
 				@continuesignal = 0
+				if @target_syscall and @info !~ /#@target_syscall/
+					syscall(@target_syscall)
+				end
 				return
 				# XXX @info='syscall' & !TRAP => we lose @info='syscall'...
 			end
@@ -392,6 +395,7 @@ class LinDebugger < Debugger
 			@state = :stopped
 			@info = "unknown #{$?.inspect}"
 		end
+		@target_syscall = nil
 	end
 
 	def do_check_target
@@ -456,11 +460,12 @@ class LinDebugger < Debugger
 		super(addr, *a)
 	end
 
-	def syscall
+	def syscall(arg=nil)
 		return if @state != :stopped
 		check_pre_run
 		@state = :running
 		@info = 'syscall'
+		@target_syscall = arg
 		@ptrace.syscall
 	end
 
@@ -498,7 +503,7 @@ class LinDebugger < Debugger
 	end
 
 	def ui_command_setup(ui)
-		ui.new_command('syscall', 'waits for the target to do a syscall using PT_SYSCALL') { |arg| ui.wrap_run { syscall } }
+		ui.new_command('syscall', 'waits for the target to do a syscall using PT_SYSCALL') { |arg| ui.wrap_run { syscall arg } }
 		ui.parent_widget.keyboard_callback[:f6] = lambda { ui.wrap_run { syscall } }
 	end
 end
