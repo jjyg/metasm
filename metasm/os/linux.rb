@@ -117,6 +117,7 @@ class PTrace32
 		'EVENT_CLONE'      => 3, 'EVENT_EXEC'       => 4,
 		'EVENT_VFORK_DONE' => 5, 'EVENT_EXIT'       => 6
 	}
+	WAIT_EXTENDEDRESULT.update WAIT_EXTENDEDRESULT.invert
 
 
 	REGS_I386 = {
@@ -171,6 +172,7 @@ class PTrace32
 		mknodat  fchownat  futimesat  fstatat64  unlinkat  renameat  linkat  symlinkat  readlinkat  fchmodat
 		faccessat pselect6 ppoll unshare set_robust_list get_robust_list splice sync_file_range tee vmsplice
 		move_pages getcpu epoll_pwait utimensat signalfd timerfd eventfd].inject({}) { |h, sc| h.update sc => h.length }
+	SYSCALLNR.update SYSCALLNR.invert
 	
 	NR_PTRACE = SYSCALLNR['ptrace']
 
@@ -178,6 +180,7 @@ class PTrace32
 	ERRNO = %w[ERR0 EPERM ENOENT ESRCH EINTR EIO ENXIO E2BIG ENOEXEC EBADF ECHILD EAGAIN ENOMEM EACCES EFAULT
 		ENOTBLK EBUSY EEXIST EXDEV ENODEV ENOTDIR EISDIR EINVAL ENFILE EMFILE ENOTTY ETXTBSY EFBIG ENOSPC
 		ESPIPE EROFS EMLINK EPIPE EDOM ERANGE].inject({}) { |h, e| h.update e => h.length }
+	ERRNO.update ERRNO.invert
 
 	def sys_ptrace(req, pid, addr, data)
 		addr = [addr].pack('L').unpack('l').first if addr >= 0x8000_0000
@@ -237,6 +240,17 @@ class PTrace32
 
 	def detach
 		sys_ptrace(COMMAND['DETACH'], @pid, 0, 0)
+	end
+
+	def setoptions(*opt)
+		opt = opt.inject(0) { |b, o| b |= o.kind_of?(Integer) ? o : OPTIONS[o] }
+		sys_ptrace(COMMAND['SETOPTIONS'], @pid, 0, opt)
+	end
+
+	# retrieve pid of cld for EVENT_CLONE/FORK, exitcode for EVENT_EXIT
+	def geteventmsg
+		sys_ptrace(COMMAND['GETEVENTMSG'], @pid, 0, @bufptr)
+		bufval
 	end
 end
 
@@ -323,7 +337,8 @@ class LinDebugger < Debugger
 	attr_accessor :ptrace, :pass_exceptions, :continuesignal
 	def initialize(pid, mem=nil)
 		@ptrace = PTrace32.new(pid)
-		@pid = @ptrace.pid
+		@tid = @pid = ptrace.pid
+		@threads = { @tid => :stopped }
 		# TODO get current cpu (x64) - parse a LoadedELF?
 		@cpu = Ia32.new
 		@memory = mem || LinuxRemoteString.new(@pid)
@@ -333,21 +348,31 @@ class LinDebugger < Debugger
 		@pass_exceptions = true
 		@reg_val_cache = {}
 		super()
-		# attach_threads
+		get_thread_list.each { |tid| attach_thread(tid) }
 	end
 
-	def attach_threads
-		@threads = {}
-		LinOS.open_process(@pid).threads.each { |tid|
-			next if tid == @pid
-			puts "attach thread #{@pid}:#{tid}" if $DEBUG
-			@ptrace.pid = tid
+	def attach_thread(tid)
+		@ptrace.pid = tid
+		if not @threads[tid]
 			@ptrace.attach
-			# waitpid(tid) => ECHLD
-			# waitpid(pid) => hang
 			@threads[tid] = :stopped
-		}
-		@ptrace.pid = @pid
+		end
+		@ptrace.setoptions('TRACESYSGOOD', 'TRACEFORK', 'TRACEVFORK',
+   				'TRACECLONE', 'TRACEEXEC', 'TRACEVFORKDONE', 'TRACEEXIT')
+		puts "attached thread #{tid}"
+		# waitpid(tid) => ECHLD
+		# waitpid(pid) => hang
+	end
+
+	def tid; @tid end
+	def tid=(t)
+		@tid_changed = (@tid != t)
+		@reg_val_cache.clear if @tid_changed
+		@tid = @ptrace.pid = t
+	end
+
+	def get_thread_list
+		LinOS.open_process(@pid).threads
 	end
 
 	def invalidate
@@ -358,6 +383,9 @@ class LinDebugger < Debugger
 	def get_reg_value(r)
 		return @reg_val_cache[r] || 0 if @state != :stopped
 		@reg_val_cache[r] ||= @ptrace.peekusr(PTrace32::REGS_I386[r.to_s.upcase]) & 0xffff_ffff
+	rescue
+		puts "get_reg_value fail :("
+		0
 	end
 	def set_reg_value(r, v)
 		@reg_val_cache[r] = v & 0xffff_ffff
@@ -368,60 +396,80 @@ class LinDebugger < Debugger
 
 	def update_waitpid
 		if $?.exited?
-			@state = :dead
-			@info = "exitcode #{$?.exitstatus}"
+			@state = (@pid == @tid ? :dead : :stopped)	# XXX other threads may still run
+			@info = "#@tid exitcode #{$?.exitstatus}"
+			@threads.delete @tid
+			self.tid = @pid
 		elsif $?.signaled?
-			@state = :dead
-			@info = "signal #{$?.termsig} #{Signal.list.index($?.termsig)}"
+			@state = (@pid == @tid ? :dead : :stopped)
+			@info = "#@tid signalx #{$?.termsig} #{::Signal.list.index($?.termsig)}"
+			@threads.delete @tid
+			self.tid = @pid
 		elsif $?.stopped?
 			@state = :stopped
-			if @info == 'syscall' and Signal.list['TRAP'] == $?.stopsig
-				@info = "syscall #{@ptrace.class::SYSCALLNR.index(get_reg_value(:orig_eax))}"
-				@continuesignal = 0
-				if @target_syscall and @info !~ /#@target_syscall/
-					syscall(@target_syscall)
+			sig = $?.stopsig & 0x7f
+			if sig == ::Signal.list['TRAP']	# possible ptrace event 
+				if $?.stopsig & 0x80 > 0
+					@info = "#@tid syscall #{PTrace32::SYSCALLNR[get_reg_value(:orig_eax)]}"
+					return syscall(@target_syscall) if @target_syscall and @info !~ /#@target_syscall/
+				elsif ($? >> 16) > 0
+					o = PTrace32::WAIT_EXTENDEDRESULT[$? >> 16]
+					case o
+					when 'EVENT_FORK', 'EVENT_VFORK', 'EVENT_CLONE'
+						cld = @ptrace.geteventmsg
+						@threads[cld] ||= :new	# may have already handled STOP
+					when 'EVENT_EXIT'
+						@threads[@tid] = :dead
+					end
+					@info = "#@tid trace event #{o}"
+				else
+					@info = nil	# standard breakpoint, no need for specific info
+							# TODO check target-initiated antidebug etc
+					@info = "#@tid" if @tid_changed
 				end
-				return
-				# XXX @info='syscall' & !TRAP => we lose @info='syscall'...
-			end
-			@info = "signal #{$?.stopsig} #{Signal.list.index($?.stopsig)}"
-			if @info =~ /TRAP/	# just a breakpoint	 TODO TRACESYSGOOD
 				@continuesignal = 0
-				@info = nil
+			elsif sig == ::Signal.list['STOP'] and (@threads[@tid] ||= :new) == :new
+				@info = "#@tid signal #{sig} #{::Signal.list.index(sig)}"
+				@threads[@tid] = :stopped
+				attach_thread(@tid)
+				@continuesignal = 'CONT'
 			else
+				@info = "#@tid signal #{sig} #{::Signal.list.index(sig)}"
 				@continuesignal = $?.stopsig
 			end
 		else
 			@state = :stopped
-			@info = "unknown #{$?.inspect}"
+			@info = "#@tid unknown wait #{$?.inspect} #{'%x' % ($? >> 16)}"
 		end
 		@target_syscall = nil
 	end
 
 	def do_check_target
-		return unless ::Process.waitpid(@pid, ::Process::WNOHANG)
+		return unless t = ::Process.waitpid(0, ::Process::WNOHANG)
+		self.tid = t
 		update_waitpid
-	rescue Errno::ECHILD
+	rescue ::Errno::ECHILD
 		@state = :dead
 	end
 
 	def do_wait_target
-		::Process.waitpid(@pid)
+		t = ::Process.waitpid(0)
+		self.tid = t
 		update_waitpid
-	rescue Errno::ECHILD
+	rescue ::Errno::ECHILD
 		@state = :dead
 	end
 
 	def parse_run_signal(sig)
 		case sig
-		when nil; (@pass_exceptions ? @continuesignal : 0)
-		when Integer; sig 
-		when String, Symbol
-			Signal.list[sig.to_s.upcase.sub(/SIG_?/, '')] || Integer(sig)
+		when nil; (@pass_exceptions ? parse_run_signal(@continuesignal || 0) : 0)
+		when ::Integer; sig 
+		when ::String, ::Symbol
+			::Signal.list[sig.to_s.upcase.sub(/SIG_?/, '')] || Integer(sig)
 		else
 			raise "invalid continue signal #{sig.inspect}"
 		end
-	rescue ArgumentError
+	rescue ::ArgumentError
 		raise "invalid continue signal #{sig.inspect}"
 	end
 
@@ -429,6 +477,7 @@ class LinDebugger < Debugger
 		return if @state != :stopped
 		@state = :running
 		@info = 'continue'
+		@threads[@tid] = :running	# XXX others ?
 		sig = parse_run_signal(a.first)
 		@ptrace.cont(sig)
 	end
@@ -437,6 +486,7 @@ class LinDebugger < Debugger
 		return if @state != :stopped
 		@state = :running
 		@info = 'singlestep'
+		@threads[@tid] = :running	# XXX others ?
 		sig = parse_run_signal(a.first)
 		@ptrace.singlestep(sig)
 	end
@@ -504,6 +554,15 @@ class LinDebugger < Debugger
 
 	def ui_command_setup(ui)
 		ui.new_command('syscall', 'waits for the target to do a syscall using PT_SYSCALL') { |arg| ui.wrap_run { syscall arg } }
+		ui.new_command('threads_raw', 'list threads from the OS') { puts get_thread_list.join(', ') }
+		ui.new_command('threads', 'list threads') { @threads.each { |t, s| puts "#{t} #{s}" } }
+		ui.new_command('tid', 'set/get current thread id') { |arg|
+			if arg.strip == ''
+				puts self.tid
+			else
+				self.tid = arg.to_i
+			end
+		}
 		ui.parent_widget.keyboard_callback[:f6] = lambda { ui.wrap_run { syscall } }
 	end
 end

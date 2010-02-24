@@ -73,6 +73,8 @@ class DbgWidget < ContainerVBoxWidget
 
 	def post_dbg_run
 		want_redraw = true
+		return if @idle_checking ||= nil	# load only one bg proc
+		@idle_checking = true
 		Gui.idle_add {
 			if not @dbg.check_target and @dbg.state == :running
 				redraw if want_redraw
@@ -88,6 +90,7 @@ class DbgWidget < ContainerVBoxWidget
 				end
 			}
 			redraw
+			@idle_checking = false
 			false
 		}
 	end
