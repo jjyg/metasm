@@ -467,6 +467,24 @@ class InputBox < Gtk::Dialog
 		vbox.pack_start label, false, false, 8
 		vbox.pack_start @textwidget, false, false, 8
 
+		Gtk::Drag.dest_set(self,
+				   Gtk::Drag::DEST_DEFAULT_MOTION |
+				   Gtk::Drag::DEST_DEFAULT_DROP,
+   				   [['text/plain', 0, 0], ['text/uri-list', 0, 0]],
+				   Gdk::DragContext::ACTION_COPY | Gdk::DragContext::ACTION_MOVE)
+		
+		signal_connect('drag_data_received') { |w, dc, x, y, data, info, time|
+			dc.targets.each { |target|
+				next if target.name != 'text/plain' and target.name != 'text/uri-list'
+				data.data.each_line { |l|
+					l = l.chomp.sub(%r{^file://}, '')
+					self.text = l
+				}
+			}
+			Gtk::Drag.finish(dc, true, false, time)
+		}
+
+
 		show_all
 		present
 	end
@@ -610,6 +628,25 @@ class Window < Gtk::Window
 
 		initialize_window(*a)
 		build_menu
+		
+		
+		Gtk::Drag.dest_set(self,
+				   Gtk::Drag::DEST_DEFAULT_MOTION |
+				   Gtk::Drag::DEST_DEFAULT_DROP,
+   				   [['text/plain', 0, 0], ['text/uri-list', 0, 0]],
+				   Gdk::DragContext::ACTION_COPY | Gdk::DragContext::ACTION_MOVE)
+		
+		signal_connect('drag_data_received') { |w, dc, x, y, data, info, time|
+			dc.targets.each { |target|
+				next if target.name != 'text/plain' and target.name != 'text/uri-list'
+				data.data.each_line { |l|
+					next if not @child or not @child.respond_to? :dragdropfile
+					l = l.chomp.sub(%r{^file://}, '')
+					protect { @child.dragdropfile(l) }
+				}
+			}
+			Gtk::Drag.finish(dc, true, false, time)
+		}
 
 		show_all
 	end
