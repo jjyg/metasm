@@ -804,5 +804,19 @@ class Debugger
 		val = resolve_expr(val) if not val.kind_of? ::Integer
 		@memory[addr, sz] = Expression.encode_imm(val, sz, @cpu)
 	end
+
+	def load_plugin(plugin_filename)
+		if not File.exist? plugin_filename and defined? Metasmdir
+			# try autocomplete
+			pf = File.join(Metasmdir, 'samples', 'dbg-plugins', plugin_filename)
+			if File.exist? pf
+				plugin_filename = pf
+			elsif File.exist? pf + '.rb'
+				plugin_filename = pf + '.rb'
+			end
+		end
+
+		instance_eval File.read(plugin_filename)
+	end
 end
 end
