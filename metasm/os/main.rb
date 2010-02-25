@@ -399,7 +399,7 @@ class Debugger
 	# resume execution of the target
 	# bypasses a breakpoint on pc if needed
 	def continue(*a)
-		while @breakpoint[pc]
+		if @breakpoint[pc]
 			do_singlestep	# XXX *a ?
 			do_wait_target	# TODO async wait if curinstr is syscall(sleep 3600)...
 		end

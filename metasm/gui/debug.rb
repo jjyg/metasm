@@ -709,7 +709,14 @@ class DbgConsoleWidget < DrawableWidget
 			add_log "#{v} 0x#{v.to_s(16)} #{[v].pack('L').inspect} #{@dbg.addrname!(v)}"
 		}
 		new_command('exit', 'quit', 'quit the debugger interface') { p.win.destroy }
-		new_command('ruby', 'execute arbitrary ruby code') { |arg| eval arg }
+		new_command('ruby', 'execute arbitrary ruby code') { |arg|
+			case ret = eval(arg)
+			when nil; add_log 'nil'
+			when String; add_log ret[0, 64].inspect
+			when Integer, Expression; add_log Expression[ret].to_s
+			else add_log ret.class.inspect
+			end
+		}
 		new_command('loadsyms', 'load symbols from a mapped module') { |arg|
 			if not arg.empty? and arg = (solve_expr(arg.dup) rescue arg)
 				@dbg.loadsyms(arg)
@@ -747,6 +754,15 @@ class DbgConsoleWidget < DrawableWidget
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
+		new_command('symbol_add', 'add a symbol name') { |arg|
+			name, val = arg.to_s.split(/\s+/, 2)
+			val = solve_expr(val)
+			if val.kind_of? Integer
+				@dbg.symbols[val] = name
+				@dbg.disassembler.set_label_at(val, name)
+				p.gui_update
+			end
+		}
 		new_command('bt', 'backtrace', 'stacktrace', 'bt [limit] - show a stack trace from current pc') { |arg|
 			arg = solve_expr(arg) if arg
 			arg = 500 if not arg.kind_of? ::Integer
@@ -759,6 +775,7 @@ class DbgConsoleWidget < DrawableWidget
 				next if not di = dasm.decoded[dasm.normalize(a)] or not di.kind_of? DecodedInstruction
 				dasm.dump_block(di.block) { |l| add_log l }
 			}
+			p.gui_update
 		}
 		new_command('save_hist', 'save the command buffer to a file') { |arg|
 			File.open(arg, 'w') { |fd| fd.puts @log }

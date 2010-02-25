@@ -407,6 +407,7 @@ class LinDebugger < Debugger
 			self.tid = @pid
 		elsif $?.stopped?
 			@state = :stopped
+			@threads[@tid] = :stopped
 			sig = $?.stopsig & 0x7f
 			if sig == ::Signal.list['TRAP']	# possible ptrace event 
 				if $?.stopsig & 0x80 > 0
@@ -418,8 +419,11 @@ class LinDebugger < Debugger
 					when 'EVENT_FORK', 'EVENT_VFORK', 'EVENT_CLONE'
 						cld = @ptrace.geteventmsg
 						@threads[cld] ||= :new	# may have already handled STOP
+						# XXX on FORK addrspace is no longer shared, need to dupe bpx etc..
 					when 'EVENT_EXIT'
 						@threads[@tid] = :dead
+					when 'EVENT_EXEC'
+						# XXX clear maps/syms/bpx..
 					end
 					@info = "#@tid trace event #{o}"
 				else
@@ -430,7 +434,6 @@ class LinDebugger < Debugger
 				@continuesignal = 0
 			elsif sig == ::Signal.list['STOP'] and (@threads[@tid] ||= :new) == :new
 				@info = "#@tid signal #{sig} #{::Signal.list.index(sig)}"
-				@threads[@tid] = :stopped
 				attach_thread(@tid)
 				@continuesignal = 'CONT'
 			else
