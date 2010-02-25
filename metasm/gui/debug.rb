@@ -77,10 +77,11 @@ class DbgWidget < ContainerVBoxWidget
 		@idle_checking = true
 		Gui.idle_add {
 			if not @dbg.check_target and @dbg.state == :running
-				redraw if want_redraw
+				redraw if want_redraw	# redraw once if the target is running (less flicker with singlestep)
 				want_redraw = false
 				next true
 			end
+			@idle_checking = false
 			@dbg.disassembler.sections.clear if @dbg.state == :dead
 			@console.add_log "target #{@dbg.state} #{@dbg.info}" if @dbg.info
 			@dbg.disassembler.disassemble_fast(@dbg.pc)
@@ -90,7 +91,6 @@ class DbgWidget < ContainerVBoxWidget
 				end
 			}
 			redraw
-			@idle_checking = false
 			false
 		}
 	end
@@ -711,10 +711,10 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('exit', 'quit', 'quit the debugger interface') { p.win.destroy }
 		new_command('ruby', 'execute arbitrary ruby code') { |arg|
 			case ret = eval(arg)
-			when nil; add_log 'nil'
+			when nil, true, false, Symbol; add_log ret.inspect
 			when String; add_log ret[0, 64].inspect
 			when Integer, Expression; add_log Expression[ret].to_s
-			else add_log ret.class.inspect
+			else add_log "#<#{ret.class}>"
 			end
 		}
 		new_command('loadsyms', 'load symbols from a mapped module') { |arg|

@@ -15,7 +15,9 @@ class ExeFormat
 	# creates a new instance, populates self.encoded with the supplied string
 	def self.load(str, *a, &b)
 		e = new(*a, &b)
-		e.encoded << str
+		if str.kind_of? EncodedData; e.encoded = str
+		else e.encoded << str
+		end
 		e
 	end
 

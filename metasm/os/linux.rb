@@ -255,8 +255,7 @@ class PTrace32
 end
 
 class LinOS < OS
-	class Process < Process
-		attr_accessor :cmdline
+	class Process < OS::Process
 		def memory
 			@memory ||= LinuxRemoteString.new(pid)
 		end
@@ -302,6 +301,11 @@ class LinOS < OS
 			# TODO handle pthread stuff (eg 2.4 kernels)
 			[pid]
 		end
+
+		def cmdline
+			File.read("/proc/#{pid}/cmdline")
+		rescue
+		end
 	end
 
 	# returns an array of Processes, with pid/module listing
@@ -323,7 +327,6 @@ class LinOS < OS
 	def self.open_process(pid)
 		pr = Process.new
 		pr.pid = pid
-		pr.cmdline = File.read("/proc/#{pid}/cmdline") rescue nil
 		pr
 	end
 
@@ -339,29 +342,41 @@ class LinDebugger < Debugger
 		@ptrace = PTrace32.new(pid)
 		@tid = @pid = ptrace.pid
 		@threads = { @tid => :stopped }
-		# TODO get current cpu (x64) - parse a LoadedELF?
-		@cpu = Ia32.new
+		@cpu = Ia32.new		# TODO get current cpu (x64)
 		@memory = mem || LinuxRemoteString.new(@pid)
 		@memory.dbg = self
 		@has_pax = false
 		@continuesignal = 0
 		@pass_exceptions = true
+		@trace_children = true
 		@reg_val_cache = {}
+		@breaking = false
 		super()
-		get_thread_list.each { |tid| attach_thread(tid) }
+		get_thread_list(@pid).each { |tid| attach_thread(tid) }
 	end
 
 	def attach_thread(tid)
 		@ptrace.pid = tid
-		if not @threads[tid]
+		if not @threads[tid] or @threads[tid] == :new
 			@ptrace.attach
 			@threads[tid] = :stopped
+			puts "attached thread #{tid}" if $VERBOSE
 		end
-		@ptrace.setoptions('TRACESYSGOOD', 'TRACEFORK', 'TRACEVFORK',
-   				'TRACECLONE', 'TRACEEXEC', 'TRACEVFORKDONE', 'TRACEEXIT')
-		puts "attached thread #{tid}"
+		opts = ['TRACESYSGOOD', 'TRACECLONE', 'TRACEEXEC', 'TRACEEXIT']
+		opts += ['TRACEFORK', 'TRACEVFORK', 'TRACEVFORKDONE'] if @trace_children
+		@ptrace.setoptions(*opts)
 		# waitpid(tid) => ECHLD
 		# waitpid(pid) => hang
+	end
+
+	def trace_children; @trace_children end
+	def trace_children=(t)
+		@trace_children=t
+		if @state == :running
+			self.break
+			do_wait_target
+		end
+		get_thread_list(@pid).each { |tid| attach_thread(tid) }
 	end
 
 	def tid; @tid end
@@ -371,8 +386,8 @@ class LinDebugger < Debugger
 		@tid = @ptrace.pid = t
 	end
 
-	def get_thread_list
-		LinOS.open_process(@pid).threads
+	def get_thread_list(pid=@pid)
+		LinOS.open_process(pid).threads
 	end
 
 	def invalidate
@@ -381,17 +396,16 @@ class LinDebugger < Debugger
 	end
 
 	def get_reg_value(r)
+		raise "bad register #{r}" if not k = PTrace32::REGS_I386[r.to_s.upcase]
 		return @reg_val_cache[r] || 0 if @state != :stopped
-		@reg_val_cache[r] ||= @ptrace.peekusr(PTrace32::REGS_I386[r.to_s.upcase]) & 0xffff_ffff
-	rescue
-		puts "get_reg_value fail :("
-		0
+		@reg_val_cache[r] ||= @ptrace.peekusr(k) & 0xffff_ffff
 	end
 	def set_reg_value(r, v)
+		raise "bad register #{r}" if not k = PTrace32::REGS_I386[r.to_s.upcase]
 		@reg_val_cache[r] = v & 0xffff_ffff
 		return if @state != :stopped
 		v = v-0x1_0000_0000 if v >= 0x8000_0000
-		@ptrace.pokeusr(PTrace32::REGS_I386[r.to_s.upcase], v)
+		@ptrace.pokeusr(k, v)
 	end
 
 	def update_waitpid
@@ -407,38 +421,56 @@ class LinDebugger < Debugger
 			self.tid = @pid
 		elsif $?.stopped?
 			@state = :stopped
-			@threads[@tid] = :stopped
 			sig = $?.stopsig & 0x7f
 			if sig == ::Signal.list['TRAP']	# possible ptrace event 
+				@threads[@tid] = :stopped
 				if $?.stopsig & 0x80 > 0
 					@info = "#@tid syscall #{PTrace32::SYSCALLNR[get_reg_value(:orig_eax)]}"
-					return syscall(@target_syscall) if @target_syscall and @info !~ /#@target_syscall/
+					if @target_syscall and @info !~ /#@target_syscall/
+					       	syscall(@target_syscall)
+						return if @state == :running
+					end
 				elsif ($? >> 16) > 0
 					o = PTrace32::WAIT_EXTENDEDRESULT[$? >> 16]
 					case o
-					when 'EVENT_FORK', 'EVENT_VFORK', 'EVENT_CLONE'
+					when 'EVENT_FORK', 'EVENT_VFORK'
+						@memory.readfd = nil	# can't read from /proc/parentpid/mem anymore
 						cld = @ptrace.geteventmsg
 						@threads[cld] ||= :new	# may have already handled STOP
-						# XXX on FORK addrspace is no longer shared, need to dupe bpx etc..
+					when 'EVENT_CLONE'
+						cld = @ptrace.geteventmsg
+						#@threads[cld] ||= :new	# may have already handled STOP
 					when 'EVENT_EXIT'
 						@threads[@tid] = :dead
+						@state = :dead if @threads.values.uniq == [:dead]
 					when 'EVENT_EXEC'
 						# XXX clear maps/syms/bpx..
+						# also check if it kills the other threads
+					when 'EVENT_VFORKDONE'
 					end
 					@info = "#@tid trace event #{o}"
 				else
 					@info = nil	# standard breakpoint, no need for specific info
 							# TODO check target-initiated antidebug etc
-					@info = "#@tid" if @tid_changed
+					puts "break in #@tid" if @tid_changed
 				end
 				@continuesignal = 0
 			elsif sig == ::Signal.list['STOP'] and (@threads[@tid] ||= :new) == :new
-				@info = "#@tid signal #{sig} #{::Signal.list.index(sig)}"
+				@memory.readfd = nil if not get_thread_list(@pid).include? @tid	# FORK, can't read from /proc/parentpid/mem anymore
 				attach_thread(@tid)
-				@continuesignal = 'CONT'
-			else
+				@threads[@tid] = :stopped
 				@info = "#@tid signal #{sig} #{::Signal.list.index(sig)}"
-				@continuesignal = $?.stopsig
+				@continuesignal = 0
+			else
+				@threads[@tid] = :stopped
+				if @breaking and sig == ::Signal.list['STOP']
+					@info = nil
+					@continuesignal = 0
+					@breaking = nil
+				else
+					@info = "#@tid signal #{sig} #{::Signal.list.index(sig)}"
+					@continuesignal = $?.stopsig
+				end
 			end
 		else
 			@state = :stopped
@@ -499,13 +531,14 @@ class LinDebugger < Debugger
 	end
 
 	def break
-		kill('CHLD')
+		@breaking = true
+		kill('STOP')
 	end
 
 	def kill(sig=nil)
 		sig = 9 if not sig or sig == ''
-		sig = Signal.list[sig] || sig.to_i
-		Process.kill(sig, @pid)
+		sig = ::Signal.list[sig] || sig.to_i
+		::Process.kill(sig, @pid)
 	end
 
 	def bpx(addr, *a)
@@ -528,7 +561,7 @@ class LinDebugger < Debugger
 		when :bpx
 			begin
 				@cpu.dbg_enable_bp(self, addr, b)
-			rescue Errno::EIO
+			rescue ::Errno::EIO
 				@memory[addr, 1]	# check if we can read
 				# if yes, it's a PaX-style config
 				@has_pax = true
@@ -550,23 +583,38 @@ class LinDebugger < Debugger
 	end
 
 	def check_post_run(*a)
-		@cpu.dbg_check_post_run(self)
-		# TODO stuff with ptrace_tids
+		@cpu.dbg_check_post_run(self) rescue nil
 		super(*a)
+	rescue
+		p @state
 	end
 
 	def ui_command_setup(ui)
 		ui.new_command('syscall', 'waits for the target to do a syscall using PT_SYSCALL') { |arg| ui.wrap_run { syscall arg } }
-		ui.new_command('threads_raw', 'list threads from the OS') { puts get_thread_list.join(', ') }
+		ui.parent_widget.keyboard_callback[:f6] = lambda { ui.wrap_run { syscall } }
+
+		ui.new_command('threads_raw', 'list threads from the OS') { puts get_thread_list(@pid).join(', ') }
 		ui.new_command('threads', 'list threads') { @threads.each { |t, s| puts "#{t} #{s}" } }
 		ui.new_command('tid', 'set/get current thread id') { |arg|
-			if arg.strip == ''
-				puts self.tid
-			else
-				self.tid = arg.to_i
+			if arg.strip == ''; puts self.tid
+			else self.tid = arg.to_i
 			end
 		}
-		ui.parent_widget.keyboard_callback[:f6] = lambda { ui.wrap_run { syscall } }
+		ui.new_command('signal_cont', 'set/get the continue signal (0 == unset)') { |arg|
+			case arg.strip
+			when ''; puts @continuesignal
+			when /^\d+$/; @continuesignal = arg.to_i
+			else @continuesignal = arg.strip.upcase.sub(/^SIG_?/, '')
+			end
+		}
+		ui.new_command('trace_children', 'set/get the children tracing state') { |arg|
+			case arg.strip.downcase
+			when ''; puts self.trace_children
+			when '0', 'false', 'no'; self.trace_children = false
+			when '1', 'true', 'yes'; self.trace_children = true
+			else raise 'trace_children: bad value, set to "true" or "false"'
+			end
+		}
 	end
 end
 
@@ -591,13 +639,7 @@ class LinuxRemoteString < VirtualString
 
 	def do_ptrace
 		if dbg
-			if @dbg.state == :running
-				Process.kill(Signal.list['STOP'], @pid)
-				Process.waitpid(@pid)
-				r = yield @dbg.ptrace
-				@dbg.ptrace.cont
-				r
-			else
+			if @dbg.state == :stopped
 				yield @dbg.ptrace
 			end
 		else
@@ -611,12 +653,14 @@ class LinuxRemoteString < VirtualString
 	end
 
 	def get_page(addr, len=@pagelength)
-		return do_ptrace { |pt| pt.readmem(addr, len) } if not readfd
-		@readfd.pos = addr
-		# target must be stopped
 		do_ptrace {
 			begin
-				@readfd.read len
+				if readfd
+					@readfd.pos = addr
+					@readfd.read len
+				else
+					@dbg.ptrace.readmem(addr, len)
+				end
 			rescue Errno::EIO, Errno::ESRCH
 				nil
 			end
