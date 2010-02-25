@@ -282,6 +282,10 @@ class VirtualFile < VirtualString
 		@fd.read len
 	end
 
+	def page_invalid?(addr)
+		false
+	end
+
 	# overwrite a section of the file
 	def rewrite_at(addr, data)
 		@fd.pos = addr
