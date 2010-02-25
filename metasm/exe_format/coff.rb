@@ -107,7 +107,7 @@ class COFF < ExeFormat
 
 	ORDINAL_REGEX = /^Ordinal_(\d+)$/
 
-	class SerialStruct < SerialStruct
+	class SerialStruct < Metasm::SerialStruct
 		new_int_field :xword
 	end
 

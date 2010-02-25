@@ -17,7 +17,7 @@ class X86_64 < Ia32
 	FpReg = nil
 
 	# Simd extended to 16 regs, xmm only (mmx gone with 80387)
-	class SimdReg < SimdReg
+	class SimdReg < Ia32::SimdReg
 		double_map 128 => (0..15).map { |n| "xmm#{n}" }
 	end
 
@@ -25,7 +25,7 @@ class X86_64 < Ia32
 	# 8 new gprs (r8..r15), set bit R in the REX prefix to reference them (or X/B if in ModRM)
 	# aonethusaontehsanothe with 8bit subreg: with no rex prefix, refers to ah ch dh bh (as usual)
 	#  but whenever the prefix is present, those become unavailable and encodie spl..dil (low byte of rsp/rdi)
-	class Reg < Reg
+	class Reg < Ia32::Reg
 		double_map  8 => %w{ al  cl  dl  bl spl bpl sil dil r8b r9b r10b r11b r12b r13b r14b r15b ah ch dh bh},
 			   16 => %w{ ax  cx  dx  bx  sp  bp  si  di r8w r9w r10w r11w r12w r13w r14w r15w},
 			   32 => %w{eax ecx edx ebx esp ebp esi edi r8d r9d r10d r11d r12d r13d r14d r15d eip},
@@ -81,17 +81,17 @@ class X86_64 < Ia32
 	# 16bit mode unavailable in x64
 	# opcodes use 64bit addressing by default, use adsz override (67h) prefix to switch to 32
 	# immediate values are encoded as :i32 sign-extended to 64bits
-	class ModRM < ModRM
+	class ModRM < Ia32::ModRM
 		# mod 0/1/2 m 4 => sib
 		# mod 0 m 5 => rip+imm
 		# sib: i 4 => no index, b 5 => no base
 	end
 
-	class DbgReg < DbgReg
+	class DbgReg < Ia32::DbgReg
 		simple_map((0..15).map { |i| [i, "dr#{i}"] })
 	end
 
-	class CtrlReg < CtrlReg
+	class CtrlReg < Ia32::CtrlReg
 		simple_map((0..15).map { |i| [i, "cr#{i}"] })
 	end
 

@@ -123,7 +123,7 @@ end	# class << self
 end
 
 class WinOS < OS
-	class Process < Process
+	class Process < OS::Process
 		# on-demand cached openprocess(ALL_ACCESS) handle
 		def handle
 			@handle ||= WinAPI.openprocess(WinAPI::PROCESS_ALL_ACCESS, 0, @pid)

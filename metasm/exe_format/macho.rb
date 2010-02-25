@@ -102,7 +102,7 @@ class MachO < ExeFormat
 	SYM_TYPE = { 0 => 'UNDF', 2/2 => 'ABS', 0xa/2 => 'INDR', 0xe/2 => 'SECT', 0x1e/2 => 'TYPE' }
 	SYM_STAB = { }
 
-	class SerialStruct < SerialStruct
+	class SerialStruct < Metasm::SerialStruct
 		new_int_field :xword
 	end
 

@@ -17,7 +17,7 @@ class XCoff < ExeFormat
 		0x100 => 'EXCEPT', 0x200 => 'INFO', 0x1000 => 'LOADER',
 		0x2000 => 'DEBUG', 0x4000 => 'TYPCHK', 0x8000 => 'OVRFLO' }
 
-	class SerialStruct < SerialStruct
+	class SerialStruct < Metasm::SerialStruct
 		new_int_field :xword, :xhalf
 	end
 

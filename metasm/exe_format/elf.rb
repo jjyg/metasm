@@ -340,7 +340,7 @@ class ELF < ExeFormat
 
 	DEFAULT_INTERP = '/lib/ld-linux.so.2'
 
-	class SerialStruct < SerialStruct
+	class SerialStruct < Metasm::SerialStruct
 		new_int_field :addr, :off, :xword, :sword, :sxword
 	end
 
