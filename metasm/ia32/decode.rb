@@ -806,7 +806,7 @@ class Ia32
 		}
 
 		# return instr emulation
-		if sym.has_attribute 'noreturn'
+		if sym.has_attribute 'noreturn' or sym.has_attribute '__noreturn__'
 			df.noreturn = true
 		else
 			new_bt[Indirection[:esp, @size/8, orig], nil]

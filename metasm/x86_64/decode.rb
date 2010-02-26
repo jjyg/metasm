@@ -196,7 +196,11 @@ class X86_64
 		}
 
 		# return instr emulation
-		new_bt[Indirection[:rsp, @size/8, orig], nil] if not sym.attributes.to_a.include? 'noreturn'
+		if sym.has_attribute 'noreturn' or sym.has_attribute '__noreturn__'
+			df.noreturn = true
+		else
+			new_bt[Indirection[:rsp, @size/8, orig], nil]
+		end
 
 		# register dirty (MS standard ABI)
 		[:rax, :rcx, :rdx, :r8, :r9, :r10, :r11].each { |r|
