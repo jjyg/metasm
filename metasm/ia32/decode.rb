@@ -642,21 +642,8 @@ class Ia32
 		when 'ret'; return [Indirection[register_symbols[4], sz/8, di.address]]
 		when 'jmp', 'call'
 			a = di.instruction.args.first
-			if a.kind_of? ModRM and a.imm and a.s == sz/8 and not a.b and s = dasm.get_section_at(Expression[a.imm, :-, 3*sz/8])
-				# jmp table
-				ret = [Expression[a.symbolic(di)]]
-				v = -3
-				loop do
-					ptr = dasm.normalize s[0].decode_imm("u#{sz}".to_sym, @endianness)
-					diff = Expression[ptr, :-, di.address].reduce
-					if (diff.kind_of? ::Integer and diff.abs < 4096) or (di.opcode.basename == 'call' and ptr != 0 and dasm.get_section_at(ptr))
-						ret << Indirection[[a.imm, :+, v*sz/8], sz/8, di.address]
-					elsif v > 0
-						break
-					end
-					v += 1
-				end
-				return ret
+			if a.kind_of? ModRM and a.imm and a.s == sz/8 and not a.b and dasm.get_section_at(a.imm)
+				return get_xrefs_x_jmptable(dasm, di, a, sz)
 			end
 		end
 
@@ -671,6 +658,49 @@ class Ia32
 			puts "unhandled setip at #{di.address} #{di.instruction}" if $DEBUG
 			[]
 		end
+	end
+
+	# we detected a jmp table (jmp [base+4*idx])
+	# try to return an accurate dest list
+	def get_xrefs_x_jmptable(dasm, di, mrm, sz)
+		# include the symbolic dest for backtrack stuff
+		ret = [Expression[mrm.symbolic(di)]]
+		i = mrm.i
+		if di.block.list.length == 2 and di.block.list[0].opcode.name =~ /^mov/ and di.block.list[0].instruction.args[0].symbolic == i.symbolic
+			i = di.block.list[0].instruction.args[1]
+		end
+		pb = di.block.from_normal.to_a
+		if pb.length == 1 and pdi = dasm.decoded[pb[0]] and pdi.opcode.name =~ /^jn?be?/ and ppdi = pdi.block.list[-2] and ppdi.opcode.name == 'cmp' and
+				ppdi.instruction.args[0].symbolic == i.symbolic and lim = Expression[ppdi.instruction.args[1]].reduce and lim.kind_of? Integer
+			# cmp eax, 42 ; jbe switch ; switch: jmp [base+4*eax]
+			s = dasm.get_section_at(mrm.imm)
+			lim += 1 if pdi.opcode.name[-1] == ?e
+			lim.times { |v|
+				ptr = dasm.normalize s[0].decode_imm("u#{sz}".to_sym, @endianness)
+				dasm.add_xref(s[1]+s[0].ptr-sz/8, Xref.new(:r, di.address, sz/8))
+				ret << Indirection[[mrm.imm, :+, v*sz/8], sz/8, di.address]
+			}
+			l = dasm.auto_label_at(mrm.imm, 'jmp_table', 'xref')
+			replace_instr_arg_immediate(di.instruction, mrm.imm, Expression[l])
+			return ret
+		end
+
+		puts "unrecognized jmp table pattern, using wild guess for #{di}" if $VERBOSE
+		di.add_comment 'wildguess'
+		s = dasm.get_section_at(mrm.imm - 3*sz/8)
+		v = -3
+		loop do
+			ptr = dasm.normalize s[0].decode_imm("u#{sz}".to_sym, @endianness)
+			diff = Expression[ptr, :-, di.address].reduce
+			if (diff.kind_of? ::Integer and diff.abs < 4096) or (di.opcode.basename == 'call' and ptr != 0 and dasm.get_section_at(ptr))
+				dasm.add_xref(s[1]+s[0].ptr-sz/8, Xref.new(:r, di.address, sz/8))
+				ret << Indirection[[mrm.imm, :+, v*sz/8], sz/8, di.address]
+			elsif v > 0
+				break
+			end
+			v += 1
+		end
+		ret
 	end
 
 	# checks if expr is a valid return expression matching the :saveip instruction
