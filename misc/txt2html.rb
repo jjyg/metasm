@@ -261,7 +261,11 @@ class Txt2Html
 		state = {}
 		out = Html::Page.new
 		out.head << Html::Stylesheet.new(@pathfix + 'style.css')
-		flush = lambda { [:pre, :list, :par].each { |f| state.delete f } ; prev = '' }
+		flush = lambda {
+			out.body << Html::P.new(compile_string(prev)) if prev.length > 0
+			[:pre, :list, :par].each { |f| state.delete f }
+			prev = ''
+		}
 		raw.each_line { |l|
 			case l = l.chomp
 			when /^([=#-])\1{3,}$/
@@ -281,6 +285,7 @@ class Txt2Html
 					str = compile_string(prev)
 					state[:title] ||= str if e == 'h1'
 					out.body << Html::Elem.new(e).add(str)
+					prev = ''
 					flush[]
 				else
 					# horizontal rule
@@ -291,6 +296,7 @@ class Txt2Html
 				# list
 				text = $1
 				if not lst = state[:list]
+					flush[]
 					lst = state[:list] = Html::List.new
 					out.body << lst
 				end
@@ -299,18 +305,19 @@ class Txt2Html
 			when /^\s+(\S.*)$/
 				# preformatted text
 				if not pre = state[:pre]
+					flush[]
 					pre = state[:pre] = Html::Elem.new('pre')
 					out.body << pre
 				end
 				pre.add compile_string(l) + ["\n"]
 			when /^\s*$/
-				out.body << Html::P.new(compile_string(prev)) if prev.length > 0
 				flush[]
 			else
 				prev << ' ' if prev.length > 0
 				prev << l
 			end
 		}
+		flush[]
 		out.head << Html::Elem.new('title').add(state[:title]) if state[:title]
 		out
 	end
