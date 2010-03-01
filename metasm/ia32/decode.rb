@@ -687,8 +687,12 @@ class Ia32
 
 		puts "unrecognized jmp table pattern, using wild guess for #{di}" if $VERBOSE
 		di.add_comment 'wildguess'
-		s = dasm.get_section_at(mrm.imm - 3*sz/8)
-		v = -3
+		if s = dasm.get_section_at(mrm.imm - 3*sz/8)
+			v = -3
+		else
+			s = dasm.get_section_at(mrm.imm)
+			v = 0
+		end
 		loop do
 			ptr = dasm.normalize s[0].decode_imm("u#{sz}".to_sym, @endianness)
 			diff = Expression[ptr, :-, di.address].reduce
