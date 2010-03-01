@@ -491,6 +491,7 @@ class Preprocessor
 	# starts a new lexer, with the specified initial filename/line number (for backtraces)
 	# discards old text/whatever
 	def feed!(text, filename='unknown', lineno=1)
+		raise ArgumentError, 'need something to parse!' if not text
 		@text = text
 		# @filename[-1] used in trace_macros to distinguish generic/specific files
 		@filename = "\"#{filename}\""
