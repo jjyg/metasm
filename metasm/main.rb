@@ -912,8 +912,9 @@ class EncodedData
 	end
 
 	# rounds up virtsize to next multiple of len
-	def align(len)
+	def align(len, pattern=nil)
 		@virtsize = EncodedData.align_size(@virtsize, len)
+		fill(@virtsize, pattern) if pattern
 	end
 
 	# returns the value val rounded up to next multiple of len
