@@ -123,11 +123,6 @@ EOS
  #define os_load_sym_ord(l, s) 0
 #endif
 
-// asm linkage
-__int64 do_invoke(int, int, int*);
-__int64 do_invoke_stdcall(int, int, int*);
-__int64 do_invoke_fastcall(int, int, int*);
-double fake_float(void);
 extern int *cb_ret_table;
 extern void *callback_handler;
 extern void *callback_id_0;
@@ -192,6 +187,13 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 	return rb_uint2inum(p);
 }
 
+#ifdef __i386__
+
+__int64 do_invoke_stdcall(int, int, int*);
+__int64 do_invoke_fastcall(int, int, int*);
+__int64 do_invoke(int, int, int*);
+double fake_float(void);
+
 // invoke a symbol
 // args is an array of Integers
 // flags: 1 stdcall  2 fastcall  4 ret_64bits  8 ret_float
@@ -253,8 +255,66 @@ static int do_callback_handler(int ori_retaddr, int caller_id, int arg0)
 	return rb_num2ulong(ret);
 }
 
+#elif defined __amd64__
+
+int do_invoke(int, int, int*);
+double fake_float(void);
+
+// invoke a symbol
+// args is an array of Integers
+// flags: 1 stdcall  2 fastcall  4 ret_64bits  8 ret_float
+// TODO float args
+static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
+{
+	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 6)
+		rb_raise(IMPMOD rb_eArgError, "bad args");
+	
+	int flags_v = rb_num2ulong(flags);
+	int ptr_v = rb_num2ulong(ptr);
+	int i, argsz;
+	int args_c[64];
+	int ret;
+	int (*ptr_f)(int, int, int, int, int, int) = ptr_v;
+
+	argsz = ARY_LEN(args);
+	for (i=0 ; i<argsz ; i++)
+		args_c[i] = rb_num2ulong(ARY_PTR(args)[i]);
+
+	for (i=argsz ; i<=6 ; i++)
+		args_c[i] = 0;
+
+	ret = ptr_f(args_c[0], args_c[1], args_c[2], args_c[3], args_c[4], args_c[5]);
+	
+	if (flags_v & 8)
+		return rb_float_new(fake_float());
+	else
+		return rb_uint2inum(ret);
+}
+
+extern int *callback_id_tmp;
+static int do_callback_handler(int arg0, int arg1, int arg2, int arg3, int arg4, int arg5)
+{
+	int ret;
+	VALUE args = rb_ary_new2(8);
+
+	RArray(args)->len = 6;
+	ARY_PTR(args)[0] = rb_uint2inum(arg0);
+	ARY_PTR(args)[1] = rb_uint2inum(arg1);
+	ARY_PTR(args)[2] = rb_uint2inum(arg2);
+	ARY_PTR(args)[3] = rb_uint2inum(arg3);
+	ARY_PTR(args)[4] = rb_uint2inum(arg4);
+	ARY_PTR(args)[5] = rb_uint2inum(arg5);
+
+	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, *callback_id_tmp, args);
+
+	return rb_num2ulong(ret);
+}
+#endif
+
+extern void printf(int);
 int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// to patch before parsing to match the .so name
 {
+//printf("lolzor\\n");
 	dynldr = rb_const_get(rb_const_get(IMPMOD rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
 	rb_define_singleton_method(dynldr, "memory_read",  memory_read, 2);
 	rb_define_singleton_method(dynldr, "memory_read_int",  memory_read_int, 1);
@@ -346,6 +406,30 @@ callback_id_0: call callback_handler
 callback_id_1: call callback_handler
 EOS
 
+	# ia32 asm source for the native component: handles ABI stuff
+	DYNLDR_ASM_X86_64 = <<EOS
+.text
+fake_float:
+	ret
+
+// entrypoint for callbacks: to the native api, give the addr of some code
+//  that will push a unique cb_identifier and jmp here
+callback_handler:
+	// stack here: cb_id_retaddr, cb_native_retaddr, cb_native_arg0, ...
+	// swap caller retaddr & cb_identifier, fix cb_identifier from the stub
+	pop rax		// stuff pushed by the stub
+	sub rax, callback_id_1 - callback_id_0	// fixup cb_id_retaddr to get a cb id
+	mov [rip+callback_id_tmp-1f], rax	// XXX racey if not greenthreaded..
+1:
+	jmp do_callback_handler
+
+callback_id_0: call callback_handler
+callback_id_1: call callback_handler
+
+.data
+callback_id_tmp dq ?
+EOS
+
 	# initialization
 	# load (build if needed) the binary module
 	def self.start
@@ -358,8 +442,9 @@ EOS
 			exe = host_exe.new(host_cpu)
 			# compile the C code, but patch the Init export name, which must match the string used in 'require'
 			exe.compile_c DYNLDR_C.gsub('<insertfilenamehere>', File.basename(binmodule, '.so'))
-			exe.assemble  case exe.cpu
-			              when Ia32; DYNLDR_ASM_IA32
+			exe.assemble  case host_cpu.shortname
+			              when 'ia32'; DYNLDR_ASM_IA32
+			              when 'x64'; DYNLDR_ASM_X86_64
 				      end
 			exe.encode_file(binmodule, :lib)
 		end
@@ -404,6 +489,7 @@ EOS
 		@cpu ||=
 		case RUBY_PLATFORM
 		when /i[3-6]86/; Ia32.new
+		when /x86_64/i; X86_64.new
 		else raise LoadError, "Unsupported host platform #{RUBY_PLATFORM}"
 		end
 	end
