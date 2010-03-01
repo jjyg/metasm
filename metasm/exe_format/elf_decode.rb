@@ -163,7 +163,7 @@ class ELF
 	end
 
 	# checks every symbol's accessibility through the gnu_hash table
-	def check_symbols_gnu_hash(off = @tag['GNU_HASH'])
+	def check_symbols_gnu_hash(off = @tag['GNU_HASH'], just_get_count=false)
 		return if not @encoded.ptr = off
 
 		# when present: the symndx first symbols are not sorted (SECTION/LOCAL/FILE/etc) symtable[symndx] is sorted (1st sorted symbol)
@@ -185,11 +185,27 @@ class ELF
 		# gnu_hash(sym[M]) % nbuckets == N
 		# or 0 if none
 
-		symcount = 0			# XXX how do we get symcount ?
-		part4 = [] ; (symcount - symndx).times { part4 << decode_word }
+		hsymcount = 0
+		part4 = []
+		hash_bucket.each { |hmodidx|
+			# for each bucket, walk all the chain
+			# we do not walk the chains in hash_bucket order here, this
+			# is just to read all the part4 as we don't know
+			# beforehand the number of hashed symbols
+			next if hmodidx == 0	# no hash chain for this mod
+			loop do
+				fu = decode_word
+				hsymcount += 1
+				part4 << fu
+				break if fu & 1 == 1
+			end
+		}
+
 		# part4[N] contains
 		# (gnu_hash(sym[N].name) & ~1) | (N == dynsymcount-1 || (gnu_hash(sym[N].name) % nbucket) != (gnu_hash(sym[N+1].name) % nbucket))
 		# that's the hash, with its lower bit replaced by the bool [1 if i am the last sym having my hash as hash]
+
+		return hsymcount+symndx if just_get_count
 
 		# TODO
 	end
@@ -329,11 +345,7 @@ class ELF
 			decode_word
 			sym_count = decode_word
 		else
-			raise 'metasm internal error: TODO find sym_count from gnu_hash'
-			@encoded.ptr = @tag['GNU_HASH']
-			decode_word
-			sym_count = decode_word	# non hashed symbols
-			# XXX UNDEF symbols are not hashed
+			sym_count = check_symbols_gnu_hash(@tag['GNU_HASH'], true)
 		end
 
 		strtab = @encoded[@tag['STRTAB'], @tag['STRSZ']].data

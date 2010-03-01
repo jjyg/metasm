@@ -607,9 +607,7 @@ class ELF < ExeFormat
 	def self.gnu_hash_symbol_name(name)
 		name.unpack('C*').inject(5381) { |hash, char|
 			break hash if char == 0
-			hash *= 33
-			hash += char
-			hash &= 0xffff_ffff
+			(hash*33 + char) & 0xffff_ffff
 		}
 	end
 
