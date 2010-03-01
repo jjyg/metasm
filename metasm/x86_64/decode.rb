@@ -173,6 +173,19 @@ class X86_64
 		di
 	end
 
+	def decode_instr_interpret(di, addr)
+		super(di, addr)
+
+		# [rip + 42] => [rip - addr + foo]
+		if m = di.instruction.args.grep(ModRM).first and
+				((m.b and m.b.val == 16) or (m.i and m.i.val == 16)) and
+				m.imm and m.imm.reduce.kind_of?(Integer)
+			m.imm = Expression[[:-, di.address + di.bin_length], :+, di.address+di.bin_length+m.imm.reduce]
+		end
+
+		di
+	end
+
 	def opsz(di)
 		if di and di.instruction.prefix and di.instruction.prefix[:rex_w]; 64
 		elsif di and di.instruction.prefix and di.instruction.prefix[:opsz]; 16

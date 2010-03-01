@@ -114,10 +114,10 @@ class X86_64 < Ia32
 	# TODO
 	def tune_prepro(pp)
 		super(pp, :itsmeX64)	# ask Ia32's to just call super()
-		# TODO
-		#pp.define_weak('_M_IX86', 500)
-		#pp.define_weak('_X86_')
-		#pp.define_weak('__i386__')
+		pp.define_weak('_M_AMD64')
+		pp.define_weak('_M_X64')
+		pp.define_weak('__amd64__')
+		pp.define_weak('__x86_64__')
 	end
 
 	def str_to_reg(str)
