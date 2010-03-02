@@ -98,7 +98,7 @@ class GdbClient
 		case buf
 		when /^E(..)$/
 			e = $1.to_i(16)
-			log "error #{e} (#{PTrace32::ERRNO.index(e)})"
+			log "error #{e} (#{PTrace::ERRNO.index(e)})"
 			return
 		when /^O([0-9a-fA-F]*)$/
 			if not outstr

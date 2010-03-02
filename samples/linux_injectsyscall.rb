@@ -6,7 +6,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 #
-# this exemple illustrates the use of the PTrace32 class to hijack a syscall in a running process
+# this exemple illustrates the use of the PTrace class to hijack a syscall in a running process
 # the next syscall made is patched to run the syscall with the arguments of our choice, then
 # run the original intended syscall
 # Works on linux/x86
@@ -15,7 +15,7 @@
 
 require 'metasm'
 
-class SyscallHooker < Metasm::PTrace32
+class SyscallHooker < Metasm::PTrace
 	CTX = ['EBX', 'ECX', 'EDX', 'ESI', 'EDI', 'EAX', 'ESP', 'EBP', 'EIP', 'ORIG_EAX']
 
 	def inject(sysnr, *args)

@@ -119,7 +119,7 @@ class Rubstop
 
 		if buf =~ /^E(..)$/
 			e = $1.to_i(16)
-			log "error #{e} (#{Metasm::PTrace32::ERRNO.index(e)})"
+			log "error #{e} (#{Metasm::PTrace::ERRNO.index(e)})"
 			return
 		end
 		log "gdb_readresp: got #{buf[0, 64].inspect}#{'...' if buf.length > 64}" if $DEBUG

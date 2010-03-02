@@ -7,7 +7,7 @@
 require 'metasm/os/main'
 
 module Metasm
-class PTrace32
+class PTrace
 	attr_accessor :buf, :pid
 
 	def self.open(target)
@@ -21,62 +21,99 @@ class PTrace32
 	# creates a ptraced process (target = path)
 	# or opens a running process (target = pid)
 	def initialize(target)
-		@buf = [0].pack('l')
-		@bufptr = [@buf].pack('P').unpack('l').first
 		begin
 			@pid = Integer(target)
+			tweak_for_pid(@pid)
 			attach
 		rescue ArgumentError
+			did_exec = true
 			if not @pid = fork
+				tweak_for_pid(Process.pid)
 				traceme
 				exec target
 			end
 		end
-		Process.wait(@pid)
+		wait
+		tweak_for_pid(@pid) if did_exec
 		puts "Ptrace: attached to #@pid" if $DEBUG
 	end
 
+	def wait
+		Process.wait(@pid)
+	end
+
+	attr_accessor :reg_off, :intsize, :syscallnr
+	# setup the variables according to the target
+	# XXX when x86 debugs x64, should we use ptrace_X86_ATTACH or X64_ATTACH ?
+	def tweak_for_pid(pid)
+		tg = OS.current.open_process(::Process.pid)
+		psz = tg.addrsz
+		case psz
+		when 32
+			@packint = 'l'
+			@packuint = 'L'
+			@intsize = 4
+			@host_syscallnr = SYSCALLNR
+			@reg_off = REGS_I386
+		when 64
+			@packint = 'q'
+			@packuint = 'Q'
+			@intsize = 8
+			@host_syscallnr = SYSCALLNR_64
+			@reg_off = REGS_X86_64
+		else raise 'unsupported architecture'
+		end
+
+		case OS.current.open_process(pid).addrsz
+		when 32; @syscallnr = SYSCALLNR
+		when 64; @syscallnr = SYSCALLNR_64
+		else raise 'unsupported target architecture'
+		end
+
+		@buf = [0].pack(@packint)
+		@bufptr = [@buf].pack('P').unpack(@packint).first
+	end
 
 	# interpret the value turned as an unsigned long
 	def bufval
-		@buf.unpack('l').first
+		@buf.unpack(@packint).first
 	end
 
 	# reads a memory range
 	def readmem(off, len)
-		decal = off & 3
+		decal = off % @intsize
 		buf = ''
 		if decal > 0
 			off -= decal
 			peekdata(off)
-			off += 4
-			buf << @buf[decal..3]
+			off += @intsize
+			buf << @buf[decal...@intsize]
 		end
 		offend = off + len
 		while off < offend
 			peekdata(off)
-			buf << @buf[0, 4]
-			off += 4
+			buf << @buf[0, @intsize]
+			off += @intsize
 		end
 		buf[0, len]
 	end
 
 	def writemem(off, str)
-		decal = off & 3
+		decal = off % @intsize
 		if decal > 0
 			off -= decal
 			peekdata(off)
 			str = @buf[0...decal] + str
 		end
-		decal = str.length & 3
+		decal = str.length % @intsize
 		if decal > 0
 			peekdata(off+str.length-decal)
-			str += @buf[decal..3]
+			str += @buf[decal...@intsize]
 		end
 		i = 0
 		while i < str.length
-			pokedata(off+i, str[i, 4])
-			i += 4
+			pokedata(off+i, str[i, @intsize])
+			i += @intsize
 		end
 	end
 
@@ -90,14 +127,14 @@ class PTrace32
 		'ATTACH'          =>  16, 'DETACH'          =>  17,
 		'SYSCALL'         =>  24,
 
-	# i486-asm/ptrace.h
-		# Arbitrarily choose the same ptrace numbers as used by the Sparc code.
+		# i486-asm/ptrace.h
 		'GETREGS'         =>  12, 'SETREGS'         =>  13,
 		'GETFPREGS'       =>  14, 'SETFPREGS'       =>  15,
 		'GETFPXREGS'      =>  18, 'SETFPXREGS'      =>  19,
 		'OLDSETOPTIONS'   =>  21, 'GET_THREAD_AREA' =>  25,
-		'SET_THREAD_AREA' =>  26, 'SYSEMU'           => 31,
-		'SYSEMU_SINGLESTEP'=> 32,
+		'SET_THREAD_AREA' =>  26, 'ARCH_PRCTL'      =>  30,
+		'SYSEMU'          =>  31, 'SYSEMU_SINGLESTEP'=> 32,
+		'SINGLEBLOCK'     =>  33,
 		# 0x4200-0x4300 are reserved for architecture-independent additions.
 		'SETOPTIONS'      => 0x4200, 'GETEVENTMSG'   => 0x4201,
 		'GETSIGINFO'      => 0x4202, 'SETSIGINFO'    => 0x4203
@@ -120,16 +157,35 @@ class PTrace32
 	WAIT_EXTENDEDRESULT.update WAIT_EXTENDEDRESULT.invert
 
 
+	# block trace
+	BTS_O = { 'TRACE' => 1, 'SCHED' => 2, 'SIGNAL' => 4, 'ALLOC' => 8 }
+	BTS = { 'CONFIG' => 40, 'STATUS' => 41, 'SIZE' => 42,
+		'GET' => 43, 'CLEAR' => 44, 'DRAIN' => 45 }
+
 	REGS_I386 = {
 		'EBX' => 0, 'ECX' => 1, 'EDX' => 2, 'ESI' => 3,
 		'EDI' => 4, 'EBP' => 5, 'EAX' => 6, 'DS'  => 7,
 		'ES'  => 8, 'FS'  => 9, 'GS'  => 10, 'ORIG_EAX' => 11,
 		'EIP' => 12, 'CS'  => 13, 'EFL' => 14, 'UESP'=> 15,
 		'EFLAGS' => 14, 'ESP' => 15,
-		'SS'  => 16, 'FRAME_SIZE' => 17,
+		'SS'  => 16,
 		# from ptrace.c in kernel source & asm-i386/user.h
 		'DR0' => 63, 'DR1' => 64, 'DR2' => 65, 'DR3' => 66,
 		'DR4' => 67, 'DR5' => 68, 'DR6' => 69, 'DR7' => 70
+	}
+
+	REGS_X86_64 = {
+		'R15' => 0, 'R14' => 1, 'R13' => 2, 'R12' => 3,
+		'RBP' => 4, 'RBX' => 5, 'R11' => 6, 'R10' => 7,
+		'R9' => 8, 'R8' => 9, 'RAX' => 10, 'RCX' => 11,
+		'RDX' => 12, 'RSI' => 13, 'RDI' => 14, 'ORIG_RAX' => 15,
+		'RIP' => 16, 'CS' => 17, 'EFLAGS' => 18, 'RSP' => 19,
+		'SS' => 20, 'FS_BASE' => 21, 'GS_BASE' => 22, 'DS' => 23,
+		'ES' => 24, 'FS' => 25, 'GS' => 26,
+		# fpval pad i387=29...73 tsz dsz ssz code stack sig res pad1 ar0 fps mag comm*4
+		'DR0' => 88, 'DR1' => 89, 'DR2' => 90, 'DR3' => 91,
+		'DR4' => 92, 'DR5' => 93, 'DR6' => 94, 'DR7' => 95,
+		'ERROR_CODE' => 96, 'FAULT_ADDR' => 97
 	}
 
 #  this struct defines the way the registers are stored on the stack during a system call.
@@ -171,10 +227,43 @@ class PTrace32
 		ioprio_set ioprio_get  inotify_init inotify_add_watch inotify_rm_watch migrate_pages  openat mkdirat
 		mknodat  fchownat  futimesat  fstatat64  unlinkat  renameat  linkat  symlinkat  readlinkat  fchmodat
 		faccessat pselect6 ppoll unshare set_robust_list get_robust_list splice sync_file_range tee vmsplice
-		move_pages getcpu epoll_pwait utimensat signalfd timerfd eventfd].inject({}) { |h, sc| h.update sc => h.length }
+		move_pages   getcpu  epoll_pwait  utimensat   signalfd  timerfd  eventfd  fallocate  timerfd_settime
+	       	timerfd_gettime  signalfd4   eventfd2  epoll_create1   dup3   pipe2  inotify_init1   preadv  pwritev
+		rt_tg_sigqueueinfo perf_counter_open].inject({}) { |h, sc| h.update sc => h.length }
 	SYSCALLNR.update SYSCALLNR.invert
 	
-	NR_PTRACE = SYSCALLNR['ptrace']
+	SYSCALLNR_64 = %w[read write open  close stat fstat lstat poll  lseek mmap mprotect munmap  brk rt_sigaction
+		rt_sigprocmask  rt_sigreturn ioctl  pread64 pwrite64  readv  writev access  pipe select  sched_yield
+		mremap  msync  mincore  madvise  shmget  shmat  shmctl dup  dup2  pause  nanosleep  getitimer  alarm
+		setitimer  getpid  sendfile   socket  connect  accept  sendto  recvfrom   sendmsg  recvmsg  shutdown
+		bind  listen  getsockname getpeername  socketpair  setsockopt  getsockopt  clone fork  vfork  execve
+		exit  wait4  kill  uname  semget  semop  semctl  shmdt  msgget  msgsnd  msgrcv  msgctl  fcntl  flock
+		fsync  fdatasync  truncate  ftruncate  getdents  getcwd   chdir  fchdir  rename  mkdir  rmdir  creat
+		link  unlink  symlink  readlink  chmod  fchmod chown  fchown  lchown  umask  gettimeofday  getrlimit
+		getrusage  sysinfo  times  ptrace  getuid  syslog  getgid  setuid  setgid  geteuid  getegid  setpgid
+		getppid  getpgrp  setsid  setreuid  setregid   getgroups  setgroups  setresuid  getresuid  setresgid
+		getresgid   getpgid   setfsuid  setfsgid   getsid   capget   capset  rt_sigpending   rt_sigtimedwait
+		rt_sigqueueinfo  rt_sigsuspend  sigaltstack utime  mknod  uselib  personality ustat  statfs  fstatfs
+		sysfs  getpriority setpriority  sched_setparam sched_getparam  sched_setscheduler sched_getscheduler
+		sched_get_priority_max   sched_get_priority_min   sched_rr_get_interval   mlock   munlock   mlockall
+		munlockall vhangup  modify_ldt pivot_root  _sysctl prctl arch_prctl  adjtimex setrlimit  chroot sync
+		acct  settimeofday  mount  umount2  swapon  swapoff reboot  sethostname  setdomainname  iopl  ioperm
+		create_module  init_module delete_module  get_kernel_syms query_module  quotactl nfsservctl  getpmsg
+		putpmsg  afs_syscall  tuxcall  security  gettid  readahead  setxattr  lsetxattr  fsetxattr  getxattr
+		lgetxattr fgetxattr listxattr llistxattr flistxattr removexattr lremovexattr fremovexattr tkill time
+		futex sched_setaffinity sched_getaffinity set_thread_area io_setup io_destroy io_getevents io_submit
+		io_cancel get_thread_area lookup_dcookie  epoll_create epoll_ctl_old epoll_wait_old remap_file_pages
+		getdents64   set_tid_address  restart_syscall   semtimedop   fadvise64  timer_create   timer_settime
+		timer_gettime timer_getoverrun timer_delete clock_settime clock_gettime clock_getres clock_nanosleep
+		exit_group  epoll_wait epoll_ctl  tgkill utimes  vserver mbind  set_mempolicy get_mempolicy  mq_open
+		mq_unlink mq_timedsend mq_timedreceive mq_notify mq_getsetattr kexec_load waitid add_key request_key
+		keyctl ioprio_set  ioprio_get inotify_init  inotify_add_watch inotify_rm_watch  migrate_pages openat
+		mkdirat  mknodat  fchownat  futimesat  newfstatat  unlinkat  renameat  linkat  symlinkat  readlinkat
+		fchmodat faccessat pselect6 ppoll unshare set_robust_list get_robust_list splice tee sync_file_range
+		vmsplice move_pages utimensat epoll_pwait  signalfd timerfd_create eventfd fallocate timerfd_settime
+		timerfd_gettime accept4  signalfd4 eventfd2  epoll_create1 dup3  pipe2 inotify_init1  preadv pwritev
+		rt_tgsigqueueinfo perf_counter_open].inject({}) { |h, sc| h.update sc => h.length }
+	SYSCALLNR_64.update SYSCALLNR_64.invert
 
 	# include/asm-generic/errno-base.h
 	ERRNO = %w[ERR0 EPERM ENOENT ESRCH EINTR EIO ENXIO E2BIG ENOEXEC EBADF ECHILD EAGAIN ENOMEM EACCES EFAULT
@@ -183,8 +272,9 @@ class PTrace32
 	ERRNO.update ERRNO.invert
 
 	def sys_ptrace(req, pid, addr, data)
-		addr = [addr].pack('L').unpack('l').first if addr >= 0x8000_0000
-		Kernel.syscall(NR_PTRACE, req, pid, addr, data)
+		addr = [addr].pack(@packint).unpack(@packint).first
+		data = [data].pack(@packint).unpack(@packint).first
+		Kernel.syscall(@host_syscallnr['ptrace'], req, pid, addr, data)
 	end
 
 	def traceme
@@ -202,20 +292,20 @@ class PTrace32
 	end
 
 	def peekusr(addr)
-		sys_ptrace(COMMAND['PEEKUSR'],  @pid, 4*addr, @bufptr)
-		bufval
+		sys_ptrace(COMMAND['PEEKUSR'],  @pid, @intsize*addr, @bufptr)
+		bufval & ((1 << (@intsize*8)) - 1)
 	end
 
 	def poketext(addr, data)
-		sys_ptrace(COMMAND['POKETEXT'], @pid, addr, data.unpack('l').first)
+		sys_ptrace(COMMAND['POKETEXT'], @pid, addr, data.unpack(@packint).first)
 	end
 
 	def pokedata(addr, data)
-		sys_ptrace(COMMAND['POKEDATA'], @pid, addr, data.unpack('l').first)
+		sys_ptrace(COMMAND['POKEDATA'], @pid, addr, data.unpack(@packint).first)
 	end
 
 	def pokeusr(addr, data)
-		sys_ptrace(COMMAND['POKEUSR'],  @pid, 4*addr, data)
+		sys_ptrace(COMMAND['POKEUSR'],  @pid, @intsize*addr, data)
 	end
 
 	def cont(sig = 0)
@@ -306,6 +396,14 @@ class LinOS < OS
 			File.read("/proc/#{pid}/cmdline")
 		rescue
 		end
+
+		def addrsz
+			cpu.size
+		end
+
+		def cpu
+			AutoExe.decode_file_header("/proc/#{pid}/exe").cpu
+		end
 	end
 
 	# returns an array of Processes, with pid/module listing
@@ -339,10 +437,10 @@ end
 class LinDebugger < Debugger
 	attr_accessor :ptrace, :pass_exceptions, :continuesignal
 	def initialize(pid, mem=nil)
-		@ptrace = PTrace32.new(pid)
+		@ptrace = PTrace.new(pid)
 		@tid = @pid = ptrace.pid
 		@threads = { @tid => :stopped }
-		@cpu = Ia32.new		# TODO get current cpu (x64)
+		@cpu = Ia32.new(@ptrace.intsize*8)
 		@memory = mem || LinuxRemoteString.new(@pid)
 		@memory.dbg = self
 		@has_pax = false
@@ -396,15 +494,14 @@ class LinDebugger < Debugger
 	end
 
 	def get_reg_value(r)
-		raise "bad register #{r}" if not k = PTrace32::REGS_I386[r.to_s.upcase]
+		raise "bad register #{r}" if not k = @ptrace.reg_off[r.to_s.upcase]
 		return @reg_val_cache[r] || 0 if @state != :stopped
-		@reg_val_cache[r] ||= @ptrace.peekusr(k) & 0xffff_ffff
+		@reg_val_cache[r] ||= @ptrace.peekusr(k)
 	end
 	def set_reg_value(r, v)
-		raise "bad register #{r}" if not k = PTrace32::REGS_I386[r.to_s.upcase]
-		@reg_val_cache[r] = v & 0xffff_ffff
+		raise "bad register #{r}" if not k = @ptrace.reg_off[r.to_s.upcase]
+		@reg_val_cache[r] = v
 		return if @state != :stopped
-		v = v-0x1_0000_0000 if v >= 0x8000_0000
 		@ptrace.pokeusr(k, v)
 	end
 
@@ -425,13 +522,13 @@ class LinDebugger < Debugger
 			if sig == ::Signal.list['TRAP']	# possible ptrace event 
 				@threads[@tid] = :stopped
 				if $?.stopsig & 0x80 > 0
-					@info = "#@tid syscall #{PTrace32::SYSCALLNR[get_reg_value(:orig_eax)]}"
+					@info = "#@tid syscall #{@ptrace.syscallnr[get_reg_value(:orig_eax)]}"
 					if @target_syscall and @info !~ /#@target_syscall/
 					       	syscall(@target_syscall)
 						return if @state == :running
 					end
 				elsif ($? >> 16) > 0
-					o = PTrace32::WAIT_EXTENDEDRESULT[$? >> 16]
+					o = PTrace::WAIT_EXTENDEDRESULT[$? >> 16]
 					case o
 					when 'EVENT_FORK', 'EVENT_VFORK'
 						@memory.readfd = nil	# can't read from /proc/parentpid/mem anymore
@@ -480,7 +577,7 @@ class LinDebugger < Debugger
 	end
 
 	def do_check_target
-		return unless t = ::Process.waitpid(0, ::Process::WNOHANG)
+		return unless t = ::Process.waitpid(-1, ::Process::WNOHANG)
 		self.tid = t
 		update_waitpid
 	rescue ::Errno::ECHILD
@@ -488,7 +585,7 @@ class LinDebugger < Debugger
 	end
 
 	def do_wait_target
-		t = ::Process.waitpid(0)
+		t = ::Process.waitpid(-1)
 		self.tid = t
 		update_waitpid
 	rescue ::Errno::ECHILD
@@ -643,7 +740,7 @@ class LinuxRemoteString < VirtualString
 				yield @dbg.ptrace
 			end
 		else
-			PTrace32.open(@pid) { |ptrace| yield ptrace }
+			PTrace.open(@pid) { |ptrace| yield ptrace }
 		end
 	end
 

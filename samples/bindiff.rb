@@ -404,7 +404,7 @@ end
 			3
 		elsif di1.instruction.args.map { |a| a.class } != di2.instruction.args.map { |a| a.class }
 			2
-		elsif di1.instruction.to_s != di2.instruction.to_s
+		elsif di1.instruction.to_s.gsub(/loc_\w+/, 'loc_') != di2.instruction.to_s.gsub(/loc_\w+/, 'loc_')	# local labels	 TODO compare blocks targeted
 			1
 		else
 			0
@@ -483,6 +483,7 @@ OptionParser.new { |opt|
 	opt.on('-v', '--verbose') { $VERBOSE = true }	# default
 	opt.on('-q', '--no-verbose') { $VERBOSE = false }
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
+	opt.on('-A', 'match everything on start') { opts[:doit] = true }
 }.parse!(ARGV)
 
 if exename1 = ARGV.shift
@@ -527,7 +528,9 @@ opts[:hookstr].to_a.each { |f| eval f }
 
 ep.each { |e| dasm1.disassemble_fast_deep(e) if dasm1 ; dasm2.disassemble_fast_deep(e) if dasm2 }
 
-Metasm::BinDiffWindow.new(dasm1, dasm2)
+bd = Metasm::BinDiffWindow.new(dasm1, dasm2)
+
+bd.widget.keypress ?A if opts[:doit]
 
 Metasm::Gui.main
 

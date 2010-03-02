@@ -4,13 +4,13 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 #
-# this exemple illustrates the use of the PTrace32 class to implement a pytstop-like functionnality
+# this exemple illustrates the use of the PTrace class to implement a pytstop-like functionnality
 # Works on linux/x86
 #
 
 require 'metasm'
 
-class Rubstop < Metasm::PTrace32
+class Rubstop < Metasm::PTrace
 	EFLAGS = {0 => 'c', 2 => 'p', 4 => 'a', 6 => 'z', 7 => 's', 9 => 'i', 10 => 'd', 11 => 'o'}
 	# define accessors for registers
 	%w[eax ebx ecx edx ebp esp edi esi eip orig_eax eflags dr0 dr1 dr2 dr3 dr6 dr7 cs ds es fs gs].each { |reg|
