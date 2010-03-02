@@ -100,7 +100,6 @@ ELF
  Check relocation encoding (eg samples/dynamic_ruby with cpu.generate_PIC=false)
 
 MachO
- fix encoder
 
 PE
  resource editor ?

@@ -21,9 +21,11 @@ push strlen
 push str
 push 1		// stdout
 mov eax, 4	// sys_write
+push eax
 int 80h
 add esp, 12
 
 push 0
 mov eax, 1	// sys_exit
+push eax
 int 80h

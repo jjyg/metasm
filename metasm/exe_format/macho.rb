@@ -98,6 +98,29 @@ class MachO < ExeFormat
 		#0x8000_0000 => 'REQ_DYLD',
 	}
 
+	THREAD_FLAVOR = {
+		'POWERPC' => { 
+			1 => 'THREAD_STATE',
+			2 => 'FLOAT_STATE',
+			3 => 'EXCEPTION_STATE',
+			4 => 'VECTOR_STATE'
+		},
+		'I386' => {
+			1 => 'NEW_THREAD_STATE',
+			2 => 'FLOAT_STATE',
+			3 => 'ISA_PORT_MAP_STATE',
+			4 => 'V86_ASSIST_STATE',
+			5 => 'REGS_SEGS_STATE',
+			6 => 'THREAD_SYSCALL_STATE',
+			7 => 'THREAD_STATE_NONE',
+			8 => 'SAVED_STATE',
+			-1 & 0xffffffff => 'THREAD_STATE',
+			-2 & 0xffffffff => 'THREAD_FPSTATE',
+			-3 & 0xffffffff => 'THREAD_EXCEPTSTATE',
+			-4 & 0xffffffff => 'THREAD_CTHREADSTATE'
+		}
+	}
+
 	SYM_SCOPE = { 0 => 'LOCAL', 1 => 'GLOBAL' }
 	SYM_TYPE = { 0 => 'UNDF', 2/2 => 'ABS', 0xa/2 => 'INDR', 0xe/2 => 'SECT', 0x1e/2 => 'TYPE' }
 	SYM_STAB = { }
@@ -155,7 +178,7 @@ class MachO < ExeFormat
 		def decode(m)
 			super(m)
 			ptr = m.encoded.ptr
-			if @cmd.kind_of? String and self.class.constants.include? @cmd
+			if @cmd.kind_of? String and self.class.constants.map { |c| c.to_s }.include? @cmd
 				@data = self.class.const_get(@cmd).decode(m)
 			end
 			m.encoded.ptr = ptr + @cmdsize - 8
@@ -251,6 +274,7 @@ class MachO < ExeFormat
 
 		class THREAD < SerialStruct
 			words :flavor, :count
+			fld_enum(:flavor) { |m, t| THREAD_FLAVOR[m.header.cputype] || {} }
 			attr_accessor :ctx
 			
 			def entrypoint(m)
@@ -259,6 +283,7 @@ class MachO < ExeFormat
 				when 'I386'; @ctx[:eip]
 				when 'X86_64'; @ctx[:rip]
 				when 'POWERPC'; @ctx[:srr0]
+				when 'ARM'; @ctx[:r15]
 				end
 			end
 
@@ -268,6 +293,7 @@ class MachO < ExeFormat
 				when 'I386'; @ctx[:eip] = ep
 				when 'X86_64'; @ctx[:rip] = ep
 				when 'POWERPC'; @ctx[:srr0] = ep
+				when 'ARM'; @ctx[:r15] = ep
 				end
 			end
 
@@ -276,6 +302,7 @@ class MachO < ExeFormat
 				when 'I386'; %w[eax ebx ecx edx edi esi ebp esp ss eflags eip cs ds es fs gs]
 				when 'X86_64'; %w[rax rbx rcx rdx rdi rsi rbp rsp r8 r9 r10 r11 r12 r13 r14 r15 rip rflags cs fs gs]
 				when 'POWERPC'; %w[srr0 srr1 r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 cr xer lr ctr mq vrsave]
+				when 'ARM'; [*0..16].map { |i| "r#{i}" }
 				else [*1..@count].map { |i| "reg#{i}" }
 				end.map { |k| k.to_sym }
 			end
@@ -405,13 +432,14 @@ class MachO < ExeFormat
 
 	def decode
 		decode_header
-		@segments.each { |s| decode_segment s}
+		@segments.each { |s| decode_segment(s) }
 		decode_symbols
 		decode_relocations
 	end
 
 	def decode_symbols
 		@symbols = []
+		ep_count = 0
 		@commands.each { |cmd|
 			e = cmd.data
 			case cmd.cmd
@@ -420,6 +448,11 @@ class MachO < ExeFormat
 				buf = @encoded.read e.strsize
 				@encoded.ptr = e.symoff
 				e.nsyms.times { @symbols << Symbol.decode(self, buf) }
+			when 'THREAD', 'UNIXTHREAD'
+				ep_count += 1
+				ep = cmd.data.entrypoint(self)
+				next if not seg = @segments.find { |seg_| ep >= seg_.virtaddr and ep < seg_.virtaddr + seg_.virtsize }
+				seg.encoded.add_export("entrypoint#{"_#{ep_count}" if ep_count >= 2 }", ep - seg.virtaddr)
 			end
 		}
 		@symbols.each { |s|
@@ -455,7 +488,7 @@ class MachO < ExeFormat
 		end
 	end
 
-	def encode
+	def encode(type=nil)
 		@encoded = EncodedData.new
 
 		init_header_cpu
@@ -626,9 +659,10 @@ class MachO < ExeFormat
 			end
 			if not cmd = @commands.find { |cmd_| cmd_.cmd == 'THREAD' or cmd_.cmd == 'UNIXTHREAD' }
 				cmd = LoadCommand.new
-				cmd.cmd = 'THREAD'
+				cmd.cmd = 'UNIXTHREAD'	# UNIXTHREAD creates a stack
 				cmd.data = LoadCommand::THREAD.new
 				cmd.data.ctx = {}
+				cmd.data.flavor = 'NEW_THREAD_STATE'	# XXX i386 specific
 				@commands << cmd
 			end
 			cmd.data.set_entrypoint(self, entrypoint)
