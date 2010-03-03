@@ -46,8 +46,6 @@ class X86_64
 			o.name == 'arpl'
 		}
 
-		addop 'syscall', [0x0F, 0x05]
-		addop 'sysret',  [0x0F, 0x07]
 		addop 'swapgs',  [0x0F, 0x01, 0xF8]
 		addop 'rdtscp',  [0x0F, 0x01, 0xF9]
 	end

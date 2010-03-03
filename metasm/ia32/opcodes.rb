@@ -231,7 +231,7 @@ class Ia32
 		addop 'setalc', [0xD6]
 		addop 'salc', [0xD6]
 		addop 'icebp', [0xF1]
-		addop 'loadall',[0x0F, 0x07]
+		#addop 'loadall',[0x0F, 0x07]	# conflict with syscall
 		addop 'ud2',   [0x0F, 0xB9]
 		addop 'umov',  [0x0F, 0x10], :mrmw,{:d => [1, 1]}
 	end
@@ -389,6 +389,9 @@ class Ia32
 		addop('fxsave',  [0x0F, 0xAE, 0<<3], :modrmA) { |o| o.props[:argsz] = 512*8 }
 		addop 'sysenter',[0x0F, 0x34]
 		addop 'sysexit', [0x0F, 0x35]
+
+		addop 'syscall', [0x0F, 0x05]	# AMD
+		addop 'sysret',  [0x0F, 0x07]	# AMD
 	end
 
 	def init_3dnow_only
