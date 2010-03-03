@@ -351,7 +351,7 @@ end
 class LinOS < OS
 	class Process < OS::Process
 		def memory
-			@memory ||= LinuxRemoteString.new(pid)
+			@memory ||= LinuxRemoteString.new(pid, 0, (1<<(8*addrsz))-1)
 		end
 		def memory=(m) @memory = m end
 
@@ -448,7 +448,7 @@ class LinDebugger < Debugger
 		if @cpu.size == 64 and @ptrace.reg_off['EAX']
 			hack_64_32
 		end
-		@memory = mem || LinuxRemoteString.new(@pid)
+		@memory = mem || LinuxRemoteString.new(@pid, 0, (1<<@cpu.size)-1)
 		@memory.dbg = self
 		@has_pax = false
 		@continuesignal = 0
@@ -464,7 +464,6 @@ class LinDebugger < Debugger
 	# the ptrace kernel interface we use only allow us a 32bit-like target access
 	# with this we advertize the cpu as having eax..edi registers (the only one we
 	# can access), while still decoding x64 instructions (whose addr < 4G)
-	# also it seems we can't read /proc/target/mem after 4G (TODO check that)
 	def hack_64_32
 		$stdout.puts "WARNING: debugging a 64bit process from a 32bit debugger is a very bad idea !"
 		@cpu.instance_eval {
@@ -776,6 +775,7 @@ class LinuxRemoteString < VirtualString
 		do_ptrace {
 			begin
 				if readfd
+					#addr = [addr].pack('q').unpack('q').first if addr >= 1<<63
 					return if addr >= 1 << 63	# XXX ruby bug ?
 					@readfd.pos = addr
 					@readfd.read len

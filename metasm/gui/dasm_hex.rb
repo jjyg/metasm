@@ -21,6 +21,7 @@ class HexWidget < DrawableWidget
 
 		# @caret_x = caret position in octets
 		# in hex, round to nearest @data_size and add @caret_x_data (nibbles)
+		@x_data = 7
 		@caret_x_data = 0
 		@oldcaret_x_data = 42
 		@focus_zone = @oldfocus_zone = :hex
@@ -89,7 +90,7 @@ class HexWidget < DrawableWidget
 	end
 
 	def doubleclick(x, y)
-		@data_size = {1 => 2, 2 => 4, 4 => 1}[@data_size]
+		@data_size = {1 => 2, 2 => 4, 4 => 8, 8 => 1}[@data_size]
 		redraw
 	end
 
@@ -128,6 +129,10 @@ class HexWidget < DrawableWidget
 			x += str.length * @font_width
 		}
 
+		if @show_address
+			@x_data = [6, Expression[curaddr].to_s.length].max + 1
+		end
+
 		xd = x_data*@font_width + 1
 		xa = x_ascii*@font_width + 1
 		hexfmt = "%0#{@data_size*2}x "
@@ -140,7 +145,7 @@ class HexWidget < DrawableWidget
 		end
 		# draw text until screen is full
 		while y < w_h
-			render["#{Expression[curaddr]}".rjust(9, '0'), :address] if @show_address
+			render["#{Expression[curaddr]}".rjust(@x_data-1, '0'), :address] if @show_address
 
 			d = data_at(curaddr)
 			if not d and data_at(curaddr+@line_size-1, 1)
@@ -172,6 +177,7 @@ class HexWidget < DrawableWidget
 				when 1; pak = 'C*'
 				when 2; pak = (@endianness == :little ? 'v*' : 'n*')
 				when 4; pak = (@endianness == :little ? 'V*' : 'N*')
+				when 8; pak = 'Q*'	# XXX endianness..
 				end
 				awp = {} ; wp.each_key { |k| awp[k/@data_size] = true }
 				if awp.empty?
@@ -230,7 +236,7 @@ class HexWidget < DrawableWidget
 
 	# char x of start of data zone
 	def x_data
-		@show_address ? 11 : 0
+		@show_address ? @x_data : 0
 	end
 
 	# char x of start of ascii zone
@@ -442,7 +448,7 @@ class HexWidget < DrawableWidget
 		return if not addr = @parent_widget.normalize(addr)
 		if addr.kind_of? Integer
 			return if @addr_min and (addr < @addr_min or addr > @addr_max)
-			@view_addr = addr&0xffff_fff0 if addr < @view_addr or addr >= @view_addr+(@num_lines-2)*@line_size
+			@view_addr = addr & -16 if addr < @view_addr or addr >= @view_addr+(@num_lines-2)*@line_size
 		elsif s = @dasm.get_section_at(addr)
 			@view_addr = Expression[s[1]]
 		else return

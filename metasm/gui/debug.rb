@@ -334,6 +334,7 @@ class DbgRegWidget < DrawableWidget
 			else
 				@dbg.set_flag_value(k, v)
 			end
+			@reg_cache[k] = v
 		}
 		@write_pending.clear
 	end
