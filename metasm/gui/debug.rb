@@ -540,6 +540,7 @@ class DbgConsoleWidget < DrawableWidget
 				redraw
 			end
 
+		when Symbol; return false	# avoid :shift cannot coerce to Int warning
 		when ?\x20..?\x7e
 			@curline[@caret_x, 0] = key.chr
 			@caret_x += 1

@@ -52,21 +52,25 @@ class PTrace
 		when 32
 			@packint = 'l'
 			@packuint = 'L'
-			@intsize = 4
+			@host_intsize = 4
 			@host_syscallnr = SYSCALLNR
 			@reg_off = REGS_I386
 		when 64
 			@packint = 'q'
 			@packuint = 'Q'
-			@intsize = 8
+			@host_intsize = 8
 			@host_syscallnr = SYSCALLNR_64
 			@reg_off = REGS_X86_64
 		else raise 'unsupported architecture'
 		end
 
 		case OS.current.open_process(pid).addrsz
-		when 32; @syscallnr = SYSCALLNR
-		when 64; @syscallnr = SYSCALLNR_64
+		when 32
+			@syscallnr = SYSCALLNR
+			@intsize = 4
+		when 64
+			@syscallnr = SYSCALLNR_64
+			@intsize = 8
 		else raise 'unsupported target architecture'
 		end
 
@@ -81,39 +85,39 @@ class PTrace
 
 	# reads a memory range
 	def readmem(off, len)
-		decal = off % @intsize
+		decal = off % @host_intsize
 		buf = ''
 		if decal > 0
 			off -= decal
 			peekdata(off)
-			off += @intsize
-			buf << @buf[decal...@intsize]
+			off += @host_intsize
+			buf << @buf[decal...@host_intsize]
 		end
 		offend = off + len
 		while off < offend
 			peekdata(off)
-			buf << @buf[0, @intsize]
-			off += @intsize
+			buf << @buf[0, @host_intsize]
+			off += @host_intsize
 		end
 		buf[0, len]
 	end
 
 	def writemem(off, str)
-		decal = off % @intsize
+		decal = off % @host_intsize
 		if decal > 0
 			off -= decal
 			peekdata(off)
 			str = @buf[0...decal] + str
 		end
-		decal = str.length % @intsize
+		decal = str.length % @host_intsize
 		if decal > 0
 			peekdata(off+str.length-decal)
-			str += @buf[decal...@intsize]
+			str += @buf[decal...@host_intsize]
 		end
 		i = 0
 		while i < str.length
-			pokedata(off+i, str[i, @intsize])
-			i += @intsize
+			pokedata(off+i, str[i, @host_intsize])
+			i += @host_intsize
 		end
 	end
 
@@ -292,8 +296,8 @@ class PTrace
 	end
 
 	def peekusr(addr)
-		sys_ptrace(COMMAND['PEEKUSR'],  @pid, @intsize*addr, @bufptr)
-		bufval & ((1 << (@intsize*8)) - 1)
+		sys_ptrace(COMMAND['PEEKUSR'],  @pid, @host_intsize*addr, @bufptr)
+		bufval & ((1 << ([@host_intsize, @intsize].min*8)) - 1)
 	end
 
 	def poketext(addr, data)
@@ -305,7 +309,7 @@ class PTrace
 	end
 
 	def pokeusr(addr, data)
-		sys_ptrace(COMMAND['POKEUSR'],  @pid, @intsize*addr, data)
+		sys_ptrace(COMMAND['POKEUSR'],  @pid, @host_intsize*addr, data)
 	end
 
 	def cont(sig = 0)
@@ -441,6 +445,9 @@ class LinDebugger < Debugger
 		@tid = @pid = ptrace.pid
 		@threads = { @tid => :stopped }
 		@cpu = Ia32.new(@ptrace.intsize*8)
+		if @cpu.size == 64 and @ptrace.reg_off['EAX']
+			hack_64_32
+		end
 		@memory = mem || LinuxRemoteString.new(@pid)
 		@memory.dbg = self
 		@has_pax = false
@@ -451,6 +458,22 @@ class LinDebugger < Debugger
 		@breaking = false
 		super()
 		get_thread_list(@pid).each { |tid| attach_thread(tid) }
+	end
+
+	# we're a 32bit process debugging a 64bit target
+	# the ptrace kernel interface we use only allow us a 32bit-like target access
+	# with this we advertize the cpu as having eax..edi registers (the only one we
+	# can access), while still decoding x64 instructions (whose addr < 4G)
+	# also it seems we can't read /proc/target/mem after 4G (TODO check that)
+	def hack_64_32
+		$stdout.puts "WARNING: debugging a 64bit process from a 32bit debugger is a very bad idea !"
+		@cpu.instance_eval {
+			ia32 = Ia32.new
+			@dbg_register_pc = ia32.dbg_register_pc
+			@dbg_register_flags = ia32.dbg_register_flags
+			@dbg_register_list = ia32.dbg_register_list
+			@dbg_register_size = ia32.dbg_register_size
+		}
 	end
 
 	def attach_thread(tid)
@@ -753,6 +776,7 @@ class LinuxRemoteString < VirtualString
 		do_ptrace {
 			begin
 				if readfd
+					return if addr >= 1 << 63	# XXX ruby bug ?
 					@readfd.pos = addr
 					@readfd.read len
 				else

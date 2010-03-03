@@ -9,10 +9,10 @@ require 'metasm/ia32/opcodes'
 module Metasm
 class Ia32
 	def dbg_register_pc
-		:eip
+		@dbg_register_pc ||= :eip
 	end
 	def dbg_register_flags
-		:eflags
+		@dbg_register_flags ||= :eflags
 	end
 
 	def dbg_register_list 
@@ -29,17 +29,17 @@ class Ia32
 
 	DBG_FLAGS = { :c => 0, :p => 2, :a => 4, :z => 6, :s => 7, :t => 8, :i => 9, :d => 10, :o => 11 }
 	def dbg_get_flag(dbg, f)
-		(dbg.get_reg_value(:eflags) >> DBG_FLAGS[f]) & 1
+		(dbg.get_reg_value(dbg_register_flags) >> DBG_FLAGS[f]) & 1
 	end
 	def dbg_set_flag(dbg, f)
-		fl = dbg.get_reg_value(:eflags)
+		fl = dbg.get_reg_value(dbg_register_flags)
 		fl |= 1 << DBG_FLAGS[f]
-		dbg.set_reg_value(:eflags, fl)
+		dbg.set_reg_value(dbg_register_flags, fl)
 	end
 	def dbg_unset_flag(dbg, f)
-		fl = dbg.get_reg_value(:eflags)
+		fl = dbg.get_reg_value(dbg_register_flags)
 		fl &= ~(1 << DBG_FLAGS[f])
-		dbg.set_reg_value(:eflags, fl)
+		dbg.set_reg_value(dbg_register_flags, fl)
 	end
 
 	def dbg_enable_singlestep(dbg)
@@ -131,14 +131,15 @@ class Ia32
 		s = dbg.addrname!(dbg.pc)
 		yield(dbg.pc, s) if block_given?
 		ret << [dbg.pc, s]
-		fp = dbg.get_reg_value(:ebp)
-		stack = dbg.get_reg_value(:esp)
-		while fp >= stack and fp <= stack+0x10000 and rec != 0
+		fp = dbg.get_reg_value(dbg_register_list[6])
+		stack = dbg.get_reg_value(dbg_register_list[7]) - 8
+		while fp > stack and fp <= stack+0x10000 and rec != 0
 			rec -= 1
 			ra = dbg.resolve_expr Indirection[fp+4, 4]
 			s = dbg.addrname!(ra)
 			yield(ra, s) if block_given?
 			ret << [ra, s]
+			stack = fp	# ensure we walk the stack upwards
 			fp = dbg.resolve_expr Indirection[fp, 4]
 		end
 		ret
