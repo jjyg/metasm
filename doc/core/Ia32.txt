@@ -8,7 +8,10 @@ generic <core/CPU.txt>.
 It can handle binary code for the 16 and 32bits modes of the processor.
 
 It is a superclass for the <core/X86_64.txt> object, a distinct processor
-that handles 64-bit mode (aka `x64`, `amd64`, `em64t`)
+that handles 64-bit *long_mode* (aka *x64*, *amd64*, *em64t*)
+
+The CPU `shortname` is `ia32` (`ia32_16` in 16-bit mode, and a `_be` suffix
+if bigendian)
 
 Opcodes
 -------
@@ -48,6 +51,8 @@ Initialization
 An Ia32 <core/CPU.txt> object can be created using the following code:
 
   Metasm::Ia32.new
+
+The `X86` alias may be used in place of `Ia32`.
 
 The constructor accepts optional arguments to specify the CPU size, the
 opcode family, and the endianness of the processor. The arguments can
@@ -159,7 +164,7 @@ The following prefixes are handled:
 
 * `lock`
 * `rep`, `repz`, `repnz`, `repe`, `repne`
-* `code16', `code32`
+* `code16`, `code32`
 
 The `repXX` prefixes are for string operations (`movsd` etc), but will be set
 for any opcode. Only the last of the family will be encoded.
