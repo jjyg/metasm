@@ -137,8 +137,8 @@ EOMZSTUB
 		elsif @sections.find { |s| s.encoded.export['DllEntryPoint'] }
 			@optheader.entrypoint = 'DllEntryPoint'
 		elsif @sections.find { |s| s.encoded.export['DllMain'] }
-			cp = @cpu.new_cparser
-			cp.parse <<EOS
+			compile_c case @cpu.shortname
+			when 'ia32'; <<EOS
 enum { DLL_PROCESS_DETACH, DLL_PROCESS_ATTACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH, DLL_PROCESS_VERIFIER };
 __stdcall int DllMain(void *handle, unsigned long reason, void *reserved);
 __stdcall int DllEntryPoint(void *handle, unsigned long reason, void *reserved) {
@@ -148,11 +148,13 @@ __stdcall int DllEntryPoint(void *handle, unsigned long reason, void *reserved) 
 	return ret;
 }
 EOS
-			assemble(@cpu.new_ccompiler(cp, self).compile)
-			@optheader.entrypoint = 'DllEntryPoint'
+				@optheader.entrypoint = 'DllEntryPoint'
+			else
+				@optheader.entrypoint = 'DllMain'
+			end
 		elsif @sections.find { |s| s.encoded.export['WinMain'] }
-			cp = @cpu.new_cparser
-			cp.parse <<EOS
+			compile_c case @cpu.shortname
+			when 'ia32'; <<EOS
 #define GetCommandLine GetCommandLineA
 #define GetModuleHandle GetModuleHandleA
 #define GetStartupInfo GetStartupInfoA
@@ -197,8 +199,10 @@ int main(void) {
 	return ret;
 }
 EOS
-			assemble(@cpu.new_ccompiler(cp, self).compile)
-			@optheader.entrypoint = 'main'
+				@optheader.entrypoint = 'main'
+			else
+				@optheader.entrypoint = 'WinMain'
+			end
 		end
 	end
 

@@ -77,7 +77,7 @@ class ExeFormat
 	# parses a bunch of standalone C code, compile and assemble it
 	def compile_c(source, file='<unk>', lineno=1)
 		cp = @cpu.new_cparser
-		tune_prepro(cp.lexer)
+		tune_cparser(cp)
 		cp.parse(source, file, lineno)
 		read_c_attrs cp if respond_to? :read_c_attrs
 		asm_source = @cpu.new_ccompiler(cp, self).compile

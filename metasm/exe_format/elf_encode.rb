@@ -1214,16 +1214,22 @@ class ELF
 			@header.entry = '_start'
 		elsif @sections.find { |s| s.encoded and s.encoded.export['main'] }
 			# entrypoint stack: [sp] = argc, [sp+1] = argv0, [sp+2] = argv1, [sp+argc+1] = 0, [sp+argc+2] = envp0, etc
-			cp = @cpu.new_cparser
-			cp.parse <<EOS
+			compile_c case @cpu.shortname
+			when 'ia32'; <<EOS
 __stdcall int main(int, char **, char **);
 void _exit(int);
 void _start(char *argv0) {
 	_exit(main(*(int*)(&argv0-1), &argv0, &argv0 + *(int*)(&argv0-1) + 1 ));
 }
 EOS
-			parse(@cpu.new_ccompiler(cp, self).compile)
-			assemble
+			else <<EOS
+void _exit(int);
+int main(int, char**, char**);
+void _start(void) {
+	_exit(main(0, 0, 0));
+}
+EOS
+			end
 			@header.entry = '_start'
 		end
 	end

@@ -583,7 +583,12 @@ class CCompiler < C::Compiler
 			regargs = [7, 6, 2, 1, 8, 9]
 		end
 		regargs_used = regargs[0, expr.rexpr.length]
-		(@state.abi_flushregs_call | regargs_used).each { |reg|
+		regs = (@state.abi_flushregs_call | regargs_used)
+		if expr.lexpr.kind_of? C::Variable and expr.lexpr.type.kind_of? C::Function and expr.lexpr.type.varargs and args_space == 0
+			regs << 0	# gcc stores here the nr of xmm args passed, real args are passed the standard way
+					# TODO check visualstudio ?
+		end
+		regs.each { |reg|
 			next if reg == 4
 			next if reg == 5 and @state.saved_rbp
 			if not @state.used.include? reg
@@ -615,6 +620,8 @@ class CCompiler < C::Compiler
 			inuse r		# XXX xchg already used regargs ?
 		}
 		instr 'sub', Reg.new(4, 64), Expression[args_space] if args_space > 0	# TODO prealloc that at func start
+
+		instr 'xor', Reg.new(0, 64), Reg.new(0, 64) if regs.include? 0
 
 		if expr.lexpr.kind_of? C::Variable and expr.lexpr.type.kind_of? C::Function
 			instr 'call', Expression[expr.lexpr.name]
