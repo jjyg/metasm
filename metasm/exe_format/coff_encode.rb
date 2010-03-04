@@ -948,6 +948,11 @@ class COFF
 		l.define_weak('__MS_X86_64_ABI__') if @cpu and @cpu.shortname == 'x64'
 	end
 
+	def tune_cparser(cp)
+		super(cp)
+		cp.llp64 if @cpu.size == 64
+	end
+
 	# honors C attributes: export, export_as(foo), import_from(kernel32), entrypoint
 	# import by ordinal: extern __stdcall int anyname(int) __attribute__((import_from(ws2_32:28)));
 	# can alias imports with int mygpaddr_alias() attr(import_from(kernel32:GetProcAddr))

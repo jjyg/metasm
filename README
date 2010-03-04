@@ -254,8 +254,9 @@ in if () goto ; etc.
 To compile a C program, use PE/ELF.compile_c, that will create a C::Parser with
 exe-specific macros defined (eg __PE__ or __ELF__).
 
-The prefered way to create a C::Parser is through a CPU#new_cparser, that
-will correctly initialize the type sizes (is long 4 or 8 bytes? etc) ; and
+The prefered way to create a C::Parser is to initialize it with a CPU and the
+desired ExeFormat, so that it is
+correctly initialized (eg type sizes: is long 4 or 8 bytes? etc) ; and
 may define preprocessor macros needed to correctly parse standard headers.
 Vendor-specific headers may need to use either #pragma prepare_visualstudio
 (to parse the Microsoft Visual Studio headers) or prepare_gcc (for gcc), the

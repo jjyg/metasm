@@ -106,6 +106,11 @@ class ExeFormat
 	def tune_prepro(l)
 	end
 
+	# prepare a cparser
+	def tune_cparser(cp)
+		tune_prepro(cp.lexer)
+	end
+
 	# this is called once C code is parsed, to handle C attributes like export/import/init etc
 	def read_c_attrs(cp)
 	end

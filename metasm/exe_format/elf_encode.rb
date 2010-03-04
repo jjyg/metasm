@@ -1168,6 +1168,12 @@ class ELF
 		l.define_weak('__ELF__', 1)
 	end
 
+	# set the data model
+	def tune_cparser(cp)
+		super(cp)
+		cp.lp64 if @cpu.size == 64
+	end
+
 	# handles C attributes: export, export_as(foo), import, import_from(libc.so.6), init, fini, entrypoint
 	def read_c_attrs(cp)
 		cp.toplevel.symbol.each_value { |v|

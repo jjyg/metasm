@@ -953,8 +953,14 @@ module C
 		attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
 		attr_accessor :endianness
 		attr_accessor :allow_bad_c
-		def initialize(lexer = nil, model=:ilp32)
-			@lexer = lexer || Preprocessor.new
+		# allowed arguments: ExeFormat, CPU, Preprocessor, Symbol (for the data model)
+		def initialize(*args)
+			model = args.grep(Symbol).first || :ilp32
+			lexer = args.grep(Preprocessor).first || Preprocessor.new
+			exe = args.grep(ExeFormat).first
+			cpu = args.grep(CPU).first
+			cpu ||= exe.cpu if exe
+			@lexer = lexer
 			@prev_pragma_callback = @lexer.pragma_callback
 			@lexer.pragma_callback = lambda { |tok| parse_pragma_callback(tok) }
 			@toplevel = Block.new(nil)
@@ -963,13 +969,15 @@ module C
 			@typesize = { :void => 1, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8,
 				:char => 1, :float => 4, :double => 8, :longdouble => 12 }
 			send model
+			cpu.tune_cparser(self) if cpu
+			exe.tune_cparser(self) if exe
 		end
 
 		def ilp16
-			# XXX check this
 			@typesize.update :short => 2, :ptr => 2,
 				:int => 2, :long => 4, :longlong => 4
 		end
+
 		def lp32
 			@typesize.update :short => 2, :ptr => 4,
 				:int => 2, :long => 4, :longlong => 8
@@ -978,18 +986,18 @@ module C
 			@typesize.update :short => 2, :ptr => 4,
 				:int => 4, :long => 4, :longlong => 8
 		end
+
 		def llp64
-			# longlong should only exist here
 			@typesize.update :short => 2, :ptr => 8,
 				:int => 4, :long => 4, :longlong => 8
-		end
-		def ilp64
-			@typesize.update :short => 2, :ptr => 8,
-				:int => 8, :long => 8, :longlong => 8
 		end
 		def lp64
 			@typesize.update :short => 2, :ptr => 8,
 				:int => 4, :long => 8, :longlong => 8
+		end
+		def ilp64
+			@typesize.update :short => 2, :ptr => 8,
+				:int => 8, :long => 8, :longlong => 8
 		end
 
 		def parse_pragma_callback(otok)
@@ -1039,6 +1047,13 @@ module C
 				prepare_visualstudio
 			when 'prepare_gcc'
 				prepare_gcc
+			when 'data_model'	# XXX use carefully, should be the very first thing parsed
+				nil while lp = @lexer.readtok and lp.type == :space
+				if lp.type != :string or lp.raw !~ /^s?[il]?lp(16|32|64)$/
+					raise lp, "invalid data model (use lp32/lp64/llp64/ilp64)"
+				else
+					send lp.raw
+				end
 			else @prev_pragma_callback[otok]
 			end
 		end

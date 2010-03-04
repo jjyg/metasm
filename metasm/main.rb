@@ -43,23 +43,32 @@ class CPU
 
 	# sets up the C parser : standard macro definitions, type model (size of int etc)
 	def tune_cparser(cp)
-		cp.send "ilp#@size"
+		case @size
+		when 64; cp.lp64
+		when 32; cp.ilp32
+		when 16; cp.ilp16
+		end
 		cp.endianness = @endianness
-		cp.lexer.define('_STDC', 1) if not cp.lexer.definition['_STDC']
+		cp.lexer.define_weak('_STDC', 1)
 		# TODO gcc -dM -E - </dev/null
 		tune_prepro(cp.lexer)
 	end
 
 	def tune_prepro(pp)
 		# TODO pp.define('BIGENDIAN')
-		# TODO ExeFormat-specific definitions
+	end
+
+	# return a new AsmPreprocessor
+	def new_asmprepro(str='', exe=nil)
+		pp = AsmPreprocessor.new(str, exe)
+		tune_prepro(pp)
+		exe.tune_prepro(pp) if exe
+		pp
 	end
 
 	# returns a new & tuned C::Parser
 	def new_cparser
-		cp = C::Parser.new
-		tune_cparser cp
-		cp
+		C::Parser.new(self)
 	end
 
 	# returns a new C::Compiler

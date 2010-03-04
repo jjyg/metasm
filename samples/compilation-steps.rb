@@ -6,8 +6,16 @@
 # shows the compilation phase step by step: c, simplified c, asm
 
 require 'metasm'
+require 'optparse'
 
-pic = ARGV.delete '--pic'
+opts = { :cpu => 'Ia32', :exe => 'Shellcode' }
+OptionParser.new { |opt|
+	opt.on('--pic', 'generate position-independant code') { opts[:pic] = true }
+	opt.on('--cpu cpu') { |c| opts[:cpu] = c }
+	opt.on('--exe exe') { |e| opts[:exe] = e }
+	opt.on('-v') { $VERBOSE = true }
+	opt.on('-d') { $VERBOSE = $DEBUG = true }
+}.parse!(ARGV)
 
 src = ARGV.empty? ? <<EOS : ARGF.read
 void foo(int);
@@ -19,12 +27,17 @@ void bla()
 }
 EOS
 
-cp = Metasm::C::Parser.parse src
+cpu = Metasm.const_get(opts[:cpu]).new
+exe = Metasm.const_get(opts[:exe]).new(cpu)
+cpu.generate_PIC = false unless opts[:pic]
+
+cp = Metasm::C::Parser.new(exe)
+cp.parse src
 puts cp, '', ' ----', ''
+
 cp.precompile
 puts cp, '', ' ----', ''
 
-cp = Metasm::C::Parser.parse src
-cpu = Metasm::Ia32.new
-cpu.generate_PIC = false unless pic
+cp = Metasm::C::Parser.new(exe)
+cp.parse src
 puts cpu.new_ccompiler(cp).compile

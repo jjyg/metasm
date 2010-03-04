@@ -88,13 +88,6 @@ class CPU
 	def parse_parser_instruction(lexer, instr)
 		raise instr, 'unknown parser instruction'
 	end
-
-	def new_asmprepro(str='', exe=nil)
-		pp = AsmPreprocessor.new(str, exe)
-		tune_prepro(pp)
-		exe.tune_prepro(pp) if exe
-		pp
-	end
 end
 
 # asm-specific preprocessor
