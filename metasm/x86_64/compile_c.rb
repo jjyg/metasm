@@ -220,6 +220,7 @@ class CCompiler < C::Compiler
 					e2 = inuse findreg(rsz)
 					op = ((type.specifier == :unsigned) ? 'movzx' : 'movsx')
 					op = 'mov' if e.sz == e2.sz
+					op = 'movsxd' if op == 'movsx' and e2.sz == 64 and e.sz == 32
 				else
 					e2 = inuse findreg(sz)
 					op = 'mov'
@@ -379,6 +380,7 @@ class CCompiler < C::Compiler
 					unuse r
 					reg = inuse findreg
 					op = (r.sz == reg.sz ? 'mov' : (expr.rexpr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
+					op = 'movsxd' if op == 'movsx' and reg.sz == 64 and r.sz == 32
 					instr op, reg, r
 					r = reg
 				end
