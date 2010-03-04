@@ -210,7 +210,6 @@ class CCompiler < C::Compiler
 	# copies the arg e to a volatile location (register/composite) if it is not already
 	# unuses the old storage
 	# may return a register bigger than the type size (eg __int8 are stored in full reg size)
-	# use rsz only to force 32bits-return on a 16bits cpu
 	def make_volatile(e, type, rsz=@cpusz)
 		if e.kind_of? ModRM or @state.bound.index(e)
 			if type.integral?
@@ -260,7 +259,7 @@ class CCompiler < C::Compiler
 		end.tr((type.specifier == :unsigned ? '' : 'ab'), 'gl')
 	end
 
-	# compiles a c expression, returns an Ia32 instruction argument
+	# compiles a c expression, returns an X64 instruction argument
 	def c_cexpr_inner(expr)
 		case expr
 		when ::Integer; Expression[expr]
@@ -373,7 +372,11 @@ class CCompiler < C::Compiler
 					r.sz = tto
 					inuse r
 				when Reg
-					instr 'and', r, Expression[(1<<tto)-1] if r.sz > tto
+					if r.sz == 64 and tto == 32
+						instr 'movzx', r, Reg.new(r.val, tto)
+					else
+						instr 'and', r, Expression[(1<<tto)-1] if r.sz > tto
+					end
 				end
 			elsif tto > tfrom
 				if not r.kind_of? Reg or r.sz != @cpusz
@@ -605,7 +608,7 @@ class CCompiler < C::Compiler
 		regargs_used.zip(expr.rexpr).each { |ra, arg|
 			a = c_cexpr_inner(arg)
 			a = resolve_address a if a.kind_of? Address
-			r = Reg.new(ra, 64)
+			r = Reg.new(ra, a.respond_to?(:sz) ? a.sz : 64)
 			instr 'mov', r, a
 			unuse a
 			regargs_unuse << r if not @state.inuse.include? ra
@@ -801,6 +804,7 @@ class CCompiler < C::Compiler
 			r = make_volatile(r, expr.type) if r.kind_of? ModRM and l.kind_of? ModRM
 			unuse l, r
 			if expr.lexpr.type.integral?
+				r = Reg.new(r.val, l.sz) if r.kind_of? Reg and r.sz != l.sz	# XXX
 				instr 'cmp', l, r
 			elsif expr.lexpr.type.float?
 				raise 'float unhandled'
@@ -864,7 +868,7 @@ class CCompiler < C::Compiler
 		end
 		regargs.each { |ra|
 			break if args.empty?
-			@state.bound[args.shift] = Reg.new(ra, 8*al)
+			@state.bound[args.shift] = Reg.new(ra, @cpusz)
 		}
 		argoff = 2*al + args_space
 		args.each { |a|
