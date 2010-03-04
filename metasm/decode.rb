@@ -2302,14 +2302,23 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 
 		if by.empty?
 			tb.to_subfuncret = nil if tb.to_subfuncret == []
+			tolist = tb.to_subfuncret || tb.to_normal.to_a
+			if lfrom = get_label_at(fb.address) and tolist.length == 1
+				lto = auto_label_at(tolist.first)
+				each_xref(fb.address, :x) { |x|
+					next if not di = @decoded[x.origin]
+					@cpu.replace_instr_arg_immediate(di.instruction, lfrom, lto)
+					di.comment.to_a.each { |c| c.gsub!(lfrom, lto) }
+				}
+			end
 			fb.from_normal.to_a.each { |newfrom|
 				if @decoded[newfrom].kind_of? DecodedInstruction and idx = @decoded[newfrom].block.to_normal.to_a.index(from)
-					@decoded[newfrom].block.to_normal[idx..idx] = tb.to_subfuncret || tb.to_normal.to_a
+					@decoded[newfrom].block.to_normal[idx..idx] = tolist
 				end
 			}
 			fb.from_subfuncret.to_a.each { |newfrom|
 				if @decoded[newfrom].kind_of? DecodedInstruction and idx = @decoded[newfrom].block.to_subfuncret.to_a.index(from)
-					@decoded[newfrom].block.to_subfuncret[idx..idx] = tb.to_subfuncret || tb.to_normal.to_a
+					@decoded[newfrom].block.to_subfuncret[idx..idx] = tolist
 				end
 			}
 		else
