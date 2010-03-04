@@ -571,8 +571,10 @@ class CCompiler < C::Compiler
 	def c_cexpr_inner_funcall(expr)
 		backup = []
 		if @parser.lexer.definition['__MS_X86_64_ABI__']
+			args_space = 32
 			regargs = [1, 2, 8, 9]
 		else
+			args_space = 0
 			regargs = [7, 6, 2, 1, 8, 9]
 		end
 		regargs_used = regargs[0, expr.rexpr.length]
@@ -607,7 +609,7 @@ class CCompiler < C::Compiler
 			regargs_unuse << r if not @state.inuse.include? ra
 			inuse r		# XXX xchg already used regargs ?
 		}
-		instr 'sub', Reg.new(4, 64), Expression[8*regargs.length]	# TODO prealloc that at func start
+		instr 'sub', Reg.new(4, 64), Expression[args_space] if args_space > 0	# TODO prealloc that at func start
 
 		if expr.lexpr.kind_of? C::Variable and expr.lexpr.type.kind_of? C::Function
 			instr 'call', Expression[expr.lexpr.name]
@@ -620,8 +622,8 @@ class CCompiler < C::Compiler
 			f = f.rexpr while f.kind_of? C::CExpression and not f.op and f.type == f.rexpr.type
 		end
 		regargs_unuse.each { |r| unuse r }
-		argsz = [expr.rexpr.length, regargs.length].max * 8
-		instr 'add', Reg.new(4, @cpusz), Expression[argsz]
+		argsz = args_space + [expr.rexpr.length - regargs.length, 0].max * 8
+		instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 
 		@state.abi_flushregs_call.each { |reg| flushcachereg reg }
 		if @state.used.include? 0
@@ -849,8 +851,21 @@ class CCompiler < C::Compiler
 	def c_init_state(func)
 		@state = State.new(func)
 		al = typesize[:ptr]
-		argoff = 2*al
-		func.type.args.each { |a|
+		args = func.type.args.dup
+		if @parser.lexer.definition['__MS_X86_64_ABI__']
+			# TODO move regs to stack if &arg0
+			args_space = 32
+			regargs = [1, 2, 8, 9]
+		else
+			args_space = 0
+			regargs = [7, 6, 2, 1, 8, 9]
+		end
+		regargs.each { |ra|
+			break if args.empty?
+			@state.bound[args.shift] = Reg.new(ra, 8*al)
+		}
+		argoff = 2*al + args_space
+		args.each { |a|
 			@state.offset[a] = -argoff
 			argoff = (argoff + sizeof(a) + al - 1) / al * al
 		}
