@@ -11,15 +11,18 @@ require 'metasm'
 
 module Metasm
 class DynLdr
-	# basic C defs for ruby internals - probably 1.8/x86 only
+	# basic C defs for ruby internals - 1.8 and 1.9 compat - x86/x64
 	RUBY_H = <<EOS
 #line #{__LINE__}
-typedef unsigned long VALUE;
+typedef uintptr_t VALUE;
+
+#define INT2VAL(v) rb_uint2inum(v)
+#define VAL2INT(v) rb_num2ulong(v)
 
 struct rb_string_t {
-	long flags;
+	VALUE flags;
 	VALUE klass;
-	long len;
+	VALUE len;
 	char *ptr;
 	union {
 		long capa;
@@ -29,9 +32,9 @@ struct rb_string_t {
 #define RString(x) ((struct rb_string_t *)(x))
 
 struct rb_array_t {
-	long flags;
+	VALUE flags;
 	VALUE klass;
-	long len;
+	VALUE len;
 	union {
 		long capa;
 		VALUE shared;
@@ -80,19 +83,19 @@ extern VALUE IMPMOD rb_eArgError __attribute__((import));
 #define T_MASK   0x3f
 #define TYPE(x) (((int)(x) & 1) ? T_FIXNUM : (((int)(x) & 3) || ((unsigned int)(x) < 7)) ? 0x40 : RString(x)->flags & T_MASK)
 
-VALUE rb_uint2inum(unsigned long);
+VALUE rb_uint2inum(VALUE);
 VALUE rb_ull2inum(unsigned long long);
-unsigned long rb_num2ulong(VALUE);
+VALUE rb_num2ulong(VALUE);
 VALUE rb_str_new(const char* ptr, long len);	// alloc + memcpy + 0term
 VALUE rb_ary_new2(int len);
 VALUE rb_float_new(double);
 
-int rb_intern(char *);
-VALUE rb_funcall(VALUE recv, int id, int nargs, ...);
-VALUE rb_const_get(VALUE, int);
+VALUE rb_intern(char *);
+VALUE rb_funcall(VALUE recv, VALUE id, int nargs, ...);
+VALUE rb_const_get(VALUE, VALUE);
 VALUE rb_raise(VALUE, char*);
-void rb_define_method(VALUE, char *, VALUE (*)(), int);
 void rb_define_const(VALUE, char *, VALUE);
+void rb_define_method(VALUE, char *, VALUE (*)(), int);
 void rb_define_singleton_method(VALUE, char *, VALUE (*)(), int);
 
 EOS
@@ -103,8 +106,8 @@ EOS
 #line #{__LINE__}
 
 #ifdef __PE__
- __stdcall int LoadLibraryA(char *);
- __stdcall int GetProcAddress(int, char *);
+ __stdcall uintptr_t LoadLibraryA(char *);
+ __stdcall uintptr_t GetProcAddress(uintptr_t, char *);
 
  #define os_load_lib(l) LoadLibraryA(l)
  #define os_load_sym(l, s) GetProcAddress(l, s)
@@ -115,8 +118,8 @@ EOS
  asm(".pt_gnu_stack rw");
 
  #define RTLD_LAZY 1
- int dlopen(char*, int);
- int dlsym(int, char*);
+ uintptr_t dlopen(char*, int);
+ uintptr_t dlsym(uintptr_t, char*);
 
  #define os_load_lib(l) dlopen(l, RTLD_LAZY)
  #define os_load_sym(l, s) dlsym(l, s)
@@ -133,12 +136,12 @@ static VALUE dynldr;
 
 static VALUE memory_read(VALUE self, VALUE addr, VALUE len)
 {
-	return rb_str_new((char*)rb_num2ulong(addr), (int)rb_num2ulong(len));
+	return rb_str_new((char*)VAL2INT(addr), VAL2INT(len));
 }
 
 static VALUE memory_read_int(VALUE self, VALUE addr)
 {
-	return rb_uint2inum(*(unsigned int*)rb_num2ulong(addr));
+	return INT2VAL(*(uintptr_t*)VAL2INT(addr));
 }
 
 static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
@@ -147,7 +150,7 @@ static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 		rb_raise(IMPMOD rb_eArgError, "mem_write needs a String");
 
 	char *src = STR_PTR(val);
-	char *dst = (char*)rb_num2ulong(addr);
+	char *dst = (char*)VAL2INT(addr);
 	int len = STR_LEN(val);
 	while (len--)
 		*dst++ = *src++;
@@ -156,7 +159,7 @@ static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 
 static VALUE memory_write_int(VALUE self, VALUE addr, VALUE val)
 {
-	*(unsigned int *)rb_num2ulong(addr) = rb_num2ulong(val);
+	*(uintptr_t *)VAL2INT(addr) = VAL2INT(val);
 	return Qtrue;
 }
 
@@ -164,13 +167,13 @@ static VALUE str_ptr(VALUE self, VALUE str)
 {
 	if (TYPE(str) != T_STRING)
 		rb_raise(IMPMOD rb_eArgError, "Invalid ptr");
-	return rb_uint2inum((unsigned int)STR_PTR(str));
+	return INT2VAL((uintptr_t)STR_PTR(str));
 }
 
 // load a symbol from a lib byname, byordinal if integral
 static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 {
-	int h, p;
+	uintptr_t h, p;
 
 	if (TYPE(lib) != T_STRING)
 		rb_raise(IMPMOD rb_eArgError, "Invalid lib");
@@ -180,11 +183,11 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 	h = os_load_lib(STR_PTR(lib));
 
 	if (TYPE(func) == T_FIXNUM)
-		p = os_load_sym_ord(h, rb_num2ulong(func));
+		p = os_load_sym_ord(h, VAL2INT(func));
 	else
 		p = os_load_sym(h, STR_PTR(func));
 
-	return rb_uint2inum(p);
+	return INT2VAL(p);
 }
 
 #ifdef __i386__
@@ -203,15 +206,15 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 64)
 		rb_raise(IMPMOD rb_eArgError, "bad args");
 	
-	int flags_v = rb_num2ulong(flags);
-	int ptr_v = rb_num2ulong(ptr);
+	uintptr_t flags_v = VAL2INT(flags);
+	uintptr_t ptr_v = VAL2INT(ptr);
 	int i, argsz;
-	int args_c[64];
+	uintptr_t args_c[64];
 	__int64 ret;
 
 	argsz = ARY_LEN(args);
 	for (i=0 ; i<argsz ; i++)
-		args_c[i] = rb_num2ulong(ARY_PTR(args)[i]);
+		args_c[i] = VAL2INT(ARY_PTR(args)[i]);
 
 	if (flags_v & 2)
 		ret = do_invoke_fastcall(ptr_v, argsz, args_c);	// supercedes stdcall
@@ -227,7 +230,7 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 		// which was in fact set by ptr_v()
 		return rb_float_new(fake_float());
 	else
-		return rb_uint2inum(ret);
+		return INT2VAL(ret);
 }
 
 // this is the function that is called on behalf of all callbacks
@@ -235,29 +238,29 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 // callback generated by callback_alloc
 // heavy stack magick at work here !
 // TODO float args / float retval / ret __int64
-static int do_callback_handler(int ori_retaddr, int caller_id, int arg0)
+static uintptr_t do_callback_handler(uintptr_t ori_retaddr, uintptr_t caller_id, uintptr_t arg0)
 {
-	int *addr = &arg0;
+	uintptr_t *addr = &arg0;
 	int i, ret;
 	VALUE args = rb_ary_new2(8);
 
 	// copy our args to a ruby-accessible buffer
 	for (i=0 ; i<8 ; i++)
-		ARY_PTR(args)[i] = rb_uint2inum(*addr++);
+		ARY_PTR(args)[i] = INT2VAL(*addr++);
 	RArray(args)->len = 8;	// len == 8, no need to ARY_LEN/EMBED stuff
 
-	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, rb_uint2inum(caller_id), args);
+	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, INT2VAL(caller_id), args);
 
 	// dynldr.callback will give us the arity (in bytes) of the callback in args[0]
 	// we just put the stack lifting offset in caller_id for the asm stub to use
-	caller_id = rb_num2ulong(ARY_PTR(args)[0]);
+	caller_id = VAL2INT(ARY_PTR(args)[0]);
 	
-	return rb_num2ulong(ret);
+	return VAL2INT(ret);
 }
 
 #elif defined __amd64__
 
-int do_invoke(int, int, int*);
+uintptr_t do_invoke(uintptr_t, uintptr_t, uintptr_t*);
 double fake_float(void);
 
 // invoke a symbol
@@ -269,52 +272,54 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 6)
 		rb_raise(IMPMOD rb_eArgError, "bad args");
 	
-	int flags_v = rb_num2ulong(flags);
-	int ptr_v = rb_num2ulong(ptr);
+	uintptr_t flags_v = VAL2INT(flags);
+	uintptr_t ptr_v = VAL2INT(ptr);
 	int i, argsz;
-	int args_c[64];
-	int ret;
-	int (*ptr_f)(int, int, int, int, int, int) = ptr_v;
+	uintptr_t args_c[64];
+	uintptr_t ret;
+	uintptr_t (*ptr_f)(uintptr_t, ...) = ptr_v;
 
 	argsz = ARY_LEN(args);
 	for (i=0 ; i<argsz ; i++)
-		args_c[i] = rb_num2ulong(ARY_PTR(args)[i]);
+		args_c[i] = VAL2INT(ARY_PTR(args)[i]);
 
-	for (i=argsz ; i<=6 ; i++)
+	for (i=argsz ; i<=8 ; i++)
 		args_c[i] = 0;
 
-	ret = ptr_f(args_c[0], args_c[1], args_c[2], args_c[3], args_c[4], args_c[5]);
+	ret = ptr_f(args_c[0], args_c[1], args_c[2], args_c[3], args_c[4], args_c[5], args_c[6], args_c[7]);
 	
 	if (flags_v & 8)
 		return rb_float_new(fake_float());
 	else
-		return rb_uint2inum(ret);
+		return INT2VAL(ret);
 }
 
-extern int *callback_id_tmp;
-static int do_callback_handler(int arg0, int arg1, int arg2, int arg3, int arg4, int arg5)
+extern uintptr_t *callback_id_tmp;
+static uintptr_t do_callback_handler(uintptr_t arg0, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4, uintptr_t arg5, uintptr_t arg6, uintptr_t arg7)
 {
-	int ret;
+	uintptr_t ret;
 	VALUE args = rb_ary_new2(8);
 
-	RArray(args)->len = 6;
-	ARY_PTR(args)[0] = rb_uint2inum(arg0);
-	ARY_PTR(args)[1] = rb_uint2inum(arg1);
-	ARY_PTR(args)[2] = rb_uint2inum(arg2);
-	ARY_PTR(args)[3] = rb_uint2inum(arg3);
-	ARY_PTR(args)[4] = rb_uint2inum(arg4);
-	ARY_PTR(args)[5] = rb_uint2inum(arg5);
+	RArray(args)->len = 8;
+	ARY_PTR(args)[0] = INT2VAL(arg0);
+	ARY_PTR(args)[1] = INT2VAL(arg1);
+	ARY_PTR(args)[2] = INT2VAL(arg2);
+	ARY_PTR(args)[3] = INT2VAL(arg3);
+	ARY_PTR(args)[4] = INT2VAL(arg4);
+	ARY_PTR(args)[5] = INT2VAL(arg5);
+	ARY_PTR(args)[6] = INT2VAL(arg6);
+	ARY_PTR(args)[7] = INT2VAL(arg7);
 
 	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, *callback_id_tmp, args);
 
-	return rb_num2ulong(ret);
+	return VAL2INT(ret);
 }
 #endif
 
-extern void printf(int);
+extern void printf(int, ...);
 int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// to patch before parsing to match the .so name
 {
-//printf("lolzor\\n");
+printf("lolzor\\n");
 	dynldr = rb_const_get(rb_const_get(IMPMOD rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
 	rb_define_singleton_method(dynldr, "memory_read",  memory_read, 2);
 	rb_define_singleton_method(dynldr, "memory_read_int",  memory_read_int, 1);
@@ -323,9 +328,9 @@ int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// t
 	rb_define_singleton_method(dynldr, "str_ptr", str_ptr, 1);
 	rb_define_singleton_method(dynldr, "sym_addr", sym_addr, 2);
 	rb_define_singleton_method(dynldr, "raw_invoke", invoke, 3);
-	rb_define_const(dynldr, "CALLBACK_TARGET", rb_uint2inum(&callback_handler));
-	rb_define_const(dynldr, "CALLBACK_ID_0", rb_uint2inum(&callback_id_0));
-	rb_define_const(dynldr, "CALLBACK_ID_1", rb_uint2inum(&callback_id_1));
+	rb_define_const(dynldr, "CALLBACK_TARGET", INT2VAL(&callback_handler));
+	rb_define_const(dynldr, "CALLBACK_ID_0", INT2VAL(&callback_id_0));
+	rb_define_const(dynldr, "CALLBACK_ID_1", INT2VAL(&callback_id_1));
 	return 0;
 }
 EOS
