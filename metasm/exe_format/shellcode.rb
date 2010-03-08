@@ -52,6 +52,14 @@ class Shellcode < ExeFormat
 		yield @encoded, (@base_addr || 0)
 	end
 
+	def addr_to_fileoff(addr)
+		addr - (base_addr || 0)
+	end
+
+	def fileoff_to_addr(foff)
+		foff + (base_addr || 0)
+	end
+
 	# encodes the source found in self.source
 	# appends it to self.encoded
 	# clears self.source

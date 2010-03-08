@@ -377,6 +377,27 @@ class COFF
 		end
 	end
 
+	# address -> file offset
+	# handles LoadedPE
+	def addr_to_fileoff(addr)
+		addr -= @load_address ||= @optheader.image_base
+		if s = sect_at_rva(addr)
+			if s.respond_to? :virtaddr
+				addr - s.virtaddr + s.rawaddr
+			else	# header
+				addr
+			end
+		end
+	end
+
+	# file offset -> memory address
+	# handles LoadedPE
+	def fileoff_to_addr(foff)
+		if s = @sections.find { |s_| s_.rawaddr <= foff and s_.rawaddr + s_.rawsize > foff }
+			s.virtaddr + foff - s.rawaddr + (@load_address ||= @optheader.image_base)
+		end
+	end
+
 	def each_section
 		base = @optheader.image_base
 		base = 0 if not base.kind_of? Integer

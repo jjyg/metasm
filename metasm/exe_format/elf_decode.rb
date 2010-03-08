@@ -58,9 +58,27 @@ class ELF
 	end
 
 	# transforms a virtual address to a file offset, from mmaped segments addresses
-	def addr_to_off addr
+	def addr_to_off(addr)
 		s = @segments.find { |s_| s_.type == 'LOAD' and s_.vaddr <= addr and s_.vaddr + s_.memsz > addr } if addr
 		addr - s.vaddr + s.offset if s
+	end
+
+	# memory address -> file offset
+	# handles relocated LoadedELF
+	def addr_to_fileoff(addr)
+		la = module_address
+	       	la = (la == 0 ? (@load_address ||= 0) : 0)
+		addr_to_off(addr - la)
+	end
+
+	# file offset -> memory address
+	# handles relocated LoadedELF
+	def fileoff_to_addr(foff)
+		if s = @segments.find { |s_| s_.type == 'LOAD' and s_.offset <= foff and s_.offset + s_.filesz > foff }
+			la = module_address
+	       		la = (la == 0 ? (@load_address ||= 0) : 0)
+			s.vaddr + la + foff - s.offset
+		end
 	end
 
 	# return the address of a label

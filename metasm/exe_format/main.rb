@@ -173,6 +173,17 @@ class ExeFormat
 		encode_string(*a)
 		File.open(path, 'wb') { |fd| fd.write(@encoded.data) }
 	end
+
+	# returns the address at which a given file offset would be mapped
+	def addr_to_fileoff(addr)
+		addr
+	end
+
+	# returns the file offset where a mapped byte comes from
+	def fileoff_to_addr(foff)
+		foff
+	end
+
 module IntToHash
 	# converts a constant name to its numeric value using the hash
 	# {1 => 'toto', 2 => 'tata'}: 'toto' => 1, 42 => 42, 'tutu' => raise
