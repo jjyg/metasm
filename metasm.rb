@@ -22,6 +22,8 @@ module Metasm
 		'WinDebugger' => 'WinOS',
 		'VirtualFile' => 'OS', 'VirtualString' => 'OS',
 		'GdbRemoteString' => 'GdbClient', 'GdbRemoteDebugger' => 'GdbClient',
+		'DecodedInstruction' => 'Disassembler', 'DecodedFunction' => 'Disassembler',
+		'InstructionBlock' => 'Disassembler',
 	}
 
 	Const_autorequire = {
@@ -39,6 +41,7 @@ module Metasm
 		'Gui' => 'gui',
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
 		'GdbClient' => 'os/remote',
+		'Disassembler' => 'disassemble',
 		'Decompiler' => 'decompile',
 		'DynLdr' => 'dynldr',
 	}
