@@ -973,6 +973,7 @@ class COFF
 			end
 			if v.has_attribute('import') or ln = v.has_attribute_var('import_from')
 				ln ||= WindowsExports::EXPORT[v.name]
+				raise "unknown library for #{v.name}" if not ln
 				i = ImportDirectory::Import.new
 				if ln.include? ':'
 					ln, name = ln.split(':')
