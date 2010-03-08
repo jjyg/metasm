@@ -965,7 +965,7 @@ module C
 			@lexer.pragma_callback = lambda { |tok| parse_pragma_callback(tok) }
 			@toplevel = Block.new(nil)
 			@unreadtoks = []
-			@endianness = :big	# used only to decode multibyte char constants
+			@endianness = cpu ? cpu.endianness : :big	# used only to decode multibyte char constants
 			@typesize = { :void => 1, :__int8 => 1, :__int16 => 2, :__int32 => 4, :__int64 => 8,
 				:char => 1, :float => 4, :double => 8, :longdouble => 12 }
 			send model
@@ -1049,7 +1049,7 @@ module C
 				prepare_gcc
 			when 'data_model'	# XXX use carefully, should be the very first thing parsed
 				nil while lp = @lexer.readtok and lp.type == :space
-				if lp.type != :string or lp.raw !~ /^s?[il]?lp(16|32|64)$/
+				if lp.type != :string or lp.raw !~ /^s?[il]?lp(16|32|64)$/ or not respond_to? lp.raw
 					raise lp, "invalid data model (use lp32/lp64/llp64/ilp64)"
 				else
 					send lp.raw
@@ -1652,7 +1652,8 @@ EOH
 					end
 					var.type = v.type # TypeDef.new('typeof', v.type, tok)
 				when 'long', 'short', 'signed', 'unsigned', 'int', 'char', 'float', 'double',
-						'void', '__int8', '__int16', '__int32', '__int64'
+						'void', '__int8', '__int16', '__int32', '__int64',
+						'intptr_t', 'uintptr_t'
 					parser.unreadtok tok
 					var.parse_type_base(parser, scope)
 				else
@@ -1749,6 +1750,10 @@ EOH
 				when 'int', 'char', 'void', 'float', 'double', '__int8', '__int16', '__int32', '__int64'
 					name = tok.raw.to_sym
 					break
+				when 'intptr_t', 'uintptr_t'
+					name = :ptr
+					specifier << :unsigned if tok.raw == 'uintptr_t'
+					break
 				else
 					parser.unreadtok tok
 					break
@@ -1778,7 +1783,7 @@ EOH
 				if (specifier & [:signed, :unsigned]).length > 1 or (specifier & [:short, :long]).length > 0
 					raise tok || parser, 'invalid specifier list'
 				end
-			when :__int8, :__int16, :__int32, :__int64
+			when :__int8, :__int16, :__int32, :__int64, :ptr
 				if (specifier & [:signed, :unsigned]).length > 1 or (specifier & [:short, :long]).length > 0
 					raise tok || parser, 'invalid specifier list'
 				end
@@ -2986,10 +2991,11 @@ EOH
 	class BaseType
 		def dump(scope, r=[''], dep=[])
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
-			r.last << @specifier.to_s << ' ' if specifier
+			r.last << @specifier.to_s << ' ' if specifier and @name != :ptr
 			r.last << case @name
 			when :longlong; 'long long'
 			when :longdouble; 'long double'
+			when :ptr; specifier == :unsigned ? 'uintptr_t' : 'intptr_t'
 			else @name.to_s
 			end
 			[r, dep]
