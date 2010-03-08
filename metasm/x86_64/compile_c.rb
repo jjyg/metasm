@@ -585,6 +585,7 @@ class CCompiler < C::Compiler
 		regargs_used = regargs[0, expr.rexpr.length]
 		regs = (@state.abi_flushregs_call | regargs_used)
 		if expr.lexpr.kind_of? C::Variable and expr.lexpr.type.kind_of? C::Function and expr.lexpr.type.varargs and args_space == 0
+			hidden_rax_arg = true
 			regs << 0	# gcc stores here the nr of xmm args passed, real args are passed the standard way
 					# TODO check visualstudio ?
 		end
@@ -621,7 +622,7 @@ class CCompiler < C::Compiler
 		}
 		instr 'sub', Reg.new(4, 64), Expression[args_space] if args_space > 0	# TODO prealloc that at func start
 
-		instr 'xor', Reg.new(0, 64), Reg.new(0, 64) if regs.include? 0
+		instr 'xor', Reg.new(0, 64), Reg.new(0, 64) if hidden_rax_arg
 
 		if expr.lexpr.kind_of? C::Variable and expr.lexpr.type.kind_of? C::Function
 			instr 'call', Expression[expr.lexpr.name]
