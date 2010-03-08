@@ -45,7 +45,7 @@ class PTrace
 	attr_accessor :reg_off, :intsize, :syscallnr
 	# setup the variables according to the target
 	# XXX when x86 debugs x64, should we use ptrace_X86_ATTACH or X64_ATTACH ?
-	def tweak_for_pid(pid)
+	def tweak_for_pid(pid=@pid)
 		tg = OS.current.open_process(::Process.pid)
 		psz = tg.addrsz
 		case psz
@@ -442,6 +442,16 @@ class LinDebugger < Debugger
 	attr_accessor :ptrace, :pass_exceptions, :continuesignal
 	def initialize(pid, mem=nil)
 		@ptrace = PTrace.new(pid)
+		reinit(mem)
+		@pass_exceptions = true
+		@trace_children = true
+		super()
+		get_thread_list(@pid).each { |tid| attach_thread(tid) }
+	end
+
+	# recreate all internal state associated to pid
+	def reinit(mem=nil)
+		ptrace.tweak_for_pid
 		@tid = @pid = ptrace.pid
 		@threads = { @tid => :stopped }
 		@cpu = Ia32.new(@ptrace.intsize*8)
@@ -452,12 +462,8 @@ class LinDebugger < Debugger
 		@memory.dbg = self
 		@has_pax = false
 		@continuesignal = 0
-		@pass_exceptions = true
-		@trace_children = true
 		@reg_val_cache = {}
 		@breaking = false
-		super()
-		get_thread_list(@pid).each { |tid| attach_thread(tid) }
 	end
 
 	# we're a 32bit process debugging a 64bit target
@@ -565,6 +571,7 @@ class LinDebugger < Debugger
 					when 'EVENT_EXEC'
 						# XXX clear maps/syms/bpx..
 						# also check if it kills the other threads
+						reinit
 					when 'EVENT_VFORKDONE'
 					end
 					@info = "#@tid trace event #{o}"
