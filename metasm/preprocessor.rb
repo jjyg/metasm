@@ -1161,6 +1161,14 @@ class Preprocessor
 				raise tok if not ntok or ntok.type != :string
 				tok.value = lexer.definition[ntok.raw] ? 1 : 0
 				return
+			elsif tok.type == :string and tok.raw == 'L'
+				ntok = lexer.readtok_nopp
+				if ntok.type == :quoted and ntok.raw[0] == ?'
+					tok.raw << ntok.raw
+					tok.value = (ntok.value + "\0\0").unpack('v')	# XXX endianness
+				else
+					lexer.unreadtok ntok
+				end
 			end
 
 			Expression.parse_num_value(lexer, tok)
