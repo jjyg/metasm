@@ -100,6 +100,12 @@ class InstructionBlock
 	end
 end
 
+class DecodedInstruction
+	def block_head?
+		self == @block.list.first
+	end
+end
+
 class CPU
 	# alias for scripts using older version of metasm
 	def get_backtrace_binding(di) backtrace_binding(di) end
@@ -109,14 +115,25 @@ class Disassembler
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
 	def self.backtrace_maxblocks=(b) ; @@backtrace_maxblocks = b ; end
 
+	# yields every InstructionBlock
 	def each_instructionblock
-		@decoded.each { |addr, di| yield di.block if di.kind_of? DecodedInstruction and di.block.list.first == di }
+		@decoded.each { |addr, di|
+			next if not di.kind_of? DecodedInstruction or not di.block_head?
+			yield di.block
+		}
 	end
 
 	# reads len raw bytes from the mmaped address space
 	def read_raw_data(addr, len)
 		if e = get_section_at(addr)
 			e[0].read(len)
+		end
+	end
+
+	# read a byte at address addr
+	def decode_byte(addr)
+		if e = get_section_at(addr)
+			e[0].decode_imm(:u8, :little)
 		end
 	end
 
@@ -129,12 +146,22 @@ class Disassembler
 	end
 
 	# read a zero-terminated string from addr
-	# if no terminal 0 is found, return the whole 4096 byte buffer
-	def decode_strz(addr)
+	# if no terminal 0 is found, return nil
+	def decode_strz(addr, maxsz=4096)
 		if e = get_section_at(addr)
-			str = e[0].read(4096)
-			str = str[0, str.index(?\0)] if str.index(?\0)
-			str
+			str = e[0].read(maxsz).to_s
+			return if not len = str.index(?\0)
+			str[0, len]
+		end
+	end
+
+	# read a zero-terminated wide string from addr
+	# return nil if no terminal found
+	def decode_wstrz(addr, maxsz=4096)
+		if e = get_section_at(addr)
+			str = e[0].read(maxsz).to_s
+			return if not len = str.unpack('v*').index(0)
+			str[0, 2*len]
 		end
 	end
 
@@ -264,6 +291,58 @@ class Disassembler
 		done
 	end
 	alias function_blocks each_function_block
+
+	# returns a graph of function calls
+	# for each func passed as arg (default: all), return a hash
+	# associating func => [list of subfuncs called]
+	def function_graph(funcs = @function.keys + @entrypoints, ret={})
+		funcs = funcs.map { |f| normalize(f) }.uniq.find_all { |f| @decoded[f] }
+		funcs.each { |f|
+			next if ret[f]
+			ret[f] = []
+			each_function_block(f) { |b|
+				@decoded[b].block.each_to_otherfunc(self) { |sf|
+					ret[f] |= [sf]
+				}
+			}
+		}
+		ret
+	end
+
+	# return the graph of function => subfunction list
+	# recurses from an entrypoint
+	def function_graph_from(addr)
+		addr = normalize(addr)
+		ret = {}
+		osz = ret.length-1
+		while ret.length != osz
+			osz = ret.length
+			function_graph(ret.values.flatten + [addr], ret)
+		end
+		ret
+	end
+
+	# return the graph of function => subfunction list
+	# for which a (sub-sub)function includes addr
+	def function_graph_to(addr)
+		addr = normalize(addr)
+		addr = find_function_start(addr) || addr
+		full = function_graph
+		ret = {}
+		todo = [addr]
+		done = []
+		while a = todo.pop
+			next if done.include? a
+			done << a
+			full.each { |f, sf|
+				next if not sf.include? a
+				ret[f] ||= []
+				ret[f] |= [a]
+				todo << f
+			}
+		end
+		ret
+	end
 
 	# returns info on sections, from @program if supported
 	# returns an array of [name, addr, length, info]
@@ -466,8 +545,8 @@ class Disassembler
 	end
 
 	# takes a graph of decodedinstructions, returns an array of instructions/label equivalent
-	# assume all jump targets have corresponding label in @prog_binding
-	def flatten_graph(entry)
+	# assume all jump targets have a matching label in @prog_binding
+	def flatten_graph(entry, include_subfunc=true)
 		ret = []
 		todo = [normalize(entry)]
 		done = []
@@ -483,7 +562,7 @@ class Disassembler
 
 			b.each_to_otherfunc(self) { |to|
 				to = normalize to
-				todo.unshift to
+				todo.unshift to if include_subfunc
 			}
 			b.each_to_samefunc(self) { |to|
 				to = normalize to

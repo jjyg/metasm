@@ -43,10 +43,6 @@ class DecodedInstruction
 		(@next_addr ||= nil) || (address + @bin_length) if address
 	end
 
-	def block_head?
-		self == @block.list.first
-	end
-
 	def show
 		if block
 			bin = @block.edata.data[@block.edata_ptr+@block_offset, @bin_length].unpack('C*').map { |c| '%02x' % c }.join
@@ -703,7 +699,10 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 	# splits an InstructionBlock, updates the blocks backtracked_for
 	def split_block(block, address=nil)
-		block, address = @decoded[block].block, block if not address
+		if not address	# invoked as split_block(0x401012)
+			return if not @decoded[block].kind_of? DecodedInstruction
+			block, address = @decoded[block].block, block
+		end
 		return block if address == block.address
 		new_b = block.split address
 		new_b.backtracked_for.dup.each { |btt|
