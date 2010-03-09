@@ -316,10 +316,10 @@ static uintptr_t do_callback_handler(uintptr_t arg0, uintptr_t arg1, uintptr_t a
 }
 #endif
 
-extern void printf(int, ...);
+//extern void printf(int, ...);
 int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// to patch before parsing to match the .so name
 {
-printf("lolzor\\n");
+//printf("lolzor\\n");
 	dynldr = rb_const_get(rb_const_get(IMPMOD rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
 	rb_define_singleton_method(dynldr, "memory_read",  memory_read, 2);
 	rb_define_singleton_method(dynldr, "memory_read_int",  memory_read_int, 1);
@@ -494,7 +494,7 @@ EOS
 		@cpu ||=
 		case RUBY_PLATFORM
 		when /i[3-6]86/; Ia32.new
-		when /x86_64/i; X86_64.new
+		when /x86_64|x64/i; X86_64.new
 		else raise LoadError, "Unsupported host platform #{RUBY_PLATFORM}"
 		end
 	end
@@ -513,6 +513,22 @@ EOS
 		{ :linux => ELF, :windows => PE }[host_arch]
 	end
 
+	# parse a C string into the @cp parser, create it if needed
+	def self.parse_c(src)
+		@cp ||= C::Parser.new(host_exe.new(host_cpu))
+		@cp.parse(src)
+	end
+
+	# compile a C fragment into a Shellcode, honors the host ABI
+	def self.compile_c(src)
+		# XXX could we reuse @cp ? (for its macros etc)
+		cp = C::Parser.new(host_exe.new(host_cpu))
+		cp.parse(src)
+		sc = Shellcode.new(host_cpu)
+		asm = host_cpu.new_ccompiler(cp, sc).compile
+		sc.assemble(asm)
+	end
+
 	# retrieve the library where a symbol is to be found (uses AutoImport)
 	def self.lib_from_sym(symname)
 		case host_arch
@@ -529,8 +545,7 @@ EOS
 	# and destroyed afterwards ; use callback_alloc_c to get a callback id with longer life span
 	def self.new_api_c(proto, fromlib=nil)
 		proto += ';'	# allow 'int foo()'
-		@cp ||= host_cpu.new_cparser
-		@cp.parse(proto)
+		parse_c(proto)
 
 		@cp.toplevel.symbol.dup.each_value { |v|
 			next if not v.kind_of? C::Variable	# enums
@@ -637,13 +652,12 @@ EOS
 	# accepts full C functions (with body) (only 1 at a time) or toplevel 'asm' statement
 	def self.callback_alloc_c(proto, &b)
 		proto += ';'	# allow 'int foo()'
-		@cp ||= host_cpu.new_cparser
-		@cp.parse(proto)
+		parse_c(proto)
 		v = @cp.toplevel.symbol.values.find_all { |v_| v_.kind_of? C::Variable and v_.type.kind_of? C::Function }.first
 		if (v and v.initializer) or @cp.toplevel.statements.find { |st| st.kind_of? C::Asm }
 			@cp.toplevel.statements.delete_if { |st| st.kind_of? C::Asm }
 			@cp.toplevel.symbol.delete v.name if v
-			sc = Shellcode.compile_c(host_cpu, proto)
+			sc = compile_c(proto)
 			ptr = memory_alloc(sc.encoded.length)
 			sc.base_addr = ptr
 			# TODO fixup external calls
@@ -685,8 +699,8 @@ EOS
 		if not id = @@callback_addrs.find { |a| not @@callback_table[a] }
 			cb_page = memory_alloc(4096)
 			sc = Shellcode.new(host_cpu, cb_page)
-			case sc.cpu
-			when Ia32
+			case sc.cpu.shortname
+			when 'ia32', 'x64'
 				addr = cb_page
 				nrcb = 128	# TODO should be 4096/5, but the parser/compiler is really too slow
 				nrcb.times {
@@ -707,14 +721,13 @@ EOS
 	# returns the raw pointer to the code page
 	# if given a block, run the block and then undefine all the C functions
 	def self.new_func_c(src)
-		sc = Shellcode.compile_c(host_cpu, src)
+		sc = compile_c(src)
 		ptr = memory_alloc(sc.encoded.length)
 		sc.base_addr = ptr
-		# TODO fixup external calls
+		# TODO fixup external calls - this will need OS ABI compat (eg win64)
 		memory_write ptr, sc.encode_string
 		memory_perm ptr, sc.encoded.length, 'rwx'
-		@cp ||= host_cpu.new_cparser
-		@cp.parse(src)	# XXX the Shellcode parser may have defined stuff / interpreted C another way...
+		parse_c(src)	# XXX the Shellcode parser may have defined stuff / interpreted C another way...
 		defs = []
 		@cp.toplevel.symbol.dup.each_value { |v|
 			next if not v.kind_of? C::Variable
@@ -762,6 +775,7 @@ EOS
 
 	# allocate an AllocStruct to hold a specific struct defined in a previous new_api_c
 	def self.alloc_c_struct(structname, values={})
+		raise "unknown struct #{structname.inspect}" if not @cp
 		struct = @cp.toplevel.struct[structname.to_s]
 		if not struct
 			struct = @cp.toplevel.symbol[structname.to_s]
@@ -796,10 +810,10 @@ EOS
 		pglim = (ptr + 0x1000) & ~0xfff
 		sz = [pglim-ptr, szmax].min
 		data = memory_read(ptr, sz)
-		return data[0, data.index(0)] if data.index(0)
+		return data[0, data.index(?\0)] if data.index(?\0)
 		if sz < szmax
 			data = memory_read(ptr, szmax)
-			data = data[0, data.index(0)] if data.index(0)
+			data = data[0, data.index(?\0)] if data.index(?\0)
 		end
 		data
 	end
@@ -853,9 +867,9 @@ EOS
 #define MEM_LARGE_PAGES  0x20000000     
 #define MEM_4MB_PAGES    0x80000000     
 
-__stdcall int VirtualAlloc(int addr, int size, int type, int prot);
-__stdcall int VirtualFree(int addr, int size, int freetype);
-__stdcall int VirtualProtect(int addr, int size, int prot, int *oldprot);
+__stdcall uintptr_t VirtualAlloc(uintptr_t addr, uintptr_t size, int type, int prot);
+__stdcall uintptr_t VirtualFree(uintptr_t addr, uintptr_t size, int freetype);
+__stdcall uintptr_t VirtualProtect(uintptr_t addr, uintptr_t size, int prot, int *oldprot);
 EOS
 		
 		# allocate some memory suitable for code allocation (ie VirtualAlloc)
@@ -885,9 +899,9 @@ EOS
 #define MAP_PRIVATE 0x2
 #define MAP_ANONYMOUS 0x20
 
-int mmap(int addr, int length, int prot, int flags, int fd, int offset);
-int munmap(int addr, int length);
-int mprotect(int addr, int len, int prot);
+uintptr_t mmap(uintptr_t addr, uintptr_t length, int prot, int flags, uintptr_t fd, uintptr_t offset);
+uintptr_t munmap(uintptr_t addr, uintptr_t length);
+uintptr_t mprotect(uintptr_t addr, uintptr_t len, int prot);
 EOS
 		
 		# allocate some memory suitable for code allocation (ie mmap)
