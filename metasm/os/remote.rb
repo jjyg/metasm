@@ -122,6 +122,7 @@ class GdbClient
 	# rle: build the regexp that will match repetitions of a character, skipping counts leading to invalid char
 	rng = [3..(125-29)]
 	[?+, ?-, ?#, ?$].sort.each { |invalid|
+		invalid = invalid.unpack('C').first if invalid.kind_of? String
 		invalid -= 29
 		rng.each_with_index { |r, i|
 			if r.include? invalid
@@ -145,7 +146,7 @@ class GdbClient
 		}
 	end
 	# decompress rle-encoded data
-	def unrle(buf) buf.gsub(/(.)\*(.)/) { $1 * ($2[0]-28) } end
+	def unrle(buf) buf.gsub(/(.)\*(.)/) { $1 * ($2.unpack('C').first-28) } end
 	# send an integer as a long hex packed with leading 0 stripped
 	def hexl(int) [int].pack('N').unpack('H*').first.gsub(/^0+(.)/, '\1') end
 	# send a binary buffer as a rle hex-encoded
