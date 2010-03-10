@@ -608,6 +608,7 @@ class LinDebugger < Debugger
 	def do_check_target
 		return unless t = ::Process.waitpid(-1, ::Process::WNOHANG)
 		self.tid = t
+		invalidate
 		update_waitpid
 	rescue ::Errno::ECHILD
 		@state = :dead
@@ -616,6 +617,7 @@ class LinDebugger < Debugger
 	def do_wait_target
 		t = ::Process.waitpid(-1)
 		self.tid = t
+		invalidate
 		update_waitpid
 	rescue ::Errno::ECHILD
 		@state = :dead

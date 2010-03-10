@@ -727,7 +727,6 @@ class WinDebugger < Debugger
 	def do_continue(*a)
 		@cpu.dbg_disable_singlestep(self)
 		@dbg.continuedebugevent(@pid, @tid, @continuecode)
-		invalidate
 		@state = :running
 		@info = 'continue'
 	end
@@ -735,7 +734,6 @@ class WinDebugger < Debugger
 	def do_singlestep(*a)
 		@cpu.dbg_enable_singlestep(self)
 		@dbg.continuedebugevent(@pid, @tid, @continuecode)
-		invalidate
 		@state = :running
 		@info = 'singlestep'
 	end
@@ -772,6 +770,7 @@ class WinDebugger < Debugger
 		return if not ev
 		pid, tid, code, info = ev
 		return if pid != @pid
+		invalidate
 		@continuecode = WinAPI::DBG_CONTINUE
 		case code
 		when WinAPI::EXCEPTION_DEBUG_EVENT

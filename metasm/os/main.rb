@@ -350,9 +350,7 @@ class Debugger
 
 	# checks stuff before letting the target run
 	# enables all breakpoints except on pc
-	# invalidates
 	def check_pre_run
-		invalidate
 		addr = pc
 		@breakpoint.each { |a, b|
 			next if a == addr or b.state != :inactive
@@ -364,7 +362,6 @@ class Debugger
 	# fixups pc if break was caused by a software breakpoint
 	# disable all breakpoints
 	def check_post_run(pre_state=nil)
-		invalidate
 		addr = pc
 		@breakpoint.each { |a, b|
 			next if a != addr or b.state != :active

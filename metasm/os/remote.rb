@@ -23,7 +23,6 @@ class GdbClient
 	def gdb_send(cmd, buf='')
 		buf = cmd + buf
 		buf = '$' << buf << '#' << gdb_csum(buf)
-		puts "gdb_send(#{buf[0, 32].inspect}#{'...' if buf.length > 32})" if $DEBUG
 
 		5.times {
 			@io.write buf
@@ -425,12 +424,14 @@ class GdbRemoteDebugger < Debugger
 			@last_check_target = t
 		end
 		return unless i = @gdb.check_target(0.01)
+		invalidate if i[:state] == :stopped and @state != :stopped
 		@state, @info = i[:state], i[:info]
 		@info = nil if @info =~ /TRAP/
 	end
 
 	def do_wait_target
 		return unless i = @gdb.check_target(nil)
+		invalidate if i[:state] == :stopped and @state != :stopped
 		@state, @info = i[:state], i[:info]
 		@info = nil if @info =~ /TRAP/
 	end
