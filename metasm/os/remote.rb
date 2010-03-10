@@ -28,9 +28,7 @@ class GdbClient
 		5.times {
 			@io.write buf
 			loop do
-				if not IO.select([@io], nil, nil, 1)
-					break
-				end
+				break if not IO.select([@io], nil, nil, 0.2)
 				raise Errno::EPIPE if not ack = @io.read(1)
 				case ack
 				when '+'
@@ -38,10 +36,12 @@ class GdbClient
 				when '-'
 					puts "gdb_send: ack neg" if $DEBUG
 					break
-				when nil; return
+				when nil
+					return
 				end
 			end
 		}
+
 		log "send error #{cmd.inspect} (no ack)"
 		false
 	end
@@ -65,6 +65,7 @@ class GdbClient
 		while @recv_ctx
 			return unless IO.select([@io], nil, nil, timeout)
 			raise Errno::EPIPE if not c = @io.read(1)
+
 			case @recv_ctx[:state]
 			when :nosync
 				if c == '$'
@@ -148,7 +149,7 @@ class GdbClient
 	# decompress rle-encoded data
 	def unrle(buf) buf.gsub(/(.)\*(.)/) { $1 * ($2.unpack('C').first-28) } end
 	# send an integer as a long hex packed with leading 0 stripped
-	def hexl(int) @pack_netint[[int]].unpack('H*').first.sub(/^0+/, '') end
+	def hexl(int) @pack_netint[[int]].unpack('H*').first.sub(/^0+(.)/, '\\1') end
 	# send a binary buffer as a rle hex-encoded
 	def hex(buf) buf.unpack('H*').first end
 	# decode an rle hex-encoded buffer
@@ -351,8 +352,9 @@ end
 class GdbRemoteString < VirtualString
 	attr_accessor :gdb
 
-	def initialize(gdb, addr_start=0, length=0xffff_ffff)
+	def initialize(gdb, addr_start=0, length=nil)
 		@gdb = gdb
+		length = 1 << (@gdb.cpu.size rescue 32)
 		@pagelength = 512
 		super(addr_start, length)
 	end
@@ -384,7 +386,7 @@ class GdbRemoteDebugger < Debugger
 		@gdb = GdbClient.new(url, cpu)
 		@gdb.logger = self
 		@cpu = @gdb.cpu
-		@memory = GdbRemoteString.new(@gdb, 0, (1<<@cpu.size)-1)
+		@memory = GdbRemoteString.new(@gdb)
 		@reg_val_cache = {}
 		@regs_dirty = false
 		# when checking target, if no message seen since this much seconds, send a 'status' query
@@ -422,7 +424,7 @@ class GdbRemoteDebugger < Debugger
 			@gdb.io.write '$?#' << @gdb.gdb_csum('?')
 			@last_check_target = t
 		end
-		return unless i = @gdb.check_target(0)
+		return unless i = @gdb.check_target(0.01)
 		@state, @info = i[:state], i[:info]
 		@info = nil if @info =~ /TRAP/
 	end
