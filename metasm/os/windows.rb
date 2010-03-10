@@ -137,6 +137,7 @@ class WinOS < OS
 			@debugger ||= WinDebugger.new(@pid)
 		end
 		def debugger=(d) @debugger = d end
+		def addrsz; 32 ; end
 	end
 
 class << self
@@ -249,6 +250,10 @@ class << self
 		raise "failed to inject shellcode" if not addr = inject_shellcode(target, shellcode)
 		createthread(target, addr)
 	end
+
+	def open_process_handle(h)
+		find_process(WinAPI.getprocessid(h))	# booh
+	end
 end	# class << self
 end
 
@@ -273,8 +278,9 @@ class WindowsRemoteString < VirtualString
 	# returns a virtual string proxying the specified process memory range
 	# reads are cached (4096 aligned bytes read at once)
 	# writes are done directly (if handle has appropriate privileges)
-	def initialize(handle, addr_start=0, length=0xffff_ffff)
+	def initialize(handle, addr_start=0, length=nil)
 		@handle = handle
+		length ||= 1 << (WinOS.open_process_handle(@handle).addrsz rescue 32)
 		super(addr_start, length)
 	end
 

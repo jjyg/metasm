@@ -351,7 +351,7 @@ end
 class LinOS < OS
 	class Process < OS::Process
 		def memory
-			@memory ||= LinuxRemoteString.new(pid, 0, (1<<(8*addrsz))-1)
+			@memory ||= LinuxRemoteString.new(pid)
 		end
 		def memory=(m) @memory = m end
 
@@ -458,7 +458,7 @@ class LinDebugger < Debugger
 		if @cpu.size == 64 and @ptrace.reg_off['EAX']
 			hack_64_32
 		end
-		@memory = mem || LinuxRemoteString.new(@pid, 0, (1<<@cpu.size)-1)
+		@memory = mem || LinuxRemoteString.new(@pid)
 		@memory.dbg = self
 		@has_pax = false
 		@continuesignal = 0
@@ -711,8 +711,6 @@ class LinDebugger < Debugger
 	def check_post_run(*a)
 		@cpu.dbg_check_post_run(self) rescue nil
 		super(*a)
-	rescue
-		p @state
 	end
 
 	def ui_command_setup(ui)
@@ -751,8 +749,9 @@ class LinuxRemoteString < VirtualString
 	# returns a virtual string proxying the specified process memory range
 	# reads are cached (4096 aligned bytes read at once), from /proc/pid/mem
 	# writes are done directly by ptrace
-	def initialize(pid, addr_start=0, length=0xffff_ffff, dbg=nil)
+	def initialize(pid, addr_start=0, length=nil, dbg=nil)
 		@pid = pid
+		length ||= 1 << (LinOS.open_process(@pid).addrsz rescue 32)
 		@readfd = File.open("/proc/#@pid/mem", 'rb') rescue nil
 		@dbg = dbg if dbg
 		@invalid_addr = false
