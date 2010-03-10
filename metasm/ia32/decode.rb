@@ -666,7 +666,8 @@ class Ia32
 		# include the symbolic dest for backtrack stuff
 		ret = [Expression[mrm.symbolic(di)]]
 		i = mrm.i
-		if di.block.list.length == 2 and di.block.list[0].opcode.name =~ /^mov/ and di.block.list[0].instruction.args[0].symbolic == i.symbolic
+		if di.block.list.length == 2 and di.block.list[0].opcode.name =~ /^mov/ and a0 = di.block.list[0].instruction.args[0] and
+				a0.respond_to? :symbolic and a0.symbolic == i.symbolic
 			i = di.block.list[0].instruction.args[1]
 		end
 		pb = di.block.from_normal.to_a
