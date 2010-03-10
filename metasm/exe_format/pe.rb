@@ -137,8 +137,9 @@ EOMZSTUB
 		elsif @sections.find { |s| s.encoded.export['DllEntryPoint'] }
 			@optheader.entrypoint = 'DllEntryPoint'
 		elsif @sections.find { |s| s.encoded.export['DllMain'] }
-			compile_c case @cpu.shortname
-			when 'ia32'; <<EOS
+			case @cpu.shortname
+			when 'ia32'
+				compile_c <<EOS
 enum { DLL_PROCESS_DETACH, DLL_PROCESS_ATTACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH, DLL_PROCESS_VERIFIER };
 __stdcall int DllMain(void *handle, unsigned long reason, void *reserved);
 __stdcall int DllEntryPoint(void *handle, unsigned long reason, void *reserved) {
@@ -153,8 +154,9 @@ EOS
 				@optheader.entrypoint = 'DllMain'
 			end
 		elsif @sections.find { |s| s.encoded.export['WinMain'] }
-			compile_c case @cpu.shortname
-			when 'ia32'; <<EOS
+			case @cpu.shortname
+			when 'ia32'
+				compile_c <<EOS
 #define GetCommandLine GetCommandLineA
 #define GetModuleHandle GetModuleHandleA
 #define GetStartupInfo GetStartupInfoA
