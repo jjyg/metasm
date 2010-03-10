@@ -10,8 +10,8 @@ require 'socket'
 module Metasm
 # lowlevel interface to the gdbserver protocol
 class GdbClient
-	# XXX x64/other arch
-	GDBREGS = %w[eax ecx edx ebx esp ebp esi edi eip eflags cs ss ds es fs gs].map { |r| r.to_sym }	# XXX [77] = 'orig_eax'
+	GDBREGS_IA32 = %w[eax ecx edx ebx esp ebp esi edi eip eflags cs ss ds es fs gs].map { |r| r.to_sym }	# XXX [77] = 'orig_eax'
+	GDBREGS_X64 = %w[rax rbx rcx rdx rsi rdi rbp rsp r8 r9 r10 r11 r12 r13 r14 r15 rip rflags cs ss ds es fs gs].map { |r| r.to_sym }
 
 	# compute the hex checksum used in gdb protocol
 	def gdb_csum(buf)
@@ -148,7 +148,7 @@ class GdbClient
 	# decompress rle-encoded data
 	def unrle(buf) buf.gsub(/(.)\*(.)/) { $1 * ($2.unpack('C').first-28) } end
 	# send an integer as a long hex packed with leading 0 stripped
-	def hexl(int) [int].pack('N').unpack('H*').first.gsub(/^0+(.)/, '\1') end
+	def hexl(int) @pack_netint[[int]].unpack('H*').first.sub(/^0+/, '') end
 	# send a binary buffer as a rle hex-encoded
 	def hex(buf) buf.unpack('H*').first end
 	# decode an rle hex-encoded buffer
@@ -162,24 +162,25 @@ class GdbClient
 	def read_regs
 		if buf = gdb_msg('g')
 			regs = unhex(unrle(buf))
-			if regs.length < GDBREGS.length*4
+			p @unpack_int[regs].map { |v| '%x' % v } if $DEBUG
+			if regs.length < @regmsgsize
 				# retry once, was probably a response to something else
 				puts "bad regs size!" if $DEBUG
 				buf = gdb_msg('g')
 				regs = unhex(unrle(buf)) if buf
-				if not buf or regs.length < GDBREGS.length*4
+				if not buf or regs.length < @regmsgsize
 					raise "regs buffer recv is too short !"
 				end
 			end
-			Hash[*GDBREGS.zip(regs.unpack('L*')).flatten]
+			Hash[*@gdbregs.zip(@unpack_int[regs]).flatten]
 		end
 	end
 
 	# send the reg values
 	def send_regs(r = {})
 		return if r.empty?
-		regs = r.values_at(*GDBREGS)
-		gdb_msg('G', hex(regs.pack('L*')))
+		regs = r.values_at(*@gdbregs)
+		gdb_msg('G', hex(@pack_int[regs]))
 	end
 
 	# read memory (small blocks prefered)
@@ -222,12 +223,18 @@ class GdbClient
 		gdb_msg('qRcmd,' + hex(cmd))
 	end
 
-	attr_accessor :io
-	def initialize(io)
+	attr_accessor :io, :cpu, :gdbregs
+	def initialize(io, cpu='Ia32')
+		cpu = Metasm.const_get(cpu).new if cpu.kind_of? String
+		raise 'unknown cpu' if not cpu.kind_of? CPU
+		setup_arch(cpu)
+		@cpu = cpu
+
 		case io
 		when IO; @io = io
-		when /^udp:([^:]*):(\d+)$/; @io = UDPSocket.new ; @io.connect($1, $2)
-		when /^(?:tcp:)?([^:]*):(\d+)$/; @io = TCPSocket.open($1, $2)
+		when /^udp:(.*):(.*?)$/i; @io = UDPSocket.new ; @io.connect($1, $2)
+		when /^(?:tcp:)?(.*):(.*?)$/i; @io = TCPSocket.open($1, $2)	# XXX matches C:\fail
+		# TODO pipe, serial port, etc ; also check ipv6
 		else raise "unknown target #{io.inspect}"
 		end
 
@@ -260,7 +267,7 @@ class GdbClient
 	def request_symbol(name)
 		resp = gdb_msg('qSymbol:', hex(name))
 		if resp and a = resp.split(':')[1]
-			unhex(a).unpack('N').first
+			@unpack_netint[unhex(a)].first
 		end
 	end
 
@@ -285,6 +292,58 @@ class GdbClient
 		return if quiet
 		@logger ||= $stdout
 		@logger.puts s
+	end
+
+
+	# setup the various function used to pack ints & the reg list
+	# according to a target CPU
+	def setup_arch(cpu)
+		case cpu.shortname
+		when 'ia32'
+			@gdbregs = GDBREGS_IA32
+			@regmsgsize = 4 * @gdbregs.length
+		when 'x64'
+			@gdbregs = GDBREGS_X64
+			@regmsgsize = 8 * @gdbregs.length
+		else
+			# we can still use readmem/kill and other generic commands
+			# XXX serverside setregs may fail if we give an incorrect regbuf size
+			puts "unsupported GdbServer CPU #{cpu.shortname}"
+			@gdbregs = [*0..32].map { |i| "r#{i}".to_sym }
+			@regmsgsize = 0
+		end
+
+		# yay life !
+		# do as if cpu is littleendian, fixup at the end
+		case cpu.size
+		when 16
+			@pack_netint   = lambda { |i| i.pack('n*') }
+			@unpack_netint = lambda { |s| s.unpack('n*') }
+			@pack_int   = lambda { |i| i.pack('v*') }
+			@unpack_int = lambda { |s| s.unpack('v*') }
+		when 32
+			@pack_netint   = lambda { |i| i.pack('N*') }
+			@unpack_netint = lambda { |s| s.unpack('N*') }
+			@pack_int   = lambda { |i| i.pack('V*') }
+			@unpack_int = lambda { |s| s.unpack('V*') }
+		when 64
+			bswap = lambda { |s| s.scan(/.{8}/m).map { |ss| ss.reverse }.join }
+			@pack_netint   = lambda { |i| i.pack('Q*') }
+			@unpack_netint = lambda { |s| s.unpack('Q*') }
+			@pack_int   = lambda { |i| bswap[i.pack('Q*')] }
+			@unpack_int = lambda { |s| bswap[s].unpack('Q*') }
+			if [1].pack('Q')[0] == ?\1	# ruby interpreter littleendian
+				@pack_netint, @pack_int = @pack_int, @pack_netint
+				@unpack_netint, @unpack_int = @unpack_int, @unpack_netint
+			end
+		else raise "GdbServer: unsupported cpu size #{cpu.size}"
+		end
+
+		# if target cpu is bigendian, use netint everywhere
+		if cpu.endianness == :big
+			@pack_int   = @pack_netint
+			@unpack_int = @unpack_netint
+		end
 	end
 end
 
@@ -321,12 +380,11 @@ end
 # this class implements a high-level API using the gdb-server network debugging protocol
 class GdbRemoteDebugger < Debugger
 	attr_accessor :gdb, :check_target_timeout
-	def initialize(url, mem=nil)
-		@gdb = GdbClient.new(url)
+	def initialize(url, cpu='Ia32')
+		@gdb = GdbClient.new(url, cpu)
 		@gdb.logger = self
-		# TODO get current cpu
-		@cpu = Ia32.new
-		@memory = mem || GdbRemoteString.new(@gdb)
+		@cpu = @gdb.cpu
+		@memory = GdbRemoteString.new(@gdb, 0, (1<<@cpu.size)-1)
 		@reg_val_cache = {}
 		@regs_dirty = false
 		# when checking target, if no message seen since this much seconds, send a 'status' query

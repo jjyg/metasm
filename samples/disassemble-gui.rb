@@ -60,7 +60,7 @@ when /^live:(.*)/
 	w = Metasm::Gui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path rescue nil} - metasm debugger")
 	dbg = w.dbg_widget.dbg
 when /^(tcp:|udp:)?..+:/
-	dbg = Metasm::GdbRemoteDebugger.new(exename)
+	dbg = Metasm::GdbRemoteDebugger.new(exename, opts[:sc_cpu])
 	w = Metasm::Gui::DbgWindow.new(dbg, "remote - metasm debugger")
 else
 	w = Metasm::Gui::DasmWindow.new("#{exename + ' - ' if exename}metasm disassembler")
