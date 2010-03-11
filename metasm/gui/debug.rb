@@ -21,17 +21,19 @@ class DbgWidget < ContainerVBoxWidget
 
 
 		@regs = DbgRegWidget.new(dbg, self)
-		@code = DisasmWidget.new(dbg.disassembler)
 		@mem  = DisasmWidget.new(dbg.disassembler)
+		@code = DisasmWidget.new(dbg.disassembler)	# after mem so that dasm.gui == @code
 		@console = DbgConsoleWidget.new(dbg, self)
 		@code.parent_widget = self
 		@mem.parent_widget = self
 		@dbg.disassembler.disassemble_fast(@dbg.pc)
 
+		oldcb = @code.bg_color_callback
 		@code.bg_color_callback = lambda { |a|
 			if a == @dbg.pc
 				'f88'
 				# TODO breakpoints & stuff
+			elsif oldcb; oldcb[a]
 			end
 		}
 		# TODO popup menu, set bp, goto here, show arg in memdump..
@@ -365,6 +367,7 @@ class DbgConsoleWidget < DrawableWidget
 	def initialize_widget(dbg, parent_widget)
 		@dbg = dbg
 		@parent_widget = parent_widget
+		@dbg.gui = self
 
 		@log = []
 		@log_length = 4000
