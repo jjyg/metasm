@@ -757,8 +757,8 @@ class WinDebugger < Debugger
 
 	def kill(*a)
 		WinAPI.terminateprocess(@dbg.hprocess[@pid], 0)
-		@state = :dead
-		@info = 'killed'
+		#@state = :dead		# dont mark it dead while the process exists
+		#@info = 'killed'
 	end
 
 	def check_post_run(*a)
