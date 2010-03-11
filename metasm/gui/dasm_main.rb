@@ -63,7 +63,6 @@ class DisasmWidget < ContainerChoiceWidget
 
 	def terminate
 		@clones.delete self
-		@idle_handle = nil if @clones.empty?
 	end
 
 	# returns the address of the item under the cursor in current view
@@ -179,14 +178,14 @@ class DisasmWidget < ContainerChoiceWidget
 	# add/change a comment @addr
 	def add_comment(addr)
 		cmt = @dasm.comment[addr].to_a.join(' ')
-		if @dasm.decoded[addr].kind_of? DecodedInstruction
-			cmt += @dasm.decoded[addr].comment.to_a.join(' ')
+		if di = @dasm.di_at(addr)
+			cmt += di.comment.to_a.join(' ')
 		end
 		inputbox("new comment for #{Expression[addr]}", :text => cmt) { |c|
 			c = c.split("\n")
 			c = nil if c == []
-			if @dasm.decoded[addr].kind_of? DecodedInstruction
-				@dasm.decoded[addr].comment = c
+			if di = @dasm.di_at(addr)
+				di.comment = c
 			else
 				@dasm.comment[addr] = c
 			end
@@ -197,7 +196,7 @@ class DisasmWidget < ContainerChoiceWidget
 	# disassemble from this point
 	# if points to a call, make it return
 	def disassemble(addr)
-		if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction and di.opcode.props[:saveip]
+		if di = @dasm.di_at(addr) and di.opcode.props[:saveip]
 			di.block.each_to_normal { |t|
 				t = @dasm.normalize t
 				next if not @dasm.decoded[t]
@@ -225,7 +224,7 @@ class DisasmWidget < ContainerChoiceWidget
 
 	# (re)decompile
 	def decompile(addr)
-		if @dasm.c_parser and var = @dasm.c_parser.toplevel.symbol[addr] and (var.type.kind_of? C::Function or @dasm.decoded[@dasm.normalize(addr)].kind_of? DecodedInstruction)
+		if @dasm.c_parser and var = @dasm.c_parser.toplevel.symbol[addr] and (var.type.kind_of? C::Function or @dasm.di_at(addr))
 			@dasm.decompiler.redecompile(addr)
 			widget(:decompile).curaddr = nil
 		end
@@ -246,7 +245,7 @@ class DisasmWidget < ContainerChoiceWidget
 		list = [['name', 'addr']]
 		@dasm.function.keys.each { |f|
 			addr = @dasm.normalize(f)
-			next if not @dasm.decoded[addr]
+			next if not @dasm.di_at(addr)
 			list << [@dasm.get_label_at(addr), Expression[addr]]
 		}
 		title = "list of functions"
@@ -274,7 +273,7 @@ class DisasmWidget < ContainerChoiceWidget
 		@dasm.each_xref(addr) { |xr|
 			next if not xr.origin
 			list << [Expression[xr.origin], "#{xr.type}#{xr.len}"]
-			if di = @dasm.decoded[xr.origin] and di.kind_of? DecodedInstruction
+			if di = @dasm.di_at(xr.origin)
 				list.last << di.instruction
 			end
 		}
@@ -395,7 +394,7 @@ class DisasmWidget < ContainerChoiceWidget
 			inputbox("label name for #{Expression[addr]}", :text => Expression[addr]) { |v|
 				next if v == ''
 				@dasm.set_label_at(addr, v)
-				if di = @dasm.decoded[addr] and di.kind_of? DecodedInstruction
+				if di = @dasm.di_at(addr)
 					@dasm.split_block(di.block, di.address)
 				end
 				gui_update

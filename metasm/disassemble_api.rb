@@ -115,6 +115,12 @@ class Disassembler
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
 	def self.backtrace_maxblocks=(b) ; @@backtrace_maxblocks = b ; end
 
+	# returns the DecodedInstruction at addr if it exists
+	def di_at(addr)
+		di = @decoded[addr] || @decoded[normalize(addr)]
+		di if di.kind_of? DecodedInstruction
+	end
+
 	# yields every InstructionBlock
 	def each_instructionblock
 		@decoded.each { |addr, di|
@@ -278,9 +284,7 @@ class Disassembler
 		todo = [addr]
 		done = []
 		while a = todo.pop
-			a = normalize(a)
-			di = @decoded[a]
-			next if not di.kind_of? DecodedInstruction
+			next if not di = di_at(a)
 			a = di.block.address
 			next if done.include? a
 			done << a
@@ -380,8 +384,8 @@ class Disassembler
 	# 'by' may be empty
 	# returns the block containing the new instrs (nil if empty)
 	def replace_instrs(from, to, by)
-		raise 'bad from' if not fdi = @decoded[from] or not fdi.kind_of? DecodedInstruction or not fdi.block.list.index(fdi)
-		raise 'bad to' if not tdi = @decoded[to] or not tdi.kind_of? DecodedInstruction or not tdi.block.list.index(tdi)
+		raise 'bad from' if not fdi = di_at(from) or not fdi.block.list.index(fdi)
+		raise 'bad to' if not tdi = di_at(to) or not tdi.block.list.index(tdi)
 
 		# create DecodedInstruction from Instructions in 'by' if needed
 		split_block(fdi.block, fdi.address)
@@ -412,7 +416,7 @@ class Disassembler
 		tb.list.clear
 		by.each { |di| fb.add_di di }
 		by.each_with_index { |di, i|
-			if odi = @decoded[di.address] and odi.kind_of? DecodedInstruction
+			if odi = di_at(di.address)
 				# collision, hopefully with another deobfuscation run ?
 				if by[i..-1].all? { |mydi| mydi.to_s == @decoded[mydi.address].to_s }
 					puts "replace_instrs: merge at  #{di}" if $DEBUG
@@ -441,22 +445,22 @@ class Disassembler
 		fb.to_normal = tb.to_normal
 		fb.to_normal.to_a.each { |newto|
 			# other paths may already point to newto, we must only update the relevant entry
-			if @decoded[newto].kind_of? DecodedInstruction and idx = @decoded[newto].block.from_normal.to_a.index(to)
+			if ndi = di_at(newto) and idx = ndi.block.from_normal.to_a.index(to)
 				if by.empty?
-					@decoded[newto].block.from_normal[idx,1] = fb.from_normal.to_a
+					ndi.block.from_normal[idx,1] = fb.from_normal.to_a
 				else
-					@decoded[newto].block.from_normal[idx] = fb.list.last.address
+					ndi.block.from_normal[idx] = fb.list.last.address
 				end
 			end
 		}
 
 		fb.to_subfuncret = tb.to_subfuncret
 		fb.to_subfuncret.to_a.each { |newto|
-			if @decoded[newto].kind_of? DecodedInstruction and idx = @decoded[newto].block.from_subfuncret.to_a.index(to)
+			if ndi = di_at(newto) and idx = ndi.block.from_subfuncret.to_a.index(to)
 				if by.empty?
-					@decoded[newto].block.from_subfuncret[idx,1] = fb.from_subfuncret.to_a
+					ndi.block.from_subfuncret[idx,1] = fb.from_subfuncret.to_a
 				else
-					@decoded[newto].block.from_subfuncret[idx] = fb.list.last.address
+					ndi.block.from_subfuncret[idx] = fb.list.last.address
 				end
 			end
 		}
@@ -473,19 +477,19 @@ class Disassembler
 				}
 			end
 			fb.from_normal.to_a.each { |newfrom|
-				if @decoded[newfrom].kind_of? DecodedInstruction and idx = @decoded[newfrom].block.to_normal.to_a.index(from)
-					@decoded[newfrom].block.to_normal[idx..idx] = tolist
+				if ndi = di_at(newfrom) and idx = ndi.block.to_normal.to_a.index(from)
+					ndi.block.to_normal[idx..idx] = tolist
 				end
 			}
 			fb.from_subfuncret.to_a.each { |newfrom|
-				if @decoded[newfrom].kind_of? DecodedInstruction and idx = @decoded[newfrom].block.to_subfuncret.to_a.index(from)
-					@decoded[newfrom].block.to_subfuncret[idx..idx] = tolist
+				if ndi = di_at(newfrom) and idx = ndi.block.to_subfuncret.to_a.index(from)
+					ndi.block.to_subfuncret[idx..idx] = tolist
 				end
 			}
 		else
 			# merge with adjacent blocks
-			merge_blocks(fb, fb.to_normal.first) if fb.to_normal.to_a.length == 1 and @decoded[fb.to_normal.first].kind_of? DecodedInstruction
-			merge_blocks(fb.from_normal.first, fb) if fb.from_normal.to_a.length == 1 and @decoded[fb.from_normal.first].kind_of? DecodedInstruction
+			merge_blocks(fb, fb.to_normal.first) if fb.to_normal.to_a.length == 1 and di_at(fb.to_normal.first)
+			merge_blocks(fb.from_normal.first, fb) if fb.from_normal.to_a.length == 1 and di_at(fb.from_normal.first)
 		end
 
 		fb if not by.empty?
@@ -493,15 +497,15 @@ class Disassembler
 
 	# undefine a sequence of decodedinstructions from an address, stops at first non-linear branch
 	def undefine_from(addr)
-		return if not @decoded[addr].kind_of? DecodedInstruction
+		return if not di_at(addr)
 		@comment.delete addr if @function.delete addr
 		split_block(addr)
 		addrs = []
-		while di = @decoded[addr] and di.kind_of? DecodedInstruction
+		while di = di_at(addr)
 			di.block.list.each { |ddi| addrs << ddi.address }
 			break if di.block.to_subfuncret.to_a != [] or di.block.to_normal.to_a.length != 1
 			addr = di.block.to_normal.first
-			break if @decoded[addr].kind_of? DecodedInstruction and @decoded[addr].block.from_normal.to_a.length != 1
+			break if ndi = di_at(addr) and ndi.block.from_normal.to_a.length != 1
 		end
 		addrs.each { |a| @decoded.delete a }
 		@xrefs.delete_if { |a, x|
@@ -519,11 +523,11 @@ class Disassembler
 	# returns true if merged
 	def merge_blocks(b1, b2, allow_nonadjacent = false)
 		if b1 and not b1.kind_of? InstructionBlock
-			return if not @decoded[b1].kind_of? DecodedInstruction
+			return if not di_at(b1)
 			b1 = @decoded[b1].block 
 		end
  		if b2 and not b2.kind_of? InstructionBlock
- 			return if not @decoded[b2].kind_of? DecodedInstruction
+ 			return if not di_at(b2)
 			b2 = @decoded[b2].block
 		end
 		if b1 and b2 and (allow_nonadjacent or b1.list.last.next_addr == b2.address) and
@@ -553,7 +557,7 @@ class Disassembler
 		label = {}
 		inv_binding = @prog_binding.invert
 		while addr = todo.pop
-			next if done.include? addr or not @decoded[addr].kind_of? DecodedInstruction
+			next if done.include? addr or not di_at(addr)
 			done << addr
 			b = @decoded[addr].block
 
@@ -572,7 +576,7 @@ class Disassembler
 			if not di = b.list[-1-@cpu.delay_slot] or not di.opcode.props[:stopexec] or di.opcode.props[:saveip]
 				to = b.list.last.next_addr
 				if todo.include? to
-					if done.include? to or not @decoded[to].kind_of? DecodedInstruction
+					if done.include? to or not di_at(to)
 						if not to_l = inv_binding[to]
 							to_l = auto_label_at(to, 'loc')
 							if done.include? to and idx = ret.index(@decoded[to].block.list.first.instruction)
@@ -624,7 +628,7 @@ class Disassembler
 	# exports the addr => symbol map (see load_map)
 	def save_map
 		@prog_binding.map { |l, o|
-			type = @decoded[o].kind_of?(DecodedInstruction) ? 'c' : 'd'	# XXX
+			type = di_at(o) ? 'c' : 'd'	# XXX
 			o = o.to_s(16).rjust(8, '0') if o.kind_of? ::Integer
 			"#{o} #{type} #{l}"
 		}
@@ -696,7 +700,7 @@ class Disassembler
 		fd.puts "comment #{t.length}", t
 
 		bl = @decoded.values.map { |d|
-			d.block if d.kind_of? DecodedInstruction and d.address == d.block.address
+			d.block if d.kind_of? DecodedInstruction and d.block_head?
 		}.compact
 		t = bl.map { |b|
 			[Expression[b.address],
@@ -972,22 +976,21 @@ class Disassembler
 	def fix_noreturn(o)
 		each_xref(o, :x) { |a|
 			a = normalize(a.origin)
-			next if not @decoded[a].kind_of? DecodedInstruction or not @decoded[a].opcode.props[:saveip]
+			next if not di = di_at(a) or not di.opcode.props[:saveip]
 			# XXX should check if caller also becomes __noreturn
-			@decoded[a].block.each_to_subfuncret { |to|
-				to = normalize(to)
-				next if not @decoded[to].kind_of? DecodedInstruction or not @decoded[to].block.from_subfuncret
-				@decoded[to].block.from_subfuncret.delete_if { |aa| normalize(aa) == a }
-				@decoded[to].block.from_subfuncret = nil if @decoded[to].block.from_subfuncret.empty?
+			di.block.each_to_subfuncret { |to|
+				next if not tdi = di_at(to) or not tdi.block.from_subfuncret
+				tdi.block.from_subfuncret.delete_if { |aa| normalize(aa) == di.address }
+				tdi.block.from_subfuncret = nil if tdi.block.from_subfuncret.empty?
 			}
-			@decoded[a].block.to_subfuncret = nil
+			di.block.to_subfuncret = nil
 		}
 	end
 
 	# find the addresses of calls calling the address, handles thunks
 	def call_sites(funcaddr)
 		find_call_site = proc { |a|
-			until not di = @decoded[a] or not di.kind_of? DecodedInstruction
+			until not di = di_at(a)
 				if di.opcode.props[:saveip]
 					cs = di.address
 					break
@@ -995,7 +998,7 @@ class Disassembler
 				if di.block.from_subfuncret.to_a.first
 					while di.block.from_subfuncret.to_a.length == 1
 						a = di.block.from_subfuncret[0]
-						break if not @decoded[a].kind_of? DecodedInstruction
+						break if not di_at(a)
 						a = @decoded[a].block.list.first.address
 						di = @decoded[a]
 					end

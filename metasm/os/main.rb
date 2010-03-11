@@ -440,7 +440,7 @@ class Debugger
 
 	# decode the Instruction at the address
 	def di_at(addr)
-		if not di = @disassembler.decoded[addr]
+		if not di = @disassembler.di_at(addr)
 			return if not s = @disassembler.get_section_at(addr)
 			di = @cpu.decode_instruction(s[0], addr)
 		end
