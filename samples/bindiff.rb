@@ -157,7 +157,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 	def create_funcs(dasm)
 		f = {}
 		dasm.function.each_key { |a|
-			next if not dasm.decoded[a].kind_of? DecodedInstruction
+			next if not dasm.di_at(a)
 			f[a] = create_func(dasm, a)
 			Gui.main_iter
 		}
@@ -171,7 +171,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 			next if h[a]
 			h[a] = []
 			dasm.decoded[a].block.each_to_samefunc(dasm) { |ta|
-				next if not dasm.decoded[ta].kind_of? DecodedInstruction
+				next if not dasm.di_at(ta)
 				todo << ta
 				h[a] << ta
 			}

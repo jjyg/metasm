@@ -778,7 +778,7 @@ class DbgConsoleWidget < DrawableWidget
 			addr = solve_expr(arg)
 			dasm.disassemble_fast(addr)
 			dasm.each_function_block(addr).sort.each { |a|
-				next if not di = dasm.decoded[dasm.normalize(a)] or not di.kind_of? DecodedInstruction
+				next if not di = dasm.di_at(a)
 				dasm.dump_block(di.block) { |l| add_log l }
 			}
 			p.gui_update

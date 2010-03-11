@@ -90,7 +90,7 @@ def self.emu(dasm, addr)
 
 	writer = nil
 	dasm.each_xref(addr, :w) { |xr| writer = xr.origin }
-	return if not dasm.decoded[writer].kind_of? Metasm::DecodedInstruction
+	return if not dasm.di_at(writer)
 
 	a_pre, a_entry, a_cond, a_out, loop_bd = find_loop(dasm, writer)
 	return if not a_pre

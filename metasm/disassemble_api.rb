@@ -117,7 +117,7 @@ class Disassembler
 
 	# returns the DecodedInstruction at addr if it exists
 	def di_at(addr)
-		di = @decoded[addr] || @decoded[normalize(addr)]
+		di = @decoded[addr] || @decoded[normalize(addr)] if addr
 		di if di.kind_of? DecodedInstruction
 	end
 

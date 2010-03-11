@@ -231,9 +231,9 @@ class AsmListingWidget < DrawableWidget
 		a = current_address
 		if not @dasm.get_section_at(a)
 			a = @dasm.sections.map { |k, e| k }.find_all { |k| k > a }.min
-		elsif @dasm.decoded[a].kind_of? DecodedInstruction
-			while @dasm.decoded[a].kind_of? DecodedInstruction
-				a = @dasm.decoded[a].block.list.last.next_addr
+		elsif @dasm.di_at(a)
+			while di = @dasm.di_at(a)
+				a = di.block.list.last.next_addr
 			end
 		else
 			a = @dasm.decoded.keys.find_all { |k| k > a }.min
@@ -247,9 +247,9 @@ class AsmListingWidget < DrawableWidget
 		if not @dasm.get_section_at(a)
 			a = @dasm.sections.map { |k, e| k }.find_all { |k| k < a }.max
 			a += @dasm.get_section_at(a)[0].length - 1 if a
-		elsif @dasm.decoded[a].kind_of? DecodedInstruction
-			while @dasm.decoded[a].kind_of? DecodedInstruction
-				a = @dasm.decoded[a].block.list.first.address
+		elsif @dasm.di_at(a)
+			while di = @dasm.di_at(a)
+				a = di.block.list.first.address
 				if off = (1..16).find { |off_|
 						@dasm.decoded[a-off_].kind_of? DecodedInstruction and
 						@dasm.decoded[a-off_].next_addr == a }
@@ -409,7 +409,7 @@ class AsmListingWidget < DrawableWidget
 		}
 
 		while line < w_h
-			if di = @dasm.decoded[curaddr] and di.kind_of? DecodedInstruction
+			if di = @dasm.di_at(curaddr)
 				if di.block_head?
 					# render dump_block_header, add a few colors
 					b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
@@ -422,7 +422,7 @@ class AsmListingWidget < DrawableWidget
 					# ary
 					di.block.each_from_samefunc(@dasm) { |addr|
 						addr = @dasm.normalize addr
-						next if not addr.kind_of? ::Integer or (@dasm.decoded[addr].kind_of? DecodedInstruction and @dasm.decoded[addr].next_addr == curaddr)
+						next if not addr.kind_of? ::Integer or (ndi = @dasm.di_at(addr) and ndi.next_addr == curaddr)
 						arrows_addr << [addr, curaddr]
 					}
 				end

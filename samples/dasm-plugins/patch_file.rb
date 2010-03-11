@@ -63,10 +63,8 @@ def patch_instrs(addr, asmsrc)
 
 	# clear what we had in the rewritten space
 	raw.length.times { |rawoff|
-		next if not di = @decoded[addr+rawoff]
-		if di.kind_of? DecodedInstruction
-			di.block.list.each { |ldi| @decoded.delete ldi.address }
-		end
+		next if not di = di_at(addr+rawoff)
+		di.block.list.each { |ldi| @decoded.delete ldi.address }
 	}
 
 	disassemble_fast(addr) if b

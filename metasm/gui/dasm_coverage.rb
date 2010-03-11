@@ -180,8 +180,7 @@ class CoverageWidget < DrawableWidget
 			acc = []
 			# stuff with addr-section_addr is to handle non-numeric section addrs (eg elf ET_REL)
 			@dasm.decoded.keys.map { |da| da-a rescue nil }.grep(Integer).grep(0..l).sort.each { |o|
-				da = @dasm.decoded[a+o]
-				next if not da.kind_of? DecodedInstruction
+				next if not da = @dasm.di_at(a+o)
 				oe = o + da.bin_length
 				if acc[-1] and acc[-1][1] >= o
 					# handle di overlapping

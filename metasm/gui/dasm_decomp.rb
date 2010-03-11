@@ -276,10 +276,9 @@ class CdecompListingWidget < DrawableWidget
 		done = []
 		ep = @dasm.entrypoints.to_a.inject({}) { |h, e| h.update @dasm.normalize(e) => true }
 		while addr = todo.pop
-			addr = @dasm.normalize(addr)
-			next if not @dasm.decoded[addr].kind_of? DecodedInstruction
-			addr = @dasm.decoded[addr].block.address
-			next if done.include?(addr) or not @dasm.decoded[addr].kind_of? DecodedInstruction
+			next if not di = @dasm.di_at(addr)
+			addr = di.block.address
+			next if done.include?(addr) or not di_at(addr)
 			done << addr
 			break if @dasm.function[addr] or ep[addr]
 			empty = true

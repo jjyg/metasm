@@ -300,8 +300,7 @@ class Decompiler
 		todo = [entry]
 		while a = todo.pop
 			next if blocks.find { |aa, at| aa == a }
-			next if not di = @dasm.decoded[a]
-			next if not di.kind_of? DecodedInstruction
+			next if not di = @dasm.di_at(a)
 			blocks << [a, []]
 			di.block.each_to { |ta, type|
 				next if type == :indirect

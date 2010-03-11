@@ -10,7 +10,7 @@ if gui
 
 	obg = gui.bg_color_callback	# chain old callback
 	gui.bg_color_callback = lambda { |a|
-		if di = decoded[a] and di.kind_of? DecodedInstruction and col = @gui_opcode_color[di.opcode.name]
+		if di = di_at(a) and col = @gui_opcode_color[di.opcode.name]
 			col
 		else
 			obg[a] if obg

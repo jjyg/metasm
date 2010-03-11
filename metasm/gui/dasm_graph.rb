@@ -839,11 +839,11 @@ class GraphViewWidget < DrawableWidget
 			a = @dasm.normalize a
 			next if done.include? a
 			done << a
-			next if not di = @dasm.decoded[a] or not di.kind_of? DecodedInstruction
+			next if not di = @dasm.di_at(a)
 			block_rel[a] = []
 			di.block.each_to_samefunc(@dasm) { |t|
 				t = @dasm.normalize t
-				next if not @dasm.decoded[t].kind_of? DecodedInstruction
+				next if not @dasm.di_at(t)
 				todo << t
 				block_rel[a] << t
 			}
@@ -853,7 +853,7 @@ class GraphViewWidget < DrawableWidget
 		# populate boxes
 		addr2box = {}
 		todo = ctx.root_addrs.dup
-		todo.delete_if { |t| not @dasm.decoded[t].kind_of? DecodedInstruction }	# undefined func start
+		todo.delete_if { |t| not @dasm.di_at(t) }	# undefined func start
 		done = []
 		while a = todo.shift
 			next if done.include? a
@@ -901,7 +901,7 @@ class GraphViewWidget < DrawableWidget
 			}
 			b[:addresses].each { |addr|
 				curaddr = addr
-				if di = @dasm.decoded[curaddr] and di.kind_of? DecodedInstruction
+				if di = @dasm.di_at(curaddr)
 					if di.block_head?
 						# render dump_block_header, add a few colors
 						b_header = '' ; @dasm.dump_block_header(di.block) { |l| b_header << l ; b_header << ?\n if b_header[-1] != ?\n }
@@ -1150,8 +1150,8 @@ class GraphViewWidget < DrawableWidget
 		roots = []
 		default_root = nil
 		while a = todo.shift
-			a = @dasm.normalize(a)
-			next if not b = @dasm.decoded[a] or not b.kind_of? DecodedInstruction or not b = b.block
+			next if not di = @dasm.di_at(a)
+			b = di.block
 			a = b.address
 			if done.include? a
 				default_root ||= a
@@ -1190,9 +1190,7 @@ class GraphViewWidget < DrawableWidget
 	# will call gui_update then
 	def focus_addr(addr, can_update_context=true)
 		return if not addr = @parent_widget.normalize(addr)
-		if not @dasm.decoded[addr].kind_of? DecodedInstruction
-			return
-		end
+		return if not @dasm.di_at(addr)
 
 		# move window / change curcontext
 		if b = @curcontext.box.find { |b_| b_[:line_address].index(addr) }

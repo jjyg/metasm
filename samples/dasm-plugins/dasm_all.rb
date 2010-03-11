@@ -13,12 +13,10 @@ def dasm_all(addrstart, length, method=:disassemble_fast_deep)
 	boff = s.ptr
 	off = 0
 	while off < length
-		if di = @decoded[addrstart + off]
-			if di.kind_of? DecodedInstruction
-				off += di.bin_length
-			else
-				off += 1
-			end
+		if di = di_at(addrstart + off)
+			off += di.bin_length
+		elsif @decoded[addrstart+off]
+			off += 1
 		else
 			s.ptr = boff+off
 			maydi = cpu.decode_instruction(s, 0)
@@ -38,7 +36,7 @@ def dasm_all(addrstart, length, method=:disassemble_fast_deep)
 	off = 0
 	while off < length
 		addr = addrstart+off
-		if di = @decoded[addr] and di.kind_of? DecodedInstruction
+		if di = di_at(addr)
 			if di.block_head?
 				b = di.block
 				if not @function[addr] and b.from_subfuncret.to_a.empty? and b.from_normal.to_a.empty?

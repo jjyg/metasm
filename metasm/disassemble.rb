@@ -469,7 +469,7 @@ class Disassembler
 				addr = Expression[b]+o
 				# ignore relocs embedded in an already-listed instr
 				x << Xref.new(:reloc, addr) if not x.find { |x_|
-					next if not x_.origin or not @decoded[x_.origin].kind_of? DecodedInstruction
+					next if not x_.origin or not di_at(x_.origin)
 					(addr - x_.origin rescue 50) < @decoded[x_.origin].bin_length
 				}
 			}
@@ -628,7 +628,7 @@ puts "  finalize subfunc #{Expression[addr]}" if debug_backtrace
 
 		addr = normalize(addr)
 
-		if from and from_subfuncret and @decoded[from].kind_of? DecodedInstruction
+		if from and from_subfuncret and di_at(from)
 			@decoded[from].block.each_to_normal { |subfunc|
 				subfunc = normalize(subfunc)
 				next if not f = @function[subfunc] or f.finalized
@@ -801,8 +801,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		disassemble_fast(ep) { |fa, di|
 			fa = normalize(fa)
 			do_disassemble_fast_deep(fa)
-			if di and @decoded[fa].kind_of? DecodedInstruction
-				@decoded[fa].block.add_from_normal(di.address)
+			if di and ndi = di_at(fa)
+				ndi.block.add_from_normal(di.address)
 			end
 		}
 	end
@@ -850,7 +850,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		if @decoded[addr].kind_of? DecodedInstruction and not @function[addr]
 			func = false
 			each_xref(addr, :x) { |x_|
-				func = true if @decoded[x_.origin].kind_of? DecodedInstruction and @decoded[x_.origin].opcode.props[:saveip]
+				func = true if odi = di_at(x_.origin) and odi.opcode.props[:saveip]
 			}
 			if func
 				l = auto_label_at(addr, 'sub', 'loc', 'xref')
@@ -1370,13 +1370,13 @@ puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#
 
 					btt = BacktraceTrace.new(expr, origin, origexpr, type, len, maxdepth-h[:loopdetect].length-1)
 					btt.detached = true if detached
-					if x = @decoded[h[:from]] and x.kind_of? DecodedInstruction
+					if x = di_at(h[:from])
 						update_btf[x.block.backtracked_for, btt]
 					end
 					if x = @function[h[:from]] and h[:from] != :default
 						update_btf[x.backtracked_for, btt]
 					end
-					if x = @decoded[h[:to]] and x.kind_of? DecodedInstruction
+					if x = di_at(h[:to])
 						btt = btt.dup
 						btt.address = x.address
 						btt.from_subfuncret = true if h[:sfret] == :subfuncret
@@ -1451,8 +1451,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 				# check that all callers :saveip returns (eg recursive call that was resolved
 				# before we found funcaddr was a function)
 				@decoded[funcaddr].block.each_from_normal { |fm|
-					if @decoded[fm].kind_of? DecodedInstruction and @decoded[fm].opcode.props[:saveip] and
-							not @decoded[fm].block.to_subfuncret
+					if fdi = di_at(fm) and fdi.opcode.props[:saveip] and not fdi.block.to_subfuncret
 						backtrace_check_funcret(btt, funcaddr, fm)
 					end
 				}
@@ -1699,7 +1698,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# creates xrefs, updates addrs_todo, updates instr args
 	def backtrace_found_result(expr, di, type, origin, len, detached)
 		n = normalize(expr)
-		fallthrough = true if type == :x and o = @decoded[origin] and o.kind_of? DecodedInstruction and not o.opcode.props[:stopexec] and n == o.block.list.last.next_addr	# delay_slot
+		fallthrough = true if type == :x and o = di_at(origin) and not o.opcode.props[:stopexec] and n == o.block.list.last.next_addr	# delay_slot
 		add_xref(n, Xref.new(type, origin, len)) if origin != :default and origin != Expression::Unknown and not fallthrough
 		unk = true if n == Expression::Unknown
 
@@ -1772,7 +1771,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		b ||= lambda { |l| puts l }
 		@sections.sort_by { |addr, edata| addr.kind_of?(::Integer) ? addr : 0 }.each { |addr, edata|
 			addr = Expression[addr] if addr.kind_of? ::String
-			blockoffs = @decoded.values.map { |di| Expression[di.block.address, :-, addr].reduce if di.kind_of? DecodedInstruction and di.block_head? }.grep(::Integer).sort.reject { |o| o < 0 or o >= edata.length }
+			blockoffs = @decoded.values.grep(DecodedInstruction).map { |di| Expression[di.block.address, :-, addr].reduce if di.block_head? }.grep(::Integer).sort.reject { |o| o < 0 or o >= edata.length }
 			b[@program.dump_section_header(addr, edata)]
 			if not dump_data and edata.length > 16*1024 and blockoffs.empty?
 				b["// [#{edata.length} data bytes]"]
