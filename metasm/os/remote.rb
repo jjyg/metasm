@@ -276,17 +276,17 @@ class GdbClient
 		case msg[0]
 		when ?S
 			sig = unhex(msg[1, 2]).unpack('C').first
-			{ :state => :stopped, :info => "signal #{sig} #{Signal.list.index(sig) rescue nil}" }
+			{ :state => :stopped, :info => "signal #{sig} #{PTrace::SIGNAL[sig]}" }
 		when ?T
 			sig = unhex(msg[1, 2]).unpack('C').first
-			ret = { :state => :stopped, :info => "signal #{sig} #{Signal.list.index(sig) rescue nil}" }
+			ret = { :state => :stopped, :info => "signal #{sig} #{PTrace::SIGNAL[sig]}" }
 			ret.update msg[3..-1].split(';').inject({}) { |h, s| k, v = s.split(':', 2) ; h.update k => (v || true) }	# 'thread' -> pid
 		when ?W
 			code = unhex(msg[1, 2]).unpack('C').first
 			{ :state => :dead, :info => "exited with code #{code}" }
 		when ?X
 			sig = unhex(msg[1, 2]).unpack('C').first
-			{ :state => :dead, :info => "signal #{sig} #{Signal.list.index(sig) rescue nil}" }
+			{ :state => :dead, :info => "signal #{sig} #{PTrace::SIGNAL[sig]}" }
 		else
 			log "check_target: unhandled #{msg.inspect}"
 			{ :state => :unknown }

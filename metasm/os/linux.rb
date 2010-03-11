@@ -269,6 +269,10 @@ class PTrace
 		rt_tgsigqueueinfo perf_counter_open].inject({}) { |h, sc| h.update sc => h.length }
 	SYSCALLNR_64.update SYSCALLNR_64.invert
 
+	SIGNAL = Signal.list
+	SIGNAL['TRAP'] ||= 5	# windows
+	SIGNAL.update SIGNAL.invert
+
 	# include/asm-generic/errno-base.h
 	ERRNO = %w[ERR0 EPERM ENOENT ESRCH EINTR EIO ENXIO E2BIG ENOEXEC EBADF ECHILD EAGAIN ENOMEM EACCES EFAULT
 		ENOTBLK EBUSY EEXIST EXDEV ENODEV ENOTDIR EISDIR EINVAL ENFILE EMFILE ENOTTY ETXTBSY EFBIG ENOSPC
@@ -541,13 +545,13 @@ class LinDebugger < Debugger
 			self.tid = @pid
 		elsif $?.signaled?
 			@state = (@pid == @tid ? :dead : :stopped)
-			@info = "#@tid signalx #{$?.termsig} #{::Signal.list.index($?.termsig)}"
+			@info = "#@tid signalx #{$?.termsig} #{PTrace::SIGNAL[$?.termsig]}"
 			@threads.delete @tid
 			self.tid = @pid
 		elsif $?.stopped?
 			@state = :stopped
 			sig = $?.stopsig & 0x7f
-			if sig == ::Signal.list['TRAP']	# possible ptrace event 
+			if sig == PTrace::SIGNAL['TRAP']	# possible ptrace event 
 				@threads[@tid] = :stopped
 				if $?.stopsig & 0x80 > 0
 					@info = "#@tid syscall #{@ptrace.syscallnr[get_reg_value(:orig_eax)]}"
@@ -581,20 +585,20 @@ class LinDebugger < Debugger
 					puts "break in #@tid" if @tid_changed
 				end
 				@continuesignal = 0
-			elsif sig == ::Signal.list['STOP'] and (@threads[@tid] ||= :new) == :new
+			elsif sig == PTrace::SIGNAL['STOP'] and (@threads[@tid] ||= :new) == :new
 				@memory.readfd = nil if not get_thread_list(@pid).include? @tid	# FORK, can't read from /proc/parentpid/mem anymore
 				attach_thread(@tid)
 				@threads[@tid] = :stopped
-				@info = "#@tid signal #{sig} #{::Signal.list.index(sig)}"
+				@info = "#@tid signal #{sig} #{PTrace::SIGNAL[sig]}"
 				@continuesignal = 0
 			else
 				@threads[@tid] = :stopped
-				if @breaking and sig == ::Signal.list['STOP']
+				if @breaking and sig == PTrace::SIGNAL['STOP']
 					@info = nil
 					@continuesignal = 0
 					@breaking = nil
 				else
-					@info = "#@tid signal #{sig} #{::Signal.list.index(sig)}"
+					@info = "#@tid signal #{sig} #{PTrace::SIGNAL[sig]}"
 					@continuesignal = $?.stopsig
 				end
 			end
@@ -628,7 +632,7 @@ class LinDebugger < Debugger
 		when nil; (@pass_exceptions ? parse_run_signal(@continuesignal || 0) : 0)
 		when ::Integer; sig 
 		when ::String, ::Symbol
-			::Signal.list[sig.to_s.upcase.sub(/SIG_?/, '')] || Integer(sig)
+			PTrace::SIGNAL[sig.to_s.upcase.sub(/SIG_?/, '')] || Integer(sig)
 		else
 			raise "invalid continue signal #{sig.inspect}"
 		end
@@ -665,7 +669,7 @@ class LinDebugger < Debugger
 
 	def kill(sig=nil)
 		sig = 9 if not sig or sig == ''
-		sig = ::Signal.list[sig] || sig.to_i
+		sig = PTrace::SIGNAL[sig] || sig.to_i
 		::Process.kill(sig, @pid)
 	end
 
