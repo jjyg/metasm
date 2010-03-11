@@ -21,9 +21,9 @@ class AsmListingWidget < DrawableWidget
 		@arrow_zone_w = 40
 
 		addrs = @dasm.sections.keys.grep(Integer)
-		@minaddr = addrs.min
-		@maxaddr = addrs.max + @dasm.sections[addrs.max].length rescue nil
-		@startaddr = @dasm.prog_binding['entrypoint'] || @minaddr || 0
+		@minaddr = addrs.min.to_i
+		@maxaddr = (addrs.max + @dasm.sections[addrs.max].length rescue (1 << @dasm.cpu.size))
+		@startaddr = @dasm.prog_binding['entrypoint'] || @minaddr
 
 		@default_color_association = { :comment => :darkblue, :label => :darkgreen, :text => :black,
 			  :instruction => :black, :address => :blue, :caret => :black,
@@ -565,8 +565,8 @@ class AsmListingWidget < DrawableWidget
 	def gui_update
 		# allows a focus_addr after an operation that changed section addresses (eg rebase)
 		addrs = @dasm.sections.keys.grep(Integer)
-		@minaddr = addrs.min
-		@maxaddr = addrs.max + @dasm.sections[addrs.max].length rescue -1
+		@minaddr = addrs.min.to_i
+		@maxaddr = (addrs.max + @dasm.sections[addrs.max].length rescue (1 << @dasm.cpu.size))
 
 		@want_update_line_text = true
 		redraw
