@@ -638,11 +638,12 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('stepover', 'run a single instruction of the target, do not enter into subfunctions') { p.dbg_stepover }
 		new_command('stepout', 'stepover until getting out of the current function') { p.dbg_stepout }
 		new_command('bpx', 'set a breakpoint') { |arg|
-			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
-			e, c, a = $1, ($2 || $4), $3
+			arg =~ /^(.*?)( once)?(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
+			e, o, c, a = $1, $2, ($3 || $5), $4
+			o = o ? true : false
 			cd = parse_expr(c) if c
 			cb = lambda { a.split(';').each { |aaa| run_command(aaa) } } if a
-			@dbg.bpx(solve_expr(e), false, cd, &cb)
+			@dbg.bpx(solve_expr(e), o, cd, &cb)
 		}
 		new_command('hwbp', 'set a hardware breakpoint') { |arg|
 			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
@@ -672,7 +673,7 @@ class DbgConsoleWidget < DrawableWidget
 			@dbg.bpx(solve_expr(e), true, cd, &cb) if arg
 			p.dbg_continue
 		}
-		new_command('refresh', 'update', 'update the target memory/register cache') {
+		new_command('refresh', 'redraw', 'update', 'update the target memory/register cache') {
 			@dbg.invalidate
 			@dbg.disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate }
 			p.gui_update
@@ -756,7 +757,7 @@ class DbgConsoleWidget < DrawableWidget
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
-		new_command('symbol_add', 'add a symbol name') { |arg|
+		new_command('add_symbol', 'add a symbol name') { |arg|
 			name, val = arg.to_s.split(/\s+/, 2)
 			val = solve_expr(val)
 			if val.kind_of? Integer
