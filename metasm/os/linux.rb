@@ -717,7 +717,7 @@ class LinDebugger < Debugger
 
 	def ui_command_setup(ui)
 		ui.new_command('syscall', 'waits for the target to do a syscall using PT_SYSCALL') { |arg| ui.wrap_run { syscall arg } }
-		ui.parent_widget.keyboard_callback[:f6] = lambda { ui.wrap_run { syscall } }
+		ui.keyboard_callback[:f6] = lambda { ui.wrap_run { syscall } }
 
 		ui.new_command('threads_raw', 'list threads from the OS') { puts get_thread_list(@pid).join(', ') }
 		ui.new_command('threads', 'list threads') { @threads.each { |t, s| puts "#{t} #{s}" } }
