@@ -274,13 +274,19 @@ class GdbClient
 	def check_target(timeout=0)
 		return if not msg = gdb_readresp(timeout)
 		case msg[0]
-		when ?T
-			sig = unhex(msg[1, 2])[0]
-			ret = { :state => :stopped, :info => "signal #{sig} #{Signal.list.index(sig) rescue nil}" }	# XXX windows host & signame?
-			ret.update msg[3..-1].split(';').inject({}) { |h, s| k, v = s.split(':', 2) ; h.update k => (v || true) }	# 'thread' -> pid
 		when ?S
-			sig = unhex(msg[1, 2])[0]
+			sig = unhex(msg[1, 2]).unpack('C').first
 			{ :state => :stopped, :info => "signal #{sig} #{Signal.list.index(sig) rescue nil}" }
+		when ?T
+			sig = unhex(msg[1, 2]).unpack('C').first
+			ret = { :state => :stopped, :info => "signal #{sig} #{Signal.list.index(sig) rescue nil}" }
+			ret.update msg[3..-1].split(';').inject({}) { |h, s| k, v = s.split(':', 2) ; h.update k => (v || true) }	# 'thread' -> pid
+		when ?W
+			code = unhex(msg[1, 2]).unpack('C').first
+			{ :state => :dead, :info => "exited with code #{code}" }
+		when ?X
+			sig = unhex(msg[1, 2]).unpack('C').first
+			{ :state => :dead, :info => "signal #{sig} #{Signal.list.index(sig) rescue nil}" }
 		else
 			log "check_target: unhandled #{msg.inspect}"
 			{ :state => :unknown }
