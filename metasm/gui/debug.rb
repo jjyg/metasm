@@ -788,9 +788,9 @@ class DbgConsoleWidget < DrawableWidget
 		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup
 	end
 
-	def wrap_run(&b)
-		@parent_widget.wrap_run(&b)
-	end
+	def wrap_run(&b) @parent_widget.wrap_run(&b) end
+	def keyboard_callback; @parent_widget.keyboard_callback end
+	def keyboard_callback_ctrl; @parent_widget.keyboard_callback_ctrl end
 
 	def handle_command
 		add_log(":#@curline")
