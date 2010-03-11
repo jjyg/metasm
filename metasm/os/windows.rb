@@ -766,6 +766,10 @@ class WinDebugger < Debugger
 		super(*a)
 	end
 
+	def pass_current_exception(doit = true)
+		@continuecode = (doit ? WinAPI::DBG_EXCEPTION_NOT_HANDLED : WinAPI::DBG_CONTINUE)
+	end
+
 	def update_dbgev(ev)
 		return if not ev
 		pid, tid, code, info = ev
@@ -785,7 +789,7 @@ class WinDebugger < Debugger
 					return
 				end
 				@state = :stopped
-				@info = "access violation at #{Expression[info.addr]}"
+				@info = "access violation at #{Expression[info.addr]} (#{ev.first_chance == 0 ? '1st' : '2nd'} chance)"
 			when WinAPI::STATUS_BREAKPOINT, WinAPI::STATUS_SINGLE_STEP
 				@state = :stopped
 				@info = nil
@@ -809,6 +813,15 @@ class WinDebugger < Debugger
 			return
 		end
 		@tid = tid
+	end
+
+	def ui_command_setup(ui)
+		ui.new_command('pass_current_exception', 'pass the current exception to the debuggee') { |arg|
+			if arg.strip == 'no'; pass_current_exception(false) ; puts "ignore exception"
+			else pass_current_exception ; puts "forward exception"
+			end
+		}
+		ui.keyboard_callback_ctrl[:f5] = lambda { pass_current_exception ; ui.wrap_run { continue } }
 	end
 end
 
