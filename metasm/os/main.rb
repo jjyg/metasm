@@ -305,8 +305,9 @@ class Debugger
 		attr_accessor :oneshot, :state, :type, :previous, :condition, :action, :mtype, :mlen
 	end
 
-	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint, :pid
+	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint, :pid, :tid
 	attr_accessor :modulemap, :symbols, :symbols_len
+	attr_accessor :gui
 
 	# initializes the disassembler from @cpu and @memory
 	def initialize
@@ -369,8 +370,12 @@ class Debugger
 		}
 		if b = @breakpoint[addr]
 			if b.condition
-				cond = resolve_expr(b.condition)
-				if cond == 0
+				if b.condition.kind_of? Proc
+					cond = b.condition.call(:addr => addr, :bp => b, :dbg => self, :pre_state => pre_state)
+				else
+					cond = (resolve_expr(b.condition) != 0)
+				end
+				if cond
 					continue if pre_state == 'continue'
 					return	# don't delete if we're singlestepping
 				end
@@ -492,6 +497,7 @@ class Debugger
 		b.mlen = mlen if mlen
 		@breakpoint[addr] = b
 		enable_bp(addr)
+		b
 	end
 
 	# sets a breakpoint on execution
