@@ -85,7 +85,11 @@ class MIPS
 	def decode_instr_interpret(di, addr)
 		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.opcode.name[0] != ?t
 			delta = Expression[di.instruction.args.last, :<<, 2].reduce
-			arg = Expression[[addr, :+, di.bin_length], :+, delta].reduce
+			if di.opcode.args.include? :i26
+				arg = Expression[[[addr, :+, di.bin_length], :&, 0xfc00_0000], :+, delta].reduce
+			else
+				arg = Expression[[addr, :+, di.bin_length], :+, delta].reduce
+			end
 			di.instruction.args[-1] = Expression[arg]
 		end
 
