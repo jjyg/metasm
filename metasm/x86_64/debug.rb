@@ -23,6 +23,44 @@ class X86_64
 		@dbg_register_size ||= Hash.new(64).update(:cs => 16, :ds => 16, :es => 16, :fs => 16, :gs => 16)
 	end
 
+	def dbg_func_retaddr(dbg)
+		dbg.memory_read_int(:rsp)
+	end
+	def dbg_func_retaddr_set(dbg, ret)
+		dbg.memory_write_int(:rsp, ret)
+	end
+
+	def dbg_func_arg(dbg, argnr)
+		if dbg.class.name =~ /win/i
+			list = [:rcx, :rdx, :r8, :r9]
+			off = 0x20
+		else
+			list = [:rdi, :rsi, :rdx, :rcx, :r8, :r9]
+			off = 0
+		end
+		if r = list[argnr]
+			dbg.get_reg_value(r)
+		else
+			argnr -= list.length
+			dbg.memory_read_int(Expression[:esp, :+, off + 8 + 8*argnr])
+		end
+	end
+	def dbg_func_arg_set(dbg, argnr, arg)
+		if dbg.class.name =~ /win/i
+			list = []
+			off = 0x20
+		else
+			list = []
+			off = 0
+		end
+		if r = list[argnr]
+			dbg.set_reg_value(r, arg)
+		else
+			argnr -= list.length
+			dbg.memory_write_int(Expression[:esp, :+, off + 8 + 8*argnr], arg)
+		end
+	end
+
 	# what's left is inherited from Ia32
 end
 end

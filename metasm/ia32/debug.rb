@@ -143,5 +143,23 @@ class Ia32
 		end
 		ret
 	end
+
+	# retrieve the current function return address
+	# to be called only on entry of the subfunction
+	def dbg_func_retaddr(dbg)
+		dbg.memory_read_int(:esp)
+	end
+	def dbg_func_retaddr_set(dbg, ret)
+		dbg.memory_write_int(:esp, ret)
+	end
+
+	# retrieve the current function arguments
+	# only valid at function entry
+	def dbg_func_arg(dbg, argnr)
+		dbg.memory_read_int(Expression[:esp, :+, 4*argnr])
+	end
+	def dbg_func_arg_set(dbg, argnr, arg)
+		dbg.memory_write_int(Expression[:esp, :+, 4*argnr], arg)
+	end
 end
 end
