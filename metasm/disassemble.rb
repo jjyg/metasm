@@ -789,6 +789,18 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		block
 	end
 
+	# retrieve the list of execution crossrefs due to the decodedinstruction
+	# returns a list of symbolic expressions
+	def get_xrefs_x(di)
+		@program.get_xrefs_x(self, di)
+	end
+
+	# retrieve the list of data r/w crossrefs due to the decodedinstruction
+	# returns a list of [type, symbolic expression, length]
+	def get_xrefs_rw(di)
+		@program.get_xrefs_rw(self, di)
+	end
+
 	# disassembles_fast from a list of entrypoints, also dasm subfunctions
 	def disassemble_fast_deep(*entrypoints)
 		@entrypoints ||= []
@@ -871,13 +883,14 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# returns a todo-style ary
 	# assumes @addrs_todo is empty
 	def disassemble_fast_block(block, &b)
+		block = InstructionBlock.new(normalize(block), get_section_at(block)[0]) if not block.kind_of? InstructionBlock
 		di_addr = block.address
 		delay_slot = nil
 		di = nil
 		ret = []
 
 		100.times {
-			break if @decoded[di_addr]
+			break if di = @decoded[di_addr]
 
 			# decode instruction
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
@@ -959,7 +972,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 	# trace whose xrefs this di is responsible of
 	def backtrace_xrefs_di_rw(di)
-		@program.get_xrefs_rw(self, di).each { |type, ptr, len|
+		get_xrefs_rw(di).each { |type, ptr, len|
 			backtrace(ptr, di.address, :origin => di.address, :type => type, :len => len).each { |xaddr|
 				next if xaddr == Expression::Unknown
 				if @check_smc and type == :w
@@ -1660,7 +1673,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 					if expr == true
 						next true if not refs.include? di.address
 						# find the expression to backtrace: assume this is the :w xref from this di
-						writes = @program.get_xrefs_rw(self, di)
+						writes = get_xrefs_rw(di)
 						writes = writes.find_all { |x_type, x_ptr, x_len| x_type == :w and x_len == ind.len }
 						if writes.length != 1
 							puts "backtrace_ind: incompatible xrefs to #{ptr} from #{di}" if $DEBUG
