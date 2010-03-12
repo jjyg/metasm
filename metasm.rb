@@ -17,6 +17,7 @@ module Metasm
 		'PTrace' => 'LinOS', 'GNUExports' => 'LinOS',
 		'LoadedELF' => 'ELF', 'LoadedPE' => 'PE',
 		'LinuxRemoteString' => 'LinOS',
+		'LinDebugger' => 'LinOS',
 		'WinAPI' => 'WinOS', 'WindowsExports' => 'WinOS',
 		'WindowsRemoteString' => 'WinOS', 'WinDbgAPI' => 'WinOS',
 		'WinDebugger' => 'WinOS',
