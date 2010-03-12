@@ -881,8 +881,8 @@ EOC
 
 	def module_symbols
 		syms = []
-		syms << ['entrypoint', @header.entry] if @header.entry != 0 or @header.type == 'EXEC'
 		m_addr = module_address
+		syms << ['entrypoint', @header.entry-m_addr] if @header.entry != 0 or @header.type == 'EXEC'
 		@symbols.each { |s|
 			next if not s.name or s.shndx == 'UNDEF'
 			pfx = %w[LOCAL WEAK].include?(s.bind) ? s.bind.downcase + '_' : ''
