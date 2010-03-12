@@ -86,7 +86,7 @@ extern VALUE IMPMOD rb_eArgError __attribute__((import));
 VALUE rb_uint2inum(VALUE);
 VALUE rb_ull2inum(unsigned long long);
 VALUE rb_num2ulong(VALUE);
-VALUE rb_str_new(const char* ptr, long len);	// alloc + memcpy + 0term
+VALUE rb_str_new(const char* ptr, unsigned long len);	// alloc + memcpy + 0term
 VALUE rb_ary_new2(int len);
 VALUE rb_float_new(double);
 
@@ -151,7 +151,7 @@ static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 
 	char *src = STR_PTR(val);
 	char *dst = (char*)VAL2INT(addr);
-	int len = STR_LEN(val);
+	unsigned len = (unsigned)STR_LEN(val);
 	while (len--)
 		*dst++ = *src++;
 	return val;
@@ -192,9 +192,9 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 
 #ifdef __i386__
 
-__int64 do_invoke_stdcall(int, int, int*);
-__int64 do_invoke_fastcall(int, int, int*);
-__int64 do_invoke(int, int, int*);
+__int64 do_invoke_stdcall(unsigned, unsigned, unsigned*);
+__int64 do_invoke_fastcall(unsigned, unsigned, unsigned*);
+__int64 do_invoke(unsigned, unsigned, unsigned*);
 double fake_float(void);
 
 // invoke a symbol
@@ -208,12 +208,12 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 	
 	uintptr_t flags_v = VAL2INT(flags);
 	uintptr_t ptr_v = VAL2INT(ptr);
-	int i, argsz;
+	unsigned i, argsz;
 	uintptr_t args_c[64];
 	__int64 ret;
 
 	argsz = ARY_LEN(args);
-	for (i=0 ; i<argsz ; i++)
+	for (i=0U ; i<argsz ; ++i)
 		args_c[i] = VAL2INT(ARY_PTR(args)[i]);
 
 	if (flags_v & 2)
@@ -224,13 +224,13 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 		ret = do_invoke(ptr_v, argsz, args_c);
 	
 	if (flags_v & 4)
-		return rb_ull2inum(ret);
+		return rb_ull2inum((unsigned __int64)ret);
 	else if (flags_v & 8)
 		// fake_float does nothing, to allow the compiler to use ST(0)
 		// which was in fact set by ptr_v()
 		return rb_float_new(fake_float());
-	else
-		return INT2VAL(ret);
+
+	return INT2VAL((unsigned)ret);
 }
 
 // this is the function that is called on behalf of all callbacks
@@ -241,13 +241,13 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 static uintptr_t do_callback_handler(uintptr_t ori_retaddr, uintptr_t caller_id, uintptr_t arg0)
 {
 	uintptr_t *addr = &arg0;
-	int i, ret;
+	unsigned i, ret;
 	VALUE args = rb_ary_new2(8);
 
 	// copy our args to a ruby-accessible buffer
-	for (i=0 ; i<8 ; i++)
+	for (i=0U ; i<8U ; ++i)
 		ARY_PTR(args)[i] = INT2VAL(*addr++);
-	RArray(args)->len = 8;	// len == 8, no need to ARY_LEN/EMBED stuff
+	RArray(args)->len = 8U;	// len == 8, no need to ARY_LEN/EMBED stuff
 
 	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, INT2VAL(caller_id), args);
 
@@ -277,21 +277,21 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 	int i, argsz;
 	uintptr_t args_c[64];
 	uintptr_t ret;
-	uintptr_t (*ptr_f)(uintptr_t, ...) = ptr_v;
+	uintptr_t (*ptr_f)(uintptr_t, ...) = (void*)ptr_v;
 
-	argsz = ARY_LEN(args);
-	for (i=0 ; i<argsz ; i++)
+	argsz = (int)ARY_LEN(args);
+	for (i=0 ; i<argsz ; ++i)
 		args_c[i] = VAL2INT(ARY_PTR(args)[i]);
 
-	for (i=argsz ; i<=8 ; i++)
+	for (i=argsz ; i<=8 ; ++i)
 		args_c[i] = 0;
 
 	ret = ptr_f(args_c[0], args_c[1], args_c[2], args_c[3], args_c[4], args_c[5], args_c[6], args_c[7]);
 	
 	if (flags_v & 8)
 		return rb_float_new(fake_float());
-	else
-		return INT2VAL(ret);
+
+	return INT2VAL(ret);
 }
 
 extern uintptr_t *callback_id_tmp;
@@ -316,10 +316,8 @@ static uintptr_t do_callback_handler(uintptr_t arg0, uintptr_t arg1, uintptr_t a
 }
 #endif
 
-//extern void printf(int, ...);
 int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// to patch before parsing to match the .so name
 {
-//printf("lolzor\\n");
 	dynldr = rb_const_get(rb_const_get(IMPMOD rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
 	rb_define_singleton_method(dynldr, "memory_read",  memory_read, 2);
 	rb_define_singleton_method(dynldr, "memory_read_int",  memory_read_int, 1);
@@ -328,9 +326,9 @@ int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// t
 	rb_define_singleton_method(dynldr, "str_ptr", str_ptr, 1);
 	rb_define_singleton_method(dynldr, "sym_addr", sym_addr, 2);
 	rb_define_singleton_method(dynldr, "raw_invoke", invoke, 3);
-	rb_define_const(dynldr, "CALLBACK_TARGET", INT2VAL(&callback_handler));
-	rb_define_const(dynldr, "CALLBACK_ID_0", INT2VAL(&callback_id_0));
-	rb_define_const(dynldr, "CALLBACK_ID_1", INT2VAL(&callback_id_1));
+	rb_define_const(dynldr, "CALLBACK_TARGET", INT2VAL((VALUE)&callback_handler));
+	rb_define_const(dynldr, "CALLBACK_ID_0", INT2VAL((VALUE)&callback_id_0));
+	rb_define_const(dynldr, "CALLBACK_ID_1", INT2VAL((VALUE)&callback_id_1));
 	return 0;
 }
 EOS
@@ -478,10 +476,19 @@ EOS
 	# find a writeable directory
 	# searches this script directory, $HOME / %APPDATA% / %USERPROFILE%, or $TMP
 	def self.find_write_dir
+		writable = lambda { |d|
+			begin
+				foo = '/_test_write_' + rand(1<<32).to_s
+				true if File.writable?(d) and
+				File.open(d+foo, 'w') { true } and
+				File.unlink(d+foo)
+			rescue
+			end
+		}
 		dir = File.dirname(__FILE__)
-		return dir if File.writable? dir
+		return dir if writable[dir]
 		dir = ENV['HOME'] || ENV['APPDATA'] || ENV['USERPROFILE']
-		if File.writable? dir
+		if writable[dir]
 			dir = File.join(dir, '.metasm')
 			Dir.mkdir dir if not File.directory? dir
 			return dir
