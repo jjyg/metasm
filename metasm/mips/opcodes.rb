@@ -147,9 +147,9 @@ end
 		addop 'sync', 0b001111, :sa
 
 		addop 'mfhi', 0b010000, :rd				# copies special reg HI to reg
-		addop 'mthi', 0b010001, :rd				# copies reg to special reg HI
+		addop 'mthi', 0b010001, :rs				# copies reg to special reg HI
 		addop 'mflo', 0b010010, :rd				# copies special reg LO to reg
-		addop 'mtlo', 0b010011, :rd				# copies reg to special reg LO
+		addop 'mtlo', 0b010011, :rs				# copies reg to special reg LO
 
 		addop 'mult', 0b011000, :rs, :rt			# multiplies the registers and store the result in HI:LO
 		addop 'multu',0b011001, :rs, :rt
