@@ -18,14 +18,12 @@ typedef long LONG;
 typedef unsigned long ULONG, DWORD;
 typedef int BOOL;
 
-typedef long LONG_PTR;
-typedef unsigned long ULONG_PTR, DWORD_PTR;
-typedef int INT_PTR;
-typedef unsigned int UINT_PTR;
+typedef intptr_t INT_PTR, LONG_PTR;
+typedef uintptr_t UINT_PTR, ULONG_PTR, DWORD_PTR;
 typedef LONG_PTR LPARAM;
-typedef const CHAR *LPSTR, *LPCSTR;
-typedef LONG_PTR LRESULT;
 typedef UINT_PTR WPARAM;
+typedef LONG_PTR LRESULT;
+typedef const CHAR *LPSTR, *LPCSTR;
 typedef void VOID, *PVOID, *LPVOID;
 
 typedef WORD ATOM;
