@@ -57,6 +57,6 @@ class TestX86_64 < Test::Unit::TestCase
 		assert_equal('ah', op["\xfe\xc4"])
 		assert_equal('spl', op["\x40\xfe\xc4"])
 		assert_equal('r12b', op["\x41\xfe\xc4"])
-		assert_equal('[rip+0ch]', op["\x8d\x05\x0c\0\0\0"])
+		assert_equal('[rip-6+12h]', op["\x8d\x05\x0c\0\0\0"])
 	end
 end
