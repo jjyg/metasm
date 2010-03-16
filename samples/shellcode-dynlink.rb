@@ -15,21 +15,17 @@ sc = Metasm::Shellcode.new(Metasm::Ia32.new)
 case ARGV[0]
 when /\.c(pp)?$/i
  	src_c = File.read(ARGV[0])
-	cp = sc.cpu.new_cparser
-	cp.parse src_c
-	src = sc.cpu.new_ccompiler(cp, sc).compile
-	sc.parse 'jmp main'
+	sc.assemble 'jmp main'
+	sc.compile_c src_c
 when /\.asm$/i
 	src = File.read(ARGV[0])
+	sc.assemble src
 when nil; abort "need sourcefile"
 else abort "unknown srcfile extension"
 end
 
-sc.parse src
-
 # find external symbols needed by the shellcode
-sc.assemble
-ext_syms = sc.encoded.reloc.values.map { |rel| rel.target.externals }.flatten - sc.encoded.export.keys
+ext_syms = sc.encoded.reloc_externals
 
 # resolver code
 sc.parse <<EOS
@@ -132,8 +128,7 @@ EOS
 }
 
 # marker to the next payload if the payload is a stager
-sc.parse "next_payload:"
-sc.assemble
+sc.assemble "next_payload:"
 
 # output to a file
 sc.encode_file 'shellcode-dynlink.raw'
@@ -141,8 +136,8 @@ sc.encode_file 'shellcode-dynlink.raw'
 __END__
 // sample payload
 
-__stdcall int MessageBoxA(int, char*, char*, int);
-void next_payload(void);
+extern __stdcall int MessageBoxA(int, char*, char*, int);
+extern void next_payload(void);
 
 int main(void)
 {
