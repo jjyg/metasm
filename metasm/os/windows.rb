@@ -244,15 +244,15 @@ typedef struct _DEBUG_EVENT {
 } DEBUG_EVENT, *LPDEBUG_EVENT;
 
 #define CONTEXT_i386    0x00010000
-#define CONTEXT_CONTROL         (CONTEXT_i386 | 0x00000001L) // SS:SP, CS:IP, FLAGS, BP
-#define CONTEXT_INTEGER         (CONTEXT_i386 | 0x00000002L) // AX, BX, CX, DX, SI, DI
-#define CONTEXT_SEGMENTS        (CONTEXT_i386 | 0x00000004L) // DS, ES, FS, GS
-#define CONTEXT_FLOATING_POINT  (CONTEXT_i386 | 0x00000008L) // 387 state
-#define CONTEXT_DEBUG_REGISTERS (CONTEXT_i386 | 0x00000010L) // DB 0-3,6,7
-#define CONTEXT_EXTENDED_REGISTERS  (CONTEXT_i386 | 0x00000020L) // cpu specific extensions
+#define CONTEXT86_CONTROL         (CONTEXT_i386 | 0x00000001L) // SS:SP, CS:IP, FLAGS, BP
+#define CONTEXT86_INTEGER         (CONTEXT_i386 | 0x00000002L) // AX, BX, CX, DX, SI, DI
+#define CONTEXT86_SEGMENTS        (CONTEXT_i386 | 0x00000004L) // DS, ES, FS, GS
+#define CONTEXT86_FLOATING_POINT  (CONTEXT_i386 | 0x00000008L) // 387 state
+#define CONTEXT86_DEBUG_REGISTERS (CONTEXT_i386 | 0x00000010L) // DB 0-3,6,7
+#define CONTEXT86_EXTENDED_REGISTERS  (CONTEXT_i386 | 0x00000020L) // cpu specific extensions
 
-#define CONTEXT_FULL (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS)
-#define CONTEXT_ALL (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS | CONTEXT_FLOATING_POINT | CONTEXT_DEBUG_REGISTERS | CONTEXT_EXTENDED_REGISTERS)
+#define CONTEXT86_FULL (CONTEXT86_CONTROL | CONTEXT86_INTEGER | CONTEXT86_SEGMENTS)
+#define CONTEXT86_ALL (CONTEXT86_FULL | CONTEXT86_FLOATING_POINT | CONTEXT86_DEBUG_REGISTERS | CONTEXT86_EXTENDED_REGISTERS)
 
 #define MAXIMUM_SUPPORTED_EXTENSION     512
 #define SIZE_OF_80387_REGISTERS      80
@@ -680,7 +680,6 @@ typedef struct _TOKEN_PRIVILEGES {
 } TOKEN_PRIVILEGES, *PTOKEN_PRIVILEGES;
 
 
-WINADVAPI
 BOOL
 WINAPI
 LookupPrivilegeNameA(
@@ -690,7 +689,6 @@ LookupPrivilegeNameA(
 	__inout  LPDWORD cchName
 );
 
-WINADVAPI
 BOOL
 WINAPI
 LookupPrivilegeValueA(
@@ -699,7 +697,6 @@ LookupPrivilegeValueA(
 	__out    PLUID   lpLuid
 );
 
-WINADVAPI
 BOOL
 WINAPI
 AdjustTokenPrivileges (
@@ -708,27 +705,25 @@ AdjustTokenPrivileges (
 	__in_opt  PTOKEN_PRIVILEGES NewState,
 	__in      DWORD BufferLength,
 	__out     PTOKEN_PRIVILEGES PreviousState,
-	__out_opt PDWORD ReturnLength
+	__out_opt DWORD *ReturnLength
 );
 
-WINADVAPI
 BOOL
 WINAPI
 OpenProcessToken (
-	__in        HANDLE ProcessHandle,
-	__in        DWORD DesiredAccess,
-	__deref_out PHANDLE TokenHandle
+	__in  HANDLE ProcessHandle,
+	__in  DWORD DesiredAccess,
+	__out HANDLE *TokenHandle
 );
 
 
-WINADVAPI
 BOOL
 WINAPI
 OpenThreadToken (
-	__in        HANDLE ThreadHandle,
-	__in        DWORD DesiredAccess,
-	__in        BOOL OpenAsSelf,
-	__deref_out PHANDLE TokenHandle
+	__in  HANDLE ThreadHandle,
+	__in  DWORD DesiredAccess,
+	__in  BOOL OpenAsSelf,
+	__out HANDLE *TokenHandle
 );
 EOS
 	SE_DEBUG_NAME = 'SeDebugPrivilege'
@@ -832,7 +827,7 @@ class << self
 						path = ' ' * 512
 						m = Process::Module.new
 						m.addr = mod
-						len = WinAPI.getmodulefilenameex(handle, mod, path, path.length)
+						len = WinAPI.getmodulefilenameexa(handle, mod, path, path.length)
 						m.path = path[0, len]
 						pr.modules << m
 					}
