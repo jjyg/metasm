@@ -340,6 +340,16 @@ class ExeFormat
 		self
 	end
 
+	# create a new label from base, parse it (incl optionnal additionnal src)
+	# returns the new label name
+	def parse_new_label(base='', src=nil)
+		parse_init
+		label = new_label(base)
+		@cursource << Label.new(label)
+		parse src
+		label
+	end
+
 	# handles special directives (alignment, changing section, ...)
 	# special directives start with a dot
 	def parse_parser_instruction(tok)
