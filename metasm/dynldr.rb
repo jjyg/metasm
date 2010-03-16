@@ -333,6 +333,129 @@ int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// t
 }
 EOS
 
+	# see the note in compile_bin_module
+	# this is a dynamic resolver for the ruby symbols we use
+	DYNLDR_C_PE_HACK = <<EOS
+#line #{__LINE__}
+
+#ifdef __PE__
+void* get_peb(void);
+
+extern int printf(char*, ...);
+// check if the wstr s1 contains 'ruby' (case-insensitive)
+static void *wstrcaseruby(short *s1, int len)
+{
+	int i = 0;
+	int match = 0;
+
+	static char *want = "ruby";	// cant contain the same letter twice
+
+	while (i < len) {
+		if (want[match] == (s1[i] | 0x20)) {	// downcase cmp
+			if (match == 3)
+				return s1+i-match;
+		} else
+			match = 0;
+		if (want[match] == (s1[i] | 0x20))
+			++match;
+		++i;
+	}
+
+	return 0;
+}
+
+#ifdef __x86_64__
+asm("get_peb: mov rax, fs:[0h] ret");
+
+// find the ruby library in the loaded modules list of the interpreter through the PEB
+static uintptr_t find_ruby_module(void)
+{
+	struct peb *peb = get_peb();
+}
+#endif
+
+#ifdef __i386__
+asm("get_peb: mov eax, fs:[30h] ret");
+
+// find the ruby library in the loaded modules list of the interpreter through the PEB
+static uintptr_t find_ruby_module(void)
+{
+	struct _lmodule {
+		struct _lmodule *next;	// list_head
+		int; int; int; int; int;
+		uintptr_t base, entry, size;
+		short; short; short*;
+		short len, maxlen;
+		short *basename;
+	} *ptr;
+	void *base;
+
+	struct {
+		int; int; int;
+		struct {
+			int; int; int;
+			struct _lmodule *inloadorder; // list_head
+		} *ldr;
+	} *peb = get_peb();
+
+	base = &peb->ldr->inloadorder;
+	ptr = ((struct _lmodule *)base)->next;
+	ptr = ptr->next;	// skip the first entry = ruby.exe
+	while (ptr != base) {
+		if (wstrcaseruby(ptr->basename, ptr->len/2))
+			return ptr->base;
+		ptr = ptr->next;
+	}
+
+	return 0;
+}
+#endif
+
+// a table of string offsets, base = the table itself
+// each entry is a ruby function, whose address is to be put inplace in the table
+// last entry == 0
+extern void *ruby_import_table;
+
+__stdcall uintptr_t GetProcAddress(uintptr_t, char *);
+// resolve the ruby imports found by offset in ruby_import_table
+static int load_ruby_imports(void)
+{
+	uintptr_t ruby_module;
+	uintptr_t *ptr;
+	char *table;
+
+	static int loaded_ruby_imports = 0;
+	if (loaded_ruby_imports)
+		return 0;
+	loaded_ruby_imports = 1;
+
+ 	ruby_module = find_ruby_module();
+	if (!ruby_module)
+		return 0;
+	
+	ptr = &ruby_import_table;
+	table = (char*)ptr;
+
+	while (*ptr) {
+		if (!(*ptr = GetProcAddress(ruby_module, table+*ptr)))
+			// TODO warning or something
+			return 0;
+		ptr++;
+	}
+
+	return 1;
+}
+
+#define DLL_PROCESS_ATTACH 1
+__stdcall int DllMain(void *handle, int reason, void *res)
+{
+	if (reason == DLL_PROCESS_ATTACH)
+		return load_ruby_imports();
+	return 1;
+}
+#endif
+EOS
+
 	# ia32 asm source for the native component: handles ABI stuff
 	DYNLDR_ASM_IA32 = <<EOS
 .text
@@ -442,19 +565,64 @@ EOS
 		binmodule = find_bin_path
 
 		if not File.exists? binmodule or File.stat(binmodule).mtime < File.stat(__FILE__).mtime
-			exe = host_exe.new(host_cpu)
-			# compile the C code, but patch the Init export name, which must match the string used in 'require'
-			exe.compile_c DYNLDR_C.gsub('<insertfilenamehere>', File.basename(binmodule, '.so'))
-			exe.assemble  case host_cpu.shortname
-			              when 'ia32'; DYNLDR_ASM_IA32
-			              when 'x64'; DYNLDR_ASM_X86_64
-				      end
-			exe.encode_file(binmodule, :lib)
+			compile_binary_module(host_exe, host_cpu, binmodule)
 		end
 
 		require binmodule
 
 		@@callback_addrs << CALLBACK_ID_0 << CALLBACK_ID_1
+	end
+
+	# compile the dynldr binary ruby module for a specific arch/cpu/modulename
+	def self.compile_binary_module(exe, cpu, modulename)
+		bin = exe.new(cpu)
+		# compile the C code, but patch the Init export name, which must match the string used in 'require'
+		bin.compile_c DYNLDR_C.gsub('<insertfilenamehere>', File.basename(modulename, '.so'))
+		bin.assemble  case cpu.shortname
+		              when 'ia32'; DYNLDR_ASM_IA32
+		              when 'x64'; DYNLDR_ASM_X86_64
+			      end
+
+		if bin.class.name.gsub(/.*::/, '') == 'PE'
+			compile_binary_module_hack(bin)
+		end
+
+		bin.encode_file(modulename, :lib)
+	end
+	
+	def self.compile_binary_module_hack(bin)
+		# this is a hack
+		# we need the module to use ruby symbols
+		# but we can't use the import table as we don't know
+		# the ruby library name (changes between 1.8, 1.9, mingw, ...)
+		# so we use this code, that will create a dynamic symbol
+		# resolver for the ruby symbols, run on module load.
+		bin.imports.delete_if { |id| id.libname =~ /ruby/ }
+
+		# the C glue: getprocaddress etc
+		bin.compile_c DYNLDR_C_PE_HACK
+
+		# we now need to setup the string table and the thunks
+		text = bin.sections.find { |s| s.name == '.text' }.encoded
+		rb_syms = text.reloc_externals.grep(/^rb_/)
+
+		bin.parse('.rodata')
+		asm_table = ['.data', '.align 8', 'ruby_import_table:']
+		dd = (bin.cpu.size == 64 ? 'dq' : 'dd')
+		rb_syms.each { |sym|
+			str_label = bin.parse_new_label('str', "db #{sym.inspect}, 0")
+
+			if sym !~ /^rb_[ce][A-Z]/
+				i = PE::ImportDirectory::Import.new
+				i.thunk = sym
+				sym = i.target = 'riat_' + str_label	# should be a new_label
+				bin.arch_encode_thunk(text, i)	# encode a jmp [importtable]
+			end
+			asm_table << "#{sym} #{dd} #{str_label} - ruby_import_table"
+		}
+		asm_table << "#{dd} 0"
+
+		bin.assemble asm_table.join("\n")
 	end
 
 	# find the path of the binary module
@@ -466,7 +634,7 @@ EOS
 		binmodule = File.join(dir, fname)
 		if not File.exists? binmodule or File.stat(binmodule).mtime < File.stat(__FILE__).mtime
 			if not dir = find_write_dir
-				raise LoadError, "no writeable dir to put the binary ruby module, try to run as root"
+				raise LoadError, "no writable dir to put the DynLdr ruby module, try to run as root"
 			end
 			binmodule = File.join(dir, fname)
 		end
