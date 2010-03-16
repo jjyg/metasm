@@ -83,13 +83,13 @@ class ExeFormat
 		asm_source = @cpu.new_ccompiler(cp, self).compile
 		puts asm_source if $DEBUG
 		assemble(asm_source, 'C compiler output', 1)
+		c_set_default_entrypoint
 	end
 
 	# creates a new object using the specified cpu, parse/compile/assemble the C source
 	def self.compile_c(cpu, source, file='<unk>', lineno=1)
 		e = new(cpu)
 		e.compile_c(source, file, lineno)
-		e.c_set_default_entrypoint
 		e
 	end
 
