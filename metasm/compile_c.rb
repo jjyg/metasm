@@ -271,6 +271,7 @@ module C
 				when :__int16; ' dw '
 				when :__int32; ' dd '
 				when :__int64; ' dq '
+				when :ptr; " d#{%w[x b w x d x x x q][@parser.typesize[type.name]]} "
 				when :float;   ' df '	# TODO
 				when :double;  ' dfd '
 				when :longdouble; ' dfld '
