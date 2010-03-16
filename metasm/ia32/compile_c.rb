@@ -843,6 +843,8 @@ class CCompiler < C::Compiler
 					if @cpusz != 16 and a.kind_of? Reg
 						instr 'push', Reg.new(a.val, @cpusz)
 					else
+						a = make_volatile(a, arg.type)
+						unuse a
 						instr 'push', a
 					end
 				when :__int32
@@ -1310,6 +1312,8 @@ class CCompiler < C::Compiler
 	# adds the metasm_intern_geteip function, which returns its own address in eax (used for PIC addressing)
 	def c_program_epilog
 		if defined? @need_geteip_stub and @need_geteip_stub
+			return if new_label('metasm_intern_geteip') != 'metasm_intern_geteip'	# already defined elsewhere
+
 			eax = Reg.new(0, @cpusz)
 			label = new_label('geteip')
 
