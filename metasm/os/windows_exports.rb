@@ -711,7 +711,9 @@ EOL
 
 	# update the autoexport data so that it refers to a specific ruby library
 	def self.patch_rubylib_name(newname)
-		EXPORT[export] = newname if EXPORT[export] =~ /ruby/
+		EXPORT.each_key { |export|
+			EXPORT[export] = newname if EXPORT[export] =~ /ruby/
+		}
 	end
 
 	# patch the ruby library name based on the current interpreter
