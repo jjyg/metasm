@@ -847,7 +847,7 @@ EOS
 	case host_arch
 	when :windows
 
-		new_api_c <<EOS
+		new_api_c <<EOS, 'kernel32'
 #define PAGE_NOACCESS          0x01     
 #define PAGE_READONLY          0x02     
 #define PAGE_READWRITE         0x04     
