@@ -169,9 +169,8 @@ The type can be given as a byte size.
   Expression.encode_imm(42, 1, :big)       # => "*"
   Expression.encode_imm(256, :u8, :little) # raise EncodeError
 
-With the `anytype` relocation type (eg `:a8`, `:a32`), overflows are ignored
-and the values are silently trucated ; otherwise an EncodeError exception is
-raised.
+On overflows (value cannot be encoded in the bit field) an EncodeError
+exception is raised.
 
 Decoding
 ########

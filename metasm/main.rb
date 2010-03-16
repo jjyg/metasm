@@ -180,7 +180,7 @@ end
 # all kind of data description (including repeated/uninitialized)
 class Data
 	# maps data type to Expression parameters (signedness/bit size)
-	INT_TYPE = {'db' => :u8, 'dw' => :u16, 'dd' => :u32, 'dq' => :u64}
+	INT_TYPE = {'db' => :a8, 'dw' => :a16, 'dd' => :a32, 'dq' => :a64}
 
 	# an Expression, an Array of Data, a String, or :uninitialized
 	attr_accessor :data
@@ -317,19 +317,23 @@ end
 # TODO replace #type with #size => bits + #type => [:signed/:unsigned/:any/:floating]
 # TODO handle floats
 class Expression < ExpressionType
-	INT_SIZE = {:u8 => 8,    :u16 => 16,     :u32 => 32, :u64 => 64,
-		    :i8 => 8,    :i16 => 16,     :i32 => 32, :i64 => 64,
-		    :a8 => 8,    :a16 => 16,     :a32 => 32, :a64 => 64
+	INT_SIZE = {}
+	INT_MIN = {}
+	INT_MAX = {}
+
+	[8, 16, 32, 64].each { |sz|
+		INT_SIZE["i#{sz}".to_sym] =
+		INT_SIZE["u#{sz}".to_sym] =
+		INT_SIZE["a#{sz}".to_sym] = sz
+
+		INT_MIN["a#{sz}".to_sym] =
+		INT_MIN["i#{sz}".to_sym] = -(1 << (sz-1))	# -0x8000
+		INT_MIN["u#{sz}".to_sym] = 0
+
+		INT_MAX["i#{sz}".to_sym] = (1 << (sz-1)) - 1	#  0x7fff
+		INT_MAX["a#{sz}".to_sym] =
+		INT_MAX["u#{sz}".to_sym] = (1 << sz) - 1	#  0xffff
 	}
-	INT_MIN  = {:u8 => 0,    :u16 => 0,      :u32 => 0, :u64 => 0,
-		    :i8 =>-0x80, :i16 =>-0x8000, :i32 =>-0x80000000, :i64 => -0x8000_0000_0000_0000,
-	}
-	INT_MAX  = {:u8 => 0xff, :u16 => 0xffff, :u32 => 0xffffffff, :u64 => 0xffff_ffff_ffff_ffff,
-		    :i8 => 0x7f, :i16 => 0x7fff, :i32 => 0x7fffffff, :i64 => 0x7fff_ffff_ffff_ffff,
-	}
-	# :a types allow silent truncating on overflow
-	INT_MIN[:a8] = INT_MIN[:a16] = INT_MIN[:a32] = INT_MIN[:a64] = -1/0.0
-	INT_MAX[:a8] = INT_MAX[:a16] = INT_MAX[:a32] = INT_MAX[:a64] =  1/0.0
 
 	# alternative constructor
 	# in operands order, and allows nesting using sub-arrays

@@ -108,7 +108,7 @@ class Ia32
 
 			if not self.b and not self.i
 				or_bits[5]
-				[ret << @imm.encode(:u32, endianness)]
+				[ret << @imm.encode(:a32, endianness)]
 
 			elsif not self.b and self.s != 1
 				# sib with no b
