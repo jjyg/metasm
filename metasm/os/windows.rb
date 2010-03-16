@@ -3,20 +3,769 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-
 require 'metasm/os/main'
-begin
-require 'Win32API' if RUBY_PLATFORM =~ /mswin|mingw/i
-rescue LoadError
-end
+require 'metasm/dynldr'
 
 module Metasm
-module WinAPI
-class << self
-	def last_error_msg
+class WinAPI < DynLdr
+	new_api_c <<EOS, 'kernel32'
+#line #{__LINE__}
+
+typedef char CHAR;
+typedef unsigned char BYTE;
+typedef unsigned short WORD;
+typedef unsigned int UINT;
+typedef long LONG;
+typedef unsigned long ULONG, DWORD, *LPDWORD;
+typedef int BOOL;
+typedef unsigned long long DWORD64;
+
+typedef intptr_t INT_PTR, LONG_PTR;
+typedef uintptr_t UINT_PTR, ULONG_PTR, DWORD_PTR, SIZE_T;
+typedef LONG_PTR LPARAM;
+typedef UINT_PTR WPARAM;
+typedef LONG_PTR LRESULT;
+typedef const CHAR *LPSTR, *LPCSTR;
+typedef void VOID, *PVOID, *LPVOID;
+
+typedef void *HANDLE;
+typedef void *HMODULE;
+
+#define DECLSPEC_IMPORT __declspec(dllimport)
+#define WINUSERAPI DECLSPEC_IMPORT
+#define WINBASEAPI DECLSPEC_IMPORT
+#define WINAPI __stdcall
+#define CALLBACK __stdcall
+#define CONST const
+#define __in __attribute__((in))
+#define __out __attribute__((out))
+#define __opt __attribute__((opt))
+#define __inout __in __out
+#define __in_opt __in __opt
+#define __out_opt __out __opt
+#define __inout_opt __inout __opt
+
+#define FORMAT_MESSAGE_FROM_SYSTEM     0x00001000
+#define INFINITE            0xFFFFFFFF
+
+#define PAGE_NOACCESS          0x01
+#define PAGE_READONLY          0x02
+#define PAGE_READWRITE         0x04
+#define PAGE_WRITECOPY         0x08
+#define PAGE_EXECUTE           0x10
+#define PAGE_EXECUTE_READ      0x20
+#define PAGE_EXECUTE_READWRITE 0x40
+#define PAGE_EXECUTE_WRITECOPY 0x80
+#define PAGE_GUARD            0x100
+#define PAGE_NOCACHE          0x200
+#define PAGE_WRITECOMBINE     0x400
+#define MEM_COMMIT           0x1000
+#define MEM_RESERVE          0x2000
+#define MEM_DECOMMIT         0x4000
+#define MEM_RELEASE          0x8000
+#define MEM_FREE            0x10000
+#define MEM_PRIVATE         0x20000
+#define MEM_MAPPED          0x40000
+#define MEM_RESET           0x80000
+#define MEM_TOP_DOWN       0x100000
+#define MEM_WRITE_WATCH    0x200000
+#define MEM_PHYSICAL       0x400000
+#define MEM_LARGE_PAGES  0x20000000
+#define MEM_4MB_PAGES    0x80000000
+#define SEC_FILE           0x800000
+#define SEC_IMAGE         0x1000000
+#define SEC_RESERVE       0x4000000
+#define SEC_COMMIT        0x8000000
+#define SEC_NOCACHE      0x10000000
+#define SEC_LARGE_PAGES  0x80000000
+#define MEM_IMAGE         SEC_IMAGE
+
+#define DEBUG_PROCESS                     0x00000001
+#define DEBUG_ONLY_THIS_PROCESS           0x00000002
+#define CREATE_SUSPENDED                  0x00000004
+#define DETACHED_PROCESS                  0x00000008
+#define CREATE_NEW_CONSOLE                0x00000010
+#define NORMAL_PRIORITY_CLASS             0x00000020
+#define IDLE_PRIORITY_CLASS               0x00000040
+#define HIGH_PRIORITY_CLASS               0x00000080
+#define REALTIME_PRIORITY_CLASS           0x00000100
+#define CREATE_NEW_PROCESS_GROUP          0x00000200
+#define CREATE_UNICODE_ENVIRONMENT        0x00000400
+#define CREATE_SEPARATE_WOW_VDM           0x00000800
+#define CREATE_SHARED_WOW_VDM             0x00001000
+#define CREATE_FORCEDOS                   0x00002000
+#define BELOW_NORMAL_PRIORITY_CLASS       0x00004000
+#define ABOVE_NORMAL_PRIORITY_CLASS       0x00008000
+#define STACK_SIZE_PARAM_IS_A_RESERVATION 0x00010000
+#define CREATE_BREAKAWAY_FROM_JOB         0x01000000
+#define CREATE_PRESERVE_CODE_AUTHZ_LEVEL  0x02000000
+#define CREATE_DEFAULT_ERROR_MODE         0x04000000
+#define CREATE_NO_WINDOW                  0x08000000
+#define PROFILE_USER                      0x10000000
+#define PROFILE_KERNEL                    0x20000000
+#define PROFILE_SERVER                    0x40000000
+#define CREATE_IGNORE_SYSTEM_DEFAULT      0x80000000
+
+#define STATUS_WAIT_0                    ((DWORD   )0x00000000L)
+#define STATUS_ABANDONED_WAIT_0          ((DWORD   )0x00000080L)
+#define STATUS_USER_APC                  ((DWORD   )0x000000C0L)
+#define STATUS_TIMEOUT                   ((DWORD   )0x00000102L)
+#define STATUS_PENDING                   ((DWORD   )0x00000103L)
+#define DBG_EXCEPTION_HANDLED            ((DWORD   )0x00010001L)
+#define DBG_CONTINUE                     ((DWORD   )0x00010002L)
+#define STATUS_SEGMENT_NOTIFICATION      ((DWORD   )0x40000005L)
+#define DBG_TERMINATE_THREAD             ((DWORD   )0x40010003L)
+#define DBG_TERMINATE_PROCESS            ((DWORD   )0x40010004L)
+#define DBG_CONTROL_C                    ((DWORD   )0x40010005L)
+#define DBG_CONTROL_BREAK                ((DWORD   )0x40010008L)
+#define DBG_COMMAND_EXCEPTION            ((DWORD   )0x40010009L)
+#define STATUS_GUARD_PAGE_VIOLATION      ((DWORD   )0x80000001L)
+#define STATUS_DATATYPE_MISALIGNMENT     ((DWORD   )0x80000002L)
+#define STATUS_BREAKPOINT                ((DWORD   )0x80000003L)
+#define STATUS_SINGLE_STEP               ((DWORD   )0x80000004L)
+#define DBG_EXCEPTION_NOT_HANDLED        ((DWORD   )0x80010001L)
+#define STATUS_ACCESS_VIOLATION          ((DWORD   )0xC0000005L)
+#define STATUS_IN_PAGE_ERROR             ((DWORD   )0xC0000006L)
+#define STATUS_INVALID_HANDLE            ((DWORD   )0xC0000008L)
+#define STATUS_NO_MEMORY                 ((DWORD   )0xC0000017L)
+#define STATUS_ILLEGAL_INSTRUCTION       ((DWORD   )0xC000001DL)
+#define STATUS_NONCONTINUABLE_EXCEPTION  ((DWORD   )0xC0000025L)
+#define STATUS_INVALID_DISPOSITION       ((DWORD   )0xC0000026L)
+#define STATUS_ARRAY_BOUNDS_EXCEEDED     ((DWORD   )0xC000008CL)
+#define STATUS_FLOAT_DENORMAL_OPERAND    ((DWORD   )0xC000008DL)
+#define STATUS_FLOAT_DIVIDE_BY_ZERO      ((DWORD   )0xC000008EL)
+#define STATUS_FLOAT_INEXACT_RESULT      ((DWORD   )0xC000008FL)
+#define STATUS_FLOAT_INVALID_OPERATION   ((DWORD   )0xC0000090L)
+#define STATUS_FLOAT_OVERFLOW            ((DWORD   )0xC0000091L)
+#define STATUS_FLOAT_STACK_CHECK         ((DWORD   )0xC0000092L)
+#define STATUS_FLOAT_UNDERFLOW           ((DWORD   )0xC0000093L)
+#define STATUS_INTEGER_DIVIDE_BY_ZERO    ((DWORD   )0xC0000094L)
+#define STATUS_INTEGER_OVERFLOW          ((DWORD   )0xC0000095L)
+#define STATUS_PRIVILEGED_INSTRUCTION    ((DWORD   )0xC0000096L)
+#define STATUS_STACK_OVERFLOW            ((DWORD   )0xC00000FDL)
+#define STATUS_CONTROL_C_EXIT            ((DWORD   )0xC000013AL)
+#define STATUS_FLOAT_MULTIPLE_FAULTS     ((DWORD   )0xC00002B4L)
+#define STATUS_FLOAT_MULTIPLE_TRAPS      ((DWORD   )0xC00002B5L)
+#define STATUS_REG_NAT_CONSUMPTION       ((DWORD   )0xC00002C9L)
+
+#define EXCEPTION_DEBUG_EVENT       1
+#define CREATE_THREAD_DEBUG_EVENT   2
+#define CREATE_PROCESS_DEBUG_EVENT  3
+#define EXIT_THREAD_DEBUG_EVENT     4
+#define EXIT_PROCESS_DEBUG_EVENT    5
+#define LOAD_DLL_DEBUG_EVENT        6
+#define UNLOAD_DLL_DEBUG_EVENT      7
+#define OUTPUT_DEBUG_STRING_EVENT   8
+#define RIP_EVENT                   9
+
+#define EXCEPTION_NONCONTINUABLE 0x1    // Noncontinuable exception
+#define EXCEPTION_MAXIMUM_PARAMETERS 15 // maximum number of exception parameters
+
+typedef struct _EXCEPTION_RECORD {
+	DWORD ExceptionCode;
+	DWORD ExceptionFlags;
+	struct _EXCEPTION_RECORD *ExceptionRecord;
+	PVOID ExceptionAddress;
+	DWORD NumberParameters;
+	ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+} EXCEPTION_RECORD, *PEXCEPTION_RECORD;
+
+typedef struct _EXCEPTION_DEBUG_INFO {
+	EXCEPTION_RECORD ExceptionRecord;
+	DWORD dwFirstChance;
+} EXCEPTION_DEBUG_INFO, *LPEXCEPTION_DEBUG_INFO;
+
+typedef struct _CREATE_THREAD_DEBUG_INFO {
+	HANDLE hThread;
+	LPVOID lpThreadLocalBase;
+	LPVOID lpStartAddress;
+} CREATE_THREAD_DEBUG_INFO, *LPCREATE_THREAD_DEBUG_INFO;
+
+typedef struct _CREATE_PROCESS_DEBUG_INFO {
+	HANDLE hFile;
+	HANDLE hProcess;
+	HANDLE hThread;
+	LPVOID lpBaseOfImage;
+	DWORD  dwDebugInfoFileOffset;
+	DWORD  nDebugInfoSize;
+	LPVOID lpThreadLocalBase;
+	LPVOID lpStartAddress;
+	LPVOID lpImageName;
+	WORD fUnicode;
+} CREATE_PROCESS_DEBUG_INFO, *LPCREATE_PROCESS_DEBUG_INFO;
+
+typedef struct _EXIT_THREAD_DEBUG_INFO {
+	DWORD dwExitCode;
+} EXIT_THREAD_DEBUG_INFO, *LPEXIT_THREAD_DEBUG_INFO;
+
+typedef struct _EXIT_PROCESS_DEBUG_INFO {
+	DWORD dwExitCode;
+} EXIT_PROCESS_DEBUG_INFO, *LPEXIT_PROCESS_DEBUG_INFO;
+
+typedef struct _LOAD_DLL_DEBUG_INFO {
+	HANDLE hFile;
+	LPVOID lpBaseOfDll;
+	DWORD dwDebugInfoFileOffset;
+	DWORD nDebugInfoSize;
+	LPVOID lpImageName;
+	WORD fUnicode;
+} LOAD_DLL_DEBUG_INFO, *LPLOAD_DLL_DEBUG_INFO;
+
+typedef struct _UNLOAD_DLL_DEBUG_INFO {
+	LPVOID lpBaseOfDll;
+} UNLOAD_DLL_DEBUG_INFO, *LPUNLOAD_DLL_DEBUG_INFO;
+
+typedef struct _OUTPUT_DEBUG_STRING_INFO {
+	LPSTR lpDebugStringData;
+	WORD fUnicode;
+	WORD nDebugStringLength;
+} OUTPUT_DEBUG_STRING_INFO, *LPOUTPUT_DEBUG_STRING_INFO;
+
+typedef struct _RIP_INFO {
+	DWORD dwError;
+	DWORD dwType;
+} RIP_INFO, *LPRIP_INFO;
+
+typedef struct _DEBUG_EVENT {
+	DWORD dwDebugEventCode;
+	DWORD dwProcessId;
+	DWORD dwThreadId;
+	union {
+		EXCEPTION_DEBUG_INFO Exception;
+		CREATE_THREAD_DEBUG_INFO CreateThread;
+		CREATE_PROCESS_DEBUG_INFO CreateProcessInfo;
+		EXIT_THREAD_DEBUG_INFO ExitThread;
+		EXIT_PROCESS_DEBUG_INFO ExitProcess;
+		LOAD_DLL_DEBUG_INFO LoadDll;
+		UNLOAD_DLL_DEBUG_INFO UnloadDll;
+		OUTPUT_DEBUG_STRING_INFO DebugString;
+		RIP_INFO RipInfo;
+	} u;
+} DEBUG_EVENT, *LPDEBUG_EVENT;
+
+#define CONTEXT_i386    0x00010000
+#define CONTEXT_CONTROL         (CONTEXT_i386 | 0x00000001L) // SS:SP, CS:IP, FLAGS, BP
+#define CONTEXT_INTEGER         (CONTEXT_i386 | 0x00000002L) // AX, BX, CX, DX, SI, DI
+#define CONTEXT_SEGMENTS        (CONTEXT_i386 | 0x00000004L) // DS, ES, FS, GS
+#define CONTEXT_FLOATING_POINT  (CONTEXT_i386 | 0x00000008L) // 387 state
+#define CONTEXT_DEBUG_REGISTERS (CONTEXT_i386 | 0x00000010L) // DB 0-3,6,7
+#define CONTEXT_EXTENDED_REGISTERS  (CONTEXT_i386 | 0x00000020L) // cpu specific extensions
+
+#define CONTEXT_FULL (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS)
+#define CONTEXT_ALL (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS | CONTEXT_FLOATING_POINT | CONTEXT_DEBUG_REGISTERS | CONTEXT_EXTENDED_REGISTERS)
+
+#define MAXIMUM_SUPPORTED_EXTENSION     512
+#define SIZE_OF_80387_REGISTERS      80
+
+typedef struct _FLOATING_SAVE_AREA {
+	DWORD   ControlWord;
+	DWORD   StatusWord;
+	DWORD   TagWord;
+	DWORD   ErrorOffset;
+	DWORD   ErrorSelector;
+	DWORD   DataOffset;
+	DWORD   DataSelector;
+	BYTE    RegisterArea[SIZE_OF_80387_REGISTERS];
+	DWORD   Cr0NpxState;
+} FLOATING_SAVE_AREA, *PFLOATING_SAVE_AREA;
+
+typedef struct _CONTEXT {
+	DWORD ContextFlags;
+	DWORD   Dr0;
+	DWORD   Dr1;
+	DWORD   Dr2;
+	DWORD   Dr3;
+	DWORD   Dr6;
+	DWORD   Dr7;
+	FLOATING_SAVE_AREA FloatSave;
+	DWORD   SegGs;
+	DWORD   SegFs;
+	DWORD   SegEs;
+	DWORD   SegDs;
+	DWORD   Edi;
+	DWORD   Esi;
+	DWORD   Ebx;
+	DWORD   Edx;
+	DWORD   Ecx;
+	DWORD   Eax;
+	DWORD   Ebp;
+	DWORD   Eip;
+	DWORD   SegCs;
+	DWORD   EFlags;
+	DWORD   Esp;
+	DWORD   SegSs;
+	BYTE    ExtendedRegisters[MAXIMUM_SUPPORTED_EXTENSION];
+} CONTEXT, *LPCONTEXT;
+
+
+typedef struct _EXCEPTION_RECORD32 {
+	DWORD ExceptionCode;
+	DWORD ExceptionFlags;
+	DWORD ExceptionRecord;
+	DWORD ExceptionAddress;
+	DWORD NumberParameters;
+	DWORD ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+} EXCEPTION_RECORD32, *PEXCEPTION_RECORD32;
+
+typedef struct _EXCEPTION_RECORD64 {
+	DWORD ExceptionCode;
+	DWORD ExceptionFlags;
+	DWORD64 ExceptionRecord;
+	DWORD64 ExceptionAddress;
+	DWORD NumberParameters;
+	DWORD __unusedAlignment;
+	DWORD64 ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+} EXCEPTION_RECORD64, *PEXCEPTION_RECORD64;
+
+typedef struct _EXCEPTION_POINTERS {
+	PEXCEPTION_RECORD ExceptionRecord;
+	LPCONTEXT ContextRecord;
+} EXCEPTION_POINTERS, *PEXCEPTION_POINTERS;
+
+#define STANDARD_RIGHTS_REQUIRED         (0x000F0000L)
+#define SYNCHRONIZE                      (0x00100000L)
+
+#define PROCESS_TERMINATE         (0x0001)
+#define PROCESS_CREATE_THREAD     (0x0002)
+#define PROCESS_SET_SESSIONID     (0x0004)
+#define PROCESS_VM_OPERATION      (0x0008)
+#define PROCESS_VM_READ           (0x0010)
+#define PROCESS_VM_WRITE          (0x0020)
+#define PROCESS_DUP_HANDLE        (0x0040)
+#define PROCESS_CREATE_PROCESS    (0x0080)
+#define PROCESS_SET_QUOTA         (0x0100)
+#define PROCESS_SET_INFORMATION   (0x0200)
+#define PROCESS_QUERY_INFORMATION (0x0400)
+#define PROCESS_SUSPEND_RESUME    (0x0800)
+#define PROCESS_ALL_ACCESS        (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFF)
+
+#define THREAD_TERMINATE               (0x0001)
+#define THREAD_SUSPEND_RESUME          (0x0002)
+#define THREAD_GET_CONTEXT             (0x0008)
+#define THREAD_SET_CONTEXT             (0x0010)
+#define THREAD_SET_INFORMATION         (0x0020)
+#define THREAD_QUERY_INFORMATION       (0x0040)
+#define THREAD_SET_THREAD_TOKEN        (0x0080)
+#define THREAD_IMPERSONATE             (0x0100)
+#define THREAD_DIRECT_IMPERSONATION    (0x0200)
+
+typedef struct _STARTUPINFOA {
+	DWORD   cb;
+	LPSTR   lpReserved;
+	LPSTR   lpDesktop;
+	LPSTR   lpTitle;
+	DWORD   dwX;
+	DWORD   dwY;
+	DWORD   dwXSize;
+	DWORD   dwYSize;
+	DWORD   dwXCountChars;
+	DWORD   dwYCountChars;
+	DWORD   dwFillAttribute;
+	DWORD   dwFlags;
+	WORD    wShowWindow;
+	WORD    cbReserved2;
+	LPVOID  lpReserved2;
+	HANDLE  hStdInput;
+	HANDLE  hStdOutput;
+	HANDLE  hStdError;
+} STARTUPINFOA, *LPSTARTUPINFOA;
+
+typedef struct _PROCESS_INFORMATION {
+	HANDLE hProcess;
+	HANDLE hThread;
+	DWORD dwProcessId;
+	DWORD dwThreadId;
+} PROCESS_INFORMATION, *PPROCESS_INFORMATION, *LPPROCESS_INFORMATION;
+
+
+WINBASEAPI
+HANDLE
+WINAPI
+OpenProcess(
+	__in DWORD dwDesiredAccess,
+	__in BOOL bInheritHandle,
+	__in DWORD dwProcessId
+);
+
+WINBASEAPI
+HANDLE
+WINAPI
+GetCurrentProcess(
+	VOID
+);
+
+WINBASEAPI
+DWORD
+WINAPI
+GetCurrentProcessId(
+	VOID
+);
+
+
+WINBASEAPI
+BOOL
+WINAPI
+TerminateProcess(
+	__in HANDLE hProcess,
+	__in UINT uExitCode
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+GetExitCodeProcess(
+	__in  HANDLE hProcess,
+	__out LPDWORD lpExitCode
+);
+
+WINBASEAPI
+HANDLE
+WINAPI
+CreateRemoteThread(
+	__in      HANDLE hProcess,
+	__in_opt  LPVOID lpThreadAttributes,
+	__in      DWORD dwStackSize,
+	__in      LPVOID lpStartAddress,
+	__in_opt  LPVOID lpParameter,
+	__in      DWORD dwCreationFlags,
+	__out_opt LPDWORD lpThreadId
+);
+
+WINBASEAPI
+DWORD
+WINAPI
+GetThreadId(
+	__in HANDLE Thread
+);
+
+WINBASEAPI
+DWORD
+WINAPI
+GetProcessId(
+	__in HANDLE Process
+);
+
+WINBASEAPI
+HANDLE
+WINAPI
+OpenThread(
+	__in DWORD dwDesiredAccess,
+	__in BOOL bInheritHandle,
+	__in DWORD dwThreadId
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+TerminateThread(
+	__in HANDLE hThread,
+	__in DWORD dwExitCode
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+GetExitCodeThread(
+	__in  HANDLE hThread,
+	__out LPDWORD lpExitCode
+);
+
+WINBASEAPI
+DWORD
+WINAPI
+GetLastError(
+	VOID
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+ReadProcessMemory(
+	__in      HANDLE hProcess,
+	__in      LPVOID lpBaseAddress,
+	__out     LPVOID lpBuffer,
+	__in      DWORD nSize,
+	__out_opt DWORD *lpNumberOfBytesRead
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+WriteProcessMemory(
+	__in      HANDLE hProcess,
+	__in      LPVOID lpBaseAddress,
+	__in      LPVOID lpBuffer,
+	__in      DWORD nSize,
+	__out_opt DWORD *lpNumberOfBytesWritten
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+GetThreadContext(
+	__in    HANDLE hThread,
+	__inout LPCONTEXT lpContext
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+SetThreadContext(
+	__in HANDLE hThread,
+	__in LPCONTEXT lpContext
+);
+WINBASEAPI
+DWORD
+WINAPI
+SuspendThread(
+	__in HANDLE hThread
+);
+
+WINBASEAPI
+DWORD
+WINAPI
+ResumeThread(
+	__in HANDLE hThread
+);
+WINBASEAPI
+VOID
+WINAPI
+DebugBreak(
+	VOID
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+WaitForDebugEvent(
+	__in LPDEBUG_EVENT lpDebugEvent,
+	__in DWORD dwMilliseconds
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+ContinueDebugEvent(
+	__in DWORD dwProcessId,
+	__in DWORD dwThreadId,
+	__in DWORD dwContinueStatus
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+DebugActiveProcess(
+	__in DWORD dwProcessId
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+DebugActiveProcessStop(
+	__in DWORD dwProcessId
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+DebugSetProcessKillOnExit(
+	__in BOOL KillOnExit
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+DebugBreakProcess (
+	__in HANDLE Process
+);
+
+WINBASEAPI
+DWORD
+WINAPI
+FormatMessageA(
+	DWORD dwFlags,
+	LPVOID lpSource,
+	DWORD dwMessageId,
+	DWORD dwLanguageId,
+	LPSTR lpBuffer,
+	DWORD nSize,
+	LPVOID Arguments
+);
+WINBASEAPI
+BOOL
+WINAPI
+CreateProcessA(
+	__in_opt    LPCSTR lpApplicationName,
+	__inout_opt LPSTR lpCommandLine,
+	__in_opt    LPVOID lpProcessAttributes,
+	__in_opt    LPVOID lpThreadAttributes,
+	__in        BOOL bInheritHandles,
+	__in        DWORD dwCreationFlags,
+	__in_opt    LPVOID lpEnvironment,
+	__in_opt    LPCSTR lpCurrentDirectory,
+	__in        LPSTARTUPINFOA lpStartupInfo,
+	__out       LPPROCESS_INFORMATION lpProcessInformation
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+CloseHandle(
+	__in HANDLE hObject
+);
+
+WINBASEAPI
+LPVOID
+WINAPI
+VirtualAllocEx(
+	__in     HANDLE hProcess,
+	__in_opt LPVOID lpAddress,
+	__in     SIZE_T dwSize,
+	__in     DWORD flAllocationType,
+	__in     DWORD flProtect
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+VirtualFreeEx(
+	__in HANDLE hProcess,
+	__in LPVOID lpAddress,
+	__in SIZE_T dwSize,
+	__in DWORD  dwFreeType
+);
+
+WINBASEAPI
+BOOL
+WINAPI
+VirtualProtectEx(
+	__in  HANDLE hProcess,
+	__in  LPVOID lpAddress,
+	__in  SIZE_T dwSize,
+	__in  DWORD flNewProtect,
+	__out LPDWORD lpflOldProtect
+);
+EOS
+
+	new_api_c <<EOS, 'advapi32'
+#line #{__LINE__}
+#define SE_PRIVILEGE_ENABLED_BY_DEFAULT (0x00000001L)
+#define SE_PRIVILEGE_ENABLED            (0x00000002L)
+#define SE_PRIVILEGE_REMOVED            (0X00000004L)
+#define SE_PRIVILEGE_USED_FOR_ACCESS    (0x80000000L)
+
+#define TOKEN_ASSIGN_PRIMARY    (0x0001)
+#define TOKEN_DUPLICATE         (0x0002)
+#define TOKEN_IMPERSONATE       (0x0004)
+#define TOKEN_QUERY             (0x0008)
+#define TOKEN_QUERY_SOURCE      (0x0010)
+#define TOKEN_ADJUST_PRIVILEGES (0x0020)
+#define TOKEN_ADJUST_GROUPS     (0x0040)
+#define TOKEN_ADJUST_DEFAULT    (0x0080)
+#define TOKEN_ADJUST_SESSIONID  (0x0100)
+
+typedef struct _LUID {
+	DWORD LowPart;
+	LONG HighPart;
+} LUID, *PLUID;
+
+typedef struct _LUID_AND_ATTRIBUTES {
+	LUID Luid;
+	DWORD Attributes;
+} LUID_AND_ATTRIBUTES, * PLUID_AND_ATTRIBUTES;
+
+typedef struct _TOKEN_PRIVILEGES {
+	DWORD PrivilegeCount;
+	LUID_AND_ATTRIBUTES Privileges[1];
+} TOKEN_PRIVILEGES, *PTOKEN_PRIVILEGES;
+
+
+WINADVAPI
+BOOL
+WINAPI
+LookupPrivilegeNameA(
+	__in_opt LPCSTR lpSystemName,
+	__in     PLUID   lpLuid,
+	__out    LPSTR lpName,
+	__inout  LPDWORD cchName
+);
+
+WINADVAPI
+BOOL
+WINAPI
+LookupPrivilegeValueA(
+	__in_opt LPCSTR lpSystemName,
+	__in     LPCSTR lpName,
+	__out    PLUID   lpLuid
+);
+
+WINADVAPI
+BOOL
+WINAPI
+AdjustTokenPrivileges (
+	__in      HANDLE TokenHandle,
+	__in      BOOL DisableAllPrivileges,
+	__in_opt  PTOKEN_PRIVILEGES NewState,
+	__in      DWORD BufferLength,
+	__out     PTOKEN_PRIVILEGES PreviousState,
+	__out_opt PDWORD ReturnLength
+);
+
+WINADVAPI
+BOOL
+WINAPI
+OpenProcessToken (
+	__in        HANDLE ProcessHandle,
+	__in        DWORD DesiredAccess,
+	__deref_out PHANDLE TokenHandle
+);
+
+
+WINADVAPI
+BOOL
+WINAPI
+OpenThreadToken (
+	__in        HANDLE ThreadHandle,
+	__in        DWORD DesiredAccess,
+	__in        BOOL OpenAsSelf,
+	__deref_out PHANDLE TokenHandle
+);
+EOS
+	SE_DEBUG_NAME = 'SeDebugPrivilege'
+	
+	new_api_c <<EOS, 'psapi'
+#line #{__LINE__}
+BOOL
+WINAPI
+EnumProcesses(
+	DWORD * lpidProcess,
+	DWORD   cb,
+	DWORD * cbNeeded
+);
+
+BOOL
+WINAPI
+EnumProcessModules(
+	HANDLE hProcess,
+	HMODULE *lphModule,
+	DWORD cb,
+	LPDWORD lpcbNeeded
+);
+
+DWORD
+WINAPI
+GetModuleFileNameExA(
+	HANDLE hProcess,
+	HMODULE hModule,
+	LPSTR lpFilename,
+	DWORD nSize
+);
+EOS
+
+	def self.last_error_msg
 		message = ' '*512
 		errno = getlasterror
-		if formatmessage(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
+		if formatmessagea(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
 			message = 'unknown error %x' % errno
 		else
 			message = message[0, message.index(?\0)] if message.index(?\0)
@@ -24,102 +773,6 @@ class << self
 		end
 		message
 	end
-
-	def new_api(lib, name, args, zero_is_err = true)
-		args = args.delete(' ').split(//)
-		retval = args.pop
-		begin
-			const_set(name, Win32API.new(lib, name, args, retval))
-		rescue
-			puts "no export #{name} found in #{lib}" if $VERBOSE
- 			return
-		end
-		# booh this is fugly
-		class << self ; self ; end.send(:define_method, name.downcase) { |*a|
-			r = const_get(name).call(*a)
-			if r == 0 and zero_is_err
-				puts "WinAPI: Error in #{name}: #{last_error_msg}" if $VERBOSE and (not zero_is_err.kind_of?(Proc) or zero_is_err[])
-				nil
-			else
-				r
-			end
-		}
-	end
-end	# class << self
-
-	if defined? Win32API
-	new_api 'kernel32', 'CloseHandle', 'I I'
-	new_api 'kernel32', 'ContinueDebugEvent', 'III I'
-	new_api 'kernel32', 'CreateProcessA', 'PPPPIIPPPP I'
-	new_api 'kernel32', 'CreateRemoteThread', 'IPIIIIP I'
-	new_api 'kernel32', 'DebugActiveProcess', 'I I'
-	new_api 'kernel32', 'DebugBreakProcess', 'I I'
-	new_api 'kernel32', 'DebugSetProcessKillOnExit', 'I I'
-	new_api 'kernel32', 'FormatMessage', 'IPIIPIP I', false
-	new_api 'kernel32', 'GetCurrentProcess', 'I'
-	new_api 'kernel32', 'GetThreadContext', 'IP I'
-	new_api 'kernel32', 'GetLastError', 'I', false
-	new_api 'kernel32', 'GetProcessId', 'I I'
-	new_api 'kernel32', 'OpenProcess', 'III I'
-	new_api 'kernel32', 'ReadProcessMemory', 'IIPIP I', lambda { getlasterror != ERROR_PARTIAL_COPY }
-	new_api 'kernel32', 'ResumeThread', 'I I', false
-	new_api 'kernel32', 'SetThreadContext', 'IP I'
-	new_api 'kernel32', 'SuspendThread', 'I I', false
-	new_api 'kernel32', 'TerminateProcess', 'II I'
-	new_api 'kernel32', 'VirtualAllocEx', 'IIIII I'
-	new_api 'kernel32', 'WaitForDebugEvent', 'PI I', lambda { getlasterror != ERROR_SEM_TIMEOUT }
-	new_api 'kernel32', 'WriteProcessMemory', 'IIPIP I'
-	new_api 'advapi32', 'OpenProcessToken', 'IIP I'
-	new_api 'advapi32', 'LookupPrivilegeValueA', 'PPP I'
-	new_api 'advapi32', 'AdjustTokenPrivileges', 'IIPIPP I'
-	new_api 'psapi', 'EnumProcesses', 'PIP I'
-	new_api 'psapi', 'EnumProcessModules', 'IPIP I'
-	new_api 'psapi', 'GetModuleFileNameEx', 'IIPI I'
-	new_api 'user32', 'PostMessageA', 'IIII I'
-	new_api 'user32', 'MessageBoxA', 'IPPI I'
-	end
-
-	CONTEXT_i386 = 0x00010000
-	CONTEXT86_CONTROL  = (CONTEXT_i386 | 0x0001) # SS:ESP, CS:EIP, FLAGS, EBP */
-	CONTEXT86_INTEGER  = (CONTEXT_i386 | 0x0002) # EAX, EBX, ECX, EDX, ESI, EDI */
-	CONTEXT86_SEGMENTS = (CONTEXT_i386 | 0x0004) # DS, ES, FS, GS */
-	CONTEXT86_FLOATING_POINT  = (CONTEXT_i386 | 0x0008) # 387 state */
-	CONTEXT86_DEBUG_REGISTERS = (CONTEXT_i386 | 0x0010) # DB 0-3,6,7 */
-	CONTEXT86_FULL = (CONTEXT86_CONTROL | CONTEXT86_INTEGER | CONTEXT86_SEGMENTS)
-	CREATE_PROCESS_DEBUG_EVENT = 3
-	CREATE_THREAD_DEBUG_EVENT = 2
-	DBG_CONTINUE = 0x00010002
-	DBG_EXCEPTION_NOT_HANDLED = 0x80010001
-	DEBUG_PROCESS = 0x00000001
-	DEBUG_ONLY_THIS_PROCESS = 0x00000002
-	CREATE_SUSPENDED = 0x00000004
-	ERROR_SEM_TIMEOUT = 121
-	ERROR_PARTIAL_COPY = 299
-	EXCEPTION_DEBUG_EVENT = 1
-	EXIT_PROCESS_DEBUG_EVENT = 5
-	EXIT_THREAD_DEBUG_EVENT = 4
-	FORMAT_MESSAGE_FROM_SYSTEM = 0x1000
-	INFINITE = 0xffffffff
-	LOAD_DLL_DEBUG_EVENT = 6
-	MEM_COMMIT = 0x1000
-	MEM_RESERVE = 0x2000
-	OUTPUT_DEBUG_STRING_EVENT = 8
-	PAGE_READONLY = 0x02
-	PAGE_EXECUTE_READWRITE = 0x40
-	PROCESS_ALL_ACCESS = 0x1F0FFF
-	PROCESS_QUERY_INFORMATION = 0x400
-	PROCESS_VM_READ = 0x10
-	PROCESS_VM_WRITE = 0x20
-	RIP_EVENT = 9
-	SE_DEBUG_NAME = 'SeDebugPrivilege'
-	SE_PRIVILEGE_ENABLED = 0x2
-	STATUS_ACCESS_VIOLATION = 0xC0000005
-	STATUS_BREAKPOINT = 0x80000003
-	STATUS_GUARD_PAGE_VIOLATION = 0x80000001
-	STATUS_SINGLE_STEP = 0x80000004
-	TOKEN_ADJUST_PRIVILEGES = 0x20
-	TOKEN_QUERY = 0x8
-	UNLOAD_DLL_DEBUG_EVENT = 7
 end
 
 class WinOS < OS
