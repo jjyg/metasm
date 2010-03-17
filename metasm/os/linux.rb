@@ -361,7 +361,7 @@ class LinOS < OS
 		def memory=(m) @memory = m end
 
 		def debugger
-			@debugger ||= LinDebugger.new(@pid, memory)
+			@debugger ||= LinDebugger.new(@pid)
 		end
 		def debugger=(d) @debugger = d end
 

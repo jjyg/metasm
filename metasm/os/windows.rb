@@ -391,33 +391,26 @@ OpenProcess(
 WINBASEAPI
 HANDLE
 WINAPI
-GetCurrentProcess(
-	VOID
-);
+GetCurrentProcess(VOID);
 
 WINBASEAPI
 DWORD
 WINAPI
-GetCurrentProcessId(
-	VOID
-);
-
+GetCurrentProcessId(VOID);
 
 WINBASEAPI
 BOOL
 WINAPI
 TerminateProcess(
 	__in HANDLE hProcess,
-	__in UINT uExitCode
-);
+	__in UINT uExitCode);
 
 WINBASEAPI
 BOOL
 WINAPI
 GetExitCodeProcess(
 	__in  HANDLE hProcess,
-	__out LPDWORD lpExitCode
-);
+	__out LPDWORD lpExitCode);
 
 WINBASEAPI
 HANDLE
@@ -429,22 +422,19 @@ CreateRemoteThread(
 	__in      LPVOID lpStartAddress,
 	__in_opt  LPVOID lpParameter,
 	__in      DWORD dwCreationFlags,
-	__out_opt LPDWORD lpThreadId
-);
+	__out_opt LPDWORD lpThreadId);
 
 WINBASEAPI
 DWORD
 WINAPI
 GetThreadId(
-	__in HANDLE Thread
-);
+	__in HANDLE Thread);
 
 WINBASEAPI
 DWORD
 WINAPI
 GetProcessId(
-	__in HANDLE Process
-);
+	__in HANDLE Process);
 
 WINBASEAPI
 HANDLE
@@ -452,32 +442,27 @@ WINAPI
 OpenThread(
 	__in DWORD dwDesiredAccess,
 	__in BOOL bInheritHandle,
-	__in DWORD dwThreadId
-);
+	__in DWORD dwThreadId);
 
 WINBASEAPI
 BOOL
 WINAPI
 TerminateThread(
 	__in HANDLE hThread,
-	__in DWORD dwExitCode
-);
+	__in DWORD dwExitCode);
 
 WINBASEAPI
 BOOL
 WINAPI
 GetExitCodeThread(
 	__in  HANDLE hThread,
-	__out LPDWORD lpExitCode
-);
+	__out LPDWORD lpExitCode);
 
 ZEROOK
 WINBASEAPI
 DWORD
 WINAPI
-GetLastError(
-	VOID
-);
+GetLastError(VOID);
 
 ZEROOK
 WINBASEAPI
@@ -488,8 +473,7 @@ ReadProcessMemory(
 	__in      LPVOID lpBaseAddress,
 	__out     LPVOID lpBuffer,
 	__in      DWORD nSize,
-	__out_opt DWORD *lpNumberOfBytesRead
-);
+	__out_opt DWORD *lpNumberOfBytesRead);
 
 WINBASEAPI
 BOOL
@@ -499,46 +483,40 @@ WriteProcessMemory(
 	__in      LPVOID lpBaseAddress,
 	__in      LPVOID lpBuffer,
 	__in      DWORD nSize,
-	__out_opt DWORD *lpNumberOfBytesWritten
-);
+	__out_opt DWORD *lpNumberOfBytesWritten);
 
 WINBASEAPI
 BOOL
 WINAPI
 GetThreadContext(
 	__in    HANDLE hThread,
-	__inout LPCONTEXT lpContext
-);
+	__inout LPCONTEXT lpContext);
 
 WINBASEAPI
 BOOL
 WINAPI
 SetThreadContext(
 	__in HANDLE hThread,
-	__in LPCONTEXT lpContext
-);
+	__in LPCONTEXT lpContext);
 
 ZEROOK
 WINBASEAPI
 DWORD
 WINAPI
 SuspendThread(
-	__in HANDLE hThread
-);
+	__in HANDLE hThread);
 
 ZEROOK
 WINBASEAPI
 DWORD
 WINAPI
 ResumeThread(
-	__in HANDLE hThread
-);
+	__in HANDLE hThread);
+
 WINBASEAPI
 VOID
 WINAPI
-DebugBreak(
-	VOID
-);
+DebugBreak(VOID);
 
 ZEROOK
 WINBASEAPI
@@ -546,8 +524,7 @@ BOOL
 WINAPI
 WaitForDebugEvent(
 	__in LPDEBUG_EVENT lpDebugEvent,
-	__in DWORD dwMilliseconds
-);
+	__in DWORD dwMilliseconds);
 
 WINBASEAPI
 BOOL
@@ -555,36 +532,31 @@ WINAPI
 ContinueDebugEvent(
 	__in DWORD dwProcessId,
 	__in DWORD dwThreadId,
-	__in DWORD dwContinueStatus
-);
+	__in DWORD dwContinueStatus);
 
 WINBASEAPI
 BOOL
 WINAPI
 DebugActiveProcess(
-	__in DWORD dwProcessId
-);
+	__in DWORD dwProcessId);
 
 WINBASEAPI
 BOOL
 WINAPI
 DebugActiveProcessStop(
-	__in DWORD dwProcessId
-);
+	__in DWORD dwProcessId);
 
 WINBASEAPI
 BOOL
 WINAPI
 DebugSetProcessKillOnExit(
-	__in BOOL KillOnExit
-);
+	__in BOOL KillOnExit);
 
 WINBASEAPI
 BOOL
 WINAPI
 DebugBreakProcess (
-	__in HANDLE Process
-);
+	__in HANDLE Process);
 
 ZEROOK
 WINBASEAPI
@@ -597,8 +569,8 @@ FormatMessageA(
 	DWORD dwLanguageId,
 	LPSTR lpBuffer,
 	DWORD nSize,
-	LPVOID Arguments
-);
+	LPVOID Arguments);
+
 WINBASEAPI
 BOOL
 WINAPI
@@ -612,15 +584,13 @@ CreateProcessA(
 	__in_opt    LPVOID lpEnvironment,
 	__in_opt    LPCSTR lpCurrentDirectory,
 	__in        LPSTARTUPINFOA lpStartupInfo,
-	__out       LPPROCESS_INFORMATION lpProcessInformation
-);
+	__out       LPPROCESS_INFORMATION lpProcessInformation);
 
 WINBASEAPI
 BOOL
 WINAPI
 CloseHandle(
-	__in HANDLE hObject
-);
+	__in HANDLE hObject);
 
 WINBASEAPI
 LPVOID
@@ -630,8 +600,7 @@ VirtualAllocEx(
 	__in_opt LPVOID lpAddress,
 	__in     SIZE_T dwSize,
 	__in     DWORD flAllocationType,
-	__in     DWORD flProtect
-);
+	__in     DWORD flProtect);
 
 WINBASEAPI
 BOOL
@@ -640,8 +609,7 @@ VirtualFreeEx(
 	__in HANDLE hProcess,
 	__in LPVOID lpAddress,
 	__in SIZE_T dwSize,
-	__in DWORD  dwFreeType
-);
+	__in DWORD  dwFreeType);
 
 WINBASEAPI
 BOOL
@@ -651,12 +619,12 @@ VirtualProtectEx(
 	__in  LPVOID lpAddress,
 	__in  SIZE_T dwSize,
 	__in  DWORD flNewProtect,
-	__out LPDWORD lpflOldProtect
-);
+	__out LPDWORD lpflOldProtect);
 EOS
 
 	new_api_c <<EOS, 'advapi32'
 #line #{__LINE__}
+
 #define SE_PRIVILEGE_ENABLED_BY_DEFAULT (0x00000001L)
 #define SE_PRIVILEGE_ENABLED            (0x00000002L)
 #define SE_PRIVILEGE_REMOVED            (0X00000004L)
@@ -694,16 +662,14 @@ LookupPrivilegeNameA(
 	__in_opt LPCSTR lpSystemName,
 	__in     PLUID   lpLuid,
 	__out    LPSTR lpName,
-	__inout  LPDWORD cchName
-);
+	__inout  LPDWORD cchName);
 
 BOOL
 WINAPI
 LookupPrivilegeValueA(
 	__in_opt LPCSTR lpSystemName,
 	__in     LPCSTR lpName,
-	__out    PLUID   lpLuid
-);
+	__out    PLUID  lpLuid);
 
 BOOL
 WINAPI
@@ -713,16 +679,14 @@ AdjustTokenPrivileges (
 	__in_opt  PTOKEN_PRIVILEGES NewState,
 	__in      DWORD BufferLength,
 	__out     PTOKEN_PRIVILEGES PreviousState,
-	__out_opt DWORD *ReturnLength
-);
+	__out_opt DWORD *ReturnLength);
 
 BOOL
 WINAPI
 OpenProcessToken (
 	__in  HANDLE ProcessHandle,
 	__in  DWORD DesiredAccess,
-	__out HANDLE *TokenHandle
-);
+	__out HANDLE *TokenHandle);
 
 
 BOOL
@@ -731,20 +695,19 @@ OpenThreadToken (
 	__in  HANDLE ThreadHandle,
 	__in  DWORD DesiredAccess,
 	__in  BOOL OpenAsSelf,
-	__out HANDLE *TokenHandle
-);
+	__out HANDLE *TokenHandle);
 EOS
 	SE_DEBUG_NAME = 'SeDebugPrivilege'
 	
 	new_api_c <<EOS, 'psapi'
 #line #{__LINE__}
+
 BOOL
 WINAPI
 EnumProcesses(
 	DWORD * lpidProcess,
 	DWORD   cb,
-	DWORD * cbNeeded
-);
+	DWORD * cbNeeded);
 
 BOOL
 WINAPI
@@ -752,8 +715,7 @@ EnumProcessModules(
 	HANDLE hProcess,
 	HMODULE *lphModule,
 	DWORD cb,
-	LPDWORD lpcbNeeded
-);
+	LPDWORD lpcbNeeded);
 
 DWORD
 WINAPI
@@ -761,8 +723,7 @@ GetModuleFileNameExA(
 	HANDLE hProcess,
 	HMODULE hModule,
 	LPSTR lpFilename,
-	DWORD nSize
-);
+	DWORD nSize);
 EOS
  
 	# convert a native function return value
@@ -943,7 +904,6 @@ class << self
 			Process.new(pid)
 		end
 	end
-
 end	# class << self
 end
 
@@ -1022,7 +982,8 @@ class WinDbgAPI
 			flags = WinAPI::DEBUG_PROCESS
 			flags |= WinAPI::DEBUG_ONLY_THIS_PROCESS if not debug_children
 			target = target.dup if target.frozen?
-			raise "CreateProcess: #{WinAPI.last_error_msg}" if not h = WinAPI.createprocessa(nil, target, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
+			h = WinAPI.createprocessa(nil, target, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
+			raise "CreateProcess: #{WinAPI.last_error_msg}" if not h
 			hprocess, hthread, pid, tid = processinfo.unpack('LLLL')
 			WinAPI.closehandle(hthread)
 			@mem[pid] = WindowsRemoteString.new(hprocess) # need @mem not empty (terminate condition of debugloop)
@@ -1364,8 +1325,7 @@ class WinDebugger < Debugger
 		@dbg = WinDbgAPI.new(pid)
 		@dbg.logger = self
 		@pid = @dbg.mem.keys.first
-		# TODO get current cpu (x64)
-		@cpu = Ia32.new
+		@cpu = Ia32.new(WinOS.open_process(@pid).addrsz)
 		@memory = @dbg.mem[@pid]
 		super()
 		# get a valid @tid (for reg values etc)
@@ -1374,7 +1334,6 @@ class WinDebugger < Debugger
 			case code
 			when WinAPI::CREATE_THREAD_DEBUG_EVENT, WinAPI::CREATE_PROCESS_DEBUG_EVENT
 				@tid = tid
-
 				break
 			end
 		}
@@ -1398,6 +1357,7 @@ class WinDebugger < Debugger
 	def get_reg_value(r)
 		ctx[r]
 	end
+
 	def set_reg_value(r, v)
 		ctx[r] = v
 	end
@@ -1472,7 +1432,7 @@ class WinDebugger < Debugger
 			case info.code
 			when WinAPI::STATUS_ACCESS_VIOLATION
 				# fix fs bug in xpsp1
-				if @cpu.kind_of? Ia32 and ctx = @dbg.get_context(pid, tid) and ctx[:fs] != 0x3b
+				if @cpu.shortname == 'ia32' and ctx = @dbg.get_context(pid, tid) and ctx[:fs] != 0x3b
 					puts "wdbg: #{pid}:#{tid} fix fs bug" if $DEBUG
 					ctx[:fs] = 0x3b
 					@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
