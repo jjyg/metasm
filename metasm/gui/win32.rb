@@ -398,6 +398,11 @@ typedef struct tagMDINEXTMENU {
 #define WMSZ_BOTTOMLEFT     7
 #define WMSZ_BOTTOMRIGHT    8
 
+#define HWND_TOP        0
+#define HWND_BOTTOM     1
+#define HWND_TOPMOST    -1
+#define HWND_NOTOPMOST  -2
+
 #define SIZE_RESTORED       0
 #define SIZE_MINIMIZED      1
 #define SIZE_MAXIMIZED      2
@@ -2191,13 +2196,15 @@ end
 class Window
 	include Msgbox
 
-	attr_accessor :menu, :hwnd
+	attr_accessor :menu, :hwnd, :popups
 	def initialize(*a, &b)
 		@widget = nil
 		@controlid = 1	# next free control id for menu items, buttons etc
 		@control_action = {}
 		(@@mainwindow_list ||= []) << self
 		@visible = false
+		@popups = []
+		@parent = nil
 
 		cname = "metasm_w32gui_#{object_id}"
 		cls = Win32Gui.alloc_c_struct 'WNDCLASSEXA', :cbsize => :size,
@@ -2280,6 +2287,8 @@ class Window
 			@clientheight = (lparam >> 16) & 0xffff
 			@widget.resized_(lparam & 0xffff, (lparam >> 16) & 0xffff) if @widget
 			redraw
+		when Win32Gui::WM_WINDOWPOSCHANGING
+			Win32Gui.memory_write_int(lparam+Win32Gui.cp.typesize[:ptr], @popups.first.hwnd) if @popups.first
 		when Win32Gui::WM_SHOWWINDOW
 			initialize_visible_
 		when Win32Gui::WM_KEYDOWN, Win32Gui::WM_SYSKEYDOWN
@@ -2481,6 +2490,17 @@ class ToolWindow < Window
 		x = r1[:left]+(r1[:right]-r1[:left]-r2[:right]+r2[:left])/2
 		y = r1[:top ]+(r1[:bottom]-r1[:top]-r2[:bottom]+r2[:top])/2
 		Win32Gui.movewindow(@hwnd, x, y, r2[:right]-r2[:left], r2[:bottom]-r2[:top], Win32Gui::FALSE)
+	end
+
+	def initialize_window(parent)
+		@parent = parent
+		@@mainwindow_list.delete self
+		@parent.popups << self if parent
+	end
+
+	def destroy_window
+		@parent.popups.delete self if @parent
+		super
 	end
 end
 
@@ -2814,11 +2834,9 @@ class IBoxWidget < DrawableWidget
 	end
 end
 	def initialize_window(win, prompt, opts={}, &b)
-		@parent = win
-		@@mainwindow_list.delete self
+		super(win)
 		self.title = opts[:title] ? opts[:title] : 'input'
 		self.widget = IBoxWidget.new(prompt, opts, &b)
-		Win32Gui.setparent(@hwnd, @parent.hwnd)
 	end
 
 	def text ; @widget.text ; end
@@ -3073,11 +3091,9 @@ class LBoxWidget < DrawableWidget
 	end
 end
 	def initialize_window(win, title, list, opts={}, &b)
-		@parent = win
-		@@mainwindow_list.delete self
+		super(win)
 		self.title = title
 		self.widget = LBoxWidget.new(list, opts, &b)
-		Win32Gui.setparent(@hwnd, @parent.hwnd)
 	end
 end
 
