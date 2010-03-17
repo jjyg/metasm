@@ -956,6 +956,7 @@ class Preprocessor
 		true
 	end
 
+	# handles the '#include' directive, which will insert a new file content in the token stream
 	def directive_include(cmd, skipspc)
 		raise cmd, 'nested too deeply' if backtrace.length > 200	# gcc
 
@@ -968,7 +969,8 @@ class Preprocessor
 				# XXX local include from a std include... (kikoo windows.h !)
 				path = nil
 				if not @include_search_path.find { |d| ::File.exist?(path = ::File.join(d, ipath)) } ||
-					@include_search_path.find { |d| path = file_exist_nocase(::File.join(d, ipath)) }
+					@include_search_path.find { |d| path = file_exist_nocase(::File.join(d, ipath)) } ||
+					path = file_exist_nocase(::File.join(::File.dirname(@filename[1..-2]), ipath))
 					path = nil
 				end
 			elsif ipath[0] != ?/
@@ -1044,6 +1046,9 @@ class Preprocessor
 		end
 	end
 
+	# checks if a file exists
+	# search for case-insensitive variants of the path
+	# returns the match if found, or nil
 	def file_exist_nocase(name)
 		componants = name.tr('\\', '/').split('/')
 		if componants[0] == ''
@@ -1059,6 +1064,13 @@ class Preprocessor
 		ret
 	end
 
+	# handles a '#pragma' directive in the preprocessor source
+	# here we handle:
+	# 'once': do not re-#include this file
+	# 'no_warn_redefinition': macro redefinition warning
+	# 'include_dir' / 'include_path': insert directories in the #include <xx> search path (this new dir will be searched first)
+	# 'push_macro' / 'pop_macro': allows temporary redifinition of a macro with later restoration
+	# other directives are forwarded to @pragma_callback
 	def directive_pragma(cmd, skipspc)
 		nil while tok = readtok and tok.type == :space
 		raise tok || cmd if not tok or tok.type != :string
