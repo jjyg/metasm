@@ -1124,6 +1124,21 @@ WINAPI
 SetForegroundWindow(
 	__in HWND hWnd);
 WINUSERAPI
+HWND
+WINAPI
+GetDesktopWindow(VOID);
+WINUSERAPI
+HWND
+WINAPI
+GetParent(
+	__in HWND hWnd);
+WINUSERAPI
+HWND
+WINAPI
+SetParent(
+	__in HWND hWndChild,
+	__in_opt HWND hWndNewParent);
+WINUSERAPI
 BOOL
 WINAPI
 EndDialog(
@@ -2803,6 +2818,7 @@ end
 		@@mainwindow_list.delete self
 		self.title = opts[:title] ? opts[:title] : 'input'
 		self.widget = IBoxWidget.new(prompt, opts, &b)
+		Win32Gui.setparent(@hwnd, @parent.hwnd)
 	end
 
 	def text ; @widget.text ; end
@@ -3061,6 +3077,7 @@ end
 		@@mainwindow_list.delete self
 		self.title = title
 		self.widget = LBoxWidget.new(list, opts, &b)
+		Win32Gui.setparent(@hwnd, @parent.hwnd)
 	end
 end
 
