@@ -28,7 +28,7 @@ class PTrace
 		rescue ArgumentError
 			did_exec = true
 			if not @pid = fork
-				tweak_for_pid(Process.pid)
+				tweak_for_pid(::Process.pid)
 				traceme
 				exec target
 			end
@@ -39,7 +39,7 @@ class PTrace
 	end
 
 	def wait
-		Process.wait(@pid)
+		::Process.wait(@pid)
 	end
 
 	attr_accessor :reg_off, :intsize, :syscallnr
@@ -354,6 +354,7 @@ end
 
 class LinOS < OS
 	class Process < OS::Process
+		# returns/create a LinuxRemoteString
 		def memory
 			@memory ||= LinuxRemoteString.new(pid)
 		end
@@ -364,6 +365,8 @@ class LinOS < OS
 		end
 		def debugger=(d) @debugger = d end
 
+		# returns the list of loaded Modules, incl start address & path
+		# read from /proc/pid/maps
 		def modules
 			list = []
 			seen = {}
@@ -393,6 +396,8 @@ class LinOS < OS
 		rescue
 		end
 
+		# returns a list of threads sharing this process address space
+		# read from /proc/pid/task/
 		def threads
 			Dir.entries("/proc/#{pid}/task/").grep(/\d+/).map { |tid| tid.to_i }
 	       	rescue
@@ -400,15 +405,19 @@ class LinOS < OS
 			[pid]
 		end
 
+		# return the invocation commandline, from /proc/pid/cmdline
+		# this is manipulable by the target itself
 		def cmdline
 			File.read("/proc/#{pid}/cmdline")
 		rescue
 		end
 
+		# returns the address size of the process, based on its #cpu
 		def addrsz
 			cpu.size
 		end
 
+		# returns the CPU for the process, by reading /proc/pid/exe
 		def cpu
 			AutoExe.decode_file_header("/proc/#{pid}/exe").cpu
 		end
@@ -429,13 +438,12 @@ class LinOS < OS
 		super(tg)
 	end
 
-	# return a Process for the specified pid (no check done)
+	# return a Process for the specified pid if it exists in /proc
 	def self.open_process(pid)
-		pr = Process.new
-		pr.pid = pid
-		pr
+		Process.new(pid) if File.directory?("/proc/#{pid}")
 	end
 
+	# create a LinDebugger on the target pid/binary
 	def self.create_debugger(path)
 		LinDebugger.new(path)
 	end

@@ -16,6 +16,11 @@ class OS
 		class Module
 			attr_accessor :path, :addr
 		end
+
+		def initialize(pid=nil)
+			@pid = pid
+		end
+
 		def to_s
 			mod = File.basename(@modules.first.path) if modules and @modules.first and @modules.first.path
 			"#{pid}: ".ljust(6) << (mod || '<unknown>')

@@ -797,15 +797,50 @@ class WinOS < OS
 			@handle ||= WinAPI.openprocess(WinAPI::PROCESS_ALL_ACCESS, 0, @pid)
 		end
 		def handle=(h) @handle = h end
+
+		# return/create a WindowsRemoteString
 		def memory
 			@memory ||= WindowsRemoteString.new(handle)
 		end
 		def memory=(m) @memory = m end
+
 		def debugger
 			@debugger ||= WinDebugger.new(@pid)
 		end
 		def debugger=(d) @debugger = d end
+
+		# returns the memory address size of the target process
+		# hardcoded to 32 for now
 		def addrsz; 32 ; end
+
+		# retrieve the process Module list from EnumProcessModules & GetModuleFileNameExA
+		# returns nil if we couldn't openprocess
+		def modules
+			oldverb, $VERBOSE = $VERBOSE, false	# avoid warning pollution from getmodfnamea
+
+			self.handle
+			# if we couldn't open a handle with ALL_ACCESS, retry with minimal rights
+			@handle ||= WinAPI.openprocess(WinAPI::PROCESS_QUERY_INFORMATION | WinAPI::PROCESS_VM_READ, 0, @pid)
+			return if not @handle
+			mods = ' '*4096
+			len = [0].pack('L')
+			ret = []
+			if WinAPI.enumprocessmodules(@handle, mods, mods.length, len)
+				len = len.unpack('L').first
+				mods[0, len].unpack('L*').each { |mod|
+					path = ' ' * 512
+					m = Process::Module.new
+					m.addr = mod
+					if len = WinAPI.getmodulefilenameexa(handle, mod, path, path.length)
+						m.path = path[0, len]
+					end
+					ret << m
+				}
+			end
+			ret
+		ensure
+			$VERBOSE = oldverb
+		end
 	end
 
 class << self
@@ -831,36 +866,10 @@ class << self
 		int = [0].pack('L')
 		return if not WinAPI.enumprocesses(tab, tab.length, int)
 		pids = tab[0, int.unpack('L').first].unpack('L*')
-		begin
-		 # temporarily hide errors from openprocess(system_process) when VERBOSE
-		 oldverb, $VERBOSE = $VERBOSE, false
-
-		 pids.map { |pid|
-			pr = Process.new
-			pr.pid = pid
-			if handle = WinAPI.openprocess(WinAPI::PROCESS_QUERY_INFORMATION | WinAPI::PROCESS_VM_READ, 0, pid)
-				mods = ' '*4096
-				ret = [0].pack('L')
-				if WinAPI.enumprocessmodules(handle, mods, mods.length, ret)
-					pr.modules = []
-					mods[0, ret.unpack('L').first].unpack('L*').each { |mod|
-						path = ' ' * 512
-						m = Process::Module.new
-						m.addr = mod
-						len = WinAPI.getmodulefilenameexa(handle, mod, path, path.length)
-						m.path = path[0, len]
-						pr.modules << m
-					}
-				end
-				WinAPI.closehandle(handle)
-			end
-			pr
-		 }
-		ensure
-			$VERBOSE = oldverb
-		end
+		pids.map { |pid| Process.new(pid) }
 	end
 
+	# create a debugger for the target pid/path
 	def create_debugger(path)
 		WinDebugger.new(path)
 	end
@@ -909,6 +918,7 @@ class << self
 		end
 	end
 
+	# creates a new thread in the target process, with the specified start address
 	def createthread(target, startaddr)
 		WinAPI.createremotethread(target.handle, 0, 0, startaddr, 0, 0, 0)
 	end
@@ -919,9 +929,21 @@ class << self
 		createthread(target, addr)
 	end
 
+	# returns a Process associated to the process handle
 	def open_process_handle(h)
-		find_process(WinAPI.getprocessid(h))	# booh
+		pr = Process.new(WinAPI.getprocessid(h))
+		pr.handle = h
+		pr
 	end
+
+	# returns the Process associated to pid if it is alive
+	def open_process(pid)
+		if h = WinAPI.openprocess(WinAPI::PROCESS_QUERY_INFORMATION, 0, pid)	# check liveness
+			WinAPI.closehandle(h)
+			Process.new(pid)
+		end
+	end
+
 end	# class << self
 end
 
