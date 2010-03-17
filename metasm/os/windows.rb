@@ -985,7 +985,7 @@ class WindowsRemoteString < VirtualString
 	def get_page(addr, len=@pagelength)
 		page = 0.chr*len
 		page.force_encoding('binary') if page.respond_to? :force_encoding
-		return if not WinAPI.readprocessmemory(@handle, addr, page, len, 0)
+		return if WinAPI.readprocessmemory(@handle, addr, page, len, 0) == 0
 		page
 	end
 
