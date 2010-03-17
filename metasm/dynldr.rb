@@ -606,22 +606,30 @@ EOS
 		text = bin.sections.find { |s| s.name == '.text' }.encoded
 		rb_syms = text.reloc_externals.grep(/^rb_/)
 
-		bin.parse('.rodata')
-		asm_table = ['.data', '.align 8', 'ruby_import_table:']
 		dd = (bin.cpu.size == 64 ? 'dq' : 'dd')
+		# the offset table
+		asm_table = ['.data', '.align 8', 'ruby_import_table:']
+		# the strings will be in .rodata
+		bin.parse('.rodata')
 		rb_syms.each { |sym|
+			# add the raw string
 			str_label = bin.parse_new_label('str', "db #{sym.inspect}, 0")
 
 			if sym !~ /^rb_[ce][A-Z]/
+				# create a thunk
 				i = PE::ImportDirectory::Import.new
 				i.thunk = sym
 				sym = i.target = 'riat_' + str_label	# should be a new_label
 				bin.arch_encode_thunk(text, i)	# encode a jmp [importtable]
 			end
+
+			# update to the offset table
 			asm_table << "#{sym} #{dd} #{str_label} - ruby_import_table"
 		}
+		# dont forget the final 0
 		asm_table << "#{dd} 0"
 
+		# now we can parse & assemble the offset table
 		bin.assemble asm_table.join("\n")
 	end
 
@@ -742,7 +750,7 @@ EOS
 			next if v.initializer	# inline & stuff
 			puts "new_api_c: load method #{v.name.downcase} from #{lib}" if $DEBUG
 
-			new_caller_for(@cp, v, v.name.downcase, addr)
+			new_caller_for(v, v.name.downcase, addr)
 		}
 
 		# constant definition from macro/enum
@@ -755,32 +763,33 @@ EOS
 
 	# define a new method 'name' in the current module to invoke the raw method at addr addr
 	# translates ruby args to raw args using the specified prototype
-	def self.new_caller_for(cp, proto, name, addr)
+	def self.new_caller_for(proto, name, addr)
 		flags = 0
 		flags |= 1 if proto.has_attribute('stdcall')
 		flags |= 2 if proto.has_attribute('fastcall')
-		flags |= 4 if proto.type.type.integral? and cp.sizeof(nil, proto.type.type) == 8
+		flags |= 4 if proto.type.type.integral? and @cp.sizeof(nil, proto.type.type) == 8
 		flags |= 8 if proto.type.type.float?
 		class << self ; self ; end.send(:define_method, name) { |*a|
 			raise ArgumentError, "bad arg count for #{name}: #{a.length} for #{proto.type.args.length}" if a.length != proto.type.args.length and not proto.type.varargs
 			auto_cb = []	# list of automatic C callbacks generated from lambdas
-			a = a.zip(proto.type.args).map { |ra, fa| convert_arg_rb2c(cp, fa, ra, auto_cb) }.flatten
+			a = a.zip(proto.type.args).map { |ra, fa| convert_arg_rb2c(fa, ra, auto_cb) }.flatten
 			ret = raw_invoke(addr, a, flags)
 			auto_cb.each { |cb| callback_free(cb) }
+			ret = convert_ret_c2rb(proto, ret)
 			ret
 		}
 	end
 
 	# ruby object -> integer suitable as arg for raw_invoke
-	def self.convert_arg_rb2c(cp, formal, val, auto_cb_list=[])
+	def self.convert_arg_rb2c(formal, val, auto_cb_list=[])
 		val = case val
 		when String; str_ptr(val)
-		when Proc; cb = callback_alloc_cobj(cp, formal, val) ; auto_cb_list << cb ; cb
+		when Proc; cb = callback_alloc_cobj(formal, val) ; auto_cb_list << cb ; cb
 		# TODO when Hash, Array; if formal.type.pointed.kind_of? C::Struct; yadda yadda ; end
 		else val.to_i
 		end
 
-		if formal and formal.type.integral? and cp.sizeof(formal) == 8 and host_cpu.size == 32
+		if formal and formal.type.integral? and @cp.sizeof(formal) == 8 and host_cpu.size == 32
 			val = [val & 0xffff_ffff, (val >> 32) & 0xffff_ffff]
 			val.reverse! if host_cpu.endianness != :little
 		end
@@ -794,7 +803,7 @@ EOS
 		raise "invalid callback #{'%x' % id} not in #{@@callback_table.keys.map { |c| c.to_s(16) }}" if not cb = @@callback_table[id]
 
 		rawargs = args.dup
-		ra = cb[:proto] ? cb[:proto].args.map { |fa| convert_arg_c2rb(cb[:cparser], fa, rawargs) } : []
+		ra = cb[:proto] ? cb[:proto].args.map { |fa| convert_arg_c2rb(fa, rawargs) } : []
 
 		# run it
 		ret = cb[:proc].call(*ra)
@@ -805,9 +814,9 @@ EOS
 	end
 
 	# C raw cb arg -> ruby object
-	def self.convert_arg_c2rb(cp, formal, rawargs)
+	def self.convert_arg_c2rb(formal, rawargs)
 		val = rawargs.shift
-		if formal.type.integral? and cp.sizeof(formal) == 64 and host_cpu.size == 32
+		if formal.type.integral? and @cp.sizeof(formal) == 64 and host_cpu.size == 32
 			if host.cpu.endianness == :little
 				val |= rawargs.shift << 32
 			else
@@ -818,6 +827,12 @@ EOS
 		val = nil if formal.type.pointer? and val == 0
 
 		val
+	end
+
+	# C raw ret -> ruby obj
+	def self.convert_ret_c2rb(fproto, ret)
+		# TODO signedness
+		ret
 	end
 
 	def self.cp; @cp ||= nil ; end
@@ -843,12 +858,12 @@ EOS
 			raise 'empty prototype'
 		else
 			@cp.toplevel.symbol.delete v.name
-			callback_alloc_cobj(@cp, v, b)
+			callback_alloc_cobj(v, b)
 		end
 	end
 
 	# allocates a callback for a given C prototype (C variable, pointer to func accepted)
-	def self.callback_alloc_cobj(cp, proto, b)
+	def self.callback_alloc_cobj(proto, b)
 		ori = proto
 		proto = proto.type if proto and proto.kind_of? C::Variable
 		proto = proto.pointed while proto and proto.pointer?
@@ -857,9 +872,8 @@ EOS
 		cb[:id] = id
 		cb[:proc] = b
 		cb[:proto] = proto
-		cb[:cparser] = cp
-		cb[:abi_stackfix] = proto.args.inject(0) { |s, a| s + [cp.sizeof(a), cp.typesize[:ptr]].max } if ori and ori.has_attribute('stdcall')
-		cb[:abi_stackfix] = proto.args[2..-1].to_a.inject(0) { |s, a| s + [cp.sizeof(a), cp.typesize[:ptr]].max } if ori and ori.has_attribute('fastcall')	# supercedes stdcall
+		cb[:abi_stackfix] = proto.args.inject(0) { |s, a| s + [@cp.sizeof(a), @cp.typesize[:ptr]].max } if ori and ori.has_attribute('stdcall')
+		cb[:abi_stackfix] = proto.args[2..-1].to_a.inject(0) { |s, a| s + [@cp.sizeof(a), @cp.typesize[:ptr]].max } if ori and ori.has_attribute('fastcall')	# supercedes stdcall
 		@@callback_table[id] = cb
 		id
 	end
@@ -909,7 +923,7 @@ EOS
 			@cp.toplevel.symbol.delete v.name
 			next if not v.type.kind_of? C::Function or not v.initializer
 			next if not off = sc.encoded.export[v.name]
-			new_caller_for(@cp, v, v.name, ptr+off)
+			new_caller_for(v, v.name, ptr+off)
 			defs << v.name
 		}
 		if block_given?
@@ -967,7 +981,7 @@ EOS
 	# only integral types handled for now
 	def self.encode_c_value(var, val)
 		# TODO encode full struct and stuff
-		val = DynLdr.convert_arg_rb2c(@cp, var, val) if not val.kind_of? Integer
+		val = DynLdr.convert_arg_rb2c(var, val) if not val.kind_of? Integer
 		Expression.encode_immediate(val, @cp.sizeof(var), @cp.endianness)
 	end
 

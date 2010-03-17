@@ -37,6 +37,7 @@ typedef void *HMODULE;
 #define WINAPI __stdcall
 #define CALLBACK __stdcall
 #define CONST const
+#define ZEROOK __attribute__((zero_not_fail))
 #define __in __attribute__((in))
 #define __out __attribute__((out))
 #define __opt __attribute__((opt))
@@ -470,6 +471,7 @@ GetExitCodeThread(
 	__out LPDWORD lpExitCode
 );
 
+ZEROOK
 WINBASEAPI
 DWORD
 WINAPI
@@ -477,6 +479,7 @@ GetLastError(
 	VOID
 );
 
+ZEROOK
 WINBASEAPI
 BOOL
 WINAPI
@@ -514,6 +517,8 @@ SetThreadContext(
 	__in HANDLE hThread,
 	__in LPCONTEXT lpContext
 );
+
+ZEROOK
 WINBASEAPI
 DWORD
 WINAPI
@@ -521,6 +526,7 @@ SuspendThread(
 	__in HANDLE hThread
 );
 
+ZEROOK
 WINBASEAPI
 DWORD
 WINAPI
@@ -534,6 +540,7 @@ DebugBreak(
 	VOID
 );
 
+ZEROOK
 WINBASEAPI
 BOOL
 WINAPI
@@ -579,6 +586,7 @@ DebugBreakProcess (
 	__in HANDLE Process
 );
 
+ZEROOK
 WINBASEAPI
 DWORD
 WINAPI
@@ -756,7 +764,19 @@ GetModuleFileNameExA(
 	DWORD nSize
 );
 EOS
+ 
+	# convert a native function return value
+	# if the native does not have the zero_not_fail attribute, convert 0
+	#  to nil, and print a message on stdout
+        def self.convert_ret_c2rb(fproto, ret)
+		if ret == 0 and not fproto.has_attribute 'zero_not_fail'
+			puts "WinAPI: error in #{fproto.name}: #{last_error_msg}" if $VERBOSE
+			nil
+		else super(fproto, ret)
+		end
+	end
 
+	# retrieve the textual error message relative to GetLastError
 	def self.last_error_msg
 		message = ' '*512
 		errno = getlasterror
