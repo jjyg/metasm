@@ -1439,7 +1439,7 @@ class WinDebugger < Debugger
 					return
 				end
 				@state = :stopped
-				@info = "access violation at #{Expression[info.addr]} (#{ev.first_chance == 0 ? '1st' : '2nd'} chance)"
+				@info = "access violation at #{Expression[info.addr]} (#{info.firstchance == 0 ? '1st' : '2nd'} chance)"
 			when WinAPI::STATUS_BREAKPOINT, WinAPI::STATUS_SINGLE_STEP
 				@state = :stopped
 				@info = nil
