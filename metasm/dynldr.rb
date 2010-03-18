@@ -942,7 +942,7 @@ EOS
 	class AllocCStruct < String
 		def initialize(cp, struct)
 			@cp, @struct = cp, struct
-			replace 0.chr*@cp.sizeof(@struct)
+			replace [0].pack('C')*@cp.sizeof(@struct)
 		end
 
 		def [](*a)
@@ -1075,7 +1075,7 @@ EOS
 		def self.memory_perm(addr, len, perm)
 			perm = { 'r' => PAGE_READONLY, 'rw' => PAGE_READWRITE, 'rx' => PAGE_EXECUTE_READ,
 				'rwx' => PAGE_EXECUTE_READWRITE }[perm.to_s.downcase]
-			virtualprotect(addr, len, perm, str_ptr(0.chr*8))
+			virtualprotect(addr, len, perm, str_ptr([0].pack('C')*8))
 		end
 	
 	when :linux

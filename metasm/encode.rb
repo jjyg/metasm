@@ -263,7 +263,7 @@ class Expression
 	def encode(type, endianness, backtrace=nil)
 		case val = reduce
 		when Integer; EncodedData.new Expression.encode_imm(val, type, endianness, backtrace)
-		else          EncodedData.new(0.chr*(INT_SIZE[type]/8), :reloc => {0 => Relocation.new(self, type, endianness, backtrace)})
+		else          EncodedData.new([0].pack('C')*(INT_SIZE[type]/8), :reloc => {0 => Relocation.new(self, type, endianness, backtrace)})
 		end
 	end
 

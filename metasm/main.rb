@@ -919,7 +919,7 @@ class EncodedData
 
 	# fill virtual space by repeating pattern (String) up to len
 	# expand self if len is larger than self.virtsize
-	def fill(len = @virtsize, pattern = 0.chr)
+	def fill(len = @virtsize, pattern = [0].pack('C'))
 		@virtsize = len if len > @virtsize
 		@data = @data.to_str.ljust(len, pattern) if len > @data.length
 	end
@@ -1063,7 +1063,7 @@ class EncodedData
 			val.fill
 			@data[from, len] = val.data
 		elsif not val.data.empty?	# patch end of real data
-			@data << (0.chr*(from-@data.length)) if @data.length < from
+			@data << ([0].pack('C')*(from-@data.length)) if @data.length < from
 			@data[from..-1] = val.data
 		else				# patch end of real data with fully virtual
 			@data = @data[0, from]

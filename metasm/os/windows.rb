@@ -943,15 +943,13 @@ class WindowsRemoteString < VirtualString
 	end
 
 	def get_page(addr, len=@pagelength)
-		page = 0.chr*len
-		page.force_encoding('binary') if page.respond_to? :force_encoding
+		page = [0].pack('C')*len
 		return if WinAPI.readprocessmemory(@handle, addr, page, len, 0) == 0
 		page
 	end
 
 	def realstring
-		s = 0.chr * @length
-		s.force_encoding('binary') if s.respond_to? :force_encoding
+		s = [0].pack('C') * @length
 		WinAPI.readprocessmemory(@handle, @addr_start, s, @length, 0)
 		s
 	end
@@ -1012,7 +1010,7 @@ class WinDbgAPI
 		# retrieves the thread context
 		def initialize(hthread, flags)
 			@hthread = hthread
-			@ctx = 0.chr * (OFFSETS.values.max + 4 + 512)
+			@ctx = [0].pack('C') * (OFFSETS.values.max + 4 + 512)
 			@flags = flags
 			update
 		end

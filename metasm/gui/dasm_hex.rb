@@ -165,7 +165,7 @@ class HexWidget < DrawableWidget
 			if @show_data and d
 				x = xd
 				if d_o > 0
-					d_do = 0.chr*(d_o % @data_size) + d
+					d_do = [0].pack('C')*(d_o % @data_size) + d
 					i = d_o/@data_size
 					x += (i*(@data_size*2+1) + i/4) * @font_width
 				else

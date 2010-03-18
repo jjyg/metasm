@@ -2325,7 +2325,7 @@ class Window
 		when Win32Gui::WM_DROPFILES
 			cnt = Win32Gui.dragqueryfilea(wparam, -1, 0, 0)
 			cnt.times { |i|
-				buf = 0.chr*1024
+				buf = [0].pack('C')*1024
 				len = Win32Gui.dragqueryfilea(wparam, i, buf, buf.length)
 				protect { @widget.dragdropfile(buf[0, len]) } if @widget and @widget.respond_to? :dragdropfile
 			}
@@ -2513,7 +2513,7 @@ class OpenFile
 	end
 
 	def initialize(win, title, opts={})
-		buf = 0.chr*512
+		buf = [0].pack('C')*512
 		ofn = Win32Gui.alloc_c_struct 'OPENFILENAMEA',
 			:lstructsize => :size,
   			#:hwndowner => win.hwnd,	# 0 for nonmodal
