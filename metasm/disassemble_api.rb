@@ -121,6 +121,15 @@ class Disassembler
 		di if di.kind_of? DecodedInstruction
 	end
 
+	# returns the DecodedInstruction covering addr
+	def di_including(addr)
+		return if not addr
+		addr = normalize(addr)
+		if off = (0...16).find { |o| @decoded[addr-o].kind_of? DecodedInstruction and @decoded[addr-o].bin_length > o }
+			@decoded[addr-off]
+		end
+	end
+
 	# yields every InstructionBlock
 	def each_instructionblock
 		@decoded.each { |addr, di|
