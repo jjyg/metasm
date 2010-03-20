@@ -2298,11 +2298,12 @@ class Window
 					@widget.keypress_ctrl_(key) if @widget
 				else
 					@widget.keypress_(key) if @widget
-					Win32Gui.defwindowproca(hwnd, msg, wparam, lparam) if key == :f4	# alt+f4
 				end
 			end
+			Win32Gui.defwindowproca(hwnd, msg, wparam, lparam) if key != :f10	# alt+f4 etc
 		when Win32Gui::WM_CHAR
-			if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
+			if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0 and not
+			   Win32Gui.getkeystate(Win32Gui::VK_MENU) & 0x8000 > 0			# altgr+[ returns CTRL on..
 				shift = (Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0)
 				if ?a.kind_of?(String)
 					wparam += (shift ? ?A.ord : ?a.ord) - 1 if wparam < 0x1a
