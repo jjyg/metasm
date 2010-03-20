@@ -398,6 +398,22 @@ typedef struct tagMDINEXTMENU {
 #define WMSZ_BOTTOMLEFT     7
 #define WMSZ_BOTTOMRIGHT    8
 
+#define SWP_NOSIZE          0x0001
+#define SWP_NOMOVE          0x0002
+#define SWP_NOZORDER        0x0004
+#define SWP_NOREDRAW        0x0008
+#define SWP_NOACTIVATE      0x0010
+#define SWP_FRAMECHANGED    0x0020  /* The frame changed: send WM_NCCALCSIZE */
+#define SWP_SHOWWINDOW      0x0040
+#define SWP_HIDEWINDOW      0x0080
+#define SWP_NOCOPYBITS      0x0100
+#define SWP_NOOWNERZORDER   0x0200  /* Don't do owner Z ordering */
+#define SWP_NOSENDCHANGING  0x0400  /* Don't send WM_WINDOWPOSCHANGING */
+#define SWP_DRAWFRAME       SWP_FRAMECHANGED
+#define SWP_NOREPOSITION    SWP_NOOWNERZORDER
+#define SWP_DEFERERASE      0x2000
+#define SWP_ASYNCWINDOWPOS  0x4000
+
 #define HWND_TOP        0
 #define HWND_BOTTOM     1
 #define HWND_TOPMOST    -1
@@ -2288,7 +2304,13 @@ class Window
 			@widget.resized_(lparam & 0xffff, (lparam >> 16) & 0xffff) if @widget
 			redraw
 		when Win32Gui::WM_WINDOWPOSCHANGING
-			Win32Gui.memory_write_int(lparam+Win32Gui.cp.typesize[:ptr], @popups.first.hwnd) if @popups.first
+			if @popups.first
+				# must move popups to top before updating hwndInsertafter
+				f = Win32Gui::SWP_NOACTIVATE | Win32Gui::SWP_NOMOVE | Win32Gui::SWP_NOSIZE |
+					Win32Gui::SWP_NOOWNERZORDER | Win32Gui::SWP_NOSENDCHANGING
+				@popups.each { |pw| Win32Gui.setwindowpos(pw.hwnd, Win32Gui::HWND_TOP, 0, 0, 0, 0, f) }
+				Win32Gui.memory_write_int(lparam+Win32Gui.cp.typesize[:ptr], @popups.first.hwnd)
+			end
 		when Win32Gui::WM_SHOWWINDOW
 			initialize_visible_
 		when Win32Gui::WM_KEYDOWN, Win32Gui::WM_SYSKEYDOWN
