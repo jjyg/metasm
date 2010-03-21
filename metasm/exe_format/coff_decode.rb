@@ -350,7 +350,8 @@ class COFF
 	def sect_at_rva(rva)
 		return if not rva or rva <= 0
 		if sections and not @sections.empty?
-			if s = @sections.find { |s_| s_.virtaddr <= rva and s_.virtaddr + s_.virtsize > rva }
+			valign = lambda { |l| EncodedData.align_size(l, @optheader.sect_align) }
+			if s = @sections.find { |s_| s_.virtaddr <= rva and s_.virtaddr + valign[s_.virtsize] > rva }
 				s.encoded.ptr = rva - s.virtaddr
 				@cursection = s
 			elsif rva < @sections.map { |s_| s_.virtaddr }.min
