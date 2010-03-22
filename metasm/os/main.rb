@@ -789,7 +789,7 @@ class Debugger
 
 	# accepts a range or begin/end address to write memory, or a register name
 	def []=(arg0, arg1, val=nil)
-		arg1, val = arg2, val if not val
+		arg1, val = val, arg1 if not val
 		if arg1
 			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
 			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
