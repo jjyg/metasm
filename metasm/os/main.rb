@@ -340,8 +340,14 @@ class Debugger
 		end
 	end
 
+	# marks the current cache of memory/regs invalid
 	def invalidate
 		@memory.invalidate
+	end
+
+	# invalidates the EncodedData backend for the dasm sections
+	def dasm_invalidate
+		disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate }
 	end
 
 	# retreive the value of the program counter register

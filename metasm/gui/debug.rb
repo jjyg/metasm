@@ -84,6 +84,8 @@ class DbgWidget < ContainerVBoxWidget
 				next true
 			end
 			@idle_checking = false
+			@dbg.dasm_invalidate
+			@mem.gui_update
 			@dbg.disassembler.sections.clear if @dbg.state == :dead
 			@console.add_log "target #{@dbg.state} #{@dbg.info}" if @dbg.info
 			@dbg.disassembler.disassemble_fast(@dbg.pc)
@@ -678,7 +680,7 @@ class DbgConsoleWidget < DrawableWidget
 		}
 		new_command('refresh', 'redraw', 'update', 'update the target memory/register cache') {
 			@dbg.invalidate
-			@dbg.disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate }
+			@dbg.dasm_invalidate
 			p.gui_update
 		}
 		new_command('bl', 'list breakpoints') {
