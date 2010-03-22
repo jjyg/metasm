@@ -78,7 +78,7 @@ def patch_instrs(addr, asmsrc)
 end
 
 if gui
-	gui.keyboard_callback[?P] = lambda {
+	gui.keyboard_callback[?P] = lambda { |k|
 		addr = gui.curaddr
 		gui.inputbox('new instructions') { |src|
 			src = src.gsub(/;\s+/, "\n")
