@@ -278,7 +278,7 @@ class CdecompListingWidget < DrawableWidget
 		while addr = todo.pop
 			next if not di = @dasm.di_at(addr)
 			addr = di.block.address
-			next if done.include?(addr) or not di_at(addr)
+			next if done.include?(addr) or not @dasm.di_at(addr)
 			done << addr
 			break if @dasm.function[addr] or ep[addr]
 			empty = true
