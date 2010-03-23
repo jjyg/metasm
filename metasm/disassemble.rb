@@ -889,8 +889,10 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		di = nil
 		ret = []
 
+		return ret if @decoded[di_addr]
+
 		100.times {
-			break if di = @decoded[di_addr]
+			break if @decoded[di_addr]
 
 			# decode instruction
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
