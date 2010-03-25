@@ -49,7 +49,7 @@ module Metasm
 		'DynLdr' => 'dynldr',
 	}
 
-def self.const_missing(c)
+def self.autorequire_const_missing(c)
 	cst = Const_autorequire_equiv[c.to_s] || c.to_s
 
 	files = Const_autorequire[cst]
@@ -81,7 +81,7 @@ def const_missing(c)
 	# Object.const_missing => Module#const_missing and not the other way around
 	# XXX should use Module.nesting, but ruby sucks arse
 	# e.g. module Metasm ; module Bla ; class << self ; Ia32 ; end ; end ; end -> fail
-	if (name =~ /^Metasm(::|$)/ or ancestors.include? Metasm) and cst = Metasm.const_missing(c)
+	if (name =~ /^Metasm(::|$)/ or ancestors.include? Metasm) and cst = Metasm.autorequire_const_missing(c)
 		cst
 	else
 		premetasm_const_missing(c)
