@@ -283,7 +283,7 @@ class ExeFormat
 	# parses an asm source file to an array of Instruction/Data/Align/Offset/Padding
 	def parse(text, file='<ruby>', lineno=0)
 		parse_init
-		@lexer ||= @cpu.new_asmprepro('', self)
+		@lexer ||= cpu.new_asmprepro('', self)
 		@lexer.feed text, file, lineno
 		lasteol = true
 
