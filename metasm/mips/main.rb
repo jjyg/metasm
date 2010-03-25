@@ -60,7 +60,6 @@ class MIPS < CPU
 		super()
 		@endianness = endianness
 		@size = 32
-		@fields_shift = {}
 		@family = family
 	end
 

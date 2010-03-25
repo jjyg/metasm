@@ -80,29 +80,26 @@ class PowerPC
 
 	def init
 		@opcode_list = []
-		@fields_shift = {
-			:aa => 1, :ba => 16, :bb => 11, :bd => 2, :bf => 23, :bfa => 18,
-			:bh => 11, :bt => 21, :d => 0, :dq => 4,
+		@fields_shift.update :aa => 1, :ba => 16, :bb => 11, :bd => 2, :bf => 23,
+			:bfa => 18, :bh => 11, :bt => 21, :d => 0, :dq => 4,
 			:ds => 2, :flm => 17, :fra => 16, :frb => 11, :frc => 6, :frs => 21,
 			:frt => 21, :fxm => 12, :l => 21, :l_ => 21, :l__ => 16, :lev => 5,
 			:li => 2, :lk => 0, :mb => 5, :mb_ => 6, :me => 5, :me_ => 1,
 			:nb => 11, :oe => 10, :ra => 16, :rb => 11, :rc => 0, :rs => 21,
 			:rt => 21, :sh => 11, :sh_ => 1, :si => 0, :spr => 11, :sr => 16,
 			:tbr => 11, :th => 21, :to => 21, :u => 12, :ui => 0,
-			:ign_bo_zzz => 16, :ign_bo_z => 21, :ign_bo_at => 21, :ign_bo_at2 => 16,
-		}
+			:ign_bo_zzz => 16, :ign_bo_z => 21, :ign_bo_at => 21, :ign_bo_at2 => 16
 
-		@fields_mask = {
-			:aa => 1, :ba => 31, :bb => 31, :bd => 0x3FFF, :bf => 7, :bfa => 7,
-			:bh => 3, :bt => 31, :d => 0xFFFF, :dq => 0xFFF,
+		@fields_mask.update :aa => 1, :ba => 31, :bb => 31, :bd => 0x3FFF, :bf => 7,
+			:bfa => 7, :bh => 3, :bt => 31, :d => 0xFFFF, :dq => 0xFFF,
 			:ds => 0x3FFF, :flm => 255, :fra => 31, :frb => 31, :frc => 31, :frs => 31,
 			:frt => 31, :fxm => 255, :l => 1, :l_ => 3, :l__ => 1, :lev => 127,
 			:li => 0xFFFFFF, :lk => 1, :mb => 63, :mb_ => 31, :me => 63, :me_ => 31,
 			:nb => 31, :oe => 1, :ra => 31, :rb => 31, :rc => 1, :rs => 31,
 			:rt => 31, :sh => 31, :sh_ => 1, :si => 0xFFFF, :spr => 0x3FF, :sr => 15,
 			:tbr => 0x3FF, :th => 15, :to => 31, :u => 15, :ui => 0xFFFF,
-			:ign_bo_zzz => 0b101111111, :ign_bo_z => 1, :ign_bo_at => 3, :ign_bo_at2 => 0b100111111,
-		}
+			:ign_bo_zzz => 0b101111111, :ign_bo_z => 1, :ign_bo_at => 3, :ign_bo_at2 => 0b100111111
+
 		@fields_shift[:ra_i16]  = @fields_shift[:ra_i16s] = @fields_shift[:ra_i16q] = 0
 		@fields_mask[:ra_i16]  = (@fields_mask[:d]  << @fields_shift[:d]) | (@fields_mask[:ra] << @fields_shift[:ra])
 		@fields_mask[:ra_i16s] = (@fields_mask[:ds] << @fields_shift[:d]) | (@fields_mask[:ra] << @fields_shift[:ra])

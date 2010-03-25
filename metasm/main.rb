@@ -31,6 +31,7 @@ class CPU
 
 	def initialize
 		@fields_mask = {}
+		@fields_shift= {}
 		@valid_args  = []
 		@valid_props = [:setip, :saveip, :stopexec]
 		@generate_PIC = true
