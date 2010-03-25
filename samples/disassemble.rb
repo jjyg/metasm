@@ -24,6 +24,7 @@ OptionParser.new { |opt|
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-o <outfile>', '--output <outfile>', 'save the assembly listing in the specified file (defaults to stdout)') { |h| opts[:outfile] = h }
 	opt.on('--cpu <cpu>', 'the CPU class to use for a shellcode (Ia32, X64, ...)') { |c| opts[:sc_cpu] = c }
+	opt.on('--exe <exe_fmt>', 'the executable file format to use (PE, ELF, ...)') { |c| opts[:exe_fmt] = c }
 	opt.on('--rebase <addr>', 'rebase the loaded file to <addr>') { |a| opts[:rebase] = Integer(a) }
 	opt.on('-s <savefile>', 'save the disassembler state after disasm') { |h| opts[:savefile] = h }
 	opt.on('-S <addrlist>', '--stop <addrlist>', '--stopaddr <addrlist>', 'do not disassemble past these addresses') { |h| opts[:stopaddr] ||= [] ; opts[:stopaddr] |= h.split ',' }
@@ -49,7 +50,8 @@ if exename =~ /^live:(.*)/
 	p target if $VERBOSE
 	exe = Shellcode.decode(target.memory, Metasm.const_get(opts[:sc_cpu]).new)
 else
-	exe = AutoExe.orshellcode { Metasm.const_get(opts[:sc_cpu]).new }.decode_file(exename)
+	exefmt = opts[:exe_fmt] ? Metasm.const_get(opts[:exe_fmt]) : AutoExe.orshellcode { Metasm.const_get(opts[:sc_cpu]).new }
+	exe = exefmt.decode_file(exename)
 	exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 	if opts[:autoload]
 		basename = exename.sub(/\.\w\w?\w?$/, '')

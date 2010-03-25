@@ -42,6 +42,7 @@ OptionParser.new { |opt|
 	opt.on('--decompile') { opts[:decompile] = true }
 	opt.on('--gui <gtk|win32|qt>') { |g| require 'metasm/gui/' + g }
 	opt.on('--cpu <cpu>', 'the CPU class to use for a shellcode (Ia32, X64, ...)') { |c| opts[:sc_cpu] = c }
+	opt.on('--exe <exe_fmt>', 'the executable file format to use (PE, ELF, ...)') { |c| opts[:exe_fmt] = c }
 	opt.on('--rebase <addr>', 'rebase the loaded file to <addr>') { |a| opts[:rebase] = Integer(a) }
 	opt.on('-c <header>', '--c-header <header>', 'read C function prototypes (for external library functions)') { |h| opts[:cheader] = h }
 	opt.on('-a', '--autoload', 'loads all relevant files with same filename (.h, .map..)') { opts[:autoload] = true }
@@ -65,7 +66,7 @@ when /^(tcp:|udp:)?..+:/
 else
 	w = Metasm::Gui::DasmWindow.new("#{exename + ' - ' if exename}metasm disassembler")
 	if exename
-		exe = w.loadfile(exename, opts[:sc_cpu])
+		exe = w.loadfile(exename, opts[:sc_cpu], opts[:exe_fmt])
 		exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 		if opts[:autoload]
 			basename = exename.sub(/\.\w\w?\w?$/, '')
