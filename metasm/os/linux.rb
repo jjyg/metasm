@@ -449,6 +449,11 @@ class LinOS < OS
 	end
 end
 
+module ::Process
+	WALL   = 0x40000000 if not defined? WALL
+	WCLONE = 0x80000000 if not defined? WCLONE
+end
+
 # this class implements a high-level API over the ptrace debugging primitives
 class LinDebugger < Debugger
 	attr_accessor :ptrace, :pass_exceptions, :continuesignal
@@ -465,8 +470,8 @@ class LinDebugger < Debugger
 	def reinit(mem=nil)
 		ptrace.tweak_for_pid
 		@tid = @pid = ptrace.pid
-		@threads = { @tid => :stopped }
-		@cpu = Ia32.new(@ptrace.intsize*8)
+		@threads = { @tid => { :state => :stopped } }	# TODO regs_cache, hwbp, singlestepcb, continuesig, breaking...
+		@cpu = LinOS.open_process(@pid).cpu
 		if @cpu.size == 64 and @ptrace.reg_off['EAX']
 			hack_64_32
 		end
@@ -495,16 +500,15 @@ class LinDebugger < Debugger
 
 	def attach_thread(tid)
 		@ptrace.pid = tid
-		if not @threads[tid] or @threads[tid] == :new
+		if not @threads[tid] or @threads[tid][:state] == :new
 			@ptrace.attach
-			@threads[tid] = :stopped
+			@threads[tid] ||= { :regs_cache => {} }
+			@threads[tid][:state] = :stopped
 			puts "attached thread #{tid}" if $VERBOSE
 		end
 		opts = ['TRACESYSGOOD', 'TRACECLONE', 'TRACEEXEC', 'TRACEEXIT']
 		opts += ['TRACEFORK', 'TRACEVFORK', 'TRACEVFORKDONE'] if @trace_children
 		@ptrace.setoptions(*opts)
-		# waitpid(tid) => ECHLD
-		# waitpid(pid) => hang
 	end
 
 	def trace_children; @trace_children end
@@ -517,15 +521,21 @@ class LinDebugger < Debugger
 		get_thread_list(@pid).each { |tid| attach_thread(tid) }
 	end
 
-	def tid; @tid end
 	def tid=(t)
 		@tid_changed = (@tid != t)
-		@reg_val_cache.clear if @tid_changed
+		if @tid_changed
+			@reg_val_cache.clear
+			@state = @threads[tid][:state] rescue @state
+		end
 		@tid = @ptrace.pid = t
 	end
 
 	def get_thread_list(pid=@pid)
 		LinOS.open_process(pid).threads
+	end
+
+	def get_process_list
+		[@pid]
 	end
 
 	def invalidate
@@ -547,20 +557,34 @@ class LinDebugger < Debugger
 
 	def update_waitpid
 		if $?.exited?
-			@state = (@pid == @tid ? :dead : :stopped)	# XXX other threads may still run
 			@info = "#@tid exitcode #{$?.exitstatus}"
 			@threads.delete @tid
-			self.tid = @pid
+			while t = ::Process.waitpid(-1, ::Process::WNOHANG | ::Process::WALL)
+				if not $?.exited?
+					self.tid = t
+					return update_waitpid
+				end
+				@threads.delete @tid
+			end
+			@state = (@threads.empty? ? :dead : :stopped)
+			self.tid = @threads.keys.first || @tid
 		elsif $?.signaled?
-			@state = (@pid == @tid ? :dead : :stopped)
 			@info = "#@tid signalx #{$?.termsig} #{PTrace::SIGNAL[$?.termsig]}"
 			@threads.delete @tid
-			self.tid = @pid
+			while t = ::Process.waitpid(-1, ::Process::WNOHANG | ::Process::WALL)
+				if not $?.signaled?
+					self.tid = t
+					return update_waitpid
+				end
+				@threads.delete @tid
+			end
+			@state = (@threads.empty? ? :dead : :stopped)
+			self.tid = @threads.keys.first || @tid
 		elsif $?.stopped?
 			@state = :stopped
 			sig = $?.stopsig & 0x7f
 			if sig == PTrace::SIGNAL['TRAP']	# possible ptrace event 
-				@threads[@tid] = :stopped
+				@threads[@tid][:state] = :stopped
 				if $?.stopsig & 0x80 > 0
 					@info = "#@tid syscall #{@ptrace.syscallnr[get_reg_value(:orig_eax)]}"
 					if @target_syscall and @info !~ /#@target_syscall/
@@ -573,13 +597,14 @@ class LinDebugger < Debugger
 					when 'EVENT_FORK', 'EVENT_VFORK'
 						@memory.readfd = nil	# can't read from /proc/parentpid/mem anymore
 						cld = @ptrace.geteventmsg
-						@threads[cld] ||= :new	# may have already handled STOP
+						@threads[cld] ||= {}
+						@threads[cld][:state] ||= :new	# may have already handled STOP
 					when 'EVENT_CLONE'
 						cld = @ptrace.geteventmsg
-						#@threads[cld] ||= :new	# may have already handled STOP
+						@threads[cld] ||= {}
+						@threads[cld][:state] ||= :new	# may have already handled STOP
 					when 'EVENT_EXIT'
-						@threads[@tid] = :dead
-						@state = :dead if @threads.values.uniq == [:dead]
+						@threads[@tid][:state] = :dead
 					when 'EVENT_EXEC'
 						# XXX clear maps/syms/bpx..
 						# also check if it kills the other threads
@@ -589,18 +614,17 @@ class LinDebugger < Debugger
 					@info = "#@tid trace event #{o}"
 				else
 					@info = nil	# standard breakpoint, no need for specific info
-							# TODO check target-initiated antidebug etc
+							# TODO check target-initiated #i3 (antidebug etc)
 					puts "break in #@tid" if @tid_changed
 				end
 				@continuesignal = 0
-			elsif sig == PTrace::SIGNAL['STOP'] and (@threads[@tid] ||= :new) == :new
+			elsif sig == PTrace::SIGNAL['STOP'] and ((@threads[@tid] ||= {})[:state] ||= :new) == :new
 				@memory.readfd = nil if not get_thread_list(@pid).include? @tid	# FORK, can't read from /proc/parentpid/mem anymore
-				attach_thread(@tid)
-				@threads[@tid] = :stopped
+				@threads[@tid][:state] = :stopped
 				@info = "#@tid signal #{sig} #{PTrace::SIGNAL[sig]}"
 				@continuesignal = 0
 			else
-				@threads[@tid] = :stopped
+				@state = @threads[@tid][:state] = :stopped
 				if @breaking and sig == PTrace::SIGNAL['STOP']
 					@info = nil
 					@continuesignal = 0
@@ -618,7 +642,7 @@ class LinDebugger < Debugger
 	end
 
 	def do_check_target
-		return unless t = ::Process.waitpid(-1, ::Process::WNOHANG)
+		return unless t = ::Process.waitpid(-1, ::Process::WNOHANG | ::Process::WALL)
 		self.tid = t
 		invalidate
 		update_waitpid
@@ -627,7 +651,7 @@ class LinDebugger < Debugger
 	end
 
 	def do_wait_target
-		t = ::Process.waitpid(-1)
+		t = ::Process.waitpid(-1, ::Process::WALL)
 		self.tid = t
 		invalidate
 		update_waitpid
@@ -650,18 +674,22 @@ class LinDebugger < Debugger
 
 	def do_continue(*a)
 		return if @state != :stopped
+		@threads.each { |tid, tdata|
+			tdata[:state] = :running
+			sig = parse_run_signal(a.first)
+			@ptrace.pid = tid
+			@ptrace.cont(sig)
+		}
+		@ptrace.pid = @tid
 		@state = :running
 		@info = 'continue'
-		@threads[@tid] = :running	# XXX others ?
-		sig = parse_run_signal(a.first)
-		@ptrace.cont(sig)
 	end
 
 	def do_singlestep(*a)
 		return if @state != :stopped
+		@threads[tid][:state] = :running
 		@state = :running
 		@info = 'singlestep'
-		@threads[@tid] = :running	# XXX others ?
 		sig = parse_run_signal(a.first)
 		@ptrace.singlestep(sig)
 	end
@@ -681,6 +709,18 @@ class LinDebugger < Debugger
 		::Process.kill(sig, @pid)
 	end
 
+	def detach
+		# TODO detach only current thread ?
+		super()
+		@threads.each_key { |tid|
+			@ptrace.pid = tid
+			@ptrace.detach
+		}
+		@threads.clear
+		@state = :dead
+		@info = 'detached'
+	end
+
 	def bpx(addr, *a)
 		return hwbp(addr, :x, 1, *a) if @has_pax
 		super(addr, *a)
@@ -692,7 +732,12 @@ class LinDebugger < Debugger
 		@state = :running
 		@info = 'syscall'
 		@target_syscall = arg
-		@ptrace.syscall
+		@threads.each { |tid, tdata|
+			tdata[:state] = :running
+			@ptrace.pid = tid
+			@ptrace.syscall
+		}
+		@ptrace.pid = @tid
 	end
 
 	def enable_bp(addr)
@@ -732,7 +777,7 @@ class LinDebugger < Debugger
 		ui.keyboard_callback[:f6] = lambda { ui.wrap_run { syscall } }
 
 		ui.new_command('threads_raw', 'list threads from the OS') { puts get_thread_list(@pid).join(', ') }
-		ui.new_command('threads', 'list threads') { @threads.each { |t, s| puts "#{t} #{s}" } }
+		ui.new_command('threads', 'list threads') { @threads.each { |t, s| puts "#{t} #{s[:state]}" } }
 		ui.new_command('tid', 'set/get current thread id') { |arg|
 			if arg.strip == ''; puts self.tid
 			else self.tid = arg.to_i
