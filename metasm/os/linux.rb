@@ -30,16 +30,18 @@ class PTrace
 			if not @pid = fork
 				tweak_for_pid(::Process.pid)
 				traceme
-				exec target
+				Process.exec target
+				exit!(0)
 			end
 		end
 		wait
+		raise "could not exec #{target}" if $?.exited?
 		tweak_for_pid(@pid) if did_exec
 		puts "Ptrace: attached to #@pid" if $DEBUG
 	end
 
 	def wait
-		::Process.wait(@pid)
+		::Process.wait(@pid, ::Process::WALL)
 	end
 
 	attr_accessor :reg_off, :intsize, :syscallnr
@@ -328,8 +330,8 @@ class PTrace
 		sys_ptrace(COMMAND['SINGLESTEP'], @pid, 0, sig)
 	end
 
-	def syscall
-		sys_ptrace(COMMAND['SYSCALL'], @pid, 0, 0)
+	def syscall(sig = 0)
+		sys_ptrace(COMMAND['SYSCALL'], @pid, 0, sig)
 	end
 
 	def attach
@@ -457,6 +459,10 @@ end
 # this class implements a high-level API over the ptrace debugging primitives
 class LinDebugger < Debugger
 	attr_accessor :ptrace, :pass_exceptions, :continuesignal
+
+	attr_accessor :stop_on_threadcreate, :stop_on_threadexit
+	attr_accessor :callback_threadcreate, :callback_threadexit, :callback_ignoresig
+
 	def initialize(pid, mem=nil)
 		@ptrace = PTrace.new(pid)
 		reinit(mem)
@@ -558,28 +564,16 @@ class LinDebugger < Debugger
 	def update_waitpid
 		if $?.exited?
 			@info = "#@tid exitcode #{$?.exitstatus}"
+			puts @info
 			@threads.delete @tid
-			while t = ::Process.waitpid(-1, ::Process::WNOHANG | ::Process::WALL)
-				if not $?.exited?
-					self.tid = t
-					return update_waitpid
-				end
-				@threads.delete @tid
-			end
-			@state = (@threads.empty? ? :dead : :stopped)
 			self.tid = @threads.keys.first || @tid
+			@state = @threads.empty? ? :dead : @threads[@tid][:state]
 		elsif $?.signaled?
 			@info = "#@tid signalx #{$?.termsig} #{PTrace::SIGNAL[$?.termsig]}"
+			puts @info
 			@threads.delete @tid
-			while t = ::Process.waitpid(-1, ::Process::WNOHANG | ::Process::WALL)
-				if not $?.signaled?
-					self.tid = t
-					return update_waitpid
-				end
-				@threads.delete @tid
-			end
-			@state = (@threads.empty? ? :dead : :stopped)
 			self.tid = @threads.keys.first || @tid
+			@state = @threads.empty? ? :dead : @threads[@tid][:state]
 		elsif $?.stopped?
 			@state = :stopped
 			sig = $?.stopsig & 0x7f
@@ -587,6 +581,7 @@ class LinDebugger < Debugger
 				@threads[@tid][:state] = :stopped
 				if $?.stopsig & 0x80 > 0
 					@info = "#@tid syscall #{@ptrace.syscallnr[get_reg_value(:orig_eax)]}"
+					puts @info
 					if @target_syscall and @info !~ /#@target_syscall/
 					       	syscall(@target_syscall)
 						return if @state == :running
@@ -603,8 +598,11 @@ class LinDebugger < Debugger
 						cld = @ptrace.geteventmsg
 						@threads[cld] ||= {}
 						@threads[cld][:state] ||= :new	# may have already handled STOP
+						return run_resume unless stop_on_threadcreate
 					when 'EVENT_EXIT'
 						@threads[@tid][:state] = :dead
+						@callback_threadexit[@tid] if callback_threadexit
+						return run_resume unless stop_on_threadexit
 					when 'EVENT_EXEC'
 						# XXX clear maps/syms/bpx..
 						# also check if it kills the other threads
@@ -612,40 +610,58 @@ class LinDebugger < Debugger
 					when 'EVENT_VFORKDONE'
 					end
 					@info = "#@tid trace event #{o}"
+					puts @info
 				else
 					@info = nil	# standard breakpoint, no need for specific info
 							# TODO check target-initiated #i3 (antidebug etc)
-					puts "break in #@tid" if @tid_changed
+					puts "#@tid breakpoint break" if @tid_changed
 				end
 				@continuesignal = 0
 			elsif sig == PTrace::SIGNAL['STOP'] and ((@threads[@tid] ||= {})[:state] ||= :new) == :new
 				@memory.readfd = nil if not get_thread_list(@pid).include? @tid	# FORK, can't read from /proc/parentpid/mem anymore
-				@threads[@tid][:state] = :stopped
-				@info = "#@tid signal #{sig} #{PTrace::SIGNAL[sig]}"
+				@state = @threads[@tid][:state] = :stopped
+				@info = "#@tid new thread started"
+				puts @info
+				@callback_threadcreate[@tid] if callback_threadcreate
+				return do_continue unless stop_on_threadcreate
 				@continuesignal = 0
 			else
 				@state = @threads[@tid][:state] = :stopped
 				if @breaking and sig == PTrace::SIGNAL['STOP']
 					@info = nil
+					puts "#@tid break"
 					@continuesignal = 0
 					@breaking = nil
+				elsif want_ignore_signal($?.stopsig)
+					sig = @continuesignal = $?.stopsig
+					puts "#@tid ignored signal #{sig} #{PTrace::SIGNAL[sig]}"
+					return run_resume
 				else
+					sig = @continuesignal = $?.stopsig
 					@info = "#@tid signal #{sig} #{PTrace::SIGNAL[sig]}"
-					@continuesignal = $?.stopsig
 				end
 			end
 		else
 			@state = :stopped
 			@info = "#@tid unknown wait #{$?.inspect} #{'%x' % ($? >> 16)}"
+			puts @info
 		end
 		@target_syscall = nil
+	end
+	
+	# check if we are supposed to ignore the signal sig
+	def want_ignore_signal(sig)
+		callback_ignoresig ? @callback_ignoresig[sig] : sig == PTrace::SIGNAL['WINCH']
 	end
 
 	def do_check_target
 		return unless t = ::Process.waitpid(-1, ::Process::WNOHANG | ::Process::WALL)
-		self.tid = t
-		invalidate
-		update_waitpid
+		loop do
+			self.tid = t
+			invalidate
+			update_waitpid
+			break if not t = ::Process.waitpid(-1, ::Process::WNOHANG | ::Process::WALL)
+		end
 	rescue ::Errno::ECHILD
 		@state = :dead
 	end
@@ -655,8 +671,21 @@ class LinDebugger < Debugger
 		self.tid = t
 		invalidate
 		update_waitpid
+		do_check_target
 	rescue ::Errno::ECHILD
 		@state = :dead
+	end
+
+	# resume execution of the target, ignoring the current stop cause
+	# must be called before updating @info
+	def run_resume
+		case @info
+		when 'singlestep'; do_singlestep
+		when 'syscall'; syscall
+		when 'continue'; do_continue
+		else do_singlestep	# ?
+		end
+		@state = :running
 	end
 
 	def parse_run_signal(sig)
@@ -675,6 +704,8 @@ class LinDebugger < Debugger
 	def do_continue(*a)
 		return if @state != :stopped
 		@threads.each { |tid, tdata|
+			# TODO continue only a userconfigured subset of threads
+			next if tdata[:state] != :stopped
 			tdata[:state] = :running
 			sig = parse_run_signal(a.first)
 			@ptrace.pid = tid
@@ -706,7 +737,7 @@ class LinDebugger < Debugger
 	def kill(sig=nil)
 		sig = 9 if not sig or sig == ''
 		sig = PTrace::SIGNAL[sig] || sig.to_i
-		::Process.kill(sig, @pid)
+		@threads.each_key { |tid| ::Process.kill(sig, tid) }
 	end
 
 	def detach
@@ -732,10 +763,12 @@ class LinDebugger < Debugger
 		@state = :running
 		@info = 'syscall'
 		@target_syscall = arg
+		sig = parse_run_signal(nil)
 		@threads.each { |tid, tdata|
+			next if tdata[:state] != :stopped
 			tdata[:state] = :running
 			@ptrace.pid = tid
-			@ptrace.syscall
+			@ptrace.syscall(sig)
 		}
 		@ptrace.pid = @tid
 	end
@@ -783,6 +816,8 @@ class LinDebugger < Debugger
 			else self.tid = arg.to_i
 			end
 		}
+		ui.new_command('stop_on_threadcreate') { |arg| @stop_on_threadcreate = ((arg =~ /1|true|y/i) ? true : false) }
+		ui.new_command('stop_on_threadexit')   { |arg| @stop_on_threadexit   = ((arg =~ /1|true|y/i) ? true : false) }
 		ui.new_command('signal_cont', 'set/get the continue signal (0 == unset)') { |arg|
 			case arg.strip
 			when ''; puts @continuesignal
