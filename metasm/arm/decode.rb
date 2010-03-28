@@ -73,14 +73,9 @@ class ARM
 			cd = %w[eq ne cs cc mi pl vs vc hi ls ge lt gt le al][field_val[:cond]]
 			if cd != 'al'
 				di.opcode = di.opcode.dup
-				di.opcode.name += cd
-				di.instruction.opname += cd
+				di.instruction.opname = di.opcode.name = di.opcode.name.dup
+				di.opcode.name[(op.props[:cond_name_off] || di.opcode.name.length), 0] = cd
 			end
-		end
-		if op.props[:s] and field_val[:s] == 1
-			di.opcode = di.opcode.dup
-			di.opcode.name += 's'
-			di.instruction.opname += 's'
 		end
 
 		op.args.each { |a|

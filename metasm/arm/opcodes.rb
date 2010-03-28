@@ -17,8 +17,7 @@ class ARM
 		o.bin = bin
 		o.args.concat(args & @valid_args)
 		(args & @valid_props).each { |p| o.props[p] = true }
-		o.props[:baseincr] = :post if args.include? :postincr
-		o.props[:baseincr] = :pre  if args.include? :preincr
+		args.grep(Hash).each { |h| o.props.update h }
 
 		# special args -> multiple fields
 		case (o.args & [:i8_r, :rm_is, :rm_rs, :mem_rn_rm, :mem_rn_i12]).first
@@ -36,31 +35,35 @@ class ARM
 		@opcode_list << o
 	end
 
+	def addop_data_s(name, op, a1, a2, *h)
+		addop name, (op << 21) | (1 << 25), a1, a2, :i8_r, :rotate, *h
+		addop name, (op << 21), a1, a2, :rm_is, *h
+		addop name, (op << 21) | (1 << 4), a1, a2, :rm_rs, *h
+	end
 	def addop_data(name, op, a1, a2)
-		addop name, (op << 21) | (1 << 25), :s, a1, a2, :i8_r, :rotate
-		addop name, (op << 21), :s, a1, a2, :rm_is
-		addop name, (op << 21) | (1 << 4), :s, a1, a2, :rm_rs
+		addop_data_s name, op, a1, a2
+		addop_data_s name+'s', op | (1 << 20), a1, a2, :cond_name_off => name.length
 	end
 
 	def addop_load_bpw(name, op, *incr)
 		addop name, op, :rd, :mem_rn_i12, *incr
 		addop name, op | (1 << 25), :rd, :mem_rn_rm, *incr
 	end
-	def addop_load_b(name, op)
-		addop_load_bpw name, op, :postincr
-		addop_load_bpw name+'t', op | (1 << 21), :postincr
-		addop_load_bpw name, op | (1 << 24)
-		addop_load_bpw name, op | (1 << 24) | (1 << 21), :preincr
+	def addop_load_b(name, op, *a)
+		addop_load_bpw name, op, {:baseincr => :post}, *a
+		addop_load_bpw name+'t', op | (1 << 21), {:baseincr => :post, :cond_name_off => name.length}, *a
+		addop_load_bpw name, op | (1 << 24), *a
+		addop_load_bpw name, op | (1 << 24) | (1 << 21), {:baseincr => :pre}, *a
 	end
 	def addop_load(name, op)
 		addop_load_b name, op
-		addop_load_b name+'b', op | (1 << 22)
+		addop_load_b name+'b', op | (1 << 22), :cond_name_off => name.length
 	end
 
 	# ARMv6 instruction set, aka arm7/arm9
 	def init_arm_v6
 		@opcode_list = []
-		@valid_props << :baseincr << :cond << :s << :tothumb << :tojazelle
+		@valid_props << :baseincr << :cond << :cond_name_off << :tothumb << :tojazelle
 		@valid_args.concat [:rn, :rd, :rm, :crn, :crd, :crm, :cpn, :reglist,
 			:rm_rs, :rm_is, :i8_r, :mem_rn_i12, :mem_rn_rm]
 		@fields_mask.update :rn => 0xf, :rd => 0xf, :rs => 0xf, :rm => 0xf,
@@ -68,16 +71,14 @@ class ARM
 			:rnx => 0xf, :rdx => 0xf,
 			:shifta => 0x1f, :shift => 3, :rotate => 0xf, :reglist => 0xffff,
 			:i8 => 0xff, :i12 => 0xfff, :i24 => 0xff_ffff,
-			:u => 1, :s => 1,
-			:mask => 0xf, :sbo => 0xf, :cond => 0xf
+			:u => 1, :mask => 0xf, :sbo => 0xf, :cond => 0xf
 
 		@fields_shift.update :rn => 16, :rd => 12, :rs => 8, :rm => 0,
 			:crn => 16, :crd => 12, :crm => 0, :cpn => 8,
 			:rnx => 16, :rdx => 12,
 			:shifta => 7, :shift => 5, :rotate => 8, :reglist => 0,
 			:i8 => 0, :i12 => 0, :i24 => 0,
-			:u => 23, :s => 20,
-			:mask => 16, :sbo => 12, :cond => 28
+			:u => 23, :mask => 16, :sbo => 12, :cond => 28
 		
 		addop_data 'and', 0,  :rd, :rn
 		addop_data 'eor', 1,  :rd, :rn
