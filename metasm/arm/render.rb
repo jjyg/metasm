@@ -34,7 +34,7 @@ class ARM
 			case @incr
 			when nil;   ['[', @base, ', ', o, ']']
 			when :pre;  ['[', @base, ', ', o, ']!']
-			when :post; ['[', @base, '],', o]
+			when :post; ['[', @base, '], ', o]
 			end
 		end
 	end

@@ -283,7 +283,7 @@ class MachO < ExeFormat
 				when 'I386'; @ctx[:eip]
 				when 'X86_64'; @ctx[:rip]
 				when 'POWERPC'; @ctx[:srr0]
-				when 'ARM'; @ctx[:r15]
+				when 'ARM'; @ctx[:pc]
 				end
 			end
 
@@ -293,7 +293,7 @@ class MachO < ExeFormat
 				when 'I386'; @ctx[:eip] = ep
 				when 'X86_64'; @ctx[:rip] = ep
 				when 'POWERPC'; @ctx[:srr0] = ep
-				when 'ARM'; @ctx[:r15] = ep
+				when 'ARM'; @ctx[:pc] = ep
 				end
 			end
 
