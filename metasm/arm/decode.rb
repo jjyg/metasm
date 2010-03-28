@@ -63,6 +63,7 @@ class ARM
 			r = (val >> @fields_shift[f]) & @fields_mask[f]
 			case f
 			when :i16; Expression.make_signed(r, 16)
+			when :i24; Expression.make_signed(r, 24)
 			when :shift; [:lsl, :lsr, :asr, :ror][r]
 			when :u; [:-, :+][r]
 			else r
@@ -75,6 +76,10 @@ class ARM
 				di.opcode = di.opcode.dup
 				di.instruction.opname = di.opcode.name = di.opcode.name.dup
 				di.opcode.name[(op.props[:cond_name_off] || di.opcode.name.length), 0] = cd
+				if di.opcode.props[:stopexec]
+					di.opcode.props = di.opcode.props.dup
+					di.opcode.props.delete :stopexec
+				end
 			end
 		end
 
@@ -83,6 +88,7 @@ class ARM
 			when :rd, :rn, :rm; Reg.new field_val[a]
 			when :rm_rs; Reg.new field_val[:rm], field_val[:shift], Reg.new(field_val[:rs])
 			when :rm_is; Reg.new field_val[:rm], field_val[:shift], field_val[:shifta]*2
+			when :i24; Expression[field_val[a] << 2]
 			when :i8_r
 				i = field_val[:i8]
 				r = field_val[:rotate]*2
@@ -101,6 +107,13 @@ class ARM
 		}
 
 		di.bin_length = 4
+		di
+	end
+
+	def decode_instr_interpret(di, addr)
+		if di.opcode.args.include? :i24
+			di.instruction.args[-1] = Expression[di.instruction.args[-1] + addr + 8]
+		end
 		di
 	end
 
@@ -136,7 +149,12 @@ class ARM
 	end
 	
 	def get_xrefs_x(dasm, di)
-		[]	# TODO
+		if di.opcode.props[:setip]
+			[di.instruction.args.last]
+		else
+			# TODO ldr pc, ..
+			[]
+		end
 	end
 end
 end

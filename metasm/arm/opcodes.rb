@@ -36,13 +36,13 @@ class ARM
 	end
 
 	def addop_data_s(name, op, a1, a2, *h)
-		addop name, (op << 21) | (1 << 25), a1, a2, :i8_r, :rotate, *h
-		addop name, (op << 21), a1, a2, :rm_is, *h
-		addop name, (op << 21) | (1 << 4), a1, a2, :rm_rs, *h
+		addop name, op | (1 << 25), a1, a2, :i8_r, :rotate, *h
+		addop name, op, a1, a2, :rm_is, *h
+		addop name, op | (1 << 4), a1, a2, :rm_rs, *h
 	end
 	def addop_data(name, op, a1, a2)
-		addop_data_s name, op, a1, a2
-		addop_data_s name+'s', op | (1 << 20), a1, a2, :cond_name_off => name.length
+		addop_data_s name, op << 21, a1, a2
+		addop_data_s name+'s', (op << 21) | (1 << 20), a1, a2, :cond_name_off => name.length
 	end
 
 	def addop_load_bpw(name, op, *incr)
@@ -64,7 +64,7 @@ class ARM
 	def init_arm_v6
 		@opcode_list = []
 		@valid_props << :baseincr << :cond << :cond_name_off << :tothumb << :tojazelle
-		@valid_args.concat [:rn, :rd, :rm, :crn, :crd, :crm, :cpn, :reglist,
+		@valid_args.concat [:rn, :rd, :rm, :crn, :crd, :crm, :cpn, :reglist, :i24,
 			:rm_rs, :rm_is, :i8_r, :mem_rn_i12, :mem_rn_rm]
 		@fields_mask.update :rn => 0xf, :rd => 0xf, :rs => 0xf, :rm => 0xf,
 			:crn => 0xf, :crd => 0xf, :crm => 0xf, :cpn => 0xf,
