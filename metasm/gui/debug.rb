@@ -78,7 +78,8 @@ class DbgWidget < ContainerVBoxWidget
 		return if @idle_checking ||= nil	# load only one bg proc
 		@idle_checking = true
 		Gui.idle_add {
-			if not @dbg.check_target and @dbg.state == :running
+			@dbg.check_target
+			if @dbg.state == :running
 				redraw if want_redraw	# redraw once if the target is running (less flicker with singlestep)
 				want_redraw = false
 				next true
@@ -87,7 +88,6 @@ class DbgWidget < ContainerVBoxWidget
 			@dbg.dasm_invalidate
 			@mem.gui_update
 			@dbg.disassembler.sections.clear if @dbg.state == :dead
-			@console.add_log "target #{@dbg.state} #{@dbg.info}" if @dbg.info
 			@dbg.disassembler.disassemble_fast(@dbg.pc)
 			@children.each { |c|
 				if wp = @watchpoint[c]
