@@ -302,8 +302,8 @@ class MachO < ExeFormat
 				when 'I386'; %w[eax ebx ecx edx edi esi ebp esp ss eflags eip cs ds es fs gs]
 				when 'X86_64'; %w[rax rbx rcx rdx rdi rsi rbp rsp r8 r9 r10 r11 r12 r13 r14 r15 rip rflags cs fs gs]
 				when 'POWERPC'; %w[srr0 srr1 r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 cr xer lr ctr mq vrsave]
-				when 'ARM'; [*0..16].map { |i| "r#{i}" }
-				else [*1..@count].map { |i| "reg#{i}" }
+				when 'ARM'; %w[r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 sp lr pc]
+				else [*1..@count].map { |i| "r#{i}" }
 				end.map { |k| k.to_sym }
 			end
 
@@ -484,6 +484,7 @@ class MachO < ExeFormat
 		when 'I386'; Ia32.new
 		when 'X86_64'; X86_64.new
 		when 'POWERPC'; PowerPC.new
+		when 'ARM'; ARM.new
 		else raise "unsupported cpu #{@header.cputype}"
 		end
 	end
@@ -575,6 +576,7 @@ class MachO < ExeFormat
 				    when 'ia32'; 'I386'
 				    when 'x64'; 'X86_64'
 				    when 'powerpc'; 'POWERPC'
+				    when 'arm'; 'ARM'
 				    end
 	end
 

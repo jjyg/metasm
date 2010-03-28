@@ -7,3 +7,5 @@
 require 'metasm/main'
 require 'metasm/arm/parse'
 require 'metasm/arm/encode'
+require 'metasm/arm/decode'
+require 'metasm/arm/render'

@@ -29,7 +29,7 @@ module Metasm
 
 	Const_autorequire = {
 		'CPU' => ['encode', 'decode', 'render', 'main', 'exe_format/main', 'os/main'],
-		'Ia32' => 'ia32', 'MIPS' => 'mips', 'PowerPC' => 'ppc',
+		'Ia32' => 'ia32', 'MIPS' => 'mips', 'PowerPC' => 'ppc', 'ARM' => 'arm',
 		'X86_64' => 'x86_64', 'Sh4' => 'sh4',
 		'C' => ['parse_c', 'compile_c'],
 		'MZ' => 'exe_format/mz', 'PE' => 'exe_format/pe',
