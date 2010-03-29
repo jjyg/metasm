@@ -64,6 +64,7 @@ class ARM
 			case f
 			when :i16; Expression.make_signed(r, 16)
 			when :i24; Expression.make_signed(r, 24)
+			when :i8_12; ((r >> 4) & 0xf0) | (r & 0xf)
 			when :shift; [:lsl, :lsr, :asr, :ror][r]
 			when :u; [:-, :+][r]
 			else r
@@ -74,8 +75,8 @@ class ARM
 			cd = %w[eq ne cs cc mi pl vs vc hi ls ge lt gt le al][field_val[:cond]]
 			if cd != 'al'
 				di.opcode = di.opcode.dup
-				di.instruction.opname = di.opcode.name = di.opcode.name.dup
-				di.opcode.name[(op.props[:cond_name_off] || di.opcode.name.length), 0] = cd
+				di.instruction.opname = di.opcode.name.dup
+				di.instruction.opname[(op.props[:cond_name_off] || di.opcode.name.length), 0] = cd
 				if di.opcode.props[:stopexec]
 					di.opcode.props = di.opcode.props.dup
 					di.opcode.props.delete :stopexec
@@ -93,15 +94,21 @@ class ARM
 				i = field_val[:i8]
 				r = field_val[:rotate]*2
 				Expression[((i >> r) | (i << (32-r))) & 0xffff_ffff]
-			when :mem_rn_rm, :mem_rn_i12
+			when :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12
 				b = Reg.new(field_val[:rn])
-				if a == :mem_rn_i12
-					o = field_val[:i12]
-				else
-					o = Reg.new(field_val[:rm], field_val[:shift], field_val[:shifta]*2)
+				o = case a
+				when :mem_rn_rm; Reg.new(field_val[:rm])
+				when :mem_rn_i8_12; field_val[:i8_12]
+				when :mem_rn_rms; Reg.new(field_val[:rm], field_val[:shift], field_val[:shifta]*2)
+				when :mem_rn_i12; field_val[:i12]
 				end
 				Memref.new(b, o, field_val[:u], op.props[:baseincr])
-			when :reglist; msk = field_val[a] ; (0..15).map { |i| Reg.new(i) if (msk & (1 << i)) > 0 }.compact
+			when :reglist
+				di.instruction.args.last.updated = true if op.props[:baseincr]
+				msk = field_val[a]
+				l = RegList.new((0..15).map { |i| Reg.new(i) if (msk & (1 << i)) > 0 }.compact)
+				l.usermoderegs = true if op.props[:usermoderegs]
+				l
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}

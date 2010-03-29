@@ -12,6 +12,7 @@ class ARM
 		include Renderable
 		def render
 			r = self.class.i_to_s[@i]
+			r += '!' if updated
 			if @stype == :lsl and @shift == 0
 				[r]
 			elsif @stype == :ror and @shift == 0
@@ -36,6 +37,17 @@ class ARM
 			when :pre;  ['[', @base, ', ', o, ']!']
 			when :post; ['[', @base, '], ', o]
 			end
+		end
+	end
+
+	class RegList
+		include Renderable
+		def render
+			r = ['{']
+			@list.each { |l| r << l << ', ' }
+			r[-1] = '}'
+			r << '^' if usermoderegs
+			r
 		end
 	end
 end

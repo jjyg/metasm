@@ -18,7 +18,7 @@ class ARM < CPU
 		4.times { |i| @s_to_i["a#{i+1}"] = i }
 		8.times { |i| @s_to_i["v#{i+1}"] = i+4 }
 
-		attr_accessor :i, :stype, :shift
+		attr_accessor :i, :stype, :shift, :updated
 		def initialize(i, stype=:lsl, shift=0)
 			@i = i
 			@stype = :lsl
@@ -46,6 +46,14 @@ class ARM < CPU
 			o = o.symbolic if o.kind_of? Reg
 			p = Expression[@base.symbolic, @sign, o].reduce
 			Indirection[p, len, orig]
+		end
+	end
+
+	class RegList
+		attr_accessor :list, :usermoderegs
+
+		def initialize(l=[])
+			@list = l
 		end
 	end
 

@@ -20,11 +20,13 @@ class ARM
 		args.grep(Hash).each { |h| o.props.update h }
 
 		# special args -> multiple fields
-		case (o.args & [:i8_r, :rm_is, :rm_rs, :mem_rn_rm, :mem_rn_i12]).first
+		case (o.args & [:i8_r, :rm_is, :rm_rs, :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12]).first
 		when :i8_r; args << :i8 << :rotate
 		when :rm_is; args << :rm << :shift << :shifta
 		when :rm_rs; args << :rm << :shift << :rs
-		when :mem_rn_rm; args << :rn << :rm << :shift << :shifta << :u
+		when :mem_rn_rm; args << :rn << :rm << :rsx << :u
+		when :mem_rn_i8_12; args << :rn << :i8_12 << :u
+		when :mem_rn_rms; args << :rn << :rm << :shift << :shifta << :u
 		when :mem_rn_i12; args << :rn << :i12 << :u
 		end
 
@@ -45,39 +47,80 @@ class ARM
 		addop_data_s name+'s', (op << 21) | (1 << 20), a1, a2, :cond_name_off => name.length
 	end
 
-	def addop_load_bpw(name, op, *incr)
-		addop name, op, :rd, :mem_rn_i12, *incr
-		addop name, op | (1 << 25), :rd, :mem_rn_rm, *incr
+	def addop_load_puw(name, op, *a)
+		addop name, op, {:baseincr => :post}, :rd, :u, *a
+		addop name, op | (1 << 24), :rd, :u, *a
+		addop name, op | (1 << 24) | (1 << 21), {:baseincr => :pre}, :rd, :u, *a
 	end
-	def addop_load_b(name, op, *a)
-		addop_load_bpw name, op, {:baseincr => :post}, *a
-		addop_load_bpw name+'t', op | (1 << 21), {:baseincr => :post, :cond_name_off => name.length}, *a
-		addop_load_bpw name, op | (1 << 24), *a
-		addop_load_bpw name, op | (1 << 24) | (1 << 21), {:baseincr => :pre}, *a
+	def addop_load_lsh_o(name, op)
+		addop_load_puw name, op, :rsz, :mem_rn_rm, {:cond_name_off => 3}
+		addop_load_puw name, op | (1 << 22), :mem_rn_i8_12, {:cond_name_off => 3}
+	end
+	def addop_load_lsh
+		op = 9 << 4
+		addop_load_lsh_o 'strh',  op | (1 << 5)
+		addop_load_lsh_o 'ldrd',  op | (1 << 6)
+		addop_load_lsh_o 'strd',  op | (1 << 6) | (1 << 5)
+		addop_load_lsh_o 'ldrh',  op | (1 << 20) | (1 << 5)
+		addop_load_lsh_o 'ldrsb', op | (1 << 20) | (1 << 6)
+		addop_load_lsh_o 'ldrsh', op | (1 << 20) | (1 << 6) | (1 << 5)
+	end
+
+	def addop_load_puwt(name, op, *a)
+		addop_load_puw name, op, *a
+		addop name+'t', op | (1 << 21), {:baseincr => :post, :cond_name_off => name.length}, :rd, :u, *a
+	end
+	def addop_load_o(name, op, *a)
+		addop_load_puwt name, op, :mem_rn_i12, *a
+		addop_load_puwt name, op | (1 << 25), :mem_rn_rms, *a
 	end
 	def addop_load(name, op)
-		addop_load_b name, op
-		addop_load_b name+'b', op | (1 << 22), :cond_name_off => name.length
+		addop_load_o name, op
+		addop_load_o name+'b', op | (1 << 22), :cond_name_off => name.length
+	end
+
+	def addop_ldm_go(name, op, *a)
+		addop name, op, :rn, :reglist, {:cond_name_off => 3}, *a
+	end
+	def addop_ldm_w(name, op, *a)
+		addop_ldm_go name, op, *a		# base reg untouched
+		addop_ldm_go name, op | (1 << 21), {:baseincr => :post}, *a	# base updated
+	end
+	def addop_ldm_s(name, op)
+		addop_ldm_w name, op			# transfer regs
+		addop_ldm_w name, op | (1 << 22), :usermoderegs	# transfer usermode regs
+	end
+	def addop_ldm_p(name, op)
+		addop_ldm_s name+'a', op		# target memory included
+		addop_ldm_s name+'b', op | (1 << 24)	# target memory excluded, transfer starts at next addr
+	end
+	def addop_ldm_u(name, op)
+		addop_ldm_p name+'d', op		# transfer made downward
+		addop_ldm_p name+'i', op | (1 << 23)	# transfer made upward
+	end
+	def addop_ldm(name, op)
+		addop_ldm_u name, op
 	end
 
 	# ARMv6 instruction set, aka arm7/arm9
 	def init_arm_v6
 		@opcode_list = []
-		@valid_props << :baseincr << :cond << :cond_name_off << :tothumb << :tojazelle
+		@valid_props << :baseincr << :cond << :cond_name_off << :usermoderegs <<
+				:tothumb << :tojazelle
 		@valid_args.concat [:rn, :rd, :rm, :crn, :crd, :crm, :cpn, :reglist, :i24,
-			:rm_rs, :rm_is, :i8_r, :mem_rn_i12, :mem_rn_rm]
+			:rm_rs, :rm_is, :i8_r, :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12]
 		@fields_mask.update :rn => 0xf, :rd => 0xf, :rs => 0xf, :rm => 0xf,
 			:crn => 0xf, :crd => 0xf, :crm => 0xf, :cpn => 0xf,
-			:rnx => 0xf, :rdx => 0xf,
+			:rnx => 0xf, :rdx => 0xf, :rsx => 0xf,
 			:shifta => 0x1f, :shift => 3, :rotate => 0xf, :reglist => 0xffff,
-			:i8 => 0xff, :i12 => 0xfff, :i24 => 0xff_ffff,
+			:i8 => 0xff, :i12 => 0xfff, :i24 => 0xff_ffff, :i8_12 => 0xf0f,
 			:u => 1, :mask => 0xf, :sbo => 0xf, :cond => 0xf
 
 		@fields_shift.update :rn => 16, :rd => 12, :rs => 8, :rm => 0,
 			:crn => 16, :crd => 12, :crm => 0, :cpn => 8,
-			:rnx => 16, :rdx => 12,
+			:rnx => 16, :rdx => 12, :rsx => 8,
 			:shifta => 7, :shift => 5, :rotate => 8, :reglist => 0,
-			:i8 => 0, :i12 => 0, :i24 => 0,
+			:i8 => 0, :i12 => 0, :i24 => 0, :i8_12 => 0,
 			:u => 23, :mask => 16, :sbo => 12, :cond => 28
 		
 		addop_data 'and', 0,  :rd, :rn
@@ -107,22 +150,17 @@ class ARM
 		addop 'bx',  (0b00010010 << 20) | (0b0001 << 4), :setip, :stopexec, :rm
 		addop 'bxj',  (0b00010010 << 20) | (0b0010 << 4), :setip, :stopexec, :rm, :tojazelle
 
-		addop_load 'ldr',  1 << 26
-		addop_load 'str', (1 << 26) | (1 << 20)
+		addop_load 'str', (1 << 26)
+		addop_load 'ldr', (1 << 26) | (1 << 20)
+		addop_load_lsh
+		addop_ldm 'stm', (1 << 27)
+		addop_ldm 'ldm', (1 << 27) | (1 << 20)
 	end
 	alias init_latest init_arm_v6
 end
 end
 
 __END__
-all shift == 0
-:offsetimm => 0xfff, :movwimm => 0x0f0fff
-			:writeback => 21,
-			:psr => 22,
-			:up => 23,
-			:preindexing => 24,
-			:offsetimm => 25
-
 		addop_cond 'mrs',  0b0001000011110000000000000000, :rd
 		addop_cond 'msr',  0b0001001010011111000000000000, :rd
 		addop_cond 'msrf', 0b0001001010001111000000000000, :rd
@@ -133,55 +171,9 @@ all shift == 0
 		addop_cond 'swp',   0b0001000000000000000010010000, :rd, :rn, :rs, :rm
 		addop_cond 'swpb',  0b0001010000000000000010010000, :rd, :rn, :rs, :rm
 
-		addop_datat 'ldr',  0b01000001 << 20
-		addop_datat 'ldrb', 0b01000101 << 20
-		addop_datat 'str',  0b01000000 << 20
-		addop_datat 'strb', 0b01000100 << 20
-
 		addop_cond 'undef', 0b00000110000000000000000000010000
 
-		block_props = [:psr, :writeback]
-		addop_variants 'ldmed',  0b10011001 << 20, block_props, :rn, :rlist
-		addop_variants 'ldmfd',  0b10001001 << 20, block_props, :rn, :rlist
-		addop_variants 'ldmea',  0b10001001 << 20, block_props, :rn, :rlist
-		addop_variants 'ldmfa',  0b10000001 << 20, block_props, :rn, :rlist
-		addop_variants 'stmfa',  0b10011000 << 20, block_props, :rn, :rlist
-		addop_variants 'stmea',  0b10001000 << 20, block_props, :rn, :rlist
-		addop_variants 'stmfd',  0b10010000 << 20, block_props, :rn, :rlist
-		addop_variants 'stmed',  0b10000000 << 20, block_props, :rn, :rlist
-
-		addop_cond 'b',  0b1010 << 24, :boffset, :setip
-		addop_cond 'bl', 0b1011 << 24, :boffset, :setip, :saveip
-		addop_cond 'blx',  0x12FFF30 , :rm, :setip
-		addop_cond 'bx',  0x12FFF10 , :rm, :setip, :saveip
-
-		
-		#Coproc data transfer
-		#Coproc data operation
-		#Coproc register transfer
-		
-		#Software interrupt	
 		addop_cond 'swi', 0b00001111 << 24
 
-		#Other
 		addop_cond 'bkpt',  0b1001000000000000001110000
 		addop_cond 'movw',  0b0011 << 24, :movwimm
-		#mov r0,r0 => nop
-		addop_cond 'nop', 0xE1A00000 
-
-	def addop_datat(name, bin, *args)
-		vars = [:up, :preindexing, :writeback]
-		addop_variants(name, bin, vars, :rd, :rn, :offsetimm, *args)
-		addop_variants(name, bin | (1 << 25), vars, :rd, :rn, :offsetreg, *args)
-	end
-
-	def addop_variants(name, bin, options, *args)
-		#XXX foireux mais bon
-		choices = (1...options.length).inject([[],options]) {|res,i| res.concat(options.combination(i).to_a)}
-
-		choices.each { |props|
-			bin2 = props.inject(bin) {|b,o| b | (1 << @bits_pos[o])} 
-			addop_ccodes(name, bin2, *args + props)
-		}
-	end
-
