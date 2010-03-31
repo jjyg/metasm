@@ -66,17 +66,12 @@ class CCompiler < C::Compiler
 		super(*a)
 		@cpusz = 64
 		@regnummax = 15
-		@label_next = nil
 	end
 
 	# shortcut to add an instruction to the source
 	def instr(name, *args)
 		# XXX parse_postfix ?
 		@source << Instruction.new(@exeformat.cpu, name, args)
-		if @label_next	# rip relative addressing
-			@source << Label.new(@label_next)
-			@label_next = nil
-		end
 	end
 
 	# returns an available register, tries to find one not in @state.cache
@@ -173,9 +168,7 @@ class CCompiler < C::Compiler
 		when nil
 			# global
 			if @exeformat.cpu.generate_PIC
-				@label_next ||= new_label('rel_rip')
-				v = ModRM.new(@cpusz, sz, nil, nil, Reg.from_str('rip'), Expression[var.name, :-, @label_next])
-				# XXX with Address, are we sure the modrm will be used in this instruction or do we need to delay @label_next ?
+				v = ModRM.new(@cpusz, sz, nil, nil, Reg.from_str('rip'), Expression[var.name, :-, '$_'])
 			else
 				v = ModRM.new(@cpusz, sz, nil, nil, nil, Expression[var.name])
 			end
