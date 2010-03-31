@@ -329,6 +329,11 @@ class ExeFormat
 					else
 						@cursource << @cpu.parse_instruction(@lexer)
 					end
+					if lname = @locallabels_fwd.delete('endinstr')
+						l = Label.new(lname)
+						l.backtrace = tok.backtrace.dup
+						@cursource << l
+					end
 				end
 			else
 				raise tok, 'syntax error'
@@ -671,6 +676,8 @@ class Expression
 					lexer.program.cursource.unshift l
 				end
 				tok.value = l.name
+			elsif not tok.value and tok.raw == '$_'
+				tok.value = lexer.program.locallabels_fwd('endinstr')
 			elsif not tok.value and tok.raw =~ /^([1-9][0-9]*)([fb])$/
 				case $2
 				when 'b'; tok.value = lexer.program.locallabels_bkw($1)	# may fallback to binary parser
