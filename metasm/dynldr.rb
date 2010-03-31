@@ -43,18 +43,10 @@ struct rb_array_t {
 };
 #define RArray(x) ((struct rb_array_t *)(x))
 
-#ifdef __PE__
-// windows exports data by pointer
-// TODO the compiler should handle these details alone
-#define IMPMOD *
-#else
-#define IMPMOD
-#endif
-
 // TODO improve autoimport to handle data imports correctly
-extern VALUE IMPMOD rb_cObject __attribute__((import));
-extern VALUE IMPMOD rb_eRuntimeError __attribute__((import));
-extern VALUE IMPMOD rb_eArgError __attribute__((import));
+extern VALUE *rb_cObject __attribute__((import));
+extern VALUE *rb_eRuntimeError __attribute__((import));
+extern VALUE *rb_eArgError __attribute__((import));
 
 #define Qfalse ((VALUE)0)
 #define Qtrue  ((VALUE)2)
@@ -147,7 +139,7 @@ static VALUE memory_read_int(VALUE self, VALUE addr)
 static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 {
 	if (TYPE(val) != T_STRING)
-		rb_raise(IMPMOD rb_eArgError, "mem_write needs a String");
+		rb_raise(*rb_eArgError, "mem_write needs a String");
 
 	char *src = STR_PTR(val);
 	char *dst = (char*)VAL2INT(addr);
@@ -166,7 +158,7 @@ static VALUE memory_write_int(VALUE self, VALUE addr, VALUE val)
 static VALUE str_ptr(VALUE self, VALUE str)
 {
 	if (TYPE(str) != T_STRING)
-		rb_raise(IMPMOD rb_eArgError, "Invalid ptr");
+		rb_raise(*rb_eArgError, "Invalid ptr");
 	return INT2VAL((uintptr_t)STR_PTR(str));
 }
 
@@ -176,9 +168,9 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 	uintptr_t h, p;
 
 	if (TYPE(lib) != T_STRING)
-		rb_raise(IMPMOD rb_eArgError, "Invalid lib");
+		rb_raise(*rb_eArgError, "Invalid lib");
 	if (TYPE(func) != T_STRING && TYPE(func) != T_FIXNUM)
-		rb_raise(IMPMOD rb_eArgError, "Invalid func");
+		rb_raise(*rb_eArgError, "Invalid func");
 	
 	h = os_load_lib(STR_PTR(lib));
 
@@ -204,7 +196,7 @@ double fake_float(void);
 static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 {
 	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 64)
-		rb_raise(IMPMOD rb_eArgError, "bad args");
+		rb_raise(*rb_eArgError, "bad args");
 	
 	uintptr_t flags_v = VAL2INT(flags);
 	uintptr_t ptr_v = VAL2INT(ptr);
@@ -270,7 +262,7 @@ double fake_float(void);
 static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 {
 	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 6)
-		rb_raise(IMPMOD rb_eArgError, "bad args");
+		rb_raise(*rb_eArgError, "bad args");
 	
 	uintptr_t flags_v = VAL2INT(flags);
 	uintptr_t ptr_v = VAL2INT(ptr);
@@ -318,7 +310,7 @@ static uintptr_t do_callback_handler(uintptr_t arg0, uintptr_t arg1, uintptr_t a
 
 int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// to patch before parsing to match the .so name
 {
-	dynldr = rb_const_get(rb_const_get(IMPMOD rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
+	dynldr = rb_const_get(rb_const_get(*rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
 	rb_define_singleton_method(dynldr, "memory_read",  memory_read, 2);
 	rb_define_singleton_method(dynldr, "memory_read_int",  memory_read_int, 1);
 	rb_define_singleton_method(dynldr, "memory_write", memory_write, 2);
