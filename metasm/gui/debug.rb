@@ -714,7 +714,7 @@ class DbgConsoleWidget < DrawableWidget
 		}
 		new_command('?', 'display a value') { |arg|
 			next if not v = solve_expr(arg)
-			add_log "#{v} 0x#{v.to_s(16)} #{[v].pack('L').inspect} #{@dbg.addrname!(v)}"
+			add_log "#{v} 0x#{v.to_s(16)} #{[v & 0xffff_ffff].pack('L').inspect} #{@dbg.addrname!(v)}"
 		}
 		new_command('exit', 'quit', 'quit the debugger interface') { p.win.destroy }
 		new_command('ruby', 'execute arbitrary ruby code') { |arg|
