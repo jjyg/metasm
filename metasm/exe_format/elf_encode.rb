@@ -352,10 +352,49 @@ class ELF
 		@tag['PLTGOT'] = label_at(gotplt.encoded, 0)
 		plt = nil
 
+		shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).assemble(c).encoded }
+
 		@relocations.dup.each { |r|
 			case r.type
 			when 'PC32'
-				next if not r.symbol or r.symbol.type != 'FUNC'
+				next if not r.symbol
+
+			       	if r.symbol.type != 'FUNC'
+					# external data xref: generate a GOT entry
+					# XXX reuse .got.plt ?
+					if not got ||= @sections.find { |s| s.type == 'PROGBITS' and s.name == '.got' }
+						got = Section.new
+						got.name = '.got'
+						got.type = 'PROGBITS'
+						got.flags = %w[ALLOC WRITE]
+						got.addralign = @bitsize/8
+						got.encoded = EncodedData.new
+						encode_add_section got
+					end
+
+					prevoffset = r.offset
+					gotlabel = r.symbol.name + '_got_entry'
+					if not got.encoded.export[gotlabel]
+						# create the got thunk
+						got.encoded.add_export(gotlabel, got.encoded.length)
+						got.encoded << encode_xword(0)
+
+						# transform the reloc PC32 => GLOB_DAT
+						r.type = 'GLOB_DAT'
+						r.offset = Expression[gotlabel]
+						r.addend = 0 if @bitsize == 64
+					else
+						@relocations.delete r
+					end
+		
+					# prevoffset is label_section_start + int_section_offset
+					target_s = @sections.find { |s| s.encoded and s.encoded.export[prevoffset.lexpr] == 0 }
+					rel = target_s.encoded.reloc[prevoffset.rexpr]
+					# [foo] => [foo - reloc_addr + gotlabel]
+
+					rel.target = Expression[[rel.target, :-, prevoffset], :+, gotlabel]
+					next
+				end
 
 				# convert to .plt entry
 				#
@@ -380,7 +419,6 @@ class ELF
 				# dd some_func_got_default	# lazily rewritten to the real addr of some_func by jmp dlresolve_inplace
 				# 				# base_relocated ?
 
-				shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).assemble(c).encoded }
 				# in the PIC case, _dlresolve imposes us to use the ebx register (which may not be saved by the calling function..)
 				# also geteip trashes eax, which may interfere with regparm(3)
 				base = @cpu.generate_PIC ? @bitsize == 32 ? 'ebx' : 'rip-1f+_PLT_GOT' : '_PLT_GOT'
@@ -401,9 +439,10 @@ class ELF
 				end
 
 				prevoffset = r.offset
-				if not plt.encoded.export[r.symbol.name + '_plt_thunk']
+				pltlabel = r.symbol.name + '_plt_thunk'
+				if not plt.encoded.export[pltlabel]
 					# create the plt thunk
-					plt.encoded.add_export r.symbol.name+'_plt_thunk', plt.encoded.length
+					plt.encoded.add_export pltlabel, plt.encoded.length
 					if @cpu.generate_PIC and @bitsize == 32
 						plt.encoded << shellcode["call metasm_intern_geteip\nlea #{base}, [eax+_PLT_GOT-metasm_intern_geteip]"]
 					end
@@ -427,7 +466,7 @@ class ELF
 				# XXX relies on the exact form of r.target from arch_create_reloc
 				target_s = @sections.find { |s| s.encoded and s.encoded.export[prevoffset.lexpr] == 0 }
 				rel = target_s.encoded.reloc[prevoffset.rexpr]
-				rel.target = Expression[[[rel.target, :-, prevoffset.rexpr], :-, label_at(target_s.encoded, 0)], :+, r.symbol.name+'_plt_thunk']
+				rel.target = Expression[[[rel.target, :-, prevoffset.rexpr], :-, label_at(target_s.encoded, 0)], :+, pltlabel]
 
 			# when 'GOTOFF', 'GOTPC'
 			end
