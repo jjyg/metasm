@@ -73,7 +73,7 @@ extern VALUE *rb_eArgError __attribute__((import));
 #endif
 
 #define T_MASK   0x3f
-#define TYPE(x) (((int)(x) & 1) ? T_FIXNUM : (((int)(x) & 3) || ((unsigned int)(x) < 7)) ? 0x40 : RString(x)->flags & T_MASK)
+#define TYPE(x) (((VALUE)(x) & 1) ? T_FIXNUM : (((VALUE)(x) & 3) || ((VALUE)(x) < 7)) ? 0x40 : RString(x)->flags & T_MASK)
 
 VALUE rb_uint2inum(VALUE);
 VALUE rb_ull2inum(unsigned long long);
@@ -85,7 +85,7 @@ VALUE rb_float_new(double);
 VALUE rb_intern(char *);
 VALUE rb_funcall(VALUE recv, VALUE id, int nargs, ...);
 VALUE rb_const_get(VALUE, VALUE);
-VALUE rb_raise(VALUE, char*);
+VALUE rb_raise(VALUE, char*, ...);
 void rb_define_const(VALUE, char *, VALUE);
 void rb_define_method(VALUE, char *, VALUE (*)(), int);
 void rb_define_singleton_method(VALUE, char *, VALUE (*)(), int);
@@ -162,6 +162,7 @@ static VALUE str_ptr(VALUE self, VALUE str)
 	return INT2VAL((uintptr_t)STR_PTR(str));
 }
 
+int printf(char*, ...);
 // load a symbol from a lib byname, byordinal if integral
 static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 {
@@ -357,38 +358,38 @@ static void *wstrcaseruby(short *s1, int len)
 }
 
 #ifdef __x86_64__
-asm("get_peb: mov rax, fs:[0h] ret");
-
-// find the ruby library in the loaded modules list of the interpreter through the PEB
-static uintptr_t find_ruby_module(void)
-{
-	struct peb *peb = get_peb();
-}
+asm("get_peb: mov rax, fs:[30h] ret");
 #endif
-
 #ifdef __i386__
 asm("get_peb: mov eax, fs:[30h] ret");
+#endif
+
+struct _lmodule {
+	struct _lmodule *next;	// list_head
+	void *; void *; void*; void*; void*;
+	uintptr_t base, entry, size;
+	short; short; short*;
+	short len, maxlen;
+	short *basename;
+};
+
+struct _peb {
+	void*; void*; void*;
+	struct {
+		int; int; void*;
+		struct _lmodule *inloadorder; // list_head
+	} *ldr;
+};
 
 // find the ruby library in the loaded modules list of the interpreter through the PEB
 static uintptr_t find_ruby_module(void)
 {
-	struct _lmodule {
-		struct _lmodule *next;	// list_head
-		int; int; int; int; int;
-		uintptr_t base, entry, size;
-		short; short; short*;
-		short len, maxlen;
-		short *basename;
-	} *ptr;
+struct _lmodule *ptr;
+void *base;
+struct _peb *peb = get_peb();
+	struct _lmodule *ptr;
 	void *base;
-
-	struct {
-		int; int; int;
-		struct {
-			int; int; int;
-			struct _lmodule *inloadorder; // list_head
-		} *ldr;
-	} *peb = get_peb();
+	struct peb *peb = get_peb();
 
 	base = &peb->ldr->inloadorder;
 	ptr = ((struct _lmodule *)base)->next;
@@ -401,7 +402,6 @@ static uintptr_t find_ruby_module(void)
 
 	return 0;
 }
-#endif
 
 // a table of string offsets, base = the table itself
 // each entry is a ruby function, whose address is to be put inplace in the table
