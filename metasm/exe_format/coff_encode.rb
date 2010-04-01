@@ -584,6 +584,10 @@ class COFF
 				when 'x64'; 'AMD64'
 				when 'ia32'; 'I386'
 				end
+		@optheader.signature ||= case @cpu.size
+				when 32; 'PE'
+				when 64; 'PE+'
+				end
 
 		# setup header flags
 		tmp = %w[LINE_NUMS_STRIPPED LOCAL_SYMS_STRIPPED DEBUG_STRIPPED] +
@@ -593,7 +597,11 @@ class COFF
 			when 'kmod'; %w[EXECUTABLE_IMAGE]
 			when 'obj';  []
 			end
-		tmp << 'x32BIT_MACHINE'		# XXX
+		if @cpu.size == 32
+			tmp << 'x32BIT_MACHINE'
+		else
+			tmp << 'LARGE_ADDRESS_AWARE'
+		end
 		tmp << 'RELOCS_STRIPPED' # if not @directory['base_relocation_table'] # object relocs
 		@header.characteristics ||= tmp
 
@@ -601,7 +609,9 @@ class COFF
 		when 'exe', 'dll'; 'WINDOWS_GUI'
 		when 'kmod'; 'NATIVE'
 		end
-		@optheader.dll_characts = ['DYNAMIC_BASE'] if @directory['base_relocation_table']
+		@optheader.dll_characts = []
+		@optheader.dll_characts << 'NX_COMPAT'
+		@optheader.dll_characts << 'DYNAMIC_BASE' if @directory['base_relocation_table']
 
 		# encode section table, add CONTAINS_* flags from other characteristics flags
 		s_table = EncodedData.new
