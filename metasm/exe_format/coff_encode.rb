@@ -575,9 +575,8 @@ class COFF
 		encode_append_section s
 	end
 
-	# appends the header/optheader/directories/section table to @encoded
-	# initializes some flags based on the target arg ('exe' / 'dll' / 'kmod' / 'obj')
-	def encode_header(target = 'exe')
+	# initialize the header from target/cpu/etc, target in ['exe' 'dll' 'kmod' 'obj']
+	def pre_encode_header(target = 'exe', want_relocs=true)
 		target = {:bin => 'exe', :lib => 'dll', :obj => 'obj', 'sys' => 'kmod', 'drv' => 'kmod'}.fetch(target, target)
 
 		@header.machine ||= case @cpu.shortname
@@ -611,10 +610,14 @@ class COFF
 		end
 		@optheader.dll_characts = []
 		@optheader.dll_characts << 'NX_COMPAT'
-		@optheader.dll_characts << 'DYNAMIC_BASE' if @directory['base_relocation_table']
+		@optheader.dll_characts << 'DYNAMIC_BASE' if want_relocs
+	end
 
+	# appends the header/optheader/directories/section table to @encoded
+	def encode_header
 		# encode section table, add CONTAINS_* flags from other characteristics flags
 		s_table = EncodedData.new
+
 		@sections.each { |s|
 			if s.characteristics.kind_of? Array and s.characteristics.include? 'MEM_READ'
 				if s.characteristics.include? 'MEM_EXECUTE'
@@ -706,6 +709,7 @@ class COFF
 	def encode(target = 'exe', want_relocs = (target != 'exe' and target != :bin))
 		@encoded = EncodedData.new
 		label_at(@encoded, 0, 'coff_start')
+		pre_encode_header(target, want_relocs)
 		autoimport
 		encode_exports if export
 		encode_imports if imports
@@ -713,7 +717,7 @@ class COFF
 		encode_tls if tls
 		create_relocation_tables if want_relocs
 		encode_relocs if relocations
-		encode_header(target)
+		encode_header
 		encode_sections_fixup
 		@encoded.data
 	end
