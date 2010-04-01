@@ -461,7 +461,7 @@ class COFF
 			shellcode = lambda { |c| Shellcode.new(@cpu).share_namespace(self).assemble(c).encoded }
 			if @cpu.generate_PIC
 				if @cpu.size == 64
-					edata << shellcode["#{import.thunk}: jmp [rip+#{import.target}-1f]\n1:"]
+					edata << shellcode["#{import.thunk}: jmp [rip-$_+#{import.target}]"]
 					return
 				end
 				# sections starts with a helper function that returns the address of metasm_intern_geteip in eax (PIC)

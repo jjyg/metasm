@@ -421,7 +421,7 @@ class ELF
 
 				# in the PIC case, _dlresolve imposes us to use the ebx register (which may not be saved by the calling function..)
 				# also geteip trashes eax, which may interfere with regparm(3)
-				base = @cpu.generate_PIC ? @bitsize == 32 ? 'ebx' : 'rip-1f+_PLT_GOT' : '_PLT_GOT'
+				base = @cpu.generate_PIC ? @bitsize == 32 ? 'ebx' : 'rip-$_+_PLT_GOT' : '_PLT_GOT'
 				if not plt ||= @sections.find { |s| s.type == 'PROGBITS' and s.name == '.plt' }
 					plt = Section.new
 					plt.name = '.plt'
@@ -431,7 +431,7 @@ class ELF
 					plt.encoded = EncodedData.new
 					sz = @bitsize/8
 					ptqual = @bitsize == 32 ? 'dword' : 'qword'
-					plt.encoded << shellcode["metasm_plt_start:\npush #{ptqual} ptr [#{base}+#{sz}]\n1: jmp #{ptqual} ptr [#{base}+#{2*sz}]\n1:"]
+					plt.encoded << shellcode["metasm_plt_start:\npush #{ptqual} ptr [#{base}+#{sz}]\njmp #{ptqual} ptr [#{base}+#{2*sz}]"]
 					if @cpu.generate_PIC and @bitsize == 32 and not @sections.find { |s| s.encoded and s.encoded.export['metasm_intern_geteip'] }
 						plt.encoded << shellcode["metasm_intern_geteip:\ncall 42f\n42: pop eax\nsub eax, 42b-metasm_intern_geteip\nret"]
 					end
@@ -446,7 +446,7 @@ class ELF
 					if @cpu.generate_PIC and @bitsize == 32
 						plt.encoded << shellcode["call metasm_intern_geteip\nlea #{base}, [eax+_PLT_GOT-metasm_intern_geteip]"]
 					end
-					plt.encoded << shellcode["jmp [#{base} + #{gotplt.encoded.length}]\n1:"]
+					plt.encoded << shellcode["jmp [#{base} + #{gotplt.encoded.length}]"]
 					plt.encoded.add_export r.symbol.name+'_plt_default', plt.encoded.length
 					reloffset = @relocations.find_all { |rr| rr.type == 'JMP_SLOT' }.length
 					reloffset *= Relocation.size(self) if @bitsize == 32
