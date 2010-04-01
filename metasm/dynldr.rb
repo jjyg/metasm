@@ -331,7 +331,6 @@ EOS
 	DYNLDR_C_PE_HACK = <<EOS
 #line #{__LINE__}
 
-#ifdef __PE__
 void* get_peb(void);
 
 extern int printf(char*, ...);
@@ -384,12 +383,9 @@ struct _peb {
 // find the ruby library in the loaded modules list of the interpreter through the PEB
 static uintptr_t find_ruby_module(void)
 {
-struct _lmodule *ptr;
-void *base;
-struct _peb *peb = get_peb();
 	struct _lmodule *ptr;
 	void *base;
-	struct peb *peb = get_peb();
+	struct _peb *peb = get_peb();
 
 	base = &peb->ldr->inloadorder;
 	ptr = ((struct _lmodule *)base)->next;
@@ -445,7 +441,6 @@ __stdcall int DllMain(void *handle, int reason, void *res)
 		return load_ruby_imports();
 	return 1;
 }
-#endif
 EOS
 
 	# ia32 asm source for the native component: handles ABI stuff
