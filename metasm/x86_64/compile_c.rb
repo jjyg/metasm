@@ -530,7 +530,7 @@ class CCompiler < C::Compiler
 								instr 'mov', l, Reg.new(rax.val, 8)
 								instr 'pop', rax
 							else
-								flushecachereg(reg)
+								flushcachereg(reg)
 								instr 'mov', Reg.new(reg, r.sz), r
 								instr 'mov', l, Reg.new(reg, 8)
 							end

@@ -238,7 +238,7 @@ class X86_64
 				else
 					ed = ModRM.encode_reg(ia, regval)
 				end
-			when :mrm_imm; ed = ia.imm.encode("a#{o.props[:adsz] || 64}".to_sym, @endianness)
+			when :mrm_imm; ed = ia.imm.encode("a#{op.props[:adsz] || 64}".to_sym, @endianness)
 			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; ed = ia.encode(oa, @endianness)
 			when :i
 				type = opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : :a32
