@@ -764,7 +764,7 @@ EOS
 		class << self ; self ; end.send(:define_method, name) { |*a|
 			raise ArgumentError, "bad arg count for #{name}: #{a.length} for #{proto.type.args.length}" if a.length != proto.type.args.length and not proto.type.varargs
 			auto_cb = []	# list of automatic C callbacks generated from lambdas
-			a = a.zip(proto.type.args).map { |ra, fa| convert_arg_rb2c(fa, ra, auto_cb) }.flatten
+			a = a.zip(proto.type.args).map { |ra, fa| convert_arg_rb2c(fa, ra, :cb_list => auto_cb, :expand_i64 => true) }.flatten
 			ret = raw_invoke(addr, a, flags)
 			auto_cb.each { |cb| callback_free(cb) }
 			ret = convert_ret_c2rb(proto, ret)
@@ -773,15 +773,15 @@ EOS
 	end
 
 	# ruby object -> integer suitable as arg for raw_invoke
-	def self.convert_arg_rb2c(formal, val, auto_cb_list=[])
+	def self.convert_arg_rb2c(formal, val, opts={})
 		val = case val
 		when String; str_ptr(val)
-		when Proc; cb = callback_alloc_cobj(formal, val) ; auto_cb_list << cb ; cb
+		when Proc; cb = callback_alloc_cobj(formal, val) ; (opts[:cb_list] ||= []) << cb ; cb
 		# TODO when Hash, Array; if formal.type.pointed.kind_of? C::Struct; yadda yadda ; end
 		else val.to_i
 		end
 
-		if formal and formal.type.integral? and @cp.sizeof(formal) == 8 and host_cpu.size == 32
+		if opts[:expand_i64] and formal and formal.type.integral? and @cp.sizeof(formal) == 8 and host_cpu.size == 32
 			val = [val & 0xffff_ffff, (val >> 32) & 0xffff_ffff]
 			val.reverse! if host_cpu.endianness != :little
 		end
