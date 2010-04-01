@@ -356,8 +356,9 @@ static void *wstrcaseruby(short *s1, int len)
 	return 0;
 }
 
+asm(".text");	// TODO fix compiler
 #ifdef __x86_64__
-asm("get_peb: mov rax, fs:[30h] ret");
+asm("get_peb: mov rax, gs:[30h] ret");
 #endif
 #ifdef __i386__
 asm("get_peb: mov eax, fs:[30h] ret");
