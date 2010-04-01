@@ -115,7 +115,7 @@ EOS
 
  #define os_load_lib(l) dlopen(l, RTLD_LAZY)
  #define os_load_sym(l, s) dlsym(l, s)
- #define os_load_sym_ord(l, s) 0
+ #define os_load_sym_ord(l, s) 0U
 #endif
 
 extern int *cb_ret_table;
@@ -128,7 +128,7 @@ static VALUE dynldr;
 
 static VALUE memory_read(VALUE self, VALUE addr, VALUE len)
 {
-	return rb_str_new((char*)VAL2INT(addr), VAL2INT(len));
+	return rb_str_new((char*)VAL2INT(addr), (unsigned long)VAL2INT(len));
 }
 
 static VALUE memory_read_int(VALUE self, VALUE addr)
