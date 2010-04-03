@@ -162,7 +162,6 @@ static VALUE str_ptr(VALUE self, VALUE str)
 	return INT2VAL((uintptr_t)STR_PTR(str));
 }
 
-int printf(char*, ...);
 // load a symbol from a lib byname, byordinal if integral
 static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 {
@@ -333,7 +332,6 @@ EOS
 
 void* get_peb(void);
 
-extern int printf(char*, ...);
 // check if the wstr s1 contains 'ruby' (case-insensitive)
 static void *wstrcaseruby(short *s1, int len)
 {
@@ -358,7 +356,7 @@ static void *wstrcaseruby(short *s1, int len)
 
 asm(".text");	// TODO fix compiler
 #ifdef __x86_64__
-asm("get_peb: mov rax, gs:[30h] ret");
+asm("get_peb: mov rax, gs:[60h] ret");
 #endif
 #ifdef __i386__
 asm("get_peb: mov eax, fs:[30h] ret");
