@@ -778,6 +778,7 @@ class ELF
 		when '386'; Ia32.new
 		when 'MIPS'; MIPS.new @endianness
 		when 'PPC'; PPC.new
+		when 'ARM'; ARM.new
 		else raise "unsupported cpu #{@header.machine}"
 		end
 	end

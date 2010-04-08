@@ -728,6 +728,8 @@ class ELF
 				when 'x64'; 'X86_64'
 				when 'ia32'; '386'
 				when 'mips'; 'MIPS'
+				when 'powerpc'; 'PPC'
+				when 'arm'; 'ARM'
 				end
 
 		@encoded = EncodedData.new
