@@ -22,11 +22,11 @@ class ARM
 		# special args -> multiple fields
 		case (o.args & [:i8_r, :rm_is, :rm_rs, :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12]).first
 		when :i8_r; args << :i8 << :rotate
-		when :rm_is; args << :rm << :shift << :shifta
-		when :rm_rs; args << :rm << :shift << :rs
+		when :rm_is; args << :rm << :stype << :shifti
+		when :rm_rs; args << :rm << :stype << :rs
 		when :mem_rn_rm; args << :rn << :rm << :rsx << :u
 		when :mem_rn_i8_12; args << :rn << :i8_12 << :u
-		when :mem_rn_rms; args << :rn << :rm << :shift << :shifta << :u
+		when :mem_rn_rms; args << :rn << :rm << :stype << :shifti << :u
 		when :mem_rn_i12; args << :rn << :i12 << :u
 		end
 
@@ -112,14 +112,14 @@ class ARM
 		@fields_mask.update :rn => 0xf, :rd => 0xf, :rs => 0xf, :rm => 0xf,
 			:crn => 0xf, :crd => 0xf, :crm => 0xf, :cpn => 0xf,
 			:rnx => 0xf, :rdx => 0xf, :rsx => 0xf,
-			:shifta => 0x1f, :shift => 3, :rotate => 0xf, :reglist => 0xffff,
+			:shifti => 0x1f, :stype => 3, :rotate => 0xf, :reglist => 0xffff,
 			:i8 => 0xff, :i12 => 0xfff, :i24 => 0xff_ffff, :i8_12 => 0xf0f,
 			:u => 1, :mask => 0xf, :sbo => 0xf, :cond => 0xf
 
 		@fields_shift.update :rn => 16, :rd => 12, :rs => 8, :rm => 0,
 			:crn => 16, :crd => 12, :crm => 0, :cpn => 8,
 			:rnx => 16, :rdx => 12, :rsx => 8,
-			:shifta => 7, :shift => 5, :rotate => 8, :reglist => 0,
+			:shifti => 7, :stype => 5, :rotate => 8, :reglist => 0,
 			:i8 => 0, :i12 => 0, :i24 => 0, :i8_12 => 0,
 			:u => 23, :mask => 16, :sbo => 12, :cond => 28
 		

@@ -65,7 +65,7 @@ class ARM
 			when :i16; Expression.make_signed(r, 16)
 			when :i24; Expression.make_signed(r, 24)
 			when :i8_12; ((r >> 4) & 0xf0) | (r & 0xf)
-			when :shift; [:lsl, :lsr, :asr, :ror][r]
+			when :stype; [:lsl, :lsr, :asr, :ror][r]
 			when :u; [:-, :+][r]
 			else r
 			end
@@ -87,8 +87,8 @@ class ARM
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :rd, :rn, :rm; Reg.new field_val[a]
-			when :rm_rs; Reg.new field_val[:rm], field_val[:shift], Reg.new(field_val[:rs])
-			when :rm_is; Reg.new field_val[:rm], field_val[:shift], field_val[:shifta]*2
+			when :rm_rs; Reg.new field_val[:rm], field_val[:stype], Reg.new(field_val[:rs])
+			when :rm_is; Reg.new field_val[:rm], field_val[:stype], field_val[:shifti]*2
 			when :i24; Expression[field_val[a] << 2]
 			when :i8_r
 				i = field_val[:i8]
@@ -99,7 +99,7 @@ class ARM
 				o = case a
 				when :mem_rn_rm; Reg.new(field_val[:rm])
 				when :mem_rn_i8_12; field_val[:i8_12]
-				when :mem_rn_rms; Reg.new(field_val[:rm], field_val[:shift], field_val[:shifta]*2)
+				when :mem_rn_rms; Reg.new(field_val[:rm], field_val[:stype], field_val[:shifti]*2)
 				when :mem_rn_i12; field_val[:i12]
 				end
 				Memref.new(b, o, field_val[:u], op.props[:baseincr])
@@ -112,6 +112,7 @@ class ARM
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
+p di.instruction.args
 
 		di.bin_length = 4
 		di

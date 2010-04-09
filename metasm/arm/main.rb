@@ -21,7 +21,7 @@ class ARM < CPU
 		attr_accessor :i, :stype, :shift, :updated
 		def initialize(i, stype=:lsl, shift=0)
 			@i = i
-			@stype = :lsl
+			@stype = stype
 			@shift = shift
 		end
 
