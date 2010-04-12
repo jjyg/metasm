@@ -419,7 +419,7 @@ end
 class MessageBox < Gtk::MessageDialog
 	include WindowPos
 	def initialize(owner, str, opts={})
-		owner = nil if owner and owner.destroyed?
+		owner = nil if owner and (not owner.kind_of? Gtk::Window or owner.destroyed?)
 		owner ||= Gtk::Window.toplevels.first
 		opts = {:title => opts} if opts.kind_of? String
 		super(owner, Gtk::Dialog::DESTROY_WITH_PARENT, INFO, BUTTONS_CLOSE, str)
