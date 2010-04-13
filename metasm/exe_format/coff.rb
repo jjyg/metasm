@@ -338,17 +338,18 @@ end
 
 # the COFF archive file format
 # maybe used in .lib files (they hold binary import information for libraries)
+# used for unix .a static library files (with no 2nd linker and newline-separated longnames)
 class COFFArchive < ExeFormat
 	class Member < SerialStruct
-		str :name, 16
-		str :date, 12
-		str :uid, 6
-		str :gid, 6
-		str :mode, 8
-		str :size, 10
-		str :eoh, 2
+		mem :name, 16
+		mem :date, 12
+		mem :uid, 6
+		mem :gid, 6
+		mem :mode, 8
+		mem :size, 10
+		mem :eoh, 2
 
-		attr_accessor :offset
+		attr_accessor :offset, :encoded
 	end
 
 	class ImportHeader < SerialStruct
@@ -362,7 +363,7 @@ class COFFArchive < ExeFormat
 		strz :libname
 	end
 
-	attr_accessor :members, :signature, :first_linker, :second_linker
+	attr_accessor :members, :signature, :first_linker, :second_linker, :longnames
 end
 end
 __END__

@@ -647,6 +647,7 @@ class COFFArchive
 			@offset = ar.encoded.ptr
 
 			super(ar)
+			raise 'bad member header' + self.inspect if @eoh != "`\n"
 
 			@name.strip!
 			@date = @date.to_i
@@ -657,20 +658,25 @@ class COFFArchive
 
 			@encoded = ar.encoded[ar.encoded.ptr, @size]
 			ar.encoded.ptr += @size
+			ar.encoded.ptr += 1 if @size & 1 == 1
 		end
 
 		def decode_half ; @encoded.decode_imm(:u16, :big) end
 		def decode_word ; @encoded.decode_imm(:u32, :big) end
+
+		def exe; AutoExe.decode(@encoded) ; end
 	end
 
 	def decode_half ; @encoded.decode_imm(:u16, :little) end
 	def decode_word ; @encoded.decode_imm(:u32, :little) end
-	def decode_strz(edata = @encoded) ; i = edata.data.index(?\0, edata.ptr) ; edata.read(i+1-ta.ptr).chop end
+	def decode_strz(edata = @encoded)
+		i = edata.data.index(?\0, edata.ptr) || edata.data.index(?\n, edata.ptr) || (edata.length+1)
+		edata.read(i+1-edata.ptr).chop
+	end
 
-	def decode_first_linker
+	def decode_first_linker(m)
 		offsets = []
 		names = []
-		m = @members[0]
 		m.encoded.ptr = 0
 		numsym = m.decode_word
 		numsym.times { offsets << m.decode_word }
@@ -682,7 +688,7 @@ class COFFArchive
 		@first_linker = names.zip(offsets) #.inject({}) { |h, (n, o)| h.update n => o }
 	end
 
-	def decode_second_linker
+	def decode_second_linker(m)
 		names = []
 		mboffsets = []
 		indices = []
@@ -698,7 +704,11 @@ class COFFArchive
 		# symbols sorted by symbol name (supposed to be more efficient, but no index into string table...)
 
 		#names.zip(indices).inject({}) { |h, (n, i)| h.update n => mboffsets[i] }
-		@second_linker = [names, mboffsets, incides]
+		@second_linker = [names, mboffsets, indices]
+	end
+
+	def decode_longnames(m)
+		@longnames = m.encoded
 	end
 
 	# set real name to archive members
@@ -709,8 +719,8 @@ class COFFArchive
 			when '/'
 			when '//'
 			when /^\/(\d+)/
-				@members[2].ptr = $1.to_i
-				m.name = decode_strz(@members[2].encoded)
+				@longnames.ptr = $1.to_i
+				m.name = decode_strz(@longnames).chomp("/")
 			else m.name.chomp! "/"
 			end
 		}
@@ -719,13 +729,18 @@ class COFFArchive
 	def decode
 		@encoded.ptr = 0
 		@signature = @encoded.read(8)
-		raise InvalidExeFormat, "Invalid COFF Archive signature #{ar.signature.inspect}" if ar.signature != "!<arch>\n"
+		raise InvalidExeFormat, "Invalid COFF Archive signature #{@signature.inspect}" if @signature != "!<arch>\n"
 		@members = []
 		while @encoded.ptr < @encoded.virtsize
 			@members << Member.decode(self)
 		end
-		decode_first_linker
-		decode_second_linker
+		@members.each { |m|
+			case m.name
+			when '/'; @first_linker ? decode_second_linker(m) : decode_first_linker(m)
+			when '//'; decode_longnames(m)
+			else break
+			end
+		}
 		fixup_names
 	end
 end
