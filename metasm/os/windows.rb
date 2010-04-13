@@ -620,6 +620,47 @@ VirtualProtectEx(
 	__in  SIZE_T dwSize,
 	__in  DWORD flNewProtect,
 	__out LPDWORD lpflOldProtect);
+
+#define TH32CS_SNAPHEAPLIST 0x00000001
+#define TH32CS_SNAPPROCESS  0x00000002
+#define TH32CS_SNAPTHREAD   0x00000004
+#define TH32CS_SNAPMODULE   0x00000008
+#define TH32CS_SNAPMODULE32 0x00000010
+#define TH32CS_SNAPALL      (TH32CS_SNAPHEAPLIST | TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD | TH32CS_SNAPMODULE)
+#define TH32CS_INHERIT      0x80000000
+
+HANDLE
+WINAPI
+CreateToolhelp32Snapshot(
+	DWORD dwFlags,
+	DWORD th32ProcessID
+);
+
+typedef struct tagTHREADENTRY32
+{
+	DWORD   dwSize;
+	DWORD   cntUsage;
+	DWORD   th32ThreadID;       // this thread
+	DWORD   th32OwnerProcessID; // Process this thread is associated with
+	LONG    tpBasePri;
+	LONG    tpDeltaPri;
+	DWORD   dwFlags;
+} THREADENTRY32, * LPTHREADENTRY32;
+
+BOOL
+WINAPI
+Thread32First(
+	HANDLE hSnapshot,
+	LPTHREADENTRY32 lpte
+);
+
+BOOL
+WINAPI
+Thread32Next(
+	HANDLE hSnapshot,
+	LPTHREADENTRY32 lpte
+);
+
 EOS
 
 	new_api_c <<EOS, 'advapi32'
@@ -801,6 +842,20 @@ class WinOS < OS
 			ret
 		ensure
 			$VERBOSE = oldverb
+		end
+
+		# return the list of threads in the current process
+		def threads
+			h = WinAPI.createtoolhelp32snapshot(WinAPI::TH32CS_SNAPTHREAD, 0)
+			list = []
+			te = WinAPI.alloc_c_struct('THREADENTRY32', :dwsize => :size)
+			return if not WinAPI.thread32first(h, te)
+			loop do
+				list << te['th32threadid'] if te['th32ownerprocessid'] == pid
+				break if not WinAPI.thread32next(h, te)
+			end
+			WinAPI.closehandle(h)
+			list
 		end
 	end
 
