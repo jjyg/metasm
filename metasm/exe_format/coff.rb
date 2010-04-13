@@ -364,6 +364,11 @@ class COFFArchive < ExeFormat
 	end
 
 	attr_accessor :members, :signature, :first_linker, :second_linker, :longnames
+
+	# return the 1st member whose name is name
+	def member(name)
+		@members.find { |m| m.name == name }
+	end
 end
 end
 __END__
