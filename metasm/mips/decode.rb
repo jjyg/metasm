@@ -231,7 +231,7 @@ class MIPS
 	def delay_slot(di=nil)
 		# branch.*likely has no delay slot
 		# bltzal/bgezal are 'link', not 'likely', hence the check for -2
-		(di and di.opcode.name[0] == ?b and di.opcode.name[-1] == ?l and di.opcode.name[-2] != ?a) ? 0 : 1
+		(di and di.opcode.props[:setip] and (di.opcode.name[-1] != ?l or di.opcode.name[-2] == ?a)) ? 1 : 0
 	end
 
 	def disassembler_default_func
