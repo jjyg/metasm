@@ -9,18 +9,6 @@ require 'metasm/encode'
 
 module Metasm
 class COFF
-	class Header
-		# finds good default values for header
-		def set_default_values(coff, opth)
-			@machine     ||= 'UNKNOWN'
-			@num_sect    ||= coff.sections.length
-			@time        ||= Time.now.to_i
-			@size_opthdr ||= opth.virtsize
-
-			super(coff)
-		end
-	end
-
 	class OptionalHeader
 		# encodes an Optional header and the directories
 		def encode(coff)
@@ -54,14 +42,9 @@ class COFF
 			@base_of_code ||= (tmp ? Expression[coff.label_at(tmp.encoded, 0), :-, coff.label_at(coff.encoded, 0)] : 0)
 			tmp = coff.sections.find { |s| s.characteristics.include? 'CONTAINS_DATA' }
 			@base_of_data ||= (tmp ? Expression[coff.label_at(tmp.encoded, 0), :-, coff.label_at(coff.encoded, 0)] : 0)
-			@image_base   ||= coff.label_at(coff.encoded, 0)
 			@file_align   ||= 0x200
 			@os_ver_maj   ||= 4
 			@subsys_maj   ||= 4
-			@image_size   ||= coff.new_label('image_size')
-			@headers_size ||= coff.new_label('headers_size')
-			@checksum     ||= coff.new_label('checksum')
-			@subsystem    ||= 'WINDOWS_GUI'
 			@stack_reserve||= 0x100000
 			@stack_commit ||= 0x1000
 			@heap_reserve ||= 0x100000
@@ -635,15 +618,20 @@ class COFF
 		}
 
 		# encode optional header
-		@optheader.headers_size = nil
-		@optheader.image_size = nil
+		@optheader.image_size   ||= new_label('image_size')
+		@optheader.image_base   ||= label_at(coff.encoded, 0)
+		@optheader.headers_size ||= new_label('headers_size')
+		@optheader.checksum     ||= new_label('checksum')
+		@optheader.subsystem    ||= 'WINDOWS_GUI'
 		@optheader.numrva = nil
 		opth = @optheader.encode(self)
 
 		# encode header
-		@header.num_sect = nil
-		@header.size_opthdr = nil
-		@encoded << @header.encode(self, opth) << opth << s_table
+		@header.machine ||= 'UNKNOWN'
+		@header.num_sect = sections.length
+		@header.time ||= Time.now.to_i & -255
+		@header.size_opthdr = opth.virtsize
+		@encoded << @header.encode(self) << opth << s_table
 	end
 
 	# append the section bodies to @encoded, and link the resulting binary

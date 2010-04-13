@@ -933,6 +933,7 @@ class EncodedData
 
 	# returns the value val rounded up to next multiple of len
 	def self.align_size(val, len)
+		return val if len == 0
 		((val + len - 1) / len).to_i * len
 	end
 

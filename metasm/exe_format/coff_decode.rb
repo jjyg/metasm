@@ -13,6 +13,7 @@ class COFF
 		# decodes a COFF optional header from coff.cursection
 		# also decodes directories in coff.directory
 		def decode(coff)
+			return set_default_values(coff) if coff.header.size_opthdr == 0
 			super(coff)
 
 			nrva = @numrva
@@ -400,6 +401,15 @@ class COFF
 	end
 
 	def each_section
+		if @header.size_opthdr == 0
+			@sections.each { |s|
+				next if not s.encoded
+				l = new_label(s.name)
+				s.encoded.add_export(l, 0)
+				yield s.encoded, l
+			}
+			return
+		end
 		base = @optheader.image_base
 		base = 0 if not base.kind_of? Integer
 		yield @encoded[0, @optheader.headers_size], base
@@ -431,6 +441,7 @@ class COFF
 	def decode_section_body(s)
 		raw = EncodedData.align_size(s.rawsize, @optheader.file_align)
 		virt = EncodedData.align_size(s.virtsize, @optheader.sect_align)
+		virt = raw = s.rawsize if @header.size_opthdr == 0
 		s.encoded = @encoded[s.rawaddr, [raw, virt].min]
 		s.encoded.virtsize = virt
 	end
@@ -667,8 +678,8 @@ class COFFArchive
 		def exe; AutoExe.decode(@encoded) ; end
 	end
 
-	def decode_half ; @encoded.decode_imm(:u16, :little) end
-	def decode_word ; @encoded.decode_imm(:u32, :little) end
+	def decode_half(edata = @encoded) ; edata.decode_imm(:u16, :little) end
+	def decode_word(edata = @encoded) ; edata.decode_imm(:u32, :little) end
 	def decode_strz(edata = @encoded)
 		i = edata.data.index(?\0, edata.ptr) || edata.data.index(?\n, edata.ptr) || (edata.length+1)
 		edata.read(i+1-edata.ptr).chop
@@ -694,10 +705,10 @@ class COFFArchive
 		indices = []
 		m = @members[1]
 		m.encoded.ptr = 0
-		nummb = m.decode_word
-		nummb.times { mboffsets << m.decode_word }
-		numsym = m.decode_word
-		numsym.times { indices << m.decode_half }
+		nummb = decode_word(m.encoded)
+		nummb.times { mboffsets << decode_word(m.encoded) }
+		numsym = decode_word(m.encoded)
+		numsym.times { indices << decode_half(m.encoded) }
 		numsym.times { names << decode_strz(m.encoded) }
 
 		# names[42] is found in object at file offset mboffsets[indices[42]]
