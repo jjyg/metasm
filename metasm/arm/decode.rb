@@ -112,7 +112,6 @@ class ARM
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
-p di.instruction.args
 
 		di.bin_length = 4
 		di
