@@ -328,10 +328,13 @@ class ELF
 		}
 	end
 
-	# marks a symbol as @encoded.export (from s.value, using segments)
+	# marks a symbol as @encoded.export (from s.value, using segments or sections)
 	def decode_symbol_export(s)
 		if s.name and s.shndx != 'UNDEF' and %w[NOTYPE OBJECT FUNC].include?(s.type)
-			if not o = addr_to_off(s.value)
+			if @header.type == 'REL'
+				sec = @sections[s.shndx]
+				o = sec.offset + s.value
+			elsif not o = addr_to_off(s.value)
 				# allow to point to end of segment
 				if not seg = @segments.find { |seg_| seg_.type == 'LOAD' and seg_.vaddr + seg_.memsz == s.value }	# check end
 					puts "W: Elf: symbol points to unmmaped space (#{s.inspect})" if $VERBOSE and s.shndx != 'ABS'
@@ -734,6 +737,7 @@ class ELF
 
 	# decodes sections, interprets symbols/relocs, fills sections.encoded
 	def decode_sections
+		decode_sections_symbols
 		@sections.each { |s|
 			case s.type
 			when 'PROGBITS', 'NOBITS'
@@ -743,7 +747,7 @@ class ELF
 		@sections.find_all { |s| s.type == 'PROGBITS' or s.type == 'NOBITS' }.each { |s|
 			if s.flags.include? 'ALLOC'
 				if s.type == 'NOBITS'
-					s.encoded = EncodedData.new :virtsize => s.size
+					s.encoded = EncodedData.new '', :virtsize => s.size
 				else
 					s.encoded = @encoded[s.offset, s.size] || EncodedData.new
 					s.encoded.virtsize = s.size
@@ -768,7 +772,11 @@ class ELF
 
 	def each_section
 		@segments.each { |s| yield s.encoded, s.vaddr if s.type == 'LOAD' }
-		# @sections ?
+		@sections.each { |s|
+			next if not s.encoded
+			s.encoded.add_export new_label(s.name), 0
+		       	yield s.encoded, label_at(s.encoded, 0)
+		} if @header.type == 'REL'
 	end
 
 	# returns a metasm CPU object corresponding to +header.machine+
