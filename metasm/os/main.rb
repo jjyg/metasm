@@ -161,6 +161,11 @@ class VirtualString
 		end
 	end
 
+	# '=~' does not go through method_missing
+	def =~(o)
+		realstring =~ o
+	end
+
 	# implements a read page cache
 
 	# the real address of our first byte
@@ -307,7 +312,7 @@ end
 # this class implements a high-level debugging API (abstract superclass)
 class Debugger
 	class Breakpoint
-		attr_accessor :oneshot, :state, :type, :previous, :condition, :action, :mtype, :mlen
+		attr_accessor :address, :oneshot, :state, :type, :previous, :condition, :action, :mtype, :mlen
 	end
 
 	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint, :pid, :tid
@@ -500,6 +505,7 @@ class Debugger
 			return
 		end
 		b = Breakpoint.new
+		b.address = addr
 		b.oneshot = oneshot
 		b.type = type
 		b.condition = cond if cond
