@@ -67,7 +67,7 @@ def create_sig_elf(elf)
 
 		len = sym.size
 		if len == 0
-			len = data.export.values.find_all { |o| o > off }.min || data.length
+			len = data.export.find_all { |k, o| o > off and k !~ /_uuid/ }.transpose[1].to_a.min || data.length
 			len -= off
 			len = 256 if len > 256
 		end
@@ -78,9 +78,19 @@ end
 
 # scan a pe/coff file
 def create_sig_coff(coff)
-	# TODO
 	if coff.kind_of? PE	# dll
-	else			# reloc coff
+		# dll
+		# TODO
+	else
+		coff.symbols.to_a.compact.each { |sym|
+			next if sym.type != 'FUNCTION'
+			next if not sym.sec_nr.kind_of? Integer
+			data = coff.sections[sym.sec_nr-1].encoded
+			off = sym.value
+			len = data.export.find_all { |k, o| o > off and k !~ /_uuid/ }.transpose[1].to_a.min || data.length
+
+			yield sym.name, data[off, len]
+		}
 	end
 end
 

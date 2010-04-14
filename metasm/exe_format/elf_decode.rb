@@ -426,12 +426,12 @@ class ELF
 			tsec = @sections[sec.info]
 			relocproc = "arch_decode_segments_reloc_#{@header.machine.to_s.downcase}"
 			next if not respond_to? relocproc
-			l = new_label(tsec.name)
-			@encoded.add_export l, tsec.offset
+			new_label('pcrel')
 			@relocations[startidx..-1].each { |r|
 				o = @encoded.ptr = tsec.offset + r.offset
 				r = r.dup
-				r.offset = Expression[l, :+, r.offset]
+				l = new_label('pcrel')
+				r.offset = Expression[l]
 				if rel = send(relocproc, r)
 					@encoded.reloc[o] = rel
 				end
@@ -812,11 +812,8 @@ class ELF
 	       	return if @header.type != 'REL'
 		@sections.each { |s|
 			next if not s.encoded
-			if not l = s.encoded.inv_export[0]
-				# may have already been created by decode_sec_relocs
-				l = new_label(s.name)
-				s.encoded.add_export l, 0
-			end
+			l = new_label(s.name)
+			s.encoded.add_export l, 0
 		       	yield s.encoded, l
 		}
 	end

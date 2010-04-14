@@ -488,16 +488,24 @@ class COFF
 			@cursection.encoded.ptr = s.relocaddr
 			s.relocs = []
 			s.relocnr.times { s.relocs << RelocObj.decode(self) }
+			new_label 'pcrel'
 			s.relocs.each { |r|
 				case r.type
-				when 'DIR32', 'DIR32NB'
+				when 'DIR32'
 					s.encoded.reloc[r.va] = Metasm::Relocation.new(Expression[r.sym.name], :u32, @endianness)
 				when 'REL32'
-					# TODO more probably Expr[sym - pc], check that
-					s.encoded.reloc[r.va] = Metasm::Relocation.new(Expression[r.sym.name], :u32, @endianness)
+					l = new_label('pcrel')
+					s.encoded.add_export(l, r.va+4)
+					s.encoded.reloc[r.va] = Metasm::Relocation.new(Expression[r.sym.name, :-, l], :u32, @endianness)
 				end
 			}
 		} if not @header.characteristics.include?('RELOCS_STRIPPED')
+		symbols.to_a.compact.each { |sym|
+			next if not sym.sec_nr.kind_of? Integer
+			next if sym.storage != 'EXTERNAL' and (sym.storage != 'STATIC' or sym.value == 0)
+			next if not s = @sections[sym.sec_nr-1]
+			s.encoded.add_export new_label(sym.name), sym.value
+		}
 	end
 
 	# decodes a section content (allows simpler LoadedPE override)

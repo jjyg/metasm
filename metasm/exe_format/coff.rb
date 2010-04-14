@@ -74,6 +74,15 @@ class COFF < ExeFormat
 		9 => 'UNION', 10 => 'ENUM', 11 => 'MOE', 12 => 'BYTE', 13 => 'WORD',
 		14 => 'UINT', 15 => 'DWORD'}
 	SYMBOL_TYPE = { 0 => 'NULL', 1 => 'POINTER', 2 => 'FUNCTION', 3 => 'ARRAY' }
+	SYMBOL_SECTION = { 0 => 'UNDEF', 0xffff => 'ABS', 0xfffe => 'DEBUG' }
+	SYMBOL_STORAGE = { 0xff => 'EOF', 0 => 'NULL', 1 => 'AUTO', 2 => 'EXTERNAL',
+		3 => 'STATIC', 4 => 'REGISTER', 5 => 'EXT_DEF', 6 => 'LABEL',
+		7 => 'UNDEF_LABEL', 8 => 'STRUCT_MEMBER', 9 => 'ARGUMENT', 10 => 'STRUCT_TAG',
+		11 => 'UNION_MEMBER', 12 => 'UNION_TAG', 13 => 'TYPEDEF', 14 => 'UNDEF_STATIC',
+		15 => 'ENUM_TAG', 16 => 'ENUM_MEMBER', 17 => 'REG_PARAM', 18 => 'BIT_FIELD',
+		100 => 'BLOCK', 101 => 'FUNCTION', 102 => 'END_STRUCT',
+	       	103 => 'FILE', 104 => 'SECTION', 105 => 'WEAK_EXT',
+	}
 
 	DEBUG_TYPE = { 0 => 'UNKNOWN', 1 => 'COFF', 2 => 'CODEVIEW', 3 => 'FPO', 4 => 'MISC',
 		5 => 'EXCEPTION', 6 => 'FIXUP', 7 => 'OMAP_TO_SRC', 8 => 'OMAP_FROM_SRC',
@@ -143,10 +152,12 @@ class COFF < ExeFormat
 		str :name, 8	# if the 1st 4 bytes are 0, the word at 4...8 is the name index in the string table
 		word :value
 		half :sec_nr
+		fld_enum :sec_nr, SYMBOL_SECTION
 		bitfield :half, 0 => :type_base, 4 => :type
 		fld_enum :type_base, SYMBOL_BTYPE
 		fld_enum :type, SYMBOL_TYPE
 		bytes :storage, :nr_aux
+		fld_enum :storage, SYMBOL_STORAGE
 
 		attr_accessor :aux
 	end
