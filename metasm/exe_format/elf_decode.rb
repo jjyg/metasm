@@ -383,8 +383,7 @@ class ELF
 		check_symbols_gnu_hash if $VERBOSE
 	end
 
-	# decodes the .symtab section
-	# currently for ET_EXEC/DYN only
+	# decode SYMTAB sections
 	def decode_sections_symbols
 		@symbols ||= []
 		@sections.to_a.each { |sec|
@@ -394,11 +393,48 @@ class ELF
 			@encoded.ptr = sec.offset
 			syms = []
 			(sec.size/Symbol.size(self)).times { syms << Symbol.decode(self, strtab) }
+			alreadysegs = true if @header.type == 'DYN' or @header.type == 'EXEC'
 			syms.each { |s|
-				next if s.shndx == 'UNDEF'
-				next if @symbols.find { |ss| ss.name == s.name }
+				if alreadysegs
+					# if we already decoded the symbols from the DYNAMIC segment,
+					# ignore dups and imports from this section
+					next if s.shndx == 'UNDEF'
+					next if @symbols.find { |ss| ss.name == s.name }
+				end
 				@symbols << s
 				decode_symbol_export(s)
+			}
+		}
+	end
+
+	# decode REL/RELA sections
+	def decode_sections_relocs
+		@relocations ||= []
+		@sections.to_a.each { |sec|
+			case sec.type
+			when 'REL'; relcls = Relocation
+			when 'RELA'; relcls = RelocationAddend
+			else next
+			end
+			startidx = @relocations.length
+			@encoded.ptr = sec.offset
+			while @encoded.ptr < sec.offset + sec.size
+				@relocations << relcls.decode(self)
+			end
+
+			# create edata relocs
+			tsec = @sections[sec.info]
+			relocproc = "arch_decode_segments_reloc_#{@header.machine.to_s.downcase}"
+			next if not respond_to? relocproc
+			l = new_label(tsec.name)
+			@encoded.add_export l, tsec.offset
+			@relocations[startidx..-1].each { |r|
+				o = @encoded.ptr = tsec.offset + r.offset
+				r = r.dup
+				r.offset = Expression[l, :+, r.offset]
+				if rel = send(relocproc, r)
+					@encoded.reloc[o] = rel
+				end
 			}
 		}
 	end
@@ -738,6 +774,7 @@ class ELF
 	# decodes sections, interprets symbols/relocs, fills sections.encoded
 	def decode_sections
 		decode_sections_symbols
+		decode_sections_relocs
 		@sections.each { |s|
 			case s.type
 			when 'PROGBITS', 'NOBITS'
@@ -772,11 +809,16 @@ class ELF
 
 	def each_section
 		@segments.each { |s| yield s.encoded, s.vaddr if s.type == 'LOAD' }
+	       	return if @header.type != 'REL'
 		@sections.each { |s|
 			next if not s.encoded
-			s.encoded.add_export new_label(s.name), 0
-		       	yield s.encoded, label_at(s.encoded, 0)
-		} if @header.type == 'REL'
+			if not l = s.encoded.inv_export[0]
+				# may have already been created by decode_sec_relocs
+				l = new_label(s.name)
+				s.encoded.add_export l, 0
+			end
+		       	yield s.encoded, l
+		}
 	end
 
 	# returns a metasm CPU object corresponding to +header.machine+

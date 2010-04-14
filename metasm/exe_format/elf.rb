@@ -374,6 +374,7 @@ class ELF < ExeFormat
 		attr_accessor :encoded
 
 		def struct_specialized(elf)
+			return Segment32 if not elf
 			case elf.bitsize
 			when 32; Segment32
 			else Segment64
@@ -429,6 +430,7 @@ class ELF < ExeFormat
 
 	class Symbol < SerialStruct
 		def struct_specialized(elf)
+			return Symbol32 if not elf
 			case elf.bitsize
 			when 32; Symbol32
 			else Symbol64
@@ -468,6 +470,7 @@ class ELF < ExeFormat
 	class Relocation < SerialStruct
 		attr_accessor :offset, :type, :symbol
 		def struct_specialized(elf)
+			return Relocation32 if not elf
 			case elf.bitsize
 			when 32; Relocation32
 			else Relocation64
@@ -497,6 +500,7 @@ class ELF < ExeFormat
 	class RelocationAddend < Relocation
 		attr_accessor :addend
 		def struct_specialized(elf)
+			return RelocationAddend32 if not elf
 			case elf.bitsize
 			when 32; RelocationAddend32
 			else RelocationAddend64
