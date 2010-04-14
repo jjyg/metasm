@@ -2027,7 +2027,7 @@ class ContainerVBoxWidget < WinWidget
 end
 
 module TextWidget
-	attr_accessor :caret_x, :caret_y, :hl_word
+	attr_accessor :caret_x, :caret_y, :hl_word, :font_width, :font_height
 
 	def initialize_text
 		@caret_x = @caret_y = 0		# text cursor position
@@ -2094,9 +2094,12 @@ end
 class DrawableWidget < WinWidget
 	include TextWidget
 
+	attr_accessor :buttons
+
 	def initialize(*a, &b)
 		@color = {}
 		@default_color_association = { :background => :winbg }
+		@buttons = nil
 
 		super()
 
@@ -2206,6 +2209,73 @@ class DrawableWidget < WinWidget
 
 	def kbd_shift
 		Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0
+	end
+
+# represents a clickable area with a label (aka button)
+class Button
+	attr_accessor :x, :y, :w, :h, :c1, :c2, :text, :down, :action
+
+	# create a new Button with the specified text & border color
+	def initialize(text='Ok', c1=:palegrey, c2=:grey, &b)
+		@x = @y = @w = @h = 0
+		@c1, @c2 = c1, c2
+		@text = text
+		@down = false
+		@action = b
+	end
+
+	# move the button (x y w h)
+	def move(nx=@x, ny=@y, nw=@w, nh=@h)
+		@x, @y, @w, @h = nx, ny, nw, nh
+	end
+
+	# draw the button on the parent widget
+	def paint(w)
+		c1, c2 = @c1, @c2
+		c1, c2 = c2, c1 if @down
+		w.draw_string_color(:text, @x+(@w-w.font_width*@text.length)/2, @y+(@h - w.font_height)/2, @text)
+		w.draw_line_color(c1, @x, @y, @x, @y+@h)
+		w.draw_line_color(c1, @x, @y, @x+@w, @y)
+		w.draw_line_color(c2, @x+@w, @y+@h, @x, @y+@h)
+		w.draw_line_color(c2, @x+@w, @y+@h, @x+@w, @y)
+	end
+
+	# checks if the click is on the button, returns true if so
+	def click(x, y)
+		@down = true if x >= @x and x < @x+@w and y >= @y and y < @y+@h
+	end
+
+	def mouserelease(x, y)
+		if @down
+			@down = false
+			@action.call
+			true
+		end
+	end
+end
+
+	# add a new button to the widget
+	def add_button(text='Ok', *a, &b)
+		@buttons ||= []
+		@buttons << Button.new(text, *a, &b)
+	end
+
+	# render the buttons on the widget
+	# should be called during #paint
+	def paint_buttons
+		@buttons.each { |b| b.paint(self) }
+	end
+
+	# checks if the click is inside a button, returns true if it is
+	# should be called during #click
+	def click_buttons(x, y)
+		@buttons.find { |b| b.click(x, y) }
+	end
+
+	# the mouse was released, call button action if it is pressed
+	# should be called during #mouserelease
+	def mouserelease_buttons(x, y)
+		@buttons.find { |b| b.mouserelease(x, y) }
 	end
 end
 
@@ -2574,15 +2644,25 @@ class IBoxWidget < DrawableWidget
 	def initialize_widget(label, opts, &b)
 		@label = label
 		@action = b
-		@b1down = @b2down = @textdown = false
+		@textdown = false
 		@curline = opts[:text].to_s
 		@caret_x_select = 0
 		@caret_x = @curline.length
 		@caret_x_start = 0
 
+		add_button('Ok', :btnc1, :btnc2) { keypress(:enter) }
+		add_button('Cancel', :btnc1, :btnc2) { keypress(:esc) }
+
 		@default_color_association = { :background => :winbg, :label => :black,
 			:text => :black, :textbg => :white, :caret => :black, :btnc1 => :palegrey,
 			:btnc2 => :grey, :textsel => :white, :textselbg => :darkblue }
+	end
+
+	def resized(w, h)
+		bw = 10*@font_width
+		bh = @font_height*3/2
+		@buttons[0].move((w-2*bw-3*@font_width)/2, 0, bw, bh)
+		@buttons[1].move(@buttons[0].x + 3*@font_width + bw, 0, bw, bh)
 	end
 
 	def initial_size
@@ -2604,30 +2684,12 @@ class IBoxWidget < DrawableWidget
 		@texty = y-1
 		@texth = @font_height+1
 
-		y += @font_height*2
-		@by = y
-		@bw = 10*@font_width
-		@bh = @font_height*3/2
-		@bx1 = (@width - 2*@bw - 3*@font_width) / 2
-		@bx2 = @bx1 + 3*@font_width + @bw
-
-		c1 = @b1down ? :btnc2 : :btnc1
-		c2 = @b1down ? :btnc1 : :btnc2
-		draw_string_color(:text, @bx1+4*@font_width, @by+@font_height*3/8, 'Ok')
-		draw_line_color(c1, @bx1, @by, @bx1, @by+@bh)
-		draw_line_color(c1, @bx1, @by, @bx1+@bw, @by)
-		draw_line_color(c2, @bx1+@bw, @by+@bh, @bx1, @by+@bh)
-		draw_line_color(c2, @bx1+@bw, @by+@bh, @bx1+@bw, @by)
-
-		c1 = @b2down ? :btnc2 : :btnc1
-		c2 = @b2down ? :btnc1 : :btnc2
-		draw_string_color(:text, @bx2+3*@font_width, @by+@font_height*3/8, 'Cancel')
-		draw_line_color(c1, @bx2, @by, @bx2, @by+@bh)
-		draw_line_color(c1, @bx2, @by, @bx2+@bw, @by)
-		draw_line_color(c2, @bx2+@bw, @by+@bh, @bx2, @by+@bh)
-		draw_line_color(c2, @bx2+@bw, @by+@bh, @bx2+@bw, @by)
-
 		Win32Gui.selectobject(@hdc, fixedfont)
+
+		y += @font_height*2
+		@buttons.each { |b| b.y = y }
+		paint_buttons
+
 		w_c = width/@font_width - 2
 
 		if @caret_x <= @caret_x_start
@@ -2732,8 +2794,8 @@ class IBoxWidget < DrawableWidget
 			Gui.main_iter
 			protect { @action.call(@curline.strip) }
 		when :esc
-			if @b1down or @b2down
-				@b1down = @b2down = false
+			if @buttons.find { |b| b.down }
+				@buttons.each { |b| b.down = false }
 				redraw
 			else
 				destroy
@@ -2781,14 +2843,8 @@ class IBoxWidget < DrawableWidget
 			@caret_x = [[@caret_x, 0].max, @curline.length].min
 			@textdown = @caret_x
 			update_caret
-		elsif y >= @by and y < @by+@bh
-			if x >= @bx1 and x < @bx1+@bw
-				@b1down = true
-				redraw
-			elsif x >= @bx2 and x < @bx2+@bw
-				@b2down = true
-				redraw
-			end
+		elsif click_buttons(x, y)
+			redraw
 		end
 	end
 
@@ -2817,12 +2873,7 @@ class IBoxWidget < DrawableWidget
 				redraw
 			end
 			@textdown = false
-		elsif @b1down
-			@b1down = false
-			keypress(:enter)
-		elsif @b2down
-			@b2down = false
-			keypress(:esc)
+		elsif mouserelease_buttons(x, y)
 		end
 	end
 	
