@@ -84,6 +84,9 @@ def create_sig_coff(coff)
 	end
 end
 
-targets = ARGV
-targets = Dir['*.a'] + Dir['*.lib'] if targets.empty?
-targets.each { |t| create_sig(AutoExe.decode_file(t)) }
+if __FILE__ == $0
+	$min_sigbytes = ARGV.shift.to_i if ARGV.first =~ /^\d+$/
+	targets = ARGV
+	targets = Dir['*.a'] + Dir['*.lib'] if targets.empty?
+	targets.each { |t| create_sig(AutoExe.decode_file(t)) }
+end
