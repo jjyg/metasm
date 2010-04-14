@@ -56,12 +56,12 @@ class COFF < ExeFormat
 	}
 
 	RELOCATION_TYPE = Hash.new({}).merge(
-		'x64' => { 0 => 'ABSOLUTE', 1 => 'ADDR64', 2 => 'ADDR32', 3 => 'ADDR32NB',
+		'AMD64' => { 0 => 'ABSOLUTE', 1 => 'ADDR64', 2 => 'ADDR32', 3 => 'ADDR32NB',
 			4 => 'REL32', 5 => 'REL32_1', 6 => 'REL32_2', 7 => 'REL32_3',
 			8 => 'REL32_4', 9 => 'REL32_5', 10 => 'SECTION', 11 => 'SECREL',
 			12 => 'SECREL7', 13 => 'TOKEN', 14 => 'SREL32', 15 => 'PAIR',
 			16 => 'SSPAN32' },
-		'arm' => { 0 => 'ABSOLUTE', 1 => 'ADDR32', 2 => 'ADDR32NB', 3 => 'BRANCH24',
+		'ARM' => { 0 => 'ABSOLUTE', 1 => 'ADDR32', 2 => 'ADDR32NB', 3 => 'BRANCH24',
 			4 => 'BRANCH11', 14 => 'SECTION', 15 => 'SECREL' },
 		'I386' => { 0 => 'ABSOLUTE', 1 => 'DIR16', 2 => 'REL16', 6 => 'DIR32',
 			7 => 'DIR32NB', 9 => 'SEG12', 10 => 'SECTION', 11 => 'SECREL',
@@ -69,12 +69,11 @@ class COFF < ExeFormat
 	)
 
 	# lsb of symbol type, unused
-	SYMBOL_TYPE = { 0 => 'NULL', 1 => 'VOID', 2 => 'CHAR', 3 => 'SHORT',
+	SYMBOL_BTYPE = { 0 => 'NULL', 1 => 'VOID', 2 => 'CHAR', 3 => 'SHORT',
 		4 => 'INT', 5 => 'LONG', 6 => 'FLOAT', 7 => 'DOUBLE', 8 => 'STRUCT',
 		9 => 'UNION', 10 => 'ENUM', 11 => 'MOE', 12 => 'BYTE', 13 => 'WORD',
 		14 => 'UINT', 15 => 'DWORD'}
-	# msb of symbol type, only 0x20 used
-	SYMBOL_DTYPE = { 0 => 'NULL', 1 => 'POINTER', 2 => 'FUNCTION', 3 => 'ARRAY' }
+	SYMBOL_TYPE = { 0 => 'NULL', 1 => 'POINTER', 2 => 'FUNCTION', 3 => 'ARRAY' }
 
 	DEBUG_TYPE = { 0 => 'UNKNOWN', 1 => 'COFF', 2 => 'CODEVIEW', 3 => 'FPO', 4 => 'MISC',
 		5 => 'EXCEPTION', 6 => 'FIXUP', 7 => 'OMAP_TO_SRC', 8 => 'OMAP_FROM_SRC',
@@ -139,6 +138,19 @@ class COFF < ExeFormat
 		words :ldrflags, :numrva
 	end
 
+	# COFF relocatable object symbol (table offset found in the Header.ptr_sym)
+	class Symbol < SerialStruct
+		str :name, 8	# if the 1st 4 bytes are 0, the word at 4...8 is the name index in the string table
+		word :value
+		half :sec_nr
+		bitfield :half, 0 => :type_base, 4 => :type
+		fld_enum :type_base, SYMBOL_BTYPE
+		fld_enum :type, SYMBOL_TYPE
+		bytes :storage, :nr_aux
+
+		attr_accessor :aux
+	end
+
 	class Section < SerialStruct
 		str :name, 8
 		words :virtsize, :virtaddr, :rawsize, :rawaddr, :relocaddr, :linenoaddr
@@ -146,7 +158,16 @@ class COFF < ExeFormat
 		word :characteristics
 		fld_bits :characteristics, SECTION_CHARACTERISTIC_BITS
 
-		attr_accessor :encoded
+		attr_accessor :encoded, :relocs
+	end
+
+	# COFF relocatable object relocation (per section, see relocaddr/relocnr)
+	class RelocObj < SerialStruct
+		word :va
+		word :symidx
+		half :type
+		fld_enum(:type) { |coff, rel| RELOCATION_TYPE[coff.header.machine] || {} }
+		attr_accessor :sym
 	end
 
 	# lists the functions/addresses exported to the OS (pendant of ImportDirectory)
@@ -323,7 +344,7 @@ class COFF < ExeFormat
 		end
 	end
 
-	attr_accessor :header, :optheader, :directory, :sections, :endianness,
+	attr_accessor :header, :optheader, :directory, :sections, :endianness, :symbols,
 		:export, :imports, :resource, :certificates, :relocations, :debug, :tls, :loadconfig, :delayimports
 
 	def initialize(cpu=nil)
@@ -370,41 +391,4 @@ class COFFArchive < ExeFormat
 		@members.find { |m| m.name == name }
 	end
 end
-end
-__END__
-
-class Symbols
-	attr_accessor :name, :value, :sectionnumber, :type, :storageclass, :nbaux, :aux
-# name: if the first 4 bytes are null, the 4 next are the index to the name in the string table
-
-	def initialize(raw, offset)
-		@name = raw[offset..offset+7].delete("\0")
-		@value = bin(raw[offset+8 ..offset+11])
-		@sectionnumber = bin(raw[offset+12..offset+13])
-		@type = bin(raw[offset+14..offset+15])
-		@storageclass = raw[offset+16]
-		@nbaux = raw[offset+17]
-		@aux = Array.new
-		@nbaux.times { @aux << raw[offset..offset+17] ; offset += 18 }
-	end
-end
-
-class Strings < Array
-	attr_accessor :size
-
-	def initialize(raw, offset)
-		@size = bin(raw[offset..offset+3])
-		endoffset = offset + @size
-puts "String table: 0x%.8x .. 0x%.8x" % [offset, endoffset]
-		curstring = ''
-		while (offset < endoffset)
-			if raw[offset] != 0
-				curstring << raw[offset]
-			else
-				self << curstring
-				curstring = ''
-			end
-			offset += 1
-		end
-	end
 end

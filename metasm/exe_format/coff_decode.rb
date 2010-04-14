@@ -33,10 +33,34 @@ class COFF
 		end
 	end
 
+	class Symbol
+		def decode(coff, strtab='')
+			n0, n1 = coff.decode_word, coff.decode_word
+			coff.encoded.ptr -= 8
+
+			super(coff)
+
+			if n0 == 0 and ne = strtab.index(?\0, n1)
+				@name = strtab[n1...ne]
+			end
+			return if @nr_aux == 0
+
+			@aux = []
+			@nr_aux.times { @aux << coff.encoded.read(18) }
+		end
+	end
+
 	class Section
 		def decode(coff)
 			super(coff)
 			coff.decode_section_body(self)
+		end
+	end
+
+	class RelocObj
+		def decode(coff)
+			super(coff)
+			@sym = coff.symbols[@symidx]
 		end
 	end
 
@@ -425,8 +449,9 @@ class COFF
 		@header.decode(self)
 		optoff = @encoded.ptr
 		@optheader.decode(self)
+		decode_symbols if @header.num_sym != 0
 		@cursection.encoded.ptr = optoff + @header.size_opthdr
-		@header.num_sect.times { @sections << Section.decode(self) }
+		decode_sections
 		if sect_at_rva(@optheader.entrypoint)
 			@cursection.encoded.add_export new_label('entrypoint')
 		end
@@ -435,6 +460,44 @@ class COFF
 				@cursection.encoded.add_export new_label(d)
 			end
 		}
+	end
+
+	# decode the COFF symbol table (obj only)
+	def decode_symbols
+		endptr = @encoded.ptr = @header.ptr_sym + 18*@header.num_sym
+		strlen = decode_word
+		@encoded.ptr = endptr
+		strtab = @encoded.read(strlen)
+		@encoded.ptr = @header.ptr_sym
+		@symbols = []
+		while @encoded.ptr < endptr
+			@symbols << Symbol.decode(self, strtab)
+			# keep the reloc.sym_idx accurate
+			@symbols.last.nr_aux.times { @symbols << nil }
+		end
+	end
+
+	# decode the COFF sections
+	def decode_sections
+		@header.num_sect.times {
+			@sections << Section.decode(self)
+		}
+		# now decode COFF object relocations
+		@sections.each { |s|
+			next if s.relocnr == 0
+			@cursection.encoded.ptr = s.relocaddr
+			s.relocs = []
+			s.relocnr.times { s.relocs << RelocObj.decode(self) }
+			s.relocs.each { |r|
+				case r.type
+				when 'DIR32', 'DIR32NB'
+					s.encoded.reloc[r.va] = Metasm::Relocation.new(Expression[r.sym.name], :u32, @endianness)
+				when 'REL32'
+					# TODO more probably Expr[sym - pc], check that
+					s.encoded.reloc[r.va] = Metasm::Relocation.new(Expression[r.sym.name], :u32, @endianness)
+				end
+			}
+		} if not @header.characteristics.include?('RELOCS_STRIPPED')
 	end
 
 	# decodes a section content (allows simpler LoadedPE override)
