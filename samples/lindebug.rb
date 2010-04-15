@@ -858,8 +858,9 @@ class LinDebug
 		}
 		@command['ma'] = lambda { |lex, int|
 			addr = int[]
-			data = lex.readtok.raw
-			@rs[addr, data.length] = data
+			str = ''
+			str << ntok.raw while ntok = lex.readtok
+			@rs[addr, str.length] = str
 		}
 		@command['mx'] = lambda { |lex, int|
 			addr = int[]

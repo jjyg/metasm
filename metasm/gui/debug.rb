@@ -712,6 +712,33 @@ class DbgConsoleWidget < DrawableWidget
 			end
 			p.regs.gui_update
 		}
+		new_command('m', 'memory_dump', 'dump memory - m <addr> <len>') { |arg|
+			next if not addr = solve_expr(arg)
+			len = solve_expr(arg) || 16
+			mem = @dbg.memory[addr, len]
+			mem.scan(/.{1,16}/m).each { |l|
+				hex = l.unpack('C*').map { |c| '%02x' % c }.join(' ')
+				asc = l.gsub(/[^0x20-0x7e]/, '.')
+				add_log "#{Expression[addr]} #{hex.ljust(3*16)} #{asc}"
+				addr += l.length
+			}
+		}
+		new_command('ma', 'memory_ascii', 'write memory (ascii) - ma <addr> foo bar') { |arg|
+			next if not addr = solve_expr(arg)
+			data = arg.strip
+			@dbg.memory[addr, data.length] = data
+			@dbg.invalidate
+			@dbg.dasm_invalidate
+			p.gui_update
+		}
+		new_command('mx', 'memory_hex', 'write memory (hex) - mx <addr> 0011223344') { |arg|
+			next if not addr = solve_expr(arg)
+			data = [arg.delete(' ')].pack('H*')
+			@dbg.memory[addr, data.length] = data
+			@dbg.invalidate
+			@dbg.dasm_invalidate
+			p.gui_update
+		}
 		new_command('?', 'display a value') { |arg|
 			next if not v = solve_expr(arg)
 			add_log "#{v} 0x#{v.to_s(16)} #{[v & 0xffff_ffff].pack('L').inspect} #{@dbg.addrname!(v)}"
