@@ -108,7 +108,7 @@ class ELF
 
 	# checks a section's data has not grown beyond s.size, if so undefs addr/offset
 	def encode_check_section_size(s)
-		if s.size and s.encoded.virtsize < s
+		if s.size and s.encoded.virtsize < s.size
 			puts "W: Elf: preexisting section #{s} has grown, relocating" if $VERBOSE
 			s.addr = s.offset = nil
 			s.size = s.encoded.virtsize
@@ -344,11 +344,10 @@ class ELF
 			gotplt.type = 'PROGBITS'
 			gotplt.flags = %w[ALLOC WRITE]
 			gotplt.addralign = @bitsize/8
-			gotplt.encoded = EncodedData.new('', :export => {'_PLT_GOT' => 0})
-			gotplt.encoded << encode_xword('_DYNAMIC') << encode_xword(0) << encode_xword(0)
 			# _DYNAMIC is not base-relocated at runtime
 			encode_add_section gotplt
 		end
+		gotplt.encoded ||= (EncodedData.new('', :export => {'_PLT_GOT' => 0}) << encode_xword('_DYNAMIC') << encode_xword(0) << encode_xword(0))
 		@tag['PLTGOT'] = label_at(gotplt.encoded, 0)
 		plt = nil
 
@@ -485,10 +484,9 @@ class ELF
 			strtab.addralign = 1
 			strtab.type = 'STRTAB'
 			strtab.flags = ['ALLOC']
-			strtab.encoded = EncodedData.new << 0
-			strtab.flags
 			encode_add_section strtab
 		end
+		strtab.encoded = EncodedData.new << 0
 		@tag['STRTAB'] = label_at(strtab.encoded, 0)
 
 		if not dynamic = @sections.find { |s| s.type == 'DYNAMIC' }
