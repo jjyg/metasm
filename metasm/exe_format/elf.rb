@@ -636,6 +636,104 @@ class ELF < ExeFormat
 		super(cpu)
 	end
 end
+
+class FatELF < ExeFormat
+	MAGIC = "\xfa\x70\x0e\x1f"	# 0xfat..elf
+
+	class SerialStruct < Metasm::SerialStruct
+		new_int_field :qword
+	end
+
+	class Header < SerialStruct
+		mem :magic, 4, MAGIC
+		word :version, 1
+		byte :nfat_arch
+		byte :reserved
+
+		def decode(fe)
+			super(fe)
+			raise InvalidExeFormat, "Invalid FatELF signature #{@magic.unpack('H*').first.inspect}" if @magic != MAGIC
+		end
+
+		def set_default_values(fe)
+			@nfat_arch ||= fe.list.length
+			super(fe)
+		end
+	end
+	class FatArch < SerialStruct
+		word :machine
+		bytes :abi, :abi_version, :e_class, :data, :res1, :res2
+		qwords :offset, :size
+
+		fld_enum :machine, ELF::MACHINE
+		fld_enum :abi, ELF::ABI
+		fld_enum :e_class, ELF::CLASS
+		fld_enum :data, ELF::DATA
+
+		attr_accessor :encoded
+	end
+
+	def encode_byte(val)         Expression[val].encode(:u8,  @endianness) end
+	def encode_word(val)         Expression[val].encode(:u16, @endianness) end
+	def encode_qword(val)        Expression[val].encode(:u64, @endianness) end
+	def decode_byte(edata = @encoded)  edata.decode_imm(:u8,  @endianness) end
+	def decode_word(edata = @encoded)  edata.decode_imm(:u16, @endianness) end
+	def decode_qword(edata = @encoded) edata.decode_imm(:u64, @endianness) end
+
+	attr_accessor :header, :list
+	def initialize
+		@endianness = :little
+		@list = []
+		super()
+	end
+
+	def decode
+		@header = Header.decode(self)
+		@list = []
+		@header.nfat_arch.times { @list << FatArch.decode(self) }
+		@list.each { |e|
+			e.encoded = @encoded[e.offset, e.size] || EncodedData.new
+		}
+	end
+
+	def encode
+		@header ||= Header.new
+		@encoded = @header.encode(self)
+		@list.map! { |f|
+			if f.kind_of? ExeFormat
+				e = f
+				f = FatArch.new
+				f.encoded = e.encode_string
+				h = e.header
+				f.machine, f.abi, f.abi_version, f.e_class, f.data =
+			 	h.machine, h.abi, h.abi_version, h.e_class, h.data
+			end
+			f.offset = new_label('fat_off')
+			f.size = f.encoded.size
+			@encoded << f.encode(self)
+			f
+		}
+		bd = {}
+		@list.each { |f|
+			@encoded.align 4096
+			bd[f.offset] = @encoded.length if f.offset.kind_of? String
+			@encoded << f.encoded
+		}
+		@encoded.fixup! bd
+	end
+
+	def [](i) AutoExe.decode(@list[i].encoded) if @list[i] end
+	def <<(exe) @list << exe ; self end
+
+	def self.autoexe_load(*a)
+		fe = super(*a)
+		fe.decode
+		# TODO have a global callback or whatever to prompt the user
+		# which file he wants to load in the dasm
+		puts "FatELF: using 1st archive member" if $VERBOSE
+		fe[0]
+	end
+end
 end
 
 # TODO symbol version info

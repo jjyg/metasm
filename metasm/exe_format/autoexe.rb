@@ -55,6 +55,7 @@ register_signature("\x7fELF") { ELF }
 register_signature(lambda { |raw| raw[0, 2] == "MZ" and off = raw[0x3c, 4].to_s.unpack('V')[0] and off < raw.length and raw[off, 4] == "PE\0\0" }) { PE }
 %w[feedface cefaedfe feedfacf cffaedfe].each { |sig| register_signature([sig].pack('H*')) { MachO } }
 register_signature("\xca\xfe\xba\xbe") { UniversalBinary }
+register_signature("\xfa\x70\x0e\x1f") { FatELF }
 register_signature('Metasm.dasm') { Disassembler }
 
 # replacement for AutoExe where #load defaults to a Shellcode of the specified CPU

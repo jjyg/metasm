@@ -14,7 +14,7 @@ module Metasm
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',
 		'X64' => 'X86_64', 'AMD64' => 'X86_64',
 		'UniversalBinary' => 'MachO', 'COFFArchive' => 'COFF',
-		'PTrace' => 'LinOS',
+		'PTrace' => 'LinOS', 'FatELF' => 'ELF',
 		'LoadedELF' => 'ELF', 'LoadedPE' => 'PE',
 		'LinuxRemoteString' => 'LinOS',
 		'LinDebugger' => 'LinOS',
