@@ -619,7 +619,7 @@ class COFF
 
 		# encode optional header
 		@optheader.image_size   ||= new_label('image_size')
-		@optheader.image_base   ||= label_at(coff.encoded, 0)
+		@optheader.image_base   ||= label_at(@encoded, 0)
 		@optheader.headers_size ||= new_label('headers_size')
 		@optheader.checksum     ||= new_label('checksum')
 		@optheader.subsystem    ||= 'WINDOWS_GUI'
