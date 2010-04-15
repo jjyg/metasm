@@ -226,7 +226,7 @@ class DisasmWidget < ContainerChoiceWidget
 	def decompile(addr)
 		if @dasm.c_parser and var = @dasm.c_parser.toplevel.symbol[addr] and (var.type.kind_of? C::Function or @dasm.di_at(addr))
 			@dasm.decompiler.redecompile(addr)
-			widget(:decompile).curaddr = nil
+			view(:decompile).curaddr = nil
 		end
 		focus_addr(addr, :decompile)
 	end
