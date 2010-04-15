@@ -856,6 +856,16 @@ class LinDebug
 				log "#{f.ljust 20} #{'%08x' % b} - #{'%08x' % e}"
 			}
 		}
+		@command['ma'] = lambda { |lex, int|
+			addr = int[]
+			data = lex.readtok.raw
+			@rs[addr, data.length] = data
+		}
+		@command['mx'] = lambda { |lex, int|
+			addr = int[]
+			data = [lex.readtok.raw].pack('H*')
+			@rs[addr, data.length] = data
+		}
 		@command['resize'] = lambda { |lex, int| resize }
 		@command['watch'] = lambda { |lex, int| @watch = ExprParser.parse(lex) ; updatedataptr }
 		@command['wd'] = lambda { |lex, int|
