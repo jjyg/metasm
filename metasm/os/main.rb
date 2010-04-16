@@ -635,9 +635,9 @@ class Debugger
 			return if not addr.kind_of? Integer
 		end
 		return if not peek = @memory.get_page(addr, 4)
-		if peek == AutoExe::ELFMAGIC
+		if peek == "\x7fELF"
 			cls = LoadedELF
-		elsif peek[0, 2] == AutoExe::MZMAGIC and @memory[addr+@memory[addr+0x3c,4].unpack('V').first, 4] == AutoExe::PEMAGIC
+		elsif peek[0, 2] == "MZ" and @memory[addr+@memory[addr+0x3c,4].unpack('V').first, 4] == "PE\0\0"
 			cls = LoadedPE
 		else return
 		end
