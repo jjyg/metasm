@@ -755,11 +755,5 @@ end
 end
 
 require 'metasm/gui/dasm_main'
-require 'metasm/gui/dasm_hex'
-require 'metasm/gui/dasm_listing'
-require 'metasm/gui/dasm_opcodes'
-require 'metasm/gui/dasm_coverage'
-require 'metasm/gui/dasm_graph'
-require 'metasm/gui/dasm_decomp'
 require 'metasm/gui/debug'
 

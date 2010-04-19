@@ -4,6 +4,13 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
+require 'metasm/gui/dasm_hex'
+require 'metasm/gui/dasm_listing'
+require 'metasm/gui/dasm_opcodes'
+require 'metasm/gui/dasm_coverage'
+require 'metasm/gui/dasm_graph'
+require 'metasm/gui/dasm_decomp'
+
 module Metasm
 module Gui
 # the main disassembler widget: this is a container for all the lower-level widgets that actually render the dasm state
