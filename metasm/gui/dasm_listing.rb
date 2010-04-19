@@ -100,7 +100,7 @@ class AsmListingWidget < DrawableWidget
 			ly = 0
 			@line_address.each { |a|
 				if c = @parent_widget.bg_color_callback[a]
-					draw_rectangle_color(c, 0, ly*@font_height, w_w, @font_height)
+					draw_rectangle_color(c, @arrow_zone_w, ly*@font_height, w_w, @font_height)
 				end
 				ly += 1
 			}
