@@ -942,7 +942,7 @@ class GraphViewWidget < DrawableWidget
 						list << [Expression[a], l.join] if l.join =~ re
 					}
 				}
-				@parent_widget.listwindow("search result for /#{pat}/i", list) { |i| @parent_widget.focus_addr i[0] }
+				@parent_widget.list_bghilight("search result for /#{pat}/i", list) { |i| @parent_widget.focus_addr i[0] }
 			}
 		else return false
 		end

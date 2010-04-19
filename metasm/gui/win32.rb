@@ -3166,8 +3166,14 @@ class LBoxWidget < DrawableWidget
 end
 	def initialize_window(win, title, list, opts={}, &b)
 		super(win)
+		@ondestroy = opts[:ondestroy]
 		self.title = title
 		self.widget = LBoxWidget.new(list, opts, &b)
+	end
+
+	def destroy_window
+		@ondestroy.call if @ondestroy
+		super()
 	end
 end
 

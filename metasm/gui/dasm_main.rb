@@ -40,6 +40,7 @@ class DisasmWidget < ContainerChoiceWidget
 		view(:listing).grab_focus
 	end
 
+	# start an idle callback that will run one round of @dasm.disassemble_mainiter
 	def start_disassemble_bg
 		gui_update_counter = 0
 		run = false
@@ -84,7 +85,10 @@ class DisasmWidget < ContainerChoiceWidget
 		@dasm.prog_binding[hl] || curview.current_address
 	end
 
-
+	# parse an address and change it to a canonical address form
+	# supported formats: label names, or string with numerical value, incl hex (0x42 and 42h)
+	# if the string is full decimal, a check against mapped space is done to find if it is
+	# hexadecimal (eg 08048000)
 	def normalize(addr)
 		case addr
 		when ::String
@@ -111,6 +115,11 @@ class DisasmWidget < ContainerChoiceWidget
 		addr
 	end
 
+	# display the specified address
+	# the display first searches in the current view (graph, listing, etc),
+	# if it cannot display the address all other views are tried in order
+	# the current focus address is saved in @pos_history (see focus_addr_back/redo)
+	# a messagebox is popped if no view can display the address unless quiet is true
 	def focus_addr(addr, viewidx=nil, quiet=false)
 		viewidx ||= curview_index || :listing
 		return if not addr
@@ -140,6 +149,7 @@ class DisasmWidget < ContainerChoiceWidget
 		end
 	end
 
+	# focus on the last address seen before the last focus_addr
 	def focus_addr_back(val = @pos_history.pop)
 		return if not val
 		@pos_history_redo << [curview_index, curview.get_cursor_pos]
@@ -148,8 +158,8 @@ class DisasmWidget < ContainerChoiceWidget
 		true
 	end
 
+	# undo focus_addr_back
 	def focus_addr_redo
-		# undo focus_addr_back
 		if val = @pos_history_redo.pop
 			@pos_history << [curview_index, curview.get_cursor_pos]
 			showview val[0]
@@ -157,24 +167,39 @@ class DisasmWidget < ContainerChoiceWidget
 		end
 	end
 
+	# ask the current view to update itself and redraw (incl all cloned widgets)
 	def gui_update
 		@clones.each { |c| c.do_gui_update }
 	end
 
+	# ask the current view to update itself
 	def do_gui_update
 		curview.gui_update	# invalidate all views ?
 	end
 
+	# redraw the window
 	def redraw
 		curview.redraw
 	end
 
+	# calls focus_addr(pre_yield_curaddr) after yield
 	def keep_focus_while
 		addr = curaddr
 		yield
 		focus_addr curaddr if addr
 	end
 	
+	# calls listwindow with the same argument, but also creates a new bg_color_callback
+	# that will color lines whose address is to be found in list[0] in green
+	# the callback is put only for the duration of the listwindow, and is not reentrant.
+	def list_bghilight(title, list, a={}, &b)
+		prev_colorcb = bg_color_callback
+		hash = list[1..-1].inject({}) { |h, l| h.update Expression[l[0]].reduce => true }
+		@bg_color_callback = lambda { |addr| hash[addr] ? '0f0' : prev_colorcb ? prev_colorcb[addr] : nil }
+		popupend = lambda { @bg_color_callback = prev_colorcb ; redraw }
+		listwindow(title, list, a.merge(:ondestroy => popupend), &b)
+	end
+
 	# add/change a comment @addr
 	def add_comment(addr)
 		cmt = @dasm.comment[addr].to_a.join(' ')
@@ -231,6 +256,8 @@ class DisasmWidget < ContainerChoiceWidget
 		focus_addr(addr, :decompile)
 	end
 
+	# change the format of displayed data under addr (byte, word, dword, qword)
+	# currently this is done using a fake empty xref
 	def toggle_data(addr)
 		return if @dasm.decoded[addr] or not @dasm.get_section_at(addr)
 		@dasm.add_xref(addr, Xref.new(nil, nil, 1)) if not @dasm.xrefs[addr]
@@ -332,6 +359,8 @@ class DisasmWidget < ContainerChoiceWidget
 		}
 	end
 
+	# same as focus_addr, also understands partial label names
+	# if the partial part is ambiguous, show a listwindow with all matches (if show_alt)
 	def focus_addr_autocomplete(v, show_alt=true)
 		if not focus_addr(v, nil, true)
 			labels = @dasm.prog_binding.map { |k, vv|
@@ -351,8 +380,8 @@ class DisasmWidget < ContainerChoiceWidget
 		end
 	end
 
+	# parses a C header
 	def prompt_parse_c_file
-		# parses a C header
 		openfile('open C header') { |f|
 			@dasm.parse_c_file(f) rescue messagebox("#{$!}\n#{$!.backtrace}")
 		}
@@ -377,10 +406,11 @@ class DisasmWidget < ContainerChoiceWidget
 				found << k if v.to_s =~ re
 			}
 			list = [['addr', 'str']] + found.map { |a| [Expression[a], @dasm.decoded[a].to_s] }
-			listwindow("search result for /#{pat}/i", list) { |i| focus_addr i[0] }
+			list_bghilight("search result for /#{pat}/i", list) { |i| focus_addr i[0] }
 		}
 	end
 
+	# calls the @dasm.rebase method to change the load base address of the current program
 	def rebase(addr=nil)
 		if not addr
 			inputbox('rebase address') { |a| rebase(Integer(a)) }
@@ -438,18 +468,21 @@ class DisasmWidget < ContainerChoiceWidget
 		end
 	end
 
+	# toggles <41h> vs <'A'> display
 	def toggle_expr_char(o)
 		@dasm.toggle_expr_char(o)
 		gui_update
 	end
 
+	# toggle <401000h> vs <'sub_fancyname'> in the current instr display
 	def toggle_expr_offset(o)
 		@dasm.toggle_expr_offset(o)
 		gui_update
 	end
 
 	def toggle_view(idx)
-		default = idx == :listing ? :graph : :listing
+		default = (idx == :graph ? :listing : :graph)
+		# switch to idx ; if already in idx, use default
 		focus_addr(curaddr, ((curview_index == idx) ? default : idx))
 	end
 
@@ -501,7 +534,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?x; list_xrefs(pointed_addr)
 		when ?;; add_comment(curview.current_address)
 
-		when ?\ ; toggle_view(:graph)
+		when ?\ ; toggle_view(:listing)
 		when :tab; toggle_view(:decompile)
 		when ?j; curview.keypress(:down)
 		when ?k; curview.keypress(:up)
@@ -531,7 +564,7 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 end
 
-# this widget is loaded in an empty DasmWindow to handle shortcuts
+# this widget is loaded in an empty DasmWindow to handle shortcuts (open file, etc)
 class NoDasmWidget < DrawableWidget
 	def initialize_widget(window)
 		@window = window
@@ -557,7 +590,7 @@ class NoDasmWidget < DrawableWidget
 	def dragdropfile(f)
 		case f
 		when /\.(c|h|cpp)$/; messagebox('load a binary first')
-		else @window.loadfile(f)	# TODO prompt to debug
+		else @window.loadfile(f)	# TODO prompt to start debugger instead of dasm
 		end
 	end
 end

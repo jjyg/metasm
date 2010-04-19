@@ -585,6 +585,8 @@ class ListWindow < Gtk::Dialog
 		}
 		treeview.signal_connect('row_activated') { destroy }
 
+		signal_connect('destroy') { h[:ondestroy].call } if h[:ondestroy]
+
 		remove vbox
 		add Gtk::ScrolledWindow.new.add(treeview)
 		toplevel.set_default_size cols.length*120, 400
