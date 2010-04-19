@@ -368,6 +368,19 @@ class DisasmWidget < ContainerChoiceWidget
 		openfile('ruby plugin') { |f| @dasm.load_plugin(f) }
 	end
 
+	# search for a regexp in #dasm.decoded.to_s
+	def prompt_search_decoded
+		inputbox('text to search in instrs (regex)') { |pat|
+			re = /#{pat}/i
+			found = []
+			@dasm.decoded.each { |k, v|
+				found << k if v.to_s =~ re
+			}
+			list = [['addr', 'str']] + found.map { |a| [Expression[a], @dasm.decoded[a].to_s] }
+			listwindow("search result for /#{pat}/i", list) { |i| focus_addr i[0] }
+		}
+	end
+
 	def rebase(addr=nil)
 		if not addr
 			inputbox('rebase address') { |a| rebase(Integer(a)) }
@@ -456,6 +469,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?s; w = toplevel ; w.promptsave if w.respond_to? :promptsave
 		when ?r; prompt_run_ruby
 		when ?C; disassemble_fast_deep(curaddr)
+		when ?f; prompt_search_decoded
 		else return @parent_widget ? @parent_widget.keypress_ctrl(key) : false
 		end
 		true

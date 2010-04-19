@@ -936,13 +936,12 @@ class GraphViewWidget < DrawableWidget
 		when ?f
 			@parent_widget.inputbox('text to search (regex)') { |pat|
 				re = /#{pat}/i
-				found = []
+				list = [['addr', 'instr']]
 				@curcontext.box.each { |b|
 					b[:line_text_col].zip(b[:line_address]) { |l, a|
-						found << a if l.join =~ re
+						list << [Expression[a], l.join] if l.join =~ re
 					}
 				}
-				list = [['addr', 'instr']] + found.map { |a| [Expression[a], @dasm.decoded[a].instruction] }
 				@parent_widget.listwindow("search result for /#{pat}/i", list) { |i| @parent_widget.focus_addr i[0] }
 			}
 		else return false
