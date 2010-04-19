@@ -779,9 +779,8 @@ EOS
 	end
 
 	# retrieve the textual error message relative to GetLastError
-	def self.last_error_msg
+	def self.last_error_msg(errno = getlasterror)
 		message = ' '*512
-		errno = getlasterror
 		if formatmessagea(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
 			message = 'unknown error %x' % errno
 		else
