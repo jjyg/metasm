@@ -713,7 +713,7 @@ EOS
 	# When such a function is called with a lambda as argument, a callback is created for the duration of the call
 	# and destroyed afterwards ; use callback_alloc_c to get a callback id with longer life span
 	def self.new_api_c(proto, fromlib=nil)
-		proto += ';'	# allow 'int foo()'
+		proto += "\n;"	# allow 'int foo()' and '#include <bar>'
 		parse_c(proto)
 
 		@cp.toplevel.symbol.dup.each_value { |v|
