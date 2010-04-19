@@ -765,7 +765,10 @@ class ELF
 		@segments.each { |s|
 			case s.type
 			when 'LOAD', 'INTERP'
-				s.encoded = @encoded[s.offset, s.filesz] || EncodedData.new
+				sz = s.filesz
+				pagepad = (-(s.offset + sz)) % 4096
+				sz += pagepad if s.type == 'LOAD' and sz > 0 and not s.flags.include?('W')
+				s.encoded = @encoded[s.offset, sz] || EncodedData.new
 				s.encoded.virtsize = s.memsz if s.memsz > s.encoded.virtsize
 			end
 		}
