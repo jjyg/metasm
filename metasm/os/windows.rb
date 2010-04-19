@@ -8,6 +8,10 @@ require 'metasm/dynldr'
 
 module Metasm
 class WinAPI < DynLdr
+	def self.api_not_found(lib, func)
+		puts "could not find symbol #{func.inspect} in #{lib.inspect}" if $VERBOSE
+	end
+
 	new_api_c <<EOS, 'kernel32'
 #line #{__LINE__}
 

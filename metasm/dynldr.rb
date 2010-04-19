@@ -720,12 +720,11 @@ EOS
 			next if not v.kind_of? C::Variable	# enums
 			@cp.toplevel.symbol.delete v.name
 			lib = fromlib || lib_from_sym(v.name)
-			begin
-				addr = sym_addr(lib, v.name)
-			rescue ArgumentError
-				raise "could not find symbol #{v.name.inspect} in #{lib.inspect}"
+			addr = sym_addr(lib, v.name)
+		       	if addr == 0 or addr == -1 or addr == 0xffff_ffff or addr == 0xffffffff_ffffffff
+				api_not_found(lib, v.name)
+				next
 			end
-			next if addr == 0 or addr == 0xffff_ffff or addr == 0xffffffff_ffffffff
 
 			if not v.type.kind_of? C::Function
 				# not a function, simply return the symbol address
@@ -745,6 +744,10 @@ EOS
 			n = "C#{n}" if n !~ /^[A-Z]/
 			const_set(n, v) if v.kind_of? Integer and not constants.map { |c| c.to_s }.include?(n)
 		}
+	end
+
+	def self.api_not_found(lib, func)
+		raise "could not find symbol #{func.inspect} in #{lib.inspect}"
 	end
 
 	# define a new method 'name' in the current module to invoke the raw method at addr addr
