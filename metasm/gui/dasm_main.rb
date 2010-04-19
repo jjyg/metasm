@@ -196,6 +196,7 @@ class DisasmWidget < ContainerChoiceWidget
 		prev_colorcb = bg_color_callback
 		hash = list[1..-1].inject({}) { |h, l| h.update Expression[l[0]].reduce => true }
 		@bg_color_callback = lambda { |addr| hash[addr] ? '0f0' : prev_colorcb ? prev_colorcb[addr] : nil }
+		redraw
 		popupend = lambda { @bg_color_callback = prev_colorcb ; redraw }
 		listwindow(title, list, a.merge(:ondestroy => popupend), &b)
 	end
