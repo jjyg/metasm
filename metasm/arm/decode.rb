@@ -44,7 +44,7 @@ class ARM
 		di.instance_variable_set('@raw', val)
 		di if di.opcode = @bin_lookaside[(val >> 20) & 0xff].find { |op|
 			(not op.props[:cond] or
-			 ((op.bin >> @fields_shift[:cond]) & @fields_mask[:cond]) != 0xf) and
+			 ((val >> @fields_shift[:cond]) & @fields_mask[:cond]) != 0xf) and
 			(op.bin & op.bin_mask) == (val & op.bin_mask)
 		}
 	end
