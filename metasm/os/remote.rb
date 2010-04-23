@@ -311,6 +311,9 @@ class GdbClient
 		when 'x64'
 			@gdbregs = GDBREGS_X64
 			@regmsgsize = 8 * @gdbregs.length
+		when 'arm'
+			@gdbregs = cpu.dbg_register_list
+			@regmsgsize = 4 * @gdbregs.length
 		else
 			# we can still use readmem/kill and other generic commands
 			# XXX serverside setregs may fail if we give an incorrect regbuf size
