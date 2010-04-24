@@ -369,7 +369,7 @@ class ELF
 			sym_count = check_symbols_gnu_hash(@tag['GNU_HASH'], true)
 		end
 
-		strtab = @encoded[@tag['STRTAB'], @tag['STRSZ']].data
+		strtab = @encoded[@tag['STRTAB'], @tag['STRSZ']].data.to_str
 
 		@encoded.ptr = @tag['SYMTAB']
 		@symbols.clear
@@ -388,11 +388,12 @@ class ELF
 		@symbols ||= []
 		@sections.to_a.each { |sec|
 			next if sec.type != 'SYMTAB'
-			strtab = @sections[sec.link]
+			next if not strtab = @sections[sec.link]
 			strtab = @encoded[strtab.offset, strtab.size].data
 			@encoded.ptr = sec.offset
 			syms = []
-			(sec.size/Symbol.size(self)).times { syms << Symbol.decode(self, strtab) }
+			raise 'Invalid symbol table' if sec.size > @encoded.length
+			(sec.size / Symbol.size(self)).times { syms << Symbol.decode(self, strtab) }
 			alreadysegs = true if @header.type == 'DYN' or @header.type == 'EXEC'
 			syms.each { |s|
 				if alreadysegs
