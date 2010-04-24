@@ -1368,6 +1368,7 @@ puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#
 						next expr
 					else
 						result |= vals
+						bt_log << [:found, vals, h[:from]] if bt_log
 						next false
 					end
 				end
