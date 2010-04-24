@@ -362,7 +362,7 @@ class GdbRemoteString < VirtualString
 
 	def initialize(gdb, addr_start=0, length=nil)
 		@gdb = gdb
-		length = 1 << (@gdb.cpu.size rescue 32)
+		length ||= 1 << (@gdb.cpu.size rescue 32)
 		@pagelength = 512
 		super(addr_start, length)
 	end
