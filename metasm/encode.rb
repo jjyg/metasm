@@ -226,6 +226,13 @@ class ExeFormat
 		# fills edata with repetitions of data until targetsize
 		fillwith = lambda { |targetsize, data|
 			if data
+				if data.reloc.empty? and not data.data.empty?	# avoid useless iterations
+					nr = (targetsize-edata.virtsize) / data.length - 1
+					if nr > 0
+						dat = data.data.ljust(data.virtsize, 0.chr)
+						edata << (dat * nr)
+					end
+				end
 				while edata.virtsize + data.virtsize <= targetsize
 					edata << data
 				end
