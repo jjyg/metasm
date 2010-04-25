@@ -3,7 +3,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-require 'metasm/sh4/opcode'
+require 'metasm/sh4/opcodes'
 require 'metasm/decode'
 
 module Metasm

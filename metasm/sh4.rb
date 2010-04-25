@@ -1,2 +1,2 @@
-require 'metasm/sh4/opcode'
+require 'metasm/sh4/opcodes'
 require 'metasm/sh4/decode'

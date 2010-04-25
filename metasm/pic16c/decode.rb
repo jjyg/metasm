@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-require 'metasm/pic16c/opcode'
+require 'metasm/pic16c/opcodes'
 require 'metasm/decode'
 
 module Metasm
