@@ -9,9 +9,7 @@ require 'metasm/ppc/main'
 module Metasm
 class PowerPC
 	def addop(name, bin, *argprops)
-		o = Opcode.new name
-
-		o.bin = bin
+		o = Opcode.new name, bin 
 		o.args.concat(argprops & @fields_mask.keys)
 		(argprops & @valid_props).each { |p| o.props[p] = true }
 		@opcode_list << o

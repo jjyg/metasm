@@ -9,8 +9,7 @@ require 'metasm/pic16c/main'
 module Metasm
 class Pic16c
 	def addop(name, bin, *l)
-		o = Opcode.new self, name
-		o.bin = bin
+		o = Opcode.new name, bin
 		l.each { |ll|
 			if @props_allowed[ll]
 				o.props[ll] = true

@@ -85,8 +85,8 @@ class X86_64
 		end
 
 		dupe = lambda { |o|
-			dop = Opcode.new o.name.dup
-			dop.bin, dop.fields, dop.props, dop.args = o.bin.dup, o.fields.dup, o.props.dup, o.args.dup
+			dop = Opcode.new o.name.dup, o.bin.dup
+ 			dop.fields, dop.props, dop.args = o.fields.dup, o.props.dup, o.args.dup
 			dop
 		}
 

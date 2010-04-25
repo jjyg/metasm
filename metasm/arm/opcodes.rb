@@ -12,9 +12,7 @@ class ARM
 	def addop(name, bin, *args)
 		args << :cond if not args.delete :uncond
 
-		o = Opcode.new name
-
-		o.bin = bin
+		o = Opcode.new name, bin
 		o.args.concat(args & @valid_args)
 		(args & @valid_props).each { |p| o.props[p] = true }
 		args.grep(Hash).each { |h| o.props.update h }

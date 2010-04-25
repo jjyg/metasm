@@ -8,9 +8,8 @@ require 'metasm/sh4/main'
 module Metasm
 class Sh4
 	def addop(name, bin, *args)
-		o = Opcode.new(name)
+		o = Opcode.new name, bin
 
-		o.bin = bin
 		o.args.concat(args & @fields_mask.keys)
 		(args & @valid_props).each { |p| o.props[p] = true }
 

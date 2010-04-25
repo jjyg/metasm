@@ -11,18 +11,10 @@ require 'metasm/mips/main'
 module Metasm
 
 class MIPS
-	private
 	def addop(name, bin, *args)
-		o = Opcode.new name
-
-		o.bin = bin
+		o = Opcode.new name, bin
 		o.args.concat(args & @fields_mask.keys)
 		(args & @valid_props).each { |p| o.props[p] = true }
-if $DEBUG
-a = (args - @valid_props - @fields_mask.keys)
-p ['mips unhandled args',a]	if not a.empty?
-end
-
 		@opcode_list << o
 	end
 

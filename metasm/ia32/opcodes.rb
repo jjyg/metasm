@@ -712,8 +712,7 @@ class Ia32
 	# yields it for further customisation, and append it to the instruction set
 	# is responsible of the creation of disambiguating opcodes if necessary (:s flag hardcoding)
 	def addop(name, bin, hint=nil, fields={}, *argprops)
-		op = Opcode.new name
-		op.bin = bin
+		op = Opcode.new name, bin
 		op.fields.replace fields
 
 		case hint

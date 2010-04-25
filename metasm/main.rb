@@ -109,8 +109,9 @@ class Opcode
 	# binary mask for decoding
 	attr_accessor :bin_mask
 
-	def initialize(name)
+	def initialize(name, bin=nil)
 		@name = name
+		@bin = bin
 		@args = []
 		@fields = {}
 		@props = {}
