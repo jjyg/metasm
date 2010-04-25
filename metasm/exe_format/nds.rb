@@ -80,7 +80,7 @@ class NDS < ExeFormat
 		@encoded = EncodedData.new
 	end
 
-	# decodes the MZ header from the current offset in self.encoded
+	# decodes the header from the current offset in self.encoded
 	def decode_header
 		@header = Header.decode(self)
 	end
