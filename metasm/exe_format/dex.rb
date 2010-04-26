@@ -342,6 +342,7 @@ class DEX < ExeFormat
 	def initialize(endianness=:little)
 		@endianness = endianness
 		@encoded = EncodedData.new
+		super()
 	end
 
 	def decode_header
@@ -388,8 +389,11 @@ class DEX < ExeFormat
 				id += m.methodid_diff
 				m.method = @methods[id]
 				m.name = @strings[m.method.nameidx]
-				m.encoded = m.codeoff
+				@encoded.ptr = m.codeoff
 				m.code = CodeItem.decode(self)
+				next if not ed = m.code.edata
+				l = new_label(m.name + '@' + @types[c.classidx])
+				ed.add_export l, 0
 			}
 		}
 	end
@@ -412,7 +416,8 @@ class DEX < ExeFormat
 		@classes.each { |c|
 			next if not c.data
 			(c.data.direct_methods + c.data.virtual_methods).each { |m|
-				yield m.code.edata, @types[c.classidx] + '|' + m.name
+				next if not m.code or not ed = m.code.edata
+				yield ed, ed.export.index(0)
 			}
 		}
 	end
