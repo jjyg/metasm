@@ -49,7 +49,6 @@ class ELF
 	def decode_sxword(edata= @encoded) edata.decode_imm((@bitsize == 32 ? :i32 : :i64), @endianness) end
 	alias decode_addr decode_xword
 	alias decode_off  decode_xword
-	def decode_strz( edata = @encoded) if i = edata.data.index(?\0, edata.ptr) ; edata.read(i+1-edata.ptr).chop end end
 
 	def readstr(str, off)
 		if off > 0 and i = str.index(?\0, off) rescue false	# LoadedElf with arbitrary pointer...

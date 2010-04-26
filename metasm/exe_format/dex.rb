@@ -337,8 +337,6 @@ class DEX < ExeFormat
 		v
 	end
 	def decode_sleb(ed = @encoded) decode_uleb(ed, true) end
-	def decode_strz(ed = @encoded) ed.read((ed.data.index(?\0, ed.ptr) || -1)+1).chop end
-
 	attr_accessor :header, :strings, :types, :protos, :fields, :methods, :classes
 
 	def initialize(endianness=:little)

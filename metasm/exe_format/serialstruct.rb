@@ -233,4 +233,13 @@ end	# class methods
 		"<#{self.class} " + ivs.map { |iv| "#{iv}=#{dump(instance_variable_get(iv), a+[self])}" }.join(' ') + ">"
 	end
 end
+
+class ExeFormat
+	def decode_strz(ed = @encoded)
+		if stop = ed.data.index(?\0, ed.ptr)
+			ed.read(stop - ed.ptr + 1).chop
+		else ''
+		end
+	end
+end
 end

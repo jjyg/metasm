@@ -366,7 +366,7 @@ class COFF
 	def decode_half( edata = @cursection.encoded) ; edata.decode_imm(:u16, @endianness) end
 	def decode_word( edata = @cursection.encoded) ; edata.decode_imm(:u32, @endianness) end
 	def decode_xword(edata = @cursection.encoded) ; edata.decode_imm((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
-	def decode_strz( edata = @cursection.encoded) ; if i = edata.data.index(?\0, edata.ptr) ; edata.read(i+1-edata.ptr).chop ; end ; end
+	def decode_strz( edata = @cursection.encoded) ; super(edata) ; end
 
 	# converts an RVA (offset from base address of file when loaded in memory) to the section containing it using the section table
 	# updates @cursection and @cursection.encoded.ptr to point to the specified address
