@@ -25,7 +25,7 @@ class HexWidget < DrawableWidget
 		@caret_x_data = 0
 		@oldcaret_x_data = 42
 		@focus_zone = @oldfocus_zone = :hex
-		@addr_min = @dasm.sections.keys.min rescue nil
+		@addr_min = @dasm.sections.keys.grep(Integer).min rescue nil
 		@addr_max = @dasm.sections.map { |s, e| s + e.length }.max rescue nil
 		@view_addr = @dasm.prog_binding['entrypoint'] || @addr_min || 0
 		@show_address = @show_data = @show_ascii = true
@@ -468,7 +468,7 @@ class HexWidget < DrawableWidget
 	end
 
 	def gui_update
-		@addr_min = @dasm.sections.keys.min rescue nil
+		@addr_min = @dasm.sections.keys.grep(Integer).min rescue nil
 		@addr_max = @dasm.sections.map { |s, e| s + e.length }.max rescue nil
 		@raw_data_cache.clear
 		redraw
