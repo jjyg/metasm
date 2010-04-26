@@ -51,6 +51,7 @@ if exename =~ /^live:(.*)/
 	exe = Shellcode.decode(target.memory, Metasm.const_get(opts[:sc_cpu]).new)
 else
 	exefmt = opts[:exe_fmt] ? Metasm.const_get(opts[:exe_fmt]) : AutoExe.orshellcode { Metasm.const_get(opts[:sc_cpu]).new }
+	exefmt = exefmt.withcpu(Metasm.const_get(opts[:sc_cpu]).new) if opts[:exe_fmt] == 'Shellcode' and opts[:sc_cpu]
 	exe = exefmt.decode_file(exename)
 	exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 	if opts[:autoload]
