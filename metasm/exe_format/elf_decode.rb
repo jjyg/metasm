@@ -767,8 +767,13 @@ class ELF
 			when 'LOAD', 'INTERP'
 				sz = s.filesz
 				pagepad = (-(s.offset + sz)) % 4096
-				sz += pagepad if s.type == 'LOAD' and sz > 0 and not s.flags.include?('W')
 				s.encoded = @encoded[s.offset, sz] || EncodedData.new
+				if s.type == 'LOAD' and sz > 0 and not s.flags.include?('W')
+					# align loaded data to the next page boundary for readonly mmap
+					# but discard the labels/relocs etc
+					s.encoded << @encoded[s.offset+sz, pagepad].data rescue nil
+					s.encoded.virtsize = sz+pagepad
+				end
 				s.encoded.virtsize = s.memsz if s.memsz > s.encoded.virtsize
 			end
 		}
