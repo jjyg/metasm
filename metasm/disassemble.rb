@@ -1846,7 +1846,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			label_alias[block.address].each { |name| b["#{name}:"] }
 		end
 		if c = @comment[block.address]
-			c.each { |l| b["// #{l}"] }
+			c = c.join("\n") if c.kind_of? ::Array
+			c.each_line { |l| b["// #{l}"] }
 		end
 	end
 
@@ -1858,13 +1859,10 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	def dump_data(addr, edata, off, &b)
 		b ||= lambda { |l| puts l }
 		if l = edata.inv_export[off]
-			l = nil
-			@prog_binding.keys.sort.each { |name|
- 				# show aliases sorted, keep last in 'l' to display inline
-				if @prog_binding[name] == addr
-					b["#{l}:"] if l
-					l = name
-				end
+			l_list = label_alias[addr].to_a.sort
+			l = l_list.pop
+			l_list.each { |ll|
+				b["#{ll}:"]
 			}
 			l = (l + ' ').ljust(16)
 		else l = ''
