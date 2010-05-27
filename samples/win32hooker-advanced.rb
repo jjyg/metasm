@@ -144,7 +144,7 @@ sc.assemble
 puts 'done'
 
 # allocate memory for our code
-raise 'remote allocation failed' if not injected_addr = WinAPI.virtualallocex(pr.handle, 0, sc.encoded.length, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+raise 'remote allocation failed' if not injected_addr = WinAPI.virtualallocex(pr.handle, 0, sc.encoded.length, WinAPI::MEM_COMMIT|WinAPI::MEM_RESERVE, WinAPI::PAGE_EXECUTE_READWRITE)
 
 puts "Injecting hooks at #{'%x' % injected_addr}"
 

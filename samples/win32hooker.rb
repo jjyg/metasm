@@ -17,7 +17,6 @@
 require 'metasm'
 
 include Metasm
-include WinAPI
 
 # open target
 WinOS.get_debug_privilege
@@ -78,7 +77,7 @@ title dw 'I see what you did there...', 0
 EOS
 
 # alloc some space in the remote process to put our shellcode
-raise 'remote allocation failed' if not injected = WinAPI.virtualallocex(pr.handle, 0, sc.encoded.length, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+raise 'remote allocation failed' if not injected = WinAPI.virtualallocex(pr.handle, 0, sc.encoded.length, WinAPI::MEM_COMMIT|WinAPI::MEM_RESERVE, WinAPI::PAGE_EXECUTE_READWRITE)
 puts "injected malicous code at %x" % injected
 
 # fixup the shellcode with its known base address, and with the addresses it will need from the IAT
