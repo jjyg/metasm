@@ -22,7 +22,7 @@ class OS
 		end
 
 		def to_s
-			mod = File.basename(@modules.first.path) if modules and @modules.first and @modules.first.path
+			mod = File.basename(modules.first.path) rescue nil
 			"#{pid}: ".ljust(6) << (mod || '<unknown>')
 		end
 		def inspect
