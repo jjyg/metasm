@@ -569,9 +569,7 @@ EOS
 		              when 'x64'; DYNLDR_ASM_X86_64
 			      end
 
-		if bin.class.name.gsub(/.*::/, '') == 'PE'
-			compile_binary_module_hack(bin)
-		end
+		compile_binary_module_hack(bin)
 
 		bin.encode_file(modulename, :lib)
 	end
@@ -579,10 +577,23 @@ EOS
 	def self.compile_binary_module_hack(bin)
 		# this is a hack
 		# we need the module to use ruby symbols
-		# but we can't use the import table as we don't know
-		# the ruby library name (changes between 1.8, 1.9, mingw, ...)
-		# so we use this code, that will create a dynamic symbol
-		# resolver for the ruby symbols, run on module load.
+		# but we don't know the actual lib filename (depends on ruby version,
+		# platform, ...)
+		case bin.class.name.gsub(/.*::/, '')
+		when 'ELF'
+			# we know the lib is already loaded in the main ruby process, no DT_NEEDED needed
+			class << bin
+				def automagic_symbols(*a)
+					super(*a)
+					@tag.delete 'NEEDED'
+				end
+			end
+			return
+		when 'PE'
+		else return
+		end
+
+		# populate the ruby import table ourselves on module loading
 		bin.imports.delete_if { |id| id.libname =~ /ruby/ }
 
 		# the C glue: getprocaddress etc
