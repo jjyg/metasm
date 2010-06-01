@@ -596,6 +596,16 @@ class COFF
 		@optheader.dll_characts << 'DYNAMIC_BASE' if want_relocs
 	end
 
+	# resets the values in the header that may have been
+	# modified by your script (eg section count, size, imagesize, etc)
+	# call this whenever you decode a file, modify it, and want to reencode it later
+	def invalidate_header
+		# set those values to nil, they will be
+		# recomputed during encode_header
+		[:code_size, :data_size, :udata_size, :base_of_code, :sect_align, :file_align, :image_size, :headers_size, :checksum].each { |m| @optheader.send("#{m}=", nil) }
+		[:num_sect, :ptr_sym, :num_sym, :size_opthdr].each { |m| @header.send("#{m}=", nil) }
+	end
+
 	# appends the header/optheader/directories/section table to @encoded
 	def encode_header
 		# encode section table, add CONTAINS_* flags from other characteristics flags
@@ -628,9 +638,9 @@ class COFF
 
 		# encode header
 		@header.machine ||= 'UNKNOWN'
-		@header.num_sect = sections.length
+		@header.num_sect ||= sections.length
 		@header.time ||= Time.now.to_i & -255
-		@header.size_opthdr = opth.virtsize
+		@header.size_opthdr ||= opth.virtsize
 		@encoded << @header.encode(self) << opth << s_table
 	end
 

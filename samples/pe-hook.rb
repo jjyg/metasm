@@ -60,6 +60,7 @@ s.encoded = newcode
 s.characteristics = %w[MEM_READ MEM_WRITE MEM_EXECUTE]
 s.encoded.fixup!('entrypoint' => pe.optheader.image_base + pe.optheader.entrypoint)	# tell the original entrypoint address to our hook
 pe.sections << s
+pe.invalidate_header
 
 # patch entrypoint
 pe.optheader.entrypoint = 'hook_entrypoint'
