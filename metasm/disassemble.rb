@@ -1879,7 +1879,11 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		if r = edata.reloc[off]
 			dumplen = elemlen = r.type.to_s[1..-1].to_i/8
 		end
-		dataspec = { 1 => 'db ', 2 => 'dw ', 4 => 'dd ' }[elemlen]
+		dataspec = { 1 => 'db ', 2 => 'dw ', 4 => 'dd ', 8 => 'dq ' }[elemlen]
+		if not dataspec
+			dataspec = 'db '
+			elemlen = 1
+		end
 		l << dataspec
 
 		# dup(?)
