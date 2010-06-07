@@ -683,7 +683,7 @@ EOS
 	def self.host_arch
 		case RUBY_PLATFORM
 		when /linux/i; :linux
-		when /mswin|mingw/i; :windows
+		when /mswin|mingw|cygwin/i; :windows
 		else raise LoadError, "Unsupported host platform #{RUBY_PLATFORM}"
 		end
 	end
