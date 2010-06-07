@@ -13,6 +13,7 @@ class HexWidget < DrawableWidget
 		:data_size, :line_size, :endianness,
 		#:data_sign, :data_hex,
 		:caret_x_data, :focus_zone,
+		:keep_aligned, :relative_addr, :hl_curbyte,
 		:view_addr, :write_pending
 
 	def initialize_widget(dasm, parent_widget)
@@ -37,6 +38,9 @@ class HexWidget < DrawableWidget
 		@raw_data_cache = {}	# addr -> raw @line_size data at addr
 		#@data_sign = false
 		#@data_hex = true
+		@keep_aligned = false	# true to keep the topleft octet a multiple of linewidth
+		@relative_addr = nil	# show '+42h' in the addr column if not nil
+		@hl_curbyte = true	# draw grey bg for current byte
 
 		@default_color_association = { :ascii => :black, :data => :black,
 			  :address => :blue, :caret => :black, :background => :white,
@@ -54,6 +58,7 @@ class HexWidget < DrawableWidget
 		@line_size *= 2 while x_ascii+(@show_ascii ? @line_size : 0) < wc	# booh..
 		@line_size /= 2
 		if @line_size != ols
+			@view_addr &= -@line_size if @keep_aligned
 			focus_addr ca
 			gui_update
 		end
@@ -90,7 +95,15 @@ class HexWidget < DrawableWidget
 	end
 
 	def doubleclick(x, y)
-		@data_size = {1 => 2, 2 => 4, 4 => 8, 8 => 1}[@data_size]
+		if x < @x_data * @font_width
+			if @relative_addr
+				@relative_addr = nil
+			else
+				@relative_addr = @view_addr
+			end
+		else
+			@data_size = {1 => 2, 2 => 4, 4 => 8, 8 => 1}[@data_size]
+		end
 		redraw
 	end
 
@@ -143,9 +156,22 @@ class HexWidget < DrawableWidget
 			else wp_win = @write_pending.dup
 			end
 		end
+
 		# draw text until screen is full
 		while y < w_h
-			render["#{Expression[curaddr]}".rjust(@x_data-1, '0'), :address] if @show_address
+			if @show_address
+				if @relative_addr
+				       diff = Expression[curaddr] - @relative_addr
+				       if diff.kind_of? Integer
+						addr = "#{'+' if diff >= 0}#{Expression[diff]}".ljust(@x_data-1)
+				       else
+						addr = "#{Expression[curaddr]}"
+				       end
+				else
+					addr = "#{Expression[curaddr]}"
+				end
+				render[addr.rjust(@x_data-1, '0'), :address]
+			end
 
 			d = data_at(curaddr)
 			if not d and data_at(curaddr+@line_size-1, 1)
@@ -180,6 +206,12 @@ class HexWidget < DrawableWidget
 				when 8; pak = 'Q*'	# XXX endianness..
 				end
 				awp = {} ; wp.each_key { |k| awp[k/@data_size] = true }
+
+				if @hl_curbyte and @caret_y == y/@font_height
+					cx = (x_data + x_data_cur(@caret_x, 0))*@font_width + 1
+					draw_rectangle_color(:caret_mirror, cx, y, @data_size*2*@font_width, @font_height)
+				end
+
 				if awp.empty?
 					s = ''
 					d_do.unpack(pak).each { |b|
@@ -435,6 +467,7 @@ class HexWidget < DrawableWidget
 
 	# hint that the caret moved
 	def update_caret
+		return redraw if @hl_curbyte
 		a = []
 		a << [x_data + x_data_cur, @caret_y] << [x_data + x_data_cur(@oldcaret_x, @oldcaret_x_data), @oldcaret_y] if @show_data
 		a << [x_ascii + @caret_x, @caret_y] << [x_ascii + @oldcaret_x, @oldcaret_y] if @show_ascii
@@ -448,7 +481,8 @@ class HexWidget < DrawableWidget
 		return if not addr = @parent_widget.normalize(addr)
 		if addr.kind_of? Integer
 			return if @addr_min and (addr < @addr_min or addr > @addr_max)
-			@view_addr = addr & -16 if addr < @view_addr or addr >= @view_addr+(@num_lines-2)*@line_size
+			addr &= -@line_size if @keep_aligned
+			@view_addr = addr if addr < @view_addr or addr >= @view_addr+(@num_lines-2)*@line_size
 		elsif s = @dasm.get_section_at(addr)
 			@view_addr = Expression[s[1]]
 		else return
