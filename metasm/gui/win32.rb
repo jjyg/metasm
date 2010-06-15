@@ -2645,7 +2645,7 @@ class IBoxWidget < DrawableWidget
 		@label = label
 		@action = b
 		@textdown = false
-		@curline = opts[:text].to_s
+		@curline = opts[:text].to_s.dup
 		@caret_x_select = 0
 		@caret_x = @curline.length
 		@caret_x_start = 0

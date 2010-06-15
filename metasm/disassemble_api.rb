@@ -235,6 +235,7 @@ class Disassembler
 		if e
 			e.add_export new, e.export.delete(old), true
 		end
+		raise "cant rename nonexisting label #{old}" if not @prog_binding[old]
 		@label_alias_cache = nil
 		@old_prog_binding[new] = @prog_binding[new] = @prog_binding.delete(old)
 		@addrs_todo.each { |at|
