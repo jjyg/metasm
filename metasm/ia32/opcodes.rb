@@ -99,7 +99,7 @@ class Ia32
 		addop_macrotttn('set', [0x0F, 0x90], 0) { |o| o.props[:argsz] = 8 }
 		addop_macrotttn('set', [0x0F, 0x90], :mrm) { |o| o.props[:argsz] = 8 ; o.args.reverse! }	# :reg field is unused
 		addop_macro3 'shl', 4
-		addop_macro3 'sal', 4
+		addop_macro3 'sal', 6
 		addop 'shld',  [0x0F, 0xA4], :mrm, {}, :u8
 		addop 'shld',  [0x0F, 0xA5], :mrm, {}, :reg_cl
 		addop_macro3 'shr', 5
