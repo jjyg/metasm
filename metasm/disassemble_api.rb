@@ -121,6 +121,12 @@ class Disassembler
 		di if di.kind_of? DecodedInstruction
 	end
 
+	# returns the DecodedFunction at addr if it exists
+	def function_at(addr)
+		f = @function[addr] || @function[normalize(addr)] if addr
+		f if f.kind_of? DecodedFunction
+	end
+
 	# returns the DecodedInstruction covering addr
 	def di_including(addr)
 		return if not addr
