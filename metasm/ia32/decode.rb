@@ -514,6 +514,33 @@ class Ia32
 					save_at[24, Expression::Unknown]
 					ret
 				}
+			when 'bt';  lambda { |di, a0, a1| { :eflag_c => Expression[[a0, :>>, [a1, :%, opsz(di)]], :&, 1] } }
+			when 'bts'; lambda { |di, a0, a1| { :eflag_c => Expression[[a0, :>>, [a1, :%, opsz(di)]], :&, 1],
+				a0 => Expression[a0, :|, [1, :<<, [a1, :%, opsz(di)]]] } }
+			when 'btr'; lambda { |di, a0, a1| { :eflag_c => Expression[[a0, :>>, [a1, :%, opsz(di)]], :&, 1],
+				a0 => Expression[a0, :&, [[1, :<<, [a1, :%, opsz(di)]], :^, mask[di]]] } }
+			when 'btc'; lambda { |di, a0, a1| { :eflag_c => Expression[[a0, :>>, [a1, :%, opsz(di)]], :&, 1],
+				a0 => Expression[a0, :^, [1, :<<, [a1, :%, opsz(di)]]] } }
+			when 'bswap'
+				lambda { |di, a0|
+					if opsz(di) == 64
+						{ a0 => Expression[
+							[[[[a0, :&, 0xff000000_00000000], :>>, 56],   :|,
+							  [[a0, :&, 0x00ff0000_00000000], :>>, 40]],  :|,
+							 [[[a0, :&, 0x0000ff00_00000000], :>>, 24],   :|,
+							  [[a0, :&, 0x000000ff_00000000], :>>,  8]]], :|,
+							[[[[a0, :&, 0x00000000_ff000000], :<<,  8],   :|,
+							  [[a0, :&, 0x00000000_00ff0000], :<<, 24]],  :|,
+							 [[[a0, :&, 0x00000000_0000ff00], :<<, 40],   :|,
+							  [[a0, :&, 0x00000000_000000ff], :<<, 56]]]] }
+					else	# XXX opsz != 32 => undef
+						{ a0 => Expression[
+							[[[a0, :&, 0xff000000], :>>, 24],  :|,
+							 [[a0, :&, 0x00ff0000], :>>,  8]], :|,
+							[[[a0, :&, 0x0000ff00], :<<,  8],  :|,
+							 [[a0, :&, 0x000000ff], :<<, 24]]] }
+					end
+				}
 			when 'nop', 'pause', 'wait', 'cmp', 'test'; lambda { |di, *a| {} }
 			end
 
