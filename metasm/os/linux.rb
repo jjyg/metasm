@@ -25,12 +25,12 @@ class PTrace
 			@pid = Integer(target)
 			tweak_for_pid(@pid)
 			attach
-		rescue ArgumentError
+		rescue ArgumentError, TypeError
 			did_exec = true
 			if not @pid = fork
 				tweak_for_pid(::Process.pid)
 				traceme
-				Process.exec target
+				Process.exec *target
 				exit!(0)
 			end
 		end
