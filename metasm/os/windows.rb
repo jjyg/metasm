@@ -1396,6 +1396,10 @@ class WinDebugger < Debugger
 		@continuecode = WinAPI::DBG_CONTINUE	#WinAPI::DBG_EXCEPTION_NOT_HANDLED
 	end
 
+	def os_process
+		WinOS.open_process(@pid)
+	end
+
 	def tid=(tid)
 		super(tid)
 		@ctx = nil

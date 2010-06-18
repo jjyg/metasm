@@ -472,6 +472,10 @@ class LinDebugger < Debugger
 		get_thread_list(@pid).each { |tid| attach_thread(tid) }
 	end
 
+	def os_process
+		LinOS.open_process(@pid)
+	end
+
 	# recreate all internal state associated to pid
 	def reinit(mem=nil)
 		ptrace.tweak_for_pid
