@@ -426,11 +426,15 @@ class Ia32
 			when 'aaa'; lambda { |di| { eax => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when 'imul'
 				lambda { |di, *a|
+					# 1 operand form == same as 'mul' (ax:dx stuff)
+					next { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } if not a[1]
+
 					if a[2]; e = Expression[a[1], :*, a[2]]
 					else e = Expression[[a[0], :*, a[1]], :&, (1 << (di.instruction.args.first.sz || opsz(di))) - 1]
 					end
 					{ a[0] => e }
 				}
+			when 'mul', 'div', 'idiv'; lambda { |di, *a| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when 'rdtsc'; lambda { |di| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when /^(stos|movs|lods|scas|cmps)[bwd]$/
 				lambda { |di|
