@@ -341,7 +341,7 @@ class Debugger
 		if @log_proc
 			a.each { @log_proc[a] }
 		else
-			super(*a)
+			super(*a) if $VERBOSE
 		end
 	end
 
