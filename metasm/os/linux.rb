@@ -514,7 +514,7 @@ class LinDebugger < Debugger
 			@ptrace.attach
 			@threads[tid] ||= { :regs_cache => {} }
 			@threads[tid][:state] = :stopped
-			puts "attached thread #{tid}" if $VERBOSE
+			puts "attached thread #{tid}"
 		end
 		opts = ['TRACESYSGOOD', 'TRACECLONE', 'TRACEEXEC', 'TRACEEXIT']
 		opts += ['TRACEFORK', 'TRACEVFORK', 'TRACEVFORKDONE'] if @trace_children
@@ -569,20 +569,22 @@ class LinDebugger < Debugger
 		if $?.exited?
 			@info = "#@tid exitcode #{$?.exitstatus}"
 			puts @info
-			@threads.delete @tid
-			self.tid = @threads.keys.first || @tid
+			if @threads.delete @tid
+				self.tid = @threads.keys.first || @tid
+			end
 			@state = @threads.empty? ? :dead : @threads[@tid][:state]
 		elsif $?.signaled?
 			@info = "#@tid signalx #{$?.termsig} #{PTrace::SIGNAL[$?.termsig]}"
 			puts @info
-			@threads.delete @tid
-			self.tid = @threads.keys.first || @tid
+			if @threads.delete @tid
+				self.tid = @threads.keys.first || @tid
+			end
 			@state = @threads.empty? ? :dead : @threads[@tid][:state]
 		elsif $?.stopped?
-			@state = :stopped
 			sig = $?.stopsig & 0x7f
 			if sig == PTrace::SIGNAL['TRAP']	# possible ptrace event 
-				@threads[@tid][:state] = :stopped
+				return if not @threads[@tid]
+				@state = @threads[@tid][:state] = :stopped
 				if $?.stopsig & 0x80 > 0
 					@info = "#@tid syscall #{@ptrace.syscallnr[get_reg_value(:orig_eax)]}"
 					puts @info
@@ -630,6 +632,7 @@ class LinDebugger < Debugger
 				return do_continue unless stop_on_threadcreate
 				@continuesignal = 0
 			else
+				return if not @threads[@tid]	# spurious sig ?
 				@state = @threads[@tid][:state] = :stopped
 				if @breaking and sig == PTrace::SIGNAL['STOP']
 					@info = nil
