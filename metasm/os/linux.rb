@@ -30,7 +30,7 @@ class PTrace
 			if not @pid = fork
 				tweak_for_pid(::Process.pid)
 				traceme
-				Process.exec *target
+				Process.exec(*target)
 				exit!(0)
 			end
 		end
@@ -712,7 +712,7 @@ class LinDebugger < Debugger
 		return if @state != :stopped
 		@threads.each { |tid, tdata|
 			# TODO continue only a userconfigured subset of threads
-			next if tdata[:state] != :stopped
+			next if tdata[:state] == :running
 			tdata[:state] = :running
 			sig = parse_run_signal(a.first)
 			@ptrace.pid = tid
