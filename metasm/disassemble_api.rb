@@ -69,6 +69,7 @@ class InstructionBlock
 		@to_indirect.each(&b) if to_indirect
 	end
 
+	# yields all from that are from the same function
 	def each_from_samefunc(dasm, &b)
 		return if dasm.function[address]
 		@from_subfuncret.each(&b) if from_subfuncret
@@ -101,17 +102,19 @@ class InstructionBlock
 end
 
 class DecodedInstruction
+	# checks if this instruction is the first of its IBlock
 	def block_head?
 		self == @block.list.first
 	end
 end
 
 class CPU
-	# alias for scripts using older version of metasm
+	# compat alias, for scripts using older version of metasm
 	def get_backtrace_binding(di) backtrace_binding(di) end
 end
 
 class Disassembler
+	# access the default value for @@backtrace_maxblocks for newly created Disassemblers
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
 	def self.backtrace_maxblocks=(b) ; @@backtrace_maxblocks = b ; end
 
@@ -121,6 +124,12 @@ class Disassembler
 		di if di.kind_of? DecodedInstruction
 	end
 
+	# returns the InstructionBlock containing the address at addr
+	def block_at(addr)
+		di = di_at(addr)
+		di.block if di
+	end
+
 	# returns the DecodedFunction at addr if it exists
 	def function_at(addr)
 		f = @function[addr] || @function[normalize(addr)] if addr
@@ -128,6 +137,7 @@ class Disassembler
 	end
 
 	# returns the DecodedInstruction covering addr
+	# returns one at starting nearest addr if multiple are available (overlapping instrs)
 	def di_including(addr)
 		return if not addr
 		addr = normalize(addr)
@@ -136,12 +146,30 @@ class Disassembler
 		end
 	end
 
+	# returns the InstructionBlock containing the byte at addr
+	# returns the one of di_including() on multiple matches (overlapping instrs)
+	def block_including(addr)
+		di = di_including(addr)
+		di.block if di
+	end
+
+	# returns the DecodedFunction including this byte
+	# return the one of find_function_start() if multiple are possible (block shared by multiple funcs)
+	def function_including(addr)
+		return if not di = di_including(addr)
+		function_at(find_function_start(di.address))
+	end
+
 	# yields every InstructionBlock
+	# returns the list of IBlocks
 	def each_instructionblock
+		ret = []
 		@decoded.each { |addr, di|
 			next if not di.kind_of? DecodedInstruction or not di.block_head?
-			yield di.block
+			ret << di.block
+			yield di.block if block_given?
 		}
+		ret
 	end
 
 	# reads len raw bytes from the mmaped address space
@@ -151,19 +179,23 @@ class Disassembler
 		end
 	end
 
+	# read an int of arbitrary type (:u8, :i32, ...)
+	def decode_int(addr, type)
+		type = "u#{type*8}".to_sym if type.kind_of? Integer
+		if e = get_section_at(addr)
+			e[0].decode_imm(type, @cpu.endianness)
+		end
+	end
+
 	# read a byte at address addr
 	def decode_byte(addr)
-		if e = get_section_at(addr)
-			e[0].decode_imm(:u8, :little)
-		end
+		decode_int(addr, :u8)
 	end
 
 	# read a dword at address addr
 	# the dword is cpu-sized (eg 32 or 64bits)
 	def decode_dword(addr)
-		if e = get_section_at(addr)
-			e[0].decode_imm("u#{@cpu.size}".to_sym, @cpu.endianness)
-		end
+		decode_int(addr, @cpu.size)
 	end
 
 	# read a zero-terminated string from addr
@@ -313,8 +345,8 @@ class Disassembler
 	alias function_blocks each_function_block
 
 	# returns a graph of function calls
-	# for each func passed as arg (default: all), return a hash
-	# associating func => [list of subfuncs called]
+	# for each func passed as arg (default: all), update the 'ret' hash
+	# associating func => [list of direct subfuncs called]
 	def function_graph(funcs = @function.keys + @entrypoints, ret={})
 		funcs = funcs.map { |f| normalize(f) }.uniq.find_all { |f| @decoded[f] }
 		funcs.each { |f|
@@ -511,7 +543,10 @@ class Disassembler
 		fb if not by.empty?
 	end
 
-	# undefine a sequence of decodedinstructions from an address, stops at first non-linear branch
+	# undefine a sequence of decodedinstructions from an address
+	# stops at first non-linear branch
+	# removes @decoded, @comments, @xrefs, @addrs_done
+	# does not update @prog_binding (does not undefine labels)
 	def undefine_from(addr)
 		return if not di_at(addr)
 		@comment.delete addr if @function.delete addr
@@ -539,12 +574,10 @@ class Disassembler
 	# returns true if merged
 	def merge_blocks(b1, b2, allow_nonadjacent = false)
 		if b1 and not b1.kind_of? InstructionBlock
-			return if not di_at(b1)
-			b1 = @decoded[b1].block 
+			return if not b1 = block_at(b1)
 		end
  		if b2 and not b2.kind_of? InstructionBlock
- 			return if not di_at(b2)
-			b2 = @decoded[b2].block
+ 			return if not b2 = block_at(b2)
 		end
 		if b1 and b2 and (allow_nonadjacent or b1.list.last.next_addr == b2.address) and
 				b1.to_normal.to_a == [b2.address] and b2.from_normal.to_a.length == 1 and	# that handles delay_slot
@@ -564,11 +597,15 @@ class Disassembler
 		@cpu.code_binding(self, *a)
 	end
 
-	# takes a graph of decodedinstructions, returns an array of instructions/label equivalent
+	# returns an array of instructions/label that, once parsed and assembled, should
+	# give something equivalent to the code accessible from the (list of) entrypoints given
+	# from the @decoded dasm graph
 	# assume all jump targets have a matching label in @prog_binding
+	# may add inconditionnal jumps in the listing to preserve the code flow
 	def flatten_graph(entry, include_subfunc=true)
 		ret = []
-		todo = [normalize(entry)]
+		entry = [entry] if not entry.kind_of? Array
+		todo = entry.map { |a| normalize(a) }
 		done = []
 		label = {}
 		inv_binding = @prog_binding.invert
@@ -1033,13 +1070,17 @@ class Disassembler
 	end
 
 	def load_plugin(plugin_filename)
-		if not File.exist? plugin_filename and defined? Metasmdir
-			# try autocomplete
-			pf = File.join(Metasmdir, 'samples', 'dasm-plugins', plugin_filename)
-			if File.exist? pf
-				plugin_filename = pf
-			elsif File.exist? pf + '.rb'
-				plugin_filename = pf + '.rb'
+		if not File.exist?(plugin_filename)
+ 			if File.exist?(plugin_filename+'.rb')
+				plugin_filename += '.rb'
+			elsif defined? Metasmdir
+				# try autocomplete
+				pf = File.join(Metasmdir, 'samples', 'dasm-plugins', plugin_filename)
+				if File.exist? pf
+					plugin_filename = pf
+				elsif File.exist? pf + '.rb'
+					plugin_filename = pf + '.rb'
+				end
 			end
 		end
 
