@@ -7,6 +7,8 @@ module Metasm
 module Gui
 class AsmListingWidget < DrawableWidget
 	attr_accessor :dasm, :arrow_zone_w
+	# nr of raw bytes to display next to each decoded instruction
+	attr_accessor :raw_data_length
 
 	def initialize_widget(dasm, parent_widget)
 		@dasm = dasm
@@ -19,6 +21,7 @@ class AsmListingWidget < DrawableWidget
 		@want_update_line_text = @want_update_caret = true
 		@wantaddr = nil
 		@arrow_zone_w = 40
+		@raw_data_length = 0
 
 		addrs = @dasm.sections.keys.grep(Integer)
 		@minaddr = addrs.min.to_i
@@ -26,7 +29,7 @@ class AsmListingWidget < DrawableWidget
 		@startaddr = @dasm.prog_binding['entrypoint'] || @minaddr
 
 		@default_color_association = { :comment => :darkblue, :label => :darkgreen, :text => :black,
-			  :instruction => :black, :address => :blue, :caret => :black,
+			  :instruction => :black, :address => :blue, :caret => :black, :raw_data => :black,
 			  :background => :white, :cursorline_bg => :paleyellow, :hl_word => :palered,
 			  :arrows_bg => :palegrey, :arrow_up => :darkblue, :arrow_dn => :darkyellow, :arrow_hl => :red }
 	end
@@ -432,6 +435,17 @@ class AsmListingWidget < DrawableWidget
 					}
 				end
 				str_c << ["#{Expression[di.address]}    ", :address]
+				if @raw_data_length.to_i > 0
+					if s = @dasm.get_section_at(curaddr)
+						raw = s[0].read(di.bin_length)
+						raw = raw.unpack('H*').first
+					else
+						raw = ''
+					end
+					raw = raw.ljust(@raw_data_length*2)[0, @raw_data_length*2]
+					raw += (di.bin_length > @raw_data_length ? '-  ' : '   ')
+					str_c << [raw, :raw_data]
+				end
 				str_c << ["#{di.instruction} ".ljust(di.comment ? 24 : 0), :instruction]
 				str_c << [" ; #{di.comment.join(' ')}", :comment] if di.comment
 				nl[]
@@ -456,8 +470,6 @@ class AsmListingWidget < DrawableWidget
 						nl[]
 					}
 				end
-				str_c << ["#{Expression[curaddr]}    ", :address]
-				str_c << ["#{label} ", :label] if label
 
 				len = 256
 				comment = nil
@@ -533,6 +545,19 @@ class AsmListingWidget < DrawableWidget
 						aoff = len
 					end
 				end
+				str_c << ["#{Expression[curaddr]}    ", :address]
+				if @raw_data_length.to_i > 0
+					if s = @dasm.get_section_at(curaddr)
+						raw = s[0].read([aoff, @raw_data_length].min)
+						raw = raw.unpack('H*').first
+					else
+						raw = ''
+					end
+					raw = raw.ljust(@raw_data_length*2)
+					raw += (aoff > @raw_data_length ? '-  ' : '   ')
+					str_c << [raw, :raw_data]
+				end
+				str_c << ["#{label} ", :label] if label
 				str_c << [dat.ljust(comment ? 24 : 0), :instruction]
 				str_c << [" ; #{comment.join(' ')}", :comment] if comment
 				nl[]
