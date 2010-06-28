@@ -436,10 +436,14 @@ end
 
 class GraphViewWidget < DrawableWidget
 	attr_accessor :dasm, :caret_box, :curcontext, :zoom, :margin
+	# bool, specifies if we should display addresses before instrs
+	attr_accessor :show_addresses
 
 	def initialize_widget(dasm, parent_widget)
 		@dasm = dasm
 		@parent_widget = parent_widget
+
+		@show_addresses = false
 
 		@caret_box = nil
 		@selected_boxes = []
@@ -449,7 +453,7 @@ class GraphViewWidget < DrawableWidget
 		@margin = 8
 		@zoom = 1.0
 		@default_color_association = { :background => :paleblue, :hlbox_bg => :palegrey, :box_bg => :white,
-				:text => :black, :arrow_hl => :red, :comment => :darkblue,
+				:text => :black, :arrow_hl => :red, :comment => :darkblue, :address => :darkblue,
 				:instruction => :black, :label => :darkgreen, :caret => :black, :hl_word => :palered,
 				:cursorline_bg => :paleyellow, :arrow_cond => :darkgreen, :arrow_uncond => :darkblue,
 			       	:arrow_direct => :darkred }
@@ -906,6 +910,7 @@ class GraphViewWidget < DrawableWidget
 							nl[]
 						}
 					end
+					render["#{Expression[curaddr]}   ", :address] if @show_addresses
 					render[di.instruction.to_s.ljust(di.comment ? 24 : 0), :instruction]
 					render[' ; ' + di.comment.join(' ')[0, 64], :comment] if di.comment
 					nl[]
