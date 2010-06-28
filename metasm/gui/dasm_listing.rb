@@ -135,10 +135,7 @@ class AsmListingWidget < DrawableWidget
 		draw_rectangle_color(:cursorline_bg, 0, @caret_y*@font_height, w_w, @font_height)
 
 		@line_text_color.each { |a|
-			render[a[0], :address]
-			render[a[1], :label]
-			render[a[2], :instruction]
-			render[a[3], :comment]
+			a.each { |s, c| render[s, c] }
 			x = @arrow_zone_w + 1
 			y += @font_height
 		}
@@ -391,7 +388,7 @@ class AsmListingWidget < DrawableWidget
 
 		@line_address.clear
 		@line_text.clear
-		@line_text_color.clear	# list of [addr, label, text, comment]
+		@line_text_color.clear	# list of [str, color]
 
 		line = 0
 
@@ -402,7 +399,7 @@ class AsmListingWidget < DrawableWidget
 
 		nl = lambda {
 			@line_address[line] = curaddr
-			@line_text[line] = str_c.join
+			@line_text[line] = str_c.map { |s, c| s }.join
 			@line_text_color[line] = str_c
 			str_c = []
 			line += 1
@@ -416,7 +413,7 @@ class AsmListingWidget < DrawableWidget
 					b_header.each_line { |l|
 						l.chomp!
 						cmt = (l[0, 2] == '//' or l[-1] != ?:)
-						str_c[cmt ? 3 : 1] = l	# cmt || label
+						str_c << [l, (cmt ? :comment : :label)]
 						nl[]
 					}
 					# ary
@@ -434,34 +431,33 @@ class AsmListingWidget < DrawableWidget
 						arrows_addr << [curaddr, addr]
 					}
 				end
-				str_c << "#{Expression[di.address]}    "
-				str_c << nil
-				str_c << "#{di.instruction} ".ljust(di.comment ? 24 : 0)
-				str_c << " ; #{di.comment.join(' ')}" if di.comment
+				str_c << ["#{Expression[di.address]}    ", :address]
+				str_c << ["#{di.instruction} ".ljust(di.comment ? 24 : 0), :instruction]
+				str_c << [" ; #{di.comment.join(' ')}", :comment] if di.comment
 				nl[]
 
 				# instr overlapping
 				if off = (1...di.bin_length).find { |off_| @dasm.decoded[curaddr + off_] }
 					nl[]
 					curaddr += off
-					str_c[3] = "// ------ overlap (#{di.bin_length - off}) ------"
+					str_c << ["// ------ overlap (#{di.bin_length - off}) ------", :comment]
 					nl[]
 				else
 					curaddr += [di.bin_length, 1].max
 				end
 			elsif s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
-				@dasm.comment[curaddr].each { |c| str_c[3] = "// #{c}" ; nl[] } if @dasm.comment[curaddr]
+				@dasm.comment[curaddr].each { |c| str_c << ["// #{c}", :comment] ; nl[] } if @dasm.comment[curaddr]
 				if label = s[0].inv_export[s[0].ptr]
 					l_list = @dasm.label_alias[curaddr].to_a.sort
 					label = l_list.pop
 					nl[] if not l_list.empty?
 					l_list.each { |name|
-						str_c[1] = "#{name}:"
+						str_c << ["#{name}:", :label]
 						nl[]
 					}
 				end
-				str_c << "#{Expression[curaddr]}    "
-				str_c << ("#{label} " if label)
+				str_c << ["#{Expression[curaddr]}    ", :address]
+				str_c << ["#{label} ", :label] if label
 
 				len = 256
 				comment = nil
@@ -537,8 +533,8 @@ class AsmListingWidget < DrawableWidget
 						aoff = len
 					end
 				end
-				str_c << dat.ljust(comment ? 24 : 0)
-				str_c << " ; #{comment.join(' ')}" if comment
+				str_c << [dat.ljust(comment ? 24 : 0), :instruction]
+				str_c << [" ; #{comment.join(' ')}", :comment] if comment
 				nl[]
 				curaddr += aoff
 			else
