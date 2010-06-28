@@ -780,10 +780,7 @@ class GraphViewWidget < DrawableWidget
 		}
 
 		b[:line_text_col].each { |list|
-			list.each_with_index { |t, i|
-				next if not t
-				render[t, [:instruction, :comment, :label, :text][i]]
-			}
+			list.each { |s, c| render[s, c] }
 			x = (b.x - @curcontext.view_x + 1)*@zoom
 			y += @font_height*@zoom
 		}
@@ -889,10 +886,7 @@ class GraphViewWidget < DrawableWidget
 			colstr = []
 			curaddr = nil
 			line = 0
-			render = lambda { |str, col|
-				col = [:instruction, :comment, :label, :text].index(col) || 0
-				colstr[col] = str
-			}
+			render = lambda { |str, col| colstr << [str, col] }
 			nl = lambda {
 				b[:line_address][line] = curaddr
 				b[:line_text_col][line] = colstr
@@ -925,7 +919,7 @@ class GraphViewWidget < DrawableWidget
 					nl[]
 				end
 			}
-			b.w = b[:line_text_col].map { |str| str.join.length }.max.to_i * @font_width + 2
+			b.w = b[:line_text_col].map { |strc| strc.map { |s, c| s }.join.length }.max.to_i * @font_width + 2
 			b.w += 1 if b.w % 2 == 0	# ensure boxes have odd width -> vertical arrows are straight
 			b.h = line * @font_height
 		}
@@ -939,7 +933,8 @@ class GraphViewWidget < DrawableWidget
 				list = [['addr', 'instr']]
 				@curcontext.box.each { |b|
 					b[:line_text_col].zip(b[:line_address]) { |l, a|
-						list << [Expression[a], l.join] if l.join =~ re
+						str = l.map { |s, c| s }.join
+						list << [Expression[a], str] if str =~ re
 					}
 				}
 				@parent_widget.list_bghilight("search result for /#{pat}/i", list) { |i| @parent_widget.focus_addr i[0] }
@@ -995,7 +990,7 @@ class GraphViewWidget < DrawableWidget
 			end
 		when :right
 			if @caret_box
-				if @caret_x <= @caret_box[:line_text_col].map { |s| s.join.length }.max
+				if @caret_x <= @caret_box[:line_text_col].map { |s| s.map { |ss, cc| ss }.join.length }.max
 					@caret_x += 1
 					update_caret
 				elsif b = @curcontext.box.sort_by { |b_| b_.x }.find { |b_| b_.x > @caret_box.x and
@@ -1062,7 +1057,7 @@ class GraphViewWidget < DrawableWidget
 			end
 		when :end
 			if @caret_box
-				@caret_x = @caret_box[:line_text_col][@caret_y].to_s.length
+				@caret_x = @caret_box[:line_text_col][@caret_y].to_a.map { |ss, cc| ss }.join.length
 				update_caret
 			else
 				@curcontext.view_x = [@curcontext.box.map { |b_| b_.x+b_.w }.max-width/@zoom+10, @curcontext.box.map { |b_| b_.x }.min-10].max
@@ -1226,7 +1221,7 @@ class GraphViewWidget < DrawableWidget
 	# redraw, change the hilighted word
 	def update_caret
 		return if not @caret_box or not @caret_x or not l = @caret_box[:line_text_col][@caret_y]
-		l = l.join
+		l = l.map { |s, c| s }.join
 		@parent_widget.focus_changed_callback[] if @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
 		update_hl_word(l, @caret_x)
 		redraw
