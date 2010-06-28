@@ -7,10 +7,14 @@ module Metasm
 module Gui
 class AsmOpcodeWidget < DrawableWidget
 	attr_accessor :dasm
+	# nr of raw data bytes to display next to decoded instructions
+	attr_accessor :raw_data_length
 	
 	def initialize_widget(dasm, parent_widget)
 		@dasm = dasm
 		@parent_widget = parent_widget
+
+		@raw_data_length = 5
 
 		@line_text = {}
 		@line_address = {}
@@ -19,7 +23,7 @@ class AsmOpcodeWidget < DrawableWidget
 		@view_addr = @dasm.prog_binding['entrypoint'] || @view_min || 0
 
 		@default_color_association = { :comment => :darkblue, :label => :darkgreen, :text => :black,
-			:instruction => :black, :address => :blue, :caret => :black,
+			:instruction => :black, :address => :blue, :caret => :black, :raw_data => :black,
 			:background => :white, :cursorline_bg => :paleyellow, :hl_word => :palered }
 	end
 
@@ -160,6 +164,17 @@ class AsmOpcodeWidget < DrawableWidget
 			render["#{Expression[curaddr]}    ", :address]
 
 			if di = di_at(curaddr)
+				if @raw_data_length.to_i > 0
+					if s = @dasm.get_section_at(curaddr)
+						raw = s[0].read(di.bin_length)
+						raw = raw.unpack('H*').first
+					else
+						raw = ''
+					end
+					raw = raw.ljust(@raw_data_length*2)[0, @raw_data_length*2]
+					raw += (di.bin_length > @raw_data_length ? '-  ' : '   ')
+					render[raw, :raw_data]
+				end
 				render["#{di.instruction} ", :instruction]
 			else
 				if s = @dasm.get_section_at(curaddr) and s[0].ptr < s[0].length
