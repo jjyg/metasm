@@ -195,7 +195,7 @@ class Disassembler
 	# read a dword at address addr
 	# the dword is cpu-sized (eg 32 or 64bits)
 	def decode_dword(addr)
-		decode_int(addr, @cpu.size)
+		decode_int(addr, @cpu.size/8)
 	end
 
 	# read a zero-terminated string from addr
