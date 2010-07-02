@@ -17,7 +17,7 @@ def self.test
 	d = xopendisplay(nil)
 	s = xdefaultscreen(d)
 	cmap = xdefaultcolormap(d, s)
-	w = xcreatesimplewindow(d, xdefaultrootwindow(d), 0, 0, 28, 28, 0, xblackpixel(d, s), xwhitepixel(d, s))
+	w = xcreatesimplewindow(d, xdefaultrootwindow(d), 0, 0, 28, 28, 0, xblackpixel(d, s), xblackpixel(d, s))
 	xstorename(d, w, "lol")
 	gc = xcreategc(d, w, 0, 0)
 	xsetforeground(d, gc, xwhitepixel(d, s))
@@ -27,7 +27,7 @@ def self.test
 str = 'lolz'
 x = 12
 y = 20
-w = 50
+#w = 50
 h = 30
 	loop {
 p :loop
