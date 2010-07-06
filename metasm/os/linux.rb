@@ -421,7 +421,10 @@ class LinOS < OS
 
 		# returns the CPU for the process, by reading /proc/pid/exe
 		def cpu
-			AutoExe.decode_file_header("/proc/#{pid}/exe").cpu
+			e = ELF.load_file("/proc/#{pid}/exe")
+			# dont decode shdr/phdr, this is 2x faster for repeated debugger spawn
+			e.decode_header(0, false, false)
+			e.cpu
 		end
 	end
 
@@ -678,7 +681,7 @@ class LinDebugger < Debugger
 		self.tid = t
 		invalidate
 		update_waitpid
-		do_check_target
+		do_check_target if @state != :dead
 	rescue ::Errno::ECHILD
 		@state = :dead
 	end
