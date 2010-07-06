@@ -572,16 +572,14 @@ class LinDebugger < Debugger
 		if $?.exited?
 			@info = "#@tid exitcode #{$?.exitstatus}"
 			puts @info
-			if @threads.delete @tid
-				self.tid = @threads.keys.first || @tid
-			end
+			@threads.delete @tid
+			self.tid = @threads.keys.first || @tid
 			@state = @threads.empty? ? :dead : @threads[@tid][:state]
 		elsif $?.signaled?
 			@info = "#@tid signalx #{$?.termsig} #{PTrace::SIGNAL[$?.termsig]}"
 			puts @info
-			if @threads.delete @tid
-				self.tid = @threads.keys.first || @tid
-			end
+			@threads.delete @tid
+			self.tid = @threads.keys.first || @tid
 			@state = @threads.empty? ? :dead : @threads[@tid][:state]
 		elsif $?.stopped?
 			sig = $?.stopsig & 0x7f
@@ -748,6 +746,7 @@ class LinDebugger < Debugger
 		sig = 9 if not sig or sig == ''
 		sig = PTrace::SIGNAL[sig] || sig.to_i
 		@threads.each_key { |tid| ::Process.kill(sig, tid) }
+		@state = :running
 	end
 
 	def detach
