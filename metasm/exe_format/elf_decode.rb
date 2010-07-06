@@ -103,14 +103,14 @@ class ELF
 	end
 
 	# decodes the elf header, section & program header
-	def decode_header(off = 0)
+	def decode_header(off = 0, decode_phdr=true, decode_shdr=true)
 		@encoded.ptr = off
 		@header.decode self
 		raise InvalidExeFormat, "Invalid elf header size: #{@header.ehsize}" if Header.size(self) != @header.ehsize
-		if @header.phoff != 0
+		if decode_phdr and @header.phoff != 0
 			decode_program_header(@header.phoff+off)
 		end
-		if @header.shoff != 0
+		if decode_shdr and @header.shoff != 0
 			decode_section_header(@header.shoff+off)
 		end
 	end
