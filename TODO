@@ -6,12 +6,9 @@ Ia32
  realmode
 
 X86_64
- compiler
  decompiler
- debugger
 
 CPU
- ARM
  Sparc
  Cell
 
@@ -23,7 +20,6 @@ Assembler
  Handle cpu pseudo-instrs (mips 'li' -> lui high + ori low)
  SplitReloc? (for pseudo-instrs)
  Ia32 GAS syntax
- move PE/ELF autoimport data in a data/ folder
  Make the autoimport depend on the target platform and not on the exeformat
  Encode FPU constants
  
@@ -38,13 +34,12 @@ Disasm
  Better :default usage
   good on call eax, but not on <600k instrs> ret
   use binary personality ? (uses call vs uses pushret..)
- FLIRT-style func signatures
  Improve backtrace -> patch di.instr.args exprs
  path-specific backtracking ( foo: call a ; a: jmp retloc ; bar: call b ; b: jmp retloc ; retloc: ret ; call foo ; ret : last ret trackback should only reach a:)
  Decode pseudo/macro-instrs (mips 'li')
  Deoptimizer (instr reordering for readability)
  Optimizer (deobfuscating)
- Per-instr context (allows to mix cell/ppc, x86 32/16bits..)
+ Per-instr context (allows to mix cell/ppc, x86 32/16bits, arm/armthumb..)
 
 Compiler
  Optimizer
@@ -95,7 +90,6 @@ ExeFormat
 ELF
  test encoding openbsd binaries
  handle symbol versions
- handle ET_REL
  LoadedELF.dump
  Check relocation encoding (eg samples/dynamic_ruby with cpu.generate_PIC=false)
 
@@ -110,8 +104,6 @@ GUI
   specialize widgets
    show breakpoints
    show jump direction from current flag values
- instruction patch (a la hexedit)
- Hexedit: allow VirtualFile 'reopen rw'
  have a console frontend
  better graph positionning fallback
  zoom font when zooming graph
