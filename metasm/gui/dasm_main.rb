@@ -201,7 +201,7 @@ class DisasmWidget < ContainerChoiceWidget
 	# the callback is put only for the duration of the listwindow, and is not reentrant.
 	def list_bghilight(title, list, a={}, &b)
 		prev_colorcb = bg_color_callback
-		hash = list[1..-1].inject({}) { |h, l| h.update Expression[l[0]].reduce => true }
+		hash = list[1..-1].inject({}) { |h, l| h.update Expression[l[0] || :unknown].reduce => true }
 		@bg_color_callback = lambda { |addr| hash[addr] ? '0f0' : prev_colorcb ? prev_colorcb[addr] : nil }
 		redraw
 		popupend = lambda { @bg_color_callback = prev_colorcb ; redraw }
@@ -360,7 +360,7 @@ class DisasmWidget < ContainerChoiceWidget
 					list.last << a[0] << a[1..-1].inspect
 				end
 			}
-			listwindow("backtrace #{expr} from #{Expression[addr]}", list) { |i|
+			list_bghilight("backtrace #{expr} from #{Expression[addr]}", list) { |i|
 				a = i[0].empty? ? i[2] : i[0]
 				focus_addr(a, nil, true)
  			}
