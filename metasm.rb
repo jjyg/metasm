@@ -17,6 +17,7 @@ module Metasm
 		'DEY' => 'DEX',
 		'PTrace' => 'LinOS', 'FatELF' => 'ELF',
 		'LoadedELF' => 'ELF', 'LoadedPE' => 'PE',
+		'LoadedAutoExe' => 'AutoExe',
 		'LinuxRemoteString' => 'LinOS',
 		'LinDebugger' => 'LinOS',
 		'WinAPI' => 'WinOS',

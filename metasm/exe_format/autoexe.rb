@@ -72,4 +72,11 @@ def self.orshellcode(cpu=nil, &b)
 	c
 end
 end
+
+# special class that decodes a LoadedPE or LoadedELF from its signature (used to read memory-mapped binaries)
+class LoadedAutoExe < AutoExe
+init_signatures
+register_signature("\x7fELF") { LoadedELF }
+register_signature(lambda { |raw| raw[0, 2] == "MZ" and off = raw[0x3c, 4].to_s.unpack('V')[0] and off < raw.length and raw[off, 4] == "PE\0\0" }) { LoadedPE }
+end
 end
