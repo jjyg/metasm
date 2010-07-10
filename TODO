@@ -27,7 +27,6 @@ Disasm
  DecodedData
  Exe decoding generate decodeddata ?
  Function-local namespace (esp+12 -> esp+var_42)
- Recognize __noreturn thunks
  Fix thunk detection (thunk: mov ecx, 42  jmp [iat_thiscall] is not a thunk)
  Test with ET_REL style exe
  Store stuff out of mem (to handle big binaries)

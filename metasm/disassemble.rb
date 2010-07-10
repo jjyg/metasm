@@ -648,6 +648,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				bf = di.block
 			end
 		elsif bf = @function[addr]
+			detect_function_thunk_noreturn(from) if bf.noreturn
 		elsif s = get_section_at(addr)
 			block = InstructionBlock.new(normalize(addr), s[0])
 			block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
@@ -849,6 +850,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		elsif name = Expression[addr].reduce_rec and name.kind_of? ::String and not @function[addr]
 			if c_parser and s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
 				@function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
+				detect_function_thunk_noreturn(from) if @function[addr].noreturn
 			elsif @function[:default]
 				@function[addr] = @function[:default].dup
 			end
@@ -1005,9 +1007,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		# check thunk linearity (no conditionnal branch etc)
 		addr = funcaddr
 		count = 0
-		while @decoded[addr].kind_of? DecodedInstruction
+		while b = block_at(addr)
 			count += 1
-			b = @decoded[addr].block
 			return if count > 5 or b.list.length > 4
 			if b.to_subfuncret and not b.to_subfuncret.empty?
 				return if b.to_subfuncret.length != 1
@@ -1037,10 +1038,35 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			f.noreturn = true if @function[addr] and @function[addr].noreturn
 		end
 		return if not fname.kind_of? ::String
-		l = auto_label_at(funcaddr, 'sub')
+		l = auto_label_at(funcaddr, 'sub', 'loc')
 		return if l[0, 4] != 'sub_'
 		puts "found thunk for #{fname} at #{Expression[funcaddr]}" if $DEBUG
 		rename_label(l, @program.new_label("thunk_#{fname}"))
+	end
+
+	# this is called when reaching a noreturn function call, with the call address
+	# it is responsible for detecting the actual 'call' instruction leading to this
+	# noreturn function, and eventually mark the call target as a thunk
+	def detect_function_thunk_noreturn(addr)
+		5.times {
+			return if not di = di_at(addr)
+			if di.opcode.props[:saveip] and not di.block.to_subfuncret
+				if di.block.to_normal.to_a.length == 1
+					taddr = normalize(di.block.to_normal.first)
+					if di_at(taddr)
+						@function[taddr] ||= DecodedFunction.new
+						return detect_function_thunk(taddr)
+					end
+				end
+				break
+			else
+				from = di.block.from_normal.to_a + di.block.from_subfuncret.to_a
+				if from.length == 1
+					addr = from.first
+				else break
+				end
+			end
+		}
 	end
 
 
