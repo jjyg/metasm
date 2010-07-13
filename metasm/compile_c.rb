@@ -417,6 +417,9 @@ module C
 			len %= align
 			len == 0 ? align : len
 		end
+
+		def check_reserved_name(var)
+		end
 	end
 
 	class Statement
@@ -534,9 +537,11 @@ module C
 
 	class Declaration
 		def precompile(compiler, scope)
-			if (@var.type.kind_of? Function and @var.initializer and scope != compiler.toplevel) or @var.storage == :static
+			if (@var.type.kind_of? Function and @var.initializer and scope != compiler.toplevel) or @var.storage == :static or compiler.check_reserved_name(@var)
+				# TODO fix label name in export table if __exported
 				scope.symbol.delete @var.name
-				@var.name = compiler.new_label @var.name
+				old = @var.name
+				@var.name = compiler.new_label @var.name until @var.name != old
 				compiler.toplevel.symbol[@var.name] = @var
 				# TODO no pure inline if addrof(func) needed
 				compiler.toplevel.statements << self unless @var.attributes.to_a.include? 'inline'
