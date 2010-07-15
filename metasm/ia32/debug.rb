@@ -107,7 +107,10 @@ class Ia32
 	end
 
 	def dbg_check_pre_run(dbg)
-		dbg.set_reg_value(:dr6, 0)
+		if dbg[:dr6] == 0 and dbg[:dr7] == 0
+			dbg[:dr7] = 0x10000	# some OS (eg Windows) only return dr6 if dr7 != 0
+		end
+		dbg[:dr6] = 0
 	end
 
 	def dbg_check_post_run(dbg)
