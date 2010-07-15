@@ -449,7 +449,7 @@ class COFF
 		@header.decode(self)
 		optoff = @encoded.ptr
 		@optheader.decode(self)
-		decode_symbols if @header.num_sym != 0
+		decode_symbols if @header.num_sym != 0 and not @header.characteristics.include? 'DEBUG_STRIPPED'
 		@cursection.encoded.ptr = optoff + @header.size_opthdr
 		decode_sections
 		if sect_at_rva(@optheader.entrypoint)
@@ -470,11 +470,12 @@ class COFF
 		strtab = @encoded.read(strlen)
 		@encoded.ptr = @header.ptr_sym
 		@symbols = []
-		while @encoded.ptr < endptr
+		@header.num_sym.times {
+			break if @encoded.ptr >= endptr or @encoded.ptr >= @encoded.length
 			@symbols << Symbol.decode(self, strtab)
 			# keep the reloc.sym_idx accurate
 			@symbols.last.nr_aux.times { @symbols << nil }
-		end
+		}
 	end
 
 	# decode the COFF sections
