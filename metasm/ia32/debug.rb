@@ -106,13 +106,18 @@ class Ia32
 		dbg.set_reg_value(:dr7, dr7)
 	end
 
+	def dbg_check_pre_run(dbg)
+		dbg.set_reg_value(:dr6, 0)
+	end
+
 	def dbg_check_post_run(dbg)
 		if dbg.state == :stopped and not dbg.info
 			eip = dbg.pc
-			if dbg.breakpoint[eip-1] and dbg.memory[eip-1, 1] == "\xcc" and dbg['dr6'] & 0x400 == 0
+			if dbg.breakpoint[eip-1] and dbg.memory[eip-1, 1] == "\xcc" and dbg[:dr6] & 0x4000 == 0
 				# we may get there by singlestepping a branch just over the \xcc
 				# the dr6 check should take care of that
-				# the only way to get there is that we hit the bp, so we need to fix eip
+				# we probably got there by hitting the bp, so we need to fix eip
+				# another exception would presumably have @info not nil
 				dbg.pc = eip-1
 			end
 		end

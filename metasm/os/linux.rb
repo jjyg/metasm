@@ -809,11 +809,6 @@ class LinDebugger < Debugger
 		b.state = :inactive
 	end
 
-	def check_post_run(*a)
-		@cpu.dbg_check_post_run(self) rescue nil
-		super(*a)
-	end
-
 	def ui_command_setup(ui)
 		ui.new_command('syscall', 'waits for the target to do a syscall using PT_SYSCALL') { |arg| ui.wrap_run { syscall arg } }
 		ui.keyboard_callback[:f6] = lambda { ui.wrap_run { syscall } }

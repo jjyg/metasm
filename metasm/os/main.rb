@@ -368,6 +368,8 @@ class Debugger
 	# checks stuff before letting the target run
 	# enables all breakpoints except on pc
 	def check_pre_run
+		@cpu.dbg_check_pre_run(self) if @cpu.respond_to? :dbg_check_pre_run
+
 		addr = pc
 		@breakpoint.each { |a, b|
 			next if a == addr or b.state != :inactive
@@ -379,6 +381,8 @@ class Debugger
 	# fixups pc if break was caused by a software breakpoint
 	# disable all breakpoints
 	def check_post_run(pre_state=nil)
+		@cpu.dbg_check_post_run(self) if @cpu.respond_to? :dbg_check_post_run
+
 		addr = pc
 		@breakpoint.each { |a, b|
 			next if a != addr or b.state != :active

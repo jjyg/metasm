@@ -27,9 +27,6 @@ class ARM
 		@dbg_register_size ||= Hash.new(32)
 	end
 
-	def dbg_check_post_run(dbg)
-	end
-
 	def dbg_need_stepover(dbg, addr, di)
 		di and di.opcode.props[:saveip]
 	end

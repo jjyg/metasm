@@ -1471,11 +1471,6 @@ class WinDebugger < Debugger
 		#@info = 'killed'
 	end
 
-	def check_post_run(*a)
-		@cpu.dbg_check_post_run(self)
-		super(*a)
-	end
-
 	def pass_current_exception(doit = true)
 		@continuecode = (doit ? WinAPI::DBG_EXCEPTION_NOT_HANDLED : WinAPI::DBG_CONTINUE)
 	end
