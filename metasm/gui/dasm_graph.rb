@@ -841,6 +841,10 @@ class GraphViewWidget < DrawableWidget
 			next if done.include? a
 			done << a
 			next if not di = @dasm.di_at(a)
+			if not di.block_head?
+				block_rel[di.block.address] = [a]
+				@dasm.split_block(a)
+			end
 			block_rel[a] = []
 			di.block.each_to_samefunc(@dasm) { |t|
 				t = @dasm.normalize t
@@ -1131,7 +1135,7 @@ class GraphViewWidget < DrawableWidget
 			redraw
 		when :insert		# split curbox at @caret_y
 			if @caret_box and a = @caret_box[:line_address][@caret_y] and @dasm.decoded[a]
-				@dasm.split_block(@dasm.decoded[a].block, a)
+				@dasm.split_block(a)
 				@curcontext.keep_split ||= []
 				@curcontext.keep_split |= [a]
 				gui_update
