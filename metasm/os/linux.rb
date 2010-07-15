@@ -501,7 +501,7 @@ class LinDebugger < Debugger
 	# with this we advertize the cpu as having eax..edi registers (the only one we
 	# can access), while still decoding x64 instructions (whose addr < 4G)
 	def hack_64_32
-		$stdout.puts "WARNING: debugging a 64bit process from a 32bit debugger is a very bad idea !"
+		puts "WARNING: debugging a 64bit process from a 32bit debugger is a very bad idea !"
 		@cpu.instance_eval {
 			ia32 = Ia32.new
 			@dbg_register_pc = ia32.dbg_register_pc
