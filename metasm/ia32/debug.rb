@@ -109,8 +109,10 @@ class Ia32
 	def dbg_check_post_run(dbg)
 		if dbg.state == :stopped and not dbg.info
 			eip = dbg.pc
-			if dbg.breakpoint[eip-1] and dbg.memory[eip-1, 1] == "\xcc"
-				# if we were singlestepping, we would have removed the 0xcc before running, so this was a continue, and we must fix eip.
+			if dbg.breakpoint[eip-1] and dbg.memory[eip-1, 1] == "\xcc" and dbg['dr6'] & 0x400 == 0
+				# we may get there by singlestepping a branch just over the \xcc
+				# the dr6 check should take care of that
+				# the only way to get there is that we hit the bp, so we need to fix eip
 				dbg.pc = eip-1
 			end
 		end
