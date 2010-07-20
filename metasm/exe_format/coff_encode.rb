@@ -595,7 +595,7 @@ class COFF
 		tmp = []
 		tmp << 'NX_COMPAT'
 		tmp << 'DYNAMIC_BASE' if want_relocs
-		@optheader.dll_characts ||= dll_c
+		@optheader.dll_characts ||= tmp
 	end
 
 	# resets the values in the header that may have been
