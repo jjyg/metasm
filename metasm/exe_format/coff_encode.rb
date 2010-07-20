@@ -588,12 +588,14 @@ class COFF
 		@header.characteristics ||= tmp
 
 		@optheader.subsystem ||= case target
-		when 'exe', 'dll'; 'WINDOWS_GUI'
-		when 'kmod'; 'NATIVE'
-		end
-		@optheader.dll_characts = []
-		@optheader.dll_characts << 'NX_COMPAT'
-		@optheader.dll_characts << 'DYNAMIC_BASE' if want_relocs
+			when 'exe', 'dll'; 'WINDOWS_GUI'
+			when 'kmod'; 'NATIVE'
+			end
+
+		tmp = []
+		tmp << 'NX_COMPAT'
+		tmp << 'DYNAMIC_BASE' if want_relocs
+		@optheader.dll_characts ||= dll_c
 	end
 
 	# resets the values in the header that may have been
