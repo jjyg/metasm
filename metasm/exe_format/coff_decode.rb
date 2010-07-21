@@ -407,6 +407,7 @@ class COFF
 	# handles LoadedPE
 	def addr_to_fileoff(addr)
 		addr -= @load_address ||= @optheader.image_base
+		return 0 if addr == 0	# sect_at_rva specialcases 0
 		if s = sect_at_rva(addr)
 			if s.respond_to? :virtaddr
 				addr - s.virtaddr + s.rawaddr
@@ -421,6 +422,8 @@ class COFF
 	def fileoff_to_addr(foff)
 		if s = @sections.find { |s_| s_.rawaddr <= foff and s_.rawaddr + s_.rawsize > foff }
 			s.virtaddr + foff - s.rawaddr + (@load_address ||= @optheader.image_base)
+		elsif foff >= 0 and foff < @optheader.headers_size
+			foff + (@load_address ||= @optheader.image_base)
 		end
 	end
 
