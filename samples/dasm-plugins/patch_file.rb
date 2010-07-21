@@ -22,17 +22,22 @@ def backup_program_file
 end
 
 # create a backup and reopen the backend VirtualFile RW
-def reopen_rw(edata=nil)
+def reopen_rw(addr=nil, edata=nil)
 	if not edata
-		sections.each { |k, v| reopen_rw(v) }
+		sections.each { |k, v| reopen_rw(k, v) }
 		return true
 	end
 
-	if File.writable?(@program.filename) and edata.data.kind_of? VirtualFile
-		backup_program_file
-		opos = edata.data.fd.pos
-		edata.data.fd = File.open(@program.filename, 'rb+')
-		edata.data.fd.pos = opos
+	return if not File.writable?(@program.filename)
+	backup_program_file
+	if not edata.data.kind_of? VirtualFile
+		# section too small, loaded as real String
+		# force reopen as VFile (allow hexediting in gui)
+		return if not off = addr_to_fileoff(addr)
+		len = edata.data.length
+		edata.data = VirtualFile.read(@program.filename, 'rb+').dup(off, len)
+	else
+		edata.data.fd.reopen @program.filename, 'rb+'
 	end
 end
 
