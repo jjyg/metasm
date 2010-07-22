@@ -706,7 +706,9 @@ class COFF
 
 	# encode a COFF file, building export/import/reloc tables if needed
 	# creates the base relocation tables (need for references to IAT not known before)
-	def encode(target = 'exe', want_relocs = (target != 'exe' and target != :bin))
+	# defaults to generating relocatable files, eg ALSR-aware
+	# pass want_relocs=false to avoid the file overhead induced by this
+	def encode(target = 'exe', want_relocs = true)
 		@encoded = EncodedData.new
 		label_at(@encoded, 0, 'coff_start')
 		pre_encode_header(target, want_relocs)
