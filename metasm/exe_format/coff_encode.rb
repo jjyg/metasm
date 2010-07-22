@@ -223,7 +223,7 @@ class COFF
 			rel
 		end
 
-		def setup_default_values(coff)
+		def set_default_values(coff)
 			# @base_addr is an rva
 			@base_addr = Expression[@base_addr, :-, coff.label_at(coff.encoded, 0)] if @base_addr.kind_of?(::String)
 
