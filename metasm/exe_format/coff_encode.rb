@@ -584,7 +584,7 @@ class COFF
 		else
 			tmp << 'LARGE_ADDRESS_AWARE'
 		end
-		tmp << 'RELOCS_STRIPPED' # if not @directory['base_relocation_table'] # object relocs
+		tmp << 'RELOCS_STRIPPED' if not want_relocs
 		@header.characteristics ||= tmp
 
 		@optheader.subsystem ||= case target
