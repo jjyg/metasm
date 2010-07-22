@@ -97,6 +97,7 @@ MachO
 PE
  resource editor ?
  rc compiler ?
+ add simple accessor for resource stuff (manifest, icon, ...)
 
 GUI
  debugger
