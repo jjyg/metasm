@@ -15,8 +15,9 @@ class PE < COFF
 
 	attr_accessor :coff_offset, :signature, :mz
 
-	def initialize(cpu=nil)
-		super(cpu)
+	def initialize(*a)
+		super(*a)
+		cpu = a.grep(CPU).first
 		@mz = MZ.new(cpu).share_namespace(self)
 	end
 

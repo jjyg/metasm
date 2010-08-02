@@ -358,7 +358,13 @@ class COFF < ExeFormat
 	attr_accessor :header, :optheader, :directory, :sections, :endianness, :symbols,
 		:export, :imports, :resource, :certificates, :relocations, :debug, :tls, :loadconfig, :delayimports
 
-	def initialize(cpu=nil)
+	# boolean, set to true to have #decode() ignore the base_relocs directory
+	attr_accessor :nodecode_relocs
+
+	def initialize(*a)
+		cpu = a.grep(CPU).first
+		@nodecode_relocs = true if a.include? :nodecode_relocs
+
 		@directory = {}	# DIRECTORIES.key => [rva, size]
 		@sections = []
 		@endianness = cpu ? cpu.endianness : :little

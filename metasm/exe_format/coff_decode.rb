@@ -686,7 +686,11 @@ class COFF
 		decode_tls
 		decode_loadconfig
 		decode_delayimports
-		decode_relocs unless ENV['METASM_NODECODE_RELOCS']	# decode relocs last
+		decode_relocs unless nodecode_relocs or ENV['METASM_NODECODE_RELOCS']	# decode relocs last
+	end
+
+	def load(*a)
+		super(*a)
 	end
 
 	# returns a metasm CPU object corresponding to +header.machine+
