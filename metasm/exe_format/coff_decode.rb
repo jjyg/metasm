@@ -689,10 +689,6 @@ class COFF
 		decode_relocs unless nodecode_relocs or ENV['METASM_NODECODE_RELOCS']	# decode relocs last
 	end
 
-	def load(*a)
-		super(*a)
-	end
-
 	# returns a metasm CPU object corresponding to +header.machine+
 	def cpu_from_headers
 		case @header.machine
