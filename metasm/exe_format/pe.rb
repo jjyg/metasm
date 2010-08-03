@@ -108,8 +108,11 @@ EOMZSTUB
 		ret = self.class.new(@cpu)
 		ret.share_namespace(self) if share_ns
 		ret.header.machine = @header.machine
+		ret.header.characteristics = @header.characteristics
 		ret.optheader.entrypoint = @optheader.entrypoint
 		ret.optheader.image_base = @optheader.image_base
+		ret.optheader.subsystem  = @optheader.subsystem
+		ret.optheader.dll_characts = @optheader.dll_characts
 		@sections.each { |s|
 			rs = Section.new
 			rs.name = s.name
