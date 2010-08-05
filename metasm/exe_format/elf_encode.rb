@@ -720,7 +720,7 @@ class ELF
 	# put sections/phdr in PT_LOAD segments
 	# link
 	# TODO support mapped PHDR, obey section-specified base address, handle NOBITS
-	def encode(type='EXEC')
+	def encode(type='DYN')
 		@header.type ||= {:bin => 'EXEC', :lib => 'DYN', :obj => 'REL'}.fetch(type, type)
 		@header.machine ||= case @cpu.shortname
 				when 'x64'; 'X86_64'
@@ -1198,7 +1198,7 @@ class ELF
 
 	def encode_file(path, *a)
 		ret = super(path, *a)
-		File.chmod(0755, path) if @header.type == 'EXEC'
+		File.chmod(0755, path) if @header.entry and @header.entry != 0
 		ret
 	end
 
