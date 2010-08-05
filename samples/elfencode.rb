@@ -6,11 +6,12 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 require 'metasm'
-$execlass = Metasm::ELF
+$opts = { :execlass => Metasm::ELF, :exetype => :lib }
 load File.join(File.dirname(__FILE__), 'exeencode.rb')
 
 __END__
 .pt_gnu_stack rw
+// .nointerp    // to disable the dynamic section, eg for stuff with int80 only
 .text
 .entrypoint
 push bla
