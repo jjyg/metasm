@@ -33,6 +33,8 @@ class SyscallHooker < Metasm::PTrace
 			mode = :int80
 		elsif fu == "\xeb\xf3" and readmem(eip-14, 7).unpack('H*').first == "51525589e50f34"	# aoenthuasn
 			mode = :sysenter
+		elsif fu == "\x0f\x05"
+			mode = :syscall
 		else
 			puts 'unhandled syscall convention, aborting, code = ' + readmem(eip-4, 8).unpack('H*').first
 			cont
