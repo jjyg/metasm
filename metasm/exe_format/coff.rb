@@ -252,7 +252,7 @@ class COFF < ExeFormat
 	class LoadConfig < SerialStruct
 		words :signature, :timestamp
 		halfs :major_version, :minor_version
-		words :globalflags, :critsec_timeout
+		words :globalflags_clear, :globalflags_set, :critsec_timeout
 		# lockpfxtable is an array of VA of LOCK prefixes, to be nopped on singleproc machines (!)
 		xwords :decommitblock, :decommittotal, :lockpfxtable, :maxalloc, :maxvirtmem, :process_affinity_mask
 		word :process_heap_flags
