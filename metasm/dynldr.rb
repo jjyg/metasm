@@ -261,13 +261,13 @@ double fake_float(void);
 // TODO float args
 static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 {
-	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 6)
+	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 16)
 		rb_raise(*rb_eArgError, "bad args");
 	
 	uintptr_t flags_v = VAL2INT(flags);
 	uintptr_t ptr_v = VAL2INT(ptr);
 	int i, argsz;
-	uintptr_t args_c[64];
+	uintptr_t args_c[16];
 	uintptr_t ret;
 	uintptr_t (*ptr_f)(uintptr_t, ...) = (void*)ptr_v;
 
@@ -275,10 +275,16 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 	for (i=0 ; i<argsz ; ++i)
 		args_c[i] = VAL2INT(ARY_PTR(args)[i]);
 
-	for (i=argsz ; i<=8 ; ++i)
+	for (i=argsz ; i<16 ; ++i)
 		args_c[i] = 0;
 
-	ret = ptr_f(args_c[0], args_c[1], args_c[2], args_c[3], args_c[4], args_c[5], args_c[6], args_c[7]);
+	if (argsz <= 4)
+		ret = ptr_f(args_c[0], args_c[1], args_c[2], args_c[3]);
+	else
+		ret = ptr_f(args_c[0],  args_c[1],  args_c[2],  args_c[3],
+			    args_c[4],  args_c[5],  args_c[6],  args_c[7],
+			    args_c[8],  args_c[9],  args_c[10], args_c[11],
+			    args_c[12], args_c[13], args_c[14], args_c[15]);
 	
 	if (flags_v & 8)
 		return rb_float_new(fake_float());
