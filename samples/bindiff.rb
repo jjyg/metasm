@@ -13,10 +13,9 @@
 # You can still force a comparaison between two functions, but the results will be bad.
 #
 # This file can be run as a standalone application (eg 'ruby bindiff file1 file2')
-# or as a disassembler plugin (for 'ruby disassemble-gui')
+# or as a disassembler plugin (see dasm-plugin/bindiff)
 
 require 'metasm'
-require 'optparse'
 
 module ::Metasm
 class BinDiffWidget < Gui::DrawableWidget
@@ -480,12 +479,11 @@ class BinDiffWindow < Gui::Window
 end
 end
 
-# allow reloading the file
-if not defined? $bindiff_loaded
+if $0 == __FILE__ and not defined? $bindiff_loaded
+# allow reloading the file for easier diff algorithm test
 $bindiff_loaded = true
 
-if $0 == __FILE__
-# this script run as standalone program
+require 'optparse'
 
 $VERBOSE = true
 
@@ -553,15 +551,4 @@ bd.widget.keypress ?A if opts[:doit]
 
 Metasm::Gui.main
 
-
-
-elsif defined?(Disassembler) and self.kind_of?(Disassembler)
-# this script run as an (existing) dasm plugin
-
-Gui::DasmWindow.new("bindiff target").promptopen("chose bindiff target") { |w|
-	w.title = "#{w.widget.dasm.program.filename} - metasm bindiff"
-	@bindiff_win = BinDiffWindow.new(self, w.widget.dasm)
-}
-
-end
 end
