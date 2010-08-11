@@ -5,11 +5,21 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
+# This sample implements a trivial binary diffing algorithm between two programs
+# the programs have first to be disassembled, and then the diff algorith will
+# (try to) identify identical functions in both dasm graphs
+# Currently there is NO fuzzy matching whatsoever, so the function graphs have to
+# be exactly the same in both programs to be recognized.
+# You can still force a comparaison between two functions, but the results will be bad.
+#
+# This file can be run as a standalone application (eg 'ruby bindiff file1 file2')
+# or as a disassembler plugin (for 'ruby disassemble-gui')
+
 require 'metasm'
 require 'optparse'
 
-module Metasm
-class BinDiffWidget < Metasm::Gui::DrawableWidget
+module ::Metasm
+class BinDiffWidget < Gui::DrawableWidget
 	attr_accessor :status
 
 	COLORS = { :same => '8f8', :similar => 'cfc', :badarg => 'fcc', :badop => 'faa', :default => '888' }
@@ -78,8 +88,10 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 			keypress(?i)
 		when ?D
 			disassemble_all
-		when ?d
+		when ?c
 			disassemble
+		when ?C
+			disassemble(:disassemble_fast)
 		when ?f
 			funcstat1
 			funcstat2
@@ -88,7 +100,7 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 				@dasm1.gui.focus_addr_autocomplete(v)
 				@dasm2.gui.focus_addr_autocomplete(v)
 			}
-		when ?i
+		when ?M
 			show_match_funcs
 		when ?m
 			match_one_func(curfunc1, curfunc2)
@@ -105,6 +117,8 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 
 	def keypress_ctrl(key)
 		case key
+		when ?C
+			disassemble(:disassemble_fast_deep)
 		when ?r
 			inputbox('code to eval') { |c| messagebox eval(c).inspect[0, 512], 'eval' }
 		end
@@ -119,15 +133,15 @@ class BinDiffWidget < Metasm::Gui::DrawableWidget
 		gui_update
 	end
 
-	def disassemble
+	def disassemble(method=:disassemble)
 		@func1 = @func2 = @funcstat1 = @funcstat2 = nil
 		set_status('dasm 1') {
-			@dasm1.disassemble_fast_deep(curaddr1)
+			@dasm1.send(method, curaddr1)
 			@dasm1.function[curaddr1] = DecodedFunction.new
 			@dasm1.gui.focus_addr(curaddr1, :graph)
 		}
 		set_status('dasm 2') {
-			@dasm2.disassemble_fast_deep(curaddr2)
+			@dasm2.send(method, curaddr2)
 			@dasm2.function[curaddr2] = DecodedFunction.new
 			@dasm2.gui.focus_addr(curaddr2, :graph)
 		}
@@ -307,6 +321,7 @@ end
 	def match_one_func(a1, a2)
 		s = match_func(a1, a2)
 		puts "match score: #{s}"
+		@match_funcs ||= {}
 		@match_funcs[a1] = [a2, s]
 		gui_update
 	end
@@ -436,9 +451,10 @@ class BinDiffWindow < Gui::Window
 		addsubmenu(menu, 'load file 1') { openfile('file 1') { |f| loadfile1(f) } }
 		addsubmenu(menu, 'load file 2') { openfile('file 2') { |f| loadfile2(f) } }
 		addsubmenu(menu)
-		addsubmenu(menu, '_disassemble from there', 'd') { widget.disassemble }
-		addsubmenu(menu, 'co_mpare functions', 'm') { widget.match_one_func(widget.curfunc1, widget.curfunc2) }
-		addsubmenu(menu, 'compare all funct_ions', 'i') { widget.show_match_funcs }
+		addsubmenu(menu, '_disassemble from there', '^C') { widget.disassemble(:disassemble_fast_deep) }
+		addsubmenu(menu, 'co_mpare current functions', 'm') { widget.match_one_func(widget.curfunc1, widget.curfunc2) }
+		addsubmenu(menu, 'compare all funct_ions', 'M') { widget.show_match_funcs }
+		addsubmenu(menu, '_goto', 'g') { widget.keypress ?g }
 		addsubmenu(menu)
 		addsubmenu(menu, 'sync win 2', '2') { widget.sync2 }
 		addsubmenu(menu, 'sync win 1', '1') { widget.sync1 }
@@ -465,8 +481,11 @@ end
 end
 
 # allow reloading the file
-if not defined? $running
-$running = true
+if not defined? $bindiff_loaded
+$bindiff_loaded = true
+
+if $0 == __FILE__
+# this script run as standalone program
 
 $VERBOSE = true
 
@@ -534,4 +553,15 @@ bd.widget.keypress ?A if opts[:doit]
 
 Metasm::Gui.main
 
+
+
+elsif defined?(Disassembler) and self.kind_of?(Disassembler)
+# this script run as an (existing) dasm plugin
+
+Gui::DasmWindow.new("bindiff target").promptopen("chose bindiff target") { |w|
+	w.title = "#{w.widget.dasm.program.filename} - metasm bindiff"
+	@bindiff_win = BinDiffWindow.new(self, w.widget.dasm)
+}
+
+end
 end
