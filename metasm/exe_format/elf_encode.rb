@@ -715,11 +715,55 @@ class ELF
 		@relocations << r
 	end
 
+	# put every ALLOC section in a segment, create segments if needed
+	# sections with a good offset within a segment are ignored
+	def encode_make_segments_from_sections
+		# fixed addresses first
+		seclist = @sections.find_all { |sec| sec.addr.kind_of? Integer }.sort_by { |sec| sec.addr } | @sections
+		seclist.each { |sec|
+			next if not sec.flags.to_a.include? 'ALLOC'
+			next if sec.offset and @segments.find { |seg_|
+				# ignore sections with a good .offset wrt segments, we're just reencoding a good ELF
+				seg_.offset <= sec.offset and seg_.offset + seg_.memsz >= sec.offset + sec.size rescue nil
+			}
+
+			# check if we fit in an existing segment
+			loadsegs = @segments.find_all { |seg_| seg_.type == 'LOAD' }
+			if not seg = loadsegs.find { |seg_|
+				sec.flags.to_a.include?('WRITE') == seg_.flags.to_a.include?('W') and
+				#sec.flags.to_a.include?('EXECINSTR') == seg_.flags.to_a.include?('X') and
+				not seg_.memsz and
+				not loadsegs[loadsegs.index(seg_)+1..-1].find { |sseg|
+					# check if another segment would overlap if we add the sec to seg_
+					o = Expression[sseg.vaddr, :-, [seg_.vaddr, :+, seg_.encoded.length+sec.encoded.length]].reduce
+					o.kind_of? ::Integer and o < 0
+				}
+			}
+				# nope, create a new one
+				seg = Segment.new
+				seg.type = 'LOAD'
+				seg.flags = ['R']
+				seg.flags << 'W' if sec.flags.include? 'WRITE'
+				seg.align = 0x1000
+				seg.encoded = EncodedData.new
+				seg.offset = new_label('segment_offset')
+				seg.vaddr = sec.addr || new_label('segment_address')
+				@segments << seg
+			end
+			seg.flags |= ['X'] if sec.flags.include? 'EXECINSTR'
+			seg.encoded.align sec.addralign if sec.addralign
+			sec.addr = Expression[seg.vaddr, :+, seg.encoded.length]
+			sec.offset = Expression[seg.offset, :+, seg.encoded.length]
+			seg.encoded << sec.encoded
+		}
+	end
+
 	# create the relocations from the sections.encoded.reloc
 	# create the dynamic sections
 	# put sections/phdr in PT_LOAD segments
 	# link
 	# TODO support mapped PHDR, obey section-specified base address, handle NOBITS
+	#      encode ET_REL
 	def encode(type='DYN')
 		@header.type ||= {:bin => 'EXEC', :lib => 'DYN', :obj => 'REL'}.fetch(type, type)
 		@header.machine ||= case @cpu.shortname
@@ -729,6 +773,10 @@ class ELF
 				when 'powerpc'; 'PPC'
 				when 'arm'; 'ARM'
 				end
+
+		if @header.type == 'REL'
+			raise 'ET_REL encoding not supported atm, come back later'
+		end
 
 		@encoded = EncodedData.new
 		if @header.type != 'EXEC' or @segments.find { |i| i.type == 'INTERP' }
@@ -740,41 +788,18 @@ class ELF
 
 		@segments.delete_if { |s| s.type == 'INTERP' } if not @header.entry
 
-		prot_match = lambda { |seg, sec|
-			(sec.include?('WRITE') == seg.include?('W')) # and (sec.include?('EXECINSTR') == seg.include?('X'))
-		}
+		encode_make_segments_from_sections
 
-		# put every section in a segment
-		# assume addr-bound sections come first in @sections, and are addr-ordered
-		@sections.each { |sec|
-			if sec.flags and sec.flags.include? 'ALLOC'
-				if sec.addr or not seg = @segments.find { |seg_| seg_.type == 'LOAD' and not seg_.memsz and prot_match[seg_.flags, sec.flags] and
-						not @segments[@segments.index(seg_)+1..-1].find { |sseg|
-							sseg.type == 'LOAD' and o = Expression[sseg.vaddr, :-, [seg_.vaddr, :+, seg_.encoded.length+sec.encoded.length]].reduce and o.kind_of? ::Integer and o < 0
-						} }
-					seg = Segment.new
-					seg.type = 'LOAD'
-					seg.flags = ['R']
-					seg.flags << 'W' if sec.flags.include? 'WRITE'
-					seg.align = 0x1000
-					seg.encoded = EncodedData.new
-					seg.offset = new_label('segment_offset')
-					seg.vaddr = sec.addr || new_label('segment_address')
-					@segments << seg
-				end
-				seg.flags |= ['X'] if sec.flags.include? 'EXECINSTR'
-				seg.encoded.align sec.addralign if sec.addralign
-				sec.addr = Expression[seg.vaddr, :+, seg.encoded.length]
-				sec.offset = Expression[seg.offset, :+, seg.encoded.length]
-				seg.encoded << sec.encoded
-			end
-		}
+		loadsegs = @segments.find_all { |seg_| seg_.type == 'LOAD' }
+
 		# ensure PT_INTERP is mapped if present
 		if interp = @segments.find { |i| i.type == 'INTERP' }
-			if not seg = @segments.find { |seg_| seg_.type == 'LOAD' and not seg_.memsz and interp.flags & seg_.flags == interp.flags and
-					not @segments[@segments.index(seg_)+1..-1].find { |sseg|
-						sseg.type == 'LOAD' and o = Expression[sseg.vaddr, :-, [seg_.vaddr, :+, seg_.encoded.length+interp.encoded.length]].reduce and o.kind_of? ::Integer and o < 0
-					} }
+			if not seg = loadsegs.find { |seg_| not seg_.memsz and interp.flags & seg_.flags == interp.flags and
+					not loadsegs[loadsegs.index(seg_)+1..-1].find { |sseg|
+						o = Expression[sseg.vaddr, :-, [seg_.vaddr, :+, seg_.encoded.length+interp.encoded.length]].reduce
+						o.kind_of? ::Integer and o < 0
+					}
+				}
 				seg = Segment.new
 				seg.type = 'LOAD'
 				seg.flags = interp.flags.dup
@@ -782,6 +807,7 @@ class ELF
 				seg.encoded = EncodedData.new
 				seg.offset = new_label('segment_offset')
 				seg.vaddr = new_label('segment_address')
+				loadsegs << seg
 				@segments << seg
 			end
 			interp.vaddr = Expression[seg.vaddr, :+, seg.encoded.length]
@@ -791,12 +817,13 @@ class ELF
 		end
 
 		# ensure last PT_LOAD is writeable (used for bss)
-		seg = @segments.reverse.find { |seg_| seg_.type == 'LOAD' }
+		seg = loadsegs.last
 		if not seg or not seg.flags.include? 'W'
 			seg = Segment.new
 			seg.type = 'LOAD'
 			seg.flags = ['R', 'W']
 			seg.encoded = EncodedData.new
+			loadsegs << seg
 			@segments << seg
 		end
 
@@ -814,9 +841,9 @@ class ELF
 
 		# use variables in the first segment descriptor, to allow fixup later
 		# (when we'll be able to include the program header)
-		if first_seg = @segments.find { |seg_| seg_.type == 'LOAD' }
+		if first_seg = loadsegs.first
 			first_seg_oaddr = first_seg.vaddr	# section's vaddr depend on oaddr
-			first_seg_off = first_seg.offset
+			first_seg_off   = first_seg.offset
 			first_seg.vaddr  = new_label('segvaddr')
 			first_seg.offset = new_label('segoff')
 			first_seg.memsz  = new_label('segmemsz')
