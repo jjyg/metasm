@@ -722,13 +722,18 @@ class ELF
 		seclist = @sections.find_all { |sec| sec.addr.kind_of? Integer }.sort_by { |sec| sec.addr } | @sections
 		seclist.each { |sec|
 			next if not sec.flags.to_a.include? 'ALLOC'
-			next if sec.offset and @segments.find { |seg_|
-				# ignore sections with a good .offset wrt segments, we're just reencoding a good ELF
-				seg_.offset <= sec.offset and seg_.offset + seg_.memsz >= sec.offset + sec.size rescue nil
-			}
 
 			# check if we fit in an existing segment
 			loadsegs = @segments.find_all { |seg_| seg_.type == 'LOAD' }
+
+			if sec.addr.kind_of?(::Integer) and seg = loadsegs.find { |seg_|
+				seg_.vaddr.kind_of?(::Integer) and seg_.vaddr <= sec.addr and seg_.vaddr + seg_.memsz >= sec.addr + sec.size
+			}
+				# sections is already inside a segment: we're reencoding an ELF, just patch the section in the segment
+				seg.encoded[sec.addr - seg.vaddr, sec.size] = sec.encoded if sec.encoded
+				next
+			end
+
 			if not seg = loadsegs.find { |seg_|
 				sec.flags.to_a.include?('WRITE') == seg_.flags.to_a.include?('W') and
 				#sec.flags.to_a.include?('EXECINSTR') == seg_.flags.to_a.include?('X') and
@@ -890,11 +895,11 @@ class ELF
 				addr = ((@header.type == 'EXEC') ? 0x08048000 : 0)
 				binding[first_seg_oaddr] = addr + @encoded.length
 			end
-			binding[first_seg_off] = @encoded.length
+			binding[first_seg_off] = @encoded.length if not first_seg_off.kind_of? ::Integer
 			first_seg.encoded = @encoded << first_seg.encoded
 			@encoded = EncodedData.new
-			binding[first_seg.memsz] = first_seg.encoded.virtsize
-			binding[first_seg.filesz] = first_seg.encoded.rawsize
+			binding[first_seg.memsz] = first_seg.encoded.virtsize if not first_seg.memsz.kind_of? ::Integer
+			binding[first_seg.filesz] = first_seg.encoded.rawsize if not first_seg.filesz.kind_of? ::Integer
 		end
 
 		@segments.each { |seg_|
