@@ -715,6 +715,21 @@ class ELF
 		@relocations << r
 	end
 
+	# resets the fields of the elf headers that should be recalculated, eg phdr offset
+	def invalidate_header
+		@header.shoff = @header.shnum = nil
+		@header.phoff = @header.phnum = nil
+		@header.shstrndx = nil
+		@sections.to_a.each { |s|
+			s.name_p = nil
+			s.offset = nil
+		}
+		@segments.to_a.each { |s|
+			s.offset = nil
+		}
+		self
+	end
+
 	# put every ALLOC section in a segment, create segments if needed
 	# sections with a good offset within a segment are ignored
 	def encode_make_segments_from_sections
