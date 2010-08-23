@@ -218,6 +218,15 @@ class Disassembler
 		end
 	end
 
+	# disassembles one instruction at address
+	# returns nil if no instruction can be decoded there
+	# does not update any internal state of the disassembler, nor reuse the @decoded cache
+	def disassemble_instruction(addr)
+		if e = get_section_at(addr)
+			@cpu.decode_instruction(e[0], normalize(addr))
+		end
+	end
+
 	# returns the label associated to an addr, or nil if none exist
 	def get_label_at(addr)
 		e, b = get_section_at(addr, false)
