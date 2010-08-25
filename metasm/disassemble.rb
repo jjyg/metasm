@@ -160,11 +160,22 @@ class InstructionBlock
 	# for internal use only (block splitting): btt with an address
 	attr_accessor :backtracked_for
 
-	def initialize(address, edata, edata_ptr=nil)
-		edata_ptr ||= edata.ptr if edata
-		@address = address
-		@edata, @edata_ptr = edata, edata_ptr
+	# create a new InstructionBlock based at address
+	# also accepts a DecodedInstruction or an Array of them to initialize from
+	def initialize(arg0, edata=nil, edata_ptr=nil)
 		@list = []
+		case arg0
+		when DecodedInstruction
+			@address = arg0.address
+			add_di(arg0)
+		when Array
+			@address = arg0.first.address if not arg0.empty?
+			arg0.each { |di| add_di(di) }
+		else
+			@address = arg0
+		end
+		edata_ptr ||= edata ? edata.ptr : 0
+		@edata, @edata_ptr = edata, edata_ptr
 		@backtracked_for = []
 	end
 
