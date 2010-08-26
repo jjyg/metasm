@@ -1095,5 +1095,35 @@ class Disassembler
 
 		instance_eval File.read(plugin_filename)
 	end
+
+	# compose two code/instruction's backtrace_binding
+	# assumes bd1 is followed by bd2 in the code flow
+	# eg inc edi + push edi =>
+	#  { Ind[:esp, 4] => Expr[:edi + 1], :esp => Expr[:esp - 4], :edi => Expr[:edi + 1] }
+	# for longer sequences, eg di1 di2 di3, use compose(di1, compose(di2, di3)) (ie right assoc)
+	# XXX if bd1 writes to memory with a pointer that is modified in bd2, this function has to
+	# revert the change made by bd2, which only works with simple ptr addition now
+	def compose_bt_binding(bd1, bd2)
+		if bd1.kind_of? DecodedInstruction
+			bd1 = bd1.backtrace_binding ||= cpu.get_backtrace_binding(bd1)
+		end
+		if bd2.kind_of? DecodedInstruction
+			bd2 = bd2.backtrace_binding ||= cpu.get_backtrace_binding(bd2)
+		end
+		
+		reduce = lambda { |e| Expression[Expression[e].reduce] }
+		bd = {}
+		bd2.each { |k, v|
+			v = reduce[v.bind(bd1)]
+			if k.kind_of? Indirection
+				k = Indirection[reduce[k.pointer.bind(bd1)], k.len, k.origin]
+			end
+			bd[k] = v
+		}
+		(bd1.keys - bd.keys).each { |k|
+			bd[k] = reduce[bd1[k]]
+		}
+		bd
+	end
 end
 end
