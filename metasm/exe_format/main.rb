@@ -64,6 +64,7 @@ class ExeFormat
 
 	# creates a new object using the specified cpu, parses the asm source, and assemble
 	def self.assemble(cpu, source, file='<unk>', lineno=1)
+		source, cpu = cpu, source if source.kind_of? CPU
 		e = new(cpu)
 		e.assemble(source, file, lineno)
 		e
@@ -71,6 +72,7 @@ class ExeFormat
 
 	# same as #assemble, reads asm source from the specified file
 	def self.assemble_file(cpu, filename)
+		filename, cpu = cpu, filename if filename.kind_of? CPU
 		assemble(cpu, File.read(filename), filename, 1)
 	end
 
@@ -88,12 +90,14 @@ class ExeFormat
 
 	# creates a new object using the specified cpu, parse/compile/assemble the C source
 	def self.compile_c(cpu, source, file='<unk>', lineno=1)
+		source, cpu = cpu, source if source.kind_of? CPU
 		e = new(cpu)
 		e.compile_c(source, file, lineno)
 		e
 	end
 
 	def self.compile_c_file(cpu, filename)
+		filename, cpu = cpu, filename if filename.kind_of? CPU
 		compile_c(cpu, File.read(filename), filename, 1)
 	end
 
