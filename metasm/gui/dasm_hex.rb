@@ -377,6 +377,37 @@ class HexWidget < DrawableWidget
 		true
 	end
 
+	def keypress_ctrl(key)
+		case key
+		when ?f
+			if @focus_zone == :hex
+				prompt_search_hex
+			else
+				prompt_search_ascii
+			end
+		else return false
+		end
+		true
+	end
+
+	# pop a dialog, scans the sections for a hex pattern
+	def prompt_search_hex
+		inputbox('hex pattern to search (hex regexp, use .. for wildcard)') { |pat|
+			pat = pat.gsub(' ', '').gsub('..', '.').gsub(/[0-9a-f][0-9a-f]/i) { |o| "\\x#{o}" }
+			pat = Regexp.new(pat, Regexp::MULTILINE)
+			list = [['addr']] + @dasm.pattern_scan(pat).map { |a| [Expression[a]] }
+			listwindow("hex search #{pat}", list) { |i| focus_addr i[0] }
+		}
+	end
+
+	# pop a dialog, scans the sections for a regex
+	def prompt_search_ascii
+		inputbox('data pattern to search (regexp)') { |pat|
+			list = [['addr']] + @dasm.pattern_scan(/#{pat}/).map { |a| [Expression[a]] }
+			listwindow("data search #{pat}", list) { |i| focus_addr i[0] }
+		}
+	end
+
 	def key_left
 		if @focus_zone == :hex
 			if @caret_x_data > 0
