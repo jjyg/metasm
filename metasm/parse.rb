@@ -836,9 +836,14 @@ class IndExpression < Expression
 			e
 		end
 
+		# callback used to customize the parsing of /^([0-9]+)$/ tokens
+		# implicitely set by parse(expr) { cb }
+		# allows eg parsing '40000' as 0x40000 when relevant
+		attr_accessor :parse_cb
+
 		def parse_intfloat(lexer, tok)
 			case tok.raw
-			when /^([0-9]+)$/; tok.value = @parse_cb ? @parse_cb[$1] : $1.to_i
+			when /^([0-9]+)$/; tok.value = parse_cb ? @parse_cb[$1] : $1.to_i
 			when /^0x([0-9a-f]+)$/i, /^([0-9a-f]+)h$/i; tok.value = $1.to_i(16)
 			when /^0b([01]+)$/i; tok.value = $1.to_i(2)
 			end
