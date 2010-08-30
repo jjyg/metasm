@@ -658,6 +658,7 @@ class Disassembler
 
 	# returns a demangled C++ name
 	# from wgcc-2.2.2/undecorate.cpp
+	# TODO
 	def demangle_cppname(name)
 		ret = name
 		if name[0] == ??
@@ -685,6 +686,34 @@ class Disassembler
 		end
 		# TODO
 		ret
+	end
+
+	# scans all the sections raw for a given regexp
+	# return/yields all the addresses matching
+	# if yield returns nil/false, do not include the addr in the final result
+	# sections are scanned MB by MB, so this should work (slowly) on 4GB sections (eg debugger VM)
+	def pattern_scan(pat, chunksz=nil, margin=nil)
+		chunksz ||= 4*1024*1024	# scan 4MB at a time
+		margin ||= 65536	# add this much bytes at each chunk to find /pat/ over chunk boundaries
+
+		pat = Regexp.new(Regexp.escape(pat)) if pat.kind_of? ::String
+
+		found = []
+		@sections.each { |sec_addr, e|
+			chunkoff = 0
+			while chunkoff < e.data.length
+				chunk = e.data[chunkoff, chunksz+margin].to_str
+				off = 0
+				while match_off = (chunk[off..-1] =~ pat)
+					break if off+match_off >= chunksz
+					match_addr = sec_addr + chunkoff + off + match_off
+					found << match_addr if not block_given? or yield(match_addr)
+					off += match_off + 1
+				end
+				chunkoff += chunksz
+			end
+		}
+		found
 	end
 
 	# exports the addr => symbol map (see load_map)
