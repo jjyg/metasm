@@ -1130,8 +1130,9 @@ class Disassembler
 	# eg inc edi + push edi =>
 	#  { Ind[:esp, 4] => Expr[:edi + 1], :esp => Expr[:esp - 4], :edi => Expr[:edi + 1] }
 	# for longer sequences, eg di1 di2 di3, use compose(di1, compose(di2, di3)) (ie right assoc)
-	# XXX if bd1 writes to memory with a pointer that is modified in bd2, this function has to
+	# XXX if bd1 writes to memory with a pointer that is reused in bd2, this function has to
 	# revert the change made by bd2, which only works with simple ptr addition now
+	# XXX unhandled situations may be resolved using :unknown, or by returning incorrect values
 	def compose_bt_binding(bd1, bd2)
 		if bd1.kind_of? DecodedInstruction
 			bd1 = bd1.backtrace_binding ||= cpu.get_backtrace_binding(bd1)
@@ -1141,17 +1142,48 @@ class Disassembler
 		end
 		
 		reduce = lambda { |e| Expression[Expression[e].reduce] }
+
 		bd = {}
+
 		bd2.each { |k, v|
-			v = reduce[v.bind(bd1)]
+			bd[k] = reduce[v.bind(bd1)]
+		}
+
+		# for each pointer appearing in keys of bd1, we must infer from bd2 what final
+		# pointers should appear in bd
+		# eg 'mov [eax], 0  mov ebx, eax'  => { [eax] <- 0, [ebx] <- 0, ebx <- eax }
+		bd1.each { |k, v|
 			if k.kind_of? Indirection
-				k = Indirection[reduce[k.pointer.bind(bd1)], k.len, k.origin]
+				k.pointer.externals.each { |e|
+					# XXX this will break on nontrivial pointers or bd2
+					bd2.each { |k2, v2|
+						# we dont want to invert computation of flag_zero/carry etc (booh)
+						next if k2.to_s =~ /flag/
+
+						next if not v2.externals.include? e
+
+						# try to reverse the computation made upon 'e'
+						# only simple addition handled here
+						ptr = reduce[k.pointer.bind e => Expression[[k2, :-, v2], :+, e]]
+
+						# if bd2 does not rewrite e, duplicate the original pointer
+						if not bd2[e]
+							bd[k] ||= reduce[v]
+
+							# here we should not see 'e' in ptr anymore
+							ptr = Expression::Unknown if ptr.externals.include? e
+						else
+							# cant check if add reversion was successful..
+						end
+
+						bd[Indirection[reduce[ptr], k.len]] ||= reduce[v]
+					}
+				}
+			else
+				bd[k] ||= reduce[v]
 			end
-			bd[k] = v
 		}
-		(bd1.keys - bd.keys).each { |k|
-			bd[k] = reduce[bd1[k]]
-		}
+
 		bd
 	end
 end
