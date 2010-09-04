@@ -1136,6 +1136,7 @@ class Disassembler
 		oldgui = gui
 		@gui = nil
 		load_plugin(plugin_filename)
+	ensure
 		@gui = oldgui
 	end
 
