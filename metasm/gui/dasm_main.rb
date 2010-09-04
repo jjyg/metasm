@@ -749,6 +749,13 @@ class DasmWindow < Window
 				} if @dasm_widget
 			} if @dasm_widget
 		}
+		addsubmenu(iomenu, '_Save asm') {
+			savefile('chose asm file') { |file|
+				File.open(file, 'w') { |fd|
+					fd.puts @dasm_widget.dasm
+				} if @dasm_widget
+			} if @dasm_widget
+		}
 		addsubmenu(iomenu, 'Save _C') {
 			savefile('chose C file') { |file|
 				File.open(file, 'w') { |fd|
