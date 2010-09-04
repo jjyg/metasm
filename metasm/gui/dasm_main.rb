@@ -303,6 +303,20 @@ class DisasmWidget < ContainerChoiceWidget
 		listwindow("list of sections", list) { |i| focus_addr i[0] if i[0] != '0' or @dasm.get_section_at(0) }
 	end
 
+	def list_strings
+		list = [['addr', 'string']]
+		nexto = 0
+		@dasm.pattern_scan(/[\x20-\x7e]{6,}/m) { |o|
+			if o - nexto > 0
+				next unless s = @dasm.get_section_at(o)
+				str = s[0].data[s[0].ptr, 1024][/[\x20-\x7e]{6,}/m]
+				list << [o, str[0, 24].inspect]
+				nexto = o + str.length
+			end
+		}
+		listwindow("list of strings", list) { |i| focus_addr i[0] }
+	end
+
 	def list_xrefs(addr)
 		list = [['address', 'type', 'instr']]
 		@dasm.each_xref(addr) { |xr|
@@ -838,6 +852,7 @@ class DasmWindow < Window
 		addsubmenu(views, '_Hex') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :hex) }
 		addsubmenu(views, 'Co_verage') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :coverage) }
 		addsubmenu(views, '_Sections') { @dasm_widget.list_sections }
+		addsubmenu(views, 'St_rings') { @dasm_widget.list_strings }
 
 		addsubmenu(@menu, views, '_Views')
 	end
