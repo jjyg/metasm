@@ -1107,6 +1107,10 @@ class Disassembler
 		ret.compact.uniq
 	end
 
+	# loads a disassembler plugin script
+	# this is simply a ruby script instance_eval() in the disassembler
+	# the filename argument is autocompleted with '.rb' suffix, and also
+	#  searched for in the Metasmdir/samples/dasm-plugins subdirectory if not found in cwd
 	def load_plugin(plugin_filename)
 		if not File.exist?(plugin_filename)
  			if File.exist?(plugin_filename+'.rb')
@@ -1123,6 +1127,16 @@ class Disassembler
 		end
 
 		instance_eval File.read(plugin_filename)
+	end
+
+	# same as load_plugin, but hides the @gui attribute while loading, preventing the plugin do popup stuff
+	# this is useful when you want to load a plugin from another plugin to enhance the plugin's functionnality
+	# XXX this also prevents setting up kbd_callbacks etc..
+	def load_plugin_nogui(plugin_filename)
+		oldgui = gui
+		@gui = nil
+		load_plugin(plugin_filename)
+		@gui = oldgui
 	end
 
 	# compose two code/instruction's backtrace_binding
