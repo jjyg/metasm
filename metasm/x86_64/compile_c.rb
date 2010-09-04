@@ -743,15 +743,25 @@ class CCompiler < C::Compiler
 
 			instr 'mov', rax, l if lv != rax.val
 
+			if r.kind_of? Expression
+				instr 'push', r
+				rsp = Reg.from_str 'rsp'
+				r = ModRM.new(@cpusz, 64, nil, nil, rsp, nil)
+				need_pop = true
+			end
+
 			if type.specifier == :unsigned
 				instr 'mov', rdx, Expression[0]
 				instr 'div', r
 			else
+				# XXX cdq ?
 				instr 'mov', rdx, rax
 				instr 'sar', rdx, Expression[0x1f]
 				instr 'idiv', r
 			end
 			unuse r
+
+			instr 'add', rsp, 8 if need_pop
 
 			if op == 'div'
 				instr 'mov', l, rax if lv != rax.val
