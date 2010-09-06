@@ -136,12 +136,10 @@ class BinDiffWidget < Gui::DrawableWidget
 		@func1 = @func2 = @funcstat1 = @funcstat2 = nil
 		set_status('dasm 1') {
 			@dasm1.send(method, curaddr1)
-			@dasm1.function[curaddr1] = DecodedFunction.new
 			@dasm1.gui.focus_addr(curaddr1, :graph)
 		}
 		set_status('dasm 2') {
 			@dasm2.send(method, curaddr2)
-			@dasm2.function[curaddr2] = DecodedFunction.new
 			@dasm2.gui.focus_addr(curaddr2, :graph)
 		}
 		gui_update
@@ -169,6 +167,7 @@ class BinDiffWidget < Gui::DrawableWidget
 	# func addr => { funcblock => list of funcblock to }
 	def create_funcs(dasm)
 		f = {}
+		dasm.entrypoints.to_a.each { |ep| dasm.function[ep] ||= DecodedFunction.new }
 		dasm.function.each_key { |a|
 			next if not dasm.di_at(a)
 			f[a] = create_func(dasm, a)
@@ -329,6 +328,8 @@ end
 	def match_func(a1, a2, do_colorize=true, verb=true)
 		f1 = func1[a1]
 		f2 = func2[a2]
+		raise "dasm1 has no function at #{Expression[a1]}" if not f1
+		raise "dasm2 has no function at #{Expression[a2]}" if not f2
 		todo1 = [a1]
 		todo2 = [a2]
 		done1 = []
