@@ -1327,7 +1327,12 @@ EOH
 				else raise self, 'unknown array size'
 				end
 			when Pointer
-				@typesize[:ptr]
+				if var.kind_of? CExpression and not var.op and var.rexpr.kind_of? ::String
+					# sizeof("lolz") => 5
+					sizeof(nil, type.type) * (var.rexpr.length + 1)
+				else
+					@typesize[:ptr]
+				end
 			when Function
 				# raise
 				1	# gcc
