@@ -1169,6 +1169,7 @@ class Disassembler
 		# eg 'mov [eax], 0  mov ebx, eax'  => { [eax] <- 0, [ebx] <- 0, ebx <- eax }
 		bd1.each { |k, v|
 			if k.kind_of? Indirection
+				done = false
 				k.pointer.externals.each { |e|
 					# XXX this will break on nontrivial pointers or bd2
 					bd2.each { |k2, v2|
@@ -1176,6 +1177,8 @@ class Disassembler
 						next if k2.to_s =~ /flag/
 
 						next if not v2.externals.include? e
+
+						done = true
 
 						# try to reverse the computation made upon 'e'
 						# only simple addition handled here
@@ -1194,6 +1197,7 @@ class Disassembler
 						bd[Indirection[reduce[ptr], k.len]] ||= reduce[v]
 					}
 				}
+				bd[k] ||= reduce[v] if not done
 			else
 				bd[k] ||= reduce[v]
 			end
