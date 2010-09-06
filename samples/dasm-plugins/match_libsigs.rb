@@ -32,17 +32,18 @@ def initialize(file)
 
 	# compile a giant regex from the signatures
 	re = @sigs.values.uniq.map { |sig|
-		sig.gsub(/../) { |b| b == '..' ? '.' : Regexp.escape([b].pack('H*')) }
+		sig.gsub(/../) { |b| b == '..' ? '.' : ('\\x' + b) }
 	}.join('|')
 
-	@giantregex = Regexp.compile(re, Regexp::MULTILINE)
+	# 'n' is a magic flag to allow high bytes in the regex (ruby1.9 + utfail)
+	@giantregex = Regexp.new re, Regexp::MULTILINE, 'n'
 end
 
 # we found a match on str at off, identify the specific symbol that matched
 # on conflict, only return the first match
 def matched_findsym(str, off)
 	str = str[off, @siglenmax].unpack('H*').first
-	@sigs.find { |sym, sig| str =~ /^#{sig}/ }[0]
+	@sigs.find { |sym, sig| str =~ /^#{sig}/i }[0]
 end
 
 # matches the signatures against a raw string
