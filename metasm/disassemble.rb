@@ -1897,7 +1897,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		b ||= lambda { |l| puts l }
 		if l = edata.inv_export[off]
 			l_list = label_alias[addr].to_a.sort
-			l = l_list.pop
+			l = l_list.pop || l
 			l_list.each { |ll|
 				b["#{ll}:"]
 			}
