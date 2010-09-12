@@ -792,7 +792,7 @@ EOS
 		when String; str_ptr(val)
 		when Proc; cb = callback_alloc_cobj(formal, val) ; (opts[:cb_list] ||= []) << cb ; cb
 		# TODO when Hash, Array; if formal.type.pointed.kind_of? C::Struct; yadda yadda ; end
-		else val.to_i
+		else val.to_i rescue 0	# NaN, Infinity, etc
 		end
 
 		if opts[:expand_i64] and formal and formal.type.integral? and @cp.sizeof(formal) == 8 and host_cpu.size == 32
