@@ -12,36 +12,9 @@ require 'metasm'
 
 
 module Metasm
-module RubyHack
-	CACHEDIR = File.expand_path('~/.metasm/jit_cache/')
-	# basic C defs for ruby internals - 1.8 only !
-	RUBY_H = <<EOS
-typedef unsigned long VALUE;
-
-struct st_table;
-
-struct klass {
-	long flags;
-	VALUE klass;
-	struct st_table *iv_tbl;
-	struct st_table *m_tbl;
-	VALUE super;
-};
-#define RClass(x) ((struct klass *)(x))
-#define RModule RClass
-
-struct string {
-	long flags;
-	VALUE klass;
-	long len;
-	char *ptr;
-	union {
-		long capa;
-		VALUE shared;
-	} aux;
-};
-#define RString(x) ((struct string *)(x))
-
+class RubyHack < DynLdr
+	# basic C defs for ruby AST - ruby1.8 only !
+	RUBY_INTERN_NODE = <<EOS
 struct node {
 	long flags;
 	char *file;
@@ -51,36 +24,8 @@ struct node {
 };
 #define FL_USHIFT 11
 #define nd_type(n) ((((struct node*)n)->flags >> FL_USHIFT) & 0xff)
-
-extern VALUE rb_cObject;
-extern VALUE rb_eRuntimeError;
-#define Qfalse ((VALUE)0)
-#define Qtrue  ((VALUE)2)
-#define Qnil   ((VALUE)4)
-#define FIX2LONG(x) (((long)x) >> 1)
-
-VALUE rb_uint2inum(unsigned long);
-unsigned long rb_num2ulong(VALUE);
-
-VALUE rb_str_new(const char* ptr, long len);	// alloc + memcpy + 0term
-
-int rb_intern(char *);
-VALUE rb_funcall(VALUE recv, int id, int nargs, ...);
-VALUE rb_const_get(VALUE, int);
-VALUE rb_raise(VALUE, char*);
-void rb_define_method(VALUE, char *, VALUE (*)(), int);
-void rb_define_singleton_method(VALUE, char *, VALUE (*)(), int);
-int rb_to_id(VALUE);
-struct node* rb_method_node(VALUE klass, int id);
-VALUE rb_str_new(char*, int);
-
-
-// TODO setup those vars auto or define a standard .import/.export (elf/pe/macho)
-#ifdef METASM_TARGET_ELF
-asm .global "rb_cObject" undef type=NOTYPE;		// TODO fix elf encoder to not need this
-asm .global "rb_eRuntimeError" undef type=NOTYPE;
-#endif
 EOS
+
         NODETYPE = [
 		:method, :fbody, :cfunc, :scope, :block,
 		:if, :case, :when, :opt_n, :while,
@@ -105,115 +50,19 @@ EOS
 		:memo, :ifunc, :dsym, :attrasgn, :last
 	]
 
+	new_api_c 'void rb_define_method(uintptr_t, char *, void *, int)'
+	new_api_c 'void *rb_method_node(uintptr_t, int id)'
 
-	# create and load a ruby module that allows
-	# to use a ruby string as the binary code implementing a ruby method
-	# enable the use of .load_binary_method(class, methodname, string)
-	def self.load_bootstrap
-		c_source = <<EOS
-#define METASM_TARGET_ELF
-
-#{RUBY_H}
-
-void mprotect(int, int, int);
-asm .global mprotect undef;
-
-static VALUE set_class_method_raw(VALUE self, VALUE klass, VALUE methname, VALUE rawcode, VALUE nparams)
-{
-	int raw = (int)RString(rawcode)->ptr;
-	mprotect(raw & 0xfffff000, ((raw+RString(rawcode)->len+0xfff) & 0xfffff000) - (raw&0xfffff000), 7);	// RWX
-	rb_define_method(klass, RString(methname)->ptr, RString(rawcode)->ptr, FIX2LONG(nparams));
-	return Qtrue;
-}
-
-static VALUE memory_read(VALUE self, VALUE addr, VALUE len)
-{
-	return rb_str_new((char*)rb_num2ulong(addr), (int)rb_num2ulong(len));
-}
-
-static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
-{
-	char *src = RString(val)->ptr;
-	char *dst = (char*)rb_num2ulong(addr);
-	int len = RString(val)->len;
-	while (len--)
-		*dst++ = *src++;
-	return val;
-}
-
-static VALUE memory_read_int(VALUE self, VALUE addr)
-{
-	return rb_uint2inum(*(unsigned long*)rb_num2ulong(addr));
-}
-
-static VALUE memory_write_int(VALUE self, VALUE addr, VALUE val)
-{
-	*(unsigned long*)rb_num2ulong(addr) = rb_num2ulong(val);
-	return val;
-}
-
-extern void *dlsym(int handle, char *symname);
-#define RTLD_DEFAULT 0
-asm .global dlsym undef;
-
-static VALUE dl_dlsym(VALUE self, VALUE symname)
-{
-	return rb_uint2inum((unsigned)dlsym(RTLD_DEFAULT, RString(symname)->ptr));
-}
-
-static VALUE get_method_node_ptr(VALUE self, VALUE klass, VALUE id)
-{
-	return rb_uint2inum((unsigned)rb_method_node(klass, rb_to_id(id)));
-}
-
-static VALUE id2ref(VALUE self, VALUE id)
-{
-	return rb_num2ulong(id);
-}
-
-int Init_metasm_binload(void)
-{
-	VALUE metasm = rb_const_get(rb_cObject, rb_intern("Metasm"));
-	VALUE rubyhack = rb_const_get(metasm, rb_intern("RubyHack"));
-	rb_define_singleton_method(rubyhack, "set_class_method_raw", set_class_method_raw, 4);
-	rb_define_singleton_method(rubyhack, "memory_read", memory_read, 2);
-	rb_define_singleton_method(rubyhack, "memory_write", memory_write, 2);
-	rb_define_singleton_method(rubyhack, "memory_read_int", memory_read_int, 1);
-	rb_define_singleton_method(rubyhack, "memory_write_int", memory_write_int, 2);
-	rb_define_singleton_method(rubyhack, "get_method_node_ptr", get_method_node_ptr, 2);
-	rb_define_singleton_method(rubyhack, "dlsym", dl_dlsym, 1);
-	rb_define_singleton_method(rubyhack, "id2ref", id2ref, 1);
-	return 0;
-}
-asm .global Init_metasm_binload;
-
-asm .soname "metasm_binload";
-asm .nointerp;
-asm .pt_gnu_stack rw;
-EOS
-		
-		`mkdir -p #{CACHEDIR}` if not File.directory? CACHEDIR
-		stat = File.stat(__FILE__)	# may be relative, do it before chdir
-		Dir.chdir(CACHEDIR) {
-			if not File.exist? 'metasm_binload.so' or File.stat('metasm_binload.so').mtime < stat.mtime
-				compile_c(c_source, ELF).encode_file('metasm_binload.so')
-			end
-			require 'metasm_binload'
-		}
-		# TODO Windows support
-		# TODO PaX support (write + mmap, in user-configurable dir?)
+class << self
+	def set_class_method_raw(klass, meth, code, nparams)
+		memory_perm(str_ptr(code), code.length, 'rwx')
+		rb_define_method(rb_obj_to_value(klass), meth, code, nparams)
 	end
 
-	def self.cpu
-		# TODO check runtime environment etc
-		@cpu ||= Ia32.new
+	def get_method_node_ptr(klass, meth)
+		raise if not klass.kind_of? Class
+		rb_method_node(rb_obj_to_value(klass), meth.to_sym.to_int)
 	end
-
-	def self.compile_c(c_src, exeformat=Shellcode)
-		exeformat.compile_c(cpu, c_src)
-	end
-
-	load_bootstrap
 
 	# sets up rawopcodes as the method implementation for class klass
 	# rawopcodes must implement the expected ABI or things will break horribly
@@ -223,11 +72,11 @@ EOS
 	# -2     self, arg_ary
 	# -1     argc, VALUE*argv, self
 	# >=0    self, arg0, arg1..
-	def self.set_method_binary(klass, methodname, raw, nargs=-2)
+	def set_method_binary(klass, methodname, raw, nargs=-2)
 		if raw.kind_of? EncodedData
-			baseaddr = memory_read_int((raw.data.object_id << 1) + 12)
+			baseaddr = str_ptr(raw.data)
 			bd = raw.binding(baseaddr)
-			raw.reloc_externals.uniq.each { |ext| bd[ext] = dlsym(ext) or raise "unknown symbol #{ext}" }
+			raw.reloc_externals.uniq.each { |ext| bd[ext] = sym_addr(0, ext) or raise "unknown symbol #{ext}" }
 			raw.fixup(bd)
 			raw = raw.data
 		end
@@ -236,17 +85,12 @@ EOS
 	end
 
 	# same as load_binary_method but with an object and not a class
-	def self.set_object_method_binary(obj, *a)
+	def set_object_method_binary(obj, *a)
 		set_method_binary((class << obj ; self ; end), *a)
 	end
 
-	def self.object_pointer(obj)
-		(obj.object_id << 1) & 0xffffffff
-	end
-
-	def self.read_node(ptr, cur=nil)
+	def read_node(ptr, cur=nil)
 		return if ptr == 0
-
 
 		type = NODETYPE[(memory_read_int(ptr) >> 11) & 0xff]
 		v1 = memory_read_int(ptr+8)
@@ -299,7 +143,7 @@ EOS
 			s = memory_read(memory_read_int(v1+12), memory_read_int(v1+16))
 			[type, s]
 		when :lit
-			[type, id2ref(v1)]
+			[type, rb_value_to_obj(v1)]
 		when :args	# specialcased by rb_call0, invalid in rb_eval
 			cnt = v3	# nr of required args, copied directly to local_vars
 			opt = read_node(v1)	# :block to execute for each missing arg / with N optargs specified, skip N 1st statements
@@ -333,28 +177,7 @@ EOS
 		end
 	end
 
-	def self.[](a, l=nil)
-		if a.kind_of? Range
-			memory_read(a.begin, a.end-a.begin+(a.exclude_end? ? 0 : 1))
-		elsif l
-			memory_read(a, l)
-		else
-			memory_read_int(a)
-		end
-	end
-
-	def self.[]=(a, l, v=nil)
-		l, v = v, l if not v
-		if a.kind_of? Range
-			memory_write(a.begin, v)
-		elsif l
-			memory_write(a, v)
-		else
-			memory_write_int(a, v)
-		end
-	end
-
-	def self.compile_ruby(klass, meth)
+	def compile_ruby(klass, meth)
 		ptr = get_method_node_ptr(klass, meth)
 		ast = read_node(ptr)
 		require 'pp'
@@ -365,16 +188,17 @@ EOS
 		set_method_binary(klass, meth, raw, klass.instance_method(meth).arity)
 	end
 
-	def self.ruby_ast_to_c(ast)
+	def ruby_ast_to_c(ast)
 		return if ast[0] != :scope
-		cp = cpu.new_cparser
-		cp.parse RUBY_H
+		cp = host_cpu.new_cparser
+		cp.parse DynLdr::RUBY_H
 		cp.parse 'void meth(VALUE self) { }'
 		cp.toplevel.symbol['meth'].type.type = cp.toplevel.symbol['VALUE']
 		scope = cp.toplevel.symbol['meth'].initializer
 		RubyCompiler.new(cp).compile(ast, scope)
 		cp.dump_definition('meth')
 	end
+end
 end
 
 class RubyCompiler
@@ -485,13 +309,12 @@ end
 
 if __FILE__ == $0
 
-demo = ARGV.empty? ? :test_jit : :dump_ruby_ast
+demo = ARGV.empty? ? :test_jit : ARGV.first == 'asm' ? :inlineasm : :compile_ruby
 
 case demo	# chose your use case !
 when :inlineasm
-
-# cnt.times { sys_write str }
-src_asm = <<EOS
+	# cnt.times { sys_write str }
+	src_asm = <<EOS
 mov ecx, [ebp+8]
 again:
 push ecx
@@ -504,60 +327,59 @@ pop ecx
 loop again
 EOS
 
-src = <<EOS
-
+	src = <<EOS
 #{Metasm::RubyHack::RUBY_H}
 
 void doit(int, char*, int);
 VALUE foo(VALUE self, VALUE count, VALUE str) {
-	doit(FIX2LONG(count), RString(str)->ptr, RString(str)->len);
+	doit(VAL2INT(count), STR_PTR(str), STR_LEN(str));
 	return count;
 }
 
-void doit(int count, char *str, int strlen) {
-	asm(#{src_asm.inspect});
-}
+void doit(int count, char *str, int strlen) { asm(#{src_asm.inspect}); }
 EOS
 
-m = Metasm::RubyHack.compile_c(src).encode_string
+	m = Metasm::RubyHack.compile_c(src).encoded
 
-o = Object.new
-Metasm::RubyHack.set_object_method_binary(o, 'bar', m, 2)
+	o = Object.new
+	Metasm::RubyHack.set_object_method_binary(o, 'bar', m, 2)
 
-puts "test1"
-o.bar(4, "blabla\n")
-puts "test2"
-o.bar(2, "foo\n")
+	puts "test1"
+	o.bar(4, "blabla\n")
+
+	puts "test2"
+	o.bar(2, "foo\n")
 
 
+when :compile_ruby
+	abort 'need <class> <method>' if ARGV.length != 2
+	c = Metasm.const_get(ARGV.shift)
+	m = ARGV.shift
+	ptr = Metasm::RubyHack.get_method_node_ptr(c, m)
+	ast = Metasm::RubyHack.read_node(ptr)
+	require 'pp'
+	pp ast
+	c = Metasm::RubyHack.ruby_ast_to_c(ast)
+	puts c
 
-when :dump_ruby_ast
-
-abort 'need <class> <method> args' if ARGV.length != 2
-c = Metasm.const_get(ARGV.shift)
-m = ARGV.shift
-ptr = Metasm::RubyHack.get_method_node_ptr(c, m)
-require 'pp'
-pp Metasm::RubyHack.read_node(ptr)
 
 when :test_jit
-
-
-class Foo
-	def bla
-		i = 0
-		20_000_000.times { i += 1 }
-		i
+	class Foo
+		def bla
+			i = 0
+			20_000_000.times { i += 1 }
+			i
+		end
 	end
-end
 
-t0 = Time.now
-Metasm::RubyHack.compile_ruby(Foo, :bla)
-t1 = Time.now
-p Foo.new.bla
-t2 = Time.now
+	t0 = Time.now
+	Metasm::RubyHack.compile_ruby(Foo, :bla)
+	t1 = Time.now
+	p Foo.new.bla
+	t2 = Time.now
 
-puts "compile %.3fs  run %.3fs" % [t1-t0, t2-t1]
+	puts "compile %.3fs  run %.3fs" % [t1-t0, t2-t1]
+
 end
 
 end
