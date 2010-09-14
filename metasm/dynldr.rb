@@ -1134,6 +1134,9 @@ EOS
 		# on PaX-enabled systems, this may need a non-mprotect-restricted ruby interpreter
 		def self.memory_perm(addr, len, perm)
 			perm = perm.to_s.downcase
+			len += (addr & 0xfff) + 0xfff
+			len &= ~0xfff
+			addr &= ~0xfff
 			p = 0
 			p |= PROT_READ if perm.include? 'r'
 			p |= PROT_WRITE if perm.include? 'w'
