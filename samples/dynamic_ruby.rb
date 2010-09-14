@@ -25,6 +25,17 @@ struct node {
 #define FL_USHIFT 11
 #define nd_type(n) ((((struct node*)n)->flags >> FL_USHIFT) & 0xff)
 EOS
+	RUBY_H = <<EOS
+#{DynLdr::RUBY_H}
+
+VALUE rb_iv_get(VALUE, char*);
+VALUE rb_iv_set(VALUE, char*, VALUE);
+VALUE rb_ivar_defined(VALUE, int);
+
+// TODO
+VALUE rb_new_ary(char*);
+VALUE rb_new_hash(char*);
+EOS
 
         NODETYPE = [
 		:method, :fbody, :cfunc, :scope, :block,
@@ -116,7 +127,7 @@ class << self
 			[type, {:localnr => memory_read_int(v1),	# nr of local vars (+2 for $_/$~)
 				:cref => v2},	# node, starting point for const resolution
 				read_node(v3)]
-		when :call, :fcall, :vcall
+		when :call, :dstr, :fcall, :vcall
 			# TODO check fcall/vcall
 			ret = [type, read_node(v1), v2.id2name]
 			if args = read_node(v3)
@@ -131,7 +142,9 @@ class << self
 		when :iasgn, :dasgn, :dasgn_curr, :gasgn, :cvasgn
 			[type, v1.id2name, read_node(v2)]
 		when :masgn
-			[type, read_node(v1), read_node(v2)]	# multiple assignment: a, b = 42 / lambda { |x, y| }.call(1, 2)
+			# multiple assignment: a, b = 42 / lambda { |x, y| }.call(1, 2)
+			# v3 = remainder storage (a, b, *c = ary => v3=c)
+			[type, read_node(v1), read_node(v2), read_node(v3)]
 		when :attrasgn
 			[type, ((v1 == 1) ? :self : read_node(v1)), v2.id2name, read_node(v3)]
 		when :lvar
@@ -167,10 +180,18 @@ class << self
 			[type, args, body, subj]
 		when :while
 			[type, read_node(v1), read_node(v2), v3]
-		when :return, :break, :next
+		when :return, :break, :next, :defined
+			[type, read_node(v1)]
+		when :to_ary
 			[type, read_node(v1)]
 		when :colon3	# ::Stuff
 			[type, v2.id2name]
+		when :method
+			[type, v1, read_node(v2), v3]
+		when :alias
+			[type, v1, v2, v3]	# ?
+		when :evstr
+			[type, v1, read_node(v2), v3]
 		else
 			puts "unhandled #{type.inspect}"
 			[type, v1, v2, v3]
@@ -191,7 +212,7 @@ class << self
 	def ruby_ast_to_c(ast)
 		return if ast[0] != :scope
 		cp = host_cpu.new_cparser
-		cp.parse DynLdr::RUBY_H
+		cp.parse RUBY_H
 		cp.parse 'void meth(VALUE self) { }'
 		cp.toplevel.symbol['meth'].type.type = cp.toplevel.symbol['VALUE']
 		scope = cp.toplevel.symbol['meth'].initializer
@@ -220,6 +241,11 @@ class RubyCompiler
 		scope.statements << C::Return.new(ast_to_c(ast[2], scope))
 	end
 
+	def fcall(fname, *arglist)
+		args = arglist.map { |a| (a.kind_of?(Integer) or a.kind_of?(String)) ? [a] : a }
+		C::CExpression[@cp.toplevel.symbol[fname], :funcall, args]
+	end
+
 	def value
 		@cp.toplevel.symbol['VALUE']
 	end
@@ -228,12 +254,16 @@ class RubyCompiler
 		@scope.symbol["local_#{n}"]
 	end
 
+	def rb_self
+		@scope.symbol['self']
+	end
+
 	def rb_intern(n)
-		C::CExpression[@cp.toplevel.symbol['rb_intern'], :funcall, [n]]
+		fcall('rb_intern', n)
 	end
 
 	def rb_funcall(recv, meth, *args)
-		C::CExpression[@cp.toplevel.symbol['rb_funcall'], :funcall, [recv, rb_intern(meth), [args.length], *args]]
+		fcall('rb_funcall', recv, rb_intern(meth), args.length, *args)
 	end
 
 	def ast_to_c(ast, scope)
@@ -250,12 +280,25 @@ class RubyCompiler
 		when :lit
 			case ast[1]
 			when Symbol
-				rb_intern(ast[1])
+				rb_intern(ast[1].to_s.inspect)
 			else	# true/false/nil/fixnum
 				ast[1].object_id
 			end
+		when :self
+			rb_self
 		when :str
-			C::CExpression[@cp.toplevel.symbol['rb_str_new'], :funcall, [ast[1], [ast[1].length]]]
+			fcall('rb_str_new', ast[1], ast[1].length)
+		when :ivar
+			fcall('rb_iv_get', rb_self, ast[1])
+		when :iasgn
+			tmp = C::Variable.new('itmp', value)
+			if not scope.symbol_ancestors['itmp']
+				scope.symbol['itmp'] = tmp
+				scope.statements << C::Declaration.new(tmp)
+			end
+			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
+			scope.statements << fcall('rb_iv_set', rb_self, ast[1], tmp)
+			tmp
 		when :iter
 			b_args, b_body, b_recv = ast[1, 3]
 			if b_recv[0] == :call and b_recv[2] == 'times'	# TODO check its Fixnum#times
@@ -270,7 +313,7 @@ class RubyCompiler
 				ast_to_c(b_body, body)
 				recv
 			else
-				puts "unsupported #{ast.inspect}"
+				puts "unsupported iter #{ast.inspect}"
 				nil.object_id
 			end
 		when :call
@@ -292,13 +335,84 @@ class RubyCompiler
 			else
 				f
 			end
-		when nil, :nil, :args
+		when :vcall, :fcall
+			# function, no explicit receiver (ie can be a private method)
+			# vcall = no args, fcall = args?
+			rb_funcall(rb_self, ast[2], *ast[3..-1].map { |a| ast_to_c(a, scope) })
+		when :if
+			# XXX 'tmp' reuse/reentry
+			tmp = C::Variable.new('tmp', value)
+			if not scope.symbol_ancestors['tmp']
+				scope.symbol['tmp'] = tmp
+				scope.statements << C::Declaration.new(tmp)
+			end
+
+			cnd = ast_to_c(ast[1], scope)
+			cnd = C::CExpression[[cnd, :'!=', nil.object_id], :'&&', [cnd, :'!=', false.object_id]]
+
+			tbdy = C::Block.new(scope)
+			thn = ast_to_c(ast[2], tbdy)
+			tbdy.statements << C::CExpression[tmp, :'=', thn]
+			ebdy = C::Block.new(scope)
+			els = ast_to_c(ast[3], ebdy)
+			tbdy.statements << C::CExpression[tmp, :'=', els]
+			scope.statements << C::If.new(cnd, tbdy, ebdy)
+			tmp
+		when :and
+			C::CExpression[ast_to_c(ast[1], scope), :'&&', ast_to_c(ast[2], scope), C::BaseType.new(:int)]
+		when :or
+			C::CExpression[ast_to_c(ast[1], scope), :'||', ast_to_c(ast[2], scope), C::BaseType.new(:int)]
+		when :not
+			C::CExpression[:'!', ast_to_c(ast[1], scope)]
+		when nil, :args
 			nil.object_id
+		when :nil, :true, :false
+			ast[0].object_id
+		when :const
+			# XXX NilClass..
+			mycls = C::CExpression[[rb_self, C::Pointer.new(@cp.toplevel.struct['rb_string_t'])], :'->', 'klass']
+			fcall('rb_const_get', mycls, rb_intern(ast[1]))
+		when :array
+			# TODO
+			#fcall('rb_new_ary')
+			#ast[1..-1].each { |e|
+			#	ary.concat e
+			#}
+			scope.statements << fcall('rb_new_ary', ast.inspect)
+			nil.object_id
+		when :hash
+			#fcall('rb_new_hash')
+			#k = nil
+			#ast[1..-1].each { |e|
+			#	if not k
+			#		k = e
+			#	else
+			#		h.assoc[k, e]
+			#		k = nil
+			#	end
+			#}
+			scope.statements << fcall('rb_new_hash', ast.inspect)
+			nil.object_id
+		when :dstr
+			#fcall('rb_str_new')
+			#rb_str_cat(str, ast[1])
+			#ast[3..-1].each { |s| rb_str_cat(str, s) }
+			C::CExpression[ast.inspect]
+		when :defined
+			case ast[1][0]
+			when :ivar
+				p ast[1][1]
+				fcall('rb_ivar_defined', rb_self, rb_intern(ast[1][1]))
+			else 
+				puts "unsupported defined? #{ast.inspect}"
+				fcall('rb_iv_defined', ast[1].inspect)
+			end
+		#when :masgn # parallel assignment
 		else
 			puts "unsupported #{ast.inspect}"
 			nil.object_id
 		end
-		ret = [ret] if ret.kind_of? Integer
+		ret = [ret] if ret.kind_of? Integer or ret.kind_of? String
 		C::CExpression[ret, value]
 	end
 end
