@@ -31,6 +31,8 @@ EOS
 VALUE rb_iv_get(VALUE, char*);
 VALUE rb_iv_set(VALUE, char*, VALUE);
 VALUE rb_ivar_defined(VALUE, int);
+VALUE rb_gvar_get(char*);
+VALUE rb_gvar_set(char*, VALUE);
 
 // TODO
 VALUE rb_new_ary(char*);
@@ -124,7 +126,7 @@ class << self
 			[type, {:fptr => v1,	# c func pointer
 				:arity => v2}]
 		when :scope
-			[type, {:localnr => memory_read_int(v1),	# nr of local vars (+2 for $_/$~)
+			[type, {:localnr => (v1 != 0 ? memory_read_int(v1) : 0),	# nr of local vars (+2 for $_/$~)
 				:cref => v2},	# node, starting point for const resolution
 				read_node(v3)]
 		when :call, :dstr, :fcall, :vcall
@@ -214,9 +216,8 @@ class << self
 		cp = host_cpu.new_cparser
 		cp.parse RUBY_H
 		cp.parse 'void meth(VALUE self) { }'
-		cp.toplevel.symbol['meth'].type.type = cp.toplevel.symbol['VALUE']
-		scope = cp.toplevel.symbol['meth'].initializer
-		RubyCompiler.new(cp).compile(ast, scope)
+		cp.toplevel.symbol['meth'].type.type = cp.toplevel.symbol['VALUE']	# return type = VALUE, avoid 'missing return statement' warning
+		RubyCompiler.new(cp).compile(ast, cp.toplevel.symbol['meth'])
 		cp.dump_definition('meth')
 	end
 end
@@ -227,56 +228,138 @@ class RubyCompiler
 		@cp = cp
 	end
 
-	def compile(ast, scope)
-		@scope = scope
-		ast[1][:localnr].times { |lnr|
-			next if lnr < 2	# TODO check usage of $~ / $_
-			# TODO args
-			# TODO analyse to find numeric locals (to avoid useless INT2FIX)
-			l = C::Variable.new("local_#{lnr}", value)
-			l.initializer = C::CExpression[[nil.object_id], l.type]
-			scope.symbol[l.name] = l
-			scope.statements << C::Declaration.new(l)
-		}
-		scope.statements << C::Return.new(ast_to_c(ast[2], scope))
+	def compile(ast, func)
+		# TODO func args (incl varargs etc)
+		# TODO handle arbitrary block/yield constructs
+		# TODO analyse to find/optimize numeric locals that never need a ruby VALUE (ie native int vs INT2FIX)
+		# TODO detect block/closure exported out of the func & abort compilation
+		@scope = func.initializer
+		@scope.statements << C::Return.new(ast_to_c(ast[2], @scope))
 	end
 
+	# create a C::CExpr[toplevel.symbol[name], :funcall, args]
+	# casts int/strings in arglist to CExpr
 	def fcall(fname, *arglist)
 		args = arglist.map { |a| (a.kind_of?(Integer) or a.kind_of?(String)) ? [a] : a }
 		C::CExpression[@cp.toplevel.symbol[fname], :funcall, args]
 	end
 
+	# the VALUE typedef
 	def value
 		@cp.toplevel.symbol['VALUE']
 	end
 
-	def local(n)
-		@scope.symbol["local_#{n}"]
+	# declare a new function variable
+	# no initializer if init == :none
+	def declare_newvar(name, initializer)
+		v = C::Variable.new(name, value)
+		v.initializer = initializer if initializer != :none
+		@scope.symbol[v.name] = v
+		@scope.statements << C::Declaration.new(v)
+		v
 	end
 
+	# retrieve or create a local var
+	# pass :none to avoid initializer
+	def get_var(name, initializer=:none)
+		name = name.gsub(/[^\w]/, '_')
+		@scope.symbol[name] ||= declare_newvar(name, initializer || C::CExpression[[nil.object_id], value])
+	end
+
+	# create a new temporary variable
+	# XXX put_var ?
+	def get_new_tmp_var(base=nil)
+		@tmp_var_id ||= 0
+		get_var("tmp_#{"#{base}_" if base}#{@tmp_var_id += 1}")
+	end
+
+	# retrieve/create a new local variable with optionnal initializer
+	def local(n, init=nil)
+		get_var "local_#{n}", init
+	end
+
+	# retrieve/create a new dynamic variable (block argument/variable)
+	# pass :none to avoid initializer
+	def dvar(n, init=nil)
+		get_var "dvar_#{n}", init
+	end
+
+	# retrieve self (1st func arg)
 	def rb_self
 		@scope.symbol['self']
 	end
 
+	# call rb_intern on a string
 	def rb_intern(n)
 		fcall('rb_intern', n)
 	end
 
+	# create a rb_funcall construct
 	def rb_funcall(recv, meth, *args)
 		fcall('rb_funcall', recv, rb_intern(meth), args.length, *args)
 	end
 
-	def ast_to_c(ast, scope)
+	# ruby bool test of a var
+	# assigns to a temporary var, and check against false/nil
+	def rb_test(expr, scope)
+		if nil.object_id == 0 or false.object_id == 0	# just to be sure
+			nf = nil.object_id | false.object_id
+			C::CExpression[[expr, :|, nf], :'!=', nf]
+		else
+			if expr.kind_of? C::Variable
+				tmp = expr
+			else
+				tmp = get_new_tmp_var('test')
+				scope.statements << C::CExpression[tmp, :'=', expr]
+			end
+			C::CExpression[[tmp, :'!=', nil.object_id], :'&&', [tmp, :'!=', false.object_id]]
+		end
+	end
+
+
+	# the recursive AST to C compiler
+	# may append C statements to scope
+	# returns the C::CExpr holding the VALUE of the current ruby statement
+	# want_value is an optionnal hint as to the returned VALUE is needed or not
+	# eg to simplify :if encoding unless we have 'foo = if 42;..'
+	def ast_to_c(ast, scope, want_value = true)
 		ret = 
 		case ast.to_a[0]
 		when :block
-			ast[1..-1].map { |a| ast_to_c(a, scope) }.last
-		when :lasgn
-			l = local(ast[1])
-			scope.statements << C::CExpression[l, :'=', ast_to_c(ast[2], scope)]
-			l
+			if ast[1]
+				ast[1..-2].each { |a| ast_to_c(a, scope, false) }
+				ast_to_c(ast.last, scope, want_value)
+			end
+
 		when :lvar
 			local(ast[1])
+		when :lasgn
+			l = local(ast[1], :none)
+			scope.statements << C::CExpression[l, :'=', ast_to_c(ast[2], scope)]
+			l
+		when :ivar
+			fcall('rb_iv_get', rb_self, ast[1])
+		when :iasgn
+			if want_value
+				tmp = get_var("ivar_#{ast[1]}")
+				scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
+				scope.statements << fcall('rb_iv_set', rb_self, ast[1], tmp)
+				tmp
+			else
+				scope.statements << fcall('rb_iv_set', rb_self, ast[1], ast_to_c(ast[2], scope))
+			end
+		when :gvar
+			fcall('rb_gvar_get', ast[1])
+		when :gasgn
+			if want_value
+				tmp = get_var("gvar_#{ast[1]}")
+				scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
+				scope.statements << fcall('rb_gvar_set', ast[1], tmp)
+				tmp
+			else
+				scope.statements << fcall('rb_gvar_set', ast[1], ast_to_c(ast[2], scope))
+			end
+
 		when :lit
 			case ast[1]
 			when Symbol
@@ -288,17 +371,11 @@ class RubyCompiler
 			rb_self
 		when :str
 			fcall('rb_str_new', ast[1], ast[1].length)
-		when :ivar
-			fcall('rb_iv_get', rb_self, ast[1])
-		when :iasgn
-			tmp = C::Variable.new('itmp', value)
-			if not scope.symbol_ancestors['itmp']
-				scope.symbol['itmp'] = tmp
-				scope.statements << C::Declaration.new(tmp)
-			end
-			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
-			scope.statements << fcall('rb_iv_set', rb_self, ast[1], tmp)
-			tmp
+		when :array
+			fcall('rb_new_ary', ast[1].inspect)
+		when :hash
+			fcall('rb_new_hash', ast[1].inspect)
+
 		when :iter
 			b_args, b_body, b_recv = ast[1, 3]
 			if b_recv[0] == :call and b_recv[2] == 'times'	# TODO check its Fixnum#times
@@ -308,91 +385,76 @@ class RubyCompiler
 				init = C::Block.new(scope)
 				init.symbol[cntr.name] = cntr
 				body = C::Block.new(init)
-				scope.statements << C::For.new(init, C::CExpression[cntr, :<, [recv, :>>, 1]], C::CExpression[:'++', cntr], body)
 				body.symbol[cntr.name] = cntr
 				ast_to_c(b_body, body)
+				scope.statements << C::For.new(init, C::CExpression[cntr, :<, [recv, :>>, 1]], C::CExpression[:'++', cntr], body)
 				recv
 			else
-				puts "unsupported iter #{ast.inspect}"
+				puts "unsupported :iter", ast[1].inspect, ast[2].inspect, ast[3].inspect
 				nil.object_id
 			end
-		when :call
-			f = rb_funcall(ast_to_c(ast[1], scope), ast[2], *ast[3..-1].map { |a| ast_to_c(a, scope) })
-			case ast[2]
-			when '+', '-'
-				tmp = C::Variable.new('tmp', value)
-				if not scope.symbol_ancestors['tmp']
-					scope.symbol['tmp'] = tmp
-					scope.statements << C::Declaration.new(tmp)
-				end
-				a1 = [ast_to_c(ast[1], scope), C::BaseType.new(:int)]
-				a3 = [ast_to_c(ast[3], scope), C::BaseType.new(:int)]
-				scope.statements <<
-				C::If.new(C::CExpression[[a1, :&, a3], :&, 1],	# XXX overflow to Bignum
-					  C::CExpression[tmp, :'=', [a1, ast[2].to_sym, [a3, :-, [1]]]],
-					  C::CExpression[tmp, :'=', f])
+
+		when :call, :vcall, :fcall
+			recv = ((ast[0] == :call) ? ast_to_c(ast[1], scope) : rb_self)
+			args = ast[3..-1].map { |a| ast_to_c(a, scope) }
+			f = rb_funcall(recv, ast[2], *args)
+			if want_value
+				tmp = get_new_tmp_var('call')
+				scope.statements << C::CExpression[tmp, :'=', f]
 				tmp
 			else
-				f
-			end
-		when :vcall, :fcall
-			# function, no explicit receiver (ie can be a private method)
-			# vcall = no args, fcall = args?
-			rb_funcall(rb_self, ast[2], *ast[3..-1].map { |a| ast_to_c(a, scope) })
-		when :if
-			# XXX 'tmp' reuse/reentry
-			tmp = C::Variable.new('tmp', value)
-			if not scope.symbol_ancestors['tmp']
-				scope.symbol['tmp'] = tmp
-				scope.statements << C::Declaration.new(tmp)
+				scope.statements << f
 			end
 
-			cnd = ast_to_c(ast[1], scope)
-			cnd = C::CExpression[[cnd, :'!=', nil.object_id], :'&&', [cnd, :'!=', false.object_id]]
+		when :if
+			cnd = rb_test(ast_to_c(ast[1], scope), scope)
 
 			tbdy = C::Block.new(scope)
-			thn = ast_to_c(ast[2], tbdy)
-			tbdy.statements << C::CExpression[tmp, :'=', thn]
+			thn = ast_to_c(ast[2], tbdy, want_value)
 			ebdy = C::Block.new(scope)
-			els = ast_to_c(ast[3], ebdy)
-			tbdy.statements << C::CExpression[tmp, :'=', els]
+			els = ast_to_c(ast[3], ebdy, want_value)
+
 			scope.statements << C::If.new(cnd, tbdy, ebdy)
-			tmp
+
+			if want_value
+				tmp = get_new_tmp_var('if')
+				tbdy.statements << C::CExpression[tmp, :'=', thn]
+				ebdy.statements << C::CExpression[tmp, :'=', els]
+				tmp
+			end
 		when :and
-			C::CExpression[ast_to_c(ast[1], scope), :'&&', ast_to_c(ast[2], scope), C::BaseType.new(:int)]
+			tmp = get_new_tmp_var('and')
+			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[1], scope)]
+			t = C::Block.new(scope)
+			t.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], t)]
+			scope.statements << C::If.new(rb_test(tmp, scope), t, nil)
+			tmp
 		when :or
-			C::CExpression[ast_to_c(ast[1], scope), :'||', ast_to_c(ast[2], scope), C::BaseType.new(:int)]
+			tmp = get_new_tmp_var('or')
+			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[1], scope)]
+			t = C::Block.new(scope)
+			e = C::Block.new(scope)
+			e.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], e)]
+			scope.statements << C::If.new(rb_test(tmp, scope), t, e)
+			tmp
 		when :not
-			C::CExpression[:'!', ast_to_c(ast[1], scope)]
+			tmp = get_new_tmp_var('not')
+			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[1], scope)]
+			t = C::CExpression[tmp, :'=', [[false.object_id], value]]
+			e = C::CExpression[tmp, :'=', [[true.object_id], value]]
+			scope.statements << C::If.new(rb_test(tmp, scope), t, e)
+			tmp
+		when :return
+			scope.statements << C::Return.new(ast_to_c(ast[1], scope))
+			nil.object_id
 		when nil, :args
 			nil.object_id
 		when :nil, :true, :false
 			ast[0].object_id
 		when :const
 			# XXX NilClass..
-			mycls = C::CExpression[[rb_self, C::Pointer.new(@cp.toplevel.struct['rb_string_t'])], :'->', 'klass']
+			mycls = C::CExpression[[[rb_self], C::Pointer.new(@cp.toplevel.struct['rb_string_t'])], :'->', 'klass']
 			fcall('rb_const_get', mycls, rb_intern(ast[1]))
-		when :array
-			# TODO
-			#fcall('rb_new_ary')
-			#ast[1..-1].each { |e|
-			#	ary.concat e
-			#}
-			scope.statements << fcall('rb_new_ary', ast.inspect)
-			nil.object_id
-		when :hash
-			#fcall('rb_new_hash')
-			#k = nil
-			#ast[1..-1].each { |e|
-			#	if not k
-			#		k = e
-			#	else
-			#		h.assoc[k, e]
-			#		k = nil
-			#	end
-			#}
-			scope.statements << fcall('rb_new_hash', ast.inspect)
-			nil.object_id
 		when :dstr
 			#fcall('rb_str_new')
 			#rb_str_cat(str, ast[1])
@@ -412,8 +474,11 @@ class RubyCompiler
 			puts "unsupported #{ast.inspect}"
 			nil.object_id
 		end
-		ret = [ret] if ret.kind_of? Integer or ret.kind_of? String
-		C::CExpression[ret, value]
+
+		if want_value
+			ret = [ret] if ret.kind_of? Integer or ret.kind_of? String
+			C::CExpression[ret, value]
+		end
 	end
 end
 end
