@@ -31,6 +31,8 @@ EOS
 VALUE rb_iv_get(VALUE, char*);
 VALUE rb_iv_set(VALUE, char*, VALUE);
 VALUE rb_ivar_defined(VALUE, int);
+VALUE rb_cvar_get(VALUE, int);
+VALUE rb_cvar_set(VALUE, int, VALUE, int);
 VALUE rb_gvar_get(char*);
 VALUE rb_gvar_set(char*, VALUE);
 
@@ -290,6 +292,12 @@ class RubyCompiler
 		@scope.symbol['self']
 	end
 
+	# retrieve the current class, from self->klass
+	# XXX will segfault with self.kind_of? Fixnum/true/false/nil/sym
+	def rb_selfclass
+		C::CExpression[[[rb_self], C::Pointer.new(value)], :'[]', [1]]
+	end
+
 	# call rb_intern on a string
 	def rb_intern(n)
 		get_var("intern_#{n}", fcall('rb_intern', n))
@@ -340,6 +348,13 @@ class RubyCompiler
 			st = ast_to_c(ast[2], scope, l)
 			scope.statements << C::CExpression[l, :'=', st] if st != l
 			l
+		when :dvar
+			dvar(ast[1])
+		when :dasgn_curr
+			l = dvar(ast[1], :none)
+			st = ast_to_c(ast[2], scope, l)
+			scope.statements << C::CExpression[l, :'=', st] if st != l
+			l
 		when :ivar
 			fcall('rb_iv_get', rb_self, ast[1])
 		when :iasgn
@@ -350,6 +365,17 @@ class RubyCompiler
 				tmp
 			else
 				scope.statements << fcall('rb_iv_set', rb_self, ast[1], ast_to_c(ast[2], scope))
+			end
+		when :cvar
+			fcall('rb_cvar_get', rb_selfclass, rb_intern(ast[1]))
+		when :cvasgn
+			if want_value
+				tmp = get_new_tmp_var("cvar_#{ast[1]}", want_value)
+				scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
+				scope.statements << fcall('rb_cvar_set', rb_selfclass, rb_intern(ast[1]), tmp, false.object_id)
+				tmp
+			else
+				scope.statements << fcall('rb_cvar_set', rb_selfclass, rb_intern(ast[1]), ast_to_c(ast[2], scope), false.object_id)
 			end
 		when :gvar
 			fcall('rb_gvar_get', ast[1])
@@ -386,6 +412,9 @@ class RubyCompiler
 				cntr = get_new_tmp_var('cntr')
 				cntr.type = C::BaseType.new(:int)
 				body = C::Block.new(scope)
+				if b_args and b_args[0] == :dasgn_curr	# [:masgn, [:array, [:dasgn_curr], [:lasgn]]]
+					body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [[cntr, :<<, 1], :|, 1]]
+				end
 				ast_to_c(b_body, body)
 				scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, [recv, :>>, 1]], C::CExpression[:'++', cntr], body)
 				recv
@@ -395,6 +424,9 @@ class RubyCompiler
 			end
 
 		when :call, :vcall, :fcall
+			if v = optimize_call(ast, scope, want_value)
+				return v
+			end
 			recv = ((ast[0] == :call) ? ast_to_c(ast[1], scope) : rb_self)
 			args = ast[3..-1].map { |a| ast_to_c(a, scope) }
 			f = rb_funcall(recv, ast[2], *args)
@@ -411,15 +443,15 @@ class RubyCompiler
 
 			tbdy = C::Block.new(scope)
 			thn = ast_to_c(ast[2], tbdy, want_value)
-			ebdy = C::Block.new(scope)
+			ebdy = C::Block.new(scope) if ast[3]
 			els = ast_to_c(ast[3], ebdy, want_value)
 
 			scope.statements << C::If.new(cnd, tbdy, ebdy)
 
 			if want_value
 				tmp = get_new_tmp_var('if', want_value)
-				tbdy.statements << C::CExpression[tmp, :'=', thn]
-				ebdy.statements << C::CExpression[tmp, :'=', els]
+				tbdy.statements << C::CExpression[tmp, :'=', thn] if tmp != thn
+				ebdy.statements << C::CExpression[tmp, :'=', els] if ast[3] and tmp != els
 				tmp
 			end
 		when :and
@@ -449,12 +481,17 @@ class RubyCompiler
 			nil.object_id
 		when nil, :args
 			nil.object_id
-		when :nil, :true, :false
-			ast[0].object_id
+		when :nil
+			nil.object_id
+		when :false
+			false.object_id
+		when :true
+			true.object_id
 		when :const
-			# XXX NilClass..
-			mycls = C::CExpression[[[rb_self], C::Pointer.new(@cp.toplevel.struct['rb_string_t'])], :'->', 'klass']
-			fcall('rb_const_get', mycls, rb_intern(ast[1]))
+			fcall('rb_const_get', rb_selfclass, rb_intern(ast[1]))
+		when :colon3
+			# XXX rb_cObj need indirection when compiled in an ELF
+			fcall('rb_const_get', @cp.toplevel.symbol['rb_cObject'], rb_intern(ast[1]))
 		when :dstr
 			#fcall('rb_str_new')
 			#rb_str_cat(str, ast[1])
@@ -478,6 +515,45 @@ class RubyCompiler
 		if want_value
 			ret = C::CExpression[[ret], value] if ret.kind_of? Integer or ret.kind_of? String
 			ret
+		end
+	end
+
+	# optional optimization of a call (eg a == 1, c+2, ...)
+	# return nil for normal rb_funcall, or C::CExpr to use as retval.
+	def optimize_call(ast, scope, want_value)
+		if ast.length == 4 and ast[3][0] == :lit and ast[3][1].kind_of? Fixnum
+			# optimize 'x==42', 'x+42', 'x-42'
+			op = ast[2]
+			o2 = ast[3][1]
+			return if not ['==', '+', '-'].include? op
+			if o2 < 0 and ['+', '-'].include? op
+				# need o2 >= 0 for overflow detection
+				op = {'+' => '-', '-' => '+'}[op]
+				o2 = -o2
+				return if not o2.kind_of? Fixnum	# -0x40000000
+			end
+
+			ce = C::CExpression
+			int_v = o2.object_id
+			recv = ast_to_c(ast[1], scope)
+			case ast[2]
+			when '=='
+				tmp = get_new_tmp_var('opt', want_value)
+				scope.statements << C::If.new(ce[recv, :'==', [int_v]], ce[tmp, :'=', [true.object_id]], ce[tmp, :'=', [false.object_id]])
+				tmp
+			when '+'
+				tmp = get_new_tmp_var('opt', want_value)
+				e = ce[recv, :+, [int_v-1]]
+				# overflow if over 0x8000_0000
+				int = C::BaseType.new(:int)
+				cnd = ce[[recv, :&, [1]], :'&&', [[[recv], int], :<, [[e], int]]]
+				t = ce[tmp, :'=', e]
+				e = ce[tmp, :'=', rb_funcall(recv, op, ast_to_c(ast[3], scope))]
+				scope.statements << C::If.new(cnd, t, e)
+				tmp
+			when '-'
+				C::CExpression[recv, :-, [int_v-1]]
+			end
 		end
 	end
 end
@@ -546,7 +622,7 @@ when :test_jit
 	class Foo
 		def bla
 			i = 0
-			20_000_000.times { i += 1 }
+			0x401_0000.times { i += 16 }
 			i
 		end
 	end
@@ -554,7 +630,8 @@ when :test_jit
 	t0 = Time.now
 	Metasm::RubyHack.compile_ruby(Foo, :bla)
 	t1 = Time.now
-	p Foo.new.bla
+	ret = Foo.new.bla
+	puts ret.to_s(16), ret.class
 	t2 = Time.now
 
 	puts "compile %.3fs  run %.3fs" % [t1-t0, t2-t1]
