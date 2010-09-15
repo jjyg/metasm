@@ -262,13 +262,14 @@ class RubyCompiler
 	# retrieve or create a local var
 	# pass :none to avoid initializer
 	def get_var(name, initializer=:none)
-		name = name.gsub(/[^\w]/, '_')
+		name = name.gsub(/[^\w]/) { |c| c.unpack('H*')[0] }
 		@scope.symbol[name] ||= declare_newvar(name, initializer || C::CExpression[[nil.object_id], value])
 	end
 
 	# create a new temporary variable
 	# XXX put_var ?
-	def get_new_tmp_var(base=nil)
+	def get_new_tmp_var(base=nil, var=nil)
+		return var if var.kind_of? C::Variable
 		@tmp_var_id ||= 0
 		get_var("tmp_#{"#{base}_" if base}#{@tmp_var_id += 1}")
 	end
@@ -291,7 +292,7 @@ class RubyCompiler
 
 	# call rb_intern on a string
 	def rb_intern(n)
-		fcall('rb_intern', n)
+		get_var("intern_#{n}", fcall('rb_intern', n))
 	end
 
 	# create a rb_funcall construct
@@ -321,6 +322,7 @@ class RubyCompiler
 	# may append C statements to scope
 	# returns the C::CExpr holding the VALUE of the current ruby statement
 	# want_value is an optionnal hint as to the returned VALUE is needed or not
+	# if want_value is a C::Variable, the statements should try to populate this var instead of some random tmp var
 	# eg to simplify :if encoding unless we have 'foo = if 42;..'
 	def ast_to_c(ast, scope, want_value = true)
 		ret = 
@@ -335,13 +337,14 @@ class RubyCompiler
 			local(ast[1])
 		when :lasgn
 			l = local(ast[1], :none)
-			scope.statements << C::CExpression[l, :'=', ast_to_c(ast[2], scope)]
+			st = ast_to_c(ast[2], scope, l)
+			scope.statements << C::CExpression[l, :'=', st] if st != l
 			l
 		when :ivar
 			fcall('rb_iv_get', rb_self, ast[1])
 		when :iasgn
 			if want_value
-				tmp = get_var("ivar_#{ast[1]}")
+				tmp = get_new_tmp_var("ivar_#{ast[1]}", want_value)
 				scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
 				scope.statements << fcall('rb_iv_set', rb_self, ast[1], tmp)
 				tmp
@@ -352,7 +355,7 @@ class RubyCompiler
 			fcall('rb_gvar_get', ast[1])
 		when :gasgn
 			if want_value
-				tmp = get_var("gvar_#{ast[1]}")
+				tmp = get_new_tmp_var("gvar_#{ast[1]}", want_value)
 				scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
 				scope.statements << fcall('rb_gvar_set', ast[1], tmp)
 				tmp
@@ -380,14 +383,11 @@ class RubyCompiler
 			b_args, b_body, b_recv = ast[1, 3]
 			if b_recv[0] == :call and b_recv[2] == 'times'	# TODO check its Fixnum#times
 				recv = ast_to_c(b_recv[1], scope)
-				cntr = C::Variable.new("cntr", C::BaseType.new(:int))	# TODO uniq name etc
-				cntr.initializer = C::CExpression[[0]]
-				init = C::Block.new(scope)
-				init.symbol[cntr.name] = cntr
-				body = C::Block.new(init)
-				body.symbol[cntr.name] = cntr
+				cntr = get_new_tmp_var('cntr')
+				cntr.type = C::BaseType.new(:int)
+				body = C::Block.new(scope)
 				ast_to_c(b_body, body)
-				scope.statements << C::For.new(init, C::CExpression[cntr, :<, [recv, :>>, 1]], C::CExpression[:'++', cntr], body)
+				scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, [recv, :>>, 1]], C::CExpression[:'++', cntr], body)
 				recv
 			else
 				puts "unsupported :iter", ast[1].inspect, ast[2].inspect, ast[3].inspect
@@ -399,7 +399,7 @@ class RubyCompiler
 			args = ast[3..-1].map { |a| ast_to_c(a, scope) }
 			f = rb_funcall(recv, ast[2], *args)
 			if want_value
-				tmp = get_new_tmp_var('call')
+				tmp = get_new_tmp_var('call', want_value)
 				scope.statements << C::CExpression[tmp, :'=', f]
 				tmp
 			else
@@ -417,20 +417,20 @@ class RubyCompiler
 			scope.statements << C::If.new(cnd, tbdy, ebdy)
 
 			if want_value
-				tmp = get_new_tmp_var('if')
+				tmp = get_new_tmp_var('if', want_value)
 				tbdy.statements << C::CExpression[tmp, :'=', thn]
 				ebdy.statements << C::CExpression[tmp, :'=', els]
 				tmp
 			end
 		when :and
-			tmp = get_new_tmp_var('and')
+			tmp = get_new_tmp_var('and', want_value)
 			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[1], scope)]
 			t = C::Block.new(scope)
 			t.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], t)]
 			scope.statements << C::If.new(rb_test(tmp, scope), t, nil)
 			tmp
 		when :or
-			tmp = get_new_tmp_var('or')
+			tmp = get_new_tmp_var('or', want_value)
 			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[1], scope)]
 			t = C::Block.new(scope)
 			e = C::Block.new(scope)
@@ -438,7 +438,7 @@ class RubyCompiler
 			scope.statements << C::If.new(rb_test(tmp, scope), t, e)
 			tmp
 		when :not
-			tmp = get_new_tmp_var('not')
+			tmp = get_new_tmp_var('not', want_value)
 			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[1], scope)]
 			t = C::CExpression[tmp, :'=', [[false.object_id], value]]
 			e = C::CExpression[tmp, :'=', [[true.object_id], value]]
@@ -476,8 +476,8 @@ class RubyCompiler
 		end
 
 		if want_value
-			ret = [ret] if ret.kind_of? Integer or ret.kind_of? String
-			C::CExpression[ret, value]
+			ret = C::CExpression[[ret], value] if ret.kind_of? Integer or ret.kind_of? String
+			ret
 		end
 	end
 end
