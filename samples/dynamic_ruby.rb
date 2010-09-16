@@ -41,6 +41,11 @@ VALUE rb_ary_new4(long, VALUE*);
 VALUE rb_ary_push(VALUE, VALUE);
 VALUE rb_hash_new(void);
 VALUE rb_hash_aset(VALUE, VALUE, VALUE);
+VALUE rb_str_new(char*, int);
+VALUE rb_str_new2(char*);
+VALUE rb_str_cat2(VALUE, char*);
+VALUE rb_str_append(VALUE, VALUE);
+VALUE rb_obj_as_string(VALUE);
 EOS
 
         NODETYPE = [
@@ -133,9 +138,16 @@ class << self
 			[type, {:localnr => (v1 != 0 ? memory_read_int(v1) : 0),	# nr of local vars (+2 for $_/$~)
 				:cref => v2},	# node, starting point for const resolution
 				read_node(v3)]
-		when :call, :dstr, :fcall, :vcall
+		when :call, :fcall, :vcall
 			# TODO check fcall/vcall
 			ret = [type, read_node(v1), v2.id2name]
+			if args = read_node(v3)
+				raise "#{ret.inspect} with args != array: #{args.inspect}" if args[0] != :array
+				ret.concat args[1..-1]
+			end
+			ret
+		when :dstr
+			ret = [type, [:str, rb_value_to_obj(v1)]]
 			if args = read_node(v3)
 				raise "#{ret.inspect} with args != array: #{args.inspect}" if args[0] != :array
 				ret.concat args[1..-1]
@@ -197,7 +209,7 @@ class << self
 		when :alias
 			[type, v1, v2, v3]	# ?
 		when :evstr
-			[type, v1, read_node(v2), v3]
+			[type, read_node(v2)]
 		else
 			puts "unhandled #{type.inspect}"
 			[type, v1, v2, v3]
@@ -418,6 +430,10 @@ class RubyCompiler
 		end
 	end
 
+	# generate C code to raise a RuntimeError, reason
+	def rb_raise(reason)
+		fcall('rb_raise', @cp.toplevel.symbol['rb_eRuntimeError'], reason)
+	end
 
 	# the recursive AST to C compiler
 	# may append C statements to scope
@@ -520,24 +536,14 @@ class RubyCompiler
 			tmp
 
 		when :iter
-			b_args, b_body, b_recv = ast[1, 3]
-			if b_recv[0] == :call and b_recv[2] == 'times'	# TODO check its Fixnum#times
-				limit = get_new_tmp_var('limit')
-				recv = ast_to_c(b_recv[1], scope, limit)
-				scope.statements << C::CExpression[limit, :'=', [recv, :>>, 1]]
-				cntr = get_new_tmp_var('cntr')
-				cntr.type = C::BaseType.new(:int, :unsigned)
-				body = C::Block.new(scope)
-				if b_args and b_args[0] == :dasgn_curr	# [:masgn, [:array, [:dasgn_curr], [:lasgn]]]
-					body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [[cntr, :<<, 1], :|, 1]]
-				end
-				ast_to_c(b_body, body)
-				scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
-				recv
-			else
-				puts "unsupported :iter", " arg="+ast[1].inspect, " body="+ast[2].inspect, " recv="+ast[3].inspect
-				nil.object_id
+			if v = optimize_iter(ast, scope, want_value)
+				return v
 			end
+			# for full support of :iter, we need access to the interpreter's ruby_block private global variable in eval.c
+			# we can find it by analysing rb_block_given_p, but this won't work with a static precompiled rubyhack...
+			# even with access to ruby_block, there we would need to redo PUSH_BLOCK, create a temporary dvar list,
+			# handle [:break, lol], and do all the stack magic reused in rb_yield (probably incl setjmp etc)
+			raise Fail, "unsupported #{ast.inspect}"
 
 		when :call, :vcall, :fcall
 			if v = optimize_call(ast, scope, want_value)
@@ -595,6 +601,14 @@ class RubyCompiler
 		when :return
 			scope.statements << C::Return.new(ast_to_c(ast[1], scope))
 			nil.object_id
+		when :break
+			if @iter_break ||= nil
+				v = (ast[1] ? ast_to_c(ast[1], scope, @iter_break) : nil.object_id)
+				scope.statements << C::CExpression[@iter_break, :'=', [v]] if @iter_break != v
+			end
+			scope.statements << C::Break.new
+			nil.object_id
+
 		when nil, :args
 			nil.object_id
 		when :nil
@@ -608,24 +622,31 @@ class RubyCompiler
 		when :colon3
 			# XXX rb_cObj need indirection when compiled in an ELF
 			fcall('rb_const_get', @cp.toplevel.symbol['rb_cObject'], rb_intern(ast[1]))
-		when :dstr
-			#fcall('rb_str_new')
-			#rb_str_cat(str, ast[1])
-			#ast[3..-1].each { |s| rb_str_cat(str, s) }
-			C::CExpression[ast.inspect]
 		when :defined
 			case ast[1][0]
 			when :ivar
-				p ast[1][1]
 				fcall('rb_ivar_defined', rb_self, rb_intern(ast[1][1]))
 			else 
-				puts "unsupported defined? #{ast.inspect}"
-				fcall('rb_iv_defined', ast[1].inspect)
+				raise Fail, "unsupported #{ast.inspect}"
 			end
-		#when :masgn # parallel assignment
+		#when :masgn
+			# parallel assignment: put everything in an Array, then pop everything back?
+		when :evstr
+			fcall('rb_obj_as_string', ast_to_c(ast[1], scope))
+		when :dstr
+			# dynamic string: "foo#{bar}baz"
+			tmp = get_new_tmp_var('dstr')
+			scope.statements << C::CExpression[tmp, :'=', fcall('rb_str_new', 0, 0)]
+			ast[1..-1].compact.each { |s|
+				if s[0] == :str # directly append the char*
+					scope.statements << fcall('rb_str_cat2', tmp, s[1])
+				else
+					scope.statements << fcall('rb_str_append', tmp, ast_to_c(s, scope))
+				end
+			}
+			tmp
 		else
-			puts "unsupported #{ast.inspect}"
-			nil.object_id
+			raise Fail, "unsupported #{ast.inspect}"
 		end
 
 		if want_value
@@ -641,7 +662,7 @@ class RubyCompiler
 			# optimize 'x==42', 'x+42', 'x-42'
 			op = ast[2]
 			o2 = ast[3][1]
-			return if not ['==', '+', '-'].include? op
+			return if not %w[== > < >= <= + -].include? op
 			if o2 < 0 and ['+', '-'].include? op
 				# need o2 >= 0 for overflow detection
 				op = {'+' => '-', '-' => '+'}[op]
@@ -650,18 +671,31 @@ class RubyCompiler
 			end
 
 			ce = C::CExpression
+			int = C::BaseType.new(:ptr)	# signed VALUE
 			int_v = o2.object_id
 			recv = ast_to_c(ast[1], scope)
 			case op
 			when '=='
+				# XXX assume == only return true for full equality: if not Fixnum, then always false
+				# which breaks 1.0 == 1 and maybe others, but its ok
 				tmp = get_new_tmp_var('opt', want_value)
 				scope.statements << C::If.new(ce[recv, :'==', [int_v]], ce[tmp, :'=', [true.object_id]], ce[tmp, :'=', [false.object_id]])
+				tmp
+			when '>', '<', '>=', '<='
+				tmp = get_new_tmp_var('opt', want_value)
+				# do the actual comparison on signed >>1 if both Fixnum
+				t = C::If.new(
+					ce[[[[recv], int], :>>, 1], op.to_sym, [[[int_v], int], :>>, 1]],
+					ce[tmp, :'=', [true.object_id]],
+					ce[tmp, :'=', [false.object_id]])
+				# fallback to actual rb_funcall
+				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
+				scope.statements << C::If.new(ce[recv, :&, 1], t, e)
 				tmp
 			when '+'
 				tmp = get_new_tmp_var('opt', want_value)
 				e = ce[recv, :+, [int_v-1]]
 				# check overflow to Bignum
-				int = C::BaseType.new(:int)
 				cnd = ce[[recv, :&, [1]], :'&&', [[[recv], int], :<, [[e], int]]]
 				t = ce[tmp, :'=', e]
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
@@ -671,13 +705,41 @@ class RubyCompiler
 				tmp = get_new_tmp_var('opt', want_value)
 				e = ce[recv, :-, [int_v-1]]
 				# check overflow to Bignum
-				int = C::BaseType.new(:int)
 				cnd = ce[[recv, :&, [1]], :'&&', [[[recv], int], :>, [[e], int]]]
 				t = ce[tmp, :'=', e]
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
 				scope.statements << C::If.new(cnd, t, e)
 				tmp
 			end
+		end
+	end
+
+	def optimize_iter(ast, scope, want_value)
+		b_args, b_body, b_recv = ast[1, 3]
+		if b_recv[0] == :call and b_recv[2] == 'times'
+			limit = get_new_tmp_var('limit')
+			recv = ast_to_c(b_recv[1], scope, limit)
+			scope.statements << C::If.new(C::CExpression[:'!', [recv, :&, 1]], rb_raise('only Fixnum#times handled'), nil)
+			old_ib = @iter_break
+			if want_value
+				# a new tmpvar, so we can overwrite it in 'break :foo'
+				@iter_break = get_new_tmp_var('iterbreak')
+				scope.statements << C::CExpression[@iter_break, :'=', recv]
+			else
+				@iter_break = nil
+			end
+			scope.statements << C::CExpression[limit, :'=', [recv, :>>, 1]]
+			cntr = get_new_tmp_var('cntr')
+			cntr.type = C::BaseType.new(:int, :unsigned)
+			body = C::Block.new(scope)
+			if b_args and b_args[0] == :dasgn_curr	# [:masgn, [:array, [:dasgn_curr], [:lasgn]]]
+				body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [[cntr, :<<, 1], :|, 1]]
+			end
+			ast_to_c(b_body, body)
+			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
+			recv = @iter_break
+			@iter_break = old_ib
+			recv || nil.object_id
 		end
 	end
 end
