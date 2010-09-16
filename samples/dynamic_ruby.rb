@@ -38,7 +38,9 @@ VALUE rb_gvar_set(char*, VALUE);
 
 VALUE rb_ary_new(void);
 VALUE rb_ary_new4(long, VALUE*);
+VALUE rb_ary_push(VALUE, VALUE);
 VALUE rb_hash_new(void);
+VALUE rb_hash_aset(VALUE, VALUE, VALUE);
 EOS
 
         NODETYPE = [
@@ -140,7 +142,7 @@ class << self
 			end
 			ret
 		when :zarray
-			[:array, []]
+			[:array]
 		when :lasgn
 			[type, v3, read_node(v2)]
 		when :iasgn, :dasgn, :dasgn_curr, :gasgn, :cvasgn
@@ -486,7 +488,8 @@ class RubyCompiler
 		when :lit
 			case ast[1]
 			when Symbol
-				rb_intern(ast[1].to_s.inspect)
+				# XXX ID2SYM
+				C::CExpression[[rb_intern(ast[1].to_s), :<<, 8], :|, 0xe]
 			else	# true/false/nil/fixnum
 				ast[1].object_id
 			end
@@ -495,9 +498,26 @@ class RubyCompiler
 		when :str
 			fcall('rb_str_new', ast[1], ast[1].length)
 		when :array
-			fcall('rb_new_ary', ast[1].inspect)
+			tmp = get_new_tmp_var('ary', want_value)
+			scope.statements << C::CExpression[tmp, :'=', fcall('rb_ary_new')]
+			ast[1..-1].each { |e|
+				scope.statements << fcall('rb_ary_push', tmp, ast_to_c(e, scope))
+			}
+			tmp
 		when :hash
-			fcall('rb_new_hash', ast[1].inspect)
+			raise Fail, "bad #{ast.inspect}" if ast[1][0] != :array
+			tmp = get_new_tmp_var('hash', want_value)
+			scope.statements << C::CExpression[tmp, :'=', fcall('rb_hash_new')]
+			ki = nil
+			ast[1][1..-1].each { |k|
+				if not ki
+					ki = k
+				else
+					scope.statements << fcall('rb_hash_aset', tmp, ast_to_c(ki, scope), ast_to_c(k, scope))
+					ki = nil
+				end
+			}
+			tmp
 
 		when :iter
 			b_args, b_body, b_recv = ast[1, 3]
@@ -515,7 +535,7 @@ class RubyCompiler
 				scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
 				recv
 			else
-				puts "unsupported :iter", ast[1].inspect, ast[2].inspect, ast[3].inspect
+				puts "unsupported :iter", " arg="+ast[1].inspect, " body="+ast[2].inspect, " recv="+ast[3].inspect
 				nil.object_id
 			end
 
