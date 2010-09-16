@@ -36,9 +36,9 @@ VALUE rb_cvar_set(VALUE, int, VALUE, int);
 VALUE rb_gvar_get(char*);
 VALUE rb_gvar_set(char*, VALUE);
 
-// TODO
-VALUE rb_new_ary(char*);
-VALUE rb_new_hash(char*);
+VALUE rb_ary_new(void);
+VALUE rb_ary_new4(long, VALUE*);
+VALUE rb_hash_new(void);
 EOS
 
         NODETYPE = [
@@ -226,6 +226,9 @@ end
 end
 
 class RubyCompiler
+	class Fail < RuntimeError
+	end
+
 	def initialize(cp)
 		@cp = cp
 	end
@@ -235,8 +238,96 @@ class RubyCompiler
 		# TODO handle arbitrary block/yield constructs
 		# TODO analyse to find/optimize numeric locals that never need a ruby VALUE (ie native int vs INT2FIX)
 		# TODO detect block/closure exported out of the func & abort compilation
+
 		@scope = func.initializer
-		@scope.statements << C::Return.new(ast_to_c(ast[2], @scope))
+
+		if ast[0] == :scope and ast[2] and ast[2][0] == :block and ast[2][1] and ast[2][1][0] == :args
+			compile_args(func, ast[2][1])
+		end
+		ret = ast_to_c(ast[2], @scope)
+
+		@scope.statements << C::Return.new(ret)
+	end
+
+	def compile_args(func, args)
+		if args[1] == 0 and (args[2] or args[3])
+			compile_args_m1(func, args)
+		elsif args[1] > 0 and (args[2] or args[3])
+			compile_args_m2(func, args)
+		else
+			# fixed arity = args[1]: VALUE func(VALUE self, VALUE local_2, VALUE local_3)
+			args[1].times { |i|
+				v = C::Variable.new("local_#{i+2}", value)
+				@scope.symbol[v.name] = v
+				func.type.args << v
+			}
+		end
+	end
+
+	# update func prototype to reflect arity -1
+	# VALUE func(int argc, VALUE *argv, VALUE self)
+	def compile_args_m1(func, args)
+		c = C::Variable.new("arg_c", C::BaseType.new(:int, :unsigned))
+		v = C::Variable.new("arg_v", C::Pointer.new(value))
+		@scope.symbol[c.name] = c
+		@scope.symbol[v.name] = v
+		func.type.args.unshift v
+		func.type.args.unshift c
+
+		args[1].times { |i|
+			local(i+2, C::CExpression[v, :'[]', [i]])
+		}
+
+		if args[2]
+			# [:block, [:lasgn, 2, [:lit, 4]]]
+			raise Fail, "unhandled vararglist #{args.inspect}" if args[2][0] != :block
+			args[2][1..-1].each_with_index { |a, i|
+				raise Fail, "unhandled arg #{a.inspect}" if a[0] != :lasgn
+				cnd = C::CExpression[c, :>, i]
+				thn = C::CExpression[local(a[1], :none), :'=', [v, :'[]', [i]]]
+				els = C::Block.new(@scope)
+				ast_to_c(a, els, false)
+				@scope.statements << C::If.new(cnd, thn, els)
+			}
+		end
+
+		if args[3]
+			raise Fail, "unhandled vararglist3 #{args.inspect}" if args[3][0] != :lasgn
+			skiplen = args[1] + args[2].length - 1
+			alloc = fcall('rb_ary_new4', [c, :-, [skiplen]], [v, :+, [skiplen]])
+			local(args[3][1], C::CExpression[[c, :>, skiplen], :'?:', [alloc, fcall('rb_ary_new')]])
+		end
+	end
+
+	# update func prototype to reflect arity -2
+	# VALUE func(VALUE self, VALUE arg_array)
+	def compile_args_m2(func, args)
+		v = C::Variable.new("arglist", value)
+		@scope.symbol[v.name] = v
+		func.type.args << v
+
+		args[1].times { |i|
+			local(i+2, rb_funcall(v, 'shift'))
+		}
+
+		# populate arguments with default values
+		if args[2]
+			# [:block, [:lasgn, 2, [:lit, 4]]]
+			raise Fail, "unhandled vararglist #{args.inspect}" if args[2][0] != :block
+			args[2][1..-1].each { |a|
+				raise Fail, "unhandled arg #{a.inspect}" if a[0] != :lasgn
+				fu = [:if,
+					[:call, [:rb2cvar, v.name], 'empty?'],
+					[:lasgn, a[1], a[2]],
+					[:lasgn, a[1], [:call, [:rb2cvar, v.name], 'shift']]]
+				ast_to_c(fu, @scope, false)
+			}
+		end
+
+		if args[3]
+			raise Fail, "unhandled vararglist3 #{args.inspect}" if args[3][0] != :lasgn
+			local(args[3][1], C::CExpression[v])
+		end
 	end
 
 	# create a C::CExpr[toplevel.symbol[name], :funcall, args]
@@ -389,6 +480,9 @@ class RubyCompiler
 				scope.statements << fcall('rb_gvar_set', ast[1], ast_to_c(ast[2], scope))
 			end
 
+		when :rb2cvar	# hax, used in vararg parsing
+			get_var(ast[1], :none)
+
 		when :lit
 			case ast[1]
 			when Symbol
@@ -408,15 +502,17 @@ class RubyCompiler
 		when :iter
 			b_args, b_body, b_recv = ast[1, 3]
 			if b_recv[0] == :call and b_recv[2] == 'times'	# TODO check its Fixnum#times
-				recv = ast_to_c(b_recv[1], scope)
+				limit = get_new_tmp_var('limit')
+				recv = ast_to_c(b_recv[1], scope, limit)
+				scope.statements << C::CExpression[limit, :'=', [recv, :>>, 1]]
 				cntr = get_new_tmp_var('cntr')
-				cntr.type = C::BaseType.new(:int)
+				cntr.type = C::BaseType.new(:int, :unsigned)
 				body = C::Block.new(scope)
 				if b_args and b_args[0] == :dasgn_curr	# [:masgn, [:array, [:dasgn_curr], [:lasgn]]]
 					body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [[cntr, :<<, 1], :|, 1]]
 				end
 				ast_to_c(b_body, body)
-				scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, [recv, :>>, 1]], C::CExpression[:'++', cntr], body)
+				scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
 				recv
 			else
 				puts "unsupported :iter", ast[1].inspect, ast[2].inspect, ast[3].inspect
@@ -536,7 +632,7 @@ class RubyCompiler
 			ce = C::CExpression
 			int_v = o2.object_id
 			recv = ast_to_c(ast[1], scope)
-			case ast[2]
+			case op
 			when '=='
 				tmp = get_new_tmp_var('opt', want_value)
 				scope.statements << C::If.new(ce[recv, :'==', [int_v]], ce[tmp, :'=', [true.object_id]], ce[tmp, :'=', [false.object_id]])
@@ -544,15 +640,23 @@ class RubyCompiler
 			when '+'
 				tmp = get_new_tmp_var('opt', want_value)
 				e = ce[recv, :+, [int_v-1]]
-				# overflow if over 0x8000_0000
+				# check overflow to Bignum
 				int = C::BaseType.new(:int)
 				cnd = ce[[recv, :&, [1]], :'&&', [[[recv], int], :<, [[e], int]]]
 				t = ce[tmp, :'=', e]
-				e = ce[tmp, :'=', rb_funcall(recv, op, ast_to_c(ast[3], scope))]
+				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
 				scope.statements << C::If.new(cnd, t, e)
 				tmp
 			when '-'
-				C::CExpression[recv, :-, [int_v-1]]
+				tmp = get_new_tmp_var('opt', want_value)
+				e = ce[recv, :-, [int_v-1]]
+				# check overflow to Bignum
+				int = C::BaseType.new(:int)
+				cnd = ce[[recv, :&, [1]], :'&&', [[[recv], int], :>, [[e], int]]]
+				t = ce[tmp, :'=', e]
+				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
+				scope.statements << C::If.new(cnd, t, e)
+				tmp
 			end
 		end
 	end
@@ -620,9 +724,9 @@ when :compile_ruby
 
 when :test_jit
 	class Foo
-		def bla
+		def bla(x=500)
 			i = 0
-			0x401_0000.times { i += 16 }
+			x.times { i += 16 }
 			i
 		end
 	end
@@ -630,7 +734,7 @@ when :test_jit
 	t0 = Time.now
 	Metasm::RubyHack.compile_ruby(Foo, :bla)
 	t1 = Time.now
-	ret = Foo.new.bla
+	ret = Foo.new.bla(0x401_0000)
 	puts ret.to_s(16), ret.class
 	t2 = Time.now
 
