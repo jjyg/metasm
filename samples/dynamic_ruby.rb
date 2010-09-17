@@ -46,6 +46,9 @@ VALUE rb_str_new2(char*);
 VALUE rb_str_cat2(VALUE, char*);
 VALUE rb_str_append(VALUE, VALUE);
 VALUE rb_obj_as_string(VALUE);
+VALUE rb_range_new(VALUE, VALUE, int exclude_end);
+VALUE rb_Array(VALUE);	// :splat
+VALUE rb_ary_to_ary(VALUE);
 EOS
 
         NODETYPE = [
@@ -210,6 +213,10 @@ class << self
 			[type, v1, v2, v3]	# ?
 		when :evstr
 			[type, read_node(v2)]
+		when :dot2, :dot3
+			[type, read_node(v1), read_node(v2)]
+		when :splat
+			[type, read_node(v1)]
 		else
 			puts "unhandled #{type.inspect}"
 			[type, v1, v2, v3]
@@ -330,11 +337,11 @@ class RubyCompiler
 			raise Fail, "unhandled vararglist #{args.inspect}" if args[2][0] != :block
 			args[2][1..-1].each { |a|
 				raise Fail, "unhandled arg #{a.inspect}" if a[0] != :lasgn
-				fu = [:if,
-					[:call, [:rb2cvar, v.name], 'empty?'],
-					[:lasgn, a[1], a[2]],
-					[:lasgn, a[1], [:call, [:rb2cvar, v.name], 'shift']]]
-				ast_to_c(fu, @scope, false)
+				t = C::Block.new(@scope)
+				ast_to_c([:lasgn, a[1], [:call, [:rb2cvar, v.name], 'shift']], t, false)
+				e = C::Block.new(@scope)
+				ast_to_c([:lasgn, a[1], a[2]], e, false)
+				@scope.statements << C::If.new(rb_ary_len(v), t, e)
 			}
 		end
 
@@ -397,10 +404,15 @@ class RubyCompiler
 		@scope.symbol['self']
 	end
 
+	# returns a CExpr casting expr to a VALUE*
+	def rb_cast_pvalue(expr, idx)
+		C::CExpression[[[expr], C::Pointer.new(value)], :'[]', [idx]]
+	end
+
 	# retrieve the current class, from self->klass
 	# XXX will segfault with self.kind_of? Fixnum/true/false/nil/sym
 	def rb_selfclass
-		C::CExpression[[[rb_self], C::Pointer.new(value)], :'[]', [1]]
+		rb_cast_pvalue(rb_self, 1)
 	end
 
 	# call rb_intern on a string
@@ -433,6 +445,76 @@ class RubyCompiler
 	# generate C code to raise a RuntimeError, reason
 	def rb_raise(reason)
 		fcall('rb_raise', @cp.toplevel.symbol['rb_eRuntimeError'], reason)
+	end
+
+	# return a C expr equivallent to TYPE(expr) == type for non-immediate types
+	# XXX expr evaluated 3 times
+	def rb_test_class_type(expr, type)
+		C::CExpression[[[expr, :>, [7]], :'&&', [[expr, :&, [3]], :==, [0]]], :'&&', [rb_cast_pvalue(expr, 0), :'==', [type]]]
+	end
+
+	# return a C expr equivallent to TYPE(expr) == T_ARRAY
+	def rb_test_class_ary(expr)
+		rb_test_class_type(expr, 9)
+	end
+	
+	# ARY_PTR(expr)
+	def rb_ary_ptr(expr, idx=nil)
+		p = C::CExpression[[rb_cast_pvalue(expr, 4)], C::Pointer.new(value)]
+		idx ? C::CExpression[p, :'[]', [idx]] : p
+	end
+
+	# ARY_LEN(expr)
+	def rb_ary_len(expr)
+		rb_cast_pvalue(expr, 2)
+	end
+
+
+	# compile a :masgn
+	def rb_masgn(ast, scope, want_value)
+		raise Fail, "masgn with no rhs #{ast.inspect}" if not ast[2]
+		raise Fail, "masgn with no lhs array #{ast.inspect}" if not ast[1] or ast[1][0] != :array
+		if not want_value and ast[2][0] == :array and not ast[3] and ast[2].length == ast[1].length
+			rb_masgn_optimized(ast, scope)
+			return nil.object_id
+		end
+		full = get_new_tmp_var('masgn', want_value)
+		ary = ast_to_c(ast[2], scope, full)
+		scope.statements << C::CExpression[full, :'=', ary] if full != ary
+		ast[1][1..-1].each_with_index { |e, i|
+			raise Fail, "weird masgn lhs #{e.inspect} in #{ast.inspect}" if e[-1] != nil
+			# local_42 = full[i]
+			e = e.dup
+			e[-1] = [:call, [:rb2cvar, full.name], '[]', [:lit, i]]
+			ast_to_c(e, scope, false)
+		}
+		if ast[3]
+			raise Fail, "weird masgn lhs #{e.inspect} in #{ast.inspect}" if ast[3][-1] != nil
+			# local_28 = full[12..-1].to_a
+			e = ast[3].dup
+			e[-1] = [:call, [:call, [:rb2cvar, full.name], '[]', [:dot2, [:lit, ast[1].length-1], [:lit, -1]]], 'to_a']
+			ast_to_c(e, scope, false)
+		end
+
+		full
+	end
+
+	# compile an optimized :masgn with rhs.length == lhs.length (no need of a ruby array)
+	def rb_masgn_optimized(ast, scope)
+		vars = []
+		ast[2][1..-1].each { |rhs|
+			var = get_new_tmp_var('masgn_opt')
+			vars << var
+			r = ast_to_c(rhs, scope, var)
+			scope.statements << C::CExpression[var, :'=', r] if var != r
+		}
+		ast[1][1..-1].each { |lhs|
+			var = vars.shift
+			lhs = lhs.dup
+			raise Fail, "weird masgn lhs #{lhs.inspect} in #{ast.inspect}" if lhs[-1] != nil
+			lhs[-1] = [:rb2cvar, var.name]
+			ast_to_c(lhs, scope, false)
+		}
 	end
 
 	# the recursive AST to C compiler
@@ -512,7 +594,7 @@ class RubyCompiler
 		when :self
 			rb_self
 		when :str
-			fcall('rb_str_new', ast[1], ast[1].length)
+			fcall('rb_str_new2', ast[1])
 		when :array
 			tmp = get_new_tmp_var('ary', want_value)
 			scope.statements << C::CExpression[tmp, :'=', fcall('rb_ary_new')]
@@ -543,7 +625,7 @@ class RubyCompiler
 			# we can find it by analysing rb_block_given_p, but this won't work with a static precompiled rubyhack...
 			# even with access to ruby_block, there we would need to redo PUSH_BLOCK, create a temporary dvar list,
 			# handle [:break, lol], and do all the stack magic reused in rb_yield (probably incl setjmp etc)
-			raise Fail, "unsupported #{ast.inspect}"
+			raise Fail, "unsupported iter #{ast[1].inspect}   -   #{ast[3].inspect}   -   #{ast[2].inspect}"
 
 		when :call, :vcall, :fcall
 			if v = optimize_call(ast, scope, want_value)
@@ -629,15 +711,23 @@ class RubyCompiler
 			else 
 				raise Fail, "unsupported #{ast.inspect}"
 			end
-		#when :masgn
+		when :masgn
 			# parallel assignment: put everything in an Array, then pop everything back?
+			rb_masgn(ast, scope, want_value)
+			
 		when :evstr
 			fcall('rb_obj_as_string', ast_to_c(ast[1], scope))
+		when :dot2, :dot3
+			fcall('rb_range_new', ast_to_c(ast[1], scope), ast_to_c(ast[2], scope), ast[0] == :dot2 ? 0 : 1)
+		when :splat
+			fcall('rb_Array', ast_to_c(ast[1], scope))
+		when :to_ary
+			fcall('rb_ary_to_ary', ast_to_c(ast[1], scope))
 		when :dstr
 			# dynamic string: "foo#{bar}baz"
 			tmp = get_new_tmp_var('dstr')
-			scope.statements << C::CExpression[tmp, :'=', fcall('rb_str_new', 0, 0)]
-			ast[1..-1].compact.each { |s|
+			scope.statements << C::CExpression[tmp, :'=', fcall('rb_str_new2', ast[1][1])]
+			ast[2..-1].compact.each { |s|
 				if s[0] == :str # directly append the char*
 					scope.statements << fcall('rb_str_cat2', tmp, s[1])
 				else
@@ -716,31 +806,133 @@ class RubyCompiler
 
 	def optimize_iter(ast, scope, want_value)
 		b_args, b_body, b_recv = ast[1, 3]
-		if b_recv[0] == :call and b_recv[2] == 'times'
+
+		old_ib = @iter_break
+		if want_value
+			# a new tmpvar, so we can overwrite it in 'break :foo'
+			@iter_break = get_new_tmp_var('iterbreak')
+		else
+			@iter_break = nil
+		end
+
+		if b_recv[0] == :call and b_recv[2] == 'reverse_each'
+			# convert ary.reverse_each to ary.reverse.each
+			b_recv = b_recv.dup
+			b_recv[1] = [:call, b_recv[1], 'reverse']
+			b_recv[2] = 'each'
+		elsif b_recv[0] == :call and b_recv[2] == 'each_key'
+			# convert hash.each_key to hash.keys.each
+			b_recv = b_recv.dup
+			b_recv[1] = [:call, b_recv[1], 'keys']
+			b_recv[2] = 'each'
+		end
+
+		# loop { }
+		if b_recv[0] == :fcall and b_recv[2] == 'loop'
+			body = C::Block.new(scope)
+			ast_to_c(b_body, body)
+			scope.statements << C::For.new(nil, nil, nil, body)
+
+		# int.times { |i| }
+		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'times'
 			limit = get_new_tmp_var('limit')
 			recv = ast_to_c(b_recv[1], scope, limit)
 			scope.statements << C::If.new(C::CExpression[:'!', [recv, :&, 1]], rb_raise('only Fixnum#times handled'), nil)
-			old_ib = @iter_break
 			if want_value
-				# a new tmpvar, so we can overwrite it in 'break :foo'
-				@iter_break = get_new_tmp_var('iterbreak')
 				scope.statements << C::CExpression[@iter_break, :'=', recv]
-			else
-				@iter_break = nil
 			end
 			scope.statements << C::CExpression[limit, :'=', [recv, :>>, 1]]
 			cntr = get_new_tmp_var('cntr')
 			cntr.type = C::BaseType.new(:int, :unsigned)
 			body = C::Block.new(scope)
-			if b_args and b_args[0] == :dasgn_curr	# [:masgn, [:array, [:dasgn_curr], [:lasgn]]]
+			if b_args and b_args[0] == :dasgn_curr
 				body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [[cntr, :<<, 1], :|, 1]]
 			end
 			ast_to_c(b_body, body)
 			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
-			recv = @iter_break
+
+		# ary.each { |e| }
+		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'each' and b_args and
+				b_args[0] == :dasgn_curr
+			ary = get_new_tmp_var('ary')
+			recv = ast_to_c(b_recv[1], scope, ary)
+			scope.statements << C::CExpression[ary, :'=', recv] if ary != recv
+			scope.statements << C::If.new(rb_test_class_ary(ary), nil, rb_raise('only Array#each { |e| } handled'))
+			if want_value
+				scope.statements << C::CExpression[@iter_break, :'=', ary]
+			end
+			cntr = get_new_tmp_var('cntr')
+			cntr.type = C::BaseType.new(:int, :unsigned)
+			body = C::Block.new(scope)
+			if b_args and b_args[0] == :dasgn_curr
+				body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
+			end
+			ast_to_c(b_body, body)
+			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
+
+		# ary.find { |e| }
+		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'find' and b_args and
+				b_args[0] == :dasgn_curr
+			ary = get_new_tmp_var('ary')
+			recv = ast_to_c(b_recv[1], scope, ary)
+			scope.statements << C::CExpression[ary, :'=', recv] if ary != recv
+			scope.statements << C::If.new(rb_test_class_ary(ary), nil, rb_raise('only Array#find { |e| } handled'))
+			if want_value
+				scope.statements << C::CExpression[@iter_break, :'=', nil.object_id]
+			end
+			cntr = get_new_tmp_var('cntr')
+			cntr.type = C::BaseType.new(:int, :unsigned)
+			body = C::Block.new(scope)
+			if b_args and b_args[0] == :dasgn_curr
+				body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
+			end
+			# same as #each up to this point (except default retval), now add a 'if (body_value) break ary[cntr];'
+			# XXX 'find { next true }' 
+
+			found = ast_to_c(b_body, body)
+			t = C::Block.new(body)
+			t.statements << C::CExpression[@iter_break, :'=', rb_ary_ptr(ary, cntr)]
+			t.statements << C::Break.new
+			body.statements << C::If.new(rb_test(found, body), t, nil)
+
+			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
+
+		# ary.map { |e| }
+		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'map' and b_args and
+				b_args[0] == :dasgn_curr
+			ary = get_new_tmp_var('ary')
+			recv = ast_to_c(b_recv[1], scope, ary)
+			scope.statements << C::CExpression[ary, :'=', recv] if ary != recv
+			scope.statements << C::If.new(rb_test_class_ary(ary), nil, rb_raise('only Array#map { |e| } handled'))
+			if want_value
+				scope.statements << C::CExpression[@iter_break, :'=', fcall('rb_ary_new')]
+			end
+			cntr = get_new_tmp_var('cntr')
+			cntr.type = C::BaseType.new(:int, :unsigned)
+			body = C::Block.new(scope)
+			if b_args and b_args[0] == :dasgn_curr
+				body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
+			end
+			# same as #each up to this point (except default retval), now add a '@iter_break << body_value'
+			# XXX 'next' unhandled 
+
+			val = ast_to_c(b_body, body)
+			body.statements << fcall('rb_ary_push', @iter_break, val)
+
+			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
+
+		# hash.each { |k, v| }
+		elsif false and b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'each' and b_args and
+				b_args[0] == :masgn and b_args[1][0] == :array and b_args[1].length == 3 and not b_args[2]
+
+		else
 			@iter_break = old_ib
-			recv || nil.object_id
+			return
 		end
+
+		ret = @iter_break
+		@iter_break = old_ib
+		ret || nil.object_id
 	end
 end
 end
