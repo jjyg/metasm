@@ -191,7 +191,14 @@ class << self
 			[type]
 		when :redo, :retry
 			[type]
-		when :case, :when
+		when :case
+			#    [:case, var_test, [:when, cnd, action, [:when, cnd2, action2, else]]]
+			# => [:case, var_test, [:when, cnd, action], [:when, cnd2, action], else]
+			cs = [type, read_node(v1), read_node(v2)]
+			cs << cs[-1].pop while cs[-1][0] == :when and cs[-1][3]
+			cs
+		when :when
+			# [:when, [:array, [test]], then, else]
 			[type, read_node(v1), read_node(v2), read_node(v3)]
 		when :iter
 			# save a block for the following funcall
@@ -351,6 +358,134 @@ class RubyCompiler
 		end
 	end
 
+	# compile a case/when
+	# create a real C switch() for Fixnums, and put the others === in the default case
+	# XXX will get the wrong order for "case x; when 1; when Fixnum; when 3;" ...
+	def compile_case(ast, scope, want_value)
+		# this generates
+		# var = stuff_to_test()
+		# if (var & 1)
+		#   switch (var >> 1) {
+		#      case 12:
+		#          stuff();
+		#          break;
+		#      default:
+		#          goto default_case;
+		#   }
+		# else
+		# default_case:
+		#   if (var == true.object_id || rb_test(rb_funcall(bla, '===', var)))
+		#      foo();
+		#   else {
+		#      default();
+		#   }
+		#      
+		ret = get_new_tmp_var('case', want_value)
+		var = ast_to_c(ast[1], scope, ret)
+		if not var.kind_of? C::Variable
+			scope.statements << C::CExpression[ret, :'=', var]
+			var = ret
+		end
+
+		# the scope to put all case int in
+		body_int = C::Block.new(scope)
+		# the scope to put the if (cs === var) cascade
+		body_other_head = body_other = nil
+		default = nil
+
+		ast[2..-1].each { |cs|
+			if cs[0] == :when
+				raise Fail if cs[1][0] != :array
+
+				# numeric case, add a case to body_int
+				if cs[1][1..-1].all? { |cd| cd[0] == :lit and (cd[1].kind_of? Fixnum or cd[1].kind_of? Range) }
+					cs[1][1..-1].each { |cd|
+						if cd[1].kind_of? Range
+							b = cd[1].begin
+							e = cd[1].end
+							e -= 1 if cd[1].exclude_end?
+							raise Fail unless b.kind_of? Integer and e.kind_of? Integer
+							body_int.statements << C::Case.new(b, e, nil)
+						else
+							body_int.statements << C::Case.new(cd[1], nil, nil)
+						end
+					}
+					cb = C::Block.new(scope)
+					v = ast_to_c(cs[2], cb, want_value)
+					cb.statements << C::CExpression[ret, :'=', v] if want_value
+					cb.statements << C::Break.new
+					body_int.statements << cb
+
+				# non-numeric (or mixed) case, add if ( cs === var )
+				else
+					cnd = nil
+					cs[1][1..-1].each { |cd|
+						if (cd[0] == :lit and (cd[1].kind_of?(Fixnum) or cd[1].kind_of?(Symbol))) or
+							[:nil, :true, :false].include?(cd[0])
+							# true C equality
+							cd = C::CExpression[var, :==, ast_to_c(cd, scope)]
+						else
+							# own block for ast_to_c to honor lazy evaluation
+							tb = C::Block.new(scope)
+							test = rb_test(rb_funcall(ast_to_c(cd, tb), '===', var), tb)
+							# discard own block unless needed
+							if tb.statements.empty?
+								cd = test
+							else
+								tb.statements << test
+								cd = C::CExpression[tb, value]
+							end
+						end
+						cnd = (cnd ? C::CExpression[cnd, :'||', cd] : cd)
+					}
+					cb = C::Block.new(scope)
+					v = ast_to_c(cs[2], cb, want_value)
+					cb.statements << C::CExpression[ret, :'=', v] if want_value
+					
+					fu = C::If.new(cnd, cb, nil)
+
+					if body_other
+						body_other.belse = fu
+					else
+						body_other_head = fu
+					end
+					body_other = fu
+				end
+
+			# default case statement
+			else
+				cb = C::Block.new(scope)
+				v = ast_to_c(cs, cb, want_value)
+				cb.statements << C::CExpression[ret, :'=', v] if want_value
+				default = cb
+			end
+		}
+
+		# assemble everything
+		scope.statements <<
+		if body_int.statements.empty?
+			if body_other
+				body_other.belse = default
+				body_other_head
+			else
+				raise Fail, "empty case? #{ast.inspect}" if not default
+				default
+			end
+		else
+			if body_other_head
+				@default_label_cnt ||= 0
+				dfl = "default_label_#{@default_label_cnt += 1}"
+				body_other_head = C::Label.new(dfl, body_other_head)
+				body_int.statements << C::Case.new('default', nil, C::Goto.new(dfl))
+				body_other.belse = default if default
+			end
+			body_int = C::Switch.new(C::CExpression[var, :>>, 1], body_int)
+			C::If.new(C::CExpression[var, :&, 1], body_int, body_other_head)
+		end
+
+		ret
+	end
+
 	# create a C::CExpr[toplevel.symbol[name], :funcall, args]
 	# casts int/strings in arglist to CExpr
 	def fcall(fname, *arglist)
@@ -417,7 +552,13 @@ class RubyCompiler
 
 	# call rb_intern on a string
 	def rb_intern(n)
-		get_var("intern_#{n}", fcall('rb_intern', n))
+		if true	#false
+			# dynamically retrieve teh rb_intern("foo") once per function
+			get_var("intern_#{n}", fcall('rb_intern', n))
+		else
+			# use the current interpreter's value (wont work for ondisk persistent extensions)
+			C::CExpression[n.to_sym.to_i]
+		end
 	end
 
 	# create a rb_funcall construct
@@ -535,14 +676,19 @@ class RubyCompiler
 		when :lvar
 			local(ast[1])
 		when :lasgn
-			l = local(ast[1], :none)
+			if scope == @scope
+				l = local(ast[1], :none)
+			else
+				# w = 4 if false ; p w  => should be nil
+				l = local(ast[1])
+			end
 			st = ast_to_c(ast[2], scope, l)
 			scope.statements << C::CExpression[l, :'=', st] if st != l
 			l
 		when :dvar
 			dvar(ast[1])
 		when :dasgn_curr
-			l = dvar(ast[1], :none)
+			l = dvar(ast[1])
 			st = ast_to_c(ast[2], scope, l)
 			scope.statements << C::CExpression[l, :'=', st] if st != l
 			l
@@ -579,15 +725,27 @@ class RubyCompiler
 			else
 				scope.statements << fcall('rb_gvar_set', ast[1], ast_to_c(ast[2], scope))
 			end
+		when :attrasgn	# foo.bar= 42 (same as :call, except for return value)
+			recv = ast_to_c(ast[1], scope)
+			raise Fail, "unsupported #{ast.inspect}" if not ast[3] or ast[3][0] != :array or ast[3].length != 2
+			arg = ast_to_c(ast[3][1], scope)
+			if want_value
+				tmp = get_new_tmp_var('call', want_value)
+				scope.statements << C::CExpression[tmp, :'=', arg]
+			end
+			scope.statements << rb_funcall(recv, ast[2], arg)
+			tmp
 
 		when :rb2cvar	# hax, used in vararg parsing
-			get_var(ast[1], :none)
+			get_var(ast[1])
 
 		when :lit
 			case ast[1]
 			when Symbol
 				# XXX ID2SYM
 				C::CExpression[[rb_intern(ast[1].to_s), :<<, 8], :|, 0xe]
+			when Range
+				fcall('rb_range_new', ast[1].begin.object_id, ast[1].end.object_id, ast[1].exclude_end? ? 0 : 1)
 			else	# true/false/nil/fixnum
 				ast[1].object_id
 			end
@@ -642,43 +800,70 @@ class RubyCompiler
 				scope.statements << f
 			end
 
-		when :if
-			cnd = rb_test(ast_to_c(ast[1], scope), scope)
+		when :if, :when
+			if ast[0] == :when and ast[1][0] == :array
+				cnd = nil
+				ast[1][1..-1].map { |cd| rb_test(ast_to_c(cd, scope), scope) }.each { |cd|
+					cnd = (cnd ? C::CExpression[cnd, :'||', cd] : cd)
+				}
+			else
+				cnd = rb_test(ast_to_c(ast[1], scope), scope)
+			end
 
 			tbdy = C::Block.new(scope)
 			thn = ast_to_c(ast[2], tbdy, want_value)
 			ebdy = C::Block.new(scope) if ast[3]
 			els = ast_to_c(ast[3], ebdy, want_value)
 
+			tmp = get_new_tmp_var('if', want_value) if want_value
+
 			scope.statements << C::If.new(cnd, tbdy, ebdy)
 
 			if want_value
-				tmp = get_new_tmp_var('if', want_value)
 				tbdy.statements << C::CExpression[tmp, :'=', thn] if tmp != thn
 				ebdy.statements << C::CExpression[tmp, :'=', els] if ast[3] and tmp != els
 				tmp
 			end
-		when :and
+
+		when :while
+			pib = @iter_break
+			@iter_break = nil	# XXX foo = while ()...
+
+			body = C::Block.new(scope)
+			if ast[3] == 0	# do .. while();
+				ast_to_c(ast[2], body, false)
+				body.statements << C::If.new(rb_test(ast_to_c(ast[1], body), body), nil, C::Break.new)
+			else
+				body.statements << C::If.new(rb_test(ast_to_c(ast[1], body), body), nil, C::Break.new)
+				ast_to_c(ast[2], body, false)
+			end
+			scope.statements << C::For.new(nil, nil, nil, body)
+
+			@iter_break = pib
+			nil.object_id
+
+		when :and, :or, :not
+			# beware lazy evaluation !
 			tmp = get_new_tmp_var('and', want_value)
-			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[1], scope)]
-			t = C::Block.new(scope)
-			t.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], t)]
-			scope.statements << C::If.new(rb_test(tmp, scope), t, nil)
-			tmp
-		when :or
-			tmp = get_new_tmp_var('or', want_value)
-			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[1], scope)]
-			t = C::Block.new(scope)
-			e = C::Block.new(scope)
-			e.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], e)]
-			scope.statements << C::If.new(rb_test(tmp, scope), t, e)
-			tmp
-		when :not
-			tmp = get_new_tmp_var('not', want_value)
-			scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[1], scope)]
-			t = C::CExpression[tmp, :'=', [[false.object_id], value]]
-			e = C::CExpression[tmp, :'=', [[true.object_id], value]]
-			scope.statements << C::If.new(rb_test(tmp, scope), t, e)
+			v1 = ast_to_c(ast[1], scope, tmp)
+			if not v1.kind_of? C::Variable
+				scope.statements << C::CExpression[tmp, :'=', v1]
+				v1 = tmp
+			end
+			case ast[0]
+			when :and
+				t = C::Block.new(scope)
+				v2 = ast_to_c(ast[2], t, tmp)
+				t.statements << C::CExpression[tmp, :'=', v2] if v2 != tmp
+			when :or
+				e = C::Block.new(scope)
+				v2 = ast_to_c(ast[2], e, tmp)
+				e.statements << C::CExpression[tmp, :'=', v2] if v2 != tmp
+			when :not
+				t = C::CExpression[tmp, :'=', [[false.object_id], value]]
+				e = C::CExpression[tmp, :'=', [[true.object_id], value]]
+			end
+			scope.statements << C::If.new(rb_test(v1, scope), t, e)
 			tmp
 		when :return
 			scope.statements << C::Return.new(ast_to_c(ast[1], scope))
@@ -735,6 +920,8 @@ class RubyCompiler
 				end
 			}
 			tmp
+		when :case
+			compile_case(ast, scope, want_value)
 		else
 			raise Fail, "unsupported #{ast.inspect}"
 		end
@@ -748,6 +935,7 @@ class RubyCompiler
 	# optional optimization of a call (eg a == 1, c+2, ...)
 	# return nil for normal rb_funcall, or C::CExpr to use as retval.
 	def optimize_call(ast, scope, want_value)
+		ce = C::CExpression
 		if ast.length == 4 and ast[3][0] == :lit and ast[3][1].kind_of? Fixnum
 			# optimize 'x==42', 'x+42', 'x-42'
 			op = ast[2]
@@ -760,47 +948,56 @@ class RubyCompiler
 				return if not o2.kind_of? Fixnum	# -0x40000000
 			end
 
-			ce = C::CExpression
 			int = C::BaseType.new(:ptr)	# signed VALUE
 			int_v = o2.object_id
 			recv = ast_to_c(ast[1], scope)
+			tmp = get_new_tmp_var('opt', want_value)
+			if not recv.kind_of? C::Variable
+				scope.statements << C::CExpression[tmp, :'=', recv]
+				recv = tmp
+			end
+
 			case op
 			when '=='
 				# XXX assume == only return true for full equality: if not Fixnum, then always false
 				# which breaks 1.0 == 1 and maybe others, but its ok
-				tmp = get_new_tmp_var('opt', want_value)
 				scope.statements << C::If.new(ce[recv, :'==', [int_v]], ce[tmp, :'=', [true.object_id]], ce[tmp, :'=', [false.object_id]])
-				tmp
 			when '>', '<', '>=', '<='
-				tmp = get_new_tmp_var('opt', want_value)
 				# do the actual comparison on signed >>1 if both Fixnum
 				t = C::If.new(
-					ce[[[[recv], int], :>>, 1], op.to_sym, [[[int_v], int], :>>, 1]],
+					ce[[[[recv], int], :>>, [1]], op.to_sym, [[[int_v], int], :>>, [1]]],
 					ce[tmp, :'=', [true.object_id]],
 					ce[tmp, :'=', [false.object_id]])
 				# fallback to actual rb_funcall
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
 				scope.statements << C::If.new(ce[recv, :&, 1], t, e)
-				tmp
 			when '+'
-				tmp = get_new_tmp_var('opt', want_value)
-				e = ce[recv, :+, [int_v-1]]
-				# check overflow to Bignum
+				e = ce[recv, :+, [int_v-1]] # overflow to Bignum ?
 				cnd = ce[[recv, :&, [1]], :'&&', [[[recv], int], :<, [[e], int]]]
 				t = ce[tmp, :'=', e]
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
 				scope.statements << C::If.new(cnd, t, e)
-				tmp
 			when '-'
-				tmp = get_new_tmp_var('opt', want_value)
 				e = ce[recv, :-, [int_v-1]]
-				# check overflow to Bignum
 				cnd = ce[[recv, :&, [1]], :'&&', [[[recv], int], :>, [[e], int]]]
 				t = ce[tmp, :'=', e]
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
 				scope.statements << C::If.new(cnd, t, e)
-				tmp
 			end
+			tmp
+		
+		# Symbol#==
+		elsif ast.length == 4 and ast[3][0] == :lit and ast[3][1].kind_of? Symbol and ast[2] == '=='
+			s_v = ast_to_c(ast[3], scope)
+			tmp = get_new_tmp_var('opt', want_value)
+			recv = ast_to_c(ast[1], scope, tmp)
+			if not recv.kind_of? C::Variable
+				scope.statements << C::CExpression[tmp, :'=', recv]
+				recv = tmp
+			end
+
+			scope.statements << C::If.new(ce[recv, :'==', [s_v]], ce[tmp, :'=', [true.object_id]], ce[tmp, :'=', [false.object_id]])
+			tmp
 		end
 	end
 
@@ -846,7 +1043,7 @@ class RubyCompiler
 			cntr.type = C::BaseType.new(:int, :unsigned)
 			body = C::Block.new(scope)
 			if b_args and b_args[0] == :dasgn_curr
-				body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [[cntr, :<<, 1], :|, 1]]
+				body.statements << C::CExpression[dvar(b_args[1]), :'=', [[cntr, :<<, 1], :|, 1]]
 			end
 			ast_to_c(b_body, body)
 			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
@@ -865,7 +1062,7 @@ class RubyCompiler
 			cntr.type = C::BaseType.new(:int, :unsigned)
 			body = C::Block.new(scope)
 			if b_args and b_args[0] == :dasgn_curr
-				body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
+				body.statements << C::CExpression[dvar(b_args[1]), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
 			end
 			ast_to_c(b_body, body)
 			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
@@ -884,7 +1081,7 @@ class RubyCompiler
 			cntr.type = C::BaseType.new(:int, :unsigned)
 			body = C::Block.new(scope)
 			if b_args and b_args[0] == :dasgn_curr
-				body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
+				body.statements << C::CExpression[dvar(b_args[1]), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
 			end
 			# same as #each up to this point (except default retval), now add a 'if (body_value) break ary[cntr];'
 			# XXX 'find { next true }' 
@@ -911,7 +1108,7 @@ class RubyCompiler
 			cntr.type = C::BaseType.new(:int, :unsigned)
 			body = C::Block.new(scope)
 			if b_args and b_args[0] == :dasgn_curr
-				body.statements << C::CExpression[dvar(b_args[1], :none), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
+				body.statements << C::CExpression[dvar(b_args[1]), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
 			end
 			# same as #each up to this point (except default retval), now add a '@iter_break << body_value'
 			# XXX 'next' unhandled 
