@@ -3373,7 +3373,7 @@ EOH
 						r, dep = @rexpr.dump(scope, r, dep)
 					when Block
 						r.last << '('
-						r, dep = Statement.dump(scope, r, dep)
+						r, dep = Statement.dump(@rexpr, scope, r, dep)
 						r.last << ' )'
 					when Label
 						r.last << '&&' << @rexpr.name
