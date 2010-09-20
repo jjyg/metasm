@@ -938,7 +938,7 @@ EOS
 		ptr = memory_alloc(sc.encoded.length)
 		sc.base_addr = ptr
 		bd = sc.encoded.binding(ptr)
-		sc.encoded.reloc_externals.uniq.each { |ext| bd[ext] = sym_addr(0, ext) or raise "unknown symbol #{ext}" }
+		sc.encoded.reloc_externals.uniq.each { |ext| bd[ext] = sym_addr(lib_from_sym(ext), ext) or raise "unknown symbol #{ext}" }
 		sc.encoded.fixup(bd)
 		memory_write ptr, sc.encode_string
 		memory_perm ptr, sc.encoded.length, 'rwx'
