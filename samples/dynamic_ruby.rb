@@ -135,6 +135,7 @@ class << self
 		when :if
 			[type, read_node(v1), read_node(v2), read_node(v3)]
 		when :cfunc
+			v2 = {0xffffffff => -1, 0xfffffffe => -2, 0xffffffffffffffff => -1, 0xfffffffffffffffe => -2}[v2] || v2
 			[type, {:fptr => v1,	# c func pointer
 				:arity => v2}]
 		when :scope
@@ -235,19 +236,19 @@ class << self
 		ast = read_node(ptr)
 		require 'pp'
 		pp ast
-		return if not c = ruby_ast_to_c(ast)
+		return if not c = ruby_ast_to_c(ast, klass, meth)
 		puts c
 		raw = compile_c(c).encoded
 		set_method_binary(klass, meth, raw, klass.instance_method(meth).arity)
 	end
 
-	def ruby_ast_to_c(ast)
+	def ruby_ast_to_c(ast, klass, meth)
 		return if ast[0] != :scope
 		cp = host_cpu.new_cparser
 		cp.parse RUBY_H
 		cp.parse 'void meth(VALUE self) { }'
 		cp.toplevel.symbol['meth'].type.type = cp.toplevel.symbol['VALUE']	# return type = VALUE, avoid 'missing return statement' warning
-		RubyCompiler.new(cp).compile(ast, cp.toplevel.symbol['meth'])
+		RubyCompiler.new(cp).compile(ast, cp.toplevel.symbol['meth'], klass, meth)
 		cp.dump_definition('meth')
 	end
 end
@@ -261,11 +262,14 @@ class RubyCompiler
 		@cp = cp
 	end
 
-	def compile(ast, func)
+	def compile(ast, func, klass, meth)
 		# TODO func args (incl varargs etc)
 		# TODO handle arbitrary block/yield constructs
 		# TODO analyse to find/optimize numeric locals that never need a ruby VALUE (ie native int vs INT2FIX)
 		# TODO detect block/closure exported out of the func & abort compilation
+
+		@klass = klass
+		@meth = meth
 
 		@scope = func.initializer
 
@@ -278,9 +282,10 @@ class RubyCompiler
 	end
 
 	def compile_args(func, args)
-		if args[1] == 0 and (args[2] or args[3])
+		case @klass.instance_method(@meth).arity
+		when -1	# args[1] == 0 and (args[2] or args[3])
 			compile_args_m1(func, args)
-		elsif args[1] > 0 and (args[2] or args[3])
+		when -2	# args[1] > 0 and (args[2] or args[3])
 			compile_args_m2(func, args)
 		else
 			# fixed arity = args[1]: VALUE func(VALUE self, VALUE local_2, VALUE local_3)
@@ -846,10 +851,9 @@ class RubyCompiler
 			# beware lazy evaluation !
 			tmp = get_new_tmp_var('and', want_value)
 			v1 = ast_to_c(ast[1], scope, tmp)
-			if not v1.kind_of? C::Variable
-				scope.statements << C::CExpression[tmp, :'=', v1]
-				v1 = tmp
-			end
+			# and/or need that tmp has the actual v1 value (returned when shortcircuit)
+			scope.statements << C::CExpression[tmp, :'=', v1] if v1 != tmp
+			v1 = tmp
 			case ast[0]
 			when :and
 				t = C::Block.new(scope)
@@ -933,7 +937,7 @@ class RubyCompiler
 	end
 
 	# optional optimization of a call (eg a == 1, c+2, ...)
-	# return nil for normal rb_funcall, or C::CExpr to use as retval.
+	# return nil for normal rb_funcall, or a C::CExpr to use as retval.
 	def optimize_call(ast, scope, want_value)
 		ce = C::CExpression
 		if ast.length == 4 and ast[3][0] == :lit and ast[3][1].kind_of? Fixnum
@@ -998,6 +1002,79 @@ class RubyCompiler
 
 			scope.statements << C::If.new(ce[recv, :'==', [s_v]], ce[tmp, :'=', [true.object_id]], ce[tmp, :'=', [false.object_id]])
 			tmp
+
+		# call C funcs directly
+		# assume private function calls are not virtual and hardlink them here
+		elsif not ast[1]
+			# TODO a = [lol]; foo(*a)
+			if ast[2].to_s == @meth.to_s
+				# self is recursive
+				arity = @klass.instance_method(@meth).arity
+				fptr = @cp.toplevel.symbol['meth']
+			else
+				# XXX only works in the current interpreter's session
+				ptr = Metasm::RubyHack.get_method_node_ptr(@klass, ast[2])
+				return if ptr == 0
+				ftype = Metasm::RubyHack::NODETYPE[(Metasm::RubyHack.memory_read_int(ptr) >> 11) & 0xff]
+				return if ftype != :cfunc
+				fast = Metasm::RubyHack.read_node(ptr)
+				arity = fast[1][:arity]
+				fptr = fast[1][:fptr]
+
+				fproto = C::Function.new(value, [])
+				case arity
+				when -1; fproto.args << C::Variable.new(nil, C::BaseType.new(:int)) << C::Variable.new(nil, C::Pointer.new(value)) << C::Variable.new(nil, value)
+				when -2; fproto.args << C::Variable.new(nil, value) << C::Variable.new(nil, value)
+				else (arity+1).times { fproto.args << C::Variable.new(nil, value) }
+				end
+
+				fptr = C::CExpression[[fptr], fproto]
+			end
+
+			ret = get_new_tmp_var('ccall', want_value)
+			c_arglist = []
+
+			case arity
+			when -2
+				arg = get_new_tmp_var('arg')
+				scope.statements << C::CExpression[arg, :'=', fcall('rb_ary_new')]
+				ast[3..-1].each { |a|
+					scope.statements << fcall('rb_ary_push', arg, ast_to_c(a, scope))
+				}
+				c_arglist << rb_self << arg
+
+			when -1
+				case ast.length
+				when 3	# no args
+					argv = C::CExpression[[0], value]
+				when 4	# 1 arg
+					argv = get_new_tmp_var('argv')
+					val = ast_to_c(ast[3], scope, argv)
+					scope.statements << C::CExpression[argv, :'=', val] if argv != val
+					argv = C::CExpression[:'&', argv]
+				else
+					argv = get_new_tmp_var('argv')
+					argv.type = C::Array.new(value, ast.length-3)
+					ast[3..-1].each_with_index { |a, i|
+						val = ast_to_c(a, scope)
+						scope.statements << C::CExpression[[argv, :'[]', [i]], :'=', val]
+					}
+				end
+				c_arglist << [ast.length - 3] << argv << rb_self
+
+			else
+				c_arglist << rb_self
+				ast[3..-1].each { |a|
+					va = get_new_tmp_var('arg')
+					val = ast_to_c(a, scope, va)
+					scope.statements << C::CExpression[va, :'=', val] if val != va
+					c_arglist << va
+				}
+			end
+
+
+			scope.statements << C::CExpression[ret, :'=', [fptr, :funcall, c_arglist]]
+			ret
 		end
 	end
 
@@ -1189,7 +1266,7 @@ when :compile_ruby
 	ast = Metasm::RubyHack.read_node(ptr)
 	require 'pp'
 	pp ast
-	c = Metasm::RubyHack.ruby_ast_to_c(ast)
+	c = Metasm::RubyHack.ruby_ast_to_c(ast, c, m)
 	puts c
 
 
