@@ -83,7 +83,7 @@ extern VALUE *rb_eArgError __attribute__((import));
 VALUE rb_uint2inum(VALUE);
 VALUE rb_ull2inum(unsigned long long);
 VALUE rb_num2ulong(VALUE);
-VALUE rb_str_new(const char* ptr, unsigned long len);	// alloc + memcpy + 0term
+VALUE rb_str_new(const char* ptr, long len);	// alloc + memcpy + 0term
 VALUE rb_ary_new2(int len);
 VALUE rb_float_new(double);
 
@@ -133,7 +133,7 @@ static VALUE dynldr;
 
 static VALUE memory_read(VALUE self, VALUE addr, VALUE len)
 {
-	return rb_str_new((char*)VAL2INT(addr), (unsigned long)VAL2INT(len));
+	return rb_str_new((char*)VAL2INT(addr), (long)VAL2INT(len));
 }
 
 static VALUE memory_read_int(VALUE self, VALUE addr)

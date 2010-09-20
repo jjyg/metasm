@@ -50,7 +50,7 @@ EOS
 	]
 
 	new_api_c 'void rb_define_method(uintptr_t, char *, void *, int)'
-	new_api_c 'void *rb_method_node(uintptr_t, int id)'
+	new_api_c 'void *rb_method_node(uintptr_t, unsigned id)'
 
 class << self
 	def set_class_method_raw(klass, meth, code, nparams)
@@ -60,7 +60,7 @@ class << self
 
 	def get_method_node_ptr(klass, meth)
 		raise if not klass.kind_of? Class
-		rb_method_node(rb_obj_to_value(klass), meth.to_sym.to_int)
+		rb_method_node(rb_obj_to_value(klass), meth.to_sym.to_i)
 	end
 
 	# sets up rawopcodes as the method implementation for class klass
@@ -242,22 +242,22 @@ class RubyLiveCompiler
 	RUBY_H = <<EOS
 #{DynLdr::RUBY_H}
 
-VALUE rb_iv_get(VALUE, char*);
-VALUE rb_iv_set(VALUE, char*, VALUE);
-VALUE rb_ivar_defined(VALUE, int);
-VALUE rb_cvar_get(VALUE, int);
-VALUE rb_cvar_set(VALUE, int, VALUE, int);
-VALUE rb_gvar_get(char*);
-VALUE rb_gvar_set(char*, VALUE);
+VALUE rb_iv_get(VALUE, const char*);
+VALUE rb_iv_set(VALUE, const char*, VALUE);
+VALUE rb_ivar_defined(VALUE, unsigned);
+VALUE rb_cvar_get(VALUE, unsigned);
+VALUE rb_cvar_set(VALUE, unsigned, VALUE, int);
+VALUE rb_gv_get(const char*);
+VALUE rb_gv_set(const char*, VALUE);
 
 VALUE rb_ary_new(void);
 VALUE rb_ary_new4(long, VALUE*);
 VALUE rb_ary_push(VALUE, VALUE);
 VALUE rb_hash_new(void);
 VALUE rb_hash_aset(VALUE, VALUE, VALUE);
-VALUE rb_str_new(char*, int);
-VALUE rb_str_new2(char*);
-VALUE rb_str_cat2(VALUE, char*);
+VALUE rb_str_new(const char*, long);
+VALUE rb_str_new2(const char*);
+VALUE rb_str_cat2(VALUE, const char*);
 VALUE rb_str_append(VALUE, VALUE);
 VALUE rb_obj_as_string(VALUE);
 VALUE rb_range_new(VALUE, VALUE, int exclude_end);
@@ -265,7 +265,7 @@ VALUE rb_Array(VALUE);	// :splat
 VALUE rb_ary_to_ary(VALUE);
 
 void rb_define_method(VALUE, char *, void *, int);
-void *rb_method_node(VALUE, int);
+void *rb_method_node(VALUE, unsigned);
 EOS
 
 	class Fail < RuntimeError
@@ -748,15 +748,15 @@ EOS
 				scope.statements << fcall('rb_cvar_set', rb_selfclass, rb_intern(ast[1]), ast_to_c(ast[2], scope), false.object_id)
 			end
 		when :gvar
-			fcall('rb_gvar_get', ast[1])
+			fcall('rb_gv_get', ast[1])
 		when :gasgn
 			if want_value
 				tmp = get_new_tmp_var("gvar_#{ast[1]}", want_value)
 				scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
-				scope.statements << fcall('rb_gvar_set', ast[1], tmp)
+				scope.statements << fcall('rb_gv_set', ast[1], tmp)
 				tmp
 			else
-				scope.statements << fcall('rb_gvar_set', ast[1], ast_to_c(ast[2], scope))
+				scope.statements << fcall('rb_gv_set', ast[1], ast_to_c(ast[2], scope))
 			end
 		when :attrasgn	# foo.bar= 42 (same as :call, except for return value)
 			recv = ast_to_c(ast[1], scope)
@@ -903,7 +903,7 @@ EOS
 		when :break
 			if @iter_break ||= nil
 				v = (ast[1] ? ast_to_c(ast[1], scope, @iter_break) : nil.object_id)
-				scope.statements << C::CExpression[@iter_break, :'=', [v]] if @iter_break != v
+				scope.statements << C::CExpression[@iter_break, :'=', [[v], value]] if @iter_break != v
 			end
 			scope.statements << C::Break.new
 			nil.object_id
@@ -911,11 +911,11 @@ EOS
 		when nil, :args
 			nil.object_id
 		when :nil
-			nil.object_id
+			C::CExpression[[nil.object_id], value]
 		when :false
-			false.object_id
+			C::CExpression[[false.object_id], value]
 		when :true
-			true.object_id
+			C::CExpression[[true.object_id], value]
 		when :const
 			# XXX use scope.cref ?
 			fcall('rb_const_get', rb_selfclass, rb_intern(ast[1]))
@@ -993,13 +993,13 @@ EOS
 			when '=='
 				# XXX assume == only return true for full equality: if not Fixnum, then always false
 				# which breaks 1.0 == 1 and maybe others, but its ok
-				scope.statements << C::If.new(ce[recv, :'==', [int_v]], ce[tmp, :'=', [true.object_id]], ce[tmp, :'=', [false.object_id]])
+				scope.statements << C::If.new(ce[recv, :'==', [int_v]], ce[tmp, :'=', [[true.object_id], value]], ce[tmp, :'=', [[false.object_id], value]])
 			when '>', '<', '>=', '<='
 				# do the actual comparison on signed >>1 if both Fixnum
 				t = C::If.new(
 					ce[[[[recv], int], :>>, [1]], op.to_sym, [[[int_v], int], :>>, [1]]],
-					ce[tmp, :'=', [true.object_id]],
-					ce[tmp, :'=', [false.object_id]])
+					ce[tmp, :'=', [[true.object_id], value]],
+					ce[tmp, :'=', [[false.object_id], value]])
 				# fallback to actual rb_funcall
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
 				scope.statements << C::If.new(ce[recv, :&, 1], t, e)
@@ -1028,7 +1028,7 @@ EOS
 				recv = tmp
 			end
 
-			scope.statements << C::If.new(ce[recv, :'==', [s_v]], ce[tmp, :'=', [true.object_id]], ce[tmp, :'=', [false.object_id]])
+			scope.statements << C::If.new(ce[recv, :'==', [s_v]], ce[tmp, :'=', [[true.object_id], value]], ce[tmp, :'=', [[false.object_id], value]])
 			tmp
 
 		elsif not ast[1]
@@ -1085,7 +1085,7 @@ EOS
 		when -1
 			case ast.length
 			when 3	# no args
-				argv = C::CExpression[[0], value]
+				argv = C::CExpression[[0], C::Pointer.new(value)]
 			when 4	# 1 arg
 				argv = get_new_tmp_var('argv')
 				val = ast_to_c(ast[3], scope, argv)
@@ -1118,7 +1118,7 @@ EOS
 	def optimize_iter(ast, scope, want_value)
 		b_args, b_body, b_recv = ast[1, 3]
 
-		old_ib = @iter_break
+		old_ib = @iter_break ||= nil
 		if want_value
 			# a new tmpvar, so we can overwrite it in 'break :foo'
 			@iter_break = get_new_tmp_var('iterbreak')
@@ -1160,7 +1160,7 @@ EOS
 				body.statements << C::CExpression[dvar(b_args[1]), :'=', [[cntr, :<<, 1], :|, 1]]
 			end
 			ast_to_c(b_body, body)
-			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
+			scope.statements << C::For.new(C::CExpression[cntr, :'=', [[0], cntr.type]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
 
 		# ary.each { |e| }
 		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'each' and b_args and
@@ -1179,7 +1179,7 @@ EOS
 				body.statements << C::CExpression[dvar(b_args[1]), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
 			end
 			ast_to_c(b_body, body)
-			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
+			scope.statements << C::For.new(C::CExpression[cntr, :'=', [[0], cntr.type]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
 
 		# ary.find { |e| }
 		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'find' and b_args and
@@ -1189,7 +1189,7 @@ EOS
 			scope.statements << C::CExpression[ary, :'=', recv] if ary != recv
 			scope.statements << C::If.new(rb_test_class_ary(ary), nil, rb_raise('only Array#find { |e| } handled'))
 			if want_value
-				scope.statements << C::CExpression[@iter_break, :'=', nil.object_id]
+				scope.statements << C::CExpression[@iter_break, :'=', [[nil.object_id], value]]
 			end
 			cntr = get_new_tmp_var('cntr')
 			cntr.type = C::BaseType.new(:int, :unsigned)
@@ -1206,7 +1206,7 @@ EOS
 			t.statements << C::Break.new
 			body.statements << C::If.new(rb_test(found, body), t, nil)
 
-			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
+			scope.statements << C::For.new(C::CExpression[cntr, :'=', [[0], cntr.type]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
 
 		# ary.map { |e| }
 		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'map' and b_args and
@@ -1230,7 +1230,7 @@ EOS
 			val = ast_to_c(b_body, body)
 			body.statements << fcall('rb_ary_push', @iter_break, val)
 
-			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
+			scope.statements << C::For.new(C::CExpression[cntr, :'=', [[0], cntr.type]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
 
 		else
 			@iter_break = old_ib
@@ -1321,7 +1321,7 @@ EOS
 		n = escape_varname("intern_#{sym}")
 		if not v = @cp.toplevel.symbol[n]
 			v = declare_newtopvar(n)
-			v.type = C::BaseType.new(:int)
+			v.type = C::BaseType.new(:int, :unsigned)
 			v.storage = :static
 			@cp.toplevel.symbol['do_init_once'].initializer.statements << C::CExpression[v, :'=', fcall('rb_intern', sym.to_s)]
 		end
@@ -1474,7 +1474,8 @@ when :test_jit
 	puts "compile %.3fs  run %.3fs" % [t1-t0, t2-t1]
 
 when :generate_persistent
-	c_src = Metasm::RubyStaticCompiler.compile(Metasm::Preprocessor, :getchar, :ungetchar, :unreadtok, :readtok_nopp, :readtok).dump
+	c_src = Metasm::RubyStaticCompiler.compile(Metasm::Preprocessor, :getchar, :ungetchar, :unreadtok, :readtok_nopp_str, :readtok_nopp, :readtok).dump
+	File.open('compiledruby.c', 'w') { |fd| fd.puts c_src } if $VERBOSE
 	puts 'compiling..'
 	# To encode to a different file, you must also rename the Init_compliedruby() function to match the lib name
 	Metasm::ELF.compile_c(Metasm::Ia32.new, c_src).encode_file('compiledruby.so')
