@@ -937,7 +937,9 @@ EOS
 		sc = compile_c(src)
 		ptr = memory_alloc(sc.encoded.length)
 		sc.base_addr = ptr
-		# TODO fixup external calls - this will need OS ABI compat (eg win64)
+		bd = sc.encoded.binding(ptr)
+		sc.encoded.reloc_externals.uniq.each { |ext| bd[ext] = sym_addr(0, ext) or raise "unknown symbol #{ext}" }
+		sc.encoded.fixup(bd)
 		memory_write ptr, sc.encode_string
 		memory_perm ptr, sc.encoded.length, 'rwx'
 		parse_c(src)	# XXX the Shellcode parser may have defined stuff / interpreted C another way...
