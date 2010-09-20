@@ -25,32 +25,6 @@ struct node {
 #define FL_USHIFT 11
 #define nd_type(n) ((((struct node*)n)->flags >> FL_USHIFT) & 0xff)
 EOS
-	RUBY_H = <<EOS
-#{DynLdr::RUBY_H}
-
-VALUE rb_iv_get(VALUE, char*);
-VALUE rb_iv_set(VALUE, char*, VALUE);
-VALUE rb_ivar_defined(VALUE, int);
-VALUE rb_cvar_get(VALUE, int);
-VALUE rb_cvar_set(VALUE, int, VALUE, int);
-VALUE rb_gvar_get(char*);
-VALUE rb_gvar_set(char*, VALUE);
-
-VALUE rb_ary_new(void);
-VALUE rb_ary_new4(long, VALUE*);
-VALUE rb_ary_push(VALUE, VALUE);
-VALUE rb_hash_new(void);
-VALUE rb_hash_aset(VALUE, VALUE, VALUE);
-VALUE rb_str_new(char*, int);
-VALUE rb_str_new2(char*);
-VALUE rb_str_cat2(VALUE, char*);
-VALUE rb_str_append(VALUE, VALUE);
-VALUE rb_obj_as_string(VALUE);
-VALUE rb_range_new(VALUE, VALUE, int exclude_end);
-VALUE rb_Array(VALUE);	// :splat
-VALUE rb_ary_to_ary(VALUE);
-EOS
-
         NODETYPE = [
 		:method, :fbody, :cfunc, :scope, :block,
 		:if, :case, :when, :opt_n, :while,
@@ -97,7 +71,8 @@ class << self
 	# -2     self, arg_ary
 	# -1     argc, VALUE*argv, self
 	# >=0    self, arg0, arg1..
-	def set_method_binary(klass, methodname, raw, nargs=-2)
+	def set_method_binary(klass, methodname, raw, nargs=nil)
+		nargs ||= klass.instance_method(methodname).arity
 		if raw.kind_of? EncodedData
 			baseaddr = str_ptr(raw.data)
 			bd = raw.binding(baseaddr)
@@ -232,37 +207,78 @@ class << self
 	end
 
 	def compile_ruby(klass, meth)
-		ptr = get_method_node_ptr(klass, meth)
-		ast = read_node(ptr)
-		require 'pp'
-		pp ast
+		ast = read_node get_method_node_ptr(klass, meth)
+
+		if $VERBOSE
+			require 'pp'
+			pp ast
+		end
+
 		return if not c = ruby_ast_to_c(ast, klass, meth)
-		puts c
+
+		if $VERBOSE
+			puts c
+		end
+
 		raw = compile_c(c).encoded
-		set_method_binary(klass, meth, raw, klass.instance_method(meth).arity)
+		set_method_binary(klass, meth, raw)
 	end
 
 	def ruby_ast_to_c(ast, klass, meth)
-		return if ast[0] != :scope
+		return if not ast or ast[0] != :scope
 		cp = host_cpu.new_cparser
-		cp.parse RUBY_H
-		cp.parse 'void meth(VALUE self) { }'
-		cp.toplevel.symbol['meth'].type.type = cp.toplevel.symbol['VALUE']	# return type = VALUE, avoid 'missing return statement' warning
-		RubyCompiler.new(cp).compile(ast, cp.toplevel.symbol['meth'], klass, meth)
-		cp.dump_definition('meth')
+		mname = RubyLiveCompiler.new(cp).compile(ast, klass, meth)
+		cp.dump_definition(mname)
 	end
-end
+end	# class << self
 end
 
-class RubyCompiler
+# a ruby2c C generator for use in the current ruby interpreter
+# generates C suitable for shellcode compilation & insertion in the current interpreter
+# has hardcoded addresses etc
+class RubyLiveCompiler
+	attr_accessor :cp
+
+	RUBY_H = <<EOS
+#{DynLdr::RUBY_H}
+
+VALUE rb_iv_get(VALUE, char*);
+VALUE rb_iv_set(VALUE, char*, VALUE);
+VALUE rb_ivar_defined(VALUE, int);
+VALUE rb_cvar_get(VALUE, int);
+VALUE rb_cvar_set(VALUE, int, VALUE, int);
+VALUE rb_gvar_get(char*);
+VALUE rb_gvar_set(char*, VALUE);
+
+VALUE rb_ary_new(void);
+VALUE rb_ary_new4(long, VALUE*);
+VALUE rb_ary_push(VALUE, VALUE);
+VALUE rb_hash_new(void);
+VALUE rb_hash_aset(VALUE, VALUE, VALUE);
+VALUE rb_str_new(char*, int);
+VALUE rb_str_new2(char*);
+VALUE rb_str_cat2(VALUE, char*);
+VALUE rb_str_append(VALUE, VALUE);
+VALUE rb_obj_as_string(VALUE);
+VALUE rb_range_new(VALUE, VALUE, int exclude_end);
+VALUE rb_Array(VALUE);	// :splat
+VALUE rb_ary_to_ary(VALUE);
+
+void rb_define_method(VALUE, char *, void *, int);
+void *rb_method_node(VALUE, int);
+EOS
+
 	class Fail < RuntimeError
 	end
 
-	def initialize(cp)
-		@cp = cp
+	def initialize(cp=nil)
+		@cp = cp || DynLdr.host_cpu.new_cparser
+		@cp.parse RUBY_H
 	end
 
-	def compile(ast, func, klass, meth)
+	# convert a ruby AST to a new C function
+	# returns the new function name
+	def compile(ast, klass, meth)
 		# TODO func args (incl varargs etc)
 		# TODO handle arbitrary block/yield constructs
 		# TODO analyse to find/optimize numeric locals that never need a ruby VALUE (ie native int vs INT2FIX)
@@ -271,14 +287,21 @@ class RubyCompiler
 		@klass = klass
 		@meth = meth
 
-		@scope = func.initializer
+		mname = escape_varname("m_#{@klass}##{@meth}".gsub('::', '_'))
+		@cp.parse "static void #{mname}(VALUE self) { }"
+		@cur_cfunc = @cp.toplevel.symbol[mname]
+		@cur_cfunc.type.type = value	# return type = VALUE, w/o 'missing return statement' warning
+
+		@scope = @cur_cfunc.initializer
 
 		if ast[0] == :scope and ast[2] and ast[2][0] == :block and ast[2][1] and ast[2][1][0] == :args
-			compile_args(func, ast[2][1])
+			compile_args(@cur_cfunc, ast[2][1])
 		end
 		ret = ast_to_c(ast[2], @scope)
 
 		@scope.statements << C::Return.new(ret)
+
+		mname
 	end
 
 	def compile_args(func, args)
@@ -513,10 +536,16 @@ class RubyCompiler
 		v
 	end
 
+	# return a string suitable for use as a variable name
+	# hexencode any char not in [A-z0-9_]
+	def escape_varname(n)
+		n.gsub(/[^\w]/) { |c| c.unpack('H*')[0] }
+	end
+
 	# retrieve or create a local var
 	# pass :none to avoid initializer
 	def get_var(name, initializer=:none)
-		name = name.gsub(/[^\w]/) { |c| c.unpack('H*')[0] }
+		name = escape_varname(name)
 		@scope.symbol[name] ||= declare_newvar(name, initializer || C::CExpression[[nil.object_id], value])
 	end
 
@@ -557,13 +586,8 @@ class RubyCompiler
 
 	# call rb_intern on a string
 	def rb_intern(n)
-		if true	#false
-			# dynamically retrieve teh rb_intern("foo") once per function
-			get_var("intern_#{n}", fcall('rb_intern', n))
-		else
-			# use the current interpreter's value (wont work for ondisk persistent extensions)
-			C::CExpression[n.to_sym.to_i]
-		end
+		# use the current interpreter's value
+		C::CExpression[n.to_sym.to_i]
 	end
 
 	# create a rb_funcall construct
@@ -643,6 +667,10 @@ class RubyCompiler
 		end
 
 		full
+	end
+
+	def rb_cstget(cname)
+		fcall('rb_const_get', @cp.toplevel.symbol['rb_cObject'], rb_intern(cname))
 	end
 
 	# compile an optimized :masgn with rhs.length == lhs.length (no need of a ruby array)
@@ -889,10 +917,10 @@ class RubyCompiler
 		when :true
 			true.object_id
 		when :const
+			# XXX use scope.cref ?
 			fcall('rb_const_get', rb_selfclass, rb_intern(ast[1]))
 		when :colon3
-			# XXX rb_cObj need indirection when compiled in an ELF
-			fcall('rb_const_get', @cp.toplevel.symbol['rb_cObject'], rb_intern(ast[1]))
+			rb_cstget(ast[1])
 		when :defined
 			case ast[1][0]
 			when :ivar
@@ -1003,79 +1031,88 @@ class RubyCompiler
 			scope.statements << C::If.new(ce[recv, :'==', [s_v]], ce[tmp, :'=', [true.object_id]], ce[tmp, :'=', [false.object_id]])
 			tmp
 
-		# call C funcs directly
-		# assume private function calls are not virtual and hardlink them here
 		elsif not ast[1]
-			# TODO a = [lol]; foo(*a)
-			if ast[2].to_s == @meth.to_s
-				# self is recursive
-				arity = @klass.instance_method(@meth).arity
-				fptr = @cp.toplevel.symbol['meth']
-			else
-				# XXX only works in the current interpreter's session
-				ptr = Metasm::RubyHack.get_method_node_ptr(@klass, ast[2])
-				return if ptr == 0
-				ftype = Metasm::RubyHack::NODETYPE[(Metasm::RubyHack.memory_read_int(ptr) >> 11) & 0xff]
-				return if ftype != :cfunc
-				fast = Metasm::RubyHack.read_node(ptr)
-				arity = fast[1][:arity]
-				fptr = fast[1][:fptr]
-
-				fproto = C::Function.new(value, [])
-				case arity
-				when -1; fproto.args << C::Variable.new(nil, C::BaseType.new(:int)) << C::Variable.new(nil, C::Pointer.new(value)) << C::Variable.new(nil, value)
-				when -2; fproto.args << C::Variable.new(nil, value) << C::Variable.new(nil, value)
-				else (arity+1).times { fproto.args << C::Variable.new(nil, value) }
-				end
-
-				fptr = C::CExpression[[fptr], fproto]
-			end
-
-			ret = get_new_tmp_var('ccall', want_value)
-			c_arglist = []
-
-			case arity
-			when -2
-				arg = get_new_tmp_var('arg')
-				scope.statements << C::CExpression[arg, :'=', fcall('rb_ary_new')]
-				ast[3..-1].each { |a|
-					scope.statements << fcall('rb_ary_push', arg, ast_to_c(a, scope))
-				}
-				c_arglist << rb_self << arg
-
-			when -1
-				case ast.length
-				when 3	# no args
-					argv = C::CExpression[[0], value]
-				when 4	# 1 arg
-					argv = get_new_tmp_var('argv')
-					val = ast_to_c(ast[3], scope, argv)
-					scope.statements << C::CExpression[argv, :'=', val] if argv != val
-					argv = C::CExpression[:'&', argv]
-				else
-					argv = get_new_tmp_var('argv')
-					argv.type = C::Array.new(value, ast.length-3)
-					ast[3..-1].each_with_index { |a, i|
-						val = ast_to_c(a, scope)
-						scope.statements << C::CExpression[[argv, :'[]', [i]], :'=', val]
-					}
-				end
-				c_arglist << [ast.length - 3] << argv << rb_self
-
-			else
-				c_arglist << rb_self
-				ast[3..-1].each { |a|
-					va = get_new_tmp_var('arg')
-					val = ast_to_c(a, scope, va)
-					scope.statements << C::CExpression[va, :'=', val] if val != va
-					c_arglist << va
-				}
-			end
-
-
-			scope.statements << C::CExpression[ret, :'=', [fptr, :funcall, c_arglist]]
-			ret
+			optimize_call_static(ast, scope, want_value)
 		end
+	end
+
+	# return ptr, arity
+	# ptr is a CExpr pointing to the C func implementing klass#method
+	def get_cfuncptr(klass, method)
+		ptr = RubyHack.get_method_node_ptr(@klass, method)
+		return if ptr == 0
+		ftype = RubyHack::NODETYPE[(RubyHack.memory_read_int(ptr) >> 11) & 0xff]
+		return if ftype != :cfunc
+		fast = RubyHack.read_node(ptr)
+		arity = fast[1][:arity]
+		fptr = fast[1][:fptr]
+
+		fproto = C::Function.new(value, [])
+		case arity
+		when -1; fproto.args << C::Variable.new(nil, C::BaseType.new(:int)) << C::Variable.new(nil, C::Pointer.new(value)) << C::Variable.new(nil, value)
+		when -2; fproto.args << C::Variable.new(nil, value) << C::Variable.new(nil, value)
+		else (arity+1).times { fproto.args << C::Variable.new(nil, value) }
+		end
+
+		C::CExpression[[fptr], C::Pointer.new(fproto)]
+	end
+
+	# call C funcs directly
+	# assume private function calls are not virtual and hardlink them here
+	def optimize_call_static(ast, scope, want_value)
+		# TODO a = [lol, zor]; foo(*a)
+		arity = @klass.instance_method(ast[2]).arity rescue return
+		if ast[2].to_s == @meth.to_s
+			# self is recursive
+			fptr = @cur_cfunc
+		else
+			fptr = get_cfuncptr(@klass, ast[2])
+			return if not fptr
+		end
+
+		ret = get_new_tmp_var('ccall', want_value)
+		c_arglist = []
+
+		case arity
+		when -2
+			arg = get_new_tmp_var('arg')
+			scope.statements << C::CExpression[arg, :'=', fcall('rb_ary_new')]
+			ast[3..-1].each { |a|
+				scope.statements << fcall('rb_ary_push', arg, ast_to_c(a, scope))
+			}
+			c_arglist << rb_self << arg
+
+		when -1
+			case ast.length
+			when 3	# no args
+				argv = C::CExpression[[0], value]
+			when 4	# 1 arg
+				argv = get_new_tmp_var('argv')
+				val = ast_to_c(ast[3], scope, argv)
+				scope.statements << C::CExpression[argv, :'=', val] if argv != val
+				argv = C::CExpression[:'&', argv]
+			else
+				argv = get_new_tmp_var('argv')
+				argv.type = C::Array.new(value, ast.length-3)
+				ast[3..-1].each_with_index { |a, i|
+					val = ast_to_c(a, scope)
+					scope.statements << C::CExpression[[argv, :'[]', [i]], :'=', val]
+				}
+			end
+			c_arglist << [ast.length - 3] << argv << rb_self
+
+		else
+			c_arglist << rb_self
+			ast[3..-1].each { |a|
+				va = get_new_tmp_var('arg')
+				val = ast_to_c(a, scope, va)
+				scope.statements << C::CExpression[va, :'=', val] if val != va
+				c_arglist << va
+			}
+		end
+
+		scope.statements << C::CExpression[ret, :'=', [fptr, :funcall, c_arglist]]
+		ret
 	end
 
 	def optimize_iter(ast, scope, want_value)
@@ -1195,10 +1232,6 @@ class RubyCompiler
 
 			scope.statements << C::For.new(C::CExpression[cntr, :'=', [0]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
 
-		# hash.each { |k, v| }
-		elsif false and b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'each' and b_args and
-				b_args[0] == :masgn and b_args[1][0] == :array and b_args[1].length == 3 and not b_args[2]
-
 		else
 			@iter_break = old_ib
 			return
@@ -1209,6 +1242,158 @@ class RubyCompiler
 		ret || nil.object_id
 	end
 end
+
+# a ruby2c C generator for use in the any ruby interpreter (generates C suitable for use as a standard Ruby extension)
+class RubyStaticCompiler < RubyLiveCompiler
+	# add a new ruby function to the current @cp
+	def self.compile(klass, *methlist)
+		@rcp ||= new
+		methlist.each { |meth|
+			ast = RubyHack.read_node(RubyHack.get_method_node_ptr(klass, meth))
+			@rcp.compile(ast, klass, meth) if ast and ast[0] == :scope
+		}
+		self
+	end
+
+	def self.dump
+		<<EOS + @rcp.cp.dump_definition('Init_compiledruby')
+#ifdef __ELF__
+asm .soname 'compiledruby';
+asm .pt_gnu_stack rw;
+#endif
+EOS
+	end
+
+
+	def initialize(cp=nil)
+		super(cp)
+
+		@cp.parse <<EOS
+// static VALUE method(VALUE self, VALUE arg0, VALUE arg1) { return (VALUE)0; }
+// static int intern_Lol;
+static void do_init_once(void) {
+	VALUE class;
+
+	// intern_lol = rb_intern("Lol");
+	// class = rb_const_get(*rb_cObject, intern_Lol);
+	// rb_define_method(class, "method", method, 2);
+}
+
+int Init_compiledruby(void) __attribute__((export)) { 
+	// use a separate func to avoid having to append statements before the 'return'
+	do_init_once();
+	return 0;
+}
+EOS
+	end
+
+	def compile(ast, klass, method)
+		@compiled_func_cache ||= {}
+
+		mname = super(ast, klass, method)
+
+		@compiled_func_cache[[klass, method.to_s]] = @cur_cfunc
+
+		init = @cp.toplevel.symbol['do_init_once'].initializer
+		var = init.symbol['class']
+		cls = C::CExpression[:'*', @cp.toplevel.symbol['rb_cObject']]
+		klass.name.split('::').each { |n|
+			init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
+			cls = var
+		}
+		
+		init.statements << fcall('rb_define_method', cls, method.to_s, @cur_cfunc, klass.instance_method(method).arity)
+
+		mname
+	end
+
+	def declare_newtopvar(name)
+		v = C::Variable.new(name, value)
+		@cp.toplevel.symbol[v.name] = v
+		pos = @cp.toplevel.statements.index @cp.toplevel.statements.find { |st|
+			st.kind_of? C::Declaration and st.var.type.kind_of? C::Function and st.var.initializer
+		} || -1
+		@cp.toplevel.statements.insert pos, C::Declaration.new(v)
+		v
+	end
+
+	def rb_intern(sym)
+		n = escape_varname("intern_#{sym}")
+		if not v = @cp.toplevel.symbol[n]
+			v = declare_newtopvar(n)
+			v.type = C::BaseType.new(:int)
+			v.storage = :static
+			@cp.toplevel.symbol['do_init_once'].initializer.statements << C::CExpression[v, :'=', fcall('rb_intern', sym.to_s)]
+		end
+		v
+	end
+
+	def rb_cstget(cname)
+		fcall('rb_const_get', C::CExpression[:*, @cp.toplevel.symbol['rb_cObject']], rb_intern(cname))
+	end
+
+	def rb_raise(reason)
+		fcall('rb_raise', C::CExpression[:*, @cp.toplevel.symbol['rb_eRuntimeError']], reason)
+	end
+
+	def get_cfuncptr(klass, method)
+		# is it a func we have in the current cparser ?
+		if ptr = @compiled_func_cache[[klass, method.to_s]]
+			return ptr
+		end
+
+		# check if it's a C or ruby func in the current interpreter
+		ptr = RubyHack.get_method_node_ptr(@klass, method)
+		return if ptr == 0
+		ftype = RubyHack::NODETYPE[(RubyHack.memory_read_int(ptr) >> 11) & 0xff]
+		return if ftype != :cfunc
+
+		# ok, so assume it will be the same next time
+		n = escape_varname "fptr_#{klass.name}##{method}".gsub('::', '_')
+		if not v = @cp.toplevel.symbol[n]
+			v = get_cfuncptr_dyn(klass, method, n)
+		end
+
+		v
+	end
+
+	def get_cfuncptr_dyn(klass, method, n)
+		arity = klass.instance_method(method).arity
+		fproto = C::Function.new(value, [])
+		case arity
+		when -1; fproto.args << C::Variable.new(nil, C::BaseType.new(:int)) << C::Variable.new(nil, C::Pointer.new(value)) << C::Variable.new(nil, value)
+		when -2; fproto.args << C::Variable.new(nil, value) << C::Variable.new(nil, value)
+		else (arity+1).times { fproto.args << C::Variable.new(nil, value) }
+		end
+
+		v = declare_newtopvar(n)
+		v.type = C::Pointer.new(fproto)
+		v.storage = :static
+
+		init = @cp.toplevel.symbol['do_init_once'].initializer
+		if not ptr = init.symbol['ptr']
+			ptr = C::Variable.new('ptr', C::Pointer.new(C::BaseType.new(:int)))
+			init.symbol[ptr.name] = ptr
+			init.statements << C::Declaration.new(ptr)
+		end
+
+		var = init.symbol['class']
+		cls = C::CExpression[:'*', @cp.toplevel.symbol['rb_cObject']]
+		klass.name.split('::').each { |n|
+			init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
+			cls = var
+		}
+		init.statements << C::CExpression[ptr, :'=', fcall('rb_method_node', cls, rb_intern(method))]
+
+		# dynamically recheck that klass#method is a :cfunc
+		cnd = C::CExpression[[[[ptr, :'[]', [0]], :>>, [11]], :&, [0xff]], :'!=', [RubyHack::NODETYPE.index(:cfunc)]]
+		init.statements << C::If.new(cnd, rb_raise("CFunc expected at #{klass}##{method}"), nil)
+
+		init.statements << C::CExpression[v, :'=', [[ptr, :'[]', [1]], v.type]]
+
+		v
+	end
+end
 end
 
 
@@ -1216,7 +1401,7 @@ end
 
 if __FILE__ == $0
 
-demo = ARGV.empty? ? :test_jit : ARGV.first == 'asm' ? :inlineasm : :compile_ruby
+demo = ARGV.empty? ? :test_jit : ARGV.first == 'asm' ? :inlineasm : ARGV.first == 'generate' ? :generate_persistent : :compile_ruby
 
 case demo	# chose your use case !
 when :inlineasm
@@ -1235,7 +1420,7 @@ loop again
 EOS
 
 	src = <<EOS
-#{Metasm::RubyHack::RUBY_H}
+#{Metasm::RubyLiveCompiler::RUBY_H}
 
 void doit(int, char*, int);
 VALUE foo(VALUE self, VALUE count, VALUE str) {
@@ -1288,6 +1473,12 @@ when :test_jit
 
 	puts "compile %.3fs  run %.3fs" % [t1-t0, t2-t1]
 
+when :generate_persistent
+	c_src = Metasm::RubyStaticCompiler.compile(Metasm::Preprocessor, :getchar, :ungetchar, :unreadtok, :readtok_nopp, :readtok).dump
+	puts 'compiling..'
+	# To encode to a different file, you must also rename the Init_compliedruby() function to match the lib name
+	Metasm::ELF.compile_c(Metasm::Ia32.new, c_src).encode_file('compiledruby.so')
+	puts 'ruby -r metasm -r compiledruby ftw'
 end
 
 end
