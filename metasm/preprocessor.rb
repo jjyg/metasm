@@ -629,62 +629,7 @@ class Preprocessor
 			return nil
 		when ?', ?"
 			# read quoted string value
-			tok.type = :quoted
-			delimiter = c
-			tok.raw << c
-			tok.value = ''
-			loop do
-				raise tok, 'unterminated string' if not c = getchar
-				tok.raw << c
-				case c
-				when delimiter; break
-				when ?\\
-					raise tok, 'unterminated escape' if not c = getchar
-					tok.raw << c
-					tok.value << \
-					case c
-					when ?n; ?\n
-					when ?r; ?\r
-					when ?t; ?\t
-					when ?a; ?\a
-					when ?b; ?\b
-					when ?v; ?\v
-					when ?f; ?\f
-					when ?e; ?\e
-					when ?#, ?\\, ?', ?"; c
-					when ?\n; ''	# already handled by getchar
-					when ?x;
-						hex = ''
-						while hex.length < 2
-							raise tok, 'unterminated escape' if not c = getchar
-							case c
-							when ?0..?9, ?a..?f, ?A..?F
-							else ungetchar; break
-							end
-							hex << c
-							tok.raw << c
-						end
-						raise tok, 'unterminated escape' if hex.empty?
-						hex.hex
-					when ?0..?7;
-						oct = '' << c
-						while oct.length < 3
-							raise tok, 'unterminated escape' if not c = getchar
-							case c
-							when ?0..?7
-							else ungetchar; break
-							end
-							oct << c
-							tok.raw << c
-						end
-						oct.oct
-					else c	# raise tok, 'unknown escape sequence'
-					end
-				when ?\n; ungetchar ; raise tok, 'unterminated string'
-				else tok.value << c
-				end
-			end
-
+			readtok_nopp_str(tok, c)
 		when ?a..?z, ?A..?Z, ?0..?9, ?$, ?_
 			tok.type = :string
 			tok.raw << c
@@ -750,6 +695,69 @@ class Preprocessor
 
 		tok
 	end
+
+	# we just read a ' or a ", read until the end of the string
+	# tok.value will contain the raw string (with escapes interpreted etc)
+	def readtok_nopp_str(tok, delimiter)
+		tok.type = :quoted
+		tok.raw << delimiter
+		tok.value = ''
+		c = nil
+		loop do
+			raise tok, 'unterminated string' if not c = getchar
+			tok.raw << c
+			case c
+			when delimiter; break
+			when ?\\
+				raise tok, 'unterminated escape' if not c = getchar
+				tok.raw << c
+				tok.value << \
+				case c
+				when ?n; ?\n
+				when ?r; ?\r
+				when ?t; ?\t
+				when ?a; ?\a
+				when ?b; ?\b
+				when ?v; ?\v
+				when ?f; ?\f
+				when ?e; ?\e
+				when ?#, ?\\, ?', ?"; c
+				when ?\n; ''	# already handled by getchar
+				when ?x;
+					hex = ''
+					while hex.length < 2
+						raise tok, 'unterminated escape' if not c = getchar
+						case c
+						when ?0..?9, ?a..?f, ?A..?F
+						else ungetchar; break
+						end
+						hex << c
+						tok.raw << c
+					end
+					raise tok, 'unterminated escape' if hex.empty?
+					hex.hex
+				when ?0..?7;
+					oct = '' << c
+					while oct.length < 3
+						raise tok, 'unterminated escape' if not c = getchar
+						case c
+						when ?0..?7
+						else ungetchar; break
+						end
+						oct << c
+						tok.raw << c
+					end
+					oct.oct
+				else c	# raise tok, 'unknown escape sequence'
+				end
+			when ?\n; ungetchar ; raise tok, 'unterminated string'
+			else tok.value << c
+			end
+		end
+
+		tok
+	end
+
 
 	# defines a simple preprocessor macro (expands to 0 or 1 token)
 	# does not check overwriting
