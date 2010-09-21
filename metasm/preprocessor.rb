@@ -622,7 +622,9 @@ class Preprocessor
 	def readtok_nopp
 		return @queue.pop unless @queue.empty?
 
-		tok = Token.new((@backtrace.map { |bt| bt[0, 2] } + [@filename, @lineno]).flatten)
+		nbt = []
+		@backtrace.each { |bt| nbt << bt[0] << bt[1] }
+		tok = Token.new(nbt << @filename << @lineno)
 
 		case c = getchar
 		when nil
