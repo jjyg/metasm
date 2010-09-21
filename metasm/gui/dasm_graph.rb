@@ -936,8 +936,8 @@ class GraphViewWidget < DrawableWidget
 
 	def keypress_ctrl(key)
 		case key
-		when ?f
-			@parent_widget.inputbox('text to search (regex)') { |pat|
+		when ?F
+			@parent_widget.inputbox('text to search in curfunc (regex)') { |pat|
 				re = /#{pat}/i
 				list = [['addr', 'instr']]
 				@curcontext.box.each { |b|
