@@ -2095,7 +2095,7 @@ EOH
 
 				# overflow
 				case t.name
-				when :char, :short, :int, :long, :longlong, :__int8, :__int16, :__int32, :__int64
+				when :char, :short, :int, :long, :ptr, :longlong, :__int8, :__int16, :__int32, :__int64
 					max = 1 << (8*parser.typesize[t.name])
 					ret = ret.to_i & (max-1)
 					if t.specifier == :signed and (ret & (max >> 1)) > 0	# char == unsigned char
