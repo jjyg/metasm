@@ -182,12 +182,14 @@ class << self
 			body = read_node(v2)	# the body statements (multi -> :block)
 			subj = read_node(v3)	# the stuff which is passed the block, probably a :call
 			[type, args, body, subj]
-		when :while
+		when :while, :until
 			[type, read_node(v1), read_node(v2), v3]
 		when :return, :break, :next, :defined
 			[type, read_node(v1)]
 		when :to_ary
 			[type, read_node(v1)]
+		when :colon2
+			[type, read_node(v1), v2.id2name]
 		when :colon3	# ::Stuff
 			[type, v2.id2name]
 		when :method
@@ -258,11 +260,13 @@ VALUE rb_hash_aset(VALUE, VALUE, VALUE);
 VALUE rb_str_new(const char*, long);
 VALUE rb_str_new2(const char*);
 VALUE rb_str_cat2(VALUE, const char*);
+VALUE rb_str_concat(VALUE, VALUE);
 VALUE rb_str_append(VALUE, VALUE);
 VALUE rb_obj_as_string(VALUE);
 VALUE rb_range_new(VALUE, VALUE, int exclude_end);
 VALUE rb_Array(VALUE);	// :splat
 VALUE rb_ary_to_ary(VALUE);
+VALUE rb_hash_aref(VALUE, VALUE);
 
 void rb_define_method(VALUE, char *, void *, int);
 void *rb_method_node(VALUE, unsigned);
@@ -271,9 +275,22 @@ EOS
 	class Fail < RuntimeError
 	end
 
+	def self.compile(klass, *methlist)
+		@rcp ||= new
+		methlist.each { |meth|
+			ast = RubyHack.read_node(RubyHack.get_method_node_ptr(klass, meth))
+			next if not ast or ast[0] != :scope
+			n = @rcp.compile(ast, klass, meth)
+			raw = RubyHack.compile_c(@rcp.cp.dump_definition(n)).encoded
+			RubyHack.set_method_binary(klass, meth, raw)
+		}
+		self
+	end
+
 	def initialize(cp=nil)
 		@cp = cp || DynLdr.host_cpu.new_cparser
 		@cp.parse RUBY_H
+		@iter_break = nil
 	end
 
 	# convert a ruby AST to a new C function
@@ -627,16 +644,32 @@ EOS
 	def rb_test_class_ary(expr)
 		rb_test_class_type(expr, 9)
 	end
-	
 	# ARY_PTR(expr)
 	def rb_ary_ptr(expr, idx=nil)
 		p = C::CExpression[[rb_cast_pvalue(expr, 4)], C::Pointer.new(value)]
 		idx ? C::CExpression[p, :'[]', [idx]] : p
 	end
-
 	# ARY_LEN(expr)
 	def rb_ary_len(expr)
 		rb_cast_pvalue(expr, 2)
+	end
+
+	# TYPE(expr) == T_STRING
+	def rb_test_class_string(expr)
+		rb_test_class_type(expr, 7)
+	end
+	# STR_PTR(expr)
+	def rb_str_ptr(expr, idx=nil)
+		p = C::CExpression[[rb_cast_pvalue(expr, 3)], C::Pointer.new(C::BaseType.new(:char))]
+		idx ? C::CExpression[p, :'[]', [idx]] : p
+	end
+	# STR_LEN(expr)
+	def rb_str_len(expr)
+		rb_cast_pvalue(expr, 2)
+	end
+
+	def rb_test_class_hash(expr)
+		rb_test_class_type(expr, 0xb)
 	end
 
 
@@ -858,16 +891,19 @@ EOS
 				tmp
 			end
 
-		when :while
+		when :while, :until
 			pib = @iter_break
 			@iter_break = nil	# XXX foo = while ()...
 
 			body = C::Block.new(scope)
 			if ast[3] == 0	# do .. while();
 				ast_to_c(ast[2], body, false)
-				body.statements << C::If.new(rb_test(ast_to_c(ast[1], body), body), nil, C::Break.new)
-			else
-				body.statements << C::If.new(rb_test(ast_to_c(ast[1], body), body), nil, C::Break.new)
+			end
+			t = nil
+			e = C::Break.new
+			t, e = e, t if ast[0] == :until
+			body.statements << C::If.new(rb_test(ast_to_c(ast[1], body), body), t, e)
+			if ast[3] != 0	# do .. while();
 				ast_to_c(ast[2], body, false)
 			end
 			scope.statements << C::For.new(nil, nil, nil, body)
@@ -901,7 +937,7 @@ EOS
 			scope.statements << C::Return.new(ast_to_c(ast[1], scope))
 			nil.object_id
 		when :break
-			if @iter_break ||= nil
+			if @iter_break
 				v = (ast[1] ? ast_to_c(ast[1], scope, @iter_break) : nil.object_id)
 				scope.statements << C::CExpression[@iter_break, :'=', [[v], value]] if @iter_break != v
 			end
@@ -919,6 +955,8 @@ EOS
 		when :const
 			# XXX use scope.cref ?
 			fcall('rb_const_get', rb_selfclass, rb_intern(ast[1]))
+		when :colon2
+			fcall('rb_const_get', ast_to_c(ast[1], scope), rb_intern(ast[2]))
 		when :colon3
 			rb_cstget(ast[1])
 		when :defined
@@ -968,9 +1006,11 @@ EOS
 	# return nil for normal rb_funcall, or a C::CExpr to use as retval.
 	def optimize_call(ast, scope, want_value)
 		ce = C::CExpression
+		op = ast[2]
+		int = C::BaseType.new(:ptr)	# signed VALUE
+
 		if ast.length == 4 and ast[3][0] == :lit and ast[3][1].kind_of? Fixnum
 			# optimize 'x==42', 'x+42', 'x-42'
-			op = ast[2]
 			o2 = ast[3][1]
 			return if not %w[== > < >= <= + -].include? op
 			if o2 < 0 and ['+', '-'].include? op
@@ -980,12 +1020,11 @@ EOS
 				return if not o2.kind_of? Fixnum	# -0x40000000
 			end
 
-			int = C::BaseType.new(:ptr)	# signed VALUE
 			int_v = o2.object_id
 			recv = ast_to_c(ast[1], scope)
 			tmp = get_new_tmp_var('opt', want_value)
 			if not recv.kind_of? C::Variable
-				scope.statements << C::CExpression[tmp, :'=', recv]
+				scope.statements << ce[tmp, :'=', recv]
 				recv = tmp
 			end
 
@@ -1019,16 +1058,67 @@ EOS
 			tmp
 		
 		# Symbol#==
-		elsif ast.length == 4 and ast[3][0] == :lit and ast[3][1].kind_of? Symbol and ast[2] == '=='
+		elsif ast.length == 4 and ast[3][0] == :lit and ast[3][1].kind_of? Symbol and op == '=='
 			s_v = ast_to_c(ast[3], scope)
 			tmp = get_new_tmp_var('opt', want_value)
 			recv = ast_to_c(ast[1], scope, tmp)
 			if not recv.kind_of? C::Variable
-				scope.statements << C::CExpression[tmp, :'=', recv]
+				scope.statements << ce[tmp, :'=', recv]
 				recv = tmp
 			end
 
 			scope.statements << C::If.new(ce[recv, :'==', [s_v]], ce[tmp, :'=', [[true.object_id], value]], ce[tmp, :'=', [[false.object_id], value]])
+			tmp
+
+		elsif ast.length == 4 and op == '<<'
+			tmp = get_new_tmp_var('opt', want_value)
+			recv = ast_to_c(ast[1], scope, tmp)
+			arg = ast_to_c(ast[3], scope)
+			if recv != tmp
+				scope.statements << ce[tmp, :'=', recv]
+				recv = tmp
+			end
+
+			ar = fcall('rb_ary_push', recv, arg)
+			st = fcall('rb_str_concat', recv, arg)
+			oth = ce[tmp, :'=', rb_funcall(recv, op, arg)]
+			scope.statements << C::If.new(rb_test_class_ary(recv), ar,
+						C::If.new(rb_test_class_string(recv), st, oth))
+			tmp
+
+		elsif ast.length == 4 and op == '[]'
+			tmp = get_new_tmp_var('opt', want_value)
+			recv = ast_to_c(ast[1], scope, tmp)
+			if not recv.kind_of? C::Variable
+				scope.statements << ce[tmp, :'=', recv]
+				recv = tmp
+			end
+
+			idx = get_new_tmp_var('idx')
+			arg = ast_to_c(ast[3], scope, idx)
+			if not arg.kind_of? C::Variable
+				scope.statements << ce[idx, :'=', arg]
+				arg = idx
+			end
+			idx = ce[[idx], int]
+
+			ar = C::Block.new(scope)
+			ar.statements << ce[idx, :'=', [[[arg], int], :>>, [1]]]
+			ar.statements << C::If.new(ce[idx, :<, [0]], ce[idx, :'=', [idx, :+, rb_ary_len(recv)]], nil) 
+			ar.statements << C::If.new(ce[[idx, :<, [0]], :'||', [idx, :>=, [[rb_ary_len(recv)], int]]],
+					ce[tmp, :'=', [[nil.object_id], value]],
+					ce[tmp, :'=', rb_ary_ptr(recv, idx)])
+			st = C::Block.new(scope)
+			st.statements << ce[idx, :'=', [[[arg], int], :>>, [1]]]
+			st.statements << C::If.new(ce[idx, :<, [0]], ce[idx, :'=', [idx, :+, rb_str_len(recv)]], nil) 
+			st.statements << C::If.new(ce[[idx, :<, [0]], :'||', [idx, :>=, [[rb_str_len(recv)], int]]],
+					ce[tmp, :'=', [[nil.object_id], value]],
+					ce[tmp, :'=', [[[[rb_str_ptr(recv, idx), :&, [0xff]], :<<, [1]], :|, [1]], value]])
+			hsh = ce[tmp, :'=', fcall('rb_hash_aref', recv, arg)]
+			oth = ce[tmp, :'=', rb_funcall(recv, op, arg)]
+			scope.statements << C::If.new(rb_test_class_hash(recv), hsh,
+						C::If.new(ce[[arg, :&, 1], :'&&', rb_test_class_ary(recv)], ar,
+						C::If.new(ce[[arg, :&, 1], :'&&', rb_test_class_string(recv)], st, oth)))
 			tmp
 
 		elsif not ast[1]
@@ -1118,7 +1208,7 @@ EOS
 	def optimize_iter(ast, scope, want_value)
 		b_args, b_body, b_recv = ast[1, 3]
 
-		old_ib = @iter_break ||= nil
+		old_ib = @iter_break
 		if want_value
 			# a new tmpvar, so we can overwrite it in 'break :foo'
 			@iter_break = get_new_tmp_var('iterbreak')
@@ -1285,6 +1375,8 @@ int Init_compiledruby(void) __attribute__((export)) {
 	return 0;
 }
 EOS
+		# current value of the 'class' variable (avoid consecutive search of Foo::Bar::Baz)
+		@init_scope_class_value = nil
 	end
 
 	def compile(ast, klass, method)
@@ -1296,11 +1388,16 @@ EOS
 
 		init = @cp.toplevel.symbol['do_init_once'].initializer
 		var = init.symbol['class']
-		cls = C::CExpression[:'*', @cp.toplevel.symbol['rb_cObject']]
-		klass.name.split('::').each { |n|
-			init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
+		if @init_scope_class_value == klass
 			cls = var
-		}
+		else
+			cls = C::CExpression[:'*', @cp.toplevel.symbol['rb_cObject']]
+			klass.name.split('::').each { |n|
+				init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
+				cls = var
+			}
+			@init_scope_class_value = klass
+		end
 		
 		init.statements << fcall('rb_define_method', cls, method.to_s, @cur_cfunc, klass.instance_method(method).arity)
 
@@ -1378,11 +1475,16 @@ EOS
 		end
 
 		var = init.symbol['class']
-		cls = C::CExpression[:'*', @cp.toplevel.symbol['rb_cObject']]
-		klass.name.split('::').each { |n|
-			init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
+		if @init_scope_class_value == klass
 			cls = var
-		}
+		else
+			cls = C::CExpression[:'*', @cp.toplevel.symbol['rb_cObject']]
+			klass.name.split('::').each { |n|
+				init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
+				cls = var
+			}
+			@init_scope_class_value = klass
+		end
 		init.statements << C::CExpression[ptr, :'=', fcall('rb_method_node', cls, rb_intern(method))]
 
 		# dynamically recheck that klass#method is a :cfunc
