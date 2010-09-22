@@ -168,6 +168,8 @@ end
 
 	# parses an arbitrary ia32 instruction argument
 	def parse_argument(lexer)
+		lexer = AsmPreprocessor.new(lexer) if lexer.kind_of? String
+
 		# reserved names (registers/segments etc)
 		@args_token ||= [Reg, SimdReg, SegReg, DbgReg, CtrlReg, FpReg].map { |a| a.s_to_i.keys }.flatten.inject({}) { |h, e| h.update e => true }
 
