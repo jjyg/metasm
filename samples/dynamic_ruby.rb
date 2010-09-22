@@ -118,7 +118,6 @@ class << self
 				:cref => v2},	# node, starting point for const resolution
 				read_node(v3)]
 		when :call, :fcall, :vcall
-			# TODO check fcall/vcall
 			ret = [type, read_node(v1), v2.id2name]
 			if args = read_node(v3)
 				raise "#{ret.inspect} with args != array: #{args.inspect}" if args[0] != :array
@@ -255,6 +254,7 @@ VALUE rb_gv_set(const char*, VALUE);
 VALUE rb_ary_new(void);
 VALUE rb_ary_new4(long, VALUE*);
 VALUE rb_ary_push(VALUE, VALUE);
+VALUE rb_ary_pop(VALUE);
 VALUE rb_hash_new(void);
 VALUE rb_hash_aset(VALUE, VALUE, VALUE);
 VALUE rb_str_new(const char*, long);
@@ -296,7 +296,6 @@ EOS
 	# convert a ruby AST to a new C function
 	# returns the new function name
 	def compile(ast, klass, meth)
-		# TODO func args (incl varargs etc)
 		# TODO handle arbitrary block/yield constructs
 		# TODO analyse to find/optimize numeric locals that never need a ruby VALUE (ie native int vs INT2FIX)
 		# TODO detect block/closure exported out of the func & abort compilation
@@ -535,7 +534,9 @@ EOS
 	# casts int/strings in arglist to CExpr
 	def fcall(fname, *arglist)
 		args = arglist.map { |a| (a.kind_of?(Integer) or a.kind_of?(String)) ? [a] : a }
-		C::CExpression[@cp.toplevel.symbol[fname], :funcall, args]
+		fv = @cp.toplevel.symbol[fname]
+		raise "need prototype for #{fname}!" if not fv
+		C::CExpression[fv, :funcall, args]
 	end
 
 	# the VALUE typedef
@@ -637,7 +638,7 @@ EOS
 	# return a C expr equivallent to TYPE(expr) == type for non-immediate types
 	# XXX expr evaluated 3 times
 	def rb_test_class_type(expr, type)
-		C::CExpression[[[expr, :>, [7]], :'&&', [[expr, :&, [3]], :==, [0]]], :'&&', [rb_cast_pvalue(expr, 0), :'==', [type]]]
+		C::CExpression[[[expr, :>, [7]], :'&&', [[expr, :&, [3]], :==, [0]]], :'&&', [[rb_cast_pvalue(expr, 0), :&, [0x3f]], :'==', [type]]]
 	end
 
 	# return a C expr equivallent to TYPE(expr) == T_ARRAY
@@ -1081,7 +1082,8 @@ EOS
 
 			ar = fcall('rb_ary_push', recv, arg)
 			st = fcall('rb_str_concat', recv, arg)
-			oth = ce[tmp, :'=', rb_funcall(recv, op, arg)]
+			oth = rb_funcall(recv, op, arg)
+			oth = ce[tmp, :'=', oth] if want_value
 			scope.statements << C::If.new(rb_test_class_ary(recv), ar,
 						C::If.new(rb_test_class_string(recv), st, oth))
 			tmp
@@ -1119,6 +1121,39 @@ EOS
 			scope.statements << C::If.new(rb_test_class_hash(recv), hsh,
 						C::If.new(ce[[arg, :&, 1], :'&&', rb_test_class_ary(recv)], ar,
 						C::If.new(ce[[arg, :&, 1], :'&&', rb_test_class_string(recv)], st, oth)))
+			tmp
+
+		elsif ast[1] and ast.length == 3 and op == 'empty?'
+			tmp = get_new_tmp_var('opt', want_value)
+			recv = ast_to_c(ast[1], scope, tmp)
+			if not recv.kind_of? C::Variable
+				scope.statements << ce[tmp, :'=', recv]
+				recv = tmp
+			end
+
+			scope.statements << C::If.new(rb_test_class_ary(recv),
+						      C::If.new(rb_ary_len(recv),
+								ce[tmp, :'=', [[false.object_id], value]],
+								ce[tmp, :'=', [[true.object_id], value]]),
+						      ce[tmp, :'=', rb_funcall(recv, op)])
+			tmp
+
+		elsif ast[1] and ast.length == 3 and op == 'pop'
+			tmp = get_new_tmp_var('opt', want_value)
+			recv = ast_to_c(ast[1], scope, tmp)
+			if not recv.kind_of? C::Variable
+				scope.statements << ce[tmp, :'=', recv]
+				recv = tmp
+			end
+
+			t = fcall('rb_ary_pop', recv)
+			e = rb_funcall(recv, op)
+			if want_value
+				t = ce[tmp, :'=', t]
+				e = ce[tmp, :'=', e]
+			end
+			scope.statements << C::If.new(rb_test_class_ary(recv), t, e)
+
 			tmp
 
 		elsif not ast[1]
@@ -1494,6 +1529,26 @@ EOS
 		init.statements << C::CExpression[v, :'=', [[ptr, :'[]', [1]], v.type]]
 
 		v
+	end
+
+	if defined? $trace_rbfuncall and $trace_rbfuncall
+	# dynamic trace of all rb_funcall made from our module
+	def rb_funcall(recv, meth, *args)
+		if not defined? @rb_fcid
+			@rb_fcid = -1
+			@cp.parse 'int atexit(void(*)(void)); int printf(char*, ...); static unsigned rb_fcid_max = 1; static unsigned rb_fcntr[1]; ' +
+				'static void rb_fcstat(void) { for (unsigned i=0; i<rb_fcid_max; ++i) if (rb_fcntr[i]) printf("%u %u\\n", i, rb_fcntr[i]); }'
+			@rb_fcntr = @cp.toplevel.symbol['rb_fcntr']
+			@rb_fcid_max = @cp.toplevel.symbol['rb_fcid_max']
+			@cp.toplevel.symbol['do_init_once'].initializer.statements << fcall('atexit', @cp.toplevel.symbol['rb_fcstat'])
+		end
+		@rb_fcid += 1
+		@rb_fcid_max.initializer = C::CExpression[[@rb_fcid+1], @rb_fcid_max.type]
+		@rb_fcntr.type.length = @rb_fcid+1
+
+		ctr = C::CExpression[:'++', [@rb_fcntr, :'[]', [@rb_fcid]]]
+		C::CExpression[ctr, :',', super(recv, meth, *args)]
+	end
 	end
 end
 end
