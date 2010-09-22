@@ -634,19 +634,19 @@ class Preprocessor
 			readtok_nopp_str(tok, c)
 		when ?a..?z, ?A..?Z, ?0..?9, ?$, ?_
 			tok.type = :string
-			tok.raw << c
+			raw = tok.raw << c
 			loop do
 				case c = getchar
 				when nil; ungetchar; break		# avoids 'no method "coerce" for nil' warning
 				when ?a..?z, ?A..?Z, ?0..?9, ?$, ?_
-					tok.raw << c
+					raw << c
 				else ungetchar; break
 				end
 			end
 
 		when ?\ , ?\t, ?\r, ?\n, ?\f
-			tok.type = :space
-			tok.raw << c
+			tok.type = ((c == ?\  || c == ?\t) ? :space : :eol)
+			raw = tok.raw << c
 			loop do
 				case c = getchar
 				when nil; break
@@ -654,30 +654,29 @@ class Preprocessor
 				when ?\n, ?\f, ?\r; tok.type = :eol
 				else break
 				end
-				tok.raw << c
+				raw << c
 			end
 			ungetchar
-			tok.type = :eol if tok.raw.index(?\n) or tok.raw.index(?\f)
 
 		when ?/
-			tok.raw << c
+			raw = tok.raw << c
 			# comment
 			case c = getchar
 			when ?/
 				# till eol
 				tok.type = :eol
-				tok.raw << c
+				raw << c
 				while c = getchar
-					tok.raw << c
+					raw << c
 					break if c == ?\n
 				end
 			when ?*
 				tok.type = :space
-				tok.raw << c
+				raw << c
 				seenstar = false
 				loop do
 					raise tok, 'unterminated c++ comment' if not c = getchar
-					tok.raw << c
+					raw << c
 					case c
 					when ?*; seenstar = true
 					when ?/; break if seenstar	# no need to reset seenstar, already false
