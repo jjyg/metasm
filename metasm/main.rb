@@ -341,17 +341,29 @@ class Expression < ExpressionType
 	# in operands order, and allows nesting using sub-arrays
 	# ex: Expression[[:-, 42], :*, [1, :+, [4, :*, 7]]]
 	# with a single argument, return it if already an Expression, else construct a new one (using unary +/-)
-	def self.[](l, op = nil, r = nil)
-		raise ArgumentError, 'invalid Expression[nil]' if not l and not r and not op
-		return l if l.kind_of? Expression and not op
-		l, op, r = nil, :-, -l if not op and l.kind_of? ::Numeric and l < 0
-		l, op, r = nil, :+, l  if not op
-		l, op, r = nil, l, op  if not r
-		l = self[*l] if l.kind_of? ::Array
+	def self.[](l, op=nil, r=nil)
+		if not r	# need to shift args
+			if not op
+				raise ArgumentError, 'invalid Expression[nil]' if not l
+				return l if l.kind_of? Expression
+				if l.kind_of? ::Numeric and l < 0
+					r = -l
+					op = :'-'
+				else
+					r = l
+					op = :'+'
+				end
+			else
+				r = op
+				op = l
+			end
+			l = nil
+		else
+			l = self[*l] if l.kind_of? ::Array
+		end
 		r = self[*r] if r.kind_of? ::Array
 		new(op, r, l)
 	end
-
 
 	# checks if a given Expression/Integer is in the type range
 	# returns true if it is, false if it overflows, and nil if cannot be determined (eg unresolved variable)
@@ -517,18 +529,8 @@ class Expression < ExpressionType
 				0
 			elsif l == 1
 				Expression[r, :'!=', 0].reduce_rec
-			elsif r == 0	# (no sideeffects) && 0 => 0
-				sideeffect = lambda { |e|
-					if e.kind_of? Expression
-						not [:+, :-, :*, :/, :&, :|, :^, :>, :<, :>>, :<<, :'==', :'!=', :<=, :>=, :'&&', :'||'].include?(e.op) or
-						sideeffect[e.lexpr] or sideeffect[e.rexpr]
-					elsif e.kind_of? ExpressionType
-						true	# fail safe
-					else
-						false
-					end
-				}
-				0 if not sideeffect[l]
+			elsif r == 0
+				0	# XXX l could be a special ExprType with sideeffects ?
 			end
 		elsif @op == :'||'
 			if l.kind_of? ::Numeric and l != 0	# shortcircuit eval
@@ -656,28 +658,7 @@ class Expression < ExpressionType
 			elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
 				Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
 			else
-				# a+(b+(c+(-a))) => b+c+0
-				# a+((-a)+(b+c)) => 0+b+c
-				neg_l = l.rexpr if l.kind_of? Expression and l.op == :-
-
-				# recursive search & replace -lexpr by 0
-				simplifier = lambda { |cur|
-					if (neg_l and neg_l == cur) or (cur.kind_of? Expression and cur.op == :- and not cur.lexpr and cur.rexpr == l)
-						# -l found
-						0
-					else
-						# recurse
-						if cur.kind_of? Expression and cur.op == :+
-							if newl = simplifier[cur.lexpr]
-								Expression[newl, cur.op, cur.rexpr].reduce_rec
-							elsif newr = simplifier[cur.rexpr]
-								Expression[cur.lexpr, cur.op, newr].reduce_rec
-							end
-						end
-					end
-				}
-
-				simplifier[r]
+				reduce_rec_add(l, r)
 			end
 		end
 
@@ -698,6 +679,34 @@ class Expression < ExpressionType
 			end
 		end
 		ret
+	end
+
+
+	# a+(b+(c+(-a))) => b+c+0
+	# a+((-a)+(b+c)) => 0+b+c
+	def reduce_rec_add(l, r)
+		if l.kind_of? Expression and l.op == :- and not l.lexpr
+			neg_l = l.rexpr
+		else
+			neg_l = Expression[:-, l]
+		end
+
+		# recursive search & replace -lexpr by 0
+		simplifier = lambda { |cur|
+			if neg_l == cur
+				# -l found
+				0
+			elsif cur.kind_of? Expression and cur.op == :+
+				# recurse
+				if newl = simplifier[cur.lexpr]
+					Expression[newl, cur.op, cur.rexpr].reduce_rec
+				elsif newr = simplifier[cur.rexpr]
+					Expression[cur.lexpr, cur.op, newr].reduce_rec
+				end
+			end
+		}
+
+		simplifier[r]
 	end
 
 	# a check to see if an Expr is the composition of two rotations (rol eax, 4 ; rol eax, 6 => rol eax, 10)
@@ -907,7 +916,7 @@ class EncodedData
 	# base defaults to the first export name + its offset
 	def binding(base = nil)
 		if not base
-			key = @export.keys.sort_by { |k| @export[k] }.first
+			key = @export.index(@export.values.min)
 			return {} if not key
 			base = (@export[key] == 0 ? key : Expression[key, :-, @export[key]])
 		end
