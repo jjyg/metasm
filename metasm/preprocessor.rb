@@ -551,6 +551,7 @@ class Preprocessor
 	def ungetchar
 		@pos = @ungetcharpos
 		@lineno = @ungetcharlineno
+		nil
 	end
 
 	# returns true if no more data is available
@@ -562,6 +563,7 @@ class Preprocessor
 	# lifo
 	def unreadtok(tok)
 		@queue << tok if tok
+		nil
 	end
 
 	# calls readtok_nopp and handles preprocessor directives

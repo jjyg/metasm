@@ -2707,11 +2707,11 @@ EOH
 			r.join("\n")
 		end
 
-		# returns a string containing the C definition of the toplevel function funcname, with its dependencies
-		def dump_definition(funcname)
+		# returns a string containing the C definition(s) of toplevel functions, with their dependencies
+		def dump_definition(*funcnames)
 			oldst = @toplevel.statements
 			@toplevel.statements = []
-			dump_definitions([@toplevel.symbol[funcname]])
+			dump_definitions(funcnames.map { |f| @toplevel.symbol[f] })
 		ensure
 			@toplevel.statements = oldst
 		end
@@ -3423,7 +3423,7 @@ EOH
 				else
 					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and @lexpr.lexpr and @lexpr.op != @op))
 					r.last << ' ' << @op.to_s << ' '
-					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and @rexpr.lexpr and @rexpr.op != @op))
+					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and @rexpr.lexpr and @rexpr.op != @op and @rexpr.op != :funcall))
 				end
 			end
 			r.last << ')' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
