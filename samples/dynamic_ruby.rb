@@ -115,8 +115,15 @@ class << self
 				:arity => v2}]
 		when :scope
 			[type, {:localnr => (v1 != 0 ? memory_read_int(v1) : 0),	# nr of local vars (+2 for $_/$~)
-				:cref => v2},	# node, starting point for const resolution
+				:cref => read_node(v2)[1..-1]},	# node, starting point for const/@@var resolution
 				read_node(v3)]
+		when :cref
+			cur = nil if cur and cur[0] != type
+			cur ||= [type]
+			cur << rb_value_to_obj(v1) if v1 != 0
+			n = read_node(v3, cur)
+			raise "block->next = #{n.inspect}" if n and n[0] != type
+			cur
 		when :call, :fcall, :vcall
 			ret = [type, read_node(v1), v2.id2name]
 			if args = read_node(v3)
@@ -850,7 +857,7 @@ EOS
 			# we can find it by analysing rb_block_given_p, but this won't work with a static precompiled rubyhack...
 			# even with access to ruby_block, there we would need to redo PUSH_BLOCK, create a temporary dvar list,
 			# handle [:break, lol], and do all the stack magic reused in rb_yield (probably incl setjmp etc)
-			raise Fail, "unsupported iter #{ast[1].inspect}   -   #{ast[3].inspect}   -   #{ast[2].inspect}"
+			raise Fail, "unsupported iter #{ast[3].inspect}  {  | #{ast[1].inspect} |    #{ast[2].inspect}  }"
 
 		when :call, :vcall, :fcall
 			if v = optimize_call(ast, scope, want_value)
@@ -878,19 +885,22 @@ EOS
 			end
 
 			tbdy = C::Block.new(scope)
-			thn = ast_to_c(ast[2], tbdy, want_value)
 			ebdy = C::Block.new(scope) if ast[3]
-			els = ast_to_c(ast[3], ebdy, want_value)
 
-			tmp = get_new_tmp_var('if', want_value) if want_value
+			if want_value
+				tmp = get_new_tmp_var('if', want_value)
+				thn = ast_to_c(ast[2], tbdy, tmp)
+				tbdy.statements << C::CExpression[tmp, :'=', thn] if tmp != thn
+				els = ast_to_c(ast[3], ebdy, tmp)
+				ebdy.statements << C::CExpression[tmp, :'=', els] if ast[3] and tmp != els
+			else
+				ast_to_c(ast[2], tbdy, false)
+				ast_to_c(ast[3], ebdy, false)
+			end
 
 			scope.statements << C::If.new(cnd, tbdy, ebdy)
 
-			if want_value
-				tbdy.statements << C::CExpression[tmp, :'=', thn] if tmp != thn
-				ebdy.statements << C::CExpression[tmp, :'=', els] if ast[3] and tmp != els
-				tmp
-			end
+			tmp
 
 		when :while, :until
 			pib = @iter_break
