@@ -49,7 +49,7 @@ EOS
 		:memo, :ifunc, :dsym, :attrasgn, :last
 	]
 
-	new_api_c 'void rb_define_method(uintptr_t, char *, void *, int)'
+	new_api_c 'void rb_define_method(uintptr_t, char *, uintptr_t (*)(), int)'
 	new_api_c 'void *rb_method_node(uintptr_t, unsigned id)'
 
 class << self
@@ -59,7 +59,7 @@ class << self
 	end
 
 	def get_method_node_ptr(klass, meth)
-		raise if not klass.kind_of? Class
+		raise "#{klass.inspect} is not a class" if not klass.kind_of? Module
 		rb_method_node(rb_obj_to_value(klass), meth.to_sym.to_i)
 	end
 
@@ -85,8 +85,17 @@ class << self
 	end
 
 	# same as load_binary_method but with an object and not a class
-	def set_object_method_binary(obj, *a)
+	def set_singleton_method_binary(obj, *a)
 		set_method_binary((class << obj ; self ; end), *a)
+	end
+
+	def read_method_ast(klass, meth)
+		read_node get_method_node_ptr(klass, meth)
+	end
+
+	def read_singleton_method_ast(klass, meth)
+		klass = (class << klass ; self ; end)
+		read_method_ast(klass, meth)
 	end
 
 	def read_node(ptr, cur=nil)
@@ -125,12 +134,7 @@ class << self
 			raise "block->next = #{n.inspect}" if n and n[0] != type
 			cur
 		when :call, :fcall, :vcall
-			ret = [type, read_node(v1), v2.id2name]
-			if args = read_node(v3)
-				raise "#{ret.inspect} with args != array: #{args.inspect}" if args[0] != :array
-				ret.concat args[1..-1]
-			end
-			ret
+			[type, read_node(v1), v2.id2name, read_node(v3)]
 		when :dstr
 			ret = [type, [:str, rb_value_to_obj(v1)]]
 			if args = read_node(v3)
@@ -152,7 +156,7 @@ class << self
 			[type, ((v1 == 1) ? :self : read_node(v1)), v2.id2name, read_node(v3)]
 		when :lvar
 			[type, v3]
-		when :ivar, :dvar, :gvar, :cvar, :const
+		when :ivar, :dvar, :gvar, :cvar, :const, :attrset
 			[type, v1.id2name]
 		when :str
 			# cannot use _id2ref here, probably the parser does not use standard alloced objects
@@ -208,35 +212,19 @@ class << self
 			[type, read_node(v1), read_node(v2)]
 		when :splat
 			[type, read_node(v1)]
+		when :argscat
+			[type, read_node(v1), read_node(v2), v3]
+		when :block_pass
+			# [args, block, receiver]: foo(bar, &baz) => [:bpass, [:array, bar], [:lvar, baz], [:call, 'foo', bar]]  (args in v1&v3!)
+			[type, read_node(v1), read_node(v2), read_node(v3)]
+		when :block_arg
+			[type, v1.id2name, v2, v3]
+		when :ensure
+			[type, read_node(v1), v2, read_node(v3)]
 		else
 			puts "unhandled #{type.inspect}"
 			[type, v1, v2, v3]
 		end
-	end
-
-	def compile_ruby(klass, meth)
-		ast = read_node get_method_node_ptr(klass, meth)
-
-		if $VERBOSE
-			require 'pp'
-			pp ast
-		end
-
-		return if not c = ruby_ast_to_c(ast, klass, meth)
-
-		if $VERBOSE
-			puts c
-		end
-
-		raw = compile_c(c).encoded
-		set_method_binary(klass, meth, raw)
-	end
-
-	def ruby_ast_to_c(ast, klass, meth)
-		return if not ast or ast[0] != :scope
-		cp = host_cpu.new_cparser
-		mname = RubyLiveCompiler.new(cp).compile(ast, klass, meth)
-		cp.dump_definition(mname)
 	end
 end	# class << self
 end
@@ -250,8 +238,8 @@ class RubyLiveCompiler
 	RUBY_H = <<EOS
 #{DynLdr::RUBY_H}
 
-VALUE rb_iv_get(VALUE, const char*);
-VALUE rb_iv_set(VALUE, const char*, VALUE);
+VALUE rb_ivar_get(VALUE, unsigned);
+VALUE rb_ivar_set(VALUE, unsigned, VALUE);
 VALUE rb_ivar_defined(VALUE, unsigned);
 VALUE rb_cvar_get(VALUE, unsigned);
 VALUE rb_cvar_set(VALUE, unsigned, VALUE, int);
@@ -262,6 +250,7 @@ VALUE rb_ary_new(void);
 VALUE rb_ary_new4(long, VALUE*);
 VALUE rb_ary_push(VALUE, VALUE);
 VALUE rb_ary_pop(VALUE);
+VALUE rb_ary_shift(VALUE);
 VALUE rb_hash_new(void);
 VALUE rb_hash_aset(VALUE, VALUE, VALUE);
 VALUE rb_str_new(const char*, long);
@@ -274,8 +263,10 @@ VALUE rb_range_new(VALUE, VALUE, int exclude_end);
 VALUE rb_Array(VALUE);	// :splat
 VALUE rb_ary_to_ary(VALUE);
 VALUE rb_hash_aref(VALUE, VALUE);
-
-void rb_define_method(VALUE, char *, void *, int);
+VALUE rb_funcall3(VALUE, unsigned, int, VALUE*);
+VALUE rb_singleton_class(VALUE);
+VALUE rb_block_proc(void);
+void rb_define_method(VALUE, char *, VALUE (*)(), int);
 void *rb_method_node(VALUE, unsigned);
 EOS
 
@@ -285,13 +276,17 @@ EOS
 	def self.compile(klass, *methlist)
 		@rcp ||= new
 		methlist.each { |meth|
-			ast = RubyHack.read_node(RubyHack.get_method_node_ptr(klass, meth))
-			next if not ast or ast[0] != :scope
+			ast = RubyHack.read_method_ast(klass, meth)
 			n = @rcp.compile(ast, klass, meth)
+			next if not n
 			raw = RubyHack.compile_c(@rcp.cp.dump_definition(n)).encoded
 			RubyHack.set_method_binary(klass, meth, raw)
 		}
 		self
+	end
+
+	def dump(m=nil)
+		m ? @cp.dump_definition(m) : @cp.to_s
 	end
 
 	def initialize(cp=nil)
@@ -302,33 +297,56 @@ EOS
 
 	# convert a ruby AST to a new C function
 	# returns the new function name
-	def compile(ast, klass, meth)
+	def compile(ast, klass, meth, singleton=false)
+		return if not ast
+
 		# TODO handle arbitrary block/yield constructs
 		# TODO analyse to find/optimize numeric locals that never need a ruby VALUE (ie native int vs INT2FIX)
 		# TODO detect block/closure exported out of the func & abort compilation
 
 		@klass = klass
 		@meth = meth
+		@meth_singleton = singleton
 
-		mname = escape_varname("m_#{@klass}##{@meth}".gsub('::', '_'))
+		mname = escape_varname("m_#{@klass}#{singleton ? '.' : '#'}#{@meth}".gsub('::', '_'))
 		@cp.parse "static void #{mname}(VALUE self) { }"
 		@cur_cfunc = @cp.toplevel.symbol[mname]
 		@cur_cfunc.type.type = value	# return type = VALUE, w/o 'missing return statement' warning
 
 		@scope = @cur_cfunc.initializer
 
-		if ast[0] == :scope and ast[2] and ast[2][0] == :block and ast[2][1] and ast[2][1][0] == :args
-			compile_args(@cur_cfunc, ast[2][1])
+		case ast[0]
+		when :ivar	# attr_reader
+			ret = fcall('rb_ivar_get', rb_self, rb_intern(ast[1]))
+		when :attrset	# attr_writer
+			compile_args(@cur_cfunc, [nil, 1])
+			ret = fcall('rb_ivar_set', rb_self, rb_intern(ast[1]), local(2))
+		when :scope	# standard ruby function
+			if ast[2] and ast[2][0] == :block and ast[2][1] and ast[2][1][0] == :args
+				compile_args(@cur_cfunc, ast[2][1])
+			end
+			want_value = true
+			if meth.to_s == 'initialize' and not singleton
+				want_value = false
+			end
+			ret = ast_to_c(ast[2], @scope, want_value)
+			ret = rb_nil if not want_value
+		#when :cfunc	# native ruby extension
+		else raise "unhandled function ast #{ast.inspect}"
 		end
-		ret = ast_to_c(ast[2], @scope)
 
 		@scope.statements << C::Return.new(ret)
 
 		mname
 	end
 
+	# return the arity of method 'name' on self
+	def method_arity(name=@meth)
+		@meth_singleton ? @klass.method(name).arity : @klass.instance_method(name).arity
+	end
+
 	def compile_args(func, args)
-		case @klass.instance_method(@meth).arity
+		case method_arity
 		when -1	# args[1] == 0 and (args[2] or args[3])
 			compile_args_m1(func, args)
 		when -2	# args[1] > 0 and (args[2] or args[3])
@@ -386,7 +404,7 @@ EOS
 		func.type.args << v
 
 		args[1].times { |i|
-			local(i+2, rb_funcall(v, 'shift'))
+			local(i+2, fcall('rb_ary_shift', v))
 		}
 
 		# populate arguments with default values
@@ -395,8 +413,7 @@ EOS
 			raise Fail, "unhandled vararglist #{args.inspect}" if args[2][0] != :block
 			args[2][1..-1].each { |a|
 				raise Fail, "unhandled arg #{a.inspect}" if a[0] != :lasgn
-				t = C::Block.new(@scope)
-				ast_to_c([:lasgn, a[1], [:call, [:rb2cvar, v.name], 'shift']], t, false)
+				t = C::CExpression[local(a[1], :none), :'=', fcall('rb_ary_shift', v)]
 				e = C::Block.new(@scope)
 				ast_to_c([:lasgn, a[1], a[2]], e, false)
 				@scope.statements << C::If.new(rb_ary_len(v), t, e)
@@ -431,9 +448,16 @@ EOS
 		#      default();
 		#   }
 		#      
-		ret = get_new_tmp_var('case', want_value)
-		var = ast_to_c(ast[1], scope, ret)
+		if want_value == true
+			ret = get_new_tmp_var('case', want_value)
+			want_value = ret
+		elsif want_value
+			ret = want_value
+		end
+
+		var = ast_to_c(ast[1], scope, want_value || true)
 		if not var.kind_of? C::Variable
+			ret ||= get_new_tmp_var('case', want_value)
 			scope.statements << C::CExpression[ret, :'=', var]
 			var = ret
 		end
@@ -463,7 +487,7 @@ EOS
 					}
 					cb = C::Block.new(scope)
 					v = ast_to_c(cs[2], cb, want_value)
-					cb.statements << C::CExpression[ret, :'=', v] if want_value
+					cb.statements << C::CExpression[ret, :'=', v] if want_value and v != ret
 					cb.statements << C::Break.new
 					body_int.statements << cb
 
@@ -491,7 +515,7 @@ EOS
 					}
 					cb = C::Block.new(scope)
 					v = ast_to_c(cs[2], cb, want_value)
-					cb.statements << C::CExpression[ret, :'=', v] if want_value
+					cb.statements << C::CExpression[ret, :'=', v] if want_value and v != ret
 					
 					fu = C::If.new(cnd, cb, nil)
 
@@ -507,7 +531,7 @@ EOS
 			else
 				cb = C::Block.new(scope)
 				v = ast_to_c(cs, cb, want_value)
-				cb.statements << C::CExpression[ret, :'=', v] if want_value
+				cb.statements << C::CExpression[ret, :'=', v] if want_value and v != ret
 				default = cb
 			end
 		}
@@ -571,7 +595,7 @@ EOS
 	# pass :none to avoid initializer
 	def get_var(name, initializer=:none)
 		name = escape_varname(name)
-		@scope.symbol[name] ||= declare_newvar(name, initializer || C::CExpression[[nil.object_id], value])
+		@scope.symbol[name] ||= declare_newvar(name, initializer || rb_nil)
 	end
 
 	# create a new temporary variable
@@ -609,6 +633,16 @@ EOS
 		rb_cast_pvalue(rb_self, 1)
 	end
 
+	def rb_nil
+		C::CExpression[[nil.object_id], value]
+	end
+	def rb_true
+		C::CExpression[[true.object_id], value]
+	end
+	def rb_false
+		C::CExpression[[false.object_id], value]
+	end
+
 	# call rb_intern on a string
 	def rb_intern(n)
 		# use the current interpreter's value
@@ -633,13 +667,13 @@ EOS
 				tmp = get_new_tmp_var('test')
 				scope.statements << C::CExpression[tmp, :'=', expr]
 			end
-			C::CExpression[[tmp, :'!=', nil.object_id], :'&&', [tmp, :'!=', false.object_id]]
+			C::CExpression[[tmp, :'!=', rb_nil], :'&&', [tmp, :'!=', rb_false]]
 		end
 	end
 
 	# generate C code to raise a RuntimeError, reason
-	def rb_raise(reason)
-		fcall('rb_raise', @cp.toplevel.symbol['rb_eRuntimeError'], reason)
+	def rb_raise(reason, cls='rb_eRuntimeError')
+		fcall('rb_raise', rb_global(cls), reason)
 	end
 
 	# return a C expr equivallent to TYPE(expr) == type for non-immediate types
@@ -696,22 +730,22 @@ EOS
 			raise Fail, "weird masgn lhs #{e.inspect} in #{ast.inspect}" if e[-1] != nil
 			# local_42 = full[i]
 			e = e.dup
-			e[-1] = [:call, [:rb2cvar, full.name], '[]', [:lit, i]]
+			e[-1] = [:rb2cstmt, rb_ary_ptr(full, i)]
 			ast_to_c(e, scope, false)
 		}
 		if ast[3]
 			raise Fail, "weird masgn lhs #{e.inspect} in #{ast.inspect}" if ast[3][-1] != nil
 			# local_28 = full[12..-1].to_a
 			e = ast[3].dup
-			e[-1] = [:call, [:call, [:rb2cvar, full.name], '[]', [:dot2, [:lit, ast[1].length-1], [:lit, -1]]], 'to_a']
+			e[-1] = [:call, [:call, [:rb2cvar, full.name], '[]', [:array, [:dot2, [:lit, ast[1].length-1], [:lit, -1]]]], 'to_a']
 			ast_to_c(e, scope, false)
 		end
 
 		full
 	end
 
-	def rb_cstget(cname)
-		fcall('rb_const_get', @cp.toplevel.symbol['rb_cObject'], rb_intern(cname))
+	def rb_global(cname)
+		@cp.toplevel.symbol[cname]
 	end
 
 	# compile an optimized :masgn with rhs.length == lhs.length (no need of a ruby array)
@@ -767,15 +801,15 @@ EOS
 			scope.statements << C::CExpression[l, :'=', st] if st != l
 			l
 		when :ivar
-			fcall('rb_iv_get', rb_self, ast[1])
+			fcall('rb_ivar_get', rb_self, rb_intern(ast[1]))
 		when :iasgn
 			if want_value
 				tmp = get_new_tmp_var("ivar_#{ast[1]}", want_value)
 				scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
-				scope.statements << fcall('rb_iv_set', rb_self, ast[1], tmp)
+				scope.statements << fcall('rb_ivar_set', rb_self, rb_intern(ast[1]), tmp)
 				tmp
 			else
-				scope.statements << fcall('rb_iv_set', rb_self, ast[1], ast_to_c(ast[2], scope))
+				scope.statements << fcall('rb_ivar_set', rb_self, rb_intern(ast[1]), ast_to_c(ast[2], scope))
 			end
 		when :cvar
 			fcall('rb_cvar_get', rb_selfclass, rb_intern(ast[1]))
@@ -783,10 +817,10 @@ EOS
 			if want_value
 				tmp = get_new_tmp_var("cvar_#{ast[1]}", want_value)
 				scope.statements << C::CExpression[tmp, :'=', ast_to_c(ast[2], scope)]
-				scope.statements << fcall('rb_cvar_set', rb_selfclass, rb_intern(ast[1]), tmp, false.object_id)
+				scope.statements << fcall('rb_cvar_set', rb_selfclass, rb_intern(ast[1]), tmp, rb_false)
 				tmp
 			else
-				scope.statements << fcall('rb_cvar_set', rb_selfclass, rb_intern(ast[1]), ast_to_c(ast[2], scope), false.object_id)
+				scope.statements << fcall('rb_cvar_set', rb_selfclass, rb_intern(ast[1]), ast_to_c(ast[2], scope), rb_false)
 			end
 		when :gvar
 			fcall('rb_gv_get', ast[1])
@@ -812,6 +846,11 @@ EOS
 
 		when :rb2cvar	# hax, used in vararg parsing
 			get_var(ast[1])
+		when :rb2cstmt
+			ast[1]
+
+		when :block_arg
+			local(ast[3], fcall('rb_block_proc'))
 
 		when :lit
 			case ast[1]
@@ -864,14 +903,30 @@ EOS
 				return v
 			end
 			recv = ((ast[0] == :call) ? ast_to_c(ast[1], scope) : rb_self)
-			args = ast[3..-1].map { |a| ast_to_c(a, scope) }
-			f = rb_funcall(recv, ast[2], *args)
+			if not ast[3]
+				f = rb_funcall(recv, ast[2])
+			elsif ast[3][0] == :array
+				args = ast[3][1..-1].map { |a| ast_to_c(a, scope) }
+				f = rb_funcall(recv, ast[2], *args)
+			elsif ast[3][0] == :splat
+				args = ast_to_c(ast[3], scope)
+				if not args.kind_of? C::Variable
+					tmp = get_new_tmp_var('args', want_value)
+					scope.statements << C::CExpression[tmp, :'=', args]
+					args = tmp
+				end
+				f = fcall('rb_funcall3', recv, rb_intern(ast[2]), rb_ary_len(args), rb_ary_ptr(args))
+			# elsif ast[3][0] == :argscat
+			else
+				raise Fail, "unsupported #{ast.inspect}"
+			end
 			if want_value
-				tmp = get_new_tmp_var('call', want_value)
+				tmp ||= get_new_tmp_var('call', want_value)
 				scope.statements << C::CExpression[tmp, :'=', f]
 				tmp
 			else
 				scope.statements << f
+				f
 			end
 
 		when :if, :when
@@ -939,8 +994,8 @@ EOS
 				v2 = ast_to_c(ast[2], e, tmp)
 				e.statements << C::CExpression[tmp, :'=', v2] if v2 != tmp
 			when :not
-				t = C::CExpression[tmp, :'=', [[false.object_id], value]]
-				e = C::CExpression[tmp, :'=', [[true.object_id], value]]
+				t = C::CExpression[tmp, :'=', rb_false]
+				e = C::CExpression[tmp, :'=', rb_true]
 			end
 			scope.statements << C::If.new(rb_test(v1, scope), t, e)
 			tmp
@@ -958,18 +1013,20 @@ EOS
 		when nil, :args
 			nil.object_id
 		when :nil
-			C::CExpression[[nil.object_id], value]
+			rb_nil
 		when :false
-			C::CExpression[[false.object_id], value]
+			rb_false
 		when :true
-			C::CExpression[[true.object_id], value]
+			rb_true
 		when :const
 			# XXX use scope.cref ?
+			# TODO do the resolution now once, and hardcode the result (also for :col2/:col3)
+			# (except bar::LOLZ ?)
 			fcall('rb_const_get', rb_selfclass, rb_intern(ast[1]))
 		when :colon2
 			fcall('rb_const_get', ast_to_c(ast[1], scope), rb_intern(ast[2]))
 		when :colon3
-			rb_cstget(ast[1])
+			fcall('rb_const_get', rb_global('rb_cObject'), rb_intern(ast[1]))
 		when :defined
 			case ast[1][0]
 			when :ivar
@@ -1003,6 +1060,11 @@ EOS
 			tmp
 		when :case
 			compile_case(ast, scope, want_value)
+		when :ensure
+			# TODO
+			ret = ast_to_c(ast[1], scope, want_value)
+			ast_to_c(ast[3], scope, false)
+			ret
 		else
 			raise Fail, "unsupported #{ast.inspect}"
 		end
@@ -1019,10 +1081,12 @@ EOS
 		ce = C::CExpression
 		op = ast[2]
 		int = C::BaseType.new(:ptr)	# signed VALUE
+		args = ast[3][1..-1] if ast[3] and ast[3][0] == :array
+		arg0 = args[0] if args and args[0]
 
-		if ast.length == 4 and ast[3][0] == :lit and ast[3][1].kind_of? Fixnum
+		if arg0 and arg0[0] == :lit and arg0[1].kind_of? Fixnum
 			# optimize 'x==42', 'x+42', 'x-42'
-			o2 = ast[3][1]
+			o2 = arg0[1]
 			return if not %w[== > < >= <= + -].include? op
 			if o2 < 0 and ['+', '-'].include? op
 				# need o2 >= 0 for overflow detection
@@ -1043,13 +1107,13 @@ EOS
 			when '=='
 				# XXX assume == only return true for full equality: if not Fixnum, then always false
 				# which breaks 1.0 == 1 and maybe others, but its ok
-				scope.statements << C::If.new(ce[recv, :'==', [int_v]], ce[tmp, :'=', [[true.object_id], value]], ce[tmp, :'=', [[false.object_id], value]])
+				scope.statements << C::If.new(ce[recv, :'==', [int_v]], ce[tmp, :'=', rb_true], ce[tmp, :'=', rb_false])
 			when '>', '<', '>=', '<='
 				# do the actual comparison on signed >>1 if both Fixnum
 				t = C::If.new(
 					ce[[[[recv], int], :>>, [1]], op.to_sym, [[[int_v], int], :>>, [1]]],
-					ce[tmp, :'=', [[true.object_id], value]],
-					ce[tmp, :'=', [[false.object_id], value]])
+					ce[tmp, :'=', rb_true],
+					ce[tmp, :'=', rb_false])
 				# fallback to actual rb_funcall
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
 				scope.statements << C::If.new(ce[recv, :&, 1], t, e)
@@ -1069,8 +1133,8 @@ EOS
 			tmp
 		
 		# Symbol#==
-		elsif ast.length == 4 and ast[3][0] == :lit and ast[3][1].kind_of? Symbol and op == '=='
-			s_v = ast_to_c(ast[3], scope)
+		elsif arg0 and arg0[0] == :lit and arg0[1].kind_of? Symbol and op == '=='
+			s_v = ast_to_c(arg0, scope)
 			tmp = get_new_tmp_var('opt', want_value)
 			recv = ast_to_c(ast[1], scope, tmp)
 			if not recv.kind_of? C::Variable
@@ -1078,13 +1142,13 @@ EOS
 				recv = tmp
 			end
 
-			scope.statements << C::If.new(ce[recv, :'==', [s_v]], ce[tmp, :'=', [[true.object_id], value]], ce[tmp, :'=', [[false.object_id], value]])
+			scope.statements << C::If.new(ce[recv, :'==', [s_v]], ce[tmp, :'=', rb_true], ce[tmp, :'=', rb_false])
 			tmp
 
-		elsif ast.length == 4 and op == '<<'
+		elsif arg0 and op == '<<'
 			tmp = get_new_tmp_var('opt', want_value)
 			recv = ast_to_c(ast[1], scope, tmp)
-			arg = ast_to_c(ast[3], scope)
+			arg = ast_to_c(arg0, scope)
 			if recv != tmp
 				scope.statements << ce[tmp, :'=', recv]
 				recv = tmp
@@ -1098,7 +1162,8 @@ EOS
 						C::If.new(rb_test_class_string(recv), st, oth))
 			tmp
 
-		elsif ast.length == 4 and op == '[]'
+		elsif arg0 and args.length == 1 and op == '[]'
+			return if ast[1][0] == :const	# Expression[42]
 			tmp = get_new_tmp_var('opt', want_value)
 			recv = ast_to_c(ast[1], scope, tmp)
 			if not recv.kind_of? C::Variable
@@ -1107,7 +1172,7 @@ EOS
 			end
 
 			idx = get_new_tmp_var('idx')
-			arg = ast_to_c(ast[3], scope, idx)
+			arg = ast_to_c(arg0, scope, idx)
 			if not arg.kind_of? C::Variable
 				scope.statements << ce[idx, :'=', arg]
 				arg = idx
@@ -1118,13 +1183,13 @@ EOS
 			ar.statements << ce[idx, :'=', [[[arg], int], :>>, [1]]]
 			ar.statements << C::If.new(ce[idx, :<, [0]], ce[idx, :'=', [idx, :+, rb_ary_len(recv)]], nil) 
 			ar.statements << C::If.new(ce[[idx, :<, [0]], :'||', [idx, :>=, [[rb_ary_len(recv)], int]]],
-					ce[tmp, :'=', [[nil.object_id], value]],
+					ce[tmp, :'=', rb_nil],
 					ce[tmp, :'=', rb_ary_ptr(recv, idx)])
 			st = C::Block.new(scope)
 			st.statements << ce[idx, :'=', [[[arg], int], :>>, [1]]]
 			st.statements << C::If.new(ce[idx, :<, [0]], ce[idx, :'=', [idx, :+, rb_str_len(recv)]], nil) 
 			st.statements << C::If.new(ce[[idx, :<, [0]], :'||', [idx, :>=, [[rb_str_len(recv)], int]]],
-					ce[tmp, :'=', [[nil.object_id], value]],
+					ce[tmp, :'=', rb_nil],
 					ce[tmp, :'=', [[[[rb_str_ptr(recv, idx), :&, [0xff]], :<<, [1]], :|, [1]], value]])
 			hsh = ce[tmp, :'=', fcall('rb_hash_aref', recv, arg)]
 			oth = ce[tmp, :'=', rb_funcall(recv, op, arg)]
@@ -1133,7 +1198,7 @@ EOS
 						C::If.new(ce[[arg, :&, 1], :'&&', rb_test_class_string(recv)], st, oth)))
 			tmp
 
-		elsif ast[1] and ast.length == 3 and op == 'empty?'
+		elsif ast[1] and not arg0 and op == 'empty?'
 			tmp = get_new_tmp_var('opt', want_value)
 			recv = ast_to_c(ast[1], scope, tmp)
 			if not recv.kind_of? C::Variable
@@ -1143,12 +1208,12 @@ EOS
 
 			scope.statements << C::If.new(rb_test_class_ary(recv),
 						      C::If.new(rb_ary_len(recv),
-								ce[tmp, :'=', [[false.object_id], value]],
-								ce[tmp, :'=', [[true.object_id], value]]),
+								ce[tmp, :'=', rb_false],
+								ce[tmp, :'=', rb_true]),
 						      ce[tmp, :'=', rb_funcall(recv, op)])
 			tmp
 
-		elsif ast[1] and ast.length == 3 and op == 'pop'
+		elsif ast[1] and not arg0 and op == 'pop'
 			tmp = get_new_tmp_var('opt', want_value)
 			recv = ast_to_c(ast[1], scope, tmp)
 			if not recv.kind_of? C::Variable
@@ -1166,15 +1231,38 @@ EOS
 
 			tmp
 
-		elsif not ast[1]
+		elsif ast[1] and op == 'kind_of?' and arg0 and (arg0[0] == :const or arg0[0] == :colon3)
+			# TODO check const maps to toplevel when :const
+			test =
+			case arg0[1]
+			when 'Symbol'
+				tmp = get_new_tmp_var('kindof', want_value)
+				ce[[ast_to_c(ast[1], scope, tmp), :'&', [0xf]], :'==', [0xe]]
+			#when 'Numeric', 'Integer'
+			when 'Fixnum'
+				tmp = get_new_tmp_var('kindof', want_value)
+				ce[ast_to_c(ast[1], scope, tmp), :'&', [0x1]]
+			when 'Array'
+				rb_test_class_ary(ast_to_c(ast[1], scope))
+			when 'String'
+				rb_test_class_string(ast_to_c(ast[1], scope))
+			else return
+			end
+puts "shortcut may be incorrect for #{ast.inspect}" if arg0[0] == :const
+			tmp ||= get_new_tmp_var('kindof', want_value)
+			scope.statements << C::If.new(test, ce[tmp, :'=', rb_true], ce[tmp, :'=', rb_false])
+			tmp
+
+		elsif not ast[1] or ast[1] == [:self]
 			optimize_call_static(ast, scope, want_value)
 		end
 	end
 
 	# return ptr, arity
 	# ptr is a CExpr pointing to the C func implementing klass#method
-	def get_cfuncptr(klass, method)
-		ptr = RubyHack.get_method_node_ptr(@klass, method)
+	def get_cfuncptr(klass, method, singleton=false)
+		cls = singleton ? (class << klass ; self ; end) : klass
+		ptr = RubyHack.get_method_node_ptr(cls, method)
 		return if ptr == 0
 		ftype = RubyHack::NODETYPE[(RubyHack.memory_read_int(ptr) >> 11) & 0xff]
 		return if ftype != :cfunc
@@ -1195,50 +1283,79 @@ EOS
 	# call C funcs directly
 	# assume private function calls are not virtual and hardlink them here
 	def optimize_call_static(ast, scope, want_value)
-		# TODO a = [lol, zor]; foo(*a)
-		arity = @klass.instance_method(ast[2]).arity rescue return
+		arity = method_arity(ast[2]) rescue return
 		if ast[2].to_s == @meth.to_s
 			# self is recursive
 			fptr = @cur_cfunc
 		else
-			fptr = get_cfuncptr(@klass, ast[2])
+			fptr = get_cfuncptr(@klass, ast[2], @meth_singleton)
 			return if not fptr
 		end
 
-		ret = get_new_tmp_var('ccall', want_value)
 		c_arglist = []
 
+		if not ast[3]
+			args = []
+		elsif ast[3][0] == :array
+			args = ast[3][1..-1]
+		elsif ast[3][0] == :splat
+			args = ast_to_c(ast[3], scope)
+			if arity != -2 and !args.kind_of?(C::Variable)
+				tmp = get_new_tmp_var('arg')
+				scope.statements << C::CExpression[tmp, :'=', args]
+				args = tmp
+			end
+			case arity
+			when -2
+				c_arglist << rb_self << args
+			when -1
+				c_arglist << [rb_ary_len(args)] << rb_ary_ptr(args) << rb_self
+			else
+				cnd = C::CExpression[rb_ary_len(args), :'!=', [arity]]
+				scope.statements << C::If.new(cnd, rb_raise("#{arity} args expected", 'rb_eArgumentError'), nil)
+
+				c_arglist << rb_self
+				arity.times { |i| c_arglist << rb_ary_ptr(args, i) }
+			end
+			arity = :canttouchthis
+		else return	# TODO
+		end
+
 		case arity
+		when :canttouchthis
 		when -2
 			arg = get_new_tmp_var('arg')
 			scope.statements << C::CExpression[arg, :'=', fcall('rb_ary_new')]
-			ast[3..-1].each { |a|
+			args.each { |a|
 				scope.statements << fcall('rb_ary_push', arg, ast_to_c(a, scope))
 			}
 			c_arglist << rb_self << arg
 
 		when -1
-			case ast.length
-			when 3	# no args
+			case args.length
+			when 0
 				argv = C::CExpression[[0], C::Pointer.new(value)]
-			when 4	# 1 arg
-				argv = get_new_tmp_var('argv')
-				val = ast_to_c(ast[3], scope, argv)
-				scope.statements << C::CExpression[argv, :'=', val] if argv != val
-				argv = C::CExpression[:'&', argv]
+			when 1
+				val = ast_to_c(args[0], scope)
+				if not val.kind_of? C::Variable
+					argv = get_new_tmp_var('argv')
+					scope.statements << C::CExpression[argv, :'=', val]
+					val = argv
+				end
+				argv = C::CExpression[:'&', val]
 			else
 				argv = get_new_tmp_var('argv')
-				argv.type = C::Array.new(value, ast.length-3)
-				ast[3..-1].each_with_index { |a, i|
+				argv.type = C::Array.new(value, args.length)
+				args.each_with_index { |a, i|
 					val = ast_to_c(a, scope)
 					scope.statements << C::CExpression[[argv, :'[]', [i]], :'=', val]
 				}
 			end
-			c_arglist << [ast.length - 3] << argv << rb_self
+			c_arglist << [args.length] << argv << rb_self
 
 		else
 			c_arglist << rb_self
-			ast[3..-1].each { |a|
+			args.each { |a|
 				va = get_new_tmp_var('arg')
 				val = ast_to_c(a, scope, va)
 				scope.statements << C::CExpression[va, :'=', val] if val != va
@@ -1246,8 +1363,14 @@ EOS
 			}
 		end
 
-		scope.statements << C::CExpression[ret, :'=', [fptr, :funcall, c_arglist]]
-		ret
+		f = C::CExpression[fptr, :funcall, c_arglist]
+		if want_value
+			ret = get_new_tmp_var('ccall', want_value)
+			scope.statements << C::CExpression[ret, :'=', f]
+			ret
+		else
+			scope.statements << f
+		end
 	end
 
 	def optimize_iter(ast, scope, want_value)
@@ -1280,7 +1403,7 @@ EOS
 			scope.statements << C::For.new(nil, nil, nil, body)
 
 		# int.times { |i| }
-		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'times'
+		elsif b_recv[0] == :call and not b_recv[3] and b_recv[2] == 'times'
 			limit = get_new_tmp_var('limit')
 			recv = ast_to_c(b_recv[1], scope, limit)
 			scope.statements << C::If.new(C::CExpression[:'!', [recv, :&, 1]], rb_raise('only Fixnum#times handled'), nil)
@@ -1298,7 +1421,7 @@ EOS
 			scope.statements << C::For.new(C::CExpression[cntr, :'=', [[0], cntr.type]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
 
 		# ary.each { |e| }
-		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'each' and b_args and
+		elsif b_recv[0] == :call and not b_recv[3] and b_recv[2] == 'each' and b_args and
 				b_args[0] == :dasgn_curr
 			ary = get_new_tmp_var('ary')
 			recv = ast_to_c(b_recv[1], scope, ary)
@@ -1317,14 +1440,14 @@ EOS
 			scope.statements << C::For.new(C::CExpression[cntr, :'=', [[0], cntr.type]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
 
 		# ary.find { |e| }
-		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'find' and b_args and
+		elsif b_recv[0] == :call and not b_recv[3] and b_recv[2] == 'find' and b_args and
 				b_args[0] == :dasgn_curr
 			ary = get_new_tmp_var('ary')
 			recv = ast_to_c(b_recv[1], scope, ary)
 			scope.statements << C::CExpression[ary, :'=', recv] if ary != recv
 			scope.statements << C::If.new(rb_test_class_ary(ary), nil, rb_raise('only Array#find { |e| } handled'))
 			if want_value
-				scope.statements << C::CExpression[@iter_break, :'=', [[nil.object_id], value]]
+				scope.statements << C::CExpression[@iter_break, :'=', rb_nil]
 			end
 			cntr = get_new_tmp_var('cntr')
 			cntr.type = C::BaseType.new(:int, :unsigned)
@@ -1344,7 +1467,7 @@ EOS
 			scope.statements << C::For.new(C::CExpression[cntr, :'=', [[0], cntr.type]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
 
 		# ary.map { |e| }
-		elsif b_recv[0] == :call and b_recv.length == 3 and b_recv[2] == 'map' and b_args and
+		elsif b_recv[0] == :call and not b_recv[3] and b_recv[2] == 'map' and b_args and
 				b_args[0] == :dasgn_curr
 			ary = get_new_tmp_var('ary')
 			recv = ast_to_c(b_recv[1], scope, ary)
@@ -1384,8 +1507,17 @@ class RubyStaticCompiler < RubyLiveCompiler
 	def self.compile(klass, *methlist)
 		@rcp ||= new
 		methlist.each { |meth|
-			ast = RubyHack.read_node(RubyHack.get_method_node_ptr(klass, meth))
-			@rcp.compile(ast, klass, meth) if ast and ast[0] == :scope
+			ast = RubyHack.read_method_ast(klass, meth)
+			@rcp.compile(ast, klass, meth)
+		}
+		self
+	end
+
+	def self.compile_singleton(klass, *methlist)
+		@rcp ||= new
+		methlist.each { |meth|
+			ast = RubyHack.read_singleton_method_ast(klass, meth)
+			@rcp.compile(ast, klass, meth, true)
 		}
 		self
 	end
@@ -1393,12 +1525,14 @@ class RubyStaticCompiler < RubyLiveCompiler
 	def self.dump
 		<<EOS + @rcp.cp.dump_definition('Init_compiledruby')
 #ifdef __ELF__
-asm .soname 'compiledruby';
 asm .pt_gnu_stack rw;
 #endif
 EOS
 	end
 
+	def dump(m=nil)
+		m ? @cp.dump_definition(m, 'do_init_once') : @cp.to_s
+	end
 
 	def initialize(cp=nil)
 		super(cp)
@@ -1424,19 +1558,20 @@ EOS
 		@init_scope_class_value = nil
 	end
 
-	def compile(ast, klass, method)
+	def compile(ast, klass, method, singleton=false)
 		@compiled_func_cache ||= {}
 
-		mname = super(ast, klass, method)
+		mname = super(ast, klass, method, singleton)
+		return if not mname
 
-		@compiled_func_cache[[klass, method.to_s]] = @cur_cfunc
+		@compiled_func_cache[[klass, method.to_s, singleton]] = @cur_cfunc
 
 		init = @cp.toplevel.symbol['do_init_once'].initializer
 		var = init.symbol['class']
 		if @init_scope_class_value == klass
 			cls = var
 		else
-			cls = C::CExpression[:'*', @cp.toplevel.symbol['rb_cObject']]
+			cls = rb_global('rb_cObject')
 			klass.name.split('::').each { |n|
 				init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
 				cls = var
@@ -1444,7 +1579,7 @@ EOS
 			@init_scope_class_value = klass
 		end
 		
-		init.statements << fcall('rb_define_method', cls, method.to_s, @cur_cfunc, klass.instance_method(method).arity)
+		init.statements << fcall("rb_define#{'_singleton' if singleton}_method", cls, method.to_s, @cur_cfunc, method_arity)
 
 		mname
 	end
@@ -1470,37 +1605,35 @@ EOS
 		v
 	end
 
-	def rb_cstget(cname)
-		fcall('rb_const_get', C::CExpression[:*, @cp.toplevel.symbol['rb_cObject']], rb_intern(cname))
+	# TODO remove this when the C compiler is fixed
+	def rb_global(cname)
+		C::CExpression[:*, @cp.toplevel.symbol[cname]]
 	end
 
-	def rb_raise(reason)
-		fcall('rb_raise', C::CExpression[:*, @cp.toplevel.symbol['rb_eRuntimeError']], reason)
-	end
-
-	def get_cfuncptr(klass, method)
+	def get_cfuncptr(klass, method, singleton=false)
 		# is it a func we have in the current cparser ?
-		if ptr = @compiled_func_cache[[klass, method.to_s]]
+		if ptr = @compiled_func_cache[[klass, method.to_s, singleton]]
 			return ptr
 		end
 
 		# check if it's a C or ruby func in the current interpreter
-		ptr = RubyHack.get_method_node_ptr(@klass, method)
+		cls = singleton ? (class << klass ; self ; end) : klass
+		ptr = RubyHack.get_method_node_ptr(cls, method)
 		return if ptr == 0
 		ftype = RubyHack::NODETYPE[(RubyHack.memory_read_int(ptr) >> 11) & 0xff]
 		return if ftype != :cfunc
 
 		# ok, so assume it will be the same next time
-		n = escape_varname "fptr_#{klass.name}##{method}".gsub('::', '_')
+		n = escape_varname "fptr_#{klass.name}#{singleton ? '.' : '#'}#{method}".gsub('::', '_')
 		if not v = @cp.toplevel.symbol[n]
-			v = get_cfuncptr_dyn(klass, method, n)
+			v = get_cfuncptr_dyn(klass, method, singleton, n)
 		end
 
 		v
 	end
 
-	def get_cfuncptr_dyn(klass, method, n)
-		arity = klass.instance_method(method).arity
+	def get_cfuncptr_dyn(klass, method, singleton, n)
+		arity = singleton ? klass.method(method).arity : klass.instance_method(method).arity
 		fproto = C::Function.new(value, [])
 		case arity
 		when -1; fproto.args << C::Variable.new(nil, C::BaseType.new(:int)) << C::Variable.new(nil, C::Pointer.new(value)) << C::Variable.new(nil, value)
@@ -1523,18 +1656,19 @@ EOS
 		if @init_scope_class_value == klass
 			cls = var
 		else
-			cls = C::CExpression[:'*', @cp.toplevel.symbol['rb_cObject']]
+			cls = rb_global('rb_cObject')
 			klass.name.split('::').each { |n|
 				init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
 				cls = var
 			}
 			@init_scope_class_value = klass
 		end
+		cls = fcall('rb_singleton_class', cls) if singleton
 		init.statements << C::CExpression[ptr, :'=', fcall('rb_method_node', cls, rb_intern(method))]
 
 		# dynamically recheck that klass#method is a :cfunc
-		cnd = C::CExpression[[[[ptr, :'[]', [0]], :>>, [11]], :&, [0xff]], :'!=', [RubyHack::NODETYPE.index(:cfunc)]]
-		init.statements << C::If.new(cnd, rb_raise("CFunc expected at #{klass}##{method}"), nil)
+		cnd = C::CExpression[[:'!', ptr], :'||', [[[[ptr, :'[]', [0]], :>>, [11]], :&, [0xff]], :'!=', [RubyHack::NODETYPE.index(:cfunc)]]]
+		init.statements << C::If.new(cnd, rb_raise("CFunc expected at #{klass}#{singleton ? '.' : '#'}#{method}"), nil)
 
 		init.statements << C::CExpression[v, :'=', [[ptr, :'[]', [1]], v.type]]
 
@@ -1566,24 +1700,32 @@ end
 
 
 
-if __FILE__ == $0
+if __FILE__ == $0 or ARGV.delete('ignore_argv0')
 
-demo = ARGV.empty? ? :test_jit : ARGV.first == 'asm' ? :inlineasm : ARGV.first == 'generate' ? :generate_persistent : :compile_ruby
+demo = case ARGV.first
+       when nil;        :test_jit
+       when 'asm';      :inlineasm
+       when 'generate'; :generate_persistent
+       else             :compile_ruby
+       end
 
-case demo	# chose your use case !
+
+case demo
 when :inlineasm
 	# cnt.times { sys_write str }
 	src_asm = <<EOS
-mov ecx, [ebp+8]
+ mov ecx, [ebp+8]
 again:
-push ecx
-mov eax, 4
-mov ebx, 1
-mov ecx, [ebp+12]
-mov edx, [ebp+16]
-int 80h
-pop ecx
-loop again
+ push ecx
+
+ mov eax, 4
+ mov ebx, 1
+ mov ecx, [ebp+12]
+ mov edx, [ebp+16]
+ int 80h
+
+ pop ecx
+ loop again
 EOS
 
 	src = <<EOS
@@ -1598,28 +1740,42 @@ VALUE foo(VALUE self, VALUE count, VALUE str) {
 void doit(int count, char *str, int strlen) { asm(#{src_asm.inspect}); }
 EOS
 
+	class Foo
+	end
+
 	m = Metasm::RubyHack.compile_c(src).encoded
 
-	o = Object.new
-	Metasm::RubyHack.set_object_method_binary(o, 'bar', m, 2)
+	Metasm::RubyHack.set_method_binary(Foo, 'bar', m, 2)
 
-	puts "test1"
-	o.bar(4, "blabla\n")
-
-	puts "test2"
-	o.bar(2, "foo\n")
+	Foo.new.bar(4, "blabla\n")
+	Foo.new.bar(2, "foo\n")
 
 
 when :compile_ruby
-	abort 'need <class> <method>' if ARGV.length != 2
-	c = Metasm.const_get(ARGV.shift)
-	m = ARGV.shift
-	ptr = Metasm::RubyHack.get_method_node_ptr(c, m)
-	ast = Metasm::RubyHack.read_node(ptr)
+	abort 'need <class#method>' if ARGV.empty?
 	require 'pp'
-	pp ast
-	c = Metasm::RubyHack.ruby_ast_to_c(ast, c, m)
-	puts c
+	puts '#if 0'
+	ARGV.each { |av|
+		next if not av =~ /^(.*)([.#])(.*)$/
+		cls, sg, meth = $1, $2, $3.to_sym
+		sg = { '.' => true, '#' => false }[sg]
+		cls = cls.split('::').inject(::Object) { |o, cst| o.const_get(cst) }
+		if sg
+			ast = Metasm::RubyHack.read_singleton_method_ast(cls, meth)
+			cls.method(meth) if not ast	# raise NoMethodError
+			puts '  --- ast ---'
+			pp ast
+			Metasm::RubyStaticCompiler.compile_singleton(cls, meth)
+		else
+			ast = Metasm::RubyHack.read_method_ast(cls, meth)
+			cls.instance_method(meth) if not ast
+			puts '  --- ast ---'
+			pp ast
+			Metasm::RubyStaticCompiler.compile(cls, meth)
+		end
+	}
+	puts '', '  ---  C  ---', '#endif'
+	puts Metasm::RubyStaticCompiler.dump
 
 
 when :test_jit
@@ -1632,7 +1788,7 @@ when :test_jit
 	end
 
 	t0 = Time.now
-	Metasm::RubyHack.compile_ruby(Foo, :bla)
+	Metasm::RubyLiveCompiler.compile(Foo, :bla)
 	t1 = Time.now
 	ret = Foo.new.bla(0x401_0000)
 	puts ret.to_s(16), ret.class
@@ -1641,7 +1797,9 @@ when :test_jit
 	puts "compile %.3fs  run %.3fs" % [t1-t0, t2-t1]
 
 when :generate_persistent
-	c_src = Metasm::RubyStaticCompiler.compile(Metasm::Preprocessor, :getchar, :ungetchar, :unreadtok, :readtok_nopp_str, :readtok_nopp, :readtok).dump
+	Metasm::RubyStaticCompiler.compile(Metasm::Preprocessor, :getchar, :ungetchar, :unreadtok, :readtok_nopp_str, :readtok_nopp, :readtok)
+	#Metasm::RubyStaticCompiler.compile(Metasm::Expression, :reduce_rec)
+	c_src = Metasm::RubyStaticCompiler.dump
 	File.open('compiledruby.c', 'w') { |fd| fd.puts c_src } if $VERBOSE
 	puts 'compiling..'
 	# To encode to a different file, you must also rename the Init_compliedruby() function to match the lib name
@@ -1650,3 +1808,5 @@ when :generate_persistent
 end
 
 end
+
+GC.disable if $0 =~ /ruby-prof/
