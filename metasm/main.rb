@@ -920,7 +920,7 @@ class EncodedData
 			return {} if not key
 			base = (@export[key] == 0 ? key : Expression[key, :-, @export[key]])
 		end
-		@export.inject({}) { |binding, (n, o)| binding.update n => Expression[base, :+, o] }
+		@export.inject({}) { |binding, (n, o)| binding.update n => Expression.new(:+, o, base) }
 	end
 
 	# returns an array of variables that needs to be defined for a complete #fixup
@@ -960,25 +960,31 @@ class EncodedData
 		when nil
 		when ::Fixnum
 			fill
-			@data = @data.realstring if defined? VirtualString and @data.kind_of? VirtualString
+			@data = @data.to_str if not @data.kind_of? String
 			@data << other
 			@virtsize += 1
 		when EncodedData
 			fill if not other.data.empty?
-			other.reloc.each  { |k, v| @reloc[k + @virtsize] = v  }
-			cf = (other.export.keys & @export.keys).find_all { |k| other.export[k] != @export[k] - @virtsize }
-			raise "edata merge: label conflict #{cf.inspect}" if not cf.empty?
-			other.export.each { |k, v| @export[k] = v + @virtsize }
-			other.inv_export.each { |k, v| @inv_export[@virtsize + k] = v }
+			other.reloc.each  { |k, v| @reloc[k + @virtsize] = v  } if not other.reloc.empty?
+			if not other.export.empty?
+				other.export.each { |k, v|
+					if @export[k] and @export[k] != v + @virtsize
+						cf = (other.export.keys & @export.keys).find_all { |k| other.export[k] != @export[k] - @virtsize }
+						raise "edata merge: label conflict #{cf.inspect}"
+					end
+					@export[k] = v + @virtsize
+				}
+				other.inv_export.each { |k, v| @inv_export[@virtsize + k] = v }
+			end
 			if @data.empty?; @data = other.data.dup
-			elsif defined? VirtualString and @data.kind_of? VirtualString; @data = @data.realstring << other.data
+			elsif not @data.kind_of?(String); @data = @data.to_str << other.data
 			else @data << other.data
 			end
 			@virtsize += other.virtsize
 		else
 			fill
 			if @data.empty?; @data = other.dup
-			elsif defined? VirtualString and @data.kind_of? VirtualString; @data = @data.realstring << other
+			elsif not @data.kind_of?(String); @data = @data.to_str << other
 			else @data << other
 			end
 			@virtsize += other.length
