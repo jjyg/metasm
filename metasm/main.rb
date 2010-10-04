@@ -969,7 +969,7 @@ class EncodedData
 			if not other.export.empty?
 				other.export.each { |k, v|
 					if @export[k] and @export[k] != v + @virtsize
-						cf = (other.export.keys & @export.keys).find_all { |k| other.export[k] != @export[k] - @virtsize }
+						cf = (other.export.keys & @export.keys).find_all { |k_| other.export[k_] != @export[k_] - @virtsize }
 						raise "edata merge: label conflict #{cf.inspect}"
 					end
 					@export[k] = v + @virtsize
