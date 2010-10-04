@@ -657,6 +657,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				split_block(di.block, di.address) if not di.block_head?	# this updates di.block
 				di.block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
 				bf = di.block
+			elsif di == true
+				bf = @function[addr]
 			end
 		elsif bf = @function[addr]
 			detect_function_thunk_noreturn(from) if bf.noreturn
