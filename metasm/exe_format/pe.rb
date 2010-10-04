@@ -6,8 +6,7 @@
 
 require 'metasm/exe_format/main'
 require 'metasm/exe_format/mz'
-require 'metasm/exe_format/coff_encode'
-require 'metasm/exe_format/coff_decode'
+require 'metasm/exe_format/coff'
 
 module Metasm
 class PE < COFF
