@@ -1110,5 +1110,31 @@ class EncodedData
 		raise EncodeError, 'cannot patch data: new content too long' if to - from < content.length
 		self[from, content.length] = content
 	end
+
+	# returns a list of offsets where /pat/ can be found inside @data
+	# scan is done per chunk of chunksz bytes, with a margin for chunk-overlapping patterns
+	# yields each offset found, and only include it in the result if the block returns !false
+	def pattern_scan(pat, chunksz=nil, margin=nil)
+		chunksz ||= 4*1024*1024 # scan 4MB at a time
+		margin  ||= 65536        # add this much bytes at each chunk to find /pat/ over chunk boundaries
+		pat = Regexp.new(Regexp.escape(pat)) if pat.kind_of? ::String
+
+		found = []
+		chunkoff = 0
+		while chunkoff < @data.length
+			chunk = @data[chunkoff, chunksz+margin].to_str
+			off = 0
+			while match_off = (chunk[off..-1] =~ pat)
+				break if off+match_off >= chunksz	# match fully in margin
+				match_addr = chunkoff + off + match_off
+				found << match_addr if not block_given? or yield(match_addr)
+				off += match_off + 1
+				# XXX +1 or +lastmatch.length ?
+				# 'aaaabc'.pattern_scan(/a*bc/) will match 5 times here
+			end
+			chunkoff += chunksz
+		end
+     		found
+	end
 end
 end
