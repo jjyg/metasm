@@ -99,7 +99,7 @@ class << self
 	end
 
 	def read_node(ptr, cur=nil)
-		return if ptr == 0
+		return if ptr == 0 or ptr == 4
 
 		type = NODETYPE[(memory_read_int(ptr) >> 11) & 0xff]
 		v1 = memory_read_int(ptr+8)
@@ -123,13 +123,13 @@ class << self
 			[type, {:fptr => v1,	# c func pointer
 				:arity => v2}]
 		when :scope
-			[type, {:localnr => (v1 != 0 ? memory_read_int(v1) : 0),	# nr of local vars (+2 for $_/$~)
+			[type, {:localnr => (v1 != 0 && v1 != 4 ? memory_read_int(v1) : 0),	# nr of local vars (+2 for $_/$~)
 				:cref => read_node(v2)[1..-1]},	# node, starting point for const/@@var resolution
 				read_node(v3)]
 		when :cref
 			cur = nil if cur and cur[0] != type
 			cur ||= [type]
-			cur << rb_value_to_obj(v1) if v1 != 0
+			cur << rb_value_to_obj(v1) if v1 != 0 and v1 != 4
 			n = read_node(v3, cur)
 			raise "block->next = #{n.inspect}" if n and n[0] != type
 			cur
@@ -322,6 +322,7 @@ EOS
 			compile_args(@cur_cfunc, [nil, 1])
 			ret = fcall('rb_ivar_set', rb_self, rb_intern(ast[1]), local(2))
 		when :scope	# standard ruby function
+			@cref = ast[1][:cref]
 			if ast[2] and ast[2][0] == :block and ast[2][1] and ast[2][1][0] == :args
 				compile_args(@cur_cfunc, ast[2][1])
 			end
@@ -343,6 +344,25 @@ EOS
 	# return the arity of method 'name' on self
 	def method_arity(name=@meth)
 		@meth_singleton ? @klass.method(name).arity : @klass.instance_method(name).arity
+	end
+
+	# find the scope where constname is defined from @cref
+	def resolve_const_owner(constname)
+		@cref.find { |cr| cr.constants.map { |c| c.to_s }.include? constname.to_s }
+	end
+
+	# checks if ast maps to a constant, returns it if it does
+	def check_const(ast)
+		case ast[0]
+		when :const
+			resolve_const_owner(ast[1])
+		when :colon2
+			if cst = check_const(ast[1])
+				cst.const_get(ast[2])
+			end
+		when :colon3
+			::Object.const_get(ast[2])
+		end
 	end
 
 	def compile_args(func, args)
@@ -536,6 +556,12 @@ EOS
 			end
 		}
 
+		# if we use the value of the case, we must add an 'else: nil'
+		if want_value and not default
+			default = C::Block.new(scope)
+			default.statements << C::CExpression[ret, :'=', rb_nil]
+		end
+
 		# assemble everything
 		scope.statements <<
 		if body_int.statements.empty?
@@ -714,6 +740,12 @@ EOS
 		rb_test_class_type(expr, 0xb)
 	end
 
+	# returns a static pointer to the constant
+	def rb_const(constname, owner = resolve_const_owner(constname))
+		raise Fail, "no dynamic constant resolution #{constname}" if not owner
+		cst = owner.const_get(constname)
+		C::CExpression[[RubyHack.rb_obj_to_value(cst)], value]
+	end
 
 	# compile a :masgn
 	def rb_masgn(ast, scope, want_value)
@@ -940,14 +972,19 @@ EOS
 			end
 
 			tbdy = C::Block.new(scope)
-			ebdy = C::Block.new(scope) if ast[3]
+			ebdy = C::Block.new(scope) if ast[3] or want_value
 
 			if want_value
 				tmp = get_new_tmp_var('if', want_value)
 				thn = ast_to_c(ast[2], tbdy, tmp)
 				tbdy.statements << C::CExpression[tmp, :'=', thn] if tmp != thn
-				els = ast_to_c(ast[3], ebdy, tmp)
-				ebdy.statements << C::CExpression[tmp, :'=', els] if ast[3] and tmp != els
+				if ast[3]
+					els = ast_to_c(ast[3], ebdy, tmp)
+				else
+					# foo = if bar ; baz ; end  => nil if !bar
+					els = rb_nil
+				end
+				ebdy.statements << C::CExpression[tmp, :'=', els] if tmp != els
 			else
 				ast_to_c(ast[2], tbdy, false)
 				ast_to_c(ast[3], ebdy, false)
@@ -1019,14 +1056,15 @@ EOS
 		when :true
 			rb_true
 		when :const
-			# XXX use scope.cref ?
-			# TODO do the resolution now once, and hardcode the result (also for :col2/:col3)
-			# (except bar::LOLZ ?)
-			fcall('rb_const_get', rb_selfclass, rb_intern(ast[1]))
+			rb_const(ast[1])
 		when :colon2
-			fcall('rb_const_get', ast_to_c(ast[1], scope), rb_intern(ast[2]))
+			if cst = check_const(ast[1])
+				rb_const(ast[2], cst)
+			else
+				fcall('rb_const_get', ast_to_c(ast[1], scope), rb_intern(ast[2]))
+			end
 		when :colon3
-			fcall('rb_const_get', rb_global('rb_cObject'), rb_intern(ast[1]))
+			rb_const(ast[1], ::Object)
 		when :defined
 			case ast[1][0]
 			when :ivar
@@ -1539,13 +1577,10 @@ EOS
 
 		@cp.parse <<EOS
 // static VALUE method(VALUE self, VALUE arg0, VALUE arg1) { return (VALUE)0; }
-// static int intern_Lol;
+// static VALUE const_Lol;
 static void do_init_once(void) {
-	VALUE class;
-
-	// intern_lol = rb_intern("Lol");
-	// class = rb_const_get(*rb_cObject, intern_Lol);
-	// rb_define_method(class, "method", method, 2);
+	// const_Lol = rb_const_get(*rb_cObject, rb_intern("Lol"));
+	// rb_define_method(const_Lol, "method", method, 2);
 }
 
 int Init_compiledruby(void) __attribute__((export)) { 
@@ -1554,8 +1589,11 @@ int Init_compiledruby(void) __attribute__((export)) {
 	return 0;
 }
 EOS
-		# current value of the 'class' variable (avoid consecutive search of Foo::Bar::Baz)
-		@init_scope_class_value = nil
+	end
+
+	# returns the 'do_init_once' function body
+	def init
+		@cp.toplevel.symbol['do_init_once'].initializer
 	end
 
 	def compile(ast, klass, method, singleton=false)
@@ -1566,42 +1604,60 @@ EOS
 
 		@compiled_func_cache[[klass, method.to_s, singleton]] = @cur_cfunc
 
-		init = @cp.toplevel.symbol['do_init_once'].initializer
-		var = init.symbol['class']
-		if @init_scope_class_value == klass
-			cls = var
-		else
-			cls = rb_global('rb_cObject')
-			klass.name.split('::').each { |n|
-				init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
-				cls = var
-			}
-			@init_scope_class_value = klass
-		end
+		cls = rb_const(nil, klass)
 		
 		init.statements << fcall("rb_define#{'_singleton' if singleton}_method", cls, method.to_s, @cur_cfunc, method_arity)
 
 		mname
 	end
 
-	def declare_newtopvar(name)
-		v = C::Variable.new(name, value)
+	def declare_newtopvar(name, initializer, type=value)
+		v = C::Variable.new(name, type)
+		v.storage = :static
 		@cp.toplevel.symbol[v.name] = v
 		pos = @cp.toplevel.statements.index @cp.toplevel.statements.find { |st|
 			st.kind_of? C::Declaration and st.var.type.kind_of? C::Function and st.var.initializer
 		} || -1
 		@cp.toplevel.statements.insert pos, C::Declaration.new(v)
+
+		if initializer
+			init.statements << C::CExpression[v, :'=', initializer]
+		end
+
 		v
 	end
 
 	def rb_intern(sym)
 		n = escape_varname("intern_#{sym}")
-		if not v = @cp.toplevel.symbol[n]
-			v = declare_newtopvar(n)
-			v.type = C::BaseType.new(:int, :unsigned)
-			v.storage = :static
-			@cp.toplevel.symbol['do_init_once'].initializer.statements << C::CExpression[v, :'=', fcall('rb_intern', sym.to_s)]
-		end
+		@cp.toplevel.symbol[n] || declare_newtopvar(n, fcall('rb_intern', sym.to_s), C::BaseType.new(:int, :unsigned))
+	end
+
+	# rb_const 'FOO', Bar::Baz  ==> 
+	#  const_Bar = rb_const_get(rb_cObject, rb_intern("Bar"));
+	#  const_Bar_Baz = rb_const_get(const_Bar, rb_intern("Baz"));
+	#  const_Bar_Baz_FOO = rb_const_get(const_Bar_Baz, rb_intern("FOO"));
+	# use rb_const(nil, class) to get a pointer to a class/module
+	def rb_const(constname, owner = resolve_const_owner(constname))
+		raise Fail, "no dynamic constant resolution #{constname}" if not owner
+
+		@const_value ||= { [::Object, 'Object'] => rb_global('rb_cObject') }
+
+		k = ::Object
+		v = nil
+		cname = owner.name
+		cname += '::' + constname if constname
+		cname.split('::').each { |n|
+			kk = k.const_get(n)
+			if not v = @const_value[[k, n]]
+				# class A ; end ; B = A  => B.name => 'A'
+				vn = "const_#{escape_varname((k.name + '::' + n).sub(/^Object::/, '').gsub('::', '_'))}"
+				vi = fcall('rb_const_get', rb_const(nil, k), fcall('rb_intern', n))
+				v = declare_newtopvar(vn, vi)
+				# n wont be reused, so do not alloc a global intern_#{n} for this
+				@const_value[[k, n]] = v
+			end
+			k = kk
+		}
 		v
 	end
 
@@ -1641,28 +1697,13 @@ EOS
 		else (arity+1).times { fproto.args << C::Variable.new(nil, value) }
 		end
 
-		v = declare_newtopvar(n)
-		v.type = C::Pointer.new(fproto)
-		v.storage = :static
-
-		init = @cp.toplevel.symbol['do_init_once'].initializer
 		if not ptr = init.symbol['ptr']
 			ptr = C::Variable.new('ptr', C::Pointer.new(C::BaseType.new(:int)))
 			init.symbol[ptr.name] = ptr
 			init.statements << C::Declaration.new(ptr)
 		end
 
-		var = init.symbol['class']
-		if @init_scope_class_value == klass
-			cls = var
-		else
-			cls = rb_global('rb_cObject')
-			klass.name.split('::').each { |n|
-				init.statements << C::CExpression[var, :'=', fcall('rb_const_get', cls, rb_intern(n))]
-				cls = var
-			}
-			@init_scope_class_value = klass
-		end
+		cls = rb_const(nil, klass)
 		cls = fcall('rb_singleton_class', cls) if singleton
 		init.statements << C::CExpression[ptr, :'=', fcall('rb_method_node', cls, rb_intern(method))]
 
@@ -1670,21 +1711,33 @@ EOS
 		cnd = C::CExpression[[:'!', ptr], :'||', [[[[ptr, :'[]', [0]], :>>, [11]], :&, [0xff]], :'!=', [RubyHack::NODETYPE.index(:cfunc)]]]
 		init.statements << C::If.new(cnd, rb_raise("CFunc expected at #{klass}#{singleton ? '.' : '#'}#{method}"), nil)
 
-		init.statements << C::CExpression[v, :'=', [[ptr, :'[]', [1]], v.type]]
-
-		v
+		vi = C::CExpression[[ptr, :'[]', [1]], C::Pointer.new(fproto)]
+		declare_newtopvar(n, vi, C::Pointer.new(fproto))
 	end
 
-	if defined? $trace_rbfuncall and $trace_rbfuncall
+    if defined? $trace_rbfuncall and $trace_rbfuncall
 	# dynamic trace of all rb_funcall made from our module
 	def rb_funcall(recv, meth, *args)
 		if not defined? @rb_fcid
+			@cp.parse <<EOS
+int atexit(void(*)(void));
+int printf(char*, ...);
+
+static unsigned rb_fcid_max = 1;
+static unsigned rb_fcntr[1];
+
+static void rb_fcstat(void)
+{
+	unsigned i;
+	for (i=0 ; i<rb_fcid_max ; ++i)
+		if (rb_fcntr[i])
+			printf("%u %u\\n", i, rb_fcntr[i]);
+}
+EOS
 			@rb_fcid = -1
-			@cp.parse 'int atexit(void(*)(void)); int printf(char*, ...); static unsigned rb_fcid_max = 1; static unsigned rb_fcntr[1]; ' +
-				'static void rb_fcstat(void) { for (unsigned i=0; i<rb_fcid_max; ++i) if (rb_fcntr[i]) printf("%u %u\\n", i, rb_fcntr[i]); }'
 			@rb_fcntr = @cp.toplevel.symbol['rb_fcntr']
 			@rb_fcid_max = @cp.toplevel.symbol['rb_fcid_max']
-			@cp.toplevel.symbol['do_init_once'].initializer.statements << fcall('atexit', @cp.toplevel.symbol['rb_fcstat'])
+			init.statements << fcall('atexit', @cp.toplevel.symbol['rb_fcstat'])
 		end
 		@rb_fcid += 1
 		@rb_fcid_max.initializer = C::CExpression[[@rb_fcid+1], @rb_fcid_max.type]
@@ -1693,7 +1746,7 @@ EOS
 		ctr = C::CExpression[:'++', [@rb_fcntr, :'[]', [@rb_fcid]]]
 		C::CExpression[ctr, :',', super(recv, meth, *args)]
 	end
-	end
+    end
 end
 end
 
@@ -1798,15 +1851,15 @@ when :test_jit
 
 when :generate_persistent
 	Metasm::RubyStaticCompiler.compile(Metasm::Preprocessor, :getchar, :ungetchar, :unreadtok, :readtok_nopp_str, :readtok_nopp, :readtok)
-	#Metasm::RubyStaticCompiler.compile(Metasm::Expression, :reduce_rec)
+	Metasm::RubyStaticCompiler.compile(Metasm::Expression, :reduce_rec, :initialize)
+	Metasm::RubyStaticCompiler.compile_singleton(Metasm::Expression, :[])
 	c_src = Metasm::RubyStaticCompiler.dump
 	File.open('compiledruby.c', 'w') { |fd| fd.puts c_src } if $VERBOSE
 	puts 'compiling..'
+begin ; require 'compiledruby' ; rescue LoadError ; end
 	# To encode to a different file, you must also rename the Init_compliedruby() function to match the lib name
 	Metasm::ELF.compile_c(Metasm::Ia32.new, c_src).encode_file('compiledruby.so')
 	puts 'ruby -r metasm -r compiledruby ftw'
 end
 
 end
-
-GC.disable if $0 =~ /ruby-prof/
