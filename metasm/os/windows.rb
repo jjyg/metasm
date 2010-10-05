@@ -1005,12 +1005,6 @@ class WindowsRemoteString < VirtualString
 		return if WinAPI.readprocessmemory(@handle, addr, page, len, 0) == 0
 		page
 	end
-
-	def realstring
-		s = [0].pack('C') * @length
-		WinAPI.readprocessmemory(@handle, @addr_start, s, @length, 0)
-		s
-	end
 end
 
 class WinDbgAPI

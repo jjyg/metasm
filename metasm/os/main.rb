@@ -227,10 +227,11 @@ class VirtualString
 	# returns a new VirtualString (using dup) if the request is bigger than @pagelength bytes
 	def read_range(from, len)
 		from += @addr_start
-		base, page = cache_get_page(from)
 		if not len
+			base, page = cache_get_page(from)
 			page[from - base]
 		elsif len <= @pagelength
+			base, page = cache_get_page(from)
 			s = page[from - base, len]
 			if from+len-base > @pagelength		# request crosses a page boundary
 				base, page = cache_get_page(from+len)
