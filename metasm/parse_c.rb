@@ -1077,7 +1077,6 @@ module C
 			@lexer.define_weak('__const', 'const')
 			@lexer.define_weak('__signed', 'signed')
 			@lexer.define_weak('__volatile', 'volatile')
-			@lexer.nodefine_strong('__REDIRECT_NTH')	# booh gnu
 			@lexer.nodefine_strong('alloca')		# TODO __builtin_alloca
 			@lexer.hooked_include['stddef.h'] = <<EOH
 /* simplified, define all at first invocation. may break things... */
