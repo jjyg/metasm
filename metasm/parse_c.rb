@@ -1076,7 +1076,13 @@ module C
 			@lexer.define_weak('__STDC__')
 			@lexer.define_weak('__const', 'const')
 			@lexer.define_weak('__signed', 'signed')
+			@lexer.define_weak('__signed__', 'signed')
 			@lexer.define_weak('__volatile', 'volatile')
+			if not @lexer.definition['__builtin_constant_p']
+				# magic macro to check if its arg is an immediate value
+				@lexer.define_weak('__builtin_constant_p', '0')
+				@lexer.definition['__builtin_constant_p'].args = [Preprocessor::Token.new([])]
+			end
 			@lexer.nodefine_strong('alloca')		# TODO __builtin_alloca
 			@lexer.hooked_include['stddef.h'] = <<EOH
 /* simplified, define all at first invocation. may break things... */
