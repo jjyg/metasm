@@ -85,9 +85,20 @@ class Graph
 		@madetree = false
 	end
 
+	# gives a text representation of the current graph state
+	def dump_layout(groups=@groups)
+		groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.sort.inspect}" }
+	end
+
 	def auto_arrange_step
+		# TODO fix
+		#  0->[1, 2] 1->[3] 2->[3, 4] 3->[] 4->[1]
+		#  push 0 jz l3  push 1 jz l4  push 2  l3: push 3  l4: hlt
+		# and more generally all non-looping graphs where this algo creates backward links
+
 		groups = @groups
 		return if groups.length <= 1
+
 		maketree = lambda { |roots|
 			next if @madetree
 			@madetree = true
@@ -116,7 +127,7 @@ class Graph
 				g.to.each { |gg| walk[gg] }
 			}
 
-			roots.each { |g| trim[g, g.from] }
+			roots.each { |g| trim[g, g.from] unless g.from.empty? }
 			roots.each { |g| walk[g] }
 			
 			# handle loops now (unmarked nodes)
@@ -319,7 +330,7 @@ class Graph
 
 		# unknown pattern, group as we can..
 		group_other = lambda {
-puts 'graph arrange: unknown configuration', groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.inspect}" }
+puts 'graph arrange: unknown configuration', dump_layout
 			g1 = groups.find_all { |g| g.from.empty? }
 			g1 << groups[rand(groups.length)] if g1.empty?
 			g2 = g1.map { |g| g.to }.flatten.uniq - g1
@@ -1089,41 +1100,31 @@ class GraphViewWidget < DrawableWidget
 			puts 'autoarrange done'
 		when ?u
 			gui_update
+
 		when ?R
 			load __FILE__
-		when ?S
+		when ?S	# reset
 			@curcontext.auto_arrange_init(@selected_boxes.empty? ? @curcontext.box : @selected_boxes)
+			puts 'reset', @curcontext.dump_layout, ''
 			zoom_all
 			redraw
-		when ?T
+		when ?T	# step auto_arrange
 			@curcontext.auto_arrange_step
+			puts @curcontext.dump_layout, ''
 			zoom_all
 			redraw
-		when ?L
+		when ?L	# post auto_arrange
 			@curcontext.auto_arrange_post
 			zoom_all
 			redraw
-		when ?V
+		when ?V	# shrink
 			@selected_boxes.each { |b_|
-				dx = (b_.from+b_.to).map { |bb| bb.x+bb.w/2 - b_.x-b_.w/2 }
+				dx = (b_.from + b_.to).map { |bb| bb.x+bb.w/2 - b_.x-b_.w/2 }
 				dx = dx.inject(0) { |s, xx| s+xx }/dx.length
-				if dx > 0
-					xmax = b_.from.map { |bb| bb.x if b_.from.find { |bbb|
-						bbb.x+bbb.w/2 < bb.x+bb.w/2 and bbb.y+bbb.h < bb.y
-					} }.compact.min
-					bx = b_.x+dx
-					bx = [bx, xmax-b_.w/2-@margin].min if xmax
-					b_.x = bx if bx > b_.x
-				else
-					xmin = b_.from.map { |bb| bb.x+bb.w if b_.from.find { |bbb|
-						bbb.x+bbb.w/2 < bb.x+bb.w/2 and bbb.y+bbb.h < bb.y
-					} }.compact.max
-					bx = b_.x+dx
-					bx = [bx, xmin+b_.w/2+@margin].max if xmin
-					b_.x = bx if bx < b_.x
-				end
+				b_.x += dx
 			}
 			redraw
+
 		when ?1	# (numeric) zoom to 1:1
 			if @zoom == 1.0
 				zoom_all
