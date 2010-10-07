@@ -276,6 +276,7 @@ module C
 					case tok.raw
 					when ';'; break
 					when ','
+					when '}'; parser.unreadtok(tok); break
 					else raise tok, '"," or ";" expected'
 					end
 				end
@@ -647,7 +648,7 @@ module C
 			raise tok || parser, '"(" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
 			raise tok, 'expr expected' if not expr = CExpression.parse(parser, scope) or not expr.type.arithmetic?
 			raise tok || parser, '")" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ')'
-			raise tok || parser, '";" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ';'
+			parser.checkstatementend(tok)
 
 			new expr, body
 		end
@@ -821,7 +822,7 @@ module C
 			end
 			raise tok || parser, '")" expected' if not tok or tok.type != :punct or tok.raw != ')'
 			ret.parse_attributes(parser)
-			raise tok || parser, '";" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ';'
+			parser.checkstatementend(tok)
 			ret
 		end
 	end
@@ -1302,6 +1303,13 @@ EOH
 			t
 		end
 
+		# checks that we are at the end of a statement, ie an ';' character (consumed), or a '}' (not consumed)
+		# otherwise, raise either the given token or self.
+		def checkstatementend(tok=nil)
+			raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or (tok.raw != ';' and tok.raw != '}')
+			unreadtok tok if tok.raw == '}'
+		end
+
 		# returns the size of a type in bytes
 		def sizeof(var, type=nil)
 			var, type = nil, var if var.kind_of? Type and not type
@@ -1462,6 +1470,7 @@ EOH
 				case tok.raw
 				when ','; nofunc = true
 				when ';'; break
+				when '}'; unreadtok(tok); break
 				else raise tok, '";" or "," expected'
 				end
 			end
@@ -1502,7 +1511,7 @@ EOH
 			elsif tok.type != :string
 				unreadtok tok
 				raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
-				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+				checkstatementend(tok)
 
 				if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.untypedef.kind_of? BaseType or expr.type.untypedef.name != :void) and CExpression.constant?(expr)
 					puts tok.exception("statement with no effect : #{expr}").message
@@ -1524,7 +1533,7 @@ EOH
 			when 'goto'
 				raise tok || self, 'label expected' if not tok = skipspaces or tok.type != :string
 				name = tok.raw
-				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+				checkstatementend(tok)
 				Goto.new name
 			when 'return'
 				expr = CExpression.parse(self, scope)	# nil allowed
@@ -1533,7 +1542,7 @@ EOH
 				if (not p and not i) or (i and not r.kind_of? ::Integer) or (p and r != 0)
 					check_compatible_type(tok, (expr ? expr.type : BaseType.new(:void)), nest[0])
 				end
-				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+				checkstatementend(tok)
 				Return.new expr
 			when 'case'
 				raise tok, 'case out of switch' if not nest.include? :switch
@@ -1543,11 +1552,11 @@ EOH
 				raise tok, 'case out of switch' if not nest.include? :switch
 				Case.new 'default', nil, parse_statement(scope, nest)
 			when 'continue'
-				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+				checkstatementend(tok)
 				raise tok, 'continue out of loop' if not nest.include? :loop
 				Continue.new
 			when 'break'
-				raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+				checkstatementend(tok)
 				raise tok, 'break out of loop' if not nest.include? :loop and not nest.include? :switch
 				Break.new
 			when 'asm', '__asm', '__asm__'
@@ -1564,7 +1573,7 @@ EOH
 					unreadtok ntok
 					unreadtok tok
 					raise tok, 'expr expected' if not expr = CExpression.parse(self, scope)
-					raise tok || self, '";" expected' if not tok = skipspaces or tok.type != :punct or tok.raw != ';'
+					checkstatementend(tok)
 
 					if $VERBOSE and not nest.include?(:expression) and (expr.op or not expr.type.untypedef.kind_of? BaseType or expr.type.untypedef.name != :void) and CExpression.constant?(expr)
 						puts tok.exception("statement with no effect : #{expr}").message
