@@ -419,8 +419,28 @@ puts 'graph arrange: unknown configuration', dump_layout
 			end
 		}
 
+		boxxy = @box.sort_by { |bb| bb.y }
+		# fill gaps that we created
+		@box.each { |b|
+			bottom = b.y+b.h
+			next if not follower = boxxy.find { |bb| bb.y+bb.h > bottom }
+
+			# preserve line[] constructs margins
+			gap = follower.y-16*follower.from.length - (bottom+16*b.to.length)
+			next if gap <= 0
+
+			@box.each { |bb|
+				if bb.y+bb.h <= bottom
+					bb.y += gap/2
+				else
+					bb.y -= gap/2
+				end
+			}
+			boxxy = @box.sort_by { |bb| bb.y }
+		}
+
 		@box[0,0].each { |b|
-			# TODO elastic positionning (ignore up arrows ?) & collision detection (box vs box and box vs arrow)
+			# TODO elastic positionning (ignore up arrows ?) & collision detection (box/box + box/arrow)
 			f = b.from[0]
 			t = b.to[0]
 			if b.to.length == 1 and b.from.length == 1 and b.y+b.h<t.y and b.y>f.y+f.h
@@ -683,11 +703,12 @@ class GraphViewWidget < DrawableWidget
 	def paint_arrow(b1, b2)
 		x1, y1 = b1.x+b1.w/2-@curcontext.view_x, b1.y+b1.h-@curcontext.view_y
 		x2, y2 = b2.x+b2.w/2-@curcontext.view_x, b2.y-1-@curcontext.view_y
+		x1o, x2o = x1, x2
 		margin = @margin
 		x1 += (-(b1.to.length-1)/2 + b1.to.index(b2)) * margin/2
 		x2 += (-(b2.from.length-1)/2 + b2.from.index(b1)) * margin/2
 		return if (y1+margin < 0 and y2 < 0) or (y1 > height/@zoom and y2-margin > height/@zoom)	# just clip on y
-		margin, x1, y1, x2, y2, b1w, b2w = [margin, x1, y1, x2, y2, b1.w, b2.w].map { |v| v*@zoom }
+		margin, x1, y1, x2, y2, b1w, b2w, x1o, x2o = [margin, x1, y1, x2, y2, b1.w, b2.w, x1o, x2o].map { |v| v*@zoom }
 
 
 		# XXX gtk wraps coords around 0x8000
@@ -720,22 +741,22 @@ class GraphViewWidget < DrawableWidget
 			draw_line(x1, y1, x2, y2) if x1 != y1 or x2 != y2
 
 		# else arrow up, need to sneak around boxes
-		elsif x1-b1w/2-margin >= x2+b2w/2+margin	# z
-			draw_line(x1, y1, x1-b1w/2-margin, y1)
-			draw_line(x1-b1w/2-margin, y1, x2+b2w/2+margin, y2)
-			draw_line(x2+b2w/2+margin, y2, x2, y2)
-			draw_line(x1, y1+1, x1-b1w/2-margin, y1+1) # double
-			draw_line(x1-b1w/2-margin+1, y1, x2+b2w/2+margin+1, y2)
-			draw_line(x2+b2w/2+margin, y2+1, x2, y2+1)
+		elsif x1o-b1w/2-margin >= x2o+b2w/2+margin	# z
+			draw_line(x1, y1, x1o-b1w/2-margin, y1)
+			draw_line(x1o-b1w/2-margin, y1, x2o+b2w/2+margin, y2)
+			draw_line(x2o+b2w/2+margin, y2, x2, y2)
+			draw_line(x1, y1+1, x1o-b1w/2-margin, y1+1) # double
+			draw_line(x1o-b1w/2-margin+1, y1, x2o+b2w/2+margin+1, y2)
+			draw_line(x2o+b2w/2+margin, y2+1, x2, y2+1)
 		elsif x1+b1w/2+margin <= x2-b2w/2-margin	# invert z
-			draw_line(x1, y1, x1+b1w/2+margin, y1)
-			draw_line(x1+b1w/2+margin, y1, x2-b2w/2-margin, y2)
-			draw_line(x2-b2w/2-margin, y2, x2, y2)
+			draw_line(x1, y1, x1o+b1w/2+margin, y1)
+			draw_line(x1o+b1w/2+margin, y1, x2o-b2w/2-margin, y2)
+			draw_line(x2o-b2w/2-margin, y2, x2, y2)
 			draw_line(x1, y1+1, x1+b1w/2+margin, y1+1) # double
-			draw_line(x1+b1w/2+margin+1, y1, x2-b2w/2-margin+1, y2)
-			draw_line(x2-b2w/2-margin, y2+1, x2, y2+1)
+			draw_line(x1o+b1w/2+margin+1, y1, x2o-b2w/2-margin+1, y2)
+			draw_line(x2o-b2w/2-margin, y2+1, x2, y2+1)
 		else						# turn around
-			x = (x1 <= x2 ? [x1-b1w/2-margin, x2-b2w/2-margin].min : [x1+b1w/2+margin, x2+b2w/2+margin].max)
+			x = (x1 <= x2 ? [x1o-b1w/2-margin, x2o-b2w/2-margin].min : [x1o+b1w/2+margin, x2o+b2w/2+margin].max)
 			draw_line(x1, y1, x, y1)
 			draw_line(x, y1, x, y2)
 			draw_line(x, y2, x2, y2)
