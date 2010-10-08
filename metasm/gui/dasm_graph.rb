@@ -1137,6 +1137,32 @@ class GraphViewWidget < DrawableWidget
 				b_.x += dx
 			}
 			redraw
+		when ?I	# create arbitrary boxes/links
+			if @selected_boxes.empty?
+				@fakebox ||= 0
+				b = @curcontext.new_box "id_#@fakebox",
+					:addresses => [], :line_address => [],
+					:line_text_col => [[["  blublu #@fakebox", :text]]]
+				b.w = @font_width * 15
+				b.h = @font_height * 2
+				b.x = rand(200) - 100
+				b.y = rand(200) - 100
+				
+				@fakebox += 1
+			else
+				b1, *bl = @selected_boxes
+				bl = [b1] if bl.empty?	# loop
+				bl.each { |b2|
+					if b1.to.include? b2
+						b1.to.delete b2
+						b2.from.delete b1
+					else
+						b1.to << b2
+						b2.from << b1
+					end
+				}
+			end
+			redraw
 
 		when ?1	# (numeric) zoom to 1:1
 			if @zoom == 1.0
