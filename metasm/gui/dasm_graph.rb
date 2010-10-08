@@ -690,14 +690,24 @@ class GraphViewWidget < DrawableWidget
 		margin, x1, y1, x2, y2, b1w, b2w = [margin, x1, y1, x2, y2, b1.w, b2.w].map { |v| v*@zoom }
 
 
-		# gtk wraps coords around 0x8000
+		# XXX gtk wraps coords around 0x8000
 		if x1.abs > 0x7000 ; y1 /= x1.abs/0x7000 ; x1 /= x1.abs/0x7000 ; end
 		if y1.abs > 0x7000 ; x1 /= y1.abs/0x7000 ; y1 /= y1.abs/0x7000 ; end
 		if x2.abs > 0x7000 ; y2 /= x2.abs/0x7000 ; x2 /= x2.abs/0x7000 ; end
 		if y2.abs > 0x7000 ; x2 /= y2.abs/0x7000 ; y2 /= y2.abs/0x7000 ; end
 
+		# straighten vertical arrows if possible
+		if y2 > y1 and (x1-x2).abs <= margin
+			if b1.to.length == 1
+				x1 = x2
+			elsif b2.from.length == 1
+				x2 = x1
+			end
+		end
+
 		set_color_arrow(b1, b2)
 		if margin > 1
+			# draw arrow tip
 			draw_line(x1, y1, x1, y1+margin)
 			draw_line(x2, y2-margin+1, x2, y2)
 			draw_line(x2-margin/2, y2-margin/2, x2, y2)
@@ -706,7 +716,10 @@ class GraphViewWidget < DrawableWidget
 			y2 -= margin-1
 		end
 		if y2+margin >= y1-margin-1
+			# straight vertical down arrow
 			draw_line(x1, y1, x2, y2) if x1 != y1 or x2 != y2
+
+		# else arrow up, need to sneak around boxes
 		elsif x1-b1w/2-margin >= x2+b2w/2+margin	# z
 			draw_line(x1, y1, x1-b1w/2-margin, y1)
 			draw_line(x1-b1w/2-margin, y1, x2+b2w/2+margin, y2)
