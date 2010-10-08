@@ -116,8 +116,8 @@ class Expression
 	def render
 		l = @lexpr.kind_of?(Integer) ? render_integer(@lexpr) : @lexpr
 		r = @rexpr.kind_of?(Integer) ? render_integer(@rexpr) : @rexpr
-		l = ['(', l, ')'] if @lexpr.kind_of? Expression and oa = NOSQ1[@op] and oa.include?(@lexpr.op)
-		r = ['(', r, ')'] if @rexpr.kind_of? Expression and oa = NOSQ2[@op] and oa.include?(@rexpr.op)
+		l = ['(', l, ')'] if @lexpr.kind_of? Expression and (not oa = NOSQ1[@op] or not oa.include?(@lexpr.op))
+		r = ['(', r, ')'] if @rexpr.kind_of? Expression and (not oa = NOSQ2[@op] or not oa.include?(@rexpr.op))
 		op = @op if l or @op != :+
 		if op == :+
 			r0 = [r].flatten.first
