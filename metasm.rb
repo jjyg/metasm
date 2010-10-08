@@ -96,6 +96,10 @@ Metasm::CPU.class
 
 # remove an 1.9 warning, couldn't find a compatible way...
 if {}.respond_to? :key
-	puts "using ruby1.9 workaround for Hash.index" if $DEBUG
-	class Hash ; alias index key end
+	puts "using ruby1.9 workaround for Hash#index warning" if $DEBUG
+	class Hash
+		alias index_premetasm index rescue nil
+		undef index rescue nil
+		alias index key
+	end
 end
