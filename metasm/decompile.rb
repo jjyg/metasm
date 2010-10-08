@@ -488,7 +488,7 @@ class Decompiler
 			when C::Goto
 				if jumpto[s.target]
 					r = jumpto[s.target].dup
-					r.value = C::CExpression[r.value.reduce(@c_parser)] if r.kind_of? C::Return and r.value	# deep_dup
+					r.value = r.value.deep_dup if r.kind_of? C::Return and r.value.kind_of? C::CExpression
 					r
 				end
 			when C::Return
