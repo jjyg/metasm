@@ -286,7 +286,7 @@ class CCompiler < C::Compiler
 		elsif e.kind_of? Expression
 			if type.integral?
 				if type.name == :__int64 and @cpusz != 64
-					e2 = inuse Composite.new(findreg(32), findreg(32))
+					e2 = inuse Composite.new(inuse(findreg(32)), findreg(32))
 					instr 'mov', e2.low, Expression[e, :&, 0xffff_ffff]
 					instr 'mov', e2.high, Expression[e, :>>, 32]
 				else
@@ -1251,7 +1251,17 @@ class CCompiler < C::Compiler
 		r = c_cexpr_inner(expr)
 		r = make_volatile(r, expr.type)
 		unuse r
-		instr 'mov', Reg.new(0, r.sz), r if r.val != 0
+		if r.kind_of? Composite
+			if r.low.val == 2
+				instr 'xchg', r.low, r.high
+				instr 'mov', Reg.new(0, 32), r.low if r.high.val != 0
+			else
+				instr 'mov', Reg.new(2, 32), r.high if r.high.val != 2
+				instr 'mov', Reg.new(0, 32), r.low if r.low.val != 0
+			end
+		else
+			instr 'mov', Reg.new(0, r.sz), r if r.val != 0
+		end
 	end
 
 	def c_asm(stmt)
