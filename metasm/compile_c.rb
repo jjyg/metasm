@@ -1328,8 +1328,10 @@ module C
 					precompile_inner(compiler, scope)
 				when CExpression
 					# simplify casts
-					@rexpr = @rexpr.precompile_inner(compiler, scope)
 					CExpression.precompile_type(compiler, scope, self)
+					# propagate type first so that (__uint64)(-1) => 0xffffffffffffffff
+					@rexpr.type = @type
+					@rexpr = @rexpr.precompile_inner(compiler, scope)
 					if @type.kind_of? BaseType and @rexpr.type.kind_of? BaseType
 						if @rexpr.type == @type
 							# noop cast
