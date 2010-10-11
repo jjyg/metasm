@@ -300,8 +300,8 @@ class CCompiler < C::Compiler
 				when 1; instr 'fld1'
 				else
 					esp = Reg.new(4, @cpusz)
-					instr 'push.i32', Expression[expr, :>>, 32]
-					instr 'push.i32', Expression[expr, :&, 0xffff_ffff]
+					instr 'push.i32', Expression[e, :>>, 32]
+					instr 'push.i32', Expression[e, :&, 0xffff_ffff]
 					instr 'fild', ModRM.new(@cpusz, 64, nil, nil, esp, nil)
 					instr 'add', esp, 8
 				end
@@ -358,9 +358,6 @@ class CCompiler < C::Compiler
 		when C::Label; findvar(C::Variable.new(expr.name, C::Array.new(C::BaseType.new(:void), 1)))
 		else puts "ia32/c_ce_i: unsupported #{expr}" if $VERBOSE
 		end
-	rescue
-		raise if caller[1...-1].grep(/c_cexpr_inner/).first
-		raise $!.message + " (#{expr})"
 	end
 
 	# compile a CExpression with no lexpr
@@ -433,7 +430,7 @@ class CCompiler < C::Compiler
 				e = e.modrm.dup
 				e.sz = sz
 				inuse e
-			when ModRM; e = make_volatile(e, expr.rexpr.type)
+			when ModRM; e = make_volatile(e, expr.rexpr.type) if not expr.rexpr.type.float?
 			end
 			case e
 			when Reg; unuse e ; e = inuse ModRM.new(@cpusz, sz, nil, nil, e, nil)
@@ -501,7 +498,11 @@ class CCompiler < C::Compiler
 						instr 'fild', r
 						return FpReg.new(nil)
 					end
-					instr 'push', r
+					if r.sz == 64
+						get_composite_parts(r).reverse_each { |rp| instr 'push', rp }
+					else
+						instr 'push', r
+					end
 				end
 			when Composite
 				instr 'push', r.high
@@ -524,15 +525,18 @@ class CCompiler < C::Compiler
 				if m.sz == 64 and @cpusz < 64
 					foo, m = get_composite_parts m
 				end
-				instr 'test', m, m
+				m2 = m
+				m2 = make_volatile(m, expr.rexpr.type) if m.kind_of? ModRM
+				m2 = get_composite_parts(m2)[0] if m2.kind_of? Composite
+				instr 'test', m2, m2
 				instr 'jns', Expression[label]
 				instr 'push.i32', Expression[0x7fff_ffff]
 				instr 'push.i32', Expression[0xffff_ffff]
 				instr 'fild', m
 				instr 'add', esp, 8
-				instr 'faddp'
+				instr 'faddp', FpReg.new(1)
 				instr 'fld1'
-				instr 'faddp'
+				instr 'faddp', FpReg.new(1)
 				@source << Label.new(label)
 			end
 			r = FpReg.new nil
@@ -774,6 +778,7 @@ class CCompiler < C::Compiler
 					end
 				end
 			elsif expr.type.float?
+				r = make_volatile(r, expr.type) if r.kind_of? Expression
 				instr 'fstp', l
 			end
 			l
@@ -1251,7 +1256,8 @@ class CCompiler < C::Compiler
 		r = c_cexpr_inner(expr)
 		r = make_volatile(r, expr.type)
 		unuse r
-		if r.kind_of? Composite
+		case r
+		when Composite
 			if r.low.val == 2
 				instr 'xchg', r.low, r.high
 				instr 'mov', Reg.new(0, 32), r.low if r.high.val != 0
@@ -1259,8 +1265,10 @@ class CCompiler < C::Compiler
 				instr 'mov', Reg.new(2, 32), r.high if r.high.val != 2
 				instr 'mov', Reg.new(0, 32), r.low if r.low.val != 0
 			end
-		else
+		when Reg
 			instr 'mov', Reg.new(0, r.sz), r if r.val != 0
+		when FpReg
+			instr 'fld', FpReg.new(r.val) if r.val and r.val != 0
 		end
 	end
 

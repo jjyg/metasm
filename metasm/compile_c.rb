@@ -272,9 +272,9 @@ module C
 				when :__int32; ' dd '
 				when :__int64; ' dq '
 				when :ptr; " d#{%w[x b w x d x x x q][@parser.typesize[type.name]]} "
-				when :float;   ' df '	# TODO
-				when :double;  ' dfd '
-				when :longdouble; ' dfld '
+				when :float;   ' db ' + [value].pack(@parser.endianness == :little ? 'e' : 'g').unpack('C*').join(', ') + ' // '
+				when :double;  ' db ' + [value].pack(@parser.endianness == :little ? 'E' : 'G').unpack('C*').join(', ') + ' // '
+				when :longdouble; ' db ' + [value].pack(@parser.endianness == :little ? 'E' : 'G').unpack('C*').join(', ') + ' // '	# XXX same as :double 
 				else raise "unknown idata type #{type.inspect} #{value.inspect}"
 				end
 
@@ -1324,7 +1324,7 @@ module C
 					v.type.qualifier = [:const]
 					v.initializer = CExpression.new(nil, nil, @rexpr, @type)
 					Declaration.new(v).precompile(compiler, scope)
-					@rexpr = CExpression.new(nil, :'*', v, Pointer.new(v.type))
+					@rexpr = CExpression.new(nil, :'*', v, v.type)
 					precompile_inner(compiler, scope)
 				when CExpression
 					# simplify casts
