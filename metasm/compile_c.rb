@@ -1329,8 +1329,8 @@ module C
 				when CExpression
 					# simplify casts
 					CExpression.precompile_type(compiler, scope, self)
-					# propagate type first so that (__uint64)(-1) => 0xffffffffffffffff
-					@rexpr.type = @type
+					# propagate type first so that __uint64 foo() { return -1 } => 0xffffffffffffffff
+					@rexpr.type = @type if @rexpr.kind_of? CExpression and @rexpr.op == :- and not @rexpr.lexpr and @type.kind_of? BaseType and @type.name == :__int64	# XXX kill me
 					@rexpr = @rexpr.precompile_inner(compiler, scope)
 					if @type.kind_of? BaseType and @rexpr.type.kind_of? BaseType
 						if @rexpr.type == @type
