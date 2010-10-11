@@ -149,6 +149,7 @@ module C
 		def arithmetic? ; @name != :void end
 		def integral? ; [:char, :short, :int, :long, :longlong, :ptr,
 			:__int8, :__int16, :__int32, :__int64].include? @name end
+		def signed? ; @specifier != :unsigned end
 		def float? ; [:float, :double, :longdouble].include? @name end
 		def void? ; @name == :void end
 		def align(parser) @name == :double ? 4 : parser.typesize[@name] end
@@ -186,6 +187,7 @@ module C
 		def pointer? ;    @type.pointer?      end
 		def arithmetic? ; @type.arithmetic?   end
 		def integral? ;   @type.integral?     end
+		def signed? ;     @type.signed?       end	# relevant only if integral? returns true
 		def float? ;      @type.float?        end
 		def void? ;       @type.void?         end
 		def untypedef ;   @type.untypedef     end
@@ -223,11 +225,12 @@ module C
 				return m
 			else
 				@members.each { |m_|
-					if t = m_.type.untypedef and t.kind_of? Union and mm = t.findmember(name)
+					if t = m_.type.untypedef and t.kind_of? Union and mm = t.findmember(name, igncase)
 						return mm
 					end
 				}
 			end
+
 			nil
 		end
 
@@ -372,6 +375,7 @@ module C
 
 		def parse_members(parser, scope)
 			super(parser, scope)
+
 			if has_attribute 'packed'
 				@pack = 1
 			elsif p = has_attribute_var('pack')
@@ -390,6 +394,7 @@ module C
 
 		def arithmetic?; true end
 		def integral?; true end
+		def signed?; false end
 
 		def parse_members(parser, scope)
 			val = -1
@@ -2061,7 +2066,7 @@ EOH
 			when :'.'
 				le = CExpression.reduce(parser, @lexpr)
 				if le.kind_of? Variable and le.initializer.kind_of? ::Array
-					midx = le.type.members.index(le.type.members.find { |m| m.name == @rexpr })
+					midx = le.type.members.index(le.type.findmember(@rexpr))
 					CExpression.reduce(parser, le.initializer[midx] || 0)
 				else
 					CExpression.new(le, @op, @rexpr, @type)
@@ -2581,22 +2586,22 @@ EOH
 								type = rt
 							elsif lts == rts and lts >= its
 								type = lt
-								type = rt if rt.qualifier == :unsigned
+								type = rt if rt.specifier == :unsigned
 							else
 								type = BaseType.new(:int)
 							end
 							# end of custom rules
-						elsif ((t = lt).name == :long and t.qualifier == :unsigned) or
-						      ((t = rt).name == :long and t.qualifier == :unsigned)
+						elsif ((t = lt).name == :long and t.specifier == :unsigned) or
+						      ((t = rt).name == :long and t.specifier == :unsigned)
 						# ... ulong ...
 							type = t
-						elsif (lt.name == :long and rt.name == :int and rt.qualifier == :unsigned) or
-						      (rt.name == :long and lt.name == :int and lt.qualifier == :unsigned)
+						elsif (lt.name == :long and rt.name == :int and rt.specifier == :unsigned) or
+						      (rt.name == :long and lt.name == :int and lt.specifier == :unsigned)
 						# long+uint => ulong
 							type = BaseType.new(:long, :unsigned)
 						elsif (t = lt).name == :long or (t = rt).name == :long or
-						      ((t = lt).name == :int and t.qualifier == :unsigned) or
-						      ((t = rt).name == :int and t.qualifier == :unsigned)
+						      ((t = lt).name == :int and t.specifier == :unsigned) or
+						      ((t = rt).name == :int and t.specifier == :unsigned)
 						# ... long > uint ...
 							type = t
 						else
@@ -3372,7 +3377,7 @@ EOH
 						if @type.kind_of? BaseType
 							r.last << 'U' if @type.specifier == :unsigned
 							case @type.name
-							when :longlong; r.last << 'LL'
+							when :longlong, :__int64; r.last << 'LL'
 							when :long, :longdouble; r.last << 'L'
 							when :float; r.last << 'F'
 							end
