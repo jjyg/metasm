@@ -212,6 +212,8 @@ module C
 		attr_accessor :name
 		attr_accessor :backtrace
 
+		attr_accessor :fldoffset, :fldbitoffset, :fldlist
+
 		def align(parser) @members.map { |m| m.type.align(parser) }.max end
 
 		def ==(o)
@@ -221,7 +223,11 @@ module C
 		end
 
 		def findmember(name, igncase=false)
-			if m = @members.find { |m_| igncase ? m_.name.to_s.downcase == name.downcase : m_.name == name }
+			update_member_cache if not fldlist
+			return @fldlist[name] if @fldlist[name]
+
+			name = name.downcase if igncase
+			if m = @members.find { |m_| (n = m_.name) and (igncase ? n.downcase : n) == name }
 				return m
 			else
 				@members.each { |m_|
@@ -235,20 +241,30 @@ module C
 		end
 
 		def offsetof(parser, name)
+			update_member_cache if not fldlist
+			return 0 if @fldlist[name]
 			raise parser, 'undefined union' if not @members
 			raise parser, 'unknown union member' if not findmember(name)
 
-			if @members.find { |m| m.name == name }
-				0
-			else
-				@members.find { |m|
-					m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
-				}.type.untypedef.offsetof(parser, name)
-			end
+			@members.find { |m|
+				m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
+			}.type.untypedef.offsetof(parser, name)
+		end
+
+		def bitoffsetof(parser, name)
+			update_member_cache if not fldlist
+			return if @fldlist[name]
+			raise parser, 'undefined union' if not @members
+			raise parser, 'unknown union member' if not findmember(name)
+
+			@members.find { |m|
+				m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
+			}.type.untypedef.bitoffsetof(parser, name)
 		end
 
 		def parse_members(parser, scope)
 			@members = []
+			@fldlist = {}
 			# parse struct/union members in definition
 			loop do
 				raise parser if not tok = parser.skipspaces
@@ -259,8 +275,8 @@ module C
 				loop do
 					member = basetype.dup
 					member.parse_declarator(parser, scope)
-					# raise parser if not member.name	# can be useful while hacking: struct foo {int; int*; int iwant;};
-					raise member.backtrace, 'member redefinition' if member.name and @members.find { |m| m.name == member.name }
+					raise member.backtrace, 'member redefinition' if member.name and @fldlist[member.name]
+					@fldlist[member.name] = member if member.name
 					@members << member
 
 					raise tok || parser if not tok = parser.skipspaces or tok.type != :punct
@@ -285,6 +301,14 @@ module C
 				end
 			end
 			parse_attributes(parser)
+		end
+
+		# updates the @fldoffset / @fldbitoffset hash storing the offset of members
+		def update_member_cache(parser)
+			@fldlist = {}
+			@members.each { |m|
+				@fldlist[m.name] = m if m.name
+			}
 		end
 
 		def parse_initializer(parser, scope)
@@ -314,7 +338,7 @@ module C
 			if nt = parser.skipspaces and nt.type == :punct and nt.raw == '.' and
 					nnt = parser.skipspaces and nnt.type == :string and
 					m = findmember(nnt.raw)
-				raise nnt, 'unhandled indirect initializer' if not nidx = @members.index(@members.find { |m_| m_.name == nnt.raw })	# TODO
+				raise nnt, 'unhandled indirect initializer' if not nidx = @members.index(@fldlist[nnt.raw])	# TODO
 				if not root
 					value[idx] ||= []	# AryRecorder may change [] to AryRec.new, can't do v = v[i] ||= []
 					value = value[idx]
@@ -340,23 +364,20 @@ module C
 		def align(parser) [@members.map { |m| m.type.align(parser) }.max, (pack || 8)].min end
 
 		def offsetof(parser, name)
+			update_member_cache(parser) if not fldoffset
+			return @fldoffset[name] if @fldoffset[name]
+
+			# this is almost never reached, only for <struct>.offsetof(anonymoussubstructmembername)
 			raise parser, 'undefined structure' if not @members
 			raise parser, 'unknown structure member' if not findmember(name)
 
-			indirect = true if not @members.find { |m| m.name == name }
+			indirect = true if not @fldlist[name]
 
 			al = align(parser)
 			off = 0
 			bit_off = 0
 			@members.each_with_index { |m, i|
-				if m.name == name
-					mal = [m.type.align(parser), al].min
-					off = (off + mal - 1) / mal * mal
-					break
-				elsif indirect and m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
-					off += m.type.untypedef.offsetof(parser, name)
-					break
-				elsif bits and b = @bits[i]
+				if bits and b = @bits[i]
 					isz = parser.typesize[:int]
 					if bit_off + b > 8*isz
 						bit_off = 0
@@ -364,13 +385,36 @@ module C
 					else
 						bit_off += b
 					end
+					break if m.name == name
+				elsif m.name == name
+					mal = [m.type.align(parser), al].min
+					off = (off + mal - 1) / mal * mal
+					break
+				elsif indirect and m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
+					off += m.type.untypedef.offsetof(parser, name)
+					break
 				else
+					bit_off = 0 if bit_off
 					mal = [m.type.align(parser), al].min
 					off = (off + mal - 1) / mal * mal
 					off += parser.sizeof(m)
 				end
 			}
 			off
+		end
+
+		# returns the [bitoffset, bitlength] of the field if it is a bitfield
+		# this should be added to the offsetof(field)
+		def bitoffsetof(parser, name)
+			update_member_cache if not fldlist
+			return @fldbitoffset[name] if fldbitoffset and @fldbitoffset[name]
+			return if @fldlist[name]
+			raise parser, 'undefined union' if not @members
+			raise parser, 'unknown union member' if not findmember(name)
+
+			@members.find { |m|
+				m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
+			}.type.untypedef.bitoffsetof(parser, name)
 		end
 
 		def parse_members(parser, scope)
@@ -382,6 +426,51 @@ module C
 				@pack = p[/\d+/].to_i
 				raise parser, "illegal struct pack(#{p})" if @pack == 0
 			end
+
+			update_member_cache(parser)
+		end
+
+		# updates the @fldoffset / @fldbitoffset hash storing the offset of members
+		def update_member_cache(parser)
+			super(parser)
+
+			@fldoffset = {}
+			@fldbitoffset = {} if fldbitoffset
+
+			al = align(parser)
+			off = 0
+			bit_off = 0
+
+			@members.each_with_index { |m, i|
+				if bits and b = @bits[i]
+					if m.name
+						@fldoffset[m.name] = off
+						@fldbitoffset ||= {}
+						@fldbitoffset[m.name] = [bit_off, b]
+					end
+					isz = parser.typesize[:int]	# TODO int fld:48;
+					if bit_off + b > 8*isz
+						bit_off = 0
+						off = (off + isz - 1) / isz * isz + isz
+						if m.name
+							@fldoffset[m.name] = off
+							@fldbitoffset[m.name] = [bit_off, b]
+						end
+					else
+						bit_off += b
+					end
+				elsif m.name
+					bit_off = 0
+					mal = [m.type.align(parser), al].min
+					@fldoffset[m.name] = off = (off + mal - 1) / mal * mal
+					off += parser.sizeof(m)
+				else
+					bit_off = 0
+					mal = [m.type.align(parser), al].min
+					off = (off + mal - 1) / mal * mal
+					off += parser.sizeof(m)
+				end
+			}
 		end
 	end
 	class Enum < Type
