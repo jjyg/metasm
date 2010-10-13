@@ -517,7 +517,7 @@ class LinDebugger < Debugger
 			@ptrace.attach
 			@threads[tid] ||= { :regs_cache => {} }
 			@threads[tid][:state] = :stopped
-			puts "attached thread #{tid}"
+			puts "attached thread #{tid}" if $VERBOSE
 		end
 		opts = ['TRACESYSGOOD', 'TRACECLONE', 'TRACEEXEC', 'TRACEEXIT']
 		opts += ['TRACEFORK', 'TRACEVFORK', 'TRACEVFORKDONE'] if @trace_children
@@ -571,13 +571,13 @@ class LinDebugger < Debugger
 	def update_waitpid
 		if $?.exited?
 			@info = "#@tid exitcode #{$?.exitstatus}"
-			puts @info
+			puts @info if $VERBOSE
 			@threads.delete @tid
 			self.tid = @threads.keys.first || @tid
 			@state = @threads.empty? ? :dead : @threads[@tid][:state]
 		elsif $?.signaled?
 			@info = "#@tid signalx #{$?.termsig} #{PTrace::SIGNAL[$?.termsig]}"
-			puts @info
+			puts @info if $VERBOSE
 			@threads.delete @tid
 			self.tid = @threads.keys.first || @tid
 			@state = @threads.empty? ? :dead : @threads[@tid][:state]
@@ -588,7 +588,7 @@ class LinDebugger < Debugger
 				@state = @threads[@tid][:state] = :stopped
 				if $?.stopsig & 0x80 > 0
 					@info = "#@tid syscall #{@ptrace.syscallnr[get_reg_value(:orig_eax)]}"
-					puts @info
+					puts @info if $VERBOSE
 					if @target_syscall and @info !~ /#@target_syscall/
 					       	syscall(@target_syscall)
 						return if @state == :running
@@ -617,18 +617,18 @@ class LinDebugger < Debugger
 					when 'EVENT_VFORKDONE'
 					end
 					@info = "#@tid trace event #{o}"
-					puts @info
+					puts @info if $VERBOSE
 				else
 					@info = nil	# standard breakpoint, no need for specific info
 							# TODO check target-initiated #i3 (antidebug etc)
-					puts "#@tid breakpoint break" if @tid_changed
+					puts "#@tid breakpoint break" if @tid_changed and $VERBOSE
 				end
 				@continuesignal = 0
 			elsif sig == PTrace::SIGNAL['STOP'] and ((@threads[@tid] ||= {})[:state] ||= :new) == :new
 				@memory.readfd = nil if not get_thread_list(@pid).include? @tid	# FORK, can't read from /proc/parentpid/mem anymore
 				@state = @threads[@tid][:state] = :stopped
 				@info = "#@tid new thread started"
-				puts @info
+				puts @info if $VERBOSE
 				@callback_threadcreate[@tid] if callback_threadcreate
 				return do_continue unless stop_on_threadcreate
 				@continuesignal = 0
@@ -637,12 +637,12 @@ class LinDebugger < Debugger
 				@state = @threads[@tid][:state] = :stopped
 				if @breaking and sig == PTrace::SIGNAL['STOP']
 					@info = nil
-					puts "#@tid break"
+					puts "#@tid break" if $VERBOSE
 					@continuesignal = 0
 					@breaking = nil
 				elsif want_ignore_signal($?.stopsig)
 					sig = @continuesignal = $?.stopsig
-					puts "#@tid ignored signal #{sig} #{PTrace::SIGNAL[sig]}"
+					puts "#@tid ignored signal #{sig} #{PTrace::SIGNAL[sig]}" if $VERBOSE
 					return run_resume
 				else
 					sig = @continuesignal = $?.stopsig
@@ -652,7 +652,7 @@ class LinDebugger < Debugger
 		else
 			@state = :stopped
 			@info = "#@tid unknown wait #{$?.inspect} #{'%x' % ($? >> 16)}"
-			puts @info
+			puts @info if $VERBOSE
 		end
 		@target_syscall = nil
 	end
