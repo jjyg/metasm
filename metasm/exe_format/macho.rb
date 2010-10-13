@@ -50,7 +50,9 @@ class MachO < ExeFormat
 		'MIPS' => { 0 => 'ALL', 1 => 'R2300', 2 => 'R2600', 3 => 'R2800', 4 => 'R2000a', },
 		'MC680x0' => { 1 => 'ALL', 2 => 'MC68040', 3 => 'MC68030_ONLY', },
 		'HPPA' => { 0 => 'ALL', 1 => '7100LC', },
-		'ARM' => { 0 => 'ALL', 1 => 'A500_ARCH', 2 => 'A500', 3 => 'A440', 4 => 'M4', 5 => 'A680', },
+		'ARM' => { 0 => 'ALL', 1 => 'A500_ARCH', 2 => 'A500', 3 => 'A440',
+			4 => 'M4', 5 => 'A680', 6 => 'ARMV6', 9 => 'ARMV7',
+		},
 		'MC88000' => { 0 => 'ALL', 1 => 'MC88100', 2 => 'MC88110', },
 		:wtf => { 0 => 'MC98000_ALL', 1 => 'MC98601', },
 		'I860' => { 0 => 'ALL', 1 => '860', },
@@ -93,7 +95,7 @@ class MachO < ExeFormat
 		0x11 => 'ROUTINES', 0x12 => 'SUB_FRAMEWORK', 0x13 => 'SUB_UMBRELLA', 0x14 => 'SUB_CLIENT',
 		0x15 => 'SUB_LIBRARY', 0x16 => 'TWOLEVEL_HINTS', 0x17 => 'PREBIND_CKSUM',
 		0x8000_0018 => 'LOAD_WEAK_DYLIB', 0x19 => 'SEGMENT_64', 0x1a => 'ROUTINES_64',
-		0x1b => 'UUID', 0x8000_001c => 'RPATH', 0x1d => 'CODE_SIGNATURE', 0x1e => 'CODE_SEGMENT_SPLIT_INFO',
+		0x1b => 'UUID', 0x8000_001c => 'RPATH', 0x1d => 'CODE_SIGNATURE_PTR', 0x1e => 'CODE_SEGMENT_SPLIT_INFO',
 		0x8000_001f => 'REEXPORT_DYLIB',
 		#0x8000_0000 => 'REQ_DYLD',
 	}
@@ -370,8 +372,89 @@ class MachO < ExeFormat
 		SUB_LIBRARY = STRING
 		SUB_CLIENT = STRING
 
-		class CODE_SIGNATURE < SerialStruct
-			mem :sig, 8
+		class CODE_SIGNATURE_PTR < SerialStruct
+			word :offset
+			word :size
+			attr_accessor :codesig
+
+			def decode(m)
+				ptr = m.encoded.ptr
+				super(m)
+				m.encoded.ptr = @offset
+				@codesig = CODE_SIGNATURE.decode(m)
+				m.encoded.ptr = ptr + @size
+			end
+		end
+	end
+
+	class CODE_SIGNATURE < SerialStruct
+		word :magic
+		word :size
+		word :count
+		attr_accessor :slots
+
+		def decode(m)
+			cs_base = m.encoded.ptr
+			e = m.endianness
+			m.endianness = :big
+
+			super(m)
+			@slots = []
+			@count.times { @slots << CS_SLOT_PTR.decode(m, cs_base) }
+			m.endianness = e
+		end
+	end
+
+	class CS_SLOT_PTR < SerialStruct
+		word :type
+		word :offset
+		attr_accessor :body
+
+		def decode(m, cs_base)
+			super(m)
+			ptr = m.encoded.ptr
+			m.encoded.ptr = cs_base + @offset
+
+			if @type == 0
+				@body = CS_CODE_DIRECTORY.decode(m)
+			else
+				@body = CS_SLOT.decode(m)
+			end
+			m.encoded.ptr = ptr
+		end
+	end
+
+	class CS_SLOT < SerialStruct
+		word :magic
+		word :size
+		attr_accessor :data
+
+		def decode(m)
+			super(m)
+			@data = m.encoded.read(@size)
+		end
+	end
+
+	class CS_CODE_DIRECTORY < SerialStruct
+		words :magic, :size, :version
+		mem :unk1, 4
+		word :hash_offset
+		word :name_offset
+		word :code_page_count
+		mem :unk3, 12
+		attr_accessor :name, :unk_hash
+
+		def decode(m)
+			super(m)
+			ptr = m.encoded.ptr
+
+			m.encoded.ptr += @name_offset - 40
+			@name = m.encoded.read(m.encoded[m.encoded.ptr..-1].data.index(?\0) || 0)
+
+			m.encoded.ptr = ptr + @hash_offset - 40
+			@unk_hash = m.encoded.read(@size - @hash_offset)
+
+			m.encoded.ptr = ptr
 		end
 	end
 
