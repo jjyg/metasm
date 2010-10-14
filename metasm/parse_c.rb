@@ -381,9 +381,9 @@ module C
 			al = align(parser)
 			off = 0
 			bit_off = 0
+			isz = parser.typesize[:int]
 			@members.each_with_index { |m, i|
 				if bits and b = @bits[i]
-					isz = parser.typesize[:int]
 					if bit_off + b > 8*isz
 						bit_off = 0
 						off = (off + isz - 1) / isz * isz + isz
@@ -391,18 +391,23 @@ module C
 						bit_off += b
 					end
 					break if m.name == name or m == name
-				elsif m.name == name or m == name
-					mal = [m.type.align(parser), al].min
-					off = (off + mal - 1) / mal * mal
-					break
-				elsif indirect and m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
-					off += m.type.untypedef.offsetof(parser, name)
-					break
 				else
-					bit_off = 0 if bit_off
-					mal = [m.type.align(parser), al].min
-					off = (off + mal - 1) / mal * mal
-					off += parser.sizeof(m)
+					if bit_off != 0
+						bit_off = 0
+						off = (off + isz - 1) / isz * isz + isz
+					end
+				       	if m.name == name or m == name
+						mal = [m.type.align(parser), al].min
+						off = (off + mal - 1) / mal * mal
+						break
+					elsif indirect and m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
+						off += m.type.untypedef.offsetof(parser, name)
+						break
+					else
+						mal = [m.type.align(parser), al].min
+						off = (off + mal - 1) / mal * mal
+						off += parser.sizeof(m)
+					end
 				end
 			}
 			off
@@ -445,6 +450,7 @@ module C
 			al = align(parser)
 			off = 0
 			bit_off = 0
+			isz = parser.typesize[:int]
 
 			@members.each_with_index { |m, i|
 				if bits and b = @bits[i]
@@ -453,7 +459,6 @@ module C
 						@fldbitoffset ||= {}
 						@fldbitoffset[m.name] = [bit_off, b]
 					end
-					isz = parser.typesize[:int]	# TODO int fld:48;
 					if bit_off + b > 8*isz
 						bit_off = 0
 						off = (off + isz - 1) / isz * isz + isz
@@ -464,15 +469,14 @@ module C
 					else
 						bit_off += b
 					end
-				elsif m.name
-					bit_off = 0
-					mal = [m.type.align(parser), al].min
-					@fldoffset[m.name] = off = (off + mal - 1) / mal * mal
-					off += parser.sizeof(m)
 				else
-					bit_off = 0
+					if bit_off != 0
+						off = (off + isz - 1) / isz * isz + isz
+						bit_off = 0
+					end
 					mal = [m.type.align(parser), al].min
 					off = (off + mal - 1) / mal * mal
+					@fldoffset[m.name] = off if m.name
 					off += parser.sizeof(m)
 				end
 			}
