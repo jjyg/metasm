@@ -241,6 +241,11 @@ module C
 		end
 
 		def offsetof(parser, name)
+			if name.kind_of? Variable
+				return 0 if @members.include? name
+				raise ParseError, 'unknown union member'
+			end
+
 			update_member_cache if not fldlist
 			return 0 if @fldlist[name]
 			raise parser, 'undefined union' if not @members
@@ -369,9 +374,9 @@ module C
 
 			# this is almost never reached, only for <struct>.offsetof(anonymoussubstructmembername)
 			raise parser, 'undefined structure' if not @members
-			raise parser, 'unknown structure member' if not findmember(name)
+			raise parser, 'unknown structure member' if (name.kind_of?(::String) ?  !findmember(name) : !@members.include?(name))
 
-			indirect = true if not @fldlist[name]
+			indirect = true if name.kind_of? ::String and not @fldlist[name]
 
 			al = align(parser)
 			off = 0
@@ -385,8 +390,8 @@ module C
 					else
 						bit_off += b
 					end
-					break if m.name == name
-				elsif m.name == name
+					break if m.name == name or m == name
+				elsif m.name == name or m == name
 					mal = [m.type.align(parser), al].min
 					off = (off + mal - 1) / mal * mal
 					break
@@ -1451,7 +1456,7 @@ EOH
 				raise self, 'unknown structure size' if not type.members
 				al = type.align(self)
 				lm = type.members.last
-				(type.offsetof(self, lm.name) + sizeof(lm) + al - 1) / al * al
+				(type.offsetof(self, lm) + sizeof(lm) + al - 1) / al * al
 			when Union
 				raise self, 'unknown structure size' if not type.members
 				type.members.map { |m| sizeof(m) }.max || 0
