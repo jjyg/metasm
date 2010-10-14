@@ -2764,6 +2764,157 @@ EOH
 	end
 
 
+
+	#
+	# AllocCStruct: ruby interpreter memory-mapped structure
+	#
+
+	# this maps a C structure from a C parser to a ruby String
+	# struct members are accessed through obj['fldname']
+	# obj.fldname is an alias
+	class AllocCStruct
+		# str is a reference to the underlying ruby String
+		# stroff is the offset from the start of this string (non-nul for nested structs)
+		# cp is a reference to the C::Parser
+		# struct to the C::Union/Struct
+		# length is the byte size of the C struct
+		attr_accessor :str, :stroff, :cp, :struct, :length
+		def initialize(cp, struct, str=nil, stroff=0)
+			@cp, @struct = cp, struct
+			@length = @cp.sizeof(@struct)
+			@str = str || [0].pack('C')*@length
+			@stroff = stroff
+		end
+
+		def [](*a)
+			return @str[@stroff..-1][*a] if not a.first.kind_of? Symbol and not a.first.kind_of? String
+			fld = a.first
+			raise "#{fld.inspect} not a member" if not f = @struct.findmember(fld.to_s, true)
+			off = @stroff + @struct.offsetof(@cp, f.name)
+			if bf = @struct.bitoffsetof(@cp, f.name)
+				ft = C::BaseType.new((bf[0] + bf[1] > 32) ? :__int64 : :__int32)
+				v = @cp.decode_c_value(@str, ft, off)
+				(v >> bf[0]) & ((1 << bf[1])-1)
+			else
+				@cp.decode_c_value(@str, f, off)
+			end
+		end
+
+		def []=(*a)
+			if not a.first.kind_of? Symbol and not a.first.kind_of? String
+				# patch @str[@stroff..-1] like a string
+				# so we must find the intended start offset, and add @stroff to it
+				if @stroff != 0
+					case a.first
+					when Range
+						if a.first.begin >= 0
+							a[0] = ::Range.new(a[0].begin+@stroff, a[0].end, a[0].exclude_end?)
+						else raise 'no can do, use positive index'
+						end
+					when Integer
+						if a.first >= 0
+							a[0] += @stroff
+						else raise 'no can do, use positive index'
+						end
+					else raise 'no can do'
+					end
+				end
+
+				return @str.send(*a)	# XXX *should* work...
+			end
+
+			fld, val = a
+			raise "#{fld.inspect} not a struct member" if not f = @struct.findmember(fld.to_s, true)
+			val = @length if val == :size
+			off = @stroff + @struct.offsetof(@cp, f.name)
+
+			if bf = @struct.bitoffsetof(@cp, f.name)
+				raise "only Integers supported in bitfield #{f.name}, got #{val.inspect}" if not val.kind_of?(::Integer)
+				# struct { int i:8; };  =>  size 8 or 32 ?
+				ft = C::BaseType.new((bf[0] + bf[1] > 32) ? :__int64 : :__int32)
+				mask = ((1 << bf[1]) - 1) << bf[0]
+				preval = @cp.decode_c_value(@str, ft, off)
+				val = (preval & ~mask) | ((val << bf[0]) & mask)
+				f = ft
+			end
+
+			val = @cp.encode_c_value(f, val)
+			@str[off, val.length] = val
+		end
+
+		# virtual accessors to members
+		# struct.foo is aliased to struct['foo'],
+		# struct.foo = 42 aliased to struct['foo'] = 42
+		def method_missing(n, *a)
+			n = n.to_s
+			if n[-1] == ?=
+				send :[]=, n[0...-1], *a
+			else
+				send :[], n, *a
+			end
+		end
+	end
+
+	class Parser
+		# TODO alloc_c_ptr to allocate a buffer of sizeof(arg) and return a ptr to it ( ReadFile(..., &lengthRead) )
+
+		# allocate a new AllocCStruct from the struct/struct typedef name of the current toplevel
+		# optionally populate the fields using the 'values' hash
+		def alloc_c_struct(structname, values=nil)
+			structname = structname.to_s if structname.kind_of?(::Symbol)
+			if structname.kind_of?(::String) and not struct = @toplevel.struct[structname]
+				struct = @toplevel.symbol[structname]
+				raise "unknown struct #{structname.inspect}" if not struct
+				struct = struct.type
+				struct = struct.pointed while struct.pointer?
+				raise "unknown struct #{structname.inspect}" if not struct.kind_of? Union
+			end
+			struct = structname if structname.kind_of? Union
+			st = AllocCStruct.new(self, struct)
+			values.each { |k, v| st[k] = v } if values
+			st
+		end
+
+		# convert (pack) a ruby value into a C buffer
+		# packs integers, converts Strings to their C pointer (using DynLdr)
+		def encode_c_value(type, val)
+			type = type.type if type.kind_of? Variable
+
+			case val
+			when ::Integer
+			when ::String
+				val = DynLdr.str_ptr(val)
+			when ::Hash
+				type = type.pointed while type.pointer?
+				raise "need a struct ptr for #{type} #{val.inspect}" if not type.kind_of? Union
+				buf = alloc_c_struct(type, val)
+				val.instance_variable_set('@rb2c', buf) # GC trick
+				val = buf
+			when ::Proc
+				val = DynLdr.convert_rb2c(type, val)	# allocate a DynLdr callback
+			#when ::Float		# TODO
+			#when AllocCStruct 	# can we actually get this ?
+			else raise "TODO #{val.inspect}"
+			end
+
+			val = Expression.encode_immediate(val, sizeof(type), @endianness) if val.kind_of?(::Integer)
+
+			val
+		end
+
+		def decode_c_value(str, type, off=0)
+			type = type.type if type.kind_of? Variable
+			if type.kind_of? Union
+				return AllocCStruct.new(self, type, str, off)
+			end
+			val = Expression.decode_immediate(str, sizeof(type), @endianness, off)
+			val = Expression.make_signed(val, sizeof(type)*8) if type.integral? and type.signed?
+			val = nil if val == 0 and type.pointer?
+			val
+		end
+	end
+
+
 	#
 	# Dumper : objects => C source
 	#
