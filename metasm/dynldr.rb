@@ -790,24 +790,72 @@ EOS
 				next
 			end
 
+			rbname = c_func_name_to_rb(v.name)
 			if not v.type.kind_of? C::Function
 				# not a function, simply return the symbol address
 				# TODO struct/table access through hash/array ?
-				class << self ; self ; end.send(:define_method, v.name.downcase) { addr }
+				class << self ; self ; end.send(:define_method, rbname) { addr }
 				next
 			end
 			next if v.initializer	# inline & stuff
-			puts "new_api_c: load method #{v.name.downcase} from #{lib}" if $DEBUG
+			puts "new_api_c: load method #{rbname} from #{lib}" if $DEBUG
 
-			new_caller_for(v, v.name.downcase, addr)
+			new_caller_for(v, rbname, addr)
 		}
 
-		# constant definition from macro/enum
-		cp.numeric_constants.each { |k, v|
-			n = k.upcase
-			n = "C#{n}" if n !~ /^[A-Z]/
-			const_set(n, v) if v.kind_of? Integer and not constants.map { |c| c.to_s }.include?(n)
+		# predeclare constants from enums
+		# macros are handled in const_missing (too slow to (re)do here everytime)
+		# TODO #define FOO(v) (v<<1)|1   =>  create ruby counterpart
+		cexist = constants.inject({}) { |h, c| h.update c.to_s => true }
+		cp.toplevel.symbol.each { |k, v|
+			if v.kind_of? ::Integer
+				n = c_const_name_to_rb(v)
+				const_set(n, v) if v.kind_of? Integer and not cexist[n]
+			end
 		}
+
+		# avoid WTF rb warning: toplevel const TRUE referenced by WinAPI::TRUE
+		cp.lexer.definition.each_key { |k|
+			n = c_const_name_to_rb(k)
+			if not const_defined?(n) and Object.const_defined?(n) and v = @cp.macro_numeric(n)
+				const_set(n, v)
+			end
+		}
+	end
+
+	# const_missing handler: will try to find a matching #define
+	def self.const_missing(c)
+		# infinite loop on autorequire C..
+		return super(c) if not defined? @cp or not @cp
+
+		cs = c.to_s
+		if @cp.lexer.definition[cs]
+			m = cs
+		else
+			m = @cp.lexer.definition.keys.find { |k| c_const_name_to_rb(k) == cs }
+		end
+
+		if m and v = @cp.macro_numeric(m)
+			const_set(c, v)
+			v
+		else
+			super(c)
+		end
+	end
+
+	# when defining ruby wrapper for C methods, the ruby method name is the string returned by this function from the C name
+	def self.c_func_name_to_rb(name)
+		n = name.to_s.gsub(/[^a-z0-9_]/i) { |c| c.unpack('H*')[0] }.downcase
+		n = "m#{n}" if n !~ /^[a-z]/
+		n
+	end
+
+	# when defining ruby wrapper for C constants (numeric define/enum), the ruby const name is
+	# the string returned by this function from the C name. It should follow ruby standards (1st letter upcase)
+	def self.c_const_name_to_rb(name)
+		n = name.to_s.gsub(/[^a-z0-9_]/i) { |c| c.unpack('H*')[0] }.upcase
+		n = "C#{n}" if n !~ /^[A-Z]/
+		n
 	end
 
 	def self.api_not_found(lib, func)
