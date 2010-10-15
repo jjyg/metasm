@@ -2324,7 +2324,7 @@ class Window
 	end
 
 	# keypress event keyval traduction table
-	Keyboard_trad = Win32Gui.constants.grep(/^VK_/).inject({}) { |h, cst|
+	Keyboard_trad = Win32Gui.cp.lexer.definition.keys.grep(/^VK_/).inject({}) { |h, cst|
 		v = Win32Gui.const_get(cst)
 		key = cst.to_s.sub(/^VK_/, '').downcase.to_sym
 		h.update v => {
@@ -2334,7 +2334,7 @@ class Window
 		}.fetch(key, key)
 	}
 
-#MSGNAME = Win32Gui.constants.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
+#MSGNAME = Win32Gui.cp.lexer.definition.keys.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
 	def windowproc(hwnd, msg, wparam, lparam)
 #puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lparam}"
 		@hwnd ||= hwnd		# some messages are sent before createwin returns
