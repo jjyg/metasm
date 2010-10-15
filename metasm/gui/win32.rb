@@ -1668,6 +1668,79 @@ typedef struct tagOFNA {
 } OPENFILENAMEA, *LPOPENFILENAMEA;
 BOOL WINAPI GetOpenFileNameA(LPOPENFILENAMEA);
 BOOL WINAPI GetSaveFileNameA(LPOPENFILENAMEA);
+
+#define SB_HORZ             0
+#define SB_VERT             1
+#define SB_CTL              2
+#define SB_BOTH             3
+
+#define SB_LINEUP           0
+#define SB_LINELEFT         0
+#define SB_LINEDOWN         1
+#define SB_LINERIGHT        1
+#define SB_PAGEUP           2
+#define SB_PAGELEFT         2
+#define SB_PAGEDOWN         3
+#define SB_PAGERIGHT        3
+#define SB_THUMBPOSITION    4
+#define SB_THUMBTRACK       5
+#define SB_TOP              6
+#define SB_LEFT             6
+#define SB_BOTTOM           7
+#define SB_RIGHT            7
+#define SB_ENDSCROLL        8
+
+#define SIF_RANGE           0x0001
+#define SIF_PAGE            0x0002
+#define SIF_POS             0x0004
+#define SIF_DISABLENOSCROLL 0x0008
+#define SIF_TRACKPOS        0x0010
+#define SIF_ALL             (SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS)
+
+WINUSERAPI
+int
+WINAPI
+SetScrollPos(
+    __in HWND hWnd,
+    __in int nBar,
+    __in int nPos,
+    __in BOOL bRedraw);
+
+WINUSERAPI
+int
+WINAPI
+GetScrollPos(
+    __in HWND hWnd,
+    __in int nBar);
+
+typedef struct tagSCROLLINFO
+{
+    UINT    cbSize;
+    UINT    fMask;
+    int     nMin;
+    int     nMax;
+    UINT    nPage;
+    int     nPos;
+    int     nTrackPos;
+}   SCROLLINFO, *LPSCROLLINFO;
+typedef SCROLLINFO CONST *LPCSCROLLINFO;
+
+WINUSERAPI
+int
+WINAPI
+SetScrollInfo(
+    __in HWND hwnd,
+    __in int nBar,
+    __in LPCSCROLLINFO lpsi,
+    __in BOOL redraw);
+
+WINUSERAPI
+BOOL
+WINAPI
+GetScrollInfo(
+    __in HWND hwnd,
+    __in int nBar,
+    __inout LPSCROLLINFO lpsi);
 EOS
 
 	new_api_c <<EOS, 'shell32'
@@ -2334,9 +2407,9 @@ class Window
 		}.fetch(key, key)
 	}
 
-#MSGNAME = Win32Gui.cp.lexer.definition.keys.grep(/WM_/).inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
+#MSGNAME = Win32Gui.cp.lexer.definition.keys.grep(/WM_/).sort.inject({}) { |h, c| h.update Win32Gui.const_get(c) => c }
 	def windowproc(hwnd, msg, wparam, lparam)
-#puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lparam}"
+#puts "wproc #{'%x' % hwnd} #{MSGNAME[msg] || msg} #{'%x' % wparam} #{'%x' % lparam}" if not %w[WM_NCHITTEST WM_SETCURSOR WM_MOUSEMOVE WM_NCMOUSEMOVE].include? MSGNAME[msg]
 		@hwnd ||= hwnd		# some messages are sent before createwin returns
 		case msg
 		when Win32Gui::WM_NCHITTEST, Win32Gui::WM_SETCURSOR
@@ -2931,12 +3004,14 @@ class LBoxWidget < DrawableWidget
 		@titles = @list.shift
 
 		@action = b
-		# index of the first row displayed
 		@linehead = 0
 		# index of the currently selected row
 		@linesel = nil
 		# ary indicating whether a title label is being clicked
 		@btndown = []
+		@btnheight = @font_height * 4/3
+		@sbh = 0	# position of the hz scrollbar
+		@sbv = 0
 
 		@default_color_association = { :background => :winbg, :label => :black,
 			:text => :black, :textbg => :white, :btnc1 => :white, :btnc2 => :grey,
@@ -2944,28 +3019,35 @@ class LBoxWidget < DrawableWidget
 	end
 
 	def initial_size
-		@colw = @colwmax.map { |w| [w+1, 40].min * @font_width }
+		@colw = @colwmax.map { |w| (w+1) * @font_width }
 		allw = @colw.inject(0) { |a, i| a+i }
 		[[allw, 80*@font_width].min, [@list.length+1, 30].min * @font_height+2]
 	end
 
 	def resized(w, h)
-		allw = @colw.inject(0) { |a, i| a+i }
-		if w > allw
-			can = w - allw
+		# scrollbar stuff
+		fullw = @colwmax.inject(0) { |a, i| a+i+1 } * @font_width
+		@sbh = fullw-w if @sbh > fullw-w
+		@sbh = 0 if @sbh < 0
+		sif = Win32Gui.alloc_c_struct('SCROLLINFO',
+			:cbsize => :size, :fmask => Win32Gui::SIF_ALL,
+			:nmin => 0, :nmax => fullw-1, :npage => w, :npos => @sbh)
+		Win32Gui.setscrollinfo(@hwnd, Win32Gui::SB_HORZ, sif, Win32Gui::TRUE)
+
+		fullh = @list.length * @font_height + @btnheight
+		@sbv = fullh-h if @sbv > fullh-h
+		@sbv = 0 if @sbv < 0
+		sif = Win32Gui.alloc_c_struct('SCROLLINFO',
+			:cbsize => :size, :fmask => Win32Gui::SIF_ALL,
+			:nmin => 0, :nmax => fullh-1, :npage => h, :npos => @sbv)
+		Win32Gui.setscrollinfo(@hwnd, Win32Gui::SB_VERT, sif, Win32Gui::TRUE)
+
+		# resize columns to fill available hz space
+		if w > fullw
+			mi = (w-fullw) / @colw.length
+			mm = (w-fullw) % @colw.length
 			@colw.length.times { |i|
-				cur = @colw[i]
-				want = (@colwmax[i] + 1) * @font_width
-				need = want-cur
-				if need > 0
-					if can < need
-						@colw[i] += can
-						can = 0
-					else
-						@colw[i] = want
-						can -= need
-					end
-				end
+				@colw[i] = (@colwmax[i]+1)*@font_width + mi + (i < mm ? 1 : 0)
 			}
 			redraw
 		end
@@ -2973,15 +3055,16 @@ class LBoxWidget < DrawableWidget
 
 	def paint
 		x = 0
+		x -= @sbh
 		@btnx = []
 		@btny = y = 0
-		#fixedfont = Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::ANSI_VAR_FONT))
-		#sz = Win32Gui.alloc_c_struct('POINT')
-		#Win32Gui.gettextextentpoint32a(@hdc, 'x', 1, sz)
-		#var_font_height = sz[:y]
+		# fixedfont = Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::ANSI_VAR_FONT))
+		# sz = Win32Gui.alloc_c_struct('POINT')
+		# Win32Gui.gettextextentpoint32a(@hdc, 'x', 1, sz)
+		# var_font_height = sz[:y]
 		@btnheight = @font_height * 4/3
 		@titles.zip(@colw, @btndown).each { |t, w, d|
-			@btnx << x
+			@btnx << (x + @sbh)
 			h = @btnheight-1
 			c1 = d ? :btnc2 : :btnc1
 			c2 = d ? :btnc1 : :btnc2
@@ -2998,9 +3081,9 @@ class LBoxWidget < DrawableWidget
 		
 		y += @btnheight
 		tl = (@linesel || -1) - @linehead
-		@lineshown = @list[@linehead, (height-y)/@font_height+1].length
+		@lineshown = @list[@linehead, (height-y)/@font_height+1].to_a.length
 		@list[@linehead, @lineshown].to_a.each { |l|
-			x = @btnx.first
+			x = @btnx.first - @sbh
 			ct, cb = :text, :textbg
 			ct, cb = :textsel, :textselbg if tl == 0
 			tl -= 1
@@ -3092,7 +3175,20 @@ class LBoxWidget < DrawableWidget
 		end
 	end
 
+	def hscroll(val)
+		Win32Gui.setscrollpos(@hwnd, Win32Gui::SB_HORZ, val, Win32Gui::TRUE)
+		@sbh = Win32Gui.getscrollpos(@hwnd, Win32Gui::SB_HORZ)	# clipping, etc
+		redraw
+	end
+
+	def vscroll(val)
+		Win32Gui.setscrollpos(@hwnd, Win32Gui::SB_VERT, val, Win32Gui::TRUE)
+		@sbv = Win32Gui.getscrollpos(@hwnd, Win32Gui::SB_VERT)
+		redraw
+	end
+
 	def xtobtn(x)
+		x += @sbh
 		if x < @btnx.first
 			return 0
 		elsif x >= @btnx.last + @colw.last
@@ -3174,6 +3270,39 @@ end
 	def destroy_window
 		@ondestroy.call if @ondestroy
 		super()
+	end
+
+	def windowproc(hwnd, msg, wparam, lparam)
+		case msg
+		when Win32Gui::WM_HSCROLL
+			sif = Win32Gui.alloc_c_struct('SCROLLINFO', :cbsize => :size, :fmask => Win32Gui::SIF_ALL)
+			Win32Gui.getscrollinfo(@hwnd, Win32Gui::SB_HORZ, sif)
+			case wparam & 0xffff
+			when Win32Gui::SB_THUMBPOSITION; val = sif.ntrackpos
+			when Win32Gui::SB_THUMBTRACK; val = sif.ntrackpos
+			when Win32Gui::SB_LINELEFT;  val = sif.npos - 1
+			when Win32Gui::SB_LINERIGHT; val = sif.npos + 1
+			when Win32Gui::SB_PAGELEFT;  val = sif.npos - sif.npage
+			when Win32Gui::SB_PAGERIGHT; val = sif.npos + sif.npage
+			else return 0
+			end
+			@widget.hscroll val
+		when Win32Gui::WM_VSCROLL
+			sif = Win32Gui.alloc_c_struct('SCROLLINFO', :cbsize => :size, :fmask => Win32Gui::SIF_ALL)
+			Win32Gui.getscrollinfo(@hwnd, Win32Gui::SB_VERT, sif)
+			case wparam & 0xffff
+			when Win32Gui::SB_THUMBPOSITION; val = sif.ntrackpos
+			when Win32Gui::SB_THUMBTRACK; val = sif.ntrackpos; nopos = true
+			when Win32Gui::SB_LINEDOWN; val = sif.npos + 1
+			when Win32Gui::SB_LINEUP;   val = sif.npos - 1
+			when Win32Gui::SB_PAGEDOWN; val = sif.npos + sif.npage
+			when Win32Gui::SB_PAGEUP;   val = sif.npos - sif.npage
+			else return 0
+			end
+			@widget.vscroll val
+		else return super(hwnd, msg, wparam, lparam)
+		end
+		0
 	end
 end
 
