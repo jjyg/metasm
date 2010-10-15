@@ -30,6 +30,7 @@ module Metasm
 	}
 
 	Const_autorequire = {
+		# CPU = metasm core files
 		'CPU' => ['encode', 'decode', 'render', 'main', 'exe_format/main', 'os/main'],
 		'Ia32' => 'ia32', 'MIPS' => 'mips', 'PowerPC' => 'ppc', 'ARM' => 'arm',
 		'X86_64' => 'x86_64', 'Sh4' => 'sh4', 'Dalvik' => 'dalvik',
@@ -78,7 +79,7 @@ end
 
 # handle subclasses, nested modules etc (e.g. Metasm::PE, to avoid Metasm::PE::Ia32: const not found)
 class Module
-alias premetasm_const_missing const_missing
+alias const_missing_premetasm const_missing
 def const_missing(c)
 	# Object.const_missing => Module#const_missing and not the other way around
 	# XXX should use Module.nesting, but ruby sucks arse
@@ -86,13 +87,13 @@ def const_missing(c)
 	if (name =~ /^Metasm(::|$)/ or ancestors.include? Metasm) and cst = Metasm.autorequire_const_missing(c)
 		cst
 	else
-		premetasm_const_missing(c)
+		const_missing_premetasm(c)
 	end
 end
 end
 
 # load core files by default (too many classes to check for otherwise)
-Metasm::CPU.class
+Metasm::Const_autorequire['CPU'].each { |f| Metasm.require File.join('metasm', f) }
 
 # remove an 1.9 warning, couldn't find a compatible way...
 if {}.respond_to? :key
