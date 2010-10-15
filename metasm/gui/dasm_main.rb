@@ -711,7 +711,11 @@ class DasmWindow < Window
 				list << [pr.pid, path] if path
 				true
 			elsif i
-				l = listwindow('running processes', list, :noshow => true) { |e| i.text = e[0] }
+				me = Process.pid.to_s
+				l = listwindow('running processes', list,
+					       :noshow => true,
+					       :color_callback => lambda { |le| [:grey, :palegrey] if le[0] == me }
+				) { |e| i.text = e[0] }
 				l.x += l.width
 				l.show
 				false
