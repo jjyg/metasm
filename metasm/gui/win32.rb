@@ -3005,6 +3005,7 @@ class LBoxWidget < DrawableWidget
 
 		@action = b
 		@linehead = 0
+		@color_callback = opts[:color_callback]	# lambda { |ary_entries_text| [color_font, color_bg] }
 		# index of the currently selected row
 		@linesel = nil
 		# ary indicating whether a title label is being clicked
@@ -3054,37 +3055,26 @@ class LBoxWidget < DrawableWidget
 	end
 
 	def paint
-		x = 0
-		x -= @sbh
 		@btnx = []
-		@btny = y = 0
-		# fixedfont = Win32Gui.selectobject(@hdc, Win32Gui.getstockobject(Win32Gui::ANSI_VAR_FONT))
-		# sz = Win32Gui.alloc_c_struct('POINT')
-		# Win32Gui.gettextextentpoint32a(@hdc, 'x', 1, sz)
-		# var_font_height = sz[:y]
+		@btny = 0
 		@btnheight = @font_height * 4/3
-		@titles.zip(@colw, @btndown).each { |t, w, d|
-			@btnx << (x + @sbh)
-			h = @btnheight-1
-			c1 = d ? :btnc2 : :btnc1
-			c2 = d ? :btnc1 : :btnc2
-			draw_line_color(c1, x, y, x, y+h)
-			draw_line_color(c1, x, y, x+w-1, y)
-			draw_line_color(c2, x+w-1, y+h, x, y+h)
-			draw_line_color(c2, x+w-1, y+h, x+w-1, y)
-
-			cw = w/@font_width-1
-			xo = [(cw-t.length) * @font_width/2, 0].max	# center titles
-			draw_string_color(:label, x+@font_width/2+xo, y+@font_height/6, t[0, cw])
+		x = 0
+		@colw.each { |w|
+			@btnx << x
 			x += w
 		}
-		
-		y += @btnheight
+
+		x -= @sbh
+		y = @btnheight
+		@linehead = @sbv / @font_height
+		y -= @sbv % @font_height
 		tl = (@linesel || -1) - @linehead
 		@lineshown = @list[@linehead, (height-y)/@font_height+1].to_a.length
 		@list[@linehead, @lineshown].to_a.each { |l|
 			x = @btnx.first - @sbh
-			ct, cb = :text, :textbg
+			ct, cb = @color_callback[l] if @color_callback
+			ct ||= :text
+			cb ||= :textbg
 			ct, cb = :textsel, :textselbg if tl == 0
 			tl -= 1
 			draw_rectangle_color(cb, x, y, width-2*x, @font_height)
@@ -3093,6 +3083,23 @@ class LBoxWidget < DrawableWidget
 				x += w
 			}
 			y += @font_height
+		}
+
+		@titles.zip(@colw, @btnx, @btndown).each { |t, w, bx, d|
+			x = bx - @sbh
+			y = @btny
+			h = @btnheight-1
+			c1 = d ? :btnc2 : :btnc1
+			c2 = d ? :btnc1 : :btnc2
+			draw_rectangle_color(:background, x, y, w-1, h)
+			draw_line_color(c1, x, y, x, y+h)
+			draw_line_color(c1, x, y, x+w-1, y)
+			draw_line_color(c2, x+w-1, y+h, x, y+h)
+			draw_line_color(c2, x+w-1, y+h, x+w-1, y)
+
+			cw = w/@font_width-1
+			xo = [(cw-t.length) * @font_width/2, 0].max	# center titles
+			draw_string_color(:label, x+@font_width/2+xo, y+@font_height/6, t[0, cw])
 		}
 	end
 
@@ -3103,7 +3110,7 @@ class LBoxWidget < DrawableWidget
 				@linesel = @linehead
 			elsif @linesel > 0
 				@linesel -= 1
-				@linehead = @linesel if @linesel < @linehead
+				vscroll(@linesel*@font_height) if @linesel < @linehead
 			end
 			redraw
 		when :down
@@ -3111,7 +3118,7 @@ class LBoxWidget < DrawableWidget
 				@linesel = @linehead
 			elsif @linesel < @list.length-1
 				@linesel += 1
-				@linehead = @linesel - (@lineshown-1) if @linehead < @linesel-(@lineshown-1)
+				vscroll((@linesel-(@lineshown-1))*@font_height) if @linehead < @linesel-(@lineshown-1)
 			end
 			redraw
 		when :pgup
@@ -3121,8 +3128,8 @@ class LBoxWidget < DrawableWidget
 			elsif @linesel != @linehead
 				@linesel = [@linehead, @linesel-off].max
 			else
-				@linehead = [0, @linehead-off].max
-				@linesel = @linehead
+				@linesel = [0, @linehead-off].max
+				vscroll(@linesel*@font_height)
 			end
 			redraw
 		when :pgdown
@@ -3133,17 +3140,17 @@ class LBoxWidget < DrawableWidget
 			elsif @linesel != @linehead+n
 				@linesel = [@linehead+n, @linesel+off].min
 			else
-				@linehead = [@linehead+off, @list.length-n-1].min
+				vscroll((@linehead+off)*@font_height)
 				@linesel = [@linehead+n, @list.length-1].min
 			end
 			redraw
 		when :home
 			@linesel = 0
-			@linehead = 0
+			vscroll(0)
 			redraw
 		when :end
 			@linesel = @list.length-1
-			@linehead = @linesel - (@lineshown-1) if @linehead < @linesel-(@lineshown-1)
+			vscroll(@list.length*@font_height)
 			redraw
 		when :enter
 			if @linesel and @list[@linesel]
@@ -3165,12 +3172,12 @@ class LBoxWidget < DrawableWidget
 		case dir
 		when :up
 			off = [@lineshown, [@lineshown/2, 5].max].min
-			@linehead = [0, @linehead-off].max
+			vscroll((@linehead-off)*@font_height)
 			redraw
 		when :down
 			n = @lineshown-1
 			off = [@lineshown, [@lineshown/2, 5].max].min
-			@linehead = [@linehead+off, @list.length-n-1].min
+			vscroll((@linehead+off)*@font_height)
 			redraw
 		end
 	end
