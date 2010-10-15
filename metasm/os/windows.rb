@@ -428,11 +428,13 @@ CreateRemoteThread(
 	__in      DWORD dwCreationFlags,
 	__out_opt LPDWORD lpThreadId);
 
+/* Vista onwards only..
 WINBASEAPI
 DWORD
 WINAPI
 GetThreadId(
 	__in HANDLE Thread);
+*/
 
 WINBASEAPI
 DWORD
