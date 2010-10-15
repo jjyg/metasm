@@ -149,7 +149,7 @@ module C
 		def arithmetic? ; @name != :void end
 		def integral? ; [:char, :short, :int, :long, :longlong, :ptr,
 			:__int8, :__int16, :__int32, :__int64].include? @name end
-		def signed? ; @specifier != :unsigned end
+		def signed? ; specifier != :unsigned end
 		def float? ; [:float, :double, :longdouble].include? @name end
 		def void? ; @name == :void end
 		def align(parser) @name == :double ? 4 : parser.typesize[@name] end
