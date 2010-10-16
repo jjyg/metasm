@@ -809,7 +809,7 @@ EOS
 		cexist = constants.inject({}) { |h, c| h.update c.to_s => true }
 		cp.toplevel.symbol.each { |k, v|
 			if v.kind_of? ::Integer
-				n = c_const_name_to_rb(v)
+				n = c_const_name_to_rb(k)
 				const_set(n, v) if v.kind_of? Integer and not cexist[n]
 			end
 		}
