@@ -817,7 +817,7 @@ EOS
 		# avoid WTF rb warning: toplevel const TRUE referenced by WinAPI::TRUE
 		cp.lexer.definition.each_key { |k|
 			n = c_const_name_to_rb(k)
-			if not const_defined?(n) and Object.const_defined?(n) and v = @cp.macro_numeric(n)
+			if not cexist[n] and Object.const_defined?(n) and v = @cp.macro_numeric(n)
 				const_set(n, v)
 			end
 		}
