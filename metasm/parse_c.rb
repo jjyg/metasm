@@ -2808,7 +2808,7 @@ EOH
 					case a.first
 					when Range
 						if a.first.begin >= 0
-							a[0] = ::Range.new(a[0].begin+@stroff, a[0].end, a[0].exclude_end?)
+							a[0] = ::Range.new(a[0].begin+@stroff, a[0].end+@stroff, a[0].exclude_end?)
 						else raise 'no can do, use positive index'
 						end
 					when Integer
@@ -2820,7 +2820,7 @@ EOH
 					end
 				end
 
-				return @str.send(*a)	# XXX *should* work...
+				return @str.send(:'[]=', *a)	# XXX *should* work...
 			end
 
 			fld, val = a
