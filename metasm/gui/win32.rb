@@ -3006,6 +3006,7 @@ class LBoxWidget < DrawableWidget
 		@action = b
 		@linehead = 0
 		@color_callback = opts[:color_callback]	# lambda { |ary_entries_text| [color_font, color_bg] }
+		@noclose_dblclick = opts[:noclose_dblclick]
 		# index of the currently selected row
 		@linesel = nil
 		# ary indicating whether a title label is being clicked
@@ -3214,6 +3215,7 @@ class LBoxWidget < DrawableWidget
 			@btndown[xtobtn(x)] = true
 			redraw
 		elsif y >= @btny+@btnheight
+			y += @sbv % @font_height
 			cy = @linehead + (y - @btny - @btnheight)/@font_height
 			if cy < @list.length
 				@linesel = cy
@@ -3226,6 +3228,8 @@ class LBoxWidget < DrawableWidget
 
 	def doubleclick(x, y)
 		if y >= @btny+@btnheight
+			return click(x, y) if @noclose_dblclick
+			y += @sbv % @font_height
 			cy = @linehead + (y - @btny - @btnheight)/@font_height
 			if cy < @list.length
 				destroy
