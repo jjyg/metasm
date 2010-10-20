@@ -155,14 +155,6 @@ typedef struct tagPOINT {
     LONG  y;
 } POINT, *PPOINT, *LPPOINT;
 
-typedef struct tagMINMAXINFO {
-    POINT ptReserved;
-    POINT ptMaxSize;
-    POINT ptMaxPosition;
-    POINT ptMinTrackSize;
-    POINT ptMaxTrackSize;
-} MINMAXINFO, *PMINMAXINFO, *LPMINMAXINFO;
-
 #define WM_PAINTICON                    0x0026
 #define WM_ICONERASEBKGND               0x0027
 #define WM_NEXTDLGCTL                   0x0028
@@ -190,20 +182,7 @@ typedef struct tagMINMAXINFO {
 #define PWR_SUSPENDRESUME   2
 #define PWR_CRITICALRESUME  3
 #define WM_COPYDATA                     0x004A
-typedef struct tagCOPYDATASTRUCT {
-    ULONG_PTR dwData;
-    DWORD cbData;
-    PVOID lpData;
-} COPYDATASTRUCT, *PCOPYDATASTRUCT;
-
 #define WM_CANCELJOURNAL                0x004B
-
-typedef struct tagMDINEXTMENU {
-    HMENU   hmenuIn;
-    HMENU   hmenuNext;
-    HWND    hwndNext;
-} MDINEXTMENU, *PMDINEXTMENU, *LPMDINEXTMENU;
-
 #define WM_NOTIFY                       0x004E
 #define WM_INPUTLANGCHANGEREQUEST       0x0050
 #define WM_INPUTLANGCHANGE              0x0051
@@ -425,16 +404,6 @@ typedef struct tagMDINEXTMENU {
 #define SIZE_MAXSHOW        3
 #define SIZE_MAXHIDE        4
 
-typedef struct tagWINDOWPOS {
-    HWND    hwnd;
-    HWND    hwndInsertAfter;
-    int     x;
-    int     y;
-    int     cx;
-    int     cy;
-    UINT    flags;
-} WINDOWPOS, *LPWINDOWPOS, *PWINDOWPOS;
-
 #define MK_LBUTTON          0x0001
 #define MK_RBUTTON          0x0002
 #define MK_SHIFT            0x0004
@@ -461,12 +430,6 @@ TrackMouseEvent(
 #define FSHIFT    0x04
 #define FCONTROL  0x08
 #define FALT      0x10
-
-typedef struct tagACCEL {
-    BYTE   fVirt;               /* Also called the flags field */
-    WORD   key;
-    WORD   cmd;
-} ACCEL, *LPACCEL;
 
 #define FALSE 0
 #define TRUE 1
@@ -528,24 +491,6 @@ typedef struct tagACCEL {
 #define MF_HELP             0x00004000L
 #define MF_RIGHTJUSTIFY     0x00004000L
 #define MF_MOUSESELECT      0x00008000L
-#define MFT_STRING          MF_STRING
-#define MFT_BITMAP          MF_BITMAP
-#define MFT_MENUBARBREAK    MF_MENUBARBREAK
-#define MFT_MENUBREAK       MF_MENUBREAK
-#define MFT_OWNERDRAW       MF_OWNERDRAW
-#define MFT_RADIOCHECK      0x00000200L
-#define MFT_SEPARATOR       MF_SEPARATOR
-#define MFT_RIGHTORDER      0x00002000L
-#define MFT_RIGHTJUSTIFY    MF_RIGHTJUSTIFY
-// Menu flags for Add/Check/EnableMenuItem
-#define MFS_GRAYED          0x00000003L
-#define MFS_DISABLED        MFS_GRAYED
-#define MFS_CHECKED         MF_CHECKED
-#define MFS_HILITE          MF_HILITE
-#define MFS_ENABLED         MF_ENABLED
-#define MFS_UNCHECKED       MF_UNCHECKED
-#define MFS_UNHILITE        MF_UNHILITE
-#define MFS_DEFAULT         MF_DEFAULT
 
 #define IDI_APPLICATION     32512
 #define IDI_HAND            32513
@@ -642,42 +587,6 @@ typedef struct tagACCEL {
 #define DC_BRUSH            18
 #define DC_PEN              19
 
-#define BS_SOLID            0
-#define BS_NULL             1
-#define BS_HOLLOW           BS_NULL
-#define BS_HATCHED          2
-#define BS_PATTERN          3
-#define BS_INDEXED          4
-#define BS_DIBPATTERN       5
-#define BS_DIBPATTERNPT     6
-#define BS_PATTERN8X8       7
-#define BS_DIBPATTERN8X8    8
-#define BS_MONOPPATTERN     9
-
-#define HS_HORIZONTAL       0
-#define HS_VERTICAL         1
-#define HS_FDIAGONAL        2
-#define HS_BDIAGONAL        3
-#define HS_CROSS            4
-#define HS_DIAGCROSS        5
-
-#define PS_SOLID            0
-#define PS_DASH             1
-#define PS_DOT              2
-#define PS_DASHDOT          3
-#define PS_DASHDOTDOT       4
-#define PS_NULL             5
-#define PS_INSIDEFRAME      6
-#define PS_USERSTYLE        7
-#define PS_ALTERNATE        8
-
-#define KF_EXTENDED       0x0100
-#define KF_DLGMODE        0x0800
-#define KF_MENUMODE       0x1000
-#define KF_ALTDOWN        0x2000
-#define KF_REPEAT         0x4000
-#define KF_UP             0x8000
-
 #define VK_LBUTTON        0x01
 #define VK_RBUTTON        0x02
 #define VK_CANCEL         0x03
@@ -760,101 +669,6 @@ typedef struct tagACCEL {
 #define VK_F22            0x85
 #define VK_F23            0x86
 #define VK_F24            0x87
-
-#define SM_CXSCREEN             0
-#define SM_CYSCREEN             1
-#define SM_CXVSCROLL            2
-#define SM_CYHSCROLL            3
-#define SM_CYCAPTION            4
-#define SM_CXBORDER             5
-#define SM_CYBORDER             6
-#define SM_CXDLGFRAME           7
-#define SM_CYDLGFRAME           8
-#define SM_CYVTHUMB             9
-#define SM_CXHTHUMB             10
-#define SM_CXICON               11
-#define SM_CYICON               12
-#define SM_CXCURSOR             13
-#define SM_CYCURSOR             14
-#define SM_CYMENU               15
-#define SM_CXFULLSCREEN         16
-#define SM_CYFULLSCREEN         17
-#define SM_CYKANJIWINDOW        18
-#define SM_MOUSEPRESENT         19
-#define SM_CYVSCROLL            20
-#define SM_CXHSCROLL            21
-#define SM_DEBUG                22
-#define SM_SWAPBUTTON           23
-#define SM_RESERVED1            24
-#define SM_RESERVED2            25
-#define SM_RESERVED3            26
-#define SM_RESERVED4            27
-#define SM_CXMIN                28
-#define SM_CYMIN                29
-#define SM_CXSIZE               30
-#define SM_CYSIZE               31
-#define SM_CXFRAME              32
-#define SM_CYFRAME              33
-#define SM_CXMINTRACK           34
-#define SM_CYMINTRACK           35
-#define SM_CXDOUBLECLK          36
-#define SM_CYDOUBLECLK          37
-#define SM_CXICONSPACING        38
-#define SM_CYICONSPACING        39
-#define SM_MENUDROPALIGNMENT    40
-#define SM_PENWINDOWS           41
-#define SM_DBCSENABLED          42
-#define SM_CMOUSEBUTTONS        43
-#define SM_CXFIXEDFRAME           SM_CXDLGFRAME  /* ;win40 name change */
-#define SM_CYFIXEDFRAME           SM_CYDLGFRAME  /* ;win40 name change */
-#define SM_CXSIZEFRAME            SM_CXFRAME     /* ;win40 name change */
-#define SM_CYSIZEFRAME            SM_CYFRAME     /* ;win40 name change */
-#define SM_SECURE               44
-#define SM_CXEDGE               45
-#define SM_CYEDGE               46
-#define SM_CXMINSPACING         47
-#define SM_CYMINSPACING         48
-#define SM_CXSMICON             49
-#define SM_CYSMICON             50
-#define SM_CYSMCAPTION          51
-#define SM_CXSMSIZE             52
-#define SM_CYSMSIZE             53
-#define SM_CXMENUSIZE           54
-#define SM_CYMENUSIZE           55
-#define SM_ARRANGE              56
-#define SM_CXMINIMIZED          57
-#define SM_CYMINIMIZED          58
-#define SM_CXMAXTRACK           59
-#define SM_CYMAXTRACK           60
-#define SM_CXMAXIMIZED          61
-#define SM_CYMAXIMIZED          62
-#define SM_NETWORK              63
-#define SM_CLEANBOOT            67
-#define SM_CXDRAG               68
-#define SM_CYDRAG               69
-#define SM_SHOWSOUNDS           70
-#define SM_CXMENUCHECK          71   /* Use instead of GetMenuCheckMarkDimensions()! */
-#define SM_CYMENUCHECK          72
-#define SM_SLOWMACHINE          73
-#define SM_MIDEASTENABLED       74
-#define SM_MOUSEWHEELPRESENT    75
-#define SM_XVIRTUALSCREEN       76
-#define SM_YVIRTUALSCREEN       77
-#define SM_CXVIRTUALSCREEN      78
-#define SM_CYVIRTUALSCREEN      79
-#define SM_CMONITORS            80
-#define SM_SAMEDISPLAYFORMAT    81
-#define SM_IMMENABLED           82
-#define SM_CXFOCUSBORDER        83
-#define SM_CYFOCUSBORDER        84
-#define SM_TABLETPC             86
-#define SM_MEDIACENTER          87
-#define SM_STARTER              88
-#define SM_SERVERR2             89
-#define SM_REMOTESESSION        0x1000
-#define SM_SHUTTINGDOWN         0x2000
-#define SM_REMOTECONTROL        0x2001
-#define SM_CARETBLINKINGENABLED 0x2002
 
 #define QS_KEY              0x0001
 #define QS_MOUSEMOVE        0x0002
@@ -1044,24 +858,6 @@ BOOL WINAPI GlobalUnlock(__in HANDLE hMem);
 HANDLE WINAPI GlobalFree(HANDLE hMem);
 
 typedef __stdcall LRESULT (*WNDPROC)(HWND, UINT, WPARAM, LPARAM);
-typedef struct tagWNDCLASSA {
-    UINT        style;
-    WNDPROC     lpfnWndProc;
-    int         cbClsExtra;
-    int         cbWndExtra;
-    HINSTANCE   hInstance;
-    HICON       hIcon;
-    HCURSOR     hCursor;
-    HBRUSH      hbrBackground;
-    LPCSTR      lpszMenuName;
-    LPCSTR      lpszClassName;
-} WNDCLASSA;
-WINUSERAPI
-ATOM
-WINAPI
-RegisterClassA(
-    __in CONST WNDCLASSA *lpWndClass);
-
 typedef struct tagWNDCLASSEXA {
 	UINT cbSize;
 	UINT style;
@@ -1134,37 +930,6 @@ SetWindowPos(
     __in int cx,
     __in int cy,
     __in UINT uFlags);
-WINUSERAPI
-BOOL
-WINAPI
-BringWindowToTop(
-    __in HWND hWnd);
-WINUSERAPI
-BOOL
-WINAPI
-SetForegroundWindow(
-	__in HWND hWnd);
-WINUSERAPI
-HWND
-WINAPI
-GetDesktopWindow(VOID);
-WINUSERAPI
-HWND
-WINAPI
-GetParent(
-	__in HWND hWnd);
-WINUSERAPI
-HWND
-WINAPI
-SetParent(
-	__in HWND hWndChild,
-	__in_opt HWND hWndNewParent);
-WINUSERAPI
-BOOL
-WINAPI
-EndDialog(
-    __in HWND hDlg,
-    __in INT_PTR nResult);
 #define SRCCOPY             (DWORD)0x00CC0020 /* dest = source                   */
 #define SRCPAINT            (DWORD)0x00EE0086 /* dest = source OR dest           */
 #define SRCAND              (DWORD)0x008800C6 /* dest = source AND dest          */
@@ -1183,13 +948,8 @@ EndDialog(
 #define NOMIRRORBITMAP      (DWORD)0x80000000 /* Do not Mirror the bitmap in this call */
 #define CAPTUREBLT          (DWORD)0x40000000 /* Include layered windows */
 BOOL    WINAPI BitBlt(__in HDC hdcDst, __in int x, __in int y, __in int cx, __in int cy, __in_opt HDC hdcSrc, __in int x1, __in int y1, __in DWORD rop);
-HBITMAP WINAPI CreateBitmap(__in int nWidth, __in int nHeight, __in UINT nPlanes, __in UINT nBitCount, __in_opt LPVOID lpBits);
-HBITMAP WINAPI CreateBitmapIndirect(__in LPVOID pbm);
-HBRUSH  WINAPI CreateBrushIndirect(__in LPVOID plbrush);
 HBITMAP WINAPI CreateCompatibleBitmap(__in HDC hdc, __in int cx, __in int cy);
-HBITMAP WINAPI CreateDiscardableBitmap(__in HDC hdc, __in int cx, __in int cy);
 HDC     WINAPI CreateCompatibleDC(__in_opt HDC hdc);
-HDC     WINAPI CreateDCA(__in_opt LPCSTR pwszDriver, __in_opt LPCSTR pwszDevice, __in_opt LPCSTR pszPort, __in_opt LPVOID pdm);
 BOOL    WINAPI DeleteDC(__in HDC hdc);
 HDC     WINAPI GetDC(__in_opt HWND hWnd);
 int     WINAPI ReleaseDC(__in_opt HWND hWnd, __in HDC hDC);
@@ -1201,114 +961,11 @@ GetTextExtentPoint32A(
 	__in int c,
 	__out LPPOINT lpsz);
 WINUSERAPI
-int
-WINAPI
-ToAscii(
-	__in UINT uVirtKey,
-	__in UINT uScanCode,
-	__in_opt CONST BYTE *lpKeyState,
-	__out DWORD *lpChar,
-	__in UINT uFlags);
-WINUSERAPI
-HWND
-WINAPI
-GetDlgItem(
-    __in_opt HWND hDlg,
-    __in int nIDDlgItem);
-WINUSERAPI
-BOOL
-WINAPI
-SetDlgItemInt(
-    __in HWND hDlg,
-    __in int nIDDlgItem,
-    __in UINT uValue,
-    __in BOOL bSigned);
-WINUSERAPI
-UINT
-WINAPI
-GetDlgItemInt(
-    __in HWND hDlg,
-    __in int nIDDlgItem,
-    __out_opt BOOL *lpTranslated,
-    __in BOOL bSigned);
-WINUSERAPI
-BOOL
-WINAPI
-SetDlgItemTextA(
-    __in HWND hDlg,
-    __in int nIDDlgItem,
-    __in LPCSTR lpString);
-WINUSERAPI
-UINT
-WINAPI
-GetDlgItemTextA(
-    __in HWND hDlg,
-    __in int nIDDlgItem,
-    __out_ecount(cchMax) LPSTR lpString,
-    __in int cchMax);
-WINUSERAPI
-BOOL
-WINAPI
-CheckDlgButton(
-    __in HWND hDlg,
-    __in int nIDButton,
-    __in UINT uCheck);
-WINUSERAPI
-BOOL
-WINAPI
-CheckRadioButton(
-    __in HWND hDlg,
-    __in int nIDFirstButton,
-    __in int nIDLastButton,
-    __in int nIDCheckButton);
-WINUSERAPI
-UINT
-WINAPI
-IsDlgButtonChecked(
-    __in HWND hDlg,
-    __in int nIDButton);
-WINUSERAPI
-LRESULT
-WINAPI
-SendDlgItemMessageA(
-    __in HWND hDlg,
-    __in int nIDDlgItem,
-    __in UINT Msg,
-    __in WPARAM wParam,
-    __in LPARAM lParam);
-WINUSERAPI
-HMENU
-WINAPI
-LoadMenuA(
-    __in_opt HINSTANCE hInstance,
-    __in LPCSTR lpMenuName);
-WINUSERAPI
-HMENU
-WINAPI
-GetMenu(
-    __in HWND hWnd);
-WINUSERAPI
 BOOL
 WINAPI
 SetMenu(
     __in HWND hWnd,
     __in_opt HMENU hMenu);
-WINUSERAPI
-BOOL
-WINAPI
-ChangeMenuA(
-    __in HMENU hMenu,
-    __in UINT cmd,
-    __in_opt LPCSTR lpszNewItem,
-    __in UINT cmdInsert,
-    __in UINT flags);
-WINUSERAPI
-UINT
-WINAPI
-GetMenuState(
-    __in HMENU hMenu,
-    __in UINT uId,
-    __in UINT uFlags);
 WINUSERAPI
 HMENU
 WINAPI
@@ -1332,90 +989,11 @@ CheckMenuItem(
 WINUSERAPI
 BOOL
 WINAPI
-EnableMenuItem(
-    __in HMENU hMenu,
-    __in UINT uIDEnableItem,
-    __in UINT uEnable);
-WINUSERAPI
-HMENU
-WINAPI
-GetSubMenu(
-    __in HMENU hMenu,
-    __in int nPos);
-WINUSERAPI
-UINT
-WINAPI
-GetMenuItemID(
-    __in HMENU hMenu,
-    __in int nPos);
-WINUSERAPI
-int
-WINAPI
-GetMenuItemCount(
-    __in_opt HMENU hMenu);
-WINUSERAPI
-BOOL
-WINAPI
-InsertMenuA(
-    __in HMENU hMenu,
-    __in UINT uPosition,
-    __in UINT uFlags,
-    __in UINT_PTR uIDNewItem,
-    __in_opt LPCSTR lpNewItem);
-WINUSERAPI
-BOOL
-WINAPI
 AppendMenuA(
     __in HMENU hMenu,
     __in UINT uFlags,
     __in UINT_PTR uIDNewItem,
     __in_opt LPCSTR lpNewItem);
-WINUSERAPI
-BOOL
-WINAPI
-ModifyMenuA(
-    __in HMENU hMnu,
-    __in UINT uPosition,
-    __in UINT uFlags,
-    __in UINT_PTR uIDNewItem,
-    __in_opt LPCSTR lpNewItem);
-WINUSERAPI
-BOOL
-WINAPI RemoveMenu(
-    __in HMENU hMenu,
-    __in UINT uPosition,
-    __in UINT uFlags);
-WINUSERAPI
-BOOL
-WINAPI
-DeleteMenu(
-    __in HMENU hMenu,
-    __in UINT uPosition,
-    __in UINT uFlags);
-
-typedef struct tagMENUITEMINFOA
-{
-    UINT     cbSize;
-    UINT     fMask;
-    UINT     fType;
-    UINT     fState;
-    UINT     wID;
-    HMENU    hSubMenu;
-    HBITMAP  hbmpChecked;
-    HBITMAP  hbmpUnchecked;
-    ULONG_PTR dwItemData;
-    LPSTR    dwTypeData;
-    UINT     cch;
-    HBITMAP  hbmpItem;
-}   MENUITEMINFOA, *LPMENUITEMINFOA, CONST *LPCMENUITEMINFOA;
-WINUSERAPI
-BOOL
-WINAPI
-InsertMenuItemA(
-    __in HMENU hmenu,
-    __in UINT item,
-    __in BOOL fByPosition,
-    __in LPCMENUITEMINFOA lpmi);
 
 #define TRANSPARENT 1
 #define OPAQUE      2
@@ -1487,43 +1065,6 @@ MessageBoxA(
     __in_opt LPCSTR lpCaption,
     __in UINT uType);
 
-typedef struct tagHELPINFO {      // Structure pointed to by lParam of WM_HELP
-    UINT    cbSize;
-    int     iContextType;
-    int     iCtrlId;
-    HANDLE  hItemHandle;
-    DWORD_PTR dwContextId;
-    POINT   MousePos;
-} HELPINFO, *LPHELPINFO;
-typedef VOID (CALLBACK *MSGBOXCALLBACK)(LPHELPINFO lpHelpInfo);
-typedef struct tagMSGBOXPARAMSA
-{
-    UINT        cbSize;
-    HWND        hwndOwner;
-    HINSTANCE   hInstance;
-    LPCSTR      lpszText;
-    LPCSTR      lpszCaption;
-    DWORD       dwStyle;
-    LPCSTR      lpszIcon;
-    DWORD_PTR   dwContextHelpId;
-    MSGBOXCALLBACK      lpfnMsgBoxCallback;
-    DWORD       dwLanguageId;
-} MSGBOXPARAMSA, *PMSGBOXPARAMSA, *LPMSGBOXPARAMSA;
-WINUSERAPI
-int
-WINAPI
-MessageBoxIndirectA(
-    __in CONST MSGBOXPARAMSA * lpmbp);
-
-WINUSERAPI
-BOOL
-WINAPI
-CheckMenuRadioItem(
-    __in HMENU hmenu,
-    __in UINT first,
-    __in UINT last,
-    __in UINT check,
-    __in UINT flags);
 WINUSERAPI
 HICON
 WINAPI
@@ -1569,8 +1110,6 @@ AdjustWindowRectEx(
     __in DWORD dwStyle,
     __in BOOL bMenu,
     __in DWORD dwExStyle);
-HBRUSH WINAPI CreateSolidBrush(DWORD color);
-HPEN WINAPI CreatePen(int style, int width, DWORD color);
 DWORD WINAPI SetTextColor(__in HDC hdc, __in DWORD color);
 BOOL WINAPI TextOutA( __in HDC hdc, __in int x, __in int y, __in_ecount(c) LPCSTR lpString, __in int c);
 BOOL WINAPI MoveToEx( __in HDC hdc, __in int x, __in int y, __out_opt LPPOINT lppt);
