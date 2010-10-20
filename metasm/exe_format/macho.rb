@@ -193,7 +193,8 @@ class MachO < ExeFormat
 		end
 
 		def encode(m)
-			ed = super(m) << @data.encode(m)
+			ed = super(m) 
+			ed << @data.encode(m) if @data
 			ed.align(m.size >> 3)
 			ed.fixup! @cmdsize => ed.length	if @cmdsize.kind_of? String
 			ed
@@ -252,10 +253,10 @@ class MachO < ExeFormat
 				@segment = s
 			end
 
-			def set_default_values
+			def set_default_values(m)
 				@segname ||= @segment.name
 				# addr, offset, etc = @segment.virtaddr + 42
-				super()
+				super(m)
 			end
 
 			def decode_inner(m)
@@ -335,7 +336,7 @@ class MachO < ExeFormat
 				ptr = m.encoded.ptr
 				super(m)
 				ptr = m.encoded.ptr = ptr + @stroff - 8
-				@str = m.encoded.read(m.encoded[ptr..-1].data.index(?\0) || 0)
+				@str = m.decode_strz
 			end
 		end
 
@@ -440,19 +441,21 @@ class MachO < ExeFormat
 		mem :unk1, 4
 		word :hash_offset
 		word :name_offset
+		word :special_page_count
 		word :code_page_count
-		mem :unk3, 12
-		attr_accessor :name, :unk_hash
+		mem :unk3, 8
+		attr_accessor :name, :cs_slots_hash, :code_hash
 
 		def decode(m)
 			super(m)
 			ptr = m.encoded.ptr
 
 			m.encoded.ptr += @name_offset - 40
-			@name = m.encoded.read(m.encoded[m.encoded.ptr..-1].data.index(?\0) || 0)
+			@name = m.decode_strz
+			@cs_slots_hash = m.encoded.read(@special_page_count * 20)
 
 			m.encoded.ptr = ptr + @hash_offset - 40
-			@unk_hash = m.encoded.read(@size - @hash_offset)
+			@code_hash = m.encoded.read(@size - @hash_offset)
 
 			m.encoded.ptr = ptr
 		end
