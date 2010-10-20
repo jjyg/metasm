@@ -617,10 +617,11 @@ class Window < Gtk::Window
 		@vbox = Gtk::VBox.new
 		add @vbox
 
-		@menu = Gtk::MenuBar.new
+		@menu = []
+		@menubar = Gtk::MenuBar.new
 		@accel_group = Gtk::AccelGroup.new
 
-		@vbox.add @menu, 'expand' => false
+		@vbox.add @menubar, 'expand' => false
 		@child = nil
 		s = Gdk::Screen.default
 		set_default_size s.width*3/4, s.height*3/4
@@ -631,6 +632,7 @@ class Window < Gtk::Window
 
 		initialize_window(*a)
 		build_menu
+		update_menu
 		
 		
 		Gtk::Drag.dest_set(self,
@@ -673,17 +675,52 @@ class Window < Gtk::Window
 	end
 
 	def new_menu
-		Gtk::Menu.new
+		[]
 	end
 
+	# append stuff to a menu
+	# arglist:
+	# empty = menu separator
+	# string = menu entry display name (use a single '_' keyboard for shortcut, eg 'Sho_rtcut' => 'r')
+	# :check = menu entry is a checkbox type, add a true/false argument to specify initial value
+	# second string = keyboard shortcut (accelerator) - use '^' for Ctrl, and '<up>' for special keys
+	# a menu object = this entry will open a submenu (you must specify a name, and action is ignored)
+	# the method takes a block or a Proc argument that will be run whenever the menu item is selected
+	#
+	# use @menu to reference the top-level menu bar
+	# call update_menu when the menu is done
 	def addsubmenu(menu, *args, &action)
+		args << action if action
+		menu << args
+		menu.last
+	end
+
+	# make the window's MenuBar reflect the content of @menu
+	def update_menu
+		# clear
+		@menubar.children.dup.each { |mc| @menubar.remove mc }
+		# populate the menubar using @menu
+		@menu.each { |e| create_menu_item(@menubar, e) }
+		@menubar.show_all
+	end
+
+	def create_menu_item(menu, entry)
+		args = entry.dup
+
+		# recognise 'OPEN', 'SAVE' etc, with special icon/localisation
 		stock = (Gtk::Stock.constants.map { |c| c.to_s } & args).first
 		args.delete stock if stock
 		accel = args.grep(/^\^?(\w|<\w+>)$/).first
 		args.delete accel if accel
 		check = args.delete :check
-		submenu = args.grep(Gtk::Menu).first
-		args.delete submenu if submenu
+		action = args.grep(::Proc).first
+		args.delete action if action
+		if submenu = args.grep(::Array).first
+			args.delete submenu
+			sm = Gtk::Menu.new
+			submenu.each { |e| create_menu_item(sm, e) }
+			submenu = sm
+		end
 		label = args.shift
 
 		if stock

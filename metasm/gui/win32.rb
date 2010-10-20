@@ -1918,9 +1918,10 @@ class Window
 		initialize_window(*a, &b)
 
 		if respond_to? :build_menu
-			@menu = new_menu
+			@menu = []
+			@menuhwnd = 0
 			build_menu
-			Win32Gui.setmenu(@hwnd, @menu)
+			update_menu
 		end
 
 		Win32Gui.dragacceptfiles(@hwnd, Win32Gui::TRUE)
@@ -2121,17 +2122,50 @@ class Window
 	def destroyed? ; @destroyed ||= false ; end
 
 	def new_menu
-		Win32Gui.createmenu()
+		[]
 	end
 
+	# append stuff to a menu
+	# arglist:
+	# empty = menu separator
+	# string = menu entry display name (use a single '_' keyboard for shortcut, eg 'Sho_rtcut' => 'r')
+	# :check = menu entry is a checkbox type, add a true/false argument to specify initial value
+	# second string = keyboard shortcut (accelerator) - use '^' for Ctrl, and '<up>' for special keys
+	# a menu object = this entry will open a submenu (you must specify a name, and action is ignored)
+	# the method takes a block or a Proc argument that will be run whenever the menu item is selected
+	#
+	# use @menu to reference the top-level menu bar
+	# call update_menu when the menu is done
 	def addsubmenu(menu, *args, &action)
+		args << action if action
+		menu << args
+		menu.last
+	end
+
+	# make the window's MenuBar reflect the content of @menu
+	def update_menu
+		Win32Gui.destroymenu(@menuhwnd) if @menuhwnd != 0
+		@menuhwnd = Win32Gui.createmenu()
+		@menu.each { |e| create_menu_item(@menuhwnd, e) }
+		Win32Gui.setmenu(@hwnd, @menuhwnd)
+	end
+
+	def create_menu_item(menu, entry)
+		args = entry.dup
+
 		stock = (%w[OPEN SAVE CLOSE QUIT] & args).first
 		args.delete stock if stock
 		accel = args.grep(/^\^?(\w|<\w+>)$/).first
 		args.delete accel if accel
 		check = args.delete :check
-		submenu = args.grep(Integer).first
-		args.delete submenu if submenu
+		action = args.grep(::Proc).first
+		args.delete action if action
+		if submenu = args.grep(::Array).first
+			args.delete submenu
+			sm = Win32Gui.createmenu()
+			submenu.each { |e| create_menu_item(sm, e) }
+			submenu = sm
+		end
 		label = args.shift
 
 		label ||= '_' + stock.capitalize if stock
@@ -2164,7 +2198,7 @@ class Window
 			else
 				@control_action[id] = lambda {
 					checked = action.call(!checked)
-					Win32Gui.checkmenuitem(@menu, id, (checked ? Win32Gui::MF_CHECKED : Win32Gui::MF_UNCHECKED))
+					Win32Gui.checkmenuitem(menu, id, (checked ? Win32Gui::MF_CHECKED : Win32Gui::MF_UNCHECKED))
 				}
 			end
 			@controlid += 1
