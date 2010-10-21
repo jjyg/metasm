@@ -695,6 +695,16 @@ class Window < Gtk::Window
 		[]
 	end
 
+	# finds a menu by name (recursive)
+	# returns a valid arg for addsubmenu(ret)
+	def find_menu(name, from=@menu)
+		name = name.gsub('_', '')
+		if not l = from.find { |e| e.grep(::String).find { |es| es.gsub('_', '') == name } }
+		       l = from.map { |e| e.grep(::Array).map { |ae| find_menu(name, ae) }.compact.first }.compact.first
+		end
+		l.grep(::Array).first if l
+	end
+
 	# append stuff to a menu
 	# arglist:
 	# empty = menu separator
