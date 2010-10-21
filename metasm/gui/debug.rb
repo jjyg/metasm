@@ -584,7 +584,11 @@ class DbgConsoleWidget < DrawableWidget
 
 	# arg str -> expr value, with special codeptr/dataptr = code/data.curaddr
 	def parse_expr(arg)
-		@dbg.parse_expr(arg) { |e|
+		parse_expr!(arg.dup)
+	end
+
+	def parse_expr!(arg)
+		@dbg.parse_expr!(arg) { |e|
 			case e.downcase
 			when 'code_addr', 'codeptr'; @parent_widget.code.curaddr
 			when 'data_addr', 'dataptr'; @parent_widget.mem.curaddr
@@ -593,7 +597,11 @@ class DbgConsoleWidget < DrawableWidget
 	end
 
 	def solve_expr(arg)
-		return if not e = parse_expr(arg)
+		solve_expr!(arg.dup)
+	end
+
+	def solve_expr!(arg)
+		return if not e = parse_expr!(arg)
 		@dbg.resolve_expr(e)
 	end
 
@@ -667,7 +675,7 @@ class DbgConsoleWidget < DrawableWidget
 			raise 'bad syntax: bpm r|w|x addr [len]' unless e =~ /^([rwx]) (.*)/i
 			mode = $1.downcase.to_sym
 			e = $2
-			exp = solve_expr(e)
+			exp = solve_expr!(e)
 			len = solve_expr(e) if e != ''
 			len ||= 1
 			@dbg.hwbp(exp, mode, len, false, cd, &cb)
@@ -715,7 +723,7 @@ class DbgConsoleWidget < DrawableWidget
 			p.regs.gui_update
 		}
 		new_command('m', 'memory_dump', 'dump memory - m <addr> <len>') { |arg|
-			next if not addr = solve_expr(arg)
+			next if not addr = solve_expr!(arg)
 			len = solve_expr(arg) || 16
 			mem = @dbg.memory[addr, len]
 			mem.scan(/.{1,16}/m).each { |l|
@@ -726,7 +734,7 @@ class DbgConsoleWidget < DrawableWidget
 			}
 		}
 		new_command('ma', 'memory_ascii', 'write memory (ascii) - ma <addr> foo bar') { |arg|
-			next if not addr = solve_expr(arg)
+			next if not addr = solve_expr!(arg)
 			data = arg.strip
 			@dbg.memory[addr, data.length] = data
 			@dbg.invalidate
@@ -734,7 +742,7 @@ class DbgConsoleWidget < DrawableWidget
 			p.gui_update
 		}
 		new_command('mx', 'memory_hex', 'write memory (hex) - mx <addr> 0011223344') { |arg|
-			next if not addr = solve_expr(arg)
+			next if not addr = solve_expr!(arg)
 			data = [arg.delete(' ')].pack('H*')
 			@dbg.memory[addr, data.length] = data
 			@dbg.invalidate
@@ -755,7 +763,7 @@ class DbgConsoleWidget < DrawableWidget
 			end
 		}
 		new_command('loadsyms', 'load symbols from a mapped module') { |arg|
-			if not arg.empty? and arg = (solve_expr(arg.dup) rescue arg)
+			if not arg.empty? and arg = (solve_expr(arg) rescue arg)
 				@dbg.loadsyms(arg)
 			else
 				@dbg.loadallsyms { |a|

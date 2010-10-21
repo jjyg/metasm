@@ -721,9 +721,14 @@ class Debugger
 
 	end
 
-	# parses the expression contained in arg, updates arg to point after the expr
+	# parses the expression contained in arg
 	def parse_expr(arg)
-		return if not e = IndExpression.parse_string(arg) { |s|
+		parse_expr!(arg.dup)
+	end
+
+	# parses the expression contained in arg, updates arg to point after the expr
+	def parse_expr!(arg)
+		return if not e = IndExpression.parse_string!(arg) { |s|
 			# handle 400000 -> 0x400000
 			# XXX no way to override and force decimal interpretation..
 			if s.length > 4 and not @disassembler.get_section_at(s.to_i) and @disassembler.get_section_at(s.to_i(16))
