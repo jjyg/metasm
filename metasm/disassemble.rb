@@ -602,7 +602,11 @@ class Disassembler
 		@decoded.each_value { |di|
 			next if not di.kind_of? DecodedInstruction
 			next if not di.opcode or not di.opcode.props[:saveip]
-			di.add_comment 'noreturn' if not di.block.to_subfuncret
+			if not di.block.to_subfuncret
+				di.add_comment 'noreturn'
+				# there is no need to re-loop on all :saveip as check_noret is transitive
+				di.block.each_to_normal { |fa| check_noreturn_function(fa) }
+			end
 		}
 		@function.each { |addr, f|
 			next if not di = @decoded[addr]
@@ -842,6 +846,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			maxdepth -= 1
 			ep.delete_if { |a| not @decoded[normalize(a[0])] } if maxdepth == 0
 		end
+		check_noreturn_function(entrypoint)
 	end
 
 	# disassembles one block from the ary, see disassemble_fast_block
@@ -1080,6 +1085,27 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				end
 			end
 		}
+	end
+
+	# given an address, detect if it may be a noreturn fuction
+	# it is if all its end blocks are calls to noreturn functions
+	# if it is, create a @function[fa] with noreturn = true
+	# should only be called with fa = target of a call
+	def check_noreturn_function(fa)
+		fb = function_blocks(fa, false, false)
+		lasts = fb.keys.find_all { |k| fb[k] == [] }
+		return if lasts.empty?
+		if lasts.all? { |la|
+			b = block_at(la)
+			next if not di = b.list.last
+			(di.opcode.props[:saveip] and b.to_normal.to_a.all? { |tfa|
+				tf = function_at(tfa) and tf.noreturn
+			}) or (di.opcode.props[:stopexec] and not di.opcode.props[:setip])
+		}
+			# yay
+			@function[fa] ||= DecodedFunction.new
+			@function[fa].noreturn = true
+		end
 	end
 
 
