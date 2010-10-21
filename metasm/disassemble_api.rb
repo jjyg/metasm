@@ -333,23 +333,23 @@ class Disassembler
 	end
 
 	# iterates over the blocks of a function, yields each func block address
-	# returns the list of block addresses
-	def each_function_block(addr, incl_subfuncs = false)
+	# returns the graph of blocks (block address => [list of samefunc blocks])
+	def each_function_block(addr, incl_subfuncs = false, find_func_start = true)
 		addr = @function.index(addr) if addr.kind_of? DecodedFunction
 		addr = addr.address if addr.kind_of? DecodedInstruction
-		addr = find_function_start(addr) if not @function[addr]
+		addr = find_function_start(addr) if not @function[addr] and find_func_start
 		todo = [addr]
-		done = []
+		ret = {}
 		while a = todo.pop
 			next if not di = di_at(a)
 			a = di.block.address
-			next if done.include? a
-			done << a
+			next if ret[a]
+			ret[a] = []
 			yield a if block_given?
-			di.block.each_to_samefunc(self) { |f| todo << f }
-			di.block.each_to_otherfunc(self) { |f| todo << f } if incl_subfuncs
+			di.block.each_to_samefunc(self) { |f| ret[a] << f ; todo << f }
+			di.block.each_to_otherfunc(self) { |f| ret[a] << f ; todo << f } if incl_subfuncs
 		end
-		done
+		ret
 	end
 	alias function_blocks each_function_block
 
@@ -374,6 +374,7 @@ class Disassembler
 	# recurses from an entrypoint
 	def function_graph_from(addr)
 		addr = normalize(addr)
+		addr = find_function_start(addr) || addr
 		ret = {}
 		osz = ret.length-1
 		while ret.length != osz
