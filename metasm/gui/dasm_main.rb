@@ -10,6 +10,7 @@ require 'metasm/gui/dasm_opcodes'
 require 'metasm/gui/dasm_coverage'
 require 'metasm/gui/dasm_graph'
 require 'metasm/gui/dasm_decomp'
+require 'metasm/gui/dasm_funcgraph'
 
 module Metasm
 module Gui
@@ -43,6 +44,7 @@ class DisasmWidget < ContainerChoiceWidget
 		addview :opcodes,   AsmOpcodeWidget.new(@dasm, self)
 		addview :hex,       HexWidget.new(@dasm, self)
 		addview :coverage,  CoverageWidget.new(@dasm, self)
+		addview :funcgraph, FuncGraphViewWidget.new(@dasm, self)
 
 		view(:listing).grab_focus
 	end
@@ -127,14 +129,14 @@ class DisasmWidget < ContainerChoiceWidget
 	# if it cannot display the address all other views are tried in order
 	# the current focus address is saved in @pos_history (see focus_addr_back/redo)
 	# a messagebox is popped if no view can display the address unless quiet is true
-	def focus_addr(addr, viewidx=nil, quiet=false)
+	def focus_addr(addr, viewidx=nil, quiet=false, *a)
 		viewidx ||= curview_index || :listing
 		return if not addr
 		return if viewidx == curview_index and addr == curaddr
 		oldpos = [curview_index, (curview.get_cursor_pos if curview)]
 		if [viewidx, oldpos[0], *view_indexes].compact.uniq.find { |i|
 			o_p = view(i).get_cursor_pos
-			if view(i).focus_addr(addr)
+			if (view(i).focus_addr(addr, *a) rescue nil)
 				view(i).gui_update if i != oldpos[0]
 				showview(i)
 				true
@@ -860,6 +862,13 @@ class DasmWindow < Window
 		addsubmenu(views, 'Co_verage') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :coverage) }
 		addsubmenu(views, '_Sections') { @dasm_widget.list_sections }
 		addsubmenu(views, 'St_rings') { @dasm_widget.list_strings }
+
+		funcgraph = new_menu
+		addsubmenu(funcgraph, 'Fu_ll') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :funcgraph, false, :full) }
+		addsubmenu(funcgraph, '_From there') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :funcgraph, false, :from) }
+		addsubmenu(funcgraph, '_To there') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :funcgraph, false, :to) }
+		addsubmenu(funcgraph, '_Butterfly') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :funcgraph, false, :both) }
+		addsubmenu(views, '_Func graph', funcgraph)
 
 		addsubmenu(@menu, views, '_Views')
 	end
