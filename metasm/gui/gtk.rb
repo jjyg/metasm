@@ -291,6 +291,9 @@ class DrawableWidget < Gtk::DrawingArea
 		set_font 'courier 10'
 	end
 
+	def initialize_widget
+	end
+
 
 	# create a color from a 'rgb' description
 	def color(val)
@@ -563,12 +566,26 @@ class ListWindow < Gtk::Dialog
 		treeview = Gtk::TreeView.new
 		treeview.model = Gtk::ListStore.new(*[String]*cols.length)
 		treeview.selection.mode = Gtk::SELECTION_NONE
+		if @color_callback = h[:color_callback]
+			@drawable = DrawableWidget.new	# needed for color()...
+			@drawable.signal_emit('realize')
+		end
 
 		cols.each_with_index { |col, i|
 			crt = Gtk::CellRendererText.new
 			tvc = Gtk::TreeViewColumn.new(col, crt)
 			tvc.sort_column_id = i
-			tvc.set_cell_data_func(crt) { |_tvc, _crt, model, iter| _crt.text = iter[i] }
+			tvc.set_cell_data_func(crt) { |_tvc, _crt, model, iter|
+			       	_crt.text = iter[i]
+				if @color_callback
+					fu = (0...cols.length).map { |ii| iter[ii] }
+					fg, bg = @color_callback[fu]
+					fg ||= :black
+					bg ||= :white
+					_crt.foreground = @drawable.color(fg).to_s
+					_crt.cell_background = @drawable.color(bg).to_s
+				end
+			}
 			treeview.append_column tvc
 		}
 
