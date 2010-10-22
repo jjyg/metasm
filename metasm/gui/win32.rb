@@ -1719,6 +1719,9 @@ class DrawableWidget < WinWidget
 		initialize_widget(*a, &b)
 	end
 
+	def initialize_widget
+	end
+
 	def initialize_visible_
 		{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
 			:red => 'f00', :darkred => '800', :palered => 'fcc',
@@ -1902,7 +1905,7 @@ class Window
 		(@@mainwindow_list ||= []) << self
 		@visible = false
 		@popups = []
-		@parent = nil
+		@parent ||= nil
 
 		cname = "metasm_w32gui_#{object_id}"
 		cls = Win32Gui.alloc_c_struct 'WNDCLASSEXA', :cbsize => :size,
@@ -2241,8 +2244,9 @@ class ToolWindow < Window
 		Win32Gui.movewindow(@hwnd, x, y, r2[:right]-r2[:left], r2[:bottom]-r2[:top], Win32Gui::FALSE)
 	end
 
-	def initialize_window(parent)
+	def initialize(parent, *a, &b)
 		@parent = parent
+		super(*a, &b)
 		@@mainwindow_list.delete self
 		@parent.popups << self if parent
 	end
@@ -2563,8 +2567,7 @@ class IBoxWidget < DrawableWidget
 		redraw
 	end
 end
-	def initialize_window(win, prompt, opts={}, &b)
-		super(win)
+	def initialize_window(prompt, opts={}, &b)
 		self.title = opts[:title] ? opts[:title] : 'input'
 		self.widget = IBoxWidget.new(prompt, opts, &b)
 	end
@@ -2854,8 +2857,7 @@ class LBoxWidget < DrawableWidget
 		@parent.destroy
 	end
 end
-	def initialize_window(win, title, list, opts={}, &b)
-		super(win)
+	def initialize_window(title, list, opts={}, &b)
 		@ondestroy = opts[:ondestroy]
 		self.title = title
 		self.widget = LBoxWidget.new(list, opts, &b)

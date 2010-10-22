@@ -12,8 +12,7 @@ if gui
 	class ColorWindow < Metasm::Gui::ToolWindow
 		def initialize_window(&b)
 			self.title = 'pick a color'
-			w = self.widget = ColorWidget.new(&b)
-			self.resize(w.pw*256, w.ph*16)
+			self.widget = ColorWidget.new(&b)
 		end
 	end
 
@@ -24,6 +23,10 @@ if gui
 			@action = b
 			@pw = 3
 			@ph = 8
+		end
+
+		def initial_size
+			[@pw*256, @ph*16]
 		end
 
 		def paint

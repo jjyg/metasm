@@ -813,6 +813,9 @@ class ToolWindow < Gtk::Dialog
 		remove @child if @child
 		@child = w
 		add @child
+		if @child.respond_to? :initial_size
+			resize *@child.initial_size
+		end
 	end
 
 	def widget
