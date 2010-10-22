@@ -9,27 +9,48 @@
 # also allows the custom coloration of blocks/functions
 
 if gui
-=begin
-	# TODO generic ToolWindow
+	class ColorWindow < Metasm::Gui::ToolWindow
+		def initialize_window(&b)
+			self.title = 'pick a color'
+			w = self.widget = ColorWidget.new(&b)
+			self.resize(w.pw*256, w.ph*16)
+		end
+	end
+
 	class ColorWidget < Metasm::Gui::DrawableWidget
+		attr_accessor :ph, :pw
 		def initialize_widget(&b)
+			super()
 			@action = b
+			@pw = 3
+			@ph = 8
 		end
 
 		def paint
-			0xff.times { |x|
-				0xf.times { |y|
-					draw_rectangle_color('%02x%x' % [x, y], x*16, y*16, 16, 16)
+			0x100.times { |x|
+				cx = x
+				if x & 0x10 > 0
+					cx = (x&0xf0) + (15-(x&0xf))
+				end
+				0x10.times { |y|
+					col = '%02x%x' % [cx, y]
+					draw_rectangle_color(col, x*@pw, y*@ph, @pw, @ph)
 				}
 			}
 		end
 
 		def click(x, y)
-			@action.call('%02x%x' % [x, y])
-			destroy
+			x = x.to_i / @pw
+			y = y.to_i / @ph
+			if x <= 0xff and y <= 0xf
+				if x & 0x10 > 0
+					x = (x&0xf0) + (15-(x&0xf))
+				end
+				toplevel.destroy
+				@action.call('%02x%x' % [x, y])
+			end
 		end
 	end
-=end
 
 	# list of user-specified addrs
 	@bookmarklist = []
@@ -67,9 +88,8 @@ if gui
 		end
 		al = al.flatten.uniq
 		# XXX also prompt for comment/bookmark name ?
-		#ColorWindow.new.prompt { |col|
-		gui.inputbox('color to use (RGB)', :text => 'f88') { |col|
-			@bookmarklist << al.min
+		ColorWindow.new(gui.toplevel) { |col|
+			@bookmarklist |= [al.min]
 			al.each { |a| @bookmarkcolor[a] = col }
 			gui.gui_update
 		}
