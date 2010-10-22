@@ -72,7 +72,7 @@ class ContainerChoiceWidget < Gtk::Notebook
 	include Msgbox
 
 	attr_accessor :views, :view_indexes
-	def initialize(*a)
+	def initialize(*a, &b)
 		super()
 		self.show_border = false
 		self.show_tabs = false
@@ -81,7 +81,7 @@ class ContainerChoiceWidget < Gtk::Notebook
 
 		signal_connect('realize') { initialize_visible } if respond_to? :initialize_visible
 
-		initialize_widget(*a)
+		initialize_widget(*a, &b)
 
 		show_all
 	end
@@ -113,7 +113,7 @@ end
 class ContainerVBoxWidget < Gtk::VBox
 	include Msgbox
 
-	def initialize(*a)
+	def initialize(*a, &b)
 		super()
 
 		signal_connect('realize') { initialize_visible } if respond_to? :initialize_visible
@@ -122,7 +122,7 @@ class ContainerVBoxWidget < Gtk::VBox
 
 		self.spacing = 2
 
-		initialize_widget(*a)
+		initialize_widget(*a, &b)
 	end
 
 	def resize_child(cld, w, h)
@@ -189,7 +189,7 @@ class DrawableWidget < Gtk::DrawingArea
 		h.update v => key
 	}
 
-	def initialize(*a)
+	def initialize(*a, &b)
 		@parent_widget = nil
 
 		@caret_x = @caret_y = 0		# text cursor position
@@ -283,7 +283,7 @@ class DrawableWidget < Gtk::DrawingArea
 			initialize_visible if respond_to? :initialize_visible
 		}
 
-		initialize_widget(*a)
+		initialize_widget(*a, &b)
 
 		# receive keyboard/mouse signals
 		set_events Gdk::Event::ALL_EVENTS_MASK
@@ -626,7 +626,7 @@ class Window < Gtk::Window
 	include Msgbox
 
 	attr_accessor :menu
-	def initialize(*a)
+	def initialize(*a, &b)
 		super()
 
 		signal_connect('destroy') { destroy_window }
@@ -647,7 +647,7 @@ class Window < Gtk::Window
 
 		(@@mainwindow_list ||= []) << self
 
-		initialize_window(*a)
+		initialize_window(*a, &b)
 		build_menu
 		update_menu
 		
@@ -791,6 +791,32 @@ class Window < Gtk::Window
 		end
 		menu.append item
 		item
+	end
+end
+
+class ToolWindow < Gtk::Dialog
+	include WindowPos
+
+	def initialize(parent=nil, *a, &b)
+		super('toolwin', parent, Gtk::Dialog::DESTROY_WITH_PARENT)
+		set_events Gdk::Event::ALL_EVENTS_MASK
+		set_can_focus true
+		@child = vbox
+		initialize_window(*a, &b)
+		show_all
+	end
+	
+	def initialize_window
+	end
+
+	def widget=(w)
+		remove @child if @child
+		@child = w
+		add @child
+	end
+
+	def widget
+		@child
 	end
 end
 
