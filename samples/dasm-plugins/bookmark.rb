@@ -76,11 +76,36 @@ if gui
 		gui.listwindow('bookmarks', list, :color_callback => listcolcb) { |e| gui.focus_addr(e[0]) }
 	}
 
+	# an api to bookmark a function
+	def bookmark_function(addr, color)
+		return if not fa = find_function_start(addr)
+		list = function_blocks(fa).map { |k, v| block_at(k).list.map { |di| di.address } }.flatten
+		bookmark_addrs list, color
+	end
+	def bookmark_addrs(list, color)
+		al = [list].flatten.uniq
+		@bookmarklist |= [al.min]
+		al.each { |a| @bookmarkcolor[a] = color }
+		gui.gui_update
+	end
+	def bookmark_delete_function(addr)
+		return if not fa = find_function_start(addr)
+		list = function_blocks(fa).map { |k, v| block_at(k).list.map { |di| di.address } }.flatten
+		bookmark_delete list
+	end
+	def bookmark_delete(list)
+		@bookmarklist -= list
+		list.each { |a| @bookmarkcolor.delete a }
+	end
+	def bookmark_delete_color(col)
+		@bookmarkcolor.delete_if { |k, v| if v == col ; @bookmarklist.delete k ; true end }
+	end
+
+
 	w = gui.toplevel
 	w.addsubmenu(w.find_menu('Views'), '_Bookmarks', popbookmarks)
 	w.update_menu
 	gui.keyboard_callback[?B] = popbookmarks
-
 	gui.keyboard_callback[?C] = lambda { |a|
 		if s = gui.curview.instance_variable_get('@selected_boxes') and not s.empty?
 			al = s.map { |b| b[:line_address] }
@@ -89,12 +114,7 @@ if gui
 		else
 			next
 		end
-		al = al.flatten.uniq
 		# XXX also prompt for comment/bookmark name ?
-		ColorWindow.new(gui.toplevel) { |col|
-			@bookmarklist |= [al.min]
-			al.each { |a| @bookmarkcolor[a] = col }
-			gui.gui_update
-		}
+		ColorWindow.new(gui.toplevel) { |col| bookmark_addrs(al, col) }
 	}
 end

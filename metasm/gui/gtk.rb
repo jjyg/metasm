@@ -814,7 +814,7 @@ class ToolWindow < Gtk::Dialog
 		@child = w
 		add @child
 		if @child.respond_to? :initial_size
-			resize *@child.initial_size
+			resize(*@child.initial_size)
 		end
 	end
 
