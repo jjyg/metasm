@@ -118,6 +118,15 @@ class Disassembler
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
 	def self.backtrace_maxblocks=(b) ; @@backtrace_maxblocks = b ; end
 
+	# returns the dasm section's edata containing addr
+	# its #ptr points to addr
+	# returns the 1st element of #get_section_at
+	def get_edata_at(addr)
+		if s = get_section_at(addr)
+			s[0]
+		end
+	end
+
 	# returns the DecodedInstruction at addr if it exists
 	def di_at(addr)
 		di = @decoded[addr] || @decoded[normalize(addr)] if addr
@@ -710,6 +719,21 @@ class Disassembler
 		found
 	end
 
+	# returns/yields [addr, string] found using pattern_scan /[\x20-\x7e]/
+	def strings_scan(minlen=6)
+		ret = []
+		nexto = 0
+		pattern_scan(/[\x20-\x7e]{#{minlen},}/m, nil, 1024) { |o|
+			if o - nexto > 0
+				next unless e = get_edata_at(o)
+				str = e.data[e.ptr, 1024][/[\x20-\x7e]{#{minlen},}/m]
+				ret << [o, str] if not block_given? or yield(o, str)
+				nexto = o + str.length
+			end
+		}
+		ret
+	end
+
 	# exports the addr => symbol map (see load_map)
 	def save_map
 		@prog_binding.map { |l, o|
@@ -1176,7 +1200,7 @@ class Disassembler
 
 						# try to reverse the computation made upon 'e'
 						# only simple addition handled here
-						ptr = reduce[k.pointer.bind e => Expression[[k2, :-, v2], :+, e]]
+						ptr = reduce[k.pointer.bind(e => Expression[[k2, :-, v2], :+, e])]
 
 						# if bd2 does not rewrite e, duplicate the original pointer
 						if not bd2[e]

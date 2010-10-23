@@ -306,15 +306,9 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 
 	def list_strings
-		list = [['addr', 'string']]
-		nexto = 0
-		@dasm.pattern_scan(/[\x20-\x7e]{6,}/m) { |o|
-			if o - nexto > 0
-				next unless s = @dasm.get_section_at(o)
-				str = s[0].data[s[0].ptr, 1024][/[\x20-\x7e]{6,}/m]
-				list << [o, str[0, 24].inspect]
-				nexto = o + str.length
-			end
+		list = [['addr', 'string', 'length']]
+		@dasm.strings_scan { |o, str|
+			list << [o, str[0, 24].inspect, str.length]
 		}
 		listwindow("list of strings", list) { |i| focus_addr i[0] }
 	end
