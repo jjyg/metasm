@@ -816,7 +816,7 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('dasm', 'disassemble_fast', 'disassembles from an address') { |arg|
 			addr = solve_expr(arg)
 			dasm.disassemble_fast(addr)
-			dasm.each_function_block(addr).sort.each { |a|
+			dasm.function_blocks(addr).keys.sort.each { |a|
 				next if not di = dasm.di_at(a)
 				dasm.dump_block(di.block) { |l| add_log l }
 			}
