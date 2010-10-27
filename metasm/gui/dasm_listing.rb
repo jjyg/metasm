@@ -541,6 +541,7 @@ class AsmListingWidget < DrawableWidget
 					else
 						len = [len, s[0].length-s[0].ptr].min
 						len -= curaddr % 256 if len == 256 and curaddr.kind_of? Integer
+						len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or s[0].inv_export[s[0].ptr+l] or s[0].reloc[s[0].ptr+l] } || len
 						dat = "db #{Expression[len]} dup(?) "
 						aoff = len
 					end
