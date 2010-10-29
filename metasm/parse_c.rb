@@ -2001,11 +2001,10 @@ EOH
 			elsif tok and tok.type == :punct and tok.raw == '('
 				# function prototype
 				# void __attribute__((noreturn)) func() => attribute belongs to func
-				if @type and dspec = @type.attributes.to_a & Attributes::DECLSPECS and not dspec.empty?
-					@type.attributes -= dspec
-					@type.attributes = nil if @type.attributes.empty?
+				if @type and @type.attributes
 					@attributes ||= []
-					@attributes |= dspec
+					@attributes |= @type.attributes
+					@type.attributes = nil
 				end
 				t = self
 				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
