@@ -60,6 +60,10 @@ else
 	src << DATA.read	# the text after __END__ in this file
 end
 
+if $opts[:outfilename] and not $opts[:overwrite_outfile] and File.exist?($opts[:outfilename])
+		abort "Error: target file exists !"
+end
+
 if $opts[:srctype] == 'c'
 	exe = $opts[:execlass].compile_c($opts[:cpu], src, file)
 else
