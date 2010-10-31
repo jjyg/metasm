@@ -1944,6 +1944,11 @@ EOH
 				t = t.type while t.type and (t.type.kind_of?(Pointer) or t.type.kind_of?(Function))
 				ptr.type = t.type
 				t.type = ptr
+				if t.kind_of? Function and ptr.attributes
+					@attributes ||= []
+					@attributes |= ptr.attributes
+					ptr.attributes = nil
+				end
 				return
 			elsif tok and tok.type == :punct and tok.raw == '('
 				parse_declarator(parser, scope, true)
