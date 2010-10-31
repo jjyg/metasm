@@ -2581,7 +2581,7 @@ class LBoxWidget < DrawableWidget
 	def initialize_widget(list, opts={}, &b)
 		ccnt = list.first.length
 		# store a true/false per column saying if the original data was integers (for col sorting)
-		@list_ints = list[1..-1].transpose.map { |col| col.all? { |e| e.kind_of? Integer } }
+		@list_ints = list[1..-1].transpose.map { |col| col.all? { |e| e.kind_of? Integer } } rescue []
 		@list = list.map { |l|
 			l += ['']*(ccnt - l.length) if l.length < ccnt
 			l = l[0, ccnt] if l.length > ccnt
