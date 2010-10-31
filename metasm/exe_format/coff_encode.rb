@@ -534,8 +534,8 @@ class COFF
 					end
 
 					(rt.relocs ||= []) << r
-				else
-					puts "W: COFF: Ignoring weird relocation #{rel.inspect} when building relocation tables" if $DEBUG
+				elsif $DEBUG and not rel.target.bind(binding).reduce.kind_of?(Integer)
+					puts "W: COFF: Ignoring weird relocation #{rel.inspect} when building relocation tables"
 				end
 			}
 
