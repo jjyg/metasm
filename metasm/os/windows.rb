@@ -1238,13 +1238,14 @@ class WinDbgAPI
 	# custom handlers should call the default version (especially for newprocess/newthread/endprocess/endthread)
 	# if given a block, yields { |pid, tid, code, rawinfo| }
 	# if the block returns something not numeric, dispatch_debugevent is called
-	def loop
+	def loop(do_continue=true)
 		raw = debugevent_alloc
 		while not @mem.empty?
 			return if not ev = waitfordebugevent(raw)
 			ret = nil
 			ret = yield(*ev) if block_given?
 			ret = dispatch_debugevent(*ev) if not ret.kind_of? ::Integer
+			next unless do_continue
 			ret = WinAPI::DBG_CONTINUE if not ret.kind_of? ::Integer
 			continuedebugevent(ev[0], ev[1], ret)
 		end
@@ -1514,7 +1515,7 @@ class WinDebugger < Debugger
 
 
 	def do_wait_target
-		@dbg.loop { |*ev|
+		@dbg.loop(false) { |*ev|
 			update_dbgev(ev)
 			break if @state != :running
 		} if @state == :running
@@ -1572,7 +1573,10 @@ class WinDebugger < Debugger
 			@state = :dead
 			@info = "process died, exitcode #{info.exitcode}"
 		else
-			# loadsyms(info.imagebase) if code == WinAPI::LOAD_DLL_DEBUG_EVENT
+			#if code == WinAPI::LOAD_DLL_DEBUG_EVENT
+			#	loadsyms(info.imagebase)
+			#end
+			@state = :running
 			@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
 			return
 		end
