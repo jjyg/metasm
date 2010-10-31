@@ -1492,6 +1492,7 @@ class WinDebugger < Debugger
 	end
 
 	def do_continue(*a)
+		return if @state != :stopped
 		@cpu.dbg_disable_singlestep(self)
 		@dbg.continuedebugevent(@pid, @tid, @continuecode)
 		@state = :running
@@ -1499,6 +1500,7 @@ class WinDebugger < Debugger
 	end
 
 	def do_singlestep(*a)
+		return if @state != :stopped
 		@cpu.dbg_enable_singlestep(self)
 		@dbg.continuedebugevent(@pid, @tid, @continuecode)
 		@state = :running
