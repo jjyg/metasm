@@ -973,9 +973,9 @@ class Disassembler
 						when ':unknown'; a = Expression::Unknown
 						else a = Expression.parse(pp.feed!(a)).reduce
 						end
-						t = t.to_sym
+						t = (t.empty? ? nil : t.to_sym)
 						len = (len != '' ? len.to_i : nil)
-						o = (o != '' ? Expression.parse(pp.feed!(o)).reduce : nil)	# :default/:unknown ?
+						o = (o.to_s != '' ? Expression.parse(pp.feed!(o)).reduce : nil)	# :default/:unknown ?
 						add_xref(a, Xref.new(t, o, len))
 					rescue 
 						puts "load: bad xref #{l.inspect} #$!" if $VERBOSE
