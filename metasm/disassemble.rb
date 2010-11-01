@@ -673,6 +673,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		elsif from and c_parser and name = Expression[addr].reduce_rec and name.kind_of? ::String and
 				s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
 			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
+			detect_function_thunk_noreturn(from) if bf.noreturn
 		elsif from
 			if bf = @function[:default]
 				puts "using default function for #{Expression[addr]} from #{Expression[from]}" if $DEBUG
