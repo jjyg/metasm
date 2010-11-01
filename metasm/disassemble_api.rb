@@ -890,7 +890,7 @@ class Disassembler
 				@program.disassembler = self
 				@program.init_disassembler
 			when 'section'
-				info = data[0, data.index("\n", off) || data.length]
+				info = data[0, data.index("\n") || data.length]
 				data = data[info.length, data.length]
 				pp.feed!(info)
 				addr = Expression.parse(pp).reduce
