@@ -415,11 +415,17 @@ class Ia32
 			when 'loop', 'loopz', 'loopnz'; lambda { |di, a0| { ecx => Expression[ecx, :-, 1] } }
 			when 'enter'
 				lambda { |di, a0, a1|
+					sz = opsz(di)/8
 					depth = a1.reduce % 32
-					b = { Indirection[esp, opsz(di)/8, di.address] => Expression[ebp], ebp => Expression[esp, :-, opsz(di)/8],
-							esp => Expression[esp, :-, a0.reduce + ((opsz(di)/8) * depth)] }
-					(1..depth).each { |i| # XXX test me !
-						b[Indirection[[esp, :-, i*opsz(di)/8], opsz(di)/8, di.address]] = Indirection[[ebp, :-, i*opsz(di)/8], opsz(di)/8, di.address] }
+					b = {	Indirection[ebp, sz, di.address] => Expression[ebp],
+						Indirection[[esp, :+, a0.reduce+sz*depth], sz, di.address] => Expression[ebp],
+						ebp => Expression[esp, :-, sz],
+						esp => Expression[esp, :-, a0.reduce+sz*depth+sz] }
+					(1..depth).each { |i|
+						b[Indirection[[esp, :+, a0.reduce+i*sz], sz, di.address]] =
+						b[Indirection[[ebp, :-, i*sz], sz, di.address]] =
+						       	Expression::Unknown # TODO Indirection[[ebp, :-, i*sz], sz, di.address]
+					}
 					b
 				}
 			when 'leave'; lambda { |di| { ebp => Indirection[[ebp], opsz(di)/8, di.address], esp => Expression[ebp, :+, opsz(di)/8] } }
