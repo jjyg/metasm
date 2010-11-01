@@ -280,6 +280,7 @@ module C
 				loop do
 					member = basetype.dup
 					member.parse_declarator(parser, scope)
+					member.type.length ||= 0 if member.type.kind_of?(Array)	# struct { char blarg[]; };
 					raise member.backtrace, 'member redefinition' if member.name and @fldlist[member.name]
 					@fldlist[member.name] = member if member.name
 					@members << member
