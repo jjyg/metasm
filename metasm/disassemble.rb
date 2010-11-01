@@ -802,7 +802,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		}
 
 		ar = [di_addr]
-		ar = @callback_newaddr[block.list.last.address, ar] || [] if callback_newaddr
+		ar = @callback_newaddr[block.list.last.address, ar] || ar if callback_newaddr
 		ar.each { |di_addr_| backtrace(di_addr_, di.address, :origin => di.address, :type => :x) }
 
 		block
@@ -1014,7 +1014,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# trace xrefs for execution
 	def backtrace_xrefs_di_x(di)
 		ar = @program.get_xrefs_x(self, di)
-		ar = @callback_newaddr[di.address, ar] || [] if callback_newaddr
+		ar = @callback_newaddr[di.address, ar] || ar if callback_newaddr
 		ar.each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x) }
 	end
 
