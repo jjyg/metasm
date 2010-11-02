@@ -478,6 +478,7 @@ class AsmListingWidget < DrawableWidget
 					s.ptr -= len		# we may not display the whole bunch, ptr is advanced later
 					len = str.length
 					if @dasm.xrefs[curaddr] or rel = s.reloc[s.ptr]
+						xlen = nil
 						xlen = rel.length if rel
 						comment = []
 						@dasm.each_xref(curaddr) { |xref|
