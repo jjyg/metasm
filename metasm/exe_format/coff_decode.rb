@@ -120,7 +120,7 @@ class COFF
 			ret = []
 			loop do
 				idata = decode(coff)
-				break if [idata.ilt_p, idata.libname_p, idata.iat_p].uniq == [0]
+				break if [idata.ilt_p, idata.libname_p].uniq == [0]
 				ret << idata
 			end
 			ret.each { |idata| idata.decode_inner(coff) }
