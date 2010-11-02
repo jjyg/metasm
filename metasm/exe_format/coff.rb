@@ -372,6 +372,8 @@ class COFF < ExeFormat
 		@optheader = OptionalHeader.new
 		super(cpu)
 	end
+
+	def shortname; 'coff'; end
 end
 
 # the COFF archive file format
