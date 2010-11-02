@@ -1001,7 +1001,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				if @check_smc and type == :w
 					#len.times { |off|	# check unaligned ?
 					waddr = xaddr	#+ off
-					if wdi = @decoded[normalize(waddr)]
+					if wdi = di_at(waddr)
 						puts "W: disasm: #{di} overwrites #{wdi}" if $VERBOSE
 						wdi.add_comment "overwritten by #{di}"
 					end
