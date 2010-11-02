@@ -401,7 +401,7 @@ class Ia32
 				lambda { |di|
 					ret = {}
 					st_off = 0
-					register_symbols.each { |r|
+					register_symbols.reverse_each { |r|
 						ret[r] = Indirection[Expression[esp, :+, st_off].reduce, opsz(di)/8, di.address]
 						st_off += opsz(di)/8
 					}
