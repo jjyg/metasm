@@ -1285,7 +1285,8 @@ class CCompiler < C::Compiler
 		@state = State.new(func)
 		# ET_DYN trashes ebx too
 		# XXX hope we're not a Shellcode to be embedded in an ELF..
-		@state.abi_flushregs_call << 3 if @exeformat.kind_of? ELF
+		# XXX must test without autorequiring ELF which may not exist
+		@state.abi_flushregs_call << 3 if @exeformat and @exeformat.shortname == 'elf'
 		al = typesize[:ptr]
 		argoff = 2*al
 		func.type.args.each { |a|
