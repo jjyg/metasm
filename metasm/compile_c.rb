@@ -763,14 +763,13 @@ module C
 			@body.continue_label = compiler.new_label 'for_continue'
 			@body.break_label = compiler.new_label 'for_break'
 
-			Label.new(@body.continue_label).precompile(compiler, scope)
-
 			if test
 				If.new(CExpression.negate(@test), Goto.new(@body.break_label)).precompile(compiler, scope)
 			end
 
 			@body.precompile(compiler, scope)
 
+			Label.new(@body.continue_label).precompile(compiler, scope)
 			if iter
 				@iter.precompile(compiler, scope)
 			end
