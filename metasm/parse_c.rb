@@ -870,7 +870,7 @@ module C
 								break
 							else body << tok.raw
 							end
-						when :quoted; body << tok.value.inspect
+						when :quoted; body << (body.empty? ? tok.value : tok.value.inspect)	# asm "pop\nret"  VS  asm add al, 'z'
 						when :string
 							body << \
 							case tok.raw
