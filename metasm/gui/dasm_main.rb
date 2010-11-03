@@ -580,6 +580,7 @@ class DisasmWidget < ContainerChoiceWidget
 		case f
 		when /\.(c|h|cpp)$/; @dasm.parse_c_file(f)
 		when /\.map$/; @dasm.load_map(f)
+		when /\.rb$/; @dasm.load_plugin(f)
 		else messagebox("unsupported file extension #{f}")
 		end
 	end
