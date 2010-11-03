@@ -245,7 +245,7 @@ end
 
 		cond and
 		case spec
-		when :reg; arg.kind_of? Reg
+		when :reg; arg.kind_of? Reg and (arg.sz >= 16 or o.props[:argsz])
 		when :modrm; (arg.kind_of? ModRM or arg.kind_of? Reg) and (!arg.sz or arg.sz >= 16 or o.props[:argsz])
 		when :i;        arg.kind_of? Expression
 		when :imm_val1; arg.kind_of? Expression and arg.reduce == 1
