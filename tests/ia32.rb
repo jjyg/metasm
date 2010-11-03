@@ -21,6 +21,12 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(assemble("push 142"), "\x68\x8e\0\0\0")
 	end
 
+	def test_sz
+		assert_equal(assemble("dec eax"), "\x48")
+		assert_equal(assemble("dec ax"), "\x66\x48")
+		assert_equal(assemble("dec al"), "\xfe\xc8")
+	end
+
 	def test_16
 		assert_equal(assemble("push 142", @@cpu16), "\x68\x8e\0")
 		assert_equal(assemble("code16 push 142", @@cpu16), "\x68\x8e\0")
