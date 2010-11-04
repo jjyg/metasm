@@ -17,7 +17,7 @@ class Rubstop < Metasm::PTrace
 		define_method(reg) { peekusr(REGS_I386[reg.upcase]) & 0xffffffff }
 		define_method(reg+'=') { |v|
 			@regs_cache[reg] = v
-			v = [v].pack('L').unpack('l').first if v >= 0x8000_0000
+			v = [v & 0xffffffff].pack('L').unpack('l').first if v >= 0x8000_0000
 			pokeusr(REGS_I386[reg.upcase], v)
 		}
 	}
