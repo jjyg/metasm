@@ -762,7 +762,9 @@ module C
 			@body = @body.precompile_make_block scope
 			@body.continue_label = compiler.new_label 'for_continue'
 			@body.break_label = compiler.new_label 'for_break'
+			label_test = compiler.new_label 'for_test'
 
+			Label.new(label_test).precompile(compiler, scope)
 			if test
 				If.new(CExpression.negate(@test), Goto.new(@body.break_label)).precompile(compiler, scope)
 			end
@@ -774,7 +776,7 @@ module C
 				@iter.precompile(compiler, scope)
 			end
 
-			Goto.new(@body.continue_label).precompile(compiler, scope)
+			Goto.new(label_test).precompile(compiler, scope)
 			Label.new(@body.break_label).precompile(compiler, scope)
 		end
 	end
