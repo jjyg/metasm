@@ -382,8 +382,8 @@ class Ia32
 		addop_macrotttn 'cmov', [0x0F, 0x40], :mrm
 
 		%w{b e be u}.each_with_index { |tt, i|
-			addop 'fcmov' +tt, [0xDA, 0xC0 | (i << 3)], :regfp
-			addop 'fcmovn'+tt, [0xDB, 0xC0 | (i << 3)], :regfp
+			addop 'fcmov' + tt, [0xDA, 0xC0 | (i << 3)], :regfp
+			addop 'fcmovn'+ tt, [0xDB, 0xC0 | (i << 3)], :regfp
 		}
 		addop 'fcomi', [0xDB, 0xF0], :regfp
 		addop('fxrstor', [0x0F, 0xAE, 1<<3], :modrmA) { |o| o.props[:argsz] = 512*8 }
