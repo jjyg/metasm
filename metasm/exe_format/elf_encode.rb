@@ -5,7 +5,7 @@
 
 
 require 'metasm/encode'
-require 'metasm/exe_format/elf'
+require 'metasm/exe_format/elf' unless defined? Metasm::ELF
 
 module Metasm
 class ELF

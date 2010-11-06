@@ -4,8 +4,8 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-require 'metasm/exe_format/coff'
 require 'metasm/encode'
+require 'metasm/exe_format/coff' unless defined? Metasm::COFF
 
 module Metasm
 class COFF
