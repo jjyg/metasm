@@ -728,7 +728,7 @@ class DbgConsoleWidget < DrawableWidget
 			mem = @dbg.memory[addr, len]
 			mem.scan(/.{1,16}/m).each { |l|
 				hex = l.unpack('C*').map { |c| '%02x' % c }.join(' ')
-				asc = l.gsub(/[^0x20-0x7e]/, '.')
+				asc = l.gsub(/[^\x20-\x7e]/, '.')
 				add_log "#{Expression[addr]} #{hex.ljust(3*16)} #{asc}"
 				addr += l.length
 			}
