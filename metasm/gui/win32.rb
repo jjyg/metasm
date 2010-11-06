@@ -2306,7 +2306,7 @@ class IBoxWidget < DrawableWidget
 		@action = b
 		@textdown = false
 		@curline = opts[:text].to_s.dup
-		@caret_x_select = 0
+		@oldsel_x = @caret_x_select = 0
 		@caret_x = @curline.length
 		@caret_x_start = 0
 
@@ -2419,20 +2419,16 @@ class IBoxWidget < DrawableWidget
 			else
 				@caret_x_select = nil
 			end
-			if @caret_x > 0
-				@caret_x -= 1
-				update_caret
-			end
+			@caret_x -= 1 if @caret_x > 0
+			update_caret
 		when :right
 			if kbd_shift
 				@caret_x_select ||= @caret_x
 			else
 				@caret_x_select = nil
 			end
-			if @caret_x < @curline.length
-				@caret_x += 1
-				update_caret
-			end
+			@caret_x += 1 if @caret_x < @curline.length
+			update_caret
 		when :home
 			if kbd_shift
 				@caret_x_select ||= @caret_x
@@ -2538,8 +2534,9 @@ class IBoxWidget < DrawableWidget
 	end
 	
 	def update_caret
-		return if @oldcaret_x == @caret_x
+		return if @oldcaret_x == @caret_x and @oldsel_x == @caret_x_select
 		redraw
+		@oldsel_x = @caret_x_select
 		@oldcaret_x = @caret_x
 	end
 
