@@ -744,7 +744,10 @@ EOS
 
 	# ExeFormat suitable as current running host native module
 	def self.host_exe
-		{ :linux => ELF, :windows => PE }[host_arch]
+		case host_arch
+		when :linux; ELF
+		when :windows; PE
+		end
 	end
 
 	# parse a C string into the @cp parser, create it if needed
