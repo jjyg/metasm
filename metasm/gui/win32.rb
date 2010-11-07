@@ -1498,7 +1498,6 @@ class ContainerVBoxWidget < WinWidget
 			if y >= cy and y < cy+@spacing
 				vsz = v
 				@resizing = v
-				Win32Gui.setcapture(@hwnd)
 				@wantheight[@resizing] ||= v.height
 				@tmpwantheight = []
 				pv.each { |vv| @tmpwantheight << vv if not @wantheight[vv] ; @wantheight[vv] ||= vv.height }
@@ -1520,7 +1519,6 @@ class ContainerVBoxWidget < WinWidget
 
 	def mouserelease(x, y)
 		if @resizing
-			Win32Gui.releasecapture
 			@wantheight[@resizing] = [0, y - @resizing.y].max
 			@resizing = nil
 			@tmpwantheight.each { |vv| @wantheight.delete vv }
@@ -2070,6 +2068,14 @@ class Window
 				return(@widget.mouse_wheel(dir, x-@clientx, y-@clienty) if @widget.respond_to? :mouse_wheel)
 			end
 		end
+
+		case cmsg
+		when :click
+			Win32Gui.setcapture(@hwnd)
+		when :mouserelease
+			Win32Gui.releasecapture
+		end
+
 		@widget.send(cmsg, x, y) if cmsg and @widget.respond_to? cmsg
 	end
 
@@ -2492,7 +2498,6 @@ class IBoxWidget < DrawableWidget
 	end
 
 	def click(x, y)
-		Win32Gui.setcapture(@hwnd)
 		if y >= @texty and y < @texty+@texth
 			@caret_x_select = nil
 			@caret_x = x.to_i / @font_width - 1 + @caret_x_start
@@ -2518,7 +2523,6 @@ class IBoxWidget < DrawableWidget
 	end
 
 	def mouserelease(x, y)
-		Win32Gui.releasecapture
 		if @textdown
 			x = Expression.make_signed(x, 16)
 			x = x.to_i / @font_width - 1 + @caret_x_start
@@ -2794,7 +2798,6 @@ class LBoxWidget < DrawableWidget
 	end
 
 	def click(x, y)
-		Win32Gui.setcapture(@hwnd)
 		if y >= @btny and y < @btny+@btnheight
 			# TODO column resize
 			@btndown[xtobtn(x)] = true
@@ -2834,7 +2837,6 @@ class LBoxWidget < DrawableWidget
 	end
 
 	def mouserelease(x, y)
-		Win32Gui.releasecapture
 		if @btndown.compact.first
 			x = Expression.make_signed(x, 16)
 			@btndown = []
