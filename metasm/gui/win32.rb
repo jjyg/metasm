@@ -1766,14 +1766,14 @@ class DrawableWidget < WinWidget
 
 	def keypress_(key)
 		# XXX my gtk api sux
-		if not respond_to? :keypress or not keypress(key)
-			@parent.keypress(key) if @parent.respond_to? :keypress
+		if not respond_to? :keypress or not protect { keypress(key) }
+			protect { @parent.keypress(key) } if @parent.respond_to? :keypress
 		end
 	end
 
 	def keypress_ctrl_(key)
-		if not respond_to? :keypress_ctrl or not keypress_ctrl(key)
-			@parent.keypress_ctrl(key) if @parent.respond_to? :keypress_ctrl
+		if not respond_to? :keypress_ctrl or not protect { keypress_ctrl(key) }
+			protect { @parent.keypress_ctrl(key) } if @parent.respond_to? :keypress_ctrl
 		end
 	end
 
