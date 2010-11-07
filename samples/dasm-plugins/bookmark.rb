@@ -42,15 +42,27 @@ if gui
 			}
 		end
 
-		def click(x, y)
+		def xy_to_col(x, y)
 			x = x.to_i / @pw
 			y = y.to_i / @ph
-			if x <= 0xff and y <= 0xf
+			if x >=0 and y >= 0 and x <= 0xff and y <= 0xf
 				if x & 0x10 > 0
 					x = (x&0xf0) + (15-(x&0xf))
 				end
+				col = '%02x%x' % [x, y]
+				toplevel.title = "color #{col}"
+				col
+			end
+		end
+
+		def mousemove(x, y)
+			xy_to_col(x, y)
+		end
+
+		def mouserelease(x, y)
+			if c = xy_to_col(x, y)
 				toplevel.destroy
-				@action.call('%02x%x' % [x, y])
+				@action.call(c)
 			end
 		end
 	end
@@ -70,7 +82,7 @@ if gui
 		end
 	}
 
-	popbookmarks = lambda {
+	popbookmarks = lambda { |*a|
 		list = [['address', 'color']] + @bookmarklist.map { |bm| [Expression[bm].to_s, @bookmarkcolor[bm].to_s] }
 		listcolcb = lambda { |e| [nil, @bookmarkcolor[Expression.parse_string(e[0]).reduce]] }
 		gui.listwindow('bookmarks', list, :color_callback => listcolcb) { |e| gui.focus_addr(e[0]) }
