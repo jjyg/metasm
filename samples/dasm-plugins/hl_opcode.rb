@@ -11,7 +11,7 @@ if gui
 	obg = gui.bg_color_callback	# chain old callback
 	gui.bg_color_callback = lambda { |a|
 		if di = di_at(a) and pr = di.opcode.props
-			if pr[:saveip] and @function[di.block.to_normal[0]]
+			if pr[:saveip] and (@function[di.block.to_normal.to_a.first] or di.block.to_subfuncret.to_a.first)
 				# don't color call+pop
 				@gui_opcode_color['call']
 			elsif pr[:stopexec]
