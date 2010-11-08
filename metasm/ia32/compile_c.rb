@@ -1071,7 +1071,7 @@ class CCompiler < C::Compiler
 				instr 'push', eax
 				saved_eax = true
 			end
-			if @state.used.include? edx.val
+			if @state.used.include? edx.val and lv != edx.val
 				instr 'push', edx
 				saved_edx = true
 			end
@@ -1089,9 +1089,7 @@ class CCompiler < C::Compiler
 				instr 'mov', edx, Expression[0]
 				instr 'div', r
 			else
-				# XXX cdq ?
-				instr 'mov', edx, eax
-				instr 'sar', edx, Expression[0x1f]
+				instr 'cdq'
 				instr 'idiv', r
 			end
 			unuse r
