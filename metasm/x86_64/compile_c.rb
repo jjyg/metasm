@@ -736,7 +736,7 @@ class CCompiler < C::Compiler
 				instr 'push', rax
 				saved_rax = true
 			end
-			if @state.used.include? rdx.val
+			if @state.used.include? rdx.val and lv != rdx.val
 				instr 'push', rdx
 				saved_rdx = true
 			end
@@ -755,8 +755,7 @@ class CCompiler < C::Compiler
 				instr 'div', r
 			else
 				# XXX cdq ?
-				instr 'mov', rdx, rax
-				instr 'sar', rdx, Expression[0x1f]
+				instr 'cdq'
 				instr 'idiv', r
 			end
 			unuse r
