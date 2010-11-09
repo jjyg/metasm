@@ -754,7 +754,6 @@ class CCompiler < C::Compiler
 				instr 'mov', rdx, Expression[0]
 				instr 'div', r
 			else
-				# XXX cdq ?
 				instr 'cdq'
 				instr 'idiv', r
 			end
