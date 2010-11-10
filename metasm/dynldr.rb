@@ -7,8 +7,6 @@
 # native libraries
 # x86 only for now
 
-require 'metasm'
-
 module Metasm
 class DynLdr
 	# basic C defs for ruby internals - 1.8 and 1.9 compat - x86/x64
@@ -61,6 +59,7 @@ extern VALUE *rb_eArgError __attribute__((import));
  #define T_STRING 0x05
  #define T_ARRAY  0x07
  #define T_FIXNUM 0x15
+ #define T_MASK   0x1f
  #define RSTRING_NOEMBED (1<<13)
  #define STR_PTR(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->ptr : (char*)&RString(o)->len)
  #define STR_LEN(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->len : (RString(o)->flags >> 14) & 0x1f)
@@ -71,13 +70,13 @@ extern VALUE *rb_eArgError __attribute__((import));
  #define T_STRING 0x07
  #define T_ARRAY  0x09
  #define T_FIXNUM 0x0a
+ #define T_MASK   0x3f
  #define STR_PTR(o) (RString(o)->ptr)
  #define STR_LEN(o) (RString(o)->len)
  #define ARY_PTR(o) (RArray(o)->ptr)
  #define ARY_LEN(o) (RArray(o)->len)
 #endif
 
-#define T_MASK   0x3f
 #define TYPE(x) (((VALUE)(x) & 1) ? T_FIXNUM : (((VALUE)(x) & 3) || ((VALUE)(x) < 7)) ? 0x40 : RString(x)->flags & T_MASK)
 
 VALUE rb_uint2inum(VALUE);
