@@ -249,11 +249,6 @@ class Offset
 	end
 end
 
-# contiguous/uninterrupted sequence of instructions, chained to other blocks
-# TODO
-class InstructionBlock
-end
-
 # the superclass of all real executable formats
 # main methods:
 #  self.decode(str) => decodes the file format (imports/relocs/etc), no asm disassembly
