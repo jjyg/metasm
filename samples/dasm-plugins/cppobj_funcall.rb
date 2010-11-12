@@ -27,6 +27,7 @@ def solve_indirect_calls
 		next if not fptr.pointer.lexpr.kind_of? Symbol
 		next if not fptr.pointer.rexpr.kind_of? Integer
 		obj = backtrace(fptr.pointer.lexpr, di.address)
+		obj.delete Expression::Unknown
 		next if obj.length != 1
 		obj = obj.first
 		obj = Expression[obj].reduce_rec
@@ -38,8 +39,9 @@ def solve_indirect_calls
 			solve_indirect_call_set_struct(obj, struct || :none)
 		end
 
-		if struct.kind_of? C::Struct and fld = struct.members.find { |m| struct.offsetof(c_parser, m) == fptr.pointer.rexpr }
-			di.add_comment "#{struct.name || obj}->#{fld.name}" if fld.name
+		if struct.kind_of? C::Struct and fld = struct.members.find { |m| struct.offsetof(c_parser, m) == fptr.pointer.rexpr } and fld.name
+			di.add_comment "#{struct.name || obj}->#{fld.name}"
+			di.comment.delete 'x:unknown'
 		end
 	}
 end
@@ -50,6 +52,7 @@ if gui
 			solve_indirect_call_set_struct(ptr, name)
 			# re-solve everything, cause we're called only once but many indirect calls may use ptr
 			solve_indirect_calls
+			gui.gui_update
 		}
 	}
 	gui.gui_update
