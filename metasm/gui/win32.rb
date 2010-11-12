@@ -2044,8 +2044,8 @@ class Window
 
 	def mouse_msg(msg, wparam, lparam)
 		return if not @widget
-		x = lparam & 0xffff
-		y = (lparam >> 16) & 0xffff
+		x = Expression.make_signed(lparam & 0xffff, 16)
+		y = Expression.make_signed((lparam >> 16) & 0xffff, 16)
 		ctrl = true if wparam & Win32Gui::MK_CONTROL > 0
 		cmsg =
 		case msg
