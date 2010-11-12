@@ -367,7 +367,7 @@ module C
 	class Struct < Union
 		attr_accessor :pack
 
-		def align(parser) [@members.map { |m| m.type.align(parser) }.max, (pack || 8)].min end
+		def align(parser) [@members.map { |m| m.type.align(parser) }.max || 1, (pack || 8)].min end
 
 		def offsetof(parser, name)
 			update_member_cache(parser) if not fldoffset
@@ -1461,7 +1461,7 @@ EOH
 				raise self, 'unknown structure size' if not type.members
 				al = type.align(self)
 				lm = type.members.last
-				(type.offsetof(self, lm) + sizeof(lm) + al - 1) / al * al
+				lm ? (type.offsetof(self, lm) + sizeof(lm) + al - 1) / al * al : 0
 			when Union
 				raise self, 'unknown structure size' if not type.members
 				type.members.map { |m| sizeof(m) }.max || 0
