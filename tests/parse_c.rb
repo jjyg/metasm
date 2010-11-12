@@ -23,6 +23,13 @@ class TestDynldr < Test::Unit::TestCase
 
 		assert_nothing_raised { cp.parse("const volatile volatile const char const * const * blarg_0;") }
 
+		assert_nothing_raised { cp.parse("void *ptr = &ptr;") }
+
+		assert_raise(Metasm::ParseError) { cp.parse("void *ptr = ptr") }
+		cp.readtok until cp.eos?
+
+		assert_nothing_raised { cp.parse("struct { int sz; } bla = { .sz = sizeof(bla) };") }
+
 		assert_raise(Metasm::ParseError) { cp.parse("signed unsigned int fu;") }
 		cp.readtok until cp.eos?
 

@@ -1561,12 +1561,21 @@ EOH
 					# variable initialization
 					raise tok, '"{" or ";" expected' if var.type.kind_of? Function
 					raise tok, 'cannot initialize extern variable' if var.storage == :extern
+					scope.symbol[var.name] = var	# allow initializer to reference var, eg 'void *ptr = &ptr;'
 					var.initializer = var.type.parse_initializer(self, scope)
 					if var.initializer.kind_of?(CExpression) and (scope == @toplevel or var.storage == :static)
-						raise tok, 'initializer is not constant' if not var.initializer.constant?
+						raise tok, "initializer for static #{var.name} is not constant" if not var.initializer.constant?
 					end
+					reference_value = lambda { |e, v|
+						found = false
+						case e
+						when Variable; found = true if e == v
+						when CExpression; e.walk { |ee| found ||= reference_value[ee, v] } if e.op != :& or e.lexpr
+						end
+						found
+					}
+					raise tok, "initializer for #{var.name} is not constant (selfreference)" if reference_value[var.initializer, var]
 					raise tok || self, '"," or ";" expected' if not tok = skipspaces or tok.type != :punct
-					scope.symbol[var.name] = var
 				else
 					scope.symbol[var.name] = var
 				end
