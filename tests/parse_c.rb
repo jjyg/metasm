@@ -25,7 +25,7 @@ class TestDynldr < Test::Unit::TestCase
 
 		assert_nothing_raised { cp.parse("void *ptr = &ptr;") }
 
-		assert_raise(Metasm::ParseError) { cp.parse("void *ptr = ptr") }
+		assert_raise(Metasm::ParseError) { cp.parse("void *ptr = ptr;") }
 		cp.readtok until cp.eos?
 
 		assert_nothing_raised { cp.parse("struct { int sz; } bla = { .sz = sizeof(bla) };") }
