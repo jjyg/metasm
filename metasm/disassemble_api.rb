@@ -365,7 +365,7 @@ class Disassembler
 	# returns a graph of function calls
 	# for each func passed as arg (default: all), update the 'ret' hash
 	# associating func => [list of direct subfuncs called]
-	def function_graph(funcs = @function.keys + @entrypoints, ret={})
+	def function_graph(funcs = @function.keys + @entrypoints.to_a, ret={})
 		funcs = funcs.map { |f| normalize(f) }.uniq.find_all { |f| @decoded[f] }
 		funcs.each { |f|
 			next if ret[f]
