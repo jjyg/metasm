@@ -60,6 +60,8 @@ class DecodedInstruction
 		ret = []
 		ret << Expression[address] << ' ' if address
 		ret << @instruction
+		ret << ' ; ' << @comment if comment
+		ret
 	end
 
 	def add_comment(c)
