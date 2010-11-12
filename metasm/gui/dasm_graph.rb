@@ -982,7 +982,7 @@ class GraphViewWidget < DrawableWidget
 	def keypress_ctrl(key)
 		case key
 		when ?F
-			@parent_widget.inputbox('text to search in curview (regex)') { |pat|
+			@parent_widget.inputbox('text to search in curview (regex)', :text => @hl_word) { |pat|
 				re = /#{pat}/i
 				list = [['addr', 'instr']]
 				@curcontext.box.each { |b|

@@ -417,7 +417,7 @@ class DisasmWidget < ContainerChoiceWidget
 
 	# search for a regexp in #dasm.decoded.to_s
 	def prompt_search_decoded
-		inputbox('text to search in instrs (regex)') { |pat|
+		inputbox('text to search in instrs (regex)', :text => curview.hl_word) { |pat|
 			re = /#{pat}/i
 			found = []
 			@dasm.decoded.each { |k, v|
@@ -720,10 +720,23 @@ class DasmWindow < Window
 		}
 	end
 
+	# reuse last @savefile to save dasm, prompt for file if undefined
 	def promptsave
+		return if not @dasm_widget
+		if @savefile ||= nil
+			@dasm_widget.dasm.save_file @savefile
+			return
+		end
 		openfile('chose save file') { |file|
+			@savefile = file
 			@dasm_widget.dasm.save_file(file)
-		} if @dasm_widget
+		}
+	end
+
+	# same as promptsave, but always prompt
+	def promptsaveas
+		@savefile = nil
+		promptsave
 	end
 
 	def promptruby
@@ -745,6 +758,7 @@ class DasmWindow < Window
 		addsubmenu(filemenu, 'OPEN', '^o') { promptopen }
 		addsubmenu(filemenu, '_Debug') { promptdebug }
 		addsubmenu(filemenu, 'SAVE', '^s') { promptsave }
+		addsubmenu(filemenu, 'Save as...') { promptsaveas }
 		addsubmenu(filemenu, 'CLOSE') {
 			if @dasm_widget
 				@dasm_widget.terminate
@@ -798,10 +812,12 @@ class DasmWindow < Window
 		addsubmenu(dasm, 'Disassemble _fast from here', 'C') { @dasm_widget.disassemble_fast(@dasm_widget.curview.current_address) }
 		addsubmenu(dasm, 'Disassemble fast & dee_p from here', '^C') { @dasm_widget.disassemble_fast_deep(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, dasm, '_Disassemble')
-		addsubmenu(actions, 'Follow', '<enter>') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }	# XXX
-		addsubmenu(actions, 'Jmp back', '<esc>') { @dasm_widget.focus_addr_back }
-		addsubmenu(actions, 'Undo jmp back', '^<enter>') { @dasm_widget.focus_addr_redo }
-		addsubmenu(actions, 'Goto', 'g') { @dasm_widget.prompt_goto }
+		navigate = new_menu
+		addsubmenu(navigate, 'Follow', '<enter>') { @dasm_widget.focus_addr @dasm_widget.curview.hl_word }	# XXX
+		addsubmenu(navigate, 'Jmp back', '<esc>') { @dasm_widget.focus_addr_back }
+		addsubmenu(navigate, 'Undo jmp back', '^<enter>') { @dasm_widget.focus_addr_redo }
+		addsubmenu(navigate, 'Goto', 'g') { @dasm_widget.prompt_goto }
+		addsubmenu(actions, navigate, 'Navigate')
 		addsubmenu(actions, '_Backtrace', 'b') { @dasm_widget.prompt_backtrace }
 		addsubmenu(actions, 'List functions', 'f') { @dasm_widget.list_functions }
 		addsubmenu(actions, 'List labels', 'l') { @dasm_widget.list_labels }
