@@ -340,7 +340,7 @@ class Debugger
 	# show information to the user, uses log_proc if defined
 	def puts(*a)
 		if @log_proc
-			a.each { @log_proc[a] }
+			a.each { |aa| @log_proc[aa] }
 		else
 			super(*a)
 		end
