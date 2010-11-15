@@ -2574,15 +2574,15 @@ EOH
 					when '+', '-'
 						nil
 					when '++', '--'
-						raise parser, "invalid lvalue #{val}" if not CExpression.lvalue?(val)
+						raise parser, "#{val}: invalid lvalue" if not CExpression.lvalue?(val)
 						CExpression.new(val, tok.raw.to_sym, nil, val.type)
 					when '->'
 						# XXX allow_bad_c..
-						raise tok, 'not a pointer' if not val.type.pointer?
+						raise tok, "#{val}: not a pointer" if not val.type.pointer?
 						type = val.type.pointed.untypedef
-						raise tok, 'bad pointer' if not type.kind_of? Union
-						raise tok, 'incomplete type' if not type.members
-						raise tok, 'invalid member' if not tok = parser.skipspaces or tok.type != :string or not m = type.findmember(tok.raw)
+						raise tok, "#{val}: bad pointer" if not type.kind_of? Union
+						raise tok, "#{val}: incomplete type" if not type.members
+						raise tok, "#{val}: invalid member" if not tok = parser.skipspaces or tok.type != :string or not m = type.findmember(tok.raw)
 						CExpression.new(val, :'->', tok.raw, m.type)
 					end
 				when '.'
@@ -2591,24 +2591,24 @@ EOH
 						parser.unreadtok ntok
 						nil
 					else
-						raise ntok, 'incomplete type' if not type.members
-						raise ntok, 'invalid member' if not m = type.findmember(ntok.raw)
+						raise ntok, "#{val}: incomplete type" if not type.members
+						raise ntok, "#{val}: invalid member" if not m = type.findmember(ntok.raw)
 						CExpression.new(val, :'.', ntok.raw, m.type)
 					end
 				when '['
-					raise tok, 'index expected' if not idx = parse(parser, scope)
-					val, idx = idx, val        if not val.type.pointer?		# fake support of '4[tab]'
-					raise tok, 'not a pointer' if not val.type.pointer?
-					raise tok, 'not an index'  if not idx.type.integral?
-					raise tok, 'get perpendicular ! (elsewhere)' if idx.kind_of?(CExpression) and idx.op == :','
-					raise tok || parser, '"]" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ']'
+					raise tok, "#{val}: index expected" if not idx = parse(parser, scope)
+					val, idx = idx, val        if not val.type.pointer?		# fake support of "4[tab]"
+					raise tok, "#{val}: not a pointer" if not val.type.pointer?
+					raise tok, "#{val}: invalid index"  if not idx.type.integral?
+					raise tok, "#{val}: get perpendicular ! (elsewhere)" if idx.kind_of?(CExpression) and idx.op == :','
+					raise tok || parser, "']' expected" if not tok = parser.skipspaces or tok.type != :punct or tok.raw != ']'
 					type = val.type.untypedef.type
 					# TODO boundscheck (and become king of the universe)
 					CExpression.new(val, :'[]', idx, type)
 				when '('
 					type = val.type.untypedef
 					type = type.type.untypedef if type.kind_of? Pointer
-					raise tok, 'not a function' if not type.kind_of? Function
+					raise tok, "#{val}: not a function" if not type.kind_of? Function
 
 					args = []
 					loop do
@@ -2620,10 +2620,10 @@ EOH
 							break
 						end
 					end
-					raise ntok || parser, '")" expected' if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
+					raise ntok || parser, "#{val}: ')' expected" if not ntok = parser.skipspaces or ntok.type != :punct or ntok.raw != ')'
 
 					type.args ||= []
-					raise tok, "bad argument count: #{args.length} for #{type.args.length}" if (type.varargs ? (args.length < type.args.length) : (args.length != type.args.length))
+					raise tok, "#{val}: bad argument count: #{args.length} for #{type.args.length}" if (type.varargs ? (args.length < type.args.length) : (args.length != type.args.length))
 					type.args.zip(args) { |ta, a|
 						p, i = ta.type.pointer?, ta.type.integral?
 						r = a.reduce(parser) if p or i
