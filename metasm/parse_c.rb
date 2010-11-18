@@ -2906,8 +2906,9 @@ EOH
 				val = buf
 			when ::Proc
 				val = DynLdr.convert_rb2c(type, val)	# allocate a DynLdr callback
+			when AllocCStruct
+				val = DynLdr.str_ptr(val.str) + val.stroff
 			#when ::Float		# TODO
-			#when AllocCStruct 	# can we actually get this ?
 			else raise "TODO #{val.inspect}"
 			end
 
