@@ -1162,7 +1162,6 @@ class Disassembler
 	# assumes bd1 is followed by bd2 in the code flow
 	# eg inc edi + push edi =>
 	#  { Ind[:esp, 4] => Expr[:edi + 1], :esp => Expr[:esp - 4], :edi => Expr[:edi + 1] }
-	# for longer sequences, eg di1 di2 di3, use compose(di1, compose(di2, di3)) (ie right assoc)
 	# XXX if bd1 writes to memory with a pointer that is reused in bd2, this function has to
 	# revert the change made by bd2, which only works with simple ptr addition now
 	# XXX unhandled situations may be resolved using :unknown, or by returning incorrect values
@@ -1194,7 +1193,8 @@ class Disassembler
 						# we dont want to invert computation of flag_zero/carry etc (booh)
 						next if k2.to_s =~ /flag/
 
-						next if not v2.externals.include? e
+						# discard indirection etc, result would be too complex / not useful
+						next if not Expression[v2].expr_externals.include? e
 
 						done = true
 
