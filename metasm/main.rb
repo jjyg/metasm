@@ -632,6 +632,10 @@ class Expression < ExpressionType
 					# -(a+b) => (-a)+(-b)
 					Expression[[:-, r.lexpr], :+, [:-, r.rexpr]].reduce_rec
 				end
+			elsif l.kind_of? Expression and l.op == :+ and l.lexpr == r
+				# shortcircuit for a common occurence [citation needed]
+				# (a+b)-a
+				l.rexpr
 			elsif l
 				# a-b => a+(-b)
 				Expression[l, :+, [:-, r]].reduce_rec
