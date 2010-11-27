@@ -632,7 +632,7 @@ class GraphViewWidget < DrawableWidget
 			idx = (x-sx+@margin/4).to_i / (@margin/2)
 			idx = 0 if idx < 0
 			idx = bt.to.length-1 if idx >= bt.to.length
-			@parent_widget.focus_addr bt.to[idx][:line_address][0]
+			@parent_widget.focus_addr bt.to[idx][:line_address][0] if bt.to[idx]
 			true
 		elsif bf = @shown_boxes.to_a.reverse.find { |b|
 			y >= b.y-@margin-2 and y <= b.y and
@@ -642,7 +642,7 @@ class GraphViewWidget < DrawableWidget
 			idx = (x-sx+@margin/4).to_i / (@margin/2)
 			idx = 0 if idx < 0
 			idx = bf.from.length-1 if idx >= bf.from.length
-			@parent_widget.focus_addr bf.from[idx][:line_address][-1]
+			@parent_widget.focus_addr bf.from[idx][:line_address][-1] if bf.from[idx]
 			true
 		end
 	end
