@@ -1059,12 +1059,43 @@ EOS
 		}
 		if block_given?
 			begin
-				ret = yield
+				yield
 			ensure
 				defs.each { |d| class << self ; self ; end.send(:remove_method, d) }
 				memory_free ptr
 			end
-			ret
+		else
+			ptr
+		end
+	end
+
+	# compile an asm sequence, callable with the ABI of the C prototype given
+	# function name comes from the prototype
+	def self.new_func_asm(proto, asm)
+		proto += "\n;"
+		old = cp.toplevel.symbol.keys
+		parse_c(proto)
+		news = cp.toplevel.symbol.keys - old
+		raise "invalid proto #{proto}" if news.length != 1
+		f = cp.toplevel.symbol[news.first]
+		raise "invalid func proto #{proto}" if not f.name or not f.type.kind_of? C::Function or f.initializer
+		cp.toplevel.symbol.delete f.name
+
+		sc = Shellcode.assemble(host_cpu, asm)
+		ptr = memory_alloc(sc.encoded.length)
+		bd = sc.encoded.binding(ptr)
+		sc.encoded.reloc_externals.uniq.each { |ext| bd[ext] = sym_addr(lib_from_sym(ext), ext) or raise "unknown symbol #{ext}" }
+		sc.encoded.fixup(bd)
+		memory_write ptr, sc.encode_string
+		memory_perm ptr, sc.encoded.length, 'rwx'
+		new_caller_for(f, f.name, ptr)
+		if block_given?
+			begin
+				yield
+			ensure
+				class << self ; self ; end.send(:remove_method, f.name)
+				memory_free ptr
+			end
 		else
 			ptr
 		end
