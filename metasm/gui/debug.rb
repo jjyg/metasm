@@ -795,8 +795,17 @@ class DbgConsoleWidget < DrawableWidget
 		}
 		new_command('symbol', 'display information on symbols') { |arg|
 			arg = arg.to_s.downcase
-			@dbg.symbols.map { |k, v| [k, @dbg.addrname(k)] if v.downcase.include? arg }.compact.sort_by { |k, v| v.downcase }.each { |k, v|
+			@dbg.symbols.map { |k, v| an = @dbg.addrname(k) ; [k, an] if an.downcase.include? arg }.compact.sort_by { |k, v| v.downcase }.each { |k, v|
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
+			}
+		}
+		new_command('maps', 'show file mappings') { |arg|
+			want = arg.to_s.downcase
+			want = nil if want == ''
+			@dbg.modulemap.map { |n, (a_b, a_e)|
+				[a_b, "#{Expression[a_b]}-#{Expression[a_e]} #{n}"] if not want or n.downcase.include?(want)
+			}.compact.sort.each { |s1, s2|
+				add_log s2
 			}
 		}
 		new_command('add_symbol', 'add a symbol name') { |arg|
@@ -825,7 +834,7 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('save_hist', 'save the command buffer to a file') { |arg|
 			File.open(arg, 'w') { |fd| fd.puts @log }
 		}
-		# TODO 'macro', 'map', 'thread'
+		# TODO 'macro', 'thread'
 
 		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup
 	end
