@@ -1193,13 +1193,13 @@ class WinDbgAPI
 	class ExitThreadInfo
 		attr_accessor :exitcode
 		def initialize(str)
-			@exitcode = *str.unpack('L')
+			@exitcode = str.unpack('L')[0]
 		end
 	end
 	class ExitProcessInfo
 		attr_accessor :exitcode
 		def initialize(str)
-			@exitcode = *str.unpack('L')
+			@exitcode = str.unpack('L')[0]
 		end
 	end
 	class LoadDllInfo
@@ -1435,6 +1435,7 @@ end
 # this class implements a high-level API over the Windows debugging primitives
 class WinDebugger < Debugger
 	attr_accessor :dbg
+	attr_accessor :ignore_threadevents, :ignore_exceptionevents
 	def initialize(pid)
 		@dbg = WinDbgAPI.new(pid)
 		@dbg.logger = self
@@ -1448,6 +1449,7 @@ class WinDebugger < Debugger
 			case code
 			when WinAPI::CREATE_THREAD_DEBUG_EVENT, WinAPI::CREATE_PROCESS_DEBUG_EVENT
 				@tid = tid
+				@state = :stopped
 				break
 			end
 		}
@@ -1546,27 +1548,47 @@ class WinDebugger < Debugger
 			# attr :code, :flags, :recordptr, :addr, :nparam, :info, :firstchance
 			case info.code
 			when WinAPI::STATUS_ACCESS_VIOLATION
-				# fix fs bug in xpsp1
 				if @cpu.shortname == 'ia32' and ctx = @dbg.get_context(pid, tid) and ctx[:fs] != 0x3b
+					# fix fs bug in xpsp1
 					puts "wdbg: #{pid}:#{tid} fix fs bug" if $DEBUG
 					ctx[:fs] = 0x3b
 					@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
 					return
 				end
+				if ignore_exceptionevents
+					@dbg.continuedebugevent(pid, tid, WinAPI::DBG_EXCEPTION_NOT_HANDLED)
+					return
+				end
 				@state = :stopped
 				@info = "access violation at #{Expression[info.addr]} (#{info.firstchance == 0 ? '1st' : '2nd'} chance)"
 			when WinAPI::STATUS_BREAKPOINT, WinAPI::STATUS_SINGLE_STEP
+				if ignore_exceptionevents and false	# TODO check user-set breakpoints/singlestep, handle these
+					@dbg.continuedebugevent(pid, tid, WinAPI::DBG_EXCEPTION_NOT_HANDLED)
+					return
+				end
 				@state = :stopped
 				@info = nil
 			else
+				if ignore_exceptionevents
+					@dbg.continuedebugevent(pid, tid, WinAPI::DBG_EXCEPTION_NOT_HANDLED)
+					return
+				end
 				@state = :stopped
 				@info = "unknown #{info.inspect}"
 				@continuecode = WinAPI::DBG_EXCEPTION_NOT_HANDLED
 			end
 		when WinAPI::CREATE_THREAD_DEBUG_EVENT
+			if ignore_threadevents
+				@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
+				return
+			end
 			@state = :stopped
 			@info = "thread #{tid} created"
 		when WinAPI::EXIT_THREAD_DEBUG_EVENT
+			if ignore_threadevents
+				@dbg.continuedebugevent(pid, tid, WinAPI::DBG_CONTINUE)
+				return
+			end
 			@state = :stopped
 			@info = "thread #{tid} died, exitcode #{info.exitcode}"
 		when WinAPI::EXIT_PROCESS_DEBUG_EVENT
@@ -1585,11 +1607,36 @@ class WinDebugger < Debugger
 
 	def ui_command_setup(ui)
 		ui.new_command('pass_current_exception', 'pass the current exception to the debuggee') { |arg|
-			if arg.strip == 'no'; pass_current_exception(false) ; puts "ignore exception"
-			else pass_current_exception ; puts "forward exception"
+			case arg.strip
+			when 'no', '0', 'false'
+				pass_current_exception(false)
+				puts "ignore exception"
+			else
+				pass_current_exception
+				puts "forward next exception"
 			end
 		}
-		ui.keyboard_callback_ctrl[:f5] = lambda { pass_current_exception ; ui.wrap_run { continue } }
+		ui.new_command('ignore_threadevents', 'dont break on thread creation/termination') { |arg|
+			case arg.strip
+			when 'no', '0', 'false'
+				self.ignore_threadevents = false
+				puts "DONT ignore threadevents"
+			else
+				self.ignore_threadevents = true
+				puts "ignore threadevents"
+			end
+		}
+		ui.new_command('ignore_exceptionevents', 'dont break on program-generated exceptions') { |arg|
+			case arg.strip
+			when 'no', '0', 'false'
+				self.ignore_exceptionevents = false
+				puts "DONT ignore exceptionevents"
+			else
+				self.ignore_exceptionevents = true
+				puts "ignore exceptionevents"
+			end
+		}
+		ui.keyboard_callback_ctrl[:f5] = lambda { |*a| pass_current_exception ; ui.wrap_run { continue } }
 	end
 end
 end
