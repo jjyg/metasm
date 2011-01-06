@@ -951,7 +951,12 @@ module C
 				if declaration; precompile_type(compiler, scope, t, declaration)
 				else   t = BaseType.new("__int#{compiler.typesize[:ptr]*8}".to_sym, :unsigned)
 				end
-			when Pointer;  t = BaseType.new("__int#{compiler.typesize[:ptr]*8}".to_sym, :unsigned)
+			when Pointer
+				if t.type.untypedef.kind_of? Function
+					precompile_type(compiler, scope, t, declaration)
+				else
+					t = BaseType.new("__int#{compiler.typesize[:ptr]*8}".to_sym, :unsigned)
+				end
 			when Enum;     t = BaseType.new("__int#{compiler.typesize[:int]*8}".to_sym)
 			when Function
 				precompile_type(compiler, scope, t)

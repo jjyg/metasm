@@ -249,9 +249,9 @@ class CCompiler < C::Compiler
 	# use rsz only to force 32bits-return on a 16bits cpu
 	def make_volatile(e, type, rsz=@cpusz)
 		if e.kind_of? ModRM or @state.bound.index(e)
-			if type.integral?
+			if type.integral? or type.pointer?
 				oldval = @state.cache[e]
-				if type.name == :__int64 and @cpusz != 64
+				if type.integral? and type.name == :__int64 and @cpusz != 64
 					e2l = inuse findreg(32)
 					unuse e
 					e2h = inuse findreg(32)
@@ -284,8 +284,8 @@ class CCompiler < C::Compiler
 		elsif e.kind_of? Address
 			make_volatile resolve_address(e), type, rsz
 		elsif e.kind_of? Expression
-			if type.integral?
-				if type.name == :__int64 and @cpusz != 64
+			if type.integral? or type.pointer?
+				if type.integral? and type.name == :__int64 and @cpusz != 64
 					e2 = inuse Composite.new(inuse(findreg(32)), findreg(32))
 					instr 'mov', e2.low, Expression[e, :&, 0xffff_ffff]
 					instr 'mov', e2.high, Expression[e, :>>, 32]
@@ -817,8 +817,19 @@ class CCompiler < C::Compiler
 
 	# compiles a subroutine call
 	def c_cexpr_inner_funcall(expr)
-		# TODO __fastcall
+		# check if an obj has an attribute - check on obj and its type
+		hasattr = lambda { |o, a| (o.kind_of?(C::Variable) and o.has_attribute(a)) or o.type.has_attribute(a) }
+		hasattrv = lambda { |o, a| (o.kind_of?(C::Variable) and o.has_attribute_var(a)) or o.type.has_attribute_var(a) }
+
+		fargs = expr.lexpr.type.pointer? ? expr.lexpr.type.pointed.args : expr.lexpr.type.args
+
 		backup = []
+		if hasattr[expr.lexpr, 'fastcall']
+			regargs = [1, 2][0, expr.rexpr.length]
+			regargs += [nil] * (expr.rexpr.length-2) if expr.rexpr.length > 2
+		else
+			regargs = fargs.map { |a| hasattrv[a, 'register'] }.map { |a| Reg.from_str(a).val if a }
+		end
 		@state.abi_flushregs_call.each { |reg|
 			next if reg == 4
 			next if reg == 5 and @state.saved_ebp
@@ -830,12 +841,26 @@ class CCompiler < C::Compiler
 				next
 			end
 			backup << reg
+			unuse reg
+			instr 'push', Reg.new(reg, [@cpusz, 32].max)
+		}
+		regargs_list = regargs.compact
+		regargs_list.each { |reg|
+			next if backup.include? reg
+			@state.dirty |= [reg]
+			next if not @state.used.include? reg
+			backup << reg
 			instr 'push', Reg.new(reg, [@cpusz, 32].max)
 		}
 		expr.rexpr.reverse_each { |arg|
 			a = c_cexpr_inner(arg)
 			a = resolve_address a if a.kind_of? Address
 			unuse a
+			if r = regargs.pop
+				inuse r
+				instr 'mov', Reg.new(r, 32), a
+				next
+			end
 			case arg.type
 			when C::BaseType
 				case t = arg.type.name
@@ -901,21 +926,32 @@ class CCompiler < C::Compiler
 		}
 		if expr.lexpr.kind_of? C::Variable and expr.lexpr.type.kind_of? C::Function
 			instr 'call', Expression[expr.lexpr.name]
-			if not expr.lexpr.attributes.to_a.include? 'stdcall'
+			if not hasattr[expr.lexpr, 'stdcall'] and not hasattr[expr.lexpr, 'fastcall']
 				al = typesize[:ptr]
-				argsz = expr.rexpr.inject(0) { |sum, a| sum + (sizeof(a) + al - 1) / al * al }
+				argsz = expr.rexpr.zip(fargs).inject(0) { |sum, (a, af)|
+					hasattrv[af, 'register'] ?  sum : sum + (sizeof(a) + al - 1) / al * al
+				}
 				instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 			end
 		else
 			ptr = c_cexpr_inner(expr.lexpr)
 			unuse ptr
-			ptr = make_volatile(ptr, expr.lexpr.type) if ptr.kind_of? Address
+			if ptr.kind_of? Address
+				if ptr.target.kind_of? C::Variable and not @state.offset[ptr.target]
+					# call an existing global function, maybe after casting to another ABI
+					ptr = Expression[ptr.target.name]
+				else
+					ptr = make_volatile(ptr, expr.lexpr.type)
+				end
+			end
 			instr 'call', ptr
 			f = expr.lexpr
 			f = f.rexpr while f.kind_of? C::CExpression and not f.op and f.rexpr.kind_of? C::Typed and f.type == f.rexpr.type
-			if not f.type.attributes.to_a.include? 'stdcall' and (not f.kind_of?(C::Variable) or not f.attributes.to_a.include? 'stdcall')
+			if not hasattr[f, 'stdcall'] and not hasattr[f, 'fastcall']
 				al = typesize[:ptr]
-				argsz = expr.rexpr.inject(0) { |sum, a| sum + (sizeof(a) + al - 1) / al * al }
+				argsz = expr.rexpr.zip(fargs).inject(0) { |sum, (a, af)|
+					hasattrv[af, 'register'] ? sum : sum + (sizeof(a) + al - 1) / al * al
+				}
 				instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 			end
 		end
@@ -938,6 +974,7 @@ class CCompiler < C::Compiler
 				unuse retreg.low
 			end
 		end
+		regargs_list.each { |reg| unuse reg }
 		backup.reverse_each { |reg|
 			sz = [@cpusz, 32].max
 			if    retreg.kind_of? Composite and reg == 0
@@ -954,6 +991,7 @@ class CCompiler < C::Compiler
 			else
 				instr 'pop', Reg.new(reg, sz)
 			end
+			inuse reg
 		}
 		retreg
 	end
