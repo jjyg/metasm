@@ -252,6 +252,7 @@ class CCompiler < C::Compiler
 				unuse v
 			end
 		end
+		v
 	end
 
 	# returns the instruction suffix for a comparison operator
