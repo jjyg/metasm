@@ -239,6 +239,21 @@ class CCompiler < C::Compiler
 		end
 	end
 
+	# takes an argument, if the argument is an integer that does not fit in an i32, moves it to a temp reg
+	# the reg is unused, so use this only right when generating the offending instr (eg cmp, add..)
+	def i_to_i32(v)
+		if v.kind_of? Expression and i = v.reduce and i.kind_of?(Integer)
+			i &= 0xffff_ffff_ffff_ffff
+			if i <= 0x7fff_ffff
+			elsif i >= (1<<64)-0x8000_0000
+				v = Expression[Expression.make_signed(i, 64)]
+			else
+				v = make_volatile(v)
+				unuse v
+			end
+		end
+	end
+
 	# returns the instruction suffix for a comparison operator
 	def getcc(op, type)
 		case op
@@ -551,7 +566,7 @@ class CCompiler < C::Compiler
 			r = c_cexpr_inner(expr.rexpr)
 			unuse r
 			if expr.lexpr.type.integral?
-				instr 'cmp', l, r
+				instr 'cmp', l, i_to_i32(r)
 			elsif expr.lexpr.type.float?
 				raise 'float unhandled'
 			else raise 'bad comparison ' + expr.to_s
@@ -697,7 +712,7 @@ class CCompiler < C::Compiler
 		when 'add', 'sub', 'and', 'or', 'xor'
 			r = make_volatile(r, type) if l.kind_of? ModRM and r.kind_of? ModRM
 			unuse r
-			instr op, l, r
+			instr op, l, i_to_i32(r)
 		when 'shr', 'sar', 'shl'
 			if r.kind_of? Expression
 				instr op, l, r
@@ -814,7 +829,7 @@ class CCompiler < C::Compiler
 			unuse l, r
 			if expr.lexpr.type.integral?
 				r = Reg.new(r.val, l.sz) if r.kind_of? Reg and r.sz != l.sz	# XXX
-				instr 'cmp', l, r
+				instr 'cmp', l, i_to_i32(r)
 			elsif expr.lexpr.type.float?
 				raise 'float unhandled'
 			else raise 'bad comparison ' + expr.to_s
