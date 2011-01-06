@@ -862,6 +862,8 @@ class CCompiler < C::Compiler
 				next
 			end
 			case arg.type
+			when C::Pointer
+				instr 'push', a
 			when C::BaseType
 				case t = arg.type.name
 				when :__int8
@@ -929,7 +931,7 @@ class CCompiler < C::Compiler
 			if not hasattr[expr.lexpr, 'stdcall'] and not hasattr[expr.lexpr, 'fastcall']
 				al = typesize[:ptr]
 				argsz = expr.rexpr.zip(fargs).inject(0) { |sum, (a, af)|
-					hasattrv[af, 'register'] ?  sum : sum + (sizeof(a) + al - 1) / al * al
+					af && hasattrv[af, 'register'] ?  sum : sum + (sizeof(a) + al - 1) / al * al
 				}
 				instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 			end
@@ -950,7 +952,7 @@ class CCompiler < C::Compiler
 			if not hasattr[f, 'stdcall'] and not hasattr[f, 'fastcall']
 				al = typesize[:ptr]
 				argsz = expr.rexpr.zip(fargs).inject(0) { |sum, (a, af)|
-					hasattrv[af, 'register'] ? sum : sum + (sizeof(a) + al - 1) / al * al
+					af && hasattrv[af, 'register'] ? sum : sum + (sizeof(a) + al - 1) / al * al
 				}
 				instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 			end
@@ -1321,7 +1323,6 @@ class CCompiler < C::Compiler
 		@state = State.new(func)
 		# ET_DYN trashes ebx too
 		# XXX hope we're not a Shellcode to be embedded in an ELF..
-		# XXX must test without autorequiring ELF which may not exist
 		@state.abi_flushregs_call << 3 if @exeformat and @exeformat.shortname == 'elf'
 		al = typesize[:ptr]
 		argoff = 2*al
