@@ -326,7 +326,6 @@ class Disassembler
 		addr = addr.address if addr.kind_of? DecodedInstruction
 		todo = [addr]
 		done = []
-		func = nil
 		while a = todo.pop
 			a = normalize(a)
 			di = @decoded[a]
@@ -626,7 +625,6 @@ class Disassembler
 		entry = [entry] if not entry.kind_of? Array
 		todo = entry.map { |a| normalize(a) }
 		done = []
-		label = {}
 		inv_binding = @prog_binding.invert
 		while addr = todo.pop
 			next if done.include? addr or not di_at(addr)

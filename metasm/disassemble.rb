@@ -611,7 +611,7 @@ class Disassembler
 			end
 		}
 		@function.each { |addr, f|
-			next if not di = @decoded[addr]
+			next if not @decoded[addr]
 			if not f.finalized
 				f.finalized = true
 puts "  finalize subfunc #{Expression[addr]}" if debug_backtrace
@@ -888,7 +888,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				func = true if odi = di_at(x_.origin) and odi.opcode.props[:saveip]
 			}
 			if func
-				l = auto_label_at(addr, 'sub', 'loc', 'xref')
+				auto_label_at(addr, 'sub', 'loc', 'xref')
 				# XXX use default_btbind_callback ?
 				@function[addr] = DecodedFunction.new
 				@function[addr].finalized = true

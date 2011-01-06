@@ -364,7 +364,6 @@ class CCompiler < C::Compiler
 
 	# compile a cast (BaseType to BaseType)
 	def c_cexpr_inner_cast(expr, r)
-		esp = Reg.new(4, @cpusz)
 		if expr.type.float? or expr.rexpr.type.float?
 			raise 'float unhandled'
 		elsif expr.type.integral? and expr.rexpr.type.integral?
@@ -935,9 +934,6 @@ class CCompiler < C::Compiler
 			instr 'mov', Reg.new(4, ebp.sz), ebp
 			instr 'pop', ebp
 		end
-		f = @state.func
-		al = typesize[:ptr]
-		argsz = f.type.args.inject(0) { |sum, a| sum += (sizeof(a) + al - 1) / al * al }
 		instr 'ret'
 	end
 

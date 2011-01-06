@@ -857,7 +857,7 @@ class Debugger
 	# scans only mapped areas of @memory, using os_process.mappings
 	def pattern_scan(pat)
 		ret = []
-		os_process.mappings.each { |a, l, *o|
+		os_process.mappings.each { |a, l, *o_|
 			EncodedData.new(@memory[a, l]).pattern_scan(pat) { |o|
 				o += a
 				ret << o if not block_given? or yield(o)

@@ -293,7 +293,7 @@ class ELF
 
 		list = @relocations.find_all { |r| r.type != 'JMP_SLOT' and not r.addend }
 		if not list.empty?
-			if not @tag['TEXTREL'] and s = @sections.find { |s_|
+			if not @tag['TEXTREL'] and @sections.find { |s_|
 				s_.encoded and e = s_.encoded.inv_export[0] and not s_.flags.include? 'WRITE' and
 				list.find { |r| Expression[r.offset, :-, e].reduce.kind_of? ::Integer }
 				# TODO need to check with r.offset.bind(elf_binding)
@@ -616,7 +616,7 @@ class ELF
 
 		# create a fake binding with all our own symbols
 		# not foolproof, should work in most cases
-		startaddr = curaddr = label_at(@encoded, 0, 'elf_start')
+		curaddr = label_at(@encoded, 0, 'elf_start')
 		binding = {'_DYNAMIC' => 0, '_GOT' => 0}	# XXX
 		@sections.each { |s|
 			next if not s.encoded

@@ -31,7 +31,7 @@ class Ia32
 
 		private
 		def encode16(reg, endianness)
-			if not @b
+			if not b
 				# imm only
 				return [EncodedData.new << (6 | (reg << 3)) << @imm.encode(:u16, endianness)]
 			end

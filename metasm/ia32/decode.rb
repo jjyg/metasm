@@ -232,7 +232,7 @@ class Ia32
 		end
 
 		pfx.delete :seg
-		case r = pfx.delete(:rep)
+		case pfx.delete(:rep)
 		when :nz
 			if di.opcode.props[:strop]
 				pfx[:rep] = 'rep'
@@ -513,7 +513,6 @@ class Ia32
 					} if di.block
 					lastfpuinstr = lastfpuinstr.address if lastfpuinstr
 					ret = {}
-					ptr = a0.pointer
 					save_at = lambda { |off, val| ret[Indirection[a0.target + off, 4, di.address]] = val }
 					save_at[0, Expression::Unknown]
 					save_at[4, Expression::Unknown]
@@ -714,9 +713,9 @@ class Ia32
 			s = dasm.get_section_at(mrm.imm)
 			lim += 1 if pdi.opcode.name[-1] == ?e
 			lim.times { |v|
-				ptr = dasm.normalize s[0].decode_imm("u#{sz}".to_sym, @endianness)
-				dasm.add_xref(s[1]+s[0].ptr-sz/8, Xref.new(:r, di.address, sz/8))
+				dasm.add_xref(s[1]+s[0].ptr, Xref.new(:r, di.address, sz/8))
 				ret << Indirection[[mrm.imm, :+, v*sz/8], sz/8, di.address]
+				s[0].read(sz/8)
 			}
 			l = dasm.auto_label_at(mrm.imm, 'jmp_table', 'xref')
 			replace_instr_arg_immediate(di.instruction, mrm.imm, Expression[l])
@@ -757,7 +756,7 @@ class Ia32
 	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist, *wantregs)
 		b = f.backtrace_binding
 
-		eax, ecx, edx, ebx, esp, ebp, esi, edi = register_symbols
+		esp, ebp = register_symbols[4, 2]
 
 		# XXX handle retaddrlist for multiple/mixed thunks
 		if retaddrlist and not dasm.decoded[retaddrlist.first] and di = dasm.decoded[faddr]

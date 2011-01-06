@@ -343,7 +343,7 @@ module C
 		def parse_initializer_designator(parser, scope, value, idx, root=true)
 			if nt = parser.skipspaces and nt.type == :punct and nt.raw == '.' and
 					nnt = parser.skipspaces and nnt.type == :string and
-					m = findmember(nnt.raw)
+					findmember(nnt.raw)
 				raise nnt, 'unhandled indirect initializer' if not nidx = @members.index(@fldlist[nnt.raw])	# TODO
 				if not root
 					value[idx] ||= []	# AryRecorder may change [] to AryRec.new, can't do v = v[i] ||= []

@@ -155,7 +155,7 @@ class X86_64
 		end
 
 		pfx.delete :seg
-		case r = pfx.delete(:rep)
+		case pfx.delete(:rep)
 		when :nz
 			if di.opcode.props[:strop]
 				pfx[:rep] = 'rep'
