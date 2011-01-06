@@ -609,6 +609,7 @@ class CCompiler < C::Compiler
 			end
 			backup << reg
 			instr 'push', Reg.new(reg, 64)
+			unuse Reg.new(reg, 64)
 		}
 		expr.rexpr[regargs.length..-1].to_a.reverse_each { |arg|
 			raise 'arg unhandled' if not arg.type.integral?
@@ -660,6 +661,7 @@ class CCompiler < C::Compiler
 			else
 				instr 'pop', Reg.new(reg, 64)
 			end
+			inuse Reg.new(reg, 64)
 		}
 		retreg
 	end
@@ -893,7 +895,8 @@ class CCompiler < C::Compiler
 		end
 		regargs.each { |ra|
 			break if args.empty?
-			@state.bound[args.shift] = Reg.new(ra, @cpusz)
+			r = @state.bound[args.shift] = Reg.new(ra, @cpusz)
+			inuse r
 		}
 		argoff = 2*al + args_space
 		args.each { |a|
