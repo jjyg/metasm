@@ -1324,13 +1324,31 @@ class CCompiler < C::Compiler
 		# ET_DYN trashes ebx too
 		# XXX hope we're not a Shellcode to be embedded in an ELF..
 		@state.abi_flushregs_call << 3 if @exeformat and @exeformat.shortname == 'elf'
+
+		c_reserve_stack(func.initializer)
+		off = @state.offset.values.max.to_i	# where to store register args
+		off = 0 if off < 0
+
 		al = typesize[:ptr]
 		argoff = 2*al
-		func.type.args.each { |a|
+		fa = func.type.args.dup
+		if func.has_attribute('fastcall')
+			2.times {
+				if a = fa.shift
+					off = c_reserve_stack_var(a, off)
+					@state.offset[a] = off
+				end
+			}
+		end
+		fa.each { |a|
+			if a.has_attribute_var('register') or a.type.has_attribute_var('register')
+				off = c_reserve_stack_var(a, off)
+				@state.offset[a] = off
+				next
+			end
 			@state.offset[a] = -argoff
 			argoff = (argoff + sizeof(a) + al - 1) / al * al
 		}
-		c_reserve_stack(func.initializer)
 		if not @state.offset.values.grep(::Integer).empty?
 			@state.saved_ebp = Reg.new(5, @cpusz)
 			@state.used << 5
@@ -1339,7 +1357,7 @@ class CCompiler < C::Compiler
 
 	def c_prolog
 		localspc = @state.offset.values.grep(::Integer).max
-		return if @state.func.attributes.to_a.include? 'naked'
+		return if @state.func.has_attribute('naked')
 		if localspc
 			al = typesize[:ptr]
 			localspc = (localspc + al - 1) / al * al
@@ -1348,6 +1366,23 @@ class CCompiler < C::Compiler
 			instr 'push', ebp
 			instr 'mov', ebp, esp
 			instr 'sub', esp, Expression[localspc] if localspc > 0
+
+			if @state.func.has_attribute('fastcall')
+				if a0 = @state.func.type.args[0]
+					instr 'mov', findvar(a0), Reg.new(1, 32)
+				end
+				if a1 = @state.func.type.args[1]
+					instr 'mov', findvar(a1), Reg.new(2, 32)
+				end
+			else
+				@state.func.type.args.each { |a|
+					if r = (a.has_attribute_var('register') or a.type.has_attribute_var('register'))
+						# XXX if r == ebp, then prepend_prolog mov [esp-off], ebp...
+						# XXX this would break when calling anyway (mov ebp, 42; <stuff with &var_42>; call func)
+						instr 'mov', findvar(a), Reg.from_str(r)
+					end
+				}
+			end
 		end
 		@state.dirty -= @state.abi_trashregs	# XXX ABI
 		@state.dirty.each { |reg|
@@ -1366,10 +1401,18 @@ class CCompiler < C::Compiler
 			instr 'pop', ebp
 		end
 		f = @state.func
-		al = typesize[:ptr]
-		argsz = f.type.args.inject(0) { |sum, a| sum += (sizeof(a) + al - 1) / al * al }
-		if f.attributes.to_a.include? 'stdcall' and argsz > 0
-			instr 'ret', Expression[argsz]
+		if f.has_attribute('stdcall') or f.has_attribute('fastcall')
+			al = typesize[:ptr]
+			fa = f.type.args.dup
+			2.times { fa.shift } if f.has_attribute('fastcall')
+			argsz = fa.inject(0) { |sum, a|
+				(a.has_attribute_var('register') or a.type.has_attribute_var('register')) ? sum : sum + (sizeof(a) + al - 1) / al * al
+			}
+			if argsz > 0
+				instr 'ret', Expression[argsz]
+			else
+				instr 'ret'
+			end
 		else
 			instr 'ret'
 		end
