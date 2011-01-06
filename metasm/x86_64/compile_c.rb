@@ -205,10 +205,11 @@ class CCompiler < C::Compiler
 	# may return a register bigger than the type size (eg __int8 are stored in full reg size)
 	def make_volatile(e, type, rsz=@cpusz)
 		if e.kind_of? ModRM or @state.bound.index(e)
-			if type.integral?
+			if type.integral? or type.pointer?
 				oldval = @state.cache[e]
 				unuse e
-				if (sz = typesize[type.name]*8) < @cpusz or sz < rsz or e.sz < rsz
+				sz = typesize[type.pointer? ? :ptr : type.name]*8
+				if sz < @cpusz or sz < rsz or e.sz < rsz
 					e2 = inuse findreg(rsz)
 					op = ((type.specifier == :unsigned) ? 'movzx' : 'movsx')
 					op = 'mov' if e.sz == e2.sz
@@ -227,7 +228,7 @@ class CCompiler < C::Compiler
 		elsif e.kind_of? Address
 			make_volatile resolve_address(e), type, rsz
 		elsif e.kind_of? Expression
-			if type.integral?
+			if type.integral? or type.pointer?
 				e2 = inuse findreg
 				instr 'mov', e2, e
 				e2
