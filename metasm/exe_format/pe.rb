@@ -303,7 +303,7 @@ class LoadedPE < PE
 
 	# use the virtualaddr/virtualsize fields of the section header
 	def decode_section_body(s)
-		s.encoded = @encoded[s.virtaddr, s.virtsize]
+		s.encoded = @encoded[s.virtaddr, s.virtsize] || EncodedData.new
 	end
 
 	# no need to decode relocations on an already mapped image
