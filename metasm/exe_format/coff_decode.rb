@@ -517,7 +517,7 @@ class COFF
 		raw = EncodedData.align_size(s.rawsize, @optheader.file_align)
 		virt = EncodedData.align_size(s.virtsize, @optheader.sect_align)
 		virt = raw = s.rawsize if @header.size_opthdr == 0
-		s.encoded = @encoded[s.rawaddr, [raw, virt].min]
+		s.encoded = @encoded[s.rawaddr, [raw, virt].min] || EncodedData.new
 		s.encoded.virtsize = virt
 	end
 
@@ -705,7 +705,7 @@ class COFF
 		ep = []
 		ep.concat @tls.callbacks.to_a if tls
 		ep << (@optheader.image_base + label_rva(@optheader.entrypoint))
-		@export.exports.each { |e|
+		@export.exports.to_a.each { |e|
 			next if e.forwarder_lib or not e.target
 			ep << (@optheader.image_base + label_rva(e.target))
 		} if export
