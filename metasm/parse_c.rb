@@ -2264,15 +2264,16 @@ EOH
 			(o.class == Variable and not @op and @rexpr == o)
 		end
 
+		NegateOp = { :== => :'!=', :'!=' => :==, :> => :<=, :>= => :<, :< => :>=, :<= => :> }
 		# returns a CExpr negating this one (eg 'x' => '!x', 'a > b' => 'a <= b'...)
 		def self.negate(e)
 			e.kind_of?(self) ? e.negate : CExpression[:'!', e]
 		end
 		def negate
-			if nop = { :== => :'!=', :'!=' => :==, :> => :<=, :>= => :<, :< => :>=, :<= => :>, :'!' => :'!' }[@op]
-				if nop == :'!'
-					CExpression[@rexpr]
-				elsif nop == :== and @rexpr.kind_of? CExpression and not @rexpr.op and @rexpr.rexpr == 0 and
+			if @op == :'!'
+				CExpression[@rexpr]
+			elsif nop = NegateOp[@op]
+				if nop == :== and @rexpr.kind_of? CExpression and not @rexpr.op and @rexpr.rexpr == 0 and
 						@lexpr.kind_of? CExpression and [:==, :'!=', :>, :<, :>=, :<=, :'!'].include? @lexpr.op
 					# (a > b) != 0  =>  (a > b)
 					CExpression[@lexpr]
