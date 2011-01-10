@@ -824,11 +824,15 @@ class CCompiler < C::Compiler
 	end
 
 	def c_ifgoto(expr, target)
-		case expr.op
+		case o = expr.op
 		when :<, :>, :<=, :>=, :==, :'!='
 			l = c_cexpr_inner(expr.lexpr)
 			r = c_cexpr_inner(expr.rexpr)
 			r = make_volatile(r, expr.type) if r.kind_of? ModRM and l.kind_of? ModRM
+			if l.kind_of? Expression
+				o = { :< => :>, :> => :<, :>= => :<=, :<= => :>= }[o] || o
+				l, r = r, l
+			end
 			unuse l, r
 			if expr.lexpr.type.integral?
 				r = Reg.new(r.val, l.sz) if r.kind_of? Reg and r.sz != l.sz	# XXX
@@ -837,7 +841,7 @@ class CCompiler < C::Compiler
 				raise 'float unhandled'
 			else raise 'bad comparison ' + expr.to_s
 			end
-			op = 'j' + getcc(expr.op, expr.lexpr.type)
+			op = 'j' + getcc(o, expr.lexpr.type)
 			instr op, Expression[target]
 		when :'!'
 			r = c_cexpr_inner(expr.rexpr)

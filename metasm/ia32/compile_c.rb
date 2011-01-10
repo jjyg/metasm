@@ -1246,10 +1246,14 @@ class CCompiler < C::Compiler
 	end
 
 	def c_ifgoto(expr, target)
-		case expr.op
+		case o = expr.op
 		when :<, :>, :<=, :>=, :==, :'!='
 			l = c_cexpr_inner(expr.lexpr)
 			r = c_cexpr_inner(expr.rexpr)
+			if l.kind_of? Expression
+				o = { :< => :>, :> => :<, :>= => :<=, :<= => :>= }[o] || o
+				l, r = r, l
+			end
 			r = make_volatile(r, expr.type) if r.kind_of? ModRM and l.kind_of? ModRM
 			unuse l, r
 			if expr.lexpr.type.integral?
@@ -1262,7 +1266,7 @@ class CCompiler < C::Compiler
 				instr 'fcmpp', l, r
 			else raise 'bad comparison ' + expr.to_s
 			end
-			op = 'j' + getcc(expr.op, expr.lexpr.type)
+			op = 'j' + getcc(o, expr.lexpr.type)
 			instr op, Expression[target]
 		when :'!'
 			r = c_cexpr_inner(expr.rexpr)
