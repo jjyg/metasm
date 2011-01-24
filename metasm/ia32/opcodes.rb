@@ -201,7 +201,7 @@ class Ia32
 		addop 'rdtsc', [0x0F, 0x31], nil, {}, :random
 		addop 'retf',  [0xCB], nil,  {}, :stopexec, :setip
 		addop 'retf',  [0xCA], nil,  {}, :stopexec, :u16, :setip
-		addop 'rsm',   [0x0F, 0xAA], :stopexec
+		addop 'rsm',   [0x0F, 0xAA], nil, {}, :stopexec
 		addop 'sahf',  [0x9E]
 		addop 'sgdt',  [0x0F, 0x01, 0<<3], :modrmA
 		addop 'sidt',  [0x0F, 0x01, 1<<3], :modrmA

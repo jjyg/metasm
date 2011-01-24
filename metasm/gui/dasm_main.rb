@@ -11,6 +11,7 @@ require 'metasm/gui/dasm_coverage'
 require 'metasm/gui/dasm_graph'
 require 'metasm/gui/dasm_decomp'
 require 'metasm/gui/dasm_funcgraph'
+require 'metasm/gui/cstruct'
 
 module Metasm
 module Gui
@@ -46,6 +47,7 @@ class DisasmWidget < ContainerChoiceWidget
 		addview :hex,       HexWidget.new(@dasm, self)
 		addview :coverage,  CoverageWidget.new(@dasm, self)
 		addview :funcgraph, FuncGraphViewWidget.new(@dasm, self)
+		addview :cstruct,   CStructWidget.new(@dasm, self)
 
 		view(:listing).grab_focus
 	end
