@@ -27,6 +27,7 @@ class DisasmWidget < ContainerChoiceWidget
 	def initialize_widget(dasm, ep=[])
 		@dasm = dasm
 		@dasm.gui = self
+		ep = [ep] if not ep.kind_of? Array
 		@entrypoints = ep
 		@pos_history = []
 		@pos_history_redo = []
@@ -643,6 +644,7 @@ class DasmWindow < Window
 	# returns the widget
 	def display(dasm, ep=[])
 		@dasm_widget.terminate if @dasm_widget
+		ep = [ep] if not ep.kind_of? Array
 		@dasm_widget = DisasmWidget.new(dasm, ep)
 		self.widget = @dasm_widget
 		@dasm_widget.focus_addr(ep.first) if ep.first
