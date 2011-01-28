@@ -137,7 +137,9 @@ class DisasmWidget < ContainerChoiceWidget
 		return if not addr
 		return if viewidx == curview_index and addr == curaddr
 		oldpos = [curview_index, (curview.get_cursor_pos if curview)]
-		if [viewidx, oldpos[0], *view_indexes].compact.uniq.find { |i|
+		views = [viewidx, oldpos[0]]
+		views += [:listing, :graph] & view_indexes
+		if views.compact.uniq.find { |i|
 			o_p = view(i).get_cursor_pos
 			if (view(i).focus_addr(addr, *a) rescue nil)
 				view(i).gui_update if i != oldpos[0]
