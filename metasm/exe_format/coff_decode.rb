@@ -359,6 +359,31 @@ class COFF
 		end
 	end
 
+	class Cor20Header
+		def decode_all(coff)
+			if coff.sect_at_rva(@metadata_rva)
+				@metadata = coff.cursection.encoded.read(@metadata_sz)
+			end
+			if coff.sect_at_rva(@resources_rva)
+				@resources = coff.cursection.encoded.read(@resources_sz)
+			end
+			if coff.sect_at_rva(@strongnamesig_rva)
+				@strongnamesig = coff.cursection.encoded.read(@strongnamesig_sz)
+			end
+			if coff.sect_at_rva(@codemgr_rva)
+				@codemgr = coff.cursection.encoded.read(@codemgr_sz)
+			end
+			if coff.sect_at_rva(@vtfixup_rva)
+				@vtfixup = coff.cursection.encoded.read(@vtfixup_sz)
+			end
+			if coff.sect_at_rva(@eatjumps_rva)
+				@eatjumps = coff.cursection.encoded.read(@eatjumps_sz)
+			end
+			if coff.sect_at_rva(@managednativehdr_rva)
+				@managednativehdr = coff.cursection.encoded.read(@managednativehdr_sz)
+			end
+		end
+	end
 
 	attr_accessor :cursection
 
@@ -595,6 +620,17 @@ class COFF
 		end
 	end
 
+	# decode the COM Cor20 header
+	def decode_com
+		if @directory['com_runtime'] and sect_at_rva(@directory['com_runtime'][0])
+			@com_header = Cor20Header.decode(self)
+			if sect_at_rva(@com_header.entrypoint)
+				@cursection.encoded.add_export new_label('com_entrypoint')
+			end
+			@com_header.decode_all(self)
+		end
+	end
+
 	# decode COFF relocation tables from directory
 	def decode_relocs
 		if @directory['base_relocation_table'] and sect_at_rva(@directory['base_relocation_table'][0])
@@ -686,6 +722,7 @@ class COFF
 		decode_tls
 		decode_loadconfig
 		decode_delayimports
+		decode_com
 		decode_relocs unless nodecode_relocs or ENV['METASM_NODECODE_RELOCS']	# decode relocs last
 	end
 

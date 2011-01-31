@@ -115,6 +115,12 @@ class COFF < ExeFormat
 
 	ORDINAL_REGEX = /^Ordinal_(\d+)$/
 
+	COMIMAGE_FLAGS = {
+		1 => 'ILONLY', 2 => '32BITREQUIRED', 4 => 'IL_LIBRARY',
+		8 => 'STRONGNAMESIGNED', 16 => 'NATIVE_ENTRYPOINT',
+		0x10000 => 'TRACKDEBUGDATA'
+	}
+
 	class SerialStruct < Metasm::SerialStruct
 		new_int_field :xword
 	end
@@ -268,6 +274,23 @@ class COFF < ExeFormat
 		attr_accessor :libname
 	end
 
+	# structure defining entrypoints and stuff for .net binaries
+	class Cor20Header < SerialStruct
+		word :size
+		halfs :major_version, :minor_version	# runtime version
+		words :metadata_rva, :metadata_sz
+		word :flags
+		fld_bits :flags, COMIMAGE_FLAGS
+		word :entrypoint	# RVA to native or managed ep, depending on flags
+		words :resources_rva, :resources_sz
+		words :strongnamesig_rva, :strongnamesig_sz
+		words :codemgr_rva, :codemgr_sz
+		words :vtfixup_rva, :vtfixup_sz
+		words :eatjumps_rva, :eatjumps_sz
+		words :managednativehdr_rva, :managednativehdr_sz
+
+		attr_accessor :metadata, :resources, :strongnamesig, :codemgr, :vtfixup, :eatjumps, :managednativehdr
+	end
 
 	# for the icon, the one that appears in the explorer is
 	#  (NT) the one with the lowest ID
@@ -356,7 +379,7 @@ class COFF < ExeFormat
 	end
 
 	attr_accessor :header, :optheader, :directory, :sections, :endianness, :symbols,
-		:export, :imports, :resource, :certificates, :relocations, :debug, :tls, :loadconfig, :delayimports
+		:export, :imports, :resource, :certificates, :relocations, :debug, :tls, :loadconfig, :delayimports, :com_header
 
 	# boolean, set to true to have #decode() ignore the base_relocs directory
 	attr_accessor :nodecode_relocs
