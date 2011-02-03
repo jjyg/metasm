@@ -558,9 +558,9 @@ class Expression < ExpressionType
 				l
 			elsif r == 0 and l.kind_of? Expression and l.op == :+
 				if l.rexpr.kind_of? Expression and l.rexpr.op == :- and not l.rexpr.lexpr
-					Expression[l.lexpr, op, l.rexpr.rexpr].reduce_rec
+					Expression[l.lexpr, @op, l.rexpr.rexpr].reduce_rec
 				elsif l.rexpr.kind_of? ::Integer
-					Expression[l.lexpr, op, -l.rexpr].reduce_rec
+					Expression[l.lexpr, @op, -l.rexpr].reduce_rec
 				end
 			end
 		elsif @op == :'!='
