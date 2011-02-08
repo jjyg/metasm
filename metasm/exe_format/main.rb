@@ -152,7 +152,7 @@ class ExeFormat
 	# initializes the disassembler if needed
 	# uses get_default_entrypoints if the argument list is empty
 	# returns the disassembler
-	def disassemble_fast(*entrypoints)
+	def disassemble_fast_deep(*entrypoints)
 		entrypoints = get_default_entrypoints if entrypoints.empty?
 		disassembler.disassemble_fast_deep(*entrypoints)
 		@disassembler
