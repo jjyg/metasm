@@ -28,6 +28,10 @@ class CCompiler < C::Compiler
 		# variable => register for current scope (variable never on the stack)
 		# bound registers are also in +used+
 		attr_accessor :bound
+		# list of reg values that are used as func args in current ABI
+		attr_accessor :regargs
+		# stack space reserved for subfunction in ABI
+		attr_accessor :args_space
 		# list of reg values that are not kept across function call
 		attr_accessor :abi_flushregs_call
 		# list of regs we can trash without restoring them
@@ -46,6 +50,8 @@ class CCompiler < C::Compiler
 			@used = [4]	# rsp is always in use
 			@inuse = []
 			@bound = {}
+			@regargs = []
+			@args_space = 0
 			@abi_flushregs_call = [0, 1, 2, 6, 7, 8, 9, 10, 11]
 			@abi_trashregs = @abi_flushregs_call.dup
 		end
@@ -585,21 +591,9 @@ class CCompiler < C::Compiler
 	# compiles a subroutine call
 	def c_cexpr_inner_funcall(expr)
 		backup = []
-		if @parser.lexer.definition['__MS_X86_64_ABI__']
-			args_space = 32
-			regargs = [1, 2, 8, 9]
-		else
-			args_space = 0
-			regargs = [7, 6, 2, 1, 8, 9]
-		end
-		regargs_used = regargs[0, expr.rexpr.length]
-		regs = (@state.abi_flushregs_call | regargs_used)
-		if expr.lexpr.kind_of? C::Variable and expr.lexpr.type.kind_of? C::Function and expr.lexpr.type.varargs and args_space == 0
-			hidden_rax_arg = true
-			regs << 0	# gcc stores here the nr of xmm args passed, real args are passed the standard way
-					# TODO check visualstudio ?
-		end
-		regs.each { |reg|
+		rax = Reg.new(0, 64)
+
+		@state.abi_flushregs_call.each { |reg|
 			next if reg == 4
 			next if reg == 5 and @state.saved_rbp
 			if not @state.used.include? reg
@@ -612,7 +606,15 @@ class CCompiler < C::Compiler
 			instr 'push', Reg.new(reg, 64)
 			unuse Reg.new(reg, 64)
 		}
-		expr.rexpr[regargs.length..-1].to_a.reverse_each { |arg|
+
+		stackargs = expr.rexpr[@state.regargs.length..-1].to_a
+
+		# preserve 16byte stack align under windows
+		# TODO ensure 16o align from func start
+		stackalign = true if (stackargs + backup).length & 1 == 1
+		instr 'push', rax if stackalign
+
+		stackargs.reverse_each { |arg|
 			raise 'arg unhandled' if not arg.type.integral? or arg.type.pointer?
 			a = c_cexpr_inner(arg)
 			a = resolve_address a if a.kind_of? Address
@@ -622,18 +624,27 @@ class CCompiler < C::Compiler
 		}
 
 		regargs_unuse = []
-		regargs_used.zip(expr.rexpr).each { |ra, arg|
+		@state.regargs.zip(expr.rexpr).each { |ra, arg|
+			break if not arg
 			a = c_cexpr_inner(arg)
 			a = resolve_address a if a.kind_of? Address
 			r = Reg.new(ra, a.respond_to?(:sz) ? a.sz : 64)
-			instr 'mov', r, a
+			instr 'mov', r, a if not a.kind_of? Reg or a.val != r.val
 			unuse a
 			regargs_unuse << r if not @state.inuse.include? ra
-			inuse r		# XXX xchg already used regargs ?
+			inuse r
 		}
-		instr 'sub', Reg.new(4, 64), Expression[args_space] if args_space > 0	# TODO prealloc that at func start
+		instr 'sub', Reg.new(4, 64), Expression[@state.args_space] if @state.args_space > 0	# TODO prealloc that at func start
 
-		instr 'xor', Reg.new(0, 64), Reg.new(0, 64) if hidden_rax_arg
+		t = expr.lexpr.type
+		t = t.pointed if t.pointer?
+		if t.kind_of? C::Function and t.varargs and @state.args_space == 0
+			# gcc stores here the nr of xmm args passed, real args are passed the standard way
+			# TODO check visualstudio/ms ABI
+			instr 'xor', rax, rax
+			inuse rax
+		end
+
 
 		if expr.lexpr.kind_of? C::Variable and expr.lexpr.type.kind_of? C::Function
 			instr 'call', Expression[expr.lexpr.name]
@@ -642,11 +653,10 @@ class CCompiler < C::Compiler
 			unuse ptr
 			ptr = make_volatile(ptr, expr.lexpr.type) if ptr.kind_of? Address
 			instr 'call', ptr
-			f = expr.lexpr
-			f = f.rexpr while f.kind_of? C::CExpression and not f.op and f.type == f.rexpr.type
 		end
 		regargs_unuse.each { |r| unuse r }
-		argsz = args_space + [expr.rexpr.length - regargs.length, 0].max * 8
+		argsz = @state.args_space + [expr.rexpr.length - @state.regargs.length, 0].max * 8
+		argsz += 8 if stackalign
 		instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 
 		@state.abi_flushregs_call.each { |reg| flushcachereg reg }
@@ -891,24 +901,26 @@ class CCompiler < C::Compiler
 		al = typesize[:ptr]
 		args = func.type.args.dup
 		if @parser.lexer.definition['__MS_X86_64_ABI__']
-			# TODO move regs to stack if &arg0
-			args_space = 32
-			regargs = [1, 2, 8, 9]
+			@state.args_space = 32
+			@state.regargs = [1, 2, 8, 9]
 		else
-			args_space = 0
-			regargs = [7, 6, 2, 1, 8, 9]
+			@state.args_space = 0
+			@state.regargs = [7, 6, 2, 1, 8, 9]
 		end
-		regargs.each { |ra|
-			break if args.empty?
-			r = @state.bound[args.shift] = Reg.new(ra, @cpusz)
-			inuse r
-		}
-		argoff = 2*al + args_space
-		args.each { |a|
-			@state.offset[a] = -argoff
-			argoff = (argoff + sizeof(a) + al - 1) / al * al
-		}
 		c_reserve_stack(func.initializer)
+		off = @state.offset.values.max.to_i
+		off = 0 if off < 0
+
+		argoff = 2*al + @state.args_space
+		args.zip(@state.regargs).each { |a, r|
+			if r
+				off = c_reserve_stack_var(a, off)
+				@state.offset[a] = off
+			else
+				@state.offset[a] = -argoff
+				argoff = (argoff + sizeof(a) + al - 1) / al * al
+			end
+		}
 		if not @state.offset.values.grep(::Integer).empty?
 			@state.saved_rbp = Reg.new(5, @cpusz)
 			@state.used << 5
@@ -926,6 +938,12 @@ class CCompiler < C::Compiler
 			instr 'push', ebp
 			instr 'mov', ebp, esp
 			instr 'sub', esp, Expression[localspc] if localspc > 0
+
+			@state.func.type.args.zip(@state.regargs).each { |a, r|
+				break if not r
+				v = findvar(a)
+				instr 'mov', v, Reg.new(r, v.sz)
+			}
 		end
 		@state.dirty -= @state.abi_trashregs	# XXX ABI
 		@state.dirty.each { |reg|
