@@ -300,7 +300,7 @@ class CCompiler < C::Compiler
 		when :-
 			r = c_cexpr_inner(expr.rexpr)
 			r = make_volatile(r, expr.type)
-			if expr.type.integral?
+			if expr.type.integral? or expr.type.pointer?
 				instr 'neg', r
 			elsif expr.type.float?
 				raise 'float unhandled'
@@ -310,7 +310,7 @@ class CCompiler < C::Compiler
 		when :'++', :'--'
 			r = c_cexpr_inner(expr.rexpr)
 			inc = true if expr.op == :'++'
-			if expr.type.integral?
+			if expr.type.integral? or expr.type.pointer?
 				op = (inc ? 'inc' : 'dec')
 				instr op, r
 			elsif expr.type.float?
@@ -349,7 +349,7 @@ class CCompiler < C::Compiler
 		when :'!'
 			r = c_cexpr_inner(expr.rexpr)
 			r = make_volatile(r, expr.rexpr.type)
-			if expr.rexpr.type.integral?
+			if expr.rexpr.type.integral? or expr.type.pointer?
 				r = make_volatile(r, expr.rexpr.type)
 				instr 'test', r, r
 			elsif expr.rexpr.type.float?
@@ -367,9 +367,9 @@ class CCompiler < C::Compiler
 	def c_cexpr_inner_cast(expr, r)
 		if expr.type.float? or expr.rexpr.type.float?
 			raise 'float unhandled'
-		elsif expr.type.integral? and expr.rexpr.type.integral?
-			tto   = typesize[expr.type.name]*8
-			tfrom = typesize[expr.rexpr.type.name]*8
+		elsif (expr.type.integral? or expr.type.pointer?) and (expr.rexpr.type.integral? or expr.rexpr.type.pointer?)
+			tto   = typesize[expr.type.pointer? ? :ptr : expr.type.name]*8
+			tfrom = typesize[expr.rexpr.type.pointer? ? :ptr : expr.rexpr.type.name]*8
 			r = resolve_address r if r.kind_of? Address
 			if r.kind_of? Expression
 				r = make_volatile r, expr.type
@@ -416,6 +416,7 @@ class CCompiler < C::Compiler
 			l
 		when :'+', :'-', :'*', :'/', :'%', :'^', :'&', :'|', :'<<', :'>>'
 			# both sides are already cast to the same type by the precompiler
+			# XXX fptrs are not #integral? ...
 			if expr.type.integral? and expr.type.name == :ptr and expr.lexpr.type.kind_of? C::BaseType and
 				typesize[expr.lexpr.type.name] == typesize[:ptr]
 				expr.lexpr.type.name = :ptr
@@ -529,7 +530,7 @@ class CCompiler < C::Compiler
 			r = resolve_address r if r.kind_of? Address
 			r = make_volatile(r, expr.type) if l.kind_of? ModRM and r.kind_of? ModRM
 			unuse r
-			if expr.type.integral?
+			if expr.type.integral? or expr.type.pointer?
 				if r.kind_of? Address
 					m = r.modrm.dup
 					m.sz = l.sz
@@ -566,7 +567,7 @@ class CCompiler < C::Compiler
 			l = make_volatile(l, expr.type)
 			r = c_cexpr_inner(expr.rexpr)
 			unuse r
-			if expr.lexpr.type.integral?
+			if expr.lexpr.type.integral? or expr.lexpr.type.pointer?
 				instr 'cmp', l, i_to_i32(r)
 			elsif expr.lexpr.type.float?
 				raise 'float unhandled'
@@ -612,7 +613,7 @@ class CCompiler < C::Compiler
 			unuse Reg.new(reg, 64)
 		}
 		expr.rexpr[regargs.length..-1].to_a.reverse_each { |arg|
-			raise 'arg unhandled' if not arg.type.integral?
+			raise 'arg unhandled' if not arg.type.integral? or arg.type.pointer?
 			a = c_cexpr_inner(arg)
 			a = resolve_address a if a.kind_of? Address
 			a = make_volatile(a, arg.type) if a.kind_of? ModRM and arg.type.name != :__int64
@@ -670,7 +671,7 @@ class CCompiler < C::Compiler
 	def c_cexpr_inner_arith(l, op, r, type)
 		# optimizes *2 -> <<1
 		if r.kind_of? Expression and (rr = r.reduce).kind_of? ::Integer
-			if type.integral?
+			if type.integral? or type.pointer?
 				log2 = lambda { |v|
 					# TODO lol
 					i = 0
@@ -834,7 +835,7 @@ class CCompiler < C::Compiler
 				l, r = r, l
 			end
 			unuse l, r
-			if expr.lexpr.type.integral?
+			if expr.lexpr.type.integral? or expr.lexpr.type.pointer?
 				r = Reg.new(r.val, l.sz) if r.kind_of? Reg and r.sz != l.sz	# XXX
 				instr 'cmp', l, i_to_i32(r)
 			elsif expr.lexpr.type.float?
