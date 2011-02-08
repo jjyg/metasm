@@ -780,6 +780,7 @@ class Window < Gtk::Window
 				else ??
 				end
 			end
+			key = key.unpack('C')[0] if key.kind_of? String	# yay rb19
 			item.add_accelerator('activate', @accel_group, key, (accel[0] == ?^ ? Gdk::Window::CONTROL_MASK : 0), Gtk::ACCEL_VISIBLE)
 		end
 		if action
