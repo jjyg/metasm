@@ -154,22 +154,31 @@ class Ia32
 		ret
 	end
 
+	# retrieve the current function return value
+	# only valid at function exit
+	def dbg_func_retval(dbg)
+		dbg.get_reg_value(dbg_register_list[0])
+	end
+	def dbg_func_retval_set(dbg, val)
+		dbg.set_reg_value(dbg_register_list[0], val)
+	end
+
 	# retrieve the current function return address
 	# to be called only on entry of the subfunction
 	def dbg_func_retaddr(dbg)
-		dbg.memory_read_int(:esp)
+		dbg.memory_read_int(dbg_register_list[7])
 	end
 	def dbg_func_retaddr_set(dbg, ret)
-		dbg.memory_write_int(:esp, ret)
+		dbg.memory_write_int(dbg_register_list[7], ret)
 	end
 
 	# retrieve the current function arguments
-	# only valid at function entry
+	# only valid at function entry (eg right after the call)
 	def dbg_func_arg(dbg, argnr)
-		dbg.memory_read_int(Expression[:esp, :+, 4*argnr])
+		dbg.memory_read_int(Expression[:esp, :+, 4*(argnr+1)])
 	end
 	def dbg_func_arg_set(dbg, argnr, arg)
-		dbg.memory_write_int(Expression[:esp, :+, 4*argnr], arg)
+		dbg.memory_write_int(Expression[:esp, :+, 4*(argnr+1)], arg)
 	end
 end
 end

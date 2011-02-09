@@ -839,6 +839,36 @@ class Debugger
 		@memory[addr, sz] = Expression.encode_imm(val, sz, @cpu)
 	end
 
+	# retrieve an argument (call at a function entrypoint)
+	def func_arg(nr)
+		@cpu.dbg_func_arg(self, nr)
+	end
+	def func_arg_set(nr, val)
+		@cpu.dbg_func_arg_set(self, nr, val)
+	end
+
+	# retrieve a function returned value (call at func exitpoint)
+	def func_retval
+		@cpu.dbg_func_retval(self)
+	end
+	def func_retval_set(val)
+		@cpu.dbg_func_retval_set(self, val)
+	end
+	def func_retval=(val)
+		@cpu.dbg_func_retval_set(self, val)
+	end
+
+	# retrieve a function return address (call at func entry/exit)
+	def func_retaddr
+		@cpu.dbg_func_retaddr(self)
+	end
+	def func_retaddr_set(addr)
+		@cpu.dbg_func_retaddr_set(self, addr)
+	end
+	def func_retaddr=(addr)
+		@cpu.dbg_func_retaddr_set(self, addr)
+	end
+
 	def load_plugin(plugin_filename)
 		if not File.exist? plugin_filename and defined? Metasmdir
 			# try autocomplete
