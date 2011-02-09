@@ -1101,9 +1101,16 @@ EOS
 		end
 	end
 
-	# allocate a C::AllocStruct to hold a specific struct defined in a previous new_api_c
+	# allocate a C::AllocCStruct to hold a specific struct defined in a previous new_api_c
 	def self.alloc_c_struct(structname, values={})
 		cp.alloc_c_struct(structname, values)
+	end
+
+	# return a C::AllocCStruct mapped over the string (with optionnal offset)
+	# str may be an EncodedData
+	def self.decode_c_struct(structname, str, off=0)
+		str = str.data if str.kind_of? EncodedData
+		cp.decode_c_struct(structname, str, off)
 	end
 
 	# return the binary version of a ruby value encoded as a C variable
