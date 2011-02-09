@@ -196,6 +196,8 @@ class ELF
 		# ((gnu_hash(sym[M].name) % C) == B			||
 		# ((gnu_hash(sym[M].name) >> shift2) % C) == B"
 		# bloomfilter may be [~0]
+		if shift2
+		end
 
 		hash_bucket = [] ; hash_bucket_len.times { hash_bucket << decode_word }
 		# bucket[N] contains the lowest M for which
@@ -953,13 +955,7 @@ EOC
 	end
 end
 
-class LoadedELF < ELF
-	attr_accessor :load_address
-	def addr_to_off(addr)
-		@load_address ||= 0
-		addr >= @load_address ? addr - @load_address : addr if addr
-	end
-
+class LoadedELF
 	# decodes the dynamic segment, fills segments.encoded
 	def decode_segments
 		decode_segments_dynamic

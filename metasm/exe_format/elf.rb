@@ -639,6 +639,14 @@ class ELF < ExeFormat
 	def shortname; 'elf'; end
 end
 
+class LoadedELF < ELF
+	attr_accessor :load_address
+	def addr_to_off(addr)
+		@load_address ||= 0
+		addr >= @load_address ? addr - @load_address : addr if addr
+	end
+end
+
 class FatELF < ExeFormat
 	MAGIC = "\xfa\x70\x0e\x1f"	# 0xfat..elf
 
