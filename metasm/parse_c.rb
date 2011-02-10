@@ -2869,28 +2869,34 @@ EOH
 			end
 		end
 
-		def to_s
-			str = []
+		def to_s(off=nil)
+			str = ['']
 			if @struct.kind_of? Struct
-				str << 'struct'
+				str.last << 'struct ' if not off
 				mlist = @struct.fldoffset.sort_by { |k, v| v }.map { |k, v| k }
 			else
-				str << 'union'
+				str.last << 'union ' if not off
 				mlist = @struct.fldlist.keys
 			end
-			str.last << ' ' << @struct.name if @struct.name
-			str.last << ' {'
+			str.last << @struct.name << ' x = ' if @struct.name and not off
+			str.last << '{'
 			mlist.each { |k|
+				curoff = off.to_i + (@struct.fldoffset ? @struct.fldoffset[k].to_i : 0)
 				val = self[k]
 				if val.kind_of? Integer and val > 0x100
-					val = '0x%X' % val
+					val = '0x%X,   // +%x' % [val, curoff]
+				elsif val.kind_of? AllocCStruct
+					val = val.to_s(curoff)
+				elsif not val
+					val = 'NULL,   // +%x' % curoff # pointer with NULL value
 				else
-					val = val.to_s
+					val = val.to_s.sub(/$/, ',   // +%x' % curoff)
 				end
 				val = val.gsub("\n", "\n\t")
-				str << "\t#{k} = #{val}"
+				str << "\t.#{k} = #{val}"
 			}
-			str << '};'
+			str << '}'
+			str.last << (off ? ',' : ';')
 			str.join("\n")
 		end
 	end
