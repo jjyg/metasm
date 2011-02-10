@@ -58,14 +58,16 @@ class ApiHook
 
 		@dbg.bpx(target) {
 			catch(:finish) {
+				@cur_abi = h[:abi]
+				@ret_longlong = h[:ret_longlong]
 				if respond_to? pre
-					@cur_abi = h[:abi]
 					args = read_arglist
 					send pre, *args
 				end
 				if respond_to? post
 					@dbg.bpx(@dbg.func_retaddr, true) {
-						send post, @dbg.func_retval
+						retval = read_ret
+						send post, retval
 					}
 				end
 			}
@@ -91,6 +93,15 @@ class ApiHook
 
 		args
        	end
+
+	# retrieve the function returned value
+	def read_ret
+		ret = @dbg.func_retval
+		if @ret_longlong
+			ret = (ret & 0xffffffff) | (@dbg[:edx] << 32)
+		end
+		ret
+	end
 
 	# patch the value of an argument
 	# only valid in pre_hook
@@ -124,7 +135,7 @@ class ApiHook
 	# patch the function return value
 	# only valid post_hook
 	def patch_ret(val)
-		if false and ret_ia32_longlong
+		if @ret_longlong
 			@dbg.set_reg_value(:edx, (val >> 32) & 0xffffffff)
 			val &= 0xffffffff
 		end
@@ -135,16 +146,16 @@ class ApiHook
 	# only valid in pre_hook
 	def finish(retval)
 		patch_ret(retval)
-		@dbg.ip = @dbg.cpu.dbg_retaddr
+		@dbg.ip = @dbg.func_retaddr
 		case @cur_abi
 		when :fastcall
-			@dbg.sp += 4*(@nargs-2) if @nargs > 2
+			@dbg[:esp] += 4*(@nargs-2) if @nargs > 2
 		when :thiscall
-			@dbg.sp += 4*(@nargs-1) if @nargs > 1
+			@dbg[:esp] += 4*(@nargs-1) if @nargs > 1
 		when :stdcall
-			@dbg.sp += 4*@nargs
+			@dbg[:esp] += 4*@nargs
 		end
-		@dbg.sp += @dbg.cpu.sz/8
+		@dbg.sp += @dbg.cpu.size/8
 		throw :finish
 	end
 end
@@ -153,6 +164,20 @@ end
 
 if __FILE__ == $0
 
+# this is the class you have to define to hook
+# 
+# setup() defines the list of hooks as an array of hashes
+# for exported functions, simply use :function => function name
+# for arbitrary hook, :module => 'module.dll', :rva => 0x1234, :hookname => 'myhook' (call pre_myhook/post_myhook)
+# :abi can be :stdcall (windows standard export), :fastcall or :thiscall, leave empty for cdecl
+# if pre_<function> is defined, it is called whenever the function is entered, via a bpx (int3)
+# if post_<function> is defined, it is called whenever the function exists, with a bpx on the return address setup at func entry
+# the pre_hook receives all arguments to the original function
+#  change them with patch_arg(argnr, newval)
+#  read memory with @dbg.memory_read_int(ptr), or @dbg.memory[ptr, length]
+#  skip the function call with finish(fake_retval) (!) needs a correct :abi & param count !
+# the post_hook receives the function return value
+#  change it with patch_ret(newval)
 class MyHook < ApiHook
 	def setup
 		[{ :function => 'WriteFile', :abi => :stdcall }]
@@ -166,9 +191,12 @@ class MyHook < ApiHook
 		# we can skip the function call with this
 		#finish(28)
 
-		puts "writing #{@dbg.memory[pbuf, size].inspect}"
+		# spy on the api / trace calls
+		bufdata = @dbg.memory[pbuf, size]
+		puts "writing #{bufdata.inspect}"
 
-		# skip first 2 bytes of the buffer
+		# but we can also mess with the args
+		# ex: skip first 2 bytes of the buffer
 		patch_arg(1, pbuf+2)
 		patch_arg(2, size-2)
 		# save values for post_hook
@@ -180,14 +208,14 @@ class MyHook < ApiHook
 		# we can patch the API return value with this
 		#patch_retval(42)
 
-		# retrieve NumberOfBytesWritten
+		# finish messing with the args: fake the nrofbyteswritten
 		written = @dbg.memory_read_int(@pwritten)
 		if written == @size
 			# if written everything, patch the value so that the program dont detect our intervention
 			@dbg.memory_write_int(@pwritten, written+2)
 		end
 
-		puts "write retval: #{retval}, written: #{written}"
+		puts "write retval: #{retval}, written: #{written} bytes"
 	end
 end
 
@@ -196,5 +224,7 @@ Metasm::WinOS.get_debug_privilege
 
 # run our Hook engine on a running 'notepad' instance
 MyHook.new('notepad')
+
+# the script ends when notepad exits
 
 end
