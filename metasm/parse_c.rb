@@ -2868,6 +2868,31 @@ EOH
 				send :[], n, *a
 			end
 		end
+
+		def to_s
+			str = []
+			if @struct.kind_of? Struct
+				str << 'struct'
+				mlist = @struct.fldoffset.sort_by { |k, v| v }.map { |k, v| k }
+			else
+				str << 'union'
+				mlist = @struct.fldlist.keys
+			end
+			str.last << ' ' << @struct.name if @struct.name
+			str.last << ' {'
+			mlist.each { |k|
+				val = self[k]
+				if val.kind_of? Integer and val > 0x100
+					val = '0x%X' % val
+				else
+					val = val.to_s
+				end
+				val = val.gsub("\n", "\n\t")
+				str << "\t#{k} = #{val}"
+			}
+			str << '};'
+			str.join("\n")
+		end
 	end
 
 	class Parser
