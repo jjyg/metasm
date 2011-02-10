@@ -342,6 +342,7 @@ typedef struct _EXCEPTION_POINTERS {
 #define PROCESS_SET_INFORMATION   (0x0200)
 #define PROCESS_QUERY_INFORMATION (0x0400)
 #define PROCESS_SUSPEND_RESUME    (0x0800)
+#define PROCESS_QUERY_LIMITED_INFORMATION (0x1000)
 #define PROCESS_ALL_ACCESS        (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFF)
 
 #define THREAD_TERMINATE               (0x0001)
@@ -353,6 +354,10 @@ typedef struct _EXCEPTION_POINTERS {
 #define THREAD_SET_THREAD_TOKEN        (0x0080)
 #define THREAD_IMPERSONATE             (0x0100)
 #define THREAD_DIRECT_IMPERSONATION    (0x0200)
+#define THREAD_SET_LIMITED_INFORMATION (0x0400)
+#define THREAD_QUERY_LIMITED_INFORMATION (0x0800)
+#define THREAD_ALL_ACCESS         (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x3FF)
+
 
 typedef struct _STARTUPINFOA {
 	DWORD   cb;
@@ -698,6 +703,12 @@ VirtualQueryEx(
 	SIZE_T dwLength	// sizeof lpBuffer
 );
 
+BOOL
+WINAPI
+IsWow64Process(
+	HANDLE hProcess,
+	BOOL *wow64
+);
 
 EOS
 
@@ -805,6 +816,115 @@ GetModuleFileNameExA(
 	DWORD nSize);
 EOS
  
+	new_api_c <<EOS, 'ntdll'
+#line #{__LINE__}
+
+typedef LONG NTSTATUS;
+
+typedef enum _PROCESSINFOCLASS {
+    ProcessBasicInformation,
+    ProcessQuotaLimits,
+    ProcessIoCounters,
+    ProcessVmCounters,
+    ProcessTimes,
+    ProcessBasePriority,
+    ProcessRaisePriority,
+    ProcessDebugPort,
+    ProcessExceptionPort,
+    ProcessAccessToken,
+    ProcessLdtInformation,
+    ProcessLdtSize,
+    ProcessDefaultHardErrorMode,
+    ProcessIoPortHandlers,
+    ProcessPooledUsageAndLimits,
+    ProcessWorkingSetWatch,
+    ProcessUserModeIOPL,
+    ProcessEnableAlignmentFaultFixup,
+    ProcessPriorityClass,
+    ProcessWx86Information,
+    ProcessHandleCount,
+    ProcessAffinityMask,
+    ProcessPriorityBoost,
+    ProcessDeviceMap,
+    ProcessSessionInformation,
+    ProcessForegroundInformation,
+    ProcessWow64Information,
+    ProcessImageFileName,
+    ProcessLUIDDeviceMapsEnabled,
+    ProcessBreakOnTermination,
+    ProcessDebugObjectHandle,
+    ProcessDebugFlags,
+    ProcessHandleTracing
+} PROCESSINFOCLASS;
+
+typedef enum _THREADINFOCLASS {
+    ThreadBasicInformation,
+    ThreadTimes,
+    ThreadPriority,
+    ThreadBasePriority,
+    ThreadAffinityMask,
+    ThreadImpersonationToken,
+    ThreadDescriptorTableEntry,
+    ThreadEnableAlignmentFaultFixup,
+    ThreadEventPair_Reusable,
+    ThreadQuerySetWin32StartAddress,
+    ThreadZeroTlsCell,
+    ThreadPerformanceCount,
+    ThreadAmILastThread,
+    ThreadIdealProcessor,
+    ThreadPriorityBoost,
+    ThreadSetTlsArrayAddress,
+    ThreadIsIoPending,
+    ThreadHideFromDebugger,
+    ThreadBreakOnTermination
+} THREADINFOCLASS;
+
+typedef struct _CLIENT_ID {
+    HANDLE UniqueProcess;
+    HANDLE UniqueThread;
+} CLIENT_ID;
+
+typedef struct _PROCESS_BASIC_INFORMATION {
+    PVOID Reserved1;
+    PVOID PebBaseAddress;
+    PVOID Reserved2[2];
+    ULONG_PTR UniqueProcessId;
+    PVOID Reserved3;
+} PROCESS_BASIC_INFORMATION;
+
+typedef struct _THREAD_BASIC_INFORMATION {
+    NTSTATUS ExitStatus;
+    PVOID TebBaseAddress;
+    CLIENT_ID ClientId;
+    ULONG_PTR AffinityMask;
+    LONG Priority;
+    LONG BasePriority;
+} THREAD_BASIC_INFORMATION;
+
+ZEROOK
+NTSTATUS
+WINAPI
+NtQueryInformationProcess(
+	HANDLE ProcessHandle,
+	PROCESSINFOCLASS ProcessInformationClass,
+	PVOID ProcessInformation,
+	ULONG ProcessInformationLength,
+	ULONG *ReturnLength
+);
+
+ZEROOK
+NTSTATUS
+WINAPI
+NtQueryInformationThread (
+	HANDLE ThreadHandle,
+	THREADINFOCLASS ThreadInformationClass,
+	PVOID ThreadInformation,
+	ULONG ThreadInformationLength,
+	ULONG *ReturnLength
+);
+
+EOS
+
 	# convert a native function return value
 	# if the native does not have the zero_not_fail attribute, convert 0
 	#  to nil, and print a message on stdout
@@ -849,8 +969,21 @@ class WinOS < OS
 		def debugger=(d) @debugger = d end
 
 		# returns the memory address size of the target process
-		# hardcoded to 32 for now
-		def addrsz; 32 ; end
+		def addrsz
+			sz = WinAPI.host_cpu.size
+			return sz if not WinAPI.respond_to?(:iswow64process)
+			byte = 0.chr*8
+			if WinAPI.iswow64process(handle, byte)
+				if byte != 0.chr*8
+					return 32 # target = wow64
+				elsif WinAPI.iswow64process(WinAPI.getcurrentprocess, byte)
+					if byte != 0.chr*8
+						return 64 # us = wow64, target is not
+					end
+				end
+			end
+			sz
+		end
 
 		# retrieve the process Module list from EnumProcessModules & GetModuleFileNameExA
 		# returns nil if we couldn't openprocess
@@ -888,7 +1021,7 @@ class WinOS < OS
 			te = WinAPI.alloc_c_struct('THREADENTRY32', :dwsize => :size)
 			return if not WinAPI.thread32first(h, te)
 			loop do
-				list << te['th32threadid'] if te['th32ownerprocessid'] == pid
+				list << te['th32threadid'] if te['th32ownerprocessid'] == @pid
 				break if not WinAPI.thread32next(h, te)
 			end
 			WinAPI.closehandle(h)
@@ -900,6 +1033,8 @@ class WinOS < OS
 			addr = 0
 			list = []
 			info = WinAPI.alloc_c_struct("MEMORY_BASIC_INFORMATION#{addrsz}")
+
+			# TODO spot heaps (snapshot)
 
 			while WinAPI.virtualqueryex(handle, addr, info, info.length)
 				addr += info[:regionsize]
@@ -922,6 +1057,54 @@ class WinOS < OS
 			end
 
 			list
+		end
+
+		def peb_base
+			pinfo = WinAPI.alloc_c_struct('PROCESS_BASIC_INFORMATION')
+			if WinAPI.ntqueryinformationprocess(handle, WinAPI::PROCESSBASICINFORMATION, pinfo, pinfo.length, 0) == 0
+				pinfo.pebbaseaddress
+			end
+		end
+
+		def terminate(exitcode=0)
+			WinAPI.terminateprocess(handle, exitcode)
+		end
+	end
+
+	class Thread
+		attr_accessor :tid
+
+		def initialize(tid, handle=nil)
+			@tid = tid
+			@handle = handle
+		end
+
+		def handle
+			@handle ||= WinAPI.openthread(WinAPI::THREAD_ALL_ACCESS, 0, @tid)
+		end
+		def handle=(h) @handle = h end
+
+		def teb_base
+			tinfo = WinAPI.alloc_c_struct('THREAD_BASIC_INFORMATION')
+			if WinAPI.ntqueryinformationthread(handle, WinAPI::THREADBASICINFORMATION, tinfo, tinfo.length, 0) == 0
+				tinfo.tebbaseaddress
+			end
+		end
+
+		def suspend
+			WinAPI.suspendthread(handle)
+		end
+
+		def resume
+			WinAPI.resumethread(handle)
+		end
+
+		def terminate(exitcode=0)
+			WinAPI.terminatethread(handle, exitcode)
+		end
+
+		def context
+			@context ||= WinDbgAPI::Context.new(handle, WinAPI::CONTEXT86_FULL | WinAPI::CONTEXT86_DEBUG_REGISTERS)
 		end
 	end
 
@@ -1023,6 +1206,14 @@ class << self
 		if h = WinAPI.openprocess(WinAPI::PROCESS_QUERY_INFORMATION, 0, pid)	# check liveness
 			WinAPI.closehandle(h)
 			Process.new(pid)
+		end
+	end
+
+	# returns the Thread associated to a tid if it is alive
+	def open_thread(tid)
+		if h = WinAPI.openthread(WinAPI::THREAD_QUERY_INFORMATION, 0, tid)
+			WinAPI.closehandle(h)
+			Thread.new(tid)
 		end
 	end
 end	# class << self
@@ -1162,6 +1353,15 @@ class WinDbgAPI
 			h = {}
 			OFFSETS.each_key { |k| h[k] = self[k] }
 			h
+		end
+
+		def method_missing(n, *a)
+			n = n.to_s
+			if n[-1] == ?=
+				send :[]=, n[0...-1].to_sym, *a
+			else
+				send :[], n.to_sym
+			end
 		end
 	end
 
