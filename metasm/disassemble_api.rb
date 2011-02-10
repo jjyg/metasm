@@ -180,6 +180,7 @@ class Disassembler
 		}
 		ret
 	end
+	alias instructionblocks each_instructionblock
 
 	# reads len raw bytes from the mmaped address space
 	def read_raw_data(addr, len)
