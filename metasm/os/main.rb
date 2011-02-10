@@ -356,14 +356,26 @@ class Debugger
 		disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate }
 	end
 
-	# retreive the value of the program counter register
+	# retreive the value of the program counter register (eip)
 	def pc
 		get_reg_value(register_pc)
 	end
+	alias ip pc
 
 	# change the value of pc
 	def pc=(v)
 		set_reg_value(register_pc, v)
+	end
+	alias ip= pc=
+
+	# retrieve the value of the stack pointer register
+	def sp
+		get_reg_value(register_sp)
+	end
+
+	# update the stack pointer
+	def sp=(v)
+		set_reg_value(register_sp, v)
 	end
 
 	# checks stuff before letting the target run
@@ -566,6 +578,11 @@ class Debugger
 	# retrieves the name of the register holding the program counter (address of the next instruction)
 	def register_pc
 		@cpu.dbg_register_pc
+	end
+
+	# retrieve the name of the register holding the stack pointer
+	def register_sp
+		@cpu.dbg_register_sp
 	end
 
 	# then name of the register holding the flags

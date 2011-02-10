@@ -11,6 +11,9 @@ class Ia32
 	def dbg_register_pc
 		@dbg_register_pc ||= :eip
 	end
+	def dbg_register_sp
+		@dbg_register_sp ||= dbg_register_list[7]
+	end
 	def dbg_register_flags
 		@dbg_register_flags ||= :eflags
 	end
