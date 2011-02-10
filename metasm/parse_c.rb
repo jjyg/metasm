@@ -2935,6 +2935,7 @@ EOH
 
 		def decode_c_value(str, type, off=0)
 			type = type.type if type.kind_of? Variable
+			type = type.untypedef
 			if type.kind_of? Union
 				return AllocCStruct.new(self, type, str, off)
 			end
