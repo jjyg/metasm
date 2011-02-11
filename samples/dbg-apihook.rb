@@ -67,7 +67,7 @@ class ApiHook
 				if respond_to? post
 					@dbg.bpx(@dbg.func_retaddr, true) {
 						retval = read_ret
-						send post, retval
+						send post, retval, args
 					}
 				end
 			}
@@ -199,20 +199,18 @@ class MyHook < ApiHook
 		# ex: skip first 2 bytes of the buffer
 		patch_arg(1, pbuf+2)
 		patch_arg(2, size-2)
-		# save values for post_hook
-		@size = size
-		@pwritten = pwritten
 	end
 
-	def post_WriteFile(retval)
+	def post_WriteFile(retval, arglistcopy)
 		# we can patch the API return value with this
 		#patch_retval(42)
 
 		# finish messing with the args: fake the nrofbyteswritten
-		written = @dbg.memory_read_int(@pwritten)
-		if written == @size
+		handle, pbuf, size, pwritten, overlap = arglistcopy
+		written = @dbg.memory_read_int(pwritten)
+		if written == size
 			# if written everything, patch the value so that the program dont detect our intervention
-			@dbg.memory_write_int(@pwritten, written+2)
+			@dbg.memory_write_int(pwritten, written+2)
 		end
 
 		puts "write retval: #{retval}, written: #{written} bytes"
