@@ -237,6 +237,17 @@ class Disassembler
 		end
 	end
 
+	# disassemble addr as if the code flow came from from_addr
+	def disassemble_from(addr, from_addr)
+		from_addr = from_addr.address if from_addr.kind_of? DecodedInstruction
+		from_addr = normalize(from_addr)
+		if b = block_at(from_addr)
+			b.add_to_normal(addr)
+		end
+		@addrs_todo << [addr, from_addr]
+		disassemble
+	end
+
 	# returns the label associated to an addr, or nil if none exist
 	def get_label_at(addr)
 		e, b = get_section_at(addr, false)
