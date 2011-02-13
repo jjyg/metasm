@@ -2860,11 +2860,12 @@ EOH
 		# virtual accessors to members
 		# struct.foo is aliased to struct['foo'],
 		# struct.foo = 42 aliased to struct['foo'] = 42
-		def method_missing(n, *a)
-			n = n.to_s
+		def method_missing(on, *a)
+			n = on.to_s
 			if n[-1] == ?=
 				send :[]=, n[0...-1], *a
 			else
+				super(on, *a) if not @struct.findmember(n, true)
 				send :[], n, *a
 			end
 		end
