@@ -211,7 +211,7 @@ class Ia32
 			when :reg_cl;   Reg.new 1, 8
 			when :reg_eax;  Reg.new 0, opsz
 			when :reg_dx;   Reg.new 2, 16
-			when :regfp0;   FpReg.new nil	# implicit?
+			when :regfp0;   FpReg.new nil
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}

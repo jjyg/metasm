@@ -171,7 +171,7 @@ class X86_64
 				else
 					rex_b = ia.val_rex
 				end
-			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regxmm
+			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regxmm
 				set_field[oa, ia.val & 7]
 				rex_r = 1 if ia.val > 7
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0

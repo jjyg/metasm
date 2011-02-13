@@ -28,11 +28,9 @@ class X86_64
 
 	# all x86_64 cpu understand <= sse2 instrs
 	def init_x8664_only
-		# TODO XXX mov i64 ?
-		# should undef all those
 		init_386_common_only
 		init_386_only
-		# 387 is dead!
+		init_387_only	# 387 indeed
 		init_486_only
 		init_pentium_only
 		init_p6_only
@@ -42,7 +40,6 @@ class X86_64
 		@opcode_list.delete_if { |o|
 			o.args.include? :modrmmmx or	# mmx is dead!
 			o.args.include? :regmmx or	# movd
-			o.args.include? :regfp or	# no fpu beyond this line
 			o.name == 'loadall' or
 			o.name == 'arpl'
 		}
@@ -81,7 +78,7 @@ class X86_64
 	end
 
 	def addop_post(op)
-		if op.fields[:d] or op.fields[:w] or op.fields[:s]
+		if op.fields[:d] or op.fields[:w] or op.fields[:s] or op.args.first == :regfp0
 			return super(op)
 		end
 

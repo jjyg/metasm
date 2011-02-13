@@ -11,10 +11,8 @@ module Metasm
 
 # The x86_64, 64-bit extension of the x86 CPU (x64, em64t, amd64...)
 class X86_64 < Ia32
-	# SegReg, Farptr unchanged
-
-	# no more floating point registers (use sse*)
-	FpReg = nil
+	# FpReg, SegReg, Farptr unchanged
+	# XXX ST(15) ?
 
 	# Simd extended to 16 regs, xmm only (mmx gone with 80387)
 	class SimdReg < Ia32::SimdReg

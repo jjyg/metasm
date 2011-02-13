@@ -120,12 +120,13 @@ class X86_64
 			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx[:seg], Reg, pfx
 			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg, pfx
 
+			when :regfp;  FpReg.new   field_val[a]
 			when :imm_val1; Expression[1]
 			when :imm_val3; Expression[3]
 			when :reg_cl;   Reg.new 1, 8
 			when :reg_eax;  Reg.new 0, opsz
 			when :reg_dx;   Reg.new 2, 16
-			#when :regfp0;   FpReg.new nil	# implicit?
+			when :regfp0;   FpReg.new nil
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}

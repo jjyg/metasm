@@ -245,6 +245,7 @@ class Ia32
 		addop 'fabs',  [0xD9, 0xE1]
 		addop_macrofpu1 'fadd',  0
 		addop 'faddp', [0xDE, 0xC0], :regfp
+		addop 'faddp', [0xDE, 0xC1]
 		addop('fbld',  [0xDF, 4<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 80 }
 		addop('fbstp', [0xDF, 6<<3], :modrmA, {}, :regfp0) { |o| o.props[:argsz] = 80 }
 		addop 'fchs',  [0xD9, 0xE0], nil,  {}, :regfp0
@@ -258,7 +259,9 @@ class Ia32
 		addop_macrofpu1 'fdiv', 6
 		addop_macrofpu1 'fdivr', 7
 		addop 'fdivp', [0xDE, 0xF8], :regfp
+		addop 'fdivp', [0xDE, 0xF9]
 		addop 'fdivrp',[0xDE, 0xF0], :regfp
+		addop 'fdivrp',[0xDE, 0xF1]
 		addop 'ffree', [0xDD, 0xC0], nil,  {:regfp  => [1, 0]}, :regfp
 		addop_macrofpu2 'fiadd', 0
 		addop_macrofpu2 'fimul', 1
@@ -289,6 +292,7 @@ class Ia32
 		addop 'fldz',   [0xD9, 0xEE]
 		addop_macrofpu1 'fmul',  1
 		addop 'fmulp',  [0xDE, 0xC8], :regfp
+		addop 'fmulp',  [0xDE, 0xC9]
 		addop 'fnop',   [0xD9, 0xD0]
 		addop 'fpatan', [0xD9, 0xF3]
 		addop 'fprem',  [0xD9, 0xF8]
@@ -314,8 +318,10 @@ class Ia32
 		addop 'fstp', [0xDD, 0xD8], :regfp
 		addop_macrofpu1 'fsub',  4
 		addop 'fsubp',  [0xDE, 0xE8], :regfp
+		addop 'fsubp',  [0xDE, 0xE9]
 		addop_macrofpu1 'fsubp', 5
 		addop 'fsubrp', [0xDE, 0xE0], :regfp
+		addop 'fsubrp', [0xDE, 0xE1]
 		addop 'ftst',   [0xD9, 0xE4]
 		addop 'fucom',  [0xDD, 0xE0], :regfp
 		addop 'fucomp', [0xDD, 0xE8], :regfp
@@ -825,7 +831,7 @@ class Ia32
 			addop_post op8
 
 			return
-		elsif op.args.include? :regfp0
+		elsif op.args.first == :regfp0
 			dop = dupe[op]
 			dop.args.delete :regfp0
 			addop_post dop
