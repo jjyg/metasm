@@ -375,7 +375,7 @@ class CCompiler < C::Compiler
 		when :-
 			r = c_cexpr_inner(expr.rexpr)
 			r = make_volatile(r, expr.type)
-			if expr.type.integral?
+			if expr.type.integral? or expr.type.pointer?
 				if r.kind_of? Composite
 					instr 'neg', r.low
 					instr 'adc', r.high, Expression[0]
@@ -391,8 +391,8 @@ class CCompiler < C::Compiler
 		when :'++', :'--'
 			r = c_cexpr_inner(expr.rexpr)
 			inc = true if expr.op == :'++'
-			if expr.type.integral?
-				if expr.type.name == :__int64 and @cpusz != 64
+			if expr.type.integral? or expr.type.pointer?
+				if expr.type.integral? and expr.type.name == :__int64 and @cpusz != 64
 					rl, rh = get_composite_parts r
 					instr 'add', rl, Expression[inc ? 1 : -1]
 					instr 'adc', rh, Expression[inc ? 0 : -1]
@@ -440,8 +440,8 @@ class CCompiler < C::Compiler
 		when :'!'
 			r = c_cexpr_inner(expr.rexpr)
 			r = make_volatile(r, expr.rexpr.type)
-			if expr.rexpr.type.integral?
-				if expr.rexpr.type.name == :__int64 and @cpusz != 64
+			if expr.rexpr.type.integral? or expr.type.pointer?
+				if expr.type.integral? and expr.rexpr.type.name == :__int64 and @cpusz != 64
 					raise # TODO
 				end
 				r = make_volatile(r, expr.rexpr.type)
@@ -563,9 +563,9 @@ class CCompiler < C::Compiler
 				instr 'and', r, Expression[(1<<tto)-1] if r.sz > tto
 			end
 			inuse r
-		elsif expr.type.integral? and expr.rexpr.type.integral?
-			tto   = typesize[expr.type.name]*8
-			tfrom = typesize[expr.rexpr.type.name]*8
+		elsif (expr.type.integral? or expr.type.pointer?) and (expr.rexpr.type.integral? or expr.rexpr.type.pointer?)
+			tto   = typesize[expr.type.integral? ? expr.type.name : :ptr]*8
+			tfrom = typesize[expr.rexpr.type.integral? ? expr.rexpr.type.name : :ptr]*8
 			r = resolve_address r if r.kind_of? Address
 			if r.kind_of? Expression
 				r = make_volatile r, expr.type
@@ -631,6 +631,7 @@ class CCompiler < C::Compiler
 			l
 		when :'+', :'-', :'*', :'/', :'%', :'^', :'&', :'|', :'<<', :'>>'
 			# both sides are already cast to the same type by the precompiler
+			# XXX expr.type.pointer?
 			if expr.type.integral? and expr.type.name == :ptr and expr.lexpr.type.kind_of? C::BaseType and
 				typesize[expr.lexpr.type.name] == typesize[:ptr]
 				expr.lexpr.type.name = :ptr
@@ -744,8 +745,8 @@ class CCompiler < C::Compiler
 			r = resolve_address r if r.kind_of? Address
 			r = make_volatile(r, expr.type) if l.kind_of? ModRM and r.kind_of? ModRM
 			unuse r
-			if expr.type.integral?
-				if expr.type.name == :__int64 and @cpusz != 64
+			if expr.type.integral? or expr.type.pointer?
+				if expr.type.integral? and expr.type.name == :__int64 and @cpusz != 64
 					ll, lh = get_composite_parts l
 					rl, rh = get_composite_parts r
 					instr 'mov', ll, rl
@@ -787,8 +788,8 @@ class CCompiler < C::Compiler
 			l = make_volatile(l, expr.type)
 			r = c_cexpr_inner(expr.rexpr)
 			unuse r
-			if expr.lexpr.type.integral?
-				if expr.lexpr.type.name == :__int64 and @cpusz != 64
+			if expr.lexpr.type.integral? or expr.lexpr.type.pointer?
+				if expr.lexpr.type.integral? and expr.lexpr.type.name == :__int64 and @cpusz != 64
 					raise # TODO
 				end
 				instr 'cmp', l, r
