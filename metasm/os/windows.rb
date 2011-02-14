@@ -672,6 +672,32 @@ Thread32Next(
 	LPTHREADENTRY32 lpte
 );
 
+typedef struct tagHEAPLIST32
+{
+	SIZE_T dwSize;
+	DWORD  th32ProcessID;   // owning process
+	ULONG_PTR  th32HeapID;      // heap (in owning process context!)
+	DWORD  dwFlags;
+} HEAPLIST32, LPHEAPLIST32;
+
+#define HF32_DEFAULT      1  // process default heap
+#define HF32_SHARED       2  // is shared heap
+
+BOOL
+WINAPI
+Heap32ListFirst(
+     HANDLE hSnapshot,
+     LPHEAPLIST32 lphl
+);
+
+BOOL
+WINAPI
+Heap32ListNext(
+     HANDLE hSnapshot,
+     LPHEAPLIST32 lphl
+);
+
+
 typedef struct _MEMORY_BASIC_INFORMATION32 {
 	DWORD BaseAddress;
 	DWORD AllocationBase;
@@ -1021,11 +1047,32 @@ class WinOS < OS
 			te = WinAPI.alloc_c_struct('THREADENTRY32', :dwsize => :size)
 			return if not WinAPI.thread32first(h, te)
 			loop do
-				list << te['th32threadid'] if te['th32ownerprocessid'] == @pid
+				list << te.th32threadid if te.th32ownerprocessid == @pid
 				break if not WinAPI.thread32next(h, te)
 			end
 			WinAPI.closehandle(h)
 			list
+		end
+
+		# returns the heaps of the process, from a toolhelp snapshot SNAPHEAPLIST
+		# this is a hash, key = heap base addr
+		# heap_addr => { :flags => integer (heap flags)
+		#                :shared => bool (from flags)
+		#                :default => bool (from flags) }
+		def heaps
+			h = WinAPI.createtoolhelp32snapshot(WinAPI::TH32CS_SNAPHEAPLIST, @pid)
+			ret = {}
+			he = WinAPI.alloc_c_struct('HEAPLIST32', :dwsize => :size)
+			return if not WinAPI.heap32listfirst(h, he)
+			loop do
+				hash = ret[he.th32heapid] = { :flags => he.dwflags }
+				hash[:default] = true if hash[:flags] & WinAPI::HF32_DEFAULT == WinAPI::HF32_DEFAULT
+				hash[:shared]  = true if hash[:flags] & WinAPI::HF32_SHARED  == WinAPI::HF32_SHARED
+				# TODO there are lots of other flags in there ! like 0x1000 / 0x8000
+				break if not WinAPI.heap32listnext(h, he)
+			end
+			WinAPI.closehandle(h)
+			ret
 		end
 
 		# return a list of [addr_start, length, perms]
@@ -1034,11 +1081,11 @@ class WinOS < OS
 			list = []
 			info = WinAPI.alloc_c_struct("MEMORY_BASIC_INFORMATION#{addrsz}")
 
-			# TODO spot heaps (snapshot)
+			hcache = heaps
 
 			while WinAPI.virtualqueryex(handle, addr, info, info.length)
-				addr += info[:regionsize]
-				next unless info[:state] & WinAPI::MEM_COMMIT > 0
+				addr += info.regionsize
+				next unless info.state & WinAPI::MEM_COMMIT > 0
 
 				prot = {
 					WinAPI::PAGE_NOACCESS => '---',
@@ -1053,7 +1100,18 @@ class WinOS < OS
 				prot << 'g' if info[:protect] & WinAPI::PAGE_GUARD > 0
 				prot << 'p' if info[:type]    & WinAPI::MEM_PRIVATE > 0
 
-				list << [info[:baseaddress], info[:regionsize], prot]
+				if h = hcache[info.baseaddress]
+					a = []
+					a << 'default' if h[:default]
+					a << 'shared' if h[:shared]
+					a << 'heap'
+					#a << h[:flags].to_s(16)
+					cmt = '[' + a.join(' ') + ']'
+				else
+					cmt = ''
+				end
+
+				list << [info.baseaddress, info.regionsize, prot, cmt]
 			end
 
 			list
