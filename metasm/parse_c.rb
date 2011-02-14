@@ -2791,8 +2791,9 @@ EOH
 		# str is a reference to the underlying ruby String
 		# stroff is the offset from the start of this string (non-nul for nested structs)
 		# cp is a reference to the C::Parser
-		# struct to the C::Union/Struct
+		# struct to the C::Union/Struct/Array
 		# length is the byte size of the C struct
+		# XXX for an Array, it's also the byte size, check obj.struct.length for number of elements
 		attr_accessor :str, :stroff, :cp, :struct, :length
 		def initialize(cp, struct, str=nil, stroff=0)
 			@cp, @struct = cp, struct
@@ -2802,6 +2803,13 @@ EOH
 		end
 
 		def [](*a)
+			if @struct.kind_of? C::Array and a.length == 1 and @struct.length and a[0].kind_of? Integer
+				i = a[0]
+				raise "#{i} out of bounds 0...#{@struct.length}" if  i < 0 or i >= @struct.length
+				off = @stroff + i*@cp.sizeof(@struct.type)
+				return @cp.decode_c_value(@str, @struct.type, off)
+			end
+
 			return @str[@stroff..-1][*a] if not a.first.kind_of? Symbol and not a.first.kind_of? String
 			fld = a.first
 			raise "#{fld.inspect} not a member" if not f = @struct.findmember(fld.to_s, true)
@@ -2816,6 +2824,15 @@ EOH
 		end
 
 		def []=(*a)
+			if @struct.kind_of? C::Array and a.length == 2 and @struct.length and a[0].kind_of? Integer
+				i = a[0]
+				raise "#{i} out of bounds 0...#{@struct.length}" if  i < 0 or i >= @struct.length
+				off = @stroff + i*@cp.sizeof(@struct.type)
+				val = @cp.encode_c_value(@struct.type, a[1])
+				@str[off, val.length] = val
+				return
+			end
+
 			if not a.first.kind_of? Symbol and not a.first.kind_of? String
 				# patch @str[@stroff..-1] like a string
 				# so we must find the intended start offset, and add @stroff to it
@@ -2872,17 +2889,24 @@ EOH
 
 		def to_s(off=nil)
 			str = ['']
-			if @struct.kind_of? Struct
+			if @struct.kind_of? C::Array
+				str.last << "#{@struct.type} x[#{@struct.length}] = " if not off
+				off ||= 0
+				mlist = (0...@struct.length)
+				fldoff = mlist.inject({}) { |h, i| h.update i => i*@cp.sizeof(@struct.type) }
+			elsif @struct.kind_of? C::Struct
 				str.last << 'struct ' if not off
-				mlist = @struct.fldoffset.sort_by { |k, v| v }.map { |k, v| k }
+				fldoff = @struct.fldoffset
+				fbo = @struct.fldbitoffset || {}
+				mlist = fldoff.keys.sort_by { |k| [fldoff[k], fbo[k]] }
 			else
 				str.last << 'union ' if not off
 				mlist = @struct.fldlist.keys
 			end
-			str.last << @struct.name << ' x = ' if @struct.name and not off
+			str.last << @struct.name << ' x = ' if not off and @struct.name
 			str.last << '{'
 			mlist.each { |k|
-				curoff = off.to_i + (@struct.fldoffset ? @struct.fldoffset[k].to_i : 0)
+				curoff = off.to_i + (fldoff ? fldoff[k].to_i : 0)
 				val = self[k]
 				if val.kind_of? Integer and val > 0x100
 					val = '0x%X,   // +%x' % [val, curoff]
@@ -2894,7 +2918,7 @@ EOH
 					val = val.to_s.sub(/$/, ',   // +%x' % curoff)
 				end
 				val = val.gsub("\n", "\n\t")
-				str << "\t.#{k} = #{val}"
+				str << "\t#{k.kind_of?(Integer) ? "[#{k}]" : ".#{k}"} = #{val}"
 			}
 			str << '}'
 			str.last << (off ? ',' : ';')
@@ -2903,8 +2927,6 @@ EOH
 	end
 
 	class Parser
-		# TODO alloc_c_ptr to allocate a buffer of sizeof(arg) and return a ptr to it ( ReadFile(..., &lengthRead) )
-
 		# find a Struct/Union object from a struct name/typedef name
 		# raises if it cant find it
 		def find_c_struct(structname)
@@ -2912,12 +2934,35 @@ EOH
 			if structname.kind_of?(::String) and not struct = @toplevel.struct[structname]
 				struct = @toplevel.symbol[structname]
 				raise "unknown struct #{structname.inspect}" if not struct
-				struct = struct.type
+				struct = struct.type.untypedef
 				struct = struct.pointed while struct.pointer?
-				raise "unknown struct #{structname.inspect}" if not struct.kind_of? Union
+				raise "unknown struct #{structname.inspect}" if not struct.kind_of? C::Union
 			end
-			struct = structname if structname.kind_of? Union
+			struct = structname if structname.kind_of? C::Union
+			raise "unknown struct #{structname.inspect}" if not struct.kind_of? C::Union
 			struct
+		end
+
+		# find a C::Type (struct/union/typedef/basetype) from a string
+		def find_c_type(typename)
+			typename = typename.to_s if typename.kind_of? ::Symbol
+			if typename.kind_of?(::String) and not type = @toplevel.struct[typename]
+				if type = @toplevel.symbol[typename]
+					type = type.type.untypedef
+				else
+					begin
+						lexer.feed(typename)
+						b = C::Block.new(@toplevel)
+						var = Variable.parse_type(self, b)
+						var.parse_declarator(self, b)
+						type = var.type
+					rescue
+					end
+				end
+			end
+			type = typename if typename.kind_of?(C::Type)
+			raise "unknown type #{typename.inspect}" if not type.kind_of? C::Type
+			type
 		end
 
 		# allocate a new AllocCStruct from the struct/struct typedef name of the current toplevel
@@ -2934,6 +2979,28 @@ EOH
 		# modification to the structure will modify the underlying string
 		def decode_c_struct(structname, str, offset=0)
 			struct = find_c_struct(structname)
+			AllocCStruct.new(self, struct, str, offset)
+		end
+
+		# allocate an array of types
+		# init is either the length of the array, or an array of initial values
+		def alloc_c_ary(typename, init=1)
+			type = find_c_type(typename)
+			len = init.kind_of?(Integer) ? init : init.length
+			struct = C::Array.new(type, len)
+			st = AllocCStruct.new(self, struct)
+			if init.kind_of?(::Array)
+				init.each_with_index { |v, i|
+					st[i] = v
+				}
+			end
+			st
+		end
+
+		# "cast" a string to C::Array
+		def decode_c_ary(typename, len, str, offset=0)
+			type = find_c_type(typename)
+			struct = C::Array.new(type, len)
 			AllocCStruct.new(self, struct, str, offset)
 		end
 
@@ -2968,7 +3035,7 @@ EOH
 		def decode_c_value(str, type, off=0)
 			type = type.type if type.kind_of? Variable
 			type = type.untypedef
-			if type.kind_of? Union
+			if type.kind_of? C::Union or type.kind_of? C::Array
 				return AllocCStruct.new(self, type, str, off)
 			end
 			val = Expression.decode_immediate(str, sizeof(type), @endianness, off)

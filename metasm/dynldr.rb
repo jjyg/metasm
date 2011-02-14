@@ -1113,6 +1113,25 @@ EOS
 		cp.decode_c_struct(structname, str, off)
 	end
 
+	# allocate a C::AllocCStruct holding an Array of typename variables
+	# if len is an int, it holds the ary length, or it can be an array of initialisers
+	# eg alloc_c_ary("int", [4, 5, 28])
+	def self.alloc_c_ary(typename, len)
+		cp.alloc_c_ary(typename, len)
+	end
+
+	# return a C::AllocCStruct holding an array of type typename mapped over str
+	def self.decode_c_ary(typename, len, str, off=0)
+		cp.decode_c_ary(typename, len, str, off)
+	end
+
+	# return an AllocCStruct holding an array of 1 element of type typename
+	# access its value with obj[0]
+	# useful when you need a pointer to an int that will be filled by an API: use alloc_c_ptr('int')
+	def self.alloc_c_ptr(typename, init=nil)
+		cp.alloc_c_ary(typename, (init ? [init] : 1))
+	end
+
 	# return the binary version of a ruby value encoded as a C variable
 	# only integral types handled for now
 	def self.encode_c_value(var, val)
