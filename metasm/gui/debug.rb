@@ -696,7 +696,7 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('bl', 'list breakpoints') {
 			i = -1
 			@dbg.breakpoint.sort.each { |a, b|
-				add_log "#{i+=1} #{Expression[a]} #{b.type} #{b.state}#{" if #{b.condition}" if b.condition}#{' do {}' if b.action}"
+				add_log "#{i+=1} #{@dbg.addrname!(a)} #{b.type} #{b.state}#{" if #{b.condition}" if b.condition}#{' do {}' if b.action}"
 			}
 		}
 		new_command('bc', 'clear breakpoints') { |arg|
