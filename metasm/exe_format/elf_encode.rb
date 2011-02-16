@@ -717,7 +717,7 @@ class ELF
 			end
 		end
 		r.addend = Expression[rel.target]
-		section.encoded.reloc.delete off
+		#section.encoded.reloc.delete off
 		@relocations << r
 	end
 
