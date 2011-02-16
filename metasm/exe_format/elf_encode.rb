@@ -687,7 +687,11 @@ class ELF
 		r.offset = Expression[label_at(section.encoded, 0, 'sect_start'), :+, off]
 		if Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of?(::Integer)
 			# this location is relative to the base load address of the ELF
-			r.type = 'RELATIVE'	# XXX 32 or 64bit field ?
+			if rel.length != 8
+				puts "ELF: x86_64_create_reloc: ignoring reloc #{rel.target} in #{section.name}: relative non-x64" if $VERBOSE
+				return
+			end
+			r.type = 'RELATIVE'
 		else
 			et = rel.target.externals
 			extern = et.find_all { |name| not binding[name] }
@@ -712,6 +716,8 @@ class ELF
 				return
 			end
 		end
+		r.addend = Expression[rel.target]
+		section.encoded.reloc.delete off
 		@relocations << r
 	end
 
