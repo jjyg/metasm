@@ -1322,15 +1322,29 @@ class ELF
 			@header.entry = '_start'
 		elsif @sections.find { |s| s.encoded and s.encoded.export['main'] }
 			# entrypoint stack: [sp] = argc, [sp+1] = argv0, [sp+2] = argv1, [sp+argc+1] = 0, [sp+argc+2] = envp0, etc
-			compile_c case @cpu.shortname
-			when 'ia32'; <<EOS
-__stdcall int main(int, char **, char **);
-void _exit(int);
-void _start(char *argv0) {
-	_exit(main(*(int*)(&argv0-1), &argv0, &argv0 + *(int*)(&argv0-1) + 1 ));
-}
+			case @cpu.shortname
+			when 'ia32'; assemble <<EOS
+_start:
+mov eax, [esp]
+lea ecx, [esp+4+4*eax+4]
+push ecx
+lea ecx, [esp+4+4]
+push ecx
+push eax
+call main
+push eax
+call _exit
 EOS
-			else <<EOS
+			when 'x64'; assemble <<EOS
+_start:
+mov rdi, [rsp]
+lea rsi, [rsp+8]
+lea rdx, [rsi+8*rdi+8]
+call main
+mov rdi, rax
+call _exit
+EOS
+			else compile_c <<EOS
 void _exit(int);
 int main(int, char**, char**);
 void _start(void) {
