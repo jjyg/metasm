@@ -524,10 +524,27 @@ class ELF
 					ar.name = '.' + k.downcase
 					ar.type = k
 					ar.addralign = ar.entsize = @bitsize/8
-					ar.flags = %w[WRITE ALLOC]	# why write ? base reloc ?
+					ar.flags = %w[WRITE ALLOC]
+					ar.encoded = EncodedData.new
 					encode_add_section ar # insert before encoding syms/relocs (which need section indexes)
 				end
-				# fill these later
+
+				# fill these later, but create the base relocs now
+				arch_create_reloc_func = "arch_#{@header.machine.downcase}_create_reloc"
+				next if not respond_to?(arch_create_reloc_func) 
+				curaddr = label_at(@encoded, 0, 'elf_start')
+				fkbind = {}
+				@sections.each { |s|
+					next if not s.encoded
+					fkbind.update s.encoded.binding(Expression[curaddr, :+, 1])
+				}
+				@relocations ||= []
+				off = ar.encoded.length
+				@tag[k].each { |a|
+					rel = Metasm::Relocation.new(Expression[a], "u#@bitsize".to_sym, @endianness)
+					send(arch_create_reloc_func, ar, off, fkbind, rel)
+					off += @bitsize/8
+				}
 			end
 		}
 
@@ -555,7 +572,6 @@ class ELF
 				encode_tag['STRSZ', strtab.encoded.size]
 			when 'INIT_ARRAY', 'FINI_ARRAY', 'PREINIT_ARRAY'	# build section containing the array
 				ar = @sections.find { |s| s.name == '.' + k.downcase }
-				ar.encoded = EncodedData.new
 				@tag[k].each { |p| ar.encoded << encode_addr(p) }
 				encode_check_section_size ar
 				encode_tag[k, label_at(ar.encoded, 0)]
@@ -636,8 +652,8 @@ class ELF
 
 	# references to FUNC symbols are transformed to JMPSLOT relocations (aka call to .plt)
 	# TODO ET_REL support
-	def arch_386_create_reloc(section, off, binding)
-		rel = section.encoded.reloc[off]
+	def arch_386_create_reloc(section, off, binding, rel=nil)
+		rel ||= section.encoded.reloc[off]
 		if rel.endianness != @endianness or not [:u32, :i32, :a32].include? rel.type
 			puts "ELF: 386_create_reloc: ignoring reloc #{rel.target} in #{section.name}: bad reloc type" if $VERBOSE
 			return
@@ -675,8 +691,8 @@ class ELF
 		@relocations << r
 	end
 
-	def arch_x86_64_create_reloc(section, off, binding)
-		rel = section.encoded.reloc[off]
+	def arch_x86_64_create_reloc(section, off, binding, rel=nil)
+		rel ||= section.encoded.reloc[off]
 		if rel.endianness != @endianness or not rel.type.to_s =~ /^[aiu](32|64)$/
 			puts "ELF: x86_64_create_reloc: ignoring reloc #{rel.target} in #{section.name}: bad reloc type" if $VERBOSE
 			return
@@ -1288,10 +1304,10 @@ class ELF
 				s.shndx = 'UNDEF'
 				@symbols << s
 			end
-			if v.has_attribute 'init'
+			if v.has_attribute('init') or v.has_attribute('constructor')
 				(@tag['INIT_ARRAY'] ||= []) << v.name
 			end
-			if v.has_attribute 'fini'
+			if v.has_attribute('fini') or v.has_attribute('destructor')
 				(@tag['FINI_ARRAY'] ||= []) << v.name
 			end
 			if v.has_attribute 'entrypoint'
