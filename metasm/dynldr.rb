@@ -607,8 +607,8 @@ EOS
 		# this is a hack
 		# we need the module to use ruby symbols
 		# but we don't know the actual ruby lib filename (depends on ruby version, # platform, ...)
-		case bin.class.name.gsub(/.*::/, '')
-		when 'ELF'
+		case bin.shortname
+		when 'elf'
 			# we know the lib is already loaded by the main ruby executable, no DT_NEEDED needed
 			class << bin
 				def automagic_symbols(*a)
@@ -619,7 +619,7 @@ EOS
 				end
 			end
 			return
-		when 'PE'
+		when 'pe'
 			# the hard part, see below
 		else
 			# unhandled arch, dont tweak
