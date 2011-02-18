@@ -18,12 +18,18 @@ class PTrace
 		ret
 	end
 
+	# calls PTRACE_TRACEME on the current (ruby) process
+	def self.traceme
+		new(::Process.pid, false).traceme
+	end
+
 	# creates a ptraced process (target = path)
 	# or opens a running process (target = pid)
-	def initialize(target)
+	def initialize(target, do_attach=true)
 		begin
 			@pid = Integer(target)
 			tweak_for_pid(@pid)
+			return if not do_attach
 			attach
 		rescue ArgumentError, TypeError
 			did_exec = true
