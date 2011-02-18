@@ -610,7 +610,6 @@ class CCompiler < C::Compiler
 		stackargs = expr.rexpr[@state.regargs.length..-1].to_a
 
 		# preserve 16byte stack align under windows
-		# TODO ensure 16o align from func start
 		stackalign = true if (stackargs + backup).length & 1 == 1
 		instr 'push', rax if stackalign
 
@@ -898,7 +897,6 @@ class CCompiler < C::Compiler
 
 	def c_init_state(func)
 		@state = State.new(func)
-		al = typesize[:ptr]
 		args = func.type.args.dup
 		if @parser.lexer.definition['__MS_X86_64_ABI__']
 			@state.args_space = 32
@@ -911,14 +909,14 @@ class CCompiler < C::Compiler
 		off = @state.offset.values.max.to_i
 		off = 0 if off < 0
 
-		argoff = 2*al + @state.args_space
+		argoff = 2*8 + @state.args_space
 		args.zip(@state.regargs).each { |a, r|
 			if r
 				off = c_reserve_stack_var(a, off)
 				@state.offset[a] = off
 			else
 				@state.offset[a] = -argoff
-				argoff = (argoff + sizeof(a) + al - 1) / al * al
+				argoff = (argoff + sizeof(a) + 7) / 8 * 8
 			end
 		}
 		if not @state.offset.values.grep(::Integer).empty?
@@ -930,9 +928,13 @@ class CCompiler < C::Compiler
 	def c_prolog
 		localspc = @state.offset.values.grep(::Integer).max
 		return if @state.func.attributes.to_a.include? 'naked'
+		@state.dirty -= @state.abi_trashregs
 		if localspc
-			al = typesize[:ptr]
-			localspc = (localspc + al - 1) / al * al
+			localspc = (localspc + 7) / 8 * 8
+			if @state.args_space > 0 and (localspc/8 + @state.dirty.length) & 1 == 0
+				# ensure 16-o stack align on windows
+				localspc += 8
+			end
 			ebp = @state.saved_rbp
 			esp = Reg.new(4, ebp.sz)
 			instr 'push', ebp
@@ -944,8 +946,9 @@ class CCompiler < C::Compiler
 				v = findvar(a)
 				instr 'mov', v, Reg.new(r, v.sz)
 			}
+		elsif @state.dirty.length & 1 == 0
+			instr 'sub', Reg.new(4, @cpusz), Expression[8]
 		end
-		@state.dirty -= @state.abi_trashregs	# XXX ABI
 		@state.dirty.each { |reg|
 			instr 'push', Reg.new(reg, @cpusz)
 		}
@@ -953,13 +956,14 @@ class CCompiler < C::Compiler
 
 	def c_epilog
 		return if @state.func.attributes.to_a.include? 'naked'
-		# TODO revert dynamic array alloc
 		@state.dirty.reverse_each { |reg|
 			instr 'pop', Reg.new(reg, @cpusz)
 		}
 		if ebp = @state.saved_rbp
 			instr 'mov', Reg.new(4, ebp.sz), ebp
 			instr 'pop', ebp
+		elsif @state.dirty.length & 1 == 0
+			instr 'add', Reg.new(4, @cpusz), Expression[8]
 		end
 		instr 'ret'
 	end
