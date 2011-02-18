@@ -46,36 +46,36 @@ class PTrace
 
 	attr_accessor :reg_off, :intsize, :syscallnr
 	# setup the variables according to the target
-	# XXX when x86 debugs x64, should we use ptrace_X86_ATTACH or X64_ATTACH ?
 	def tweak_for_pid(pid=@pid)
-		tg = OS.current.open_process(::Process.pid)
-		psz = tg.addrsz
-		case psz
-		when 32
+		# use these for our syscalls PTRACE
+		case LinOS.open_process(::Process.pid).cpu.shortname
+		when 'ia32'
 			@packint = 'l'
 			@packuint = 'L'
 			@host_intsize = 4
-			@host_syscallnr = SYSCALLNR
+			@host_syscallnr = SYSCALLNR_I386
 			@reg_off = REGS_I386
-		when 64
+		when 'x64'
 			@packint = 'q'
 			@packuint = 'Q'
 			@host_intsize = 8
-			@host_syscallnr = SYSCALLNR_64
+			@host_syscallnr = SYSCALLNR_X86_64
 			@reg_off = REGS_X86_64
 		else raise 'unsupported architecture'
 		end
 
-		case OS.current.open_process(pid).addrsz
-		when 32
-			@syscallnr = SYSCALLNR
+		# use these to interpret the child state
+		case LinOS.open_process(pid).cpu.shortname
+		when 'ia32'
+			@syscallnr = SYSCALLNR_I386
 			@intsize = 4
-		when 64
-			@syscallnr = SYSCALLNR_64
+		when 'x64'
+			@syscallnr = SYSCALLNR_X86_64
 			@intsize = 8
 		else raise 'unsupported target architecture'
 		end
 
+		# buffer used in ptrace syscalls
 		@buf = [0].pack(@packint)
 		@bufptr = [@buf].pack('P').unpack(@packint).first
 	end
@@ -204,15 +204,7 @@ class PTrace
 		#'ERROR_CODE' => 114, 'FAULT_ADDR' => 115
 	}
 
-#  this struct defines the way the registers are stored on the stack during a system call.
-# struct pt_regs {
-#        long ebx; long ecx; long edx; long esi;
-#        long edi; long ebp; long eax; int  xds;
-#        int  xes; long orig_eax; long eip; int  xcs;
-#        long eflags; long esp; int  xss;
-# };
-
-	SYSCALLNR = %w[restart_syscall exit fork read write  open close waitpid  creat link unlink execve chdir time
+	SYSCALLNR_I386 = %w[restart_syscall exit fork read write  open close waitpid  creat link unlink execve chdir time
 		mknod chmod lchown break oldstat lseek getpid mount umount setuid getuid stime ptrace alarm oldfstat
 		pause utime stty gtty access nice ftime sync kill  rename mkdir rmdir dup pipe times prof brk setgid
 		getgid signal  geteuid getegid acct  umount2 lock ioctl fcntl  mpx setpgid ulimit  oldolduname umask
@@ -246,9 +238,9 @@ class PTrace
 		move_pages   getcpu  epoll_pwait  utimensat   signalfd  timerfd  eventfd  fallocate  timerfd_settime
 	       	timerfd_gettime  signalfd4   eventfd2  epoll_create1   dup3   pipe2  inotify_init1   preadv  pwritev
 		rt_tg_sigqueueinfo perf_counter_open].inject({}) { |h, sc| h.update sc => h.length }
-	SYSCALLNR.update SYSCALLNR.invert
+	SYSCALLNR_I386.update SYSCALLNR_I386.invert
 	
-	SYSCALLNR_64 = %w[read write open  close stat fstat lstat poll  lseek mmap mprotect munmap  brk rt_sigaction
+	SYSCALLNR_X86_64 = %w[read write open  close stat fstat lstat poll  lseek mmap mprotect munmap  brk rt_sigaction
 		rt_sigprocmask  rt_sigreturn ioctl  pread64 pwrite64  readv  writev access  pipe select  sched_yield
 		mremap  msync  mincore  madvise  shmget  shmat  shmctl dup  dup2  pause  nanosleep  getitimer  alarm
 		setitimer  getpid  sendfile   socket  connect  accept  sendto  recvfrom   sendmsg  recvmsg  shutdown
@@ -279,7 +271,7 @@ class PTrace
 		vmsplice move_pages utimensat epoll_pwait  signalfd timerfd_create eventfd fallocate timerfd_settime
 		timerfd_gettime accept4  signalfd4 eventfd2  epoll_create1 dup3  pipe2 inotify_init1  preadv pwritev
 		rt_tgsigqueueinfo perf_counter_open].inject({}) { |h, sc| h.update sc => h.length }
-	SYSCALLNR_64.update SYSCALLNR_64.invert
+	SYSCALLNR_X86_64.update SYSCALLNR_X86_64.invert
 
 	SIGNAL = Signal.list
 	SIGNAL['TRAP'] ||= 5	# windows
