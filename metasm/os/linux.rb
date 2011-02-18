@@ -188,10 +188,20 @@ class PTrace
 		'RIP' => 16, 'CS' => 17, 'RFLAGS' => 18, 'RSP' => 19,
 		'SS' => 20, 'FS_BASE' => 21, 'GS_BASE' => 22, 'DS' => 23,
 		'ES' => 24, 'FS' => 25, 'GS' => 26,
-		# fpval pad i387=29...73 tsz dsz ssz code stack sig res pad1 ar0 fps mag comm*4
-		'DR0' => 88, 'DR1' => 89, 'DR2' => 90, 'DR3' => 91,
-		'DR4' => 92, 'DR5' => 93, 'DR6' => 94, 'DR7' => 95,
-		'ERROR_CODE' => 96, 'FAULT_ADDR' => 97
+		#'FP_VALID' => 27,
+		#'387_XWD' => 28, '387_RIP' => 29, '387_RDP' => 30, '387_MXCSR' => 31,
+		#'FP0' => 32, 'FP1' => 34, 'FP2' => 36, 'FP3' => 38,
+		#'FP4' => 40, 'FP5' => 42, 'FP6' => 44, 'FP7' => 46,
+		#'XMM0' => 48, 'XMM1' => 52, 'XMM2' => 56, 'XMM3' => 60,
+		#'XMM4' => 64, 'XMM5' => 68, 'XMM6' => 72, 'XMM7' => 76,
+		#'FPAD0' => 80, 'FPAD11' => 91,
+		#'TSZ' => 92, 'DSZ' => 93, 'SSZ' => 94, 'CODE' => 95,
+		#'STK' => 96, 'SIG' => 97, 'PAD' => 98, 'U_AR0' => 99,
+		#'FPPTR' => 100, 'MAGIC' => 101, 'COMM0' => 102, 'COMM1' => 103,
+		#'COMM2' => 104, 'COMM3' => 105,
+		'DR0' => 106, 'DR1' => 107, 'DR2' => 108, 'DR3' => 109,
+		'DR4' => 110, 'DR5' => 111, 'DR6' => 112, 'DR7' => 113,
+		#'ERROR_CODE' => 114, 'FAULT_ADDR' => 115
 	}
 
 #  this struct defines the way the registers are stored on the stack during a system call.
@@ -318,6 +328,45 @@ class PTrace
 		sys_ptrace(COMMAND['POKEUSR'],  @pid, @host_intsize*addr, data)
 	end
 
+	def getregs(buf=nil)
+		buf ||= [0].pack('C')*512
+		sys_ptrace(COMMAND['GETREGS'], @pid, 0, buf)
+		buf
+	end
+	def setregs(buf)
+		sys_ptrace(COMMAND['SETREGS'], @pid, 0, buf)
+	end
+
+	def getfpregs(buf=nil)
+		buf ||= [0].pack('C')*1024
+		sys_ptrace(COMMAND['GETFPREGS'], @pid, 0, buf)
+		buf
+	end
+	def setfpregs(buf)
+		sys_ptrace(COMMAND['SETFPREGS'], @pid, 0, buf)
+	end
+
+	def getfpxregs(buf=nil)
+		buf ||= [0].pack('C')*512
+		sys_ptrace(COMMAND['GETFPXREGS'], @pid, 0, buf)
+		buf
+	end
+	def setfpxregs(buf)
+		sys_ptrace(COMMAND['SETFPXREGS'], @pid, 0, buf)
+	end
+
+	def get_thread_area(addr)
+		sys_ptrace(COMMAND['GET_THREAD_AREA'],  @pid, addr, @bufptr)
+		bufval
+	end
+	def set_thread_area(addr, data)
+		sys_ptrace(COMMAND['SET_THREAD_AREA'],  @pid, addr, data)
+	end
+
+	def prctl(addr, data)
+		sys_ptrace(COMMAND['ARCH_PRCTL'], @pid, addr, data)
+	end
+	
 	def cont(sig = 0)
 		sys_ptrace(COMMAND['CONT'], @pid, 0, sig)
 	end
@@ -557,6 +606,7 @@ class LinDebugger < Debugger
 	end
 
 	def get_reg_value(r)
+		# TODO fpu regs (@ptrace.getfpregs.unpack etc)
 		raise "bad register #{r}" if not k = @ptrace.reg_off[r.to_s.upcase]
 		return @reg_val_cache[r] || 0 if @state != :stopped
 		@reg_val_cache[r] ||= @ptrace.peekusr(k)
