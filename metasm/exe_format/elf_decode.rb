@@ -958,10 +958,13 @@ end
 class LoadedELF
 	# decodes the dynamic segment, fills segments.encoded
 	def decode_segments
+		if @load_address == 0 and @segments.find { |s| s.type == 'LOAD' and s.vaddr > @encoded.length }
+			@load_address = @segments.find_all { |s| s.type == 'LOAD' }.map { |s| s.vaddr }.min
+		end
 		decode_segments_dynamic
 		@segments.each { |s|
 			if s.type == 'LOAD'
-				s.encoded = @encoded[s.vaddr, s.memsz]
+				s.encoded = @encoded[addr_to_off(s.vaddr), s.memsz]
 			end
 		}
 	end
