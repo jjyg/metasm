@@ -619,7 +619,7 @@ EOS
 				end
 			end
 			return
-		when 'pe'
+		when 'coff'
 			# the hard part, see below
 		else
 			# unhandled arch, dont tweak
