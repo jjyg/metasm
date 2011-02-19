@@ -588,7 +588,7 @@ class LinDebug
 			when :f5;  cont
 			when :f6
 				syscall
-				log Rubstop::SYSCALLNR.index(@rs.regs_cache['orig_eax']) || @rs.regs_cache['orig_eax'].to_s
+				log @rs.syscallnr.index(@rs.regs_cache['orig_eax']) || @rs.regs_cache['orig_eax'].to_s
 			when :f10; stepover
 			when :f11; singlestep
 			when :f12; stepout
