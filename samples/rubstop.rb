@@ -386,7 +386,7 @@ if $0 == __FILE__
 				rs.singlestep
 			else
 				rs.syscall ; rs.syscall	# wait return of syscall
-				puts "#{rs.orig_eax.to_s.ljust(3)} #{Rubstop::SYSCALLNR.index rs.orig_eax}"
+				puts "#{rs.orig_eax.to_s.ljust(3)} #{rs.syscallnr.index rs.orig_eax}"
 			end
 		end
 		p rs.child
