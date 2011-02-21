@@ -380,7 +380,26 @@ class COFF
 				@eatjumps = coff.curencoded.read(@eatjumps_sz)
 			end
 			if coff.sect_at_rva(@managednativehdr_rva)
-				@managednativehdr = coff.cursection.encoded.read(@managednativehdr_sz)
+				@managednativehdr = coff.curencoded.read(@managednativehdr_sz)
+			end
+		end
+	end
+
+	class DebugDirectory
+		def decode_inner(coff)
+			case @type
+			when 'CODEVIEW'
+				# XXX what is @pointer?
+				return if not coff.sect_at_rva(@addr)
+				sig = coff.curencoded.read(4)
+				case sig
+				when 'NB09'	# CodeView 4.10
+				when 'NB10'	# external pdb2.0
+					@data = NB10.decode(coff)
+				when 'NB11'	# CodeView 5.0
+				when 'RSDS'	# external pdb7.0
+					@data = RSDS.decode(coff)
+				end
 			end
 		end
 	end
@@ -683,7 +702,12 @@ class COFF
 
 	def decode_debug
 		if dd = @directory['debug'] and sect_at_rva(dd[0])
-			@debug = DebugDirectory.decode(self)
+			@debug = []
+			p0 = curencoded.ptr
+			while curencoded.ptr < p0 + dd[1]
+				@debug << DebugDirectory.decode(self)
+			end
+			@debug.each { |dbg| dbg.decode_inner(self) }
 		end
 	end
 

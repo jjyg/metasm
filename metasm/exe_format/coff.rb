@@ -245,6 +245,21 @@ class COFF < ExeFormat
 		halfs :major_version, :minor_version
 		words :type, :size_of_data, :addr, :pointer
 		fld_enum :type, DEBUG_TYPE
+
+		attr_accessor :data
+
+		class NB10 < SerialStruct
+			word :offset
+			word :signature
+			word :age
+			strz :pdbfilename
+		end
+
+		class RSDS < SerialStruct
+			mem :guid, 16
+			word :age
+			strz :pdbfilename
+		end
 	end
 
 	class TLSDirectory < SerialStruct
