@@ -931,7 +931,7 @@ class CCompiler < C::Compiler
 		@state.dirty -= @state.abi_trashregs
 		if localspc
 			localspc = (localspc + 7) / 8 * 8
-			if @state.args_space > 0 and (localspc/8 + @state.dirty.length) & 1 == 0
+			if @state.args_space > 0 and (localspc/8 + @state.dirty.length) & 1 == 1
 				# ensure 16-o stack align on windows
 				localspc += 8
 			end
@@ -946,7 +946,7 @@ class CCompiler < C::Compiler
 				v = findvar(a)
 				instr 'mov', v, Reg.new(r, v.sz)
 			}
-		elsif @state.dirty.length & 1 == 0
+		elsif @state.args_space > 0 and @state.dirty.length & 1 == 0
 			instr 'sub', Reg.new(4, @cpusz), Expression[8]
 		end
 		@state.dirty.each { |reg|
@@ -962,7 +962,7 @@ class CCompiler < C::Compiler
 		if ebp = @state.saved_rbp
 			instr 'mov', Reg.new(4, ebp.sz), ebp
 			instr 'pop', ebp
-		elsif @state.dirty.length & 1 == 0
+		elsif @state.args_space > 0 and @state.dirty.length & 1 == 0
 			instr 'add', Reg.new(4, @cpusz), Expression[8]
 		end
 		instr 'ret'
