@@ -219,7 +219,10 @@ module C
 		def ==(o)
 			# if we dont compare names, infinite recursion on mylinkedlist == otherlinkedlist
 			o.object_id == self.object_id or
-			(o.class == self.class and o.name == self.name and o.members.to_a.map { |m| m.type } == self.members.to_a.map { |m| m.type } and o.attributes == self.attributes)
+			(o.class == self.class and o.name == self.name and
+			 o.members.to_a.map { |m| m.type } == self.members.to_a.map { |m| m.type } and
+			 o.members.to_a.map { |m| m.name } == self.members.to_a.map { |m| m.name } and
+			 o.attributes == self.attributes)
 		end
 
 		def findmember(name, igncase=false)
@@ -1845,7 +1848,10 @@ EOH
 					end
 					return
 				end
-				raise tok, 'struct redefinition' if struct = scope.struct[name] and struct.members
+				if struct = scope.struct[name] and struct.members
+					oldstruct = scope.struct.delete(name)
+					struct = nil
+				end
 				if struct
 					(struct.attributes ||= []).concat @type.attributes if @type.attributes
 					(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier
@@ -1860,6 +1866,10 @@ EOH
 			end
 
 			@type.parse_members(parser, scope)
+
+			if oldstruct and @type != oldstruct
+				raise tok, "conflicting struct redefinition (old at #{oldstruct.backtrace.exception(nil).message rescue :unknown})"
+			end
 		end
 
 		# parses int/long int/long long/double etc
