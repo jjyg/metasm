@@ -593,7 +593,22 @@ class CCompiler < C::Compiler
 		backup = []
 		rax = Reg.new(0, 64)
 
-		@state.abi_flushregs_call.each { |reg|
+		ft = expr.lexpr.type
+		ft = ft.pointed if ft.pointer?
+		ft = nil if not ft.kind_of? C::Function
+
+		arglist = expr.rexpr.dup
+		regargsmask = @state.regargs.dup
+		if ft
+			ft.args.each_with_index { |a, i|
+				if rn = a.has_attribute_var('register')
+					regargsmask.insert(i, Reg.from_str(rn).val)
+				end
+			}
+		end
+		regargsmask = regargsmask[0, expr.rexpr.length]
+
+		(@state.abi_flushregs_call | regargsmask.compact.uniq).each { |reg|
 			next if reg == 4
 			next if reg == 5 and @state.saved_rbp
 			if not @state.used.include? reg
@@ -607,7 +622,7 @@ class CCompiler < C::Compiler
 			@state.used.delete reg
 		}
 
-		stackargs = expr.rexpr[@state.regargs.length..-1].to_a
+		stackargs = expr.rexpr.zip(regargsmask).map { |a, r| a if not r }.compact
 
 		# preserve 16byte stack align under windows
 		stackalign = true if (stackargs + backup).length & 1 == 1
@@ -623,8 +638,8 @@ class CCompiler < C::Compiler
 		}
 
 		regargs_unuse = []
-		@state.regargs.zip(expr.rexpr).each { |ra, arg|
-			break if not arg
+		regargsmask.zip(expr.rexpr).each { |ra, arg|
+			next if not arg or not ra
 			a = c_cexpr_inner(arg)
 			a = resolve_address a if a.kind_of? Address
 			r = Reg.new(ra, a.respond_to?(:sz) ? a.sz : 64)
@@ -635,9 +650,7 @@ class CCompiler < C::Compiler
 		}
 		instr 'sub', Reg.new(4, 64), Expression[@state.args_space] if @state.args_space > 0	# TODO prealloc that at func start
 
-		t = expr.lexpr.type
-		t = t.pointed if t.pointer?
-		if t.kind_of? C::Function and t.varargs and @state.args_space == 0
+		if ft.kind_of? C::Function and ft.varargs and @state.args_space == 0
 			# gcc stores here the nr of xmm args passed, real args are passed the standard way
 			# TODO check visualstudio/ms ABI
 			instr 'xor', rax, rax
@@ -654,7 +667,7 @@ class CCompiler < C::Compiler
 			instr 'call', ptr
 		end
 		regargs_unuse.each { |r| unuse r }
-		argsz = @state.args_space + [expr.rexpr.length - @state.regargs.length, 0].max * 8
+		argsz = @state.args_space + stackargs.length * 8
 		argsz += 8 if stackalign
 		instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 
@@ -910,8 +923,12 @@ class CCompiler < C::Compiler
 		off = 0 if off < 0
 
 		argoff = 2*8 + @state.args_space
-		args.zip(@state.regargs).each { |a, r|
-			if r
+		rlist = @state.regargs.dup
+		args.each { |a|
+			if a.has_attribute_var('register')
+				off = c_reserve_stack_var(a, off)
+				@state.offset[a] = off
+			elsif r = rlist.shift
 				if @state.args_space > 0
 					# use reserved space to spill regargs
 					off = -16-8*@state.regargs.index(r)
@@ -946,8 +963,13 @@ class CCompiler < C::Compiler
 			instr 'mov', ebp, esp
 			instr 'sub', esp, Expression[localspc] if localspc > 0
 
-			@state.func.type.args.zip(@state.regargs).each { |a, r|
-				break if not r
+			rlist = @state.regargs.dup
+			@state.func.type.args.each { |a|
+				if rn = a.has_attribute_var('register')
+					r = Reg.from_str(rn).val
+				elsif r = rlist.shift
+				else next
+				end
 				v = findvar(a)
 				instr 'mov', v, Reg.new(r, v.sz)
 			}
