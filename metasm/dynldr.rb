@@ -87,7 +87,7 @@ VALUE rb_ary_new2(int len);
 VALUE rb_float_new(double);
 
 VALUE rb_intern(char *);
-VALUE rb_funcall(VALUE recv, VALUE id, int nargs, ...);
+VALUE rb_funcall(VALUE recv, VALUE id, uintptr_t nargs, ...);
 VALUE rb_const_get(VALUE, VALUE);
 VALUE rb_raise(VALUE, char*, ...);
 void rb_define_const(VALUE, char *, VALUE);
@@ -317,16 +317,17 @@ uintptr_t do_callback_handler(uintptr_t arg0, uintptr_t arg1, uintptr_t arg2, ui
 {
 	uintptr_t ret;
 	VALUE args = rb_ary_new2(8);
+	VALUE *ptr = ARY_PTR(args);
 
 	RArray(args)->len = 8;
-	ARY_PTR(args)[0] = INT2VAL(arg0);
-	ARY_PTR(args)[1] = INT2VAL(arg1);
-	ARY_PTR(args)[2] = INT2VAL(arg2);
-	ARY_PTR(args)[3] = INT2VAL(arg3);
-	ARY_PTR(args)[4] = INT2VAL(arg4);
-	ARY_PTR(args)[5] = INT2VAL(arg5);
-	ARY_PTR(args)[6] = INT2VAL(arg6);
-	ARY_PTR(args)[7] = INT2VAL(arg7);
+	ptr[0] = INT2VAL(arg0);
+	ptr[1] = INT2VAL(arg1);
+	ptr[2] = INT2VAL(arg2);
+	ptr[3] = INT2VAL(arg3);
+	ptr[4] = INT2VAL(arg4);
+	ptr[5] = INT2VAL(arg5);
+	ptr[6] = INT2VAL(arg6);
+	ptr[7] = INT2VAL(arg7);
 
 	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, *callback_id_tmp, args);
 
