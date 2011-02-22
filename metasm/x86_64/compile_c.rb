@@ -672,7 +672,8 @@ class CCompiler < C::Compiler
 		instr 'add', Reg.new(4, @cpusz), Expression[argsz] if argsz > 0
 
 		@state.abi_flushregs_call.each { |reg| flushcachereg reg }
-		if @state.used.include? 0
+		@state.used |= backup
+		if @state.used.include?(0)
 			retreg = inuse findreg
 		else
 			retreg = inuse getreg(0)
@@ -684,7 +685,6 @@ class CCompiler < C::Compiler
 			else
 				instr 'pop', Reg.new(reg, 64)
 			end
-			@state.used |= [reg]
 		}
 		retreg
 	end
