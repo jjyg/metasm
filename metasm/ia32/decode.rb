@@ -1153,7 +1153,9 @@ class Ia32
 				else bt[finish, reg, false]
 				end
 			next if val == Expression[reg]
-			val = Expression[val, :&, 0xffff_ffff].reduce #( 1<<@size)-1  # 16bit code may use e.g. edi
+			mask = 0xffff_ffff	# dont use 1<<@size, because 16bit code may use e.g. edi (through opszoverride)
+			mask = 0xffff_ffff_ffff_ffff if @size == 64
+			val = Expression[val, :&, mask].reduce
 			binding[reg] = Expression[val]
 		}
 
