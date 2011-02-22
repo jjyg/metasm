@@ -530,8 +530,8 @@ class CCompiler < C::Compiler
 			c_cexpr_inner_arith(l, expr.op, r, expr.type)
 			l
 		when :'='
-			l = c_cexpr_inner(expr.lexpr)
 			r = c_cexpr_inner(expr.rexpr)
+			l = c_cexpr_inner(expr.lexpr)
 			raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and not @state.bound.index(l)
 			r = resolve_address r if r.kind_of? Address
 			r = make_volatile(r, expr.type) if l.kind_of? ModRM and r.kind_of? ModRM
@@ -604,7 +604,7 @@ class CCompiler < C::Compiler
 			end
 			backup << reg
 			instr 'push', Reg.new(reg, 64)
-			unuse Reg.new(reg, 64)
+			@state.used.delete reg
 		}
 
 		stackargs = expr.rexpr[@state.regargs.length..-1].to_a
@@ -671,7 +671,7 @@ class CCompiler < C::Compiler
 			else
 				instr 'pop', Reg.new(reg, 64)
 			end
-			inuse Reg.new(reg, 64)
+			@state.used |= [reg]
 		}
 		retreg
 	end
@@ -912,7 +912,12 @@ class CCompiler < C::Compiler
 		argoff = 2*8 + @state.args_space
 		args.zip(@state.regargs).each { |a, r|
 			if r
-				off = c_reserve_stack_var(a, off)
+				if @state.args_space > 0
+					# use reserved space to spill regargs
+					off = -16-8*@state.regargs.index(r)
+				else
+					off = c_reserve_stack_var(a, off)
+				end
 				@state.offset[a] = off
 			else
 				@state.offset[a] = -argoff

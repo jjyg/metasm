@@ -739,8 +739,8 @@ class CCompiler < C::Compiler
 			c_cexpr_inner_arith(l, expr.op, r, expr.type)
 			l
 		when :'='
-			l = c_cexpr_inner(expr.lexpr)
 			r = c_cexpr_inner(expr.rexpr)
+			l = c_cexpr_inner(expr.lexpr)
 			raise 'bad lvalue ' + l.inspect if not l.kind_of? ModRM and not @state.bound.index(l)
 			r = resolve_address r if r.kind_of? Address
 			r = make_volatile(r, expr.type) if l.kind_of? ModRM and r.kind_of? ModRM
