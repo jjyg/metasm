@@ -87,7 +87,7 @@ VALUE rb_ary_new2(int len);
 VALUE rb_float_new(double);
 
 VALUE rb_intern(char *);
-VALUE rb_funcall(VALUE recv, VALUE id, uintptr_t nargs, ...);
+VALUE rb_funcall(VALUE recv, VALUE id, int nargs, ...);
 VALUE rb_const_get(VALUE, VALUE);
 VALUE rb_raise(VALUE, char*, ...);
 void rb_define_const(VALUE, char *, VALUE);
@@ -312,8 +312,9 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 	return INT2VAL(ret);
 }
 
-extern uintptr_t *callback_id_tmp;
-uintptr_t do_callback_handler(uintptr_t arg0, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4, uintptr_t arg5, uintptr_t arg6, uintptr_t arg7)
+uintptr_t do_callback_handler(uintptr_t cb_id __attribute__((register(rax))),
+		uintptr_t arg0, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+		uintptr_t arg4, uintptr_t arg5, uintptr_t arg6, uintptr_t arg7)
 {
 	uintptr_t ret;
 	VALUE args = rb_ary_new2(8);
@@ -329,7 +330,7 @@ uintptr_t do_callback_handler(uintptr_t arg0, uintptr_t arg1, uintptr_t arg2, ui
 	ptr[6] = INT2VAL(arg6);
 	ptr[7] = INT2VAL(arg7);
 
-	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, *callback_id_tmp, args);
+	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, INT2VAL(cb_id), args);
 
 	return VAL2INT(ret);
 }
@@ -347,7 +348,12 @@ int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// t
 	rb_define_singleton_method(dynldr, "rb_value_to_obj", rb_value_to_obj, 1);
 	rb_define_singleton_method(dynldr, "sym_addr", sym_addr, 2);
 	rb_define_singleton_method(dynldr, "raw_invoke", invoke, 3);
-	rb_define_const(dynldr, "CALLBACK_TARGET", INT2VAL((VALUE)&callback_handler));
+	rb_define_const(dynldr, "CALLBACK_TARGET",
+#ifdef __i386__
+			INT2VAL((VALUE)&callback_handler));
+#elif defined __amd64__
+			INT2VAL((VALUE)&do_callback_handler));
+#endif
 	rb_define_const(dynldr, "CALLBACK_ID_0", INT2VAL((VALUE)&callback_id_0));
 	rb_define_const(dynldr, "CALLBACK_ID_1", INT2VAL((VALUE)&callback_id_1));
 	return 0;
@@ -550,20 +556,13 @@ fake_float:
 	ret
 
 // entrypoint for callbacks: to the native api, give the addr of some code
-//  that will push a unique cb_identifier and jmp here
-callback_handler:
-	// stack here: cb_id_retaddr, cb_native_retaddr, cb_native_arg0, ...
-	// swap caller retaddr & cb_identifier, fix cb_identifier from the stub
-	pop rax		// stuff pushed by the stub
-	sub rax, callback_id_1 - callback_id_0	// fixup cb_id_retaddr to get a cb id
-	mov [rip+callback_id_tmp-$_], rax	// XXX racey if not greenthreaded..
+//  that will save its address in rax and jump to do_cb_h
+callback_id_0:
+	lea rax, [rip-$_+callback_id_0]
 	jmp do_callback_handler
-
-callback_id_0: call callback_handler
-callback_id_1: call callback_handler
-
-.data
-callback_id_tmp dq ?
+callback_id_1:
+	lea rax, [rip-$_+callback_id_1]
+	jmp do_callback_handler
 EOS
 
 	# initialization
@@ -1018,13 +1017,21 @@ EOS
 			cb_page = memory_alloc(4096)
 			sc = Shellcode.new(host_cpu, cb_page)
 			case sc.cpu.shortname
-			when 'ia32', 'x64'
+			when 'ia32'
 				addr = cb_page
 				nrcb = 128	# TODO should be 4096/5, but the parser/compiler is really too slow
 				nrcb.times {
 					@@callback_addrs << addr
 					sc.parse "call #{CALLBACK_TARGET}"
 					addr += 5
+				}
+			when 'x64'
+				addr = cb_page
+				nrcb = 128	# same remark
+				nrcb.times {
+					@@callback_addrs << addr
+					sc.parse "1: lea rax, [rip-$_+1b] jmp #{CALLBACK_TARGET}"
+					addr += 12	# XXX approximative..
 				}
 			end
 			sc.assemble
