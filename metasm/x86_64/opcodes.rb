@@ -17,11 +17,15 @@ class X86_64
 
 	def init_386_common_only
 		super()
-		@valid_props |= [:imm64, :auto64]
+		# :imm64 => accept a real int64 as :i argument
+		# :auto64 => ignore rex_w, always 64-bit op
+		# :op32no64 => if write to a 32-bit reg, dont zero the top 32-bits of dest
+		@valid_props |= [:imm64, :auto64, :op32no64]
 		@opcode_list.delete_if { |o| o.bin[0].to_i & 0xf0 == 0x40 }	# now REX prefix
 		@opcode_list.each { |o|
 			o.props[:imm64] = true if o.bin == [0xB8]	# mov reg, <true imm64>
-			o.props[:auto64] = true if o.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/ # operate in 64bit ignoring rex_w
+			o.props[:auto64] = true if o.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/
+			#o.props[:op32no64] = true if o.name =~ //	# TODO are there any instr here ?
 		}
 		addop 'movsxd', [0x63], :mrmw
 	end
