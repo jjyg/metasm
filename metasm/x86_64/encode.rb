@@ -129,7 +129,7 @@ class X86_64
 			when 16; pfx << 0x66
 			end
 		else
-			opsz = op.props[:argsz] || i.prefix[:sz] || (64 if op.props[:auto64])	# XXX test push ax
+			opsz = op.props[:argsz] || i.prefix[:sz]
 			oi.each { |oa, ia|
 				case oa
 				when :reg, :reg_eax, :modrm, :modrmA, :mrm_imm
@@ -137,10 +137,11 @@ class X86_64
 					opsz = ia.sz
 				end
 			}
+			opsz ||= 64 if op.props[:auto64]
 			opsz = op.props[:opsz] if op.props[:opsz]	# XXX ?
 			case opsz
 			when 64; rex_w = 1 if not op.props[:auto64]
-			when 32
+			when 32; raise EncodeError, "Incompatible arg size in #{i}" if op.props[:auto64]
 			when 16; pfx << 0x66
 			end
 		end
