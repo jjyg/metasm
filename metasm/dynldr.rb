@@ -555,8 +555,7 @@ callback_handler:
 	// swap caller retaddr & cb_identifier, fix cb_identifier from the stub
 	pop rax		// stuff pushed by the stub
 	sub rax, callback_id_1 - callback_id_0	// fixup cb_id_retaddr to get a cb id
-	mov [rip+callback_id_tmp-1f], rax	// XXX racey if not greenthreaded..
-1:
+	mov [rip+callback_id_tmp-$_], rax	// XXX racey if not greenthreaded..
 	jmp do_callback_handler
 
 callback_id_0: call callback_handler
