@@ -2935,8 +2935,8 @@ EOH
 			str.join("\n")
 		end
 
-		def to_ary
-			return (defined?(super) ? super() : method_missing(:to_ary)) if not @struct.kind_of?(C::Array)
+		def to_array
+			raise NoMethodError, "Not an Array" if not @struct.kind_of?(C::Array)
 			ary = []
 			@struct.length.times { |i| ary << self[i] }
 			ary
