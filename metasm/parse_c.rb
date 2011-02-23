@@ -385,7 +385,11 @@ module C
 			al = align(parser)
 			off = 0
 			bit_off = 0
-			isz = parser.typesize[:int]
+			if bits
+				isz = parser.typesize[:int]
+				isz *= 2 while isz < 8 and @bits.compact.find { |b| b > isz*8 }
+			end
+
 			@members.each_with_index { |m, i|
 				if bits and b = @bits[i]
 					if bit_off + b > 8*isz
@@ -454,7 +458,10 @@ module C
 			al = align(parser)
 			off = 0
 			bit_off = 0
-			isz = parser.typesize[:int]
+			if bits
+				isz = parser.typesize[:int]
+				isz *= 2 while isz < 8 and @bits.compact.find { |b| b > isz*8 }
+			end
 
 			@members.each_with_index { |m, i|
 				if bits and b = @bits[i]
