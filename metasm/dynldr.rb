@@ -14,8 +14,14 @@ class DynLdr
 #line #{__LINE__}
 typedef uintptr_t VALUE;
 
-#define INT2VAL(v) rb_uint2inum(v)
-#define VAL2INT(v) rb_num2ulong(v)
+#if defined(__PE__) && defined(__x86_64__)
+ // sonovabeep
+ #define INT2VAL(v) rb_ull2inum(v)
+ #define VAL2INT(v) rb_num2ull(v)
+#else
+ #define INT2VAL(v) rb_uint2inum(v)
+ #define VAL2INT(v) rb_num2ulong(v)
+#endif
 
 struct rb_string_t {
 	VALUE flags;
@@ -82,6 +88,7 @@ extern VALUE *rb_eArgError __attribute__((import));
 VALUE rb_uint2inum(VALUE);
 VALUE rb_ull2inum(unsigned long long);
 VALUE rb_num2ulong(VALUE);
+unsigned long long rb_num2ull(VALUE);
 VALUE rb_str_new(const char* ptr, long len);	// alloc + memcpy + 0term
 VALUE rb_ary_new2(int len);
 VALUE rb_float_new(double);
