@@ -261,7 +261,7 @@ module C
 
 		def bitoffsetof(parser, name)
 			update_member_cache if not fldlist
-			return if @fldlist[name]
+			return if @fldlist[name] or @members.include?(name)
 			raise parser, 'undefined union' if not @members
 			raise parser, 'unknown union member' if not findmember(name)
 
@@ -426,7 +426,7 @@ module C
 		def bitoffsetof(parser, name)
 			update_member_cache if not fldlist
 			return @fldbitoffset[name] if fldbitoffset and @fldbitoffset[name]
-			return if @fldlist[name]
+			return if @fldlist[name] or @members.include?(name)
 			raise parser, 'undefined union' if not @members
 			raise parser, 'unknown union member' if not findmember(name)
 
@@ -2827,11 +2827,13 @@ EOH
 				return @cp.decode_c_value(@str, @struct.type, off)
 			end
 
-			return @str[@stroff..-1][*a] if not a.first.kind_of? Symbol and not a.first.kind_of? String
-			fld = a.first
-			raise "#{fld.inspect} not a member" if not f = @struct.findmember(fld.to_s, true)
-			off = @stroff + @struct.offsetof(@cp, f.name)
-			if bf = @struct.bitoffsetof(@cp, f.name)
+			return @str[@stroff..-1][*a] if a.length != 1
+			a = a.first
+			return @str[@stroff..-1][a] if not a.kind_of? Symbol and not a.kind_of? String and not a.kind_of? C::Variable
+			f = a
+			raise "#{a.inspect} not a member" if not f.kind_of? C::Variable and not f = @struct.findmember(a.to_s, true)
+			off = @stroff + @struct.offsetof(@cp, a)
+			if bf = @struct.bitoffsetof(@cp, a)
 				ft = C::BaseType.new((bf[0] + bf[1] > 32) ? :__int64 : :__int32)
 				v = @cp.decode_c_value(@str, ft, off)
 				(v >> bf[0]) & ((1 << bf[1])-1)
@@ -2904,7 +2906,8 @@ EOH
 			end
 		end
 
-		def to_s(off=nil)
+		def to_s(off=nil, maxdepth=500)
+			return '{ /* ... */ }' if maxdepth <= 0
 			str = ['']
 			if @struct.kind_of? C::Array
 				str.last << "#{@struct.type} x[#{@struct.length}] = " if not off
@@ -2915,20 +2918,26 @@ EOH
 				str.last << 'struct ' if not off
 				fldoff = @struct.fldoffset
 				fbo = @struct.fldbitoffset || {}
-				mlist = fldoff.keys.sort_by { |k| [fldoff[k], fbo[k]] }
+				mlist = @struct.members.map { |m| m.name || m }
 			else
 				str.last << 'union ' if not off
-				mlist = @struct.fldlist.keys
+				mlist = @struct.members.map { |m| m.name || m }
 			end
 			str.last << @struct.name << ' x = ' if not off and @struct.name
 			str.last << '{'
 			mlist.each { |k|
-				curoff = off.to_i + (fldoff ? fldoff[k].to_i : 0)
-				val = self[k]
+				if k.kind_of? C::Variable	# anonymous member
+					curoff = off.to_i + @struct.offsetof(@cp, k)
+					val = self[k]
+					k = '?'
+				else
+					curoff = off.to_i + (fldoff ? fldoff[k].to_i : 0)
+					val = self[k]
+				end
 				if val.kind_of? Integer and val > 0x100
 					val = '0x%X,   // +%x' % [val, curoff]
 				elsif val.kind_of? AllocCStruct
-					val = val.to_s(curoff)
+					val = val.to_s(curoff, maxdepth-1)
 				elsif not val
 					val = 'NULL,   // +%x' % curoff # pointer with NULL value
 				else
