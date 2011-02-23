@@ -2934,6 +2934,13 @@ EOH
 			str.last << (off ? ',' : ';')
 			str.join("\n")
 		end
+
+		def to_ary
+			return super() if not @struct.kind_of?(C::Array)
+			ary = []
+			@struct.length.times { |i| ary << self[i] }
+			ary
+		end
 	end
 
 	class Parser
