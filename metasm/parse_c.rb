@@ -387,7 +387,7 @@ module C
 			bit_off = 0
 			if bits
 				isz = parser.typesize[:int]
-				isz *= 2 while isz < 8 and @bits.compact.find { |b| b > isz*8 }
+				isz *= 2 while isz < 8 and @bits.zip(@members).find { |b, m| b and (b > isz*8 or (parser and parser.sizeof(m) > isz)) }
 			end
 
 			@members.each_with_index { |m, i|
@@ -460,7 +460,7 @@ module C
 			bit_off = 0
 			if bits
 				isz = parser.typesize[:int]
-				isz *= 2 while isz < 8 and @bits.compact.find { |b| b > isz*8 }
+				isz *= 2 while isz < 8 and @bits.zip(@members).find { |b, m| b and (b > isz*8 or (parser and parser.sizeof(m) > isz)) }
 			end
 
 			@members.each_with_index { |m, i|
