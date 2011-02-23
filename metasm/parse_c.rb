@@ -2832,6 +2832,7 @@ EOH
 			return @str[@stroff..-1][a] if not a.kind_of? Symbol and not a.kind_of? String and not a.kind_of? C::Variable
 			f = a
 			raise "#{a.inspect} not a member" if not f.kind_of? C::Variable and not f = @struct.findmember(a.to_s, true)
+			a = f.name if a.kind_of? String or a.kind_of? Symbol
 			off = @stroff + @struct.offsetof(@cp, a)
 			if bf = @struct.bitoffsetof(@cp, a)
 				ft = C::BaseType.new((bf[0] + bf[1] > 32) ? :__int64 : :__int32)
@@ -2852,7 +2853,7 @@ EOH
 				return
 			end
 
-			if not a.first.kind_of? Symbol and not a.first.kind_of? String
+			if not a.first.kind_of? Symbol and not a.first.kind_of? String and not a.first.kind_of? C::Variable
 				# patch @str[@stroff..-1] like a string
 				# so we must find the intended start offset, and add @stroff to it
 				if @stroff != 0
@@ -2874,13 +2875,14 @@ EOH
 				return @str.send(:'[]=', *a)	# XXX *should* work...
 			end
 
-			fld, val = a
-			raise "#{fld.inspect} not a struct member" if not f = @struct.findmember(fld.to_s, true)
+			a, val = a
+			raise "#{a.inspect} not a struct member" if not a.kind_of? C::Variable and not f = @struct.findmember(a.to_s, true)
+			a = f.name if a.kind_of? String or a.kind_of? Symbol
 			val = @length if val == :size
-			off = @stroff + @struct.offsetof(@cp, f.name)
+			off = @stroff + @struct.offsetof(@cp, a)
 
-			if bf = @struct.bitoffsetof(@cp, f.name)
-				raise "only Integers supported in bitfield #{f.name}, got #{val.inspect}" if not val.kind_of?(::Integer)
+			if bf = @struct.bitoffsetof(@cp, a)
+				raise "only Integers supported in bitfield #{a}, got #{val.inspect}" if not val.kind_of?(::Integer)
 				# struct { int i:8; };  =>  size 8 or 32 ?
 				ft = C::BaseType.new((bf[0] + bf[1] > 32) ? :__int64 : :__int32)
 				mask = ((1 << bf[1]) - 1) << bf[0]
