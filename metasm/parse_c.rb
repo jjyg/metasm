@@ -385,35 +385,36 @@ module C
 			al = align(parser)
 			off = 0
 			bit_off = 0
-			if bits
-				isz = parser.typesize[:int]
-				isz *= 2 while isz < 8 and @bits.zip(@members).find { |b, m| b and (b > isz*8 or (parser and parser.sizeof(m) > isz)) }
-			end
+			isz = nil
 
 			@members.each_with_index { |m, i|
 				if bits and b = @bits[i]
-					if bit_off + b > 8*isz
-						bit_off = 0
-						off = (off + isz - 1) / isz * isz + isz
-					else
-						bit_off += b
-					end
-					break if m.name == name or m == name
-				else
-					if bit_off != 0
-						bit_off = 0
-						off = (off + isz - 1) / isz * isz + isz
-					end
-				       	if m.name == name or m == name
+					if not isz
 						mal = [m.type.align(parser), al].min
 						off = (off + mal - 1) / mal * mal
+					end
+					isz = parser.sizeof(m)
+					if b == 0 or (bit_off > 0 and bit_off + b > 8*isz)
+						bit_off = 0
+						mal = [m.type.align(parser), al].min
+						off = (off + isz + mal - 1) / mal * mal
+					end
+					break if m.name == name or m == name
+					bit_off += b
+				else
+					if isz
+						off += isz
+						bit_off = 0
+						isz = nil
+					end
+					mal = [m.type.align(parser), al].min
+					off = (off + mal - 1) / mal * mal
+				       	if m.name == name or m == name
 						break
 					elsif indirect and m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
 						off += m.type.untypedef.offsetof(parser, name)
 						break
 					else
-						mal = [m.type.align(parser), al].min
-						off = (off + mal - 1) / mal * mal
 						off += parser.sizeof(m)
 					end
 				end
@@ -458,32 +459,31 @@ module C
 			al = align(parser)
 			off = 0
 			bit_off = 0
-			if bits
-				isz = parser.typesize[:int]
-				isz *= 2 while isz < 8 and @bits.zip(@members).find { |b, m| b and (b > isz*8 or (parser and parser.sizeof(m) > isz)) }
-			end
+			isz = nil
 
 			@members.each_with_index { |m, i|
 				if bits and b = @bits[i]
+					if not isz
+						mal = [m.type.align(parser), al].min
+						off = (off + mal - 1) / mal * mal
+					end
+					isz = parser.sizeof(m)
+					if b == 0 or (bit_off > 0 and bit_off + b > 8*isz)
+						bit_off = 0
+						mal = [m.type.align(parser), al].min
+						off = (off + isz + mal - 1) / mal * mal
+					end
 					if m.name
 						@fldoffset[m.name] = off
 						@fldbitoffset ||= {}
 						@fldbitoffset[m.name] = [bit_off, b]
 					end
-					if bit_off + b > 8*isz
-						bit_off = 0
-						off = (off + isz - 1) / isz * isz + isz
-						if m.name
-							@fldoffset[m.name] = off
-							@fldbitoffset[m.name] = [bit_off, b]
-						end
-					else
-						bit_off += b
-					end
+					bit_off += b
 				else
-					if bit_off != 0
-						off = (off + isz - 1) / isz * isz + isz
+					if isz
+						off += isz
 						bit_off = 0
+						isz = nil
 					end
 					mal = [m.type.align(parser), al].min
 					off = (off + mal - 1) / mal * mal

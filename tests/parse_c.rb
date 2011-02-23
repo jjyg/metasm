@@ -80,24 +80,57 @@ EOS
 		assert_equal(16, cp.sizeof(cp.toplevel.struct['foo_5']))
 	end
 
-	def test_structbit
+	def test_bitfields
 		cp.parse <<EOS
 struct foo_bits {
-	int bla:4;
-	int foo:8;
-	int lol:1;
-	int lulz:1;
-	int hallothar;
-	int lastbit:1;
+	__int32 f0:4;
+	__int32 :0;
+	__int32 f1:4;
+	__int32 f2:4;
+	__int8  f3;
+	__int32 f4:4;
+	__int32 f5:30;
+};
+
+struct foo_n_bits {
+	struct foo_bits;
+};
+
+struct foo2_bits {
+	__int64 f0:30;
+	__int64 f1:30;
+	__int64 f2:30;
+};
+
+struct foo3_bits {
+	__int16 f0:8;
+	__int16 f1:4;
+	__int16 f2:1;
 };
 EOS
 		st = cp.toplevel.struct['foo_bits']
-		assert_equal(12, cp.sizeof(st))
-		assert_equal(0,  st.offsetof(cp, 'lulz'))
-		assert_equal([13, 1], st.bitoffsetof(cp, 'lulz'))
-		assert_equal(4,  st.offsetof(cp, 'hallothar'))
-		assert_equal(8,  st.offsetof(cp, 'lastbit'))
-		assert_equal([0, 1],  st.bitoffsetof(cp, 'lastbit'))
+		assert_equal(20, cp.sizeof(st))
+		assert_equal([0, 4], st.bitoffsetof(cp, 'f1'))
+		assert_equal([4, 4], st.bitoffsetof(cp, 'f2'))
+		assert_equal(8,  st.offsetof(cp, 'f3'))
+		assert_equal(12,  st.offsetof(cp, 'f4'))
+		assert_equal([0, 30],  st.bitoffsetof(cp, 'f5'))
+
+		st = cp.toplevel.struct['foo_n_bits']
+		assert_equal(20, cp.sizeof(st))
+		assert_equal([0, 4], st.bitoffsetof(cp, 'f1'))
+		assert_equal([4, 4], st.bitoffsetof(cp, 'f2'))
+		assert_equal(8,  st.offsetof(cp, 'f3'))
+		assert_equal(12,  st.offsetof(cp, 'f4'))
+		assert_equal([0, 30],  st.bitoffsetof(cp, 'f5'))
+
+		st = cp.toplevel.struct['foo2_bits']
+		assert_equal([0, 30], st.bitoffsetof(cp, 'f0'))
+		assert_equal([30, 30], st.bitoffsetof(cp, 'f1'))
+		assert_equal([0, 30], st.bitoffsetof(cp, 'f2'))
+
+		st = cp.toplevel.struct['foo3_bits']
+		assert_equal(2, cp.sizeof(st))
 	end
 
 	def test_allocstruct
