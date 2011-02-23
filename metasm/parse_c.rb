@@ -2936,7 +2936,7 @@ EOH
 		end
 
 		def to_ary
-			return super() if not @struct.kind_of?(C::Array)
+			return (defined?(super) ? super() : method_missing(:to_ary)) if not @struct.kind_of?(C::Array)
 			ary = []
 			@struct.length.times { |i| ary << self[i] }
 			ary
