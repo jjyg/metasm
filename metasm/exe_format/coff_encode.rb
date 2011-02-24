@@ -1029,7 +1029,8 @@ class COFF
 	# and WindowsExports::EXPORT
 	# if the relocation target is '<symbolname>' or 'iat_<symbolname>, link to the IAT address, if it is '<symbolname> + <expr>',
 	# link to a thunk (plt-like)
-	def autoimport
+	# if the relocation is not found, try again after appending 'fallback_append' to the symbol (eg wsprintf => wsprintfA)
+	def autoimport(fallback_append='A')
 		WindowsExports rescue return	# autorequire
 		autoexports = WindowsExports::EXPORT.dup
 		@sections.each { |s|
@@ -1045,7 +1046,11 @@ class COFF
 				elsif r.target.op == :- and r.target.rexpr.kind_of?(::String) and r.target.lexpr.kind_of?(::String)
 					sym = thunk = r.target.lexpr
 				end
-				next if not dll = autoexports[sym]
+				if not dll = autoexports[sym]
+					sym += fallback_append if sym.kind_of?(::String) and fallback_append.kind_of?(::String)
+					next if not dll = autoexports[sym]
+				end
+
 				@imports ||= []
 				next if @imports.find { |id| id.imports.find { |ii| ii.name == sym } }
 				if not id = @imports.find { |id_| id_.libname =~ /^#{dll}(\.dll)?$/i }
