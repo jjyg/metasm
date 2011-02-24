@@ -124,7 +124,7 @@ class Ia32
 		addop 'aad',   [0xD5, 0x0A]
 		addop 'aam',   [0xD4, 0x0A]
 		addop 'aas',   [0x3F]
-		addop 'arpl',  [0x63], :mrm
+		addop('arpl',  [0x63], :mrm) { |o| o.props[:argsz] = 16 ; o.args.reverse! }
 		addop 'bound', [0x62], :mrmA
 		addop 'bsf',   [0x0F, 0xBC], :mrm
 		addop 'bsr',   [0x0F, 0xBD], :mrm
