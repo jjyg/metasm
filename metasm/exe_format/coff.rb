@@ -139,8 +139,8 @@ class COFF < ExeFormat
 		half :signature, 'PE', SIGNATURE
 		bytes :link_ver_maj, :link_ver_min
 		words :code_size, :data_size, :udata_size, :entrypoint, :base_of_code
-		# base_of_data does not exist in PE+
-		new_field(:base_of_data, lambda { |exe, hdr| exe.decode_word if hdr.signature != 'PE+' }, lambda { |exe, hdr, val| exe.encode_word(val) if hdr.signature != 'PE+' }, 0)
+		# base_of_data does not exist in 64-bit
+		new_field(:base_of_data, lambda { |exe, hdr| exe.decode_word if exe.bitsize != 64 }, lambda { |exe, hdr, val| exe.encode_word(val) if exe.bitsize != 64 }, 0)
 		# NT-specific fields
 		xword :image_base
 		words :sect_align, :file_align
@@ -393,7 +393,7 @@ class COFF < ExeFormat
 		end
 	end
 
-	attr_accessor :header, :optheader, :directory, :sections, :endianness, :symbols,
+	attr_accessor :header, :optheader, :directory, :sections, :endianness, :symbols, :bitsize,
 		:export, :imports, :resource, :certificates, :relocations, :debug, :tls, :loadconfig, :delayimports, :com_header
 
 	# boolean, set to true to have #decode() ignore the base_relocs directory
@@ -406,6 +406,7 @@ class COFF < ExeFormat
 		@directory = {}	# DIRECTORIES.key => [rva, size]
 		@sections = []
 		@endianness = cpu ? cpu.endianness : :little
+		@bitsize = cpu ? cpu.size : 32
 		@header = Header.new
 		@optheader = OptionalHeader.new
 		super(cpu)

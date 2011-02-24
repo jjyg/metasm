@@ -10,6 +10,10 @@ require 'metasm/exe_format/coff' unless defined? Metasm::COFF
 module Metasm
 class COFF
 	class OptionalHeader
+		decode_hook(:entrypoint) { |coff, ohdr|
+			coff.bitsize = (ohdr.signature == 'PE+' ? 64 : 32)
+		}
+
 		# decodes a COFF optional header from coff.cursection
 		# also decodes directories in coff.directory
 		def decode(coff)
@@ -141,7 +145,7 @@ class COFF
 
 				@imports = []
 
-				ord_mask = 1 << (coff.optheader.signature == 'PE+' ? 63 : 31)
+				ord_mask = 1 << (coff.bitsize-1)
 				addrs.each { |a|
 					i = Import.new
 					if (a & ord_mask) != 0
@@ -412,7 +416,7 @@ class COFF
 	def decode_byte( edata = curencoded) ; edata.decode_imm(:u8,  @endianness) end
 	def decode_half( edata = curencoded) ; edata.decode_imm(:u16, @endianness) end
 	def decode_word( edata = curencoded) ; edata.decode_imm(:u32, @endianness) end
-	def decode_xword(edata = curencoded) ; edata.decode_imm((@optheader.signature == 'PE+' ? :u64 : :u32), @endianness) end
+	def decode_xword(edata = curencoded) ; edata.decode_imm("u#@bitsize".to_sym, @endianness) end
 	def decode_strz( edata = curencoded) ; super(edata) ; end
 
 	# converts an RVA (offset from base address of file when loaded in memory) to the section containing it using the section table
@@ -589,7 +593,7 @@ class COFF
 	def decode_imports
 		if @directory['import_table'] and sect_at_rva(@directory['import_table'][0])
 			@imports = ImportDirectory.decode_all(self)
-			iatlen = (@optheader.signature == 'PE+' ? 8 : 4)
+			iatlen = @bitsize/8
 			@imports.each { |id|
 				if sect_at_rva(id.iat_p)
 					ptr = curencoded.ptr
@@ -601,7 +605,7 @@ class COFF
 						end
 						if name
 							i.target ||= name
-							r = Metasm::Relocation.new(Expression[name], :u32, @endianness)
+							r = Metasm::Relocation.new(Expression[name], "u#@bitsize".to_sym, @endianness)
 							curencoded.reloc[ptr] = r
 							curencoded.add_export new_label('iat_'+name), ptr, true
 						end
