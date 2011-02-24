@@ -416,7 +416,7 @@ class COFF
 	def decode_byte( edata = curencoded) ; edata.decode_imm(:u8,  @endianness) end
 	def decode_half( edata = curencoded) ; edata.decode_imm(:u16, @endianness) end
 	def decode_word( edata = curencoded) ; edata.decode_imm(:u32, @endianness) end
-	def decode_xword(edata = curencoded) ; edata.decode_imm("u#@bitsize".to_sym, @endianness) end
+	def decode_xword(edata = curencoded) ; edata.decode_imm((@bitsize == 32 ? :u32 : :u64), @endianness) end
 	def decode_strz( edata = curencoded) ; super(edata) ; end
 
 	# converts an RVA (offset from base address of file when loaded in memory) to the section containing it using the section table
