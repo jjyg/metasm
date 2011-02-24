@@ -122,8 +122,8 @@ class << self
 	end
 
 	# inject a hook to be run during the decoding process
-	def decode_hook(after=nil, &b)
-		idx = (after ? @@fields[self].index(fld_get(after)) : -1)
+	def decode_hook(before=nil, &b)
+		idx = (before ? @@fields[self].index(fld_get(before)) : -1)
 		@@fields[self].insert(idx, [nil, b])
 	end
 end	# class methods
