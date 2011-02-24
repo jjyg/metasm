@@ -57,6 +57,7 @@ if file = ARGV.shift
 		src << File.read(file)
 	end
 else
+	$opts[:srctype] ||= $opts[:srctype_data]
 	src << DATA.read	# the text after __END__ in this file
 end
 
