@@ -14,6 +14,8 @@ class TestIa32 < Test::Unit::TestCase
 		Metasm::Shellcode.assemble(cpu, src).encode_string
 	end
 
+	def assert_equal(a, b) super(b, a) end
+
 	def test_basic
 		assert_equal(assemble("nop"), "\x90")
 		assert_equal(assemble("push eax"), "\x50")
@@ -25,6 +27,7 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(assemble("dec eax"), "\x48")
 		assert_equal(assemble("dec ax"), "\x66\x48")
 		assert_equal(assemble("dec al"), "\xfe\xc8")
+		assert_equal(assemble("arpl [ebp+70h], bx"), "cop")
 	end
 
 	def test_16
