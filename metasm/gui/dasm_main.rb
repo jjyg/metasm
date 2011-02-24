@@ -764,7 +764,7 @@ class DasmWindow < Window
 		addsubmenu(filemenu, 'OPEN', '^o') { promptopen }
 		addsubmenu(filemenu, '_Debug') { promptdebug }
 		addsubmenu(filemenu, 'SAVE', '^s') { promptsave }
-		addsubmenu(filemenu, 'Save as...') { promptsaveas }
+		addsubmenu(filemenu, 'Save _as...') { promptsaveas }
 		addsubmenu(filemenu, 'CLOSE') {
 			if @dasm_widget
 				@dasm_widget.terminate
@@ -774,39 +774,42 @@ class DasmWindow < Window
 		}
 		addsubmenu(filemenu)
 
-		iomenu = new_menu
-		addsubmenu(iomenu, 'Load _map') {
+		importmenu = new_menu
+		addsubmenu(importmenu, 'Load _map') {
 			openfile('chose map file') { |file|
 				@dasm_widget.dasm.load_map(File.read(file)) if @dasm_widget
 			} if @dasm_widget
 		}
-		addsubmenu(iomenu, 'S_ave map') {
+		addsubmenu(importmenu, 'Load _C') {
+			openfile('chose C file') { |file|
+				@dasm_widget.dasm.parse_c(File.read(file)) if @dasm_widget
+			} if @dasm_widget
+		}
+		addsubmenu(filemenu, '_Import', importmenu)
+
+		exportmenu = new_menu
+		addsubmenu(exportmenu, 'Save _map') {
 			savefile('chose map file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm.save_map
 				} if @dasm_widget
 			} if @dasm_widget
 		}
-		addsubmenu(iomenu, '_Save asm') {
+		addsubmenu(exportmenu, 'Save _asm') {
 			savefile('chose asm file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm
 				} if @dasm_widget
 			} if @dasm_widget
 		}
-		addsubmenu(iomenu, 'Save _C') {
+		addsubmenu(exportmenu, 'Save _C') {
 			savefile('chose C file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm.c_parser
 				} if @dasm_widget
 			} if @dasm_widget
 		}
-		addsubmenu(filemenu, 'Load _C') {
-			openfile('chose C file') { |file|
-				@dasm_widget.dasm.parse_c(File.read(file)) if @dasm_widget
-			} if @dasm_widget
-		}
-		addsubmenu(filemenu, '_i/o', iomenu)
+		addsubmenu(filemenu, '_Export', exportmenu)
 		addsubmenu(filemenu)
 		addsubmenu(filemenu, 'QUIT') { destroy } # post_quit_message ?
 
