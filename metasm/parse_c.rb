@@ -867,6 +867,26 @@ module C
 							end
 						end
 					end
+				# allow shell-style heredoc: asm <<EOS\n<asm>\nEOS
+				elsif tok.type == :punct and tok.raw == '<'
+					raise ftok, 'bad asm heredoc' if not tok = parser.lexer.readtok or tok.type != :punct or tok.raw != '<'
+					delimiter = parser.lexer.readtok
+					if delimiter.type == :punct and delimiter.raw == '-'
+						skipspc = true
+						delimiter = parser.lexer.readtok
+					end
+					raise ftok, 'bad asm heredoc delim' if delimiter.type != :string or not tok = parser.lexer.readtok or tok.type != :eol
+					nl = true
+					loop do
+						raise ftok, 'unterminated heredoc' if not tok = parser.lexer.readtok
+						break if nl and tok.raw == delimiter.raw
+						raw = tok.raw
+						raw = "\n" if skipspc and tok.type == :eol
+						body << raw
+						nl = (tok.type == :eol and (raw[-1] == ?\n or raw[-1] == ?\r))
+					end
+				# MS single-instr: asm inc eax;
+				# also allow asm "foo bar\nbaz";
 				else
 					parser.lexer.unreadtok tok
 					loop do

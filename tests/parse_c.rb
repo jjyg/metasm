@@ -35,6 +35,19 @@ class TestDynldr < Test::Unit::TestCase
 
 		assert_raise(Metasm::ParseError) { cp.parse("long long long fu;") }
 		cp.readtok until cp.eos?
+
+		assert_raise(Metasm::ParseError) { cp.parse <<EOS }
+asm <<EOA
+ foo
+ EOA
+EOS
+		cp.readtok until cp.eos?
+
+		assert_nothing_raised { cp.parse <<EOS }
+asm <<-EOA
+ foo
+ EOA
+EOS
 	end
 
 	def test_struct
