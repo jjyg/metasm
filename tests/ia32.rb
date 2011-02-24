@@ -27,7 +27,7 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(assemble("dec eax"), "\x48")
 		assert_equal(assemble("dec ax"), "\x66\x48")
 		assert_equal(assemble("dec al"), "\xfe\xc8")
-		assert_equal(assemble("arpl [ebp+70h], bx"), "cop")
+		assert_equal(assemble("arpl [edi+70h], bp"), "cop")
 	end
 
 	def test_16
