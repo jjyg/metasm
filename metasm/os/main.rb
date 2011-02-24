@@ -499,6 +499,7 @@ class Debugger
 
 	# stepover until finding the last instruction of the function
 	def stepout
+		# TODO thread-local bps
 		while not end_stepout(di_at(pc))
 			stepover
 			wait_target
@@ -622,8 +623,8 @@ class Debugger
 	end
 
 	# returns the name of the module containing addr
-	def findmodule(addr)
-		@modulemap.keys.find { |k| @modulemap[k][0] <= addr and @modulemap[k][1] > addr } || '???'
+	def findmodule(addr, default='???')
+		@modulemap.keys.find { |k| @modulemap[k][0] <= addr and @modulemap[k][1] > addr } || default
 	end
 
 	# returns a string describing addr in term of symbol (eg 'libc.so.6!printf+2f')
@@ -895,6 +896,8 @@ class Debugger
 			elsif File.exist? pf + '.rb'
 				plugin_filename = pf + '.rb'
 			end
+		elsif File.exist? plugin_filename + '.rb'
+			plugin_filename = plugin_filename + '.rb'
 		end
 
 		instance_eval File.read(plugin_filename)
