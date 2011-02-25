@@ -1212,9 +1212,9 @@ typedef struct tagOFNA {
    LPARAM       lCustData;
    LPVOID       lpfnHook;
    LPCSTR       lpTemplateName;
-   void *       pvReserved;
-   DWORD        dwReserved;
-   DWORD        FlagsEx;
+   //void *       pvReserved;	// undef for win98 compat
+   //DWORD        dwReserved;
+   //DWORD        FlagsEx;
 } OPENFILENAMEA, *LPOPENFILENAMEA;
 BOOL WINAPI GetOpenFileNameA(LPOPENFILENAMEA);
 BOOL WINAPI GetSaveFileNameA(LPOPENFILENAMEA);

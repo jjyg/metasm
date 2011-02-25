@@ -723,7 +723,7 @@ class DasmWindow < Window
 				l.show
 				false
 			end
-		}
+		} if not list_pr.empty?
 	end
 
 	# reuse last @savefile to save dasm, prompt for file if undefined
