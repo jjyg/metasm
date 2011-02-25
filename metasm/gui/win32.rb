@@ -1110,6 +1110,15 @@ AdjustWindowRectEx(
     __in DWORD dwStyle,
     __in BOOL bMenu,
     __in DWORD dwExStyle);
+#define PS_SOLID            0
+#define PS_DASH             1       /* -------  */
+#define PS_DOT              2       /* .......  */
+#define PS_DASHDOT          3       /* _._._._  */
+#define PS_DASHDOTDOT       4       /* _.._.._  */
+#define PS_NULL             5
+#define PS_INSIDEFRAME      6
+#define PS_USERSTYLE        7
+#define PS_ALTERNATE        8
 DWORD WINAPI SetTextColor(__in HDC hdc, __in DWORD color);
 BOOL WINAPI TextOutA( __in HDC hdc, __in int x, __in int y, __in_ecount(c) LPCSTR lpString, __in int c);
 BOOL WINAPI MoveToEx( __in HDC hdc, __in int x, __in int y, __out_opt LPPOINT lppt);
@@ -1118,8 +1127,10 @@ BOOL WINAPI Rectangle(__in HDC hdc, __in int left, __in int top, __in int right,
 HANDLE WINAPI SelectObject(__in HDC hdc, __in HANDLE h);
 BOOL WINAPI DeleteObject(__in HANDLE ho);
 DWORD WINAPI SetBkColor(__in HDC hdc, __in DWORD color);
-DWORD WINAPI SetDCBrushColor(__in HDC hdc, __in DWORD color);
-DWORD WINAPI SetDCPenColor(__in HDC hdc, __in DWORD color);
+HANDLE WINAPI CreateSolidBrush(__in DWORD color);
+//DWORD WINAPI SetDCBrushColor(__in HDC hdc, __in DWORD color);
+HANDLE WINAPI CreatePen(__in int style, __in int width, __in DWORD color);
+//DWORD WINAPI SetDCPenColor(__in HDC hdc, __in DWORD color);
 int WINAPI FillRect(__in HDC hDC, __in CONST RECT *lprc, __in HBRUSH hbr);
 
 WINUSERAPI HWND WINAPI GetCapture(VOID);
@@ -1289,6 +1300,17 @@ WINAPI BOOL DragQueryPoint(HDROP,LPPOINT);
 WINAPI void DragFinish(HDROP);
 WINAPI void DragAcceptFiles(HWND,BOOL);
 EOS
+
+def self.setdcbrushcolor(hdc, col)
+	@@brushes ||= {}
+	b = @@brushes[col] ||= createsolidbrush(col)
+	selectobject(hdc, b)
+end
+def self.setdcpencolor(hdc, col)
+	@@pens ||= {}
+	p = @@pens[col] ||= createpen(PS_SOLID, 0, col)
+	selectobject(hdc, p)
+end
 end
 
 module Protect
