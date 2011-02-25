@@ -27,7 +27,7 @@ class X86_64
 			o.props[:auto64] = true if o.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/
 			#o.props[:op32no64] = true if o.name =~ //	# TODO are there any instr here ?
 		}
-		addop 'movsxd', [0x63], :mrmw
+		addop 'movsxd', [0x63], :mrm
 	end
 
 	# all x86_64 cpu understand <= sse2 instrs

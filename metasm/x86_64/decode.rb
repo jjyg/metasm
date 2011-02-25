@@ -26,24 +26,24 @@ class X86_64
 			# sib: i 4 => no index, b 5 => no base
 
 			s = i = b = imm = nil
-			if rm == 4	# XXX pfx[:rex_b] ?
+			if rm == 4
 				sib = edata.get_byte.to_i
 
 				ii = (sib >> 3) & 7
-				if ii != 4	# XXX pfx[:rex_x] ?
-					ii |= 8 if pfx[:rex_x]
+				ii |= 8 if pfx[:rex_x]
+				if ii != 4
 					s = 1 << ((sib >> 6) & 3)
 					i = Reg.new(ii, adsz)
 				end
 
 				bb = sib & 7
-				if bb == 5 and m == 0 # XXX pfx[:rex_b] ?
+				if bb == 5 and m == 0
 					m = 2	# :i32 follows
 				else
 					bb |= 8 if pfx[:rex_b]
 					b = Reg.new(bb, adsz)
 				end
-			elsif rm == 5 and m == 0	# rip XXX pfx[:rex_b] ?
+			elsif rm == 5 and m == 0
 				b = Reg.new(16, adsz)
 				m = 2	# :i32 follows
 			else
@@ -68,7 +68,13 @@ class X86_64
 
 	def decode_prefix(instr, byte)
 		x = super(instr, byte)
-		#return if instr.prefix[:rex]	# must be the last prefix	TODO check repetition/out of order
+		if instr.prefix.delete :rex
+			# rex ignored if not last
+			instr.prefix.delete :rex_b
+			instr.prefix.delete :rex_x
+			instr.prefix.delete :rex_r
+			instr.prefix.delete :rex_w
+		end
 		if byte & 0xf0 == 0x40
 			x = instr.prefix[:rex] = byte
 			instr.prefix[:rex_b] = 1 if byte & 1 > 0
@@ -227,14 +233,8 @@ class X86_64
 			reg_args = [:rdi, :rsi, :rdx, :rcx, :r8, :r9]
 		end
 
-		# emulate ret <n>
 		al = cp.typesize[:ptr]
-		if sym.attributes.to_a.include? 'stdcall'
-			argsz = sym.type.args[reg_args.length..-1].to_a.inject(al) { |sum, a| sum += (cp.sizeof(a) + al - 1) / al * al }
-			df.backtrace_binding[:rsp] = Expression[:rsp, :+, argsz]
-		else
-			df.backtrace_binding[:rsp] = Expression[:rsp, :+, al]
-		end
+		df.backtrace_binding[:rsp] = Expression[:rsp, :+, al]
 
 		# scan args for function pointers
 		# TODO walk structs/unions..

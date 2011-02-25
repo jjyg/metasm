@@ -154,7 +154,7 @@ class X86_64
 			rex_x = 1 if mrm.i and mrm.i.val_rex.to_i > 0
 			pfx << 0x67 if (mrm.b and mrm.b.sz == 32) or (mrm.i and mrm.i.sz == 32)
 			pfx << [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][mrm.seg.val] if mrm.seg
-		elsif op.props[:adsz] and op.propz[:adsz] == 32
+		elsif op.props[:adsz] == 32
 			pfx << 0x67
 		end
 
