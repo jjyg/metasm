@@ -219,12 +219,19 @@ class CCompiler < C::Compiler
 					e2 = inuse findreg(rsz)
 					op = ((type.specifier == :unsigned) ? 'movzx' : 'movsx')
 					op = 'mov' if e.sz == e2.sz
-					op = 'movsxd' if op == 'movsx' and e2.sz == 64 and e.sz == 32
+					if e2.sz == 64 and e.sz == 32
+						if op == 'movsx'
+							instr 'movsxd', e2, e
+						else
+							instr 'mov', Reg.new(e2.val, 32), e
+						end
+					else
+						instr op, e2, e
+					end
 				else
 					e2 = inuse findreg(sz)
-					op = 'mov'
+					instr 'mov', e2, e
 				end
-				instr op, e2, e
 				@state.cache[e2] = oldval if oldval and e.kind_of? ModRM
 				e2
 			elsif type.float?
@@ -388,7 +395,7 @@ class CCompiler < C::Compiler
 					inuse r
 				when Reg
 					if r.sz == 64 and tto == 32
-						instr 'movzx', r, Reg.new(r.val, tto)
+						instr 'mov', Reg.new(r.val, tto), Reg.new(r.val, tto)
 					else
 						instr 'and', r, Expression[(1<<tto)-1] if r.sz > tto
 					end
@@ -398,8 +405,15 @@ class CCompiler < C::Compiler
 					unuse r
 					reg = inuse findreg
 					op = (r.sz == reg.sz ? 'mov' : (expr.rexpr.type.specifier == :unsigned ? 'movzx' : 'movsx'))
-					op = 'movsxd' if op == 'movsx' and reg.sz == 64 and r.sz == 32
-					instr op, reg, r
+					if reg.sz == 64 and r.sz == 32
+						if op == 'movsx'
+							instr 'movsxd', reg, r
+						else
+							instr 'mov', Reg.new(reg.val, 32), r
+						end
+					else
+						instr op, reg, r
+					end
 					r = reg
 				end
 			end
