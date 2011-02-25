@@ -147,8 +147,6 @@ class X86_64
 				di.instruction.args[1].sz = 32
 			elsif opsz == 8
 				di.instruction.args[1].sz = 8
-			elsif op.name == 'movzx' and pfx[:rex_w]
-				di.instruction.args[1].sz = 32
 			else
 				di.instruction.args[1].sz = 16
 			end
