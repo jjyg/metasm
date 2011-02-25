@@ -402,6 +402,9 @@ asm("get_peb: mov rax, gs:[60h] ret");
 #endif
 #ifdef __i386__
 asm("get_peb: mov eax, fs:[30h] ret");
+
+// 1st arg for ld_rb_imp == Init retaddr
+asm("Init_dynldr: call load_ruby_imports jmp Init_dynldr_real");
 #endif
 
 struct _lmodule {
@@ -422,7 +425,7 @@ struct _peb {
 };
 
 // find the ruby library in the loaded modules list of the interpreter through the PEB
-static uintptr_t find_ruby_module(void)
+static uintptr_t find_ruby_module_peb(void)
 {
 	struct _lmodule *ptr;
 	void *base;
@@ -440,6 +443,16 @@ static uintptr_t find_ruby_module(void)
 	return 0;
 }
 
+// find the ruby library from an address in the ruby module (Init_dynldr retaddr)
+static uintptr_t find_ruby_module_mem(uintptr_t someaddr)
+{
+	// could __try{}, but with no imports we're useless anyway.
+	uintptr_t ptr = someaddr & (-0x10000);
+	while (*((unsigned __int16 *)ptr) != 'ZM')	// XXX too weak?
+		ptr -= 0x10000;
+	return ptr;
+}
+
 // a table of string offsets, base = the table itself
 // each entry is a ruby function, whose address is to be put inplace in the table
 // last entry == 0
@@ -447,7 +460,7 @@ extern void *ruby_import_table;
 
 __stdcall uintptr_t GetProcAddress(uintptr_t, char *);
 // resolve the ruby imports found by offset in ruby_import_table
-static int load_ruby_imports(void)
+int load_ruby_imports(uintptr_t rbaddr)
 {
 	uintptr_t ruby_module;
 	uintptr_t *ptr;
@@ -458,7 +471,11 @@ static int load_ruby_imports(void)
 		return 0;
 	loaded_ruby_imports = 1;
 
- 	ruby_module = find_ruby_module();
+	if (rbaddr)
+		ruby_module = find_ruby_module_mem(rbaddr);
+	else
+	 	ruby_module = find_ruby_module_peb();
+
 	if (!ruby_module)
 		return 0;
 	
@@ -475,13 +492,15 @@ static int load_ruby_imports(void)
 	return 1;
 }
 
+#ifdef __x86_64__
 #define DLL_PROCESS_ATTACH 1
 __stdcall int DllMain(void *handle, int reason, void *res)
 {
 	if (reason == DLL_PROCESS_ATTACH)
-		return load_ruby_imports();
+		return load_ruby_imports(0);
 	return 1;
 }
+#endif
 EOS
 
 	# ia32 asm source for the native component: handles ABI stuff
@@ -638,9 +657,6 @@ EOS
 		# populate the ruby import table ourselves on module loading
 		bin.imports.delete_if { |id| id.libname =~ /ruby/ }
 
-		# the C glue: getprocaddress etc
-		bin.compile_c DYNLDR_C_PE_HACK
-
 		# we generate something like:
 		#  .data
 		#  ruby_import_table:
@@ -662,6 +678,16 @@ EOS
 		rb_syms = text.reloc_externals.grep(/^rb_/)
 
 		dd = (bin.cpu.size == 64 ? 'dq' : 'dd')
+
+		if bin.cpu.size == 32
+			# hax to find the base of libruby under Win98 (peb sux)
+			text.export['Init_dynldr_real'] = text.export.delete('Init_dynldr')
+			bin.unique_labels_cache.delete('Init_dynldr')
+		end
+
+		# the C glue: getprocaddress etc
+		bin.compile_c DYNLDR_C_PE_HACK
+
 		# the IAT, initialized with relative offsets to symbol names
 		asm_table = ['.data', '.align 8', 'ruby_import_table:']
 		# strings will be in .rodata
