@@ -521,6 +521,13 @@ ZEROOK
 WINBASEAPI
 DWORD
 WINAPI
+Wow64SuspendThread(
+	__in HANDLE hThread);
+
+ZEROOK
+WINBASEAPI
+DWORD
+WINAPI
 ResumeThread(
 	__in HANDLE hThread);
 
@@ -727,6 +734,39 @@ VirtualQueryEx(
 	LPVOID lpAddress,
 	PMEMORY_BASIC_INFORMATION32 lpBuffer,
 	SIZE_T dwLength	// sizeof lpBuffer
+);
+
+typedef struct _LDT_ENTRY {
+	WORD  LimitLow;
+	WORD  BaseLow;
+	union {
+		struct {
+		BYTE BaseMid;
+		BYTE Flags1;
+		BYTE Flags2;
+		BYTE BaseHi;
+	} Bytes;
+	struct {
+		DWORD BaseMid  :8;
+		DWORD Type  :5;
+		DWORD Dpl  :2;
+		DWORD Pres  :1;
+		DWORD LimitHi  :4;
+		DWORD Sys  :1;
+		DWORD Reserved_0  :1;
+		DWORD Default_Big  :1;
+		DWORD Granularity  :1;
+		DWORD BaseHi  :8;
+	} Bits;
+	} HighWord;
+} LDT_ENTRY;
+
+BOOL
+WINAPI
+GetThreadSelectorEntry(
+	HANDLE hThread,
+	DWORD dwSelector,
+	LDT_ENTRY *lpSelectorEntry
 );
 
 BOOL
@@ -977,6 +1017,11 @@ end
 
 class WinOS < OS
 	class Process < OS::Process
+		def initialize(pid, handle=nil)
+			@pid = pid
+			@handle = handle
+		end
+
 		# on-demand cached openprocess(ALL_ACCESS) handle
 		def handle
 			@handle ||= WinAPI.openprocess(WinAPI::PROCESS_ALL_ACCESS, 0, @pid)
@@ -1023,6 +1068,7 @@ class WinOS < OS
 			mods = ' '*4096
 			len = [0].pack('L')
 			ret = []
+			return ret if not WinAPI.respond_to?(:enumprocessmodules)	# XXX win98
 			if WinAPI.enumprocessmodules(@handle, mods, mods.length, len)
 				len = len.unpack('L').first
 				mods[0, len].unpack('L*').each { |mod|
@@ -1118,9 +1164,15 @@ class WinOS < OS
 		end
 
 		def peb_base
-			pinfo = WinAPI.alloc_c_struct('PROCESS_BASIC_INFORMATION')
-			if WinAPI.ntqueryinformationprocess(handle, WinAPI::PROCESSBASICINFORMATION, pinfo, pinfo.length, 0) == 0
-				pinfo.pebbaseaddress
+			@peb_base ||=
+			if WinAPI.respond_to?(:ntqueryinformationprocess)
+				pinfo = WinAPI.alloc_c_struct('PROCESS_BASIC_INFORMATION')
+				if WinAPI.ntqueryinformationprocess(handle, WinAPI::PROCESSBASICINFORMATION, pinfo, pinfo.length, 0) == 0
+					pinfo.pebbaseaddress
+				end
+			else
+				# win98 - all pebs have the same addr
+				WinAPI.new_func_asm('int get_peb(void)', 'mov eax, fs:[30h] ret') { WinAPI.get_peb }
 			end
 		end
 
@@ -1142,17 +1194,33 @@ class WinOS < OS
 		end
 		def handle=(h) @handle = h end
 
+		# return the address of the TEB for the target thread
 		def teb_base
-			tinfo = WinAPI.alloc_c_struct('THREAD_BASIC_INFORMATION')
-			if WinAPI.ntqueryinformationthread(handle, WinAPI::THREADBASICINFORMATION, tinfo, tinfo.length, 0) == 0
-				tinfo.tebbaseaddress
+			@teb_base ||=
+			if WinAPI.respond_to?(:ntqueryinformationthread)
+				tinfo = WinAPI.alloc_c_struct('THREAD_BASIC_INFORMATION')
+				if WinAPI.ntqueryinformationthread(handle, WinAPI::THREADBASICINFORMATION, tinfo, tinfo.length, 0) == 0
+					tinfo.tebbaseaddress
+				end
+			else
+				fs = context { |c| c[:fs] }
+				ldte = WinAPI.alloc_c_struct('LDT_ENTRY')
+				if WinAPI.getthreadselectorentry(handle, fs, ldte)
+					ldte.baselow | (ldte.basemid << 16) | (ldte.basehi << 24)
+				end
 			end
 		end
 
+		# increment the suspend count of the target thread - stop at >0
 		def suspend
-			WinAPI.suspendthread(handle)
+			if false	# TODO check if we're 64 and he is 32
+				WinAPI.wow64suspendthread(handle)
+			else
+				WinAPI.suspendthread(handle)
+			end
 		end
 
+		# decrease the suspend count of the target thread - runs at 0
 		def resume
 			WinAPI.resumethread(handle)
 		end
@@ -1161,8 +1229,19 @@ class WinOS < OS
 			WinAPI.terminatethread(handle, exitcode)
 		end
 
+		# returns a Context object. Can be reused, refresh the values with #update (target thread must be suspended)
+		# if a block is given, suspend the thread, update the context, yield it, and resume the thread
 		def context
 			@context ||= WinDbgAPI::Context.new(handle, WinAPI::CONTEXT86_FULL | WinAPI::CONTEXT86_DEBUG_REGISTERS)
+			if block_given?
+				suspend
+				@context.update
+				ret = yield @context
+				resume
+				ret
+			else
+				@context
+			end
 		end
 	end
 
@@ -1254,9 +1333,8 @@ class << self
 
 	# returns a Process associated to the process handle
 	def open_process_handle(h)
-		pr = Process.new(WinAPI.getprocessid(h))
-		pr.handle = h
-		pr
+		pid = WinAPI.getprocessid(h) rescue 0
+		Process.new(pid, h)
 	end
 
 	# returns the Process associated to pid if it is alive
@@ -1335,7 +1413,7 @@ class WinDbgAPI
 		begin
 			pid = Integer(target)
 			WinAPI.debugactiveprocess(pid)
-			WinAPI.debugsetprocesskillonexit(0) rescue nil
+			WinAPI.debugsetprocesskillonexit(0) if WinAPI.respond_to?(:debugsetprocesskillonexit)
 			@mem[pid] = WindowsRemoteString.open_pid(pid)
 		rescue ArgumentError
 			# *(int*)&startupinfo = sizeof(startupinfo);
@@ -1382,6 +1460,7 @@ class WinDbgAPI
 		def update(flags=@flags)
 			set_val(:ctxflags, flags)
 			WinAPI.getthreadcontext(@hthread, @ctx)
+			self
 		end
 
 		# returns the value of an unsigned int register
@@ -1678,11 +1757,6 @@ class WinDbgAPI
 		str
 	end
 
-	def break(pid)
-		WinAPI.debugbreakprocess(@hprocess[pid])
-	end
-
-
 	attr_accessor :logger
 	def puts(*s)
 		@logger ||= $stdout
@@ -1782,7 +1856,21 @@ class WinDebugger < Debugger
 	end
 
 	def break
-		@dbg.break(@pid) if @state == :running
+		return if @state != :running
+		if WinAPI.respond_to? :debugbreakprocess
+			WinAPI.debugbreakprocess(@dbg.hprocess[@pid])
+		else
+			os_thread.suspend
+			@state = :stopped
+		end
+	end
+
+	def detach
+		if WinAPI.respond_to? :debugactiveprocessstop
+			WinAPI.debugactiveprocessstop(@pid)
+		else
+			puts 'detach not supported'
+		end
 	end
 
 	def kill(*a)
