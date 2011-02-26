@@ -2230,7 +2230,7 @@ EOH
 				t = @type.untypedef
 				case t
 				when BaseType
-				when Pointer; return self #raise parser, 'address unknown for now'
+				when Pointer; return self if @op
 				else
 					return @rexpr if not @op and not @lexpr and @rexpr.kind_of? Variable and @rexpr.type == @type
 					return self # raise parser, 'not arithmetic type'
@@ -2262,11 +2262,12 @@ EOH
 				end
 
 				# overflow
-				case t.name
+				tn = (t.pointer? ? :ptr : t.name)
+				case tn
 				when :char, :short, :int, :long, :ptr, :longlong, :__int8, :__int16, :__int32, :__int64
-					max = 1 << (8*parser.typesize[t.name])
+					max = 1 << (8*parser.typesize[tn])
 					ret = ret.to_i & (max-1)
-					if t.specifier == :signed and (ret & (max >> 1)) > 0	# char == unsigned char
+					if not t.pointer? and t.specifier != :unsigned and (ret & (max >> 1)) > 0	# char == unsigned char
 						ret - max
 					else
 						ret
