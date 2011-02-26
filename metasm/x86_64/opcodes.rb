@@ -49,7 +49,6 @@ class X86_64
 		}
 
 		addop 'swapgs',  [0x0F, 0x01, 0xF8]
-		addop 'rdtscp',  [0x0F, 0x01, 0xF9]
 	end
 
 	def init_sse3

@@ -552,6 +552,7 @@ class Ia32
 		addop('movbe',    [0x0F, 0x38, 0xF0], :mrm, { :d => [2, 0] }) { |o| o.args.reverse! }
 		addop 'xgetbv', [0x0F, 0x01, 0xD0]
 		addop 'xsetbv', [0x0F, 0x01, 0xD1]
+		addop 'rdtscp', [0x0F, 0x01, 0xF9]
 		addop 'xrstor', [0x0F, 0xAE, 5<<3], :modrmA
 		addop 'xsave',  [0x0F, 0xAE, 4<<3], :modrmA
 		addop 'nop', [0x0F, 0x1F], 0	# which family does this belong to ?
