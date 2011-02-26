@@ -709,12 +709,10 @@ class DasmWindow < Window
 		list_pr = OS.current.list_processes
 		Gui.idle_add {
 			if pr = list_pr.shift
-				path = pr.modules.first.path if pr.modules and pr.modules.first
-				#path ||= '<unk>'	# if we can't retrieve exe name, can't debug the process
-				list << [pr.pid, path] if path
+				list << [pr.pid, pr.path] if pr.path
 				true
 			elsif i
-				me = Process.pid.to_s
+				me = ::Process.pid.to_s
 				l = listwindow('running processes', list,
 					       :noshow => true,
 					       :color_callback => lambda { |le| [:grey, :palegrey] if le[0] == me }
