@@ -896,6 +896,11 @@ EOS
 		raise "could not find symbol #{func.inspect} in #{lib.inspect}"
 	end
 
+	# called whenever a native API is called through new_api_c/new_func_c/etc
+	def self.trace_invoke(api, args)
+		#p api
+	end
+
 	# define a new method 'name' in the current module to invoke the raw method at addr addr
 	# translates ruby args to raw args using the specified prototype
 	def self.new_caller_for(proto, name, addr)
@@ -918,6 +923,7 @@ EOS
 				aa
 			}.flatten
 
+			trace_invoke(name, a)
 			# do it
 			ret = raw_invoke(addr, a, flags)
 
@@ -943,7 +949,10 @@ EOS
 			val.instance_variable_set('@rb2c', buf)	# GC trick: lifetime(buf) >= lifetime(hash) (XXX or until next call to convert_rb2c)
 			str_ptr(buf.str)
 		#when Float; val	# TODO handle that in raw_invoke C code
-		else val.to_i rescue 0	# NaN, Infinity, etc
+		else
+		       v = val.to_i rescue 0	# NaN, Infinity, etc
+		       v = -v if v == -(1<<(cp.typesize[:ptr]*8-1))	# ruby bug... raise -0x8000_0000: out of ulong range
+		       v
 		end
 	end
 
