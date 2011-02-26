@@ -12,9 +12,9 @@ module Metasm
 class OS
 	# represents a running process with a few information, and defines methods to get more interaction (#memory, #debugger)
 	class Process
-		attr_accessor :pid, :modules
+		attr_accessor :pid, :path, :modules
 		class Module
-			attr_accessor :path, :addr
+			attr_accessor :path, :addr, :size
 		end
 
 		def initialize(pid=nil)
@@ -22,7 +22,7 @@ class OS
 		end
 
 		def to_s
-			mod = File.basename(modules.first.path) rescue nil
+			mod = File.basename(path) rescue nil
 			"#{pid}: ".ljust(6) << (mod || '<unknown>')
 		end
 		def inspect
@@ -37,7 +37,7 @@ class OS
 		when Integer
 			list_processes.find { |pr| pr.pid == name }
 		else
-			list_processes.find { |pr| m = pr.modules.to_a.first and m.path.include? name.to_s } or
+			list_processes.find { |pr| pr.path.to_s.include? name.to_s } or
 				(find_process(Integer(name)) if name =~ /^(0x[0-9a-f]+|[0-9]+)$/i)
 		end
 	end
@@ -45,7 +45,7 @@ class OS
 	# create a new debuggee process stopped at start
 	def self.create_process(path)
 		dbg = create_debugger(path)
-		pr = find_process(dbg.pid)
+		pr = open_process(dbg.pid)
 		pr.debugger = dbg
 		pr.memory = dbg.memory
 		pr

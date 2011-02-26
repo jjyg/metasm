@@ -461,6 +461,11 @@ class LinOS < OS
 		rescue
 		end
 
+		def path
+			cmdline.split(0.chr)[0]
+		rescue
+		end
+
 		# returns the address size of the process, based on its #cpu
 		def addrsz
 			cpu.size
