@@ -2923,7 +2923,7 @@ EOH
 			if n[-1] == ?=
 				send :[]=, n[0...-1], *a
 			else
-				super(on, *a) if not @struct.findmember(n, true)
+				super(on, *a) if not @struct.kind_of?(C::Union) or not @struct.findmember(n, true)
 				send :[], n, *a
 			end
 		end
@@ -2978,6 +2978,13 @@ EOH
 			ary = []
 			@struct.length.times { |i| ary << self[i] }
 			ary
+		end
+
+		def to_strz
+			raise NoMethodError, "Not an Array" if not @struct.kind_of?(C::Array)
+			a = to_array
+			a[a.index(0)..-1] = [] if a.index(0)
+			a.pack('C*')
 		end
 	end
 
