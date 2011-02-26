@@ -163,6 +163,8 @@ typedef void *HMODULE;
 #define OUTPUT_DEBUG_STRING_EVENT   8
 #define RIP_EVENT                   9
 
+#define MAX_PATH 260
+
 #define EXCEPTION_NONCONTINUABLE 0x1    // Noncontinuable exception
 #define EXCEPTION_MAXIMUM_PARAMETERS 15 // maximum number of exception parameters
 
@@ -644,7 +646,6 @@ VirtualProtectEx(
 #define TH32CS_SNAPTHREAD   0x00000004
 #define TH32CS_SNAPMODULE   0x00000008
 #define TH32CS_SNAPMODULE32 0x00000010
-#define TH32CS_SNAPALL      (TH32CS_SNAPHEAPLIST | TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD | TH32CS_SNAPMODULE)
 #define TH32CS_INHERIT      0x80000000
 
 HANDLE
@@ -653,6 +654,35 @@ CreateToolhelp32Snapshot(
 	DWORD dwFlags,
 	DWORD th32ProcessID
 );
+
+typedef struct tagPROCESSENTRY32
+{
+	DWORD   dwSize;
+	DWORD   cntUsage;
+	DWORD   th32ProcessID;
+	ULONG_PTR th32DefaultHeapID;
+	DWORD   th32ModuleID;
+	DWORD   cntThreads;
+	DWORD   th32ParentProcessID;
+	LONG    pcPriClassBase;
+	DWORD   dwFlags;
+	CHAR    szExeFile[MAX_PATH];
+} PROCESSENTRY32;
+
+BOOL
+WINAPI
+Process32First(
+	HANDLE hSnapshot,
+	PROCESSENTRY32 *lppe
+);
+BOOL
+WINAPI
+ZEROOK
+Process32Next(
+    HANDLE hSnapshot,
+    PROCESSENTRY32 *lppe
+);
+
 
 typedef struct tagTHREADENTRY32
 {
@@ -671,13 +701,14 @@ Thread32First(
 	HANDLE hSnapshot,
 	LPTHREADENTRY32 lpte
 );
-
 BOOL
 WINAPI
+ZEROOK
 Thread32Next(
 	HANDLE hSnapshot,
 	LPTHREADENTRY32 lpte
 );
+
 
 typedef struct tagHEAPLIST32
 {
@@ -696,12 +727,41 @@ Heap32ListFirst(
      HANDLE hSnapshot,
      LPHEAPLIST32 lphl
 );
-
 BOOL
 WINAPI
+ZEROOK
 Heap32ListNext(
      HANDLE hSnapshot,
      LPHEAPLIST32 lphl
+);
+
+
+typedef struct tagMODULEENTRY32
+{
+	DWORD   dwSize;
+	DWORD   th32ModuleID;
+	DWORD   th32ProcessID;
+	DWORD   GlblcntUsage;
+	DWORD   ProccntUsage;
+	ULONG_PTR modBaseAddr;
+	DWORD   modBaseSize;
+	HMODULE hModule;
+	char    szModule[256];
+	char    szExePath[MAX_PATH];
+} MODULEENTRY32;
+
+BOOL
+WINAPI
+Module32First(
+	HANDLE hSnapshot,
+	MODULEENTRY32 *lpme
+);
+BOOL
+WINAPI
+ZEROOK
+Module32Next(
+	HANDLE hSnapshot,
+	MODULEENTRY32 *lpme
 );
 
 
@@ -855,33 +915,6 @@ OpenThreadToken (
 EOS
 	SE_DEBUG_NAME = 'SeDebugPrivilege'
 	
-	new_api_c <<EOS, 'psapi'
-#line #{__LINE__}
-
-BOOL
-WINAPI
-EnumProcesses(
-	DWORD * lpidProcess,
-	DWORD   cb,
-	DWORD * cbNeeded);
-
-BOOL
-WINAPI
-EnumProcessModules(
-	HANDLE hProcess,
-	HMODULE *lphModule,
-	DWORD cb,
-	LPDWORD lpcbNeeded);
-
-DWORD
-WINAPI
-GetModuleFileNameExA(
-	HANDLE hProcess,
-	HMODULE hModule,
-	LPSTR lpFilename,
-	DWORD nSize);
-EOS
- 
 	new_api_c <<EOS, 'ntdll'
 #line #{__LINE__}
 
@@ -1017,6 +1050,7 @@ end
 
 class WinOS < OS
 	class Process < OS::Process
+		attr_accessor :ppid
 		def initialize(pid, handle=nil)
 			@pid = pid
 			@handle = handle
@@ -1056,34 +1090,22 @@ class WinOS < OS
 			sz
 		end
 
-		# retrieve the process Module list from EnumProcessModules & GetModuleFileNameExA
-		# returns nil if we couldn't openprocess
+		# retrieve the process Module list
 		def modules
-			oldverb, $VERBOSE = $VERBOSE, false	# avoid warning pollution from getmodfnamea
-
-			self.handle
-			# if we couldn't open a handle with ALL_ACCESS, retry with minimal rights
-			@handle ||= WinAPI.openprocess(WinAPI::PROCESS_QUERY_INFORMATION | WinAPI::PROCESS_VM_READ, 0, @pid)
-			return if not @handle
-			mods = ' '*4096
-			len = [0].pack('L')
-			ret = []
-			return ret if not WinAPI.respond_to?(:enumprocessmodules)	# XXX win98
-			if WinAPI.enumprocessmodules(@handle, mods, mods.length, len)
-				len = len.unpack('L').first
-				mods[0, len].unpack('L*').each { |mod|
-					path = ' ' * 512
-					m = Process::Module.new
-					m.addr = mod
-					if len = WinAPI.getmodulefilenameexa(handle, mod, path, path.length)
-						m.path = path[0, len]
-					end
-					ret << m
-				}
+			h = WinAPI.createtoolhelp32snapshot(WinAPI::TH32CS_SNAPMODULE, @pid)
+			list = []
+			me = WinAPI.alloc_c_struct('MODULEENTRY32', :dwsize => :size)
+			return [] if not WinAPI.module32first(h, me)
+			loop do
+				m = Module.new
+				m.addr = me.modbaseaddr
+				m.size = me.modbasesize
+				m.path = me.szexepath.to_strz
+				list << m
+				break if WinAPI.module32next(h, me) == 0
 			end
-			ret
-		ensure
-			$VERBOSE = oldverb
+			WinAPI.closehandle(h)
+			list
 		end
 
 		# return the list of threads in the current process
@@ -1091,17 +1113,17 @@ class WinOS < OS
 			h = WinAPI.createtoolhelp32snapshot(WinAPI::TH32CS_SNAPTHREAD, 0)
 			list = []
 			te = WinAPI.alloc_c_struct('THREADENTRY32', :dwsize => :size)
-			return if not WinAPI.thread32first(h, te)
+			return [] if not WinAPI.thread32first(h, te)
 			loop do
 				list << te.th32threadid if te.th32ownerprocessid == @pid
-				break if not WinAPI.thread32next(h, te)
+				break if WinAPI.thread32next(h, te) == 0
 			end
 			WinAPI.closehandle(h)
 			list
 		end
 
 		# returns the heaps of the process, from a toolhelp snapshot SNAPHEAPLIST
-		# this is a hash, key = heap base addr
+		# this is a hash
 		# heap_addr => { :flags => integer (heap flags)
 		#                :shared => bool (from flags)
 		#                :default => bool (from flags) }
@@ -1109,13 +1131,13 @@ class WinOS < OS
 			h = WinAPI.createtoolhelp32snapshot(WinAPI::TH32CS_SNAPHEAPLIST, @pid)
 			ret = {}
 			he = WinAPI.alloc_c_struct('HEAPLIST32', :dwsize => :size)
-			return if not WinAPI.heap32listfirst(h, he)
+			return [] if not WinAPI.heap32listfirst(h, he)
 			loop do
 				hash = ret[he.th32heapid] = { :flags => he.dwflags }
 				hash[:default] = true if hash[:flags] & WinAPI::HF32_DEFAULT == WinAPI::HF32_DEFAULT
 				hash[:shared]  = true if hash[:flags] & WinAPI::HF32_SHARED  == WinAPI::HF32_SHARED
 				# TODO there are lots of other flags in there ! like 0x1000 / 0x8000
-				break if not WinAPI.heap32listnext(h, he)
+				break if WinAPI.heap32listnext(h, he) == 0
 			end
 			WinAPI.closehandle(h)
 			ret
@@ -1172,7 +1194,7 @@ class WinOS < OS
 				end
 			else
 				# win98 - all pebs have the same addr
-				WinAPI.new_func_asm('int get_peb(void)', 'mov eax, fs:[30h] ret') { WinAPI.get_peb }
+				WinAPI.new_func_asm('unsigned get_peb(void)', 'mov eax, fs:[30h] ret') { WinAPI.get_peb }
 			end
 		end
 
@@ -1262,13 +1284,21 @@ class << self
 		true
 	end
 
-	# returns an array of Processes, with pid/module listing
+	# returns an array of Processes
 	def list_processes
-		tab = ' '*4096
-		int = [0].pack('L')
-		return if not WinAPI.enumprocesses(tab, tab.length, int)
-		pids = tab[0, int.unpack('L').first].unpack('L*')
-		pids.map { |pid| Process.new(pid) }
+		h = WinAPI.createtoolhelp32snapshot(WinAPI::TH32CS_SNAPPROCESS, 0)
+		list = []
+		pe = WinAPI.alloc_c_struct('PROCESSENTRY32', :dwsize => :size)
+		return if not WinAPI.process32first(h, pe)
+		loop do
+			p = Process.new(pe.th32processid)
+			p.ppid = pe.th32parentprocessid
+			p.path = pe.szexefile.to_strz
+			list << p
+			break if WinAPI.process32next(h, pe) == 0
+		end
+		WinAPI.closehandle(h)
+		list
 	end
 
 	# create a debugger for the target pid/path
