@@ -35,6 +35,7 @@ typedef void VOID, *PVOID, *LPVOID;
 typedef void *HANDLE;
 typedef void *HMODULE;
 
+#define INVALID_HANDLE_VALUE (HANDLE)-1
 #define DECLSPEC_IMPORT __declspec(dllimport)
 #define WINUSERAPI DECLSPEC_IMPORT
 #define WINBASEAPI DECLSPEC_IMPORT
@@ -1093,6 +1094,7 @@ class WinOS < OS
 		# retrieve the process Module list
 		def modules
 			h = WinAPI.createtoolhelp32snapshot(WinAPI::TH32CS_SNAPMODULE, @pid)
+			return [] if h == WinAPI::INVALID_HANDLE_VALUE
 			list = []
 			me = WinAPI.alloc_c_struct('MODULEENTRY32', :dwsize => :size)
 			return [] if not WinAPI.module32first(h, me)
@@ -1129,6 +1131,7 @@ class WinOS < OS
 		#                :default => bool (from flags) }
 		def heaps
 			h = WinAPI.createtoolhelp32snapshot(WinAPI::TH32CS_SNAPHEAPLIST, @pid)
+			return [] if h == WinAPI::INVALID_HANDLE_VALUE
 			ret = {}
 			he = WinAPI.alloc_c_struct('HEAPLIST32', :dwsize => :size)
 			return [] if not WinAPI.heap32listfirst(h, he)
@@ -1294,7 +1297,7 @@ class << self
 			p = Process.new(pe.th32processid)
 			p.ppid = pe.th32parentprocessid
 			p.path = pe.szexefile.to_strz
-			list << p
+			list << p if p.pid != 0
 			break if WinAPI.process32next(h, pe) == 0
 		end
 		WinAPI.closehandle(h)
