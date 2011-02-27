@@ -3073,6 +3073,7 @@ EOH
 			type = type.type if type.kind_of? Variable
 
 			case val
+			when nil; val = 0
 			when ::Integer
 			when ::String
 				val = DynLdr.str_ptr(val)
