@@ -371,6 +371,10 @@ class Disassembler
 	attr_accessor :backtrace_maxblocks_data
 	# max bt length for backtrace_fast blocks, default=0
 	attr_accessor :backtrace_maxblocks_fast
+	# max complexity for an Expr during backtrace before abort
+	attr_accessor :backtrace_maxcomplexity, :backtrace_maxcomplexity_data
+	# maximum number of instructions inside a basic block, split past this limit
+	attr_accessor :disassemble_maxblocklength
 	# a cparser that parsed some C header files, prototypes are converted to DecodedFunction when jumped to
 	attr_accessor :c_parser
 	# hash address => array of strings
@@ -419,6 +423,9 @@ class Disassembler
 		@address_binding = {}
 		@backtrace_maxblocks = @@backtrace_maxblocks
 		@backtrace_maxblocks_fast = 0
+		@backtrace_maxcomplexity = 40
+		@backtrace_maxcomplexity_data = 5
+		@disassemble_maxblocklength = 100
 		@comment = {}
 		@funcs_stdabi = true
 	end
@@ -745,7 +752,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 		# try not to run for too long
 		# loop usage: break if the block continues to the following instruction, else return
-		100.times {
+		@disassemble_maxblocklength.times {
 			# check collision into a known block
 			break if @decoded[di_addr]
 
@@ -914,7 +921,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 		return ret if @decoded[di_addr]
 
-		100.times {
+		@disassemble_maxblocklength.times {
 			break if @decoded[di_addr]
 
 			# decode instruction
@@ -1323,8 +1330,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		snapshot_addr   = nargs.delete(:snapshot_addr) || nargs.delete(:stopaddr)
 		maxdepth        = nargs.delete(:maxdepth) || @backtrace_maxblocks
 		detached        = nargs.delete :detached
-		max_complexity  = nargs.delete(:max_complexity) || 40
-		max_complexity_data = nargs.delete(:max_complexity) || 8
+		max_complexity  = nargs.delete(:max_complexity) || @backtrace_maxcomplexity
+		max_complexity_data = nargs.delete(:max_complexity) || @backtrace_maxcomplexity_data
 		bt_log          = nargs.delete :log	# array to receive the ongoing backtrace info
 		only_upto       = nargs.delete :only_upto
 		no_check        = nargs.delete :no_check
