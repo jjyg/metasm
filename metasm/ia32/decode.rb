@@ -186,8 +186,8 @@ class Ia32
 			adsz = @size
 		end
 
+		mmxsz = ((op.props[:xmmx] && pfx[:opsz]) ? 128 : 64)
 		op.args.each { |a|
-			mmxsz = ((op.props[:xmmx] && pfx[:opsz]) ? 128 : 64)
 			di.instruction.args << case a
 			when :reg;    Reg.new     field_val[a], opsz
 			when :eeec;   CtrlReg.new field_val[a]

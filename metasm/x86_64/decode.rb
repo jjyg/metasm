@@ -105,6 +105,7 @@ class X86_64
 
 		opsz = op.props[:argsz] || (pfx[:rex_w] ? 64 : (pfx[:opsz] ? 16 : (op.props[:auto64] ? 64 : 32)))
 		adsz = pfx[:adsz] ? 32 : 64
+		mmxsz = (op.props[:xmmx] && pfx[:opsz]) ? 128 : 64
 
 		op.args.each { |a|
 			di.instruction.args << case a
@@ -112,6 +113,7 @@ class X86_64
 			when :eeec;   CtrlReg.new field_val_r[a]
 			when :eeed;   DbgReg.new  field_val_r[a]
 			when :seg2, :seg2A, :seg3, :seg3A; SegReg.new field_val[a]
+			when :regmmx; SimdReg.new field_val_r[a], mmxsz
 			when :regxmm; SimdReg.new field_val_r[a], 128
 
 			when :farptr; Farptr.decode edata, @endianness, opsz
@@ -124,6 +126,7 @@ class X86_64
 
 			when :mrm_imm;  ModRM.new(adsz, opsz, nil, nil, nil, Expression[edata.decode_imm("a#{adsz}".to_sym, @endianness)], pfx[:seg])	# XXX manuals say :a64, test it
 			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx[:seg], Reg, pfx
+			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx[:seg], SimdReg, pfx
 			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg, pfx
 
 			when :regfp;  FpReg.new   field_val[a]

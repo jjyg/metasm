@@ -16,7 +16,8 @@ class X86_64 < Ia32
 
 	# Simd extended to 16 regs, xmm only (mmx gone with 80387)
 	class SimdReg < Ia32::SimdReg
-		double_map 128 => (0..15).map { |n| "xmm#{n}" }
+		double_map  64 => (0..15).map { |n| "mm#{n}" },
+   			   128 => (0..15).map { |n| "xmm#{n}" }
 	end
 
 	# general purpose registers, all sizes

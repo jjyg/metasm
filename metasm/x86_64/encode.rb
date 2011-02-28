@@ -172,9 +172,10 @@ class X86_64
 				else
 					rex_b = ia.val_rex
 				end
-			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regxmm
+			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regxmm, :regmmx
 				set_field[oa, ia.val & 7]
 				rex_r = 1 if ia.val > 7
+				pfx << 0x66 if oa == :regmmx and op.props[:xmmx] and ia.sz == 128
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0
 				# implicit
 			when :modrm, :modrmA, :modrmmmx, :modrmxmm
@@ -195,7 +196,7 @@ class X86_64
 			end
 		}
 
-		if !(op.args & [:modrm, :modrmA, :modrmxmm]).empty?
+		if !(op.args & [:modrm, :modrmA, :modrmxmm, :modrmmmx]).empty?
 			# reg field of modrm
 			regval = (base[-1] >> 3) & 7
 			base.pop
