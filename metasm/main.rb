@@ -573,6 +573,14 @@ class Expression < ExpressionType
 			elsif l == r; 0
 			elsif r == 1 and l.kind_of? Expression and [:'==', :'!=', :<, :>, :<=, :>=].include? l.op
 				Expression[nil, :'!', l].reduce_rec
+			elsif l.kind_of?(::Numeric)
+				if r.kind_of? Expression and r.op == :^
+					# 1^(x^y) => x^(y^1)
+					Expression[r.lexpr, :^, [r.rexpr, :^, l]].reduce_rec
+				else
+					# 1^a => a^1
+					Expression[r, :^, l].reduce_rec
+				end
 			elsif l.kind_of? Expression and l.op == :^
 				# a^(b^c) => (a^b)^c
 				Expression[l.lexpr, :^, [l.rexpr, :^, r]].reduce_rec
