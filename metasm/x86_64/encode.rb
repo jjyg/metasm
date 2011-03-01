@@ -243,7 +243,7 @@ class X86_64
 			when :mrm_imm; ed = ia.imm.encode("a#{op.props[:adsz] || 64}".to_sym, @endianness)
 			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; ed = ia.encode(oa, @endianness)
 			when :i
-				type = opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : :a32
+				type = opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : "a#{opsz}".to_sym
 			       	ed = ia.encode(type, @endianness)
 			else raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"
 			end
