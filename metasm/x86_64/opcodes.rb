@@ -41,6 +41,10 @@ class X86_64
 		init_sse2_only
 
 		@opcode_list.delete_if { |o|
+			o.args.include?(:seg2) or
+			o.args.include?(:seg2A) or
+			o.name == 'lds' or
+			o.name == 'les' or
 			o.name == 'loadall' or
 			o.name == 'arpl'
 		}
