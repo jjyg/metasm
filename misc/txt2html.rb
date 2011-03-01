@@ -292,13 +292,22 @@ class Txt2Html
 					out.body << Html::Hr.new
 					flush[]
 				end
-			when /^[*-]\s+(.*)/
+			when /^([*-]+)\s+(.*)/
 				# list
-				text = $1
-				if not lst = state[:list]
-					flush[]
-					lst = state[:list] = Html::List.new
-					out.body << lst
+				bullet = $1
+				text = $2
+				if lst = state[:list] && state[:list][bullet]
+					state[:list].delete_if { |k, v| k.length > bullet.length }
+				else
+					flush[] if not state[:list]
+					state[:list] ||= {}
+					state[:list].delete_if { |k, v| k.length > bullet.length }
+					lst = state[:list][bullet] = Html::List.new
+					if pl = state[:list][bullet.chop]
+						pl.content.last.content << lst
+					else
+						out.body << lst
+					end
 				end
 				lst.add_line compile_string(text)
 
@@ -313,8 +322,13 @@ class Txt2Html
 			when /^\s*$/
 				flush[]
 			else
-				prev << ' ' if prev.length > 0
-				prev << l
+				if state[:list]
+					lst = state[:list].sort.last[1]
+					lst.content.last.content << ' ' << compile_string(l)
+				else
+					prev << ' ' if prev.length > 0
+					prev << l
+				end
 			end
 		}
 		flush[]
