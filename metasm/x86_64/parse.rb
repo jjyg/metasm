@@ -56,7 +56,7 @@ class X86_64
 			return if not arg.kind_of? Reg and not arg.kind_of? ModRM
 			arg.sz ||= 32
 			if spec == :reg
-				return if arg.kind_of? ModRM
+				return if not arg.kind_of? Reg
 				return arg.sz >= 32
 			else
 				return arg.sz == 32

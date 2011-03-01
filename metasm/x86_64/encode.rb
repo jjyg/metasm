@@ -149,10 +149,10 @@ class X86_64
 
 		# addrsize override / segment override / rex_bx
 		if mrm = i.args.grep(ModRM).first
-			mrm.encode(0, @endianness)	# may reorder b/i, which must be correct for rex
+			mrm.encode(0, @endianness) if mrm.b or mrm.i	# may reorder b/i, which must be correct for rex
 			rex_b = 1 if mrm.b and mrm.b.val_rex.to_i > 0
 			rex_x = 1 if mrm.i and mrm.i.val_rex.to_i > 0
-			pfx << 0x67 if (mrm.b and mrm.b.sz == 32) or (mrm.i and mrm.i.sz == 32)
+			pfx << 0x67 if (mrm.b and mrm.b.sz == 32) or (mrm.i and mrm.i.sz == 32) or op.props[:adsz] == 32
 			pfx << [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][mrm.seg.val] if mrm.seg
 		elsif op.props[:adsz] == 32
 			pfx << 0x67
@@ -243,7 +243,7 @@ class X86_64
 			when :mrm_imm; ed = ia.imm.encode("a#{op.props[:adsz] || 64}".to_sym, @endianness)
 			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; ed = ia.encode(oa, @endianness)
 			when :i
-				type = opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : "a#{opsz}".to_sym
+				type = (opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : "#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym)
 			       	ed = ia.encode(type, @endianness)
 			else raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"
 			end
