@@ -182,7 +182,6 @@ class VirtualString
 		@pagecache = []
 		@pagecache_len = 4
 		@pagelength ||= 4096	# must be (1 << x)
-		@invalid_page_addr = nil
 	end
 
 	# returns wether a page is valid or not

@@ -894,7 +894,7 @@ class LinDebugger < Debugger
 end
 
 class LinuxRemoteString < VirtualString
-	attr_accessor :pid, :readfd, :invalid_addr
+	attr_accessor :pid, :readfd
 	attr_accessor :dbg
 
 	# returns a virtual string proxying the specified process memory range
@@ -905,7 +905,6 @@ class LinuxRemoteString < VirtualString
 		length ||= 1 << (LinOS.open_process(@pid).addrsz rescue 32)
 		@readfd = File.open("/proc/#@pid/mem", 'rb') rescue nil
 		@dbg = dbg if dbg
-		@invalid_addr = false
 		super(addr_start, length)
 	end
 
