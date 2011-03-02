@@ -30,10 +30,8 @@ class Elem
 	end
 	
 	@@quotechars = {
-		'é' => '&eacute;',
-		'è' => '&egrave;',
-		'ë' => '&euml;',
-		'à' => '&agrave;',
+		'Ã¨' => '&egrave;',
+		'Ã«' => '&euml;',
 		'>' => '&gt;',
 		'<' => '&lt;',
 		'"' => '&quot;',

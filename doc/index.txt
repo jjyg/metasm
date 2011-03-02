@@ -46,8 +46,8 @@ Authors
 Metasm is mostly written by Yoann Guillot.
 
 Some parts were added by various contributors, including :
-* Julien Tinnès
-* Raphaël Rigo
+* Julien TinnÃ¨s
+* RaphaÃ«l Rigo
 * Arnaud Cornet
 * Alexandre Gazet
 
