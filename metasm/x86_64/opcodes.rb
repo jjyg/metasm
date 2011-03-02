@@ -43,10 +43,7 @@ class X86_64
 		@opcode_list.delete_if { |o|
 			o.args.include?(:seg2) or
 			o.args.include?(:seg2A) or
-			o.name == 'lds' or
-			o.name == 'les' or
-			o.name == 'loadall' or
-			o.name == 'arpl'
+			%w[lds les loadall arpl pusha pushad popa popad].include?(o.name)
 		}
 
 		addop 'swapgs',  [0x0F, 0x01, 0xF8]
