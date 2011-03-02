@@ -99,8 +99,10 @@ class X86_64
 			op64.name << '.i64'
 			op64.props[:opsz] = 64
 			@opcode_list << op64
-		elsif op.props[:strop] or op.props[:stropz] or op.args.include? :mrm_imm
+		elsif op.props[:strop] or op.props[:stropz] or op.args.include? :mrm_imm or
+				op.args.include? :modrm or op.args.include? :modrmA or op.name =~ /loop|xlat/
 			# define adsz-override version for ambiguous opcodes (movsq)
+			# XXX loop pfx 67 = rip+ecx, 66/rex ignored
 			op32 = dupe[op]
 			op32.name << '.a32'
 			op32.props[:adsz] = 32
