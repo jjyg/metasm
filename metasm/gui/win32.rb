@@ -1842,8 +1842,17 @@ class DrawableWidget < WinWidget
 		draw_string(x, y, text)
 	end
 
-	def kbd_shift
-		Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0
+	def keyboard_state(query=nil)
+		case query
+		when :control, :ctrl
+			Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
+		when :shift
+			Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0
+		when :alt
+			Win32Gui.getkeystate(Win32Gui::VK_MENU) & 0x8000 > 0
+		else
+			[:control, :shift, :alt].find_all { |s| keyboard_state(s) }
+		end
 	end
 
 # represents a clickable area with a label (aka button)
@@ -1959,6 +1968,17 @@ class Window
 		Win32Gui.updatewindow(@hwnd)
 	end
 
+	def keyboard_state(query=nil)
+		case query
+		when :control, :ctrl
+			Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
+		when :shift
+			Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0
+		when :alt
+			Win32Gui.getkeystate(Win32Gui::VK_MENU) & 0x8000 > 0
+		end
+	end
+
 	# keypress event keyval traduction table
 	Keyboard_trad = Win32Gui.cp.lexer.definition.keys.grep(/^VK_/).inject({}) { |h, cst|
 		v = Win32Gui.const_get(cst)
@@ -2022,7 +2042,7 @@ class Window
 		when Win32Gui::WM_KEYDOWN, Win32Gui::WM_SYSKEYDOWN
 			# SYSKEYDOWN for f10 (default = activate the menu bar)
 			if key = Keyboard_trad[wparam]
-				if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0
+				if keyboard_state(:control)
 					@widget.keypress_ctrl_(key) if @widget
 				else
 					@widget.keypress_(key) if @widget
@@ -2030,14 +2050,12 @@ class Window
 			end
 			Win32Gui.defwindowproca(hwnd, msg, wparam, lparam) if key != :f10	# alt+f4 etc
 		when Win32Gui::WM_CHAR
-			if Win32Gui.getkeystate(Win32Gui::VK_CONTROL) & 0x8000 > 0 and not
-			   Win32Gui.getkeystate(Win32Gui::VK_MENU) & 0x8000 > 0			# altgr+[ returns CTRL on..
-				shift = (Win32Gui.getkeystate(Win32Gui::VK_SHIFT) & 0x8000 > 0)
+			if keyboard_state(:control) and not keyboard_state(:alt)	# altgr+[ returns CTRL on..
 				if ?a.kind_of?(String)
-					wparam += (shift ? ?A.ord : ?a.ord) - 1 if wparam < 0x1a
+					wparam += (keyboard_state(:shift) ? ?A.ord : ?a.ord) - 1 if wparam < 0x1a
 					k = wparam.chr
 				else
-					wparam += (shift ? ?A : ?a) - 1 if wparam < 0x1a
+					wparam += (keyboard_state(:shift) ? ?A : ?a) - 1 if wparam < 0x1a
 					k = wparam
 				end
 				@widget.keypress_ctrl_(k) if @widget

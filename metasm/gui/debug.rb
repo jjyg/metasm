@@ -401,6 +401,22 @@ class DbgConsoleWidget < DrawableWidget
 		update_caret
 	end
 
+	def doubleclick(x, y)
+		# TODO real copy/paste
+		# for now, copy the line under the dblclick
+		y -= height % @font_height
+		y = y.to_i / @font_height
+		hc = height / @font_height
+		if y == hc - 1
+			txt = @statusline
+		elsif y == hc - 2
+			txt = @curline
+		else
+			txt = @log.reverse[@log_offset + hc - y - 3].to_s
+		end
+		clipboard_copy(txt)
+	end
+
 	def mouse_wheel(dir, x, y)
 		case dir
 		when :up; @log_offset += 3
@@ -548,6 +564,15 @@ class DbgConsoleWidget < DrawableWidget
 				redraw
 			end
 
+		when :insert
+			if keyboard_state(:shift)
+				txt = clipboard_paste.to_s
+				@curline[@caret_x, 0] = txt
+				@caret_x += txt.length
+				update_status_cmd
+				redraw
+			end
+
 		when Symbol; return false	# avoid :shift cannot coerce to Int warning
 		when ?\x20..?\x7e
 			@curline[@caret_x, 0] = key.chr
@@ -555,6 +580,19 @@ class DbgConsoleWidget < DrawableWidget
 			update_status_cmd
 			redraw
 
+		else return false
+		end
+		true
+	end
+
+	def keypress_ctrl(key)
+		case key
+		when ?v
+			txt = clipboard_paste.to_s
+			@curline[@caret_x, 0] = txt
+			@caret_x += txt.length
+			update_status_cmd
+			redraw
 		else return false
 		end
 		true

@@ -216,7 +216,8 @@ class DrawableWidget < Gtk::DrawingArea
 		}
 
 		signal_connect('button_press_event') { |w, ev|
-			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+			@last_kb_ev = ev
+			if keyboard_state(:control)
 				next protect { click_ctrl(ev.x, ev.y) } if ev.event_type == Gdk::Event::Type::BUTTON_PRESS and ev.button == 1 and respond_to? :click_ctrl
 				next
 			end
@@ -235,7 +236,8 @@ class DrawableWidget < Gtk::DrawingArea
 		}
 
 		signal_connect('motion_notify_event') { |w, ev|
-			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+			@last_kb_ev = ev
+			if keyboard_state(:control)
 				protect { mousemove_ctrl(ev.x, ev.y) } if respond_to? :mousemove_ctrl
 			else
 				protect { mousemove(ev.x, ev.y) }
@@ -252,7 +254,8 @@ class DrawableWidget < Gtk::DrawingArea
 			when Gdk::EventScroll::Direction::DOWN; :down
 			else next
 			end
-			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+			@last_kb_ev = ev
+			if keyboard_state(:control)
 				protect { mouse_wheel_ctrl(dir, ev.x, ev.y) } if respond_to? :mouse_wheel_ctrl
 			else
 				protect { mouse_wheel(dir, ev.x, ev.y) }
@@ -260,8 +263,9 @@ class DrawableWidget < Gtk::DrawingArea
 		} if respond_to? :mouse_wheel
 
 		signal_connect('key_press_event') { |w, ev|
+			@last_kb_ev = ev
 			key = Keyboard_trad[ev.keyval]
-			if ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+			if keyboard_state(:control)
 				protect { keypress_ctrl(key) or (@parent_widget and @parent_widget.keypress_ctrl(key)) }
 			else
 				protect { keypress(key) or (@parent_widget and @parent_widget.keypress(key)) }
@@ -407,6 +411,29 @@ class DrawableWidget < Gtk::DrawingArea
 		draw_color(col)
 		draw_string(x, y, str)
 	end
+
+	def clipboard_copy(buf)
+		clipboard = Gtk::Clipboard.get(Gdk::Selection::PRIMARY)
+		clipboard.text = buf
+	end
+
+	def clipboard_paste
+		clipboard = Gtk::Clipboard.get(Gdk::Selection::PRIMARY)
+		clipboard.wait_for_text
+	end
+
+	def keyboard_state(query=nil)
+		case query
+		when :control, :ctrl
+			ev = @last_kb_ev and ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+		when :shift
+			ev = @last_kb_ev and ev.state & Gdk::Window::SHIFT_MASK   == Gdk::Window::SHIFT_MASK
+		when :alt
+			ev = @last_kb_ev and ev.state & Gdk::Window::MOD1_MASK    == Gdk::Window::MOD1_MASK
+		else
+			[:control, :shift, :alt].find_all { |s| keyboard_state(s) }
+		end
+	end
 end
 
 module WindowPos
@@ -455,9 +482,10 @@ class InputBox < Gtk::Dialog
 		end
 
 		@textwidget.signal_connect('key_press_event') { |w, ev|
-			case ev.keyval
-			when Gdk::Keyval::GDK_Escape; response(RESPONSE_REJECT) ; true
-			when Gdk::Keyval::GDK_Return, Gdk::Keyval::GDK_KP_Enter; response(RESPONSE_ACCEPT) ; true
+			key = DrawableWidget::Keyboard_trad[ev.keyval]
+			case key
+			when :escape; response(RESPONSE_REJECT) ; true
+			when :enter; response(RESPONSE_ACCEPT) ; true
 			end
 		}
 
