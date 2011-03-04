@@ -550,7 +550,7 @@ class AsmListingWidget < DrawableWidget
 				str_c << ["#{Expression[curaddr]}    ", :address]
 				if @raw_data_length.to_i > 0
 					if s = @dasm.get_section_at(curaddr)
-						raw = s.read([aoff, @raw_data_length].min)
+						raw = s[0].read([aoff, @raw_data_length].min)
 						raw = raw.unpack('H*').first
 					else
 						raw = ''
