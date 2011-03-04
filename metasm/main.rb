@@ -620,7 +620,7 @@ class Expression < ExpressionType
 			elsif l == r; l
 			elsif l.kind_of?(Integer); Expression[r, @op, l].reduce_rec
 			elsif l.kind_of?(Expression) and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
-			elsif l.kind_of?(Expression) and [:|, :^].include?(l.op) and r.kind_of?(Integer) and (r & (r+1)) != 0
+			elsif l.kind_of?(Expression) and [:|, :^].include?(l.op) and r.kind_of?(Integer) and (l.op == :| or (r & (r+1)) != 0)
 				# (a ^| b) & i => (a&i ^| b&i)
 				Expression[[l.lexpr, :&, r], l.op, [l.rexpr, :&, r]].reduce_rec
 			elsif r.kind_of?(::Integer) and l.kind_of?(Expression) and (r & (r+1)) == 0
@@ -754,7 +754,7 @@ class Expression < ExpressionType
 			end
 		when :|
 			# rol/ror composition
-			reduce_rec_composerol e, mrsk
+			reduce_rec_composerol e, mask
 		else
 			Expression[e, :&, mask]
 		end
