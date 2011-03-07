@@ -111,6 +111,44 @@ end
 class CPU
 	# compat alias, for scripts using older version of metasm
 	def get_backtrace_binding(di) backtrace_binding(di) end
+
+	# return something like backtrace_binding in the forward direction
+	# set pc_reg to some reg name (eg :pc) to include effects on the instruction pointer
+	def get_fwdemu_binding(di, pc_reg=nil)
+		fdi = di.backtrace_binding ||= get_backtrace_binding(di)
+		# find self-updated regs & revert them in simultaneous affectations
+		# XXX handles only a <- a+i for now, this covers all useful cases (except imul eax, eax, 42  jz foobar)
+		fdi.keys.grep(::Symbol).each { |s|
+			val = Expression[fdi[s]]
+			next if val.lexpr != s or (val.op != :+ and val.op != :-) #or not val.rexpr.kind_of? ::Integer
+			fwd = { s => val }
+			inv = { s => val.dup }
+			inv[s].op = ((inv[s].op == :+) ? :- : :+)
+			nxt = {}
+			fdi.each { |k, v|
+				if k == s
+					nxt[k] = v
+				else
+					k = k.bind(fwd).reduce_rec if k.kind_of? Indirection
+					nxt[k] = Expression[Expression[v].bind(inv).reduce_rec]
+				end
+			}
+			fdi = nxt
+		}
+		if pc_reg
+			if di.opcode.props[:setip]
+				xr = get_xrefs_x(nil, di)
+				if xr and xr.length == 1
+					fdi[pc_reg] = xr[0]
+				else
+					fdi[:incomplete_binding] = Expression[1]
+				end
+			else
+				fdi[pc_reg] = Expression[pc_reg, :+, di.bin_length]
+			end
+		end
+		fdi
+	end
 end
 
 class Disassembler
@@ -181,6 +219,11 @@ class Disassembler
 		ret
 	end
 	alias instructionblocks each_instructionblock
+
+	# return a backtrace_binding reversed (akin to code emulation) (but not really)
+	def get_fwdemu_binding(di, pc=nil)
+		@cpu.get_fwdemu_binding(di, pc)
+	end
 
 	# reads len raw bytes from the mmaped address space
 	def read_raw_data(addr, len)
