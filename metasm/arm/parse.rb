@@ -64,20 +64,32 @@ class ARM
 				arg.updated = true
 			end
 		elsif lexer.nexttok.raw == '{'
-			arg = Reglist.new
+			lexer.readtok
+			arg = RegList.new
 			loop do
+				raise "unterminated reglist" if lexer.eos?
 				lexer.skip_space
 				if Reg.s_to_i[lexer.nexttok.raw]
 					arg.list << Reg.new(Reg.s_to_i[lexer.readtok.raw])
 					lexer.skip_space
 				end
 				case lexer.nexttok.raw
-				when ','
+				when ','; lexer.readtok
+				when '-'
+					lexer.readtok
+					lexer.skip_space
+					if not r = Reg.s_to_i[lexer.nexttok.raw]
+						raise lexer, "reglist parse error: invalid range"
+					end
+					lexer.readtok
+					(arg.list.last.i+1..r).each { |v|
+						arg.list << Reg.new(v)
+					}
 				when '}'; lexer.readtok ; break
-				else raise lexer, 'reglist parse error'
+				else raise lexer, "reglist parse error: ',' or '}' expected, got #{lexer.nexttok.raw.inspect}"
 				end
 			end
-			if lexer.nexttok.raw == '^'
+			if lexer.nexttok and lexer.nexttok.raw == '^'
 				lexer.readtok
 				arg.usermoderegs = true
 			end
