@@ -1637,17 +1637,19 @@ class WinDebugger < Debugger
 		check_target until pid
 	end
 
+	def shortname; 'windbg'; end
+
 	def attach(npid)
 		WinAPI.debugactiveprocess(npid)
 		WinAPI.debugsetprocesskillonexit(0) if WinAPI.respond_to?(:debugsetprocesskillonexit)
 		check_target until pid
 	end
 
-	def createprocess(target, debug_children=false)
+	def createprocess(target)
 		startupinfo = WinAPI.alloc_c_struct('STARTUPINFOA', :cb => :size)
 		processinfo = WinAPI.alloc_c_struct('PROCESS_INFORMATION')
 		flags  = WinAPI::DEBUG_PROCESS
-		flags |= WinAPI::DEBUG_ONLY_THIS_PROCESS if not debug_children
+		flags |= WinAPI::DEBUG_ONLY_THIS_PROCESS if not trace_children
 		target = target.dup if target.frozen?	# eg ARGV
 		h = WinAPI.createprocessa(nil, target, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
 		raise "CreateProcess: #{WinAPI.last_error_msg}" if not h
@@ -1904,11 +1906,13 @@ class WinDebugger < Debugger
 	end
 
 	def detach
+		del_all_breakpoints
 		if WinAPI.respond_to? :debugactiveprocessstop
 			WinAPI.debugactiveprocessstop(@pid)
 		else
 			raise 'detach not supported'
 		end
+		del_pid
 	end
 
 	def kill(exitcode=0)

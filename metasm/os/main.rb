@@ -434,7 +434,12 @@ class Debugger
 	       	:callback_exception, :callback_newthread, :callback_endthread,
 		:callback_newprocess, :callback_endprocess, :callback_loadlibrary
 
-	attr_accessor :pass_all_exceptions, :ignore_newthread, :ignore_endthread
+	# global switches, specify wether to break on exception/thread event
+	#  can be a Proc that is evaluated (arg = info parameter of the evt_func)
+	# trace_children is a bool to tell if we should debug subprocesses spawned
+	#  by the target
+	attr_accessor :pass_all_exceptions, :ignore_newthread, :ignore_endthread,
+		:trace_children
 
 	# link to the user-interface object if available
 	attr_accessor :gui
@@ -448,13 +453,17 @@ class Debugger
 		@info = 'empty'
 		# stuff saved when we switch pids
 		@pid_stuff_list = [:memory, :cpu, :disassembler, :symbols, :symbols_len,
-			:modulemap, :breakpoint, :breakpoint_memory, :tid, :tid_stuff, :delete_process]
+			:modulemap, :breakpoint, :breakpoint_memory, :tid, :tid_stuff,
+			:delete_process, :dead_process]
 		@tid_stuff_list = [:state, :info, :breakpoint_thread, :singlestep_cb, 
-			:run_method, :run_args, :breakpoint_cause, :delete_thread]
+			:run_method, :run_args, :breakpoint_cause,
+			:delete_thread, :dead_thread]
 		@callback_loadlibrary = lambda { |h| loadsyms(h[:address]) ; continue }
 		initialize_newpid
 		initialize_newtid
 	end
+
+	def shortname; self.class.name.split('::').last.downcase; end
 
 	attr_reader :pid
 	# change pid and associated cached data
@@ -502,6 +511,7 @@ class Debugger
 		@tid_stuff_list.each { |s| instance_variable_set("@#{s}", nil) }
 
 		@state = :stopped
+		@info = 'new'
 		@breakpoint_thread = {}
 		gui.swapin_tid if gui.respond_to?(:swapin_tid)
 	end
@@ -554,6 +564,22 @@ class Debugger
 			instance_variable_set("@#{fld}", @tid_stuff[@tid][fld])
 		}
 		gui.swapin_tid if gui.respond_to?(:swapin_tid)
+	end
+
+	# delete references to the current pid
+	# switch to another pid, set @state = :dead if none available
+	def del_pid
+		@delete_process = true
+		set_pid @pid_stuff_list.keys.find { |k| k != @pid }
+		@state = :dead if not @pid
+	end
+
+	# delete references to the current thread
+	# calls del_process if no tid left
+	def del_tid
+		@delete_thread = true
+		set_tid @tid_stuff_list.keys.find { |k| k != @tid }
+		del_pid if not @tid
 	end
 
 	# change the debugger to a specific pid/tid
@@ -676,12 +702,27 @@ class Debugger
 		}
 	end
 
+
+	# delete all breakpoints defined in the current thread
+	def del_all_breakpoints_thread
+		@breakpoint_thread.values.map { |b| b.hash_shared }.flatten.uniq.each { |b| del_bp(b) }
+	end
+
+	# delete all breakpoints for the current process and all its threads
+	def del_all_breakpoints
+		each_tid { del_all_breakpoints_thread }
+		@breakpoint.values.map { |b| b.hash_shared }.flatten.uniq.each { |b| del_bp(b) }
+		@breakpoint_memory.values.uniq.map { |b| b.hash_shared }.flatten.uniq.each { |b| del_bp(b) }
+	end
+
+	# calls do_enable_bpm for bpms, or @cpu.dbg_enable_bp
 	def do_enable_bp(b)
 		if b.type == :bpm; do_enable_bpm(b)
 		else @cpu.dbg_enable_bp(self, b)
 		end
 	end
 
+	# calls do_disable_bpm for bpms, or @cpu.dbg_disable_bp
 	def do_disable_bp(b)
 		if b.type == :bpm; do_disable_bpm(b)
 		else @cpu.dbg_disable_bp(self, b)
@@ -809,13 +850,22 @@ class Debugger
 	# to be called right before resuming execution of the target
 	# run_m is the method that should be called if the execution is stopped
 	# due to a side-effect of the debugger (bpx with wrong condition etc)
+	# returns nil if the execution should be avoided (just deleted the dead thread/process)
 	def check_pre_run(run_m, *run_a)
+		if @dead_process
+			del_pid
+			return
+		elsif @dead_thread
+			del_tid
+			return
+		end
 		@cpu.dbg_check_pre_run(self) if @cpu.respond_to?(:dbg_check_pre_run)
 		@breakpoint_cause = nil
 		@run_method = run_m
 		@run_args = run_a
 		@state = :running
 		@info = nil
+		true
 	end
 
 
@@ -976,7 +1026,9 @@ class Debugger
 
 		callback_exception[info] if callback_exception
 
-		if pass_all_exceptions
+		pass = pass_all_exceptions
+		pass = pass[info] if pass.kind_of? Proc
+		if pass
 			pass_current_exception
 			resume_badbreak
 		end
@@ -988,7 +1040,9 @@ class Debugger
 
 		callback_newthread[info] if callback_newthread
 
-		if ignore_newthread
+		ign = ignore_newthread
+		ign = ign[info] if ign.kind_of? Proc
+		if ign
 			continue
 		end
 	end
@@ -996,12 +1050,14 @@ class Debugger
 	def evt_endthread(info={})
 		@state = :stopped
 		@info = 'end thread'
-		# mark the thread as to be deleted on next continue 
-		@delete_thread = true
+		# mark the thread as to be deleted on next check_pre_run
+		@dead_thread = true
 
 		callback_endthread[info] if callback_endthread
 
-		if ignore_endthread
+		ign = ignore_endthread
+		ign = ign[info] if ign.kind_of? Proc
+		if ign
 			continue
 		end
 	end
@@ -1016,7 +1072,7 @@ class Debugger
 	def evt_endprocess(info={})
 		@state = :stopped
 		@info = 'end process'
-		@delete_process = true
+		@dead_process = true
 
 		callback_endprocess[info] if callback_endprocess
 	end
@@ -1086,11 +1142,11 @@ class Debugger
 	def continue
 		if b = @breakpoint_cause and b.hash_shared.find { |bb| bb.state == :active }
 			singlestep_bp(b) {
-				check_pre_run(:continue)
+				next if not check_pre_run(:continue)
 				do_continue
 			}
 		else
-			check_pre_run(:continue)
+			return if not check_pre_run(:continue)
 			do_continue
 		end
 	end
@@ -1105,7 +1161,7 @@ class Debugger
 	# resume execution of the target one instruction at a time
 	def singlestep(&b)
 		@singlestep_cb = b
-		check_pre_run(:singlestep)
+		return if not check_pre_run(:singlestep)
 		do_singlestep
 	end
 

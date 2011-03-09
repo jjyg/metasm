@@ -960,6 +960,15 @@ class DbgConsoleWidget < DrawableWidget
 			@dbg.ignore_endthread = true
 		}
 
+		new_command('trace_children', 'trace children of the next processes we attach (0|1)') { |arg|
+			arg = case arg.to_s.strip.downcase
+			when '0', 'no', 'false'; false
+			else true
+			end
+			add_log "trace children #{arg ? 'active' : 'inactive'}"
+			@dbg.trace_children = arg
+		}
+
 		new_command('attach', 'attach to a running process') { |arg|
 			if pr = @dbg.list_processes.find { |pp| pp.path.to_s.downcase.include?(arg.downcase) }
 				pid = pr.pid
