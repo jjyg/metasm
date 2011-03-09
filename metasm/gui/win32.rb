@@ -2100,7 +2100,7 @@ class Window
 		when Win32Gui::WM_LBUTTONDBLCLK
 			:doubleclick
 		when Win32Gui::WM_MOUSEWHEEL
-			off = Expression.make_signed(wparam >> 16, 16)
+			off = Expression.make_signed((wparam >> 16) & 0xffff, 16)
 			dir = off > 0 ? :up : :down
 			if ctrl
 				return(@widget.mouse_wheel_ctrl(dir, x-@clientx, y-@clienty) if @widget.respond_to? :mouse_wheel_ctrl)
@@ -2551,7 +2551,6 @@ class IBoxWidget < DrawableWidget
 
 	def mousemove(x, y)
 		if @textdown
-			x = Expression.make_signed(x, 16)
 			x = x.to_i / @font_width - 1 + @caret_x_start
 			x = [[x, 0].max, @curline.length].min
 			if x != @textdown
@@ -2564,7 +2563,6 @@ class IBoxWidget < DrawableWidget
 
 	def mouserelease(x, y)
 		if @textdown
-			x = Expression.make_signed(x, 16)
 			x = x.to_i / @font_width - 1 + @caret_x_start
 			x = [[x, 0].max, @curline.length].min
 			if x != @textdown
@@ -2870,7 +2868,6 @@ class LBoxWidget < DrawableWidget
 	def mousemove(x, y)
 		if @btndown.compact.first
 			@btndown = []
-			x = Expression.make_signed(x, 16)
 			@btndown[xtobtn(x)] = true
 			redraw
 		end
@@ -2878,7 +2875,6 @@ class LBoxWidget < DrawableWidget
 
 	def mouserelease(x, y)
 		if @btndown.compact.first
-			x = Expression.make_signed(x, 16)
 			@btndown = []
 			col = xtobtn(x)
 			cursel = @list[@linesel] if @linesel
