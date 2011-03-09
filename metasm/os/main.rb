@@ -312,24 +312,444 @@ end
 # this class implements a high-level debugging API (abstract superclass)
 class Debugger
 	class Breakpoint
-		attr_accessor :address, :oneshot, :state, :type, :previous, :condition, :action, :mtype, :mlen
+		attr_accessor :address,
+			# context where the bp was defined
+			:pid, :tid,
+			# bool: oneshot ?
+			:oneshot,
+			# current bp state: :active, :inactive (internal use), :disabled (user-specified)
+			:state,
+			# type: type of breakpoint (:bpx = soft, :hw = hard)
+			:type,
+			# Expression if this is a conditionnal bp
+			# may be a Proc, String or Expression, evaluated every time the breakpoint hits
+			# if it returns 0 or false, the breakpoint is ignored
+			:condition,
+			# Proc to run if this bp has a callback
+			:action,
+			# Proc to run to emulate the overwritten instr behavior
+			# used to avoid unset/singlestep/re-set, more multithread friendly
+			:emul_instr,
+			# internal data, cpu-specific (overwritten byte for a softbp, memory type/size for hwbp..)
+			:internal,
+			# reference breakpoints sharing a target implementation (same hw debug register, soft bp addr...)
+			#  shared is an array of Breakpoints, the same Array object in all shared breakpoints
+			#  owner is a hash key => shared (dbg.breakpoint)
+			#  key is an identifier for the Bp class in owner (bp.address)
+			:hash_shared, :hash_owner, :hash_key,
+			# user-defined breakpoint-specific stuff
+			:userdata
+
+		# append the breakpoint to hash_owner + hash_shared
+		def add(owner=@hash_owner)
+			@hash_owner = owner
+			@hash_key ||= @address
+			return add_bpm if @type == :bpm
+			if pv = owner[@hash_key]
+				@hash_shared  = pv.hash_shared
+				@internal   ||= pv.internal
+				@emul_instr ||= pv.emul_instr
+			else
+				@hash_shared = []
+			end
+			@hash_shared << self
+		end
+
+		# register a bpm: add references to all page start covered in @hash_owner
+		def add_bpm
+			m = @address + @internal[:len]
+			a = @address & -0x1000
+			@hash_shared = [self]
+
+			@internal ||= {}
+			@internal[:orig_prot] ||= {}
+			while a < m
+				if pv = @hash_owner[a]
+					if not pv.hash_shared.include?(self)
+						pv.hash_shared.concat @hash_shared-pv.hash_shared
+						@hash_shared.each { |bpm| bpm.hash_shared = pv.hash_shared }
+					end
+					@internal[:orig_prot][a] = pv.internal[:orig_prot][a]
+				else
+					@hash_owner[a] = self
+				end
+				a += 0x1000
+			end
+		end
+
+		# delete the breakpoint from hash_shared, and hash_owner if empty
+		def del
+			return del_bpm if @type == :bpm
+			@hash_shared.delete self
+			if @hash_shared.empty?
+  				@hash_owner.delete @hash_key
+			elsif @hash_owner[@hash_key] == self
+				@hash_owner[@hash_key] = @hash_shared.first
+			end
+		end
+
+		# unregister a bpm
+		def del_bpm
+			m = @address + @internal[:len]
+			a = @address & -0x1000
+			@hash_shared.delete self
+			while a < m
+				pv = @hash_owner[a]
+				if pv == self
+					if opv = @hash_shared.find { |bpm|
+							bpm.address < a + 0x1000 and bpm.address + bpm.internal[:len] > a
+						}
+						@hash_owner[a] = opv
+					else
+						@hash_owner.delete a
+
+						# split hash_shared on disjoint ranges
+						prev_shared = @hash_shared.find_all { |bpm|
+							bpm.address < a + 0x1000 and bpm.address + bpm.internal[:len] <= a
+						}
+
+						prev_shared.each { |bpm|
+							bpm.hash_shared = prev_shared
+							@hash_shared.delete bpm
+						}
+					end
+				end
+				a += 0x1000
+			end
+		end
 	end
 
-	attr_accessor :memory, :cpu, :disassembler, :state, :info, :breakpoint, :pid, :tid
-	attr_accessor :modulemap, :symbols, :symbols_len
+	# per-process data
+	attr_accessor :memory, :cpu, :disassembler, :breakpoint, :breakpoint_memory,
+		:modulemap, :symbols, :symbols_len
+	# per-thread data
+	attr_accessor :state, :info, :breakpoint_thread, :singlestep_cb, :run_method,
+		:run_args, :breakpoint_cause
+
+	# which/where per-process/thread stuff is stored
+	attr_accessor :pid_stuff, :tid_stuff, :pid_stuff_list, :tid_stuff_list
+
+	# global debugger callbacks, called whenever such event occurs
+	attr_accessor :callback_singlestep, :callback_bpx, :callback_hwbp, :callback_bpm,
+	       	:callback_exception, :callback_newthread, :callback_endthread,
+		:callback_newprocess, :callback_endprocess, :callback_loadlibrary
+
+	attr_accessor :pass_all_exceptions, :ignore_newthread, :ignore_endthread
+
+	# link to the user-interface object if available
 	attr_accessor :gui
 
-	# initializes the disassembler from @cpu and @memory
+	# initializes the disassembler internal data - subclasses should call super()
 	def initialize
-		@disassembler = Shellcode.decode(EncodedData.new(@memory), @cpu).init_disassembler
-		@modulemap = {}
+		@pid_stuff = {}
+		@tid_stuff = {}
+		@log_proc = nil
+		@state = :dead
+		@info = 'empty'
+		# stuff saved when we switch pids
+		@pid_stuff_list = [:memory, :cpu, :disassembler, :symbols, :symbols_len,
+			:modulemap, :breakpoint, :breakpoint_memory, :tid, :tid_stuff, :delete_process]
+		@tid_stuff_list = [:state, :info, :breakpoint_thread, :singlestep_cb, 
+			:run_method, :run_args, :breakpoint_cause, :delete_thread]
+		@callback_loadlibrary = lambda { |h| loadsyms(h[:address]) ; continue }
+		initialize_newpid
+		initialize_newtid
+	end
+
+	attr_reader :pid
+	# change pid and associated cached data
+	# this will also re-load the previously selected tid for this process
+	def pid=(npid)
+		return if npid == pid
+		swapout_pid
+		@pid = npid
+		swapin_pid
+	end
+	alias set_pid pid=
+
+	attr_reader :tid
+	def tid=(ntid)
+		return if ntid == tid
+		swapout_tid
+		@tid = ntid
+		swapin_tid
+	end
+	alias set_tid tid=
+
+	# creates stuff related to a new process being debugged
+	# includes disassembler, modulemap, symbols, breakpoints
+	# subclasses should check that @pid maps to a real process and raise() otherwise
+	# to be called with @pid/@tid set, calls initialize_memory+initialize_cpu
+	def initialize_newpid
+		return if not pid
+		@pid_stuff_list.each { |s| instance_variable_set("@#{s}", nil) }
+
+		@cpu = initialize_cpu
+		@memory = initialize_memory
+		@disassembler = initialize_disassembler
 		@symbols = {}
 		@symbols_len = {}
+		@modulemap = {}
 		@breakpoint = {}
-		@state = :stopped
-		@info = nil
-		@log_proc = nil
+		@breakpoint_memory = {}
+		@tid_stuff = {}
+		gui.swapin_pid if gui.respond_to?(:swapin_pid)
 	end
+
+	# subclasses should check that @tid maps to a real thread and raise() otherwise
+	def initialize_newtid
+		return if not tid
+		@tid_stuff_list.each { |s| instance_variable_set("@#{s}", nil) }
+
+		@state = :stopped
+		@breakpoint_thread = {}
+		gui.swapin_tid if gui.respond_to?(:swapin_tid)
+	end
+
+	# initialize the disassembler from @cpu/@memory
+	def initialize_disassembler
+		return if not @memory or not @cpu
+		Shellcode.decode(@memory, @cpu).disassembler
+	end
+
+	# we're switching focus from one pid to another, save current pid data
+	def swapout_pid
+		return if not pid
+		swapout_tid
+		gui.swapout_pid if gui.respond_to?(:swapout_pid)
+		return @pid_stuff.delete(@pid) if @delete_process
+		@pid_stuff[@pid] ||= {}
+		@pid_stuff_list.each { |fld|
+			@pid_stuff[@pid][fld] = instance_variable_get("@#{fld}")
+		}
+	end
+
+	# we're switching focus from one tid to another, save current tid data
+	def swapout_tid
+		return if not tid
+		gui.swapout_tid if gui.respond_to?(:swapout_tid)
+		return @tid_stuff.delete(@tid) if @delete_thread
+		@tid_stuff[@tid] ||= {}
+		@tid_stuff_list.each { |fld|
+			@tid_stuff[@tid][fld] = instance_variable_get("@#{fld}")
+		}
+	end
+
+	# we're switching focus from one pid to another, load current pid data
+	def swapin_pid
+		return initialize_newpid if not @pid_stuff[@pid]
+
+		@pid_stuff_list.each { |fld|
+			instance_variable_set("@#{fld}", @pid_stuff[@pid][fld])
+		}
+		swapin_tid
+		gui.swapin_pid if gui.respond_to?(:swapin_pid)
+	end
+
+	# we're switching focus from one tid to another, load current tid data
+	def swapin_tid
+		return initialize_newtid if not @tid_stuff[@tid]
+
+		@tid_stuff_list.each { |fld|
+			instance_variable_set("@#{fld}", @tid_stuff[@tid][fld])
+		}
+		gui.swapin_tid if gui.respond_to?(:swapin_tid)
+	end
+
+	# change the debugger to a specific pid/tid
+	# if given a block, run the block and then restore the original pid/tid
+	# pid may be an object that respond to #pid/#tid
+	def switch_context(npid, ntid=nil)
+		if npid.respond_to? :pid
+			ntid ||= npid.tid
+			npid = npid.pid
+		end
+		oldpid = pid
+		oldtid = tid
+		set_pid npid
+		set_tid ntid if ntid
+		if block_given?
+			# shortcut begin..ensure overhead
+			return yield if oldpid == pid and oldtid == tid
+
+			begin
+				yield
+			ensure
+				set_pid oldpid
+				set_tid oldtid
+			end
+		end
+	end
+	alias set_context switch_context
+
+	# iterate over all pids, yield in the context of this pid
+	def each_pid
+		# ensure @pid is last, so that we finish in the current context
+		lst = @pid_stuff.keys - [@pid]
+		lst << @pid
+		return lst if not block_given?
+		lst.each { |p|
+			set_pid p
+			yield
+		}
+	end
+
+	# iterate over all tids of the current process, yield in its context
+	def each_tid
+		lst = @tid_stuff.keys - [@tid]
+		lst << @tid
+		return lst if not block_given?
+		lst.each { |t|
+			set_tid t
+			yield
+		}
+	end
+
+	# iterate over all tids of all pids, yield in their context
+	def each_pid_tid
+		each_pid { each_tid { yield } }
+	end
+
+
+	# create a thread/process breakpoint
+	# addr can be a numeric address, an Expression that is resolved, or
+	#  a String that is parsed+resolved
+	# info's keys are set to the breakpoint
+	# standard keys are :type, :oneshot, :condition, :action
+	# returns the Breakpoint object
+	def add_bp(addr, info={})
+		info[:pid] ||= @pid
+		info[:tid] ||= @tid if info[:pid] == @pid
+
+		b = Breakpoint.new
+		info.each { |k, v|
+			b.send("#{k}=", v)
+		}
+
+		switch_context(b) {
+			addr = resolve_expr(addr) if not addr.kind_of? ::Integer
+			b.address = addr
+
+			b.hash_owner ||= case b.type
+				when :bpm;  @breakpoint_memory
+				when :hwbp; @breakpoint_thread
+				when :bpx;  @breakpoint
+				end
+			# XXX bpm may hash_share with an :active, but be larger and still need enable()
+			b.add
+
+			enable_bp(b) if not info[:state]
+		}
+
+		b
+	end
+
+	# remove a breakpoint
+	def del_bp(b)
+		disable_bp(b)
+		b.del
+	end
+
+	# activate an inactive breakpoint
+	def enable_bp(b)
+		return if b.state == :active
+		if not b.hash_shared.find { |bb| bb.state == :active }
+			switch_context(b) {
+				if not b.internal
+					init_bpx(b) if b.type == :bpx
+					b.internal ||= {}
+					b.hash_shared.each { |bb| bb.internal ||= b.internal }
+				end
+				do_enable_bp(b)
+			}
+		end
+		b.state = :active
+	end
+
+	# deactivate an active breakpoint
+	def disable_bp(b, newstate = :inactive)
+		return if b.state != :active
+		b.state = newstate
+		return if b.hash_shared.find { |bb| bb.state == :active }
+		switch_context(b) {
+			do_disable_bp(b)
+		}
+	end
+
+	def do_enable_bp(b)
+		if b.type == :bpm; do_enable_bpm(b)
+		else @cpu.dbg_enable_bp(self, b)
+		end
+	end
+
+	def do_disable_bp(b)
+		if b.type == :bpm; do_disable_bpm(b)
+		else @cpu.dbg_disable_bp(self, b)
+		end
+	end
+
+	# called in the context of the target when a bpx is to be initialized
+	# will disassemble the code pointed, and try to initialize #emul_instr
+	def init_bpx(b)
+		@disassembler.disassemble_fast_block(b.address)		# XXX configurable dasm method
+		if di = @disassembler.di_at(b.address) and
+				fdbd = @disassembler.get_fwdemu_binding(di, :ip) and
+				not fdbd[:incomplete_binding]
+			b.emul_instr = lambda { |dbg|
+				fdbd.map { |k, v|
+					k = Indirection[resolve(k.pointer), k.len] if k.kind_of? Indirection
+					[k, resolve(v)]
+				}.each { |k, v|
+					case k
+					when :ip; dbg.pc = v
+					when Symbol; dbg.set_reg_value(k, v)
+					when Indirection; dbg.memory_write_int(k.pointer, v, k.len)
+					end
+				}
+			}
+			b.hash_shared.each { |bb| bb.emul_instr = b.emul_instr }
+		end
+	end
+
+	# sets a breakpoint on execution
+	def bpx(addr, oneshot=false, cond=nil, &action)
+		h = { :type => :bpx }
+		h[:oneshot] = true if oneshot
+		h[:condition] = cond if cond
+		h[:action] = action if action
+		add_bp(addr, h)
+	end
+
+	# sets a hardware breakpoint
+	# mtype in :r :w :x
+	# mlen is the size of the memory zone to cover
+	# mlen may be constrained by the architecture
+	def hwbp(addr, mtype=:x, mlen=1, oneshot=false, cond=nil, &action)
+		h = { :type => :hwbp }
+		h[:hash_owner] = @breakpoint_thread
+		addr = resolve_expr(addr) if not addr.kind_of? ::Integer
+		h[:hash_key] = [addr, mtype, mlen]
+		h[:internal] = { :type => mtype, :len => mlen }
+		h[:oneshot] = true if oneshot
+		h[:condition] = cond if cond
+		h[:action] = action if action
+		add_bp(addr, h)
+	end
+
+	# sets a memory breakpoint
+	# mtype is :r :w :rw or :x
+	# mlen is the size of the memory zone to cover
+	def bpm(addr, mtype=:r, mlen=4096, oneshot=false, cond=nil, &action)
+		h = { :type => :bpm }
+		addr = resolve_expr(addr) if not addr.kind_of? ::Integer
+		h[:hash_key] = addr & -4096	# XXX actually referenced at addr, addr+4096, ... addr+len
+		h[:internal] = { :type => type, :len => mlen }
+		h[:oneshot] = true if oneshot
+		h[:condition] = cond if cond
+		h[:action] = action if action
+		add_bp(addr, h)
+	end
+
 
 	# define the lambda to use to log stuff (used by #puts)
 	def set_log_proc(l=nil, &b)
@@ -337,22 +757,446 @@ class Debugger
 	end
 
 	# show information to the user, uses log_proc if defined
-	def puts(*a)
+	def log(*a)
 		if @log_proc
 			a.each { |aa| @log_proc[aa] }
 		else
-			super(*a)
+			puts(*a)
 		end
 	end
 
+
 	# marks the current cache of memory/regs invalid
 	def invalidate
-		@memory.invalidate
+		@memory.invalidate if @memory
 	end
 
 	# invalidates the EncodedData backend for the dasm sections
 	def dasm_invalidate
 		disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate }
+	end
+
+	# return all breakpoints set on a specific address (or all bp)
+	def all_breakpoints(addr=nil)
+		ret = []
+		if addr
+			if b = @breakpoint[addr]
+				ret |= b.hash_shared
+			end
+		else
+			@breakpoint.each_value { |bb| ret |= bb.hash_shared }
+		end
+
+		@breakpoint_thread.each_value { |bb|
+			next if addr and bb.address != addr
+			ret |= bb.hash_shared
+		}
+
+		@breakpoint_memory.each_value { |m|
+			next if addr and (bb.address+bb.internal[:len] <= addr or bb.address > addr)
+			ret |= bb.hash_shared
+		}
+
+		ret
+	end
+
+	def find_breakpoint(addr=nil)
+		return @breakpoint[addr] if @breakpoint[addr] and (not block_given? or yield(@breakpoint[addr]))
+		all_breakpoints(addr).find { |b| yield b }
+	end
+
+
+	# to be called right before resuming execution of the target
+	# run_m is the method that should be called if the execution is stopped
+	# due to a side-effect of the debugger (bpx with wrong condition etc)
+	def check_pre_run(run_m, *run_a)
+		@cpu.dbg_check_pre_run(self) if @cpu.respond_to?(:dbg_check_pre_run)
+		@breakpoint_cause = nil
+		@run_method = run_m
+		@run_args = run_a
+		@state = :running
+		@info = nil
+	end
+
+
+	# called when the target stops due to a singlestep exception
+	def evt_singlestep(b=nil)
+		b ||= find_singlestep
+		return evt_exception(:type => 'singlestep') if not b
+
+		@state = :stopped
+		@info = 'singlestep'
+		@cpu.dbg_evt_singlestep(self) if @cpu.respond_to?(:dbg_evt_singlestep)
+
+		callback_singlestep[] if callback_singlestep
+
+		if cb = @singlestep_cb
+			@singlestep_cb = nil
+			cb.call	# call last, as the cb may change singlestep_cb/state/etc
+		end
+	end
+
+	# returns true if the singlestep is due to us
+	def find_singlestep
+		return @cpu.dbg_find_singlestep(self) if @cpu.respond_to?(:dbg_find_singlestep)
+		@run_method == :singlestep
+	end
+	
+	# called when the target stops due to a soft breakpoint exception
+	def evt_bpx(b=nil)
+		b ||= find_bp_bpx
+		return evt_exception(:type => 'breakpoint') if not b
+
+		@state = :stopped
+		@info = 'breakpoint'
+		@cpu.dbg_evt_bpx(self, b) if @cpu.respond_to?(:dbg_evt_bpx)
+
+		callback_bpx[b] if callback_bpx
+
+		post_evt_bp(b)
+	end
+
+	# return the breakpoint that is responsible for the evt_bpx
+	def find_bp_bpx
+		return @cpu.dbg_find_bpx(self) if @cpu.respond_to?(:dbg_find_bpx)
+		@breakpoint[pc]
+	end
+
+	# called when the target stops due to a hwbp exception
+	def evt_hwbp(b=nil)
+		b ||= find_bp_hwbp
+		return evt_exception(:type => 'hwbp') if not b
+
+		@state = :stopped
+		@info = 'hwbp'
+		@cpu.dbg_evt_hwbp(self, b) if @cpu.respond_to?(:dbg_evt_hwbp)
+
+		callback_hwbp[b] if callback_hwbp
+
+		post_evt_bp(b)
+	end
+
+	# return the breakpoint that is responsible for the evt_hwbp
+	def find_bp_hwbp
+		return @cpu.dbg_find_hwbp(self) if @cpu.respond_to?(:dbg_find_bpx)
+		@breakpoint_thread.find { |b| b.address == pc }
+	end
+
+	# called for archs where the same interrupt is generated for hwbp and singlestep
+	# checks if a hwbp matches, then call evt_hwbp, else call evt_singlestep (which
+	# will forward to evt_exception if singlestep does not match either)
+	def evt_hwbp_singlestep
+		if b = find_bp_hwbp
+			evt_hwbp(b)
+		else
+			evt_singlestep
+		end
+	end
+
+	# called when the target stops due to a memory exception caused by a memory bp
+	# called by evt_exception
+	def evt_bpm(b)
+		@state = :stopped
+		@info = 'bpm'
+
+		callback_bpm[b] if callback_bpm
+
+		post_evt_bp(b)
+	end
+
+	# return a bpm whose page coverage includes the fault described in info
+	def find_bp_bpm(info)
+		@breakpoint_memory[info[:fault_addr] & -0x1000]
+	end
+
+	# returns true if the fault described in info is valid to trigger b
+	def check_bpm_range(b, info)
+		return if b.address+b.internal[:len] <= info[:fault_addr]
+		return if b.address >= info[:fault_addr] + info[:fault_len]
+		case b.internal[:type]
+		when :x; info[:fault_addr] == pc	# XXX
+		when :r; info[:fault_access] == :r 
+		when :w; info[:fault_access] == :w
+		when :rw; true
+		end
+	end
+
+	# handles breakpoint conditions/callbacks etc
+	def post_evt_bp(b)
+		@breakpoint_cause = b
+
+		found_valid_active = false
+
+		# XXX may have many active bps with callback that continue/singlestep/singlestep{}...
+		b.hash_shared.dup.map { |bb|
+			# ignore inactive bps
+			next if bb.state != :active
+
+			# ignore out-of-range bpms
+			next if bb.type == :bpm and not check_bpm_range(bb, b.internal)
+
+			# check condition
+			case bb.condition
+			when nil; cd = 1
+			when Proc; cd = bb.condition.call
+			when String, Expression; cd = resolve_expr(bb.condition)
+			else raise "unknown bp condition #{bb.condition.inspect}"
+			end
+			next if not cd or cd == 0
+
+			found_valid_active = true
+
+			# oneshot
+			del_bp(bb) if bb.oneshot
+
+			# callback
+			bb.action
+		}.compact.each { |cb| cb.call }
+
+		# we did break due to a bp whose condition is not true: resume
+		# (unless a callback already resumed)
+		resume_badbreak(b) if not found_valid_active and @state == :stopped
+	end
+
+	# called whenever the target stops due to an exception
+	# type may be:
+	# * 'access violation', :fault_addr, :fault_len, :fault_access (:r/:w/:x)
+	# * 'invalid instruction'
+	# * 'breakpoint' (target-generated bpx)
+	# ...
+	def evt_exception(info={})
+		if info[:type] == 'access violation' and b = find_bp_bpm(info)
+			info[:fault_len] ||= 1
+			b.internal.update info
+			return evt_bpm(b)
+		end
+
+		@state = :stopped
+		@info = "exception #{info[:type]}"
+
+		callback_exception[info] if callback_exception
+
+		if pass_all_exceptions
+			pass_current_exception
+			resume_badbreak
+		end
+	end
+
+	def evt_newthread(info={})
+		@state = :stopped
+		@info = 'new thread'
+
+		callback_newthread[info] if callback_newthread
+
+		if ignore_newthread
+			continue
+		end
+	end
+
+	def evt_endthread(info={})
+		@state = :stopped
+		@info = 'end thread'
+		# mark the thread as to be deleted on next continue 
+		@delete_thread = true
+
+		callback_endthread[info] if callback_endthread
+
+		if ignore_endthread
+			continue
+		end
+	end
+
+	def evt_newprocess(info={})
+		@state = :stopped
+		@info = 'new process'
+
+		callback_newprocess[info] if callback_newprocess
+	end
+
+	def evt_endprocess(info={})
+		@state = :stopped
+		@info = 'end process'
+		@delete_process = true
+
+		callback_endprocess[info] if callback_endprocess
+	end
+
+	def evt_loadlibrary(info={})
+		@state = :stopped
+		@info = 'loadlibrary'
+
+		callback_loadlibrary[info] if callback_loadlibrary
+	end
+
+	# called when we did break due to a breakpoint whose condition is invalid
+	# resume execution as if we never stopped
+	# disable offending bp + singlestep if needed
+	def resume_badbreak(b=nil)
+		# ensure we didn't delete b 
+		if b and b.hash_shared.find { |bb| bb.state == :active }
+			rm = @run_method
+			if rm == :singlestep
+				singlestep_bp(b)
+			else
+				@run_args = ra
+				singlestep_bp(b) { send rm, *ra }
+			end
+		else
+			send @run_method, *@run_args
+		end
+	end
+
+	# singlesteps over an active breakpoint and run its block
+	# if the breakpoint provides an emulation stub, run that, otherwise
+	# disable the breakpoint, singlestep, and re-enable
+	def singlestep_bp(bp, &b)
+		if be = bp.hash_shared.find { |bb| bb.emul_instr }
+			be.emul_instr[self]
+			yield if block_given?
+		else
+			bp.hash_shared.each { |bb|
+				disable_bp(bb, :temp_inactive) if bb.state == :active
+			}
+			# this *should* work with different bps stopping the current instr
+			prev_sscb = @singlestep_cb
+			singlestep {
+				bp.hash_shared.each { |bb|
+					enable_bp(bb) if bb.state == :temp_inactive
+				}
+				prev_sscb[] if prev_sscb
+				yield if block_given?
+			}
+		end
+	end
+
+
+	# checks if the running target has stopped (nonblocking)
+	def check_target
+		do_check_target
+	end
+
+	# waits until the running target stops (due to a breakpoint, fault, etc)
+	def wait_target
+		do_wait_target while @state == :running
+	end
+
+	# resume execution of the target
+	# bypasses a software breakpoint on pc if needed
+	# thread breakpoints must be manually disabled before calling continue
+	def continue
+		if b = @breakpoint_cause and b.hash_shared.find { |bb| bb.state == :active }
+			singlestep_bp(b) {
+				check_pre_run(:continue)
+				do_continue
+			}
+		else
+			check_pre_run(:continue)
+			do_continue
+		end
+	end
+	alias run continue
+
+	# continue ; wait_target
+	def continue_wait
+		continue
+		wait_target
+	end
+
+	# resume execution of the target one instruction at a time
+	def singlestep(&b)
+		@singlestep_cb = b
+		check_pre_run(:singlestep)
+		do_singlestep
+	end
+
+	# singlestep ; wait_target
+	def singlestep_wait(&b)
+		singlestep(&b)
+		wait_target
+	end
+
+	# tests if the specified instructions should be stepover() using singlestep or
+	# by putting a breakpoint at next_addr
+	def need_stepover(di = di_at(pc))
+		di and @cpu.dbg_need_stepover(self, di.address, di)
+	end
+
+	# stepover: singlesteps, but do not enter in subfunctions
+	def stepover
+		di = di_at(pc)
+		if need_stepover(di)
+			bpx di.next_addr, true, Expression[:tid, :==, @tid]
+			continue
+		else
+			singlestep
+		end
+	end
+
+	# stepover ; wait_target
+	def stepover_wait
+		stepover
+		wait_target
+	end
+
+	# checks if an instruction should stop the stepout() (eg it is a return instruction)
+	def end_stepout(di = di_at(pc))
+		di and @cpu.dbg_end_stepout(self, di.address, di)
+	end
+
+	# stepover until finding the last instruction of the function
+	def stepout
+		# TODO thread-local bps
+		while not end_stepout
+			stepover
+			wait_target
+		end
+		do_singlestep
+	end
+
+	# set a singleshot breakpoint, run the process, and wait
+	def go(target, cond=nil)
+		bpx(target, true, cond)
+		continue_wait
+	end
+
+	# continue_wait until @state == :dead
+	def run_forever
+		continue_wait until @state == :dead
+	end
+
+	# decode the Instruction at the address, use the @disassembler cache if available
+	def di_at(addr)
+		@disassembler.di_at(addr) || @disassembler.disassemble_instruction(addr)
+	end
+
+	# list the general purpose register names available for the target
+	def register_list
+		@cpu.dbg_register_list
+	end
+
+	# hash { register_name => register_size_in_bits }
+	def register_size
+		@cpu.dbg_register_size
+	end
+
+	# retrieves the name of the register holding the program counter (address of the next instruction)
+	def register_pc
+		@cpu.dbg_register_pc
+	end
+
+	# retrieve the name of the register holding the stack pointer
+	def register_sp
+		@cpu.dbg_register_sp
+	end
+
+	# then name of the register holding the cpu flags
+	def register_flags
+		@cpu.dbg_register_flags
+	end
+
+	# list of flags available in the flag register
+	def flag_list
+		@cpu.dbg_flag_list
 	end
 
 	# retreive the value of the program counter register (eip)
@@ -377,233 +1221,19 @@ class Debugger
 		set_reg_value(register_sp, v)
 	end
 
-	# checks stuff before letting the target run
-	# enables all breakpoints except on pc
-	def check_pre_run
-		@cpu.dbg_check_pre_run(self) if @cpu.respond_to? :dbg_check_pre_run
-
-		addr = pc
-		@breakpoint.each { |a, b|
-			next if a == addr or b.state != :inactive
-			enable_bp(a)
-		}
-	end
-
-	# checks stuff once we get control after the target has run
-	# fixups pc if break was caused by a software breakpoint
-	# disable all breakpoints
-	def check_post_run(pre_state=nil)
-		@cpu.dbg_check_post_run(self) if @cpu.respond_to? :dbg_check_post_run
-
-		addr = pc
-		@breakpoint.each { |a, b|
-			next if a != addr or b.state != :active
-			disable_bp(a)
-		}
-		if b = @breakpoint[addr]
-			if b.condition
-				if b.condition.kind_of? Proc
-					cond = b.condition.call(:addr => addr, :bp => b, :dbg => self, :pre_state => pre_state)
-				else
-					cond = (resolve_expr(b.condition) != 0)
-				end
-				if cond
-					continue if pre_state == 'continue'
-					return	# don't delete if we're singlestepping
-				end
-			end
-			@breakpoint.delete(addr) if b.oneshot
-			if b.action
-				b.action.call :addr => addr, :bp => b, :dbg => self, :pre_state => pre_state
-			end
-		end
-	end
-
-	# checks if the running target has stopped (nonblocking)
-	def check_target
-		pre_state = @info
-		t = do_check_target
-		check_post_run(pre_state) if @state == :stopped
-		t
-	end
-
-	# waits until the running target stops (due to a breakpoint or a fault)
-	def wait_target
-		t = do_wait_target
-		check_post_run if @state == :stopped
-		t
-	end
-
-	# resume execution of the target
-	# bypasses a breakpoint on pc if needed
-	def continue(*a)
-		if @breakpoint[pc]
-			do_singlestep	# XXX *a ?
-			do_wait_target	# TODO async wait if curinstr is syscall(sleep 3600)...
-		end
-		check_pre_run	# re-set bp
-		do_continue(*a)
-	end
-
-	# resume execution of the target one instruction at a time
-	def singlestep(*a)
-		check_pre_run
-		do_singlestep(*a)
-	end
-
-	# alias for #continue
-	def run
-		continue
-	end
-
-	# keep the debugee running until it's dead
-	def run_forever
-		while @state != :dead
-			run
-			wait_target
-		end
-	end
-
-	# tests if the specified instructions should be stepover() using singlestep or
-	# by putting a software breakpoint after it
-	def need_stepover(di)
-		di and @cpu.dbg_need_stepover(self, di.address, di)
-	end
-
-	# decode the Instruction at the address
-	def di_at(addr)
-		if not di = @disassembler.di_at(addr)
-			return if not s = @disassembler.get_section_at(addr)
-			di = @cpu.decode_instruction(s[0], addr)
-		end
-		di
-	end
-
-	# stepover: singlesteps, but do not enter in subfunctions
-	def stepover
-		check_pre_run
-		di = di_at(pc)
-		if need_stepover(di)
-			bpx di.next_addr, true
-			do_continue
-		else
-			do_singlestep
-		end
-	end
-
-	# checks if an instruction should stop the stepout() (eg it is a return instruction)
-	def end_stepout(di)
-		di and @cpu.dbg_end_stepout(self, di.address, di)
-	end
-
-	# stepover until finding the last instruction of the function
-	def stepout
-		# TODO thread-local bps
-		while not end_stepout(di_at(pc))
-			stepover
-			wait_target
-		end
-		do_singlestep
-	end
-
-	# adds a breakpoint at an address
-	# type is in :bpx :hw
-	# oneshot = true if the bp should be deleted once it is hit
-	# cond is a condition: on hit, if the condition evaluates to false, ignore the hit
-	# act is the action to do on hit (a lambda)
-	def add_bp(addr, type, oneshot, cond, act, mtype=nil, mlen=nil)
-		addr = parse_expr(addr) if addr.kind_of? String
-		addr = resolve_expr(addr) if not addr.kind_of? Integer
-		if b = @breakpoint[addr]
-			b.oneshot = false if not oneshot
-			raise 'bp type conflict' if type != b.type
-			raise 'bp condition conflict' if cond != b.condition
-			raise 'bp action conflict' if act != b.action
-			return
-		end
-		b = Breakpoint.new
-		b.address = addr
-		b.oneshot = oneshot
-		b.type = type
-		b.condition = cond if cond
-		b.action = act if act
-		b.mtype = mtype if mtype
-		b.mlen = mlen if mlen
-		@breakpoint[addr] = b
-		enable_bp(addr)
-		b
-	end
-
-	# sets a breakpoint on execution
-	def bpx(addr, oneshot=false, cond=nil, &action)
-		add_bp(addr, :bpx, oneshot, cond, action)
-	end
-
-	# sets a hardware breakpoint
-	# mtype in :r :w :x
-	# mlen is the size of the memory zone to cover
-	# mlen may be constrained by the architecture
-	def hwbp(addr, mtype=:x, mlen=1, oneshot=false, cond=nil, &action)
-		add_bp(addr, :hw, oneshot, cond, action, mtype, mlen)
-	end
-
-	# set a singleshot breakpoint and waits until we hit it
-	def go(target=nil, cond=nil)
-		bpx(target, true, cond) if target
-		continue
-		wait_target
-	end
-
-	# removes a breakpoint (disable & delete)
-	def remove_breakpoint(addr)
-		disable_bp(addr)
-		@breakpoint.delete addr
-	end
-
-	# detach the debugger: disables all breakpoints
-	def detach
-		@breakpoint.each_key { |a| disable_bp(a) }
-	end
-
-	# list the register names available for the target
-	def register_list
-		@cpu.dbg_register_list
-	end
-
-	# list the size of the registers
-	def register_size
-		@cpu.dbg_register_size
-	end
-
-	# retrieves the name of the register holding the program counter (address of the next instruction)
-	def register_pc
-		@cpu.dbg_register_pc
-	end
-
-	# retrieve the name of the register holding the stack pointer
-	def register_sp
-		@cpu.dbg_register_sp
-	end
-
-	# then name of the register holding the flags
-	def register_flags
-		@cpu.dbg_register_flags
-	end
-
-	# list of flags available in the flag register
-	def flag_list
-		@cpu.dbg_flag_list
-	end
-
-	# retrieve the value of a flag
+	# retrieve the value of a flag (0/1)
 	def get_flag_value(f)
 		@cpu.dbg_get_flag(self, f)
 	end
-	alias get_flag get_flag_value
+
+	# retrieve the value of a flag (true/false)
+	def get_flag(f)
+		get_flag_value(f) != 0
+	end
 
 	# change the value of a flag
 	def set_flag_value(f, v)
-		v != 0 ? set_flag(f) : unset_flag(f)
+		(v && v != 0) ? set_flag(f) : unset_flag(f)
 	end
 
 	# switch the value of a flag (true->false, false->true)
@@ -621,34 +1251,36 @@ class Debugger
 		@cpu.dbg_unset_flag(self, f)
 	end
 
-	# returns the name of the module containing addr
-	def findmodule(addr, default='???')
-		@modulemap.keys.find { |k| @modulemap[k][0] <= addr and @modulemap[k][1] > addr } || default
+	# returns the name of the module containing addr or nil
+	def addr2module(addr)
+		@modulemap.keys.find { |k| @modulemap[k][0] <= addr and @modulemap[k][1] > addr }
 	end
 
 	# returns a string describing addr in term of symbol (eg 'libc.so.6!printf+2f')
 	def addrname(addr)
-		findmodule(addr) + '!' +
+		(addr2module(addr) || '???') + '!' +
 		if s = @symbols[addr] ? addr : @symbols_len.keys.find { |s_| s_ < addr and s_ + @symbols_len[s_] > addr }
 			@symbols[s] + (addr == s ? '' : ('+%x' % (addr-s)))
 		else '%08x' % addr
 		end
 	end
 
-	# same as addrname, but check prev addresses if no symbol matches
+	# same as addrname, but scan preceding addresses if no symbol matches
 	def addrname!(addr)
-		findmodule(addr) + '!' +
-		if s = @symbols[addr] ? addr : @symbols_len.keys.find { |s_| s_ < addr and s_ + @symbols_len[s_] > addr } || @symbols.keys.sort.find_all { |s_| s_ < addr and s_ + 0x10000 > addr }.max
+		(addr2module(addr) || '???') + '!' +
+		if s = @symbols[addr] ? addr :
+				@symbols_len.keys.find { |s_| s_ < addr and s_ + @symbols_len[s_] > addr } ||
+				@symbols.keys.sort.find_all { |s_| s_ < addr and s_ + 0x10000 > addr }.max
 			@symbols[s] + (addr == s ? '' : ('+%x' % (addr-s)))
 		else '%08x' % addr
 		end
 	end
 
-	# loads the symbols from a mapped module (each name loaded only once)
+	# loads the symbols from a mapped module
 	def loadsyms(addr, name='%08x'%addr.to_i)
 		if addr.kind_of? String
-			OS.current.find_process(@pid).modules.to_a.each { |m|
-				if m.path =~ /#{addr}/
+			modules.each { |m|
+				if m.path =~ /#{addr}/i
 					addr = m.addr
 					name = File.basename m.path
 					break
@@ -664,46 +1296,41 @@ class Debugger
 		else return
 		end
 
-		@loadedsyms ||= {}
-		return if @loadedsyms[name]
-		@loadedsyms[name] = true
-
 		begin
 			e = cls.load @memory[addr, 0x1000_0000]
 			e.load_address = addr
 			e.decode_header
 			e.decode_exports
 		rescue
-			@modulemap[addr.to_s(16)] = [addr, addr+0x1000]
+			# cache the error so that we dont hit it every time
+			@modulemap[addr.to_s(16)] ||= [addr, addr+0x1000]
 			return
 		end
 
 		if n = e.module_name and n != name
 			name = n
-			return if @loadedsyms[name]
-			@loadedsyms[name] = true
 		end
 
-		@modulemap[name] = [addr, addr+e.module_size]
+		@modulemap[name] ||= [addr, addr+e.module_size]
 
-		sl = @symbols.length
+		cnt = 0
 		e.module_symbols.each { |n_, a, l|
+			cnt += 1
 			a += addr
 			@disassembler.set_label_at(a, n_, false)
-			@symbols[a] = n_
+			@symbols[a] = n_	# XXX store "lib!sym" ?
 			if l and l > 1; @symbols_len[a] = l
 			else @symbols_len.delete a	# we may overwrite an existing symbol, keep len in sync
 			end
 		}
-		puts "loaded #{@symbols.length - sl} symbols from #{name}" if $VERBOSE
+		log "loaded #{cnt} symbols from #{name}"
 
 		true
 	end
 
 	# scan the target memory for loaded libraries, load their symbols
-	def scansyms
-		addr = 0
-		while addr <= 0xffff_f000
+	def scansyms(addr=0, max=@memory.length-0x1000-addr)
+		while addr <= max
 			loadsyms(addr)
 			addr += 0x1000
 		end
@@ -711,7 +1338,7 @@ class Debugger
 
 	# load symbols from all libraries found by the OS module
 	def loadallsyms
-		OS.current.find_process(@pid).modules.to_a.each { |m|
+		modules.each { |m|
 			yield m.addr if block_given?
 			loadsyms(m.addr, m.path)
 		}
@@ -719,7 +1346,7 @@ class Debugger
 
 	# see Disassembler#load_map
 	def load_map(str, off=0)
-		str = File.read(str) rescue nil if not str.index("\n")
+		str = File.read(str) if File.exist?(str)
 		sks = @disassembler.sections.keys.sort
 		str.each_line { |l|
 			case l.strip
@@ -766,15 +1393,15 @@ class Debugger
 					if ex =~ /^[0-9a-f]+$/i and @disassembler.get_section_at(ex.to_i(16))
 						v = ex.to_i(16)
 					else
-						puts "unknown symbol name #{ex}"
 						raise "unknown symbol name #{ex}"
 					end
 				when 1
 					v = symbols.index(lst.first)
-					puts "using #{lst.first} for #{ex}"
+					log "using #{lst.first} for #{ex}"
 				else
-					puts "ambiguous #{ex}: #{lst.join(', ')} ?"
-					raise "ambiguous symbol name #{ex}"
+					suggest = lst[0, 50].join(', ')
+					suggest = suggest[0, 125] + '...' if suggest.length > 128
+					raise "ambiguous symbol name #{ex}: #{suggest} ?"
 				end
 			end
 			bd[ex] = v
@@ -786,9 +1413,10 @@ class Debugger
 
 	# resolves an expression involving register values and/or memory indirection using the current context
 	# uses #register_list, #get_reg_value, @mem, @cpu
+	# :tid/:pid resolve to current thread
 	def resolve_expr(e)
 		e = parse_expr(e) if e.kind_of? ::String
-		bd = {}
+		bd = { :tid => @tid, :pid => @pid }
 		Expression[e].externals.each { |ex|
 			next if bd[ex]
 			case ex
@@ -887,26 +1515,41 @@ class Debugger
 	end
 
 	def load_plugin(plugin_filename)
-		if not File.exist? plugin_filename and defined? Metasmdir
+		if not File.exist?(plugin_filename) and defined? Metasmdir
 			# try autocomplete
 			pf = File.join(Metasmdir, 'samples', 'dbg-plugins', plugin_filename)
-			if File.exist? pf
+			if File.exist?(pf)
 				plugin_filename = pf
-			elsif File.exist? pf + '.rb'
+			elsif File.exist?(pf + '.rb')
 				plugin_filename = pf + '.rb'
 			end
-		elsif File.exist? plugin_filename + '.rb'
-			plugin_filename = plugin_filename + '.rb'
+		end
+		if not File.exist?(plugin_filename) and File.exist?(plugin_filename + '.rb')
+			plugin_filename += '.rb'
 		end
 
 		instance_eval File.read(plugin_filename)
 	end
 
+	# return the list of memory mappings of the current process
+	# array of [start, len, perms, infos]
+	def mappings
+		[[0, @memory.length]]
+	end
+
+	# return a list of Process::Modules (with a #path, #addr) for the current process
+	def modules
+		[]
+	end
+
 	# see EData#pattern_scan
 	# scans only mapped areas of @memory, using os_process.mappings
-	def pattern_scan(pat)
+	def pattern_scan(pat, start=0, len=@memory.length-start)
 		ret = []
-		os_process.mappings.each { |a, l, *o_|
+		mappings.each { |a, l, *o_|
+			a = start if a < start
+			l = start+len-a if a+l > start+len
+			next if l <= 0
 			EncodedData.new(@memory[a, l]).pattern_scan(pat) { |o|
 				o += a
 				ret << o if not block_given? or yield(o)

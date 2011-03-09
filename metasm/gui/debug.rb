@@ -14,13 +14,13 @@ module Gui
 # TODO handle debugee fork()
 class DbgWidget < ContainerVBoxWidget
 	attr_accessor :dbg, :console, :regs, :code, :mem, :win
+	attr_accessor :watchpoint
 	attr_accessor :parent_widget, :keyboard_callback, :keyboard_callback_ctrl
 	def initialize_widget(dbg)
 		@dbg = dbg
 		@keyboard_callback = {}
 		@keyboard_callback_ctrl = {}
 		@parent_widget = nil
-
 
 		@regs = DbgRegWidget.new(dbg, self)
 		@mem  = DisasmWidget.new(dbg.disassembler)
@@ -53,6 +53,17 @@ class DbgWidget < ContainerVBoxWidget
 		@mem.focus_addr(0, :hex)
 	end
 
+	def swapin_tid
+		@regs.swapin_tid
+		redraw
+	end
+	def swapin_pid
+		@mem.dasm = @dbg.disassembler
+		@code.dasm = @dbg.disassembler
+		swapin_tid
+		gui_update
+	end
+
 	def keypress(key)
 		return true if @keyboard_callback[key] and @keyboard_callback[key][key]
 		case key
@@ -68,7 +79,11 @@ class DbgWidget < ContainerVBoxWidget
 
 	def keypress_ctrl(key)
 		return true if @keyboard_callback_ctrl[key] and @keyboard_callback_ctrl[key][key]
-		return @parent_widget ? @parent_widget.keypress_ctrl(key) : false
+		case key
+		when :f5;  protect { @dbg.pass_current_exception ; dbg.continue }
+		else return @parent_widget ? @parent_widget.keypress_ctrl(key) : false
+		end
+		true
 	end
 
 	def pre_dbg_run
@@ -137,18 +152,26 @@ class DbgRegWidget < DrawableWidget
 
 		@caret_x = @caret_reg = 0
 		@oldcaret_x = @oldcaret_reg = 42
-		@write_pending = {}	# addr -> newvalue (bytewise)
 
-		@registers = @dbg.register_list
-		@flags = @dbg.flag_list
-		@register_size = Hash.new(1) ; @registers.each { |r| @register_size[r] = @dbg.register_size[r]/4 }
-		@reg_cache = Hash.new(0)
-		@reg_cache_old = {}
+		@tid_stuff = {}
+		swapin_tid
+
 		@reg_pos = []	# list of x y w h vx of the reg drawing on widget, vx is x of value
 	
 		@default_color_association = { :label => :black, :data => :blue, :write_pending => :darkred,
 				       	:changed => :darkgreen, :caret => :black, :background => :white,
 					:inactive => :palegrey }
+	end
+
+	def swapin_tid
+		stf = @tid_stuff[[@dbg.pid, @dbg.tid]] ||= {}
+		return if not @dbg.cpu
+		@write_pending = stf[:write_pending] ||= {}	# addr -> newvalue (bytewise)
+		@registers = stf[:registers] ||= @dbg.register_list
+		@flags = stf[:flags] ||= @dbg.flag_list
+		@register_size = stf[:reg_sz] ||= @registers.inject(Hash.new(1)) { |h, r| h.update r => @dbg.register_size[r]/4 }
+		@reg_cache = stf[:reg_cache] ||= Hash.new(0)
+		@reg_cache_old = stf[:reg_cache_old] ||= {}
 	end
 
 	def initialize_visible
@@ -330,7 +353,7 @@ class DbgRegWidget < DrawableWidget
 	end
 
 	def pre_dbg_run
-		@reg_cache_old = @reg_cache.dup if @reg_cache
+		@reg_cache_old.replace @reg_cache if @reg_cache
 	end
 
 	def commit_writes
@@ -346,7 +369,7 @@ class DbgRegWidget < DrawableWidget
 	end
 
 	def gui_update
-		@reg_cache = @registers.inject({}) { |h, r| h.update r => @dbg.get_reg_value(r) }
+		@reg_cache.replace @registers.inject({}) { |h, r| h.update r => @dbg.get_reg_value(r) }
 		@flags.each { |f| @reg_cache[f] = @dbg.get_flag_value(f) }
 		redraw
 	end
@@ -686,7 +709,7 @@ class DbgConsoleWidget < DrawableWidget
 			else add_log "height #{p.win.height/@font_height}"
 			end
 		}
-		new_command('continue', 'run', 'let the target run until something occurs') { |arg| p.dbg_continue(arg) }
+		new_command('continue', 'run', 'let the target run until something occurs') { p.dbg_continue }
 		new_command('stepinto', 'singlestep', 'run a single instruction of the target') { p.dbg_singlestep }
 		new_command('stepover', 'run a single instruction of the target, do not enter into subfunctions') { p.dbg_stepover }
 		new_command('stepout', 'stepover until getting out of the current function') { p.dbg_stepout }
@@ -753,6 +776,10 @@ class DbgConsoleWidget < DrawableWidget
 			reg, val = arg.split(/\s+/, 2)
 			if reg == 'fl'
 				@dbg.toggle_flag(val.to_sym)
+			elsif not reg
+				@dbg.register_list.each { |r|
+					add_log "#{r} = #{Expression[@dbg.get_reg_value(r)]}"
+				}
 			elsif not val
 				add_log "#{reg} = #{Expression[@dbg.get_reg_value(reg.to_sym)]}"
 			else
@@ -872,7 +899,78 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('save_hist', 'save the command buffer to a file') { |arg|
 			File.open(arg, 'w') { |fd| fd.puts @log }
 		}
-		# TODO 'macro', 'thread'
+
+		new_command('watch', 'follow an expression in the data view (none to delete)') { |arg|
+			if arg == 'nil' or arg == 'none' or arg == 'delete'
+				p.watchpoint.delete p.mem
+			else
+				e = parse_expr(arg)
+				p.watchpoint[p.mem] = e
+			end
+		}
+
+		new_command('list_pid', 'list_processes', 'list processes available for debugging') { |arg|
+			@dbg.list_processes.each { |pp|
+				add_log "#{pp.pid} #{pp.path}"
+			}
+		}
+		new_command('pid', 'select a pid') { |arg|
+			if pid = solve_expr(arg)
+				@dbg.pid = pid
+			else
+				add_log "pid #{@dbg.pid}"
+			end
+		}
+		new_command('list_tid', 'list_threads', 'list thread ids of the current process') { |arg|
+			@dbg.list_threads.each { |t|
+				stf = @dbg.tid_stuff[t]
+				stf ||= { :state => @dbg.state, :info => @dbg.info } if t == @dbg.tid
+				stf ||= {}
+				add_log "#{t} #{stf[:state]} #{stf[:info]}"
+			}
+		}
+		new_command('tid', 'select a tid') { |arg|
+			if tid = solve_expr(arg)
+				@dbg.tid = tid
+			else
+				add_log "tid #{@dbg.tid} #{@dbg.state} #{@dbg.info}"
+			end
+		}
+
+		new_command('exception_pass', 'pass the exception unhandled to the target on next continue') {
+			@dbg.pass_current_exception
+		}
+		new_command('exception_handle', 'handle the exception, hide it from the target on next continue') {
+			@dbg.pass_current_exception false
+		}
+
+		new_command('exception_pass_all', 'ignore all target exceptions') {
+			@dbg.pass_all_exceptions = true
+		}
+		new_command('exception_handle_all', 'break on target exceptions') {
+			@dbg.pass_all_exceptions = false
+		}
+
+		new_command('thread_events_break', 'break on thread creation/termination') {
+			@dbg.ignore_newthread = false
+			@dbg.ignore_endthread = false
+		}
+		new_command('thread_event_ignore', 'ignore thread creation/termination') {
+			@dbg.ignore_newthread = true
+			@dbg.ignore_endthread = true
+		}
+
+		new_command('attach', 'attach to a running process') { |arg|
+			if pr = @dbg.list_processes.find { |pp| pp.path.to_s.downcase.include?(arg.downcase) }
+				pid = pr.pid
+			else
+				pid = solve_expr(arg)
+			end
+			@dbg.attach(pid)
+		}
+		new_command('createprocess', 'create a new process and debug it') { |arg|
+			@dbg.createprocess(arg)
+		}
 
 		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup
 	end
