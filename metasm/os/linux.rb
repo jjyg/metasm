@@ -25,13 +25,20 @@ class PTrace
 
 	# creates a ptraced process (target = path)
 	# or opens a running process (target = pid)
+	# values for do_attach:
+	#  :create => always fork+traceme+exec+wait
+	#  :attach => always attach
+	#  false/nil => same as attach, without actually calling PT_ATTACH (usefull if we're already tracing pid)
+	#  anything else: try to attach if pid is numeric (using Integer()), else create
 	def initialize(target, do_attach=true)
 		begin
+			raise ArgumentError if do_attach == :create
 			@pid = Integer(target)
 			tweak_for_pid(@pid)
 			return if not do_attach
 			attach
 		rescue ArgumentError, TypeError
+			raise if do_attach == :attach or not do_attach
 			did_exec = true
 			if not @pid = fork
 				tweak_for_pid(::Process.pid)
@@ -583,6 +590,14 @@ class LinOS < OS
 			e.decode_header(0, false, false)
 			e.cpu
 		end
+
+		def terminate
+			kill
+		end
+
+		def kill(signr=9)
+			::Process.kill(signr, @pid)
+		end
 	end
 
 class << self
@@ -669,7 +684,7 @@ end
 class LinDebugger < Debugger
 	# ptrace is per-process or per-thread ?
 	attr_accessor :ptrace, :continuesignal, :has_pax_mprotect, :target_syscall
-	attr_accessor :callback_syscall, :callback_branch
+	attr_accessor :callback_syscall, :callback_branch, :callback_exec
 
 	def initialize(pidpath=nil)
 		super()
@@ -679,21 +694,36 @@ class LinDebugger < Debugger
 		# by default, break on all signals except SIGWINCH (terminal resize notification)
 		@pass_all_exceptions = lambda { |e| e[:signal] == 'WINCH' }
 
+		@callback_syscall = lambda { |i| log "syscall #{i[:syscall]}" }
+		@callback_exec = lambda { |i| log "execve #{os_process.path}" }
+
 		return if not pidpath
 
-		attach(pidpath)
+		begin
+			pid = Integer(pidpath)
+			attach(pid)
+		rescue ArgumentError
+			create_process(pidpath)
+		end
 	end
 
 	def shortname; 'lindbg'; end
 
-	def attach(pid, do_attach=true)
-		pt = PTrace.new(pid)
+	# attach to a running process and all its threads
+	def attach(pid, do_attach=:attach)
+		pt = PTrace.new(pid, do_attach)
 		set_context(pt.pid, pt.pid)	# swapout+init_newpid
-		set_thread_options
 		log "attached #@pid"
 		list_threads.each { |tid| attach_thread(tid) if tid != @pid }
 	end
-	alias create_process attach
+
+	# create a process and debug it
+	def create_process(path)
+		pt = PTrace.new(path, :create)
+		# TODO save path, allow restart etc
+		set_context(pt.pid, pt.pid)	# swapout+init_newpid
+		log "attached #@pid"
+	end
 
 	def initialize_cpu
 		@cpu = os_process.cpu
@@ -702,6 +732,8 @@ class LinDebugger < Debugger
 		if @cpu.size == 64 and @ptrace.reg_off['EAX']
 			hack_64_32
 		end
+		set_tid @pid
+		set_thread_options
 	end
 
 	def initialize_memory
@@ -724,6 +756,14 @@ class LinDebugger < Debugger
 		LinOS.check_process(pid)
 	end
 
+	def mappings
+		os_process.mappings
+	end
+
+	def modules
+		os_process.modules
+	end
+
 	# we're a 32bit process debugging a 64bit target
 	# the ptrace kernel interface we use only allow us a 32bit-like target access
 	# with this we advertize the cpu as having eax..edi registers (the only one we
@@ -739,6 +779,7 @@ class LinDebugger < Debugger
 		}
 	end
 
+	# attach a thread of the current process
 	def attach_thread(tid)
 		set_tid tid
 		@ptrace.pid = tid
@@ -748,8 +789,7 @@ class LinDebugger < Debugger
 		set_thread_options
 	end
 
-	# set the debugee ptrace options (according to @trace_children)
-
+	# set the debugee ptrace options (notify clone/exec/exit, and fork/vfork depending on @trace_children)
 	def set_thread_options
 		opts  = %w[TRACESYSGOOD TRACECLONE TRACEEXEC TRACEEXIT]
 		opts += %w[TRACEFORK TRACEVFORK TRACEVFORKDONE] if trace_children
@@ -839,10 +879,6 @@ class LinDebugger < Debugger
 						resume_badbreak
 
 					when 'EVENT_EXEC'
-						raise 'TODO'
-						# wipe tid/pid
-						# reinit with newpid
-						# are we in new already ?
 						evt_exec info
 					end
 
@@ -850,8 +886,7 @@ class LinDebugger < Debugger
 					si = @ptrace.getsiginfo
 					case si.si_code
 					when PTrace::SIGINFO['BRKPT'],
-					     PTrace::SIGINFO['KERNEL']
-						# 0xcc seems to prefer KERNEL to BRKPT
+					     PTrace::SIGINFO['KERNEL']	# \xCC prefer KERNEL to BRKPT
 						evt_bpx
 					when PTrace::SIGINFO['TRACE']
 						evt_singlestep	# singlestep/singleblock
@@ -983,6 +1018,18 @@ class LinDebugger < Debugger
 		@info = "branch"
 
 		callback_branch[info] if callback_branch
+	end
+
+	# called during sys_execve in the new process
+	def evt_exec(info={})
+		@state = :stopped
+		@info = "#{info[:exec]} execve"
+
+		initialize_newpid
+		# XXX will receive a SIGTRAP, could hide it..
+
+		callback_exec[info] if callback_exec
+		# calling continue() here will loop back to TRAP+INFO_EXEC
 	end
 
 	def break

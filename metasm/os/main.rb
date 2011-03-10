@@ -1023,8 +1023,7 @@ class Debugger
 	# called whenever the target stops due to an exception
 	# type may be:
 	# * 'access violation', :fault_addr, :fault_len, :fault_access (:r/:w/:x)
-	# * 'invalid instruction'
-	# * 'breakpoint' (target-generated bpx)
+	# anything else for other exceptions (access violation is special to handle bpm)
 	# ...
 	def evt_exception(info={})
 		if info[:type] == 'access violation' and b = find_bp_bpm(info)
@@ -1612,7 +1611,7 @@ class Debugger
 
 	# list debugged pids
 	def list_debug_pids
-		@pid_stuff.keys | [@pid]
+		@pid_stuff.keys | [@pid].compact
 	end
 
 	# return a list of OS::Process listing all alive processes (incl not debugged)
@@ -1628,7 +1627,7 @@ class Debugger
 
 	# list debugged tids
 	def list_debug_tids
-		@tid_stuff.keys | [@tid]
+		@tid_stuff.keys | [@tid].compact
 	end
 
 	# list of thread ids existing in the current process (incl not debugged)

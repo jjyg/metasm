@@ -1857,7 +1857,8 @@ class WinDebugger < Debugger
 
 		callback_debugstring[info] if callback_debugstring
 
-		continue
+		# allow callback to skip this call to continue() by setting info[:nocontinue] = true
+		continue unless info[:nocontinue]
 	end
 
 	def evt_unloadlibrary(info={})
@@ -1866,7 +1867,7 @@ class WinDebugger < Debugger
 
 		callback_unloadlibrary[info] if callback_unloadlibrary
 
-		continue
+		continue unless info[:nocontinue]
 	end
 
 	def evt_ripevent(info={})
@@ -1875,7 +1876,7 @@ class WinDebugger < Debugger
 
 		callback_ripevent[info] if callback_ripevent
 
-		continue
+		continue unless info[:nocontinue]
 	end
 
 	def do_check_target

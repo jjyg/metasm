@@ -879,13 +879,19 @@ class DbgConsoleWidget < DrawableWidget
 				add_log "#{Expression[k]} #{@dbg.addrname(k)}"
 			}
 		}
-		new_command('maps', 'show file mappings') { |arg|
+		new_command('maps', 'show file mappings from parsed modules') { |arg|
 			want = arg.to_s.downcase
 			want = nil if want == ''
 			@dbg.modulemap.map { |n, (a_b, a_e)|
 				[a_b, "#{Expression[a_b]}-#{Expression[a_e]} #{n}"] if not want or n.downcase.include?(want)
 			}.compact.sort.each { |s1, s2|
 				add_log s2
+			}
+		}
+		new_command('rawmaps', 'show OS file mappings') { |arg|
+			# XXX listwindow
+			@dbg.mappings.each { |a, l, *i|
+				add_log "%x %x %s" % [a, l, i*' ']
 			}
 		}
 		new_command('add_symbol', 'add a symbol name') { |arg|
