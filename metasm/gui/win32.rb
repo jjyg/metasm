@@ -2460,7 +2460,7 @@ class IBoxWidget < DrawableWidget
 	def keypress(key)
 		case key
 		when :left
-			if kbd_shift
+			if keyboard_state(:shift)
 				@caret_x_select ||= @caret_x
 			else
 				@caret_x_select = nil
@@ -2468,7 +2468,7 @@ class IBoxWidget < DrawableWidget
 			@caret_x -= 1 if @caret_x > 0
 			update_caret
 		when :right
-			if kbd_shift
+			if keyboard_state(:shift)
 				@caret_x_select ||= @caret_x
 			else
 				@caret_x_select = nil
@@ -2476,7 +2476,7 @@ class IBoxWidget < DrawableWidget
 			@caret_x += 1 if @caret_x < @curline.length
 			update_caret
 		when :home
-			if kbd_shift
+			if keyboard_state(:shift)
 				@caret_x_select ||= @caret_x
 			else
 				@caret_x_select = nil
@@ -2484,7 +2484,7 @@ class IBoxWidget < DrawableWidget
 			@caret_x = 0
 			update_caret
 		when :end
-			if kbd_shift
+			if keyboard_state(:shift)
 				@caret_x_select ||= @caret_x
 			else
 				@caret_x_select = nil
