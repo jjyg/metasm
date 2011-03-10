@@ -451,15 +451,16 @@ class Debugger
 		@tid_stuff = {}
 		@log_proc = nil
 		@state = :dead
-		@info = 'empty'
+		@info = ''
 		# stuff saved when we switch pids
 		@pid_stuff_list = [:memory, :cpu, :disassembler, :symbols, :symbols_len,
 			:modulemap, :breakpoint, :breakpoint_memory, :tid, :tid_stuff,
-			:delete_process, :dead_process]
+			:dead_process]
 		@tid_stuff_list = [:state, :info, :breakpoint_thread, :singlestep_cb, 
-			:run_method, :run_args, :breakpoint_cause,
-			:delete_thread, :dead_thread]
+			:run_method, :run_args, :breakpoint_cause, :dead_thread]
 		@callback_loadlibrary = lambda { |h| loadsyms(h[:address]) ; continue }
+		@callback_newprocess = lambda { |h| log "process #{@pid} created" }
+		@callback_endprocess = lambda { |h| log "process #{@pid} died" }
 		initialize_newpid
 		initialize_newtid
 	end
@@ -471,6 +472,7 @@ class Debugger
 	# this will also re-load the previously selected tid for this process
 	def pid=(npid)
 		return if npid == pid
+		raise "invalid pid" if not check_pid(npid)
 		swapout_pid
 		@pid = npid
 		swapin_pid
@@ -480,6 +482,7 @@ class Debugger
 	attr_reader :tid
 	def tid=(ntid)
 		return if ntid == tid
+		raise "invalid tid" if not check_tid(ntid)
 		swapout_tid
 		@tid = ntid
 		swapin_tid
@@ -494,16 +497,15 @@ class Debugger
 		return if not pid
 		@pid_stuff_list.each { |s| instance_variable_set("@#{s}", nil) }
 
-		@cpu = initialize_cpu
-		@memory = initialize_memory
-		@disassembler = initialize_disassembler
 		@symbols = {}
 		@symbols_len = {}
 		@modulemap = {}
 		@breakpoint = {}
 		@breakpoint_memory = {}
 		@tid_stuff = {}
-		gui.swapin_pid if gui.respond_to?(:swapin_pid)
+		initialize_cpu
+		initialize_memory
+		initialize_disassembler
 	end
 
 	# subclasses should check that @tid maps to a real thread and raise() otherwise
@@ -514,13 +516,14 @@ class Debugger
 		@state = :stopped
 		@info = 'new'
 		@breakpoint_thread = {}
-		gui.swapin_tid if gui.respond_to?(:swapin_tid)
+		gui.swapin_tid if @disassembler and gui.respond_to?(:swapin_tid)
 	end
 
 	# initialize the disassembler from @cpu/@memory
 	def initialize_disassembler
 		return if not @memory or not @cpu
-		Shellcode.decode(@memory, @cpu).disassembler
+		@disassembler = Shellcode.decode(@memory, @cpu).disassembler
+		gui.swapin_pid if gui.respond_to?(:swapin_pid)
 	end
 
 	# we're switching focus from one pid to another, save current pid data
@@ -528,7 +531,6 @@ class Debugger
 		return if not pid
 		swapout_tid
 		gui.swapout_pid if gui.respond_to?(:swapout_pid)
-		return @pid_stuff.delete(@pid) if @delete_process
 		@pid_stuff[@pid] ||= {}
 		@pid_stuff_list.each { |fld|
 			@pid_stuff[@pid][fld] = instance_variable_get("@#{fld}")
@@ -539,7 +541,6 @@ class Debugger
 	def swapout_tid
 		return if not tid
 		gui.swapout_tid if gui.respond_to?(:swapout_tid)
-		return @tid_stuff.delete(@tid) if @delete_thread
 		@tid_stuff[@tid] ||= {}
 		@tid_stuff_list.each { |fld|
 			@tid_stuff[@tid][fld] = instance_variable_get("@#{fld}")
@@ -570,17 +571,27 @@ class Debugger
 	# delete references to the current pid
 	# switch to another pid, set @state = :dead if none available
 	def del_pid
-		@delete_process = true
-		set_pid @pid_stuff.keys.find { |k| k != @pid }
-		@state = :dead if not @pid
+		@pid_stuff.delete @pid
+		if newpid = @pid_stuff.keys.first
+			@pid = newpid
+			swapin_pid
+		else
+			@state = :dead
+			@info = ''
+			@tid = nil
+		end
 	end
 
 	# delete references to the current thread
 	# calls del_process if no tid left
 	def del_tid
-		@delete_thread = true
-		set_tid @tid_stuff.keys.find { |k| k != @tid }
-		del_pid if not @tid
+		@tid_stuff.delete @tid
+		if newtid = @tid_stuff.keys.first
+			@tid = newtid
+			swapin_tid
+		else
+			del_pid
+		end
 	end
 
 	# change the debugger to a specific pid/tid
@@ -1597,6 +1608,36 @@ class Debugger
 	# return a list of Process::Modules (with a #path, #addr) for the current process
 	def modules
 		[]
+	end
+
+	# list debugged pids
+	def list_debug_pids
+		@pid_stuff.keys | [@pid]
+	end
+
+	# return a list of OS::Process listing all alive processes (incl not debugged)
+	# default version only includes current debugged pids
+	def list_processes
+		list_debug_pids.map { |p| OS::Process.new(p) }
+	end
+
+	# check if pid is valid
+	def check_pid(pid)
+		list_processes.find { |p| p.pid == pid }
+	end
+
+	# list debugged tids
+	def list_debug_tids
+		@tid_stuff.keys | [@tid]
+	end
+
+	# list of thread ids existing in the current process (incl not debugged)
+	# default version only lists debugged tids
+	alias list_threads list_debug_tids
+
+	# check if tid is valid for the current process
+	def check_tid(tid)
+		list_threads.include?(tid)
 	end
 
 	# see EData#pattern_scan

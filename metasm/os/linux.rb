@@ -672,7 +672,7 @@ class LinDebugger < Debugger
 
 	def initialize(pidpath=nil)
 		super()
-		@pid_stuff_list << :has_pax_mprotect << :ptrace	<< :breaking
+		@pid_stuff_list << :has_pax_mprotect << :ptrace	<< :breaking << :os_process
 		@tid_stuff_list << :continuesignal << :saved_csig << :ctx << :target_syscall
 
 		# by default, break on all signals except SIGWINCH (terminal resize notification)
@@ -688,21 +688,24 @@ class LinDebugger < Debugger
 	def attach(pid, do_attach=true)
 		pt = PTrace.new(pid)
 		set_context(pt.pid, pt.pid)	# swapout+init_newpid
-		@ptrace = pt
+		# calls init_mem, which also init @ptrace
 		if @cpu.size == 64 and @ptrace.reg_off['EAX']
 			hack_64_32
 		end
 		set_thread_options
+		log "attached #@pid"
 		list_threads.each { |tid| attach_thread(tid) if tid != @pid }
 	end
 	alias createprocess attach
 
 	def initialize_cpu
-		os_process.cpu
+		@cpu = os_process.cpu
 	end
 
 	def initialize_memory
-		os_process.memory = LinuxRemoteString.new(@pid, 0, nil, self)
+		# need to init @ptrace here, before init_dasm calls gui.swapin
+		@ptrace = PTrace.new(@pid, false)
+		@memory = os_process.memory = LinuxRemoteString.new(@pid, 0, nil, self)
 	end
 
 	def os_process
@@ -711,6 +714,14 @@ class LinDebugger < Debugger
 
 	def list_threads
 		os_process.threads
+	end
+
+	def list_processes
+		LinOS.list_processes
+	end
+
+	def check_pid(pid)
+		LinOS.check_process(pid)
 	end
 
 	# we're a 32bit process debugging a 64bit target
@@ -741,12 +752,8 @@ class LinDebugger < Debugger
 
 	def set_thread_options
 		opts  = %w[TRACESYSGOOD TRACECLONE TRACEEXEC TRACEEXIT]
-		opts += %w[TRACEFORK TRACEVFORK TRACEVFORKDONE] if @trace_children
+		opts += %w[TRACEFORK TRACEVFORK TRACEVFORKDONE] if trace_children
 		@ptrace.setoptions(*opts)
-	end
-
-	def list_processes
-		LinOS.list_processes
 	end
 
 	def invalidate

@@ -55,8 +55,15 @@ class DbgWidget < ContainerVBoxWidget
 
 	def swapin_tid
 		@regs.swapin_tid
+		@dbg.disassembler.disassemble_fast(@dbg.pc)
+		@children.each { |c|
+			if wp = @watchpoint[c]
+				c.focus_addr @dbg.resolve_expr(wp), nil, true
+			end
+		}
 		redraw
 	end
+
 	def swapin_pid
 		@mem.dasm = @dbg.disassembler
 		@code.dasm = @dbg.disassembler
@@ -90,6 +97,7 @@ class DbgWidget < ContainerVBoxWidget
 		@regs.pre_dbg_run
 	end
 
+	# TODO check_target always, incl when :stopped
 	def post_dbg_run
 		want_redraw = true
 		return if @idle_checking ||= nil	# load only one bg proc
@@ -418,6 +426,14 @@ class DbgConsoleWidget < DrawableWidget
 		gui_update
 	end
 
+	def swapin_tid
+		@parent_widget.swapin_tid
+	end
+
+	def swapin_pid
+		@parent_widget.swapin_pid
+	end
+
 	def click(x, y)
 		@caret_x = (x-1).to_i / @font_width - 1
 		@caret_x = [[@caret_x, 0].max, @curline.length].min
@@ -460,7 +476,7 @@ class DbgConsoleWidget < DrawableWidget
 
 	       	y -= @font_height
 		draw_rectangle_color(:status_bg, 0, y, w_w, @font_height)
-		str = "#{@dbg.state} #{@dbg.info}"
+		str = "#{@dbg.pid}:#{@dbg.tid} #{@dbg.state} #{@dbg.info}"
 		draw_string_color(:status, w_w-str.length*@font_width-1, y, str)
 		draw_string_color(:status, 1+@font_width, y, @statusline)
 	       	y -= @font_height
@@ -670,7 +686,6 @@ class DbgConsoleWidget < DrawableWidget
 		@commands = {}
 		@cmd_help = {}
 		p = @parent_widget
-		dasm = @dbg.disassembler
 		new_command('help') { add_log @commands.keys.sort.join(' ') } # TODO help <subject>
 		new_command('d', 'focus data window on an address') { |arg| p.mem.focus_addr(solve_expr(arg)) }
 		new_command('db', 'display bytes in data window') { |arg| p.mem.curview.data_size = 1 ; p.mem.gui_update ; @commands['d'][arg] }
@@ -889,6 +904,7 @@ class DbgConsoleWidget < DrawableWidget
 		}
 		new_command('dasm', 'disassemble_fast', 'disassembles from an address') { |arg|
 			addr = solve_expr(arg)
+			dasm = @dbg.disassembler
 			dasm.disassemble_fast(addr)
 			dasm.function_blocks(addr).keys.sort.each { |a|
 				next if not di = dasm.di_at(a)
@@ -909,25 +925,33 @@ class DbgConsoleWidget < DrawableWidget
 			end
 		}
 
-		new_command('list_pid', 'list_processes', 'list processes available for debugging') { |arg|
+		new_command('list_pid', 'list pids currently debugged') { |arg|
+			add_log @dbg.list_debug_pids.sort.map { |pp| pp == @dbg.pid ? "*#{pp}" : pp }.join(' ')
+		}
+		new_command('list_tid', 'list tids currently debugged') { |arg|
+			add_log @dbg.list_debug_tids.sort.map { |tt| tt == @dbg.tid ? "*#{tt}" : tt }.join(' ')
+		}
+
+		new_command('list_processes', 'list processes available for debugging') { |arg|
 			@dbg.list_processes.each { |pp|
 				add_log "#{pp.pid} #{pp.path}"
 			}
 		}
-		new_command('pid', 'select a pid') { |arg|
-			if pid = solve_expr(arg)
-				@dbg.pid = pid
-			else
-				add_log "pid #{@dbg.pid}"
-			end
-		}
-		new_command('list_tid', 'list_threads', 'list thread ids of the current process') { |arg|
+		new_command('list_threads', 'list thread ids of the current process') { |arg|
 			@dbg.list_threads.each { |t|
 				stf = @dbg.tid_stuff[t]
 				stf ||= { :state => @dbg.state, :info => @dbg.info } if t == @dbg.tid
 				stf ||= {}
 				add_log "#{t} #{stf[:state]} #{stf[:info]}"
 			}
+		}
+		
+		new_command('pid', 'select a pid') { |arg|
+			if pid = solve_expr(arg)
+				@dbg.pid = pid
+			else
+				add_log "pid #{@dbg.pid}"
+			end
 		}
 		new_command('tid', 'select a tid') { |arg|
 			if tid = solve_expr(arg)

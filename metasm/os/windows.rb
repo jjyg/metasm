@@ -1662,10 +1662,9 @@ class WinDebugger < Debugger
 
 	# called whenever we receive a handle to a new process being debugged, after initialisation of @os_process
 	def initialize_osprocess
-		@cpu = initialize_cpu
-		@memory = initialize_memory
-		@disassembler = initialize_disassembler
-		gui.swapin_pid if gui.respond_to?(:swapin_pid)
+		initialize_cpu
+		initialize_memory
+		initialize_disassembler
 	end
 
 	def initialize_newpid
@@ -1685,7 +1684,7 @@ class WinDebugger < Debugger
 		return if not @os_process
 		case WinAPI.host_cpu.shortname
 		when 'ia32', 'x64'
-			Ia32.new(os_process.addrsz)
+			@cpu = Ia32.new(os_process.addrsz)
 		else
 			raise 'unsupported architecture'
 		end
@@ -1693,7 +1692,7 @@ class WinDebugger < Debugger
 
 	def initialize_memory
 		return if not @os_process
-		os_process.memory
+		@memory = os_process.memory
 	end
 
 	def mappings
@@ -1710,6 +1709,10 @@ class WinDebugger < Debugger
 
 	def list_threads
 		os_process.threads
+	end
+
+	def check_pid(pid)
+		WinOS.check_process(pid)
 	end
 
 	def ctx

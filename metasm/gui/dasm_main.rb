@@ -17,7 +17,7 @@ module Metasm
 module Gui
 # the main disassembler widget: this is a container for all the lower-level widgets that actually render the dasm state
 class DisasmWidget < ContainerChoiceWidget
-	attr_accessor :dasm, :entrypoints, :gui_update_counter_max
+	attr_accessor :entrypoints, :gui_update_counter_max
 	attr_accessor :keyboard_callback, :keyboard_callback_ctrl	# hash key => lambda { |key| true if handled }
 	attr_accessor :clones
 	attr_accessor :pos_history, :pos_history_redo
@@ -50,6 +50,16 @@ class DisasmWidget < ContainerChoiceWidget
 		addview :cstruct,   CStructWidget.new(@dasm, self)
 
 		view(:listing).grab_focus
+	end
+
+	attr_reader :dasm
+	# when updating @dasm, also update dasm for all views
+	def dasm=(d)
+		@dasm = d
+		view_indexes.each { |v|
+			w = view(v)
+			w.dasm = d if w.respond_to?(:'dasm=')
+		}
 	end
 
 	# start an idle callback that will run one round of @dasm.disassemble_mainiter
