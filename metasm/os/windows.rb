@@ -1631,7 +1631,7 @@ class WinDebugger < Debugger
 			npid = Integer(pidpath)
 			attach(npid)
 		rescue ArgumentError
-			createprocess(pidpath)
+			create_process(pidpath)
 		end
 
 		check_target until pid
@@ -1645,7 +1645,7 @@ class WinDebugger < Debugger
 		check_target until pid
 	end
 
-	def createprocess(target)
+	def create_process(target)
 		startupinfo = WinAPI.alloc_c_struct('STARTUPINFOA', :cb => :size)
 		processinfo = WinAPI.alloc_c_struct('PROCESS_INFORMATION')
 		flags  = WinAPI::DEBUG_PROCESS

@@ -51,6 +51,7 @@ class PTrace
 	end
 
 	attr_accessor :reg_off, :intsize, :syscallnr, :syscallreg
+	attr_accessor :packint, :packuint, :host_intsize, :host_syscallnr
 	# setup the variables according to the target
 	def tweak_for_pid(pid=@pid)
 		# use these for our syscalls PTRACE
@@ -642,15 +643,15 @@ class LinuxRemoteString < VirtualString
 	end
 
 	def get_page(addr, len=@pagelength)
-		do_ptrace {
+		do_ptrace { |ptrace|
 			begin
-				if readfd
-					#addr = [addr].pack('q').unpack('q').first if addr >= 1<<63
-					return if addr >= 1 << 63	# XXX ruby bug ?
+				if readfd and addr < (1<<63)
+					# 1<<63: ruby seek = 'too big to fit longlong', linux read = EINVAL
 					@readfd.pos = addr
 					@readfd.read len
-				else
-					@dbg.ptrace.readmem(addr, len)
+				elsif addr < (1<<(ptrace.host_intsize*8))
+					# can reach 1<<64 with peek_data only if ptrace accepts 64bit args
+					ptrace.readmem(addr, len)
 				end
 			rescue Errno::EIO, Errno::ESRCH
 				nil
@@ -688,23 +689,22 @@ class LinDebugger < Debugger
 	def attach(pid, do_attach=true)
 		pt = PTrace.new(pid)
 		set_context(pt.pid, pt.pid)	# swapout+init_newpid
-		# calls init_mem, which also init @ptrace
-		if @cpu.size == 64 and @ptrace.reg_off['EAX']
-			hack_64_32
-		end
 		set_thread_options
 		log "attached #@pid"
 		list_threads.each { |tid| attach_thread(tid) if tid != @pid }
 	end
-	alias createprocess attach
+	alias create_process attach
 
 	def initialize_cpu
 		@cpu = os_process.cpu
+		# need to init @ptrace here, before init_dasm calls gui.swapin
+		@ptrace = PTrace.new(@pid, false)
+		if @cpu.size == 64 and @ptrace.reg_off['EAX']
+			hack_64_32
+		end
 	end
 
 	def initialize_memory
-		# need to init @ptrace here, before init_dasm calls gui.swapin
-		@ptrace = PTrace.new(@pid, false)
 		@memory = os_process.memory = LinuxRemoteString.new(@pid, 0, nil, self)
 	end
 
@@ -753,7 +753,13 @@ class LinDebugger < Debugger
 	def set_thread_options
 		opts  = %w[TRACESYSGOOD TRACECLONE TRACEEXEC TRACEEXIT]
 		opts += %w[TRACEFORK TRACEVFORK TRACEVFORKDONE] if trace_children
+		@ptrace.pid = @tid
 		@ptrace.setoptions(*opts)
+	end
+
+	# update the current pid relative to tracing children (@trace_children only effects newly traced pid/tid)
+	def do_trace_children
+		each_tid { set_thread_options }
 	end
 
 	def invalidate
@@ -843,7 +849,9 @@ class LinDebugger < Debugger
 				else
 					si = @ptrace.getsiginfo
 					case si.si_code
-					when PTrace::SIGINFO['BRKPT']
+					when PTrace::SIGINFO['BRKPT'],
+					     PTrace::SIGINFO['KERNEL']
+						# 0xcc seems to prefer KERNEL to BRKPT
 						evt_bpx
 					when PTrace::SIGINFO['TRACE']
 						evt_singlestep	# singlestep/singleblock
@@ -907,7 +915,6 @@ class LinDebugger < Debugger
 		set_tid_findpid t
 		update_waitpid $?
 	rescue ::Errno::ECHILD
-		@state = :dead	# XXX ?
 	end
 
 	def do_wait_target
@@ -915,7 +922,6 @@ class LinDebugger < Debugger
 		set_tid_findpid t
 		update_waitpid $?
 	rescue ::Errno::ECHILD
-		@state = :dead
 	end
 
 	def do_continue
@@ -985,6 +991,8 @@ class LinDebugger < Debugger
 	end
 
 	def kill(sig=nil)
+		return if not tid
+		# XXX tkill ?
 		::Process.kill(sig2signr(sig), tid)
 	end
 

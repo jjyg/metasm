@@ -572,8 +572,7 @@ class Debugger
 	# switch to another pid, set @state = :dead if none available
 	def del_pid
 		@pid_stuff.delete @pid
-		if newpid = @pid_stuff.keys.first
-			@pid = newpid
+		if @pid = @pid_stuff.keys.first
 			swapin_pid
 		else
 			@state = :dead
@@ -583,11 +582,10 @@ class Debugger
 	end
 
 	# delete references to the current thread
-	# calls del_process if no tid left
+	# calls del_pid if no tid left
 	def del_tid
 		@tid_stuff.delete @tid
-		if newtid = @tid_stuff.keys.first
-			@tid = newtid
+		if @tid = @tid_stuff.keys.first
 			swapin_tid
 		else
 			del_pid
@@ -869,6 +867,8 @@ class Debugger
 			return
 		elsif @dead_thread
 			del_tid
+			return
+		elsif @state == :running
 			return
 		end
 		@cpu.dbg_check_pre_run(self) if @cpu.respond_to?(:dbg_check_pre_run)

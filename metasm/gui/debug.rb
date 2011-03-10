@@ -984,13 +984,16 @@ class DbgConsoleWidget < DrawableWidget
 			@dbg.ignore_endthread = true
 		}
 
-		new_command('trace_children', 'trace children of the next processes we attach (0|1)') { |arg|
+		new_command('trace_children', 'trace children of debuggee (0|1)') { |arg|
 			arg = case arg.to_s.strip.downcase
 			when '0', 'no', 'false'; false
 			else true
 			end
 			add_log "trace children #{arg ? 'active' : 'inactive'}"
+			# update the flag for future debugee
 			@dbg.trace_children = arg
+			# change current debugee setting if supported
+			@dbg.do_trace_children if @dbg.respond_to?(:do_trace_children)
 		}
 
 		new_command('attach', 'attach to a running process') { |arg|
@@ -1001,8 +1004,8 @@ class DbgConsoleWidget < DrawableWidget
 			end
 			@dbg.attach(pid)
 		}
-		new_command('createprocess', 'create a new process and debug it') { |arg|
-			@dbg.createprocess(arg)
+		new_command('create_process', 'create a new process and debug it') { |arg|
+			@dbg.create_process(arg)
 		}
 
 		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup
