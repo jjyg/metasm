@@ -1654,8 +1654,9 @@ class WinDebugger < Debugger
 		h = WinAPI.createprocessa(nil, target, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
 		raise "CreateProcess: #{WinAPI.last_error_msg}" if not h
 
-		set_context(processinfo.dwprocessid, processinfo.dwthreadid)
+		set_pid processinfo.dwprocessid
 		@os_process = WinOS::Process.new(processinfo.dwprocessid, processinfo.hprocess)
+		set_tid processinfo.dwthreadid
 		@os_thread  = WinOS::Thread.new(processinfo.dwthreadid, processinfo.hthread, @os_process)
 		initialize_osprocess
 	end
