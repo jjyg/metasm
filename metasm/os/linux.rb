@@ -90,56 +90,12 @@ class PTrace
 
 		# buffer used in ptrace syscalls
 		@buf = [0].pack(@packint)
-		@bufptr = [@buf].pack('P').unpack(@packint).first
+		@bufptr = str_ptr(@buf)
 	end
 
-	SIGINFO_C = <<EOS
-typedef __int32 __pid_t;
-typedef unsigned __int32 __uid_t;
-typedef uintptr_t sigval_t;
-typedef long __clock_t;
-
-typedef struct siginfo {
-    int si_signo;		/* Signal number.  */
-    int si_errno;		/* If non-zero, an errno value associated with
-				   this signal, as defined in <errno.h>.  */
-    int si_code;		/* Signal code.  */
-    // int pad64;
-
-    union {
-        int _pad[128-3*4];	/* total >= 128b */
-
-        struct {		/* kill().  */
-            __pid_t si_pid;	/* Sending process ID.  */
-            __uid_t si_uid;	/* Real user ID of sending process.  */
-        } _kill;
-        struct {		/* POSIX.1b timers.  */
-            int si_tid;		/* Timer ID.  */
-            int si_overrun;	/* Overrun count.  */
-            sigval_t si_sigval;	/* Signal value.  */
-        } _timer;
-        struct {		/* POSIX.1b signals.  */
-            __pid_t si_pid;	/* Sending process ID.  */
-            __uid_t si_uid;	/* Real user ID of sending process.  */
-            sigval_t si_sigval;	/* Signal value.  */
-        } _rt;
-        struct {		/* SIGCHLD.  */
-            __pid_t si_pid;	/* Which child.  */
-            __uid_t si_uid;	/* Real user ID of sending process.  */
-            int si_status;	/* Exit value or signal.  */
-            __clock_t si_utime;
-            __clock_t si_stime;
-        } _sigchld;
-        struct {		/* SIGILL, SIGFPE, SIGSEGV, SIGBUS.  */
-            void *si_addr;	/* Faulting insn/memory ref.  */
-        } _sigfault;
-        struct {		/* SIGPOLL.  */
-            long int si_band;	/* Band event for SIGPOLL.  */
-            int si_fd;
-        } _sigpoll;
-    };
-} siginfo_t;
-EOS
+	def str_ptr(str)
+		[str].pack('P').unpack(@packint).first
+	end
 
 	# interpret the value turned as an unsigned long
 	def bufval
@@ -233,7 +189,7 @@ EOS
 		'EBX' => 0, 'ECX' => 1, 'EDX' => 2, 'ESI' => 3,
 		'EDI' => 4, 'EBP' => 5, 'EAX' => 6, 'DS'  => 7,
 		'ES'  => 8, 'FS'  => 9, 'GS'  => 10, 'ORIG_EAX' => 11,
-		'EIP' => 12, 'CS'  => 13, 'EFL' => 14, 'UESP'=> 15,
+		'EIP' => 12, 'CS'  => 13,  'EFL' => 14, 'UESP'=> 15,
 					'EFLAGS' => 14, 'ESP' => 15,
 		'SS'  => 16,
 		# from ptrace.c in kernel source & asm-i386/user.h
@@ -265,7 +221,7 @@ EOS
 		#'ERROR_CODE' => 114, 'FAULT_ADDR' => 115
 	}
 
-	SYSCALLNR_I386 = %w[restart_syscall exit fork read write  open close waitpid  creat link unlink execve chdir time
+	SYSCALLNR_I386 = %w[restart_syscall exit fork read write open close waitpid creat link unlink execve chdir time
 		mknod chmod lchown break oldstat lseek getpid mount umount setuid getuid stime ptrace alarm oldfstat
 		pause utime stty gtty access nice ftime sync kill  rename mkdir rmdir dup pipe times prof brk setgid
 		getgid signal  geteuid getegid acct  umount2 lock ioctl fcntl  mpx setpgid ulimit  oldolduname umask
@@ -301,7 +257,7 @@ EOS
 		rt_tg_sigqueueinfo perf_counter_open].inject({}) { |h, sc| h.update sc => h.length }
 	SYSCALLNR_I386.update SYSCALLNR_I386.invert
 	
-	SYSCALLNR_X86_64 = %w[read write open  close stat fstat lstat poll  lseek mmap mprotect munmap  brk rt_sigaction
+	SYSCALLNR_X86_64 = %w[read write open close stat fstat lstat poll lseek mmap mprotect munmap brk rt_sigaction
 		rt_sigprocmask  rt_sigreturn ioctl  pread64 pwrite64  readv  writev access  pipe select  sched_yield
 		mremap  msync  mincore  madvise  shmget  shmat  shmctl dup  dup2  pause  nanosleep  getitimer  alarm
 		setitimer  getpid  sendfile   socket  connect  accept  sendto  recvfrom   sendmsg  recvmsg  shutdown
@@ -345,14 +301,87 @@ EOS
 		ESPIPE EROFS EMLINK EPIPE EDOM ERANGE].inject({}) { |h, e| h.update e => h.length }
 	ERRNO.update ERRNO.invert
 
+	SIGINFO = {
+		# user-generated signal
+		'DETHREAD' => -7,	# execve killing threads
+		'TKILL' => -6, 'SIGIO' => -5, 'ASYNCIO' => -4, 'MESGQ' => -3,
+		'TIMER' => -2, 'QUEUE' => -1, 'USER' => 0, 'KERNEL' => 0x80,
+		# ILL
+		'ILLOPC' => 1, 'ILLOPN' => 2, 'ILLADR' => 3, 'ILLTRP' => 4,
+		'PRVOPC' => 5, 'PRVREG' => 6, 'COPROC' => 7, 'BADSTK' => 8,
+		# FPE
+		'INTDIV' => 1, 'INTOVF' => 2, 'FLTDIV' => 3, 'FLTOVF' => 4,
+		'FLTUND' => 5, 'FLTRES' => 6, 'FLTINV' => 7, 'FLTSUB' => 8,
+		# SEGV
+		'MAPERR' => 1, 'ACCERR' => 2,
+		# BUS
+		'ADRALN' => 1, 'ADRERR' => 2, 'OBJERR' => 3, 'MCEERR_AR' => 4,
+		'MCEERR_AO' => 5,
+		# TRAP
+		'BRKPT' => 1, 'TRACE' => 2, 'BRANCH' => 3, 'HWBKPT' => 4,
+		# CHLD
+		'EXITED' => 1, 'KILLED' => 2, 'DUMPED' => 3, 'TRAPPED' => 4,
+		'STOPPED' => 5, 'CONTINUED' => 6,
+		# POLL
+		'POLL_IN' => 1, 'POLL_OUT' => 2, 'POLL_MSG' => 3, 'POLL_ERR' => 4,
+		'POLL_PRI' => 5, 'POLL_HUP' => 6
+	}
+
+	SIGINFO_C = <<EOS
+typedef __int32 __pid_t;
+typedef unsigned __int32 __uid_t;
+typedef uintptr_t sigval_t;
+typedef long __clock_t;
+
+typedef struct siginfo {
+    int si_signo;
+    int si_errno;
+    int si_code;
+    // int pad64;
+    union {
+        int _pad[128/4-3];	/* total >= 128b */
+
+        struct {		/* kill().  */
+            __pid_t si_pid;	/* Sending process ID.  */
+            __uid_t si_uid;	/* Real user ID of sending process.  */
+        } _kill;
+        struct {		/* POSIX.1b timers.  */
+            int si_tid;		/* Timer ID.  */
+            int si_overrun;	/* Overrun count.  */
+            sigval_t si_sigval;	/* Signal value.  */
+        } _timer;
+        struct {		/* POSIX.1b signals.  */
+            __pid_t si_pid;	/* Sending process ID.  */
+            __uid_t si_uid;	/* Real user ID of sending process.  */
+            sigval_t si_sigval;	/* Signal value.  */
+        } _rt;
+        struct {		/* SIGCHLD.  */
+            __pid_t si_pid;	/* Which child.  */
+            __uid_t si_uid;	/* Real user ID of sending process.  */
+            int si_status;	/* Exit value or signal.  */
+            __clock_t si_utime;
+            __clock_t si_stime;
+        } _sigchld;
+        struct {		/* SIGILL, SIGFPE, SIGSEGV, SIGBUS.  */
+            uintptr_t si_addr;	/* Faulting insn/memory ref.  */
+        } _sigfault;
+        struct {		/* SIGPOLL.  */
+            long int si_band;	/* Band event for SIGPOLL.  */
+            int si_fd;
+        } _sigpoll;
+    };
+} siginfo_t;
+EOS
+
 	def sys_ptrace(req, pid, addr, data)
+		data = str_ptr(data) if data.kind_of?(String)
 		addr = [addr].pack(@packint).unpack(@packint).first
 		data = [data].pack(@packint).unpack(@packint).first
 		Kernel.syscall(@host_syscallnr['ptrace'], req, pid, addr, data)
 	end
 
 	def traceme
-		sys_ptrace(COMMAND['TRACEME'],  0, 0, 0)
+		sys_ptrace(COMMAND['TRACEME'], 0, 0, 0)
 	end
 
 	def peektext(addr)
@@ -421,7 +450,8 @@ EOS
 		sys_ptrace(COMMAND['ARCH_PRCTL'], @pid, addr, data)
 	end
 	
-	def cont(sig = 0)
+	def cont(sig = nil)
+		sig ||= 0
 		sys_ptrace(COMMAND['CONT'], @pid, 0, sig)
 	end
 
@@ -429,11 +459,18 @@ EOS
 		sys_ptrace(COMMAND['KILL'], @pid, 0, 0)
 	end
 
-	def singlestep(sig = 0)
+	def singlestep(sig = nil)
+		sig ||= 0
 		sys_ptrace(COMMAND['SINGLESTEP'], @pid, 0, sig)
 	end
 
-	def syscall(sig = 0)
+	def singleblock(sig = nil)
+		sig ||= 0
+		sys_ptrace(COMMAND['SINGLEBLOCK'], @pid, 0, sig)
+	end
+
+	def syscall(sig = nil)
+		sig ||= 0
 		sys_ptrace(COMMAND['SYSCALL'], @pid, 0, sig)
 	end
 
@@ -547,6 +584,7 @@ class LinOS < OS
 		end
 	end
 
+class << self
 	# returns an array of Processes, with pid/module listing
 	def list_processes
 		Dir.entries('/proc').grep(/^\d+$/).map { |pid| Process.new(pid.to_i) }
@@ -577,7 +615,7 @@ class LinuxRemoteString < VirtualString
 	# writes are done directly by ptrace
 	def initialize(pid, addr_start=0, length=nil, dbg=nil)
 		@pid = pid
-		length ||= 1 << (dbg ? dbg.cpu.size || LinOS.open_process(@pid).addrsz rescue 32)
+		length ||= 1 << (dbg ? dbg.cpu.size : (LinOS.open_process(@pid).addrsz rescue 32))
 		@readfd = File.open("/proc/#@pid/mem", 'rb') rescue nil
 		@dbg = dbg if dbg
 		super(addr_start, length)
@@ -630,9 +668,9 @@ end
 class LinDebugger < Debugger
 	# ptrace is per-process or per-thread ?
 	attr_accessor :ptrace, :continuesignal, :has_pax_mprotect, :target_syscall
-	attr_accessor :callback_syscall
+	attr_accessor :callback_syscall, :callback_branch
 
-	def initialize(pidpath)
+	def initialize(pidpath=nil)
 		super()
 		@pid_stuff_list << :has_pax_mprotect << :ptrace	<< :breaking
 		@tid_stuff_list << :continuesignal << :saved_csig << :ctx << :target_syscall
@@ -651,17 +689,21 @@ class LinDebugger < Debugger
 		pt = PTrace.new(pid)
 		set_context(pt.pid, pt.pid)	# swapout+init_newpid
 		@ptrace = pt
-		@cpu = os_process.cpu
 		if @cpu.size == 64 and @ptrace.reg_off['EAX']
 			hack_64_32
 		end
-		os_process.memory = @memory = LinuxRemoteString.new(@pid, 0, nil, self)
-		initialize_disassembler
-
 		set_thread_options
 		list_threads.each { |tid| attach_thread(tid) if tid != @pid }
 	end
 	alias createprocess attach
+
+	def initialize_cpu
+		os_process.cpu
+	end
+
+	def initialize_memory
+		os_process.memory = LinuxRemoteString.new(@pid, 0, nil, self)
+	end
 
 	def os_process
 		@os_process ||= LinOS.open_process(@pid)
@@ -676,7 +718,7 @@ class LinDebugger < Debugger
 	# with this we advertize the cpu as having eax..edi registers (the only one we
 	# can access), while still decoding x64 instructions (whose addr < 4G)
 	def hack_64_32
-		puts "WARNING: debugging a 64bit process from a 32bit debugger is a very bad idea !"
+		log "WARNING: debugging a 64bit process from a 32bit debugger is a very bad idea !"
 		@cpu.instance_eval {
 			ia32 = Ia32.new
 			@dbg_register_pc = ia32.dbg_register_pc
@@ -736,10 +778,11 @@ class LinDebugger < Debugger
 	def update_waitpid(status)
 		invalidate
 		@continuesignal = 0
+		@state = :stopped	# allow get_reg (for eg pt_syscall)
 		info = { :status => status }
 		if status.exited?
 			info.update :exitcode => status.exitstatus
-			if @tid == @pid	# XXX
+			if @tid == @pid		# XXX
 				evt_endprocess info
 			else
 				evt_endthread info
@@ -757,7 +800,7 @@ class LinDebugger < Debugger
 			if signame == 'TRAP'
 				if status.stopsig & 0x80 > 0
 					# XXX int80 in x64 => syscallnr32 ?
-					evt_syscall info.update(:syscall => @ptrace.syscallnr[@ptrace.syscallreg])
+					evt_syscall info.update(:syscall => @ptrace.syscallnr[get_reg_value(@ptrace.syscallreg)])
 
 				elsif (status >> 16) > 0
 					case o = PTrace::WAIT_EXTENDEDRESULT[status >> 16]
@@ -792,13 +835,14 @@ class LinDebugger < Debugger
 
 				else
 					si = @ptrace.getsiginfo
-puts si.si_code, PTrace::INFO_TRAP[si.si_code]
-					case PTrace::INFO_TRAP[si.si_code]
-					when 'BRKPT'
-						evt_breakpoint
-					when 'TRACE'
-						evt_singlestep
-					when 'HWBKPT'
+					case si.si_code
+					when PTrace::SIGINFO['BRKPT']
+						evt_bpx
+					when PTrace::SIGINFO['TRACE']
+						evt_singlestep	# singlestep/singleblock
+					when PTrace::SIGINFO['BRANCH']
+						evt_branch	# XXX BTS?
+					when PTrace::SIGINFO['HWBKPT']
 						evt_hwbp
 					else
 						@saved_csig = @continuesignal = sig
@@ -828,9 +872,9 @@ puts si.si_code, PTrace::INFO_TRAP[si.si_code]
 					# need more data on access violation (for bpm)
 					info.update :type => 'access violation'
 					si = @ptrace.getsiginfo
-					access = case PTrace::INFO_SEGV[si.si_code]
-						 when 'MAPERR'; :r	# XXX write access to unmapped => ?
-						 when 'ACCERR'; :w
+					access = case si.si_code
+						 when PTrace::SIGINFO['MAPERR']; :r	# XXX write access to unmapped => ?
+						 when PTrace::SIGINFO['ACCERR']; :w
 						 end
 					info.update :fault_addr => si.si_addr, :fault_access => access
 				end
@@ -877,6 +921,36 @@ puts si.si_code, PTrace::INFO_TRAP[si.si_code]
 		@ptrace.singlestep(@continuesignal)
 	end
 
+	# use the PT_SYSCALL to break on next syscall
+	# regexp allowed to wait a specific syscall
+	def syscall(arg=nil)
+		arg = nil if arg and arg.strip == ''
+		return if not check_pre_run(:syscall, arg)
+		@target_syscall = arg
+		@ptrace.pid = @tid
+		@ptrace.syscall(@continuesignal)
+	end
+
+	def syscall_wait(*a, &b)
+		syscall(*a, &b)
+		wait_target
+	end
+
+	# use the PT_SINGLEBLOCK to execute until the next branch
+	def singleblock
+		# record as singlestep to avoid evt_singlestep -> evt_exception
+		# step or block doesn't matter much here anyway
+		return if not check_pre_run(:singlestep)
+		@ptrace.pid = @tid
+		@ptrace.singleblock(@continuesignal)
+	end
+
+	def singleblock_wait(*a, &b)
+		singleblock(*a, &b)
+		wait_target
+	end
+
+	# woke up from a PT_SYSCALL
 	def evt_syscall(info={})
 		@state = :stopped
 		@info = "syscall #{info[:syscall]}"
@@ -890,6 +964,14 @@ puts si.si_code, PTrace::INFO_TRAP[si.si_code]
 		end
 	end
 
+	# SIGTRAP + SIGINFO_TRAP_BRANCH = ?
+	def evt_branch(info={})
+		@state = :stopped
+		@info = "branch"
+
+		callback_branch[info] if callback_branch
+	end
+
 	def break
 		@breaking = true
 		kill 'STOP'
@@ -899,7 +981,7 @@ puts si.si_code, PTrace::INFO_TRAP[si.si_code]
 		::Process.kill(sig2signr(sig), tid)
 	end
 
-	def pass_current_exception(bool)
+	def pass_current_exception(bool=true)
 		if bool
 			@continuesignal = @saved_csig
 		else
@@ -929,23 +1011,6 @@ puts si.si_code, PTrace::INFO_TRAP[si.si_code]
 		del_pid
 	end
 
-	# use the PT_SYSCALL to break on next syscall
-	# regexp allowed to wait a specific syscall
-	def syscall(arg=nil)
-		arg = nil if arg and arg.strip == ''
-		return if not check_pre_run(:syscall, arg)
-		@target_syscall = arg
-		@ptrace.pid = @tid
-		@ptrace.syscall(@continuesignal)
-	end
-
-	# use the PT_SINGLEBLOCK to execute until the end of the block
-	def singleblock
-		return if not check_pre_run(:singleblock)
-		@ptrace.pid = @tid
-		@ptrace.singleblock(@continuesignal)
-	end
-
 	def bpx(addr, *a, &b)
 		return hwbp(addr, :x, 1, *a, &b) if @has_pax_mprotect
 		super(addr, *a, &b)
@@ -960,9 +1025,8 @@ puts si.si_code, PTrace::INFO_TRAP[si.si_code]
 			@memory[b.address, 1]	# check if we can read
 			# didn't raise: it's a PaX-style config
 			@has_pax_mprotect = true
-			b.type = :hw
-			b.internal = { :type => :x, :len => 1 }
-			@cpu.dbg_enable_bp(self, b)
+			b.del
+			hwbp(b.address, :x, 1, b.oneshot, b.condition, &b.action)
 			log 'PaX: bpx->hwbp'
 		else raise
 		end

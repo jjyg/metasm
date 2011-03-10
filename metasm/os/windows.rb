@@ -1618,7 +1618,7 @@ class WinDebugger < Debugger
 
 	attr_accessor :callback_unloadlibrary, :callback_debugstring, :callback_ripevent
 
-	def initialize(pidpath)
+	def initialize(pidpath=nil)
 		super()
 		@pid_stuff_list << :os_process
 		@tid_stuff_list << :os_thread << :ctx << :continuecode

@@ -132,7 +132,7 @@ class Ia32
 		dr6 = dbg[:dr6]
 		return if dr6 & 0xf == 0
 		dn = (0..3).find { |n| dr6 & (1 << n) }
-		dbg.breakpoint_thread.values.find { |b| b.intern[:dr] == dn }
+		dbg.breakpoint_thread.values.find { |b| b.internal[:dr] == dn }
 	end
 
 	def dbg_need_stepover(dbg, addr, di)

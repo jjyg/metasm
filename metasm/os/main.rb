@@ -350,6 +350,7 @@ class Debugger
 				@internal   ||= pv.internal
 				@emul_instr ||= pv.emul_instr
 			else
+				owner[@hash_key] = self
 				@hash_shared = []
 			end
 			@hash_shared << self
@@ -570,7 +571,7 @@ class Debugger
 	# switch to another pid, set @state = :dead if none available
 	def del_pid
 		@delete_process = true
-		set_pid @pid_stuff_list.keys.find { |k| k != @pid }
+		set_pid @pid_stuff.keys.find { |k| k != @pid }
 		@state = :dead if not @pid
 	end
 
@@ -578,7 +579,7 @@ class Debugger
 	# calls del_process if no tid left
 	def del_tid
 		@delete_thread = true
-		set_tid @tid_stuff_list.keys.find { |k| k != @tid }
+		set_tid @tid_stuff.keys.find { |k| k != @tid }
 		del_pid if not @tid
 	end
 
