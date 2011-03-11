@@ -1066,7 +1066,7 @@ class LinDebugger < Debugger
 	def detach
 		del_all_breakpoints
 		each_tid {
-			@ptrace.tid = @tid
+			@ptrace.pid = @tid
 			@ptrace.detach
 			@delete_thread = true
 		}

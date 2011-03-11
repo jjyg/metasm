@@ -890,8 +890,10 @@ class DbgConsoleWidget < DrawableWidget
 		}
 		new_command('rawmaps', 'show OS file mappings') { |arg|
 			# XXX listwindow
-			@dbg.mappings.each { |a, l, *i|
-				add_log "%x %x %s" % [a, l, i*' ']
+			@dbg.mappings.sort.each { |a, l, *i|
+				foo = i*' '
+				next if arg.to_s != '' and foo !~ /#{arg}/i
+				add_log "%08x %06x %s" % [a, l, i*' ']
 			}
 		}
 		new_command('add_symbol', 'add a symbol name') { |arg|
@@ -945,8 +947,8 @@ class DbgConsoleWidget < DrawableWidget
 		}
 		new_command('list_threads', 'list thread ids of the current process') { |arg|
 			@dbg.list_threads.each { |t|
-				stf = @dbg.tid_stuff[t]
-				stf ||= { :state => @dbg.state, :info => @dbg.info } if t == @dbg.tid
+				stf = { :state => @dbg.state, :info => @dbg.info } if t == @dbg.tid
+				stf ||= @dbg.tid_stuff[t]
 				stf ||= {}
 				add_log "#{t} #{stf[:state]} #{stf[:info]}"
 			}
