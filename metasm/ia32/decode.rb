@@ -278,8 +278,8 @@ class Ia32
 		case cc
 		when 'o'; Expression[:eflag_o]
 		when 'no'; Expression[:'!', :eflag_o]
-		when 'b', 'nae'; Expression[:eflag_c]
-		when 'nb', 'ae'; Expression[:'!', :eflag_c]
+		when 'b', 'nae', 'c'; Expression[:eflag_c]
+		when 'nb', 'ae', 'nc'; Expression[:'!', :eflag_c]
 		when 'z', 'e'; Expression[:eflag_z]
 		when 'nz', 'ne'; Expression[:'!', :eflag_z]
 		when 'be', 'na'; Expression[:eflag_c, :|, :eflag_z]

@@ -658,7 +658,7 @@ class Ia32
 	end
 
 	def addop_macrotttn(name, bin, hint, fields = {}, *props, &blk)
-		[%w{o},     %w{no},    %w{b nae}, %w{nb ae},
+		[%w{o},     %w{no},    %w{b nae c}, %w{nb ae nc},
 		 %w{z e},   %w{nz ne}, %w{be na}, %w{nbe a},
 		 %w{s},     %w{ns},    %w{p pe},  %w{np po},
 		 %w{l nge}, %w{nl ge}, %w{le ng}, %w{nle g}].each_with_index { |e, i|
