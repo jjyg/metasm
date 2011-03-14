@@ -263,14 +263,14 @@ typedef struct _RIP_INFO {
 	DWORD dwType;
 } RIP_INFO, *LPRIP_INFO;
 
-typedef struct _DEBUG_EVENT __attribute__((pack(4))) {
+typedef struct _DEBUG_EVENT {
 	DWORD dwDebugEventCode;
 	DWORD dwProcessId;
 	DWORD dwThreadId;
+	// DWORD pad64; (implicit)
 	union {
 		EXCEPTION_DEBUG_INFO Exception;
 		EXCEPTION_DEBUG_INFO32 Exception32;
-		EXCEPTION_DEBUG_INFO64 Exception64;	// XXX bad align
 		CREATE_THREAD_DEBUG_INFO CreateThread;
 		CREATE_PROCESS_DEBUG_INFO CreateProcess;
 		EXIT_THREAD_DEBUG_INFO ExitThread;
@@ -354,7 +354,7 @@ typedef struct _CONTEXT_I386 {
 	BYTE   ExtendedRegisters[24*16];
 } *LPCONTEXT_I386, *LPCONTEXT;
 
-typedef struct _CONTEXT {
+typedef struct _CONTEXT_AMD64 {
 	DWORD64 P1Home;	 // Register parameter home addresses.
 	DWORD64 P2Home;
 	DWORD64 P3Home;
@@ -371,7 +371,7 @@ typedef struct _CONTEXT {
 	WORD   SegFs;
 	WORD   SegGs;
 	WORD   SegSs;
-	DWORD EFlags;
+	DWORD RFlags;
 
 	DWORD64 Dr0;
 	DWORD64 Dr1;
@@ -398,9 +398,30 @@ typedef struct _CONTEXT {
 	DWORD64 R15;
 	DWORD64 Rip;
 
+	WORD ControlWord;
+	WORD StatusWord;
+	BYTE TagWord;
+	BYTE resv1;
+	WORD ErrorOpcode;
+	DWORD ErrorOffset;
+	WORD ErrorSelector;
+	WORD resv2;
+	DWORD DataAtOffset;
+	WORD DataSelector;
+	WORD resv3;
+	DWORD MxCsr_f;
+	DWORD MxCsrMask;
+	XMMREG ST[8];
 	XMMREG Xmm[16];
 
-	FLOATING_SAVE_AREA FltSave;
+	XMMREG Vector[26];
+	DWORD64 VectorControl;
+	
+	DWORD64 DebugControl;
+	DWORD64 LastBranchToRip;
+	DWORD64 LastBranchFromRip;
+	DWORD64 LastExceptionToRip;
+	DWORD64 LastExceptionFromRip;
 } *LPCONTEXT_AMD64;
 
 typedef struct _EXCEPTION_POINTERS {
@@ -590,6 +611,20 @@ WINAPI
 SetThreadContext(
 	__in HANDLE hThread,
 	__in LPCONTEXT lpContext);
+
+WINBASEAPI
+BOOL
+WINAPI
+Wow64GetThreadContext(
+	__in    HANDLE hThread,
+	__inout LPCONTEXT_I386 lpContext);
+
+WINBASEAPI
+BOOL
+WINAPI
+Wow64SetThreadContext(
+	__in    HANDLE hThread,
+	__inout LPCONTEXT_I386 lpContext);
 
 ZEROOK
 WINBASEAPI
@@ -1107,15 +1142,19 @@ EOS
 	# if the native does not have the zero_not_fail attribute, convert 0
 	#  to nil, and print a message on stdout
         def self.convert_ret_c2rb(fproto, ret)
+		@last_err_msg = nil
 		if ret == 0 and not fproto.has_attribute 'zero_not_fail'
-			puts "WinAPI: error in #{fproto.name}: #{last_error_msg}" if $VERBOSE
+			# save error msg so that last_error_msg returns the same thing if called again
+			puts "WinAPI: error in #{fproto.name}: #{@last_err_msg = last_error_msg}" if $VERBOSE
 			nil
 		else super(fproto, ret)
 		end
 	end
 
 	# retrieve the textual error message relative to GetLastError
-	def self.last_error_msg(errno = getlasterror)
+	def self.last_error_msg(errno = nil)
+		return @last_err_msg if @last_err_msg
+		errno ||= getlasterror
 		message = ' '*512
 		if formatmessagea(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
 			message = 'unknown error %x' % errno
@@ -1154,19 +1193,20 @@ class WinOS < OS
 
 		# returns the memory address size of the target process
 		def addrsz
-			sz = WinAPI.host_cpu.size
-			return sz if not WinAPI.respond_to?(:iswow64process)
-			byte = 0.chr*8
-			if WinAPI.iswow64process(handle, byte)
-				if byte != 0.chr*8
-					return 32 # target = wow64
-				elsif WinAPI.iswow64process(WinAPI.getcurrentprocess, byte)
+			@addrsz ||= if WinAPI.respond_to?(:iswow64process)
+				byte = 0.chr*8
+				if WinAPI.iswow64process(handle, byte)
 					if byte != 0.chr*8
-						return 64 # us = wow64, target is not
+						32 # target = wow64
+					elsif WinAPI.iswow64process(WinAPI.getcurrentprocess, byte) and byte != 0.chr*8
+						64 # us = wow64, target is not
+					else
+						WinAPI.host_cpu.size
 					end
+				else
+					WinAPI.host_cpu.size
 				end
 			end
-			sz
 		end
 
 		def modules
@@ -1318,10 +1358,16 @@ class WinOS < OS
 				else raise "unsupported architecture #{tg}"
 				end
 
+				@getcontext = :getthreadcontext
+				@setcontext = :setthreadcontext
 				case tg
 				when 'ia32'
 					@context = WinAPI.alloc_c_struct('_CONTEXT_I386')
 					@context.contextflags = WinAPI::CONTEXT_I386_ALL
+					if WinAPI.host_cpu.shortname == 'x64'
+						@getcontext = :wow64getthreadcontext
+						@setcontext = :wow64setthreadcontext
+					end
 				when 'x64'
 					@context = WinAPI.alloc_c_struct('_CONTEXT_AMD64')
 					@context.contextflags = WinAPI::CONTEXT_AMD64_ALL
@@ -1331,7 +1377,7 @@ class WinOS < OS
 			# update the context to reflect the current thread reg values
 			# call only when the thread is suspended
 			def update
-				WinAPI.getthreadcontext(@handle, @context)
+				WinAPI.send(@getcontext, @handle, @context)
 			end
 
 			def [](k)
@@ -1366,7 +1412,7 @@ class WinOS < OS
 				else
 					@context[k] = v
 				end
-				WinAPI.setthreadcontext(@handle, @context)
+				WinAPI.send(@setcontext, @handle, @context)
 			end
 
 			def method_missing(m, *a)
@@ -1642,7 +1688,11 @@ class WinDebugger < Debugger
 	def attach(npid)
 		WinAPI.debugactiveprocess(npid)
 		WinAPI.debugsetprocesskillonexit(0) if WinAPI.respond_to?(:debugsetprocesskillonexit)
-		check_target until pid
+		100.times {
+			check_target
+			break if pid
+		}
+		raise "attach failed" if not pid
 	end
 
 	def create_process(target)
@@ -1654,9 +1704,8 @@ class WinDebugger < Debugger
 		h = WinAPI.createprocessa(nil, target, nil, nil, 0, flags, nil, nil, startupinfo, processinfo)
 		raise "CreateProcess: #{WinAPI.last_error_msg}" if not h
 
-		set_pid processinfo.dwprocessid
+		set_context(processinfo.dwprocessid, processinfo.dwthreadid)
 		@os_process = WinOS::Process.new(processinfo.dwprocessid, processinfo.hprocess)
-		set_tid processinfo.dwthreadid
 		@os_thread  = WinOS::Thread.new(processinfo.dwthreadid, processinfo.hthread, @os_process)
 		initialize_osprocess
 	end
@@ -1716,8 +1765,16 @@ class WinDebugger < Debugger
 		WinOS.check_process(pid)
 	end
 
+	def check_tid(tid)
+		# dont raise() on the first set_context when os_proc is not set yet
+		return true if not os_process
+		super(tid)
+	end
+
 	def ctx
 		if not @ctx
+			# swapin_tid => gui.swapin_tid => getreg before we init os_thread in EventCreateThread
+			return Hash.new(0) if not os_thread
 			@ctx = os_thread.context
 			@ctx.update
 		end
