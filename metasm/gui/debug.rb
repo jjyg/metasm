@@ -9,9 +9,6 @@ module Metasm
 module Gui
 
 # TODO invalidate dbg.disassembler on selfmodifying code
-# TODO handle multiple threads, reattach, etc
-# TODO customize child widgets (listing: persistent hilight of current instr, show/set breakpoints, ...)
-# TODO handle debugee fork()
 class DbgWidget < ContainerVBoxWidget
 	attr_accessor :dbg, :console, :regs, :code, :mem, :win
 	attr_accessor :watchpoint
@@ -49,7 +46,9 @@ class DbgWidget < ContainerVBoxWidget
 
 		@watchpoint = { @code => @dbg.register_pc }
 
-		@code.focus_addr(@dbg.resolve_expr(@watchpoint[@code]), :graph)
+		pc = @dbg.resolve_expr(@watchpoint[@code])
+		graph = :graph if @dbg.disassembler.function_blocks(pc).to_a.length < 100
+		@code.focus_addr(pc, graph)
 		@mem.focus_addr(0, :hex)
 	end
 
@@ -219,15 +218,16 @@ class DbgRegWidget < DrawableWidget
 
 		@reg_pos = []
 		running = (@dbg.state != :stopped)
+		regstrlen = @registers.map { |reg| reg.to_s.length + 1 }.max
 		@registers.each { |reg|
-			strlen = reg.to_s.length + 1 + @register_size[reg]
+			strlen = regstrlen + @register_size[reg]
 			if x + strlen*@font_width >= w_w
 				x = 1
 				y += @font_height
 			end
-			@reg_pos << [x, y, (strlen+1)*@font_width, @font_height, x+(reg.to_s.length+1)*@font_width]
+			@reg_pos << [x, y, (strlen+1)*@font_width, @font_height, x+regstrlen*@font_width]
 
-			render["#{reg}=", :label]
+			render["#{reg}=".ljust(regstrlen), :label]
 			v = @write_pending[reg] || @reg_cache[reg]
 			col = running ? :inactive : @write_pending[reg] ? :write_pending : @reg_cache_old.fetch(reg, v) != v ? :changed : :data
 			render["%0#{@register_size[reg]}x " % v, col]
