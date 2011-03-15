@@ -326,6 +326,9 @@ class CCompiler < C::Compiler
 		when Composite
 			el = e.low
 			eh = e.high
+		when Reg
+			el = e
+			eh = findreg
 		else raise
 		end
 		[el, eh]
@@ -1085,6 +1088,8 @@ class CCompiler < C::Compiler
 					ecx = Reg.new(1, 32)
 					instr 'xchg', ecx, Reg.new(r.val, 32)
 					l = Reg.new(r.val, l.sz) if l.kind_of? Reg and l.val == 1
+					@state.used.delete r.val if not @state.used.include? 1
+					inuse ecx
 				end
 				instr op, l, Reg.new(1, 8)
 				instr 'xchg', ecx, Reg.new(r.val, 32) if r.val != 1
@@ -1164,25 +1169,87 @@ class CCompiler < C::Compiler
 		end
 
 		ll, lh = get_composite_parts l
-		r = make_volatile(r, type) if l.kind_of? ModRM and r.kind_of? ModRM
-		rl, rh = get_composite_parts r
+		# 1ULL << 2 -> 2 is not ULL
+		r = make_volatile(r, C::BaseType.new("__int#{r.sz}".to_sym)) if l.kind_of? ModRM and r.kind_of? ModRM
+		rl, rh = get_composite_parts(r) if not r.kind_of? Reg
 
 		case op
 		when 'add', 'sub', 'and', 'or', 'xor'
 			unuse r
 			instr op, ll, rl
 			op = {'add' => 'adc', 'sub' => 'sbb'}[op] || op
-			instr op, lh, rh
-		when 'shr', 'sar'
-			unuse r
-			raise # TODO
-			instr 'cmp', ecx, Expression[32]
-			instr 'jae'
-			instr 'shrd'
-		when 'shl'
-			unuse r
-			raise # TODO
-			instr 'shld'
+			instr op, lh, rh unless (op == 'or' or op == 'xor') and rh.kind_of?(Expression) and rh.reduce == 0
+		when 'shl', 'shr', 'sar'
+			rlc = r.reduce if r.kind_of? Expression
+			opd = { 'shl' => 'shld', 'shr' => 'shrd', 'sar' => 'shrd' }[op]
+
+			ll, lh = lh, ll if op != 'shl'	# OMGHAX
+			llv = ll
+			if llv.kind_of? ModRM
+				llv = make_volatile(llv, C::BaseType.new(:__int32))
+				inuse ll
+			end
+
+			if rlc.kind_of? Integer
+				case rlc
+				when 0
+				when 1..31
+					instr opd, llv, lh, Expression[rlc]
+					instr op, ll, Expression[rlc]
+				when 32..63
+					instr 'mov', lh, llv
+					if op == 'sar'
+						instr 'sar', ll, Expression[31]
+					else
+						instr 'mov', ll, Expression[0]
+					end
+					instr op, lh, Expression[rlc-32] if rlc != 32
+				else
+					if op == 'sar'
+						instr 'sar', ll, Expression[31]
+						instr 'mov', lh, llv
+					else
+						instr 'mov', ll, Expression[0]
+						instr 'mov', lh, Expression[0]
+					end
+				end
+			else
+				r = make_volatile(r, C::BaseType.new(:__int8, :unsigned))
+				r = r.low if r.kind_of? Composite
+				rl ||= r
+
+				cl = Reg.new(1, 8)
+				ecx = Reg.new(1, 32)
+				if r.val != 1
+					instr 'xchg', ecx, Reg.new(r.val, 32)
+					lh  = Reg.new(r.val, lh.sz)  if lh.kind_of?(Reg)  and lh.val == 1
+					ll  = Reg.new(r.val, ll.sz)  if ll.kind_of?(Reg)  and ll.val == 1
+					llv = Reg.new(r.val, llv.sz) if llv.kind_of?(Reg) and llv.val == 1
+					@state.used.delete r.val if not @state.used.include? 1
+					inuse ecx
+				end
+
+				labelh = new_label('shldh')
+				labeld = new_label('shldd')
+				instr 'test', ecx, Expression[0x20]
+				instr 'jnz', Expression[labelh]
+				instr opd, llv, lh, cl
+				instr op, ll, cl
+				instr 'jmp', Expression[labeld]
+				@source << Label.new(labelh)
+				instr op, llv, cl
+				instr 'mov', lh, llv
+				if op == 'sar'
+					instr 'sar', ll, Expression[31]
+				else
+					instr 'mov', ll, Expression[0]
+				end
+				@source << Label.new(labeld)
+
+				instr 'xchg', ecx, Reg.new(r.val, 32) if r.val != 1
+				unuse ecx
+				unuse r
+			end
 		when 'mul'
 			# high = (low1*high2) + (high1*low2) + (low1*low2).high
 			t1 = findreg(32)
