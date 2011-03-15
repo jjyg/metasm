@@ -744,17 +744,36 @@ class Debugger
 	def init_bpx(b)
 		@disassembler.disassemble_fast_block(b.address)		# XXX configurable dasm method
 		if di = @disassembler.di_at(b.address) and
-				fdbd = @disassembler.get_fwdemu_binding(di, :ip) and
-				not fdbd[:incomplete_binding]
+				fdbd = @disassembler.get_fwdemu_binding(di, register_pc) and
+				not fdbd[:incomplete_binding] and not fdbd.index(Expression::Unknown) and
+				fdbd.keys.all? { |k| k.kind_of?(Symbol) or k.kind_of?(Indirection) }
+
+puts di.instruction, fdbd.inspect
 			b.emul_instr = lambda { |dbg|
+				resv = lambda { |e|
+					r = e
+					flags = Expression[r].externals.uniq.find_all { |f| f.to_s =~ /flags?_(.+)/ }
+					if flags.first
+						bd = {}
+						flags.each { |f|
+							f.to_s =~ /flags?_(.+)/
+							bd[f] = dbg.get_flag_value($1.downcase.to_sym)
+						}
+						r = r.bind(bd)
+					end
+					dbg.resolve(r)
+				}
+
 				fdbd.map { |k, v|
-					k = Indirection[resolve(k.pointer), k.len] if k.kind_of? Indirection
-					[k, resolve(v)]
+					k = Indirection[resv[k.pointer], k.len] if k.kind_of?(Indirection)
+					[k, resv[v]]
 				}.each { |k, v|
-					case k
-					when :ip; dbg.pc = v
-					when Symbol; dbg.set_reg_value(k, v)
-					when Indirection; dbg.memory_write_int(k.pointer, v, k.len)
+					if k.to_s =~ /flags?_(.+)/
+						dbg.set_flag_value($1.downcase.to_sym, v)
+					elsif k.kind_of?(Symbol)
+						dbg.set_reg_value(k, v)
+					elsif k.kind_of?(Indirection)
+						dbg.memory_write_int(k.pointer, v, k.len)
 					end
 				}
 			}
@@ -1118,6 +1137,7 @@ class Debugger
 	# disable the breakpoint, singlestep, and re-enable
 	def singlestep_bp(bp, &b)
 		if be = bp.hash_shared.find { |bb| bb.emul_instr }
+			@state = :stopped
 			be.emul_instr[self]
 			yield if block_given?
 		else
@@ -1172,8 +1192,16 @@ class Debugger
 	# resume execution of the target one instruction at a time
 	def singlestep(&b)
 		@singlestep_cb = b
+		bp = @breakpoint_cause
 		return if not check_pre_run(:singlestep)
-		do_singlestep
+		if bp and bp.hash_shared.find { |bb| bb.state == :active } and be = bp.hash_shared.find { |bb| bb.emul_instr }
+			@state = :stopped
+			be.emul_instr[self]
+			invalidate
+			evt_singlestep(true)
+		else
+			do_singlestep
+		end
 	end
 
 	# singlestep ; wait_target
