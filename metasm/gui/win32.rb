@@ -1301,6 +1301,17 @@ WINAPI void DragFinish(HDROP);
 WINAPI void DragAcceptFiles(HWND,BOOL);
 EOS
 
+def self.last_error_msg(errno = getlasterror)
+	message = ' '*512
+	if formatmessagea(FORMAT_MESSAGE_FROM_SYSTEM, nil, errno, 0, message, message.length, nil) == 0
+		message = 'unknown error %x' % errno
+	else
+		message = message[0, message.index(?\0)] if message.index(?\0)
+		message.chomp!
+	end
+	message
+end
+
 def self.setdcbrushcolor(hdc, col)
 	@@brushes ||= {}
 	b = @@brushes[col] ||= createsolidbrush(col)
@@ -2950,7 +2961,9 @@ def Gui.main
 		if Win32Gui.peekmessagea(msg, 0, 0, 0, Win32Gui::PM_NOREMOVE) != 0 or
 				Win32Gui.msgwaitformultipleobjects(0, 0, Win32Gui::FALSE, 500,
 					Win32Gui::QS_ALLINPUT) != Win32Gui::WAIT_TIMEOUT
-			break if Win32Gui.getmessagea(msg, 0, 0, 0) == 0
+			ret = Win32Gui.getmessagea(msg, 0, 0, 0)
+			break if ret == 0
+			raise Win32Gui.last_error_msg if ret < 0
 			Win32Gui.translatemessage(msg)
 			Win32Gui.dispatchmessagea(msg)
 		end
