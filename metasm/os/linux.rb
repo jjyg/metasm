@@ -819,6 +819,8 @@ class LinDebugger < Debugger
 		return ctx[r] || 0 if @state != :stopped
 		@ptrace.pid = @tid
 		ctx[r] ||= @ptrace.peekusr(k)
+	rescue Errno::ESRCH
+		0
 	end
 	def set_reg_value(r, v)
 		raise "bad register #{r}" if not k = @ptrace.reg_off[r.to_s.upcase]
@@ -1041,6 +1043,7 @@ class LinDebugger < Debugger
 		return if not tid
 		# XXX tkill ?
 		::Process.kill(sig2signr(sig), tid)
+	rescue Errno::ESRCH
 	end
 
 	def pass_current_exception(bool=true)
