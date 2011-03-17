@@ -37,7 +37,7 @@ class ARM
 			     when :mem_rn_rms; :rm_rs
 			     when :mem_rn_i12; :i16
 			     end
-			arg.kind_of? Memref and parse_arg_valid?(op, os, arg.off)
+			arg.kind_of? Memref and parse_arg_valid?(op, os, arg.offset)
 		when :reglist; arg.kind_of? RegList
 		end
 		# TODO check flags on reglist, check int values
@@ -115,8 +115,9 @@ class ARM
 			when ']'
 			when ','
 			end
+			lexer.readtok
 			arg = Memref.new(base, off)
-			if lexer.nexttok.raw == '!'
+			if lexer.nexttok and lexer.nexttok.raw == '!'
 				lexer.readtok
 				arg.update = true
 			end
