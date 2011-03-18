@@ -15,12 +15,12 @@ class ARM
 			v = v.reduce if v.kind_of? Expression
 			case f
 			when :i8_12
-				base |= (v & 0xf) | ((v << 4) & 0xf00)
+				base = Expression[base, :|, [[v, :&, 0xf], :|, [[v, :<<, 4], :&, 0xf00]]]
 				next
 			when :stype; v = [:lsl, :lsr, :asr, :ror].index(v)
 			when :u; v = [:-, :+].index(v)
 			end
-			base |= (v & @fields_mask[f]) << @fields_shift[f]
+			base = Expression[base, :|, [[v, :&, @fields_mask[f]], :<<, @fields_shift[f]]]
 		}
 
 		val, mask, shift = 0, 0, 0
