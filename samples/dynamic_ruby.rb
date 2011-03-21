@@ -289,10 +289,12 @@ EOS
 		m ? @cp.dump_definition(m) : @cp.to_s
 	end
 
+	attr_accessor :optim_hint
 	def initialize(cp=nil)
 		@cp = cp || DynLdr.host_cpu.new_cparser
 		@cp.parse RUBY_H
 		@iter_break = nil
+		@optim_hint = {}
 	end
 
 	# convert a ruby AST to a new C function
@@ -1165,19 +1167,28 @@ EOS
 					ce[tmp, :'=', rb_false])
 				# fallback to actual rb_funcall
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
-				scope.statements << C::If.new(ce[recv, :&, 1], t, e)
+				add_optimized_statement scope, ast[1], recv, 'fixnum' => t, 'other' => e
 			when '+'
 				e = ce[recv, :+, [int_v-1]] # overflow to Bignum ?
 				cnd = ce[[recv, :&, [1]], :'&&', [[[recv], int], :<, [[e], int]]]
 				t = ce[tmp, :'=', e]
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
-				scope.statements << C::If.new(cnd, t, e)
+				if @optim_hint[ast[1]] == 'fixnum'
+					# add_optimized_statement wont handle the overflow check correctly
+					scope.statements << t
+				else
+					scope.statements << C::If.new(cnd, t, e)
+				end
 			when '-'
 				e = ce[recv, :-, [int_v-1]]
 				cnd = ce[[recv, :&, [1]], :'&&', [[[recv], int], :>, [[e], int]]]
 				t = ce[tmp, :'=', e]
 				e = ce[tmp, :'=', rb_funcall(recv, op, o2.object_id)]
-				scope.statements << C::If.new(cnd, t, e)
+				if @optim_hint[ast[1]] == 'fixnum'
+					scope.statements << t
+				else
+					scope.statements << C::If.new(cnd, t, e)
+				end
 			end
 			tmp
 		
@@ -1207,8 +1218,8 @@ EOS
 			st = fcall('rb_str_concat', recv, arg)
 			oth = rb_funcall(recv, op, arg)
 			oth = ce[tmp, :'=', oth] if want_value
-			scope.statements << C::If.new(rb_test_class_ary(recv), ar,
-						C::If.new(rb_test_class_string(recv), st, oth))
+
+			add_optimized_statement scope, ast[1], recv, 'ary' => ar, 'string' => st, 'other' => oth
 			tmp
 
 		elsif arg0 and args.length == 1 and op == '[]'
@@ -1242,9 +1253,12 @@ EOS
 					ce[tmp, :'=', [[[[rb_str_ptr(recv, idx), :&, [0xff]], :<<, [1]], :|, [1]], value]])
 			hsh = ce[tmp, :'=', fcall('rb_hash_aref', recv, arg)]
 			oth = ce[tmp, :'=', rb_funcall(recv, op, arg)]
-			scope.statements << C::If.new(rb_test_class_hash(recv), hsh,
-						C::If.new(ce[[arg, :&, 1], :'&&', rb_test_class_ary(recv)], ar,
-						C::If.new(ce[[arg, :&, 1], :'&&', rb_test_class_string(recv)], st, oth)))
+
+			# ary/string only valid with fixnum argument !
+			add_optimized_statement scope, ast[1], recv, 'hash' => hsh, 'other' => oth,
+						'ary_bnd' => ce[tmp, :'=', rb_ary_ptr(recv, ce[[[arg], int], :>>, [1]])],
+				 		ce[[arg, :&, 1], :'&&', rb_test_class_ary(recv)] => ar,
+			      			ce[[arg, :&, 1], :'&&', rb_test_class_string(recv)] => st
 			tmp
 
 		elsif ast[1] and not arg0 and op == 'empty?'
@@ -1255,11 +1269,10 @@ EOS
 				recv = tmp
 			end
 
-			scope.statements << C::If.new(rb_test_class_ary(recv),
-						      C::If.new(rb_ary_len(recv),
-								ce[tmp, :'=', rb_false],
-								ce[tmp, :'=', rb_true]),
-						      ce[tmp, :'=', rb_funcall(recv, op)])
+			ar = C::If.new(rb_ary_len(recv), ce[tmp, :'=', rb_false], ce[tmp, :'=', rb_true])
+
+			add_optimized_statement scope, ast[1], recv, 'ary' => ar,
+				'other' => ce[tmp, :'=', rb_funcall(recv, op)]
 			tmp
 
 		elsif ast[1] and not arg0 and op == 'pop'
@@ -1276,7 +1289,8 @@ EOS
 				t = ce[tmp, :'=', t]
 				e = ce[tmp, :'=', e]
 			end
-			scope.statements << C::If.new(rb_test_class_ary(recv), t, e)
+
+			add_optimized_statement scope, ast[1], recv, 'ary' => t, 'other' => e
 
 			tmp
 
@@ -1305,6 +1319,37 @@ puts "shortcut may be incorrect for #{ast.inspect}" if arg0[0] == :const
 		elsif not ast[1] or ast[1] == [:self]
 			optimize_call_static(ast, scope, want_value)
 		end
+	end
+
+	# check if the var falls in an optim_hint, if so generate only selected code
+	# optim is a hash varclass (keyof @optim_hint) => c_stmt
+	# optim key can also be a C::Stmt that is used in the If clause
+	# if optim['ary'] == optim['ary_bnd'], you can omit the latter
+	# must have an 'other' key that is calls the generic ruby method
+	def add_optimized_statement(scope, varid, varc, optim={})
+		cat = @optim_hint[varid]
+		cat = 'ary' if cat == 'ary_bnd' and not optim['ary_bnd']
+		if not st = optim[cat]
+			st = optim['other']
+			if not cat and optim.keys.all? { |k| k.kind_of? String }
+				# no need to cascade if we have a hash and can optim ary only
+				optim.each { |i, s|
+					case i
+					when 'ary'; st = C::If.new(rb_test_class_ary(varc), s, st)
+					when 'hash'; st = C::If.new(rb_test_class_hash(varc), s, st)
+					when 'string'; st = C::If.new(rb_test_class_string(varc), s, st)
+					when 'other'; # already done as default case
+					when 'fixnum'; # add test last
+					when C::Statement; st = C::If.new(i, s, st)
+					end
+				}
+				if fs = optim['fixnum']
+					# first test to perform (fast path)
+					st = C::If.new(C::CExpression[varc, :&, 1], fs, st)
+				end
+			end
+		end
+		scope.statements << st
 	end
 
 	# return ptr, arity
@@ -1579,7 +1624,7 @@ asm .pt_gnu_stack rw;
 EOS
 	end
 
-	def dump(m=nil)
+	def dump(m="Init_compiledruby")
 		m ? @cp.dump_definition(m, 'do_init_once') : @cp.to_s
 	end
 
