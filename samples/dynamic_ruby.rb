@@ -867,13 +867,24 @@ EOS
 			end
 		when :attrasgn	# foo.bar= 42 (same as :call, except for return value)
 			recv = ast_to_c(ast[1], scope)
-			raise Fail, "unsupported #{ast.inspect}" if not ast[3] or ast[3][0] != :array or ast[3].length != 2
-			arg = ast_to_c(ast[3][1], scope)
+			raise Fail, "unsupported #{ast.inspect}" if not ast[3] or ast[3][0] != :array
+			if ast[3].length != 2
+				if ast[2] != '[]=' or ast[3].length != 3
+					raise Fail, "unsupported #{ast.inspect}"
+				end
+				# foo[4] = 2
+				idx = ast_to_c(ast[3][1], scope)
+			end
+			arg = ast_to_c(ast[3].last, scope)
 			if want_value
 				tmp = get_new_tmp_var('call', want_value)
 				scope.statements << C::CExpression[tmp, :'=', arg]
 			end
-			scope.statements << rb_funcall(recv, ast[2], arg)
+			if idx
+				scope.statements << rb_funcall(recv, ast[2], idx, arg)
+			else
+				scope.statements << rb_funcall(recv, ast[2], arg)
+			end
 			tmp
 
 		when :rb2cvar	# hax, used in vararg parsing
