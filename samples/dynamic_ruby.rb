@@ -1493,7 +1493,7 @@ puts "shortcut may be incorrect for #{ast.inspect}" if arg0[0] == :const
 		# loop { }
 		if b_recv[0] == :fcall and b_recv[2] == 'loop'
 			body = C::Block.new(scope)
-			ast_to_c(b_body, body)
+			ast_to_c(b_body, body, false)
 			scope.statements << C::For.new(nil, nil, nil, body)
 
 		# int.times { |i| }
@@ -1511,7 +1511,7 @@ puts "shortcut may be incorrect for #{ast.inspect}" if arg0[0] == :const
 			if b_args and b_args[0] == :dasgn_curr
 				body.statements << C::CExpression[dvar(b_args[1]), :'=', [[cntr, :<<, 1], :|, 1]]
 			end
-			ast_to_c(b_body, body)
+			ast_to_c(b_body, body, false)
 			scope.statements << C::For.new(C::CExpression[cntr, :'=', [[0], cntr.type]], C::CExpression[cntr, :<, limit], C::CExpression[:'++', cntr], body)
 
 		# ary.each { |e| }
@@ -1530,7 +1530,7 @@ puts "shortcut may be incorrect for #{ast.inspect}" if arg0[0] == :const
 			if b_args and b_args[0] == :dasgn_curr
 				body.statements << C::CExpression[dvar(b_args[1]), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
 			end
-			ast_to_c(b_body, body)
+			ast_to_c(b_body, body, false)
 			scope.statements << C::For.new(C::CExpression[cntr, :'=', [[0], cntr.type]], C::CExpression[cntr, :<, rb_ary_len(ary)], C::CExpression[:'++', cntr], body)
 
 		# ary.find { |e| }
@@ -1677,7 +1677,15 @@ EOS
 		@cp.toplevel.statements.insert pos, C::Declaration.new(v)
 
 		if initializer
-			init.statements << C::CExpression[v, :'=', initializer]
+			pos = -1
+			if name =~ /^intern_/
+				pos = 0
+				init.statements.each { |st|
+					break unless st.kind_of? C::CExpression and st.op == :'=' and st.lexpr.kind_of? C::Variable and st.lexpr.name < name
+					pos += 1
+				}
+			end
+			init.statements.insert(pos, C::CExpression[v, :'=', initializer])
 		end
 
 		v
