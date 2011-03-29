@@ -1103,8 +1103,9 @@ EOS
 			cp.toplevel.symbol.delete v.name
 			next if not v.type.kind_of? C::Function or not v.initializer
 			next if not off = sc.encoded.export[v.name]
-			new_caller_for(v, v.name, ptr+off)
-			defs << v.name
+			rbname = c_func_name_to_rb(v.name)
+			new_caller_for(v, rbname, ptr+off)
+			defs << rbname
 		}
 		if block_given?
 			begin
@@ -1137,12 +1138,13 @@ EOS
 		sc.encoded.fixup(bd)
 		memory_write ptr, sc.encode_string
 		memory_perm ptr, sc.encoded.length, 'rwx'
-		new_caller_for(f, f.name, ptr)
+		rbname = c_func_name_to_rb(f.name)
+		new_caller_for(f, rbname, ptr)
 		if block_given?
 			begin
 				yield
 			ensure
-				class << self ; self ; end.send(:remove_method, f.name)
+				class << self ; self ; end.send(:remove_method, rbname)
 				memory_free ptr
 			end
 		else
