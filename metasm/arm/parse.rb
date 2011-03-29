@@ -111,7 +111,7 @@ class ARM
 			if not off.kind_of? Expression and not off.kind_of? Reg
 				raise lexer, 'invalid mem off (reg/imm expected)'
 			end
-			case lexer.nexttok.raw
+			case lexer.nexttok and lexer.nexttok.raw
 			when ']'
 			when ','
 			end
