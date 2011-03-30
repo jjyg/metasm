@@ -893,6 +893,36 @@ class GraphViewWidget < DrawableWidget
 		end
 	end
 
+	def load_dotfile(path)
+		@want_update_graph = false
+		@curcontext.clear
+		boxes = {}
+		new_box = lambda { |text|
+			b = @curcontext.new_box(text, :line_text_col => [[[text, :text]]])
+			b.w = text.length * @font_width
+			b.h = @font_height
+			b
+		}
+		max = File.size(path)
+		i = 0
+		File.open(path) { |fd|
+			while l = fd.gets
+				case l.strip
+				when /^"?(\w+)"?\s*->\s*"?(\w+)"?;?$/
+					b1 = boxes[$1] ||= new_box[$1]
+					b2 = boxes[$2] ||= new_box[$2]
+					b1.to   |= [b2]
+					b2.from |= [b1]
+				end
+$stderr.printf("%.02f\r" % (fd.pos*100.0/max))  if (i += 1) & 0xff == 0
+			end
+		}
+p boxes.length
+		redraw
+rescue Interrupt
+p boxes.length
+	end
+
 	# create the graph objects in ctx
 	def build_ctx(ctx)
 		# graph : block -> following blocks in same function
