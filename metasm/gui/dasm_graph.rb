@@ -632,7 +632,13 @@ class GraphViewWidget < DrawableWidget
 			idx = (x-sx+@margin/4).to_i / (@margin/2)
 			idx = 0 if idx < 0
 			idx = bt.to.length-1 if idx >= bt.to.length
-			@parent_widget.focus_addr bt.to[idx][:line_address][0] if bt.to[idx]
+			if bt.to[idx]
+				if @parent_widget
+					@parent_widget.focus_addr bt.to[idx][:line_address][0]
+				else
+					focus_xy(bt.to[idx].x, bt.to[idx].y)
+				end
+			end
 			true
 		elsif bf = @shown_boxes.to_a.reverse.find { |b|
 			y >= b.y-@margin-2 and y <= b.y and
@@ -642,7 +648,13 @@ class GraphViewWidget < DrawableWidget
 			idx = (x-sx+@margin/4).to_i / (@margin/2)
 			idx = 0 if idx < 0
 			idx = bf.from.length-1 if idx >= bf.from.length
-			@parent_widget.focus_addr bf.from[idx][:line_address][-1] if bf.from[idx]
+			if bf.from[idx]
+				if @parent_widget
+					@parent_widget.focus_addr bf.from[idx][:line_address][-1]
+				else
+					focus_xy(bt.from[idx].x, bt.from[idx].y)
+				end
+			end
 			true
 		end
 	end
@@ -790,7 +802,7 @@ class GraphViewWidget < DrawableWidget
 		w_w = (b.x - @curcontext.view_x + b.w - @font_width)*@zoom
 		w_h = (b.y - @curcontext.view_y + b.h - @font_height)*@zoom
 
-		if @parent_widget.bg_color_callback
+		if @parent_widget and @parent_widget.bg_color_callback
 			ly = 0
 			b[:line_address].each { |a|
 				if c = @parent_widget.bg_color_callback[a]
@@ -1253,7 +1265,7 @@ class GraphViewWidget < DrawableWidget
 	# start or an entrypoint is found, then the graph is created from there
 	# will call gui_update then
 	def focus_addr(addr, can_update_context=true)
-		return if not addr = @parent_widget.normalize(addr)
+		return if @parent_widget and not addr = @parent_widget.normalize(addr)
 		return if not @dasm.di_at(addr)
 
 		# move window / change curcontext
@@ -1292,7 +1304,7 @@ class GraphViewWidget < DrawableWidget
 	def update_caret
 		return if not @caret_box or not @caret_x or not l = @caret_box[:line_text_col][@caret_y]
 		l = l.map { |s, c| s }.join
-		@parent_widget.focus_changed_callback[] if @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
+		@parent_widget.focus_changed_callback[] if @parent_widget and @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
 		update_hl_word(l, @caret_x)
 		redraw
 	end
