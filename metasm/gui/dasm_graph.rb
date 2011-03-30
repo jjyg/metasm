@@ -212,6 +212,13 @@ class Graph
 
 		# scan groups for a line pattern (multiple groups with same to & same from)
 		group_lines = lambda { |strict|
+			if groups.all? { |g1| g1.from.empty? and g1.to.empty? }
+				# disjoint subgraphs
+				align_hz[groups]
+				merge_groups[groups]
+				next true
+			end
+
 			groups.find { |g1|
 				ary = g1.from.map { |gg| gg.to }.flatten.uniq.find_all { |gg|
 					gg != g1 and
