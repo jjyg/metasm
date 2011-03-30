@@ -134,7 +134,10 @@ class ExeFormat
 	def init_disassembler
 		@disassembler ||= Disassembler.new(self)
 		@disassembler.cpu ||= cpu
-		each_section { |edata, base| @disassembler.add_section edata, base }
+		each_section { |edata, base|
+			edata ||= EncodedData.new
+			@disassembler.add_section edata, base
+		}
 		@disassembler
 	end
 
