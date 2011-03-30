@@ -2282,6 +2282,9 @@ class Window
 		@title = t
 		Win32Gui.setwindowtexta(@hwnd, @title)
 	end
+
+	def initialize_window
+	end
 end
 
 class ToolWindow < Window

@@ -821,6 +821,9 @@ class Window < Gtk::Window
 		menu.append item
 		item
 	end
+
+	def initialize_window
+	end
 end
 
 class ToolWindow < Gtk::Dialog
@@ -835,9 +838,6 @@ class ToolWindow < Gtk::Dialog
 		show_all
 	end
 	
-	def initialize_window
-	end
-
 	def widget=(w)
 		remove @child if @child
 		@child = w
