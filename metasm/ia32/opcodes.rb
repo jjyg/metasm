@@ -499,7 +499,7 @@ class Ia32
 		# TODO <..blabla...integer...blabla..>
 
 		# nomem
-		addop 'clflush', [0x0F, 0xAE, 7<<3], :modrmA
+		addop('clflush', [0x0F, 0xAE, 7<<3], :modrmA) { |o| o.props[:argsz] = 8 }
 		addop('maskmovdqu', [0x0F, 0xF7], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('movntpd', [0x0F, 0x2B], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('movntdq', [0x0F, 0xE7], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
