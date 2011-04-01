@@ -710,6 +710,7 @@ class Window < Gtk::Window
 		@vbox.remove @child if @child
 		@child = w
 		@vbox.add w if w
+		show_all
 	end
 
 	def widget
@@ -845,6 +846,7 @@ class ToolWindow < Gtk::Dialog
 		if @child.respond_to? :initial_size
 			resize(*@child.initial_size)
 		end
+		show_all
 	end
 
 	def widget
