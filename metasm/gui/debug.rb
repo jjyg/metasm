@@ -674,6 +674,7 @@ class DbgConsoleWidget < DrawableWidget
 	end
 
 	def solve_expr(arg)
+		return arg if arg.kind_of? Integer
 		solve_expr!(arg.dup)
 	end
 
@@ -682,15 +683,49 @@ class DbgConsoleWidget < DrawableWidget
 		@dbg.resolve_expr(e)
 	end
 
+	# update the data window, or dump data to console if len given
+	def cmd_dd(addr, dlen=nil, len=nil)
+		if addr.kind_of? String
+			s = addr.strip
+			addr = solve_expr!(s)
+			if not s.empty?
+				s = s[1..-1] if s[0] == ?,
+				len ||= solve_expr(s)
+			end
+		end
+
+		if len
+			while len > 0
+				data = @dbg.memory[addr, [len, 16].min]
+				le = (@dbg.cpu.endianness == :little)
+				data = '' if @dbg.memory.page_invalid?(addr)
+				case dlen
+				when nil; add_log "#{Expression[addr]}  #{data.unpack('C*').map { |c| '%02X' % c }.join(' ').ljust(2*16+15)}  #{data.tr("\0-\x1f\x7f-\xff", '.')}"
+				when 1;   add_log "#{Expression[addr]}  #{data.unpack('C*').map { |c| '%02X' % c }.join(' ')}"
+				when 2;   add_log "#{Expression[addr]}  #{data.unpack(le ? 'v*' : 'n*').map { |c| '%04X' % c }.join(' ')}"
+				when 4;   add_log "#{Expression[addr]}  #{data.unpack(le ? 'V*' : 'N*').map { |c| '%08X' % c }.join(' ')}"
+				when 8;   add_log "#{Expression[addr]}  #{data.unpack('Q*').map { |c| '%016X' % c }.join(' ')}"
+				end
+				addr += 16
+				len -= 16
+			end
+		else
+			@parent_widget.mem.view(:hex).data_size = dlen if dlen
+			@parent_widget.mem.focus_addr(solve_expr(addr)) if addr != ''
+			@parent_widget.mem.gui_update
+		end
+	end
+
 	def init_commands
 		@commands = {}
 		@cmd_help = {}
 		p = @parent_widget
 		new_command('help') { add_log @commands.keys.sort.join(' ') } # TODO help <subject>
-		new_command('d', 'focus data window on an address') { |arg| p.mem.focus_addr(solve_expr(arg)) }
-		new_command('db', 'display bytes in data window') { |arg| p.mem.curview.data_size = 1 ; p.mem.gui_update ; @commands['d'][arg] }
-		new_command('dw', 'display bytes in data window') { |arg| p.mem.curview.data_size = 2 ; p.mem.gui_update ; @commands['d'][arg] }
-		new_command('dd', 'display bytes in data window') { |arg| p.mem.curview.data_size = 4 ; p.mem.gui_update ; @commands['d'][arg] }
+		new_command('d', 'focus data window on an address') { |arg| cmd_dd(arg) }
+		new_command('db', 'dump/focus bytes in data window')  { |arg| cmd_dd(arg, 1) }
+		new_command('dw', 'dump/focus words in data window')  { |arg| cmd_dd(arg, 2) }
+		new_command('dd', 'dump/focus dwords in data window') { |arg| cmd_dd(arg, 4) }
+		new_command('dq', 'dump/focus qwords in data window') { |arg| cmd_dd(arg, 8) }
 		new_command('u', 'focus code window on an address') { |arg| p.code.focus_addr(solve_expr(arg)) }
 		new_command('.', 'focus code window on current address') { p.code.focus_addr(solve_expr(@dbg.register_pc.to_s)) }
 		new_command('wc', 'set code window height') { |arg|
@@ -788,7 +823,7 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('kill', 'kill the target') { |arg| @dbg.kill(arg) ; p.post_dbg_run }
 		new_command('detach', 'detach from the target') { @dbg.detach ; p.post_dbg_run }
 		new_command('r', 'read/write the content of a register') { |arg|
-			reg, val = arg.split(/\s+/, 2)
+			reg, val = arg.split(/\s+|\s*=\s*/, 2)
 			if reg == 'fl'
 				@dbg.toggle_flag(val.to_sym)
 			elsif not reg
@@ -801,17 +836,6 @@ class DbgConsoleWidget < DrawableWidget
 				@dbg.set_reg_value(reg.to_sym, solve_expr(val))
 			end
 			p.regs.gui_update
-		}
-		new_command('m', 'memory_dump', 'dump memory - m <addr> <len>') { |arg|
-			next if not addr = solve_expr!(arg)
-			len = solve_expr(arg) || 16
-			mem = @dbg.memory[addr, len]
-			mem.scan(/.{1,16}/m).each { |l|
-				hex = l.unpack('C*').map { |c| '%02x' % c }.join(' ')
-				asc = l.gsub(/[^\x20-\x7e]/, '.')
-				add_log "#{Expression[addr]} #{hex.ljust(3*16)} #{asc}"
-				addr += l.length
-			}
 		}
 		new_command('ma', 'memory_ascii', 'write memory (ascii) - ma <addr> foo bar') { |arg|
 			next if not addr = solve_expr!(arg)
@@ -928,8 +952,7 @@ class DbgConsoleWidget < DrawableWidget
 			if arg == 'nil' or arg == 'none' or arg == 'delete'
 				p.watchpoint.delete p.mem
 			else
-				e = parse_expr(arg)
-				p.watchpoint[p.mem] = e
+				p.watchpoint[p.mem] = parse_expr(arg)
 			end
 		}
 
