@@ -711,7 +711,7 @@ class DbgConsoleWidget < DrawableWidget
 			end
 		else
 			@parent_widget.mem.view(:hex).data_size = dlen if dlen
-			@parent_widget.mem.focus_addr(solve_expr(addr)) if addr != ''
+			@parent_widget.mem.focus_addr(solve_expr(addr)) if addr and addr != ''
 			@parent_widget.mem.gui_update
 		end
 	end
