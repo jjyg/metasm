@@ -2853,7 +2853,7 @@ EOH
 			return @str[@stroff..-1][a] if not a.kind_of? Symbol and not a.kind_of? String and not a.kind_of? C::Variable
 			f = a
 			raise "#{a.inspect} not a member" if not f.kind_of? C::Variable and not f = @struct.findmember(a.to_s, true)
-			a = f.name if a.kind_of? String or a.kind_of? Symbol
+			a = f.name || f
 			off = @stroff + @struct.offsetof(@cp, a)
 			if bf = @struct.bitoffsetof(@cp, a)
 				ft = C::BaseType.new((bf[0] + bf[1] > 32) ? :__int64 : :__int32)
@@ -2934,19 +2934,17 @@ EOH
 			str = ['']
 			if @struct.kind_of? C::Array
 				str.last << "#{@struct.type} x[#{@struct.length}] = " if not off
-				off ||= 0
 				mlist = (0...@struct.length)
 				fldoff = mlist.inject({}) { |h, i| h.update i => i*@cp.sizeof(@struct.type) }
 			elsif @struct.kind_of? C::Struct
-				str.last << 'struct ' if not off
+				str.last << "struct #{@struct.name || '_'} x = " if not off
 				fldoff = @struct.fldoffset
 				fbo = @struct.fldbitoffset || {}
 				mlist = @struct.members.map { |m| m.name || m }
 			else
-				str.last << 'union ' if not off
+				str.last << "union #{@struct.name || '_'} x = " if not off
 				mlist = @struct.members.map { |m| m.name || m }
 			end
-			str.last << @struct.name << ' x = ' if not off and @struct.name
 			str.last << '{'
 			mlist.each { |k|
 				if k.kind_of? C::Variable	# anonymous member
@@ -2957,8 +2955,14 @@ EOH
 					curoff = off.to_i + (fldoff ? fldoff[k].to_i : 0)
 					val = self[k]
 				end
-				if val.kind_of? Integer and val > 0x100
-					val = '0x%X,   // +%x' % [val, curoff]
+				if val.kind_of? Integer
+					if val >= 0x100
+						val = '0x%X,   // +%x' % [val, curoff]
+					elsif val <= -0x100
+						val = '-0x%X,   // +%x' % [-val, curoff]
+					else
+						val = '%d,   // +%x' % [val, curoff]
+					end
 				elsif val.kind_of? AllocCStruct
 					val = val.to_s(curoff, maxdepth-1)
 				elsif not val
