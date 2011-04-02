@@ -9,7 +9,7 @@ require 'metasm/dynldr'
 module Metasm
 class WinAPI < DynLdr
 	def self.api_not_found(lib, func)
-		puts "could not find symbol #{func.inspect} in #{lib.inspect}" if $VERBOSE
+		puts "could not find symbol #{func.name.inspect} in #{lib.inspect}" if $VERBOSE and not func.attributes.to_a.include?('optional')
 	end
 
 	new_api_c <<EOS, 'kernel32'
@@ -615,6 +615,7 @@ SetThreadContext(
 WINBASEAPI
 BOOL
 WINAPI
+__attribute__((optional))
 Wow64GetThreadContext(
 	__in    HANDLE hThread,
 	__inout LPCONTEXT_I386 lpContext);
@@ -622,6 +623,7 @@ Wow64GetThreadContext(
 WINBASEAPI
 BOOL
 WINAPI
+__attribute__((optional))
 Wow64SetThreadContext(
 	__in    HANDLE hThread,
 	__inout LPCONTEXT_I386 lpContext);
@@ -637,6 +639,7 @@ ZEROOK
 WINBASEAPI
 DWORD
 WINAPI
+__attribute__((optional))
 Wow64SuspendThread(
 	__in HANDLE hThread);
 
@@ -945,6 +948,7 @@ GetThreadSelectorEntry(
 
 BOOL
 WINAPI
+__attribute__((optional))
 IsWow64Process(
 	HANDLE hProcess,
 	BOOL *wow64

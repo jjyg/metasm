@@ -820,7 +820,7 @@ EOS
 			lib = fromlib || lib_from_sym(v.name)
 			addr = sym_addr(lib, v.name)
 		       	if addr == 0 or addr == -1 or addr == 0xffff_ffff or addr == 0xffffffff_ffffffff
-				api_not_found(lib, v.name)
+				api_not_found(lib, v)
 				next
 			end
 
@@ -893,7 +893,7 @@ EOS
 	end
 
 	def self.api_not_found(lib, func)
-		raise "could not find symbol #{func.inspect} in #{lib.inspect}"
+		raise "could not find symbol #{func.name.inspect} in #{lib.inspect}"
 	end
 
 	# called whenever a native API is called through new_api_c/new_func_c/etc
