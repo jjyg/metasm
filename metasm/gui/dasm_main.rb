@@ -887,6 +887,7 @@ class DasmWindow < Window
 		addsubmenu(views, 'De_compiled') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :decompile) }
 		addsubmenu(views, 'Raw _opcodes') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :opcodes) }
 		addsubmenu(views, '_Hex') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :hex) }
+		addsubmenu(views, 'C S_truct') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :cstruct) }
 		addsubmenu(views, 'Co_verage') { @dasm_widget.focus_addr(@dasm_widget.curaddr, :coverage) }
 		addsubmenu(views, '_Sections') { @dasm_widget.list_sections }
 		addsubmenu(views, 'St_rings') { @dasm_widget.list_strings }
