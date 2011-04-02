@@ -17,7 +17,7 @@ class WinAPI < DynLdr
 
 typedef char CHAR;
 typedef unsigned char BYTE;
-typedef unsigned short WORD;
+typedef unsigned short WORD, USHORT;
 typedef unsigned int UINT;
 typedef long LONG;
 typedef unsigned long ULONG, DWORD, *LPDWORD;
@@ -906,6 +906,7 @@ typedef struct _MEMORY_BASIC_INFORMATION64 {
 
 SIZE_T
 WINAPI
+ZEROOK
 VirtualQueryEx(
 	HANDLE hProcess,
 	LPVOID lpAddress,
@@ -1096,6 +1097,12 @@ typedef enum _THREADINFOCLASS {
     ThreadBreakOnTermination
 } THREADINFOCLASS;
 
+typedef enum _MEMORYINFOCLASS {
+    MemoryBasicInformation,
+    MemoryDunnoLol,
+    MemoryMapFileName
+} MEMORYINFOCLASS;
+
 typedef struct _CLIENT_ID {
     HANDLE UniqueProcess;
     HANDLE UniqueThread;
@@ -1118,6 +1125,12 @@ typedef struct _THREAD_BASIC_INFORMATION {
     LONG BasePriority;
 } THREAD_BASIC_INFORMATION;
 
+typedef struct _UNICODE_STRING {
+    USHORT Length;
+    USHORT MaximumLength;
+    USHORT *Buffer;
+} UNICODE_STRING;
+
 ZEROOK
 NTSTATUS
 WINAPI
@@ -1137,6 +1150,18 @@ NtQueryInformationThread (
 	THREADINFOCLASS ThreadInformationClass,
 	PVOID ThreadInformation,
 	ULONG ThreadInformationLength,
+	ULONG *ReturnLength
+);
+
+ZEROOK
+NTSTATUS
+WINAPI
+NtQueryVirtualMemory (
+	HANDLE ProcessHandle,
+	PVOID BaseAddress,
+	MEMORYINFOCLASS MemoryInformationClass,
+	PVOID MemoryInformation,
+	ULONG MemoryInformationLength,
 	ULONG *ReturnLength
 );
 
@@ -1230,10 +1255,11 @@ class WinOS < OS
 			addr = 0
 			list = []
 			info = WinAPI.alloc_c_struct("MEMORY_BASIC_INFORMATION#{addrsz}")
+			path = [0xff].pack('C') * 512
 
 			hcache = heaps
 
-			while WinAPI.virtualqueryex(handle, addr, info, info.length)
+			while WinAPI.virtualqueryex(handle, addr, info, info.length) != 0
 				addr += info.regionsize
 				next unless info.state & WinAPI::MEM_COMMIT > 0
 
@@ -1257,6 +1283,10 @@ class WinOS < OS
 					a << 'heap'
 					#a << h[:flags].to_s(16)
 					cmt = '[' + a.join(' ') + ']'
+				elsif WinAPI.ntqueryvirtualmemory(handle, info.baseaddress, WinAPI::MEMORYMAPFILENAME, path, path.length, 0) == 0
+					us = WinAPI.decode_c_struct('UNICODE_STRING', path)
+					s = WinAPI.decode_c_ary('USHORT', us['Length']/2, WinAPI.memory_read(us['Buffer'], us['MaximumLength']))
+					cmt = s.to_strz
 				else
 					cmt = ''
 				end
