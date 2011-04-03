@@ -132,7 +132,7 @@ class DbgWidget < ContainerVBoxWidget
 	def dbg_continue(*a) wrap_run { @dbg.continue(*a) } end
 	def dbg_singlestep(*a) wrap_run { @dbg.singlestep(*a) } end
 	def dbg_stepover(*a) wrap_run { @dbg.stepover(*a) } end
-	def dbg_stepout(*a) wrap_run { @dbg.stepout(*a) } end	# TODO idle_add etc
+	def dbg_stepout(*a) wrap_run { @dbg.stepout(*a) } end
 
 	def redraw
 		super
@@ -144,6 +144,62 @@ class DbgWidget < ContainerVBoxWidget
 	def gui_update
 		@console.redraw
 		@children.each { |c| c.gui_update }
+	end
+
+	def prompt_attach(caption='chose target')
+		l = nil
+		i = inputbox(caption) { |name|
+			i = nil ; l.destroy if l and not l.destroyed?
+			@dbg.attach(name)
+		}
+
+		# build process list in bg (exe name resolution takes a few seconds)
+		list = [['pid', 'name']]
+		list_pr = OS.current.list_processes
+		Gui.idle_add {
+			if pr = list_pr.shift
+				list << [pr.pid, pr.path] if pr.path
+				true
+			elsif i
+				me = ::Process.pid.to_s
+				l = listwindow('running processes', list,
+					       :noshow => true,
+					       :color_callback => lambda { |le| [:grey, :palegrey] if le[0] == me }
+					      ) { |e| i.text = e[0] }
+					      l.x += l.width
+					      l.show
+					      false
+			end
+		} if not list_pr.empty?
+	end
+
+	def prompt_createprocess(caption='chose path')
+		openfile(caption) { |path|
+			path = '"' + path + '"' if @dbg.shortname == 'windbg' and path =~ /\s/
+			inputbox('target args?', :text => path) { |pa|
+				@dbg.create_process(pa)
+			}
+		}
+	end
+
+	def prompt_datawatch
+		inputbox('data watch', :text => @watchpoint[@mem].to_s) { |e|
+			case e
+			when '', 'nil', 'none', 'delete'
+				@watchpoint.delete @mem
+			else
+				@watchpoint[@mem] = @console.parse_expr(e)
+			end
+		}
+	end
+
+	def dragdropfile(f)
+		case f
+		when /\.(c|h|cpp)$/; @dbg.disassembler.parse_c_file(f)
+		when /\.map$/; @dbg.load_map(f)
+		when /\.rb$/; @dbg.load_plugin(f)
+		else messagebox("unsupported file extension #{f}")
+		end
 	end
 end
 
@@ -805,18 +861,21 @@ class DbgConsoleWidget < DrawableWidget
 			p.gui_update
 		}
 		new_command('bl', 'list breakpoints') {
-			i = -1
-			@dbg.breakpoint.sort.each { |a, b|
-				add_log "#{i+=1} #{@dbg.addrname!(a)} #{b.type} #{b.state}#{" if #{b.condition}" if b.condition}#{' do {}' if b.action}"
+			@bl = []
+			@dbg.all_breakpoints.each { |b|
+				add_log "#{@bl.length} #{@dbg.addrname!(b.address)} #{b.type} #{b.state}#{" if #{b.condition}" if b.condition}"
+				@bl << b
 			}
 		}
 		new_command('bc', 'clear breakpoints') { |arg|
+			@bl ||= @dbg.all_breakpoints
 			if arg == '*'
-				@dbg.breakpoint.keys.each { |i| @dbg.remove_breakpoint(i) }
+				@bl.each { |b| @dbg.del_bp(b) }
 			else
 				next if not i = solve_expr(arg)
-				i = @dbg.breakpoint.sort[i][0] if i < @dbg.breakpoint.length
-				@dbg.remove_breakpoint(i)
+				if b = @bl[i]
+					@dbg.del_bp(b)
+				end
 			end
 		}
 		new_command('break', 'interrupt a running target') { |arg| @dbg.break ; p.post_dbg_run }
@@ -949,7 +1008,9 @@ class DbgConsoleWidget < DrawableWidget
 		}
 
 		new_command('watch', 'follow an expression in the data view (none to delete)') { |arg|
-			if arg == 'nil' or arg == 'none' or arg == 'delete'
+			if not arg
+				add_log p.watchpoint[p.mem].to_s
+			elsif arg == 'nil' or arg == 'none' or arg == 'delete'
 				p.watchpoint.delete p.mem
 			else
 				p.watchpoint[p.mem] = parse_expr(arg)
@@ -1117,16 +1178,48 @@ class DbgWindow < Window
 	end
 
 	def build_menu
+		filemenu = new_menu
+		addsubmenu(filemenu, '_attach process') { @dbg_widget.prompt_attach }
+		addsubmenu(filemenu, 'create _process') { @dbg_widget.prompt_createprocess }
+		addsubmenu(filemenu, 'open _dasm window') { DasmWindow.new }
+		addsubmenu(filemenu)
+		addsubmenu(filemenu, 'QUIT') { destroy }
+
+		addsubmenu(@menu, filemenu, '_File')
+
 		dbgmenu = new_menu
 		addsubmenu(dbgmenu, 'continue', '<f5>') { @dbg_widget.dbg_continue }
 		addsubmenu(dbgmenu, 'step over', '<f10>') { @dbg_widget.dbg_stepover }
 		addsubmenu(dbgmenu, 'step into', '<f11>') { @dbg_widget.dbg_singlestep }
-		addsubmenu(dbgmenu, 'kill target') { @dbg_widget.dbg.kill }	# destroy ?
-		addsubmenu(dbgmenu, 'detach target') { @dbg_widget.dbg.detach }	# destroy ?
+		addsubmenu(dbgmenu, '_kill target') { @dbg_widget.dbg.kill }
+		addsubmenu(dbgmenu, '_detach target') { @dbg_widget.dbg.detach }
 		addsubmenu(dbgmenu)
 		addsubmenu(dbgmenu, 'QUIT') { destroy }
 
-		addsubmenu(@menu, dbgmenu, '_Actions')
+		addsubmenu(@menu, dbgmenu, '_Debug')
+
+		codeviewmenu = new_menu
+		addsubmenu(codeviewmenu, '_listing') { @dbg_widget.code.focus_addr(@dbg_widget.code.curaddr, :listing) }
+		addsubmenu(codeviewmenu, '_graph') { @dbg_widget.code.focus_addr(@dbg_widget.code.curaddr, :graph) }
+		addsubmenu(codeviewmenu, 'raw _opcodes') { @dbg_widget.code.focus_addr(@dbg_widget.code.curaddr, :opcodes) }
+
+		dataviewmenu = new_menu
+		addsubmenu(dataviewmenu, '_hexa') { @dbg_widget.mem.focus_addr(@dbg_widget.mem.curaddr, :hex) }
+		addsubmenu(dataviewmenu, 'raw _opcodes') { @dbg_widget.mem.focus_addr(@dbg_widget.mem.curaddr, :opcodes) }
+		addsubmenu(dataviewmenu, '_c struct') { @dbg_widget.mem.focus_addr(@dbg_widget.mem.curaddr, :cstruct) }
+
+		focusmenu = new_menu
+		addsubmenu(focusmenu, '_regs') { @dbg_widget.regs.grab_focus ; @dbg_widget.redraw }
+		addsubmenu(focusmenu, '_data') { @dbg_widget.mem.grab_focus ; @dbg_widget.redraw }
+		addsubmenu(focusmenu, '_code') { @dbg_widget.code.grab_focus ; @dbg_widget.redraw }
+		addsubmenu(focusmenu, 'conso_le', '.') { @dbg_widget.console.grab_focus ; @dbg_widget.redraw }
+
+		viewmenu = new_menu
+		addsubmenu(viewmenu, codeviewmenu, '_code display')
+		addsubmenu(viewmenu, dataviewmenu, '_data display')
+		addsubmenu(viewmenu, focusmenu, '_focus')
+		addsubmenu(viewmenu, 'data _watch') { @dbg_widget.prompt_datawatch }
+		addsubmenu(@menu, viewmenu, '_Views')
 	end
 end
 
