@@ -160,6 +160,14 @@ class CdecompListingWidget < DrawableWidget
 		when :end
 			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
+		when :pgup
+			@caret_y -= @cheight/2
+			@caret_y = 0 if @caret_y < 0
+			update_caret
+		when :pgdown
+			@caret_y += @cheight/2
+			@caret_y = @line_text.length if @caret_y > @line_text.length
+			update_caret
 		when ?n	# rename local/global variable
 			f = curfunc.initializer if curfunc and curfunc.initializer.kind_of? C::Block
 			n = @hl_word
