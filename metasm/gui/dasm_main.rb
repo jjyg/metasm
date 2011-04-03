@@ -323,7 +323,7 @@ class DisasmWidget < ContainerChoiceWidget
 	def list_strings
 		list = [['addr', 'string', 'length']]
 		@dasm.strings_scan { |o, str|
-			list << [o, str[0, 24].inspect, str.length]
+			list << [Expression[o], str[0, 24].inspect, str.length]
 		}
 		listwindow("list of strings", list) { |i| focus_addr i[0] }
 	end
