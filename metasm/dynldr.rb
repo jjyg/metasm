@@ -679,14 +679,16 @@ EOS
 
 		dd = (bin.cpu.size == 64 ? 'dq' : 'dd')
 
+		init_symbol = text.export.keys.grep(/^Init_/).first
+		raise 'no Init_mname symbol found' if not init_symbol
 		if bin.cpu.size == 32
 			# hax to find the base of libruby under Win98 (peb sux)
-			text.export['Init_dynldr_real'] = text.export.delete('Init_dynldr')
-			bin.unique_labels_cache.delete('Init_dynldr')
+			text.export[init_symbol + '_real'] = text.export.delete(init_symbol)
+			bin.unique_labels_cache.delete(init_symbol)
 		end
 
 		# the C glue: getprocaddress etc
-		bin.compile_c DYNLDR_C_PE_HACK
+		bin.compile_c DYNLDR_C_PE_HACK.gsub('Init_dynldr', init_symbol)
 
 		# the IAT, initialized with relative offsets to symbol names
 		asm_table = ['.data', '.align 8', 'ruby_import_table:']
