@@ -226,12 +226,12 @@ class CStructWidget < DrawableWidget
 	end
 
 	def get_cursor_pos
-		[@curaddr, @curstruct, @caret_x, @caret_y]
+		[@curaddr, @curstruct, @caret_x, @caret_y, @view_y]
 	end
 
 	def set_cursor_pos(p)
 		focus_addr p[0], p[1]
-		@caret_x, @caret_y = p[2, 2]
+		@caret_x, @caret_y, @view_y = p[2, 3]
 		update_caret
 	end
 

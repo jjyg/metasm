@@ -246,12 +246,12 @@ class CdecompListingWidget < DrawableWidget
 	end
 
 	def get_cursor_pos
-		[@curaddr, @caret_x, @caret_y]
+		[@curaddr, @caret_x, @caret_y, @view_y]
 	end
 
 	def set_cursor_pos(p)
 		focus_addr p[0]
-		@caret_x, @caret_y = p[1, 2]
+		@caret_x, @caret_y, @view_y = p[1, 3]
 		update_caret
 	end
 
