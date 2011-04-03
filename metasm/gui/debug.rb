@@ -106,6 +106,7 @@ class DbgWidget < ContainerVBoxWidget
 			if @dbg.state == :running
 				redraw if want_redraw	# redraw once if the target is running (less flicker with singlestep)
 				want_redraw = false
+				sleep 0.01
 				next true
 			end
 			@idle_checking = false
