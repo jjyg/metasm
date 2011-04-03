@@ -1416,6 +1416,8 @@ class WinOS < OS
 
 			def [](k)
 				case k.to_s
+				when /^[cdefgs]s$/i
+					@context["seg#{k}"]
 				when /^st(\d*)/i
 					v = @context['st'][$1.to_i]
 					buf = v.str[v.str_off, 10]
@@ -1433,6 +1435,8 @@ class WinOS < OS
 
 			def []=(k, v)
 				case k.to_s
+				when /^[cdefgs]s$/i
+					@context["seg#{k}"] = v
 				when /^st(\d*)/i
 					# TODO check this, 'D' is 8byte wide
 					buf = [v, 0, 0].pack('DCC')
@@ -1452,10 +1456,10 @@ class WinOS < OS
 			def method_missing(m, *a)
 				if m.to_s[-1] == ?=
 					super(m, *a) if a.length != 1
-					send m.to_s[0...-1], a[0]
+					send '[]=', m.to_s[0...-1], a[0]
 				else
 					super(m, *a) if a.length != 0
-					send m
+					send '[]', m
 				end
 			end
 		end
@@ -1693,6 +1697,7 @@ end
 # this class implements a high-level API over the Windows debugging primitives
 class WinDebugger < Debugger
 	attr_accessor :os_process, :os_thread,
+		:auto_fix_fs_bug,
 		# is current exception handled? (arg to pass to continuedbgevt)
 		:continuecode
 
@@ -1703,7 +1708,7 @@ class WinDebugger < Debugger
 		@pid_stuff_list << :os_process
 		@tid_stuff_list << :os_thread << :ctx << :continuecode
 
-		@auto_fix_fs_bug = true
+		@auto_fix_fs_bug = false
 
 		return if not pidpath
 
@@ -1862,10 +1867,10 @@ class WinDebugger < Debugger
 			# ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
 			case str.exceptioncode
 			when WinAPI::STATUS_ACCESS_VIOLATION
-				if @auto_fix_fs_bug and context.fs != 0x3b
+				if @auto_fix_fs_bug and ctx.fs != 0x3b
 					# fix bug in xpsp1 where fs would get a random value in a debugee
 					log "wdbg: #{pid}:#{tid} fix fs bug" if $DEBUG
-					context.fs = 0x3b
+					ctx.fs = 0x3b
 					resume_badbreak
 					return
 				end
