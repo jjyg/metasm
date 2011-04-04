@@ -179,7 +179,7 @@ class CStructWidget < DrawableWidget
 		when ?l
 			liststructs
 		when ?t
-			inputbox('new struct name to use', :text => @curstruct.name) { |n|
+			inputbox('new struct name to use', :text => (@curstruct.name rescue '')) { |n|
 				lst = @dasm.c_parser.toplevel.struct.keys.grep(String)
 				if fn = lst.find { |ln| ln == n } || lst.find { |ln| ln.downcase == n.downcase }
 					focus_addr(@curaddr, @dasm.c_parser.toplevel.struct[fn])
