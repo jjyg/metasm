@@ -26,7 +26,7 @@ class ARM
 
 	def parse_arg_valid?(op, sym, arg)
 		case sym
-		when :rd, :rs, :rn, :rm; arg.kind_of? Reg and arg.shift == 0
+		when :rd, :rs, :rn, :rm; arg.kind_of? Reg and arg.shift == 0 and (arg.updated ? op.props[:baseincr] : !op.props[:baseincr])
 		when :rm_rs; arg.kind_of? Reg and arg.shift.kind_of? Reg
 		when :rm_is; arg.kind_of? Reg and arg.shift.kind_of? Integer
 		when :i16, :i24, :i8_12, :i8_r; arg.kind_of? Expression
@@ -119,7 +119,7 @@ class ARM
 			arg = Memref.new(base, off)
 			if lexer.nexttok and lexer.nexttok.raw == '!'
 				lexer.readtok
-				arg.update = true
+				arg.incr = :pre	# TODO :post
 			end
 		else
 			arg = Expression.parse lexer
