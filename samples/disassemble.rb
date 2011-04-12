@@ -81,7 +81,7 @@ opts[:hookstr].to_a.each { |f| eval f }
 t1 = Time.now if opts[:benchmark]
 # do the work
 begin
-	method = opts[:fast] ? :disassemble_fast : :disassemble
+	method = opts[:fast] ? :disassemble_fast_deep : :disassemble
 	if ARGV.empty?
 		exe.send(method)
 	else
