@@ -214,20 +214,43 @@ module C
 
 		attr_accessor :fldoffset, :fldbitoffset, :fldlist
 
-		def align(parser) @members.map { |m| m.type.align(parser) }.max end
+		def align(parser) @members.to_a.map { |m| m.type.align(parser) }.max end
 
+		# there is only one instance of a given named struct per parser
+		# so we just compare struct names here
+		# for comparison between parsers, see #compare_deep
 		def ==(o)
-			# if we dont compare names, infinite recursion on mylinkedlist == otherlinkedlist
 			o.object_id == self.object_id or
-			(o.class == self.class and o.name == self.name and
-			 o.members.to_a.map { |m| m.type } == self.members.to_a.map { |m| m.type } and
-			 o.members.to_a.map { |m| m.name } == self.members.to_a.map { |m| m.name } and
-			 o.attributes == self.attributes)
+			(o.class == self.class and o.name == self.name and ((o.name and true) or compare_deep(o)))
+		end
+
+		# compare to another structure, comparing members recursively (names and type)
+		# returns true if the self is same as o
+		def compare_deep(o, seen = [])
+			return true if o.object_id == self.object_id
+			return if o.class != self.class or o.name != self.name or o.attributes != self.attributes
+			o.members.to_a.zip(self.members.to_a).each { |om, sm|
+				return if om.name != sm.name
+				return if om.type != sm.type
+				if om.type.pointer?
+					ot = om.type
+					st = sm.type
+					500.times {	# limit for selfpointers (shouldnt happen)
+						break if not ot.pointer?
+						ot = ot.pointed.untypedef
+						st = st.pointed.untypedef
+					}
+					if ot.kind_of?(C::Union) and ot.name and not seen.include?(ot)
+						return if not st.compare_deep(ot, seen+[ot])
+					end
+				end
+			}
+			true
 		end
 
 		def findmember(name, igncase=false)
-			update_member_cache if not fldlist
-			return @fldlist[name] if @fldlist[name]
+			raise parser, 'undefined structure' if not @members
+			return @fldlist[name] if fldlist and @fldlist[name]
 
 			name = name.downcase if igncase
 			if m = @members.find { |m_| (n = m_.name) and (igncase ? n.downcase : n) == name }
@@ -244,14 +267,15 @@ module C
 		end
 
 		def offsetof(parser, name)
-			if name.kind_of? Variable
+			raise parser, 'undefined structure' if not @members
+			update_member_cache(parser) if not fldlist
+			return 0 if @fldlist[name]
+
+			if name.kind_of?(Variable)
 				return 0 if @members.include? name
 				raise ParseError, 'unknown union member'
 			end
 
-			update_member_cache if not fldlist
-			return 0 if @fldlist[name]
-			raise parser, 'undefined union' if not @members
 			raise parser, 'unknown union member' if not findmember(name)
 
 			@members.find { |m|
@@ -260,7 +284,8 @@ module C
 		end
 
 		def bitoffsetof(parser, name)
-			update_member_cache if not fldlist
+			raise parser, 'undefined structure' if not @members
+			update_member_cache(parser) if not fldlist
 			return if @fldlist[name] or @members.include?(name)
 			raise parser, 'undefined union' if not @members
 			raise parser, 'unknown union member' if not findmember(name)
@@ -271,8 +296,8 @@ module C
 		end
 
 		def parse_members(parser, scope)
+			@fldlist = nil if fldlist	# invalidate fld offset cache
 			@members = []
-			@fldlist = {}
 			# parse struct/union members in definition
 			loop do
 				raise parser if not tok = parser.skipspaces
@@ -284,8 +309,7 @@ module C
 					member = basetype.dup
 					member.parse_declarator(parser, scope)
 					member.type.length ||= 0 if member.type.kind_of?(Array)	# struct { char blarg[]; };
-					raise member.backtrace, 'member redefinition' if member.name and @fldlist[member.name]
-					@fldlist[member.name] = member if member.name
+					raise member.backtrace, 'member redefinition' if member.name and @members.find { |m| m.name == member.name }
 					@members << member
 
 					raise tok || parser if not tok = parser.skipspaces or tok.type != :punct
@@ -315,7 +339,7 @@ module C
 		# updates the @fldoffset / @fldbitoffset hash storing the offset of members
 		def update_member_cache(parser)
 			@fldlist = {}
-			@members.each { |m|
+			@members.to_a.each { |m|
 				@fldlist[m.name] = m if m.name
 			}
 		end
@@ -347,7 +371,7 @@ module C
 			if nt = parser.skipspaces and nt.type == :punct and nt.raw == '.' and
 					nnt = parser.skipspaces and nnt.type == :string and
 					findmember(nnt.raw)
-				raise nnt, 'unhandled indirect initializer' if not nidx = @members.index(@fldlist[nnt.raw])	# TODO
+				raise nnt, 'unhandled indirect initializer' if not nidx = @members.index(@members.find { |m| m.name == nnt.raw })	# TODO
 				if not root
 					value[idx] ||= []	# AryRecorder may change [] to AryRec.new, can't do v = v[i] ||= []
 					value = value[idx]
@@ -373,14 +397,14 @@ module C
 		def align(parser) [@members.to_a.map { |m| m.type.align(parser) }.max || 1, (pack || 8)].min end
 
 		def offsetof(parser, name)
-			update_member_cache(parser) if not fldoffset
+			raise parser, 'undefined structure' if not @members
+			update_member_cache(parser) if not fldlist
 			return @fldoffset[name] if @fldoffset[name]
 
 			# this is almost never reached, only for <struct>.offsetof(anonymoussubstructmembername)
-			raise parser, 'undefined structure' if not @members
 			raise parser, 'unknown structure member' if (name.kind_of?(::String) ?  !findmember(name) : !@members.include?(name))
 
-			indirect = true if name.kind_of? ::String and not @fldlist[name]
+			indirect = true if name.kind_of?(::String) and not @fldlist[name]
 
 			al = align(parser)
 			off = 0
@@ -425,7 +449,8 @@ module C
 		# returns the [bitoffset, bitlength] of the field if it is a bitfield
 		# this should be added to the offsetof(field)
 		def bitoffsetof(parser, name)
-			update_member_cache if not fldlist
+			raise parser, 'undefined structure' if not @members
+			update_member_cache(parser) if not fldlist
 			return @fldbitoffset[name] if fldbitoffset and @fldbitoffset[name]
 			return if @fldlist[name] or @members.include?(name)
 			raise parser, 'undefined union' if not @members
@@ -445,8 +470,6 @@ module C
 				@pack = p[/\d+/].to_i
 				raise parser, "illegal struct pack(#{p})" if @pack == 0
 			end
-
-			update_member_cache(parser)
 		end
 
 		# updates the @fldoffset / @fldbitoffset hash storing the offset of members
@@ -1852,7 +1875,7 @@ EOH
 				name = tok.raw
 				raise tok, 'bad struct name' if Keyword[name] or (?0..?9).include?(name[0])
 				@type.backtrace = tok
-				@type.name = tok.raw
+				@type.name = name
 				@type.parse_attributes(parser)
 				raise parser if not ntok = parser.skipspaces
 				if ntok.type != :punct or ntok.raw != '{'
@@ -1864,8 +1887,15 @@ EOH
 						@type = scope.struct[name] ||= @type
 					else
 						# check that the structure exists
-						# do not check it is declared (may be a pointer)
-						struct = scope.struct_ancestors[name]
+						raise parser if not ntok = parser.skipspaces
+						parser.unreadtok ntok
+						if ntok.type == :punct and ntok.raw == '{'
+							# allow redeclaration of a struct at a nested level
+							struct = scope.struct[name]
+						else
+							# do not check it is declared (may be a pointer)
+							struct = scope.struct_ancestors[name]
+						end
 						# allow incomplete types, usage as var type will raise later
 						struct = scope.struct[name] = @type if not struct
 						raise tok, 'unknown struct' if not struct.kind_of?(@type.class)
@@ -1875,11 +1905,10 @@ EOH
 					end
 					return
 				end
-				if struct = scope.struct[name] and struct.members
-					oldstruct = scope.struct.delete(name)
-					struct = nil
-				end
-				if struct
+				if scope.struct[name] and scope.struct[name].members
+					# redefinition of an existing struct, save for later comparison
+					oldstruct = scope.struct[name]
+				elsif struct = scope.struct[name]
 					(struct.attributes ||= []).concat @type.attributes if @type.attributes
 					(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier
 					struct.backtrace = @type.backtrace
@@ -1894,8 +1923,11 @@ EOH
 
 			@type.parse_members(parser, scope)
 
-			if oldstruct and @type != oldstruct
-				raise tok, "conflicting struct redefinition (old at #{oldstruct.backtrace.exception(nil).message rescue :unknown})"
+			if oldstruct
+				if not @type.compare_deep(oldstruct)
+					raise tok, "conflicting struct redefinition (old at #{oldstruct.backtrace.exception(nil).message rescue :unknown})"
+				end
+				@type = oldstruct
 			end
 		end
 
@@ -2935,12 +2967,13 @@ EOH
 		def to_s(off=nil, maxdepth=500)
 			return '{ /* ... */ }' if maxdepth <= 0
 			str = ['']
-			if @struct.kind_of? C::Array
+			if @struct.kind_of?(C::Array)
 				str.last << "#{@struct.type} x[#{@struct.length}] = " if not off
 				mlist = (0...@struct.length)
 				fldoff = mlist.inject({}) { |h, i| h.update i => i*@cp.sizeof(@struct.type) }
-			elsif @struct.kind_of? C::Struct
+			elsif @struct.kind_of?(C::Struct)
 				str.last << "struct #{@struct.name || '_'} x = " if not off
+				@struct.update_member_cache(@cp) if not @struct.fldlist
 				fldoff = @struct.fldoffset
 				fbo = @struct.fldbitoffset || {}
 				mlist = @struct.members.map { |m| m.name || m }
@@ -2950,7 +2983,7 @@ EOH
 			end
 			str.last << '{'
 			mlist.each { |k|
-				if k.kind_of? C::Variable	# anonymous member
+				if k.kind_of? Variable	# anonymous member
 					curoff = off.to_i + @struct.offsetof(@cp, k)
 					val = self[k]
 					k = '?'
@@ -2958,7 +2991,7 @@ EOH
 					curoff = off.to_i + (fldoff ? fldoff[k].to_i : 0)
 					val = self[k]
 				end
-				if val.kind_of? Integer
+				if val.kind_of?(::Integer)
 					if val >= 0x100
 						val = '0x%X,   // +%x' % [val, curoff]
 					elsif val <= -0x100
@@ -2974,7 +3007,7 @@ EOH
 					val = val.to_s.sub(/$/, ',   // +%x' % curoff)
 				end
 				val = val.gsub("\n", "\n\t")
-				str << "\t#{k.kind_of?(Integer) ? "[#{k}]" : ".#{k}"} = #{val}"
+				str << "\t#{k.kind_of?(::Integer) ? "[#{k}]" : ".#{k}"} = #{val}"
 			}
 			str << '}'
 			str.last << (off ? ',' : ';')
