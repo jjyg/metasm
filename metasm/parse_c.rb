@@ -1887,20 +1887,12 @@ EOH
 						@type = scope.struct[name] ||= @type
 					else
 						# check that the structure exists
-						raise parser if not ntok = parser.skipspaces
-						parser.unreadtok ntok
-						if ntok.type == :punct and ntok.raw == '{'
-							# allow redeclaration of a struct at a nested level
-							struct = scope.struct[name]
-						else
-							# do not check it is declared (may be a pointer)
-							struct = scope.struct_ancestors[name]
-						end
+						struct = scope.struct_ancestors[name]
 						# allow incomplete types, usage as var type will raise later
 						struct = scope.struct[name] = @type if not struct
-						raise tok, 'unknown struct' if not struct.kind_of?(@type.class)
+						raise tok, 'unknown struct' if struct.class != @type.class
 						(struct.attributes ||= []).concat @type.attributes if @type.attributes
-						(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier
+						(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier	# XXX const struct foo bar => bar is const, not foo...
 						@type = struct
 					end
 					return
