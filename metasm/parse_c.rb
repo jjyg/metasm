@@ -2830,14 +2830,17 @@ EOH
 		# stroff is the offset from the start of this string (non-nul for nested structs)
 		# cp is a reference to the C::Parser
 		# struct to the C::Union/Struct/Array
-		# length is the byte size of the C struct
-		# XXX for an Array, it's also the byte size, check obj.struct.length for number of elements
-		attr_accessor :str, :stroff, :cp, :struct, :length
+		# sizeof is the byte size of the C struct
+		attr_accessor :str, :stroff, :cp, :struct
+		attr_writer :sizeof
 		def initialize(cp, struct, str=nil, stroff=0)
 			@cp, @struct = cp, struct
-			@length = @cp.sizeof(@struct)
-			@str = str || [0].pack('C')*@length
+			@str = str || [0].pack('C')*sizeof
 			@stroff = stroff
+		end
+
+		def sizeof
+			@sizeof ||= @cp.sizeof(@struct)
 		end
 
 		def [](*a)
@@ -2899,7 +2902,7 @@ EOH
 			a, val = a
 			raise "#{a.inspect} not a struct member" if not a.kind_of? C::Variable and not f = @struct.findmember(a.to_s, true)
 			a = f.name if a.kind_of? String or a.kind_of? Symbol
-			val = @length if val == :size
+			val = sizeof if val == :size
 			off = @stroff + @struct.offsetof(@cp, a)
 
 			if bf = @struct.bitoffsetof(@cp, a)
