@@ -98,9 +98,11 @@ class Ia32
 	end
 
 	def decode_prefix(instr, byte)
-		# XXX check multiple occurences ?
 		instr.prefix ||= {}
 		(instr.prefix[:list] ||= []) << byte
+
+		# XXX actual limit = 15-instr.length
+		return false if instr.prefix[:list].length >= 15
 
 		case byte
 		when 0x66; instr.prefix[:opsz] = true
