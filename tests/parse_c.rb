@@ -36,6 +36,12 @@ class TestDynldr < Test::Unit::TestCase
 		assert_raise(Metasm::ParseError) { cp.parse("long long long fu;") }
 		cp.readtok until cp.eos?
 
+		assert_raise(Metasm::ParseError) { cp.parse("void badarg(int i, int i) {}") }
+		cp.readtok until cp.eos?
+
+		assert_raise(Metasm::ParseError) { cp.parse("struct strun; union strun;") }
+		cp.readtok until cp.eos?
+
 		assert_raise(Metasm::ParseError) { cp.parse <<EOS }
 asm <<EOA
  foo

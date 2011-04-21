@@ -1879,6 +1879,7 @@ EOH
 				@type.parse_attributes(parser)
 				raise parser if not ntok = parser.skipspaces
 				if ntok.type != :punct or ntok.raw != '{'
+					raise tok, "struct/union confusion" if scope.struct[name] and scope.struct[name].class != @type.class
 					# variable declaration
 					parser.unreadtok ntok
 					if ntok.type == :punct and ntok.raw == ';'
@@ -1900,7 +1901,9 @@ EOH
 				if scope.struct[name] and scope.struct[name].members
 					# redefinition of an existing struct, save for later comparison
 					oldstruct = scope.struct[name]
+					raise tok, "struct/union confusion" if oldstruct.class != @type.class
 				elsif struct = scope.struct[name]
+					raise tok, "struct/union confusion" if struct.class != @type.class
 					(struct.attributes ||= []).concat @type.attributes if @type.attributes
 					(struct.qualifier  ||= []).concat @type.qualifier  if @type.qualifier
 					struct.backtrace = @type.backtrace
@@ -2144,6 +2147,8 @@ EOH
 						raise parser, '"{" expected' if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '{'
 						parser.unreadtok tok
 					end
+					namedargs = t.type.args.map { |a| a.name }.compact - [false]
+					raise tok, "duplicate argument name #{namedargs.find { |a| namedargs.index(a) != namedargs.rindex(a) }.inspect}" if namedargs.length != namedargs.uniq.length
 				end
 				parse_attributes(parser, true)	# should be type.attrs, but this should be more existing-compiler-compatible
 			else
