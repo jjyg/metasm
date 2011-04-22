@@ -552,7 +552,7 @@ module C
 
 			if i = @var.initializer
 				if @var.type.kind_of? Function
-					if @var.type.type.kind_of? Struct
+					if @var.type.type.kind_of? Union
 						s = @var.type.type
 						v = Variable.new
 						v.name = compiler.new_label('return_struct_ptr')
@@ -877,7 +877,7 @@ module C
 		def precompile(compiler, scope)
 			if @value
 				@value = CExpression.new(nil, nil, @value, @value.type) if not @value.kind_of? CExpression
-				if @value.type.untypedef.kind_of? Struct
+				if @value.type.untypedef.kind_of? Union
 					@value = @value.precompile_inner(compiler, scope)
 					func = scope.function.type
 					CExpression.new(CExpression.new(nil, :*, func.args.first, @value.type), :'=', @value, @value.type).precompile(compiler, scope)
@@ -1011,7 +1011,7 @@ module C
 				lexpr = CExpression.precompile_inner(compiler, scope, @lexpr)
 				@lexpr = nil
 				@op = nil
-				if struct.kind_of? Struct and (off = struct.offsetof(compiler, @rexpr)) != 0
+				if struct.kind_of? Union and (off = struct.offsetof(compiler, @rexpr)) != 0
 					off = CExpression.new(nil, nil, off, BaseType.new(:int, :unsigned))
 					@rexpr = CExpression.new(lexpr, :'+', off, lexpr.type)
 					# ensure the (ptr + value) is not expanded to (ptr + value * sizeof(*ptr))
@@ -1157,7 +1157,7 @@ module C
 					}
 					scope.statements << copy_inline[@lexpr.initializer, scope]		# body already precompiled
 					CExpression.new(nil, nil, rval, rval.type).precompile_inner(compiler, scope)
-				elsif @type.kind_of? Struct
+				elsif @type.kind_of? Union
 					var = Variable.new
 					var.name = compiler.new_label('return_struct')
 					var.type = @type
