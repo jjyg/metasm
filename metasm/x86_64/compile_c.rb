@@ -1013,7 +1013,7 @@ class CCompiler < C::Compiler
 	end
 
 	def check_reserved_name(var)
-		Reg.s_to_i[var.name]
+		Reg.s_to_i[var.name] or super(var)
 	end
 end
 

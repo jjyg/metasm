@@ -418,7 +418,10 @@ module C
 			len == 0 ? align : len
 		end
 
+		# return non-nil if the variable name is unsuitable to appear as is in the asm listing
+		# eg filter out asm instruction names
 		def check_reserved_name(var)
+			%w[db dw dd dq].include?(var.name)
 		end
 	end
 
