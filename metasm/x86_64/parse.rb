@@ -29,7 +29,7 @@ class X86_64
 
 	# needed due to how ruby inheritance works wrt constants
 	def parse_argregclasslist
-		[Reg, SimdReg, SegReg, DbgReg, CtrlReg, FpReg]
+		[Reg, SimdReg, SegReg, DbgReg, TstReg, CtrlReg, FpReg]
 	end
 	# same inheritance sh*t
 	def parse_modrm(lex, tok, cpu)

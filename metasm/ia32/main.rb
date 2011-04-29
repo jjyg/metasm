@@ -78,6 +78,11 @@ class Ia32 < CPU
 		simple_map((0..7).map { |i| [i, "cr#{i}"] })
 	end
 
+	# test registers (tr0..tr7) (undocumented)
+	class TstReg < Argument
+		simple_map((0..7).map { |i| [i, "tr#{i}"] })
+	end
+
 	# floating point registers
 	class FpReg < Argument
 		simple_map((0..7).map { |i| [i, "ST(#{i})"] } << [nil, 'ST'])

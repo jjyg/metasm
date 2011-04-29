@@ -94,6 +94,10 @@ class X86_64 < Ia32
 		simple_map((0..15).map { |i| [i, "cr#{i}"] })
 	end
 
+	class TstReg < Ia32::TstReg
+		simple_map((0..15).map { |i| [i, "tr#{i}"] })
+	end
+
 	# Create a new instance of an X86 cpu
 	# arguments (any order)
 	# - instruction set (386, 486, sse2...) [latest]

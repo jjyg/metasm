@@ -11,14 +11,14 @@ class Ia32
 	def init_cpu_constants
 		@opcode_list ||= []
 		@fields_mask.update :w => 1, :s => 1, :d => 1, :modrm => 0xc7,
-			:reg => 7, :eeec => 7, :eeed => 7, :seg2 => 3, :seg3 => 7,
+			:reg => 7, :eeec => 7, :eeed => 7, :eeet => 7, :seg2 => 3, :seg3 => 7,
 			:regfp => 7, :regmmx => 7, :regxmm => 7
 		@fields_mask[:seg2A]    = @fields_mask[:seg2]
 		@fields_mask[:seg3A]    = @fields_mask[:seg3]
 		@fields_mask[:modrmA]   = @fields_mask[:modrm]
 
 		@valid_args.concat [:i, :i8, :u8, :u16, :reg, :seg2, :seg2A,
-			:seg3, :seg3A, :eeec, :eeed, :modrm, :modrmA, :mrm_imm,
+			:seg3, :seg3A, :eeec, :eeed, :eeet, :modrm, :modrmA, :mrm_imm,
 			:farptr, :imm_val1, :imm_val3, :reg_cl, :reg_eax,
 			:reg_dx, :regfp, :regfp0, :modrmmmx, :regmmx,
 			:modrmxmm, :regxmm] - @valid_args
@@ -177,6 +177,7 @@ class Ia32
 		addop 'ltr',   [0x0F, 0x00], 3
 		addop('mov',   [0x0F, 0x20, 0xC0], :reg, {:d => [1, 1], :eeec => [2, 3]}, :eeec) { |op| op.args.reverse! }
 		addop('mov',   [0x0F, 0x21, 0xC0], :reg, {:d => [1, 1], :eeed => [2, 3]}, :eeed) { |op| op.args.reverse! }
+		addop('mov',   [0x0F, 0x24, 0xC0], :reg, {:d => [1, 1], :eeet => [2, 3]}, :eeet) { |op| op.args.reverse! }
 		addop('mov',   [0x8C], 0,    {:d => [0, 1], :seg3 => [1, 3]}, :seg3) { |op| op.args.reverse! }
 		addop 'out',   [0xE6], nil,  {:w => [0, 0]}, :u8, :reg_eax
 		addop 'out',   [0xE6], nil,  {:w => [0, 0]}, :reg_eax, :u8

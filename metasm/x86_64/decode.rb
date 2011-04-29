@@ -112,6 +112,7 @@ class X86_64
 			when :reg;    Reg.new     field_val_r[a], opsz
 			when :eeec;   CtrlReg.new field_val_r[a]
 			when :eeed;   DbgReg.new  field_val_r[a]
+			when :eeet;   TstReg.new  field_val_r[a]
 			when :seg2, :seg2A, :seg3, :seg3A; SegReg.new field_val[a]
 			when :regmmx; SimdReg.new field_val_r[a], mmxsz
 			when :regxmm; SimdReg.new field_val_r[a], 128

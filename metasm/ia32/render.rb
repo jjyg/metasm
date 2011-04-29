@@ -14,7 +14,7 @@ class Ia32
 		include Renderable
 	end
 
-	[SegReg, DbgReg, CtrlReg, FpReg].each { |c| c.class_eval {
+	[SegReg, DbgReg, TstReg, CtrlReg, FpReg].each { |c| c.class_eval {
 		def render ; [self.class.i_to_s[@val]] end
 	} }
 	[Reg, SimdReg].each { |c| c.class_eval {

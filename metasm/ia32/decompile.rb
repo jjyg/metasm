@@ -290,7 +290,7 @@ class Ia32
 					# mov cr0 etc
 					a1, a2 = di.instruction.args
 					case a1
-					when Ia32::CtrlReg, Ia32::DbgReg, Ia32::SegReg
+					when Ia32::CtrlReg, Ia32::DbgReg, Ia32::TstReg, Ia32::SegReg
 						sz = a1.kind_of?(Ia32::SegReg) ? 16 : 32
 						if not dcmp.c_parser.toplevel.symbol["intrinsic_set_#{a1}"]
 							dcmp.c_parser.parse("void intrinsic_set_#{a1}(__int#{sz});")
@@ -302,7 +302,7 @@ class Ia32
 						next
 					end
 					case a2
-					when Ia32::CtrlReg, Ia32::DbgReg, Ia32::SegReg
+					when Ia32::CtrlReg, Ia32::DbgReg, Ia32::TstReg, Ia32::SegReg
 						if not dcmp.c_parser.toplevel.symbol["intrinsic_get_#{a2}"]
 							sz = a2.kind_of?(Ia32::SegReg) ? 16 : 32
 							dcmp.c_parser.parse("__int#{sz} intrinsic_get_#{a2}(void);")

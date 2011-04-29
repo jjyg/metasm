@@ -240,7 +240,7 @@ class Ia32
 		postponed = []
 		oi.each { |oa, ia|
 			case oa
-			when :reg, :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regmmx, :regxmm
+			when :reg, :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :eeet, :regfp, :regmmx, :regxmm
 				# field arg
 				set_field[oa, ia.val]
 				pfx << 0x66 if oa == :regmmx and op.props[:xmmx] and ia.sz == 128

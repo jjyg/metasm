@@ -167,7 +167,7 @@ end
 	end
 
 	def parse_argregclasslist
-		[Reg, SimdReg, SegReg, DbgReg, CtrlReg, FpReg]
+		[Reg, SimdReg, SegReg, DbgReg, TstReg, CtrlReg, FpReg]
 	end
 	def parse_modrm(lex, tok, cpu)
 		ModRM.parse(lex, tok, cpu)
@@ -267,6 +267,7 @@ end
 		when :seg2A;    arg.kind_of? SegReg  and arg.val < 4 and arg.val != 1
 		when :eeec;     arg.kind_of? CtrlReg
 		when :eeed;     arg.kind_of? DbgReg
+		when :eeet;     arg.kind_of? TstReg
 		when :modrmA;   arg.kind_of? ModRM
 		when :mrm_imm;  arg.kind_of? ModRM   and not arg.s and not arg.i and not arg.b
 		when :farptr;   arg.kind_of? Farptr

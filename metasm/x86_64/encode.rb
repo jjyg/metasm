@@ -172,7 +172,7 @@ class X86_64
 				else
 					rex_b = ia.val_rex
 				end
-			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :regfp, :regxmm, :regmmx
+			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :eeet, :regfp, :regxmm, :regmmx
 				set_field[oa, ia.val & 7]
 				rex_r = 1 if ia.val > 7
 				pfx << 0x66 if oa == :regmmx and op.props[:xmmx] and ia.sz == 128

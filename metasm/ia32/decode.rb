@@ -194,6 +194,7 @@ class Ia32
 			when :reg;    Reg.new     field_val[a], opsz
 			when :eeec;   CtrlReg.new field_val[a]
 			when :eeed;   DbgReg.new  field_val[a]
+			when :eeet;   TstReg.new  field_val[a]
 			when :seg2, :seg2A, :seg3, :seg3A; SegReg.new field_val[a]
 			when :regfp;  FpReg.new   field_val[a]
 			when :regmmx; SimdReg.new field_val[a], mmxsz
