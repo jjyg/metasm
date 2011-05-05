@@ -5,6 +5,7 @@
 
 
 require 'metasm/os/main'
+require 'metasm/debug'
 
 module Metasm
 class PTrace

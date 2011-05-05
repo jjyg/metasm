@@ -4,6 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 require 'metasm/os/main'
+require 'metasm/debug'
 require 'metasm/dynldr'
 
 module Metasm
