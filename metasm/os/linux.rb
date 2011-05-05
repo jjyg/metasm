@@ -716,6 +716,7 @@ class LinDebugger < Debugger
 		set_context(pt.pid, pt.pid)	# swapout+init_newpid
 		log "attached #@pid"
 		list_threads.each { |tid| attach_thread(tid) if tid != @pid }
+		set_tid @pid
 	end
 
 	# create a process and debug it
@@ -871,7 +872,7 @@ class LinDebugger < Debugger
 						resume_badbreak
 
 					when 'EVENT_EXIT'
-						info.update :exitcode => @ptrace.geteventmsg
+						info.update :exitcode => (@ptrace.geteventmsg rescue nil)
 						if @tid == @pid
 							evt_endprocess info
 						else
@@ -886,8 +887,8 @@ class LinDebugger < Debugger
 					end
 
 				else
-					si = @ptrace.getsiginfo
-					case si.si_code
+					si = @ptrace.getsiginfo rescue nil
+					case si ? si.si_code : :foo
 					when PTrace::SIGINFO['BRKPT'],
 					     PTrace::SIGINFO['KERNEL']	# \xCC prefer KERNEL to BRKPT
 						evt_bpx
