@@ -102,6 +102,7 @@ class DbgWidget < ContainerVBoxWidget
 		return if @idle_checking ||= nil	# load only one bg proc
 		@idle_checking = true
 		Gui.idle_add {
+		    protect {
 			@dbg.check_target
 			if @dbg.state == :running
 				redraw if want_redraw	# redraw once if the target is running (less flicker with singlestep)
@@ -121,6 +122,7 @@ class DbgWidget < ContainerVBoxWidget
 			}
 			redraw
 			false
+		    }
 		}
 	end
 
