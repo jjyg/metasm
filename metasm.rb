@@ -45,6 +45,7 @@ module Metasm
 		'Gui' => 'gui',
 		'WindowsExports' => 'os/windows_exports',
 		'GNUExports' => 'os/gnu_exports',
+		'Debugger' => 'debug',
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
 		'GdbClient' => 'os/remote',
 		'Disassembler' => 'disassemble',
