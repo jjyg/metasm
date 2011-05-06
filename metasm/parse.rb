@@ -821,6 +821,8 @@ class IndExpression < Expression
 					break
 				when ':'	# symbols, eg ':eax'
 					n = lexer.readtok
+					nil while tok = lexer.readtok and tok.type == :space
+					lexer.unreadtok tok
 					return n.raw.to_sym
 				else
 					lexer.unreadtok tok
