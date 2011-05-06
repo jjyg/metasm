@@ -80,8 +80,8 @@ class PTrace
 		end
 
 		# use these to interpret the child state
-		tgcpu = LinOS.open_process(pid).cpu
-		case tgcpu.shortname
+		@tgcpu = LinOS.open_process(pid).cpu
+		case @tgcpu.shortname
 		when 'ia32'
 			@syscallreg = 'ORIG_EAX'
 			@syscallnr = SYSCALLNR_I386
@@ -92,10 +92,6 @@ class PTrace
 			@intsize = 8
 		else raise 'unsupported target architecture'
 		end
-
-		cp = tgcpu.new_cparser
-		cp.parse SIGINFO_C
-		@siginfo = cp.alloc_c_struct('siginfo')
 
 		# buffer used in ptrace syscalls
 		@buf = [0].pack(@packint)
@@ -502,12 +498,20 @@ EOS
 		bufval
 	end
 
-	def getsiginfo
-		sys_ptrace(COMMAND['GETSIGINFO'], @pid, 0, @siginfo.str)
-		@siginfo
+	def siginfo
+		@siginfo ||= (
+			cp = @tgcpu.new_cparser
+			cp.parse SIGINFO_C
+			cp.alloc_c_struct('siginfo')
+		)
 	end
 
-	def setsiginfo(si=@siginfo)
+	def getsiginfo
+		sys_ptrace(COMMAND['GETSIGINFO'], @pid, 0, siginfo.str)
+		siginfo
+	end
+
+	def setsiginfo(si=siginfo)
 		si = si.str if si.respond_to?(:str)
 		sys_ptrace(COMMAND['SETSIGINFO'], @pid, 0, si)
 	end
