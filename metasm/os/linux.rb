@@ -646,11 +646,24 @@ class LinuxRemoteString < VirtualString
 		self.class.new(@pid, addr, len, dbg)
 	end
 
-	def do_ptrace
+	def do_ptrace(needproc)
 		if dbg
 			dbg.switch_context(@pid) {
-				# XXX tid ?
-				yield dbg.ptrace if dbg.state == :stopped
+				st = dbg.state
+				if needproc and st == :stopped
+					# we will try to access /proc/pid/mem
+					# if the main thread is still running, fallback to ptrace.readmem instead
+					pst = (dbg.tid == @pid ? st : dbg.tid_stuff[@pid][:state])
+					if pst != :stopped
+						savedreadfd = @readfd
+						@readfd = nil
+					end
+				end
+
+				ret = yield dbg.ptrace if st == :stopped
+
+				@readfd = savedreadfd if savedreadfd
+				ret
 			}
 		else
 			PTrace.open(@pid) { |ptrace| yield ptrace }
@@ -659,11 +672,11 @@ class LinuxRemoteString < VirtualString
 
 	def rewrite_at(addr, data)
 		# target must be stopped
-		do_ptrace { |ptrace| ptrace.writemem(addr, data) }
+		do_ptrace(false) { |ptrace| ptrace.writemem(addr, data) }
 	end
 
 	def get_page(addr, len=@pagelength)
-		do_ptrace { |ptrace|
+		do_ptrace(true) { |ptrace|
 			begin
 				if readfd and addr < (1<<63)
 					# 1<<63: ruby seek = 'too big to fit longlong', linux read = EINVAL

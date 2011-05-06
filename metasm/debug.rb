@@ -331,7 +331,7 @@ class Debugger
 		lst << @tid
 		return lst if not block_given?
 		lst.each { |t|
-			set_tid t
+			set_tid t rescue next
 			yield
 		}
 	end
