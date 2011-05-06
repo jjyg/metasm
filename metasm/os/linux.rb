@@ -936,6 +936,7 @@ class LinDebugger < Debugger
 			elsif signame == 'STOP' and @breaking
 				@state = :stopped
 				@info = 'break'
+				@breaking.call if @breaking.kind_of? Proc
 				@breaking = nil
 
 			else
@@ -1056,8 +1057,8 @@ class LinDebugger < Debugger
 		# calling continue() here will loop back to TRAP+INFO_EXEC
 	end
 
-	def break
-		@breaking = true
+	def break(&b)
+		@breaking = b || true
 		kill 'STOP'
 	end
 
@@ -1089,10 +1090,16 @@ class LinDebugger < Debugger
 
 	# stop debugging the current process
 	def detach
+		if @state == :running
+			# must be stopped so we can rm bps
+			self.break { detach }
+			wait_target
+			return
+		end
 		del_all_breakpoints
 		each_tid {
 			@ptrace.pid = @tid
-			@ptrace.detach
+			@ptrace.detach rescue nil
 			@delete_thread = true
 		}
 		del_pid
