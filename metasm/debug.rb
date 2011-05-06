@@ -350,7 +350,8 @@ class Debugger
 	# returns the Breakpoint object
 	def add_bp(addr, info={})
 		info[:pid] ||= @pid
-		info[:tid] ||= @tid if info[:pid] == @pid
+		# dont define :tid for bpx, otherwise on del_bp we may switch_context to this thread that may not be stopped -> cant ptrace_write
+		info[:tid] ||= @tid if info[:pid] == @pid and info[:type] == :hwbp
 
 		b = Breakpoint.new
 		info.each { |k, v|
