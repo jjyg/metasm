@@ -819,7 +819,7 @@ puts di.instruction, fdbd.inspect
 			if rm == :singlestep
 				singlestep_bp(b)
 			else
-				@run_args = ra
+				ra = @run_args
 				singlestep_bp(b) { send rm, *ra }
 			end
 		else
