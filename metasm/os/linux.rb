@@ -876,7 +876,8 @@ class LinDebugger < Debugger
 						resume_badbreak
 
 					when 'EVENT_EXIT'
-						info.update :exitcode => (@ptrace.geteventmsg rescue nil)
+						@ptrace.pid = @tid
+						info.update :exitcode => @ptrace.geteventmsg
 						if @tid == @pid
 							evt_endprocess info
 						else
@@ -891,8 +892,9 @@ class LinDebugger < Debugger
 					end
 
 				else
-					si = @ptrace.getsiginfo rescue nil
-					case si ? si.si_code : :foo
+					@ptrace.pid = @tid
+					si = @ptrace.getsiginfo
+					case si.si_code
 					when PTrace::SIGINFO['BRKPT'],
 					     PTrace::SIGINFO['KERNEL']	# \xCC prefer KERNEL to BRKPT
 						evt_bpx
@@ -929,6 +931,7 @@ class LinDebugger < Debugger
 				if signame == 'SEGV'
 					# need more data on access violation (for bpm)
 					info.update :type => 'access violation'
+					@ptrace.pid = @tid
 					si = @ptrace.getsiginfo
 					access = case si.si_code
 						 when PTrace::SIGINFO['MAPERR']; :r	# XXX write access to unmapped => ?
