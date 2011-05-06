@@ -749,12 +749,13 @@ class ELF
 	end
 
 	# decodes the ELF dynamic tags, interpret them, and decodes symbols and relocs
-	def decode_segments_dynamic
+	def decode_segments_dynamic(decode_relocs=true)
 		return if not dynamic = @segments.find { |s| s.type == 'DYNAMIC' }
 		@encoded.ptr = add_label('dynamic_tags', dynamic.vaddr)
 		decode_tags
 		decode_segments_tags_interpret
 		decode_segments_symbols
+		return if not decode_relocs
 		decode_segments_relocs
 		decode_segments_relocs_interpret
 	end
@@ -804,7 +805,7 @@ class ELF
 	end
 
 	def decode_exports
-		decode_segments_dynamic
+		decode_segments_dynamic(false)
 	end
 
 	# decodes the elf header, and depending on the elf type, decode segments or sections
