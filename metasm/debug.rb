@@ -437,6 +437,9 @@ class Debugger
 	# called in the context of the target when a bpx is to be initialized
 	# will disassemble the code pointed, and try to initialize #emul_instr
 	def init_bpx(b)
+		# dont bother setting stuff up if it is never to be used
+		return if b.oneshot and not b.condition
+
 		@disassembler.disassemble_fast_block(b.address)		# XXX configurable dasm method
 		if di = @disassembler.di_at(b.address) and
 				fdbd = @disassembler.get_fwdemu_binding(di, register_pc) and
