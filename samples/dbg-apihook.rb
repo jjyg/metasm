@@ -17,6 +17,8 @@
 require 'metasm'
 
 class ApiHook
+	attr_accessor :dbg
+
 	# rewrite this function to list the hooks you want
 	# return an array of hashes
 	def setup
@@ -33,19 +35,31 @@ class ApiHook
 			raise 'no such process' if not process
 			dbg = process.debugger
 		end
-		dbg.loadallsyms
 		@dbg = dbg
-		setup.each { |h| setup_hook(h) }
-		init_prerun if respond_to?(:init_prerun)	# allow subclass to do stuff before main loop
-		@dbg.run_forever
+		begin
+			setup.each { |h| setup_hook(h) }
+			init_prerun if respond_to?(:init_prerun)	# allow subclass to do stuff before main loop
+			@dbg.run_forever
+		rescue Interrupt
+			@dbg.detach #rescue nil
+		end
 	end
 
 	# setup one function hook
 	def setup_hook(h)
+		@las ||= false
+		if not h[:lib] and not @las
+			@dbg.loadallsyms
+			@las = false
+		elsif h[:lib]
+			# avoid loadallsyms if specified (regexp against pathname, not exported lib name)
+			@dbg.loadsyms(h[:lib])
+		end
+
 		pre  =  "pre_#{h[:hookname] || h[:function]}"
 		post = "post_#{h[:hookname] || h[:function]}"
 
-		@nargs = h[:nargs] || method(pre).arity if respond_to?(pre)
+		nargs = h[:nargs] || method(pre).arity if respond_to?(pre)
 
 		if target = h[:address]
 		elsif target = h[:rva]
@@ -56,7 +70,8 @@ class ApiHook
 			target = h[:function]
 		end
 
-		@dbg.bpx(target) {
+		@dbg.bpx(target, false, h[:condition]) {
+			@nargs = nargs
 			catch(:finish) {
 				@cur_abi = h[:abi]
 				@ret_longlong = h[:ret_longlong]
@@ -217,8 +232,7 @@ class MyHook < ApiHook
 	end
 end
 
-# name says it all
-Metasm::WinOS.get_debug_privilege
+Metasm::OS.current.get_debug_privilege if Metasm::OS.current.respond_to? :get_debug_privilege
 
 # run our Hook engine on a running 'notepad' instance
 MyHook.new('notepad')
