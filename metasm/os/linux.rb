@@ -143,6 +143,7 @@ class PTrace
 			pokedata(off+i, str[i, @host_intsize])
 			i += @host_intsize
 		end
+		true
 	end
 
 	# linux/ptrace.h
@@ -672,7 +673,8 @@ class LinuxRemoteString < VirtualString
 
 	def rewrite_at(addr, data)
 		# target must be stopped
-		do_ptrace(false) { |ptrace| ptrace.writemem(addr, data) }
+		wr = do_ptrace(false) { |ptrace| ptrace.writemem(addr, data) }
+		raise "couldn't ptrace_write at #{'%x' % addr}" if not wr
 	end
 
 	def get_page(addr, len=@pagelength)
