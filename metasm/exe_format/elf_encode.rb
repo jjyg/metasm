@@ -48,7 +48,7 @@ class ELF
 		# creates .shstrtab if needed
 		def make_name_p elf
 			return 0 if not name or @name == ''
-			if elf.header.shstrndx.to_i == 0
+			if elf.header.shstrndx.to_i == 0 or not elf.sections[elf.header.shstrndx]
 				sn = Section.new
 				sn.name = '.shstrtab'
 				sn.type = 'STRTAB'
@@ -140,6 +140,9 @@ class ELF
 		srank = rank[s]
 		nexts = @sections.find { |sec| rank[sec] > srank }	# find section with rank superior
 		nexts = nexts ? @sections.index(nexts) : -1		# if none, last
+		if @header.shstrndx.to_i != 0 and nexts != -1 and @header.shstrndx >= nexts
+			@header.shstrndx += 1
+		end
 		@sections.insert(nexts, s)				# insert section
 	end
 
