@@ -53,8 +53,7 @@ class Ia32
 		addop 'div',   [0xF6], 6,    {:w => [0, 0]}
 		addop 'enter', [0xC8], nil,  {}, :u16, :u8
 		addop 'idiv',  [0xF6], 7,    {:w => [0, 0]}
-		addop('imul',  [0xF6], 5,    {:w => [0, 0]}, :reg_eax) { |o| o.args.reverse! }
-		addop 'imul',  [0xF6], 5,    {:w => [0, 0]}
+		addop 'imul',  [0xF6], 5,    {:w => [0, 0]}	# implicit eax, but different semantic from imul eax, ebx (the implicit version updates edx:eax)
 		addop 'imul',  [0x0F, 0xAF], :mrm
 		addop 'imul',  [0x69], :mrm, {:s => [0, 1]}, :i
 		addop 'inc',   [0x40], :reg
