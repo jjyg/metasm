@@ -1036,8 +1036,8 @@ p boxes.length
 				}
 				@parent_widget.list_bghilight("search result for /#{pat}/i", list) { |i| @parent_widget.focus_addr i[0] }
 			}
-		when :+; mouse_wheel_ctrl(:up, width/2, height/2)
-		when :-; mouse_wheel_ctrl(:down, width/2, height/2)
+		when ?+; mouse_wheel_ctrl(:up, width/2, height/2)
+		when ?-; mouse_wheel_ctrl(:down, width/2, height/2)
 		else return false
 		end
 		true
