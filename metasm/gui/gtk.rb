@@ -385,6 +385,19 @@ class DrawableWidget < Gtk::DrawingArea
 	end
 
 	def draw_rectangle(x, y, w, h)
+		# GTK clips coords around 0x8000
+		return if x > 0x7000 or y > 0x7000
+		if x < -0x7000
+			w -= x + 100
+			x = -100
+		end
+		if y < -0x7000
+			h -= y + 100
+			y = -100
+		end
+		w = 0x7000 if w > 0x7000
+		h = 0x7000 if h > 0x7000
+
 		@w.draw_rectangle(@gc, true, x, y, w, h)
 	end
 
@@ -394,6 +407,29 @@ class DrawableWidget < Gtk::DrawingArea
 	end
 
 	def draw_line(x, y, ex, ey)
+		if x.abs > 0x7000
+			return if ex.abs > 0x7000 and ((ex < 0) == (x < 0))
+			ox = x
+			x = ((x > 0) ? 0x7000 : -0x7000)
+			y += (x-ox)*(ey-y)/(ex-ox)
+		end
+		if ex.abs > 0x7000
+			oex = ex
+			ex = ((ex > 0) ? 0x7000 : -0x7000)
+			ey += (ex-oex)*(y-ey)/(x-oex)
+		end
+		if y.abs > 0x7000
+			return if ey.abs > 0x7000 and ((ey < 0) == (y < 0))
+			oy = y
+			y = ((y > 0) ? 0x7000 : -0x7000)
+			x += (y-oy)*(ex-x)/(ey-oy)
+		end
+		if ey.abs > 0x7000
+			oey = ey
+			ey = ((ey > 0) ? 0x7000 : -0x7000)
+			ex += (ey-oey)*(x-ey)/(y-oey)
+		end
+
 		@w.draw_line(@gc, x, y, ex, ey)
 	end
 
@@ -403,6 +439,7 @@ class DrawableWidget < Gtk::DrawingArea
 	end
 
 	def draw_string(x, y, str)
+		return if x.abs > 0x7000 or y.abs > 0x7000
 		@layout.text = str
 		@w.draw_layout(@gc, x, y, @layout)
 	end

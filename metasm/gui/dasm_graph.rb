@@ -519,7 +519,7 @@ class GraphViewWidget < DrawableWidget
 				@curcontext.view_y += (y / oldzoom - y / @zoom)
 			end
 		when :down
-			if @zoom > 1.0/100
+			if @zoom > 1.0/1000
 				oldzoom = @zoom
 				@zoom /= 1.1
 				@zoom = 1.0 if (@zoom-1.0).abs < 0.05
@@ -729,12 +729,6 @@ class GraphViewWidget < DrawableWidget
 		return if (y1+margin < 0 and y2 < 0) or (y1 > height/@zoom and y2-margin > height/@zoom)	# just clip on y
 		margin, x1, y1, x2, y2, b1w, b2w, x1o, x2o = [margin, x1, y1, x2, y2, b1.w, b2.w, x1o, x2o].map { |v| v*@zoom }
 
-
-		# XXX gtk wraps coords around 0x8000
-		if x1.abs > 0x7000 ; y1 /= x1.abs/0x7000 ; x1 /= x1.abs/0x7000 ; end
-		if y1.abs > 0x7000 ; x1 /= y1.abs/0x7000 ; y1 /= y1.abs/0x7000 ; end
-		if x2.abs > 0x7000 ; y2 /= x2.abs/0x7000 ; x2 /= x2.abs/0x7000 ; end
-		if y2.abs > 0x7000 ; x2 /= y2.abs/0x7000 ; y2 /= y2.abs/0x7000 ; end
 
 		# straighten vertical arrows if possible
 		if y2 > y1 and (x1-x2).abs <= margin
@@ -1042,6 +1036,8 @@ p boxes.length
 				}
 				@parent_widget.list_bghilight("search result for /#{pat}/i", list) { |i| @parent_widget.focus_addr i[0] }
 			}
+		when :+; mouse_wheel_ctrl(:up, width/2, height/2)
+		when :-; mouse_wheel_ctrl(:down, width/2, height/2)
 		else return false
 		end
 		true
