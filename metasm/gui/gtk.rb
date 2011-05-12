@@ -388,13 +388,14 @@ class DrawableWidget < Gtk::DrawingArea
 		# GTK clips coords around 0x8000
 		return if x > 0x7000 or y > 0x7000
 		if x < -0x7000
-			w -= x + 100
+			w += x + 100
 			x = -100
 		end
 		if y < -0x7000
-			h -= y + 100
+			h += y + 100
 			y = -100
 		end
+		return if w <= 0 or h <= 0
 		w = 0x7000 if w > 0x7000
 		h = 0x7000 if h > 0x7000
 
