@@ -435,15 +435,39 @@ class Ia32
 			when 'aaa'; lambda { |di| { eax => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when 'imul'
 				lambda { |di, *a|
-					# 1 operand form == same as 'mul' (ax:dx stuff)
-					next { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } if not a[1]
+					if not a[1]
+						# 1 operand from: store result in edx:eax
+						bd = {}
+						m = mask[di]
+						s = opsz(di)
+						e = Expression[Expression.make_signed(Expression[a[0], :&, m], s), :*, Expression.make_signed(Expression[eax, :&, m], s)]
+						if s == 8
+							bd[Expression[eax, :&, 0xffff]] = e
+						else
+							bd[Expression[eax, :&, m]] = Expression[e, :&, m]
+							bd[Expression[edx, :&, m]] = Expression[[e, :>>, opsz(di)], :&, m]
+						end
+						# XXX eflags?
+						next bd
+					end
 
 					if a[2]; e = Expression[a[1], :*, a[2]]
 					else e = Expression[[a[0], :*, a[1]], :&, (1 << (di.instruction.args.first.sz || opsz(di))) - 1]
 					end
 					{ a[0] => e }
 				}
-			when 'mul', 'div', 'idiv'; lambda { |di, *a| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
+			when 'mul'
+				lambda { |di, *a|
+					m = mask[di]
+					e = Expression[a, :*, [eax, :&, m]]
+					if opsz(di) == 8
+						{ Expression[eax, :&, 0xffff] => e }
+					else
+						{ Expression[eax, :&, m] => Expression[e, :&, m],
+						  Expression[edx, :&, m] => Expression[[e, :>>, opsz(di)], :&, m] }
+					end
+				}
+			when 'div', 'idiv'; lambda { |di, *a| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when 'rdtsc'; lambda { |di| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when /^(stos|movs|lods|scas|cmps)[bwd]$/
 				lambda { |di|
