@@ -890,30 +890,32 @@ class GraphViewWidget < DrawableWidget
 	end
 
 	def load_dotfile(path)
+		load_dot(File.read(path))
+	end
+
+	def load_dot(dota)
 		@want_update_graph = false
 		@curcontext.clear
 		boxes = {}
 		new_box = lambda { |text|
 			b = @curcontext.new_box(text, :line_text_col => [[[text, :text]]])
-			b.w = text.length * @font_width
+			b.w = (text.length+1) * @font_width
 			b.h = @font_height
 			b
 		}
-		max = File.size(path)
+		max = dota.length
 		i = 0
-		File.open(path) { |fd|
-			while l = fd.gets
-				case l.strip
-				when /^"?(\w+)"?\s*->\s*"?(\w+)"?;?$/
-					b1 = boxes[$1] ||= new_box[$1]
-					b2 = boxes[$2] ||= new_box[$2]
-					b1.to   |= [b2]
-					b2.from |= [b1]
-				end
-$stderr.printf("%.02f\r" % (fd.pos*100.0/max))  if (i += 1) & 0xff == 0
+		dota.scan(/^.*$/) { |l|
+			a = l.strip.chomp(';').split(/->/).map { |s| s.strip.delete '"' }
+			next if not id = a.shift
+			b0 = boxes[id] ||= new_box[id]
+			while id = a.shift
+				b1 = boxes[id] ||= new_box[id]
+				b0.to   |= [b1]
+				b1.from |= [b0]
+				b0 = b1
 			end
 		}
-p boxes.length
 		redraw
 rescue Interrupt
 p boxes.length
