@@ -28,7 +28,7 @@ class Graph
 		attr_accessor :to, :from
 	end
 
-	attr_accessor :id, :box, :root_addrs, :view_x, :view_y, :keep_split
+	attr_accessor :id, :box, :box_id, :root_addrs, :view_x, :view_y, :keep_split
 	def initialize(id)
 		@id = id
 		@root_addrs = []
@@ -39,21 +39,23 @@ class Graph
 	# empty @box
 	def clear
 		@box = []
+		@box_id = {}
 	end
 
 	# link the two boxes (by id)
 	def link_boxes(id1, id2)
-		raise "unknown index 1 #{id1}" if not b1 = @box.find { |b| b.id == id1 }
-		raise "unknown index 2 #{id2}" if not b2 = @box.find { |b| b.id == id2 }
+		raise "unknown index 1 #{id1}" if not b1 = @box_id[id1]
+		raise "unknown index 2 #{id2}" if not b2 = @box_id[id2]
 		b1.to   |= [b2]
 		b2.from |= [b1]
 	end
 
 	# creates a new box, ensures id is not already taken
 	def new_box(id, content=nil)
-		raise "duplicate id #{id}" if @box.find { |b| b.id == id }
+		raise "duplicate id #{id}" if @box_id[id]
 		b = Box.new(id, content)
 		@box << b
+		@box_id[id] = b
 		b
 	end
 
@@ -77,11 +79,10 @@ class Graph
 		# no self references
 		# a box is in one and only one group in 'groups'
 		@groups.each { |g|
-			g.to   = g.content.first.to.map   { |t| next if not t = list.index(t) ; @groups[t] }.compact - [g]
-			g.from = g.content.first.from.map { |f| next if not f = list.index(f) ; @groups[f] }.compact - [g]
+			g.to   = g.content.first.to.map   { |t| if t = list.index(t) ; @groups[t] ; end }.compact - [g]
+			g.from = g.content.first.from.map { |f| if f = list.index(f) ; @groups[f] ; end }.compact - [g]
 		}
 
-		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
 		@madetree = false
 	end
 
@@ -99,10 +100,8 @@ class Graph
 		groups = @groups
 		return if groups.length <= 1
 
+		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
 		maketree = lambda { |roots|
-			next if @madetree
-			@madetree = true
-
 			maxdepth = {}	# max arc count to reach this box from graph start (excl loop)
 
 			trim = lambda { |g, from|
@@ -389,7 +388,10 @@ puts 'graph arrange: unknown configuration', dump_layout
 
 		# walk graph from roots, cut backward links
 		trim_graph = lambda {
+			next if @madetree
 			next true if ign_break[]
+			@madetree = true
+
 			g1 = groups.find_all { |g| g.from.empty? }
 			g1 << groups.first if g1.empty?
 			cntpre = groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
@@ -463,8 +465,8 @@ puts 'graph arrange: unknown configuration', dump_layout
 	def auto_arrange_boxes
 		auto_arrange_init
 		nil while @groups.length > 1 and auto_arrange_step
-		@groups = []
 		auto_arrange_post
+		@groups = []
 	end
 end
 
