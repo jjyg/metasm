@@ -101,19 +101,35 @@ class Graph
 		return if groups.length <= 1
 
 		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
+		# replace bk links with dummy forward link TODO use this box' x coord as bk arrow x
 		maketree = lambda { |roots|
 			maxdepth = {}	# max arc count to reach this box from graph start (excl loop)
 
-			trim = lambda { |g, from|
+			trim = lambda { |g|
 				# unlink g from (part of) its from
-				from.each { |gg| gg.to.delete g }
-				g.from -= from
+				g.from.delete_if { |gg|
+					if not maxdepth[gg]
+						if gg != g
+							nb = Box.new(nil, [])
+							nb.x = nb.y = -4
+							nb.w = nb.h = 8
+							g.to << nb
+							nb.from = [g]
+							nb.to = [gg]
+							gg.from << nb
+							groups << nb
+						end
+						gg.to.delete g
+						true
+					end
+				}
 			}
 
 			walk = lambda { |g|
 				# score
 				parentdepth = g.from.map { |gg| maxdepth[gg] }
-				if parentdepth.empty?
+				if maxdepth[g]
+				elsif parentdepth.empty?
 					# root
 					maxdepth[g] = 0
 				elsif parentdepth.include? nil
@@ -126,19 +142,19 @@ class Graph
 				g.to.each { |gg| walk[gg] }
 			}
 
-			roots.each { |g| trim[g, g.from] unless g.from.empty? }
+			roots.each { |g| g.from.delete_if { |gf| gf.to.delete g } }
 			roots.each { |g| walk[g] }
 			
 			# handle loops now (unmarked nodes)
 			while unmarked = groups - maxdepth.keys and not unmarked.empty?
 				if g = unmarked.find { |g_| g_.from.find { |gg| maxdepth[gg] } }
 					# loop head
-					trim[g, g.from.find_all { |gg| not maxdepth[gg] }]	# XXX not quite sure for this
+					trim[g]
 					walk[g]
 				else
 					# disconnected subgraph
 					g = unmarked.find { |g_| g_.from.empty? } || unmarked.first
-					trim[g, g.from]
+					trim[g]
 					maxdepth[g] = 0
 					walk[g]
 				end
@@ -386,18 +402,12 @@ puts 'graph arrange: unknown configuration', dump_layout
 			}
 		}
 
-		# walk graph from roots, cut backward links
-		trim_graph = lambda {
+		mtree = lambda {
 			next if @madetree
-			next true if ign_break[]
 			@madetree = true
-
 			g1 = groups.find_all { |g| g.from.empty? }
-			g1 << groups.first if g1.empty?
-			cntpre = groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
-			g1.each { |g| maketree[[g]] }
-			cntpost = groups.inject(0) { |cntpre_, g| cntpre_ + g.to.length }
-			true if cntpre != cntpost
+			g1 << groups.first if g1.empty?	# XXX find members of the top loop(s)
+			maketree[g1]
 		}
 
 		# known, clean patterns
@@ -406,10 +416,12 @@ puts 'graph arrange: unknown configuration', dump_layout
 		}
 		# approximations
 		group_unclean = lambda {
-			group_lines[false] or group_or[false] or group_halflines[] or group_ifthen[false] or group_other[]
+			ign_break[] or group_lines[false] or group_or[false] or group_halflines[] or group_ifthen[false] or group_other[]
 		}
 
-		group_clean[] or trim_graph[] or group_unclean[]
+		mtree[]
+
+		group_clean[] or group_unclean[]
 	end
 
 	# the boxes have been almost put in place, here we soften a little the result & arrange some qwirks

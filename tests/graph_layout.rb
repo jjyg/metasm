@@ -14,10 +14,12 @@ def test_layout(lo)
 	w = Gui::Window.new
 	ww = w.widget = Gui::GraphViewWidget.new(nil, nil)
 	ww.grab_focus
-	15.times { Gui.main_iter }
-	ww.load_dot(lo)
-	ww.curcontext.auto_arrange_boxes
-	ww.zoom_all
+	Gui.idle_add {
+		ww.load_dot(lo)
+		ww.curcontext.auto_arrange_boxes
+		ww.zoom_all
+		false
+	}
 	Gui.main
 end
 
@@ -137,8 +139,21 @@ EOS
 	test_layout <<EOS
 escape -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8;
 2 -> 21;
-4 -> 41;
-6 -> 61;
+EOS
+	test_layout <<EOS
+loophead -> 1 -> loophead;
+2 -> 3 -> 2;
+3 -> 4;
+1 -> 4;
+EOS
+	test_layout <<EOS
+1 -> e1;
+l00pz -> 1 -> l00pz;
+l2 -> 2 -> l2;
+2 -> e1;
+2 -> e2;
+l3 -> 3 -> l3;
+3 -> e2;
 EOS
 
 rescue Interrupt
