@@ -161,7 +161,7 @@ class DrawableWidget < Gtk::DrawingArea
 			key = {
 			:page_up => :pgup, :page_down => :pgdown, :next => :pgdown,
 			:escape => :esc, :return => :enter, :l1 => :f11, :l2 => :f12,
-			:prior => :pgup,
+			:prior => :pgup, :menu => :popupmenu,
 
 			:space => ?\ ,
 			:asciitilde => ?~, :quoteleft => ?`,
@@ -226,7 +226,6 @@ class DrawableWidget < Gtk::DrawingArea
 				grab_focus
 				case ev.button
 				when 1; protect { click(ev.x, ev.y) } if respond_to? :click
-				when 3; protect { rightclick(ev.x, ev.y) } if respond_to? :rightclick
 				end
 			when Gdk::Event::Type::BUTTON2_PRESS
 				case ev.button
@@ -245,8 +244,11 @@ class DrawableWidget < Gtk::DrawingArea
 		} if respond_to? :mousemove
 
 		signal_connect('button_release_event') { |w, ev|
-			protect { mouserelease(ev.x, ev.y) } if ev.button == 1
-		} if respond_to? :mouserelease
+			case ev.button
+			when 1; protect { mouserelease(ev.x, ev.y) } if respond_to? :mouserelease
+			when 3; protect { rightclick(ev.x, ev.y) } if respond_to? :rightclick
+			end
+		}
 
 		signal_connect('scroll_event') { |w, ev|
 			dir = case ev.direction
@@ -331,6 +333,16 @@ class DrawableWidget < Gtk::DrawingArea
 		hash.each { |k, v| @color[k] = color(v) }
 		modify_bg Gtk::STATE_NORMAL, @color[:background]
 		gui_update
+	end
+
+	def new_menu
+		toplevel.new_menu
+	end
+	def addsubmenu(*a, &b)
+		toplevel.addsubmenu(*a, &b)
+	end
+	def popupmenu(m, x, y)
+		toplevel.popupmenu(m, x+allocation.x, y+allocation.y)
 	end
 
 	# update @hl_word from a line & offset, return nil if unchanged
@@ -704,6 +716,7 @@ class Window < Gtk::Window
 		@menubar = Gtk::MenuBar.new
 		@accel_group = Gtk::AccelGroup.new
 
+		set_gravity Gdk::Window::GRAVITY_STATIC
 		@vbox.add @menubar, 'expand' => false
 		@child = nil
 		s = Gdk::Screen.default
@@ -770,6 +783,13 @@ class Window < Gtk::Window
 		       l = from.map { |e| e.grep(::Array).map { |ae| find_menu(name, ae) }.compact.first }.compact.first
 		end
 		l.grep(::Array).first if l
+	end
+
+	def popupmenu(m, x, y)
+		mh = Gtk::Menu.new
+		m.each { |e| create_menu_item(mh, e) }
+		mh.show_all
+		mh.popup(nil, nil, 2, 0) { |_m, _x, _y, _p| [position[0]+x, position[1]+y, true] }
 	end
 
 	# append stuff to a menu

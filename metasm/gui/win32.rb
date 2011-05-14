@@ -960,6 +960,33 @@ GetTextExtentPoint32A(
 	__in_ecount(c) LPCSTR lpString,
 	__in int c,
 	__out LPPOINT lpsz);
+
+typedef struct tagRECT {
+    LONG left;
+    LONG top;
+    LONG right;
+    LONG bottom;
+} RECT, *LPRECT;
+
+#define TPM_LEFTBUTTON  0x0000L
+#define TPM_RIGHTBUTTON 0x0002L
+#define TPM_LEFTALIGN   0x0000L
+#define TPM_CENTERALIGN 0x0004L
+#define TPM_RIGHTALIGN  0x0008L
+#define TPM_TOPALIGN        0x0000L
+#define TPM_VCENTERALIGN    0x0010L
+#define TPM_BOTTOMALIGN     0x0020L
+#define TPM_HORIZONTAL      0x0000L
+#define TPM_VERTICAL        0x0040L
+#define TPM_NONOTIFY        0x0080L
+#define TPM_RETURNCMD       0x0100L
+#define TPM_RECURSE         0x0001L
+#define TPM_HORPOSANIMATION 0x0400L
+#define TPM_HORNEGANIMATION 0x0800L
+#define TPM_VERPOSANIMATION 0x1000L
+#define TPM_VERNEGANIMATION 0x2000L
+#define TPM_NOANIMATION     0x4000L
+#define TPM_LAYOUTRTL       0x8000L
 WINUSERAPI
 BOOL
 WINAPI
@@ -980,6 +1007,17 @@ WINAPI
 DestroyMenu(
     __in HMENU hMenu);
 WINUSERAPI
+BOOL
+WINAPI
+TrackPopupMenu(
+    __in HMENU hMenu,
+    __in UINT uFlags,
+    __in int x,
+    __in int y,
+    __in int nReserved,
+    __in HWND hWnd,
+    __in_opt CONST RECT *prcRect);
+WINUSERAPI
 DWORD
 WINAPI
 CheckMenuItem(
@@ -998,13 +1036,6 @@ AppendMenuA(
 #define TRANSPARENT 1
 #define OPAQUE      2
 int WINAPI SetBkMode(__in HDC hdc, __in int mode);
-
-typedef struct tagRECT {
-    LONG left;
-    LONG top;
-    LONG right;
-    LONG bottom;
-} RECT, *LPRECT;
 
 WINUSERAPI
 int
@@ -1083,6 +1114,18 @@ BOOL
 WINAPI
 UpdateWindow(
     __in HWND hWnd);
+WINUSERAPI
+BOOL
+WINAPI
+ClientToScreen(
+    __in HWND hWnd,
+    __inout LPPOINT pt);
+WINUSERAPI
+BOOL
+WINAPI
+ScreenToClient(
+    __in HWND hWnd,
+    __inout LPPOINT pt);
 WINUSERAPI
 BOOL
 WINAPI
@@ -1773,6 +1816,18 @@ class DrawableWidget < WinWidget
 		gui_update
 	end
 
+	def new_menu
+		toplevel.new_menu
+	end
+
+	def addsubmenu(*a, &b)
+		toplevel.addsubmenu(*a, &b)
+	end
+
+	def popupmenu(m, x, y)
+		toplevel.popupmenu(m, x+@x, y+@y)
+	end
+
 	def paint_(realhdc)
 		@hdc = Win32Gui.createcompatibledc(realhdc)
 		bmp = Win32Gui.createcompatiblebitmap(realhdc, @width, @height)
@@ -1997,7 +2052,7 @@ class Window
 		h.update v => {
 			:prior => :pgup, :next => :pgdown,
 			:escape => :esc, :return => :enter,
-			:back => :backspace,
+			:back => :backspace, :apps => :popupmenu,
 		}.fetch(key, key)
 	}
 
@@ -2214,10 +2269,37 @@ class Window
 
 	# make the window's MenuBar reflect the content of @menu
 	def update_menu
+		unuse_menu(@menu)
 		Win32Gui.destroymenu(@menuhwnd) if @menuhwnd != 0
 		@menuhwnd = Win32Gui.createmenu()
 		@menu.each { |e| create_menu_item(@menuhwnd, e) }
 		Win32Gui.setmenu(@hwnd, @menuhwnd)
+	end
+
+	def popupmenu(m, x, y)
+		hm = Win32Gui.createpopupmenu()
+		m.each { |e| create_menu_item(hm, e) }
+		pt = Win32Gui.alloc_c_struct('POINT', :x => x, :y => y)
+		Win32Gui.clienttoscreen(@hwnd, pt)
+		id = Win32Gui.trackpopupmenu(hm, Win32Gui::TPM_NONOTIFY | Win32Gui::TPM_RETURNCMD, pt.x, pt.y, 0, @hwnd, 0)
+		if p = @control_action[id]
+			# TrackPopup returns before WM_COMMAND is delivered, so if we
+			# want to cleanup @control_action we must call it now & clenup
+			p.call
+		end
+		unuse_menu(m)
+		Win32Gui.destroymenu(hm)
+	end
+
+	def unuse_menu(m)
+		m.flatten.grep(Proc).reverse_each { |c|
+			if @control_action[@controlid-1] == c
+				@controlid -= 1		# recycle IDs
+				@control_action.delete @controlid
+			elsif i = @control_action.index(c)
+				@control_action.delete i
+			end
+		}
 	end
 
 	def create_menu_item(menu, entry)
@@ -2270,6 +2352,7 @@ class Window
 					checked = action.call(!checked)
 					Win32Gui.checkmenuitem(menu, id, (checked ? Win32Gui::MF_CHECKED : Win32Gui::MF_UNCHECKED))
 				}
+				entry << @control_action[id]	# allow deletion in unuse_menu
 			end
 			@controlid += 1
 		end
