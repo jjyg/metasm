@@ -1106,10 +1106,36 @@ class Disassembler
 
 	# change Expression display mode for current object o to display integers as char constants
 	def toggle_expr_char(o)
-		return if not o.kind_of? Renderable
+		return if not o.kind_of?(Renderable)
+		tochars = lambda { |v|
+			if v.kind_of?(::Integer)
+				a = []
+				vv = v.abs
+				a << (vv & 0xff)
+				vv >>= 8
+				while vv > 0
+					a << (vv & 0xff)
+					vv >>= 8
+				end
+				if a.all? { |b| b < 0x7f }
+					s = a.pack('C*').inspect.gsub("'") { '\\\'' }[1...-1]
+					ExpressionString.new(v, (v > 0 ? "'#{s}'" : "-'#{s}'"), :char)
+				end
+			end
+		}
 		o.each_expr { |e|
-			e.render_info ||= {}
-			e.render_info[:char] = e.render_info[:char] ? nil : @cpu.endianness
+			if e.kind_of?(Expression)
+				if nr = tochars[e.rexpr]
+					e.rexpr = nr
+				elsif e.rexpr.kind_of?(ExpressionString) and e.rexpr.type == :char
+					e.rexpr = e.rexpr.expr
+				end
+				if nl = tochars[e.lexpr]
+					e.lexpr = nl
+				elsif e.lexpr.kind_of?(ExpressionString) and e.lexpr.type == :char
+					e.lexpr = e.lexpr.expr
+				end
+			end
 		}
 	end
 

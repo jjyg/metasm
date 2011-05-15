@@ -846,6 +846,23 @@ class Expression < ExpressionType
 	Unknown = self[:unknown]
 end
 
+# An Expression with a custom string representation
+# used to show #define constants, struct offsets, func local vars, etc
+class ExpressionString < ExpressionType
+	attr_accessor :expr, :str, :type
+	def reduce_rec
+		expr.reduce_rec
+	end
+	def bind(*a)
+		expr.bind(*a)
+	end
+	def initialize(expr, str, type)
+		@expr = Expression[expr]
+		@str = str
+		@type = type
+	end
+end
+
 # an EncodedData relocation, specifies a value to patch in
 class Relocation
 	# the relocation value (an Expression)

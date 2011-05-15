@@ -19,8 +19,8 @@ module Renderable
 		r = proc { |e|
 			case e
 			when Expression
-				yield e
 				r[e.lexpr] ; r[e.rexpr]
+				yield e
 			when Renderable
 				e.render.each { |re| r[re] }
 			end
@@ -64,45 +64,13 @@ end
 
 class Expression
 	include Renderable
-	attr_accessor :render_info
-
-	# this is an accessor to @@render_int, the lambda used to render integers > 10
-	# usage: Expression.render_int = lambda { |e| '0x%x' % e }
-	#  or    Expression.render_int { |e| '0x%x' % e }
-	# XXX the returned string should be suitable for inclusion in a label name etc
-	def self.render_int(&b)
-		if b
-			@@render_int = b
-		else
-			@@render_int
-		end
-	end
-	def self.render_int=(p)
- 		@@render_int = p
-	end
-	@@render_int = nil
 
 	def render_integer(e)
-		if render_info and @render_info[:char]
-			ee = e
-			v = []
-			while ee > 0
-				v << (ee & 0xff)
-				ee >>= 8
-			end
-			v.reverse! if @render_info[:char] == :big
-			if not v.empty? and v.all? { |c| c < 0x7f }
-				# XXX endianness
-				return "'" + v.pack('C*').inspect.gsub("'") { '\\\'' }[1...-1] + "'"
-			end
-		end
 		if e < 0
 			neg = true
 			e = -e
 		end
 		if e < 10; e = e.to_s
-		elsif @@render_int
-			e = @@render_int[e]
 		else
 			e = '%xh' % e
 			e = '0' << e unless (?0..?9).include? e[0]
@@ -126,5 +94,11 @@ class Expression
 		end
 		[l, op, r].compact
 	end
+end
+
+class ExpressionString
+	include Renderable
+
+	def render; [@str] end
 end
 end
