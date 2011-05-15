@@ -2053,6 +2053,7 @@ class Window
 			:prior => :pgup, :next => :pgdown,
 			:escape => :esc, :return => :enter,
 			:back => :backspace, :apps => :popupmenu,
+			:add => ?+, :subtract => ?-, :multiply => ?*, :divide => ?/,
 		}.fetch(key, key)
 	}
 
