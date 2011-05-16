@@ -215,10 +215,10 @@ class Graph
 		# scan groups for a column pattern (head has 1 'to' which from == [head])
 		group_columns = lambda {
 			groups.find { |g|
-				next if g.from.length == 1 and g.from.first.to.length == 1
+				next if g.to.length != 1 or g.to.first.from.length != 1
+				next if g.from.length == 1 and g.from.first.to.length == 1	# we want the head
 				ary = [g]
 				ary << (g = g.to.first) while g.to.length == 1 and g.to.first.from.length == 1
-				next if ary.length <= 1
 				align_vt[ary]
 				merge_groups[ary]
 				true
@@ -227,7 +227,7 @@ class Graph
 
 		# scan groups for a line pattern (multiple groups with same to & same from)
 		group_lines = lambda { |strict|
-			if groups.all? { |g1| g1.from.empty? and g1.to.empty? }
+			if groups.first.to.empty? and groups.all? { |g1| g1.from.empty? and g1.to.empty? }
 				# disjoint subgraphs
 				align_hz[groups]
 				merge_groups[groups]
@@ -235,26 +235,44 @@ class Graph
 			end
 
 			groups.find { |g1|
-				ary = g1.from.map { |gg| gg.to }.flatten.uniq.find_all { |gg|
-					gg != g1 and
-					(gg.from - g1.from).empty? and (g1.from - gg.from).empty? and
-					(strict ? ((gg.to - g1.to).empty? and (g1.to - gg.to).empty?) : (g1.to & gg.to).first)
-				}
-				ary = g1.to.map { |gg| gg.from }.flatten.uniq.find_all { |gg|
-					gg != g1 and
-					(gg.to - g1.to).empty? and (g1.to - gg.to).empty? and
-					(strict ? ((gg.from - g1.from).empty? and (g1.from - gg.from).empty?) : (g1.from & gg.from).first)
-				} if ary.empty?
-				next if ary.empty?
-				ary << g1
+				if g1.to.length > 1
+					ary = g1.to.find_all { |gg| gg.from.length == 1 }
+					if ary.length > 1
+						if strict
+							tf = ary.first.to.first
+							ary = ary.find_all { |gg| gg.to.length <= 1 and gg.to.first == tf }
+						else
+							ary = ary.find_all { |gg| (gg.to & ary.first.to).first }
+						end
+					else
+						ary = nil
+					end
+				end
+				if (not ary or ary.length <= 1) and g1.from.length > 1
+					ary = g1.from.find_all { |gg| gg.to.length == 1 }
+					if ary.length > 1
+						if strict
+							tf = ary.first.from.first
+							ary = ary.find_all { |gg| gg.from.length <= 1 and gg.from.first == tf }
+						else
+							ary = ary.find_all { |gg| (gg.from & ary.first.from).first }
+						end
+					else
+						ary = nil
+					end
+				end
+				next if not ary or ary.length <= 1
 				dy = 16*ary.map { |g| g.to.length + g.from.length }.inject { |a, b| a+b }
 				ary.each { |g| g.h += dy ; g.y -= dy/2 }
 				align_hz[ary]
 				if ary.first.to.empty?	# shrink graph if highly dissymetric and to.empty?
 					ah = ary.map { |g| g.h }.max
+					pg = nil
 					ary.each { |g|
 						move_group[g, 0, (g.h-ah)/2]	# move up
-						next if not p = ary[ary.index(g)-1]
+						p = pg		# p = ary[ary.index(g)-1]
+						pg = g
+						next if not p
 						y = [g.y, p.y].min		# shrink width
 						h = [g.h, p.h].min
 						xp = p.content.map { |b| b.x+b.w if b.y+b.h+8 >= y and b.y-8 <= y+h }.compact.max || p.x+p.w/2
@@ -282,9 +300,11 @@ class Graph
 		# scan groups for a if/then pattern (1 -> 2 -> 3 & 1 -> 3)
 		group_ifthen = lambda { |strict|
 			groups.reverse.find { |g|
+				# g = if, g2 = then, g2_ = end
+				next if g.to.length != 2
 				next if not g2 = g.to.find { |g2_| (g2_.to.length == 1 and g.to.include?(g2_.to.first)) or
 					(not strict and g2_.to.empty?)  }
-				next if strict and g2.from != [g] or g.to.length != 2
+				next if strict and g2.from.length != 1
 				g2.h += 16 ; g2.y -= 8
 				align_vt[[g, g2]]
 				dx = -g2.x+8
@@ -353,7 +373,7 @@ class Graph
 		# unknown pattern, group as we can..
 		group_other = lambda {
 puts 'graph arrange: unknown configuration', dump_layout
-			g1 = groups.find_all { |g| g.from.empty? }
+			g1 = groups.find_all { |g| g.from.empty? and not g.to.empty? }
 			g1 << groups[rand(groups.length)] if g1.empty?
 			g2 = g1.map { |g| g.to }.flatten.uniq - g1
 			align_vt[g1]
@@ -416,6 +436,7 @@ puts 'graph arrange: unknown configuration', dump_layout
 		}
 		# approximations
 		group_unclean = lambda {
+			#puts "unclean #{groups.length}"
 			ign_break[] or group_lines[false] or group_or[false] or group_halflines[] or group_ifthen[false] or group_other[]
 		}
 

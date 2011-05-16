@@ -139,6 +139,7 @@ EOS
 	test_layout <<EOS
 escape -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8;
 2 -> 21;
+4 -> 6;
 EOS
 	test_layout <<EOS
 loophead -> 1 -> loophead;
