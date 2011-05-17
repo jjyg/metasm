@@ -84,7 +84,7 @@ class Preprocessor
 		# modifies the list, returns an array of list of tokens/nil
 		# handles nesting
 		def self.parse_arglist(lexer, list=nil)
-			readtok = lambda { list ? list.shift : lexer.readtok(false) }
+			readtok = lambda { list ? list.shift : lexer.readtok_nopp }
 			unreadtok = lambda { |t| list ? (list.unshift(t) if t) : lexer.unreadtok(t) }
 			tok = nil
 			unreadlist = []
@@ -567,7 +567,7 @@ class Preprocessor
 	end
 
 	# calls readtok_nopp and handles preprocessor directives
-	def readtok(expand_macros = true)
+	def readtok
 		lastpos = @pos
 		tok = readtok_nopp
 
@@ -604,7 +604,7 @@ class Preprocessor
 			end
 			tok = readtok if lastpos == 0	# else return the :eol
 
-		elsif expand_macros and tok.type == :string and m = @definition[tok.raw] and not tok.expanded_from.to_a.find { |ef| ef.raw == m.name.raw } and
+		elsif tok.type == :string and m = @definition[tok.raw] and not tok.expanded_from.to_a.find { |ef| ef.raw == m.name.raw } and
 				((m.args and margs = Macro.parse_arglist(self)) or not m.args)
 
 			if defined? @traced_macros and tok.backtrace[-2].to_s[0] == ?" and m.name and m.name.backtrace[-2].to_s[0] == ?<
