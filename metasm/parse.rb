@@ -159,6 +159,11 @@ class AsmPreprocessor < Preprocessor
 		end
 	end
 
+	class Preprocessor::Token
+		# token already preprocessed for macro def/expansion
+		attr_accessor :alreadyapp
+	end
+
 	# the program (used to create new label names)
 	attr_accessor :program
 	# hash macro name => Macro
@@ -187,6 +192,7 @@ class AsmPreprocessor < Preprocessor
 	# reads a token, handles macros/comments/integers/etc
 	def readtok
 		tok = super()
+		return tok if tok and tok.alreadyapp
 
 		# handle ; comments
 		if tok and tok.type == :punct and tok.raw == ';'
@@ -234,6 +240,7 @@ class AsmPreprocessor < Preprocessor
 			end
 		end
 
+		tok.alreadyapp = true if tok
 		tok
 	end
 end
