@@ -568,7 +568,6 @@ class Preprocessor
 
 	# calls readtok_nopp and handles preprocessor directives
 	def readtok
-		lastpos = @pos
 		tok = readtok_nopp
 
 		if not tok
@@ -579,30 +578,38 @@ class Preprocessor
 				tok = readtok
 			end
 
-		elsif (tok.type == :eol or lastpos == 0) and @ifelse_nesting.last != :testing
-			unreadtok tok if lastpos == 0
-			# detect preprocessor directive
-			# state = 1 => seen :eol, 2 => seen #
+		elsif tok.type == :punct and tok.raw == '#' and not tok.expanded_from and @ifelse_nesting.last != :testing
+			# backward check for :eol (skip the '#' itself)
+			pos = @pos-2
+			while pos >= 0		# if reach start of file, proceed
+				case @text[pos, 1]
+				when "\n"
+					pos -= 1 if pos > 0 and @text[pos-1] == ?\r
+					return tok if pos > 0 and @text[pos-1] == ?\\	# check if the newline was a line-continuation
+					break	# proceed
+				when /\s/	# beware switch order, this matches "\n" too
+				else return tok	# false alarm
+				end
+				pos -= 1
+			end
 			pretok = []
 			rewind = true
-			state = 1
-			loop do
-				pretok << (ntok = readtok_nopp)
-				break if not ntok
+			while ntok = readtok_nopp
+				pretok << ntok
 				if ntok.type == :space	# nothing
-				elsif state == 1 and ntok.type == :punct and ntok.raw == '#' and not ntok.expanded_from
-					state = 2
-				elsif state == 2 and ntok.type == :string and not ntok.expanded_from
+					next
+				elsif ntok.type == :string and not ntok.expanded_from
 					rewind = false if preprocessor_directive(ntok)
-					break
-				else break
 				end
+				break
 			end
 			if rewind
 				# false alarm: revert
 				pretok.reverse_each { |t| unreadtok t }
+			else
+				# XXX return :eol ?
+				tok = readtok
 			end
-			tok = readtok if lastpos == 0	# else return the :eol
 
 		elsif tok.type == :string and m = @definition[tok.raw] and not tok.expanded_from.to_a.find { |ef| ef.raw == m.name.raw } and
 				((m.args and margs = Macro.parse_arglist(self)) or not m.args)
