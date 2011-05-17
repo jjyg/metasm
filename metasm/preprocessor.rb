@@ -378,6 +378,7 @@ class Preprocessor
 	# hash filename => file content
 	attr_accessor :hooked_include
 	attr_accessor :warn_redefinition
+	attr_accessor :may_preprocess
 
 	# global default search directory for #included <files>
 	@@include_search_path = ['/usr/include']
@@ -397,6 +398,7 @@ class Preprocessor
 		@lineno = 1
 		@warn_redefinition = true
 		@hooked_include = {}
+		@may_preprocess = false
 		@pragma_once = {}
 		@pragma_callback = lambda { |otok|
 			tok = otok
@@ -493,6 +495,10 @@ class Preprocessor
 	def feed!(text, filename='unknown', lineno=1)
 		raise ArgumentError, 'need something to parse!' if not text
 		@text = text
+		if not @may_preprocess and (@text =~ /^\s*(#|\?\?=)/ or
+				@text =~ /#{@definition.keys.map { |k| Regexp.escape(k) }.join('|')}/)
+			@may_preprocess = true
+		end
 		# @filename[-1] used in trace_macros to distinguish generic/specific files
 		@filename = "\"#{filename}\""
 		@lineno = lineno
@@ -569,6 +575,7 @@ class Preprocessor
 	# calls readtok_nopp and handles preprocessor directives
 	def readtok
 		tok = readtok_nopp
+		return tok if not @may_preprocess	# shortcut
 
 		if not tok
 			# end of file: resume parent
@@ -586,6 +593,7 @@ class Preprocessor
 				when "\n"
 					pos -= 1 if pos > 0 and @text[pos-1] == ?\r
 					return tok if pos > 0 and @text[pos-1] == ?\\	# check if the newline was a line-continuation
+					return tok if pos > 2 and @text[pos-3, 3] == '??/'	# trigraph
 					break	# proceed
 				when /\s/	# beware switch order, this matches "\n" too
 				else return tok	# false alarm
@@ -774,6 +782,9 @@ class Preprocessor
 	def define(name, value=nil, from=caller.first)
 		from =~ /^(.*?):(\d+)/
 		btfile, btlineno = $1, $2.to_i
+		if not @may_preprocess and @text =~ /#{Regexp.escape name}/
+			@may_preprocess = true
+		end
 		t = Token.new([btfile, btlineno])
 		t.type = :string
 		t.raw = name.dup
