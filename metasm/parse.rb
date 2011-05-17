@@ -168,9 +168,11 @@ class AsmPreprocessor < Preprocessor
 	attr_accessor :program
 	# hash macro name => Macro
 	attr_accessor :macro
+	attr_accessor :may_apreprocess
 
 	def initialize(text='', program=nil)
 		@program = program
+		@may_apreprocess = false
 		@macro = {}
 		super(text)
 	end
@@ -189,13 +191,20 @@ class AsmPreprocessor < Preprocessor
 		t
 	end
 
-	# reads a token, handles macros/comments/integers/etc
+	def feed!(*a)
+		super(*a)
+		if not @may_apreprocess and (@text =~ / (macro|equ) / or not @macro.empty?)
+			@may_apreprocess = true
+		end
+	end
+
+	# reads a token, handles macros/comments/etc
 	def readtok
 		tok = super()
-		return tok if tok and tok.alreadyapp
+		return tok if not tok or tok.alreadyapp
 
 		# handle ; comments
-		if tok and tok.type == :punct and tok.raw == ';'
+		if tok.type == :punct and tok.raw[0] == ?;
 			tok.type = :eol
 			begin
 				tok = tok.dup
@@ -209,7 +218,7 @@ class AsmPreprocessor < Preprocessor
 		end
 
 		# handle macros
-		if tok and tok.type == :string
+		if @may_apreprocess and tok.type == :string
 			if @macro[tok.raw]
 				@macro[tok.raw].apply(tok, self, @program).reverse_each { |t| unreadtok t }
 				tok = readtok

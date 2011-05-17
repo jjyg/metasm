@@ -386,16 +386,11 @@ class Preprocessor
 	def self.include_search_path=(np) @@include_search_path=np end
 
 	def initialize(text='')
-		@queue = []
 		@backtrace = []
 		@definition = %w[__FILE__ __LINE__ __COUNTER__ __DATE__ __TIME__].inject({}) { |h, n| h.update n => SpecialMacro.new(n) }
 		@include_search_path = @@include_search_path.dup
 		# stack of :accept/:discard/:discard_all/:testing, represents the current nesting of #if..#endif
 		@ifelse_nesting = []
-		@text = text
-		@pos = 0
-		@filename = 'unknown'
-		@lineno = 1
 		@warn_redefinition = true
 		@hooked_include = {}
 		@may_preprocess = false
@@ -407,6 +402,7 @@ class Preprocessor
 			unreadtok tok
 			puts otok.exception("unhandled pragma #{str.inspect}").message if $VERBOSE
 		}
+		feed!(text)
 		define '__METASM__', VERSION
 	end
 
@@ -495,8 +491,8 @@ class Preprocessor
 	def feed!(text, filename='unknown', lineno=1)
 		raise ArgumentError, 'need something to parse!' if not text
 		@text = text
-		if not @may_preprocess and (@text =~ /^\s*(#|\?\?=)/ or
-				@text =~ /#{@definition.keys.map { |k| Regexp.escape(k) }.join('|')}/)
+		if not @may_preprocess and (@text =~ /^\s*(#|\?\?=)/ or (not @definition.empty? and
+				 @text =~ /#{@definition.keys.map { |k| Regexp.escape(k) }.join('|')}/))
 			@may_preprocess = true
 		end
 		# @filename[-1] used in trace_macros to distinguish generic/specific files
