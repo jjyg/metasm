@@ -512,7 +512,7 @@ class Preprocessor
 
 	# reads one character from self.text
 	# updates self.lineno
-	# handles trigraphs and \-continued lines
+	# handles \-continued lines
 	def getchar
 		@ungetcharpos = @pos
 		@ungetcharlineno = @lineno
@@ -520,11 +520,11 @@ class Preprocessor
 		@pos += 1
 
 		# check trigraph
-		if c == ?? and @text[@pos] == ?? and Trigraph[@text[@pos+1]]
-			puts "can i has trigraf plox ??#{c.chr} (#@filename:#@lineno)" if $VERBOSE
-			c = Trigraph[@text[@pos+1]]
-			@pos += 2
-		end
+		#if c == ?? and @text[@pos] == ?? and Trigraph[@text[@pos+1]]
+		#	puts "can i has trigraf plox ??#{c.chr} (#@filename:#@lineno)" if $VERBOSE
+		#	c = Trigraph[@text[@pos+1]]
+		#	@pos += 2
+		#end
 
 		# check line continuation
 		# TODO portability
