@@ -203,28 +203,12 @@ class AsmPreprocessor < Preprocessor
 			end
 		end
 
-		# aggregate space/eol
-		if tok and (tok.type == :space or tok.type == :eol)
-			if ntok = readtok(true) and ntok.type == :space
-				tok = tok.dup
-				tok.raw << ntok.raw
-			elsif ntok and ntok.type == :eol
-				tok = tok.dup
-				tok.raw << ntok.raw
-				tok.type = :eol
-			else
-				unreadtok ntok
-			end
-		end
-
-
 		# handle macros
 		# the rec parameter is used to avoid reading the whole text at once when reading ahead to check 'macro' keyword
 		if not rec and tok and tok.type == :string
 			if @macro[tok.raw]
 				@macro[tok.raw].apply(tok, self, @program).reverse_each { |t| unreadtok t }
 				tok = readtok
-
 			else
 				if ntok = readtok(true) and ntok.type == :space and nntok = readtok(true) and nntok.type == :string and (nntok.raw == 'macro' or nntok.raw == 'equ')
 					puts "W: asm: redefinition of macro #{tok.raw} at #{tok.backtrace_str}, previous definition at #{@macro[tok.raw].name.backtrace_str}" if @macro[tok.raw]
