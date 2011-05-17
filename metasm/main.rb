@@ -394,7 +394,9 @@ class Expression < ExpressionType
 	# XXX funny args order, you should use +Expression[]+ instead
 	def initialize(op, rexpr, lexpr)
 		raise ArgumentError, "Expression: invalid arg order: #{[lexpr, op, rexpr].inspect}" if not op.kind_of? ::Symbol
-		@op, @lexpr, @rexpr = op, lexpr, rexpr
+		@op = op
+		@lexpr = lexpr
+		@rexpr = rexpr
 	end
 
 	# recursive check of equity using #==
