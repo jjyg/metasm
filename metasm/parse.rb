@@ -185,8 +185,7 @@ class AsmPreprocessor < Preprocessor
 	end
 
 	# reads a token, handles macros/comments/integers/etc
-	# argument is for internal use
-	def readtok(rec = false)
+	def readtok
 		tok = super()
 
 		# handle ; comments
@@ -204,13 +203,12 @@ class AsmPreprocessor < Preprocessor
 		end
 
 		# handle macros
-		# the rec parameter is used to avoid reading the whole text at once when reading ahead to check 'macro' keyword
-		if not rec and tok and tok.type == :string
+		if tok and tok.type == :string
 			if @macro[tok.raw]
 				@macro[tok.raw].apply(tok, self, @program).reverse_each { |t| unreadtok t }
 				tok = readtok
 			else
-				if ntok = readtok(true) and ntok.type == :space and nntok = readtok(true) and nntok.type == :string and (nntok.raw == 'macro' or nntok.raw == 'equ')
+				if ntok = super() and ntok.type == :space and nntok = super() and nntok.type == :string and (nntok.raw == 'macro' or nntok.raw == 'equ')
 					puts "W: asm: redefinition of macro #{tok.raw} at #{tok.backtrace_str}, previous definition at #{@macro[tok.raw].name.backtrace_str}" if @macro[tok.raw]
 					m = Macro.new tok
 					# XXX this allows nested macro definition..
