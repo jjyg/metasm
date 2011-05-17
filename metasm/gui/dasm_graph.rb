@@ -1210,10 +1210,11 @@ p boxes.length
 			redraw
 
 		when ?a
+			t0 = Time.now
 			puts 'autoarrange'
 			@curcontext.auto_arrange_boxes
 			redraw
-			puts 'autoarrange done'
+			puts 'autoarrange done %.02f' % (Time.now - t0)
 		when ?u
 			gui_update
 
