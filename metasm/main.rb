@@ -497,9 +497,29 @@ class Expression < ExpressionType
 		end
 
 		v =
-		if r.kind_of?(::Integer) and (not l or l.kind_of?(::Numeric))
+		if @op == :+
+			if not l; r	# +x  => x
+			elsif r == 0; l	# x+0 => x
+			elsif l == :unknown or r == :unknown; :unknown
+			elsif l.kind_of?(::Numeric)
+				if r.kind_of?(::Numeric)
+					l + r
+				elsif r.kind_of? Expression and r.op == :+
+					# 1+(x+y) => x+(y+1)
+					Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec
+				else
+					# 1+a => a+1
+					Expression[r, :+, l].reduce_rec
+				end
+				# (a+b)+foo => a+(b+foo)
+			elsif l.kind_of? Expression and l.op == :+; Expression[l.lexpr, :+, [l.rexpr, :+, r]].reduce_rec
+			elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
+				Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
+			else
+				reduce_rec_add(l, r)
+			end
+		elsif r.kind_of?(::Numeric) and (not l or l.kind_of?(::Numeric))
 			case @op
-			when :+; l ? l + r : r
 			when :-; l ? l - r : -r
 			when :'!'; raise 'internal error' if l ; (r == 0) ? 1 : 0
 			when :'~'; raise 'internal error' if l ; ~r
@@ -517,26 +537,6 @@ class Expression < ExpressionType
 				end ? 1 : 0
 			else
 				l.send(@op, r)
-			end
-
-		elsif @op == :+
-			if not l; r	# +x  => x
-			elsif r == 0; l	# x+0 => x
-			elsif l == :unknown or r == :unknown; :unknown
-			elsif l.kind_of?(::Numeric)
-				if r.kind_of? Expression and r.op == :+
-					# 1+(x+y) => x+(y+1)
-					Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec
-				else
-					# 1+a => a+1
-					Expression[r, :+, l].reduce_rec
-				end
-				# (a+b)+foo => a+(b+foo)
-			elsif l.kind_of? Expression and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
-			elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
-				Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
-			else
-				reduce_rec_add(l, r)
 			end
 		elsif @op == :-
 			if l == :unknown or r == :unknown; :unknown
