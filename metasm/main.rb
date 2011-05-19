@@ -497,10 +497,13 @@ class Expression < ExpressionType
 		end
 
 		v =
-		if r.kind_of?(::Numeric) and (l == nil or l.kind_of?(::Numeric))
-			# calculate numerics
-			if [:'&&', :'||', :'>', :'<', :'>=', :'<=', :'==', :'!='].include?(@op)
-				# bool expr
+		if r.kind_of?(::Integer) and (not l or l.kind_of?(::Numeric))
+			case @op
+			when :+; l ? l + r : r
+			when :-; l ? l - r : -r
+			when :'!'; raise 'internal error' if l ; (r == 0) ? 1 : 0
+			when :'~'; raise 'internal error' if l ; ~r
+			when :'&&', :'||', :'>', :'<', :'>=', :'<=', :'==', :'!='
 				raise 'internal error' if not l
 				case @op
 				when :'&&'; (l != 0) && (r != 0)
@@ -512,18 +515,47 @@ class Expression < ExpressionType
 				when :'=='; l == r
 				when :'!='; l != r
 				end ? 1 : 0
-			elsif not l
-				case @op
-				when :'!'; (r == 0) ? 1 : 0
-				when :+;  r
-				when :-; -r
-				when :~; ~r
-				end
 			else
-				# use ruby evaluator
 				l.send(@op, r)
 			end
 
+		elsif @op == :+
+			if not l; r	# +x  => x
+			elsif r == 0; l	# x+0 => x
+			elsif l == :unknown or r == :unknown; :unknown
+			elsif l.kind_of?(::Numeric)
+				if r.kind_of? Expression and r.op == :+
+					# 1+(x+y) => x+(y+1)
+					Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec
+				else
+					# 1+a => a+1
+					Expression[r, :+, l].reduce_rec
+				end
+				# (a+b)+foo => a+(b+foo)
+			elsif l.kind_of? Expression and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
+			elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
+				Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
+			else
+				reduce_rec_add(l, r)
+			end
+		elsif @op == :-
+			if l == :unknown or r == :unknown; :unknown
+			elsif not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
+				if r.op == :- # no lexpr (reduced)
+					# -(-x) => x
+					r.rexpr
+				else # :+ and lexpr (r is reduced)
+					# -(a+b) => (-a)+(-b)
+					Expression[[:-, r.lexpr], :+, [:-, r.rexpr]].reduce_rec
+				end
+			elsif l.kind_of? Expression and l.op == :+ and l.lexpr == r
+				# shortcircuit for a common occurence [citation needed]
+				# (a+b)-a
+				l.rexpr
+			elsif l
+				# a-b => a+(-b)
+				Expression[l, :+, [:-, r]].reduce_rec
+			end
 		elsif @op == :'&&'
 			if l == 0	# shortcircuit eval
 				0
@@ -655,43 +687,6 @@ class Expression < ExpressionType
 				Expression[[l.lexpr, :/, r], :+, l.rexpr/r].reduce_rec
 			elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :* and l.lexpr % r == 0
 				Expression[l.lexpr/r, :*, l.rexpr].reduce_rec
-			end
-		elsif @op == :-
-			if l == :unknown or r == :unknown; :unknown
-			elsif not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
-				if r.op == :- # no lexpr (reduced)
-					# -(-x) => x
-					r.rexpr
-				else # :+ and lexpr (r is reduced)
-					# -(a+b) => (-a)+(-b)
-					Expression[[:-, r.lexpr], :+, [:-, r.rexpr]].reduce_rec
-				end
-			elsif l.kind_of? Expression and l.op == :+ and l.lexpr == r
-				# shortcircuit for a common occurence [citation needed]
-				# (a+b)-a
-				l.rexpr
-			elsif l
-				# a-b => a+(-b)
-				Expression[l, :+, [:-, r]].reduce_rec
-			end
-		elsif @op == :+
-			if l == :unknown or r == :unknown; :unknown
-			elsif not l; r	# +x  => x
-			elsif r == 0; l	# x+0 => x
-			elsif l.kind_of?(::Numeric)
-				if r.kind_of? Expression and r.op == :+
-					# 1+(x+y) => x+(y+1)
-					Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec
-				else
-					# 1+a => a+1
-					Expression[r, :+, l].reduce_rec
-				end
-				# (a+b)+foo => a+(b+foo)
-			elsif l.kind_of? Expression and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
-			elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
-				Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
-			else
-				reduce_rec_add(l, r)
 			end
 		end
 
