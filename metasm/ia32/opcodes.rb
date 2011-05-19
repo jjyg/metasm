@@ -236,7 +236,8 @@ class Ia32
 		addop 'salc', [0xD6]
 		addop 'icebp', [0xF1]
 		#addop 'loadall',[0x0F, 0x07]	# conflict with syscall
-		addop 'ud2',   [0x0F, 0xB9]
+		addop 'ud0',   [0x0F, 0xFF]	# amd
+		addop 'ud1',   [0x0F, 0xB9]
 		addop 'umov',  [0x0F, 0x10], :mrmw,{:d => [1, 1]}
 	end
 
