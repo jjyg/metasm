@@ -117,8 +117,6 @@ class Ia32
 				v = byte & 7
 			end
 			instr.prefix[:seg] = SegReg.new(v)
-
-			instr.prefix[:jmphint] = ((byte & 0x10) == 0x10)
 		else
 			return false
 		end
@@ -172,6 +170,13 @@ class Ia32
 		when 0x66; pfx.delete :opsz
 		when 0x67; pfx.delete :adsz
 		when 0xF2, 0xF3; pfx.delete :rep
+		end
+
+		if op.props[:setip] and not op.props[:stopexec] and pfx[:seg]
+			case pfx[:seg].val
+			when 1; pfx[:jmphint] = 'hintnojmp'
+			when 3; pfx[:jmphint] = 'hintjmp'
+			end
 		end
 
 		field_val = lambda { |f|

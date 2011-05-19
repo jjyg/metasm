@@ -163,6 +163,8 @@ end
 		when 'repne', 'repnz'; i.prefix[:rep] = 'repnz'
 		when 'code16';         i.prefix[:sz] = 16
 		when 'code32';         i.prefix[:sz] = 32
+		when 'hintjmp', 'ht';  i.prefix[:jmphint] = 'hintjmp'
+		when 'hintnojmp', 'hnt';i.prefix[:jmphint] = 'hintnojmp'
 		end
 	end
 

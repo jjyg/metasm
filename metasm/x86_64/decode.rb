@@ -103,6 +103,13 @@ class X86_64
 			v
 		}
 
+		if op.props[:setip] and not op.props[:stopexec] and pfx[:seg]
+			case pfx[:seg].val
+			when 1; pfx[:jmphint] = 'hintnojmp'
+			when 3; pfx[:jmphint] = 'hintjmp'
+			end
+		end
+
 		opsz = op.props[:argsz] || (pfx[:rex_w] ? 64 : (pfx[:opsz] ? 16 : (op.props[:auto64] ? 64 : 32)))
 		adsz = pfx[:adsz] ? 32 : 64
 		mmxsz = (op.props[:xmmx] && pfx[:opsz]) ? 128 : 64

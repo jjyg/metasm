@@ -116,7 +116,8 @@ class X86_64
 			case k
 			when :jmp;  {:jmp => 0x3e, :nojmp => 0x2e}[v]
 			when :lock; 0xf0
-			when :rep;  {'repnz' => 0xf2, 'repz' => 0xf3, 'rep' => 0xf2}[v] # TODO
+			when :rep;  {'repnz' => 0xf2, 'repz' => 0xf3, 'rep' => 0xf2}[v]
+			when :jmphint; {'hintjmp' => 0x3e, 'hintnojmp' => 0x2e}[v]
 			end
 		}.compact.pack 'C*'
 		pfx << op.props[:needpfx] if op.props[:needpfx]

@@ -62,6 +62,7 @@ class Ia32
 		r = []
 		r << 'lock ' if i.prefix and i.prefix[:lock]
 		r << i.prefix[:rep] << ' ' if i.prefix and i.prefix[:rep]
+		r << i.prefix[:jmphint] << ' ' if i.prefix and i.prefix[:jmphint]
 		r << i.opname
 		i.args.each { |a|
 			a.instruction = i if a.kind_of? ModRM
