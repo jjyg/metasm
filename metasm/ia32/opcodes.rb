@@ -216,6 +216,7 @@ class Ia32
 		addop 'std',   [0xFD]
 		addop 'sti',   [0xFB]
 		addop 'str',   [0x0F, 0x00], 1
+		addop 'test',  [0xF6], 1,    {:w => [0, 0]}, :u			# undocumented alias to F6/0
 		addop 'ud2',   [0x0F, 0x0B]
 		addop 'verr',  [0x0F, 0x00], 4
 		addop 'verw',  [0x0F, 0x00], 5
@@ -488,6 +489,15 @@ class Ia32
 		addop 'prefetcht2', [0x0F, 0x18, 3<<3], :modrmA
 		addop 'prefetchnta',[0x0F, 0x18, 0<<3], :modrmA
 		addop 'sfence',  [0x0F, 0xAE, 0xF8]
+		# variants of prefetch are actually nops (or similar)
+		addop 'nop_und0', [0x0F, 0x18], 0
+		addop 'nop_und1', [0x0F, 0x18], 1
+		addop 'nop_und2', [0x0F, 0x18], 2
+		addop 'nop_und3', [0x0F, 0x18], 3
+		addop 'nop_und4', [0x0F, 0x18], 4
+		addop 'nop_und5', [0x0F, 0x18], 5
+		addop 'nop_und6', [0x0F, 0x18], 6
+		addop 'nop_und7', [0x0F, 0x18], 7
 	end
 
 	# XXX must be done after init_sse (patches :regmmx opcodes)
