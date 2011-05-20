@@ -44,7 +44,7 @@ OptionParser.new { |opt|
 	opt.on('--le', 'set cpu in little-endian mode') { $opts[:cpu].endianness = :little }
 	opt.on('--be', 'set cpu in big-endian mode') { $opts[:cpu].endianness = :big }
 	opt.on('--fno-pic', 'generate position-dependant code') { $opts[:cpu].generate_PIC = false }
-	opt.on('--shared', 'generate shared library') { $opts[:exetype] = :lib }
+	opt.on('--shared', '--lib', '--dll', 'generate shared library') { $opts[:exetype] = :lib }
 	opt.on('--ruby-module-hack', 'use the dynldr module hack to use any ruby lib available for ruby symbols') { $opts[:dldrhack] = true }
 }.parse!
 
