@@ -1260,7 +1260,7 @@ class WinOS < OS
 
 			hcache = heaps
 
-			while WinAPI.virtualqueryex(handle, addr, info, info.length) != 0
+			while WinAPI.virtualqueryex(handle, addr, info, info.sizeof) != 0
 				addr += info.regionsize
 				next unless info.state & WinAPI::MEM_COMMIT > 0
 
@@ -1302,7 +1302,7 @@ class WinOS < OS
 			@peb_base ||=
 			if WinAPI.respond_to?(:ntqueryinformationprocess)
 				pinfo = WinAPI.alloc_c_struct('PROCESS_BASIC_INFORMATION')
-				if WinAPI.ntqueryinformationprocess(handle, WinAPI::PROCESSBASICINFORMATION, pinfo, pinfo.length, 0) == 0
+				if WinAPI.ntqueryinformationprocess(handle, WinAPI::PROCESSBASICINFORMATION, pinfo, pinfo.sizeof, 0) == 0
 					pinfo.pebbaseaddress
 				end
 			else
@@ -1337,7 +1337,7 @@ class WinOS < OS
 			@teb_base ||=
 			if WinAPI.respond_to?(:ntqueryinformationthread)
 				tinfo = WinAPI.alloc_c_struct('THREAD_BASIC_INFORMATION')
-				if WinAPI.ntqueryinformationthread(handle, WinAPI::THREADBASICINFORMATION, tinfo, tinfo.length, 0) == 0
+				if WinAPI.ntqueryinformationthread(handle, WinAPI::THREADBASICINFORMATION, tinfo, tinfo.sizeof, 0) == 0
 					tinfo.tebbaseaddress
 				end
 			else
