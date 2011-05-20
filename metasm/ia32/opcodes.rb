@@ -579,7 +579,7 @@ class Ia32
 		addop('pcmpistrm', [0x0F, 0x3A, 0x62], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
 		addop('pcmpistri', [0x0F, 0x3A, 0x63], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
 		addop('pcmpgtq', [0x0F, 0x38, 0x37], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
-		addop('popcnt',  [0x0F, 0xB8], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
+		addop('popcnt',  [0x0F, 0xB8], :mrm) { |o| o.props[:needpfx] = 0xF3 }
 	end
 
 
