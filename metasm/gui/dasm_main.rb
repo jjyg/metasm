@@ -688,6 +688,7 @@ class DasmWindow < Window
 			end
 		}
 		(@dasm_widget ? DasmWindow.new : self).display(exe.disassembler)
+		self.title = "#{File.basename(path)} - metasm disassembler"
 		exe
 	end
 
