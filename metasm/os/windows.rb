@@ -1700,6 +1700,8 @@ class WinDebugger < Debugger
 	attr_accessor :os_process, :os_thread,
 		:auto_fix_fs_bug,
 		# is current exception handled? (arg to pass to continuedbgevt)
+		# if it has the special value :suspended, it means that the thread
+		# is to be restarted through resume and not continuedbgevt
 		:continuecode
 
 	attr_accessor :callback_unloadlibrary, :callback_debugstring, :callback_ripevent
@@ -1836,12 +1838,20 @@ class WinDebugger < Debugger
 
 	def do_continue(*a)
 		@cpu.dbg_disable_singlestep(self)
-		WinAPI.continuedebugevent(@pid, @tid, @continuecode)
+		if @continuecode == :suspended
+			resume
+		else
+			WinAPI.continuedebugevent(@pid, @tid, @continuecode)
+		end
 	end
 
 	def do_singlestep(*a)
 		@cpu.dbg_enable_singlestep(self)
-		WinAPI.continuedebugevent(@pid, @tid, @continuecode)
+		if @continuecode == :suspended
+			resume
+		else
+			WinAPI.continuedebugevent(@pid, @tid, @continuecode)
+		end
 	end
 
 	def update_dbgev(ev)
@@ -1994,17 +2004,20 @@ class WinDebugger < Debugger
 
 	def break
 		return if @state != :running
-		if WinAPI.respond_to? :debugbreakprocess
-			WinAPI.debugbreakprocess(os_process.handle)
-		else
-			suspend
-		end
+		# debugbreak() will create a new thread to 0xcc, but wont touch existing threads
+		suspend
 	end
 
 	def suspend
 		os_thread.suspend
 		@state = :stopped
 		@info = 'thread suspended'
+		@continuecode = :suspended
+	end
+
+	def resume
+		@state = :running
+		os_thread.resume
 	end
 
 	def detach
@@ -2022,6 +2035,7 @@ class WinDebugger < Debugger
 	end
 
 	def pass_current_exception(doit = true)
+		return if @continuecode == :suspended
 		@continuecode = (doit ? WinAPI::DBG_EXCEPTION_NOT_HANDLED : WinAPI::DBG_CONTINUE)
 	end
 end
