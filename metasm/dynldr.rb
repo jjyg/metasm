@@ -379,8 +379,7 @@ static void *wstrcaseruby(short *s1, int len)
 {
 	int i = 0;
 	int match = 0;
-
-	static char *want = "ruby";	// cant contain the same letter twice
+	char *want = "ruby";	// cant contain the same letter twice
 
 	while (i < len) {
 		if (want[match] == (s1[i] | 0x20)) {	// downcase cmp
