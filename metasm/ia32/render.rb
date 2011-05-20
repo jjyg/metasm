@@ -60,13 +60,18 @@ class Ia32
 
 	def render_instruction(i)
 		r = []
-		r << 'lock ' if i.prefix and i.prefix[:lock]
-		r << i.prefix[:rep] << ' ' if i.prefix and i.prefix[:rep]
-		r << i.prefix[:jmphint] << ' ' if i.prefix and i.prefix[:jmphint]
+		if pfx = i.prefix
+			r << 'lock ' if pfx[:lock]
+			r << pfx[:rep] << ' ' if pfx[:rep]
+			r << pfx[:jmphint] << ' ' if pfx[:jmphint]
+			r << 'seg_' << pfx[:seg] << ' ' if pfx[:seg]
+		end
 		r << i.opname
+		sep = ' '
 		i.args.each { |a|
 			a.instruction = i if a.kind_of? ModRM
-			r << (r.last == i.opname ? ' ' : ', ') << a
+			r << sep << a
+			sep = ', '
 		}
 		r
 	end

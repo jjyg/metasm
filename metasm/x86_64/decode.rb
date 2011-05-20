@@ -104,7 +104,7 @@ class X86_64
 		}
 
 		if op.props[:setip] and not op.props[:stopexec] and pfx[:seg]
-			case pfx[:seg].val
+			case pfx.delete(:seg).val
 			when 1; pfx[:jmphint] = 'hintnojmp'
 			when 3; pfx[:jmphint] = 'hintjmp'
 			end
@@ -132,10 +132,10 @@ class X86_64
 				v &= 0xffff_ffff_ffff_ffff if opsz == 64 and op.props[:unsigned_imm] and v.kind_of? Integer
 				Expression[v]
 
-			when :mrm_imm;  ModRM.new(adsz, opsz, nil, nil, nil, Expression[edata.decode_imm("a#{adsz}".to_sym, @endianness)], pfx[:seg])
-			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx[:seg], Reg, pfx
-			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx[:seg], SimdReg, pfx
-			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg, pfx
+			when :mrm_imm;  ModRM.new(adsz, opsz, nil, nil, nil, Expression[edata.decode_imm("a#{adsz}".to_sym, @endianness)], pfx.delete(:seg))
+			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx.delete(:seg), Reg, pfx
+			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, pfx
+			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, pfx
 
 			when :regfp;  FpReg.new   field_val[a]
 			when :imm_val1; Expression[1]
@@ -170,7 +170,6 @@ class X86_64
 		# sil => bh
 		di.instruction.args.each { |a| a.val += 12 if a.kind_of? Reg and a.sz == 8 and not pfx[:rex] and a.val >= 4 and a.val <= 8 }
 
-		pfx.delete :seg
 		case pfx.delete(:rep)
 		when :nz
 			if di.opcode.props[:strop]

@@ -165,6 +165,8 @@ The following prefixes are handled:
 * `lock`
 * `rep`, `repz`, `repnz`, `repe`, `repne`
 * `code16`, `code32`
+* `hintjmp`, `hintnojmp` (aliases: `ht`, `hnt`)
+* `seg_cs` ... `seg_gs`
 
 The `repXX` prefixes are for string operations (`movsd` etc), but will be set
 for any opcode. Only the last of the family will be encoded.
@@ -177,11 +179,11 @@ independantly of the global CPU mode. For exemple,
 will generate `"\xb8\x42\x00"` (no opsz override prefix), and will decode or
 run incorrectly on an 32bit CPU.
 
-The encoder also has code to handle `jmp hints` prefixes, but the parser has
-no equivalent prefix support.
+The `hintjmp` prefix is useful for conditional jumps to give a hint to the
+CPU branch predictor as to whether the branch is take or not.
 
-There is currently no way to specify a segment-override prefix for instruction
-not using a ModRM argument. Use a `db 26h` style line.
+The `seg_cs` prefix family is used to declare arbitrary segment override.
+These should be used only in instructions with no ModRM argument.
 
 
 Suffixes

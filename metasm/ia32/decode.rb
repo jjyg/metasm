@@ -173,7 +173,7 @@ class Ia32
 		end
 
 		if op.props[:setip] and not op.props[:stopexec] and pfx[:seg]
-			case pfx[:seg].val
+			case pfx.delete(:seg).val
 			when 1; pfx[:jmphint] = 'hintnojmp'
 			when 3; pfx[:jmphint] = 'hintjmp'
 			end
@@ -209,10 +209,10 @@ class Ia32
 			when :i8, :u8, :u16; Expression[edata.decode_imm(a, @endianness)]
 			when :i; Expression[edata.decode_imm("#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym, @endianness)]
 
-			when :mrm_imm;  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx[:seg]
-			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx[:seg]
-			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx[:seg], SimdReg
-			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx[:seg], SimdReg
+			when :mrm_imm;  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx.delete(:seg)
+			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx.delete(:seg)
+			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg
+			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg
 
 			when :imm_val1; Expression[1]
 			when :imm_val3; Expression[3]
@@ -239,7 +239,6 @@ class Ia32
 			end
 		end
 
-		pfx.delete :seg
 		case pfx.delete(:rep)
 		when :nz
 			if di.opcode.props[:strop]

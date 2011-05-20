@@ -153,7 +153,6 @@ end
 	end
 
 	def parse_prefix(i, pfx)
-		# XXX check for redefinition ?
 		# implicit 'true' return value when assignment occur
 		i.prefix ||= {}
 		case pfx
@@ -165,6 +164,7 @@ end
 		when 'code32';         i.prefix[:sz] = 32
 		when 'hintjmp', 'ht';  i.prefix[:jmphint] = 'hintjmp'
 		when 'hintnojmp', 'hnt';i.prefix[:jmphint] = 'hintnojmp'
+		when /^seg_([c-g]s)$/; i.prefix[:seg] = SegReg.new(SegReg.s_to_i[$1])
 		end
 	end
 
