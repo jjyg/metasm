@@ -1825,7 +1825,7 @@ class DrawableWidget < WinWidget
 	end
 
 	def popupmenu(m, x, y)
-		toplevel.popupmenu(m, x+@x, y+@y)
+		toplevel.popupmenu(m, (x+@x).to_i, (y+@y).to_i)
 	end
 
 	def paint_(realhdc)

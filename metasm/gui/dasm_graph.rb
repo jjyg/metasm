@@ -637,7 +637,19 @@ class GraphViewWidget < DrawableWidget
 		if b = find_box_xy(x, y) and @zoom >= 0.90 and @zoom <= 1.1
 			click(x, y)
 			@mousemove_origin = nil
-			@parent_widget.clone_window(@hl_word, :graph)
+			m = new_menu
+			cm = new_menu
+			addsubmenu(cm, 'copy _word') { clipboard_copy(@hl_word) if @hl_word }
+			addsubmenu(cm, 'copy _line') { clipboard_copy(@caret_box[:line_text_col][@caret_y].map { |ss, cc| ss }.join) }
+			addsubmenu(cm, 'copy _box')  {
+				sb = @selected_boxes
+				sb = [@curbox] if sb.empty?
+				clipboard_copy(sb.map { |ob| ob[:line_text_col].map { |s| s.map { |ss, cc| ss }.join + "\r\n" }.join }.join("\r\n"))
+		       	}	# XXX auto \r\n vs \n
+			addsubmenu(m, '_clipboard', cm)
+			addsubmenu(m, 'clone _window') { @parent_widget.clone_window(@hl_word, :graph) }
+			# TODO @parent_widget.contextmenu (for debugger)
+			popupmenu(m, x, y)
 		end
 	end
 
@@ -1208,6 +1220,12 @@ p boxes.length
 				b_.to.each { |bb| bb.from.delete b_ }
 			}
 			redraw
+		when :popupmenu
+			if @caret_box
+				cx = (@caret_box.x - @curcontext.view_x + 1 + @caret_x*@font_width)*@zoom
+				cy = (@caret_box.y - @curcontext.view_y + 1 + @caret_y*@font_height)*@zoom
+				rightclick(cx, cy)
+			end
 
 		when ?a
 			t0 = Time.now

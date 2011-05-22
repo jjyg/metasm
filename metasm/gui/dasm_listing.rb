@@ -55,11 +55,24 @@ class AsmListingWidget < DrawableWidget
 
 	def click(x, y)
 		set_caret_from_click(x - @arrow_zone_w, y)
+		@caret_x = 0 if @caret_x < 0
 	end
 
 	def rightclick(x, y)
 		click(x, y)
-		@parent_widget.clone_window(@hl_word, :listing)
+		cx = (x - @arrow_zone_w) / @font_width
+		cy = y / @font_height
+		if cx > 0
+			m = new_menu
+			cm = new_menu
+			addsubmenu(cm, 'copy _word') { clipboard_copy(@hl_word) if @hl_word }
+			addsubmenu(cm, 'copy _line') { clipboard_copy(@line_text[cy]) if @line_text[cy] }
+			addsubmenu(cm, 'copy _all')  { clipboard_copy(@line_text.join("\r\n")) }	# XXX auto \r\n vs \n
+			addsubmenu(m, '_clipboard', cm)
+			addsubmenu(m, 'clone _window') { @parent_widget.clone_window(@hl_word, :listing) }
+			# TODO @parent_widget.contextmenu (for debugger)
+			popupmenu(m, x, y)
+		end
 	end
 
 	def doubleclick(x, y)
@@ -315,6 +328,8 @@ class AsmListingWidget < DrawableWidget
 		when :end
 			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
+		when :popupmenu
+			rightclick(@caret_x*@font_width + @arrow_zone_w+1, @caret_y*@font_height)
 		else return false
 		end
 		true

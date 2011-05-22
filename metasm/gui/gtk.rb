@@ -342,7 +342,7 @@ class DrawableWidget < Gtk::DrawingArea
 		toplevel.addsubmenu(*a, &b)
 	end
 	def popupmenu(m, x, y)
-		toplevel.popupmenu(m, x+allocation.x, y+allocation.y)
+		toplevel.popupmenu(m, (x+allocation.x).to_i, (y+allocation.y).to_i)
 	end
 
 	# update @hl_word from a line & offset, return nil if unchanged
