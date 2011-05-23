@@ -59,4 +59,17 @@ class TestX86_64 < Test::Unit::TestCase
 		assert_equal('r12b', op["\x41\xfe\xc4"])
 		assert_equal('[rip-6+12h]', op["\x8d\x05\x0c\0\0\0"])
 	end
+
+	def test_opsz
+		assert_equal("\x66\x98", assemble("cbw"))
+		assert_equal("\x98", assemble("cwde"))
+		assert_equal("\x48\x98", assemble("cdqe"))
+
+		assert_equal("\x0f\xc7\x08", assemble("cmpxchg8b [rax]"))
+		assert_equal("\x48\x0f\xc7\x08", assemble("cmpxchg16b [rax]"))
+
+		assert_equal(nil, disassemble("\x66\x0f\xc7\x08").decoded[0])
+		assert_equal('cmpxchg8b', disassemble("\x47\x0f\xc7\x08").decoded[0].opcode.name)
+		assert_equal('cmpxchg16b', disassemble("\x48\x0f\xc7\x08").decoded[0].opcode.name)
+	end
 end

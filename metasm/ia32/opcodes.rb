@@ -42,10 +42,8 @@ class Ia32
 		addop 'call',  [0xFF], 2,    {}, :stopexec, :setip, :saveip
 		addop('cbw',   [0x98]) { |o| o.props[:opsz] = 16 }
 		addop('cwde',  [0x98]) { |o| o.props[:opsz] = 32 }
-		addop('cdqe',  [0x98]) { |o| o.props[:opsz] = 64 }
 		addop('cwd',   [0x99]) { |o| o.props[:opsz] = 16 }
 		addop('cdq',   [0x99]) { |o| o.props[:opsz] = 32 }
-		addop('cqo',   [0x99]) { |o| o.props[:opsz] = 64 }
 		addop_macro1 'cmp', 7
 		addop_macrostr 'cmps',  [0xA6], :stropz
 		addop 'dec',   [0x48], :reg
@@ -354,7 +352,7 @@ class Ia32
 	def init_pentium_only
 		init_cpu_constants
 
-		addop 'cmpxchg8b', [0x0F, 0xC7], 1
+		addop('cmpxchg8b', [0x0F, 0xC7], 1) { |o| o.props[:opsz] = 32 ; o.props[:argsz] = 64 }
 		# lock cmpxchg8b eax
 		#addop 'f00fbug', [0xF0, 0x0F, 0xC7, 0xC8]
 

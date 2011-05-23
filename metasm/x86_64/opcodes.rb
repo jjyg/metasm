@@ -47,6 +47,9 @@ class X86_64
 			 lds les loadall arpl pusha pushad popa popad].include?(o.name)
 		}
 
+		addop('cdqe', [0x98]) { |o| o.props[:opsz] = 64 }
+		addop('cqo',  [0x99]) { |o| o.props[:opsz] = 64 }
+		addop('cmpxchg16b', [0x0F, 0xC7], 1) { |o| o.props[:opsz] = 64 ; o.props[:argsz] = 128 }
 		addop 'swapgs',  [0x0F, 0x01, 0xF8]
 	end
 

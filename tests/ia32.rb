@@ -44,6 +44,17 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(assemble("jmp.i32 $"), "\xe9\xfb\xff\xff\xff")
 	end
 
+	def test_opsz
+		assert_equal(assemble("cbw"), "\x66\x98")
+		assert_equal(assemble("cwde"), "\x98")
+
+		assert_equal(assemble("cbw", @@cpu16), "\x98")
+		assert_equal(assemble("cwde", @@cpu16), "\x66\x98")
+
+		assert_equal(assemble("cmpxchg8b [eax]"), "\x0f\xc7\x08")
+		assert_equal(assemble("cmpxchg8b [bx]", @@cpu16), "\x66\x0f\xc7\x0f")
+	end
+
 	def test_mrmsz
 		assert_equal(assemble("mov [eax], ebx"), "\x89\x18")
 		assert_equal(assemble("mov [eax], bl"), "\x88\x18")
@@ -77,6 +88,9 @@ class TestIa32 < Test::Unit::TestCase
 		d = disassemble("\x90")
 		assert_equal(d.decoded[0].class, Metasm::DecodedInstruction)
 		assert_equal(d.decoded[0].opcode.name, "nop")
+
+		assert_equal(disassemble("\x66\x0f\xc7\x08").decoded[0], nil)
+		assert_equal(disassemble("\x0f\xc7\x08").decoded[0].opcode.name, 'cmpxchg8b')
 	end
 
 end

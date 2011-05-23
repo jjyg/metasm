@@ -213,11 +213,9 @@ class Ia32
 					opsz = ia.sz
 				end
 			}
-			pfx << 0x66 if (not op.props[:argsz] or opsz != op.props[:argsz]) and (
-				(opsz and size == 48 - opsz) or (op.props[:opsz] and op.props[:opsz] != size))
-			if op.props[:opsz] and size == 48 - op.props[:opsz]
-				opsz = op.props[:opsz]
-			end
+			pfx << 0x66 if (op.props[:opsz] and op.props[:opsz] != size) or 
+					(not op.props[:argsz] and opsz and size == 48 - opsz)
+			opsz ||= op.props[:opsz]
 		end
 		opsz ||= size
 

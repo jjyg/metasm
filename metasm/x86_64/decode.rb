@@ -110,7 +110,7 @@ class X86_64
 			end
 		end
 
-		opsz = op.props[:argsz] || (pfx[:rex_w] ? 64 : (pfx[:opsz] ? 16 : (op.props[:auto64] ? 64 : 32)))
+		opsz = op.props[:argsz] || opsz(di)
 		adsz = pfx[:adsz] ? 32 : 64
 		mmxsz = (op.props[:xmmx] && pfx[:opsz]) ? 128 : 64
 

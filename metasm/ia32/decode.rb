@@ -185,13 +185,8 @@ class Ia32
 			end
 		}
 
-		opsz = opsz(di)
-
-		if pfx[:adsz]
-			adsz = 48 - @size
-		else
-			adsz = @size
-		end
+		opsz = op.props[:argsz] || opsz(di)
+		adsz = (pfx[:adsz] ? 48 - @size : @size)
 
 		mmxsz = ((op.props[:xmmx] && pfx[:opsz]) ? 128 : 64)
 		op.args.each { |a|
@@ -311,10 +306,9 @@ class Ia32
 	def backtrace_binding=(b) @backtrace_binding = b end
 
 	def opsz(di)
-		ret = @size
-		ret = di.opcode.props[:argsz] if di and di.opcode.props[:argsz]
-		ret = 48 - ret if di and not di.opcode.props[:argsz] and di.instruction.prefix and di.instruction.prefix[:opsz]
-		ret
+		if di and di.instruction.prefix and di.instruction.prefix[:opsz]; 48-@size
+		else @size
+		end
 	end
 
 	# populate the @backtrace_binding hash with default values
