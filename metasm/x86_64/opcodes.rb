@@ -87,7 +87,11 @@ class X86_64
 			dop
 		}
 
-		@opcode_list << op
+		if op.props[:needpfx] and @opcode_list.find { |oo| (oo.name == op.name or oo.bin == op.bin) and not oo.props[:needpfx] }
+			@opcode_list.unshift op
+		else
+			@opcode_list << op
+		end
 
 		if op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret'
 			# define opsz-override version for ambiguous opcodes
