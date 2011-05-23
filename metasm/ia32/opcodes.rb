@@ -237,8 +237,8 @@ class Ia32
 		addop 'icebp', [0xF1]
 		#addop 'loadall',[0x0F, 0x07]	# conflict with syscall
 		addop 'ud0',   [0x0F, 0xFF]	# amd
-		addop 'ud1',   [0x0F, 0xB9]
-		addop 'umov',  [0x0F, 0x10], :mrmw,{:d => [1, 1]}
+		addop 'ud2',   [0x0F, 0xB9], :mrm
+		addop 'umov',  [0x0F, 0x10], :mrmw, {:d => [1, 1]}
 	end
 
 	def init_387_only
@@ -490,15 +490,10 @@ class Ia32
 		addop 'prefetcht2', [0x0F, 0x18, 3<<3], :modrmA
 		addop 'prefetchnta',[0x0F, 0x18, 0<<3], :modrmA
 		addop 'sfence',  [0x0F, 0xAE, 0xF8]
-		# variants of prefetch are actually nops (or similar)
-		addop 'nop_und0', [0x0F, 0x18], 0
-		addop 'nop_und1', [0x0F, 0x18], 1
-		addop 'nop_und2', [0x0F, 0x18], 2
-		addop 'nop_und3', [0x0F, 0x18], 3
-		addop 'nop_und4', [0x0F, 0x18], 4
-		addop 'nop_und5', [0x0F, 0x18], 5
-		addop 'nop_und6', [0x0F, 0x18], 6
-		addop 'nop_und7', [0x0F, 0x18], 7
+		# the whole row of prefetch is actually nops
+		addop 'nop', [0x0F, 0x1C], :mrmw, :d => [1, 1]	# incl. official version = 0f1f mrm
+		addop 'nop_8', [0x0F, 0x18], :mrmw, :d => [1, 1]
+		addop 'nop_d', [0x0F, 0x0D], :mrm
 	end
 
 	# XXX must be done after init_sse (patches :regmmx opcodes)
@@ -567,7 +562,6 @@ class Ia32
 		addop 'rdtscp', [0x0F, 0x01, 0xF9]
 		addop 'xrstor', [0x0F, 0xAE, 5<<3], :modrmA
 		addop 'xsave',  [0x0F, 0xAE, 4<<3], :modrmA
-		addop 'nop', [0x0F, 0x1F], 0	# which family does this belong to ?
 	end
 
 	def init_sse42_only
@@ -856,7 +850,7 @@ class Ia32
 			@opcode_list << op
 		end
 
-		if op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret'
+		if op.args == [:i] or op.args == [:farptr] or op.name =~ /^i?ret/
 			# define opsz-override version for ambiguous opcodes
 			op16 = dupe[op]
 			op16.name << '.i16'

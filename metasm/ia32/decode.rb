@@ -149,7 +149,7 @@ class Ia32
 				  (sz = op.props[:opsz] and opsz(di) != sz) or
 				  (ndpfx = op.props[:needpfx] and not pfx[:list].to_a.include? ndpfx) or
 				  # return non-ambiguous opcode (eg push.i16 in 32bit mode) / sync with addop_post in opcode.rb
-				  (pfx[:opsz] and (op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret') and not op.props[:opsz]) or
+				  (pfx[:opsz] and (op.args == [:i] or op.args == [:farptr] or op.name =~ /^i?ret/) and not op.props[:opsz]) or
 				  (pfx[:adsz] and op.props[:adsz] and op.props[:adsz] == @size)
 				 )
 			}
@@ -261,7 +261,7 @@ class Ia32
 	# adds the eip delta to the offset +off+ of the instruction (may be an Expression) + its bin_length
 	# do not call twice on the same di !
 	def decode_instr_interpret(di, addr)
-		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.instruction.opname[0, 3] != 'ret'
+		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.instruction.opname !~ /^i?ret/
 			delta = di.instruction.args.last.reduce
 			arg = Expression[[addr, :+, di.bin_length], :+, delta].reduce
 			di.instruction.args[-1] = Expression[arg]

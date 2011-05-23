@@ -93,7 +93,7 @@ class X86_64
 			@opcode_list << op
 		end
 
-		if op.args == [:i] or op.args == [:farptr] or op.name[0, 3] == 'ret'
+		if op.args == [:i] or op.args == [:farptr] or op.name =~ /^i?ret/
 			# define opsz-override version for ambiguous opcodes
 			op16 = dupe[op]
 			op16.name << '.i16'
