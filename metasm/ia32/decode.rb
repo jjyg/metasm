@@ -367,7 +367,7 @@ class Ia32
 			when 'pop'
 				lambda { |di, a0| { esp => Expression[esp, :+, opsz(di)/8],
 					a0 => Indirection[esp, opsz(di)/8, di.address] } }
-			when 'pushfd'
+			when 'pushfd', 'pushf'
 				# TODO Unknown per bit
 				lambda { |di|
 					efl = Expression[0x202]
@@ -378,7 +378,7 @@ class Ia32
 					bts[11, :eflag_o]
 					{ esp => Expression[esp, :-, opsz(di)/8], Indirection[esp, opsz(di)/8, di.address] => efl }
 			       	}
-			when 'popfd'
+			when 'popfd', 'popf'
 				lambda { |di| bt = lambda { |pos| Expression[[Indirection[esp, opsz(di)/8, di.address], :>>, pos], :&, 1] }
 					{ esp => Expression[esp, :+, opsz(di)/8], :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7], :eflag_o => bt[11] } }
 			when 'sahf'
@@ -563,7 +563,8 @@ class Ia32
 				a0 => Expression[a0, :^, [1, :<<, [a1, :%, opsz(di)]]] } }
 			when 'bswap'
 				lambda { |di, a0|
-					if opsz(di) == 64
+					case opsz(di)
+					when 64
 						{ a0 => Expression[
 							[[[[a0, :&, 0xff000000_00000000], :>>, 56],   :|,
 							  [[a0, :&, 0x00ff0000_00000000], :>>, 40]],  :|,
@@ -573,12 +574,15 @@ class Ia32
 							  [[a0, :&, 0x00000000_00ff0000], :<<, 24]],  :|,
 							 [[[a0, :&, 0x00000000_0000ff00], :<<, 40],   :|,
 							  [[a0, :&, 0x00000000_000000ff], :<<, 56]]]] }
-					else	# XXX opsz != 32 => undef
+					when 32
 						{ a0 => Expression[
 							[[[a0, :&, 0xff000000], :>>, 24],  :|,
 							 [[a0, :&, 0x00ff0000], :>>,  8]], :|,
 							[[[a0, :&, 0x0000ff00], :<<,  8],  :|,
 							 [[a0, :&, 0x000000ff], :<<, 24]]] }
+					when 16
+						# bswap ax => mov ax, 0
+						{ a0 => 0 }
 					end
 				}
 			when 'nop', 'pause', 'wait', 'cmp', 'test'; lambda { |di, *a| {} }
