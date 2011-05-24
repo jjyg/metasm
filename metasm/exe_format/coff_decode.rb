@@ -18,12 +18,13 @@ class COFF
 		# also decodes directories in coff.directory
 		def decode(coff)
 			return set_default_values(coff) if coff.header.size_opthdr == 0
+			off = coff.curencoded.ptr
 			super(coff)
+			nrva = (coff.header.size_opthdr - (coff.curencoded.ptr - off)) / 8
 
-			nrva = @numrva
-			if @numrva > DIRECTORIES.length
-				puts "W: COFF: Invalid directories count #{@numrva}" if $VERBOSE
-				nrva = DIRECTORIES.length
+			if nrva > DIRECTORIES.length or nrva != @numrva
+				puts "W: COFF: Weird directories count #{@numrva}" if $VERBOSE
+				nrva = DIRECTORIES.length if nrva > DIRECTORIES.length
 			end
 
 			coff.directory = {}
@@ -426,8 +427,7 @@ class COFF
 	def sect_at_rva(rva)
 		return if not rva or rva <= 0
 		if sections and not @sections.empty?
-			valign = lambda { |l| EncodedData.align_size(l, @optheader.sect_align) }
-			if s = @sections.find { |s_| s_.virtaddr <= rva and s_.virtaddr + valign[s_.virtsize] > rva }
+			if s = @sections.find { |s_| s_.virtaddr <= rva and s_.virtaddr + EncodedData.align_size((s_.virtsize == 0 ? s_.rawsize : s_.virtsize), @optheader.sect_align) > rva }
 				s.encoded.ptr = rva - s.virtaddr
 				@cursection = s
 			elsif rva < @sections.map { |s_| s_.virtaddr }.min
@@ -566,8 +566,10 @@ class COFF
 	# decodes a section content (allows simpler LoadedPE override)
 	def decode_section_body(s)
 		raw = EncodedData.align_size(s.rawsize, @optheader.file_align)
-		virt = EncodedData.align_size(s.virtsize, @optheader.sect_align)
+		virt = s.virtsize
 		virt = raw = s.rawsize if @header.size_opthdr == 0
+		virt = raw if virt == 0
+		virt = EncodedData.align_size(virt, @optheader.sect_align)
 		s.encoded = @encoded[s.rawaddr, [raw, virt].min] || EncodedData.new
 		s.encoded.virtsize = virt
 	end
