@@ -243,8 +243,10 @@ EOS
 			old_cp = d.c_parser
 			d.c_parser = nil
 			d.parse_c '__stdcall void *GetProcAddress(int, char *);'
+			d.parse_c '__stdcall void ExitProcess(int) __attribute__((noreturn));'
 			d.c_parser.lexer.define_weak('__MS_X86_64_ABI__') if @cpu.kind_of? X86_64
 			gpa = @cpu.decode_c_function_prototype(d.c_parser, 'GetProcAddress')
+			epr = @cpu.decode_c_function_prototype(d.c_parser, 'ExitProcess')
 			d.c_parser = old_cp
 			d.parse_c ''
 			d.c_parser.lexer.define_weak('__MS_X86_64_ABI__') if @cpu.kind_of? X86_64
@@ -268,6 +270,7 @@ EOS
 				bind
 			}
 			d.function[Expression['GetProcAddress']] = gpa
+			d.function[Expression['ExitProcess']] = epr
 			d.function[:default] = @cpu.disassembler_default_func
 		end
 		d
