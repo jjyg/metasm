@@ -411,9 +411,25 @@ class Ia32
 					ret
 				}
 			when 'call'
-				lambda { |di, a0| { esp => Expression[esp, :-, opsz(di)/8],
-					Indirection[esp, opsz(di)/8, di.address] => Expression[di.next_addr] } }
+				lambda { |di, a0|
+					sz = opsz(di)/8
+					if a0.kind_of? Farptr
+						{ esp => Expression[esp, :-, 2*sz],
+						  Indirection[esp, sz, di.address] => Expression[di.next_addr],
+						  Indirection[[esp, :+, sz], sz, di.address] => Expression::Unknown }
+					else
+						{ esp => Expression[esp, :-, sz],
+						  Indirection[esp, sz, di.address] => Expression[di.next_addr] }
+					end
+				}
+			when 'callf'
+				lambda { |di, a0|
+					sz = opsz(di)/8
+					{ esp => Expression[esp, :-, 2*sz],
+					  Indirection[esp, sz, di.address] => Expression[di.next_addr],
+					  Indirection[[esp, :+, sz], sz, di.address] => Expression::Unknown } }
 			when 'ret'; lambda { |di, *a| { esp => Expression[esp, :+, [opsz(di)/8, :+, a[0] || 0]] } }
+			when 'retf';lambda { |di, *a| { esp => Expression[esp, :+, [opsz(di)/4, :+, a[0] || 0]] } }
 			when 'loop', 'loopz', 'loopnz'; lambda { |di, a0| { ecx => Expression[ecx, :-, 1] } }
 			when 'enter'
 				lambda { |di, a0, a1|
