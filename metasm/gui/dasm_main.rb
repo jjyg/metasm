@@ -138,17 +138,17 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 
 	# display the specified address
-	# the display first searches in the current view (graph, listing, etc),
-	# if it cannot display the address all other views are tried in order
+	# the display first searches in the current view
+	# if it cannot display the address, the listing, graph and decompile views are tried (in that order)
 	# the current focus address is saved in @pos_history (see focus_addr_back/redo)
-	# a messagebox is popped if no view can display the address unless quiet is true
+	# if quiet is false, a messagebox is popped if no view can display the address
 	def focus_addr(addr, viewidx=nil, quiet=false, *a)
 		viewidx ||= curview_index || :listing
 		return if not addr
 		return if viewidx == curview_index and addr == curaddr
 		oldpos = [curview_index, (curview.get_cursor_pos if curview)]
 		views = [viewidx, oldpos[0]]
-		views += [:listing, :graph] & view_indexes
+		views += [:listing, :graph, :decompile] & view_indexes
 		if views.compact.uniq.find { |i|
 			o_p = view(i).get_cursor_pos
 			if (view(i).focus_addr(addr, *a) rescue nil)
