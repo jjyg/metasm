@@ -504,7 +504,7 @@ class AsmListingWidget < DrawableWidget
 						comment = nil if comment.empty?
 						len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or s.inv_export[s.ptr+l] or s.reloc[s.ptr+l] } || len
 						str = str[0, len] if len < str.length
-						str = str.pack('C*').unpack(@dasm.cpu.endianness == :big ? 'n*' : 'v*') if len == 2
+						str = str.pack('C*').unpack(@dasm.cpu.endianness == :big ? 'n*' : 'v*') if xlen == 2
 						if (xlen == 1 or xlen == 2) and asc = str.inject('') { |asc_, c|
 								case c
 								when 0x20..0x7e, 9, 10, 13; asc_ << c
