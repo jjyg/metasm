@@ -17,10 +17,11 @@ class COFF
 		# decodes a COFF optional header from coff.cursection
 		# also decodes directories in coff.directory
 		def decode(coff)
-			return set_default_values(coff) if coff.header.size_opthdr == 0
+			return set_default_values(coff) if coff.header.size_opthdr == 0 and not coff.header.characteristics.include?('EXECUTABLE_IMAGE')
 			off = coff.curencoded.ptr
 			super(coff)
 			nrva = (coff.header.size_opthdr - (coff.curencoded.ptr - off)) / 8
+			nrva = @numrva if nrva < 0
 
 			if nrva > DIRECTORIES.length or nrva != @numrva
 				puts "W: COFF: Weird directories count #{@numrva}" if $VERBOSE
@@ -480,6 +481,11 @@ class COFF
 
 	def each_section
 		if @header.size_opthdr == 0
+			if @sections.empty?
+				base = @optheader.image_base
+				base = 0 if not base.kind_of? Integer
+				yield @encoded[0, 4096], base
+			end
 			@sections.each { |s|
 				next if not s.encoded
 				l = new_label(s.name)
