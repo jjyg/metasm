@@ -2002,6 +2002,11 @@ class WinDebugger < Debugger
 		end
 	end
 
+	def del_pid
+		WinAPI.debugactiveprocessstop(@pid) if WinAPI.respond_to? :debugactiveprocessstop
+		super()
+	end
+
 	def break
 		return if @state != :running
 		# debugbreak() will create a new thread to 0xcc, but wont touch existing threads
@@ -2022,9 +2027,7 @@ class WinDebugger < Debugger
 
 	def detach
 		del_all_breakpoints
-		if WinAPI.respond_to? :debugactiveprocessstop
-			WinAPI.debugactiveprocessstop(@pid)
-		else
+		if not WinAPI.respond_to? :debugactiveprocessstop
 			raise 'detach not supported'
 		end
 		del_pid
