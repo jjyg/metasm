@@ -650,11 +650,11 @@ class COFF
 
 	# append the section bodies to @encoded, and link the resulting binary
 	def encode_sections_fixup
-		@encoded.align @optheader.file_align
 		if @optheader.headers_size.kind_of?(::String)
 			@encoded.fixup! @optheader.headers_size => @encoded.virtsize
 			@optheader.headers_size = @encoded.virtsize
 		end
+		@encoded.align @optheader.file_align
 
 		baseaddr = @optheader.image_base.kind_of?(::Integer) ? @optheader.image_base : 0x400000
 		binding = @encoded.binding(baseaddr)
