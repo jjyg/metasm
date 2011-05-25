@@ -480,12 +480,7 @@ class COFF
 	end
 
 	def each_section
-		if @header.size_opthdr == 0
-			if @sections.empty?
-				base = @optheader.image_base
-				base = 0 if not base.kind_of? Integer
-				yield @encoded[0, 4096], base
-			end
+		if @header.size_opthdr == 0 and not @header.characteristics.include?('EXECUTABLE_IMAGE')
 			@sections.each { |s|
 				next if not s.encoded
 				l = new_label(s.name)
@@ -496,7 +491,9 @@ class COFF
 		end
 		base = @optheader.image_base
 		base = 0 if not base.kind_of? Integer
-		yield @encoded[0, @optheader.headers_size], base
+		sz = @optheader.headers_size
+		sz = EncodedData.align_size(@optheader.image_size, 4096) if @sections.empty?
+		yield @encoded[0, sz], base
 		@sections.each { |s| yield s.encoded, base + s.virtaddr }
 	end
 
