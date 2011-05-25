@@ -508,6 +508,9 @@ class Disassembler
 		@c_parser ||= @cpu.new_cparser
 		@c_parser.lexer.define_weak('__METASM__DECODE__')
 		@c_parser.parse(str, filename, lineno)
+	rescue ParseError
+		@c_parser.lexer.feed! ''
+		raise
 	end
 
 	# returns the canonical form of addr (absolute address integer or label of start of section + section offset)

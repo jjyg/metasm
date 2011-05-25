@@ -500,6 +500,7 @@ class Preprocessor
 		@lineno = lineno
 		@pos = 0
 		@queue = []
+		@backtrace = []
 		self
 	end
 
