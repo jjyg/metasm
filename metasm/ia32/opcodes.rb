@@ -816,6 +816,8 @@ class Ia32
 			# hardcode the bit
 			dop = dupe[op]
 			dop.props[:argsz] = 8
+			# 64-bit w=0 s=1 => UD
+			dop.fields.delete(:s) if @size == 64
 			addop_post dop
 
 			op.bin[wf[0]] |= 1 << wf[1]
