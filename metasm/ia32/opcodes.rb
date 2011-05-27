@@ -152,8 +152,8 @@ class Ia32
 		addop 'into',  [0xCE]
 		addop 'invd',  [0x0F, 0x08]
 		addop 'invlpg',[0x0F, 0x01, 7<<3], :modrmA
-		addop 'iret',  [0xCF], nil,  {}, :stopexec, :setip
-		addop 'iretd', [0xCF], nil,  {}, :stopexec, :setip
+		addop('iretd', [0xCF], nil,  {}, :stopexec, :setip) { |o| o.props[:opsz] = 32 }
+		addop_macroret 'iret', [0xCF]
 		addop('jcxz',  [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 16 }
 		addop('jecxz', [0xE3], nil,  {}, :setip, :i8) { |o| o.props[:opsz] = 32 }
 		addop 'jmp',   [0xEA], nil,  {}, :farptr, :setip, :stopexec
@@ -202,8 +202,8 @@ class Ia32
 		addop 'rdmsr', [0x0F, 0x32]
 		addop 'rdpmc', [0x0F, 0x33]
 		addop 'rdtsc', [0x0F, 0x31], nil, {}, :random
-		addop 'retf',  [0xCB], nil,  {}, :stopexec, :setip
-		addop 'retf',  [0xCA], nil,  {}, :stopexec, :u16, :setip
+		addop_macroret 'retf', [0xCB]
+		addop_macroret 'retf', [0xCA], :u16
 		addop 'rsm',   [0x0F, 0xAA], nil, {}, :stopexec
 		addop 'sahf',  [0x9E]
 		addop 'sgdt',  [0x0F, 0x01, 0<<3], :modrmA
@@ -721,6 +721,13 @@ class Ia32
 		addop(name.tr('p', 's'), bin, hint) { |o| o.props[:needpfx] = 0xF3 }
 	end
 
+	# special ret (iret/retf), that still default to 32b mode in x64
+	def addop_macroret(name, bin, *args)
+		addop(name + '.i32', bin, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = 32 }
+		addop(name + '.i16', bin, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = 16 }
+		addop(name, bin, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = @size }
+	end
+
 	# helper function: creates a new Opcode based on the arguments, eventually
 	# yields it for further customisation, and append it to the instruction set
 	# is responsible of the creation of disambiguating opcodes if necessary (:s flag hardcoding)
@@ -848,7 +855,7 @@ class Ia32
 			@opcode_list << op
 		end
 
-		if op.args == [:i] or op.args == [:farptr] or op.name =~ /^i?ret/
+		if op.args == [:i] or op.args == [:farptr] or op.name == 'ret'
 			# define opsz-override version for ambiguous opcodes
 			op16 = dupe[op]
 			op16.name << '.i16'

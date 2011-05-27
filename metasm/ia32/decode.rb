@@ -150,7 +150,7 @@ class Ia32
 				  (ndpfx = op.props[:needpfx] and not pfx[:list].to_a.include? ndpfx) or
 				  (pfx[:adsz] and op.props[:adsz] and op.props[:adsz] == @size) or
 				  # return non-ambiguous opcode (eg push.i16 in 32bit mode) / sync with addop_post in opcode.rb
-				  (pfx[:opsz] and not op.props[:opsz] and (op.args == [:i] or op.args == [:farptr] or op.name =~ /^i?ret/)) or
+				  (pfx[:opsz] and not op.props[:opsz] and (op.args == [:i] or op.args == [:farptr] or op.name == 'ret')) or
 				  (pfx[:adsz] and not op.props[:adsz] and (op.props[:strop] or op.props[:stropz] or op.args.include?(:mrm_imm) or op.args.include?(:modrm) or op.args.include?(:modrmA) or op.name =~ /loop|xlat/))
 				 )
 			}

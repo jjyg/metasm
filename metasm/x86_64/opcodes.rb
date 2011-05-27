@@ -43,13 +43,15 @@ class X86_64
 		@opcode_list.delete_if { |o|
 			o.args.include?(:seg2) or
 			o.args.include?(:seg2A) or
-			%w[aaa aad aam aas bound daa das
+			o.args.include?(:farptr) or
+			%w[aaa aad aam aas bound daa das into
 			 lds les loadall arpl pusha pushad popa popad].include?(o.name)
 		}
 
 		addop('cdqe', [0x98]) { |o| o.props[:opsz] = 64 }
 		addop('cqo',  [0x99]) { |o| o.props[:opsz] = 64 }
 		addop('cmpxchg16b', [0x0F, 0xC7], 1) { |o| o.props[:opsz] = 64 ; o.props[:argsz] = 128 }
+		addop('iretq', [0xCF], nil,  {}, :stopexec, :setip) { |o| o.props[:opsz] = 64 } ; opcode_list.unshift opcode_list.pop
 		addop 'swapgs',  [0x0F, 0x01, 0xF8]
 	end
 
@@ -79,6 +81,11 @@ class X86_64
 		addop(name+'q', bin) { |o| o.props[:opsz] = 64 ; o.props[type] = true }
 	end
 
+	def addop_macroret(name, bin, *args)
+		addop(name + '.i64', bin, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = 64 }
+		super(name, bin, *args)
+	end
+
 	def addop_post(op)
 		if op.fields[:d] or op.fields[:w] or op.fields[:s] or op.args.first == :regfp0
 			return super(op)
@@ -96,7 +103,7 @@ class X86_64
 			@opcode_list << op
 		end
 
-		if op.args == [:i] or op.args == [:farptr] or op.name =~ /^i?ret/
+		if op.args == [:i] or op.name == 'ret'
 			# define opsz-override version for ambiguous opcodes
 			op16 = dupe[op]
 			op16.name << '.i16'
