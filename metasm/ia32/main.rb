@@ -60,6 +60,10 @@ class Ia32 < CPU
 			}
 		end
 
+		public
+		def ==(o)
+			self.class == o.class and instance_variables.all? { |i| instance_variable_get(i) == o.instance_variable_get(i) }
+		end
 	end
 
 
