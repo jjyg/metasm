@@ -1750,6 +1750,7 @@ class WinDebugger < Debugger
 		@os_process = WinOS::Process.new(processinfo.dwprocessid, processinfo.hprocess)
 		@os_thread  = WinOS::Thread.new(processinfo.dwthreadid, processinfo.hthread, @os_process)
 		initialize_osprocess
+		check_target
 	end
 
 	# called whenever we receive a handle to a new process being debugged, after initialisation of @os_process
