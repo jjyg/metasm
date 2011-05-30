@@ -2002,7 +2002,14 @@ class WinDebugger < Debugger
 		end
 	end
 
+	def del_tid
+		# tell Windows to release the THREAD object
+		WinAPI.continuedebugevent(@pid, @tid, @continuecode)
+		super()
+	end
+
 	def del_pid
+		# tell Windows to release the PROCESS object
 		WinAPI.debugactiveprocessstop(@pid) if WinAPI.respond_to? :debugactiveprocessstop
 		super()
 	end
