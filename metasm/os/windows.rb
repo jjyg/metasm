@@ -2038,6 +2038,9 @@ class WinDebugger < Debugger
 		if not WinAPI.respond_to? :debugactiveprocessstop
 			raise 'detach not supported'
 		end
+		# if we detach after a dbgevt and before calling continuedbgevent, the thread
+		# may receive unhandled exceptions (eg BPX) and crash the process right after detach
+		each_tid { do_continue }
 		del_pid
 	end
 
