@@ -206,7 +206,7 @@ class Ia32
 			when :i; Expression[edata.decode_imm("#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym, @endianness)]
 
 			when :mrm_imm;  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx.delete(:seg)
-			when :modrm, :modrmA; ModRM.decode edata, field_val[a], @endianness, adsz, opsz, pfx.delete(:seg)
+			when :modrm, :modrmA; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg)
 			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg
 			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg
 

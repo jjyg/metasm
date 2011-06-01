@@ -741,7 +741,7 @@ class Ia32
 		when :mrm, :mrmw, :mrmA
 			h = (hint == :mrmA ? :modrmA : :modrm)
 			op.fields[:reg]   = [bin.length, 3]
-			op.fields[h] = [bin.length, 0]
+			op.fields[:modrm] = [bin.length, 0]
 			op.fields[:w]     = [bin.length - 1, 0] if hint == :mrmw
 			argprops.unshift :reg, h
 			op.bin << 0
@@ -752,7 +752,7 @@ class Ia32
 			op.fields[:regfp] = [bin.length-1, 0]
 			argprops.unshift :regfp, :regfp0
 		when :modrmA
-			op.fields[:modrmA] = [bin.length-1, 0]
+			op.fields[:modrm] = [bin.length-1, 0]
 			argprops << :modrmA
 
 		when Integer		# mod/m, reg == opcode extension = hint
