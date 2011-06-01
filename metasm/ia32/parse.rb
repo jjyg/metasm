@@ -106,7 +106,7 @@ class ModRM
 					s = o.lexpr
 					i = o.rexpr
 					s, i = i, s if s.kind_of? Reg
-					raise otok, 'mrm: bad scale' unless s.kind_of? Integer
+					raise otok, "mrm: bad scale #{s}" unless [1, 2, 4, 8].include?(s)
 				elsif o.op == :+
 					# recurse
 					walker[o.lexpr]
