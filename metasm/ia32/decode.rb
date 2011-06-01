@@ -726,8 +726,8 @@ class Ia32
 		when 'ret'; return [Indirection[register_symbols[4], sz/8, di.address]]
 		when 'jmp', 'call'
 			a = di.instruction.args.first
-			if dasm and a.kind_of?(ModRM) and a.imm and a.s == sz/8 and not a.b and dasm.get_section_at(a.imm)
-				return get_xrefs_x_jmptable(dasm, di, a, sz)
+			if dasm and a.kind_of?(ModRM) and a.imm and (a.s == sz/8 or a.s == 4) and not a.b and dasm.get_section_at(a.imm)
+				return get_xrefs_x_jmptable(dasm, di, a, a.s*8)
 			end
 		end
 
