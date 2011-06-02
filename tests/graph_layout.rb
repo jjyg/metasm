@@ -57,6 +57,12 @@ multidiamond -> 2 -> 31 -> 32 -> 34 -> 5 -> 6 -> 8;
 31 -> 33 -> 34;
 EOS
 	test_layout <<EOS
+dmdout -> 2 -> 3a -> 4;
+2 -> 3b -> 4;
+3a -> 4a;
+3b -> 4b;
+EOS
+	test_layout <<EOS
 ifthenthen -> 2 -> 8;
 2 -> 3 -> 8;
 2 -> 4 -> 5 -> 8;
@@ -99,6 +105,40 @@ cascade -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> e;
 4 -> 41 -> e;
 5 -> 51 -> e;
 6 -> 61 -> e;
+EOS
+	test_layout <<EOS
+rstair -> 2 -> 3 -> 4 -> 5 -> 6;
+2 -> 4;
+2 -> 5;
+2 -> 6;
+EOS
+	test_layout <<EOS
+drstair -> 2a -> 3 -> 4 -> 5 -> 6;
+drstair -> 2b -> 4;
+2a -> 4;
+2a -> 5;
+2a -> 6;
+2b -> 4;
+2b -> 5;
+2b -> 6;
+EOS
+	test_layout <<EOS
+mrstair -> 2a -> 3a -> 4a -> 5a -> 6a;
+mrstair -> 2b -> 4a;
+2a -> 4a;
+2a -> 5a;
+2a -> 6a;
+2b -> 4a;
+2b -> 5a;
+2b -> 6a;
+2a -> 3b -> 4b -> 5b -> 6b;
+2a -> 4b;
+2a -> 5b;
+2a -> 6b;
+2b -> 3b;
+2b -> 4b;
+2b -> 5b;
+2b -> 6b;
 EOS
 	test_layout <<EOS
 loop -> 2 -> 3 -> 4;
