@@ -34,6 +34,10 @@ class Ia32 < CPU
 					@val = v
 				end
 
+				def ==(o)
+					self.class == o.class and val == o.val
+				end
+
 				def self.from_str(s) new(@s_to_i[s]) end
 			}
 		end
@@ -53,16 +57,15 @@ class Ia32 < CPU
 					@sz = sz
 				end
 
+				def ==(o)
+					self.class == o.class and val == o.val and sz == o.sz
+				end
+
 				def self.from_str(s)
 					raise "Bad #{name} #{s.inspect}" if not x = @s_to_i[s]
 					new(*x)
 				end
 			}
-		end
-
-		public
-		def ==(o)
-			self.class == o.class and instance_variables.all? { |i| instance_variable_get(i) == o.instance_variable_get(i) }
 		end
 	end
 
@@ -137,6 +140,10 @@ class Ia32 < CPU
 		def initialize(seg, addr)
 			@seg, @addr = seg, addr
 		end
+
+		def ==(o)
+			self.class == o.class and seg == o.seg and addr == o.addr
+		end
 	end
 
 	# ModRM represents indirections in x86 (eg dword ptr [eax+4*ebx+12h])
@@ -183,6 +190,10 @@ class Ia32 < CPU
 			p = Expression[p, :+, @imm] if imm
 			p = Expression["segment_base_#@seg", :+, p] if seg and seg.val != ((b && (@b.val == 4 || @b.val == 5)) ? 2 : 3)
 			Indirection[p.reduce, @sz/8, (di.address if di)]
+		end
+
+		def ==(o)
+			self.class == o.class and s == o.s and i == o.i and b == o.b and imm == o.imm and seg == o.seg and adsz == o.adsz and sz == o.sz
 		end
 	end
 
