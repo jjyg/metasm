@@ -23,8 +23,7 @@ class X86_64
 		@opcode_list.delete_if { |o| o.bin[0].to_i & 0xf0 == 0x40 }	# now REX prefix
 		@opcode_list.each { |o|
 			o.props[:imm64] = true if o.bin == [0xB8]	# mov reg, <true imm64>
-			o.props[:auto64] = true if o.name =~ /^(j|loop|(call|enter|leave|push|pop|ret)$)/
-			#o.props[:op32no64] = true if o.name =~ //	# TODO are there any instr here ?
+			o.props[:auto64] = true if o.name =~ /^(j.*|loop.*|call|enter|leave|push|pop|ret)$/
 		}
 		addop 'movsxd', [0x63], :mrm
 		addop('cdqe', [0x98]) { |o| o.props[:opsz] = 64 }
@@ -51,7 +50,7 @@ class X86_64
 		}
 
 		@opcode_list.each { |o|
-			o.props[:auto64] = true if o.name =~ /^(callf|jmpf|enter|leave|lgdt|lidt|lldt|ltr|push|pop)$/
+			o.props[:auto64] = true if o.name =~ /^(enter|leave|lgdt|lidt|lldt|ltr|push|pop)$/
 		}
 
 		addop('cmpxchg16b', [0x0F, 0xC7], 1) { |o| o.props[:opsz] = 64 ; o.props[:argsz] = 128 }
