@@ -23,10 +23,12 @@ class X86_64
 		@opcode_list.delete_if { |o| o.bin[0].to_i & 0xf0 == 0x40 }	# now REX prefix
 		@opcode_list.each { |o|
 			o.props[:imm64] = true if o.bin == [0xB8]	# mov reg, <true imm64>
-			o.props[:auto64] = true if o.name =~ /^(j|loop|(call|enter|leave|lgdt|lidt|lldt|ltr|pop|push|ret)$)/
+			o.props[:auto64] = true if o.name =~ /^(j|loop|(call|enter|leave|push|pop|ret)$)/
 			#o.props[:op32no64] = true if o.name =~ //	# TODO are there any instr here ?
 		}
 		addop 'movsxd', [0x63], :mrm
+		addop('cdqe', [0x98]) { |o| o.props[:opsz] = 64 }
+		addop('cqo',  [0x99]) { |o| o.props[:opsz] = 64 }
 	end
 
 	# all x86_64 cpu understand <= sse2 instrs
@@ -48,11 +50,13 @@ class X86_64
 			 lds les loadall arpl pusha pushad popa popad].include?(o.name)
 		}
 
-		addop('cdqe', [0x98]) { |o| o.props[:opsz] = 64 }
-		addop('cqo',  [0x99]) { |o| o.props[:opsz] = 64 }
+		@opcode_list.each { |o|
+			o.props[:auto64] = true if o.name =~ /^(callf|jmpf|enter|leave|lgdt|lidt|lldt|ltr|push|pop)$/
+		}
+
 		addop('cmpxchg16b', [0x0F, 0xC7], 1) { |o| o.props[:opsz] = 64 ; o.props[:argsz] = 128 }
 		addop('iretq', [0xCF], nil,  {}, :stopexec, :setip) { |o| o.props[:opsz] = 64 } ; opcode_list.unshift opcode_list.pop
-		addop 'swapgs',  [0x0F, 0x01, 0xF8]
+		addop 'swapgs', [0x0F, 0x01, 0xF8]
 	end
 
 	def init_sse3
