@@ -22,12 +22,6 @@ class Graph
 		#def inspect ; puts caller ; "#{Expression[@id] rescue @id.inspect}" end
 	end
 
-	# TODO
-	class MergedBox
-		attr_accessor :id, :text, :x, :y, :w, :h
-		attr_accessor :to, :from
-	end
-
 	attr_accessor :id, :box, :box_id, :root_addrs, :view_x, :view_y, :keep_split
 	def initialize(id)
 		@id = id
@@ -312,7 +306,17 @@ class Graph
 				move_group[g2, dx, 0]
 				merge_groups[[g, g2]]
 				true
-			}
+			} or (strict and groups.find { |g|
+				next if g.from.length != 2
+				next if not g2 = g.from.find { |g2_| g2_.from.length == 1 and g.from.include?(g2_.from.first) }
+				next if g2.to.length != 1
+				g2.h += 16 ; g2.y -= 8
+				align_vt[[g2, g]]
+				dx = -g2.x+8
+				move_group[g2, dx, 0]
+				merge_groups[[g, g2]]
+				true
+			})
 		}
 
 		# if (a || b) c;
