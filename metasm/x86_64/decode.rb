@@ -121,7 +121,7 @@ class X86_64
 			when :eeed;   DbgReg.new  field_val_r[a]
 			when :eeet;   TstReg.new  field_val_r[a]
 			when :seg2, :seg2A, :seg3, :seg3A; SegReg.new field_val[a]
-			when :regmmx; SimdReg.new field_val_r[a], mmxsz
+			when :regmmx; SimdReg.new field_val[a], mmxsz	# rex_r ignored
 			when :regxmm; SimdReg.new field_val_r[a], 128
 
 			when :farptr; Farptr.decode edata, @endianness, opsz
