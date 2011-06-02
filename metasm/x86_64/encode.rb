@@ -134,7 +134,7 @@ class X86_64
 			opsz = op.props[:argsz] || i.prefix[:sz]
 			oi.each { |oa, ia|
 				case oa
-				when :reg, :reg_eax, :modrm, :modrmA, :mrm_imm
+				when :reg, :reg_eax, :modrm, :mrm_imm
 					raise EncodeError, "Incompatible arg size in #{i}" if ia.sz and opsz and opsz != ia.sz
 					opsz = ia.sz
 				end
@@ -180,7 +180,7 @@ class X86_64
 				pfx << 0x66 if oa == :regmmx and op.props[:xmmx] and ia.sz == 128
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0
 				# implicit
-			when :modrm, :modrmA, :modrmmmx, :modrmxmm
+			when :modrm, :modrmmmx, :modrmxmm
 				# postpone, but we must set rex now
 				case ia
 				when ModRM
@@ -198,7 +198,7 @@ class X86_64
 			end
 		}
 
-		if !(op.args & [:modrm, :modrmA, :modrmxmm, :modrmmmx]).empty?
+		if !(op.args & [:modrm, :modrmxmm, :modrmmmx]).empty?
 			# reg field of modrm
 			regval = (base[-1] >> 3) & 7
 			base.pop
@@ -225,7 +225,7 @@ class X86_64
 		postponed.each { |oa, ia|
 			case oa
 			when :farptr; ed = ia.encode(@endianness, "a#{opsz}".to_sym)
-			when :modrm, :modrmA, :modrmmmx, :modrmxmm
+			when :modrm, :modrmmmx, :modrmxmm
 				if ia.kind_of? ModRM
 					ed = ia.encode(regval, @endianness)
 					if ed.kind_of?(::Array)

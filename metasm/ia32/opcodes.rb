@@ -15,17 +15,16 @@ class Ia32
 			:regfp => 7, :regmmx => 7, :regxmm => 7
 		@fields_mask[:seg2A]    = @fields_mask[:seg2]
 		@fields_mask[:seg3A]    = @fields_mask[:seg3]
-		@fields_mask[:modrmA]   = @fields_mask[:modrm]
 
 		@valid_args.concat [:i, :i8, :u8, :u16, :reg, :seg2, :seg2A,
-			:seg3, :seg3A, :eeec, :eeed, :eeet, :modrm, :modrmA, :mrm_imm,
+			:seg3, :seg3A, :eeec, :eeed, :eeet, :modrm, :mrm_imm,
 			:farptr, :imm_val1, :imm_val3, :reg_cl, :reg_eax,
 			:reg_dx, :regfp, :regfp0, :modrmmmx, :regmmx,
 			:modrmxmm, :regxmm] - @valid_args
 
 		@valid_props.concat [:strop, :stropz, :opsz, :argsz, :setip,
 			:stopexec, :saveip, :unsigned_imm, :random, :needpfx,
-			:xmmx] - @valid_props
+			:xmmx, :modrmR, :modrmA] - @valid_props
 	end
 
 	# only most common instructions from the 386 instruction set
@@ -530,7 +529,7 @@ class Ia32
 		addop('fisttp',   [0xDF, 1<<3], :modrmA) { |o| o.props[:argsz] = 16 }
 		addop('fisttp',   [0xDB, 1<<3], :modrmA) { |o| o.props[:argsz] = 32 }
 		addop('fisttp',   [0xDD, 1<<3], :modrmA) { |o| o.props[:argsz] = 64 }
-		addop('lddqu',    [0x0F, 0xF0], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrmA ; o.props[:needpfx] = 0xF2 }
+		addop('lddqu',    [0x0F, 0xF0], :mrmxmm, {}, :modrmA) { |o| o.args[o.args.index(:modrmxmm)] = :modrm ; o.props[:needpfx] = 0xF2 }
 		addop('movddup',  [0x0F, 0x12], :mrmxmm) { |o| o.props[:needpfx] = 0xF2 }
 		addop('movshdup', [0x0F, 0x16], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
 		addop('movsldup', [0x0F, 0x12], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
@@ -739,11 +738,11 @@ class Ia32
 		when nil
 
 		when :mrm, :mrmw, :mrmA
-			h = (hint == :mrmA ? :modrmA : :modrm)
 			op.fields[:reg]   = [bin.length, 3]
 			op.fields[:modrm] = [bin.length, 0]
 			op.fields[:w]     = [bin.length - 1, 0] if hint == :mrmw
-			argprops.unshift :reg, h
+			argprops.unshift :reg, :modrm
+			argprops << :modrmA if hint == :mrmA
 			op.bin << 0
 		when :reg
 			op.fields[:reg] = [bin.length-1, 0]
@@ -753,7 +752,7 @@ class Ia32
 			argprops.unshift :regfp, :regfp0
 		when :modrmA
 			op.fields[:modrm] = [bin.length-1, 0]
-			argprops << :modrmA
+			argprops << :modrm << :modrmA
 
 		when Integer		# mod/m, reg == opcode extension = hint
 			op.fields[:modrm] = [bin.length, 0]
@@ -868,7 +867,7 @@ class Ia32
 			op32.props[:opsz] = 32
 			@opcode_list << op32
 		elsif op.props[:strop] or op.props[:stropz] or op.args.include? :mrm_imm or
-				op.args.include? :modrm or op.args.include? :modrmA or op.name =~ /loop|xlat/
+				op.args.include? :modrm or op.name =~ /loop|xlat/
 			# define adsz-override version for ambiguous opcodes (TODO allow movsd edi / movsd di syntax)
 			# XXX loop pfx 67 = eip+cx, 66 = ip+ecx
 			op16 = dupe[op]

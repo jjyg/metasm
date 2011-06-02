@@ -256,7 +256,7 @@ end
 		cond and
 		case spec
 		when :reg; arg.kind_of? Reg and (arg.sz >= 16 or o.props[:argsz])
-		when :modrm; (arg.kind_of? ModRM or arg.kind_of? Reg) and (!arg.sz or arg.sz >= 16 or o.props[:argsz])
+		when :modrm; (arg.kind_of? ModRM or arg.kind_of? Reg) and (!arg.sz or arg.sz >= 16 or o.props[:argsz]) and (!o.props[:modrmA] or arg.kind_of? ModRM) and (!o.props[:modrmR] or arg.kind_of? Reg)
 		when :i;        arg.kind_of? Expression
 		when :imm_val1; arg.kind_of? Expression and arg.reduce == 1
 		when :imm_val3; arg.kind_of? Expression and arg.reduce == 3
@@ -270,14 +270,13 @@ end
 		when :eeec;     arg.kind_of? CtrlReg
 		when :eeed;     arg.kind_of? DbgReg
 		when :eeet;     arg.kind_of? TstReg
-		when :modrmA;   arg.kind_of? ModRM
 		when :mrm_imm;  arg.kind_of? ModRM   and not arg.s and not arg.i and not arg.b
 		when :farptr;   arg.kind_of? Farptr
 		when :regfp;    arg.kind_of? FpReg
 		when :regfp0;   arg.kind_of? FpReg   and (arg.val == nil or arg.val == 0)
-		when :modrmmmx; arg.kind_of? ModRM   or (arg.kind_of? SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx])))
+		when :modrmmmx; arg.kind_of? ModRM   or (arg.kind_of? SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx]))) and (!o.props[:modrmA] or arg.kind_of? ModRM) and (!o.props[:modrmR] or arg.kind_of? SimdReg)
 		when :regmmx;   arg.kind_of? SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx]))
-		when :modrmxmm; arg.kind_of? ModRM   or (arg.kind_of? SimdReg and arg.sz == 128)
+		when :modrmxmm; arg.kind_of? ModRM   or (arg.kind_of? SimdReg and arg.sz == 128) and (!o.props[:modrmA] or arg.kind_of? ModRM) and (!o.props[:modrmR] or arg.kind_of? SimdReg)
 		when :regxmm;   arg.kind_of? SimdReg and arg.sz == 128
 		when :i8, :u8, :u16
 			arg.kind_of? Expression and

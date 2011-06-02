@@ -139,7 +139,7 @@ class X86_64
 				Expression[v]
 
 			when :mrm_imm;  ModRM.new(adsz, opsz, nil, nil, nil, Expression[edata.decode_imm("a#{adsz}".to_sym, @endianness)], pfx.delete(:seg))
-			when :modrm, :modrmA; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg), Reg, pfx
+			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg), Reg, pfx
 			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, pfx
 			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, pfx
 
