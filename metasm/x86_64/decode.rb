@@ -103,6 +103,12 @@ class X86_64
 			v
 		}
 
+		case op.props[:needpfx]
+		when 0x66; pfx.delete :opsz
+		when 0x67; pfx.delete :adsz
+		when 0xF2, 0xF3; pfx.delete :rep
+		end
+
 		if op.props[:setip] and not op.props[:stopexec] and pfx[:seg]
 			case pfx.delete(:seg).val
 			when 1; pfx[:jmphint] = 'hintnojmp'
@@ -203,7 +209,7 @@ class X86_64
 
 	def opsz(di)
 		if di and di.instruction.prefix and di.instruction.prefix[:rex_w]; 64
-		elsif di and di.instruction.prefix and di.instruction.prefix[:opsz]; 16
+		elsif di and di.instruction.prefix and di.instruction.prefix[:opsz] and di.opcode.props[:needpfx] != 0x66; 16
 		elsif di and di.opcode.props[:auto64]; 64
 		else 32
 		end

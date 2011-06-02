@@ -307,7 +307,7 @@ class Ia32
 	def backtrace_binding=(b) @backtrace_binding = b end
 
 	def opsz(di)
-		if di and di.instruction.prefix and di.instruction.prefix[:opsz]; 48-@size
+		if di and di.instruction.prefix and di.instruction.prefix[:opsz] and di.opcode.props[:needpfx] != 0x66; 48-@size
 		else @size
 		end
 	end
