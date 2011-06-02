@@ -56,6 +56,9 @@ class X86_64
 		addop('cmpxchg16b', [0x0F, 0xC7], 1) { |o| o.props[:opsz] = 64 ; o.props[:argsz] = 128 }
 		addop('iretq', [0xCF], nil,  {}, :stopexec, :setip) { |o| o.props[:opsz] = 64 } ; opcode_list.unshift opcode_list.pop
 		addop 'swapgs', [0x0F, 0x01, 0xF8]
+
+		addop('movq',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm ; o.args.reverse! ; o.props[:opsz] = o.props[:argsz] = 64 }
+		addop('movq',  [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmxmm)] = :modrm ; o.args.reverse! ; o.props[:opsz] = o.props[:argsz] = 64 ; o.props[:needpfx] = 0x66 }
 	end
 
 	def init_sse3

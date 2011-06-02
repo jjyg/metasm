@@ -304,8 +304,8 @@ end
 			else
 				if r = i.args.grep(Reg).first
 					m.sz = r.sz
-				elsif opcode_list_byname[i.opname].all? { |o| o.props[:argsz] }
-					m.sz = opcode_list_byname[i.opname].first.props[:argsz]
+				elsif l = opcode_list_byname[i.opname].map { |o| o.props[:argsz] }.uniq and l.length == 1 and l.first
+					m.sz = l.first
 				else
 					# this is also the size of ctrlreg/dbgreg etc
 					# XXX fpu/simd ?

@@ -357,8 +357,8 @@ class Ia32
 
 		# mmx
 		addop 'emms',  [0x0F, 0x77]
-		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm ; o.args.reverse! }
-		addop('movq',  [0x0F, 0x6F], :mrmmmx, {:d => [1, 4]}) { |o| o.args.reverse! }
+		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm ; o.args.reverse! ; o.props[:opsz] = o.props[:argsz] = 32 }
+		addop('movq',  [0x0F, 0x6F], :mrmmmx, {:d => [1, 4]}) { |o| o.args.reverse! ; o.props[:argsz] = 64 }
 		addop 'packssdw', [0x0F, 0x6B], :mrmmmx
 		addop 'packsswb', [0x0F, 0x63], :mrmmmx
 		addop 'packuswb', [0x0F, 0x67], :mrmmmx
@@ -441,8 +441,7 @@ class Ia32
 		addop_macrossps 'maxps', [0x0F, 0x5F], :mrmxmm
 		addop_macrossps 'minps', [0x0F, 0x5D], :mrmxmm
 		addop('movaps',  [0x0F, 0x28], :mrmxmm, {:d => [1, 0]}) { |o| o.args.reverse! }
-		addop('movd',    [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmxmm)] = :modrm ; o.args.reverse! ; o.props[:needpfx] = 0x66 }
-		addop('movdqa',  [0x0F, 0x6F], :mrmxmm, {:d => [1, 4]}) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 }
+		addop('movd',  [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmxmm)] = :modrm ; o.args.reverse! ; o.props[:opsz] = o.props[:argsz] = 32 ; o.props[:needpfx] = 0x66 }
 
 		# movhlps(reg, reg){nomem} == movlps(reg, mrm){no restriction}...
 		addop 'movhlps', [0x0F, 0x12], :mrmxmm, {:d => [1, 0]}
@@ -498,9 +497,16 @@ class Ia32
 	def init_sse2_only
 		init_cpu_constants
 
-		@opcode_list.each { |o| o.props[:xmmx] = true if o.args.include? :regmmx and o.args.include? :modrmmmx }
+		@opcode_list.each { |o| o.props[:xmmx] = true if o.args.include? :regmmx and o.args.include? :modrmmmx and o.name != 'movq' }
 
 		# TODO <..blabla...integer...blabla..>
+
+		addop('movdqa',  [0x0F, 0x6F], :mrmxmm, {:d => [1, 4]}) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 }
+		addop('movdqu',  [0x0F, 0x6F], :mrmxmm, {:d => [1, 4]}) { |o| o.args.reverse! ; o.props[:needpfx] = 0xF3 }
+		addop('movq2dq', [0x0F, 0xD6], :mrmxmm, {}, :modrmR) { |o| o.args[o.args.index(:modrmxmm)] = :modrmmmx ; o.props[:needpfx] = 0xF3 }
+		addop('movdq2q', [0x0F, 0xD6], :mrmmmx, {}, :modrmR) { |o| o.args[o.args.index(:modrmmmx)] = :modrmxmm ; o.props[:needpfx] = 0xF2 }
+		addop('movq',    [0x0F, 0x7E], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 ; o.props[:argsz] = 64 }
+		addop('movq',    [0x0F, 0xD6], :mrmxmm) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 ; o.props[:argsz] = 64 }
 
 		# nomem
 		addop('clflush', [0x0F, 0xAE, 7<<3], :modrmA) { |o| o.props[:argsz] = 8 }

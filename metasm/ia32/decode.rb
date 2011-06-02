@@ -10,7 +10,7 @@ require 'metasm/decode'
 module Metasm
 class Ia32
 	class ModRM
-		def self.decode(edata, byte, endianness, adsz, opsz, seg=nil, regclass=Reg)
+		def self.decode(edata, byte, endianness, adsz, opsz, seg=nil, regclass=Reg, h = {})
 			m = (byte >> 6) & 3
 			rm = byte & 7
 
@@ -57,6 +57,7 @@ class Ia32
 				imm = Expression[imm.reduce & ((1 << (adsz || 32)) - 1)]
 			end
 
+			opsz = h[:argsz] if h[:argsz]
 			new adsz, opsz, s, i, b, imm, seg
 		end
 	end
@@ -208,8 +209,8 @@ class Ia32
 
 			when :mrm_imm;  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx.delete(:seg)
 			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg)
-			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg
-			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg
+			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz]
+			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz]
 
 			when :imm_val1; Expression[1]
 			when :imm_val3; Expression[3]

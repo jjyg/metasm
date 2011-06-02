@@ -142,7 +142,7 @@ class X86_64
 			opsz ||= 64 if op.props[:auto64]
 			opsz = op.props[:opsz] if op.props[:opsz]	# XXX ?
 			case opsz
-			when 64; rex_w = 1 if not op.props[:auto64]
+			when 64; rex_w = 1 if not op.props[:auto64] and (not op.props[:argsz] or op.props[:opsz] == 64)
 			when 32; raise EncodeError, "Incompatible arg size in #{i}" if op.props[:auto64]
 			when 16; pfx << 0x66
 			end
@@ -224,7 +224,6 @@ class X86_64
 
 		postponed.each { |oa, ia|
 			case oa
-			when :farptr; ed = ia.encode(@endianness, "a#{opsz}".to_sym)
 			when :modrm, :modrmmmx, :modrmxmm
 				if ia.kind_of? ModRM
 					ed = ia.encode(regval, @endianness)

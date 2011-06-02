@@ -15,7 +15,7 @@ class X86_64
 			rm = byte & 7
 
 			if m == 3
-				rm |= 8 if pfx[:rex_b]
+				rm |= 8 if pfx[:rex_b] and (regclass != SimdReg or opsz != 64)	# mm8 -> mm0
 				return regclass.new(rm, opsz)
 			end
 
@@ -62,6 +62,7 @@ class X86_64
 				imm = Expression[imm.reduce & ((1 << adsz) - 1)]
 			end
 
+			opsz = pfx[:argsz] if pfx[:argsz]
 			new adsz, opsz, s, i, b, imm, seg
 		end
 	end
@@ -140,8 +141,8 @@ class X86_64
 
 			when :mrm_imm;  ModRM.new(adsz, opsz, nil, nil, nil, Expression[edata.decode_imm("a#{adsz}".to_sym, @endianness)], pfx.delete(:seg))
 			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg), Reg, pfx
-			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, pfx
-			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, pfx
+			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz])
+			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz])
 
 			when :regfp;  FpReg.new   field_val[a]
 			when :imm_val1; Expression[1]
