@@ -50,7 +50,7 @@ class X86_64
 		}
 
 		@opcode_list.each { |o|
-			o.props[:auto64] = true if o.name =~ /^(enter|leave|lgdt|lidt|lldt|ltr|push|pop)$/
+			o.props[:auto64] = true if o.name =~ /^(enter|leave|[sl]gdt|[sl]idt|[sl]ldt|[sl]tr|push|pop)$/
 		}
 
 		addop('cmpxchg16b', [0x0F, 0xC7], 1) { |o| o.props[:opsz] = 64 ; o.props[:argsz] = 128 }
