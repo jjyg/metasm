@@ -1103,6 +1103,12 @@ class DbgConsoleWidget < DrawableWidget
 			@dbg.create_process(arg)
 		}
 
+		new_command('plugin', 'load', 'load a debugger plugin') { |arg|
+			@dbg.load_plugin arg
+			add_log "loaded plugin #{File.basename(arg)}"
+		}
+
+
 		@dbg.ui_command_setup(self) if @dbg.respond_to? :ui_command_setup
 	end
 
