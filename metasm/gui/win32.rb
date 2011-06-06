@@ -1780,7 +1780,7 @@ end
 class DrawableWidget < WinWidget
 	include TextWidget
 
-	attr_accessor :buttons
+	attr_accessor :buttons, :parent_widget
 
 	def initialize(*a, &b)
 		@color = {}
