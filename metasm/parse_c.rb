@@ -249,7 +249,7 @@ module C
 		end
 
 		def findmember(name, igncase=false)
-			raise parser, 'undefined structure' if not @members
+			raise 'undefined structure' if not @members
 			return @fldlist[name] if fldlist and @fldlist[name]
 
 			name = name.downcase if igncase
