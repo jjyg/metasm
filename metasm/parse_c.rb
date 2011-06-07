@@ -1933,7 +1933,10 @@ EOH
 			name = :int
 			tok = nil
 			loop do
-				raise parser if not tok = parser.skipspaces
+				if not tok = parser.skipspaces
+					raise parser if specifier.empty?
+					break
+				end
 				if tok.type != :string
 					parser.unreadtok tok
 					break
