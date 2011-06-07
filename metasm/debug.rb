@@ -1370,17 +1370,24 @@ puts di.instruction, fdbd.inspect
 	# scans only mapped areas of @memory, using os_process.mappings
 	def pattern_scan(pat, start=0, len=@memory.length-start)
 		ret = []
-		mappings.each { |a, l, *o_|
+		mappings.each { |a, l, p, *o_|
+			next if p !~ /r/i
 			l -= start-a if a < start
 			a = start if a < start
 			l = start+len-a if a+l > start+len
 			next if l <= 0
-			EncodedData.new(@memory[a, l]).pattern_scan(pat) { |o|
+			EncodedData.new(read_mapped_range(a, l)).pattern_scan(pat) { |o|
 				o += a
 				ret << o if not block_given? or yield(o)
 			}
 		}
 		ret
+	end
+
+	def read_mapped_range(a, l)
+		# try to use a single get_page call
+		s = @memory.get_page(a, l) || ''
+		s.length == l ? s : @memory[a, l]
 	end
 end
 end
