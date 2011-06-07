@@ -1274,7 +1274,7 @@ class WinOS < OS
 					WinAPI::PAGE_EXECUTE_READWRITE => 'rwx',
 					WinAPI::PAGE_EXECUTE_WRITECOPY => 'rwx'
 				}[info[:protect] & 0xff]
-				prot << 'g' if info[:protect] & WinAPI::PAGE_GUARD > 0
+				prot = prot.sub('r', '-') + 'g' if info[:protect] & WinAPI::PAGE_GUARD > 0
 				prot << 'p' if info[:type]    & WinAPI::MEM_PRIVATE > 0
 
 				if h = hcache[info.baseaddress]
