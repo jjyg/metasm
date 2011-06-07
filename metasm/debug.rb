@@ -1371,6 +1371,7 @@ puts di.instruction, fdbd.inspect
 	def pattern_scan(pat, start=0, len=@memory.length-start)
 		ret = []
 		mappings.each { |a, l, *o_|
+			l -= start-a if a < start
 			a = start if a < start
 			l = start+len-a if a+l > start+len
 			next if l <= 0
