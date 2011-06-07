@@ -1318,7 +1318,7 @@ puts di.instruction, fdbd.inspect
 				plugin_filename = pf + '.rb'
 			end
 		end
-		if not File.exist?(plugin_filename) and File.exist?(plugin_filename + '.rb')
+		if (not File.exist?(plugin_filename) or File.directory?(plugin_filename)) and File.exist?(plugin_filename + '.rb')
 			plugin_filename += '.rb'
 		end
 

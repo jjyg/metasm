@@ -200,7 +200,7 @@ class DbgWidget < ContainerVBoxWidget
 		case f
 		when /\.(c|h|cpp)$/; @dbg.disassembler.parse_c_file(f)
 		when /\.map$/; @dbg.load_map(f)
-		when /\.rb$/; @dbg.load_plugin(f)
+		when /\.rb$/; @dbg.load_plugin(f) ; @console.add_log "loaded plugin #{File.basename(f, '.rb')}"
 		else messagebox("unsupported file extension #{f}")
 		end
 	end
@@ -1105,7 +1105,7 @@ class DbgConsoleWidget < DrawableWidget
 
 		new_command('plugin', 'load', 'load a debugger plugin') { |arg|
 			@dbg.load_plugin arg
-			add_log "loaded plugin #{File.basename(arg)}"
+			add_log "loaded plugin #{File.basename(arg, '.rb')}"
 		}
 
 
