@@ -893,10 +893,11 @@ class GraphViewWidget < DrawableWidget
 			x += str.length * @font_width
 		}
 
+		yoff = @font_height * @zoom
 		b[:line_text_col].each { |list|
-			list.each { |s, c| render[s, c] }
+			list.each { |s, c| render[s, c] } if y >= -yoff
 			x = (b.x - @curcontext.view_x + 1)*@zoom
-			y += @font_height*@zoom
+			y += yoff
 			break if y > w_h+2
 		}
 

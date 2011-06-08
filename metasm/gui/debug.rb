@@ -515,6 +515,21 @@ class DbgConsoleWidget < DrawableWidget
 		clipboard_copy(txt)
 	end
 
+	# copy/paste word under cursor (paste when on last line)
+	def rightclick(x, y)
+		y -= height % @font_height
+		y = y.to_i / @font_height
+		hc = height / @font_height
+		x /= @font_width
+		if y >= hc - 2
+			keypress_ctrl ?v
+		else
+			txt = @log.reverse[@log_offset + hc - y - 3].to_s
+			word = txt[0...x].to_s[/\w*$/] << txt[x..-1].to_s[/^\w*/]
+			clipboard_copy(word)
+		end
+	end
+
 	def mouse_wheel(dir, x, y)
 		case dir
 		when :up; @log_offset += 3
@@ -831,11 +846,13 @@ class DbgConsoleWidget < DrawableWidget
 			@dbg.bpx(solve_expr(e), o, cd, &cb)
 		}
 		new_command('hwbp', 'set a hardware breakpoint') { |arg|
-			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
-			e, c, a = $1, ($2 || $4), $3
+			arg =~ /^(.*?)( once)?( [rwx])?(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
+			e, o, t, c, a = $1, $2, $3, ($4 || $6), $5
+			o = o ? true : false
+			t = (t || 'x').strip.to_sym
 			cd = parse_expr(c) if c
 			cb = lambda { a.split(';').each { |aaa| run_command(aaa) } } if a
-			@dbg.hwbp(solve_expr(e), :x, 1, false, cd, &cb)
+			@dbg.hwbp(solve_expr(e), t, 1, o, cd, &cb)
 		}
 		new_command('bpm', 'set a hardware memory breakpoint: bpm r 0x4800ff 16') { |arg|
 			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
