@@ -750,7 +750,8 @@ class GraphViewWidget < DrawableWidget
 		}
 
 		@shown_boxes = []
-		w_w, w_h = width, height
+		w_w = width
+	       	w_h = height
 		@curcontext.box.each { |b|
 			next if b.x >= @curcontext.view_x+w_w/@zoom or b.y >= @curcontext.view_y+w_h/@zoom or b.x+b.w <= @curcontext.view_x or b.y+b.h <= @curcontext.view_y
 			@shown_boxes << b
@@ -853,6 +854,7 @@ class GraphViewWidget < DrawableWidget
 		y = (b.y - @curcontext.view_y + 1)*@zoom
 		w_w = (b.x - @curcontext.view_x + b.w - @font_width)*@zoom
 		w_h = (b.y - @curcontext.view_y + b.h - @font_height)*@zoom
+		w_h = height if w_h > height
 
 		if @parent_widget and @parent_widget.bg_color_callback
 			ly = 0
@@ -874,7 +876,6 @@ class GraphViewWidget < DrawableWidget
 		# renders a string at current cursor position with a color
 		# must not include newline
 		render = lambda { |str, color|
-			# function ends when we write under the bottom of the listing
 			next if y >= w_h+2 or x >= w_w
 			if @hl_word
 				stmp = str
@@ -896,6 +897,7 @@ class GraphViewWidget < DrawableWidget
 			list.each { |s, c| render[s, c] }
 			x = (b.x - @curcontext.view_x + 1)*@zoom
 			y += @font_height*@zoom
+			break if y > w_h+2
 		}
 
 		if b == @caret_box and focus?
