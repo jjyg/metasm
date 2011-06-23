@@ -53,10 +53,130 @@ class Graph
 		b
 	end
 
+	# find the minimal set of nodes from which we can reach all others
+	# this is done *before* removing cycles in the graph
+	# stored as having an order of 0
+	def find_roots
+		roots = @groups.find_all { |g| g.from.empty? }
+		roots << @groups.first if roots.empty? and @groups.first
+		# tentative @order
+		o = {}
+		todo = []
+		roots.each { |g|
+			o[g] = 0
+			todo |= g.to
+		}
+		loop do
+			# order nodes from the tentative roots
+			while n = todo.find { |g| g.from.all? { |gg| o[gg] } } ||
+				  todo.sort_by { |g| g.from.map { |gg| o[gg] }.compact.max }.first	# cycle heads
+				todo.delete n
+				o[n] = n.from.map { |g| o[g] }.compact.max + 1
+				todo |= n.to.find_all { |g| not o[g] }
+			end
+			# todo empty at this point
+			break if o.length >= @groups.length
+
+			if rt = roots.find { |g| g.from.find { |gg| not o[gg] } } ||
+					@groups.find_all { |g| o[g] and g.from.find { |gg| not o[gg] } }.sort_by { |g| o[g] }.first
+				# if we picked a root in the middle of the graph, try to go up
+				utodo = rt.from.find_all { |g| not o[g] }
+				while n = utodo.find { |g| g.to.all? { |gg| o[gg] } } ||
+					  utodo.sort_by { |g| g.to.map { |gg| o[gg] }.compact.min }.first
+					utodo.delete n
+					o[n] = n.to.map { |g| o[g] }.compact.min - 1
+					utodo |= n.from.find_all { |g| not o[g] }
+					todo |= n.to.find_all { |g| not o[g] }
+				end
+				# setup todo for next fwd iteration
+				todo = todo.find_all { |g| g.from.find { |gg| o[gg] } }
+			else
+				# disjoint graph, start over from there
+				roots = [@groups.find { |g| not o[g] }]
+				roots.each { |g|
+					o[g] = 0
+					todo |= g.to.find_all { |g| not o[g] }
+				}
+			end
+		end
+
+		# now all nodes have a relative order, which may be negative
+		# extract real roots from that (root iff no from with lower order)
+		roots = @groups.find_all { |g| not g.from.find { |gg| o[gg] < o[g] } }
+		# recompute real order from these roots
+		@order = {}
+		todo = []
+		roots.each { |g|
+			@order[g] = 0
+			todo |= g.to
+		}
+		while n = todo.find { |g| g.from.all? { |gg| @order[gg] } } ||
+			  todo.sort_by { |g| g.from.map { |gg| @order[gg] }.compact.max }.first	# cycle heads
+			todo.delete n
+			@order[n] = n.from.map { |g| @order[g] }.compact.max + 1
+			todo |= n.to.find_all { |g| not @order[g] }
+		end
+		raise if @order.length != @groups.length
+	end
+
+	# remove looping edges from @groups, order the boxes in layers, find the roots of the graph, create dummy groups along long edges
+	def maketree
+		find_roots
+
+		# now we have the roots and node orders
+		#  revert cycling edges - o(chld) < o(parent)
+		#  expand long edges    - o(chld) > o(parent)+1
+		newemptybox = lambda { b = Box.new(nil, []) ; b.x = -8 ; b.y = -9 ; b.w = 16 ; b.h = 18 ; @groups << b ; b }
+		@order.each_key { |g|
+			og = @order[g]
+			g.to.dup.each { |gg|
+				ogg = @order[gg]
+				if ogg < og
+					# cycling edge, revert & may expand
+					sq = [gg]
+					if ogg < og-1
+						(og - 1 - ogg).times { |i| sq << newemptybox[] }
+					end
+					sq << g
+					g.to.delete gg
+					gg.from.delete g
+					sq.inject { |g1, g2|
+						g1.to |= [g2]
+						g2.from |= [g1]
+						@order[g2] = @order[g1]+1
+						g2
+					}
+					raise if @order[g] != og
+				elsif ogg > og+1
+					# long edge, expand
+					sq = [g]
+					(ogg - 1 - og).times { |i| sq << newemptybox[] }
+					sq << gg
+					gg.to.delete g
+					g.from.delete gg
+					sq.inject { |g1, g2|
+						g1.to |= [g2]
+						g2.from |= [g1]
+						@order[g2] = @order[g1]+1
+						g2
+					}
+					raise if @order[gg] != ogg
+				end
+			}
+		}
+
+		# @layers[o] = [list of nodes of order o]
+		@layers = []
+		@groups.each { |g|
+			(@layers[@order[g]] ||= []) << g
+		}
+	end
+
 	# place boxes in a good-looking layout
 	def auto_arrange_init(list=@box)
 		# groups is an array of box groups
 		# all groups are centered on the origin
+		h = {}	# { group => box }
 		@groups = list.map { |b|
 			b.x = -b.w/2
 			b.y = -b.h/2
@@ -65,6 +185,7 @@ class Graph
 			g.y = b.y - 9
 			g.w = b.w + 16
 			g.h = b.h + 18
+			h[b] = g
 			g
 		}
 
@@ -73,430 +194,102 @@ class Graph
 		# no self references
 		# a box is in one and only one group in 'groups'
 		@groups.each { |g|
-			g.to   = g.content.first.to.map   { |t| if t = list.index(t) ; @groups[t] ; end }.compact - [g]
-			g.from = g.content.first.from.map { |f| if f = list.index(f) ; @groups[f] ; end }.compact - [g]
+			g.to   = g.content.first.to.map   { |t| h[t] if t != g }.compact
+			g.from = g.content.first.from.map { |f| h[f] if f != g }.compact
 		}
 
-		@madetree = false
-	end
+		maketree
+		return if @layers.empty?
 
-	# gives a text representation of the current graph state
-	def dump_layout(groups=@groups)
-		groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.sort.inspect}" }
+		# TODO layout disjoint graphs distinctly ?
+
+		# widest layer width
+		maxlw = @layers.map { |l| l.inject(0) { |ll, g| ll + g.w } }.max
+
+		# center the 1st layer boxes on a segment that large
+		x0 = -maxlw/2.0
+		curlw = @layers[0].inject(0) { |ll, g| ll + g.w }
+		dx0 = (maxlw - curlw) / (2.0*@layers[0].length)
+		@layers[0].each { |g|
+			x0 += dx0
+			g.x = x0
+			x0 += g.w + dx0
+		}
 	end
 
 	def auto_arrange_step
-		# TODO fix
-		#  0->[1, 2] 1->[3] 2->[3, 4] 3->[] 4->[1]
-		#  push 0 jz l3  push 1 jz l4  push 2  l3: push 3  l4: hlt
-		# and more generally all non-looping graphs where this algo creates backward links
+		return if @layers.empty?
 
-		groups = @groups
-		return if groups.length <= 1
+		# at this point, the goal is to reorder the most populated layer the best we can, and
+		# move other layers' boxes accordingly
 
-		# walk from a box, fork at each multiple to, chop links to a previous box (loops etc)
-		# replace bk links with dummy forward link TODO use this box' x coord as bk arrow x
-		maketree = lambda { |roots|
-			maxdepth = {}	# max arc count to reach this box from graph start (excl loop)
-
-			trim = lambda { |g|
-				# unlink g from (part of) its from
-				g.from.delete_if { |gg|
-					if not maxdepth[gg]
-						if gg != g
-							nb = Box.new(nil, [])
-							nb.x = nb.y = -4
-							nb.w = nb.h = 8
-							g.to << nb
-							nb.from = [g]
-							nb.to = [gg]
-							gg.from << nb
-							groups << nb
-						end
-						gg.to.delete g
-						true
-					end
-				}
+		maxlw = @layers.map { |l| l.inject(0) { |ll, g| ll + g.w } }.max
+		@layers[1..-1].each { |l|
+			# for each subsequent layer, reorder boxes based on their ties with the previous layer
+			i = 0
+			l.replace l.sort_by { |g|
+				# we know g.from is not empty (g would be in @layer[0])
+				medfrom = g.from.inject(0.0) { |mx, gg| mx + (gg.x + gg.w/2) } / g.from.length
+				# on ties, keep original order
+				[medfrom, i]
 			}
+			# now they are reordered, update their #x accordingly
+			# TODO elastic positionning around the ideal position
+			x0 = -maxlw/2.0
+			curlw = l.inject(0) { |ll, g| ll + g.w }
+			dx0 = (maxlw - curlw) / (2.0*l.length)
+			l.each { |g|
+				x0 += dx0
+				g.x = x0
+				x0 += g.w + dx0
+			}
+		}
 
-			walk = lambda { |g|
-				# score
-				parentdepth = g.from.map { |gg| maxdepth[gg] }
-				if maxdepth[g]
-				elsif parentdepth.empty?
-					# root
-					maxdepth[g] = 0
-				elsif parentdepth.include? nil
-					# not farthest parent found / loop
-					next
-				# elsif maxdepth[g] => ?
+		@layers[0...-1].reverse_each { |l|
+			# for each subsequent layer, reorder boxes based on their ties with the previous layer
+			i = 0
+			l.replace l.sort_by { |g|
+				if g.to.empty?
+					# TODO floating end
+					medfrom = 0
 				else
-					maxdepth[g] = parentdepth.max + 1
+					medfrom = g.to.inject(0.0) { |mx, gg| mx + (gg.x + gg.w/2) } / g.to.length
 				end
-				g.to.each { |gg| walk[gg] }
+				# on ties, keep original order
+				[medfrom, i]
 			}
-
-			roots.each { |g| g.from.delete_if { |gf| gf.to.delete g } }
-			roots.each { |g| walk[g] }
-			
-			# handle loops now (unmarked nodes)
-			while unmarked = groups - maxdepth.keys and not unmarked.empty?
-				if g = unmarked.find { |g_| g_.from.find { |gg| maxdepth[gg] } }
-					# loop head
-					trim[g]
-					walk[g]
-				else
-					# disconnected subgraph
-					g = unmarked.find { |g_| g_.from.empty? } || unmarked.first
-					trim[g]
-					maxdepth[g] = 0
-					walk[g]
-				end
-			end
-		}
-
-		# concat all ary boxes into its 1st element, remove trailing groups from 'groups'
-		# updates from/to
-		merge_groups = lambda { |ary|
-			bg = Box.new(nil, [])
-			bg.x, bg.y = ary.map { |g| g.x }.min, ary.map { |g| g.y }.min
-			bg.w, bg.h = ary.map { |g| g.x+g.w }.max - bg.x, ary.map { |g| g.y+g.h }.max - bg.y
-			ary.each { |g|
-				bg.content.concat g.content
-				bg.to |= g.to
-				bg.from |= g.from
-			}
-			bg.to -= ary
-			bg.to.each { |t| t.from = t.from - ary + [bg] }
-			bg.from -= ary
-			bg.from.each { |f| f.to = f.to - ary + [bg] }
-			idx = ary.map { |g| groups.index(g) }.min
-			groups = @groups = groups - ary
-			groups.insert(idx, bg)
-			bg
-		}
-
-		# move all boxes within group of dx, dy
-		move_group = lambda { |g, dx, dy|
-			g.content.each { |b| b.x += dx ; b.y += dy }
-			g.x += dx ; g.y += dy
-		}
-
-		align_hz = lambda { |ary|
-			# if we have one of the block much bigger than the others, put it on the far right
-			big = ary.sort_by { |g| g.h }.last
-			if (ary-[big]).all? { |g| g.h < big.h/3 }
-				ary -= [big]
-			else
-				big = nil
-			end
-			nx = ary.map { |g| g.w }.inject(0) { |a, b| a+b } / -2
-			nx *= 2 if big and ary.length == 1	# just put the parent on the separation of the 2 child
-			ary.each { |g|
-				move_group[g, nx-g.x, 0]
-				nx += g.w
-			}
-			move_group[big, nx-big.x, 0] if big
-		}
-		align_vt = lambda { |ary|
-			ny = ary.map { |g| g.h }.inject(0) { |a, b| a+b } / -2
-			ary.each { |g|
-				move_group[g, 0, ny-g.y]
-				ny += g.h
+			# now they are reordered, update their #x accordingly
+			x0 = -maxlw/2.0
+			curlw = l.inject(0) { |ll, g| ll + g.w }
+			dx0 = (maxlw - curlw) / (2.0*l.length)
+			l.each { |g|
+				x0 += dx0
+				g.x = x0
+				x0 += g.w + dx0
 			}
 		}
 
-		# scan groups for a column pattern (head has 1 'to' which from == [head])
-		group_columns = lambda {
-			groups.find { |g|
-				next if g.to.length != 1 or g.to.first.from.length != 1
-				next if g.from.length == 1 and g.from.first.to.length == 1	# we want the head
-				ary = [g]
-				ary << (g = g.to.first) while g.to.length == 1 and g.to.first.from.length == 1
-				align_vt[ary]
-				merge_groups[ary]
-				true
-			}
-		}
-
-		# scan groups for a line pattern (multiple groups with same to & same from)
-		group_lines = lambda { |strict|
-			if groups.first.to.empty? and groups.all? { |g1| g1.from.empty? and g1.to.empty? }
-				# disjoint subgraphs
-				align_hz[groups]
-				merge_groups[groups]
-				next true
-			end
-
-			groups.find { |g1|
-				if g1.to.length > 1
-					ary = g1.to.find_all { |gg| gg.from.length == 1 }
-					if ary.length > 1
-						if strict
-							tf = ary.first.to.first
-							ary = ary.find_all { |gg| gg.to.length <= 1 and gg.to.first == tf }
-						else
-							ary = ary.find_all { |gg| (gg.to & ary.first.to).first }
-						end
-					else
-						ary = nil
-					end
-				end
-				if (not ary or ary.length <= 1) and g1.from.length > 1
-					ary = g1.from.find_all { |gg| gg.to.length == 1 }
-					if ary.length > 1
-						if strict
-							tf = ary.first.from.first
-							ary = ary.find_all { |gg| gg.from.length <= 1 and gg.from.first == tf }
-						else
-							ary = ary.find_all { |gg| (gg.from & ary.first.from).first }
-						end
-					else
-						ary = nil
-					end
-				end
-				next if not ary or ary.length <= 1
-				dy = 16*ary.map { |g| g.to.length + g.from.length }.inject { |a, b| a+b }
-				ary.each { |g| g.h += dy ; g.y -= dy/2 }
-				align_hz[ary]
-				if ary.first.to.empty?	# shrink graph if highly dissymetric and to.empty?
-					ah = ary.map { |g| g.h }.max
-					pg = nil
-					ary.each { |g|
-						move_group[g, 0, (g.h-ah)/2]	# move up
-						p = pg		# p = ary[ary.index(g)-1]
-						pg = g
-						next if not p
-						y = [g.y, p.y].min		# shrink width
-						h = [g.h, p.h].min
-						xp = p.content.map { |b| b.x+b.w if b.y+b.h+8 >= y and b.y-8 <= y+h }.compact.max || p.x+p.w/2
-						xg = g.content.map { |b| b.x if b.y+b.h+8 >= y and b.y-8 <= y+h }.compact.min || g.x+g.w/2
-						dx = xg-xp-24
-						next if dx <= 0
-						ary.each { |gg|
-							dx = -dx if gg == g
-							move_group[gg, dx/2, 0]
-						}
-						if p.x+p.w > ary.last.x+ary.last.w or ary.first.x > g.x # fix broken centerism
-							x = [g.x, ary.first.x].min
-							xm = [p.x+p.w, ary.last.x+ary.last.w].max
-							ary.each { |gg| move_group[gg, (x+xm)/-2, 0] }
-						end
-					}
-				end
-				merge_groups[ary]
-				true
-			}
-		}
-
-		group_inv_if = {}
-
-		# scan groups for a if/then pattern (1 -> 2 -> 3 & 1 -> 3)
-		group_ifthen = lambda { |strict|
-			groups.reverse.find { |g|
-				# g = if, g2 = then, g2_ = end
-				next if g.to.length != 2
-				next if not g2 = g.to.find { |g2_| (g2_.to.length == 1 and g.to.include?(g2_.to.first)) or
-					(not strict and g2_.to.empty?)  }
-				next if strict and g2.from.length != 1
-				g2.h += 16 ; g2.y -= 8
-				align_vt[[g, g2]]
-				dx = -g2.x+8
-				dx -= g2.w+16 if group_inv_if[g]
-				move_group[g2, dx, 0]
-				merge_groups[[g, g2]]
-				true
-			} or (strict and groups.find { |g|
-				next if g.from.length != 2
-				next if not g2 = g.from.find { |g2_| g2_.from.length == 1 and g.from.include?(g2_.from.first) }
-				next if g2.to.length != 1
-				g2.h += 16 ; g2.y -= 8
-				align_vt[[g2, g]]
-				dx = -g2.x+8
-				move_group[g2, dx, 0]
-				merge_groups[[g, g2]]
-				true
-			})
-		}
-
-		# if (a || b) c;
-		# the 'else' case handles '&& else', and && is two if/then nested
-		group_or = lambda { |strict|
-			groups.find { |g|
-				next if g.to.length != 2
-				g2 = g.to[0]
-				g2 = g.to[1] if not g2.to.include? g.to[1]
-				thn = (g.to & g2.to).first
-				next if g2.to.length != 2 or not thn or thn.to.length != 1
-				els = (g2.to - [thn]).first
-				if thn.to == [els]
-					els = nil
-				elsif els.to != thn.to
-					next if strict
-					align_vt[[g, g2]]
-					merge_groups[[g, g2]]
-					break true
-				else
-					align_hz[[thn, els]]
-					thn = merge_groups[[thn, els]]
-				end
-				thn.h += 16 ; thn.y -= 8
-				align_vt[[g, g2, thn]]
-				move_group[g2, -g2.x, 0]
-				move_group[thn, thn.x-8, 0] if not els
-				merge_groups[[g, g2, thn]]
-				true
-			}
-		}
-
-
-		# loop with exit 1 -> 2, 3 & 2 -> 1
-		group_loop = lambda {
-			groups.find { |g|
-				next if not g2 = g.to.sort_by { |g2_| g2_.h }.find { |g2_| g2_.to == [g] or (g2_.to.empty? and g2_.from == [g]) }
-				g2.h += 16
-				align_vt[[g, g2]]
-				move_group[g2, g2.x-8, 0]
-				merge_groups[[g, g2]]
-				true
-			}
-		}
-
-		# same single from or to
-		group_halflines = lambda {
-			ary = nil
-			if groups.find { |g| ary = g.from.find_all { |gg| gg.to == [g] } and ary.length > 1 } or
-			   groups.find { |g| ary = g.to.find_all { |gg| gg.from == [g] } and ary.length > 1 }
-				align_hz[ary]
-				merge_groups[ary]
-				true
-			end
-		}
-
-
-		# unknown pattern, group as we can..
-		group_other = lambda {
-puts 'graph arrange: unknown configuration', dump_layout
-			g1 = groups.find_all { |g| g.from.empty? and not g.to.empty? }
-			g1 << groups[rand(groups.length)] if g1.empty?
-			g2 = g1.map { |g| g.to }.flatten.uniq - g1
-			align_vt[g1]
-			g1 = merge_groups[g1]
-			g1.w += 128 ; g1.x -= 64
-			next if g2.empty?
-			align_vt[g2]
-			g2 = merge_groups[g2]
-			g2.w += 128 ; g2.x -= 64
-
-			align_hz[[g1, g2]]
-			merge_groups[[g1, g2]]
-			true
-		}
-
-		# check constructs with multiple blocks with to to end block (a la break;)
-		ign_break = lambda {
-			can_reach = lambda { |b1, b2, term|
-				next if b1 == term
-				done = [term]
-				todo = b1.to.dup
-				while t = todo.pop
-					next if done.include? t
-					done << t
-					break true if t == b2
-					todo.concat t.to
-				end
-			}
-			can_reach_unidir = lambda { |b1, b2, term| can_reach[b1, b2, term] and not can_reach[b2, b1, term] }
-			groups.find { |g|
-				f2 = nil
-				if (g.from.length > 2 and f3 = g.from.find { |f| f.to == [g] } and f1 = g.from.find { |f|
-					f2 = g.from.find { |ff| can_reach_unidir[ff, f3, g] and can_reach_unidir[f, ff, g] }}) or
-				   (g.to.length > 2 and f3 = g.to.find { |f| f.from == [g] } and f1 = g.to.find { |f|
-					f2 = g.to.find { |ff| can_reach_unidir[f3, ff, g] and can_reach_unidir[ff, f, g] }})
-					group_inv_if[f1] = true
-					if f3.to == [g]
-						g.from.delete f2
-						f2.to.delete g
-					else
-						g.to.delete f2
-						f2.from.delete g
-					end
-					true
-				end
-			}
-		}
-
-		mtree = lambda {
-			next if @madetree
-			@madetree = true
-			g1 = groups.find_all { |g| g.from.empty? }
-			g1 << groups.first if g1.empty?	# XXX find members of the top loop(s)
-			maketree[g1]
-		}
-
-		# known, clean patterns
-		group_clean = lambda {
-			group_columns[] or group_lines[true] or group_ifthen[true] or group_loop[] or group_or[true]
-		}
-		# approximations
-		group_unclean = lambda {
-			#puts "unclean #{groups.length}"
-			ign_break[] or group_lines[false] or group_or[false] or group_halflines[] or group_ifthen[false] or group_other[]
-		}
-
-		mtree[]
-
-		group_clean[] or group_unclean[]
+		nil
 	end
 
-	# the boxes have been almost put in place, here we soften a little the result & arrange some qwirks
 	def auto_arrange_post
-		# entrypoint should be above other boxes, same for exitpoints
-		@box.each { |b|
-			if b.from == []
-				chld = b.to
-				chld = @box - [b] if not @box.find { |bb| bb != b and bb.from == [] }
-				chld.each { |t| b.y = t.y - b.h - 16 if t.y < b.y+b.h }
-			end
-			if b.to == []
-				chld = b.from
-				chld = @box - [b] if not @box.find { |bb| bb != b and bb.to == [] }
-				chld.each { |f| b.y = f.y + f.h + 16 if f.y+f.h > b.y }
-			end
-		}
-
-		boxxy = @box.sort_by { |bb| bb.y }
-		# fill gaps that we created
-		@box.each { |b|
-			bottom = b.y+b.h
-			next if not follower = boxxy.find { |bb| bb.y+bb.h > bottom }
-
-			# preserve line[] constructs margins
-			gap = follower.y-16*follower.from.length - (bottom+16*b.to.length)
-			next if gap <= 0
-
-			@box.each { |bb|
-				if bb.y+bb.h <= bottom
-					bb.y += gap/2
-				else
-					bb.y -= gap/2
-				end
+		# vertical: just center each box on its layer
+		y0 = 0
+		@layers.each { |l|
+			hmax = l.map { |g| g.h }.max
+			l.each { |g|
+				g.y = y0 + (hmax - g.h)/2
 			}
-			boxxy = @box.sort_by { |bb| bb.y }
+			y0 += hmax
 		}
 
-		@box[0,0].each { |b|
-			# TODO elastic positionning (ignore up arrows ?) & collision detection (box/box + box/arrow)
-			f = b.from[0]
-			t = b.to[0]
-			if b.to.length == 1 and b.from.length == 1 and b.y+b.h<t.y and b.y>f.y+f.h
-				wx = (t.x+t.w/2 + f.x+f.w/2)/2 - b.w/2
-				wy = (t.y + f.y+f.h)/2 - b.h/2
-				b.x += (wx-b.x)/5
-				b.y += (wy-b.y)/5
+		# actually move boxes inside the groups
+		@groups.each { |g|
+			if b = g.content[0]
+				b.x = g.x.to_i + 8
+				b.y = g.y.to_i + 9
 			end
 		}
-
 	end
 
 	def auto_arrange_boxes
@@ -504,6 +297,11 @@ puts 'graph arrange: unknown configuration', dump_layout
 		nil while @groups.length > 1 and auto_arrange_step
 		auto_arrange_post
 		@groups = []
+	end
+
+	# gives a text representation of the current graph state
+	def dump_layout(groups=@groups)
+		groups.map { |g| "#{groups.index(g)} -> #{g.to.map { |t| groups.index(t) }.sort.inspect}" }
 	end
 end
 
