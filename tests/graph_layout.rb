@@ -179,6 +179,7 @@ unbalance3 -> 2 -> 3 -> e;
 2 -> 5 -> e;
 2 -> 6 -> e;
 8 -> 9 -> e;
+2 -> 7 -> e;
 EOS
 	test_layout <<EOS
 disjoint -> 1 -> 2 -> 3 -> 4 -> 5 -> 6;
@@ -219,6 +220,20 @@ l2 -> 2 -> l2;
 2 -> e2;
 l3 -> 3 -> l3;
 3 -> e2;
+EOS
+	test_layout <<EOS
+3loop -> 1 -> 3loop;
+1 -> 2 -> 3  -> 2;
+0 -> 00 -> 0 -> 2;
+EOS
+	test_layout <<EOS
+foo -> 0 -> 1
+0 -> 2 -> 3 -> 4 -> 5
+4 -> 6
+4 -> 7 -> 5
+4 -> 8 -> 6
+2 -> 1 -> 7
+3 -> 1 -> 8
 EOS
 
 rescue Interrupt
