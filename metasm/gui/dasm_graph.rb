@@ -95,7 +95,7 @@ class Graph
 				roots = [@groups.find { |g| not o[g] }]
 				roots.each { |g|
 					o[g] = 0
-					todo |= g.to.find_all { |g| not o[g] }
+					todo |= g.to.find_all { |gg| not o[gg] }
 				}
 			end
 		end
@@ -127,6 +127,7 @@ class Graph
 		#  revert cycling edges - o(chld) < o(parent)
 		#  expand long edges    - o(chld) > o(parent)+1
 		newemptybox = lambda { b = Box.new(nil, []) ; b.x = -8 ; b.y = -9 ; b.w = 16 ; b.h = 18 ; @groups << b ; b }
+		newboxo = {}
 		@order.each_key { |g|
 			og = @order[g]
 			g.to.dup.each { |gg|
@@ -138,32 +139,36 @@ class Graph
 						(og - 1 - ogg).times { |i| sq << newemptybox[] }
 					end
 					sq << g
-					g.to.delete gg
-					gg.from.delete g
+					g.from.delete gg
+					gg.to.delete g
+					newboxo[gg] = @order[gg]
 					sq.inject { |g1, g2|
 						g1.to |= [g2]
 						g2.from |= [g1]
-						@order[g2] = @order[g1]+1
+						# need separate hash to avoid updating @order in its #each_key
+						newboxo[g2] = newboxo[g1]+1
 						g2
 					}
-					raise if @order[g] != og
+					raise if newboxo[g] != og
 				elsif ogg > og+1
 					# long edge, expand
 					sq = [g]
 					(ogg - 1 - og).times { |i| sq << newemptybox[] }
 					sq << gg
-					gg.to.delete g
-					g.from.delete gg
+					gg.from.delete g
+					g.to.delete gg
+					newboxo[g] = @order[g]
 					sq.inject { |g1, g2|
 						g1.to |= [g2]
 						g2.from |= [g1]
-						@order[g2] = @order[g1]+1
+						newboxo[g2] = newboxo[g1]+1
 						g2
 					}
-					raise if @order[gg] != ogg
+					raise if newboxo[gg] != ogg
 				end
 			}
 		}
+		@order.update newboxo
 
 		# @layers[o] = [list of nodes of order o]
 		@layers = []
@@ -229,12 +234,12 @@ class Graph
 			i = 0
 			l.replace l.sort_by { |g|
 				# we know g.from is not empty (g would be in @layer[0])
-				medfrom = g.from.inject(0.0) { |mx, gg| mx + (gg.x + gg.w/2) } / g.from.length
+				medfrom = g.from.inject(0.0) { |mx, gg| mx + (gg.x + gg.w/2.0) } / g.from.length
 				# on ties, keep original order
 				[medfrom, i]
 			}
 			# now they are reordered, update their #x accordingly
-			# TODO elastic positionning around the ideal position
+			# evenly distribute them in the layer
 			x0 = -maxlw/2.0
 			curlw = l.inject(0) { |ll, g| ll + g.w }
 			dx0 = (maxlw - curlw) / (2.0*l.length)
@@ -253,7 +258,7 @@ class Graph
 					# TODO floating end
 					medfrom = 0
 				else
-					medfrom = g.to.inject(0.0) { |mx, gg| mx + (gg.x + gg.w/2) } / g.to.length
+					medfrom = g.to.inject(0.0) { |mx, gg| mx + (gg.x + gg.w/2.0) } / g.to.length
 				end
 				# on ties, keep original order
 				[medfrom, i]
@@ -269,6 +274,37 @@ class Graph
 			}
 		}
 
+		# now the boxes are (hopefully) sorted correctly
+		# position them according to their ties with prev/next layer
+		# from the maxw layer (positionning = packed), propagate adjacent layers positions
+		maxidx = (0..@layers.length).find { |i| l = @layers[i] ; l.inject(0) { |ll, g| ll + g.w } == maxlw }
+		# list of layer indexes to walk
+		ilist = []
+		ilist.concat((maxidx+1...@layers.length).to_a) if maxidx < @layers.length-1
+		ilist.concat((0..maxidx-1).to_a.reverse) if maxidx > 0
+		ilist.each { |i|
+			l = @layers[i]
+			curlw = l.inject(0) { |ll, g| ll + g.w }
+			# left/rightmost acceptable position for the current box w/o overflowing on the right side
+			minx = -maxlw/2.0
+			maxx = minx + (maxlw-curlw)
+			l.each { |g|
+				ref = (i < maxidx) ? g.to : g.from
+				# TODO elastic positionning around the ideal position
+				# (g and g+1 may have the same med, then center both on it)
+				if ref.empty?
+					g.x = (minx+maxx)/2
+				else
+					# center on the outline of rx
+					# may want to center on rx center's center ?
+					rx = ref.sort_by { |gg| gg.x }
+					med = (rx[0].x + rx[-1].x + rx[-1].w - g.w) / 2.0
+					g.x = [[med, minx].max, maxx].min
+				end
+				minx = g.x + g.w
+				maxx += g.w
+			}
+		}
 		nil
 	end
 
@@ -290,6 +326,10 @@ class Graph
 				b.y = g.y.to_i + 9
 			end
 		}
+
+		# TODO
+		# energy-minimal positionning of boxes from this basic layout
+		# avoid arrow confusions
 	end
 
 	def auto_arrange_boxes
