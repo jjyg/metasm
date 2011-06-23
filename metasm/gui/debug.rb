@@ -1147,6 +1147,7 @@ class DbgConsoleWidget < DrawableWidget
 	end
 
 	def run_command(cmd)
+		cmd = cmd.sub(/^\s+/, '')
 		cn = cmd.split.first
 		if not @commands[cn]
 			a = @commands.keys.find_all { |k| k[0, cn.length] == cn }
