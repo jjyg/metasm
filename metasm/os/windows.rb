@@ -2023,6 +2023,7 @@ class WinDebugger < Debugger
 
 	def suspend
 		os_thread.suspend
+		invalidate
 		@state = :stopped
 		@info = 'thread suspended'
 		@continuecode = :suspended

@@ -845,7 +845,7 @@ class DbgConsoleWidget < DrawableWidget
 			cb = lambda { a.split(';').each { |aaa| run_command(aaa) } } if a
 			@dbg.bpx(solve_expr(e), o, cd, &cb)
 		}
-		new_command('hwbp', 'set a hardware breakpoint') { |arg|
+		new_command('hwbp', 'set a hardware breakpoint (hwbp 0x2345 w)') { |arg|
 			arg =~ /^(.*?)( once)?( [rwx])?(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i
 			e, o, t, c, a = $1, $2, $3, ($4 || $6), $5
 			o = o ? true : false
