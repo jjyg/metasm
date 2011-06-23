@@ -11,6 +11,10 @@ require 'metasm'
 include Metasm
 
 def test_layout(lo)
+	$cur ||= 0
+	$cur += 1
+	return if $target and $cur != $target
+	puts $cur, lo, '' if $VERBOSE
 	w = Gui::Window.new
 	ww = w.widget = Gui::GraphViewWidget.new(nil, nil)
 	ww.grab_focus
@@ -75,6 +79,10 @@ multipod -> 2 -> 3;
 2 -> 6;
 2 -> 7;
 2 -> 8;
+EOS
+	test_layout <<EOS
+mplarge -> 1 -> 2;
+1 -> 3333333333333333333333333333333333;
 EOS
 	test_layout <<EOS
 dangling -> 2 -> 11 -> 12 -> 13 -> 4;
@@ -166,6 +174,22 @@ unbalance2 -> 2 -> 3 -> e;
 2 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> e;
 EOS
 	test_layout <<EOS
+unbalance3 -> 2 -> 3 -> e;
+2 -> 4 -> e;
+2 -> 5 -> e;
+2 -> 6 -> e;
+8 -> 9 -> e;
+EOS
+	test_layout <<EOS
+disjoint -> 1 -> 2 -> 3 -> 4 -> 5 -> 6;
+l1 -> l2;
+l1 -> l3;
+l1 -> l4;
+l1 -> l5;
+l1 -> l6;
+EOS
+
+	test_layout <<EOS
 lol -> 2 -> 31 -> 41 -> 5;
 2 -> 32 -> 42 -> 5;
 31 -> 42;
@@ -201,5 +225,6 @@ rescue Interrupt
 end
 
 if __FILE__ == $0
+	$target = ARGV[0].to_i if ARGV[0]
 	test_all
 end
