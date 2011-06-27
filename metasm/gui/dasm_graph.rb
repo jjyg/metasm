@@ -129,9 +129,9 @@ class Graph
 		newemptybox = lambda { b = Box.new(nil, []) ; b.x = -8 ; b.y = -9 ; b.w = 16 ; b.h = 18 ; @groups << b ; b }
 		newboxo = {}
 		@order.each_key { |g|
-			og = @order[g]
+			og = @order[g] || newboxo[g]
 			g.to.dup.each { |gg|
-				ogg = @order[gg]
+				ogg = @order[gg] || newboxo[gg]
 				if ogg < og
 					# cycling edge, revert & may expand
 					sq = [gg]
@@ -141,7 +141,7 @@ class Graph
 					sq << g
 					g.from.delete gg
 					gg.to.delete g
-					newboxo[gg] = @order[gg]
+					newboxo[gg] ||= @order[gg]
 					sq.inject { |g1, g2|
 						g1.to |= [g2]
 						g2.from |= [g1]
@@ -157,7 +157,7 @@ class Graph
 					sq << gg
 					gg.from.delete g
 					g.to.delete gg
-					newboxo[g] = @order[g]
+					newboxo[g] ||= @order[g]
 					sq.inject { |g1, g2|
 						g1.to |= [g2]
 						g2.from |= [g1]

@@ -235,6 +235,17 @@ foo -> 0 -> 1
 2 -> 1 -> 7
 3 -> 1 -> 8
 EOS
+	test_layout <<EOS
+dang -> 2 -> 3 -> 4 -> 5 -> 6 -> 4;
+2 -> 9;
+5 -> 9;
+EOS
+	test_layout <<EOS
+dang2 -> 2 -> 3 -> 4 -> 5 -> 6 -> 4
+2 -> 9
+5 -> 9
+9 -> a -> 9
+EOS
 
 rescue Interrupt
 end
