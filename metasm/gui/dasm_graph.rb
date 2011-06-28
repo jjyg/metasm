@@ -53,6 +53,15 @@ class Graph
 		b
 	end
 
+	# returns the [x1, y1, x2, y2] of the rectangle encompassing all boxes
+	def boundingbox
+		minx = @box.map { |b| b.x }.min.to_i
+		miny = @box.map { |b| b.y }.min.to_i
+		maxx = @box.map { |b| b.x + b.w }.max.to_i
+		maxy = @box.map { |b| b.y + b.h }.max.to_i
+		[minx, miny, maxx, maxy]
+	end
+
 	# find the minimal set of nodes from which we can reach all others
 	# this is done *before* removing cycles in the graph
 	# stored as having an order of 0
@@ -375,13 +384,18 @@ class GraphViewWidget < DrawableWidget
 		# @othergraphs = ?	(to keep user-specified formatting)
 	end
 
+	def view_x; @curcontext.view_x; end
+	def view_x=(vx); @curcontext.view_x = vx; end
+	def view_y; @curcontext.view_y; end
+	def view_y=(vy); @curcontext.view_y = vy; end
+
 	def resized(w, h)
 		redraw
 	end
 
 	def find_box_xy(x, y)
-		x = @curcontext.view_x+x/@zoom
-		y = @curcontext.view_y+y/@zoom
+		x = view_x+x/@zoom
+		y = view_y+y/@zoom
 		@shown_boxes.to_a.reverse.find { |b| b.x <= x and b.x+b.w > x and b.y <= y-1 and b.y+b.h > y+1 }
 	end
 
@@ -434,10 +448,10 @@ class GraphViewWidget < DrawableWidget
 		@mousemove_origin = nil
 
 		if @mousemove_origin_ctrl
-			x1 = @curcontext.view_x + @mousemove_origin_ctrl[0]/@zoom
+			x1 = view_x + @mousemove_origin_ctrl[0]/@zoom
 			x2 = x1 + (x - @mousemove_origin_ctrl[0])/@zoom
 			x1, x2 = x2, x1 if x1 > x2
-			y1 = @curcontext.view_y + @mousemove_origin_ctrl[1]/@zoom
+			y1 = view_y + @mousemove_origin_ctrl[1]/@zoom
 			y2 = y1 + (y - @mousemove_origin_ctrl[1])/@zoom
 			y1, y2 = y2, y1 if y1 > y2
 			@selected_boxes |= @curcontext.box.find_all { |b| b.x >= x1 and b.x + b.w <= x2 and b.y >= y1 and b.y + b.h <= y2 }
@@ -464,8 +478,8 @@ class GraphViewWidget < DrawableWidget
 		if b = find_box_xy(x, y)
 			@selected_boxes = [b] if not @selected_boxes.include? b
 			@caret_box = b
-			@caret_x = (@curcontext.view_x+x/@zoom-b.x-1).to_i / @font_width
-			@caret_y = (@curcontext.view_y+y/@zoom-b.y-1).to_i / @font_height
+			@caret_x = (view_x+x/@zoom-b.x-1).to_i / @font_width
+			@caret_y = (view_y+y/@zoom-b.y-1).to_i / @font_height
 			update_caret
 		else
 			@selected_boxes = []
@@ -517,8 +531,8 @@ class GraphViewWidget < DrawableWidget
 	# check if the user clicked on the beginning/end of an arrow, if so focus on the other end
 	def doubleclick_check_arrow(x, y)
 		return if @margin*@zoom < 2
-		x = @curcontext.view_x+x/@zoom
-		y = @curcontext.view_y+y/@zoom
+		x = view_x+x/@zoom
+		y = view_y+y/@zoom
 		sx = nil
 		if bt = @shown_boxes.to_a.reverse.find { |b|
 			y >= b.y+b.h-1 and y <= b.y+b.h-1+@margin+2 and
@@ -557,10 +571,12 @@ class GraphViewWidget < DrawableWidget
 
 	# update the zoom & view_xy to show the whole graph in the window
 	def zoom_all
-		minx = @curcontext.box.map { |b| b.x }.min.to_i - 10
-		miny = @curcontext.box.map { |b| b.y }.min.to_i - 10
-		maxx = @curcontext.box.map { |b| b.x + b.w }.max.to_i + 10
-		maxy = @curcontext.box.map { |b| b.y + b.h }.max.to_i + 10
+		minx, miny, maxx, maxy = @curcontext.boundingbox
+		minx -= @margin
+		miny -= @margin
+		maxx += @margin
+		maxy += @margin
+
 		@zoom = [width.to_f/(maxx-minx), height.to_f/(maxy-miny)].min
 		@zoom = 1.0 if @zoom > 1.0 or (@zoom-1.0).abs < 0.1
 		@curcontext.view_x = minx + (maxx-minx-width/@zoom)/2
@@ -591,7 +607,7 @@ class GraphViewWidget < DrawableWidget
 		w_w = width
 	       	w_h = height
 		@curcontext.box.each { |b|
-			next if b.x >= @curcontext.view_x+w_w/@zoom or b.y >= @curcontext.view_y+w_h/@zoom or b.x+b.w <= @curcontext.view_x or b.y+b.h <= @curcontext.view_y
+			next if b.x >= view_x+w_w/@zoom or b.y >= view_y+w_h/@zoom or b.x+b.w <= view_x or b.y+b.h <= view_y
 			@shown_boxes << b
 			paint_box(b)
 		}
@@ -610,9 +626,10 @@ class GraphViewWidget < DrawableWidget
 	end
 
 	def paint_arrow(b1, b2)
-		x1, y1 = b1.x+b1.w/2-@curcontext.view_x, b1.y+b1.h-@curcontext.view_y
-		x2, y2 = b2.x+b2.w/2-@curcontext.view_x, b2.y-1-@curcontext.view_y
-		x1o, x2o = x1, x2
+		x1 = x1o = b1.x+b1.w/2-view_x
+		y1 = b1.y+b1.h-view_y
+		x2 = x2o = b2.x+b2.w/2-view_x
+		y2 = b2.y-1-view_y
 		margin = @margin
 		x1 += (-(b1.to.length-1)/2 + b1.to.index(b2)) * margin/2
 		x2 += (-(b2.from.length-1)/2 + b2.from.index(b1)) * margin/2
@@ -683,29 +700,29 @@ class GraphViewWidget < DrawableWidget
 
 	def paint_box(b)
 		set_color_boxshadow(b)
-		draw_rectangle((b.x-@curcontext.view_x+3)*@zoom, (b.y-@curcontext.view_y+4)*@zoom, b.w*@zoom, b.h*@zoom)
+		draw_rectangle((b.x-view_x+3)*@zoom, (b.y-view_y+4)*@zoom, b.w*@zoom, b.h*@zoom)
 		set_color_box(b)
-		draw_rectangle((b.x-@curcontext.view_x)*@zoom, (b.y-@curcontext.view_y+1)*@zoom, b.w*@zoom, b.h*@zoom)
+		draw_rectangle((b.x-view_x)*@zoom, (b.y-view_y+1)*@zoom, b.w*@zoom, b.h*@zoom)
 
 		# current text position
-		x = (b.x - @curcontext.view_x + 1)*@zoom
-		y = (b.y - @curcontext.view_y + 1)*@zoom
-		w_w = (b.x - @curcontext.view_x + b.w - @font_width)*@zoom
-		w_h = (b.y - @curcontext.view_y + b.h - @font_height)*@zoom
+		x = (b.x - view_x + 1)*@zoom
+		y = (b.y - view_y + 1)*@zoom
+		w_w = (b.x - view_x + b.w - @font_width)*@zoom
+		w_h = (b.y - view_y + b.h - @font_height)*@zoom
 		w_h = height if w_h > height
 
 		if @parent_widget and @parent_widget.bg_color_callback
 			ly = 0
 			b[:line_address].each { |a|
 				if c = @parent_widget.bg_color_callback[a]
-					draw_rectangle_color(c, (b.x-@curcontext.view_x)*@zoom, (1+b.y-@curcontext.view_y+ly*@font_height)*@zoom, b.w*@zoom, (@font_height*@zoom).ceil)
+					draw_rectangle_color(c, (b.x-view_x)*@zoom, (1+b.y-view_y+ly*@font_height)*@zoom, b.w*@zoom, (@font_height*@zoom).ceil)
 				end
 				ly += 1
 			}
 		end
 
 		if @caret_box == b
-			draw_rectangle_color(:cursorline_bg, (b.x-@curcontext.view_x)*@zoom, (1+b.y-@curcontext.view_y+@caret_y*@font_height)*@zoom, b.w*@zoom, @font_height*@zoom)
+			draw_rectangle_color(:cursorline_bg, (b.x-view_x)*@zoom, (1+b.y-view_y+@caret_y*@font_height)*@zoom, b.w*@zoom, @font_height*@zoom)
 		end
 
 		return if @zoom < 0.99 or @zoom > 1.1
@@ -734,14 +751,14 @@ class GraphViewWidget < DrawableWidget
 		yoff = @font_height * @zoom
 		b[:line_text_col].each { |list|
 			list.each { |s, c| render[s, c] } if y >= -yoff
-			x = (b.x - @curcontext.view_x + 1)*@zoom
+			x = (b.x - view_x + 1)*@zoom
 			y += yoff
 			break if y > w_h+2
 		}
 
 		if b == @caret_box and focus?
-			cx = (b.x - @curcontext.view_x + 1 + @caret_x*@font_width)*@zoom
-			cy = (b.y - @curcontext.view_y + 1 + @caret_y*@font_height)*@zoom
+			cx = (b.x - view_x + 1 + @caret_x*@font_width)*@zoom
+			cy = (b.y - view_y + 1 + @caret_y*@font_height)*@zoom
 			draw_line_color(:caret, cx, cy, cx, cy+(@font_height-1)*@zoom)
 		end
 	end
@@ -1067,8 +1084,8 @@ p boxes.length
 			redraw
 		when :popupmenu
 			if @caret_box
-				cx = (@caret_box.x - @curcontext.view_x + 1 + @caret_x*@font_width)*@zoom
-				cy = (@caret_box.y - @curcontext.view_y + 1 + @caret_y*@font_height)*@zoom
+				cx = (@caret_box.x - view_x + 1 + @caret_x*@font_width)*@zoom
+				cy = (@caret_box.y - view_y + 1 + @caret_y*@font_height)*@zoom
 				rightclick(cx, cy)
 			end
 
@@ -1223,11 +1240,11 @@ p boxes.length
 	end
 
 	def focus_xy(x, y)
-		if not @curcontext.view_x or @curcontext.view_x*@zoom + width*3/4 < x or @curcontext.view_x*@zoom > x
+		if not view_x or view_x*@zoom + width*3/4 < x or view_x*@zoom > x
 			@curcontext.view_x = (x - width/5)/@zoom
 			redraw
 		end
-		if not @curcontext.view_y or @curcontext.view_y*@zoom + height*3/4 < y or @curcontext.view_y*@zoom > y
+		if not view_y or view_y*@zoom + height*3/4 < y or view_y*@zoom > y
 			@curcontext.view_y = (y - height/5)/@zoom
 			redraw
 		end
