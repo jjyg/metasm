@@ -62,6 +62,61 @@ class Graph
 		[minx, miny, maxx, maxy]
 	end
 
+	# position known box patterns recursively (lines, columns, if/end)
+	def pattern_layout
+		nil while pattern_layout_col or pattern_layout_line or pattern_layout_ifend
+	end
+
+	# a -> b -> c -> d (no other in/outs)
+	def pattern_layout_col
+		# find head
+		return if not head = @groups.find { |g|
+			g.to.length == 1 and
+			g.to[0].from.length == 1 and
+			(g.from.length != 1 or g.from[0].to.length != 1)
+		}
+
+		# find full sequence
+		ar = [head]
+		while head.to.length == 1 and head.to[0].from.length == 1
+			head = head.to[0]
+			ar << head
+		end
+
+		# move boxes inside this group
+		maxw = ar.map { |g| g.w }.max
+		fullh = ar.inject(0) { |h, g| h + g.h }
+		cury = -fullh/2
+		ar.each { |g|
+			dy = cury - g.y
+			g.content.each { |b| b.y += dy }
+			cury += g.h
+		}
+
+		# create remplacement group
+		newg = Box.new(nil, ar.map { |g| g.content }.flatten)
+		newg.w = maxw
+		newg.h = fullh
+		newg.x = -newg.w/2
+		newg.y = -newg.h/2
+		newg.from = ar.first.from - ar
+		newg.to = ar.last.to - ar
+		# fix xrefs
+		newg.from.each { |g| g.to -= ar ; g.to << newg }
+		newg.to.each { |g| g.from -= ar ; g.from << newg }
+		# fix @groups
+		@groups[@groups.index(head)] = newg
+		@groups -= ar
+
+		true
+	end
+
+	def pattern_layout_line
+	end
+
+	def pattern_layout_ifend
+	end
+
 	# find the minimal set of nodes from which we can reach all others
 	# this is done *before* removing cycles in the graph
 	# stored as having an order of 0
@@ -212,6 +267,8 @@ class Graph
 			g.from = g.content.first.from.map { |f| h[f] if f != g }.compact
 		}
 
+		pattern_layout
+
 		maketree
 		return if @layers.empty?
 
@@ -330,10 +387,12 @@ class Graph
 
 		# actually move boxes inside the groups
 		@groups.each { |g|
-			if b = g.content[0]
-				b.x = g.x.to_i + 8
-				b.y = g.y.to_i + 9
-			end
+			dx = (g.x + g.w/2).to_i
+			dy = (g.y + g.h/2).to_i
+			g.content.each { |b|
+				b.x += dx
+				b.y += dy
+			}
 		}
 
 		# TODO
