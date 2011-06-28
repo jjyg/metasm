@@ -189,6 +189,12 @@ class DrawableWidget < Gtk::DrawingArea
 		h.update v => key
 	}
 
+	BasicColor = {	:white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
+			:red => 'f00', :darkred => '800', :palered => 'fcc',
+			:green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
+			:blue => '00f', :darkblue => '008', :paleblue => 'ccf',
+			:yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc' }
+
 	def initialize(*a, &b)
 		@parent_widget = nil
 
@@ -275,12 +281,7 @@ class DrawableWidget < Gtk::DrawingArea
 		}
 
 		signal_connect('realize') {
-			{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
-			  :red => 'f00', :darkred => '800', :palered => 'fcc',
-			  :green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
-			  :blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			  :yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
-			}.each { |tag, val|
+			BasicColor.each { |tag, val|
 				@color[tag] = color(val)
 			}
 

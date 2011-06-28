@@ -1780,6 +1780,11 @@ end
 class DrawableWidget < WinWidget
 	include TextWidget
 
+	BasicColor = {	:white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
+			:red => 'f00', :darkred => '800', :palered => 'fcc',
+			:green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
+			:blue => '00f', :darkblue => '008', :paleblue => 'ccf',
+			:yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc' }
 	attr_accessor :buttons, :parent_widget
 
 	def initialize(*a, &b)
@@ -1797,12 +1802,7 @@ class DrawableWidget < WinWidget
 	end
 
 	def initialize_visible_
-		{ :white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
-			:red => 'f00', :darkred => '800', :palered => 'fcc',
-			:green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
-			:blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			:yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc',
-		}.each { |tag, val|
+		BasicColor.each { |tag, val|
 			@color[tag] = color(val)
 		}
 		@color[:winbg] = Win32Gui.getsyscolor(Win32Gui::COLOR_BTNFACE)
