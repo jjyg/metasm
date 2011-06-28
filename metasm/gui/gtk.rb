@@ -153,7 +153,7 @@ class DrawableWidget < Gtk::DrawingArea
 	# keypress event keyval traduction table
 	Keyboard_trad = Gdk::Keyval.constants.grep(/^GDK_/).inject({}) { |h, cst|
 		v = Gdk::Keyval.const_get(cst)
-		key = cst.to_s.sub(/^GDK_/, '').sub(/^KP_/, '')
+		key = cst.to_s.sub(/^GDK_/, '').sub(/^KEY_/, '').sub(/^KP_/, '')
 		if key.length == 1
 			key = key[0]	# ?a, ?b etc
 		else
@@ -859,13 +859,10 @@ class Window < Gtk::Window
 			key = accel[-1]
 			if key == ?>
 				key = accel[/<(.*)>/, 1]
-				key = case key
-				when 'enter'; Gdk::Keyval::GDK_Return
-				when 'esc'; Gdk::Keyval::GDK_Escape
-				when 'tab'; Gdk::Keyval::GDK_Tab
-				when /^f(\d\d?)$/i; Gdk::Keyval.const_get("GDK_#{key.upcase}")
-				else ??
-				end
+				key = DrawableWidget::Keyboard_trad.index(case key
+				  when 'enter', 'esc', 'tab', /^f(\d\d?)$/i; key.downcase.to_sym
+				  else ??
+				  end)
 			end
 			key = key.unpack('C')[0] if key.kind_of? String	# yay rb19
 			item.add_accelerator('activate', @accel_group, key, (accel[0] == ?^ ? Gdk::Window::CONTROL_MASK : 0), Gtk::ACCEL_VISIBLE)
