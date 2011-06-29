@@ -272,13 +272,38 @@ class Graph
 			@order[g] = 0
 			todo |= g.to
 		}
-		while n = todo.find { |g| g.from.all? { |gg| @order[gg] } } ||
-			  todo.sort_by { |g| g.from.map { |gg| @order[gg] }.compact.max }.first	# cycle heads
+		until todo.empty?
+			if not n = todo.find { |g| g.from.all? { |gg| @order[gg] } }
+				# try to find cycle heads, starting from highest order parent
+				# take additionnal steps to avoid selecting a top node that should be
+				# child of some other loop
+				# eg 1 -> 4 ; 1 -> 2 -> <cycle> -> 4  => start with the cycle, and not 4
+				cheads = todo.sort_by { |g| g.from.map { |gg| @order[gg] }.compact.max || @groups.length }
+				n = cheads.first
+				cheads.each_with_index { |g, i|
+					next if cheads[i+1..-1].find { |gg|
+						can_find_path(gg, g) and not can_find_path(g, gg)
+					}
+					n = g
+					break
+				}
+			end
 			todo.delete n
 			@order[n] = n.from.map { |g| @order[g] }.compact.max + 1
 			todo |= n.to.find_all { |g| not @order[g] }
 		end
 		raise if @order.length != @groups.length
+	end
+
+	# checks if there is a path from src to dst
+	def can_find_path(src, dst)
+		todo = [src]
+		done = {}
+		while g = todo.pop
+			return true if g == dst
+			todo.concat g.to unless done[g]
+			done[g] = true
+		end
 	end
 
 	# remove looping edges from @groups, order the boxes in layers, find the roots of the graph, create dummy groups along long edges
@@ -531,6 +556,7 @@ class GraphViewWidget < DrawableWidget
 		@shown_boxes = []
 		@mousemove_origin = @mousemove_origin_ctrl = nil
 		@curcontext = Graph.new(nil)
+		@want_focus_addr = nil
 		@margin = 8
 		@zoom = 1.0
 		@default_color_association = { :background => :paleblue, :hlbox_bg => :palegrey, :box_bg => :white,
