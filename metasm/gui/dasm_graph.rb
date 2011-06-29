@@ -85,11 +85,18 @@ class Graph
 
 		# move boxes inside this group
 		maxw = ar.map { |g| g.w }.max
+		if ar.last.to.include? ar.first
+			# ar is a loop: shift whole array to
+			#  make place for the arrow going up
+			maxw += 20
+			dx = 10
+		else dx = 0
+		end
 		fullh = ar.inject(0) { |h, g| h + g.h }
 		cury = -fullh/2
 		ar.each { |g|
 			dy = cury - g.y
-			g.content.each { |b| b.y += dy }
+			g.content.each { |b| b.x += dx ; b.y += dy }
 			cury += g.h
 		}
 
@@ -111,10 +118,101 @@ class Graph
 		true
 	end
 
+	# a -> [b, c, d] -> e
 	def pattern_layout_line
+		# find head
+		ar = []
+		@groups.each { |g|
+			if g.from.length == 1 and g.to.length <= 1 and g.from.first.to.length > 1
+				ar = g.from.first.to.find_all { |gg| gg.from == g.from and gg.to == g.to }
+			elsif g.from.empty? and g.to.length == 1 and g.to.first.from.length > 1
+				ar = g.to.first.from.find_all { |gg| gg.from == g.from and gg.to == g.to }
+			else ar = []
+			end
+			break if ar.length > 1
+		}
+		return if ar.length <= 1
+
+		# move boxes inside this group
+		ar = ar.sort_by { |g| g.h }
+		maxh = ar.last.h
+		fullw = ar.inject(0) { |w, g| w + g.w }
+		curx = -fullw/2
+		ar.each { |g|
+			# if no to, put all boxes at bottom ; if no from, put them at top
+			case [g.from.length, g.to.length]
+			when [1, 0]; dy = (g.h - maxh)/2
+			when [0, 1]; dy = (maxh - g.h)/2
+			else dy = 0
+			end
+
+			dx = curx - g.x
+			g.content.each { |b| b.x += dx ; b.y += dy }
+			curx += g.w
+		}
+		# add a gap proportionnal to the ar width
+		maxh += fullw/4
+
+		# create remplacement group
+		newg = Box.new(nil, ar.map { |g| g.content }.flatten)
+		newg.w = fullw
+		newg.h = maxh
+		newg.x = -newg.w/2
+		newg.y = -newg.h/2
+		newg.from = ar.first.from
+		newg.to = ar.first.to
+		# fix xrefs
+		newg.from.each { |g| g.to -= ar ; g.to << newg }
+		newg.to.each { |g| g.from -= ar ; g.from << newg }
+		# fix @groups
+		@groups[@groups.index(ar.first)] = newg
+		@groups -= ar
+
+		true
 	end
 
+	# a -> b -> c & a -> c
 	def pattern_layout_ifend
+		# find head
+		return if not head = @groups.find { |g|
+			g.to.length == 2 and
+			((g.to[0].to.length == 1 and g.to[0].to[0] == g.to[1] and g.to[0].from.length == 1) or
+			 (g.to[1].to.length == 1 and g.to[1].to[0] == g.to[0] and g.to[1].from.length == 1))
+		}
+
+		if head.to[0].from.length == 1
+			ten = head.to[0]
+		else
+			ten = head.to[1]
+		end
+
+		# stuff 'then' inside the 'if'
+		# move 'if' up, 'then' down
+		head.content.each { |g| g.y -= ten.h/2 }
+		ten.content.each { |g| g.y += head.h/2 }
+		head.h += ten.h
+		head.y -= ten.h/2
+
+		# widen 'if'
+		dw = 2*ten.w - head.w
+		if dw > 0
+			# need to widen head to fit ten
+			head.w += dw
+			head.x -= dw/2
+		end
+
+		# merge
+		ten.content.each { |g| g.x += -ten.x }
+		head.content.concat ten.content
+		head.to.delete ten
+		head.to[0].from.delete ten
+
+		# XXX now head is too wide on the left side
+
+		@groups.delete ten
+
+		true
+
 	end
 
 	# find the minimal set of nodes from which we can reach all others

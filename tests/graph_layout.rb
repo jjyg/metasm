@@ -85,6 +85,17 @@ mplarge -> 1 -> 2;
 1 -> 3333333333333333333333333333333333;
 EOS
 	test_layout <<EOS
+multif -> 1
+1 -> a2 -> a3
+a2 -> a222222222 -> a3
+1 -> b2 -> b3
+b2 -> b222222222 -> b3
+EOS
+	test_layout <<EOS
+ifx -> 1 -> 2 -> 3 -> 4 -> 5
+4 -> eeeeeeeeeeee -> 5
+EOS
+	test_layout <<EOS
 dangling -> 2 -> 11 -> 12 -> 13 -> 4;
 2 -> 21 -> 22 -> 23 -> 4;
 2 -> 31 -> 32 -> 33 -> 4;
