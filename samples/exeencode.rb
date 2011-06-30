@@ -27,6 +27,7 @@ $opts = {
 OptionParser.new { |opt|
 	opt.on('-o file', 'output filename') { |f| $opts[:outfilename] = f }
 	opt.on('-i', 'dont overwrite existing outfile') { $opts[:nooverwrite_outfile] = true }
+	opt.on('-f', 'overwrite existing outfile (default)') { $opts.delete :nooverwrite_outfile }	# without this, optparse autocomplete to --fno-pic and break older scripts...
 	opt.on('--c', 'parse source as a C file') { $opts[:srctype] = 'c' }
 	opt.on('--asm', 'parse asm as an ASM file') { $opts[:srctype] = 'asm' }
 	opt.on('--stdin', 'parse source on stdin') { ARGV << '-' }
