@@ -1834,7 +1834,13 @@ class WinDebugger < Debugger
 	end
 
 	def set_reg_value(r, v)
-		ctx[r] = v
+		if @state == :running
+			suspend
+			ctx[r] = v
+			resume
+		else
+			ctx[r] = v
+		end
 	end
 
 	def do_continue(*a)
@@ -1842,6 +1848,7 @@ class WinDebugger < Debugger
 		if @continuecode == :suspended
 			resume
 		else
+			@state = :running
 			WinAPI.continuedebugevent(@pid, @tid, @continuecode)
 		end
 	end
@@ -1851,6 +1858,7 @@ class WinDebugger < Debugger
 		if @continuecode == :suspended
 			resume
 		else
+			@state = :running
 			WinAPI.continuedebugevent(@pid, @tid, @continuecode)
 		end
 	end
@@ -2031,6 +2039,7 @@ class WinDebugger < Debugger
 
 	def resume
 		@state = :running
+		@info = nil
 		os_thread.resume
 	end
 

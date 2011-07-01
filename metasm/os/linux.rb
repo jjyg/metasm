@@ -987,11 +987,13 @@ class LinDebugger < Debugger
 	end
 
 	def do_continue
+		@state = :running
 		@ptrace.pid = tid
 		@ptrace.cont(@continuesignal)
 	end
 
 	def do_singlestep(*a)
+		@state = :running
 		@ptrace.pid = tid
 		@ptrace.singlestep(@continuesignal)
 	end

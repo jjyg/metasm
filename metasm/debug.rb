@@ -593,7 +593,6 @@ puts di.instruction, fdbd.inspect
 		@breakpoint_cause = nil
 		@run_method = run_m
 		@run_args = run_a
-		@state = :running
 		@info = nil
 		true
 	end
