@@ -46,10 +46,10 @@ class Ia32
 	end
 
 	def dbg_enable_singlestep(dbg)
-		dbg_set_flag(dbg, :t)
+		dbg_set_flag(dbg, :t) if dbg_get_flag(dbg, :t) == 0
 	end
 	def dbg_disable_singlestep(dbg)
-		dbg_unset_flag(dbg, :t)
+		dbg_unset_flag(dbg, :t) if dbg_get_flag(dbg, :t) != 0
 	end
 
 	def dbg_enable_bp(dbg, bp)
@@ -113,7 +113,7 @@ class Ia32
 		if dbg[:dr6] == 0 and dbg[:dr7] == 0
 			dbg[:dr7] = 0x10000	# some OS (eg Windows) only return dr6 if dr7 != 0
 		end
-		dbg[:dr6] = 0
+		dbg[:dr6] = 0 if dbg[:dr6] & 0x400f != 0
 	end
 
 	def dbg_evt_bpx(dbg, b)
