@@ -13,7 +13,11 @@ include Metasm
 def test_layout(lo)
 	$cur ||= 0
 	$cur += 1
-	return if $target and $cur != $target
+	if $target.to_i != 0
+		return if $cur != $target
+	else
+		return if not lo.include? $target
+	end if $target
 	puts $cur, lo, '' if $VERBOSE
 	w = Gui::Window.new
 	ww = w.widget = Gui::GraphViewWidget.new(nil, nil)
@@ -94,6 +98,17 @@ EOS
 	test_layout <<EOS
 ifx -> 1 -> 2 -> 3 -> 4 -> 5
 4 -> eeeeeeeeeeee -> 5
+EOS
+	test_layout <<EOS
+llll -> 1 -> 22222222222222222222222222 -> e
+1 -> 33333333333333333333333333 -> e
+1 -> 4444444444444444444444 -> e
+1 -> 5 -> e
+5 -> 5t -> e
+1 -> 6 -> e
+6 -> 6t -> e
+1 -> 7 -> e
+7 -> 7t -> e
 EOS
 	test_layout <<EOS
 dangling -> 2 -> 11 -> 12 -> 13 -> 4;
@@ -262,6 +277,6 @@ rescue Interrupt
 end
 
 if __FILE__ == $0
-	$target = ARGV[0].to_i if ARGV[0]
+	$target = ARGV[0]
 	test_all
 end
