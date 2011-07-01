@@ -134,7 +134,7 @@ class Graph
 		return if ar.length <= 1
 
 		# move boxes inside this group
-		ar = ar.sort_by { |g| g.h }
+		ar = ar.sort_by { |g| -g.h }
 		maxh = ar.last.h
 		fullw = ar.inject(0) { |w, g| w + g.w }
 		curx = -fullw/2
@@ -150,8 +150,14 @@ class Graph
 			g.content.each { |b| b.x += dx ; b.y += dy }
 			curx += g.w
 		}
-		# add a gap proportionnal to the ar width
-		maxh += fullw/4
+		# add a 'margin-top' proportionnal to the ar width
+		# this gap should be relative to the real boxes and not possible previous gaps when
+		# merging lines (eg long line + many if patterns -> dont duplicate gaps)
+		boxen = ar.map { |g| g.content }.flatten
+		realh = boxen.map { |g| g.y + g.h }.max - boxen.map { |g| g.y }.min
+		if maxh < realh + fullw/4
+			maxh = realh + fullw/4
+		end
 
 		# create remplacement group
 		newg = Box.new(nil, ar.map { |g| g.content }.flatten)
