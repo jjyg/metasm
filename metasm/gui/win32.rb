@@ -1562,7 +1562,7 @@ class ContainerVBoxWidget < WinWidget
 		cy = 0
 		pv = []
 		@views.each_with_index { |v, i|
-			if y >= cy and y < cy + v.height
+			if y >= cy+1 and y < cy + v.height - 1
 				if @focus_idx != i
 					@focus_idx = i
 					redraw
@@ -1571,7 +1571,7 @@ class ContainerVBoxWidget < WinWidget
 				return
 			end
 			cy += v.height
-			if y >= cy and y < cy+@spacing
+			if y >= cy-1 and y < cy+@spacing+1
 				vsz = v
 				@resizing = v
 				@wantheight[@resizing] ||= v.height
