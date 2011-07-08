@@ -351,8 +351,7 @@ class DisasmWidget < ContainerChoiceWidget
 		}
 	end
 
-	def prompt_backtrace
-		addr = curaddr
+	def prompt_backtrace(addr=curaddr)
 		inputbox('expression to backtrace', :text => curview.hl_word) { |e|
 			expr = IndExpression.parse_string(e)
 			bd = {}
@@ -389,6 +388,38 @@ class DisasmWidget < ContainerChoiceWidget
 				a = i[0].empty? ? i[2] : i[0]
 				focus_addr(a, nil, true)
  			}
+		}
+	end
+
+	# prompt the struct to use for offset in a given instr
+	def prompt_struct_offset(di=curobj)
+		return if not di.kind_of? DecodedInstruction
+		off = nil
+		di.each_expr { |e|
+			# hit only ints after an actual '+' sign
+			# XXX this sucks more than ivans sister
+			if e.kind_of?(Expression) and e.op == :+ and e.lexpr and e.rexpr.kind_of?(Expression) and e.rexpr.op == :+ and not e.rexpr.lexpr
+				foo = e.rexpr.rexpr
+				if foo.kind_of?(Integer)
+					off = foo
+				elsif foo.kind_of?(ExpressionString) and foo.type == :structoff
+					off = foo.expr.reduce
+				end
+			end
+		}
+		raise 'cant see any offset there !' if not off
+		stlist = []
+		@dasm.c_parser.toplevel.struct.each_value { |st|
+			if st.kind_of?(C::Struct) and stm = st.findmember_atoffset(@dasm.c_parser, off) and stm.name
+				stlist << [st, stm]
+			end
+		}
+
+		list =  [['struct'], ['none']] + stlist.map { |st, stm| "#{st.name}.#{stm.name}" }
+		listwindow("chose structure for offset #{Expression[off]}", list) { |a|
+			stn = a[0].split('.')[0] if a[0] != 'none'
+			@dasm.patch_structoffset(di, stn, off)
+			gui_update
 		}
 	end
 
@@ -552,10 +583,10 @@ class DisasmWidget < ContainerChoiceWidget
 				curview.hl_word = w 
 				curview.redraw
 			}
-		when ?b; prompt_backtrace
-		when ?c; disassemble(curview.current_address)
-		when ?C; disassemble_fast(curview.current_address)
-		when ?d; toggle_data(curview.current_address)
+		when ?b; prompt_backtrace(curaddr)
+		when ?c; disassemble(curaddr)
+		when ?C; disassemble_fast(curaddr)
+		when ?d; toggle_data(curaddr)
 		when ?f; list_functions
 		when ?g; prompt_goto
 		when ?l; list_labels
@@ -563,9 +594,10 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?o; toggle_expr_offset(curobj)
 		when ?p; playpause_dasm
 		when ?r; toggle_expr_char(curobj)
+		when ?t; prompt_struct_offset(curobj)
 		when ?v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag
 		when ?x; list_xrefs(pointed_addr)
-		when ?;; add_comment(curview.current_address)
+		when ?;; add_comment(curaddr)
 
 		when ?\ ; toggle_view(:listing)
 		when :tab; toggle_view(:decompile)

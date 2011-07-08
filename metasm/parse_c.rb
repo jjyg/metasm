@@ -249,7 +249,7 @@ module C
 		end
 
 		def findmember(name, igncase=false)
-			raise 'undefined structure' if not @members
+			raise 'undefined structure' if not members
 			return @fldlist[name] if fldlist and @fldlist[name]
 
 			name = name.downcase if igncase
@@ -267,7 +267,7 @@ module C
 		end
 
 		def offsetof(parser, name)
-			raise parser, 'undefined structure' if not @members
+			raise parser, 'undefined structure' if not members
 			update_member_cache(parser) if not fldlist
 			return 0 if @fldlist[name]
 
@@ -284,7 +284,7 @@ module C
 		end
 
 		def bitoffsetof(parser, name)
-			raise parser, 'undefined structure' if not @members
+			raise parser, 'undefined structure' if not members
 			update_member_cache(parser) if not fldlist
 			return if @fldlist[name] or @members.include?(name)
 			raise parser, 'undefined union' if not @members
@@ -397,7 +397,7 @@ module C
 		def align(parser) [@members.to_a.map { |m| m.type.align(parser) }.max || 1, (pack || 8)].min end
 
 		def offsetof(parser, name)
-			raise parser, 'undefined structure' if not @members
+			raise parser, 'undefined structure' if not members
 			update_member_cache(parser) if not fldlist
 			return @fldoffset[name] if @fldoffset[name]
 
@@ -449,7 +449,7 @@ module C
 		# returns the [bitoffset, bitlength] of the field if it is a bitfield
 		# this should be added to the offsetof(field)
 		def bitoffsetof(parser, name)
-			raise parser, 'undefined structure' if not @members
+			raise parser, 'undefined structure' if not members
 			update_member_cache(parser) if not fldlist
 			return @fldbitoffset[name] if fldbitoffset and @fldbitoffset[name]
 			return if @fldlist[name] or @members.include?(name)
@@ -459,6 +459,15 @@ module C
 			@members.find { |m|
 				m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
 			}.type.untypedef.bitoffsetof(parser, name)
+		end
+
+		# returns the @member element that has offsetof(m) == off
+		def findmember_atoffset(parser, off)
+			return if not members
+			update_member_cache(parser) if not fldlist
+			if m = @fldoffset.index(off)
+				@fldlist[m]
+			end
 		end
 
 		def parse_members(parser, scope)

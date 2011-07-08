@@ -1104,6 +1104,29 @@ class Disassembler
 		delta
 	end
 
+	# change Expressions in the instruction args to display <somestruct>.<somemember>
+	def patch_structoffset(di, stname, off=nil)
+		tge = nil
+		di.each_expr { |e|
+			if e.kind_of?(Expression) and e.op == :+
+				if e.rexpr.kind_of? Integer and (not off or off == e.rexpr)
+					tge = e
+				elsif e.rexpr.kind_of? ExpressionString and (not off or off == e.rexpr.reduce)
+					tge = e
+				end
+			end
+		}
+		raise 'cant find offset' if not tge
+		if not stname
+			# replace str.mem by the original offset
+			tge.rexpr = Expression[tge.rexpr].reduce
+		else
+			st = c_parser.toplevel.struct[stname]
+			stm = st.findmember_atoffset(c_parser, off)
+			tge.rexpr = ExpressionStringStructoff.new(tge.rexpr, st, stm)
+		end
+	end
+
 	# change Expression display mode for current object o to display integers as char constants
 	def toggle_expr_char(o)
 		return if not o.kind_of?(Renderable)

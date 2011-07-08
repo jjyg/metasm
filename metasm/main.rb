@@ -847,16 +847,28 @@ end
 # used to show #define constants, struct offsets, func local vars, etc
 class ExpressionString < ExpressionType
 	attr_accessor :expr, :str, :type
-	def reduce_rec
-		expr.reduce_rec
-	end
-	def bind(*a)
-		expr.bind(*a)
-	end
+	def reduce; expr.reduce; end
+	def reduce_rec; expr.reduce_rec; end
+	def bind(*a); expr.bind(*a); end
 	def initialize(expr, str, type)
 		@expr = Expression[expr]
 		@str = str
 		@type = type
+	end
+end
+
+# Custom ExpressionString to represent an offset inside a structure
+class ExpressionStringStructoff < ExpressionString
+	attr_accessor :struct, :member
+	def initialize(expr, st, stm)
+		@expr = Expression[expr]
+		@struct = st
+		@member = stm
+		@type = :structoff
+	end
+
+	def render
+		[@struct.name, '.', @member.name]
 	end
 end
 
