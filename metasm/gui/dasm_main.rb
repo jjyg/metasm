@@ -391,6 +391,47 @@ class DisasmWidget < ContainerChoiceWidget
 		}
 	end
 
+	# prompt the contant to use in place of some numeric value
+	def prompt_constant(di=curobj)
+		return if not di.kind_of? DecodedInstruction
+		di.each_expr { |e|
+			if e.lexpr.kind_of? Integer or e.lexpr.kind_of?(ExpressionString)
+				v = Expression[e.lexpr].reduce
+				lst = []
+				dasm.c_constants.each { |cn, cv| lst << [cn] if v == cv }
+				if not lst.empty?
+					default = Expression[v].to_s
+					lst << [default]
+					listwindow("constant for #{Expression[v]}", [['name']] + lst) { |a|
+						if a[0] == default
+							e.lexpr = v
+						else
+							e.lexpr = ExpressionString.new(v, a[0], :constant)
+						end
+						gui_update
+					}
+				end
+			end
+			if e.rexpr.kind_of? Integer or e.rexpr.kind_of?(ExpressionString)
+				v = Expression[e.rexpr].reduce
+				lst = []
+				dasm.c_constants.each { |cn, cv| lst << [cn] if v == cv }
+				if not lst.empty?
+					default = Expression[v].to_s
+					lst << [default]
+					listwindow("constant for #{Expression[v]}", [['name']] + lst) { |a|
+						if a[0] == default
+							e.rexpr = v
+						else
+							e.rexpr = ExpressionString.new(v, a[0], :constant)
+						end
+						gui_update
+					}
+				end
+			end
+		}
+	end
+
 	# prompt the struct to use for offset in a given instr
 	def prompt_struct_offset(di=curobj)
 		return if not di.kind_of? DecodedInstruction
@@ -415,7 +456,7 @@ class DisasmWidget < ContainerChoiceWidget
 			end
 		}
 
-		list =  [['struct'], ['none']] + stlist.map { |st, stm| "#{st.name}.#{stm.name}" }
+		list =  [['struct'], ['none']] + stlist.map { |st, stm| ["#{st.name}.#{stm.name}"] }
 		listwindow("chose structure for offset #{Expression[off]}", list) { |a|
 			stn = a[0].split('.')[0] if a[0] != 'none'
 			@dasm.patch_structoffset(di, stn, off)
@@ -590,6 +631,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?f; list_functions
 		when ?g; prompt_goto
 		when ?l; list_labels
+		when ?m; prompt_constant(curobj)
 		when ?n; rename_label(pointed_addr)
 		when ?o; toggle_expr_offset(curobj)
 		when ?p; playpause_dasm

@@ -505,12 +505,18 @@ class Disassembler
 
 	# parses a C string for function prototypes
 	def parse_c(str, filename=nil, lineno=1)
+		@c_parser_constcache = nil
 		@c_parser ||= @cpu.new_cparser
 		@c_parser.lexer.define_weak('__METASM__DECODE__')
 		@c_parser.parse(str, filename, lineno)
 	rescue ParseError
 		@c_parser.lexer.feed! ''
 		raise
+	end
+
+	# list the constants ([name, integer value]) defined in the C code (#define / enums)
+	def c_constants
+		@c_parser_constcache ||= @c_parser.numeric_constants
 	end
 
 	# returns the canonical form of addr (absolute address integer or label of start of section + section offset)
