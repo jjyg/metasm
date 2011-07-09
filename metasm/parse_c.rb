@@ -2941,8 +2941,9 @@ EOH
 			end
 
 			a, val = a
-			raise "#{a.inspect} not a struct member" if not a.kind_of? C::Variable and not f = @struct.findmember(a.to_s, true)
-			a = f.name if a.kind_of? String or a.kind_of? Symbol
+			f = a
+			raise "#{a.inspect} not a struct member" if not f.kind_of? C::Variable and not f = @struct.findmember(a.to_s, true)
+			a = f.name || f
 			val = sizeof if val == :size
 			off = @stroff + @struct.offsetof(@cp, a)
 
