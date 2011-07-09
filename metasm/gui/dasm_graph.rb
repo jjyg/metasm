@@ -693,7 +693,9 @@ class GraphViewWidget < DrawableWidget
 		       	}	# XXX auto \r\n vs \n
 			addsubmenu(m, '_clipboard', cm)
 			addsubmenu(m, 'clone _window') { @parent_widget.clone_window(@hl_word, :graph) }
-			# TODO @parent_widget.contextmenu (for debugger)
+			if @parent_widget.respond_to?(:extend_contextmenu)
+				@parent_widget.extend_contextmenu(self, m, @caret_box[:line_address][@caret_y])
+			end
 			popupmenu(m, x, y)
 		end
 	end

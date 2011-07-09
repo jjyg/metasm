@@ -673,6 +673,12 @@ class DisasmWidget < ContainerChoiceWidget
 		else messagebox("unsupported file extension #{f}")
 		end
 	end
+
+	def extend_contextmenu(tg, menu, addr=nil)
+		if @parent_widget.respond_to?(:extend_contextmenu)
+			@parent_widget.extend_contextmenu(tg, menu, addr)
+		end
+	end
 end
 
 # this widget is loaded in an empty DasmWindow to handle shortcuts (open file, etc)

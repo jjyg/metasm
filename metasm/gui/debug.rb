@@ -204,6 +204,24 @@ class DbgWidget < ContainerVBoxWidget
 		else messagebox("unsupported file extension #{f}")
 		end
 	end
+
+	def extend_contextmenu(tg, menu, addr=nil)
+		if addr
+			bm = tg.new_menu
+			bl = @dbg.all_breakpoints(addr)
+			if not bl.empty?
+				tg.addsubmenu(bm, '_clear breakpoint') { bl.each { |b| @dbg.del_bp(b) } }
+			end
+			tg.addsubmenu(bm, '_go here') { @dbg.bpx(addr, true) ; dbg_continue }
+			tg.addsubmenu(bm, '_bpx') { @dbg.bpx(addr) }
+			tg.addsubmenu(bm, 'bpm _read') { @dbg.hwbp(addr, :r, 1) }
+			tg.addsubmenu(bm, 'bpm _write') { @dbg.hwbp(addr, :w, 1) }
+			tg.addsubmenu(menu, '_bp', bm)
+		end
+		if @parent_widget.respond_to?(:extend_contextmenu)
+			@parent_widget.extend_contextmenu(tg, menu, addr)
+		end
+	end
 end
 
 
