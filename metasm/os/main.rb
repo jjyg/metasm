@@ -51,11 +51,19 @@ class OS
 		pr
 	end
 
+	# return 'winos' or 'linos' depending on the underlying OS
+	def self.shortname
+		case RUBY_PLATFORM
+		when /mswin|mingw|cygwin/i; 'winos'
+		when /linux/i; 'linos'
+		end
+	end
+
 	# return the platform-specific version
 	def self.current
-		case RUBY_PLATFORM
-		when /mswin|mingw|cygwin/i; WinOS
-		when /linux/i; LinOS
+		case shortname
+		when 'winos'; WinOS
+		when 'linos'; LinOS
 		end
 	end
 end
