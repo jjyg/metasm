@@ -491,6 +491,10 @@ typedef struct _PROCESS_INFORMATION {
 } PROCESS_INFORMATION, *PPROCESS_INFORMATION, *LPPROCESS_INFORMATION;
 
 
+WINAPI
+DWORD
+GetVersion(VOID);
+
 WINBASEAPI
 HANDLE
 WINAPI
@@ -1650,6 +1654,11 @@ class << self
 		end
 	end
 
+	# returns the [major, minor] version of the windows os
+	def version
+		v = WinAPI.getversion
+		[v & 0xff, (v>>8) & 0xff]
+	end
 end	# class << self
 end
 
