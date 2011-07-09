@@ -70,7 +70,6 @@ class AsmListingWidget < DrawableWidget
 			addsubmenu(cm, 'copy _all')  { clipboard_copy(@line_text.join("\r\n")) }	# XXX auto \r\n vs \n
 			addsubmenu(m, '_clipboard', cm)
 			addsubmenu(m, 'clone _window') { @parent_widget.clone_window(@hl_word, :listing) }
-			addsubmenu(m, 'FUUU') { messagebox('lol', 'lal') }
 			if @parent_widget.respond_to?(:extend_contextmenu)
 				@parent_widget.extend_contextmenu(self, m, @line_address[@caret_y])
 			end
