@@ -491,10 +491,17 @@ class WindowsHeap < Heap
 			scan_heap_segment(p, l)
 		}
 		scan_frontend(ar)
-		del_fastbins(ar)
+		scan_valloc(ar)
 	end
 
 	def scan_frontend(ar)
+	end
+
+	def scan_valloc(ar)
+		each_listentry(ar.virtualallocdblocks, '_HEAP_VIRTUAL_ALLOC_ENTRY') { |va|
+			# Unusedbyte count stored in the BusyBlock.Size field
+			@chunks[va.stroff + va.sizeof] = va.CommitSize - va.Size
+		}
 	end
 
 	def scan_heap_segment(first, len)
@@ -566,10 +573,6 @@ class WindowsHeap < Heap
 				ptr = sa + sl
 			}
 		}
-	end
-
-	def del_fastbins(ar)
-		# TODO
 	end
 
 	# call with a LIST_ENTRY allocstruct, the target structure and LE offset in this structure
