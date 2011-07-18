@@ -2740,7 +2740,7 @@ EOH
 					unless (r.kind_of?(CExpression) and not r.lexpr and r.type.kind_of?(BaseType) and
 					    ((not r.op and r.rexpr.kind_of?(Integer)) or
 					     (r.op == :- and r.rexpr.kind_of?(CExpression) and not r.rexpr.op and not r.rexpr.lexpr and r.rexpr.rexpr.kind_of?(Integer))) and
-					     l.kind_of?(Typed) and (l.type.kind_of?(BaseType) or (l.type.kind_of?(Pointer) and r.rexpr == 0)))
+					     l.kind_of?(Typed) and (l.type.untypedef.kind_of?(BaseType) or (l.type.untypedef.kind_of?(Pointer) and r.rexpr == 0)))
 						# avoid useless warnings on unsigned foo = -1  /  void *foo = 0
 						parser.check_compatible_type(parser, r.type, l.type)
 					end
