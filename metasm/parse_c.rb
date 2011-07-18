@@ -2729,14 +2729,21 @@ EOH
 			stack = []
 
 			popstack = lambda {
-				r, l = stack.pop, stack.pop
+				r = stack.pop
+				l = stack.pop
 				case op = opstack.pop
 				when :'?:'
 					stack << CExpression.new(stack.pop, op, [l, r], l.type)
 				when :','
 					stack << CExpression.new(l, op, r, r.type)
 				when :'='
-					parser.check_compatible_type(parser, r.type, l.type)
+					unless (r.kind_of?(CExpression) and not r.lexpr and r.type.kind_of?(BaseType) and
+					    ((not r.op and r.rexpr.kind_of?(Integer)) or
+					     (r.op == :- and r.rexpr.kind_of?(CExpression) and not r.rexpr.op and not r.rexpr.lexpr and r.rexpr.rexpr.kind_of?(Integer))) and
+					     l.kind_of?(Typed) and (l.type.kind_of?(BaseType) or (l.type.kind_of?(Pointer) and r.rexpr == 0)))
+						# avoid useless warnings on unsigned foo = -1  /  void *foo = 0
+						parser.check_compatible_type(parser, r.type, l.type)
+					end
 					stack << CExpression.new(l, op, r, l.type)
 				when :'&&', :'||'
 					stack << CExpression.new(l, op, r, BaseType.new(:int))
