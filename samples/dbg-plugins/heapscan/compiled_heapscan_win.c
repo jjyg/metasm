@@ -12,7 +12,7 @@ VALUE rb_hash_aset(VALUE, VALUE, VALUE);
 VALUE rb_hash_aref(VALUE, VALUE);
 VALUE rb_uint2inum(VALUE);
 VALUE rb_num2ulong(VALUE);
-char *rb_string_value_ptr(VALUE);
+char *rb_string_value_ptr(VALUE*);
 VALUE rb_gc_enable(void);
 VALUE rb_gc_disable(void);
 
@@ -40,7 +40,7 @@ static VALUE m_WindowsHeap23scan_heap_segment(VALUE self, VALUE vfirst, VALUE vl
 	while (off < len) {
 		he = heapcpy + off;
 		if (he->Flags & 1) {
-			sz = he->Size*8;
+			sz = (VALUE)he->Size*8;
 			if (sz > he->UnusedBytes)
 				sz -= he->UnusedBytes;
 			else
@@ -72,7 +72,7 @@ static VALUE m_WindowsHeap23scan_heap_segment_xr(VALUE self, VALUE vfirst, VALUE
 
 	rb_gc_disable();
 	off = 0;
-	VALUE *ptr0, *base, cklen;
+	VALUE *ptr0, base, cklen;
 	while (off < len) {
 		he = heapcpy + off;
 		// address of the chunk
@@ -81,7 +81,7 @@ static VALUE m_WindowsHeap23scan_heap_segment_xr(VALUE self, VALUE vfirst, VALUE
 		    (((cklen = rb_hash_aref(chunks, rb_uint2inum(base)))|4) != 4)) {
 			cklen /= 2*sizeof(void*);	// /2 == FIX2INT
 			// pointer to the data for the chunk in our copy of the heap from pagecache
-			ptr0 = heapcpy + off + sizeof(*he);
+			ptr0 = (VALUE*)(heapcpy + off + sizeof(*he));
 			VALUE tabto = 0;
 			VALUE tabfrom;
 			while (cklen--) {
