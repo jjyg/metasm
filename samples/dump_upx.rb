@@ -10,7 +10,7 @@
 # original entrypoint by disassembling the UPX stub, set breakpoint on it,
 # run the program, and dump the loaded image to an executable PE.
 #
-# usage: dump_upx.rb <packed.exe> [<dumped.exe>] [<rva iat>]
+# usage: dump_upx.rb <packed.exe> [<dumped.exe>] [<iat (r)va>]
 #
 
 require 'metasm'
@@ -40,7 +40,7 @@ class UPXUnpacker
 
 	# disassemble the upx stub to find a cross-section jump (to the real entrypoint)
 	def find_oep(pe)		
-		dasm = pe.disassemble_fast 'entrypoint'
+		dasm = pe.disassemble_fast_deep 'entrypoint'
 		
 		return if not jmp = dasm.decoded.find { |addr, di|
 			# check only once per basic block
@@ -90,6 +90,6 @@ class UPXUnpacker
 end
 
 if __FILE__ == $0
-	# args: packed [unpacked] [iat rva]
+	# args: packed_filename [unpacked_filename] [iat (r)va]
 	UPXUnpacker.new(ARGV.shift, ARGV.shift, (Integer(ARGV.shift) rescue nil))
 end
