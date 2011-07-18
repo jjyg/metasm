@@ -34,7 +34,7 @@ if not File.exist?(fname + '.so') and File.exist?(fname + '.c')
 	puts "compiling native scanner..."
 	exe = DynLdr.host_exe.compile_c_file(DynLdr.host_cpu, fname + '.c')
 	DynLdr.compile_binary_module_hack(exe)
-	exe.encode_file fname + '.so'
+	exe.encode_file(fname + '.so', :lib)
 end
 require fname if File.exist?(fname + '.so')
 
