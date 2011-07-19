@@ -41,7 +41,7 @@ if opts[:vspath] ||= ARGV.shift
 end
 
 funcnames = opts[:exe].map { |e|
-	pe = PE.decode_file_header(e)
+	pe = PE.decode_file_header(e) rescue next
 	pe.decode_imports
 	if not pe.imports
 		puts "#{e} has no imports"
