@@ -272,6 +272,9 @@ dang2 -> 2 -> 3 -> 4 -> 5 -> 6 -> 4
 5 -> 9
 9 -> a -> 9
 EOS
+	test_layout <<EOS
+onlyloop -> onlyloop
+EOS
 
 rescue Interrupt
 end

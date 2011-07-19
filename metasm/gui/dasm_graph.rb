@@ -278,6 +278,7 @@ class Graph
 			@order[g] = 0
 			todo |= g.to
 		}
+		todo -= roots
 		until todo.empty?
 			if not n = todo.find { |g| g.from.all? { |gg| @order[gg] } }
 				# try to find cycle heads, starting from highest order parent
