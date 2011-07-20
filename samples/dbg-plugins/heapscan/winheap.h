@@ -150,6 +150,10 @@ typedef struct _HEAP_LOOKASIDE       // 10 elements, 0x30 bytes (sizeof)
 /*0x02C*/     UINT8        _PADDING0_[0x4];
 }HEAP_LOOKASIDE, *PHEAP_LOOKASIDE;
 
+struct FRONTEND1 {
+	struct _HEAP_LOOKASIDE l[128];
+};
+
 typedef struct _HEAP_SEGMENT                           // 15 elements, 0x3C bytes (sizeof)
 {
 /*0x000*/     struct _HEAP_ENTRY Entry;                          // 7 elements, 0x8 bytes (sizeof)
