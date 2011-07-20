@@ -1527,6 +1527,7 @@ class ContainerChoiceWidget < WinWidget
 
 	def set_focus(c)
 		@curview = c
+		grab_focus
 		redraw
 	end
 end
@@ -1708,6 +1709,7 @@ class ContainerVBoxWidget < WinWidget
 
 	def set_focus(c)
 		@focus_idx = @views.index(c)
+		grab_focus
 		redraw
 	end
 end
