@@ -495,6 +495,19 @@ class WindowsHeap < Heap
 	end
 
 	def scan_frontend(ar)
+		if ar.frontendheaptype == 1
+			laptr = ar.frontendheap
+			@chunks.delete laptr	# not a real (user) chunk
+			128.times {
+				la = @cp.decode_c_struct('_HEAP_LOOKASIDE', @dbg.memory, laptr)
+				free = la.listhead.flink
+				while free
+					@chunks.delete free
+					free = @cp.decode_c_struct('_LIST_ENTRY', @dbg.memory, free).flink
+				end
+				laptr += la.sizeof
+			}
+		end
 	end
 
 	def scan_valloc(ar)

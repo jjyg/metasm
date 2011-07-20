@@ -93,7 +93,7 @@ class GraphHeapWidget < GraphViewWidget
 					inputbox("new value for #{m.name}", :text => defval.to_s) { |nn|
 						if string
 							am = as[m]
-							(nn.unpack('C*') + [0]).each_with_index { |b, i| am[i] = b }
+							(nn.unpack('C*') + [0]).each_with_index { |b_, i| am[i] = b_ }
 						else
 							as[m] = Expression.parse_string(nn).reduce
 						end
@@ -134,8 +134,8 @@ class GraphHeapWidget < GraphViewWidget
 		# link boxes
 		if (@heap.xrchunksto[ctx.box.first.id].to_a & @addr_struct.keys).length == ctx.box.length - 1
 			ot = ctx.box[0].id
-			ctx.box[1..-1].each { |b|
-				ctx.link_boxes(ot, b.id)
+			ctx.box[1..-1].each { |b_|
+				ctx.link_boxes(ot, b_.id)
 			}
 		else
 		    ctx.box.each { |b|
