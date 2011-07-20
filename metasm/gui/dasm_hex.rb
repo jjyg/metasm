@@ -47,7 +47,7 @@ class HexWidget < DrawableWidget
 			  :write_pending => :darkred, :caret_mirror => :palegrey }
 	end
 
-	def resized(w, h)
+	def resized(w=width, h=height)
 		wc = w/@font_width
 		hc = h/@font_height
 		ca = current_address
@@ -103,6 +103,7 @@ class HexWidget < DrawableWidget
 			end
 		else
 			@data_size = {1 => 2, 2 => 4, 4 => 8, 8 => 1}[@data_size]
+			resized
 		end
 		redraw
 	end
