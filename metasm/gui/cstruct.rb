@@ -179,28 +179,31 @@ class CStructWidget < DrawableWidget
 		when ?l
 			liststructs
 		when ?t
-			inputbox('new struct name to use', :text => (@curstruct.name rescue '')) { |n|
-				lst = @dasm.c_parser.toplevel.struct.keys.grep(String)
-				if fn = lst.find { |ln| ln == n } || lst.find { |ln| ln.downcase == n.downcase }
-					focus_addr(@curaddr, @dasm.c_parser.toplevel.struct[fn])
-				else
-					lst = @dasm.c_parser.toplevel.symbol.keys.grep(String).find_all { |ln|
-						s = @dasm.c_parser.toplevel.symbol[ln]
-						s.kind_of?(C::TypeDef) and s.untypedef.kind_of?(C::Union)
-					}
-					if fn = lst.find { |ln| ln == n } || lst.find { |ln| ln.downcase == n.downcase }
-						focus_addr(@curaddr, @dasm.c_parser.toplevel.symbol[fn].untypedef)
-					else
-						liststructs(n)
-					end
-				end
-			}
+			inputbox('new struct name to use', :text => (@curstruct.name rescue '')) { |n| focus_struct_byname(n) }
 		else return false
 		end
 		true
 	end
 
-	def liststructs(partname=nil)
+	# display the struct or pop a list of matching struct names if ambiguous
+	def focus_struct_byname(n, addr=@curaddr)
+		lst = @dasm.c_parser.toplevel.struct.keys.grep(String)
+		if fn = lst.find { |ln| ln == n } || lst.find { |ln| ln.downcase == n.downcase }
+			focus_addr(addr, @dasm.c_parser.toplevel.struct[fn])
+		else
+			lst = @dasm.c_parser.toplevel.symbol.keys.grep(String).find_all { |ln|
+				s = @dasm.c_parser.toplevel.symbol[ln]
+				s.kind_of?(C::TypeDef) and s.untypedef.kind_of?(C::Union)
+			}
+			if fn = lst.find { |ln| ln == n } || lst.find { |ln| ln.downcase == n.downcase }
+				focus_addr(addr, @dasm.c_parser.toplevel.symbol[fn].untypedef)
+			else
+				liststructs(n, addr)
+			end
+		end
+	end
+
+	def liststructs(partname=nil, addr=@curaddr)
 		tl = @dasm.c_parser.toplevel
 		list = [['name', 'size']]
 		list += tl.struct.keys.grep(String).sort.map { |stn|
@@ -216,12 +219,12 @@ class CStructWidget < DrawableWidget
 		}.compact
 
 		if partname and list.length == 2
-			focus_addr(@curaddr, tl.struct[list[1][0]] || tl.symbol[list[1][0]].untypedef)
+			focus_addr(addr, tl.struct[list[1][0]] || tl.symbol[list[1][0]].untypedef)
 			return
 		end
 
 		listwindow('structs', list) { |stn|
-			focus_addr(@curaddr, tl.struct[stn[0]] || tl.symbol[stn[0]].untypedef)
+			focus_addr(addr, tl.struct[stn[0]] || tl.symbol[stn[0]].untypedef)
 		}
 	end
 
@@ -254,9 +257,14 @@ class CStructWidget < DrawableWidget
 	def focus_addr(addr, struct=@curstruct)
 		return if @parent_widget and not addr = @parent_widget.normalize(addr)
 		@curaddr = addr
-		@curstruct = struct
 		@caret_x = @caret_y = 0
-		gui_update
+		if struct.kind_of? String
+			@curstruct = nil
+			focus_struct_byname(struct)
+		else
+			@curstruct = struct
+			gui_update
+		end
 		true
 	end
 

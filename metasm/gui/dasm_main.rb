@@ -145,7 +145,7 @@ class DisasmWidget < ContainerChoiceWidget
 	def focus_addr(addr, viewidx=nil, quiet=false, *a)
 		viewidx ||= curview_index || :listing
 		return if not addr
-		return if viewidx == curview_index and addr == curaddr
+		return if viewidx == curview_index and addr == curaddr and a.empty?
 		oldpos = [curview_index, (curview.get_cursor_pos if curview)]
 		views = [viewidx, oldpos[0]]
 		views += [:listing, :graph, :decompile] & view_indexes
@@ -157,6 +157,7 @@ class DisasmWidget < ContainerChoiceWidget
 				true
 			else
 				view(i).set_cursor_pos o_p
+				a = nil
 				false
 			end
 		}

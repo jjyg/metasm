@@ -48,8 +48,8 @@ class DbgWidget < ContainerVBoxWidget
 
 		pc = @dbg.resolve_expr(@watchpoint[@code])
 		graph = :graph if @dbg.disassembler.function_blocks(pc).to_a.length < 100
-		@code.focus_addr(pc, graph)
-		@mem.focus_addr(0, :hex)
+		@code.focus_addr(pc, graph, true)
+		@mem.focus_addr(0, :hex, true)
 	end
 
 	def swapin_tid
@@ -779,7 +779,7 @@ class DbgConsoleWidget < DrawableWidget
 	def cmd_dd(addr, dlen=nil, len=nil)
 		if addr.kind_of? String
 			s = addr.strip
-			addr = solve_expr!(s)
+			addr = solve_expr!(s) || @parent_widget.mem.curaddr
 			if not s.empty?
 				s = s[1..-1] if s[0] == ?,
 				len ||= solve_expr(s)
@@ -803,7 +803,8 @@ class DbgConsoleWidget < DrawableWidget
 			end
 		else
 			@parent_widget.mem.view(:hex).data_size = dlen if dlen
-			@parent_widget.mem.focus_addr(solve_expr(addr)) if addr and addr != ''
+			@parent_widget.mem.showview(:hex) if dlen
+			@parent_widget.mem.focus_addr(solve_expr(addr))
 			@parent_widget.mem.gui_update
 		end
 	end
@@ -818,6 +819,18 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('dw', 'dump/focus words in data window')  { |arg| cmd_dd(arg, 2) }
 		new_command('dd', 'dump/focus dwords in data window') { |arg| cmd_dd(arg, 4) }
 		new_command('dq', 'dump/focus qwords in data window') { |arg| cmd_dd(arg, 8) }
+		new_command('dc', 'focus C struct in data window: <name> <addr>') { |arg|
+			name, addr = arg.strip.split(/\s+/, 2)
+			addr = (addr ? solve_expr(addr) : @parent_widget.mem.curaddr)
+			@parent_widget.mem.focus_addr(addr, :cstruct, false, name)
+		}
+		new_command('dC', 'dump C struct: dC <name> <addr>') { |arg|
+			name, addr = arg.strip.split(/\s+/, 2)
+			addr = (addr ? solve_expr(addr) : @parent_widget.mem.curaddr)
+			if st = @dbg.disassembler.c_parser.decode_c_struct(name, @dbg.memory, addr)
+				add_log st.to_s.gsub("\t", '  ')
+			end
+		}
 		new_command('u', 'focus code window on an address') { |arg| p.code.focus_addr(solve_expr(arg)) }
 		new_command('.', 'focus code window on current address') { p.code.focus_addr(solve_expr(@dbg.register_pc.to_s)) }
 		new_command('wc', 'set code window height') { |arg|
