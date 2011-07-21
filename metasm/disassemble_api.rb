@@ -720,17 +720,23 @@ class Disassembler
 	end
 
 	# returns a demangled C++ name
+	def demangle_cppname(name)
+		case name[0]
+		when ??	# MSVC
+			name = name[1..-1]
+			demangle_msvc(name[1..-1]) if name[0] == ??
+		when ?_
+			name = name.sub(/_GLOBAL__[ID]_/, '')
+			demangle_gcc(name[2..-1][/\S*/]) if name[0, 2] == '_Z'
+		end
+	end
+
 	# from wgcc-2.2.2/undecorate.cpp
 	# TODO
-	def demangle_cppname(name)
-		ret = name
-		if name[0] == ??
-			name = name[1..-1]
-			if name[0] == ??
-				name = name[1..-1]
-				op = name[0, 1]
-				op = name[0, 2] if op == '_'
-				if op = {
+	def demangle_msvc(name)
+		op = name[0, 1]
+		op = name[0, 2] if op == '_'
+		if op = {
 	'2' => "new", '3' => "delete", '4' => "=", '5' => ">>", '6' => "<<", '7' => "!", '8' => "==", '9' => "!=",
 	'A' => "[]", 'C' => "->", 'D' => "*", 'E' => "++", 'F' => "--", 'G' => "-", 'H' => "+", 'I' => "&",
 	'J' => "->*", 'K' => "/", 'L' => "%", 'M' => "<", 'N' => "<=", 'O' => ">", 'P' => ">=", 'Q' => ",",
@@ -743,11 +749,132 @@ class Disassembler
 	'_M' => "`eh vector destructor iterator'", '_N' => "`eh vector vbase constructor iterator'", '_O' => "`copy constructor closure'",
 	'_S' => "`local vftable'", '_T' => "`local vftable constructor closure'", '_U' => "new[]", '_V' => "delete[]",
 	'_X' => "`placement delete closure'", '_Y' => "`placement delete[] closure'"}[op]
-					ret = op[0] == ?` ? op[1..-2] : "op_#{op}"
+			op[0] == ?` ? op[1..-2] : "op_#{op}"
+		end
+	end
+
+	# from http://www.codesourcery.com/public/cxx-abi/abi.html
+	def demangle_gcc(name)
+		subs = []
+		ret = ''
+		decode_tok = lambda {
+			name ||= ''
+			case name[0]
+			when nil
+			when ?N
+				name = name[1..-1]
+				decode_tok[]
+				until name[0] == ?E
+					ret << '::'
+					decode_tok[]
+				end
+				name = name[1..-1]
+			when ?C
+				name = name[2..-1]
+				ret << ret[/[^:]*$/]
+			when ?D
+				name = name[2..-1]
+				ret << '~' << ret[/[^:]*$/]
+			when ?0..?9
+				nr = name[/^[0-9]+/]
+				name = name[nr.length..-1]
+				ret << name[0, nr.to_i]
+				name = name[nr.to_i..-1]
+				subs << ret[/[\w:]*$/]
+			when ?S
+				name = name[1..-1]
+				case name[0]
+				when ?_
+					ret << subs[0].to_s
+					name = name[1..-1]
+				when ?0..?9
+					ret << subs[name[0, 1].unpack('C')[0] - 0x30 + 1].to_s
+					name = name[2..-1]	# assume single-digit
+				when ?A..?Z
+					ret << subs[name[0, 1].unpack('C')[0] - 0x41 + 11].to_s
+					name = name[2..-1]
+				when ?t
+					ret << 'std::'
+					name = name[1..-1]
+					decode_tok[]
+				else
+					std = { ?a => 'std::allocator',
+						?b => 'std::basic_string',
+						?s => 'std::basic_string < char, std::char_traits<char>, std::allocator<char> >',
+						?i => 'std::basic_istream<char,  std::char_traits<char> >',
+						?o => 'std::basic_ostream<char,  std::char_traits<char> >',
+						?d => 'std::basic_iostream<char, std::char_traits<char> >'
+					}[name[0]] || name[0, 1]
+					ret << std
+					name = name[1..-1]
+				end
+			when ?P
+				name = name[1..-1]
+				decode_tok[]
+				ret << '*'
+			when ?R
+				name = name[1..-1]
+				decode_tok[]
+				ret << '&'
+			when ?r
+				name = name[1..-1]
+				decode_tok[]
+				ret << ' restrict'
+			when ?V
+				name = name[1..-1]
+				decode_tok[]
+				ret << ' volatile'
+			when ?K
+				name = name[1..-1]
+				decode_tok[]
+				ret << ' const'
+			else
+				if ty = {
+			?v => 'void', ?w => 'wchar_t', ?b => 'bool', ?c => 'char', ?a => 'signed char',
+			?h => 'unsigned char', ?s => 'short', ?t => 'unsigned short', ?i => 'int',
+			?j => 'unsigned int', ?l => 'long', ?m => 'unsigned long', ?x => '__int64',
+			?y => 'unsigned __int64', ?n => '__int128', ?o => 'unsigned __int128', ?f => 'float',
+			?d => 'double', ?e => 'long double', ?g => '__float128', ?z => '...'
+				}[name[0]]
+					name = name[1..-1]
+					ret << ty
+				else
+					fu = name[0, 2]
+					name = name[2..-1]
+					if op = {
+			'nw' => ' new', 'na' => ' new[]', 'dl' => ' delete', 'da' => ' delete[]',
+			'ps' => '+', 'ng' => '-', 'ad' => '&', 'de' => '*', 'co' => '~', 'pl' => '+',
+			'mi' => '-', 'ml' => '*', 'dv' => '/', 'rm' => '%', 'an' => '&', 'or' => '|',
+			'eo' => '^', 'aS' => '=', 'pL' => '+=', 'mI' => '-=', 'mL' => '*=', 'dV' => '/=',
+			'rM' => '%=', 'aN' => '&=', 'oR' => '|=', 'eO' => '^=', 'ls' => '<<', 'rs' => '>>',
+			'lS' => '<<=', 'rS' => '>>=', 'eq' => '==', 'ne' => '!=', 'lt' => '<', 'gt' => '>',
+			'le' => '<=', 'ge' => '>=', 'nt' => '!', 'aa' => '&&', 'oo' => '||', 'pp' => '++',
+			'mm' => '--', 'cm' => ',', 'pm' => '->*', 'pt' => '->', 'cl' => '()', 'ix' => '[]',
+			'qu' => '?', 'st' => ' sizeof', 'sz' => ' sizeof', 'at' => ' alignof', 'az' => ' alignof'
+					}[fu]
+						ret << "operator#{op}"
+					elsif fu == 'cv'
+						ret << "cast<"
+						decode_tok[]
+						ret << ">"
+					else
+						ret << "unk[#{fu}]"
+					end
 				end
 			end
+		}
+
+		decode_tok[]
+		subs.pop
+		if name != ''
+			ret << '('
+			decode_tok[]
+			while name != ''
+				ret << ', '
+				decode_tok[]
+			end
+			ret << ')'
 		end
-		# TODO
 		ret
 	end
 
