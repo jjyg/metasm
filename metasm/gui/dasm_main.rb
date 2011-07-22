@@ -457,9 +457,10 @@ class DisasmWidget < ContainerChoiceWidget
 			end
 		}
 
-		list =  [['struct'], ['none']] + stlist.map { |st, stm| ["#{st.name}.#{stm.name}"] }
+		default = Expression[off].to_s
+		list =  [['struct'], [default]] + stlist.map { |st, stm| ["#{st.name}.#{stm.name}"] }
 		listwindow("chose structure for offset #{Expression[off]}", list) { |a|
-			stn = a[0].split('.')[0] if a[0] != 'none'
+			stn = a[0].split('.')[0] if a[0] != default
 			@dasm.patch_structoffset(di, stn, off)
 			gui_update
 		}
