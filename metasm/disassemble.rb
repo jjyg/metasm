@@ -636,12 +636,11 @@ puts "  finalize subfunc #{Expression[addr]}" if debug_backtrace
 					detect_function_thunk(addr)
 				end
 			end
-			@comment[addr] ||= []
 			bd = f.backtrace_binding.reject { |k, v| Expression[k] == Expression[v] or Expression[v] == Expression::Unknown }
 			unk = f.backtrace_binding.map { |k, v| k if v == Expression::Unknown }.compact
 			bd[unk.map { |u| Expression[u].to_s }.sort.join(',')] = Expression::Unknown if not unk.empty?
-			@comment[addr] |= ["function binding: " + bd.map { |k, v| "#{k} -> #{v}" }.sort.join(', ')]
-			@comment[addr] |= ["function ends at " + f.return_address.map { |ra| Expression[ra] }.join(', ')] if f.return_address
+			add_comment(addr, "function binding: " + bd.map { |k, v| "#{k} -> #{v}" }.sort.join(', '))
+			add_comment(addr, "function ends at " + f.return_address.map { |ra| Expression[ra] }.join(', ')) if f.return_address
 		}
 	end
 
@@ -772,8 +771,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				each_xref(waddr, :w) { |x|
 					#next if off + x.len < 0
 					puts "W: disasm: self-modifying code at #{Expression[waddr]}" if $VERBOSE
-					@comment[di_addr] ||= []
-					@comment[di_addr] |= ["overwritten by #{@decoded[x.origin]}"]
+					add_comment(di_addr, "overwritten by #{@decoded[x.origin]}")
 					@callback_selfmodifying[di_addr] if callback_selfmodifying
 					return
 				}

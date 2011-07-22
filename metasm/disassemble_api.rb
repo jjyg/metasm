@@ -156,6 +156,13 @@ class Disassembler
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end
 	def self.backtrace_maxblocks=(b) ; @@backtrace_maxblocks = b ; end
 
+	# adds a commentary at the given address
+	# comments are found in the array @comment: {addr => [list of strings]}
+	def add_comment(addr, cmt)
+		@comment[addr] ||= []
+		@comment[addr] |= [cmt]
+	end
+
 	# returns the dasm section's edata containing addr
 	# its #ptr points to addr
 	# returns the 1st element of #get_section_at
