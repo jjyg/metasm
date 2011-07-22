@@ -761,38 +761,67 @@ class Disassembler
 			name ||= ''
 			case name[0]
 			when nil
+				ret = nil
 			when ?N
 				name = name[1..-1]
 				decode_tok[]
 				until name[0] == ?E
+					break if not ret
 					ret << '::'
 					decode_tok[]
 				end
 				name = name[1..-1]
+			when ?I
+				name = name[1..-1]
+				ret = ret[0..-3] if ret[-2, 2] == '::'
+				ret << '<'
+				decode_tok[]
+				until name[0] == ?E
+					break if not ret
+					ret << ', '
+					decode_tok[]
+				end
+				ret << ' ' if ret and ret[-1] == ?>
+				ret << '>' if ret
+				name = name[1..-1]
+			when ?T
+				case name[1]
+				when ?T; ret << 'vtti('
+				when ?V; ret << 'vtable('
+				when ?I; ret << 'typeinfo('
+				when ?S; ret << 'typename('
+				else ret = nil
+				end
+				name = name[2..-1].to_s
+				decode_tok[] if ret
+				ret << ')' if ret
+				name = name[1..-1] if name[0] == ?E
 			when ?C
 				name = name[2..-1]
-				ret << ret[/[^:]*$/]
+				ret << ret[/([^:]*)(<.*|::)?$/, 1]
 			when ?D
 				name = name[2..-1]
-				ret << '~' << ret[/[^:]*$/]
+				ret << '~' << ret[/([^:]*)(<.*|::)?$/, 1]
 			when ?0..?9
 				nr = name[/^[0-9]+/]
-				name = name[nr.length..-1]
+				name = name[nr.length..-1].to_s
 				ret << name[0, nr.to_i]
 				name = name[nr.to_i..-1]
 				subs << ret[/[\w:]*$/]
 			when ?S
 				name = name[1..-1]
 				case name[0]
-				when ?_
-					ret << subs[0].to_s
-					name = name[1..-1]
-				when ?0..?9
-					ret << subs[name[0, 1].unpack('C')[0] - 0x30 + 1].to_s
-					name = name[2..-1]	# assume single-digit
-				when ?A..?Z
-					ret << subs[name[0, 1].unpack('C')[0] - 0x41 + 11].to_s
-					name = name[2..-1]
+				when ?_, ?0..?9, ?A..?Z
+					case name[0]
+					when ?_; idx = 0 ; name = name[1..-1]
+					when ?0..?9; idx = name[0, 1].unpack('C')[0] - 0x30 + 1 ; name = name[2..-1]
+					when ?A..?Z; idx = name[0, 1].unpack('C')[0] - 0x41 + 11 ; name = name[2..-1]
+					end
+					if not subs[idx]
+						ret = nil
+					else
+						ret << subs[idx]
+					end
 				when ?t
 					ret << 'std::'
 					name = name[1..-1]
@@ -804,32 +833,25 @@ class Disassembler
 						?i => 'std::basic_istream<char,  std::char_traits<char> >',
 						?o => 'std::basic_ostream<char,  std::char_traits<char> >',
 						?d => 'std::basic_iostream<char, std::char_traits<char> >'
-					}[name[0]] || name[0, 1]
-					ret << std
+					}[name[0]]
+					if not std
+						ret = nil
+					else
+						ret << std
+					end
 					name = name[1..-1]
 				end
-			when ?P
+			when ?P, ?R, ?r, ?V, ?K
+				attr = { ?P => '*', ?R => '&', ?r => ' restrict', ?V => ' volatile', ?K => ' const' }[name[0]]
 				name = name[1..-1]
+				rl = ret.length
 				decode_tok[]
-				ret << '*'
-			when ?R
-				name = name[1..-1]
-				decode_tok[]
-				ret << '&'
-			when ?r
-				name = name[1..-1]
-				decode_tok[]
-				ret << ' restrict'
-			when ?V
-				name = name[1..-1]
-				decode_tok[]
-				ret << ' volatile'
-			when ?K
-				name = name[1..-1]
-				decode_tok[]
-				ret << ' const'
+				if ret
+					ret << attr
+					subs << ret[rl..-1]
+				end
 			else
-				if ty = {
+				if ret =~ /[(<]/ and ty = {
 			?v => 'void', ?w => 'wchar_t', ?b => 'bool', ?c => 'char', ?a => 'signed char',
 			?h => 'unsigned char', ?s => 'short', ?t => 'unsigned short', ?i => 'int',
 			?j => 'unsigned int', ?l => 'long', ?m => 'unsigned long', ?x => '__int64',
@@ -856,24 +878,25 @@ class Disassembler
 					elsif fu == 'cv'
 						ret << "cast<"
 						decode_tok[]
-						ret << ">"
+						ret << ">" if ret
 					else
-						ret << "unk[#{fu}]"
+						ret = nil
 					end
 				end
 			end
+			name ||= ''
 		}
 
 		decode_tok[]
 		subs.pop
-		if name != ''
+		if ret and name != ''
 			ret << '('
 			decode_tok[]
-			while name != ''
+			while ret and name != ''
 				ret << ', '
 				decode_tok[]
 			end
-			ret << ')'
+			ret << ')' if ret
 		end
 		ret
 	end
