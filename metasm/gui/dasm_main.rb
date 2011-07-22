@@ -157,7 +157,7 @@ class DisasmWidget < ContainerChoiceWidget
 				true
 			else
 				view(i).set_cursor_pos o_p
-				a = nil
+				a.clear
 				false
 			end
 		}
