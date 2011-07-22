@@ -805,10 +805,12 @@ class Disassembler
 				name = name[1..-1] if name[0] == ?E
 			when ?C
 				name = name[2..-1]
-				ret << ret[/([^:]*)(<.*|::)?$/, 1]
+				base = ret[/([^:]*)(<.*|::)?$/, 1]
+				ret << base
 			when ?D
 				name = name[2..-1]
-				ret << '~' << ret[/([^:]*)(<.*|::)?$/, 1]
+				base = ret[/([^:]*)(<.*|::)?$/, 1]
+				ret << '~' << base
 			when ?0..?9
 				nr = name[/^[0-9]+/]
 				name = name[nr.length..-1].to_s
