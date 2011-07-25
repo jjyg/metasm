@@ -396,12 +396,14 @@ class ELF
 			raise 'Invalid symbol table' if sec.size > @encoded.length
 			(sec.size / Symbol.size(self)).times { syms << Symbol.decode(self, strtab) }
 			alreadysegs = true if @header.type == 'DYN' or @header.type == 'EXEC'
+			alreadysyms = @symbols.inject({}) { |h, s| h.update s.name => true } if alreadysegs
 			syms.each { |s|
 				if alreadysegs
 					# if we already decoded the symbols from the DYNAMIC segment,
 					# ignore dups and imports from this section
 					next if s.shndx == 'UNDEF'
-					next if @symbols.find { |ss| ss.name == s.name }
+					next if alreadysyms[s.name]
+					alreadysyms[s.name] = true
 				end
 				@symbols << s
 				decode_symbol_export(s)
