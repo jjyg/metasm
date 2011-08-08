@@ -720,21 +720,21 @@ class Expression < ExpressionType
 		end
 
 		# recursive search & replace -lexpr by 0
-		simplifier = lambda { |cur|
-			if neg_l == cur
-				# -l found
-				0
-			elsif cur.kind_of? Expression and cur.op == :+
-				# recurse
-				if newl = simplifier[cur.lexpr]
-					Expression[newl, cur.op, cur.rexpr].reduce_rec
-				elsif newr = simplifier[cur.rexpr]
-					Expression[cur.lexpr, cur.op, newr].reduce_rec
-				end
-			end
-		}
+		reduce_rec_add_rec(r, neg_l)
+	end
 
-		simplifier[r]
+	def reduce_rec_add_rec(cur, neg_l)
+		if neg_l == cur
+			# -l found
+			0
+		elsif cur.kind_of?(Expression) and cur.op == :+
+			# recurse
+			if newl = reduce_rec_add_rec(cur.lexpr, neg_l)
+				Expression[newl, cur.op, cur.rexpr].reduce_rec
+			elsif newr = reduce_rec_add_rec(cur.rexpr, neg_l)
+				Expression[cur.lexpr, cur.op, newr].reduce_rec
+			end
+		end
 	end
 
 	# expr & 0xffff

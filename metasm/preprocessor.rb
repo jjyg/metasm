@@ -649,21 +649,20 @@ class Preprocessor
 		when ?a..?z, ?A..?Z, ?0..?9, ?$, ?_
 			tok.type = :string
 			raw = tok.raw << c
-			loop do
-				case c = getchar
-				when nil; ungetchar; break		# avoids 'no method "coerce" for nil' warning
+			while c = getchar
+				case c
 				when ?a..?z, ?A..?Z, ?0..?9, ?$, ?_
-					raw << c
-				else ungetchar; break
+				else break
 				end
+				raw << c
 			end
+			ungetchar
 
 		when ?\ , ?\t, ?\r, ?\n, ?\f
 			tok.type = ((c == ?\  || c == ?\t) ? :space : :eol)
 			raw = tok.raw << c
-			loop do
-				case c = getchar
-				when nil; break
+			while c = getchar
+				case c
 				when ?\ , ?\t
 				when ?\n, ?\f, ?\r; tok.type = :eol
 				else break
@@ -688,8 +687,7 @@ class Preprocessor
 				tok.type = :space
 				raw << c
 				seenstar = false
-				loop do
-					raise tok, 'unterminated c++ comment' if not c = getchar
+				while c = getchar
 					raw << c
 					case c
 					when ?*; seenstar = true
@@ -697,6 +695,7 @@ class Preprocessor
 					else seenstar = false
 					end
 				end
+				raise tok, 'unterminated c++ comment' if not c
 			else
 				# just a slash
 				ungetchar
