@@ -856,7 +856,7 @@ class Ia32
 			addop_post dop
 		end
 
-		if op.props[:needpfx] and @opcode_list.find { |oo| (oo.name == op.name or oo.bin == op.bin) and not oo.props[:needpfx] }
+		if op.props[:needpfx]
 			@opcode_list.unshift op
 		else
 			@opcode_list << op

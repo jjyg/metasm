@@ -972,6 +972,7 @@ class EncodedData
 	# if numeric, replace the raw data with the encoding of this value (+fill+s preceding data if needed) and remove the reloc
 	# if replace_target is true, the reloc target is replaced with its bound counterpart
 	def fixup_choice(binding, replace_target)
+		return if binding.empty?
 		@reloc.keys.each { |off|
 			val = @reloc[off].target.bind(binding).reduce
 			if val.kind_of? Integer

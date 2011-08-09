@@ -93,4 +93,10 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(disassemble("\x0f\xc7\x08").decoded[0].opcode.name, 'cmpxchg8b')
 	end
 
+	def test_pfx
+		assert_equal(assemble("nop"), "\x90")
+		assert_equal(assemble("pause"), "\xf3\x90")
+		assert_equal(disassemble("\x90").decoded.values.first.opcode.name, "nop")
+		assert_equal(disassemble("\xf3\x90").decoded.values.first.opcode.name, "pause")
+	end
 end
