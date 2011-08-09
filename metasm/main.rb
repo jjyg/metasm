@@ -420,7 +420,8 @@ class Expression < ExpressionType
 			return binding[self].dup
 		end
 
-		l, r = @lexpr, @rexpr
+		l = @lexpr
+		r = @rexpr
 		if l and binding[l]
 			raise "internal error - bound #{l.inspect}" if l.kind_of? ::Numeric
 			l = binding[l]
@@ -433,7 +434,7 @@ class Expression < ExpressionType
 		elsif r.kind_of? ExpressionType
 			r = r.bind(binding)
 		end
-		Expression[l, @op, r]
+		Expression.new(@op, r, l)
 	end
 
 	# bind in place (replace self.lexpr/self.rexpr with the binding value)
@@ -546,7 +547,7 @@ class Expression < ExpressionType
 					r.rexpr
 				else # :+ and lexpr (r is reduced)
 					# -(a+b) => (-a)+(-b)
-					Expression[[:-, r.lexpr], :+, [:-, r.rexpr]].reduce_rec
+					Expression.new(:+, Expression.new(:-, r.rexpr, nil), Expression.new(:-, r.lexpr, nil)).reduce_rec
 				end
 			elsif l.kind_of? Expression and l.op == :+ and l.lexpr == r
 				# shortcircuit for a common occurence [citation needed]
@@ -694,7 +695,7 @@ class Expression < ExpressionType
 		when nil
 			# no dup if no new value
 			(r == :unknown or l == :unknown) ? :unknown :
-			((r == @rexpr and l == @lexpr) ? self : Expression[l, @op, r])
+			((r == @rexpr and l == @lexpr) ? self : Expression.new(@op, r, l))
 		when Expression
 			(v.lexpr == :unknown or v.rexpr == :unknown) ? :unknown : v
 		else v
@@ -716,7 +717,7 @@ class Expression < ExpressionType
 		if l.kind_of? Expression and l.op == :- and not l.lexpr
 			neg_l = l.rexpr
 		else
-			neg_l = Expression[:-, l]
+			neg_l = Expression.new(:-, l, nil)
 		end
 
 		# recursive search & replace -lexpr by 0
