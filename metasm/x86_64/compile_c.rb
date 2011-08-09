@@ -666,9 +666,9 @@ class CCompiler < C::Compiler
 
 		if ft.kind_of? C::Function and ft.varargs and @state.args_space == 0
 			# gcc stores here the nr of xmm args passed, real args are passed the standard way
-			# TODO check visualstudio/ms ABI
 			instr 'xor', rax, rax
 			inuse rax
+			regargs_unuse << rax
 		end
 
 
