@@ -2518,6 +2518,7 @@ EOH
 						type = :long if suffix.count('l') == 1
 					end
 					val = CExpression[val, BaseType.new(type, *specifier)]
+					val = parse_value_postfix(parser, scope, val)
 				else raise parser, "internal error #{val.inspect}"
 				end
 
@@ -2525,6 +2526,7 @@ EOH
 				if tok.raw[0] == ?'
 					raise tok, 'invalid character constant' if not [1, 2, 4, 8].include? tok.value.length	# TODO 0fill
 					val = CExpression[Expression.decode_imm(tok.value, tok.value.length, :big), BaseType.new(:int)]
+					val = parse_value_postfix(parser, scope, val)
 				else
 					val = CExpression[tok.value, Pointer.new(BaseType.new(tok.raw[0, 2] == 'L"' ? :short : :char))]
 					val = parse_value_postfix(parser, scope, val)
