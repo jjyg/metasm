@@ -5,6 +5,7 @@
 
 
 require 'metasm/os/main'
+require 'metasm/debug'
 require 'socket'
 
 module Metasm
@@ -391,15 +392,36 @@ end
 class GdbRemoteDebugger < Debugger
 	attr_accessor :gdb, :check_target_timeout
 	def initialize(url, cpu='Ia32')
+		super()
+		@tid_stuff_list << :reg_val_cache << :regs_dirty
 		@gdb = GdbClient.new(url, cpu)
 		@gdb.logger = self
-		@cpu = @gdb.cpu
-		@memory = GdbRemoteString.new(@gdb)
-		@reg_val_cache = {}
-		@regs_dirty = false
 		# when checking target, if no message seen since this much seconds, send a 'status' query
 		@check_target_timeout = 1
+		set_context(28, 28)
+	end
+
+	def check_pid(pid)
+		# return nil if pid == nil
+		pid
+	end
+
+	def check_tid(tid)
+		tid
+	end
+
+	def initialize_newtid
 		super()
+		@reg_val_cache = {}
+		@regs_dirty = false
+	end
+
+	def initialize_cpu
+		@cpu = @gdb.cpu
+	end
+
+	def initialize_memory
+		@memory = GdbRemoteString.new(@gdb)
 	end
 
 	def invalidate
