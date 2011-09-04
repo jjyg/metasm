@@ -512,6 +512,7 @@ class CCompiler < C::Compiler
 					end
 				when :-
 					r = c_cexpr_inner(expr.rexpr)
+					r = resolve_address r if r.kind_of? Address
 					if r.kind_of? Expression
 						unuse l, r
 						l = Address.new(l.modrm.dup)

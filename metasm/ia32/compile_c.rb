@@ -637,7 +637,7 @@ class CCompiler < C::Compiler
 			# both sides are already cast to the same type by the precompiler
 			# XXX expr.type.pointer?
 			if expr.type.integral? and expr.type.name == :ptr and expr.lexpr.type.kind_of? C::BaseType and
-				typesize[expr.lexpr.type.name] == typesize[:ptr]
+					typesize[expr.lexpr.type.name] == typesize[:ptr]
 				expr.lexpr.type.name = :ptr
 			end
 			l = c_cexpr_inner(expr.lexpr)
@@ -711,6 +711,7 @@ class CCompiler < C::Compiler
 					end
 				when :-
 					r = c_cexpr_inner(expr.rexpr)
+					r = resolve_address r if r.kind_of? Address
 					if r.kind_of? Expression
 						unuse l, r
 						l = Address.new(l.modrm.dup)
