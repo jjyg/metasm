@@ -311,16 +311,9 @@ class LinuxHeap < Heap
 		ptr = 0
 
 		psz = dw[ptr]
-		if psz == base+0x10 or psz == base+0x20
-			# arena -> this is the heap_info, 1st ptr = mstate
-			nbase = psz + ar.length
-			nbase = (nbase + 2*@ptsz - 1) & (-2*@ptsz)
-			ptr = (nbase-base) / @ptsz
-			psz = dw[ptr]
-		end
 		sz = dw[ptr+1]
 		base += 2*@ptsz	# user pointer
-		raise "bad heap base %x %x" % [psz, sz] if psz != 0 or sz & 1 == 0
+		raise "bad heap base %x %x  %x %x" % [psz, sz, base, len] if psz != 0 or sz & 1 == 0
 
 		loop do
 			clen = sz & -8	# chunk size
@@ -442,15 +435,36 @@ struct malloc_state {
 	uintptr_t system_mem;	// XXX int32?
 	uintptr_t max_system_mem;
 };
+
+struct heap_info {
+	struct malloc_state *ar_ptr; // Arena for this heap.
+	struct _heap_info *prev; // Previous heap.
+	uintptr_t size;   // Current size in bytes. XXX int32?
+	uintptr_t mprotect_size; // Size in bytes that has been mprotected
+};
 EOS
 		end
 
 		ptr = @main_arena_ptr
 		loop do
 			ar = @cp.decode_c_struct('malloc_state', @dbg.memory, ptr)
-			toplen = chunkdata(ar.top)[1] & -8
-#puts "heap arptr %x hp %x hsz %x" % [ptr, ar.top + toplen - ar.system_mem, ar.system_mem]
-			yield ar.top + toplen - ar.system_mem, ar.system_mem, ar
+			if ptr == @main_arena_ptr
+				# main arena: find start from top.end - system_mem
+				toplen = chunkdata(ar.top)[1] & -8
+				yield ar.top + toplen - ar.system_mem, ar.system_mem, ar
+			else
+				# non-main arena: find heap_info for top, follow list
+				iptr = ar.top & -0x10_0000	# XXX
+				while iptr
+					hi = @cp.decode_c_struct('heap_info', @dbg.memory, iptr)
+					off = hi.sizeof
+					off += ar.sizeof if iptr+off == hi.ar_ptr
+					yield iptr+off, hi.size-off, ar
+
+					iptr = hi.prev
+				end
+			end
+
 			ptr = ar.next
 			break if ptr == @main_arena_ptr
 		end

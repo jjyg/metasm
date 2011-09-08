@@ -44,21 +44,17 @@ static VALUE m_LinuxHeap23scan_heap(VALUE self, VALUE vbase, VALUE vlen, VALUE a
 	VALUE sz, clen;
 	VALUE page;
 	VALUE psz = rb_iv_get(self, "@ptsz") >> 1;
+	VALUE ptr = 0;
 
 	chunks = rb_iv_get(self, "@chunks");
 	page = rb_funcall(self, rb_intern("pagecache"), 2, vbase, vlen);
 	heap = rb_string_value_ptr(&page);
 
-	VALUE ptr = 0;
-	if (heap_entry(heap, 0, psz) == base+4*psz)
-		ptr = 4 + rb_num2ulong(rb_funcall(ar, rb_intern("sizeof"), 0)) / psz;
-	ptr += ptr & 1;		// align
-
-	sz = heap_entry(heap, ptr+1, psz);
-	if (heap_entry(heap, ptr, psz) != 0 || (sz & 1) != 1)
+	sz = heap_entry(heap, 1, psz);
+	if (heap_entry(heap, 0, psz) != 0 || (sz & 1) != 1)
 		return 4;
 
-	base += ptr * psz + 8;
+	base += 8;
 
 	for (;;) {
 		clen = sz & -8;
