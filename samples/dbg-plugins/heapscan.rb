@@ -251,11 +251,24 @@ if gui
 		$ghw.do_focus_addr(a)
 	}
 	gui.new_command('heap_strscan', 'scan a string') { |a|
-		sa = @straddr = pattern_scan(a)
+		sa = pattern_scan(a)
 		log "found #{sa.length} strings : #{sa.map { |aa| Expression[aa] }.join(' ')}"
 		sa.each { |aa|
 			next if not ck = @heap.find_chunk(aa)
-			log "ptr #{Expression[aa]} in chunk #{Expression[ck]} in list #{@heap.linkedlists[ck] ? true : nil rescue nil} in array #{@heap.arrays[ck] ? @heap.arrays[ck].map { |k, v| "#{Expression[k]} (#{v.length})" }.join(', ') : nil}"
+			log "ptr #{Expression[aa]} in chunk #{Expression[ck]} (#{Expression[@heap.chunks[ck]]}) in list #{@heap.linkedlists && @heap.linkedlists[ck] && true} in array #{@heap.arrays[ck].map { |k, v| "#{Expression[k]} (#{v.length})" }.join(', ') if @heap.arrays and @heap.arrays[ck]}"
+		}
+	}
+	gui.new_command('heap_ptrscan', 'scan a pointer') { |a|
+		a = resolve(a)
+		if @heap.chunks[a]
+			pa = @heap.xrchunksfrom[a].to_a
+		else
+			pa = pattern_scan(Expression.encode_imm(a, @cpu.size/8, @cpu.endianness))
+		end
+		log "found #{pa.length} pointers : #{pa.map { |aa| Expression[aa] }.join(' ')}"
+		pa.each { |aa|
+			next if not ck = @heap.find_chunk(aa)
+			log "ptr @#{Expression[aa]} in chunk #{Expression[ck]} (#{Expression[@heap.chunks[ck]]}) in list #{@heap.linkedlists && @heap.linkedlists[ck] && true} in array #{@heap.arrays[ck].map { |k, v| "#{Expression[k]} (#{v.length})" }.join(', ') if @heap.arrays and @heap.arrays[ck]}"
 		}
 	}
 
