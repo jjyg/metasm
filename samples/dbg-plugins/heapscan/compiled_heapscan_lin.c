@@ -51,7 +51,7 @@ static VALUE m_LinuxHeap23scan_heap(VALUE self, VALUE vbase, VALUE vlen, VALUE a
 
 	VALUE ptr = 0;
 	if (heap_entry(heap, 0, psz) == base+4*psz)
-		ptr = 4 + rb_num2ulong(rb_funcall(ar, rb_intern("length"), 0)) / psz;
+		ptr = 4 + rb_num2ulong(rb_funcall(ar, rb_intern("sizeof"), 0)) / psz;
 	ptr += ptr & 1;		// align
 
 	sz = heap_entry(heap, ptr+1, psz);
