@@ -45,11 +45,11 @@ class GraphHeapWidget < GraphViewWidget
 						end
 						if nsz < osz
 							idx = st.members.index(m)
+							pos = st.offsetof(as.cp, m)
 							# fill gap with bytes
-							rnd = [*'a'..'z'][rand(26)] # try this hard to avoid m name collisions
 							idx += 1
 							while nsz < osz
-								st.members[idx, 0] = [C::Variable.new("fil#{rnd}#{idx}", C::BaseType.new(:__int8, :unsigned))]
+								st.members[idx, 0] = [C::Variable.new(('unk_%x' % (pos+nsz)), C::BaseType.new(:__int8, :unsigned))]
 								idx += 1
 								nsz += 1
 							end
@@ -278,7 +278,7 @@ class GraphHeapWidget < GraphViewWidget
 			st.members = []
 			li = 0
 			(@heap.chunks[addr] / 4).times { |i|
-				n = "u#{i}"
+				n = 'unk_%x' % (4*i)
 				v = @dasm.decode_dword(addr+4*i)
 				if @heap.chunks[v]
 					t = C::Pointer.new(C::BaseType.new(:void))
@@ -289,7 +289,7 @@ class GraphHeapWidget < GraphViewWidget
 				li = i
 			}
 			(@heap.chunks[addr] % 4).times { |i|
-				n = "u#{li+i}"
+				n = 'unk_%x' % (4*li+i)
 				v = @dasm.decode_byte(addr+4*li+i)
 				t = C::BaseType.new(:char)
 				st.members << C::Variable.new(n, t)
