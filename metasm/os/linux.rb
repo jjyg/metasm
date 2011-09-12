@@ -651,20 +651,25 @@ class LinuxRemoteString < VirtualString
 		if dbg
 			dbg.switch_context(@pid) {
 				st = dbg.state
-				if needproc and st == :stopped
+				next if st != :stopped
+				if needproc
 					# we will try to access /proc/pid/mem
 					# if the main thread is still running, fallback to ptrace.readmem instead
 					pst = (dbg.tid == @pid ? st : dbg.tid_stuff[@pid][:state])
 					if pst != :stopped
 						savedreadfd = @readfd
 						@readfd = nil
+						begin
+							yield dbg.ptrace
+						ensure
+							@readfd = savedreadfd
+						end
+					else
+						yield dbg.ptrace
 					end
+				else
+					yield dbg.ptrace
 				end
-
-				ret = yield dbg.ptrace if st == :stopped
-
-				@readfd = savedreadfd if savedreadfd
-				ret
 			}
 		else
 			PTrace.open(@pid) { |ptrace| yield ptrace }
