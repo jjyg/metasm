@@ -29,7 +29,7 @@ class GraphHeapWidget < GraphViewWidget
 				if m = st.fldoffset.index(b[:line_address][@caret_y].to_i - b.id) and m = st.fldlist[m]
 					inputbox("new type for #{m.name}") { |nn|
 						as.cp.lexer.feed!(nn)
-						raise 'bad type' if not v = C::Variable.parse_type(as.cp, as.cp.toplevel, true)
+						raise "bad type#{nil while as.cp.readtok}" if not v = C::Variable.parse_type(as.cp, as.cp.toplevel, true)
 						v.parse_declarator(as.cp, as.cp.toplevel)
 						nt = v.type
 						nsz = as.cp.sizeof(nt)
