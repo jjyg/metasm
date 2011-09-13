@@ -33,7 +33,7 @@ module Metasm
 	# files to require to get the definition of those constants
 	Const_autorequire = {
 		'Ia32' => 'ia32', 'MIPS' => 'mips', 'PowerPC' => 'ppc', 'ARM' => 'arm',
-		'X86_64' => 'x86_64', 'Sh4' => 'sh4', 'Dalvik' => 'dalvik',
+		'X86_64' => 'x86_64', 'Sh4' => 'sh4', 'Dalvik' => 'dalvik', 'ARC' => 'arc',
 		'C' => 'compile_c',
 		'MZ' => 'exe_format/mz', 'PE' => 'exe_format/pe',
 		'ELF' => 'exe_format/elf', 'COFF' => 'exe_format/coff',
