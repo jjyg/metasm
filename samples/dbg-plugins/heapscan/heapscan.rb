@@ -592,7 +592,9 @@ class WindowsHeap < Heap
 				ptr = ucr.Next
 			end
 			ptr = sg.firstentry
-			ptrend = sg.lastentryinsegment + @hsz
+			# XXX lastentryinsegment == firstentry ???
+			# lastvalidentry = address of the end of the segment (may point to unmapped space)
+			ptrend = sg.lastvalidentry
 			skiplist.delete_if { |sa, sl| sa < ptr or sa + sl > ptrend }
 			skiplist << [ptrend, 1]
 			skiplist.sort.each { |sa, sl|
