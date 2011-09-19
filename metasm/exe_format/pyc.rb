@@ -103,13 +103,13 @@ class PYC < ExeFormat
 			# XXX format varies with version (header.signature)
 			obj = {}
 			obj[:type] = :code
-			obj[:fileoff] = @encoded.ptr
 			obj[:argcount] = decode_long
 			#obj[:kwonly_argcount] = decode_long	# not in py2.7
 			obj[:nlocals] = decode_long
 			obj[:stacksize] = decode_long
 			obj[:flags] = decode_long	# TODO bit-decode this one
 
+			obj[:fileoff] = @encoded.ptr + 5	# XXX assume :code is a 's'
 			obj[:code] = decode_pymarshal
 			obj[:consts] = decode_pymarshal
 			obj[:names] = decode_pymarshal
