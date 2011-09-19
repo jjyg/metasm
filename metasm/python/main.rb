@@ -9,6 +9,7 @@ module Metasm
 class Python < CPU
 	def initialize(prog = nil)
 		super()
+		@program = prog
 		@endianness = (prog.respond_to?(:endianness) ? prog.endianness : :little)
 		@size = (prog.respond_to?(:size) ? prog.size : 32)
 	end

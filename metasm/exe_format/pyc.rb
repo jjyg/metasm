@@ -158,7 +158,7 @@ class PYC < ExeFormat
 
 	# return the :code part which contains off
 	def code_at_off(off)
-		@all_code.find { |c| c[:fileoff] >= off and c[:fileoff] + c[:code].length < off }
+		@all_code.find { |c| c[:fileoff] <= off and c[:fileoff] + c[:code].length > off }
 	end
 end
 end

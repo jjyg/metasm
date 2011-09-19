@@ -209,5 +209,9 @@ class CPU
 	def delay_slot(di=nil)
 		0
 	end
+
+	def disassembler_default_func
+		DecodedFunction.new
+	end
 end
 end

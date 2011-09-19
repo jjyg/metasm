@@ -7,15 +7,17 @@ require 'metasm/python/main'
 
 module Metasm
 class Python
+	CMP_OP = %w[< <= == != > >= in not_in is is_not exch]
+
 	def addop(name, bin, *args)
 		o = Opcode.new(name)
 		o.bin = bin
 
-		if bin >= 90 and args.empty?	# HAVE_ARGUMENT
+		if bin >= 90 and (args - @valid_props).empty?	# HAVE_ARGUMENT
 			o.args << :i16
 		end
 
-		o.args.concat(args & @valid_args)
+		args.each { |a| o.args << a if @valid_args.include? a } # allow dupes
 		(args & @valid_props).each { |p| o.props[p] = true }
 		@opcode_list << o
 	end
@@ -24,7 +26,7 @@ class Python
 		@opcode_list = []
 
 		@valid_props = [:setip, :saveip, :stopexec]
-		@valid_args = [:i16]
+		@valid_args = [:u8, :i16, :cmp]
 
 		addop 'STOP_CODE', 0, :stopexec
 		addop 'POP_TOP', 1
@@ -55,13 +57,19 @@ class Python
 		addop 'INPLACE_TRUE_DIVIDE', 29
 
 		addop 'SLICE', 30
-		#/* Also uses 31-33 */
+		addop 'SLICE_1', 31
+		addop 'SLICE_2', 32
+		addop 'SLICE_3', 33
 
 		addop 'STORE_SLICE', 40
-		#/* Also uses 41-43 */
+		addop 'STORE_SLICE_1', 41
+		addop 'STORE_SLICE_2', 42
+		addop 'STORE_SLICE_3', 43
 
 		addop 'DELETE_SLICE', 50
-		#/* Also uses 51-53 */
+		addop 'DELETE_SLICE_1', 51
+		addop 'DELETE_SLICE_2', 52
+		addop 'DELETE_SLICE_3', 53
 
 		addop 'STORE_MAP', 54
 		addop 'INPLACE_ADD', 55
@@ -106,7 +114,7 @@ class Python
 		addop 'STORE_NAME', 90      #/* Index in name list */
 		addop 'DELETE_NAME', 91      #/* "" */
 		addop 'UNPACK_SEQUENCE', 92      #/* Number of sequence items */
-		addop 'FOR_ITER', 93
+		addop 'FOR_ITER', 93, :setip
 		addop 'LIST_APPEND', 94
 
 		addop 'STORE_ATTR', 95      #/* Index in name list */
@@ -121,16 +129,16 @@ class Python
 		addop 'BUILD_SET', 104     #/* Number of set items */
 		addop 'BUILD_MAP', 105     #/* Always zero for now */
 		addop 'LOAD_ATTR', 106     #/* Index in name list */
-		addop 'COMPARE_OP', 107     #/* Comparison operator */
+		addop 'COMPARE_OP', 107, :cmp     #/* Comparison operator */
 		addop 'IMPORT_NAME', 108     #/* Index in name list */
 		addop 'IMPORT_FROM', 109     #/* Index in name list */
-		addop 'JUMP_FORWARD', 110     #/* Number of bytes to skip */
+		addop 'JUMP_FORWARD', 110, :setip, :stopexec     #/* Number of bytes to skip */
 
-		addop 'JUMP_IF_FALSE_OR_POP', 111 #/* Target byte offset from beginning of code */
-		addop 'JUMP_IF_TRUE_OR_POP', 112 #/* "" */
-		addop 'JUMP_ABSOLUTE', 113     #/* "" */
-		addop 'POP_JUMP_IF_FALSE', 114   #/* "" */
-		addop 'POP_JUMP_IF_TRUE', 115    #/* "" */
+		addop 'JUMP_IF_FALSE_OR_POP', 111, :setip #/* Target byte offset from beginning of code */
+		addop 'JUMP_IF_TRUE_OR_POP', 112, :setip #/* "" */
+		addop 'JUMP_ABSOLUTE', 113, :setip, :stopexec     #/* "" */
+		addop 'POP_JUMP_IF_FALSE', 114, :setip   #/* "" */
+		addop 'POP_JUMP_IF_TRUE', 115, :setip    #/* "" */
 
 		addop 'LOAD_GLOBAL', 116     #/* Index in name list */
 
@@ -145,7 +153,7 @@ class Python
 
 		addop 'RAISE_VARARGS', 130     #/* Number of raise arguments (1, 2 or 3) */
 		#/* CALL_FUNCTION_XXX opcodes defined below depend on this definition */
-		addop 'CALL_FUNCTION', 131     #/* #args + (#kwargs<<8) */
+		addop 'CALL_FUNCTION', 131, :u8, :u8, :setip     #/* #args + (#kwargs<<8) */
 		addop 'MAKE_FUNCTION', 132     #/* #defaults */
 		addop 'BUILD_SLICE', 133     #/* Number of items */
 
@@ -155,9 +163,9 @@ class Python
 		addop 'STORE_DEREF', 137     #/* Store into cell */ 
 
 		#/* The next 3 opcodes must be contiguous and satisfy (CALL_FUNCTION_VAR - CALL_FUNCTION) & 3 == 1  */
-		addop 'CALL_FUNCTION_VAR', 140  #/* #args + (#kwargs<<8) */
-		addop 'CALL_FUNCTION_KW', 141  #/* #args + (#kwargs<<8) */
-		addop 'CALL_FUNCTION_VAR_KW', 142  #/* #args + (#kwargs<<8) */
+		addop 'CALL_FUNCTION_VAR', 140, :u8, :u8, :setip  #/* #args + (#kwargs<<8) */
+		addop 'CALL_FUNCTION_KW', 141, :u8, :u8, :setip  #/* #args + (#kwargs<<8) */
+		addop 'CALL_FUNCTION_VAR_KW', 142, :u8, :u8, :setip  #/* #args + (#kwargs<<8) */
 
 		addop 'SETUP_WITH', 143
 
