@@ -73,7 +73,7 @@ class Shellcode < ExeFormat
 	end
 
 	def encode(binding={})
-		@encoded.fixup! binding
+		@encoded.fixup! binding if binding.kind_of? Hash
 		@encoded.fixup @encoded.binding(@base_addr)
 		@encoded.fill @encoded.rawsize
 		self
