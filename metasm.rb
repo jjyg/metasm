@@ -43,7 +43,7 @@ module Metasm
 		'DEX' => 'exe_format/dex',
 		'NDS' => 'exe_format/nds', 'XCoff' => 'exe_format/xcoff',
 		'Bflt' => 'exe_format/bflt', 'Dol' => 'exe_format/dol',
-		'PYC' => 'exe_format/pyc',
+		'PYC' => 'exe_format/pyc', 'JavaClass' => 'exe_format/javaclass',
 		'Gui' => 'gui',
 		'WindowsExports' => 'os/windows_exports',
 		'GNUExports' => 'os/gnu_exports',
