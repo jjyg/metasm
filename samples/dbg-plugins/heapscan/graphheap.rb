@@ -20,32 +20,57 @@ class GraphHeapWidget < GraphViewWidget
 	def keypress(k)
 		case k
 		when ?u
+			# update display (refresh struct member values)
 			@parent_widget.parent_widget.console.commands['refresh'][]
 			gui_update
 		when ?t
+			# change struct field type
 			if b = @caret_box
-				as = @addr_struct[b.id]
-				st = as.struct
-				if m = st.fldoffset.index(b[:line_address][@caret_y].to_i - b.id) and m = st.fldlist[m]
-					inputbox("new type for #{m.name}") { |nn|
-						as.cp.lexer.feed!(nn)
-						raise "bad type#{nil while as.cp.readtok}" if not v = C::Variable.parse_type(as.cp, as.cp.toplevel, true)
-						v.parse_declarator(as.cp, as.cp.toplevel)
+				if @caret_y == 0
+					as = @addr_struct[b.id]
+					st = as.struct
+					inputbox("replacement struct for #{st.name}", :text => st.name) { |n|
+						next if not nst = @heap.cp.toplevel.struct[n]
+						@heap.chunk_struct[b.id] = nst
+						@addr_struct[b.id] = @heap.cp.decode_c_struct(n, as.str, as.stroff)
+						# XXX snap_data ?
+						gui_update
+					}
+				elsif m = b[:line_member][@caret_y]
+					if m.kind_of?(Integer)
+						# XXX Array, need to find the outer struct
+						mn = b[:line_text_col][@caret_y].map { |l, c| l }.join[/(\S*)\[/, 1]
+						ar = b[:line_struct][@caret_y]
+						st = b[:line_struct][0...@caret_y].reverse.compact.find { |st_| st_.struct.kind_of?(C::Struct) and st_[mn].struct == ar.struct }
+						raise '?' if not st
+						st = st.struct
+						m = st.fldlist[mn]
+					else
+						st = b[:line_struct][@caret_y].struct
+					end
+					inputbox("new type for #{m.name}", :text => m.dump_def(@heap.cp.toplevel)[0].join(' ')) { |nn|
+						nil while @heap.cp.readtok
+						@heap.cp.lexer.feed nn
+						if not v = C::Variable.parse_type(@heap.cp, @heap.cp.toplevel, true)
+							nil while @heap.cp.readtok
+							raise 'bad type'
+						end
+						v.parse_declarator(@heap.cp, @heap.cp.toplevel)
 						nt = v.type
-						nsz = as.cp.sizeof(nt)
-						osz = as.cp.sizeof(m)
+						nsz = @heap.cp.sizeof(nt)
+						osz = @heap.cp.sizeof(m)
 						if nsz > osz
 							idx = st.members.index(m)
 							# eat next members
 							while nsz > osz
 								break if idx+1 >= st.members.length
-								sz = as.cp.sizeof(st.members.delete_at(idx+1))
+								sz = @heap.cp.sizeof(st.members.delete_at(idx+1))
 								osz += sz
 							end
 						end
 						if nsz < osz
 							idx = st.members.index(m)
-							pos = st.offsetof(as.cp, m)
+							pos = st.offsetof(@heap.cp, m)
 							# fill gap with bytes
 							idx += 1
 							while nsz < osz
@@ -55,53 +80,68 @@ class GraphHeapWidget < GraphViewWidget
 							end
 						end
 						m.type = nt
-						st.update_member_cache(as.cp)
+						st.update_member_cache(@heap.cp)
 						gui_update
 					}
+
 				end
 			end
 		when ?n
+			# rename struct field
 			if b = @caret_box
-				as = @addr_struct[b.id]
-				st = as.struct
 				if @caret_y == 0
-					inputbox("new name for #{st.name}") { |nn|
-						as.cp.toplevel.struct[nn] = as.cp.toplevel.struct.delete(st.name)
+					st = @addr_struct[b.id].struct
+					inputbox("new name for #{st.name}", :text => st.name) { |nn|
+						raise "struct #{nn} already exists (try 't')" if @heap.cp.toplevel.struct[nn]
+						@heap.cp.toplevel.struct[nn] = @heap.cp.toplevel.struct.delete(st.name)
 						st.name = nn
 						gui_update
 					}
-				elsif (st.fldoffset or st.update_member_cache(as.cp) or true) and m = st.fldoffset.index(b[:line_address][@caret_y].to_i - b.id) and m = st.fldlist[m]
-					inputbox("new name for #{m.name}") { |nn|
+				elsif m = b[:line_member][@caret_y]
+					if m.kind_of?(Integer)
+						mn = b[:line_text_col][@caret_y].map { |l, c| l }.join[/(\S*)\[/, 1]
+						ar = b[:line_struct][@caret_y]
+						st = b[:line_struct][0...@caret_y].reverse.compact.find { |st_| st_.struct.kind_of?(C::Struct) and st_[mn].struct == ar.struct }
+						raise '?' if not st
+						st = st.struct
+						m = st.fldlist[mn]
+					else
+						st = b[:line_struct][@caret_y].struct
+					end
+					inputbox("new name for #{m.name}", :text => m.name) { |nn|
 						m.name = nn
-						st.update_member_cache(as.cp)
+						st.update_member_cache(@heap.cp)
 						gui_update
 					}
 				end
 			end
 		when ?e
+			# edit struct field value under the cursor
 			if b = @caret_box
-				as = @addr_struct[b.id]
-				st = as.struct
-				if m = st.findmember_atoffset(as.cp, b[:line_address][@caret_y].to_i - b.id)
-					if m.type.kind_of?(C::Array) and m.type.type.kind_of?(C::BaseType) and m.type.type.name == :char
-						defval = as[m].to_array.pack('C*').gsub(/\0*$/, '').gsub(/[^\x20-\x7e]/, '.')
+				# TODO b[:struct][line], b.[:member][line] (int for Arrays)
+				st = b[:line_struct][@caret_y]
+				mb = b[:line_member][@caret_y]
+				if st and mb
+					if mb.kind_of?(C::Variable) and mb.type.kind_of?(C::Array) and m.type.type.kind_of?(C::BaseType) and m.type.type.name == :char
+						defval = st[mb].to_array.pack('C*').gsub(/\0*$/, '').gsub(/[^\x20-\x7e]/, '.')
 						string = true
 					else
-						defval = as[m]
+						defval = st[mb]
 						string = false
 					end
-					inputbox("new value for #{m.name}", :text => defval.to_s) { |nn|
+					inputbox("new value for #{mb.respond_to?(:name) ? mb.name : mb}", :text => defval.to_s) { |nn|
 						if string
-							am = as[m]
+							am = st[mb]
 							(nn.unpack('C*') + [0]).each_with_index { |b_, i| am[i] = b_ }
 						else
-							as[m] = Expression.parse_string(nn).reduce
+							st[mb] = Expression.parse_string(nn).reduce
 						end
 						gui_update
 					}
 				end
 			end
 		when ?x
+			# show heap xrefs to the hilighted chunk
 			if b = @caret_box
 				list = [['address']]
 				@heap.xrchunksfrom[b.id].to_a.each { |a|
@@ -113,6 +153,25 @@ class GraphHeapWidget < GraphViewWidget
 					listwindow("heap xrefs to #{Expression[b.id]}", list) { |*i| @parent_widget.focus_addr(i[0], nil, true) }
 				end
 			end
+		when ?+
+			# append blocks linked from the currently shown blocks to the display
+			@addr_struct.keys.each { |k|
+				@heap.xrchunksto[k].to_a.each { |nt|
+					next if @addr_struct[nt]
+					# TODO check if the pointer is a some_struct*
+					st = @heap.chunk_struct[nt] || create_struct(nt)
+					ed, l = @dasm.get_section_at(nt)
+					@addr_struct[nt] = @heap.cp.decode_c_struct(st.name, ed.data, ed.ptr)
+				}
+			}
+			gui_update
+		when ?-
+			# remove graph leaves in an attempt to undo ?+
+			unk = @addr_struct.keys.find_all { |k|
+				(@heap.xrchunksto[k].to_a & @addr_struct.keys).empty?
+			}
+			unk.each { |k| @addr_struct.delete k }
+			gui_update
 		else return super(k)
 		end
 		true
@@ -127,7 +186,7 @@ class GraphHeapWidget < GraphViewWidget
 		while a = todo.shift
 			next if done.include? a
 			done << a
-			box = ctx.new_box a, :line_text_col => [], :line_address => []
+			box = ctx.new_box a, :line_text_col => [], :line_address => [], :line_struct => [], :line_member => []
 			todo.concat @heap.xrchunksto[a].to_a & @addr_struct.keys
 		end
 
@@ -138,11 +197,11 @@ class GraphHeapWidget < GraphViewWidget
 				ctx.link_boxes(ot, b_.id)
 			}
 		else
-		    ctx.box.each { |b|
-			@heap.xrchunksto[b.id].to_a.each { |t|
-				ctx.link_boxes(b.id, t) if @addr_struct[t]
+			ctx.box.each { |b|
+				@heap.xrchunksto[b.id].to_a.each { |t|
+					ctx.link_boxes(b.id, t) if @addr_struct[t]
+				}
 			}
-		    }
 		end
 
 		if snapped
@@ -153,6 +212,9 @@ class GraphHeapWidget < GraphViewWidget
 		ctx.box.each { |b|
 			colstr = []
 			curaddr = b.id
+			curst = nil
+			curmb = nil
+			margin = ''
 			if snapped
 				ghost = snapped[curaddr]
 			end
@@ -161,59 +223,94 @@ class GraphHeapWidget < GraphViewWidget
 			nl = lambda {
 				b[:line_address][line] = curaddr
 				b[:line_text_col][line] = colstr
+				b[:line_struct][line] = curst
+				b[:line_member][line] = curmb
 				colstr = []
 				line += 1
 			}
 			render_val = lambda { |v|
-				if not v
+				if v.kind_of?(::Integer)
+					if v > 0x100
+						render['0x%X' % v, :text]
+					elsif v < -0x100
+						render['-0x%X' % -v, :text]
+					else
+						render[v.to_s, :text]
+					end
+				elsif not v
 					render['NULL', :text]
-				elsif v > 0x100
-					render['0x%X' % v, :text]
-				elsif v < -0x100
-					render['-0x%X' % -v, :text]
 				else
 					render[v.to_s, :text]
 				end
 			}
-			ast = @addr_struct[curaddr]
-			render["struct #{ast.struct.name} *#{'0x%X' % curaddr} = {", :text]
-			nl[]
-			ast.struct.members.each { |m|
-				if m.type.kind_of?(C::Array)
-					if m.type.type.kind_of?(C::BaseType) and m.type.type.name == :char
-						render["    #{m.type.type.to_s[1...-1]} #{m.name}[#{m.type.length}] = #{ast[m].to_array.pack('C*').gsub(/\0*$/, '').inspect}", :text]
+			render_st = lambda { |ast|
+				oldst = curst
+				oldmb = curmb
+				oldmargin = margin
+				render['{', :text]
+				nl[]
+				margin += '    '
+				curst = ast
+				ast.struct.members.each { |m|
+					curmb = m
+					if m.type.kind_of?(C::Array)
+						if m.type.type.kind_of?(C::BaseType) and m.type.type.name == :char
+							render[margin, :text]
+							render["#{m.type.type.to_s[1...-1]} #{m.name}[#{m.type.length}] = #{ast[m].to_array.pack('C*').gsub(/\0*$/, '').inspect}", :text]
+							nl[]
+							curaddr += ast.cp.sizeof(m)
+						else
+							t = m.type.type.to_s[1...-1]
+							tsz = ast.cp.sizeof(m.type.type)
+							fust = curst
+							fumb = curmb
+							curst = ast[m]
+							ast[m].to_array.each_with_index { |v, i|
+								curmb = i
+								render["    #{t} #{m.name}[#{i}] = ", :text]
+								render_val[v]
+								@datadiff[curaddr] = true if ghost and ghost[m][i] != v
+								render[';', :text]
+								nl[]
+								curaddr += tsz
+							}
+							curst = fust
+							curmb = fumb
+						end
+					elsif m.type.kind_of?(C::Union)
+						render[margin, :text]
+						render[m.type.kind_of?(C::Struct) ? 'struct ' : 'union ', :text]
+						render["#{m.type.name} ", :text] if m.type.name
+						render_st[ast[m]]
+						render[" #{m.name};", :text]
+						nl[]
+					else
+						render[margin, :text]
+						render["#{m.type.to_s[1...-1]} ", :text]
+						render["#{m.name} = ", :text]
+						render_val[ast[m]]
+						@datadiff[curaddr] = true if ghost and ghost[m] != ast[m]
+						render[';', :text]
+
+						if m.type.kind_of?(C::Pointer) and m.type.type.kind_of?(C::BaseType) and m.type.type.name == :char
+							if s = @dasm.decode_strz(ast[m], 32)
+								render["    // #{s.inspect}", :comment]
+							end
+						end
 						nl[]
 						curaddr += ast.cp.sizeof(m)
-					else
-						t = m.type.type.to_s[1...-1]
-						tsz = ast.cp.sizeof(m.type.type)
-						ast[m].to_array.each_with_index { |v, i|
-							render["    #{t} #{m.name}[#{i}] = ", :text]
-							render_val[v]
-							@datadiff[curaddr] = true if ghost and ghost[m][i] != v
-							render[';', :text]
-							nl[]
-							curaddr += tsz
-						}
 					end
-				else
-					render["    ", :text]
-					render["#{m.type.to_s[1...-1]} ", :text]
-					render["#{m.name} = ", :text]
-					render_val[ast[m]]
-					@datadiff[curaddr] = true if ghost and ghost[m] != ast[m]
-					render[';', :text]
-
-					if m.type.kind_of?(C::Pointer) and m.type.type.kind_of?(C::BaseType) and m.type.type.name == :char
-						if s = @dasm.decode_strz(ast[m], 32)
-							render["    // #{s.inspect}", :comment]
-						end
-					end
-					nl[]
-					curaddr += ast.cp.sizeof(m)
-				end
+				}
+				margin = oldmargin
+				curst = oldst
+				curmb = oldmb
+				render[margin, :text]
+				render['}', :text]
 			}
-			render['};', :text]
+			ast = @addr_struct[curaddr]
+			render["struct #{ast.struct.name} *#{'0x%X' % curaddr} = ", :text]
+			render_st[ast]
+			render[';', :text]
 			nl[]
 
 			b.w = b[:line_text_col].map { |strc| strc.map { |s, c| s }.join.length }.max.to_i * @font_width + 2
@@ -223,6 +320,7 @@ class GraphHeapWidget < GraphViewWidget
 	end
 
 	def struct_find_roots(addr)
+		addr = @addr_struct.keys.find { |a| addr >= a and addr < a+@addr_struct[a].sizeof } if not @addr_struct[addr]
 		todo = [addr]
 		done = []
 		roots = []
@@ -245,7 +343,6 @@ class GraphHeapWidget < GraphViewWidget
 		roots
 	end
 
-	# will call gui_update then
 	def focus_addr(addr, fu=nil)
 		return if @parent_widget and not addr = @parent_widget.normalize(addr)
 
@@ -258,12 +355,13 @@ class GraphHeapWidget < GraphViewWidget
 
 			focus_xy(b.x, b.y + @caret_y*@font_height)
 			update_caret
-		elsif addr_struct and @addr_struct[addr]
+		elsif addr_struct and (@addr_struct[addr] or @addr_struct.find { |a, s| addr >= a and addr < a+s.sizeof })
 			@curcontext = Graph.new 'testic'
 			@curcontext.root_addrs = struct_find_roots(addr)
 			@want_focus_addr = addr
 			gui_update
 		elsif @heap.chunks[addr]
+			@want_focus_addr = addr
 			do_focus_addr(addr)
 		else
 			return
@@ -272,35 +370,38 @@ class GraphHeapWidget < GraphViewWidget
 	end
 
 	def do_focus_addr(addr)
-		if not st = @heap.chunk_struct[addr]
-			st = C::Struct.new
-			st.name = "chunk_#{'%x' % addr}"
-			st.members = []
-			li = 0
-			(@heap.chunks[addr] / 4).times { |i|
-				n = 'unk_%x' % (4*i)
-				v = @dasm.decode_dword(addr+4*i)
-				if @heap.chunks[v]
-					t = C::Pointer.new(C::BaseType.new(:void))
-				else
-					t = C::BaseType.new(:int)
-				end
-				st.members << C::Variable.new(n, t)
-				li = i
-			}
-			(@heap.chunks[addr] % 4).times { |i|
-				n = 'unk_%x' % (4*li+i)
-				v = @dasm.decode_byte(addr+4*li+i)
-				t = C::BaseType.new(:char)
-				st.members << C::Variable.new(n, t)
-			}
-			@heap.cp.toplevel.struct[st.name] = st
-			@heap.chunk_struct[addr] = st
-		end
+		st = @heap.chunk_struct[addr] || create_struct(addr)
 
 		ed, l = @dasm.get_section_at(addr)
 		@addr_struct = { addr => @heap.cp.decode_c_struct(st.name, ed.data, ed.ptr) }
 		gui_update
+	end
+
+	# create the struct chunk_<addr>, register it in @heap.chunk_struct
+	def create_struct(addr)
+		st = C::Struct.new
+		st.name = "chunk_#{'%x' % addr}"
+		st.members = []
+		li = 0
+		(@heap.chunks[addr] / 4).times { |i|
+			n = 'unk_%x' % (4*i)
+			v = @dasm.decode_dword(addr+4*i)
+			if @heap.chunks[v]
+				t = C::Pointer.new(C::BaseType.new(:void))
+			else
+				t = C::BaseType.new(:int, :unsigned)
+			end
+			st.members << C::Variable.new(n, t)
+			li = i
+		}
+		(@heap.chunks[addr] % 4).times { |i|
+			n = 'unk_%x' % (4*li+i)
+			v = @dasm.decode_byte(addr+4*li+i)
+			t = C::BaseType.new(:char, :unsigned)
+			st.members << C::Variable.new(n, t)
+		}
+		@heap.cp.toplevel.struct[st.name] = st
+		@heap.chunk_struct[addr] = st
 	end
 
 	def snap

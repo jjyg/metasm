@@ -457,7 +457,7 @@ module C
 			raise parser, 'unknown union member' if not findmember(name)
 
 			@members.find { |m|
-				m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
+				m.type.untypedef.kind_of?(Union) and m.type.untypedef.findmember(name)
 			}.type.untypedef.bitoffsetof(parser, name)
 		end
 
