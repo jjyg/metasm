@@ -253,8 +253,9 @@ class GraphHeapWidget < GraphViewWidget
 				curst = ast
 				ast.struct.members.each { |m|
 					curmb = m
-					if m.type.kind_of?(C::Array)
-						if m.type.type.kind_of?(C::BaseType) and m.type.type.name == :char
+					if m.type.untypedef.kind_of?(C::Array)
+						elemt = m.type.untypedef.type.untypedef
+						if elemt.kind_of?(C::BaseType) and elemt.name == :char
 							render[margin, :text]
 							render["#{m.type.type.to_s[1...-1]} #{m.name}[#{m.type.length}] = #{ast[m].to_array.pack('C*').gsub(/\0*$/, '').inspect}", :text]
 							nl[]
@@ -267,9 +268,21 @@ class GraphHeapWidget < GraphViewWidget
 							curst = ast[m]
 							ast[m].to_array.each_with_index { |v, i|
 								curmb = i
-								render["    #{t} #{m.name}[#{i}] = ", :text]
-								render_val[v]
-								@datadiff[curaddr] = true if ghost and ghost[m][i] != v
+								render[margin, :text]
+								if elemt.kind_of?(C::Union)
+									if m.type.untypedef.type.kind_of?(C::Union)
+										render[elemt.kind_of?(C::Struct) ? 'struct ' : 'union ', :text]
+										render["#{elemt.name} ", :text] if m.type.name
+									else # typedef
+										render["#{elemt.to_s[1...-1]} ", :text]
+									end
+									render_st[v]
+									render[" #{m.name}[#{i}]", :text]
+								else
+									render["#{t} #{m.name}[#{i}] = ", :text]
+									render_val[v]
+									@datadiff[curaddr] = true if ghost and ghost[m][i] != v
+								end
 								render[';', :text]
 								nl[]
 								curaddr += tsz
@@ -277,10 +290,14 @@ class GraphHeapWidget < GraphViewWidget
 							curst = fust
 							curmb = fumb
 						end
-					elsif m.type.kind_of?(C::Union)
+					elsif m.type.untypedef.kind_of?(C::Union)
 						render[margin, :text]
-						render[m.type.kind_of?(C::Struct) ? 'struct ' : 'union ', :text]
-						render["#{m.type.name} ", :text] if m.type.name
+						if m.type.kind_of?(C::Union)
+							render[m.type.untypedef.kind_of?(C::Struct) ? 'struct ' : 'union ', :text]
+							render["#{m.type.name} ", :text] if m.type.name
+						else # typedef
+							render["#{m.type.to_s[1...-1]} ", :text]
+						end
 						render_st[ast[m]]
 						render[" #{m.name};", :text]
 						nl[]
