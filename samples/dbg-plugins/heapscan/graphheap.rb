@@ -25,7 +25,19 @@ class GraphHeapWidget < GraphViewWidget
 			gui_update
 		when ?t
 			# change struct field type
-			if b = @caret_box
+			if @selected_boxes.length > 1
+				# mass-retype chunks
+				st = @addr_struct[@selected_boxes[0].id].struct
+				inputbox("replacement struct for selected chunks", :text => st.name) { |n|
+					next if not nst = @heap.cp.toplevel.struct[n]
+					@selected_boxes.each { |sb|
+						as = @addr_struct[sb.id]
+						@heap.chunk_struct[sb.id] = nst
+						@addr_struct[sb.id] = @heap.cp.decode_c_struct(n, as.str, as.stroff)
+					}
+					gui_update
+				}
+			elsif b = @caret_box
 				if @caret_y == 0
 					as = @addr_struct[b.id]
 					st = as.struct
@@ -150,7 +162,7 @@ class GraphHeapWidget < GraphViewWidget
 				if list.length == 1
 					messagebox "no xref to #{Expression[b.id]}"
 				else
-					listwindow("heap xrefs to #{Expression[b.id]}", list) { |*i| @parent_widget.focus_addr(i[0], nil, true) }
+					listwindow("heap xrefs to #{Expression[b.id]}", list) { |i| @parent_widget.focus_addr(i[0], nil, true) }
 				end
 			end
 		when ?+
