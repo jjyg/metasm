@@ -400,6 +400,7 @@ module C
 			raise parser, 'undefined structure' if not members
 			update_member_cache(parser) if not fldlist
 			return @fldoffset[name] if @fldoffset[name]
+			return @fldoffset[name.name] if name.respond_to?(:name) and @fldoffset[name.name]
 
 			# this is almost never reached, only for <struct>.offsetof(anonymoussubstructmembername)
 			raise parser, 'unknown structure member' if (name.kind_of?(::String) ?  !findmember(name) : !@members.include?(name))
@@ -452,6 +453,7 @@ module C
 			raise parser, 'undefined structure' if not members
 			update_member_cache(parser) if not fldlist
 			return @fldbitoffset[name] if fldbitoffset and @fldbitoffset[name]
+			return @fldbitoffset[name.name] if fldbitoffset and name.respond_to?(:name) and @fldbitoffset[name.name]
 			return if @fldlist[name] or @members.include?(name)
 			raise parser, 'undefined union' if not @members
 			raise parser, 'unknown union member' if not findmember(name)
