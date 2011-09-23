@@ -275,4 +275,7 @@ if gui
 	gui.new_command('heap_snap', 'snapshot the current heap struct') { |a|
 		$ghw.snap
 	}
+	gui.new_command('heap_snap_add', 'snapshot, ignore fields changed between now and last snap') { |a|
+		$ghw.snap_add
+	}
 end

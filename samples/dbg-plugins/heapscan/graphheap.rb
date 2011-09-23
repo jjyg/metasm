@@ -71,7 +71,7 @@ class GraphHeapWidget < GraphViewWidget
 						nt = v.type
 						nsz = @heap.cp.sizeof(nt)
 						osz = @heap.cp.sizeof(m)
-						if nsz > osz
+						if nsz > osz and st.kind_of?(C::Struct)
 							idx = st.members.index(m)
 							# eat next members
 							while nsz > osz
@@ -80,7 +80,7 @@ class GraphHeapWidget < GraphViewWidget
 								osz += sz
 							end
 						end
-						if nsz < osz
+						if nsz < osz and st.kind_of?(C::Struct)
 							idx = st.members.index(m)
 							pos = st.offsetof(@heap.cp, m)
 							# fill gap with bytes
@@ -227,8 +227,9 @@ class GraphHeapWidget < GraphViewWidget
 			curst = nil
 			curmb = nil
 			margin = ''
+			start_addr = curaddr
 			if snapped
-				ghost = snapped[curaddr]
+				ghosts = snapped[curaddr]
 			end
 			line = 0
 			render = lambda { |str, col| colstr << [str, col] }
@@ -255,7 +256,47 @@ class GraphHeapWidget < GraphViewWidget
 					render[v.to_s, :text]
 				end
 			}
+			render_st = nil
+			render_st_ar = lambda { |ast, m|
+				elemt = m.type.untypedef.type.untypedef
+				if elemt.kind_of?(C::BaseType) and elemt.name == :char
+					render[margin, :text]
+					render["#{m.type.type.to_s[1...-1]} #{m.name}[#{m.type.length}] = #{ast[m].to_array.pack('C*').gsub(/\0*$/, '').inspect}", :text]
+					nl[]
+					curaddr += ast.cp.sizeof(m)
+				else
+					t = m.type.type.to_s[1...-1]
+					tsz = ast.cp.sizeof(m.type.type)
+					fust = curst
+					fumb = curmb
+					curst = ast[m]
+					ast[m].to_array.each_with_index { |v, i|
+						curmb = i
+						render[margin, :text]
+						if elemt.kind_of?(C::Union)
+							if m.type.untypedef.type.kind_of?(C::Union)
+								render[elemt.kind_of?(C::Struct) ? 'struct ' : 'union ', :text]
+								render["#{elemt.name} ", :text] if m.type.name
+							else # typedef
+								render["#{elemt.to_s[1...-1]} ", :text]
+							end
+							render_st[v]
+							render[" #{m.name}[#{i}]", :text]
+						else
+							render["#{t} #{m.name}[#{i}] = ", :text]
+							render_val[v]
+							@datadiff[curaddr] = true if ghosts and ghosts.all? { |g| g[curaddr-start_addr, tsz] == ghosts[0][curaddr-start_addr, tsz] } and ghosts[0][curaddr-start_addr, tsz] != ast.str[curaddr, tsz].to_str
+						end
+						render[';', :text]
+						nl[]
+						curaddr += tsz
+					}
+					curst = fust
+					curmb = fumb
+				end
+			}
 			render_st = lambda { |ast|
+				st_addr = curaddr
 				oldst = curst
 				oldmb = curmb
 				oldmargin = margin
@@ -265,60 +306,47 @@ class GraphHeapWidget < GraphViewWidget
 				curst = ast
 				ast.struct.members.each { |m|
 					curmb = m
+					curaddr = st_addr + ast.struct.offsetof(@heap.cp, m)
+
+					if bo = ast.struct.bitoffsetof(@heap.cp, m)
+						# float curaddr to make ghost hilight work on bitfields
+						curaddr += (1+bo[0])/1000.0
+					end
+
 					if m.type.untypedef.kind_of?(C::Array)
-						elemt = m.type.untypedef.type.untypedef
-						if elemt.kind_of?(C::BaseType) and elemt.name == :char
-							render[margin, :text]
-							render["#{m.type.type.to_s[1...-1]} #{m.name}[#{m.type.length}] = #{ast[m].to_array.pack('C*').gsub(/\0*$/, '').inspect}", :text]
-							nl[]
-							curaddr += ast.cp.sizeof(m)
-						else
-							t = m.type.type.to_s[1...-1]
-							tsz = ast.cp.sizeof(m.type.type)
-							fust = curst
-							fumb = curmb
-							curst = ast[m]
-							ast[m].to_array.each_with_index { |v, i|
-								curmb = i
-								render[margin, :text]
-								if elemt.kind_of?(C::Union)
-									if m.type.untypedef.type.kind_of?(C::Union)
-										render[elemt.kind_of?(C::Struct) ? 'struct ' : 'union ', :text]
-										render["#{elemt.name} ", :text] if m.type.name
-									else # typedef
-										render["#{elemt.to_s[1...-1]} ", :text]
-									end
-									render_st[v]
-									render[" #{m.name}[#{i}]", :text]
-								else
-									render["#{t} #{m.name}[#{i}] = ", :text]
-									render_val[v]
-									@datadiff[curaddr] = true if ghost and ghost[m][i] != v
-								end
-								render[';', :text]
-								nl[]
-								curaddr += tsz
-							}
-							curst = fust
-							curmb = fumb
-						end
+						render_st_ar[ast, m]
 					elsif m.type.untypedef.kind_of?(C::Union)
 						render[margin, :text]
 						if m.type.kind_of?(C::Union)
-							render[m.type.untypedef.kind_of?(C::Struct) ? 'struct ' : 'union ', :text]
+							render[m.type.kind_of?(C::Struct) ? 'struct ' : 'union ', :text]
 							render["#{m.type.name} ", :text] if m.type.name
 						else # typedef
 							render["#{m.type.to_s[1...-1]} ", :text]
 						end
+						oca = curaddr
 						render_st[ast[m]]
-						render[" #{m.name};", :text]
+						nca = curaddr
+						curaddr = oca
+						render[" #{m.name if m.name};", :text]
 						nl[]
+						curaddr = nca
 					else
 						render[margin, :text]
 						render["#{m.type.to_s[1...-1]} ", :text]
 						render["#{m.name} = ", :text]
 						render_val[ast[m]]
-						@datadiff[curaddr] = true if ghost and ghost[m] != ast[m]
+						tsz = ast.cp.sizeof(m)
+						# TODO bit-level multighosting
+						if ghosts and ghosts.all? { |g| g[curaddr.to_i-start_addr, tsz] == ghosts[0][curaddr.to_i-start_addr, tsz] } and ghosts[0][curaddr.to_i-start_addr, tsz] != ast.str[curaddr.to_i, tsz].to_str
+							if bo
+								ft = C::BaseType.new((bo[0] + bo[1] > 32) ? :__int64 : :__int32)
+								v1 = @heap.cp.decode_c_value(ghosts[0][curaddr.to_i-start_addr, tsz], ft, 0)
+								v2 = @heap.cp.decode_c_value(ast.str[curaddr.to_i, tsz], ft, 0)
+								@datadiff[curaddr] = true if (v1 >> bo[0]) & ((1 << bo[1])-1) != (v2 >> bo[0]) & ((1 << bo[1])-1)
+							else
+								@datadiff[curaddr] = true
+							end
+						end
 						render[';', :text]
 
 						if m.type.kind_of?(C::Pointer) and m.type.type.kind_of?(C::BaseType) and m.type.type.name == :char
@@ -327,7 +355,8 @@ class GraphHeapWidget < GraphViewWidget
 							end
 						end
 						nl[]
-						curaddr += ast.cp.sizeof(m)
+						curaddr += tsz
+						curaddr = curaddr.to_i if bo
 					end
 				}
 				margin = oldmargin
@@ -434,18 +463,27 @@ class GraphHeapWidget < GraphViewWidget
 	end
 
 	def snap
+		if not snapped
+			@datadiff = {}
+			ocb = @parent_widget.bg_color_callback
+			@parent_widget.bg_color_callback = lambda { |a|
+				if @datadiff[a]
+					'f88'
+				elsif ocb
+					ocb[a]
+				end
+			}
+		end
 		@snapped = {}
 		@addr_struct.each { |a, ast|
-			@snapped[a] = ast.cp.decode_c_struct(ast.struct, ast.str[ast.stroff, ast.sizeof].to_str)
+			@snapped[a] = [ast.str[ast.stroff, ast.sizeof].to_str]
 		}
-		@datadiff = {}
-		ocb = @parent_widget.bg_color_callback
-		@parent_widget.bg_color_callback = lambda { |a|
-			if @datadiff[a]
-				'f88'
-			elsif ocb
-				ocb[a]
-			end
+	end
+
+	def snap_add
+		return snap if not snapped
+		@addr_struct.each { |a, ast|
+			(@snapped[a] ||= []) << ast.str[ast.stroff, ast.sizeof].to_str
 		}
 	end
 
