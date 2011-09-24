@@ -155,9 +155,9 @@ class GraphHeapWidget < GraphViewWidget
 		when ?x
 			# show heap xrefs to the hilighted chunk
 			if b = @caret_box
-				list = [['address']]
+				list = [['address', 'size']]
 				@heap.xrchunksfrom[b.id].to_a.each { |a|
-					list << [Expression[a]]
+					list << [Expression[a], Expression[@heap.chunks[a]]]
 				}
 				if list.length == 1
 					messagebox "no xref to #{Expression[b.id]}"
@@ -182,7 +182,7 @@ class GraphHeapWidget < GraphViewWidget
 			unk = @addr_struct.keys.find_all { |k|
 				(@heap.xrchunksto[k].to_a & @addr_struct.keys).empty?
 			}
-			unk.each { |k| @addr_struct.delete k }
+			unk.each { |k| @addr_struct.delete k if @addr_struct.length > 1 }
 			gui_update
 		else return super(k)
 		end
@@ -261,7 +261,7 @@ class GraphHeapWidget < GraphViewWidget
 				elemt = m.type.untypedef.type.untypedef
 				if elemt.kind_of?(C::BaseType) and elemt.name == :char
 					render[margin, :text]
-					render["#{m.type.type.to_s[1...-1]} #{m.name}[#{m.type.length}] = #{ast[m].to_array.pack('C*').gsub(/\0*$/, '').inspect}", :text]
+					render["#{m.type.type.to_s[1...-1]} #{m.name}[#{m.type.length}] = #{ast[m].to_array.pack('C*').sub(/\0.*$/m, '').inspect}", :text]
 					nl[]
 					curaddr += ast.cp.sizeof(m)
 				else
@@ -437,24 +437,49 @@ class GraphHeapWidget < GraphViewWidget
 
 	# create the struct chunk_<addr>, register it in @heap.chunk_struct
 	def create_struct(addr)
+		ptsz = @dasm.cpu.size/8
+
+		# check if this is a c++ object with RTTI info
+		vptr = @dasm.decode_dword(addr)
+		rtti = @dasm.decode_dword(vptr-ptsz)
+		case OS.shortname
+		when 'winos'
+			typeinfo = @dasm.decode_dword(rtti+3*ptsz) if rtti
+			if typeinfo and s = @dasm.decode_strz(typeinfo+3*ptsz)
+				rtti_name = s[/^(.*)@@$/, 1]	# remove trailing @@
+			end
+		when 'linos'
+			typeinfo = @dasm.decode_dword(rtti+ptsz) if rtti
+			if typeinfo and s = @dasm.decode_strz(typeinfo)
+				rtti_name = s[/^[0-9]+(.*)$/, 1]	# remove leading number
+			end
+		end
+
+		if rtti_name and st = @heap.cp.toplevel.struct[rtti_name]
+			return @heap.chunk_struct[addr] = st
+		end
+
 		st = C::Struct.new
-		st.name = "chunk_#{'%x' % addr}"
+		st.name = rtti_name || "chunk_#{'%x' % addr}"
 		st.members = []
 		li = 0
-		(@heap.chunks[addr] / 4).times { |i|
-			n = 'unk_%x' % (4*i)
-			v = @dasm.decode_dword(addr+4*i)
-			if @heap.chunks[v]
+		(@heap.chunks[addr] / ptsz).times { |i|
+			n = 'unk_%x' % (ptsz*i)
+			v = @dasm.decode_dword(addr+ptsz*i)
+			if i == 0 and rtti_name
+				t = C::Pointer.new(C::Pointer.new(C::BaseType.new(:void)))
+				n = 'vtable'
+			elsif @heap.chunks[v]
 				t = C::Pointer.new(C::BaseType.new(:void))
 			else
-				t = C::BaseType.new(:int, :unsigned)
+				t = C::BaseType.new("__int#{ptsz*8}".to_sym, :unsigned)
 			end
 			st.members << C::Variable.new(n, t)
 			li = i
 		}
-		(@heap.chunks[addr] % 4).times { |i|
-			n = 'unk_%x' % (4*li+i)
-			v = @dasm.decode_byte(addr+4*li+i)
+		(@heap.chunks[addr] % ptsz).times { |i|
+			n = 'unk_%x' % (ptsz*li+i)
+			v = @dasm.decode_byte(addr+ptsz*li+i)
 			t = C::BaseType.new(:char, :unsigned)
 			st.members << C::Variable.new(n, t)
 		}
