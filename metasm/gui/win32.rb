@@ -2111,7 +2111,9 @@ class Window
 		when Win32Gui::WM_KEYDOWN, Win32Gui::WM_SYSKEYDOWN
 			# SYSKEYDOWN for f10 (default = activate the menu bar)
 			if key = Keyboard_trad[wparam]
-				if keyboard_state(:control)
+				if [?+, ?-, ?/, ?*].include?(key)
+					# keypad keys generate wm_keydown + wm_char, ignore this one
+				elsif keyboard_state(:control)
 					@widget.keypress_ctrl_(key) if @widget
 				else
 					@widget.keypress_(key) if @widget
@@ -2122,15 +2124,15 @@ class Window
 			if keyboard_state(:control) and not keyboard_state(:alt)	# altgr+[ returns CTRL on..
 				if ?a.kind_of?(String)
 					wparam += (keyboard_state(:shift) ? ?A.ord : ?a.ord) - 1 if wparam < 0x1a
-					k = wparam.chr
+					key = wparam.chr
 				else
 					wparam += (keyboard_state(:shift) ? ?A : ?a) - 1 if wparam < 0x1a
-					k = wparam
+					key = wparam
 				end
-				@widget.keypress_ctrl_(k) if @widget
+				@widget.keypress_ctrl_(key) if @widget
 			else
-				k = (?a.kind_of?(String) ? wparam.chr : wparam)
-				@widget.keypress_(k) if @widget
+				key = (?a.kind_of?(String) ? wparam.chr : wparam)
+				@widget.keypress_(key) if @widget
 			end
 		when Win32Gui::WM_DESTROY
 			destroy_window
