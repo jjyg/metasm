@@ -678,22 +678,26 @@ class GraphViewWidget < DrawableWidget
 		redraw
 	end
 
+	def setup_contextmenu(b, m)
+		cm = new_menu
+		addsubmenu(cm, 'copy _word') { clipboard_copy(@hl_word) if @hl_word }
+		addsubmenu(cm, 'copy _line') { clipboard_copy(@caret_box[:line_text_col][@caret_y].map { |ss, cc| ss }.join) }
+		addsubmenu(cm, 'copy _box')  {
+			sb = @selected_boxes
+			sb = [@curbox] if sb.empty?
+			clipboard_copy(sb.map { |ob| ob[:line_text_col].map { |s| s.map { |ss, cc| ss }.join + "\r\n" }.join }.join("\r\n"))
+		}	# XXX auto \r\n vs \n
+		addsubmenu(m, '_clipboard', cm)
+		addsubmenu(m, 'clone _window') { @parent_widget.clone_window(@hl_word, :graph) }
+	end
+
 	# if the target is a call to a subfunction, open a new window with the graph of this function (popup)
 	def rightclick(x, y)
 		if b = find_box_xy(x, y) and @zoom >= 0.90 and @zoom <= 1.1
 			click(x, y)
 			@mousemove_origin = nil
 			m = new_menu
-			cm = new_menu
-			addsubmenu(cm, 'copy _word') { clipboard_copy(@hl_word) if @hl_word }
-			addsubmenu(cm, 'copy _line') { clipboard_copy(@caret_box[:line_text_col][@caret_y].map { |ss, cc| ss }.join) }
-			addsubmenu(cm, 'copy _box')  {
-				sb = @selected_boxes
-				sb = [@curbox] if sb.empty?
-				clipboard_copy(sb.map { |ob| ob[:line_text_col].map { |s| s.map { |ss, cc| ss }.join + "\r\n" }.join }.join("\r\n"))
-		       	}	# XXX auto \r\n vs \n
-			addsubmenu(m, '_clipboard', cm)
-			addsubmenu(m, 'clone _window') { @parent_widget.clone_window(@hl_word, :graph) }
+			setup_contextmenu(b, m)
 			if @parent_widget.respond_to?(:extend_contextmenu)
 				@parent_widget.extend_contextmenu(self, m, @caret_box[:line_address][@caret_y])
 			end

@@ -7,7 +7,7 @@ module ::Metasm
 module Gui
 class GraphHeapWidget < GraphViewWidget
 	attr_accessor :heap, :addr_struct, :snapped
-	# addrstruct = 0x234 => AllocCStruct
+	# addr_struct = 0x234 => AllocCStruct
 
 	def set_color_arrow(b1, b2)
 		if b1 == @caret_box or b2 == @caret_box
@@ -15,6 +15,33 @@ class GraphHeapWidget < GraphViewWidget
 		else
 			draw_color :arrow_cond
 		end
+	end
+
+	def setup_contextmenu(b, m)
+		addsubmenu(m, '_follow pointer') {
+			next if not lm = b[:line_member][@caret_y]
+			addr = b[:line_struct][@caret_y][lm]
+			next if not @heap.chunks[addr]
+			if lm.kind_of?(::Integer)
+				t = b[:line_struct][@caret_y].struct.type
+			else
+				t = lm.type
+			end
+			if t.pointer? and t.pointed.untypedef.kind_of? C::Union
+				@heap.chunk_struct[addr] ||= t.pointed.untypedef
+			end
+			st = @heap.chunk_struct[addr] || create_struct(addr)
+			ed, l = @dasm.get_section_at(addr)
+			@addr_struct[addr] = @heap.cp.decode_c_struct(st.name, ed.data, ed.ptr)
+			gui_update
+		}
+		addsubmenu(m, '_hide box') {
+			@selected_boxes.each { |sb|
+				@addr_struct.delete sb.id if @addr_struct.length > 1
+			}
+			gui_update
+		}
+		super(b, m)
 	end
 
 	def keypress(k)
@@ -45,7 +72,6 @@ class GraphHeapWidget < GraphViewWidget
 						next if not nst = @heap.cp.toplevel.struct[n]
 						@heap.chunk_struct[b.id] = nst
 						@addr_struct[b.id] = @heap.cp.decode_c_struct(n, as.str, as.stroff)
-						# XXX snap_data ?
 						gui_update
 					}
 				elsif m = b[:line_member][@caret_y]
@@ -167,8 +193,8 @@ class GraphHeapWidget < GraphViewWidget
 			end
 		when ?+
 			# append blocks linked from the currently shown blocks to the display
-			@addr_struct.keys.each { |k|
-				@heap.xrchunksto[k].to_a.each { |nt|
+			@addr_struct.keys.each { |ak|
+				@heap.xrchunksto[ak].to_a.each { |nt|
 					next if @addr_struct[nt]
 					# TODO check if the pointer is a some_struct*
 					st = @heap.chunk_struct[nt] || create_struct(nt)
@@ -179,10 +205,10 @@ class GraphHeapWidget < GraphViewWidget
 			gui_update
 		when ?-
 			# remove graph leaves in an attempt to undo ?+
-			unk = @addr_struct.keys.find_all { |k|
-				(@heap.xrchunksto[k].to_a & @addr_struct.keys).empty?
+			unk = @addr_struct.keys.find_all { |ak|
+				(@heap.xrchunksto[ak].to_a & @addr_struct.keys).empty?
 			}
-			unk.each { |k| @addr_struct.delete k if @addr_struct.length > 1 }
+			unk.each { |ak| @addr_struct.delete ak if @addr_struct.length > 1 }
 			gui_update
 		else return super(k)
 		end
@@ -224,7 +250,7 @@ class GraphHeapWidget < GraphViewWidget
 		ctx.box.each { |b|
 			colstr = []
 			curaddr = b.id
-			curst = nil
+			curst = @addr_struct[b.id]
 			curmb = nil
 			margin = ''
 			start_addr = curaddr
