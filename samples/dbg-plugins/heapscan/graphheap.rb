@@ -160,7 +160,7 @@ class GraphHeapWidget < GraphViewWidget
 				st = b[:line_struct][@caret_y]
 				mb = b[:line_member][@caret_y]
 				if st and mb
-					if mb.kind_of?(C::Variable) and mb.type.kind_of?(C::Array) and m.type.type.kind_of?(C::BaseType) and m.type.type.name == :char
+					if mb.kind_of?(C::Variable) and mb.type.kind_of?(C::Array) and mb.type.type.kind_of?(C::BaseType) and mb.type.type.name == :char
 						defval = st[mb].to_array.pack('C*').gsub(/\0*$/, '').gsub(/[^\x20-\x7e]/, '.')
 						string = true
 					else
