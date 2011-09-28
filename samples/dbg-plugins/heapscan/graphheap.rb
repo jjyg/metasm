@@ -463,6 +463,8 @@ class GraphHeapWidget < GraphViewWidget
 
 	# create the struct chunk_<addr>, register it in @heap.chunk_struct
 	def create_struct(addr)
+		raise "no chunk here" if not @heap.chunks[addr]
+
 		ptsz = @dasm.cpu.size/8
 
 		# check if this is a c++ object with RTTI info
@@ -501,7 +503,7 @@ class GraphHeapWidget < GraphViewWidget
 				t = C::BaseType.new("__int#{ptsz*8}".to_sym, :unsigned)
 			end
 			st.members << C::Variable.new(n, t)
-			li = i
+			li = i+1
 		}
 		(@heap.chunks[addr] % ptsz).times { |i|
 			n = 'unk_%x' % (ptsz*li+i)
