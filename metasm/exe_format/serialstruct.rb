@@ -46,6 +46,13 @@ class << self
 
 	# standard fields:
 
+	# virtual field, handled explicitly in a custom encode/decode
+	def virtual(*a)
+		a.each { |f|
+			new_field(f, nil, nil, nil)
+		}
+	end
+
 	# a fixed-size memory chunk
 	def mem(name, len, defval='')
 		new_field(name, lambda { |exe, me| exe.curencoded.read(len) }, lambda { |exe, me, val| val[0, len].ljust(len, 0.chr) }, defval)
