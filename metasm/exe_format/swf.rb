@@ -123,9 +123,11 @@ class SWF < ExeFormat
 		end
 
 		def encode(swf)
+			ed = @view.encode(swf)
 			bswap_framerate(swf)
-			@view.encode(swf) + super(swf)
+			ed << super(swf)
 			bswap_framerate(swf)
+			ed
 		end
 	end
 
