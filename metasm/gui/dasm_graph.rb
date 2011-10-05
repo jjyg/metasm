@@ -711,7 +711,7 @@ class GraphViewWidget < DrawableWidget
 			if @hl_word and @zoom >= 0.90 and @zoom <= 1.1
 				@parent_widget.focus_addr(@hl_word)
 			else
-				@parent_widget.focus_addr b[:addresses].first
+				@parent_widget.focus_addr((b[:addresses] || b[:line_address]).first)
 			end
 		elsif doubleclick_check_arrow(x, y)
 		elsif @zoom == 1.0

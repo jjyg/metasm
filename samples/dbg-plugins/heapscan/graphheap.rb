@@ -39,6 +39,7 @@ class GraphHeapWidget < GraphViewWidget
 			@selected_boxes.each { |sb|
 				@addr_struct.delete sb.id if @addr_struct.length > 1
 			}
+			@curcontext.root_addrs = struct_find_roots(@addr_struct.keys.first)
 			gui_update
 		}
 		super(b, m)
@@ -405,6 +406,7 @@ class GraphHeapWidget < GraphViewWidget
 
 	def struct_find_roots(addr)
 		addr = @addr_struct.keys.find { |a| addr >= a and addr < a+@addr_struct[a].sizeof } if not @addr_struct[addr]
+
 		todo = [addr]
 		done = []
 		roots = []
@@ -415,7 +417,7 @@ class GraphHeapWidget < GraphViewWidget
 				next
 			end
 			done << a
-			newf = @heap.xrchunksfrom[addr].to_a & @addr_struct.keys
+			newf = @heap.xrchunksfrom[a].to_a & @addr_struct.keys
 			if newf.empty?
 				roots << a
 			else
