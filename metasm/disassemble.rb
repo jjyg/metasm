@@ -949,7 +949,9 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			if di.opcode.props[:stopexec] or di.opcode.props[:setip]
 				if di.opcode.props[:setip]
 					@addrs_todo = []
-					@program.get_xrefs_x(self, di).each { |expr|
+					ar = @program.get_xrefs_x(self, di)
+					ar = @callback_newaddr[di.address, ar] || ar if callback_newaddr
+					ar.each { |expr|
 						backtrace(expr, di.address, :origin => di.address, :type => :x, :maxdepth => @backtrace_maxblocks_fast)
 					}
 				end
@@ -972,8 +974,13 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			end
 		}
 
-		di.block.add_to_normal(di_addr)
-		ret << [di_addr, di.address]
+		ar = [di_addr]
+		ar = @callback_newaddr[block.list.last.address, ar] || ar if callback_newaddr
+		ar.each { |a|
+			di.block.add_to_normal(a)
+			ret << [a, di.address]
+		}
+		ret
 	end
 
 	# handles when disassemble_fast encounters a call to a subfunction
