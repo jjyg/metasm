@@ -640,8 +640,8 @@ class CCompiler < C::Compiler
 		stackargs = expr.rexpr.zip(regargsmask).map { |a, r| a if not r }.compact
 
 		# preserve 16byte stack align under windows
-		stackalign = true if (stackargs + backup).length & 1 == 1
-		instr 'push', rax if stackalign
+		stackalign = true if @state.args_space > 0 and (stackargs + backup).length & 1 == 1
+		instr 'sub', Reg.new(4, @cpusz), Expression[8] if stackalign
 
 		stackargs.reverse_each { |arg|
 			raise 'arg unhandled' if not arg.type.integral? or arg.type.pointer?
@@ -653,7 +653,7 @@ class CCompiler < C::Compiler
 		}
 
 		regargs_unuse = []
-		regargsmask.zip(expr.rexpr).each { |ra, arg|
+		regargsmask.zip(expr.rexpr).reverse_each { |ra, arg|
 			next if not arg or not ra
 			a = c_cexpr_inner(arg)
 			a = resolve_address a if a.kind_of? Address
@@ -700,6 +700,7 @@ class CCompiler < C::Compiler
 			else
 				instr 'pop', Reg.new(reg, 64)
 			end
+			inuse getreg(reg)
 		}
 		retreg
 	end
