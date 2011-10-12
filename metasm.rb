@@ -45,6 +45,7 @@ module Metasm
 		'Bflt' => 'exe_format/bflt', 'Dol' => 'exe_format/dol',
 		'PYC' => 'exe_format/pyc', 'JavaClass' => 'exe_format/javaclass',
 		'SWF' => 'exe_format/swf',
+		'Shellcode_RWX' => 'exe_format/shellcode_rwx',
 		'Gui' => 'gui',
 		'WindowsExports' => 'os/windows_exports',
 		'GNUExports' => 'os/gnu_exports',
