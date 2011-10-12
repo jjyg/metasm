@@ -1378,10 +1378,12 @@ class WinOS < OS
 			@context ||= Context.new(self, :all)
 			if block_given?
 				suspend
-				@context.update
-				ret = yield @context
-				resume
-				ret
+				begin
+					@context.update
+					yield @context
+				ensure
+					resume
+				end
 			else
 				@context
 			end
@@ -1391,8 +1393,9 @@ class WinOS < OS
 		class Context
 			def initialize(thread, kind=:all)
 				@handle = thread.handle
-				tg = thread.process ? thread.process.addrsz : 32
-				case WinAPI.host_cpu.shortname
+				tg = (thread.process ? thread.process.addrsz : 32)
+				hcpu = WinAPI.host_cpu.shortname
+				case hcpu
 				when 'ia32', 'x64'; tg = ((tg == 32) ? 'ia32' : 'x64')
 				else raise "unsupported architecture #{tg}"
 				end
@@ -1403,7 +1406,7 @@ class WinOS < OS
 				when 'ia32'
 					@context = WinAPI.alloc_c_struct('_CONTEXT_I386')
 					@context.contextflags = WinAPI::CONTEXT_I386_ALL
-					if WinAPI.host_cpu.shortname == 'x64'
+					if hcpu == 'x64'
 						@getcontext = :wow64getthreadcontext
 						@setcontext = :wow64setthreadcontext
 					end
@@ -1451,6 +1454,7 @@ class WinOS < OS
 					kk.lo = v & ((1<<64)-1)
 					kk.hi = (v>>64) & ((1<<64)-1)
 				when /^mmx?(\d+)/i
+					# XXX st(7-$1) ?
 					@context['xmm'][$1.to_i].lo = v
 				else
 					@context[k] = v
@@ -1460,10 +1464,10 @@ class WinOS < OS
 
 			def method_missing(m, *a)
 				if m.to_s[-1] == ?=
-					super(m, *a) if a.length != 1
+					return super(m, *a) if a.length != 1
 					send '[]=', m.to_s[0...-1], a[0]
 				else
-					super(m, *a) if a.length != 0
+					return super(m, *a) if a.length != 0
 					send '[]', m
 				end
 			end
