@@ -69,7 +69,7 @@ class Shellcode < ExeFormat
 		parse(*a) if not a.empty?
 		@encoded << assemble_sequence(@source, @cpu)
 		@source.clear
-		encode
+		self
 	end
 
 	def encode(binding={})

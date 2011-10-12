@@ -1009,8 +1009,8 @@ class EncodedData
 
 	# returns an array of variables that needs to be defined for a complete #fixup
 	# ie the list of externals for all relocations
-	def reloc_externals
-		@reloc.values.map { |r| r.target.externals }.flatten.uniq - @export.keys
+	def reloc_externals(interns = @export.keys)
+		@reloc.values.map { |r| r.target.externals }.flatten.uniq - interns
 	end
 
 	# returns the offset where the relocation for target t is to be applied

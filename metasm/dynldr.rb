@@ -791,14 +791,38 @@ EOS
 		cp.parse(src)
 	end
 
-	# compile a C fragment into a Shellcode, honors the host ABI
+	# compile a C fragment into a Shellcode_RWX, honors the host ABI
 	def self.compile_c(src)
 		# XXX could we reuse self.cp ? (for its macros etc)
 		cp = C::Parser.new(host_exe.new(host_cpu))
 		cp.parse(src)
-		sc = Shellcode.new(host_cpu)
+		sc = Shellcode_RWX.new(host_cpu)
 		asm = host_cpu.new_ccompiler(cp, sc).compile
 		sc.assemble(asm)
+	end
+
+	# maps a Shellcode_RWX in memory, fixup stdlib relocations
+	# returns the Shellcode_RWX, with the base_r/w/x initialized to the allocated memory
+	def self.sc_map_resolve(sc)
+		sc.base_r = memory_alloc(sc.encoded_r.length) if sc.encoded_r.length > 0
+		sc.base_w = memory_alloc(sc.encoded_w.length) if sc.encoded_w.length > 0
+		sc.base_x = memory_alloc(sc.encoded_x.length) if sc.encoded_x.length > 0
+
+		locals = sc.encoded_r.export.keys | sc.encoded_w.export.keys | sc.encoded_x.export.keys
+		exts = sc.encoded_r.reloc_externals(locals) | sc.encoded_w.reloc_externals(locals) | sc.encoded_x.reloc_externals(locals)
+		bd = {}
+		exts.uniq.each { |ext| bd[ext] = sym_addr(lib_from_sym(ext), ext) or raise "unknown symbol #{ext}" }
+		sc.fixup_check(bd)
+
+		memory_write sc.base_r, sc.encoded_r.data if sc.encoded_r.length > 0
+		memory_write sc.base_w, sc.encoded_w.data if sc.encoded_w.length > 0
+		memory_write sc.base_x, sc.encoded_x.data if sc.encoded_x.length > 0
+
+		memory_perm sc.base_r, sc.encoded_r.length, 'r'  if sc.encoded_r.length > 0
+		memory_perm sc.base_w, sc.encoded_w.length, 'rw' if sc.encoded_w.length > 0
+		memory_perm sc.base_x, sc.encoded_x.length, 'rx' if sc.encoded_x.length > 0
+
+		sc
 	end
 
 	# retrieve the library where a symbol is to be found (uses AutoImport)
@@ -1026,13 +1050,8 @@ EOS
 		if (v and v.initializer) or cp.toplevel.statements.find { |st| st.kind_of? C::Asm }
 			cp.toplevel.statements.delete_if { |st| st.kind_of? C::Asm }
 			cp.toplevel.symbol.delete v.name if v
-			sc = compile_c(proto)
-			ptr = memory_alloc(sc.encoded.length)
-			sc.base_addr = ptr
-			# TODO fixup external calls
-			memory_write ptr, sc.encode_string
-			memory_perm ptr, sc.encoded.length, 'rwx'
-			ptr
+			sc = sc_map_resolve(compile_c(proto))
+			sc.base_x
 		elsif not v
 			raise 'empty prototype'
 		else
@@ -1066,29 +1085,34 @@ EOS
 	# finds a free callback id, allocates a new page if needed
 	def self.callback_find_id
 		if not id = @@callback_addrs.find { |a| not @@callback_table[a] }
-			cb_page = memory_alloc(4096)
+			page_size = 4096
+			cb_page = memory_alloc(page_size)
 			sc = Shellcode.new(host_cpu, cb_page)
 			case sc.cpu.shortname
 			when 'ia32'
-				addr = cb_page
-				nrcb = 128	# TODO should be 4096/5, but the parser/compiler is really too slow
-				nrcb.times {
-					@@callback_addrs << addr
-					sc.parse "call #{CALLBACK_TARGET}"
-					addr += 5
-				}
+				asm = "call #{CALLBACK_TARGET}"
 			when 'x64'
-				addr = cb_page
-				nrcb = 128	# same remark
-				nrcb.times {
-					@@callback_addrs << addr
-					sc.parse "1: lea rax, [rip-$_+1b] jmp #{CALLBACK_TARGET}"
-					addr += 12	# XXX approximative..
-				}
+				if (cb_page - CALLBACK_TARGET).abs >= 0x7fff_f000
+					# cannot directly 'jmp CB_T'
+					asm = "1: mov rax, #{CALLBACK_TARGET}  push rax  lea rax, [rip-$_+1b]  ret"
+				else
+					asm = "1: lea rax, [rip-$_+1b]  jmp #{CALLBACK_TARGET}"
+				end
+			else
+				raise 'Who are you?'
 			end
-			sc.assemble
-			memory_write cb_page, sc.encode_string
-			memory_perm cb_page, 4096, 'rx'
+
+			# fill the page with valid callbacks
+			loop do
+				off = sc.encoded.length
+				sc.assemble asm
+				break if sc.encoded.length > page_size
+				@@callback_addrs << (cb_page + off)
+			end
+
+			memory_write cb_page, sc.encode_string[0, page_size]
+			memory_perm cb_page, page_size, 'rx'
+
 			raise 'callback_alloc bouh' if not id = @@callback_addrs.find { |a| not @@callback_table[a] }
 		end
 		id
@@ -1098,23 +1122,17 @@ EOS
 	# returns the raw pointer to the code page
 	# if given a block, run the block and then undefine all the C functions & free memory
 	def self.new_func_c(src)
-		sc = compile_c(src)
-		ptr = memory_alloc(sc.encoded.length)
-		sc.base_addr = ptr
-		bd = sc.encoded.binding(ptr)
-		sc.encoded.reloc_externals.uniq.each { |ext| bd[ext] = sym_addr(lib_from_sym(ext), ext) or raise "unknown symbol #{ext}" }
-		sc.encoded.fixup(bd)
-		memory_write ptr, sc.encode_string
-		memory_perm ptr, sc.encoded.length, 'rwx'
+		sc = sc_map_resolve(compile_c(src))
+
 		parse_c(src)	# XXX the Shellcode parser may have defined stuff / interpreted C another way...
 		defs = []
 		cp.toplevel.symbol.dup.each_value { |v|
 			next if not v.kind_of? C::Variable
 			cp.toplevel.symbol.delete v.name
 			next if not v.type.kind_of? C::Function or not v.initializer
-			next if not off = sc.encoded.export[v.name]
+			next if not off = sc.encoded_x.export[v.name]
 			rbname = c_func_name_to_rb(v.name)
-			new_caller_for(v, rbname, ptr+off)
+			new_caller_for(v, rbname, sc.base_x+off)
 			defs << rbname
 		}
 		if block_given?
@@ -1122,16 +1140,20 @@ EOS
 				yield
 			ensure
 				defs.each { |d| class << self ; self ; end.send(:remove_method, d) }
-				memory_free ptr
+				memory_free sc.base_r if sc.base_r
+				memory_free sc.base_w if sc.base_w
+				memory_free sc.base_x if sc.base_x
 			end
 		else
-			ptr
+			sc.base_x
 		end
 	end
 
 	# compile an asm sequence, callable with the ABI of the C prototype given
 	# function name comes from the prototype
-	def self.new_func_asm(proto, asm)
+	# the shellcode is mapped in read-only memory unless selfmodifyingcode is true
+	# note that you can use a .data section for simple writable non-executable memory
+	def self.new_func_asm(proto, asm, selfmodifyingcode=false)
 		proto += "\n;"
 		old = cp.toplevel.symbol.keys
 		parse_c(proto)
@@ -1141,24 +1163,24 @@ EOS
 		raise "invalid func proto #{proto}" if not f.name or not f.type.kind_of? C::Function or f.initializer
 		cp.toplevel.symbol.delete f.name
 
-		sc = Shellcode.assemble(host_cpu, asm)
-		ptr = memory_alloc(sc.encoded.length)
-		bd = sc.encoded.binding(ptr)
-		sc.encoded.reloc_externals.uniq.each { |ext| bd[ext] = sym_addr(lib_from_sym(ext), ext) or raise "unknown symbol #{ext}" }
-		sc.encoded.fixup(bd)
-		memory_write ptr, sc.encode_string
-		memory_perm ptr, sc.encoded.length, 'rwx'
+		sc = Shellcode_RWX.assemble(host_cpu, asm)
+		sc = sc_map_resolve(sc)
+		if selfmodifyingcode
+			memory_perm sc.base_x, sc.encoded_x.length, 'rwx'
+		end
 		rbname = c_func_name_to_rb(f.name)
-		new_caller_for(f, rbname, ptr)
+		new_caller_for(f, rbname, sc.base_x)
 		if block_given?
 			begin
 				yield
 			ensure
 				class << self ; self ; end.send(:remove_method, rbname)
-				memory_free ptr
+				memory_free sc.base_r if sc.base_r
+				memory_free sc.base_w if sc.base_w
+				memory_free sc.base_x
 			end
 		else
-			ptr
+			sc.base_x
 		end
 	end
 
@@ -1293,11 +1315,12 @@ EOS
 	when :linux
 		
 		new_api_c <<EOS
-#define PROT_READ 0x1
+#define PROT_READ  0x1
 #define PROT_WRITE 0x2
-#define PROT_EXEC 0x4
+#define PROT_EXEC  0x4
 
-#define MAP_PRIVATE 0x2
+#define MAP_PRIVATE   0x2
+#define MAP_FIXED     0x10
 #define MAP_ANONYMOUS 0x20
 
 uintptr_t mmap(uintptr_t addr, uintptr_t length, int prot, int flags, uintptr_t fd, uintptr_t offset);
@@ -1320,16 +1343,38 @@ EOS
 	
 		# change memory permissions - perm 'rwx'
 		# on PaX-enabled systems, this may need a non-mprotect-restricted ruby interpreter
+		# if a mapping 'rx' is denied, will try to create a file and mmap() it rx in place
 		def self.memory_perm(addr, len, perm)
 			perm = perm.to_s.downcase
 			len += (addr & 0xfff) + 0xfff
 			len &= ~0xfff
 			addr &= ~0xfff
+
 			p = 0
-			p |= PROT_READ if perm.include? 'r'
-			p |= PROT_WRITE if perm.include? 'w'
-			p |= PROT_EXEC if perm.include? 'x'
-			mprotect(addr, len, p)
+			p |= PROT_READ  if perm.include?('r')
+			p |= PROT_WRITE if perm.include?('w')
+			p |= PROT_EXEC  if perm.include?('x')
+
+			ret = mprotect(addr, len, p)
+
+			if ret != 0 and perm.include?('x') and not perm.include?('w') and len > 0 and @memory_perm_wd ||= find_write_dir
+				# We are on a PaX-mprotected system. Try to use a file mapping to work aroud.
+				Dir.chdir(@memory_perm_wd) {
+					fname = 'tmp_mprot_%d_%x' % [Process.pid, addr]
+					data = memory_read(addr, len)
+					begin
+						File.open(fname, 'w') { |fd| fd.write data }
+						# reopen to ensure filesystem flush
+						rret = File.open(fname, 'r') { |fd| mmap(addr, len, p, MAP_FIXED|MAP_PRIVATE, fd.fileno, 0) }
+						raise 'hax' if data != memory_read(addr, len)
+						ret = 0 if rret == addr
+					ensure
+						File.unlink(fname) rescue nil
+					end
+				}
+			end
+
+			ret
 		end
 	
 	end
