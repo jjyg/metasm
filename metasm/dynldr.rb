@@ -939,11 +939,11 @@ EOS
 		flags |= 4 if proto.type.type.integral? and cp.sizeof(nil, proto.type.type) == 8
 		flags |= 8 if proto.type.type.float?
 		class << self ; self ; end.send(:define_method, name) { |*a|
-			raise ArgumentError, "bad arg count for #{name}: #{a.length} for #{proto.type.args.length}" if a.length != proto.type.args.length and not proto.type.varargs
+			raise ArgumentError, "bad arg count for #{name}: #{a.length} for #{proto.type.args.to_a.length}" if a.length != proto.type.args.to_a.length and not proto.type.varargs
 
 			# convert the arglist suitably for raw_invoke
 			auto_cb = []	# list of automatic C callbacks generated from lambdas
-			a = a.zip(proto.type.args).map { |ra, fa|
+			a = a.zip(proto.type.args.to_a).map { |ra, fa|
 				aa = convert_rb2c(fa, ra, :cb_list => auto_cb)
 				if fa and fa.type.integral? and cp.sizeof(fa) == 8 and host_cpu.size == 32
 					aa = [aa & 0xffff_ffff, (aa >> 32) & 0xffff_ffff]
