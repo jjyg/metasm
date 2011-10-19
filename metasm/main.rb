@@ -81,6 +81,13 @@ class CPU
 	def shortname
 		self.class.name.sub(/.*::/, '').downcase
 	end
+
+	# some userinterface wants to hilight a word, return a regexp
+	# useful for register aliases
+	# the regexp will be enclosed in \b and should not contain captures
+	def gui_hilight_word_regexp(word)
+		Regexp.escape(word)
+	end
 end
 
 # generic CPU, with no instructions, just size/endianness

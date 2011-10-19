@@ -931,7 +931,7 @@ class GraphViewWidget < DrawableWidget
 			if @hl_word
 				stmp = str
 				pre_x = 0
-				while stmp =~ /^(.*?)(\b#{Regexp.escape @hl_word}\b)/
+				while stmp =~ @hl_word_re
 					s1, s2 = $1, $2
 					pre_x += s1.length * @font_width
 					hl_x = s2.length * @font_width

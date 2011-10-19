@@ -93,5 +93,26 @@ class Ia32
 		h['toggle lock'] = lambda { (i.prefix ||= {})[:lock] = !i.prefix[:lock] }
 		h
 	end
+
+	def gui_hilight_word_regexp_init
+		ret = {}
+
+		%w[a b c d].each { |r|
+			ret["#{r}l"] = "e?#{r}x|#{r}l"
+			ret["#{r}h"] = "e?#{r}x|#{r}h"
+			ret["#{r}x"] = ret["e#{r}x"] = "e?#{r}x|#{r}[hl]"
+		}
+
+		%w[sp bp si di].each { |r|
+			ret[r] = ret["e#{r}"] = "e?#{r}"
+		}
+
+		ret
+	end
+
+	def gui_hilight_word_regexp(word)
+		@gui_hilight_word_hash ||= gui_hilight_word_regexp_init
+		@gui_hilight_word_hash[word] or super(word)
+	end
 end
 end

@@ -94,7 +94,7 @@ class CdecompListingWidget < DrawableWidget
 			if @hl_word
 				stmp = str
 				pre_x = 0
-				while stmp =~ /^(.*?)(\b#{Regexp.escape @hl_word}\b)/
+				while stmp =~ @hl_word_re
 					s1, s2 = $1, $2
 					pre_x += s1.length*@font_width
 					hl_w = s2.length*@font_width
@@ -264,7 +264,7 @@ class CdecompListingWidget < DrawableWidget
 		invalidate_caret(@caret_x-@view_x, @caret_y-@view_y)
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 
-		redraw if update_hl_word(@line_text[@caret_y], @caret_x)
+		redraw if update_hl_word(@line_text[@caret_y], @caret_x, :c)
 	end
 
 	# focus on addr

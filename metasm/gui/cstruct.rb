@@ -93,7 +93,7 @@ class CStructWidget < DrawableWidget
 					if @hl_word
 						stmp = t
 						pre_x = 0
-						while stmp =~ /^(.*?)(\b#{Regexp.escape @hl_word}\b)/
+						while stmp =~ @hl_word_re
 							s1, s2 = $1, $2
 							pre_x += s1.length*@font_width
 							hl_w = s2.length*@font_width
@@ -243,7 +243,7 @@ class CStructWidget < DrawableWidget
 	def update_caret
 		if @caret_x < @view_x or @caret_x >= @view_x + @cwidth or @caret_y < @view_y or @caret_y >= @view_y + @cheight
 			redraw
-		elsif update_hl_word(@line_text[@caret_y], @caret_x)
+		elsif update_hl_word(@line_text[@caret_y], @caret_x, :c)
 			redraw
 		else
 			invalidate_caret(@oldcaret_x-@view_x, @oldcaret_y-@view_y)

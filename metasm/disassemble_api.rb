@@ -1484,5 +1484,9 @@ class Disassembler
 
 		bd
 	end
+
+	def gui_hilight_word_regexp(word)
+		@cpu.gui_hilight_word_regexp(word)
+	end
 end
 end
