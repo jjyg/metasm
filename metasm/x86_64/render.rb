@@ -22,7 +22,7 @@ class X86_64
 			ret["#{r}l"] = ret[r] = ret["e#{r}"] = ret["r#{r}"] = "[re]?#{r}|#{r}l"
 		}
 
-		(8...15).each { |i|
+		(8..15).each { |i|
 			r = "r#{i}"
 			ret[r+'b'] = ret[r+'w'] = ret[r+'d'] = ret[r] = "#{r}[bwd]?"
 		}
