@@ -1396,21 +1396,21 @@ class WinOS < OS
 				tg = (thread.process ? thread.process.addrsz : 32)
 				hcpu = WinAPI.host_cpu.shortname
 				case hcpu
-				when 'ia32', 'x64'; tg = ((tg == 32) ? 'ia32' : 'x64')
+				when 'ia32', 'x64'
 				else raise "unsupported architecture #{tg}"
 				end
 
 				@getcontext = :getthreadcontext
 				@setcontext = :setthreadcontext
 				case tg
-				when 'ia32'
+				when 32
 					@context = WinAPI.alloc_c_struct('_CONTEXT_I386')
 					@context.contextflags = WinAPI::CONTEXT_I386_ALL
 					if hcpu == 'x64'
 						@getcontext = :wow64getthreadcontext
 						@setcontext = :wow64setthreadcontext
 					end
-				when 'x64'
+				when 64
 					@context = WinAPI.alloc_c_struct('_CONTEXT_AMD64')
 					@context.contextflags = WinAPI::CONTEXT_AMD64_ALL
 				end
@@ -1426,15 +1426,16 @@ class WinOS < OS
 				case k.to_s
 				when /^[cdefgs]s$/i
 					@context["seg#{k}"]
-				when /^st(\d*)/i
+				when /^st(\d?)$/i
 					v = @context['st'][$1.to_i]
 					buf = v.str[v.str_off, 10]
 					# TODO check this, 'D' is 8byte wide
 					buf.unpack('D')[0]
-				when /^xmm(\d+)/i
+				# TODO when /^ymm(\d+)$/i
+				when /^xmm(\d+)$/i
 					v = @context['xmm'][$1.to_i]
 					(v.hi << 64) | v.lo
-				when /^mmx?(\d+)/i
+				when /^mmx?(\d)$/i
 					@context['xmm'][$1.to_i].lo
 				else
 					@context[k]
@@ -1445,15 +1446,16 @@ class WinOS < OS
 				case k.to_s
 				when /^[cdefgs]s$/i
 					@context["seg#{k}"] = v
-				when /^st(\d*)/i
+				when /^st(\d?)$/i
 					# TODO check this, 'D' is 8byte wide
 					buf = [v, 0, 0].pack('DCC')
 					@context['st'][$1.to_i][0, 10] = buf
-				when /^xmm(\d+)/i
+				# TODO when /^ymm(\d+)$/i
+				when /^xmm(\d+)$/i
 					kk = @context['xmm'][$1.to_i]
 					kk.lo = v & ((1<<64)-1)
 					kk.hi = (v>>64) & ((1<<64)-1)
-				when /^mmx?(\d+)/i
+				when /^mmx?(\d)$/i
 					# XXX st(7-$1) ?
 					@context['xmm'][$1.to_i].lo = v
 				else
