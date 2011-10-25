@@ -14,9 +14,11 @@ class PTrace
 	def self.open(target)
 		ptrace = new(target)
 		return ptrace if not block_given?
-		ret = yield ptrace
-		ptrace.detach
-		ret
+		begin
+			yield ptrace
+		ensure
+			ptrace.detach
+		end
 	end
 
 	# calls PTRACE_TRACEME on the current (ruby) process
@@ -29,29 +31,48 @@ class PTrace
 	# values for do_attach:
 	#  :create => always fork+traceme+exec+wait
 	#  :attach => always attach
-	#  false/nil => same as attach, without actually calling PT_ATTACH (usefull if we're already tracing pid)
-	#  anything else: try to attach if pid is numeric (using Integer()), else create
+	#  false/nil => same as attach, without actually calling PT_ATTACH (useful when the ruby process is already tracing pid)
+	#  default/anything else: try to attach if pid is numeric, else create
 	def initialize(target, do_attach=true)
-		begin
-			raise ArgumentError if do_attach == :create
+		case do_attach
+		when :create
+			init_create(target)
+		when :attach
+			init_attach(target)
+		when :dup
+			raise ArgumentError unless target.kind_of?(PTrace)
+			@pid = target.pid
+			tweak_for_pid(@pid, target.tgcpu)		# avoid re-parsing /proc/self/exe
+		when nil, false
 			@pid = Integer(target)
 			tweak_for_pid(@pid)
-			return if not do_attach
-			attach
-		rescue ArgumentError, TypeError
-			raise if do_attach == :attach or not do_attach
-			did_exec = true
-			if not @pid = fork
-				tweak_for_pid(::Process.pid)
-				traceme
-				::Process.exec(*target)
-				exit!(0)
-			end
+		else
+			t = begin; Integer(target)
+			    rescue ArgumentError, TypeError
+			    end
+			t ? init_attach(t) : init_create(target)
+		end
+	end
+
+	def init_attach(target)
+		@pid = Integer(target)
+		tweak_for_pid(@pid)
+		attach
+		wait
+		puts "Ptrace: attached to #@pid" if $DEBUG
+	end
+	
+	def init_create(target)
+		if not @pid = ::Process.fork
+			tweak_for_pid(::Process.pid)
+			traceme
+			::Process.exec(*target)
+			exit!(0)
 		end
 		wait
 		raise "could not exec #{target}" if $?.exited?
-		tweak_for_pid(@pid) if did_exec
-		puts "Ptrace: attached to #@pid" if $DEBUG
+		tweak_for_pid(@pid)
+		puts "Ptrace: attached to new #@pid" if $DEBUG
 	end
 
 	def wait
@@ -60,10 +81,12 @@ class PTrace
 
 	attr_accessor :reg_off, :intsize, :syscallnr, :syscallreg
 	attr_accessor :packint, :packuint, :host_intsize, :host_syscallnr
-	# setup the variables according to the target
-	def tweak_for_pid(pid=@pid)
+	attr_accessor :tgcpu
+	# setup variables according to the target (ptrace interface, syscall nrs, ...)
+	def tweak_for_pid(pid=@pid, tgcpu=nil)
 		# use these for our syscalls PTRACE
-		case LinOS.open_process(::Process.pid).cpu.shortname
+		@@host_csn ||= LinOS.open_process(::Process.pid).cpu.shortname
+		case @@host_csn
 		when 'ia32'
 			@packint = 'l'
 			@packuint = 'L'
@@ -79,8 +102,8 @@ class PTrace
 		else raise 'unsupported architecture'
 		end
 
+		@tgcpu = tgcpu || LinOS.open_process(pid).cpu
 		# use these to interpret the child state
-		@tgcpu = LinOS.open_process(pid).cpu
 		case @tgcpu.shortname
 		when 'ia32'
 			@syscallreg = 'ORIG_EAX'
@@ -96,6 +119,12 @@ class PTrace
 		# buffer used in ptrace syscalls
 		@buf = [0].pack(@packint)
 		@bufptr = str_ptr(@buf)
+	end
+
+	def host_csn; @@host_csn end
+
+	def dup
+		self.class.new(self, :dup)
 	end
 
 	def str_ptr(str)
@@ -148,25 +177,25 @@ class PTrace
 
 	# linux/ptrace.h
 	COMMAND = {
-		'TRACEME'         =>   0, 'PEEKTEXT'        =>   1,
-		'PEEKDATA'        =>   2, 'PEEKUSR'         =>   3,
-		'POKETEXT'        =>   4, 'POKEDATA'        =>   5,
-		'POKEUSR'         =>   6, 'CONT'            =>   7,
-		'KILL'            =>   8, 'SINGLESTEP'      =>   9,
-		'ATTACH'          =>  16, 'DETACH'          =>  17,
-		'SYSCALL'         =>  24,
+		:TRACEME         =>   0, :PEEKTEXT        =>   1,
+		:PEEKDATA        =>   2, :PEEKUSR         =>   3,
+		:POKETEXT        =>   4, :POKEDATA        =>   5,
+		:POKEUSR         =>   6, :CONT            =>   7,
+		:KILL            =>   8, :SINGLESTEP      =>   9,
+		:ATTACH          =>  16, :DETACH          =>  17,
+		:SYSCALL         =>  24,
 
 		# arch/x86/include/ptrace-abi.h
-		'GETREGS'         =>  12, 'SETREGS'         =>  13,
-		'GETFPREGS'       =>  14, 'SETFPREGS'       =>  15,
-		'GETFPXREGS'      =>  18, 'SETFPXREGS'      =>  19,
-		'OLDSETOPTIONS'   =>  21, 'GET_THREAD_AREA' =>  25,
-		'SET_THREAD_AREA' =>  26, 'ARCH_PRCTL'      =>  30,
-		'SYSEMU'          =>  31, 'SYSEMU_SINGLESTEP'=> 32,
-		'SINGLEBLOCK'     =>  33,
+		:GETREGS         =>  12, :SETREGS         =>  13,
+		:GETFPREGS       =>  14, :SETFPREGS       =>  15,
+		:GETFPXREGS      =>  18, :SETFPXREGS      =>  19,
+		:OLDSETOPTIONS   =>  21, :GET_THREAD_AREA =>  25,
+		:SET_THREAD_AREA =>  26, :ARCH_PRCTL      =>  30,
+		:SYSEMU          =>  31, :SYSEMU_SINGLESTEP=> 32,
+		:SINGLEBLOCK     =>  33,
 		# 0x4200-0x4300 are reserved for architecture-independent additions.
-		'SETOPTIONS'      => 0x4200, 'GETEVENTMSG'   => 0x4201,
-		'GETSIGINFO'      => 0x4202, 'SETSIGINFO'    => 0x4203
+		:SETOPTIONS      => 0x4200, :GETEVENTMSG   => 0x4201,
+		:GETSIGINFO      => 0x4202, :SETSIGINFO    => 0x4203
 	}
 
 	OPTIONS = {
@@ -339,7 +368,7 @@ typedef unsigned __int32 __uid_t;
 typedef uintptr_t sigval_t;
 typedef long __clock_t;
 
-typedef struct siginfo {
+struct siginfo {
     int si_signo;
     int si_errno;
     int si_code;
@@ -376,7 +405,7 @@ typedef struct siginfo {
             int si_fd;
         } _sigpoll;
     };
-} siginfo_t;
+};
 EOS
 
 	def sys_ptrace(req, pid, addr, data)
@@ -387,134 +416,144 @@ EOS
 	end
 
 	def traceme
-		sys_ptrace(COMMAND['TRACEME'], 0, 0, 0)
+		sys_ptrace(COMMAND[:TRACEME], 0, 0, 0)
 	end
 
 	def peektext(addr)
-		sys_ptrace(COMMAND['PEEKTEXT'], @pid, addr, @bufptr)
+		sys_ptrace(COMMAND[:PEEKTEXT], @pid, addr, @bufptr)
 		@buf
 	end
 
 	def peekdata(addr)
-		sys_ptrace(COMMAND['PEEKDATA'], @pid, addr, @bufptr)
+		sys_ptrace(COMMAND[:PEEKDATA], @pid, addr, @bufptr)
 		@buf
 	end
 
 	def peekusr(addr)
-		sys_ptrace(COMMAND['PEEKUSR'],  @pid, @host_intsize*addr, @bufptr)
-		bufval & ((1 << ([@host_intsize, @intsize].min*8)) - 1)
+		sys_ptrace(COMMAND[:PEEKUSR],  @pid, @host_intsize*addr, @bufptr)
+		@peekmask ||= (1 << ([@host_intsize, @intsize].min*8)) - 1
+		bufval & @peekmask
 	end
 
 	def poketext(addr, data)
-		sys_ptrace(COMMAND['POKETEXT'], @pid, addr, data.unpack(@packint).first)
+		sys_ptrace(COMMAND[:POKETEXT], @pid, addr, data.unpack(@packint).first)
 	end
 
 	def pokedata(addr, data)
-		sys_ptrace(COMMAND['POKEDATA'], @pid, addr, data.unpack(@packint).first)
+		sys_ptrace(COMMAND[:POKEDATA], @pid, addr, data.unpack(@packint).first)
 	end
 
 	def pokeusr(addr, data)
-		sys_ptrace(COMMAND['POKEUSR'],  @pid, @host_intsize*addr, data)
+		sys_ptrace(COMMAND[:POKEUSR],  @pid, @host_intsize*addr, data)
 	end
 
 	def getregs(buf=nil)
+		buf = buf.str if buf.respond_to?(:str)	# AllocCStruct
 		buf ||= [0].pack('C')*512
-		sys_ptrace(COMMAND['GETREGS'], @pid, 0, buf)
+		sys_ptrace(COMMAND[:GETREGS], @pid, 0, buf)
 		buf
 	end
 	def setregs(buf)
-		sys_ptrace(COMMAND['SETREGS'], @pid, 0, buf)
+		buf = buf.str if buf.respond_to?(:str)
+		sys_ptrace(COMMAND[:SETREGS], @pid, 0, buf)
 	end
 
 	def getfpregs(buf=nil)
+		buf = buf.str if buf.respond_to?(:str)
 		buf ||= [0].pack('C')*1024
-		sys_ptrace(COMMAND['GETFPREGS'], @pid, 0, buf)
+		sys_ptrace(COMMAND[:GETFPREGS], @pid, 0, buf)
 		buf
 	end
 	def setfpregs(buf)
-		sys_ptrace(COMMAND['SETFPREGS'], @pid, 0, buf)
+		buf = buf.str if buf.respond_to?(:str)
+		sys_ptrace(COMMAND[:SETFPREGS], @pid, 0, buf)
 	end
 
 	def getfpxregs(buf=nil)
+		buf = buf.str if buf.respond_to?(:str)
 		buf ||= [0].pack('C')*512
-		sys_ptrace(COMMAND['GETFPXREGS'], @pid, 0, buf)
+		sys_ptrace(COMMAND[:GETFPXREGS], @pid, 0, buf)
 		buf
 	end
 	def setfpxregs(buf)
-		sys_ptrace(COMMAND['SETFPXREGS'], @pid, 0, buf)
+		buf = buf.str if buf.respond_to?(:str)
+		sys_ptrace(COMMAND[:SETFPXREGS], @pid, 0, buf)
 	end
 
 	def get_thread_area(addr)
-		sys_ptrace(COMMAND['GET_THREAD_AREA'],  @pid, addr, @bufptr)
+		sys_ptrace(COMMAND[:GET_THREAD_AREA],  @pid, addr, @bufptr)
 		bufval
 	end
 	def set_thread_area(addr, data)
-		sys_ptrace(COMMAND['SET_THREAD_AREA'],  @pid, addr, data)
+		sys_ptrace(COMMAND[:SET_THREAD_AREA],  @pid, addr, data)
 	end
 
 	def prctl(addr, data)
-		sys_ptrace(COMMAND['ARCH_PRCTL'], @pid, addr, data)
+		sys_ptrace(COMMAND[:ARCH_PRCTL], @pid, addr, data)
 	end
 	
 	def cont(sig = nil)
 		sig ||= 0
-		sys_ptrace(COMMAND['CONT'], @pid, 0, sig)
+		sys_ptrace(COMMAND[:CONT], @pid, 0, sig)
 	end
 
 	def kill
-		sys_ptrace(COMMAND['KILL'], @pid, 0, 0)
+		sys_ptrace(COMMAND[:KILL], @pid, 0, 0)
 	end
 
 	def singlestep(sig = nil)
 		sig ||= 0
-		sys_ptrace(COMMAND['SINGLESTEP'], @pid, 0, sig)
+		sys_ptrace(COMMAND[:SINGLESTEP], @pid, 0, sig)
 	end
 
 	def singleblock(sig = nil)
 		sig ||= 0
-		sys_ptrace(COMMAND['SINGLEBLOCK'], @pid, 0, sig)
+		sys_ptrace(COMMAND[:SINGLEBLOCK], @pid, 0, sig)
 	end
 
 	def syscall(sig = nil)
 		sig ||= 0
-		sys_ptrace(COMMAND['SYSCALL'], @pid, 0, sig)
+		sys_ptrace(COMMAND[:SYSCALL], @pid, 0, sig)
 	end
 
 	def attach
-		sys_ptrace(COMMAND['ATTACH'], @pid, 0, 0)
+		sys_ptrace(COMMAND[:ATTACH], @pid, 0, 0)
 	end
 
 	def detach
-		sys_ptrace(COMMAND['DETACH'], @pid, 0, 0)
+		sys_ptrace(COMMAND[:DETACH], @pid, 0, 0)
 	end
 
 	def setoptions(*opt)
 		opt = opt.inject(0) { |b, o| b |= o.kind_of?(Integer) ? o : OPTIONS[o] }
-		sys_ptrace(COMMAND['SETOPTIONS'], @pid, 0, opt)
+		sys_ptrace(COMMAND[:SETOPTIONS], @pid, 0, opt)
 	end
 
 	# retrieve pid of cld for EVENT_CLONE/FORK, exitcode for EVENT_EXIT
 	def geteventmsg
-		sys_ptrace(COMMAND['GETEVENTMSG'], @pid, 0, @bufptr)
+		sys_ptrace(COMMAND[:GETEVENTMSG], @pid, 0, @bufptr)
 		bufval
+	end
+
+	def cp
+		@cp ||= @tgcpu.new_cparser
 	end
 
 	def siginfo
 		@siginfo ||= (
-			cp = @tgcpu.new_cparser
-			cp.parse SIGINFO_C
+			cp.parse SIGINFO_C if not cp.toplevel.struct['siginfo']
 			cp.alloc_c_struct('siginfo')
 		)
 	end
 
 	def getsiginfo
-		sys_ptrace(COMMAND['GETSIGINFO'], @pid, 0, siginfo.str)
+		sys_ptrace(COMMAND[:GETSIGINFO], @pid, 0, siginfo.str)
 		siginfo
 	end
 
 	def setsiginfo(si=siginfo)
 		si = si.str if si.respond_to?(:str)
-		sys_ptrace(COMMAND['SETSIGINFO'], @pid, 0, si)
+		sys_ptrace(COMMAND[:SETSIGINFO], @pid, 0, si)
 	end
 end
 
@@ -700,6 +739,301 @@ class LinuxRemoteString < VirtualString
 	end
 end
 
+class PTraceContext_Ia32 < PTrace
+	C_STRUCT = <<EOS
+struct user_regs_struct_ia32 {
+	unsigned __int32 ebx;
+	unsigned __int32 ecx;
+	unsigned __int32 edx;
+	unsigned __int32 esi;
+	unsigned __int32 edi;
+	unsigned __int32 ebp;
+	unsigned __int32 eax;
+	unsigned __int32 ds;
+	unsigned __int32 es;
+	unsigned __int32 fs;
+	unsigned __int32 gs;
+	unsigned __int32 orig_eax;
+	unsigned __int32 eip;
+	unsigned __int32 cs;
+	unsigned __int32 eflags;
+	unsigned __int32 esp;
+	unsigned __int32 ss;
+};
+
+struct user_fxsr_struct_ia32 {
+	unsigned __int16 cwd;
+	unsigned __int16 swd;
+	unsigned __int16 twd;
+	unsigned __int16 fop;
+	unsigned __int32 fip;
+	unsigned __int32 fcs;
+	unsigned __int32 foo;
+	unsigned __int32 fos;
+	unsigned __int32 mxcsr;
+	unsigned __int32 reserved;
+	unsigned __int32 st_space[32];   /* 8*16 bytes for each FP-reg = 128 bytes */
+	unsigned __int32 xmm_space[32];  /* 8*16 bytes for each XMM-reg = 128 bytes */
+	unsigned __int32 padding[56];
+};
+EOS
+
+	def initialize(ptrace, pid=ptrace.pid)
+		super(ptrace, :dup)
+		@pid = pid
+		@cp = ptrace.cp
+		init
+	end
+
+	def init
+		@gpr = @@gpr_ia32 ||= [:ebx, :ecx, :edx, :esi, :edi, :ebp, :eax,
+			:ds, :es, :fs, :gs, :orig_eax, :eip, :cs, :eflags,
+			:esp, :ss].inject({}) { |h, r| h.update r => true }
+		@gpr_peek = @@gpr_peek_ia32 ||= (0..7).inject({}) { |h, i|
+			h.update "dr#{i}".to_sym => REGS_I386["DR#{i}"] }
+		@gpr_sub = @@gpr_sub_ia32 ||= gpr_sub_init
+		@xmm = @@xmm_ia32 ||= [:cwd, :swd, :twd, :fop, :fip, :fcs, :foo,
+			:fos, :mxcsr].inject({}) { |h, r| h.update r => true }
+		@cp.parse C_STRUCT if not @cp.toplevel.struct['user_regs_struct_ia32']
+		@gpr_st = @xmm_st = nil
+	end
+
+	# :bh => [:ebx, 0xff, 8]
+	# XXX similar to Reg.symbolic... DRY
+	def gpr_sub_init
+		ret = {}
+		%w[a b c d].each { |r|
+			b = "e#{r}x".to_sym
+			ret["#{r}x".to_sym] = [b, 0xffff]
+			ret["#{r}l".to_sym] = [b, 0xff]
+			ret["#{r}h".to_sym] = [b, 0xff, 8]
+		}
+		%w[sp bp si di].each { |r|
+			b = "e#{r}".to_sym
+			ret[r.to_sym] = [b, 0xffff]
+		}
+		ret
+	end
+
+	def do_getregs
+		st = cp.alloc_c_struct('user_regs_struct_ia32')
+		getregs(st)
+		st
+	end
+
+	def do_setregs(st=@gpr_st)
+		setregs(st)
+	end
+
+	def do_getxmm
+		st = cp.alloc_c_struct('user_fxsr_struct_ia32')
+		getfpxregs(st)
+		st
+	end
+
+	def do_setxmm(st=@xmm_st)
+		setfpxregs(st)
+	end
+
+	def get_reg(r)
+		rs = r.to_sym
+		if @gpr[rs]
+			@gpr_st ||= do_getregs
+			@gpr_st[rs]
+		elsif o = @gpr_peek[rs]
+			peekusr(o)
+		elsif o = @gpr_sub[rs]
+			v = get_reg(o[0])
+			v >>= o[2] if o[2]
+			v &= o[1]
+		elsif @xmm[rs]
+			@xmm_st ||= do_getxmm
+			@xmm_st[rs]
+		else
+			case r.to_s
+			when /^st(\d?)$/i
+				i = $1.to_i
+				@xmm_st ||= do_getxmm
+				fu = @xmm_st.st_space
+				raw = fu.str[fu.stroff + 10*i, 10]	# XXX
+				raw.unpack('D').first	# XXX
+			when /^mmx?(\d)$/i
+				i = $1.to_i
+				@xmm_st ||= do_getxmm
+				fu = @xmm_st.st_space
+				fu[4*i] | (fu[4*i + 1] << 32)
+			when /^xmm(\d+)$/i
+				i = $1.to_i
+				@xmm_st ||= do_getxmm
+				fu = @xmm_st.xmm_space
+				fu[4*i] | (fu[4*i + 1] << 32) | (fu[4*i + 2] << 64) | (fu[4*i + 3] << 96)
+			# TODO when /^ymm(\d+)$/i
+			else raise "unknown register name #{r}"
+			end
+		end
+	end
+
+	def set_reg(r, v)
+		rs = r.to_sym
+		if @gpr[rs]
+			@gpr_st ||= do_getregs
+			@gpr_st[rs] = v
+			do_setregs
+		elsif o = @gpr_peek[rs]
+			pokeusr(o, v)
+		elsif o = @gpr_sub[rs]
+			vo = get_reg(o[0])
+			msk = o[1]
+			v &= o[1]
+			if o[2]
+				msk <<= o[2]
+				v <<= o[2]
+			end
+			v |= vo & ~msk
+			set_reg(o[0], v)
+		elsif @xmm[rs]
+			@xmm_st ||= do_getxmm
+			@xmm_st[rs] = v
+			do_setxmm
+		else
+			case r.to_s
+			when /^st(\d?)$/i
+				i = $1.to_i
+				@xmm_st ||= do_getxmm
+				fu = @xmm_st.st_space
+				fu.str[fu.stroff + 10*i, 10] = [v, 0, 0].pack('DCC')	# XXX
+				do_setxmm
+			when /^mmx?(\d)$/i
+				i = $1.to_i
+				@xmm_st ||= do_getxmm
+				fu = @xmm_st.st_space
+				fu[4*i] = v & 0xffff_ffff
+				fu[4*i + 1] = (v >> 32) & 0xffff_ffff
+				do_setxmm
+			when /^xmm(\d+)$/i
+				i = $1.to_i
+				@xmm_st ||= do_getxmm
+				fu = @xmm_st.xmm_space
+				fu[4*i] = v & 0xffff_ffff
+				fu[4*i + 1] = (v >> 32) & 0xffff_ffff
+				fu[4*i + 2] = (v >> 64) & 0xffff_ffff
+				fu[4*i + 3] = (v >> 96) & 0xffff_ffff
+				do_setxmm
+			# TODO when /^ymm(\d+)$/i
+			else raise "unknown register name #{r}"
+			end
+		end
+	end
+end
+
+class PTraceContext_X64 < PTraceContext_Ia32
+	C_STRUCT = <<EOS
+struct user_regs_struct_x64 {
+	unsigned __int64 r15;
+	unsigned __int64 r14;
+	unsigned __int64 r13;
+	unsigned __int64 r12;
+	unsigned __int64 rbp;
+	unsigned __int64 rbx;
+	unsigned __int64 r11;
+	unsigned __int64 r10;
+	unsigned __int64 r9;
+	unsigned __int64 r8;
+	unsigned __int64 rax;
+	unsigned __int64 rcx;
+	unsigned __int64 rdx;
+	unsigned __int64 rsi;
+	unsigned __int64 rdi;
+	unsigned __int64 orig_rax;
+	unsigned __int64 rip;
+	unsigned __int64 cs;
+	unsigned __int64 rflags;
+	unsigned __int64 rsp;
+	unsigned __int64 ss;
+	unsigned __int64 fs_base;
+	unsigned __int64 gs_base;
+	unsigned __int64 ds;
+	unsigned __int64 es;
+	unsigned __int64 fs;
+	unsigned __int64 gs;
+};
+
+struct user_i387_struct_x64 {
+	unsigned __int16 cwd;
+	unsigned __int16 swd;
+	unsigned __int16 twd;    /* Note this is not the same as the 32bit/x87/FSAVE twd */
+	unsigned __int16 fop;
+	unsigned __int64 rip;
+	unsigned __int64 rdp;
+	unsigned __int32 mxcsr;
+	unsigned __int32 mxcsr_mask;
+	unsigned __int32 st_space[32];   /* 8*16 bytes for each FP-reg = 128 bytes */
+	unsigned __int32 xmm_space[64];  /* 16*16 bytes for each XMM-reg = 256 bytes */
+	unsigned __int32 padding[24];
+	// YMM ?
+};
+EOS
+
+	def init
+		@gpr = @@gpr_x64 ||= [:r15, :r14, :r13, :r12, :rbp, :rbx, :r11,
+			:r10, :r9, :r8, :rax, :rcx, :rdx, :rsi, :rdi, :orig_rax,
+			:rip, :cs, :rflags, :rsp, :ss, :fs_base, :gs_base, :ds,
+			:es, :fs, :gs].inject({}) { |h, r| h.update r => true }
+		@gpr_peek = @@gpr_peek_x64 ||= (0..7).inject({}) { |h, i|
+			h.update "dr#{i}".to_sym => REGS_X86_64["DR#{i}"] }
+		@gpr_sub = @@gpr_sub_x64 ||= gpr_sub_init
+		@xmm = @@xmm_x64 ||= [:cwd, :swd, :twd, :fop, :rip, :rdp, :mxcsr,
+			:mxcsr_mask].inject({}) { |h, r| h.update r => true }
+		@cp.parse C_STRUCT if not @cp.toplevel.struct['user_regs_struct_x64']
+		@gpr_st = @xmm_st = nil
+	end
+
+	def gpr_sub_init
+		ret = {}
+		%w[a b c d].each { |r|
+			b = "r#{r}x".to_sym
+			ret["e#{r}x".to_sym] = [b, 0xffff_ffff]
+			ret[ "#{r}x".to_sym] = [b, 0xffff]
+			ret[ "#{r}l".to_sym] = [b, 0xff]
+			ret[ "#{r}h".to_sym] = [b, 0xff, 8]
+		}
+		%w[sp bp si di].each { |r|
+			b = "r#{r}".to_sym
+			ret["e#{r}".to_sym] = [b, 0xffff_ffff]
+			ret[ "#{r}".to_sym] = [b, 0xffff]
+			ret["#{r}l".to_sym] = [b, 0xff]
+		}
+		(8..15).each { |i|
+			b = "r#{i}".to_sym
+			ret["r#{i}d"] = [b, 0xffff_ffff]
+			ret["r#{i}w"] = [b, 0xffff]
+			ret["r#{i}b"] = [b, 0xff]
+		}
+		ret[:eip] = [:rip, 0xffff_ffff]
+		ret
+	end
+
+	def do_getregs
+		st = cp.alloc_c_struct('user_regs_struct_x64')
+		getregs(st)
+		st
+	end
+
+	def do_setregs(st=@gpr_st)
+		setregs(st)
+	end
+
+	def do_getxmm
+		st = cp.alloc_c_struct('user_i387_struct_x64')
+		getfpregs(st)
+		st
+	end
+
+	def do_setxmm(st=@xmm_st)
+		setfpregs(st)
+	end
+end
+
 module ::Process
 	WALL   = 0x40000000 if not defined? WALL
 	WCLONE = 0x80000000 if not defined? WCLONE
@@ -753,10 +1087,10 @@ class LinDebugger < Debugger
 
 	def initialize_cpu
 		@cpu = os_process.cpu
-		# need to init @ptrace here, before init_dasm calls gui.swapin
+		# need to init @ptrace here, before init_dasm calls gui.swapin	XXX this stinks
 		@ptrace = PTrace.new(@pid, false)
 		if @cpu.size == 64 and @ptrace.reg_off['EAX']
-			hack_64_32
+			hack_x64_32
 		end
 		set_tid @pid
 		set_thread_options
@@ -790,19 +1124,18 @@ class LinDebugger < Debugger
 		os_process.modules
 	end
 
-	# we're a 32bit process debugging a 64bit target
+	# We're a 32bit process debugging a 64bit target
 	# the ptrace kernel interface we use only allow us a 32bit-like target access
-	# with this we advertize the cpu as having eax..edi registers (the only one we
+	# With this we advertize the cpu as having eax..edi registers (the only one we
 	# can access), while still decoding x64 instructions (whose addr < 4G)
-	def hack_64_32
+	def hack_x64_32
 		log "WARNING: debugging a 64bit process from a 32bit debugger is a very bad idea !"
-		@cpu.instance_eval {
-			ia32 = Ia32.new
-			@dbg_register_pc = ia32.dbg_register_pc
-			@dbg_register_flags = ia32.dbg_register_flags
-			@dbg_register_list = ia32.dbg_register_list
-			@dbg_register_size = ia32.dbg_register_size
-		}
+		ia32 = Ia32.new
+		@cpu.instance_variable_set('@dbg_register_pc', ia32.dbg_register_pc)
+		@cpu.instance_variable_set('@dbg_register_sp', ia32.dbg_register_sp)
+		@cpu.instance_variable_set('@dbg_register_flags', ia32.dbg_register_flags)
+		@cpu.instance_variable_set('@dbg_register_list', ia32.dbg_register_list)
+		@cpu.instance_variable_set('@dbg_register_size', ia32.dbg_register_size)
 	end
 
 	# attach a thread of the current process
@@ -833,27 +1166,23 @@ class LinDebugger < Debugger
 		super()
 	end
 
-	# a hash of the current thread context
-	# TODO keys = :gpr, :fpu, :xmm, :dr ; val = AllocCStruct
-	# include accessors for st0/xmm12 (@ptrace.getfpregs.unpack etc)
+	# current thread register values accessor
 	def ctx
-		@ctx ||= {}
+		@ctx ||= case @ptrace.host_csn
+			 when 'ia32'; PTraceContext_Ia32.new(@ptrace, @tid)
+			 when 'x64'; PTraceContext_X64.new(@ptrace, @tid)
+			 else raise '8==D'
+			 end
 	end
 
 	def get_reg_value(r)
-		raise "bad register #{r}" if not k = @ptrace.reg_off[r.to_s.upcase]
-		return ctx[r] || 0 if @state != :stopped
-		@ptrace.pid = @tid
-		ctx[r] ||= @ptrace.peekusr(k)
+		return 0 if @state != :stopped
+		ctx.get_reg(r)
 	rescue Errno::ESRCH
 		0
 	end
 	def set_reg_value(r, v)
-		raise "bad register #{r}" if not k = @ptrace.reg_off[r.to_s.upcase]
-		ctx[r] = v
-		return if @state != :stopped
-		@ptrace.pid = @tid
-		@ptrace.pokeusr(k, v)
+		ctx.set_reg(r, v)
 	end
 
 	def update_waitpid(status)
