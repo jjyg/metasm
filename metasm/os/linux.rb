@@ -855,8 +855,7 @@ EOS
 				i = $1.to_i
 				@xmm_st ||= do_getxmm
 				fu = @xmm_st.st_space
-				raw = fu.str[fu.stroff + 10*i, 10]	# XXX
-				raw.unpack('D').first	# XXX
+				[fu[4*i], fu[4*i+1], fu[4*i+2]].pack('L*').unpack('D').first	# XXX
 			when /^mmx?(\d)$/i
 				i = $1.to_i
 				@xmm_st ||= do_getxmm
@@ -901,7 +900,7 @@ EOS
 				i = $1.to_i
 				@xmm_st ||= do_getxmm
 				fu = @xmm_st.st_space
-				fu.str[fu.stroff + 10*i, 10] = [v, 0, 0].pack('DCC')	# XXX
+				fu[4*i], fu[4*i+1], fu[4*i+2] = [v, -1].pack('DL').unpack('L*')	# XXX
 				do_setxmm
 			when /^mmx?(\d)$/i
 				i = $1.to_i
