@@ -1428,7 +1428,7 @@ class WinOS < OS
 					@context["seg#{k}"]
 				when /^st(\d?)$/i
 					v = @context['st'][$1.to_i]
-					buf = v.str[v.str_off, 10]
+					buf = v.str[v.stroff, 10]
 					# TODO check this, 'D' is 8byte wide
 					buf.unpack('D')[0]
 				# TODO when /^ymm(\d+)$/i
@@ -1436,6 +1436,7 @@ class WinOS < OS
 					v = @context['xmm'][$1.to_i]
 					(v.hi << 64) | v.lo
 				when /^mmx?(\d)$/i
+					# XXX probably in st(0/7)
 					@context['xmm'][$1.to_i].lo
 				else
 					@context[k]
