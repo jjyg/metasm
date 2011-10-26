@@ -425,10 +425,10 @@ class Ia32
 	def init_sse_only
 		init_cpu_constants
 
-		addop_macrossps 'addps', [0x0F, 0xA8], :mrmxmm
-		addop 'andnps',  [0x0F, 0xAA], :mrmxmm
-		addop 'andps',   [0x0F, 0xA4], :mrmxmm
-		addop_macrossps 'cmpps', [0x0F, 0xC2], :mrmxmm
+		addop_macrossps 'addps', [0x0F, 0x58], :mrmxmm
+		addop 'andnps',  [0x0F, 0x55], :mrmxmm
+		addop 'andps',   [0x0F, 0x54], :mrmxmm
+		addop_macrossps 'cmpps', [0x0F, 0xC2], :mrmxmm, :u8
 		addop 'comiss',  [0x0F, 0x2F], :mrmxmm
 
 		[['pi2ps', 0x2A], ['ps2pi', 0x2D], ['tps2pi', 0x2C]].each { |str, bin|
@@ -717,20 +717,19 @@ class Ia32
 
 	def addop_macrommx(ggrng, name, val)
 		addop_macrogg ggrng, name, [0x0F, 0xC0 | (val << 4)], :mrmmmx
-		addop_macrogg ggrng, name, [0x0F, 0x70, 0xC0 | (val << 4)], nil, {:regmmx => [2, 0]}, :u8
+		addop_macrogg ggrng, name, [0x0F, 0x70, 0xC0 | (val << 4)], nil, {:regmmx => [2, 0]}, :regmmx, :u8
 	end
 
-	def addop_macrossps(name, bin, hint)
-		# don't allow fields argument, as this will be modified by addop (.dup it if needed)
-		addop name, bin, hint
-		addop(name.tr('p', 's'), bin, hint) { |o| o.props[:needpfx] = 0xF3 }
+	def addop_macrossps(name, bin, hint, *a)
+		addop name, bin.dup, hint, {}, *a
+		addop(name.sub(/ps$/, 'ss'), bin.dup, hint, {}, *a) { |o| o.props[:needpfx] = 0xF3 }
 	end
 
 	# special ret (iret/retf), that still default to 32b mode in x64
 	def addop_macroret(name, bin, *args)
-		addop(name + '.i32', bin, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = 32 }
-		addop(name + '.i16', bin, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = 16 }
-		addop(name, bin, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = @size }
+		addop(name + '.i32', bin.dup, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = 32 }
+		addop(name + '.i16', bin.dup, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = 16 }
+		addop(name, bin.dup, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = @size }
 	end
 
 	# helper function: creates a new Opcode based on the arguments, eventually
