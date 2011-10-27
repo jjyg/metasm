@@ -1880,7 +1880,7 @@ class DrawableWidget < WinWidget
 	end
 
 	def color(col)
-		@color[col] ||= col.sub(/^(\w)(\w)(\w)$/, '\\3\\3\\2\\2\\1\\1').to_i(16)
+		@color[col] ||= col.sub(/^(\w\w)(\w\w)(\w\w)$/, '\\3\\2\\1').sub(/^(\w)(\w)(\w)$/, '\\3\\3\\2\\2\\1\\1').to_i(16)
 	end
 
 	def draw_color(col)

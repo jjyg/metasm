@@ -305,7 +305,11 @@ class DrawableWidget < Gtk::DrawingArea
 	# create a color from a 'rgb' description
 	def color(val)
 		if not @color[val]
-			@color[val] = Gdk::Color.new(*val.unpack('CCC').map { |c| (c.chr*4).hex })
+			v = case val.length
+			when 3; val.scan(/./).map { |c| (c*4).to_i(16) }
+			when 6; val.scan(/../).map { |c| (c+c).to_i(16) }
+			end
+			@color[val] = Gdk::Color.new(*v)
 			window.colormap.alloc_color(@color[val], true, true)
 		end
 		@color[val]
