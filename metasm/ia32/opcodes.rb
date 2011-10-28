@@ -235,7 +235,7 @@ class Ia32
 		#addop 'loadall',[0x0F, 0x07]	# conflict with syscall
 		addop 'ud0',   [0x0F, 0xFF]	# amd
 		addop 'ud2',   [0x0F, 0xB9], :mrm
-		addop 'umov',  [0x0F, 0x10], :mrmw, {:d => [1, 1]}
+		#addop 'umov',  [0x0F, 0x10], :mrmw, {:d => [1, 1]}	# conflicts with movups/movhlps
 	end
 
 	def init_387_only
@@ -357,7 +357,7 @@ class Ia32
 
 		# mmx
 		addop 'emms',  [0x0F, 0x77]
-		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm ; o.args.reverse! ; o.props[:opsz] = o.props[:argsz] = 32 }
+		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args = [:modrm, :regmmx] ; o.props[:opsz] = o.props[:argsz] = 32 }
 		addop('movq',  [0x0F, 0x6F], :mrmmmx, {:d => [1, 4]}) { |o| o.args.reverse! ; o.props[:argsz] = 64 }
 		addop 'packssdw', [0x0F, 0x6B], :mrmmmx
 		addop 'packsswb', [0x0F, 0x63], :mrmmmx
@@ -380,7 +380,7 @@ class Ia32
 		addop_macrogg 0..2, 'psub',  [0x0F, 0xF8], :mrmmmx
 		addop_macrogg 0..1, 'psubs', [0x0F, 0xE8], :mrmmmx
 		addop_macrogg 0..1, 'psubus',[0x0F, 0xD8], :mrmmmx
-		addop_macrogg 1..3, 'punchkh', [0x0F, 0x68], :mrmmmx
+		addop_macrogg 1..3, 'punpckh', [0x0F, 0x68], :mrmmmx
 		addop_macrogg 1..3, 'punpckl', [0x0F, 0x60], :mrmmmx
 		addop 'pxor',  [0x0F, 0xEF], :mrmmmx
 	end
@@ -431,26 +431,24 @@ class Ia32
 		addop_macrossps 'cmpps', [0x0F, 0xC2], :mrmxmm, :u8
 		addop 'comiss',  [0x0F, 0x2F], :mrmxmm
 
-		[['pi2ps', 0x2A], ['ps2pi', 0x2D], ['tps2pi', 0x2C]].each { |str, bin|
-			addop('cvt' << str, [0x0F, bin], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrmmmx }
-			addop('cvt' << str.tr('p', 's'), [0x0F, bin], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrm ; o.props[:needpfx] = 0xF3 }
-		}
+		addop('cvtpi2ps', [0x0F, 0x2A], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrmmmx }
+		addop('cvtps2pi', [0x0F, 0x2D], :mrmmmx) { |o| o.args[o.args.index(:modrmmmx)] = :modrmxmm }
+		addop('cvtsi2ss', [0x0F, 0x2A], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrm ; o.props[:needpfx] = 0xF3 }
+		addop('cvtss2si', [0x0F, 0x2D], :mrm)    { |o| o.args[o.args.index(:modrm)] = :modrmxmm ; o.props[:needpfx] = 0xF3 }
+		addop('cvttps2pi',[0x0F, 0x2C], :mrmmmx) { |o| o.args[o.args.index(:modrmmmx)] = :modrmxmm }
+		addop('cvttss2si',[0x0F, 0x2C], :mrm)    { |o| o.args[o.args.index(:modrm)] = :modrmxmm ; o.props[:needpfx] = 0xF3 }
 
 		addop_macrossps 'divps', [0x0F, 0x5E], :mrmxmm
 		addop 'ldmxcsr', [0x0F, 0xAE, 2<<3], :modrmA
 		addop_macrossps 'maxps', [0x0F, 0x5F], :mrmxmm
 		addop_macrossps 'minps', [0x0F, 0x5D], :mrmxmm
 		addop('movaps',  [0x0F, 0x28], :mrmxmm, {:d => [1, 0]}) { |o| o.args.reverse! }
-		addop('movd',  [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmxmm)] = :modrm ; o.args.reverse! ; o.props[:opsz] = o.props[:argsz] = 32 ; o.props[:needpfx] = 0x66 }
-
-		# movhlps(reg, reg){nomem} == movlps(reg, mrm){no restriction}...
-		addop 'movhlps', [0x0F, 0x12], :mrmxmm, {:d => [1, 0]}
-		addop 'movlps',  [0x0F, 0x12], :mrmxmm, {:d => [1, 0]}
-		addop 'movlhps', [0x0F, 0x16], :mrmxmm, {:d => [1, 0]}
-		addop 'movhps',  [0x0F, 0x16], :mrmxmm, {:d => [1, 0]}
-
+		addop 'movhlps', [0x0F, 0x12], :mrmxmm, {}, :modrmR
+		addop 'movlps',  [0x0F, 0x12], :mrmxmm, {:d => [1, 0]}, :modrmA
+		addop 'movlhps', [0x0F, 0x16], :mrmxmm, {}, :modrmR
+		addop 'movhps',  [0x0F, 0x16], :mrmxmm, {:d => [1, 0]}, :modrmA
 		addop 'movmskps',[0x0F, 0x50, 0xC0], nil, {:reg => [2, 3], :regxmm => [2, 0]}, :regxmm, :reg
-		addop('movss',   [0x0F, 0x10], :mrmxmm, {:d => [1, 0]}) { |o| o.props[:needpfx] = 0xF3 }
+		addop('movss',   [0x0F, 0x10], :mrmxmm, {:d => [1, 0]}) { |o| o.args.reverse! ; o.props[:needpfx] = 0xF3 }
 		addop 'movups',  [0x0F, 0x10], :mrmxmm, {:d => [1, 0]}
 		addop_macrossps 'mulps', [0x0F, 0x59], :mrmxmm
 		addop 'orps',    [0x0F, 0x56], :mrmxmm
@@ -465,50 +463,104 @@ class Ia32
 		addop 'unpcklps',[0x0F, 0x14], :mrmxmm
 		addop 'xorps',   [0x0F, 0x57], :mrmxmm
 
-		# start of integer instruction (accept opsz override prefix to access xmm)
-		addop('pavgb',   [0x0F, 0xE0], :mrmmmx) { |o| o.props[:xmmx] = true }
-		addop('pavgw',   [0x0F, 0xE3], :mrmmmx) { |o| o.props[:xmmx] = true }
-# TODO		addop('pextrw',  [0x0F, 0xC5], :mrmmmx) { |o| o.fields[:reg] = o.fields.delete(:regmmx) } { |o| o.props[:xmmx] = true ; o.args << :u8 }
-#		addop('pinsrw',  [0x0F, 0xC4], :mrmmmx) { |o| o.fields[:reg] = o.fields.delete(:regmmx) } { |o| o.props[:xmmx] = true ; o.args << :u8 }
-		addop('pmaxsw',  [0x0F, 0xEE], :mrmmmx) { |o| o.props[:xmmx] = true }
-		addop('pmaxub',  [0x0F, 0xDE], :mrmmmx) { |o| o.props[:xmmx] = true }
-		addop('pminsw',  [0x0F, 0xEA], :mrmmmx) { |o| o.props[:xmmx] = true }
-		addop('pminub',  [0x0F, 0xDA], :mrmmmx) { |o| o.props[:xmmx] = true }
-#		addop('pmovmskb',[0x0F, 0xD4], :mrmmmx) { |o| o.fields[:reg] = o.fields.delete(:regmmx) } ) { |o| o.props[:xmmx] = true } # no mem ref in the mrm
-		addop('pmulhuw', [0x0F, 0xE4], :mrmmmx) { |o| o.props[:xmmx] = true }
-		addop('psadbw',  [0x0F, 0xF6], :mrmmmx) { |o| o.props[:xmmx] = true }
-		addop('pshufw',  [0x0F, 0x70], :mrmmmx) { |o| o.props[:xmmx] = true ; o.args << :u8 }
-		addop('maskmovq',[0x0F, 0xF7], :mrmmmx) { |o| o.props[:xmmx] = true } # nomem
-		addop('movntq',  [0x0F, 0xE7], :mrmmmx) { |o| o.args.reverse! ; o.props[:xmmx] = true }
+		# integer instrs, mmx only
+		addop 'pavgb',   [0x0F, 0xE0], :mrmmmx
+		addop 'pavgw',   [0x0F, 0xE3], :mrmmmx
+		addop 'pextrw',  [0x0F, 0xC5, 0xC0], nil, {:reg => [2, 3], :regmmx => [2, 0]}, :reg, :regmmx, :u8
+		addop 'pinsrw',  [0x0F, 0xC4, 0x00], nil, {:modrm => [2, 0], :regmmx => [2, 3]}, :modrm, :regmmx, :u8
+		addop 'pmaxsw',  [0x0F, 0xEE], :mrmmmx
+		addop 'pmaxub',  [0x0F, 0xDE], :mrmmmx
+		addop 'pminsw',  [0x0F, 0xEA], :mrmmmx
+		addop 'pminub',  [0x0F, 0xDA], :mrmmmx
+		addop 'pmovmskb',[0x0F, 0xD4, 0xC0], nil, {:reg => [2, 3], :regmmx => [2, 0]}, :reg, :regmmx
+		addop 'psadbw',  [0x0F, 0xF6], :mrmmmx
+		addop 'pshufw',  [0x0F, 0x70], :mrmmmx, {}, :u8
+
+		addop 'maskmovq',[0x0F, 0xF7], :mrmmmx, {}, :modrmR
+		addop('movntq',  [0x0F, 0xE7], :mrmmmx) { |o| o.args.reverse! }
 		addop('movntps', [0x0F, 0x2B], :mrmxmm) { |o| o.args.reverse! }
 		addop 'prefetcht0', [0x0F, 0x18, 1<<3], :modrmA
 		addop 'prefetcht1', [0x0F, 0x18, 2<<3], :modrmA
 		addop 'prefetcht2', [0x0F, 0x18, 3<<3], :modrmA
 		addop 'prefetchnta',[0x0F, 0x18, 0<<3], :modrmA
 		addop 'sfence',  [0x0F, 0xAE, 0xF8]
+
 		# the whole row of prefetch is actually nops
 		addop 'nop', [0x0F, 0x1C], :mrmw, :d => [1, 1]	# incl. official version = 0f1f mrm
 		addop 'nop_8', [0x0F, 0x18], :mrmw, :d => [1, 1]
 		addop 'nop_d', [0x0F, 0x0D], :mrm
 	end
 
-	# XXX must be done after init_sse (patches :regmmx opcodes)
-	# TODO complete the list
 	def init_sse2_only
 		init_cpu_constants
 
-		@opcode_list.each { |o| o.props[:xmmx] = true if o.args.include? :regmmx and o.args.include? :modrmmmx and o.name != 'movq' }
+		@opcode_list.each { |o| o.props[:xmmx] = true if o.fields[:regmmx] and o.name !~ /^(?:mov(?:nt)?q|pshufw|cvt.*)$/ }
 
-		# TODO <..blabla...integer...blabla..>
+		# mirror of the init_sse part
+		addop_macrosdpd 'addpd', [0x0F, 0x58], :mrmxmm
+		addop('andnpd',  [0x0F, 0x55], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('andpd',   [0x0F, 0x54], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop_macrosdpd 'cmppd', [0x0F, 0xC2], :mrmxmm, :u8
+		addop('comisd',  [0x0F, 0x2F], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+
+		addop('cvtpi2pd', [0x0F, 0x2A], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrmmmx ; o.props[:needpfx] = 0x66 }
+		addop('cvtpd2pi', [0x0F, 0x2D], :mrmmmx) { |o| o.args[o.args.index(:modrmmmx)] = :modrmxmm ; o.props[:needpfx] = 0x66 }
+		addop('cvtsi2sd', [0x0F, 0x2A], :mrmxmm) { |o| o.args[o.args.index(:modrmxmm)] = :modrm    ; o.props[:needpfx] = 0xF2 }
+		addop('cvtsd2si', [0x0F, 0x2D], :mrm   ) { |o| o.args[o.args.index(:modrm   )] = :modrmxmm ; o.props[:needpfx] = 0xF2 }
+		addop('cvttpd2pi',[0x0F, 0x2C], :mrmmmx) { |o| o.args[o.args.index(:modrmmmx)] = :modrmxmm ; o.props[:needpfx] = 0x66 }
+		addop('cvttsd2si',[0x0F, 0x2C], :mrm   ) { |o| o.args[o.args.index(:modrm   )] = :modrmxmm ; o.props[:needpfx] = 0xF2 }
+
+		addop('cvtpd2ps', [0x0F, 0x5A], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('cvtps2pd', [0x0F, 0x5A], :mrmxmm)
+		addop('cvtsd2ss', [0x0F, 0x5A], :mrmxmm) { |o| o.props[:needpfx] = 0xF2 }
+		addop('cvtss2sd', [0x0F, 0x5A], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
+
+		addop('cvtpd2dq', [0x0F, 0xE6], :mrmxmm) { |o| o.props[:needpfx] = 0xF2 }
+		addop('cvttpd2dq',[0x0F, 0xE6], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('cvtdq2pd', [0x0F, 0xE6], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
+		addop('cvtps2dq', [0x0F, 0x5B], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('cvttps2dq',[0x0F, 0x5B], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
+		addop('cvtdq2ps', [0x0F, 0x5B], :mrmxmm)
+
+		addop_macrosdpd 'divpd', [0x0F, 0x5E], :mrmxmm
+		addop_macrosdpd 'maxpd', [0x0F, 0x5F], :mrmxmm
+		addop_macrosdpd 'minpd', [0x0F, 0x5D], :mrmxmm
+		addop('movapd',  [0x0F, 0x28], :mrmxmm, {:d => [1, 0]}) { |o| o.props[:needpfx] = 0x66 }
+
+		addop('movlpd',  [0x0F, 0x12], :mrmxmm, {:d => [1, 0]}) { |o| o.props[:needpfx] = 0x66 }
+		addop('movhpd',  [0x0F, 0x16], :mrmxmm, {:d => [1, 0]}) { |o| o.props[:needpfx] = 0x66 }
+
+		addop('movmskpd',[0x0F, 0x50, 0xC0], nil, {:reg => [2, 3], :regxmm => [2, 0]}, :regxmm, :reg) { |o| o.props[:needpfx] = 0x66 }
+		addop('movsd',   [0x0F, 0x10], :mrmxmm, {:d => [1, 0]}) { |o| o.args.reverse! ; o.props[:needpfx] = 0xF2 }
+		addop('movupd',  [0x0F, 0x10], :mrmxmm, {:d => [1, 0]}) { |o| o.props[:needpfx] = 0x66 }
+		addop_macrosdpd 'mulpd', [0x0F, 0x59], :mrmxmm
+		addop('orpd',    [0x0F, 0x56], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('shufpd',  [0x0F, 0xC6], :mrmxmm, {}, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop_macrosdpd 'sqrtpd', [0x0F, 0x51], :mrmxmm
+		addop_macrosdpd 'subpd', [0x0F, 0x5C], :mrmxmm
+		addop('ucomisd', [0x0F, 0x2E], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('unpckhpd',[0x0F, 0x15], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('unpcklpd',[0x0F, 0x14], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('xorpd',   [0x0F, 0x57], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 
 		addop('movdqa',  [0x0F, 0x6F], :mrmxmm, {:d => [1, 4]}) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 }
 		addop('movdqu',  [0x0F, 0x6F], :mrmxmm, {:d => [1, 4]}) { |o| o.args.reverse! ; o.props[:needpfx] = 0xF3 }
 		addop('movq2dq', [0x0F, 0xD6], :mrmxmm, {}, :modrmR) { |o| o.args[o.args.index(:modrmxmm)] = :modrmmmx ; o.props[:needpfx] = 0xF3 }
 		addop('movdq2q', [0x0F, 0xD6], :mrmmmx, {}, :modrmR) { |o| o.args[o.args.index(:modrmmmx)] = :modrmxmm ; o.props[:needpfx] = 0xF2 }
-		addop('movq',    [0x0F, 0x7E], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 ; o.props[:argsz] = 64 }
-		addop('movq',    [0x0F, 0xD6], :mrmxmm) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 ; o.props[:argsz] = 64 }
+		addop('movq',    [0x0F, 0x7E], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 ; o.props[:argsz] = 128 }
+		addop('movq',    [0x0F, 0xD6], :mrmxmm) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 ; o.props[:argsz] = 128 }
 
-		# nomem
+		addop 'paddq',   [0x0F, 0xD4], :mrmmmx, {}, :xmmx
+		addop 'pmuludq', [0x0F, 0xF4], :mrmmmx, {}, :xmmx
+		addop('pshuflw', [0x0F, 0x70], :mrmxmm, {}, :u8) { |o| o.props[:needpfx] = 0xF2 }
+		addop('pshufhw', [0x0F, 0x70], :mrmxmm, {}, :u8) { |o| o.props[:needpfx] = 0xF3 }
+		addop('pshufd',  [0x0F, 0x70], :mrmxmm, {}, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pslldq',  [0x0F, 0x73, 0xF8], nil, {:regxmm => [2, 0]}, :regxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('psrldq',  [0x0F, 0x73, 0xD8], nil, {:regxmm => [2, 0]}, :regxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop 'psubq',   [0x0F, 0xFB], :mrmmmx, {}, :xmmx
+		addop('punpckhqdq', [0x0F, 0x6D], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('punpcklqdq', [0x0F, 0x6C], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+
 		addop('clflush', [0x0F, 0xAE, 7<<3], :modrmA) { |o| o.props[:argsz] = 8 }
 		addop('maskmovdqu', [0x0F, 0xF7], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('movntpd', [0x0F, 0x2B], :mrmxmm) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 }
@@ -723,6 +775,11 @@ class Ia32
 	def addop_macrossps(name, bin, hint, *a)
 		addop name, bin.dup, hint, {}, *a
 		addop(name.sub(/ps$/, 'ss'), bin.dup, hint, {}, *a) { |o| o.props[:needpfx] = 0xF3 }
+	end
+
+	def addop_macrosdpd(name, bin, hint, *a)
+		addop(name, bin.dup, hint, {}, *a) { |o| o.props[:needpfx] = 0x66 }
+		addop(name.sub(/pd$/, 'sd'), bin.dup, hint, {}, *a) { |o| o.props[:needpfx] = 0xF2 }
 	end
 
 	# special ret (iret/retf), that still default to 32b mode in x64

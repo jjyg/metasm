@@ -487,7 +487,8 @@ class Ia32
 			when 'div', 'idiv'; lambda { |di, *a| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when 'rdtsc'; lambda { |di| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when /^(stos|movs|lods|scas|cmps)[bwd]$/
-				lambda { |di|
+				lambda { |di, *a|
+					next {:incomplete_binding => 1} if di.opcode.args.include?(:regxmm)	# XXX movsd xmm0, xmm1...
 					op =~ /^(stos|movs|lods|scas|cmps)([bwd])$/
 					e_op = $1
 					sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
