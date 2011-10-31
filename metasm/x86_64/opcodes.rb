@@ -34,7 +34,7 @@ class X86_64
 	def init_x8664_only
 		init_386_common_only
 		init_386_only
-		init_387_only	# 387 indeed
+		init_387_only
 		init_486_only
 		init_pentium_only
 		init_p6_only
@@ -54,7 +54,7 @@ class X86_64
 		}
 
 		addop('cmpxchg16b', [0x0F, 0xC7], 1) { |o| o.props[:opsz] = 64 ; o.props[:argsz] = 128 }
-		addop('iretq', [0xCF], nil,  {}, :stopexec, :setip) { |o| o.props[:opsz] = 64 } ; opcode_list.unshift opcode_list.pop
+		addop('iretq', [0xCF], nil, :stopexec, :setip) { |o| o.props[:opsz] = 64 } ; opcode_list.unshift opcode_list.pop
 		addop 'swapgs', [0x0F, 0x01, 0xF8]
 
 		addop('movq',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args[o.args.index(:modrmmmx)] = :modrm ; o.args.reverse! ; o.props[:opsz] = o.props[:argsz] = 64 }
@@ -66,15 +66,10 @@ class X86_64
 		init_sse3_only
 	end
 
-	def init_vmx
-		init_sse3
-		init_vmx_only
-	end
-	
 	def init_all
-		init_vmx
-		init_sse42_only
+		init_sse42
 		init_3dnow_only
+		init_vmx_only
 	end
 
 	alias init_latest init_all
@@ -88,7 +83,7 @@ class X86_64
 	end
 
 	def addop_macroret(name, bin, *args)
-		addop(name + '.i64', bin, nil, {}, :stopexec, :setip, *args) { |o| o.props[:opsz] = 64 }
+		addop(name + '.i64', bin, nil, :stopexec, :setip, *args) { |o| o.props[:opsz] = 64 }
 		super(name, bin, *args)
 	end
 

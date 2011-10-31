@@ -593,6 +593,35 @@ class Ia32
 		addop('movsldup', [0x0F, 0x12], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 }
 	end
 
+	def init_ssse3_only
+		init_cpu_constants
+
+		addop_macrogg 0..2, 'pabs', [0x0F, 0x38, 0x1C], :mrmmmx, :xmmx
+		addop 'palignr',  [0x0F, 0x3A, 0x0F], :mrmmmx, :u8, :xmmx
+		addop 'phaddd',   [0x0F, 0x38, 0x02], :mrmmmx, :xmmx
+		addop 'phaddsw',  [0x0F, 0x38, 0x03], :mrmmmx, :xmmx
+		addop 'phaddw',   [0x0F, 0x38, 0x01], :mrmmmx, :xmmx
+		addop 'phsubd',   [0x0F, 0x38, 0x06], :mrmmmx, :xmmx
+		addop 'phsubsw',  [0x0F, 0x38, 0x07], :mrmmmx, :xmmx
+		addop 'phsubw',   [0x0F, 0x38, 0x05], :mrmmmx, :xmmx
+		addop 'pmaddubsw',[0x0F, 0x38, 0x04], :mrmmmx, :xmmx
+		addop 'pmulhrsw', [0x0F, 0x38, 0x0B], :mrmmmx, :xmmx
+		addop 'pshufb',   [0x0F, 0x38, 0x00], :mrmmmx, :xmmx
+		addop_macrogg 0..2, 'psignb', [0x0F, 0x38, 0x80], :mrmmmx, :xmmx
+	end
+
+	def init_aesni_only
+		init_cpu_constants
+
+		addop('aesdec',    [0x0F, 0x38, 0xDE], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('aesdeclast',[0x0F, 0x38, 0xDF], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('aesenc',    [0x0F, 0x38, 0xDC], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('aesenclast',[0x0F, 0x38, 0xDD], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('aesimc',    [0x0F, 0x38, 0xDB], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('aeskeygenassist', [0x0F, 0x3A, 0xDF], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pclmulqdq', [0x0F, 0x3A, 0x44], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+	end
+
 	def init_vmx_only
 		init_cpu_constants
 
@@ -619,14 +648,18 @@ class Ia32
 		addop 'xsave',  [0x0F, 0xAE, 4<<3], :modrmA
 	end
 
+	def init_sse41_only
+		init_cpu_constants
+	end
+
 	def init_sse42_only
 		init_cpu_constants
 
 		addop('crc32', [0x0F, 0x38, 0xF0], :mrmw) { |o| o.props[:needpfx] = 0xF2 }
-		addop('pcmpestrm', [0x0F, 0x3A, 0x60], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
-		addop('pcmpestri', [0x0F, 0x3A, 0x61], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
-		addop('pcmpistrm', [0x0F, 0x3A, 0x62], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
-		addop('pcmpistri', [0x0F, 0x3A, 0x63], :mrmxmm, {}, :i8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pcmpestrm', [0x0F, 0x3A, 0x60], :mrmxmm, :i8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pcmpestri', [0x0F, 0x3A, 0x61], :mrmxmm, :i8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pcmpistrm', [0x0F, 0x3A, 0x62], :mrmxmm, :i8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pcmpistri', [0x0F, 0x3A, 0x63], :mrmxmm, :i8) { |o| o.props[:needpfx] = 0x66 }
 		addop('pcmpgtq', [0x0F, 0x38, 0x37], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('popcnt',  [0x0F, 0xB8], :mrm) { |o| o.props[:needpfx] = 0xF3 }
 	end
@@ -685,15 +718,26 @@ class Ia32
 		init_sse3_only
 	end
 
-	def init_vmx
+	def init_ssse3
 		init_sse3
-		init_vmx_only
+		init_ssse3_only
 	end
-	
-	def init_all
-		init_vmx
+
+	def init_sse41
+		init_ssse3
+		init_sse41_only
+	end
+
+	def init_sse42
+		init_sse41
 		init_sse42_only
+	end
+
+	def init_all
+		init_sse42
 		init_3dnow_only
+		init_vmx_only
+		init_aesni_only
 	end
 
 	alias init_latest init_all
