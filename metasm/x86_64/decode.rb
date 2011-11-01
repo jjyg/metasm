@@ -172,6 +172,8 @@ class X86_64
 			else
 				di.instruction.args[0].sz = 32
 			end
+		elsif op.name == 'crc32'
+			di.instruction.args[0].sz = 32
 		end
 
 		# sil => bh

@@ -232,17 +232,30 @@ end
 	# check if the argument matches the opcode's argument spec
 	def parse_arg_valid?(o, spec, arg)
 		if o.name ==  'movsx' or o.name == 'movzx'
-			if not arg.kind_of? Reg and not arg.kind_of? ModRM
+			if not arg.kind_of?(Reg) and not arg.kind_of?(ModRM)
  				return
 			elsif not arg.sz
 				puts "ambiguous arg size for indirection in #{o.name}" if $VERBOSE
 				return
 			elsif spec == :reg	# reg=dst, modrm=src (smaller)
-				return (arg.kind_of? Reg and arg.sz >= 16)
+				return (arg.kind_of?(Reg) and arg.sz >= 16)
 			elsif o.props[:argsz]
 				return arg.sz == o.props[:argsz]
 			else
-				return arg.sz <= 16
+				return arg.sz == 16
+			end
+		elsif o.name == 'crc32'
+			if not arg.kind_of?(Reg) and not arg.kind_of?(ModRM)
+				return
+			elsif not arg.sz
+				puts "ambiguous arg size for indirection in #{o.name}" if $VERBOSE
+				return
+			elsif spec == :reg
+				return (arg.kind_of?(Reg) and arg.sz >= 32)
+			elsif o.props[:argsz]
+				return arg.sz == o.props[:argsz]
+			else
+				return arg.sz >= 16
 			end
 		end
 

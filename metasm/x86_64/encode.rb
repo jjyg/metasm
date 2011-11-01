@@ -121,13 +121,18 @@ class X86_64
 			when :seg; [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][v.val]
 			end
 		}.compact.pack 'C*'
-		pfx << op.props[:needpfx] if op.props[:needpfx]
 
 		rex_w = rex_r = rex_x = rex_b = nil
 		if op.name == 'movsx' or op.name == 'movzx' or op.name == 'movsxd'
 			case i.args[0].sz
 			when 64; rex_w = 1
 			when 32
+			when 16; pfx << 0x66
+			end
+		elsif op.name == 'crc32'
+			case i.args[1].sz
+			when 64; rex_w = 1
+			when 32;
 			when 16; pfx << 0x66
 			end
 		else
@@ -212,12 +217,14 @@ class X86_64
 			postponed.first[1] = Expression[target, :-, postlabel]
 		end
 
+		pfx << op.props[:needpfx] if op.props[:needpfx]
+
 		if rex_w == 1 or rex_r == 1 or rex_b == 1 or rex_x == 1 or i.args.grep(Reg).find { |r| r.sz == 8 and r.val >= 4 and r.val < 8 }
 			rex ||= 0x40
-			rex |= 1 if rex_b.to_i > 0
-			rex |= 2 if rex_x.to_i > 0
-			rex |= 4 if rex_r.to_i > 0
-			rex |= 8 if rex_w.to_i > 0
+			rex |= 1 if rex_b == 1
+			rex |= 2 if rex_x == 1
+			rex |= 4 if rex_r == 1
+			rex |= 8 if rex_w == 1
 		end
 		pfx << rex if rex
 		ret = EncodedData.new(pfx + base.pack('C*'))

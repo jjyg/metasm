@@ -235,6 +235,8 @@ class Ia32
 			else
 				di.instruction.args[0].sz = @size
 			end
+		elsif op.name == 'crc32'
+			di.instruction.args[0].sz = 32
 		end
 
 		case pfx.delete(:rep)

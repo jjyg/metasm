@@ -200,10 +200,11 @@ class Ia32
 			when :seg; [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][v.val]
 			end
 		}.compact.pack 'C*'
-		pfx << op.props[:needpfx] if op.props[:needpfx]
 
 		if op.name == 'movsx' or op.name == 'movzx'
 			pfx << 0x66 if size == 48-i.args[0].sz
+		elsif op.name == 'crc32'
+			pfx << 0x66 if size == 48-i.args[1].sz
 		else
 			opsz = op.props[:argsz]
 			oi.each { |oa, ia|
@@ -213,7 +214,7 @@ class Ia32
 					opsz = ia.sz
 				end
 			}
-			pfx << 0x66 if (op.props[:opsz] and op.props[:opsz] != size) or 
+			pfx << 0x66 if (op.props[:opsz] and size == 48 - op.props[:opsz]) or 
 					(not op.props[:argsz] and opsz and size == 48 - opsz)
 			opsz ||= op.props[:opsz]
 		end
@@ -264,6 +265,8 @@ class Ia32
 			target = target.rexpr if target.kind_of? Expression and target.op == :+ and not target.lexpr
 			postponed.first[1] = Expression[target, :-, postlabel]
 		end
+
+		pfx << op.props[:needpfx] if op.props[:needpfx]
 
 		#
 		# append other arguments
