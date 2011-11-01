@@ -176,6 +176,7 @@ class Ia32
 		addop('mov',   [0x0F, 0x21, 0xC0], :reg, {:d => [1, 1], :eeed => [2, 3]}, :eeed) { |op| op.args.reverse! }
 		addop('mov',   [0x0F, 0x24, 0xC0], :reg, {:d => [1, 1], :eeet => [2, 3]}, :eeet) { |op| op.args.reverse! }
 		addop('mov',   [0x8C], 0,    {:d => [0, 1], :seg3 => [1, 3]}, :seg3) { |op| op.args.reverse! }
+		addop('movbe', [0x0F, 0x38, 0xF0], :mrm, { :d => [2, 0] }) { |o| o.args.reverse! }
 		addop 'out',   [0xE6], nil,  {:w => [0, 0]}, :u8, :reg_eax
 		addop 'out',   [0xE6], nil,  {:w => [0, 0]}, :reg_eax, :u8
 		addop 'out',   [0xE6], nil,  {:w => [0, 0]}, :u8
@@ -200,6 +201,7 @@ class Ia32
 		addop_macro3 'rcr', 3
 		addop 'rdmsr', [0x0F, 0x32]
 		addop 'rdpmc', [0x0F, 0x33]
+		addop 'rdrand', [0x0F, 0xC7], 6, :modrmR
 		addop 'rdtsc', [0x0F, 0x31], nil, :random
 		addop_macroret 'retf', [0xCB]
 		addop_macroret 'retf', [0xCA], :u16
@@ -213,7 +215,7 @@ class Ia32
 		addop 'std',   [0xFD]
 		addop 'sti',   [0xFB]
 		addop 'str',   [0x0F, 0x00], 1
-		addop 'test',  [0xF6], 1,    {:w => [0, 0]}, :u			# undocumented alias to F6/0
+		addop 'test',  [0xF6], 1, {:w => [0, 0]}, :u			# undocumented alias to F6/0
 		addop 'ud2',   [0x0F, 0x0B]
 		addop 'verr',  [0x0F, 0x00], 4
 		addop 'verw',  [0x0F, 0x00], 5
@@ -225,12 +227,12 @@ class Ia32
 
 # pfx:  addrsz = 0x67, lock = 0xf0, opsz = 0x66, repnz = 0xf2, rep/repz = 0xf3
 #	cs/nojmp = 0x2E, ds/jmp = 0x3E, es = 0x26, fs = 0x64, gs = 0x65, ss = 0x36
+
 		# undocumented opcodes
-		# TODO put these in the right place (486/P6/...)
 		addop 'aam',   [0xD4], nil, :u8
 		addop 'aad',   [0xD5], nil, :u8
-		addop 'setalc', [0xD6]
-		addop 'salc', [0xD6]
+		addop 'setalc',[0xD6]
+		addop 'salc',  [0xD6]
 		addop 'icebp', [0xF1]
 		#addop 'loadall',[0x0F, 0x07]	# conflict with syscall
 		addop 'ud0',   [0x0F, 0xFF]	# amd
@@ -345,7 +347,6 @@ class Ia32
 
 	def init_486_only
 		init_cpu_constants
-		# TODO add new segments (fs/gs) ?
 	end
 
 	def init_pentium_only
@@ -619,6 +620,7 @@ class Ia32
 		addop('aesenclast',[0x0F, 0x38, 0xDD], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('aesimc',    [0x0F, 0x38, 0xDB], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('aeskeygenassist', [0x0F, 0x3A, 0xDF], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+
 		addop('pclmulqdq', [0x0F, 0x3A, 0x44], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
 	end
 
@@ -640,7 +642,6 @@ class Ia32
 
 		addop 'getsec',   [0x0F, 0x37]
 
-		addop('movbe',    [0x0F, 0x38, 0xF0], :mrm, { :d => [2, 0] }) { |o| o.args.reverse! }
 		addop 'xgetbv', [0x0F, 0x01, 0xD0]
 		addop 'xsetbv', [0x0F, 0x01, 0xD1]
 		addop 'rdtscp', [0x0F, 0x01, 0xF9]
@@ -650,6 +651,57 @@ class Ia32
 
 	def init_sse41_only
 		init_cpu_constants
+
+		addop('blendpd',  [0x0F, 0x3A, 0x0D], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('blendps',  [0x0F, 0x3A, 0x0C], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('blendvpd', [0x0F, 0x38, 0x15], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('blendvps', [0x0F, 0x38, 0x14], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('dppd',     [0x0F, 0x3A, 0x41], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('dpps',     [0x0F, 0x3A, 0x40], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('extractps',[0x0F, 0x3A, 0x17], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('insertps', [0x0F, 0x3A, 0x21], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('movntdqa', [0x0F, 0x38, 0x2A], :mrmxmm, :modrmA) { |o| o.props[:needpfx] = 0x66 }
+		addop('mpsadbw',  [0x0F, 0x3A, 0x42], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('packusdw', [0x0F, 0x38, 0x2B], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pblendvb', [0x0F, 0x38, 0x10], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pblendw',  [0x0F, 0x3A, 0x1E], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('pcmpeqq',  [0x0F, 0x38, 0x29], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pextrb', [0x0F, 0x3A, 0x14], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:argsz] = 8 }
+		addop('pextrw', [0x0F, 0x3A, 0x15], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:argsz] = 16 }
+		addop('pextrd', [0x0F, 0x3A, 0x16], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:argsz] = 32 }
+		addop('pinsrb', [0x0F, 0x3A, 0x20], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:argsz] = 8 }
+		addop('pinsrw', [0x0F, 0x3A, 0x21], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:argsz] = 16 }
+		addop('pinsrd', [0x0F, 0x3A, 0x22], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:argsz] = 32 }
+		addop('phminposuw', [0x0F, 0x38, 0x41], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pminsb', [0x0F, 0x38, 0x38], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pminsd', [0x0F, 0x38, 0x39], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pminuw', [0x0F, 0x38, 0x3A], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pminud', [0x0F, 0x38, 0x3B], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmaxsb', [0x0F, 0x38, 0x3C], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmaxsd', [0x0F, 0x38, 0x3D], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmaxuw', [0x0F, 0x38, 0x3E], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmaxud', [0x0F, 0x38, 0x3F], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+
+		addop('pmovsxbw', [0x0F, 0x38, 0x20], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovsxbd', [0x0F, 0x38, 0x21], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovsxbq', [0x0F, 0x38, 0x22], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovsxwd', [0x0F, 0x38, 0x23], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovsxwq', [0x0F, 0x38, 0x24], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovsxdq', [0x0F, 0x38, 0x25], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovzxbw', [0x0F, 0x38, 0x30], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovzxbd', [0x0F, 0x38, 0x31], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovzxbq', [0x0F, 0x38, 0x32], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovzxwd', [0x0F, 0x38, 0x33], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovzxwq', [0x0F, 0x38, 0x34], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmovzxdq', [0x0F, 0x38, 0x35], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+
+		addop('pmuldq',  [0x0F, 0x38, 0x28], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('pmulld',  [0x0F, 0x38, 0x40], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('ptest',   [0x0F, 0x38, 0x17], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
+		addop('roundps', [0x0F, 0x3A, 0x08], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('roundpd', [0x0F, 0x3A, 0x09], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('roundss', [0x0F, 0x3A, 0x0A], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
+		addop('roundsd', [0x0F, 0x3A, 0x0B], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
 	end
 
 	def init_sse42_only
@@ -663,7 +715,6 @@ class Ia32
 		addop('pcmpgtq', [0x0F, 0x38, 0x37], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('popcnt',  [0x0F, 0xB8], :mrm) { |o| o.props[:needpfx] = 0xF3 }
 	end
-
 
 	#
 	# CPU family dependencies

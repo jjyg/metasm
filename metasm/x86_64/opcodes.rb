@@ -66,14 +66,11 @@ class X86_64
 		init_sse3_only
 	end
 
-	def init_all
-		init_sse42
-		init_3dnow_only
-		init_vmx_only
+	def init_sse41_only
+		super()
+		addop('pextrq', [0x0F, 0x3A, 0x16], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:opsz] = o.props[:argsz] = 64 }
+		addop('pinsrq', [0x0F, 0x3A, 0x22], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:opsz] = o.props[:argsz] = 64 }
 	end
-
-	alias init_latest init_all
-
 
 	def addop_macrostr(name, bin, type)
 		super(name, bin, type)
