@@ -124,7 +124,9 @@ class Ia32
 		addop('arpl',  [0x63], :mrm) { |o| o.props[:argsz] = 16 ; o.args.reverse! }
 		addop 'bound', [0x62], :mrmA
 		addop 'bsf',   [0x0F, 0xBC], :mrm
+		addop('tzcnt', [0x0F, 0xBC], :mrm) { |o| o.props[:needpfx] = 0xF3 }
 		addop 'bsr',   [0x0F, 0xBD], :mrm
+		addop('lzcnt', [0x0F, 0xBD], :mrm) { |o| o.props[:needpfx] = 0xF3 }
 		addop_macro2 'bt' , 0
 		addop_macro2 'btc', 3
 		addop_macro2 'btr', 2
@@ -150,7 +152,8 @@ class Ia32
 		addop_macrostr 'ins',   [0x6C], :strop
 		addop 'into',  [0xCE]
 		addop 'invd',  [0x0F, 0x08]
-		addop 'invlpg',[0x0F, 0x01, 7<<3], :modrmA
+		addop 'invlpg', [0x0F, 0x01, 7<<3], :modrmA
+		addop('invpcid', [0x0F, 0x38, 0x82], :mrm) { |o| o.props[:needpfx] = 0x66 }
 		addop('iretd', [0xCF], nil, :stopexec, :setip) { |o| o.props[:opsz] = 32 }
 		addop_macroret 'iret', [0xCF]
 		addop('jcxz',  [0xE3], nil, :setip, :i8) { |o| o.props[:opsz] = 16 }
