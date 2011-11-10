@@ -29,13 +29,13 @@ class ARM
 		when :rd, :rs, :rn, :rm; arg.kind_of? Reg and arg.shift == 0 and (arg.updated ? op.props[:baseincr] : !op.props[:baseincr])
 		when :rm_rs; arg.kind_of? Reg and arg.shift.kind_of? Reg
 		when :rm_is; arg.kind_of? Reg and arg.shift.kind_of? Integer
-		when :i16, :i24, :i8_12, :i8_r; arg.kind_of? Expression
+		when :i12, :i24, :i8_12, :i8_r; arg.kind_of? Expression
 		when :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12
 			os = case sym
 			     when :mem_rn_rm; :rm
 			     when :mem_rn_i8_12; :i8_12
 			     when :mem_rn_rms; :rm_rs
-			     when :mem_rn_i12; :i16
+			     when :mem_rn_i12; :i12
 			     end
 			arg.kind_of? Memref and parse_arg_valid?(op, os, arg.offset)
 		when :reglist; arg.kind_of? RegList

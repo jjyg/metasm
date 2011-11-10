@@ -9,7 +9,7 @@ require 'metasm/encode'
 
 module Metasm
 class ARM
-	def encode_instr_op(section, instr, op)
+	def encode_instr_op(program, instr, op)
 		base = op.bin
 		set_field = lambda { |f, v|
 			v = v.reduce if v.kind_of? Expression
@@ -66,12 +66,23 @@ class ARM
 				r = (0..15).find { next true if b < 0x10 ; b = (b >> 2) | ((b & 3) << 30) }
 				set_field[:i8, b]
 				set_field[:rotate, r]
-			when :i16, :i24
+			when :i12, :i24
 				val, mask, shift = arg, @fields_mask[sym], @fields_shift[sym]
 			end
 		}
 
-		Expression[base, :|, [[val, :<<, shift], :&, mask]].encode(:u32, @endianness)
+		if op.args[-1] == :i24
+			# convert label name for branch to relative offset
+			label = program.new_label('l_'+op.name)
+			target = val
+			target = target.rexpr if target.kind_of? Expression and target.op == :+ and not target.lexpr
+			val = Expression[[target, :-, [label, :+, 8]], :>>, 2]
+
+			EncodedData.new('', :export => { label => 0 }) <<
+			Expression[base, :|, [[val, :<<, shift], :&, mask]].encode(:u32, @endianness)
+		else
+			Expression[base, :|, [[val, :<<, shift], :&, mask]].encode(:u32, @endianness)
+		end
 	end
 end
 end
