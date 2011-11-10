@@ -104,6 +104,12 @@ class X86_64
 			v
 		}
 
+		pfx[:rex_r] = 1 if op.fields[:vex_r] and field_val[:vex_r] == 0
+		pfx[:rex_b] = 1 if op.fields[:vex_b] and field_val[:vex_b] == 0
+		pfx[:rex_x] = 1 if op.fields[:vex_x] and field_val[:vex_x] == 0
+		pfx[:rex_w] = 1 if op.fields[:vex_w] and field_val[:vex_w] == 1
+		di.instruction.prefix = pfx if not di.instruction.prefix and not pfx.empty?	# for opsz(di) + vex_w
+
 		case op.props[:needpfx]
 		when 0x66; pfx.delete :opsz
 		when 0x67; pfx.delete :adsz
@@ -130,6 +136,7 @@ class X86_64
 			when :seg2, :seg2A, :seg3, :seg3A; SegReg.new field_val[a]
 			when :regmmx; SimdReg.new field_val[a], mmxsz	# rex_r ignored
 			when :regxmm; SimdReg.new field_val_r[a], 128
+			when :regymm; SimdReg.new field_val_r[a], 256
 
 			when :farptr; Farptr.decode edata, @endianness, opsz
 			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; Expression[edata.decode_imm(a, @endianness)]
@@ -143,6 +150,11 @@ class X86_64
 			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg), Reg, pfx
 			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz])
 			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz])
+			when :modrmymm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 256, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz])
+
+			when :vexvreg; Reg.new((field_val[:vex_vvvv] ^ 0xf), opsz)
+			when :vexvxmm; SimdReg.new((field_val[:vex_vvvv] ^ 0xf), 128)
+			when :vexvymm; SimdReg.new((field_val[:vex_vvvv] ^ 0xf), 256)
 
 			when :regfp;  FpReg.new   field_val[a]
 			when :imm_val1; Expression[1]

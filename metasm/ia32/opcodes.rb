@@ -12,7 +12,9 @@ class Ia32
 		@opcode_list ||= []
 		@fields_mask.update :w => 1, :s => 1, :d => 1, :modrm => 0xc7,
 			:reg => 7, :eeec => 7, :eeed => 7, :eeet => 7, :seg2 => 3, :seg3 => 7,
-			:regfp => 7, :regmmx => 7, :regxmm => 7
+			:regfp => 7, :regmmx => 7, :regxmm => 7, :regymm => 7,
+			:vex_r => 1, :vex_b => 1, :vex_x => 1, :vex_w => 1,
+			:vex_vvvv => 0xf
 		@fields_mask[:seg2A]    = @fields_mask[:seg2]
 		@fields_mask[:seg3A]    = @fields_mask[:seg3]
 
@@ -20,7 +22,8 @@ class Ia32
 			:seg3, :seg3A, :eeec, :eeed, :eeet, :modrm, :mrm_imm,
 			:farptr, :imm_val1, :imm_val3, :reg_cl, :reg_eax,
 			:reg_dx, :regfp, :regfp0, :modrmmmx, :regmmx,
-			:modrmxmm, :regxmm] - @valid_args
+			:modrmxmm, :regxmm, :modrmymm, :regymm,
+			:vexvxmm, :vexvymm, :vexvreg] - @valid_args
 
 		@valid_props.concat [:strop, :stropz, :opsz, :argsz, :setip,
 			:stopexec, :saveip, :unsigned_imm, :random, :needpfx,
@@ -716,7 +719,25 @@ class Ia32
 		addop('pcmpistrm', [0x0F, 0x3A, 0x62], :mrmxmm, :i8) { |o| o.props[:needpfx] = 0x66 }
 		addop('pcmpistri', [0x0F, 0x3A, 0x63], :mrmxmm, :i8) { |o| o.props[:needpfx] = 0x66 }
 		addop('pcmpgtq', [0x0F, 0x38, 0x37], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
-		addop('popcnt',  [0x0F, 0xB8], :mrm) { |o| o.props[:needpfx] = 0xF3 }
+		addop('popcnt', [0x0F, 0xB8], :mrm) { |o| o.props[:needpfx] = 0xF3 }
+	end
+
+	def init_avx_only
+		init_cpu_constants
+
+		addop_vex 'vmpsadbw', 0x42, [1, :vexvxmm, 128, 0x66, 0x0f3a], :mrmxmm, :u8
+		addop_vex 'vpabsb',   0x1c, [nil, 128, 0x66, 0x0f38], :mrmxmm
+		addop_vex 'vpabsw',   0x1d, [nil, 128, 0x66, 0x0f38], :mrmxmm
+		addop_vex 'vpabsd',   0x1e, [nil, 128, 0x66, 0x0f38], :mrmxmm
+	end
+
+	def init_avx2_only
+		init_cpu_constants
+
+		addop_vex 'vmpsadbw', 0x42, [1, :vexvymm, 256, 0x66, 0x0f3a], :mrmymm, :u8
+		addop_vex 'vpabsb',   0x1c, [nil, 256, 0x66, 0x0f38], :mrmymm
+		addop_vex 'vpabsw',   0x1d, [nil, 256, 0x66, 0x0f38], :mrmymm
+		addop_vex 'vpabsd',   0x1e, [nil, 256, 0x66, 0x0f38], :mrmymm
 	end
 
 	#
@@ -787,8 +808,18 @@ class Ia32
 		init_sse42_only
 	end
 
-	def init_all
+	def init_avx
 		init_sse42
+		init_avx_only
+	end
+
+	def init_avx2
+		init_avx
+		init_avx2_only
+	end
+
+	def init_all
+		init_avx2
 		init_3dnow_only
 		init_vmx_only
 		init_aesni_only
@@ -889,6 +920,46 @@ class Ia32
 		addop(name, bin.dup, nil, :stopexec, :setip, *args) { |o| o.props[:opsz] = @size }
 	end
 
+	# add an AVX instruction needing a VEX prefix (c4h/c5h)
+	# the prefix is hardcoded
+	def addop_vex(name, bin, vex, *args)
+		argnr = vex.shift
+		argt = vex.shift if argnr
+		l = vex.shift
+		pfx = vex.shift
+		of = vex.shift
+		w = vex.shift
+
+		lpp = ((l >> 8) << 2) | [0, 0x66, 0xf3, 0xf2].index(pfx)
+		mmmmm = [nil, 0x0f, 0x0f38, 0x0f3a].index(of)
+
+		c4bin = [0xc4, mmmmm, lpp, bin]
+		c4bin[2] |= 1 << 7 if w == 1
+		c4bin[2] |= 0xf << 3 if not argnr
+
+		addop(name, c4bin, *args) { |o|
+			o.args.insert(argnr, argt) if argnr
+
+			o.fields[:vex_r] = [1, 7]
+			o.fields[:vex_b] = [1, 6]
+			o.fields[:vex_x] = [1, 5]
+			o.fields[:vex_w] = [2, 7] if not w
+			o.fields[:vex_vvvv] = [2, 3] if argnr
+		}
+
+		return if w == 1 or mmmmm != 1
+
+		c5bin = [0xc5, lpp, bin]
+		c5bin[1] |= 0xf << 3 if not argnr
+
+		addop(name, c5bin, *args) { |o|
+			o.args.insert(argnr, argt) if argnr
+
+			o.fields[:vex_r] = [1, 7]
+			o.fields[:vex_vvvv] = [1, 3] if argnr
+		}
+	end
+
 	# helper function: creates a new Opcode based on the arguments, eventually
 	# yields it for further customisation, and append it to the instruction set
 	# is responsible of the creation of disambiguating opcodes if necessary (:s flag hardcoding)
@@ -932,6 +1003,11 @@ class Ia32
 			op.fields[:modrm] = [bin.length, 0]
 			bin << 0
 			argprops.unshift :regxmm, :modrmxmm
+		when :mrmymm
+			op.fields[:regymm] = [bin.length, 3]
+			op.fields[:modrm] = [bin.length, 0]
+			bin << 0
+			argprops.unshift :regymm, :modrmymm
 		else
 			raise SyntaxError, "invalid hint #{hint.inspect} for #{name}"
 		end

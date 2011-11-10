@@ -72,4 +72,8 @@ class TestX86_64 < Test::Unit::TestCase
 		assert_equal('cmpxchg8b', disassemble("\x47\x0f\xc7\x08").decoded[0].opcode.name)
 		assert_equal('cmpxchg16b', disassemble("\x48\x0f\xc7\x08").decoded[0].opcode.name)
 	end
+
+	def test_avx
+		assert_equal('vmpsadbw ymm12, ymm14, ymm2, 3', disassemble("\xc4\x63\x8d\x42\xe2\x03").decoded[0].instruction.to_s)
+	end
 end

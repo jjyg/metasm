@@ -95,10 +95,11 @@ class Ia32 < CPU
 		simple_map((0..7).map { |i| [i, "ST(#{i})"] } << [nil, 'ST'])
 	end
 
-	# a single operation multiple data register (mm0..mm7, xmm0..xmm7)
+	# Single Instr Multiple Data register (mm0..mm7, xmm0..xmm7, ymm0..ymm7)
 	class SimdReg < Argument
 		double_map  64 => (0..7).map { |n| "mm#{n}" },
-			   128 => (0..7).map { |n| "xmm#{n}" }
+			   128 => (0..7).map { |n| "xmm#{n}" },
+			   256 => (0..7).map { |n| "ymm#{n}" }
 		def symbolic(di=nil) ; to_s.to_sym end
 	end
 

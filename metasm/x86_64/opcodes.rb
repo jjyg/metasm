@@ -46,7 +46,9 @@ class X86_64
 			o.args.include?(:seg2A) or
 			o.args.include?(:farptr) or
 			%w[aaa aad aam aas bound daa das into
-			 lds les loadall arpl pusha pushad popa popad].include?(o.name)
+			 lds les loadall arpl pusha pushad popa
+			 popad].include?(o.name.split('.')[0])
+			 # split needed for lds.a32
 		}
 
 		@opcode_list.each { |o|

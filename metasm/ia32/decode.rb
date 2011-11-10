@@ -91,8 +91,7 @@ class Ia32
 			msk = op.bin_mask[0]
 
 			for i in b..(b | (255^msk))
-				next if i & msk != b & msk
-				lookaside[i] << op
+				lookaside[i] << op if i & msk == b & msk
 			end
 		}
 		lookaside
@@ -132,7 +131,7 @@ class Ia32
 		while edata.ptr < edata.data.length
 			pfx = di.instruction.prefix || {}
 			byte = edata.data[edata.ptr]
-			byte = byte.unpack('C').first if byte.kind_of? ::String	# 1.9
+			byte = byte.unpack('C').first if byte.kind_of?(::String)
 			return di if di.opcode = @bin_lookaside[byte].find { |op|
 				# fetch the relevant bytes from edata
 				bseq = edata.data[edata.ptr, op.bin.length].unpack('C*')
@@ -148,6 +147,9 @@ class Ia32
 				  (fld = op.fields[:seg3A] || op.fields[:seg3] and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg3] > 5) or
 				  (op.props[:modrmA] and fld = op.fields[:modrm] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
 				  (op.props[:modrmR] and fld = op.fields[:modrm] and (bseq[fld[0]] >> fld[1]) & 0xC0 != 0xC0) or
+				  (fld = op.fields[:vex_r] and @size != 64 and (bseq[fld[0]] >> fld[1]) & @fields_mask[:vex_r] != 1) or
+				  (fld = op.fields[:vex_b] and @size != 64 and (bseq[fld[0]] >> fld[1]) & @fields_mask[:vex_b] != 1) or
+				  (fld = op.fields[:vex_vvvv] and @size != 64 and (bseq[fld[0]] >> fld[1]) & @fields_mask[:vex_vvvv] < 8) or
 				  (sz = op.props[:opsz] and opsz(di) != sz) or
 				  (ndpfx = op.props[:needpfx] and not pfx[:list].to_a.include? ndpfx) or
 				  (pfx[:adsz] and op.props[:adsz] and op.props[:adsz] == @size) or
@@ -202,6 +204,7 @@ class Ia32
 			when :regfp;  FpReg.new   field_val[a]
 			when :regmmx; SimdReg.new field_val[a], mmxsz
 			when :regxmm; SimdReg.new field_val[a], 128
+			when :regymm; SimdReg.new field_val[a], 256
 
 			when :farptr; Farptr.decode edata, @endianness, opsz
 			when :i8, :u8, :u16; Expression[edata.decode_imm(a, @endianness)]
@@ -211,6 +214,11 @@ class Ia32
 			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg)
 			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz]
 			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz]
+			when :modrmymm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 256, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz]
+
+			when :vexvreg; Reg.new((field_val[:vex_vvvv] ^ 0xf), opsz)
+			when :vexvxmm; SimdReg.new((field_val[:vex_vvvv] ^ 0xf), 128)
+			when :vexvymm; SimdReg.new((field_val[:vex_vvvv] ^ 0xf), 256)
 
 			when :imm_val1; Expression[1]
 			when :imm_val3; Expression[3]

@@ -99,4 +99,8 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(disassemble("\x90").decoded.values.first.opcode.name, "nop")
 		assert_equal(disassemble("\xf3\x90").decoded.values.first.opcode.name, "pause")
 	end
+
+	def test_avx
+		assert_equal(disassemble("\xc4\xe3\xf5\x42\xc2\x03").decoded[0].instruction.to_s, "vmpsadbw ymm0, ymm1, ymm2, 3")
+	end
 end
