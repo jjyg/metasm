@@ -934,15 +934,17 @@ class Ia32
 		mmmmm = [nil, 0x0f, 0x0f38, 0x0f3a].index(of)
 
 		c4bin = [0xc4, mmmmm, lpp, bin]
+		c4bin[1] |= 1 << 7 if @size != 64
+		c4bin[1] |= 1 << 6 if @size != 64
 		c4bin[2] |= 1 << 7 if w == 1
 		c4bin[2] |= 0xf << 3 if not argnr
 
 		addop(name, c4bin, *args) { |o|
 			o.args.insert(argnr, argt) if argnr
 
-			o.fields[:vex_r] = [1, 7]
-			o.fields[:vex_b] = [1, 6]
-			o.fields[:vex_x] = [1, 5]
+			o.fields[:vex_r] = [1, 7] if @size == 64
+			o.fields[:vex_x] = [1, 6] if @size == 64
+			o.fields[:vex_b] = [1, 5]
 			o.fields[:vex_w] = [2, 7] if not w
 			o.fields[:vex_vvvv] = [2, 3] if argnr
 		}
@@ -950,12 +952,13 @@ class Ia32
 		return if w == 1 or mmmmm != 1
 
 		c5bin = [0xc5, lpp, bin]
+		c5bin[1] |= 1 << 7 if @size != 64
 		c5bin[1] |= 0xf << 3 if not argnr
 
 		addop(name, c5bin, *args) { |o|
 			o.args.insert(argnr, argt) if argnr
 
-			o.fields[:vex_r] = [1, 7]
+			o.fields[:vex_r] = [1, 7] if @size == 64
 			o.fields[:vex_vvvv] = [1, 3] if argnr
 		}
 	end

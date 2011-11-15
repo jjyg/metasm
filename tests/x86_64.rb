@@ -74,6 +74,11 @@ class TestX86_64 < Test::Unit::TestCase
 	end
 
 	def test_avx
-		assert_equal('vmpsadbw ymm12, ymm14, ymm2, 3', disassemble("\xc4\x63\x8d\x42\xe2\x03").decoded[0].instruction.to_s)
+		assert_equal('vmpsadbw ymm12, ymm14, ymm2, 3', disassemble("\xc4\x63\x0d\x42\xe2\x03").decoded[0].instruction.to_s)
+		assert_equal("\xc4\x63\x0d\x42\xe2\x03", assemble('vmpsadbw ymm12, ymm14, ymm2, 3'))
+		assert_equal("\xc5\x31\x63\xc2", assemble('vpacksswb xmm8, xmm9, xmm2'))
+		assert_equal("\xc4\x41\x31\x63\xc2", assemble('vpacksswb xmm8, xmm9, xmm10'))
+		assert_equal("\xc5\x31\x63\x04\x5a", assemble('vpacksswb xmm8, xmm9, [rdx+2*rbx]'))
+		assert_equal("\xc4\x01\x31\x63\x04\x5a", assemble('vpacksswb xmm8, xmm9, [r10+2*r11]'))
 	end
 end

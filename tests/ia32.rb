@@ -101,6 +101,7 @@ class TestIa32 < Test::Unit::TestCase
 	end
 
 	def test_avx
-		assert_equal(disassemble("\xc4\xe3\xf5\x42\xc2\x03").decoded[0].instruction.to_s, "vmpsadbw ymm0, ymm1, ymm2, 3")
+		assert_equal(disassemble("\xc4\xc3\x75\x42\xc2\x03").decoded[0].instruction.to_s, "vmpsadbw ymm0, ymm1, ymm2, 3")
+		assert_equal(assemble("vmpsadbw ymm0, ymm1, ymm2, 3"), "\xc4\xc3\x75\x42\xc2\x03")
 	end
 end

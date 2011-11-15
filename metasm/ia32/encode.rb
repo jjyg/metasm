@@ -241,10 +241,12 @@ class Ia32
 		postponed = []
 		oi.each { |oa, ia|
 			case oa
-			when :reg, :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :eeet, :regfp, :regmmx, :regxmm
+			when :reg, :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :eeet, :regfp, :regmmx, :regxmm, :regymm
 				# field arg
 				set_field[oa, ia.val]
 				pfx << 0x66 if oa == :regmmx and op.props[:xmmx] and ia.sz == 128
+			when :vexvreg, :vexvxmm, :vexvymm
+				set_field[:vex_vvvv, ia.val ^ 0xf]
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0
 				# implicit
 			else
@@ -252,7 +254,7 @@ class Ia32
 			end
 		}
 
-		if !(op.args & [:modrm, :modrmxmm, :modrmmmx]).empty?
+		if !(op.args & [:modrm, :modrmmmx, :modrmxmm, :modrmymm]).empty?
 			# reg field of modrm
 			regval = (base[-1] >> 3) & 7
 			base.pop
@@ -276,7 +278,7 @@ class Ia32
 		postponed.each { |oa, ia|
 			case oa
 			when :farptr; ed = ia.encode(@endianness, "a#{opsz}".to_sym)
-			when :modrm, :modrmmmx, :modrmxmm
+			when :modrm, :modrmmmx, :modrmxmm, :modrmymm
 				if ia.kind_of? ModRM
 					ed = ia.encode(regval, @endianness)
 					if ed.kind_of?(::Array)

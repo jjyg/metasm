@@ -147,8 +147,6 @@ class Ia32
 				  (fld = op.fields[:seg3A] || op.fields[:seg3] and (bseq[fld[0]] >> fld[1]) & @fields_mask[:seg3] > 5) or
 				  (op.props[:modrmA] and fld = op.fields[:modrm] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
 				  (op.props[:modrmR] and fld = op.fields[:modrm] and (bseq[fld[0]] >> fld[1]) & 0xC0 != 0xC0) or
-				  (fld = op.fields[:vex_r] and @size != 64 and (bseq[fld[0]] >> fld[1]) & @fields_mask[:vex_r] != 1) or
-				  (fld = op.fields[:vex_b] and @size != 64 and (bseq[fld[0]] >> fld[1]) & @fields_mask[:vex_b] != 1) or
 				  (fld = op.fields[:vex_vvvv] and @size != 64 and (bseq[fld[0]] >> fld[1]) & @fields_mask[:vex_vvvv] < 8) or
 				  (sz = op.props[:opsz] and opsz(di) != sz) or
 				  (ndpfx = op.props[:needpfx] and not pfx[:list].to_a.include? ndpfx) or

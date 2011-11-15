@@ -122,7 +122,7 @@ class X86_64
 			end
 		}.compact.pack 'C*'
 
-		rex_w = rex_r = rex_x = rex_b = nil
+		rex_w = rex_r = rex_x = rex_b = 0
 		if op.name == 'movsx' or op.name == 'movzx' or op.name == 'movsxd'
 			case i.args[0].sz
 			when 64; rex_w = 1
@@ -175,25 +175,27 @@ class X86_64
 			when :reg
 				set_field[oa, ia.val_enc]
 				if op.fields[:reg][1] == 3
-					rex_r = ia.val_rex
+					rex_r = ia.val_rex || 0
 				else
-					rex_b = ia.val_rex
+					rex_b = ia.val_rex || 0
 				end
-			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :eeet, :regfp, :regxmm, :regmmx
+			when :seg3, :seg3A, :seg2, :seg2A, :eeec, :eeed, :eeet, :regfp, :regmmx, :regxmm, :regymm
 				set_field[oa, ia.val & 7]
 				rex_r = 1 if ia.val > 7
 				pfx << 0x66 if oa == :regmmx and op.props[:xmmx] and ia.sz == 128
+			when :vexvreg, :vexvxmm, :vexvymm
+				set_field[:vex_vvvv, ia.val ^ 0xf]
 			when :imm_val1, :imm_val3, :reg_cl, :reg_eax, :reg_dx, :regfp0
 				# implicit
-			when :modrm, :modrmmmx, :modrmxmm
+			when :modrm, :modrmmmx, :modrmxmm, :modrmymm
 				# postpone, but we must set rex now
 				case ia
 				when ModRM
 					ia.encode(0, @endianness)	# could swap b/i
-					rex_x = ia.i.val_rex if ia.i
-					rex_b = ia.b.val_rex if ia.b
+					rex_x = ia.i.val_rex || 0 if ia.i
+					rex_b = ia.b.val_rex || 0 if ia.b
 				when Reg
-					rex_b = ia.val_rex
+					rex_b = ia.val_rex || 0
 				else
 					rex_b = ia.val >> 3
 				end
@@ -203,7 +205,7 @@ class X86_64
 			end
 		}
 
-		if !(op.args & [:modrm, :modrmxmm, :modrmmmx]).empty?
+		if !(op.args & [:modrm, :modrmmmx, :modrmxmm, :modrmymm]).empty?
 			# reg field of modrm
 			regval = (base[-1] >> 3) & 7
 			base.pop
@@ -219,19 +221,24 @@ class X86_64
 
 		pfx << op.props[:needpfx] if op.props[:needpfx]
 
-		if rex_w == 1 or rex_r == 1 or rex_b == 1 or rex_x == 1 or i.args.grep(Reg).find { |r| r.sz == 8 and r.val >= 4 and r.val < 8 }
-			rex ||= 0x40
+		if op.fields[:vex_r]
+			set_field[:vex_r, rex_r ^ 1]
+			set_field[:vex_x, rex_x ^ 1] if op.fields[:vex_x]
+			set_field[:vex_b, rex_b ^ 1] if op.fields[:vex_b]
+			set_field[:vex_w, rex_w] if op.fields[:vex_w]
+		elsif rex_r + rex_x + rex_b + rex_w >= 1 or i.args.grep(Reg).find { |r| r.sz == 8 and r.val >= 4 and r.val < 8 }
+			rex = 0x40
 			rex |= 1 if rex_b == 1
 			rex |= 2 if rex_x == 1
 			rex |= 4 if rex_r == 1
 			rex |= 8 if rex_w == 1
+			pfx << rex
 		end
-		pfx << rex if rex
 		ret = EncodedData.new(pfx + base.pack('C*'))
 
 		postponed.each { |oa, ia|
 			case oa
-			when :modrm, :modrmmmx, :modrmxmm
+			when :modrm, :modrmmmx, :modrmxmm, :modrmymm
 				if ia.kind_of? ModRM
 					ed = ia.encode(regval, @endianness)
 					if ed.kind_of?(::Array)

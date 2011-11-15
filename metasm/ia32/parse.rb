@@ -291,6 +291,13 @@ end
 		when :regmmx;   arg.kind_of? SimdReg and (arg.sz == 64 or (arg.sz == 128 and o.props[:xmmx]))
 		when :modrmxmm; arg.kind_of? ModRM   or (arg.kind_of? SimdReg and arg.sz == 128) and (!o.props[:modrmA] or arg.kind_of? ModRM) and (!o.props[:modrmR] or arg.kind_of? SimdReg)
 		when :regxmm;   arg.kind_of? SimdReg and arg.sz == 128
+		when :modrmymm; arg.kind_of? ModRM   or (arg.kind_of? SimdReg and arg.sz == 256) and (!o.props[:modrmA] or arg.kind_of? ModRM) and (!o.props[:modrmR] or arg.kind_of? SimdReg)
+		when :regymm;   arg.kind_of? SimdReg and arg.sz == 256
+
+		when :vexvreg;  arg.kind_of? Reg and arg.sz == @size
+		when :vexvxmm;  arg.kind_of? SimdReg and arg.sz == 128
+		when :vexvymm;  arg.kind_of? SimdReg and arg.sz == 256
+
 		when :i8, :u8, :u16
 			arg.kind_of? Expression and
 			(o.props[:setip] or Expression.in_range?(arg, spec) != false)	# true or nil allowed
