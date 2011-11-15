@@ -23,7 +23,7 @@ class Ia32
 			:farptr, :imm_val1, :imm_val3, :reg_cl, :reg_eax,
 			:reg_dx, :regfp, :regfp0, :modrmmmx, :regmmx,
 			:modrmxmm, :regxmm, :modrmymm, :regymm,
-			:vexvxmm, :vexvymm, :vexvreg] - @valid_args
+			:vexvxmm, :vexvymm, :vexvreg, :i4xmm, :i4ymm] - @valid_args
 
 		@valid_props.concat [:strop, :stropz, :opsz, :argsz, :setip,
 			:stopexec, :saveip, :unsigned_imm, :random, :needpfx,
@@ -725,7 +725,7 @@ class Ia32
 	def init_avx_only
 		init_cpu_constants
 
-		addop_vex 'vmpsadbw', 0x42, [1, :vexvxmm, 128, 0x66, 0x0f3a], :mrmxmm, :u8
+		addop_vex 'vmpsadbw', 0x42, [1, 128, 0x66, 0x0f3a], :mrmxmm, :u8
 		addop_vex 'vpabsb',   0x1c, [nil, 128, 0x66, 0x0f38], :mrmxmm
 		addop_vex 'vpabsw',   0x1d, [nil, 128, 0x66, 0x0f38], :mrmxmm
 		addop_vex 'vpabsd',   0x1e, [nil, 128, 0x66, 0x0f38], :mrmxmm
@@ -734,7 +734,7 @@ class Ia32
 	def init_avx2_only
 		init_cpu_constants
 
-		addop_vex 'vmpsadbw', 0x42, [1, :vexvymm, 256, 0x66, 0x0f3a], :mrmymm, :u8
+		addop_vex 'vmpsadbw', 0x42, [1, 256, 0x66, 0x0f3a], :mrmymm, :u8
 		addop_vex 'vpabsb',   0x1c, [nil, 256, 0x66, 0x0f38], :mrmymm
 		addop_vex 'vpabsw',   0x1d, [nil, 256, 0x66, 0x0f38], :mrmymm
 		addop_vex 'vpabsd',   0x1e, [nil, 256, 0x66, 0x0f38], :mrmymm
@@ -924,11 +924,12 @@ class Ia32
 	# the prefix is hardcoded
 	def addop_vex(name, bin, vex, *args)
 		argnr = vex.shift
-		argt = vex.shift if argnr
+		argt = vex.shift if argnr and vex.first.kind_of?(::Symbol)
 		l = vex.shift
 		pfx = vex.shift
 		of = vex.shift
 		w = vex.shift
+		argt ||= (l == 128 ? :vexvxmm : :vexvymm)
 
 		lpp = ((l >> 8) << 2) | [0, 0x66, 0xf3, 0xf2].index(pfx)
 		mmmmm = [nil, 0x0f, 0x0f38, 0x0f3a].index(of)

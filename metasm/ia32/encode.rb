@@ -300,6 +300,7 @@ class Ia32
 			when :mrm_imm; ed = ia.imm.encode("a#{adsz}".to_sym, @endianness)
 			when :i8, :u8, :u16; ed = ia.encode(oa, @endianness)
 			when :i; ed = ia.encode("a#{opsz}".to_sym, @endianness)
+			when :i4xmm, :i4ymm; ed = ia.val << 4	# u8
 			else raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"
 			end
 

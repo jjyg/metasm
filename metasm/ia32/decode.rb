@@ -217,6 +217,8 @@ class Ia32
 			when :vexvreg; Reg.new((field_val[:vex_vvvv] ^ 0xf), opsz)
 			when :vexvxmm; SimdReg.new((field_val[:vex_vvvv] ^ 0xf), 128)
 			when :vexvymm; SimdReg.new((field_val[:vex_vvvv] ^ 0xf), 256)
+			when :i4xmm; SimdReg.new((edata.decode_imm(:u8, @endianness) >> 4) & 7, 128)
+			when :i4ymm; SimdReg.new((edata.decode_imm(:u8, @endianness) >> 4) & 7, 256)
 
 			when :imm_val1; Expression[1]
 			when :imm_val3; Expression[3]

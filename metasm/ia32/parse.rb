@@ -295,8 +295,8 @@ end
 		when :regymm;   arg.kind_of? SimdReg and arg.sz == 256
 
 		when :vexvreg;  arg.kind_of? Reg and arg.sz == @size
-		when :vexvxmm;  arg.kind_of? SimdReg and arg.sz == 128
-		when :vexvymm;  arg.kind_of? SimdReg and arg.sz == 256
+		when :vexvxmm, :i4xmm;  arg.kind_of? SimdReg and arg.sz == 128
+		when :vexvymm, :i4ymm;  arg.kind_of? SimdReg and arg.sz == 256
 
 		when :i8, :u8, :u16
 			arg.kind_of? Expression and
