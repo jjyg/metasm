@@ -61,11 +61,6 @@ class X86_64
 
 		addop('movq',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args = [:modrm, :regmmx] ; o.props[:opsz] = o.props[:argsz] = 64 }
 		addop('movq',  [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args = [:modrm, :regxmm] ; o.props[:opsz] = o.props[:argsz] = 64 ; o.props[:needpfx] = 0x66 }
-
-		addop('rdfsbase', [0x0F, 0xAE], 0, :modrmR) { |o| o.props[:needpfx] = 0xF3 }
-		addop('rdgsbase', [0x0F, 0xAE], 1, :modrmR) { |o| o.props[:needpfx] = 0xF3 }
-		addop('wrfsbase', [0x0F, 0xAE], 2, :modrmR) { |o| o.props[:needpfx] = 0xF3 }
-		addop('wrgsbase', [0x0F, 0xAE], 3, :modrmR) { |o| o.props[:needpfx] = 0xF3 }
 	end
 
 	def init_sse3
@@ -77,6 +72,14 @@ class X86_64
 		super()
 		addop('pextrq', [0x0F, 0x3A, 0x16], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:opsz] = o.props[:argsz] = 64 }
 		addop('pinsrq', [0x0F, 0x3A, 0x22], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:opsz] = o.props[:argsz] = 64 }
+	end
+
+	def init_avx_only
+		super()
+		addop('rdfsbase', [0x0F, 0xAE], 0, :modrmR) { |o| o.props[:needpfx] = 0xF3 }
+		addop('rdgsbase', [0x0F, 0xAE], 1, :modrmR) { |o| o.props[:needpfx] = 0xF3 }
+		addop('wrfsbase', [0x0F, 0xAE], 2, :modrmR) { |o| o.props[:needpfx] = 0xF3 }
+		addop('wrgsbase', [0x0F, 0xAE], 3, :modrmR) { |o| o.props[:needpfx] = 0xF3 }
 	end
 
 	def addop_macrostr(name, bin, type)
