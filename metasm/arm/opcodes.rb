@@ -130,10 +130,10 @@ class ARM
 		addop_data 'adc', 5,  :rd, :rn
 		addop_data 'sbc', 6,  :rd, :rn
 		addop_data 'rsc', 7,  :rd, :rn
-		addop_data 'tst', 8,  :rdx, :rn
-		addop_data 'teq', 9,  :rdx, :rn
-		addop_data 'cmp', 10, :rdx, :rn
-		addop_data 'cmn', 11, :rdx, :rn
+		addop_data_s 'tst', (8  << 21) | (1 << 20), :rdx, :rn
+		addop_data_s 'teq', (9  << 21) | (1 << 20), :rdx, :rn
+		addop_data_s 'cmp', (10 << 21) | (1 << 20), :rdx, :rn
+		addop_data_s 'cmn', (11 << 21) | (1 << 20), :rdx, :rn
 		addop_data 'orr', 12, :rd, :rn
 		addop_data 'or',  12, :rd, :rn
 		addop_data 'mov', 13, :rd, :rnx
