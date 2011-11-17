@@ -238,10 +238,10 @@ class Ia32 < CPU
 		pp.define_weak('__i386__')
 	end
 
-	# returns a Reg object if the arg is a valid register (eg 'ax' => Reg.new(0, 16))
+	# returns a Reg/SimdReg object if the arg is a valid register (eg 'ax' => Reg.new(0, 16))
 	# returns nil if str is invalid
 	def str_to_reg(str)
-		Reg.from_str(str) if Reg.s_to_i.has_key? str
+		Reg.s_to_i.has_key?(str) ? Reg.from_str(str) : SimdReg.s_to_i.has_key?(str) ? SimdReg.from_str(str) : nil
 	end
 
 	def shortname

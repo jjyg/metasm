@@ -28,7 +28,11 @@ class Ia32
 						b = Reg.new(a, adsz)
 					else
 						s = 1
-						i = Reg.new(a, adsz)
+						if h[:mrmvex]
+							i = SimdReg.new(a, h[:mrmvex])
+						else
+							i = Reg.new(a, adsz)
+						end
 					end
 
 				when :sib
@@ -37,7 +41,11 @@ class Ia32
 					ii = ((sib >> 3) & 7)
 					if ii != 4
 						s = 1 << ((sib >> 6) & 3)
-						i = Reg.new(ii, adsz)
+						if h[:mrmvex]
+							i = SimdReg.new(ii, h[:mrmvex])
+						else
+							i = Reg.new(ii, adsz)
+						end
 					end
 
 					bb = sib & 7
@@ -211,8 +219,8 @@ class Ia32
 			when :mrm_imm;  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx.delete(:seg)
 			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg)
 			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz]
-			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz]
-			when :modrmymm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 256, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz]
+			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz], :mrmvex => op.props[:mrmvex]
+			when :modrmymm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 256, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz], :mrmvex => op.props[:mrmvex]
 
 			when :vexvreg; Reg.new((field_val[:vex_vvvv] ^ 0xf), opsz)
 			when :vexvxmm; SimdReg.new((field_val[:vex_vvvv] ^ 0xf), 128)

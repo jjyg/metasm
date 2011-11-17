@@ -33,7 +33,12 @@ class X86_64
 				ii |= 8 if pfx[:rex_x]
 				if ii != 4
 					s = 1 << ((sib >> 6) & 3)
-					i = Reg.new(ii, adsz)
+					if pfx[:mrmvex]
+						i = SimdReg.new(ii, pfx[:mrmvex])
+					else
+						i = Reg.new(ii, adsz)
+					end
+
 				end
 
 				bb = sib & 7
@@ -149,8 +154,8 @@ class X86_64
 			when :mrm_imm;  ModRM.new(adsz, opsz, nil, nil, nil, Expression[edata.decode_imm("a#{adsz}".to_sym, @endianness)], pfx.delete(:seg))
 			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg), Reg, pfx
 			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz])
-			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz])
-			when :modrmymm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 256, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz])
+			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz], :mrmvex => op.props[:mrmvex])
+			when :modrmymm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 256, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz], :mrmvex => op.props[:mrmvex])
 
 			when :vexvreg; Reg.new((field_val[:vex_vvvv] ^ 0xf), opsz)
 			when :vexvxmm; SimdReg.new((field_val[:vex_vvvv] ^ 0xf), 128)

@@ -99,6 +99,10 @@ class ModRM
 				else
 					b = o
 				end
+			when SimdReg
+				raise otok, 'mrm: too many regs' if i
+				i = o
+				s = 1
 			when Expression
 				if o.op == :* and (o.rexpr.kind_of? Reg or o.lexpr.kind_of? Reg)
 					# scaled index

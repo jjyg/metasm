@@ -18,6 +18,14 @@ class X86_64 < Ia32
 		double_map  64 => (0..7).map { |n| "mm#{n}" },
    			   128 => (0..15).map { |n| "xmm#{n}" },
    			   256 => (0..15).map { |n| "ymm#{n}" }
+
+		def val_enc
+			@val & 7
+		end
+
+		def val_rex
+			@val >> 3
+		end
 	end
 
 	# general purpose registers, all sizes
@@ -125,7 +133,7 @@ class X86_64 < Ia32
 
 	def str_to_reg(str)
 		# X86_64::Reg != Ia32::Reg
-		Reg.from_str(str) if Reg.s_to_i.has_key? str
+		Reg.s_to_i.has_key?(str) ? Reg.from_str(str) : SimdReg.s_to_i.has_key?(str) ? SimdReg.from_str(str) : nil
 	end
 
 	def shortname

@@ -227,7 +227,7 @@ class Ia32
 		adsz ||= size
 		# addrsize override / segment override
 		if mrm = i.args.grep(ModRM).first
-			if not op.props[:adsz] and ((mrm.b and mrm.b.sz != adsz) or (mrm.i and mrm.i.sz != adsz))
+			if not op.props[:adsz] and ((mrm.b and mrm.b.sz == 48 - adsz) or (mrm.i and mrm.i.sz == 48 - adsz))
 				pfx << 0x67
 				adsz = 48 - adsz
 			end

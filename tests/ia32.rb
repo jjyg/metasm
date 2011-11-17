@@ -90,7 +90,7 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(d.decoded[0].opcode.name, "nop")
 
 		assert_equal(disassemble("\x66\x0f\xc7\x08").decoded[0], nil)
-		assert_equal(disassemble("\x0f\xc7\x08").decoded[0].opcode.name, 'cmpxchg8b')
+		assert_equal(disassemble("\x0f\xc7\x08").decoded[0].opcode.name, "cmpxchg8b")
 	end
 
 	def test_pfx
@@ -103,5 +103,8 @@ class TestIa32 < Test::Unit::TestCase
 	def test_avx
 		assert_equal(disassemble("\xc4\xc3\x75\x42\xc2\x03").decoded[0].instruction.to_s, "vmpsadbw ymm0, ymm1, ymm2, 3")
 		assert_equal(assemble("vmpsadbw ymm0, ymm1, ymm2, 3"), "\xc4\xc3\x75\x42\xc2\x03")
+		assert_equal(assemble("vpblendvb xmm1, xmm2, xmm3, xmm4"), "\xc4\xc3\x69\x4c\xcb\x40")
+		assert_equal(assemble("vgatherdpd xmm1, qword ptr [edx+xmm1], xmm2"), "\xc4\xc2\xe9\x92\x0c\x0a")
+		assert_equal(disassemble("\xc4\xc2\xe9\x92\x0c\x0a").decoded[0].instruction.to_s, "vgatherdpd xmm1, qword ptr [edx+xmm1], xmm2")
 	end
 end

@@ -64,7 +64,7 @@ class X86_64
 					# sib
 					or_bits[4]
 
-					@b, @i = @i, @b if @s == 1 and (@i.val_enc == 4 or @b.val_enc == 5)
+					@b, @i = @i, @b if @s == 1 and @i.kind_of?(Reg) and (@i.val_enc == 4 or @b.val_enc == 5)
 
 					raise EncodeError, "Invalid ModRM #{self}" if @i.val == 4
 

@@ -80,5 +80,7 @@ class TestX86_64 < Test::Unit::TestCase
 		assert_equal("\xc4\x41\x31\x63\xc2", assemble('vpacksswb xmm8, xmm9, xmm10'))
 		assert_equal("\xc5\x31\x63\x04\x5a", assemble('vpacksswb xmm8, xmm9, [rdx+2*rbx]'))
 		assert_equal("\xc4\x01\x31\x63\x04\x5a", assemble('vpacksswb xmm8, xmm9, [r10+2*r11]'))
+		assert_equal("\xc4\x22\x99\x92\x14\x1a", assemble('vgatherdpd xmm10, qword ptr [rdx+xmm11], xmm12'))
+		assert_equal('vgatherdpd xmm10, qword ptr [rdx+xmm11], xmm12', disassemble("\xc4\x22\x99\x92\x14\x1a").decoded[0].instruction.to_s)
 	end
 end
