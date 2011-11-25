@@ -377,9 +377,10 @@ class Ia32
 		addop 'pmulhw',[0x0F, 0xE5], :mrmmmx
 		addop 'pmullw',[0x0F, 0xD5], :mrmmmx
 		addop 'por',   [0x0F, 0xEB], :mrmmmx
-		addop_macrommx 1..3, 'psll', 3
-		addop_macrommx 1..2, 'psra', 2
-		addop_macrommx 1..3, 'psrl', 1
+		[[1..3, 'psll', 3], [1..2, 'psra', 2], [1..3, 'psrl', 1]].each { |ggrng, name, val|
+			addop_macrogg ggrng, name, [0x0F, 0xC0 | (val << 4)], :mrmmmx
+			addop_macrogg ggrng, name, [0x0F, 0x70, 0xC0 | (val << 4)], nil, {:regmmx => [2, 0]}, :regmmx, :u8
+		}
 		addop_macrogg 0..2, 'psub',  [0x0F, 0xF8], :mrmmmx
 		addop_macrogg 0..1, 'psubs', [0x0F, 0xE8], :mrmmmx
 		addop_macrogg 0..1, 'psubus',[0x0F, 0xD8], :mrmmmx
@@ -721,122 +722,101 @@ class Ia32
 	def init_avx_only
 		init_cpu_constants
 
-		addop_vex 'vmpsadbw', [1, 128, 0x66, 0x0F3A], 0x42, :mrmxmm, :u8
-		addop_vex 'vpabsb', [nil, 128, 0x66, 0x0F38], 0x1C, :mrmxmm
-		addop_vex 'vpabsw', [nil, 128, 0x66, 0x0F38], 0x1D, :mrmxmm
-		addop_vex 'vpabsd', [nil, 128, 0x66, 0x0F38], 0x1E, :mrmxmm
-		addop_vex 'vpacksswb', [1, 128, 0x66, 0x0F], 0x63, :mrmxmm
-		addop_vex 'vpackssdw', [1, 128, 0x66, 0x0F], 0x6B, :mrmxmm
-		addop_vex 'vpackusdw', [1, 128, 0x66, 0x0F38], 0x2B, :mrmxmm
-		addop_vex 'vpackusbw', [1, 128, 0x66, 0x0F], 0x67, :mrmxmm
-		addop_vex 'vpaddb',   [1, 128, 0x66, 0x0F], 0xFC, :mrmxmm
-		addop_vex 'vpaddw',   [1, 128, 0x66, 0x0F], 0xFD, :mrmxmm
-		addop_vex 'vpaddd',   [1, 128, 0x66, 0x0F], 0xFE, :mrmxmm
-		addop_vex 'vpaddq',   [1, 128, 0x66, 0x0F], 0xD4, :mrmxmm
-		addop_vex 'vpaddsb',  [1, 128, 0x66, 0x0F], 0xEC, :mrmxmm
-		addop_vex 'vpaddsw',  [1, 128, 0x66, 0x0F], 0xED, :mrmxmm
-		addop_vex 'vpaddusb', [1, 128, 0x66, 0x0F], 0xDC, :mrmxmm
-		addop_vex 'vpaddusw', [1, 128, 0x66, 0x0F], 0xDD, :mrmxmm
-		addop_vex 'vpalignr', [1, 128, 0x66, 0x0F3A], 0x0F, :mrmxmm, :u8
-		addop_vex 'vpand',  [1, 128, 0x66, 0x0F], 0xDB, :mrmxmm
-		addop_vex 'vpandn', [1, 128, 0x66, 0x0F], 0xDF, :mrmxmm
-		addop_vex 'vpavgb', [1, 128, 0x66, 0x0F], 0xE0, :mrmxmm
-		addop_vex 'vpavgw', [1, 128, 0x66, 0x0F], 0xE3, :mrmxmm
+		add128 = {}
+		add256 = {}
+		%w[movss movsd movlps movlpd movlhps movhps movhpd movhlps
+		   cvtsi2ss cvtsi2sd cvttss2si cvttsd2si cvtss2si cvtsd2si
+		   ucomiss ucomisd comiss comisd sqrtss sqrtsd rsqrtss rcpss
+		   addss addsd mulss mulsd cvtss2sd cvtsd2ss subss subsd
+		   minss minsd divss divsd maxss maxsd
+		   punpcklb punpcklw punpckld packsswb pcmpgtb pcmpgtw pcmpgtd packuswb
+		   punpckhb punpckhw punpckhd packssdw punpcklq punpckhq movd movq
+		   pcmpeqb pcmpeqw pcmpeqd ldmxcsr stmxcsr
+		   cmpss cmpsd pinsrw pextrw paddq pmullw psubusb psubusw pminub
+		   pand paddusb paddusw pmaxub pandn pavgb pavgw
+		   pmulhuw pmulhw psubsb psubsw pminsw por paddsb paddsw pmaxsw pxor
+		   pmuludq pmaddwd psadbw maskmovdqu
+		   psubb psubw psubd psubq paddb paddw paddd
+		   phaddw phaddsw phaddd phsubw phsubsw phsubd
+		   pmaddubsw palignr pshufb pmulhrsw psignb psignw psignd
+		   dppd extractps insertps mpsadbw packusdw pblendw pcmpeqq
+		   pextrd pextrq pextrb phminposuw pinsrb pinsrd pinsrq
+		   pmaxsb pmaxsd pmaxud pmaxuw pminsb pminsd pminud pminuw
+		   pmuldq pmulld roundsd roundss
+		   pcmpgtq pcmpestri pcmpestrm pcmpistri pcmpistrm
+		   aesdec aesdeclast aesenc aesenclast aesimc aeskeygenassist
+		   pclmulqdq punpcklbw punpcklwd punpckldq punpckhbw punpckhwd 
+		   punpckhdq punpcklqdq punpckhqdq].each { |n| add128[n] = true }
+
+		%w[movups movupd movddup movsldup 
+		   unpcklps unpcklpd unpckhps unpckhpd
+		   movaps movshdup movapd movntps movntpd movmskps movmskpd
+		   sqrtps sqrtpd rsqrtps rcpps andps andpd andnps andnpd
+		   orps orpd xorps xorpd addps addpd mulps mulpd
+		   cvtps2pd cvtpd2ps cvtdq2ps cvtps2dq cvttps2dq
+		   subps subpd minps minpd divps divpd maxps maxpd
+		   movdqa movdqu haddpd haddps hsubpd hsubps
+		   cmpps cmppd shufps shufpd addsubpd addsubps
+		   cvtpd2dq cvttpd2dq cvtdq2pd movntdq lddqu
+		   blendps blendpd blendvps blendvpd dpps ptest
+		   roundpd roundps].each { |n| add128[n] = add256[n] = true }
+
+		varg = Hash.new(1)
+		%w[pabsb pabsw pabsd pmovmskb pshufd pshufhw pshuflw movntdqa
+		   pmovsxbw pmovsxbd pmovsxbq pmovsxwd pmovsxwq pmovsxdq
+		   pmovzxbw pmovzxbd pmovzxbq pmovzxwd pmovzxwq pmovzxdq
+		].each { |n| add128[n] = true ; varg[n] = nil }
+
+		cvtarg128 = {	:regmmx => :regxmm, :modrmmmx => :modrmxmm }
+		cvtarg256 = {	:regmmx => :regymm, :modrmmmx => :modrmymm,
+				:regxmm => :regymm, :modrmxmm => :modrmymm }
+
+		# autopromote old sseX opcodes
+		@opcode_list.each { |o|
+			next if o.bin[0] != 0x0F or not add128[o.name]	# rep cmpsd / movsd
+
+			mm = (o.bin[1] == 0x38 ? 0x0F38 : o.bin[1] == 0x3A ? 0x0F3A : 0x0F)
+			pp = o.props[:needpfx]
+			pp = 0x66 if o.props[:xmmx]
+			fpxlen = (mm == 0x0F ? 1 : 2)
+
+			addop_vex('v' + o.name, [varg[o.name], 128, pp, mm], o.bin[fpxlen], nil, *o.args.map { |oa| cvtarg128[oa] || oa }) { |oo|
+				oo.bin += [o.bin[fpxlen+1]] if o.bin[fpxlen+1]
+				dbinlen = o.bin.length - oo.bin.length
+				o.fields.each { |k, v| oo.fields[cvtarg128[k] || k] = [v[0]-dbinlen, v[1]] }
+				o.props.each  { |k, v| oo.props[k] = v if k != :xmmx and k != :needpfx }
+			}
+
+			next if not add256[o.name]
+			addop_vex('v' + o.name, [varg[o.name], 256, pp, mm], o.bin[fpxlen], nil, *o.args.map { |oa| cvtarg256[oa] || oa }) { |oo|
+				oo.bin += [o.bin[fpxlen+1]] if o.bin[fpxlen+1]
+				dbinlen = o.bin.length - oo.bin.length
+				o.fields.each { |k, v| oo.fields[cvtarg256[k] || k] = [v[0]-dbinlen, v[1]] }
+				o.props.each  { |k, v| oo.props[k] = v if k != :xmmx and k != :needpfx }
+			}
+		}
+
+		# sse promotion, special cases
 		addop_vex 'vpblendvb', [1, 128, 0x66, 0x0F3A, 0], 0x4C, :mrmxmm, :i4xmm
-		addop_vex 'vpblendw',  [1, 128, 0x66, 0x0F3A], 0x0E, :mrmxmm, :u8
-		addop_vex 'vpcmpeqb', [1, 128, 0x66, 0x0F], 0x74, :mrmxmm
-		addop_vex 'vpcmpeqw', [1, 128, 0x66, 0x0F], 0x75, :mrmxmm
-		addop_vex 'vpcmpeqd', [1, 128, 0x66, 0x0F], 0x76, :mrmxmm
-		addop_vex 'vpcmpeqq', [1, 128, 0x66, 0x0F38], 0x29, :mrmxmm
-		addop_vex 'vpcmpgtb', [1, 128, 0x66, 0x0F], 0x64, :mrmxmm
-		addop_vex 'vpcmpgtw', [1, 128, 0x66, 0x0F], 0x65, :mrmxmm
-		addop_vex 'vpcmpgtd', [1, 128, 0x66, 0x0F], 0x66, :mrmxmm
-		addop_vex 'vpcmpgtq', [1, 128, 0x66, 0x0F38], 0x37, :mrmxmm
-		addop_vex 'vphaddw',  [1, 128, 0x66, 0x0F38], 0x01, :mrmxmm
-		addop_vex 'vphaddd',  [1, 128, 0x66, 0x0F38], 0x02, :mrmxmm
-		addop_vex 'vphaddsw', [1, 128, 0x66, 0x0F38], 0x03, :mrmxmm
-		addop_vex 'vphsubw',  [1, 128, 0x66, 0x0F38], 0x05, :mrmxmm
-		addop_vex 'vphsubd',  [1, 128, 0x66, 0x0F38], 0x06, :mrmxmm
-		addop_vex 'vphsubsw', [1, 128, 0x66, 0x0F38], 0x07, :mrmxmm
-		addop_vex 'vpmaddubsw', [1, 128, 0x66, 0x0F38], 0x04, :mrmxmm
-		addop_vex 'vpmaddwd',   [1, 128, 0x66, 0x0F], 0xF5, :mrmxmm
-		addop_vex 'vpmaxsb', [1, 128, 0x66, 0x0F38], 0x3C, :mrmxmm
-		addop_vex 'vpmaxsw', [1, 128, 0x66, 0x0F], 0xEE, :mrmxmm
-		addop_vex 'vpmaxsd', [1, 128, 0x66, 0x0F38], 0x3D, :mrmxmm
-		addop_vex 'vpmaxub', [1, 128, 0x66, 0x0F], 0xDD, :mrmxmm
-		addop_vex 'vpmaxuw', [1, 128, 0x66, 0x0F38], 0x3E, :mrmxmm
-		addop_vex 'vpmaxud', [1, 128, 0x66, 0x0F38], 0x3F, :mrmxmm
-		addop_vex 'vpminsb', [1, 128, 0x66, 0x0F38], 0x38, :mrmxmm
-		addop_vex 'vpminsw', [1, 128, 0x66, 0x0F], 0xEA, :mrmxmm
-		addop_vex 'vpminsd', [1, 128, 0x66, 0x0F38], 0x39, :mrmxmm
-		addop_vex 'vpminub', [1, 128, 0x66, 0x0F], 0xDA, :mrmxmm
-		addop_vex 'vpminuw', [1, 128, 0x66, 0x0F38], 0x3A, :mrmxmm
-		addop_vex 'vpminud', [1, 128, 0x66, 0x0F38], 0x3B, :mrmxmm
-		addop_vex('vpmovmskb', [nil, 128, 0x66, 0x0F], 0xD7, :mrmxmm) { |o| o.args[o.args.index(:regxmm)] = :reg }
-		addop_vex 'vpmovsxbw', [nil, 128, 0x66, 0x0F38], 0x20, :mrmxmm
-		addop_vex 'vpmovsxbd', [nil, 128, 0x66, 0x0F38], 0x21, :mrmxmm
-		addop_vex 'vpmovsxbq', [nil, 128, 0x66, 0x0F38], 0x22, :mrmxmm
-		addop_vex 'vpmovsxwd', [nil, 128, 0x66, 0x0F38], 0x23, :mrmxmm
-		addop_vex 'vpmovsxwq', [nil, 128, 0x66, 0x0F38], 0x24, :mrmxmm
-		addop_vex 'vpmovsxdq', [nil, 128, 0x66, 0x0F38], 0x25, :mrmxmm
-		addop_vex 'vpmovzxbw', [nil, 128, 0x66, 0x0F38], 0x30, :mrmxmm
-		addop_vex 'vpmovzxbd', [nil, 128, 0x66, 0x0F38], 0x31, :mrmxmm
-		addop_vex 'vpmovzxbq', [nil, 128, 0x66, 0x0F38], 0x32, :mrmxmm
-		addop_vex 'vpmovzxwd', [nil, 128, 0x66, 0x0F38], 0x33, :mrmxmm
-		addop_vex 'vpmovzxwq', [nil, 128, 0x66, 0x0F38], 0x34, :mrmxmm
-		addop_vex 'vpmovzxdq', [nil, 128, 0x66, 0x0F38], 0x35, :mrmxmm
-		addop_vex 'vpmuldq',   [1, 128, 0x66, 0x0F38], 0x28, :mrmxmm
-		addop_vex 'vpmulhrsw', [1, 128, 0x66, 0x0F38], 0x0B, :mrmxmm
-		addop_vex 'vpmulhuw',  [1, 128, 0x66, 0x0F], 0xE4, :mrmxmm
-		addop_vex 'vpmulhw',   [1, 128, 0x66, 0x0F], 0xE5, :mrmxmm
-		addop_vex 'vpmullw',   [1, 128, 0x66, 0x0F], 0xD5, :mrmxmm
-		addop_vex 'vpmulld',   [1, 128, 0x66, 0x0F38], 0x40, :mrmxmm
-		addop_vex 'vpmuludq',  [1, 128, 0x66, 0x0F], 0xF4, :mrmxmm
-		addop_vex 'vpor', [1, 128, 0x66, 0x0F], 0xEB, :mrmxmm
-		addop_vex 'vpsadbw', [1, 128, 0x66, 0x0F], 0xF6, :mrmxmm
-		addop_vex 'vpshufb',  [1, 128, 0x66, 0x0F38], 0x00, :mrmxmm
-		addop_vex 'vpshufd',  [nil, 128, 0x66, 0x0F], 0x70, :mrmxmm, :u8
-		addop_vex 'vpshufhw', [nil, 128, 0xF3, 0x0F], 0x70, :mrmxmm, :u8
-		addop_vex 'vpshuflw', [nil, 128, 0xF2, 0x0F], 0x70, :mrmxmm, :u8
-		addop_vex 'vpsignb', [1, 128, 0x66, 0x0F38], 0x08, :mrmxmm
-		addop_vex 'vpsignw', [1, 128, 0x66, 0x0F38], 0x09, :mrmxmm
-		addop_vex 'vpsignd', [1, 128, 0x66, 0x0F38], 0x0A, :mrmxmm
 		addop_vex 'vpsllw', [1, 128, 0x66, 0x0F], 0xF1, :mrmxmm
 		addop_vex('vpsllw', [0, 128, 0x66, 0x0F], 0x71, 6, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 		addop_vex 'vpslld', [1, 128, 0x66, 0x0F], 0xF2, :mrmxmm
 		addop_vex('vpslld', [0, 128, 0x66, 0x0F], 0x72, 6, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 		addop_vex 'vpsllq', [1, 128, 0x66, 0x0F], 0xF3, :mrmxmm
 		addop_vex('vpsllq', [0, 128, 0x66, 0x0F], 0x73, 6, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
-		addop_vex('vpslldq',[0, 128, 0x66, 0x0F], 0x73, 7, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
+		addop_vex('vpslldq',[0, 128, 0x66, 0x0F], 0x73, 7, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 		addop_vex 'vpsraw', [1, 128, 0x66, 0x0F], 0xE1, :mrmxmm
 		addop_vex('vpsraw', [0, 128, 0x66, 0x0F], 0x71, 4, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 		addop_vex 'vpsrad', [1, 128, 0x66, 0x0F], 0xE2, :mrmxmm
 		addop_vex('vpsrad', [0, 128, 0x66, 0x0F], 0x72, 4, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 		addop_vex 'vpsrlw', [1, 128, 0x66, 0x0F], 0xD1, :mrmxmm
-		addop_vex('vpsrlw', [0, 128, 0x66, 0x0F], 0x71, 2, :u8) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
+		addop_vex('vpsrlw', [0, 128, 0x66, 0x0F], 0x71, 2, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 		addop_vex 'vpsrld', [1, 128, 0x66, 0x0F], 0xD2, :mrmxmm
-		addop_vex('vpsrld', [0, 128, 0x66, 0x0F], 0x72, 2, :u8) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
+		addop_vex('vpsrld', [0, 128, 0x66, 0x0F], 0x72, 2, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 		addop_vex 'vpsrlq', [1, 128, 0x66, 0x0F], 0xD3, :mrmxmm
-		addop_vex('vpsrlq', [0, 128, 0x66, 0x0F], 0x73, 2, :u8) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
+		addop_vex('vpsrlq', [0, 128, 0x66, 0x0F], 0x73, 2, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 		addop_vex('vpsrldq',[0, 128, 0x66, 0x0F], 0x73, 3, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
-		addop_vex 'vpsubb',   [1, 128, 0x66, 0x0F], 0xF8, :mrmxmm
-		addop_vex 'vpsubw',   [1, 128, 0x66, 0x0F], 0xF9, :mrmxmm
-		addop_vex 'vpsubd',   [1, 128, 0x66, 0x0F], 0xFA, :mrmxmm
-		addop_vex 'vpsubq',   [1, 128, 0x66, 0x0F], 0xFB, :mrmxmm
-		addop_vex 'vpsubsb',  [1, 128, 0x66, 0x0F], 0xE8, :mrmxmm
-		addop_vex 'vpsubsw',  [1, 128, 0x66, 0x0F], 0xE9, :mrmxmm
-		addop_vex 'vpsubusb', [1, 128, 0x66, 0x0F], 0xD8, :mrmxmm
-		addop_vex 'vpsubusw', [1, 128, 0x66, 0x0F], 0xD9, :mrmxmm
-		addop_vex 'vpunpckhbw',  [1, 128, 0x66, 0x0F], 0x68, :mrmxmm
-		addop_vex 'vpunpckhwd',  [1, 128, 0x66, 0x0F], 0x69, :mrmxmm
-		addop_vex 'vpunpckhdq',  [1, 128, 0x66, 0x0F], 0x6A, :mrmxmm
-		addop_vex 'vpunpckhqdq', [1, 128, 0x66, 0x0F], 0x6D, :mrmxmm
-		addop_vex 'vpunpcklbw',  [1, 128, 0x66, 0x0F], 0x60, :mrmxmm
-		addop_vex 'vpunpcklwd',  [1, 128, 0x66, 0x0F], 0x61, :mrmxmm
-		addop_vex 'vpunpckldq',  [1, 128, 0x66, 0x0F], 0x62, :mrmxmm
-		addop_vex 'vpunpcklqdq', [1, 128, 0x66, 0x0F], 0x6C, :mrmxmm
-		addop_vex 'vpxor', [1, 128, 0x66, 0x0F], 0xEF, :mrmxmm
-		addop_vex 'vmovntdqa', [nil, 128, 0x66, 0x0F38], 0x2A, :mrmxmm, :modrmA
+
 
 		addop_vex 'vbroadcastss', [nil, 128, 0x66, 0x0F38, 0], 0x18, :mrmxmm, :modrmA
 		addop_vex 'vbroadcastss', [nil, 256, 0x66, 0x0F38, 0], 0x18, :mrmymm, :modrmA
@@ -844,12 +824,12 @@ class Ia32
 		addop_vex 'vbroadcastf128', [nil, 256, 0x66, 0x0F38, 0], 0x1A, :mrmymm, :modrmA
 
 		# general-purpose register operations
-		addop_vex 'andn', [1, :vexvreg, 128, 0, 0x0F38], 0xF2, :mrm
-		addop_vex 'bextr', [2, :vexvreg, 128, 0, 0x0F38], 0xF7, :mrm
-		addop_vex 'blsi', [0, :vexvreg, 128, 0, 0x0F38], 0xF3, 3
-		addop_vex 'blsmsk', [0, :vexvreg, 128, 0, 0x0F38], 0xF3, 2
-		addop_vex 'blsr', [0, :vexvreg, 128, 0, 0x0F38], 0xF3, 1
-		addop_vex 'bzhi', [2, :vexvreg, 128, 0, 0x0F38], 0xF5, :mrm
+		addop_vex 'andn', [1, :vexvreg, 128, nil, 0x0F38], 0xF2, :mrm
+		addop_vex 'bextr', [2, :vexvreg, 128, nil, 0x0F38], 0xF7, :mrm
+		addop_vex 'blsi', [0, :vexvreg, 128, nil, 0x0F38], 0xF3, 3
+		addop_vex 'blsmsk', [0, :vexvreg, 128, nil, 0x0F38], 0xF3, 2
+		addop_vex 'blsr', [0, :vexvreg, 128, nil, 0x0F38], 0xF3, 1
+		addop_vex 'bzhi', [2, :vexvreg, 128, nil, 0x0F38], 0xF5, :mrm
 		addop('lzcnt', [0x0F, 0xBD], :mrm) { |o| o.props[:needpfx] = 0xF3 }
 		addop_vex 'mulx', [1, :vexvreg, 128, 0xF2, 0x0F38], 0xF6, :mrm
 		addop_vex 'pdep', [1, :vexvreg, 128, 0xF2, 0x0F38], 0xF5, :mrm
@@ -872,123 +852,67 @@ class Ia32
 	def init_avx2_only
 		init_cpu_constants
 
-		# AVX promoted to ymm
-		addop_vex 'vmpsadbw', [1, 256, 0x66, 0x0F3A], 0x42, :mrmymm, :u8
-		addop_vex 'vpabsb', [nil, 256, 0x66, 0x0F38], 0x1C, :mrmymm
-		addop_vex 'vpabsw', [nil, 256, 0x66, 0x0F38], 0x1D, :mrmymm
-		addop_vex 'vpabsd', [nil, 256, 0x66, 0x0F38], 0x1E, :mrmymm
-		addop_vex 'vpacksswb', [1, 256, 0x66, 0x0F], 0x63, :mrmymm
-		addop_vex 'vpackssdw', [1, 256, 0x66, 0x0F], 0x6B, :mrmymm
-		addop_vex 'vpackusdw', [1, 256, 0x66, 0x0F38], 0x2B, :mrmymm
-		addop_vex 'vpackusbw', [1, 256, 0x66, 0x0F], 0x67, :mrmymm
-		addop_vex 'vpaddb',   [1, 256, 0x66, 0x0F], 0xFC, :mrmymm
-		addop_vex 'vpaddw',   [1, 256, 0x66, 0x0F], 0xFD, :mrmymm
-		addop_vex 'vpaddd',   [1, 256, 0x66, 0x0F], 0xFE, :mrmymm
-		addop_vex 'vpaddq',   [1, 256, 0x66, 0x0F], 0xD4, :mrmymm
-		addop_vex 'vpaddsb',  [1, 256, 0x66, 0x0F], 0xEC, :mrmymm
-		addop_vex 'vpaddsw',  [1, 256, 0x66, 0x0F], 0xED, :mrmymm
-		addop_vex 'vpaddusb', [1, 256, 0x66, 0x0F], 0xDC, :mrmymm
-		addop_vex 'vpaddusw', [1, 256, 0x66, 0x0F], 0xDD, :mrmymm
-		addop_vex 'vpalignr', [1, 256, 0x66, 0x0F3A], 0x0F, :mrmymm, :u8
-		addop_vex 'vpand',  [1, 256, 0x66, 0x0F], 0xDB, :mrmymm
-		addop_vex 'vpandn', [1, 256, 0x66, 0x0F], 0xDF, :mrmymm
-		addop_vex 'vpavgb', [1, 256, 0x66, 0x0F], 0xE0, :mrmymm
-		addop_vex 'vpavgw', [1, 256, 0x66, 0x0F], 0xE3, :mrmymm
+		add256 = {}
+		%w[packsswb pcmpgtb pcmpgtw pcmpgtd packuswb packssdw
+		   pcmpeqb pcmpeqw pcmpeqd paddq pmullw psubusb psubusw
+		   pminub pand paddusb paddusw pmaxub pandn pavgb pavgw
+		   pmulhuw pmulhw psubsb psubsw pminsw por paddsb paddsw
+		   pmaxsw pxor pmuludq pmaddwd psadbw maskmovdqu
+		   psubb psubw psubd psubq paddb paddw paddd
+		   phaddw phaddsw phaddd phsubw phsubsw phsubd
+		   pmaddubsw palignr pshufb pmulhrsw psignb psignw psignd
+		   mpsadbw packusdw pblendw pcmpeqq
+		   pmaxsb pmaxsd pmaxud pmaxuw pminsb pminsd pminud pminuw
+		   pmuldq pmulld pcmpgtq punpcklbw punpcklwd punpckldq 
+		   punpckhbw punpckhwd punpckhdq punpcklqdq punpckhqdq
+		].each { |n| add256[n] = true }
+
+		varg = Hash.new(1)
+		%w[pabsb pabsw pabsd pmovmskb pshufd pshufhw pshuflw movntdqa
+		   pmovsxbw pmovsxbd pmovsxbq pmovsxwd pmovsxwq pmovsxdq
+		   pmovzxbw pmovzxbd pmovzxbq pmovzxwd pmovzxwq pmovzxdq
+		].each { |n| add256[n] = true ; varg[n] = nil }
+
+		cvtarg256 = {	:regmmx => :regymm, :modrmmmx => :modrmymm,
+				:regxmm => :regymm, :modrmxmm => :modrmymm }
+
+		# autopromote old sseX opcodes
+		@opcode_list.each { |o|
+			next if o.bin[0] != 0x0F or not add256[o.name]
+
+			mm = (o.bin[1] == 0x38 ? 0x0F38 : o.bin[1] == 0x3A ? 0x0F3A : 0x0F)
+			pp = o.props[:needpfx]
+			pp = 0x66 if o.props[:xmmx]
+			fpxlen = (mm == 0x0F ? 1 : 2)
+
+			addop_vex('v' + o.name, [varg[o.name], 256, pp, mm], o.bin[fpxlen], nil, *o.args.map { |oa| cvtarg256[oa] || oa }) { |oo|
+				oo.bin += [o.bin[fpxlen+1]] if o.bin[fpxlen+1]
+				dbinlen = o.bin.length - oo.bin.length
+				o.fields.each { |k, v| oo.fields[cvtarg256[k] || k] = [v[0]-dbinlen, v[1]] }
+				o.props.each  { |k, v| oo.props[k] = v if k != :xmmx and k != :needpfx }
+			}
+		}
+
+		# promote special cases
 		addop_vex 'vpblendvb', [1, 256, 0x66, 0x0F3A, 0], 0x4C, :mrmymm, :i4ymm
-		addop_vex 'vpblendw',  [1, 256, 0x66, 0x0F3A], 0x0E, :mrmymm, :u8
-		addop_vex 'vpcmpeqb', [1, 256, 0x66, 0x0F], 0x74, :mrmymm
-		addop_vex 'vpcmpeqw', [1, 256, 0x66, 0x0F], 0x75, :mrmymm
-		addop_vex 'vpcmpeqd', [1, 256, 0x66, 0x0F], 0x76, :mrmymm
-		addop_vex 'vpcmpeqq', [1, 256, 0x66, 0x0F38], 0x29, :mrmymm
-		addop_vex 'vpcmpgtb', [1, 256, 0x66, 0x0F], 0x64, :mrmymm
-		addop_vex 'vpcmpgtw', [1, 256, 0x66, 0x0F], 0x65, :mrmymm
-		addop_vex 'vpcmpgtd', [1, 256, 0x66, 0x0F], 0x66, :mrmymm
-		addop_vex 'vpcmpgtq', [1, 256, 0x66, 0x0F38], 0x37, :mrmymm
-		addop_vex 'vphaddw',  [1, 256, 0x66, 0x0F38], 0x01, :mrmymm
-		addop_vex 'vphaddd',  [1, 256, 0x66, 0x0F38], 0x02, :mrmymm
-		addop_vex 'vphaddsw', [1, 256, 0x66, 0x0F38], 0x03, :mrmymm
-		addop_vex 'vphsubw',  [1, 256, 0x66, 0x0F38], 0x05, :mrmymm
-		addop_vex 'vphsubd',  [1, 256, 0x66, 0x0F38], 0x06, :mrmymm
-		addop_vex 'vphsubsw', [1, 256, 0x66, 0x0F38], 0x07, :mrmymm
-		addop_vex 'vpmaddubsw', [1, 256, 0x66, 0x0F38], 0x04, :mrmymm
-		addop_vex 'vpmaddwd',   [1, 256, 0x66, 0x0F], 0xF5, :mrmymm
-		addop_vex 'vpmaxsb', [1, 256, 0x66, 0x0F38], 0x3C, :mrmymm
-		addop_vex 'vpmaxsw', [1, 256, 0x66, 0x0F], 0xEE, :mrmymm
-		addop_vex 'vpmaxsd', [1, 256, 0x66, 0x0F38], 0x3D, :mrmymm
-		addop_vex 'vpmaxub', [1, 256, 0x66, 0x0F], 0xDE, :mrmymm
-		addop_vex 'vpmaxuw', [1, 256, 0x66, 0x0F38], 0x3E, :mrmymm
-		addop_vex 'vpmaxud', [1, 256, 0x66, 0x0F38], 0x3F, :mrmymm
-		addop_vex 'vpminsb', [1, 256, 0x66, 0x0F38], 0x38, :mrmymm
-		addop_vex 'vpminsw', [1, 256, 0x66, 0x0F], 0xEA, :mrmymm
-		addop_vex 'vpminsd', [1, 256, 0x66, 0x0F38], 0x39, :mrmymm
-		addop_vex 'vpminub', [1, 256, 0x66, 0x0F], 0xDA, :mrmymm
-		addop_vex 'vpminuw', [1, 256, 0x66, 0x0F38], 0x3A, :mrmymm
-		addop_vex 'vpminud', [1, 256, 0x66, 0x0F38], 0x3B, :mrmymm
-		addop_vex('vpmovmskb', [nil, 256, 0x66, 0x0F], 0xD7, :mrmymm) { |o| o.args[o.args.index(:regymm)] = :reg }
-		addop_vex 'vpmovsxbw', [nil, 256, 0x66, 0x0F38], 0x20, :mrmymm
-		addop_vex 'vpmovsxbd', [nil, 256, 0x66, 0x0F38], 0x21, :mrmymm
-		addop_vex 'vpmovsxbq', [nil, 256, 0x66, 0x0F38], 0x22, :mrmymm
-		addop_vex 'vpmovsxwd', [nil, 256, 0x66, 0x0F38], 0x23, :mrmymm
-		addop_vex 'vpmovsxwq', [nil, 256, 0x66, 0x0F38], 0x24, :mrmymm
-		addop_vex 'vpmovsxdq', [nil, 256, 0x66, 0x0F38], 0x25, :mrmymm
-		addop_vex 'vpmovzxbw', [nil, 256, 0x66, 0x0F38], 0x30, :mrmymm
-		addop_vex 'vpmovzxbd', [nil, 256, 0x66, 0x0F38], 0x31, :mrmymm
-		addop_vex 'vpmovzxbq', [nil, 256, 0x66, 0x0F38], 0x32, :mrmymm
-		addop_vex 'vpmovzxwd', [nil, 256, 0x66, 0x0F38], 0x33, :mrmymm
-		addop_vex 'vpmovzxwq', [nil, 256, 0x66, 0x0F38], 0x34, :mrmymm
-		addop_vex 'vpmovzxdq', [nil, 256, 0x66, 0x0F38], 0x35, :mrmymm
-		addop_vex 'vpmuldq',   [1, 256, 0x66, 0x0F38], 0x28, :mrmymm
-		addop_vex 'vpmulhrsw', [1, 256, 0x66, 0x0F38], 0x0B, :mrmymm
-		addop_vex 'vpmulhuw',  [1, 256, 0x66, 0x0F], 0xE4, :mrmymm
-		addop_vex 'vpmulhw',   [1, 256, 0x66, 0x0F], 0xE5, :mrmymm
-		addop_vex 'vpmullw',   [1, 256, 0x66, 0x0F], 0xD5, :mrmymm
-		addop_vex 'vpmulld',   [1, 256, 0x66, 0x0F38], 0x40, :mrmymm
-		addop_vex 'vpmuludq',  [1, 256, 0x66, 0x0F], 0xF4, :mrmymm
-		addop_vex 'vpor', [1, 256, 0x66, 0x0F], 0xEB, :mrmymm
-		addop_vex 'vpsadbw', [1, 256, 0x66, 0x0F], 0xF6, :mrmymm
-		addop_vex 'vpshufb',  [1, 256, 0x66, 0x0F38], 0x00, :mrmymm
-		addop_vex 'vpshufd',  [nil, 256, 0x66, 0x0F], 0x70, :mrmymm, :u8
-		addop_vex 'vpshufhw', [nil, 256, 0xF3, 0x0F], 0x70, :mrmymm, :u8
-		addop_vex 'vpshuflw', [nil, 256, 0xF2, 0x0F], 0x70, :mrmymm, :u8
-		addop_vex 'vpsignb', [1, 256, 0x66, 0x0F38], 0x08, :mrmymm
-		addop_vex 'vpsignw', [1, 256, 0x66, 0x0F38], 0x09, :mrmymm
-		addop_vex 'vpsignd', [1, 256, 0x66, 0x0F38], 0x0A, :mrmymm
 		addop_vex 'vpsllw', [1, 256, 0x66, 0x0F], 0xF1, :mrmymm
 		addop_vex('vpsllw', [0, 256, 0x66, 0x0F], 0x71, 6, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
 		addop_vex 'vpslld', [1, 256, 0x66, 0x0F], 0xF2, :mrmymm
 		addop_vex('vpslld', [0, 256, 0x66, 0x0F], 0x72, 6, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
 		addop_vex 'vpsllq', [1, 256, 0x66, 0x0F], 0xF3, :mrmymm
 		addop_vex('vpsllq', [0, 256, 0x66, 0x0F], 0x73, 6, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
-		addop_vex('vpslldq',[0, 256, 0x66, 0x0F], 0x73, 7, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
+		addop_vex('vpslldq',[0, 256, 0x66, 0x0F], 0x73, 7, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
 		addop_vex 'vpsraw', [1, 256, 0x66, 0x0F], 0xE1, :mrmymm
 		addop_vex('vpsraw', [0, 256, 0x66, 0x0F], 0x71, 4, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
 		addop_vex 'vpsrad', [1, 256, 0x66, 0x0F], 0xE2, :mrmymm
 		addop_vex('vpsrad', [0, 256, 0x66, 0x0F], 0x72, 4, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
 		addop_vex 'vpsrlw', [1, 256, 0x66, 0x0F], 0xD1, :mrmymm
-		addop_vex('vpsrlw', [0, 256, 0x66, 0x0F], 0x71, 2, :u8) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
+		addop_vex('vpsrlw', [0, 256, 0x66, 0x0F], 0x71, 2, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
 		addop_vex 'vpsrld', [1, 256, 0x66, 0x0F], 0xD2, :mrmymm
-		addop_vex('vpsrld', [0, 256, 0x66, 0x0F], 0x72, 2, :u8) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
+		addop_vex('vpsrld', [0, 256, 0x66, 0x0F], 0x72, 2, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
 		addop_vex 'vpsrlq', [1, 256, 0x66, 0x0F], 0xD3, :mrmymm
-		addop_vex('vpsrlq', [0, 256, 0x66, 0x0F], 0x73, 2, :u8) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
+		addop_vex('vpsrlq', [0, 256, 0x66, 0x0F], 0x73, 2, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
 		addop_vex('vpsrldq',[0, 256, 0x66, 0x0F], 0x73, 3, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmymm }
-		addop_vex 'vpsubb',   [1, 256, 0x66, 0x0F], 0xF8, :mrmymm
-		addop_vex 'vpsubw',   [1, 256, 0x66, 0x0F], 0xF9, :mrmymm
-		addop_vex 'vpsubd',   [1, 256, 0x66, 0x0F], 0xFA, :mrmymm
-		addop_vex 'vpsubq',   [1, 256, 0x66, 0x0F], 0xFB, :mrmymm
-		addop_vex 'vpsubsb',  [1, 256, 0x66, 0x0F], 0xE8, :mrmymm
-		addop_vex 'vpsubsw',  [1, 256, 0x66, 0x0F], 0xE9, :mrmymm
-		addop_vex 'vpsubusb', [1, 256, 0x66, 0x0F], 0xD8, :mrmymm
-		addop_vex 'vpsubusw', [1, 256, 0x66, 0x0F], 0xD9, :mrmymm
-		addop_vex 'vpunpckhbw',  [1, 256, 0x66, 0x0F], 0x68, :mrmymm
-		addop_vex 'vpunpckhwd',  [1, 256, 0x66, 0x0F], 0x69, :mrmymm
-		addop_vex 'vpunpckhdq',  [1, 256, 0x66, 0x0F], 0x6A, :mrmymm
-		addop_vex 'vpunpckhqdq', [1, 256, 0x66, 0x0F], 0x6D, :mrmymm
-		addop_vex 'vpunpcklbw',  [1, 256, 0x66, 0x0F], 0x60, :mrmymm
-		addop_vex 'vpunpcklwd',  [1, 256, 0x66, 0x0F], 0x61, :mrmxmm
-		addop_vex 'vpunpckldq',  [1, 256, 0x66, 0x0F], 0x62, :mrmymm
-		addop_vex 'vpunpcklqdq', [1, 256, 0x66, 0x0F], 0x6C, :mrmymm
-		addop_vex 'vpxor', [1, 256, 0x66, 0x0F], 0xEF, :mrmymm
-		addop_vex 'vmovntdqa', [nil, 256, 0x66, 0x0F38], 0x2A, :mrmymm, :modrmA
 
 		addop_vex 'vbroadcastss', [nil, 128, 0x66, 0x0F38, 0], 0x18, :mrmxmm, :modrmR
 		addop_vex 'vbroadcastss', [nil, 256, 0x66, 0x0F38, 0], 0x18, :mrmymm, :modrmR
@@ -1073,6 +997,20 @@ class Ia32
 			addop_vex n1 + '231' + n2 + 's', [1, 256, 0x66, 0x0F38, 0], bin | 0x30, :mrmymm
 			addop_vex n1 + '231' + n2 + 'd', [1, 128, 0x66, 0x0F38, 1], bin | 0x30, :mrmxmm
 			addop_vex n1 + '231' + n2 + 'd', [1, 256, 0x66, 0x0F38, 1], bin | 0x30, :mrmymm
+
+			# pseudo-opcodes aliases (swap arg0/arg1)
+			addop_vex(n1 + '312' + n2 + 's', [1, 128, 0x66, 0x0F38, 0], bin | 0x10, :mrmxmm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '312' + n2 + 's', [1, 256, 0x66, 0x0F38, 0], bin | 0x10, :mrmymm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '312' + n2 + 'd', [1, 128, 0x66, 0x0F38, 1], bin | 0x10, :mrmxmm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '312' + n2 + 'd', [1, 256, 0x66, 0x0F38, 1], bin | 0x10, :mrmymm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '123' + n2 + 's', [1, 128, 0x66, 0x0F38, 0], bin | 0x20, :mrmxmm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '123' + n2 + 's', [1, 256, 0x66, 0x0F38, 0], bin | 0x20, :mrmymm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '123' + n2 + 'd', [1, 128, 0x66, 0x0F38, 1], bin | 0x20, :mrmxmm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '123' + n2 + 'd', [1, 256, 0x66, 0x0F38, 1], bin | 0x20, :mrmymm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '321' + n2 + 's', [1, 128, 0x66, 0x0F38, 0], bin | 0x30, :mrmxmm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '321' + n2 + 's', [1, 256, 0x66, 0x0F38, 0], bin | 0x30, :mrmymm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '321' + n2 + 'd', [1, 128, 0x66, 0x0F38, 1], bin | 0x30, :mrmxmm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
+			addop_vex(n1 + '321' + n2 + 'd', [1, 256, 0x66, 0x0F38, 1], bin | 0x30, :mrmymm) { |o| o.args[0, 2] = o.args[0, 2].reverse }
 		}
 	end
 
@@ -1235,11 +1173,6 @@ class Ia32
 		}
 	end
 
-	def addop_macrommx(ggrng, name, val)
-		addop_macrogg ggrng, name, [0x0F, 0xC0 | (val << 4)], :mrmmmx
-		addop_macrogg ggrng, name, [0x0F, 0x70, 0xC0 | (val << 4)], nil, {:regmmx => [2, 0]}, :regmmx, :u8
-	end
-
 	def addop_macrossps(name, bin, hint, *a)
 		addop name, bin.dup, hint, *a
 		addop(name.sub(/ps$/, 'ss'), bin.dup, hint, *a) { |o| o.props[:needpfx] = 0xF3 }
@@ -1268,7 +1201,7 @@ class Ia32
 		w = vexspec.shift
 		argt ||= (l == 128 ? :vexvxmm : :vexvymm)
 
-		lpp = ((l >> 8) << 2) | [0, 0x66, 0xF3, 0xF2].index(pfx)
+		lpp = ((l >> 8) << 2) | [nil, 0x66, 0xF3, 0xF2].index(pfx)
 		mmmmm = [nil, 0x0F, 0x0F38, 0x0F3A].index(of)
 
 		c4bin = [0xC4, mmmmm, lpp, bin]
