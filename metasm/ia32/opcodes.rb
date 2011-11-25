@@ -726,27 +726,25 @@ class Ia32
 
 		add128 = {}
 		add256 = {}
-		%w[movss movsd movlps movlpd movlhps movhps movhpd movhlps
-		   cvtsi2ss cvtsi2sd cvttss2si cvttsd2si cvtss2si cvtsd2si
-		   ucomiss ucomisd comiss comisd sqrtss sqrtsd rsqrtss rcpss
+		%w[movss movsd movlhps movhpd movhlps
+		   cvtsi2ss cvtsi2sd sqrtss sqrtsd rsqrtss rcpss
 		   addss addsd mulss mulsd cvtss2sd cvtsd2ss subss subsd
 		   minss minsd divss divsd maxss maxsd
 		   punpcklb punpcklw punpckld packsswb pcmpgtb pcmpgtw pcmpgtd packuswb
-		   punpckhb punpckhw punpckhd packssdw punpcklq punpckhq movd movq
+		   punpckhb punpckhw punpckhd packssdw punpcklq punpckhq
 		   pcmpeqb pcmpeqw pcmpeqd ldmxcsr stmxcsr
-		   cmpss cmpsd pinsrw pextrw paddq pmullw psubusb psubusw pminub
+		   cmpss cmpsd paddq pmullw psubusb psubusw pminub
 		   pand paddusb paddusw pmaxub pandn pavgb pavgw
 		   pmulhuw pmulhw psubsb psubsw pminsw por paddsb paddsw pmaxsw pxor
-		   pmuludq pmaddwd psadbw maskmovdqu
+		   pmuludq pmaddwd psadbw
 		   psubb psubw psubd psubq paddb paddw paddd
 		   phaddw phaddsw phaddd phsubw phsubsw phsubd
 		   pmaddubsw palignr pshufb pmulhrsw psignb psignw psignd
-		   dppd extractps insertps mpsadbw packusdw pblendw pcmpeqq
-		   pextrd pextrq pextrb phminposuw pinsrb pinsrd pinsrq
+		   dppd insertps mpsadbw packusdw pblendw pcmpeqq
+		   pinsrb pinsrw pinsrd pinsrq
 		   pmaxsb pmaxsd pmaxud pmaxuw pminsb pminsd pminud pminuw
-		   pmuldq pmulld roundsd roundss
-		   pcmpgtq pcmpestri pcmpestrm pcmpistri pcmpistrm
-		   aesdec aesdeclast aesenc aesenclast aesimc aeskeygenassist
+		   pmuldq pmulld roundsd roundss pcmpgtq
+		   aesdec aesdeclast aesenc aesenclast
 		   pclmulqdq punpcklbw punpcklwd punpckldq punpckhbw punpckhwd 
 		   punpckhdq punpcklqdq punpckhqdq].each { |n| add128[n] = true }
 
@@ -767,6 +765,14 @@ class Ia32
 		%w[pabsb pabsw pabsd pmovmskb pshufd pshufhw pshuflw movntdqa
 		   pmovsxbw pmovsxbd pmovsxbq pmovsxwd pmovsxwq pmovsxdq
 		   pmovzxbw pmovzxbd pmovzxbq pmovzxwd pmovzxwq pmovzxdq
+		   aesimc aeskeygenassist lddqu maskmovdqu movapd movaps
+		   pcmpestri pcmpestrm pcmpistri pcmpistrm phminposuw
+		   cvtpd2dq cvttpd2dq cvtdq2pd cvtps2pd cvtpd2ps cvtdq2ps cvtps2dq
+		   cvttps2dq movd movq movddup movdqa movdqu movmskps movmskpd
+		   movntdq movntps movntpd movshdup movsldup movups movupd
+		   pextrb pextrw pextrd pextrq ptest rcpps roundps roundpd
+		   extractps sqrtps sqrtpd comiss comisd ucomiss ucomisd
+		   cvttss2si cvttsd2si cvtss2si cvtsd2si
 		].each { |n| add128[n] = true ; varg[n] = nil }
 
 		cvtarg128 = {	:regmmx => :regxmm, :modrmmmx => :modrmxmm }
@@ -819,6 +825,13 @@ class Ia32
 		addop_vex('vpsrlq', [0, 128, 0x66, 0x0F], 0x73, 2, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 		addop_vex('vpsrldq',[0, 128, 0x66, 0x0F], 0x73, 3, :u8, :modrmR) { |o| o.args[o.args.index(:modrm)] = :modrmxmm }
 
+		# dst==mem => no vreg
+		addop_vex 'vmovhps', [1,   128, nil,  0x0F], 0x16, :mrmxmm, :modrmA
+		addop_vex('vmovhps', [nil, 128, nil,  0x0F], 0x17, :mrmxmm, :modrmA) { |o| o.args.reverse! }
+		addop_vex 'vmovlpd', [1,   128, 0x66, 0x0F], 0x12, :mrmxmm, :modrmA
+		addop_vex('vmovlpd', [nil, 128, 0x66, 0x0F], 0x13, :mrmxmm, :modrmA) { |o| o.args.reverse! }
+		addop_vex 'vmovlps', [1,   128, nil,  0x0F], 0x12, :mrmxmm, :modrmA
+		addop_vex('vmovlps', [nil, 128, nil,  0x0F], 0x13, :mrmxmm, :modrmA) { |o| o.args.reverse! }
 
 		addop_vex 'vbroadcastss', [nil, 128, 0x66, 0x0F38, 0], 0x18, :mrmxmm, :modrmA
 		addop_vex 'vbroadcastss', [nil, 256, 0x66, 0x0F38, 0], 0x18, :mrmymm, :modrmA
@@ -859,7 +872,7 @@ class Ia32
 		   pcmpeqb pcmpeqw pcmpeqd paddq pmullw psubusb psubusw
 		   pminub pand paddusb paddusw pmaxub pandn pavgb pavgw
 		   pmulhuw pmulhw psubsb psubsw pminsw por paddsb paddsw
-		   pmaxsw pxor pmuludq pmaddwd psadbw maskmovdqu
+		   pmaxsw pxor pmuludq pmaddwd psadbw
 		   psubb psubw psubd psubq paddb paddw paddd
 		   phaddw phaddsw phaddd phsubw phsubsw phsubd
 		   pmaddubsw palignr pshufb pmulhrsw psignb psignw psignd
@@ -873,7 +886,7 @@ class Ia32
 		%w[pabsb pabsw pabsd pmovmskb pshufd pshufhw pshuflw movntdqa
 		   pmovsxbw pmovsxbd pmovsxbq pmovsxwd pmovsxwq pmovsxdq
 		   pmovzxbw pmovzxbd pmovzxbq pmovzxwd pmovzxwq pmovzxdq
-		].each { |n| add256[n] = true ; varg[n] = nil }
+		   maskmovdqu].each { |n| add256[n] = true ; varg[n] = nil }
 
 		cvtarg256 = {	:regmmx => :regymm, :modrmmmx => :modrmymm,
 				:regxmm => :regymm, :modrmxmm => :modrmymm }
