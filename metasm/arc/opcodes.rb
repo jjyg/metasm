@@ -18,9 +18,11 @@ class ARC
 	def addop(mode, name, bin, *args)
 		o = Opcode.new(name)
 		o.bin = bin
-		o.args.concat(args & @fields_mask.keys)
-		(args & @valid_props).each { |p| o.props[p] = true }
-		(args & @fields_mask.keys).each { |f| o.fields[f] = [@fields_mask[f], @fields_shift[f]] }
+		args.each { |a|
+			o.args << a if @fields_mask[a]
+			o.props[a] = true if @valid_props[a]
+			o.fields[a] = [@fields_mask[a], @fields_shift[a]] if @fields_mask[a]
+		}
 		(mode == :ac16) ? (@opcode_list16 << o) : (@opcode_list32 << o)
 	end
 
@@ -28,7 +30,7 @@ class ARC
 		@opcode_list16 = []
 		@opcode_list32 = []
 
-		@valid_props = [:setip, :saveip, :stopexec, :flag_update, :delay_slot]
+		@valid_props.update :flag_update => true, :delay_slot => true
 		@cond_suffix = [''] + %w[z nz p n cs cc vs vc gt ge lt le hi ls pnz]
 		#The remaining 16 condition codes (10-1F) are available for extension
 		@cond_suffix += (0x10..0x1f).map{ |i| "extcc#{i.to_s(16)}" }

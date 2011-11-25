@@ -61,9 +61,10 @@ invoke_virtual_quick invoke_virtual_quick_range invoke_super_quick invoke_super_
 unused_fc unused_fd unused_fe unused_ff]
 
 	def init_dalvik
-		@valid_props << :canthrow
-		@valid_args = [:i16, :i16_32hi, :i16_64hi, :i32, :iaa, :ib, :icc, :u16, :u32, :u64,
-			:r16, :ra, :raa, :rb, :rbb, :rcc, :rlist16, :rlist4, :rlist5, :m16]
+		@valid_props[:canthrow] = true
+		[:i16, :i16_32hi, :i16_64hi, :i32, :iaa, :ib, :icc, :u16, :u32, :u64,
+		 :r16, :ra, :raa, :rb, :rbb, :rcc, :rlist16, :rlist4, :rlist5, :m16
+		].each { |a| @valid_args[a] = true }
 		@opcode_list = []
 
 		OPCODES.each_with_index { |n, b|

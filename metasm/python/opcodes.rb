@@ -13,20 +13,21 @@ class Python
 		o = Opcode.new(name)
 		o.bin = bin
 
-		if bin >= 90 and (args - @valid_props).empty?	# HAVE_ARGUMENT
-			o.args << :i16
-		end
+		args.each { |a|
+			o.args << a if @valid_args[a]
+			o.props[a] = true if @valid_props[a]
+		}
+		o.args << :i16 if o.bin >= 90 and o.props.empty?	# HAVE_ARGUMENT
 
-		args.each { |a| o.args << a if @valid_args.include? a } # allow dupes
-		(args & @valid_props).each { |p| o.props[p] = true }
 		@opcode_list << o
 	end
 
 	def init_opcode_list
 		@opcode_list = []
 
-		@valid_props = [:setip, :saveip, :stopexec]
-		@valid_args = [:u8, :i16, :cmp]
+		@valid_args[:u8] = true
+		@valid_args[:i16] = true
+		@valid_args[:cmp] = true
 
 		addop 'STOP_CODE', 0, :stopexec
 		addop 'POP_TOP', 1

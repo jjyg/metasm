@@ -12,25 +12,24 @@ class ARM
 	def addop(name, bin, *args)
 		args << :cond if not args.delete :uncond
 
+		suppl = nil
 		o = Opcode.new name, bin
-		o.args.concat(args & @valid_args)
-		(args & @valid_props).each { |p| o.props[p] = true }
-		args.grep(Hash).each { |h| o.props.update h }
-
-		# special args -> multiple fields
-		case (o.args & [:i8_r, :rm_is, :rm_rs, :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12]).first
-		when :i8_r; args << :i8 << :rotate
-		when :rm_is; args << :rm << :stype << :shifti
-		when :rm_rs; args << :rm << :stype << :rs
-		when :mem_rn_rm; args << :rn << :rm << :rsx << :u
-		when :mem_rn_i8_12; args << :rn << :i8_12 << :u
-		when :mem_rn_rms; args << :rn << :rm << :stype << :shifti << :u
-		when :mem_rn_i12; args << :rn << :i12 << :u
-		end
-
-		(args & @fields_mask.keys).each { |f|
-			o.fields[f] = [@fields_mask[f], @fields_shift[f]]
+		args.each { |a|
+			o.args << a if @valid_args[a]
+			o.props[a] = true if @valid_props[a]
+			o.props.update a if a.kind_of?(Hash)
+			# special args -> multiple fields
+			suppl ||= { :i8_r => [:i8, :rotate], :rm_is => [:rm, :stype, :shifti],
+				:rm_rs => [:rm, :stype, :rs], :mem_rn_rm => [:rn, :rm, :rsx, :u],
+				:mem_rn_i8_12 => [:rn, :i8_12, :u],
+				:mem_rn_rms => [:rn, :rm, :stype, :shifti, :i],
+				:mem_rn_i12 => [:rn, :i12, :u]
+			}[a]
 		}
+
+		args.concat suppl if suppl
+
+		args.each { |a| o.fields[a] = [@fields_mask[a], @fields_shift[a]] if @fields_mask[a] }
 
 		@opcode_list << o
 	end
@@ -103,10 +102,14 @@ class ARM
 	# ARMv6 instruction set, aka arm7/arm9
 	def init_arm_v6
 		@opcode_list = []
-		@valid_props << :baseincr << :cond << :cond_name_off << :usermoderegs <<
-				:tothumb << :tojazelle
-		@valid_args.concat [:rn, :rd, :rm, :crn, :crd, :crm, :cpn, :reglist, :i24,
-			:rm_rs, :rm_is, :i8_r, :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12]
+
+		[:baseincr, :cond, :cond_name_off, :usermoderegs, :tothumb, :tojazelle
+		].each { |p| @valid_props[p] = true }
+
+		[:rn, :rd, :rm, :crn, :crd, :crm, :cpn, :reglist, :i24, :rm_rs, :rm_is,
+		 :i8_r, :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12
+		].each { |p| @valid_args[p] = true }
+
 		@fields_mask.update :rn => 0xf, :rd => 0xf, :rs => 0xf, :rm => 0xf,
 			:crn => 0xf, :crd => 0xf, :crm => 0xf, :cpn => 0xf,
 			:rnx => 0xf, :rdx => 0xf, :rsx => 0xf,

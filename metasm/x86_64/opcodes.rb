@@ -11,7 +11,7 @@ module Metasm
 class X86_64
 	def init_cpu_constants
 		super()
-		@valid_args.concat [:i32, :u32, :i64, :u64] - @valid_args
+		[:i32, :u32, :i64, :u64].each { |a| @valid_args[a] = true }
 	end
 
 	def init_386_common_only
@@ -19,7 +19,7 @@ class X86_64
 		# :imm64 => accept a real int64 as :i argument
 		# :auto64 => ignore rex_w, always 64-bit op
 		# :op32no64 => if write to a 32-bit reg, dont zero the top 32-bits of dest
-		@valid_props |= [:imm64, :auto64, :op32no64]
+		[:imm64, :auto64, :op32no64].each { |a| @valid_props[a] = true }
 		@opcode_list.delete_if { |o| o.bin[0].to_i & 0xf0 == 0x40 }	# now REX prefix
 		@opcode_list.each { |o|
 			o.props[:imm64] = true if o.bin == [0xB8]	# mov reg, <true imm64>
@@ -99,12 +99,6 @@ class X86_64
 			return super(op)
 		end
 
-		dupe = lambda { |o|
-			dop = Opcode.new o.name.dup, o.bin.dup
- 			dop.fields, dop.props, dop.args = o.fields.dup, o.props.dup, o.args.dup
-			dop
-		}
-
 		if op.props[:needpfx]
 			@opcode_list.unshift op
 		else
@@ -113,12 +107,12 @@ class X86_64
 
 		if op.args == [:i] or op.name == 'ret'
 			# define opsz-override version for ambiguous opcodes
-			op16 = dupe[op]
+			op16 = op.dup
 			op16.name << '.i16'
 			op16.props[:opsz] = 16
 			@opcode_list << op16
 			# push call ret jz  can't 32bit
-			op64 = dupe[op]
+			op64 = op.dup
 			op64.name << '.i64'
 			op64.props[:opsz] = 64
 			@opcode_list << op64
@@ -126,11 +120,11 @@ class X86_64
 				op.args.include? :modrm or op.name =~ /loop|xlat/
 			# define adsz-override version for ambiguous opcodes (movsq)
 			# XXX loop pfx 67 = rip+ecx, 66/rex ignored
-			op32 = dupe[op]
+			op32 = op.dup
 			op32.name << '.a32'
 			op32.props[:adsz] = 32
 			@opcode_list << op32
-			op64 = dupe[op]
+			op64 = op.dup
 			op64.name << '.a64'
 			op64.props[:adsz] = 64
 			@opcode_list << op64

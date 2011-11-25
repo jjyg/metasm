@@ -13,8 +13,10 @@ module Metasm
 class MIPS
 	def addop(name, bin, *args)
 		o = Opcode.new name, bin
-		o.args.concat(args & @fields_mask.keys)
-		(args & @valid_props).each { |p| o.props[p] = true }
+		args.each { |a|
+			o.args << a if @fields_mask[a]
+			o.props[a] = true if @valid_props[a]
+		}
 		@opcode_list << o
 	end
 

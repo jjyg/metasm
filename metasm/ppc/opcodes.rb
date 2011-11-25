@@ -10,8 +10,10 @@ module Metasm
 class PowerPC
 	def addop(name, bin, *argprops)
 		o = Opcode.new name, bin 
-		o.args.concat(argprops & @fields_mask.keys)
-		(argprops & @valid_props).each { |p| o.props[p] = true }
+		argprops.each { |a|
+			o.args << a if @fields_mask[a]
+			o.props[a] = true if @valid_props[a]
+		}
 		@opcode_list << o
 	end
 

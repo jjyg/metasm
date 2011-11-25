@@ -10,11 +10,10 @@ class Sh4
 	def addop(name, bin, *args)
 		o = Opcode.new name, bin
 
-		o.args.concat(args & @fields_mask.keys)
-		(args & @valid_props).each { |p| o.props[p] = true }
-
-		(args & @fields_mask.keys).each { |f|
-			o.fields[f] = [@fields_mask[f], @fields_shift[f]]
+		args.each { |a|
+			o.args << a if @fields_mask[a]
+			o.props[a] = true if @valid_props[a]
+			o.fields[a] = [@fields_mask[a], @fields_shift[a]] if @fields_mask[a]
 		}
 
 		@opcode_list << o
@@ -74,7 +73,7 @@ class Sh4
 		# implicit operands
 		[:vbr, :gbr, :sr, :ssr, :spc, :sgr, :dbr, :mach, :macl, :pr, :fpul, :fpscr, :dbr, :pc, :r0].each { |a| @fields_mask[a] = @fields_shift[a] = 0 }
 
-		@valid_props = [:setip, :saveip, :stopexec , :delay_slot]
+		@valid_props[:delay_slot] = true
 
 		addop 'add', 0b0011 << 12 | 0b1100, :rm, :rn
 		addop 'add', 0b0111 << 12, :s8, :rn

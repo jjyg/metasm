@@ -32,8 +32,8 @@ class CPU
 	def initialize
 		@fields_mask = {}
 		@fields_shift= {}
-		@valid_args  = []
-		@valid_props = [:setip, :saveip, :stopexec]
+		@valid_args  = {}
+		@valid_props = { :setip => true, :saveip => true, :stopexec => true }
 		@generate_PIC = true
 	end
 
@@ -126,6 +126,15 @@ class Opcode
 
 	def basename
 		@name.sub(/\..*/, '')
+	end
+
+	def dup
+		o = Opcode.new(@name.dup, @bin)
+		o.bin    = @bin.dup if @bin.kind_of?(::Array)
+		o.args   = @args.dup
+		o.fields = @fields.dup
+		o.props  = @props.dup
+		o
 	end
 end
 

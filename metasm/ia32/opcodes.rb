@@ -18,16 +18,18 @@ class Ia32
 		@fields_mask[:seg2A]    = @fields_mask[:seg2]
 		@fields_mask[:seg3A]    = @fields_mask[:seg3]
 
-		@valid_args.concat [:i, :i8, :u8, :u16, :reg, :seg2, :seg2A,
-			:seg3, :seg3A, :eeec, :eeed, :eeet, :modrm, :mrm_imm,
-			:farptr, :imm_val1, :imm_val3, :reg_cl, :reg_eax,
-			:reg_dx, :regfp, :regfp0, :modrmmmx, :regmmx,
-			:modrmxmm, :regxmm, :modrmymm, :regymm,
-			:vexvxmm, :vexvymm, :vexvreg, :i4xmm, :i4ymm] - @valid_args
+		[:i, :i8, :u8, :u16, :reg, :seg2, :seg2A,
+		 :seg3, :seg3A, :eeec, :eeed, :eeet, :modrm, :mrm_imm,
+		 :farptr, :imm_val1, :imm_val3, :reg_cl, :reg_eax,
+		 :reg_dx, :regfp, :regfp0, :modrmmmx, :regmmx,
+		 :modrmxmm, :regxmm, :modrmymm, :regymm,
+		 :vexvxmm, :vexvymm, :vexvreg, :i4xmm, :i4ymm
+		].each { |a| @valid_args[a] = true }
 
-		@valid_props.concat [:strop, :stropz, :opsz, :argsz, :setip,
-			:stopexec, :saveip, :unsigned_imm, :random, :needpfx,
-			:xmmx, :modrmR, :modrmA, :mrmvex] - @valid_props
+		[:strop, :stropz, :opsz, :argsz, :setip,
+		 :stopexec, :saveip, :unsigned_imm, :random, :needpfx,
+		 :xmmx, :modrmR, :modrmA, :mrmvex 
+		].each { |a| @valid_props[a] = true }
 	end
 
 	# only most common instructions from the 386 instruction set
@@ -38,7 +40,7 @@ class Ia32
 
 		addop_macro1 'adc', 2
 		addop_macro1 'add', 0
-		addop_macro1 'and', 4, :u
+		addop_macro1 'and', 4, :unsigned_imm
 		addop 'bswap', [0x0F, 0xC8], :reg
 		addop 'call',  [0xE8], nil, :stopexec, :setip, :i, :saveip
 		addop 'call',  [0xFF], 2, :stopexec, :setip, :saveip
@@ -74,8 +76,8 @@ class Ia32
 		addop 'loopne',[0xE0], nil, :setip, :i8
 		addop 'mov',   [0xA0], nil,  {:w => [0, 0], :d => [0, 1]}, :mrm_imm, :reg_eax
 		addop 'mov',   [0x88], :mrmw,{:d => [0, 1]}
-		addop 'mov',   [0xB0], :reg, {:w => [0, 3]}, :u
-		addop 'mov',   [0xC6], 0,    {:w => [0, 0]}, :u
+		addop 'mov',   [0xB0], :reg, {:w => [0, 3]}, :i, :unsigned_imm
+		addop 'mov',   [0xC6], 0,    {:w => [0, 0]}, :i, :unsigned_imm
 		addop_macrostr 'movs',  [0xA4], :strop
 		addop 'movsx', [0x0F, 0xBE], :mrmw
 		addop 'movzx', [0x0F, 0xB6], :mrmw
@@ -83,12 +85,12 @@ class Ia32
 		addop 'neg',   [0xF6], 3,    {:w => [0, 0]}
 		addop 'nop',   [0x90]
 		addop 'not',   [0xF6], 2,    {:w => [0, 0]}
-		addop_macro1 'or', 1, :u
+		addop_macro1 'or', 1, :unsigned_imm
 		addop 'pop',   [0x58], :reg
 		addop 'pop',   [0x8F], 0
 		addop 'push',  [0x50], :reg
 		addop 'push',  [0xFF], 6
-		addop 'push',  [0x68], nil,  {:s => [0, 1]}, :u
+		addop 'push',  [0x68], nil,  {:s => [0, 1]}, :i, :unsigned_imm
 		addop 'ret',   [0xC3], nil, :stopexec, :setip
 		addop 'ret',   [0xC2], nil, :stopexec, :u16, :setip
 		addop_macro3 'rol', 0
@@ -108,13 +110,13 @@ class Ia32
 		addop_macrostr 'stos',  [0xAA], :strop
 		addop_macro1 'sub', 5
 		addop 'test',  [0x84], :mrmw
-		addop 'test',  [0xA8], nil,  {:w => [0, 0]}, :reg_eax, :u
-		addop 'test',  [0xF6], 0,    {:w => [0, 0]}, :u
+		addop 'test',  [0xA8], nil,  {:w => [0, 0]}, :reg_eax, :i, :unsigned_imm
+		addop 'test',  [0xF6], 0,    {:w => [0, 0]}, :i, :unsigned_imm
 		addop 'xchg',  [0x90], :reg, :reg_eax
 		addop('xchg',  [0x90], :reg, :reg_eax) { |o| o.args.reverse! }	# xchg eax, ebx == xchg ebx, eax)
 		addop 'xchg',  [0x86], :mrmw
 		addop('xchg',  [0x86], :mrmw) { |o| o.args.reverse! }
-		addop_macro1 'xor', 6, :u
+		addop_macro1 'xor', 6, :unsigned_imm
 	end
 
 	def init_386_only
@@ -217,7 +219,7 @@ class Ia32
 		addop 'std',   [0xFD]
 		addop 'sti',   [0xFB]
 		addop 'str',   [0x0F, 0x00], 1
-		addop 'test',  [0xF6], 1, {:w => [0, 0]}, :u			# undocumented alias to F6/0
+		addop 'test',  [0xF6], 1, {:w => [0, 0]}, :i, :unsigned_imm			# undocumented alias to F6/0
 		addop 'ud2',   [0x0F, 0x0B]
 		addop 'verr',  [0x0F, 0x00], 4
 		addop 'verw',  [0x0F, 0x00], 5
@@ -1107,10 +1109,10 @@ class Ia32
 	# addop_* macros
 	#
 
-	def addop_macro1(name, num, immtype=:i)
-		addop name, [(num << 3) | 4], nil, {:w => [0, 0]}, :reg_eax, immtype
+	def addop_macro1(name, num, *props)
+		addop name, [(num << 3) | 4], nil, {:w => [0, 0]}, :reg_eax, :i, *props
 		addop name, [num << 3], :mrmw, {:d => [0, 1]}
-		addop name, [0x80], num, {:w => [0, 0], :s => [0, 1]}, immtype
+		addop name, [0x80], num, {:w => [0, 0], :s => [0, 1]}, :i, *props
 	end
 	def addop_macro2(name, num)
 		addop name, [0x0F, 0xBA], (4 | num), :u8
@@ -1290,37 +1292,29 @@ class Ia32
 			raise SyntaxError, "invalid hint #{hint.inspect} for #{name}"
 		end
 
-		if argprops.index(:u)
-			argprops << :unsigned_imm
-			argprops[argprops.index(:u)] = :i
-		end
-
-		(argprops & @valid_props).each { |p| op.props[p] = true }
-		argprops -= @valid_props
-
-		op.args.concat(argprops & @valid_args)
-		argprops -= @valid_args
-
-		raise "Invalid opcode definition: #{name}: unknown #{argprops.inspect}" unless argprops.empty?
+		argprops.each { |a|
+			op.props[a] = true if @valid_props[a]
+			op.args << a if @valid_args[a]
+		}
 
 		yield op if block_given?
 
-		argprops = (op.props.keys - @valid_props) + (op.args - @valid_args) + (op.fields.keys - @fields_mask.keys)
-		raise "Invalid opcode customisation: #{name}: #{argprops.inspect}" unless argprops.empty?
+		if $DEBUG
+			argprops -= @valid_props.keys + @valid_args.keys
+			raise "Invalid opcode definition: #{name}: unknown #{argprops.inspect}" unless argprops.empty?
+
+			argprops = (op.props.keys - @valid_props.keys) + (op.args - @valid_args.keys) + (op.fields.keys - @fields_mask.keys)
+			raise "Invalid opcode customisation: #{name}: #{argprops.inspect}" unless argprops.empty?
+		end
 
 		addop_post(op)
 	end
 
 	# this recursive method is in charge of Opcode duplication (eg to hardcode some flag)
 	def addop_post(op)
-		dupe = lambda { |o|
-			dop = Opcode.new o.name.dup
-			dop.bin, dop.fields, dop.props, dop.args = o.bin.dup, o.fields.dup, o.props.dup, o.args.dup
-			dop
-		}
 		if df = op.fields.delete(:d)
 			# hardcode the bit
-			dop = dupe[op]
+			dop = op.dup
 			dop.args.reverse!
 			addop_post dop
 
@@ -1330,7 +1324,7 @@ class Ia32
 			return
 		elsif wf = op.fields.delete(:w)
 			# hardcode the bit
-			dop = dupe[op]
+			dop = op.dup
 			dop.props[:argsz] = 8
 			# 64-bit w=0 s=1 => UD
 			dop.fields.delete(:s) if @size == 64
@@ -1347,22 +1341,22 @@ class Ia32
 			op32 = op
 			addop_post op32
 
-			op8 = dupe[op]
+			op8 = op.dup
 			op8.bin[sf[0]] |= 1 << sf[1]
 			op8.args.map! { |arg| arg == :i ? :i8 : arg }
 			addop_post op8
 
-			op32 = dupe[op32]
+			op32 = op32.dup
 			op32.name << '.i'
 			addop_post op32
 
-			op8 = dupe[op8]
+			op8 = op8.dup
 			op8.name << '.i8'
 			addop_post op8
 
 			return
 		elsif op.args.first == :regfp0
-			dop = dupe[op]
+			dop = op.dup
 			dop.args.delete :regfp0
 			addop_post dop
 		end
@@ -1375,11 +1369,11 @@ class Ia32
 
 		if op.args == [:i] or op.args == [:farptr] or op.name == 'ret'
 			# define opsz-override version for ambiguous opcodes
-			op16 = dupe[op]
+			op16 = op.dup
 			op16.name << '.i16'
 			op16.props[:opsz] = 16
 			@opcode_list << op16
-			op32 = dupe[op]
+			op32 = op.dup
 			op32.name << '.i32'
 			op32.props[:opsz] = 32
 			@opcode_list << op32
@@ -1387,11 +1381,11 @@ class Ia32
 				op.args.include? :modrm or op.name =~ /loop|xlat/
 			# define adsz-override version for ambiguous opcodes (TODO allow movsd edi / movsd di syntax)
 			# XXX loop pfx 67 = eip+cx, 66 = ip+ecx
-			op16 = dupe[op]
+			op16 = op.dup
 			op16.name << '.a16'
 			op16.props[:adsz] = 16
 			@opcode_list << op16
-			op32 = dupe[op]
+			op32 = op.dup
 			op32.name << '.a32'
 			op32.props[:adsz] = 32
 			@opcode_list << op32
