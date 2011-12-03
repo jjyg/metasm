@@ -811,7 +811,7 @@ EOS
 		locals = sc.encoded_r.export.keys | sc.encoded_w.export.keys | sc.encoded_x.export.keys
 		exts = sc.encoded_r.reloc_externals(locals) | sc.encoded_w.reloc_externals(locals) | sc.encoded_x.reloc_externals(locals)
 		bd = {}
-		exts.uniq.each { |ext| bd[ext] = sym_addr(lib_from_sym(ext), ext) or raise "unknown symbol #{ext}" }
+		exts.uniq.each { |ext| bd[ext] = sym_addr(lib_from_sym(ext), ext) or raise rescue raise "unknown symbol #{ext.inspect}" }
 		sc.fixup_check(bd)
 
 		memory_write sc.base_r, sc.encoded_r.data if sc.encoded_r.length > 0
