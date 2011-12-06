@@ -833,24 +833,28 @@ class Expression < ExpressionType
 	# returns the array of non-numeric members of the expression
 	# if a variables appears 3 times, it will be present 3 times in the returned array
 	def externals
-		[@rexpr, @lexpr].inject([]) { |a, e|
+		a = []
+		[@rexpr, @lexpr].each { |e|
 			case e
 			when ExpressionType; a.concat e.externals
 			when nil, ::Numeric; a
 			else a << e
 			end
 		}
+		a
 	end
 
 	# returns the externals that appears in the expression, does not walk through other ExpressionType
 	def expr_externals
-		[@rexpr, @lexpr].inject([]) { |a, e|
+		a = []
+		[@rexpr, @lexpr].each { |e|
 			case e
 			when Expression; a.concat e.expr_externals
 			when nil, ::Numeric, ExpressionType; a
 			else a << e
 			end
 		}
+		a
 	end
 
 	def inspect
@@ -1020,7 +1024,9 @@ class EncodedData
 			return {} if not key
 			base = (@export[key] == 0 ? key : Expression[key, :-, @export[key]])
 		end
-		@export.inject({}) { |binding, (n, o)| binding.update n => Expression.new(:+, o, base) }
+		binding = {}
+		@export.each { |n, o| binding.update n => Expression.new(:+, o, base) }
+		binding
 	end
 
 	# returns an array of variables that needs to be defined for a complete #fixup
