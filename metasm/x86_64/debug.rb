@@ -40,10 +40,10 @@ class X86_64
 	end
 	def dbg_func_arg_set(dbg, argnr, arg)
 		if dbg.class.name =~ /win/i
-			list = []
+			list = [:rcx, :rdx, :r8, :r9]
 			off = 0x20
 		else
-			list = []
+			list = [:rdi, :rsi, :rdx, :rcx, :r8, :r9]
 			off = 0
 		end
 		if r = list[argnr]
