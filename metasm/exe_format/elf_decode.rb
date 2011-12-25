@@ -224,7 +224,40 @@ class ELF
 		# (gnu_hash(sym[N].name) & ~1) | (N == dynsymcount-1 || (gnu_hash(sym[N].name) % nbucket) != (gnu_hash(sym[N+1].name) % nbucket))
 		# that's the hash, with its lower bit replaced by the bool [1 if i am the last sym having my hash as hash]
 
-		return hsymcount+symndx if just_get_count
+		# we're going to decode the symbol table, and we just want to get the nr of symbols to read
+		if just_get_count
+			# index of highest hashed (exported) symbols
+			ns = hsymcount+symndx
+
+			# no way to get the number of non-exported symbols from what we have here
+			# so we'll decode all relocs and use the largest index we see..
+			rels = []
+			if @encoded.ptr = @tag['REL'] and @tag['RELENT'] == Relocation.size(self)
+				p_end = @encoded.ptr + @tag['RELSZ']
+				while @encoded.ptr < p_end
+					rels << Relocation.decode(self)
+				end
+			end
+			if @encoded.ptr = @tag['RELA'] and @tag['RELAENT'] == RelocationAddend.size(self)
+				p_end = @encoded.ptr + @tag['RELASZ']
+				while @encoded.ptr < p_end
+					rels << RelocationAddend.decode(self)
+				end
+			end
+			if @encoded.ptr = @tag['JMPREL'] and relcls = case @tag['PLTREL']
+					when 'REL';  Relocation
+					when 'RELA'; RelocationAddend
+					end
+				p_end = @encoded.ptr + @tag['PLTRELSZ']
+				while @encoded.ptr < p_end
+					rels << relcls.decode(self)
+				end
+			end
+			maxr = rels.map { |rel| rel.symbol }.grep(::Integer).max || -1
+
+			return [ns, maxr+1].max
+		end
+
 
 		# TODO
 	end
