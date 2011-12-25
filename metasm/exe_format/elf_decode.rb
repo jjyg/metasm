@@ -514,7 +514,7 @@ class ELF
 	# returns the Metasm::Relocation that should be applied for reloc
 	# self.encoded.ptr must point to the location that will be relocated (for implicit addends)
 	def arch_decode_segments_reloc_386(reloc)
-		if reloc.symbol and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
+		if reloc.symbol.kind_of?(Symbol) and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
 			s = @sections.find { |s_| s_.name and s_.offset <= @encoded.ptr and s_.offset + s_.size > @encoded.ptr }
 			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
 		end
@@ -551,7 +551,7 @@ class ELF
 			target = Expression[:-, [target, :+, 'tlsoffset']] if reloc.type == 'TLS_TPOFF32'
 		when 'COPY'
 			# mark the address pointed as a copy of the relocation target
-			if not reloc.symbol or not name = reloc.symbol.name
+			if not reloc.symbol.kind_of?(Symbol) or not name = reloc.symbol.name
 				puts "W: Elf: symbol to COPY has no name: #{reloc.inspect}" if $VERBOSE
 				name = ''
 			end
@@ -569,7 +569,7 @@ class ELF
 	# returns the Metasm::Relocation that should be applied for reloc
 	# self.encoded.ptr must point to the location that will be relocated (for implicit addends)
 	def arch_decode_segments_reloc_mips(reloc)
-		if reloc.symbol and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
+		if reloc.symbol.kind_of?(Symbol) and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
 			s = @sections.find { |s_| s_.name and s_.offset <= @encoded.ptr and s_.offset + s_.size > @encoded.ptr }
 			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
 		end
@@ -598,7 +598,7 @@ class ELF
 	# returns the Metasm::Relocation that should be applied for reloc
 	# self.encoded.ptr must point to the location that will be relocated (for implicit addends)
 	def arch_decode_segments_reloc_x86_64(reloc)
-		if reloc.symbol and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
+		if reloc.symbol.kind_of?(Symbol) and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
 			s = @sections.find { |s_| s_.name and s_.offset <= @encoded.ptr and s_.offset + s_.size > @encoded.ptr }
 			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
 		end
@@ -636,7 +636,7 @@ class ELF
 			sz = :u32 if reloc.type == '32' or reloc.type == 'PC32'
 		when 'COPY'
 			# mark the address pointed as a copy of the relocation target
-			if not reloc.symbol or not name = reloc.symbol.name
+			if not reloc.symbol.kind_of?(Symbol) or not name = reloc.symbol.name
 				puts "W: Elf: symbol to COPY has no name: #{reloc.inspect}" if $VERBOSE
 				name = ''
 			end
