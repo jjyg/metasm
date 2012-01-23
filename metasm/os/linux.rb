@@ -1060,7 +1060,7 @@ class LinDebugger < Debugger
 		begin
 			pid = Integer(pidpath)
 			attach(pid)
-		rescue ArgumentError
+		rescue TypeError
 			create_process(pidpath)
 		end
 	end
