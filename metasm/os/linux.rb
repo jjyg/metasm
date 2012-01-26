@@ -1057,12 +1057,10 @@ class LinDebugger < Debugger
 
 		return if not pidpath
 
-		begin
-			pid = Integer(pidpath)
-			attach(pid)
-		rescue ArgumentError
-			create_process(pidpath)
-		end
+		t = begin; Integer(pidpath)
+		    rescue ArgumentError, TypeError
+		    end
+		t ? attach(t) : create_process(pidpath)
 	end
 
 	def shortname; 'lindbg'; end
