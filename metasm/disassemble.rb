@@ -577,6 +577,7 @@ class Disassembler
 	end
 
 	# returns a hash associating addr => list of labels at this addr
+	# label_alias[a] may be nil if a new label is created elsewhere in the edata with the same name
 	def label_alias
 		if not @label_alias_cache
 			@label_alias_cache = {}
@@ -1930,7 +1931,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		if not xr.empty?
 			b["\n// Xrefs: #{xr[0, 8].join(' ')}#{' ...' if xr.length > 8}"]
 		end
-		if block.edata.inv_export[block.edata_ptr]
+		if block.edata.inv_export[block.edata_ptr] and label_alias[block.address]
 			b["\n"] if xr.empty?
 			label_alias[block.address].each { |name| b["#{name}:"] }
 		end
@@ -1947,8 +1948,8 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	# TODO array-style data access
 	def dump_data(addr, edata, off, &b)
 		b ||= lambda { |l| puts l }
-		if l = edata.inv_export[off]
-			l_list = label_alias[addr].to_a.sort
+		if l = edata.inv_export[off] and label_alias[addr]
+			l_list = label_alias[addr].sort
 			l = l_list.pop || l
 			l_list.each { |ll|
 				b["#{ll}:"]
