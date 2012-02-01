@@ -24,6 +24,7 @@ class Debugger
 			:action,
 			# Proc to run to emulate the overwritten instr behavior
 			# used to avoid unset/singlestep/re-set, more multithread friendly
+			# may be a DecodedInstruction for lazy initialization, see Debugger#init_bpx/has_emul_instr(bpx)
 			:emul_instr,
 			# internal data, cpu-specific (overwritten byte for a softbp, memory type/size for hwbp..)
 			:internal,
@@ -436,48 +437,69 @@ class Debugger
 	end
 
 	# called in the context of the target when a bpx is to be initialized
-	# will disassemble the code pointed, and try to initialize #emul_instr
+	# may (lazily) initialize b.emul_instr for virtual singlestep
 	def init_bpx(b)
 		# dont bother setting stuff up if it is never to be used
 		return if b.oneshot and not b.condition
 
-		@disassembler.disassemble_fast_block(b.address)		# XXX configurable dasm method
-		if di = @disassembler.di_at(b.address) and
-				fdbd = @disassembler.get_fwdemu_binding(di, register_pc) and
-				not fdbd[:incomplete_binding] and not fdbd.index(Expression::Unknown) and
-				fdbd.keys.all? { |k| k.kind_of?(Symbol) or k.kind_of?(Indirection) }
+		# lazy setup of b.emul_instr: delay building emulating lambda to if/when actually needed
+		# we still need to disassemble now and update @disassembler, before we patch the memory for the bpx
+		di = init_bpx_disassemble(b.address)
+		b.hash_shared.each { |bb| bb.emul_instr = di }
+	end
 
-puts di.instruction, fdbd.inspect
-			b.emul_instr = lambda { |dbg|
-				resv = lambda { |e|
-					r = e
-					flags = Expression[r].externals.uniq.find_all { |f| f.to_s =~ /flags?_(.+)/ }
-					if flags.first
-						bd = {}
-						flags.each { |f|
-							f.to_s =~ /flags?_(.+)/
-							bd[f] = dbg.get_flag_value($1.downcase.to_sym)
-						}
-						r = r.bind(bd)
-					end
-					dbg.resolve(r)
-				}
+	# retrieve the di at a given address, disassemble if needed
+	# TODO make it so this doesn't interfere with other 'real' disassembler later commands, eg disassemble() or disassemble_fast_deep()
+	# (right now, when they see the block already present they stop all processing)
+	def init_bpx_disassemble(addr)
+		@disassembler.disassemble_fast_block(addr)
+		@disassembler.di_at(addr)
+	end
 
-				fdbd.map { |k, v|
-					k = Indirection[resv[k.pointer], k.len] if k.kind_of?(Indirection)
-					[k, resv[v]]
-				}.each { |k, v|
-					if k.to_s =~ /flags?_(.+)/
-						dbg.set_flag_value($1.downcase.to_sym, v)
-					elsif k.kind_of?(Symbol)
-						dbg.set_reg_value(k, v)
-					elsif k.kind_of?(Indirection)
-						dbg.memory_write_int(k.pointer, v, k.len)
-					end
+	# checks if bp has an emul_instr
+	# do the lazy initialization if needed
+	def has_emul_instr(bp)
+		if bp.emul_instr.kind_of?(DecodedInstruction)
+			if di = bp.emul_instr and fdbd = @disassembler.get_fwdemu_binding(di, register_pc) and
+					fdbd.all? { |k, v| (k.kind_of?(Symbol) or k.kind_of?(Indirection)) and
+						k != :incomplete_binding and v != Expression::Unknown }
+			 	# setup a lambda that will mimic, using the debugger primitives, the actual execution of the instruction
+				bp.emul_instr = lambda {
+					fdbd.map { |k, v|
+						k = Indirection[emulinstr_resv(k.pointer), k.len] if k.kind_of?(Indirection)
+						[k, emulinstr_resv(v)]
+					}.each { |k, v|
+						if k.to_s =~ /flags?_(.+)/i
+							f = $1.downcase.to_sym
+							set_flag_value(f, v)
+						elsif k.kind_of?(Symbol)
+							set_reg_value(k, v)
+						elsif k.kind_of?(Indirection)
+							memory_write_int(k.pointer, v, k.len)
+						end
+					}
 				}
-			}
-			b.hash_shared.each { |bb| bb.emul_instr = b.emul_instr }
+				bp.hash_shared.each { |bb| bb.emul_instr = bp.emul_instr }
+			else
+				bp.hash_shared.each { |bb| bb.emul_instr = nil }
+			end
 		end
+
+		bp.emul_instr
+	end
+
+	def emulinstr_resv(e)
+		r = e
+		flags = Expression[r].externals.uniq.find_all { |f| f.to_s =~ /flags?_(.+)/i }
+		if flags.first
+			bd = {}
+			flags.each { |f|
+				f.to_s =~ /flags?_(.+)/i
+				bd[f] = get_flag_value($1.downcase.to_sym)
+			}
+			r = r.bind(bd)
+		end
+		resolve(r)
 	end
 
 	# sets a breakpoint on execution
@@ -834,9 +856,9 @@ puts di.instruction, fdbd.inspect
 	# if the breakpoint provides an emulation stub, run that, otherwise
 	# disable the breakpoint, singlestep, and re-enable
 	def singlestep_bp(bp, &b)
-		if be = bp.hash_shared.find { |bb| bb.emul_instr }
+		if has_emul_instr(bp)
 			@state = :stopped
-			be.emul_instr[self]
+			bp.emul_instr.call
 			yield if block_given?
 		else
 			bp.hash_shared.each { |bb|
@@ -892,9 +914,9 @@ puts di.instruction, fdbd.inspect
 		@singlestep_cb = b
 		bp = @breakpoint_cause
 		return if not check_pre_run(:singlestep)
-		if bp and bp.hash_shared.find { |bb| bb.state == :active } and be = bp.hash_shared.find { |bb| bb.emul_instr }
+		if bp and bp.hash_shared.find { |bb| bb.state == :active } and has_emul_instr(bp)
 			@state = :stopped
-			be.emul_instr[self]
+			bp.emul_instr.call
 			invalidate
 			evt_singlestep(true)
 		else
@@ -1214,7 +1236,7 @@ puts di.instruction, fdbd.inspect
 			next if bd[ex]
 			case ex
 			when ::Symbol; bd[ex] = get_reg_value(ex)
-			when ::String; bd[ex] = @symbols.index(ex) || 0
+			when ::String; bd[ex] = @symbols.index(ex) || @disassembler.prog_binding[ex] || 0
 			end
 		}
 		Expression[e].bind(bd).reduce { |i|
