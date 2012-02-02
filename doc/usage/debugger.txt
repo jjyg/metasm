@@ -1,0 +1,322 @@
+The Debugger
+============
+
+Metasm includes functionnalities to communicate with some operating system
+debugging infrastructures.
+
+Currently supported:
+
+* Windows (x86, x64)
+* Linux (x86, x64)
+
+Generic interface
+-----------------
+
+Metasm exposes a generic API that will work on all supported platforms.
+
+This interface is implemented using system-specific classes, that you may
+directly access for tighter control.
+
+Global operating system interface is available through the <core/OS.txt> class.
+It has methods to enumerate live processes, spawn new processes, and provide
+process/thread access.
+
+Individual process debugging is wrapped in the <core/Debugger.txt> class.
+
+Windows debugging
+-----------------
+
+The windows debugger relies on <core/DynLdr.txt> to interface directly with
+the *Win32_API*.
+
+Support exists for 32-bit process, and, using a 64-bit ruby interpreter, for
+64-bit process and WoW64-process debugging.
+
+The operating system wrapper is <core/WinOS.txt>, the debugger is
+<core/WinDebugger.txt>.
+
+Linux debugging
+---------------
+
+The linux debugger relies on the */proc* filesystem for process and thread
+enumeration, process memory access, etc ; and on the *ptrace* syscall
+(through `Kernel.syscall()`) for actual debugging.
+
+You'll need a 64-bit ruby interpreter to debug 64-bit target processes.
+
+The operating system wrapper is <core/LinOS.txt>, the debugger is
+<core/LinDebugger.txt>.
+
+Due to linux limitations, the memory of a process is accessible for read or
+write only if one of its thread is stopped by the debugger.
+
+Remote debugging
+----------------
+
+Metasm also implements a client for the *GdbServer* protocol.
+See <core/GdbRemoteDebugger.txt>.
+
+
+The debugging interface
+=======================
+
+The `Debugger` object is a generic interface to the low-level operating
+system interface. It manages all the generic machinery to handle multi-process
+and multi-thread debugging, conditional breakpoints, symbols, etc.
+
+The debugger is asynchronous: you can issue a command to `run` the target
+process, do whatever you want in your script, and check from time to time
+if some debugging event happened, and then handle it.
+
+The debugger object maintains some attributes for the target process.
+The most important are:
+* a <core/Disassembler.txt>
+* an accessor to the process memory, as a <core/VirtualString.txt>
+
+The process memory and register set is cached for faster access, use
+the `invalidate` method to force a refresh. The debugger will automatically
+invalidate on any debug event.
+
+Multi-process / multi-thread
+----------------------------
+
+The `Debugger` offers accessor for the state of the current active thread.
+
+You can change the current active thread or process by using the `pid` and
+`tid` accessors.
+
+When handling a debugging event, the debugger will accept any event in
+any of the debuggee, and return in the context of this thread.
+
+To enumerate the processes or threads, use one of the following functions,
+that will execute the block after setting pid/tid to all available value:
+* `each_pid` (all pids)
+* `each_tid` (all tids of current pid)
+* `each_pid_tid` (all tids of all pids)
+
+By default, the debugger will not attach to child process spawned by a
+debuggee. To do so, set the `trace_children` variable before you attach.
+On Windows, this variable only has effect when set before a `create_process`.
+
+Target manipulation
+-------------------
+
+You can check the state of the debuggee through the `state` accessor.
+It can have one of the 3 values:
+* `:stopped`, when the thread has stopped due to a debug event (breakpoint hit,
+exception raised, ...)
+* `:running`, when the thread is runnig
+* `:dead`, when all supervised process have ended
+
+To update the state of a `:running` process, call the `check_target` (non
+blocking) or `wait_target`.
+
+When `:stopped`, the `info` attribute can give more specific informations.
+It consists of an arbitrary String.
+
+Most of the other accessors require the target to be in the `:stopped` state.
+
+To manipulate the value of a register, use `get_reg_value(:eax)` or
+`set_reg_value(:eax,0x42)`.
+
+To manipulate the memory, use `memory[address,length]`. You can also
+use `memory_read_int(address)` to read/write integers with the target
+endianness.
+
+A shortcut method is available, through the `[]` method. When used with one
+argument, it is interpreted as a register name to be retrieved, with two
+arguments it is a memory range.
+
+ dbg[:eax]                         # read the 'eax' register
+ dbg[0x1234, 10] = 'hohohohoho'    # patch the christmas spirit in memory
+
+You can manipulate complex expressions using the `resolve(expr)` method.
+It accepts a String representation of an arbitrary expression. Any register,
+symbol (function name) and/or memory dereference can be used inside.
+You can puts an `:` before a register name to force it to be parsed as a
+register and not a symbol ; this can be useful for non-standard registers.
+
+The memory functions accept such expressions in place of addresses most of the
+time. For exemple:
+
+ dbg["some_pointer + eax + 4*[ecx]", 3] = 'foo'
+
+Running the target
+------------------
+
+When the debuggee is `:stopped`, you can resume execution using these methods:
+* `continue`: resume execution until the next exception/breakpoint hit (alias: `run`)
+* `singlestep`: executes one CPU instruction and break in the debugger
+* `stepover`: same as singlestep, except if the instruction pointer is on a
+subfunction call, then break only after the function returns.
+
+These methods will set the target to `:running` and return immediately.
+To wait for the end of the `singlestep`, you can use `wait_target`, it
+will block until a debug event happens. Usually that means that the instruction
+has been executed, but that could also mean that another thread/process under
+supervision ran into a breakpoint, or that the instruction raised an exception.
+
+If you have an active loop to run in your script, you can also call
+`check_target` periodically, and check the value of `dbg.state` to detect
+a debug event.
+
+For convenience, you can call `continue_wait` that will call `continue` and
+`wait_target`, `singlestep_wait`, etc.
+
+When calling `singlestep`, you can pass a ruby block that will run when the
+singlestep succeeds, even if many other debug events happen inbetween.
+
+Breakpoints
+-----------
+
+Depending on the target architecture, you can have access up to three types of
+breakpoints: software, hardware, and memory.
+
+A hardware breakpoint uses features of the cpu to gain control at a given time.
+On x86/x64, they have these characteristics:
+* you can have at most 4 hardware breakpoints active at one time
+* a hardware breakpoint is specific to a thread, as they use special registers
+* they can be set up to break on execution of a specific address, or
+on read or writes of 1, 2 or 4 bytes in memory at a specific address
+
+A software breakpoint consists in replacing an instruction in the memory space
+of the target with a specific pattern that will raise an exception when run.
+The advantages over hardware breakpoints are that you can have as many as you
+wish at the same time. The disadvantage is that it changes the target address
+space, which may be a problem ; also it means that the breakpoint is active
+for all threads of a given process.
+
+Finally a memory breakpoint uses the virtual memory mechanism to take control
+on reads or writes on arbitrary memory ranges.
+
+Breakpoints
+***********
+
+All breakpoints can be conditional. This means that whenever a breakpoint
+hits, the debugger will evaluate an expression to determine if it should
+ignore the breakpoint or handle it and give control to your script.
+
+The expression can be any arithmetic expression, and should evaluate to 0
+(ignore the breakpoint) or non-0 (break and give control to the script).
+
+The arithmetic expression can refer to any register, memory dereference,
+or symbol ; and additionally the special registers `:tid` and `:pid` can
+be used to check the current debuggee context (eg for a thread-specific
+breakpoint).
+
+All breakpoints can have a callback. This is a ruby block that will be run
+whenever the breakpoint hits (and has a valid condition if applicable).
+Your callback can do anything, including resuming the execution of the target.
+
+Finally, all breakpoints can be singleshot. This means that whenever the
+breakpoint hits, it is deleted (it will hit only once).
+
+Hardware breakpoint (hwbp)
+**************************
+
+A hardware breakpoint is set using:
+
+ hwbp(addr, mtype=:x, mlen=1, oneshot=false, cond=nil, &callback)
+
+* addr is the address of the breakpoint. Can be an expression (resolved now)
+* mtype specifies the type of hw breakpoint: `:r`, `:w`, `:x`
+* mlen specifies the size of the area. `:r/:w` mtype only, and must be in [1, 2, 4, 8]
+* oneshot is a boolean, set to true for a singleshot breakpoint
+* cond is the conditional expression, String or Expression (resolved at evaluation time)
+* callback is a ruby block to run when the breakpoint hits
+
+Exemple:
+
+ # run the block whenever any of the 4 bytes pointed by eax+12 are read:
+ dbg.hwbp('eax+12', :r, 4) { puts "dont read me bro!" }
+
+
+Software breakpoint (bpx)
+*************************
+
+To set a software breakpoint, use:
+
+ bpx(addr, oneshot=false, cond=nil, &callback)
+
+Arguments are the same as `hwbp`.
+
+A software breakpoint involves the modification of the target address space,
+which impacts all threads of the process.
+On a hit, only the affected thread is stopped.
+
+When resuming the thread, it should see the original instruction that was
+overwritten. If we restore temporarily the original code, there exist a race
+condition, where another thread could use this window to run through the
+code without hitting the breakpoint. To avoid that, metasm will try, when
+possible, to emulate the effects of the original instruction on the active
+thread. This works only when metasm knows the full effects of the replaced
+instruction. If this is not the case, the old method to revert the original
+code, run the target thread in singlestep, and re-insert the breakpoint is
+used.
+
+Memory breakpoint (bpm)
+***********************
+
+To define a memory breakpoint, use:
+
+ bpm(addr, mtype=:r, mlen=4096, oneshot=false, cond=nil, &callback)
+
+* mtype is `:r` or `:w`
+
+A memory breakpoint is split in pages and managed internally by the framework.
+If the range does not fit on page boundary, an implicit condition is added to
+check that the exception actually happens inside the watched range, and ignores
+the breakpoint otherwise.
+
+Currently, memory breakpoints are not implemented.
+Maybe someday on windows, using guard pages.
+
+Breakpoint management
+*********************
+
+When setting up a breakpoint, a **Breakpoint** object is returned.
+It shall be used to remove the breakpoint, using **del_bp**.
+
+To enumerate breakpoints, use **all_breakpoints(addr=nil)**.
+This will return an Array of the breakpoints defined for the current thread, ie
+the current thread hwbp, the current process bpx, and the current process bpm
+list.
+
+Callbacks
+---------
+
+It is possible to define a callback to be run when a specific debug event
+occurs.  They are a ruby Proc that will be called when the event occurs, in
+the context of the right thread, and will receive a Hash of information on the
+event specifics. The Hash keys depend on the callback.
+
+The list is:
+* `callback_singlestep`
+* `callback_bpx`
+* `callback_hwbp`
+* `callback_bpm`
+* `callback_exception` - any other exception (memory corruption, division by 0,
+breakpoint exception not matching any bpx, ...)
+* `callback_newthread`
+* `callback_endthread`
+* `callback_newprocess`
+* `callback_endprocess`
+
+Linux-specific:
+* `callback_syscall` - stopped after a `ptrace_syscall`
+* `callback_exec` - target ran the `exec` syscall
+* `callback_branch` - branch trace mode, experimental kernel feature, needs
+recent CPU
+
+Windows-specific:
+* `callback_loadlibrary`
+* `callback_unloadlibrary`
+* `callback_debugstring`
+* `callback_ripevent`
+
+A few variables are available to change the default mode of stopping on any
+debug event:
+* `pass_all_exceptions` - do not stop on unknown exceptions, forward them to
+the debuggee
+* `ignore_newthread` - do not stop on new thread creation
+* `ignore_endthread` - do not stop on thread deletion
