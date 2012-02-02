@@ -752,7 +752,7 @@ class Debugger
 			# oneshot
 			del_bp(bb) if bb.oneshot
 
-			true
+			bb.action
 		}.each { |bb| bb.action.call }
 
 		# discard @breakpoint_cause if a bp callback did modify register_pc
