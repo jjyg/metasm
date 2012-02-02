@@ -728,8 +728,10 @@ class Debugger
 
 		found_valid_active = false
 
+		pre_callback_pc = pc
+
 		# XXX may have many active bps with callback that continue/singlestep/singlestep{}...
-		b.hash_shared.dup.map { |bb|
+		b.hash_shared.dup.find_all { |bb|
 			# ignore inactive bps
 			next if bb.state != :active
 
@@ -750,9 +752,11 @@ class Debugger
 			# oneshot
 			del_bp(bb) if bb.oneshot
 
-			# callback
-			bb.action
-		}.compact.each { |cb| cb.call }
+			true
+		}.each { |bb| bb.action.call }
+
+		# discard @breakpoint_cause if a bp callback did modify register_pc
+		@breakpoint_cause = nil if pc != pre_callback_pc
 
 		# we did break due to a bp whose condition is not true: resume
 		# (unless a callback already resumed)
@@ -855,7 +859,7 @@ class Debugger
 	# singlesteps over an active breakpoint and run its block
 	# if the breakpoint provides an emulation stub, run that, otherwise
 	# disable the breakpoint, singlestep, and re-enable
-	def singlestep_bp(bp, &b)
+	def singlestep_bp(bp)
 		if has_emul_instr(bp)
 			@state = :stopped
 			bp.emul_instr.call
