@@ -739,6 +739,20 @@ class Ia32
 		end
 	end
 
+	# patch a forward binding from the backtrace binding
+	# fixes fwdemu for push/pop/call/ret
+	def fix_fwdemu_binding(di, fbd)
+		case di.opcode.name
+		when 'push', 'call'
+			sz = opsz(di)/8
+			fbd[Indirection[[:esp, :-, sz], sz]] = fbd.delete(Indirection[:esp, sz])
+		when 'pop', 'ret' # nothing to do
+		when /^(push|pop|call|ret|enter|leave|stos|movs|lods|scas|cmps)/
+			fbd[:incomplete_binding] = Expression[1]	# TODO
+		end
+		fbd
+	end
+
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
 

@@ -213,5 +213,31 @@ class CPU
 	def disassembler_default_func
 		DecodedFunction.new
 	end
+
+	# return something like backtrace_binding in the forward direction
+	# set pc_reg to some reg name (eg :pc) to include effects on the instruction pointer
+	def get_fwdemu_binding(di, pc_reg=nil)
+		fdi = di.backtrace_binding ||= get_backtrace_binding(di)
+		fdi = fix_fwdemu_binding(di, fdi)
+		if pc_reg
+			if di.opcode.props[:setip]
+				xr = get_xrefs_x(nil, di)
+				if xr and xr.length == 1
+					fdi[pc_reg] = xr[0]
+				else
+					fdi[:incomplete_binding] = Expression[1]
+				end
+			else
+				fdi[pc_reg] = Expression[pc_reg, :+, di.bin_length]
+			end
+		end
+		fdi
+	end
+
+	# patch a forward binding from the backtrace binding
+	# useful only on specific instructions that update a register *and* dereference that register (eg push)
+	def fix_fwdemu_binding(di, fbd)
+		fbd
+	end
 end
 end
