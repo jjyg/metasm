@@ -591,6 +591,7 @@ class Debugger
 		ret
 	end
 
+	# return on of the breakpoints at address addr
 	def find_breakpoint(addr=nil)
 		return @breakpoint[addr] if @breakpoint[addr] and (not block_given? or yield(@breakpoint[addr]))
 		all_breakpoints(addr).find { |b| yield b }
@@ -880,6 +881,15 @@ class Debugger
 		end
 	end
 
+	# checks if @breakpoint_cause is valid, or was obsoleted by the user changing pc
+	def check_breakpoint_cause
+		if bp = @breakpoint_cause and
+				(bp.type == :bpx or (bp.type == :hwbp and bp.internal[:type] == :x)) and
+				pc != bp.address
+			bp = @breakpoint_cause = nil
+		end
+		bp
+	end
 
 	# checks if the running target has stopped (nonblocking)
 	def check_target
@@ -895,7 +905,7 @@ class Debugger
 	# bypasses a software breakpoint on pc if needed
 	# thread breakpoints must be manually disabled before calling continue
 	def continue
-		if b = @breakpoint_cause and b.hash_shared.find { |bb| bb.state == :active }
+		if b = check_breakpoint_cause and b.hash_shared.find { |bb| bb.state == :active }
 			singlestep_bp(b) {
 				next if not check_pre_run(:continue)
 				do_continue
@@ -916,7 +926,7 @@ class Debugger
 	# resume execution of the target one instruction at a time
 	def singlestep(&b)
 		@singlestep_cb = b
-		bp = @breakpoint_cause
+		bp = check_breakpoint_cause
 		return if not check_pre_run(:singlestep)
 		if bp and bp.hash_shared.find { |bb| bb.state == :active } and has_emul_instr(bp)
 			@state = :stopped
