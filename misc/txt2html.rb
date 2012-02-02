@@ -368,13 +368,13 @@ class Txt2Html
 		out
 	end
 
-	# handle **bold_words** *italic* `fixed` <links>
+	# handle **bold_words** *italic* `fixed` <links> **bold__word__with__underscore**
 	def compile_string(str)
 		o = [str]
 		on = []
 		o.each { |s|
 			while s.kind_of? String and o1 = s.index('**') and o2 = s.index('**', o1+2) and not s[o1..o2].index(' ')
-				on << s[0...o1] << Html::Elem.new('b').add(s[o1+2...o2].tr('_', ' '))
+				on << s[0...o1] << Html::Elem.new('b').add(s[o1+2...o2].tr('_', ' ').gsub('  ', '_'))
 				s = s[o2+2..-1]
 			end
 			on << s
@@ -383,7 +383,7 @@ class Txt2Html
 		on = []
 		o.each { |s|
 			while s.kind_of? String and o1 = s.index('*') and o2 = s.index('*', o1+1) and not s[o1..o2].index(' ')
-				on << s[0...o1] << Html::Elem.new('i').add(s[o1+1...o2].tr('_', ' '))
+				on << s[0...o1] << Html::Elem.new('i').add(s[o1+1...o2].tr('_', ' ').gsub('  ', '_'))
 				s = s[o2+1..-1]
 			end
 			on << s
@@ -409,19 +409,20 @@ class Txt2Html
 					when 'txt'
 						tg = outfilename(lnk)
 						Txt2Html.new(lnk)
-						on << Html::A.new(@pathfix + tg, File.basename(lnk, '.txt').tr('_', ' '))
+						on << Html::A.new(@pathfix + tg, File.basename(lnk, '.txt').tr('_', ' ').gsub('  ', '_'))
 					when 'jpg', 'png'
 						on << Html::Img.new(lnk)
 					end
 				else
+					on << Html::A.new(lnk, lnk)
 					if lnk =~ /\.txt$/
 						@@seen_nofile ||= []
 						if not @@seen_nofile.include? lnk
 							@@seen_nofile << lnk
 							puts "reference to missing #{lnk.inspect}"
 						end
+						on.last.hclass('brokenlink')
 					end
-					on << Html::A.new(lnk, lnk)
 				end
 			end
 			on << s
