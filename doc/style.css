@@ -1,3 +1,6 @@
-span.quote {
-	font-family: monospace;
-}
+body { background-color: #002b36; color: #839496; }
+a { text-decoration: none; color:#268bd2; }
+a:hover, a:visited, a:active { color:#2aa198; }
+a:hover { text-decoration: underline; }
+a.brokenlink { color: #dc322f; }
+span.quote { font-family: monospace; }
