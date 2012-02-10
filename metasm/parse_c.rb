@@ -2741,10 +2741,10 @@ EOH
 				when :','
 					stack << CExpression.new(l, op, r, r.type)
 				when :'='
-					unless (r.kind_of?(CExpression) and not r.lexpr and r.type.kind_of?(BaseType) and
+					unless r.kind_of?(CExpression) and not r.lexpr and r.type.kind_of?(BaseType) and
 					    ((not r.op and r.rexpr.kind_of?(Integer)) or
 					     (r.op == :- and r.rexpr.kind_of?(CExpression) and not r.rexpr.op and not r.rexpr.lexpr and r.rexpr.rexpr.kind_of?(Integer))) and
-					     l.kind_of?(Typed) and (l.type.untypedef.kind_of?(BaseType) or (l.type.untypedef.kind_of?(Pointer) and r.rexpr == 0)))
+					     l.kind_of?(Typed) and (l.type.untypedef.kind_of?(BaseType) or (l.type.untypedef.kind_of?(Pointer) and r.rexpr == 0))
 						# avoid useless warnings on unsigned foo = -1  /  void *foo = 0
 						parser.check_compatible_type(parser, r.type, l.type)
 					end
@@ -2767,6 +2767,8 @@ EOH
 					elsif l.type.pointer? or r.type.pointer?
 						puts parser.exception("should not #{op.inspect} a pointer").message if $VERBOSE and not [:'+', :'-', :'=', :'+=', :'-=', :==, :'!='].include? op
 						type = l.type.pointer? ? l.type : r.type
+					elsif RIGHTASSOC[op] and op != :'?:'	# += etc
+						type = l.type
 					else
 						# yay integer promotion
 						lt = l.type.untypedef
