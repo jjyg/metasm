@@ -289,12 +289,15 @@ EOS
 		m ? @cp.dump_definition(m) : @cp.to_s
 	end
 
+	@@optim_hint = {}
+	def self.optim_hint; @@optim_hint; end
+
 	attr_accessor :optim_hint
 	def initialize(cp=nil)
 		@cp = cp || DynLdr.host_cpu.new_cparser
 		@cp.parse RUBY_H
 		@iter_break = nil
-		@optim_hint = {}
+		@optim_hint = @@optim_hint.dup
 	end
 
 	# convert a ruby AST to a new C function
@@ -1135,10 +1138,10 @@ EOS
 		args = ast[3][1..-1] if ast[3] and ast[3][0] == :array
 		arg0 = args[0] if args and args[0]
 
-		if arg0 and arg0[0] == :lit and arg0[1].kind_of? Fixnum
+		if arg0 and arg0[0] == :lit and arg0[1].kind_of?(Fixnum) and %w[== > < >= <= + -].include?(op)
+			# TODO or @optim_hint[ast[1]] == 'fixnum'
 			# optimize 'x==42', 'x+42', 'x-42'
 			o2 = arg0[1]
-			return if not %w[== > < >= <= + -].include? op
 			if o2 < 0 and ['+', '-'].include? op
 				# need o2 >= 0 for overflow detection
 				op = {'+' => '-', '-' => '+'}[op]
@@ -1818,6 +1821,12 @@ end
 
 
 if __FILE__ == $0 or ARGV.delete('ignore_argv0')
+
+while i = ARGV.index('-e')
+	# setup optim_hint etc
+	ARGV.delete_at(i)
+	eval ARGV.delete_at(i)
+end
 
 demo = case ARGV.first
        when nil;        :test_jit
