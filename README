@@ -21,6 +21,10 @@ Ready-to-use scripts can be found in the samples/ subdirectory, check the
 comments in the scripts headers. You can also try the --help argument if
 you're feeling lucky.
 
+For more information, check the doc/ subdirectory. The text files can be
+compiled to html using the misc/txt2html.rb script.
+
+
 
 Here is a short overview of the Metasm internals.
 

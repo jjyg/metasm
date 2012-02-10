@@ -274,10 +274,10 @@ Maybe someday on windows, using guard pages.
 Breakpoint management
 *********************
 
-When setting up a breakpoint, a **Breakpoint** object is returned.
-It shall be used to remove the breakpoint, using **del_bp**.
+When setting up a breakpoint, a `Breakpoint` object is returned.
+It shall be used to remove the breakpoint, using `del_bp`.
 
-To enumerate breakpoints, use **all_breakpoints(addr=nil)**.
+To enumerate breakpoints, use `all_breakpoints(addr=nil)`.
 This will return an Array of the breakpoints defined for the current thread, ie
 the current thread hwbp, the current process bpx, and the current process bpm
 list.
