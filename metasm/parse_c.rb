@@ -2728,105 +2728,109 @@ EOH
 			end
 		end
 
+		def parse_popstack(parser, stack, opstack)
+			r = stack.pop
+			l = stack.pop
+			case op = opstack.pop
+			when :'?:'
+				stack << CExpression.new(stack.pop, op, [l, r], l.type)
+			when :','
+				stack << CExpression.new(l, op, r, r.type)
+			when :'='
+				unless r.kind_of?(CExpression) and not r.lexpr and r.type.kind_of?(BaseType) and
+				    ((not r.op and r.rexpr.kind_of?(Integer)) or
+				     (r.op == :- and r.rexpr.kind_of?(CExpression) and not r.rexpr.op and not r.rexpr.lexpr and r.rexpr.rexpr.kind_of?(Integer))) and
+				     l.kind_of?(Typed) and (l.type.untypedef.kind_of?(BaseType) or (l.type.untypedef.kind_of?(Pointer) and r.rexpr == 0))
+					# avoid useless warnings on unsigned foo = -1  /  void *foo = 0
+					parser.check_compatible_type(parser, r.type, l.type)
+				end
+				if l.kind_of?(Typed) and (lt = l.type.untypedef).kind_of?(BaseType) and r.kind_of?(Typed) and (rt = r.type.untypedef).kind_of?(BaseType) and lt.specifier != :unsigned and rt.specifier == :unsigned and parser.typesize[lt.name] > parser.typesize[rt.name]
+					# (int32)i = (uchar)255 => 255, not -1
+					r = CExpression.new(nil, nil, r, BaseType.new(lt.name, :unsigned))
+				end
+				stack << CExpression.new(l, op, r, l.type)
+			when :'&&', :'||'
+				stack << CExpression.new(l, op, r, BaseType.new(:int))
+			else
+				# XXX struct == struct ?
+				raise parser, "invalid type #{l.type} #{l} for #{op.inspect}" if not l.type.arithmetic? and not parser.allow_bad_c
+				raise parser, "invalid type #{r.type} #{r} for #{op.inspect}" if not r.type.arithmetic? and not parser.allow_bad_c
+
+				if l.type.pointer? and r.type.pointer?
+					type = \
+					case op
+					when :'-'; BaseType.new(:long)	# addr_t or sumthin ?
+					when :'-='; l.type
+					when :'>', :'>=', :'<', :'<=', :'==', :'!='; BaseType.new(:long)
+					else raise parser, "cannot do #{op.inspect} on pointers" unless parser.allow_bad_c ; l.type
+					end
+				elsif l.type.pointer? or r.type.pointer?
+					puts parser.exception("should not #{op.inspect} a pointer").message if $VERBOSE and not [:'+', :'-', :'=', :'+=', :'-=', :==, :'!='].include? op
+					type = l.type.pointer? ? l.type : r.type
+				elsif RIGHTASSOC[op] and op != :'?:'	# += etc
+					type = l.type
+				else
+					# yay integer promotion
+					lt = l.type.untypedef
+					rt = r.type.untypedef
+					if    (t = lt).name == :longdouble or (t = rt).name == :longdouble or
+					      (t = lt).name == :double or (t = rt).name == :double or
+					      (t = lt).name == :float or (t = rt).name == :float
+					# long double > double > float ...
+						type = t
+					elsif true
+						# custom integer rules based on type sizes
+						lts = parser.typesize[lt.name]
+						rts = parser.typesize[rt.name]
+						its = parser.typesize[:int]
+						if not lts or not rts
+							type = BaseType.new(:int)
+						elsif lts >  rts and lts >= its
+							type = lt
+						elsif rts >  lts and rts >= its
+							type = rt
+						elsif lts == rts and lts >= its
+							type = lt
+							type = rt if rt.specifier == :unsigned
+						else
+							type = BaseType.new(:int)
+						end
+						# end of custom rules
+					elsif ((t = lt).name == :long and t.specifier == :unsigned) or
+					      ((t = rt).name == :long and t.specifier == :unsigned)
+					# ... ulong ...
+						type = t
+					elsif (lt.name == :long and rt.name == :int and rt.specifier == :unsigned) or
+					      (rt.name == :long and lt.name == :int and lt.specifier == :unsigned)
+					# long+uint => ulong
+						type = BaseType.new(:long, :unsigned)
+					elsif (t = lt).name == :long or (t = rt).name == :long or
+					      ((t = lt).name == :int and t.specifier == :unsigned) or
+					      ((t = rt).name == :int and t.specifier == :unsigned)
+					# ... long > uint ...
+						type = t
+					else
+					# int
+						type = BaseType.new(:int)
+					end
+				end
+
+				case op
+				when :'>', :'>=', :'<', :'<=', :'==', :'!='
+					# cast both sides
+					l = CExpression[l, type] if l.type != type
+					r = CExpression[r, type] if r.type != type
+					stack << CExpression.new(l, op, r, BaseType.new(:int))
+				else
+					# promote result
+					stack << CExpression.new(l, op, r, type)
+				end
+			end
+		end
+
 		def parse(parser, scope, allow_coma = true)
 			opstack = []
 			stack = []
-
-			popstack = lambda {
-				r = stack.pop
-				l = stack.pop
-				case op = opstack.pop
-				when :'?:'
-					stack << CExpression.new(stack.pop, op, [l, r], l.type)
-				when :','
-					stack << CExpression.new(l, op, r, r.type)
-				when :'='
-					unless r.kind_of?(CExpression) and not r.lexpr and r.type.kind_of?(BaseType) and
-					    ((not r.op and r.rexpr.kind_of?(Integer)) or
-					     (r.op == :- and r.rexpr.kind_of?(CExpression) and not r.rexpr.op and not r.rexpr.lexpr and r.rexpr.rexpr.kind_of?(Integer))) and
-					     l.kind_of?(Typed) and (l.type.untypedef.kind_of?(BaseType) or (l.type.untypedef.kind_of?(Pointer) and r.rexpr == 0))
-						# avoid useless warnings on unsigned foo = -1  /  void *foo = 0
-						parser.check_compatible_type(parser, r.type, l.type)
-					end
-					stack << CExpression.new(l, op, r, l.type)
-				when :'&&', :'||'
-					stack << CExpression.new(l, op, r, BaseType.new(:int))
-				else
-					# XXX struct == struct ?
-					raise parser, "invalid type #{l.type} #{l} for #{op.inspect}" if not l.type.arithmetic? and not parser.allow_bad_c
-					raise parser, "invalid type #{r.type} #{r} for #{op.inspect}" if not r.type.arithmetic? and not parser.allow_bad_c
-
-					if l.type.pointer? and r.type.pointer?
-						type = \
-						case op
-						when :'-'; BaseType.new(:long)	# addr_t or sumthin ?
-						when :'-='; l.type
-						when :'>', :'>=', :'<', :'<=', :'==', :'!='; BaseType.new(:long)
-						else raise parser, "cannot do #{op.inspect} on pointers" unless parser.allow_bad_c ; l.type
-						end
-					elsif l.type.pointer? or r.type.pointer?
-						puts parser.exception("should not #{op.inspect} a pointer").message if $VERBOSE and not [:'+', :'-', :'=', :'+=', :'-=', :==, :'!='].include? op
-						type = l.type.pointer? ? l.type : r.type
-					elsif RIGHTASSOC[op] and op != :'?:'	# += etc
-						type = l.type
-					else
-						# yay integer promotion
-						lt = l.type.untypedef
-						rt = r.type.untypedef
-						if    (t = lt).name == :longdouble or (t = rt).name == :longdouble or
-						      (t = lt).name == :double or (t = rt).name == :double or
-						      (t = lt).name == :float or (t = rt).name == :float
-						# long double > double > float ...
-							type = t
-						elsif true
-							# custom integer rules based on type sizes
-							lts = parser.typesize[lt.name]
-							rts = parser.typesize[rt.name]
-							its = parser.typesize[:int]
-							if not lts or not rts
-								type = BaseType.new(:int)
-							elsif lts >  rts and lts >= its
-								type = lt
-							elsif rts >  lts and rts >= its
-								type = rt
-							elsif lts == rts and lts >= its
-								type = lt
-								type = rt if rt.specifier == :unsigned
-							else
-								type = BaseType.new(:int)
-							end
-							# end of custom rules
-						elsif ((t = lt).name == :long and t.specifier == :unsigned) or
-						      ((t = rt).name == :long and t.specifier == :unsigned)
-						# ... ulong ...
-							type = t
-						elsif (lt.name == :long and rt.name == :int and rt.specifier == :unsigned) or
-						      (rt.name == :long and lt.name == :int and lt.specifier == :unsigned)
-						# long+uint => ulong
-							type = BaseType.new(:long, :unsigned)
-						elsif (t = lt).name == :long or (t = rt).name == :long or
-						      ((t = lt).name == :int and t.specifier == :unsigned) or
-						      ((t = rt).name == :int and t.specifier == :unsigned)
-						# ... long > uint ...
-							type = t
-						else
-						# int
-							type = BaseType.new(:int)
-						end
-					end
-
-					case op
-					when :'>', :'>=', :'<', :'<=', :'==', :'!='
-						# cast both sides
-						l = CExpression[l, type] if l.type != type
-						r = CExpression[r, type] if r.type != type
-						stack << CExpression.new(l, op, r, BaseType.new(:int))
-					else
-						# promote result
-						stack << CExpression.new(l, op, r, type)
-					end
-				end
-			}
 
 			return if not e = parse_value(parser, scope)
 
@@ -2837,7 +2841,7 @@ EOH
 				when :'?'
 					# a, b ? c, d : e, f  ==  a, (b ? (c, d) : e), f
 					until opstack.empty? or OP_PRIO[opstack.last][:'?:']
-						popstack[]
+						parse_popstack(parser, stack, opstack)
 					end
 					stack << parse(parser, scope)
 					raise op || parser, '":" expected' if not op = readop(parser) or op.value != :':'
@@ -2852,7 +2856,7 @@ EOH
 						break
 					end
 					until opstack.empty? or OP_PRIO[op.value][opstack.last]
-						popstack[]
+						parse_popstack(parser, stack, opstack)
 					end
 				end
 
@@ -2862,7 +2866,7 @@ EOH
 			end
 
 			until opstack.empty?
-				popstack[]
+				parse_popstack(parser, stack, opstack)
 			end
 
 			CExpression[stack.first]
