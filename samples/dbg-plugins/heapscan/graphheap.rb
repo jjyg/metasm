@@ -192,6 +192,68 @@ class GraphHeapWidget < GraphViewWidget
 					listwindow("heap xrefs to #{Expression[b.id]}", list) { |i| @parent_widget.focus_addr(i[0], nil, true) }
 				end
 			end
+		when ?I
+			# insert new field in struct
+			if b = @caret_box
+				if m = b[:line_member][@caret_y]
+					if m.kind_of?(Integer)
+						# XXX Array, need to find the outer struct
+						mn = b[:line_text_col][@caret_y].map { |l, c| l }.join[/(\S*)\[/, 1]
+						ar = b[:line_struct][@caret_y]
+						st = b[:line_struct][0...@caret_y].reverse.compact.find { |st_| st_.struct.kind_of?(C::Struct) and st_[mn].struct == ar.struct }
+						raise '?' if not st
+						st = st.struct
+						m = st.fldlist[mn]
+					else
+						st = b[:line_struct][@caret_y].struct
+					end
+					inputbox("new type to insert before #{m.name}", :text => m.dump_def(@heap.cp.toplevel)[0].join(' ')) { |nn|
+						nil while @heap.cp.readtok
+						@heap.cp.lexer.feed nn
+						if not v = C::Variable.parse_type(@heap.cp, @heap.cp.toplevel, true)
+							nil while @heap.cp.readtok
+							raise 'bad type'
+						end
+						v.parse_declarator(@heap.cp, @heap.cp.toplevel)
+						nt = v.type
+						idx = st.members.index(m)
+						pos = st.offsetof(@heap.cp, m)
+						name = 'unk_%x_new' % pos
+						cntr = 0
+						while st.members.find { |m| m.name == name }
+							name = 'unk_%x_new_%d' % [pos, cntr+=1]
+						end
+						st.members[idx, 0] = [C::Variable.new(name, nt)]
+						st.update_member_cache(@heap.cp)
+						gui_update
+					}
+
+				end
+			end
+		when ?S
+			# delete structure field
+			if b = @caret_box
+				if m = b[:line_member][@caret_y]
+					if m.kind_of?(Integer)
+						# XXX Array, need to find the outer struct
+						mn = b[:line_text_col][@caret_y].map { |l, c| l }.join[/(\S*)\[/, 1]
+						ar = b[:line_struct][@caret_y]
+						st = b[:line_struct][0...@caret_y].reverse.compact.find { |st_| st_.struct.kind_of?(C::Struct) and st_[mn].struct == ar.struct }
+						raise '?' if not st
+						st = st.struct
+						m = st.fldlist[mn]
+					else
+						st = b[:line_struct][@caret_y].struct
+					end
+					inputbox("delete #{m.name} ?") { |nn|
+						idx = st.members.index(m)
+						st.members.delete_at(idx)
+						st.update_member_cache(@heap.cp)
+						gui_update
+					}
+
+				end
+			end
 		when ?+
 			# append blocks linked from the currently shown blocks to the display
 			@addr_struct.keys.each { |ak|
