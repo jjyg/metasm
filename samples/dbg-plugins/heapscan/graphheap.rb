@@ -218,10 +218,10 @@ class GraphHeapWidget < GraphViewWidget
 						nt = v.type
 						idx = st.members.index(m)
 						pos = st.offsetof(@heap.cp, m)
-						name = 'unk_%x_new' % pos
+						name = oname = v.name || ('unk_%x_new' % pos)
 						cntr = 0
-						while st.members.find { |m| m.name == name }
-							name = 'unk_%x_new_%d' % [pos, cntr+=1]
+						while st.members.find { |m_| m_.name == name }
+							name = oname + "_#{cntr+=1}"
 						end
 						st.members[idx, 0] = [C::Variable.new(name, nt)]
 						st.update_member_cache(@heap.cp)
