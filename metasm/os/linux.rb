@@ -836,6 +836,7 @@ EOS
 	end
 
 	def get_reg(r)
+		r = r.downcase if r == 'ORIG_EAX'
 		rs = r.to_sym
 		if @gpr[rs]
 			@gpr_st ||= do_getregs
@@ -873,6 +874,7 @@ EOS
 	end
 
 	def set_reg(r, v)
+		r = r.downcase if r == 'ORIG_EAX' or r == 'ORIG_RAX'
 		rs = r.to_sym
 		if @gpr[rs]
 			@gpr_st ||= do_getregs
