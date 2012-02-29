@@ -876,7 +876,8 @@ class Disassembler
 	# return/yields all the addresses matching
 	# if yield returns nil/false, do not include the addr in the final result
 	# sections are scanned MB by MB, so this should work (slowly) on 4GB sections (eg debugger VM)
-	def pattern_scan(pat, chunksz=nil, margin=nil)
+	# with addr_start/length, symbol-based section are skipped
+	def pattern_scan(pat, addr_start=nil, length=nil, chunksz=nil, margin=nil)
 		chunksz ||= 4*1024*1024	# scan 4MB at a time
 		margin ||= 65536	# add this much bytes at each chunk to find /pat/ over chunk boundaries
 
@@ -884,6 +885,22 @@ class Disassembler
 
 		found = []
 		@sections.each { |sec_addr, e|
+			if addr_start
+				begin
+					if sec_addr < addr_start
+						next if sec_addr+e.length <= addr_start
+						e = e[addr_start-sec_addr, e.length]
+						sec_addr = addr_start
+					end
+					if sec_addr+e.length > addr_start+length
+						next if sec_addr > addr_start+length
+						e = e[0, sec_addr+e.length-(addr_start+length)]
+					end
+				rescue
+					# catch arithmetic error with symbol-based section
+					next
+				end
+			end
 			e.pattern_scan(pat, chunksz, margin) { |eo|
 				match_addr = sec_addr + eo
 				found << match_addr if not block_given? or yield(match_addr)
