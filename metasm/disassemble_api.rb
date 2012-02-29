@@ -1467,5 +1467,19 @@ class Disassembler
 	def gui_hilight_word_regexp(word)
 		@cpu.gui_hilight_word_regexp(word)
 	end
+
+	# return a C::AllocCStruct from c_parser
+	# TODO handle program.class::Header.to_c_struct
+	def decode_c_struct(structname, addr)
+		if c_parser and edata = get_edata_at(addr)
+			c_parser.decode_c_struct(structname, edata.data, edata.ptr)
+		end
+	end
+
+	def decode_c_ary(structname, addr, len)
+		if c_parser and edata = get_edata_at(addr)
+			c_parser.decode_c_ary(structname, len, edata.data, edata.ptr)
+		end
+	end
 end
 end
