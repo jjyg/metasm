@@ -1230,13 +1230,13 @@ class EncodedData
 		while chunkoff < @data.length
 			chunk = @data[chunkoff, chunksz+margin].to_str
 			off = 0
-			while match_off = (chunk[off..-1] =~ pat)
-				break if off+match_off >= chunksz	# match fully in margin
-				match_addr = chunkoff + off + match_off
+			while match = chunk[off..-1].match(pat)
+				off += match.pre_match.length
+				m_l = match[0].length
+				break if off >= chunksz	# match fully in margin
+				match_addr = chunkoff + off
 				found << match_addr if not block_given? or yield(match_addr)
-				off += match_off + 1
-				# XXX +1 or +lastmatch.length ?
-				# 'aaaabc'.pattern_scan(/a*bc/) will match 5 times here
+				off += m_l
 			end
 			chunkoff += chunksz
 		end
