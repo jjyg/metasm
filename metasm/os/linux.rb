@@ -1337,6 +1337,7 @@ class LinDebugger < Debugger
 		arg = nil if arg and arg.strip == ''
 		return if not check_pre_run(:syscall, arg)
 		@target_syscall = arg
+		@state = :running
 		@ptrace.pid = @tid
 		@ptrace.syscall(@continuesignal)
 	end
@@ -1351,6 +1352,7 @@ class LinDebugger < Debugger
 		# record as singlestep to avoid evt_singlestep -> evt_exception
 		# step or block doesn't matter much here anyway
 		return if not check_pre_run(:singlestep)
+		@state = :running
 		@ptrace.pid = @tid
 		@ptrace.singleblock(@continuesignal)
 	end
