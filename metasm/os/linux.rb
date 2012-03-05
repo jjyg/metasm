@@ -1335,11 +1335,21 @@ class LinDebugger < Debugger
 	# regexp allowed to wait a specific syscall
 	def syscall(arg=nil)
 		arg = nil if arg and arg.strip == ''
-		return if not check_pre_run(:syscall, arg)
-		@target_syscall = arg
-		@state = :running
-		@ptrace.pid = @tid
-		@ptrace.syscall(@continuesignal)
+		if b = check_breakpoint_cause and b.hash_shared.find { |bb| bb.state == :active }
+			singlestep_bp(b) {
+				next if not check_pre_run(:syscall, arg)
+				@target_syscall = arg
+				@state = :running
+				@ptrace.pid = @tid
+				@ptrace.syscall(@continuesignal)
+			}
+		else
+			return if not check_pre_run(:syscall, arg)
+			@target_syscall = arg
+			@state = :running
+			@ptrace.pid = @tid
+			@ptrace.syscall(@continuesignal)
+		end
 	end
 
 	def syscall_wait(*a, &b)
@@ -1351,10 +1361,19 @@ class LinDebugger < Debugger
 	def singleblock
 		# record as singlestep to avoid evt_singlestep -> evt_exception
 		# step or block doesn't matter much here anyway
-		return if not check_pre_run(:singlestep)
-		@state = :running
-		@ptrace.pid = @tid
-		@ptrace.singleblock(@continuesignal)
+		if b = check_breakpoint_cause and b.hash_shared.find { |bb| bb.state == :active }
+			singlestep_bp(b) {
+				next if not check_pre_run(:singlestep)
+				@state = :running
+				@ptrace.pid = @tid
+				@ptrace.singleblock(@continuesignal)
+			}
+		else
+			return if not check_pre_run(:singlestep)
+			@state = :running
+			@ptrace.pid = @tid
+			@ptrace.singleblock(@continuesignal)
+		end
 	end
 
 	def singleblock_wait(*a, &b)
