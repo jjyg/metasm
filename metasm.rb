@@ -42,6 +42,7 @@ module Metasm
 		'AOut' => 'exe_format/a_out', 'MachO' => 'exe_format/macho',
 		'DEX' => 'exe_format/dex',
 		'NDS' => 'exe_format/nds', 'XCoff' => 'exe_format/xcoff',
+		'GameBoyRom' => 'exe_format/gb',
 		'Bflt' => 'exe_format/bflt', 'Dol' => 'exe_format/dol',
 		'PYC' => 'exe_format/pyc', 'JavaClass' => 'exe_format/javaclass',
 		'SWF' => 'exe_format/swf',
