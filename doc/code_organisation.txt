@@ -54,6 +54,8 @@ decoding/disassembly.
 CPUs
 ####
 
+The cpu-specific code is stored inside the `cpu/` subdirectory.
+
 All supported architectures have a dedicated subdirectory, and a helper file
 that will simply include all the arch-specific files.
 
