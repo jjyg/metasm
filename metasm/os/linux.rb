@@ -1451,7 +1451,16 @@ class LinDebugger < Debugger
 		if @state == :running
 			# must be stopped so we can rm bps
 			self.break { detach }
+			mypid = @pid
 			wait_target
+
+			# after syscall(), wait will return once for interrupted syscall,
+			# and we need to wait more for the break callback to kick in
+			if @pid == mypid and @state == :stopped and @info =~ /syscall/
+				do_continue
+				check_target
+			end
+
 			return
 		end
 		del_all_breakpoints
