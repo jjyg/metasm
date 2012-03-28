@@ -23,7 +23,7 @@ class Z80
 		%w[nz z nc c po pe p m].each_with_index { |cc, i|
 			dbin = bin.dup
 			dbin[0] |= i << 3
-			addop name + cc, bin, *args
+			addop name + cc, dbin, *args
 		}
 	end
 

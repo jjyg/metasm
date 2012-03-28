@@ -149,14 +149,6 @@ class Z80
 		di
 	end
 
-	# return the list of registers as symbols in the order used by pushad
-	# for use in backtrace and stuff, for compatibility with x64
-	# esp is [4]
-	REG_SYMS = [:eax, :ecx, :edx, :ebx, :esp, :ebp, :esi, :edi]
-	def register_symbols
-		REG_SYMS
-	end
-
 	# hash opcode_name => lambda { |dasm, di, *symbolic_args| instr_binding }
 	def backtrace_binding
 		@backtrace_binding ||= init_backtrace_binding
@@ -166,8 +158,6 @@ class Z80
 	# populate the @backtrace_binding hash with default values
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
-
-		eax, ecx, edx, ebx, esp, ebp, esi, edi = register_symbols
 
 		mask = 0xffff
 
@@ -180,9 +170,7 @@ class Z80
 				lambda { |di, a0, a1|
 					e_op = { 'add' => :+, 'adc' => :+, 'sub' => :-, 'sbc' => :-, 'and' => :&, 'xor' => :^, 'or' => :| }[op]
 					ret = Expression[a0, e_op, a1]
-					ret = Expression[ret, e_op, :flag_c] if op == 'adc' or op == 'sbb'
-					# optimises eax ^ eax => 0
-					# avoid hiding memory accesses (to not hide possible fault)
+					ret = Expression[ret, e_op, :flag_c] if op == 'adc' or op == 'sbc'
 					ret = Expression[ret.reduce] if not a0.kind_of? Indirection
 					{ a0 => ret }
 				}
