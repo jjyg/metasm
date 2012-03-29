@@ -9,8 +9,6 @@ require 'metasm/decode'
 
 module Metasm
 class CY16
-	class InvalidRD < RuntimeError; end
-
 	def build_opcode_bin_mask(op)
 		# bit = 0 if can be mutated by an field value, 1 if fixed by opcode
 		op.bin_mask = 0
@@ -46,14 +44,13 @@ class CY16
 	end
 
 
-	def decode_instr_op_r(type, val, edata)
+	def decode_instr_op_r(val, edata)
 		bw = ((val & 0b1000) > 0 ? 1 : 2)
 		case val & 0b11_0000
 		when 0b00_0000
 			Reg.new(val)
 		when 0b01_0000
 			if val == 0b01_1111
-				raise InvalidRD, 'immediate destination' if type == :rd
 				Expression[edata.decode_imm(:u16, @endianness)]
 			else
 				Memref.new(Reg.new(8+(val&7)), nil, bw)
@@ -84,7 +81,7 @@ class CY16
 
 		op.args.each { |a|
 			di.instruction.args << case a
-			when :rs, :rd; decode_instr_op_r(a, field_val[a], edata)
+			when :rs, :rd; decode_instr_op_r(field_val[a], edata)
 			when :o7; Expression[2*field_val[a]]
 			when :u3; Expression[field_val[a]+1]
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
