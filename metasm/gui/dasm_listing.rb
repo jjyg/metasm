@@ -502,7 +502,7 @@ class AsmListingWidget < DrawableWidget
 							xlen ||= xref.len || 1 if xref.len
 							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]}" if xref.origin
 						} if @dasm.xrefs[curaddr]
-						len = xlen if xlen and xlen > 2	# db xref may point a string
+						len = xlen if xlen and xlen >= 2	# db xref may point a string
 						comment = nil if comment.empty?
 						len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or s.inv_export[s.ptr+l] or s.reloc[s.ptr+l] } || len
 						str = str[0, len] if len < str.length
