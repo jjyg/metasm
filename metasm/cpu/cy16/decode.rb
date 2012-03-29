@@ -9,6 +9,8 @@ require 'metasm/decode'
 
 module Metasm
 class CY16
+	class InvalidRD < RuntimeError; end
+
 	def build_opcode_bin_mask(op)
 		# bit = 0 if can be mutated by an field value, 1 if fixed by opcode
 		op.bin_mask = 0
@@ -51,7 +53,7 @@ class CY16
 			Reg.new(val)
 		when 0b01_0000
 			if val == 0b01_1111
-				raise 'immediate destination' if type == :rd
+				raise InvalidRD, 'immediate destination' if type == :rd
 				Expression[edata.decode_imm(:u16, @endianness)]
 			else
 				Memref.new(Reg.new(8+(val&7)), nil, bw)
@@ -89,9 +91,12 @@ class CY16
 			end
 		}
 
+		di.instruction.args.reverse!
+
 		di.bin_length += edata.ptr - before_ptr
 
 		di
+	rescue InvalidRD
 	end
 
 	def decode_instr_interpret(di, addr)
@@ -119,9 +124,10 @@ class CY16
 		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
 			binding = case op
 			when 'mov'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
-			when 'add', 'adc', 'sub', 'sbc', 'and', 'xor', 'or'
+			when 'add', 'adc', 'sub', 'sbc', 'and', 'xor', 'or', 'addi', 'subi'
 				lambda { |di, a0, a1|
-					e_op = { 'add' => :+, 'adc' => :+, 'sub' => :-, 'sbc' => :-, 'and' => :&, 'xor' => :^, 'or' => :| }[op]
+					e_op = { 'add' => :+, 'adc' => :+, 'sub' => :-, 'sbc' => :-, 'and' => :&,
+						 'xor' => :^, 'or' => :|, 'addi' => :+, 'subi' => :- }[op]
 					ret = Expression[a0, e_op, a1]
 					ret = Expression[ret, e_op, :flag_c] if op == 'adc' or op == 'sbb'
 					# optimises eax ^ eax => 0
@@ -156,7 +162,9 @@ class CY16
 		}
 
 		if binding = backtrace_binding[di.opcode.basename]
-			binding[di, *a]
+			bd = {}
+			di.instruction.args.each { |aa| bd[aa.base.symbolic] = Expression[aa.base.symbolic, :+, aa.sz] if aa.kind_of?(Memref) and aa.autoincr }
+			bd.update binding[di, *a]
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			# assume nothing except the 1st arg is modified

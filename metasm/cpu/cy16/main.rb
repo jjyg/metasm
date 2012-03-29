@@ -49,7 +49,7 @@ class CY16 < CPU
 
 	def initialize(family = :latest)
 		super()
-		@endianness = :big
+		@endianness = :little
 		@size = 16
 		@family = family
 	end

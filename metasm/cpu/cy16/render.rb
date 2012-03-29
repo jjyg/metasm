@@ -16,12 +16,14 @@ class CY16
 	class Memref
 		include Renderable
 		def render
-			r = ['(']
+			r = []
+			r << (@sz == 1 ? 'byte ptr ' : 'word ptr ')
+			r << '['
 			r << @base if @base
 			r << '++' if @autoincr
 			r << ' + ' if @base and @offset
 			r << @offset if @offset
-			r << ')'
+			r << ']'
 		end
 	end
 
