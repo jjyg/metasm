@@ -742,6 +742,10 @@ class Ia32
 	# patch a forward binding from the backtrace binding
 	# fixes fwdemu for push/pop/call/ret
 	def fix_fwdemu_binding(di, fbd)
+		if di.instruction.args.grep(ModRM).find { |m| m.seg and m.symbolic(di).target.lexpr =~ /^segment_base_/ }
+			fbd[:incomplete_binding] = Expression[1]
+		end
+
 		case di.opcode.name
 		when 'push', 'call'
 			sz = opsz(di)/8
