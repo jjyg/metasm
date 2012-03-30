@@ -783,6 +783,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
 			if not di = @cpu.decode_instruction(block.edata, di_addr)
 				ed = block.edata
+				break if ed.ptr >= ed.length and get_section_at(di_addr) and di = block.list.last
 				puts "#{ed.ptr >= ed.length ? "end of section reached" : "unknown instruction #{ed.data[di_addr-block.address+block.edata_ptr, 4].to_s.unpack('H*')}"} at #{Expression[di_addr]}" if $VERBOSE
 				return
 			end
@@ -935,6 +936,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			# decode instruction
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
 			if not di = @cpu.decode_instruction(block.edata, di_addr)
+				break if block.edata.ptr >= block.edata.length and get_section_at(di_addr) and di = block.list.last
 				return ret
 			end
 
