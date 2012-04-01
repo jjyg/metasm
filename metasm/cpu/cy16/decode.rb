@@ -82,7 +82,8 @@ class CY16
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :rs, :rd; decode_instr_op_r(field_val[a], edata)
-			when :o7; Expression[2*field_val[a]]
+			when :o7; Expression[2*Expression.make_signed(field_val[a], 7)]
+			when :x7; Expression[field_val[a]]
 			when :u3; Expression[field_val[a]+1]
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end

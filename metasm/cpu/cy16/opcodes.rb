@@ -31,8 +31,8 @@ class CY16
 		@opcode_list = []
 		@valid_args.update [:rs, :rd, :o7
 		].inject({}) { |h, v| h.update v => true }
-		@fields_mask.update :rs => 0x3f, :rd => 0x3f, :o7 => 0x7f, :u3 => 7
-		@fields_shift.update :rs => 6, :rd => 0, :o7 => 0, :u3 => 6
+		@fields_mask.update :rs => 0x3f, :rd => 0x3f, :o7 => 0x7f, :x7 => 0x7f, :u3 => 7
+		@fields_shift.update :rs => 6, :rd => 0, :o7 => 0, :x7 => 0, :u3 => 6
 
 		addop 'mov', 0<<12, :rs, :rd
 		addop 'add', 1<<12, :rs, :rd
@@ -47,8 +47,8 @@ class CY16
 		addop 'or',  8<<12, :rs, :rd
 		addop 'xor', 9<<12, :rs, :rd
 
-		addop_macrocc 'int', (10<<12), :o7
-		addop 'int', (10<<12) | (15<<8), :o7
+		addop_macrocc 'int', (10<<12), :x7
+		addop 'int', (10<<12) | (15<<8), :x7
 		addop_macrocc 'c', (10<<12) | (1<<7), :setip, :saveip, :rd
 		addop 'call',(10<<12) | (15<<8) | (1<<7), :setip, :stopexec, :saveip, :rd
 		addop_macrocc 'r', (12<<12) | (1<<7) | 0b010111, :setip	# must come before absolute jmp
