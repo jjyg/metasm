@@ -27,7 +27,7 @@ def scanfuncstart(addr)
 end
 
 if gui
-	gui.keyboard_callback_ctrl[?P] = lambda {
+	gui.keyboard_callback_ctrl[?P] = lambda { |*a|
 		if o = scanfuncstart(gui.curaddr)
 			gui.focus_addr(o)
 		end

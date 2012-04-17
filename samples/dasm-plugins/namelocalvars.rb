@@ -26,7 +26,7 @@ def namelocalvars(addr)
 end
 
 if gui
-	gui.keyboard_callback[?L] = lambda {
+	gui.keyboard_callback[?L] = lambda { |*a|
 		puts namelocalvars(gui.curaddr).join(', ')
 		gui.gui_update
 		true
