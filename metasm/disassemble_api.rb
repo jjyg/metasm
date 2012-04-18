@@ -968,13 +968,14 @@ class Disassembler
 	def save_io(fd)
 		fd.puts 'Metasm.dasm'
 
-		if @program.filename
+		if @program.filename and not @program.kind_of?(Shellcode)
 			t = @program.filename.to_s
 			fd.puts "binarypath #{t.length}", t
 		else
 			t = "#{@cpu.class.name.sub(/.*::/, '')} #{@cpu.size} #{@cpu.endianness}"
 			fd.puts "cpu #{t.length}", t
 			# XXX will be reloaded as a Shellcode with this CPU, but it may be a custom EXE
+			# do not output binarypath, we'll be loaded as a Shellcode, 'section' will suffice
 		end
 
 		@sections.each { |a, e|
@@ -1080,6 +1081,7 @@ class Disassembler
 				reinitialize Shellcode.new(cpu)
 				@program.disassembler = self
 				@program.init_disassembler
+				@sections.delete(0)	# rm empty section at 0, other real 'section' follow
 			when 'section'
 				info = data[0, data.index("\n") || data.length]
 				data = data[info.length, data.length]
