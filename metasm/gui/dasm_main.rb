@@ -755,6 +755,9 @@ class DasmWindow < Window
 	def loadfile(path, cpu='Ia32', exefmt=nil)
 		if exefmt
 			exefmt = Metasm.const_get(exefmt) if exefmt.kind_of? String
+			if exefmt.name.split('::').last == 'Shellcode'
+				exefmt = Shellcode.withcpu(cpu)
+			end
 		else
 			exefmt = AutoExe.orshellcode { cpu = Metasm.const_get(cpu) if cpu.kind_of? String ; cpu.new }
 		end
