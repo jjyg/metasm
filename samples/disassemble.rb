@@ -62,7 +62,7 @@ else
 	end
 end
 # set options
-dasm = exe.init_disassembler
+dasm = exe.disassembler
 makeint = lambda { |addr|
 	case addr
 	when /^[0-9].*h/; addr.to_i(16)

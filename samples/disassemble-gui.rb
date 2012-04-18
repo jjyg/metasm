@@ -80,7 +80,7 @@ end
 ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
 
 if exe
-	dasm = exe.init_disassembler
+	dasm = exe.disassembler
 
 	dasm.load_map opts[:map] if opts[:map]
 	dasm.parse_c_file opts[:cheader] if opts[:cheader]
