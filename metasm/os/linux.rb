@@ -812,6 +812,7 @@ EOS
 			b = "e#{r}".to_sym
 			ret[r.to_sym] = [b, 0xffff]
 		}
+		ret[:orig_rax] = [:orig_eax, 0xffff_ffff]
 		ret
 	end
 
@@ -1011,6 +1012,7 @@ EOS
 			ret["r#{i}b"] = [b, 0xff]
 		}
 		ret[:eip] = [:rip, 0xffff_ffff]
+		ret[:orig_eax] = [:orig_rax, 0xffff_ffff]
 		ret
 	end
 
