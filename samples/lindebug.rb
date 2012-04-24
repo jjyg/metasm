@@ -471,7 +471,7 @@ class LinDebug
 	end
 	def cont(*a)
 		self.statusline = ' target running...'
-		@rs.cont_wait(*a)
+		@rs.continue_wait(*a)
 		updatecodeptr
 		@statusline = nil
 	end
@@ -627,7 +627,7 @@ class LinDebug
 			type, str = str.split(/\s+/, 2)
 			@rs.set_hwbp @rs.resolve(str), type
 		}
-		@command['bt'] = lambda { |str| @rs.backtrace { |t| add_log t } }
+		@command['bt'] = lambda { |str| @rs.stacktrace { |a,t| add_log "#{'%x' % a} #{t}" } }
 		@command['d'] =  lambda { |str| @dataptr = @rs.resolve(str) if str.length > 0 }
 		@command['db'] = lambda { |str| @datafmt = 'db' ; @dataptr = @rs.resolve(str) if str.length > 0 }
 		@command['dw'] = lambda { |str| @datafmt = 'dw' ; @dataptr = @rs.resolve(str) if str.length > 0 }
@@ -671,6 +671,9 @@ class LinDebug
 		@command['?'] = lambda { |str|
 			val = @rs.resolve(str)
 			log "#{val} 0x#{val.to_s(16)} #{[val].pack('L').inspect}"
+		}
+		@command['syscall'] = lambda { |str|
+			@rs.syscall_wait(str)
 		}
 	end
 end
