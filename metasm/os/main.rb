@@ -272,7 +272,7 @@ class VirtualFile < VirtualString
 		if sz = File.size(path) <= 4096 and (mode == 'rb' or mode == 'r')
 			File.open(path, mode) { |fd| fd.read }
 		else
-			File.open(path, mode) { |fd| new fd, 0, sz }
+			File.open(path, mode) { |fd| new fd.dup, 0, sz }
 		end
 	end
 
@@ -282,7 +282,7 @@ class VirtualFile < VirtualString
 	# creates a new virtual mapping of a section of the file
 	# the file descriptor must be seekable
 	def initialize(fd, addr_start = 0, length = nil)
-		@fd = fd.dup
+		@fd = fd
 		if not length
 			@fd.seek(0, File::SEEK_END)
 			length = @fd.tell - addr_start
