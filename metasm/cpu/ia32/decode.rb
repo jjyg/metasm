@@ -749,7 +749,8 @@ class Ia32
 		case di.opcode.name
 		when 'push', 'call'
 			sz = opsz(di)/8
-			fbd[Indirection[[:esp, :-, sz], sz]] = fbd.delete(Indirection[:esp, sz])
+			esp = register_symbols[4]
+			fbd[Indirection[[esp, :-, sz], sz]] = fbd.delete(Indirection[esp, sz])
 		when 'pop', 'ret' # nothing to do
 		when /^(push|pop|call|ret|enter|leave|stos|movs|lods|scas|cmps)/
 			fbd[:incomplete_binding] = Expression[1]	# TODO
