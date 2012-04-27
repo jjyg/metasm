@@ -114,8 +114,8 @@ class Preprocessor
 					when :punct
 						case tok.raw
 						when ','; break if nest == 0
-						when ')'; break if nest == 0 ; nest -= 1
-						when '('; nest += 1
+						when ')', '}'; break if nest == 0 ; nest -= 1
+						when '(', '{'; nest += 1
 						end
 					end
 					arg << tok
