@@ -33,10 +33,10 @@ class PTrace
 	#  :attach => always attach
 	#  false/nil => same as attach, without actually calling PT_ATTACH (useful when the ruby process is already tracing pid)
 	#  default/anything else: try to attach if pid is numeric, else create
-	def initialize(target, do_attach=true)
+	def initialize(target, do_attach=true, &b)
 		case do_attach
 		when :create
-			init_create(target)
+			init_create(target, &b)
 		when :attach
 			init_attach(target)
 		when :dup
@@ -50,7 +50,7 @@ class PTrace
 			t = begin; Integer(target)
 			    rescue ArgumentError, TypeError
 			    end
-			t ? init_attach(t) : init_create(target)
+			t ? init_attach(t) : init_create(target, &b)
 		end
 	end
 
@@ -62,10 +62,11 @@ class PTrace
 		puts "Ptrace: attached to #@pid" if $DEBUG
 	end
 	
-	def init_create(target)
+	def init_create(target, &b)
 		if not @pid = ::Process.fork
 			tweak_for_pid(::Process.pid)
 			traceme
+			b.call if b
 			::Process.exec(*target)
 			exit!(0)
 		end
@@ -1048,7 +1049,7 @@ class LinDebugger < Debugger
 	attr_accessor :ptrace, :continuesignal, :has_pax_mprotect, :target_syscall
 	attr_accessor :callback_syscall, :callback_branch, :callback_exec
 
-	def initialize(pidpath=nil)
+	def initialize(pidpath=nil, &b)
 		super()
 		@pid_stuff_list << :has_pax_mprotect << :ptrace	<< :breaking << :os_process
 		@tid_stuff_list << :continuesignal << :saved_csig << :ctx << :target_syscall
@@ -1064,7 +1065,7 @@ class LinDebugger < Debugger
 		t = begin; Integer(pidpath)
 		    rescue ArgumentError, TypeError
 		    end
-		t ? attach(t) : create_process(pidpath)
+		t ? attach(t) : create_process(pidpath, &b)
 	end
 
 	def shortname; 'lindbg'; end
@@ -1079,8 +1080,14 @@ class LinDebugger < Debugger
 	end
 
 	# create a process and debug it
-	def create_process(path)
-		pt = PTrace.new(path, :create)
+	# if given a block, the block is run in the context of the ruby subprocess
+	# after the fork() and before exec()ing the target binary
+	# you can use it to eg tweak file descriptors:
+	#  tg_stdin_r, tg_stdin_w = IO.pipe
+	#  create_process('/bin/cat') { tg_stdin_w.close ; $stdin.reopen(tg_stdin_r) }
+	#  tg_stdin_w.write 'lol'
+	def create_process(path, &b)
+		pt = PTrace.new(path, :create, &b)
 		# TODO save path, allow restart etc
 		set_context(pt.pid, pt.pid)	# swapout+init_newpid
 		log "attached #@pid"
