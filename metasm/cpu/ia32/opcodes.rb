@@ -63,7 +63,9 @@ class Ia32
 		addop 'int',   [0xCC], nil, :imm_val3, :stopexec
 		addop 'int',   [0xCD], nil, :u8
 		addop_macrotttn 'j', [0x70], nil, :setip, :i8
+		addop_macrotttn('j', [0x70], nil, :setip, :i8) { |o| o.name << '.i8' }
 		addop_macrotttn 'j', [0x0F, 0x80], nil, :setip, :i
+		addop_macrotttn('j', [0x0F, 0x80], nil, :setip, :i) { |o| o.name << '.i' }
 		addop 'jmp',   [0xE9], nil,  {:s => [0, 1]}, :setip, :i,  :stopexec
 		addop 'jmp',   [0xFF], 4, :setip, :stopexec
 		addop 'lea',   [0x8D], :mrmA
@@ -1380,7 +1382,7 @@ class Ia32
 			@opcode_list << op
 		end
 
-		if op.args == [:i] or op.args == [:farptr] or op.name == 'ret'
+		if (op.args == [:i] or op.args == [:farptr] or op.name == 'ret') and op.name !~ /\.i/
 			# define opsz-override version for ambiguous opcodes
 			op16 = op.dup
 			op16.name << '.i16'
