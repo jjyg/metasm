@@ -173,7 +173,7 @@ class COFF
 	end
 
 	class ResourceDirectory
-		def decode(coff, edata = coff.curencoded, startptr = edata.ptr)
+		def decode(coff, edata = coff.curencoded, startptr = edata.ptr, maxdepth=3)
 			super(coff, edata)
 
 			@entries = []
@@ -215,10 +215,12 @@ class COFF
 					e.subdir_p = e_ptr & 0x7fff_ffff
 					if startptr + e.subdir_p >= edata.length
 						puts 'W: COFF: invalid resource structure: directory too far' if $VERBOSE
-					else
+					elsif maxdepth > 0
 						edata.ptr = startptr + e.subdir_p
 						e.subdir = ResourceDirectory.new
-						e.subdir.decode coff, edata, startptr
+						e.subdir.decode coff, edata, startptr, maxdepth-1
+					else
+						puts 'W: COFF: recursive resource section' if $VERBOSE
 					end
 				else
 					e.dataentry_p = e_ptr
