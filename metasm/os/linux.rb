@@ -405,6 +405,11 @@ struct siginfo {
             long int si_band;	/* Band event for SIGPOLL.  */
             int si_fd;
         } _sigpoll;
+        struct {                /* SIGSYS under SECCOMP */
+            uintptr_t si_calladdr; /* calling insn address */
+            int si_syscall;     /* triggering syscall nr */
+            int si_arch;        /* AUDIT_ARCH_* for syscall */
+        } _sigsys;
     };
 };
 EOS
