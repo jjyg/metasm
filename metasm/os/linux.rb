@@ -204,7 +204,7 @@ class PTrace
 		'TRACESYSGOOD'  => 0x01, 'TRACEFORK'     => 0x02,
 		'TRACEVFORK'    => 0x04, 'TRACECLONE'    => 0x08,
 		'TRACEEXEC'     => 0x10, 'TRACEVFORKDONE'=> 0x20,
-		'TRACEEXIT'     => 0x40
+		'TRACEEXIT'     => 0x40, 'TRACESECCOMP'  => 0x80,
 	}
 
 	WAIT_EXTENDEDRESULT = {
