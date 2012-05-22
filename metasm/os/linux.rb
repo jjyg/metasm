@@ -211,7 +211,8 @@ class PTrace
 		# Wait extended result codes for the above trace options.
 		'EVENT_FORK'       => 1, 'EVENT_VFORK'      => 2,
 		'EVENT_CLONE'      => 3, 'EVENT_EXEC'       => 4,
-		'EVENT_VFORK_DONE' => 5, 'EVENT_EXIT'       => 6
+		'EVENT_VFORK_DONE' => 5, 'EVENT_EXIT'       => 6,
+		'EVENT_SECCOMP'    => 7,
 	}
 	WAIT_EXTENDEDRESULT.update WAIT_EXTENDEDRESULT.invert
 
