@@ -127,6 +127,8 @@ class MachO < ExeFormat
 	SYM_TYPE = { 0 => 'UNDF', 2/2 => 'ABS', 0xa/2 => 'INDR', 0xe/2 => 'SECT', 0x1e/2 => 'TYPE' }
 	SYM_STAB = { }
 
+	GENERIC_RELOC = { 0 => 'VANILLA', 1 => 'PAIR', 2 => 'SECTDIFF', 3 => 'LOCAL_SECTDIFF', 4 => 'PB_LA_PTR' }
+
 	class SerialStruct < Metasm::SerialStruct
 		new_int_field :xword
 	end
@@ -479,6 +481,12 @@ class MachO < ExeFormat
 		end
 	end
 
+	class Relocation < SerialStruct
+		word :address
+		bitfield :word, 0 => :symbolnum, 24 => :pcrel, 25 => :length, 27 => :extern, 28 => :type
+		fld_enum :type, GENERIC_RELOC
+	end
+
 	def encode_byte(val)        Expression[val].encode( :u8, @endianness) end
 	def encode_half(val)        Expression[val].encode(:u16, @endianness) end
 	def encode_word(val)        Expression[val].encode(:u32, @endianness) end
@@ -494,6 +502,7 @@ class MachO < ExeFormat
 	attr_accessor :segments
 	attr_accessor :commands
 	attr_accessor :symbols
+	attr_accessor :relocs
 
 	def initialize(cpu=nil)
 		super(cpu)
@@ -549,6 +558,26 @@ class MachO < ExeFormat
 	end
 
 	def decode_relocations
+		@relocs = []
+		@segments.each { |seg|
+			seg.sections.each { |sec|
+				@encoded.ptr = sec.reloff
+				sec.nreloc.times { @relocs << Relocation.decode(self) }
+			}
+		}
+		@commands.each { |cmd|
+			if cmd.cmd == 'DYSYMTAB'
+				@encoded.ptr = cmd.data.extreloff
+				cmd.data.nextrel.times { @relocs << Relocation.decode(self) }
+				@encoded.ptr = cmd.data.locreloff
+				cmd.data.nlocrel.times { @relocs << Relocation.decode(self) }
+			end
+		}
+		@relocs.each { |r|
+			if r.extern == 1
+				sym = @symbols[r.symbolnum]
+			end
+		}
 	end
 
 	def decode_segment(s)
