@@ -180,7 +180,7 @@ class MachO < ExeFormat
 		def decode(m)
 			super(m)
 			ptr = m.encoded.ptr
-			if @cmd.kind_of? String and self.class.constants.map { |c| c.to_s }.include? @cmd
+			if @cmd.kind_of?(String) and self.class.constants.map { |c| c.to_s }.include?(@cmd)
 				@data = self.class.const_get(@cmd).decode(m)
 			end
 			m.encoded.ptr = ptr + @cmdsize - 8
@@ -552,9 +552,13 @@ class MachO < ExeFormat
 	end
 
 	def decode_segment(s)
+		@encoded.add_export(s.name, s.fileoff)
 		s.encoded = @encoded[s.fileoff, s.filesize]
 		s.encoded.virtsize = s.virtsize
-		s.sections.each { |ss| ss.encoded = @encoded[ss.offset, ss.size] }
+		s.sections.each { |ss|
+			ss.encoded = @encoded[ss.offset, ss.size]
+			s.encoded.add_export(ss.name, ss.offset)
+		}
 	end
 
 	def each_section(&b)
