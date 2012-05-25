@@ -573,9 +573,17 @@ class MachO < ExeFormat
 				cmd.data.nlocrel.times { @relocs << Relocation.decode(self) }
 			end
 		}
+		seg = nil
 		@relocs.each { |r|
 			if r.extern == 1
 				sym = @symbols[r.symbolnum]
+				seg = @segments.find { |sg| sg.virtaddr <= r.address and sg.virtaddr + sg.virtsize > r.address } unless seg and seg.virtaddr <= r.address and seg.virtaddr + seg.virtsize > r.address
+				if not seg
+					puts "macho: reloc to unmapped space #{r.inspect} #{sym.inspect}" if $VERBOSE
+					next
+				end
+				seg.encoded.reloc[r.address - seg.virtaddr] = Metasm::Relocation.new(Expression[sym.name], :u32, @endianness)
+
 			end
 		}
 	end
