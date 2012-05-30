@@ -1026,6 +1026,7 @@ EOS
 	# XXX val is an integer, how to decode Floats etc ? raw binary ptr ?
 	def self.convert_c2rb(formal, val)
 		formal = formal.type if formal.kind_of? C::Variable
+		val &= (1 << 8*cp.sizeof(formal))-1 if formal.integral?
 		val = Expression.make_signed(val, 8*cp.sizeof(formal)) if formal.integral? and formal.signed?
 		val = nil if formal.pointer? and val == 0
 		val
