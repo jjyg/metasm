@@ -1820,7 +1820,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		# TODO trace expression evolution to allow handling of
 		#  mov eax, 28 ; add eax, 4 ; jmp eax
 		#  => mov eax, (loc_xx-4)
-		if di and not unk # and di.address == origin
+		if di and not unk and expr != n # and di.address == origin
 			@cpu.replace_instr_arg_immediate(di.instruction, expr, n)
 		end
 		if @decoded[origin] and not unk
