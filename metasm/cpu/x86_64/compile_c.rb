@@ -752,7 +752,8 @@ class CCompiler < C::Compiler
 
 		case op
 		when 'add', 'sub', 'and', 'or', 'xor'
-			r = make_volatile(r, type) if l.kind_of? ModRM and r.kind_of? ModRM
+			r = make_volatile(r, type) if l.kind_of?(ModRM) and r.kind_of?(ModRM)
+			r = make_volatile(r, type) if r.kind_of?(ModRM) and r.sz != l.sz	# add rax, word [moo]
 			unuse r
 			r = Reg.new(r.val, l.sz) if r.kind_of?(Reg) and l.kind_of?(ModRM) and l.sz and l.sz != r.sz     # add byte ptr [rax], bl
 			instr op, l, i_to_i32(r)
