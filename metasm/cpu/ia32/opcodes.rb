@@ -480,7 +480,7 @@ class Ia32
 		addop 'pmaxub',  [0x0F, 0xDE], :mrmmmx
 		addop 'pminsw',  [0x0F, 0xEA], :mrmmmx
 		addop 'pminub',  [0x0F, 0xDA], :mrmmmx
-		addop 'pmovmskb',[0x0F, 0xD4, 0xC0], nil, {:reg => [2, 3], :regmmx => [2, 0]}, :reg, :regmmx
+		addop 'pmovmskb',[0x0F, 0xD7, 0xC0], nil, {:reg => [2, 3], :regmmx => [2, 0]}, :reg, :regmmx
 		addop 'psadbw',  [0x0F, 0xF6], :mrmmmx
 		addop 'pshufw',  [0x0F, 0x70], :mrmmmx, :u8
 
