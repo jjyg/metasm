@@ -743,16 +743,21 @@ class Ia32
 	# fixes fwdemu for push/pop/call/ret
 	def fix_fwdemu_binding(di, fbd)
 		if di.instruction.args.grep(ModRM).find { |m| m.seg and m.symbolic(di).target.lexpr =~ /^segment_base_/ }
+			fbd = fbd.dup
 			fbd[:incomplete_binding] = Expression[1]
 		end
 
 		case di.opcode.name
 		when 'push', 'call'
+			fbd = fbd.dup
 			sz = opsz(di)/8
 			esp = register_symbols[4]
-			fbd[Indirection[[esp, :-, sz], sz]] = fbd.delete(Indirection[esp, sz])
+			if i = fbd.delete(Indirection[esp, sz])
+				fbd[Indirection[[esp, :-, sz], sz]] = i
+			end
 		when 'pop', 'ret' # nothing to do
 		when /^(push|pop|call|ret|enter|leave|stos|movs|lods|scas|cmps)/
+			fbd = fbd.dup
 			fbd[:incomplete_binding] = Expression[1]	# TODO
 		end
 		fbd
