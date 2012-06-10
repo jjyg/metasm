@@ -1422,7 +1422,6 @@ p boxes.length
 			@curcontext.view_y += (height/2 / @zoom - height/2)
 			@zoom = 1.0
 
-			focus_xy(b.x, b.y + @caret_y*@font_height)
 			update_caret
 		elsif can_update_context
 			@curcontext = Graph.new 'testic'
@@ -1449,10 +1448,11 @@ p boxes.length
 	# hint that the caret moved
 	# redraw, change the hilighted word
 	def update_caret
-		return if not @caret_box or not @caret_x or not l = @caret_box[:line_text_col][@caret_y]
+		return if not b = @caret_box or not @caret_x or not l = @caret_box[:line_text_col][@caret_y]
 		l = l.map { |s, c| s }.join
 		@parent_widget.focus_changed_callback[] if @parent_widget and @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
 		update_hl_word(l, @caret_x)
+		focus_xy(b.x, b.y + @caret_y*@font_height)
 		redraw
 	end
 
