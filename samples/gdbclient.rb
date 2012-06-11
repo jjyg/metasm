@@ -529,7 +529,8 @@ class Rubstop
 		# file fmt: addr type name eg 'c01001ba t setup_idt'
 		minaddr = maxaddr = nil
 		File.read(mapfile).each { |l|
-			addr = l.chomp.split[0].to_i(16)
+			addr, name = l.chomp.split.values_at(0, 2)
+			addr = addr.to_i(16)
 			minaddr = addr if not minaddr or minaddr > addr
 			maxaddr = addr if not maxaddr or maxaddr < addr
 			@symbols[addr] = name
