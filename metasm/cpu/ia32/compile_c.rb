@@ -527,7 +527,7 @@ class CCompiler < C::Compiler
 			if expr.rexpr.type.specifier == :unsigned and r.sz == 64
 				label = new_label('unsign_float')
 				if m.sz == 64 and @cpusz < 64
-					foo, m = get_composite_parts m
+					m = get_composite_parts(m)[1]
 				end
 				m2 = m
 				m2 = make_volatile(m, expr.rexpr.type) if m.kind_of? ModRM

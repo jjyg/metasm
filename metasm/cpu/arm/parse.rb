@@ -101,7 +101,7 @@ class ARM
 			base = Reg.new Reg.s_to_i[lexer.readtok.raw]
 			if lexer.nexttok.raw == ']'
 				lexer.readtok
-				closed = true
+				#closed = true
 			end
 			if lexer.nexttok.raw != ','
 				raise lexer, 'mem off expected'

@@ -612,7 +612,6 @@ class CCompiler < C::Compiler
 		ft = ft.pointed if ft.pointer?
 		ft = nil if not ft.kind_of? C::Function
 
-		arglist = expr.rexpr.dup
 		regargsmask = @state.regargs.dup
 		if ft
 			ft.args.each_with_index { |a, i|

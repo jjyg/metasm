@@ -54,7 +54,6 @@ def heapscan_scan
 	mmaps = []
 	libc = nil
 	pr = os_process
-	vm = pr.memory
 	pr.mappings.each { |a, l, p, f|
 		case f.to_s
 		when /heap/

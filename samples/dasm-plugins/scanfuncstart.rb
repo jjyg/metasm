@@ -14,7 +14,7 @@ def scanfuncstart(addr)
 		fs = find_function_start(addr)
 		return fs if fs != addr
 	end
-	edata, s_name = get_section_at(addr)
+	edata = get_edata_at(addr)
 	if o = (1..1000).find { |off|
 		@decoded[addr-off-1] or
 		edata.data[edata.ptr-off-1] == ?\xcc or

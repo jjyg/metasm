@@ -225,7 +225,7 @@ EOS
 			puts "backtrace seh from #{di} => #{a.map { |addr| Expression[addr] }.join(', ')}" if $VERBOSE
 			a.each { |aa|
 				next if aa == Expression::Unknown
-				l = dasm.auto_label_at(aa, 'seh', 'loc', 'sub')
+				dasm.auto_label_at(aa, 'seh', 'loc', 'sub')
 				dasm.addrs_todo << [aa]
 			}
 			super(dasm, di)
@@ -375,7 +375,6 @@ class LoadedPE < PE
 			else
 				# read imported pointer from the import structure
 				while not ptr = imports.first.iat.shift
-					load_dll = nil
 					imports.shift
 					break if imports.empty?
 					iat_p = imports.first.iat_p

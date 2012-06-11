@@ -91,7 +91,7 @@ class Python
 		}
 
 		if binding = backtrace_binding[di.opcode.basename]
-			bd = binding[di, *a]
+			binding[di, *a]
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			{ :incomplete_binding => Expression[1] }

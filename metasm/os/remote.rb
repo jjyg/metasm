@@ -108,7 +108,7 @@ class GdbClient
 			end
 			outstr << unhex($1)
 			ret = gdb_readresp(timeout, outstr)
-			outstr.split("\n").each { |e| log 'gdb: ' + e } if first
+			outstr.split("\n").each { |o| log 'gdb: ' + o } if first
 			return ret
 		end
 

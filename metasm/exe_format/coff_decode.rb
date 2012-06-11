@@ -248,7 +248,8 @@ class COFF
 
 			decode_tllv = lambda { |ed, state|
 				sptr = ed.ptr
-				len, vlen, type = coff.decode_half(ed), coff.decode_half(ed), coff.decode_half(ed)
+				len, vlen = coff.decode_half(ed), coff.decode_half(ed)
+				coff.decode_half(ed)	# type
 				tagname = ''
 				while c = coff.decode_half(ed) and c != 0
 					tagname << (c&255)

@@ -1573,7 +1573,6 @@ class ContainerVBoxWidget < WinWidget
 			end
 			cy += v.height
 			if y >= cy-1 and y < cy+@spacing+1
-				vsz = v
 				@resizing = v
 				@wantheight[@resizing] ||= v.height
 				@tmpwantheight = []
@@ -2915,7 +2914,6 @@ class LBoxWidget < DrawableWidget
 			vscroll((@linehead-off)*@font_height)
 			redraw
 		when :down
-			n = @lineshown-1
 			off = [@lineshown, [@lineshown/2, 5].max].min
 			vscroll((@linehead+off)*@font_height)
 			redraw
@@ -3041,7 +3039,7 @@ end
 			Win32Gui.getscrollinfo(@hwnd, Win32Gui::SB_VERT, sif)
 			case wparam & 0xffff
 			when Win32Gui::SB_THUMBPOSITION; val = sif.ntrackpos
-			when Win32Gui::SB_THUMBTRACK; val = sif.ntrackpos; nopos = true
+			when Win32Gui::SB_THUMBTRACK; val = sif.ntrackpos #; nopos = true
 			when Win32Gui::SB_LINEDOWN; val = sif.npos + 1
 			when Win32Gui::SB_LINEUP;   val = sif.npos - 1
 			when Win32Gui::SB_PAGEDOWN; val = sif.npos + sif.npage

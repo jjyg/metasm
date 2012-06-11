@@ -107,7 +107,7 @@ class ARM
 			when :reglist
 				di.instruction.args.last.updated = true if op.props[:baseincr]
 				msk = field_val[a]
-				l = RegList.new((0..15).map { |i| Reg.new(i) if (msk & (1 << i)) > 0 }.compact)
+				l = RegList.new((0..15).map { |n| Reg.new(n) if (msk & (1 << n)) > 0 }.compact)
 				l.usermoderegs = true if op.props[:usermoderegs]
 				l
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
@@ -143,7 +143,7 @@ class ARM
 		}
 	
 		if binding = backtrace_binding[di.opcode.name]
-			bd = binding[di, *a]
+			binding[di, *a]
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			# assume nothing except the 1st arg is modified

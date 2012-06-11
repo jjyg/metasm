@@ -165,7 +165,6 @@ class COFF
 			edata['iat'] << EncodedData.new
 			# edata['ilt'] = edata['iat']
 			label = lambda { |n| coff.label_at(edata[n], 0, n) }
-			rva = lambda { |n| Expression[label[n], :-, coff.label_at(coff.encoded, 0)] }
 			rva_end = lambda { |n| Expression[[label[n], :-, coff.label_at(coff.encoded, 0)], :+, edata[n].virtsize] }
 
 			@libname_p = rva_end['nametable']

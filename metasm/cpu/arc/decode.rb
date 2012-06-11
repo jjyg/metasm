@@ -235,7 +235,7 @@ class ARC
 					Memref.new(GPR.new(26), Expression[field_val[imm]], memref_size(di))
 
 				when :cu3, :cu5, :cu5ee, :cu6, :cu7, :cu7l, :cu8; Expression[field_val[a]]
-				when :cs9, :cs10; :cs11;  Expression[field_val[a]]
+				when :cs9, :cs10, :cs11;  Expression[field_val[a]]
 				when :cdisps7, :cdisps8, :cdisps10, :cdisps13; Expression[field_val[a]]
 				when :@cb; Memref.new(GPR.new(field_val[:cb]), nil, memref_size(di))
 				when :@cbu7, :@cbu6, :@cbu5; Memref.new(GPR.new(field_val[:cb]), Expression[field_val[a]], memref_size(di))
@@ -254,7 +254,7 @@ class ARC
 
 				when :@bextcext
 					tmp = field_val[a]
-					c = tmp & 0x3F
+					#c = tmp & 0x3F
 					tmp = tmp >> 6
 					b = (tmp >> 12) | ((tmp & 0x7) << 3)
 					Memref.new(field_val[:bext],  field_val[:cext], memref_size(di))
@@ -324,12 +324,12 @@ class ARC
 	end
 
 	def init_backtrace_binding
-		gp, fp, sp, ilink1, ilink2, blink, lp_count = register_symbols
+		sp = :r28
+		blink = :r31
 
 		@backtrace_binding ||= {}
 
 		mask = lambda { |sz| (1 << sz)-1 }  # 32bits => 0xffff_ffff
-		sign = lambda { |v, di| Expression[[[v, :&, mask[di]], :>>, opsz(di)-1], :'!=', 0] }
 
 		opcode_list.each{|mode, oplist|
 			oplist.map { |ol| ol.name }.uniq.each { |op|
@@ -390,7 +390,7 @@ class ARC
 		}
 
 		if binding = backtrace_binding[di.opcode.basename]
-			bd = binding[di, *a]
+			binding[di, *a]
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			{ :incomplete_binding => Expression[1] }

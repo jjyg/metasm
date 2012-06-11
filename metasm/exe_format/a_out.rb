@@ -119,11 +119,11 @@ class AOut < ExeFormat
 
 		@data = EncodedData.new << @encoded.read(@header.data)
 
-		textrel = @encoded.read @header.trsz
-		datarel = @encoded.read @header.drsz
-		syms    = @encoded.read @header.syms
-		strings = @encoded.read
 		# TODO
+		#textrel = @encoded.read @header.trsz
+		#datarel = @encoded.read @header.drsz
+		#syms    = @encoded.read @header.syms
+		#strings = @encoded.read
 	end
 
 	def encode

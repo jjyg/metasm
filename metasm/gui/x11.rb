@@ -579,7 +579,7 @@ EOS
 def self.test
 	d = xopendisplay(nil)
 	s = xdefaultscreen(d)
-	cmap = xdefaultcolormap(d, s)
+	#cmap = xdefaultcolormap(d, s)
 	w = xcreatesimplewindow(d, xdefaultrootwindow(d), 0, 0, 28, 28, 0, xblackpixel(d, s), xblackpixel(d, s))
 	xstorename(d, w, "lol")
 	gc = xcreategc(d, w, 0, 0)

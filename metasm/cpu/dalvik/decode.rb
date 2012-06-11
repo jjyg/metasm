@@ -138,7 +138,7 @@ class Dalvik
 		}
 	
 		if binding = backtrace_binding[di.opcode.name]
-			bd = binding[di, *a]
+			binding[di, *a]
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			# assume nothing except the 1st arg is modified

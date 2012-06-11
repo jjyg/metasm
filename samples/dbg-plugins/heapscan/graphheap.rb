@@ -31,7 +31,7 @@ class GraphHeapWidget < GraphViewWidget
 				@heap.chunk_struct[addr] ||= t.pointed.untypedef
 			end
 			st = @heap.chunk_struct[addr] || create_struct(addr)
-			ed, l = @dasm.get_section_at(addr)
+			ed = @dasm.get_edata_at(addr)
 			@addr_struct[addr] = @heap.cp.decode_c_struct(st.name, ed.data, ed.ptr)
 			gui_update
 		}
@@ -261,7 +261,7 @@ class GraphHeapWidget < GraphViewWidget
 					next if @addr_struct[nt]
 					# TODO check if the pointer is a some_struct*
 					st = @heap.chunk_struct[nt] || create_struct(nt)
-					ed, l = @dasm.get_section_at(nt)
+					ed = @dasm.get_edata_at(nt)
 					@addr_struct[nt] = @heap.cp.decode_c_struct(st.name, ed.data, ed.ptr)
 				}
 			}
@@ -287,7 +287,7 @@ class GraphHeapWidget < GraphViewWidget
 		while a = todo.shift
 			next if done.include? a
 			done << a
-			box = ctx.new_box a, :line_text_col => [], :line_address => [], :line_struct => [], :line_member => []
+			ctx.new_box a, :line_text_col => [], :line_address => [], :line_struct => [], :line_member => []
 			todo.concat @heap.xrchunksto[a].to_a & @addr_struct.keys
 		end
 
@@ -520,7 +520,7 @@ class GraphHeapWidget < GraphViewWidget
 	def do_focus_addr(addr)
 		st = @heap.chunk_struct[addr] || create_struct(addr)
 
-		ed, l = @dasm.get_section_at(addr)
+		ed = @dasm.get_edata_at(addr)
 		@addr_struct = { addr => @heap.cp.decode_c_struct(st.name, ed.data, ed.ptr) }
 		gui_update
 	end
@@ -571,7 +571,6 @@ class GraphHeapWidget < GraphViewWidget
 		}
 		(@heap.chunks[addr] % ptsz).times { |i|
 			n = 'unk_%x' % (ptsz*li+i)
-			v = @dasm.decode_byte(addr+ptsz*li+i)
 			t = C::BaseType.new(:char, :unsigned)
 			st.members << C::Variable.new(n, t)
 		}
