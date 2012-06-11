@@ -16,7 +16,8 @@ def lint(tg)
 	elsif File.directory?(tg)
 		Dir.entries(tg).each { |ent|
 			next if ent == '.' or ent == '..'
-			lint(File.join(tg, ent)) if File.directory?(ent) or ent =~ /\.rb$/
+			ent = File.join(tg, ent)
+			lint(ent) if File.directory?(ent) or ent =~ /\.rb$/
 		}
 	else
 		lint_file(tg)
