@@ -154,7 +154,7 @@ class AsmOpcodeWidget < DrawableWidget
 
 		# draw text until screen is full
 		while y < height
-			if label = invb[curaddr]
+			if invb[curaddr]
 				nl[]
 				@dasm.label_alias[curaddr].to_a.each { |name|
 					render["#{name}:", :label]

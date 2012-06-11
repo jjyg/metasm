@@ -282,7 +282,6 @@ class DbgRegWidget < DrawableWidget
 	end
 
 	def paint
-		curaddr = 0
 		x = 1
 		y = 0
 

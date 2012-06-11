@@ -1608,7 +1608,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# static resolution of indirections
 	def resolve(expr)
 		binding = Expression[expr].expr_indirections.inject(@old_prog_binding) { |binding_, ind|
-			e, b = get_section_at(resolve(ind.target))
+			e = get_edata_at(resolve(ind.target))
 			return expr if not e
 			binding_.merge ind => Expression[ e.decode_imm("u#{8*ind.len}".to_sym, @cpu.endianness) ]
 		}
@@ -1712,7 +1712,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 		ret = []
 
 		decode_imm = lambda { |addr, len|
-			edata, foo = get_section_at(addr)
+			edata = get_edata_at(addr)
 			if edata
 				Expression[ edata.decode_imm("u#{8*len}".to_sym, @cpu.endianness) ]
 			else

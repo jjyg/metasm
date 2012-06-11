@@ -1227,7 +1227,7 @@ class LinDebugger < Debugger
 					evt_syscall info.update(:syscall => @ptrace.syscallnr[get_reg_value(@ptrace.syscallreg)])
 
 				elsif (status >> 16) > 0
-					case o = PTrace::WAIT_EXTENDEDRESULT[status >> 16]
+					case PTrace::WAIT_EXTENDEDRESULT[status >> 16]
 					when 'EVENT_FORK', 'EVENT_VFORK'
 						# parent notification of a fork
 						# child receives STOP (may have already happened)

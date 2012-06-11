@@ -1006,8 +1006,6 @@ class GraphViewWidget < DrawableWidget
 			b.h = @font_height
 			b
 		}
-		max = dota.length
-		i = 0
 		dota.scan(/^.*$/) { |l|
 			a = l.strip.chomp(';').split(/->/).map { |s| s.strip.delete '"' }
 			next if not id = a.shift
@@ -1020,8 +1018,8 @@ class GraphViewWidget < DrawableWidget
 			end
 		}
 		redraw
-rescue Interrupt
-p boxes.length
+	rescue Interrupt
+		puts "dot_len #{boxes.length}"
 	end
 
 	# create the graph objects in ctx

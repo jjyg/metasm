@@ -3002,7 +3002,6 @@ EOH
 				str.last << "struct #{@struct.name || '_'} x = " if not off
 				@struct.update_member_cache(@cp) if not @struct.fldlist
 				fldoff = @struct.fldoffset
-				fbo = @struct.fldbitoffset || {}
 				mlist = @struct.members.map { |m| m.name || m }
 			else
 				str.last << "union #{@struct.name || '_'} x = " if not off
@@ -3233,8 +3232,7 @@ EOH
 			all = @toplevel.struct.values + @toplevel.symbol.values
 			all -= all.grep(::Integer)	# Enum values
 
-			r, dep = @toplevel.dump_reorder(all, todo_rndr, todo_deps)
-			r.join("\n")
+			@toplevel.dump_reorder(all, todo_rndr, todo_deps)[0].join("\n")
 		end
 
 		# returns a string containing the C definition(s) of toplevel functions, with their dependencies

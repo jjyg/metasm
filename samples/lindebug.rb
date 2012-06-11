@@ -508,7 +508,7 @@ class LinDebug
 	def handle_keypress(k)
 			case k
 			when 4; log 'exiting'; return true	 # eof
-			when ?\e; focus = :prompt
+			when ?\e; @focus = :prompt
 			when :f5;  cont
 			when :f6;  syscall
 			when :f10; stepover
@@ -607,7 +607,6 @@ class LinDebug
 	end
 
 	def load_commands
-		ntok = nil
 		@command['kill'] = lambda { |str|
 			@rs.kill
 			@running = false

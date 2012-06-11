@@ -69,7 +69,7 @@ class Decompiler
 				@c_parser.toplevel.symbol.delete func.name
 				decompile_func(entry)
 				@recurse = pre_recurse
-				if not dcl = @c_parser.toplevel.statements.grep(C::Declaration).find { |decl| decl.var.name == func.name }
+				if not @c_parser.toplevel.statements.grep(C::Declaration).find { |decl| decl.var.name == func.name }
 					@c_parser.toplevel.statements << C::Declaration.new(func)
 				end
 			end

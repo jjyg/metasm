@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# encoding: UTF-8 (rage)
 #    This file is part of Metasm, the Ruby assembly manipulation suite
 #    Copyright (C) 2006-2009 Yoann GUILLOT
 #

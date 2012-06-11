@@ -125,11 +125,9 @@ class Disassembler
 		@comment[addr] |= [cmt]
 	end
 
-	# returns the dasm section's edata containing addr
-	# its #ptr points to addr
-	# returns the 1st element of #get_section_at
-	def get_edata_at(addr)
-		if s = get_section_at(addr)
+	# returns the 1st element of #get_section_at (ie the edata at a given address) or nil
+	def get_edata_at(*a)
+		if s = get_section_at(*a)
 			s[0]
 		end
 	end
@@ -262,7 +260,7 @@ class Disassembler
 
 	# returns the label associated to an addr, or nil if none exist
 	def get_label_at(addr)
-		e, b = get_section_at(addr, false)
+		e = get_edata_at(addr, false)
 		e.inv_export[e.ptr] if e
 	end
 
@@ -286,7 +284,7 @@ class Disassembler
 
 	# remove a label at address addr
 	def del_label_at(addr, name=get_label_at(addr))
-		ed, b = get_section_at(addr)
+		ed = get_edata_at(addr)
 		if ed and ed.inv_export[ed.ptr]
 			ed.del_export name, ed.ptr
 			@label_alias_cache = nil
@@ -311,7 +309,7 @@ class Disassembler
 			@cpu.replace_instr_arg_immediate(di.instruction, old, new)
 			di.comment.to_a.each { |c| c.gsub!(old, new) }
 		}
-		e, l = get_section_at(old, false)
+		e = get_edata_at(old, false)
 		if e
 			e.add_export new, e.export.delete(old), true
 		end

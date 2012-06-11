@@ -221,7 +221,8 @@ class MyHook < ApiHook
 		#patch_retval(42)
 
 		# finish messing with the args: fake the nrofbyteswritten
-		handle, pbuf, size, pwritten, overlap = arglistcopy
+		#handle, pbuf, size, pwritten, overlap = arglistcopy
+		size, pwritten = arglistcopy.values_at(2, 3)
 		written = @dbg.memory_read_int(pwritten)
 		if written == size
 			# if written everything, patch the value so that the program dont detect our intervention

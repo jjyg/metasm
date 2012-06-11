@@ -316,7 +316,6 @@ class CStructWidget < DrawableWidget
 		elsif struct.kind_of?(C::Struct)
 			render["struct #{struct.name || '_'} st_#{Expression[@curaddr]} = ", :text] if not off
 			fldoff = struct.fldoffset
-			fbo = struct.fldbitoffset || {}
 		else
 			render["union #{struct.name || '_'} un_#{Expression[@curaddr]} = ", :text] if not off
 		end

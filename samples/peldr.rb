@@ -178,7 +178,7 @@ class PeLdr
 
 	def self.populate_peb
 		DL.memory_write(@@peb, 0.chr*4096)
-		set = lambda { |off, val| DL.memory_write_int(@@peb+off, val) }
+		#set = lambda { |off, val| DL.memory_write_int(@@peb+off, val) }
 	end
 
 	def self.teb ; @@teb ; end

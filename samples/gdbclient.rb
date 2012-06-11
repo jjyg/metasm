@@ -491,7 +491,7 @@ class Rubstop
 		# too bad module_list is not in ksyms
 		if mod = request_symbol('module_list')
 			int_at = lambda { |addr, off| @mem[addr+off, 4].unpack('L').first }
-			mod_size = lambda { int_at[mod, 0] }
+			#mod_size = lambda { int_at[mod, 0] }
 			mod_next = lambda { int_at[mod, 4] }
 			mod_nsym = lambda { int_at[mod, 0x18] }	# most portable. yes.
 			mod_syms = lambda { int_at[mod, 0x20] }
@@ -529,8 +529,7 @@ class Rubstop
 		# file fmt: addr type name eg 'c01001ba t setup_idt'
 		minaddr = maxaddr = nil
 		File.read(mapfile).each { |l|
-			addr, type, name = l.chomp.split
-			addr = addr.to_i(16)
+			addr = l.chomp.split[0].to_i(16)
 			minaddr = addr if not minaddr or minaddr > addr
 			maxaddr = addr if not maxaddr or maxaddr < addr
 			@symbols[addr] = name
