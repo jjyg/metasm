@@ -83,6 +83,8 @@ class PTrace
 	attr_accessor :reg_off, :intsize, :syscallnr, :syscallreg
 	attr_accessor :packint, :packuint, :host_intsize, :host_syscallnr
 	attr_accessor :tgcpu
+	@@sys_ptrace = {}
+
 	# setup variables according to the target (ptrace interface, syscall nrs, ...)
 	def tweak_for_pid(pid=@pid, tgcpu=nil)
 		# use these for our syscalls PTRACE
@@ -119,7 +121,45 @@ class PTrace
 
 		# buffer used in ptrace syscalls
 		@buf = [0].pack(@packint)
-		@bufptr = str_ptr(@buf)
+
+		@sys_ptrace = @@sys_ptrace[@host_syscallnr['ptrace']] ||= setup_sys_ptrace(@host_syscallnr['ptrace'])
+	end
+
+	def setup_sys_ptrace(sysnr)
+		moo = Class.new(DynLdr)
+		case @@host_csn
+		when 'ia32'
+			# XXX compat lin2.4 ?
+			asm = <<EOS
+#define off 3*4
+push ebx
+push esi
+mov eax, #{sysnr}
+mov ebx, [esp+off]
+mov ecx, [esp+off+4]
+mov edx, [esp+off+8]
+mov esi, [esp+off+12]
+call gs:[10h]
+pop esi
+pop ebx
+ret
+EOS
+		when 'x64'
+			asm = <<EOS
+#define off 3*8
+mov rax, #{sysnr}
+//mov rdi, rdi
+//mov rsi, rdi
+//mov rdx, rdx
+mov r10, rcx
+syscall
+ret
+EOS
+		else raise 'unsupported target architecture'
+		end
+
+		moo.new_func_asm 'long ptrace(unsigned long, unsigned long, unsigned long, unsigned long)', asm
+		moo
 	end
 
 	def host_csn; @@host_csn end
@@ -416,10 +456,11 @@ struct siginfo {
 EOS
 
 	def sys_ptrace(req, pid, addr, data)
-		data = str_ptr(data) if data.kind_of?(String)
-		addr = [addr].pack(@packint).unpack(@packint).first
-		data = [data].pack(@packint).unpack(@packint).first
-		Kernel.syscall(@host_syscallnr['ptrace'], req, pid, addr, data)
+		ret = @sys_ptrace.ptrace(req, pid, addr, data)
+		if ret < 0 and ret > -256
+			raise SystemCallError.new("ptrace #{COMMAND.index(req) || req}", -ret)
+		end
+		ret
 	end
 
 	def traceme
@@ -427,17 +468,17 @@ EOS
 	end
 
 	def peektext(addr)
-		sys_ptrace(COMMAND[:PEEKTEXT], @pid, addr, @bufptr)
+		sys_ptrace(COMMAND[:PEEKTEXT], @pid, addr, @buf)
 		@buf
 	end
 
 	def peekdata(addr)
-		sys_ptrace(COMMAND[:PEEKDATA], @pid, addr, @bufptr)
+		sys_ptrace(COMMAND[:PEEKDATA], @pid, addr, @buf)
 		@buf
 	end
 
 	def peekusr(addr)
-		sys_ptrace(COMMAND[:PEEKUSR],  @pid, @host_intsize*addr, @bufptr)
+		sys_ptrace(COMMAND[:PEEKUSR],  @pid, @host_intsize*addr, @buf)
 		@peekmask ||= (1 << ([@host_intsize, @intsize].min*8)) - 1
 		bufval & @peekmask
 	end
@@ -488,7 +529,7 @@ EOS
 	end
 
 	def get_thread_area(addr)
-		sys_ptrace(COMMAND[:GET_THREAD_AREA],  @pid, addr, @bufptr)
+		sys_ptrace(COMMAND[:GET_THREAD_AREA],  @pid, addr, @buf)
 		bufval
 	end
 	def set_thread_area(addr, data)
@@ -538,7 +579,7 @@ EOS
 
 	# retrieve pid of cld for EVENT_CLONE/FORK, exitcode for EVENT_EXIT
 	def geteventmsg
-		sys_ptrace(COMMAND[:GETEVENTMSG], @pid, 0, @bufptr)
+		sys_ptrace(COMMAND[:GETEVENTMSG], @pid, 0, @buf)
 		bufval
 	end
 
