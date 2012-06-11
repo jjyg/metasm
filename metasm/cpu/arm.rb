@@ -3,6 +3,8 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+class Metasm::ARM < Metasm::CPU
+end
 
 require 'metasm/main'
 require 'metasm/cpu/arm/parse'

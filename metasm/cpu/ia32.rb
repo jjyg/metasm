@@ -3,6 +3,9 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+# fix autorequire warning
+class Metasm::Ia32 < Metasm::CPU
+end
 
 require 'metasm/main'
 require 'metasm/cpu/ia32/parse'

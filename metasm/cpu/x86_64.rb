@@ -3,6 +3,8 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+class Metasm::X86_64 < Metasm::Ia32
+end
 
 require 'metasm/main'
 require 'metasm/cpu/x86_64/parse'

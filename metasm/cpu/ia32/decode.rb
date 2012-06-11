@@ -337,6 +337,7 @@ class Ia32
 		@backtrace_binding ||= {}
 
 		eax, ecx, edx, ebx, esp, ebp, esi, edi = register_symbols
+		ebx = ebx
 
 		mask = lambda { |di| (1 << opsz(di))-1 }	# 32bits => 0xffff_ffff
 		sign = lambda { |v, di| Expression[[[v, :&, mask[di]], :>>, opsz(di)-1], :'!=', 0] }
