@@ -594,12 +594,21 @@ class MachO < ExeFormat
 		s.encoded.virtsize = s.virtsize
 		s.sections.each { |ss|
 			ss.encoded = @encoded[ss.offset, ss.size]
-			s.encoded.add_export(ss.name, ss.offset)
+			s.encoded.add_export(ss.name, ss.offset - s.fileoff)
 		}
 	end
 
 	def each_section(&b)
 		@segments.each { |s| yield s.encoded, s.virtaddr }
+	end
+
+	def section_info
+		ret = []
+		@segments.each { |seg|
+			# TODO flags -> array
+			ret.concat seg.sections.map { |s| [s.name, s.addr, s.size, s.flags] }
+		}
+		ret
 	end
 
 	def get_default_entrypoints
