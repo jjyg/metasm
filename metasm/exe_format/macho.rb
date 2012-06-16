@@ -126,8 +126,15 @@ class MachO < ExeFormat
 	SYM_SCOPE = { 0 => 'LOCAL', 1 => 'GLOBAL' }
 	SYM_TYPE = { 0 => 'UNDF', 2/2 => 'ABS', 0xa/2 => 'INDR', 0xe/2 => 'SECT', 0x1e/2 => 'TYPE' }
 	SYM_STAB = { }
+	IND_SYM_IDX = { 0x4000_0000 => 'INDIRECT_SYMBOL_ABS', 0x8000_0000 => 'INDIRECT_SYMBOL_LOCAL' }
 
 	GENERIC_RELOC = { 0 => 'VANILLA', 1 => 'PAIR', 2 => 'SECTDIFF', 3 => 'LOCAL_SECTDIFF', 4 => 'PB_LA_PTR' }
+
+	SEC_TYPE = {
+		0 => 'REGULAR', 1 => 'ZEROFILL', 2 => 'CSTRING_LITERALS', 3 => '4BYTE_LITERALS',
+		4 => '8BYTE_LITERALS', 5 => 'LITERAL_POINTERS', 6 => 'NON_LAZY_SYMBOL_POINTERS',
+		7 => 'LAZY_SYMBOL_POINTERS', 8 => 'SYMBOL_STUBS', 9 => 'MOD_INIT_FUNC_POINTERS'
+	}
 
 	class SerialStruct < Metasm::SerialStruct
 		new_int_field :xword
@@ -245,7 +252,10 @@ class MachO < ExeFormat
 			str :name, 16
 			str :segname, 16
 			xwords :addr, :size
-			words :offset, :align, :reloff, :nreloc, :flags, :res1, :res2
+			words :offset, :align, :reloff, :nreloc
+			bitfield :word, 0 => :type, 8 => :attributes_sys, 24 => :attributes_usr
+			words :res1, :res2
+			fld_enum :type, SEC_TYPE
 			attr_accessor :res3	# word 64bit only
 			attr_accessor :segment, :encoded
 
@@ -532,6 +542,15 @@ class MachO < ExeFormat
 		decode_relocations
 	end
 
+	# return the segment containing address, set seg.encoded.ptr to the correct offset
+	def segment_at(addr)
+		return if not addr or addr <= 0
+		if seg = @segments.find { |seg_| addr >= seg_.virtaddr and addr < seg_.virtaddr + seg_.virtsize }
+			seg.encoded.ptr = addr - seg.virtaddr
+			seg
+		end
+	end
+
 	def decode_symbols
 		@symbols = []
 		ep_count = 0
@@ -546,32 +565,83 @@ class MachO < ExeFormat
 			when 'THREAD', 'UNIXTHREAD'
 				ep_count += 1
 				ep = cmd.data.entrypoint(self)
-				next if not seg = @segments.find { |seg_| ep >= seg_.virtaddr and ep < seg_.virtaddr + seg_.virtsize }
-				seg.encoded.add_export("entrypoint#{"_#{ep_count}" if ep_count >= 2 }", ep - seg.virtaddr)
+				next if not seg = segment_at(ep)
+				seg.encoded.add_export("entrypoint#{"_#{ep_count}" if ep_count >= 2 }")
 			end
 		}
 		@symbols.each { |s|
 			next if s.value == 0 or not s.name
-			next if not seg = @segments.find { |seg_| s.value >= seg_.virtaddr and s.value < seg_.virtaddr + seg_.virtsize }
-			seg.encoded.add_export(s.name, s.value - seg.virtaddr)
+			next if not seg = segment_at(s.value)
+			seg.encoded.add_export(s.name)
 		}
 	end
 
 	def decode_relocations
 		@relocs = []
-		@segments.each { |seg|
-			seg.sections.each { |sec|
-				@encoded.ptr = sec.reloff
-				sec.nreloc.times { @relocs << Relocation.decode(self) }
-			}
-		}
+		indsymtab = []
 		@commands.each { |cmd|
 			if cmd.cmd == 'DYSYMTAB'
 				@encoded.ptr = cmd.data.extreloff
 				cmd.data.nextrel.times { @relocs << Relocation.decode(self) }
 				@encoded.ptr = cmd.data.locreloff
 				cmd.data.nlocrel.times { @relocs << Relocation.decode(self) }
+				@encoded.ptr = cmd.data.indirectsymoff
+				cmd.data.nindirectsyms.times { indsymtab << decode_word }
 			end
+		}
+		@segments.each { |seg|
+			seg.sections.each { |sec|
+				@encoded.ptr = sec.reloff
+				sec.nreloc.times { @relocs << Relocation.decode(self) }
+
+				elemsz = 4
+				case sec.type
+				when 'NON_LAZY_SYMBOL_POINTERS', 'LAZY_SYMBOL_POINTERS'
+					edata = seg.encoded
+					off = sec.offset - seg.fileoff
+					(sec.size / 4).times { |i|
+						sidx = indsymtab[sec.res1+i]
+						case IND_SYM_IDX[sidx]
+						when 'INDIRECT_SYMBOL_LOCAL' # base reloc: add delta from prefered image base
+							edata.ptr = off
+							addr = decode_word(edata)
+							if s = segment_at(addr)
+								label = label_at(s.encoded, s.encoded.ptr, "xref_#{Expression[addr]}")
+								seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[label], :u32, @endianness)
+							end
+						when 'INDIRECT_SYMBOL_ABS'   # nothing
+						else
+							sym = @symbols[sidx]
+							seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[sym.name], :u32, @endianness)
+						end
+						off += 4
+					}
+				when 'SYMBOL_STUBS'
+					# TODO next unless arch == 386 and sec.attrs & SELF_MODIFYING_CODE and sec.res2 == 5
+
+					edata = seg.encoded
+					off = sec.offset - seg.fileoff + 1
+					(sec.size / 5).times { |i|
+						sidx = indsymtab[sec.res1+i]
+						case IND_SYM_IDX[sidx]
+						when 'INDIRECT_SYMBOL_LOCAL' # base reloc: add delta from prefered image base
+							edata.ptr = off
+							addr = decode_word(edata)
+							if s = segment_at(addr)
+								label = label_at(s.encoded, s.encoded.ptr, "xref_#{Expression[addr]}")
+								seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[label, :-, [seg.virtaddr, :+, off+4]], :u32, @endianness)
+							end
+						when 'INDIRECT_SYMBOL_ABS'   # nothing
+						else
+							seg.encoded[off-1] = 0xe9
+							sym = @symbols[sidx]
+							seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[sym.name, :-, [seg.virtaddr, :+, off+4]], :u32, @endianness)
+						end
+						off += 5
+					}
+
+				end
+			}
 		}
 		seg = nil
 		@relocs.each { |r|
@@ -583,7 +653,6 @@ class MachO < ExeFormat
 					next
 				end
 				seg.encoded.reloc[r.address - seg.virtaddr] = Metasm::Relocation.new(Expression[sym.name], :u32, @endianness)
-
 			end
 		}
 	end
