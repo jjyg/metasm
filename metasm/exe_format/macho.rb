@@ -674,8 +674,7 @@ class MachO < ExeFormat
 	def section_info
 		ret = []
 		@segments.each { |seg|
-			# TODO flags -> array
-			ret.concat seg.sections.map { |s| [s.name, s.addr, s.size, s.flags] }
+			ret.concat seg.sections.map { |s| [s.name, s.addr, s.size, s.type] }
 		}
 		ret
 	end
