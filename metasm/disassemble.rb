@@ -632,7 +632,7 @@ class Disassembler
 			if not f.finalized
 				f.finalized = true
 puts "  finalize subfunc #{Expression[addr]}" if debug_backtrace
-				@cpu.backtrace_update_function_binding(self, addr, f, f.return_address)
+				backtrace_update_function_binding(addr, f)
 				if not f.return_address
 					detect_function_thunk(addr)
 				end
@@ -667,7 +667,7 @@ puts "  finalize subfunc #{Expression[addr]}" if debug_backtrace
 				next if not f = @function[subfunc] or f.finalized
 				f.finalized = true
 puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
-				@cpu.backtrace_update_function_binding(self, subfunc, f, f.return_address)
+				backtrace_update_function_binding(subfunc, f)
 				if not f.return_address
 					detect_function_thunk(subfunc)
 				end
@@ -918,7 +918,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# does not recurse into subfunctions
 	# assumes all :saveip returns, except those pointing to a subfunc with noreturn
 	# yields subfunction addresses (targets of :saveip)
-	# only backtrace for :x with maxdepth 1 (ie handles only basic push+ret)
+	# no backtrace for :x (change with backtrace_maxblocks_fast)
 	# returns a todo-style ary
 	# assumes @addrs_todo is empty
 	def disassemble_fast_block(block, &b)
@@ -1603,6 +1603,10 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# applies a location binding
 	def backtrace_emu_blockup(addr, expr)
 		(ab = @address_binding[addr]) ? Expression[expr.bind(ab).reduce] : expr
+	end
+
+	def backtrace_update_function_binding(addr, func=@function[addr], retaddrs=func.return_address)
+		@cpu.backtrace_update_function_binding(self, addr, func, retaddrs)
 	end
 
 	# static resolution of indirections
