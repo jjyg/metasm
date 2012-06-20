@@ -905,8 +905,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			}
 			if func
 				auto_label_at(addr, 'sub', 'loc', 'xref')
-				# XXX use default_btbind_callback ?
-				@function[addr] = DecodedFunction.new
+				@function[addr] = (@function[:default] || DecodedFunction.new).dup
 				@function[addr].finalized = true
 				detect_function_thunk(addr)
 				puts "found new function #{get_label_at(addr)} at #{Expression[addr]}" if $VERBOSE
