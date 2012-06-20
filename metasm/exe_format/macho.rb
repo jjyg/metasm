@@ -594,7 +594,6 @@ class MachO < ExeFormat
 				@encoded.ptr = sec.reloff
 				sec.nreloc.times { @relocs << Relocation.decode(self) }
 
-				elemsz = 4
 				case sec.type
 				when 'NON_LAZY_SYMBOL_POINTERS', 'LAZY_SYMBOL_POINTERS'
 					edata = seg.encoded
@@ -629,13 +628,13 @@ class MachO < ExeFormat
 							addr = decode_word(edata)
 							if s = segment_at(addr)
 								label = label_at(s.encoded, s.encoded.ptr, "xref_#{Expression[addr]}")
-								seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[label, :-, [seg.virtaddr, :+, off+4]], :u32, @endianness)
+								seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[label, :-, Expression[seg.virtaddr, :+, off+4].reduce], :u32, @endianness)
 							end
 						when 'INDIRECT_SYMBOL_ABS'   # nothing
 						else
 							seg.encoded[off-1] = 0xe9
 							sym = @symbols[sidx]
-							seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[sym.name, :-, [seg.virtaddr, :+, off+4]], :u32, @endianness)
+							seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[sym.name, :-, Expression[seg.virtaddr, :+, off+4].reduce], :u32, @endianness)
 						end
 						off += 5
 					}
@@ -677,6 +676,45 @@ class MachO < ExeFormat
 			ret.concat seg.sections.map { |s| [s.name, s.addr, s.size, s.type] }
 		}
 		ret
+	end
+
+	def init_disassembler
+		d = super()
+		case @cpu.shortname
+		when 'ia32', 'x64'
+			old_cp = d.c_parser
+			d.c_parser = nil
+			d.parse_c <<EOC
+void *dlsym(int, char *);	// has special callback
+// standard noreturn, optimized by gcc
+void __attribute__((noreturn)) exit(int);
+void abort(void) __attribute__((noreturn));
+EOC
+			d.function[Expression['_dlsym']] = d.function[Expression['dlsym']] = dls = @cpu.decode_c_function_prototype(d.c_parser, 'dlsym')
+			d.function[Expression['_exit']] = d.function[Expression['exit']] = @cpu.decode_c_function_prototype(d.c_parser, 'exit')
+			d.function[Expression['abort']] = @cpu.decode_c_function_prototype(d.c_parser, 'abort')
+			d.c_parser = old_cp
+
+			dls.btbind_callback = lambda { |dasm, bind, funcaddr, calladdr, expr, origin, maxdepth|
+				sz = @cpu.size/8
+				raise 'dlsym call error' if not dasm.decoded[calladdr]
+				if @cpu.shortname == 'x64'
+					arg2 = :rsi
+				else
+					arg2 = Indirection.new(Expression[:esp, :+, 2*sz], sz, calladdr)
+				end
+				fnaddr = dasm.backtrace(arg2, calladdr, :include_start => true, :maxdepth => maxdepth)
+				if fnaddr.kind_of?(::Array) and fnaddr.length == 1 and s = dasm.decode_strz(fnaddr.first, 64) and s.length > sz
+					bind = bind.merge @cpu.register_symbols[0] => Expression[s]
+				end
+				bind
+			}
+
+			df = d.function[:default] = @cpu.disassembler_default_func
+			df.backtrace_binding[@cpu.register_symbols[4]] = Expression[@cpu.register_symbols[4], :+, @cpu.size/8]
+			df.btbind_callback = nil
+		end
+		d
 	end
 
 	def get_default_entrypoints
