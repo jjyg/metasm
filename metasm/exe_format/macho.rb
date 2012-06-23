@@ -270,10 +270,6 @@ class MachO < ExeFormat
 				# addr, offset, etc = @segment.virtaddr + 42
 				super(m)
 			end
-
-			def decode_inner(m)
-				@encoded = m.encoded[m.addr_to_off(@addr), @size]
-			end
 		end
 		SECTION_64 = SECTION
 
@@ -549,6 +545,26 @@ class MachO < ExeFormat
 			seg.encoded.ptr = addr - seg.virtaddr
 			seg
 		end
+	end
+
+	def addr_to_fileoff(addr)
+		s = @segments.find { |s_| s_.virtaddr <= addr and s_.virtaddr + s_.virtsize > addr } if addr
+		addr - s.virtaddr + s.fileoff if s
+	end
+
+	def fileoff_to_addr(foff)
+		if s = @segments.find { |s_| s_.fileoff <= foff and s_.fileoff + s_.filesize > foff }
+			s.virtaddr + module_address + foff - s.fileoff
+		end
+	end
+
+	def module_address
+		@segments.map { |s_| s_.virtaddr }.min || 0
+	end
+
+	def module_size
+		return 0 if not sz = @segments.map { |s_| s_.virtaddr + s_.virtsize }.max
+		sz - module_address
 	end
 
 	def decode_symbols
