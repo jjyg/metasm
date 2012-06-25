@@ -407,7 +407,7 @@ class Ia32
 		addop 'sysexit', [0x0F, 0x35]
 
 		addop 'syscall', [0x0F, 0x05]	# AMD
-		addop 'sysret',  [0x0F, 0x07]	# AMD
+		addop_macroret 'sysret', [0x0F, 0x07]	# AMD
 	end
 
 	def init_3dnow_only
@@ -1203,7 +1203,7 @@ class Ia32
 	# special ret (iret/retf), that still default to 32b mode in x64
 	def addop_macroret(name, bin, *args)
 		addop(name + '.i32', bin.dup, nil, :stopexec, :setip, *args) { |o| o.props[:opsz] = 32 }
-		addop(name + '.i16', bin.dup, nil, :stopexec, :setip, *args) { |o| o.props[:opsz] = 16 }
+		addop(name + '.i16', bin.dup, nil, :stopexec, :setip, *args) { |o| o.props[:opsz] = 16 } if name != 'sysret'
 		addop(name, bin.dup, nil, :stopexec, :setip, *args) { |o| o.props[:opsz] = @size }
 	end
 
