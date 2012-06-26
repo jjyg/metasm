@@ -1422,7 +1422,7 @@ class Debugger
 	def read_mapped_range(a, l)
 		# try to use a single get_page call
 		s = @memory.get_page(a, l) || ''
-		s.length == l ? s : @memory[a, l]
+		s.length == l ? s : (s = @memory[a, l] ? s.to_str : nil)
 	end
 end
 end

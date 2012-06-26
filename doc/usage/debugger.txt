@@ -130,6 +130,11 @@ arguments it is a memory range.
  dbg[:eax]                         # read the 'eax' register
  dbg[0x1234, 10] = 'hohohohoho'    # patch the christmas spirit in memory
 
+To optimize reading large sections of the process memory that you know to be
+in a single memory mapping, use the `read_mapped_range(addr, len)` method ;
+it will try to use a single OS-specific call instead of reading the range one
+4096-byte page at a time. This method returns a String directly.
+
 You can manipulate complex expressions using the `resolve(expr)` method.
 It accepts a String representation of an arbitrary expression. Any register,
 symbol (function name) and/or memory dereference can be used inside.
