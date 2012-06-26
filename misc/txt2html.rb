@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-# encoding: UTF-8 (rage)
+# encoding: binary (rage)
 #    This file is part of Metasm, the Ruby assembly manipulation suite
 #    Copyright (C) 2006-2009 Yoann GUILLOT
 #
@@ -49,7 +49,7 @@ class Elem
 			if e.class.ancestors.include? Elem
 				@content << e
 			else
-				@content << e.to_s.gsub(Regexp.new("(#{@@quotechars.keys.join('|')})")) { |x| @@quotechars[x] }
+				@content << e.to_s.gsub(Regexp.new("(#{@@quotechars.keys.join('|')})", 'm')) { |x| @@quotechars[x] }
 			end
 		}
 		self
@@ -274,7 +274,7 @@ class Txt2Html
 		puts "compiling #{outf}..." if $VERBOSE
 
 		@pathfix = outf.split('/')[0...-1].map { '../' }.join
-		out = compile(File.read(f).gsub("\r", '') + "\n\n")
+		out = compile(File.open(f, 'rb') { |fd| fd.read }.gsub("\r", '') + "\n\n")
 		File.open(outf, 'wb') { |fd| fd.write out.to_s.gsub("\r", '').gsub("\n", "\r\n") }
 	end
 
