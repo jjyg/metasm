@@ -635,6 +635,7 @@ class MachO < ExeFormat
 					# TODO next unless arch == 386 and sec.attrs & SELF_MODIFYING_CODE and sec.res2 == 5
 
 					edata = seg.encoded
+					edata.data = edata.data.to_str.dup
 					off = sec.offset - seg.fileoff + 1
 					(sec.size / 5).times { |i|
 						sidx = indsymtab[sec.res1+i]
