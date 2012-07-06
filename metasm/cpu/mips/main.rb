@@ -43,16 +43,16 @@ class MIPS < CPU
 	end
 
 	class Memref
-		attr_accessor :base, :offset
-		def initialize(base, offset)
-			@base, @offset = base, offset
+		attr_accessor :base, :offset, :sz
+		def initialize(base, offset, sz=32)
+			@base, @offset, @sz = base, offset, sz
 		end
 
 		def symbolic(orig)
 			p = nil
 			p = Expression[p, :+, @base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
-			Indirection[p.reduce, 4, orig]
+			Indirection[p.reduce, @sz/8, orig]
 		end
 	end
 

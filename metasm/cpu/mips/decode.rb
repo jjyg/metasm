@@ -67,7 +67,11 @@ class MIPS
 			di.instruction.args << case a
 			when :rs, :rt, :rd; Reg.new field_val[a]
 			when :sa, :i16, :i20, :i26, :it; Expression[field_val[a]]
-			when :rs_i16; Memref.new Reg.new(field_val[:rs]), Expression[field_val[:i16]]
+			when :rs_i16
+				len = 32
+				len = 16 if op.props[:mi16] or op.props[:mu16]
+				len = 8  if op.props[:mi8 ] or op.props[:mu8]
+				Memref.new Reg.new(field_val[:rs]), Expression[field_val[:i16]], len
 			when :ft; FpReg.new field_val[a]
 			when :idm1, :idb; Expression['unsupported']
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"

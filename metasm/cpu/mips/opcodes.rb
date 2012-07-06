@@ -51,6 +51,7 @@ class MIPS
 		@fields_shift.update :rs => 21, :rt => 16, :rd => 11, :sa => 6,
 			:i16 => 0, :i26 => 0, :rs_i16 => 0, :it => 16,
 			:ft => 16, :idm1 => 11, :idb => 11, :sel => 0, :i20 => 6 #, :i32 => 0
+		@valid_props.update :mi8 => true, :mu8 => true, :mi16 => true, :mu16 => true
 
 		init_mips32_obsolete
 		init_mips32_reserved
@@ -82,16 +83,16 @@ class MIPS
 		addop 'blez', 0b000110 << 26, :rs, :i16, :setip		# <= 0
 		addop 'bgtz', 0b000111 << 26, :rs, :i16, :setip		# > 0
 
-		addop 'lb',   0b100000 << 26, :rt, :rs_i16		# load byte	rs <- [rt+i]
-		addop 'lh',   0b100001 << 26, :rt, :rs_i16		# load halfword
+		addop 'lb',   0b100000 << 26, :rt, :rs_i16, :mi8	# load byte	rs <- [rt+i]
+		addop 'lh',   0b100001 << 26, :rt, :rs_i16, :mi16	# load halfword
 		addop 'lwl',  0b100010 << 26, :rt, :rs_i16		# load word left
 		addop 'lw',   0b100011 << 26, :rt, :rs_i16		# load word
-		addop 'lbu',  0b100100 << 26, :rt, :rs_i16		# load byte unsigned
-		addop 'lhu',  0b100101 << 26, :rt, :rs_i16		# load halfword unsigned
+		addop 'lbu',  0b100100 << 26, :rt, :rs_i16, :mu8	# load byte unsigned
+		addop 'lhu',  0b100101 << 26, :rt, :rs_i16, :mu16	# load halfword unsigned
 		addop 'lwr',  0b100110 << 26, :rt, :rs_i16		# load word right
 
-		addop 'sb',   0b101000 << 26, :rt, :rs_i16		# store byte
-		addop 'sh',   0b101001 << 26, :rt, :rs_i16		# store halfword
+		addop 'sb',   0b101000 << 26, :rt, :rs_i16, :mi8	# store byte
+		addop 'sh',   0b101001 << 26, :rt, :rs_i16, :mi16	# store halfword
 		addop 'swl',  0b101010 << 26, :rt, :rs_i16		# store word left
 		addop 'sw',   0b101011 << 26, :rt, :rs_i16		# store word
 		addop 'swr',  0b101110 << 26, :rt, :rs_i16		# store word right
