@@ -568,6 +568,11 @@ module C
 			parse_attributes(parser)
 		end
 
+		def compare_deep(o)
+			return true if o.object_id == self.object_id
+			return if o.class != self.class or o.name != self.name or o.attributes != self.attributes
+			members == o.members
+		end
 	end
 	class Pointer < Type
 		attr_accessor :type
