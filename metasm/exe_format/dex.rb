@@ -135,7 +135,7 @@ class DEX < ExeFormat
 
 	class MethodId < SerialStruct
 		u2 :classidx
-		u2 :typeidx
+		u2 :protoidx
 		u4 :nameidx
 	end
 
