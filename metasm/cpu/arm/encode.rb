@@ -61,9 +61,13 @@ class ARM
 			when :reglist
 				set_field[sym, arg.list.inject(0) { |rl, r| rl | (1 << r.i) }]
 			when :i8_r
-				# XXX doublecheck this
 				b = arg.reduce & 0xffffffff
-				r = (0..15).find { next true if b < 0x10 ; b = (b >> 2) | ((b & 3) << 30) }
+				r = (0..15).find {
+					next true if b < 0x100
+					b = ((b << 2) & 0xffff_ffff) | ((b >> 30) & 3)
+					false
+				}
+				raise EncodeError, "Invalid constant" if not r
 				set_field[:i8, b]
 				set_field[:rotate, r]
 			when :i12, :i24
