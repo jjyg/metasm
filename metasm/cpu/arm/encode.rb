@@ -12,7 +12,7 @@ class ARM
 	def encode_instr_op(program, instr, op)
 		base = op.bin
 		set_field = lambda { |f, v|
-			v = v.reduce if v.kind_of? Expression
+			v = v.reduce if v.kind_of?(Expression)
 			case f
 			when :i8_12
 				base = Expression[base, :|, [[v, :&, 0xf], :|, [[v, :<<, 4], :&, 0xf00]]]
@@ -79,7 +79,7 @@ class ARM
 			# convert label name for branch to relative offset
 			label = program.new_label('l_'+op.name)
 			target = val
-			target = target.rexpr if target.kind_of? Expression and target.op == :+ and not target.lexpr
+			target = target.rexpr if target.kind_of?(Expression) and target.op == :+ and not target.lexpr
 			val = Expression[[target, :-, [label, :+, 8]], :>>, 2]
 
 			EncodedData.new('', :export => { label => 0 }) <<

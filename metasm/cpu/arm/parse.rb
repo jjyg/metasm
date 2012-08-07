@@ -26,10 +26,17 @@ class ARM
 
 	def parse_arg_valid?(op, sym, arg)
 		case sym
-		when :rd, :rs, :rn, :rm; arg.kind_of? Reg and arg.shift == 0 and (arg.updated ? op.props[:baseincr] : !op.props[:baseincr])
-		when :rm_rs; arg.kind_of? Reg and arg.shift.kind_of? Reg
-		when :rm_is; arg.kind_of? Reg and arg.shift.kind_of? Integer
-		when :i12, :i24, :i8_12, :i8_r; arg.kind_of? Expression
+		when :rd, :rs, :rn, :rm; arg.kind_of?(Reg) and arg.shift == 0 and (arg.updated ? op.props[:baseincr] : !op.props[:baseincr])
+		when :rm_rs; arg.kind_of?(Reg) and arg.shift.kind_of?(Reg)
+		when :rm_is; arg.kind_of?(Reg) and arg.shift.kind_of?(Integer)
+		when :i12, :i24, :i8_12; arg.kind_of?(Expression)
+		when :i8_r
+			if arg.kind_of?(Expression)
+				b = arg.reduce
+				!b.kind_of?(Integer) or (0..15).find {
+						b = ((b << 2) & 0xffff_ffff) | ((b >> 30) & 3)
+						b < 0x100 }
+			end
 		when :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12
 			os = case sym
 			     when :mem_rn_rm; :rm
@@ -37,8 +44,8 @@ class ARM
 			     when :mem_rn_rms; :rm_rs
 			     when :mem_rn_i12; :i12
 			     end
-			arg.kind_of? Memref and parse_arg_valid?(op, os, arg.offset)
-		when :reglist; arg.kind_of? RegList
+			arg.kind_of?(Memref) and parse_arg_valid?(op, os, arg.offset)
+		when :reglist; arg.kind_of?(RegList)
 		end
 		# TODO check flags on reglist, check int values
 	end
@@ -108,7 +115,7 @@ class ARM
 			end
 			lexer.readtok
 			off = parse_argument(lexer)
-			if not off.kind_of? Expression and not off.kind_of? Reg
+			if not off.kind_of?(Expression) and not off.kind_of?(Reg)
 				raise lexer, 'invalid mem off (reg/imm expected)'
 			end
 			case lexer.nexttok and lexer.nexttok.raw

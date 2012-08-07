@@ -68,8 +68,5 @@ class ARM < CPU
 		@opcode_list
 	end
 end
-
-class ARM_THUMB < ARM
-end
 end
 
