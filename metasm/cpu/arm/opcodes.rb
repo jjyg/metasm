@@ -187,65 +187,66 @@ class ARM
 
 		[:i16, :i16_3_8, :i16_rd].each { |p| @valid_props_t[p] = true }
 		[:i5, :rm, :rn, :rd].each { |p| @valid_args_t[p] = true }
-		@fields_mask_t.update :i5 => 0x1f, :i3 => 7,
+		@fields_mask_t.update :i5 => 0x1f, :i3 => 7, :i51 => 0x5f,
 		       	:rm => 7, :rn => 7, :rd => 7, :rdn => 7, :rdn8 => 7
-		@fields_shift_t.update :i5 => 6, :i3 => 6,
+		@fields_shift_t.update :i5 => 6, :i3 => 6, :i51 => 3,
 			:rm => 6, :rn => 3, :rd => 0, :rdn => 0, :rdn8 => 8
 
-		addop_t 'mov', 0b000_00 << 11, :rm, :rd
-		addop_t 'lsl', 0b000_00 << 11, :rm, :rd, :i5
-		addop_t 'lsr', 0b000_01 << 11, :rm, :rd, :i5
-		addop_t 'asr', 0b000_10 << 11, :rm, :rd, :i5
+		addop_t 'mov', 0b000_00 << 11, :rd, :rm
+		addop_t 'lsl', 0b000_00 << 11, :rd, :rm, :i5
+		addop_t 'lsr', 0b000_01 << 11, :rd, :rm, :i5
+		addop_t 'asr', 0b000_10 << 11, :rd, :rm, :i5
 
-		addop_t 'add', 0b000_1100 << 9, :rm, :rn, :rd
-		addop_t 'add', 0b000_1110 << 9, :i3, :rn, :rd
-		addop_t 'sub', 0b000_1101 << 9, :rm, :rn, :rd
-		addop_t 'sub', 0b000_1111 << 9, :i3, :rn, :rd
+		addop_t 'add', 0b000_1100 << 9, :rd, :rn, :rm
+		addop_t 'add', 0b000_1110 << 9, :rd, :rn, :i3
+		addop_t 'sub', 0b000_1101 << 9, :rd, :rn, :rm
+		addop_t 'sub', 0b000_1111 << 9, :rd, :rn, :i3
 
 		addop_t 'mov', 0b001_00 << 10, :rdn8, :i8
 		addop_t 'cmp', 0b001_01 << 10, :rdn8, :i8
 		addop_t 'add', 0b001_10 << 10, :rdn8, :i8
 		addop_t 'sub', 0b001_11 << 10, :rdn8, :i8
 
-		addop_t 'and', (0b010000 << 10) | ( 0 << 6), :rm, :rdn
-		addop_t 'eor', (0b010000 << 10) | ( 1 << 6), :rm, :rdn	# xor
-		addop_t 'lsl', (0b010000 << 10) | ( 2 << 6), :rm, :rdn
-		addop_t 'lsr', (0b010000 << 10) | ( 3 << 6), :rm, :rdn
-		addop_t 'asr', (0b010000 << 10) | ( 4 << 6), :rm, :rdn
-		addop_t 'adc', (0b010000 << 10) | ( 5 << 6), :rm, :rdn
-		addop_t 'sbc', (0b010000 << 10) | ( 6 << 6), :rm, :rdn
-		addop_t 'ror', (0b010000 << 10) | ( 7 << 6), :rm, :rdn
-		addop_t 'tst', (0b010000 << 10) | ( 8 << 6), :rm, :rdn
-		addop_t 'rsb', (0b010000 << 10) | ( 9 << 6), :rm, :rdn
-		addop_t 'cmp', (0b010000 << 10) | (10 << 6), :rm, :rdn
-		addop_t 'cmn', (0b010000 << 10) | (11 << 6), :rm, :rdn
-		addop_t 'orr', (0b010000 << 10) | (12 << 6), :rm, :rdn	# or
-		addop_t 'mul', (0b010000 << 10) | (13 << 6), :rm, :rdn
-		addop_t 'bic', (0b010000 << 10) | (14 << 6), :rm, :rdn
-		addop_t 'mvn', (0b010000 << 10) | (15 << 6), :rm, :rdn
+		addop_t 'and', (0b010000 << 10) | ( 0 << 6), :rdn, :rm
+		addop_t 'eor', (0b010000 << 10) | ( 1 << 6), :rdn, :rm	# xor
+		addop_t 'lsl', (0b010000 << 10) | ( 2 << 6), :rdn, :rm
+		addop_t 'lsr', (0b010000 << 10) | ( 3 << 6), :rdn, :rm
+		addop_t 'asr', (0b010000 << 10) | ( 4 << 6), :rdn, :rm
+		addop_t 'adc', (0b010000 << 10) | ( 5 << 6), :rdn, :rm
+		addop_t 'sbc', (0b010000 << 10) | ( 6 << 6), :rdn, :rm
+		addop_t 'ror', (0b010000 << 10) | ( 7 << 6), :rdn, :rm
+		addop_t 'tst', (0b010000 << 10) | ( 8 << 6), :rdn, :rm
+		addop_t 'rsb', (0b010000 << 10) | ( 9 << 6), :rdn, :rm
+		addop_t 'cmp', (0b010000 << 10) | (10 << 6), :rdn, :rm
+		addop_t 'cmn', (0b010000 << 10) | (11 << 6), :rdn, :rm
+		addop_t 'orr', (0b010000 << 10) | (12 << 6), :rdn, :rm	# or
+		addop_t 'mul', (0b010000 << 10) | (13 << 6), :rdn, :rm
+		addop_t 'bic', (0b010000 << 10) | (14 << 6), :rdn, :rm
+		addop_t 'mvn', (0b010000 << 10) | (15 << 6), :rdn, :rm
 
-		addop_t 'add', 0b010001_00 << 8, :dn, :rm, :rdn
-		addop_t 'cmp', 0b010001_01 << 8, :dn, :rm, :rdn
-		addop_t 'mov', 0b010001_10 << 8, :dn, :rm, :rdn
+		addop_t 'add', 0b010001_00 << 8, :rdn, :rm, :dn
+		addop_t 'cmp', 0b010001_01 << 8, :rdn, :rm, :dn
+		addop_t 'mov', 0b010001_10 << 8, :rdn, :rm, :dn
 
-		addop_t 'bx',  0b010001_11 << 8, :l, :rm
-		addop_t 'blx', 0b01001 << 11, :rd, :pc_i8
+		addop_t 'bx',  0b010001_110 << 7, :rm
+		addop_t 'blx', 0b010001_111 << 7, :rm
 
-		addop_t 'str',   0b0101_000 << 9, :rm, :rn, :rd
-		addop_t 'strh',  0b0101_001 << 9, :rm, :rn, :rd
-		addop_t 'strb',  0b0101_010 << 9, :rm, :rn, :rd
-		addop_t 'ldrsb', 0b0101_011 << 9, :rm, :rn, :rd
-		addop_t 'ldr',   0b0101_100 << 9, :rm, :rn, :rd
-		addop_t 'ldrh',  0b0101_101 << 9, :rm, :rn, :rd
-		addop_t 'ldrb',  0b0101_110 << 9, :rm, :rn, :rd
-		addop_t 'ldrsh', 0b0101_111 << 9, :rm, :rn, :rd
+		addop_t 'ldr',   0b01001 << 11, :rd, :pc_i8
+		addop_t 'str',   0b0101_000 << 9, :rd, :rn, :rm
+		addop_t 'strh',  0b0101_001 << 9, :rd, :rn, :rm
+		addop_t 'strb',  0b0101_010 << 9, :rd, :rn, :rm
+		addop_t 'ldrsb', 0b0101_011 << 9, :rd, :rn, :rm
+		addop_t 'ldr',   0b0101_100 << 9, :rd, :rn, :rm
+		addop_t 'ldrh',  0b0101_101 << 9, :rd, :rn, :rm
+		addop_t 'ldrb',  0b0101_110 << 9, :rd, :rn, :rm
+		addop_t 'ldrsh', 0b0101_111 << 9, :rd, :rn, :rm
 
-		addop_t 'str',  0b01100 << 11, :i5, :rn, :rd
-		addop_t 'ldr',  0b01101 << 11, :i5, :rn, :rd
-		addop_t 'strb', 0b01110 << 11, :i5, :rn, :rd
-		addop_t 'ldrb', 0b01111 << 11, :i5, :rn, :rd
-		addop_t 'strh', 0b10000 << 11, :i5, :rn, :rd
-		addop_t 'ldrh', 0b10001 << 11, :i5, :rn, :rd
+		addop_t 'str',  0b01100 << 11, :rd, :rn, :i5
+		addop_t 'ldr',  0b01101 << 11, :rd, :rn, :i5
+		addop_t 'strb', 0b01110 << 11, :rd, :rn, :i5
+		addop_t 'ldrb', 0b01111 << 11, :rd, :rn, :i5
+		addop_t 'strh', 0b10000 << 11, :rd, :rn, :i5
+		addop_t 'ldrh', 0b10001 << 11, :rd, :rn, :i5
 		addop_t 'str',  0b10010 << 11, :rd, :sp_i8
 		addop_t 'ldr',  0b10011 << 11, :rd, :sp_i8
 		addop_t 'adr',  0b10100 << 11, :rd, :pc, :i8
@@ -254,12 +255,12 @@ class ARM
 		# 0b1011 misc
 		addop_t 'add',  0b1011_0000_0 << 7, :sp, :i7
 		addop_t 'sub',  0b1011_0000_1 << 7, :sp, :i7
-		addop_t 'sxth', 0b1011_0010_00 << 6, :rn, :rd
-		addop_t 'sxtb', 0b1011_0010_01 << 6, :rn, :rd
-		addop_t 'uxth', 0b1011_0010_10 << 6, :rn, :rd
-		addop_t 'uxtb', 0b1011_0010_11 << 6, :rn, :rd
-		addop_t 'cbz',  0b1011_0001 << 8, :i5_, :rd	# | 1 << 9
-		addop_t 'cbnz', 0b1011_1001 << 8, :i5_, :rd
+		addop_t 'sxth', 0b1011_0010_00 << 6, :rd, :rn
+		addop_t 'sxtb', 0b1011_0010_01 << 6, :rd, :rn
+		addop_t 'uxth', 0b1011_0010_10 << 6, :rd, :rn
+		addop_t 'uxtb', 0b1011_0010_11 << 6, :rd, :rn
+		addop_t 'cbz',  0b1011_0001 << 8, :rd, :i51
+		addop_t 'cbnz', 0b1011_1001 << 8, :rd, :i51
 		addop_t 'push', 0b1011_0100 << 8, :rlist
 		addop_t 'push', 0b1011_0101 << 8, :rlist
 		addop_t 'pop',  0b1011_1100 << 8, :rlist
@@ -269,9 +270,9 @@ class ARM
 		addop_t 'setendbe', 0b1011_0110_0101_1000
 		addop_t 'cps', 0b1011_0110_0110_0000
 		#addop_t 'unpredictable', 0b1011_0110_0110_1000, :msk_0001_0111
-		addop_t 'rev',   0b1011_1010_00 << 6, :rn, :rd
-		addop_t 'rev16', 0b1011_1010_01 << 6, :rn, :rd
-		addop_t 'revsh', 0b1011_1010_11 << 6, :rn, :rd
+		addop_t 'rev',   0b1011_1010_00 << 6, :rd, :rn
+		addop_t 'rev16', 0b1011_1010_01 << 6, :rd, :rn
+		addop_t 'revsh', 0b1011_1010_11 << 6, :rd, :rn
 		addop_t 'bkpt',  0b1011_1110 << 8, :i8
 		addop_t 'it',    0b1011_1111 << 8, :itcond, :itmsk
 		addop_t 'nop',   0b1011_1111_0000_0000
