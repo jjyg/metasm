@@ -47,14 +47,15 @@ module Ansi
 		$stdin.ioctl(TIOCGWINSZ, s) >= 0 ? s.unpack('SS') : [80, 25]
 	end
 	def self.set_term_canon(bool)
-		tty = ''.ljust(256)
-		$stdin.ioctl(TCGETS, tty)
+		ttys = ''.ljust(256)
+		$stdin.ioctl(TCGETS, ttys)
+		tty = ttys.unpack('C*')
 		if bool
 			tty[12] &= ~(ECHO|CANON)
 		else
 			tty[12] |= ECHO|CANON
 		end
-		$stdin.ioctl(TCSETS, tty)
+		$stdin.ioctl(TCSETS, tty.pack('C*'))
 	end
 
 	ESC_SEQ = {'A' => :up, 'B' => :down, 'C' => :right, 'D' => :left,
@@ -89,6 +90,7 @@ class LinDebug
 	attr_accessor :win_data_height, :win_code_height, :win_prpt_height
 	def init_screen
 		Ansi.set_term_canon(true)
+		@win_reg_height = 2
 		@win_data_height = 20
 		@win_code_height = 20
 		resize
@@ -100,7 +102,7 @@ class LinDebug
 		$stdout.flush
 	end
 
-	def win_data_start; 2 end
+	def win_data_start; @win_reg_height end
 	def win_code_start; win_data_start+win_data_height end
 	def win_prpt_start; win_code_start+win_code_height end
 
@@ -179,7 +181,7 @@ class LinDebug
 	def display_screen(screenlines, cursx, cursy)
 
 		@oldscreenbuf ||= []
-		lines = screenlines.to_a
+		lines = screenlines.lines
 		oldlines = @oldscreenbuf
 		@oldscreenbuf = lines
 		screenlines = lines.zip(oldlines).map { |l, ol| l == ol ? "\n" : l }.join
@@ -208,43 +210,35 @@ class LinDebug
 	end
 
 	def _updateregs
-		text = ''
-		text << ' '
-		x = 1
-		%w[eax ebx ecx edx eip].each { |r|
-			r = r.to_sym
-			text << Color[:changed] if @rs[r] != @oldregs[r]
-			text << "#{r}="
-			text << ('%08X' % @rs[r])
-			text << Color[:normal] if @rs[r] != @oldregs[r]
-			text << '  '
-			x += 14
+		words = @rs.register_list.map { |r|
+			rv = @rs[r]
+			["#{r}=%0#{@rs.register_size[r]/4}X " % rv,
+				(@oldregs[r] != rv)]
+		} + @rs.flag_list.map { |fl|
+			fv = @rs.get_flag(fl)
+			[fv ? fl.to_s.upcase : fl.to_s.downcase,
+				(@oldregs[fl] != fv)]
 		}
-		text << (' '*([@console_width-x, 0].max)) << "\n" << ' '
-		x = 1
-		%w[esi edi ebp esp].each { |r|
-			text << Color[:changed] if @rs[r] != @oldregs[r]
-			text << "#{r}="
-			text << ('%08X' % @rs[r])
-			text << Color[:normal] if @rs[r] != @oldregs[r]
-			text << '  '
-			x += 14
-		}
-		@rs.cpu.class::DBG_FLAGS.to_a.transpose.reverse.transpose.sort.each { |off, flag|
-			val = @rs['eflags'] & (1<<off)
-			flag = flag.to_s
-			flag = flag.upcase if val != 0
-			if val != @oldregs['eflags'] & (1 << off)
-				text << Color[:changed]
-				text << flag
-				text << Color[:normal]
-			else
-				text << flag
+
+		text = ' '
+		linelen = 1	# line length w/o ansi colors
+
+		@win_reg_height = 1
+		words.each { |w, changed|
+			if linelen + w.length >= @console_width - 1
+				text << (' '*([@console_width-linelen, 0].max)) << "\n "
+				linelen = 1
+				@win_reg_height += 1
 			end
+
+			text << Color[:changed] if changed
+			text << w
+			text << Color[:normal] if changed
 			text << ' '
-			x += 2
+
+			linelen += w.length+1
 		}
-		text << (' '*([@console_width-x, 0].max)) << "\n"
+		text << (' '*([@console_width-linelen, 0].max)) << "\n"
 	end
 
 	def updatecode
@@ -344,7 +338,7 @@ class LinDebug
 			when 'dw'; text << raw.unpack('S*').map { |c| '%04x ' % c }.join
 			when 'dd'; text << raw.unpack('L*').map { |c| '%08x ' % c }.join
 			end
-			text << ' ' << raw.unpack('C*').map { |c| (0x20..0x7e).include?(c) ? c : ?. }.pack('C*')
+			text << ' ' << raw.unpack('C*').map { |c| (0x20..0x7e).include?(c) ? c : 0x2e }.pack('C*')
 			text << Ansi::ClearLineAfter << "\n"
 			addr += 16
 		end
@@ -424,14 +418,19 @@ class LinDebug
 
 		cmd, str = str.split(/\s+/, 2)
 		if @command.has_key? cmd
-			@command[cmd].call(str)
+			@command[cmd].call(str.to_s)
 		else
 			if cmd and (poss = @command.keys.find_all { |c| c[0, cmd.length] == cmd }).length == 1
-				@command[poss.first].call(str)
+				@command[poss.first].call(str.to_s)
 			else
 				log 'unknown command'
 			end
 		end
+	end
+
+	def preupdate
+		@rs.register_list.each { |r| @oldregs[r] = @rs[r] }
+		@rs.flag_list.each { |fl| @oldregs[fl] = @rs.get_flag(fl) }
 	end
 
 	def updatecodeptr
@@ -450,7 +449,6 @@ class LinDebug
 				@codeptr = addrs[-(@win_code_height-4)]
 			end
 		end
-		@rs.register_list.each { |r| @oldregs[r] = @rs[r] }
 		updatedataptr
 	end
 
@@ -459,30 +457,35 @@ class LinDebug
 
 	def singlestep
 		self.statusline = ' target singlestepping...'
+		preupdate
 		@rs.singlestep_wait
 		updatecodeptr
 		@statusline = nil
 	end
 	def stepover
 		self.statusline = ' target running...'
+		preupdate
 		@rs.stepover_wait
 		updatecodeptr
 		@statusline = nil
 	end
 	def cont(*a)
 		self.statusline = ' target running...'
+		preupdate
 		@rs.continue_wait(*a)
 		updatecodeptr
 		@statusline = nil
 	end
 	def stepout
 		self.statusline = ' target running...'
+		preupdate
 		@rs.stepout_wait
 		updatecodeptr
 		@statusline = nil
 	end
 	def syscall
 		self.statusline = ' target running to next syscall...'
+		preupdate
 		@rs.syscall_wait
 		updatecodeptr
 		@statusline = nil
@@ -507,7 +510,7 @@ class LinDebug
 
 	def handle_keypress(k)
 			case k
-			when 4; log 'exiting'; return true	 # eof
+			when ?\4; log 'exiting'; return true	 # eof
 			when ?\e; @focus = :prompt
 			when :f5;  cont
 			when :f6;  syscall
@@ -558,7 +561,7 @@ class LinDebug
 			when :right; @promptpos += 1 if @promptpos < @promptbuf.length
 			when :home;  @promptpos = 0
 			when :end;   @promptpos = @promptbuf.length
-			when :backspace, 0x7f; @promptbuf[@promptpos-=1, 1] = '' if @promptpos > 0
+			when :backspace, ?\x7f; @promptbuf[@promptpos-=1, 1] = '' if @promptpos > 0
 			when :suppr; @promptbuf[@promptpos, 1] = '' if @promptpos < @promptbuf.length
 			when :pgup
 				case @focus
@@ -598,7 +601,7 @@ class LinDebug
 				rescue Exception
 					log "error: #$!", *$!.backtrace
 				end
-			when 0x20..0x7e
+			when ?\ ..?~
 				@promptbuf[@promptpos, 0] = k.chr
 				@promptpos += 1
 			else log "unknown key pressed #{k.inspect}"
@@ -634,11 +637,7 @@ class LinDebug
 		@command['r'] =  lambda { |str|
 			r, str = str.split(/\s+/, 2)
 			if r == 'fl'
-				if i = @rs.cpu.class::DBG_FLAGS[str.to_sym]
-					@rs['eflags'] ^= 1 << i
-				else
-					log "bad flag #{str}"
-				end
+				@rs.toggle_flag(str.to_sym)
 			elsif not @rs[r]
 				log "bad reg #{r}"
 			elsif str.length > 0
