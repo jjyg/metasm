@@ -87,7 +87,7 @@ module Ansi
 end
 
 class LinDebug
-	attr_accessor :win_data_height, :win_code_height, :win_prpt_height
+	attr_accessor :win_reg_height, :win_data_height, :win_code_height, :win_prpt_height
 	def init_screen
 		Ansi.set_term_canon(true)
 		@win_reg_height = 2
@@ -223,6 +223,7 @@ class LinDebug
 		text = ' '
 		linelen = 1	# line length w/o ansi colors
 
+		owr = @win_reg_height
 		@win_reg_height = 1
 		words.each { |w, changed|
 			if linelen + w.length >= @console_width - 1
@@ -238,6 +239,7 @@ class LinDebug
 
 			linelen += w.length+1
 		}
+		resize if owr != @win_reg_height
 		text << (' '*([@console_width-linelen, 0].max)) << "\n"
 	end
 
@@ -377,11 +379,11 @@ class LinDebug
 		@console_height, @console_width = Ansi.get_terminal_size
 		@win_data_height = 1 if @win_data_height < 1
 		@win_code_height = 1 if @win_code_height < 1
-		if @win_data_height + @win_code_height + 5 > @console_height
+		if @win_data_height + @win_code_height + @win_reg_height + 3 > @console_height
 			@win_data_height = @console_height/2 - 4
 			@win_code_height = @console_height/2 - 4
 		end
-		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+2) - 1
+		@win_prpt_height = @console_height-(@win_data_height+@win_code_height+@win_reg_height) - 1
 		@oldscreenbuf = []
 		update
 	end
@@ -679,12 +681,18 @@ end
 
 if $0 == __FILE__
 	require 'optparse'
-	filemap = nil
+	opts = { :sc_cpu => 'Ia32' }
 	OptionParser.new { |opt|
-		opt.on('-m map', '--map filemap') { |f| filemap = f }
+		opt.on('-m map', '--map filemap') { |f| opts[:filemap] = f }
+		opt.on('--cpu cpu') { |c| opts[:sc_cpu] = c }
 	}.parse!(ARGV)
 
-	rs = Metasm::LinDebugger.new(ARGV.join(' '))
-	rs.loadmap(filemap) if filemap
+	case ARGV.first
+	when /^(tcp:|udp:)?..+:/
+		rs = Metasm::GdbRemoteDebugger.new(ARGV.first, opts[:sc_cpu])
+	else
+		rs = Metasm::LinDebugger.new(ARGV.join(' '))
+	end
+	rs.loadmap(opts[:filemap]) if opts[:filemap]
 	LinDebug.new(rs).main_loop
 end
