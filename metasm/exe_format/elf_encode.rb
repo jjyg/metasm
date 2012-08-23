@@ -820,9 +820,13 @@ class ELF
 				end
 
 		if @header.type == 'REL'
-			raise 'ET_REL encoding not supported atm, come back later'
+			encode_rel
+		else
+			encode_elf
 		end
+	end
 
+	def encode_elf
 		@encoded = EncodedData.new
 		if @header.type != 'EXEC' or @segments.find { |i| i.type == 'INTERP' }
 			# create a .dynamic section unless we are an ET_EXEC with .nointerp
@@ -974,6 +978,36 @@ class ELF
 			next if not sec.encoded or sec.flags.include? 'ALLOC'	# already in a segment.encoded
 			binding[sec.offset] = @encoded.length
 			binding.update sec.encoded.binding
+			@encoded << sec.encoded
+			@encoded.align 8
+		}
+
+		@encoded.fixup! binding
+		@encoded.data
+	end
+
+	def encode_rel
+		@encoded = EncodedData.new
+		automagic_symbols
+		create_relocations
+
+		@header.phoff = @header.phnum = @header.phentsize = 0
+		@header.entry = 0
+		@sections.each { |sec| sec.addr = 0 }
+		st = @sections.inject(EncodedData.new) { |edata, sec| edata << sec.encode(self) }
+
+		binding = {}
+		@encoded << @header.encode(self)
+		@encoded.align 8
+
+		binding[@header.shoff] = @encoded.length
+		@encoded << st
+		@encoded.align 8
+
+		@sections.each { |sec|
+			next if not sec.encoded
+			binding[sec.offset] = @encoded.length
+			sec.encoded.fixup sec.encoded.binding
 			@encoded << sec.encoded
 			@encoded.align 8
 		}
