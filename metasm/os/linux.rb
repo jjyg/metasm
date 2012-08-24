@@ -1060,6 +1060,7 @@ EOS
 			ret["r#{i}b"] = [b, 0xff]
 		}
 		ret[:eip] = [:rip, 0xffff_ffff]
+		ret[:eflags] = [:rflags, 0xffff_ffff]
 		ret[:orig_eax] = [:orig_rax, 0xffff_ffff]
 		ret
 	end
