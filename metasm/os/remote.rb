@@ -24,9 +24,11 @@ class GdbClient
 	def gdb_send(cmd, buf='')
 		buf = cmd + buf
 		buf = '$' << buf << '#' << gdb_csum(buf)
+		log "gdb_send #{buf.inspect}" if $DEBUG
 
 		5.times {
 			@io.write buf
+			out = ''
 			loop do
 				break if not IO.select([@io], nil, nil, 0.2)
 				raise Errno::EPIPE if not ack = @io.read(1)
@@ -34,12 +36,15 @@ class GdbClient
 				when '+'
 					return true
 				when '-'
-					puts "gdb_send: ack neg" if $DEBUG
+					log "gdb_send: ack neg" if $DEBUG
 					break
 				when nil
 					return
+				else
+					out << ack
 				end
 			end
+			log "no ack, got #{out.inspect}" if out != ''
 		}
 
 		log "send error #{cmd.inspect} (no ack)"
@@ -112,7 +117,7 @@ class GdbClient
 			return ret
 		end
 
-		puts "gdb_readresp: got #{buf[0, 64].inspect}#{'...' if buf.length > 64}" if $DEBUG
+		log "gdb_readresp: got #{buf[0, 64].inspect}#{'...' if buf.length > 64}" if $DEBUG
 		buf
 	end
 
@@ -233,9 +238,9 @@ class GdbClient
 
 		case io
 		when IO; @io = io
-		when /^udp:(.*):(.*?)$/i; @io = UDPSocket.new ; @io.connect($1, $2)
-		when /^(?:tcp:)?(.*):(.*?)$/i; @io = TCPSocket.open($1, $2)	# XXX matches C:\fail
-		# TODO pipe, serial port, etc ; also check ipv6
+		when /^ser:(.*)/i; @io = File.open($1, 'rb+')
+		when /^udp:\[?(.*)\]?:(.*?)$/i; @io = UDPSocket.new ; @io.connect($1, $2)
+		when /^(?:tcp:)?\[?(..+)\]?:(.*?)$/i; @io = TCPSocket.open($1, $2)
 		else raise "unknown target #{io.inspect}"
 		end
 
@@ -243,6 +248,10 @@ class GdbClient
 	end
 
 	def gdb_setup
+		pnd = ''
+		pnd << @io.read(1) while IO.select([@io], nil, nil, 0.2)
+		log "startpending: #{pnd.inspect}" if pnd != ''
+			
 		gdb_msg('q', 'Supported')
 		#gdb_msg('Hc', '-1')
 		#gdb_msg('qC')
@@ -296,9 +305,9 @@ class GdbClient
 
 	attr_accessor :logger, :quiet
 	def log(s)
+		puts s if $DEBUG and logger
 		return if quiet
-		@logger ||= $stdout
-		@logger.puts s
+		logger ? logger.log(s) : puts(s)
 	end
 
 

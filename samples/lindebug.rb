@@ -629,7 +629,7 @@ class LinDebug
 		}
 		@command['bphw'] = lambda { |str|
 			type, str = str.split(/\s+/, 2)
-			@rs.set_hwbp @rs.resolve(str), type
+			@rs.set_hwbp @rs.resolve(str.to_s), type
 		}
 		@command['bt'] = lambda { |str| @rs.stacktrace { |a,t| add_log "#{'%x' % a} #{t}" } }
 		@command['d'] =  lambda { |str| @dataptr = @rs.resolve(str) if str.length > 0 }
@@ -642,7 +642,7 @@ class LinDebug
 				@rs.toggle_flag(str.to_sym)
 			elsif not @rs[r]
 				log "bad reg #{r}"
-			elsif str.length > 0
+			elsif str and str.length > 0
 				@rs[r] = @rs.resolve(str)
 			else
 				log "#{r} = #{@rs[r]}"
@@ -688,7 +688,7 @@ if $0 == __FILE__
 	}.parse!(ARGV)
 
 	case ARGV.first
-	when /^(tcp:|udp:)?..+:/
+	when /^(tcp:|udp:)?..+:/, /^ser:/
 		rs = Metasm::GdbRemoteDebugger.new(ARGV.first, opts[:sc_cpu])
 	else
 		rs = Metasm::LinDebugger.new(ARGV.join(' '))
