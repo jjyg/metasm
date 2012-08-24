@@ -210,9 +210,12 @@ class LinDebug
 	end
 
 	def _updateregs
+		pvrsz = 0
 		words = @rs.register_list.map { |r|
+			rs = r.to_s.rjust(pvrsz)
+			pvrsz = rs.length
 			rv = @rs[r]
-			["#{r}=%0#{@rs.register_size[r]/4}X " % rv,
+			["#{rs}=%0#{@rs.register_size[r]/4}X " % rv,
 				(@oldregs[r] != rv)]
 		} + @rs.flag_list.map { |fl|
 			fv = @rs.get_flag(fl)
@@ -257,14 +260,16 @@ class LinDebug
 		end
 		@codeptr = addr
 
+		addrsz = @rs.register_size[@rs.register_pc]
+		addrfmt = "%0#{addrsz/4}X"
 		if not @rs.addr2module(addr)
-			base = addr & 0xffff_f000
+			base = addr & ((1 << addrsz) - 0x1000)
 			@noelfsig ||= {}	# cache elfmagic notfound
-			if not @noelfsig[base] and base < 0xffff_0000
-				self.statusline = " scanning for elf header at #{'%08X' % base}"
+			if not @noelfsig[base] and base < ((1 << addrsz) - 0x1_0000)
+				self.statusline = " scanning for elf header at #{addrfmt % base}"
 				128.times {
-					@statusline = " scanning for elf header at #{'%08X' % base}"
-					if not @noelfsig[base] and @rs[base, 4] == Metasm::ELF::MAGIC
+					@statusline = " scanning for elf header at #{addrfmt % base}"
+					if not @noelfsig[base] and @rs[base, Metasm::ELF::MAGIC.length] == Metasm::ELF::MAGIC
 						@rs.loadsyms(base, base.to_s(16))
 						break
 					else
@@ -284,6 +289,9 @@ class LinDebug
 		post = @console_width - (pre + title.length + 2)
 		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post) << Color[:normal] << "\n"
 
+		seg = ''
+		seg = ('%04X' % @rs['cs']) << ':' if @rs.cpu.shortname =~ /ia32|x64/
+
 		cnt = @win_code_height
 		while (cnt -= 1) > 0
 			if @rs.symbols[addr]
@@ -291,8 +299,8 @@ class LinDebug
 				break if (cnt -= 1) <= 0
 			end
 			text << Color[:hilight] if addr == @rs.pc
-			text << ('%04X' % @rs['cs']) << ':'
-			text << ('%08X' % addr)
+			text << seg
+			text << (addrfmt % addr)
 			di = @rs.di_at(addr)
 			di = nil if di and addr < @rs.pc and addr+di.bin_length > @rs.pc
 			len = (di ? di.bin_length : 1)
@@ -301,7 +309,7 @@ class LinDebug
 			if di
 				text <<
 				if addr == @rs.pc
-					"*#{di.instruction}".ljust([@console_width-37, 0].max)
+					"*#{di.instruction}".ljust([@console_width-(addrsz/4+seg.length+24), 0].max)
 				else
 					" #{di.instruction}" << Ansi::ClearLineAfter
 				end
@@ -320,7 +328,10 @@ class LinDebug
 	end
 
 	def _updatedata
-		@dataptr &= 0xffff_ffff
+		addrsz = @rs.register_size[@rs.register_pc]
+		addrfmt = "%0#{addrsz/4}X"
+
+		@dataptr &= ((1 << addrsz) - 1)
 		addr = @dataptr
 
 		text = ''
@@ -330,10 +341,13 @@ class LinDebug
 		post = [@console_width - (pre + title.length + 2), 0].max
 		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post) << Color[:normal] << "\n"
 
+		seg = ''
+		seg = ('%04X' % @rs['ds']) << ':' if @rs.cpu.shortname == 'ia32'
+
 		cnt = @win_data_height
 		while (cnt -= 1) > 0
 			raw = @rs.memory[addr, 16].to_s
-			text << ('%04X' % @rs['ds']) << ':' << ('%08X' % addr) << '  '
+			text << seg << (addrfmt % addr) << '  '
 			case @datafmt
 			when 'db'; text << raw[0,8].unpack('C*').map { |c| '%02x ' % c }.join << ' ' <<
 				   raw[8,8].to_s.unpack('C*').map { |c| '%02x ' % c }.join
