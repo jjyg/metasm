@@ -15,6 +15,7 @@ module Metasm
 	Const_autorequire_equiv = {
 		'X86' => 'Ia32', 'PPC' => 'PowerPC',
 		'X64' => 'X86_64', 'AMD64' => 'X86_64',
+		'MIPS64' => 'MIPS',
 		'UniversalBinary' => 'MachO', 'COFFArchive' => 'COFF',
 		'DEY' => 'DEX',
 		'PTrace' => 'LinOS', 'FatELF' => 'ELF',

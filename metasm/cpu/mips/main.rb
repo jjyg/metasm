@@ -68,5 +68,12 @@ class MIPS < CPU
 		@opcode_list
 	end
 end
+
+class MIPS64 < MIPS
+	def initialize(endianness = :big, family = :latest)
+		super(endianness, family)
+		@size = 64
+	end
+end
 end
 

@@ -324,6 +324,9 @@ class GdbClient
 		when 'arm'
 			@gdbregs = cpu.dbg_register_list
 			@regmsgsize = 4 * @gdbregs.length
+		when 'mips'
+			@gdbregs = cpu.dbg_register_list
+			@regmsgsize = cpu.size/8 * @gdbregs.length
 		else
 			# we can still use readmem/kill and other generic commands
 			# XXX serverside setregs may fail if we give an incorrect regbuf size

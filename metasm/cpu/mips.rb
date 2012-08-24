@@ -3,9 +3,12 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
+class Metasm::MIPS < Metasm::CPU
+end
 
 require 'metasm/main'
 require 'metasm/cpu/mips/parse'
 require 'metasm/cpu/mips/encode'
 require 'metasm/cpu/mips/decode'
 require 'metasm/cpu/mips/render'
+require 'metasm/cpu/mips/debug'
