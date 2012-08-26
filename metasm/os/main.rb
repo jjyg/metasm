@@ -169,6 +169,17 @@ class VirtualString
 		end
 	end
 
+	def rindex(chr, max=length)
+		return if max > length
+		if max > 64 and i = self[max-64, 64].rindex(chr)
+			max - 64 + i
+		elsif max > @pagelength and i = self[max-@pagelength, @pagelength].rindex(chr)
+			max - @pagelength + i
+		else
+			realstring.rindex(chr, max)
+		end
+	end
+
 	# '=~' does not go through method_missing
 	def =~(o)
 		realstring =~ o
