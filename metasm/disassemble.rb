@@ -490,7 +490,7 @@ class Disassembler
 				# ignore relocs embedded in an already-listed instr
 				x << Xref.new(:reloc, addr) if not x.find { |x_|
 					next if not x_.origin or not di_at(x_.origin)
-					(addr - x_.origin rescue 50) < @decoded[x_.origin].bin_length
+					(addr - x_.origin) < @decoded[x_.origin].bin_length rescue false
 				}
 			}
 		end
