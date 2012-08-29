@@ -61,12 +61,11 @@ class MIPS
 
 		addop 'mov',  0b001000 << 26, :rt, :rs			# rt <- rs+0
 		addop 'addi', 0b001000 << 26, :rt, :rs, :i16		# add		rt <- rs+i
-		addop 'li',   0b001001 << 26, :rt, :i16			# add $0	# XXX liu ?
+		addop 'li',   0b001001 << 26, :rt, :i16			# addiu rt <- zero+i
 		addop 'addiu',0b001001 << 26, :rt, :rs, :i16		# add unsigned
 		addop 'slti', 0b001010 << 26, :rt, :rs, :i16		# set on less than
 		addop 'sltiu',0b001011 << 26, :rt, :rs, :i16		# set on less than unsigned
 		addop 'andi', 0b001100 << 26, :rt, :rs, :i16		# and
-		addop 'li',   0b001101 << 26, :rt, :i16			# or $0
 		addop 'ori',  0b001101 << 26, :rt, :rs, :i16		# or
 		addop 'xori', 0b001110 << 26, :rt, :rs, :i16		# xor
 		addop 'lui',  0b001111 << 26, :rt, :i16			# load upper

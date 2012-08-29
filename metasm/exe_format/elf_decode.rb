@@ -544,6 +544,24 @@ class ELF
 		end
 	end
 
+	# returns the target of a relocation using reloc.symbol
+	# may create new labels if the relocation targets a section
+	def reloc_target(reloc)
+		target = 0
+		if reloc.symbol.kind_of?(Symbol)
+			if reloc.symbol.type == 'SECTION'
+				s = @sections[reloc.symbol.shndx]
+				if not target = @encoded.inv_export[s.offset]
+					target = new_label(s.name)
+					@encoded.add_export(target, s.offset)
+				end
+			elsif reloc.symbol.name
+				target = reloc.symbol.name
+			end
+		end
+		target
+	end
+
 	# returns the Metasm::Relocation that should be applied for reloc
 	# self.encoded.ptr must point to the location that will be relocated (for implicit addends)
 	def arch_decode_segments_reloc_386(reloc)
@@ -576,8 +594,7 @@ class ELF
 		when 'GLOB_DAT', 'JMP_SLOT', '32', 'PC32', 'TLS_TPOFF', 'TLS_TPOFF32'
 			# XXX use versionned version
 			# lazy jmp_slot ?
-			target = 0
-			target = reloc.symbol.name if reloc.symbol.kind_of?(Symbol) and reloc.symbol.name
+			target = reloc_target(reloc)
 			target = Expression[target, :-, reloc.offset] if reloc.type == 'PC32'
 			target = Expression[target, :+, addend] if addend and addend != 0
 			target = Expression[target, :+, 'tlsoffset'] if reloc.type == 'TLS_TPOFF'
@@ -607,19 +624,35 @@ class ELF
 			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
 		end
 
+		original_word = decode_word
+
 		# decode addend if needed
 		case reloc.type
 		when 'NONE' # no addend
-		else addend = reloc.addend || decode_sword
+		else addend = reloc.addend || Expression.make_signed(original_word, 32)
 		end
 
 		case reloc.type
 		when 'NONE'
 		when '32', 'REL32'
-			target = 0
-			target = reloc.symbol.name if reloc.symbol.kind_of?(Symbol) and reloc.symbol.name
+			target = reloc_target(reloc)
 			target = Expression[target, :-, reloc.offset] if reloc.type == 'REL32'
 			target = Expression[target, :+, addend] if addend and addend != 0
+		when '26'
+			target = reloc_target(reloc)
+			addend &= 0x3ff_ffff
+			target = Expression[target, :+, [addend, :<<, 2]] if addend and addend != 0
+			target = Expression[[original_word, :&, 0xfc0_0000], :|, [[target, :&, 0x3ff_ffff], :>>, 2]]
+		when 'HI16'
+			target = reloc_target(reloc)
+			addend &= 0xffff
+			target = Expression[target, :+, [addend, :<<, 16]] if addend and addend != 0
+			target = Expression[[original_word, :&, 0xffff_0000], :|, [[target, :>>, 16], :&, 0xffff]]
+		when 'LO16'
+			target = reloc_target(reloc)
+			addend &= 0xffff
+			target = Expression[target, :+, addend] if addend and addend != 0
+			target = Expression[[original_word, :&, 0xffff_0000], :|, [target, :&, 0xffff]]
 		else
 			puts "W: Elf: unhandled MIPS reloc #{reloc.inspect}" if $VERBOSE
 			target = nil
@@ -662,8 +695,7 @@ class ELF
 		when 'GLOB_DAT', 'JMP_SLOT', '64', 'PC64', '32', 'PC32'
 			# XXX use versionned version
 			# lazy jmp_slot ?
-			target = 0
-			target = reloc.symbol.name if reloc.symbol.kind_of?(Symbol) and reloc.symbol.name
+			target = reloc_target(reloc)
 			target = Expression[target, :-, reloc.offset] if reloc.type == 'PC64' or reloc.type == 'PC32'
 			target = Expression[target, :+, addend] if addend and addend != 0
 			sz = :u32 if reloc.type == '32' or reloc.type == 'PC32'

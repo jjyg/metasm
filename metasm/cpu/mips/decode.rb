@@ -36,25 +36,42 @@ class MIPS
 
 	def decode_findopcode(edata)
 		return if edata.ptr >= edata.data.length
-		# TODO handle relocations !!
 		di = DecodedInstruction.new(self)
 		val = edata.decode_imm(:u32, @endianness)
 		edata.ptr -= 4
-		di if di.opcode = @bin_lookaside[val >> 24].find { |op|
-			(op.bin & op.bin_mask) == (val & op.bin_mask)
-		}
+		if val.kind_of?(Expression)
+			# relocations
+			hval = Expression[val, :&, 0xff000000].reduce
+			if hval.kind_of?(Expression)
+				# reloc_i26
+				if hval.kind_of?(Expression) and pat = hval.match(Expression[['a', :&, 0x300_0000], :|, 'b'], 'a', 'b')
+					hval = pat['b']
+				end
+			end
+			di if di.opcode = @bin_lookaside[hval >> 24].find { |op|
+				(op.bin & op.bin_mask) == Expression[val, :&, op.bin_mask].reduce
+			}
+		else
+			di if di.opcode = @bin_lookaside[val >> 24].find { |op|
+				(op.bin & op.bin_mask) == (val & op.bin_mask)
+			}
+		end
 	end
 
 	def decode_instr_op(edata, di)
-		# TODO handle relocations !!
 		before_ptr = edata.ptr
 		op = di.opcode
 		di.instruction.opname = op.name
 		val = edata.decode_imm(:u32, @endianness)
 
 		field_val = lambda { |f|
-			r = (val >> @fields_shift[f]) & @fields_mask[f]
-			# XXX do that cleanly (Expr.decode_imm)
+			if val.kind_of?(Expression)
+				r = Expression[[val, :>>, @fields_shift[f]], :&, @fields_mask[f]].reduce
+			else
+				r = (val >> @fields_shift[f]) & @fields_mask[f]
+			end
+
+			next r if r.kind_of?(Expression)
 			case f
 			when :sa, :i16, :it; r = Expression.make_signed(r, 16)
 			when :i20; r = Expression.make_signed(r, 20)
@@ -90,7 +107,13 @@ class MIPS
 		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.opcode.name[0] != ?t
 			delta = Expression[di.instruction.args.last, :<<, 2].reduce
 			if di.opcode.args.include? :i26
-				arg = Expression[[[addr, :+, di.bin_length], :&, 0xfc00_0000], :+, delta].reduce
+				# absolute jump in the 0x3ff_ffff region surrounding next_pc
+				if delta.kind_of? Expression and delta.op == :& and delta.rexpr == 0x3ff_fffc
+					# relocated arg: assume the linker mapped so that instr&target are in the same region
+					arg = Expression[delta.lexpr].reduce
+				else
+					arg = Expression[[[addr, :+, di.bin_length], :&, 0xfc00_0000], :+, delta].reduce
+				end
 			else
 				arg = Expression[[addr, :+, di.bin_length], :+, delta].reduce
 			end
@@ -116,7 +139,7 @@ class MIPS
 				{ :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] }
 			}
 			when 'nop', 'j', 'jr', /^b/; lambda { |di, *a| {} }
-			when 'lui'; lambda { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
+			when 'lui'; lambda { |di, a0, a1| { a0 => Expression[[a1, :&, 0xffff], :<<, 16] } }
 			when 'add', 'addu', 'addi', 'addiu'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :+, a2] } }	# XXX addiu $sp, -40h should be addiu $sp, 0xffc0 from the books, but..
 			when 'sub', 'subu'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :-, a2] } }
 			when 'slt', 'slti'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :<, a2] } }
