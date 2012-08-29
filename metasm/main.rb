@@ -514,29 +514,9 @@ class Expression < ExpressionType
 		end
 
 		v =
-		if @op == :+
-			if not l; r	# +x  => x
-			elsif r == 0; l	# x+0 => x
-			elsif l == :unknown or r == :unknown; :unknown
-			elsif l.kind_of?(::Numeric)
-				if r.kind_of?(::Numeric)
-					l + r
-				elsif r.kind_of? Expression and r.op == :+
-					# 1+(x+y) => x+(y+1)
-					Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec
-				else
-					# 1+a => a+1
-					Expression[r, :+, l].reduce_rec
-				end
-				# (a+b)+foo => a+(b+foo)
-			elsif l.kind_of? Expression and l.op == :+; Expression[l.lexpr, :+, [l.rexpr, :+, r]].reduce_rec
-			elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
-				Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
-			else
-				reduce_rec_add(l, r)
-			end
-		elsif r.kind_of?(::Numeric) and (not l or l.kind_of?(::Numeric))
+		if r.kind_of?(::Numeric) and (not l or l.kind_of?(::Numeric))
 			case @op
+			when :+; l ? l + r : r
 			when :-; l ? l - r : -r
 			when :'!'; raise 'internal error' if l ; (r == 0) ? 1 : 0
 			when :'~'; raise 'internal error' if l ; ~r
@@ -555,163 +535,8 @@ class Expression < ExpressionType
 			else
 				l.send(@op, r)
 			end
-		elsif @op == :-
-			if l == :unknown or r == :unknown; :unknown
-			elsif not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
-				if r.op == :- # no lexpr (reduced)
-					# -(-x) => x
-					r.rexpr
-				else # :+ and lexpr (r is reduced)
-					# -(a+b) => (-a)+(-b)
-					Expression.new(:+, Expression.new(:-, r.rexpr, nil), Expression.new(:-, r.lexpr, nil)).reduce_rec
-				end
-			elsif l.kind_of? Expression and l.op == :+ and l.lexpr == r
-				# shortcircuit for a common occurence [citation needed]
-				# (a+b)-a
-				l.rexpr
-			elsif l
-				# a-b => a+(-b)
-				Expression[l, :+, [:-, r]].reduce_rec
-			end
-		elsif @op == :'&&'
-			if l == 0	# shortcircuit eval
-				0
-			elsif l == 1
-				Expression[r, :'!=', 0].reduce_rec
-			elsif r == 0
-				0	# XXX l could be a special ExprType with sideeffects ?
-			end
-		elsif @op == :'||'
-			if l.kind_of?(::Numeric) and l != 0	# shortcircuit eval
-				1
-			elsif l == 0
-				Expression[r, :'!=', 0].reduce_rec
-			elsif r == 0
-				Expression[l, :'!=', 0].reduce_rec
-			end
-		elsif @op == :>> or @op == :<<
-			if l == 0; 0
-			elsif r == 0; l
-			elsif l.kind_of? Expression and l.op == @op
-				Expression[l.lexpr, @op, [l.rexpr, :+, r]].reduce_rec
-			elsif @op == :<< and l.kind_of? Expression and l.op == :>> and r.kind_of? Integer and l.rexpr.kind_of? Integer
-				# (a >> 1) << 1  ==  a & 0xfffffe
-				if r == l.rexpr
-					Expression[l.lexpr, :&, (-1 << r)].reduce_rec
-				elsif r > l.rexpr
-					Expression[[l.lexpr, :>>, r-l.rexpr], :&, (-1 << r)].reduce_rec
-				else
-					Expression[[l.lexpr, :<<, l.rexpr-r], :&, (-1 << r)].reduce_rec
-				end
-			elsif r.kind_of? Integer and l.kind_of? Expression and [:&, :|, :^].include? l.op
-				# (a | b) << i => (a<<i | b<<i)
-				Expression[[l.lexpr, @op, r], l.op, [l.rexpr, @op, r]].reduce_rec
-			end
-		elsif @op == :'!'
-			if r.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[r.op]
-				Expression[r.lexpr, op, r.rexpr].reduce_rec
-			end
-		elsif @op == :==
-			if l == r; 1
-			elsif r == 0 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
-				Expression[l.lexpr, op, l.rexpr].reduce_rec
-			elsif r == 1 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
-				l
-			elsif r == 0 and l.kind_of? Expression and l.op == :+
-				if l.rexpr.kind_of? Expression and l.rexpr.op == :- and not l.rexpr.lexpr
-					Expression[l.lexpr, @op, l.rexpr.rexpr].reduce_rec
-				elsif l.rexpr.kind_of?(::Integer)
-					Expression[l.lexpr, @op, -l.rexpr].reduce_rec
-				end
-			end
-		elsif @op == :'!='
-			if l == r; 0
-			end
-		elsif @op == :^
-			if l == :unknown or r == :unknown; :unknown
-			elsif l == 0; r
-			elsif r == 0; l
-			elsif l == r; 0
-			elsif r == 1 and l.kind_of? Expression and [:'==', :'!=', :<, :>, :<=, :>=].include? l.op
-				Expression[nil, :'!', l].reduce_rec
-			elsif l.kind_of?(::Numeric)
-				if r.kind_of? Expression and r.op == :^
-					# 1^(x^y) => x^(y^1)
-					Expression[r.lexpr, :^, [r.rexpr, :^, l]].reduce_rec
-				else
-					# 1^a => a^1
-					Expression[r, :^, l].reduce_rec
-				end
-			elsif l.kind_of? Expression and l.op == :^
-				# (a^b)^c => a^(b^c)
-				Expression[l.lexpr, :^, [l.rexpr, :^, r]].reduce_rec
-			elsif r.kind_of? Expression and r.op == :^
-				if r.rexpr == l
-					# a^(a^b) => b
-					r.lexpr
-				elsif r.lexpr == l
-					# a^(b^a) => b
-					r.rexpr
-				else
-					# a^(b^(c^(a^d)))  =>  b^(a^(c^(a^d)))
-					# XXX ugly..
-					tr = r
-					found = false
-					while not found and tr.kind_of?(Expression) and tr.op == :^
-						found = true if tr.lexpr == l or tr.rexpr == l
-						tr = tr.rexpr
-					end
-					if found
-						Expression[r.lexpr, :^, [l, :^, r.rexpr]].reduce_rec
-					end
-				end
-			elsif l.kind_of?(Expression) and l.op == :& and l.rexpr.kind_of?(::Integer) and (l.rexpr & (l.rexpr+1)) == 0
-				if r.kind_of?(::Integer) and r & l.rexpr == r
-					# (a&0xfff)^12 => (a^12)&0xfff
-					Expression[[l.lexpr, :^, r], :&, l.rexpr].reduce_rec
-				elsif r.kind_of?(Expression) and r.op == :& and r.rexpr.kind_of?(::Integer) and r.rexpr == l.rexpr
-					# (a&0xfff)^(b&0xfff) => (a^b)&0xfff
-					Expression[[l.lexpr, :^, r.lexpr], :&, l.rexpr].reduce_rec
-				end
-			end
-		elsif @op == :&
-			if l == 0 or r == 0; 0
-			elsif r == 1 and l.kind_of?(Expression) and [:'==', :'!=', :<, :>, :<=, :>=].include?(l.op)
-				l
-			elsif l == r; l
-			elsif l.kind_of?(Integer); Expression[r, @op, l].reduce_rec
-			elsif l.kind_of?(Expression) and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
-			elsif l.kind_of?(Expression) and [:|, :^].include?(l.op) and r.kind_of?(Integer) and (l.op == :| or (r & (r+1)) != 0)
-				# (a ^| b) & i => (a&i ^| b&i)
-				Expression[[l.lexpr, :&, r], l.op, [l.rexpr, :&, r]].reduce_rec
-			elsif r.kind_of?(::Integer) and l.kind_of?(Expression) and (r & (r+1)) == 0
-				# foo & 0xffff
-				reduce_rec_mod2(l, r)
-			end
-		elsif @op == :|
-			if    l == 0; r
-			elsif r == 0; l
-			elsif l == -1 or r == -1; -1
-			elsif l == r; l
-			elsif l.kind_of? Integer; Expression[r, @op, l].reduce_rec
-			elsif l.kind_of? Expression and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
-			end
-		elsif @op == :*
-			if    l == 0 or r == 0; 0
-			elsif l == 1; r
-			elsif r == 1; l
-			elsif r.kind_of? Integer; Expression[r, @op, l].reduce_rec
-			elsif r.kind_of? Expression and r.op == @op; Expression[[l, @op, r.lexpr], @op, r.rexpr].reduce_rec
-			elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :* and r.lexpr.kind_of? Integer; Expression[l*r.lexpr, :*, r.rexpr].reduce_rec	# XXX need & regsize..
-			elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :+ and r.rexpr.kind_of? Integer; Expression[[l, :*, r.lexpr], :+, l*r.rexpr].reduce_rec
-			end
-		elsif @op == :/
-			if r == 0
-			elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :+ and l.rexpr.kind_of? Integer and l.rexpr % r == 0
-				Expression[[l.lexpr, :/, r], :+, l.rexpr/r].reduce_rec
-			elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :* and l.lexpr % r == 0
-				Expression[l.lexpr/r, :*, l.rexpr].reduce_rec
-			end
+		elsif rp = @@reduce_op[@op]
+			rp[self, l, r]
 		end
 
 		ret = case v
@@ -733,18 +558,49 @@ class Expression < ExpressionType
 		ret
 	end
 
+	@@reduce_op = {
+		:+    => lambda { |e, l, r| e.reduce_op_plus(l, r) },
+		:-    => lambda { |e, l, r| e.reduce_op_minus(l, r) },
+		:'&&' => lambda { |e, l, r| e.reduce_op_andand(l, r) },
+		:'||' => lambda { |e, l, r| e.reduce_op_oror(l, r) },
+		:>>   => lambda { |e, l, r| e.reduce_op_shr(l, r) },
+		:<<   => lambda { |e, l, r| e.reduce_op_shl(l, r) },
+		:'!'  => lambda { |e, l, r| e.reduce_op_not(l, r) },
+		:==   => lambda { |e, l, r| e.reduce_op_eql(l, r) },
+		:'!=' => lambda { |e, l, r| e.reduce_op_neq(l, r) },
+		:^    => lambda { |e, l, r| e.reduce_op_xor(l, r) },
+		:&    => lambda { |e, l, r| e.reduce_op_and(l, r) },
+		:|    => lambda { |e, l, r| e.reduce_op_or(l, r) },
+		:*    => lambda { |e, l, r| e.reduce_op_times(l, r) },
+		:/    => lambda { |e, l, r| e.reduce_op_div(l, r) }
+	}
 
-	# a+(b+(c+(-a))) => b+c+0
-	# a+((-a)+(b+c)) => 0+b+c
-	def reduce_rec_add(l, r)
-		if l.kind_of? Expression and l.op == :- and not l.lexpr
-			neg_l = l.rexpr
+
+	def self.reduce_op
+		@@reduce_op
+	end
+
+	def reduce_op_plus(l, r)
+		if not l; r	# +x  => x
+		elsif r == 0; l	# x+0 => x
+		elsif l == :unknown or r == :unknown; :unknown
+		elsif l.kind_of?(::Numeric)
+			if r.kind_of? Expression and r.op == :+
+				# 1+(x+y) => x+(y+1)
+				Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec
+			else
+				# 1+a => a+1
+				Expression[r, :+, l].reduce_rec
+			end
+			# (a+b)+foo => a+(b+foo)
+		elsif l.kind_of? Expression and l.op == :+; Expression[l.lexpr, :+, [l.rexpr, :+, r]].reduce_rec
+		elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
+			Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
+		elsif l.kind_of? Expression and l.op == :- and not l.lexpr
+			reduce_rec_add_rec(r, l.rexpr)
 		else
-			neg_l = Expression.new(:-, l, nil)
+			reduce_rec_add_rec(r, Expression.new(:-, l, nil))
 		end
-
-		# recursive search & replace -lexpr by 0
-		reduce_rec_add_rec(r, neg_l)
 	end
 
 	def reduce_rec_add_rec(cur, neg_l)
@@ -761,26 +617,183 @@ class Expression < ExpressionType
 		end
 	end
 
-	# expr & 0xffff
-	def reduce_rec_mod2(e, mask)
-		case e.op
-		when :+, :^
-			if e.lexpr.kind_of?(Expression) and e.lexpr.op == :& and
-			   e.lexpr.rexpr.kind_of?(::Integer) and e.lexpr.rexpr & mask == mask
-				# ((a&m) + b) & m  =>  (a+b) & m
-				Expression[[e.lexpr.lexpr, e.op, e.rexpr], :&, mask].reduce_rec
-			elsif e.rexpr.kind_of?(Expression) and e.rexpr.op == :& and
-			      e.rexpr.rexpr.kind_of?(::Integer) and e.rexpr.rexpr & mask == mask
-				# (a + (b&m)) & m  =>  (a+b) & m
-				Expression[[e.lexpr, e.op, e.rexpr.lexpr], :&, mask].reduce_rec
-			else
-				Expression[e, :&, mask]
+	def reduce_op_minus(l, r)
+		if l == :unknown or r == :unknown; :unknown
+		elsif not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
+			if r.op == :- # no lexpr (reduced)
+				# -(-x) => x
+				r.rexpr
+			else # :+ and lexpr (r is reduced)
+				# -(a+b) => (-a)+(-b)
+				Expression.new(:+, Expression.new(:-, r.rexpr, nil), Expression.new(:-, r.lexpr, nil)).reduce_rec
 			end
-		when :|
-			# rol/ror composition
-			reduce_rec_composerol e, mask
-		else
-			Expression[e, :&, mask]
+		elsif l.kind_of? Expression and l.op == :+ and l.lexpr == r
+			# shortcircuit for a common occurence [citation needed]
+			# (a+b)-a
+			l.rexpr
+		elsif l
+			# a-b => a+(-b)
+			Expression[l, :+, [:-, r]].reduce_rec
+		end
+	end
+
+	def reduce_op_andand(l, r)
+		if l == 0	# shortcircuit eval
+			0
+		elsif l == 1
+			Expression[r, :'!=', 0].reduce_rec
+		elsif r == 0
+			0	# XXX l could be a special ExprType with sideeffects ?
+		end
+	end
+
+	def reduce_op_oror(l, r)
+		if l.kind_of?(::Numeric) and l != 0	# shortcircuit eval
+			1
+		elsif l == 0
+			Expression[r, :'!=', 0].reduce_rec
+		elsif r == 0
+			Expression[l, :'!=', 0].reduce_rec
+		end
+	end
+
+	def reduce_op_shr(l, r)
+		if l == 0; 0
+		elsif r == 0; l
+		elsif l.kind_of? Expression and l.op == :>>
+			Expression[l.lexpr, :>>, [l.rexpr, :+, r]].reduce_rec
+		elsif r.kind_of? Integer and l.kind_of? Expression and [:&, :|, :^].include? l.op
+			# (a | b) << i => (a<<i | b<<i)
+			Expression[[l.lexpr, :>>, r], l.op, [l.rexpr, :>>, r]].reduce_rec
+		end
+	end
+	
+	def reduce_op_shl(l, r)
+		if l == 0; 0
+		elsif r == 0; l
+		elsif l.kind_of? Expression and l.op == :<<
+			Expression[l.lexpr, :<<, [l.rexpr, :+, r]].reduce_rec
+		elsif l.kind_of? Expression and l.op == :>> and r.kind_of? Integer and l.rexpr.kind_of? Integer
+			# (a >> 1) << 1  ==  a & 0xfffffe
+			if r == l.rexpr
+				Expression[l.lexpr, :&, (-1 << r)].reduce_rec
+			elsif r > l.rexpr
+				Expression[[l.lexpr, :>>, r-l.rexpr], :&, (-1 << r)].reduce_rec
+			else
+				Expression[[l.lexpr, :<<, l.rexpr-r], :&, (-1 << r)].reduce_rec
+			end
+		elsif r.kind_of? Integer and l.kind_of? Expression and [:&, :|, :^].include? l.op
+			# (a | b) << i => (a<<i | b<<i)
+			Expression[[l.lexpr, :<<, r], l.op, [l.rexpr, :<<, r]].reduce_rec
+		end
+	end
+
+	def reduce_op_not(l, r)
+		if r.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[r.op]
+			Expression[r.lexpr, op, r.rexpr].reduce_rec
+		end
+	end
+
+	def reduce_op_eql(l, r)
+		if l == r; 1
+		elsif r == 0 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
+			Expression[l.lexpr, op, l.rexpr].reduce_rec
+		elsif r == 1 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
+			l
+		elsif r == 0 and l.kind_of? Expression and l.op == :+
+			if l.rexpr.kind_of? Expression and l.rexpr.op == :- and not l.rexpr.lexpr
+				Expression[l.lexpr, :==, l.rexpr.rexpr].reduce_rec
+			elsif l.rexpr.kind_of?(::Integer)
+				Expression[l.lexpr, :==, -l.rexpr].reduce_rec
+			end
+		end
+	end
+
+	def reduce_op_neq(l, r)
+		if l == r; 0
+		end
+	end
+
+	def reduce_op_xor
+		if l == :unknown or r == :unknown; :unknown
+		elsif l == 0; r
+		elsif r == 0; l
+		elsif l == r; 0
+		elsif r == 1 and l.kind_of? Expression and [:'==', :'!=', :<, :>, :<=, :>=].include? l.op
+			Expression[nil, :'!', l].reduce_rec
+		elsif l.kind_of?(::Numeric)
+			if r.kind_of? Expression and r.op == :^
+				# 1^(x^y) => x^(y^1)
+				Expression[r.lexpr, :^, [r.rexpr, :^, l]].reduce_rec
+			else
+				# 1^a => a^1
+				Expression[r, :^, l].reduce_rec
+			end
+		elsif l.kind_of? Expression and l.op == :^
+			# (a^b)^c => a^(b^c)
+			Expression[l.lexpr, :^, [l.rexpr, :^, r]].reduce_rec
+		elsif r.kind_of? Expression and r.op == :^
+			if r.rexpr == l
+				# a^(a^b) => b
+				r.lexpr
+			elsif r.lexpr == l
+				# a^(b^a) => b
+				r.rexpr
+			else
+				# a^(b^(c^(a^d)))  =>  b^(a^(c^(a^d)))
+				# XXX ugly..
+				tr = r
+				found = false
+				while not found and tr.kind_of?(Expression) and tr.op == :^
+					found = true if tr.lexpr == l or tr.rexpr == l
+					tr = tr.rexpr
+				end
+				if found
+					Expression[r.lexpr, :^, [l, :^, r.rexpr]].reduce_rec
+				end
+			end
+		elsif l.kind_of?(Expression) and l.op == :& and l.rexpr.kind_of?(::Integer) and (l.rexpr & (l.rexpr+1)) == 0
+			if r.kind_of?(::Integer) and r & l.rexpr == r
+				# (a&0xfff)^12 => (a^12)&0xfff
+				Expression[[l.lexpr, :^, r], :&, l.rexpr].reduce_rec
+			elsif r.kind_of?(Expression) and r.op == :& and r.rexpr.kind_of?(::Integer) and r.rexpr == l.rexpr
+				# (a&0xfff)^(b&0xfff) => (a^b)&0xfff
+				Expression[[l.lexpr, :^, r.lexpr], :&, l.rexpr].reduce_rec
+			end
+		end
+	end
+
+	def reduce_op_and(l, r)
+		if l == 0 or r == 0; 0
+		elsif r == 1 and l.kind_of?(Expression) and [:'==', :'!=', :<, :>, :<=, :>=].include?(l.op)
+			l
+		elsif l == r; l
+		elsif l.kind_of?(Integer); Expression[r, @op, l].reduce_rec
+		elsif l.kind_of?(Expression) and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
+		elsif l.kind_of?(Expression) and [:|, :^].include?(l.op) and r.kind_of?(Integer) and (l.op == :| or (r & (r+1)) != 0)
+			# (a ^| b) & i => (a&i ^| b&i)
+			Expression[[l.lexpr, :&, r], l.op, [l.rexpr, :&, r]].reduce_rec
+		elsif r.kind_of?(::Integer) and l.kind_of?(Expression) and (r & (r+1)) == 0
+			# foo & 0xffff
+			case l.op
+			when :+, :^
+				if l.lexpr.kind_of?(Expression) and l.lexpr.op == :& and
+					l.lexpr.rexpr.kind_of?(::Integer) and l.lexpr.rexpr & r == r
+					# ((a&m) + b) & m  =>  (a+b) & m
+					Expression[[l.lexpr.lexpr, l.op, l.rexpr], :&, r].reduce_rec
+				elsif l.rexpr.kind_of?(Expression) and l.rexpr.op == :& and
+					l.rexpr.rexpr.kind_of?(::Integer) and l.rexpr.rexpr & r == r
+					# (a + (b&m)) & m  =>  (a+b) & m
+					Expression[[l.lexpr, l.op, l.rexpr.lexpr], :&, r].reduce_rec
+				else
+					Expression[l, :&, r]
+				end
+			when :|
+				# rol/ror composition
+				reduce_rec_composerol l, r
+			else
+				Expression[l, :&, r]
+			end
 		end
 	end
 
@@ -811,6 +824,37 @@ class Expression < ExpressionType
 			Expression[e, :&, mask]
 		end
 	end
+
+	def reduce_op_or(l, r)
+		if    l == 0; r
+		elsif r == 0; l
+		elsif l == -1 or r == -1; -1
+		elsif l == r; l
+		elsif l.kind_of? Integer; Expression[r, @op, l].reduce_rec
+		elsif l.kind_of? Expression and l.op == @op; Expression[l.lexpr, @op, [l.rexpr, @op, r]].reduce_rec
+		end
+	end
+
+	def reduce_op_times(l, r)
+		if    l == 0 or r == 0; 0
+		elsif l == 1; r
+		elsif r == 1; l
+		elsif r.kind_of? Integer; Expression[r, @op, l].reduce_rec
+		elsif r.kind_of? Expression and r.op == @op; Expression[[l, @op, r.lexpr], @op, r.rexpr].reduce_rec
+		elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :* and r.lexpr.kind_of? Integer; Expression[l*r.lexpr, :*, r.rexpr].reduce_rec	# XXX need & regsize..
+		elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :+ and r.rexpr.kind_of? Integer; Expression[[l, :*, r.lexpr], :+, l*r.rexpr].reduce_rec
+		end
+	end
+
+	def reduce_op_div(l, r)
+		if r == 0
+		elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :+ and l.rexpr.kind_of? Integer and l.rexpr % r == 0
+			Expression[[l.lexpr, :/, r], :+, l.rexpr/r].reduce_rec
+		elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :* and l.lexpr % r == 0
+			Expression[l.lexpr/r, :*, l.rexpr].reduce_rec
+		end
+	end
+
 
 	# a pattern-matching method
 	# Expression[42, :+, 28].match(Expression['any', :+, 28], 'any') => {'any' => 42}
