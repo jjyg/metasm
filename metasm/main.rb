@@ -691,17 +691,19 @@ class Expression < ExpressionType
 		end
 	end
 
+	NEG_OP = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}
+
 	def reduce_op_not(l, r)
-		if r.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[r.op]
-			Expression[r.lexpr, op, r.rexpr].reduce_rec
+		if r.kind_of? Expression and nop = NEG_OP[r.op]
+			Expression[r.lexpr, nop, r.rexpr].reduce_rec
 		end
 	end
 
 	def reduce_op_eql(l, r)
 		if l == r; 1
-		elsif r == 0 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
-			Expression[l.lexpr, op, l.rexpr].reduce_rec
-		elsif r == 1 and l.kind_of? Expression and op = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}[l.op]
+		elsif r == 0 and l.kind_of? Expression and nop = NEG_OP[l.op]
+			Expression[l.lexpr, nop, l.rexpr].reduce_rec
+		elsif r == 1 and l.kind_of? Expression and NEG_OP[l.op]
 			l
 		elsif r == 0 and l.kind_of? Expression and l.op == :+
 			if l.rexpr.kind_of? Expression and l.rexpr.op == :- and not l.rexpr.lexpr
@@ -717,12 +719,12 @@ class Expression < ExpressionType
 		end
 	end
 
-	def reduce_op_xor
+	def reduce_op_xor(l, r)
 		if l == :unknown or r == :unknown; :unknown
 		elsif l == 0; r
 		elsif r == 0; l
 		elsif l == r; 0
-		elsif r == 1 and l.kind_of? Expression and [:'==', :'!=', :<, :>, :<=, :>=].include? l.op
+		elsif r == 1 and l.kind_of? Expression and NEG_OP[l.op]
 			Expression[nil, :'!', l].reduce_rec
 		elsif l.kind_of?(::Numeric)
 			if r.kind_of? Expression and r.op == :^
