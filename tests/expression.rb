@@ -27,6 +27,8 @@ class TestExpression < Test::Unit::TestCase
 		assert_equal(E[:a, :+, 2], E[:b, :+, [:a, :-, [4, :+, [:b, :-, 6]]]].reduce)
 		assert_equal(E[:a, :&, 0xff00], E[[[:a, :>>, 8], :&, 0xff], :<<, 8].reduce)
 
+		assert_equal(E[[:a, :>>, 1], :&, 0xff0], E[[[:a, :>>, 5], :&, 0xff], :<<, 4].reduce)
+
 		assert_equal(0, E[[:a, :&, 0xff00], :&, [:b, :&, 0xff]].reduce)
 		assert_equal(0, E[[:a, :&, 0xff], :>>, 8].reduce)
 

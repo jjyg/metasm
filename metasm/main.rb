@@ -681,9 +681,9 @@ class Expression < ExpressionType
 			if r == l.rexpr
 				Expression[l.lexpr, :&, (-1 << r)].reduce_rec
 			elsif r > l.rexpr
-				Expression[[l.lexpr, :>>, r-l.rexpr], :&, (-1 << r)].reduce_rec
+				Expression[[l.lexpr, :<<, r-l.rexpr], :&, (-1 << r)].reduce_rec
 			else
-				Expression[[l.lexpr, :<<, l.rexpr-r], :&, (-1 << r)].reduce_rec
+				Expression[[l.lexpr, :>>, l.rexpr-r], :&, (-1 << r)].reduce_rec
 			end
 		elsif r.kind_of? Integer and l.kind_of? Expression and [:&, :|, :^].include? l.op
 			# (a | b) << i => (a<<i | b<<i)
