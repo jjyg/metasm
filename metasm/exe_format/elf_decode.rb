@@ -851,6 +851,7 @@ class ELF
 
 	# decodes sections, interprets symbols/relocs, fills sections.encoded
 	def decode_sections
+		@symbols.clear	# the NULL symbol is explicit in the symbol table
 		decode_sections_symbols
 		decode_sections_relocs
 		@sections.each { |s|
