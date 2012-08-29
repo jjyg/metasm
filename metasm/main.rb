@@ -594,10 +594,17 @@ class Expression < ExpressionType
 			elsif r == 0; l
 			elsif l.kind_of? Expression and l.op == @op
 				Expression[l.lexpr, @op, [l.rexpr, :+, r]].reduce_rec
-			# XXX (a >> 1) << 1  !=  a (lose low bit)
-			# XXX (a << 1) >> 1  !=  a (with real cpus, lose high bit)
-			# (a | b) << i
+			elsif @op == :<< and l.kind_of? Expression and l.op == :>> and r.kind_of? Integer and l.rexpr.kind_of? Integer
+				# (a >> 1) << 1  ==  a & 0xfffffe
+				if r == l.rexpr
+					Expression[l.lexpr, :&, (-1 << r)].reduce_rec
+				elsif r > l.rexpr
+					Expression[[l.lexpr, :>>, r-l.rexpr], :&, (-1 << r)].reduce_rec
+				else
+					Expression[[l.lexpr, :<<, l.rexpr-r], :&, (-1 << r)].reduce_rec
+				end
 			elsif r.kind_of? Integer and l.kind_of? Expression and [:&, :|, :^].include? l.op
+				# (a | b) << i => (a<<i | b<<i)
 				Expression[[l.lexpr, @op, r], l.op, [l.rexpr, @op, r]].reduce_rec
 			end
 		elsif @op == :'!'
