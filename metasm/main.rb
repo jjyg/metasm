@@ -357,7 +357,7 @@ class Expression < ExpressionType
 			if not op
 				raise ArgumentError, 'invalid Expression[nil]' if not l
 				return l if l.kind_of? Expression
-				if l.kind_of? ::Numeric and l < 0
+				if l.kind_of?(::Numeric) and l < 0
 					r = -l
 					op = :'-'
 				else
@@ -370,9 +370,9 @@ class Expression < ExpressionType
 			end
 			l = nil
 		else
-			l = self[*l] if l.kind_of? ::Array
+			l = self[*l] if l.kind_of?(::Array)
 		end
-		r = self[*r] if r.kind_of? ::Array
+		r = self[*r] if r.kind_of?(::Array)
 		new(op, r, l)
 	end
 
@@ -380,7 +380,7 @@ class Expression < ExpressionType
 	# returns true if it is, false if it overflows, and nil if cannot be determined (eg unresolved variable)
 	def self.in_range?(val, type)
 		val = val.reduce if val.kind_of? self
-		return unless val.kind_of? ::Numeric
+		return unless val.kind_of?(::Numeric)
 
 		if INT_MIN[type]
 			val == val.to_i and
@@ -409,7 +409,7 @@ class Expression < ExpressionType
 	# basic constructor
 	# XXX funny args order, you should use +Expression[]+ instead
 	def initialize(op, rexpr, lexpr)
-		raise ArgumentError, "Expression: invalid arg order: #{[lexpr, op, rexpr].inspect}" if not op.kind_of? ::Symbol
+		raise ArgumentError, "Expression: invalid arg order: #{[lexpr, op, rexpr].inspect}" if not op.kind_of?(::Symbol)
 		@op = op
 		@lexpr = lexpr
 		@rexpr = rexpr
@@ -439,13 +439,13 @@ class Expression < ExpressionType
 		l = @lexpr
 		r = @rexpr
 		if l and binding[l]
-			raise "internal error - bound #{l.inspect}" if l.kind_of? ::Numeric
+			raise "internal error - bound #{l.inspect}" if l.kind_of?(::Numeric)
 			l = binding[l]
 		elsif l.kind_of? ExpressionType
 			l = l.bind(binding)
 		end
 		if r and binding[r]
-			raise "internal error - bound #{r.inspect}" if r.kind_of? ::Numeric
+			raise "internal error - bound #{r.inspect}" if r.kind_of?(::Numeric)
 			r = binding[r]
 		elsif r.kind_of? ExpressionType
 			r = r.bind(binding)
@@ -582,7 +582,7 @@ class Expression < ExpressionType
 				0	# XXX l could be a special ExprType with sideeffects ?
 			end
 		elsif @op == :'||'
-			if l.kind_of? ::Numeric and l != 0	# shortcircuit eval
+			if l.kind_of?(::Numeric) and l != 0	# shortcircuit eval
 				1
 			elsif l == 0
 				Expression[r, :'!=', 0].reduce_rec
@@ -620,7 +620,7 @@ class Expression < ExpressionType
 			elsif r == 0 and l.kind_of? Expression and l.op == :+
 				if l.rexpr.kind_of? Expression and l.rexpr.op == :- and not l.rexpr.lexpr
 					Expression[l.lexpr, @op, l.rexpr.rexpr].reduce_rec
-				elsif l.rexpr.kind_of? ::Integer
+				elsif l.rexpr.kind_of?(::Integer)
 					Expression[l.lexpr, @op, -l.rexpr].reduce_rec
 				end
 			end
@@ -790,14 +790,14 @@ class Expression < ExpressionType
 		m = Expression[['var', :sh_op, 'amt'], :|, ['var', :inv_sh_op, 'inv_amt']]
 		if vars = e.match(m, 'var', :sh_op, 'amt', :inv_sh_op, 'inv_amt') and vars[:sh_op] == {:>> => :<<, :<< => :>>}[vars[:inv_sh_op]] and
 		   ((vars['amt'].kind_of?(::Integer) and  vars['inv_amt'].kind_of?(::Integer) and ampl = vars['amt'] + vars['inv_amt']) or
-		    (vars['amt'].kind_of? Expression and vars['amt'].op == :% and vars['amt'].rexpr.kind_of? ::Integer and
+		    (vars['amt'].kind_of? Expression and vars['amt'].op == :% and vars['amt'].rexpr.kind_of?(::Integer) and
 		     vars['inv_amt'].kind_of? Expression and vars['inv_amt'].op == :% and vars['amt'].rexpr == vars['inv_amt'].rexpr and ampl = vars['amt'].rexpr)) and
 		   mask == (1<<ampl)-1 and vars['var'].kind_of? Expression and	# it's a rotation
 
 		   vars['var'].op == :& and vars['var'].rexpr == mask and
 		  ivars = vars['var'].lexpr.match(m, 'var', :sh_op, 'amt', :inv_sh_op, 'inv_amt') and ivars[:sh_op] == {:>> => :<<, :<< => :>>}[ivars[:inv_sh_op]] and
 		   ((ivars['amt'].kind_of?(::Integer) and  ivars['inv_amt'].kind_of?(::Integer) and ampl = ivars['amt'] + ivars['inv_amt']) or
-		    (ivars['amt'].kind_of? Expression and ivars['amt'].op == :% and ivars['amt'].rexpr.kind_of? ::Integer and
+		    (ivars['amt'].kind_of? Expression and ivars['amt'].op == :% and ivars['amt'].rexpr.kind_of?(::Integer) and
 		     ivars['inv_amt'].kind_of? Expression and ivars['inv_amt'].op == :% and ivars['amt'].rexpr == ivars['inv_amt'].rexpr and ampl = ivars['amt'].rexpr))
 			if ivars[:sh_op] != vars[:sh_op]
 				# ensure the rotations are the same orientation
@@ -912,7 +912,7 @@ class Relocation
 	include Backtrace
 
 	def initialize(target, type, endianness, backtrace = nil)
-		raise ArgumentError, "bad args #{[target, type, endianness].inspect}" if not target.kind_of? Expression or not type.kind_of? ::Symbol or not endianness.kind_of? ::Symbol
+		raise ArgumentError, "bad args #{[target, type, endianness].inspect}" if not target.kind_of? Expression or not type.kind_of?(::Symbol) or not endianness.kind_of?(::Symbol)
 		@target, @type, @endianness, @backtrace = target, type, endianness, backtrace
 	end
 
@@ -1152,7 +1152,7 @@ class EncodedData
 			val = len
 			len = nil
 		end
-		if not len and from.kind_of? ::Range
+		if not len and from.kind_of?(::Range)
 			b = from.begin
 			e = from.end
 			b = @export[b] if @export[b]
@@ -1164,14 +1164,14 @@ class EncodedData
 			from = b
 		end
 		from = @export[from] || from
-		raise "invalid offset #{from}" if not from.kind_of? ::Integer
+		raise "invalid offset #{from}" if not from.kind_of?(::Integer)
 		from = from + @virtsize if from < 0
 
 		if not len
-			val = val.chr if val.kind_of? ::Integer
+			val = val.chr if val.kind_of?(::Integer)
 			len = val.length
 		end
-		raise "invalid slice length #{len}" if not len.kind_of? ::Integer or len < 0
+		raise "invalid slice length #{len}" if not len.kind_of?(::Integer) or len < 0
 
 		if from >= @virtsize
 			len = 0
@@ -1230,7 +1230,7 @@ class EncodedData
 	def pattern_scan(pat, chunksz=nil, margin=nil)
 		chunksz ||= 4*1024*1024 # scan 4MB at a time
 		margin  ||= 65536        # add this much bytes at each chunk to find /pat/ over chunk boundaries
-		pat = Regexp.new(Regexp.escape(pat)) if pat.kind_of? ::String
+		pat = Regexp.new(Regexp.escape(pat)) if pat.kind_of?(::String)
 
 		found = []
 		chunkoff = 0
