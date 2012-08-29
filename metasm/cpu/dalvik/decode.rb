@@ -96,7 +96,16 @@ class Dalvik
 				next
 			when :m16
 				val << edata.decode_imm(:u16, @endianness)
-				Method.new(@dex, val.last)
+				DexMethod.new(@dex, val.last)
+			when :fld16
+				val << edata.decode_imm(:u16, @endianness)
+				DexField.new(@dex, val.last)
+			when :typ16
+				val << edata.decode_imm(:u16, @endianness)
+				DexType.new(@dex, val.last)
+			when :str16
+				val << edata.decode_imm(:u16, @endianness)
+				DexString.new(@dex, val.last)
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
@@ -154,7 +163,7 @@ class Dalvik
 	def get_xrefs_x(dasm, di)
 		if di.opcode.props[:saveip]
 			m = di.instruction.args.first
-			if m.kind_of? Method and m.off
+			if m.kind_of?(DexMethod) and m.off
 				[m.off]
 			else
 				[:default]

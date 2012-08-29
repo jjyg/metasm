@@ -63,7 +63,8 @@ unused_fc unused_fd unused_fe unused_ff]
 	def init_dalvik
 		@valid_props[:canthrow] = true
 		[:i16, :i16_32hi, :i16_64hi, :i32, :iaa, :ib, :icc, :u16, :u32, :u64,
-		 :r16, :ra, :raa, :rb, :rbb, :rcc, :rlist16, :rlist4, :rlist5, :m16
+		 :r16, :ra, :raa, :rb, :rbb, :rcc, :rlist16, :rlist4, :rlist5,
+		 :m16, :fld16, :typ16, :str16
 		].each { |a| @valid_args[a] = true }
 		@opcode_list = []
 
@@ -120,12 +121,16 @@ unused_fc unused_fd unused_fe unused_ff]
 			:fmt20t
 		when 'goto_32'
 			:fmt30t
-		when 'const_string', 'const_class', 'check_cast',
-			'new_instance', 'sget', 'sget_wide', 'sget_object',
+		when 'const_string'
+			:fmt21c_str
+		when 'const_class', 'check_cast',
+			'new_instance'
+			:fmt21c_typ
+		when 'sget', 'sget_wide', 'sget_object',
 			'sget_boolean', 'sget_byte', 'sget_char', 'sget_short',
 			'sput', 'sput_wide', 'sput_object', 'sput_boolean',
 			'sput_byte', 'sput_char', 'sput_short'
-			:fmt21c
+			:fmt21c_fld
 		when 'const_16', 'const_wide_16'
 			:fmt21s
 		when 'if_eqz', 'if_nez', 'if_ltz', 'if_gez', 'if_gtz', 'if_lez'
@@ -215,7 +220,9 @@ unused_fc unused_fd unused_fe unused_ff]
 		when :fmt10t; op.args << :iaa
 		when :fmt20t; op.args << :i16
 		when :fmt20bc; op.args << :iaa << :u16
-		when :fmt21c; op.args << :raa << :u16
+		when :fmt21c_str; op.args << :raa << :str16
+		when :fmt21c_typ; op.args << :raa << :typ16
+		when :fmt21c_fld; op.args << :raa << :fld16
 		when :fmt22x; op.args << :raa << :r16
 		when :fmt21s, :fmt21t; op.args << :raa << :i16
 		when :fmt21h; op.args << :raa << :i16_32hi
@@ -223,7 +230,7 @@ unused_fc unused_fd unused_fe unused_ff]
 		when :fmt23x; op.args << :raa << :rbb << :rcc
 		when :fmt22b; op.args << :raa << :rbb << :icc
 		when :fmt22s, :fmt22t; op.args << :ra << :rb << :i16
-		when :fmt22c, :fmt22cs; op.args << :ra << :rb << :u16
+		when :fmt22c, :fmt22cs; op.args << :ra << :rb << :fld16
 		when :fmt30t; op.args << :i32
 		when :fmt31t, :fmt31c; op.args << :raa << :u32
 		when :fmt32x; op.args << :r16 << :r16

@@ -23,7 +23,7 @@ class Dalvik < CPU
 		end
 	end
 
-	class Method
+	class DexMethod
 		attr_accessor :dex, :midx, :off
 		def initialize(dex, midx)
 			@dex = dex
@@ -40,6 +40,54 @@ class Dalvik < CPU
 				#dex.encoded.inv_export[@off]
 			else
 				"method_#@midx"
+			end
+		end
+	end
+
+	class DexField
+		attr_accessor :dex, :fidx
+		def initialize(dex, fidx)
+			@dex = dex
+			@fidx = fidx
+		end
+
+		def to_s
+			if @dex and f = @dex.fields[@fidx]
+				@dex.types[f.classidx] + '->' + @dex.strings[f.nameidx]
+			else
+				"field_#@fidx"
+			end
+		end
+	end
+
+	class DexType
+		attr_accessor :dex, :tidx
+		def initialize(dex, tidx)
+			@dex = dex
+			@tidx = tidx
+		end
+
+		def to_s
+			if @dex and f = @dex.types[@tidx]
+				f
+			else
+				"type_#@tidx"
+			end
+		end
+	end
+
+	class DexString
+		attr_accessor :dex, :sidx
+		def initialize(dex, sidx)
+			@dex = dex
+			@sidx = sidx
+		end
+
+		def to_s
+			if @dex and f = @dex.strings[@sidx]
+				f.inspect
+			else
+				"string_#@sidx"
 			end
 		end
 	end

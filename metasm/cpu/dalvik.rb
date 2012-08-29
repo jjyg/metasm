@@ -4,5 +4,8 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
+class Metasm::Dalvik < Metasm::CPU
+end
+
 require 'metasm/main'
 require 'metasm/cpu/dalvik/decode'

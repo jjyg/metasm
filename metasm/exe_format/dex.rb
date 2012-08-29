@@ -441,7 +441,11 @@ class DEX < ExeFormat
 	end
 
 	def get_default_entrypoints
-		[]
+		@classes.find_all { |c| c.data }.map { |c|
+			(c.data.direct_methods + c.data.virtual_methods).map { |m|
+				m.codeoff+m.code.insns_off
+			}
+		}.flatten
 	end
 end
 
