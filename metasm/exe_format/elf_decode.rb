@@ -891,8 +891,10 @@ class ELF
 	       	return if @header.type != 'REL'
 		@sections.each { |s|
 			next if not s.encoded
-			l = new_label(s.name)
-			s.encoded.add_export l, 0
+			if not l = s.encoded.inv_export[0] or l != s.name.tr('^a-zA-Z0-9_', '_')
+				l = new_label(s.name)
+				s.encoded.add_export l, 0
+			end
 		       	yield s.encoded, l
 		}
 	end
