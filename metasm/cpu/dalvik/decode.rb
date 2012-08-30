@@ -115,6 +115,15 @@ class Dalvik
 		di
 	end
 
+	def decode_instr_interpret(di, addr)
+		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.instruction.opname =~ /^if|^goto/
+			arg = Expression[addr, :+, [di.instruction.args.last, :*, 2]].reduce
+			di.instruction.args[-1] = Expression[arg]
+		end
+
+		di
+	end
+
 	def backtrace_binding
 		@backtrace_binding ||= init_backtrace_binding
 	end
@@ -169,8 +178,10 @@ class Dalvik
 				[:default]
 			end
 		elsif di.opcode.props[:setip]
-			if di.opcode.name =~ /return/
+			if di.opcode.name =~ /^return/
 				[Indirection[:callstack, @size/8]]
+			elsif di.opcode.name =~ /^if|^goto/
+				[di.instruction.args.last]
 			else
 				[]	# [di.instruction.args.last]
 			end

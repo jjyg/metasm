@@ -29,7 +29,8 @@ class Dalvik < CPU
 			@dex = dex
 			@midx = midx
 			if @dex and m = @dex.methods[midx] and c = @dex.classes[m.classidx] and c.data and
-				me = (c.data.direct_methods+c.data.virtual_methods).find { |mm| mm.method == m }
+				me = (c.data.direct_methods+c.data.virtual_methods).find { |mm| mm.methodid == midx }
+				# FIXME this doesnt work
 				@off = me.codeoff + me.code.insns_off
 			end
 		end
