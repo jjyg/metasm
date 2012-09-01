@@ -365,7 +365,7 @@ class GraphHeapWidget < GraphViewWidget
 						if elemt.kind_of?(C::Union)
 							if m.type.untypedef.type.kind_of?(C::Union)
 								render[elemt.kind_of?(C::Struct) ? 'struct ' : 'union ', :text]
-								render["#{elemt.name} ", :text] if m.type.name
+								render["#{elemt.name} ", :text] if elemt.name
 							else # typedef
 								render["#{elemt.to_s[1...-1]} ", :text]
 							end

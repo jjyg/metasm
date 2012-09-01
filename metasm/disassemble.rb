@@ -438,8 +438,8 @@ class Disassembler
 		when ::Integer
 		when ::String
 			raise "invalid section base #{base.inspect} - not at section start" if encoded.export[base] and encoded.export[base] != 0
-			if e = get_edata_at(base)
-				e.del_export(base)
+			if ed = get_edata_at(base)
+				ed.del_export(base)
 			end
 			encoded.add_export base, 0
 		else raise "invalid section base #{base.inspect} - expected string or integer"
