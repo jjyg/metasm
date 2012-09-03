@@ -439,16 +439,18 @@ class AsmListingWidget < DrawableWidget
 					# ary
 					di.block.each_from_samefunc(@dasm) { |addr|
 						addr = @dasm.normalize addr
-						next if not addr.kind_of? ::Integer or (ndi = @dasm.di_at(addr) and ndi.next_addr == curaddr)
+						# block.list.last for delayslot
+						next if ndi = @dasm.di_at(addr) and ndi.block.list.last.next_addr == curaddr
 						arrows_addr << [addr, curaddr]
 					}
 				end
 				if di.block.list.last == di
+					# kikoo delayslot
+					rdi = di.block.list[-[4, di.block.list.length].min, 4].reverse.find { |_di| _di.opcode.props[:setip] } || di
 					di.block.each_to_samefunc(@dasm) { |addr|
 						addr = @dasm.normalize addr
-						next if not addr.kind_of? ::Integer or (di.next_addr == addr and
-								(not di.opcode.props[:saveip] or di.block.to_subfuncret))
-						arrows_addr << [curaddr, addr]
+						next if di.next_addr == addr and (not rdi.opcode.props[:saveip] or rdi.block.to_subfuncret)
+						arrows_addr << [rdi.address, addr]
 					}
 				end
 				str_c << ["#{Expression[di.address]}    ", :address]
@@ -595,9 +597,13 @@ class AsmListingWidget < DrawableWidget
 		prev_arrows = @arrows
 		addr_line = {}		# addr => last line (di)
 		@line_address.each_with_index { |a, l| addr_line[a] = l }
-		@arrows = arrows_addr.uniq.sort.map { |from, to|
-			[(addr_line[from] || (from < curaddr ? :up : :down) rescue :up),
-			 (addr_line[ to ] || ( to  < curaddr ? :up : :down) rescue :up)]
+		@arrows = arrows_addr.uniq.find_all { |from, to|
+			((from-curaddr)+(to-curaddr)).kind_of?(::Integer) rescue nil
+		}.sort_by { |from, to|
+			[from-curaddr, to-curaddr]
+		}.map { |from, to|
+			[(addr_line[from] || (from-curaddr < 0 ? :up : :down)),
+			 (addr_line[ to ] || (to - curaddr < 0 ? :up : :down))]
 		}
 		invalidate(0, 0, @arrow_zone_w, 100000) if prev_arrows != @arrows
 	end
