@@ -47,10 +47,10 @@ class MIPS
 		@opcode_list = []
 		@fields_mask.update :rs => 0x1f, :rt => 0x1f, :rd => 0x1f, :sa => 0x1f,
 			:i16 => 0xffff, :i26 => 0x3ffffff, :rs_i16 => 0x3e0ffff, :it => 0x1f,
-			:ft => 0x1f, :idm1 => 0x1f, :idb => 0x1f, :sel => 7, :i20 => 0xfffff #, :i32 => 0
+			:ft => 0x1f, :idm1 => 0x1f, :idb => 0x1f, :sel => 7, :i20 => 0xfffff
 		@fields_shift.update :rs => 21, :rt => 16, :rd => 11, :sa => 6,
 			:i16 => 0, :i26 => 0, :rs_i16 => 0, :it => 16,
-			:ft => 16, :idm1 => 11, :idb => 11, :sel => 0, :i20 => 6 #, :i32 => 0
+			:ft => 16, :idm1 => 11, :idb => 11, :sel => 0, :i20 => 6
 		@valid_props.update :mi8 => true, :mu8 => true, :mi16 => true, :mu16 => true
 
 		init_mips32_obsolete
@@ -236,6 +236,68 @@ class MIPS
 		addop 'ei',     (0b010000<<26) | (0b01011<<21) | (0b01100<<11) | (1<<5), :rt
 	end
 	alias init_latest init_mips32r2
+end
+
+class MIPS64
+	def init_mips64
+		init_mips32r2
+		@valid_props.update :mi64 => true
+
+		addop 'ld',     0b110111 << 26, :rt, :rs_i16, :m64
+		addop 'lwu',    0b100111 << 26, :rt, :rs_i16
+		addop 'sd',     0b111111 << 26, :rt, :rs_i16, :m64
+		addop 'scd',    0b111100 << 26, :rt, :rs_i16, :m64
+		addop 'ldl',    0b011010 << 26, :rt, :rs_i16
+		addop 'ldr',    0b011011 << 26, :rt, :rs_i16
+		addop 'sdl',    0b101100 << 26, :rt, :rs_i16
+		addop 'sdr',    0b101101 << 26, :rt, :rs_i16
+		addop 'lld',    0b110100 << 26, :rt, :rs_i16
+		addop 'daddi',  0b011000 << 26, :rt, :rs, :i16
+		addop 'daddiu', 0b011001 << 26, :rt, :rs, :i16
+
+		addop 'dclo',  (0b011100 << 26) | (0b100101), :rd, :rt, :rs
+		addop 'dclz',  (0b011100 << 26) | (0b100100), :rd, :rt, :rs
+
+		addop 'dadd',   0b101100, :rd, :rs, :rt
+		addop 'daddu',  0b101101, :rd, :rs, :rt
+		addop 'dsub',   0b101110, :rd, :rs, :rt
+		addop 'dsubu',  0b101111, :rd, :rs, :rt
+		addop 'dsll',   0b111000, :rd, :rt, :sa
+		addop 'dsll32', 0b111100, :rd, :rt, :sa
+		addop 'dsllv',  0b010100, :rd, :rt, :rs
+		addop 'dsra',   0b111011, :rd, :rt, :sa
+		addop 'dsra32', 0b111111, :rd, :rt, :sa
+		addop 'dsrav',  0b010111, :rd, :rt, :rs
+		addop 'dsrl',   0b111010, :rd, :rt, :sa
+		addop 'dsrl32', 0b111110, :rd, :rt, :sa
+		addop 'dsrlv',  0b010110, :rd, :rt, :rs
+		addop 'ddiv',   0b011110, :rs, :rt
+		addop 'ddivu',  0b011111, :rs, :rt
+		addop 'dmult',  0b011100, :rs, :rt
+		addop 'dmultu', 0b011101, :rs, :rt
+	end
+
+	def init_mips64r2
+		init_mips64
+		@fields_mask.update :msbd => 0x1f
+		@fields_shift.update :msbd => 11
+
+		addop 'dext',  (0b011111 << 26) | 0b000011, :rt, :rs, :sa, :msbd	# sa => lsb
+		addop 'dextm', (0b011111 << 26) | 0b000001, :rt, :rs, :sa, :msbd
+		addop 'dextu', (0b011111 << 26) | 0b000010, :rt, :rs, :sa, :msbd
+		addop 'dins',  (0b011111 << 26) | 0b000111, :rt, :rs, :sa, :msbd
+		addop 'dinsm', (0b011111 << 26) | 0b000101, :rt, :rs, :sa, :msbd
+		addop 'dinsu', (0b011111 << 26) | 0b000110, :rt, :rs, :sa, :msbd
+		
+		addop 'drotr',   (1 << 21) | 0b111010, :rd, :rt, :sa
+		addop 'drotr32', (1 << 21) | 0b111110, :rd, :rt, :sa
+		addop 'drotrv',  (1 <<  6) | 0b010110, :rd, :rt, :rs
+
+		addop 'dsbh', (0b011111 << 26) | (0b00010 << 6) | 0b100100, :rd, :rt
+		addop 'dshd', (0b011111 << 26) | (0b00101 << 6) | 0b100100, :rd, :rt
+	end
+
+	alias init_latest init_mips64r2
 end
 end
 __END__

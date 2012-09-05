@@ -52,8 +52,9 @@ class ELF < ExeFormat
 			0x8000_0000 => 'LEDATA'},
 		'SPARCV9' => {0 => 'TSO', 1 => 'PSO', 2 => 'RMO'},	# XXX not a flag
 		'MIPS' => {1 => 'NOREORDER', 2 => 'PIC', 4 => 'CPIC',
-			8 => 'XGOT', 16 => '64BIT_WHIRL', 32 => 'ABI2',
-			64 => 'ABI_ON32'}
+			8 => 'XGOT', 0x10 => '64BIT_WHIRL', 0x20 => 'ABI2',
+			0x40 => 'ABI_ON32', 0x80 => 'OPTIONSFIRST',
+			0x100 => '32BITMODE'}
 	}
 
 	DYNAMIC_TAG = { 0 => 'NULL', 1 => 'NEEDED', 2 => 'PLTRELSZ', 3 =>

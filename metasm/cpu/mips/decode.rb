@@ -73,7 +73,8 @@ class MIPS
 
 			next r if r.kind_of?(Expression)
 			case f
-			when :sa, :i16, :it; r = Expression.make_signed(r, 16)
+			when :msbd; r += 1
+			when :i16; r = Expression.make_signed(r, 16)
 			when :i20; r = Expression.make_signed(r, 20)
 			when :i26; r = Expression.make_signed(r, 26)
 			else r
@@ -83,9 +84,10 @@ class MIPS
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :rs, :rt, :rd; Reg.new field_val[a]
-			when :sa, :i16, :i20, :i26, :it; Expression[field_val[a]]
+			when :sa, :i16, :i20, :i26, :it, :msbd; Expression[field_val[a]]
 			when :rs_i16
 				len = 32
+				len = 64 if op.props[:m64]
 				len = 16 if op.props[:mi16] or op.props[:mu16]
 				len = 8  if op.props[:mi8 ] or op.props[:mu8]
 				Memref.new Reg.new(field_val[:rs]), Expression[field_val[:i16]], len
