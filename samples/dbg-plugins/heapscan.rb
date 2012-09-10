@@ -49,7 +49,7 @@ end
 def heap; @heap ; end
 def heap=(h) ; @heap = h ; end
 
-def heapscan_scan
+def heapscan_scan(xr=true)
 	heaps = []
 	mmaps = []
 	libc = nil
@@ -96,6 +96,7 @@ def heapscan_scan
 
 	@heap.scan_chunks
 	heapscan_time "#{@heap.chunks.length} chunks"
+	return if not xr
 
 	@heap.scan_chunks_xr
 	heapscan_time "#{@heap.xrchunksto.length} src, #{@heap.xrchunksfrom.length} dst"
@@ -221,6 +222,8 @@ if gui
 	$ghw.show if $ghw.respond_to?(:show)
 
 	gui.new_command('heap_scan', 'scan the heap(s)') { |*a| heapscan_scan ; $ghw.heap = @heap }
+	gui.new_command('heap_scan_noxr', 'scan the heap(s), no xrefs') { |*a| heapscan_scan(false) ; $ghw.heap = @heap }
+	gui.new_command('heap_scan_xronly', 'scan the heap(s) for xrefs') { |*a| $ghw.heap.scan_chunks_xr }
 	gui.new_command('heap_scanstructs', 'scan the heap for arrays/lists') { |*a| heapscan_structs }
 	gui.new_command('heap_list', 'show a linked list') { |a|
 		if a.to_s != ''
