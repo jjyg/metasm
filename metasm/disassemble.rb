@@ -794,7 +794,18 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			block.add_di di
 			puts di if $DEBUG
 
-			di = @callback_newinstr[di] if callback_newinstr
+			if callback_newinstr
+				ndi = @callback_newinstr[di]
+				if not ndi or not ndi.block
+					block.list.delete di
+					if ndi
+						block.add_di ndi
+						ndi.bin_length = di.bin_length if ndi.bin_length == 0
+						@decoded[di_addr] = ndi
+					end
+				end
+				di = ndi
+			end
 			return if not di
 			block = di.block
 
@@ -945,7 +956,18 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			block.add_di di
 			puts di if $DEBUG
 
-			di = @callback_newinstr[di] if callback_newinstr
+			if callback_newinstr
+				ndi = @callback_newinstr[di]
+				if not ndi or not ndi.block
+					block.list.delete di
+					if ndi
+						block.add_di ndi
+						ndi.bin_length = di.bin_length if ndi.bin_length == 0
+						@decoded[di_addr] = ndi
+					end
+				end
+				di = ndi
+			end
 			return ret if not di
 
 			di_addr = di.next_addr
