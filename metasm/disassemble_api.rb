@@ -487,11 +487,13 @@ class Disassembler
 		wantlen -= by.grep(DecodedInstruction).inject(0) { |len, di| len + di.bin_length }
 		ldi = by.last
 		ldi = DecodedInstruction.new(ldi) if ldi.kind_of? Instruction
-		wantlen = by.grep(Instruction).length if wantlen < 0 or (ldi and ldi.opcode.props[:setip])
-		by.map! { |di|
+		nb_i = by.grep(Instruction).length
+		wantlen = nb_i if wantlen < 0 or (ldi and ldi.opcode.props[:setip])
+		by = by.map { |di|
 			if di.kind_of? Instruction
 				di = DecodedInstruction.new(di)
-				wantlen -= di.bin_length = wantlen / by.grep(Instruction).length
+				wantlen -= (di.bin_length = wantlen / nb_i)
+				nb_i -= 1
 			end
 			di
 		}
