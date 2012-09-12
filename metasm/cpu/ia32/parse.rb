@@ -261,6 +261,9 @@ end
 			else
 				return arg.sz >= 16
 			end
+		elsif o.name == 'xchg' and @size == 64
+			# x64 nop (xchg eax, eax) is special-cased as a real nop (real xchg eax, eax would zero rax upper bits)
+			return if spec == :reg and o.args.include?(:reg_eax) and arg.kind_of?(Reg) and arg.sz == 32 and arg.val == 0
 		end
 
 		return false if arg.kind_of? ModRM and arg.adsz and o.props[:adsz] and arg.adsz != o.props[:adsz]
