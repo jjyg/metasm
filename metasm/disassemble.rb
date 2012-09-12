@@ -857,6 +857,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		@entrypoints |= entrypoints
 
 		entrypoints.each { |ep| do_disassemble_fast_deep(normalize(ep)) }
+
+		@callback_finished[] if callback_finished
 	end
 
 	def do_disassemble_fast_deep(ep)
