@@ -83,4 +83,10 @@ class TestX86_64 < Test::Unit::TestCase
 		assert_equal("\xc4\x22\x99\x92\x14\x1a", assemble('vgatherdpd xmm10, qword ptr [rdx+xmm11], xmm12'))
 		assert_equal('vgatherdpd xmm10, qword ptr [rdx+xmm11], xmm12', disassemble("\xc4\x22\x99\x92\x14\x1a").decoded[0].instruction.to_s)
 	end
+
+	def test_lol
+		# x64 nop weirdnesses
+		assert_equal("\x87\xc0", assemble('xchg eax, eax'))
+		assert_equal('xchg r8, rax', disassemble("\x49\x90").decoded[0].instruction.to_s)
+	end
 end

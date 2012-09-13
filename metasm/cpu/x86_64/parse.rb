@@ -64,6 +64,8 @@ class X86_64
 				return arg.sz == 32
 			end
 		end
+		return if o.name == 'xchg' and spec == :reg and o.args.include?(:reg_eax) and arg.kind_of?(Reg) and arg.sz == 32 and arg.val == 0
+
 		super(o, spec, arg)
 	end
 end
