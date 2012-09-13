@@ -497,6 +497,7 @@ class Ia32
 		addop 'nop', [0x0F, 0x1C], :mrmw, :d => [1, 1]	# incl. official version = 0f1f mrm
 		addop 'nop_8', [0x0F, 0x18], :mrmw, :d => [1, 1]
 		addop 'nop_d', [0x0F, 0x0D], :mrm
+		addop 'nop', [0x0F, 0x1C], 0	# official asm syntax is 'nop [eax]'
 	end
 
 	def init_sse2_only
