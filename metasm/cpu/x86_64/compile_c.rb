@@ -236,7 +236,7 @@ class CCompiler < C::Compiler
 				e2
 			elsif type.float?
 				raise 'float unhandled'
-			else raise
+			else raise "cannot cast #{e} to #{type}"
 			end
 		elsif e.kind_of? Address
 			make_volatile resolve_address(e), type, rsz
@@ -247,6 +247,7 @@ class CCompiler < C::Compiler
 				e2
 			elsif type.float?
 				raise 'float unhandled'
+			else raise "cannot cast #{e} to #{type}"
 			end
 		else
 			e
@@ -417,7 +418,6 @@ class CCompiler < C::Compiler
 					r = reg
 				end
 			end
-		else raise
 		end
 		r
 	end

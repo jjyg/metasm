@@ -1719,6 +1719,7 @@ EOH
 				Goto.new name
 			when 'return'
 				expr = CExpression.parse(self, scope)	# nil allowed
+				raise tok || self, "cannot return #{expr} in function returning void" if expr and nest[0].kind_of?(Type) and nest[0].void?
 				p, i = nest[0].pointer?, nest[0].integral? if expr
 				r = expr.reduce(self) if p or i
 				if (not p and not i) or (i and not r.kind_of? ::Integer) or (p and r != 0)
