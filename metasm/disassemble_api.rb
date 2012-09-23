@@ -886,6 +886,7 @@ class Disassembler
 		found = []
 		@sections.each { |sec_addr, e|
 			if addr_start
+				length ||= 0x1000_0000
 				begin
 					if sec_addr < addr_start
 						next if sec_addr+e.length <= addr_start
@@ -897,6 +898,7 @@ class Disassembler
 						e = e[0, sec_addr+e.length-(addr_start+length)]
 					end
 				rescue
+					puts $!, $!.message, $!.backtrace if $DEBUG
 					# catch arithmetic error with symbol-based section
 					next
 				end
