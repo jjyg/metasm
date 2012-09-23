@@ -397,7 +397,7 @@ class HexWidget < DrawableWidget
 			pat = pat.gsub(' ', '').gsub('..', '.').gsub(/[0-9a-f][0-9a-f]/i) { |o| "\\x#{o}" }
 			pat = Regexp.new(pat, Regexp::MULTILINE, 'n')	# 'n' = force ascii-8bit
 			list = [['addr']] + @dasm.pattern_scan(pat).map { |a| [Expression[a]] }
-			listwindow("hex search #{pat}", list) { |i| focus_addr i[0] }
+			listwindow("hex search #{pat}", list) { |i| @parent_widget.focus_addr i[0] }
 		}
 	end
 
@@ -405,7 +405,7 @@ class HexWidget < DrawableWidget
 	def prompt_search_ascii
 		inputbox('data pattern to search (regexp)') { |pat|
 			list = [['addr']] + @dasm.pattern_scan(/#{pat}/).map { |a| [Expression[a]] }
-			listwindow("data search #{pat}", list) { |i| focus_addr i[0] }
+			listwindow("data search #{pat}", list) { |i| @parent_widget.focus_addr i[0] }
 		}
 	end
 
