@@ -513,7 +513,7 @@ class DisasmWidget < ContainerChoiceWidget
 				found << k if v.to_s =~ re
 			}
 			list = [['addr', 'str']] + found.map { |a| [Expression[a], @dasm.decoded[a].to_s] }
-			list_bghilight("search result for /#{pat}/i", list) { |i| @parent_widget.focus_addr i[0] }
+			list_bghilight("search result for /#{pat}/i", list) { |i| focus_addr i[0] }
 		}
 	end
 
