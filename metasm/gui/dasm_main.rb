@@ -624,6 +624,7 @@ class DisasmWidget < ContainerChoiceWidget
 				next unless curview.respond_to? :hl_word
 				next if w == ''
 				curview.hl_word = w 
+				curview.hl_word_re = /(.*)(#{w})/
 				curview.redraw
 			}
 		when ?b; prompt_backtrace(curaddr)

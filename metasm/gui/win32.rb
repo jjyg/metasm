@@ -1714,7 +1714,7 @@ class ContainerVBoxWidget < WinWidget
 end
 
 module TextWidget
-	attr_accessor :caret_x, :caret_y, :hl_word, :font_width, :font_height
+	attr_accessor :caret_x, :caret_y, :hl_word, :hl_word_re, :font_width, :font_height
 
 	def initialize_text
 		@caret_x = @caret_y = 0		# text cursor position

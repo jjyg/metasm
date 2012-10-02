@@ -593,6 +593,7 @@ class GraphViewWidget < DrawableWidget
 		case dir
 		when :up
 			if @zoom < 100
+				# zoom in
 				oldzoom = @zoom
 				@zoom *= 1.1
 				@zoom = 1.0 if (@zoom-1.0).abs < 0.05
@@ -601,6 +602,7 @@ class GraphViewWidget < DrawableWidget
 			end
 		when :down
 			if @zoom > 1.0/1000
+				# zoom out
 				oldzoom = @zoom
 				@zoom /= 1.1
 				@zoom = 1.0 if (@zoom-1.0).abs < 0.05
@@ -706,8 +708,8 @@ class GraphViewWidget < DrawableWidget
 	end
 
 	def doubleclick(x, y)
+		@mousemove_origin = nil
 		if b = find_box_xy(x, y)
-			@mousemove_origin = nil
 			if @hl_word and @zoom >= 0.90 and @zoom <= 1.1
 				@parent_widget.focus_addr(@hl_word)
 			else
@@ -1433,12 +1435,13 @@ class GraphViewWidget < DrawableWidget
 	end
 
 	def focus_xy(x, y)
-		if not view_x or view_x*@zoom + width*3/4 < x or view_x*@zoom > x
-			@curcontext.view_x = (x - width/5)/@zoom
+		return if @mousemove_origin
+		if not view_x or view_x + width*3/4/@zoom < x or view_x > x
+			@curcontext.view_x = x - width/5/@zoom
 			redraw
 		end
-		if not view_y or view_y*@zoom + height*3/4 < y or view_y*@zoom > y
-			@curcontext.view_y = (y - height/5)/@zoom
+		if not view_y or view_y + height*3/4/@zoom < y or view_y > y
+			@curcontext.view_y = y - height/5/@zoom
 			redraw
 		end
 	end
