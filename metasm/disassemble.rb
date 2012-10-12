@@ -1333,6 +1333,84 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		end
 	end
 
+	# iterates over all instructions of a function from a given entrypoint
+	# carries an object while walking, the object is yielded every instruction
+	# every block is walked only once, after all previous blocks are done (if possible)
+	# on a 'jz', a [:clone] event is yielded for every path beside the first
+	# on a juction (eg a -> b -> d, a -> c -> d), a [:merge] event occurs if froms have different objs
+	# event list:
+	#  [:di, <addr>, <decoded_instruction>, <object>]
+	#  [:clone, <newaddr>, <oldaddr>, <object>]
+	#  [:merge, <newaddr>, [[<oldaddr1>, <object1>], [<oldaddr2>, <object2>], ...], <object1>]
+	#  [:subfunc, <subfunc_addr>, <call_addr>, <object>]
+	# all events should return an object
+	# :merge has a copy of object1 at the end so that uninterested callers can always return args[-1]
+	def function_walk(addr_start, obj_start)
+		# addresses of instrs already seen => obj
+		done = {}
+		todo = [[addr_start, obj_start]]
+
+		while hop = todo.pop
+			addr, obj = hop
+			next if done.has_key?(done)
+
+			di = di_at(addr)
+			next if not di
+
+			if done.empty?
+				dilist = di.block.list[di.block.list.index(di)..-1]
+			else
+				# new block, check all 'from' have been seen
+				if not hop[2]
+					# may retry later
+					all_ok = true
+					di.block.each_from_samefunc(self) { |fa| all_ok = false unless done.has_key?(fa) }
+					if not all_ok
+						todo.unshift([addr, obj, true])
+						next
+					end
+				end
+
+				froms = {}
+				di.block.each_from_samefunc(self) { |fa| froms[fa] = done[fa] }
+				if froms.values.uniq.length > 1
+					obj = yield([:merge, addr, froms.to_a, froms.values.first])
+				end
+
+				dilist = di.block.list
+			end
+
+			if dilist.each { |_di|
+					break if done.has_key?(_di.address)	# looped back into addr_start
+					done[_di.address] = obj
+					obj = yield([:di, _di.address, _di, obj])
+				}
+
+				from = dilist.last.address
+
+				if di.block.to_normal and di.block.to_normal[0] and
+						di.block.to_subfuncret and di.block.to_subfuncret[0]
+					# block calls into a subfunction
+					obj = di.block.to_normal.map { |subf|
+						# propagate only obj for the 1st subfunc
+						yield([:subfunc, subf, from, obj])
+					}.first
+				end
+
+				wantclone = false
+				di.block.each_to_samefunc(self) { |ta|
+					if wantclone
+						nobj = yield([:clone, ta, from, obj])
+						todo << [ta, nobj]
+					else
+						todo << [ta, obj]
+						wantclone = true
+					end
+				}
+			end
+		end
+	end
+
 	# holds a backtrace result until a snapshot_addr is encountered
 	class StoppedExpr
 		attr_accessor :exprs
