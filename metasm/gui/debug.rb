@@ -98,6 +98,11 @@ class DbgWidget < ContainerVBoxWidget
 
 	# TODO check_target always, incl when :stopped
 	def post_dbg_run
+		# focus currently stopped threads
+		if @dbg.state == :running and tt = @dbg.tid_stuff.find { |tid, tstuff| tstuff[:state] != :running }
+			@dbg.tid = tt[0]
+		end
+
 		want_redraw = true
 		return if @idle_checking ||= nil	# load only one bg proc
 		@idle_checking = true

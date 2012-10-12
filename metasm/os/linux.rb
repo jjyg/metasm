@@ -1202,6 +1202,9 @@ class LinDebugger < Debugger
 		@state = :stopped	# no need to wait()
 		log "attached thread #{tid}"
 		set_thread_options
+	rescue Errno::ESRCH
+		# raced, thread quitted already
+		del_tid
 	end
 
 	# set the debugee ptrace options (notify clone/exec/exit, and fork/vfork depending on @trace_children)

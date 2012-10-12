@@ -564,7 +564,7 @@ class Debugger
 
 	# invalidates the EncodedData backend for the dasm sections
 	def dasm_invalidate
-		disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate }
+		disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate } if disassembler
 	end
 
 	# return all breakpoints set on a specific address (or all bp)
