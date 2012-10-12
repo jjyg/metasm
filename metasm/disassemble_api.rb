@@ -99,6 +99,28 @@ class InstructionBlock
 			yield to if type == :indirect or dasm.function[to] or not dasm.decoded[to]
 		}
 	end
+
+	# returns the array used in each_from_samefunc
+	def from_samefunc(dasm)
+		ary = []
+		each_from_samefunc(dasm) { |a| ary << a }
+		ary
+	end
+	def from_otherfunc(dasm)
+		ary = []
+		each_from_otherfunc(dasm) { |a| ary << a }
+		ary
+	end
+	def to_samefunc(dasm)
+		ary = []
+		each_to_samefunc(dasm) { |a| ary << a }
+		ary
+	end
+	def to_otherfunc(dasm)
+		ary = []
+		each_to_otherfunc(dasm) { |a| ary << a }
+		ary
+	end
 end
 
 class DecodedInstruction
