@@ -1592,5 +1592,12 @@ class Disassembler
 			c_parser.decode_c_ary(structname, len, edata.data, edata.ptr)
 		end
 	end
+
+	# find the function containing addr, and find & rename stack vars in it
+	def name_local_vars(addr)
+		if @cpu.respond_to?(:name_local_vars) and faddr = find_function_start(addr)
+			@cpu.name_local_vars(self, faddr)
+		end
+	end
 end
 end

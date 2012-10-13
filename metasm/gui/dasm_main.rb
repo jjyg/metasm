@@ -587,9 +587,14 @@ class DisasmWidget < ContainerChoiceWidget
 		gui_update
 	end
 
-	# toggle constant names with raw value
+	# toggle constant/localvar names with raw value
 	def toggle_expr_str(o)
 		@dasm.toggle_expr_str(o)
+		gui_update
+	end
+
+	def name_local_vars(a)
+		@dasm.name_local_vars(a)
 		gui_update
 	end
 
@@ -640,6 +645,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?f; list_functions
 		when ?g; prompt_goto
 		when ?k; toggle_expr_str(curobj)
+		when ?K; name_local_vars(curaddr)
 		when ?l; list_labels
 		when ?m; prompt_constant(curobj)
 		when ?n; rename_label(pointed_addr)

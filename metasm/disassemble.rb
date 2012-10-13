@@ -233,6 +233,8 @@ class DecodedFunction
 	attr_accessor :finalized
 	# bool, if true the function does not return (eg exit() or ExitProcess())
 	attr_accessor :noreturn
+	# hash stackoff => varname
+	attr_accessor :localvars
 
 	# if btbind_callback is defined, calls it with args [dasm, binding, funcaddr, calladdr, expr, origin, maxdepth]
 	# else update lazily the binding from expr.externals, and return backtrace_binding
@@ -263,6 +265,11 @@ class DecodedFunction
 	def initialize
 		@backtracked_for = []
 		@backtrace_binding = {}
+	end
+
+	def get_localvar_stackoff(off)
+		@localvars ||= {}
+		@localvars[off] ||= (off > 0 ? 'arg_%X' % off : 'var_%X' % -off)
 	end
 end
 

@@ -1254,5 +1254,35 @@ class Ia32
 
 		binding
 	end
+
+	# trace the stack pointer register across a function, rename occurences of esp+XX to esp+var_XX
+	def name_local_vars(dasm, funcaddr)
+		esp = register_symbols[4]
+		func = dasm.function[funcaddr]
+		dasm.trace_function_register(funcaddr, esp => 0) { |di, r, off, trace|
+			next if r.to_s =~ /flag/
+			if mrm = di.instruction.args.grep(ModRM).first
+				b = mrm.b || (mrm.i if mrm.s == 1)
+				# its a modrm => b is read, so ignore r/off (not yet applied), use trace only
+				stackoff = trace[b.symbolic] if b
+				next if not stackoff
+				imm = mrm.imm || Expression[0]
+				frameoff = imm + stackoff
+				if frameoff.kind_of?(::Integer)
+					if func
+						str = func.get_localvar_stackoff(frameoff)
+					else
+						# XXX register args ? non-ABI standard register args ? (eg optimized x64)
+						str = 'var_%X' % (-frameoff)
+						str = 'arg_%X' % frameoff if frameoff > 0
+					end
+					mrm.imm = ExpressionString.new(imm, str, :stackvar)
+				end
+			end
+			off = off.reduce if off.kind_of?(Expression)
+			next unless off.kind_of?(Integer)
+			off
+		}
+	end
 end
 end
