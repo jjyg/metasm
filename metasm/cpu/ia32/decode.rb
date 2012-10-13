@@ -1270,7 +1270,7 @@ class Ia32
 				frameoff = imm + stackoff
 				if frameoff.kind_of?(::Integer)
 					if func
-						str = func.get_localvar_stackoff(frameoff)
+						str = func.get_localvar_stackoff(frameoff, di)
 					else
 						# XXX register args ? non-ABI standard register args ? (eg optimized x64)
 						str = 'var_%X' % (-frameoff)

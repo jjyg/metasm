@@ -107,6 +107,16 @@ class DisasmWidget < ContainerChoiceWidget
 		@dasm.prog_binding[hl] || curview.current_address
 	end
 
+	# returns the ExpressionString if the currently hilighted word is a :stackvar
+	def pointed_localvar
+		hl = curview.hl_word
+		localvar = nil
+		curobj.each_expr { |e|
+			localvar = e if e.kind_of?(ExpressionString) and e.type == :stackvar and e.str == hl
+		}
+		localvar
+	end
+
 	# parse an address and change it to a canonical address form
 	# supported formats: label names, or string with numerical value, incl hex (0x42 and 42h)
 	# if the string is full decimal, a check against mapped space is done to find if it is
@@ -329,15 +339,31 @@ class DisasmWidget < ContainerChoiceWidget
 		listwindow("list of strings", list) { |i| focus_addr i[0] }
 	end
 
-	def list_xrefs(addr)
+	def list_xrefs(addr=nil)
 		list = [['address', 'type', 'instr']]
-		@dasm.each_xref(addr) { |xr|
-			next if not xr.origin
-			list << [Expression[xr.origin], "#{xr.type}#{xr.len}"]
-			if di = @dasm.di_at(xr.origin)
-				list.last << di.instruction
+		if not addr and pointed_localvar
+			addr = curview.hl_word
+			faddr = @dasm.find_function_start(curaddr)
+		       	func = @dasm.function[faddr]
+			if func and func.localvars_xrefs
+				stoff = func.localvars.index(addr)
+				func.localvars_xrefs[stoff].to_a.each { |a|
+					list << [Expression[a], '?']
+					if di = @dasm.di_at(a)
+						list.last << di.instruction
+					end
+				}
 			end
-		}
+		else
+			addr ||= pointed_addr
+			@dasm.each_xref(addr) { |xr|
+				next if not xr.origin
+				list << [Expression[xr.origin], "#{xr.type}#{xr.len}"]
+				if di = @dasm.di_at(xr.origin)
+					list.last << di.instruction
+				end
+			}
+		end
 		if list.length == 1
 			messagebox "no xref to #{Expression[addr]}" if addr
 		else
@@ -528,23 +554,35 @@ class DisasmWidget < ContainerChoiceWidget
 		end
 	end
 
-	# prompts for a new name for addr
-	def rename_label(addr)
-		old = addr
-		if @dasm.prog_binding[old] or old = @dasm.get_label_at(addr)
+	# prompts for a new name for what is under the cursor (or the current address)
+	def rename(what=nil)
+		if not what and localvar = pointed_localvar
+			inputbox("new name for #{localvar}", :text => localvar.to_s) { |v|
+				if v =~ /^[a-z_][a-z0-9_]*$/i
+					localvar.str.replace v
+					gui_update
+				else messagebox("invalid local var name #{v.inspect}")
+				end
+			}
+			return
+		end
+
+		what ||= pointed_addr
+		if @dasm.prog_binding[what] or old = @dasm.get_label_at(what)
+			old ||= what
 			inputbox("new name for #{old}", :text => old) { |v|
 				if v == ''
-					@dasm.del_label_at(addr)
+					@dasm.del_label_at(what)
 				else
 					@dasm.rename_label(old, v)
 				end
 				gui_update
 			}
 		else
-			inputbox("label name for #{Expression[addr]}", :text => Expression[addr]) { |v|
+			inputbox("label name for #{Expression[what]}", :text => Expression[what]) { |v|
 				next if v == ''
-				@dasm.set_label_at(addr, v)
-				if di = @dasm.di_at(addr)
+				@dasm.set_label_at(what, v)
+				if di = @dasm.di_at(what)
 					@dasm.split_block(di.block, di.address)
 				end
 				gui_update
@@ -648,13 +686,13 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?K; name_local_vars(curaddr)
 		when ?l; list_labels
 		when ?m; prompt_constant(curobj)
-		when ?n; rename_label(pointed_addr)
+		when ?n; rename
 		when ?o; toggle_expr_offset(curobj)
 		when ?p; playpause_dasm
 		when ?r; toggle_expr_char(curobj)
 		when ?t; prompt_struct_offset(curobj)
 		when ?v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag
-		when ?x; list_xrefs(pointed_addr)
+		when ?x; list_xrefs
 		when ?;; add_comment(curaddr)
 
 		when ?\ ; toggle_view(:listing)
@@ -938,10 +976,10 @@ class DasmWindow < Window
 		addsubmenu(actions, '_Backtrace', 'b') { @dasm_widget.prompt_backtrace }
 		addsubmenu(actions, 'List functions', 'f') { @dasm_widget.list_functions }
 		addsubmenu(actions, 'List labels', 'l') { @dasm_widget.list_labels }
-		addsubmenu(actions, 'List xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'List xrefs', 'x') { @dasm_widget.list_xrefs }
 		addsubmenu(actions, 'Find local vars', 'K') { @dasm_widget.name_local_vars(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Rebase') { @dasm_widget.rebase }
-		addsubmenu(actions, 'Rename label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'Rename label', 'n') { @dasm_widget.rename }
 		addsubmenu(actions, 'Decompile', '<tab>') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Decompile finali_ze') { @dasm_widget.dasm.decompiler.finalize ; @dasm_widget.gui_update }
 		addsubmenu(actions, 'Comment', ';') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }

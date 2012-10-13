@@ -21,6 +21,8 @@ module Renderable
 			when Expression
 				r[e.lexpr] ; r[e.rexpr]
 				yield e
+			when ExpressionType
+				yield e
 			when Renderable
 				e.render.each { |re| r[re] }
 			end

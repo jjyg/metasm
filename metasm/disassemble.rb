@@ -234,7 +234,10 @@ class DecodedFunction
 	# bool, if true the function does not return (eg exit() or ExitProcess())
 	attr_accessor :noreturn
 	# hash stackoff => varname
+	# varname is a single String object shared by all ExpressionStrings (to allow renames)
 	attr_accessor :localvars
+	# hash stack offset => di address
+	attr_accessor :localvars_xrefs
 
 	# if btbind_callback is defined, calls it with args [dasm, binding, funcaddr, calladdr, expr, origin, maxdepth]
 	# else update lazily the binding from expr.externals, and return backtrace_binding
@@ -267,7 +270,12 @@ class DecodedFunction
 		@backtrace_binding = {}
 	end
 
-	def get_localvar_stackoff(off)
+	def get_localvar_stackoff(off, di=nil)
+		if di
+			@localvars_xrefs ||= {}
+			@localvars_xrefs[off] ||= []
+			@localvars_xrefs[off] |= [di.address]
+		end
 		@localvars ||= {}
 		@localvars[off] ||= (off > 0 ? 'arg_%X' % off : 'var_%X' % -off)
 	end
