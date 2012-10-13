@@ -1293,32 +1293,44 @@ class Disassembler
 
 	# dataflow method
 	# walks a function, starting at addr
-	# follows the usage of a register, computing the evolution from the value it had at start_addr
+	# follows the usage of registers, computing the evolution from the value they had at start_addr
 	# whenever an instruction references the register (or anything derived from it), 
-	#  yield [di, used_register, reg_value] where reg_value is the Expression holding the value of
-	#  the register  wrt the initial value at start_addr
+	#  yield [di, used_register, reg_value, trace_state] where reg_value is the Expression holding the value of
+	#  the register wrt the initial value at start_addr, and trace_state the value of all registers (reg_value
+	#  not yet applied)
 	#  the yield return value is propagated, unless it is nil/false
-	def trace_function_register(start_addr, reg, val=Expression[reg])
-		function_walk(start_addr, {reg => val}) { |args|
+	# init_state is a hash { :reg => initial value }
+	def trace_function_register(start_addr, init_state)
+		function_walk(start_addr, init_state) { |args|
 			trace_state = args.last
 			case args.first
 			when :di
 				di = args[2]
+				update = {}
 				get_fwdemu_binding(di).each { |r, v|
 					if v.externals.find { |e| trace_state[e] }
-						trace_state = trace_state.dup
+						# XXX may mix old (from trace) and current (from v) registers
 						newv = v.bind(trace_state)
-						if newv = yield(di, r, newv)
-							trace_state[r] = newv
-						else
-							trace_state.delete r
+						update[r] = yield(di, r, newv, trace_state)
+					elsif r.kind_of?(ExpressionType) and rr = r.externals.find { |e| trace_state[e] }
+						# reg dereferenced in a write (eg mov [esp], 42)
+						next if update.has_key?(rr)	# already yielded
+						if yield(di, rr, trace_state[rr], trace_state) == false
+							update[rr] = false
 						end
 					elsif trace_state[r]
-						trace_state = trace_state.dup
+						# XXX yield :remove_from_context?
+						update[rr] = false
+					end
+				}
+				update.each { |r, v|
+					trace_state = trace_state.dup
+					if v
+						trace_state[r] = v
+					else
 						trace_state.delete r
 					end
 				}
-				trace_state = false if trace_state.empty?
 			when :subfunc
 				faddr = args[1]
 				calladdr = args[2]
@@ -1334,15 +1346,23 @@ class Disassembler
 					binding.each { |r, v|
 						if v.externals.find { |e| trace_state[e] }
 							trace_state = trace_state.dup
-							trace_state[r] = v.bind(trace_state)
+							trace_state[r] = Expression[v.bind(trace_state)].reduce
 						elsif trace_state[r]
 							trace_state = trace_state.dup
 							trace_state.delete r
 						end
 					}
-					trace_state = false if trace_state.empty?
 				end
+			when :merge
+				# when merging paths, keep the smallest common state subset
+				# XXX may have unexplored froms
+				conflicts = args[2]
+				trace_state = trace_state.dup
+				conflicts.each { |addr, st|
+					trace_state.delete_if { |k, v| st[k] != v }
+				}
 			end
+			trace_state = false if trace_state.empty?
 			trace_state
 		}
 	end

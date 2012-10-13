@@ -1341,7 +1341,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# event list:
 	#  [:di, <addr>, <decoded_instruction>, <object>]
 	#  [:clone, <newaddr>, <oldaddr>, <object>]
-	#  [:merge, <newaddr>, [[<oldaddr1>, <object1>], [<oldaddr2>, <object2>], ...], <object1>]
+	#  [:merge, <newaddr>, {<oldaddr1> => <object1>, <oldaddr2> => <object2>, ...}, <object1>]
 	#  [:subfunc, <subfunc_addr>, <call_addr>, <object>]
 	# all events should return an object
 	# :merge has a copy of object1 at the end so that uninterested callers can always return args[-1]
@@ -1373,9 +1373,9 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				end
 
 				froms = {}
-				di.block.each_from_samefunc(self) { |fa| froms[fa] = done[fa] }
+				di.block.each_from_samefunc(self) { |fa| froms[fa] = done[fa] if done[fa] }
 				if froms.values.uniq.length > 1
-					obj = yield([:merge, addr, froms.to_a, froms.values.first])
+					obj = yield([:merge, addr, froms, froms.values.first])
 					next if obj == false
 				end
 
