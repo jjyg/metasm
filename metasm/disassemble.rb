@@ -1345,6 +1345,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	#  [:subfunc, <subfunc_addr>, <call_addr>, <object>]
 	# all events should return an object
 	# :merge has a copy of object1 at the end so that uninterested callers can always return args[-1]
+	# if an event returns false, the trace stops for the current branch
 	def function_walk(addr_start, obj_start)
 		# addresses of instrs already seen => obj
 		done = {}
@@ -1375,6 +1376,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				di.block.each_from_samefunc(self) { |fa| froms[fa] = done[fa] }
 				if froms.values.uniq.length > 1
 					obj = yield([:merge, addr, froms.to_a, froms.values.first])
+					next if obj == false
 				end
 
 				dilist = di.block.list
@@ -1384,23 +1386,25 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					break if done.has_key?(_di.address)	# looped back into addr_start
 					done[_di.address] = obj
 					obj = yield([:di, _di.address, _di, obj])
+					break if obj == false
 				}
 
 				from = dilist.last.address
 
 				if di.block.to_normal and di.block.to_normal[0] and
 						di.block.to_subfuncret and di.block.to_subfuncret[0]
-					# block calls into a subfunction
+					# current instruction block calls into a subfunction
 					obj = di.block.to_normal.map { |subf|
-						# propagate only obj for the 1st subfunc
 						yield([:subfunc, subf, from, obj])
-					}.first
+					}.first		# propagate 1st subfunc result
+					next if obj == false
 				end
 
 				wantclone = false
 				di.block.each_to_samefunc(self) { |ta|
 					if wantclone
 						nobj = yield([:clone, ta, from, obj])
+						next if obj == false
 						todo << [ta, nobj]
 					else
 						todo << [ta, obj]

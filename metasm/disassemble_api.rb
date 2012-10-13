@@ -1273,9 +1273,9 @@ class Disassembler
 		tge = nil
 		di.each_expr { |e|
 			if e.kind_of?(Expression) and e.op == :+
-				if e.rexpr.kind_of? Integer and (not off or off == e.rexpr)
+				if e.rexpr.kind_of?(Integer) and (not off or off == e.rexpr)
 					tge = e
-				elsif e.rexpr.kind_of? ExpressionString and (not off or off == e.rexpr.reduce)
+				elsif e.rexpr.kind_of?(ExpressionString) and (not off or off == e.rexpr.reduce)
 					tge = e
 				end
 			end
@@ -1289,6 +1289,62 @@ class Disassembler
 			stm = st.findmember_atoffset(c_parser, off)
 			tge.rexpr = ExpressionStringStructoff.new(tge.rexpr, st, stm)
 		end
+	end
+
+	# dataflow method
+	# walks a function, starting at addr
+	# follows the usage of a register, computing the evolution from the value it had at start_addr
+	# whenever an instruction references the register (or anything derived from it), 
+	#  yield [di, used_register, reg_value] where reg_value is the Expression holding the value of
+	#  the register  wrt the initial value at start_addr
+	#  the yield return value is propagated, unless it is nil/false
+	def trace_function_register(start_addr, reg, val=Expression[reg])
+		function_walk(start_addr, {reg => val}) { |args|
+			trace_state = args.last
+			case args.first
+			when :di
+				di = args[2]
+				get_fwdemu_binding(di).each { |r, v|
+					if v.externals.find { |e| trace_state[e] }
+						trace_state = trace_state.dup
+						newv = v.bind(trace_state)
+						if newv = yield(di, r, newv)
+							trace_state[r] = newv
+						else
+							trace_state.delete r
+						end
+					elsif trace_state[r]
+						trace_state = trace_state.dup
+						trace_state.delete r
+					end
+				}
+				trace_state = false if trace_state.empty?
+			when :subfunc
+				faddr = args[1]
+				calladdr = args[2]
+				f = @function[faddr]
+				f = @function[f.backtrace_binding[:thunk]] if f and f.backtrace_binding[:thunk]
+				if f
+					binding = f.backtrace_binding
+					if binding.empty?
+						backtrace_update_function_binding(faddr)
+						binding = f.backtrace_binding
+					end
+					# XXX fwdemu_binding ?
+					binding.each { |r, v|
+						if v.externals.find { |e| trace_state[e] }
+							trace_state = trace_state.dup
+							trace_state[r] = v.bind(trace_state)
+						elsif trace_state[r]
+							trace_state = trace_state.dup
+							trace_state.delete r
+						end
+					}
+					trace_state = false if trace_state.empty?
+				end
+			end
+			trace_state
+		}
 	end
 
 	# change Expression display mode for current object o to display integers as char constants
