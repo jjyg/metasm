@@ -587,6 +587,12 @@ class DisasmWidget < ContainerChoiceWidget
 		gui_update
 	end
 
+	# toggle constant names with raw value
+	def toggle_expr_str(o)
+		@dasm.toggle_expr_str(o)
+		gui_update
+	end
+
 	def toggle_view(idx)
 		default = (idx == :graph ? :listing : :graph)
 		# switch to idx ; if already in idx, use default
@@ -633,6 +639,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?d; toggle_data(curaddr)
 		when ?f; list_functions
 		when ?g; prompt_goto
+		when ?k; toggle_expr_str(curobj)
 		when ?l; list_labels
 		when ?m; prompt_constant(curobj)
 		when ?n; rename_label(pointed_addr)
@@ -647,7 +654,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?\ ; toggle_view(:listing)
 		when :tab; toggle_view(:decompile)
 		when ?j; curview.keypress(:down)
-		when ?k; curview.keypress(:up)
+		#when ?k; curview.keypress(:up)
 		else
 			p key if $DEBUG
 			return @parent_widget ? @parent_widget.keypress(key) : false

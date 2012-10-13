@@ -1422,6 +1422,15 @@ class Disassembler
 		}
 	end
 
+	# toggle all ExpressionStrings
+	def toggle_expr_str(o)
+		return if not o.kind_of?(Renderable)
+		o.each_expr { |e|
+			e.lexpr.hide_str = !e.lexpr.hide_str if e.lexpr.kind_of?(ExpressionString)
+			e.rexpr.hide_str = !e.rexpr.hide_str if e.rexpr.kind_of?(ExpressionString)
+		}
+	end
+
 	# call this function on a function entrypoint if the function is in fact a __noreturn
 	# will cut the to_subfuncret of callers
 	def fix_noreturn(o)

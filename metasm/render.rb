@@ -82,15 +82,15 @@ class Expression
 	NOSQ1 = NOSQ2 = {:* => [:*], :+ => [:+, :-, :*], :- => [:+, :-, :*]}
 	NOSQ2[:-] = [:*]
 	def render
-		l = @lexpr.kind_of?(Integer) ? render_integer(@lexpr) : @lexpr
-		r = @rexpr.kind_of?(Integer) ? render_integer(@rexpr) : @rexpr
-		l = ['(', l, ')'] if @lexpr.kind_of? Expression and (not oa = NOSQ1[@op] or not oa.include?(@lexpr.op))
-		r = ['(', r, ')'] if @rexpr.kind_of? Expression and (not oa = NOSQ2[@op] or not oa.include?(@rexpr.op))
+		l = @lexpr.kind_of?(::Integer) ? render_integer(@lexpr) : @lexpr
+		r = @rexpr.kind_of?(::Integer) ? render_integer(@rexpr) : @rexpr
+		l = ['(', l, ')'] if @lexpr.kind_of?(Expression) and (not oa = NOSQ1[@op] or not oa.include?(@lexpr.op))
+		r = ['(', r, ')'] if @rexpr.kind_of?(Expression) and (not oa = NOSQ2[@op] or not oa.include?(@rexpr.op))
 		op = @op if l or @op != :+
 		if op == :+
 			r0 = [r].flatten.first
 			r0 = r0.render.flatten.first while r0.kind_of? Renderable
-			op = nil if (r0.kind_of? Integer and r0 < 0) or (r0.kind_of? String and r0[0] == ?-) or r0 == :-
+			op = nil if (r0.kind_of?(::Integer) and r0 < 0) or (r0.kind_of?(::String) and r0[0] == ?-) or r0 == :-
 		end
 		[l, op, r].compact
 	end
@@ -99,6 +99,6 @@ end
 class ExpressionString
 	include Renderable
 
-	def render; [@str] end
+	def render; hide_str ? @expr.render : render_str ; end
 end
 end
