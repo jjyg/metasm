@@ -939,6 +939,7 @@ class DasmWindow < Window
 		addsubmenu(actions, 'List functions', 'f') { @dasm_widget.list_functions }
 		addsubmenu(actions, 'List labels', 'l') { @dasm_widget.list_labels }
 		addsubmenu(actions, 'List xrefs', 'x') { @dasm_widget.list_xrefs(@dasm_widget.pointed_addr) }
+		addsubmenu(actions, 'Find local vars', 'K') { @dasm_widget.name_local_vars(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Rebase') { @dasm_widget.rebase }
 		addsubmenu(actions, 'Rename label', 'n') { @dasm_widget.rename_label(@dasm_widget.pointed_addr) }
 		addsubmenu(actions, 'Decompile', '<tab>') { @dasm_widget.decompile(@dasm_widget.curview.current_address) }
