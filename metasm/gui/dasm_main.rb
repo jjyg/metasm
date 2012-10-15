@@ -461,35 +461,43 @@ class DisasmWidget < ContainerChoiceWidget
 		}
 	end
 
-	# prompt the struct to use for offset in a given instr
-	def prompt_struct_offset(di=curobj)
-		return if not di.kind_of? DecodedInstruction
-		off = nil
-		di.each_expr { |e|
-			# hit only ints after an actual '+' sign
-			# XXX this sucks more than ivans sister
-			if e.kind_of?(Expression) and e.op == :+ and e.lexpr and e.rexpr.kind_of?(Expression) and e.rexpr.op == :+ and not e.rexpr.lexpr
-				foo = e.rexpr.rexpr
-				if foo.kind_of?(Integer)
-					off = foo
-				elsif foo.kind_of?(ExpressionString) and foo.type == :structoff
-					off = foo.expr.reduce
+	# prompts for a structure name, autocompletes to known structures, and/or display a listwindow with
+	# possible completions, yields the target C::Struct
+	def prompt_c_struct(prompt, inittext='')
+		inputbox(prompt, :text => inittext) { |st_name|
+			# TODO propose typedef struct {} moo; too
+			stn_list = @dasm.c_parser.toplevel.struct.keys.grep(String)
+
+			if name = stn_list.find { |n| n == st_name } || stn_list.find { |n| n.downcase == st_name.downcase }
+				# single match
+				yield(@dasm.c_parser.toplevel.struct[name])
+			else
+				# try autocomplete
+				list = [['name']]
+				list += stn_list.sort.grep(/#{st_name}/i).map { |stn| [stn] }
+				if list.length == 2
+					# single autocompletion
+					yield(@dasm.c_parser.toplevel.struct[list[1][0]])
+				else
+					listwindow(prompt, list) { |ans|
+						yield(@dasm.c_parser.toplevel.struct[ans[0]])
+					}
 				end
 			end
 		}
-		raise 'cant see any offset there !' if not off
-		stlist = []
-		@dasm.c_parser.toplevel.struct.each_value { |st|
-			if st.kind_of?(C::Struct) and stm = st.findmember_atoffset(@dasm.c_parser, off) and stm.name
-				stlist << [st, stm]
-			end
-		}
+	end
 
-		default = Expression[off].to_s
-		list =  [['struct'], [default]] + stlist.map { |st, stm| ["#{st.name}.#{stm.name}"] }
-		listwindow("chose structure for offset #{Expression[off]}", list) { |a|
-			stn = a[0].split('.')[0] if a[0] != default
-			@dasm.patch_structoffset(di, stn, off)
+	# prompt the struct to use for offset in a given instr
+	def prompt_struct_ptr(reg=curview.hl_word, addr=curaddr)
+		return if not reg or not @dasm.cpu.register_symbols.find { |rs| rs.to_s == reg.to_s }
+		reg = reg.to_sym
+
+		di = @dasm.di_at(addr)
+		return if not di.kind_of?(DecodedInstruction)
+
+		prompt_c_struct("struct pointed by #{reg}") { |st|
+			# TODO store that info for the decompiler ?
+			@dasm.trace_update_reg_structptr(addr, reg, st)
 			gui_update
 		}
 	end
@@ -692,7 +700,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?o; toggle_expr_offset(curobj)
 		when ?p; playpause_dasm
 		when ?r; toggle_expr_char(curobj)
-		when ?t; prompt_struct_offset(curobj)
+		when ?t; prompt_struct_ptr
 		when ?v; $VERBOSE = ! $VERBOSE ; puts "#{'not ' if not $VERBOSE}verbose"	# toggle verbose flag
 		when ?x; list_xrefs
 		when ?;; add_comment(curaddr)
