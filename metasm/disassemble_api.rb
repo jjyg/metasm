@@ -1626,6 +1626,7 @@ class Disassembler
 	# find the function containing addr, and find & rename stack vars in it
 	def name_local_vars(addr)
 		if @cpu.respond_to?(:name_local_vars) and faddr = find_function_start(addr)
+			@function[faddr] ||= DecodedFunction.new	# XXX
 			@cpu.name_local_vars(self, faddr)
 		end
 	end
