@@ -109,6 +109,7 @@ class DisasmWidget < ContainerChoiceWidget
 
 	# returns the ExpressionString if the currently hilighted word is a :stackvar
 	def pointed_localvar
+		return if not curobj
 		hl = curview.hl_word
 		localvar = nil
 		curobj.each_expr { |e|
