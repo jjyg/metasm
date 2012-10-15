@@ -1391,10 +1391,13 @@ class Disassembler
 				next unless sname.kind_of?(::String) and soff.kind_of?(::Integer)
 				next if not st = c_parser.toplevel.struct[sname]
 
+				# TODO if trace[b] offset != 0, we had a lea reg, [struct+substruct_off], tweak str accordingly
+
 				# resolve struct + off into struct.membername
 				str = st.name.dup
 				st.expand_member_offset(c_parser, soff, str)
 				# patch di
+				imm = imm.rexpr if imm.kind_of?(Expression) and not imm.lexpr and imm.rexpr.kind_of?(ExpressionString)
 				imm = imm.expr if imm.kind_of?(ExpressionString)
 				@cpu.instr_args_memoryptr_setoffset(ind, ExpressionString.new(imm, str, :structoff))
 			}
@@ -1409,11 +1412,18 @@ class Disassembler
 				end
 
 			when Indirection
-				# di is like  r = dword [structptr+off]
+				# di is mov reg, [ptr+struct.offset]
 				# check if the target member is a pointer to a struct, if so, trace it
-				# TODO
-				#Expression[targetstruct]
-				# TODO also check for lea reg, [struct+substruct_off]
+				expr = val.pointer.reduce
+				sname = expr.lexpr || expr.rexpr
+				soff = (expr.lexpr ? expr.rexpr : 0)
+				next unless sname.kind_of?(::String) and soff.kind_of?(::Integer)
+				next if not st = c_parser.toplevel.struct[sname]
+				pt = st.expand_member_offset(c_parser, soff, '')
+				pt = pt.untypedef if pt
+				if pt.kind_of?(C::Pointer) and pt.type.untypedef.kind_of?(C::Union) and pt.type.untypedef.name
+					Expression[pt.type.untypedef.name]
+				end
 
 			# in other cases, stop trace
 			end
