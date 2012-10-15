@@ -1269,29 +1269,6 @@ class Disassembler
 		delta
 	end
 
-	# change Expressions in the instruction args to display <somestruct>.<somemember>
-	def patch_structoffset(di, stname, off=nil)
-		tge = nil
-		di.each_expr { |e|
-			if e.kind_of?(Expression) and e.op == :+
-				if e.rexpr.kind_of?(Integer) and (not off or off == e.rexpr)
-					tge = e
-				elsif e.rexpr.kind_of?(ExpressionString) and (not off or off == e.rexpr.reduce)
-					tge = e
-				end
-			end
-		}
-		raise 'cant find offset' if not tge
-		if not stname
-			# replace str.mem by the original offset
-			tge.rexpr = Expression[tge.rexpr].reduce
-		else
-			st = c_parser.toplevel.struct[stname]
-			stm = st.findmember_atoffset(c_parser, off)
-			tge.rexpr = ExpressionStringStructoff.new(tge.rexpr, st, stm)
-		end
-	end
-
 	# dataflow method
 	# walks a function, starting at addr
 	# follows the usage of registers, computing the evolution from the value they had at start_addr
@@ -1334,7 +1311,6 @@ class Disassembler
 				}
 			when :subfunc
 				faddr = args[1]
-				calladdr = args[2]
 				f = @function[faddr]
 				f = @function[f.backtrace_binding[:thunk]] if f and f.backtrace_binding[:thunk]
 				if f
@@ -1365,6 +1341,58 @@ class Disassembler
 			end
 			trace_state = false if trace_state.empty?
 			trace_state
+		}
+	end
+
+	# define a register as a pointer to a structure
+	# rename all [reg+off] as [reg+struct.member] in current function
+	# also trace assignments of pointer members (TODO)
+	def trace_update_reg_structptr(addr, reg, struct, structoff=0)
+		trace_function_register(addr, reg => Expression[struct.name, :+, structoff]) { |di, r, val, trace|
+
+			next if r.to_s =~ /flag/	# XXX maybe too ia32-specific?
+
+			@cpu.instr_args_memoryptr(di).each { |ind|
+				# find the structure dereference in di
+				b = @cpu.instr_args_memoryptr_getbase(ind)
+				b = b.symbolic if b
+				next unless trace[b]
+				imm = @cpu.instr_args_memoryptr_getoffset(ind) || 0
+				expr = trace[b] + imm	# Expr#+ calls Expr#reduce
+				next if not expr.kind_of?(Expression) or expr.op != :+
+
+				# check expr has the form 'traced_struct_reg + off'
+				sname = expr.lexpr || expr.rexpr
+				soff = (expr.lexpr ? expr.rexpr : 0)
+				next unless sname.kind_of?(::String) and soff.kind_of?(::Integer)
+				next if not st = c_parser.toplevel.struct[sname]
+
+				# resolve struct + off into struct.membername
+				str = st.name.dup
+				st.expand_member_offset(c_parser, soff, str)
+				# patch di
+				imm = imm.expr if imm.kind_of?(ExpressionString)
+				@cpu.instr_args_memoryptr_setoffset(ind, ExpressionString.new(imm, str, :structoff))
+			}
+
+			# check if we need to trace 'r' further
+			val = val.reduce_rec if val.kind_of?(Expression)
+			case val
+			when Expression
+				# only trace trivial structptr+off expressions
+				if val.op == :+ and not val.rexpr.kind_of?(Expression) and not val.lexpr.kind_of?(Expression)
+					val
+				end
+
+			when Indirection
+				# di is like  r = dword [structptr+off]
+				# check if the target member is a pointer to a struct, if so, trace it
+				# TODO
+				#Expression[targetstruct]
+				# TODO also check for lea reg, [struct+substruct_off]
+
+			# in other cases, stop trace
+			end
 		}
 	end
 

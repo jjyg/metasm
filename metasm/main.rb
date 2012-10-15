@@ -932,23 +932,12 @@ class ExpressionString < ExpressionType
 	def reduce; expr.reduce; end
 	def reduce_rec; expr.reduce_rec; end
 	def bind(*a); expr.bind(*a); end
-	def initialize(expr, str, type)
+	def initialize(expr, str, type=nil)
 		@expr = Expression[expr]
 		@str = str
 		@type = type
 	end
 	def render_str ; [str] ; end
-end
-
-# Custom ExpressionString to represent an offset inside a structure
-class ExpressionStringStructoff < ExpressionString
-	attr_accessor :struct, :member
-	def initialize(expr, st, stm)
-		super(expr, nil, :structoff)
-		@struct = st
-		@member = stm
-	end
-	def render_str ; [@struct.name, '.', @member.name] ; end
 end
 
 # an EncodedData relocation, specifies a value to patch in
