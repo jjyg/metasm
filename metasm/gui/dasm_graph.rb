@@ -1435,13 +1435,29 @@ class GraphViewWidget < DrawableWidget
 	end
 
 	def focus_xy(x, y)
+		# dont care about caret pos VS screen margins when clicking
 		return if @mousemove_origin
-		if not view_x or view_x + width*3/4/@zoom < x or view_x > x
+
+		# ensure the caret stays onscreen
+		if not view_x
 			@curcontext.view_x = x - width/5/@zoom
 			redraw
+		elsif view_x + width/20/@zoom > x
+			@curcontext.view_x = x-width/20/@zoom
+			redraw
+		elsif view_x + width*9/10/@zoom < x
+			@curcontext.view_x = x-width*9/10/@zoom
+			redraw
 		end
-		if not view_y or view_y + height*3/4/@zoom < y or view_y > y
+
+		if not view_y
 			@curcontext.view_y = y - height/5/@zoom
+			redraw
+		elsif view_y + height/20/@zoom > y
+			@curcontext.view_y = y-height/20/@zoom
+			redraw
+		elsif view_y + height*9/10/@zoom < y
+			@curcontext.view_y = y-height*9/10/@zoom
 			redraw
 		end
 	end
@@ -1453,7 +1469,7 @@ class GraphViewWidget < DrawableWidget
 		l = l.map { |s, c| s }.join
 		@parent_widget.focus_changed_callback[] if @parent_widget and @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
 		update_hl_word(l, @caret_x)
-		focus_xy(b.x, b.y + @caret_y*@font_height)
+		focus_xy(b.x + @caret_x*@font_width, b.y + @caret_y*@font_height)
 		redraw
 	end
 
