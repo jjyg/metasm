@@ -1238,16 +1238,18 @@ class GraphViewWidget < DrawableWidget
 			end
 		when :pgup
 			if @caret_box
-				@caret_y = 0
-				update_caret
+				@caret_y -= (height/4/@zoom/@font_height).to_i
+				@caret_y = 0 if @caret_y < 0
+				update_caret(false)
 			else
 				@curcontext.view_y -= height/4/@zoom
 				redraw
 			end
 		when :pgdown
 			if @caret_box
-				@caret_y = @caret_box[:line_address].length-1
-				update_caret
+				@caret_y += (height/4/@zoom/@font_height).to_i
+				@caret_y = [@caret_box[:line_address].length-1, @caret_y].min
+				update_caret(false)
 			else
 				@curcontext.view_y += height/4/@zoom
 				redraw
@@ -1255,7 +1257,7 @@ class GraphViewWidget < DrawableWidget
 		when :home
 			if @caret_box
 				@caret_x = 0
-				update_caret
+				update_caret(false)
 			else
 				@curcontext.view_x = @curcontext.box.map { |b_| b_.x }.min-10
 				@curcontext.view_y = @curcontext.box.map { |b_| b_.y }.min-10
@@ -1264,7 +1266,7 @@ class GraphViewWidget < DrawableWidget
 		when :end
 			if @caret_box
 				@caret_x = @caret_box[:line_text_col][@caret_y].to_a.map { |ss, cc| ss }.join.length
-				update_caret
+				update_caret(false)
 			else
 				@curcontext.view_x = [@curcontext.box.map { |b_| b_.x+b_.w }.max-width/@zoom+10, @curcontext.box.map { |b_| b_.x }.min-10].max
 				@curcontext.view_y = [@curcontext.box.map { |b_| b_.y+b_.h }.max-height/@zoom+10, @curcontext.box.map { |b_| b_.y }.min-10].max
@@ -1435,13 +1437,17 @@ class GraphViewWidget < DrawableWidget
 	end
 
 	def focus_xy(x, y)
-		# dont care about caret pos VS screen margins when clicking
-		return if @mousemove_origin
-
 		# ensure the caret stays onscreen
 		if not view_x
 			@curcontext.view_x = x - width/5/@zoom
 			redraw
+		elsif @caret_box and @caret_box.w < width*27/30/@zoom
+			# keep @caret_box full if possible
+			if view_x + width/20/@zoom > @caret_box.x
+				@curcontext.view_x = @caret_box.x-width/20/@zoom 
+			elsif view_x + width*9/10/@zoom < @caret_box.x+@caret_box.w
+				@curcontext.view_x = @caret_box.x+@caret_box.w-width*9/10/@zoom 
+			end
 		elsif view_x + width/20/@zoom > x
 			@curcontext.view_x = x-width/20/@zoom
 			redraw
@@ -1453,6 +1459,12 @@ class GraphViewWidget < DrawableWidget
 		if not view_y
 			@curcontext.view_y = y - height/5/@zoom
 			redraw
+		elsif @caret_box and @caret_box.h < height*27/30/@zoom
+			if view_y + height/20/@zoom > @caret_box.y
+				@curcontext.view_y = @caret_box.y-height/20/@zoom 
+			elsif view_y + height*9/10/@zoom < @caret_box.y+@caret_box.h
+				@curcontext.view_y = @caret_box.y+@caret_box.h-height*9/10/@zoom 
+			end
 		elsif view_y + height/20/@zoom > y
 			@curcontext.view_y = y-height/20/@zoom
 			redraw
@@ -1464,12 +1476,17 @@ class GraphViewWidget < DrawableWidget
 
 	# hint that the caret moved
 	# redraw, change the hilighted word
-	def update_caret
+	def update_caret(update_hlword = true)
 		return if not b = @caret_box or not @caret_x or not l = @caret_box[:line_text_col][@caret_y]
-		l = l.map { |s, c| s }.join
-		@parent_widget.focus_changed_callback[] if @parent_widget and @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
-		update_hl_word(l, @caret_x)
+
+		if update_hlword
+			l = l.map { |s, c| s }.join
+			@parent_widget.focus_changed_callback[] if @parent_widget and @parent_widget.focus_changed_callback and @oldcaret_y != @caret_y
+			update_hl_word(l, @caret_x)
+		end
+
 		focus_xy(b.x + @caret_x*@font_width, b.y + @caret_y*@font_height)
+
 		redraw
 	end
 
