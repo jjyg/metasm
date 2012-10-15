@@ -270,14 +270,14 @@ class DecodedFunction
 		@backtrace_binding = {}
 	end
 
-	def get_localvar_stackoff(off, di=nil)
+	def get_localvar_stackoff(off, di=nil, str=nil)
 		if di
 			@localvars_xrefs ||= {}
 			@localvars_xrefs[off] ||= []
 			@localvars_xrefs[off] |= [di.address]
 		end
 		@localvars ||= {}
-		@localvars[off] ||= (off > 0 ? 'arg_%X' % off : 'var_%X' % -off)
+		@localvars[off] ||= (str || (off > 0 ? 'arg_%X' % off : 'var_%X' % -off))
 	end
 end
 

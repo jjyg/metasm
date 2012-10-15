@@ -1269,13 +1269,11 @@ class Ia32
 				imm = mrm.imm || Expression[0]
 				frameoff = imm + stackoff
 				if frameoff.kind_of?(::Integer)
-					if func
-						str = func.get_localvar_stackoff(frameoff, di)
-					else
-						# XXX register args ? non-ABI standard register args ? (eg optimized x64)
-						str = 'var_%X' % (-frameoff)
-						str = 'arg_%X' % frameoff if frameoff > 0
-					end
+					# XXX register args ? non-ABI standard register args ? (eg optimized x64)
+					str = 'var_%X' % (-frameoff)
+					str = 'arg_%X' % (frameoff-@size/8) if frameoff > 0
+					str = func.get_localvar_stackoff(frameoff, di, str) if func
+					imm = imm.expr if imm.kind_of?(ExpressionString)
 					mrm.imm = ExpressionString.new(imm, str, :stackvar)
 				end
 			end
