@@ -390,6 +390,22 @@ module C
 			end
 			idx + 1
 		end
+
+		# resolve structptr + offset into 'str.membername'
+		# handles 'var.substruct1.array[12].foo'
+		# updates str
+		# returns the final member type itself
+		# works for Struct/Union/Array
+		def expand_member_offset(c_parser, off, str)
+			# XXX choose in members, check sizeof / prefer structs
+			m = struct.members.first
+			str << '.' << m.name if m.name
+			if m.type.respond_to?(:expand_member_offset)
+				m.type.expand_member_offset(c_parser, off, str)
+			else
+				m.type
+			end
+		end
 	end
 	class Struct < Union
 		attr_accessor :pack
@@ -525,6 +541,26 @@ module C
 					off += parser.sizeof(m)
 				end
 			}
+		end
+
+		# see Union#expand_member_offset
+		def expand_member_offset(c_parser, off, str)
+			members.to_a.each { |m|
+				mo = offsetof(c_parser, m)
+				if mo == off or mo + c_parser.sizeof(m) > off
+					str << '.' << m.name if m.name
+					if m.type.respond_to?(:expand_member_offset)
+						return m.type.expand_member_offset(c_parser, off-mo, str)
+					else
+						return m.type
+					end
+				elsif mo > off
+					break
+				end
+			}
+			# XXX that works only for pointer-style str
+			str << "+#{off}"
+			nil
 		end
 	end
 	class Enum < Type
@@ -699,6 +735,17 @@ module C
 				end
 			end
 			idx + 1
+		end
+
+		# see Union#expand_member_offset
+		def expand_member_offset(c_parser, off, str)
+			tsz = c_parser.sizeof(@type)
+			str << "[#{off/tsz}]"
+			if @type.respond_to?(:expand_member_offset)
+				@type.expand_member_offset(c_parser, off%tsz, str)
+			else
+				@type
+			end
 		end
 	end
 
