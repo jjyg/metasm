@@ -244,6 +244,35 @@ class Ia32 < CPU
 		Reg.s_to_i.has_key?(str) ? Reg.from_str(str) : SimdReg.s_to_i.has_key?(str) ? SimdReg.from_str(str) : nil
 	end
 
+	# returns the list of Regs in the instruction arguments
+	# may be converted into symbols through Reg#symbolic
+	def instr_args_regs(i)
+		i = i.instruction if i.kind_of?(DecodedInstruction)
+		i.args.grep(Reg)
+	end
+
+	# returns the list of ModRMs in the instruction arguments
+	# may be converted into Indirection through ModRM#symbolic
+	def instr_args_memoryptr(i)
+		i = i.instruction if i.kind_of?(DecodedInstruction)
+		i.args.grep(ModRM)
+	end
+
+	# return the 'base' of the ModRM (Reg/nil)
+	def instr_args_memoryptr_getbase(mrm)
+		mrm.b || (mrm.i if mrm.s == 1)
+	end
+
+	# return the offset of the ModRM (Expression/nil)
+	def instr_args_memoryptr_getoffset(mrm)
+		mrm.imm
+	end
+
+	# define ModRM offset (eg to changing imm into an ExpressionString)
+	def instr_args_memoryptr_setoffset(mrm, imm)
+		mrm.imm = (imm ? Expression[imm] : imm)
+	end
+
 	def shortname
 		"ia32#{'_16' if @size == 16}#{'_be' if @endianness == :big}"
 	end
