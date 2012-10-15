@@ -1261,7 +1261,7 @@ class Ia32
 		func = dasm.function[funcaddr]
 		dasm.trace_function_register(funcaddr, esp => 0) { |di, r, off, trace|
 			next if r.to_s =~ /flag/
-			if mrm = di.instruction.args.grep(ModRM).first
+			di.instruction.args.grep(ModRM).each { |mrm|
 				b = mrm.b || (mrm.i if mrm.s == 1)
 				# its a modrm => b is read, so ignore r/off (not yet applied), use trace only
 				stackoff = trace[b.symbolic] if b
@@ -1276,7 +1276,7 @@ class Ia32
 					imm = imm.expr if imm.kind_of?(ExpressionString)
 					mrm.imm = ExpressionString.new(imm, str, :stackvar)
 				end
-			end
+			}
 			off = off.reduce if off.kind_of?(Expression)
 			next unless off.kind_of?(Integer)
 			off
