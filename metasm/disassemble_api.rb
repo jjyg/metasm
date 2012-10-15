@@ -1276,6 +1276,7 @@ class Disassembler
 	#  yield [di, used_register, reg_value, trace_state] where reg_value is the Expression holding the value of
 	#  the register wrt the initial value at start_addr, and trace_state the value of all registers (reg_value
 	#  not yet applied)
+	#  reg_value may be nil if used_register is not modified by the function (eg call [eax])
 	#  the yield return value is propagated, unless it is nil/false
 	# init_state is a hash { :reg => initial value }
 	def trace_function_register(start_addr, init_state)
@@ -1297,14 +1298,33 @@ class Disassembler
 							update[rr] = false
 						end
 					elsif trace_state[r]
-						# XXX yield :remove_from_context?
-						update[rr] = false
+						# started on mov reg, foo
+						# XXX what do we do on start_addr: mov reg, [reg+4] ?
+						next if di.address == start_addr
+						update[r] = false
 					end
 				}
+
+				# directly walk the instruction argument list for registers not appearing in the binding
+				@cpu.instr_args_memoryptr(di).each { |ind|
+					b = @cpu.instr_args_memoryptr_getbase(ind)
+					if b and b = b.symbolic and not update.has_key?(b)
+						yield(di, b, nil, trace_state)
+					end
+				}
+				@cpu.instr_args_regs(di).each { |r|
+					r = r.symbolic
+					if not update.has_key?(r)
+						yield(di, r, nil, trace_state)
+					end
+				}
+
 				update.each { |r, v|
 					trace_state = trace_state.dup
 					if v
-						trace_state[r] = v
+						# cannot follow non-registers, or we would have to emulate every single
+						# instruction (try following [esp+4] across a __stdcall..)
+						trace_state[r] = v if r.kind_of?(::Symbol)
 					else
 						trace_state.delete r
 					end
@@ -1322,8 +1342,10 @@ class Disassembler
 					# XXX fwdemu_binding ?
 					binding.each { |r, v|
 						if v.externals.find { |e| trace_state[e] }
-							trace_state = trace_state.dup
-							trace_state[r] = Expression[v.bind(trace_state)].reduce
+							if r.kind_of?(::Symbol)
+								trace_state = trace_state.dup
+								trace_state[r] = Expression[v.bind(trace_state)].reduce
+							end
 						elsif trace_state[r]
 							trace_state = trace_state.dup
 							trace_state.delete r
@@ -1357,7 +1379,9 @@ class Disassembler
 				b = @cpu.instr_args_memoryptr_getbase(ind)
 				b = b.symbolic if b
 				next unless trace[b]
-				imm = @cpu.instr_args_memoryptr_getoffset(ind) || 0
+				imm = @cpu.instr_args_memoryptr_getoffset(ind)
+				next if not imm and ind.symbolic.pointer.lexpr	# ignore [eax+4*ebx] XXX member_at_0 may be an array?
+				imm ||= 0
 				expr = trace[b] + imm	# Expr#+ calls Expr#reduce
 				next if not expr.kind_of?(Expression) or expr.op != :+
 

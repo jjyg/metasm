@@ -1401,7 +1401,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					break if done.has_key?(_di.address)	# looped back into addr_start
 					done[_di.address] = obj
 					obj = yield([:di, _di.address, _di, obj])
-					break if obj == false
+					break if obj == false	# also return false for the previous 'if'
 				}
 
 				from = dilist.last.address
