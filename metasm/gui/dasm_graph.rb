@@ -1437,6 +1437,9 @@ class GraphViewWidget < DrawableWidget
 	end
 
 	def focus_xy(x, y)
+		# dont move during a click
+		return if @mousemove_origin
+
 		# ensure the caret stays onscreen
 		if not view_x
 			@curcontext.view_x = x - width/5/@zoom
