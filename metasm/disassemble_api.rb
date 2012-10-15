@@ -314,6 +314,7 @@ class Disassembler
 		each_xref(addr) { |xr|
 			next if not xr.origin or not o = @decoded[xr.origin] or not o.kind_of? Renderable
 			o.each_expr { |e|
+				next unless e.kind_of?(Expression)
 				e.lexpr = addr if e.lexpr == name
 				e.rexpr = addr if e.rexpr == name
 			}
@@ -1407,6 +1408,7 @@ class Disassembler
 	def toggle_expr_offset(o)
 		return if not o.kind_of? Renderable
 		o.each_expr { |e|
+			next unless e.kind_of?(Expression)
 			if n = @prog_binding[e.lexpr]
 				e.lexpr = n
 			elsif e.lexpr.kind_of? ::Integer and n = get_label_at(e.lexpr)
@@ -1426,8 +1428,8 @@ class Disassembler
 	def toggle_expr_str(o)
 		return if not o.kind_of?(Renderable)
 		o.each_expr { |e|
-			e.lexpr.hide_str = !e.lexpr.hide_str if e.lexpr.kind_of?(ExpressionString)
-			e.rexpr.hide_str = !e.rexpr.hide_str if e.rexpr.kind_of?(ExpressionString)
+			next unless e.kind_of?(ExpressionString)
+			e.hide_str = !e.hide_str
 		}
 	end
 

@@ -112,7 +112,8 @@ class DisasmWidget < ContainerChoiceWidget
 		hl = curview.hl_word
 		localvar = nil
 		curobj.each_expr { |e|
-			localvar = e if e.kind_of?(ExpressionString) and e.type == :stackvar and e.str == hl
+			next unless e.kind_of?(ExpressionString)
+			localvar = e if e.type == :stackvar and e.str == hl
 		}
 		localvar
 	end
@@ -422,6 +423,7 @@ class DisasmWidget < ContainerChoiceWidget
 	def prompt_constant(di=curobj)
 		return if not di.kind_of? DecodedInstruction
 		di.each_expr { |e|
+			next unless e.kind_of?(Expression)
 			if e.lexpr.kind_of? Integer or e.lexpr.kind_of?(ExpressionString)
 				v = Expression[e.lexpr].reduce
 				lst = []
