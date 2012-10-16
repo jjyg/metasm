@@ -823,10 +823,10 @@ class Disassembler
 				else
 					std = { ?a => 'std::allocator',
 						?b => 'std::basic_string',
-						?s => 'std::basic_string < char, std::char_traits<char>, std::allocator<char> >',
-						?i => 'std::basic_istream<char,  std::char_traits<char> >',
-						?o => 'std::basic_ostream<char,  std::char_traits<char> >',
-						?d => 'std::basic_iostream<char, std::char_traits<char> >'
+						?s => 'std::string', # 'std::basic_string < char, std::char_traits<char>, std::allocator<char> >',
+						?i => 'std::istream', # 'std::basic_istream<char,  std::char_traits<char> >',
+						?o => 'std::ostream', # 'std::basic_ostream<char,  std::char_traits<char> >',
+						?d => 'std::iostream', # 'std::basic_iostream<char, std::char_traits<char> >'
 					}[name[0]]
 					if not std
 						ret = nil
