@@ -1369,8 +1369,8 @@ class Disassembler
 	# define a register as a pointer to a structure
 	# rename all [reg+off] as [reg+struct.member] in current function
 	# also trace assignments of pointer members (TODO)
-	def trace_update_reg_structptr(addr, reg, struct, structoff=0)
-		trace_function_register(addr, reg => Expression[struct.name, :+, structoff]) { |di, r, val, trace|
+	def trace_update_reg_structptr(addr, reg, structname, structoff=0)
+		trace_function_register(addr, reg => Expression[structname, :+, structoff]) { |di, r, val, trace|
 
 			next if r.to_s =~ /flag/	# XXX maybe too ia32-specific?
 
@@ -1379,9 +1379,7 @@ class Disassembler
 				b = @cpu.instr_args_memoryptr_getbase(ind)
 				b = b.symbolic if b
 				next unless trace[b]
-				imm = @cpu.instr_args_memoryptr_getoffset(ind)
-				next if not imm and ind.symbolic.pointer.lexpr	# ignore [eax+4*ebx] XXX member_at_0 may be an array?
-				imm ||= 0
+				imm = @cpu.instr_args_memoryptr_getoffset(ind) || 0
 				expr = trace[b] + imm	# Expr#+ calls Expr#reduce
 				next if not expr.kind_of?(Expression) or expr.op != :+
 
@@ -1417,12 +1415,39 @@ class Disassembler
 				expr = val.pointer.reduce
 				sname = expr.lexpr || expr.rexpr
 				soff = (expr.lexpr ? expr.rexpr : 0)
+
+				if soff.kind_of?(Expression)
+					# ignore index in ptr array
+					if soff.op == :* and soff.lexpr == @cpu.size/8
+						soff = 0
+					elsif soff.rexpr.kind_of?(Expression) and soff.rexpr.op == :* and soff.rexpr.lexpr == @cpu.size/8
+						soff = soff.lexpr
+					elsif soff.lexpr.kind_of?(Expression) and soff.lexpr.op == :* and soff.lexpr.lexpr == @cpu.size/8
+						soff = soff.rexpr
+					end
+				end
+
 				next unless sname.kind_of?(::String) and soff.kind_of?(::Integer)
-				next if not st = c_parser.toplevel.struct[sname]
-				pt = st.expand_member_offset(c_parser, soff, '')
-				pt = pt.untypedef if pt
-				if pt.kind_of?(C::Pointer) and pt.type.untypedef.kind_of?(C::Union) and pt.type.untypedef.name
-					Expression[pt.type.untypedef.name]
+
+				if st = c_parser.toplevel.struct[sname]
+					pt = st.expand_member_offset(c_parser, soff, '')
+					pt = pt.untypedef if pt
+					if pt.kind_of?(C::Pointer)
+						tt = pt.type.untypedef
+						stars = ''
+						while tt.kind_of?(C::Pointer)
+							stars << '*'
+							tt = tt.type.untypedef
+						end
+						if tt.kind_of?(C::Union) and tt.name
+							Expression[tt.name + stars]
+						end
+					end
+
+				elsif soff == 0 and sname[-1] == ?*
+					# XXX pointer to pointer to struct
+					# full C type support would be better, but harder to fit in an Expr
+					Expression[sname[0...-1]]
 				end
 
 			# in other cases, stop trace

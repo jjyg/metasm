@@ -463,25 +463,30 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 
 	# prompts for a structure name, autocompletes to known structures, and/or display a listwindow with
-	# possible completions, yields the target C::Struct
-	def prompt_c_struct(prompt, inittext='')
-		inputbox(prompt, :text => inittext) { |st_name|
+	# possible completions, yields the target structure name
+	def prompt_c_struct(prompt, opts={})
+		inputbox(prompt, opts) { |st_name|
+			stars = ''
+			if opts[:allow_stars]
+				stars = st_name[/\**$/]
+				st_name[stars] = ''
+			end
 			# TODO propose typedef struct {} moo; too
 			stn_list = @dasm.c_parser.toplevel.struct.keys.grep(String)
 
 			if name = stn_list.find { |n| n == st_name } || stn_list.find { |n| n.downcase == st_name.downcase }
 				# single match
-				yield(@dasm.c_parser.toplevel.struct[name])
+				yield(name+stars)
 			else
 				# try autocomplete
 				list = [['name']]
-				list += stn_list.sort.grep(/#{st_name}/i).map { |stn| [stn] }
+				list += stn_list.sort.grep(/#{st_name}/i).map { |stn| [stn+stars] }
 				if list.length == 2
 					# single autocompletion
-					yield(@dasm.c_parser.toplevel.struct[list[1][0]])
+					yield(list[1][0])
 				else
 					listwindow(prompt, list) { |ans|
-						yield(@dasm.c_parser.toplevel.struct[ans[0]])
+						yield(ans[0])
 					}
 				end
 			end
@@ -496,7 +501,7 @@ class DisasmWidget < ContainerChoiceWidget
 		di = @dasm.di_at(addr)
 		return if not di.kind_of?(DecodedInstruction)
 
-		prompt_c_struct("struct pointed by #{reg}") { |st|
+		prompt_c_struct("struct pointed by #{reg}", :allow_stars => true) { |st|
 			# TODO store that info for the decompiler ?
 			@dasm.trace_update_reg_structptr(addr, reg, st)
 			gui_update
