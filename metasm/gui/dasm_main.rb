@@ -471,8 +471,14 @@ class DisasmWidget < ContainerChoiceWidget
 				stars = st_name[/\**$/]
 				st_name[stars] = ''
 			end
+
 			# TODO propose typedef struct {} moo; too
-			stn_list = @dasm.c_parser.toplevel.struct.keys.grep(String)
+			sh = @dasm.c_parser.toplevel.struct
+			if sh[st_name].kind_of?(C::Union)
+				stn_list = [st_name]
+			else
+				stn_list = sh.keys.grep(String).find_all { |k| sh[k].kind_of?(C::Union) }
+			end
 
 			if name = stn_list.find { |n| n == st_name } || stn_list.find { |n| n.downcase == st_name.downcase }
 				# single match
