@@ -804,6 +804,8 @@ EOS
 	# maps a Shellcode_RWX in memory, fixup stdlib relocations
 	# returns the Shellcode_RWX, with the base_r/w/x initialized to the allocated memory
 	def self.sc_map_resolve(sc)
+		sc_map_resolve_addthunks(sc)
+
 		sc.base_r = memory_alloc(sc.encoded_r.length) if sc.encoded_r.length > 0
 		sc.base_w = memory_alloc(sc.encoded_w.length) if sc.encoded_w.length > 0
 		sc.base_x = memory_alloc(sc.encoded_x.length) if sc.encoded_x.length > 0
@@ -823,6 +825,37 @@ EOS
 		memory_perm sc.base_x, sc.encoded_x.length, 'rx' if sc.encoded_x.length > 0
 
 		sc
+	end
+
+	def self.sc_map_resolve_addthunks(sc)
+		case host_cpu.shortname
+		when 'x64'
+			# patch 'call moo' into 'call thunk; thunk: jmp qword [moo_ptr]'
+			# this is similar to ELF PLT section, allowing code to call
+			# into a library mapped more than 4G away
+			# XXX handles only 'call extern', not 'lea reg, extern' or anything else
+			# in this case, the linker will still raise an 'immediate overflow'
+			# during fixup_check in sc_map_resolve
+			[sc.encoded_r, sc.encoded_w, sc.encoded_x].each { |edata|
+				edata.reloc.dup.each { |off, rel|
+					# target only call extern / jmp.i32 extern
+					next if rel.type != :i32
+					next if rel.target.op != :-
+					next if edata.export[rel.target.rexpr] != off+4
+					next if edata.export[rel.target.lexpr]
+					opc = edata.data[off-1, 1].unpack('C')[0]
+					next if opc != 0xe8 and opc != 0xe9
+
+					thunk_sc = Shellcode.new(host_cpu).share_namespace(sc)
+					thunk = thunk_sc.assemble(<<EOS).encoded
+1: jmp qword [rip]
+dq #{rel.target.lexpr}
+EOS
+					edata << thunk
+					rel.target.lexpr = thunk.inv_export[0]
+				}
+			}
+		end
 	end
 
 	# retrieve the library where a symbol is to be found (uses AutoImport)
