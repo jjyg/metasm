@@ -982,6 +982,11 @@ class Debugger
 		do_singlestep
 	end
 
+	def stepout_wait
+		stepout
+		wait_target
+	end
+
 	# set a singleshot breakpoint, run the process, and wait
 	def go(target, cond=nil)
 		bpx(target, true, cond)
