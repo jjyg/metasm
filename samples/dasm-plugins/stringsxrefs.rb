@@ -22,4 +22,7 @@ def stringsxrefs(maxsz = 32)
 	nil
 end
 
-stringsxrefs if gui
+if gui
+	stringsxrefs
+	gui.gui_update
+end
