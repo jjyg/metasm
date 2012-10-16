@@ -749,6 +749,10 @@ class DisasmWidget < ContainerChoiceWidget
 			@parent_widget.extend_contextmenu(tg, menu, addr)
 		end
 	end
+
+	def inspect
+		"<DisasmWidget @%x @dasm=#{dasm.inspect}>" % object_id
+	end
 end
 
 # this widget is loaded in an empty DasmWindow to handle shortcuts (open file, etc)
