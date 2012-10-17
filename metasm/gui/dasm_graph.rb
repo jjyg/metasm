@@ -525,6 +525,44 @@ class Graph
 			}
 		}
 
+		# vertical shrink
+		# TODO stuff may shrink vertically more if we could move it slightly horizontally...
+		@box.sort_by { |b| b.y }.each { |b|
+
+			next if b.from.empty?
+			# move box up to its from, unless something blocks the way
+
+			min_y = b.from.map { |bb|
+					bb.y+bb.h
+				}.find_all { |by|
+					by < b.y
+				}.max
+
+			margin_y = 12 + 8 * [b.from.length, b.from[0].to.length].max
+
+			next if not min_y or b.y <= min_y + margin_y
+
+			blocking = @box.find_all { |bb|
+					next if bb == b
+					bb.y+bb.h > min_y and bb.y+bb.h < b.y and
+					bb.x-12 < b.x+b.w and bb.x+bb.w+12 > b.x
+				}
+
+			may_y = blocking.map { |bb| bb.y+bb.h } << min_y
+
+			do_y = may_y.sort.map { |by| by + margin_y }.find { |by|
+				# should not collision with b if moved to by+margin_y
+				not blocking.find { |bb|
+					bb.x-12 < b.x+b.w and bb.x+bb.w+12 > b.x and
+					bb.y-12 < by+b.h and bb.y+bb.h+12 > by
+				}
+			}
+
+			b.y = do_y if do_y < b.y
+
+			# no need to re-sort outer loop
+		}
+
 		# TODO
 		# energy-minimal positionning of boxes from this basic layout
 		# avoid arrow confusions
