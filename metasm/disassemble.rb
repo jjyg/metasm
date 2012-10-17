@@ -1994,7 +1994,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	end
 
 	def inspect
-		"<Metasm::Debugger @%x>" % object_id
+		"<Metasm::Disassembler @%x>" % object_id
 	end
 
 	def to_s
