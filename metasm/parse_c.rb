@@ -548,6 +548,12 @@ module C
 			members.to_a.each { |m|
 				mo = offsetof(c_parser, m)
 				if mo == off or mo + c_parser.sizeof(m) > off
+					if bitoffsetof(c_parser, m)
+						# ignore bitfields
+						str << "+#{off}" if off > 0
+						return self
+					end
+
 					str << '.' << m.name if m.name
 					if m.type.respond_to?(:expand_member_offset)
 						return m.type.expand_member_offset(c_parser, off-mo, str)
@@ -559,7 +565,7 @@ module C
 				end
 			}
 			# XXX that works only for pointer-style str
-			str << "+#{off}"
+			str << "+#{off}" if off > 0
 			nil
 		end
 	end
