@@ -1370,22 +1370,50 @@ class Disassembler
 	# rename all [reg+off] as [reg+struct.member] in current function
 	# also trace assignments of pointer members (TODO)
 	def trace_update_reg_structptr(addr, reg, structname, structoff=0)
+		sname = soff = ctx = nil
+		expr_to_sname = lambda { |expr|
+			if not expr.kind_of?(Expression) or expr.op != :+
+				sname = nil
+				next
+			end
+
+			sname = expr.lexpr || expr.rexpr
+			soff = (expr.lexpr ? expr.rexpr : 0)
+
+			if soff.kind_of?(Expression)
+				# ignore index in ptr array
+				if soff.op == :* and soff.lexpr == @cpu.size/8
+					soff = 0
+				elsif soff.rexpr.kind_of?(Expression) and soff.rexpr.op == :* and soff.rexpr.lexpr == @cpu.size/8
+					soff = soff.lexpr
+				elsif soff.lexpr.kind_of?(Expression) and soff.lexpr.op == :* and soff.lexpr.lexpr == @cpu.size/8
+					soff = soff.rexpr
+				end
+			elsif soff.kind_of?(Symbol)
+				# array with 1 byte elements?
+				if ctx[sname]
+					soff = 0
+				elsif ctx[soff]
+					sname = soff
+					soff = 0
+				end
+			end
+		}
+
 		trace_function_register(addr, reg => Expression[structname, :+, structoff]) { |di, r, val, trace|
 
 			next if r.to_s =~ /flag/	# XXX maybe too ia32-specific?
 
+			ctx = trace
 			@cpu.instr_args_memoryptr(di).each { |ind|
 				# find the structure dereference in di
 				b = @cpu.instr_args_memoryptr_getbase(ind)
 				b = b.symbolic if b
 				next unless trace[b]
 				imm = @cpu.instr_args_memoryptr_getoffset(ind) || 0
-				expr = trace[b] + imm	# Expr#+ calls Expr#reduce
-				next if not expr.kind_of?(Expression) or expr.op != :+
 
 				# check expr has the form 'traced_struct_reg + off'
-				sname = expr.lexpr || expr.rexpr
-				soff = (expr.lexpr ? expr.rexpr : 0)
+				expr_to_sname[trace[b] + imm]	# Expr#+ calls Expr#reduce
 				next unless sname.kind_of?(::String) and soff.kind_of?(::Integer)
 				next if not st = c_parser.toplevel.struct[sname]
 
@@ -1393,11 +1421,15 @@ class Disassembler
 
 				# resolve struct + off into struct.membername
 				str = st.name.dup
-				st.expand_member_offset(c_parser, soff, str)
+				mb = st.expand_member_offset(c_parser, soff, str)
 				# patch di
 				imm = imm.rexpr if imm.kind_of?(Expression) and not imm.lexpr and imm.rexpr.kind_of?(ExpressionString)
 				imm = imm.expr if imm.kind_of?(ExpressionString)
 				@cpu.instr_args_memoryptr_setoffset(ind, ExpressionString.new(imm, str, :structoff))
+
+				# check if the type is an enum/bitfield, patch instruction immediates
+				# TODO include that somehow in 'trace' (eg mov reg, [ptr+enum_member] ; cmp reg, 42 => enum)
+				trace_update_reg_structptr_arg_enum(di, mb, str) if mb
 			}
 
 			# check if we need to trace 'r' further
@@ -1405,27 +1437,15 @@ class Disassembler
 			case val
 			when Expression
 				# only trace trivial structptr+off expressions
-				if val.op == :+ and not val.rexpr.kind_of?(Expression) and not val.lexpr.kind_of?(Expression)
-					val
+				expr_to_sname[val]
+				if sname.kind_of?(::String) and soff.kind_of?(::Integer)
+					Expression[sname, :+, soff]
 				end
 
 			when Indirection
 				# di is mov reg, [ptr+struct.offset]
 				# check if the target member is a pointer to a struct, if so, trace it
-				expr = val.pointer.reduce
-				sname = expr.lexpr || expr.rexpr
-				soff = (expr.lexpr ? expr.rexpr : 0)
-
-				if soff.kind_of?(Expression)
-					# ignore index in ptr array
-					if soff.op == :* and soff.lexpr == @cpu.size/8
-						soff = 0
-					elsif soff.rexpr.kind_of?(Expression) and soff.rexpr.op == :* and soff.rexpr.lexpr == @cpu.size/8
-						soff = soff.lexpr
-					elsif soff.lexpr.kind_of?(Expression) and soff.lexpr.op == :* and soff.lexpr.lexpr == @cpu.size/8
-						soff = soff.rexpr
-					end
-				end
+				expr_to_sname[val.pointer.reduce]
 
 				next unless sname.kind_of?(::String) and soff.kind_of?(::Integer)
 
@@ -1453,6 +1473,57 @@ class Disassembler
 			# in other cases, stop trace
 			end
 		}
+	end
+
+	# found a special member of a struct, check if we can apply
+	# bitfield/enum name to other constants in the di
+	def trace_update_reg_structptr_arg_enum(di, mb, str)
+		if ename = mb.has_attribute_var('enum') and enum = c_parser.toplevel.struct[ename] and enum.kind_of?(C::Enum) and
+				num = di.instruction.args.grep(Expression).first and num_i = num.reduce and num_i.kind_of?(::Integer)
+			# handle enum values on tagged structs
+			if enum.members and name = enum.members.index(num_i)
+				num.lexpr = nil
+				num.op = :+
+				num.rexpr = ExpressionString.new(Expression[num_i], name, :enum)
+				di.add_comment "enum::#{ename}"
+			end
+
+		elsif mb.untypedef.kind_of?(C::Struct) and num = di.instruction.args.grep(Expression).first and
+			num_i = num.reduce and num_i.kind_of?(::Integer)
+			# handle bitfields:
+			#  add comment on 'test [eax+member.bitfield], 0x10'
+			# XXX little-endian only
+			if str =~ /\+(\d+)$/
+				# test byte [bitfield+1], 0x1  =>  test dword [bitfield], 0x100
+				off = $1.to_i
+				num_i <<= off*8
+				str[/\+\d+$/] = ''
+			end
+
+			# TODO handle ~num_i 
+			num_left = num_i
+			s_or = []
+			mb.untypedef.members.each { |mm|
+				if bo = mb.bitoffsetof(c_parser, mm)
+					boff, blen = bo
+					if mm.name && blen == 1 && ((num_i >> boff) & 1) > 0
+						s_or << mm.name
+						num_left &= ~(1 << boff)
+					end
+				end
+			}
+			if s_or.first
+				num.lexpr = nil
+				num.op = :+
+					if num_left != 0
+						s_or << ('0x%X' % num_left)
+					end
+				str = s_or.join('|')
+				num.rexpr = ExpressionString.new(Expression[num_i], str, :bitfield)
+				di.add_comment 'bitfield'
+			end
+
+		end
 	end
 
 	# change Expression display mode for current object o to display integers as char constants
