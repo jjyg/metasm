@@ -211,7 +211,7 @@ class DisasmWidget < ContainerChoiceWidget
 
 	# ask the current view to update itself
 	def do_gui_update
-		curview.gui_update	# invalidate all views ?
+		curview.gui_update if curview	# invalidate all views ?
 	end
 
 	# redraw the window
