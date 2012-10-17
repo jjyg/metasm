@@ -797,7 +797,7 @@ class GraphViewWidget < DrawableWidget
 			idx = bf.from.length-1 if idx >= bf.from.length
 			if bf.from[idx]
 				if @parent_widget
-					@caret_box, @caret_y = bt, bt[:line_address].length-1
+					@caret_box, @caret_y = bf, bf[:line_address].length-1
 					@parent_widget.focus_addr bf.from[idx][:line_address][-1]
 				else
 					focus_xy(bt.from[idx].x, bt.from[idx].y)
