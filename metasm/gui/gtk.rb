@@ -885,7 +885,7 @@ class Window < Gtk::Window
 		if action
 			a = action
 			if check
-				a = lambda { item.active = action.call(item.active?) }
+				a = lambda { |it| it.active = action.call(it.active?) }
 			end
 			item.signal_connect('activate') { protect { a.call(item) } }
 		end
