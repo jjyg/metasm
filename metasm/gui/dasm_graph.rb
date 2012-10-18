@@ -895,26 +895,13 @@ class GraphViewWidget < DrawableWidget
 			y1 += margin
 			y2 -= margin-1
 		end
-		if y2+margin >= y1-margin-1
-			# straight vertical down arrow
+
+		if y2 > y1 - b1.h*@zoom - 2*margin+1
+			# straight arrow
 			draw_line(x1, y1, x2, y2) if x1 != y1 or x2 != y2
 
-		# else arrow up, need to sneak around boxes
-		elsif x1o-b1w/2-margin >= x2o+b2w/2+margin	# z
-			draw_line(x1, y1, x1o-b1w/2-margin, y1)
-			draw_line(x1o-b1w/2-margin, y1, x2o+b2w/2+margin, y2)
-			draw_line(x2o+b2w/2+margin, y2, x2, y2)
-			draw_line(x1, y1+1, x1o-b1w/2-margin, y1+1) # double
-			draw_line(x1o-b1w/2-margin+1, y1, x2o+b2w/2+margin+1, y2)
-			draw_line(x2o+b2w/2+margin, y2+1, x2, y2+1)
-		elsif x1+b1w/2+margin <= x2-b2w/2-margin	# invert z
-			draw_line(x1, y1, x1o+b1w/2+margin, y1)
-			draw_line(x1o+b1w/2+margin, y1, x2o-b2w/2-margin, y2)
-			draw_line(x2o-b2w/2-margin, y2, x2, y2)
-			draw_line(x1, y1+1, x1+b1w/2+margin, y1+1) # double
-			draw_line(x1o+b1w/2+margin+1, y1, x2o-b2w/2-margin+1, y2)
-			draw_line(x2o-b2w/2-margin, y2+1, x2, y2+1)
-		else						# turn around
+		else
+			# arrow goes up: navigate around b2
 			x = (x1 <= x2 ? [x1o-b1w/2-margin, x2o-b2w/2-margin].min : [x1o+b1w/2+margin, x2o+b2w/2+margin].max)
 			draw_line(x1, y1, x, y1)
 			draw_line(x, y1, x, y2)
