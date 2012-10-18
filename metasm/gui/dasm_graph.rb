@@ -226,90 +226,91 @@ class Graph
 	# stored as having an order of 0
 	def find_roots
 		roots = @groups.find_all { |g| g.from.empty? }
-		roots << @groups.first if roots.empty? and @groups.first
-		# tentative @order
-		o = {}
+		o = {}	# tentative @order
 		todo = []
-		roots.each { |g|
-			o[g] = 0
-			todo |= g.to
+
+		# 'todo' has no trivial candidate
+		solve_cycle = lambda {
+			# pick one node from todo which no other todo can reach
+			# exclude pathing through already ordered nodes
+			todo.find { |t1|
+				not todo.find { |t2| t1 != t2 and can_find_path(t2, t1, o.dup) }
+			} ||
+			# some cycle heads are mutually recursive
+			todo.sort_by { |t1|
+				# find the one who can reach the most others
+				[todo.find_all { |t2| t1 != t2 and can_find_path(t1, t2, o.dup) }.length,
+				# and with the highest rank
+				 t1.from.map { |gg| o[gg] }.compact.max]
+			}.last
 		}
+
 		loop do
+			roots.each { |g|
+				o[g] ||= 0
+				todo |= g.to.find_all { |gg| not o[gg] }
+			}
+
 			# order nodes from the tentative roots
-			while n = todo.find { |g| g.from.all? { |gg| o[gg] } } ||
-				  todo.sort_by { |g| g.from.map { |gg| o[gg] }.compact.max }.first	# cycle heads
+			until todo.empty?
+				n = todo.find { |g| g.from.all? { |gg| o[gg] } } || solve_cycle[]
 				todo.delete n
 				o[n] = n.from.map { |g| o[g] }.compact.max + 1
 				todo |= n.to.find_all { |g| not o[g] }
 			end
-			# todo empty at this point
 			break if o.length >= @groups.length
 
-			if rt = roots.find { |g| g.from.find { |gg| not o[gg] } } ||
-					@groups.find_all { |g| o[g] and g.from.find { |gg| not o[gg] } }.sort_by { |g| o[g] }.first
-				# if we picked a root in the middle of the graph, try to go up
-				utodo = rt.from.find_all { |g| not o[g] }
-				while n = utodo.find { |g| g.to.all? { |gg| o[gg] } } ||
-					  utodo.sort_by { |g| g.to.map { |gg| o[gg] }.compact.min }.first
-					utodo.delete n
+			# pathological cases
+
+			if noroot = @groups.find_all { |g| o[g] and g.from.find { |gg| not o[gg] } }.sort_by { |g| o[g] }.first
+				# we picked a root in the middle of the graph, walk up
+				todo |= noroot.from.find_all { |g| not o[g] }
+				until todo.empty?
+					n = todo.find { |g| g.to.all? { |gg| o[gg] } } ||
+					    todo.sort_by { |g| g.to.map { |gg| o[gg] }.compact.min }.first
+					todo.delete n
 					o[n] = n.to.map { |g| o[g] }.compact.min - 1
-					utodo |= n.from.find_all { |g| not o[g] }
-					todo |= n.to.find_all { |g| not o[g] }
+					todo |= n.from.find_all { |g| not o[g] }
 				end
 				# setup todo for next fwd iteration
-				todo = todo.find_all { |g| g.from.find { |gg| o[gg] } }
+				todo |= @groups.find_all { |g| not o[g] and g.from.find { |gg| o[gg] } }
 			else
-				# disjoint graph, start over from there
-				roots = [@groups.find { |g| not o[g] }]
-				roots.each { |g|
-					o[g] = 0
-					todo |= g.to.find_all { |gg| not o[gg] }
-				}
+				# disjoint graph, start over from one other random node
+				roots << @groups.find { |g| not o[g] }
 			end
 		end
 
-		# now all nodes have a relative order, which may be negative
-		# extract real roots from that (root iff no from with lower order)
-		roots = @groups.find_all { |g| not g.from.find { |gg| o[gg] < o[g] } }
-		# recompute real order from these roots
-		@order = {}
-		todo = []
-		roots.each { |g|
-			@order[g] = 0
-			todo |= g.to
-		}
-		todo -= roots
-		until todo.empty?
-			if not n = todo.find { |g| g.from.all? { |gg| @order[gg] } }
-				# try to find cycle heads, starting from highest order parent
-				# take additionnal steps to avoid selecting a top node that should be
-				# child of some other loop
-				# eg 1 -> 4 ; 1 -> 2 -> <cycle> -> 4  => start with the cycle, and not 4
-				cheads = todo.sort_by { |g| g.from.map { |gg| @order[gg] }.compact.max || @groups.length }
-				n = cheads.first
-				cheads.each_with_index { |g, i|
-					next if cheads[i+1..-1].find { |gg|
-						can_find_path(gg, g) and not can_find_path(g, gg)
-					}
-					n = g
-					break
-				}
+		if o.values.find { |rank| rank < 0 }
+			# hit a pathological case, restart with found roots
+			roots = @groups.find_all { |g| not g.from.find { |gg| o[gg] < o[g] } }
+			o = {}
+			todo = []
+			roots.each { |g|
+				o[g] ||= 0
+				todo |= g.to.find_all { |gg| not o[gg] }
+			}
+			until todo.empty?
+				n = todo.find { |g| g.from.all? { |gg| o[gg] } } || solve_cycle[]
+				todo.delete n
+				o[n] = n.from.map { |g| o[g] }.compact.max + 1
+				todo |= n.to.find_all { |g| not o[g] }
 			end
-			todo.delete n
-			@order[n] = n.from.map { |g| @order[g] }.compact.max + 1
-			todo |= n.to.find_all { |g| not @order[g] }
+
+			# there's something screwy around here !
+			raise "moo" if o.length < @groups.length
 		end
-		raise if @order.length != @groups.length
+
+		@order = o
 	end
 
-	# checks if there is a path from src to dst
-	def can_find_path(src, dst)
+	# checks if there is a path from src to dst avoiding stuff in 'done'
+	def can_find_path(src, dst, done={})
 		todo = [src]
-		done = {}
 		while g = todo.pop
+			next if done[g]
 			return true if g == dst
-			todo.concat g.to unless done[g]
 			done[g] = true
+			todo.concat g.to
 		end
 	end
 
@@ -535,10 +536,10 @@ class Graph
 			min_y = b.from.map { |bb|
 					bb.y+bb.h
 				}.find_all { |by|
-					by < b.y
+					by <= b.y
 				}.max
 
-			margin_y = 12 + 8 * [b.from.length, b.from[0].to.length].max
+			margin_y = 16 + 8 * [b.from.length, b.from[0].to.length].max
 
 			next if not min_y or b.y <= min_y + margin_y
 
