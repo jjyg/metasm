@@ -539,7 +539,14 @@ class Graph
 					by <= b.y
 				}.max
 
-			margin_y = 16 + 8 * [b.from.length, b.from[0].to.length].max
+			moo = []
+			moo << 8*b.from.length
+			moo << 8*b.from[0].to.length
+			cx = b.x+b.w/2
+			moo << b.from.map { |bb| (cx - (bb.x+bb.w/2)).abs }.max / 10
+			cx = b.from[0].x+b.from[0].w/2
+			moo << b.from[0].to.map { |bb| (cx - (bb.x+bb.w/2)).abs }.max / 10
+			margin_y = 16 + moo.max
 
 			next if not min_y or b.y <= min_y + margin_y
 
