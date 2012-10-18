@@ -1389,7 +1389,7 @@ class Disassembler
 				elsif soff.lexpr.kind_of?(Expression) and soff.lexpr.op == :* and soff.lexpr.lexpr == @cpu.size/8
 					soff = soff.rexpr
 				end
-			elsif soff.kind_of?(Symbol)
+			elsif soff.kind_of?(::Symbol)
 				# array with 1 byte elements?
 				if ctx[sname]
 					soff = 0
@@ -1417,6 +1417,9 @@ class Disassembler
 				next unless sname.kind_of?(::String) and soff.kind_of?(::Integer)
 				next if not st = c_parser.toplevel.struct[sname]
 
+				# ignore lea esi, [esi+0]
+				next if soff == 0 and not di.backtrace_binding.find { |k, v| v-k != 0 }
+
 				# TODO if trace[b] offset != 0, we had a lea reg, [struct+substruct_off], tweak str accordingly
 
 				# resolve struct + off into struct.membername
@@ -1428,8 +1431,7 @@ class Disassembler
 				@cpu.instr_args_memoryptr_setoffset(ind, ExpressionString.new(imm, str, :structoff))
 
 				# check if the type is an enum/bitfield, patch instruction immediates
-				# TODO include that somehow in 'trace' (eg mov reg, [ptr+enum_member] ; cmp reg, 42 => enum)
-				trace_update_reg_structptr_arg_enum(di, mb, str) if mb
+				trace_update_reg_structptr_arg_enum(di, ind, mb, str) if mb
 			}
 
 			# check if we need to trace 'r' further
@@ -1477,52 +1479,91 @@ class Disassembler
 
 	# found a special member of a struct, check if we can apply
 	# bitfield/enum name to other constants in the di
-	def trace_update_reg_structptr_arg_enum(di, mb, str)
-		if ename = mb.has_attribute_var('enum') and enum = c_parser.toplevel.struct[ename] and enum.kind_of?(C::Enum) and
-				num = di.instruction.args.grep(Expression).first and num_i = num.reduce and num_i.kind_of?(::Integer)
-			# handle enum values on tagged structs
-			if enum.members and name = enum.members.index(num_i)
-				num.lexpr = nil
-				num.op = :+
-				num.rexpr = ExpressionString.new(Expression[num_i], name, :enum)
-				di.add_comment "enum::#{ename}"
-			end
-
-		elsif mb.untypedef.kind_of?(C::Struct) and num = di.instruction.args.grep(Expression).first and
-			num_i = num.reduce and num_i.kind_of?(::Integer)
-			# handle bitfields:
-			#  add comment on 'test [eax+member.bitfield], 0x10'
-			# XXX little-endian only
-			if str =~ /\+(\d+)$/
-				# test byte [bitfield+1], 0x1  =>  test dword [bitfield], 0x100
-				off = $1.to_i
-				num_i <<= off*8
-				str[/\+\d+$/] = ''
-			end
-
-			# TODO handle ~num_i 
-			num_left = num_i
-			s_or = []
-			mb.untypedef.members.each { |mm|
-				if bo = mb.bitoffsetof(c_parser, mm)
-					boff, blen = bo
-					if mm.name && blen == 1 && ((num_i >> boff) & 1) > 0
-						s_or << mm.name
-						num_left &= ~(1 << boff)
+	def trace_update_reg_structptr_arg_enum(di, ind, mb, str)
+		if ename = mb.has_attribute_var('enum') and enum = c_parser.toplevel.struct[ename] and enum.kind_of?(C::Enum)
+			# handle enums: struct moo { int __attribute__((enum(bla))) fld; };
+			doit = lambda { |_di|
+				if num = _di.instruction.args.grep(Expression).first and num_i = num.reduce and num_i.kind_of?(::Integer)
+					# handle enum values on tagged structs
+					if enum.members and name = enum.members.index(num_i)
+						num.lexpr = nil
+						num.op = :+
+						num.rexpr = ExpressionString.new(Expression[num_i], name, :enum)
+						_di.add_comment "enum::#{ename}" if _di.address != di.address
 					end
 				end
 			}
-			if s_or.first
-				num.lexpr = nil
-				num.op = :+
-					if num_left != 0
-						s_or << ('0x%X' % num_left)
-					end
-				str = s_or.join('|')
-				num.rexpr = ExpressionString.new(Expression[num_i], str, :bitfield)
-				di.add_comment 'bitfield'
+
+			doit[di]
+
+			# mov eax, [ptr+struct.enumfield]  =>  trace eax
+			if reg = @cpu.instr_args_regs(di).find { |r| v = di.backtrace_binding[r.symbolic] and (v - ind.symbolic) == 0 }
+				reg = reg.symbolic
+				trace_function_register(di.address, reg => Expression[0]) { |_di, r, val, trace|
+					next if r != reg and val != Expression[reg]
+					doit[_di]
+					val
+				}
 			end
 
+		elsif mb.untypedef.kind_of?(C::Struct)
+			# handle bitfields
+
+			byte_off = 0
+			if str =~ /\+(\d+)$/
+				# test byte [bitfield+1], 0x1  =>  test dword [bitfield], 0x100
+				# XXX little-endian only
+				byte_off = $1.to_i
+				str[/\+\d+$/] = ''
+			end
+			cmt = str.split('.')[-2, 2].join('.')
+
+			doit = lambda { |_di, add|
+				if num = _di.instruction.args.grep(Expression).first and num_i = num.reduce and num_i.kind_of?(::Integer)
+					# TODO handle ~num_i 
+					num_left = num_i << add
+					s_or = []
+					mb.untypedef.members.each { |mm|
+						if bo = mb.bitoffsetof(c_parser, mm)
+							boff, blen = bo
+							if mm.name && blen == 1 && ((num_left >> boff) & 1) > 0
+								s_or << mm.name
+								num_left &= ~(1 << boff)
+							end
+						end
+					}
+					if s_or.first
+						if num_left != 0
+							s_or << ('0x%X' % num_left)
+						end
+						s = s_or.join('|')
+						num.lexpr = nil
+						num.op = :+
+						num.rexpr = ExpressionString.new(Expression[num_i], s, :bitfield)
+						_di.add_comment cmt if _di.address != di.address
+					end
+				end
+			}
+
+			doit[di, byte_off*8]
+
+			if reg = @cpu.instr_args_regs(di).find { |r| v = di.backtrace_binding[r.symbolic] and (v - ind.symbolic) == 0 }
+				reg = reg.symbolic
+				trace_function_register(di.address, reg => Expression[0]) { |_di, r, val, trace|
+					if r.kind_of?(Expression) and r.op == :&
+					       if r.lexpr == reg
+						       # test al, 42
+						       doit[_di, byte_off*8]
+					       elsif r.lexpr.kind_of?(Expression) and r.lexpr.op == :>> and r.lexpr.lexpr == reg
+						       # test ah, 42
+						       doit[_di, byte_off*8+r.lexpr.rexpr]
+					       end
+					end
+					next if r != reg and val != Expression[reg]
+					doit[_di, byte_off*8]
+					_di.address == di.address && r == reg ? Expression[0] : val
+				}
+			end
 		end
 	end
 
