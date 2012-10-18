@@ -186,7 +186,7 @@ class Graph
 			 (g.to[1].to.length == 1 and g.to[1].to[0] == g.to[0] and g.to[1].from.length == 1))
 		}
 
-		if head.to[0].from.length == 1
+		if head.to[0].to.length == 1 and head.to[0].to[0] == head.to[1]
 			ten = head.to[0]
 		else
 			ten = head.to[1]
@@ -200,7 +200,7 @@ class Graph
 		head.y -= ten.h/2
 
 		# widen 'if'
-		dw = 2*ten.w - head.w
+		dw = ten.w - head.w
 		if dw > 0
 			# need to widen head to fit ten
 			head.w += dw
@@ -208,12 +208,11 @@ class Graph
 		end
 
 		# merge
-		ten.content.each { |g| g.x += -ten.x }
+		dx = -ten.x
+		ten.content.each { |g| g.x += dx }
 		head.content.concat ten.content
 		head.to.delete ten
 		head.to[0].from.delete ten
-
-		# XXX now head is too wide on the left side
 
 		@groups.delete ten
 
