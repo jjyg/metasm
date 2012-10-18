@@ -439,23 +439,23 @@ class DrawableWidget < Gtk::DrawingArea
 			return if ex.abs > 0x7000 and ((ex < 0) == (x < 0))
 			ox = x
 			x = ((x > 0) ? 0x7000 : -0x7000)
-			y += (x-ox)*(ey-y)/(ex-ox)
+			y = ey+(x-ex)*(y-ey)/(ox-ex)
 		end
 		if ex.abs > 0x7000
 			oex = ex
 			ex = ((ex > 0) ? 0x7000 : -0x7000)
-			ey += (ex-oex)*(y-ey)/(x-oex)
+			ey = y+(ex-x)*(ey-y)/(oex-x)
 		end
 		if y.abs > 0x7000
 			return if ey.abs > 0x7000 and ((ey < 0) == (y < 0))
 			oy = y
 			y = ((y > 0) ? 0x7000 : -0x7000)
-			x += (y-oy)*(ex-x)/(ey-oy)
+			x = ex+(y-ey)*(x-ex)/(oy-ey)
 		end
 		if ey.abs > 0x7000
 			oey = ey
 			ey = ((ey > 0) ? 0x7000 : -0x7000)
-			ex += (ey-oey)*(x-ey)/(y-oey)
+			ex = x+(ey-y)*(ex-x)/(oey-y)
 		end
 
 		@w.draw_line(@gc, x, y, ex, ey)
