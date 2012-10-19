@@ -1299,7 +1299,6 @@ class Disassembler
 						end
 					elsif trace_state[r]
 						# started on mov reg, foo
-						# XXX what do we do on start_addr: mov reg, [reg+4] ?
 						next if di.address == start_addr
 						update[r] = false
 					end
@@ -1400,6 +1399,7 @@ class Disassembler
 			end
 		}
 
+		lastdi = nil
 		trace_function_register(addr, reg => Expression[structname, :+, structoff]) { |di, r, val, trace|
 
 			next if r.to_s =~ /flag/	# XXX maybe too ia32-specific?
@@ -1432,10 +1432,14 @@ class Disassembler
 
 				# check if the type is an enum/bitfield, patch instruction immediates
 				trace_update_reg_structptr_arg_enum(di, ind, mb, str) if mb
-			}
+			} if lastdi != di.address
+			lastdi = di.address
+
+			next Expression[structname, :+, structoff] if di.address == addr and r == reg
 
 			# check if we need to trace 'r' further
 			val = val.reduce_rec if val.kind_of?(Expression)
+			val = Expression[val] if val.kind_of?(::String)
 			case val
 			when Expression
 				# only trace trivial structptr+off expressions
@@ -1471,7 +1475,6 @@ class Disassembler
 					# full C type support would be better, but harder to fit in an Expr
 					Expression[sname[0...-1]]
 				end
-
 			# in other cases, stop trace
 			end
 		}
