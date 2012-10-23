@@ -1287,7 +1287,7 @@ class Disassembler
 				di = args[2]
 				update = {}
 				get_fwdemu_binding(di).each { |r, v|
-					if v.externals.find { |e| trace_state[e] }
+					if v.kind_of?(Expression) and v.externals.find { |e| trace_state[e] }
 						# XXX may mix old (from trace) and current (from v) registers
 						newv = v.bind(trace_state)
 						update[r] = yield(di, r, newv, trace_state)
