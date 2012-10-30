@@ -68,8 +68,18 @@ class GdbClient
 		buf = nil
 
 		while @recv_ctx
-			return unless IO.select([@io], nil, nil, timeout)
-			raise Errno::EPIPE if not c = @io.read(1)
+			if !@recv_ctx[:rbuf]
+				return unless IO.select([@io], nil, nil, timeout)
+				if @io.kind_of?(UDPSocket)
+					raise Errno::EPIPE if not @recv_ctx[:rbuf] = @io.recvfrom(65536)[0]
+				else
+					raise Errno::EPIPE if not c = @io.read(1)
+				end
+			end
+			if @recv_ctx[:rbuf]
+				c = @recv_ctx[:rbuf].slice!(0, 1)
+				@recv_ctx.delete :rbuf if @recv_ctx[:rbuf] == ''
+			end
 
 			case @recv_ctx[:state]
 			when :nosync
