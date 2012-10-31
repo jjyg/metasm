@@ -262,7 +262,7 @@ class LinDebug
 
 		addrsz = @rs.register_size[@rs.register_pc]
 		addrfmt = "%0#{addrsz/4}X"
-		if not @rs.addr2module(addr)
+		if not @rs.addr2module(addr) and @rs.shortname != 'gdbremotedebugger'
 			base = addr & ((1 << addrsz) - 0x1000)
 			@noelfsig ||= {}	# cache elfmagic notfound
 			if not @noelfsig[base] and base < ((1 << addrsz) - 0x1_0000)
@@ -707,6 +707,6 @@ if $0 == __FILE__
 	else
 		rs = Metasm::LinDebugger.new(ARGV.join(' '))
 	end
-	rs.loadmap(opts[:filemap]) if opts[:filemap]
+	rs.load_map(opts[:filemap]) if opts[:filemap]
 	LinDebug.new(rs).main_loop
 end
