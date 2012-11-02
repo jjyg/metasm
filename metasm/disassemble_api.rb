@@ -1415,7 +1415,7 @@ class Disassembler
 				# check expr has the form 'traced_struct_reg + off'
 				expr_to_sname[trace[b] + imm]	# Expr#+ calls Expr#reduce
 				next unless sname.kind_of?(::String) and soff.kind_of?(::Integer)
-				next if not st = c_parser.toplevel.struct[sname]
+				next if not st = c_parser.toplevel.struct[sname] or not st.kind_of?(C::Union)
 
 				# ignore lea esi, [esi+0]
 				next if soff == 0 and not di.backtrace_binding.find { |k, v| v-k != 0 }
@@ -1455,7 +1455,7 @@ class Disassembler
 
 				next unless sname.kind_of?(::String) and soff.kind_of?(::Integer)
 
-				if st = c_parser.toplevel.struct[sname]
+				if st = c_parser.toplevel.struct[sname] and st.kind_of?(C::Union)
 					pt = st.expand_member_offset(c_parser, soff, '')
 					pt = pt.untypedef if pt
 					if pt.kind_of?(C::Pointer)
@@ -1519,7 +1519,7 @@ class Disassembler
 				byte_off = $1.to_i
 				str[/\+\d+$/] = ''
 			end
-			cmt = str.split('.')[-2, 2].join('.')
+			cmt = str.split('.')[-2, 2].join('.') if str.count('.') > 1
 
 			doit = lambda { |_di, add|
 				if num = _di.instruction.args.grep(Expression).first and num_i = num.reduce and num_i.kind_of?(::Integer)
