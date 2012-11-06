@@ -1799,6 +1799,7 @@ class DrawableWidget < WinWidget
 			:orange => 'fc8',
        	}
 	attr_accessor :buttons, :parent_widget
+	attr_accessor :default_color_association
 
 	def initialize(*a, &b)
 		@color = {}
