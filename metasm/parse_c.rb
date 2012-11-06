@@ -398,7 +398,7 @@ module C
 		# works for Struct/Union/Array
 		def expand_member_offset(c_parser, off, str)
 			# XXX choose in members, check sizeof / prefer structs
-			m = struct.members.first
+			m = @members.first
 			str << '.' << m.name if m.name
 			if m.type.respond_to?(:expand_member_offset)
 				m.type.expand_member_offset(c_parser, off, str)
