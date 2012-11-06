@@ -190,10 +190,13 @@ class DrawableWidget < Gtk::DrawingArea
 	}
 
 	BasicColor = {	:white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
-			:red => 'f00', :darkred => '800', :palered => 'fcc',
-			:green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
-			:blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			:yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc' }
+			:red => 'f44', :darkred => '800', :palered => 'faa',
+			:green => '4f4', :darkgreen => '080', :palegreen => 'afa',
+			:blue => '44f', :darkblue => '008', :paleblue => 'aaf',
+			:yellow => 'ff4', :darkyellow => '440', :paleyellow => 'ffa',
+			:orange => 'fc8', 
+
+	}
 
 	def initialize(*a, &b)
 		@parent_widget = nil
@@ -332,12 +335,19 @@ class DrawableWidget < Gtk::DrawingArea
 
 	# change the color association
 	# arg is a hash function symbol => color symbol
-	# color must be allocated
 	# check #initialize/sig('realize') for initial function/color list
+	# if called before the widget is first displayed onscreen, will register a hook to re-call itself later
 	def set_color_association(hash)
-		hash.each { |k, v| @color[k] = color(v) }
-		modify_bg Gtk::STATE_NORMAL, @color[:background]
-		gui_update
+		if not realized?
+			sid = signal_connect('realize') {
+				signal_handler_disconnect(sid)
+				set_color_association(hash)
+			}
+		else
+			hash.each { |k, v| @color[k] = color(v) }
+			modify_bg Gtk::STATE_NORMAL, @color[:background]
+			gui_update
+		end
 	end
 
 	def new_menu

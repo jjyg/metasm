@@ -1792,10 +1792,12 @@ class DrawableWidget < WinWidget
 	include TextWidget
 
 	BasicColor = {	:white => 'fff', :palegrey => 'ddd', :black => '000', :grey => '444',
-			:red => 'f00', :darkred => '800', :palered => 'fcc',
-			:green => '0f0', :darkgreen => '080', :palegreen => 'cfc',
-			:blue => '00f', :darkblue => '008', :paleblue => 'ccf',
-			:yellow => 'ff0', :darkyellow => '440', :paleyellow => 'ffc' }
+			:red => 'f44', :darkred => '800', :palered => 'faa',
+			:green => '4f4', :darkgreen => '080', :palegreen => 'afa',
+			:blue => '44f', :darkblue => '008', :paleblue => 'aaf',
+			:yellow => 'ff4', :darkyellow => '440', :paleyellow => 'ffa',
+			:orange => 'fc8',
+       	}
 	attr_accessor :buttons, :parent_widget
 
 	def initialize(*a, &b)
