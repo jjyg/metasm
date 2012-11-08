@@ -47,7 +47,8 @@ if gui
 		:caret         => :base0,
 		:label         => :violet,
 		:address       => :blue,
-		:hl_word       => :base0C,
+		:hl_word_bg    => :white,
+		:hl_word       => :black,
 	}
 
 	specific = {
@@ -89,6 +90,7 @@ if gui
 			:arrow_uncond  => :cyan,
 			:arrow_direct  => :blue,
 			:arrow_hl      => :orange,
+			:box_bg_shadow => '000000',
 		},
 
 		:hex => {

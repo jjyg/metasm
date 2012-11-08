@@ -1922,6 +1922,23 @@ class DrawableWidget < WinWidget
 		draw_string(x, y, text)
 	end
 
+	# same as draw_string_color + hilight @hl_word_re
+	def draw_string_hl(col, x, y, str)
+		if @hl_word
+			while str =~ @hl_word_re
+				s1, s2 = $1, $2
+				draw_string_color(col, x, y, s1)
+				x += s1.length*@font_width
+				hl_w = s2.length*@font_width
+				draw_rectangle_color(:hl_word_bg, x, y, hl_w, @font_height)
+				draw_string_color(:hl_word, x, y, s2)
+				x += hl_w
+				str = str[s1.length+s2.length..-1]
+			end
+		end
+		draw_string_color(col, x, y, str)
+	end
+
 	def keyboard_state(query=nil)
 		case query
 		when :control, :ctrl

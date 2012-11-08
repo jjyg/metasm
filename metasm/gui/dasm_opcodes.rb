@@ -24,7 +24,8 @@ class AsmOpcodeWidget < DrawableWidget
 
 		@default_color_association = { :comment => :darkblue, :label => :darkgreen, :text => :black,
 			:instruction => :black, :address => :blue, :caret => :black, :raw_data => :black,
-			:background => :white, :cursorline_bg => :paleyellow, :hl_word => :palered }
+			:background => :white, :cursorline_bg => :paleyellow, :hl_word_bg => :palered,
+	       		:hl_word => :black }
 	end
 
 	def resized(w, h)
@@ -124,19 +125,7 @@ class AsmOpcodeWidget < DrawableWidget
 		# must not include newline
 		render = lambda { |str, color|
 			fullstr << str
-			if @hl_word
-				stmp = str
-				pre_x = 0
-				while stmp =~ @hl_word_re
-					s1, s2 = $1, $2
-					pre_x += s1.length * @font_width
-					hl_x = s2.length * @font_width
-					draw_rectangle_color(:hl_word, x+pre_x, y, hl_x, @font_height)
-					pre_x += hl_x
-					stmp = stmp[s1.length+s2.length..-1]
-				end
-			end
-			draw_string_color(color, x, y, str)
+			draw_string_hl(color, x, y, str)
 			x += str.length * @font_width
 		}
 

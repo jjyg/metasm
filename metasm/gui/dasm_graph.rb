@@ -613,9 +613,9 @@ class GraphViewWidget < DrawableWidget
 		@zoom = 1.0
 		@default_color_association = { :background => :paleblue, :hlbox_bg => :palegrey, :box_bg => :white,
 				:text => :black, :arrow_hl => :red, :comment => :darkblue, :address => :darkblue,
-				:instruction => :black, :label => :darkgreen, :caret => :black, :hl_word => :palered,
-				:cursorline_bg => :paleyellow, :arrow_cond => :darkgreen, :arrow_uncond => :darkblue,
-			       	:arrow_direct => :darkred }
+				:instruction => :black, :label => :darkgreen, :caret => :black, :hl_word_bg => :palered,
+				:hl_word => :black, :cursorline_bg => :paleyellow, :arrow_cond => :darkgreen,
+				:arrow_uncond => :darkblue, :arrow_direct => :darkred, :box_bg_shadow => :black }
 		# @othergraphs = ?	(to keep user-specified formatting)
 	end
 
@@ -919,7 +919,7 @@ class GraphViewWidget < DrawableWidget
 	end
 
 	def set_color_boxshadow(b)
-		draw_color :black
+		draw_color :box_bg_shadow
 	end
 
 	def set_color_box(b)
@@ -964,19 +964,7 @@ class GraphViewWidget < DrawableWidget
 		# must not include newline
 		render = lambda { |str, color|
 			next if y >= w_h+2 or x >= w_w
-			if @hl_word
-				stmp = str
-				pre_x = 0
-				while stmp =~ @hl_word_re
-					s1, s2 = $1, $2
-					pre_x += s1.length * @font_width
-					hl_x = s2.length * @font_width
-					draw_rectangle_color(:hl_word, x+pre_x, y, hl_x, @font_height*@zoom)
-					pre_x += hl_x
-					stmp = stmp[s1.length+s2.length..-1]
-				end
-			end
-			draw_string_color(color, x, y, str)
+			draw_string_hl(color, x, y, str)
 			x += str.length * @font_width
 		}
 

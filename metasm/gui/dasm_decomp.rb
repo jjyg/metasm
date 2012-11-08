@@ -20,7 +20,7 @@ class CdecompListingWidget < DrawableWidget
 		@tabwidth = 8
 
 		@default_color_association = { :text => :black, :keyword => :blue, :caret => :black,
-			  :background => :white, :hl_word => :palered, :localvar => :darkred,
+			  :background => :white, :hl_word_bg => :palered, :hl_word => :black, :localvar => :darkred,
 			  :globalvar => :darkgreen, :intrinsic => :darkyellow }
 	end
 
@@ -91,19 +91,7 @@ class CdecompListingWidget < DrawableWidget
 		# must not include newline
 		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
-			if @hl_word
-				stmp = str
-				pre_x = 0
-				while stmp =~ @hl_word_re
-					s1, s2 = $1, $2
-					pre_x += s1.length*@font_width
-					hl_w = s2.length*@font_width
-					draw_rectangle_color(:hl_word, x+pre_x, y, hl_w, @font_height)
-					pre_x += hl_w
-					stmp = stmp[s1.length+s2.length..-1]
-				end
-			end
-			draw_string_color(color, x, y, str)
+			draw_string_hl(color, x, y, str)
 			x += str.length * @font_width
 		}
 

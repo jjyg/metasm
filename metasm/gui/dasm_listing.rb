@@ -30,7 +30,7 @@ class AsmListingWidget < DrawableWidget
 
 		@default_color_association = { :comment => :darkblue, :label => :darkgreen, :text => :black,
 			  :instruction => :black, :address => :blue, :caret => :black, :raw_data => :black,
-			  :background => :white, :cursorline_bg => :paleyellow, :hl_word => :palered,
+			  :background => :white, :cursorline_bg => :paleyellow, :hl_word_bg => :palered, :hl_word => :black,
 			  :arrows_bg => :palegrey, :arrow_up => :darkblue, :arrow_dn => :darkyellow, :arrow_hl => :red }
 	end
 
@@ -133,19 +133,7 @@ class AsmListingWidget < DrawableWidget
 		render = lambda { |str, color|
 			# function ends when we write under the bottom of the listing
 			next if not str or y >= w_h or x >= w_w
-			if @hl_word and @hl_word != ''
-				stmp = str
-				pre_x = 0
-				while stmp =~ @hl_word_re
-					s1, s2 = $1, $2
-					pre_x += s1.length * @font_width
-					hl_x = s2.length * @font_width
-					draw_rectangle_color(:hl_word, x+pre_x, y, hl_x, @font_height)
-					pre_x += hl_x
-					stmp = stmp[s1.length+s2.length..-1]
-				end
-			end
-			draw_string_color(color, x, y, str)
+			draw_string_hl(color, x, y, str)
 			x += str.length * @font_width
 		}
 

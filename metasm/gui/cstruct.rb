@@ -24,7 +24,7 @@ class CStructWidget < DrawableWidget
 		@structdepth = 2
 
 		@default_color_association = { :text => :black, :keyword => :blue, :caret => :black,
-			  :background => :white, :hl_word => :palered, :comment => :darkblue }
+			  :background => :white, :hl_word_bg => :palered, :hl_word => :black, :comment => :darkblue }
 	end
 
 	def click(x, y)
@@ -90,19 +90,7 @@ class CStructWidget < DrawableWidget
 				elsif cx < @view_x
 				else
 					t = t[(@view_x - cx + t.length)..-1] if cx-t.length < @view_x
-					if @hl_word
-						stmp = t
-						pre_x = 0
-						while stmp =~ @hl_word_re
-							s1, s2 = $1, $2
-							pre_x += s1.length*@font_width
-							hl_w = s2.length*@font_width
-							draw_rectangle_color(:hl_word, x+pre_x, y, hl_w, @font_height)
-							pre_x += hl_w
-							stmp = stmp[s1.length+s2.length..-1]
-						end
-					end
-					draw_string_color(c, x, y, t)
+					draw_string_hl(c, x, y, t)
 					x += t.length * @font_width
 				end
 			}
