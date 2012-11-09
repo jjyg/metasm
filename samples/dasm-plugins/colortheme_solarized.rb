@@ -120,4 +120,6 @@ if gui
 		nca = solarized.merge(legacy).merge(default).merge(cs)
 		view.set_color_association(nca)
 	}
+
+	true
 end

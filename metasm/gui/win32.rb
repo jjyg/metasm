@@ -1826,9 +1826,8 @@ class DrawableWidget < WinWidget
 	end
 
 	def set_color_association(hash)
-		hash.partition { |k, v| v.kind_of?(::String) }.each { |h|
-			h.each { |k, v| @color[k] = color(v) }
-		}
+		hord = Hash.new { |h, k| h[k] = (hash[k] ? h[hash[k]] + 1 : 0) }
+		hash.sort_by { |k, v| hord[k] }.each { |k, v| @color[k] = color(v) }
 		gui_update
 	end
 

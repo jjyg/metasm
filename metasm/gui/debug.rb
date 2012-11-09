@@ -30,7 +30,7 @@ class DbgWidget < ContainerVBoxWidget
 		oldcb = @code.bg_color_callback
 		@code.bg_color_callback = lambda { |a|
 			if a == @dbg.pc
-				'f88'
+				:red_bg
 				# TODO breakpoints & stuff
 			elsif oldcb; oldcb[a]
 			end
@@ -247,9 +247,8 @@ class DbgRegWidget < DrawableWidget
 
 		@reg_pos = []	# list of x y w h vx of the reg drawing on widget, vx is x of value
 	
-		@default_color_association = { :label => :black, :data => :blue, :write_pending => :darkred,
-				       	:changed => :darkgreen, :caret => :black, :background => :white,
-					:inactive => :palegrey }
+		@default_color_association = ColorTheme.merge :label => :text, :data => :blue, :write_pending => :darkred,
+				       	:changed => :green, :caret => :text, :inactive => :palegrey
 	end
 
 	def swapin_tid
@@ -496,8 +495,8 @@ class DbgConsoleWidget < DrawableWidget
 
 		@dbg.set_log_proc { |l| add_log l }
 
-		@default_color_association = { :log => :palegrey, :curline => :white, :caret => :yellow,
-			:background => :black, :status => :black, :status_bg => '088' }
+		@default_color_association = ColorTheme.merge :log => :palegrey, :curline => :white, :caret => :yellow,
+			:background => :black, :status => :black, :status_bg => '088'
 
 		init_commands
 	end
