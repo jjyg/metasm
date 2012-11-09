@@ -18,7 +18,11 @@ module Gui
 class DrawableWidget
 	ColorTheme = { :comment => :darkblue, :label => :darkgreen, :text => :black,
 			:instruction => :black, :address => :blue, :caret => :black, :background => :white,
-			:cursorline_bg => :paleyellow, :hl_word_bg => :palered, :hl_word => :black }
+			:cursorline_bg => :paleyellow, :hl_word_bg => :palered, :hl_word => :black,
+			:red_bg => 'f88', :green_bg => '8f8', :blue_bg => '88f',
+			:cyan_bg => '8ff', :magenta_bg => 'f8f', :yellow_bg => 'ff8',
+			:orange_bg => 'fc8'
+	}
 end
 
 # the main disassembler widget: this is a container for all the lower-level widgets that actually render the dasm state

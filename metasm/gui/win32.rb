@@ -1825,8 +1825,10 @@ class DrawableWidget < WinWidget
 		initialize_visible if respond_to? :initialize_visible
 	end
 
-	def set_color_association(h)
-		h.each { |k, v| @color[k] = color(v) }
+	def set_color_association(hash)
+		hash.partition { |k, v| v.kind_of?(::String) }.each { |h|
+			h.each { |k, v| @color[k] = color(v) }
+		}
 		gui_update
 	end
 

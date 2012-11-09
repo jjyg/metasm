@@ -33,6 +33,15 @@ if gui
 
 		:black   => '002b36',	# base03
 		:white   => '93a1a1',	# base1
+
+		:yellow_bg  => '5a591b',# approx mean with black + manual tweak
+		:orange_bg  => '553a16',
+		:red_bg     => '461b1d',
+		:magenta_bg => '69305c',
+		:violet_bg  => '364d7d',
+		:blue_bg    => '135a84',
+		:cyan_bg    => '156567',
+		:green_bg   => '16510b',
 	}
 
 	# all widget's colorscheme inherits from this one
@@ -104,7 +113,11 @@ if gui
 	gui.view_indexes.each { |v|
 		cs = specific[v] || {}
 		view = gui.view(v)
-		view.set_color_association(solarized)	# redefine basic colors (black/white/..)
-		view.set_color_association(view.default_color_association.merge(default).merge(cs))
+		# keep original view ':foo => :text' colors
+		legacy = view.default_color_association.dup
+		# but discard actual color defs (still present as fallback anyway)
+		legacy.delete_if { |k, v| v.kind_of?(::String) }
+		nca = solarized.merge(legacy).merge(default).merge(cs)
+		view.set_color_association(nca)
 	}
 end

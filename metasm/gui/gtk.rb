@@ -344,7 +344,9 @@ class DrawableWidget < Gtk::DrawingArea
 				set_color_association(hash)
 			}
 		else
-			hash.each { |k, v| @color[k] = color(v) }
+			hash.partition { |k, v| v.kind_of?(::String) }.each { |h|
+				h.each { |k, v| @color[k] = color(v) }
+			}
 			modify_bg Gtk::STATE_NORMAL, @color[:background]
 			gui_update
 		end

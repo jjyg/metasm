@@ -7,9 +7,9 @@
 # metasm dasm GUI plugin: hilight lines of code based on the opcode name
 if gui
 	@gui_opcode_color = {
-		:call => :green,
-		:jmp  => :palered,
-		:jcc  => :orange,
+		:call => :green_bg,
+		:jmp  => :red_bg,
+		:jcc  => :orange_bg,
 	}
 
 	obg = gui.bg_color_callback	# chain old callback
