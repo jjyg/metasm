@@ -161,6 +161,8 @@ class Debugger
 		initialize_newtid
 	end
 
+	def dasm; disassembler; end
+
 	def shortname; self.class.name.split('::').last.downcase; end
 
 	attr_reader :pid
