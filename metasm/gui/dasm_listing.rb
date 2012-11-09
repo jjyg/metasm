@@ -28,10 +28,8 @@ class AsmListingWidget < DrawableWidget
 		@maxaddr = (addrs.max + @dasm.sections[addrs.max].length rescue (1 << @dasm.cpu.size))
 		@startaddr = @dasm.prog_binding['entrypoint'] || @minaddr
 
-		@default_color_association = { :comment => :darkblue, :label => :darkgreen, :text => :black,
-			  :instruction => :black, :address => :blue, :caret => :black, :raw_data => :black,
-			  :background => :white, :cursorline_bg => :paleyellow, :hl_word_bg => :palered, :hl_word => :black,
-			  :arrows_bg => :palegrey, :arrow_up => :darkblue, :arrow_dn => :darkyellow, :arrow_hl => :red }
+		@default_color_association = ColorTheme.merge :raw_data => :black, :arrows_bg => :palegrey,
+			:arrow_up => :darkblue, :arrow_dn => :darkyellow, :arrow_hl => :red
 	end
 
 	def resized(w, h)

@@ -611,11 +611,9 @@ class GraphViewWidget < DrawableWidget
 		@want_focus_addr = nil
 		@margin = 8
 		@zoom = 1.0
-		@default_color_association = { :background => :paleblue, :hlbox_bg => :palegrey, :box_bg => :white,
-				:text => :black, :arrow_hl => :red, :comment => :darkblue, :address => :darkblue,
-				:instruction => :black, :label => :darkgreen, :caret => :black, :hl_word_bg => :palered,
-				:hl_word => :black, :cursorline_bg => :paleyellow, :arrow_cond => :darkgreen,
-				:arrow_uncond => :darkblue, :arrow_direct => :darkred, :box_bg_shadow => :black }
+		@default_color_association = ColorTheme.merge :hlbox_bg => :palegrey, :box_bg => :white,
+				:arrow_hl => :red, :arrow_cond => :darkgreen, :arrow_uncond => :darkblue,
+				:arrow_direct => :darkred, :box_bg_shadow => :black, :background => :paleblue
 		# @othergraphs = ?	(to keep user-specified formatting)
 	end
 

@@ -15,6 +15,12 @@ require 'metasm/gui/cstruct'
 
 module Metasm
 module Gui
+class DrawableWidget
+	ColorTheme = { :comment => :darkblue, :label => :darkgreen, :text => :black,
+			:instruction => :black, :address => :blue, :caret => :black, :background => :white,
+			:cursorline_bg => :paleyellow, :hl_word_bg => :palered, :hl_word => :black }
+end
+
 # the main disassembler widget: this is a container for all the lower-level widgets that actually render the dasm state
 class DisasmWidget < ContainerChoiceWidget
 	attr_accessor :entrypoints, :gui_update_counter_max

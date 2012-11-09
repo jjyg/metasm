@@ -19,8 +19,8 @@ class CoverageWidget < DrawableWidget
 		@section_x = []
 		@slave = nil	# another dasmwidget whose curaddr is kept sync
 
-		@default_color_association = { :caret => :yellow, :caret_col => :darkyellow,
-			:background => :palegrey, :code => :red, :data => :blue }
+		@default_color_association = ColorTheme.merge :caret => :yellow, :caret_col => :darkyellow,
+			:background => :palegrey, :code => :red, :data => :blue
 	end
 
 	def click(x, y)

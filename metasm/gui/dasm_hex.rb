@@ -42,9 +42,8 @@ class HexWidget < DrawableWidget
 		@relative_addr = nil	# show '+42h' in the addr column if not nil
 		@hl_curbyte = true	# draw grey bg for current byte
 
-		@default_color_association = { :ascii => :black, :data => :black,
-			  :address => :blue, :caret => :black, :background => :white,
-			  :write_pending => :darkred, :caret_mirror => :palegrey }
+		@default_color_association = ColorTheme.merge :ascii => :black, :data => :black,
+			  :write_pending => :darkred, :caret_mirror => :palegrey
 	end
 
 	def resized(w=width, h=height)

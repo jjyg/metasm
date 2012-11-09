@@ -22,10 +22,7 @@ class AsmOpcodeWidget < DrawableWidget
 		@view_max = @dasm.sections.map { |s, e| s + e.length }.max rescue nil
 		@view_addr = @dasm.prog_binding['entrypoint'] || @view_min || 0
 
-		@default_color_association = { :comment => :darkblue, :label => :darkgreen, :text => :black,
-			:instruction => :black, :address => :blue, :caret => :black, :raw_data => :black,
-			:background => :white, :cursorline_bg => :paleyellow, :hl_word_bg => :palered,
-	       		:hl_word => :black }
+		@default_color_association = ColorTheme.merge :raw_data => :black
 	end
 
 	def resized(w, h)

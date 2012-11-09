@@ -19,9 +19,8 @@ class CdecompListingWidget < DrawableWidget
 		@curaddr = nil
 		@tabwidth = 8
 
-		@default_color_association = { :text => :black, :keyword => :blue, :caret => :black,
-			  :background => :white, :hl_word_bg => :palered, :hl_word => :black, :localvar => :darkred,
-			  :globalvar => :darkgreen, :intrinsic => :darkyellow }
+		@default_color_association = ColorTheme.merge :keyword => :blue, :localvar => :darkred,
+			:globalvar => :darkgreen, :intrinsic => :darkyellow
 	end
 
 	def curfunc

@@ -23,8 +23,7 @@ class CStructWidget < DrawableWidget
 		@cwidth = @cheight = 1	# widget size in chars
 		@structdepth = 2
 
-		@default_color_association = { :text => :black, :keyword => :blue, :caret => :black,
-			  :background => :white, :hl_word_bg => :palered, :hl_word => :black, :comment => :darkblue }
+		@default_color_association = ColorTheme.merge :keyword => :blue
 	end
 
 	def click(x, y)
