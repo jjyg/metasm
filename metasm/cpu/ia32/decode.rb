@@ -1185,6 +1185,10 @@ class Ia32
 		binding = {}
 		bt = lambda { |from, expr, inc_start|
 			ret = dasm.backtrace(Expression[expr], from, :snapshot_addr => entry, :include_start => inc_start)
+			if ret.length == 2
+				# backtrace() will preserve the formal Indirection even when resolved, ignore that bit here
+				ret.delete_if { |e| Expression[e].reduce_rec.kind_of?(::Indirection) }
+			end
 			ret.length == 1 ? ret.first : Expression::Unknown
 		}
 
