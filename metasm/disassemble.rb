@@ -1796,7 +1796,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expression[origin] if origin}" if debug_backtrace
 		result = backtrace_value(expr, maxdepth)
 		# keep the ori pointer in the results to emulate volatile memory (eg decompiler prefers this)
-		#result << expr if not type	# XXX returning multible values for nothing is too confusing, TODO fix decompiler
+		#result << expr if not type	# XXX returning multiple values for nothing is too confusing, TODO fix decompiler
 		result.uniq!
 
 		# create xrefs/labels
