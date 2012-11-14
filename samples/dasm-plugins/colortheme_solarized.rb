@@ -116,7 +116,7 @@ if gui
 		# keep original view ':foo => :text' colors
 		legacy = view.default_color_association.dup
 		# but discard actual color defs (still present as fallback anyway)
-		legacy.delete_if { |k, v| v.kind_of?(::String) }
+		legacy.delete_if { |k, c| c.kind_of?(::String) }
 		nca = solarized.merge(legacy).merge(default).merge(cs)
 		view.set_color_association(nca)
 	}
