@@ -468,12 +468,14 @@ class GdbRemoteDebugger < Debugger
 	end
 
 	def get_reg_value(r)
+		r = r.to_sym
 		return @reg_val_cache[r] || 0 if @state != :stopped
 		sync_regs
 		@reg_val_cache = @gdb.read_regs || {} if @reg_val_cache.empty?
 		@reg_val_cache[r] || 0
 	end
 	def set_reg_value(r, v)
+		r = r.to_sym
 		@reg_val_cache[r] = v
 		@regs_dirty = true
 	end
