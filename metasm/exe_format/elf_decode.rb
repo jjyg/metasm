@@ -716,6 +716,33 @@ class ELF
 		Metasm::Relocation.new(Expression[target], sz, @endianness) if target
 	end
 
+	def arch_decode_segments_reloc_sh(reloc)
+		if reloc.symbol.kind_of?(Symbol) and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
+			s = @sections.find { |s_| s_.name and s_.offset <= @encoded.ptr and s_.offset + s_.size > @encoded.ptr }
+			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
+		end
+
+		original_word = decode_word
+
+		# decode addend if needed
+		case reloc.type
+		when 'NONE' # no addend
+		else addend = reloc.addend || Expression.make_signed(original_word, 32)
+		end
+
+		case reloc.type
+		when 'NONE'
+		when 'GLOB_DAT', 'JMP_SLOT'
+			target = reloc_target(reloc)
+			target = Expression[target, :+, addend] if addend and addend != 0
+		else
+			puts "W: Elf: unhandled SH reloc #{reloc.inspect}" if $VERBOSE
+			target = nil
+		end
+
+		Metasm::Relocation.new(Expression[target], :u32, @endianness) if target
+	end
+
 	class DwarfDebug
 		# decode a DWARF2 'compilation unit'
 		def decode(elf, info, abbrev, str)
@@ -907,6 +934,7 @@ class ELF
 		when 'MIPS'; (@header.flags.include?('32BITMODE') ? MIPS64 : MIPS).new @endianness
 		when 'PPC'; PPC.new
 		when 'ARM'; ARM.new
+		when 'SH'; Sh4.new
 		else raise "unsupported cpu #{@header.machine}"
 		end
 	end

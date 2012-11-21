@@ -110,7 +110,6 @@ class Sh4
 			when :pr; PR.new
 			when :fpul; FPUL.new
 			when :fpscr; FPSCR.new
-			when :dbr; DBR.new
 			when :pc; PC.new
 
 			when :@rm, :@rn, :@disppc
