@@ -1011,6 +1011,11 @@ EOC
 				(d.address_binding[s.value] ||= {})[:$t9] ||= Expression[s.value]
 			}
 			d.function[:default] = @cpu.disassembler_default_func
+		when 'sh4'
+			noret = DecodedFunction.new
+			noret.noreturn = true
+			d.function[Expression['__stack_chk_fail']] = noret
+			d.function[:default] = @cpu.disassembler_default_func
 		end
 		d
 	end

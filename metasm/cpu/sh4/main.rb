@@ -257,6 +257,8 @@ class Sh4 < CPU
 			b = @base
 			b = b.symbolic if b.kind_of? Reg
 
+			b = Expression[b, :-, sz/8] if @action == :pre
+
 			if disp
 				o = @disp
 				o = o.symbolic if o.kind_of? Reg

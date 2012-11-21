@@ -142,18 +142,40 @@ class Sh4
 	def disassembler_default_func
 		df = DecodedFunction.new
 		df.backtrace_binding = {}
-		15.times { |i| df.backtrace_binding["r#{i}".to_sym] = Expression::Unknown }
+		13.times { |i| df.backtrace_binding["r#{i}".to_sym] = Expression::Unknown }
+		df.backtrace_binding[:r14] = Expression[:r14]
+		df.backtrace_binding[:r15] = Expression[:r15]
 		df.backtracked_for = [BacktraceTrace.new(Expression[:pr], :default, Expression[:pr], :x)]
 		df.btfor_callback = lambda { |dasm, btfor, funcaddr, calladdr|
 			if funcaddr != :default
 				btfor
 			elsif di = dasm.decoded[calladdr] and di.opcode.props[:saveip]
 				btfor
-			else []
+			else
+				[]
 			end
 		}
 		df
 	end
+
+	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist, *wantregs)
+		retaddrlist.map! { |retaddr| dasm.decoded[retaddr] ? dasm.decoded[retaddr].block.list.last.address : retaddr } if retaddrlist
+		b = f.backtrace_binding
+
+		bt_val = lambda { |r|
+			next if not retaddrlist
+			bt = []
+			b[r] = Expression::Unknown	# break recursive dep
+			retaddrlist.each { |retaddr|
+				bt |= dasm.backtrace(Expression[r], retaddr,
+					:include_start => true, :snapshot_addr => faddr, :origin => retaddr)
+			}
+			b[r] = ((bt.length == 1) ? bt.first : Expression::Unknown)
+		}
+		wantregs = GPR::Sym if wantregs.empty?
+		wantregs.map { |r| r.to_sym }.each(&bt_val)
+	end
+
 
 	# interprets a condition code (in an opcode name) as an expression
 	def decode_cmp_expr(di, a0, a1)
@@ -212,7 +234,7 @@ class Sh4
 			when 'clrt'; lambda { |di| { :t_bit => 0 }}
 			when 'clrmac'; lambda { |di| { :macl => 0, :mach => 0 }}
 			when 'jmp'; lambda { |di, a0| { :pc => a0 }}
-			when 'jsr'; lambda { |di, a0| { :pc => Expression[a0], :pr => Expression[di.address+2*2] }}
+			when 'jsr', 'bsr', 'bsrf'; lambda { |di, a0| { :pc => Expression[a0], :pr => Expression[di.address, :+, 2*2] }}
 			when 'dt'; lambda { |di, a0|
 				res = Expression[a0, :-, 1]
 				{ :a0 => res, :t_bit => Expression[res, :==, 0] }
@@ -252,8 +274,8 @@ class Sh4
 				shift_bit = Expression[a0, :&, 1]
 				{ a0 => Expression[a0, :>>, 1], :t_bit => shift_bit }
 			}
-			when 'sub';  lambda { |di, a0, a1| { a1 => Expression[a0, :-, a1] }}
-			when 'subc'; lambda { |di, a0, a1| { a1 => Expression[a0, :-, [a1, :-, :t_bit]] }}
+			when 'sub';  lambda { |di, a0, a1| { a1 => Expression[a1, :-, a0] }}
+			when 'subc'; lambda { |di, a0, a1| { a1 => Expression[a1, :-, [a0, :-, :t_bit]] }}
 			when 'and', 'and.b'; lambda { |di, a0, a1| { a1 => Expression[[a0, :&, mask[di]], :|, [[a1, :&, mask[di]]]] }}
 			when 'or', 'or.b';   lambda { |di, a0, a1| { a1 => Expression[[a0, :|, mask[di]], :|, [[a1, :&, mask[di]]]] }}
 			when 'xor', 'xor.b'; lambda { |di, a0, a1| { a1 => Expression[[a0, :|, mask[di]], :^, [[a1, :&, mask[di]]]] }}
@@ -283,12 +305,15 @@ class Sh4
 		if binding = backtrace_binding[di.opcode.basename]
 			bd = binding[di, *a] || {}
 			di.instruction.args.grep(Memref).each { |m|
-				if m.post
-					# TODO preincrement/postdecrement
-					bd.each { |k, v| bd[k] = v.bind(r => Expression[r, :+, 1]) }
-					bd[r] ||= Expression[r, :+, 1]
+				next unless r = m.base and r.kind_of?(GPR)
+				r = r.symbolic
+				case m.action
+				when :post
+					bd[r] ||= Expression[r, :+, di.opcode.props[:memsz]/8]
+				when :pre
+					bd[r] ||= Expression[r, :-, di.opcode.props[:memsz]/8]
 				end
-			} if false
+			}
 			bd
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
