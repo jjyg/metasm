@@ -260,8 +260,8 @@ class Sh4
 			when 'neg' ;  lambda { |di, a0, a1| { a1 => Expression[mask[di], :-, a0] }}
 			when 'negc' ; lambda { |di, a0, a1| { a1 => Expression[[[mask[di], :-, a0], :-, :t_bit], :&, mask[di]] }}
 			when 'not';   lambda { |di, a0, a1| { a1 => Expression[a0, :^, mask[di]] }}
-			when 'nop'; lambda { {} }
-			when /^b/; lambda { {} }	# branches
+			when 'nop'; lambda { |*a| {} }
+			when /^b/; lambda { |*a| {} }	# branches
 			end
 		}
 

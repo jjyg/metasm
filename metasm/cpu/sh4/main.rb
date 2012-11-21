@@ -272,12 +272,16 @@ class Sh4 < CPU
 
 		def render
 			if @disp
-				['@(', @base, ',', @disp, ')']
+				#['@(', @base, ',', @disp, ')']
+				['[', @base, '+', @disp, ']']
 			else
 				case @action
-				when :pre then ['@-', @base]
-				when :post then ['@', @base, '+']
-				else ['@', @base]
+				when :pre then ['[--', @base, ']']
+				when :post then ['[', @base, '++]']
+				else ['[', @base, ']']
+				#when :pre then ['@-', @base]
+				#when :post then ['@', @base, '+']
+				#else ['@', @base]
 				end
 			end
 		end
