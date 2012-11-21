@@ -196,6 +196,7 @@ class Sh4
 			when 'stc.w', 'stc.b', 'mov.w', 'mov.b'
 				lambda { |di, a0, a1| { a1 => Expression[a0, :&, mask[di]] }}
 			when 'movt'; lambda { |di, a0| { a0 => :t_bit }}
+			when 'mova'; lambda { |di, a0, a1| { a1 => Expression[a0] }}
 			when 'exts.b', 'exts.w', 'extu.w'
 				lambda { |di, a0, a1| { a1 => Expression[a0, :&, mask[di]] }}
 			when 'cmp/eq', 'cmp/ge', 'cmp/ge', 'cmp/gt', 'cmp/hi', 'cmp/hs'
@@ -306,6 +307,11 @@ class Sh4
 		val = case val
 		      when Reg; val.symbolic
 		      when Memref; arg.symbolic(di.address, 4)
+		      else val
+		      end
+
+		val = case di.instruction.opname
+		      when 'braf', 'bsrf'; Expression[[di.address, :+, 4], :+, val]
 		      else val
 		      end
 
