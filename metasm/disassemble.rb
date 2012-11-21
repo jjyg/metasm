@@ -1094,7 +1094,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		count = 0
 		while b = block_at(addr)
 			count += 1
-			return if count > 5 or b.list.length > 4
+			return if count > 5 or b.list.length > 5
 			if b.to_subfuncret and not b.to_subfuncret.empty?
 				return if b.to_subfuncret.length != 1
 				addr = normalize(b.to_subfuncret.first)
