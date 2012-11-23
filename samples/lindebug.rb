@@ -641,9 +641,9 @@ class LinDebug
 		@command['bpx'] = lambda { |str|
 			@rs.bpx @rs.resolve(str)
 		}
-		@command['bphw'] = lambda { |str|
+		@command['bphw'] = @command['hwbp'] = lambda { |str|
 			type, str = str.split(/\s+/, 2)
-			@rs.set_hwbp @rs.resolve(str.to_s), type
+			@rs.hwbp @rs.resolve(str.to_s), type
 		}
 		@command['bt'] = lambda { |str| @rs.stacktrace { |a,t| add_log "#{'%x' % a} #{t}" } }
 		@command['d'] =  lambda { |str| @dataptr = @rs.resolve(str) if str.length > 0 }
