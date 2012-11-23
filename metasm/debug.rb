@@ -14,7 +14,7 @@ class Debugger
 			:oneshot,
 			# current bp state: :active, :inactive (internal use), :disabled (user-specified)
 			:state,
-			# type: type of breakpoint (:bpx = soft, :hw = hard)
+			# type: type of breakpoint (:bpx = soft, :hwbp = hard, :bpm = memory)
 			:type,
 			# Expression if this is a conditionnal bp
 			# may be a Proc, String or Expression, evaluated every time the breakpoint hits

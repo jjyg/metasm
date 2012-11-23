@@ -557,7 +557,7 @@ class GdbRemoteDebugger < Debugger
 			else
 				@cpu.dbg_enable_bp(self, b)
 			end
-		when :hw
+		when :hwbp
 			@gdb.set_hwbp(b.internal[:type], b.address, b.internal[:len])
 		end
 	end
@@ -572,7 +572,7 @@ class GdbRemoteDebugger < Debugger
 			else
 				@cpu.dbg_disable_bp(self, b)
 			end
-		when :hw
+		when :hwbp
 			@gdb.unset_hwbp(b.internal[:type], b.address, b.internal[:len])
 		end
 	end
