@@ -521,6 +521,7 @@ class Debugger
 		h = { :type => :hwbp }
 		h[:hash_owner] = @breakpoint_thread
 		addr = resolve_expr(addr) if not addr.kind_of? ::Integer
+		mtype = mtype.to_sym
 		h[:hash_key] = [addr, mtype, mlen]
 		h[:internal] = { :type => mtype, :len => mlen }
 		h[:oneshot] = true if oneshot

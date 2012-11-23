@@ -274,7 +274,7 @@ class GdbClient
 
 	def set_hwbp(type, addr, len=1, set=true)
 		set = (set ? 'Z' : 'z')
-		type = { 'r' => '3', 'w' => '2', 'x' => '1', 's' => '0' }[type.to_s] || raise("invalid bp type #{type.inspect}")
+		type = { :r => '3', :w => '2', :x => '1', 's' => '0' }[type.to_s] || raise("invalid bp type #{type.inspect}")
 		gdb_msg(set, type << ',' << hexl(addr) << ',' << hexl(len))
 		true
 	end
