@@ -483,7 +483,7 @@ class HexWidget < DrawableWidget
 		}
 		@write_pending.clear
 	rescue
-		@parent_widget.messagebox($!, $!.class.to_s)
+		@parent_widget.messagebox($!.message.to_s, $!.class.to_s)
 	end
 
 	def get_cursor_pos
