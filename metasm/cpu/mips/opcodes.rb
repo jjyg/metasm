@@ -197,10 +197,10 @@ class MIPS
 
 
 		# cp0
-		addop 'mfc0', (0b010000<<26) | (0b00000<<21), :rt, :rd
-		addop 'mfc0', (0b010000<<26) | (0b00000<<21), :rt, :rd, :sel
-		addop 'mtc0', (0b010000<<26) | (0b00100<<21), :rt, :rd
-		addop 'mtc0', (0b010000<<26) | (0b00100<<21), :rt, :rd, :sel
+		addop 'mfc0', (0b010000<<26) | (0b00000<<21), :rt, :idb
+		addop 'mfc0', (0b010000<<26) | (0b00000<<21), :rt, :idb, :sel
+		addop 'mtc0', (0b010000<<26) | (0b00100<<21), :rt, :idb
+		addop 'mtc0', (0b010000<<26) | (0b00100<<21), :rt, :idb, :sel
 
 		addop 'tlbr', (0b010000<<26) | (1<<25) | 0b000001
 		addop 'tlbwi',(0b010000<<26) | (1<<25) | 0b000010
@@ -275,6 +275,11 @@ class MIPS64
 		addop 'ddivu',  0b011111, :rs, :rt
 		addop 'dmult',  0b011100, :rs, :rt
 		addop 'dmultu', 0b011101, :rs, :rt
+
+		addop 'dmfc0', (0b010000<<26) | (0b00001<<21), :rt, :idb
+		addop 'dmfc0', (0b010000<<26) | (0b00001<<21), :rt, :idb, :sel
+		addop 'dmtc0', (0b010000<<26) | (0b00101<<21), :rt, :idb
+		addop 'dmtc0', (0b010000<<26) | (0b00101<<21), :rt, :idb, :sel
 	end
 
 	def init_mips64r2

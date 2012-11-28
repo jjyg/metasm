@@ -84,7 +84,7 @@ class MIPS
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :rs, :rt, :rd; Reg.new field_val[a]
-			when :sa, :i16, :i20, :i26, :it, :msbd; Expression[field_val[a]]
+			when :sa, :i16, :i20, :i26, :it, :msbd, :sel, :idb; Expression[field_val[a]]
 			when :rs_i16
 				len = 32
 				len = 64 if op.props[:m64]
