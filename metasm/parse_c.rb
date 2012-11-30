@@ -1840,6 +1840,7 @@ EOH
 		end
 
 		# returns all numeric constants defined with their value, either macros or enums
+		# for enums, also return the enum name
 		def numeric_constants
 			ret = []
 			# macros
@@ -1849,8 +1850,17 @@ EOH
 				end
 			}
 			# enums
+			seen_enum = {}
+			@toplevel.struct.each { |k, v|
+				if v.kind_of?(Enum)
+					v.members.each { |kk, vv|
+						ret << [kk, vv, k]
+						seen_enum[kk] = true
+					}
+				end
+			}
 			@toplevel.symbol.each { |k, v|
-				ret << [k, v] if v.kind_of? ::Numeric
+				ret << [k, v] if v.kind_of?(::Numeric) and not seen_enum[k]
 			}
 			ret
 		end

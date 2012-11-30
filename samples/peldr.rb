@@ -148,7 +148,7 @@ class PeLdr
 			end
 		}
 
-		cp.numeric_constants.each { |k, v|
+		cp.numeric_constants.each { |k, v, f|
 			n = k.upcase
 			n = "C#{n}" if n !~ /^[A-Z]/
 			DL.const_set(n, v) if not DL.const_defined?(n) and v.kind_of? Integer

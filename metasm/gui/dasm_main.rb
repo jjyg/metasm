@@ -435,14 +435,15 @@ class DisasmWidget < ContainerChoiceWidget
 		return if not di.kind_of? DecodedInstruction
 		di.each_expr { |e|
 			next unless e.kind_of?(Expression)
-			if e.lexpr.kind_of? Integer or e.lexpr.kind_of?(ExpressionString)
+			if (e.lexpr.kind_of?(Integer) or e.lexpr.kind_of?(ExpressionString)) and
+					(!curview.hl_word or curview.hl_word == Expression[e.lexpr].to_s)
 				v = Expression[e.lexpr].reduce
 				lst = []
-				dasm.c_constants.each { |cn, cv| lst << [cn] if v == cv }
+				dasm.c_constants.each { |cn, cv, fm| lst << [cn, fm] if v == cv }
 				if not lst.empty?
 					default = Expression[v].to_s
 					lst << [default]
-					listwindow("constant for #{Expression[v]}", [['name']] + lst) { |a|
+					listwindow("constant for #{Expression[v]}", [['name', 'enum']] + lst) { |a|
 						if a[0] == default
 							e.lexpr = v
 						else
@@ -452,14 +453,15 @@ class DisasmWidget < ContainerChoiceWidget
 					}
 				end
 			end
-			if e.rexpr.kind_of? Integer or e.rexpr.kind_of?(ExpressionString)
+			if (e.rexpr.kind_of? Integer or e.rexpr.kind_of?(ExpressionString)) and
+					(!curview.hl_word or curview.hl_word == Expression[e.rexpr].to_s)
 				v = Expression[e.rexpr].reduce
 				lst = []
-				dasm.c_constants.each { |cn, cv| lst << [cn] if v == cv }
+				dasm.c_constants.each { |cn, cv, fm| lst << [cn, fm] if v == cv }
 				if not lst.empty?
 					default = Expression[v].to_s
 					lst << [default]
-					listwindow("constant for #{Expression[v]}", [['name']] + lst) { |a|
+					listwindow("constant for #{Expression[v]}", [['name', 'enum']] + lst) { |a|
 						if a[0] == default
 							e.rexpr = v
 						else
