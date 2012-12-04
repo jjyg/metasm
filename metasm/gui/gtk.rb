@@ -570,15 +570,40 @@ class InputBox < Gtk::Dialog
 		@textwidget  = Gtk::TextView.new
 		if opts[:text]
 			@textwidget.buffer.text = opts[:text].to_s
-			@textwidget.buffer.move_mark('selection_bound', @textwidget.buffer.start_iter)
-			@textwidget.buffer.move_mark('insert', @textwidget.buffer.end_iter)
+			text_select_all
 		end
+
+		@@history ||= []
+		@history_off = @@history.length
 
 		@textwidget.signal_connect('key_press_event') { |w, ev|
 			key = DrawableWidget::Keyboard_trad[ev.keyval]
 			case key
-			when :escape; response(RESPONSE_REJECT) ; true
-			when :enter; response(RESPONSE_ACCEPT) ; true
+			when :escape
+				response(RESPONSE_REJECT)
+				true
+			when :enter
+				@@history[@history_off] = @textwidget.buffer.text.to_s
+				response(RESPONSE_ACCEPT)
+				true
+			when :up
+				@@history[@history_off] = @textwidget.buffer.text.to_s
+				if @history_off > 0
+					@history_off -= 1
+				else
+					@history_off = @@history.length-1
+				end
+				@textwidget.buffer.text = @@history[@history_off].to_s
+				text_select_all
+			when :down
+				@@history[@history_off] = @textwidget.buffer.text.to_s
+				if @history_off < @@history.length-1
+					@history_off += 1
+				else
+					@history_off = 0
+				end
+				@textwidget.buffer.text = @@history[@history_off].to_s
+				text_select_all
 			end
 		}
 
@@ -612,6 +637,11 @@ class InputBox < Gtk::Dialog
 
 		show_all
 		present
+	end
+
+	def text_select_all
+		@textwidget.buffer.move_mark('selection_bound', @textwidget.buffer.start_iter)
+		@textwidget.buffer.move_mark('insert', @textwidget.buffer.end_iter)
 	end
 
 	def text ; @textwidget.buffer.text ; end
