@@ -182,11 +182,11 @@ class Graph
 		# find head
 		return if not head = @groups.find { |g|
 			g.to.length == 2 and
-			((g.to[0].to.length == 1 and g.to[0].to[0] == g.to[1] and g.to[0].from.length == 1) or
-			 (g.to[1].to.length == 1 and g.to[1].to[0] == g.to[0] and g.to[1].from.length == 1))
+			((g.to[0].from.length == 1 and g.to[0].to.length == 1 and g.to[0].to[0] == g.to[1]) or
+			 (g.to[1].from.length == 1 and g.to[1].to.length == 1 and g.to[1].to[0] == g.to[0]))
 		}
 
-		if head.to[0].to.length == 1 and head.to[0].to[0] == head.to[1]
+		if head.to[0].to.include?(head.to[1])
 			ten = head.to[0]
 		else
 			ten = head.to[1]
@@ -1130,7 +1130,7 @@ class GraphViewWidget < DrawableWidget
 						}
 					end
 					render["#{Expression[curaddr]}   ", :address] if @show_addresses
-					render[di.instruction.to_s.ljust(di.comment ? 24 : 0), :instruction]
+					render[di.instruction.to_s.ljust(di.comment ? 18 : 0), :instruction]
 					render[' ; ' + di.comment.join(' ')[0, 64], :comment] if di.comment
 					nl[]
 				else

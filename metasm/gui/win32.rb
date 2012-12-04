@@ -2625,28 +2625,19 @@ class IBoxWidget < DrawableWidget
 			end
 			@caret_x = @curline.length
 			update_caret
-		when :up
-			@@history[@history_off] = @curline.strip
-			if @history_off > 0
-				@history_off -= 1
-			else
-				@history_off = @@history.length-1
+		when :up, :down
+			if @history_off < @@history.length or @curline.strip != @@history.last
+				@@history[@history_off] = @curline.strip
 			end
-			@curline = @@history[@history_off].to_s
-			@caret_x = @curline.length if @caret_x > @curline.length
-			update_caret
-		when :down
-			@@history[@history_off] = @curline.strip
-			if @history_off < @@history.length-1
-				@history_off += 1
-			else
-				@history_off = 0
-			end
+			@history_off += (key == :up ? -1 : 1)
+			@history_off %= @@history.length
 			@curline = @@history[@history_off].to_s
 			@caret_x = @curline.length if @caret_x > @curline.length
 			update_caret
 		when :enter
-			@@history[@history_off] = @curline.strip
+			@@history << @curline.strip
+			@@history.pop if @@history.last == ''
+			@@history.pop if @@history.last == @@history[-2]
 			destroy
 			Gui.main_iter
 			protect { @action.call(@curline.strip) }

@@ -583,25 +583,18 @@ class InputBox < Gtk::Dialog
 				response(RESPONSE_REJECT)
 				true
 			when :enter
-				@@history[@history_off] = @textwidget.buffer.text.to_s
+				@@history << @textwidget.buffer.text.to_s
+				@@history.pop if @@history.last == ''
+				@@history.pop if @@history.last == @@history[-2]
 				response(RESPONSE_ACCEPT)
 				true
-			when :up
-				@@history[@history_off] = @textwidget.buffer.text.to_s
-				if @history_off > 0
-					@history_off -= 1
-				else
-					@history_off = @@history.length-1
+			when :up, :down
+				txt = @textwidget.buffer.text.to_s
+				if (@history_off < @@history.length or @@history.last != txt)
+					@@history[@history_off] = txt
 				end
-				@textwidget.buffer.text = @@history[@history_off].to_s
-				text_select_all
-			when :down
-				@@history[@history_off] = @textwidget.buffer.text.to_s
-				if @history_off < @@history.length-1
-					@history_off += 1
-				else
-					@history_off = 0
-				end
+				@history_off += (key == :up ? -1 : 1)
+				@history_off %= @@history.length
 				@textwidget.buffer.text = @@history[@history_off].to_s
 				text_select_all
 			end
