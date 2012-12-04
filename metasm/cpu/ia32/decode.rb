@@ -825,7 +825,7 @@ class Ia32
 			s = dasm.get_section_at(mrm.imm)
 			v = 0
 		end
-		loop do
+		while s[0].ptr < s[0].length
 			ptr = dasm.normalize s[0].decode_imm("u#{sz}".to_sym, @endianness)
 			diff = Expression[ptr, :-, di.address].reduce
 			if (diff.kind_of? ::Integer and diff.abs < 4096) or (di.opcode.basename == 'call' and ptr != 0 and dasm.get_section_at(ptr))
