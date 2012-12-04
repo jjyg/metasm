@@ -1367,7 +1367,7 @@ class Disassembler
 
 	# define a register as a pointer to a structure
 	# rename all [reg+off] as [reg+struct.member] in current function
-	# also trace assignments of pointer members (TODO)
+	# also trace assignments of pointer members
 	def trace_update_reg_structptr(addr, reg, structname, structoff=0)
 		sname = soff = ctx = nil
 		expr_to_sname = lambda { |expr|
@@ -1389,11 +1389,8 @@ class Disassembler
 					soff = soff.rexpr
 				end
 			elsif soff.kind_of?(::Symbol)
-				# array with 1 byte elements?
-				if ctx[sname]
-					soff = 0
-				elsif ctx[soff]
-					sname = soff
+				# array with 1 byte elements / pre-scaled idx?
+				if not ctx[soff]
 					soff = 0
 				end
 			end
