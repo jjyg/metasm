@@ -941,6 +941,7 @@ class ExpressionString < ExpressionType
 		@type = type
 	end
 	def render_str ; [str] ; end
+	def inspect ; "ExpressionString.new(#{@expr.inspect}, #{str.inspect}, #{type.inspect})" ; end
 end
 
 # an EncodedData relocation, specifies a value to patch in
