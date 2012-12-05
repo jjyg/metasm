@@ -753,7 +753,7 @@ class ListWindow < Gtk::Dialog
 
 		remove vbox
 		add Gtk::ScrolledWindow.new.add(treeview)
-		toplevel.set_default_size cols.length*120, 400
+		toplevel.set_default_size cols.length*240, 400
 
 		show if not h[:noshow]
 
