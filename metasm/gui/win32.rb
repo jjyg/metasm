@@ -2487,8 +2487,10 @@ class IBoxWidget < DrawableWidget
 		@oldsel_x = @caret_x_select = 0
 		@caret_x = @curline.length
 		@caret_x_start = 0
-		@@history ||= []
-		@history_off = @@history.length
+		@@history ||= {}
+		histkey = opts[:history] || label[0, 10]
+		@history = (@@history[histkey] ||= [])
+		@history_off = @history.length
 
 		add_button('Ok', :btnc1, :btnc2) { keypress(:enter) }
 		add_button('Cancel', :btnc1, :btnc2) { keypress(:esc) }
@@ -2626,18 +2628,18 @@ class IBoxWidget < DrawableWidget
 			@caret_x = @curline.length
 			update_caret
 		when :up, :down
-			if @history_off < @@history.length or @curline.strip != @@history.last
-				@@history[@history_off] = @curline.strip
+			if @history_off < @history.length or @curline.strip != @history.last
+				@history[@history_off] = @curline.strip
 			end
 			@history_off += (key == :up ? -1 : 1)
-			@history_off %= @@history.length
-			@curline = @@history[@history_off].to_s
+			@history_off %= @history.length
+			@curline = @history[@history_off].to_s
 			@caret_x = @curline.length if @caret_x > @curline.length
 			update_caret
 		when :enter
-			@@history << @curline.strip
-			@@history.pop if @@history.last == ''
-			@@history.pop if @@history.last == @@history[-2]
+			@history << @curline.strip
+			@history.pop if @history.last == ''
+			@history.pop if @history.last == @history[-2]
 			destroy
 			Gui.main_iter
 			protect { @action.call(@curline.strip) }

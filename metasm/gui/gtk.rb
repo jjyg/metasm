@@ -573,8 +573,10 @@ class InputBox < Gtk::Dialog
 			text_select_all
 		end
 
-		@@history ||= []
-		@history_off = @@history.length
+		@@history ||= {}
+		histkey = opts[:history] || str[0, 10]
+		@history = (@@history[histkey] ||= [])
+		@history_off = @history.length
 
 		@textwidget.signal_connect('key_press_event') { |w, ev|
 			key = DrawableWidget::Keyboard_trad[ev.keyval]
@@ -583,19 +585,19 @@ class InputBox < Gtk::Dialog
 				response(RESPONSE_REJECT)
 				true
 			when :enter
-				@@history << @textwidget.buffer.text.to_s
-				@@history.pop if @@history.last == ''
-				@@history.pop if @@history.last == @@history[-2]
+				@history << @textwidget.buffer.text.to_s
+				@history.pop if @history.last == ''
+				@history.pop if @history.last == @history[-2]
 				response(RESPONSE_ACCEPT)
 				true
 			when :up, :down
 				txt = @textwidget.buffer.text.to_s
-				if (@history_off < @@history.length or @@history.last != txt)
-					@@history[@history_off] = txt
+				if (@history_off < @history.length or @history.last != txt)
+					@history[@history_off] = txt
 				end
 				@history_off += (key == :up ? -1 : 1)
-				@history_off %= @@history.length
-				@textwidget.buffer.text = @@history[@history_off].to_s
+				@history_off %= @history.length
+				@textwidget.buffer.text = @history[@history_off].to_s
 				text_select_all
 			end
 		}
