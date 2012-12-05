@@ -89,8 +89,8 @@ if exe
 	dasm.parse_c_file opts[:cheader] if opts[:cheader]
 	dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 	dasm.debug_backtrace = true if opts[:debugbacktrace]
-	dasm.disassemble_fast_deep(*ep) if opts[:fast]
 	dasm.callback_finished = lambda { w.dasm_widget.focus_addr w.dasm_widget.curaddr, :decompile ; dasm.decompiler.finalize } if opts[:decompile]
+	dasm.disassemble_fast_deep(*ep) if opts[:fast]
 elsif dbg
 	dbg.load_map opts[:map] if opts[:map]
 	opts[:plugin].to_a.each { |p| dbg.load_plugin(p) }
@@ -98,11 +98,18 @@ end
 if dasm
 	w.display(dasm, ep)
 	opts[:plugin].to_a.each { |p| dasm.load_plugin(p) }
-	if opts[:session] and not opts[:newsession] and File.exist?(opts[:session])
-		puts "replaying session #{opts[:session]}"
-		w.widget.replay_session(opts[:session])
+
+	if opts[:session]
+		if File.exist?(opts[:session])
+			if opts[:newsession]
+				File.unlink(opts[:session])
+			else
+				puts "replaying session #{opts[:session]}"
+				w.widget.replay_session(opts[:session])
+			end
+		end
+		w.widget.save_session opts[:session]
 	end
-	w.widget.save_session opts[:session] if opts[:session]
 end
 
 opts[:hookstr].to_a.each { |f| eval f }
