@@ -1582,6 +1582,7 @@ EOH
 			when Struct
 				raise self, "unknown structure size #{type.name}" if not type.members
 				al = type.align(self)
+				al = 1 if (var and var.has_attribute('sizeof_packed')) or type.has_attribute('sizeof_packed')
 				lm = type.members.last
 				lm ? (type.offsetof(self, lm) + sizeof(lm) + al - 1) / al * al : 0
 			when Union
