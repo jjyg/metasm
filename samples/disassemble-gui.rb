@@ -49,6 +49,8 @@ OptionParser.new { |opt|
 	opt.on('-v', '--verbose') { $VERBOSE = true }	# default
 	opt.on('-q', '--no-verbose') { $VERBOSE = false }
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
+	opt.on('-S <file>', '--session <sessionfile>', 'save user actions in this session file') { |a|  opts[:session] = a }
+	opt.on('-N', '--new-session', 'start new session, discard old one') { opts[:newsession] = true }
 }.parse!(ARGV)
 
 case exename = ARGV.shift
@@ -73,6 +75,7 @@ else
 			opts[:map] ||= basename + '.map' if File.exist?(basename + '.map')
 			opts[:cheader] ||= basename + '.h' if File.exist?(basename + '.h')
 			(opts[:plugin] ||= []) << (basename + '.rb') if File.exist?(basename + '.rb')
+			opts[:session] ||= basename + '.metasm-session'
 		end
 	end
 end
@@ -95,6 +98,11 @@ end
 if dasm
 	w.display(dasm, ep)
 	opts[:plugin].to_a.each { |p| dasm.load_plugin(p) }
+	if opts[:session] and not opts[:newsession] and File.exist?(opts[:session])
+		puts "replaying session #{opts[:session]}"
+		w.widget.replay_session(opts[:session])
+	end
+	w.widget.save_session opts[:session] if opts[:session]
 end
 
 opts[:hookstr].to_a.each { |f| eval f }

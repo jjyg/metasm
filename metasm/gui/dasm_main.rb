@@ -94,6 +94,10 @@ class DisasmWidget < ContainerChoiceWidget
 		}
 	end
 
+	def wait_disassemble_bg
+		Gui.main_iter until @entrypoints.empty? and @dasm.addrs_todo.empty?
+	end
+
 	def terminate
 		@clones.delete self
 	end
@@ -118,11 +122,10 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 
 	# returns the ExpressionString if the currently hilighted word is a :stackvar
-	def pointed_localvar
-		return if not curobj
-		hl = curview.hl_word
+	def pointed_localvar(obj = curobj, hl = curview.hl_word)
+		return if not obj
 		localvar = nil
-		curobj.each_expr { |e|
+		obj.each_expr { |e|
 			next unless e.kind_of?(ExpressionString)
 			localvar = e if e.type == :stackvar and e.str == hl
 		}
@@ -185,6 +188,7 @@ class DisasmWidget < ContainerChoiceWidget
 		}
 			@pos_history << oldpos if oldpos[0]	# ignore start focus_addr
 			@pos_history_redo.clear
+			session_append "@session_focus_addr = #{dasm.normalize(addr).inspect} ; @pos_history = #{@pos_history.inspect}"
 			true
 		else
 			messagebox "Invalid address #{addr}" if not quiet
@@ -257,18 +261,24 @@ class DisasmWidget < ContainerChoiceWidget
 		inputbox("new comment for #{Expression[addr]}", :text => cmt) { |c|
 			c = c.split("\n")
 			c = nil if c == []
-			if di = @dasm.di_at(addr)
-				di.comment = c
-			else
-				@dasm.comment[addr] = c
-			end
+			do_add_comment(addr, c)
+			session_append "do_add_comment(#{addr.inspect}, #{c.inspect})"
 			gui_update
 		}
+	end
+
+	def do_add_comment(addr, c)
+		if di = @dasm.di_at(addr)
+			di.comment = c
+		else
+			@dasm.comment[addr] = c
+		end
 	end
 
 	# disassemble from this point
 	# if points to a call, make it return
 	def disassemble(addr)
+		session_append "disassemble(#{addr.inspect}) ; wait_disassemble_bg"
 		if di = @dasm.di_at(addr) and di.opcode.props[:saveip]
 			di.block.each_to_normal { |t|
 				t = @dasm.normalize t
@@ -286,17 +296,20 @@ class DisasmWidget < ContainerChoiceWidget
 	# disassemble fast from this point (don't dasm subfunctions, don't backtrace)
 	def disassemble_fast(addr)
 		@dasm.disassemble_fast(addr)
+		session_append "dasm.disassemble_fast(#{addr.inspect})"
 		gui_update
 	end
 
 	# disassemble fast & deep from this point (don't backtrace, but still dasm subfuncs)
 	def disassemble_fast_deep(addr)
 		@dasm.disassemble_fast_deep(addr)
+		session_append "dasm.disassemble_fast_deep(#{addr.inspect})"
 		gui_update
 	end
 
 	# (re)decompile
 	def decompile(addr)
+		session_append "decompile(#{addr.inspect})"
 		if @dasm.c_parser and var = @dasm.c_parser.toplevel.symbol[addr] and (var.type.kind_of? C::Function or @dasm.di_at(addr))
 			@dasm.decompiler.redecompile(addr)
 			view(:decompile).curaddr = nil
@@ -307,6 +320,7 @@ class DisasmWidget < ContainerChoiceWidget
 	# change the format of displayed data under addr (byte, word, dword, qword)
 	# currently this is done using a fake empty xref
 	def toggle_data(addr)
+		session_append "toggle_data(#{addr.inspect})"
 		return if @dasm.decoded[addr] or not @dasm.get_section_at(addr)
 		@dasm.add_xref(addr, Xref.new(nil, nil, 1)) if not @dasm.xrefs[addr]
 		@dasm.each_xref(addr) { |x|
@@ -449,6 +463,7 @@ class DisasmWidget < ContainerChoiceWidget
 						else
 							e.lexpr = ExpressionString.new(v, a[0], :constant)
 						end
+						session_append "if di = dasm.di_at(#{di.address.inspect}) ; di.each_expr { |e| e.lexpr = #{e.lexpr.inspect} if e.kind_of?(Expression) and e.lexpr and Expression[e.lexpr].reduce == #{v.inspect} } ; end"
 						gui_update
 					}
 				end
@@ -467,6 +482,7 @@ class DisasmWidget < ContainerChoiceWidget
 						else
 							e.rexpr = ExpressionString.new(v, a[0], :constant)
 						end
+						session_append "if di = dasm.di_at(#{di.address.inspect}) ; di.each_expr { |e| e.rexpr = #{e.rexpr.inspect} if e.kind_of?(Expression) and e.rexpr and Expression[e.rexpr].reduce == #{v.inspect} } ; end"
 						gui_update
 					}
 				end
@@ -522,6 +538,7 @@ class DisasmWidget < ContainerChoiceWidget
 		prompt_c_struct("struct pointed by #{reg}", :allow_stars => true) { |st|
 			# TODO store that info for the decompiler ?
 			@dasm.trace_update_reg_structptr(addr, reg, st)
+			session_append "dasm.trace_update_reg_structptr(#{addr.inspect}, #{reg.inspect}, #{st.inspect})"
 			gui_update
 		}
 	end
@@ -556,7 +573,10 @@ class DisasmWidget < ContainerChoiceWidget
 
 	# run arbitrary ruby
 	def prompt_run_ruby
-		inputbox('ruby code to eval()') { |c| messagebox eval(c).inspect[0, 512], 'eval' }
+		inputbox('ruby code to eval()') { |c|
+			messagebox eval(c).inspect[0, 512], 'eval'
+			session_append "#eval #{c.inspect}"
+		}
 	end
 
 	# run ruby plugin
@@ -591,9 +611,12 @@ class DisasmWidget < ContainerChoiceWidget
 	# prompts for a new name for what is under the cursor (or the current address)
 	def rename(what=nil)
 		if not what and localvar = pointed_localvar
+			addr = curaddr
+			str = localvar.str.dup
 			inputbox("new name for #{localvar}", :text => localvar.to_s) { |v|
 				if v =~ /^[a-z_][a-z0-9_]*$/i
 					localvar.str.replace v
+					session_append "pointed_localvar(dasm.decoded[#{addr.inspect}], #{str.inspect}).str.replace(#{v.inspect})"
 					gui_update
 				else messagebox("invalid local var name #{v.inspect}")
 				end
@@ -607,8 +630,10 @@ class DisasmWidget < ContainerChoiceWidget
 			inputbox("new name for #{old}", :text => old) { |v|
 				if v == ''
 					@dasm.del_label_at(what)
+					session_append "dasm.del_label_at(#{what.inspect})"
 				else
 					@dasm.rename_label(old, v)
+					session_append "dasm.rename_label(#{old.inspect}, #{v.inspect})"
 				end
 				gui_update
 			}
@@ -616,9 +641,8 @@ class DisasmWidget < ContainerChoiceWidget
 			inputbox("label name for #{Expression[what]}", :text => Expression[what]) { |v|
 				next if v == ''
 				@dasm.set_label_at(what, v)
-				if di = @dasm.di_at(what)
-					@dasm.split_block(di.block, di.address)
-				end
+				@dasm.split_block(what)
+				session_append "dasm.set_label_at(#{what.inspect}, #{v.inspect}) ; dasm.split_block(#{what.inspect})"
 				gui_update
 			}
 		end
@@ -650,23 +674,27 @@ class DisasmWidget < ContainerChoiceWidget
 	# toggles <41h> vs <'A'> display
 	def toggle_expr_char(o)
 		@dasm.toggle_expr_char(o)
+		session_append "dasm.toggle_expr_char(dasm.decoded[#{curaddr.inspect}])"
 		gui_update
 	end
 
 	# toggle <401000h> vs <'sub_fancyname'> in the current instr display
 	def toggle_expr_offset(o)
 		@dasm.toggle_expr_offset(o)
+		session_append "dasm.toggle_expr_offset(dasm.decoded[#{curaddr.inspect}])"
 		gui_update
 	end
 
 	# toggle constant/localvar names with raw value
 	def toggle_expr_str(o)
 		@dasm.toggle_expr_str(o)
+		session_append "dasm.toggle_expr_str(dasm.decoded[#{curaddr.inspect}])"
 		gui_update
 	end
 
 	def name_local_vars(a)
 		@dasm.name_local_vars(a)
+		session_append "dasm.name_local_vars(#{a.inspect})"
 		gui_update
 	end
 
@@ -681,6 +709,7 @@ class DisasmWidget < ContainerChoiceWidget
 		list = []
 		@dasm.each_function_block(addr, incl_subfuncs) { |b| list << b }
 		list.each { |b| @dasm.undefine_from(b) }
+		session_append "undefine_function(#{addr.inspect}, #{incl_subfuncs.inspect})"
 		gui_update
 	end
 
@@ -738,6 +767,32 @@ class DisasmWidget < ContainerChoiceWidget
 			return @parent_widget ? @parent_widget.keypress(key) : false
 		end
 		true
+	end
+
+	attr_accessor :session_file
+	def save_session(filename)
+		@session_file = filename
+	end
+
+	def replay_session(filename)
+		i = 0
+		File.readlines(filename).each { |l|
+			instance_eval l
+			i += 1
+		}
+		focus_addr(@session_focus_addr) if @session_focus_addr
+		puts "Session replay finished"
+	rescue ::Exception
+		puts "Session replay: error on line #{i}: #{$!.class} #{$!}"
+	end
+
+	def session_append(str)
+		if session_file
+			File.open(session_file, 'a') { |fd| fd.puts str }
+		end
+	rescue
+		@session_file = nil
+		puts "Failed to save session, disabling (#{$!.class} #{$!})"
 	end
 
 	# creates a new dasm window with the same disassembler object, focus it on addr#win
