@@ -257,7 +257,7 @@ class CdecompListingWidget < DrawableWidget
 	# focus on addr
 	# returns true on success (address exists & decompiled)
 	def focus_addr(addr)
-		if @dasm.c_parser and (@dasm.c_parser.toplevel.symbol[addr] or @dasm.c_parser.toplevel.struct[addr])
+		if @dasm.c_parser and (@dasm.c_parser.toplevel.symbol[addr] or @dasm.c_parser.toplevel.struct[addr].kind_of?(C::Union))
 			@curaddr = addr
 			@caret_x = @caret_y = 0
 			gui_update
