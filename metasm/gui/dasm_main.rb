@@ -189,7 +189,7 @@ class DisasmWidget < ContainerChoiceWidget
 		}
 			@pos_history << oldpos if oldpos[0]	# ignore start focus_addr
 			@pos_history_redo.clear
-			session_append "@session_focus_addr = #{dasm.normalize(addr).inspect} ; @pos_history = #{@pos_history.inspect}"
+			session_append "@session_focus_addr = #{addr.inspect} ; @pos_history = #{@pos_history.inspect}"
 			true
 		else
 			messagebox "Invalid address #{addr}" if not quiet
@@ -787,10 +787,26 @@ class DisasmWidget < ContainerChoiceWidget
 		puts "Session replay: error on line #{i}: #{$!.class} #{$!}"
 	end
 
+	# append one line to the session file
+	# converts addresses to hex, deletes consecutive set_focus lines
 	def session_append(str)
-		if session_file
-			File.open(session_file, 'a') { |fd| fd.puts str }
+		return if not session_file
+
+		# convert decimal addrs to hex
+		str = str.sub(/(\(|\[|= )(\d\d\d\d\d\d+)/) { $1 + ('0x%x' % $2.to_i) }
+
+		@session_lastsz_setfocus ||= nil	# prevent warning
+		if str =~ /^@session_focus_addr = / and @session_lastsz_setfocus
+			# overwrite previous set_focus
+			File.truncate(session_file, @session_lastsz_setfocus) if File.size(session_file) == @session_lastsz
+			is_setfocus = true
 		end
+
+		File.open(session_file, 'a') { |fd| fd.puts str }
+
+		@session_lastsz = File.size(session_file)
+		@session_lastsz_setfocus = @session_lastsz if not is_setfocus
+
 	rescue
 		@session_file = nil
 		puts "Failed to save session, disabling (#{$!.class} #{$!})"
