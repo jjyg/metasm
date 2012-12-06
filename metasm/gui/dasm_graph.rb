@@ -62,15 +62,10 @@ class Graph
 		[minx, miny, maxx, maxy]
 	end
 
-	# position known box patterns recursively (lines, columns, if/end)
-	def pattern_layout
-		nil while pattern_layout_col or pattern_layout_line or pattern_layout_ifend
-	end
-
 	# a -> b -> c -> d (no other in/outs)
-	def pattern_layout_col
+	def pattern_layout_col(groups)
 		# find head
-		return if not head = @groups.find { |g|
+		return if not head = groups.find { |g|
 			g.to.length == 1 and
 			g.to[0].from.length == 1 and
 			(g.from.length != 1 or g.from[0].to.length != 1)
@@ -112,17 +107,18 @@ class Graph
 		newg.from.each { |g| g.to -= ar ; g.to << newg }
 		newg.to.each { |g| g.from -= ar ; g.from << newg }
 		# fix @groups
-		@groups[@groups.index(head)] = newg
-		@groups -= ar
+		groups[groups.index(head)] = newg
+		@order[newg] = @order[head]
+		ar.each { |g| groups.delete g }
 
 		true
 	end
 
 	# a -> [b, c, d] -> e
-	def pattern_layout_line
+	def pattern_layout_line(groups)
 		# find head
 		ar = []
-		@groups.each { |g|
+		groups.each { |g|
 			if g.from.length == 1 and g.to.length <= 1 and g.from.first.to.length > 1
 				ar = g.from.first.to.find_all { |gg| gg.from == g.from and gg.to == g.to }
 			elsif g.from.empty? and g.to.length == 1 and g.to.first.from.length > 1
@@ -170,17 +166,18 @@ class Graph
 		# fix xrefs
 		newg.from.each { |g| g.to -= ar ; g.to << newg }
 		newg.to.each { |g| g.from -= ar ; g.from << newg }
-		# fix @groups
-		@groups[@groups.index(ar.first)] = newg
-		@groups -= ar
+		# fix groups
+		groups[groups.index(ar.first)] = newg
+		@order[newg] = @order[ar.first]
+		ar.each { |g| groups.delete g }
 
 		true
 	end
 
 	# a -> b -> c & a -> c
-	def pattern_layout_ifend
+	def pattern_layout_ifend(groups)
 		# find head
-		return if not head = @groups.find { |g|
+		return if not head = groups.find { |g|
 			g.to.length == 2 and
 			((g.to[0].from.length == 1 and g.to[0].to.length == 1 and g.to[0].to[0] == g.to[1]) or
 			 (g.to[1].from.length == 1 and g.to[1].to.length == 1 and g.to[1].to[0] == g.to[0]))
@@ -214,35 +211,24 @@ class Graph
 		head.to.delete ten
 		head.to[0].from.delete ten
 
-		@groups.delete ten
+		groups.delete ten
 
 		true
 
 	end
 
+	def pattern_layout_complex(groups)
+		# TODO
+	end
+
 	# find the minimal set of nodes from which we can reach all others
 	# this is done *before* removing cycles in the graph
-	# stored as having an order of 0
-	def find_roots
-		roots = @groups.find_all { |g| g.from.empty? }
-		o = {}	# tentative @order
+	# returns the order (Hash group => group_order)
+	# roots have an order of 0
+	def order_graph(groups)
+		roots = groups.find_all { |g| g.from.empty? }
+		o = {}	# tentative order
 		todo = []
-
-		# 'todo' has no trivial candidate
-		solve_cycle = lambda {
-			# pick one node from todo which no other todo can reach
-			# exclude pathing through already ordered nodes
-			todo.find { |t1|
-				not todo.find { |t2| t1 != t2 and can_find_path(t2, t1, o.dup) }
-			} ||
-			# some cycle heads are mutually recursive
-			todo.sort_by { |t1|
-				# find the one who can reach the most others
-				[todo.find_all { |t2| t1 != t2 and can_find_path(t1, t2, o.dup) }.length,
-				# and with the highest rank
-				 t1.from.map { |gg| o[gg] }.compact.max]
-			}.last
-		}
 
 		loop do
 			roots.each { |g|
@@ -252,16 +238,16 @@ class Graph
 
 			# order nodes from the tentative roots
 			until todo.empty?
-				n = todo.find { |g| g.from.all? { |gg| o[gg] } } || solve_cycle[]
+				n = todo.find { |g| g.from.all? { |gg| o[gg] } } || order_solve_cycle(todo, o)
 				todo.delete n
 				o[n] = n.from.map { |g| o[g] }.compact.max + 1
 				todo |= n.to.find_all { |g| not o[g] }
 			end
-			break if o.length >= @groups.length
+			break if o.length >= groups.length
 
 			# pathological cases
 
-			if noroot = @groups.find_all { |g| o[g] and g.from.find { |gg| not o[gg] } }.sort_by { |g| o[g] }.first
+			if noroot = groups.find_all { |g| o[g] and g.from.find { |gg| not o[gg] } }.sort_by { |g| o[g] }.first
 				# we picked a root in the middle of the graph, walk up
 				todo |= noroot.from.find_all { |g| not o[g] }
 				until todo.empty?
@@ -272,16 +258,16 @@ class Graph
 					todo |= n.from.find_all { |g| not o[g] }
 				end
 				# setup todo for next fwd iteration
-				todo |= @groups.find_all { |g| not o[g] and g.from.find { |gg| o[gg] } }
+				todo |= groups.find_all { |g| not o[g] and g.from.find { |gg| o[gg] } }
 			else
 				# disjoint graph, start over from one other random node
-				roots << @groups.find { |g| not o[g] }
+				roots << groups.find { |g| not o[g] }
 			end
 		end
 
 		if o.values.find { |rank| rank < 0 }
-			# hit a pathological case, restart with found roots
-			roots = @groups.find_all { |g| not g.from.find { |gg| o[gg] < o[g] } }
+			# did hit a pathological case, restart with found real roots
+			roots = groups.find_all { |g| not g.from.find { |gg| o[gg] < o[g] } }
 			o = {}
 			todo = []
 			roots.each { |g|
@@ -289,17 +275,33 @@ class Graph
 				todo |= g.to.find_all { |gg| not o[gg] }
 			}
 			until todo.empty?
-				n = todo.find { |g| g.from.all? { |gg| o[gg] } } || solve_cycle[]
+				n = todo.find { |g| g.from.all? { |gg| o[gg] } } || order_solve_cycle(todo, o)
 				todo.delete n
 				o[n] = n.from.map { |g| o[g] }.compact.max + 1
 				todo |= n.to.find_all { |g| not o[g] }
 			end
 
 			# there's something screwy around here !
-			raise "moo" if o.length < @groups.length
+			raise "moo" if o.length < groups.length
 		end
 
-		@order = o
+		o
+	end
+
+	def order_solve_cycle(todo, o)
+		# 'todo' has no trivial candidate
+		# pick one node from todo which no other todo can reach
+		# exclude pathing through already ordered nodes
+		todo.find { |t1|
+			not todo.find { |t2| t1 != t2 and can_find_path(t2, t1, o.dup) }
+		} ||
+		# some cycle heads are mutually recursive
+		todo.sort_by { |t1|
+			# find the one who can reach the most others
+			[todo.find_all { |t2| t1 != t2 and can_find_path(t1, t2, o.dup) }.length,
+			# and with the highest rank
+			 t1.from.map { |gg| o[gg] }.compact.max]
+		}.last
 	end
 
 	# checks if there is a path from src to dst avoiding stuff in 'done'
@@ -313,45 +315,50 @@ class Graph
 		end
 	end
 
-	# remove looping edges from @groups, order the boxes in layers, find the roots of the graph, create dummy groups along long edges
-	def maketree
-		find_roots
-
+	# revert looping edges in groups
+	def make_tree(groups, order)
 		# now we have the roots and node orders
 		#  revert cycling edges - o(chld) < o(parent)
-		#  expand long edges    - o(chld) > o(parent)+1
-		newemptybox = lambda { b = Box.new(nil, []) ; b.x = -8 ; b.y = -9 ; b.w = 16 ; b.h = 18 ; @groups << b ; b }
-		newboxo = {}
-		@order.each_key { |g|
-			og = @order[g] || newboxo[g]
+		order.each_key { |g|
 			g.to.dup.each { |gg|
-				ogg = @order[gg] || newboxo[gg]
-				if ogg < og
-					# cycling edge, revert & may expand
-					sq = [gg]
-					if ogg < og-1
-						(og - 1 - ogg).times { |i| sq << newemptybox[] }
-					end
-					sq << g
+				if order[gg] < order[g]
+					# cycling edge, revert
 					g.from.delete gg
 					gg.to.delete g
-					newboxo[gg] ||= @order[gg]
-					sq.inject { |g1, g2|
-						g1.to |= [g2]
-						g2.from |= [g1]
-						# need separate hash to avoid updating @order in its #each_key
-						newboxo[g2] = newboxo[g1]+1
-						g2
-					}
-					raise if newboxo[g] != og
-				elsif ogg > og+1
+					g.to |= [gg]
+					gg.from |= [g]
+				end
+			}
+		}
+	end
+
+	# group groups in layers of same order
+	# create dummy groups along long edges so that no path exists between non-contiguous layers
+	def create_layers(groups, order)
+		newemptybox = lambda {
+			b = Box.new(nil, [])
+			b.x = -8
+			b.y = -9
+			b.w = 16
+			b.h = 18
+			groups << b
+			b
+		}
+
+		newboxo = {}
+
+		order.each_key { |g|
+			og = order[g] || newboxo[g]
+			g.to.dup.each { |gg|
+				ogg = order[gg] || newboxo[gg]
+				if ogg > og+1
 					# long edge, expand
 					sq = [g]
 					(ogg - 1 - og).times { |i| sq << newemptybox[] }
 					sq << gg
 					gg.from.delete g
 					g.to.delete gg
-					newboxo[g] ||= @order[g]
+					newboxo[g] ||= order[g]
 					sq.inject { |g1, g2|
 						g1.to |= [g2]
 						g2.from |= [g1]
@@ -362,21 +369,26 @@ class Graph
 				end
 			}
 		}
-		@order.update newboxo
 
-		# @layers[o] = [list of nodes of order o]
-		@layers = []
-		@groups.each { |g|
-			(@layers[@order[g]] ||= []) << g
+		order.update newboxo
+
+		# layers[o] = [list of nodes of order o]
+		layers = []
+		groups.each { |g|
+			(layers[order[g]] ||= []) << g
 		}
+
+		layers
 	end
 
+
 	# place boxes in a good-looking layout
-	def auto_arrange_init(list=@box)
-		# groups is an array of box groups
+	# create artificial 'group' container for boxes, that will later be merged in geometrical patterns
+	def auto_arrange_init
+		# 'group' is an array of boxes
 		# all groups are centered on the origin
-		h = {}	# { group => box }
-		@groups = list.map { |b|
+		h = {}	# { box => group }
+		@groups = @box.map { |b|
 			b.x = -b.w/2
 			b.y = -b.h/2
 			g = Box.new(nil, [b])
@@ -397,35 +409,46 @@ class Graph
 			g.from = g.content.first.from.map { |f| h[f] if f != g }.compact
 		}
 
-		pattern_layout
+		# order boxes
+		@order = order_graph(@groups)
 
-		maketree
-		return if @layers.empty?
+		# remove cycles from the graph
+		make_tree(@groups, @order)
+	end
 
-		# TODO layout disjoint graphs distinctly ?
+	def auto_arrange_step(groups=@groups)
+		pattern_layout_col(groups) or pattern_layout_line(groups) or
+			pattern_layout_ifend(groups) or pattern_layout_complex(groups)
+	end
+
+	def auto_arrange_post
+		auto_arrange_layers
+		auto_arrange_movebox
+		auto_arrange_vertical_shrink
+	end
+
+	def auto_arrange_layers
+		@order = order_graph(@groups)
+		# already a tree
+		layers = create_layers(@groups, @order)
+		return if layers.empty?
 
 		# widest layer width
-		maxlw = @layers.map { |l| l.inject(0) { |ll, g| ll + g.w } }.max
+		maxlw = layers.map { |l| l.inject(0) { |ll, g| ll + g.w } }.max
 
 		# center the 1st layer boxes on a segment that large
 		x0 = -maxlw/2.0
-		curlw = @layers[0].inject(0) { |ll, g| ll + g.w }
-		dx0 = (maxlw - curlw) / (2.0*@layers[0].length)
-		@layers[0].each { |g|
+		curlw = layers[0].inject(0) { |ll, g| ll + g.w }
+		dx0 = (maxlw - curlw) / (2.0*layers[0].length)
+		layers[0].each { |g|
 			x0 += dx0
 			g.x = x0
 			x0 += g.w + dx0
 		}
-	end
-
-	def auto_arrange_step
-		return if @layers.empty?
 
 		# at this point, the goal is to reorder the most populated layer the best we can, and
 		# move other layers' boxes accordingly
-
-		maxlw = @layers.map { |l| l.inject(0) { |ll, g| ll + g.w } }.max
-		@layers[1..-1].each { |l|
+		layers[1..-1].each { |l|
 			# for each subsequent layer, reorder boxes based on their ties with the previous layer
 			i = 0
 			l.replace l.sort_by { |g|
@@ -446,7 +469,7 @@ class Graph
 			}
 		}
 
-		@layers[0...-1].reverse_each { |l|
+		layers[0...-1].reverse_each { |l|
 			# for each subsequent layer, reorder boxes based on their ties with the previous layer
 			i = 0
 			l.replace l.sort_by { |g|
@@ -473,13 +496,13 @@ class Graph
 		# now the boxes are (hopefully) sorted correctly
 		# position them according to their ties with prev/next layer
 		# from the maxw layer (positionning = packed), propagate adjacent layers positions
-		maxidx = (0..@layers.length).find { |i| l = @layers[i] ; l.inject(0) { |ll, g| ll + g.w } == maxlw }
+		maxidx = (0..layers.length).find { |i| l = layers[i] ; l.inject(0) { |ll, g| ll + g.w } == maxlw }
 		# list of layer indexes to walk
 		ilist = []
-		ilist.concat((maxidx+1...@layers.length).to_a) if maxidx < @layers.length-1
+		ilist.concat((maxidx+1...layers.length).to_a) if maxidx < layers.length-1
 		ilist.concat((0..maxidx-1).to_a.reverse) if maxidx > 0
 		ilist.each { |i|
-			l = @layers[i]
+			l = layers[i]
 			curlw = l.inject(0) { |ll, g| ll + g.w }
 			# left/rightmost acceptable position for the current box w/o overflowing on the right side
 			minx = -maxlw/2.0
@@ -501,21 +524,20 @@ class Graph
 				maxx += g.w
 			}
 		}
-		nil
-	end
 
-	def auto_arrange_post
 		# vertical: just center each box on its layer
 		y0 = 0
-		@layers.each { |l|
+		layers.each { |l|
 			hmax = l.map { |g| g.h }.max
 			l.each { |g|
 				g.y = y0 + (hmax - g.h)/2
 			}
 			y0 += hmax
 		}
+	end
 
-		# actually move boxes inside the groups
+	# actually move boxes inside the groups
+	def auto_arrange_movebox
 		@groups.each { |g|
 			dx = (g.x + g.w/2).to_i
 			dy = (g.y + g.h/2).to_i
@@ -524,7 +546,9 @@ class Graph
 				b.y += dy
 			}
 		}
+	end
 
+	def auto_arrange_vertical_shrink
 		# vertical shrink
 		# TODO stuff may shrink vertically more if we could move it slightly horizontally...
 		@box.sort_by { |b| b.y }.each { |b|
@@ -1318,27 +1342,6 @@ class GraphViewWidget < DrawableWidget
 
 		when ?R
 			load __FILE__
-		when ?S	# reset
-			@curcontext.auto_arrange_init(@selected_boxes.empty? ? @curcontext.box : @selected_boxes)
-			puts 'reset', @curcontext.dump_layout, ''
-			zoom_all
-			redraw
-		when ?T	# step auto_arrange
-			@curcontext.auto_arrange_step
-			puts @curcontext.dump_layout, ''
-			zoom_all
-			redraw
-		when ?L	# post auto_arrange
-			@curcontext.auto_arrange_post
-			zoom_all
-			redraw
-		when ?V	# shrink
-			@selected_boxes.each { |b_|
-				dx = (b_.from + b_.to).map { |bb| bb.x+bb.w/2 - b_.x-b_.w/2 }
-				dx = dx.inject(0) { |s, xx| s+xx }/dx.length
-				b_.x += dx
-			}
-			redraw
 		when ?I	# create arbitrary boxes/links
 			if @selected_boxes.empty?
 				@fakebox ||= 0
