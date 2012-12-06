@@ -74,6 +74,7 @@ class DisasmWidget < ContainerChoiceWidget
 
 	# start an idle callback that will run one round of @dasm.disassemble_mainiter
 	def start_disassemble_bg
+		return if @dasm.addrs_todo.empty? and @entrypoints.all? { |ep| @dasm.decoded[ep] }
 		gui_update_counter = 0
 		run = false
 		Gui.idle_add {
