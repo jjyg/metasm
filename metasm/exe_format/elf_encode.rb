@@ -601,17 +601,13 @@ class ELF
 		@sections.each { |s|
 			next if not s.encoded
 			s.encoded.reloc.each_value { |r|
-				t = Expression[r.target.reduce]
-				if t.op == :+ and t.rexpr.kind_of? Expression and t.rexpr.op == :- and not t.rexpr.lexpr and
-						t.rexpr.rexpr.kind_of?(::String) and t.lexpr.kind_of?(::String)
-					symname = t.lexpr
-				else
-					symname = t.reduce_rec
-				end
-				next if not dll = autoexports[symname]
+				et = r.target.externals
+				extern = et.find_all { |name| autoexports[name] }
+				next if extern.length != 1
+				symname = extern.first
 				if not @symbols.find { |sym| sym.name == symname }
 					@tag['NEEDED'] ||= []
-					@tag['NEEDED'] |= [dll]
+					@tag['NEEDED'] |= [autoexports[symname]]
 					sym = Symbol.new
 					sym.shndx = 'UNDEF'
 					sym.type = 'FUNC'
@@ -737,6 +733,55 @@ class ELF
 		end
 		r.addend = Expression[rel.target]
 		#section.encoded.reloc.delete off
+		@relocations << r
+	end
+
+	def arch_mips_create_reloc(section, off, binding, rel=nil)
+		rel ||= section.encoded.reloc[off]
+		startaddr = label_at(@encoded, 0)
+		r = Relocation.new
+		r.offset = Expression[label_at(section.encoded, 0, 'sect_start'), :+, off]
+		if Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of?(::Integer)
+			# this location is relative to the base load address of the ELF
+			r.type = 'REL32'
+		else
+			et = rel.target.externals
+			extern = et.find_all { |name| not binding[name] }
+			if extern.length != 1
+				puts "ELF: mips_create_reloc: ignoring reloc #{rel.target} in #{section.name}: #{extern.inspect} unknown" if $VERBOSE
+				return
+			end
+			if not sym = @symbols.find { |s| s.name == extern.first }
+				puts "ELF: mips_create_reloc: ignoring reloc #{rel.target} in #{section.name}: undefined symbol #{extern.first}" if $VERBOSE
+				return
+			end
+			r.symbol = sym
+			if Expression[rel.target, :-, sym.name].bind(binding).reduce.kind_of?(::Integer)
+				rel.target = Expression[rel.target, :-, sym.name]
+				r.type = '32'
+			elsif Expression[rel.target, :&, 0xffff0000].reduce.kind_of?(::Integer)
+				lo = Expression[rel.target, :&, 0xffff].reduce
+				lo = lo.lexpr if lo.kind_of?(Expression) and lo.op == :& and lo.rexpr == 0xffff
+				if lo.kind_of?(Expression) and lo.op == :>> and lo.rexpr == 16
+					r.type = 'HI16'
+					rel.target = Expression[rel.target, :&, 0xffff0000]
+					# XXX offset ?
+				elsif lo.kind_of?(String) or (lo.kind_of(Expression) and lo.op == :+)
+					r.type = 'LO16'
+					rel.target = Expression[rel.target, :&, 0xffff0000]
+					# XXX offset ?
+				else
+					puts "ELF: mips_create_reloc: ignoring reloc #{lo}: cannot find matching 16 reloc type" if $VERBOSE
+					return
+				end
+			#elsif Expression[rel.target, :+, label_at(section.encoded, 0)].bind(section.encoded.binding).reduce.kind_of? ::Integer
+			#	rel.target = Expression[[rel.target, :+, label_at(section.encoded, 0)], :+, off]
+			#	r.type = 'PC32'
+			else
+				puts "ELF: mips_create_reloc: ignoring reloc #{sym.name} + #{rel.target}: cannot find matching standard reloc type" if $VERBOSE
+				return
+			end
+		end
 		@relocations << r
 	end
 

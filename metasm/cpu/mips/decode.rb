@@ -92,7 +92,7 @@ class MIPS
 				len = 8  if op.props[:mi8 ] or op.props[:mu8]
 				Memref.new Reg.new(field_val[:rs]), Expression[field_val[:i16]], len
 			when :ft; FpReg.new field_val[a]
-			when :idm1, :idb; Expression['unsupported']
+			when :idm1; Expression['unsupported']
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}

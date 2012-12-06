@@ -46,7 +46,7 @@ class MIPS
 			end
 		}
 
-		Expression[base, :+, [[val, :&, mask], :<<, shift]].encode(:u32, @endianness) << postdata
+		Expression[base, :|, [[val, :&, mask], :<<, shift]].encode(:u32, @endianness) << postdata
 	end
 end
 end
