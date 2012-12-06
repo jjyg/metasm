@@ -294,5 +294,8 @@ class Sh4 < CPU
 		init
 	end
 
+	def dbg_register_list 
+		@dbg_register_list ||= GPR::Sym
+	end
 end
 end

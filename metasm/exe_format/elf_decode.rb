@@ -1014,7 +1014,9 @@ EOC
 		when 'sh4'
 			noret = DecodedFunction.new
 			noret.noreturn = true
-			d.function[Expression['__stack_chk_fail']] = noret
+			%w[__stack_chk_fail abort exit].each { |fn|
+				d.function[Expression[fn]] = noret
+			}
 			d.function[:default] = @cpu.disassembler_default_func
 		end
 		d

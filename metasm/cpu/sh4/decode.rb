@@ -142,9 +142,8 @@ class Sh4
 	def disassembler_default_func
 		df = DecodedFunction.new
 		df.backtrace_binding = {}
-		13.times { |i| df.backtrace_binding["r#{i}".to_sym] = Expression::Unknown }
-		df.backtrace_binding[:r14] = Expression[:r14]
-		df.backtrace_binding[:r15] = Expression[:r15]
+		(0..7 ).each { |i| r = "r#{i}".to_sym ; df.backtrace_binding[r] = Expression::Unknown }
+		(8..15).each { |i| r = "r#{i}".to_sym ; df.backtrace_binding[r] = Expression[r] }
 		df.backtracked_for = [BacktraceTrace.new(Expression[:pr], :default, Expression[:pr], :x)]
 		df.btfor_callback = lambda { |dasm, btfor, funcaddr, calladdr|
 			if funcaddr != :default
@@ -239,7 +238,7 @@ class Sh4
 				res = Expression[a0, :-, 1]
 				{ :a0 => res, :t_bit => Expression[res, :==, 0] }
 			}
-			when 'add' ; lambda { |di, a0, a1| { a1 => Expression[a0, :+, a1] }}
+			when 'add' ; lambda { |di, a0, a1| { a1 => Expression[[a0, :+, a1], :&, 0xffff_ffff] }}
 			when 'addc' ; lambda { |di, a0, a1|
 				res = Expression[[a0, :&, mask[di]], :+, [[a1, :&, mask[di]], :+, :t_bit]]
 				{ a1 => Expression[a0, :+, [a1, :+, :t_bit]], :t_bit => Expression[res, :>, mask[di]] }
@@ -274,12 +273,11 @@ class Sh4
 				shift_bit = Expression[a0, :&, 1]
 				{ a0 => Expression[a0, :>>, 1], :t_bit => shift_bit }
 			}
-			when 'sub';  lambda { |di, a0, a1| { a1 => Expression[a1, :-, a0] }}
+			when 'sub';  lambda { |di, a0, a1| { a1 => Expression[[a1, :-, a0], :&, 0xffff_ffff] }}
 			when 'subc'; lambda { |di, a0, a1| { a1 => Expression[a1, :-, [a0, :-, :t_bit]] }}
 			when 'and', 'and.b'; lambda { |di, a0, a1| { a1 => Expression[[a0, :&, mask[di]], :|, [[a1, :&, mask[di]]]] }}
 			when 'or', 'or.b';   lambda { |di, a0, a1| { a1 => Expression[[a0, :|, mask[di]], :|, [[a1, :&, mask[di]]]] }}
 			when 'xor', 'xor.b'; lambda { |di, a0, a1| { a1 => Expression[[a0, :|, mask[di]], :^, [[a1, :&, mask[di]]]] }}
-			when 'add', 'addc', 'addv'; lambda { |di, a0, a1| { a1 => Expression[a0, :+, a1] }}
 			when 'neg' ;  lambda { |di, a0, a1| { a1 => Expression[mask[di], :-, a0] }}
 			when 'negc' ; lambda { |di, a0, a1| { a1 => Expression[[[mask[di], :-, a0], :-, :t_bit], :&, mask[di]] }}
 			when 'not';   lambda { |di, a0, a1| { a1 => Expression[a0, :^, mask[di]] }}
