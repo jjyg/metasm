@@ -80,18 +80,11 @@ class Graph
 
 		# move boxes inside this group
 		maxw = ar.map { |g| g.w }.max
-		if ar.last.to.include? ar.first
-			# ar is a loop: shift whole array to
-			#  make place for the arrow going up
-			maxw += 20
-			dx = 10
-		else dx = 0
-		end
 		fullh = ar.inject(0) { |h, g| h + g.h }
 		cury = -fullh/2
 		ar.each { |g|
 			dy = cury - g.y
-			g.content.each { |b| b.x += dx ; b.y += dy }
+			g.content.each { |b| b.y += dy }
 			cury += g.h
 		}
 
@@ -106,9 +99,8 @@ class Graph
 		# fix xrefs
 		newg.from.each { |g| g.to -= ar ; g.to << newg }
 		newg.to.each { |g| g.from -= ar ; g.from << newg }
-		# fix @groups
+		# fix groups
 		groups[groups.index(head)] = newg
-		@order[newg] = @order[head]
 		ar.each { |g| groups.delete g }
 
 		true
@@ -130,8 +122,8 @@ class Graph
 		return if ar.length <= 1
 
 		# move boxes inside this group
-		ar = ar.sort_by { |g| -g.h }
-		maxh = ar.last.h
+		#ar = ar.sort_by { |g| -g.h }
+		maxh = ar.map { |g| g.h }.max
 		fullw = ar.inject(0) { |w, g| w + g.w }
 		curx = -fullw/2
 		ar.each { |g|
@@ -168,7 +160,6 @@ class Graph
 		newg.to.each { |g| g.from -= ar ; g.from << newg }
 		# fix groups
 		groups[groups.index(ar.first)] = newg
-		@order[newg] = @order[ar.first]
 		ar.each { |g| groups.delete g }
 
 		true
@@ -218,7 +209,16 @@ class Graph
 	end
 
 	def pattern_layout_complex(groups)
-		# TODO
+		order = order_graph(groups)
+
+		# search global if/end patterns, then recurse on the 'then'
+		head = groups.sort_by { |g| order[g] }.find { |g|
+			g.to.length > 1
+			# for every 'to', find all nodes that this to and no other can reach (list_reachable)
+			# then redo the whole pattern_layout for this subgroup only
+		}
+
+		false
 	end
 
 	# find the minimal set of nodes from which we can reach all others
@@ -313,6 +313,18 @@ class Graph
 			done[g] = true
 			todo.concat g.to
 		end
+		false
+	end
+
+	# returns a hash with true for every node reachable from src (included)
+	def list_reachable(src, done={})
+		todo = [src]
+		while g = todo.pop
+			next if done[g]
+			done[g] = true
+			todo.concat g.to
+		end
+		done
 	end
 
 	# revert looping edges in groups
@@ -381,56 +393,12 @@ class Graph
 		layers
 	end
 
-
-	# place boxes in a good-looking layout
-	# create artificial 'group' container for boxes, that will later be merged in geometrical patterns
-	def auto_arrange_init
-		# 'group' is an array of boxes
-		# all groups are centered on the origin
-		h = {}	# { box => group }
-		@groups = @box.map { |b|
-			b.x = -b.w/2
-			b.y = -b.h/2
-			g = Box.new(nil, [b])
-			g.x = b.x - 8
-			g.y = b.y - 9
-			g.w = b.w + 16
-			g.h = b.h + 18
-			h[b] = g
-			g
-		}
-
-		# init group.to/from
-		# must always point to something that is in the 'groups' array
-		# no self references
-		# a box is in one and only one group in 'groups'
-		@groups.each { |g|
-			g.to   = g.content.first.to.map   { |t| h[t] if t != g }.compact
-			g.from = g.content.first.from.map { |f| h[f] if f != g }.compact
-		}
-
-		# order boxes
-		@order = order_graph(@groups)
-
-		# remove cycles from the graph
-		make_tree(@groups, @order)
-	end
-
-	def auto_arrange_step(groups=@groups)
-		pattern_layout_col(groups) or pattern_layout_line(groups) or
-			pattern_layout_ifend(groups) or pattern_layout_complex(groups)
-	end
-
-	def auto_arrange_post
-		auto_arrange_layers
-		auto_arrange_movebox
-		auto_arrange_vertical_shrink
-	end
-
-	def auto_arrange_layers
-		@order = order_graph(@groups)
+	# take all groups, order them by order, layout as layers
+	# always return a single group holding everything
+	def layout_layers(groups)
+		order = order_graph(groups)
 		# already a tree
-		layers = create_layers(@groups, @order)
+		layers = create_layers(groups, order)
 		return if layers.empty?
 
 		# widest layer width
@@ -498,42 +466,109 @@ class Graph
 		# from the maxw layer (positionning = packed), propagate adjacent layers positions
 		maxidx = (0..layers.length).find { |i| l = layers[i] ; l.inject(0) { |ll, g| ll + g.w } == maxlw }
 		# list of layer indexes to walk
-		ilist = []
+		ilist = [maxidx]
 		ilist.concat((maxidx+1...layers.length).to_a) if maxidx < layers.length-1
 		ilist.concat((0..maxidx-1).to_a.reverse) if maxidx > 0
+		layerbox = []
 		ilist.each { |i|
 			l = layers[i]
 			curlw = l.inject(0) { |ll, g| ll + g.w }
 			# left/rightmost acceptable position for the current box w/o overflowing on the right side
 			minx = -maxlw/2.0
 			maxx = minx + (maxlw-curlw)
+
+			# replace whole layer with a box
+			newg = layerbox[i] = Box.new(nil, l.map { |g| g.content }.flatten)
+			newg.w = maxlw
+			newg.h = l.map { |g| g.h }.max
+			newg.x = -newg.w/2
+			newg.y = -newg.h/2
+			# dont care for from/to, we'll return a single box anyway
+
 			l.each { |g|
 				ref = (i < maxidx) ? g.to : g.from
 				# TODO elastic positionning around the ideal position
 				# (g and g+1 may have the same med, then center both on it)
-				if ref.empty?
-					g.x = (minx+maxx)/2
+				if i == maxidx
+					nx = minx
+				elsif ref.empty?
+					nx = (minx+maxx)/2
 				else
 					# center on the outline of rx
 					# may want to center on rx center's center ?
 					rx = ref.sort_by { |gg| gg.x }
-					med = (rx[0].x + rx[-1].x + rx[-1].w - g.w) / 2.0
-					g.x = [[med, minx].max, maxx].min
+					med = (rx.first.x + rx.last.x + rx.last.w - g.w) / 2.0
+					nx = [[med, minx].max, maxx].min
 				end
-				minx = g.x + g.w
+				dx = nx+g.w/2
+				g.content.each { |b| b.x += dx }
+				minx = nx+g.w
 				maxx += g.w
 			}
 		}
 
+		newg = Box.new(nil, layerbox.map { |g| g.content }.flatten)
+		newg.w = layerbox.map { |g| [-g.x, g.x+g.w].max/2 }.max
+		newg.h = layerbox.inject(0) { |h, g| h + g.h }
+		newg.x = -newg.w/2
+		newg.y = -newg.h/2
+
 		# vertical: just center each box on its layer
-		y0 = 0
-		layers.each { |l|
-			hmax = l.map { |g| g.h }.max
-			l.each { |g|
-				g.y = y0 + (hmax - g.h)/2
+		y0 = newg.y
+		layerbox.each { |lg|
+			lg.content.each { |b|
+				b.y += y0-lg.y
 			}
-			y0 += hmax
+			y0 += lg.h
 		}
+
+		groups.replace [newg]
+	end
+
+
+	# place boxes in a good-looking layout
+	# create artificial 'group' container for boxes, that will later be merged in geometrical patterns
+	def auto_arrange_init
+		# 'group' is an array of boxes
+		# all groups are centered on the origin
+		h = {}	# { box => group }
+		@groups = @box.map { |b|
+			b.x = -b.w/2
+			b.y = -b.h/2
+			g = Box.new(nil, [b])
+			g.x = b.x - 8
+			g.y = b.y - 9
+			g.w = b.w + 16
+			g.h = b.h + 18
+			h[b] = g
+			g
+		}
+
+		# init group.to/from
+		# must always point to something that is in the 'groups' array
+		# no self references
+		# a box is in one and only one group in 'groups'
+		@groups.each { |g|
+			g.to   = g.content.first.to.map   { |t| h[t] if t != g }.compact
+			g.from = g.content.first.from.map { |f| h[f] if f != g }.compact
+		}
+
+		# order boxes
+		order = order_graph(@groups)
+
+		# remove cycles from the graph
+		make_tree(@groups, order)
+	end
+
+	def auto_arrange_step(groups=@groups)
+		pattern_layout_col(groups) or pattern_layout_line(groups) or
+			pattern_layout_ifend(groups) or pattern_layout_complex(groups) or
+			layout_layers(groups)
+	end
+
+	def auto_arrange_post
+		auto_arrange_movebox
+		#auto_arrange_vertical_shrink
 	end
 
 	# actually move boxes inside the groups
