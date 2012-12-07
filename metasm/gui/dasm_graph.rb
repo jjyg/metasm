@@ -106,6 +106,24 @@ class Graph
 		true
 	end
 
+	# if a group has no content close to its x/x+w borders, shrink it
+	def group_remove_hz_margin(g, maxw=16)
+		if g.content.empty?
+			g.x = -maxw/2 if g.x < -maxw/2
+			g.w = maxw if g.w > maxw
+			return
+		end
+
+		margin_left = g.content.map { |b| b.x }.min - g.x
+		margin_right = g.x+g.w - g.content.map { |b| b.x+b.w }.max
+		if margin_left + margin_right > maxw
+			g.w -= margin_left + margin_right - maxw
+			dx = (maxw/2 + margin_right - margin_left)/2
+			g.content.each { |b| b.x += dx }
+			g.x = -g.w/2
+		end
+	end
+
 	# a -> [b, c, d] -> e
 	def pattern_layout_line(groups)
 		# find head
@@ -120,6 +138,8 @@ class Graph
 			break if ar.length > 1
 		}
 		return if ar.length <= 1
+
+		ar.each { |g| group_remove_hz_margin(g) }
 
 		# move boxes inside this group
 		#ar = ar.sort_by { |g| -g.h }
@@ -188,17 +208,20 @@ class Graph
 		head.y -= ten.h/2
 
 		# widen 'if'
-		dw = ten.w - head.w
+		# this adds a phantom left side
+		# drop existing margins first
+		group_remove_hz_margin(ten)
+		dw = ten.w - head.w/2
 		if dw > 0
 			# need to widen head to fit ten
-			head.w += dw
-			head.x -= dw/2
+			head.w += 2*dw
+			head.x -= dw
 		end
 
 		# merge
-		dx = -ten.x
-		ten.content.each { |g| g.x += dx }
+		ten.content.each { |g| g.x += -ten.x }
 		head.content.concat ten.content
+
 		head.to.delete ten
 		head.to[0].from.delete ten
 
@@ -400,6 +423,8 @@ class Graph
 		# already a tree
 		layers = create_layers(groups, order)
 		return if layers.empty?
+
+		layers.each { |l| l.each { |g| group_remove_hz_margin(g) } }
 
 		# widest layer width
 		maxlw = layers.map { |l| l.inject(0) { |ll, g| ll + g.w } }.max
