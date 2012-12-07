@@ -2635,7 +2635,7 @@ class IBoxWidget < DrawableWidget
 			@history_off %= @history.length
 			@curline = @history[@history_off].to_s
 			@caret_x = @curline.length if @caret_x > @curline.length
-			update_caret
+			redraw
 		when :enter
 			@history << @curline.strip
 			@history.pop if @history.last == ''
