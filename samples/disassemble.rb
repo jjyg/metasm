@@ -75,7 +75,13 @@ dasm.parse_c_file opts[:cheader] if opts[:cheader]
 dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 dasm.debug_backtrace = true if opts[:debugbacktrace]
 opts[:stopaddr].to_a.each { |addr| dasm.decoded[makeint[addr]] = true }
-opts[:plugin].to_a.each { |p| dasm.load_plugin p }
+opts[:plugin].to_a.each { |p|
+	begin
+		dasm.load_plugin p
+	rescue ::Exception
+		puts "Error with plugin #{plugin_filename}: #{$!.class} #{$!}"
+	end
+}
 opts[:hookstr].to_a.each { |f| eval f }
 
 t1 = Time.now if opts[:benchmark]
@@ -98,7 +104,13 @@ if opts[:decompile]
 	tdc = Time.now if opts[:benchmark]
 end
 
-opts[:post_plugin].to_a.each { |p| dasm.load_plugin p }
+opts[:post_plugin].to_a.each { |p|
+	begin
+		dasm.load_plugin p
+	rescue ::Exception
+		puts "Error with plugin #{plugin_filename}: #{$!.class} #{$!}"
+	end
+}
 
 dasm.save_file(opts[:savefile]) if opts[:savefile]
 

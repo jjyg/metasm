@@ -93,11 +93,23 @@ if exe
 	dasm.disassemble_fast_deep(*ep) if opts[:fast]
 elsif dbg
 	dbg.load_map opts[:map] if opts[:map]
-	opts[:plugin].to_a.each { |p| dbg.load_plugin(p) }
+	opts[:plugin].to_a.each { |p|
+		begin
+			dbg.load_plugin(p)
+		rescue ::Exception
+			puts "Error with plugin #{plugin_filename}: #{$!.class} #{$!}"
+		end
+	}
 end
 if dasm
 	w.display(dasm, ep)
-	opts[:plugin].to_a.each { |p| dasm.load_plugin(p) }
+	opts[:plugin].to_a.each { |p|
+		begin
+			dasm.load_plugin(p)
+		rescue ::Exception
+			puts "Error with plugin #{plugin_filename}: #{$!.class} #{$!}"
+		end
+	}
 
 	if opts[:session]
 		if File.exist?(opts[:session])

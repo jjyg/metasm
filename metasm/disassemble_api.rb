@@ -1697,8 +1697,6 @@ class Disassembler
 		end
 
 		instance_eval File.read(plugin_filename)
-	rescue ::Exception
-		puts "Error with plugin #{plugin_filename}: #{$!.class} #{$!}"
 	end
 
 	# same as load_plugin, but hides the @gui attribute while loading, preventing the plugin do popup stuff
