@@ -233,15 +233,60 @@ class Graph
 
 	def pattern_layout_complex(groups)
 		order = order_graph(groups)
-
-		# search global if/end patterns, then recurse on the 'then'
-		head = groups.sort_by { |g| order[g] }.find { |g|
-			g.to.length > 1
-			# for every 'to', find all nodes that this to and no other can reach (list_reachable)
-			# then redo the whole pattern_layout for this subgroup only
+		uniq = nil
+		if groups.sort_by { |g| order[g] }.find { |g|
+			next if g.to.length <= 1
+			# list all nodes reachable for every 'to'
+			reach = g.to.map { |t| list_reachable(t) }
+			# list all nodes reachable only from one 'to'
+			uniq = []
+			reach.each_with_index { |r, i|
+				# take all nodes reachable from there ...
+				u = uniq[i] = r.dup
+				reach.each_with_index { |rr, ii|
+					next if i == ii
+					# ... and delete nodes reachable from elsewhere
+					rr.each_key { |k| u.delete k }
+				}
+			}
+			uniq.delete_if { |u| u.length <= 1 }
+			!uniq.empty?
 		}
+			# now layout every uniq subgroup independently
+			uniq.each { |u|
+				# isolate subgroup from external links
+				hadfrom = []
+				hadto = []
+				subgroups = groups.find_all { |g| u[g] }
+				subgroups.each { |g|
+					g.to.delete_if { |t| hadto << t if not u[t] }
+					g.from.delete_if { |f| hadfrom << f if not u[f] }
+				}
 
-		false
+				# subgroup layout
+				auto_arrange_step(subgroups) while subgroups.length > 1
+				newg = subgroups[0]
+
+				# patch 'groups'
+				idx = groups.index { |g| u[g] }
+				groups.delete_if { |g| u[g] }
+				groups[idx, 0] = [newg]
+
+				# restore external links & fix xrefs
+				hadfrom.uniq.each { |f|
+					f.to.delete_if { |t| u[t] }
+					f.to |= [newg]
+					newg.from |= [f]
+				}
+				hadto.uniq.each { |t|
+					t.from.delete_if { |f| u[f] }
+					t.from |= [newg]
+					newg.to |= [t]
+				}
+			}
+
+			true
+		end
 	end
 
 	# find the minimal set of nodes from which we can reach all others
