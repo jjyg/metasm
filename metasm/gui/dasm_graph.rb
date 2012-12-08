@@ -403,10 +403,10 @@ class Graph
 			g.to.dup.each { |gg|
 				if order[gg] < order[g]
 					# cycling edge, revert
-					g.from.delete gg
-					gg.to.delete g
-					g.to |= [gg]
-					gg.from |= [g]
+					g.to.delete gg
+					gg.from.delete g
+					g.from |= [gg]
+					gg.to |= [g]
 				end
 			}
 		}
