@@ -238,14 +238,15 @@ class Graph
 			next if g.to.length <= 1
 			# list all nodes reachable for every 'to'
 			reach = g.to.map { |t| list_reachable(t) }
-			# list all nodes reachable only from one 'to'
+			# list all nodes reachable only from a single 'to'
 			uniq = []
 			reach.each_with_index { |r, i|
 				# take all nodes reachable from there ...
 				u = uniq[i] = r.dup
+				u.delete_if { |k, v| k.content.empty? }	# ignore previous layout_complex artifacts
 				reach.each_with_index { |rr, ii|
 					next if i == ii
-					# ... and delete nodes reachable from elsewhere
+					# ... and delete nodes reachable from anywhere else
 					rr.each_key { |k| u.delete k }
 				}
 			}
@@ -254,14 +255,34 @@ class Graph
 		}
 			# now layout every uniq subgroup independently
 			uniq.each { |u|
-				# isolate subgroup from external links
-				hadfrom = []
-				hadto = []
 				subgroups = groups.find_all { |g| u[g] }
+
+				# isolate subgroup from external links
+				# change all external links into a single empty box
+				newtop = Box.new(nil, [])
+				newtop.x = -8 ; newtop.y = -9
+				newtop.w = 16 ; newtop.h = 18
+				newbot = Box.new(nil, [])
+				newbot.x = -8 ; newbot.y = -9
+				newbot.w = 16 ; newbot.h = 18
+				hadfrom = [] ; hadto = []
 				subgroups.each { |g|
-					g.to.delete_if { |t| hadto << t if not u[t] }
-					g.from.delete_if { |f| hadfrom << f if not u[f] }
+					g.to.dup.each { |t|
+						next if u[t]
+						newbot.from |= [g]
+						g.to.delete t
+						hadto << t
+						g.to |= [newbot]
+					}
+					g.from.dup.each { |f|
+						next if u[f]
+						newtop.to |= [g]
+						g.from.delete f
+						hadfrom << f
+						g.from |= [newtop]
+					}
 				}
+				subgroups << newtop << newbot
 
 				# subgroup layout
 				auto_arrange_step(subgroups) while subgroups.length > 1
@@ -578,7 +599,7 @@ class Graph
 		}
 
 		newg = Box.new(nil, layerbox.map { |g| g.content }.flatten)
-		newg.w = layerbox.map { |g| [-g.x, g.x+g.w].max/2 }.max
+		newg.w = layerbox.map { |g| g.w }.max
 		newg.h = layerbox.inject(0) { |h, g| h + g.h }
 		newg.x = -newg.w/2
 		newg.y = -newg.h/2
