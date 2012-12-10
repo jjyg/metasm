@@ -1602,6 +1602,24 @@ class Disassembler
 		}
 	end
 
+	def toggle_expr_dec(o)
+		return if not o.kind_of?(Renderable)
+		o.each_expr { |e|
+			if e.kind_of?(Expression)
+				if e.rexpr.kind_of?(::Integer)
+					e.rexpr = ExpressionString.new(Expression[e.rexpr], e.rexpr.to_s, :decimal)
+				elsif e.rexpr.kind_of?(ExpressionString) and e.rexpr.type == :decimal
+					e.rexpr = e.rexpr.reduce
+				end
+				if e.lexpr.kind_of?(::Integer)
+					e.lexpr = ExpressionString.new(Expression[e.lexpr], e.lexpr.to_s, :decimal)
+				elsif e.lexpr.kind_of?(ExpressionString) and e.lexpr.type == :decimal
+					e.lexpr = e.lexpr.reduce
+				end
+			end
+		}
+	end
+
 	# patch Expressions in current object to include label names when available
 	# XXX should we also create labels ?
 	def toggle_expr_offset(o)

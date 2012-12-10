@@ -679,6 +679,13 @@ class DisasmWidget < ContainerChoiceWidget
 		gui_update
 	end
 
+	# toggle <10h> vs <16> display
+	def toggle_expr_dec(o)
+		@dasm.toggle_expr_dec(o)
+		session_append "dasm.toggle_expr_dec(dasm.decoded[#{curaddr.inspect}])"
+		gui_update
+	end
+
 	# toggle <401000h> vs <'sub_fancyname'> in the current instr display
 	def toggle_expr_offset(o)
 		@dasm.toggle_expr_offset(o)
@@ -743,7 +750,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?b; prompt_backtrace(curaddr)
 		when ?c; disassemble(curaddr)
 		when ?C; disassemble_fast(curaddr)
-		when ?d; toggle_data(curaddr)
+		when ?d; curobj.kind_of?(DecodedInstruction) ? toggle_expr_dec(curobj) : toggle_data(curaddr)
 		when ?f; list_functions
 		when ?g; prompt_goto
 		when ?k; toggle_expr_str(curobj)
