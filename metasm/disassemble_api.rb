@@ -289,11 +289,12 @@ class Disassembler
 	# sets the label for the specified address
 	# returns nil if the address is not mapped
 	# memcheck is passed to get_section_at to validate that the address is mapped
-	def set_label_at(addr, name, memcheck=true)
+	# keep existing label if 'overwrite' is false
+	def set_label_at(addr, name, memcheck=true, overwrite=true)
 		addr = Expression[addr].reduce
 		e, b = get_section_at(addr, memcheck)
 		if not e
-		elsif not l = e.inv_export[e.ptr]
+		elsif not l = e.inv_export[e.ptr] or (!overwrite and l != name)
 			l = @program.new_label(name)
 			e.add_export l, e.ptr
 			@label_alias_cache = nil
@@ -327,6 +328,8 @@ class Disassembler
 	# returns the new label
 	# the new label must be program-uniq (see @program.new_label)
 	def rename_label(old, new)
+		return new if old == new
+		raise "label #{new.inspect} exists" if @prog_binding[new]
 		each_xref(normalize(old)) { |x|
 			next if not di = @decoded[x.origin]
 			@cpu.replace_instr_arg_immediate(di.instruction, old, new)
@@ -968,16 +971,21 @@ class Disassembler
 	def load_map(str, off=0)
 		str = File.read(str) rescue nil if not str.index("\n")
 		sks = @sections.keys.sort
+		seen = {}
 		str.each_line { |l|
 			case l.strip
 			when /^([0-9A-F]+)\s+(\w+)\s+(\w+)/i	# kernel.map style
-				set_label_at($1.to_i(16)+off, $3)
+				addr = $1.to_i(16)+off
+				set_label_at(addr, $3, false, !seen[addr])
+				seen[addr] = true
 			when /^([0-9A-F]+):([0-9A-F]+)\s+([a-z_]\w+)/i	# IDA style
 				# we do not have section load order, let's just hope that the addresses are sorted (and sortable..)
 				#  could check the 1st part of the file, with section sizes, but it is not very convenient
 				# the regexp is so that we skip the 1st part with section descriptions
 				# in the file, section 1 is the 1st section ; we have an additionnal section (exe header) which fixes the 0-index
-				set_label_at(sks[$1.to_i(16)] + $2.to_i(16) + off, $3)
+				addr = sks[$1.to_i(16)] + $2.to_i(16) + off
+				set_label_at(addr, $3, false, !seen[addr])
+				seen[addr] = true
 			end
                 }
 	end
