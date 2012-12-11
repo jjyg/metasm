@@ -814,6 +814,19 @@ class Ia32
 			}
 			l = dasm.auto_label_at(mrm.imm, 'jmp_table', 'xref')
 			replace_instr_arg_immediate(di.instruction, mrm.imm, Expression[l])
+			# add 'case 1' comments
+			cases = {}
+			ret.each_with_index { |ind, idx|
+				idx -= 1	# ret[0] = symbolic
+				next if idx < 0
+				a = dasm.backtrace(ind, di.address)
+				if a.length == 1 and a[0].kind_of?(Expression) and addr = a[0].reduce and addr.kind_of?(::Integer)
+					(cases[addr] ||= []) << idx
+				end
+			}
+			cases.each { |addr, list|
+				dasm.add_comment(addr, "case #{list.join(', ')}:")
+			}
 			return ret
 		end
 
