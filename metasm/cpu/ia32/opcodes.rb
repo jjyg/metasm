@@ -171,9 +171,9 @@ class Ia32
 		addop 'les',   [0xC4], :mrmA
 		addop 'lfs',   [0x0F, 0xB4], :mrmA
 		addop 'lgs',   [0x0F, 0xB5], :mrmA
-		addop 'lgdt',  [0x0F, 0x01], 2
+		addop 'lgdt',  [0x0F, 0x01], 2, :modrmA
 		addop 'lidt',  [0x0F, 0x01, 3<<3], :modrmA
-		addop 'lldt',  [0x0F, 0x00], 2
+		addop 'lldt',  [0x0F, 0x00], 2, :modrmA
 		addop 'lmsw',  [0x0F, 0x01], 6
 # prefix	addop 'lock',  [0xF0]
 		addop 'lsl',   [0x0F, 0x03], :mrm
