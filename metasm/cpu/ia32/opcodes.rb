@@ -859,12 +859,25 @@ class Ia32
 		addop('tzcnt', [0x0F, 0xBC], :mrm) { |o| o.props[:needpfx] = 0xF3 }
 		addop('invpcid', [0x0F, 0x38, 0x82], :mrm) { |o| o.props[:needpfx] = 0x66 }
 		addop 'rdrand', [0x0F, 0xC7], 6, :modrmR
+		addop 'rdseed', [0x0F, 0xC7], 7, :modrmR
+		addop('adcx', [0x0F, 0x38, 0xF6], :mrm) { |o| o.props[:needpfx] = 0x66 }
+		addop('adox', [0x0F, 0x38, 0xF6], :mrm) { |o| o.props[:needpfx] = 0xF3 }
 
 		# fp16
 		addop_vex 'vcvtph2ps', [nil, 128, 0x66, 0x0F38, 0], 0x13, :mrmxmm
 		addop_vex 'vcvtph2ps', [nil, 256, 0x66, 0x0F38, 0], 0x13, :mrmymm
 		addop_vex('vcvtps2ph', [nil, 128, 0x66, 0x0F3A, 0], 0x1D, :mrmxmm, :u8) { |o| o.args.reverse! }
 		addop_vex('vcvtps2ph', [nil, 256, 0x66, 0x0F3A, 0], 0x1D, :mrmymm, :u8) { |o| o.args.reverse! }
+
+		# TSE
+		addop 'xabort', [0xC6, 0xF8], nil, :i8	# may :stopexec
+		addop 'xbegin', [0xC7, 0xF8], nil, :i	# may :setip: xabortreturns to $_(xbegin) + off
+		addop 'xend',   [0x0F, 0x01, 0xD5]
+		addop 'xtest',  [0x0F, 0x01, 0xD6]
+
+		# SMAP
+		addop 'clac',  [0x0F, 0x01, 0xCA]
+		addop 'stac',  [0x0F, 0x01, 0xCB]
 	end
 
 	def init_avx2_only
