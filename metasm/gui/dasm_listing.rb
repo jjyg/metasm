@@ -539,7 +539,7 @@ class AsmListingWidget < DrawableWidget
 						comment = []
 						@dasm.each_xref(curaddr) { |xref|
 							len = xref.len if xref.len
-							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin]} "
+							comment << " #{xref.type}#{xref.len}:#{Expression[xref.origin] if xref.origin} "
 						}
 						len = 1 if (len != 2 and len != 4 and len != 8) or len < 1
 						dat = "#{%w[x db dw x dd x x x dq][len]} ? "

@@ -884,6 +884,9 @@ class GraphViewWidget < DrawableWidget
 		}	# XXX auto \r\n vs \n
 		addsubmenu(m, '_clipboard', cm)
 		addsubmenu(m, 'clone _window') { @parent_widget.clone_window(@hl_word, :graph) }
+		addsubmenu(m, 'show descendants only') { hide_non_descendants(@selected_boxes) }
+		addsubmenu(m, 'show ascendants only') { hide_non_ascendants(@selected_boxes) }
+		addsubmenu(m, 'restore graph') { gui_update }
 	end
 
 	# if the target is a call to a subfunction, open a new window with the graph of this function (popup)
@@ -1515,6 +1518,48 @@ class GraphViewWidget < DrawableWidget
 		else return false
 		end
 		true
+	end
+
+	def hide_non_descendants(list)
+		reach = {}
+		todo = list.dup
+		while b = todo.pop
+			next if reach[b]
+			reach[b] = true
+			b.to.each { |bb|
+				todo << bb if bb.y+bb.h >= b.y
+			}
+		end
+
+		@curcontext.box.delete_if { |bb|
+			!reach[bb]
+		}
+		@curcontext.box.each { |bb|
+			bb.from.delete_if { |bbb| !reach[bbb] }
+			bb.to.delete_if { |bbb| !reach[bbb] }
+		}
+		redraw
+	end
+
+	def hide_non_ascendants(list)
+		reach = {}
+		todo = list.dup
+		while b = todo.pop
+			next if reach[b]
+			reach[b] = true
+			b.from.each { |bb|
+				todo << bb if bb.y <= b.h+b.y
+			}
+		end
+
+		@curcontext.box.delete_if { |bb|
+			!reach[bb]
+		}
+		@curcontext.box.each { |bb|
+			bb.from.delete_if { |bbb| !reach[bbb] }
+			bb.to.delete_if { |bbb| !reach[bbb] }
+		}
+		redraw
 	end
 
 	# find a suitable array of graph roots, walking up from a block (function start/entrypoint)
