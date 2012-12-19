@@ -1128,7 +1128,7 @@ class DbgConsoleWidget < DrawableWidget
 			@dbg.ignore_newthread = false
 			@dbg.ignore_endthread = false
 		}
-		new_command('thread_event_ignore', 'ignore thread creation/termination') {
+		new_command('thread_events_ignore', 'ignore thread creation/termination') {
 			@dbg.ignore_newthread = true
 			@dbg.ignore_endthread = true
 		}
