@@ -392,7 +392,11 @@ class HexWidget < DrawableWidget
 
 	# pop a dialog, scans the sections for a hex pattern
 	def prompt_search_hex
-		inputbox('hex pattern to search (hex regexp, use .. for wildcard)', :text => [current_address].pack('L').unpack('H*').first) { |pat|
+		text = ''
+		if current_address.kind_of?(::Integer)
+			text = Expression.encode_imm(current_address, "u#{@dasm.cpu.size}".to_sym, @dasm.cpu).unpack('H*').first
+		end
+		inputbox('hex pattern to search (hex regexp, use .. for wildcard)', :text => text) { |pat|
 			pat = pat.gsub(' ', '').gsub('..', '.').gsub(/[0-9a-f][0-9a-f]/i) { |o| "\\x#{o}" }
 			pat = Regexp.new(pat, Regexp::MULTILINE, 'n')	# 'n' = force ascii-8bit
 			list = [['addr']] + @dasm.pattern_scan(pat).map { |a| [Expression[a]] }
