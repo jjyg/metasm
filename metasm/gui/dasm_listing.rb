@@ -276,6 +276,12 @@ class AsmListingWidget < DrawableWidget
 
 	def keypress(key)
 		case key
+		when ?u	# undef data formatting with ?d
+			addr = current_address
+			if not @dasm.decoded[addr] and @dasm.xrefs[addr].kind_of?(Xref)
+				@dasm.xrefs.delete addr
+				gui_update
+			end
 		when :left
 			if @caret_x >= 1
 				@caret_x -= 1
