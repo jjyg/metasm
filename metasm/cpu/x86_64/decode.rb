@@ -176,6 +176,8 @@ class X86_64
 
 		di.bin_length += edata.ptr - before_ptr
 
+		return if edata.ptr > edata.length
+
 		if op.name == 'movsx' or op.name == 'movzx' or op.name == 'movsxd'
 			if op.name == 'movsxd'
 				di.instruction.args[1].sz = 32

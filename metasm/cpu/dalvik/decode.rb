@@ -12,7 +12,7 @@ class Dalvik
 	end
 
 	def decode_findopcode(edata)
-		return if edata.ptr >= edata.data.length
+		return if edata.ptr+2 > edata.length
 		di = DecodedInstruction.new(self)
 		di.opcode = opcode_list[edata.decode_imm(:u16, @endianness) & 0xff]
 		edata.ptr -= 2
@@ -111,6 +111,8 @@ class Dalvik
 		}
 
 		di.bin_length = val.length*2
+
+		return if edata.ptr > edata.length
 
 		di
 	end

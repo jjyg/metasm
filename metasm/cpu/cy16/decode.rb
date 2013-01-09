@@ -35,7 +35,7 @@ class CY16
 
 	def decode_findopcode(edata)
 		di = DecodedInstruction.new self
-		return if edata.ptr >= edata.data.length
+		return if edata.ptr+2 > edata.length
 		bin = edata.decode_imm(:u16, @endianness)
 		edata.ptr -= 2
 		return di if di.opcode = @bin_lookaside[(bin >> 8) & 0xff].find { |op|

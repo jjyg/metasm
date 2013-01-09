@@ -241,6 +241,8 @@ class Ia32
 
 		di.bin_length += edata.ptr - before_ptr
 
+		return false if edata.ptr > edata.length
+
 		if op.name == 'movsx' or op.name == 'movzx'
 			if di.opcode.props[:argsz] == 8
 				di.instruction.args[1].sz = 8

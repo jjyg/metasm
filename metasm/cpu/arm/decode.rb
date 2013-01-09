@@ -38,7 +38,7 @@ class ARM
 	end
 
 	def decode_findopcode(edata)
-		return if edata.ptr >= edata.data.length
+		return if edata.ptr+4 > edata.length
 		di = DecodedInstruction.new(self)
 		val = edata.decode_imm(:u32, @endianness)
 		di.instance_variable_set('@raw', val)

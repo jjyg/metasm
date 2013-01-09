@@ -136,6 +136,9 @@ class Sh4
 		}
 
 		di.bin_length += edata.ptr - before_ptr
+
+		return if edata.ptr > edata.length
+
 		di
 	end
 

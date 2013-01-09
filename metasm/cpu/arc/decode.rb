@@ -285,6 +285,9 @@ class ARC
 		}
 
 		di.bin_length += edata.ptr - before_ptr
+
+		return if edata.ptr > edata.virtsize
+
 		di
 	end
 

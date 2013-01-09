@@ -96,7 +96,10 @@ class MIPS
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
+
 		di.bin_length += edata.ptr - before_ptr
+
+		return false if edata.ptr > edata.length
 
 		di
 	end

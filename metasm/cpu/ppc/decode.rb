@@ -37,7 +37,7 @@ class PowerPC
 	end
 
 	def decode_findopcode(edata)
-		return if edata.ptr >= edata.data.length
+		return if edata.ptr+4 > edata.length
 		di = DecodedInstruction.new(self)
 		val = edata.decode_imm(:u32, @endianness)
 		edata.ptr -= 4
@@ -73,7 +73,10 @@ class PowerPC
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
+
 		di.bin_length += edata.ptr - before_ptr
+
+		return if edata.ptr > edata.length
 
 		decode_aliases(di.instruction)
 

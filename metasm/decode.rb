@@ -134,9 +134,10 @@ class EncodedData
 	# bytes from rawsize to virtsize are returned as zeroes
 	# ignores self.relocations
 	def read(len=@virtsize-@ptr)
-		len = @virtsize-@ptr if len > @virtsize-@ptr
-		str = (@ptr < @data.length) ? @data[@ptr, len] : ''
-		str = str.to_str.ljust(len, "\0") if str.length < len
+		vlen = len
+		vlen = @virtsize-@ptr if len > @virtsize-@ptr
+		str = (@ptr < @data.length) ? @data[@ptr, vlen] : ''
+		str = str.to_str.ljust(vlen, "\0") if str.length < vlen
 		@ptr += len
 		str
 	end

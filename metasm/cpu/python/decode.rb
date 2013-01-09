@@ -43,6 +43,8 @@ class Python
 			end
 		}
 
+		return if edata.ptr > edata.length
+
 		di
 	end
 
