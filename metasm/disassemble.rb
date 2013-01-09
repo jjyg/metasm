@@ -1495,7 +1495,7 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 		end
 
 		if vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) : backtrace_check_found(expr,
-				di, origin, type, len, maxdepth, detached))
+				di, origin, type, len, maxdepth, detached, snapshot_addr))
 			# no need to update backtracked_for
 			return vals
 		elsif maxdepth <= 0
@@ -1535,7 +1535,7 @@ puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr}#{" => #{expr}" if expr 
 					if expr != oldexpr and not snapshot_addr and vals = (no_check ?
 							(!need_backtrace(expr, terminals) and [expr]) :
 							backtrace_check_found(expr, nil, origin, type, len,
-								maxdepth-h[:loopdetect].length, detached))
+								maxdepth-h[:loopdetect].length, detached, snapshot_addr))
 						result |= vals
 						next
 					end
@@ -1576,7 +1576,7 @@ puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#
 
 				if expr != oldexpr and vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) :
 						backtrace_check_found(expr, @decoded[h[:from]], origin, type, len,
-							maxdepth-h[:loopdetect].length, detached))
+							maxdepth-h[:loopdetect].length, detached, snapshot_addr))
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 						next expr
@@ -1645,7 +1645,7 @@ puts "  backtrace: recursive function #{Expression[h[:funcaddr]]}" if debug_back
 				end
 puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" if debug_backtrace and expr != oldexpr
 				if vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) : backtrace_check_found(expr,
-						h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached))
+						h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached, snapshot_addr))
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 					else
@@ -1762,7 +1762,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# TODO trace expr evolution through backtrace, to modify immediates to an expr involving label names
 	# TODO mov [ptr], imm ; <...> ; jmp [ptr] => rename imm as loc_XX
 	#  eg. mov eax, 42 ; add eax, 4 ; jmp eax  =>  mov eax, some_label-4
-	def backtrace_check_found(expr, di, origin, type, len, maxdepth, detached)
+	def backtrace_check_found(expr, di, origin, type, len, maxdepth, detached, snapshot_addr=nil)
 		# only entrypoints or block starts called by a :saveip are checked for being a function
 		# want to execute [esp] from a block start
 		if type == :x and di and di == di.block.list.first and @cpu.backtrace_is_function_return(expr, @decoded[origin]) and (
@@ -1792,6 +1792,9 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 		end
 
 		return if need_backtrace(expr)
+		if snapshot_addr
+			return if expr.expr_externals(true).find { |ee| ee.kind_of?(Indirection) }
+		end
 
 puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expression[origin] if origin}" if debug_backtrace
 		result = backtrace_value(expr, maxdepth)

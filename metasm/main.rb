@@ -906,12 +906,13 @@ class Expression < ExpressionType
 	end
 
 	# returns the externals that appears in the expression, does not walk through other ExpressionType
-	def expr_externals
+	def expr_externals(include_exprs=false)
 		a = []
 		[@rexpr, @lexpr].each { |e|
 			case e
-			when Expression; a.concat e.expr_externals
-			when nil, ::Numeric, ExpressionType; a
+			when Expression; a.concat e.expr_externals(include_exprs)
+			when nil, ::Numeric; a
+			when ExpressionType; include_exprs ? a << e : a
 			else a << e
 			end
 		}
