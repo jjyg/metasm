@@ -321,11 +321,16 @@ class GdbClient
 	end
 
 
+	attr_accessor :ptrsz
+
 	# setup the various function used to pack ints & the reg list
 	# according to a target CPU
 	def setup_arch(cpu)
+		@ptrsz = cpu.size
+
 		case cpu.shortname
-		when 'ia32'
+		when /^ia32/
+			@ptrsz = 32
 			@gdbregs = GDBREGS_IA32
 			@regmsgsize = 4 * @gdbregs.length
 		when 'x64'
@@ -347,7 +352,7 @@ class GdbClient
 
 		# yay life !
 		# do as if cpu is littleendian, fixup at the end
-		case cpu.size
+		case @ptrsz
 		when 16
 			@pack_netint   = lambda { |i| i.pack('n*') }
 			@unpack_netint = lambda { |s| s.unpack('n*') }
@@ -368,7 +373,7 @@ class GdbClient
 				@pack_netint, @pack_int = @pack_int, @pack_netint
 				@unpack_netint, @unpack_int = @unpack_int, @unpack_netint
 			end
-		else raise "GdbServer: unsupported cpu size #{cpu.size}"
+		else raise "GdbServer: unsupported cpu size #{@ptrsz}"
 		end
 
 		# if target cpu is bigendian, use netint everywhere
@@ -385,7 +390,7 @@ class GdbRemoteString < VirtualString
 
 	def initialize(gdb, addr_start=0, length=nil)
 		@gdb = gdb
-		length ||= 1 << (@gdb.cpu.size rescue 32)
+		length ||= 1 << (@gdb.ptrsz || 32)
 		@pagelength = 512
 		super(addr_start, length)
 	end
@@ -412,7 +417,7 @@ end
 
 # this class implements a high-level API using the gdb-server network debugging protocol
 class GdbRemoteDebugger < Debugger
-	attr_accessor :gdb, :check_target_timeout
+	attr_accessor :gdb, :check_target_timeout, :reg_val_cache
 	def initialize(url, cpu='Ia32')
 		super()
 		@tid_stuff_list << :reg_val_cache << :regs_dirty
@@ -453,8 +458,10 @@ class GdbRemoteDebugger < Debugger
 		@regs_dirty = false
 	end
 
+	attr_accessor :realmode
 	def initialize_cpu
 		@cpu = @gdb.cpu
+		@realmode = true if @cpu and @cpu.shortname =~ /^ia32_16/
 	end
 
 	def initialize_memory
@@ -472,10 +479,20 @@ class GdbRemoteDebugger < Debugger
 		return @reg_val_cache[r] || 0 if @state != :stopped
 		sync_regs
 		@reg_val_cache = @gdb.read_regs || {} if @reg_val_cache.empty?
+		if realmode
+			case r
+			when :eip; seg = :cs
+			when :esp; seg = :ss
+			else seg = :ds
+			end
+			# XXX seg override
+			return @reg_val_cache[seg].to_i*16 + @reg_val_cache[r].to_i
+		end
 		@reg_val_cache[r] || 0
 	end
 	def set_reg_value(r, v)
 		r = r.to_sym
+		# XXX realmode
 		@reg_val_cache[r] = v
 		@regs_dirty = true
 	end

@@ -300,12 +300,16 @@ class LinDebug
 			end
 			text << Color[:hilight] if addr == @rs.pc
 			text << seg
-			text << (addrfmt % addr)
+			if @rs.realmode
+				text << (addrfmt % (addr - 16*@rs['cs']))
+			else
+				text << (addrfmt % addr)
+			end
 			di = @rs.di_at(addr)
 			di = nil if di and addr < @rs.pc and addr+di.bin_length > @rs.pc
 			len = (di ? di.bin_length : 1)
 			text << '  '
-			text << @rs.memory[addr, [len, 10].min].unpack('C*').map { |c| '%02X' % c }.join.ljust(22)
+			text << @rs.memory[addr, [len, 10].min].to_s.unpack('C*').map { |c| '%02X' % c }.join.ljust(22)
 			if di
 				text <<
 				if addr == @rs.pc

@@ -60,7 +60,7 @@ class Ia32
 				end
 			}
 
-			if imm and imm.reduce.kind_of? Integer and imm.reduce < -0x10_0000
+			if imm and ir = imm.reduce and ir.kind_of?(Integer) and ir < 0 and (ir < -0x10_0000 or (!b and !i))
 				# probably a base address -> unsigned
 				imm = Expression[imm.reduce & ((1 << (adsz || 32)) - 1)]
 			end
