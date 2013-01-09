@@ -278,6 +278,12 @@ class Ia32 < CPU
 	end
 end
 
-X86 = Ia32
+X86 = X86_32 = Ia32
+
+class X86_16 < X86
+	def self.new(*a)
+		return X86.new(16, *a)
+	end
+end
 
 end

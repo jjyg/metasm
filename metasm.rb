@@ -13,7 +13,7 @@ module Metasm
 
 	# constants defined in the same file as another
 	Const_autorequire_equiv = {
-		'X86' => 'Ia32', 'PPC' => 'PowerPC',
+		'X86' => 'Ia32', 'X86_32' => 'Ia32', 'X86_16' => 'Ia32', 'PPC' => 'PowerPC',
 		'X64' => 'X86_64', 'AMD64' => 'X86_64',
 		'MIPS64' => 'MIPS',
 		'UniversalBinary' => 'MachO', 'COFFArchive' => 'COFF',
