@@ -262,7 +262,7 @@ class LinDebug
 
 		addrsz = @rs.register_size[@rs.register_pc]
 		addrfmt = "%0#{addrsz/4}X"
-		if not @rs.addr2module(addr) and @rs.shortname != 'gdbremotedebugger'
+		if not @rs.addr2module(addr) and @rs.shortname !~ /remote/
 			base = addr & ((1 << addrsz) - 0x1000)
 			@noelfsig ||= {}	# cache elfmagic notfound
 			if not @noelfsig[base] and base < ((1 << addrsz) - 0x1_0000)
@@ -300,7 +300,7 @@ class LinDebug
 			end
 			text << Color[:hilight] if addr == @rs.pc
 			text << seg
-			if @rs.realmode
+			if @rs.shortname =~ /remote/ and @rs.realmode
 				text << (addrfmt % (addr - 16*@rs['cs']))
 			else
 				text << (addrfmt % addr)
@@ -346,7 +346,7 @@ class LinDebug
 		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post) << Color[:normal] << "\n"
 
 		seg = ''
-		seg = ('%04X' % @rs['ds']) << ':' if @rs.cpu.shortname == 'ia32'
+		seg = ('%04X' % @rs['ds']) << ':' if @rs.cpu.shortname =~ /^ia32/
 
 		cnt = @win_data_height
 		while (cnt -= 1) > 0
