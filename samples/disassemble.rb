@@ -79,7 +79,7 @@ opts[:plugin].to_a.each { |p|
 	begin
 		dasm.load_plugin p
 	rescue ::Exception
-		puts "Error with plugin #{plugin_filename}: #{$!.class} #{$!}"
+		puts "Error with plugin #{p}: #{$!.class} #{$!}"
 	end
 }
 opts[:hookstr].to_a.each { |f| eval f }
@@ -108,7 +108,7 @@ opts[:post_plugin].to_a.each { |p|
 	begin
 		dasm.load_plugin p
 	rescue ::Exception
-		puts "Error with plugin #{plugin_filename}: #{$!.class} #{$!}"
+		puts "Error with plugin #{p}: #{$!.class} #{$!}"
 	end
 }
 

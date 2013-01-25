@@ -97,7 +97,7 @@ elsif dbg
 		begin
 			dbg.load_plugin(p)
 		rescue ::Exception
-			puts "Error with plugin #{plugin_filename}: #{$!.class} #{$!}"
+			puts "Error with plugin #{p}: #{$!.class} #{$!}"
 		end
 	}
 end
@@ -107,7 +107,7 @@ if dasm
 		begin
 			dasm.load_plugin(p)
 		rescue ::Exception
-			puts "Error with plugin #{plugin_filename}: #{$!.class} #{$!}"
+			puts "Error with plugin #{p}: #{$!.class} #{$!}"
 		end
 	}
 
