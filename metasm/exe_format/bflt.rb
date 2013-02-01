@@ -29,6 +29,13 @@ class Bflt < ExeFormat
 			when MAGIC
 			else raise InvalidExeFormat, "Bad bFLT signature #@magic"
 			end
+
+			if @rev >= 0x01000000 and (@rev & 0x00f0ffff) == 0
+				puts "Bflt: probable wrong endianness, retrying" if $VERBOSE
+				exe.endianness = { :big => :little, :little => :big }[exe.endianness]
+				exe.encoded.ptr -= 4*16
+				super(exe)
+			end
 		end
 
 		def set_default_values(exe)
@@ -50,6 +57,7 @@ class Bflt < ExeFormat
 	def decode_word(edata = @encoded) edata.decode_imm(:u32, @endianness) end
 	def encode_word(w) Expression[w].encode(:u32, @endianness) end
 
+	attr_accessor :endianness
 	def initialize(cpu = nil)
 		@endianness = cpu ? cpu.endianness : :little
 		@header = Header.new
@@ -79,7 +87,7 @@ class Bflt < ExeFormat
 		@reloc = []
 		@encoded.ptr = @header.reloc_start
 		@header.reloc_count.times { @reloc << decode_word }
-		if @header.version == 2
+		if @header.rev == 2
 			@reloc.map! { |r| r & 0x3fff_ffff }
 		end
 
@@ -101,6 +109,7 @@ class Bflt < ExeFormat
 			end
 
 			# what it points to
+			# XXX probably wrong
 			section.ptr = r-base
 			target = decode_word(section)
 			if target >= @header.entry and target < @header.data_start
@@ -108,7 +117,7 @@ class Bflt < ExeFormat
 			elsif target >= @header.data_start and target < @header.bss_end
 				target = label_at(@data, target - @header.data_start, "xref_#{Expression[target]}")
 			else
-				puts "out of bounds reloc target at #{Expression[r]}" if $VERBOSE
+				puts "out of bounds reloc target #{Expression[target]} at #{Expression[r]}" if $VERBOSE
 				next
 			end
 
