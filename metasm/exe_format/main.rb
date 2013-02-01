@@ -16,7 +16,7 @@ class ExeFormat
 	# creates a new instance, populates self.encoded with the supplied string
 	def self.load(str, *a, &b)
 		e = new(*a, &b)
-		if str.kind_of? EncodedData; e.encoded = str
+		if str.kind_of?(EncodedData); e.encoded = str
 		else e.encoded << str
 		end
 		e
@@ -61,6 +61,30 @@ class ExeFormat
 		e = load(raw, *a, &b)
 		e.decode_header
 		e
+	end
+
+	def load(str)
+		if str.kind_of?(EncodedData); @encoded = str
+		else @encoded << str
+		end
+		self
+	end
+
+	def load_file(path)
+		@filename ||= path
+		load(VirtualFile.read(path))
+	end
+
+	def decode_file(path)
+		load_file(path)
+		decode
+		self
+	end
+
+	def decode_file_header(path)
+		load_file(path)
+		decode_header
+		self
 	end
 
 	# creates a new object using the specified cpu, parses the asm source, and assemble

@@ -707,6 +707,8 @@ if $0 == __FILE__
 
 	case ARGV.first
 	when /^(tcp:|udp:)?..+:/, /^ser:/
+		opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
+		opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
 		rs = Metasm::GdbRemoteDebugger.new(ARGV.first, opts[:sc_cpu])
 	else
 		rs = Metasm::LinDebugger.new(ARGV.join(' '))
