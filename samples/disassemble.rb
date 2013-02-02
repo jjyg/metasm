@@ -58,13 +58,13 @@ else
 	if opts[:exe_fmt].kind_of?(::String)
 		exefmt = opts[:exe_fmt] = Metasm.const_get(opts[:exe_fmt])
 	else
-		exefmt = AutoExe.orshellcode {
+		exefmt = opts[:exe_fmt] || AutoExe.orshellcode {
 			opts[:sc_cpu] = Metasm.const_get(opts[:sc_cpu]) if opts[:sc_cpu].kind_of?(::String)
 			opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
 			opts[:sc_cpu]
 		}
 	end
-	exefmt = exefmt.withcpu(opts[:sc_cpu]) if exefmt.kind_of?(::Class) and exefmt.name.split('::').last == 'Shellcode'
+	exefmt = exefmt.withcpu(opts[:sc_cpu]) if exefmt.kind_of?(::Class) and exefmt.name.to_s.split('::').last == 'Shellcode'
 	exe = exefmt.decode_file(exename)
 	exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 	if opts[:autoload]
