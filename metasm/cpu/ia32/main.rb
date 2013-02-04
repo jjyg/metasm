@@ -277,4 +277,5 @@ class Ia32 < CPU
 		"ia32#{'_16' if @size == 16}#{'_be' if @endianness == :big}"
 	end
 end
+X86 = Ia32
 end
