@@ -52,6 +52,7 @@ class MachO < ExeFormat
 		'HPPA' => { 0 => 'ALL', 1 => '7100LC', },
 		'ARM' => { 0 => 'ALL', 1 => 'A500_ARCH', 2 => 'A500', 3 => 'A440',
 			4 => 'M4', 5 => 'A680', 6 => 'ARMV6', 9 => 'ARMV7',
+			11 => 'ARMV7S',
 		},
 		'MC88000' => { 0 => 'ALL', 1 => 'MC88100', 2 => 'MC88110', },
 		:wtf => { 0 => 'MC98000_ALL', 1 => 'MC98601', },
@@ -82,7 +83,7 @@ class MachO < ExeFormat
 		0x10 => 'PREBOUND', 0x20 => 'SPLIT_SEGS', 0x40 => 'LAZY_INIT', 0x80 => 'TWOLEVEL',
 		0x100 => 'FORCE_FLAT', 0x200 => 'NOMULTIDEFS', 0x400 => 'NOFIXPREBINDING', 0x800 => 'PREBINDABLE',
 		0x1000 => 'ALLMODSBOUND', 0x2000 => 'SUBSECTIONS_VIA_SYMBOLS', 0x4000 => 'CANONICAL', 0x8000 => 'WEAK_DEFINES',
-		0x10000 => 'BINDS_TO_WEAK', 0x20000 => 'ALLOW_STACK_EXECUTION',
+		0x10000 => 'BINDS_TO_WEAK', 0x20000 => 'ALLOW_STACK_EXECUTION', 0x200000 => 'MH_PIE',
 	}
 
 	SEG_PROT = { 1 => 'READ', 2 => 'WRITE', 4 => 'EXECUTE' }
@@ -96,6 +97,7 @@ class MachO < ExeFormat
 		0x15 => 'SUB_LIBRARY', 0x16 => 'TWOLEVEL_HINTS', 0x17 => 'PREBIND_CKSUM',
 		0x8000_0018 => 'LOAD_WEAK_DYLIB', 0x19 => 'SEGMENT_64', 0x1a => 'ROUTINES_64',
 		0x1b => 'UUID', 0x8000_001c => 'RPATH', 0x1d => 'CODE_SIGNATURE_PTR', 0x1e => 'CODE_SEGMENT_SPLIT_INFO',
+		0x21 => 'ENCRYPTION_INFO',
 		0x8000_001f => 'REEXPORT_DYLIB',
 		#0x8000_0000 => 'REQ_DYLD',
 	}
@@ -354,6 +356,7 @@ class MachO < ExeFormat
 		end
 		LOAD_DYLIB = DYLIB
 		ID_DYLIB = DYLIB
+		LOAD_WEAK_DYLIB = DYLIB
 
 		class PREBOUND_DYLIB < STRING
 			word :stroff
@@ -363,6 +366,10 @@ class MachO < ExeFormat
 
 		LOAD_DYLINKER = STRING
 		ID_DYLINKER = STRING
+
+		class ENCRYPTION_INFO < SerialStruct
+			words :cryptoff, :cryptsize, :cryptid
+		end
 
 		class ROUTINES < SerialStruct
 			xwords :init_addr, :init_module, :res1, :res2, :res3, :res4, :res5, :res6
