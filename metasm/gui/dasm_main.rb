@@ -835,7 +835,7 @@ class DisasmWidget < ContainerChoiceWidget
 	def dragdropfile(f)
 		case f
 		when /\.(c|h|cpp)$/; @dasm.parse_c_file(f)
-		when /\.map$/; @dasm.load_map(f)
+		when /\.map$/; @dasm.load_map(f) ; gui_update
 		when /\.rb$/; @dasm.load_plugin(f)
 		else messagebox("unsupported file extension #{f}")
 		end
@@ -1041,6 +1041,7 @@ class DasmWindow < Window
 		addsubmenu(importmenu, 'Load _map') {
 			openfile('chose map file') { |file|
 				@dasm_widget.dasm.load_map(File.read(file)) if @dasm_widget
+				@dasm_widget.gui_update if @dasm_widget
 			} if @dasm_widget
 		}
 		addsubmenu(importmenu, 'Load _C') {
