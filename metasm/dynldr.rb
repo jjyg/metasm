@@ -52,13 +52,15 @@ extern VALUE *rb_cObject __attribute__((import));
 extern VALUE *rb_eRuntimeError __attribute__((import));
 extern VALUE *rb_eArgError __attribute__((import));
 
-#define Qfalse ((VALUE)0)
-#define Qtrue  ((VALUE)2)
-#define Qnil   ((VALUE)4)
-
 // allows generating a ruby1.9 dynldr.so from ruby1.8
 #ifndef DYNLDR_RUBY_19
 #define DYNLDR_RUBY_19 #{RUBY_VERSION >= '1.9' ? 1 : 0}
+#endif
+
+#if #{RUBY_VERSION >= '2.0' ? 1 : 0}
+// flonums. WHY?
+// also breaks Qtrue/Qnil
+#define rb_float_new rb_float_new_in_heap
 #endif
 
 #if DYNLDR_RUBY_19
@@ -163,7 +165,7 @@ static VALUE memory_write(VALUE self, VALUE addr, VALUE val)
 static VALUE memory_write_int(VALUE self, VALUE addr, VALUE val)
 {
 	*(uintptr_t *)VAL2INT(addr) = VAL2INT(val);
-	return Qtrue;
+	return 1;
 }
 
 static VALUE str_ptr(VALUE self, VALUE str)
@@ -497,7 +499,7 @@ int load_ruby_imports(uintptr_t rbaddr)
 
 #ifdef __x86_64__
 #define DLL_PROCESS_ATTACH 1
-__stdcall int DllMain(void *handle, int reason, void *res)
+int DllMain(void *handle, int reason, void *res)
 {
 	if (reason == DLL_PROCESS_ATTACH)
 		return load_ruby_imports(0);
