@@ -183,7 +183,7 @@ class CPU
 	# returns a DecodedInstruction or nil
 	def decode_instruction(edata, addr)
 		@bin_lookaside ||= build_bin_lookaside
-		di = decode_findopcode edata
+		di = decode_findopcode edata if edata.ptr <= edata.length
 		di.address = addr if di
 		di = decode_instr_op(edata, di) if di
 		decode_instr_interpret(di, addr) if di

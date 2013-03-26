@@ -68,7 +68,6 @@ class ARC
 	end
 
 	def decode_findopcode(edata)
-		return if edata.ptr >= edata.data.length
 		di = DecodedInstruction.new(self)
 
 		@instrlength = instruction_size(edata)
