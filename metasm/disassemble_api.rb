@@ -497,7 +497,7 @@ class Disassembler
 	#  paths are only walked using from/to_normal
 	# 'by' may be empty
 	# returns the block containing the new instrs (nil if empty)
-	def replace_instrs(from, to, by)
+	def replace_instrs(from, to, by, patch_by=false)
 		raise 'bad from' if not fdi = di_at(from) or not fdi.block.list.index(fdi)
 		raise 'bad to' if not tdi = di_at(to) or not tdi.block.list.index(tdi)
 
@@ -515,14 +515,26 @@ class Disassembler
 		ldi = DecodedInstruction.new(ldi) if ldi.kind_of? Instruction
 		nb_i = by.grep(Instruction).length
 		wantlen = nb_i if wantlen < 0 or (ldi and ldi.opcode.props[:setip])
-		by = by.map { |di|
-			if di.kind_of? Instruction
-				di = DecodedInstruction.new(di)
-				wantlen -= (di.bin_length = wantlen / nb_i)
-				nb_i -= 1
-			end
-			di
-		}
+		if patch_by
+			by.map! { |di|
+				if di.kind_of? Instruction
+					di = DecodedInstruction.new(di)
+					wantlen -= di.bin_length = wantlen / by.grep(Instruction).length
+					nb_i -= 1
+				end
+				di
+			}
+		else
+			by = by.map { |di|
+				if di.kind_of? Instruction
+					di = DecodedInstruction.new(di)
+					wantlen -= (di.bin_length = wantlen / nb_i)
+					nb_i -= 1
+				end
+				di
+			}
+		end
+
 
 #puts "  ** patch next_addr to #{Expression[tb.list.last.next_addr]}" if not by.empty? and by.last.opcode.props[:saveip]
 		by.last.next_addr = tb.list.last.next_addr if not by.empty? and by.last.opcode.props[:saveip]
