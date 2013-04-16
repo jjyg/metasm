@@ -572,7 +572,8 @@ class Expression < ExpressionType
 		:&    => lambda { |e, l, r| e.reduce_op_and(l, r) },
 		:|    => lambda { |e, l, r| e.reduce_op_or(l, r) },
 		:*    => lambda { |e, l, r| e.reduce_op_times(l, r) },
-		:/    => lambda { |e, l, r| e.reduce_op_div(l, r) }
+		:/    => lambda { |e, l, r| e.reduce_op_div(l, r) },
+		:%    => lambda { |e, l, r| e.reduce_op_mod(l, r) },
 	}
 
 
@@ -862,6 +863,12 @@ class Expression < ExpressionType
 			Expression[[l.lexpr, :/, r], :+, l.rexpr/r].reduce_rec
 		elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :* and l.lexpr % r == 0
 			Expression[l.lexpr/r, :*, l.rexpr].reduce_rec
+		end
+	end
+
+	def reduce_op_mod(l, r)
+		if r.kind_of?(Integer) and r != 0 and (r & (r-1) == 0)
+			Expression[l, :&, r-1].reduce_rec
 		end
 	end
 
