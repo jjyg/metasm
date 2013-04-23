@@ -139,7 +139,7 @@ class COFF
 	end
 
 	class ImportDirectory
-		# encodes all import directories + iat
+		# encode all import directories + iat
 		def self.encode(coff, ary)
 			edata = { 'iat' => [] }
 			%w[idata ilt nametable].each { |name| edata[name] = EncodedData.new }
@@ -160,7 +160,7 @@ class COFF
 			[it, iat]
 		end
 
-		# encodes an import directory + iat + names in the edata hash received as arg
+		# encode one import directory + iat + names in the edata hash received as arg
 		def encode(coff, edata)
 			edata['iat'] << EncodedData.new
 			# edata['ilt'] = edata['iat']
@@ -395,7 +395,8 @@ class COFF
 		s.characteristics = %w[MEM_READ MEM_WRITE MEM_DISCARDABLE]
 		encode_append_section s
 
-		if @imports.first and @imports.first.iat_p.kind_of? Integer
+		if @imports.first and @imports.first.iat_p.kind_of?(Integer)
+			# ordiat = iat.sort_by { @import[x].iat_p }
 			ordiat = @imports.zip(iat).sort_by { |id, it| id.iat_p.kind_of?(Integer) ? id.iat_p : 1<<65 }.map { |id, it| it }
 		else
 			ordiat = iat
@@ -412,7 +413,7 @@ class COFF
 		plt.characteristics = %w[MEM_READ MEM_EXECUTE]
 
 		@imports.zip(iat) { |id, it|
-			if id.iat_p.kind_of? Integer and s = @sections.find { |s_| s_.virtaddr <= id.iat_p and s_.virtaddr + (s_.virtsize || s_.encoded.virtsize) > id.iat_p }
+			if id.iat_p.kind_of?(Integer) and @sections.find { |s| s.virtaddr <= id.iat_p and s.virtaddr + (s.virtsize || s.encoded.virtsize) > id.iat_p }
 				id.iat = it	# will be fixed up after encode_section
 			else
 				# XXX should not be mixed (for @directory['iat'][1])
@@ -688,7 +689,7 @@ class COFF
 		# patch the iat where iat_p was defined
 		# sort to ensure a 0-terminated will not overwrite an entry
 		# (try to dump notepad.exe, which has a forwarder;)
-		@imports.find_all { |id| id.iat_p.kind_of? Integer }.sort_by { |id| id.iat_p }.each { |id|
+		@imports.find_all { |id| id.iat_p.kind_of?(Integer) }.sort_by { |id| id.iat_p }.each { |id|
 			s = sect_at_rva(id.iat_p)
 			@encoded[s.rawaddr + s.encoded.ptr, id.iat.virtsize] = id.iat
 			binding.update id.iat.binding(baseaddr + id.iat_p)
