@@ -413,7 +413,7 @@ class COFF
 		plt.characteristics = %w[MEM_READ MEM_EXECUTE]
 
 		@imports.zip(iat) { |id, it|
-			if id.iat_p.kind_of?(Integer) and @sections.find { |s| s.virtaddr <= id.iat_p and s.virtaddr + (s.virtsize || s.encoded.virtsize) > id.iat_p }
+			if id.iat_p.kind_of?(Integer) and @sections.find { |s_| s_.virtaddr <= id.iat_p and s_.virtaddr + (s_.virtsize || s_.encoded.virtsize) > id.iat_p }
 				id.iat = it	# will be fixed up after encode_section
 			else
 				# XXX should not be mixed (for @directory['iat'][1])
