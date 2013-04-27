@@ -1274,8 +1274,12 @@ class Ia32
 	def name_local_vars(dasm, funcaddr)
 		esp = register_symbols[4]
 		func = dasm.function[funcaddr]
+		subs = []
 		dasm.trace_function_register(funcaddr, esp => 0) { |di, r, off, trace|
 			next if r.to_s =~ /flag/
+			if di.opcode.name == 'call' and tf = di.block.to_normal.find { |t| dasm.function[t] and dasm.function[t].localvars }
+				subs << [trace[esp], dasm.function[tf].localvars]
+			end
 			di.instruction.args.grep(ModRM).each { |mrm|
 				b = mrm.b || (mrm.i if mrm.s == 1)
 				# its a modrm => b is read, so ignore r/off (not yet applied), use trace only
@@ -1296,6 +1300,15 @@ class Ia32
 			next unless off.kind_of?(Integer)
 			off
 		}
+		# if subfunctions are called at a fixed stack offset, rename var_3c -> subarg_0
+		if func and func.localvars and not subs.empty? and subs.all? { |sb| sb[0] == subs.first[0] }
+			func.localvars.each { |varoff, varname|
+				subargnames = subs.map { |o, sb| sb[varoff-o+@size/8] }.compact
+				if subargnames.uniq.length == 1
+					varname.replace 'sub'+subargnames[0]
+				end
+			}
+		end
 	end
 end
 end
