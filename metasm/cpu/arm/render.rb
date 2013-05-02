@@ -19,7 +19,7 @@ class ARM
 				["#{r} RRX"]
 			else
 				case s = @shift
-				when Integer; s = Expression[s]
+				when Integer; s = Expression[s == 0 ? 32 : s]	# lsl and ror already accounted for
 				when Reg; s = self.class.i_to_s[s.i]
 				end
 				["#{r} #{@stype.to_s.upcase} #{s}"]
