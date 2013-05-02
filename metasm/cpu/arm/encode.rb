@@ -42,7 +42,7 @@ class ARM
 			when :rm_is
 				set_field[:rm, arg.i]
 				set_field[:stype, arg.stype]
-				set_field[:shifti, arg.shift/2]
+				set_field[:shifti, arg.shift]
 			when :mem_rn_rm, :mem_rn_rms, :mem_rn_i8_12, :mem_rn_i12
 				set_field[:rn, arg.base.i]
 				case sym

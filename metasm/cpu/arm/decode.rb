@@ -88,7 +88,7 @@ class ARM
 			di.instruction.args << case a
 			when :rd, :rn, :rm; Reg.new field_val[a]
 			when :rm_rs; Reg.new field_val[:rm], field_val[:stype], Reg.new(field_val[:rs])
-			when :rm_is; Reg.new field_val[:rm], field_val[:stype], field_val[:shifti]*2
+			when :rm_is; Reg.new field_val[:rm], field_val[:stype], field_val[:shifti]
 			when :i12; Expression[field_val[a]]
 			when :i24; Expression[field_val[a] << 2]
 			when :i8_r
@@ -100,7 +100,7 @@ class ARM
 				o = case a
 				when :mem_rn_rm; Reg.new(field_val[:rm])
 				when :mem_rn_i8_12; field_val[:i8_12]
-				when :mem_rn_rms; Reg.new(field_val[:rm], field_val[:stype], field_val[:shifti]*2)
+				when :mem_rn_rms; Reg.new(field_val[:rm], field_val[:stype], field_val[:shifti])
 				when :mem_rn_i12; field_val[:i12]
 				end
 				Memref.new(b, o, field_val[:u], op.props[:baseincr])
