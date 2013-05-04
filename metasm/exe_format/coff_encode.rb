@@ -529,9 +529,7 @@ class COFF
 					end
 
 					# initialize reloc table base address if needed
-					if not rt.base_addr
-						rt.base_addr = off & ~0xfff
-					end
+					rt.base_addr ||= off & ~0xfff
 
 					(rt.relocs ||= []) << r
 				elsif $DEBUG and not rel.target.bind(binding).reduce.kind_of?(Integer)

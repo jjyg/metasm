@@ -712,6 +712,25 @@ class COFF
 		end
 	end
 
+	def decode_reloc_amd64(r)
+		case r.type
+		when 'ABSOLUTE'
+		when 'HIGHLOW'
+			addr = decode_word
+			if s = sect_at_va(addr)
+				label = label_at(s.encoded, s.encoded.ptr, "xref_#{Expression[addr]}")
+				Metasm::Relocation.new(Expression[label], :u32, @endianness)
+			end
+		when 'DIR64'
+			addr = decode_xword
+			if s = sect_at_va(addr)
+				label = label_at(s.encoded, s.encoded.ptr, "xref_#{Expression[addr]}")
+				Metasm::Relocation.new(Expression[label], :u64, @endianness)
+			end
+		else puts "W: COFF: Unsupported amd64 relocation #{r.inspect}" if $VERBOSE
+		end
+	end
+
 	def decode_debug
 		if dd = @directory['debug'] and sect_at_rva(dd[0])
 			@debug = []
