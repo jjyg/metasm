@@ -693,7 +693,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 		if di = @decoded[addr]
 			if di.kind_of? DecodedInstruction
-				split_block(di.block, di.address) if not di.block_head?	# this updates di.block
+				split_block(di.block, di.address, true) if not di.block_head?	# this updates di.block
 				di.block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
 				bf = di.block
 			elsif di == true
@@ -752,20 +752,22 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	end
 
 	# splits an InstructionBlock, updates the blocks backtracked_for
-	def split_block(block, address=nil)
+	def split_block(block, address=nil, rebacktrace=false)
 		if not address	# invoked as split_block(0x401012)
 			return if not @decoded[block].kind_of? DecodedInstruction
 			block, address = @decoded[block].block, block
 		end
 		return block if address == block.address
 		new_b = block.split address
-		new_b.backtracked_for.dup.each { |btt|
-			backtrace(btt.expr, btt.address,
-				  :only_upto => block.list.last.address,
-				  :include_start => !btt.exclude_instr, :from_subfuncret => btt.from_subfuncret,
-				  :origin => btt.origin, :orig_expr => btt.orig_expr, :type => btt.type, :len => btt.len,
-				  :detached => btt.detached, :maxdepth => btt.maxdepth)
-		}
+		if rebacktrace
+			new_b.backtracked_for.dup.each { |btt|
+				backtrace(btt.expr, btt.address,
+					  :only_upto => block.list.last.address,
+					  :include_start => !btt.exclude_instr, :from_subfuncret => btt.from_subfuncret,
+					  :origin => btt.origin, :orig_expr => btt.orig_expr, :type => btt.type, :len => btt.len,
+					  :detached => btt.detached, :maxdepth => btt.maxdepth)
+			}
+		end
 		new_b
 	end
 
