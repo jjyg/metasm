@@ -196,6 +196,7 @@ class AsmPreprocessor < Preprocessor
 		if not @may_apreprocess and (@text =~ / (macro|equ) / or not @macro.empty?)
 			@may_apreprocess = true
 		end
+		self
 	end
 
 	# reads a token, handles macros/comments/etc
