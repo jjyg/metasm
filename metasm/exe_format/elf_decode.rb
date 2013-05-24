@@ -18,17 +18,17 @@ class ELF
 			case hdr.e_class
 			when '32'; elf.bitsize = 32
 			when '64', '64_icc'; elf.bitsize = 64
-			else raise InvalidExeFormat, "E: ELF: unsupported class #{hdr.e_class}"
+			else puts "W: ELF: unsupported class #{hdr.e_class}, assuming 32bit"; elf.bitsize = 32
 			end
 
 			case hdr.data
 			when 'LSB'; elf.endianness = :little
 			when 'MSB'; elf.endianness = :big
-			else raise InvalidExeFormat, "E: ELF: unsupported endianness #{hdr.data}"
+			else puts "W: ELF: unsupported endianness #{hdr.data}, assuming littleendian"; elf.endianness = :little
 			end
 
 			if hdr.i_version != 'CURRENT'
-				raise InvalidExeFormat, "E: ELF: unsupported ELF version #{hdr.i_version}"
+				puts ":: ELF: unsupported ELF version #{hdr.i_version}"
 			end
 	       	}
 	end
