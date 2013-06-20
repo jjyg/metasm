@@ -126,6 +126,12 @@ typedef void *HMODULE;
 #define DBG_CONTROL_C                    ((DWORD   )0x40010005L)
 #define DBG_CONTROL_BREAK                ((DWORD   )0x40010008L)
 #define DBG_COMMAND_EXCEPTION            ((DWORD   )0x40010009L)
+#define STATUS_WX86_CONTINUE             ((DWORD   )0x4000001DL)
+#define STATUS_WX86_SINGLE_STEP          ((DWORD   )0x4000001EL)
+#define STATUS_WX86_BREAKPOINT           ((DWORD   )0x4000001FL)
+#define STATUS_WX86_EXCEPTION_CONTINUE   ((DWORD   )0x40000020L)
+#define STATUS_WX86_EXCEPTION_LASTCHANCE ((DWORD   )0x40000021L)
+#define STATUS_WX86_EXCEPTION_CHAIN      ((DWORD   )0x40000022L)
 #define STATUS_GUARD_PAGE_VIOLATION      ((DWORD   )0x80000001L)
 #define STATUS_DATATYPE_MISALIGNMENT     ((DWORD   )0x80000002L)
 #define STATUS_BREAKPOINT                ((DWORD   )0x80000003L)
@@ -1259,7 +1265,7 @@ class WinOS < OS
 		def mappings
 			addr = 0
 			list = []
-			info = WinAPI.alloc_c_struct("MEMORY_BASIC_INFORMATION#{addrsz}")
+			info = WinAPI.alloc_c_struct("MEMORY_BASIC_INFORMATION#{WinAPI.host_cpu.size}")
 			path = [0xff].pack('C') * 512
 
 			hcache = heaps
@@ -1918,11 +1924,11 @@ class WinDebugger < Debugger
 				addr = str.exceptioninformation[1]
 				evt_exception(:type => 'access violation', :st => str, :firstchance => stf,
 					      :fault_addr => addr, :fault_access => mode)
-			when WinAPI::STATUS_BREAKPOINT
+			when WinAPI::STATUS_BREAKPOINT, WinAPI::STATUS_WX86_BREAKPOINT
 				# we must ack ntdll interrupts on process start
 				# but we should not mask process-generated exceptions by default..
 				evt_bpx
-			when WinAPI::STATUS_SINGLE_STEP
+			when WinAPI::STATUS_SINGLE_STEP, WinAPI::STATUS_WX86_SINGLE_STEP
 				evt_hwbp_singlestep
 			else
 				@status_name ||= WinAPI.cp.lexer.definition.keys.grep(/^STATUS_/).
