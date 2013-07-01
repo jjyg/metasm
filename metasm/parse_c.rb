@@ -3908,7 +3908,6 @@ EOH
 	class CExpression
 		def self.string_inspect(s)
 			# keep all ascii printable except \ and "
-			s.force_encoding('binary')
 			'"' + s.gsub(/[^ !\x23-\x5b\x5d-\x7e]/) { |o| '\\x' + o.unpack('H*').first } + '"'
 		end
 
