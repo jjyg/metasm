@@ -949,7 +949,7 @@ module C
 						when :space; body << ' '
 						when :eol; body << "\n"
 						when :punct; body << tok.raw
-						when :quoted; body << tok.value.inspect	# concat adjacent c strings
+						when :quoted; body << CExpression.string_inspect(tok.value)	# concat adjacent c strings
 						when :string
 							body << \
 							case tok.raw
@@ -992,7 +992,7 @@ module C
 								break
 							else body << tok.raw
 							end
-						when :quoted; body << (body.empty? ? tok.value : tok.value.inspect)	# asm "pop\nret"  VS  asm add al, 'z'
+						when :quoted; body << (body.empty? ? tok.value : CExpression.string_inspect(tok.value))	# asm "pop\nret"  VS  asm add al, 'z'
 						when :string
 							body << \
 							case tok.raw
@@ -3881,7 +3881,7 @@ EOH
 			r.last << 'asm '
 			r.last << 'volatile ' if @volatile
 			r.last << '('
-			r.last << @body.inspect
+			r.last << CExpression.string_inspect(@body)
 			if @output or @input or @clobber
 				if @output and @output != []
 					# TODO
@@ -3899,13 +3899,19 @@ EOH
 				end
 			end
 			if @clobber and @clobber != []
-				r << (': ' << @clobber.map { |c| c.inspect }.join(', '))
+				r << (': ' << @clobber.map { |c| CExpression.string_inspect(c) }.join(', '))
 			end
 			r.last << ');'
 			[r, dep]
 		end
 	end
 	class CExpression
+		def self.string_inspect(s)
+			# keep all ascii printable except \ and "
+			s.force_encoding('binary')
+			'"' + s.gsub(/[^ !\x23-\x5b\x5d-\x7e]/) { |o| '\\x' + o.unpack('H*').first } + '"'
+		end
+
 		def self.dump(e, scope, r=[''], dep=[], brace = false)
 			if $DEBUG
 				brace = false
@@ -3918,7 +3924,7 @@ EOH
 			r, dep = \
 			case e
 			when ::Numeric; r.last << e.to_s ; [r, dep]
-			when ::String; r.last << e.inspect ; [r, dep]
+			when ::String; r.last << string_inspect(e) ; [r, dep]
 			when CExpression; e.dump_inner(scope, r, dep, brace)
 			when Variable; e.dump(scope, r, dep)
 			when nil; [r, dep]
@@ -3963,7 +3969,7 @@ EOH
 						end
 					when ::String
 						r.last << 'L' if @type.kind_of? Pointer and @type.type.kind_of? BaseType and @type.type.name == :short
-						r.last << @rexpr.inspect
+						r.last << CExpression.string_inspect(@rexpr)
 					when CExpression # cast
 						r, dep = @type.dump_cast(scope, r, dep)
 						r, dep = CExpression.dump(@rexpr, scope, r, dep, true)
