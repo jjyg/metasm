@@ -999,7 +999,7 @@ class EncodedData
 	def ptr=(p) @ptr = @export[p] || p end
 
 	# opts' keys in :reloc, :export, :virtsize, defaults to empty/empty/data.length
-	def initialize(data = '', opts={})
+	def initialize(data='', opts={})
 		@data     = data
 		@reloc    = opts[:reloc]    || {}
 		@export   = opts[:export]   || {}
@@ -1013,6 +1013,7 @@ class EncodedData
 		if set_inv or not @inv_export[off]
 			@inv_export[off] = label
 		end
+		label
 	end
 
 	def del_export(label, off=@export[label])
