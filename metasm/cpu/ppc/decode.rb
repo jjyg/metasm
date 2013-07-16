@@ -13,8 +13,8 @@ class PowerPC
 		# bit = 0 if can be mutated by an field value, 1 if fixed by opcode
 		return if not op.bin.kind_of? Integer
 		op.bin_mask = 0
-		op.args.each { |f|
-			op.bin_mask |= @fields_mask[f] << @fields_shift[f]
+		op.fields.each { |k, (m, s)|
+			op.bin_mask |= m << s
 		}
 		op.bin_mask = 0xffff_ffff ^ op.bin_mask
 	end
@@ -68,8 +68,11 @@ class PowerPC
 			when :ra_i16, :ra_i16s, :ra_i16q
 				i = field_val[{:ra_i16 => :d, :ra_i16s => :ds, :ra_i16q => :dq}[a]]
 			       	Memref.new GPR.new(field_val[:ra]), Expression[i]
-			when :bd, :d, :ds, :dq, :si, :ui, :li, :sh, :ma, :mb, :me, :ma_, :mb_, :me_; Expression[field_val[a]]
-			when :ign_bo_zzz, :ign_bo_z, :ign_bo_at, :ign_bo_at2, :ign_bi, :aa, :lk, :oe, :rc, :l; next
+			when :bd, :d, :ds, :dq, :si, :ui, :li, :sh, :mb, :me, :mb_, :me_, :u; Expression[field_val[a]]
+			when :ba, :bf, :bfa, :bt; CR.new field_val[a]
+			when :bb, :bh, :flm, :fxm, :l_, :l__, :lev, :nb, :sh_, :spr, :sr, :tbr, :th, :to
+				puts "PPC.decode: unsupported argument #{a.inspect}" if $VERBOSE	# TODO
+				Expression[field_val[a]]
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}

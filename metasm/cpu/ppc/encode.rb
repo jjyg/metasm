@@ -31,7 +31,7 @@ class PowerPC
 
 		op.args.zip(instr.args).each { |sym, arg|
 			case sym
-			when :rs, :rt, :rd
+			when :rs, :rt, :rd, :ba, :bf, :bfa, :bt
 				set_field[sym, arg.i]
 			when :ft
 				set_field[sym, arg.i]

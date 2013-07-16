@@ -11,10 +11,15 @@ module Metasm
 class PowerPC < CPU
 	class Reg
 		include Renderable
+		class << self
+			attr_accessor :s_to_i, :i_to_s
+		end
 
 		def ==(o)
 			o.class == self.class and (not respond_to?(:i) or o.i == i)
 		end
+
+		def render ; [self.class.i_to_s[@i]] ; end
 	end
 
 	# general purpose reg
@@ -24,17 +29,14 @@ class PowerPC < CPU
 			@i = i
 		end
 
-		Sym = (0..31).map { |i| "r#{i}".to_sym }
-		Sym[1] = :sp
+		@s_to_i = (0..31).inject({}) { |h, i| h.update((i == 1 ? 'sp' : "r#{i}") => i) }
+		@i_to_s = @s_to_i.invert
+		Sym = @s_to_i.sort.transpose.last
 		def symbolic ; Sym[@i] end
-		def render ; [@i == 1 ? 'sp' : "r#@i"] end
 	end
 
 	# special purpose reg
 	class SPR < Reg
-		class << self
-			attr_accessor :s_to_i, :i_to_s
-		end
 		@s_to_i = {'xer' => 1, 'lr' => 8, 'ctr' => 9, 'dec' => 22, 'srr0' => 26, 'srr1' => 27,
 			'sprg0' => 272, 'sprg1' => 273, 'sprg2' => 274, 'sprg3' => 275, 'pvr' => 287}
 		@i_to_s = @s_to_i.invert
@@ -50,14 +52,15 @@ class PowerPC < CPU
 	end
 
 	# floating point
-	class FPR
+	class FPR < Reg
 		attr_accessor :i
 		def initialize(i)
 			@i = i
 		end
 
-		include Renderable
-		def render ; ["fp#@i"] end
+		@s_to_i = (0..31).inject({}) { |h, i| h.update "fp#{i}" => i }
+		@i_to_s = @s_to_i.invert
+		Sym = @s_to_i.sort.transpose.last
 	end
 
 	# machine state reg
@@ -73,8 +76,10 @@ class PowerPC < CPU
 			@i = i
 		end
 
+		@s_to_i = (0..31).inject({}) { |h, i| h.update "cr#{i}" => i }
+		@i_to_s = @s_to_i.invert
+		Sym = @s_to_i.sort.transpose.last
 		def symbolic ; "cr#@i".to_sym end
-		def render ; ["cr#@i"] end
 	end
 
 	# indirection : reg+reg or reg+16b_off
@@ -89,13 +94,13 @@ class PowerPC < CPU
 			b = @base.symbolic
 			b = nil if b == :r0	# XXX is it true ?
 			o = @offset
-			o = o.symbolic if o.kind_of? Reg
+			o = o.symbolic if o.kind_of?(Reg)
 			Indirection[Expression[b, :+, o].reduce, 4, orig]
 		end
 
 		include Renderable
 		def render
-			if @offset.kind_of? Reg
+			if @offset.kind_of?(Reg)
 				['(', @base, ' + ', @offset, ')']
 			else
 				[@offset, '(', @base, ')']
