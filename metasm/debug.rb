@@ -294,7 +294,7 @@ class Debugger
 	# if given a block, run the block and then restore the original pid/tid
 	# pid may be an object that respond to #pid/#tid
 	def switch_context(npid, ntid=nil)
-		if npid.respond_to? :pid
+		if npid.respond_to?(:pid)
 			ntid ||= npid.tid
 			npid = npid.pid
 		end
@@ -567,7 +567,7 @@ class Debugger
 
 	# invalidates the EncodedData backend for the dasm sections
 	def dasm_invalidate
-		disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to? :invalidate } if disassembler
+		disassembler.sections.each_value { |s| s.data.invalidate if s.data.respond_to?(:invalidate) } if disassembler
 	end
 
 	# return all breakpoints set on a specific address (or all bp)
@@ -683,7 +683,7 @@ class Debugger
 
 	# return the breakpoint that is responsible for the evt_hwbp
 	def find_bp_hwbp
-		return @cpu.dbg_find_hwbp(self) if @cpu.respond_to?(:dbg_find_bpx)
+		return @cpu.dbg_find_hwbp(self) if @cpu.respond_to?(:dbg_find_hwbp)
 		@breakpoint_thread.find { |b| b.address == pc }
 	end
 
