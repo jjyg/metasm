@@ -123,8 +123,8 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 
 	# returns the ExpressionString if the currently hilighted word is a :stackvar
-	def pointed_localvar(obj = curobj, hl = curview.hl_word)
-		return if not obj
+	def pointed_localvar(obj=curobj, hl=curview.hl_word)
+		return if not obj.kind_of?(Renderable)
 		localvar = nil
 		obj.each_expr { |e|
 			next unless e.kind_of?(ExpressionString)
@@ -447,7 +447,7 @@ class DisasmWidget < ContainerChoiceWidget
 
 	# prompt the contant to use in place of some numeric value
 	def prompt_constant(di=curobj)
-		return if not di.kind_of? DecodedInstruction
+		return if not di.kind_of?(DecodedInstruction)
 		di.each_expr { |e|
 			next unless e.kind_of?(Expression)
 			if (e.lexpr.kind_of?(Integer) or e.lexpr.kind_of?(ExpressionString)) and
