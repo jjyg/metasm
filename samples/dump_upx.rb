@@ -85,7 +85,8 @@ class UPXUnpacker
 		dump.sections.each { |s| s.characteristics |= ['MEM_WRITE'] }
 
 		# write the PE file to disk
-		dump.encode_file @dumpfile
+		# as UPX strips the relocation information, mark the exe to opt-out from ASLR
+		dump.encode_file @dumpfile, 'exe', false
 
 		puts 'dump complete'
 	ensure
