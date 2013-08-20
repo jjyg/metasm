@@ -315,7 +315,7 @@ class LoadedPE < PE
 
 	# reads a loaded PE from memory, returns a PE object
 	# dumps the header, optheader and all sections ; try to rebuild IAT (#memdump_imports)
-	def self.memdump(memory, baseaddr, entrypoint = nil, iat_p=nil)
+	def self.memdump(memory, baseaddr, entrypoint=nil, iat_p=nil)
 		loaded = LoadedPE.load memory[baseaddr, 0x1000_0000]
 		loaded.load_address = baseaddr
 		loaded.decode
@@ -417,6 +417,7 @@ class LoadedPE < PE
 					puts 'unknown ptr %x' % ptr if $DEBUG
 					# allow holes in the unk_iat_p table
 					break if not unk_iat_p or failcnt > 4
+					loaded_dll = nil
 					failcnt += 1
 					next
 				end
