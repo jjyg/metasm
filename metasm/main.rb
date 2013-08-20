@@ -1121,7 +1121,7 @@ class EncodedData
 	end
 
 	# concatenation of another +EncodedData+ (or nil/Fixnum/anything supporting String#<<)
-	def << other
+	def <<(other)
 		case other
 		when nil
 		when ::Fixnum
@@ -1149,6 +1149,10 @@ class EncodedData
 			@virtsize += other.virtsize
 		else
 			fill
+			if other.respond_to?(:force_encoding) and other.encoding.name != 'ASCII-8BIT'
+				# kick me in the rubygnoles
+				other = other.dup.force_encoding('binary')
+			end
 			if @data.empty?; @data = other.dup
 			elsif not @data.kind_of?(String); @data = @data.to_str << other
 			else @data << other
