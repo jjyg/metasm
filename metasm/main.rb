@@ -1000,6 +1000,10 @@ class EncodedData
 
 	# opts' keys in :reloc, :export, :virtsize, defaults to empty/empty/data.length
 	def initialize(data='', opts={})
+		if data.respond_to?(:force_encoding) and data.encoding.name != 'ASCII-8BIT' and data.length > 0
+			puts "Forcing edata.data.encoding = BINARY at", caller if $DEBUG
+			data = data.dup.force_encoding('binary')
+		end
 		@data     = data
 		@reloc    = opts[:reloc]    || {}
 		@export   = opts[:export]   || {}
@@ -1150,7 +1154,7 @@ class EncodedData
 		else
 			fill
 			if other.respond_to?(:force_encoding) and other.encoding.name != 'ASCII-8BIT'
-				# kick me in the rubygnoles
+				puts "Forcing edata.data.encoding = BINARY at", caller if $DEBUG
 				other = other.dup.force_encoding('binary')
 			end
 			if @data.empty?; @data = other.dup
@@ -1164,7 +1168,7 @@ class EncodedData
 	end
 
 	# equivalent to dup << other, filters out Integers & nil
-	def + other
+	def +(other)
 		raise ArgumentError if not other or other.kind_of?(Integer)
 		dup << other
 	end
