@@ -280,15 +280,21 @@ class Debugger
 	end
 
 	# delete references to the current thread
-	# calls del_pid if no tid left
 	def del_tid
 		@tid_stuff.delete @tid
 		if @tid = @tid_stuff.keys.first
 			swapin_tid
 		else
-			del_pid
+			del_tid_notid
 		end
 	end
+
+	# wipe the whole process when no TID is left
+	# XXX we may have a pending evt_newthread...
+	def del_tid_notid
+		del_pid
+	end
+
 
 	# change the debugger to a specific pid/tid
 	# if given a block, run the block and then restore the original pid/tid
@@ -895,6 +901,7 @@ class Debugger
 	end
 
 	# checks if the running target has stopped (nonblocking)
+	# returns false if no debug event happened
 	def check_target
 		do_check_target
 	end

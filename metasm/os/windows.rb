@@ -1186,6 +1186,7 @@ EOS
 		if ret == 0 and not fproto.has_attribute 'zero_not_fail'
 			# save error msg so that last_error_msg returns the same thing if called again
 			puts "WinAPI: error in #{fproto.name}: #{@last_err_msg = last_error_msg}" if $VERBOSE
+			puts caller if $DEBUG
 			nil
 		else super(fproto, ret)
 		end
@@ -2030,6 +2031,7 @@ class WinDebugger < Debugger
 		@dbg_eventstruct ||= WinAPI.alloc_c_struct('_DEBUG_EVENT')
 		if WinAPI.waitfordebugevent(@dbg_eventstruct, timeout) != 0
 			update_dbgev(@dbg_eventstruct)
+			true
 		end
 	end
 
@@ -2039,9 +2041,14 @@ class WinDebugger < Debugger
 		super()
 	end
 
+	# do nothing, windows will send us a EXIT_PROCESS event
+	def del_tid_notid
+		nil while do_waitfordebug(10) and !@tid
+	end
+
 	def del_pid
 		# tell Windows to release the PROCESS object
-		WinAPI.debugactiveprocessstop(@pid) if WinAPI.respond_to? :debugactiveprocessstop
+		WinAPI.debugactiveprocessstop(@pid) if WinAPI.respond_to?(:debugactiveprocessstop)
 		super()
 	end
 

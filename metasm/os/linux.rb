@@ -1370,6 +1370,7 @@ class LinDebugger < Debugger
 		# XXX all threads may have stopped, wait them now ?
 		set_tid_findpid t
 		update_waitpid $?
+		true
 	rescue ::Errno::ECHILD
 	end
 

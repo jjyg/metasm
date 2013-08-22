@@ -504,14 +504,18 @@ class GdbRemoteDebugger < Debugger
 
 	def do_check_target
 		return if @state == :dead
+
+		# keep-alive on the connexion
 		t = Time.now
 		@last_check_target ||= t
 		if @state == :running and t - @last_check_target > @check_target_timeout
 			@gdb.io.write '$?#' << @gdb.gdb_csum('?')
 			@last_check_target = t
 		end
+
 		return unless i = @gdb.check_target(0.01)
 		update_state(i)
+		true
 	end
 
 	def do_wait_target
