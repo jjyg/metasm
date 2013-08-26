@@ -150,7 +150,7 @@ class ARM
 		addop 'bl', 0b1011 << 24, :setip, :stopexec, :i24, :saveip
 		addop 'bkpt', (0b00010010 << 20) | (0b0111 << 4)		# other fields are available&unused, also cnd != AL is undef
 		addop 'blx', 0b1111101 << 25, :setip, :stopexec, :saveip, :tothumb, :h, :nocond, :i24
-		addop 'blx', (0b00010010 << 20) | (0b0011 << 4), :setip, :stopexec, :saveip, :tothumb, :rm
+		addop 'blx', (0b00010010 << 20) | (0b111111111111 << 8) | (0b0011 << 4), :setip, :stopexec, :saveip, :tothumb, :rm
 		addop 'bx',  (0b00010010 << 20) | (0b0001 << 4), :setip, :stopexec, :rm
 		addop 'bxj',  (0b00010010 << 20) | (0b0010 << 4), :setip, :stopexec, :rm, :tojazelle
 
