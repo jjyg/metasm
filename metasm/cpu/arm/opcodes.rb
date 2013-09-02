@@ -155,7 +155,7 @@ class ARM
 		addop 'b',  0b1010 << 24, :setip, :stopexec, :i24
 		addop 'bl', 0b1011 << 24, :setip, :stopexec, :i24, :saveip
 		addop 'bkpt', (0b00010010 << 20) | (0b0111 << 4)		# other fields are available&unused, also cnd != AL is undef
-		addop 'blx', 0b1111101 << 25, :setip, :stopexec, :saveip, :tothumb, :h, :nocond, :i24
+		addop 'blx', 0b1111101 << 25, :setip, :stopexec, :saveip, :tothumb, :h, :uncond, :i24
 		addop 'blx', (0b00010010 << 20) | (0b0011 << 4), :setip, :stopexec, :saveip, :tothumb, :rm, :sbo16, :sbo12, :sbo8
 		addop 'bx',  (0b00010010 << 20) | (0b0001 << 4), :setip, :stopexec, :rm, :sbo16, :sbo12, :sbo8
 		addop 'bxj',  (0b00010010 << 20) | (0b0010 << 4), :setip, :stopexec, :rm, :tojazelle, :sbo16, :sbo12, :sbo8
@@ -165,6 +165,16 @@ class ARM
 		addop_load_lsh
 		addop_ldm 'stm', (1 << 27)
 		addop_ldm 'ldm', (1 << 27) | (1 << 20)
+
+		# TODO mrs, [qus]add/sub*
+		addop 'clz',   (0b00010110 << 20) | (0b0001 << 4), :rd, :rm, :sbo16, :sbo8
+		addop 'ldrex', (0b00011001 << 20) | (0b1001 << 4), :rd, :rn, :sbo8, :sbo0
+		addop 'strex', (0b00011000 << 20) | (0b1001 << 4), :rd, :rm, :rn, :sbo8
+		addop 'rev',   (0b01101011 << 20) | (0b0011 << 4), :rd, :rm, :sbo16, :sbo8
+		addop 'rev16', (0b01101011 << 20) | (0b1011 << 4), :rd, :rm, :sbo16, :sbo8
+		addop 'revsh', (0b01101111 << 20) | (0b1011 << 4), :rd, :rm, :sbo16, :sbo8
+		addop 'sel',   (0b01101000 << 20) | (0b1011 << 4), :rd, :rn, :rm, :sbo8
+
 	end
 
 
