@@ -51,6 +51,7 @@ class ARM
 	end
 
 	def parse_argument(lexer)
+		raise lexer, "unexpected EOS" if not lexer.nexttok
 		if Reg.s_to_i[lexer.nexttok.raw]
 			arg = Reg.new Reg.s_to_i[lexer.readtok.raw]
 			lexer.skip_space
@@ -69,22 +70,24 @@ class ARM
 			when '!'
 				lexer.readtok
 				arg.updated = true
-			end
+			end if lexer.nexttok
 		elsif lexer.nexttok.raw == '{'
 			lexer.readtok
 			arg = RegList.new
 			loop do
-				raise "unterminated reglist" if lexer.eos?
 				lexer.skip_space
+				raise "unterminated reglist" if lexer.eos?
 				if Reg.s_to_i[lexer.nexttok.raw]
 					arg.list << Reg.new(Reg.s_to_i[lexer.readtok.raw])
 					lexer.skip_space
+					raise "unterminated reglist" if lexer.eos?
 				end
 				case lexer.nexttok.raw
 				when ','; lexer.readtok
 				when '-'
 					lexer.readtok
 					lexer.skip_space
+					raise "unterminated reglist" if lexer.eos?
 					if not r = Reg.s_to_i[lexer.nexttok.raw]
 						raise lexer, "reglist parse error: invalid range"
 					end
@@ -102,15 +105,17 @@ class ARM
 			end
 		elsif lexer.nexttok.raw == '['
 			lexer.readtok
+			raise "unexpected EOS" if lexer.eos?
 			if not base = Reg.s_to_i[lexer.nexttok.raw]
 				raise lexer, 'invalid mem base (reg expected)'
 			end
 			base = Reg.new Reg.s_to_i[lexer.readtok.raw]
+			raise "unexpected EOS" if lexer.eos?
 			if lexer.nexttok.raw == ']'
 				lexer.readtok
 				#closed = true
 			end
-			if lexer.nexttok.raw != ','
+			if !lexer.nexttok or lexer.nexttok.raw != ','
 				raise lexer, 'mem off expected'
 			end
 			lexer.readtok
