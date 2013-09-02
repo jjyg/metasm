@@ -18,6 +18,12 @@ class ARM
 		suppl = nil
 		o = Opcode.new name, bin
 		args.each { |a|
+			# Should Be One fields
+			if a == :sbo16 ; o.bin |= 0b1111 << 16 ; next ; end
+			if a == :sbo12 ; o.bin |= 0b1111 << 12 ; next ; end
+			if a == :sbo8  ; o.bin |= 0b1111 <<  8 ; next ; end
+			if a == :sbo0  ; o.bin |= 0b1111 <<  0 ; next ; end
+
 			o.args << a if @valid_args[a]
 			o.props[a] = true if @valid_props[a]
 			o.props.update a if a.kind_of?(Hash)
@@ -150,9 +156,9 @@ class ARM
 		addop 'bl', 0b1011 << 24, :setip, :stopexec, :i24, :saveip
 		addop 'bkpt', (0b00010010 << 20) | (0b0111 << 4)		# other fields are available&unused, also cnd != AL is undef
 		addop 'blx', 0b1111101 << 25, :setip, :stopexec, :saveip, :tothumb, :h, :nocond, :i24
-		addop 'blx', (0b00010010 << 20) | (0b0011 << 4), :setip, :stopexec, :saveip, :tothumb, :rm
-		addop 'bx',  (0b00010010 << 20) | (0b0001 << 4), :setip, :stopexec, :rm
-		addop 'bxj',  (0b00010010 << 20) | (0b0010 << 4), :setip, :stopexec, :rm, :tojazelle
+		addop 'blx', (0b00010010 << 20) | (0b0011 << 4), :setip, :stopexec, :saveip, :tothumb, :rm, :sbo16, :sbo12, :sbo8
+		addop 'bx',  (0b00010010 << 20) | (0b0001 << 4), :setip, :stopexec, :rm, :sbo16, :sbo12, :sbo8
+		addop 'bxj',  (0b00010010 << 20) | (0b0010 << 4), :setip, :stopexec, :rm, :tojazelle, :sbo16, :sbo12, :sbo8
 
 		addop_load 'str', (1 << 26)
 		addop_load 'ldr', (1 << 26) | (1 << 20)
