@@ -263,7 +263,7 @@ class CCompiler < C::Compiler
 			elsif i >= (1<<64)-0x8000_0000
 				v = Expression[Expression.make_signed(i, 64)]
 			else
-				v = make_volatile(v)
+				v = make_volatile(v, C::BaseType.new(:int))
 				unuse v
 			end
 		end
@@ -576,7 +576,10 @@ class CCompiler < C::Compiler
 							instr 'mov', l, Reg.new(r.val, l.sz)
 						end
 					elsif l.kind_of? ModRM and r.kind_of? Expression and l.sz == 64
-						r = make_volatile(r, expr.type)
+						rval = r.reduce
+						if !rval.kind_of?(Integer) or rval > 0xffff_ffff or rval < -0x8000_0000
+							r = make_volatile(r, expr.type)
+						end
 						instr 'mov', l, r
 					else
 						instr 'mov', l, r
