@@ -575,6 +575,9 @@ class CCompiler < C::Compiler
 						else
 							instr 'mov', l, Reg.new(r.val, l.sz)
 						end
+					elsif l.kind_of? ModRM and r.kind_of? Expression and l.sz == 64
+						r = make_volatile(r, expr.type)
+						instr 'mov', l, r
 					else
 						instr 'mov', l, r
 					end
