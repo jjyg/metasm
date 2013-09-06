@@ -2328,7 +2328,8 @@ EOH
 			when :'.'
 				le = CExpression.reduce(parser, @lexpr)
 				if le.kind_of? Variable and le.initializer.kind_of? ::Array
-					midx = le.type.members.index(le.type.findmember(@rexpr))
+					t = le.type.untypedef
+					midx = t.members.index(t.findmember(@rexpr))
 					CExpression.reduce(parser, le.initializer[midx] || 0)
 				else
 					CExpression.new(le, @op, @rexpr, @type)
