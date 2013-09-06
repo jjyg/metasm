@@ -579,6 +579,7 @@ class CCompiler < C::Compiler
 						rval = r.reduce
 						if !rval.kind_of?(Integer) or rval > 0xffff_ffff or rval < -0x8000_0000
 							r = make_volatile(r, expr.type)
+							unuse r
 						end
 						instr 'mov', l, r
 					else
