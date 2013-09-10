@@ -11,7 +11,7 @@ module Metasm
 module C
 	class Parser
 		def precompile
-			@toplevel.precompile(Compiler.new(self))
+			@toplevel.precompile(Compiler.new(self, @program))
 			self
 		end
 	end
@@ -36,7 +36,8 @@ module C
 		end
 
 		# creates a new CCompiler from an ExeFormat and a C Parser
-		def initialize(parser, exeformat=ExeFormat.new, source=[])
+		def initialize(parser, exeformat=nil, source=[])
+			exeformat ||= ExeFormat.new
 			@parser, @exeformat, @source = parser, exeformat, source
 			@auto_label_list = {}
 			@label_oldname = {}
@@ -428,7 +429,8 @@ module C
 		# return non-nil if the variable name is unsuitable to appear as is in the asm listing
 		# eg filter out asm instruction names
 		def check_reserved_name(var)
-			@exeformat.cpu.check_reserved_name(var.name) or %w[db dw dd dq].include?(var.name)
+			return true if @exeformat.cpu and @exeformat.cpu.check_reserved_name(var.name)
+			%w[db dw dd dq].include?(var.name)
 		end
 	end
 
@@ -555,8 +557,12 @@ module C
 						# reuse same name as predeclarations
 						@var.name = n
 					else
-						@var.name = compiler.new_label @var.name until @var.name != old
-						compiler.label_oldname[@var.name] = old
+						newname = old
+						newname = compiler.new_label newname until newname != old
+						if not compiler.check_reserved_name(@var)
+							compiler.label_oldname[newname] = old
+						end
+						@var.name = newname
 					end
 					ref ||= scope.symbol[@var.name] || @var
 					# append only one actual declaration for all predecls (the one with init, or the last uninit)

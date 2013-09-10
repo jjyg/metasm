@@ -1180,13 +1180,14 @@ module C
 		attr_accessor :lexer, :toplevel, :typesize, :pragma_pack
 		attr_accessor :endianness
 		attr_accessor :allow_bad_c
+		attr_accessor :program
 		# allowed arguments: ExeFormat, CPU, Preprocessor, Symbol (for the data model)
 		def initialize(*args)
 			model = args.grep(Symbol).first || :ilp32
 			lexer = args.grep(Preprocessor).first || Preprocessor.new
-			exe = args.grep(ExeFormat).first
+			@program = args.grep(ExeFormat).first
 			cpu = args.grep(CPU).first
-			cpu ||= exe.cpu if exe
+			cpu ||= @program.cpu if @program
 			@lexer = lexer
 			@prev_pragma_callback = @lexer.pragma_callback
 			@lexer.pragma_callback = lambda { |tok| parse_pragma_callback(tok) }
@@ -1197,7 +1198,7 @@ module C
 				:char => 1, :float => 4, :double => 8, :longdouble => 12 }
 			send model
 			cpu.tune_cparser(self) if cpu
-			exe.tune_cparser(self) if exe
+			@program.tune_cparser(self) if @program
 		end
 
 		def ilp16
