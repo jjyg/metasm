@@ -313,6 +313,7 @@ class ExeFormat
 						lname = @locallabels_bkw[tok.raw] = @locallabels_fwd.delete(tok.raw) || new_label('local_'+tok.raw)
 					else
 						lname = tok.raw
+						raise tok, "invalid label name: #{lname.inspect} is reserved" if @cpu.check_reserved_name(lname)
 						raise tok, "label redefinition" if new_label(lname) != lname
 					end
 					l = Label.new(lname)

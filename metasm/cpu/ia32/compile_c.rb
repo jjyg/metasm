@@ -1511,10 +1511,6 @@ class CCompiler < C::Compiler
 #File.open('m-dbg-precomp.c', 'w') { |fd| fd.puts @parser }
 #File.open('m-dbg-src.asm', 'w') { |fd| fd.puts @source }
 	end
-
-	def check_reserved_name(var)
-		Reg.s_to_i[var.name] or super(var)
-	end
 end
 
 	def new_ccompiler(parser, exe=ExeFormat.new)

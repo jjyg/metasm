@@ -346,6 +346,10 @@ end
 		end
 	end
 
+	def check_reserved_name(name)
+		Reg.s_to_i[name]
+	end
+
 	def instr_uncond_jump_to(target)
 		parse_instruction("jmp #{target}")
 	end

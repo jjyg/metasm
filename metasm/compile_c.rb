@@ -18,7 +18,7 @@ module C
 
 	# each CPU defines a subclass of this one
 	class Compiler
-		# an ExeFormat (mostly used for unique label creation)
+		# an ExeFormat (mostly used for unique label creation, and cpu.check_reserved_name)
 		attr_accessor :exeformat
 		# the C Parser (destroyed by compilation)
 		attr_accessor :parser
@@ -428,7 +428,7 @@ module C
 		# return non-nil if the variable name is unsuitable to appear as is in the asm listing
 		# eg filter out asm instruction names
 		def check_reserved_name(var)
-			%w[db dw dd dq].include?(var.name)
+			@exeformat.cpu.check_reserved_name(var.name) or %w[db dw dd dq].include?(var.name)
 		end
 	end
 

@@ -88,6 +88,10 @@ class CPU
 	def gui_hilight_word_regexp(word)
 		Regexp.escape(word)
 	end
+
+	# returns true if the name is invalid as a label name (eg register name)
+	def check_reserved_name(name)
+	end
 end
 
 # generic CPU, with no instructions, just size/endianness

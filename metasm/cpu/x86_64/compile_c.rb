@@ -1021,10 +1021,6 @@ class CCompiler < C::Compiler
 
 	def c_program_epilog
 	end
-
-	def check_reserved_name(var)
-		Reg.s_to_i[var.name] or super(var)
-	end
 end
 
 	def new_ccompiler(parser, exe=ExeFormat.new)

@@ -68,5 +68,9 @@ class X86_64
 
 		super(o, spec, arg)
 	end
+
+	def check_reserved_name(name)
+		Reg.s_to_i[name]
+	end
 end
 end
