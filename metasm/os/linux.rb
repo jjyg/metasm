@@ -1200,7 +1200,8 @@ class LinDebugger < Debugger
 		set_tid tid
 		@ptrace.pid = tid
 		@ptrace.attach
-		@state = :stopped	# no need to wait()
+		@state = :stopped
+		::Process.waitpid(tid, ::Process::WALL)
 		log "attached thread #{tid}"
 		set_thread_options
 	rescue Errno::ESRCH
@@ -1359,8 +1360,12 @@ class LinDebugger < Debugger
 	
 	def set_tid_findpid(tid)
 		return if tid == @tid
-		if tid != @pid and pr = list_processes.find { |p| p.threads.include? tid }
-			set_pid pr.pid
+		if tid != @pid and !@tid_stuff[tid]
+			if kv = @pid_stuff.find { |k, v| v[:tid_stuff] and v[:tid_stuff][tid] }
+				set_pid kv[0]
+			elsif pr = list_processes.find { |p| p.threads.include?(tid) }
+				set_pid pr.pid
+			end
 		end
 		set_tid tid
 	end
