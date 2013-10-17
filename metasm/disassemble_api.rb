@@ -198,12 +198,12 @@ class Disassembler
 
 	# yields every InstructionBlock
 	# returns the list of IBlocks
-	def each_instructionblock
+	def each_instructionblock(&b)
 		ret = []
 		@decoded.each { |addr, di|
 			next if not di.kind_of? DecodedInstruction or not di.block_head?
 			ret << di.block
-			yield di.block if block_given?
+			b.call(di.block) if b
 		}
 		ret
 	end
@@ -915,7 +915,7 @@ class Disassembler
 	# if yield returns nil/false, do not include the addr in the final result
 	# sections are scanned MB by MB, so this should work (slowly) on 4GB sections (eg debugger VM)
 	# with addr_start/length, symbol-based section are skipped
-	def pattern_scan(pat, addr_start=nil, length=nil, chunksz=nil, margin=nil)
+	def pattern_scan(pat, addr_start=nil, length=nil, chunksz=nil, margin=nil, &b)
 		chunksz ||= 4*1024*1024	# scan 4MB at a time
 		margin ||= 65536	# add this much bytes at each chunk to find /pat/ over chunk boundaries
 
@@ -943,7 +943,7 @@ class Disassembler
 			end
 			e.pattern_scan(pat, chunksz, margin) { |eo|
 				match_addr = sec_addr + eo
-				found << match_addr if not block_given? or yield(match_addr)
+				found << match_addr if not b or b.call(match_addr)
 				false
 			}
 		}
@@ -951,14 +951,14 @@ class Disassembler
 	end
 
 	# returns/yields [addr, string] found using pattern_scan /[\x20-\x7e]/
-	def strings_scan(minlen=6)
+	def strings_scan(minlen=6, &b)
 		ret = []
 		nexto = 0
 		pattern_scan(/[\x20-\x7e]{#{minlen},}/m, nil, 1024) { |o|
 			if o - nexto > 0
 				next unless e = get_edata_at(o)
 				str = e.data[e.ptr, 1024][/[\x20-\x7e]{#{minlen},}/m]
-				ret << [o, str] if not block_given? or yield(o, str)
+				ret << [o, str] if not b or b.call(o, str)
 				nexto = o + str.length
 			end
 		}

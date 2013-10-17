@@ -946,11 +946,11 @@ class DasmWindow < Window
 		exe
 	end
 
-	def promptopen(caption='chose target binary')
-		openfile(caption) { |exename| loadfile(exename) ; yield self if block_given? }
+	def promptopen(caption='chose target binary', &b)
+		openfile(caption) { |exename| loadfile(exename) ; b.call(self) if b }
 	end
 
-	def promptdebug(caption='chose target')
+	def promptdebug(caption='chose target', &b)
 		l = nil
 		i = inputbox(caption) { |name|
 			i = nil ; l.destroy if l and not l.destroyed?
@@ -966,7 +966,7 @@ class DasmWindow < Window
 			end
 			DbgWindow.new(target)
 			destroy if not @dasm_widget
-			yield self if block_given?
+			b.call(self) if b
 		}
 
 		# build process list in bg (exe name resolution takes a few seconds)

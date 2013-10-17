@@ -299,7 +299,7 @@ class Debugger
 	# change the debugger to a specific pid/tid
 	# if given a block, run the block and then restore the original pid/tid
 	# pid may be an object that respond to #pid/#tid
-	def switch_context(npid, ntid=nil)
+	def switch_context(npid, ntid=nil, &b)
 		if npid.respond_to?(:pid)
 			ntid ||= npid.tid
 			npid = npid.pid
@@ -308,12 +308,12 @@ class Debugger
 		oldtid = tid
 		set_pid npid
 		set_tid ntid if ntid
-		if block_given?
+		if b
 			# shortcut begin..ensure overhead
-			return yield if oldpid == pid and oldtid == tid
+			return b.call if oldpid == pid and oldtid == tid
 
 			begin
-				yield
+				b.call
 			ensure
 				set_pid oldpid
 				set_tid oldtid
@@ -323,31 +323,31 @@ class Debugger
 	alias set_context switch_context
 
 	# iterate over all pids, yield in the context of this pid
-	def each_pid
+	def each_pid(&b)
 		# ensure @pid is last, so that we finish in the current context
 		lst = @pid_stuff.keys - [@pid]
 		lst << @pid
-		return lst if not block_given?
+		return lst if not b
 		lst.each { |p|
 			set_pid p
-			yield
+			b.call
 		}
 	end
 
 	# iterate over all tids of the current process, yield in its context
-	def each_tid
+	def each_tid(&b)
 		lst = @tid_stuff.keys - [@tid]
 		lst << @tid
-		return lst if not block_given?
+		return lst if not b
 		lst.each { |t|
 			set_tid t rescue next
-			yield
+			b.call
 		}
 	end
 
 	# iterate over all tids of all pids, yield in their context
-	def each_pid_tid
-		each_pid { each_tid { yield } }
+	def each_pid_tid(&b)
+		each_pid { each_tid { b.call } }
 	end
 
 
@@ -601,9 +601,9 @@ class Debugger
 	end
 
 	# return on of the breakpoints at address addr
-	def find_breakpoint(addr=nil)
-		return @breakpoint[addr] if @breakpoint[addr] and (not block_given? or yield(@breakpoint[addr]))
-		all_breakpoints(addr).find { |b| yield b }
+	def find_breakpoint(addr=nil, &b)
+		return @breakpoint[addr] if @breakpoint[addr] and (not b or b.call(@breakpoint[addr]))
+		all_breakpoints(addr).find { |bp| b.call bp }
 	end
 
 
@@ -869,11 +869,11 @@ class Debugger
 	# singlesteps over an active breakpoint and run its block
 	# if the breakpoint provides an emulation stub, run that, otherwise
 	# disable the breakpoint, singlestep, and re-enable
-	def singlestep_bp(bp)
+	def singlestep_bp(bp, &b)
 		if has_emul_instr(bp)
 			@state = :stopped
 			bp.emul_instr.call
-			yield if block_given?
+			b.call if b
 		else
 			bp.hash_shared.each { |bb|
 				disable_bp(bb, :temp_inactive) if bb.state == :active
@@ -885,7 +885,7 @@ class Debugger
 					enable_bp(bb) if bb.state == :temp_inactive
 				}
 				prev_sscb[] if prev_sscb
-				yield if block_given?
+				b.call if b
 			}
 		end
 	end
@@ -1181,9 +1181,9 @@ class Debugger
 	end
 
 	# load symbols from all libraries found by the OS module
-	def loadallsyms
+	def loadallsyms(&b)
 		modules.each { |m|
-			yield m.addr if block_given?
+			b.call(m.addr) if b
 			loadsyms(m.addr, m.path)
 		}
 	end
@@ -1215,7 +1215,7 @@ class Debugger
 	end
 
 	# parses the expression contained in arg, updates arg to point after the expr
-	def parse_expr!(arg)
+	def parse_expr!(arg, &b)
 		return if not e = IndExpression.parse_string!(arg) { |s|
 			# handle 400000 -> 0x400000
 			# XXX no way to override and force decimal interpretation..
@@ -1230,7 +1230,7 @@ class Debugger
 		bd = {}
 		e.externals.grep(::String).each { |ex|
 			if not v = register_list.find { |r| ex.downcase == r.to_s.downcase } ||
-						(block_given? && yield(ex)) || symbols.index(ex)
+						(b && b.call(ex)) || symbols.index(ex)
 				lst = symbols.values.find_all { |s| s.downcase.include? ex.downcase }
 				case lst.length
 				when 0
@@ -1418,26 +1418,26 @@ class Debugger
 
 	# see EData#pattern_scan
 	# scans only mapped areas of @memory, using os_process.mappings
-	def pattern_scan(pat, start=0, len=@memory.length-start)
+	def pattern_scan(pat, start=0, len=@memory.length-start, &b)
 		ret = []
-		mappings.each { |a, l, p, *o_|
-			next if p !~ /r/i
-			l -= start-a if a < start
-			a = start if a < start
-			l = start+len-a if a+l > start+len
-			next if l <= 0
-			EncodedData.new(read_mapped_range(a, l)).pattern_scan(pat) { |o|
-				o += a
-				ret << o if not block_given? or yield(o)
+		mappings.each { |addr, len, perm, *o_|
+			next if perm !~ /r/i
+			len -= start-addr if addr < start
+			addr = start if addr < start
+			len = start+len-addr if addr+len > start+len
+			next if len <= 0
+			EncodedData.new(read_mapped_range(addr, len)).pattern_scan(pat) { |off|
+				off += addr
+				ret << off if not b or b.call(off)
 			}
 		}
 		ret
 	end
 
-	def read_mapped_range(a, l)
+	def read_mapped_range(addr, len)
 		# try to use a single get_page call
-		s = @memory.get_page(a, l) || ''
-		s.length == l ? s : (s = @memory[a, l] ? s.to_str : nil)
+		s = @memory.get_page(addr, len) || ''
+		s.length == len ? s : (s = @memory[addr, len] ? s.to_str : nil)
 	end
 end
 end
