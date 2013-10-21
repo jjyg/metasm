@@ -1420,14 +1420,14 @@ class Debugger
 	# scans only mapped areas of @memory, using os_process.mappings
 	def pattern_scan(pat, start=0, len=@memory.length-start, &b)
 		ret = []
-		mappings.each { |addr, len, perm, *o_|
+		mappings.each { |maddr, mlen, perm, *o_|
 			next if perm !~ /r/i
-			len -= start-addr if addr < start
-			addr = start if addr < start
-			len = start+len-addr if addr+len > start+len
-			next if len <= 0
-			EncodedData.new(read_mapped_range(addr, len)).pattern_scan(pat) { |off|
-				off += addr
+			mlen -= start-maddr if maddr < start
+			maddr = start if maddr < start
+			mlen = start+len-maddr if maddr+mlen > start+len
+			next if mlen <= 0
+			EncodedData.new(read_mapped_range(maddr, mlen)).pattern_scan(pat) { |off|
+				off += maddr
 				ret << off if not b or b.call(off)
 			}
 		}
