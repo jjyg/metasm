@@ -27,32 +27,17 @@ struct _SINGLE_LIST_ENTRY {
 
 
 typedef struct _HEAP_ENTRY {
-	union {
-		struct {
-			UINT16       Size;
-			UINT8        Flags;
-			UINT8        SmallTagIndex;
-			UINT8        _PADDING0_[0x4];
-		};
-		struct {
-			VOID*        SubSegmentCode;
-			UINT16       PreviousSize;
-			union
-			{
-				UINT8        SegmentOffset;
-				UINT8        LFHFlags;
-			};
-			UINT8        UnusedBytes;
-		};
-		struct
-		{
-			ULONG32      Code1;
-			UINT16       Code2;
-			UINT8        Code3;
-			UINT8        Code4;
-		};
-		UINT64       AgregateCode;
+	VOID*        PreviousBlockPrivateData;
+	UINT16       Size;
+	UINT8        Flags;
+	UINT8        SmallTagIndex;
+	UINT16       PreviousSize;
+	union
+	{
+		UINT8        SegmentOffset;
+		UINT8        LFHFlags;
 	};
+	UINT8        UnusedBytes;
 } HEAP_ENTRY, *PHEAP_ENTRY;
 
 typedef struct _HEAP_COUNTERS
