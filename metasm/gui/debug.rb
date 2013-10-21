@@ -795,7 +795,7 @@ class DbgConsoleWidget < DrawableWidget
 				le = (@dbg.cpu.endianness == :little)
 				data = '' if @dbg.memory.page_invalid?(addr)
 				case dlen
-				when nil; add_log "#{Expression[addr]}  #{data.unpack('C*').map { |c| '%02X' % c }.join(' ').ljust(2*16+15)}  #{data.tr("\0-\x1f\x7f-\xff", '.')}"
+				when nil; add_log "#{Expression[addr]}  #{data.unpack('C*').map { |c| '%02X' % c }.join(' ').ljust(2*16+15)}  #{data.tr("^\x20-\x7e", '.')}"
 				when 1;   add_log "#{Expression[addr]}  #{data.unpack('C*').map { |c| '%02X' % c }.join(' ')}"
 				when 2;   add_log "#{Expression[addr]}  #{data.unpack(le ? 'v*' : 'n*').map { |c| '%04X' % c }.join(' ')}"
 				when 4;   add_log "#{Expression[addr]}  #{data.unpack(le ? 'V*' : 'N*').map { |c| '%08X' % c }.join(' ')}"
