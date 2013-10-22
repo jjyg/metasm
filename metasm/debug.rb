@@ -551,7 +551,7 @@ class Debugger
 	end
 
 
-	# define the lambda to use to log stuff (used by #puts)
+	# define the lambda to use to log stuff
 	def set_log_proc(l=nil, &b)
 		@log_proc = l || b
 	end
@@ -561,7 +561,7 @@ class Debugger
 		if @log_proc
 			a.each { |aa| @log_proc[aa] }
 		else
-			puts(*a)
+			puts(*a) if $VERBOSE
 		end
 	end
 
