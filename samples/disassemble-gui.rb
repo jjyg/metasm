@@ -95,6 +95,7 @@ if exe
 	dasm.disassemble_fast_deep(*ep) if opts[:fast]
 elsif dbg
 	dbg.load_map opts[:map] if opts[:map]
+	dbg.disassembler.parse_c_file opts[:cheader] if opts[:cheader]
 	opts[:plugin].to_a.each { |p|
 		begin
 			dbg.load_plugin(p)
