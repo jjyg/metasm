@@ -47,7 +47,7 @@ class ELF
 		# defines the @name_p field from @name and elf.section[elf.header.shstrndx]
 		# creates .shstrtab if needed
 		def make_name_p elf
-			return 0 if not name or @name == ''
+			return 0 if not name or @name == '' or elf.header.shnum == 0
 			if elf.header.shstrndx.to_i == 0 or not elf.sections[elf.header.shstrndx]
 				sn = Section.new
 				sn.name = '.shstrtab'
@@ -199,6 +199,8 @@ class ELF
 
 	# encodes the symbol dynamic hash table in the .hash section, updates the HASH tag
 	def encode_hash
+		return if @symbols.length <= 1
+
 		if not hash = @sections.find { |s| s.type == 'HASH' }
 			hash = Section.new
 			hash.name = '.hash'
@@ -239,6 +241,8 @@ class ELF
 	# encodes the symbol table
 	# should have a stable self.sections array (only append allowed after this step)
 	def encode_segments_symbols(strtab)
+		return if @symbols.length <= 1
+
 		if not dynsym = @sections.find { |s| s.type == 'DYNSYM' }
 			dynsym = Section.new
 			dynsym.name = '.dynsym'
@@ -264,7 +268,7 @@ class ELF
 	# encodes the relocation tables
 	# needs a complete self.symbols array
 	def encode_segments_relocs
-		return if not @relocations
+		return if not @relocations or @relocations.empty?
 
 		arch_preencode_reloc_func = "arch_#{@header.machine.downcase}_preencode_reloc"
 		send arch_preencode_reloc_func if respond_to? arch_preencode_reloc_func
@@ -340,6 +344,8 @@ class ELF
 
 	# creates the .plt/.got from the @relocations
 	def arch_386_preencode_reloc
+		return if @relocations.empty?
+
 		# if .got.plt does not exist, the dynamic loader segfaults
 		if not gotplt = @sections.find { |s| s.type == 'PROGBITS' and s.name == '.got.plt' }
 			gotplt = Section.new
@@ -560,6 +566,9 @@ class ELF
 
 		encode_check_section_size strtab
 
+		# rm unused tag (shrink .nointerp binaries by allowing to skip the section entirely)
+		@tag.delete('STRTAB') if strtab.encoded.length == 1
+
 		# XXX any order needed ?
 		@tag.keys.each { |k|
 			case k
@@ -584,7 +593,7 @@ class ELF
 				encode_tag[k, @tag[k]]
 			end
 		}
-		encode_tag['NULL', @tag['NULL'] || 0]
+		encode_tag['NULL', @tag['NULL'] || 0] unless @tag.empty?
 
 		encode_check_section_size dynamic
 	end
@@ -922,7 +931,7 @@ class ELF
 		end
 
 		# add dynamic segment
-		if ds = @sections.find { |sec| sec.type == 'DYNAMIC' }
+		if ds = @sections.find { |sec| sec.type == 'DYNAMIC' } and ds.encoded.length > 1
 			ds.set_default_values self
 			seg = Segment.new
 			seg.type = 'DYNAMIC'
