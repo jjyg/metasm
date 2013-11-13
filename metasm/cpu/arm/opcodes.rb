@@ -165,6 +165,11 @@ class ARM
 		addop_load_lsh
 		addop_ldm 'stm', (1 << 27)
 		addop_ldm 'ldm', (1 << 27) | (1 << 20)
+		# TODO aliases (http://www.davespace.co.uk/arm/introduction-to-arm/stack.html)
+		# fd = full descending  stmfd/ldmfd = stmdb/ldmia
+		# ed = empty descending stmed/ldmed = stmda/ldmib
+		# fa = full ascending   stmfa/ldmfa = stmib/ldmda
+		# ea = empty ascending  stmea/ldmea = stmia/ldmdb
 
 		# TODO mrs, [qus]add/sub*
 		addop 'clz',   (0b00010110 << 20) | (0b0001 << 4), :rd, :rm, :sbo16, :sbo8
