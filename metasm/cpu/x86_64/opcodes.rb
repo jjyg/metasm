@@ -45,7 +45,7 @@ class X86_64
 			o.args.include?(:seg2) or
 			o.args.include?(:seg2A) or
 			o.args.include?(:farptr) or
-			%w[aaa aad aam aas bound daa das into
+			%w[aaa aad aam aas bound daa das into jcxz jecxz
 			 lds les loadall arpl pusha pushad popa
 			 popad].include?(o.name.split('.')[0])
 			 # split needed for lds.a32
@@ -61,6 +61,8 @@ class X86_64
 
 		addop('movq',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args = [:modrm, :regmmx] ; o.props[:opsz] = o.props[:argsz] = 64 }
 		addop('movq',  [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args = [:modrm, :regxmm] ; o.props[:opsz] = o.props[:argsz] = 64 ; o.props[:needpfx] = 0x66 }
+		addop('jcxz', [0xE3], nil, :setip, :i8) { |o| o.props[:adsz] = 32 }	# actually 16 (cx), but x64 in general says pfx 0x67 => adsz = 32
+		addop('jrcxz', [0xE3], nil, :setip, :i8) { |o| o.props[:adsz] = 64 }
 	end
 
 	def init_sse3

@@ -143,7 +143,6 @@ class Ia32
 			return di if di.opcode = @bin_lookaside[byte].find { |op|
 				# fetch the relevant bytes from edata
 				bseq = edata.data[edata.ptr, op.bin.length].unpack('C*')
-				di.opcode = op if op.props[:opsz]	# needed by opsz(di)
 
 				# check against full opcode mask
 				op.bin.zip(bseq, op.bin_mask).all? { |b1, b2, m| b2 and ((b1 & m) == (b2 & m)) } and
@@ -156,7 +155,8 @@ class Ia32
 				  (op.props[:modrmA] and fld = op.fields[:modrm] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
 				  (op.props[:modrmR] and fld = op.fields[:modrm] and (bseq[fld[0]] >> fld[1]) & 0xC0 != 0xC0) or
 				  (fld = op.fields[:vex_vvvv] and @size != 64 and (bseq[fld[0]] >> fld[1]) & @fields_mask[:vex_vvvv] < 8) or
-				  (sz = op.props[:opsz] and opsz(di) != sz) or
+				  (sz = op.props[:opsz] and opsz(di, op) != sz) or
+				  (sz = op.props[:adsz] and adsz(di, op) != sz) or
 				  (ndpfx = op.props[:needpfx] and not pfx[:list].to_a.include? ndpfx) or
 				  (pfx[:adsz] and op.props[:adsz] and op.props[:adsz] == @size) or
 				  # return non-ambiguous opcode (eg push.i16 in 32bit mode) / sync with addop_post in opcode.rb
@@ -329,8 +329,14 @@ class Ia32
 	end
 	def backtrace_binding=(b) @backtrace_binding = b end
 
-	def opsz(di)
-		if di and di.instruction.prefix and di.instruction.prefix[:opsz] and di.opcode.props[:needpfx] != 0x66; 48-@size
+	def opsz(di, op=nil)
+		if di and di.instruction.prefix and di.instruction.prefix[:opsz] and (op || di.opcode).props[:needpfx] != 0x66; 48-@size
+		else @size
+		end
+	end
+
+	def adsz(di, op=nil)
+		if di and di.instruction.prefix and di.instruction.prefix[:adsz] and (op || di.opcode).props[:needpfx] != 0x67; 48-@size
 		else @size
 		end
 	end

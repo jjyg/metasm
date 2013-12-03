@@ -160,8 +160,8 @@ class Ia32
 		addop 'invlpg', [0x0F, 0x01, 7<<3], :modrmA
 		addop('iretd', [0xCF], nil, :stopexec, :setip) { |o| o.props[:opsz] = 32 }
 		addop_macroret 'iret', [0xCF]
-		addop('jcxz',  [0xE3], nil, :setip, :i8) { |o| o.props[:opsz] = 16 }
-		addop('jecxz', [0xE3], nil, :setip, :i8) { |o| o.props[:opsz] = 32 }
+		addop('jcxz',  [0xE3], nil, :setip, :i8) { |o| o.props[:adsz] = 16 }
+		addop('jecxz', [0xE3], nil, :setip, :i8) { |o| o.props[:adsz] = 32 }
 		addop 'jmp',   [0xEA], nil, :farptr, :setip, :stopexec
 		addop 'jmpf',  [0xEA], nil, :farptr, :setip, :stopexec
 		addop 'jmpf',  [0xFF], 5, :stopexec, :setip		# reg ?

@@ -231,11 +231,17 @@ class X86_64
 		di
 	end
 
-	def opsz(di)
+	def opsz(di, op=nil)
 		if di and di.instruction.prefix and di.instruction.prefix[:rex_w]; 64
-		elsif di and di.instruction.prefix and di.instruction.prefix[:opsz] and di.opcode.props[:needpfx] != 0x66; 16
-		elsif di and di.opcode.props[:auto64]; 64
+		elsif di and di.instruction.prefix and di.instruction.prefix[:opsz] and (op || di.opcode).props[:needpfx] != 0x66; 16
+		elsif di and (op || di.opcode).props[:auto64]; 64
 		else 32
+		end
+	end
+
+	def adsz(di, op=nil)
+		if di and di.instruction.prefix and di.instruction.prefix[:adsz] and (op || di.opcode).props[:needpfx] != 0x67; 32
+		else 64
 		end
 	end
 
