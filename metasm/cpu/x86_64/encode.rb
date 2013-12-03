@@ -258,7 +258,19 @@ class X86_64
 			when :mrm_imm; ed = ia.imm.encode("a#{op.props[:adsz] || 64}".to_sym, @endianness)
 			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; ed = ia.encode(oa, @endianness)
 			when :i
-				type = (opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : "#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym)
+				type = if opsz == 64
+					if op.props[:imm64]
+						:a64
+					else
+						# handle 0xffffffff_ffffffff -> -1, which should fit in i32
+						ia = Expression[ia, :-, [(1<<64), :*, [[[ia, :>>, 63], :&, 1], :&, [ia, :>, 0]]]]
+						:i32
+					end
+				elsif op.props[:unsigned_imm]
+					"a#{opsz}".to_sym
+				else
+					"i#{opsz}".to_sym
+				end
 			       	ed = ia.encode(type, @endianness)
 			when :i4xmm, :i4ymm
 				ed = ia.val << 4	# u8

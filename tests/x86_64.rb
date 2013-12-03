@@ -26,6 +26,7 @@ class TestX86_64 < Test::Unit::TestCase
 		assert_equal("\x48\xbb\xef\xcd\xab\x89\x67\x45\x23\x01", assemble("mov rbx, 0123456789abcdefh"))
 		assert_equal("\x8d\x05\x0c\0\0\0", assemble("lea eax, [rip+12]"))
 		assert_equal("\x8d\x04\x25\x0c\0\0\0", assemble("lea eax, [12]"))
+		assert_equal("\x48\x81\xE3\xFF\xF0\xFF\xFF", assemble("and rbx, 0xffffffff_fffff0ff"))
 	end
 
 	def test_err
@@ -35,6 +36,8 @@ class TestX86_64 < Test::Unit::TestCase
 		assert_raise(Metasm::ParseError) { assemble("add [bx]") }
 		assert_raise(Metasm::ParseError) { assemble("add [eip+4*eax]") }
 		assert_raise(Metasm::ParseError) { assemble("add ah, r8b") }
+		assert_raise(Metasm::EncodeError) { assemble("and rbx, 0x1_ffffffff_ffffffff") }
+		assert_raise(Metasm::EncodeError) { assemble("mov rbx, 011123456789abcdefh") }
 	end
 
 	def disassemble(bin, cpu=@@cpu)

@@ -26,7 +26,7 @@ class Ia32
 		 :vexvxmm, :vexvymm, :vexvreg, :i4xmm, :i4ymm
 		].each { |a| @valid_args[a] = true }
 
-		[:strop, :stropz, :opsz, :argsz, :setip,
+		[:strop, :stropz, :opsz, :adsz, :argsz, :setip,
 		 :stopexec, :saveip, :unsigned_imm, :random, :needpfx,
 		 :xmmx, :modrmR, :modrmA, :mrmvex 
 		].each { |a| @valid_props[a] = true }
