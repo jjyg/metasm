@@ -262,8 +262,10 @@ class X86_64
 					if op.props[:imm64]
 						:a64
 					else
-						# handle 0xffffffff_ffffffff -> -1, which should fit in i32
-						ia = Expression[ia, :-, [(1<<64), :*, [[[ia, :>>, 63], :&, 1], :&, [ia, :>, 0]]]]
+						if _ia = ia.reduce and _ia.kind_of?(Integer) and _ia > 0 and (_ia >> 63) == 1
+							# handle 0xffffffff_ffffffff -> -1, which should fit in i32
+							ia = Expression[_ia - (1 << 64)]
+						end
 						:i32
 					end
 				elsif op.props[:unsigned_imm]
