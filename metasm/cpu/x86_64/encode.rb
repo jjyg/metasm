@@ -268,7 +268,8 @@ class X86_64
 						end
 						:i32
 					end
-				elsif op.props[:unsigned_imm]
+				elsif op.props[:unsigned_imm] or (i.args[0].respond_to?(:sz) and i.args[0].sz == opsz)
+					# cmp al, 0xff works beside :i8
 					"a#{opsz}".to_sym
 				else
 					"i#{opsz}".to_sym
