@@ -17,6 +17,9 @@ class MachO < ExeFormat
 
 	MAGICS = [MAGIC, CIGAM, MAGIC64, CIGAM64]
 
+	# "a" != "a"   lolz!
+	MAGICS.each { |s| s.force_encoding('BINARY') } if MAGIC.respond_to?(:force_encoding)
+
 	CPU = {
 		1 => 'VAX', 2 => 'ROMP',
 		4 => 'NS32032', 5 => 'NS32332',
