@@ -642,8 +642,13 @@ class COFF
 		if ct = @directory['certificate_table']
 			@certificates = []
 			@cursection = self
+			if ct[0] > @encoded.length or ct[1] > @encoded.length - ct[0] or ct[1] > 1024
+				puts "W: COFF: invalid certificate_table #{'0x%X+0x%0X' % ct}" if $VERBOSE
+				ct = [ct[0], 1]
+			end
 			@encoded.ptr = ct[0]
 			off_end = ct[0]+ct[1]
+			off_end = @encoded.length if off_end > @encoded.length
 			while @encoded.ptr < off_end
 				certlen = decode_word
 				certrev = decode_half
