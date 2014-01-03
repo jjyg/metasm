@@ -147,7 +147,7 @@ class X86_64
 			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; Expression[edata.decode_imm(a, @endianness)]
 			when :i		# 64bit constants are sign-extended from :i32
 				type = (opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : "#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym )
- 				v = edata.decode_imm(type, @endianness)
+				v = edata.decode_imm(type, @endianness)
 				v &= 0xffff_ffff_ffff_ffff if opsz == 64 and op.props[:unsigned_imm] and v.kind_of? Integer
 				Expression[v]
 
@@ -248,7 +248,7 @@ class X86_64
 	def register_symbols
 		[:rax, :rcx, :rdx, :rbx, :rsp, :rbp, :rsi, :rdi, :r8, :r9, :r10, :r11, :r12, :r13, :r14, :r15]
 	end
-	
+
 	# returns a DecodedFunction from a parsed C function prototype
 	def decode_c_function_prototype(cp, sym, orig=nil)
 		sym = cp.toplevel.symbol[sym] if sym.kind_of?(::String)

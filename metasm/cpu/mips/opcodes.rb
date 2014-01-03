@@ -293,7 +293,7 @@ class MIPS64
 		addop 'dins',  (0b011111 << 26) | 0b000111, :rt, :rs, :sa, :msbd
 		addop 'dinsm', (0b011111 << 26) | 0b000101, :rt, :rs, :sa, :msbd
 		addop 'dinsu', (0b011111 << 26) | 0b000110, :rt, :rs, :sa, :msbd
-		
+
 		addop 'drotr',   (1 << 21) | 0b111010, :rd, :rt, :sa
 		addop 'drotr32', (1 << 21) | 0b111110, :rd, :rt, :sa
 		addop 'drotrv',  (1 <<  6) | 0b010110, :rd, :rt, :rs

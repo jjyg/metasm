@@ -832,7 +832,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 			if not di_addr or di.opcode.props[:stopexec] or not @program.get_xrefs_x(self, di).empty?
 				# do not backtrace until delay slot is finished (eg MIPS: di is a
-			       	#  ret and the delay slot holds stack fixup needed to calc func_binding)
+				#  ret and the delay slot holds stack fixup needed to calc func_binding)
 				# XXX if the delay slot is also xref_x or :stopexec it is ignored
 				delay_slot ||= [di, @cpu.delay_slot(di)]
 			end
@@ -1106,7 +1106,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				return if not btb = sf.backtrace_binding
 				btb = btb.dup
 				btb.delete_if { |k, v| Expression[k] == Expression[v] }
-			       	return if btb.length > 2 or btb.values.include? Expression::Unknown
+				return if btb.length > 2 or btb.values.include? Expression::Unknown
 			else
 				return if not bt = b.to_normal
 				if bt.include? :default
@@ -1639,7 +1639,7 @@ oldexpr = expr
 				when :func
 					expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr, origin, maxdepth-h[:loopdetect].length)
 					if snapshot_addr and snapshot_addr == h[:funcaddr]
-						# XXX recursiveness detection needs to be fixed						
+						# XXX recursiveness detection needs to be fixed
 puts "  backtrace: recursive function #{Expression[h[:funcaddr]]}" if debug_backtrace
 						next false
 					end

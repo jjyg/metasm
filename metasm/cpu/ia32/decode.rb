@@ -408,7 +408,7 @@ class Ia32
 					bts[7, :eflag_s]
 					bts[11, :eflag_o]
 					{ esp => Expression[esp, :-, opsz(di)/8], Indirection[esp, opsz(di)/8, di.address] => efl }
-			       	}
+				}
 			when 'popfd', 'popf'
 				lambda { |di| bt = lambda { |pos| Expression[[Indirection[esp, opsz(di)/8, di.address], :>>, pos], :&, 1] }
 					{ esp => Expression[esp, :+, opsz(di)/8], :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7], :eflag_o => bt[11] } }
@@ -478,7 +478,7 @@ class Ia32
 					(1..depth).each { |i|
 						b[Indirection[[esp, :+, a0.reduce+i*sz], sz, di.address]] =
 						b[Indirection[[ebp, :-, i*sz], sz, di.address]] =
-						       	Expression::Unknown # TODO Indirection[[ebp, :-, i*sz], sz, di.address]
+							Expression::Unknown # TODO Indirection[[ebp, :-, i*sz], sz, di.address]
 					}
 					b
 				}
@@ -582,7 +582,7 @@ class Ia32
 					ret
 				}
 			when 'fstenv', 'fnstenv'
-			       	lambda { |di, a0|
+				lambda { |di, a0|
 					# stores the address of the last non-control fpu instr run
 					lastfpuinstr = di.block.list[0...di.block.list.index(di)].reverse.find { |pdi|
 						case pdi.opcode.name

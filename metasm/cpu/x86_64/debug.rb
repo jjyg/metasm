@@ -15,7 +15,7 @@ class X86_64
 		@dbg_register_flags ||= :rflags
 	end
 
-	def dbg_register_list 
+	def dbg_register_list
 		@dbg_register_list ||= [:rax, :rbx, :rcx, :rdx, :rsi, :rdi, :rbp, :rsp, :r8, :r9, :r10, :r11, :r12, :r13, :r14, :r15, :rip]
 	end
 

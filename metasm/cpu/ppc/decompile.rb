@@ -25,7 +25,7 @@ class PowerPC
 	# returns { blockaddr => [list of vars that are needed by a following block] }
 	def decompile_func_finddeps(dcmp, blocks, func)
 		deps_r = {} ; deps_w = {} ; deps_to = {}
-		deps_subfunc = {} 	# things read/written by subfuncs
+		deps_subfunc = {}	# things read/written by subfuncs
 
 		# find read/writes by each block
 		blocks.each { |b, to|
@@ -43,7 +43,7 @@ class PowerPC
 					end
 				}
 				#a << :eax if di.opcode.name == 'ret'		# standard ABI
-				
+
 				deps_r[b] |= a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - deps_w[b]
 				deps_w[b] |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
 			}

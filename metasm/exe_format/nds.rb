@@ -30,7 +30,7 @@ class NDS < ExeFormat
 		mem :secareadisable, 8
 		words :endoff, :headersz
 		mem :reserved4, 56
-	       	mem :ninlogo, 156
+		mem :ninlogo, 156
 		half :logoCRC, 0xcf56
 		half :headerCRC
 	end

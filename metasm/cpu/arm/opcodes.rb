@@ -132,7 +132,7 @@ class ARM
 			:shifti => 7, :stype => 5, :rotate => 8, :reglist => 0,
 			:i8 => 0, :i12 => 0, :i24 => 0, :i8_12 => 0,
 			:u => 23, :mask => 16, :sbo => 12, :cond => 28
-		
+
 		addop_data 'and', 0,  :rd, :rn
 		addop_data 'eor', 1,  :rd, :rn
 		addop_data 'xor', 1,  :rd, :rn
@@ -151,7 +151,7 @@ class ARM
 		addop_data 'mov', 13, :rd, :rnx
 		addop_data 'bic', 14, :rd, :rn
 		addop_data 'mvn', 15, :rd, :rnx
-		
+
 		addop 'b',  0b1010 << 24, :setip, :stopexec, :i24
 		addop 'bl', 0b1011 << 24, :setip, :stopexec, :i24, :saveip
 		addop 'bkpt', (0b00010010 << 20) | (0b0111 << 4)		# other fields are available&unused, also cnd != AL is undef
@@ -209,7 +209,7 @@ class ARM
 		[:i16, :i16_3_8, :i16_rd].each { |p| @valid_props_t[p] = true }
 		[:i5, :rm, :rn, :rd].each { |p| @valid_args_t[p] = true }
 		@fields_mask_t.update :i5 => 0x1f, :i3 => 7, :i51 => 0x5f,
-		       	:rm => 7, :rn => 7, :rd => 7, :rdn => 7, :rdn8 => 7
+			:rm => 7, :rn => 7, :rd => 7, :rdn => 7, :rdn8 => 7
 		@fields_shift_t.update :i5 => 6, :i3 => 6, :i51 => 3,
 			:rm => 6, :rn => 3, :rd => 0, :rdn => 0, :rdn8 => 8
 

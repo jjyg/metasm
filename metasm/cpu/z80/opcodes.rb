@@ -195,7 +195,7 @@ class Z80
 		addop 'ldi',  [0x2A], :r_a, :m_hl
 		addop 'ldd',  [0x32], :m_hl, :r_a	# (hl--) <- a
 		addop 'ldd',  [0x3A], :r_a, :m_hl
-		
+
 		addop 'reti', [0xD9], :setip, :stopexec
 
 		# override retpo/jpo

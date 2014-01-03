@@ -202,7 +202,7 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 
 	if (TYPE(func) != T_STRING && TYPE(func) != T_FIXNUM)
 		rb_raise(*rb_eArgError, "Invalid func");
-	
+
 	if (TYPE(func) == T_FIXNUM)
 		p = os_load_sym_ord(h, VAL2INT(func));
 	else
@@ -226,7 +226,7 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 {
 	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 64)
 		rb_raise(*rb_eArgError, "bad args");
-	
+
 	uintptr_t flags_v = VAL2INT(flags);
 	uintptr_t ptr_v = VAL2INT(ptr);
 	unsigned i, argsz;
@@ -243,7 +243,7 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 		ret = do_invoke_stdcall(ptr_v, argsz, args_c);
 	else
 		ret = do_invoke(ptr_v, argsz, args_c);
-	
+
 	if (flags_v & 4)
 		return rb_ull2inum((unsigned __int64)ret);
 	else if (flags_v & 8)
@@ -279,7 +279,7 @@ uintptr_t do_callback_handler(uintptr_t ori_retaddr, uintptr_t caller_id, uintpt
 	// dynldr.callback will give us the arity (in bytes) of the callback in args[0]
 	// we just put the stack lifting offset in caller_id for the asm stub to use
 	caller_id = VAL2INT(ARY_PTR(args)[0]);
-	
+
 	return VAL2INT(ret);
 }
 
@@ -296,7 +296,7 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 {
 	if (TYPE(args) != T_ARRAY || ARY_LEN(args) > 16)
 		rb_raise(*rb_eArgError, "bad args");
-	
+
 	uintptr_t flags_v = VAL2INT(flags);
 	uintptr_t ptr_v = VAL2INT(ptr);
 	int i, argsz;
@@ -318,7 +318,7 @@ static VALUE invoke(VALUE self, VALUE ptr, VALUE args, VALUE flags)
 			    args_c[4],  args_c[5],  args_c[6],  args_c[7],
 			    args_c[8],  args_c[9],  args_c[10], args_c[11],
 			    args_c[12], args_c[13], args_c[14], args_c[15]);
-	
+
 	if (flags_v & 8)
 		return rb_float_new(fake_float());
 
@@ -479,11 +479,11 @@ int load_ruby_imports(uintptr_t rbaddr)
 	if (rbaddr)
 		ruby_module = find_ruby_module_mem(rbaddr);
 	else
-	 	ruby_module = find_ruby_module_peb();
+		ruby_module = find_ruby_module_peb();
 
 	if (!ruby_module)
 		return 0;
-	
+
 	ptr = &ruby_import_table;
 	table = (char*)ptr;
 
@@ -514,7 +514,7 @@ EOS
 do_invoke_fastcall:
 	push ebp
 	mov ebp, esp
-	
+
 	// load ecx/edx, fix arg/argcount
 	mov eax, [ebp+16]
 	mov ecx, [eax]
@@ -632,7 +632,7 @@ EOS
 		# save the shared library
 		bin.encode_file(modulename, :lib)
 	end
-	
+
 	def self.compile_binary_module_hack(bin)
 		# this is a hack
 		# we need the module to use ruby symbols
@@ -770,7 +770,7 @@ EOS
 		else raise LoadError, "Unsupported host platform #{RUBY_PLATFORM}"
 		end
 	end
-	
+
 	# returns whether we run on linux or windows
 	def self.host_arch
 		case RUBY_PLATFORM
@@ -883,7 +883,7 @@ EOS
 			cp.toplevel.symbol.delete v.name
 			lib = fromlib || lib_from_sym(v.name)
 			addr = sym_addr(lib, v.name)
-		       	if addr == 0 or addr == -1 or addr == 0xffff_ffff or addr == 0xffffffff_ffffffff
+			if addr == 0 or addr == -1 or addr == 0xffff_ffff or addr == 0xffffffff_ffffffff
 				api_not_found(lib, v)
 				next
 			end
@@ -1300,56 +1300,56 @@ EOS
 	when :windows
 
 		new_api_c <<EOS, 'kernel32'
-#define PAGE_NOACCESS          0x01     
-#define PAGE_READONLY          0x02     
-#define PAGE_READWRITE         0x04     
-#define PAGE_WRITECOPY         0x08     
-#define PAGE_EXECUTE           0x10     
-#define PAGE_EXECUTE_READ      0x20     
-#define PAGE_EXECUTE_READWRITE 0x40     
-#define PAGE_EXECUTE_WRITECOPY 0x80     
-#define PAGE_GUARD            0x100     
-#define PAGE_NOCACHE          0x200     
-#define PAGE_WRITECOMBINE     0x400     
+#define PAGE_NOACCESS          0x01
+#define PAGE_READONLY          0x02
+#define PAGE_READWRITE         0x04
+#define PAGE_WRITECOPY         0x08
+#define PAGE_EXECUTE           0x10
+#define PAGE_EXECUTE_READ      0x20
+#define PAGE_EXECUTE_READWRITE 0x40
+#define PAGE_EXECUTE_WRITECOPY 0x80
+#define PAGE_GUARD            0x100
+#define PAGE_NOCACHE          0x200
+#define PAGE_WRITECOMBINE     0x400
 
-#define MEM_COMMIT           0x1000     
-#define MEM_RESERVE          0x2000     
-#define MEM_DECOMMIT         0x4000     
-#define MEM_RELEASE          0x8000     
-#define MEM_FREE            0x10000     
-#define MEM_PRIVATE         0x20000     
-#define MEM_MAPPED          0x40000     
-#define MEM_RESET           0x80000     
-#define MEM_TOP_DOWN       0x100000     
-#define MEM_WRITE_WATCH    0x200000     
-#define MEM_PHYSICAL       0x400000     
-#define MEM_LARGE_PAGES  0x20000000     
-#define MEM_4MB_PAGES    0x80000000     
+#define MEM_COMMIT           0x1000
+#define MEM_RESERVE          0x2000
+#define MEM_DECOMMIT         0x4000
+#define MEM_RELEASE          0x8000
+#define MEM_FREE            0x10000
+#define MEM_PRIVATE         0x20000
+#define MEM_MAPPED          0x40000
+#define MEM_RESET           0x80000
+#define MEM_TOP_DOWN       0x100000
+#define MEM_WRITE_WATCH    0x200000
+#define MEM_PHYSICAL       0x400000
+#define MEM_LARGE_PAGES  0x20000000
+#define MEM_4MB_PAGES    0x80000000
 
 __stdcall uintptr_t VirtualAlloc(uintptr_t addr, uintptr_t size, int type, int prot);
 __stdcall uintptr_t VirtualFree(uintptr_t addr, uintptr_t size, int freetype);
 __stdcall uintptr_t VirtualProtect(uintptr_t addr, uintptr_t size, int prot, int *oldprot);
 EOS
-		
+
 		# allocate some memory suitable for code allocation (ie VirtualAlloc)
 		def self.memory_alloc(sz)
 			virtualalloc(nil, sz, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE)
 		end
-	
+
 		# free memory allocated through memory_alloc
 		def self.memory_free(addr)
 			virtualfree(addr, 0, MEM_RELEASE)
 		end
-	
+
 		# change memory permissions - perm in [r rw rx rwx]
 		def self.memory_perm(addr, len, perm)
 			perm = { 'r' => PAGE_READONLY, 'rw' => PAGE_READWRITE, 'rx' => PAGE_EXECUTE_READ,
 				'rwx' => PAGE_EXECUTE_READWRITE }[perm.to_s.downcase]
 			virtualprotect(addr, len, perm, str_ptr([0].pack('C')*8))
 		end
-	
+
 	when :linux
-		
+
 		new_api_c <<EOS
 #define PROT_READ  0x1
 #define PROT_WRITE 0x2
@@ -1363,7 +1363,7 @@ uintptr_t mmap(uintptr_t addr, uintptr_t length, int prot, int flags, uintptr_t 
 uintptr_t munmap(uintptr_t addr, uintptr_t length);
 uintptr_t mprotect(uintptr_t addr, uintptr_t len, int prot);
 EOS
-		
+
 		# allocate some memory suitable for code allocation (ie mmap)
 		def self.memory_alloc(sz)
 			@mmaps ||= {}	# save size for mem_free
@@ -1371,12 +1371,12 @@ EOS
 			@mmaps[a] = sz
 			a
 		end
-	
+
 		# free memory allocated through memory_alloc
 		def self.memory_free(addr)
 			munmap(addr, @mmaps[addr])
 		end
-	
+
 		# change memory permissions - perm 'rwx'
 		# on PaX-enabled systems, this may need a non-mprotect-restricted ruby interpreter
 		# if a mapping 'rx' is denied, will try to create a file and mmap() it rx in place
@@ -1412,7 +1412,7 @@ EOS
 
 			ret
 		end
-	
+
 	end
 end
 end

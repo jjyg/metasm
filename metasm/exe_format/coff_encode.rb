@@ -830,7 +830,7 @@ class COFF
 					@lexer.unreadtok tok if not tok = @lexer.readtok or tok.type != :punct or tok.raw != '='
 					raise instr, 'invalid base' if not s.virtaddr = Expression.parse(@lexer).reduce or not s.virtaddr.kind_of?(::Integer)
 					if not @optheader.image_base
-				       		@optheader.image_base = (s.virtaddr-0x80) & 0xfff00000
+						@optheader.image_base = (s.virtaddr-0x80) & 0xfff00000
 						puts "Warning: no image_base specified, using #{Expression[@optheader.image_base]}" if $VERBOSE
 					end
 					s.virtaddr -= @optheader.image_base

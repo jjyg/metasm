@@ -103,7 +103,7 @@ class CStructWidget < DrawableWidget
 			cy = (@caret_y-@view_y)*@font_height
 			draw_line_color(:caret, cx, cy, cx, cy+@font_height-1)
 		end
-	
+
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 	end
 
@@ -273,7 +273,7 @@ class CStructWidget < DrawableWidget
 			@line_text_col << []
 			render[indent * [@structdepth - maxdepth, 0].max, :text]
 		}
-		
+
 		if not obj
 			@line_text_col = [[]]
 			@line_dereference = []
@@ -357,7 +357,7 @@ class CStructWidget < DrawableWidget
 		else
 			@line_text_col = [[[:text, '/* no struct selected (list with "l") */']]]
 		end
-		
+
 		@line_text = @line_text_col.map { |l| l.map { |c, s| s }.join }
 		update_caret
 		redraw

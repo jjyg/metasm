@@ -18,7 +18,7 @@ class Ia32
 		@dbg_register_flags ||= :eflags
 	end
 
-	def dbg_register_list 
+	def dbg_register_list
 		@dbg_register_list ||= [:eax, :ebx, :ecx, :edx, :esi, :edi, :ebp, :esp, :eip]
 	end
 

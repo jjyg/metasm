@@ -42,7 +42,7 @@ class ARC < CPU
 		Sym = (0..64).map { |i| "r#{i}".to_sym }
 		def symbolic; Sym[@i] end
 
-		Render = { 
+		Render = {
 			26 => 'gp', # global pointer, used to point to small sets of shared data throughout execution of a program
 			27 => 'fp', # frame pointer
 			28 => 'sp', # stak pointer

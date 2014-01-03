@@ -237,7 +237,7 @@ end
 	def parse_arg_valid?(o, spec, arg)
 		if o.name ==  'movsx' or o.name == 'movzx'
 			if not arg.kind_of?(Reg) and not arg.kind_of?(ModRM)
- 				return
+				return
 			elsif not arg.sz
 				puts "ambiguous arg size for indirection in #{o.name}" if $VERBOSE
 				return

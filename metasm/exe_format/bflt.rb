@@ -133,7 +133,7 @@ class Bflt < ExeFormat
 
 		@encoded = EncodedData.new
 		@encoded << @header.encode(self)
-		
+
 		binding = @text.binding(0x40).merge(@data.binding(@header.data_start))
 		@encoded << @text << @data.data
 		@encoded.fixup! binding

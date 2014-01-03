@@ -9,7 +9,7 @@ class AsmOpcodeWidget < DrawableWidget
 	attr_accessor :dasm
 	# nr of raw data bytes to display next to decoded instructions
 	attr_accessor :raw_data_length
-	
+
 	def initialize_widget(dasm, parent_widget)
 		@dasm = dasm
 		@parent_widget = parent_widget
@@ -237,7 +237,7 @@ class AsmOpcodeWidget < DrawableWidget
 	# redraws the caret, change the hilighted word, redraw if needed
 	def update_caret
 		if update_hl_word(@line_text[@caret_y], @caret_x) or @caret_y != @oldcaret_y
-			redraw 
+			redraw
 		elsif @oldcaret_x != @caret_x
 			invalidate_caret(@oldcaret_x, @oldcaret_y)
 			invalidate_caret(@caret_x, @caret_y)

@@ -66,7 +66,7 @@ class << self
 	# 0-terminated string
 	def strz(name, defval='')
 		d = lambda { |exe, me|
-		       	ed = exe.curencoded
+			ed = exe.curencoded
 			ed.read(ed.data.index(?\0, ed.ptr)-ed.ptr+1).chop
 		}
 		e = lambda { |exe, me, val| val + 0.chr }
@@ -114,7 +114,7 @@ class << self
 			d = lambda { |exe, me| (@bitfield_val >> off) & mask }
 			# update the temp var with the field value, return nil
 			e = lambda { |exe, me, val| @bitfield_val |= (val & mask) << off ; nil }
-		       	new_field(name, d, e, 0)
+			new_field(name, d, e, 0)
 		}
 
 		# free the temp var

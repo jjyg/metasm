@@ -450,7 +450,7 @@ module C
 					end
 					mal = [m.type.align(parser), al].min
 					off = (off + mal - 1) / mal * mal
-				       	if m.name == name or m == name
+					if m.name == name or m == name
 						break
 					elsif indirect and m.type.untypedef.kind_of? Union and m.type.untypedef.findmember(name)
 						off += m.type.untypedef.offsetof(parser, name)
@@ -1066,7 +1066,7 @@ module C
 			raise "invalid CExpr #{[l, o, r, t].inspect}" if (o and not o.kind_of? ::Symbol) or not t.kind_of? Type
 			@lexpr, @op, @rexpr, @type = l, o, r, t
 		end
-		
+
 		# overwrites @lexpr @op @rexpr @type from the arg
 		def replace(o)
 			@lexpr, @op, @rexpr, @type = o.lexpr, o.op, o.rexpr, o.type
@@ -1102,7 +1102,7 @@ module C
 				else
 					x2 = splat[args[2]]
 				end
- 				new(splat[args[0]], op, x2, args[3])
+				new(splat[args[0]], op, x2, args[3])
 			when 3
 				op = args[1]
 				x1 = splat[args[0]]
@@ -1116,7 +1116,7 @@ module C
 				when :funcall
 				       rt = x1.type.untypedef
 				       rt = rt.type.untypedef if rt.pointer?
-			       	       new(x1, op, x2, rt.type)
+				       new(x1, op, x2, rt.type)
 				when :[]; new(x1, op, x2, x1.type.untypedef.type)
 				when :+; new(x1, op, x2, (x2.type.pointer? ? x2.type : x1.type))
 				when :-; new(x1, op, x2, ((x1.type.pointer? and x2.type.pointer?) ? BaseType.new(:int) : x2.type.pointer? ? x2.type : x1.type))
@@ -2324,7 +2324,7 @@ EOH
 				else
 					l = CExpression.new(nil, nil, l, BaseType.new(:int)) if l.kind_of? ::Integer
 					r = CExpression.new(nil, nil, r, BaseType.new(:int)) if r.kind_of? ::Integer
-				       	CExpression.new(l, @op, r, @type)
+					CExpression.new(l, @op, r, @type)
 				end
 			when :'.'
 				le = CExpression.reduce(parser, @lexpr)
@@ -2368,7 +2368,7 @@ EOH
 					end
 				else
 					l = CExpression.reduce(parser, @lexpr)
-				       	if not l.kind_of?(::Numeric) or not r.kind_of?(::Numeric)
+					if not l.kind_of?(::Numeric) or not r.kind_of?(::Numeric)
 						l = CExpression.new(nil, nil, l, BaseType.new(:int)) if l.kind_of? ::Integer
 						r = CExpression.new(nil, nil, r, BaseType.new(:int)) if r.kind_of? ::Integer
 						return CExpression.new(l, @op, r, @type)
@@ -2411,7 +2411,7 @@ EOH
 			o.object_id == self.object_id or
 			(self.class == o.class and op == o.op and lexpr == o.lexpr and rexpr == o.rexpr)
 		end
-	
+
 		def ===(o)
 			(self.class == o.class and op == o.op and lexpr === o.lexpr and rexpr === o.rexpr) or
 			(o.class == Variable and not @op and @rexpr == o)
@@ -4004,7 +4004,7 @@ EOH
 					l = lexpr.lexpr.type.pointed.untypedef.findmember(lexpr.rexpr) if lexpr.kind_of? CExpression and lexpr.op == :'->'
 					# honor __attribute__((indexenum(enumname)))
 					if l and l.attributes and rexpr.kind_of? CExpression and not rexpr.op and rexpr.rexpr.kind_of? ::Integer and
-					       		n = l.has_attribute_var('indexenum') and enum = scope.struct_ancestors[n] and i = enum.members.index(rexpr.rexpr)
+							n = l.has_attribute_var('indexenum') and enum = scope.struct_ancestors[n] and i = enum.members.index(rexpr.rexpr)
 						r.last << i
 						dep |= [enum]
 					else

@@ -271,7 +271,7 @@ class X86_64
 				else
 					"a#{opsz}".to_sym
 				end
-			       	ed = ia.encode(type, @endianness)
+				ed = ia.encode(type, @endianness)
 			when :i4xmm, :i4ymm
 				ed = ia.val << 4	# u8
 			else raise SyntaxError, "Internal error: want to encode field #{oa.inspect} as arg in #{i}"

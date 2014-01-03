@@ -423,7 +423,7 @@ typedef struct _CONTEXT_AMD64 {
 
 	XMMREG Vector[26];
 	DWORD64 VectorControl;
-	
+
 	DWORD64 DebugControl;
 	DWORD64 LastBranchToRip;
 	DWORD64 LastBranchFromRip;
@@ -1044,7 +1044,7 @@ OpenThreadToken (
 	__out HANDLE *TokenHandle);
 EOS
 	SE_DEBUG_NAME = 'SeDebugPrivilege'
-	
+
 	new_api_c <<EOS, 'ntdll'
 #line #{__LINE__}
 
@@ -1181,7 +1181,7 @@ EOS
 	# convert a native function return value
 	# if the native does not have the zero_not_fail attribute, convert 0
 	#  to nil, and print a message on stdout
-        def self.convert_ret_c2rb(fproto, ret)
+	def self.convert_ret_c2rb(fproto, ret)
 		@last_err_msg = nil
 		if ret == 0 and not fproto.has_attribute 'zero_not_fail'
 			# save error msg so that last_error_msg returns the same thing if called again
@@ -1911,7 +1911,7 @@ class WinDebugger < Debugger
 			st = ev.exception
 			str = st.exceptionrecord
 			stf = st.dwfirstchance	# non-zero = first chance
-			
+
 			@state = :stopped
 			@info = "exception"
 

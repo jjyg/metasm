@@ -23,7 +23,7 @@ class CPU
 	attr_accessor :valid_args, :valid_props, :fields_mask
 	attr_accessor :endianness, :size
 	attr_accessor :generate_PIC
-	
+
 	def opcode_list
 		@opcode_list ||= init_opcode_list
 	end
@@ -675,7 +675,7 @@ class Expression < ExpressionType
 			Expression[[l.lexpr, :>>, r], l.op, [l.rexpr, :>>, r]].reduce_rec
 		end
 	end
-	
+
 	def reduce_op_shl(l, r)
 		if l == 0; 0
 		elsif r == 0; l
@@ -1312,7 +1312,7 @@ class EncodedData
 			end
 			chunkoff += chunksz
 		end
-     		found
+		found
 	end
 end
 end

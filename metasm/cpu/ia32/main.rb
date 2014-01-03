@@ -150,7 +150,7 @@ class Ia32 < CPU
 	# ModRM represents indirections in x86 (eg dword ptr [eax+4*ebx+12h])
 	class ModRM < Argument
 		# valid combinaisons for a modrm
-		# ints are reg indexes, symbols are immediates, except :sib 
+		# ints are reg indexes, symbols are immediates, except :sib
 		Sum = {
 		    16 => {
 			0 => [ [3, 6], [3, 7], [5, 6], [5, 7], [6], [7], [:i16], [3] ],

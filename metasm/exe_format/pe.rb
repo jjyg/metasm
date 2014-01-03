@@ -425,7 +425,7 @@ class LoadedPE < PE
 			end
 
 			# dumped last importdirectory is correct, append the import field
- 			i = ImportDirectory::Import.new
+			i = ImportDirectory::Import.new
 			if e.name
 				puts e.name if $DEBUG
 				i.name = e.name

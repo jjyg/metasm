@@ -367,7 +367,7 @@ class ELF
 			when 'PC32'
 				next if not r.symbol
 
-			       	if r.symbol.type != 'FUNC'
+				if r.symbol.type != 'FUNC'
 					# external data xref: generate a GOT entry
 					# XXX reuse .got.plt ?
 					if not got ||= @sections.find { |s| s.type == 'PROGBITS' and s.name == '.got' }
@@ -394,7 +394,7 @@ class ELF
 					else
 						@relocations.delete r
 					end
-		
+
 					# prevoffset is label_section_start + int_section_offset
 					target_s = @sections.find { |s| s.encoded and s.encoded.export[prevoffset.lexpr] == 0 }
 					rel = target_s.encoded.reloc[prevoffset.rexpr]
@@ -420,12 +420,12 @@ class ELF
 				#
 				# [.got.plt header]
 				# dd _DYNAMIC
-				# dd 0 				# rewritten to GOTPLT? by ld-linux
+				# dd 0				# rewritten to GOTPLT? by ld-linux
 				# dd 0				# rewritten to dlresolve_inplace by ld-linux
 				#
 				# [.got.plt + func_got_offset]
 				# dd some_func_got_default	# lazily rewritten to the real addr of some_func by jmp dlresolve_inplace
-				# 				# base_relocated ?
+				#				# base_relocated ?
 
 				# in the PIC case, _dlresolve imposes us to use the ebx register (which may not be saved by the calling function..)
 				# also geteip trashes eax, which may interfere with regparm(3)
@@ -540,7 +540,7 @@ class ELF
 
 				# fill these later, but create the base relocs now
 				arch_create_reloc_func = "arch_#{@header.machine.downcase}_create_reloc"
-				next if not respond_to?(arch_create_reloc_func) 
+				next if not respond_to?(arch_create_reloc_func)
 				curaddr = label_at(@encoded, 0, 'elf_start')
 				fkbind = {}
 				@sections.each { |s|

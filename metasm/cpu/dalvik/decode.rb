@@ -22,7 +22,7 @@ class Dalvik
 	def decode_instr_op(edata, di)
 		op = di.opcode
 		di.instruction.opname = op.name
-		
+
 		val = [edata.decode_imm(:u16, @endianness)]
 
 		op.args.each { |a|
@@ -80,7 +80,7 @@ class Dalvik
 				Expression[Expression.make_signed((val[1] >> 8) & 0xff, 8)]
 			when :rlist4, :rlist5
 				cnt = (val[0] >> 12) & 0xf
-			       	val << edata.decode_imm(:u16, @endianness)
+				val << edata.decode_imm(:u16, @endianness)
 				[cnt, 4].min.times {
 					di.instruction.args << Reg.new(val[-1] & 0xf)
 					val[-1] >>= 4
@@ -129,7 +129,7 @@ class Dalvik
 	def backtrace_binding
 		@backtrace_binding ||= init_backtrace_binding
 	end
- 
+
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 		sz = @size/8
@@ -137,12 +137,12 @@ class Dalvik
 			case op.name
 			when /invoke/
 				@backtrace_binding[op.name] = lambda { |di, *args| {
-					:callstack => Expression[:callstack, :-, sz], 
+					:callstack => Expression[:callstack, :-, sz],
 					Indirection[:callstack, sz] => Expression[di.next_addr]
 				} }
 			when /return/
 				@backtrace_binding[op.name] = lambda { |di, *args| {
-			       		:callstack => Expression[:callstack, :+, sz]
+					:callstack => Expression[:callstack, :+, sz]
 				} }
 			end
 		}
@@ -156,7 +156,7 @@ class Dalvik
 			else arg
 			end
 		}
-	
+
 		if binding = backtrace_binding[di.opcode.name]
 			binding[di, *a]
 		else
@@ -170,7 +170,7 @@ class Dalvik
 		end
 
 	end
-	
+
 	def get_xrefs_x(dasm, di)
 		if di.opcode.props[:saveip]
 			m = di.instruction.args.first

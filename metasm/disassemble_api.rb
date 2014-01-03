@@ -492,7 +492,7 @@ class Disassembler
 	# if from..to spans multiple blocks
 	#  to.block is splitted after to
 	#  all path from from are replaced by a single link to after 'to', be careful !
- 	#   (eg a->b->... & a->c ; from in a, to in c => a->b is lost)
+	#   (eg a->b->... & a->c ; from in a, to in c => a->b is lost)
 	#  all instructions are stuffed in the first block
 	#  paths are only walked using from/to_normal
 	# 'by' may be empty
@@ -656,8 +656,8 @@ class Disassembler
 		if b1 and not b1.kind_of? InstructionBlock
 			return if not b1 = block_at(b1)
 		end
- 		if b2 and not b2.kind_of? InstructionBlock
- 			return if not b2 = block_at(b2)
+		if b2 and not b2.kind_of? InstructionBlock
+			return if not b2 = block_at(b2)
 		end
 		if b1 and b2 and (allow_nonadjacent or b1.list.last.next_addr == b2.address) and
 				b1.to_normal.to_a == [b2.address] and b2.from_normal.to_a.length == 1 and	# that handles delay_slot
@@ -999,7 +999,7 @@ class Disassembler
 				set_label_at(addr, $3, false, !seen[addr])
 				seen[addr] = true
 			end
-                }
+		}
 	end
 
 	# saves the dasm state in a file
@@ -1215,7 +1215,7 @@ class Disassembler
 						len = (len != '' ? len.to_i : nil)
 						o = (o.to_s != '' ? Expression.parse(pp.feed!(o)).reduce : nil)	# :default/:unknown ?
 						add_xref(a, Xref.new(t, o, len))
-					rescue 
+					rescue
 						puts "load: bad xref #{l.inspect} #$!" if $VERBOSE
 					end
 				}
@@ -1292,7 +1292,7 @@ class Disassembler
 	# dataflow method
 	# walks a function, starting at addr
 	# follows the usage of registers, computing the evolution from the value they had at start_addr
-	# whenever an instruction references the register (or anything derived from it), 
+	# whenever an instruction references the register (or anything derived from it),
 	#  yield [di, used_register, reg_value, trace_state] where reg_value is the Expression holding the value of
 	#  the register wrt the initial value at start_addr, and trace_state the value of all registers (reg_value
 	#  not yet applied)
@@ -1540,7 +1540,7 @@ class Disassembler
 
 			doit = lambda { |_di, add|
 				if num = _di.instruction.args.grep(Expression).first and num_i = num.reduce and num_i.kind_of?(::Integer)
-					# TODO handle ~num_i 
+					# TODO handle ~num_i
 					num_left = num_i << add
 					s_or = []
 					mb.untypedef.members.each { |mm|
@@ -1721,7 +1721,7 @@ class Disassembler
 	#  searched for in the Metasmdir/samples/dasm-plugins subdirectory if not found in cwd
 	def load_plugin(plugin_filename)
 		if not File.exist?(plugin_filename)
- 			if File.exist?(plugin_filename+'.rb')
+			if File.exist?(plugin_filename+'.rb')
 				plugin_filename += '.rb'
 			elsif defined? Metasmdir
 				# try autocomplete
@@ -1762,7 +1762,7 @@ class Disassembler
 		if bd2.kind_of? DecodedInstruction
 			bd2 = bd2.backtrace_binding ||= cpu.get_backtrace_binding(bd2)
 		end
-		
+
 		reduce = lambda { |e| Expression[Expression[e].reduce] }
 
 		bd = {}

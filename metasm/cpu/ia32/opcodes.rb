@@ -28,7 +28,7 @@ class Ia32
 
 		[:strop, :stropz, :opsz, :adsz, :argsz, :setip,
 		 :stopexec, :saveip, :unsigned_imm, :random, :needpfx,
-		 :xmmx, :modrmR, :modrmA, :mrmvex 
+		 :xmmx, :modrmR, :modrmA, :mrmvex
 		].each { |a| @valid_props[a] = true }
 	end
 
@@ -748,10 +748,10 @@ class Ia32
 		   pmaxsb pmaxsd pmaxud pmaxuw pminsb pminsd pminud pminuw
 		   pmuldq pmulld roundsd roundss pcmpgtq
 		   aesdec aesdeclast aesenc aesenclast
-		   pclmulqdq punpcklbw punpcklwd punpckldq punpckhbw punpckhwd 
+		   pclmulqdq punpcklbw punpcklwd punpckldq punpckhbw punpckhwd
 		   punpckhdq punpcklqdq punpckhqdq].each { |n| add128[n] = true }
 
-		%w[movups movupd movddup movsldup 
+		%w[movups movupd movddup movsldup
 		   unpcklps unpcklpd unpckhps unpckhpd
 		   movaps movshdup movapd movntps movntpd movmskps movmskpd
 		   sqrtps sqrtpd rsqrtps rcpps andps andpd andnps andnpd
@@ -894,7 +894,7 @@ class Ia32
 		   pmaddubsw palignr pshufb pmulhrsw psignb psignw psignd
 		   mpsadbw packusdw pblendw pcmpeqq
 		   pmaxsb pmaxsd pmaxud pmaxuw pminsb pminsd pminud pminuw
-		   pmuldq pmulld pcmpgtq punpcklbw punpcklwd punpckldq 
+		   pmuldq pmulld pcmpgtq punpcklbw punpcklwd punpckldq
 		   punpckhbw punpckhwd punpckhdq punpcklqdq punpckhqdq
 		].each { |n| add256[n] = true }
 
@@ -1005,7 +1005,7 @@ class Ia32
 
 	def init_fma_only
 		init_cpu_constants
-		
+
 		[['vfmaddsub', 'p', 0x86],
 		 ['vfmsubadd', 'p', 0x87],
 		 ['vfmadd',    'p', 0x88],

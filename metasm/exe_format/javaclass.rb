@@ -32,7 +32,7 @@ class JavaClass < ExeFormat
 	class ConstantPool < SerialStruct
 		u2 :constant_pool_count
 		attr_accessor :constant_pool
-		
+
 		def decode(c)
 			super(c)
 
@@ -99,7 +99,7 @@ class JavaClass < ExeFormat
 				raise 'unkown constant tag'
 				return
 			end
-		end	
+		end
 
 		def encode(c)
 			super(c) << @info.encode(c)
@@ -238,7 +238,7 @@ class JavaClass < ExeFormat
 			super(c)
 			@attributes = Attributes.decode(c)
 		end
-		
+
 		def encode(c)
 			super(c) << @attributes.encode(c)
 		end
@@ -380,7 +380,7 @@ class JavaClass < ExeFormat
 		if idx = cp_find('Utf8') { |i| i.bytes == string }
 			return idx
 		end
-	
+
 		cpi = ConstantUtf8.new
 		cpi.bytes = string
 		cpi.length = string.length

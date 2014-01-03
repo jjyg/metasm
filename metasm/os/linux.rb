@@ -61,7 +61,7 @@ class PTrace
 		wait
 		puts "Ptrace: attached to #@pid" if $DEBUG
 	end
-	
+
 	def init_create(target, &b)
 		if not @pid = ::Process.fork
 			tweak_for_pid(::Process.pid)
@@ -331,10 +331,10 @@ EOS
 		mknodat  fchownat  futimesat  fstatat64  unlinkat  renameat  linkat  symlinkat  readlinkat  fchmodat
 		faccessat pselect6 ppoll unshare set_robust_list get_robust_list splice sync_file_range tee vmsplice
 		move_pages   getcpu  epoll_pwait  utimensat   signalfd  timerfd  eventfd  fallocate  timerfd_settime
-	       	timerfd_gettime  signalfd4   eventfd2  epoll_create1   dup3   pipe2  inotify_init1   preadv  pwritev
+		timerfd_gettime  signalfd4   eventfd2  epoll_create1   dup3   pipe2  inotify_init1   preadv  pwritev
 		rt_tg_sigqueueinfo perf_counter_open].inject({}) { |h, sc| h.update sc => h.length }
 	SYSCALLNR_I386.update SYSCALLNR_I386.invert
-	
+
 	SYSCALLNR_X86_64 = %w[read write open close stat fstat lstat poll lseek mmap mprotect munmap brk rt_sigaction
 		rt_sigprocmask  rt_sigreturn ioctl  pread64 pwrite64  readv  writev access  pipe select  sched_yield
 		mremap  msync  mincore  madvise  shmget  shmat  shmctl dup  dup2  pause  nanosleep  getitimer  alarm
@@ -540,7 +540,7 @@ EOS
 	def prctl(addr, data)
 		sys_ptrace(COMMAND[:ARCH_PRCTL], @pid, addr, data)
 	end
-	
+
 	def cont(sig = nil)
 		sig ||= 0
 		sys_ptrace(COMMAND[:CONT], @pid, 0, sig)
@@ -656,7 +656,7 @@ class LinOS < OS
 		# read from /proc/pid/task/
 		def threads
 			Dir.entries("/proc/#{pid}/task/").grep(/^\d+$/).map { |tid| tid.to_i }
-	       	rescue
+		rescue
 			# TODO handle pthread stuff (eg 2.4 kernels)
 			[pid]
 		end
@@ -1267,7 +1267,7 @@ class LinDebugger < Debugger
 			end
 		elsif status.stopped?
 			sig = status.stopsig & 0x7f
-			signame = PTrace::SIGNAL[sig] 
+			signame = PTrace::SIGNAL[sig]
 			if signame == 'TRAP'
 				if status.stopsig & 0x80 > 0
 					# XXX int80 in x64 => syscallnr32 ?
@@ -1357,7 +1357,7 @@ class LinDebugger < Debugger
 			evt_exception info.update(:type => "unknown wait #{status.inspect}")
 		end
 	end
-	
+
 	def set_tid_findpid(tid)
 		return if tid == @tid
 		if tid != @pid and !@tid_stuff[tid]
@@ -1507,7 +1507,7 @@ class LinDebugger < Debugger
 		when nil, ''; 9
 		when Integer; sig
 		when String
-		       	sig = sig.upcase.sub(/^SIG_?/, '')
+			sig = sig.upcase.sub(/^SIG_?/, '')
 			PTrace::SIGNAL[sig] || Integer(sig)
 		else raise "unhandled signal #{sig.inspect}"
 		end

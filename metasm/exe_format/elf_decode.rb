@@ -30,7 +30,7 @@ class ELF
 			if hdr.i_version != 'CURRENT'
 				puts ":: ELF: unsupported ELF version #{hdr.i_version}"
 			end
-	       	}
+		}
 	end
 
 	class Symbol
@@ -66,7 +66,7 @@ class ELF
 	# handles relocated LoadedELF
 	def addr_to_fileoff(addr)
 		la = module_address
-	       	la = (la == 0 ? (@load_address ||= 0) : 0)
+		la = (la == 0 ? (@load_address ||= 0) : 0)
 		addr_to_off(addr - la)
 	end
 
@@ -75,7 +75,7 @@ class ELF
 	def fileoff_to_addr(foff)
 		if s = @segments.find { |s_| s_.type == 'LOAD' and s_.offset <= foff and s_.offset + s_.filesz > foff }
 			la = module_address
-	       		la = (la == 0 ? (@load_address ||= 0) : 0)
+			la = (la == 0 ? (@load_address ||= 0) : 0)
 			s.vaddr + la + foff - s.offset
 		end
 	end
@@ -915,14 +915,14 @@ class ELF
 
 	def each_section
 		@segments.each { |s| yield s.encoded, s.vaddr if s.type == 'LOAD' }
-	       	return if @header.type != 'REL'
+		return if @header.type != 'REL'
 		@sections.each { |s|
 			next if not s.encoded
 			if not l = s.encoded.inv_export[0] or l != s.name.tr('^a-zA-Z0-9_', '_')
 				l = new_label(s.name)
 				s.encoded.add_export l, 0
 			end
-		       	yield s.encoded, l
+			yield s.encoded, l
 		}
 	end
 

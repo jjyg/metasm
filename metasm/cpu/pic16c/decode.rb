@@ -17,22 +17,21 @@ class Pic16c
 		}
 		op.bin_mask.map! { |v| 255 ^ v }
 	end
-	
+
 	def build_bin_lookaside
 		# sets up a hash byte value => list of opcodes that may match
 		# opcode.bin_mask is built here
 		lookaside = Array.new(256) { [] }
 		@opcode_list.each { |op|
-			
+
 			build_opcode_bin_mask op
-			
+
 			b   = op.bin[0]
 			msk = op.bin_mask[0]
-			
-			
+
 			for i in b..(b | (255^msk))
 				ext if i & msk != b & msk
-				
+
 				lookaside[i] << op
 			end
 		}

@@ -9,7 +9,7 @@ require 'metasm/cpu/ppc/main'
 module Metasm
 class PowerPC
 	def addop(name, bin, *argprops)
-		o = Opcode.new name, bin 
+		o = Opcode.new name, bin
 		argprops.each { |a|
 			o.args << a if @valid_args[a]
 			o.fields[a] = [@fields_mask[a], @fields_shift[a]] if @fields_mask[a]
@@ -115,7 +115,7 @@ class PowerPC
 			:rt => 31, :sh => 31, :sh_ => 1, :si => 0xFFFF, :spr => 0x3FF, :sr => 15,
 			:tbr => 0x3FF, :th => 15, :to => 31, :u => 15, :ui => 0xFFFF,
 			:ign_bo_zzz => 0b101111111, :ign_bo_z => 1, :ign_bo_at => 3, :ign_bo_at2 => 0b100111111
-		
+
 		@valid_args = @fields_mask.dup
 		[:ign_bo_zzz, :ign_bo_z, :ign_bo_at, :ign_bo_at2, :aa, :lk, :oe, :rc, :l].each { |k| @valid_args.delete k }
 
@@ -129,7 +129,7 @@ class PowerPC
 		addop_branchcond 'b', 0x40000000, :bd
 		addop_branchcond 'b', 0x4C000020, :lr
 		addop_branchcond 'b', 0x4C000420, :ctr
-	
+
 		addop 'sc',     0x44000002, :lev
 		addop 'crand',  0x4C000202, :bt, :ba, :bb
 		addop 'crxor',  0x4C000182, :bt, :ba, :bb

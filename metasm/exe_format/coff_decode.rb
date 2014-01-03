@@ -180,10 +180,10 @@ class COFF
 
 			nrnames = @nr_names if $DEBUG
 			(@nr_names+@nr_id).times {
- 				e = Entry.new
+				e = Entry.new
 
- 				e_id = coff.decode_word(edata)
- 				e_ptr = coff.decode_word(edata)
+				e_id = coff.decode_word(edata)
+				e_ptr = coff.decode_word(edata)
 
 				if not e_id.kind_of? Integer or not e_ptr.kind_of? Integer
 					puts 'W: COFF: relocs in the rsrc directory?' if $VERBOSE
@@ -278,7 +278,7 @@ class COFF
 				when :str
 					val = ed.read(vlen*2).unpack('v*')
 					val.pop if val[-1] == 0
-					val = val.pack('C*') if val.all? { |c_| c_ > 0 and  c_ < 256 } 
+					val = val.pack('C*') if val.all? { |c_| c_ > 0 and  c_ < 256 }
 					vers[tagname] = val
 				when :var
 					val = ed.read(vlen).unpack('V*')
@@ -751,11 +751,11 @@ class COFF
 	def decode_tls
 		if @directory['tls_table'] and sect_at_rva(@directory['tls_table'][0])
 			@tls = TLSDirectory.decode(self)
-		       	if s = sect_at_va(@tls.callback_p)
+			if s = sect_at_va(@tls.callback_p)
 				s.encoded.add_export 'tls_callback_table'
 				@tls.callbacks.each_with_index { |cb, i|
 					@tls.callbacks[i] = curencoded.add_export "tls_callback_#{i}" if sect_at_rva(cb)
-			       	}
+				}
 			end
 		end
 	end

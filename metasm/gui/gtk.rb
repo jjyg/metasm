@@ -194,7 +194,7 @@ class DrawableWidget < Gtk::DrawingArea
 			:green => '4f4', :darkgreen => '080', :palegreen => 'afa',
 			:blue => '44f', :darkblue => '008', :paleblue => 'aaf',
 			:yellow => 'ff4', :darkyellow => '440', :paleyellow => 'ffa',
-			:orange => 'fc8', 
+			:orange => 'fc8',
 
 	}
 
@@ -615,9 +615,9 @@ class InputBox < Gtk::Dialog
 		Gtk::Drag.dest_set(self,
 				   Gtk::Drag::DEST_DEFAULT_MOTION |
 				   Gtk::Drag::DEST_DEFAULT_DROP,
-   				   [['text/plain', 0, 0], ['text/uri-list', 0, 0]],
+				   [['text/plain', 0, 0], ['text/uri-list', 0, 0]],
 				   Gdk::DragContext::ACTION_COPY | Gdk::DragContext::ACTION_MOVE)
-		
+
 		signal_connect('drag_data_received') { |w, dc, x, y, data, info, time|
 			dc.targets.each { |target|
 				next if target.name != 'text/plain' and target.name != 'text/uri-list'
@@ -722,7 +722,7 @@ class ListWindow < Gtk::Dialog
 			tvc = Gtk::TreeViewColumn.new(col, crt)
 			tvc.sort_column_id = i
 			tvc.set_cell_data_func(crt) { |_tvc, _crt, model, iter|
-			       	_crt.text = iter[i]
+				_crt.text = iter[i]
 				if @color_callback
 					fu = (0...cols.length).map { |ii| iter[ii] }
 					fg, bg = @color_callback[fu]
@@ -797,14 +797,13 @@ class Window < Gtk::Window
 		initialize_window(*a, &b)
 		build_menu
 		update_menu
-		
-		
+
 		Gtk::Drag.dest_set(self,
 				   Gtk::Drag::DEST_DEFAULT_MOTION |
 				   Gtk::Drag::DEST_DEFAULT_DROP,
-   				   [['text/plain', 0, 0], ['text/uri-list', 0, 0]],
+				   [['text/plain', 0, 0], ['text/uri-list', 0, 0]],
 				   Gdk::DragContext::ACTION_COPY | Gdk::DragContext::ACTION_MOVE)
-		
+
 		signal_connect('drag_data_received') { |w, dc, x, y, data, info, time|
 			dc.targets.each { |target|
 				next if target.name != 'text/plain' and target.name != 'text/uri-list'
@@ -961,7 +960,7 @@ class ToolWindow < Gtk::Dialog
 		initialize_window(*a, &b)
 		show_all
 	end
-	
+
 	def widget=(w)
 		remove @child if @child
 		@child = w

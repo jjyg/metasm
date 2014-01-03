@@ -261,7 +261,7 @@ class GdbClient
 		pnd = ''
 		pnd << @io.read(1) while IO.select([@io], nil, nil, 0.2)
 		log "startpending: #{pnd.inspect}" if pnd != ''
-			
+
 		gdb_msg('q', 'Supported')
 		#gdb_msg('Hc', '-1')
 		#gdb_msg('qC')
@@ -565,7 +565,7 @@ class GdbRemoteDebugger < Debugger
 		del_all_breakpoints
 		del_pid
 	end
-	
+
 	# set to true to use the gdb msg to handle bpx, false to set 0xcc manually ourself
 	attr_accessor :gdb_bpx
 	def do_enable_bp(b)

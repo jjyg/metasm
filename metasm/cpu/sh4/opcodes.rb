@@ -274,7 +274,7 @@ class Sh4
 		addop 'mov.w', 0b10000101 << 8, :@disprm, :r0
 
 		addop 'mova', 0b11000111 << 8, :disppc, :r0 # calculates an effective address using PC-relative with displacement addressing
-		addop 'movca.l', 0b0000 << 12 | 11000011, :r0, :@rn # stores the long-word in R0 to memory at the effective address specified in Rn.     
+		addop 'movca.l', 0b0000 << 12 | 11000011, :r0, :@rn # stores the long-word in R0 to memory at the effective address specified in Rn.
 
 		addop 'movt', 0b0000 << 12 | 0b00101001, :rn # copies the T-bit to Rn
 

@@ -748,7 +748,7 @@ class FatELF < ExeFormat
 				f.encoded = e.encode_string
 				h = e.header
 				f.machine, f.abi, f.abi_version, f.e_class, f.data =
-			 	h.machine, h.abi, h.abi_version, h.e_class, h.data
+					h.machine, h.abi, h.abi_version, h.e_class, h.data
 			end
 			f.offset = new_label('fat_off')
 			f.size = f.encoded.size
@@ -844,7 +844,7 @@ typedef struct {			/* Verneed Auxiliary Structure. */
 	Elf32_Word	vna_next;	/* no. of bytes from start of this */
 } Elf32_Vernaux;			/*	vernaux to next vernaux entry */
 
-typedef	Elf32_Half 	Elf32_Versym;	/* Version symbol index array */
+typedef	Elf32_Half	Elf32_Versym;	/* Version symbol index array */
 
 typedef struct {
 	Elf32_Half	si_boundto;	/* direct bindings - symbol bound to */

@@ -240,7 +240,7 @@ class DisasmWidget < ContainerChoiceWidget
 		yield
 		focus_addr curaddr if addr
 	end
-	
+
 	# calls listwindow with the same argument, but also creates a new bg_color_callback
 	# that will color lines whose address is to be found in list[0] in green
 	# the callback is put only for the duration of the listwindow, and is not reentrant.
@@ -371,7 +371,7 @@ class DisasmWidget < ContainerChoiceWidget
 		if not addr and pointed_localvar
 			addr = curview.hl_word
 			faddr = @dasm.find_function_start(curaddr)
-		       	func = @dasm.function[faddr]
+			func = @dasm.function[faddr]
 			if func and func.localvars_xrefs
 				stoff = func.localvars.index(addr)
 				func.localvars_xrefs[stoff].to_a.each { |a|
@@ -441,7 +441,7 @@ class DisasmWidget < ContainerChoiceWidget
 			list_bghilight("backtrace #{expr} from #{Expression[addr]}", list) { |i|
 				a = i[0].empty? ? i[2] : i[0]
 				focus_addr(a, nil, true)
- 			}
+			}
 		}
 	end
 
@@ -549,7 +549,7 @@ class DisasmWidget < ContainerChoiceWidget
 	def focus_addr_autocomplete(v, show_alt=true)
 		if not focus_addr(v, nil, true)
 			labels = @dasm.prog_binding.map { |k, vv|
- 				[k, Expression[@dasm.normalize(vv)]] if k.downcase.include? v.downcase
+				[k, Expression[@dasm.normalize(vv)]] if k.downcase.include? v.downcase
 			}.compact
 			case labels.length
 			when 0; focus_addr(v)
@@ -743,7 +743,7 @@ class DisasmWidget < ContainerChoiceWidget
 		when ?/; inputbox('search word') { |w|
 				next unless curview.respond_to? :hl_word
 				next if w == ''
-				curview.hl_word = w 
+				curview.hl_word = w
 				curview.hl_word_re = /(.*)(#{w})/
 				curview.redraw
 			}
@@ -895,7 +895,7 @@ class DasmWindow < Window
 			self.widget = NoDasmWidget.new(self)
 		end
 	end
-	
+
 	def widget=(w)
 		super(w || NoDasmWidget.new(self))
 	end

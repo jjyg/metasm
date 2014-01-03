@@ -25,7 +25,7 @@ class ZIP < ExeFormat
 		4 => 'REDUCE3', 5 => 'REDUCE4', 6 => 'IMPLODE', 7 => 'TOKENIZED',
 		8 => 'DEFLATE', 9 => 'DEFLATE64', 10 => 'OLDTERSE', 12 => 'BZIP2', 14 => 'LZMA',
 		18 => 'TERSE', 19 => 'LZ77', 97 => 'WAVPACK', 98 => 'PPMD' }
-	
+
 	# zip file format:
 	#
 	# [local header 1]

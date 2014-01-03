@@ -67,7 +67,7 @@ class PowerPC
 			when :fra, :frb, :frc, :frs, :frt; FPR.new field_val[a]
 			when :ra_i16, :ra_i16s, :ra_i16q
 				i = field_val[{:ra_i16 => :d, :ra_i16s => :ds, :ra_i16q => :dq}[a]]
-			       	Memref.new GPR.new(field_val[:ra]), Expression[i]
+				Memref.new GPR.new(field_val[:ra]), Expression[i]
 			when :bd, :d, :ds, :dq, :si, :ui, :li, :sh, :mb, :me, :mb_, :me_, :u; Expression[field_val[a]]
 			when :ba, :bf, :bfa, :bt; CR.new field_val[a]
 			when :bb, :bh, :flm, :fxm, :l_, :l__, :lev, :nb, :sh_, :spr, :sr, :tbr, :th, :to
@@ -90,8 +90,8 @@ class PowerPC
 		case i.opname
 		when /^n?or\.?$/
 			if i.args[1] == i.args[2]
-	 			i.args.pop
-	 			i.opname = {'or' => 'mr', 'or.' => 'mr.', 'nor' => 'not', 'nor.' => 'not.'}[i.opname]
+				i.args.pop
+				i.opname = {'or' => 'mr', 'or.' => 'mr.', 'nor' => 'not', 'nor.' => 'not.'}[i.opname]
 			end
 		when /^addi/
 			if a = i.args[2].reduce and a.kind_of? Integer and a < 0
@@ -113,7 +113,7 @@ class PowerPC
 	# else just add the offset +off+ of the instruction + its length (off may be an Expression)
 	# assumes edata.ptr points just after the instruction (as decode_instr_op left it)
 	# do not call twice on the same di !
- 	def decode_instr_interpret(di, addr)
+	def decode_instr_interpret(di, addr)
 		if di.opcode.props[:setip] and di.instruction.args.last.kind_of? Expression and di.opcode.name[0] != ?t and di.opcode.name[-1] != ?a
 			arg = Expression[addr, :+, di.instruction.args.last].reduce
 			di.instruction.args[-1] = Expression[arg]
@@ -197,11 +197,11 @@ class PowerPC
 				ptr = m.pointer.externals.grep(Symbol).first
 				ret[ptr] = m.pointer if ptr != a0
 				ret
-		       	}
+			}
 			when 'lwz'; lambda { |di, a0, m| { a0 => Expression[m] } }
 			when 'stwu'; lambda { |di, a0, m|
 				{ m => Expression[a0], m.pointer.externals.grep(Symbol).first => m.pointer }
-		       	}
+			}
 			when 'stw'; lambda { |di, a0, m| { m => Expression[a0] } }
 			when 'rlwinm'; lambda { |di, a0, a1, sh, mb, me|
 				mb, me = mb.reduce, me.reduce

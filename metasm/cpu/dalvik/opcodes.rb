@@ -82,7 +82,7 @@ unused_fc unused_fd unused_fe unused_ff]
 	def addop_args(op)
 		fmt = case op.name
 		when 'goto'
-  			:fmt10t
+			:fmt10t
 		when 'nop', 'return_void'
 			:fmt10x
 		when 'const_4'
@@ -246,7 +246,7 @@ unused_fc unused_fd unused_fe unused_ff]
 		when :fmt3inline
 			op.args << :r16 << :rlist4
 		when :fmt3rc, :fmt3rms
-		       	# rlist = :r16, :r16+1, :r16+2, ..., :r16+:iaa-1
+			# rlist = :r16, :r16+1, :r16+2, ..., :r16+:iaa-1
 			op.args << :r16 << :rlist16
 		when :fmt51l
 			# u64 = u16 | (u16 << 16) | ...

@@ -79,7 +79,7 @@ class Debugger
 			return del_bpm if @type == :bpm
 			@hash_shared.delete self
 			if @hash_shared.empty?
-  				@hash_owner.delete @hash_key
+				@hash_owner.delete @hash_key
 			elsif @hash_owner[@hash_key] == self
 				@hash_owner[@hash_key] = @hash_shared.first
 			end
@@ -128,7 +128,7 @@ class Debugger
 
 	# global debugger callbacks, called whenever such event occurs
 	attr_accessor :callback_singlestep, :callback_bpx, :callback_hwbp, :callback_bpm,
-	       	:callback_exception, :callback_newthread, :callback_endthread,
+		:callback_exception, :callback_newthread, :callback_endthread,
 		:callback_newprocess, :callback_endprocess, :callback_loadlibrary
 
 	# global switches, specify wether to break on exception/thread event
@@ -152,7 +152,7 @@ class Debugger
 		@pid_stuff_list = [:memory, :cpu, :disassembler, :symbols, :symbols_len,
 			:modulemap, :breakpoint, :breakpoint_memory, :tid, :tid_stuff,
 			:dead_process]
-		@tid_stuff_list = [:state, :info, :breakpoint_thread, :singlestep_cb, 
+		@tid_stuff_list = [:state, :info, :breakpoint_thread, :singlestep_cb,
 			:run_method, :run_args, :breakpoint_cause, :dead_thread]
 		@callback_loadlibrary = lambda { |h| loadsyms(h[:address]) ; continue }
 		@callback_newprocess = lambda { |h| log "process #{@pid} attached" }
@@ -471,7 +471,7 @@ class Debugger
 			if di = bp.emul_instr and fdbd = @disassembler.get_fwdemu_binding(di, register_pc) and
 					fdbd.all? { |k, v| (k.kind_of?(Symbol) or k.kind_of?(Indirection)) and
 						k != :incomplete_binding and v != Expression::Unknown }
-			 	# setup a lambda that will mimic, using the debugger primitives, the actual execution of the instruction
+				# setup a lambda that will mimic, using the debugger primitives, the actual execution of the instruction
 				bp.emul_instr = lambda {
 					fdbd.map { |k, v|
 						k = Indirection[emulinstr_resv(k.pointer), k.len] if k.kind_of?(Indirection)
@@ -652,7 +652,7 @@ class Debugger
 		return @cpu.dbg_find_singlestep(self) if @cpu.respond_to?(:dbg_find_singlestep)
 		@run_method == :singlestep
 	end
-	
+
 	# called when the target stops due to a soft breakpoint exception
 	def evt_bpx(b=nil)
 		b ||= find_bp_bpx
@@ -854,7 +854,7 @@ class Debugger
 	# resume execution as if we never stopped
 	# disable offending bp + singlestep if needed
 	def resume_badbreak(b=nil)
-		# ensure we didn't delete b 
+		# ensure we didn't delete b
 		if b and b.hash_shared.find { |bb| bb.state == :active }
 			rm = @run_method
 			if rm == :singlestep

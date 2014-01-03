@@ -931,7 +931,7 @@ class GraphViewWidget < DrawableWidget
 		if bt = @shown_boxes.to_a.reverse.find { |b|
 			y >= b.y+b.h-1 and y <= b.y+b.h-1+@margin+2 and
 			sx = b.x+b.w/2 - b.to.length/2 * @margin/2 and
-		       	x >= sx-@margin/2 and x <= sx+b.to.length*@margin/2	# should be margin/4, but add a little comfort margin
+			x >= sx-@margin/2 and x <= sx+b.to.length*@margin/2	# should be margin/4, but add a little comfort margin
 		}
 			idx = (x-sx+@margin/4).to_i / (@margin/2)
 			idx = 0 if idx < 0
@@ -948,7 +948,7 @@ class GraphViewWidget < DrawableWidget
 		elsif bf = @shown_boxes.to_a.reverse.find { |b|
 			y >= b.y-@margin-2 and y <= b.y and
 			sx = b.x+b.w/2 - b.from.length/2 * @margin/2 and
-		       	x >= sx-@margin/2 and x <= sx+b.from.length*@margin/2
+			x >= sx-@margin/2 and x <= sx+b.from.length*@margin/2
 		}
 			idx = (x-sx+@margin/4).to_i / (@margin/2)
 			idx = 0 if idx < 0
@@ -1001,7 +1001,7 @@ class GraphViewWidget < DrawableWidget
 
 		@shown_boxes = []
 		w_w = width
-	       	w_h = height
+		w_h = height
 		@curcontext.box.each { |b|
 			next if b.x >= view_x+w_w/@zoom or b.y >= view_y+w_h/@zoom or b.x+b.w <= view_x or b.y+b.h <= view_y
 			@shown_boxes << b
@@ -1481,7 +1481,7 @@ class GraphViewWidget < DrawableWidget
 				b.h = @font_height * 2
 				b.x = rand(200) - 100
 				b.y = rand(200) - 100
-				
+
 				@fakebox += 1
 			else
 				b1, *bl = @selected_boxes
@@ -1641,9 +1641,9 @@ class GraphViewWidget < DrawableWidget
 		elsif @caret_box and @caret_box.w < width*27/30/@zoom
 			# keep @caret_box full if possible
 			if view_x + width/20/@zoom > @caret_box.x
-				@curcontext.view_x = @caret_box.x-width/20/@zoom 
+				@curcontext.view_x = @caret_box.x-width/20/@zoom
 			elsif view_x + width*9/10/@zoom < @caret_box.x+@caret_box.w
-				@curcontext.view_x = @caret_box.x+@caret_box.w-width*9/10/@zoom 
+				@curcontext.view_x = @caret_box.x+@caret_box.w-width*9/10/@zoom
 			end
 		elsif view_x + width/20/@zoom > x
 			@curcontext.view_x = x-width/20/@zoom
@@ -1658,9 +1658,9 @@ class GraphViewWidget < DrawableWidget
 			redraw
 		elsif @caret_box and @caret_box.h < height*27/30/@zoom
 			if view_y + height/20/@zoom > @caret_box.y
-				@curcontext.view_y = @caret_box.y-height/20/@zoom 
+				@curcontext.view_y = @caret_box.y-height/20/@zoom
 			elsif view_y + height*9/10/@zoom < @caret_box.y+@caret_box.h
-				@curcontext.view_y = @caret_box.y+@caret_box.h-height*9/10/@zoom 
+				@curcontext.view_y = @caret_box.y+@caret_box.h-height*9/10/@zoom
 			end
 		elsif view_y + height/20/@zoom > y
 			@curcontext.view_y = y-height/20/@zoom

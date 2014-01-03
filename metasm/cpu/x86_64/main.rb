@@ -16,8 +16,8 @@ class X86_64 < Ia32
 	# XMM extended to 16 regs, YMM
 	class SimdReg < Ia32::SimdReg
 		double_map  64 => (0..7).map { |n| "mm#{n}" },
-   			   128 => (0..15).map { |n| "xmm#{n}" },
-   			   256 => (0..15).map { |n| "ymm#{n}" }
+			   128 => (0..15).map { |n| "xmm#{n}" },
+			   256 => (0..15).map { |n| "ymm#{n}" }
 
 		def val_enc
 			@val & 7

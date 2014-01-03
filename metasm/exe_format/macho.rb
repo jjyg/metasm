@@ -47,7 +47,7 @@ class MachO < ExeFormat
 			3 => 'MMAX_APC_FPU', 4 => 'MMAX_APC_FPA', 5 => 'MMAX_XPC',
 		},
 		'I386' => { 3 => 'ALL', 4 => '486', 4+128 => '486SX',
-		       	0 => 'INTEL_MODEL_ALL', 10 => 'PENTIUM_4',
+			0 => 'INTEL_MODEL_ALL', 10 => 'PENTIUM_4',
 			5 => 'PENT', 0x16 => 'PENTPRO', 0x36 => 'PENTII_M3', 0x56 => 'PENTII_M5',
 		},
 		'MIPS' => { 0 => 'ALL', 1 => 'R2300', 2 => 'R2600', 3 => 'R2800', 4 => 'R2000a', },
@@ -106,7 +106,7 @@ class MachO < ExeFormat
 	}
 
 	THREAD_FLAVOR = {
-		'POWERPC' => { 
+		'POWERPC' => {
 			1 => 'THREAD_STATE',
 			2 => 'FLOAT_STATE',
 			3 => 'EXCEPTION_STATE',
@@ -207,7 +207,7 @@ class MachO < ExeFormat
 		end
 
 		def encode(m)
-			ed = super(m) 
+			ed = super(m)
 			ed << @data.encode(m) if @data
 			ed.align(m.size >> 3)
 			ed.fixup! @cmdsize => ed.length	if @cmdsize.kind_of? String
@@ -292,7 +292,7 @@ class MachO < ExeFormat
 			words :flavor, :count
 			fld_enum(:flavor) { |m, t| THREAD_FLAVOR[m.header.cputype] || {} }
 			attr_accessor :ctx
-			
+
 			def entrypoint(m)
 				@ctx ||= {}
 				case m.header.cputype

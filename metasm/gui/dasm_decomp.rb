@@ -115,7 +115,7 @@ class CdecompListingWidget < DrawableWidget
 			cy = (@caret_y-@view_y)*@font_height
 			draw_line_color(:caret, cx, cy, cx, cy+@font_height-1)
 		end
-	
+
 		@oldcaret_x, @oldcaret_y = @caret_x, @caret_y
 	end
 
@@ -171,7 +171,7 @@ class CdecompListingWidget < DrawableWidget
 						f.decompdata[:stackoff_name][s.stackoff] = v if s.stackoff
 					elsif @dasm.c_parser.toplevel.symbol[n]
 						@dasm.rename_label(n, v)
-						@curaddr = v if @curaddr == n                   
+						@curaddr = v if @curaddr == n
 					end
 					gui_update
 				}

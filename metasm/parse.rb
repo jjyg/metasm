@@ -780,7 +780,7 @@ class Expression
 			pp = Preprocessor.new(str)
 
 			e = parse(pp, &b)
-			
+
 			# update arg
 			len = pp.pos
 			pp.queue.each { |t| len -= t.raw.length }

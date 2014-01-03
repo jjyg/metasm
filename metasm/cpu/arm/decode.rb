@@ -58,7 +58,7 @@ class ARM
 		op = di.opcode
 		di.instruction.opname = op.name
 		val = di.instance_variable_get('@raw')
-		
+
 		field_val = lambda { |f|
 			r = (val >> @fields_shift[f]) & @fields_mask[f]
 			case f
@@ -128,7 +128,7 @@ class ARM
 	def backtrace_binding
 		@backtrace_binding ||= init_backtrace_binding
 	end
- 
+
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 	end
@@ -141,7 +141,7 @@ class ARM
 			else arg
 			end
 		}
-	
+
 		if binding = backtrace_binding[di.opcode.name]
 			binding[di, *a]
 		else
@@ -155,7 +155,7 @@ class ARM
 		end
 
 	end
-	
+
 	def get_xrefs_x(dasm, di)
 		if di.opcode.props[:setip]
 			[di.instruction.args.last]

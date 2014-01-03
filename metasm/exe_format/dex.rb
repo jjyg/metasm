@@ -256,7 +256,7 @@ class DEX < ExeFormat
 		uleb :typeidx
 		uleb :handleroff
 	end
-	
+
 	class Link < SerialStruct
 		# undefined
 	end
