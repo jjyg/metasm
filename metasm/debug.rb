@@ -155,7 +155,7 @@ class Debugger
 		@tid_stuff_list = [:state, :info, :breakpoint_thread, :singlestep_cb, 
 			:run_method, :run_args, :breakpoint_cause, :dead_thread]
 		@callback_loadlibrary = lambda { |h| loadsyms(h[:address]) ; continue }
-		@callback_newprocess = lambda { |h| log "process #{@pid} created" }
+		@callback_newprocess = lambda { |h| log "process #{@pid} attached" }
 		@callback_endprocess = lambda { |h| log "process #{@pid} died" }
 		initialize_newpid
 		initialize_newtid
@@ -543,7 +543,7 @@ class Debugger
 		h = { :type => :bpm }
 		addr = resolve_expr(addr) if not addr.kind_of? ::Integer
 		h[:hash_key] = addr & -4096	# XXX actually referenced at addr, addr+4096, ... addr+len
-		h[:internal] = { :type => type, :len => mlen }
+		h[:internal] = { :type => mtype, :len => mlen }
 		h[:oneshot] = true if oneshot
 		h[:condition] = cond if cond
 		h[:action] = action if action
@@ -592,7 +592,7 @@ class Debugger
 			ret |= bb.hash_shared
 		}
 
-		@breakpoint_memory.each_value { |m|
+		@breakpoint_memory.each_value { |bb|
 			next if addr and (bb.address+bb.internal[:len] <= addr or bb.address > addr)
 			ret |= bb.hash_shared
 		}
@@ -656,6 +656,8 @@ class Debugger
 	# called when the target stops due to a soft breakpoint exception
 	def evt_bpx(b=nil)
 		b ||= find_bp_bpx
+		# TODO handle race:
+		# bpx foo ; thread hits foo ; we bc foo ; os notify us of bp hit but we already cleared everything related to 'bpx foo' -> unhandled bp exception
 		return evt_exception(:type => 'breakpoint') if not b
 
 		@state = :stopped
@@ -725,9 +727,9 @@ class Debugger
 		return if b.address+b.internal[:len] <= info[:fault_addr]
 		return if b.address >= info[:fault_addr] + info[:fault_len]
 		case b.internal[:type]
-		when :x; info[:fault_addr] == pc	# XXX
-		when :r; info[:fault_access] == :r 
+		when :r; info[:fault_access] == :r	# or info[:fault_access] == :x
 		when :w; info[:fault_access] == :w
+		when :x; info[:fault_access] == :x	# XXX non-NX cpu => check pc is in bpm range ?
 		when :rw; true
 		end
 	end

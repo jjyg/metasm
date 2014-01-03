@@ -173,7 +173,10 @@ class DbgWidget < ContainerVBoxWidget
 				l = listwindow('running processes', list,
 					       :noshow => true,
 					       :color_callback => lambda { |le| [:grey, :palegrey] if le[0] == me }
-					      ) { |e| i.text = e[0] }
+					      ) { |e|
+						      i.text = e[0]
+						      i.keypress(:enter) if l.destroyed?
+					      }
 					      l.x += l.width
 					      l.show
 					      false
@@ -902,7 +905,7 @@ class DbgConsoleWidget < DrawableWidget
 			exp = solve_expr!(e)
 			len = solve_expr(e) if e != ''
 			len ||= 1
-			@dbg.hwbp(exp, mode, len, false, cd, &cb)
+			@dbg.bpm(exp, mode, len, false, cd, &cb)
 		}
 		new_command('g', 'wait until target reaches the specified address') { |arg|
 			arg =~ /^(.*?)(?: if (.*?))?(?: do (.*?))?(?: if (.*?))?$/i

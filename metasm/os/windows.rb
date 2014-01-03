@@ -1886,6 +1886,19 @@ class WinDebugger < Debugger
 		end
 	end
 
+	def do_enable_bpm(bp)
+		@bpm_info ||= WinAPI.alloc_c_struct("MEMORY_BASIC_INFORMATION#{WinAPI.host_cpu.size}")
+		WinAPI.virtualqueryex(os_process.handle, bp.address, @bpm_info, @bpm_info.sizeof)
+		# TODO save original page perms, check bpm type (:w -> vprotect(PAGE_READONLY)), handle multiple bpm on same page
+		WinAPI.virtualprotectex(os_process.handle, bp.address, bp.internal[:len], @bpm_info[:protect] | WinAPI::PAGE_GUARD, @bpm_info)
+	end
+
+	def do_disable_bpm(bp)
+		@bpm_info ||= WinAPI.alloc_c_struct("MEMORY_BASIC_INFORMATION#{WinAPI.host_cpu.size}")
+		WinAPI.virtualqueryex(os_process.handle, bp.address, @bpm_info, @bpm_info.sizeof)
+		WinAPI.virtualprotectex(os_process.handle, bp.address, bp.internal[:len], @bpm_info[:protect] & ~WinAPI::PAGE_GUARD, @bpm_info)
+	end
+
 	def update_dbgev(ev)
 		# XXX ev is static, copy all necessary values before yielding to something that may call check_target
 		set_context ev.dwprocessid, ev.dwthreadid
@@ -1909,7 +1922,7 @@ class WinDebugger < Debugger
 			# DWORD NumberParameters;
 			# ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
 			case str.exceptioncode
-			when WinAPI::STATUS_ACCESS_VIOLATION
+			when WinAPI::STATUS_ACCESS_VIOLATION, WinAPI::STATUS_GUARD_PAGE_VIOLATION
 				if @auto_fix_fs_bug and ctx.fs != 0x3b
 					# fix bug in xpsp1 where fs would get a random value in a debugee
 					log "wdbg: #{pid}:#{tid} fix fs bug" if $DEBUG
