@@ -279,6 +279,7 @@ class Expression
 			      when 64; "\0\0\0\0\0\0\0\0"
 			      else [0].pack('C')*(INT_SIZE[type]/8)
 			      end
+			str = str.force_encoding('BINARY') if str.respond_to?(:force_encoding)
 	       		EncodedData.new(str, :reloc => {0 => Relocation.new(self, type, endianness, backtrace)})
 		end
 	end
