@@ -2833,7 +2833,11 @@ class LBoxWidget < DrawableWidget
 	def paint
 		@btnx = []
 		@btny = 0
-		@btnheight = @font_height * 4/3
+		if @btnheight != @font_height * 4/3
+			# fix vscrollbar height on w7
+			@btnheight = @font_height * 4/3
+			resized(width, height)
+		end
 		x = 0
 		@colw.each { |w|
 			@btnx << x
