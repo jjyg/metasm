@@ -1095,7 +1095,7 @@ end
 # this class implements a high-level API over the ptrace debugging primitives
 class LinDebugger < Debugger
 	# ptrace is per-process or per-thread ?
-	attr_accessor :ptrace, :continuesignal, :has_pax_mprotect, :target_syscall
+	attr_accessor :ptrace, :continuesignal, :has_pax_mprotect, :target_syscall, :cached_waitpid
 	attr_accessor :callback_syscall, :callback_branch, :callback_exec
 
 	def initialize(pidpath=nil, &b)
@@ -1108,6 +1108,7 @@ class LinDebugger < Debugger
 
 		@callback_syscall = lambda { |i| log "syscall #{i[:syscall]}" }
 		@callback_exec = lambda { |i| log "execve #{os_process.path}" }
+		@cached_waitpid = []
 
 		return if not pidpath
 
@@ -1201,7 +1202,10 @@ class LinDebugger < Debugger
 		@ptrace.pid = tid
 		@ptrace.attach
 		@state = :stopped
+		# store this waitpid so that we can return it in a future check_target
 		::Process.waitpid(tid, ::Process::WALL)
+		# XXX can $? be safely stored?
+		@cached_waitpid << [tid, $?.dup]
 		log "attached thread #{tid}"
 		set_thread_options
 	rescue Errno::ESRCH
@@ -1371,18 +1375,28 @@ class LinDebugger < Debugger
 	end
 
 	def do_check_target
-		return unless t = ::Process.waitpid(-1, ::Process::WNOHANG | ::Process::WALL)
-		# XXX all threads may have stopped, wait them now ?
+		if @cached_waitpid.empty?
+			t = ::Process.waitpid(-1, ::Process::WNOHANG | ::Process::WALL)
+			st = $?
+		else
+			t, st = @cached_waitpid.shift
+		end
+		return if not t
 		set_tid_findpid t
-		update_waitpid $?
+		update_waitpid st
 		true
 	rescue ::Errno::ECHILD
 	end
 
 	def do_wait_target
-		t = ::Process.waitpid(-1, ::Process::WALL)
+		if @cached_waitpid.empty?
+			t = ::Process.waitpid(-1, ::Process::WALL)
+			st = $?
+		else
+			t, st = @cached_waitpid.shift
+		end
 		set_tid_findpid t
-		update_waitpid $?
+		update_waitpid st
 	rescue ::Errno::ECHILD
 	end
 
