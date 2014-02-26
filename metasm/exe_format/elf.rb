@@ -394,11 +394,6 @@ class ELF < ExeFormat
 		word :flags
 		fld_bits(:flags) { |elf, hdr| FLAGS[hdr.machine] || {} }
 		halfs :ehsize, :phentsize, :phnum, :shentsize, :shnum, :shstrndx
-
-		def self.size elf
-			x = elf.bitsize >> 3
-			40 + 3*x
-		end
 	end
 
 	class Segment < SerialStruct
@@ -411,11 +406,6 @@ class ELF < ExeFormat
 			when 32; Segment32
 			else Segment64
 			end
-		end
-
-		def self.size elf
-			x = elf.bitsize >> 3
-			8 + 6*x
 		end
 	end
 
@@ -453,11 +443,6 @@ class ELF < ExeFormat
 		xword :entsize
 
 		attr_accessor :name, :encoded
-
-		def self.size elf
-			x = elf.bitsize >> 3
-			16 + 6*x
-		end
 	end
 
 	class Symbol < SerialStruct
@@ -471,11 +456,6 @@ class ELF < ExeFormat
 
 		attr_accessor :name_p, :value, :size, :bind, :type, :other, :shndx
 		attr_accessor :name, :thunk
-
-		def self.size elf
-			x = elf.bitsize >> 3
-			8 + 2*x
-		end
 	end
 
 	class Symbol32 < Symbol
@@ -510,12 +490,6 @@ class ELF < ExeFormat
 		end
 
 		def addend ; end
-
-		def self.size elf
-			x = elf.bitsize >> 3
-			2*x
-		end
-
 	end
 	class Relocation32 < Relocation
 		addr :offset
@@ -538,11 +512,6 @@ class ELF < ExeFormat
 			else RelocationAddend64
 			end
 		end
-		def self.size elf
-			x = elf.bitsize >> 3
-			3*x
-		end
-
 	end
 	class RelocationAddend32 < RelocationAddend
 		addr :offset
@@ -669,6 +638,15 @@ class ELF < ExeFormat
 	end
 
 	def shortname; 'elf'; end
+
+	def sizeof_byte ; 1 ; end
+	def sizeof_half ; 2 ; end
+	def sizeof_word ; 4 ; end
+	def sizeof_sword ; 4 ; end
+	def sizeof_xword ; @bitsize == 32 ? 4 : 8 ; end
+	alias sizeof_sxword sizeof_xword
+	alias sizeof_addr sizeof_xword
+	alias sizeof_off sizeof_xword
 end
 
 class LoadedELF < ELF
@@ -721,6 +699,9 @@ class FatELF < ExeFormat
 	def decode_byte(edata = @encoded)  edata.decode_imm(:u8,  @endianness) end
 	def decode_word(edata = @encoded)  edata.decode_imm(:u16, @endianness) end
 	def decode_qword(edata = @encoded) edata.decode_imm(:u64, @endianness) end
+	def sizeof_byte ; 1 ; end
+	def sizeof_word ; 2 ; end
+	def sizeof_qword ; 8 ; end
 
 	attr_accessor :header, :list
 	def initialize
