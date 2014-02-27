@@ -304,15 +304,22 @@ EOS
 	def pehash(digest)
 		off0 = 0
 		off1 = @coff_offset + @header.sizeof(self) + @optheader.offsetof(self, :checksum)
-		if @directory['certificate_table']
-			off2 = @coff_offset + @header.sizeof(self) + @optheader.sizeof(self) + 8*DIRECTORIES.index('certificate_table')
-			off3 = @encoded.length - @directory['certificate_table'][1]
+
+		dir_ct_idx = DIRECTORIES.index('certificate_table')
+		if @optheader.numrva > dir_ct_idx
+			off2 = @coff_offset + @header.sizeof(self) + @optheader.sizeof(self) + 8*dir_ct_idx
+			ct_size = @encoded.data[off2, 8].unpack('V*')[1]
+			off3 = @encoded.length - ct_size
+		else
+			off4 = @encoded.length
 		end
 
 		digest << @encoded.data[off0 ... off1].to_str
 		digest << @encoded.data[off1+4 ... off2].to_str if off2
 		digest << @encoded.data[off2+8 ... off3].to_str if off2 and off3 > off2+8
+		digest << @encoded.data[off1+4 ... off4].to_str if off4
 		digest << ("\0" * (8 - (@encoded.length & 7))) if @encoded.length & 7 != 0
+
 		digest.hexdigest
 	end
 
