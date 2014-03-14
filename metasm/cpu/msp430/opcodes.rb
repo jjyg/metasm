@@ -59,6 +59,9 @@ class MSP430
 		addop_macro2 'jl',  6
 		addop_macro2 'jmp', 7, :stopexec
 
+		addop 'ret', 0x4130, :setip, :stopexec	# mov pc, [sp++]
+		addop 'pop', 0x4130, :rd, :ad		# mov rd, [sp++]
+
 		addop_macro3 'mov', 4
 		addop_macro3 'add', 5
 		addop_macro3 'adc', 6	# 'addc'

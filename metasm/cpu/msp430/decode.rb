@@ -140,8 +140,12 @@ class MSP430
 			when 'and'; lambda { |di, a0, a1| { a0 => Expression[a0, :&, a1] } }
 			when 'or';  lambda { |di, a0, a1| { a0 => Expression[a0, :|, a1] } }
 			when 'xor'; lambda { |di, a0, a1| { a0 => Expression[a0, :^, a1] } }
-			when 'call'; lambda { |di, a0| { Indirection[[:sp, :-, 2], 2] => Expression[di.next_addr],
+			when 'push'; lambda { |di, a0| { Indirection[:sp, 2] => Expression[a0],
 							 :sp => Expression[:sp, :-, 2] } }
+			when 'call'; lambda { |di, a0| { Indirection[:sp, 2] => Expression[di.next_addr],
+							 :sp => Expression[:sp, :-, 2] } }
+			when 'pop';  lambda { |di, a0| { a0 => Expression[Indirection[:sp, 2]],
+							 :sp => Expression[:sp, :+, 2] } }
 			when 'ret';  lambda { |di| { :sp => Expression[:sp, :+, 2] } }
 			when 'reti'; lambda { |di| { :sp => Expression[:sp, :+, 4] } }
 			when /^j/; lambda { |di, a0| {} }
@@ -195,7 +199,37 @@ class MSP430
 	end
 
 	def backtrace_is_function_return(expr, di=nil)
-		expr.reduce_rec == :sp
+		expr = Expression[expr].reduce_rec
+		expr.kind_of?(Indirection) and expr.len == 2 and expr.target == Expression[:sp]
+	end
+
+	# updates the function backtrace_binding
+	# if the function is big and no specific register is given, do nothing (the binding will be lazily updated later, on demand)
+	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist, *wantregs)
+		b = f.backtrace_binding
+
+		bt_val = lambda { |r|
+			next if not retaddrlist
+			b[r] = Expression::Unknown
+			bt = []
+			retaddrlist.each { |retaddr|
+				bt |= dasm.backtrace(Expression[r], retaddr, :include_start => true,
+					     :snapshot_addr => faddr, :origin => retaddr)
+			}
+			if bt.length != 1
+				b[r] = Expression::Unknown
+			else
+				b[r] = bt.first
+			end
+		}
+
+		if not wantregs.empty?
+			wantregs.each(&bt_val)
+		else
+			bt_val[:sp]
+		end
+
+		b
 	end
 
 	def replace_instr_arg_immediate(i, old, new)
