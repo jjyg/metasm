@@ -935,6 +935,8 @@ class ELF
 		when 'PPC'; PPC.new
 		when 'ARM'; ARM.new
 		when 'SH'; Sh4.new
+		when 'ARC_COMPACT'; ARC.new
+		when 'MSP430'; MSP430.new
 		else raise "unsupported cpu #{@header.machine}"
 		end
 	end
