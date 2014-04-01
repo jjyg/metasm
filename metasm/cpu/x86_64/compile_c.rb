@@ -790,6 +790,11 @@ class CCompiler < C::Compiler
 				end
 				instr 'mov', l, ll
 			else
+				if r.kind_of?(ModRM) and l.kind_of?(Reg) and r.sz != l.sz
+					rr = make_volatile(r, type)
+					unuse r
+					r = rr
+				end
 				instr 'imul', l, r
 			end
 			unuse r
