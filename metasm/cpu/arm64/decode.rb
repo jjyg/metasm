@@ -63,51 +63,18 @@ class ARM64
 			when :i12; Expression.make_signed(r, 12)
 			when :i24; Expression.make_signed(r, 24)
 			when :i8_12; ((r >> 4) & 0xf0) | (r & 0xf)
-			when :stype; [:lsl, :lsr, :asr, :ror][r]
-			when :u; [:-, :+][r]
 			else r
 			end
 		}
 
-		if op.props[:cond]
-			cd = %w[eq ne cs cc mi pl vs vc hi ls ge lt gt le al][field_val[:cond]]
-			if cd != 'al'
-				di.opcode = di.opcode.dup
-				di.instruction.opname = di.opcode.name.dup
-				di.instruction.opname[(op.props[:cond_name_off] || di.opcode.name.length), 0] = cd
-				if di.opcode.props[:stopexec]
-					di.opcode.props = di.opcode.props.dup
-					di.opcode.props.delete :stopexec
-				end
-			end
-		end
-
 		op.args.each { |a|
 			di.instruction.args << case a
-			when :rd, :rn, :rm; Reg.new field_val[a]
-			when :rm_rs; Reg.new field_val[:rm], field_val[:stype], Reg.new(field_val[:rs])
-			when :rm_is; Reg.new field_val[:rm], field_val[:stype], field_val[:shifti]
-			when :i12; Expression[field_val[a]]
-			when :i24; Expression[field_val[a] << 2]
-			when :i8_r
-				i = field_val[:i8]
-				r = field_val[:rotate]*2
-				Expression[((i >> r) | (i << (32-r))) & 0xffff_ffff]
-			when :mem_rn_rm, :mem_rn_i8_12, :mem_rn_rms, :mem_rn_i12
-				b = Reg.new(field_val[:rn])
-				o = case a
-				when :mem_rn_rm; Reg.new(field_val[:rm])
-				when :mem_rn_i8_12; field_val[:i8_12]
-				when :mem_rn_rms; Reg.new(field_val[:rm], field_val[:stype], field_val[:shifti])
-				when :mem_rn_i12; field_val[:i12]
-				end
-				Memref.new(b, o, field_val[:u], op.props[:baseincr])
-			when :reglist
-				di.instruction.args.last.updated = true if op.props[:baseincr]
-				msk = field_val[a]
-				l = RegList.new((0..15).map { |n| Reg.new(n) if (msk & (1 << n)) > 0 }.compact)
-				l.usermoderegs = true if op.props[:usermoderegs]
-				l
+			when :rd, :rn, :rm, :rt
+				sz = 64
+				sz = 32 if op.fields[:sf] and field_val[:sf] == 0
+				Reg.new field_val[a], sz
+			when :i16_5; Expression[field_val[a]]
+			when :i24_0; Expression[field_val[a] << 2]
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
