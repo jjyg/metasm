@@ -934,6 +934,7 @@ class ELF
 		when 'MIPS'; (@header.flags.include?('32BITMODE') ? MIPS64 : MIPS).new @endianness
 		when 'PPC'; PPC.new
 		when 'ARM'; ARM.new
+		when 'AARCH64'; AArch64.new
 		when 'SH'; Sh4.new
 		when 'ARC_COMPACT'; ARC.new
 		when 'MSP430'; MSP430.new
