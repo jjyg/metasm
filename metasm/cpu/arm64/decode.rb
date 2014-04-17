@@ -58,13 +58,7 @@ class ARM64
 		val = di.raw_data
 
 		field_val = lambda { |f|
-			r = (val >> @fields_shift[f]) & @fields_mask[f]
-			case f
-			when :i12; Expression.make_signed(r, 12)
-			when :i24; Expression.make_signed(r, 24)
-			when :i8_12; ((r >> 4) & 0xf0) | (r & 0xf)
-			else r
-			end
+			(val >> @fields_shift[f]) & @fields_mask[f]
 		}
 
 		op.args.each { |a|
@@ -72,9 +66,15 @@ class ARM64
 			when :rd, :rn, :rm, :rt
 				sz = 64
 				sz = 32 if op.fields[:sf] and field_val[:sf] == 0
-				Reg.new field_val[a], sz
+				nr = field_val[a]
+				nr = 32 if nr == 31 and op.props[:r_z]
+				Reg.new nr, sz
 			when :i16_5; Expression[field_val[a]]
-			when :i24_0; Expression[field_val[a] << 2]
+			when :i24_0; Expression[field_val[a]]
+			when :i12_10_s1
+				f = field_val[a]
+				f = (f & 0xfff) << 12 if (f >> 12) & 1 == 1
+				Expression[f]
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
