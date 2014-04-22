@@ -63,7 +63,7 @@ class ARM64
 
 		op.args.each { |a|
 			di.instruction.args << case a
-			when :rd, :rn, :rm, :rt
+			when :rn, :rt, :rt2
 				nr = field_val[a]
 				nr = 32 if nr == 31 and op.props[:r_z]
 				Reg.new nr, (op.props[:r_32] ? 32 : 64)
@@ -73,10 +73,11 @@ class ARM64
 				f = field_val[a]
 				f = (f & 0xfff) << 12 if (f >> 12) & 1 == 1
 				Expression[f]
-			when :m_rn_s9, :m_rn_u12
+			when :m_rn_s9, :m_rn_u12, :m_rn_s7
 				r = Reg.new(field_val[:rn], 64)
 				o = case a
 				    when :m_rn_s9; Expression.make_signed(field_val[:s9_12], 9)
+				    when :m_rn_s7; Expression.make_signed(field_val[:s7_15], 7)
 				    when :m_rn_u12; field_val[:u12_10]
 				    else raise SyntaxError, "Internal error #{a.inspect} in #{op.name}"
 				    end

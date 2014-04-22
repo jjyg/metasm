@@ -51,23 +51,24 @@ class ARM64
 		 :mem_sz,	# point to uint32 => 4
 		].each { |p| @valid_props[p] = true }
 
-		[:rn, :rt,
+		[:rn, :rt, :rt2,
 		 :i14_5, :i16_5, :i26_0, :i12_10_s1,
 		 :m_rn_s9, :m_rn_u12,
 		].each { |p| @valid_args[p] = true }
 
-		@fields_mask.update :rn => 0x1f, :rt => 0x1f,
+		@fields_mask.update :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f,
 			:i14_5 => 0x3fff, :i16_5 => 0xffff, :i26_0 => 0x3ffffff,
 			:i12_10_s1 => 0x1fff,
-			:s9_12 => 0x1ff, :u12_10 => 0xfff,
+			:s7_15 => 0x7f, :s9_12 => 0x1ff, :u12_10 => 0xfff,
+			:m_rn_s7  => ((0x7f << 10) | 0x1f),
 			:m_rn_s9  => ((0x1ff << 7) | 0x1f),
 			:m_rn_u12 => ((0xfff << 5) | 0x1f)
 
-		@fields_shift.update :rn => 5, :rt => 0,
+		@fields_shift.update :rn => 5, :rt => 0, :rt2 => 10,
 			:i14_5 => 5, :i16_5 => 5, :i26_0 => 0,
 			:i12_10_s1 => 10,
-			:s9_12 => 12, :u12_10 => 10,
-			:m_rn_s9 => 5, :m_rn_u12 => 5
+			:s7_15 => 15, :s9_12 => 12, :u12_10 => 10,
+			:m_rn_s7 => 5, :m_rn_s9 => 5, :m_rn_u12 => 5
 
 		addop_s31 'cbz',  0b0110100 << 24, :rt, :boff, :setip
 		addop_s31 'cbnz', 0b0110101 << 24, :rt, :boff, :setip
@@ -104,7 +105,11 @@ class ARM64
 
 		addop_s30 'ldr', (0b10_111_0_00_01_0 << 21) | (0b01 << 10), :rt, :m_rn_s9, :mem_incr => :post
 		addop_s30 'ldr', (0b10_111_0_00_01_0 << 21) | (0b11 << 10), :rt, :m_rn_s9, :mem_incr => :pre
-		addop_s30 'ldr', (0b10_111_0_01_01_0 << 21), :rt, :m_rn_u12
+		addop_s30 'ldr',  0b10_111_0_01_01_0 << 21, :rt, :m_rn_u12
+
+		addop_s31 'stp',  0b00_101_0_001_0 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :post
+		addop_s31 'stp',  0b00_101_0_011_0 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :pre
+		addop_s31 'stp',  0b00_101_0_010_0 << 22, :rt, :rt2, :m_rn_s7
 	end
 
 	alias init_latest init_arm_v8
