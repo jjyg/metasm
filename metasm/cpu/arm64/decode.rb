@@ -73,6 +73,8 @@ class ARM64
 				f = field_val[a]
 				f = (f & 0xfff) << 12 if (f >> 12) & 1 == 1
 				Expression[f]
+			when :i19_5_2_29
+				Expression.make_signed((field_val[:i19_5] << 2) | field_val[:i2_29], 21)
 			when :m_rn_s9, :m_rn_u12, :m_rn_s7
 				r = Reg.new(field_val[:rn], 64)
 				o = case a
@@ -94,6 +96,10 @@ class ARM64
 	def decode_instr_interpret(di, addr)
 		if di.opcode.props[:setip] and di.opcode.args[-1] == :i26_0
 			di.instruction.args[-1] = Expression[Expression[addr, :+, di.instruction.args[-1]].reduce]
+		elsif di.opcode.props[:pcrel]
+			di.instruction.args[-1] = Expression[Expression[addr, :+, di.instruction.args[-1]].reduce]
+		elsif di.opcode.props[:pcrel_page]
+			di.instruction.args[-1] = Expression[Expression[[addr, :&, ~0xfff], :+, [di.instruction.args[-1], :<<, 12]].reduce]
 		end
 		di
 	end

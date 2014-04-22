@@ -50,10 +50,13 @@ class ARM64
 		 :r_32,		# reg size == 32bit
 		 :mem_incr,	# mem dereference is pre/post-increment
 		 :mem_sz,	# point to uint32 => 4
+		 :pcrel,	# immediate value is pc-relative
+		 :pcrel_page,	# immediate value is a page offset, pc-relative
 		].each { |p| @valid_props[p] = true }
 
 		[:rn, :rt, :rt2,
 		 :i14_5, :i16_5, :i26_0, :i12_10_s1,
+		 :i19_5_2_29,
 		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
 		].each { |p| @valid_args[p] = true }
 
@@ -61,6 +64,8 @@ class ARM64
 			:i14_5 => 0x3fff, :i16_5 => 0xffff, :i26_0 => 0x3ffffff,
 			:i12_10_s1 => 0x1fff,
 			:s7_15 => 0x7f, :s9_12 => 0x1ff, :u12_10 => 0xfff,
+			:i19_5 => 0x7ffff, :i2_29 => 3,
+			:i19_5_2_29 => 0x60ffffe0,
 			:m_rn_s7  => ((0x7f << 10) | 0x1f),
 			:m_rn_s9  => ((0x1ff << 7) | 0x1f),
 			:m_rn_u12 => ((0xfff << 5) | 0x1f)
@@ -68,8 +73,13 @@ class ARM64
 		@fields_shift.update :rn => 5, :rt => 0, :rt2 => 10,
 			:i14_5 => 5, :i16_5 => 5, :i26_0 => 0,
 			:i12_10_s1 => 10,
+			:i19_5 => 5, :i2_29 => 29,
+			:i19_5_2_29 => 0,
 			:s7_15 => 15, :s9_12 => 12, :u12_10 => 10,
 			:m_rn_s7 => 5, :m_rn_s9 => 5, :m_rn_u12 => 5
+
+		addop 'adr',  1 << 28, :rt, :i19_5_2_29, :pcrel
+		addop 'adrp',(1 << 28) | (1 << 31), :rt, :i19_5_2_29, :pcrel_page
 
 		addop_s31 'cbz',  0b0110100 << 24, :rt, :boff, :setip
 		addop_s31 'cbnz', 0b0110101 << 24, :rt, :boff, :setip
@@ -104,13 +114,18 @@ class ARM64
 		addop_s31 'movz', (0b10100101 << 23), :rt, :i16_5
 		addop_s31 'movk', (0b11100101 << 23), :rt, :i16_5
 
+		addop_s30 'str', (0b10_111_0_00_00_0 << 21) | (0b01 << 10), :rt, :m_rn_s9, :mem_incr => :post
+		addop_s30 'str', (0b10_111_0_00_00_0 << 21) | (0b11 << 10), :rt, :m_rn_s9, :mem_incr => :pre
+		addop_s30 'str',  0b10_111_0_01_00 << 22, :rt, :m_rn_u12
 		addop_s30 'ldr', (0b10_111_0_00_01_0 << 21) | (0b01 << 10), :rt, :m_rn_s9, :mem_incr => :post
 		addop_s30 'ldr', (0b10_111_0_00_01_0 << 21) | (0b11 << 10), :rt, :m_rn_s9, :mem_incr => :pre
-		addop_s30 'ldr',  0b10_111_0_01_01_0 << 21, :rt, :m_rn_u12
-
+		addop_s30 'ldr',  0b10_111_0_01_01 << 22, :rt, :m_rn_u12
 		addop_s31 'stp',  0b00_101_0_001_0 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :post
 		addop_s31 'stp',  0b00_101_0_011_0 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :pre
 		addop_s31 'stp',  0b00_101_0_010_0 << 22, :rt, :rt2, :m_rn_s7
+		addop_s31 'ldp',  0b00_101_0_001_1 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :post
+		addop_s31 'ldp',  0b00_101_0_011_1 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :pre
+		addop_s31 'ldp',  0b00_101_0_010_1 << 22, :rt, :rt2, :m_rn_s7
 	end
 
 	alias init_latest init_arm_v8
