@@ -15,6 +15,7 @@ class ARM64
 		args.each { |a|
 			o.args << a if @valid_args[a]
 			o.props[a] = true if @valid_props[a]
+			o.props.update a if a.kind_of?(::Hash)
 		}
 
 		args.each { |a| o.fields[a] = [@fields_mask[a], @fields_shift[a]] if @fields_mask[a] }
@@ -53,7 +54,7 @@ class ARM64
 
 		[:rn, :rt, :rt2,
 		 :i14_5, :i16_5, :i26_0, :i12_10_s1,
-		 :m_rn_s9, :m_rn_u12,
+		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
 		].each { |p| @valid_args[p] = true }
 
 		@fields_mask.update :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f,
