@@ -25,12 +25,32 @@ class ARM64 < CPU
 		Sym = @i_to_s[64].inject({}) { |h, (k, v)| h.update k => v.to_sym }
 
 		def symbolic
-			# TODO LSL ?
 			if @sz == 64
 				Sym[@i]
 			else
 				Expression[Sym[@i], :&, 0xffffffff]
 			end
+		end
+	end
+
+	class RegShift
+		attr_accessor :reg, :mode, :shift
+		def initialize(reg, mode, shift)
+			@reg = reg
+			@mode = mode
+			@shift = shift
+		end
+
+		def symbolic
+			sym = @reg.symbolic
+			if shift != 0
+				case @mode
+				when :lsl; Expression[sym, :<<, shift]
+				when :lsr; Expression[sym, :>>, shift]
+				when :asr; Expression[sym, :>>, shift]	# signextend
+				end
+			end
+			sym
 		end
 	end
 

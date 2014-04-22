@@ -63,10 +63,19 @@ class ARM64
 
 		op.args.each { |a|
 			di.instruction.args << case a
-			when :rn, :rt, :rt2
+			when :rn, :rt, :rt2, :rm
 				nr = field_val[a]
 				nr = 32 if nr == 31 and op.props[:r_z]
 				Reg.new nr, (op.props[:r_32] ? 32 : 64)
+			when :rm_lsl_i6, :rm_lsr_i6, :rm_asr_i6, :rm_lsl_i5, :rm_lsr_i5, :rm_asr_i5
+				nr = field_val[:rm]
+				nr = 32 if nr == 31 and op.props[:r_z]
+				r = Reg.new nr, (op.props[:r_32] ? 32 : 64)
+				shift = field_val[:i6_10]
+				mode = { :rm_lsl_i6 => :lsl, :rm_lsl_i5 => :lsl,
+					 :rm_lsr_i6 => :lsr, :rm_lsr_i5 => :lsr,
+					 :rm_asr_i6 => :asr, :rm_asr_i5 => :asr }[a]
+				RegShift.new r, mode, shift
 			when :i16_5; Expression[field_val[a]]
 			when :i26_0; Expression[Expression.make_signed(field_val[a], 26) << 2]
 			when :i12_10_s1

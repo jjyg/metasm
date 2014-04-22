@@ -33,6 +33,15 @@ class ARM64
 		addop n, (1 << 30) | bin, *args
 	end
 
+	def addop_data_shifted(n, bin)
+		addop n, bin | (0b00 << 22), :rt, :rn, :rm_lsl_i6, :r_z
+		addop n, bin | (0b01 << 22), :rt, :rn, :rm_lsr_i6, :r_z
+		addop n, bin | (0b10 << 22), :rt, :rn, :rm_asr_i6, :r_z
+		addop n, bin | (0b00 << 22) | (1 << 31), :rt, :rn, :rm_lsl_i5, :r_32, :r_z
+		addop n, bin | (0b01 << 22) | (1 << 31), :rt, :rn, :rm_lsr_i5, :r_32, :r_z
+		addop n, bin | (0b10 << 22) | (1 << 31), :rt, :rn, :rm_asr_i5, :r_32, :r_z
+	end
+
 	def addop_cc(n, bin, *args)
 		%w[eq ne cs cc  mi pl vs vc  hi ls ge lt  gt le al al2].each_with_index { |e, i|
 			args << :stopexec if e == 'al' and args.include?(:setip)
@@ -46,7 +55,7 @@ class ARM64
 		@opcode_list = []
 
 		[:stopexec, :setip, :saveip,
-		 :r31_z,	# reg nr31 = flag ? zero : sp
+		 :r_z,		# reg nr31 = flag ? zero : sp
 		 :r_32,		# reg size == 32bit
 		 :mem_incr,	# mem dereference is pre/post-increment
 		 :mem_sz,	# point to uint32 => 4
@@ -54,15 +63,19 @@ class ARM64
 		 :pcrel_page,	# immediate value is a page offset, pc-relative
 		].each { |p| @valid_props[p] = true }
 
-		[:rn, :rt, :rt2,
+		[:rn, :rt, :rt2, :rm,
+		 :rm_lsl_i6, :rm_lsr_i6, :rm_asr_i6,
+		 :rm_lsl_i5, :rm_lsr_i5, :rm_asr_i5,
 		 :i14_5, :i16_5, :i26_0, :i12_10_s1,
 		 :i19_5_2_29,
 		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
 		].each { |p| @valid_args[p] = true }
 
-		@fields_mask.update :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f,
+		@fields_mask.update :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f, :rm => 0x1f,
+			:rm_lsl_i6 => 0x7ff, :rm_lsr_i6 => 0x7ff, :rm_asr_i6 => 0x7ff,
+			:rm_lsl_i5 => 0x7df, :rm_lsr_i5 => 0x7df, :rm_asr_i5 => 0x7df,
 			:i14_5 => 0x3fff, :i16_5 => 0xffff, :i26_0 => 0x3ffffff,
-			:i12_10_s1 => 0x1fff,
+			:i12_10_s1 => 0x1fff, :i6_10 => 0x3f,
 			:s7_15 => 0x7f, :s9_12 => 0x1ff, :u12_10 => 0xfff,
 			:i19_5 => 0x7ffff, :i2_29 => 3,
 			:i19_5_2_29 => 0x60ffffe0,
@@ -70,9 +83,11 @@ class ARM64
 			:m_rn_s9  => ((0x1ff << 7) | 0x1f),
 			:m_rn_u12 => ((0xfff << 5) | 0x1f)
 
-		@fields_shift.update :rn => 5, :rt => 0, :rt2 => 10,
+		@fields_shift.update :rn => 5, :rt => 0, :rt2 => 10, :rm => 16,
+			:rm_lsl_i6 => 10, :rm_lsr_i6 => 10, :rm_asr_i6 => 10,
+			:rm_lsl_i5 => 10, :rm_lsr_i5 => 10, :rm_asr_i5 => 10,
 			:i14_5 => 5, :i16_5 => 5, :i26_0 => 0,
-			:i12_10_s1 => 10,
+			:i12_10_s1 => 10, :i6_10 => 10,
 			:i19_5 => 5, :i2_29 => 29,
 			:i19_5_2_29 => 0,
 			:s7_15 => 15, :s9_12 => 12, :u12_10 => 10,
@@ -84,6 +99,19 @@ class ARM64
 		addop_s31 'cbz',  0b0110100 << 24, :rt, :boff, :setip
 		addop_s31 'cbnz', 0b0110101 << 24, :rt, :boff, :setip
 		addop_cc 'b', 0b0101010 << 25, :boff, :setip
+
+		addop_data_shifted 'and',  0b00_01010_00_0 << 21
+		addop_data_shifted 'andn', 0b00_01010_00_1 << 21	# and not, alias for bic
+		addop_data_shifted 'bic',  0b00_01010_00_1 << 21
+		addop_s31 'mov', (0b01_01010_00_0 << 21) | (0b11111 << 5), :rt, :rm, :r_z  	# alias for orr rt, 0, rm
+		addop_data_shifted 'or',   0b01_01010_00_0 << 21
+		addop_data_shifted 'orr',  0b01_01010_00_0 << 21	# alias for or
+		addop_data_shifted 'orn',  0b01_01010_00_1 << 21	# or not
+		addop_data_shifted 'xor',  0b10_01010_00_0 << 21	# alias for eor
+		addop_data_shifted 'eor',  0b10_01010_00_0 << 21
+		addop_data_shifted 'eorn', 0b10_01010_00_1 << 21
+		addop_data_shifted 'ands', 0b11_01010_00_0 << 21	# same as and + set flags
+		addop_data_shifted 'bics', 0b11_01010_00_1 << 21	# same as bic + set flags
 
 		addop 'svc',   (0b11010100 << 24) | (0b000 << 21) | (0b00001), :i16_5, :stopexec
 		addop 'hvc',   (0b11010100 << 24) | (0b000 << 21) | (0b00010), :i16_5, :stopexec

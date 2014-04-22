@@ -15,6 +15,21 @@ class ARM64
 		end
 	end
 
+	class RegShift
+		include Renderable
+		def render
+			if shift == 0
+				[@reg]
+			else
+				case @mode
+				when :lsl; [@reg, ' LSL ', Expression[shift]]
+				when :lsr; [@reg, ' LSR ', Expression[shift]]
+				when :asr; [@reg, ' ASR ', Expression[shift]]
+				end
+			end
+		end
+	end
+
 	class Memref
 		include Renderable
 		def render
