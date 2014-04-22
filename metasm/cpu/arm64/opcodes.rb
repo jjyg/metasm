@@ -66,7 +66,7 @@ class ARM64
 		[:rn, :rt, :rt2, :rm,
 		 :rm_lsl_i6, :rm_lsr_i6, :rm_asr_i6,
 		 :rm_lsl_i5, :rm_lsr_i5, :rm_asr_i5,
-		 :i14_5, :i16_5, :i26_0, :i12_10_s1,
+		 :i14_5, :i16_5, :i19_5, :i26_0, :i12_10_s1,
 		 :i19_5_2_29,
 		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
 		].each { |p| @valid_args[p] = true }
@@ -96,9 +96,9 @@ class ARM64
 		addop 'adr',  1 << 28, :rt, :i19_5_2_29, :pcrel
 		addop 'adrp',(1 << 28) | (1 << 31), :rt, :i19_5_2_29, :pcrel_page
 
-		addop_s31 'cbz',  0b0110100 << 24, :rt, :boff, :setip
-		addop_s31 'cbnz', 0b0110101 << 24, :rt, :boff, :setip
-		addop_cc 'b', 0b0101010 << 25, :boff, :setip
+		addop_s31 'cbz',  0b0110100 << 24, :rt, :i19_5, :setip
+		addop_s31 'cbnz', 0b0110101 << 24, :rt, :i19_5, :setip
+		addop_cc 'b', 0b0101010 << 25, :i19_5, :setip
 
 		addop_data_shifted 'and',  0b00_01010_00_0 << 21
 		addop_data_shifted 'andn', 0b00_01010_00_1 << 21	# and not, alias for bic

@@ -77,6 +77,7 @@ class ARM64
 					 :rm_asr_i6 => :asr, :rm_asr_i5 => :asr }[a]
 				RegShift.new r, mode, shift
 			when :i16_5; Expression[field_val[a]]
+			when :i19_5; Expression[Expression.make_signed(field_val[a], 19) << 2]
 			when :i26_0; Expression[Expression.make_signed(field_val[a], 26) << 2]
 			when :i12_10_s1
 				f = field_val[a]
@@ -103,7 +104,7 @@ class ARM64
 	end
 
 	def decode_instr_interpret(di, addr)
-		if di.opcode.props[:setip] and di.opcode.args[-1] == :i26_0
+		if di.opcode.props[:setip] and di.instruction.args.last.kind_of?(Expression)
 			di.instruction.args[-1] = Expression[Expression[addr, :+, di.instruction.args[-1]].reduce]
 		elsif di.opcode.props[:pcrel]
 			di.instruction.args[-1] = Expression[Expression[addr, :+, di.instruction.args[-1]].reduce]
