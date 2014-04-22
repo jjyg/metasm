@@ -18,12 +18,21 @@ class ARM64
 	class Memref
 		include Renderable
 		def render
-			o = @offset
-			o = Expression[o] if o.kind_of? Integer
+			o = Expression[@base]
+			if @index
+				i = @index
+				i = Expression[@scale, :*, @index] if @scale != 1
+				o = Expression[o, :+, i]
+			end
 			case @incr
-			when nil;   ['[', @base, ', ', o, ']']
-			when :pre;  ['[', @base, ', ', o, ']!']
-			when :post; ['[', @base, '], ', o]
+			when nil
+				o = Expression[o, :+, @offset] if @offset and @offset != 0 and @offset != Expression[0]
+				['[', o, ']']
+			when :pre
+				o = Expression[o, :+, @offset]
+				['[', o, ']!']
+			when :post
+				['[', o, '], ', @offset]
 			end
 		end
 	end

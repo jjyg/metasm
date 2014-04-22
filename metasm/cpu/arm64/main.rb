@@ -48,7 +48,8 @@ class ARM64 < CPU
 				o = Expression[o, :+, si]
 			end
 			o = Expression[o, :+, @offset] if @offset
-			Indirection[p, @sz, orig]
+			o = Expression[o, :+, @sz] if @incr == :pre
+			Indirection[o, @sz, orig]
 		end
 	end
 

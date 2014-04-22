@@ -73,7 +73,16 @@ class ARM64
 				f = field_val[a]
 				f = (f & 0xfff) << 12 if (f >> 12) & 1 == 1
 				Expression[f]
-			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
+			when :m_rn_s9, :m_rn_u12
+				r = Reg.new(field_val[:rn], 64)
+				o = case a
+				    when :m_rn_s9; Expression.make_signed(field_val[:s9_12], 9)
+				    when :m_rn_u12; field_val[:u12_10]
+				    else raise SyntaxError, "Internal error #{a.inspect} in #{op.name}"
+				    end
+				mem_sz = op.props[:mem_sz] || (op.props[:r_32] ? 4 : 8)
+				Memref.new(r, nil, nil, o, mem_sz, op.props[:mem_incr])
+			else raise SyntaxError, "Internal error: invalid argument #{a.inspect} in #{op.name}"
 			end
 		}
 
