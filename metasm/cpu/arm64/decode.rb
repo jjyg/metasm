@@ -64,11 +64,9 @@ class ARM64
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :rd, :rn, :rm, :rt
-				sz = 64
-				sz = 32 if op.fields[:sf] and field_val[:sf] == 0
 				nr = field_val[a]
 				nr = 32 if nr == 31 and op.props[:r_z]
-				Reg.new nr, sz
+				Reg.new nr, (op.props[:r_32] ? 32 : 64)
 			when :i16_5; Expression[field_val[a]]
 			when :i24_0; Expression[field_val[a]]
 			when :i12_10_s1
