@@ -26,7 +26,7 @@ class ARM64
 			end
 			case @incr
 			when nil
-				o = Expression[o, :+, @offset] if @offset and @offset != 0 and @offset != Expression[0]
+				o = Expression[o, :+, @offset] if @offset and @offset != Expression[0]
 				['[', o, ']']
 			when :pre
 				o = Expression[o, :+, @offset]

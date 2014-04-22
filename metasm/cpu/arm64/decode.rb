@@ -81,7 +81,7 @@ class ARM64
 				    else raise SyntaxError, "Internal error #{a.inspect} in #{op.name}"
 				    end
 				mem_sz = op.props[:mem_sz] || (op.props[:r_32] ? 4 : 8)
-				Memref.new(r, nil, nil, o, mem_sz, op.props[:mem_incr])
+				Memref.new(r, nil, nil, Expression[o*mem_sz], mem_sz, op.props[:mem_incr])
 			else raise SyntaxError, "Internal error: invalid argument #{a.inspect} in #{op.name}"
 			end
 		}
