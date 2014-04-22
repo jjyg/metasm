@@ -68,7 +68,7 @@ class ARM64
 				nr = 32 if nr == 31 and op.props[:r_z]
 				Reg.new nr, (op.props[:r_32] ? 32 : 64)
 			when :i16_5; Expression[field_val[a]]
-			when :i24_0; Expression[field_val[a]]
+			when :i26_0; Expression[Expression.make_signed(field_val[a], 26) << 2]
 			when :i12_10_s1
 				f = field_val[a]
 				f = (f & 0xfff) << 12 if (f >> 12) & 1 == 1
@@ -91,8 +91,8 @@ class ARM64
 	end
 
 	def decode_instr_interpret(di, addr)
-		if di.opcode.args[-1] == :i24
-			di.instruction.args[-1] = Expression[di.instruction.args[-1] + addr + 8]
+		if di.opcode.props[:setip] and di.opcode.args[-1] == :i26_0
+			di.instruction.args[-1] = Expression[Expression[addr, :+, di.instruction.args[-1]].reduce]
 		end
 		di
 	end
