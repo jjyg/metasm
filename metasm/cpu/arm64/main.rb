@@ -54,6 +54,16 @@ class ARM64 < CPU
 		end
 	end
 
+	class RegCC
+		attr_accessor :cc
+		def initialize(cc)
+			@cc = cc
+		end
+		def symbolic
+			0
+		end
+	end
+
 	class Memref
 		attr_accessor :base, :index, :scale, :offset, :sz, :incr
 		def initialize(base, index, scale, offset, sz, incr=nil)

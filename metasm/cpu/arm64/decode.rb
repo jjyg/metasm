@@ -139,6 +139,8 @@ class ARM64
 				    end
 				mem_sz = op.props[:mem_sz] || (op.props[:r_32] ? 4 : 8)
 				Memref.new(r, nil, nil, Expression[o*mem_sz], mem_sz, op.props[:mem_incr])
+			when :cond_12
+				RegCC.new OP_CC[field_val[a]]
 			else raise SyntaxError, "Internal error: invalid argument #{a.inspect} in #{op.name}"
 			end
 		}

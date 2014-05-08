@@ -37,6 +37,13 @@ class ARM64
 		end
 	end
 
+	class RegCC
+		include Renderable
+		def render
+			[@cc]
+		end
+	end
+
 	class Memref
 		include Renderable
 		def render

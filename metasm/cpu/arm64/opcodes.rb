@@ -70,8 +70,9 @@ class ARM64
 		addop_s30 n, bin | (1 << 24), :rt, :m_rn_u12
 	end
 
+	OP_CC = %w[eq ne cs cc  mi pl vs vc  hi ls ge lt  gt le al al2]
 	def addop_cc(n, bin, *args)
-		%w[eq ne cs cc  mi pl vs vc  hi ls ge lt  gt le al al2].each_with_index { |e, i|
+		OP_CC.each_with_index { |e, i|
 			args << :stopexec if e == 'al' and args.include?(:setip)
 			addop n+e, bin | i, *args
 		}
@@ -98,7 +99,7 @@ class ARM64
 		 :i14_5, :i16_5, :i19_5, :i26_0, :i12_10_s1,
 		 :i19_5_2_29,
 		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
-		 :bitmask_imm,
+		 :bitmask_imm, :cond_12,
 		].each { |p| @valid_args[p] = true }
 
 		@fields_mask.update :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f, :rm => 0x1f,
@@ -109,7 +110,7 @@ class ARM64
 			:i12_10_s1 => 0x3fff, :i6_10 => 0x3f,
 			:s7_15 => 0x7f, :s9_12 => 0x1ff, :u12_10 => 0xfff,
 			:i19_5 => 0x7ffff, :i2_29 => 3,
-			:i19_5_2_29 => 0x60ffffe0,
+			:i19_5_2_29 => 0x60ffffe0, :cond_12 => 0xf,
 			:bitmask_n => 1, :bitmask_s => 0x3f, :bitmask_r => 0x3f,
 			:regextend_13 => 7, :i1_12 => 1, :i3_10 => 7,
 			:m_rn_s7  => ((0x7f << 10) | 0x1f),
@@ -122,9 +123,9 @@ class ARM64
 			:m_rm_extend => 5, :rm_extend_i3 => 10,
 			:i14_5 => 5, :i16_5 => 5, :i26_0 => 0,
 			:i12_10_s1 => 10, :i6_10 => 10,
-			:i19_5 => 5, :i2_29 => 29,
-			:i19_5_2_29 => 0,
 			:s7_15 => 15, :s9_12 => 12, :u12_10 => 10,
+			:i19_5 => 5, :i2_29 => 29,
+			:i19_5_2_29 => 0, :cond_12 => 12,
 			:bitmask_n => 22, :bitmask_s => 10, :bitmask_r => 16,
 			:regextend_13 => 13, :i1_12 => 12, :i3_10 => 10,
 			:m_rn_s7 => 5, :m_rn_s9 => 5, :m_rn_u12 => 5
@@ -209,6 +210,11 @@ class ARM64
 		addop_s31 'ldp',  0b00_101_0_001_1 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :post
 		addop_s31 'ldp',  0b00_101_0_011_1 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :pre
 		addop_s31 'ldp',  0b00_101_0_010_1 << 22, :rt, :rt2, :m_rn_s7
+
+		addop_s31 'csel',  (0b0011010100 << 21) | (0b00 << 10), :rt, :rn, :rm, :cond_12, :r_z
+		addop_s31 'csinc', (0b0011010100 << 21) | (0b01 << 10), :rt, :rn, :rm, :cond_12, :r_z
+		addop_s31 'csinv', (0b1011010100 << 21) | (0b00 << 10), :rt, :rn, :rm, :cond_12, :r_z
+		addop_s31 'csneg', (0b1011010100 << 21) | (0b01 << 10), :rt, :rn, :rm, :cond_12, :r_z
 	end
 
 	alias init_latest init_arm_v8
