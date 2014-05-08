@@ -33,13 +33,13 @@ class ARM64
 		addop n, (1 << 30) | bin, *args
 	end
 
-	def addop_data_shifted(n, bin)
-		addop n, bin | (0b00 << 22), :rt, :rn, :rm_lsl_i6, :r_z
-		addop n, bin | (0b01 << 22), :rt, :rn, :rm_lsr_i6, :r_z
-		addop n, bin | (0b10 << 22), :rt, :rn, :rm_asr_i6, :r_z
-		addop n, bin | (0b00 << 22) | (1 << 31), :rt, :rn, :rm_lsl_i5, :r_32, :r_z
-		addop n, bin | (0b01 << 22) | (1 << 31), :rt, :rn, :rm_lsr_i5, :r_32, :r_z
-		addop n, bin | (0b10 << 22) | (1 << 31), :rt, :rn, :rm_asr_i5, :r_32, :r_z
+	def addop_data_shifted(n, bin, *args)
+		addop n, bin | (0b00 << 22), :rt, :rn, :rm_lsl_i6, :r_32, *args
+		addop n, bin | (0b01 << 22), :rt, :rn, :rm_lsr_i6, :r_32, *args
+		addop n, bin | (0b10 << 22), :rt, :rn, :rm_asr_i6, :r_32, *args
+		addop n, bin | (0b00 << 22) | (1 << 31), :rt, :rn, :rm_lsl_i5, *args
+		addop n, bin | (0b01 << 22) | (1 << 31), :rt, :rn, :rm_lsr_i5, *args
+		addop n, bin | (0b10 << 22) | (1 << 31), :rt, :rn, :rm_asr_i5, *args
 	end
 
 	def addop_data_imm(n, bin, *args)
@@ -49,18 +49,18 @@ class ARM64
 
 	# official name => usual name
 	OP_DATA_ALIAS = { 'bic' => 'andn', 'orr' => 'or', 'eor' => 'xor' }
-	def addop_data_shifted_alias(n, bin)
+	def addop_data_shifted_alias(n, bin, *args)
 		if a = OP_DATA_ALIAS[n]
-			addop_data_shifted(a, bin)
+			addop_data_shifted a, bin, *args
 		end
-		addop_data_shifted(n, bin)
+		addop_data_shifted n, bin, *args
 	end
 
 	def addop_data_imm_alias(n, bin, *args)
 		if a = OP_DATA_ALIAS[n]
-			addop_data_imm(a, bin)
+			addop_data_imm a, bin, *args
 		end
-		addop_data_imm(n, bin)
+		addop_data_imm n, bin, *args
 	end
 
 	def addop_cc(n, bin, *args)
@@ -97,7 +97,7 @@ class ARM64
 			:rm_lsl_i6 => 0x7ff, :rm_lsr_i6 => 0x7ff, :rm_asr_i6 => 0x7ff,
 			:rm_lsl_i5 => 0x7df, :rm_lsr_i5 => 0x7df, :rm_asr_i5 => 0x7df,
 			:i14_5 => 0x3fff, :i16_5 => 0xffff, :i26_0 => 0x3ffffff,
-			:i12_10_s1 => 0x1fff, :i6_10 => 0x3f,
+			:i12_10_s1 => 0x3fff, :i6_10 => 0x3f,
 			:s7_15 => 0x7f, :s9_12 => 0x1ff, :u12_10 => 0xfff,
 			:i19_5 => 0x7ffff, :i2_29 => 3,
 			:i19_5_2_29 => 0x60ffffe0,
@@ -131,15 +131,27 @@ class ARM64
 		addop_data_shifted_alias 'orn',  0b01_01010_00_1 << 21	# or not
 		addop_data_shifted_alias 'eor',  0b10_01010_00_0 << 21
 		addop_data_shifted_alias 'eorn', 0b10_01010_00_1 << 21
-		addop_data_shifted_alias 'ands', 0b11_01010_00_0 << 21	# same as and + set flags
-		addop_data_shifted_alias 'bics', 0b11_01010_00_1 << 21	# same as bic + set flags
+		addop_data_shifted_alias 'ands', 0b11_01010_00_0 << 21, :r_z	# same as and + set flags
+		addop_data_shifted_alias 'bics', 0b11_01010_00_1 << 21, :r_z	# same as bic + set flags
+
+		addop 'cmp', (0b11_01011_00_0 << 21) | (0b11111 << 0) | (0b00 << 22), :rn, :rm_lsl_i6, :r_32, :r_z # alias for subs 0, rn, rm
+		addop 'cmp', (0b11_01011_00_0 << 21) | (0b11111 << 0) | (0b01 << 22), :rn, :rm_lsr_i6, :r_32, :r_z
+		addop 'cmp', (0b11_01011_00_0 << 21) | (0b11111 << 0) | (0b10 << 22), :rn, :rm_asr_i6, :r_32, :r_z
+		addop 'cmp', (0b11_01011_00_0 << 21) | (0b11111 << 0) | (0b00 << 22) | (1 << 31), :rn, :rm_lsl_i5, :r_z
+		addop 'cmp', (0b11_01011_00_0 << 21) | (0b11111 << 0) | (0b01 << 22) | (1 << 31), :rn, :rm_lsr_i5, :r_z
+		addop 'cmp', (0b11_01011_00_0 << 21) | (0b11111 << 0) | (0b10 << 22) | (1 << 31), :rn, :rm_asr_i5, :r_z
+		addop_s31 'negs', (0b11_01011_00_0 << 21) | (0b11111 << 5), :rt, :rm, :r_z  	# alias for subs rt, 0, rm
+		addop_data_shifted_alias 'add', 0b00_01011_00_0 << 21
+		addop_data_shifted_alias 'adds',0b01_01011_00_0 << 21, :r_z
+		addop_data_shifted_alias 'sub', 0b10_01011_00_0 << 21
+		addop_data_shifted_alias 'subs',0b11_01011_00_0 << 21, :r_z
 
 		addop_data_imm_alias 'and', 0b00_100100 << 23
 		addop_data_imm_alias 'orr', 0b01_100100 << 23
 		addop_data_imm_alias 'eor', 0b10_100100 << 23
 		addop_data_imm_alias 'ands',0b11_100100 << 23, :r_z
 
-		addop 'svc',   (0b11010100 << 24) | (0b000 << 21) | (0b00001), :i16_5, :stopexec
+		addop 'svc',   (0b11010100 << 24) | (0b000 << 21) | (0b00001), :i16_5
 		addop 'hvc',   (0b11010100 << 24) | (0b000 << 21) | (0b00010), :i16_5, :stopexec
 		addop 'smc',   (0b11010100 << 24) | (0b000 << 21) | (0b00011), :i16_5, :stopexec
 		addop 'brk',   (0b11010100 << 24) | (0b001 << 21) | (0b00000), :i16_5, :stopexec
