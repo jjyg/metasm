@@ -18,14 +18,21 @@ class ARM64
 	class RegShift
 		include Renderable
 		def render
-			if shift == 0
-				[@reg]
-			else
-				case @mode
-				when :lsl; [@reg, ' LSL ', Expression[shift]]
-				when :lsr; [@reg, ' LSR ', Expression[shift]]
-				when :asr; [@reg, ' ASR ', Expression[shift]]
+			case @mode
+			when :lsl, :lsr, :asr
+				if shift == 0
+					[@reg]
+				else
+					case @mode
+					when :lsl; [@reg, ' LSL ', Expression[shift]]
+					when :lsr; [@reg, ' LSR ', Expression[shift]]
+					when :asr; [@reg, ' ASR ', Expression[shift]]
+					end
 				end
+			else
+				sh = []
+				sh << ' LSL ' << Expression[shift] if shift != 0
+				[ @mode.to_s, '( ', @reg, ' )', *sh ]
 			end
 		end
 	end

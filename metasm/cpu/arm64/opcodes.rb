@@ -87,6 +87,7 @@ class ARM64
 		[:rn, :rt, :rt2, :rm,
 		 :rm_lsl_i6, :rm_lsr_i6, :rm_asr_i6,
 		 :rm_lsl_i5, :rm_lsr_i5, :rm_asr_i5,
+		 :rm_extend_i3,
 		 :i14_5, :i16_5, :i19_5, :i26_0, :i12_10_s1,
 		 :i19_5_2_29,
 		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
@@ -96,12 +97,14 @@ class ARM64
 		@fields_mask.update :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f, :rm => 0x1f,
 			:rm_lsl_i6 => 0x7ff, :rm_lsr_i6 => 0x7ff, :rm_asr_i6 => 0x7ff,
 			:rm_lsl_i5 => 0x7df, :rm_lsr_i5 => 0x7df, :rm_asr_i5 => 0x7df,
+			:rm_extend_i3 => 0x7ff,
 			:i14_5 => 0x3fff, :i16_5 => 0xffff, :i26_0 => 0x3ffffff,
 			:i12_10_s1 => 0x3fff, :i6_10 => 0x3f,
 			:s7_15 => 0x7f, :s9_12 => 0x1ff, :u12_10 => 0xfff,
 			:i19_5 => 0x7ffff, :i2_29 => 3,
 			:i19_5_2_29 => 0x60ffffe0,
 			:bitmask_n => 1, :bitmask_s => 0x3f, :bitmask_r => 0x3f,
+			:regextend_13 => 7, :i3_10 => 7,
 			:m_rn_s7  => ((0x7f << 10) | 0x1f),
 			:m_rn_s9  => ((0x1ff << 7) | 0x1f),
 			:m_rn_u12 => ((0xfff << 5) | 0x1f)
@@ -109,12 +112,14 @@ class ARM64
 		@fields_shift.update :rn => 5, :rt => 0, :rt2 => 10, :rm => 16,
 			:rm_lsl_i6 => 10, :rm_lsr_i6 => 10, :rm_asr_i6 => 10,
 			:rm_lsl_i5 => 10, :rm_lsr_i5 => 10, :rm_asr_i5 => 10,
+			:rm_extend_i3 => 10,
 			:i14_5 => 5, :i16_5 => 5, :i26_0 => 0,
 			:i12_10_s1 => 10, :i6_10 => 10,
 			:i19_5 => 5, :i2_29 => 29,
 			:i19_5_2_29 => 0,
 			:s7_15 => 15, :s9_12 => 12, :u12_10 => 10,
 			:bitmask_n => 22, :bitmask_s => 10, :bitmask_r => 16,
+			:regextend_13 => 13, :i3_10 => 10,
 			:m_rn_s7 => 5, :m_rn_s9 => 5, :m_rn_u12 => 5
 
 		addop 'adr',  1 << 28, :rt, :i19_5_2_29, :pcrel
@@ -145,6 +150,11 @@ class ARM64
 		addop_data_shifted_alias 'adds',0b01_01011_00_0 << 21, :r_z
 		addop_data_shifted_alias 'sub', 0b10_01011_00_0 << 21
 		addop_data_shifted_alias 'subs',0b11_01011_00_0 << 21, :r_z
+
+		addop_s31 'add', 0b00_01011_00_1 << 21, :rt, :rn, :rm_extend_i3
+		addop_s31 'adds',0b01_01011_00_1 << 21, :rt, :rn, :rm_extend_i3
+		addop_s31 'sub', 0b10_01011_00_1 << 21, :rt, :rn, :rm_extend_i3
+		addop_s31 'subs',0b11_01011_00_1 << 21, :rt, :rn, :rm_extend_i3
 
 		addop_data_imm_alias 'and', 0b00_100100 << 23
 		addop_data_imm_alias 'orr', 0b01_100100 << 23

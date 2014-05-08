@@ -76,6 +76,14 @@ class ARM64
 					 :rm_lsr_i6 => :lsr, :rm_lsr_i5 => :lsr,
 					 :rm_asr_i6 => :asr, :rm_asr_i5 => :asr }[a]
 				RegShift.new r, mode, shift
+			when :rm_extend_i3
+				nr = field_val[:rm]
+				nr = 32 if nr == 31 and op.props[:r_z]
+				r = Reg.new nr, (op.props[:r_32] ? 32 : 64)
+				shift = field_val[:i3_10]
+				x = field_val[:regextend_13]
+				mode = [ :uxtb, :uxth, :uxtw, :uxtx, :sxtb, :sxth, :sxtw, :sxtx ][x]
+				RegShift.new r, mode, shift
 			when :i16_5; Expression[field_val[a]]
 			when :i19_5; Expression[Expression.make_signed(field_val[a], 19) << 2]
 			when :i26_0; Expression[Expression.make_signed(field_val[a], 26) << 2]
