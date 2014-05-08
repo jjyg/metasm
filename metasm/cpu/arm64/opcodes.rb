@@ -47,6 +47,11 @@ class ARM64
 		addop n, bin | (1 << 31), :rt, :rn, :bitmask_imm, :bitmask_n, :bitmask_s, :bitmask_r,  *args
 	end
 
+	def addop_bitfield(n, bin, *args)
+		addop n, bin, :rt, :rn, :bitmask, :bitmask_s, :bitmask_r, *args
+		addop n, bin | (1 << 31) | (1 << 22), :rt, :rn, :bitmask, :bitmask_s, :bitmask_r,  *args
+	end
+
 	# official name => usual name
 	OP_DATA_ALIAS = { 'bic' => 'andn', 'orr' => 'or', 'eor' => 'xor' }
 	def addop_data_shifted_alias(n, bin, *args)
@@ -99,7 +104,7 @@ class ARM64
 		 :i14_5, :i16_5, :i19_5, :i26_0, :i12_10_s1,
 		 :i19_5_2_29,
 		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
-		 :bitmask_imm, :cond_12,
+		 :bitmask, :bitmask_imm, :cond_12,
 		].each { |p| @valid_args[p] = true }
 
 		@fields_mask.update :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f, :rm => 0x1f,
@@ -215,6 +220,10 @@ class ARM64
 		addop_s31 'csinc', (0b0011010100 << 21) | (0b01 << 10), :rt, :rn, :rm, :cond_12, :r_z
 		addop_s31 'csinv', (0b1011010100 << 21) | (0b00 << 10), :rt, :rn, :rm, :cond_12, :r_z
 		addop_s31 'csneg', (0b1011010100 << 21) | (0b01 << 10), :rt, :rn, :rm, :cond_12, :r_z
+
+		addop_bitfield 'sbfm', 0b00_100110 << 23
+		addop_bitfield 'bfm',  0b01_100110 << 23
+		addop_bitfield 'ubfm', 0b10_100110 << 23
 	end
 
 	alias init_latest init_arm_v8

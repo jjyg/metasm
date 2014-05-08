@@ -105,7 +105,7 @@ class ARM64
 				Expression[f]
 			when :i19_5_2_29
 				Expression.make_signed((field_val[:i19_5] << 2) | field_val[:i2_29], 21)
-			when :bitmask_imm
+			when :bitmask, :bitmask_imm
 				n = field_val[:bitmask_n]
 				s = field_val[:bitmask_s]
 				r = field_val[:bitmask_r]
