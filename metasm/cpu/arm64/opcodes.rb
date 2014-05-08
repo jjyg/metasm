@@ -63,6 +63,13 @@ class ARM64
 		addop_data_imm n, bin, *args
 	end
 
+	def addop_store(n, bin, *args)
+		addop_s30 n, bin | (0b01 << 10), :rt, :m_rn_s9, :mem_incr => :post
+		addop_s30 n, bin | (0b11 << 10), :rt, :m_rn_s9, :mem_incr => :pre
+		addop_s30 n, bin | (1 << 21) | (0b10 << 10) | (1 << 14), :rt, :m_rm_extend
+		addop_s30 n, bin | (1 << 24), :rt, :m_rn_u12
+	end
+
 	def addop_cc(n, bin, *args)
 		%w[eq ne cs cc  mi pl vs vc  hi ls ge lt  gt le al al2].each_with_index { |e, i|
 			args << :stopexec if e == 'al' and args.include?(:setip)
@@ -191,20 +198,11 @@ class ARM64
 		addop_s31 'movz', (0b10100101 << 23), :rt, :i16_5
 		addop_s31 'movk', (0b11100101 << 23), :rt, :i16_5
 
-		addop_s30 'str', (0b10_111_0_00_00_0 << 21) | (0b01 << 10), :rt, :m_rn_s9, :mem_incr => :post
-		addop_s30 'str', (0b10_111_0_00_00_0 << 21) | (0b11 << 10), :rt, :m_rn_s9, :mem_incr => :pre
-		addop_s30 'str',  0b10_111_0_01_00 << 22, :rt, :m_rn_u12
-		addop_s30 'ldr', (0b10_111_0_00_01_0 << 21) | (0b01 << 10), :rt, :m_rn_s9, :mem_incr => :post
-		addop_s30 'ldr', (0b10_111_0_00_01_0 << 21) | (0b11 << 10), :rt, :m_rn_s9, :mem_incr => :pre
-		addop_s30 'ldr',  0b10_111_0_01_01 << 22, :rt, :m_rn_u12
-		addop_s30 'strb',(0b00_111_0_00_00_0 << 21) | (0b01 << 10), :rt, :m_rn_s9, :mem_incr => :post
-		addop_s30 'strb',(0b00_111_0_00_00_0 << 21) | (0b11 << 10), :rt, :m_rn_s9, :mem_incr => :pre
-		addop_s30 'strb',(0b00_111_0_00_00_1 << 21) | (0b10 << 10) | (1 << 14), :rt, :m_rm_extend
-		addop_s30 'strb', 0b00_111_0_01_00 << 22, :rt, :m_rn_u12
-		addop_s30 'ldrb',(0b00_111_0_00_01_0 << 21) | (0b01 << 10), :rt, :m_rn_s9, :mem_incr => :post
-		addop_s30 'ldrb',(0b00_111_0_00_01_0 << 21) | (0b11 << 10), :rt, :m_rn_s9, :mem_incr => :pre
-		addop_s30 'ldrb',(0b00_111_0_00_01_1 << 21) | (0b10 << 10) | (1 << 14), :rt, :m_rm_extend
-		addop_s30 'ldrb', 0b00_111_0_01_01 << 22, :rt, :m_rn_u12
+		addop_store 'str',   (0b10_111_0_00_00 << 22)
+		addop_store 'ldr',   (0b10_111_0_00_01 << 22)
+		addop_store 'ldrsw', (0b10_111_0_00_10 << 22)
+		addop_store 'strb',  (0b00_111_0_00_00 << 22)
+		addop_store 'ldrb',  (0b00_111_0_00_01 << 22)
 		addop_s31 'stp',  0b00_101_0_001_0 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :post
 		addop_s31 'stp',  0b00_101_0_011_0 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :pre
 		addop_s31 'stp',  0b00_101_0_010_0 << 22, :rt, :rt2, :m_rn_s7
