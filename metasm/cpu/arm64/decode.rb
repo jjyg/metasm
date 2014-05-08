@@ -171,7 +171,15 @@ class ARM64
 
 	def get_xrefs_x(dasm, di)
 		if di.opcode.props[:setip]
-			[di.instruction.args.last]
+			tg = di.instruction.args.last
+			case tg
+			when nil
+				raise 'internal error: no jmp target' if di.opcode.name != 'ret'
+				tg = :x30
+			when Expression
+			else tg = tg.symbolic
+			end
+			[tg]
 		else
 			# TODO ldr pc, ..
 			[]

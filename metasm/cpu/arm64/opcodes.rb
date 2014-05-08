@@ -164,11 +164,12 @@ class ARM64
 
 		addop 'b',   (0b000101 << 26), :i26_0, :setip, :stopexec
 		addop 'bl',  (0b100101 << 26), :i26_0, :setip, :stopexec, :saveip
-		addop 'br',  (0b1101011 << 25) | (0b0000 << 21) | (0b1111 << 16), :rn, :setip, :stopexec
-		addop 'blr', (0b1101011 << 25) | (0b0001 << 21) | (0b1111 << 16), :rn, :setip, :stopexec
-		addop 'ret', (0b1101011 << 25) | (0b0010 << 21) | (0b1111 << 16), :rn, :setip, :stopexec
-		addop 'eret',(0b1101011 << 25) | (0b0100 << 21) | (0b1111 << 16) | (0b11111 << 5), :setip, :stopexec
-		addop 'drps',(0b1101011 << 25) | (0b0101 << 21) | (0b1111 << 16) | (0b11111 << 5), :setip, :stopexec
+		addop 'br',  (0b1101011 << 25) | (0b0000 << 21) | (0b11111 << 16), :rn, :setip, :stopexec
+		addop 'blr', (0b1101011 << 25) | (0b0001 << 21) | (0b11111 << 16), :rn, :setip, :stopexec
+		addop 'ret', (0b1101011 << 25) | (0b0010 << 21) | (0b11111 << 16) | (0b11110 << 5), :setip, :stopexec
+		addop 'ret', (0b1101011 << 25) | (0b0010 << 21) | (0b11111 << 16), :rn, :setip, :stopexec
+		addop 'eret',(0b1101011 << 25) | (0b0100 << 21) | (0b11111 << 16) | (0b11111 << 5), :setip, :stopexec
+		addop 'drps',(0b1101011 << 25) | (0b0101 << 21) | (0b11111 << 16) | (0b11111 << 5), :setip, :stopexec
 
 		addop_s31 'mov',  (0b0010001 << 24), :rt, :rn			# alias for add rt, rn, 0
 		addop_s31 'add',  (0b0010001 << 24), :rt, :rn, :i12_10_s1
