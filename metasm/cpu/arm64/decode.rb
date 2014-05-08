@@ -85,6 +85,30 @@ class ARM64
 				Expression[f]
 			when :i19_5_2_29
 				Expression.make_signed((field_val[:i19_5] << 2) | field_val[:i2_29], 21)
+			when :bitmask_imm
+				n = field_val[:bitmask_n]
+				s = field_val[:bitmask_s]
+				r = field_val[:bitmask_r]
+				# highestsetbit stuff
+				levels = ((n << 6) | (s ^ 0x3f)) >> 1
+				levels = levels | (levels >> 1)
+				levels = levels | (levels >> 2)
+				levels = levels | (levels >> 4)
+				esize = levels + 1
+				s &= levels
+				r &= levels
+				welem = (1 << (s+1)) - 1
+				# ROR(welem, r)
+				wmask = ((welem >> (r % esize)) | (welem << (esize - (r % esize))))
+				wmask &= (1 << esize) - 1
+				# duplicate(wmask, sz)
+				while esize < 64
+					wmask |= wmask << esize
+					esize *= 2
+				end
+				wmask &= (1 << di.instruction.args[0].sz) - 1
+				Expression[wmask]
+
 			when :m_rn_s9, :m_rn_u12, :m_rn_s7
 				r = Reg.new(field_val[:rn], 64)
 				o = case a

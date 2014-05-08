@@ -42,6 +42,27 @@ class ARM64
 		addop n, bin | (0b10 << 22) | (1 << 31), :rt, :rn, :rm_asr_i5, :r_32, :r_z
 	end
 
+	def addop_data_imm(n, bin, *args)
+		addop n, bin, :rt, :rn, :bitmask_imm, :bitmask_s, :bitmask_r, *args
+		addop n, bin | (1 << 31), :rt, :rn, :bitmask_imm, :bitmask_n, :bitmask_s, :bitmask_r,  *args
+	end
+
+	# official name => usual name
+	OP_DATA_ALIAS = { 'bic' => 'andn', 'orr' => 'or', 'eor' => 'xor' }
+	def addop_data_shifted_alias(n, bin)
+		if a = OP_DATA_ALIAS[n]
+			addop_data_shifted(a, bin)
+		end
+		addop_data_shifted(n, bin)
+	end
+
+	def addop_data_imm_alias(n, bin, *args)
+		if a = OP_DATA_ALIAS[n]
+			addop_data_imm(a, bin)
+		end
+		addop_data_imm(n, bin)
+	end
+
 	def addop_cc(n, bin, *args)
 		%w[eq ne cs cc  mi pl vs vc  hi ls ge lt  gt le al al2].each_with_index { |e, i|
 			args << :stopexec if e == 'al' and args.include?(:setip)
@@ -69,6 +90,7 @@ class ARM64
 		 :i14_5, :i16_5, :i19_5, :i26_0, :i12_10_s1,
 		 :i19_5_2_29,
 		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
+		 :bitmask_imm,
 		].each { |p| @valid_args[p] = true }
 
 		@fields_mask.update :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f, :rm => 0x1f,
@@ -79,6 +101,7 @@ class ARM64
 			:s7_15 => 0x7f, :s9_12 => 0x1ff, :u12_10 => 0xfff,
 			:i19_5 => 0x7ffff, :i2_29 => 3,
 			:i19_5_2_29 => 0x60ffffe0,
+			:bitmask_n => 1, :bitmask_s => 0x3f, :bitmask_r => 0x3f,
 			:m_rn_s7  => ((0x7f << 10) | 0x1f),
 			:m_rn_s9  => ((0x1ff << 7) | 0x1f),
 			:m_rn_u12 => ((0xfff << 5) | 0x1f)
@@ -91,6 +114,7 @@ class ARM64
 			:i19_5 => 5, :i2_29 => 29,
 			:i19_5_2_29 => 0,
 			:s7_15 => 15, :s9_12 => 12, :u12_10 => 10,
+			:bitmask_n => 22, :bitmask_s => 10, :bitmask_r => 16,
 			:m_rn_s7 => 5, :m_rn_s9 => 5, :m_rn_u12 => 5
 
 		addop 'adr',  1 << 28, :rt, :i19_5_2_29, :pcrel
@@ -100,18 +124,20 @@ class ARM64
 		addop_s31 'cbnz', 0b0110101 << 24, :rt, :i19_5, :setip
 		addop_cc 'b', 0b0101010 << 25, :i19_5, :setip
 
-		addop_data_shifted 'and',  0b00_01010_00_0 << 21
-		addop_data_shifted 'andn', 0b00_01010_00_1 << 21	# and not, alias for bic
-		addop_data_shifted 'bic',  0b00_01010_00_1 << 21
 		addop_s31 'mov', (0b01_01010_00_0 << 21) | (0b11111 << 5), :rt, :rm, :r_z  	# alias for orr rt, 0, rm
-		addop_data_shifted 'or',   0b01_01010_00_0 << 21
-		addop_data_shifted 'orr',  0b01_01010_00_0 << 21	# alias for or
-		addop_data_shifted 'orn',  0b01_01010_00_1 << 21	# or not
-		addop_data_shifted 'xor',  0b10_01010_00_0 << 21	# alias for eor
-		addop_data_shifted 'eor',  0b10_01010_00_0 << 21
-		addop_data_shifted 'eorn', 0b10_01010_00_1 << 21
-		addop_data_shifted 'ands', 0b11_01010_00_0 << 21	# same as and + set flags
-		addop_data_shifted 'bics', 0b11_01010_00_1 << 21	# same as bic + set flags
+		addop_data_shifted_alias 'and',  0b00_01010_00_0 << 21
+		addop_data_shifted_alias 'bic',  0b00_01010_00_1 << 21	# and not
+		addop_data_shifted_alias 'orr',  0b01_01010_00_0 << 21
+		addop_data_shifted_alias 'orn',  0b01_01010_00_1 << 21	# or not
+		addop_data_shifted_alias 'eor',  0b10_01010_00_0 << 21
+		addop_data_shifted_alias 'eorn', 0b10_01010_00_1 << 21
+		addop_data_shifted_alias 'ands', 0b11_01010_00_0 << 21	# same as and + set flags
+		addop_data_shifted_alias 'bics', 0b11_01010_00_1 << 21	# same as bic + set flags
+
+		addop_data_imm_alias 'and', 0b00_100100 << 23
+		addop_data_imm_alias 'orr', 0b01_100100 << 23
+		addop_data_imm_alias 'eor', 0b10_100100 << 23
+		addop_data_imm_alias 'ands',0b11_100100 << 23, :r_z
 
 		addop 'svc',   (0b11010100 << 24) | (0b000 << 21) | (0b00001), :i16_5, :stopexec
 		addop 'hvc',   (0b11010100 << 24) | (0b000 << 21) | (0b00010), :i16_5, :stopexec
@@ -132,7 +158,7 @@ class ARM64
 		addop 'eret',(0b1101011 << 25) | (0b0100 << 21) | (0b1111 << 16) | (0b11111 << 5), :setip, :stopexec
 		addop 'drps',(0b1101011 << 25) | (0b0101 << 21) | (0b1111 << 16) | (0b11111 << 5), :setip, :stopexec
 
-		addop_s31 'mov',  (0b0010001 << 24), :rt, :rn			# add a, b, 0 alias mov a, b
+		addop_s31 'mov',  (0b0010001 << 24), :rt, :rn			# alias for add rt, rn, 0
 		addop_s31 'add',  (0b0010001 << 24), :rt, :rn, :i12_10_s1
 		addop_s31 'adds', (0b0110001 << 24), :rt, :rn, :i12_10_s1
 		addop_s31 'sub',  (0b1010001 << 24), :rt, :rn, :i12_10_s1
