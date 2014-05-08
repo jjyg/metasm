@@ -76,14 +76,26 @@ class ARM64
 					 :rm_lsr_i6 => :lsr, :rm_lsr_i5 => :lsr,
 					 :rm_asr_i6 => :asr, :rm_asr_i5 => :asr }[a]
 				RegShift.new r, mode, shift
-			when :rm_extend_i3
+			when :m_rm_extend, :rm_extend_i3
 				nr = field_val[:rm]
-				nr = 32 if nr == 31 and op.props[:r_z]
-				r = Reg.new nr, (op.props[:r_32] ? 32 : 64)
-				shift = field_val[:i3_10]
+				nr = 32 if nr == 31
 				x = field_val[:regextend_13]
-				mode = [ :uxtb, :uxth, :uxtw, :uxtx, :sxtb, :sxth, :sxtw, :sxtx ][x]
-				RegShift.new r, mode, shift
+				case a
+				when :m_rm_extend
+					shift = 0	# field_val[:i1_12] -- bug in arm doc ?
+					mode = [ :resv000, :resv001, :uxtw, :lsl, :resv100, :resv101, :sxtw, :sxtx ][x]
+					rm = RegShift.new Reg.new(nr, 64), mode, shift
+
+					rn = Reg.new field_val[:rn], 64
+
+					mem_sz = op.props[:mem_sz] || (op.props[:r_32] ? 4 : 8)
+					Memref.new(rn, rm, 1, nil, mem_sz)
+				when :rm_extend_i3
+					r = Reg.new nr, (op.props[:r_32] ? 32 : 64)
+					shift = field_val[:i3_10]
+					mode = [ :uxtb, :uxth, :uxtw, :uxtx, :sxtb, :sxth, :sxtw, :sxtx ][x]
+					RegShift.new r, mode, shift
+				end
 			when :i16_5; Expression[field_val[a]]
 			when :i19_5; Expression[Expression.make_signed(field_val[a], 19) << 2]
 			when :i26_0; Expression[Expression.make_signed(field_val[a], 26) << 2]
