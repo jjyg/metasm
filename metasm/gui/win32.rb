@@ -2798,7 +2798,7 @@ class LBoxWidget < DrawableWidget
 	def initial_size
 		@colw = @colwmax.map { |w| (w+1) * @font_width }
 		allw = @colw.inject(0) { |a, i| a+i }
-		[[allw, 80*@font_width].min, [@list.length+1, 30].min * @font_height+2]
+		[[allw+@font_width, 80*@font_width].min, [@list.length+2, 30].min * @font_height+2]
 	end
 
 	def resized(w, h)
