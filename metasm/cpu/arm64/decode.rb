@@ -166,12 +166,45 @@ class ARM64
 
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
+
+		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
+			binding = case op
+			when 'mov', 'adr', 'adrp'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'movz'; lambda { |di, a0, a1| { a0 => Expression[a1] } }	# TODO
+			when 'movn'; lambda { |di, a0, a1| { a0 => Expression[:~, a1] } }	# TODO check
+			when 'and', 'ands', 'orr', 'or', 'eor', 'xor'
+				bin_op = { 'and' => :&, 'ands' => :&, 'orr' => :|,
+					'or' => :|, 'eor' => :^, 'xor' => :^ }[op]
+				lambda { |di, a0, a1, a2| { a0 => Expression[ a1, bin_op, a2 ] } }
+			when 'orn', 'eorn', 'bic', 'bics', 'andn'
+				bin_op = { 'orn' => :|, 'eorn' => :^, 'andn' => :&, 'bic' => :&, 'bics' => :& }[op]
+				lambda { |di, a0, a1, a2| { a0 => Expression[ a1, bin_op, [ :~, a2 ] ] } }
+			when 'add', 'adds', 'sub', 'subs'
+				bin_op = { 'add' => :+, 'adds' => :+, 'sub' => :-, 'subs' => :- }[op]
+				lambda { |di, a0, a1, a2| { a0 => Expression[ a1, bin_op, a2 ] } }
+			when 'ldr', 'ldrb', 'ldrsw'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'str', 'strb', 'strsw'; lambda { |di, a0, a1| { a1 => Expression[a0] } }
+			when 'stp'; lambda { |di, a0, a1, a2| ptr = a2.target
+				{ Indirection[ptr, 8] => Expression[a0], Indirection[[ptr, :+, 8], 8] => Expression[a1] } }
+			when 'ldp'; lambda { |di, a0, a1, a2| ptr = a2.target
+				{ a0 => Indirection[ptr, 8], a1 => Indirection[[ptr, :+, 8], 8] } }
+			when 'ret'; lambda { |di, *a| aa = a[0] || :r30 ; { aa => Expression[aa, :+, 8] } }
+			when 'bl', 'blr'; lambda { |di, *a| { :sp => Expression[:sp, :-, 8], Indirection[[:sp, :-, 8], 8] => Expression[di.next_addr] } }
+			when 'cbz', 'cbnz', 'cmp', /^b/; lambda { |di, *a| {} }
+			end
+
+			# TODO pre/post-increment memref ptrs
+
+			@backtrace_binding[op] ||= binding
+		}
+
+		@backtrace_binding
 	end
 
 	def get_backtrace_binding(di)
 		a = di.instruction.args.map { |arg|
 			case arg
-			when Reg; arg.symbolic
+			when Reg, RegShift, RegCC; arg.symbolic
 			when Memref; arg.symbolic(di.address)
 			else arg
 			end
@@ -206,6 +239,10 @@ class ARM64
 			# TODO ldr pc, ..
 			[]
 		end
+	end
+
+	def backtrace_is_stack_address(expr)
+		Expression[expr].expr_externals.include? :sp
 	end
 end
 end
