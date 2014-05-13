@@ -71,9 +71,9 @@ class ARM64 < CPU
 		end
 
 		def symbolic(orig=nil)
-			o = Expression[@base]
+			o = @base.symbolic
 			if @index
-				si = @index
+				si = @index.symbolic
 				si = Expression[@scale, :*, @index] if @scale != 1
 				o = Expression[o, :+, si]
 			end
