@@ -185,15 +185,15 @@ class ARM64
 			when 'ldr', 'ldrb', 'ldrsw'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'str', 'strb', 'strsw'; lambda { |di, a0, a1| { a1 => Expression[a0] } }
 			when 'stp'; lambda { |di, a0, a1, a2| ptr = a2.target
-				{ Indirection[ptr, 8] => Expression[a0], Indirection[[ptr, :+, 8], 8] => Expression[a1] } }
+				{ Indirection[ptr, 8] => Expression[a0], Indirection[Expression[ptr, :+, 8].reduce, 8] => Expression[a1] } }
 			when 'ldp'; lambda { |di, a0, a1, a2| ptr = a2.target
-				{ a0 => Indirection[ptr, 8], a1 => Indirection[[ptr, :+, 8], 8] } }
-			when 'ret'; lambda { |di, *a| aa = a[0] || :r30 ; { aa => Expression[aa, :+, 8] } }
-			when 'bl', 'blr'; lambda { |di, *a| { :sp => Expression[:sp, :-, 8], Indirection[[:sp, :-, 8], 8] => Expression[di.next_addr] } }
+				{ a0 => Indirection[ptr, 8], a1 => Indirection[Expression[ptr, :+, 8].reduce, 8] } }
+			when 'ret'; lambda { |di, *a| { } }
+			when 'bl', 'blr'; lambda { |di, *a| { :x30 => Expression[di.next_addr] } }
 			when 'cbz', 'cbnz', 'cmp', /^b/; lambda { |di, *a| {} }
 			end
 
-			# TODO pre/post-increment memref ptrs
+			# pre/post-increment memref done in def get_backtrace_binding(di)
 
 			@backtrace_binding[op] ||= binding
 		}
@@ -211,7 +211,39 @@ class ARM64
 		}
 
 		if binding = backtrace_binding[di.opcode.name]
-			binding[di, *a]
+			bd = binding[di, *a] || {}
+
+			# handle pre-increment / post-increment memrefs
+			di.instruction.args.grep(Memref).each { |m|
+				next unless r = m.base and r.kind_of?(Reg)
+				case m.incr
+				when :pre
+					# for di "str x1, [sp+10]!" ; bt_bind should be { sp += 10, [sp] = x1 } but memref.symbolic returns [sp+10]
+					# eg: str x30, [sp-20]! ; ldr x30, [sp], 20 ; ret  should backtrace as  x30 -> [sp] -!> x30
+					rs = r.symbolic
+					bd.dup.each_key { |k|
+						if k.kind_of?(Indirection)
+							bd[Indirection[k.target.bind(rs => Expression[rs, :-, m.offset]).reduce, k.len, k.origin]] = bd.delete(k)
+						end
+					}
+					bd[rs] ||= Expression[rs, :+, m.offset]
+				when :post
+					bd[r.symbolic] ||= Expression[r.symbolic, :+, m.offset]
+				end
+			}
+
+			# handle subregisters (x30 -> w30)
+			bd.keys.grep(Expression).each { |e|
+				# must be Expression[reg, :&, 0xffff_ffff]
+				if e.op == :& and e.rexpr == 0xffff_ffff
+					reg = e.lexpr
+					next if not reg.kind_of? Symbol
+					val = bd.delete e
+					bd[reg] = Expression[[reg, :&, 0xffff_ffff_0000_0000], :|, [val, :&, 0xffff_ffff]]
+				end
+			}
+
+			bd
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
 			# assume nothing except the 1st arg is modified
@@ -221,7 +253,6 @@ class ARM64
 			else {}
 			end.update(:incomplete_binding => Expression[1])
 		end
-
 	end
 
 	def get_xrefs_x(dasm, di)
@@ -239,6 +270,10 @@ class ARM64
 			# TODO ldr pc, ..
 			[]
 		end
+	end
+
+	def backtrace_is_function_return(expr, di=nil)
+		expr.reduce_rec == :x30
 	end
 
 	def backtrace_is_stack_address(expr)

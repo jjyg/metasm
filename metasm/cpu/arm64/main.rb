@@ -71,15 +71,14 @@ class ARM64 < CPU
 		end
 
 		def symbolic(orig=nil)
-			o = @base.symbolic
+			o = Expression[@base.symbolic]
 			if @index
 				si = @index.symbolic
 				si = Expression[@scale, :*, @index] if @scale != 1
 				o = Expression[o, :+, si]
 			end
-			o = Expression[o, :+, @offset] if @offset
-			o = Expression[o, :+, @sz] if @incr == :pre
-			Indirection[o, @sz, orig]
+			o = Expression[o, :+, @offset] if @offset and @incr != :post
+			Indirection[o.reduce, @sz, orig]
 		end
 	end
 
