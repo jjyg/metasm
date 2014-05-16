@@ -76,5 +76,20 @@ class ARM64
 			r
 		end
 	end
+
+	def gui_hilight_word_regexp_init
+		ret = {}
+		(0..30).each { |i|
+			ret["w#{i}"] = ret["x#{i}"] = "[wx]#{i}"
+		}
+		ret["sp"] = ret["wsp"] = "w?sp"
+		ret["zr"] = ret["wzr"] = "w?zr"
+		ret
+	end
+
+	def gui_hilight_word_regexp(word)
+		@gui_hilight_word_hash ||= gui_hilight_word_regexp_init
+		@gui_hilight_word_hash[word] or super(word)
+	end
 end
 end
