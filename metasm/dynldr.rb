@@ -92,7 +92,8 @@ VALUE rb_ull2inum(unsigned long long);
 VALUE rb_num2ulong(VALUE);
 unsigned long long rb_num2ull(VALUE);
 VALUE rb_str_new(const char* ptr, long len);	// alloc + memcpy + 0term
-VALUE rb_ary_new2(int len);
+VALUE rb_ary_new();
+VALUE rb_ary_push(VALUE, VALUE);
 VALUE rb_float_new(double);
 
 VALUE rb_intern(char *);
@@ -263,16 +264,16 @@ uintptr_t do_callback_handler(uintptr_t ori_retaddr, uintptr_t caller_id, uintpt
 {
 	uintptr_t *addr = &arg0;
 	unsigned i, ret;
-	VALUE args = rb_ary_new2(10);
+	VALUE args = rb_ary_new();
 
 	// __fastcall callback args
-	ARY_PTR(args)[0] = INT2VAL(arg_ecx);
-	ARY_PTR(args)[1] = INT2VAL(arg_edx);
+
+	rb_ary_push(args, INT2VAL(arg_ecx));
+	rb_ary_push(args, INT2VAL(arg_edx));
 
 	// copy our args to a ruby-accessible buffer
 	for (i=2U ; i<10U ; ++i)
-		ARY_PTR(args)[i] = INT2VAL(*addr++);
-	RArray(args)->len = 10U;	// len == 10, no need to ARY_LEN/EMBED stuff
+		rb_ary_push(args, INT2VAL(*addr++));
 
 	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, INT2VAL(caller_id), args);
 
@@ -330,18 +331,16 @@ uintptr_t do_callback_handler(uintptr_t cb_id __attribute__((register(rax))),
 		uintptr_t arg4, uintptr_t arg5, uintptr_t arg6, uintptr_t arg7)
 {
 	uintptr_t ret;
-	VALUE args = rb_ary_new2(8);
-	VALUE *ptr = ARY_PTR(args);
+	VALUE args = rb_ary_new();
 
-	RArray(args)->len = 8;
-	ptr[0] = INT2VAL(arg0);
-	ptr[1] = INT2VAL(arg1);
-	ptr[2] = INT2VAL(arg2);
-	ptr[3] = INT2VAL(arg3);
-	ptr[4] = INT2VAL(arg4);
-	ptr[5] = INT2VAL(arg5);
-	ptr[6] = INT2VAL(arg6);
-	ptr[7] = INT2VAL(arg7);
+	rb_ary_push(args, INT2VAL(arg0));
+	rb_ary_push(args, INT2VAL(arg1));
+	rb_ary_push(args, INT2VAL(arg2));
+	rb_ary_push(args, INT2VAL(arg3));
+	rb_ary_push(args, INT2VAL(arg4));
+	rb_ary_push(args, INT2VAL(arg5));
+	rb_ary_push(args, INT2VAL(arg6));
+	rb_ary_push(args, INT2VAL(arg7));
 
 	ret = rb_funcall(dynldr, rb_intern("callback_run"), 2, INT2VAL(cb_id), args);
 
@@ -725,8 +724,7 @@ EOS
 	# find the path of the binary module
 	# if none exists, create a path writeable by the current user
 	def self.find_bin_path
-		fname = ['dynldr', host_arch, host_cpu.shortname,
-			 ('19' if RUBY_VERSION >= '1.9')].compact.join('-') + '.so'
+		fname = ['dynldr', host_arch, host_cpu.shortname, RUBY_VERSION.gsub('.', '')].join('-') + '.so'
 		dir = File.dirname(__FILE__)
 		binmodule = File.join(dir, fname)
 		if not File.exists? binmodule or File.stat(binmodule).mtime < File.stat(__FILE__).mtime
