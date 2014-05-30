@@ -54,7 +54,7 @@ module Metasm
 		'GNUExports' => 'os/gnu_exports',
 		'Debugger' => 'debug',
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
-		'GdbClient' => 'os/remote',
+		'GdbClient' => 'os/gdbremote',
 		'Disassembler' => 'disassemble',
 		'Decompiler' => 'decompile',
 		'DynLdr' => 'dynldr',

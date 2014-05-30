@@ -139,7 +139,7 @@ first in read/write, and fallback to read-only mode.
 GdbRemoteString
 ###############
 
-Defined in `metasm/os/remote.rb`.
+Defined in `metasm/os/gdbremote.rb`.
 
 Maps over the virtual memory of a remote process debugged with a
 <core/GdbClient.txt> instance, using `setmem` and `getmem`.
