@@ -16,7 +16,7 @@ class ARM64
 	end
 
 	def dbg_register_list
-		@dbg_register_list ||= Reg::Sym.sort.transpose[1]
+		@dbg_register_list ||= Reg::Sym.sort.transpose[1] - [:xzr]
 	end
 
 	def dbg_flag_list

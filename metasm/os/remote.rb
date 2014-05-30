@@ -185,7 +185,7 @@ class GdbClient
 				buf = gdb_msg('g')
 				regs = unhex(unrle(buf)) if buf
 				if not buf or regs.length < @regmsgsize
-					raise "regs buffer recv is too short !"
+					raise "regs buffer recv is too short ! (#{regs.length} < #{@regmsgsize})"
 				end
 			end
 			Hash[*@gdbregs.zip(@unpack_int[regs]).flatten]
@@ -339,6 +339,9 @@ class GdbClient
 		when 'arm'
 			@gdbregs = cpu.dbg_register_list
 			@regmsgsize = 4 * @gdbregs.length
+		when 'arm64'
+			@gdbregs = cpu.dbg_register_list
+			@regmsgsize = 8 * @gdbregs.length
 		when 'mips'
 			@gdbregs = cpu.dbg_register_list
 			@regmsgsize = cpu.size/8 * @gdbregs.length
