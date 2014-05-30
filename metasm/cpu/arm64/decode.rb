@@ -97,6 +97,11 @@ class ARM64
 					RegShift.new r, mode, shift
 				end
 			when :i16_5; Expression[field_val[a]]
+			when :il18_5;
+				v = field_val[a]
+				s = (v >> 16) & 3
+				v = v & 0xffff
+				Expression[v, :<<, (16*s)]
 			when :i19_5; Expression[Expression.make_signed(field_val[a], 19) << 2]
 			when :i26_0; Expression[Expression.make_signed(field_val[a], 26) << 2]
 			when :i12_10_s1
@@ -170,8 +175,9 @@ class ARM64
 		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
 			binding = case op
 			when 'mov', 'adr', 'adrp'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
-			when 'movz'; lambda { |di, a0, a1| { a0 => Expression[a1] } }	# TODO
-			when 'movn'; lambda { |di, a0, a1| { a0 => Expression[:~, a1] } }	# TODO check
+			when 'movz'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'movn'; lambda { |di, a0, a1| { a0 => Expression[:~, a1] } }
+			#when 'movk'; lambda { |di, a0, a1| a1 + lsl replace target bits of a0, other unchanged
 			when 'and', 'ands', 'orr', 'or', 'eor', 'xor'
 				bin_op = { 'and' => :&, 'ands' => :&, 'orr' => :|,
 					'or' => :|, 'eor' => :^, 'xor' => :^ }[op]

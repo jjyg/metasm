@@ -101,7 +101,7 @@ class ARM64
 		 :rm_lsl_i6, :rm_lsr_i6, :rm_asr_i6,
 		 :rm_lsl_i5, :rm_lsr_i5, :rm_asr_i5,
 		 :m_rm_extend, :rm_extend_i3,
-		 :i14_5, :i16_5, :i19_5, :i26_0, :i12_10_s1,
+		 :i14_5, :i16_5, :il18_5, :i19_5, :i26_0, :i12_10_s1,
 		 :i19_5_2_29,
 		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
 		 :bitmask, :bitmask_imm, :cond_12,
@@ -111,7 +111,7 @@ class ARM64
 			:rm_lsl_i6 => 0x7ff, :rm_lsr_i6 => 0x7ff, :rm_asr_i6 => 0x7ff,
 			:rm_lsl_i5 => 0x7df, :rm_lsr_i5 => 0x7df, :rm_asr_i5 => 0x7df,
 			:m_rm_extend => ((0x1f << 11) | (0xb << 7) | 0x1f), :rm_extend_i3 => 0x7ff,
-			:i14_5 => 0x3fff, :i16_5 => 0xffff, :i26_0 => 0x3ffffff,
+			:i14_5 => 0x3fff, :i16_5 => 0xffff, :il18_5 => 0x3ffff, :i26_0 => 0x3ffffff,
 			:i12_10_s1 => 0x3fff, :i6_10 => 0x3f,
 			:s7_15 => 0x7f, :s9_12 => 0x1ff, :u12_10 => 0xfff,
 			:i19_5 => 0x7ffff, :i2_29 => 3,
@@ -126,7 +126,7 @@ class ARM64
 			:rm_lsl_i6 => 10, :rm_lsr_i6 => 10, :rm_asr_i6 => 10,
 			:rm_lsl_i5 => 10, :rm_lsr_i5 => 10, :rm_asr_i5 => 10,
 			:m_rm_extend => 5, :rm_extend_i3 => 10,
-			:i14_5 => 5, :i16_5 => 5, :i26_0 => 0,
+			:i14_5 => 5, :i16_5 => 5, :il18_5 => 5, :i26_0 => 0,
 			:i12_10_s1 => 10, :i6_10 => 10,
 			:s7_15 => 15, :s9_12 => 12, :u12_10 => 10,
 			:i19_5 => 5, :i2_29 => 29,
@@ -200,9 +200,10 @@ class ARM64
 		addop_s31 'sub',  (0b1010001 << 24), :rt, :rn, :i12_10_s1
 		addop_s31 'subs', (0b1110001 << 24), :rt, :rn, :i12_10_s1
 
-		addop_s31 'movn', (0b00100101 << 23), :rt, :i16_5
-		addop_s31 'movz', (0b10100101 << 23), :rt, :i16_5
-		addop_s31 'movk', (0b11100101 << 23), :rt, :i16_5
+		addop_s31 'movn', (0b00100101 << 23), :rt, :il18_5
+		addop_s31 'mov',  (0b10100101 << 23), :rt, :i16_5	# alias movz rt, i16 LSL 0
+		addop_s31 'movz', (0b10100101 << 23), :rt, :il18_5
+		addop_s31 'movk', (0b11100101 << 23), :rt, :il18_5
 
 		addop_store 'str',   (0b10_111_0_00_00 << 22)
 		addop_store 'ldr',   (0b10_111_0_00_01 << 22)
