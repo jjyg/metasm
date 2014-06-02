@@ -87,6 +87,7 @@ class ARM
 
 	def addop_ldm_go(name, op, *a)
 		addop name, op, :rn, :reglist, {:cond_name_off => 3}, *a
+		addop name, op, :rn, :reglist, {:cond_name_off => name.length}, *a	# post-ARMv6 the condition code is at the end of the opname
 	end
 	def addop_ldm_w(name, op, *a)
 		addop_ldm_go name, op, *a		# base reg untouched
