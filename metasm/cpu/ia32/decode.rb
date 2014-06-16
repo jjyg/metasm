@@ -388,6 +388,14 @@ class Ia32
 				}
 			when 'sar', 'shl', 'sal'; lambda { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz(di), 32].max]] } }
 			when 'shr'; lambda { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz(di)]] } }
+			when 'shrd'
+				lambda { |di, a0, a1, a2| 
+					{ a0 => Expression[[a0, :>>, [a2, :%, opsz(di)]], :|, [a1, :<<, [[opsz(di), :-, a2], :%, opsz(di)]]] }
+				}
+			when 'shld'
+				lambda { |di, a0, a1, a2| 
+					{ a0 => Expression[[a0, :<<, [a2, :%, opsz(di)]], :|, [a1, :>>, [[opsz(di), :-, a2], :%, opsz(di)]]] }
+				}
 			when 'cwd', 'cdq', 'cqo'; lambda { |di| { Expression[edx, :&, mask[di]] => Expression[mask[di], :*, sign[eax, di]] } }
 			when 'cbw', 'cwde', 'cdqe'; lambda { |di|
 				o2 = opsz(di)/2 ; m2 = (1 << o2) - 1
