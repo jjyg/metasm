@@ -75,7 +75,6 @@ class MIPS
 			when :msbd; r += 1
 			when :i16; r = Expression.make_signed(r, 16)
 			when :i20; r = Expression.make_signed(r, 20)
-			when :i26; r = Expression.make_signed(r, 26)
 			else r
 			end
 		}
@@ -112,11 +111,11 @@ class MIPS
 			delta = Expression[di.instruction.args.last, :<<, 2].reduce
 			if di.opcode.args.include? :i26
 				# absolute jump in the 0x3ff_ffff region surrounding next_pc
-				if delta.kind_of? Expression and delta.op == :& and delta.rexpr == 0x3ff_fffc
+				if delta.kind_of? Expression and delta.op == :& and delta.rexpr == 0xfff_fffc
 					# relocated arg: assume the linker mapped so that instr&target are in the same region
 					arg = Expression[delta.lexpr].reduce
 				else
-					arg = Expression[[[addr, :+, di.bin_length], :&, 0xfc00_0000], :+, delta].reduce
+					arg = Expression[[[addr, :+, di.bin_length], :&, 0xf000_0000], :+, delta].reduce
 				end
 			else
 				arg = Expression[[addr, :+, di.bin_length], :+, delta].reduce
