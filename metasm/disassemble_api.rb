@@ -995,6 +995,7 @@ class Disassembler
 				#  could check the 1st part of the file, with section sizes, but it is not very convenient
 				# the regexp is so that we skip the 1st part with section descriptions
 				# in the file, section 1 is the 1st section ; we have an additionnal section (exe header) which fixes the 0-index
+				# XXX this is PE-specific, TODO fix it for ELF (ida references sections, we reference segments...)
 				addr = sks[$1.to_i(16)] + $2.to_i(16) + off
 				set_label_at(addr, $3, false, !seen[addr])
 				seen[addr] = true

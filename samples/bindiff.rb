@@ -490,7 +490,7 @@ $VERBOSE = true
 # parse arguments
 opts = {}
 OptionParser.new { |opt|
-	opt.banner = 'Usage: bindiff.rb [options] <executable> [<entrypoints>]'
+	opt.banner = 'Usage: bindiff.rb [options] <exe1> <exe2> [<entrypoints>]'
 	opt.on('-P <plugin>', '--plugin <plugin>', 'load a metasm disassembler plugin') { |h| (opts[:plugin] ||= []) << h }
 	opt.on('-e <code>', '--eval <code>', 'eval a ruby code') { |h| (opts[:hookstr] ||= []) << h }
 	opt.on('--map1 <mapfile>', 'load a map file (addr <-> name association)') { |f| opts[:map1] = f }
