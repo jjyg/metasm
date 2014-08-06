@@ -982,7 +982,7 @@ class CCompiler < C::Compiler
 		@state.dirty -= @state.abi_trashregs
 		if localspc
 			localspc = (localspc + 7) / 8 * 8
-			if @state.args_space > 0 and (localspc/8 + @state.dirty.length) & 1 == 1
+			if @state.args_space > 0 and (localspc/8 + @state.dirty.length).to_i & 1 == 1
 				# ensure 16-o stack align on windows
 				localspc += 8
 			end
