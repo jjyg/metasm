@@ -104,11 +104,11 @@ class Ia32
 		addop_macrotttn('set', [0x0F, 0x90], :mrm) { |o| o.props[:argsz] = 8 ; o.args.reverse! }	# :reg field is unused
 		addop_macro3 'shl', 4
 		addop_macro3 'sal', 6
-		addop 'shld',  [0x0F, 0xA4], :mrm, :u8
-		addop 'shld',  [0x0F, 0xA5], :mrm, :reg_cl
+		addop('shld',  [0x0F, 0xA4], :mrm, :u8) { |o| o.args[0], o.args[1] = o.args[1], o.args[0] }
+		addop('shld',  [0x0F, 0xA5], :mrm, :reg_cl) { |o| o.args[0], o.args[1] = o.args[1], o.args[0] }
 		addop_macro3 'shr', 5
-		addop 'shrd',  [0x0F, 0xAC], :mrm, :u8
-		addop 'shrd',  [0x0F, 0xAD], :mrm, :reg_cl
+		addop('shrd',  [0x0F, 0xAC], :mrm, :u8) { |o| o.args[0], o.args[1] = o.args[1], o.args[0] }
+		addop('shrd',  [0x0F, 0xAD], :mrm, :reg_cl) { |o| o.args[0], o.args[1] = o.args[1], o.args[0] }
 		addop_macrostr 'stos',  [0xAA], :strop
 		addop_macro1 'sub', 5
 		addop 'test',  [0x84], :mrmw
