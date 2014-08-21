@@ -326,6 +326,33 @@ EOS
 	def self.pehash(path, digest)
 		decode_file_header(path).pehash(digest)
 	end
+
+	# compute Mandiant "importhash"
+	def imphash
+		lst = []
+		@imports.each { |id|
+			ln = id.libname.downcase.sub(/.(dll|sys|ocx)$/, '')
+			id.imports.each { |i|
+				if not i.name and ordtable = WindowsExports::IMPORT_HASH[ln]
+					iname = ordtable[i.ordinal]
+				else
+					iname = i.name
+				end
+				iname ||= "ord#{i.ordinal}"
+
+				lst << "#{ln}.#{iname}"
+			}
+		}
+
+		require 'digest/md5'
+		Digest::MD5.hexdigest(lst.join(',').downcase)
+	end
+
+	def self.imphash(path)
+		pe = decode_file_header(path)
+		pe.decode_imports
+		pe.imphash
+	end
 end
 
 # an instance of a PE file, loaded in memory
