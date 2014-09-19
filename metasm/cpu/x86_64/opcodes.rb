@@ -59,8 +59,8 @@ class X86_64
 		addop('iretq', [0xCF], nil, :stopexec, :setip) { |o| o.props[:opsz] = 64 } ; opcode_list.unshift opcode_list.pop
 		addop 'swapgs', [0x0F, 0x01, 0xF8]
 
-		addop('movq',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args = [:modrm, :regmmx] ; o.props[:opsz] = o.props[:argsz] = 64 }
-		addop('movq',  [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args = [:modrm, :regxmm] ; o.props[:opsz] = o.props[:argsz] = 64 ; o.props[:needpfx] = 0x66 }
+		addop('movq',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args = [:regmmx, :modrm] ; o.props[:opsz] = o.props[:argsz] = 64 }
+		addop('movq',  [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args = [:regxmm, :modrm] ; o.props[:opsz] = o.props[:argsz] = 64 ; o.props[:needpfx] = 0x66 }
 		addop('jcxz', [0xE3], nil, :setip, :i8) { |o| o.props[:adsz] = 32 }	# actually 16 (cx), but x64 in general says pfx 0x67 => adsz = 32
 		addop('jrcxz', [0xE3], nil, :setip, :i8) { |o| o.props[:adsz] = 64 }
 	end
