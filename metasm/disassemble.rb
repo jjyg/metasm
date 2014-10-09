@@ -504,14 +504,16 @@ class Disassembler
 
 		# add pseudo-xrefs for exe relocs
 		if (not type or type == :reloc) and l = get_label_at(addr) and a = @inv_section_reloc[l]
+			x_more = []
 			a.each { |b, e, o, r|
 				addr = Expression[b]+o
 				# ignore relocs embedded in an already-listed instr
-				x << Xref.new(:reloc, addr) if not x.find { |x_|
+				x_more << Xref.new(:reloc, addr) if not x.find { |x_|
 					next if not x_.origin or not di_at(x_.origin)
 					(addr - x_.origin) < @decoded[x_.origin].bin_length rescue false
 				}
 			}
+			x.concat x_more
 		end
 
 		x.each { |x_| yield x_ }
