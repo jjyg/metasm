@@ -381,19 +381,20 @@ class Ia32
 				lambda { |di, a0, a1|
 					e_op = (op[2] == ?r ? :>> : :<<)
 					inv_op = {:<< => :>>, :>> => :<< }[e_op]
-					sz = [a1, :%, opsz(di)]
-					isz = [[opsz(di), :-, a1], :%, opsz(di)]
+					operandsize = di.instruction.args[0].sz
+					sz = [a1, :%, operandsize]
+					isz = [[operandsize, :-, a1], :%, operandsize]
 					# ror a, b  =>  (a >> b) | (a << (32-b))
-					{ a0 => Expression[[[a0, e_op, sz], :|, [a0, inv_op, isz]], :&, mask[di]] }
+					{ a0 => Expression[[[[a0, :&, mask[di]], e_op, sz], :|, [[a0, :&, mask[di]], inv_op, isz]], :&, mask[di]] }
 				}
 			when 'sar', 'shl', 'sal'; lambda { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz(di), 32].max]] } }
 			when 'shr'; lambda { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz(di)]] } }
 			when 'shrd'
-				lambda { |di, a0, a1, a2| 
+				lambda { |di, a0, a1, a2|
 					{ a0 => Expression[[a0, :>>, [a2, :%, opsz(di)]], :|, [a1, :<<, [[opsz(di), :-, a2], :%, opsz(di)]]] }
 				}
 			when 'shld'
-				lambda { |di, a0, a1, a2| 
+				lambda { |di, a0, a1, a2|
 					{ a0 => Expression[[a0, :<<, [a2, :%, opsz(di)]], :|, [a1, :>>, [[opsz(di), :-, a2], :%, opsz(di)]]] }
 				}
 			when 'cwd', 'cdq', 'cqo'; lambda { |di| { Expression[edx, :&, mask[di]] => Expression[mask[di], :*, sign[eax, di]] } }
