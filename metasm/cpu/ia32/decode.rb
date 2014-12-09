@@ -382,10 +382,11 @@ class Ia32
 					e_op = (op[2] == ?r ? :>> : :<<)
 					inv_op = {:<< => :>>, :>> => :<< }[e_op]
 					operandsize = di.instruction.args[0].sz
+					operandmask = (1 << operandsize) - 1
 					sz = [a1, :%, operandsize]
 					isz = [[operandsize, :-, a1], :%, operandsize]
 					# ror a, b  =>  (a >> b) | (a << (32-b))
-					{ a0 => Expression[[[[a0, :&, mask[di]], e_op, sz], :|, [[a0, :&, mask[di]], inv_op, isz]], :&, mask[di]] }
+					{ a0 => Expression[[[[a0, :&, operandmask], e_op, sz], :|, [[a0, :&, operandmask], inv_op, isz]], :&, operandmask] }
 				}
 			when 'sar', 'shl', 'sal'; lambda { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz(di), 32].max]] } }
 			when 'shr'; lambda { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz(di)]] } }
