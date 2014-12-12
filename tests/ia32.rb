@@ -130,5 +130,6 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(backtrace("mov eax, 0xf000_0000\n add eax, 0x2000_0000\n shr eax, 28", :eax), Metasm::Expression[1])
 		assert_equal(backtrace("mov eax, 0xf000_0000\n add eax, 0x2000_0000\n ror eax, 28", :eax), Metasm::Expression[1])
 		assert_equal(backtrace("mov eax, 1\n mov ebx, 2\n xchg al, bl", :eax), Metasm::Expression[2])
+		assert_equal(backtrace("mov eax, 0x01020304\n xchg al, ah", :eax), Metasm::Expression[0x01020403])
 	end
 end

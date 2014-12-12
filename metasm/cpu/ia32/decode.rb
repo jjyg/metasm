@@ -361,7 +361,22 @@ class Ia32
 					{ a0 => Expression[[a1, :|, [sign1, :*, (-1 << sz1)]], :&, mask[di]] }
 				}
 			when 'lea'; lambda { |di, a0, a1| { a0 => a1.target } }
-			when 'xchg'; lambda { |di, a0, a1| { a0 => Expression[a1], a1 => Expression[a0] } }
+			when 'xchg'; lambda { |di, a0, a1|
+				# specialcase xchg al, ah (conflict on eax not handled in get_backtrace_binding)
+				if a0.kind_of?(Expression) and a1.kind_of?(Expression) and
+						a0.op == :& and a0.rexpr == 255 and
+						a1.op == :& and a1.rexpr == 255 and
+						((a0.lexpr.kind_of?(Expression) and a0.lexpr.lexpr == a1.lexpr and a0.lexpr.op == :>> and a0.lexpr.rexpr == 8) or
+						 (a1.lexpr.kind_of?(Expression) and a1.lexpr.lexpr == a0.lexpr and a1.lexpr.op == :>> and a1.lexpr.rexpr == 8))
+					tgreg = a0.lexpr.kind_of?(Expression) ? a1.lexpr : a0.lexpr
+					invmask = (@size == 64 ? 0xffff_ffff_ffff_0000 : 0xffff_0000)
+					{ tgreg => Expression[[tgreg, :&, invmask], :|,
+					   [[[tgreg, :>>, 8], :&, 0x00ff], :|,
+					    [[tgreg, :<<, 8], :&, 0xff00]]] }
+				else
+					{ a0 => Expression[a1], a1 => Expression[a0] }
+				end
+			}
 			when 'add', 'sub', 'or', 'xor', 'and', 'pxor', 'adc', 'sbb'
 				lambda { |di, a0, a1|
 					e_op = { 'add' => :+, 'sub' => :-, 'or' => :|, 'and' => :&, 'xor' => :^, 'pxor' => :^, 'adc' => :+, 'sbb' => :- }[op]
