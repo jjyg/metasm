@@ -83,7 +83,7 @@ class TestIa32 < Test::Unit::TestCase
 	end
 
 	def test_C
-		src = "int bla(void) { volatile int i=0; return ++i; }"
+		src = "int bla(void) { volatile int i=0; return (int)++i; }"
 		assert_equal(Metasm::Shellcode.compile_c(@@cpu32, src).encode_string,
 				["5589E583EC04C745FC00000000FF45FC8B45FC89EC5DC3"].pack('H*'))
 	end
@@ -114,5 +114,21 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(assemble("vpblendvb xmm1, xmm2, xmm3, xmm4"), bin("\xc4\xc3\x69\x4c\xcb\x40"))
 		assert_equal(assemble("vgatherdpd xmm1, qword ptr [edx+xmm1], xmm2"), bin("\xc4\xc2\xe9\x92\x0c\x0a"))
 		assert_equal(disassemble(bin("\xc4\xc2\xe9\x92\x0c\x0a")).decoded[0].instruction.to_s, "vgatherdpd xmm1, qword ptr [edx+xmm1], xmm2")
+	end
+
+	def backtrace(asm, expr, cpu=@@cpu32)
+		raw = assemble(asm + "\n nop", cpu)
+		disassemble(raw, cpu).backtrace(expr, raw.length-1).first
+	end
+
+	def test_backtrace
+		assert_equal(backtrace("mov eax, 10", :eax), Metasm::Expression[10])
+		assert_equal(backtrace("mov eax, 0x1234\n ror eax, 8", :eax), Metasm::Expression[0x34000012])
+		assert_equal(backtrace("mov eax, 0x1234\n ror al, 4", :eax), Metasm::Expression[0x1243])
+		assert_equal(backtrace("mov eax, 0x1234\n shr al, 4", :eax), Metasm::Expression[0x1203])
+		assert_equal(backtrace("mov eax, 0x1234\n shl ah, 4", :eax), Metasm::Expression[0x2034])
+		assert_equal(backtrace("mov eax, 0xf000_0000\n add eax, 0x2000_0000\n shr eax, 28", :eax), Metasm::Expression[1])
+		assert_equal(backtrace("mov eax, 0xf000_0000\n add eax, 0x2000_0000\n ror eax, 28", :eax), Metasm::Expression[1])
+		assert_equal(backtrace("mov eax, 1\n mov ebx, 2\n xchg al, bl", :eax), Metasm::Expression[2])
 	end
 end
