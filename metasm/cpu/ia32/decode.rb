@@ -530,12 +530,12 @@ class Ia32
 				}
 			when 'div', 'idiv'; lambda { |di, *a| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
 			when 'rdtsc'; lambda { |di| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
-			when /^(stos|movs|lods|scas|cmps)[bwd]$/
+			when /^(stos|movs|lods|scas|cmps)[bwdq]$/
 				lambda { |di, *a|
 					next {:incomplete_binding => 1} if di.opcode.args.include?(:regxmm)	# XXX movsd xmm0, xmm1...
-					op =~ /^(stos|movs|lods|scas|cmps)([bwd])$/
+					op =~ /^(stos|movs|lods|scas|cmps)([bwdq])$/
 					e_op = $1
-					sz = { 'b' => 1, 'w' => 2, 'd' => 4 }[$2]
+					sz = { 'b' => 1, 'w' => 2, 'd' => 4, 'q' => 8 }[$2]
 					eax_ = Reg.new(0, 8*sz).symbolic
 					dir = :+
 					if di.block and (di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil)
@@ -563,7 +563,7 @@ class Ia32
 						end
 					when 'scas'
 						case pfx[:rep]
-						when nil; { edi => Expression[edi, dir, sz] }
+						when nil; { edi => Expression[edi, dir, sz], :eflag_z => Expression[pedi, :==, Expression[eax, :&, (1 << (sz*8))-1]] }
 						else { edi => Expression::Unknown, ecx => Expression::Unknown }
 						end
 					when 'cmps'
@@ -692,7 +692,11 @@ class Ia32
 			when 'imul', 'mul', 'idiv', 'div', /^(scas|cmps)[bwdq]$/
 				lambda { |di, *a|
 					ret = (binding ? binding[di, *a] : {})
-					ret[:eflag_z] = ret[:eflag_s] = ret[:eflag_c] = ret[:eflag_o] = Expression::Unknown	# :incomplete_binding ?
+					ret[:eflag_z] ||= Expression::Unknown
+					ret[:eflag_s] ||= Expression::Unknown
+					ret[:eflag_c] ||= Expression::Unknown
+					ret[:eflag_o] ||= Expression::Unknown
+					# :incomplete_binding ?
 					ret
 				}
 			end
