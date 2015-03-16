@@ -604,7 +604,7 @@ EOS
 
 		binmodule = find_bin_path
 
-		if not File.exists?(binmodule) or File.stat(binmodule).mtime < File.stat(__FILE__).mtime
+		if not File.exist?(binmodule) or File.stat(binmodule).mtime < File.stat(__FILE__).mtime
 			compile_binary_module(host_exe, host_cpu, binmodule)
 		end
 
@@ -727,7 +727,7 @@ EOS
 		fname = ['dynldr', host_arch, host_cpu.shortname, RUBY_VERSION.gsub('.', '')].join('-') + '.so'
 		dir = File.dirname(__FILE__)
 		binmodule = File.join(dir, fname)
-		if not File.exists? binmodule or File.stat(binmodule).mtime < File.stat(__FILE__).mtime
+		if not File.exist? binmodule or File.stat(binmodule).mtime < File.stat(__FILE__).mtime
 			if not dir = find_write_dir
 				raise LoadError, "no writable dir to put the DynLdr ruby module, try to run as root"
 			end

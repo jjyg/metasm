@@ -94,7 +94,7 @@ if $opts[:to_string]
 	end
 
 	if of = $opts[:outfilename]
-		abort "Error: target file #{of.inspect} exists !" if File.exists?(of) and $opts[:nooverwrite_outfile]
+		abort "Error: target file #{of.inspect} exists !" if File.exist?(of) and $opts[:nooverwrite_outfile]
 		File.open(of, 'w') { |fd| fd.puts str }
 		puts "saved to file #{of.inspect}"
 	else
@@ -102,7 +102,7 @@ if $opts[:to_string]
 	end
 else
 	of = $opts[:outfilename] ||= 'a.out'
-	abort "Error: target file #{of.inspect} exists !" if File.exists?(of) and $opts[:nooverwrite_outfile]
+	abort "Error: target file #{of.inspect} exists !" if File.exist?(of) and $opts[:nooverwrite_outfile]
 	Metasm::DynLdr.compile_binary_module_hack(exe) if $opts[:dldrhack]
 	exe.encode_file(of, $opts[:exetype])
 	puts "saved to file #{of.inspect}"
