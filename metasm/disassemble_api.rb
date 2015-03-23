@@ -665,6 +665,8 @@ class Disassembler
 				b1.to_indirect.to_a == [] and b2.from_indirect.to_a == []
 			b2.list.each { |di| b1.add_di di }
 			b1.to_normal = b2.to_normal
+			b1.to_subfuncret = b2.to_subfuncret
+			b1.to_indirect = b2.to_indirect
 			b2.list.clear
 			@addrs_done.delete_if { |ad| normalize(ad[0]) == b2.address }
 			true
