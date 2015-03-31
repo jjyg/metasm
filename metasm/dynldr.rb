@@ -85,7 +85,13 @@ extern VALUE *rb_eArgError __attribute__((import));
  #define ARY_LEN(o) (RArray(o)->len)
 #endif
 
-#define TYPE(x) (((VALUE)(x) & 1) ? T_FIXNUM : (((VALUE)(x) & 3) || ((VALUE)(x) < 7)) ? 0x40 : RString(x)->flags & T_MASK)
+#if #{nil.object_id == 4}
+// ruby1.8
+#define TYPE(x) (((VALUE)(x) & 1) ? T_FIXNUM : (((VALUE)(x) < 0x07) || (((VALUE)(x) & 0xf) == 0xe)) ? 0x40 : RString(x)->flags & T_MASK)
+#else
+// ruby2.0+, USE_FLONUM, world is hell
+#define TYPE(x) (((VALUE)(x) & 1) ? T_FIXNUM : (((VALUE)(x) < 0x3f) || (((VALUE)(x) & 0xf) == 0xc) || (((VALUE)(x) & 3) == 2)) ? 0x40 : RString(x)->flags & T_MASK)
+#endif
 
 VALUE rb_uint2inum(VALUE);
 VALUE rb_ull2inum(unsigned long long);
