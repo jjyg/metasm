@@ -14,11 +14,26 @@ __END__
 // .nointerp    // to disable the dynamic section, eg for stuff with int80 only
 .text
 .entrypoint
+#if defined __i386__
 push bla
 push fmt
 call printf
+
 push 0
 call exit
+
+#elif defined __amd64__
+lea rsi, [rip+bla-$_]
+lea rdi, [rip+fmt-$_]
+xor rax, rax
+call printf
+
+mov rdi, 0
+call exit
+
+#else
+unsupported architecture!
+#endif
 
 .data
 bla db "world", 0
