@@ -41,7 +41,7 @@ class ARM
 		return if edata.ptr+4 > edata.length
 		di = DecodedInstruction.new(self)
 		val = edata.decode_imm(:u32, @endianness)
-		di.instance_variable_set('@raw', val)
+		di.misc = val
 		di if di.opcode = @bin_lookaside[(val >> 20) & 0xff].find { |op|
 			(not op.props[:cond] or
 			 ((val >> @fields_shift[:cond]) & @fields_mask[:cond]) != 0xf) and
@@ -57,7 +57,7 @@ class ARM
 	def decode_instr_op(edata, di)
 		op = di.opcode
 		di.instruction.opname = op.name
-		val = di.instance_variable_get('@raw')
+		val = di.misc	# saved decoded u32
 
 		field_val = lambda { |f|
 			r = (val >> @fields_shift[f]) & @fields_mask[f]

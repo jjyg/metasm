@@ -26,6 +26,7 @@ class DecodedInstruction
 	attr_accessor :backtrace_binding
 	# used during fixed-size instruction decoding to hold the decoded raw opcode
 	attr_accessor :raw_data
+	attr_accessor :misc
 
 	# create a new DecodedInstruction with an Instruction whose cpu is the argument
 	# can take an existing Instruction as argument
