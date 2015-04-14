@@ -76,12 +76,49 @@ class ST20
 
 	def get_backtrace_binding(di)
 		arg = di.instruction.args[0]
+		sz = @size/8
+		unk = Expression::Unknown
 		case di.instruction.opname
-		when 'nop'
-			{}
+		when 'j'; {}
+		when 'ldlp';  { :a => Expression[:wspace, :+, [sz, :*, arg]], :b => :a, :c => :b }
+		when 'ldnl';  { :a => Indirection[[:a, :+, [sz, :*, arg]], sz, di] }
+		when 'ldc';   { :a => arg, :b => :a, :c => :b }
+		when 'ldnlp'; { :a => Expression[:a, :+, [sz, :*, arg]] }
+		when 'ldl';   { :a => Indirection[[:wspace, :+, [sz, :*, arg]], sz, di], :b => :a, :c => :b }
+		when 'adc';   { :a => Expression[:a, :+, arg] }
+		when 'fcall'; {
+			:a => Expression[di.next_addr],
+			:wspace => Expression[:wspace, :-, [4*sz]],
+			Indirection[[:wspace, :-, [4*sz]], sz, di] => di.next_addr,
+			Indirection[[:wspace, :-, [3*sz]], sz, di] => :a,
+			Indirection[[:wspace, :-, [2*sz]], sz, di] => :b,
+			Indirection[[:wspace, :-, [1*sz]], sz, di] => :c,
+		}
+		# cj+(:a != 0) => a=b, b=c, c=unk ; (:a == 0) => jump, a=a, b=b, c=c
+		when 'cj';   { :a => unk, :b => unk, :c => unk }
+		when 'ajw';  { :wspace => Expression[:wspace, :+, [4, :*, arg]] }
+		when 'eqc';  { :a => Expression[:a, :==, arg] }
+		when 'stl';  { Indirection[[:wspace, :+, [sz, :*, arg]], sz, di] => :a, :a => :b, :b => :c, :c => unk }
+		when 'stnl'; { Indirection[[:a, :+, [sz, :*, arg]], sz, di] => :b, :a => :c, :b => unk, :c => unk }
+
+		when 'add';  { :a => Expression[:b, :+, :a], :b => :c, :c => unk }
+		when 'sub';  { :a => Expression[:b, :-, :a], :b => :c, :c => unk }
+		when 'prod'; { :a => Expression[:b, :*, :a], :b => :c, :c => unk }
+		when 'xor';  { :a => Expression[:b, :^, :a], :b => :c, :c => unk }
+		when 'ldpi'; { :a => Indirection[[di.next_addr, :+, :a], sz, di] }
+		when 'mint'; { :a => Expression[-1 << (@size-1)], :b => :a, :c => :b }
+		when 'in';   { :a => unk, :b => unk, :c => unk }	# read a bytes from channel b at buffer c
+		when 'out';  { :a => unk, :b => unk, :c => unk }	# write a bytes to channel b from buffer c
+		when 'lb';   { :a => Indirection[:a, 1, di] }
+		when 'sb';   { Indirection[:a, 1, di] => Expression[:b, :&, 0xff], :a => :c, :b => unk, :c => unk }
+		when 'bsub'; { :a => Expression[:a, :+, :b], :b => :c, :c => unk }
+		when 'ssub'; { :a => Expression[:a, :+, [2, :*, :b]], :b => :c, :c => unk }
+		when 'wsub'; { :a => Expression[:a, :+, [sz, :*, :b]], :b => :c, :c => unk }
+		when 'gajw'; { :wspace => Expression[:a], :a => Expression[:wspace] }
+		when 'dup';  { :b => :a, :c => :b }
 		else
 			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
-			{ :incomplete_binding => Expression[1] }
+			{ :incomplete_binding => Expression[1], :a => unk, :b => unk, :c => unk }
 		end
 	end
 
