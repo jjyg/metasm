@@ -307,7 +307,7 @@ class ExeFormat
 	def new_label(base = '')
 		base = base.dup.tr('^a-zA-Z0-9_', '_')
 		# use %x instead of to_s(16) for negative values
-		base = (base << '_uuid' << ('%08x' % base.object_id)).freeze if base.empty? or @unique_labels_cache[base]
+		base = (base << '_uuid' << ('%08x' % (base.object_id & 0xffff_ffff_ffff_ffff))).freeze if base.empty? or @unique_labels_cache[base]
 		@unique_labels_cache[base] = true
 		base
 	end
