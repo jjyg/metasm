@@ -85,7 +85,7 @@ extern VALUE *rb_eArgError __attribute__((import));
  #define ARY_LEN(o) (RArray(o)->len)
 #endif
 
-#if #{nil.object_id == 4}
+#if #{nil.object_id == 4 ? 1 : 0}
 // ruby1.8
 #define TYPE(x) (((VALUE)(x) & 1) ? T_FIXNUM : (((VALUE)(x) < 0x07) || (((VALUE)(x) & 0xf) == 0xe)) ? 0x40 : RString(x)->flags & T_MASK)
 #else
