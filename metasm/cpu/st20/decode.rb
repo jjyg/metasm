@@ -122,9 +122,6 @@ class ST20
 		end
 	end
 
-	def fix_fwdemu_binding(di, fbd)
-	end
-
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
 

@@ -15,6 +15,10 @@ class ST20 < CPU
 		init_opcodes
 	end
 
+	def register_symbols
+		[:a, :b, :c]
+	end
+
 	def render_instruction(i)
 		r = []
 		r << i.opname

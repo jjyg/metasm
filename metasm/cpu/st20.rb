@@ -6,3 +6,4 @@
 
 require 'metasm/main'
 require 'metasm/cpu/st20/decode'
+require 'metasm/cpu/st20/decompile'
