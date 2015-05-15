@@ -11,10 +11,19 @@ class Ia32
 	# temporarily setup dasm.address_binding so that backtracking
 	# stack-related offsets resolve in :frameptr (relative to func start)
 	def decompile_makestackvars(dasm, funcstart, blocks)
+		esp = register_symbols[4]
 		oldfuncbd = dasm.address_binding[funcstart]
-		dasm.address_binding[funcstart] = { :esp => :frameptr }	# this would suffice, the rest here is just optimisation
-
+		dasm.address_binding[funcstart] = { esp => :frameptr }
 		patched_binding = [funcstart]	# list of addresses to cleanup later
+
+		if blocks.length <= 12
+			blocks.each { |block| yield block }
+			return
+		end
+
+		# for large function, pre-trace and cache esp/ebp for every block start to improve decompilation time
+
+		ebp = register_symbols[5]
 		ebp_frame = true
 
 		# pretrace esp and ebp for each function block (cleared later)
@@ -24,16 +33,16 @@ class Ia32
 			if not dasm.address_binding[blockstart]
 				patched_binding << blockstart
 				dasm.address_binding[blockstart] = {}
-				foo = dasm.backtrace(:esp, blockstart, :snapshot_addr => funcstart)
+				foo = dasm.backtrace(esp, blockstart, :snapshot_addr => funcstart)
 				if foo.length == 1 and ee = foo.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
 						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
-					dasm.address_binding[blockstart][:esp] = ee
+					dasm.address_binding[blockstart][esp] = ee
 				end
 				if ebp_frame
-					foo = dasm.backtrace(:ebp, blockstart, :snapshot_addr => funcstart)
+					foo = dasm.backtrace(ebp, blockstart, :snapshot_addr => funcstart)
 					if foo.length == 1 and ee = foo.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
 							(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
-						dasm.address_binding[blockstart][:ebp] = ee
+						dasm.address_binding[blockstart][ebp] = ee
 					else
 						ebp_frame = false	# func does not use ebp as frame ptr, no need to bt for later blocks
 					end
@@ -46,6 +55,11 @@ class Ia32
 	ensure
 		patched_binding.each { |a| dasm.address_binding.delete a }
 		dasm.address_binding[funcstart] = oldfuncbd if oldfuncbd
+	end
+
+	# add di-specific registry written/accessed
+	def decompile_func_finddeps_di(dcmp, func, di, a, w)
+		a << :eax if di.opcode.name == 'ret' and (not func.type.kind_of? C::BaseType or func.type.type.name != :void)	# standard ABI
 	end
 
 	# list variable dependency for each block, remove useless writes
@@ -69,7 +83,7 @@ class Ia32
 					else a |= Expression[k].externals	# if dword [eax] <- 42, eax is read
 					end
 				}
-				a << :eax if di.opcode.name == 'ret' and (not func.type.kind_of? C::BaseType or func.type.type.name != :void)	# standard ABI
+				decompile_func_finddeps_di(dcmp, func, di, a, w)
 
 				deps_r[b] |= a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - deps_w[b]
 				deps_w[b] |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
@@ -120,7 +134,7 @@ class Ia32
 						else a |= Expression[k].externals	# if dword [eax] <- 42, eax is read
 						end
 					}
-					a << :eax if di.opcode.name == 'ret' and (not func.type.kind_of? C::BaseType or func.type.type.name != :void)	# standard ABI
+					decompile_func_finddeps_di(dcmp, func, di, a, w)
 
 					next true if (a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - bw).include? r
 					bw |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
