@@ -644,7 +644,7 @@ class Ia32
 		addop('vmclear',  [0x0F, 0xC7, 6<<3], :modrmA) { |o| o.props[:argsz] = 64 ; o.props[:needpfx] = 0x66 }
 		addop('vmxon',    [0x0F, 0xC7, 6<<3], :modrmA) { |o| o.props[:argsz] = 64 ; o.props[:needpfx] = 0xF3 }
 		addop('vmptrld',  [0x0F, 0xC7, 6<<3], :modrmA) { |o| o.props[:argsz] = 64 }
-		addop('vmptrrst', [0x0F, 0xC7, 7<<3], :modrmA) { |o| o.props[:argsz] = 64 }
+		addop('vmptrst',  [0x0F, 0xC7, 7<<3], :modrmA) { |o| o.props[:argsz] = 64 }
 		addop('invept',   [0x0F, 0x38, 0x80], :mrmA) { |o| o.props[:needpfx] = 0x66 }
 		addop('invvpid',  [0x0F, 0x38, 0x81], :mrmA) { |o| o.props[:needpfx] = 0x66 }
 
