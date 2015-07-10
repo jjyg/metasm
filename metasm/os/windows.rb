@@ -1232,22 +1232,31 @@ class WinOS < OS
 		end
 		attr_writer :debugger
 
-		# returns the memory address size of the target process
-		def addrsz
-			@addrsz ||= if WinAPI.respond_to?(:iswow64process)
+		# return 32 for 32bit process, 64 for 64bit process
+		# populates iswow64
+		def cpusz
+			@cpusz ||= (
 				byte = 0.chr*8
-				if WinAPI.iswow64process(handle, byte)
+				if WinAPI.respond_to?(:iswow64process) and WinAPI.iswow64process(handle, byte)
+					# os supports iswow64process, so target may be 64bits
 					if byte != 0.chr*8
-						32 # target = wow64
-					elsif WinAPI.iswow64process(WinAPI.getcurrentprocess, byte) and byte != 0.chr*8
-						64 # us = wow64, target is not
+						@iswow64 = true
+						32
 					else
+						@iswow64 = false
 						WinAPI.host_cpu.size
 					end
 				else
 					WinAPI.host_cpu.size
 				end
-			end
+			)
+		end
+		attr_accessor :iswow64
+
+		# returns the memory address size of the target process
+		# if the target is a wow64 process (32bit process under a 64bit os), return 64
+		def addrsz
+			@addrsz ||= ((cpusz == 32 and iswow64) ? 64 : cpusz)
 		end
 
 		def modules
@@ -1363,7 +1372,7 @@ class WinOS < OS
 
 		# increment the suspend count of the target thread - stop at >0
 		def suspend
-			if WinAPI.host_cpu.size == 64 and process and process.addrsz == 32
+			if WinAPI.host_cpu.size == 64 and process and process.iswow64
 				WinAPI.wow64suspendthread(handle)
 			else
 				WinAPI.suspendthread(handle)
@@ -1400,26 +1409,20 @@ class WinOS < OS
 		class Context
 			def initialize(thread, kind=:all)
 				@handle = thread.handle
-				tg = (thread.process ? thread.process.addrsz : 32)
-				hcpu = WinAPI.host_cpu.shortname
-				case hcpu
-				when 'ia32', 'x64'
-				else raise "unsupported architecture #{tg}"
-				end
-
+				tg = (thread.process ? thread.process.cpusz : 32)
 				@getcontext = :getthreadcontext
 				@setcontext = :setthreadcontext
-				case tg
-				when 32
+				if tg == 32
+					# XXX check CS under wow64 ?
 					@context = WinAPI.alloc_c_struct('_CONTEXT_I386')
-					@context.contextflags = WinAPI::CONTEXT_I386_ALL
-					if hcpu == 'x64'
+					@context.contextflags = WinAPI::CONTEXT_I386_ALL	# XXX kind ?
+					if WinAPI.host_cpu.shortname == 'x64' and thread.process and thread.process.iswow64
 						@getcontext = :wow64getthreadcontext
 						@setcontext = :wow64setthreadcontext
 					end
-				when 64
+				else
 					@context = WinAPI.alloc_c_struct('_CONTEXT_AMD64')
-					@context.contextflags = WinAPI::CONTEXT_AMD64_ALL
+					@context.contextflags = WinAPI::CONTEXT_AMD64_ALL	# XXX kind ?
 				end
 			end
 
@@ -1805,7 +1808,7 @@ class WinDebugger < Debugger
 		return if not @os_process
 		case WinAPI.host_cpu.shortname
 		when 'ia32', 'x64'
-			@cpu = Ia32.new(os_process.addrsz)
+			@cpu = Ia32.new(os_process.cpusz)
 		else
 			raise 'unsupported architecture'
 		end
