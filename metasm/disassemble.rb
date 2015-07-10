@@ -546,7 +546,6 @@ class Disassembler
 	def normalize(addr)
 		return addr if not addr or addr == :default
 		addr = Expression[addr].bind(@old_prog_binding).reduce if not addr.kind_of? Integer
-		addr %= 1 << [@cpu.size, 32].max if @cpu and addr.kind_of? Integer
 		addr
 	end
 
