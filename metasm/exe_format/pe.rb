@@ -330,7 +330,7 @@ EOS
 	# compute Mandiant "importhash"
 	def imphash
 		lst = []
-		@imports.each { |id|
+		@imports.to_a.each { |id|
 			ln = id.libname.downcase.sub(/.(dll|sys|ocx)$/, '')
 			id.imports.each { |i|
 				if not i.name and ordtable = WindowsExports::IMPORT_HASH[ln]
