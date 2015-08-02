@@ -946,11 +946,11 @@ class DasmWindow < Window
 		exe
 	end
 
-	def promptopen(caption='chose target binary', &b)
+	def promptopen(caption='choose target binary', &b)
 		openfile(caption) { |exename| loadfile(exename) ; b.call(self) if b }
 	end
 
-	def promptdebug(caption='chose target', &b)
+	def promptdebug(caption='choose target', &b)
 		l = nil
 		i = inputbox(caption) { |name|
 			i = nil ; l.destroy if l and not l.destroyed?
@@ -996,7 +996,7 @@ class DasmWindow < Window
 			@dasm_widget.dasm.save_file @savefile
 			return
 		end
-		openfile('chose save file') { |file|
+		savefile('choose save file') { |file|
 			@savefile = file
 			@dasm_widget.dasm.save_file(file)
 		}
@@ -1039,13 +1039,13 @@ class DasmWindow < Window
 
 		importmenu = new_menu
 		addsubmenu(importmenu, 'Load _map') {
-			openfile('chose map file') { |file|
+			openfile('choose map file') { |file|
 				@dasm_widget.dasm.load_map(File.read(file)) if @dasm_widget
 				@dasm_widget.gui_update if @dasm_widget
 			} if @dasm_widget
 		}
 		addsubmenu(importmenu, 'Load _C') {
-			openfile('chose C file') { |file|
+			openfile('choose C file') { |file|
 				@dasm_widget.dasm.parse_c(File.read(file)) if @dasm_widget
 			} if @dasm_widget
 		}
@@ -1053,21 +1053,21 @@ class DasmWindow < Window
 
 		exportmenu = new_menu
 		addsubmenu(exportmenu, 'Save _map') {
-			savefile('chose map file') { |file|
+			savefile('choose map file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm.save_map
 				} if @dasm_widget
 			} if @dasm_widget
 		}
 		addsubmenu(exportmenu, 'Save _asm') {
-			savefile('chose asm file') { |file|
+			savefile('choose asm file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm
 				} if @dasm_widget
 			} if @dasm_widget
 		}
 		addsubmenu(exportmenu, 'Save _C') {
-			savefile('chose C file') { |file|
+			savefile('choose C file') { |file|
 				File.open(file, 'w') { |fd|
 					fd.puts @dasm_widget.dasm.c_parser
 				} if @dasm_widget

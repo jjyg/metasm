@@ -154,7 +154,7 @@ class DbgWidget < ContainerVBoxWidget
 		@children.each { |c| c.gui_update }
 	end
 
-	def prompt_attach(caption='chose target')
+	def prompt_attach(caption='choose target')
 		l = nil
 		i = inputbox(caption) { |name|
 			i = nil ; l.destroy if l and not l.destroyed?
@@ -184,7 +184,7 @@ class DbgWidget < ContainerVBoxWidget
 		} if not list_pr.empty?
 	end
 
-	def prompt_createprocess(caption='chose path')
+	def prompt_createprocess(caption='choose path')
 		openfile(caption) { |path|
 			path = '"' + path + '"' if @dbg.shortname == 'windbg' and path =~ /\s/
 			inputbox('target args?', :text => path) { |pa|

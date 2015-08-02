@@ -45,7 +45,7 @@ module Msgbox
 		InputBox.new(toplevel, *a) { |*ya| protect { yield(*ya) } }
 	end
 
-	# asks to chose a file to open, yields filename
+	# asks to choose a file to open, yields filename
 	# args: title, :path => path
 	def openfile(*a)
 		OpenFile.new(toplevel, *a) { |*ya| protect { yield(*ya) } }

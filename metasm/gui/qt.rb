@@ -51,7 +51,7 @@ module Msgbox
 
 	@@dialogfilefolder = nil
 
-	# asks to chose a file to open, yields filename
+	# asks to choose a file to open, yields filename
 	# args: title, :path => path
 	def openfile(title, opts={})
 		f = Qt::FileDialog.get_open_file_name(nil, title, @@dialogfilefolder)

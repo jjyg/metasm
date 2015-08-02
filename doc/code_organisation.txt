@@ -107,7 +107,7 @@ The actual implementation of the GUI are found in:
 
 Please note that the Qt backend does not work *at all*.
 
-The `gui.rb` file in the main directory is used to chose among the available GUI backend
+The `gui.rb` file in the main directory is used to choose among the available GUI backend
 the most appropriate for the current session.
 
 
