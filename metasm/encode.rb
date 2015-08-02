@@ -42,7 +42,7 @@ class ExeFormat
 		edata
 	end
 
-	# chose among multiple possible sub-EncodedData
+	# choose among multiple possible sub-EncodedData
 	# assumes all ambiguous edata have the equivallent relocations in the same order
 	def assemble_resolve(ary)
 		startlabel = new_label('section_start')
@@ -167,7 +167,7 @@ class ExeFormat
 		# for linear expressions of internal variables (ie differences of labels from the ary):
 		#  - calc target numeric bounds, and reject relocs not accepting worst case value
 		#  - else reject all but largest place available
-		# then chose the shortest overall EData left
+		# then choose the shortest overall EData left
 		ary.map! { |elem|
 			case elem
 			when Array
