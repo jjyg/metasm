@@ -76,20 +76,22 @@ class X86_64
 
 				imm ||= 0 if @b.val_enc == 5
 				if imm
+					i32 = :i32
+					i32 = :a32 if (self.b and self.b.sz == 32) or (self.i and self.i.sz == 32)
 					case Expression.in_range?(imm, :i8)
 					when true
 						or_bits[1<<6]
 						[ret << Expression.encode_imm(imm, :i8, endianness)]
 					when false
 						or_bits[2<<6]
-						[ret << Expression.encode_imm(imm, :a32, endianness)]
+						[ret << Expression.encode_imm(imm, i32, endianness)]
 					when nil
 						rets = ret.dup
 						or_bits[1<<6]
 						ret << @imm.encode(:i8, endianness)
 						rets, ret = ret, rets	# or_bits[] modifies ret directly
 						or_bits[2<<6]
-						ret << @imm.encode(:a32, endianness)
+						ret << @imm.encode(i32, endianness)
 						[ret, rets]
 					end
 				else
