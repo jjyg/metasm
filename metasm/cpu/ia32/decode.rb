@@ -403,7 +403,12 @@ class Ia32
 					# ror a, b  =>  (a >> b) | (a << (32-b))
 					{ a0 => Expression[[[[a0, :&, operandmask], e_op, sz], :|, [[a0, :&, operandmask], inv_op, isz]], :&, operandmask] }
 				}
-			when 'sar', 'shl', 'sal'; lambda { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz(di), 32].max]] } }
+			when 'shl', 'sal'; lambda { |di, a0, a1| { a0 => Expression[a0, (op[-1] == ?r ? :>> : :<<), [a1, :%, [opsz(di), 32].max]] } }
+			when 'sar'; lambda { |di, a0, a1|
+				sz = [opsz(di), 32].max
+				a1 = [a1, :%, sz]
+				{ a0 => Expression[[a0, :>>, a1], :|,
+						   [[[mask[di], :*, sign[a0, di]], :<<, [sz, :-, a1]], :&, mask[di]]] } }
 			when 'shr'; lambda { |di, a0, a1| { a0 => Expression[[a0, :&, mask[di]], :>>, [a1, :%, opsz(di)]] } }
 			when 'shrd'
 				lambda { |di, a0, a1, a2|
