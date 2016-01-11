@@ -267,6 +267,11 @@ class CCompiler < C::Compiler
 						e2 = inuse findreg(rsz)
 						op = ((type.specifier == :unsigned) ? 'movzx' : 'movsx')
 						op = 'mov' if e.sz == e2.sz
+					elsif e.sz > sz
+						e2 = inuse findreg(sz)
+						el, eh = get_composite_parts(e)
+						e = el
+						op = 'mov'
 					else
 						e2 = inuse findreg(sz)
 						op = 'mov'
@@ -779,6 +784,9 @@ class CCompiler < C::Compiler
 						else
 							instr 'mov', l, Reg.new(r.val, l.sz)
 						end
+					elsif r.kind_of? Composite
+						rl, rh = get_composite_parts r
+						instr 'mov', l, rl
 					else
 						instr 'mov', l, r
 					end
