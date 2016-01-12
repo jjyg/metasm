@@ -1337,11 +1337,11 @@ class CCompiler < C::Compiler
 			unuse l, r
 			if expr.lexpr.type.integral?
 				if expr.lexpr.type.name == :__int64 and @cpusz != 64
-					raise # TODO
+					raise "unsupported 64bit comparison #{expr}"	# TODO
 				end
 				instr 'cmp', l, r
 			elsif expr.lexpr.type.float?
-				raise # TODO
+				raise "unsupported float comparison #{expr}"	# TODO
 				instr 'fcmpp', l, r
 			else raise 'bad comparison ' + expr.to_s
 			end
@@ -1351,12 +1351,20 @@ class CCompiler < C::Compiler
 			r = c_cexpr_inner(expr.rexpr)
 			r = make_volatile(r, expr.rexpr.type)
 			unuse r
+			if r.kind_of? Composite
+				r, rh = get_composite_parts(r)
+				instr 'or', r, rh
+			end
 			instr 'test', r, r
 			instr 'jz', Expression[target]
 		else
 			r = c_cexpr_inner(expr)
 			r = make_volatile(r, expr.type)
 			unuse r
+			if r.kind_of? Composite
+				r, rh = get_composite_parts(r)
+				instr 'or', r, rh
+			end
 			instr 'test', r, r
 			instr 'jnz', Expression[target]
 		end
