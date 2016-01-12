@@ -66,30 +66,31 @@ def asm
   puts "[+] Metasm assembly shell"
   puts "type help for usage..\n\n"
 
-  # Console Settings
-  cmds = %w[help exit quit].sort
-  completion = proc { |line| cmds.grep( /^#{Regexp.escape( line )}/ ) }
-  Readline.completion_proc = completion
+  Readline.completion_proc = lambda { |line| %w[help exit quit].find_all { |w| line.downcase == w[0, line.length] } }
   Readline.completion_append_character = ' '
-  while line = Readline.readline('asm > ', true)
 
-    if line.include? 'help'
-      puts "\nType in opcodes to see their binary form",
+  while line = Readline.readline('asm> ', true)
+    case line
+    when /^help(\W|$)/
+      puts "",
+           "Type in opcodes to see their binary form",
            "You can use ';' to type multi-line stuff",
-           "e.g. 'nop nop' will display \"\\x90\\x90\""
-      puts "\nexit/quit \t Quit the console."
-      puts "help \t\t Show this screen."
-      next
-    end
-    break if line =~ /^quit.*/i or line =~ /^exit.*/i
-
-    begin
-      data = line.gsub(';', "\n")
-      next if data.strip.empty?
-      data = data.encode
-      puts '"' + data.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
-    rescue Metasm::Exception => e
-      puts "Error: #{e.class} #{e.message}"
+           "e.g. 'nop nop' will display \"\\x90\\x90\"",
+           "",
+           "exit/quit    Quit the console",
+           "help         Show this screen",
+           ""
+    when /^(quit|exit)(\W|$)/
+      break
+    else
+      begin
+        data = line.gsub(';', "\n")
+        next if data.strip.empty?
+        e_data = data.encode
+        puts '"' + e_data.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
+      rescue Metasm::Exception => e
+        puts "Error: #{e.class} #{e.message}"
+      end
     end
   end
 
