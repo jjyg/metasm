@@ -43,6 +43,8 @@ class MachO < ExeFormat
 			9 => '8600', 10 => '8650', 11 => '8800', 12 => 'UVAXIII',
 		},
 		'ROMP' => { 0 => 'ALL', 1 => 'PC', 2 => 'APC', 3 => '135',
+		},
+		'NS32032' => {	# same for NS*
 			0 => 'MMAX_ALL', 1 => 'MMAX_DPC', 2 => 'SQT',
 			3 => 'MMAX_APC_FPU', 4 => 'MMAX_APC_FPA', 5 => 'MMAX_XPC',
 		},

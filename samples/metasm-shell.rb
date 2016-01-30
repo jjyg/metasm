@@ -18,73 +18,85 @@
 # > exit
 
 require 'metasm'
+require 'readline'
 
 class String
-	@@cpu = Metasm::Ia32.new
-	class << self
-		def cpu()   @@cpu   end
-		def cpu=(c)
-			c = Metasm.const_get(c).new if c.kind_of? String
-			@@cpu=c
-		end
-	end
+  @@cpu = Metasm::Ia32.new
+  class << self
+    def cpu()   @@cpu   end
+    def cpu=(c)
+      c = Metasm.const_get(c).new if c.kind_of? String
+      @@cpu=c
+    end
+  end
 
-	# encodes the current string as a Shellcode, returns the resulting EncodedData
-	def encode_edata
-		Metasm::Shellcode.assemble(@@cpu, self).encode.encoded
-	end
+  # encodes the current string as a Shellcode, returns the resulting EncodedData
+  def encode_edata
+    Metasm::Shellcode.assemble(@@cpu, self).encode.encoded
+  end
 
-	# encodes the current string as a Shellcode, returns the resulting binary String
-	# outputs warnings on unresolved relocations
-	def encode
-		ed = encode_edata
-		if not ed.reloc.empty?
-			puts 'W: encoded string has unresolved relocations: ' + ed.reloc.map { |o, r| r.target.inspect }.join(', ')
-		end
-		ed.fill
-		ed.data
-	end
+  # encodes the current string as a Shellcode, returns the resulting binary String
+  # outputs warnings on unresolved relocations
+  def encode
+    ed = encode_edata
+    if not ed.reloc.empty?
+      puts 'W: encoded string has unresolved relocations: ' + ed.reloc.map { |o, r| r.target.inspect }.join(', ')
+    end
+    ed.fill
+    ed.data
+  end
 
-	# decodes the current string as a Shellcode, with specified base address
-	# returns the resulting Disassembler
-	def decode_blocks(base_addr=0, eip=base_addr)
-		sc = Metasm::Shellcode.decode(self, @@cpu)
-		sc.base_addr = base_addr
-		sc.disassemble(eip)
-	end
+  # decodes the current string as a Shellcode, with specified base address
+  # returns the resulting Disassembler
+  def decode_blocks(base_addr=0, eip=base_addr)
+    sc = Metasm::Shellcode.decode(self, @@cpu)
+    sc.base_addr = base_addr
+    sc.disassemble(eip)
+  end
 
-	# decodes the current string as a Shellcode, with specified base address
-	# returns the asm source equivallent
-	def decode(base_addr=0, eip=base_addr)
-		decode_blocks(base_addr, eip).to_s
-	end
+  # decodes the current string as a Shellcode, with specified base address
+  # returns the asm source equivallent
+  def decode(base_addr=0, eip=base_addr)
+    decode_blocks(base_addr, eip).to_s
+  end
 end
 
 # get in interactive assembler mode
 def asm
-	puts 'type "exit" or "quit" to quit', 'use ";" for newline', ''
-	while (print "asm> " ; $stdout.flush ; l = gets)
-		break if %w[quit exit].include? l.chomp
-		if l.chomp == 'help'
-			puts "Metasm assembly shell: type in opcodes to see their binary form",
-				"You can use ';' to type multi-line stuff",
-				"e.g. 'nop nop' will display \"\\x90\\x90\""
-			next
-		end
-	
-		begin
-			data = l.gsub(';', "\n")
-			next if data.strip.empty?
-			data = data.encode
-			puts '"' + data.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
-		rescue Metasm::Exception => e
-			puts "Error: #{e.class} #{e.message}"
-		end
-	end
+  puts "[+] Metasm assembly shell"
+  puts "type help for usage..\n\n"
 
-	puts
+  Readline.completion_proc = lambda { |line| %w[help exit quit].find_all { |w| line.downcase == w[0, line.length] } }
+  Readline.completion_append_character = ' '
+
+  while line = Readline.readline('asm> ', true)
+    case line
+    when /^help(\W|$)/
+      puts "",
+           "Type in opcodes to see their binary form",
+           "You can use ';' to type multi-line stuff",
+           "e.g. 'nop nop' will display \"\\x90\\x90\"",
+           "",
+           "exit/quit    Quit the console",
+           "help         Show this screen",
+           ""
+    when /^(quit|exit)(\W|$)/
+      break
+    else
+      begin
+        data = line.gsub(';', "\n")
+        next if data.strip.empty?
+        e_data = data.encode
+        puts '"' + e_data.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
+      rescue Metasm::Exception => e
+        puts "Error: #{e.class} #{e.message}"
+      end
+    end
+  end
+
+  puts
 end
 
 if __FILE__ == $0
-	asm
+  asm
 end

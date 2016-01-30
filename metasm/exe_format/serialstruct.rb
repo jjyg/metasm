@@ -56,7 +56,7 @@ class << self
 
 	# a fixed-size memory chunk
 	def mem(name, len, defval='')
-		new_field(name, lambda { |exe, me| exe.curencoded.read(len) }, lambda { |exe, me, val| val[0, len].ljust(len, 0.chr) }, lambda { |exe, me| len }, defval)
+		new_field(name, lambda { |exe, me| exe.curencoded.read(len) }, lambda { |exe, me, val| d = val[0, len].ljust(len, 0.chr) ; d.force_encoding('BINARY') if d.respond_to?(:force_encoding) ; d }, lambda { |exe, me| len }, defval)
 	end
 	# a fixed-size string, 0-padded
 	def str(name, len, defval='')

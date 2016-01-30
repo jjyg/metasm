@@ -11,7 +11,7 @@ module Metasm
 class ELF
 	class Header
 		def set_default_values elf
-			@magic     ||= "\x7fELF"
+			@magic     ||= ELF::MAGIC
 			@e_class   ||= elf.bitsize.to_s
 			@data      ||= (elf.endianness == :big ? 'MSB' : 'LSB')
 			@version   ||= 'CURRENT'
@@ -62,6 +62,7 @@ class ELF
 			return if name_p and sne.data[@name_p, @name.length+1] == @name+0.chr
 			return if @name_p = sne.data.index(@name+0.chr)
 			@name_p = sne.virtsize
+			@name.force_encoding('BINARY') if name.respond_to?(:force_encoding)
 			sne << @name << 0
 		end
 	end
@@ -92,6 +93,7 @@ class ELF
 			return if name_p and s[@name_p, @name.length+1] == @name+0.chr
 			return if @name_p = s.index(@name+0.chr)
 			@name_p = strtab.length
+			@name.force_encoding('BINARY') if name.respond_to?(:force_encoding)
 			strtab << @name << 0
 		end
 	end
@@ -519,6 +521,7 @@ class ELF
 		add_str = lambda { |n|
 			if n and n != '' and not ret = strtab.encoded.data.index(n + 0.chr)
 				ret = strtab.encoded.virtsize
+				n.force_encoding('BINARY') if n.respond_to?(:force_encoding)
 				strtab.encoded << n << 0
 			end
 			ret || 0
