@@ -1,5 +1,5 @@
 #    This file is part of Metasm, the Ruby assembly manipulation suite
-#    Copyright (C) 2015 Google
+#    Copyright (C) 2015-2016 Google
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
@@ -11,17 +11,15 @@ class MCS51 < CPU
 
 	class Reg
 		I_TO_S  = { 0x4 => 'A',
-		           0x5 => 'B',
-		           0x6 => '@R0',
-		           0x7 => '@R1',
-		           0x8 => 'R0',
-		           0x9 => 'R1',
-		           0xA => 'R2',
-		           0xB => 'R3',
-		           0xC => 'R4',
-		           0xD => 'R5',
-		           0xE => 'R6',
-		           0xF => 'R7'
+		            0x5 => 'B',
+		            0x8 => 'R0',
+		            0x9 => 'R1',
+		            0xA => 'R2',
+		            0xB => 'R3',
+		            0xC => 'R4',
+		            0xD => 'R5',
+		            0xE => 'R6',
+		            0xF => 'R7'
 		}
 
 		S_TO_I = { 'A' => 0x4,
@@ -52,12 +50,14 @@ class MCS51 < CPU
 	end
 
 	class Memref
-		def initialize(offset)
+		attr_accessor :base, :offset
+		def initialize(base, offset)
+			@base = base
 			@offset = offset
 		end
 
 		def to_s
-			@offset.to_s
+			@base ? "@" + @base.to_s : @offset.to_s
 		end
 	end
 
