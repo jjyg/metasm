@@ -428,7 +428,7 @@ class Ia32
 			when 'pop'
 				lambda { |di, a0| { esp => Expression[esp, :+, opsz(di)/8],
 					a0 => Indirection[esp, opsz(di)/8, di.address] } }
-			when 'pushfd', 'pushf'
+			when 'pushfd', 'pushf', 'pushfq'
 				# TODO Unknown per bit
 				lambda { |di|
 					efl = Expression[0x202]
