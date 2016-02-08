@@ -1572,7 +1572,7 @@ puts "  backtrace end #{ev} #{expr}" if debug_backtrace
 				oldexpr = t[0][0]
 				next false if expr == oldexpr		# unmodifying loop
 puts "  bt loop at #{Expression[t[0][1]]}: #{oldexpr} => #{expr} (#{t.map { |z| Expression[z[1]] }.join(' <- ')})" if debug_backtrace
-				bt_log << [:loop, expr, oldexpr, t[0][1], t[1][1]]
+				bt_log << [:loop, expr, oldexpr, t.map { |z| z[1] }] if bt_log
 				false
 			when :up
 				next false if only_upto and h[:to] != only_upto
