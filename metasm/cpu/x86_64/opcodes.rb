@@ -46,7 +46,7 @@ class X86_64
 			o.args.include?(:seg2A) or
 			o.args.include?(:farptr) or
 			%w[aaa aad aam aas bound daa das into jcxz jecxz
-			 lds les loadall arpl pusha pushad popa popad pushfd popfq
+			 lds les loadall arpl pusha pushad popa popad pushfd popfd
 			].include?(o.name.split('.')[0])
 			 # split needed for lds.a32
 		}
