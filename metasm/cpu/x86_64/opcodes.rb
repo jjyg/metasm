@@ -46,7 +46,7 @@ class X86_64
 			o.args.include?(:seg2A) or
 			o.args.include?(:farptr) or
 			%w[aaa aad aam aas bound daa das into jcxz jecxz
-			 lds les loadall arpl pusha pushad popa popad pushfd
+			 lds les loadall arpl pusha pushad popa popad pushfd popfq
 			].include?(o.name.split('.')[0])
 			 # split needed for lds.a32
 		}
@@ -58,6 +58,7 @@ class X86_64
 		addop('cmpxchg16b', [0x0F, 0xC7], 1) { |o| o.props[:opsz] = 64 ; o.props[:argsz] = 128 }
 		addop('iretq', [0xCF], nil, :stopexec, :setip) { |o| o.props[:opsz] = 64 } ; opcode_list.unshift opcode_list.pop
 		addop('pushfq', [0x9C]) { |o| o.props[:auto64] = true }
+		addop('popfq',  [0x9D]) { |o| o.props[:auto64] = true }
 		addop 'swapgs', [0x0F, 0x01, 0xF8]
 
 		addop('movq',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args = [:regmmx, :modrm] ; o.props[:opsz] = o.props[:argsz] = 64 }

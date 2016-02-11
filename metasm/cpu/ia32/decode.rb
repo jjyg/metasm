@@ -439,7 +439,7 @@ class Ia32
 					bts[11, :eflag_o]
 					{ esp => Expression[esp, :-, opsz(di)/8], Indirection[esp, opsz(di)/8, di.address] => efl }
 				}
-			when 'popfd', 'popf'
+			when 'popfd', 'popf', 'popfq'
 				lambda { |di| bt = lambda { |pos| Expression[[Indirection[esp, opsz(di)/8, di.address], :>>, pos], :&, 1] }
 					{ esp => Expression[esp, :+, opsz(di)/8], :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7], :eflag_o => bt[11] } }
 			when 'sahf'
