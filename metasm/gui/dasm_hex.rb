@@ -350,8 +350,8 @@ class HexWidget < DrawableWidget
 				else
 					case v = key
 					when ?0..?9; v -= ?0
-					when ?a..?f; v -= ?a-10
-					when ?A..?F; v -= ?A-10
+					when ?a..?f; v -= ?a - 10
+					when ?A..?F; v -= ?A - 10
 					else return false
 					end
 				end
