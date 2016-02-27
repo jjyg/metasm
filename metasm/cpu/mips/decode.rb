@@ -149,11 +149,12 @@ class MIPS
 			when 'and', 'andi'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :&, a2] } }
 			when 'or', 'ori';   lambda { |di, a0, a1, a2|   { a0 => Expression[a1, :|, a2] } }
 			when 'nor'; lambda { |di, a0, a1, a2| { a0 => Expression[:~, [a1, :|, a2]] } }
+			when 'not'; lambda { |di, a0, a1| { a0 => Expression[:~, a1] } }
 			when 'xor'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :^, a2] } }
 			when 'sll', 'sllv'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :>>, a2] } }
 			when 'srl', 'srlv', 'sra', 'srav'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :<<, a2] } }	# XXX sign-extend
-			when 'lw';        lambda { |di, a0, a1| { a0 => Expression[a1] } }
-			when 'sw';        lambda { |di, a0, a1| { a1 => Expression[a0] } }
+			when 'lw', 'lwl', 'lwr'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'sw', 'swl', 'swr'; lambda { |di, a0, a1| { a1 => Expression[a0] } }
 			when 'lh', 'lhu'; lambda { |di, a0, a1| { a0 => Expression[a1] } }	# XXX sign-extend
 			when 'sh';        lambda { |di, a0, a1| { a1 => Expression[a0] } }
 			when 'lb', 'lbu'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
@@ -161,8 +162,8 @@ class MIPS
 			when /^slti?u?/;  lambda { |di, a0, a1, a2| { a0 => Expression[a1, :<, a2] } }	# XXX signedness
 			when 'mfhi'; lambda { |di, a0| { a0 => Expression[:hi] } }
 			when 'mflo'; lambda { |di, a0| { a0 => Expression[:lo] } }
-			when 'mult'; lambda { |di, a0, a1| { :hi => Expression[[a0, :*, a1], :>>, 32], :lo => Expression[[a0, :*, a1], :&, 0xffff_ffff] } }
-			when 'div';  lambda { |di, a0, a1| { :hi => Expression[a0, :%, a1], :lo => Expression[a0, :/, a1] } }
+			when 'mult', 'multu'; lambda { |di, a0, a1| { :hi => Expression[[a0, :*, a1], :>>, 32], :lo => Expression[[a0, :*, a1], :&, 0xffff_ffff] } }
+			when 'div', 'divu';  lambda { |di, a0, a1| { :hi => Expression[a0, :%, a1], :lo => Expression[a0, :/, a1] } }
 			when 'jal', 'jalr'; lambda { |di, a0| { :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] } }
 			when 'li', 'mov'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'syscall'; lambda { |di, *a| { :$v0 => Expression::Unknown } }
