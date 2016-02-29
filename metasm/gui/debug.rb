@@ -410,8 +410,8 @@ class DbgRegWidget < DrawableWidget
 				case v = key
 				when ?\x20; v = nil
 				when ?0..?9; v -= ?0
-				when ?a..?f; v -= ?a-10
-				when ?A..?F; v -= ?A-10
+				when ?a..?f; v -= ?a - 10
+				when ?A..?F; v -= ?A - 10
 				else return false
 				end
 			end

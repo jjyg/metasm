@@ -181,7 +181,7 @@ class ST20
 					# conditional jump
 					commit[]
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
-					cc = ceb[:a, :!=, 0]
+					cc = ceb[:a, :'!=', 0]
 					# XXX switch/indirect/multiple jmp
 					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n))
 					to.delete dcmp.dasm.normalize(n)
