@@ -21,7 +21,7 @@ class TestMCS51 < Test::Unit::TestCase
 		hex_stream += "\x02\x12\x34"
 
 		dasm = Metasm::Shellcode.disassemble(Metasm::MCS51.new, hex_stream)
-		puts dasm
+		#puts dasm
 		assert_equal(23, dasm.decoded.length)
 	end
 end
