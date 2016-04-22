@@ -1154,17 +1154,19 @@ class EncodedData
 				other.inv_export.each { |k, v| @inv_export[@virtsize + k] = v }
 			end
 			if @data.empty?; @data = other.data.dup
+			elsif other.empty?
 			elsif not @data.kind_of?(String); @data = @data.to_str << other.data
 			else @data << other.data
 			end
 			@virtsize += other.virtsize
 		else
 			fill
-			if other.respond_to?(:force_encoding) and other.encoding.name != 'ASCII-8BIT'
+			if other.respond_to?(:force_encoding) and other.encoding.name != 'ASCII-8BIT' and other.length > 0
 				puts "Forcing edata.data.encoding = BINARY at", caller if $DEBUG
 				other = other.dup.force_encoding('binary')
 			end
 			if @data.empty?; @data = other.dup
+			elsif other.empty?
 			elsif not @data.kind_of?(String); @data = @data.to_str << other
 			else @data << other
 			end
