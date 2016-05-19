@@ -556,7 +556,7 @@ class Ia32
 					op =~ /^(stos|movs|lods|scas|cmps)([bwdq])$/
 					e_op = $1
 					sz = { 'b' => 1, 'w' => 2, 'd' => 4, 'q' => 8 }[$2]
-					eax_ = Reg.new(0, 8*sz).symbolic
+					eax_ = self.class::Reg.new(0, 8*sz).symbolic
 					dir = :+
 					if di.block and (di.block.list.find { |ddi| ddi.opcode.name == 'std' } rescue nil)
 						dir = :-
