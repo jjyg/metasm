@@ -63,24 +63,25 @@ class Indirection < ExpressionType
 		@target.externals
 	end
 
-	def match_rec(target, vars)
-		return false if not target.kind_of? Indirection
-		t = target.target
-		if vars[t]
-			return false if @target != vars[t]
-		elsif vars.has_key? t
-			vars[t] = @target
-		elsif t.kind_of? ExpressionType
-			return false if not @target.match_rec(t, vars)
+	def match_rec(pattern, vars)
+		return false if not pattern.kind_of? Indirection
+		pt = pattern.target
+		if vars[pt]
+			return false if @target != vars[pt]
+		elsif vars.has_key? pt
+			vars[pt] = @target
+		elsif pt.kind_of? ExpressionType
+			return false if not @target.match_rec(pt, vars)
 		else
-			return false if targ != @target
+			return false if pt != @target
 		end
-		if vars[target.len]
-			return false if @len != vars[target.len]
-		elsif vars.has_key? target.len
-			vars[target.len] = @len
+		pl = pattern.len
+		if vars[pl]
+			return false if @len != vars[pl]
+		elsif vars.has_key? pl
+			vars[pl] = @len
 		else
-			return false if target.len != @len
+			return false if pl != @len
 		end
 		vars
 	end

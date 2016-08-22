@@ -892,7 +892,7 @@ class Expression < ExpressionType
 			if targ and vars[targ]
 				return false if exp != vars[targ]
 			elsif targ and vars.has_key? targ
-				return false if not vars[targ] = exp
+				vars[targ] = exp
 			elsif targ.kind_of? ExpressionType
 				return false if not exp.kind_of? ExpressionType or not exp.match_rec(targ, vars)
 			else
