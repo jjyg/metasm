@@ -1044,7 +1044,7 @@ class Disassembler
 		fd.puts "decoded #{t.length}", t
 
 		t = @comment.map { |a, c|
-			c.map { |l| l.chomp }.join("\n").split("\n").map { |lc| "#{Expression[a]} #{lc.chomp}" }
+			c.to_a.map { |l| l.chomp }.join("\n").split("\n").map { |lc| "#{Expression[a]} #{lc.chomp}" }
 		}.join("\n")
 		fd.puts "comment #{t.length}", t
 
