@@ -365,8 +365,7 @@ class ELF
 	# marks a symbol as @encoded.export (from s.value, using segments or sections)
 	def decode_symbol_export(s)
 		if s.name and s.shndx != 'UNDEF' and %w[NOTYPE OBJECT FUNC].include?(s.type)
-			if @header.type == 'REL'
-				sec = @sections[s.shndx]
+			if @header.type == 'REL' and s.shndx.kind_of?(::Integer) and sec = @sections[s.shndx]
 				o = sec.offset + s.value
 			elsif not o = addr_to_off(s.value)
 				# allow to point to end of segment
