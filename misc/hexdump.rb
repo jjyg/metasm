@@ -50,7 +50,7 @@ if $0 == __FILE__
 	fmt << 'w' if ARGV.delete '-W'
 	fmt << 'd' if ARGV.delete '-D'
 	fmt << 'a' if ARGV.delete '-A'
-	fmt = ['c', 'd', 'a'] if ARGV.delete '-a'
+	fmt = ['c', 'd', 'a'] if ARGV.delete '-a' or fmt.empty?
 	infd = ARGV.empty? ? $stdin : File.open(ARGV.first, 'rb')
 	infd.hexdump(:fmt => fmt)
 end
