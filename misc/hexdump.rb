@@ -29,7 +29,7 @@ def hexdump(ctx={})
 			print s.unpack('C*').map { |b| '%02x' % b }.join(' ').ljust(3*16-1) + '  ' if fmt.include? 'c'
 			print s.unpack('v*').map { |b| '%04x' % b }.join(' ').ljust(5*8-1)  + '  ' if fmt.include? 'w'
 			print s.unpack('L*').map { |b| '%08x' % b }.join(' ').ljust(9*4-1)  + '  ' if fmt.include? 'd'
-			print s.tr("\0-\x1f\x7f-\xff", '.') if fmt.include? 'a'
+			print s.tr("\0-\x1f\x7f-\xff".force_encoding('BINARY'), '.') if fmt.include? 'a'
 			puts
 		elsif not ctx[:lastdup]
 			ctx[:lastdup] = true
