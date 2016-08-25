@@ -632,6 +632,10 @@ class MachO < ExeFormat
 					off = sec.offset - seg.fileoff
 					(sec.size / 4).times { |i|
 						sidx = indsymtab[sec.res1+i]
+						if not sidx
+							puts "W: osx: invalid symbol pointer index #{i} ?" if $VERBOSE
+							next
+						end
 						case IND_SYM_IDX[sidx]
 						when 'INDIRECT_SYMBOL_LOCAL' # base reloc: add delta from prefered image base
 							edata.ptr = off
