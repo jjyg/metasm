@@ -639,15 +639,15 @@ class MachO < ExeFormat
 						case IND_SYM_IDX[sidx]
 						when 'INDIRECT_SYMBOL_LOCAL' # base reloc: add delta from prefered image base
 							edata.ptr = off
-							addr = decode_word(edata)
+							addr = decode_xword(edata)
 							if s = segment_at(addr)
 								label = label_at(s.encoded, s.encoded.ptr, "xref_#{Expression[addr]}")
-								seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[label], :u32, @endianness)
+								seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[label], "u#@size".to_sym, @endianness)
 							end
 						when 'INDIRECT_SYMBOL_ABS'   # nothing
 						else
 							sym = @symbols[sidx]
-							seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[sym.name], :u32, @endianness)
+							seg.encoded.reloc[off] = Metasm::Relocation.new(Expression[sym.name],"u#@size".to_sym, @endianness)
 						end
 						off += sizeof_xword
 					}
