@@ -6,7 +6,7 @@ backend = ENV['METASM_GUI'] || (
 			require 'gtk2'
 			'gtk'
 		rescue LoadError
-			raise LoadError, 'No GUI ruby binding installed - please install libgtk2-ruby'
+			raise LoadError, 'No GUI ruby binding installed - please install ruby-gtk2'
 		end
 	end
 )
