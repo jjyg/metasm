@@ -452,8 +452,8 @@ EOS
 	end
 
 	# compile a case/when
-	# create a real C switch() for Fixnums, and put the others === in the default case
-	# XXX will get the wrong order for "case x; when 1; when Fixnum; when 3;" ...
+	# create a real C switch() for Integers, and put the others === in the default case
+	# XXX will get the wrong order for "case x; when 1; when Integer; when 3;" ...
 	def compile_case(ast, scope, want_value)
 		# this generates
 		# var = stuff_to_test()
@@ -498,7 +498,7 @@ EOS
 				raise Fail if cs[1][0] != :array
 
 				# numeric case, add a case to body_int
-				if cs[1][1..-1].all? { |cd| cd[0] == :lit and (cd[1].kind_of? Fixnum or cd[1].kind_of? Range) }
+				if cs[1][1..-1].all? { |cd| cd[0] == :lit and (cd[1].kind_of? Integer or cd[1].kind_of? Range) }
 					cs[1][1..-1].each { |cd|
 						if cd[1].kind_of? Range
 							b = cd[1].begin
@@ -520,7 +520,7 @@ EOS
 				else
 					cnd = nil
 					cs[1][1..-1].each { |cd|
-						if (cd[0] == :lit and (cd[1].kind_of?(Fixnum) or cd[1].kind_of?(Symbol))) or
+						if (cd[0] == :lit and (cd[1].kind_of?(Integer) or cd[1].kind_of?(Symbol))) or
 							[:nil, :true, :false].include?(cd[0])
 							# true C equality
 							cd = C::CExpression[var, :==, ast_to_c(cd, scope)]
@@ -659,7 +659,7 @@ EOS
 	end
 
 	# retrieve the current class, from self->klass
-	# XXX will segfault with self.kind_of? Fixnum/true/false/nil/sym
+	# XXX will segfault with self.kind_of? Integer/true/false/nil/sym
 	def rb_selfclass
 		rb_cast_pvalue(rb_self, 1)
 	end
@@ -1138,7 +1138,7 @@ EOS
 		args = ast[3][1..-1] if ast[3] and ast[3][0] == :array
 		arg0 = args[0] if args and args[0]
 
-		if arg0 and arg0[0] == :lit and arg0[1].kind_of?(Fixnum) and %w[== > < >= <= + -].include?(op)
+		if arg0 and arg0[0] == :lit and arg0[1].kind_of?(Integer) and %w[== > < >= <= + -].include?(op)
 			# TODO or @optim_hint[ast[1]] == 'fixnum'
 			# optimize 'x==42', 'x+42', 'x-42'
 			o2 = arg0[1]
@@ -1146,7 +1146,7 @@ EOS
 				# need o2 >= 0 for overflow detection
 				op = {'+' => '-', '-' => '+'}[op]
 				o2 = -o2
-				return if not o2.kind_of? Fixnum	# -0x40000000
+				return if not o2.kind_of? Integer	# -0x40000000
 			end
 
 			int_v = o2.object_id
@@ -1159,11 +1159,11 @@ EOS
 
 			case op
 			when '=='
-				# XXX assume == only return true for full equality: if not Fixnum, then always false
+				# XXX assume == only return true for full equality: if not Integer, then always false
 				# which breaks 1.0 == 1 and maybe others, but its ok
 				scope.statements << C::If.new(ce[recv, :'==', [int_v]], ce[tmp, :'=', rb_true], ce[tmp, :'=', rb_false])
 			when '>', '<', '>=', '<='
-				# do the actual comparison on signed >>1 if both Fixnum
+				# do the actual comparison on signed >>1 if both Integer
 				t = C::If.new(
 					ce[[[[recv], int], :>>, [1]], op.to_sym, [[[int_v], int], :>>, [1]]],
 					ce[tmp, :'=', rb_true],
@@ -1304,8 +1304,7 @@ EOS
 			when 'Symbol'
 				tmp = get_new_tmp_var('kindof', want_value)
 				ce[[ast_to_c(ast[1], scope, tmp), :'&', [0xf]], :'==', [0xe]]
-			#when 'Numeric', 'Integer'
-			when 'Fixnum'
+			when 'Integer'
 				tmp = get_new_tmp_var('kindof', want_value)
 				ce[ast_to_c(ast[1], scope, tmp), :'&', [0x1]]
 			when 'Array'
@@ -1503,7 +1502,7 @@ puts "shortcut may be incorrect for #{ast.inspect}" if arg0[0] == :const
 		elsif b_recv[0] == :call and not b_recv[3] and b_recv[2] == 'times'
 			limit = get_new_tmp_var('limit')
 			recv = ast_to_c(b_recv[1], scope, limit)
-			scope.statements << C::If.new(C::CExpression[:'!', [recv, :&, 1]], rb_raise('only Fixnum#times handled'), nil)
+			scope.statements << C::If.new(C::CExpression[:'!', [recv, :&, 1]], rb_raise('only Integer#times handled'), nil)
 			if want_value
 				scope.statements << C::CExpression[@iter_break, :'=', recv]
 			end
