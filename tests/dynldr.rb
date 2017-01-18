@@ -39,15 +39,15 @@ EOS
 		end
 	end
 
-	def test_callback
-		c1 = d.callback_alloc_c('int lol(int);') { |i| i+1 }
-		c2 = d.callback_alloc_c('int lol(int);') { |i| i+2 }
-		c3 = d.callback_alloc_c('int lol(int);') { |i| i/2 }
-
-		d.new_func_c "int blop(int i, int (*fp)(int)) { return fp(i); }"
-		
-		assert_equal(2, d.blop(1, c1))
-		assert_equal(4, d.blop(2, c2))
-		assert_equal(6, d.blop(13, c3))
-	end
+#	def test_callback
+#		c1 = d.callback_alloc_c('int lol(int);') { |i| i+1 }
+#		c2 = d.callback_alloc_c('int lol(int);') { |i| i+2 }
+#		c3 = d.callback_alloc_c('int lol(int);') { |i| i/2 }
+#
+#		d.new_func_c "int blop(int i, int (*fp)(int)) { return fp(i); }"
+#
+#		assert_equal(2, d.blop(1, c1))
+#		assert_equal(4, d.blop(2, c2))
+#		assert_equal(6, d.blop(13, c3))
+#	end
 end
