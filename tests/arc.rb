@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 require 'test/unit'
-require 'metasm'
+require_relative '../metasm'
 
 class TestArc < Test::Unit::TestCase
 	def test_arc_dec

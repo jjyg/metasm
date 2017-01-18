@@ -5,7 +5,7 @@
 
 
 require 'test/unit'
-require 'metasm/exe_format/shellcode'
+require_relative '../metasm/exe_format/shellcode'
 
 class TestEncodedData < Test::Unit::TestCase
 	def compile(src)
@@ -120,7 +120,7 @@ EOS
 		ee = Metasm::Expression[:+, 'bla'].encode(:u16, :big)
 		ee.fixup('bla' => 1024)
 		assert_equal("\4\0", ee.data)
-		
+
 		eee = compile <<EOS
 db abc - def
 def:
