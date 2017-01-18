@@ -79,7 +79,7 @@ class ARC
 		lookaside = lookaside[sub_opcode(val)] if @instrlength == 32 and maj == 5
 
 		op = lookaside.select { |opcode|
-			if $ARC_DEBUG and (val & opcode.bin_mask) == opcode.bin
+			if false and (val & opcode.bin_mask) == opcode.bin
 				puts "#{opcode.bin_mask.to_s(16)} - #{opcode.bin.to_s(16)} - #{(val & opcode.bin_mask).to_s(16)} -  #{opcode.name} - #{opcode.args}"
 			end
 			(val & opcode.bin_mask) == opcode.bin
@@ -255,7 +255,7 @@ class ARC
 					tmp = field_val[a]
 					#c = tmp & 0x3F
 					tmp = tmp >> 6
-					b = (tmp >> 12) | ((tmp & 0x7) << 3)
+					#b = (tmp >> 12) | ((tmp & 0x7) << 3)
 					Memref.new(field_val[:bext],  field_val[:cext], memref_size(di))
 
 				when :u6, :u6e, :s8e, :s9, :s12; Expression[field_val[a]]
@@ -263,7 +263,7 @@ class ARC
 				when :auxs12; AUX.new field_val[:s12]
 				when :@c; Memref.new(GPR.new(field_val[a]),  nil, memref_size(di))
 				when :@bcext; Memref.new(field_val[a],  nil, memref_size(di))
-				when :@bcext; Memref.new(field_val[:b], field_val[:cext], memref_size(di))
+				#when :@bcext; Memref.new(field_val[:b], field_val[:cext], memref_size(di))
 				when :@bs9
 					# [b,s9] or [limm] if b = 0x3E
 					base = field_val[:bext]
