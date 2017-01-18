@@ -472,7 +472,7 @@ EOS
 		#   else {
 		#      default();
 		#   }
-		#      
+		#
 		if want_value == true
 			ret = get_new_tmp_var('case', want_value)
 			want_value = ret
@@ -541,7 +541,7 @@ EOS
 					cb = C::Block.new(scope)
 					v = ast_to_c(cs[2], cb, want_value)
 					cb.statements << C::CExpression[ret, :'=', v] if want_value and v != ret
-					
+
 					fu = C::If.new(cnd, cb, nil)
 
 					if body_other
@@ -810,7 +810,7 @@ EOS
 	# if want_value is a C::Variable, the statements should try to populate this var instead of some random tmp var
 	# eg to simplify :if encoding unless we have 'foo = if 42;..'
 	def ast_to_c(ast, scope, want_value = true)
-		ret = 
+		ret =
 		case ast.to_a[0]
 		when :block
 			if ast[1]
@@ -1085,13 +1085,13 @@ EOS
 			case ast[1][0]
 			when :ivar
 				fcall('rb_ivar_defined', rb_self, rb_intern(ast[1][1]))
-			else 
+			else
 				raise Fail, "unsupported #{ast.inspect}"
 			end
 		when :masgn
 			# parallel assignment: put everything in an Array, then pop everything back?
 			rb_masgn(ast, scope, want_value)
-			
+
 		when :evstr
 			fcall('rb_obj_as_string', ast_to_c(ast[1], scope))
 		when :dot2, :dot3
@@ -1194,7 +1194,7 @@ EOS
 				end
 			end
 			tmp
-		
+
 		# Symbol#==
 		elsif arg0 and arg0[0] == :lit and arg0[1].kind_of? Symbol and op == '=='
 			s_v = ast_to_c(arg0, scope)
@@ -1244,13 +1244,13 @@ EOS
 
 			ar = C::Block.new(scope)
 			ar.statements << ce[idx, :'=', [[[arg], int], :>>, [1]]]
-			ar.statements << C::If.new(ce[idx, :<, [0]], ce[idx, :'=', [idx, :+, rb_ary_len(recv)]], nil) 
+			ar.statements << C::If.new(ce[idx, :<, [0]], ce[idx, :'=', [idx, :+, rb_ary_len(recv)]], nil)
 			ar.statements << C::If.new(ce[[idx, :<, [0]], :'||', [idx, :>=, [[rb_ary_len(recv)], int]]],
 					ce[tmp, :'=', rb_nil],
 					ce[tmp, :'=', rb_ary_ptr(recv, idx)])
 			st = C::Block.new(scope)
 			st.statements << ce[idx, :'=', [[[arg], int], :>>, [1]]]
-			st.statements << C::If.new(ce[idx, :<, [0]], ce[idx, :'=', [idx, :+, rb_str_len(recv)]], nil) 
+			st.statements << C::If.new(ce[idx, :<, [0]], ce[idx, :'=', [idx, :+, rb_str_len(recv)]], nil)
 			st.statements << C::If.new(ce[[idx, :<, [0]], :'||', [idx, :>=, [[rb_str_len(recv)], int]]],
 					ce[tmp, :'=', rb_nil],
 					ce[tmp, :'=', [[[[rb_str_ptr(recv, idx), :&, [0xff]], :<<, [1]], :|, [1]], value]])
@@ -1552,7 +1552,7 @@ puts "shortcut may be incorrect for #{ast.inspect}" if arg0[0] == :const
 				body.statements << C::CExpression[dvar(b_args[1]), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
 			end
 			# same as #each up to this point (except default retval), now add a 'if (body_value) break ary[cntr];'
-			# XXX 'find { next true }' 
+			# XXX 'find { next true }'
 
 			found = ast_to_c(b_body, body)
 			t = C::Block.new(body)
@@ -1579,7 +1579,7 @@ puts "shortcut may be incorrect for #{ast.inspect}" if arg0[0] == :const
 				body.statements << C::CExpression[dvar(b_args[1]), :'=', [rb_ary_ptr(ary), :'[]', [cntr]]]
 			end
 			# same as #each up to this point (except default retval), now add a '@iter_break << body_value'
-			# XXX 'next' unhandled 
+			# XXX 'next' unhandled
 
 			val = ast_to_c(b_body, body)
 			body.statements << fcall('rb_ary_push', @iter_break, val)
@@ -1641,7 +1641,7 @@ static void do_init_once(void) {
 	// rb_define_method(const_Lol, "method", method, 2);
 }
 
-int Init_compiledruby(void) __attribute__((export)) { 
+int Init_compiledruby(void) __attribute__((export)) {
 	// use a separate func to avoid having to append statements before the 'return'
 	do_init_once();
 	return 0;
@@ -1663,7 +1663,7 @@ EOS
 		@compiled_func_cache[[klass, method.to_s, singleton]] = @cur_cfunc
 
 		cls = rb_const(nil, klass)
-		
+
 		init.statements << fcall("rb_define#{'_singleton' if singleton}_method", cls, method.to_s, @cur_cfunc, method_arity)
 
 		mname
@@ -1698,7 +1698,7 @@ EOS
 		@cp.toplevel.symbol[n] || declare_newtopvar(n, fcall('rb_intern', sym.to_s), C::BaseType.new(:int, :unsigned))
 	end
 
-	# rb_const 'FOO', Bar::Baz  ==> 
+	# rb_const 'FOO', Bar::Baz  ==>
 	#  const_Bar = rb_const_get(rb_cObject, rb_intern("Bar"));
 	#  const_Bar_Baz = rb_const_get(const_Bar, rb_intern("Baz"));
 	#  const_Bar_Baz_FOO = rb_const_get(const_Bar_Baz, rb_intern("FOO"));
