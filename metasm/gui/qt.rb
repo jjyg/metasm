@@ -180,7 +180,7 @@ Standby OpenUrl LaunchMail LaunchMedia Launch0 Launch1 Launch2 Launch3 Launch4 L
 LaunchC LaunchD LaunchE LaunchF MediaLast unknown Call Context1 Context2 Context3 Context4 Flip Hangup No Select Yes
 Execute Printer Play Sleep Zoom Cancel
 	].inject({}) { |h, cst|
-		v = Qt.const_get("Key_#{cst}").to_i	# AONETUHANOTEUHATNOHEU Qt::Enum != Fixnum
+		v = Qt.const_get("Key_#{cst}").to_i	# AONETUHANOTEUHATNOHEU Qt::Enum != Integer
 		key = cst.downcase.to_sym
 		key = { :pageup => :pgup, :pagedown => :pgdown, :escape => :esc, :return => :enter }.fetch(key, key)
 		h.update v => key
