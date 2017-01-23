@@ -66,7 +66,7 @@ class COFF
 	class RelocObj
 		def decode(coff)
 			super(coff)
-			@sym = coff.symbols[@symidx]
+			@sym = coff.symbols[@symidx] if coff.symbols
 		end
 	end
 
@@ -89,7 +89,7 @@ class COFF
 					addr = addrs[i]
 					if addr >= coff.directory['export_table'][0] and addr < coff.directory['export_table'][0] + coff.directory['export_table'][1] and coff.sect_at_rva(addr)
 						name = coff.decode_strz
-						e.forwarder_lib, name = name.split('.', 2)
+						e.forwarder_lib, name = name.split('.', 2) if name.index('.')
 						if name[0] == ?#
 							e.forwarder_ordinal = name[1..-1].to_i
 						else
@@ -111,6 +111,7 @@ class COFF
 			end
 			if namep and ords
 				namep.zip(ords).each { |np, oi|
+					next if not @exports[oi]
 					@exports[oi].name_p = np
 					if coff.sect_at_rva(np)
 						@exports[oi].name = coff.decode_strz
@@ -429,7 +430,7 @@ class COFF
 	# may return self when rva points to the coff header
 	# returns nil if none match, 0 never matches
 	def sect_at_rva(rva)
-		return if not rva or rva <= 0
+		return if not rva or not rva.kind_of?(::Integer) or rva <= 0
 		if sections and not @sections.empty?
 			if s = @sections.find { |s_| s_.virtaddr <= rva and s_.virtaddr + EncodedData.align_size((s_.virtsize == 0 ? s_.rawsize : s_.virtsize), @optheader.sect_align) > rva }
 				s.encoded.ptr = rva - s.virtaddr
@@ -551,6 +552,7 @@ class COFF
 			s.relocnr.times { s.relocs << RelocObj.decode(self) }
 			new_label 'pcrel'
 			s.relocs.each { |r|
+				next if not r.sym
 				case r.type
 				when 'DIR32'
 					s.encoded.reloc[r.va] = Metasm::Relocation.new(Expression[r.sym.name], :u32, @endianness)
