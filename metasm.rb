@@ -36,7 +36,7 @@ module Metasm
 	Const_autorequire = {
 		'Ia32' => 'cpu/ia32', 'MIPS' => 'cpu/mips', 'PowerPC' => 'cpu/ppc', 'ARM' => 'cpu/arm',
 		'X86_64' => 'cpu/x86_64', 'Sh4' => 'cpu/sh4', 'Dalvik' => 'cpu/dalvik', 'ARC' => 'cpu/arc',
-		'Python' => 'cpu/python', 'Z80' => 'cpu/z80', 'CY16' => 'cpu/cy16', 'BPF' => 'cpu/bpf',
+		'Python' => 'cpu/python', 'Z80' => 'cpu/z80', 'CY16' => 'cpu/cy16', 'BPF' => 'cpu/bpf', 'EBPF' => 'cpu/ebpf',
 		'MSP430' => 'cpu/msp430', 'ARM64' => 'cpu/arm64', 'ST20' => 'cpu/st20', 'MCS51' => 'cpu/mcs51',
 		'C' => 'compile_c',
 		'MZ' => 'exe_format/mz', 'PE' => 'exe_format/pe',
