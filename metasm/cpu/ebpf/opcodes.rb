@@ -89,7 +89,7 @@ class EBPF
 		addop_j 'jsge', 0x75
 		addop 'call', 0x85, :i	# native call, doesn't interfere with bpf code flow
 		addop 'tailcall', 0x8D, :i, :setip => true, :stopexec => true	# tail call: r2 is a map, r3 is an index, jump to r2[r3] (ret?)
-		addop 'exit', 0x95, :stopexec
+		addop 'exit', 0x95, :stopexec => true
 	end
 
 	alias init_latest init_ebpf
