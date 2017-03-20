@@ -852,6 +852,11 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				end
 				delay_slot[1] = delay - 1
 			end
+
+			if block.edata.inv_export[di_addr - block.address + block.edata_ptr]
+				# ensure there is a block split if we have a label defined
+				break
+			end
 		}
 
 		ar = [di_addr]

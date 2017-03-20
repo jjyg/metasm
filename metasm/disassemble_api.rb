@@ -295,6 +295,7 @@ class Disassembler
 		e, b = get_section_at(addr, memcheck)
 		if not e
 		elsif not l = e.inv_export[e.ptr] or (!overwrite and l != name)
+			split_block(addr)
 			l = @program.new_label(name)
 			e.add_export l, e.ptr
 			@label_alias_cache = nil
