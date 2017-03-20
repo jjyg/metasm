@@ -27,21 +27,30 @@ class EBPF
 		di.instruction.opname = op.name
 		di.bin_length = 8
 		blob = edata.decode_imm(:u64, @endianness)
-		imm = (blob >> 32) & 0xffff_Ffff
+		imm = (blob >> 32) & 0xffff_ffff
+		imm = Expression.make_signed(imm, 32)
 		off = (blob >> 16) & 0xffff
+		off = Expression.make_signed(off, 16)
 		src = (blob >> 12) & 0xf
 		dst = (blob >>  8) & 0xf
-		code = blob & 0xff
+		#code = blob & 0xff
+
+		if di.opcode.props[:imm64]
+			imm = (imm & 0xffff_ffff) | (edata.decode_imm(:u64, @endianness) & 0xffff_ffff_0000_0000)	# next_imm << 32
+			di.bin_length += 8
+		end
 
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :i;    Expression[imm]
+			when :r0;   Reg.new(0)
 			when :rs;   Reg.new(src)
 			when :rd;   Reg.new(dst)
 			when :off;  Expression[off]
 			when :p_rs_o; MemRef.new(Reg.new(src), Expression[off], op.props[:msz])
 			when :p_rd_o; MemRef.new(Reg.new(dst), Expression[off], op.props[:msz])
-			#when :p_i;   MemRef.new(nil, Expression[imm], op.props[:msz])
+			when :p_pkt_i; PktRef.new(nil, Expression[imm], op.props[:msz])
+			when :p_pkt_rs_i; PktRef.new(Reg.new(src), Expression[imm], op.props[:msz])
 			else raise "unhandled arg #{a}"
 			end
 		}
@@ -76,9 +85,11 @@ class EBPF
 			when 'sub'; lambda { |di, a0, a1| { a0 => Expression[a0, :-, a1] } }
 			when 'mul'; lambda { |di, a0, a1| { a0 => Expression[a0, :*, a1] } }
 			when 'div'; lambda { |di, a0, a1| { a0 => Expression[a0, :/, a1] } }
+			when 'or';  lambda { |di, a0, a1| { a0 => Expression[a0, :|, a1] } }
+			when 'and'; lambda { |di, a0, a1| { a0 => Expression[a0, :&, a1] } }
 			when 'shl'; lambda { |di, a0, a1| { a0 => Expression[a0, :<<, a1] } }
 			when 'shr'; lambda { |di, a0, a1| { a0 => Expression[a0, :>>, a1] } }	# XXX sign
-			when 'neg'; lambda { |di, a0| { a0 => Expression[:-, a0] } }
+			when 'neg'; lambda { |di, a0|     { a0 => Expression[:-, a0] } }
 			when 'mod'; lambda { |di, a0, a1| { a0 => Expression[a0, :%, a1] } }
 			when 'xor'; lambda { |di, a0, a1| { a0 => Expression[a0, :^, a1] } }
 			when 'mov'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
@@ -88,15 +99,23 @@ class EBPF
 			when 'sub32'; lambda { |di, a0, a1| { a0 => Expression[[a0, :-, a1], :&, 0xffff_ffff] } }
 			when 'mul32'; lambda { |di, a0, a1| { a0 => Expression[[a0, :*, a1], :&, 0xffff_ffff] } }
 			when 'div32'; lambda { |di, a0, a1| { a0 => Expression[[a0, :/, a1], :&, 0xffff_ffff] } }
+			when 'or32';  lambda { |di, a0, a1| { a0 => Expression[[a0, :|, a1], :&, 0xffff_ffff] } }
+			when 'and32'; lambda { |di, a0, a1| { a0 => Expression[[a0, :&, a1], :&, 0xffff_ffff] } }
 			when 'shl32'; lambda { |di, a0, a1| { a0 => Expression[[a0, :<<, a1], :&, 0xffff_ffff] } }
-			when 'shr32'; lambda { |di, a0, a1| { a0 => Expression[[a0, :>>, a1], :&, 0xffff_ffff] } }	# XXX sign
-			when 'neg32'; lambda { |di, a0| { a0 => Expression[:-, a0] } }
+			when 'shr32'; lambda { |di, a0, a1| { a0 => Expression[[[a0, :&, 0xffff_ffff], :>>, a1], :&, 0xffff_ffff] } }	# XXX sign
+			when 'neg32'; lambda { |di, a0|     { a0 => Expression[:-, [a0, :&, 0xffff_ffff]] } }
 			when 'mod32'; lambda { |di, a0, a1| { a0 => Expression[[a0, :%, a1], :&, 0xffff_ffff] } }
 			when 'xor32'; lambda { |di, a0, a1| { a0 => Expression[[a0, :^, a1], :&, 0xffff_ffff] } }
 			when 'mov32'; lambda { |di, a0, a1| { a0 => Expression[a1, :&, 0xffff_ffff] } }
-			when 'sar32'; lambda { |di, a0, a1| { a0 => Expression[[a0, :>>, a1], :&, 0xffff_ffff] } }
+			when 'sar32'; lambda { |di, a0, a1| { a0 => Expression[[[a0, :&, 0xffff_ffff], :>>, a1], :&, 0xffff_ffff] } }
 
-			when 'jmp', 'jg', 'jge', 'je', 'jtest', 'ret'; lambda { |di, *a| { } }
+			when /^ld/; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when /^st/; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when /^xadd/; lambda { |di, a0, a1| { a0 => Expression[a0, :+, a1] } }
+
+			when 'call'; lambda { |di, *a| { :r0 => Expression::Unknown } }
+
+			when 'jmp', 'jeq', 'jgt', 'jge', 'jset', 'jne', 'jsgt', 'jsge'; lambda { |di, *a| { } }
 			end
 			@backtrace_binding[op] ||= binding if binding
 		}

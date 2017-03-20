@@ -13,17 +13,23 @@ class EBPF
 		include Renderable
 		def render ; ["r#@v"] end
 	end
+
 	class MemRef
 		include Renderable
 		def render
 			r = []
-			r << memtype
-			r << [nil, ' byte ', ' word ', nil, ' dword '][@msz]
+			r << { 1 => 'byte ', 2 => 'word ', 4 => 'dword ', 8 => 'qword ' }[@msz]
 			r << '['
 			r << @base if @base
 			r << '+' if @base and @offset
 			r << @offset if @offset
 			r << ']'
+		end
+	end
+
+	class PktRef
+		def render
+			['pkt '] + super
 		end
 	end
 
