@@ -119,7 +119,7 @@ class DbgWidget < ContainerVBoxWidget
 			@dbg.dasm_invalidate
 			@mem.gui_update
 			@dbg.disassembler.sections.clear if @dbg.state == :dead
-			@dbg.disassembler.disassemble_fast(@dbg.pc)
+			@dbg.disassembler.disassemble_fast(@dbg.pc) if not @dbg.disassembler.di_at(@dbg.pc)
 			@children.each { |c|
 				if wp = @watchpoint[c]
 					c.focus_addr @dbg.resolve_expr(wp), nil, true
@@ -251,7 +251,7 @@ class DbgRegWidget < DrawableWidget
 		@reg_pos = []	# list of x y w h vx of the reg drawing on widget, vx is x of value
 
 		@default_color_association = ColorTheme.merge :label => :text, :data => :blue, :write_pending => :darkred,
-				:changed => :green, :caret => :text, :inactive => :palegrey
+				:changed => :darkgreen, :caret => :text, :inactive => :palegrey
 	end
 
 	def swapin_tid

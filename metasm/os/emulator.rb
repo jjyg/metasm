@@ -42,6 +42,11 @@ end
 # this class implements a virtual debugger over an emulated cpu (based on cpu#get_backtrace_binding)
 class EmuDebugger < Debugger
 	attr_accessor :ctx
+	# lambda called everytime we emulate a di
+	# receives the di as parameter
+	# if it returns nil, the di is emulated as usual, if it returns true no further processing is done for this di
+	# dont forget to handle reg_pc !
+	attr_accessor :callback_emulate_di
 
 	def initialize(disassembler)
 		@pid = @tid = 0
@@ -55,8 +60,13 @@ class EmuDebugger < Debugger
 		@cpu = disassembler.cpu
 		@disassembler = disassembler
 		@ctx = {}
-		@bpx = {}
+		@state = :stopped
 		@symbols = {}
+		@symbols_len = {}
+		@modulemap = {}
+		@breakpoint = {}
+		@breakpoint_memory = {}
+		@breakpoint_thread = {}
 	end
 
 	def initialize_disassembler
@@ -88,13 +98,19 @@ class EmuDebugger < Debugger
 	end
 
 	def do_continue
-		while not @bpx[pc] and @disassembler.di_at(pc)	# check bp#enabled
-			do_singlestep
+		while not @breakpoint[pc] and do_singlestep	# TODO check bp#enabled
 		end
 	end
 
 	def do_singlestep
 		di = @disassembler.di_at(pc)
+		return if not di
+
+		if callback_emulate_di
+			ret = callback_emulate_di.call(di)
+			return true if ret
+		end
+
 		return if di.opcode.props[:stopexec] and not di.opcode.props[:setip]
 
 		# 2-pass to respect binding atomicity
@@ -120,6 +136,7 @@ class EmuDebugger < Debugger
 				puts "singlestep: badkey #{k} = #{v}"
 			end
 		}
+		true
 	end
 end
 end
