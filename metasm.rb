@@ -56,6 +56,7 @@ module Metasm
 		'Debugger' => 'debug',
 		'LinOS' => 'os/linux', 'WinOS' => 'os/windows',
 		'GdbClient' => 'os/gdbremote',
+		'EmuDebugger' => 'os/emulator',
 		'Disassembler' => 'disassemble',
 		'Decompiler' => 'decompile',
 		'DynLdr' => 'dynldr',
