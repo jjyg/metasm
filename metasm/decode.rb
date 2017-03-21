@@ -207,6 +207,18 @@ class CPU
 		di
 	end
 
+	# return a symbolic representation of an instruction argument (eg Reg[0] => :eax)
+	def symbolic(arg, di=nil)
+		case arg
+		when Expression
+			arg
+		when Integer
+			Expression[arg]
+		else
+			arg.symbolic(di)
+		end
+	end
+
 	# number of instructions following a jump that are still executed
 	def delay_slot(di=nil)
 		0
@@ -218,22 +230,29 @@ class CPU
 
 	# return something like backtrace_binding in the forward direction
 	# set pc_reg to some reg name (eg :pc) to include effects on the instruction pointer
-	def get_fwdemu_binding(di, pc_reg=nil)
-		fdi = di.backtrace_binding ||= get_backtrace_binding(di)
-		fdi = fix_fwdemu_binding(di, fdi)
+	# pass a debugger to allow reading the context and actually resolve the next pc in case of conditionnal jumps
+	def get_fwdemu_binding(di, pc_reg=nil, dbg_ctx=nil)
+		fbd = di.backtrace_binding ||= get_backtrace_binding(di)
+		fbd = fix_fwdemu_binding(di, fbd)
 		if pc_reg
+			n_a = Expression[pc_reg, :+, di.bin_length]
 			if di.opcode.props[:setip]
-				xr = get_xrefs_x(nil, di)
-				if xr and xr.length == 1
-					fdi[pc_reg] = xr[0]
+				xr = get_xrefs_x(nil, di).to_a
+				xr |= [n_a] if not di.opcode.props[:stopexec]
+				if xr.length == 1
+					fbd[pc_reg] = xr[0]
 				else
-					fdi[:incomplete_binding] = Expression[1]
+					dbg_resolve_pc(di, fbd, pc_reg, dbg_ctx)
 				end
 			else
-				fdi[pc_reg] = Expression[pc_reg, :+, di.bin_length]
+				fbd[pc_reg] = Expression[pc_reg, :+, di.bin_length]
 			end
 		end
-		fdi
+		fbd
+	end
+
+	def dbg_resolve_pc(di, fbd, pc_reg, dbg_ctx)
+		fbd[:incomplete_binding] = Expression[1]
 	end
 
 	# patch a forward binding from the backtrace binding

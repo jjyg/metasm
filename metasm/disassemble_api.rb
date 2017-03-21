@@ -210,8 +210,8 @@ class Disassembler
 	alias instructionblocks each_instructionblock
 
 	# return a backtrace_binding reversed (akin to code emulation) (but not really)
-	def get_fwdemu_binding(di, pc=nil)
-		@cpu.get_fwdemu_binding(di, pc)
+	def get_fwdemu_binding(di, pc=nil, dbg_ctx=nil)
+		@cpu.get_fwdemu_binding(di, pc, dbg_ctx)
 	end
 
 	# reads len raw bytes from the mmaped address space
