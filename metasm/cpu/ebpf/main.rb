@@ -14,7 +14,7 @@ class EBPF < CPU
 			@v = v
 		end
 
-		def symbolic(orig=nil) ; "r#@v".to_sym ; end
+		def symbolic(di=nil) ; "r#@v".to_sym ; end
 	end
 
 	class MemRef
@@ -26,19 +26,19 @@ class EBPF < CPU
 			@msz = msz
 		end
 
-		def symbolic(orig)
+		def symbolic(di)
 			p = Expression[@base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
-			Indirection[p, @msz, orig]
+			Indirection[p, @msz, (di.address if di)]
 		end
 	end
 
 	class PktRef < MemRef
-		def symbolic(orig)
+		def symbolic(di)
 			p = Expression[:packet]
 			p = Expression[p, :+, @base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
-			Indirection[p, @msz, orig]
+			Indirection[p, @msz, (di.address if di)]
 		end
 	end
 
