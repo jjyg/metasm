@@ -78,16 +78,25 @@ class EBPF
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 
+		bswap = lambda { |val, nbytes|
+			case nbytes
+			when 1; val
+			when 2; Expression[[[val, :&, 0xff], :<<, 8], :|, [[val, :&, 0xff00], :>>, 8]]
+			when 4; Expression[[bswap[Expression[val, :&, 0xffff], 2], :<<, 16], :|, bswap[Expression[[val, :>>, 16], :&, 0xffff], 2]]
+			when 8; Expression[[bswap[Expression[val, :&, 0xffffffff], 4], :<<, 32], :|, bswap[Expression[[val, :>>, 32], :&, 0xffffffff], 4]]
+			end
+		}
+
 		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
 			binding = case op
 
 			when 'add'; lambda { |di, a0, a1| { a0 => Expression[a0, :+, a1] } }
 			when 'sub'; lambda { |di, a0, a1| { a0 => Expression[a0, :-, a1] } }
-			when 'mul'; lambda { |di, a0, a1| { a0 => Expression[a0, :*, a1] } }
+			when 'mul'; lambda { |di, a0, a1| { a0 => Expression[[a0, :*, a1], :&, 0xffff_ffff_ffff_ffff] } }
 			when 'div'; lambda { |di, a0, a1| { a0 => Expression[a0, :/, a1] } }
 			when 'or';  lambda { |di, a0, a1| { a0 => Expression[a0, :|, a1] } }
 			when 'and'; lambda { |di, a0, a1| { a0 => Expression[a0, :&, a1] } }
-			when 'shl'; lambda { |di, a0, a1| { a0 => Expression[a0, :<<, a1] } }
+			when 'shl'; lambda { |di, a0, a1| { a0 => Expression[[a0, :<<, a1], :&, 0xffff_ffff_ffff_ffff] } }
 			when 'shr'; lambda { |di, a0, a1| { a0 => Expression[a0, :>>, a1] } }	# XXX sign
 			when 'neg'; lambda { |di, a0|     { a0 => Expression[:-, a0] } }
 			when 'mod'; lambda { |di, a0, a1| { a0 => Expression[a0, :%, a1] } }
@@ -109,9 +118,22 @@ class EBPF
 			when 'mov32'; lambda { |di, a0, a1| { a0 => Expression[a1, :&, 0xffff_ffff] } }
 			when 'sar32'; lambda { |di, a0, a1| { a0 => Expression[[[a0, :&, 0xffff_ffff], :>>, a1], :&, 0xffff_ffff] } }
 
-			when /^ld/; lambda { |di, a0, a1| { a0 => Expression[a1] } }
-			when /^st/; lambda { |di, a0, a1| { a0 => Expression[a1] } }
-			when /^xadd/; lambda { |di, a0, a1| { a0 => Expression[a0, :+, a1] } }
+			when 'be', 'le'; lambda { |di, a0, a1|
+				if @endianness.to_s[0] == di.opcode.name[0]
+					{}
+				else
+					{ a1 => bswap[a1, Expression[a0].reduce] }
+				end
+			}
+			when /^ldind|^ldabs|^stind|^stabs/; lambda { |di, a0, a1|
+				if @endianness == :big
+					{ a0 => Expression[a1] }
+				else
+					{ a0 => bswap[a1, di.opcode.props[:msz]] }
+				end
+			}
+			when /^ld|^st/; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when /^xadd/; lambda { |di, a0, a1| { a0 => Expression[a0, :+, a1] } }	# XXX bswap ?
 
 			when 'call'; lambda { |di, *a| { :r0 => Expression::Unknown } }
 
