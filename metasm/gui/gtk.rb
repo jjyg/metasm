@@ -128,13 +128,18 @@ class ContainerVBoxWidget < Gtk::VBox
 	def resize_child(cld, w, h)
 		pk = query_child_packing(cld)
 		if h <= 0
-			pk[0] = true
+			if pk[0] != true
+				pk[0] = true
+				set_child_packing(cld, *pk)
+			end
 			h = 1
 		else
-			pk[0] = false
+			if pk[0] == true
+				pk[0] = false
+				set_child_packing(cld, *pk)
+			end
 		end
 		return if h == cld.allocation.height
-		set_child_packing(cld, *pk)
 		cld.set_height_request(h)
 	end
 
