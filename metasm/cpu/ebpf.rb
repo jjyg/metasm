@@ -7,3 +7,4 @@
 require 'metasm/main'
 require 'metasm/cpu/ebpf/decode'
 require 'metasm/cpu/ebpf/render'
+require 'metasm/cpu/ebpf/debug'
