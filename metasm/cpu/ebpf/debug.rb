@@ -51,5 +51,11 @@ class EBPF
 			fbd[pc_reg] = di.next_addr
 		end
 	end
+
+	def dbg_enable_bp(dbg, bp)
+	end
+
+	def dbg_disable_bp(dbg, bp)
+	end
 end
 end
