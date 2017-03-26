@@ -491,7 +491,7 @@ class Disassembler
 		end
 	end
 
-	# yields each xref to a given address, optionnaly restricted to a type
+	# yields each xref to a given address, optionaly restricted to a type
 	def each_xref(addr, type=nil)
 		addr = normalize addr
 
@@ -1101,7 +1101,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	#  which must not have return_addresses
 	# returns the new thunk name if it was changed
 	def detect_function_thunk(funcaddr)
-		# check thunk linearity (no conditionnal branch etc)
+		# check thunk linearity (no conditional branch etc)
 		addr = funcaddr
 		count = 0
 		while b = block_at(addr)
@@ -2019,7 +2019,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		a
 	end
 
-	# dumps the source, optionnally including data
+	# dumps the source, optionally including data
 	# yields (defaults puts) each line
 	def dump(dump_data=true, &b)
 		b ||= lambda { |l| puts l }

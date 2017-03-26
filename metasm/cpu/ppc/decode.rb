@@ -176,12 +176,6 @@ class PowerPC
 		df
 	end
 
-	# hash opname => lambda { |di, *sym_args| binding }
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-	def backtrace_binding=(b) @backtrace_binding = b end
-
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
@@ -229,25 +223,6 @@ class PowerPC
 			@backtrace_binding[op] ||= binding if binding
 		}
 		@backtrace_binding
-	end
-
-	def get_backtrace_binding(di)
-		a = di.instruction.args.map { |arg|
-			case arg
-			when Memref; arg.symbolic(di.address)
-			when Reg; arg.symbolic
-			else arg
-			end
-		}
-
-		binding = if binding = backtrace_binding[di.instruction.opname]
-			binding[di, *a]
-		else
-			puts "unknown instruction to emu #{di}" if $VERBOSE
-			{}
-		end
-
-		binding
 	end
 
 	def get_xrefs_x(dasm, di)

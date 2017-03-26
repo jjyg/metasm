@@ -24,17 +24,6 @@ class Z80
 		end
 	end
 
-	def render_instruction(i)
-		r = []
-		r << i.opname
-		if not i.args.empty?
-			r << ' '
-			i.args.each { |a_| r << a_ << ', ' }
-			r.pop
-		end
-		r
-	end
-
 	def gui_hilight_word_regexp_init
 		ret = {}
 

@@ -684,7 +684,7 @@ class Disassembler
 	# give something equivalent to the code accessible from the (list of) entrypoints given
 	# from the @decoded dasm graph
 	# assume all jump targets have a matching label in @prog_binding
-	# may add inconditionnal jumps in the listing to preserve the code flow
+	# may add inconditional jumps in the listing to preserve the code flow
 	def flatten_graph(entry, include_subfunc=true)
 		ret = []
 		entry = [entry] if not entry.kind_of? Array
@@ -978,7 +978,7 @@ class Disassembler
 	end
 
 	# loads a map file (addr => symbol)
-	# off is an optionnal offset to add to every address found (for eg rebased binaries)
+	# off is an optional offset to add to every address found (for eg rebased binaries)
 	# understands:
 	#  standard map files (eg linux-kernel.map: <addr> <type> <name>, e.g. 'c01001ba t setup_idt')
 	#  ida map files (<sectionidx>:<sectionoffset> <name>)
@@ -997,7 +997,7 @@ class Disassembler
 				# we do not have section load order, let's just hope that the addresses are sorted (and sortable..)
 				#  could check the 1st part of the file, with section sizes, but it is not very convenient
 				# the regexp is so that we skip the 1st part with section descriptions
-				# in the file, section 1 is the 1st section ; we have an additionnal section (exe header) which fixes the 0-index
+				# in the file, section 1 is the 1st section ; we have an additional section (exe header) which fixes the 0-index
 				# XXX this is PE-specific, TODO fix it for ELF (ida references sections, we reference segments...)
 				addr = sks[$1.to_i(16)] + $2.to_i(16) + off
 				set_label_at(addr, $3, false, !seen[addr])
@@ -1742,7 +1742,7 @@ class Disassembler
 	end
 
 	# same as load_plugin, but hides the @gui attribute while loading, preventing the plugin do popup stuff
-	# this is useful when you want to load a plugin from another plugin to enhance the plugin's functionnality
+	# this is useful when you want to load a plugin from another plugin to enhance the plugin's functionality
 	# XXX this also prevents setting up kbd_callbacks etc..
 	def load_plugin_nogui(plugin_filename)
 		oldgui = gui

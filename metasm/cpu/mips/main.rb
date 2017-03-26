@@ -26,7 +26,7 @@ class MIPS < CPU
 		end
 
 		Sym = @i_to_s.sort.map { |k, v| v.to_sym }
-		def symbolic ; @i == 0 ? 0 : Sym[@i] end
+		def symbolic(di=nil) ; @i == 0 ? 0 : Sym[@i] end
 	end
 
 	class FpReg
@@ -48,11 +48,11 @@ class MIPS < CPU
 			@base, @offset, @sz = base, offset, sz
 		end
 
-		def symbolic(orig)
+		def symbolic(di=nil)
 			p = nil
 			p = Expression[p, :+, @base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
-			Indirection[p.reduce, @sz/8, orig]
+			Indirection[p.reduce, @sz/8, (di.address if di)r
 		end
 	end
 

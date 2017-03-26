@@ -126,10 +126,6 @@ class Dalvik
 		di
 	end
 
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 		sz = @size/8
@@ -147,28 +143,6 @@ class Dalvik
 			end
 		}
 		@backtrace_binding
-	end
-
-	def get_backtrace_binding(di)
-		a = di.instruction.args.map { |arg|
-			case arg
-			when Reg; arg.symbolic
-			else arg
-			end
-		}
-
-		if binding = backtrace_binding[di.opcode.name]
-			binding[di, *a]
-		else
-			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
-			# assume nothing except the 1st arg is modified
-			case a[0]
-			when Indirection, Symbol; { a[0] => Expression::Unknown }
-			when Expression; (x = a[0].externals.first) ? { x => Expression::Unknown } : {}
-			else {}
-			end.update(:incomplete_binding => Expression[1])
-		end
-
 	end
 
 	def get_xrefs_x(dasm, di)

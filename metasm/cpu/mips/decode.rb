@@ -126,12 +126,6 @@ class MIPS
 		di
 	end
 
-	# hash opname => lambda { |di, *sym_args| binding }
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-	def backtrace_binding=(b) @backtrace_binding = b end
-
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
@@ -177,7 +171,7 @@ class MIPS
 	def get_backtrace_binding(di)
 		a = di.instruction.args.map { |arg|
 			case arg
-			when Memref; arg.symbolic(di.address)
+			when Memref; arg.symbolic(di)
 			when Reg; arg.symbolic
 			else arg
 			end

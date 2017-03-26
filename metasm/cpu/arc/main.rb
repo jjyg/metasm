@@ -40,7 +40,7 @@ class ARC < CPU
 	# Branch Link Register R31 (BLINK)
 	class GPR < Reg
 		Sym = (0..64).map { |i| "r#{i}".to_sym }
-		def symbolic; Sym[@i] end
+		def symbolic(di=nil); Sym[@i] end
 
 		Render = {
 			26 => 'gp', # global pointer, used to point to small sets of shared data throughout execution of a program
@@ -69,7 +69,7 @@ class ARC < CPU
 	end
 
 	class AUX < Reg
-		def symbolic; "aux#{i}".to_sym end
+		def symbolic(di=nil); "aux#{i}".to_sym end
 
 		Render = {
 			0x00  => 'status',                # Status register (Original ARCtangent-A4 processor format)
@@ -162,7 +162,7 @@ class ARC < CPU
 			@base, @disp, @size = base, disp, sz
 		end
 
-		def symbolic(orig)
+		def symbolic(di=nil)
 			b = @base
 			b = b.symbolic if b.kind_of? Reg
 
@@ -174,7 +174,7 @@ class ARC < CPU
 				e = Expression[b].reduce
 			end
 
-			Indirection[e, @size, orig]
+			Indirection[e, @size, (di.address if di)]
 		end
 
 		include Renderable

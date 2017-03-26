@@ -228,9 +228,44 @@ class CPU
 		DecodedFunction.new
 	end
 
+	# hash opcode_name => lambda { |dasm, di, *symbolic_args| instr_binding }
+	def backtrace_binding
+		@backtrace_binding ||= init_backtrace_binding
+	end
+	def backtrace_binding=(b) @backtrace_binding = b end
+
+	# return the backtrace binding for a specific di
+	def get_backtrace_binding(di)
+		a = di.instruction.args.map { |arg| symbolic(arg, di) }
+
+		if binding = backtrace_binding[di.opcode.name]
+			binding[di, *a]
+		else
+			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
+			{:incomplete_binding => Expression[1]}
+		end
+	end
+
+	# return the list of jump targets for insturctions modifying the control flow
+	def get_xrefs_x(dasm, di)
+		return [] if not di.opcode.props[:setip]
+
+		di.instruction.args[-1, 1]
+	end
+
+	# updates an instruction's argument replacing an expression with another (eg label renamed)
+	def replace_instr_arg_immediate(i, old, new)
+		i.args.map! { |a|
+			case a
+			when Expression; a == old ? new : Expression[a.bind(old => new).reduce]
+			else a
+			end
+		}
+	end
+
 	# return something like backtrace_binding in the forward direction
 	# set pc_reg to some reg name (eg :pc) to include effects on the instruction pointer
-	# pass a debugger to allow reading the context and actually resolve the next pc in case of conditionnal jumps
+	# pass a debugger to allow reading the context and actually resolve the next pc in case of conditional jumps
 	def get_fwdemu_binding(di, pc_reg=nil, dbg_ctx=nil)
 		fbd = di.backtrace_binding ||= get_backtrace_binding(di)
 		fbd = fix_fwdemu_binding(di, fbd)
@@ -251,6 +286,7 @@ class CPU
 		fbd
 	end
 
+	# resolve the program counter following a conditional jump using a debugging context
 	def dbg_resolve_pc(di, fbd, pc_reg, dbg_ctx)
 		fbd[:incomplete_binding] = Expression[1]
 	end

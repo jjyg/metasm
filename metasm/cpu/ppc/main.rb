@@ -32,7 +32,7 @@ class PowerPC < CPU
 		@s_to_i = (0..31).inject({}) { |h, i| h.update((i == 1 ? 'sp' : "r#{i}") => i) }
 		@i_to_s = @s_to_i.invert
 		Sym = @s_to_i.sort.transpose.last
-		def symbolic ; Sym[@i] end
+		def symbolic(di=nil) ; Sym[@i] end
 	end
 
 	# special purpose reg
@@ -47,7 +47,7 @@ class PowerPC < CPU
 		end
 
 		Sym = @i_to_s.sort.inject({}) { |h, (k, v)| h.update k => v.to_sym }
-		def symbolic ; Sym[@i] end
+		def symbolic(di=nil) ; Sym[@i] end
 		def render ; [self.class.i_to_s[@i] || "spr#@i"] end
 	end
 
@@ -65,7 +65,7 @@ class PowerPC < CPU
 
 	# machine state reg
 	class MSR < Reg
-		def symbolic ; :msr end
+		def symbolic(di=nil) ; :msr end
 		def render ; ['msr'] end
 	end
 
@@ -79,7 +79,7 @@ class PowerPC < CPU
 		@s_to_i = (0..31).inject({}) { |h, i| h.update "cr#{i}" => i }
 		@i_to_s = @s_to_i.invert
 		Sym = @s_to_i.sort.transpose.last
-		def symbolic ; "cr#@i".to_sym end
+		def symbolic(di=nil) ; "cr#@i".to_sym end
 	end
 
 	# indirection : reg+reg or reg+16b_off
@@ -90,7 +90,7 @@ class PowerPC < CPU
 			@base, @offset = base, offset
 		end
 
-		def symbolic(orig)
+		def symbolic(di=nil)
 			b = @base.symbolic
 			b = nil if b == :r0	# XXX is it true ?
 			o = @offset

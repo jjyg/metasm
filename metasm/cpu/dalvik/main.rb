@@ -14,7 +14,7 @@ class Dalvik < CPU
 			@i = i
 		end
 
-		def symbolic
+		def symbolic(di=nil)
 			"r#@i".to_sym
 		end
 

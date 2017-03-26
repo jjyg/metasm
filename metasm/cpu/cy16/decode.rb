@@ -107,12 +107,6 @@ class CY16
 		di
 	end
 
-	# hash opcode_name => lambda { |dasm, di, *symbolic_args| instr_binding }
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-	def backtrace_binding=(b) @backtrace_binding = b end
-
 	# populate the @backtrace_binding hash with default values
 	def init_backtrace_binding
 		@backtrace_binding ||= {}

@@ -1229,7 +1229,7 @@ EOS
 		cp.alloc_c_struct(structname, values)
 	end
 
-	# return a C::AllocCStruct mapped over the string (with optionnal offset)
+	# return a C::AllocCStruct mapped over the string (with optional offset)
 	# str may be an EncodedData
 	def self.decode_c_struct(structname, str, off=0)
 		str = str.data if str.kind_of? EncodedData

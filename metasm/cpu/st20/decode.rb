@@ -169,12 +169,5 @@ class ST20
 	def backtrace_is_stack_address(expr)
 		Expression[expr].expr_externals.include?(:sp)
 	end
-
-	# updates an instruction's argument replacing an expression with another (eg label renamed)
-	def replace_instr_arg_immediate(i, old, new)
-		i.args.map! { |a|
-			a == old ? new : Expression[a.bind(old => new).reduce]
-		}
-	end
 end
 end

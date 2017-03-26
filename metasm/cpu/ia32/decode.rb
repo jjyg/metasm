@@ -323,12 +323,6 @@ class Ia32
 		end
 	end
 
-	# hash opcode_name => lambda { |dasm, di, *symbolic_args| instr_binding }
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-	def backtrace_binding=(b) @backtrace_binding = b end
-
 	def opsz(di, op=nil)
 		if di and di.instruction.prefix and di.instruction.prefix[:opsz] and (op || di.opcode).props[:needpfx] != 0x66; 48-@size
 		else @size
@@ -726,8 +720,8 @@ class Ia32
 		@backtrace_binding
 	end
 
-	# returns the condition (bool Expression) under which a conditionnal jump is taken
-	# returns nil if not a conditionnal jump
+	# returns the condition (bool Expression) under which a conditional jump is taken
+	# returns nil if not a conditional jump
 	# backtrace for the condition must include the jump itself (eg loop -> ecx--)
 	def get_jump_condition(di)
 		ecx = register_symbols[1]

@@ -25,7 +25,7 @@ class ARM < CPU
 			@shift = shift
 		end
 
-		def symbolic
+		def symbolic(di=nil)
 			r = self.class.i_to_s[@i].to_sym
 			if @stype == :lsl and @shift == 0
 				r
@@ -41,11 +41,11 @@ class ARM < CPU
 			@base, @offset, @sign, @incr = base, offset, sign, incr
 		end
 
-		def symbolic(len=4, orig=nil)
+		def symbolic(di=nil)
 			o = @offset
 			o = o.symbolic if o.kind_of? Reg
 			p = Expression[@base.symbolic, @sign, o].reduce
-			Indirection[p, len, orig]
+			Indirection[p, 4, (di.address if di)]
 		end
 	end
 

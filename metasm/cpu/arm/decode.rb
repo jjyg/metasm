@@ -125,10 +125,6 @@ class ARM
 		di
 	end
 
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 	end
@@ -137,7 +133,7 @@ class ARM
 		a = di.instruction.args.map { |arg|
 			case arg
 			when Reg; arg.symbolic
-			when Memref; arg.symbolic(di.address)
+			when Memref; arg.symbolic(di)
 			else arg
 			end
 		}

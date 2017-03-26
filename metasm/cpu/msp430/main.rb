@@ -20,7 +20,7 @@ class MSP430 < CPU
 
 		attr_accessor :i
 		def initialize(i) ; @i = i end
-		def symbolic ; Sym[@i] end
+		def symbolic(di=nil) ; Sym[@i] end
 		def render ; [Sym[@i].to_s] end
 		def ==(o) ; o.class == self.class and o.i == @i end
 	end
@@ -35,10 +35,10 @@ class MSP430 < CPU
 			@postincr = postincr
 		end
 
-		def symbolic(orig=nil)
+		def symbolic(di=nil)
 			r = @base.symbolic if @base
 			e = Expression[r, :+, @offset].reduce
-			Indirection[e, (@size || 1), orig]
+			Indirection[e, (@size || 1), (di.address if di)]
 		end
 
 		include Renderable

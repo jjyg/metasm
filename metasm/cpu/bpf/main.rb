@@ -14,7 +14,7 @@ class BPF < CPU
 			@v = v
 		end
 
-		def symbolic(orig=nil) ; @v ; end
+		def symbolic(di=nil) ; @v ; end
 	end
 
 	class MemRef
@@ -30,11 +30,11 @@ class BPF < CPU
 			@msz = msz
 		end
 
-		def symbolic(orig)
+		def symbolic(di=nil)
 			p = Expression[memtype]
 			p = Expression[p, :+, @base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
-			Indirection[p, @msz, orig]
+			Indirection[p, @msz, (di.address if di)]
 		end
 	end
 

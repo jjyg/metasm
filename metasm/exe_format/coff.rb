@@ -213,7 +213,7 @@ class COFF < ExeFormat
 	end
 
 	# tree-like structure, holds all misc data the program might need (icons, cursors, version information)
-	# conventionnally structured in a 3-level depth structure:
+	# conventionally structured in a 3-level depth structure:
 	#  I resource type (icon/cursor/etc, see +TYPES+)
 	#  II resource id (icon n1, icon 'toto', ...)
 	#  III language-specific version (icon n1 en, icon n1 en-dvorak...)

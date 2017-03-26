@@ -313,10 +313,6 @@ class ARC
 		REG_SYMS
 	end
 
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-
 	def opshift(op)
 		op[/\d/].to_i
 	end
@@ -380,23 +376,6 @@ class ARC
 		}
 
 		@backtrace_binding
-	end
-
-	def get_backtrace_binding(di)
-		a = di.instruction.args.map { |arg|
-			case arg
-			when GPR; arg.symbolic
-			when Memref; arg.symbolic(di.address)
-			else arg
-			end
-		}
-
-		if binding = backtrace_binding[di.opcode.basename]
-			binding[di, *a]
-		else
-			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
-			{ :incomplete_binding => Expression[1] }
-		end
 	end
 
 	def get_xrefs_x(dasm, di)

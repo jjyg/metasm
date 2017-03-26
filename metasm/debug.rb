@@ -16,7 +16,7 @@ class Debugger
 			:state,
 			# type: type of breakpoint (:bpx = soft, :hwbp = hard, :bpm = memory)
 			:type,
-			# Expression if this is a conditionnal bp
+			# Expression if this is a conditional bp
 			# may be a Proc, String or Expression, evaluated every time the breakpoint hits
 			# if it returns 0 or false, the breakpoint is ignored
 			:condition,

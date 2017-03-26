@@ -26,7 +26,7 @@ class EBPF < CPU
 			@msz = msz
 		end
 
-		def symbolic(di)
+		def symbolic(di=nil)
 			p = Expression[@base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
 			Indirection[p, @msz, (di.address if di)]
@@ -34,7 +34,7 @@ class EBPF < CPU
 	end
 
 	class PktRef < MemRef
-		def symbolic(di)
+		def symbolic(di=nil)
 			p = Expression[:packet]
 			p = Expression[p, :+, @base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset

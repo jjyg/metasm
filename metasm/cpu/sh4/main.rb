@@ -48,7 +48,7 @@ class Sh4 < CPU
 		def initialize(i); @i = i end
 		Sym = (0..15).map { |i| "r#{i}".to_sym }
 
-		def symbolic ; Sym[@i] end
+		def symbolic(di=nil) ; Sym[@i] end
 
 		def render ; ["r#@i"] end
 	end
@@ -59,7 +59,7 @@ class Sh4 < CPU
 		def initialize(i); @i = i end
 		Sym = (0..7).map { |i| "r#{i}_bank".to_sym }
 
-		def symbolic ; Sym[@i] end
+		def symbolic(di=nil) ; Sym[@i] end
 
 		def render ; ["r#{@i}_bank"] end
 	end
@@ -71,7 +71,7 @@ class Sh4 < CPU
 		def initialize(i); @i = i end
 		Sym = (0..15).map { |i| "fr#{i}".to_sym }
 
-		def symbolic ; Sym[@i] end
+		def symbolic(di=nil) ; Sym[@i] end
 
 		def render ; ["fr#@i"] end
 	end
@@ -91,7 +91,7 @@ class Sh4 < CPU
 		def initialize(i); @i = i end
 		Sym = (0..7).map { |i| "dr#{i*2}".to_sym }
 
-		def symbolic ; Sym[@i/2] end
+		def symbolic(di=nil) ; Sym[@i/2] end
 
 		def render ; ["dr#@i"] end
 	end
@@ -107,7 +107,7 @@ class Sh4 < CPU
 		def initialize(i); @i = i end
 		Sym = (0..3).map { |i| "fv#{i*4}".to_sym }
 
-		def symbolic ; Sym[@i/4] end
+		def symbolic(di=nil) ; Sym[@i/4] end
 
 		def render ; ["fv#@i"] end
 	end
@@ -119,7 +119,7 @@ class Sh4 < CPU
 		def initialize(i); @i = i end
 		Sym = (0..15).map { |i| "xf#{i}".to_sym }
 
-		def symbolic ; Sym[@i] end
+		def symbolic(di=nil) ; Sym[@i] end
 
 		def render ; ["xf#@i"] end
 	end
@@ -139,14 +139,14 @@ class Sh4 < CPU
 		def initialize(i); @i = i end
 		Sym = (0..7).map { |i| "xd#{i*2}".to_sym }
 
-		def symbolic ; Sym[@i/2] end
+		def symbolic(di=nil) ; Sym[@i/2] end
 
 		def render ; ["xd#@i"] end
 	end
 
 	# Single-precision floating-point extended register matrix
 	class XMTRX < Reg
-		def symbolic ; :xmtrx ; end
+		def symbolic(di=nil) ; :xmtrx ; end
 		def render ; ['xmtrx'] ; end
 	end
 
@@ -154,42 +154,42 @@ class Sh4 < CPU
 	# Multiply-and-accumulate register high
 	class MACH < Reg
 
-		def symbolic ; :mach end
+		def symbolic(di=nil) ; :mach end
 		def render ; ['mach'] end
 	end
 
 	# Multiply-and-accumulate register low
 	class MACL < Reg
 
-		def symbolic ; :macl end
+		def symbolic(di=nil) ; :macl end
 		def render ; ['macl'] end
 	end
 
 	# Procedure register
 	class PR < Reg
 
-		def symbolic ; :pr end
+		def symbolic(di=nil) ; :pr end
 		def render ; ['pr'] end
 	end
 
 	# Floating-point communication register
 	class FPUL < Reg
 
-		def symbolic ; :fpul end
+		def symbolic(di=nil) ; :fpul end
 		def render ; ['fpul'] end
 	end
 
 	# Program counter
 	class PC < Reg
 
-		def symbolic ; :pc end
+		def symbolic(di=nil) ; :pc end
 		def render ; ['pc'] end
 	end
 
 	# Floating-point status/control register
 	class FPSCR < Reg
 
-		def symbolic ; :fpscr end
+		def symbolic(di=nil) ; :fpscr end
 		def render ; ['fpscr'] end
 	end
 
@@ -198,49 +198,49 @@ class Sh4 < CPU
 	# Status register
 	class SR < Reg
 
-		def symbolic ; :sr end
+		def symbolic(di=nil) ; :sr end
 		def render ; ['sr'] end
 	end
 
 	# Saved status register
 	class SSR < Reg
 
-		def symbolic ; :ssr end
+		def symbolic(di=nil) ; :ssr end
 		def render ; ['ssr'] end
 	end
 
 	# Saved program counter
 	class SPC < Reg
 
-		def symbolic ; :spc end
+		def symbolic(di=nil) ; :spc end
 		def render ; ['spc'] end
 	end
 
 	# Global base register
 	class GBR < Reg
 
-		def symbolic ; :spc end
+		def symbolic(di=nil) ; :spc end
 		def render ; ['gbr'] end
 	end
 
 	# Vector base register
 	class VBR < Reg
 
-		def symbolic ; :spc end
+		def symbolic(di=nil) ; :spc end
 		def render ; ['vbr'] end
 	end
 
 	# Saved general register
 	class SGR < Reg
 
-		def symbolic ; :sgr end
+		def symbolic(di=nil) ; :sgr end
 		def render ; ['sgr'] end
 	end
 
 	# Debug base register
 	class DBR < Reg
 
-		def symbolic ; :dbr end
+		def symbolic(di=nil) ; :dbr end
 		def render ; ['dbr'] end
 	end
 
@@ -253,7 +253,9 @@ class Sh4 < CPU
 			@base, @disp, @action = base, offset, action
 		end
 
-		def symbolic(orig=nil, sz=32)
+		def symbolic(di=nil)
+			sz = 32
+			sz = di.opcode.props[:memsz] if di
 			b = @base
 			b = b.symbolic if b.kind_of? Reg
 
@@ -267,7 +269,7 @@ class Sh4 < CPU
 				e = Expression[b].reduce
 			end
 
-			Indirection[e, sz, orig]
+			Indirection[e, sz, (di.address if di)]
 		end
 
 		include Renderable

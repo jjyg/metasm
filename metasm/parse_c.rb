@@ -3176,7 +3176,7 @@ EOH
 		end
 
 		# parse a given String as an AllocCStruct
-		# offset is an optionnal offset from the string start
+		# offset is an optional offset from the string start
 		# modification to the structure will modify the underlying string
 		def decode_c_struct(structname, str, offset=0)
 			struct = find_c_struct(structname)

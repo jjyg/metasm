@@ -68,12 +68,6 @@ class EBPF
 		di
 	end
 
-	# hash opcode_name => lambda { |dasm, di, *symbolic_args| instr_binding }
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-	def backtrace_binding=(b) @backtrace_binding = b end
-
 	# populate the @backtrace_binding hash with default values
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
@@ -143,42 +137,6 @@ class EBPF
 		}
 
 		@backtrace_binding
-	end
-
-	def get_backtrace_binding(di)
-		a = di.instruction.args.map { |arg|
-			case arg
-			when MemRef, Reg; arg.symbolic(di)
-			else arg
-			end
-		}
-
-		if binding = backtrace_binding[di.opcode.name]
-			binding[di, *a]
-		else
-			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
-			{:incomplete_binding => Expression[1]}
-		end
-	end
-
-	def get_xrefs_x(dasm, di)
-		return [] if not di.opcode.props[:setip]
-
-		if di.instruction.args.length == 4
-			di.instruction.args[-2, 2]
-		else
-			di.instruction.args[-1, 1]
-		end
-	end
-
-	# updates an instruction's argument replacing an expression with another (eg label renamed)
-	def replace_instr_arg_immediate(i, old, new)
-		i.args.map! { |a|
-			case a
-			when Expression; a == old ? new : Expression[a.bind(old => new).reduce]
-			else a
-			end
-		}
 	end
 end
 end

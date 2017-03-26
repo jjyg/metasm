@@ -124,10 +124,6 @@ class MSP430
 		di
 	end
 
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 
@@ -159,7 +155,7 @@ class MSP430
 		a = di.instruction.args.map { |arg|
 			case arg
 			when Reg; arg.symbolic
-			when Memref; arg.symbolic(di.address)
+			when Memref; arg.symbolic(di)
 			else arg
 			end
 		}
@@ -192,7 +188,7 @@ class MSP430
 		val = di.instruction.args[0]
 		case val
 		when Reg; val = val.symbolic
-		when Memref; val = val.symbolic(di.address)
+		when Memref; val = val.symbolic(di)
 		end
 
 		[Expression[val]]

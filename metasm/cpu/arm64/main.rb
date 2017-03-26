@@ -24,7 +24,7 @@ class ARM64 < CPU
 
 		Sym = @i_to_s[64].inject({}) { |h, (k, v)| h.update k => v.to_sym }
 
-		def symbolic
+		def symbolic(di=nil)
 			if @sz == 64
 				Sym[@i]
 			else
@@ -41,7 +41,7 @@ class ARM64 < CPU
 			@shift = shift
 		end
 
-		def symbolic
+		def symbolic(di=nil)
 			sym = @reg.symbolic
 			if shift != 0
 				case @mode
@@ -59,7 +59,7 @@ class ARM64 < CPU
 		def initialize(cc)
 			@cc = cc
 		end
-		def symbolic
+		def symbolic(di=nil)
 			0
 		end
 	end
@@ -70,7 +70,7 @@ class ARM64 < CPU
 			@base, @index, @scale, @offset, @sz, @incr = base, index, scale, offset, sz, incr
 		end
 
-		def symbolic(orig=nil)
+		def symbolic(di=nil)
 			o = Expression[@base.symbolic]
 			if @index
 				si = @index.symbolic
@@ -78,7 +78,7 @@ class ARM64 < CPU
 				o = Expression[o, :+, si]
 			end
 			o = Expression[o, :+, @offset] if @offset and @incr != :post
-			Indirection[o.reduce, @sz, orig]
+			Indirection[o.reduce, @sz, (di.address if di)]
 		end
 	end
 

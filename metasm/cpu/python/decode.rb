@@ -66,10 +66,6 @@ class Python
 		di
 	end
 
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 
@@ -81,22 +77,6 @@ class Python
 		}
 
 		@backtrace_binding
-	end
-
-	def get_backtrace_binding(di)
-		a = di.instruction.args.map { |arg|
-			case arg
-			when Var; arg.symbolic
-			else arg
-			end
-		}
-
-		if binding = backtrace_binding[di.opcode.basename]
-			binding[di, *a]
-		else
-			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
-			{ :incomplete_binding => Expression[1] }
-		end
 	end
 
 	def get_xrefs_x(dasm, di)

@@ -165,10 +165,6 @@ class ARM64
 		di
 	end
 
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 
@@ -211,7 +207,7 @@ class ARM64
 		a = di.instruction.args.map { |arg|
 			case arg
 			when Reg, RegShift, RegCC; arg.symbolic
-			when Memref; arg.symbolic(di.address)
+			when Memref; arg.symbolic(di)
 			else arg
 			end
 		}
@@ -269,7 +265,7 @@ class ARM64
 				raise 'internal error: no jmp target' if di.opcode.name != 'ret'
 				tg = :x30
 			when Expression
-			else tg = tg.symbolic
+			else tg = tg.symbolic(di)
 			end
 			[tg]
 		else

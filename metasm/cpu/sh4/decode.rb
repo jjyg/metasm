@@ -197,10 +197,6 @@ class Sh4
 		end
 	end
 
-	def backtrace_binding
-		@backtrace_binding ||= init_backtrace_binding
-	end
-
 	def opsz(di)
 		ret = @size
 		ret = 8 if di and di.opcode.name =~ /\.b/
@@ -298,7 +294,7 @@ class Sh4
 			when GPR, XFR, XDR, FVR, DR, FR, XMTRX; arg.symbolic
 			when MACH, MACL, PR, FPUL, PC, FPSCR; arg.symbolic
 			when SR, SSR, SPC, GBR, VBR, SGR, DBR; arg.symbolic
-			when Memref; arg.symbolic(di.address, di.opcode.props[:memsz]/8)
+			when Memref; arg.symbolic(di)
 			else arg
 			end
 		}
@@ -332,7 +328,7 @@ class Sh4
 
 		val = case val
 		      when Reg; val.symbolic
-		      when Memref; arg.symbolic(di.address, 4)
+		      when Memref; arg.symbolic(di)
 		      else val
 		      end
 

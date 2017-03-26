@@ -25,7 +25,7 @@ class Python < CPU
 			o.class == self.class and o.i == i
 		end
 
-		def symbolic; "var_#{@i}".to_sym end
+		def symbolic(di=nil); "var_#{@i}".to_sym end
 
 		def render
 			["var_#@i"]

@@ -1063,7 +1063,7 @@ module C
 				@lexpr = nil
 				precompile_inner(compiler, scope)
 			when :'?:'
-				# cannot precompile in place, a conditionnal expression may have a coma: must turn into If
+				# cannot precompile in place, a conditional expression may have a coma: must turn into If
 				if @lexpr.kind_of? CExpression
 					@lexpr = @lexpr.precompile_inner(compiler, scope)
 					if not @lexpr.lexpr and not @lexpr.op and @lexpr.rexpr.kind_of? ::Numeric

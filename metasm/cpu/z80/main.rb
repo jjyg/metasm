@@ -26,7 +26,7 @@ class Z80 < CPU
 			@i = i
 		end
 
-		def symbolic(orig=nil) ; to_s.to_sym ; end
+		def symbolic(di=nil) ; to_s.to_sym ; end
 
 		def self.from_str(s)
 			raise "Bad name #{s.inspect}" if not x = @s_to_i[s]
@@ -43,11 +43,11 @@ class Z80 < CPU
 			@sz = sz
 		end
 
-		def symbolic(orig)
+		def symbolic(di=nil)
 			p = nil
 			p = Expression[p, :+, @base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
-			Indirection[p.reduce, @sz, orig]
+			Indirection[p.reduce, @sz, (di.address if di)]
 		end
 	end
 

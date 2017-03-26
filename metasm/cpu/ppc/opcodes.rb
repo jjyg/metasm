@@ -39,7 +39,7 @@ class PowerPC
 		addop_branch(nbase+'dz',  bin|(0b10010<<21), :ign_bo_at2, :stopexec, *argprops) if not argprops.include? :ctr
 		addop_branch(nbase+'dnz', bin|(0b10000<<21), :ign_bo_at2, :stopexec, *argprops) if not argprops.include? :ctr
 
-		# conditionnal
+		# conditional
 		%w[lt gt eq so].each_with_index { |cd, i|
 			ncd = {'lt' => 'gte', 'gt' => 'lte', 'eq' => 'ne', 'so' => 'nso'}[cd]
 			addop_branch(nbase+cd, bin|(0b1100<<21)|(i<<16), :ign_bo_at, *argprops)
