@@ -52,7 +52,7 @@ class MIPS < CPU
 			p = nil
 			p = Expression[p, :+, @base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
-			Indirection[p.reduce, @sz/8, (di.address if di)r
+			Indirection[p.reduce, @sz/8, (di.address if di)]
 		end
 	end
 

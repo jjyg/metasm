@@ -294,8 +294,10 @@ class CPU
 		Expression[Expression[value].bind(di.backtrace_binding ||= get_backtrace_binding(di)).reduce]
 	end
 
-	# returns a list of Expressions/Integer to backtrace to find an execution target
+	# return the list of jump targets for insturctions modifying the control flow
 	def get_xrefs_x(dasm, di)
+		return [] if not di.opcode.props[:setip]
+		di.instruction.args[-1, 1]
 	end
 
 	# returns a list of [type, address, len]
@@ -338,7 +340,7 @@ class CPU
 	def replace_instr_arg_immediate(i, old, new)
 		i.args.map! { |a|
 			case a
-			when Expression; Expression[a.bind(old => new).reduce]
+			when Expression; a == old ? new : Expression[a.bind(old => new).reduce]
 			else a
 			end
 		}

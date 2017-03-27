@@ -246,23 +246,6 @@ class CPU
 		end
 	end
 
-	# return the list of jump targets for insturctions modifying the control flow
-	def get_xrefs_x(dasm, di)
-		return [] if not di.opcode.props[:setip]
-
-		di.instruction.args[-1, 1]
-	end
-
-	# updates an instruction's argument replacing an expression with another (eg label renamed)
-	def replace_instr_arg_immediate(i, old, new)
-		i.args.map! { |a|
-			case a
-			when Expression; a == old ? new : Expression[a.bind(old => new).reduce]
-			else a
-			end
-		}
-	end
-
 	# return something like backtrace_binding in the forward direction
 	# set pc_reg to some reg name (eg :pc) to include effects on the instruction pointer
 	# pass a debugger to allow reading the context and actually resolve the next pc in case of conditional jumps

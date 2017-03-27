@@ -77,16 +77,5 @@ class OpenRisc
 
 		@backtrace_binding
 	end
-
-	def get_backtrace_binding(di)
-		a = di.instruction.args.map { |arg| symbolic(arg) }
-
-		if binding = backtrace_binding[di.opcode.name]
-			binding[di, *a]
-		else
-			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
-			{:incomplete_binding => Expression[1]}
-		end
-	end
 end
 end

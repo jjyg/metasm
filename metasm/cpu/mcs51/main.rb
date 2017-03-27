@@ -37,6 +37,9 @@ class MCS51 < CPU
 			new(S_TO_I[s])
 		end
 
+		def symbolic(di=nil)
+			to_s.to_sym
+		end
 	end
 
 	class Immediate
@@ -46,6 +49,10 @@ class MCS51 < CPU
 
 		def to_s
 			"#" + @value.to_s
+		end
+
+		def symbolic(di=nil)
+			Expression[@value]
 		end
 	end
 
@@ -58,6 +65,10 @@ class MCS51 < CPU
 
 		def to_s
 			@base ? "@" + @base.to_s : @offset.to_s
+		end
+
+		def symbolic(di=nil)
+			Indirection[(@base || @offset), 1, (di.address if di)]
 		end
 	end
 

@@ -87,7 +87,7 @@ class MCS51
 		di
 	end
 
-	def backtrace_binding(b)
+	def init_backtrace_binding
 		@backtrace_binding ||= {}
 	end
 

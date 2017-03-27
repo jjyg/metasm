@@ -130,11 +130,6 @@ class DecodedInstruction
 	end
 end
 
-class CPU
-	# compat alias, for scripts using older version of metasm
-	def get_backtrace_binding(di) backtrace_binding(di) end
-end
-
 class Disassembler
 	# access the default value for @@backtrace_maxblocks for newly created Disassemblers
 	def self.backtrace_maxblocks ; @@backtrace_maxblocks ; end

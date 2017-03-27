@@ -161,6 +161,7 @@ class MIPS
 			when 'jal', 'jalr'; lambda { |di, a0| { :$ra => Expression[Expression[di.address, :+, 2*di.bin_length].reduce] } }
 			when 'li', 'mov'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'syscall'; lambda { |di, *a| { :$v0 => Expression::Unknown } }
+			when /^b/; lambda { |di, *a| {} }
 			end
 
 			@backtrace_binding[op] ||= binding if binding
@@ -177,19 +178,14 @@ class MIPS
 			end
 		}
 
-		binding = if binding = backtrace_binding[di.instruction.opname]
-			binding[di, *a]
+		if binding = backtrace_binding[di.instruction.opname]
+			bd = binding[di, *a]
+			bd.delete 0	# allow add $zero, 42 => nop
+			bd
 		else
-			if di.instruction.opname[0] == ?b and di.opcode.props[:setip]
-			else
-				puts "unknown instruction to emu #{di}" if $VERBOSE
-			end
-			{}
+			puts "unhandled instruction to backtrace: #{di}" if $VERBOSE
+			{:incomplete_binding => Expression[1]}
 		end
-
-		binding.delete 0	# allow add $zero, 42 => nop
-
-		binding
 	end
 
 	def get_xrefs_x(dasm, di)
