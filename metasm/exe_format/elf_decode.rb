@@ -937,6 +937,7 @@ class ELF
 		when 'SH'; Sh4.new
 		when 'ARC_COMPACT'; ARC.new
 		when 'MSP430'; MSP430.new
+		when 'OPENRISC'; OpenRisc.new(:latest, @endianness)
 		else raise "unsupported cpu #{@header.machine}"
 		end
 	end
