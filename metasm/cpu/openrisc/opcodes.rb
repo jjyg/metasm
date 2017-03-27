@@ -22,24 +22,24 @@ class OpenRisc
 
 	def init_or1300
 		@opcode_list = []
-		@valid_args = { :rD => [:rD], :rA => [:rA], :rB => [:rB], :lo16 => [:lo16], :disp26 => [:disp26], :uimm16 => [:uimm16], :abs26 => [:abs26], :rA_simm16 => [:rA, :simm16], :hi16 => [:hi16], :uimm5 => [:uimm5], :rA_ui16nc => [:rA, :ui16nc], :simm16 => [:simm16] }
-		@fields_off = { :rD => 21, :rA => 16, :rB => 11, :lo16 => 0, :disp26 => 0, :uimm16 => 0, :rA_ign => 16, :abs26 => 0, :uimm16_ign => 0, :simm16 => 0, :hi16 => 0, :rD_ign => 21, :uimm5 => 0, :ui16nc => 0 }
-		@fields_mask = { :rD => 0x1F, :rA => 0x1F, :rB => 0x1F, :lo16 => 0xFFFF, :disp26 => 0x3FFFFFF, :uimm16 => 0xFFFF, :rA_ign => 0x1F, :abs26 => 0x3FFFFFF, :uimm16_ign => 0xFFFF, :simm16 => 0xFFFF, :hi16 => 0xFFFF, :rD_ign => 0x1F, :uimm5 => 0x1F, :ui16nc => 0xFFFF }
+		@valid_args = { :rD => [:rD], :rA => [:rA], :rB => [:rB], :lo16 => [:lo16], :disp26 => [:disp26], :uimm16 => [:uimm16], :rA_ign => [:rA], :abs26 => [:abs26], :uimm16_ign => [:uimm16], :rA_simm16 => [:rA, :simm16], :hi16 => [:hi16], :rD_ign => [:rD], :uimm5 => [:uimm5], :rA_ui16nc => [:rA, :ui16nc], :simm16 => [:simm16] }
+		@fields_off = { :rD => 21, :rA => 16, :rB => 11, :lo16 => 0, :disp26 => 0, :uimm16 => 0, :abs26 => 0, :simm16 => 0, :hi16 => 0, :uimm5 => 0, :ui16nc => 0 }
+		@fields_mask = { :rD => 0x1F, :rA => 0x1F, :rB => 0x1F, :lo16 => 0xFFFF, :disp26 => 0x3FFFFFF, :uimm16 => 0xFFFF, :abs26 => 0x3FFFFFF, :simm16 => 0xFFFF, :hi16 => 0xFFFF, :uimm5 => 0x1F, :ui16nc => 0xFFFF }
 
 		addop 'add', 0xE0000000, :rD, :rA, :rB
 		addop 'addi', 0x94000000, :rD, :rA, :lo16
 		addop 'and', 0xE0000003, :rD, :rA, :rB
 		addop 'andi', 0xA0000000, :rD, :rA, :lo16
-		addop 'bal', 0x08000000, :disp26
-		addop 'bf', 0x10000000, :disp26
-		addop 'bnf', 0x0C000000, :disp26
+		#addop 'bal', 0x08000000, :disp26	# XX jal ?
+		addop 'bf', 0x10000000, :disp26, :setip => true
+		addop 'bnf', 0x0C000000, :disp26, :setip => true
 		addop 'brk', 0x17000000, :uimm16, :rA_ign
 		addop 'div', 0xE0000009, :rD, :rA, :rB
 		addop 'divu', 0xE000000A, :rD, :rA, :rB
-		addop 'j', 0x00000000, :abs26
-		addop 'jal', 0x04000000, :abs26
-		addop 'jalr', 0x14200000, :rA, :uimm16_ign
-		addop 'jr', 0x14000000, :rA, :uimm16_ign
+		addop 'j', 0x00000000, :abs26, :setip => true, :stopexec => true
+		addop 'jal', 0x04000000, :abs26, :setip => true, :stopexec => true, :saveip => true
+		addop 'jalr', 0x14200000, :rA, :uimm16_ign, :setip => true, :stopexec => true, :saveip => true
+		addop 'jr', 0x14000000, :rA, :uimm16_ign, :setip => true, :stopexec => true
 		addop 'lbs', 0x88000000, :rD, :rA_simm16
 		addop 'lbz', 0x84000000, :rD, :rA_simm16
 		addop 'lhs', 0x90000000, :rD, :rA_simm16

@@ -33,16 +33,21 @@ class OpenRisc < CPU
 		end
 	end
 
-	def initialize(family = :latest, endianness = :big)
+	def initialize(family = :latest, endianness = :big, delay_slot = 1)
 		super()
 		@endianness = endianness
 		@size = 32
 		@family = family
+		@delay_slot = delay_slot
 	end
 
 	def init_opcode_list
 		send("init_#@family")
 		@opcode_list
+	end
+
+	def delay_slot(di=nil)
+		@delay_slot
 	end
 end
 end

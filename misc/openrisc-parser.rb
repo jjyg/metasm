@@ -61,13 +61,14 @@ xml.each('ul') { |ul|
 	}
 	flds.each_key { |f|
 		puts "# no arg using #{f} in #{iname}"
-		f_i = "#{f}_ign"
-		fields[f_i] ||= fields[f]
-		addop.last.last << f_i
+		a_i = "#{f}_ign"
+		valid_args[a_i] ||= [f]
+		addop.last.last << a_i
 	}
 }
 
 puts "\tdef init_cpu"
+puts "\t\t@opcode_list = []"
 puts "\t\t@valid_args = { #{valid_args.map { |a, f| ":#{a} => [#{f.map { |ff| ':' + ff }.join(', ')}]" }.join(', ')} }"
 puts "\t\t@fields_off = { #{fields.map { |k, v| ":#{k} => #{v[0]}" }.join(', ')} }"
 puts "\t\t@fields_mask = { #{fields.map { |k, v| ":#{k} => #{'0x%02X' % v[1]}" }.join(', ')} }"

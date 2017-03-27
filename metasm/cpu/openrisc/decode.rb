@@ -15,7 +15,7 @@ class OpenRisc
 			op.bin_mask = 0
 			op.args.each { |a|
 				@valid_args[a].each { |f|
-					mask |= @fields_mask[f] << @fields_off[f]
+					op.bin_mask |= @fields_mask[f] << @fields_off[f]
 				}
 			}
 			((op.bin >> 24) .. ((op.bin | op.bin_mask) >> 24)).each { |b|
@@ -46,10 +46,19 @@ class OpenRisc
 		fld = lambda { |f|
 			(val >> @fields_off[f]) & @fields_mask[f]
 		}
+		sign_fld = lambda { |f, sz|
+			Expression.make_signed(Expression[fld[f]], sz).reduce
+		}
 
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :rA, :rB, :rD; Reg.new(fld[a])
+			when :rA_ign, :rD_ign, :uimm16_ign; next
+			when :abs26, :disp26; Expression[sign_fld[a, 26]]
+			when :lo16, :hi16, :uimm5, :uimm16; Expression[fld[a]]
+			when :simm16; Expression[sign_fld[a, 16]]
+			when :rA_simm16; MemRef.new(Reg.new(fld[:rA]), Expression[sign_fld[:simm16, 16]], di.opcode.props[:memsz])
+			when :rA_ui16nc; MemRef.new(Reg.new(fld[:rA]), Expression[fld[:ui16nc]], di.opcode.props[:memsz])
 			else raise "unhandled arg #{a}"
 			end
 		}
@@ -59,6 +68,12 @@ class OpenRisc
 
 	def decode_instr_interpret(di, addr)
 		if di.opcode.props[:setip]
+			case di.opcode.name
+			when 'j', 'jal', 'bf', 'bnf'
+				# abs26 is not absolute, duh
+				arg = Expression[addr, :+, [di.instruction.args[-1], :<<, 2]].reduce
+				di.instruction.args[-1] = Expression[arg]
+			end
 		end
 
 		di
@@ -70,7 +85,7 @@ class OpenRisc
 
 		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
 			binding = case op
-			when 'add'; lambda { |di, a0, a1| { a0 => Expression[a0, :+, a1] } }
+			when 'add'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :+, a2] } }
 			end
 			@backtrace_binding[op] ||= binding if binding
 		}
