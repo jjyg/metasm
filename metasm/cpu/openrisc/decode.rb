@@ -10,7 +10,7 @@ require 'metasm/decode'
 module Metasm
 class OpenRisc
 	def build_bin_lookaside
-		bl = Hash.new(255) { [] }
+		bl = Array.new(255) { [] }
 		opcode_list.each { |op|
 			op.bin_mask = 0
 			op.args.each { |a|

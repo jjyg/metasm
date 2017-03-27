@@ -73,6 +73,6 @@ puts "\t\t@fields_off = { #{fields.map { |k, v| ":#{k} => #{v[0]}" }.join(', ')}
 puts "\t\t@fields_mask = { #{fields.map { |k, v| ":#{k} => #{'0x%02X' % v[1]}" }.join(', ')} }"
 puts
 addop.each { |op|
-	puts "\t\taddop '#{op[0]}', #{'0x%08X' % op[1]}#{op[2].map { |a| " :#{a}" }.join(',')}"
+	puts "\t\taddop '#{op[0]}', #{'0x%08X' % op[1]}#{op[2].map { |a| ", :#{a}" }.join('')}"
 }
 puts "\tend"
