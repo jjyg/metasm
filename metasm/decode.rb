@@ -210,7 +210,7 @@ class CPU
 	# return a symbolic representation of an instruction argument (eg Reg[0] => :eax)
 	def symbolic(arg, di=nil)
 		case arg
-		when Expression
+		when ExpressionType
 			arg
 		when Integer
 			Expression[arg]
