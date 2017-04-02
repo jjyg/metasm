@@ -297,7 +297,7 @@ class CPU
 	# return the list of jump targets for insturctions modifying the control flow
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
-		di.instruction.args[-1, 1]
+		[symbolic(di.instruction.args.last, di)]
 	end
 
 	# returns a list of [type, address, len]
