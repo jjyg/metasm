@@ -84,7 +84,20 @@ class OpenRisc
 
 		opcode_list.map { |ol| ol.basename }.uniq.sort.each { |op|
 			binding = case op
+			when 'movhi'; lambda { |di, a0, a1| { a0 => Expression[a1, :<<, 16] } }
 			when 'add'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :+, a2] } }
+			when 'sub'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :-, a2] } }
+			when 'mul'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :*, a2] } }
+			when 'div'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :/, a2] } }
+			when 'and'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :&, a2] } }
+			when 'or';  lambda { |di, a0, a1, a2| { a0 => Expression[a1, :|, a2] } }
+			when 'xor'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :^, a2] } }
+			when 'lwz', 'lbz', 'lhz'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'lbs'; lambda { |di, a0, a1| { a0 => Expression[Expression.make_signed(a1, 8)] } }
+			when 'lhs'; lambda { |di, a0, a1| { a0 => Expression[Expression.make_signed(a1, 16)] } }
+			when 'sw', 'sh', 'sb';  lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'jal', 'jalr'; lambda { |di, a0| { :r9 => Expression[di.next_addr + delay_slot(di)*4] } }
+			when 'jr', 'j', 'be', 'bne'; lambda { |di, *a| {} }
 			end
 			@backtrace_binding[op] ||= binding if binding
 		}
