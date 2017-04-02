@@ -12,12 +12,6 @@ class OpenRisc
 	def build_bin_lookaside
 		bl = Array.new(255) { [] }
 		opcode_list.each { |op|
-			op.bin_mask = 0
-			op.args.each { |a|
-				@valid_args[a].each { |f|
-					op.bin_mask |= @fields_mask[f] << @fields_off[f]
-				}
-			}
 			((op.bin >> 24) .. ((op.bin | op.bin_mask) >> 24)).each { |b|
 				if (b | (op.bin_mask >> 24)) == ((op.bin | op.bin_mask) >> 24)
 					bl[b] << op
@@ -49,16 +43,21 @@ class OpenRisc
 		sign_fld = lambda { |f, sz|
 			Expression.make_signed(Expression[fld[f]], sz).reduce
 		}
+		fld_smoo = lambda {
+			Expression[Expression.make_signed((val & 0x7ff) | ((val >> 10) & 0xF800), 16)]
+		}
 
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :rA, :rB, :rD; Reg.new(fld[a])
-			when :rA_ign, :rD_ign, :uimm16_ign; next
-			when :abs26, :disp26; Expression[sign_fld[a, 26]]
-			when :lo16, :hi16, :uimm5, :uimm16; Expression[fld[a]]
+			when :fA; FpReg.new(fld[:rA])
+			when :fB; FpReg.new(fld[:rB])
+			when :fD; FpReg.new(fld[:rD])
+			when :disp26; Expression[sign_fld[a, 26]]
+			when :uimm5, :uimm16; Expression[fld[a]]
 			when :simm16; Expression[sign_fld[a, 16]]
 			when :rA_simm16; MemRef.new(Reg.new(fld[:rA]), Expression[sign_fld[:simm16, 16]], di.opcode.props[:memsz])
-			when :rA_ui16nc; MemRef.new(Reg.new(fld[:rA]), Expression[fld[:ui16nc]], di.opcode.props[:memsz])
+			when :rA_smoo; MemRef.new(Reg.new(fld[:rA]), fld_smoo[], di.opcode.props[:memsz])
 			else raise "unhandled arg #{a}"
 			end
 		}
