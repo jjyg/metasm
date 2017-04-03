@@ -742,6 +742,52 @@ class ELF
 		Metasm::Relocation.new(Expression[target], :u32, @endianness) if target
 	end
 
+	def arch_decode_segments_reloc_openrisc(reloc)
+		if reloc.symbol.kind_of?(Symbol) and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
+			s = @sections.find { |s_| s_.name and s_.offset <= @encoded.ptr and s_.offset + s_.size > @encoded.ptr }
+			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
+		end
+
+		original_word = decode_word
+
+		# decode addend if needed
+		case reloc.type
+		when 'NONE' # no addend
+		else addend = reloc.addend || Expression.make_signed(original_word, 32)
+		end
+
+		case reloc.type
+		when 'NONE'
+		when '32', '32_PCREL'
+			target = reloc_target(reloc)
+			target = Expression[target, :-, reloc.offset] if reloc.type == '32_PCREL'
+			target = Expression[target, :+, addend] if addend and addend != 0
+		when 'INSN_REL_26'
+			target = reloc_target(reloc)
+			addend &= 0x3ff_ffff
+			target = Expression[target, :+, [addend, :<<, 2]] if addend and addend != 0
+			target = Expression[[original_word, :&, 0xfc0_0000], :|, [[target, :&, 0x3ff_ffff], :>>, 2]]
+		when 'HI_16_IN_INSN'
+			target = reloc_target(reloc)
+			addend &= 0xffff
+			target = Expression[target, :+, [addend, :<<, 16]] if addend and addend != 0
+			target = Expression[[original_word, :&, 0xffff_0000], :|, [[target, :>>, 16], :&, 0xffff]]
+		when 'LO_16_IN_INSN'
+			target = reloc_target(reloc)
+			addend &= 0xffff
+			target = Expression[target, :+, addend] if addend and addend != 0
+			target = Expression[[original_word, :&, 0xffff_0000], :|, [target, :&, 0xffff]]
+		when 'JMP_SLOT'
+			target = reloc_target(reloc)
+			target = Expression[target, :+, addend] if addend and addend != 0
+		else
+			puts "W: Elf: unhandled MIPS reloc #{reloc.inspect}" if $VERBOSE
+			target = nil
+		end
+
+		Metasm::Relocation.new(Expression[target], :u32, @endianness) if target
+	end
+
 	class DwarfDebug
 		# decode a DWARF2 'compilation unit'
 		def decode(elf, info, abbrev, str)
@@ -930,14 +976,14 @@ class ELF
 		case @header.machine
 		when 'X86_64'; X86_64.new
 		when '386'; Ia32.new
-		when 'MIPS'; (@header.flags.include?('32BITMODE') ? MIPS64 : MIPS).new @endianness
+		when 'MIPS'; (@header.flags.include?('32BITMODE') ? MIPS64 : MIPS).new(@endianness)
 		when 'PPC'; PPC.new
 		when 'ARM'; ARM.new
 		when 'AARCH64'; AArch64.new
 		when 'SH'; Sh4.new
 		when 'ARC_COMPACT'; ARC.new
 		when 'MSP430'; MSP430.new
-		when 'OPENRISC'; OpenRisc.new(:latest, @endianness)
+		when 'OPENRISC'; OpenRisc.new(:latest, @endianness, (@header.flags.include?('NODELAY') ? 0 : 1))
 		else raise "unsupported cpu #{@header.machine}"
 		end
 	end
@@ -1020,6 +1066,17 @@ EOC
 			%w[__stack_chk_fail abort exit].each { |fn|
 				d.function[Expression[fn]] = noret
 			}
+			d.function[:default] = @cpu.disassembler_default_func
+		when 'openrisc'
+			old_cp = d.c_parser
+			d.c_parser = nil
+			d.parse_c <<EOC
+void __libc_start_main(void(*)(), int, char**, void(*)(), void(*)()) __attribute__((noreturn));
+void __attribute__((noreturn)) exit(int);
+EOC
+			d.function[Expression['__libc_start_main']] = @cpu.decode_c_function_prototype(d.c_parser, '__libc_start_main')
+			d.function[Expression['exit']] = @cpu.decode_c_function_prototype(d.c_parser, 'exit')
+			d.c_parser = old_cp
 			d.function[:default] = @cpu.disassembler_default_func
 		end
 		d

@@ -78,7 +78,8 @@ class ELF < ExeFormat
 		'MIPS' => {1 => 'NOREORDER', 2 => 'PIC', 4 => 'CPIC',
 			8 => 'XGOT', 0x10 => '64BIT_WHIRL', 0x20 => 'ABI2',
 			0x40 => 'ABI_ON32', 0x80 => 'OPTIONSFIRST',
-			0x100 => '32BITMODE'}
+			0x100 => '32BITMODE'},
+		'OPENRISC' => { 1 => 'NODELAY' },
 	}
 
 	DYNAMIC_TAG = { 0 => 'NULL', 1 => 'NEEDED', 2 => 'PLTRELSZ', 3 =>
@@ -391,7 +392,16 @@ class ELF < ExeFormat
 			11 => '32S', 12 => '16', 13 => 'PC16', 14 => '8',
 			15 => 'PC8', 16 => 'DTPMOD64', 17 => 'DTPOFF64',
 			18 => 'TPOFF64', 19 => 'TLSGD', 20 => 'TLSLD',
-			21 => 'DTPOFF32', 22 => 'GOTTPOFF', 23 => 'TPOFF32' }
+			21 => 'DTPOFF32', 22 => 'GOTTPOFF', 23 => 'TPOFF32' },
+		'OPENRISC' => { 0 => 'NONE', 1 => '32', 2 => '16', 3 => '8',
+			4 => 'LO_16_IN_INSN', 5 => 'HI_16_IN_INSN', 6 => 'INSN_REL_26', 7 => 'GNU_VTENTRY',
+			8 => 'GNU_VTINHERIT', 9 => '32_PCREL', 10 => '16_PCREL', 11 => '8_PCREL',
+			12 => 'GOTPC_HI16', 13 => 'GOTPC_LO16', 14 => 'GOT15', 15 => 'PLT26',
+			16 => 'GOTOFF_HI16', 17 => 'GOTOFF_LO16', 18 => 'COPY', 19 => 'GLOB_DAT',
+			20 => 'JMP_SLOT', 21 => 'RELATIVE', 22 => 'TLS_GD_HI16', 23 => 'TLS_GD_LO16',
+			24 => 'TLS_LDM_HI16', 25 => 'TLS_LDM_LO16', 26 => 'TLS_LDO_HI16', 27 => 'TLS_LDO_LO16',
+			28 => 'TLS_IE_HI16', 29 => 'TLS_IE_LO16', 30 => 'TLS_LE_HI16', 31 => 'TLS_LE_LO16',
+			32 => 'TLS_TPOFF', 33 => 'TLS_DTPOFF', 34 => 'TLS_DTPMOD' },
 	}
 
 	DEFAULT_INTERP = '/lib/ld-linux.so.2'
