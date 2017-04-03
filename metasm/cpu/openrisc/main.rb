@@ -45,7 +45,7 @@ class OpenRisc < CPU
 		def symbolic(di)
 			p = Expression[@base.symbolic] if base
 			p = Expression[p, :+, @offset] if offset
-			Indirection[p, @msz, (di.address if di)]
+			Indirection[p.reduce, @msz, (di.address if di)]
 		end
 	end
 
