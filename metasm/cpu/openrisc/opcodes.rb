@@ -19,7 +19,7 @@ class OpenRisc
 		@opcode_list << o
 	end
 
-	def init_or1300
+	def init_or1k
 		@opcode_list = []
 		@valid_args = [ :rA, :rB, :rD, :fA, :fB, :fD, :disp26, :uimm16, :simm16, :uimm5, :rA_simm16, :rA_smoo ].inject({}) { |h, a| h.update a => true }
 		@fields_off = { :rD => 21, :rA => 16, :rB => 11, :disp26 => 0, :uimm16 => 0, :simm16 => 0, :uimm5 => 0, :smoo => 0 }
@@ -104,6 +104,6 @@ class OpenRisc
 		addop 'sfles', 0xE5A0_0000, 0x001F_FFFF, :rA, :rB
 	end
 
-	alias init_latest init_or1300
+	alias init_latest init_or1k
 end
 end

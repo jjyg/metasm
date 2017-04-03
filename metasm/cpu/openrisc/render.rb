@@ -14,6 +14,11 @@ class OpenRisc
 		def render ; ["r#@v"] end
 	end
 
+	class FpReg
+		include Renderable
+		def render ; ["f#@v"] end
+	end
+
 	class MemRef
 		include Renderable
 		def render

@@ -92,17 +92,82 @@ class OpenRisc
 			when 'and'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :&, a2] } }
 			when 'or';  lambda { |di, a0, a1, a2| { a0 => Expression[a1, :|, a2] } }
 			when 'xor'; lambda { |di, a0, a1, a2| { a0 => Expression[a1, :^, a2] } }
+			when 'shl'; lambda { |di, a0, a1, a2| { a0 => Expression[[a1, :<<, a2], :&, 0xffff_ffff] } }
+			when 'shr'; lambda { |di, a0, a1, a2| { a0 => Expression[[a1, :>>, a2], :&, 0xffff_ffff] } }
+			when 'sar'; lambda { |di, a0, a1, a2| { a0 => Expression[[[a1, :>>, a2], :|, [[0xffff_ffff, :<<, a2], :*, [a1, :>>, 31]]], :&, 0xffff_ffff] } }
+			when 'ror'; lambda { |di, a0, a1, a2| { a0 => Expression[[[a1, :>>, a2], :|, [a1, :<<, [32, :-, a2]]], :&, 0xffff_ffff] } }
 			when 'lwz', 'lbz', 'lhz'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'lbs'; lambda { |di, a0, a1| { a0 => Expression[Expression.make_signed(a1, 8)] } }
 			when 'lhs'; lambda { |di, a0, a1| { a0 => Expression[Expression.make_signed(a1, 16)] } }
 			when 'sw', 'sh', 'sb';  lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'jal', 'jalr'; lambda { |di, a0| { :r9 => Expression[di.next_addr + delay_slot(di)*4] } }
-			when 'jr', 'j', 'be', 'bne'; lambda { |di, *a| {} }
+			when 'jr', 'j', 'bf', 'bnf', 'nop'; lambda { |di, *a| {} }
+			when /^sf/; lambda { |di, *a| {} }
 			end
 			@backtrace_binding[op] ||= binding if binding
 		}
 
 		@backtrace_binding
+	end
+
+	# returns a DecodedFunction from a parsed C function prototype
+	def decode_c_function_prototype(cp, sym, orig=nil)
+		sym = cp.toplevel.symbol[sym] if sym.kind_of?(::String)
+		df = DecodedFunction.new
+		orig ||= Expression[sym.name]
+
+		new_bt = lambda { |expr, rlen|
+			df.backtracked_for << BacktraceTrace.new(expr, orig, expr, rlen ? :r : :x, rlen)
+		}
+
+		# return instr emulation
+		if sym.has_attribute 'noreturn' or sym.has_attribute '__noreturn__'
+			df.noreturn = true
+		else
+			new_bt[:r9, nil]
+		end
+
+		[3, 4, 5, 6, 7, 8, 11, 12, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31].each { |r|
+			# dirty regs according to ABI
+			df.backtrace_binding.update "r#{r}".to_sym => Expression::Unknown
+		}
+
+		# scan args for function pointers
+		reg_args = [:r3, :r4, :r5, :r6, :r7, :r8]
+		sym.type.args.to_a.zip(reg_args).each { |a, ra|
+			break if not a or not ra
+			if a.type.untypedef.kind_of? C::Pointer
+				pt = a.type.untypedef.type.untypedef
+				if pt.kind_of? C::Function
+					new_bt[ra, nil]
+					df.backtracked_for.last.detached = true
+				elsif pt.kind_of? C::Struct
+					new_bt[ra, al]
+				else
+					new_bt[ra, cp.sizeof(nil, pt)]
+				end
+			end
+		}
+
+		df
+	end
+
+	def disassembler_default_func
+		df = DecodedFunction.new
+		df.backtrace_binding = (1..32).inject({}) { |h, r| h.update "r#{r}".to_sym => Expression["r#{r}".to_sym] }
+		[3, 4, 5, 6, 7, 8, 11, 12, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31].each { |r|
+			df.backtrace_binding["r#{r}".to_sym] = Expression::Unknown
+		}
+		df.backtracked_for = [BacktraceTrace.new(Expression[:r9], :default, Expression[:r9], :x)]
+		df
+	end
+
+	def backtrace_is_function_return(expr, di=nil)
+		Expression[expr].reduce_rec == :r9
+	end
+
+	def backtrace_is_stack_address(expr)
+		Expression[expr].expr_externals.include? :r1
 	end
 end
 end

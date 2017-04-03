@@ -14,7 +14,23 @@ class OpenRisc < CPU
 			@v = v
 		end
 
-		def symbolic(di=nil) ; "r#@v".to_sym ; end
+		def symbolic(di=nil)
+			if @v != 0 or not di or di.instruction.args[0].object_id == self.object_id
+				"r#@v".to_sym
+			else
+				# r0 is always 0, but we still return :r0 when writing to it (ie its the 1st instr arg)
+				Expression[0]
+			end
+		end
+	end
+
+	class FpReg
+		attr_accessor :v
+		def initialize(v)
+			@v = v
+		end
+
+		def symbolic(di=nil) ; "f#@v".to_sym ; end
 	end
 
 	class MemRef
