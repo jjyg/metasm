@@ -26,7 +26,7 @@ class OpenRisc
 		@fields_mask = { :rD => 0x1F, :rA => 0x1F, :rB => 0x1F, :disp26 => 0x3FFFFFF, :simm16 => 0xFFFF, :uimm16 => 0xFFFF, :uimm5 => 0x1F, :smoo => 0x3E007FF }
 
 		addop 'j',     0x0000_0000, 0x03FF_FFFF, :disp26, :setip => true, :stopexec => true
-		addop 'jal',   0x0400_0000, 0x03FF_FFFF, :disp26, :setip => true, :stopexec => true
+		addop 'jal',   0x0400_0000, 0x03FF_FFFF, :disp26, :setip => true, :stopexec => true, :saveip => true
 		addop 'bnf',   0x0C00_0000, 0x03FF_FFFF, :disp26, :setip => true	# branch if not flag
 		addop 'bf',    0x1000_0000, 0x03FF_FFFF, :disp26, :setip => true
 		addop 'nop',   0x1400_0000, 0x03FF_FFFF
