@@ -7,3 +7,4 @@
 require 'metasm/main'
 require 'metasm/cpu/openrisc/decode'
 require 'metasm/cpu/openrisc/render'
+require 'metasm/cpu/openrisc/debug'

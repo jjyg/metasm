@@ -102,7 +102,16 @@ class OpenRisc
 			when 'sw', 'sh', 'sb';  lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'jal', 'jalr'; lambda { |di, a0| { :r9 => Expression[di.next_addr + delay_slot(di)*4] } }
 			when 'jr', 'j', 'bf', 'bnf', 'nop'; lambda { |di, *a| {} }
-			when /^sf/; lambda { |di, *a| {} }
+			when 'sfeq'; lambda { |di, a0, a1| { :flag => Expression[a0, :==, a1] } }
+			when 'sfne'; lambda { |di, a0, a1| { :flag => Expression[a0, :!=, a1] } }
+			when 'sfgtu'; lambda { |di, a0, a1| { :flag => Expression[[a0, :&, 0xffff_ffff], :>, [a1, :&, 0xffff_ffff]] } }
+			when 'sfgeu'; lambda { |di, a0, a1| { :flag => Expression[[a0, :&, 0xffff_ffff], :>=, [a1, :&, 0xffff_ffff]] } }
+			when 'sfltu'; lambda { |di, a0, a1| { :flag => Expression[[a0, :&, 0xffff_ffff], :<, [a1, :&, 0xffff_ffff]] } }
+			when 'sfleu'; lambda { |di, a0, a1| { :flag => Expression[[a0, :&, 0xffff_ffff], :<=, [a1, :&, 0xffff_ffff]] } }
+			when 'sfgts'; lambda { |di, a0, a1| { :flag => Expression[Expression.make_signed(a0, 32), :>, Expression.make_signed(a1, 32)] } }
+			when 'sfges'; lambda { |di, a0, a1| { :flag => Expression[Expression.make_signed(a0, 32), :>=, Expression.make_signed(a1, 32)] } }
+			when 'sflts'; lambda { |di, a0, a1| { :flag => Expression[Expression.make_signed(a0, 32), :<, Expression.make_signed(a1, 32)] } }
+			when 'sfles'; lambda { |di, a0, a1| { :flag => Expression[Expression.make_signed(a0, 32), :<=, Expression.make_signed(a1, 32)] } }
 			end
 			@backtrace_binding[op] ||= binding if binding
 		}
