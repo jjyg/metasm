@@ -61,8 +61,8 @@ class EmuDebugger < Debugger
 		@disassembler = disassembler
 		@ctx = {}
 		@state = :stopped
-		@symbols = {}
-		@symbols_len = {}
+		@symbols = disassembler.prog_binding.invert
+		@symbols_len = @symbols.keys.inject({}) { |h, s| h.update s => 1 }
 		@modulemap = {}
 		@breakpoint = {}
 		@breakpoint_memory = {}

@@ -42,7 +42,7 @@ class EBPF
 		when 'jne'; dbg_ctx.resolve(a[0]) != dbg_ctx.resolve(a[1])
 		when 'jsgt'; Expression.make_signed(dbg_ctx.resolve(a[0]), 64) >  Expression.make_signed(dbg_ctx.resolve(a[1]), 64)
 		when 'jsge'; Expression.make_signed(dbg_ctx.resolve(a[0]), 64) >= Expression.make_signed(dbg_ctx.resolve(a[1]), 64)
-		else return super(di, fdb, pc_reg, dbg_ctx)
+		else return super(di, fbd, pc_reg, dbg_ctx)
 		end
 
 		if cond

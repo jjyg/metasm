@@ -421,7 +421,7 @@ class DisasmWidget < ContainerChoiceWidget
 			dasm.backtrace(expr, addr, :log => log)
 			list = [['address', 'type', 'old value', 'value']]
 			log.each { |t, *a|
-				list << [Expression[a[-1]], t]
+				list << [Expression[a[-1]], t] rescue next
 				case t
 				when :start
 					list.last << a[0]
