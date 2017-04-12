@@ -1274,7 +1274,7 @@ class Debugger
 			if i.kind_of? Indirection and p = i.pointer.reduce and p.kind_of? ::Integer
 				i.len ||= @cpu.size/8
 				p &= (1 << @cpu.size) - 1 if p < 0
-				Expression.decode_imm(@memory, i.len, @cpu, p)
+				@memory.decode_imm(p, i.len, @cpu)
 			end
 		}
 	end

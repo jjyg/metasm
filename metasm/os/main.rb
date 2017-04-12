@@ -272,6 +272,11 @@ class VirtualString
 	# overwrites a section of the original data
 	#def rewrite_at(addr, content)
 	#end
+
+	# decode an integer
+	def decode_imm(addr, len, cpu)
+		Expression.decode_imm(self, len, cpu, addr)
+	end
 end
 
 # on-demand reading of a file

@@ -37,6 +37,10 @@ class VirtualMemoryDasm < VirtualString
 			e[0].data[addr - e[1], data.length] = data
 		end
 	end
+
+	def decode_imm(addr, len, cpu)
+		@disassembler.decode_int(addr, len)
+	end
 end
 
 # this class implements a virtual debugger over an emulated cpu (based on cpu#get_backtrace_binding)
@@ -47,6 +51,9 @@ class EmuDebugger < Debugger
 	# if it returns nil, the di is emulated as usual, if it returns true no further processing is done for this di
 	# dont forget to handle reg_pc !
 	attr_accessor :callback_emulate_di
+	# lambda called everytime we cannot find an instruction at the current PC
+	# return true if the context was fixed
+	attr_accessor :callback_unknown_pc
 
 	def initialize(disassembler)
 		@pid = @tid = 0
@@ -104,6 +111,11 @@ class EmuDebugger < Debugger
 
 	def do_singlestep
 		di = @disassembler.di_at(pc)
+		if not di and callback_unknown_pc
+			if callback_unknown_pc.call
+				return do_singlestep
+			end
+		end
 		return if not di
 
 		if callback_emulate_di
@@ -124,7 +136,7 @@ class EmuDebugger < Debugger
 		}.each { |k, v|
 			if not v.kind_of?(Integer)
 				puts "singlestep: badvalue #{k} = #{v}"
-				next
+				#next
 			end
 
 			case k
