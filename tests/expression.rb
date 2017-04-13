@@ -15,6 +15,8 @@ class TestExpression < Test::Unit::TestCase
 
 	def test_numeric
 		assert_equal(5, E[4, :+, 1].reduce)
+		assert_equal(4, E[5].reduce { |e| e == 5 ? 4 : e })
+		assert_equal(5, E[5].reduce)	# test the previous lambda does not linger around
 	end
 
 	def test_reduce

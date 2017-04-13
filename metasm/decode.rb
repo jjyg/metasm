@@ -25,8 +25,8 @@ class Indirection < ExpressionType
 		@target, @len, @origin = target, len, origin
 	end
 
-	def reduce_rec
-		ptr = Expression[@target.reduce]
+	def reduce_rec(cb=nil)
+		ptr = Expression[@target.reduce(&cb)]
 		(ptr == Expression::Unknown) ? ptr : Indirection.new(ptr, @len, @origin)
 	end
 

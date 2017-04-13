@@ -383,7 +383,7 @@ class Expression < ExpressionType
 	# checks if a given Expression/Integer is in the type range
 	# returns true if it is, false if it overflows, and nil if cannot be determined (eg unresolved variable)
 	def self.in_range?(val, type)
-		val = val.reduce if val.kind_of? self
+		val = val.reduce if val.kind_of?(self)
 		return unless val.kind_of?(::Numeric)
 
 		if INT_MIN[type]
@@ -490,15 +490,13 @@ class Expression < ExpressionType
 	# returns a simplified copy of self
 	# can return an +Expression+ or a +Numeric+, may return self
 	# see +reduce_rec+ for simplifications description
-	# if given a block, it will temporarily overwrite the global @@reduce_lambda XXX THIS IS NOT THREADSAFE
-	def reduce(&b)
-		old_rp, @@reduce_lambda = @@reduce_lambda, b if b
-		case e = reduce_rec
+	# if given a block, will use it instead of @@reduce_lambda
+	def reduce(&cb)
+		cb ||= @@reduce_lambda
+		case e = reduce_rec(cb)
 		when Expression, Numeric; e
 		else Expression[e]
 		end
-	ensure
-		@@reduce_lambda = old_rp if b
 	end
 
 	# resolves logic operations (true || false, etc)
@@ -508,13 +506,13 @@ class Expression < ExpressionType
 	# reduces addition of 0 and unary +
 	# canonicalize additions: put variables in the lhs, descend addition tree in the rhs => (a + (b + (c + 12)))
 	# make formal reduction if finds somewhere in addition tree (a) and (-a)
-	def reduce_rec
-		l = @lexpr.kind_of?(ExpressionType) ? @lexpr.reduce_rec : @lexpr
-		r = @rexpr.kind_of?(ExpressionType) ? @rexpr.reduce_rec : @rexpr
+	def reduce_rec(cb = @@reduce_lambda)
+		l = @lexpr.kind_of?(ExpressionType) ? @lexpr.reduce_rec(cb) : @lexpr
+		r = @rexpr.kind_of?(ExpressionType) ? @rexpr.reduce_rec(cb) : @rexpr
 
-		if @@reduce_lambda
-			l = @@reduce_lambda[l] || l if not @lexpr.kind_of? Expression
-			r = @@reduce_lambda[r] || r if not @rexpr.kind_of? Expression
+		if cb
+			l = cb[l] || l if l and not @lexpr.kind_of?(Expression)
+			r = cb[r] || r if r and not @rexpr.kind_of?(Expression)
 		end
 
 		v =
@@ -540,7 +538,7 @@ class Expression < ExpressionType
 				l.send(@op, r)
 			end
 		elsif rp = @@reduce_op[@op]
-			rp[self, l, r]
+			rp[self, l, r, cb]
 		end
 
 		ret = case v
@@ -552,9 +550,9 @@ class Expression < ExpressionType
 			(v.lexpr == :unknown or v.rexpr == :unknown) ? :unknown : v
 		else v
 		end
-		if @@reduce_lambda and ret.kind_of? ExpressionType and newret = @@reduce_lambda[ret] and newret != ret
-			if newret.kind_of? ExpressionType
-				ret = newret.reduce_rec
+		if cb and ret.kind_of?(ExpressionType) and newret = cb[ret] and newret != ret
+			if newret.kind_of?(ExpressionType)
+				ret = newret.reduce_rec(cb)
 			else
 				ret = newret
 			end
@@ -563,21 +561,21 @@ class Expression < ExpressionType
 	end
 
 	@@reduce_op = {
-		:+    => lambda { |e, l, r| e.reduce_op_plus(l, r) },
-		:-    => lambda { |e, l, r| e.reduce_op_minus(l, r) },
-		:'&&' => lambda { |e, l, r| e.reduce_op_andand(l, r) },
-		:'||' => lambda { |e, l, r| e.reduce_op_oror(l, r) },
-		:>>   => lambda { |e, l, r| e.reduce_op_shr(l, r) },
-		:<<   => lambda { |e, l, r| e.reduce_op_shl(l, r) },
-		:'!'  => lambda { |e, l, r| e.reduce_op_not(l, r) },
-		:==   => lambda { |e, l, r| e.reduce_op_eql(l, r) },
-		:'!=' => lambda { |e, l, r| e.reduce_op_neq(l, r) },
-		:^    => lambda { |e, l, r| e.reduce_op_xor(l, r) },
-		:&    => lambda { |e, l, r| e.reduce_op_and(l, r) },
-		:|    => lambda { |e, l, r| e.reduce_op_or(l, r) },
-		:*    => lambda { |e, l, r| e.reduce_op_times(l, r) },
-		:/    => lambda { |e, l, r| e.reduce_op_div(l, r) },
-		:%    => lambda { |e, l, r| e.reduce_op_mod(l, r) },
+		:+    => lambda { |e, l, r, cb| e.reduce_op_plus(l, r, cb) },
+		:-    => lambda { |e, l, r, cb| e.reduce_op_minus(l, r, cb) },
+		:'&&' => lambda { |e, l, r, cb| e.reduce_op_andand(l, r, cb) },
+		:'||' => lambda { |e, l, r, cb| e.reduce_op_oror(l, r, cb) },
+		:>>   => lambda { |e, l, r, cb| e.reduce_op_shr(l, r, cb) },
+		:<<   => lambda { |e, l, r, cb| e.reduce_op_shl(l, r, cb) },
+		:'!'  => lambda { |e, l, r, cb| e.reduce_op_not(l, r, cb) },
+		:==   => lambda { |e, l, r, cb| e.reduce_op_eql(l, r, cb) },
+		:'!=' => lambda { |e, l, r, cb| e.reduce_op_neq(l, r, cb) },
+		:^    => lambda { |e, l, r, cb| e.reduce_op_xor(l, r, cb) },
+		:&    => lambda { |e, l, r, cb| e.reduce_op_and(l, r, cb) },
+		:|    => lambda { |e, l, r, cb| e.reduce_op_or(l, r, cb) },
+		:*    => lambda { |e, l, r, cb| e.reduce_op_times(l, r, cb) },
+		:/    => lambda { |e, l, r, cb| e.reduce_op_div(l, r, cb) },
+		:%    => lambda { |e, l, r, cb| e.reduce_op_mod(l, r, cb) },
 	}
 
 
@@ -585,47 +583,47 @@ class Expression < ExpressionType
 		@@reduce_op
 	end
 
-	def reduce_op_plus(l, r)
+	def reduce_op_plus(l, r, cb)
 		if not l; r	# +x  => x
 		elsif r == 0; l	# x+0 => x
 		elsif l == :unknown or r == :unknown; :unknown
 		elsif l.kind_of?(::Numeric)
 			if r.kind_of? Expression and r.op == :+
 				# 1+(x+y) => x+(y+1)
-				Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec
+				Expression[r.lexpr, :+, [r.rexpr, :+, l]].reduce_rec(cb)
 			else
 				# 1+a => a+1
-				Expression[r, :+, l].reduce_rec
+				Expression[r, :+, l].reduce_rec(cb)
 			end
 			# (a+b)+foo => a+(b+foo)
-		elsif l.kind_of? Expression and l.op == :+; Expression[l.lexpr, :+, [l.rexpr, :+, r]].reduce_rec
+		elsif l.kind_of? Expression and l.op == :+; Expression[l.lexpr, :+, [l.rexpr, :+, r]].reduce_rec(cb)
 		elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :% and r.op == :% and l.rexpr.kind_of?(::Integer) and l.rexpr == r.rexpr
-			Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec
+			Expression[[l.lexpr, :+, r.lexpr], :%, l.rexpr].reduce_rec(cb)
 		elsif l.kind_of? Expression and l.op == :- and not l.lexpr
-			reduce_rec_add_rec(r, l.rexpr)
+			reduce_rec_add_rec(r, l.rexpr, cb)
 		elsif l.kind_of? Expression and r.kind_of? Expression and l.op == :& and r.op == :& and l.rexpr.kind_of?(::Integer) and r.rexpr.kind_of?(::Integer) and l.rexpr & r.rexpr == 0
 			# (a&0xf0)+(b&0x0f) => (a&0xf0)|(b&0x0f)
-			Expression[l, :|, r].reduce_rec
+			Expression[l, :|, r].reduce_rec(cb)
 		else
-			reduce_rec_add_rec(r, Expression.new(:-, l, nil))
+			reduce_rec_add_rec(r, Expression.new(:-, l, nil), cb)
 		end
 	end
 
-	def reduce_rec_add_rec(cur, neg_l)
+	def reduce_rec_add_rec(cur, neg_l, cb)
 		if neg_l == cur
 			# -l found
 			0
 		elsif cur.kind_of?(Expression) and cur.op == :+
 			# recurse
-			if newl = reduce_rec_add_rec(cur.lexpr, neg_l)
-				Expression[newl, cur.op, cur.rexpr].reduce_rec
-			elsif newr = reduce_rec_add_rec(cur.rexpr, neg_l)
-				Expression[cur.lexpr, cur.op, newr].reduce_rec
+			if newl = reduce_rec_add_rec(cur.lexpr, neg_l, cb)
+				Expression[newl, cur.op, cur.rexpr].reduce_rec(cb)
+			elsif newr = reduce_rec_add_rec(cur.rexpr, neg_l, cb)
+				Expression[cur.lexpr, cur.op, newr].reduce_rec(cb)
 			end
 		end
 	end
 
-	def reduce_op_minus(l, r)
+	def reduce_op_minus(l, r, cb)
 		if l == :unknown or r == :unknown; :unknown
 		elsif not l and r.kind_of? Expression and (r.op == :- or r.op == :+)
 			if r.op == :- # no lexpr (reduced)
@@ -633,7 +631,7 @@ class Expression < ExpressionType
 				r.rexpr
 			else # :+ and lexpr (r is reduced)
 				# -(a+b) => (-a)+(-b)
-				Expression.new(:+, Expression.new(:-, r.rexpr, nil), Expression.new(:-, r.lexpr, nil)).reduce_rec
+				Expression.new(:+, Expression.new(:-, r.rexpr, nil), Expression.new(:-, r.lexpr, nil)).reduce_rec(cb)
 			end
 		elsif l.kind_of? Expression and l.op == :+ and l.lexpr == r
 			# shortcircuit for a common occurence [citation needed]
@@ -641,107 +639,107 @@ class Expression < ExpressionType
 			l.rexpr
 		elsif l
 			# a-b => a+(-b)
-			Expression[l, :+, [:-, r]].reduce_rec
+			Expression[l, :+, [:-, r]].reduce_rec(cb)
 		end
 	end
 
-	def reduce_op_andand(l, r)
+	def reduce_op_andand(l, r, cb)
 		if l == 0	# shortcircuit eval
 			0
 		elsif l == 1
-			Expression[r, :'!=', 0].reduce_rec
+			Expression[r, :'!=', 0].reduce_rec(cb)
 		elsif r == 0
 			0	# XXX l could be a special ExprType with sideeffects ?
 		end
 	end
 
-	def reduce_op_oror(l, r)
+	def reduce_op_oror(l, r, cb)
 		if l.kind_of?(::Numeric) and l != 0	# shortcircuit eval
 			1
 		elsif l == 0
-			Expression[r, :'!=', 0].reduce_rec
+			Expression[r, :'!=', 0].reduce_rec(cb)
 		elsif r == 0
-			Expression[l, :'!=', 0].reduce_rec
+			Expression[l, :'!=', 0].reduce_rec(cb)
 		end
 	end
 
-	def reduce_op_shr(l, r)
+	def reduce_op_shr(l, r, cb)
 		if l == 0; 0
 		elsif r == 0; l
 		elsif l.kind_of? Expression and l.op == :>>
-			Expression[l.lexpr, :>>, [l.rexpr, :+, r]].reduce_rec
+			Expression[l.lexpr, :>>, [l.rexpr, :+, r]].reduce_rec(cb)
 		elsif r.kind_of? Integer and l.kind_of? Expression and [:&, :|, :^].include? l.op
 			# (a | b) << i => (a<<i | b<<i)
-			Expression[[l.lexpr, :>>, r], l.op, [l.rexpr, :>>, r]].reduce_rec
+			Expression[[l.lexpr, :>>, r], l.op, [l.rexpr, :>>, r]].reduce_rec(cb)
 		end
 	end
 
-	def reduce_op_shl(l, r)
+	def reduce_op_shl(l, r, cb)
 		if l == 0; 0
 		elsif r == 0; l
 		elsif l.kind_of? Expression and l.op == :<<
-			Expression[l.lexpr, :<<, [l.rexpr, :+, r]].reduce_rec
+			Expression[l.lexpr, :<<, [l.rexpr, :+, r]].reduce_rec(cb)
 		elsif l.kind_of? Expression and l.op == :>> and r.kind_of? Integer and l.rexpr.kind_of? Integer
 			# (a >> 1) << 1  ==  a & 0xfffffe
 			if r == l.rexpr
-				Expression[l.lexpr, :&, (-1 << r)].reduce_rec
+				Expression[l.lexpr, :&, (-1 << r)].reduce_rec(cb)
 			elsif r > l.rexpr
-				Expression[[l.lexpr, :<<, r-l.rexpr], :&, (-1 << r)].reduce_rec
+				Expression[[l.lexpr, :<<, r-l.rexpr], :&, (-1 << r)].reduce_rec(cb)
 			else
-				Expression[[l.lexpr, :>>, l.rexpr-r], :&, (-1 << r)].reduce_rec
+				Expression[[l.lexpr, :>>, l.rexpr-r], :&, (-1 << r)].reduce_rec(cb)
 			end
-		elsif r.kind_of? Integer and l.kind_of? Expression and [:&, :|, :^].include? l.op
+		elsif r.kind_of?(::Integer) and l.kind_of?(Expression) and [:&, :|, :^].include?(l.op)
 			# (a | b) << i => (a<<i | b<<i)
-			Expression[[l.lexpr, :<<, r], l.op, [l.rexpr, :<<, r]].reduce_rec
+			Expression[[l.lexpr, :<<, r], l.op, [l.rexpr, :<<, r]].reduce_rec(cb)
 		end
 	end
 
 	NEG_OP = {:'==' => :'!=', :'!=' => :'==', :< => :>=, :> => :<=, :<= => :>, :>= => :<}
 
-	def reduce_op_not(l, r)
+	def reduce_op_not(l, r, cb)
 		if r.kind_of? Expression and nop = NEG_OP[r.op]
-			Expression[r.lexpr, nop, r.rexpr].reduce_rec
+			Expression[r.lexpr, nop, r.rexpr].reduce_rec(cb)
 		end
 	end
 
-	def reduce_op_eql(l, r)
+	def reduce_op_eql(l, r, cb)
 		if l == r; 1
 		elsif r == 0 and l.kind_of? Expression and nop = NEG_OP[l.op]
-			Expression[l.lexpr, nop, l.rexpr].reduce_rec
+			Expression[l.lexpr, nop, l.rexpr].reduce_rec(cb)
 		elsif r == 1 and l.kind_of? Expression and NEG_OP[l.op]
 			l
 		elsif r == 0 and l.kind_of? Expression and l.op == :+
 			if l.rexpr.kind_of? Expression and l.rexpr.op == :- and not l.rexpr.lexpr
-				Expression[l.lexpr, :==, l.rexpr.rexpr].reduce_rec
+				Expression[l.lexpr, :==, l.rexpr.rexpr].reduce_rec(cb)
 			elsif l.rexpr.kind_of?(::Integer)
-				Expression[l.lexpr, :==, -l.rexpr].reduce_rec
+				Expression[l.lexpr, :==, -l.rexpr].reduce_rec(cb)
 			end
 		end
 	end
 
-	def reduce_op_neq(l, r)
+	def reduce_op_neq(l, r, cb)
 		if l == r; 0
 		end
 	end
 
-	def reduce_op_xor(l, r)
+	def reduce_op_xor(l, r, cb)
 		if l == :unknown or r == :unknown; :unknown
 		elsif l == 0; r
 		elsif r == 0; l
 		elsif l == r; 0
 		elsif r == 1 and l.kind_of? Expression and NEG_OP[l.op]
-			Expression[nil, :'!', l].reduce_rec
+			Expression[nil, :'!', l].reduce_rec(cb)
 		elsif l.kind_of?(::Numeric)
 			if r.kind_of? Expression and r.op == :^
 				# 1^(x^y) => x^(y^1)
-				Expression[r.lexpr, :^, [r.rexpr, :^, l]].reduce_rec
+				Expression[r.lexpr, :^, [r.rexpr, :^, l]].reduce_rec(cb)
 			else
 				# 1^a => a^1
-				Expression[r, :^, l].reduce_rec
+				Expression[r, :^, l].reduce_rec(cb)
 			end
 		elsif l.kind_of? Expression and l.op == :^
 			# (a^b)^c => a^(b^c)
-			Expression[l.lexpr, :^, [l.rexpr, :^, r]].reduce_rec
+			Expression[l.lexpr, :^, [l.rexpr, :^, r]].reduce_rec(cb)
 		elsif r.kind_of? Expression and r.op == :^
 			if r.rexpr == l
 				# a^(a^b) => b
@@ -759,30 +757,30 @@ class Expression < ExpressionType
 					tr = tr.rexpr
 				end
 				if found
-					Expression[r.lexpr, :^, [l, :^, r.rexpr]].reduce_rec
+					Expression[r.lexpr, :^, [l, :^, r.rexpr]].reduce_rec(cb)
 				end
 			end
 		elsif l.kind_of?(Expression) and l.op == :& and l.rexpr.kind_of?(::Integer) and (l.rexpr & (l.rexpr+1)) == 0
 			if r.kind_of?(::Integer) and r & l.rexpr == r
 				# (a&0xfff)^12 => (a^12)&0xfff
-				Expression[[l.lexpr, :^, r], :&, l.rexpr].reduce_rec
+				Expression[[l.lexpr, :^, r], :&, l.rexpr].reduce_rec(cb)
 			elsif r.kind_of?(Expression) and r.op == :& and r.rexpr.kind_of?(::Integer) and r.rexpr == l.rexpr
 				# (a&0xfff)^(b&0xfff) => (a^b)&0xfff
-				Expression[[l.lexpr, :^, r.lexpr], :&, l.rexpr].reduce_rec
+				Expression[[l.lexpr, :^, r.lexpr], :&, l.rexpr].reduce_rec(cb)
 			end
 		end
 	end
 
-	def reduce_op_and(l, r)
+	def reduce_op_and(l, r, cb)
 		if l == 0 or r == 0; 0
 		elsif r == 1 and l.kind_of?(Expression) and [:'==', :'!=', :<, :>, :<=, :>=].include?(l.op)
 			l
 		elsif l == r; l
-		elsif l.kind_of?(Integer); Expression[r, :&, l].reduce_rec
-		elsif l.kind_of?(Expression) and l.op == :&; Expression[l.lexpr, :&, [l.rexpr, :&, r]].reduce_rec
+		elsif l.kind_of?(Integer); Expression[r, :&, l].reduce_rec(cb)
+		elsif l.kind_of?(Expression) and l.op == :&; Expression[l.lexpr, :&, [l.rexpr, :&, r]].reduce_rec(cb)
 		elsif l.kind_of?(Expression) and [:|, :^].include?(l.op) and r.kind_of?(Integer) and (l.op == :| or (r & (r+1)) != 0)
 			# (a ^| b) & i => (a&i ^| b&i)
-			Expression[[l.lexpr, :&, r], l.op, [l.rexpr, :&, r]].reduce_rec
+			Expression[[l.lexpr, :&, r], l.op, [l.rexpr, :&, r]].reduce_rec(cb)
 		elsif r.kind_of?(::Integer) and l.kind_of?(Expression) and (r & (r+1)) == 0
 			# foo & 0xffff
 			case l.op
@@ -790,17 +788,17 @@ class Expression < ExpressionType
 				if l.lexpr.kind_of?(Expression) and l.lexpr.op == :& and
 					l.lexpr.rexpr.kind_of?(::Integer) and l.lexpr.rexpr & r == r
 					# ((a&m) + b) & m  =>  (a+b) & m
-					Expression[[l.lexpr.lexpr, l.op, l.rexpr], :&, r].reduce_rec
+					Expression[[l.lexpr.lexpr, l.op, l.rexpr], :&, r].reduce_rec(cb)
 				elsif l.rexpr.kind_of?(Expression) and l.rexpr.op == :& and
 					l.rexpr.rexpr.kind_of?(::Integer) and l.rexpr.rexpr & r == r
 					# (a + (b&m)) & m  =>  (a+b) & m
-					Expression[[l.lexpr, l.op, l.rexpr.lexpr], :&, r].reduce_rec
+					Expression[[l.lexpr, l.op, l.rexpr.lexpr], :&, r].reduce_rec(cb)
 				else
 					Expression[l, :&, r]
 				end
 			when :|
 				# rol/ror composition
-				reduce_rec_composerol l, r
+				reduce_rec_composerol(l, r, cb)
 			else
 				Expression[l, :&, r]
 			end
@@ -809,7 +807,7 @@ class Expression < ExpressionType
 
 	# a check to see if an Expr is the composition of two rotations (rol eax, 4 ; rol eax, 6 => rol eax, 10)
 	# this is a bit too ugly to stay in the main reduce_rec body.
-	def reduce_rec_composerol(e, mask)
+	def reduce_rec_composerol(e, mask, cb)
 		m = Expression[['var', :sh_op, 'amt'], :|, ['var', :inv_sh_op, 'inv_amt']]
 		if vars = e.match(m, 'var', :sh_op, 'amt', :inv_sh_op, 'inv_amt') and vars[:sh_op] == {:>> => :<<, :<< => :>>}[vars[:inv_sh_op]] and
 		   ((vars['amt'].kind_of?(::Integer) and  vars['inv_amt'].kind_of?(::Integer) and ampl = vars['amt'] + vars['inv_amt']) or
@@ -829,50 +827,50 @@ class Expression < ExpressionType
 			end
 			amt = Expression[[vars['amt'], :+, ivars['amt']], :%, ampl]
 			invamt = Expression[[vars['inv_amt'], :+, ivars['inv_amt']], :%, ampl]
-			Expression[[[[ivars['var'], :&, mask], vars[:sh_op], amt], :|, [[ivars['var'], :&, mask], vars[:inv_sh_op], invamt]], :&, mask].reduce_rec
+			Expression[[[[ivars['var'], :&, mask], vars[:sh_op], amt], :|, [[ivars['var'], :&, mask], vars[:inv_sh_op], invamt]], :&, mask].reduce_rec(cb)
 		else
 			Expression[e, :&, mask]
 		end
 	end
 
-	def reduce_op_or(l, r)
+	def reduce_op_or(l, r, cb)
 		if    l == 0; r
 		elsif r == 0; l
 		elsif l == -1 or r == -1; -1
 		elsif l == r; l
-		elsif l.kind_of? Integer; Expression[r, :|, l].reduce_rec
+		elsif l.kind_of? Integer; Expression[r, :|, l].reduce_rec(cb)
 		elsif l.kind_of? Expression and l.op == :|
 			# (a|b)|c => a|(b|c)
-			Expression[l.lexpr, :|, [l.rexpr, :|, r]].reduce_rec
+			Expression[l.lexpr, :|, [l.rexpr, :|, r]].reduce_rec(cb)
 		elsif l.kind_of? Expression and l.op == :& and r.kind_of? Expression and r.op == :& and l.lexpr == r.lexpr
 			# (a&b)|(a&c) => a&(b|c)
-			Expression[l.lexpr, :&, [l.rexpr, :|, r.rexpr]].reduce_rec
+			Expression[l.lexpr, :&, [l.rexpr, :|, r.rexpr]].reduce_rec(cb)
 		end
 	end
 
-	def reduce_op_times(l, r)
+	def reduce_op_times(l, r, cb)
 		if    l == 0 or r == 0; 0
 		elsif l == 1; r
 		elsif r == 1; l
-		elsif r.kind_of? Integer; Expression[r, :*, l].reduce_rec
-		elsif r.kind_of? Expression and r.op == :*; Expression[[l, :*, r.lexpr], :*, r.rexpr].reduce_rec
-		elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :* and r.lexpr.kind_of? Integer; Expression[l*r.lexpr, :*, r.rexpr].reduce_rec	# XXX need & regsize..
-		elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :+ and r.rexpr.kind_of? Integer; Expression[[l, :*, r.lexpr], :+, l*r.rexpr].reduce_rec
+		elsif r.kind_of? Integer; Expression[r, :*, l].reduce_rec(cb)
+		elsif r.kind_of? Expression and r.op == :*; Expression[[l, :*, r.lexpr], :*, r.rexpr].reduce_rec(cb)
+		elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :* and r.lexpr.kind_of? Integer; Expression[l*r.lexpr, :*, r.rexpr].reduce_rec(cb)	# XXX need & regsize..
+		elsif l.kind_of? Integer and r.kind_of? Expression and r.op == :+ and r.rexpr.kind_of? Integer; Expression[[l, :*, r.lexpr], :+, l*r.rexpr].reduce_rec(cb)
 		end
 	end
 
-	def reduce_op_div(l, r)
+	def reduce_op_div(l, r, cb)
 		if r == 0
 		elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :+ and l.rexpr.kind_of? Integer and l.rexpr % r == 0
-			Expression[[l.lexpr, :/, r], :+, l.rexpr/r].reduce_rec
+			Expression[[l.lexpr, :/, r], :+, l.rexpr/r].reduce_rec(cb)
 		elsif r.kind_of? Integer and l.kind_of? Expression and l.op == :* and l.lexpr % r == 0
-			Expression[l.lexpr/r, :*, l.rexpr].reduce_rec
+			Expression[l.lexpr/r, :*, l.rexpr].reduce_rec(cb)
 		end
 	end
 
-	def reduce_op_mod(l, r)
+	def reduce_op_mod(l, r, cb)
 		if r.kind_of?(Integer) and r != 0 and (r & (r-1) == 0)
-			Expression[l, :&, r-1].reduce_rec
+			Expression[l, :&, r-1].reduce_rec(cb)
 		end
 	end
 
@@ -941,8 +939,8 @@ end
 # used to show #define constants, struct offsets, func local vars, etc
 class ExpressionString < ExpressionType
 	attr_accessor :expr, :str, :type, :hide_str
-	def reduce; expr.reduce; end
-	def reduce_rec; expr.reduce_rec; end
+	def reduce(&b); expr.reduce(&b); end
+	def reduce_rec(cb=@@reduce_lambda); expr.reduce_rec(cb); end
 	def bind(*a); expr.bind(*a); end
 	def externals; expr.externals; end
 	def expr_externals; expr.expr_externals; end
