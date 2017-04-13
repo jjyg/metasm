@@ -313,7 +313,11 @@ class DbgRegWidget < DrawableWidget
 			render["#{reg}=".ljust(regstrlen), :label]
 			v = @write_pending[reg] || @reg_cache[reg]
 			col = running ? :inactive : @write_pending[reg] ? :write_pending : @reg_cache_old.fetch(reg, v) != v ? :changed : :data
-			render["%0#{@register_size[reg]}x " % v, col]
+			if v.kind_of?(::Integer)
+				render["%0#{@register_size[reg]}x " % v, col]
+			else
+				render[v.to_s, col]
+			end
 			x += @font_width	# space
 		}
 

@@ -111,12 +111,12 @@ class EmuDebugger < Debugger
 
 	def do_singlestep
 		di = @disassembler.di_at(pc)
-		if not di and callback_unknown_pc
-			if callback_unknown_pc.call
-				return do_singlestep
+		if not di
+			if callback_unknown_pc and callback_unknown_pc.call()
+				return true
 			end
+			return
 		end
-		return if not di
 
 		if callback_emulate_di
 			ret = callback_emulate_di.call(di)
@@ -134,11 +134,6 @@ class EmuDebugger < Debugger
 			end
 			[k, resolve(v)]
 		}.each { |k, v|
-			if not v.kind_of?(Integer)
-				puts "singlestep: badvalue #{k} = #{v}"
-				#next
-			end
-
 			case k
 			when Indirection
 				memory_write_int(k.pointer, v, k.len)

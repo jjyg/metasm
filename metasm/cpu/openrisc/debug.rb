@@ -97,5 +97,14 @@ class OpenRisc
 
 	def dbg_disable_bp(dbg, bp)
 	end
+
+	def dbg_need_stepover(dbg, addr, di)
+		if @delay_slot == 0
+			di.opcode.props[:saveip]
+		else
+			ddi = dbg.disassembler.di_at(addr-4)
+			ddi and ddi.opcode.props[:saveip]
+		end
+	end
 end
 end
