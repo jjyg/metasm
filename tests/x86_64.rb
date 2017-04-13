@@ -5,7 +5,7 @@
 
 
 require 'test/unit'
-require 'metasm'
+require_relative '../metasm'
 
 class TestX86_64 < Test::Unit::TestCase
 	@@cpu = Metasm::X86_64.new
