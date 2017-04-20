@@ -342,7 +342,7 @@ class CdecompListingWidget < DrawableWidget
 			@line_text_col = [[[:text, 'please wait']]]
 			redraw
 			@decompiling = true
-			@dasm.decompile_func(@curaddr)
+			protect { @dasm.decompile_func(@curaddr) }
 			@decompiling = false
 		end
 		if curfunc

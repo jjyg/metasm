@@ -1114,9 +1114,9 @@ module C
 
 				case op
 				when :funcall
-				       rt = x1.type.untypedef
-				       rt = rt.type.untypedef if rt.pointer?
-				       new(x1, op, x2, rt.type)
+					rt = x1.type.untypedef
+					rt = rt.type.untypedef if rt.pointer?
+					new(x1, op, x2, rt.type)
 				when :[]; new(x1, op, x2, x1.type.untypedef.type)
 				when :+; new(x1, op, x2, (x2.type.pointer? ? x2.type : x1.type))
 				when :-; new(x1, op, x2, ((x1.type.pointer? and x2.type.pointer?) ? BaseType.new(:int) : x2.type.pointer? ? x2.type : x1.type))
@@ -3910,7 +3910,17 @@ EOH
 	class CExpression
 		def self.string_inspect(s)
 			# keep all ascii printable except \ and "
-			'"' + s.gsub(/[^ !\x23-\x5b\x5d-\x7e]/) { |o| '\\x' + o.unpack('H*').first } + '"'
+			'"' + s.gsub(/[^ !\x23-\x5b\x5d-\x7e]/) { |o|
+				case hex = o.unpack('H*').first.downcase
+				when '00'; '\\0'
+				when '0a'; '\\n'
+				when '0d'; '\\r'
+				when '1b'; '\\e'
+				when '22'; '\\"'
+				when '5c'; '\\\\'
+				else "\\x#{hex}"
+				end
+			} + '"'
 		end
 
 		def self.dump(e, scope, r=[''], dep=[], brace = false)

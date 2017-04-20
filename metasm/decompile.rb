@@ -251,7 +251,7 @@ class Decompiler
 				v
 			}
 			var.initializer = data.map { |v| C::CExpression[v, C::BaseType.new(:int)] } unless (data - [0]).empty?
-			if (tsz == 1 or tsz == 2) and eos = data.index(0) and (0..3).all? { |i| data[i] >= 0x20 and data[i] < 0x7f }	# printable str
+			if (tsz == 1 or tsz == 2) and eos = data.index(0) and ((0..3).all? { |i| data[i] >= 0x20 and data[i] < 0x7f } or ptype.to_s == '(char)')	# printable str
 				# XXX 0x80 with ruby1.9...
 				var.initializer = C::CExpression[data[0, eos].pack('C*'), C::Pointer.new(ptype)] rescue nil
 			end
@@ -1120,7 +1120,9 @@ class Decompiler
 			dom.each { |oo| ce_patch(g.exprs[oo[0]][oo[1]], var, nv) }
 			dom_ro.each { |oo|
 				ce = g.exprs[oo[0]][oo[1]]
-				if ce.op == :funcall or ce.rexpr.kind_of? C::CExpression
+				if ce.op == :funcall
+					ce_patch(ce, var, nv)
+				elsif ce.rexpr.kind_of? C::CExpression
 					ce_patch(ce.rexpr, var, nv)
 				else
 					ce.rexpr = nv
