@@ -1176,7 +1176,7 @@ class Preprocessor
 				op = op.dup
 				op.raw << ntok.raw
 			# ok
-			when '^', '+', '-', '*', '/', '%', '>>', '<<', '>=', '<=', '||', '&&', '!=', '=='
+			when '^', '+', '-', '*', '/', '%', '>>', '<<', '>=', '<=', '||', '&&', '!=', '==', '?'
 			# unknown
 			else
 				lexer.unreadtok tok
@@ -1271,6 +1271,21 @@ class Preprocessor
 				lexer.unreadtok ntok
 				until opstack.empty? or Expression::OP_PRIO[op.value][opstack.last]
 					stack << Expression.new(opstack.pop, stack.pop, stack.pop)
+				end
+
+				if op.value == :'?'
+					a1 = parse(lexer)
+					if not tok = lexer.readtok or tok.type != :punct or tok.raw != ':'
+						raise op, 'expected ":" ternary operator'
+					end
+					a2 = parse(lexer)
+					case Expression[stack.pop].reduce
+					when 0;         stack << a2
+					when ::Integer; stack << a1
+					else;           stack << a2
+					end
+
+					next
 				end
 
 				opstack << op.value

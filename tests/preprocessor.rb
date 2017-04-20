@@ -69,6 +69,23 @@ EOS
 tutu coucou
 #endif
 EOS
+		helper_preparse(<<EOS, 'a1')
+#define tutu
+#if ! defined ( tutu )
+a0
+#else
+a1
+#endif
+EOS
+		helper_preparse(<<EOS, 'a1')
+#define tutu
+#if defined(tutu) ? 0 : 1
+a0
+#endif
+#if defined(toto) ? 0 : 1
+a1
+#endif
+EOS
 		helper_preparse('a #define b', 'a #define b')
 		helper_preparse(<<EOS, "// true !\nblu")
 #ifdef toto // this is false
@@ -142,6 +159,7 @@ EOS
 #include <tests/prepro_testinclude.asm>
 out
 EOS
+		rescue Errno::ENOENT
 		ensure
 			File.unlink('tests/prepro_testinclude.asm') rescue nil
 		end
