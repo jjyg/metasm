@@ -27,10 +27,6 @@ class OpenRisc
 		@dbg_register_size ||= Hash.new(32)
 	end
 
-	def dbg_need_stepover(dbg, addr, di)
-		false
-	end
-
 	def get_fwdemu_binding(di, pc_reg=nil, dbg_ctx=nil)
 		fbd = di.backtrace_binding ||= get_backtrace_binding(di)
 		fbd = fix_fwdemu_binding(di, fbd)

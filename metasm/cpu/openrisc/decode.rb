@@ -145,13 +145,13 @@ class OpenRisc
 		reg_args = [:r3, :r4, :r5, :r6, :r7, :r8]
 		sym.type.args.to_a.zip(reg_args).each { |a, ra|
 			break if not a or not ra
-			if a.type.untypedef.kind_of? C::Pointer
+			if a.type.untypedef.kind_of?(C::Pointer)
 				pt = a.type.untypedef.type.untypedef
-				if pt.kind_of? C::Function
+				if pt.kind_of?(C::Function)
 					new_bt[ra, nil]
 					df.backtracked_for.last.detached = true
-				elsif pt.kind_of? C::Struct
-					new_bt[ra, al]
+				elsif pt.kind_of?(C::Struct)
+					new_bt[ra, cp.typesize[:ptr]]
 				else
 					new_bt[ra, cp.sizeof(nil, pt)]
 				end
