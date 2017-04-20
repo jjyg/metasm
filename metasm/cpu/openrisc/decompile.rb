@@ -96,7 +96,7 @@ class OpenRisc
 					}
 					decompile_func_finddeps_di(dcmp, func, di, a, w)
 
-					next true if (a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - bw).include? r
+					next true if (a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - bw).include?(r)
 					bw |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
 					false
 				}
@@ -137,12 +137,12 @@ class OpenRisc
 				done = []
 				todo = deps_to[b].dup
 				while a = todo.pop
-					next if done.include? a
+					next if done.include?(a)
 					done << a
-					if not deps_r[a] or deps_r[a].include? dep
+					if not deps_r[a] or deps_r[a].include?(dep)
 						ret = false
 						break
-					elsif not deps_w[a].include? dep
+					elsif not deps_w[a].include?(dep)
 						todo.concat deps_to[a]
 					end
 				end
@@ -191,7 +191,7 @@ class OpenRisc
 					final = []
 					ops[0..i].reverse_each { |r, v|
 						final << r if not v
-						e = Expression[e].bind(r => v).reduce if not final.include? r
+						e = Expression[e].bind(r => v).reduce if not final.include?(r)
 					}
 					ops[i][1] = nil
 					binding.delete k
@@ -214,21 +214,27 @@ class OpenRisc
 					end
 				}
 
-				if f.type.varargs and f.type.args.last.type.pointer?
-					# check if last arg is a fmtstring
-					bt = dcmp.dasm.backtrace(args.last, di.address, :snapshot_addr => func_entry, :include_start => true)
-					if bt.length == 1 and s = dcmp.dasm.get_section_at(bt.first)
-						bt = dcmp.dasm.backtrace(:r1, di.address, :snapshot_addr => func_entry, :include_start => true)
-						stackoff = Expression[bt, :-, :r1].bind(:r1 => :frameptr).reduce rescue nil
-						fmt = s[0].read(512)
-						fmt = fmt.unpack('v*').pack('C*') if dcmp.sizeof(f.type.args.last.type.untypedef.type) == 2
-						if fmt.index(?\0)
-							fmt = fmt[0...fmt.index(?\0)]
-							fmt.gsub('%%', '').count('%').times {	# XXX %.*s etc..
-								args << Indirection[[:frameptr, :+, stackoff], @size/8]
-								stackoff += @size/8
-							}
+				if f.type.varargs
+					nargs = 1
+					if f.type.args.last.type.pointer?
+						# check if last arg is a fmtstring
+						bt = dcmp.dasm.backtrace(args.last, di.block.list.last.address, :snapshot_addr => func_entry, :include_start => true)
+						if bt.length == 1 and s = dcmp.dasm.get_section_at(bt.first)
+							fmt = s[0].read(512)
+							fmt = fmt.unpack('v*').pack('C*') if dcmp.sizeof(f.type.args.last.type.untypedef.type) == 2
+							if fmt.index(?\0)
+								fmt = fmt[0...fmt.index(?\0)]
+								nargs = fmt.gsub('%%', '').count('%')	# XXX %.*s etc..
+							end
 						end
+					end
+					bt = dcmp.dasm.backtrace(:r1, di.block.list.last.address, :snapshot_addr => func_entry, :include_start => true)
+					stackoff = Expression[bt, :-, :r1].bind(:r1 => :frameptr).reduce rescue nil
+					if stackoff and nargs > 0
+						nargs.times {
+							args << Indirection[[:frameptr, :+, stackoff], @size/8]
+							stackoff += @size/8
+						}
 					end
 				end
 
@@ -237,7 +243,7 @@ class OpenRisc
 
 			# go !
 			di_list = dcmp.dasm.decoded[b].block.list.dup
-			if di_list[-2] and di_list[-2].opcode.props[:setip]
+			if di_list[-2] and di_list[-2].opcode.props[:setip] and @delay_slot > 0
 				di_list[-1], di_list[-2] = di_list[-2], di_list[-1]
 			end
 			di_list.each { |di|
@@ -258,13 +264,12 @@ class OpenRisc
 
 				if di.instruction.to_s == 'jr r9'
 					commit[]
-					ret = nil
 					ret = C::CExpression[ceb[abi_funcall[:retval]]] unless func.type.type.kind_of?(C::BaseType) and func.type.type.name == :void
 					stmts << C::Return.new(ret)
 				elsif di.opcode.name == 'jal' or di.opcode.name == 'jalr'
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					args = []
-					if f = dcmp.c_parser.toplevel.symbol[n] and f.type.kind_of? C::Function and f.type.args
+					if f = dcmp.c_parser.toplevel.symbol[n] and f.type.kind_of?(C::Function) and f.type.args
 						args = get_func_args[di, f]
 					end
 					commit[]
@@ -275,7 +280,7 @@ class OpenRisc
 						fptr = ceb[n]
 						binding.delete n
 						proto = C::Function.new(C::BaseType.new(:int))
-						proto = f.type if f and f.type.kind_of? C::Function
+						proto = f.type if f and f.type.kind_of?(C::Function)
 						f = C::CExpression[[fptr], C::Pointer.new(proto)]
 					elsif not f
 						# internal functions are predeclared, so this one is extern
@@ -305,7 +310,7 @@ class OpenRisc
 								update[k] = Expression[Expression[v].bind(binding).reduce]
 							else
 								stmts << ceb[k, :'=', v]
-								stmts.pop if stmts.last.kind_of? C::Variable	# [:eflag_s, :=, :unknown].reduce
+								stmts.pop if stmts.last.kind_of?(C::Variable)	# [:eflag_s, :=, :unknown].reduce
 							end
 						}
 						binding.update update
@@ -338,6 +343,7 @@ class OpenRisc
 
 	def decompile_check_abi(dcmp, entry, func)
 		a = func.type.args || []
+		# TODO check abi_funcall[:args], dont delete r4 __unused if r5 is used
 		a.delete_if { |arg| arg.has_attribute_var('register') and arg.has_attribute('unused') }
 	end
 end
