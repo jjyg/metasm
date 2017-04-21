@@ -122,7 +122,9 @@ class Decompiler
 		namestackvars(scope)
 		unalias_vars(scope, func)
 		decompile_c_types(scope)
-		optimize(scope)
+		optimize_code(scope)
+		optimize_vars(scope)
+		optimize_vars(scope)	# 1st run may transform i = i+1 into i++ which second run may coalesce into if(i)
 		remove_unreferenced_vars(scope)
 		cleanup_var_decl(scope, func)
 		if @recurse > 0
@@ -1661,16 +1663,6 @@ class Decompiler
 		}
 	end
 
-	# to be run with scope = function body with only CExpr/Decl/Label/Goto/IfGoto/Return, with correct variables types
-	# will transform += 1 to ++, inline them to prev/next statement ('++x; if (x)..' => 'if (++x)..')
-	# remove useless variables ('int i;', i never used or 'i = 1; j = i;', i never read after => 'j = 1;')
-	# remove useless casts ('(int)i' with 'int i;' => 'i')
-	def optimize(scope)
-		optimize_code(scope)
-		optimize_vars(scope)
-		optimize_vars(scope)	# 1st run may transform i = i+1 into i++ which second run may coalesce into if(i)
-	end
-
 	# simplify cexpressions (char & 255, redundant casts, etc)
 	def optimize_code(scope)
 		return if forbid_optimize_code
@@ -2143,6 +2135,7 @@ class Decompiler
 						not v.type.qualifier.to_a.include? :volatile and not find_next_read_ce[e.rexpr, v]
 
 					# reduce trivial static assignments
+					# i = 4 ; f(i) => f(4)
 					if (e.rexpr.kind_of? C::CExpression and iv = e.rexpr.reduce(@c_parser) and iv.kind_of? ::Integer) or
 					   (e.rexpr.kind_of? C::CExpression and e.rexpr.op == :& and not e.rexpr.lexpr and e.rexpr.lexpr.kind_of? C::Variable) or
 					   (e.rexpr.kind_of? C::Variable and e.rexpr.type.kind_of? C::Array)
@@ -2174,6 +2167,9 @@ class Decompiler
 							next
 						end
 					end
+
+					# TODO
+					# i = j ; <i and j never modified> => s/i/j/g
 
 					case nr = find_next_read[label, i, v]
 					when C::CExpression
@@ -2351,6 +2347,12 @@ class Decompiler
 				ce.op = ce.rexpr.op
 				ce.rexpr = ce.rexpr.rexpr.rexpr
 			end
+
+			# (char *)42 => new global var
+			if not ce.op and ce.type.pointer? and ce.rexpr.kind_of?(C::CExpression) and not ce.rexpr.op and ce.rexpr.rexpr.kind_of?(::Integer)
+				ce.rexpr = new_global_var(ce.rexpr.rexpr, ce.type, scope)
+			end
+
 			# (a > 0) != 0
 			if ce.op == :'!=' and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 0 and ce.lexpr.kind_of? C::CExpression and
 					[:<, :<=, :>, :>=, :'==', :'!=', :'!'].include? ce.lexpr.op
@@ -2393,6 +2395,14 @@ class Decompiler
 			if (ce.op == :+ or ce.op == :-) and ce.lexpr.kind_of? C::CExpression and ce.lexpr.op == {:+ => :'--', :- => :'++'}[ce.op] and
 					ce.lexpr.rexpr and ce.rexpr.kind_of? C::CExpression and not ce.rexpr.op and ce.rexpr.rexpr == 1
 				ce.lexpr, ce.op, ce.rexpr = ce.lexpr.rexpr, ce.lexpr.op, nil
+			end
+
+			# 1+2 => 3
+			if ce.lexpr.kind_of?(C::CExpression) and not ce.lexpr.op and ce.lexpr.rexpr.kind_of?(::Integer) and
+			   ce.rexpr.kind_of?(C::CExpression) and not ce.rexpr.op and ce.rexpr.rexpr.kind_of?(::Integer) and
+			   [:+, :-, :*, :/, :|, :&, :^, :>, :'==', :'!=', :<, :>=, :<=].include?(ce.op)
+				ce.rexpr = ce.reduce(@c_parser)
+				ce.lexpr = ce.op = nil
 			end
 		}
 	end
