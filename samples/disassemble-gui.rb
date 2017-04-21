@@ -91,7 +91,7 @@ if exe
 	dasm.parse_c_file opts[:cheader] if opts[:cheader]
 	dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 	dasm.debug_backtrace = true if opts[:debugbacktrace]
-	dasm.callback_finished = lambda { w.dasm_widget.focus_addr w.dasm_widget.curaddr, :decompile ; dasm.decompiler.finalize } if opts[:decompile]
+	dasm.callback_finished = lambda { dasm.callback_finished = nil ; w.dasm_widget.focus_addr w.dasm_widget.curaddr, :decompile ; dasm.decompiler.finalize } if opts[:decompile]
 	dasm.disassemble_fast_deep(*ep) if opts[:fast]
 elsif dbg
 	dbg.load_map opts[:map] if opts[:map]
