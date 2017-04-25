@@ -1127,6 +1127,7 @@ class DasmWindow < Window
 			} if @dasm_widget
 		}
 		addsubmenu(options)
+		addsubmenu(options, 'Forbid a_ll optimizations', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_all_optimizations = ck }
 		addsubmenu(options, 'Forbid decompile _types', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_types = ck }
 		addsubmenu(options, 'Forbid decompile _if/while', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_decompile_ifwhile = ck }
 		addsubmenu(options, 'Forbid decomp _optimize', :check) { |ck| @dasm_widget.dasm.decompiler.forbid_optimize_code = ck }

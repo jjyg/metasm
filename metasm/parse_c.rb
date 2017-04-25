@@ -1056,6 +1056,8 @@ module C
 	class CExpression < Statement
 		include Typed
 
+		AssignOp = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'^=', :'&=', :'|=', :'>>=', :'<<=', :'++', :'--']
+
 		# may be :,, :., :'->', :funcall (function, [arglist]), :[] (array indexing), nil (cast)
 		attr_accessor :op
 		# nil/CExpr/Variable/Label/::String( = :quoted/struct member name)/::Integer/::Float/Block

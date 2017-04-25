@@ -13,17 +13,9 @@ class C::Variable; attr_accessor :stackoff; end
 class C::Block; attr_accessor :decompdata; end
 class DecodedFunction; attr_accessor :decompdata; end
 
-class CPU
-	def decompile_check_abi(dcmp, entry, func)
-	end
-end
-
 class Decompiler
-	# TODO add methods to C::CExpr
-	AssignOp = [:'=', :'+=', :'-=', :'*=', :'/=', :'%=', :'^=', :'&=', :'|=', :'>>=', :'<<=', :'++', :'--']
-
 	attr_accessor :dasm, :c_parser
-	attr_accessor :forbid_optimize_dataflow, :forbid_optimize_code, :forbid_decompile_ifwhile, :forbid_decompile_types, :forbid_optimize_labels
+	attr_accessor :forbid_optimize_dataflow, :forbid_optimize_code, :forbid_decompile_ifwhile, :forbid_decompile_types, :forbid_optimize_labels, :forbid_all_optimizations
 	# recursive flag: for each subfunction, recurse is decremented, when 0 only the prototype is decompiled, when <0 nothing is done
 	attr_accessor :recurse
 
@@ -117,6 +109,8 @@ class Decompiler
 
 		# di blocks => raw c statements, declare variables
 		@dasm.cpu.decompile_blocks(self, myblocks, deps, func)
+
+		return if forbid_all_optimizations
 
 		simplify_goto(scope)
 		namestackvars(scope)
@@ -931,7 +925,7 @@ class Decompiler
 	# checks if expr writes var
 	def ce_write(ce_, var)
 		walk_ce(ce_) { |ce|
-			break true if AssignOp.include?(ce.op) and (isvar(ce.lexpr, var) or
+			break true if C::CExpression::AssignOp.include?(ce.op) and (isvar(ce.lexpr, var) or
 				(((ce.op == :'++' or ce.op == :'--') and isvar(ce.rexpr, var))))
 		}
 	end
@@ -1863,7 +1857,7 @@ class Decompiler
 		when nil, ::Numeric, ::String; false
 		when ::Array; exp.any? { |_e| sideeffect _e, scope }
 		when C::Variable; (scope and not scope.symbol[exp.name]) or exp.type.qualifier.to_a.include?(:volatile)
-		when C::CExpression; (exp.op == :* and not exp.lexpr) or exp.op == :funcall or AssignOp.include?(exp.op) or
+		when C::CExpression; (exp.op == :* and not exp.lexpr) or exp.op == :funcall or C::CExpression::AssignOp.include?(exp.op) or
 				sideeffect(exp.lexpr, scope) or sideeffect(exp.rexpr, scope)
 		else true	# failsafe
 		end
@@ -2115,7 +2109,7 @@ class Decompiler
 					when :'+=', :'-='
 						# TODO i++; i += 4  =>  i += 5
 						next
-					when *AssignOp
+					when *C::CExpression::AssignOp
 						next	# ++i; i |= 4  =>  ignore
 					else
 						if    pos == :post and v == oe.lexpr; oe.lexpr = C::CExpression[e.op, v]
@@ -2211,7 +2205,7 @@ class Decompiler
 									cnt += 1 if ce.rexpr == v
 								else
 									bad = true if (ce.op == :'++' or ce.op == :'--') and depend_vars.include?(ce.rexpr)
-									bad = true if AssignOp.include?(ce.op) and depend_vars.include?(ce.lexpr)
+									bad = true if C::CExpression::AssignOp.include?(ce.op) and depend_vars.include?(ce.lexpr)
 									cnt += 1 if ce.lexpr == v
 									cnt += 1 if ce.rexpr == v
 								end
@@ -2244,7 +2238,7 @@ class Decompiler
 									elsif isfunc
 										break :fail
 									end
-								when *AssignOp
+								when *C::CExpression::AssignOp
 									break :fail if not ce.lexpr and depend_vars.include?(ce.rexpr)	# ++depend
 									if ce.rexpr == v
 										ce.rexpr = r
@@ -2290,7 +2284,7 @@ class Decompiler
 						# remove sideeffectless subexprs
 						loop do
 							case e.op
-							when :funcall, *AssignOp
+							when :funcall, *C::CExpression::AssignOp
 							else
 								l = (e.lexpr.kind_of?(C::CExpression) and sideeffect(e.lexpr))
 								r = (e.rexpr.kind_of?(C::CExpression) and sideeffect(e.rexpr))
