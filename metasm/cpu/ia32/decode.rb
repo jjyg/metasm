@@ -792,14 +792,24 @@ class Ia32
 		end
 
 		case di.opcode.name
-		when 'push', 'call'
-			fbd = fbd.dup
+		when /^push/, 'call'
+			ori = fbd
+			fbd = {}
 			sz = opsz(di)/8
 			esp = register_symbols[4]
-			if i = fbd.delete(Indirection[esp, sz])
-				fbd[Indirection[[esp, :-, sz], sz]] = i
+			if ori[esp] and ori[Indirection[esp, sz]]
+				ori.each { |k, v|
+					if k.kind_of?(Indirection)
+						fbd[k.bind(esp => ori[esp]).reduce_rec] = v
+					else
+						fbd[k] = v
+					end
+				}
+			else
+				fbd = ori.dup
+				fbd[:incomplete_binding] = Expression[1]	# TODO
 			end
-		when 'pop', 'ret' # nothing to do
+		when /^pop/, 'ret' # nothing to do
 		when /^(push|pop|call|ret|enter|leave|stos|movs|lods|scas|cmps)/
 			fbd = fbd.dup
 			fbd[:incomplete_binding] = Expression[1]	# TODO
