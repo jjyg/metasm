@@ -64,7 +64,13 @@ class DecodedInstruction
 		ret = []
 		ret << Expression[address] << ' ' if address
 		ret << @instruction
-		ret << ' ; ' << @comment if comment
+		if comment
+			ret << ' ; '
+			@comment.each { |c|
+				ret << c << ' '
+			}
+			ret.pop
+		end
 		ret
 	end
 
