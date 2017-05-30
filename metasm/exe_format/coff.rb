@@ -258,9 +258,20 @@ class COFF < ExeFormat
 		end
 
 		class RSDS < SerialStruct
-			mem :guid, 16
+			word :guid_03
+			halfs :guid_45, :guid_67
+			bytes :guid_8, :guid_9, :guid_a, :guid_b, :guid_c, :guid_d, :guid_e, :guid_f
 			word :age
 			strz :pdbfilename
+
+			def guid
+				"%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X" % [guid_03, guid_45, guid_67, guid_8, guid_9, guid_a, guid_b, guid_c, guid_d, guid_e, guid_f]
+			end
+
+			# http path to pdb (compressed)
+			def msdl_url
+				"http://msdl.microsoft.com/download/symbols/#{pdbfilename}/#{guid.delete("-")}#{age}/#{pdbfilename.chop}_"
+			end
 		end
 	end
 
