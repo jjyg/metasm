@@ -355,5 +355,9 @@ end
 	def instr_uncond_jump_to(target)
 		parse_instruction("jmp #{target}")
 	end
+
+	def instr_jump_stop
+		parse_instruction("hlt")
+	end
 end
 end

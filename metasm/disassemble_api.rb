@@ -687,11 +687,16 @@ class Disassembler
 		done = []
 		inv_binding = @prog_binding.invert
 		while addr = todo.pop
-			next if done.include? addr or not di_at(addr)
+			next if done.include?(addr)
 			done << addr
-			b = @decoded[addr].block
 
 			ret << Label.new(inv_binding[addr]) if inv_binding[addr]
+			if not di_at(addr)
+				ret << @cpu.instr_jump_stop
+				next
+			end
+
+			b = @decoded[addr].block
 			ret.concat b.list.map { |di| di.instruction }
 
 			b.each_to_otherfunc(self) { |to|
@@ -705,8 +710,8 @@ class Disassembler
 
 			if not di = b.list[-1-@cpu.delay_slot] or not di.opcode.props[:stopexec] or di.opcode.props[:saveip]
 				to = b.list.last.next_addr
-				if todo.include? to
-					if done.include? to or not di_at(to)
+				if todo.include?(to) and di_at(to)
+					if done.include?(to)
 						if not to_l = inv_binding[to]
 							to_l = auto_label_at(to, 'loc')
 							if done.include? to and idx = ret.index(@decoded[to].block.list.first.instruction)
@@ -717,6 +722,8 @@ class Disassembler
 					else
 						todo << to	# ensure it's next in the listing
 					end
+				else
+					ret << @cpu.instr_jump_stop
 				end
 			end
 		end
