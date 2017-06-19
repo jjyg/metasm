@@ -246,7 +246,8 @@ class DisasmWidget < ContainerChoiceWidget
 	# the callback is put only for the duration of the listwindow, and is not reentrant.
 	def list_bghilight(title, list, a={}, &b)
 		prev_colorcb = bg_color_callback
-		hash = list[1..-1].inject({}) { |h, l| h.update Expression[l[0] || :unknown].reduce => true }
+		addr_idx = a.delete(:bghilight_index) || 0
+		hash = list[1..-1].inject({}) { |h, l| h.update Expression[l[addr_idx] || :unknown].reduce => true }
 		@bg_color_callback = lambda { |addr| hash[addr] ? '0f0' : prev_colorcb ? prev_colorcb[addr] : nil }
 		redraw
 		popupend = lambda { @bg_color_callback = prev_colorcb ; redraw }
@@ -419,27 +420,31 @@ class DisasmWidget < ContainerChoiceWidget
 
 			log = []
 			dasm.backtrace(expr, addr, :log => log)
-			list = [['address', 'type', 'old value', 'value']]
+			list = [['order', 'address', 'type', 'old value', 'value']]
+			order = 0
 			log.each { |t, *a|
-				list << [Expression[a[-1]], t] rescue next
+				order += 1
+				list << [('%03d' % order), Expression[a[-1]], t] rescue next
 				case t
 				when :start
 					list.last << a[0]
 				when :up
+					order -= 1
 					list.pop
 				when :di
+					list.last[-1] = "di #{@dasm.di_at(a[-1]).instruction rescue nil}"
 					list.last << a[1] << a[0]
 				when :func
 					list.last << a[1] << a[0]
 				when :found
 					list.pop
-					a[0].each { |e_| list << [nil, :found, Expression[e_]] }
+					a[0].each { |e_| list << [('%03d' % (order += 1)), nil, :found, Expression[e_]] }
 				else
 					list.last << a[0] << a[1..-1].inspect
 				end
 			}
-			list_bghilight("backtrace #{expr} from #{Expression[addr]}", list) { |i|
-				a = i[0].empty? ? i[2] : i[0]
+			list_bghilight("backtrace #{expr} from #{Expression[addr]}", list, :bghilight_index => 1) { |i|
+				a = i[1].empty? ? i[3] : i[1]
 				focus_addr(a, nil, true)
 			}
 		}
