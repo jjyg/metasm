@@ -637,7 +637,7 @@ class Disassembler
 			return false
 		elsif @addrs_todo.empty?
 			ep = entrypoints.shift
-			l = auto_label_at(normalize(ep), 'entrypoint')
+			l = auto_label_at(normalize(ep), 'entrypoint') || normalize(ep)
 			puts "start disassemble from #{l} (#{entrypoints.length})" if $VERBOSE and not entrypoints.empty?
 			@entrypoints << l
 			@addrs_todo << [ep]
