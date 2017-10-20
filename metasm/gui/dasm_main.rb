@@ -946,8 +946,10 @@ class DasmWindow < Window
 				ret
 			end
 		}
-		(@dasm_widget ? DasmWindow.new : self).display(exe.disassembler)
-		self.title = "#{File.basename(path)} - metasm disassembler"
+		tg_win = self
+		tg_win = DasmWindow.new if @dasm_widget
+		tg_win.display(exe.disassembler)
+		tg_win.title = "#{File.basename(path)} - metasm disassembler"
 		exe
 	end
 
