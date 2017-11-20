@@ -90,10 +90,21 @@ class EmuDebugger < Debugger
 	end
 
 	def get_reg_value(r)
-		@ctx[r] || 0
+		if r.to_s =~ /flags?_(.+)/i
+			f = $1.downcase.to_sym
+			get_flag_value(f)
+		else
+			@ctx[r] || 0
+		end
 	end
+
 	def set_reg_value(r, v)
-		@ctx[r] = v
+		if r.to_s =~ /flags?_(.+)/i
+			f = $1.downcase.to_sym
+			set_flag_value(f, v)
+		else
+			@ctx[r] = v
+		end
 	end
 
 	def do_check_target
@@ -111,6 +122,10 @@ class EmuDebugger < Debugger
 
 	def do_singlestep
 		di = @disassembler.di_at(pc)
+		if not di
+			@disassembler.disassemble_fast(pc)
+			di = @disassembler.di_at(pc)
+		end
 		if not di
 			if callback_unknown_pc and callback_unknown_pc.call()
 				return true
@@ -136,11 +151,13 @@ class EmuDebugger < Debugger
 		}.each { |k, v|
 			case k
 			when Indirection
+				v = v & ((1 << (k.len*8)) - 1)
 				memory_write_int(k.pointer, v, k.len)
 			when Symbol
 				set_reg_value(k, v)
+			when /^dummy_metasm_/
 			else
-				puts "singlestep: badkey #{k} = #{v}"
+				puts "singlestep: badkey #{k.inspect} = #{v}"
 			end
 		}
 		true

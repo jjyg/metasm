@@ -66,9 +66,11 @@ class Ia32
 		end
 	end
 
+	DBG_BPX = "\xcc"
+	DBG_BPX.force_encoding('BINARY') if DBG_BPX.respond_to?(:force_encoding)
 	def dbg_enable_bpx(dbg, bp)
 		bp.internal[:previous] ||= dbg.memory[bp.address, 1]
-		dbg.memory[bp.address, 1] = "\xcc"
+		dbg.memory[bp.address, 1] = DBG_BPX
 	end
 
 	def dbg_disable_bpx(dbg, bp)
@@ -188,6 +190,42 @@ class Ia32
 	end
 	def dbg_func_arg_set(dbg, argnr, arg)
 		dbg.memory_write_int(Expression[:esp, :+, 4*(argnr+1)], arg)
+	end
+
+	def dbg_resolve_pc(di, fbd, pc_reg, dbg_ctx)
+		a = di.instruction.args.map { |aa| symbolic(aa) }
+
+		cond = case di.opcode.name
+		when 'jz', 'je';    dbg_ctx.get_flag(:z)
+		when 'jnz', 'jne'; !dbg_ctx.get_flag(:z)
+		when 'jo';   dbg_ctx.get_flag(:o)
+		when 'jno'; !dbg_ctx.get_flag(:o)
+		when 'js';   dbg_ctx.get_flag(:s)
+		when 'jns'; !dbg_ctx.get_flag(:s)
+		when 'jc', 'jb', 'jnae';   dbg_ctx.get_flag(:c)
+		when 'jnc', 'jnb', 'jae'; !dbg_ctx.get_flag(:c)
+		when 'jbe', 'jna';  dbg_ctx.get_flag(:c) or   dbg_ctx.get_flag(:z)
+		when 'jnbe', 'ja'; !dbg_ctx.get_flag(:c) and !dbg_ctx.get_flag(:z)
+		when 'jl', 'jnge'; dbg_ctx.get_flag(:s) != dbg_ctx.get_flag(:o)
+		when 'jnl', 'jge'; dbg_ctx.get_flag(:s) == dbg_ctx.get_flag(:o)
+		when 'jle', 'jng';  dbg_ctx.get_flag(:z) or  dbg_ctx.get_flag(:s) != dbg_ctx.get_flag(:o)
+		when 'jnle', 'jg'; !dbg_ctx.get_flag(:z) and dbg_ctx.get_flag(:s) == dbg_ctx.get_flag(:o)
+		when 'jp', 'jpe';   dbg_ctx.get_flag(:p)
+		when 'jnp', 'jpo'; !dbg_ctx.get_flag(:p)
+		when 'loop';             dbg_ctx[dbg_register_list[2]] != 0
+		when 'loopz', 'loope';   dbg_ctx[dbg_register_list[2]] != 0 and  dbg_ctx.get_flag(:z)
+		when 'loopnz', 'loopne'; dbg_ctx[dbg_register_list[2]] != 0 and !dbg_ctx.get_flag(:z)
+		when 'jcxz', 'jecxz', 'jrcxz'
+			mask = {?c => 0xffff, ?e => 0xffff_ffff, ?r => -1}[di.opcode.name[1]]
+			dbg_ctx[dbg_register_list[2]] & mask == 0
+		else return super(di, fbd, pc_reg, dbg_ctx)
+		end
+
+		if cond
+			fbd[pc_reg] = a.last
+		else
+			fbd[pc_reg] = di.next_addr
+		end
 	end
 end
 end

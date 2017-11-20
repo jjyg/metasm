@@ -736,12 +736,7 @@ class Ia32
 	end
 
 	def get_backtrace_binding(di)
-		a = di.instruction.args.map { |arg|
-			case arg
-			when ModRM, Reg, SimdReg; arg.symbolic(di)
-			else arg
-			end
-		}
+		a = di.instruction.args.map { |arg| symbolic(arg, di) }
 
 		if binding = backtrace_binding[di.opcode.basename]
 			bd = binding[di, *a]

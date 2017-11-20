@@ -73,26 +73,31 @@ class Ia32 < CPU
 	# segment register: es, cs, ss, ds, fs, gs and the theoretical segr6/7
 	class SegReg < Argument
 		simple_map((0..7).zip(%w(es cs ss ds fs gs segr6 segr7)))
+		def symbolic(di=nil) ; to_s.to_sym end
 	end
 
 	# debug register (dr0..dr3, dr6, dr7), and theoretical dr4/5
 	class DbgReg < Argument
 		simple_map((0..7).map { |i| [i, "dr#{i}"] })
+		def symbolic(di=nil) ; to_s.to_sym end
 	end
 
 	# control register (cr0, cr2, cr3, cr4) and theoretical cr1/5/6/7
 	class CtrlReg < Argument
 		simple_map((0..7).map { |i| [i, "cr#{i}"] })
+		def symbolic(di=nil) ; to_s.to_sym end
 	end
 
 	# test registers (tr0..tr7) (undocumented)
 	class TstReg < Argument
 		simple_map((0..7).map { |i| [i, "tr#{i}"] })
+		def symbolic(di=nil) ; to_s.to_sym end
 	end
 
 	# floating point registers
 	class FpReg < Argument
 		simple_map((0..7).map { |i| [i, "ST(#{i})"] } << [nil, 'ST'])
+		def symbolic(di=nil) ; to_s.tr('()', '').to_sym end
 	end
 
 	# Single Instr Multiple Data register (mm0..mm7, xmm0..xmm7, ymm0..ymm7)
