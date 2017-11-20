@@ -172,6 +172,7 @@ class COFF
 			@iat_p ||= Expression[coff.label_at(edata['iat'].last, 0, 'iat'), :-, coff.label_at(coff.encoded, 0)]
 			edata['idata'] << super(coff)
 
+			@libname.force_encoding('BINARY') if @libname.respond_to?(:force_encoding)
 			edata['nametable'] << @libname << 0
 
 			ord_mask = 1 << (coff.bitsize - 1)
@@ -182,6 +183,7 @@ class COFF
 				else
 					edata['nametable'].align 2
 					ptr = coff.encode_xword(rva_end['nametable'])
+					i.name.force_encoding('BINARY') if i.name.respond_to?(:force_encoding)
 					edata['nametable'] << coff.encode_half(i.hint || 0) << i.name << 0
 				end
 				edata['ilt'] << ptr
@@ -626,6 +628,7 @@ class COFF
 				end
 			end
 			s.rawaddr = nil if s.rawaddr.kind_of?(::Integer)	# XXX allow to force rawaddr ?
+			s.name.force_encoding('BINARY') if s.name.respond_to?(:force_encoding)
 			s_table << s.encode(self)
 		}
 

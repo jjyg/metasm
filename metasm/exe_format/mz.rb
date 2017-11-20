@@ -11,6 +11,7 @@ require 'metasm/decode'
 module Metasm
 class MZ < ExeFormat
 	MAGIC = 'MZ'	# 0x4d5a
+	MAGIC.force_encoding('BINARY') if MAGIC.respond_to?(:force_encoding)
 	class Header < SerialStruct
 		mem :magic, 2, MAGIC
 		words :cblp, :cp, :crlc, :cparhdr, :minalloc, :maxalloc, :ss, :sp, :csum, :ip, :cs, :lfarlc, :ovno

@@ -11,6 +11,7 @@ require 'metasm/exe_format/coff'
 module Metasm
 class PE < COFF
 	MAGIC = "PE\0\0"	# 0x50450000
+	MAGIC.force_encoding('BINARY') if MAGIC.respond_to?(:force_encoding)
 
 	attr_accessor :coff_offset, :signature, :mz
 
