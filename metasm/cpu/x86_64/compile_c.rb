@@ -32,6 +32,8 @@ class CCompiler < C::Compiler
 		attr_accessor :regargs
 		# stack space reserved for subfunction in ABI
 		attr_accessor :args_space
+		# ensure stack is 16byte aligned before calls
+		attr_accessor :stack_align16
 		# list of reg values that are not kept across function call
 		attr_accessor :abi_flushregs_call
 		# list of regs we can trash without restoring them
@@ -52,6 +54,7 @@ class CCompiler < C::Compiler
 			@bound = {}
 			@regargs = []
 			@args_space = 0
+			@stack_align16 = true
 			@abi_flushregs_call = [0, 1, 2, 6, 7, 8, 9, 10, 11]
 			@abi_trashregs = @abi_flushregs_call.dup
 		end
@@ -646,8 +649,7 @@ class CCompiler < C::Compiler
 
 		stackargs = expr.rexpr.zip(regargsmask).map { |a, r| a if not r }.compact
 
-		# preserve 16byte stack align under windows
-		stackalign = true if @state.args_space > 0 and (stackargs + backup).length & 1 == 1
+		stackalign = true if @state.stack_align16 and (stackargs + backup).length & 1 == 1
 		instr 'sub', Reg.new(4, @cpusz), Expression[8] if stackalign
 
 		stackargs.reverse_each { |arg|
@@ -982,8 +984,7 @@ class CCompiler < C::Compiler
 		@state.dirty -= @state.abi_trashregs
 		if localspc
 			localspc = (localspc + 7) / 8 * 8
-			if @state.args_space > 0 and (localspc/8 + @state.dirty.length) & 1 == 1
-				# ensure 16-o stack align on windows
+			if @state.stack_align16 and (localspc/8 + @state.dirty.length) & 1 == 1
 				localspc += 8
 			end
 			ebp = @state.saved_rbp
@@ -1002,7 +1003,7 @@ class CCompiler < C::Compiler
 				v = findvar(a)
 				instr 'mov', v, Reg.new(r, v.sz)
 			}
-		elsif @state.args_space > 0 and @state.dirty.length & 1 == 0
+		elsif @state.stack_align16 and @state.dirty.length & 1 == 0
 			instr 'sub', Reg.new(4, @cpusz), Expression[8]
 		end
 		@state.dirty.each { |reg|
@@ -1018,7 +1019,7 @@ class CCompiler < C::Compiler
 		if ebp = @state.saved_rbp
 			instr 'mov', Reg.new(4, ebp.sz), ebp
 			instr 'pop', ebp
-		elsif @state.args_space > 0 and @state.dirty.length & 1 == 0
+		elsif @state.stack_align16 and @state.dirty.length & 1 == 0
 			instr 'add', Reg.new(4, @cpusz), Expression[8]
 		end
 		instr 'ret'

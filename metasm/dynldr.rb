@@ -5,7 +5,7 @@
 
 # This sample creates the dynldr.so ruby shared object that allows interaction with
 # native libraries
-# x86 only for now
+# x86/x64 only for now
 
 module Metasm
 class DynLdr
