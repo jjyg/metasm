@@ -587,12 +587,15 @@ class InputBox < Gtk::Dialog
 			key = DrawableWidget::Keyboard_trad[ev.keyval]
 			case key
 			when :escape
+				@history_off = @history.length
 				response(RESPONSE_REJECT)
 				true
 			when :enter
+				@history.pop if @history.last == ''
 				@history << @textwidget.buffer.text.to_s
 				@history.pop if @history.last == ''
 				@history.pop if @history.last == @history[-2]
+				@history_off = @history.length
 				response(RESPONSE_ACCEPT)
 				true
 			when :up, :down
@@ -601,7 +604,7 @@ class InputBox < Gtk::Dialog
 					@history[@history_off] = txt
 				end
 				@history_off += (key == :up ? -1 : 1)
-				@history_off %= @history.length
+				@history_off %= (@history.length > 0 ? @history.length : 1)
 				@textwidget.buffer.text = @history[@history_off].to_s
 				text_select_all
 			end
