@@ -106,6 +106,10 @@ class Dalvik
 			when :str16
 				val << edata.decode_imm(:u16, @endianness)
 				DexString.new(@dex, val.last)
+			when :str32
+				val << edata.decode_imm(:u16, @endianness)
+				val << edata.decode_imm(:u16, @endianness)
+				DexString.new(@dex, (val[-2] | (val[-1] << 16)))
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}

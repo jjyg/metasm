@@ -35,9 +35,15 @@ class Dalvik < CPU
 			end
 		end
 
+		def symbolic(di=nil)
+			self
+		end
+
 		def to_s
 			if @dex and m = @dex.methods[@midx]
-				@dex.types[m.classidx] + '->' + @dex.strings[m.nameidx]
+				t = @dex.types[m.classidx]
+				t = t[1...-1] if t[0, 1] == 'L' and t[-1, 1] == ';'
+				t + '->' + @dex.strings[m.nameidx]
 				#dex.encoded.inv_export[@off]
 			else
 				"method_#@midx"
@@ -50,6 +56,10 @@ class Dalvik < CPU
 		def initialize(dex, fidx)
 			@dex = dex
 			@fidx = fidx
+		end
+
+		def symbolic(di=nil)
+			self
 		end
 
 		def to_s
@@ -68,6 +78,10 @@ class Dalvik < CPU
 			@tidx = tidx
 		end
 
+		def symbolic(di=nil)
+			self
+		end
+
 		def to_s
 			if @dex and f = @dex.types[@tidx]
 				f
@@ -82,6 +96,10 @@ class Dalvik < CPU
 		def initialize(dex, sidx)
 			@dex = dex
 			@sidx = sidx
+		end
+
+		def symbolic(di=nil)
+			self
 		end
 
 		def to_s

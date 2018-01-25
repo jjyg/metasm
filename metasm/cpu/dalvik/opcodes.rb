@@ -64,7 +64,7 @@ unused_fc unused_fd unused_fe unused_ff]
 		@valid_props[:canthrow] = true
 		[:i16, :i16_32hi, :i16_64hi, :i32, :iaa, :ib, :icc, :u16, :u32, :u64,
 		 :r16, :ra, :raa, :rb, :rbb, :rcc, :rlist16, :rlist4, :rlist5,
-		 :m16, :fld16, :typ16, :str16
+		 :m16, :fld16, :typ16, :str16, :str32
 		].each { |a| @valid_args[a] = true }
 		@opcode_list = []
 
@@ -232,7 +232,8 @@ unused_fc unused_fd unused_fe unused_ff]
 		when :fmt22s, :fmt22t; op.args << :ra << :rb << :i16
 		when :fmt22c, :fmt22cs; op.args << :ra << :rb << :fld16
 		when :fmt30t; op.args << :i32
-		when :fmt31t, :fmt31c; op.args << :raa << :u32
+		when :fmt31c; op.args << :raa << :str32
+		when :fmt31t; op.args << :raa << :u32
 		when :fmt32x; op.args << :r16 << :r16
 		when :fmt31i; op.args << :raa << :i32
 		when :fmt35ca
