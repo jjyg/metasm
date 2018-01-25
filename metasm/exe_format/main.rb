@@ -217,6 +217,8 @@ class ExeFormat
 
 	def shortname; self.class.name.split('::').last.downcase; end
 
+	def inspect; "<Metasm::ExeFormat %s @%x>" % [shortname, object_id]; end
+
 module IntToHash
 	# converts a constant name to its numeric value using the hash
 	# {1 => 'toto', 2 => 'tata'}: 'toto' => 1, 42 => 42, 'tutu' => raise
