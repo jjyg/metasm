@@ -37,6 +37,7 @@ end
 
 # register a new binary file signature
 def self.register_signature(sig, exe=nil, &b)
+	sig.force_encoding('binary') if sig.respond_to?(:force_encoding)
 	(@signatures ||= []) << [sig, exe || b]
 end
 
@@ -59,6 +60,7 @@ register_signature("dex\n") { DEX }
 register_signature("dey\n") { DEY }
 register_signature("\xfa\x70\x0e\x1f") { FatELF }
 register_signature("\x50\x4b\x03\x04") { ZIP }
+register_signature("\0asm") { WASM }
 register_signature('Metasm.dasm') { Disassembler }
 
 # replacement for AutoExe where #load defaults to a Shellcode of the specified CPU
