@@ -331,17 +331,28 @@ class DEX < ExeFormat
 	def decode_u4(edata = @encoded) edata.decode_imm(:u32, @endianness) end
 	def sizeof_u2 ; 2 ; end
 	def sizeof_u4 ; 4 ; end
+	def encode_uleb(val)
+		v = val
+		out = Expression[v & 0x7f].encode(:u8, @endianness)
+		v >>= 7
+		while v > 0 or v < -1
+			out = Expression[0x80 | (v & 0x7f)].encode(:u8, @endianness) << out
+			v >>= 7
+		end
+		out
+	end
 	def decode_uleb(ed = @encoded, signed=false)
 		v = s = 0
 		while s < 5*7
 			b = ed.read(1).unpack('C').first.to_i
 			v |= (b & 0x7f) << s
-			break if (b&0x80) == 0
 			s += 7
+			break if (b&0x80) == 0
 		end
 		v = Expression.make_signed(v, s) if signed
 		v
 	end
+	def encode_sleb(val) encode_uleb(val) end
 	def decode_sleb(ed = @encoded) decode_uleb(ed, true) end
 	attr_accessor :header, :strings, :types, :protos, :fields, :methods, :classes
 
