@@ -331,11 +331,14 @@ class DEX < ExeFormat
 	def decode_u4(edata = @encoded) edata.decode_imm(:u32, @endianness) end
 	def sizeof_u2 ; 2 ; end
 	def sizeof_u4 ; 4 ; end
-	def encode_uleb(val)
+	def encode_uleb(val, signed=false)
 		v = val
+		# force_more_bytes: ensure sign bit is not mistaken as value when signed (eg encode 0x40 as 0x80, 0x40 ; not 0x40 (decoded as -0x40))
+		force_more_bytes = (signed and v & 0x40 > 0)
 		out = Expression[v & 0x7f].encode(:u8, @endianness)
 		v >>= 7
-		while v > 0 or v < -1
+		while v > 0 or v < -1 or force_more_bytes
+			force_more_bytes = (signed and v & 0x40 > 0)
 			out = Expression[0x80 | (v & 0x7f)].encode(:u8, @endianness) << out
 			v >>= 7
 		end
@@ -352,7 +355,7 @@ class DEX < ExeFormat
 		v = Expression.make_signed(v, s) if signed
 		v
 	end
-	def encode_sleb(val) encode_uleb(val) end
+	def encode_sleb(val) encode_uleb(val, true) end
 	def decode_sleb(ed = @encoded) decode_uleb(ed, true) end
 	attr_accessor :header, :strings, :types, :protos, :fields, :methods, :classes
 
