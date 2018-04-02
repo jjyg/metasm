@@ -119,7 +119,7 @@ class WasmFile < ExeFormat
 
 	def type_to_s(t)
 		return t unless t.kind_of?(::Hash)
-		t[:ret].map { |tt| type_to_s(tt) }.join(', ') << ' f(' << t[:params].map { |tt| type_to_s(tt) }.join(', ') << ')'
+		(t[:ret].map { |tt| type_to_s(tt) }.join(', ') << ' f(' << t[:params].map { |tt| type_to_s(tt) }.join(', ') << ')').strip
 	end
 
 	def decode_limits(edata=@encoded)
@@ -323,10 +323,14 @@ class WasmFile < ExeFormat
 
 	def init_disassembler
 		dasm = super()
-		@function_body.each_with_index { |fb, i|
+		function_body.to_a.each_with_index { |fb, i|
 			p = @function_signature[i] if function_signature
 			v = fb[:local_var].map { |lv| type_to_s(lv) }.join(' ; ')
-			dasm.comment[fb[:init_offset]] = ["proto: #{p || 'unknown'}", "vars: #{v}"]
+			dasm.add_comment fb[:init_offset], "proto: #{p ? type_to_s(p) : 'unknown'}"
+			dasm.add_comment fb[:init_offset], "vars: #{v}"
+		}
+		global.to_a.each { |g|
+			dasm.add_comment g[:init_offset], "type: #{type_to_s(g[:type])}"
 		}
 		dasm
 	end

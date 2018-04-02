@@ -439,7 +439,7 @@ class DEX < ExeFormat
 			next if not c.data
 			(c.data.direct_methods + c.data.virtual_methods).each { |m|
 				n = @types[c.classidx] + '->' + m.name
-				dasm.comment[m.codeoff+m.code.insns_off] = [n]
+				dasm.add_comment m.codeoff+m.code.insns_off, n
 			}
 		}
 		dasm.function[:default] = @cpu.disassembler_default_func
