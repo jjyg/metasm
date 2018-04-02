@@ -14,7 +14,7 @@ class EBPF
 		def render ; ["r#@v"] end
 	end
 
-	class MemRef
+	class Memref
 		include Renderable
 		def render
 			r = []
@@ -27,7 +27,7 @@ class EBPF
 		end
 	end
 
-	class PktRef
+	class Pktref
 		def render
 			['pkt '] + super
 		end

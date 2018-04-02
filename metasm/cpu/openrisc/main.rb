@@ -33,7 +33,7 @@ class OpenRisc < CPU
 		def symbolic(di=nil) ; "f#@v".to_sym ; end
 	end
 
-	class MemRef
+	class Memref
 		attr_accessor :base, :offset, :msz
 
 		def initialize(base, offset, msz)

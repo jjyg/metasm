@@ -33,9 +33,9 @@ class BPF
 			when :x;    Reg.new(:x)
 			when :a;    Reg.new(:a)
 			when :len;  Reg.new(:len)
-			when :p_k;  PktRef.new(nil, Expression[k], op.props[:msz])
-			when :p_xk; PktRef.new(Reg.new(:x), Expression[k], op.props[:msz])
-			when :m_k;  MemRef.new(nil, Expression[4*k], 4)
+			when :p_k;  Pktref.new(nil, Expression[k], op.props[:msz])
+			when :p_xk; Pktref.new(Reg.new(:x), Expression[k], op.props[:msz])
+			when :m_k;  Memref.new(nil, Expression[4*k], 4)
 			when :jt;   Expression[jt]
 			when :jf;   Expression[jf]
 			else raise "unhandled arg #{a}"

@@ -19,7 +19,7 @@ class OpenRisc
 		def render ; ["f#@v"] end
 	end
 
-	class MemRef
+	class Memref
 		include Renderable
 		def render
 			off = @offset

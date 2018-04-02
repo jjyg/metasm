@@ -56,8 +56,8 @@ class OpenRisc
 			when :disp26; Expression[sign_fld[a, 26]]
 			when :uimm5, :uimm16; Expression[fld[a]]
 			when :simm16; Expression[sign_fld[a, 16]]
-			when :rA_simm16; MemRef.new(Reg.new(fld[:rA]), Expression[sign_fld[:simm16, 16]], di.opcode.props[:memsz])
-			when :rA_smoo; MemRef.new(Reg.new(fld[:rA]), fld_smoo[], di.opcode.props[:memsz])
+			when :rA_simm16; Memref.new(Reg.new(fld[:rA]), Expression[sign_fld[:simm16, 16]], di.opcode.props[:memsz])
+			when :rA_smoo; Memref.new(Reg.new(fld[:rA]), fld_smoo[], di.opcode.props[:memsz])
 			else raise "unhandled arg #{a}"
 			end
 		}

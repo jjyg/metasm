@@ -17,7 +17,7 @@ class EBPF < CPU
 		def symbolic(di=nil) ; "r#@v".to_sym ; end
 	end
 
-	class MemRef
+	class Memref
 		attr_accessor :base, :offset, :msz
 
 		def initialize(base, offset, msz)
@@ -33,7 +33,7 @@ class EBPF < CPU
 		end
 	end
 
-	class PktRef < MemRef
+	class Pktref < Memref
 		def symbolic(di=nil)
 			p = Expression[:packet]
 			p = Expression[p, :+, @base.symbolic] if base

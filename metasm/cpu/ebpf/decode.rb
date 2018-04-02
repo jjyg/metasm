@@ -47,10 +47,10 @@ class EBPF
 			when :rs;   Reg.new(src)
 			when :rd;   Reg.new(dst)
 			when :off;  Expression[off]
-			when :p_rs_o; MemRef.new(Reg.new(src), Expression[off], op.props[:msz])
-			when :p_rd_o; MemRef.new(Reg.new(dst), Expression[off], op.props[:msz])
-			when :p_pkt_i; PktRef.new(nil, Expression[imm], op.props[:msz])
-			when :p_pkt_rs_i; PktRef.new(Reg.new(src), Expression[imm], op.props[:msz])
+			when :p_rs_o; Memref.new(Reg.new(src), Expression[off], op.props[:msz])
+			when :p_rd_o; Memref.new(Reg.new(dst), Expression[off], op.props[:msz])
+			when :p_pkt_i; Pktref.new(nil, Expression[imm], op.props[:msz])
+			when :p_pkt_rs_i; Pktref.new(Reg.new(src), Expression[imm], op.props[:msz])
 			else raise "unhandled arg #{a}"
 			end
 		}

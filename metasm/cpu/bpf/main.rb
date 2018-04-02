@@ -17,7 +17,7 @@ class BPF < CPU
 		def symbolic(di=nil) ; @v ; end
 	end
 
-	class MemRef
+	class Memref
 		attr_accessor :base, :offset, :msz
 
 		def memtype
@@ -38,7 +38,7 @@ class BPF < CPU
 		end
 	end
 
-	class PktRef < MemRef
+	class Pktref < Memref
 		def memtype
 			:pkt
 		end

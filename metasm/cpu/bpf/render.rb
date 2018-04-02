@@ -13,7 +13,7 @@ class BPF
 		include Renderable
 		def render ; [@v.to_s] end
 	end
-	class MemRef
+	class Memref
 		include Renderable
 		def render
 			r = []
