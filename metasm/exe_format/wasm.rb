@@ -54,8 +54,8 @@ class WasmFile < ExeFormat
 		attr_accessor :edata, :raw_offset, :name
 
 		def decode(exe)
-			@raw_offset = exe.encoded.ptr
 			super(exe)
+			@raw_offset = exe.encoded.ptr
 			@edata = exe.encoded[exe.encoded.ptr, @payload_len]
 			exe.encoded.ptr += @payload_len
 		end
@@ -174,13 +174,14 @@ class WasmFile < ExeFormat
 			@modules << Module.decode(self)
 		end
 		@modules.each { |m|
+			@encoded.add_export(new_label("module_#{m.id}"), m.raw_offset)
 			f = "decode_module_#{m.id.to_s.downcase}"
 			send(f, m) if respond_to?(f)
 		}
 		export.to_a.each { |e|
 			next if e[:kind] != 'function'	# TODO resolve init_offset for globals etc?
-			off = function_body.to_a[e[:index]]
-			@encoded.add_export(new_label(e[:field]), off, true) if off
+			next if not fb = function_body.to_a[e[:index]]
+			@encoded.add_export(new_label(e[:field]), fb[:init_offset], true)
 		}
 	end
 
