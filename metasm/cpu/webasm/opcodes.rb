@@ -29,9 +29,9 @@ class WebAsm
 
 		addop 'unreachable',   0x00, :stopexec
 		addop 'nop',           0x01
-		addop 'block',         0x02, :uleb		# arg = signature (block_type)
-		addop 'loop',          0x03, :uleb		# ^
-		addop 'if',            0x04, :uleb, :setip	# ^
+		addop 'block',         0x02, :sleb		# arg = signature (block_type)
+		addop 'loop',          0x03, :sleb		# ^
+		addop 'if',            0x04, :sleb, :setip	# ^
 		addop 'else',          0x05, :setip, :stopexec
 		addop 'end',           0x0b, :setip, :stopexec	# end of if/loop/block
 		addop 'br',            0x0c, :uleb, :setip, :stopexec	# arg = depth to break up to
