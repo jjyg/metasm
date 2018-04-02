@@ -108,11 +108,11 @@ class BacktraceTrace
 	attr_accessor :detached
 	# maxdepth at the point of the object creation
 	attr_accessor :maxdepth
+	# disassembler context
+	attr_accessor :ctx
 
-	def initialize(expr, origin, orig_expr, type, len=nil, maxdepth=nil)
-		@expr, @origin, @orig_expr, @type = expr, origin, orig_expr, type
-		@len = len if len
-		@maxdepth = maxdepth if maxdepth
+	def initialize(expr, origin, orig_expr, type, len=nil, maxdepth=nil, ctx=nil)
+		@expr, @origin, @orig_expr, @type, @len, @maxdepth, @ctx = expr, origin, orig_expr, type, len, maxdepth, ctx
 	end
 
 	def hash ; [origin, expr].hash ; end
@@ -292,6 +292,17 @@ class DecodedFunction
 end
 
 class CPU
+	# decode an instruction with a dasm context
+	# ctx is a hash, should be modified inplace by the CPU
+	# will be passed to the next instruction(s) in the code flow
+	def decode_instruction_context(edata, di, ctx)
+		decode_instruction(edata, di)
+	end
+
+	# return the initial context for the disassembler, starts disassembling from addr
+	def disassemble_init_ctx(dasm, addr)
+	end
+
 	# return the thing to backtrace to find +value+ before the execution of this instruction
 	# eg backtrace_emu('inc eax', Expression[:eax]) => Expression[:eax + 1]
 	#  (the value of :eax after 'inc eax' is the value of :eax before plus 1)
@@ -637,14 +648,19 @@ class Disassembler
 			return false
 		elsif @addrs_todo.empty?
 			ep = entrypoints.shift
+			ctx = get_initial_ctx(ep)
 			l = auto_label_at(normalize(ep), 'entrypoint') || normalize(ep)
 			puts "start disassemble from #{l} (#{entrypoints.length})" if $VERBOSE and not entrypoints.empty?
 			@entrypoints << l
-			@addrs_todo << [ep]
+			@addrs_todo << { :addr => ep, :ctx => ctx }
 		else
 			disassemble_step
 		end
 		true
+	end
+
+	def get_initial_ctx(addr)
+		@cpu.disassemble_init_ctx(self, addr)
 	end
 
 	def post_disassemble
@@ -679,19 +695,20 @@ puts "  finalize subfunc #{Expression[addr]}" if debug_backtrace
 	# adds next addresses to handle to addrs_todo
 	# if @function[:default] exists, jumps to unknows locations are interpreted as to @function[:default]
 	def disassemble_step
-		return if not todo = @addrs_todo.pop or @addrs_done.include? todo
-		@addrs_done << todo if todo[1]
+		return if not x = @addrs_todo.pop or @addrs_done.include?(x)
+		@addrs_done << x if x[:from]
 
-		# from_sfret is true if from is the address of a function call that returns to addr
-		addr, from, from_subfuncret = todo
+		addr = x[:addr]
+		from = x[:from]
+		# from_subfuncret is true if from is the address of a function call that returns to addr
 
 		return if from == Expression::Unknown
 
-		puts "disassemble_step #{Expression[addr]} #{Expression[from] if from} #{from_subfuncret}  (/#{@addrs_todo.length})" if $DEBUG
+		puts "disassemble_step #{Expression[addr]} #{Expression[from] if from} #{x[:from_subfuncret]}  (/#{@addrs_todo.length})" if $DEBUG
 
 		addr = normalize(addr)
 
-		if from and from_subfuncret and di_at(from)
+		if from and x[:from_subfuncret] and di_at(from)
 			@decoded[from].block.each_to_normal { |subfunc|
 				subfunc = normalize(subfunc)
 				next if not f = @function[subfunc] or f.finalized
@@ -705,9 +722,9 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		end
 
 		if di = @decoded[addr]
-			if di.kind_of? DecodedInstruction
+			if di.kind_of?(DecodedInstruction)
 				split_block(di.block, di.address, true) if not di.block_head?	# this updates di.block
-				di.block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
+				di.block.add_from(from, x[:from_subfuncret] ? :subfuncret : :normal) if from and from != :default
 				bf = di.block
 			elsif di == true
 				bf = @function[addr]
@@ -716,8 +733,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			detect_function_thunk_noreturn(from) if bf.noreturn
 		elsif s = get_section_at(addr)
 			block = InstructionBlock.new(normalize(addr), s[0])
-			block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
-			disassemble_block(block)
+			block.add_from(from, x[:from_subfuncret] ? :subfuncret : :normal) if from and from != :default
+			disassemble_block(block, x[:ctx])
 		elsif from and c_parser and name = Expression[addr].reduce_rec and name.kind_of? ::String and
 				s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
 			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
@@ -725,7 +742,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		elsif from
 			if bf = @function[:default]
 				puts "using default function for #{Expression[addr]} from #{Expression[from]}" if $DEBUG
-				if name = Expression[addr].reduce_rec and name.kind_of? ::String
+				if name = Expression[addr].reduce_rec and name.kind_of?(::String)
 					@function[addr] = @function[:default].dup
 				else
 					addr = :default
@@ -745,7 +762,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		end
 
 		if bf and from and from != :default
-			if bf.kind_of? DecodedFunction
+			if bf.kind_of?(DecodedFunction)
 				bff = bf.get_backtracked_for(self, addr, from)
 			else
 				bff = bf.backtracked_for
@@ -753,21 +770,21 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		end
 		bff.each { |btt|
 			next if btt.address
-			if @decoded[from].kind_of? DecodedInstruction and @decoded[from].opcode.props[:saveip] and not from_subfuncret and not @function[addr]
-				backtrace_check_found(btt.expr, @decoded[addr], btt.origin, btt.type, btt.len, btt.maxdepth, btt.detached)
+			if @decoded[from].kind_of?(DecodedInstruction) and @decoded[from].opcode.props[:saveip] and not x[:from_subfuncret] and not @function[addr]
+				backtrace_check_found(btt.expr, @decoded[addr], btt.origin, btt.type, btt.len, btt.maxdepth, btt.detached, btt.ctx)
 			end
 			next if backtrace_check_funcret(btt, addr, from)
 			backtrace(btt.expr, from,
-				  :include_start => true, :from_subfuncret => from_subfuncret,
+				  :include_start => true, :from_subfuncret => x[:from_subfuncret],
 				  :origin => btt.origin, :orig_expr => btt.orig_expr, :type => btt.type,
-				  :len => btt.len, :detached => btt.detached, :maxdepth => btt.maxdepth)
+				  :len => btt.len, :detached => btt.detached, :maxdepth => btt.maxdepth, :ctx => btt.ctx)
 		} if bff
 	end
 
 	# splits an InstructionBlock, updates the blocks backtracked_for
 	def split_block(block, address=nil, rebacktrace=false)
 		if not address	# invoked as split_block(0x401012)
-			return if not @decoded[block].kind_of? DecodedInstruction
+			return if not @decoded[block].kind_of?(DecodedInstruction)
 			block, address = @decoded[block].block, block
 		end
 		return block if address == block.address
@@ -778,14 +795,14 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					  :only_upto => block.list.last.address,
 					  :include_start => !btt.exclude_instr, :from_subfuncret => btt.from_subfuncret,
 					  :origin => btt.origin, :orig_expr => btt.orig_expr, :type => btt.type, :len => btt.len,
-					  :detached => btt.detached, :maxdepth => btt.maxdepth)
+					  :detached => btt.detached, :maxdepth => btt.maxdepth, :ctx => btt.ctx)
 			}
 		end
 		new_b
 	end
 
 	# disassembles a new instruction block at block.address (must be normalized)
-	def disassemble_block(block)
+	def disassemble_block(block, ctx)
 		raise if not block.list.empty?
 		di_addr = block.address
 		delay_slot = nil
@@ -813,7 +830,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 			# decode instruction
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
-			if not di = @cpu.decode_instruction(block.edata, di_addr)
+			ctx = ctx.dup if ctx
+			if not di = @cpu.decode_instruction_context(block.edata, di_addr, ctx)
 				ed = block.edata
 				break if ed.ptr >= ed.length and get_section_at(di_addr) and di = block.list.last
 				puts "#{ed.ptr >= ed.length ? "end of section reached" : "unknown instruction #{ed.data[di_addr-block.address+block.edata_ptr, 4].to_s.unpack('H*').first}"} at #{Expression[di_addr]}" if $VERBOSE
@@ -853,7 +871,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			if delay_slot
 				di, delay = delay_slot
 				if delay == 0 or not di_addr
-					backtrace_xrefs_di_x(di)
+					backtrace_xrefs_di_x(di, ctx)
 					if di.opcode.props[:stopexec] or not di_addr; return
 					else break
 					end
@@ -869,7 +887,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 		ar = [di_addr]
 		ar = @callback_newaddr[block.list.last.address, ar] || ar if callback_newaddr
-		ar.each { |di_addr_| backtrace(di_addr_, di.address, :origin => di.address, :type => :x) }
+		ar.each { |di_addr_| backtrace(di_addr_, di.address, :origin => di.address, :type => :x, :ctx => ctx) }
 
 		block
 	end
@@ -909,11 +927,11 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# disassembles fast from a list of entrypoints
 	# see disassemble_fast_step
 	def disassemble_fast(entrypoint, maxdepth=-1, &b)
-		ep = [entrypoint]
-		until ep.empty?
-			disassemble_fast_step(ep, &b)
+		todo = [{ :addr => entrypoint }]
+		until todo.empty?
+			disassemble_fast_step(todo, &b)
 			maxdepth -= 1
-			ep.delete_if { |a| not @decoded[normalize(a[0])] } if maxdepth == 0
+			todo.delete_if { |a| not @decoded[normalize(a[:addr])] } if maxdepth == 0
 		end
 		check_noreturn_function(entrypoint)
 	end
@@ -921,23 +939,22 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# disassembles one block from the ary, see disassemble_fast_block
 	def disassemble_fast_step(todo, &b)
 		return if not x = todo.pop
-		addr, from, from_subfuncret = x
 
-		addr = normalize(addr)
+		addr = normalize(x[:addr])
 
 		if di = @decoded[addr]
 			if di.kind_of? DecodedInstruction
 				split_block(di.block, di.address) if not di.block_head?
-				di.block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
+				di.block.add_from(x[:from], x[:from_subfuncret] ? :subfuncret : :normal) if x[:from] and x[:from] != :default
 			end
 		elsif s = get_section_at(addr)
-			block = InstructionBlock.new(normalize(addr), s[0])
-			block.add_from(from, from_subfuncret ? :subfuncret : :normal) if from and from != :default
-			todo.concat disassemble_fast_block(block, &b)
-		elsif name = Expression[addr].reduce_rec and name.kind_of? ::String and not @function[addr]
-			if c_parser and s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
+			block = InstructionBlock.new(addr, s[0])
+			block.add_from(x[:from], x[:from_subfuncret] ? :subfuncret : :normal) if x[:from] and x[:from] != :default
+			todo.concat disassemble_fast_block(block, x[:ctx], &b)
+		elsif name = Expression[addr].reduce_rec and name.kind_of?(::String) and not @function[addr]
+			if c_parser and s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of?(C::Function)
 				@function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
-				detect_function_thunk_noreturn(from) if @function[addr].noreturn
+				detect_function_thunk_noreturn(x[:from]) if @function[addr].noreturn
 			elsif @function[:default]
 				@function[addr] = @function[:default].dup
 			end
@@ -970,8 +987,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# no backtrace for :x (change with backtrace_maxblocks_fast)
 	# returns a todo-style ary
 	# assumes @addrs_todo is empty
-	def disassemble_fast_block(block, &b)
-		block = InstructionBlock.new(normalize(block), get_section_at(block)[0]) if not block.kind_of? InstructionBlock
+	def disassemble_fast_block(block, ctx, &b)
+		block = InstructionBlock.new(normalize(block), get_section_at(block)[0]) if not block.kind_of?(InstructionBlock)
 		di_addr = block.address
 		delay_slot = nil
 		di = nil
@@ -984,7 +1001,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 			# decode instruction
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
-			if not di = @cpu.decode_instruction(block.edata, di_addr)
+			ctx = ctx.dup if ctx
+			if not di = @cpu.decode_instruction_context(block.edata, di_addr, ctx)
 				break if block.edata.ptr >= block.edata.length and get_section_at(di_addr) and di = block.list.last
 				return ret
 			end
@@ -1015,12 +1033,12 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					ar = @program.get_xrefs_x(self, di)
 					ar = @callback_newaddr[di.address, ar] || ar if callback_newaddr
 					ar.each { |expr|
-						backtrace(expr, di.address, :origin => di.address, :type => :x, :maxdepth => @backtrace_maxblocks_fast)
+						backtrace(expr, di.address, :origin => di.address, :type => :x, :maxdepth => @backtrace_maxblocks_fast, :ctx => ctx)
 					}
 				end
 				if di.opcode.props[:saveip]
 					@addrs_todo = []
-					ret.concat disassemble_fast_block_subfunc(di, &b)
+					ret.concat disassemble_fast_block_subfunc(di, ctx, &b)
 				else
 					ret.concat @addrs_todo
 					@addrs_todo = []
@@ -1041,13 +1059,13 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		ar = @callback_newaddr[block.list.last.address, ar] || ar if callback_newaddr
 		ar.each { |a|
 			di.block.add_to_normal(a)
-			ret << [a, di.address]
+			ret << { :addr => a, :from => di.address, :ctx => ctx }
 		}
 		ret
 	end
 
 	# handles when disassemble_fast encounters a call to a subfunction
-	def disassemble_fast_block_subfunc(di)
+	def disassemble_fast_block_subfunc(di, ctx)
 		funcs = di.block.to_normal.to_a
 		do_ret = funcs.empty?
 		ret = []
@@ -1060,7 +1078,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				# this includes retaddr unless f is noreturn
 				bf.each { |btt|
 					next if btt.type != :x
-					bt = backtrace(btt.expr, di.address, :include_start => true, :origin => btt.origin, :maxdepth => [@backtrace_maxblocks_fast, 1].max)
+					bt = backtrace(btt.expr, di.address, :include_start => true, :origin => btt.origin, :maxdepth => [@backtrace_maxblocks_fast, 1].max, :ctx => ctx)
 					if btt.detached
 						ret.concat bt	# callback argument
 					elsif bt.find { |a| normalize(a) == na }
@@ -1073,7 +1091,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		}
 		if do_ret
 			di.block.add_to_subfuncret(na)
-			ret << [na, di.address, true]
+			ret << { :addr => na, :from => di.address, :from_subfuncret => true, :ctx => ctx }
 			di.block.add_to_normal :default if not di.block.to_normal and @function[:default]
 		end
 		ret
@@ -1098,10 +1116,10 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	end
 
 	# trace xrefs for execution
-	def backtrace_xrefs_di_x(di)
+	def backtrace_xrefs_di_x(di, ctx)
 		ar = @program.get_xrefs_x(self, di)
 		ar = @callback_newaddr[di.address, ar] || ar if callback_newaddr
-		ar.each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x) }
+		ar.each { |expr| backtrace(expr, di.address, :origin => di.address, :type => :x, :ctx => ctx) }
 	end
 
 	# checks if the function starting at funcaddr is an external function thunk (eg jmp [SomeExtFunc])
@@ -1242,7 +1260,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	#  (defaults to dasm.backtrace_maxblocks, which defaults do Dasm.backtrace_maxblocks)
 	def backtrace_walk(obj, addr, include_start, from_subfuncret, stopaddr, maxdepth)
 		start_addr = normalize(addr)
-		stopaddr = [stopaddr] if stopaddr and not stopaddr.kind_of? ::Array
+		stopaddr = [stopaddr] if stopaddr and not stopaddr.kind_of?(::Array)
 
 		# array of [obj, addr, from_subfuncret, loopdetect]
 		# loopdetect is an array of [obj, addr, from_type] of each end of block encountered
@@ -1269,7 +1287,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					next if f_type == :indirect
 					hadsomething = true
 					o_f_addr = f_addr
-					f_addr = @decoded[f_addr].block.list.last.address if @decoded[f_addr].kind_of? DecodedInstruction	# delay slot
+					f_addr = @decoded[f_addr].block.list.last.address if @decoded[f_addr].kind_of?(DecodedInstruction)	# delay slot
 					if l = w_loopdetect.find { |l_obj, l_addr, l_type| l_addr == f_addr and l_type == f_type }
 						f_obj = yield(:loop, w_obj, :looptrace => w_loopdetect[w_loopdetect.index(l)..-1], :loopdetect => w_loopdetect)
 						if f_obj and f_obj != w_obj	# should avoid infinite loops
@@ -1283,7 +1301,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					f_loopdetect ||= w_loopdetect
 					# only count non-trivial paths in loopdetect (ignore linear links)
 					add_detect = [[f_obj, f_addr, f_type]]
-					add_detect = [] if @decoded[f_addr].kind_of? DecodedInstruction and tmp = @decoded[f_addr].block and
+					add_detect = [] if @decoded[f_addr].kind_of?(DecodedInstruction) and tmp = @decoded[f_addr].block and
 							((w_di.block.from_subfuncret.to_a == [] and w_di.block.from_normal == [f_addr] and
 							 tmp.to_normal == [w_di.address] and tmp.to_subfuncret.to_a == []) or
 							(w_di.block.from_subfuncret == [f_addr] and tmp.to_subfuncret == [w_di.address]))
@@ -1296,7 +1314,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				each_xref(w_addr, :x) { |x|
 					f_addr = x.origin
 					o_f_addr = f_addr
-					f_addr = @decoded[f_addr].block.list.last.address if @decoded[f_addr].kind_of? DecodedInstruction	# delay slot
+					f_addr = @decoded[f_addr].block.list.last.address if @decoded[f_addr].kind_of?(DecodedInstruction)	# delay slot
 					if l = w_loopdetect.find { |l_obj, l_addr, l_type| l_addr == w_addr }
 						f_obj = yield(:loop, w_obj, :looptrace => w_loopdetect[w_loopdetect.index(l)..-1], :loopdetect => w_loopdetect)
 						if f_obj and f_obj != w_obj
@@ -1479,6 +1497,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	#  :only_upto => backtrace only to update bt_for for current block & previous ending at only_upto
 	#  :no_check => don't use backtrace_check_found (will not backtrace indirection static values)
 	#  :terminals => array of symbols with constant value (stop backtracking if all symbols in the expr are terminals) (only supported with no_check)
+	#  :ctx => disassembler context
 	def backtrace(expr, start_addr, nargs={})
 		include_start   = nargs.delete :include_start
 		from_subfuncret = nargs.delete :from_subfuncret
@@ -1495,6 +1514,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		only_upto       = nargs.delete :only_upto
 		no_check        = nargs.delete :no_check
 		terminals       = nargs.delete(:terminals) || []
+		ctx		= nargs.delete :ctx
 		raise ArgumentError, "invalid argument to backtrace #{nargs.keys.inspect}" if not nargs.empty?
 
 		expr = Expression[expr]
@@ -1515,7 +1535,7 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 		end
 
 		if vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) : backtrace_check_found(expr,
-				di, origin, type, len, maxdepth, detached, snapshot_addr))
+				di, origin, type, len, maxdepth, detached, ctx, snapshot_addr))
 			# no need to update backtracked_for
 			return vals
 		elsif maxdepth <= 0
@@ -1524,7 +1544,7 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 
 		# create initial backtracked_for
 		if type and origin == start_addr and di
-			btt = BacktraceTrace.new(expr, origin, origexpr, type, len, maxdepth-1)
+			btt = BacktraceTrace.new(expr, origin, origexpr, type, len, maxdepth-1, ctx)
 			btt.address = di.address
 			btt.exclude_instr = true if not include_start
 			btt.from_subfuncret = true if from_subfuncret and include_start
@@ -1545,9 +1565,9 @@ puts "backtracking #{type} #{expr} from #{di || Expression[start_addr || 0]} for
 			when :unknown_addr, :maxdepth
 puts "  backtrace end #{ev} #{expr}" if debug_backtrace
 				result |= [expr] if not snapshot_addr
-				@addrs_todo << [expr, (detached ? nil : origin)] if not snapshot_addr and type == :x and origin
+				@addrs_todo << { :addr => expr, :from => (detached ? nil : origin), :ctx => ctx } if not snapshot_addr and type == :x and origin
 			when :end
-				if not expr.kind_of? StoppedExpr
+				if not expr.kind_of?(StoppedExpr)
 					oldexpr = expr
 					expr = backtrace_emu_blockup(h[:addr], expr)
 puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if debug_backtrace
@@ -1555,7 +1575,7 @@ puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr}#{" => #{expr}" if expr 
 					if expr != oldexpr and not snapshot_addr and vals = (no_check ?
 							(!need_backtrace(expr, terminals) and [expr]) :
 							backtrace_check_found(expr, nil, origin, type, len,
-								maxdepth-h[:loopdetect].length, detached, snapshot_addr))
+								maxdepth-h[:loopdetect].length, detached, ctx, snapshot_addr))
 						result |= vals
 						next
 					end
@@ -1564,14 +1584,14 @@ puts "  backtrace end #{ev} #{expr}" if debug_backtrace
 				if not snapshot_addr
 					result |= [expr]
 
-					btt = BacktraceTrace.new(expr, origin, origexpr, type, len, maxdepth-h[:loopdetect].length-1)
+					btt = BacktraceTrace.new(expr, origin, origexpr, type, len, maxdepth-h[:loopdetect].length-1, ctx)
 					btt.detached = true if detached
 					@decoded[h[:addr]].block.backtracked_for |= [btt] if @decoded[h[:addr]]
 					@function[h[:addr]].backtracked_for |= [btt] if @function[h[:addr]] and h[:addr] != :default
-					@addrs_todo << [expr, (detached ? nil : origin)] if type == :x and origin
+					@addrs_todo << { :addr => expr, :from => (detached ? nil : origin), :ctx => ctx } if type == :x and origin
 				end
 			when :stopaddr
-				if not expr.kind_of? StoppedExpr
+				if not expr.kind_of?(StoppedExpr)
 					oldexpr = expr
 					expr = backtrace_emu_blockup(h[:addr], expr)
 puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if debug_backtrace
@@ -1580,7 +1600,7 @@ puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr}#{" => #{expr}" if expr 
 puts "  backtrace end #{ev} #{expr}" if debug_backtrace
 				result |= ((expr.kind_of?(StoppedExpr)) ? expr.exprs : [expr])
 			when :loop
-				next false if expr.kind_of? StoppedExpr
+				next false if expr.kind_of?(StoppedExpr)
 				t = h[:looptrace]
 				oldexpr = t[0][0]
 				next false if expr == oldexpr		# unmodifying loop
@@ -1597,7 +1617,7 @@ puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#
 
 				if expr != oldexpr and vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) :
 						backtrace_check_found(expr, @decoded[h[:from]], origin, type, len,
-							maxdepth-h[:loopdetect].length, detached, snapshot_addr))
+							maxdepth-h[:loopdetect].length, detached, ctx, snapshot_addr))
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 						next expr
@@ -1619,7 +1639,7 @@ puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#
 						end
 					}
 
-					btt = BacktraceTrace.new(expr, origin, origexpr, type, len, maxdepth-h[:loopdetect].length-1)
+					btt = BacktraceTrace.new(expr, origin, origexpr, type, len, maxdepth-h[:loopdetect].length-1, ctx)
 					btt.detached = true if detached
 					if x = di_at(h[:from])
 						update_btf[x.block.backtracked_for, btt]
@@ -1643,7 +1663,7 @@ puts "   already backtraced" if debug_backtrace
 				end
 				expr
 			when :di, :func
-				next if expr.kind_of? StoppedExpr
+				next if expr.kind_of?(StoppedExpr)
 				if not snapshot_addr and @cpu.backtrace_is_stack_address(expr)
 puts "  not backtracking stack address #{expr}" if debug_backtrace
 					next false
@@ -1666,7 +1686,7 @@ puts "  backtrace: recursive function #{Expression[h[:funcaddr]]}" if debug_back
 				end
 puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" if debug_backtrace and expr != oldexpr
 				if vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) : backtrace_check_found(expr,
-						h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached, snapshot_addr))
+						h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached, ctx, snapshot_addr))
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 					else
@@ -1698,7 +1718,7 @@ puts '  backtrace result: ' + result.map { |r| Expression[r] }.join(', ') if deb
 				not need_backtrace(retaddr)
 puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if debug_backtrace
 			di.block.add_to_subfuncret normalize(retaddr)
-			if @decoded[funcaddr].kind_of? DecodedInstruction
+			if @decoded[funcaddr].kind_of?(DecodedInstruction)
 				# check that all callers :saveip returns (eg recursive call that was resolved
 				# before we found funcaddr was a function)
 				@decoded[funcaddr].block.each_from_normal { |fm|
@@ -1716,17 +1736,17 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 				todo = []
 				di.block.each_to_normal { |t| todo << normalize(t) }
 				while a = todo.pop
-					next if faddrlist.include? a or not get_section_at(a)
+					next if faddrlist.include?(a) or not get_section_at(a)
 					faddrlist << a
-					if @decoded[a].kind_of? DecodedInstruction
+					if @decoded[a].kind_of?(DecodedInstruction)
 						@decoded[a].block.each_to_samefunc(self) { |t| todo << normalize(t) }
 					end
 				end
 
-				idx = @addrs_todo.index(@addrs_todo.find { |r, i, sfr| faddrlist.include? normalize(r) }) || -1
-				@addrs_todo.insert(idx, [retaddr, instraddr, true])
+				idx = @addrs_todo.index(@addrs_todo.find { |a| faddrlist.include? normalize(a[:addr]) }) || -1
+				@addrs_todo.insert(idx, { :addr => retaddr, :from => instraddr, :from_subfuncret => true, :ctx => btt.ctx })
 			else
-				@addrs_todo << [retaddr, instraddr, true]
+				@addrs_todo << { :addr => retaddr, :from => instraddr, :from_subfuncret => true, :ctx => btt.ctx }
 			end
 			true
 		end
@@ -1783,7 +1803,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# TODO trace expr evolution through backtrace, to modify immediates to an expr involving label names
 	# TODO mov [ptr], imm ; <...> ; jmp [ptr] => rename imm as loc_XX
 	#  eg. mov eax, 42 ; add eax, 4 ; jmp eax  =>  mov eax, some_label-4
-	def backtrace_check_found(expr, di, origin, type, len, maxdepth, detached, snapshot_addr=nil)
+	def backtrace_check_found(expr, di, origin, type, len, maxdepth, detached, ctx, snapshot_addr=nil)
 		# only entrypoints or block starts called by a :saveip are checked for being a function
 		# want to execute [esp] from a block start
 		if type == :x and di and di == di.block.list.first and @cpu.backtrace_is_function_return(expr, @decoded[origin]) and (
@@ -1825,7 +1845,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 
 		# create xrefs/labels
 		result.each { |e|
-			backtrace_found_result(e, di, type, origin, len, detached)
+			backtrace_found_result(e, di, type, origin, len, detached, ctx)
 		} if type and origin
 
 		result
@@ -1954,7 +1974,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	end
 
 	# creates xrefs, updates addrs_todo, updates instr args
-	def backtrace_found_result(expr, di, type, origin, len, detached)
+	def backtrace_found_result(expr, di, type, origin, len, detached, ctx)
 		n = normalize(expr)
 		fallthrough = true if type == :x and o = di_at(origin) and not o.opcode.props[:stopexec] and n == o.block.list.last.next_addr	# delay_slot
 		add_xref(n, Xref.new(type, origin, len)) if origin != :default and origin != Expression::Unknown and not fallthrough
@@ -2013,7 +2033,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			else
 				@decoded[origin].block.add_to_normal(normalize(n)) if @decoded[origin] and not unk
 			end
-			@addrs_todo << [n, origin]
+			@addrs_todo << { :addr => n, :from => origin, :ctx => ctx }
 		end
 	end
 
