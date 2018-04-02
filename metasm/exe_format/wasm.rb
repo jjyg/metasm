@@ -31,7 +31,8 @@ class WasmFile < ExeFormat
 	OPCODE_IMM_COUNT[0x11] = 2
 	(0x20..0x24).each { |op| OPCODE_IMM_COUNT[op] = 1 }
 	(0x28..0x3e).each { |op| OPCODE_IMM_COUNT[op] = 2 }
-	(0x3f..0x44).each { |op| OPCODE_IMM_COUNT[op] = 1 }
+	(0x3f..0x42).each { |op| OPCODE_IMM_COUNT[op] = 1 }
+	# 0x43 followed by uint32, 0x44 followed by uint64 (float constants)
 	# end WTF
 
 
@@ -149,6 +150,10 @@ class WasmFile < ExeFormat
 				# indirect branch wtf
 				decode_uleb(edata).times { decode_uleb(edata) }
 				decode_uleb(edata)
+			when 0x43
+				edata.read(4)
+			when 0x44
+				edata.read(8)
 			else
 				OPCODE_IMM_COUNT[op].times {
 					decode_uleb(edata)
