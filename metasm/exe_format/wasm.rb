@@ -12,7 +12,7 @@ require 'metasm/decode'
 module Metasm
 # WebAssembly
 # leb integer encoding taken from dex.rb
-class WASM < ExeFormat
+class WasmFile < ExeFormat
 	MAGIC = "\0asm"
 	MAGIC.force_encoding('binary') if MAGIC.respond_to?(:force_encoding)
 
@@ -42,7 +42,7 @@ class WASM < ExeFormat
 
 	class Header < SerialStruct
 		mem :sig, 4, MAGIC
-		decode_hook { |exe, hdr| raise InvalidExeFormat, "E: invalid WASM signature #{hdr.sig.inspect}" if hdr.sig != MAGIC }
+		decode_hook { |exe, hdr| raise InvalidExeFormat, "E: invalid WasmFile signature #{hdr.sig.inspect}" if hdr.sig != MAGIC }
 		u4 :ver, 1
 	end
 
@@ -50,10 +50,7 @@ class WASM < ExeFormat
 		uleb :id
 		fld_enum :id, SECTION_NAME
 		uleb :payload_len
-		# if id == 0, this in not a well-known module, then the name is encoded here (uleb name length + actual name)
-		# payload_len counts this field in the edata
-		#new_field(:name, lambda { |exe, hdr| exe.encoded.read(exe.decode_uleb) if hdr.id == 0 }, lambda { |exe, hdr, val| exe.encode_uleb(val.length) + val if hdr.id == 0 }, lambda { |exe, hdr| hdr.id == 0 ? 0 : 1 }, 0)
-		attr_accessor :edata, :raw_offset
+		attr_accessor :edata, :raw_offset, :name
 
 		def decode(exe)
 			@raw_offset = exe.encoded.ptr
@@ -119,6 +116,11 @@ class WASM < ExeFormat
 		type
 	end
 
+	def type_to_s(t)
+		return t unless t.kind_of?(::Hash)
+		t[:ret].map { |tt| type_to_s(tt) }.join(', ') << ' f(' << t[:params].map { |tt| type_to_s(tt) }.join(', ') << ')'
+	end
+
 	def decode_limits(edata=@encoded)
 		flags = decode_uleb(edata)
 		out = { :initial_size => decode_uleb(edata) }
@@ -170,6 +172,11 @@ class WASM < ExeFormat
 			f = "decode_module_#{m.id.to_s.downcase}"
 			send(f, m) if respond_to?(f)
 		}
+		export.to_a.each { |e|
+			next if e[:kind] != 'function'	# TODO resolve init_offset for globals etc?
+			off = function_body.to_a[e[:index]]
+			@encoded.add_export(new_label(e[:field]), off, true) if off
+		}
 	end
 
 	def decode_module_type(m)
@@ -182,15 +189,13 @@ class WASM < ExeFormat
 	def decode_module_import(m)
 		@import = []
 		decode_uleb(m.edata).times {
-			mlen = decode_uleb(m.edata)
-			mod = m.edata.read(mlen)
-			flen = decode_uleb(m.edata)
-			fld = m.edata.read(flen)
+			mod = m.edata.read(decode_uleb(m.edata))
+			fld = m.edata.read(decode_uleb(m.edata))
 			kind = decode_uleb(m.edata)
 			kind = { :kind => EXTERNAL_KIND[kind] || kind }
 			case kind[:kind]
 			when 'function'
-				kind[:type] = @type[decode_uleb(m.edata)]
+				kind[:type] = @type[decode_uleb(m.edata)]	# XXX keep index only, in case @type is not yet known ?
 			when 'table'
 				kind[:type] = decode_type(m.edata)
 				kind[:limits] = decode_limits(m.edata)
@@ -230,6 +235,7 @@ class WASM < ExeFormat
 		@global = []
 		decode_uleb(m.edata).times {
 			@global << { :type => decode_type(m.edata), :init_offset => read_code_until_end(m) }
+			@encoded.add_export new_label("global_#{@global.length-1}_init"), @global.last[:init_offset]
 		}
 	end
 
@@ -259,6 +265,7 @@ class WASM < ExeFormat
 				seg[:elems] << decode_uleb(m.edata) 
 			}
 			@element << seg
+			@encoded.add_export new_label("element_#{@element.length-1}_init_addr"), @element.last[:init_offset]
 		}
 	end
 
@@ -277,7 +284,8 @@ class WASM < ExeFormat
 			}
 			code_offset = m.raw_offset + m.edata.ptr	# bytecode comes next
 			m.edata.ptr = next_ptr
-			@function_body << { :local_vars => local_vars, :init_offset => code_offset }
+			@function_body << { :local_var => local_vars, :init_offset => code_offset }
+			@encoded.add_export new_label("function_#{@function_body.length-1}"), @function_body.last[:init_offset]
 		}
 	end
 
@@ -287,11 +295,34 @@ class WASM < ExeFormat
 			@data << { :index => decode_uleb(m.edata),
 				   :init_offset => read_code_until_end(m),
 				   :data => m.edata.read(decode_uleb(m.edata)) }
+			@encoded.add_export new_label("data_#{@data.length-1}_init_addr"), @data.last[:init_offset]
 		}
 	end
 
+	def decode_module_0(m)
+		# id == 0 for not well-known modules
+		# the module name is encoded at start of payload (uleb name length + actual name)
+		m.name = m.edata.read(decode_uleb(m.edata))
+		f = "decode_module_0_#{m.name.downcase}"
+		send(f, m) if respond_to?(f)
+	end
+
+	def decode_module_0_name(m)
+		# TODO parse stored names of local variables etc
+	end
+
 	def cpu_from_headers
-		WasmCPU.new(self)
+		WebAsm.new(self)
+	end
+
+	def init_disassembler
+		dasm = super()
+		@function_body.each_with_index { |fb, i|
+			p = @function_signature[i] if function_signature
+			v = fb[:local_var].map { |lv| type_to_s(lv) }.join(' ; ')
+			dasm.comment[fb[:init_offset]] = ["proto: #{p || 'unknown'}", "vars: #{v}"]
+		}
+		dasm
 	end
 
 	def each_section
@@ -299,7 +330,10 @@ class WASM < ExeFormat
 	end
 
 	def get_default_entrypoints
-		[]
+		global.to_a.map { |g| g[:init_offset] } +
+		element.to_a.map { |e| e[:init_offset] } +
+		data.to_a.map { |d| d[:init_offset] } +
+		function_body.to_a.map { |f| f[:init_offset] }
 	end
 end
 end
