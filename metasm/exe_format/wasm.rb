@@ -94,7 +94,7 @@ class WasmFile < ExeFormat
 	def decode_sleb(ed = @encoded) decode_uleb(ed, true) end
 	attr_accessor :header, :modules, :type, :import, :function_signature,
 		:table, :memory, :global, :export, :start_function_index,
-		:element, :function_body
+		:element, :function_body, :data
 
 	def initialize(endianness=:little)
 		@endianness = endianness
