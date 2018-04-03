@@ -288,9 +288,9 @@ class DisasmWidget < ContainerChoiceWidget
 				@dasm.function[t] ||= @dasm.function[:default] ? @dasm.function[:default].dup : DecodedFunction.new
 			}
 			di.block.add_to_subfuncret(di.next_addr)
-			@dasm.addrs_todo << [di.next_addr, addr, true]
+			@dasm.addrs_todo << { :addr => di.next_addr, :from => addr, :from_subfuncret => true }
 		elsif addr
-			@dasm.addrs_todo << [addr]
+			@entrypoints << addr
 		end
 		start_disassemble_bg
 	end
@@ -665,7 +665,7 @@ class DisasmWidget < ContainerChoiceWidget
 			true
 		elsif @dasm_pause.empty?
 			@dasm_pause = @dasm.addrs_todo.dup
-			@dasm.addrs_todo.replace @dasm_pause.find_all { |a, *b| @dasm.decoded[@dasm.normalize(a)] }
+			@dasm.addrs_todo.replace @dasm_pause.find_all { |a| @dasm.decoded[@dasm.normalize(a[:addr])] }
 			@dasm_pause -= @dasm.addrs_todo
 			puts "dasm paused (#{@dasm_pause.length})"
 		else

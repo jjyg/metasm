@@ -927,7 +927,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# disassembles fast from a list of entrypoints
 	# see disassemble_fast_step
 	def disassemble_fast(entrypoint, maxdepth=-1, &b)
-		todo = [{ :addr => entrypoint }]
+		todo = [{ :addr => entrypoint, :cpu_context => get_initial_cpu_context(entrypoint) }]
 		until todo.empty?
 			disassemble_fast_step(todo, &b)
 			maxdepth -= 1
@@ -1743,7 +1743,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 					end
 				end
 
-				idx = @addrs_todo.index(@addrs_todo.find { |a| faddrlist.include? normalize(a[:addr]) }) || -1
+				idx = @addrs_todo.index(@addrs_todo.find { |aa| faddrlist.include? normalize(aa[:addr]) }) || -1
 				@addrs_todo.insert(idx, { :addr => retaddr, :from => instraddr, :from_subfuncret => true, :cpu_context => btt.cpu_context })
 			else
 				@addrs_todo << { :addr => retaddr, :from => instraddr, :from_subfuncret => true, :cpu_context => btt.cpu_context }
