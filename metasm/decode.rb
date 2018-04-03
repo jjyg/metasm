@@ -180,10 +180,14 @@ class Expression
 end
 
 class CPU
+	def bin_lookaside
+		@bin_lookaside ||= build_bin_lookaside
+	end
+
 	# decodes the instruction at edata.ptr, mapped at virtual address off
 	# returns a DecodedInstruction or nil
 	def decode_instruction(edata, addr)
-		@bin_lookaside ||= build_bin_lookaside
+		bin_lookaside
 		di = decode_findopcode edata if edata.ptr <= edata.length
 		di.address = addr if di
 		di = decode_instr_op(edata, di) if di
