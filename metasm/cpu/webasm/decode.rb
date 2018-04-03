@@ -28,31 +28,63 @@ class WebAsm
 		v
 	end
 
-	# implement a DecodedInstruction cache because we need to repeatedly decode opcodes to resolve code flow
-	def get_di_cache(edata)
-		@di_cache ||= {}
-		@di_cache[[edata.object_id, edata.ptr]]
+	# when starting disassembly, pre-decode all instructions until the final 'end' and fixup the xrefs (if/block/loop...)
+	def disassemble_init_context(dasm, addr)
+		cache = {}
+		stack = []
+		loop do
+			di = dasm.disassemble_instruction(addr)
+			cache[addr] = di
+			case di.opcode.name
+			when 'if', 'loop', 'block'
+				stack << [di]
+			when 'else'
+				raise "bad else #{stack.last.inspect}" if stack.last.length != 1 or stack.last.last.opcode.name != 'if'
+				stack.last.each { |ddi| ddi.misc = { :x => di.next_addr } }	# if points past here
+				stack.last.shift	# remove if from list
+				stack.last << di
+			when 'br', 'br_if'
+				# tg = stack[-arg[0]]
+				# if loop: set misc[:x]
+				# if block: stack[-arg] << di
+			when 'br_table'
+			when 'end'
+				ops = stack.pop
+				if not ops
+					# stack empty: end of func
+					di.opcode = @opcode_list.find { |op| op.name == 'end' and op.props[:stopexec] and not op.props[:setip] }
+
+					break
+				elsif ops.first.opcode.name == 'loop'
+					# end of loop
+					di.opcode = @opcode_list.find { |op| op.name == 'end' and op.props[:stopexec] and op.props[:setip] }
+					di.misc = { :x => ops.first.address }
+				else
+					# end of if/else/block
+					di.opcode = @opcode_list.find { |op| op.name == 'end' and not op.props[:stopexec] and not op.props[:setip] }
+					ops.each { |ddi| ddi.misc = { :x => di.address } }
+				end
+			end
+			addr = di.next_addr
+		end
+
+		{ :di_cache => cache }
 	end
-	def set_di_cache(edata, di)
-		@di_cache ||= {}
-		@di_cache[[edata.object_id, edata.ptr - di.bin_length]] = di
+
+	# reuse the instructions from the cache
+	def decode_instruction_context(edata, di_addr, ctx)
+		if ctx
+			ctx[:di_cache][di_addr]
+		end or super(edata, di_addr, ctx)
 	end
 
 	def decode_findopcode(edata)
-		di = get_di_cache(edata)
-		return di if di
-
-		return if edata.ptr >= edata.length
-
 		di = DecodedInstruction.new(self)
-		di.bin_length = 1
 		val = edata.decode_imm(:u8, @endianness)
-		di if di.opcode = @bin_lookaside[val].first
+		di if di.opcode = bin_lookaside[val].first
 	end
 
 	def decode_instr_op(edata, di)
-		return di if di.instruction.opname	# already cached
-
 		before_ptr = edata.ptr
 		op = di.opcode
 		di.instruction.opname = op.name
@@ -69,12 +101,7 @@ class WebAsm
 			end
 		}
 
-		di.bin_length += edata.ptr - before_ptr
-
-		return if edata.ptr > edata.length
-
-		set_di_cache(edata, di)
-
+		di.bin_length = 1 + edata.ptr - before_ptr
 		di
 	end
 
@@ -109,56 +136,7 @@ class WebAsm
 
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
-
-		out = []
-
-		case di.opcode.name
-		when 'if'
-			stack = []
-			iter_di(dasm, di) { |ddi|
-				case ddi.opcode.name
-				when 'if', 'loop', 'block'
-					stack << di.opcode.name
-				when 'else'
-					if stack.empty?
-						out << ddi.next_addr
-						break
-					end
-				when 'end'
-					if stack.empty?
-						out << ddi.next_addr
-						break
-					else
-						stack.pop
-					end
-				end
-			}
-		when 'else'
-			stack = []
-			iter_di(dasm, di) { |ddi|
-				case ddi.opcode.name
-				when 'if', 'loop', 'block'
-					stack << di.opcode.name
-				when 'end'
-					if stack.empty?
-						out << ddi.next_addr
-						break
-					else
-						stack.pop
-					end
-				end
-			}
-		end
-
-		out
-	end
-
-	def iter_di(dasm, di)
-		addr = di.next_addr
-		while ddi = dasm.di_at(addr) || dasm.disassemble_instruction(addr)
-			addr = ddi.next_addr
-			yield ddi
-		end
+		di.misc ? [di.misc[:x]] : []
 	end
 end
 end
