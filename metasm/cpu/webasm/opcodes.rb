@@ -34,8 +34,7 @@ class WebAsm
 		addop 'if',            0x04, :sleb, :setip	# ^
 		addop 'else',          0x05, :setip, :stopexec
 		addop 'end',           0x0b, :stopexec		# end of function (default with no function context)
-		addop 'end',           0x0b, :setip, :stopexec	# end of loop
-		addop 'end',           0x0b			# end of if/else/block
+		addop 'end',           0x0b			# end of if/else/block/loop
 		addop 'br',            0x0c, :uleb, :setip, :stopexec	# arg = depth to break up to
 		addop 'br_if',         0x0d, :uleb, :setip
 		addop 'br_table',      0x0e, :br_table, :setip, :stopexec

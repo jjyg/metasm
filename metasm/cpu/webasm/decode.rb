@@ -31,7 +31,8 @@ class WebAsm
 	# when starting disassembly, pre-decode all instructions until the final 'end' and fixup the xrefs (if/block/loop...)
 	def disassemble_init_context(dasm, addr)
 		cache = {}
-		stack = []
+		stack = [[]]
+		set_misc_x = lambda { |di, tg| di.misc ||= { :x => [] } ; di.misc[:x] |= [tg] }
 		loop do
 			di = dasm.disassemble_instruction(addr)
 			cache[addr] = di
@@ -39,30 +40,33 @@ class WebAsm
 			when 'if', 'loop', 'block'
 				stack << [di]
 			when 'else'
-				raise "bad else #{stack.last.inspect}" if stack.last.length != 1 or stack.last.last.opcode.name != 'if'
-				stack.last.each { |ddi| ddi.misc = { :x => di.next_addr } }	# if points past here
-				stack.last.shift	# remove if from list
-				stack.last << di
-			when 'br', 'br_if'
-				# tg = stack[-arg[0]]
-				# if loop: set misc[:x]
-				# if block: stack[-arg] << di
-			when 'br_table'
-			when 'end'
-				ops = stack.pop
-				if not ops
-					# stack empty: end of func
-					di.opcode = @opcode_list.find { |op| op.name == 'end' and op.props[:stopexec] and not op.props[:setip] }
-
-					break
-				elsif ops.first.opcode.name == 'loop'
-					# end of loop
-					di.opcode = @opcode_list.find { |op| op.name == 'end' and op.props[:stopexec] and op.props[:setip] }
-					di.misc = { :x => ops.first.address }
+				raise "bad else #{stack.last.inspect}" if stack.last.empty? or stack.last.last.opcode.name != 'if'
+				stack.last.each { |ddi| set_misc_x[ddi, di.next_addr] }	# 'if' points past here
+				stack.last[0] = di	# 'else' replace 'if'
+			when 'br', 'br_if', 'br_table'
+				if di.opcode.name == 'br_table'
+					depths = di.instruction.args.first.ary.uniq | [di.instruction.args.first.default]
 				else
-					# end of if/else/block
-					di.opcode = @opcode_list.find { |op| op.name == 'end' and not op.props[:stopexec] and not op.props[:setip] }
-					ops.each { |ddi| ddi.misc = { :x => di.address } }
+					depths = [di.instruction.args.first.reduce]
+				end
+				depths.each { |depth|
+					tg = stack[-depth-1] # XXX skip if/else in the stack ?
+					raise "bad br #{di}" if not tg
+					if tg.first.opcode.name == 'loop'
+						set_misc_x[di, tg.first.address]
+					else
+						tg << di
+					end
+				}
+			when 'end'
+				dis = stack.pop
+				dis.each { |ddi| set_misc_x[ddi, di.address] if ddi.opcode.name != 'loop' and ddi.opcode.name != 'block' }
+				if stack.empty?
+					# stack empty: end of func
+					di.opcode = @opcode_list.find { |op| op.name == 'end' and op.props[:stopexec] }
+					break
+				else
+					di.opcode = @opcode_list.find { |op| op.name == 'end' and not op.props[:stopexec] }
 				end
 			end
 			addr = di.next_addr
@@ -136,7 +140,7 @@ class WebAsm
 
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
-		di.misc ? [di.misc[:x]] : []
+		di.misc ? [di.misc[:x]].flatten : []
 	end
 end
 end
