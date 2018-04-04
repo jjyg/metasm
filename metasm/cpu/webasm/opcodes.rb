@@ -29,9 +29,9 @@ class WebAsm
 
 		addop 'unreachable',   0x00, :stopexec
 		addop 'nop',           0x01
-		addop 'block',         0x02, :sleb		# arg = signature (block_type)
-		addop 'loop',          0x03, :sleb		# ^
-		addop 'if',            0x04, :sleb, :setip	# ^
+		addop 'block',         0x02, :blocksig		# arg = signature (block_type)
+		addop 'loop',          0x03, :blocksig		# ^
+		addop 'if',            0x04, :blocksig, :setip	# ^
 		addop 'else',          0x05, :setip, :stopexec
 		addop 'end',           0x0b, :stopexec		# end of function (default with no function context)
 		addop 'end',           0x0b			# end of if/else/block/loop
@@ -39,7 +39,7 @@ class WebAsm
 		addop 'br_if',         0x0d, :uleb, :setip
 		addop 'br_table',      0x0e, :br_table, :setip, :stopexec
 		addop 'return',        0x0f, :stopexec
-		addop 'call',          0x10, :uleb, :setip	# function index
+		addop 'call',          0x10, :uleb, :setip, :saveip, :stopexec	# function index
 		addop 'call_indirect', 0x11, :uleb, :uleb	# type index for target function signature ; fixed 1 
 
 		addop 'drop',   0x1a

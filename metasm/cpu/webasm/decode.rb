@@ -33,8 +33,7 @@ class WebAsm
 		cache = {}
 		stack = [[]]
 		set_misc_x = lambda { |di, tg| di.misc ||= { :x => [] } ; di.misc[:x] |= [tg] }
-		loop do
-			di = dasm.disassemble_instruction(addr)
+		while di = dasm.disassemble_instruction(addr)
 			cache[addr] = di
 			case di.opcode.name
 			when 'if', 'loop', 'block'
@@ -52,7 +51,7 @@ class WebAsm
 				depths.each { |depth|
 					tg = stack[-depth-1] # XXX skip if/else in the stack ?
 					raise "bad br #{di}" if not tg
-					if tg.first.opcode.name == 'loop'
+					if tg.first and tg.first.opcode.name == 'loop'
 						set_misc_x[di, tg.first.address]
 					else
 						tg << di
@@ -100,12 +99,24 @@ class WebAsm
 			when :memoff; Memref.new(decode_uleb(edata))
 			when :uleb; Expression[decode_uleb(edata)]
 			when :sleb; Expression[decode_uleb(edata, true)]
+			when :blocksig; BlockSignature.new(decode_uleb(edata, true))
 			when :br_table; decode_br_table(edata)
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
 
 		di.bin_length = 1 + edata.ptr - before_ptr
+		di
+	end
+
+	def decode_instr_interpret(di, addr)
+		if di.opcode.name == 'call'
+			fnr = di.instruction.args.first.reduce
+			if @wasm_file and @wasm_file.function_body and f = @wasm_file.function_body[fnr]
+				di.instruction.args[0] = Expression[f[:init_offset]]
+				di.misc = { :x => f[:init_offset] }
+			end
+		end
 		di
 	end
 
@@ -122,6 +133,10 @@ class WebAsm
 
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
 			@backtrace_binding[op] ||= case op
+			when 'call'; lambda { |di, *a|
+				{ :callstack => Expression[:callstack, :+, 1], Indirection[:callstack, 1] => Expression[di.next_addr] } }
+			when 'end', 'return'; lambda { |di, *a|
+				{ :callstack => Expression[:callstack, :-, 1] } if di.opcode.props[:stopexec] }
 			when 'nop'; lambda { |di| {} }
 			end
 		}
@@ -139,8 +154,29 @@ class WebAsm
 	end
 
 	def get_xrefs_x(dasm, di)
+		if di.opcode.props[:stopexec]
+			case di.opcode.name
+			when 'return', 'end'
+				return [Indirection[:callstack, 1]]
+			end
+		end
 		return [] if not di.opcode.props[:setip]
+
 		di.misc ? [di.misc[:x]].flatten : []
+	end
+
+	def backtrace_is_function_return(expr, di=nil)
+		expr == Expression[Indirection[:callstack, 1]]
+	end
+
+	def disassembler_default_func
+		df = DecodedFunction.new
+		df.backtrace_binding = { :callstack => Expression[:callstack, :-, 1] }
+		df
+	end
+
+	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist, *wantregs)
+		f.backtrace_binding = { :callstack => Expression[:callstack, :-, 1] }
 	end
 end
 end

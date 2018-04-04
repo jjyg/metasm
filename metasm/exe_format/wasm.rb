@@ -21,7 +21,7 @@ class WasmFile < ExeFormat
 			 9 => 'Element', 10 => 'Code', 11 => 'Data' }
 
 	TYPE = { -1 => 'i32', -2 => 'i64', -3 => 'f32', -4 => 'f64',
-		 -0x10 => 'anyfunc', -0x20 => 'func', -0x40 => 'block' }
+		 -0x10 => 'anyfunc', -0x20 => 'func', -0x40 => 'none' }
 
 	EXTERNAL_KIND = { 0 => 'function', 1 => 'table', 2 => 'memory', 3 => 'global' }
 

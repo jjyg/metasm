@@ -943,7 +943,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		addr = normalize(x[:addr])
 
 		if di = @decoded[addr]
-			if di.kind_of? DecodedInstruction
+			if di.kind_of?(DecodedInstruction)
 				split_block(di.block, di.address) if not di.block_head?
 				di.block.add_from(x[:from], x[:from_subfuncret] ? :subfuncret : :normal) if x[:from] and x[:from] != :default
 			end
@@ -965,7 +965,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 	# check if an addr has an xref :x from a :saveip, if so mark as Function
 	def disassemble_fast_checkfunc(addr)
-		if @decoded[addr].kind_of? DecodedInstruction and not @function[addr]
+		if @decoded[addr].kind_of?(DecodedInstruction) and not @function[addr]
 			func = false
 			each_xref(addr, :x) { |x_|
 				func = true if odi = di_at(x_.origin) and odi.opcode.props[:saveip]
@@ -1205,7 +1205,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			next if not di = b.list.last
 			(di.opcode.props[:saveip] and b.to_normal.to_a.all? { |tfa|
 				tf = function_at(tfa) and tf.noreturn
-			}) or (di.opcode.props[:stopexec] and not di.opcode.props[:setip])
+			}) or (di.opcode.props[:stopexec] and not (di.opcode.props[:setip] or not get_xrefs_x(di).empty?))
 		}
 			# yay
 			@function[fa] ||= DecodedFunction.new

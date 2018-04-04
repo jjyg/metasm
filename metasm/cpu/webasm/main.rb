@@ -8,10 +8,12 @@ require 'metasm/main'
 module Metasm
 
 class WebAsm < CPU
-	def initialize(endianness = :little)
+	attr_accessor :wasm_file
+	def initialize(*args)
 		super()
-		@endianness = endianness
-		@size = 32
+		@size = args.grep(Integer).first || 32
+		@wasm_file = args.grep(ExeFormat).first
+		@endianness = args.delete(:little) || args.delete(:big) || (@wasm_file ? @wasm_file.endianness : :little)
 	end
 
 	class Memref
@@ -27,11 +29,9 @@ class WebAsm < CPU
 		end
 
 		include Renderable
-
 		def render
 			['[', @off, ']']
 		end
-
 	end
 
 	class BrTable
@@ -47,6 +47,23 @@ class WebAsm < CPU
 			@ary.each { |a| out << a << ', ' }
 			out.pop if out.length > 1
 			out << ']' << ' or ' << @default
+		end
+	end
+
+	class BlockSignature
+		attr_accessor :id
+
+		def initialize(id)
+			@id = id
+		end
+
+		def symbolic(di=nil)
+			Expression[@id]
+		end
+
+		include Renderable
+		def render
+			[WasmFile::TYPE.fetch(@id, Expression[@id])]
 		end
 	end
 
