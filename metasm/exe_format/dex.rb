@@ -333,16 +333,12 @@ class DEX < ExeFormat
 	def sizeof_u4 ; 4 ; end
 	def encode_uleb(val, signed=false)
 		v = val
-		# force_more_bytes: ensure sign bit is not mistaken as value when signed (eg encode 0x40 as 0x80, 0x40 ; not 0x40 (decoded as -0x40))
-		force_more_bytes = (signed and v & 0x40 > 0)
-		out = Expression[v & 0x7f].encode(:u8, @endianness)
-		v >>= 7
-		while v > 0 or v < -1 or force_more_bytes
-			force_more_bytes = (signed and v & 0x40 > 0)
-			out = Expression[0x80 | (v & 0x7f)].encode(:u8, @endianness) << out
+		out = EncodedData.new
+		while v > 0x7f or v < -0x40 or (signed and v > 0x3f)
+			out << Expression[0x80 | (v&0x7f)].encode(:u8, @endianness)
 			v >>= 7
 		end
-		out
+		out << Expression[v & 0x7f].encode(:u8, @endianness)
 	end
 	def decode_uleb(ed = @encoded, signed=false)
 		v = s = 0
