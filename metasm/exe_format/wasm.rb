@@ -328,6 +328,7 @@ class WasmFile < ExeFormat
 		global.to_a.each { |g|
 			dasm.add_comment g[:init_offset], "type: #{type_to_s(g[:type])}"
 		}
+		dasm.function[:default] = @cpu.disassembler_default_func
 		dasm
 	end
 

@@ -122,7 +122,9 @@ class WebAsm
 			fnr = di.instruction.args.first.reduce
 			if @wasm_file and @wasm_file.function_body and f = @wasm_file.function_body[fnr]
 				di.instruction.args[0] = Expression[f[:init_offset]]
-				di.misc = { :x => f[:init_offset] }
+				di.misc = { :x => [f[:init_offset]] }
+			else
+				di.misc = { :x => [:default] }
 			end
 		end
 		di
@@ -142,9 +144,9 @@ class WebAsm
 		opcode_list.map { |ol| ol.name }.uniq.each { |op|
 			@backtrace_binding[op] ||= case op
 			when 'call'; lambda { |di, *a|
-				{ :callstack => Expression[:callstack, :+, 1], Indirection[:callstack, 1] => Expression[di.next_addr] } }
+				{ :callstack => Expression[:callstack, :+, 8], Indirection[:callstack, 8] => Expression[di.next_addr] } }
 			when 'end', 'return'; lambda { |di, *a|
-				{ :callstack => Expression[:callstack, :-, 1] } if di.opcode.props[:stopexec] }
+				{ :callstack => Expression[:callstack, :-, 8] } if di.opcode.props[:stopexec] }
 			when 'nop'; lambda { |di| {} }
 			end
 		}
@@ -165,7 +167,7 @@ class WebAsm
 		if di.opcode.props[:stopexec]
 			case di.opcode.name
 			when 'return', 'end'
-				return [Indirection[:callstack, 1]]
+				return [Indirection[:callstack, 8]]
 			end
 		end
 		return [] if not di.opcode.props[:setip]
@@ -174,17 +176,19 @@ class WebAsm
 	end
 
 	def backtrace_is_function_return(expr, di=nil)
-		expr == Expression[Indirection[:callstack, 1]]
+		expr and Expression[expr] == Expression[Indirection[:callstack, 8]]
 	end
 
 	def disassembler_default_func
 		df = DecodedFunction.new
-		df.backtrace_binding = { :callstack => Expression[:callstack, :-, 1] }
+		ra = Indirection[:callstack, 8]
+		df.backtracked_for << BacktraceTrace.new(ra, :default, ra, :x, nil)
+		df.backtrace_binding = { :callstack => Expression[:callstack, :-, 8] }
 		df
 	end
 
 	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist, *wantregs)
-		f.backtrace_binding = { :callstack => Expression[:callstack, :-, 1] }
+		f.backtrace_binding = { :callstack => Expression[:callstack, :-, 8] }
 	end
 end
 end
