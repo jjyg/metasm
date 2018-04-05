@@ -30,7 +30,12 @@ class WebAsm
 
 	# when starting disassembly, pre-decode all instructions until the final 'end' and fixup the xrefs (if/block/loop...)
 	def disassemble_init_context(dasm, addr)
-		cache = {}
+		dasm.misc ||= {}
+		dasm.misc[:cpu_context] ||= {}
+		cache = dasm.misc[:cpu_context][:di_cache] ||= {}
+		addr = dasm.normalize(addr)
+		return dasm.misc[:cpu_context] if cache[addr]
+
 		stack = [[]]
 		set_misc_x = lambda { |di, tg| di.misc ||= { :x => [] } ; di.misc[:x] |= [tg] }
 		while di = dasm.disassemble_instruction(addr)
@@ -39,7 +44,7 @@ class WebAsm
 			when 'if', 'loop', 'block'
 				stack << [di]
 			when 'else'
-				raise "bad else #{stack.last.inspect}" if stack.last.empty? or stack.last.last.opcode.name != 'if'
+				raise "bad #{di} #{stack.last.inspect}" if stack.last.empty? or stack.last.last.opcode.name != 'if'
 				stack.last.each { |ddi| set_misc_x[ddi, di.next_addr] }	# 'if' points past here
 				stack.last[0] = di	# 'else' replace 'if'
 			when 'br', 'br_if', 'br_table'
@@ -50,7 +55,7 @@ class WebAsm
 				end
 				depths.each { |depth|
 					tg = stack[-depth-1] # XXX skip if/else in the stack ?
-					raise "bad br #{di}" if not tg
+					raise "bad #{di} (#{stack.length})" if not tg
 					if tg.first and tg.first.opcode.name == 'loop'
 						set_misc_x[di, tg.first.address]
 					else
@@ -71,18 +76,17 @@ class WebAsm
 			addr = di.next_addr
 		end
 
-		{ :dasm => dasm, :di_cache => cache }
+		dasm.misc[:cpu_context]
 	end
 
 	# reuse the instructions from the cache
-	def decode_instruction_context(edata, di_addr, ctx)
-		if ctx
-			if not ctx[:di_cache][di_addr]
-				c2 = disassemble_init_context(ctx[:dasm], di_addr)
-				ctx[:di_cache].update c2[:di_cache]
-			end
-			ctx[:di_cache][di_addr]
-		end or super(edata, di_addr, ctx)
+	def decode_instruction_context(dasm, edata, di_addr, ctx)
+		ctx ||= disassemble_init_context(dasm, di_addr)
+		if not ctx[:di_cache][di_addr]
+			di_addr = dasm.normalize(di_addr)
+			disassemble_init_context(dasm, di_addr)
+		end
+		ctx[:di_cache][di_addr]
 	end
 
 	def decode_findopcode(edata)

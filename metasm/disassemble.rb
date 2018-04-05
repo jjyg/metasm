@@ -295,7 +295,7 @@ class CPU
 	# decode an instruction with a dasm context
 	# context is a hash, should be modified inplace by the CPU
 	# will be passed to the next instruction(s) in the code flow
-	def decode_instruction_context(edata, di_addr, context)
+	def decode_instruction_context(dasm, edata, di_addr, context)
 		decode_instruction(edata, di_addr)
 	end
 
@@ -437,6 +437,8 @@ class Disassembler
 	attr_accessor :callback_finished
 	# pointer to the gui widget we're displayed in
 	attr_accessor :gui
+	# arbitrary data stored by other objects
+	attr_accessor :misc
 
 	@@backtrace_maxblocks = 50
 
@@ -831,7 +833,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			# decode instruction
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
 			cpu_context = cpu_context.dup if cpu_context
-			if not di = @cpu.decode_instruction_context(block.edata, di_addr, cpu_context)
+			if not di = @cpu.decode_instruction_context(self, block.edata, di_addr, cpu_context)
 				ed = block.edata
 				break if ed.ptr >= ed.length and get_section_at(di_addr) and di = block.list.last
 				puts "#{ed.ptr >= ed.length ? "end of section reached" : "unknown instruction #{ed.data[di_addr-block.address+block.edata_ptr, 4].to_s.unpack('H*').first}"} at #{Expression[di_addr]}" if $VERBOSE
@@ -1002,7 +1004,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			# decode instruction
 			block.edata.ptr = di_addr - block.address + block.edata_ptr
 			cpu_context = cpu_context.dup if cpu_context
-			if not di = @cpu.decode_instruction_context(block.edata, di_addr, cpu_context)
+			if not di = @cpu.decode_instruction_context(self, block.edata, di_addr, cpu_context)
 				break if block.edata.ptr >= block.edata.length and get_section_at(di_addr) and di = block.list.last
 				return ret
 			end
