@@ -71,12 +71,16 @@ class WebAsm
 			addr = di.next_addr
 		end
 
-		{ :di_cache => cache }
+		{ :dasm => dasm, :di_cache => cache }
 	end
 
 	# reuse the instructions from the cache
 	def decode_instruction_context(edata, di_addr, ctx)
 		if ctx
+			if not ctx[:di_cache][di_addr]
+				c2 = disassemble_init_context(ctx[:dasm], di_addr)
+				ctx[:di_cache].update c2[:di_cache]
+			end
 			ctx[:di_cache][di_addr]
 		end or super(edata, di_addr, ctx)
 	end
