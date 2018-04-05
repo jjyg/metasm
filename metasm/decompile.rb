@@ -23,6 +23,7 @@ class Decompiler
 		@dasm = dasm
 		@recurse = 1/0.0	# Infinity
 		@c_parser = cp || @dasm.cpu.new_cparser
+		@dasm.cpu.decompile_init(self) if @dasm.cpu.respond_to?(:decompile_init)
 	end
 
 	# decompile recursively function from an entrypoint, then perform global optimisation (static vars, ...)

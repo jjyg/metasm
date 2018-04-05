@@ -6,3 +6,4 @@
 
 require 'metasm/main'
 require 'metasm/cpu/webasm/decode'
+require 'metasm/cpu/webasm/decompile'
