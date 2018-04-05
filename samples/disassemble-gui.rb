@@ -51,6 +51,7 @@ OptionParser.new { |opt|
 	opt.on('-d', '--debug') { $DEBUG = $VERBOSE = true }
 	opt.on('-S <file>', '--session <sessionfile>', 'save user actions in this session file') { |a|  opts[:session] = a }
 	opt.on('-N', '--new-session', 'start new session, discard old one') { opts[:newsession] = true }
+	opt.on('-A', '--disassemble-all-entrypoints') { opts[:dasm_all] = true }
 }.parse!(ARGV)
 
 case exename = ARGV.shift
@@ -83,6 +84,7 @@ else
 end
 
 ep = ARGV.map { |arg| (?0..?9).include?(arg[0]) ? Integer(arg) : arg }
+ep += exe.get_default_entrypoints if opts[:dasm_all]
 
 if exe
 	dasm = exe.disassembler
@@ -104,6 +106,7 @@ elsif dbg
 		end
 	}
 end
+
 if dasm
 	w.display(dasm, ep)
 	opts[:plugin].to_a.each { |p|
@@ -130,3 +133,4 @@ end
 opts[:hookstr].to_a.each { |f| eval f }
 
 Metasm::Gui.main
+
