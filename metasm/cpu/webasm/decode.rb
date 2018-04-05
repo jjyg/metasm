@@ -141,13 +141,27 @@ class WebAsm
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 
-		opcode_list.map { |ol| ol.name }.uniq.each { |op|
-			@backtrace_binding[op] ||= case op
+		opstack = lambda { |off| Indirection[[:opstack, :+, off], 8] }
+		add_opstack = lambda { |delta, hash| { :opstack => Expression[:opstack, :+, delta] }.update hash }
+		global = lambda { |di| Indirection['global_%d' % Expression[di.instruction.args.first].reduce, 8] }
+		local = lambda { |di| ('local_%d' % Expression[di.instruction.args.first].reduce).to_sym }
+
+		opcode_list.map { |ol| ol.name }.uniq.each { |opname|
+			@backtrace_binding[opname] ||= case opname
 			when 'call'; lambda { |di, *a|
 				{ :callstack => Expression[:callstack, :+, 8], Indirection[:callstack, 8] => Expression[di.next_addr] } }
-			when 'end', 'return'; lambda { |di, *a|
+			when 'end', 'return'; lambda { |di|
 				{ :callstack => Expression[:callstack, :-, 8] } if di.opcode.props[:stopexec] }
 			when 'nop'; lambda { |di| {} }
+			when 'get_global'; lambda { |di| add_opstack[-8, opstack[0] => Expression[global[di]]] }
+			when 'set_global'; lambda { |di| add_opstack[ 8, global[di] => Expression[opstack[0]]] }
+			when 'get_local'; lambda { |di| add_opstack[-8, opstack[0] => Expression[local[di]]] }
+			when 'set_local'; lambda { |di| add_opstack[ 8, local[di] => Expression[opstack[0]]] }
+			when 'tee_local'; lambda { |di| add_opstack[ 0, local[di] => Expression[opstack[0]]] }
+			when 'i32.const'; lambda { |di| add_opstack[-8, opstack[0] => Expression[di.instruction.args.first.reduce]] }
+			when 'i64.const'; lambda { |di| add_opstack[-8, opstack[0] => Expression[di.instruction.args.first.reduce]] }
+			when 'i32.add'; lambda { |di| add_opstack[ 8, opstack[0] => Expression[opstack[0], :+, opstack[8]]] }
+			when 'i32.and'; lambda { |di| add_opstack[ 8, opstack[0] => Expression[opstack[0], :&, opstack[8]]] }
 			end
 		}
 
