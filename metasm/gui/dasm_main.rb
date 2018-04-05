@@ -60,6 +60,10 @@ class DisasmWidget < ContainerChoiceWidget
 		addview :cstruct,   CStructWidget.new(@dasm, self)
 
 		view(:listing).grab_focus
+
+		if ENV['METASM_DASM_PLUGINS']
+			ENV['METASM_DASM_PLUGINS'].split(',').each { |p| @dasm.load_plugin p }
+		end
 	end
 
 	attr_reader :dasm
