@@ -342,7 +342,7 @@ class DEX < ExeFormat
 	end
 	def decode_uleb(ed = @encoded, signed=false)
 		v = s = 0
-		while s < 5*7
+		while s < 10*7
 			b = ed.read(1).unpack('C').first.to_i
 			v |= (b & 0x7f) << s
 			s += 7
