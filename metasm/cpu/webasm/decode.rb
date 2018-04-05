@@ -141,8 +141,8 @@ class WebAsm
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 
-		opstack = lambda { |off| Indirection[[:opstack, :+, off], 8] }
-		add_opstack = lambda { |delta, hash| { :opstack => Expression[:opstack, :+, delta] }.update hash }
+		opstack = lambda { |off| Indirection[Expression[:opstack, :+, off].reduce, 8] }
+		add_opstack = lambda { |delta, hash| { :opstack => Expression[:opstack, :+, delta].reduce }.update hash }
 		global = lambda { |di| Indirection['global_%d' % Expression[di.instruction.args.first].reduce, 8] }
 		local = lambda { |di| ('local_%d' % Expression[di.instruction.args.first].reduce).to_sym }
 
