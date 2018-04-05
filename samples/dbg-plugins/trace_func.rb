@@ -92,7 +92,7 @@ end
 # retrieve an instructionblock, disassemble if needed
 def trace_get_block(addr)
 	# TODO trace all blocks from addr for which we know the target, stop on call / jmp [foo]
-	disassembler.disassemble_fast_block(addr)
+	disassembler.disassemble_fast(addr)
 	if di = disassembler.di_at(addr)
 		di.block
 	end

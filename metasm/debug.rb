@@ -460,7 +460,7 @@ class Debugger
 	# TODO make it so this doesn't interfere with other 'real' disassembler later commands, eg disassemble() or disassemble_fast_deep()
 	# (right now, when they see the block already present they stop all processing)
 	def init_bpx_disassemble(addr)
-		@disassembler.disassemble_fast_block(addr)
+		@disassembler.disassemble_fast(addr)
 		@disassembler.di_at(addr)
 	end
 
