@@ -113,6 +113,22 @@ class WasmFile < ExeFormat
 		type
 	end
 
+	# return the nth global
+	# use the @global array and the @import array
+	def get_global_nr(nr)
+		return @global[nr] if nr < @global.to_a.length
+		nr -= @global.to_a.length
+		@import.to_a.find_all { |i| i[:kind] == 'global' }[nr]
+	end
+
+	# return the nth function body
+	# use the @function_body array and the @import array
+	def get_function_nr(nr)
+		return @function_body[nr] if nr < @function_body.to_a.length
+		nr -= @function_body.to_a.length
+		@import.to_a.find_all { |i| i[:kind] == 'function' }[nr]
+	end
+
 	def type_to_s(t)
 		return t unless t.kind_of?(::Hash)
 		(t[:ret].map { |tt| type_to_s(tt) }.join(', ') << ' f(' << t[:params].map { |tt| type_to_s(tt) }.join(', ') << ')').strip
@@ -136,8 +152,7 @@ class WasmFile < ExeFormat
 			edata = @encoded
 		end
 
-		# XXX uleb / u8 ?
-		while op = decode_uleb(edata)
+		while op = edata.decode_imm(:u8, @endianness)
 			case op
 			when 0xb
 				# end opcode
@@ -151,9 +166,7 @@ class WasmFile < ExeFormat
 			when 0x44
 				edata.read(8)
 			else
-				OPCODE_IMM_COUNT[op].times {
-					decode_uleb(edata)
-				}
+				OPCODE_IMM_COUNT[op].times { decode_uleb(edata) }
 			end
 		end
 		raw_offset
@@ -191,31 +204,34 @@ class WasmFile < ExeFormat
 	def decode_module_import(m)
 		@import = []
 		decode_uleb(m.edata).times {
-			mod = m.edata.read(decode_uleb(m.edata))
-			fld = m.edata.read(decode_uleb(m.edata))
+			i = {}
+			i[:module] = m.edata.read(decode_uleb(m.edata))
+			i[:field] = m.edata.read(decode_uleb(m.edata))
 			kind = decode_uleb(m.edata)
-			kind = { :kind => EXTERNAL_KIND[kind] || kind }
-			case kind[:kind]
+			i[:kind] = EXTERNAL_KIND[kind] || kind
+			case i[:kind]
 			when 'function'
-				kind[:type] = @type[decode_uleb(m.edata)]	# XXX keep index only, in case @type is not yet known ?
+				i[:type] = @type[decode_uleb(m.edata)]	# XXX keep index only, in case @type is not yet known ?
 			when 'table'
-				kind[:type] = decode_type(m.edata)
-				kind[:limits] = decode_limits(m.edata)
+				i[:type] = decode_type(m.edata)
+				i[:limits] = decode_limits(m.edata)
 			when 'memory'
-				kind[:limits] = decode_limits(m.edata)
+				i[:limits] = decode_limits(m.edata)
 			when 'global'
-				kind[:type] = decode_type(m.edata)
-				kind[:mutable] = decode_uleb(m.edata)
+				i[:type] = decode_type(m.edata)
+				i[:mutable] = decode_uleb(m.edata)
 			end
-
-			@import << { :module => mod, :field => fld, :kind => kind }
+			@import << i
 		}
 	end
 
 	def decode_module_function(m)
 		@function_signature = []
+		idx = 0
 		decode_uleb(m.edata).times {
 			@function_signature << @type[decode_uleb(m.edata)]
+			@function_body[idx][:type] = @function_signature[idx] if function_body
+			idx += 1
 		}
 	end
 
@@ -273,6 +289,7 @@ class WasmFile < ExeFormat
 
 	def decode_module_code(m)
 		@function_body = []
+		idx = 0
 		decode_uleb(m.edata).times {
 			local_vars = []
 			body_size = decode_uleb(m.edata)	# size of local defs + bytecode (in bytes)
@@ -287,7 +304,9 @@ class WasmFile < ExeFormat
 			code_offset = m.raw_offset + m.edata.ptr	# bytecode comes next
 			m.edata.ptr = next_ptr
 			@function_body << { :local_var => local_vars, :init_offset => code_offset }
+			@function_body.last[:type] = @function_signature[idx] if function_signature
 			@encoded.add_export new_label("function_#{@function_body.length-1}"), @function_body.last[:init_offset]
+			idx += 1
 		}
 	end
 
@@ -319,10 +338,9 @@ class WasmFile < ExeFormat
 
 	def init_disassembler
 		dasm = super()
-		function_body.to_a.each_with_index { |fb, i|
-			p = @function_signature[i] if function_signature
+		function_body.to_a.each { |fb|
 			v = fb[:local_var].map { |lv| type_to_s(lv) }.join(' ; ')
-			dasm.add_comment fb[:init_offset], "proto: #{p ? type_to_s(p) : 'unknown'}"
+			dasm.add_comment fb[:init_offset], "proto: #{fb[:type] ? type_to_s(fb[:type]) : 'unknown'}"
 			dasm.add_comment fb[:init_offset], "vars: #{v}"
 		}
 		global.to_a.each { |g|

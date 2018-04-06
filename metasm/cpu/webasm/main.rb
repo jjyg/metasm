@@ -11,7 +11,7 @@ class WebAsm < CPU
 	attr_accessor :wasm_file
 	def initialize(*args)
 		super()
-		@size = args.grep(Integer).first || 32
+		@size = args.grep(Integer).first || 64
 		@wasm_file = args.grep(ExeFormat).first
 		@endianness = args.delete(:little) || args.delete(:big) || (@wasm_file ? @wasm_file.endianness : :little)
 	end

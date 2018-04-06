@@ -23,19 +23,41 @@ class WebAsm
 	end
 
 	def decompile_init(dcmp)
-		dcmp.dasm.program.global.to_a.each_with_index { |g, idx|
+		@wasm_file.global.to_a.each_with_index { |g, idx|
 			var = C::Variable.new
 			var.name = 'global_%d' % idx
-			var.type = wasm_type_to_type(g[:type])
+			var.type = C::Array.new(wasm_type_to_type(g[:type]), 1)
 			dcmp.c_parser.toplevel.symbol[var.name] = var
 			dcmp.c_parser.toplevel.statements << C::Declaration.new(var)
 			# TODO init
+		}
+		@wasm_file.import.to_a.each { |i|
+			case i[:kind]
+			when 'global'
+				var = C::Variable.new
+				var.name = '%s_%s' % [i[:module], i[:field]]
+				var.type = C::Array.new(wasm_type_to_type(i[:type]), 1)
+				var.storage = :extern
+				dcmp.c_parser.toplevel.symbol[var.name] = var
+				dcmp.c_parser.toplevel.statements << C::Declaration.new(var)
+			when 'function'
+				var = C::Variable.new
+				var.name = '%s_%s' % [i[:module], i[:field]]
+				var.type = wasm_type_to_type(i[:type])
+				var.storage = :extern
+				dcmp.c_parser.toplevel.symbol[var.name] = var
+				dcmp.c_parser.toplevel.statements << C::Declaration.new(var)
+			end
 		}
 	end
 
 	def decompile_makestackvars(dasm, funcstart, blocks)
 		oldfuncbd = dasm.address_binding[funcstart]
-		dasm.address_binding[funcstart] = { :opstack => :frameptr }
+		fidx = @wasm_file.function_body.index { |fb| fb[:init_offset] == funcstart }
+		fb = @wasm_file.function_body[fidx]
+		fp = @wasm_file.function_signature[fidx]
+		locnr = fb[:local_var].length + fp[:params].length
+		dasm.address_binding[funcstart] = { :opstack => Expression[:frameptr], :local_base => Expression[:frameptr, :+, 8] }
 		blocks.each { |block| yield block }
 		dasm.address_binding[funcstart] = oldfuncbd if oldfuncbd
 	end
@@ -49,12 +71,8 @@ class WebAsm
 
 	def decompile_blocks(dcmp, myblocks, deps, func, nextaddr = nil)
 		func_entry = myblocks.first[0]
-		dcmp.dasm.program.function_signature.to_a.zip(dcmp.dasm.program.function_body.to_a).each { |fs, fb|
-			next if fb[:init_offset] != func_entry
-			func.type = wasm_type_to_type(fs)
-			func.type.args.each_with_index { |a, i| a.name ||= "local_%d" % i }
-		}
 		retaddrs = dcmp.dasm.function[func_entry].return_address
+		fidx = @wasm_file.function_body.index { |fb| fb[:init_offset] == func_entry }
 
 		scope = func.initializer
 		func.type.args.each { |a| scope.symbol[a.name] = a }
@@ -72,17 +90,16 @@ class WebAsm
 			# go !
 			di_list = dcmp.dasm.decoded[b].block.list.dup
 			di_list.each { |di|
-				if di.opcode.props[:setip] and not di.opcode.props[:stopexec]
+				if di.opcode.name == 'if'
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
-					if di.opcode.name == /bfeq/
-						cc = ce[:flag]
-					else
-						cc = ce[:!, :flag]
-					end
+					bd = get_fwdemu_binding(di)
+					cc = ce[:!, bd[:flag]]
 					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n))
 					to.delete dcmp.dasm.normalize(n)
 				elsif (di.opcode.name == 'end' or di.opcode.name == 'return') and retaddrs.include?(di.address)
-					ret = C::CExpression[ce[Expression[Indirection[[:frameptr, :-, 8], 8]]]] unless func.type.type.kind_of?(C::BaseType) and func.type.type.name == :void
+					fsig = @wasm_file.function_signature[fidx]
+					rettype = wasm_type_to_type(fsig[:ret].first) if fsig[:ret] and fsig[:ret].first
+					ret = C::CExpression[ce[Expression[Indirection[[:frameptr, :-, 8], dcmp.sizeof(rettype)]]]] unless fsig[:ret].empty?
 					stmts << C::Return.new(ret)
 				elsif di.opcode.name == 'call' #or di.opcode.name == 'call_indirect'
 					n = di.block.to_normal.first
@@ -131,6 +148,11 @@ class WebAsm
 	end
 
 	def decompile_check_abi(dcmp, entry, func)
+		dcmp.dasm.program.function_signature.to_a.zip(dcmp.dasm.program.function_body.to_a).each { |fs, fb|
+			next if fb[:init_offset] != entry
+			func.type.type = wasm_type_to_type(fs).type
+			#func.type.args.each_with_index { |a, i| a.name ||= "arg_%d" % i }
+		}
 	end
 end
 end

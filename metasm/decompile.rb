@@ -1645,9 +1645,10 @@ class Decompiler
 				# XXX o1 may overlap o2 AND another (int32 v_10; int32 v_E; int32 v_C;)
 				# TODO should check stuff with aliasing domains
 				next if v1.name == v2.name or o1 >= o2+l2 or o1+l1 <= o2 or l1 > l2 or (l2 == l1 and o2 >= o1)
+				next if o1 == o2 and l1 != l2
 				# v1 => *(&v2+delta)
 				p = C::CExpression[:&, v2]
-				p = C::CExpression[p, :+,  [o1-o2]]
+				p = C::CExpression[p, :+,  [o1-o2]] if o1 != o2
 				p = C::CExpression[p, C::Pointer.new(v1.type)] if v1.type != p.type.type
 				p = C::CExpression[:*, p]
 				walk_ce(scope) { |ce|

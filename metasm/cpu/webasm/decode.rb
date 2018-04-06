@@ -36,10 +36,13 @@ class WebAsm
 		addr = dasm.normalize(addr)
 		return dasm.misc[:cpu_context] if cache[addr]
 
+		func_idx = dasm.program.function_body.index { |f| f[:init_offset] == addr }
 		stack = [[]]
-		set_misc_x = lambda { |di, tg| di.misc ||= { :x => [] } ; di.misc[:x] |= [tg] }
+		set_misc_x = lambda { |di, tg| di.misc[:x] ||= [] ; di.misc[:x] |= [tg] }
 		while di = dasm.disassemble_instruction(addr)
 			cache[addr] = di
+			di.misc ||= {}
+			di.misc[:func_idx] = func_idx
 			case di.opcode.name
 			when 'if', 'loop', 'block'
 				stack << [di]
@@ -120,9 +123,10 @@ class WebAsm
 	def decode_instr_interpret(di, addr)
 		if di.opcode.name == 'call'
 			fnr = di.instruction.args.first.reduce
-			if @wasm_file and @wasm_file.function_body and f = @wasm_file.function_body[fnr]
-				di.instruction.args[0] = Expression[f[:init_offset]]
-				di.misc = { :x => [f[:init_offset]] }
+			if f = @wasm_file.get_function_nr(fnr)
+				tg = f[:init_offset] ? f[:init_offset] : "#{f[:module]}_#{f[:field]}"
+				di.instruction.args[0] = Expression[tg]
+				di.misc = { :x => [tg] }
 			else
 				di.misc = { :x => [:default] }
 			end
@@ -141,27 +145,51 @@ class WebAsm
 	def init_backtrace_binding
 		@backtrace_binding ||= {}
 
-		opstack = lambda { |off| Indirection[Expression[:opstack, :+, off].reduce, 8] }
+		typesz = Hash.new(8).update 'i32' => 4, 'f32' => 4
+		opstack = lambda { |off, sz| Indirection[Expression[:opstack, :+, off].reduce, sz] }
 		add_opstack = lambda { |delta, hash| { :opstack => Expression[:opstack, :+, delta].reduce }.update hash }
-		global = lambda { |di| Indirection['global_%d' % Expression[di.instruction.args.first].reduce, 8] }
-		local = lambda { |di| ('local_%d' % Expression[di.instruction.args.first].reduce).to_sym }
+		globsz = lambda { |di|
+			glob_nr = Expression[di.instruction.args.first].reduce
+			g = @wasm_file.get_global_nr(glob_nr)
+			g ? typesz[g[:type]] : 8
+		}
+		global = lambda { |di|
+			glob_nr = Expression[di.instruction.args.first].reduce
+			g = @wasm_file.get_global_nr(glob_nr)
+			n = g && g[:module] ? "#{g[:module]}_#{g[:field]}" : "global_#{glob_nr}"
+			Indirection[n, globsz[di]]
+		}
+		locsz = lambda { |di|
+			loc_nr = Expression[di.instruction.args.first].reduce
+			f = @wasm_file.function_body[di.misc[:func_idx]]
+			next typesz[f[:type][:params][loc_nr]] if f[:type] and loc_nr < f[:type][:params].to_a.length
+			loc_nr -= f[:type][:params].to_a.length if f[:type]
+			next typesz[f[:local_var][loc_nr]] if f[:local_var].to_a[loc_nr]
+			8
+		}
+		local = lambda { |di|
+			loc_nr = Expression[di.instruction.args.first].reduce
+			Indirection[[:local_base, :+, loc_nr*8], locsz[di]]
+		}
 
 		opcode_list.map { |ol| ol.name }.uniq.each { |opname|
 			@backtrace_binding[opname] ||= case opname
-			when 'call'; lambda { |di, *a|
+			when 'call'; lambda { |di|
 				{ :callstack => Expression[:callstack, :+, 8], Indirection[:callstack, 8] => Expression[di.next_addr] } }
 			when 'end', 'return'; lambda { |di|
 				{ :callstack => Expression[:callstack, :-, 8] } if di.opcode.props[:stopexec] }
 			when 'nop'; lambda { |di| {} }
-			when 'get_global'; lambda { |di| add_opstack[-8, opstack[0] => Expression[global[di]]] }
-			when 'set_global'; lambda { |di| add_opstack[ 8, global[di] => Expression[opstack[0]]] }
-			when 'get_local'; lambda { |di| add_opstack[-8, opstack[0] => Expression[local[di]]] }
-			when 'set_local'; lambda { |di| add_opstack[ 8, local[di] => Expression[opstack[0]]] }
-			when 'tee_local'; lambda { |di| add_opstack[ 0, local[di] => Expression[opstack[0]]] }
-			when 'i32.const'; lambda { |di| add_opstack[-8, opstack[0] => Expression[di.instruction.args.first.reduce]] }
-			when 'i64.const'; lambda { |di| add_opstack[-8, opstack[0] => Expression[di.instruction.args.first.reduce]] }
-			when 'i32.add'; lambda { |di| add_opstack[ 8, opstack[0] => Expression[opstack[0], :+, opstack[8]]] }
-			when 'i32.and'; lambda { |di| add_opstack[ 8, opstack[0] => Expression[opstack[0], :&, opstack[8]]] }
+			when 'get_global'; lambda { |di| add_opstack[-8, opstack[0, globsz[di]] => Expression[global[di]]] }
+			when 'set_global'; lambda { |di| add_opstack[ 8, global[di] => Expression[opstack[0, globsz[di]]]] }
+			when 'get_local'; lambda { |di| add_opstack[-8, opstack[0, locsz[di]] => Expression[local[di]]] }
+			when 'set_local'; lambda { |di| add_opstack[ 8, local[di] => Expression[opstack[0, locsz[di]]]] }
+			when 'tee_local'; lambda { |di| add_opstack[ 0, local[di] => Expression[opstack[0, locsz[di]]]] }
+			when 'i32.const'; lambda { |di| add_opstack[-8, opstack[0, 4] => Expression[di.instruction.args.first.reduce]] }
+			when 'i64.const'; lambda { |di| add_opstack[-8, opstack[0, 8] => Expression[di.instruction.args.first.reduce]] }
+			when 'i32.eqz'; lambda { |di| add_opstack[ 0, opstack[0, 8] => Expression[opstack[0, 4], :==, 0]] }
+			when 'i32.add'; lambda { |di| add_opstack[ 8, opstack[0, 4] => Expression[opstack[8, 4], :+, opstack[0, 4]]] }
+			when 'i32.and'; lambda { |di| add_opstack[ 8, opstack[0, 4] => Expression[opstack[8, 4], :&, opstack[0, 4]]] }
+			when 'if'; lambda { |di| add_opstack[ 8, :flag => Expression[opstack[0, 8]]] }
 			end
 		}
 
