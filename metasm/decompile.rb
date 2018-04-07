@@ -121,6 +121,7 @@ class Decompiler
 		optimize_vars(scope)
 		optimize_vars(scope)	# 1st run may transform i = i+1 into i++ which second run may coalesce into if(i)
 		remove_unreferenced_vars(scope)
+		decompile_c_types_again(scope)
 		cleanup_var_decl(scope, func)
 		if @recurse > 0
 			decompile_controlseq(scope)
@@ -1215,7 +1216,7 @@ class Decompiler
 		}
 		globalvar = lambda { |e|
 			e = e.rexpr if e.kind_of?(C::CExpression) and not e.op
-			if e.kind_of?(::Integer) and @dasm.get_section_at(e)
+			if e.kind_of?(::Integer) and e > 4096 and @dasm.get_section_at(e)
 				e
 			elsif e.kind_of?(C::Variable) and not scope.symbol[e.name] and @c_parser.toplevel.symbol[e.name] and @dasm.get_section_at(e.name)
 				e.name
@@ -1511,6 +1512,74 @@ class Decompiler
 				end
 			elsif ce.type.pointer? and ce.rexpr.kind_of?(C::CExpression) and ce.rexpr.op == :& and not ce.rexpr.lexpr and sizeof(ce.rexpr.rexpr.type) == sizeof(ce.type.pointed)
 				ce.type = ce.rexpr.type
+			end
+		}
+	end
+
+	# use casts to determine variable types after code optimization
+	# if all uses of var_42 are through *(int*)(&var_42), set type to int
+	def decompile_c_types_again(scope)
+		return if forbid_decompile_types
+
+		update_type = lambda { |n, t|
+			o = scope.symbol[n].stackoff
+			next if not o and t.untypedef.kind_of?(C::Union)
+			next if o and scope.decompdata[:stackoff_type][o] and t != scope.decompdata[:stackoff_type][o]
+			scope.symbol[n].type = t
+		}
+
+		# true if e is a cast of a var address
+		is_cast = lambda { |ce|
+			true if not ce.op and not ce.lexpr and ce.rexpr and ce.rexpr.kind_of?(C::CExpression) and ce.rexpr.op == :& and not ce.rexpr.lexpr
+		}
+
+		# scan code for casts
+		uses = {}
+		count_refs = Hash.new(0)
+		walk_ce(scope) { |ce|
+			count_refs[ce.lexpr.name] += 1 if ce.lexpr.kind_of?(C::Variable)
+			count_refs[ce.rexpr.name] += 1 if ce.rexpr.kind_of?(C::Variable)
+			if is_cast[ce] and ce.rexpr.rexpr.kind_of?(C::Variable)
+				(uses[ce.rexpr.rexpr.name] ||= []) << ce.type.pointed
+			end
+		}
+
+		# given a list of types, return a type compatible with all
+		summary_type = lambda { |type_list|
+			t = type_list.first
+			type_list.each { |tt|
+				if sizeof(t) != sizeof(tt) or t.integral? != tt.integral? or t.pointer? != tt.pointer?
+					t = nil
+					break
+				elsif t != tt
+					t = tt if t.to_s =~ /__/
+				end
+			}
+			t
+		}
+
+		updated = {}
+		uses.each { |n, tl|
+			if tl.length == count_refs[n] and t = summary_type[tl] and update_type[n, t]
+				updated[n] = true
+			end
+		}
+		return if updated.empty?
+
+		walk_ce(scope, true) { |ce|
+			if is_cast[ce] and updated[ce.rexpr.rexpr.name]
+				ce.op = :&
+				ce.rexpr = ce.rexpr.rexpr
+			elsif ce.op == :* and not ce.lexpr and ce.rexpr.kind_of?(C::CExpression) and ce.rexpr.op == :& and not ce.rexpr.lexpr and ce.rexpr.rexpr.kind_of?(C::Variable) and updated[ce.rexpr.rexpr.name]
+				ce.op = nil
+				ce.rexpr = ce.rexpr.rexpr
+			elsif ce.op
+				if ce.rexpr.kind_of?(C::CExpression) and not ce.rexpr.op and ce.rexpr.rexpr.kind_of?(C::Variable) and updated[ce.rexpr.rexpr.name]
+					ce.rexpr = ce.rexpr.rexpr
+				end
+				if ce.lexpr.kind_of?(C::CExpression) and not ce.lexpr.op and ce.lexpr.rexpr.kind_of?(C::Variable) and updated[ce.lexpr.rexpr.name]
+					ce.lexpr = ce.lexpr.rexpr
+				end
 			end
 		}
 	end
