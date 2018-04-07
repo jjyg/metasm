@@ -90,10 +90,14 @@ class WebAsm
 			# go !
 			di_list = dcmp.dasm.decoded[b].block.list.dup
 			di_list.each { |di|
-				if di.opcode.name == 'if'
+				if di.opcode.name == 'if' or di.opcode.name == 'br_if'
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					bd = get_fwdemu_binding(di)
-					cc = ce[:!, bd[:flag]]
+					if di.opcode.name == 'if'
+						cc = ce[:!, bd[:flag]]
+					else
+						cc = ce[bd[:flag]]
+					end
 					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n))
 					to.delete dcmp.dasm.normalize(n)
 				elsif (di.opcode.name == 'end' or di.opcode.name == 'return') and retaddrs.include?(di.address)

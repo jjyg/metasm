@@ -189,7 +189,8 @@ class WebAsm
 			when 'i32.eqz'; lambda { |di| add_opstack[ 0, opstack[0, 8] => Expression[opstack[0, 4], :==, 0]] }
 			when 'i32.add'; lambda { |di| add_opstack[ 8, opstack[0, 4] => Expression[opstack[8, 4], :+, opstack[0, 4]]] }
 			when 'i32.and'; lambda { |di| add_opstack[ 8, opstack[0, 4] => Expression[opstack[8, 4], :&, opstack[0, 4]]] }
-			when 'if'; lambda { |di| add_opstack[ 8, :flag => Expression[opstack[0, 8]]] }
+			when 'if', 'br_if'; lambda { |di| add_opstack[ 8, :flag => Expression[opstack[0, 8]]] }
+			when 'block', 'loop', 'br'; lambda { |di| {} }
 			end
 		}
 
@@ -204,6 +205,21 @@ class WebAsm
 			{:incomplete_binding => Expression[1]}
 		end
 	end
+
+	def fix_fwdemu_binding(di, fbd)
+		ori = fbd
+		fbd = {}
+		ori.each { |k, v|
+			if k.kind_of?(Indirection) and not k.target.lexpr.kind_of?(Indirection) and not k.target.rexpr.kind_of?(Indirection)
+				# dont fixup store8 etc
+				fbd[k.bind(:opstack => ori[:opstack]).reduce_rec] = v
+			else
+				fbd[k] = v
+			end
+		}
+		fbd
+	end
+
 
 	def get_xrefs_x(dasm, di)
 		if di.opcode.props[:stopexec]

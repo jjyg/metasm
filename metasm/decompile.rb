@@ -326,10 +326,11 @@ class Decompiler
 		blockstart = nil
 		cache_di = nil
 		cache = {}	# [i_s, e, type] => backtrace
-		tovar = lambda { |di, e, i_s|
+		tovar = lambda { |di, e, i_s_c|
+			i_s = (i_s_c > 0)
 			case e
-			when Expression; Expression[tovar[di, e.lexpr, i_s], e.op, tovar[di, e.rexpr, i_s]].reduce
-			when Indirection; Indirection[tovar[di, e.target, i_s], e.len, e.origin]
+			when Expression; Expression[tovar[di, e.lexpr, i_s_c], e.op, tovar[di, e.rexpr, i_s_c]].reduce
+			when Indirection; Indirection[tovar[di, e.target, i_s_c-1], e.len, e.origin]
 			when :frameptr; e
 			when ::Symbol
 				cache.clear if cache_di != di ; cache_di = di
@@ -363,9 +364,9 @@ class Decompiler
 				bd = di.backtrace_binding ||= @dasm.cpu.get_backtrace_binding(di)
 				newbd = repl_bind[di] = {}
 				bd.each { |k, v|
-					k = tovar[di, k, true] if k.kind_of?(Indirection)
+					k = tovar[di, k, 2] if k.kind_of?(Indirection)
 					next if k == Expression[:frameptr] or (k.kind_of?(Expression) and k.lexpr == :frameptr and k.op == :+ and k.rexpr.kind_of?( ::Integer))
-					newbd[k] = tovar[di, v, false]
+					newbd[k] = tovar[di, v, 0]
 				}
 			}
 		}
