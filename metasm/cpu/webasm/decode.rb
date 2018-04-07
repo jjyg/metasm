@@ -123,12 +123,14 @@ class WebAsm
 	def decode_instr_interpret(di, addr)
 		if di.opcode.name == 'call'
 			fnr = di.instruction.args.first.reduce
+			di.misc ||= {}
+			di.misc[:tg_func_nr] = fnr
 			if f = @wasm_file.get_function_nr(fnr)
 				tg = f[:init_offset] ? f[:init_offset] : "#{f[:module]}_#{f[:field]}"
 				di.instruction.args[0] = Expression[tg]
-				di.misc = { :x => [tg] }
+				di.misc[:x] = [tg]
 			else
-				di.misc = { :x => [:default] }
+				di.misc[:x] = [:default]
 			end
 		end
 		di
@@ -178,7 +180,7 @@ class WebAsm
 			when 'call', 'call_indirect'
 				lambda { |di|
 					if opname == 'call'
-						f = @wasm_file.get_function_nr(di.instruction.args.first.reduce)
+						f = @wasm_file.get_function_nr(di.misc[:tg_func_nr])
 						proto = f ? f[:type] : {}
 						h = { :callstack => Expression[:callstack, :+, 8], Indirection[:callstack, 8] => Expression[di.next_addr] }
 					else
@@ -265,7 +267,6 @@ class WebAsm
 		fbd
 	end
 
-
 	def get_xrefs_x(dasm, di)
 		if di.opcode.props[:stopexec]
 			case di.opcode.name
@@ -292,6 +293,10 @@ class WebAsm
 
 	def backtrace_update_function_binding(dasm, faddr, f, retaddrlist, *wantregs)
 		f.backtrace_binding = { :callstack => Expression[:callstack, :-, 8] }
+	end
+
+	def backtrace_is_stack_address(expr)
+		([:local_base, :opstack] & Expression[expr].expr_externals).first
 	end
 end
 end
