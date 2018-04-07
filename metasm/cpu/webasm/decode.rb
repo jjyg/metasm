@@ -196,7 +196,7 @@ class WebAsm
 					h
 				}
 			when 'if', 'br_if'; lambda { |di| add_opstack[ 8, :flag => Expression[opstack[0, 8]]] }
-			when 'block', 'loop', 'br', 'nop'; lambda { |di| {} }
+			when 'block', 'loop', 'br', 'nop', 'else'; lambda { |di| {} }
 			when 'end', 'return'; lambda { |di| di.opcode.props[:stopexec] ? { :callstack => Expression[:callstack, :-, 8] } : {} }
 			when 'drop'; lambda { |di| add_opstack[8, {}] }
 			when 'select'; lambda { |di| add_opstack[16, opstack[0, 8] => Expression[[opstack[8, 8], :*, [1, :-, opstack[0, 8]]], :|, [opstack[16, 8], :*, opstack[0, 8]]]] }

@@ -102,15 +102,27 @@ class WebAsm
 					ret = C::CExpression[ce[Expression[Indirection[[:frameptr, :-, 8], dcmp.sizeof(rettype)]]]] unless fsig[:ret].empty?
 					stmts << C::Return.new(ret)
 				elsif di.opcode.name == 'call' #or di.opcode.name == 'call_indirect'
-					n = di.block.to_normal.first
+					f_w = @wasm_file.get_function_nr(di.misc[:tg_func_nr])
+					raise "no call target for #{di} @#{di.misc[:tg_func_nr]}" if not f_w
+					if f_w[:init_offset]
+						tg = dcmp.dasm.auto_label_at(f_w[:init_offset], 'sub')
+					else
+						tg = '%s_%s' % [f_w[:module], f_w[:field]]
+					end
+					f = dcmp.c_parser.toplevel.symbol[tg]
+					raise "no global function #{tg} for #{di}" if not f
+
 					args = []
-					if f = dcmp.c_parser.toplevel.symbol[n] and f.type.kind_of?(C::Function) and f.type.args
-						# TODO
+					bd = get_fwdemu_binding(di)
+					i = 0
+					while bd_arg = bd["param_#{i}"]
+						args << ce[bd_arg]
+						i += 1
 					end
 					e = C::CExpression[f, :funcall, args]
-					# TODO
-					#e = C::CExpression[ce[abi_funcall[:retval]], :'=', e, f.type.type] if f.type.type != C::BaseType.new(:void)
-					# TODO ensure dasm.bt_binding includes args pop from stack
+					if bd_ret = bd.index(Expression["ret_0"])
+						e = C::CExpression[ce[bd_ret], :'=', e, f.type.type]
+					end
 					stmts << e
 				else
 					bd = get_fwdemu_binding(di)
