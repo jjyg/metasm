@@ -473,7 +473,7 @@ class Disassembler
 	# adds a section, updates prog_binding
 	# base addr is an Integer or a String (label name for offset 0)
 	def add_section(encoded, base)
-		encoded, base = base, encoded if base.kind_of? EncodedData
+		encoded, base = base, encoded if base.kind_of?(EncodedData)
 		case base
 		when ::Integer
 		when ::String
@@ -566,7 +566,7 @@ class Disassembler
 	# returns the canonical form of addr (absolute address integer or label of start of section + section offset)
 	def normalize(addr)
 		return addr if not addr or addr == :default
-		addr = Expression[addr].bind(@old_prog_binding).reduce if not addr.kind_of? Integer
+		addr = Expression[addr].bind(@old_prog_binding).reduce if not addr.kind_of?(Integer)
 		addr
 	end
 
@@ -575,18 +575,18 @@ class Disassembler
 	def get_section_at(addr, memcheck=true)
 		case addr = normalize(addr)
 		when ::Integer
-			if s =  @sections.find { |b, e| b.kind_of? ::Integer and addr >= b and addr < b + e.length } ||
-				@sections.find { |b, e| b.kind_of? ::Integer and addr == b + e.length }		# end label
+			if s =  @sections.find { |b, e| b.kind_of?(::Integer) and addr >= b and addr < b + e.length } ||
+				@sections.find { |b, e| b.kind_of?(::Integer) and addr == b + e.length }		# end label
 				s[1].ptr = addr - s[0]
 				return if memcheck and s[1].data.respond_to?(:page_invalid?) and s[1].data.page_invalid?(s[1].ptr)
 				[s[1], s[0]]
 			end
 		when Expression
-			if addr.op == :+ and addr.rexpr.kind_of? ::Integer and addr.rexpr >= 0 and addr.lexpr.kind_of? ::String and e = @sections[addr.lexpr]
+			if addr.op == :+ and addr.rexpr.kind_of?(::Integer) and addr.rexpr >= 0 and addr.lexpr.kind_of?(::String) and e = @sections[addr.lexpr]
 				e.ptr = addr.rexpr
 				return if memcheck and e.data.respond_to?(:page_invalid?) and e.data.page_invalid?(e.ptr)
 				[e, Expression[addr.lexpr]]
-			elsif addr.op == :+ and addr.rexpr.kind_of? ::String and not addr.lexpr and e = @sections[addr.rexpr]
+			elsif addr.op == :+ and addr.rexpr.kind_of?(::String) and not addr.lexpr and e = @sections[addr.rexpr]
 				e.ptr = 0
 				return if memcheck and e.data.respond_to?(:page_invalid?) and e.data.page_invalid?(e.ptr)
 				[e, addr.rexpr]
@@ -603,8 +603,8 @@ class Disassembler
 		return if addrstr !~ /^\w+$/
 		e, b = get_section_at(addr)
 		if not e
-			l = Expression[addr].reduce_rec if Expression[addr].reduce_rec.kind_of? ::String
-			l ||= addrstr if addr.kind_of? Expression and addr.externals.grep(::Symbol).empty?
+			l = Expression[addr].reduce_rec if Expression[addr].reduce_rec.kind_of?(::String)
+			l ||= addrstr if addr.kind_of?(Expression) and addr.externals.grep(::Symbol).empty?
 		elsif not l = e.inv_export[e.ptr]
 			l = @program.new_label(addrstr)
 			e.add_export l, e.ptr
@@ -667,7 +667,7 @@ class Disassembler
 
 	def post_disassemble
 		@decoded.each_value { |di|
-			next if not di.kind_of? DecodedInstruction
+			next if not di.kind_of?(DecodedInstruction)
 			next if not di.opcode or not di.opcode.props[:saveip]
 			if not di.block.to_subfuncret
 				di.add_comment 'noreturn'
@@ -737,8 +737,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			block = InstructionBlock.new(normalize(addr), s[0])
 			block.add_from(from, x[:from_subfuncret] ? :subfuncret : :normal) if from and from != :default
 			disassemble_block(block, x[:cpu_context])
-		elsif from and c_parser and name = Expression[addr].reduce_rec and name.kind_of? ::String and
-				s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of? C::Function
+		elsif from and c_parser and name = Expression[addr].reduce_rec and name.kind_of?(::String) and
+				s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of?(C::Function)
 			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
 			detect_function_thunk_noreturn(from) if bf.noreturn
 		elsif from
@@ -1162,7 +1162,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			f.backtrace_binding = { :thunk => addr }
 			f.noreturn = true if @function[addr] and @function[addr].noreturn
 		end
-		return if not fname.kind_of? ::String
+		return if not fname.kind_of?(::String)
 		l = auto_label_at(funcaddr, 'sub', 'loc')
 		return if l[0, 4] != 'sub_'
 		puts "found thunk for #{fname} at #{Expression[funcaddr]}" if $DEBUG
@@ -1611,7 +1611,7 @@ puts "  bt loop at #{Expression[t[0][1]]}: #{oldexpr} => #{expr} (#{t.map { |z| 
 				false
 			when :up
 				next false if only_upto and h[:to] != only_upto
-				next expr if expr.kind_of? StoppedExpr
+				next expr if expr.kind_of?(StoppedExpr)
 				oldexpr = expr
 				expr = backtrace_emu_blockup(h[:from], expr)
 puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#{" => #{expr}" if expr != oldexpr}" if debug_backtrace
@@ -1787,7 +1787,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# returns true if the expression needs more backtrace
 	# it checks for the presence of a symbol (not :unknown), which means it depends on some register value
 	def need_backtrace(expr, terminals=[])
-		return if expr.kind_of? ::Integer
+		return if expr.kind_of?(::Integer)
 		!(expr.externals.grep(::Symbol) - [:unknown] - terminals).empty?
 	end
 
@@ -2054,7 +2054,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 	def dump(dump_data=true, &b)
 		b ||= lambda { |l| puts l }
 		@sections.sort_by { |addr, edata| addr.kind_of?(::Integer) ? addr : 0 }.each { |addr, edata|
-			addr = Expression[addr] if addr.kind_of? ::String
+			addr = Expression[addr] if addr.kind_of?(::String)
 			blockoffs = @decoded.values.grep(DecodedInstruction).map { |di| Expression[di.block.address, :-, addr].reduce if di.block_head? }.grep(::Integer).sort.reject { |o| o < 0 or o >= edata.length }
 			b[@program.dump_section_header(addr, edata)]
 			if not dump_data and edata.length > 16*1024 and blockoffs.empty?
@@ -2069,7 +2069,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 					di = @decoded[addr+unk_off]
 					if unk_off != di.block.edata_ptr
 						b["\n// ------ overlap (#{unk_off-di.block.edata_ptr}) ------"]
-					elsif di.block.from_normal.kind_of? ::Array
+					elsif di.block.from_normal.kind_of?(::Array)
 						b["\n"]
 					end
 					dump_block(di.block, &b)
@@ -2114,7 +2114,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			label_alias[block.address].each { |name| b["#{name}:"] }
 		end
 		if c = @comment[block.address]
-			c = c.join("\n") if c.kind_of? ::Array
+			c = c.join("\n") if c.kind_of?(::Array)
 			c.each_line { |l| b["// #{l}"] }
 		end
 	end
@@ -2159,11 +2159,11 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			dups = edata.virtsize - off
 			@prog_binding.each_value { |a|
 				tmp = Expression[a, :-, addr].reduce
-				dups = tmp if tmp.kind_of? ::Integer and tmp > 0 and tmp < dups
+				dups = tmp if tmp.kind_of?(::Integer) and tmp > 0 and tmp < dups
 			}
 			@xrefs.each_key { |a|
 				tmp = Expression[a, :-, addr].reduce
-				dups = tmp if tmp.kind_of? ::Integer and tmp > 0 and tmp < dups
+				dups = tmp if tmp.kind_of?(::Integer) and tmp > 0 and tmp < dups
 			}
 			dups /= elemlen
 			dups = 1 if dups < 1
@@ -2209,7 +2209,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 			if (elemlen == 1 or elemlen == 2)
 				case value
 				when 0x20..0x7e, 0x0a, 0x0d
-					if vals_.last.kind_of? ::String; vals_.last << value ; vals_
+					if vals_.last.kind_of?(::String); vals_.last << value ; vals_
 					else vals_ << value.chr
 					end
 				else vals_ << value
@@ -2219,7 +2219,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 		}
 
 		vals.map! { |value|
-			if value.kind_of? ::String
+			if value.kind_of?(::String)
 				if value.length > 2 # or value == vals.first or value == vals.last # if there is no xref, don't care
 					value.inspect
 				else
