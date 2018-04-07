@@ -1094,7 +1094,7 @@ module C
 			# sub-arrays in args are to be passed to self.[] recursively (syntaxic sugar)
 			splat = lambda { |e| e.kind_of?(::Array) ? self[*e] : e }
 
-			args.shift while args.first == nil	# CExpr[nil, :&, bla] => CExpr[:&, bla]
+			args.shift while args.length > 0 and args.first == nil	# CExpr[nil, :&, bla] => CExpr[:&, bla]
 
 			case args.length
 			when 4
