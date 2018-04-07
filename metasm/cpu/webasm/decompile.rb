@@ -53,13 +53,9 @@ class WebAsm
 
 	def decompile_makestackvars(dasm, funcstart, blocks)
 		oldfuncbd = dasm.address_binding[funcstart]
-		fidx = @wasm_file.function_body.index { |fb| fb[:init_offset] == funcstart }
-		fb = @wasm_file.function_body[fidx]
-		fp = @wasm_file.function_signature[fidx]
-		locnr = fb[:local_var].length + fp[:params].length
 		dasm.address_binding[funcstart] = { :opstack => Expression[:frameptr], :local_base => Expression[:frameptr, :+, 8] }
 		blocks.each { |block| yield block }
-		dasm.address_binding[funcstart] = oldfuncbd if oldfuncbd
+		dasm.address_binding[funcstart] = oldfuncbd
 	end
 
 	def decompile_func_finddeps_di(dcmp, func, di, a, w)
