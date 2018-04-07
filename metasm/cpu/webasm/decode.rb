@@ -173,24 +173,69 @@ class WebAsm
 		}
 
 		opcode_list.map { |ol| ol.name }.uniq.each { |opname|
+			sz = (opname[1, 2] == '32' ? 4 : 8)
 			@backtrace_binding[opname] ||= case opname
-			when 'call'; lambda { |di|
-				{ :callstack => Expression[:callstack, :+, 8], Indirection[:callstack, 8] => Expression[di.next_addr] } }
-			when 'end', 'return'; lambda { |di|
-				{ :callstack => Expression[:callstack, :-, 8] } if di.opcode.props[:stopexec] }
-			when 'nop'; lambda { |di| {} }
-			when 'get_global'; lambda { |di| add_opstack[-8, opstack[0, globsz[di]] => Expression[global[di]]] }
-			when 'set_global'; lambda { |di| add_opstack[ 8, global[di] => Expression[opstack[0, globsz[di]]]] }
+			when 'call', 'call_indirect'
+				lambda { |di|
+					if opname == 'call'
+						f = @wasm_file.get_function_nr(di.instruction.args.first.reduce)
+						proto = f ? f[:type] : {}
+						h = { :callstack => Expression[:callstack, :+, 8], Indirection[:callstack, 8] => Expression[di.next_addr] }
+					else
+						proto = @wasm_file.type[di.instruction.args.first.reduce]
+						h = {}
+					end
+					stack_off = 0
+					stack_off -= 8*proto[:ret].to_a.length
+					stack_off += 8*proto[:params].to_a.length
+					h.update :opstack => Expression[:opstack, :+, stack_off]
+					proto[:ret].to_a.each_with_index { |rt, i| h.update opstack[8*i, typesz[rt]] => "ret_#{i}" }
+					proto[:params].to_a.each_with_index { |pt, i| h.update "param_#{i}" => Expression[opstack[8*i, typesz[pt]]] }
+					h
+				}
+			when 'if', 'br_if'; lambda { |di| add_opstack[ 8, :flag => Expression[opstack[0, 8]]] }
+			when 'block', 'loop', 'br', 'nop'; lambda { |di| {} }
+			when 'end', 'return'; lambda { |di| di.opcode.props[:stopexec] ? { :callstack => Expression[:callstack, :-, 8] } : {} }
+			when 'drop'; lambda { |di| add_opstack[8, {}] }
+			when 'select'; lambda { |di| add_opstack[16, opstack[0, 8] => Expression[[opstack[8, 8], :*, [1, :-, opstack[0, 8]]], :|, [opstack[16, 8], :*, opstack[0, 8]]]] }
 			when 'get_local'; lambda { |di| add_opstack[-8, opstack[0, locsz[di]] => Expression[local[di]]] }
 			when 'set_local'; lambda { |di| add_opstack[ 8, local[di] => Expression[opstack[0, locsz[di]]]] }
 			when 'tee_local'; lambda { |di| add_opstack[ 0, local[di] => Expression[opstack[0, locsz[di]]]] }
-			when 'i32.const'; lambda { |di| add_opstack[-8, opstack[0, 4] => Expression[di.instruction.args.first.reduce]] }
-			when 'i64.const'; lambda { |di| add_opstack[-8, opstack[0, 8] => Expression[di.instruction.args.first.reduce]] }
-			when 'i32.eqz'; lambda { |di| add_opstack[ 0, opstack[0, 8] => Expression[opstack[0, 4], :==, 0]] }
-			when 'i32.add'; lambda { |di| add_opstack[ 8, opstack[0, 4] => Expression[opstack[8, 4], :+, opstack[0, 4]]] }
-			when 'i32.and'; lambda { |di| add_opstack[ 8, opstack[0, 4] => Expression[opstack[8, 4], :&, opstack[0, 4]]] }
-			when 'if', 'br_if'; lambda { |di| add_opstack[ 8, :flag => Expression[opstack[0, 8]]] }
-			when 'block', 'loop', 'br'; lambda { |di| {} }
+			when 'get_global'; lambda { |di| add_opstack[-8, opstack[0, globsz[di]] => Expression[global[di]]] }
+			when 'set_global'; lambda { |di| add_opstack[ 8, global[di] => Expression[opstack[0, globsz[di]]]] }
+			when /\.load(.*)/
+				mode = $1; memsz = (mode.include?('32') ? 4 : mode.include?('16') ? 2 : mode.include?('8') ? 1 : sz)
+				lambda { |di| add_opstack[ 0, opstack[0, sz] => Expression[Indirection[[opstack[0, 4], :+, di.instruction.args[1].off], memsz]]] }
+			when /\.store(.*)/
+				mode = $1; memsz = (mode.include?('32') ? 4 : mode.include?('16') ? 2 : mode.include?('8') ? 1 : sz)
+				lambda { |di| add_opstack[ 16, Indirection[[opstack[0, 4], :+, di.instruction.args[1].off], memsz] => Expression[opstack[8, sz], :&, (1 << (8*memsz)) - 1]] }
+			when /\.const/; lambda { |di| add_opstack[-8, opstack[0, sz] => Expression[di.instruction.args.first.reduce]] }
+			when /\.eqz/; lambda { |di| add_opstack[ 0, opstack[0, 8] => Expression[opstack[0, sz], :==, 0]] }
+			when /\.eq/;  lambda { |di| add_opstack[ 8, opstack[0, 8] => Expression[opstack[8, sz], :==, opstack[0, sz]]] }
+			when /\.ne/;  lambda { |di| add_opstack[ 8, opstack[0, 8] => Expression[opstack[8, sz], :!=, opstack[0, sz]]] }
+			when /\.lt/;  lambda { |di| add_opstack[ 8, opstack[0, 8] => Expression[opstack[8, sz], :<, opstack[0, sz]]] }
+			when /\.gt/;  lambda { |di| add_opstack[ 8, opstack[0, 8] => Expression[opstack[8, sz], :>, opstack[0, sz]]] }
+			when /\.le/;  lambda { |di| add_opstack[ 8, opstack[0, 8] => Expression[opstack[8, sz], :<=, opstack[0, sz]]] }
+			when /\.ge/;  lambda { |di| add_opstack[ 8, opstack[0, 8] => Expression[opstack[8, sz], :>=, opstack[0, sz]]] }
+
+			when /\.(clz|ctz|popcnt)/; lambda { |di| add_opstack[ 0, :bits => Expression[opstack[0, sz]]] }
+			when /\.add/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :+, opstack[0, sz]]] }
+			when /\.sub/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :+, opstack[0, sz]]] }
+			when /\.mul/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :*, opstack[0, sz]]] }
+			when /\.div/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :/, opstack[0, sz]]] }
+			when /\.rem/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :%, opstack[0, sz]]] }
+			when /\.and/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :&, opstack[0, sz]]] }
+			when /\.or/;  lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :|, opstack[0, sz]]] }
+			when /\.xor/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :^, opstack[0, sz]]] }
+			when /\.shl/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :<<, opstack[0, sz]]] }
+			when /\.shr/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :>>, opstack[0, sz]]] }
+			when /\.rotl/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[[opstack[8, sz], :<<, opstack[0, sz]], :|, [opstack[8, sz], :>>, [8*sz, :-, opstack[0, sz]]]]] }
+			when /\.rotr/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[[opstack[8, sz], :>>, opstack[0, sz]], :|, [opstack[8, sz], :<<, [8*sz, :-, opstack[0, sz]]]]] }
+			when /f.*\.(abs|neg|ceil|floor|trunc|nearest|sqrt|copysign)/; lambda { |di| add_opstack[0, :incomplete_binding => 1] }
+			when /f.*\.(min|max)/; lambda { |di| add_opstack[8, :incomplete_binding => 1] }
+			when /i32.wrap/; lambda { |di| add_opstack[ 0, opstack[0, 4] => Expression[opstack[0, 8]]] }
+			when /i64.extend/; lambda { |di| add_opstack[ 0, opstack[0, 8] => Expression[opstack[0, 4]]] }
+			when /trunc|convert|promote|demote|reinterpret/; lambda { |di| add_opstack[0, :incomplete_binding => 1] }
 			end
 		}
 
