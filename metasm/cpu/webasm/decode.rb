@@ -311,5 +311,9 @@ class WebAsm
 	def backtrace_is_stack_address(expr)
 		([:local_base, :opstack] & Expression[expr].expr_externals).first
 	end
+
+	def decode_c_function_prototype(cp, sym, orig=nil)
+		disassembler_default_func
+	end
 end
 end
