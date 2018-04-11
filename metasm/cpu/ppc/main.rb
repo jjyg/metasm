@@ -95,7 +95,7 @@ class PowerPC < CPU
 			b = nil if b == :r0	# XXX is it true ?
 			o = @offset
 			o = o.symbolic if o.kind_of?(Reg)
-			Indirection[Expression[b, :+, o].reduce, 4, orig]
+			Indirection[Expression[b, :+, o].reduce, 4, (di.address if di)]
 		end
 
 		include Renderable
