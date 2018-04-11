@@ -149,7 +149,20 @@ class WebAsm
 
 		typesz = Hash.new(8).update 'i32' => 4, 'f32' => 4
 		opstack = lambda { |off, sz| Indirection[Expression[:opstack, :+, off].reduce, sz] }
-		add_opstack = lambda { |delta, hash| { :opstack => Expression[:opstack, :+, delta].reduce }.update hash }
+		add_opstack = lambda { |delta, hash|
+			# patch dword ptr [:opstack] => 42 into qword ptr [:opstack] => 42 & 0xffffffff (eg clear the high bits of [opstack]
+			h_patch = {}
+			hash.each { |k, v|
+				if k.kind_of?(Indirection) and k.len == 4 and k.pointer.op == :+ and (
+						(k.pointer.rexpr == :opstack and not k.pointer.lexpr) or
+						(k.pointer.lexpr == :opstack and k.pointer.rexpr.kind_of?(::Integer)))
+					h_patch[Indirection[k.pointer, 8]] = Expression[v, :&, 0xffffffff]
+				else
+					h_patch[k] = v
+				end
+			}
+			{ :opstack => Expression[:opstack, :+, delta].reduce }.update h_patch
+		}
 		globsz = lambda { |di|
 			glob_nr = Expression[di.instruction.args.first].reduce
 			g = @wasm_file.get_global_nr(glob_nr)
