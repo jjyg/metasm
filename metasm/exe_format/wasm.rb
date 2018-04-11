@@ -116,17 +116,19 @@ class WasmFile < ExeFormat
 	# return the nth global
 	# use the @global array and the @import array
 	def get_global_nr(nr)
-		return @global[nr] if nr < @global.to_a.length
-		nr -= @global.to_a.length
-		@import.to_a.find_all { |i| i[:kind] == 'global' }[nr]
+		glob_imports = @import.to_a.find_all { |i| i[:kind] == 'global' }
+		return glob_imports[nr] if nr < glob_imports.length
+		nr -= glob_imports.length
+		@global[nr]
 	end
 
 	# return the nth function body
 	# use the @function_body array and the @import array
 	def get_function_nr(nr)
-		return @function_body[nr] if nr < @function_body.to_a.length
-		nr -= @function_body.to_a.length
-		@import.to_a.find_all { |i| i[:kind] == 'function' }[nr]
+		func_imports = @import.to_a.find_all { |i| i[:kind] == 'function' }
+		return func_imports[nr] if nr < func_imports.length
+		nr -= func_imports.length
+		@function_body[nr]
 	end
 
 	def type_to_s(t)
@@ -187,9 +189,11 @@ class WasmFile < ExeFormat
 			f = "decode_module_#{m.id.to_s.downcase}"
 			send(f, m) if respond_to?(f)
 		}
+		func_imports = @import.to_a.find_all { |i| i[:kind] == 'function' }
 		export.to_a.each { |e|
 			next if e[:kind] != 'function'	# TODO resolve init_offset for globals etc?
-			next if not fb = function_body.to_a[e[:index]]
+			idx = e[:index] - func_imports.length
+			next if not fb = function_body.to_a[idx]
 			@encoded.add_export(new_label(e[:field]), fb[:init_offset], true)
 		}
 	end
