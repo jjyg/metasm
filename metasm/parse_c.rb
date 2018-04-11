@@ -1064,9 +1064,16 @@ module C
 		attr_accessor :lexpr, :rexpr
 		# a Type
 		attr_accessor :type
+		attr_accessor :misc
+
 		def initialize(l, o, r, t)
 			raise "invalid CExpr #{[l, o, r, t].inspect}" if (o and not o.kind_of? ::Symbol) or not t.kind_of? Type
 			@lexpr, @op, @rexpr, @type = l, o, r, t
+		end
+
+		def with_misc(m)
+			@misc = m if m or misc
+			self
 		end
 
 		# overwrites @lexpr @op @rexpr @type from the arg

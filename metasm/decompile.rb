@@ -1216,7 +1216,7 @@ class Decompiler
 		}
 		globalvar = lambda { |e|
 			e = e.rexpr if e.kind_of?(C::CExpression) and not e.op
-			if e.kind_of?(::Integer) and e > 4096 and @dasm.get_section_at(e)
+			if e.kind_of?(::Integer) and e > 0x10000 and @dasm.get_section_at(e)
 				e
 			elsif e.kind_of?(C::Variable) and not scope.symbol[e.name] and @c_parser.toplevel.symbol[e.name] and @dasm.get_section_at(e.name)
 				e.name
