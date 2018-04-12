@@ -81,7 +81,7 @@ class WebAsm
 			end
 
 			# Expr => CExpr
-			ce  = lambda { |*e| dcmp.decompile_cexpr(Expression[Expression[*e].reduce], scope) }
+			ce = lambda { |*e| dcmp.decompile_cexpr(Expression[Expression[*e].reduce], scope) }
 
 			# go !
 			di_list = dcmp.dasm.decoded[b].block.list.dup
@@ -160,10 +160,22 @@ class WebAsm
 	end
 
 	def decompile_check_abi(dcmp, entry, func)
-		dcmp.dasm.program.function_signature.to_a.zip(dcmp.dasm.program.function_body.to_a).each { |fs, fb|
+		scope = func.initializer
+		@wasm_file.function_body.to_a.each { |fb|
 			next if fb[:init_offset] != entry
-			func.type.type = wasm_type_to_type(fs).type
-			#func.type.args.each_with_index { |a, i| a.name ||= "arg_%d" % i }
+			w_type = wasm_type_to_type(fb[:type])
+			func.type.type = w_type.type
+			if func.type.args.length > w_type.args.length
+				# detected an argument that is actually a local variable, move into func scope
+				while a = func.type.args.delete_at(w_type.args.length)
+					if a.has_attribute('unused')
+						scope.symbol.delete a.name
+					else
+						a.initializer = C::CExpression[0]
+						scope.statements[0, 0] = [C::Declaration.new(a)]
+					end
+				end
+			end
 		}
 	end
 end
