@@ -191,7 +191,7 @@ class WebAsm
 					stack_off -= 8*proto[:ret].to_a.length
 					stack_off += 8*proto[:params].to_a.length
 					h.update :opstack => Expression[:opstack, :+, stack_off]
-					proto[:ret].to_a.each_with_index { |rt, i| h.update opstack[8*i, typesz[rt]] => "ret_#{i}" }
+					proto[:ret].to_a.each_with_index { |rt, i| h.update opstack[8*i, typesz[rt]] => Expression["ret_#{i}"] }
 					proto[:params].to_a.each_with_index { |pt, i| h.update "param_#{i}" => Expression[opstack[8*i, typesz[pt]]] }
 					h
 				}

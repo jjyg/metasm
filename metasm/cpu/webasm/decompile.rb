@@ -207,7 +207,7 @@ class WebAsm
 					end
 					e = C::CExpression[f, :funcall, args]
 					if bd_ret = bd.index(Expression["ret_0"])
-						e = C::CExpression[ce[bd_ret], :'=', e, f.type.type]
+						e = ce[bd_ret, :'=', e]
 					end
 					stmts << e
 				else
