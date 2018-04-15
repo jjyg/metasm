@@ -3933,14 +3933,6 @@ EOH
 		end
 
 		def self.dump(e, scope, r=[''], dep=[], brace = false)
-			if $DEBUG
-				brace = false
-				case e
-				when CExpression, Variable
-					r, dep = e.type.dump_cast(scope, r, dep)
-				end
-				r.last << '('
-			end
 			r, dep = \
 			case e
 			when ::Numeric; r.last << e.to_s ; [r, dep]
@@ -3949,9 +3941,6 @@ EOH
 			when Variable; e.dump(scope, r, dep)
 			when nil; [r, dep]
 			else raise 'wtf?' + e.inspect
-			end
-			if $DEBUG
-				r.last << ')'
 			end
 			[r, dep]
 		end
@@ -4001,7 +3990,7 @@ EOH
 						r.last << ' )'
 					when Label
 						r.last << '&&' << @rexpr.name
-					else raise "wtf? #{inspect}"
+					else r.last << "(wtf? #{inspect})"
 					end
 				else
 					r.last << @op.to_s

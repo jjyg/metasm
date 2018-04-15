@@ -110,6 +110,7 @@ class Decompiler
 
 		# di blocks => raw c statements, declare variables
 		@dasm.cpu.decompile_blocks(self, myblocks, deps, func)
+		puts "dcmp debug #{func.name} {", scope, '}' if $DEBUG
 
 		return if forbid_all_optimizations
 
@@ -2416,7 +2417,7 @@ class Decompiler
 
 			# (char *)42 => new global var
 			if not ce.op and ce.type.pointer? and ce.rexpr.kind_of?(C::CExpression) and not ce.rexpr.op and ce.rexpr.rexpr.kind_of?(::Integer)
-				ce.rexpr = new_global_var(ce.rexpr.rexpr, ce.type, scope)
+				ce.rexpr = new_global_var(ce.rexpr.rexpr, ce.type, scope) || ce.rexpr
 			end
 
 			# (a > 0) != 0
