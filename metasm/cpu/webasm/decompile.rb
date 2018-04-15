@@ -51,9 +51,13 @@ class WebAsm
 		}
 	end
 
+	def abi_funcall
+		@abi_funcall ||= { :changed => [] }
+	end
+
 	def decompile_makestackvars(dasm, funcstart, blocks)
 		oldfuncbd = dasm.address_binding[funcstart]
-		dasm.address_binding[funcstart] = { :opstack => Expression[:frameptr], :local_base => Expression[:frameptr, :+, 8] }
+		dasm.address_binding[funcstart] = { :opstack => Expression[:frameptr] }
 		blocks.each { |block| yield block }
 		dasm.address_binding[funcstart] = oldfuncbd
 	end
@@ -68,20 +72,102 @@ class WebAsm
 	def decompile_blocks(dcmp, myblocks, deps, func, nextaddr = nil)
 		func_entry = myblocks.first[0]
 		retaddrs = dcmp.dasm.function[func_entry].return_address
-		fidx = @wasm_file.function_body.index { |fb| fb[:init_offset] == func_entry }
-
+		w_func = @wasm_file.function_body.find { |fb| fb[:init_offset] == func_entry }
 		scope = func.initializer
 		func.type.args.each { |a| scope.symbol[a.name] = a }
 		stmts = scope.statements
+
+		local = []
+		w_func[:type][:params].each { |t|
+			local << C::Variable.new("arg_#{local.length}", wasm_type_to_type(t))
+			scope.symbol[local.last.name] = local.last
+			func.type.args << local.last
+		}
+		w_func[:local_var].each { |t|
+			local << C::Variable.new("var_#{local.length}", wasm_type_to_type(t))
+			scope.symbol[local.last.name] = local.last
+			local.last.initializer = C::CExpression[0]
+			stmts << C::Declaration.new(local.last)
+		}
+
+		opstack = {}
+
+		# *(_int32*)(local_base+16) => 16
+		ce_ptr_offset = lambda { |ee, base|
+			if ee.kind_of?(C::CExpression) and ee.op == :* and not ee.lexpr and ee.rexpr.kind_of?(C::CExpression) and
+					not ee.rexpr.op and ee.rexpr.rexpr.kind_of?(C::CExpression)
+				if not ee.rexpr.rexpr.op and ee.rexpr.rexpr.rexpr.kind_of?(C::Variable) and ee.rexpr.rexpr.rexpr.name == base
+					0
+				elsif ee.rexpr.rexpr.lexpr.kind_of?(C::Variable) and ee.rexpr.rexpr.lexpr.name == base and
+						ee.rexpr.rexpr.rexpr.kind_of?(C::CExpression) and not ee.rexpr.rexpr.rexpr.op and ee.rexpr.rexpr.rexpr.rexpr.kind_of?(::Integer)
+					if ee.rexpr.rexpr.op == :+
+						ee.rexpr.rexpr.rexpr.rexpr
+					elsif ee.rexpr.rexpr.op == :-
+						-ee.rexpr.rexpr.rexpr.rexpr
+					end
+				end
+			end
+		}
+		opstack_idx = -1
+		ce_local_offset = lambda { |ee| ce_ptr_offset[ee, 'local_base'] }
+		ce_opstack_offset = lambda { |ee| ce_ptr_offset[ee, 'frameptr'] }
+
+		# Expr => CExpr
+		ce = lambda { |*e|
+			c_expr = dcmp.decompile_cexpr(Expression[Expression[*e].reduce], scope)
+			dcmp.walk_ce(c_expr, true) { |ee|
+				if ee.rexpr.kind_of?(::Array)
+					# funcall arglist
+					ee.rexpr.map! { |eee|
+						if loff = ce_local_offset[eee]
+							C::CExpression[local[loff/8]]
+						elsif soff = ce_opstack_offset[eee]
+							C::CExpression[opstack[-soff/8]]
+						else
+							eee
+						end
+					}
+				end
+				if loff = ce_local_offset[ee.lexpr]
+					ee.lexpr = local[loff/8]
+				end
+				if loff = ce_local_offset[ee.rexpr]
+					ee.rexpr = local[loff/8]
+					ee.rexpr = C::CExpression[ee.rexpr] if not ee.op and ee.type.pointer?
+				end
+				if soff = ce_opstack_offset[ee.rexpr]
+					# must do soff.rexpr before lexpr in case of reaffectation !
+					ee.rexpr = opstack[-soff/8]
+					ee.rexpr = C::CExpression[ee.rexpr] if not ee.op and ee.type.pointer?
+				end
+				if soff = ce_opstack_offset[ee.lexpr]
+					if ee.op == :'='
+						# affectation: create a new variable
+						varname = "loc_#{opstack_idx += 1}"
+						ne = C::Variable.new(varname, wasm_type_to_type("i#{8*dcmp.sizeof(ee.lexpr)}"))
+						scope.symbol[varname] = ne
+						stmts << C::Declaration.new(ne)
+						opstack[-soff/8] = ne
+					end
+					ee.lexpr = opstack[-soff/8]
+				end
+			}
+			if loff = ce_local_offset[c_expr]
+				C::CExpression[local[loff/8]]
+			elsif soff = ce_opstack_offset[c_expr]
+				C::CExpression[opstack[-soff/8]]
+			else
+				c_expr
+			end
+		}
+
+
 		blocks_toclean = myblocks.dup
 		until myblocks.empty?
 			b, to = myblocks.shift
 			if l = dcmp.dasm.get_label_at(b)
 				stmts << C::Label.new(l)
 			end
-
-			# Expr => CExpr
-			ce = lambda { |*e| dcmp.decompile_cexpr(Expression[Expression[*e].reduce], scope) }
 
 			# go !
 			di_list = dcmp.dasm.decoded[b].block.list.dup
@@ -97,7 +183,7 @@ class WebAsm
 					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n))
 					to.delete dcmp.dasm.normalize(n)
 				elsif (di.opcode.name == 'end' or di.opcode.name == 'return') and retaddrs.include?(di.address)
-					fsig = @wasm_file.function_signature[fidx]
+					fsig = w_func[:type]
 					rettype = wasm_type_to_type(fsig[:ret].first) if fsig[:ret] and fsig[:ret].first
 					ret = C::CExpression[ce[Expression[Indirection[[:frameptr, :-, 8], dcmp.sizeof(rettype)]]]] unless fsig[:ret].empty?
 					stmts << C::Return.new(ret)
@@ -130,6 +216,7 @@ class WebAsm
 						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil)
 					else
 						bd.each { |k, v|
+							next if k == :opstack
 							e = ce[k, :'=', v]
 							stmts << e if not e.kind_of?(C::Variable)	# [:eflag_s, :=, :unknown].reduce
 						}
