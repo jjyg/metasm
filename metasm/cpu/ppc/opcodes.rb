@@ -116,14 +116,13 @@ class PowerPC
 			:tbr => 0x3FF, :th => 15, :to => 31, :u => 15, :ui => 0xFFFF,
 			:ign_bo_zzz => 0b101111111, :ign_bo_z => 1, :ign_bo_at => 3, :ign_bo_at2 => 0b100111111
 
-		@valid_args = @fields_mask.dup
-		[:ign_bo_zzz, :ign_bo_z, :ign_bo_at, :ign_bo_at2, :aa, :lk, :oe, :rc, :l].each { |k| @valid_args.delete k }
-
 		@fields_shift[:ra_i16]  = @fields_shift[:ra_i16s] = @fields_shift[:ra_i16q] = 0
 		@fields_mask[:ra_i16]  = (@fields_mask[:d]  << @fields_shift[:d]) | (@fields_mask[:ra] << @fields_shift[:ra])
 		@fields_mask[:ra_i16s] = (@fields_mask[:ds] << @fields_shift[:d]) | (@fields_mask[:ra] << @fields_shift[:ra])
 		@fields_mask[:ra_i16q] = (@fields_mask[:dq] << @fields_shift[:d]) | (@fields_mask[:ra] << @fields_shift[:ra])
 
+		@valid_args = @fields_mask.dup
+		[:ign_bo_zzz, :ign_bo_z, :ign_bo_at, :ign_bo_at2, :aa, :lk, :oe, :rc, :l].each { |k| @valid_args.delete k }
 
 		addop_branch 'b', 0x48000000, :li, :stopexec
 		addop_branchcond 'b', 0x40000000, :bd
