@@ -207,10 +207,10 @@ class WebAsm
 			when 'set_global'; lambda { |di| add_opstack[ 8, global[di] => Expression[opstack[0, globsz[di]]]] }
 			when /\.load(.*)/
 				mode = $1; memsz = (mode.include?('32') ? 4 : mode.include?('16') ? 2 : mode.include?('8') ? 1 : sz)
-				lambda { |di| add_opstack[ 0, opstack[0, sz] => Expression[Indirection[[opstack[0, 4], :+, di.instruction.args[1].off], memsz]]] }
+				lambda { |di| add_opstack[ 0, opstack[0, sz] => Expression[Indirection[[:mem, :+, [opstack[0, 4], :+, di.instruction.args[1].off]], memsz]]] }
 			when /\.store(.*)/
 				mode = $1; memsz = (mode.include?('32') ? 4 : mode.include?('16') ? 2 : mode.include?('8') ? 1 : sz)
-				lambda { |di| add_opstack[ 16, Indirection[[opstack[8, 4], :+, di.instruction.args[1].off], memsz] => Expression[opstack[0, sz], :&, (1 << (8*memsz)) - 1]] }
+				lambda { |di| add_opstack[ 16, Indirection[[:mem, :+, [opstack[8, 4], :+, di.instruction.args[1].off]], memsz] => Expression[opstack[0, sz], :&, (1 << (8*memsz)) - 1]] }
 			when /\.const/; lambda { |di| add_opstack[-8, opstack[0, sz] => Expression[di.instruction.args.first.reduce]] }
 			when /\.eqz/; lambda { |di| add_opstack[ 0, opstack[0, 8] => Expression[opstack[0, sz], :==, 0]] }
 			when /\.eq/;  lambda { |di| add_opstack[ 8, opstack[0, 8] => Expression[opstack[8, sz], :==, opstack[0, sz]]] }
