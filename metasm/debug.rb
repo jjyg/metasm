@@ -612,10 +612,10 @@ class Debugger
 	# due to a side-effect of the debugger (bpx with wrong condition etc)
 	# returns nil if the execution should be avoided (just deleted the dead thread/process)
 	def check_pre_run(run_m, *run_a)
-		if @dead_process
+		if @dead_process ||= nil
 			del_pid
 			return
-		elsif @dead_thread
+		elsif @dead_thread ||= nil
 			del_tid
 			return
 		elsif @state == :running
@@ -894,7 +894,7 @@ class Debugger
 
 	# checks if @breakpoint_cause is valid, or was obsoleted by the user changing pc
 	def check_breakpoint_cause
-		if bp = @breakpoint_cause and
+		if bp = breakpoint_cause and
 				(bp.type == :bpx or (bp.type == :hwbp and bp.internal[:type] == :x)) and
 				pc != bp.address
 			bp = @breakpoint_cause = nil
@@ -1440,6 +1440,41 @@ class Debugger
 		# try to use a single get_page call
 		s = @memory.get_page(addr, len) || ''
 		s.length == len ? s : (s = @memory[addr, len] ? s.to_str : nil)
+	end
+end
+
+class CPU
+	# return the CPU register used to store the current instruction pointer
+	def dbg_register_pc
+		@dbg_register_pc ||= :pc
+	end
+
+	# return the list of CPU registers
+	def dbg_register_list
+		@dbg_register_list ||= [dbg_register_pc]
+	end
+
+	# return the list of flags for the CPU
+	def dbg_flag_list
+		@dbg_flag_list ||= []
+	end
+
+	# return a hash with register name => register size in bits
+	def dbg_register_size
+		@dbg_register_size ||= Hash.new(@size)
+	end
+
+	# returns true if stepover is different from stepinto for this instruction
+	def dbg_need_stepover(dbg, addr, di)
+		di and di.opcode.props[:saveip]
+	end
+
+	# activate a software breakpoint
+	def dbg_enable_bp(dbg, bp)
+	end
+
+	# deactivate a software breakpoint
+	def dbg_disable_bp(dbg, bp)
 	end
 end
 end

@@ -35,7 +35,7 @@ module Ansi
 			end
 		}.compact.join(';') << 'm'
 	end
-	def self.hline(len) "\e(0"<<'q'*len<<"\e(B" end
+	def self.hline(len) "\e(0" << 'q'*len << "\e(B" end
 
 	TIOCGWINSZ = 0x5413
 	TCGETS = 0x5401

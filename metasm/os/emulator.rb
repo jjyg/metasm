@@ -76,6 +76,9 @@ class EmuDebugger < Debugger
 		@breakpoint_thread = {}
 	end
 
+	def detach
+	end
+
 	def initialize_disassembler
 	end
 	def initialize_cpu
