@@ -70,9 +70,5 @@ class WebAsm < CPU
 	def init_opcode_list
 		init
 	end
-
-	def dbg_register_list
-		@dbg_register_list ||= []
-	end
 end
 end

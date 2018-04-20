@@ -72,7 +72,12 @@ class WebAsm
 	def decompile_blocks(dcmp, myblocks, deps, func, nextaddr = nil)
 		func_entry = myblocks.first[0]
 		retaddrs = dcmp.dasm.function[func_entry].return_address
-		w_func = @wasm_file.function_body.find { |fb| fb[:init_offset] == func_entry }
+		if w_func = @wasm_file.function_body.find { |fb| fb[:init_offset] == func_entry }
+		elsif g = @wasm_file.global.find { |gg| gg[:init_offset] == func_entry }
+			w_func = { :local_var => [], :type => { :params => [], :ret => [g[:type]] } }
+		elsif e = (@wasm_file.element.to_a + @wasm_file.data.to_a).find { |gg| gg[:init_offset] == func_entry }
+			w_func = { :local_var => [], :type => { :params => [], :ret => ['i32'] } }
+		end
 		scope = func.initializer
 		func.type.args.each { |a| scope.symbol[a.name] = a }
 		stmts = scope.statements
