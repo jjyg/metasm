@@ -271,7 +271,7 @@ class Disassembler
 		if b = block_at(from_addr)
 			b.add_to_normal(addr)
 		end
-		@addrs_todo << [addr, from_addr]
+		@addrs_todo << { :addr => addr, :from => from_addr }
 		disassemble
 	end
 
