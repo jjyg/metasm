@@ -246,14 +246,14 @@ class VirtualString
 	def read_range(from, len)
 		from += @addr_start
 		if not len
-			base, page = cache_get_page(from)
-			page[from - base]
+			base, page, inval = cache_get_page(from)
+			page[from - base] if not inval
 		elsif len <= @pagelength
-			base, page = cache_get_page(from)
-			s = page[from - base, len]
+			base, page, inval = cache_get_page(from)
+			s = page[from - base, len] if not inval
 			if from+len-base > @pagelength		# request crosses a page boundary
-				base, page = cache_get_page(from+len)
-				s << page[0, from+len-base]
+				base, page, inval = cache_get_page(from+len)
+				s << page[0, from+len-base] if s and not inval
 			end
 			s
 		else

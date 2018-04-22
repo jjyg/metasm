@@ -1290,11 +1290,11 @@ class Debugger
 		if arg1
 			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
 			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
-			@memory[arg0, arg1].to_str
+			(@memory[arg0, arg1] || '').to_str
 		elsif arg0.kind_of? ::Range
 			arg0.begin = resolve_expr(arg0.begin) if not arg0.begin.kind_of? ::Integer	# cannot happen, invalid ruby Range
 			arg0.end = resolve_expr(arg0.end) if not arg0.end.kind_of? ::Integer
-			@memory[arg0].to_str
+			(@memory[arg0] || '').to_str
 		else
 			get_reg_value(arg0)
 		end

@@ -23,12 +23,12 @@ class VirtualMemoryDasm < VirtualString
 	end
 
 	# reads an aligned page from the file, at file offset addr
-	def get_page(addr, len=@pagelength)
+	def read_range(addr, len=@pagelength)
 		@disassembler.read_raw_data(addr, len)
 	end
 
 	def page_invalid?(addr)
-		@disassembler.get_section_at(addr)
+		!@disassembler.get_section_at(addr)
 	end
 
 	# overwrite a section of the file
