@@ -227,7 +227,7 @@ EOS
 			a.each { |aa|
 				next if aa == Expression::Unknown
 				dasm.auto_label_at(aa, 'seh', 'loc', 'sub')
-				dasm.addrs_todo << [aa]
+				dasm.addrs_todo << { :addr => aa }
 			}
 			super(dasm, di)
 		else
