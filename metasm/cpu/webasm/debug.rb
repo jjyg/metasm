@@ -16,12 +16,16 @@ class WebAsm
 		case di.opcode.name
 		when 'br_if', 'if'
 			if dbg_ctx.resolve(Indirection[:opstack, 8]) != 0
-				fbd[pc_reg] = di.next_addr
+				fbd[pc_reg] = (di.opcode.name == 'if' ? di.next_addr : di.misc[:x])
 			else
-				fbd[pc_reg] = di.misc[:x]
+				fbd[pc_reg] = (di.opcode.name == 'if' ? di.misc[:x] : di.next_addr)
 			end
 		else return super(di, fbd, pc_reg, dbg_ctx)
 		end
+	end
+
+	def dbg_end_stepout(dbg, addr, di)
+		di and di.opcode.props[:stopexec] and (di.opcode.name == 'return' or di.opcode.name == 'end')
 	end
 end
 end
