@@ -115,11 +115,11 @@ def self.emu(dasm, addr)
 	loop do
 		# the effects of the loop
 		post_bd = loop_bd.inject({}) { |bd, (k, v)|
-	       		if k.kind_of? Metasm::Indirection
+			if k.kind_of? Metasm::Indirection
 				k = k.bind(pre_bd).reduce_rec
 				raise "bad ptr #{k}" if not dasm.get_section_at(k.pointer.reduce)
 			end
-		       	bd.update k => Metasm::Expression[v.bind(pre_bd).reduce]
+			bd.update k => Metasm::Expression[v.bind(pre_bd).reduce]
 		}
 
 		# the indirections used by the loop
