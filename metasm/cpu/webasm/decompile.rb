@@ -75,7 +75,7 @@ class WebAsm
 		if w_func = @wasm_file.function_body.find { |fb| fb[:init_offset] == func_entry }
 		elsif g = @wasm_file.global.find { |gg| gg[:init_offset] == func_entry }
 			w_func = { :local_var => [], :type => { :params => [], :ret => [g[:type]] } }
-		elsif e = (@wasm_file.element.to_a + @wasm_file.data.to_a).find { |gg| gg[:init_offset] == func_entry }
+		elsif (@wasm_file.element.to_a + @wasm_file.data.to_a).find { |gg| gg[:init_offset] == func_entry }
 			w_func = { :local_var => [], :type => { :params => [], :ret => ['i32'] } }
 		end
 		scope = func.initializer
@@ -193,13 +193,9 @@ class WebAsm
 					ret = C::CExpression[ce[Expression[Indirection[[:frameptr, :-, 8], dcmp.sizeof(rettype)]]]] unless fsig[:ret].empty?
 					stmts << C::Return.new(ret)
 				elsif di.opcode.name == 'call' #or di.opcode.name == 'call_indirect'
-					f_w = @wasm_file.get_function_nr(di.misc[:tg_func_nr])
-					raise "no call target for #{di} @#{di.misc[:tg_func_nr]}" if not f_w
-					if f_w[:init_offset]
-						tg = dcmp.dasm.auto_label_at(f_w[:init_offset], 'sub')
-					else
-						tg = '%s_%s' % [f_w[:module], f_w[:field]]
-					end
+					tg = di.misc[:x].first
+					raise "no call target for #{di}" if not tg
+					dcmp.dasm.auto_label_at(tg, 'sub') if dasm.get_section_at(tg)
 					f = dcmp.c_parser.toplevel.symbol[tg]
 					raise "no global function #{tg} for #{di}" if not f
 

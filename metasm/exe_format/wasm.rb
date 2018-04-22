@@ -90,7 +90,7 @@ class WasmFile < ExeFormat
 	def decode_sleb(ed = @encoded) decode_uleb(ed, true) end
 	attr_accessor :header, :modules, :type, :import, :function_signature,
 		:table, :memory, :global, :export, :start_function_index,
-		:element, :function_body, :data
+		:element, :function_body, :data, :code_info
 
 	def initialize(endianness=:little)
 		@endianness = endianness
@@ -195,6 +195,25 @@ class WasmFile < ExeFormat
 			idx = e[:index] - func_imports.length
 			next if not fb = function_body.to_a[idx]
 			@encoded.add_export(new_label(e[:field]), fb[:init_offset], true)
+		}
+		# bytecode start addr => { :local_var => [], :params => [], :ret => [] }
+		# :local_var absent for external code (imported funcs)
+		@code_info = {}
+		import.to_a.each { |i|
+			next unless i[:kind] == 'function'
+			@code_info["#{i[:module]}_#{i[:field]}"] = { :params => i[:type][:params], :ret => i[:type][:ret] }
+		}
+		function_body.to_a.each { |fb|
+			@code_info[fb[:init_offset]] = { :local_var => fb[:local_var], :params => fb[:type][:params], :ret => fb[:type][:ret] }
+		}
+		global.to_a.each { |g|
+			@code_info[g[:init_offset]] = { :local_var => [], :params => [], :ret => [g[:type]] }
+		}
+		element.to_a.each { |e|
+			@code_info[e[:init_offset]] = { :local_var => [], :params => [], :ret => ['i32'] }
+		}
+		data.to_a.each { |d|
+			@code_info[d[:init_offset]] = { :local_var => [], :params => [], :ret => ['i32'] }
 		}
 	end
 

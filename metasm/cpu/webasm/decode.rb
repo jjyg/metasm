@@ -36,13 +36,13 @@ class WebAsm
 		addr = dasm.normalize(addr)
 		return dasm.misc[:cpu_context] if cache[addr]
 
-		func_nr = @wasm_file.function_body.index { |f| f[:init_offset] == addr } + @wasm_file.import.to_a.find_all { |i| i[:kind] == 'function' }.length
+		code_start = addr
 		stack = [[]]
 		set_misc_x = lambda { |di, tg| di.misc[:x] ||= [] ; di.misc[:x] |= [tg] }
 		while di = dasm.disassemble_instruction(addr)
 			cache[addr] = di
 			di.misc ||= {}
-			di.misc[:func_nr] = func_nr
+			di.misc[:code_start] = code_start
 			case di.opcode.name
 			when 'if', 'loop', 'block'
 				stack << [di]
@@ -163,10 +163,10 @@ class WebAsm
 		}
 		locsz = lambda { |di|
 			loc_nr = Expression[di.instruction.args.first].reduce
-			f = @wasm_file.get_function_nr(di.misc[:func_nr])
-			next typesz[f[:type][:params][loc_nr]] if f[:type] and loc_nr < f[:type][:params].to_a.length
-			loc_nr -= f[:type][:params].to_a.length if f[:type]
-			next typesz[f[:local_var][loc_nr]] if f[:local_var].to_a[loc_nr]
+			ci = @wasm_file.code_info[di.misc[:code_start]]
+			next typesz[ci[:params][loc_nr]] if loc_nr < ci[:params].length
+			loc_nr -= ci[:params].length
+			next typesz[ci[:local_var][loc_nr]] if ci[:local_var][loc_nr]
 			8
 		}
 		local = lambda { |di|
@@ -182,6 +182,7 @@ class WebAsm
 					if opname == 'call'
 						f = @wasm_file.get_function_nr(di.misc[:tg_func_nr])
 						proto = f ? f[:type] : {}
+						# TODO use local_base
 						h = { :callstack => Expression[:callstack, :+, 8], Indirection[:callstack, 8] => Expression[di.next_addr] }
 					else
 						proto = @wasm_file.type[di.instruction.args.first.reduce]
