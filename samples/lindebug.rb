@@ -124,10 +124,10 @@ class LinDebug
 		defretval
 	end
 
-	attr_accessor :dataptr, :codeptr, :rs, :promptlog, :command
-	def initialize(rs)
-		@rs = rs
-		@rs.set_log_proc { |l| add_log l }
+	attr_accessor :dataptr, :codeptr, :dbg, :promptlog, :command
+	def initialize(dbg)
+		@dbg = dbg
+		@dbg.set_log_proc { |l| add_log l }
 		@datafmt = 'db'
 
 		@prompthistlen = 20
@@ -148,7 +148,7 @@ class LinDebug
 	end
 
 	def init_rs
-		@codeptr = @dataptr = @rs.pc	# avoid initial faults
+		@codeptr = @dataptr = @dbg.pc	# avoid initial faults
 	end
 
 	def main_loop
@@ -211,14 +211,14 @@ class LinDebug
 
 	def _updateregs
 		pvrsz = 0
-		words = @rs.register_list.map { |r|
+		words = @dbg.register_list.map { |r|
 			rs = r.to_s.rjust(pvrsz)
 			pvrsz = rs.length
-			rv = @rs[r]
-			["#{rs}=%0#{@rs.register_size[r]/4}X " % rv,
+			rv = @dbg[r]
+			["#{rs}=%0#{@dbg.register_size[r]/4}X " % rv,
 				(@oldregs[r] != rv)]
-		} + @rs.flag_list.map { |fl|
-			fv = @rs.get_flag(fl)
+		} + @dbg.flag_list.map { |fl|
+			fv = @dbg.get_flag(fl)
 			[fv ? fl.to_s.upcase : fl.to_s.downcase,
 				(@oldregs[fl] != fv)]
 		}
@@ -253,24 +253,24 @@ class LinDebug
 	def _updatecode
 		if @codeptr
 			addr = @codeptr
-		elsif @oldregs[@rs.register_pc] and @oldregs[@rs.register_pc] < @rs.pc and @oldregs[@rs.register_pc] + 8 >= @rs.pc
-			addr = @oldregs[@rs.register_pc]
+		elsif @oldregs[@dbg.register_pc] and @oldregs[@dbg.register_pc] < @dbg.pc and @oldregs[@dbg.register_pc] + 8 >= @dbg.pc
+			addr = @oldregs[@dbg.register_pc]
 		else
-			addr = @rs.pc
+			addr = @dbg.pc
 		end
 		@codeptr = addr
 
-		addrsz = @rs.register_size[@rs.register_pc]
+		addrsz = @dbg.register_size[@dbg.register_pc]
 		addrfmt = "%0#{addrsz/4}X"
-		if not @rs.addr2module(addr) and @rs.shortname !~ /remote/
+		if not @dbg.addr2module(addr) and @dbg.shortname !~ /remote/
 			base = addr & ((1 << addrsz) - 0x1000)
 			@noelfsig ||= {}	# cache elfmagic notfound
 			if not @noelfsig[base] and base < ((1 << addrsz) - 0x1_0000)
 				self.statusline = " scanning for elf header at #{addrfmt % base}"
 				128.times {
 					@statusline = " scanning for elf header at #{addrfmt % base}"
-					if not @noelfsig[base] and @rs[base, Metasm::ELF::MAGIC.length] == Metasm::ELF::MAGIC
-						@rs.loadsyms(base, base.to_s(16))
+					if not @noelfsig[base] and @dbg[base, Metasm::ELF::MAGIC.length] == Metasm::ELF::MAGIC
+						@dbg.loadsyms(base, base.to_s(16))
 						break
 					else
 						@noelfsig[base] = true	# XXX an elf may be mmaped here later..
@@ -284,35 +284,35 @@ class LinDebug
 
 		text = ''
 		text << Color[:border]
-		title = @rs.addrname(addr)
+		title = @dbg.addrname(addr)
 		pre  = [@console_width-100, 6].max
 		post = @console_width - (pre + title.length + 2)
 		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post) << Color[:normal] << "\n"
 
 		seg = ''
-		seg = ('%04X' % @rs['cs']) << ':' if @rs.cpu.shortname =~ /ia32|x64/
+		seg = ('%04X' % @dbg['cs']) << ':' if @dbg.cpu.shortname =~ /ia32|x64/
 
 		cnt = @win_code_height
 		while (cnt -= 1) > 0
-			if @rs.symbols[addr]
-				text << ('    ' << @rs.symbols[addr] << ?:) << Ansi::ClearLineAfter << "\n"
+			if @dbg.symbols[addr]
+				text << ('    ' << @dbg.symbols[addr] << ?:) << Ansi::ClearLineAfter << "\n"
 				break if (cnt -= 1) <= 0
 			end
-			text << Color[:hilight] if addr == @rs.pc
+			text << Color[:hilight] if addr == @dbg.pc
 			text << seg
-			if @rs.shortname =~ /remote/ and @rs.realmode
-				text << (addrfmt % (addr - 16*@rs['cs']))
+			if @dbg.shortname =~ /remote/ and @dbg.realmode
+				text << (addrfmt % (addr - 16*@dbg['cs']))
 			else
 				text << (addrfmt % addr)
 			end
-			di = @rs.di_at(addr)
-			di = nil if di and addr < @rs.pc and addr+di.bin_length > @rs.pc
+			di = @dbg.di_at(addr)
+			di = nil if di and addr < @dbg.pc and addr+di.bin_length > @dbg.pc
 			len = (di ? di.bin_length : 1)
 			text << '  '
-			text << @rs.memory[addr, [len, 10].min].to_s.unpack('C*').map { |c| '%02X' % c }.join.ljust(22)
+			text << @dbg.memory[addr, [len, 10].min].to_s.unpack('C*').map { |c| '%02X' % c }.join.ljust(22)
 			if di
 				text <<
-				if addr == @rs.pc
+				if addr == @dbg.pc
 					"*#{di.instruction}".ljust([@console_width-(addrsz/4+seg.length+24), 0].max)
 				else
 					" #{di.instruction}" << Ansi::ClearLineAfter
@@ -320,7 +320,7 @@ class LinDebug
 			else
 				text << ' <unk>' << Ansi::ClearLineAfter
 			end
-			text << Color[:normal] if addr == @rs.pc
+			text << Color[:normal] if addr == @dbg.pc
 			addr += len
 			text << "\n"
 		end
@@ -332,7 +332,7 @@ class LinDebug
 	end
 
 	def _updatedata
-		addrsz = @rs.register_size[@rs.register_pc]
+		addrsz = @dbg.register_size[@dbg.register_pc]
 		addrfmt = "%0#{addrsz/4}X"
 
 		@dataptr &= ((1 << addrsz) - 1)
@@ -340,17 +340,17 @@ class LinDebug
 
 		text = ''
 		text << Color[:border]
-		title = @rs.addrname(addr)
+		title = @dbg.addrname(addr)
 		pre  = [@console_width-100, 6].max
 		post = [@console_width - (pre + title.length + 2), 0].max
 		text << Ansi.hline(pre) << ' ' << title << ' ' << Ansi.hline(post) << Color[:normal] << "\n"
 
 		seg = ''
-		seg = ('%04X' % @rs['ds']) << ':' if @rs.cpu.shortname =~ /^ia32/
+		seg = ('%04X' % @dbg['ds']) << ':' if @dbg.cpu.shortname =~ /^ia32/
 
 		cnt = @win_data_height
 		while (cnt -= 1) > 0
-			raw = @rs.memory[addr, 16].to_s
+			raw = @dbg.memory[addr, 16].to_s
 			text << seg << (addrfmt % addr) << '  '
 			case @datafmt
 			when 'db'; text << raw[0,8].unpack('C*').map { |c| '%02x ' % c }.join << ' ' <<
@@ -449,20 +449,21 @@ class LinDebug
 	end
 
 	def preupdate
-		@rs.register_list.each { |r| @oldregs[r] = @rs[r] }
-		@rs.flag_list.each { |fl| @oldregs[fl] = @rs.get_flag(fl) }
+		@dbg.register_list.each { |r| @oldregs[r] = @dbg[r] }
+		@dbg.flag_list.each { |fl| @oldregs[fl] = @dbg.get_flag(fl) }
 	end
 
 	def updatecodeptr
-		@codeptr ||= @rs.pc
-		if @codeptr > @rs.pc or @codeptr < @rs.pc - 6*@win_code_height
-			@codeptr = @rs.pc
-		elsif @codeptr != @rs.pc
+		@codeptr ||= @dbg.pc
+		if @codeptr > @dbg.pc or @codeptr < @dbg.pc - 6*@win_code_height
+			@codeptr = @dbg.pc
+		elsif @codeptr != @dbg.pc
 			addr = @codeptr
 			addrs = []
-			while addr < @rs.pc
+			while addr <= @dbg.pc
 				addrs << addr
-				o = ((di = @rs.di_at(addr)) ? di.bin_length : 0)
+				addrs << addr if @dbg.symbols[addr]
+				o = ((di = @dbg.di_at(addr)) ? di.bin_length : 0)
 				addr += ((o == 0) ? 1 : o)
 			end
 			if addrs.length > @win_code_height-4
@@ -478,35 +479,35 @@ class LinDebug
 	def singlestep
 		self.statusline = ' target singlestepping...'
 		preupdate
-		@rs.singlestep_wait
+		@dbg.singlestep_wait
 		updatecodeptr
 		@statusline = nil
 	end
 	def stepover
 		self.statusline = ' target running...'
 		preupdate
-		@rs.stepover_wait
+		@dbg.stepover_wait
 		updatecodeptr
 		@statusline = nil
 	end
 	def cont(*a)
 		self.statusline = ' target running...'
 		preupdate
-		@rs.continue_wait(*a)
+		@dbg.continue_wait(*a)
 		updatecodeptr
 		@statusline = nil
 	end
 	def stepout
 		self.statusline = ' target running...'
 		preupdate
-		@rs.stepout_wait
+		@dbg.stepout_wait
 		updatecodeptr
 		@statusline = nil
 	end
 	def syscall
 		self.statusline = ' target running to next syscall...'
 		preupdate
-		@rs.syscall_wait
+		@dbg.syscall_wait
 		updatecodeptr
 		@statusline = nil
 	end
@@ -552,9 +553,9 @@ class LinDebug
 				when :data
 					@dataptr -= 16
 				when :code
-					@codeptr ||= @rs.pc
+					@codeptr ||= @dbg.pc
 					@codeptr -= (1..10).find { |off|
-						di = @rs.di_at(@codeptr-off)
+						di = @dbg.di_at(@codeptr-off)
 						di.bin_length == off if di
 					} || 10
 				end
@@ -573,8 +574,8 @@ class LinDebug
 				when :data
 					@dataptr += 16
 				when :code
-					@codeptr ||= @rs.pc
-					di = @rs.di_at(@codeptr)
+					@codeptr ||= @dbg.pc
+					di = @dbg.di_at(@codeptr)
 					@codeptr += (di ? (di.bin_length || 1) : 1)
 				end
 			when :left;  @promptpos -= 1 if @promptpos > 0
@@ -588,10 +589,10 @@ class LinDebug
 				when :prompt; @log_off += @win_prpt_height-3
 				when :data; @dataptr -= 16*(@win_data_height-1)
 				when :code
-					@codeptr ||= @rs.pc
+					@codeptr ||= @dbg.pc
 					(@win_code_height-1).times {
 						@codeptr -= (1..10).find { |off|
-							di = @rs.di_at(@codeptr-off)
+							di = @dbg.di_at(@codeptr-off)
 							di.bin_length == off if di
 						} || 10
 					}
@@ -601,8 +602,8 @@ class LinDebug
 				when :prompt; @log_off -= @win_prpt_height-3
 				when :data; @dataptr += 16*(@win_data_height-1)
 				when :code
-					@codeptr ||= @rs.pc
-					(@win_code_height-1).times { @codeptr += ((o = @rs.di_at(@codeptr)) ? [o.bin_length, 1].max : 1) }
+					@codeptr ||= @dbg.pc
+					(@win_code_height-1).times { @codeptr += ((o = @dbg.di_at(@codeptr)) ? [o.bin_length, 1].max : 1) }
 				end
 			when ?\t
 				if not @promptbuf[0, @promptpos].include? ' '
@@ -631,67 +632,67 @@ class LinDebug
 
 	def load_commands
 		@command['kill'] = lambda { |str|
-			@rs.kill
+			@dbg.kill
 			@running = false
 			log 'killed'
 		}
 		@command['quit'] = @command['detach'] = @command['exit'] = lambda { |str|
-			@rs.detach
+			@dbg.detach
 			@running = false
 		}
 		@command['closeui'] = lambda { |str|
 			@running = false
 		}
 		@command['bpx'] = lambda { |str|
-			@rs.bpx @rs.resolve(str)
+			@dbg.bpx @dbg.resolve(str)
 		}
 		@command['bphw'] = @command['hwbp'] = lambda { |str|
 			type, str = str.split(/\s+/, 2)
-			@rs.hwbp @rs.resolve(str.to_s), type
+			@dbg.hwbp @dbg.resolve(str.to_s), type
 		}
-		@command['bt'] = lambda { |str| @rs.stacktrace { |a,t| add_log "#{'%x' % a} #{t}" } }
-		@command['d'] =  lambda { |str| @dataptr = @rs.resolve(str) if str.length > 0 }
-		@command['db'] = lambda { |str| @datafmt = 'db' ; @dataptr = @rs.resolve(str) if str.length > 0 }
-		@command['dw'] = lambda { |str| @datafmt = 'dw' ; @dataptr = @rs.resolve(str) if str.length > 0 }
-		@command['dd'] = lambda { |str| @datafmt = 'dd' ; @dataptr = @rs.resolve(str) if str.length > 0 }
+		@command['bt'] = lambda { |str| @dbg.stacktrace { |a,t| add_log "#{'%x' % a} #{t}" } }
+		@command['d'] =  lambda { |str| @dataptr = @dbg.resolve(str) if str.length > 0 }
+		@command['db'] = lambda { |str| @datafmt = 'db' ; @dataptr = @dbg.resolve(str) if str.length > 0 }
+		@command['dw'] = lambda { |str| @datafmt = 'dw' ; @dataptr = @dbg.resolve(str) if str.length > 0 }
+		@command['dd'] = lambda { |str| @datafmt = 'dd' ; @dataptr = @dbg.resolve(str) if str.length > 0 }
 		@command['r'] =  lambda { |str|
 			r, str = str.split(/\s+/, 2)
 			if r == 'fl'
-				@rs.toggle_flag(str.to_sym)
-			elsif not @rs[r]
+				@dbg.toggle_flag(str.to_sym)
+			elsif not @dbg[r]
 				log "bad reg #{r}"
 			elsif str and str.length > 0
-				@rs[r] = @rs.resolve(str)
+				@dbg[r] = @dbg.resolve(str)
 			else
-				log "#{r} = #{@rs[r]}"
+				log "#{r} = #{@dbg[r]}"
 			end
 		}
 		@command['g'] = lambda { |str|
-			@rs.go @rs.resolve(str)
+			@dbg.go @dbg.resolve(str)
 		}
-		@command['u'] = lambda { |str| @codeptr = @rs.resolve(str) }
+		@command['u'] = lambda { |str| @codeptr = @dbg.resolve(str) }
 		@command['ruby'] = lambda { |str| instance_eval str }
 		@command['wd'] = lambda { |str|
 			@focus = :data
 			if str.length > 0
-				@win_data_height = @rs.resolve(str)
+				@win_data_height = @dbg.resolve(str)
 				resize
 			end
 		}
 		@command['wc'] = lambda { |str|
 			@focus = :code
 			if str.length > 0
-				@win_code_height = @rs.resolve(str)
+				@win_code_height = @dbg.resolve(str)
 				resize
 			end
 		}
 		@command['wp'] = lambda { |str| @focus = :prompt }
 		@command['?'] = lambda { |str|
-			val = @rs.resolve(str)
+			val = @dbg.resolve(str)
 			log "#{val} 0x#{val.to_s(16)} #{[val].pack('L').inspect}"
 		}
 		@command['syscall'] = lambda { |str|
-			@rs.syscall_wait(str)
+			@dbg.syscall_wait(str)
 		}
 	end
 end
@@ -709,10 +710,10 @@ if $0 == __FILE__
 	when /^(tcp:|udp:)?..+:/, /^ser:/
 		opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
 		opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
-		rs = Metasm::GdbRemoteDebugger.new(ARGV.first, opts[:sc_cpu])
+		dbg = Metasm::GdbRemoteDebugger.new(ARGV.first, opts[:sc_cpu])
 	else
-		rs = Metasm::LinDebugger.new(ARGV.join(' '))
+		dbg = Metasm::LinDebugger.new(ARGV.join(' '))
 	end
-	rs.load_map(opts[:filemap]) if opts[:filemap]
-	LinDebug.new(rs).main_loop
+	dbg.load_map(opts[:filemap]) if opts[:filemap]
+	LinDebug.new(dbg).main_loop
 end
