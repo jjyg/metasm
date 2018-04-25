@@ -297,6 +297,12 @@ class Ia32
 		REG_SYMS
 	end
 
+	# return the list of backtraced EFLAGS as symbols
+	EFLAG_SYMS = [:eflag_z, :eflag_s, :eflag_c, :eflag_o]
+	def eflag_symbols
+		EFLAG_SYMS
+	end
+
 	# interprets a condition code (in an opcode name) as an expression involving backtracked eflags
 	# eflag_p is never computed, and this returns Expression::Unknown for this flag
 	# ex: 'z' => Expression[:eflag_z]
@@ -1238,11 +1244,15 @@ class Ia32
 	# the binding will not include memory access from subfunctions
 	# entry should be an entrypoint of the disassembler if finish is nil
 	# the code sequence must have only one end, with no to_normal
-	def code_binding(dasm, entry, finish=nil)
+	# options:
+	#  :include_eflags => include EFLAGS in the returned binding
+	def code_binding(dasm, entry, finish=nil, **nargs)
+		include_eflags = nargs.delete :include_eflags
+
 		entry = dasm.normalize(entry)
 		finish = dasm.normalize(finish) if finish
 		lastdi = nil
-		binding = {}
+		bd = {}
 		bt = lambda { |from, expr, inc_start|
 			ret = dasm.backtrace(Expression[expr], from, :snapshot_addr => entry, :include_start => inc_start)
 			ret.length == 1 ? ret.first : Expression::Unknown
@@ -1267,7 +1277,7 @@ class Ia32
 					get_xrefs_w(dasm, di).each { |waddr, len|
 						# we want the ptr expressed with reg values at entry
 						ptr = bt[a, waddr, false]
-						binding[Indirection[ptr, len, a]] = bt[a, Indirection[waddr, len, a], true]
+						bd[Indirection[ptr, len, a]] = bt[a, Indirection[waddr, len, a], true]
 					}
 					false
 				end
@@ -1290,13 +1300,13 @@ class Ia32
 				if lastdi.opcode.props[:setip]
 					e = get_xrefs_x(dasm, lastdi)
 					raise 'bad code_binding ending' if e.to_a.length != 1 or not lastdi.opcode.props[:stopexec]
-					binding[:ip] = bt[lastdi.address, e.first, false]
+					bd[:ip] = bt[lastdi.address, e.first, false]
 				elsif not lastdi.opcode.props[:stopexec]
-					binding[:ip] = lastdi.next_addr
+					bd[:ip] = lastdi.next_addr
 				end
 			end
 		end
-		binding.delete_if { |k, v| Expression[k] == Expression[v] }
+		bd.delete_if { |k, v| Expression[k] == Expression[v] }
 
 		# add register binding
 		raise "no code_binding end" if not lastdi and not finish
@@ -1309,10 +1319,22 @@ class Ia32
 			mask = 0xffff_ffff	# dont use 1<<@size, because 16bit code may use e.g. edi (through opszoverride)
 			mask = 0xffff_ffff_ffff_ffff if @size == 64
 			val = Expression[val, :&, mask].reduce
-			binding[reg] = Expression[val]
+			bd[reg] = Expression[val]
 		}
 
-		binding
+		# add EFLAGS binding
+		if include_eflags
+			eflag_symbols.each { |eflag|
+				val =
+					if lastdi; bt[lastdi.address, eflag, true]
+					else bt[finish, eflag, false]
+					end
+				next if val == Expression[eflag]
+				bd[eflag] = Expression[val.reduce]
+			}
+		end
+
+		bd
 	end
 
 	# trace the stack pointer register across a function, rename occurences of esp+XX to esp+var_XX
