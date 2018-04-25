@@ -100,9 +100,9 @@ def self.emu(dasm, addr)
 	loop_again_cond = Expression[:'!', loop_again_cond] if dasm.decoded[a_cond].next_addr != a_out
 
 	init_bd = {}
-	loop_bd.keys.grep(Symbol).each { |reg|
-		bt = dasm.backtrace(reg, a_pre, :include_start => true)
-		init_bd[reg] = bt.first if bt.length == 1 and bt.first != Metasm::Expression::Unknown and bt.first != Metasm::Expression[reg]
+	loop_bd.values.map { |v| v.externals }.flatten.uniq.each { |ext|
+		bt = dasm.backtrace(ext, a_pre, :include_start => true)
+		init_bd[ext] = bt.first if bt.length == 1 and bt.first != Metasm::Expression::Unknown and bt.first != Metasm::Expression[ext]
 	}
 
 	# reject non-determinist memory write
@@ -139,7 +139,7 @@ def self.emu(dasm, addr)
 
 		break if loop_again_cond.bind(post_bd).reduce == 0
 
-		pre_bd = post_bd
+		pre_bd.update(post_bd)
 		pre_bd.delete_if { |k, v| not k.kind_of? Symbol }
 	end
 
@@ -166,7 +166,7 @@ def self.find_loop(dasm, addr)
 	first = b1.address
 	last = b2.list.last.address
 	post = (b2.to_normal - [b1.address]).first
-	loop_bd = dasm.code_binding(first, post)
+	loop_bd = dasm.code_binding(first, post, :include_eflags => true)
 
 	[pre, first, last, post, loop_bd]
 end
