@@ -206,8 +206,10 @@ class WasmFile < ExeFormat
 		function_body.to_a.each { |fb|
 			@code_info[fb[:init_offset]] = { :local_var => fb[:local_var], :params => fb[:type][:params], :ret => fb[:type][:ret] }
 		}
+		global_idx = import.to_a.find_all { |i| i[:kind] == 'global' }.length - 1
 		global.to_a.each { |g|
 			@code_info[g[:init_offset]] = { :local_var => [], :params => [], :ret => [g[:type]] }
+			@encoded.add_export new_label("global_#{global_idx += 1}_init"), g[:init_offset]
 		}
 		element.to_a.each { |e|
 			@code_info[e[:init_offset]] = { :local_var => [], :params => [], :ret => ['i32'] }
@@ -276,7 +278,6 @@ class WasmFile < ExeFormat
 		@global = []
 		decode_uleb(m.edata).times {
 			@global << { :type => decode_type(m.edata), :init_offset => read_code_until_end(m) }
-			@encoded.add_export new_label("global_#{@global.length-1}_init"), @global.last[:init_offset]
 		}
 	end
 

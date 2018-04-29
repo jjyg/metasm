@@ -223,7 +223,7 @@ class WebAsm
 
 			when /\.(clz|ctz|popcnt)/; lambda { |di| add_opstack[ 0, :bits => Expression[opstack[0, sz]]] }
 			when /\.add/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :+, opstack[0, sz]]] }
-			when /\.sub/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :+, opstack[0, sz]]] }
+			when /\.sub/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :-, opstack[0, sz]]] }
 			when /\.mul/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :*, opstack[0, sz]]] }
 			when /\.div/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :/, opstack[0, sz]]] }
 			when /\.rem/; lambda { |di| add_opstack[ 8, opstack[0, sz] => Expression[opstack[8, sz], :%, opstack[0, sz]]] }
