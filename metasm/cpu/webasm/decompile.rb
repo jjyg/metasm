@@ -195,7 +195,7 @@ class WebAsm
 				elsif di.opcode.name == 'call' #or di.opcode.name == 'call_indirect'
 					tg = di.misc[:x].first
 					raise "no call target for #{di}" if not tg
-					dcmp.dasm.auto_label_at(tg, 'sub') if dasm.get_section_at(tg)
+					tg = dcmp.dasm.auto_label_at(tg, 'sub') if dcmp.dasm.get_section_at(tg)
 					f = dcmp.c_parser.toplevel.symbol[tg]
 					raise "no global function #{tg} for #{di}" if not f
 
