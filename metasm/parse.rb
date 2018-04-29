@@ -26,18 +26,10 @@ class CPU
 		while tok = lexer.readtok and parse_prefix(i, tok.raw)
 			lexer.skip_space_eol
 		end
+
+		lexer.unreadtok(tok)
+		tok = parse_instruction_mnemonic(lexer)
 		return if not tok
-
-		# allow '.' in opcode name
-		tok = tok.dup
-		while ntok = lexer.nexttok and ntok.type == :punct and ntok.raw == '.'
-			tok.raw << lexer.readtok.raw
-			ntok = lexer.readtok
-			raise tok, 'invalid opcode name' if not ntok or ntok.type != :string
-			tok.raw << ntok.raw
-		end
-
-		raise tok, 'invalid opcode' if not opcode_list_byname[tok.raw]
 
 		i.opname = tok.raw
 		i.backtrace = tok.backtrace
@@ -61,6 +53,23 @@ class CPU
 		parse_instruction_fixup(i)
 
 		i
+	end
+
+	# return a lexer token with an instruction mnemonic in #raw
+	# allows '.' in opcode name
+	# return nil at eof
+	def parse_instruction_mnemonic(lexer)
+		return if not tok = lexer.readtok
+		tok = tok.dup
+		while ntok = lexer.nexttok and ntok.type == :punct and ntok.raw == '.'
+			tok.raw << lexer.readtok.raw
+			ntok = lexer.readtok
+			raise tok, 'invalid opcode name' if not ntok or ntok.type != :string
+			tok.raw << ntok.raw
+		end
+
+		raise tok, 'invalid opcode' if not opcode_list_byname[tok.raw]
+		tok
 	end
 
 	def parse_instruction_checkproto(i)
