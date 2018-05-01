@@ -894,11 +894,13 @@ end
 
 class DasmWindow < Window
 	attr_accessor :dasm_widget, :menu
-	def initialize_window(title = 'metasm disassembler', dasm=nil, *ep)
+	def initialize_window(*args)
+		dasm = args.grep(Disassembler).first
+		title = args.find { |a| dasm ? !dasm.get_section_at(a) : a.kind_of?(::String) } || 'metasm disassembler'
+		ep = args - [dasm, title]
 		self.title = title
 		@dasm_widget = nil
 		if dasm
-			ep = ep.first if ep.length == 1 and ep.first.kind_of? Array
 			display(dasm, ep)
 		else
 			self.widget = NoDasmWidget.new(self)

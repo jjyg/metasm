@@ -1240,6 +1240,7 @@ end
 class DbgWindow < Window
 	attr_accessor :dbg_widget
 	def initialize_window(dbg = nil, title='metasm debugger')
+		dbg, title = title, dbg if dbg.kind_of?(::String) or title.kind_of?(Debugger)
 		self.title = title
 		display(dbg) if dbg
 	end
