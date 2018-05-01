@@ -416,7 +416,7 @@ class Decompiler
 			end
 			itype = C::Pointer.new(bt)
 			p = decompile_cexpr(e.target, scope, itype)
-			p = C::CExpression[[p], itype] if not p.type.kind_of?(C::Pointer)
+			p = C::CExpression[[p], itype]
 			C::CExpression[:*, p]
 		when ::Integer
 			C::CExpression[e]
@@ -1761,12 +1761,23 @@ class Decompiler
 				ce.replace C::CExpression[ce.rexpr.rexpr]
 			end
 
-			# int x + 0xffffffff -> x-1
+			# int x + 0xffffffff => x-1
 			if ce.lexpr and ce.rexpr.kind_of?(C::CExpression) and not ce.rexpr.op and [:+, :-, :'+=', :'-=', :'!=', :==, :>, :<, :>=, :<=].include?(ce.op) and
 					ce.rexpr.rexpr == (1 << (8*sizeof(ce.lexpr)))-1
 				ce.op = {:+ => :-, :- => :+, :'+=' => :'-=', :'-=' => :'+='}[ce.op]
 				ce.rexpr.rexpr = 1
 			end
+
+			# i + ptr => ptr + i
+			if ce.op == :+ and ce.lexpr and ce.rexpr.type.pointer? and ce.lexpr.type.integral?
+				ce.rexpr, ce.lexpr = ce.lexpr, ce.rexpr
+			end
+
+			# (ptr + i) + j => ptr + (i + j)
+			if ce.op == :+ and ce.lexpr and ce.lexpr.type.pointer? and ce.rexpr.type.integral? and ce.lexpr.kind_of?(C::CExpression) and ce.lexpr.op == :+ and ce.lexpr.lexpr and ce.lexpr.lexpr.type.pointer? and ce.lexpr.rexpr.type.integral?
+				ce.lexpr, ce.rexpr = ce.lexpr.lexpr, C::CExpression[ce.lexpr.rexpr, :+, ce.rexpr]
+			end
+
 
 			# int *ptr; *(ptr + 4) => ptr[4]
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of?(C::CExpression) and ce.rexpr.op == :+ and var = ce.rexpr.lexpr and var.kind_of?(C::Variable) and var.type.pointer?
@@ -1900,12 +1911,6 @@ class Decompiler
 			end
 			if ce.lexpr.kind_of?(C::CExpression) and not ce.lexpr.op and ce.lexpr.rexpr.kind_of?(C::Variable) and ce.lexpr.type == ce.lexpr.rexpr.type
 				ce.lexpr = ce.lexpr.rexpr
-			end
-
-			if ce.op == :'=' and ce.lexpr.kind_of?(C::CExpression) and ce.lexpr.op == :* and not ce.lexpr.lexpr and ce.lexpr.rexpr.kind_of?(C::CExpression) and
-					not ce.lexpr.rexpr.op and ce.lexpr.rexpr.type.pointer? and ce.lexpr.rexpr.type.pointed != ce.rexpr.type
-				ce.lexpr.rexpr.type = C::Pointer.new(ce.rexpr.type)
-				optimize_code(ce.lexpr)
 			end
 		}
 
@@ -2456,8 +2461,14 @@ class Decompiler
 			end
 
 			# x += 1 => ++x
-			if (ce.op == :'+=' or ce.op == :'-=') and ce.rexpr.kind_of?(C::CExpression) and not ce.rexpr.op and ce.rexpr.rexpr == 1
-				ce.lexpr, ce.op, ce.rexpr = nil, {:'+=' => :'++', :'-=' => :'--'}[ce.op], ce.lexpr
+			if (ce.op == :'+=' or ce.op == :'-=') and ce.rexpr.kind_of?(C::CExpression) and not ce.rexpr.op and (ce.rexpr.rexpr == 1 or ce.rexpr.rexpr == -1)
+				if ce.rexpr.rexpr == 1
+					ce.op = {:'+=' => :'++', :'-=' => :'--'}[ce.op]
+				else
+					ce.op = {:'+=' => :'--', :'-=' => :'++'}[ce.op]
+				end
+				ce.rexpr = ce.lexpr
+				ce.lexpr = nil
 			end
 
 			# --x+1 => x--
