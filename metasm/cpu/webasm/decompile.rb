@@ -23,17 +23,15 @@ class WebAsm
 	end
 
 	def decompile_init(dcmp)
-		@wasm_file.global.to_a.each_with_index { |g, idx|
-			var = C::Variable.new
-			var.name = 'global_%d' % idx
-			var.type = C::Array.new(wasm_type_to_type(g[:type]), 1)
-			dcmp.c_parser.toplevel.symbol[var.name] = var
-			dcmp.c_parser.toplevel.statements << C::Declaration.new(var)
-			# TODO init
-		}
+		mem = dcmp.c_parser.toplevel.symbol['mem'] = C::Variable.new('mem', C::Pointer.new(C::BaseType.new(:char)))
+		mem.storage = :static
+		dcmp.c_parser.toplevel.statements << C::Declaration.new(mem)
+
+		global_idx = 0
 		@wasm_file.import.to_a.each { |i|
 			case i[:kind]
 			when 'global'
+				global_idx += 1
 				var = C::Variable.new
 				var.name = '%s_%s' % [i[:module], i[:field]]
 				var.type = C::Array.new(wasm_type_to_type(i[:type]), 1)
@@ -47,6 +45,27 @@ class WebAsm
 				var.storage = :extern
 				dcmp.c_parser.toplevel.symbol[var.name] = var
 				dcmp.c_parser.toplevel.statements << C::Declaration.new(var)
+			end
+		}
+
+		@wasm_file.global.to_a.each_with_index { |g, idx|
+			g_name = 'global_%d' % global_idx
+			global_idx += 1
+			var = C::Variable.new
+			var.name = g_name
+			var.type = C::Array.new(wasm_type_to_type(g[:type]), 1)
+			dcmp.c_parser.toplevel.symbol[var.name] = var
+			dcmp.c_parser.toplevel.statements << C::Declaration.new(var)
+
+			# decompile initializers
+			g_init_name = g_name + '_init'
+			dcmp.dasm.disassemble(g_init_name)
+			dcmp.decompile_func(g_init_name)
+			if init = dcmp.c_parser.toplevel.symbol[g_init_name] and init.initializer.kind_of?(C::Block) and
+					init.initializer.statements.first.kind_of?(C::Return)
+				dcmp.c_parser.toplevel.symbol[g_name].initializer = [ init.initializer.statements.first.value ]
+				dcmp.c_parser.toplevel.symbol.delete(g_init_name)
+				dcmp.c_parser.toplevel.statements.delete_if { |st| st.kind_of?(C::Declaration) and st.var.name == g_init_name }
 			end
 		}
 	end

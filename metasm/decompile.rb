@@ -19,6 +19,8 @@ class Decompiler
 	# recursive flag: for each subfunction, recurse is decremented, when 0 only the prototype is decompiled, when <0 nothing is done
 	attr_accessor :recurse
 
+	def disassembler ; dasm ; end
+
 	def initialize(dasm, cp = dasm.c_parser)
 		@dasm = dasm
 		@recurse = 1/0.0	# Infinity
@@ -2496,7 +2498,7 @@ class Decompiler
 	def optimize_global
 		# check all global vars (pointers to global data)
 		tl = @c_parser.toplevel
-		vars = tl.symbol.keys.find_all { |k| tl.symbol[k].kind_of?(C::Variable) and not tl.symbol[k].type.kind_of?(C::Function) }
+		vars = tl.symbol.keys.find_all { |k| tl.symbol[k].kind_of?(C::Variable) and not tl.symbol[k].type.kind_of?(C::Function) and not tl.symbol[k].storage == :extern }
 		countref = Hash.new(0)
 
 		walk_ce(tl) { |ce|
