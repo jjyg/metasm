@@ -437,7 +437,7 @@ class Ia32
 				lambda { |di| bt = lambda { |pos| Expression[[Indirection[esp, opsz(di)/8, di.address], :>>, pos], :&, 1] }
 					{ esp => Expression[esp, :+, opsz(di)/8], :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7], :eflag_o => bt[11] } }
 			when 'sahf'
-				lambda { |di| bt = lambda { |pos| Expression[[eax, :>>, pos], :&, 1] }
+				lambda { |di| bt = lambda { |pos| Expression[[eax, :>>, 8+pos], :&, 1] }
 					{ :eflag_c => bt[0], :eflag_z => bt[6], :eflag_s => bt[7] } }
 			when 'lahf'
 				lambda { |di|
@@ -446,7 +446,7 @@ class Ia32
 					bts[0, :eflag_c] #bts[2, :eflag_p] #bts[4, :eflag_a]
 					bts[6, :eflag_z]
 					bts[7, :eflag_s]
-					{ eax => efl }
+					{ Expression[[eax, :>>, 8], :&, 0xff] => efl }
 				}
 			when 'pushad'
 				lambda { |di|
@@ -684,7 +684,7 @@ class Ia32
 						end
 					ret
 				}
-			when 'inc', 'dec', 'neg', 'shl', 'shr', 'sar', 'ror', 'rol', 'rcr', 'rcl', 'shld', 'shrd'
+			when 'inc', 'dec', 'neg', 'shl', 'shr', 'sal', 'sar', 'ror', 'rol', 'rcr', 'rcl', 'shld', 'shrd'
 				lambda { |di, a0, *a|
 					ret = (binding ? binding[di, a0, *a] : {})
 					res = ret[a0] || Expression::Unknown
@@ -693,6 +693,8 @@ class Ia32
 					case op
 					when 'neg'; ret[:eflag_c] = Expression[[res, :&, mask[di]], :'!=', 0]
 					when 'inc', 'dec'	# don't touch carry flag
+					when 'shr', 'sar', 'shrd'; ret[:eflag_c] = Expression[[a0, :>>, [a[0], :-, 1]], :&, 1]	# XXX shr 0 => no touch flag
+					when 'shl', 'sal', 'shld'; ret[:eflag_c] = Expression[[a0, :>>, [di.instruction.args[0].sz, :-, a[0]]], :&, 1]
 					else ret[:eflag_c] = Expression::Unknown	# :incomplete_binding ?
 					end
 					ret[:eflag_o] = case op
