@@ -17,12 +17,18 @@ class Indirection < ExpressionType
 	alias pointer target
 	alias pointer= target=
 	# length in bytes of data referenced
-	attr_accessor :len
+	attr_reader :len
 	# address of the instruction who generated the indirection
 	attr_accessor :origin
 
 	def initialize(target, len, origin)
-		@target, @len, @origin = target, len, origin
+		@target, @origin = target, origin
+		self.len = len
+	end
+
+	def len=(len)
+		@len = len
+		@max_bits_mask ||= (1 << (len*8)) - 1
 	end
 
 	def reduce_rec(cb=nil)

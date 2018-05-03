@@ -327,12 +327,16 @@ end
 class ExpressionType
 	def +(o) Expression[self, :+, o].reduce end
 	def -(o) Expression[self, :-, o].reduce end
+	# if the expression is constrained, this holds the mask of the maximum value
+	# (eg int16 => 0xffff)
+	attr_accessor :max_bits_mask
 end
 
 # handle immediate values, and arbitrary arithmetic/logic expression involving variables
 # boolean values are treated as in C : true is 1, false is 0
 # TODO replace #type with #size => bits + #type => [:signed/:unsigned/:any/:floating]
 # TODO handle floats
+# TODO ternary operator ?
 class Expression < ExpressionType
 	INT_SIZE = {}
 	INT_MIN = {}
@@ -781,6 +785,8 @@ class Expression < ExpressionType
 		elsif l.kind_of?(Expression) and [:|, :^].include?(l.op) and r.kind_of?(Integer) and (l.op == :| or (r & (r+1)) != 0)
 			# (a ^| b) & i => (a&i ^| b&i)
 			Expression[[l.lexpr, :&, r], l.op, [l.rexpr, :&, r]].reduce_rec(cb)
+		elsif r.kind_of?(::Integer) and l.kind_of?(ExpressionType) and r == l.max_bits_mask
+			l
 		elsif r.kind_of?(::Integer) and l.kind_of?(Expression) and (r & (r+1)) == 0
 			# foo & 0xffff
 			case l.op
@@ -945,6 +951,7 @@ class ExpressionString < ExpressionType
 	def externals; expr.externals; end
 	def expr_externals; expr.expr_externals; end
 	def match_rec(*a); expr.match_rec(*a); end
+	def max_bits_mask; expr.max_bits_mask; end
 	def initialize(expr, str, type=nil)
 		@expr = Expression[expr]
 		@str = str
