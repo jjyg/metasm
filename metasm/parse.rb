@@ -430,7 +430,7 @@ class ExeFormat
 			@cursource << Padding.new(fillwith, tok.backtrace) << Offset.new(e, tok.backtrace)
 
 		else
-			@cpu.parse_parser_instruction(self, tok)
+			@cpu.parse_parser_instruction(@lexer, tok)
 		end
 	end
 
