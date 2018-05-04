@@ -921,10 +921,11 @@ class DasmWindow < Window
 	# returns the widget
 	def display(dasm, ep=[])
 		@dasm_widget.terminate if @dasm_widget
-		ep = [ep] if not ep.kind_of? Array
+		ep = [ep] if not ep.kind_of?(Array)
+		ep0 = ep.first
 		@dasm_widget = DisasmWidget.new(dasm, ep)
 		self.widget = @dasm_widget
-		@dasm_widget.focus_addr(ep.first) if ep.first
+		@dasm_widget.focus_addr(ep0) if ep0
 		@dasm_widget
 	end
 
