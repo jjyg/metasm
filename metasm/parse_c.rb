@@ -22,7 +22,17 @@ module C
 			__builtin_offsetof
 	].inject({}) { |h, w| h.update w => true }
 
+	module Misc
+		attr_accessor :misc
+
+		def with_misc(m)
+			@misc = m if m or misc
+			self
+		end
+	end
+
 	class Statement
+		include Misc
 	end
 
 	module Typed	# allows quick testing whether an object is an CExpr or a Variable
@@ -114,6 +124,7 @@ module C
 
 	class Type
 		include Attributes
+		include Misc
 		attr_accessor :qualifier	# const volatile
 
 		def pointer? ;    false end
@@ -758,6 +769,7 @@ module C
 	class Variable
 		include Attributes
 		include Typed
+		include Misc
 
 		attr_accessor :type
 		attr_accessor :initializer	# CExpr	/ Block (for Functions)
@@ -773,6 +785,8 @@ module C
 	# found in a block's Statements, used to know the initialization order
 	# eg { int i; i = 4; struct foo { int k; } toto = {i}; }
 	class Declaration
+		include Misc
+
 		attr_accessor :var
 		def initialize(var)
 			@var = var
@@ -1064,16 +1078,10 @@ module C
 		attr_accessor :lexpr, :rexpr
 		# a Type
 		attr_accessor :type
-		attr_accessor :misc
 
 		def initialize(l, o, r, t)
 			raise "invalid CExpr #{[l, o, r, t].inspect}" if (o and not o.kind_of? ::Symbol) or not t.kind_of? Type
 			@lexpr, @op, @rexpr, @type = l, o, r, t
-		end
-
-		def with_misc(m)
-			@misc = m if m or misc
-			self
 		end
 
 		# overwrites @lexpr @op @rexpr @type from the arg
@@ -3330,19 +3338,49 @@ EOH
 		end
 	end
 
+	# used to render a C to a source string, while keeping the information of which each character comes from which C object
+	class CRenderString < ::String
+		attr_accessor :my_c	# default C obj with which raw characters are associated
+		# hash offset => C::Statement, means bytes from this offset to the next entry comes from rendering this C object
+		def c_at_offset
+			@c_at_offset ||= {}
+		end
+
+		# concatenate another CRenderString: merge @c_at_offset
+		def <<(o)
+			if o.kind_of?(self.class)
+				o.c_at_offset.each { |k, v|
+					c_at_offset[length+k] ||= v
+				}
+			elsif my_c
+				c_at_offset[length] ||= my_c
+			end
+			super(o)
+		end
+
+		def initialize(*a)
+			if cs = a.grep(Statement).first
+				a -= [cs]
+				@my_c = cs
+				c_at_offset[0] = cs
+			end
+			super(*a)
+		end
+	end
+
 	class Statement
-		def self.dump(e, scope, r=[''], dep=[])
+		def self.dump(e, scope, r=[CRenderString.new], dep=[])
 			case e
 			when nil; r.last << ';'
 			when Block
 				r.last << ' ' if not r.last.empty?
 				r.last << '{'
-				tr, dep = e.dump(scope, [''], dep)
+				tr, dep = e.dump(scope, [CRenderString.new], dep)
 				tr.pop if tr.last.empty?
 				r.concat tr.map { |s| Case.dump_indent(s) }
-				(r.last[-1] == ?{ ? r.last : r) << '}'
+				(r.last[-1] == ?{ ? r.last : r) << CRenderString.new('}')
 			else
-				tr, dep = e.dump(scope, [''], dep)
+				tr, dep = e.dump(scope, [CRenderString.new], dep)
 				r.concat tr.map { |s| Case.dump_indent(s) }
 			end
 			[r, dep]
@@ -3357,7 +3395,7 @@ EOH
 		def to_s() dump(nil)[0].join("\n") end
 
 		# return array of c source lines and array of dependencies (objects)
-		def dump(scp, r=[''], dep=[])
+		def dump(scp, r=[CRenderString.new], dep=[])
 			mydefs = @symbol.values.grep(TypeDef) + @struct.values + anonymous_enums.to_a
 			todo_rndr = {}
 			todo_deps = {}
@@ -3369,7 +3407,7 @@ EOH
 			[r, dep]
 		end
 
-		def dump_reorder(mydefs, todo_rndr, todo_deps, r=[''], dep=[])
+		def dump_reorder(mydefs, todo_rndr, todo_deps, r=[CRenderString.new], dep=[])
 			val = todo_deps.values.flatten.uniq
 			dep |= val
 			dep -= mydefs | todo_deps.keys
@@ -3384,6 +3422,7 @@ EOH
 			# predeclare structs involved in cyclic dependencies
 			dep_cycle = lambda { |ary|
 				# sexyness inside (c)
+				# XXX 5 years later, i have no idea whats going on here
 				deps = todo_deps[ary.last]
 				if deps.include? ary.first; ary
 				elsif (deps-ary).find { |d| deps = dep_cycle[ary + [d]] }; deps
@@ -3393,7 +3432,7 @@ EOH
 				oldc = nil
 				while c = dep_cycle[[t]]
 					break if oldc == c
-					r << "#{t.kind_of?(Struct) ? 'struct' : 'union'} #{t.name};" if not oldc
+					r << CRenderString.new(t, "#{t.kind_of?(Struct) ? 'struct' : 'union'} #{t.name};") if not oldc
 					oldc = c
 					c.each { |s|
 						# XXX struct z { struct a* }; struct a { void (*foo)(struct z); };
@@ -3412,7 +3451,7 @@ EOH
 				end
 				todo_now.sort_by { |k| k.name || '0' }.each { |k|
 					if k.kind_of? Variable and k.type.kind_of? Function and k.initializer
-						r << ''
+						r << CRenderString.new
 						r.concat todo_rndr.delete(k)
 					else
 						r.pop if r.last == ''
@@ -3422,12 +3461,12 @@ EOH
 					todo_deps.delete k
 				}
 				todo_deps.each_key { |k| todo_deps[k] -= todo_now }
-				r << '' << '' << ''
+				r << CRenderString.new << CRenderString.new << CRenderString.new
 			end
 
 			@statements.each { |s|
-				r << '' if not r.last.empty?
-				if s.kind_of? Block
+				r << CRenderString.new if not r.last.empty?
+				if s.kind_of?(Block)
 					r, dep = Statement.dump(s, self, r, dep)
 				else
 					r, dep = s.dump(self, r, dep)
@@ -3438,10 +3477,10 @@ EOH
 		end
 	end
 	class Declaration
-		def dump(scope, r=[''], dep=[])
-			tr, dep = @var.dump_def(scope, [''], dep)
-			if @var.kind_of? Variable and @var.type.kind_of? Function and @var.initializer
-				r << ''
+		def dump(scope, r=[CRenderString.new], dep=[])
+			tr, dep = @var.dump_def(scope, [CRenderString.new], dep)
+			if @var.kind_of?(Variable) and @var.type.kind_of?(Function) and @var.initializer
+				r << CRenderString.new
 				r.concat tr
 			else
 				r.pop if r.last == ''
@@ -3470,14 +3509,14 @@ EOH
 		end
 	end
 	class Variable
-		def dump(scope, r=[''], dep=[])
+		def dump(scope, r=[CRenderString.new], dep=[])
 			if name
 				dep |= [scope.symbol_ancestors[@name]]
 				r.last << @name
 			end
 			[r, dep]
 		end
-		def dump_def(scope, r=[''], dep=[], skiptype=false)
+		def dump_def(scope, r=[CRenderString.new], dep=[], skiptype=false)
 			# int a=1, b=2;
 			r.last << dump_attributes_pre
 			if not skiptype
@@ -3485,7 +3524,7 @@ EOH
 				r, dep = @type.base.dump(scope, r, dep)
 				r.last << ' ' if name
 			end
-			r, dep = @type.dump_declarator([(name ? @name.dup : '') << dump_attributes], scope, r, dep)
+			r, dep = @type.dump_declarator([CRenderString.new(name ? @name.dup : '') << dump_attributes], scope, r, dep)
 
 			if initializer
 				r.last << ' = ' if not @type.kind_of?(Function)
@@ -3499,7 +3538,7 @@ EOH
 		end
 	end
 	class Type
-		def dump_initializer(init, scope, r=[''], dep=[])
+		def dump_initializer(init, scope, r=[CRenderString.new], dep=[])
 			case init
 			when ::Numeric
 				r.last << init.to_s
@@ -3511,9 +3550,9 @@ EOH
 			end
 		end
 
-		def dump_declarator(decl, scope, r=[''], dep=[])
+		def dump_declarator(decl, scope, r=[CRenderString.new], dep=[])
 			r.last << decl.shift
-			r.concat decl
+			r.concat decl.map { |d| CRenderString.new << d }
 			[r, dep]
 		end
 
@@ -3521,11 +3560,11 @@ EOH
 			dump(*a)
 		end
 
-		def dump_cast(scope, r=[''], dep=[])
+		def dump_cast(scope, r=[CRenderString.new], dep=[])
 			r.last << '('
 			r.last << dump_attributes_pre if not kind_of? TypeDef
 			r, dep = base.dump(scope, r, dep)
-			r, dep = dump_declarator([kind_of?(TypeDef) ? '' : dump_attributes], scope, r, dep)
+			r, dep = dump_declarator([CRenderString.new(kind_of?(TypeDef) ? '' : dump_attributes)], scope, r, dep)
 			r.last << ')'
 			[r, dep]
 		end
@@ -3535,28 +3574,29 @@ EOH
 		end
 	end
 	class Pointer
-		def dump_declarator(decl, scope, r=[''], dep=[])
+		def dump_declarator(decl, scope, r=[CRenderString.new], dep=[])
 			d = decl[0]
-			decl[0] = '*'
+			decl[0] = CRenderString.new
+			decl[0] << '*'
 			decl[0] << ' ' << @qualifier.map { |q| q.to_s }.join(' ') << ' ' if qualifier
 			decl[0] << d
-			if @type.kind_of? Function or @type.kind_of? Array
-				decl[0] = '(' << decl[0]
+			if @type.kind_of?(Function) or @type.kind_of?(Array)
+				decl[0] = CRenderString.new << '(' << decl[0]
 				decl.last << ')'
 			end
 			@type.dump_declarator(decl, scope, r, dep)
 		end
 	end
 	class Array
-		def dump_declarator(decl, scope, r=[''], dep=[])
+		def dump_declarator(decl, scope, r=[CRenderString.new], dep=[])
 			decl.last << '()' if decl.last.empty?
 			decl.last << '['
 			decl, dep = CExpression.dump(@length, scope, decl, dep) if length
 			decl.last << ']'
 			@type.dump_declarator(decl, scope, r, dep)
 		end
-		def dump_initializer(init, scope, r=[''], dep=[])
-			return super(init, scope, r, dep) if not init.kind_of? ::Array
+		def dump_initializer(init, scope, r=[CRenderString.new], dep=[])
+			return super(init, scope, r, dep) if not init.kind_of?(::Array)
 			r.last << '{ '
 			showname = false
 			init.each_with_index { |v, i|
@@ -3565,21 +3605,21 @@ EOH
 					next
 				end
 				r.last << ', ' if r.last[-2, 2] != '{ '
-				rt = ['']
+				rt = [CRenderString.new]
 				if showname
 					showname = false
-					rt << "[#{i}] = "
+					rt << CRenderString.new("[#{i}] = ")
 				end
 				rt, dep = @type.dump_initializer(v, scope, rt, dep)
 				r.last << rt.shift
-				r.concat rt.map { |s| "\t" << s }
+				r.concat rt.map { |s| CRenderString.new << "\t" << s }
 			}
 			r.last << ' }'
 			[r, dep]
 		end
 	end
 	class Function
-		def dump_declarator(decl, scope, r=[''], dep=[])
+		def dump_declarator(decl, scope, r=[CRenderString.new], dep=[])
 			decl.last << '()' if decl.last.empty?
 			decl.last << '('
 			if args
@@ -3598,12 +3638,12 @@ EOH
 			@type.dump_declarator(decl, scope, r, dep)
 		end
 
-		def dump_initializer(init, scope, r=[''], dep=[])
-			Statement.dump(init, scope, r << '', dep)
+		def dump_initializer(init, scope, r=[CRenderString.new], dep=[])
+			Statement.dump(init, scope, r << CRenderString.new, dep)
 		end
 	end
 	class BaseType
-		def dump(scope, r=[''], dep=[])
+		def dump(scope, r=[CRenderString.new], dep=[])
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << @specifier.to_s << ' ' if specifier and @name != :ptr
 			r.last << case @name
@@ -3616,27 +3656,27 @@ EOH
 		end
 	end
 	class TypeDef
-		def dump(scope, r=[''], dep=[])
+		def dump(scope, r=[CRenderString.new], dep=[])
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << @name
 			dep |= [scope.symbol_ancestors[@name]]
 			[r, dep]
 		end
 
-		def dump_def(scope, r=[''], dep=[])
+		def dump_def(scope, r=[CRenderString.new], dep=[])
 			r.last << 'typedef '
 			r.last << dump_attributes_pre
 			r, dep = @type.base.dump(scope, r, dep)
 			r.last << ' '
-			@type.dump_declarator([(name ? @name.dup : '') << dump_attributes], scope, r, dep)
+			@type.dump_declarator([CRenderString.new(name ? @name.dup : '') << dump_attributes], scope, r, dep)
 		end
 
-		def dump_initializer(init, scope, r=[''], dep=[])
+		def dump_initializer(init, scope, r=[CRenderString.new], dep=[])
 			@type.dump_initializer(init, scope, r, dep)
 		end
 	end
 	class Union
-		def dump(scope, r=[''], dep=[])
+		def dump(scope, r=[CRenderString.new], dep=[])
 			if name
 				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 				r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1] << ' ' << @name
@@ -3647,26 +3687,26 @@ EOH
 			end
 		end
 
-		def dump_def(scope, r=[''], dep=[])
-			r << ''
+		def dump_def(scope, r=[CRenderString.new], dep=[])
+			r << CRenderString.new
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << self.class.name.downcase[/(?:.*::)?(.*)/, 1]
 			r.last << ' ' << @name if name
 			if members
 				r.last << ' {'
 				@members.each_with_index { |m,i|
-					tr, dep = m.dump_def(scope, [''], dep)
+					tr, dep = m.dump_def(scope, [CRenderString.new], dep)
 					tr.last << ':' << @bits[i].to_s if bits and @bits[i]
 					tr.last << ';'
-					r.concat tr.map { |s| "\t" << s }
+					r.concat tr.map { |s| CRenderString.new << "\t" << s }
 				}
-				r << '}'
+				r << CRenderString.new('}')
 			end
 			r.last << dump_attributes
 			[r, dep]
 		end
 
-		def dump_initializer(init, scope, r=[''], dep=[])
+		def dump_initializer(init, scope, r=[CRenderString.new], dep=[])
 			return super(init, scope, r, dep) if not init.kind_of? ::Array
 			r.last << '{ '
 			showname = false
@@ -3676,21 +3716,21 @@ EOH
 					next
 				end
 				r.last << ', ' if r.last[-2, 2] != '{ '
-				rt = ['']
+				rt = [CRenderString.new]
 				if showname
 					showname = false
 					rt << ".#{m.name} = "
 				end
 				rt, dep = m.type.dump_initializer(i, scope, rt, dep)
 				r.last << rt.shift
-				r.concat rt.map { |s| "\t" << s }
+				r.concat rt.map { |s| CRenderString.new << "\t" << s }
 			}
 			r.last << ' }'
 			[r, dep]
 		end
 	end
 	class Struct
-		def dump_def(scope, r=[''], dep=[])
+		def dump_def(scope, r=[CRenderString.new], dep=[])
 			if pack
 				r, dep = super(scope, r, dep)
 				r.last <<
@@ -3704,7 +3744,7 @@ EOH
 		end
 	end
 	class Enum
-		def dump(scope, r=[''], dep=[])
+		def dump(scope, r=[CRenderString.new], dep=[])
 			if name
 				r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 				r.last << 'enum ' << @name
@@ -3715,7 +3755,7 @@ EOH
 			end
 		end
 
-		def dump_def(scope, r=[''], dep=[])
+		def dump_def(scope, r=[CRenderString.new], dep=[])
 			r.last << @qualifier.map { |q| q.to_s << ' ' }.join if qualifier
 			r.last << 'enum'
 			r.last << ' ' << @name if name
@@ -3735,7 +3775,7 @@ EOH
 			[r, dep]
 		end
 
-		def dump_initializer(init, scope, r=[''], dep=[])
+		def dump_initializer(init, scope, r=[CRenderString.new], dep=[])
 			if members and (
 					k = @members.index(init) or
 					(init.kind_of? CExpression and not init.op and k = @members.index(init.rexpr))
@@ -3748,14 +3788,14 @@ EOH
 		end
 	end
 	class If
-		def dump(scope, r=[''], dep=[])
-			r.last << 'if ('
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, 'if (')
 			r, dep = CExpression.dump(@test, scope, r, dep)
 			r.last << ')'
 			r, dep = Statement.dump(@bthen, scope, r, dep)
 			if belse
-				@bthen.kind_of?(Block) ? (r.last << ' else') : (r << 'else')
-				if @belse.kind_of? If
+				@bthen.kind_of?(Block) ? (r.last << CRenderString.new(' else')) : (r << CRenderString.new(self, 'else'))
+				if @belse.kind_of?(If)
 					# skip indent
 					r.last << ' '
 					r, dep = @belse.dump(scope, r, dep)
@@ -3767,9 +3807,9 @@ EOH
 		end
 	end
 	class For
-		def dump(scope, r=[''], dep=[])
-			r.last << 'for ('
-			if @init.kind_of? Block
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, 'for (')
+			if @init.kind_of?(Block)
 				scope = @init
 				skiptype = false
 				@init.symbol.each_value { |s|
@@ -3793,56 +3833,57 @@ EOH
 		end
 	end
 	class While
-		def dump(scope, r=[''], dep=[])
-			r.last << 'while ('
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, 'while (')
 			r, dep = CExpression.dump(@test, scope, r, dep)
 			r.last << ')'
 			Statement.dump(@body, scope, r, dep)
 		end
 	end
 	class DoWhile
-		def dump(scope, r=[''], dep=[])
-			r.last << 'do'
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, 'do')
 			r, dep = Statement.dump(@body, scope, r, dep)
-			@body.kind_of?(Block) ? (r.last << ' while (') : (r << 'while (')
+			r << CRenderString.new if not @body.kind_of?(Block)
+			r.last << CRenderString.new(self, ' while (')
 			r, dep = CExpression.dump(@test, scope, r, dep)
 			r.last << ');'
 			[r, dep]
 		end
 	end
 	class Switch
-		def dump(scope, r=[''], dep=[])
-			r.last << 'switch ('
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, 'switch (')
 			r, dep = CExpression.dump(@test, scope, r, dep)
 			r.last << ')'
-			r.last << ' {' if @body.kind_of? Block
-			tr, dep = @body.dump(scope, [''], dep)
+			r.last << ' {' if @body.kind_of?(Block)
+			tr, dep = @body.dump(scope, [CRenderString.new], dep)
 			r.concat tr.map { |s| Case.dump_indent(s, true) }
-			r << '}' if @body.kind_of? Block
+			r << CRenderString.new('}') if @body.kind_of? Block
 			[r, dep]
 		end
 	end
 	class Continue
-		def dump(scope, r=[''], dep=[])
-			r.last << 'continue;'
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, 'continue;')
 			[r, dep]
 		end
 	end
 	class Break
-		def dump(scope, r=[''], dep=[])
-			r.last << 'break;'
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, 'break;')
 			[r, dep]
 		end
 	end
 	class Goto
-		def dump(scope, r=[''], dep=[])
-			r.last << "goto #@target;"
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, "goto #@target;")
 			[r, dep]
 		end
 	end
 	class Return
-		def dump(scope, r=[''], dep=[])
-			r.last << 'return '
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, 'return ')
 			r, dep = CExpression.dump(@value, scope, r, dep)
 			r.last.chop! if r.last[-1] == ?\ 	# the space character
 			r.last << ';'
@@ -3850,12 +3891,12 @@ EOH
 		end
 	end
 	class Case
-		def dump(scope, r=[''], dep=[])
+		def dump(scope, r=[CRenderString.new], dep=[])
 			case @expr
 			when 'default'
 				r.last << @expr
 			else
-				r.last << 'case '
+				r.last << CRenderString.new(self, 'case ')
 				r, dep = CExpression.dump(@expr, scope, r, dep)
 				if exprup
 					r.last << ' ... '
@@ -3868,35 +3909,35 @@ EOH
 
 		def self.dump_indent(s, short=false)
 			case s
-			when /^(case|default)\W/; (short ? '    ' : "\t") << s
-			when /^\s+(case|default)\W/; "\t" << s
+			when /^(case|default)\W/; CRenderString.new(short ? '    ' : "\t") << s
+			when /^\s+(case|default)\W/; CRenderString.new("\t") << s
 			when /:$/; s
-			else "\t" << s
+			else CRenderString.new("\t") << s
 			end
 		end
 	end
 	class Label
-		def dump(scope, r=[''], dep=[])
-			r.last << @name << ':'
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, @name) << ':'
 			dump_inner(scope, r, dep)
 		end
-		def dump_inner(scope, r=[''], dep=[])
+		def dump_inner(scope, r=[CRenderString.new], dep=[])
 			if not @statement; [r, dep]
-			elsif @statement.kind_of? Block; Statement.dump(@statement, scope, r, dep)
-			else  @statement.dump(scope, r << '', dep)
+			elsif @statement.kind_of?(Block); Statement.dump(@statement, scope, r, dep)
+			else  @statement.dump(scope, r << CRenderString.new, dep)
 			end
 		end
 	end
 	class Asm
-		def dump(scope, r=[''], dep=[])
-			r.last << 'asm '
+		def dump(scope, r=[CRenderString.new], dep=[])
+			r.last << CRenderString.new(self, 'asm ')
 			r.last << 'volatile ' if @volatile
 			r.last << '('
-			r.last << CExpression.string_inspect(@body)
+			r.last << CRenderString.new(self, CExpression.string_inspect(@body))
 			if @output or @input or @clobber
 				if @output and @output != []
 					# TODO
-					r << ': /* todo */'
+					r << CRenderString.new(': /* todo */')
 				elsif (@input and @input != []) or (@clobber and @clobber != [])
 					r.last << ' :'
 				end
@@ -3904,13 +3945,13 @@ EOH
 			if @input or @clobber
 				if @input and @input != []
 					# TODO
-					r << ': /* todo */'
+					r << CRenderString.new(': /* todo */')
 				elsif @clobber and @clobber != []
 					r.last << ' :'
 				end
 			end
 			if @clobber and @clobber != []
-				r << (': ' << @clobber.map { |c| CExpression.string_inspect(c) }.join(', '))
+				r << (CRenderString.new(': ') << @clobber.map { |c| CExpression.string_inspect(c) }.join(', '))
 			end
 			r.last << ');'
 			[r, dep]
@@ -3932,7 +3973,7 @@ EOH
 			} + '"'
 		end
 
-		def self.dump(e, scope, r=[''], dep=[], brace = false)
+		def self.dump(e, scope, r=[CRenderString.new], dep=[], brace = false)
 			r, dep = \
 			case e
 			when ::Numeric; r.last << e.to_s ; [r, dep]
@@ -3945,14 +3986,15 @@ EOH
 			[r, dep]
 		end
 
-		def dump(scope, r=[''], dep=[])
+		def dump(scope, r=[CRenderString.new], dep=[])
 			r, dep = dump_inner(scope, r, dep)
-			r.last << ';'
+			r.last << CRenderString.new(self, ';')
 			[r, dep]
 		end
 
-		def dump_inner(scope, r=[''], dep=[], brace = false)
-			r.last << '(' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
+		def dump_inner(scope, r=[CRenderString.new], dep=[], brace = false)
+			r.last << CRenderString.new(self)
+			r.last << '(' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of?(CExpression))
 			if not @lexpr
 				if not @op
 					case @rexpr
@@ -3968,7 +4010,7 @@ EOH
 						else
 							r.last << re.to_s
 						end
-						if @type.kind_of? BaseType
+						if @type.kind_of?(BaseType)
 							r.last << 'U' if @type.specifier == :unsigned
 							case @type.name
 							when :longlong, :__int64; r.last << 'LL'
@@ -3977,7 +4019,7 @@ EOH
 							end
 						end
 					when ::String
-						r.last << 'L' if @type.kind_of? Pointer and @type.type.kind_of? BaseType and @type.type.name == :short
+						r.last << 'L' if @type.kind_of?(Pointer) and @type.type.kind_of?(BaseType) and @type.type.name == :short
 						r.last << CExpression.string_inspect(@rexpr)
 					when CExpression # cast
 						r, dep = @type.dump_cast(scope, r, dep)
@@ -3990,11 +4032,11 @@ EOH
 						r.last << ' )'
 					when Label
 						r.last << '&&' << @rexpr.name
-					else r.last << "(wtf? #{inspect})"
+					else raise "(wtf? #{inspect})"
 					end
 				else
 					r.last << @op.to_s
-					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? C::CExpression and @rexpr.lexpr))
+					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of?(C::CExpression) and @rexpr.lexpr))
 				end
 			elsif not @rexpr
 				r, dep = CExpression.dump(@lexpr, scope, r, dep)
@@ -4003,15 +4045,15 @@ EOH
 				case @op
 				when :'->', :'.'
 					r, dep = CExpression.dump(@lexpr, scope, r, dep, true)
-					r.last << @op.to_s << @rexpr
+					r.last << CRenderString.new(self, @op.to_s) << @rexpr
 				when :'[]'
 					r, dep = CExpression.dump(@lexpr, scope, r, dep, true)
 					r.last << '['
-					l = lexpr if lexpr.kind_of? Variable
-					l = lexpr.lexpr.type.untypedef.findmember(lexpr.rexpr) if lexpr.kind_of? CExpression and lexpr.op == :'.'
-					l = lexpr.lexpr.type.pointed.untypedef.findmember(lexpr.rexpr) if lexpr.kind_of? CExpression and lexpr.op == :'->'
+					l = lexpr if lexpr.kind_of?(Variable)
+					l = lexpr.lexpr.type.untypedef.findmember(lexpr.rexpr) if lexpr.kind_of?(CExpression) and lexpr.op == :'.'
+					l = lexpr.lexpr.type.pointed.untypedef.findmember(lexpr.rexpr) if lexpr.kind_of?(CExpression) and lexpr.op == :'->'
 					# honor __attribute__((indexenum(enumname)))
-					if l and l.attributes and rexpr.kind_of? CExpression and not rexpr.op and rexpr.rexpr.kind_of? ::Integer and
+					if l and l.attributes and rexpr.kind_of?(CExpression) and not rexpr.op and rexpr.rexpr.kind_of?(::Integer) and
 							n = l.has_attribute_var('indexenum') and enum = scope.struct_ancestors[n] and i = enum.members.index(rexpr.rexpr)
 						r.last << i
 						dep |= [enum]
@@ -4029,17 +4071,17 @@ EOH
 					r.last << ')'
 				when :'?:'
 					r, dep = CExpression.dump(@lexpr, scope, r, dep, true)
-					r.last << ' ? '
+					r.last << CRenderString.new(self, ' ? ')
 					r, dep = CExpression.dump(@rexpr[0], scope, r, dep, true)
-					r.last << ' : '
+					r.last << CRenderString.new(self, ' : ')
 					r, dep = CExpression.dump(@rexpr[1], scope, r, dep, true)
 				else
-					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of? CExpression and @lexpr.lexpr and @lexpr.op != @op))
-					r.last << ' ' << @op.to_s << ' '
-					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of? CExpression and @rexpr.lexpr and @rexpr.op != @op and @rexpr.op != :funcall and @op != :'='))
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of?(CExpression) and @lexpr.lexpr and @lexpr.op != @op))
+					r.last << CRenderString.new(self, ' ' << @op.to_s << ' ')
+					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of?(CExpression) and @rexpr.lexpr and @rexpr.op != @op and @rexpr.op != :funcall and @op != :'='))
 				end
 			end
-			r.last << ')' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of? CExpression)
+			r.last << ')' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of?(CExpression))
 			[r, dep]
 		end
 
