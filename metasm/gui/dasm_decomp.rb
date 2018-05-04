@@ -6,7 +6,7 @@
 module Metasm
 module Gui
 class CdecompListingWidget < DrawableWidget
-	attr_accessor :dasm, :curaddr, :tabwidth
+	attr_accessor :dasm, :curfuncaddr, :tabwidth
 
 	def initialize_widget(dasm, parent_widget)
 		@dasm = dasm
@@ -16,7 +16,8 @@ class CdecompListingWidget < DrawableWidget
 		@cwidth = @cheight = 1	# widget size in chars
 		@line_text = []
 		@line_text_col = []	# each line is [[:col, 'text'], [:col, 'text']]
-		@curaddr = nil
+		@line_addr = []
+		@curfuncaddr = nil
 		@tabwidth = 8
 
 		@default_color_association = ColorTheme.merge :keyword => :blue, :localvar => :darkred,
@@ -24,7 +25,7 @@ class CdecompListingWidget < DrawableWidget
 	end
 
 	def curfunc
-		@dasm.c_parser and (@dasm.c_parser.toplevel.symbol[@curaddr] or @dasm.c_parser.toplevel.struct[@curaddr])
+		@dasm.c_parser and (@dasm.c_parser.toplevel.symbol[@curfuncaddr] or @dasm.c_parser.toplevel.struct[@curfuncaddr])
 	end
 
 	def click(x, y)
@@ -156,84 +157,92 @@ class CdecompListingWidget < DrawableWidget
 			@caret_y = @line_text.length if @caret_y > @line_text.length
 			update_caret
 		when ?n	# rename local/global variable
-			f = curfunc.initializer if curfunc and curfunc.initializer.kind_of? C::Block
-			n = @hl_word
-			if (f and f.symbol[n]) or @dasm.c_parser.toplevel.symbol[n]
-				@parent_widget.inputbox("new name for #{n}", :text => n) { |v|
-					if v !~ /^[a-z_$][a-z_0-9$]*$/i
-						@parent_widget.messagebox("invalid name #{v.inspect} !")
-						next
-					end
-					if f and f.symbol[n]
-						# TODO add/update comment to the asm instrs
-						s = f.symbol[v] = f.symbol.delete(n)
-						s.name = v
-						f.decompdata[:stackoff_name][s.stackoff] = v if s.stackoff
-					elsif @dasm.c_parser.toplevel.symbol[n]
-						@dasm.rename_label(n, v)
-						@curaddr = v if @curaddr == n
-					end
-					gui_update
-				}
-			end
+			prompt_rename
 		when ?r # redecompile
-			@parent_widget.decompile(@curaddr)
+			@parent_widget.decompile(@curfuncaddr)
 		when ?t, ?y	# change variable type (you'll want to redecompile after that)
-			f = curfunc.initializer if curfunc.kind_of? C::Variable and curfunc.initializer.kind_of? C::Block
-			n = @hl_word
-			cp = @dasm.c_parser
-			if (f and s = f.symbol[n]) or s = cp.toplevel.symbol[n] or s = cp.toplevel.symbol[@curaddr]
-				s_ = s.dup
-				s_.initializer = nil if s.kind_of? C::Variable	# for static var, avoid dumping the initializer in the textbox
-				s_.attributes &= C::Attributes::DECLSPECS if s_.attributes
-				@parent_widget.inputbox("new type for #{s.name}", :text => s_.dump_def(cp.toplevel)[0].join(' ')) { |t|
-					if t == ''
-						if s.type.kind_of? C::Function and s.initializer and s.initializer.decompdata
-							s.initializer.decompdata[:stackoff_type].clear
-							s.initializer.decompdata.delete :return_type
-						elsif s.kind_of? C::Variable and s.stackoff
-							f.decompdata[:stackoff_type].delete s.stackoff
-						end
-						next
-					end
-					begin
-						cp.lexer.feed(t)
-						raise 'bad type' if not v = C::Variable.parse_type(cp, cp.toplevel, true)
-						v.parse_declarator(cp, cp.toplevel)
-						if s.type.kind_of? C::Function and s.initializer and s.initializer.decompdata
-							# updated type of a decompiled func: update stack
-							vt = v.type.untypedef
-							vt = vt.type.untypedef if vt.kind_of? C::Pointer
-							raise 'function forever !' if not vt.kind_of? C::Function
-							# TODO _declspec
-							ao = 1
-							vt.args.to_a.each { |a|
-								next if a.has_attribute_var('register')
-								ao = (ao + [cp.sizeof(a), cp.typesize[:ptr]].max - 1) / cp.typesize[:ptr] * cp.typesize[:ptr]
-								s.initializer.decompdata[:stackoff_name][ao] = a.name if a.name
-								s.initializer.decompdata[:stackoff_type][ao] = a.type
-								ao += cp.sizeof(a)
-							}
-							s.initializer.decompdata[:return_type] = vt.type
-							s.type = v.type
-						else
-							f.decompdata[:stackoff_type][s.stackoff] = v.type if f and s.kind_of? C::Variable and s.stackoff
-							s.type = v.type
-						end
-						gui_update
-					rescue Object
-						@parent_widget.messagebox([$!.message, $!.backtrace].join("\n"), "error")
-					end
-					cp.readtok until cp.eos?
-				}
-			end
+			prompt_retype
 		else return false
 		end
 		true
 	end
 
+	def prompt_rename
+		f = curfunc.initializer if curfunc and curfunc.initializer.kind_of?(C::Block)
+		n = @hl_word
+		if (f and f.symbol[n]) or @dasm.c_parser.toplevel.symbol[n]
+			@parent_widget.inputbox("new name for #{n}", :text => n) { |v|
+				if v !~ /^[a-z_$][a-z_0-9$]*$/i
+					@parent_widget.messagebox("invalid name #{v.inspect} !")
+					next
+				end
+				if f and f.symbol[n]
+					# TODO add/update comment to the asm instrs
+					s = f.symbol[v] = f.symbol.delete(n)
+					s.name = v
+					f.decompdata[:stackoff_name][s.stackoff] = v if s.stackoff
+				elsif @dasm.c_parser.toplevel.symbol[n]
+					@dasm.rename_label(n, v)
+					@curfuncaddr = v if @curfuncaddr == n
+				end
+				gui_update
+			}
+		end
+	end
+
+	def prompt_retype
+		f = curfunc.initializer if curfunc.kind_of?(C::Variable) and curfunc.initializer.kind_of?(C::Block)
+		n = @hl_word
+		cp = @dasm.c_parser
+		if (f and s = f.symbol[n]) or s = cp.toplevel.symbol[n] or s = cp.toplevel.symbol[@curfuncaddr]
+			s_ = s.dup
+			s_.initializer = nil if s.kind_of?(C::Variable)	# for static var, avoid dumping the initializer in the textbox
+			s_.attributes &= C::Attributes::DECLSPECS if s_.attributes
+			@parent_widget.inputbox("new type for #{s.name}", :text => s_.dump_def(cp.toplevel)[0].join(' ')) { |t|
+				if t == ''
+					if s.type.kind_of?(C::Function) and s.initializer and s.initializer.decompdata
+						s.initializer.decompdata[:stackoff_type].clear
+						s.initializer.decompdata.delete(:return_type)
+					elsif s.kind_of?(C::Variable) and s.stackoff
+						f.decompdata[:stackoff_type].delete s.stackoff
+					end
+					next
+				end
+				begin
+					cp.lexer.feed(t)
+					raise 'bad type' if not v = C::Variable.parse_type(cp, cp.toplevel, true)
+					v.parse_declarator(cp, cp.toplevel)
+					if s.type.kind_of?(C::Function) and s.initializer and s.initializer.decompdata
+						# updated type of a decompiled func: update stack
+						vt = v.type.untypedef
+						vt = vt.type.untypedef if vt.kind_of?(C::Pointer)
+						raise 'function forever !' if not vt.kind_of?(C::Function)
+						# TODO _declspec
+						ao = 1
+						vt.args.to_a.each { |a|
+							next if a.has_attribute_var('register')
+							ao = (ao + [cp.sizeof(a), cp.typesize[:ptr]].max - 1) / cp.typesize[:ptr] * cp.typesize[:ptr]
+							s.initializer.decompdata[:stackoff_name][ao] = a.name if a.name
+							s.initializer.decompdata[:stackoff_type][ao] = a.type
+							ao += cp.sizeof(a)
+						}
+						s.initializer.decompdata[:return_type] = vt.type
+						s.type = v.type
+					else
+						f.decompdata[:stackoff_type][s.stackoff] = v.type if f and s.kind_of?(C::Variable) and s.stackoff
+						s.type = v.type
+					end
+					gui_update
+				rescue Object
+					@parent_widget.messagebox([$!.message, $!.backtrace].join("\n"), "error")
+				end
+				cp.readtok until cp.eos?
+			}
+		end
+	end
+
 	def get_cursor_pos
-		[@curaddr, @caret_x, @caret_y, @view_y]
+		[@curfuncaddr, @caret_x, @caret_y, @view_y]
 	end
 
 	def set_cursor_pos(p)
@@ -258,7 +267,7 @@ class CdecompListingWidget < DrawableWidget
 	# returns true on success (address exists & decompiled)
 	def focus_addr(addr)
 		if @dasm.c_parser and (@dasm.c_parser.toplevel.symbol[addr] or @dasm.c_parser.toplevel.struct[addr].kind_of?(C::Union))
-			@curaddr = addr
+			@curfuncaddr = addr
 			@caret_x = @caret_y = 0
 			gui_update
 			return true
@@ -270,34 +279,75 @@ class CdecompListingWidget < DrawableWidget
 		todo = [addr]
 		done = []
 		ep = @dasm.entrypoints.to_a.inject({}) { |h, e| h.update @dasm.normalize(e) => true }
-		while addr = todo.pop
-			next if not di = @dasm.di_at(addr)
-			addr = di.block.address
-			next if done.include?(addr) or not @dasm.di_at(addr)
-			done << addr
-			break if @dasm.function[addr] or ep[addr]
+		while laddr = todo.pop
+			next if not di = @dasm.di_at(laddr)
+			laddr = di.block.address
+			next if done.include?(laddr) or not @dasm.di_at(laddr)
+			done << laddr
+			break if @dasm.function[laddr] or ep[laddr]
 			empty = true
-			@dasm.decoded[addr].block.each_from_samefunc(@dasm) { |na| empty = false ; todo << na }
+			@dasm.decoded[laddr].block.each_from_samefunc(@dasm) { |na| empty = false ; todo << na }
 			break if empty
 		end
-		@dasm.auto_label_at(addr, 'loc') if @dasm.get_section_at(addr) and not @dasm.get_label_at(addr)
-		return if not l = @dasm.get_label_at(addr)
-		@curaddr = l
+		@dasm.auto_label_at(laddr, 'loc') if @dasm.get_section_at(laddr) and not @dasm.get_label_at(laddr)
+		return if not l = @dasm.get_label_at(laddr)
+		@curfuncaddr = l
 		@caret_x = @caret_y = 0
+		@want_addr = addr
 		gui_update
 		true
 	end
 
 	# returns the address of the data under the cursor
 	def current_address
-		@curaddr
+		if @line_c[@caret_y]
+			lc = {}
+			@line_c[@caret_y].each { |k, v|
+				lc[k] = v if v.misc and v.misc[:di_addr]
+			}
+			o = lc.keys.sort.reverse.find  { |oo| oo < @caret_x } || lc.keys.min
+		end
+		o ? lc[o].misc[:di_addr] : @curfuncaddr
 	end
 
+	# return the C object under the cursor
+	def curobj
+		if lc = @line_c[@caret_y]
+			o = lc.keys.sort.reverse.find  { |oo| oo < @caret_x } || lc.keys.min
+		end
+		o ? lc[o] : curfunc
+	end
+
+
 	def update_line_text
-		@line_text = curfunc.dump_def(@dasm.c_parser.toplevel)[0].map { |l| l.gsub("\t", ' '*@tabwidth) }
+		text = curfunc.dump_def(@dasm.c_parser.toplevel)[0]
+		@line_text = text.map { |l| l.gsub("\t", ' '*@tabwidth) }
+		# y => { x => C }
+		@line_c = text.map { |l|
+			h = {}
+			l.c_at_offset.each { |o, c|
+				oo = l[0, o].gsub("\t", ' '*@tabwidth).length
+				h[oo] = c
+			}
+			h
+		}
+
+		@want_addr ||= nil
+		# define @caret_y to match @want_addr from focus_addr()
+		@line_c.each_with_index { |lc, y|
+			next if not @want_addr
+			lc.each { |o, c|
+				if @want_addr and c.misc and c.misc[:di_addr]
+					@caret_x, @caret_y = o, y+1 if @want_addr > c.misc[:di_addr]
+					@want_addr = nil if @want_addr <= c.misc[:di_addr]
+				end
+			}
+		}
+		@want_addr = nil
+
 		@line_text_col = []
 
-		if f = curfunc and f.kind_of? C::Variable and f.initializer.kind_of? C::Block
+		if f = curfunc and f.kind_of?(C::Variable) and f.initializer.kind_of?(C::Block)
 			keyword_re = /\b(#{C::Keyword.keys.join('|')})\b/
 			intrinsic_re = /\b(intrinsic_\w+)\b/
 			lv = f.initializer.symbol.keys
@@ -342,7 +392,7 @@ class CdecompListingWidget < DrawableWidget
 			@line_text_col = [[[:text, 'please wait']]]
 			redraw
 			@decompiling = true
-			protect { @dasm.decompile_func(@curaddr) }
+			protect { @dasm.decompile_func(@curfuncaddr) }
 			@decompiling = false
 		end
 		if curfunc

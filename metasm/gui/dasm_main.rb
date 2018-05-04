@@ -114,7 +114,7 @@ class DisasmWidget < ContainerChoiceWidget
 
 	# returns the object under the cursor in current view (@dasm.decoded[curaddr])
 	def curobj
-		@dasm.decoded[curaddr]
+		curview.respond_to?(:curobj) ? curview.curobj : @dasm.decoded[curaddr]
 	end
 
 	# returns the address of the label under the cursor or the address of the line of the cursor
@@ -318,7 +318,7 @@ class DisasmWidget < ContainerChoiceWidget
 		session_append "decompile(#{addr.inspect})"
 		if @dasm.c_parser and var = @dasm.c_parser.toplevel.symbol[addr] and (var.type.kind_of? C::Function or @dasm.di_at(addr))
 			@dasm.decompiler.redecompile(addr)
-			view(:decompile).curaddr = nil
+			view(:decompile).curfuncaddr = nil
 		end
 		focus_addr(addr, :decompile)
 	end
