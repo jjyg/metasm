@@ -200,17 +200,17 @@ class WebAsm
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					bd = get_fwdemu_binding(di)
 					if di.opcode.name == 'if'
-						cc = ce[:!, bd[:flag]]
+						cc = ce[:!, bd[:flag]].with_misc(:di_addr => di.address)
 					else
-						cc = ce[bd[:flag]]
+						cc = ce[bd[:flag]].with_misc(:di_addr => di.address)
 					end
-					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n))
+					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n).with_misc(:di_addr => di.address)).with_misc(:di_addr => di.address)
 					to.delete dcmp.dasm.normalize(n)
 				elsif (di.opcode.name == 'end' or di.opcode.name == 'return') and retaddrs.include?(di.address)
 					fsig = w_func[:type]
 					rettype = wasm_type_to_type(fsig[:ret].first) if fsig[:ret] and fsig[:ret].first
 					ret = C::CExpression[ce[Expression[Indirection[[:frameptr, :-, 8], dcmp.sizeof(rettype)]]]] unless fsig[:ret].empty?
-					stmts << C::Return.new(ret)
+					stmts << C::Return.new(ret).with_misc(:di_addr => di.address)
 				elsif di.opcode.name == 'call' #or di.opcode.name == 'call_indirect'
 					tg = di.misc[:x].first
 					raise "no call target for #{di}" if not tg
@@ -225,19 +225,19 @@ class WebAsm
 						args << ce[bd_arg]
 						i += 1
 					end
-					e = C::CExpression[f, :funcall, args]
+					e = C::CExpression[f, :funcall, args].with_misc(:di_addr => di.address)
 					if bd_ret = bd.index(Expression["ret_0"])
-						e = ce[bd_ret, :'=', e]
+						e = ce[bd_ret, :'=', e].with_misc(:di_addr => di.address)
 					end
 					stmts << e
 				else
 					bd = get_fwdemu_binding(di)
 					if di.backtrace_binding[:incomplete_binding]
-						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil)
+						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil).with_misc(:di_addr => di.address)
 					else
 						bd.each { |k, v|
 							next if k == :opstack
-							e = ce[k, :'=', v]
+							e = ce[k, :'=', v].with_misc(:di_addr => di.address)
 							stmts << e if not e.kind_of?(C::Variable)	# [:eflag_s, :=, :unknown].reduce
 						}
 					end
