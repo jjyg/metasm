@@ -60,7 +60,6 @@ class CdecompListingWidget < DrawableWidget
 			if @caret_y < @line_text.length - 1
 				@view_y += 4
 				@caret_y += 4
-				redraw
 			end
 		end
 		redraw
@@ -149,11 +148,19 @@ class CdecompListingWidget < DrawableWidget
 			@caret_x = @line_text[@caret_y].to_s.length
 			update_caret
 		when :pgup
-			@caret_y -= @cheight/2
-			@caret_y = 0 if @caret_y < 0
+			if @caret_y > 0
+				@view_y -= @cheight/2
+				@caret_y -= @cheight/2
+				@caret_y = 0 if @caret_y < 0
+				redraw
+			end
 		when :pgdown
-			@caret_y += @cheight/2
-			@caret_y = @line_text.length if @caret_y > @line_text.length
+			if @caret_y < @line_text.length
+				@view_y += @cheight/2
+				@caret_y += @cheight/2
+				@caret_y = @line_text.length if @caret_y > @line_text.length
+				redraw
+			end
 		when ?n	# rename local/global variable
 			prompt_rename
 		when ?r # redecompile
