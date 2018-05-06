@@ -49,6 +49,7 @@ class WebAsm
 			when 'else'
 				raise "bad #{di} #{stack.last.inspect}" if stack.last.empty? or stack.last.last.opcode.name != 'if'
 				stack.last.each { |ddi| set_misc_x[ddi, di.next_addr] }	# 'if' points past here
+				di.misc[:end_of] = stack.last[0]	# store matching 'if'
 				stack.last[0] = di	# 'else' replace 'if'
 			when 'br', 'br_if', 'br_table'
 				if di.opcode.name == 'br_table'
@@ -67,12 +68,18 @@ class WebAsm
 				}
 			when 'end'
 				dis = stack.pop
-				dis.each { |ddi| set_misc_x[ddi, di.address] if ddi.opcode.name != 'loop' and ddi.opcode.name != 'block' }
+				dis.each { |ddi| set_misc_x[ddi, di.next_addr] if ddi.opcode.name != 'loop' and ddi.opcode.name != 'block' }
 				if stack.empty?
 					# stack empty: end of func
 					di.opcode = @opcode_list.find { |op| op.name == 'end' and op.props[:stopexec] }
 					break
 				else
+					if dis.first
+						di.misc[:end_of] = dis.first	# store matching loop/block/if
+						if dis.first.opcode.name == 'else'
+							di.misc[:end_of] = dis.first.misc[:end_of]	# else patched stack.last, recover original 'if'
+						end
+					end
 					di.opcode = @opcode_list.find { |op| op.name == 'end' and not op.props[:stopexec] }
 				end
 			end
