@@ -2335,9 +2335,6 @@ class Decompiler
 						end
 					end
 
-					# TODO
-					# i = j ; <i and j never modified> => s/i/j/g
-
 					case nr = find_next_read[label, i, v]
 					when C::CExpression
 						# read in one place only, try to patch rexpr in there
@@ -2483,6 +2480,73 @@ class Decompiler
 				end
 			end
 		}
+
+
+		# var propagation
+		# find vars who are written only once, and replace all their use by their assignment value
+		# XXX this may supercede some of the ugly stuff just before
+		loop do
+			g.invalidate
+			writtenonce = {}	# var => [label, offset] of assignment
+			neverwritten = {}	# var => true (eg args)
+			g.exprs_var.each { |varname, h1|
+				next if not var = scope.symbol[varname]
+				neverwritten[varname] = true
+				h1.each { |label, idx_list|
+					idx_list.each { |expr_idx|
+						e = g.exprs[label][expr_idx]
+						if ce_write(e, var)
+							neverwritten.delete varname
+							if writtenonce[varname]
+								# written twice, abort
+								writtenonce.delete varname
+								break
+							elsif e.op == :'=' and e.lexpr == var and not ce_write(e.rexpr, var)
+								# good !
+								writtenonce[varname] = [label, expr_idx]
+							else
+								# unhandled write, abort
+								break
+							end
+						end
+					}
+				}
+			}
+			# XXX check cycles ?
+
+			is_trivial_assign = lambda { |e, rec_max|
+				case e
+				when C::Variable; writtenonce[e.name] or neverwritten[e.name]
+				when ::Integer, nil; true
+				when C::CExpression
+					rec_max > 0 and
+					not sideeffect(e) and
+					(e.op == :+ or e.op == :- or e.op == nil) and
+					is_trivial_assign[e.lexpr, rec_max-1] and
+					is_trivial_assign[e.rexpr, rec_max-1]
+				end
+			}
+			break if not trivial_var = writtenonce.keys.find { |var|
+				l, i = writtenonce[var]
+				e = g.exprs[l][i].rexpr
+				is_trivial_assign[e, 3]
+			}
+			label, idx = writtenonce[trivial_var]
+			assign_expr = g.exprs[label][idx]
+			var = assign_expr.lexpr
+			value = assign_expr.rexpr
+			g.exprs_var[trivial_var].each { |l, list|
+				list.each { |i|
+					e = g.exprs[l][i]
+					if l == label and i == idx
+						e.lexpr = e.op = e.rexpr = nil
+					else
+						ce_patch(e, var, value)
+					end
+				}
+			}
+		end
+
 
 		# wipe cexprs marked in the previous step
 		walk(scope) { |st|
