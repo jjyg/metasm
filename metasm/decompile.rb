@@ -119,7 +119,7 @@ class Decompiler
 
 		simplify_goto(scope)
 		namestackvars(scope)
-		unalias_vars(scope, func)	# TODO slow
+		unalias_vars(scope, func)
 		decompile_c_types(scope)
 		optimize_code(scope)
 		optimize_vars(scope)
@@ -988,6 +988,7 @@ class Decompiler
 		write = {}
 		ro = {}
 		wo = {}
+		g_exprs = g.exprs_var[var.name] || {}
 
 		# list of [l, i] for which domain is not known
 		unchecked = []
@@ -995,7 +996,7 @@ class Decompiler
 		# mark all exprs of the graph
 		# TODO handle var_14 __attribute__((out)) = &curvar <=> curvar write
 		r = var.has_attribute_var('register')
-		g.exprs.each { |label, exprs|
+		g_exprs.each { |label, exprs|
 			exprs.each_with_index { |ce, i|
 				if ce_read(ce, var)
 					if (ce.op == :'=' and isvar(ce.lexpr, var) and not ce_write(ce.rexpr, var)) or
@@ -1043,8 +1044,9 @@ class Decompiler
 					i -= 1
 					if i < 0
 						g.from_optim[l].to_a.each { |ll|
-							todo_w << [ll, g.exprs[ll].to_a.length-1]
+							todo_w << [ll, g_exprs[ll].to_a.length-1]
 						}
+						# read unitialized
 						func_top = true if g.from_optim[l].to_a.empty?
 						break
 					end
@@ -1053,7 +1055,7 @@ class Decompiler
 		}
 
 		# flood by walking the graph down from [l, i] (excluded)
-		# malks stuff to walk up
+		# marks stuff to walk up
 		walk_down = lambda { |l, i|
 			todo_w = [[l, i+1]]
 			done_w = []
@@ -1073,7 +1075,7 @@ class Decompiler
 						break
 					end
 					i += 1
-					if i >= g.exprs[l].to_a.length
+					if i >= g_exprs[l].to_a.length
 						g.to_optim[l].to_a.each { |ll|
 							todo_w << [ll, 0]
 						}
@@ -1134,9 +1136,9 @@ class Decompiler
 			scope.statements << C::Declaration.new(nv)
 			scope.symbol[nv.name] = nv
 
-			dom.each { |oo| ce_patch(g.exprs[oo[0]][oo[1]], var, nv) }
+			dom.each { |oo| ce_patch(g_exprs[oo[0]][oo[1]], var, nv) }
 			dom_ro.each { |oo|
-				ce = g.exprs[oo[0]][oo[1]]
+				ce = g_exprs[oo[0]][oo[1]]
 				if ce.op == :funcall
 					ce_patch(ce, var, nv)
 				elsif ce.rexpr.kind_of?(C::CExpression)
@@ -1146,7 +1148,7 @@ class Decompiler
 				end
 			}
 			dom_wo.each { |oo|
-				ce = g.exprs[oo[0]][oo[1]]
+				ce = g_exprs[oo[0]][oo[1]]
 				if ce.op == :funcall
 				elsif ce.lexpr.kind_of?(C::CExpression)
 					ce_patch(ce.lexpr, var, nv)
@@ -1977,6 +1979,34 @@ class Decompiler
 	class CGraph
 		# exprs: label => [exprs], to: label => [labels], block: label => are exprs standalone (vs If#test), start: 1st label
 		attr_accessor :exprs, :to, :block, :start, :to_optim, :from_optim
+
+		# same as exprs, but includes only expressions referencing a var
+		def exprs_var
+			@exprs_var ||= init_exprs_var
+		end
+
+		def init_exprs_var
+			ret = {}
+			# return the list of variable names referenced by the expr
+			expr_vars = lambda { |e|
+				case e
+				when C::CExpression; expr_vars[e.lexpr] + expr_vars[e.rexpr]
+				when ::Array; e.map { |ee| expr_vars[ee] }.flatten
+				when C::Variable; [e.name]
+				else; []
+				end
+			}
+			@exprs.each { |l, el|
+				el.each { |e|
+					expr_vars[e].uniq.each { |v|
+						ret[v] ||= {}
+						ret[v][l] ||= []
+						ret[v][l] << e
+					}
+				}
+			}
+			ret
+		end
 	end
 	def c_to_graph(st)
 		g = CGraph.new
