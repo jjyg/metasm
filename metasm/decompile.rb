@@ -988,7 +988,8 @@ class Decompiler
 		write = {}
 		ro = {}
 		wo = {}
-		g_exprs = g.exprs_var[var.name] || {}
+		g_exprs = {}
+		g.exprs_var[var.name].to_h.each { |k, v| g_exprs[k] = v.map { |i| g.exprs[k][i] } }
 
 		# list of [l, i] for which domain is not known
 		unchecked = []
@@ -1977,125 +1978,153 @@ class Decompiler
 	# converts C code to a graph of cexprs (nodes = cexprs, edges = codepaths)
 	# returns a CGraph
 	class CGraph
-		# exprs: label => [exprs], to: label => [labels], block: label => are exprs standalone (vs If#test), start: 1st label
+		# exprs: label => [exprs], to: label => [labels], block: label => are exprs in a block (vs If#test), start: 1st label
 		attr_accessor :exprs, :to, :block, :start, :to_optim, :from_optim
 
-		# same as exprs, but includes only expressions referencing a var
-		def exprs_var
-			@exprs_var ||= init_exprs_var
+		def initialize
+			@exprs = {}	# label => [exprs]
+			@to = {}	# label => [labels]
+			@block = {}	# label => is label in a block? (vs If#test)
+			@anon_label = 0	# when no label is there, use anon_label++
+			@exprs_var = nil	# similar to @exprs, indexed by var name, lazy initialization
 		end
 
-		def init_exprs_var
-			ret = {}
-			# return the list of variable names referenced by the expr
-			expr_vars = lambda { |e|
-				case e
-				when C::CExpression; expr_vars[e.lexpr] + expr_vars[e.rexpr]
-				when ::Array; e.map { |ee| expr_vars[ee] }.flatten
-				when C::Variable; [e.name]
-				else; []
-				end
-			}
-			@exprs.each { |l, el|
-				el.each { |e|
-					expr_vars[e].uniq.each { |v|
-						ret[v] ||= {}
-						ret[v][l] ||= []
-						ret[v][l] << e
-					}
-				}
-			}
-			ret
+		def build(stmt)
+			@start = @anon_label
+			to_graph(stmt, @start, nil, nil, nil)
+			optimize
+			self
 		end
-	end
-	def c_to_graph(st)
-		g = CGraph.new
-		g.exprs = {}	# label => [exprs]
-		g.to = {}	# label => [labels]
-		g.block = {}	# label => is label in a block? (vs If#test)
-		anon_label = 0	# when no label is there, use anon_label++
+
 		# converts C code to a graph of codepath of cexprs
-		to_graph = lambda { |stmt, l_cur, l_after, l_cont, l_break|
+		def to_graph(stmt, l_cur, l_after, l_cont, l_break)
 			case stmt
-			when C::Label; g.to[l_cur] = [stmt.name] ; g.to[stmt.name] = [l_after]
-			when C::Goto; g.to[l_cur] = [stmt.target]
-			when C::Continue; g.to[l_cur] = [l_cont]
-			when C::Break; g.to[l_cur] = [l_break]
+			when C::Label; @to[l_cur] = [stmt.name] ; @to[stmt.name] = [l_after]
+			when C::Goto; @to[l_cur] = [stmt.target]
+			when C::Continue; @to[l_cur] = [l_cont]
+			when C::Break; @to[l_cur] = [l_break]
 			when C::CExpression
-				g.exprs[l_cur] = [stmt]
-				g.to[l_cur] = [l_after]
+				@exprs[l_cur] = [stmt]
+				@to[l_cur] = [l_after]
 			when C::Return
-				g.exprs[l_cur] = [stmt.value] if stmt.value
-				g.to[l_cur] = []
+				@exprs[l_cur] = [stmt.value] if stmt.value
+				@to[l_cur] = []
 			when C::Block
-				to_graph[stmt.statements, l_cur, l_after, l_cont, l_break]
+				to_graph(stmt.statements, l_cur, l_after, l_cont, l_break)
 			when ::Array
-				g.exprs[l_cur] = []
-				g.block[l_cur] = true
+				@exprs[l_cur] = []
+				@block[l_cur] = true
 				stmt.each_with_index { |s, i|
 					case s
 					when C::Declaration
 					when C::CExpression
-						g.exprs[l_cur] << s
+						@exprs[l_cur] << s
 					else
-						l = anon_label += 1
-						ll = anon_label += 1
-						g.to[l_cur] = [l]
-						g.block[l_cur] = true
-						to_graph[stmt[i], l, ll, l_cont, l_break]
+						l = @anon_label += 1
+						ll = @anon_label += 1
+						@to[l_cur] = [l]
+						@block[l_cur] = true
+						to_graph(stmt[i], l, ll, l_cont, l_break)
 						l_cur = ll
-						g.exprs[l_cur] = []
+						@exprs[l_cur] = []
 					end
 				}
-				g.to[l_cur] = [l_after].compact
+				@to[l_cur] = [l_after].compact
 			when C::If
-				g.exprs[l_cur] = [stmt.test]
-				lt = anon_label += 1
-				to_graph[stmt.bthen, lt, l_after, l_cont, l_break]
-				le = anon_label += 1
-				to_graph[stmt.belse, le, l_after, l_cont, l_break]
-				g.to[l_cur] = [lt, le]
+				@exprs[l_cur] = [stmt.test]
+				lt = @anon_label += 1
+				to_graph(stmt.bthen, lt, l_after, l_cont, l_break)
+				le = @anon_label += 1
+				to_graph(stmt.belse, le, l_after, l_cont, l_break)
+				@to[l_cur] = [lt, le]
 			when C::While, C::DoWhile
-				la = anon_label += 1
+				la = @anon_label += 1
 				if stmt.kind_of?(C::DoWhile)
 					lt, lb = la, l_cur
 				else
 					lt, lb = l_cur, la
 				end
-				g.exprs[lt] = [stmt.test]
-				g.to[lt] = [lb, l_after]
-				to_graph[stmt.body, lb, lt, lt, l_after]
-			when C::Asm, nil; g.to[l_cur] = [l_after]
+				@exprs[lt] = [stmt.test]
+				@to[lt] = [lb, l_after]
+				to_graph(stmt.body, lb, lt, lt, l_after)
+			when C::Asm, nil; @to[l_cur] = [l_after]
 			else puts "to_graph unhandled #{stmt.class}: #{stmt}" if $VERBOSE
 			end
-		}
-
-		g.start = anon_label
-		to_graph[st, g.start, nil, nil, nil]
+		end
 
 		# optimize graph
-		g.to_optim = {}
-		g.to.each { |k, v| g.to_optim[k] = v.uniq }
-		g.exprs.delete_if { |k, v| v == [] }
-		g.to_optim.delete_if { |k, v|
-			if v.length == 1 and not g.exprs[k] and v != [k]
-				g.to_optim.each_value { |t| if i = t.index(k) ; t[i] = v.first ; end }
-				true
-			elsif v.length == 0 and not g.exprs[k]
-				g.to_optim.each_value { |t| t.delete k }
-				true
+		def optimize
+			@to_optim = {}
+			@to.each { |k, v| @to_optim[k] = v.uniq }
+			@exprs.delete_if { |k, v| v == [] }
+			@to_optim.delete_if { |k, v|
+				if v.length == 1 and not @exprs[k] and v != [k]
+					@to_optim.each_value { |t| if i = t.index(k) ; t[i] = v.first ; end }
+					true
+				elsif v.length == 0 and not @exprs[k]
+					@to_optim.each_value { |t| t.delete k }
+					true
+				end
+			}
+
+			@from_optim = {}
+			@to_optim.each { |k, v| v.each { |t| (@from_optim[t] ||= []) << k } }
+		end
+
+		# varname => { label => [list of indices of @exprs[label] referencing varname] }
+		def exprs_var
+			@exprs_var ||= init_exprs_var
+		end
+
+		# returns the list of variable names referenced by a CExpr
+		def get_expr_vars(e)
+			case e
+			when C::CExpression; get_expr_vars(e.lexpr) + get_expr_vars(e.rexpr)
+			when ::Array; e.inject([]) { |a, ee| a.concat get_expr_vars(ee) }
+			when C::Variable; [e.name]
+			else; []
 			end
-		}
+		end
 
-		g.from_optim = {}
-		g.to_optim.each { |k, v| v.each { |t| (g.from_optim[t] ||= []) << k } }
+		# initialize @exprs_var
+		def init_exprs_var
+			@exprs_var = {}
+			@exprs.each_key { |label| update_exprs_var(label) }
+			@exprs_var
+		end
 
-		g
+		# populate one label of @exprs_var
+		def update_exprs_var(label)
+			@exprs[label].each_with_index { |e, idx|
+				get_expr_vars(e).uniq.each { |varname|
+					@exprs_var[varname] ||= {}
+					@exprs_var[varname][label] ||= []
+					@exprs_var[varname][label] << idx
+				}
+			}
+		end
+
+		# invalidates one label (eg exprs were deleted)
+		# rebuilds @exprs_var if necessary
+		def invalidate(label=nil)
+			if @exprs_var
+				if label
+					@exprs_var.each { |v, h| h.delete(label) }
+					update_exprs_var(label)
+				else
+					@exprs_var = nil
+				end
+			end
+		end
+	end
+	def c_to_graph(stmt)
+		CGraph.new.build(stmt)
 	end
 
 	# dataflow optimization
 	# condenses expressions (++x; if (x)  =>  if (++x))
 	# remove local var assignment (x = 1; f(x); x = 2; g(x);  =>  f(1); g(2); etc)
+	# XXX omg
 	def optimize_vars(scope)
 		return if forbid_optimize_dataflow
 
@@ -2125,8 +2154,10 @@ class Decompiler
 		find_next_read_rec = lambda { |label, idx, var, done, badlabels|
 			next if done.include?(label)
 			done << label if idx == 0
+			list = g.exprs_var[var.name][label].to_a.find_all { |i| i >= idx }
+			idx = list.shift
 
-			idx += 1 while ce = g.exprs[label].to_a[idx] and not ret = find_next_read_ce[ce, var]
+			idx = list.shift while idx and not ret = find_next_read_ce[g.exprs[label][idx], var]
 			next ret if ret
 
 			to = g.to_optim[label].to_a.map { |t|
@@ -2148,8 +2179,10 @@ class Decompiler
 		find_prev_read_rec = lambda { |label, idx, var, done|
 			next if done.include?(label)
 			done << label if idx == g.exprs[label].length-1
+			list = g.exprs_var[var.name][label].to_a.find_all { |i| i <= idx }
+			idx = list.pop
 
-			idx -= 1 while idx >= 0 and ce = g.exprs[label].to_a[idx] and not ret = find_next_read_ce[ce, var]
+			idx = list.pop while idx and not ret = find_next_read_ce[g.exprs[label][idx], var]
 			if ret.kind_of?(C::CExpression)
 				fwchk = find_next_read[label, idx+1, var]
 				ret = fwchk if not fwchk.kind_of?(C::CExpression)
@@ -2171,7 +2204,7 @@ class Decompiler
 			end
 		}
 
-		# list of labels reachable without using a label
+		# list of labels reachable without passing through label
 		badlab = {}
 		build_badlabel = lambda { |label|
 			next if badlab[label]
@@ -2261,6 +2294,7 @@ class Decompiler
 
 					i -= 1
 					exprs.delete_at(i)
+					g.invalidate(label)
 					e.lexpr = e.op = e.rexpr = nil
 
 
@@ -2401,6 +2435,8 @@ class Decompiler
 							when :done
 								i -= 1
 								exprs.delete_at(i)
+								g.invalidate(label)
+								g.invalidate(l_l) if l_l != label
 								e.lexpr = e.op = e.rexpr = nil
 								break
 							when :fail
@@ -2442,6 +2478,7 @@ class Decompiler
 							end
 							break
 						end
+						g.invalidate(label)
 					end
 				end
 			end
@@ -2452,6 +2489,7 @@ class Decompiler
 			next if not st.kind_of?(C::Block)
 			st.statements.delete_if { |e| e.kind_of?(C::CExpression) and not e.lexpr and not e.op and not e.rexpr }
 		}
+		g.invalidate
 
 		# reoptimize cexprs
 		walk_ce(scope, true) { |ce|
