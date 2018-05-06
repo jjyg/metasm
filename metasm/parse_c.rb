@@ -4066,7 +4066,7 @@ EOH
 					r.last << '('
 					@rexpr.each { |arg|
 						r.last << ', ' if r.last[-1] != ?(
-						r, dep = CExpression.dump(arg, scope, r, dep)
+						r, dep = CExpression.dump(arg, scope, r, dep, (arg.kind_of?(CExpression) and arg.op == :','))
 					}
 					r.last << ')'
 				when :'?:'
@@ -4076,7 +4076,7 @@ EOH
 					r.last << CRenderString.new(self, ' : ')
 					r, dep = CExpression.dump(@rexpr[1], scope, r, dep, true)
 				else
-					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of?(CExpression) and @lexpr.lexpr and @lexpr.op != @op))
+					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of?(CExpression) and @lexpr.lexpr and @lexpr.op != @op and @lexpr.op != :funcall))
 					r.last << CRenderString.new(self, ' ' << @op.to_s << ' ')
 					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of?(CExpression) and @rexpr.lexpr and @rexpr.op != @op and @rexpr.op != :funcall and @op != :'='))
 				end

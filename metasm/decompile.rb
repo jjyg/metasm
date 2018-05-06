@@ -98,6 +98,7 @@ class Decompiler
 		myblocks = listblocks_func(entry)
 
 		# [esp+8] => [:frameptr-12]
+		# TODO slow
 		makestackvars entry, myblocks.map { |b, to| @dasm.decoded[b].block }
 
 		# find registry dependencies between blocks
@@ -118,7 +119,7 @@ class Decompiler
 
 		simplify_goto(scope)
 		namestackvars(scope)
-		unalias_vars(scope, func)
+		unalias_vars(scope, func)	# TODO slow
 		decompile_c_types(scope)
 		optimize_code(scope)
 		optimize_vars(scope)
@@ -129,6 +130,7 @@ class Decompiler
 		if @recurse > 0
 			decompile_controlseq(scope)
 			optimize_vars(scope)
+			optimize_code(scope)
 			optimize_ctrl(scope)
 			optimize_vars(scope)
 			remove_unreferenced_vars(scope)
@@ -589,6 +591,19 @@ class Decompiler
 			scope.statements.concat i.bthen.statements
 			i.bthen = C::Break.new
 		end
+
+		# while (1) { a; if (b) break; }  =>  do { a } while (!b);
+		walk(scope, false, true) { |ce|
+			if ce.kind_of?(C::While) and ce.test.kind_of?(C::CExpression) and not ce.test.op and ce.test.rexpr == 1 and ce.body.kind_of?(C::Block)
+				i = ce.body.statements.last
+				if i.kind_of?(C::If) and not i.belse and i.bthen.kind_of?(C::Break)
+					ce.body.statements.pop
+					C::DoWhile.new(i.test.negate, ce.body)
+				end
+			end
+		}
+
+		# TODO for (;;) {}
 
 		patch_test = lambda { |ce|
 			ce = ce.rexpr if ce.kind_of?(C::CExpression) and ce.op == :'!'
@@ -1773,6 +1788,14 @@ class Decompiler
 				ce.rexpr, ce.lexpr = ce.lexpr, ce.rexpr
 			end
 
+			# i + v => v + i
+			if ce.op == :+ and ce.lexpr.kind_of?(C::CExpression) and not ce.lexpr.op and ce.lexpr.rexpr.kind_of?(::Integer)
+				# avoid infinite swapping
+				if not ce.rexpr.kind_of?(C::CExpression) or ce.rexpr.op or not ce.rexpr.rexpr.kind_of?(::Integer)
+					ce.rexpr, ce.lexpr = ce.lexpr, ce.rexpr
+				end
+			end
+
 			# (ptr + i) + j => ptr + (i + j)
 			if ce.op == :+ and ce.lexpr and ce.lexpr.type.pointer? and ce.rexpr.type.integral? and ce.lexpr.kind_of?(C::CExpression) and ce.lexpr.op == :+ and ce.lexpr.lexpr and ce.lexpr.lexpr.type.pointer? and ce.lexpr.rexpr.type.integral?
 				ce.lexpr, ce.rexpr = ce.lexpr.lexpr, C::CExpression[ce.lexpr.rexpr, :+, ce.rexpr]
@@ -1783,6 +1806,12 @@ class Decompiler
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of?(C::CExpression) and ce.rexpr.op == :+ and var = ce.rexpr.lexpr and var.kind_of?(C::Variable) and var.type.pointer?
 				ce.lexpr, ce.op, ce.rexpr = ce.rexpr.lexpr, :'[]', ce.rexpr.rexpr
 				future_array << var.name
+			end
+
+			# ptr + (i << 3) => ptr + 8*i
+			if (ce.op == :+ or ce.op == :[]) and ce.rexpr.kind_of?(C::CExpression) and ce.rexpr.op == :<< and ce.rexpr.rexpr.kind_of?(C::CExpression) and not ce.rexpr.rexpr.op and ce.rexpr.rexpr.rexpr.kind_of?(::Integer)
+				ce.rexpr.rexpr.rexpr = 1 << ce.rexpr.rexpr.rexpr
+				ce.rexpr.lexpr, ce.rexpr.op, ce.rexpr.rexpr = ce.rexpr.rexpr, :*, ce.rexpr.lexpr
 			end
 
 			# char x; x & 255 => x
@@ -2716,26 +2745,38 @@ class Decompiler
 	end
 
 	# yields each statement (recursive)
-	def walk(scope, post=false, &b)
+	# replace the element by the block return value if patch is true
+	def walk(scope, post=false, patch=false, &b)
 		case scope
-		when ::Array; scope.each { |s| walk(s, post, &b) }
+		when ::Array
+			scope.each_with_index { |s, i|
+				v = walk(s, post, patch, &b)
+				scope[i] = v if patch and v
+			}
+			nil
 		when C::Statement
-			yield scope if not post
+			v = yield scope if not post
 			case scope
-			when C::Block; walk(scope.statements, post, &b)
+			when C::Block
+				walk(scope.statements, post, patch, &b)
 			when C::If
-				yield scope.test
-				walk(scope.bthen, post, &b)
-				walk(scope.belse, post, &b) if scope.belse
+				vv = yield scope.test
+				scope.test = vv if patch and vv
+				walk(scope.bthen, post, patch, &b)
+				walk(scope.belse, post, patch, &b) if scope.belse
 			when C::While, C::DoWhile
-				yield scope.test
-				walk(scope.body, post, &b)
+				vv = yield scope.test
+				scope.test = vv if patch and vv
+				walk(scope.body, post, patch, &b)
 			when C::Return
-				yield scope.value
+				vv = yield scope.value
+				scope.value = vv if patch and vv
 			end
-			yield scope if post
+			v = yield scope if post
+			v
 		when C::Declaration
-			walk(scope.var.initializer, post, &b) if scope.var.initializer
+			walk(scope.var.initializer, post, patch, &b) if scope.var.initializer
+			nil
 		end
 	end
 
