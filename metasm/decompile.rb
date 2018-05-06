@@ -2621,6 +2621,12 @@ class Decompiler
 				ce.rexpr = ce.rexpr.rexpr
 			end
 
+			# x = 4 | x => x |= 4
+			if ce.op == :'=' and ce.rexpr.kind_of?(C::CExpression) and [:+, :*, :|, :&, :^].include?(ce.rexpr.op) and ce.rexpr.rexpr == ce.lexpr
+				ce.op = (ce.rexpr.op.to_s + '=').to_sym
+				ce.rexpr = ce.rexpr.lexpr
+			end
+
 			# x += 1 => ++x
 			if (ce.op == :'+=' or ce.op == :'-=') and ce.rexpr.kind_of?(C::CExpression) and not ce.rexpr.op and (ce.rexpr.rexpr == 1 or ce.rexpr.rexpr == -1)
 				if ce.rexpr.rexpr == 1

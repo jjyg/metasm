@@ -151,11 +151,9 @@ class CdecompListingWidget < DrawableWidget
 		when :pgup
 			@caret_y -= @cheight/2
 			@caret_y = 0 if @caret_y < 0
-			update_caret
 		when :pgdown
 			@caret_y += @cheight/2
 			@caret_y = @line_text.length if @caret_y > @line_text.length
-			update_caret
 		when ?n	# rename local/global variable
 			prompt_rename
 		when ?r # redecompile
