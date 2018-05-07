@@ -106,9 +106,9 @@ class Decompiler
 
 		scope = func.initializer = C::Block.new(@c_parser.toplevel)
 		if df = @dasm.function[entry]
-			scope.decompdata = df.decompdata ||= {:stackoff_type => {}, :stackoff_name => {}}
+			scope.decompdata = df.decompdata ||= {:unalias_type => {}, :unalias_name => {}}
 		else
-			scope.decompdata ||= {:stackoff_type => {}, :stackoff_name => {}}
+			scope.decompdata ||= {:unalias_type => {}, :unalias_name => {}}
 		end
 
 		# di blocks => raw c statements, declare variables
@@ -205,17 +205,18 @@ class Decompiler
 				@dasm.disassemble(addr) if not @dasm.decoded[addr]	# TODO disassemble_fast ?
 				f = @dasm.function[addr] ||= DecodedFunction.new
 				# TODO detect thunks (__noreturn)
-				f.decompdata ||= { :stackoff_type => {}, :stackoff_name => {} }
+				f.decompdata ||= { :unalias_type => {}, :unalias_name => {} }
 				if not s = @c_parser.toplevel.symbol[name] or not s.initializer or not s.type.untypedef.kind_of?(C::Function)
 					os = @c_parser.toplevel.symbol.delete name
 					@c_parser.toplevel.statements.delete_if { |ts| ts.kind_of?(C::Declaration) and ts.var.name == name }
-					aoff = 1
-					ptype.args.to_a.each { |a|
-						aoff = (aoff + @c_parser.typesize[:ptr] - 1) / @c_parser.typesize[:ptr] * @c_parser.typesize[:ptr]
-						f.decompdata[:stackoff_type][aoff] ||= a.type
-						f.decompdata[:stackoff_name][aoff] ||= a.name if a.name
-						aoff += sizeof(a)	# ary ?
-					}
+					#aoff = 1
+					#ptype.args.to_a.each { |a|
+						# TODO
+						#aoff = (aoff + @c_parser.typesize[:ptr] - 1) / @c_parser.typesize[:ptr] * @c_parser.typesize[:ptr]
+						#f.decompdata[:unalias_type][aoff] ||= a.type
+						#f.decompdata[:unalias_name][aoff] ||= a.name if a.name
+						#aoff += sizeof(a)	# ary ?
+					#}
 					decompile_func_rec(addr)
 					s = @c_parser.toplevel.symbol[name]
 					walk_ce([@c_parser.toplevel, scope]) { |ce|
@@ -1137,9 +1138,11 @@ class Decompiler
 			n_i += 1 while scope.symbol_ancestors[newvarname = "#{var.name}_a#{n_i}"]
 
 			nv = var.dup
+			nv.misc = var.misc ? var.misc.dup : {}
 			nv.storage = :register if nv.has_attribute_var('register')
 			nv.attributes = nv.attributes.dup if nv.attributes
 			nv.name = newvarname
+			nv.misc[:unalias_name] = newvarname
 			scope.statements << C::Declaration.new(nv)
 			scope.symbol[nv.name] = nv
 
@@ -1201,9 +1204,6 @@ class Decompiler
 			end
 			v
 		}
-
-		scope.decompdata[:stackoff_name].each { |o, n| newvar[o, n] }
-		scope.decompdata[:stackoff_type].each { |o, t| newvar[o, stackoff_to_varname(o)] }
 
 		walk_ce(scope) { |e|
 			next if e.op != :+ and e.op != :-
@@ -1286,7 +1286,7 @@ class Decompiler
 			next if propagating.include?(n)
 			o = scope.symbol[n].stackoff
 			next if not o and t.untypedef.kind_of?(C::Union)
-			next if o and scope.decompdata[:stackoff_type][o] and t != scope.decompdata[:stackoff_type][o]
+			next if scope.decompdata[:unalias_type][n] and t != scope.decompdata[:unalias_type][n]
 			next if t0 = types[n] and not better_type[t, t0]
 			next if o and (t.integral? or t.pointer?) and o % sizeof(t) != 0 # keep vars aligned
 			types[n] = t
@@ -1401,7 +1401,7 @@ class Decompiler
 		# put all those macros in use
 		# use user-defined types first
 		scope.symbol.each_value { |v|
-			next if not v.kind_of?(C::Variable) or not v.stackoff or not t = scope.decompdata[:stackoff_type][v.stackoff]
+			next if not v.kind_of?(C::Variable) or not t = scope.decompdata[:unalias_type][v.name]
 			known_type[v, t]
 		}
 
@@ -1551,7 +1551,7 @@ class Decompiler
 		update_type = lambda { |n, t|
 			o = scope.symbol[n].stackoff
 			next if not o and t.untypedef.kind_of?(C::Union)
-			next if o and scope.decompdata[:stackoff_type][o] and t != scope.decompdata[:stackoff_type][o]
+			next if scope.decompdata[:unalias_type][n] and t != scope.decompdata[:unalias_type][n]
 			scope.symbol[n].type = t
 		}
 
@@ -2828,7 +2828,7 @@ class Decompiler
 			end
 			while curoff > argoff
 				wantarg = C::Variable.new
-				wantarg.name = scope.decompdata[:stackoff_name][argoff] || stackoff_to_varname(argoff)
+				wantarg.name = stackoff_to_varname(argoff)
 				wantarg.type = C::BaseType.new(:int)
 				wantarg.attributes = ['unused']
 				func.type.args << wantarg
@@ -2837,6 +2837,18 @@ class Decompiler
 			end
 			func.type.args << a
 			argoff += @c_parser.typesize[:ptr]
+		}
+
+		# use user-supplied names
+		scope.symbol.keys.each { |s|
+			v = scope.symbol[s]
+			next if not v.kind_of?(C::Variable)
+			v.misc ||= {}
+			uan = v.misc[:unalias_name] ||= s
+			if newname = scope.decompdata[:unalias_name][uan] and newname != s
+				v.name = newname
+				scope.symbol[newname] = scope.symbol.delete(s)
+			end
 		}
 	end
 

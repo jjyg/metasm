@@ -184,8 +184,10 @@ class CdecompListingWidget < DrawableWidget
 				if f and f.symbol[n]
 					# TODO add/update comment to the asm instrs
 					s = f.symbol[v] = f.symbol.delete(n)
+					s.misc ||= {}
+					uan = s.misc[:unalias_name] ||= n
 					s.name = v
-					f.decompdata[:stackoff_name][s.stackoff] = v if s.stackoff
+					f.decompdata[:unalias_name][uan] = v
 				elsif @dasm.c_parser.toplevel.symbol[n]
 					@dasm.rename_label(n, v)
 					@curfuncaddr = v if @curfuncaddr == n
@@ -206,10 +208,11 @@ class CdecompListingWidget < DrawableWidget
 			@parent_widget.inputbox("new type for #{s.name}", :text => s_.dump_def(cp.toplevel)[0].join(' ')) { |t|
 				if t == ''
 					if s.type.kind_of?(C::Function) and s.initializer and s.initializer.decompdata
-						s.initializer.decompdata[:stackoff_type].clear
 						s.initializer.decompdata.delete(:return_type)
-					elsif s.kind_of?(C::Variable) and s.stackoff
-						f.decompdata[:stackoff_type].delete s.stackoff
+					elsif f.symbol[n] and s.kind_of?(C::Variable)
+						s.misc ||= {}
+						uan = s.misc[:unalias_name] ||= s.name
+						f.decompdata[:unalias_type].delete uan
 					end
 					next
 				end
@@ -223,18 +226,20 @@ class CdecompListingWidget < DrawableWidget
 						vt = vt.type.untypedef if vt.kind_of?(C::Pointer)
 						raise 'function forever !' if not vt.kind_of?(C::Function)
 						# TODO _declspec
-						ao = 1
-						vt.args.to_a.each { |a|
-							next if a.has_attribute_var('register')
-							ao = (ao + [cp.sizeof(a), cp.typesize[:ptr]].max - 1) / cp.typesize[:ptr] * cp.typesize[:ptr]
-							s.initializer.decompdata[:stackoff_name][ao] = a.name if a.name
-							s.initializer.decompdata[:stackoff_type][ao] = a.type
-							ao += cp.sizeof(a)
+						vt.args.to_a.each_with_index { |a, idx|
+							oa = curfunc.type.args.to_a[idx]
+							oa.misc ||= {}
+							a.misc ||= {}
+							uan = a.misc[:unalias_name] = oa.misc[:unalias_name] ||= oa.name
+							s.initializer.decompdata[:unalias_name][uan] = a.name if a.name
+							s.initializer.decompdata[:unalias_type][uan] = a.type
 						}
 						s.initializer.decompdata[:return_type] = vt.type
 						s.type = v.type
-					else
-						f.decompdata[:stackoff_type][s.stackoff] = v.type if f and s.kind_of?(C::Variable) and s.stackoff
+					elsif f and s.kind_of?(C::Variable) and f.symbol[s.name]
+						s.misc ||= {}
+						uan = s.misc[:unalias_name] ||= s.name
+						f.decompdata[:unalias_type][uan] = v.type
 						s.type = v.type
 					end
 					gui_update
