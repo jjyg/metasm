@@ -592,19 +592,6 @@ class Decompiler
 			i.bthen = C::Break.new
 		end
 
-		# while (1) { a; if (b) break; }  =>  do { a } while (!b);
-		walk(scope, false, true) { |ce|
-			if ce.kind_of?(C::While) and ce.test.kind_of?(C::CExpression) and not ce.test.op and ce.test.rexpr == 1 and ce.body.kind_of?(C::Block)
-				i = ce.body.statements.last
-				if i.kind_of?(C::If) and not i.belse and i.bthen.kind_of?(C::Break)
-					ce.body.statements.pop
-					C::DoWhile.new(i.test.negate, ce.body)
-				end
-			end
-		}
-
-		# TODO for (;;) {}
-
 		patch_test = lambda { |ce|
 			ce = ce.rexpr if ce.kind_of?(C::CExpression) and ce.op == :'!'
 			# if (a+1)  =>  if (a != -1)
@@ -649,6 +636,25 @@ class Decompiler
 				end
 			end
 		}
+
+		walk(scope, false, true) { |ce|
+			# while (1) { a; if (b) break; }  =>  do { a } while (!b);
+			if ce.kind_of?(C::While) and ce.test.kind_of?(C::CExpression) and not ce.test.op and ce.test.rexpr == 1 and ce.body.kind_of?(C::Block)
+				i = ce.body.statements.last
+				if i.kind_of?(C::If) and not i.belse and i.bthen.kind_of?(C::Break)
+					ce.body.statements.pop
+					C::DoWhile.new(i.test.negate, ce.body)
+				end
+			end
+
+			# if (a) b = 1; else b = 2;  =>  b = a ? 1 : 2
+			if ce.kind_of?(C::If) and ce.belse.kind_of?(C::CExpression) and ce.belse.op == :'=' and ce.belse.lexpr.kind_of?(C::Variable) and ce.bthen.kind_of?(C::CExpression) and ce.bthen.op == :'=' and ce.bthen.lexpr == ce.belse.lexpr
+				C::CExpression[ce.bthen.lexpr, :'=', [ce.test, :'?:', [ce.bthen.rexpr, ce.belse.rexpr]]]
+			end
+		}
+
+		# TODO for (;;) {}
+
 		walk(scope) { |ce|
 			next if not ce.kind_of?(C::Block)
 			st = ce.statements
@@ -1799,11 +1805,22 @@ class Decompiler
 				end
 			end
 
-			# (ptr + i) + j => ptr + (i + j)
-			if ce.op == :+ and ce.lexpr and ce.lexpr.type.pointer? and ce.rexpr.type.integral? and ce.lexpr.kind_of?(C::CExpression) and ce.lexpr.op == :+ and ce.lexpr.lexpr and ce.lexpr.lexpr.type.pointer? and ce.lexpr.rexpr.type.integral?
+			# (a + b) + c => a + (b + c)
+			if ce.op == :+ and ce.lexpr.kind_of?(C::CExpression) and ce.lexpr.op == :+ and ce.lexpr.lexpr
 				ce.lexpr, ce.rexpr = ce.lexpr.lexpr, C::CExpression[ce.lexpr.rexpr, :+, ce.rexpr]
+				optimize_code(ce)
 			end
 
+			# 1 + 2 => 3
+			if (ce.op == :+ or ce.op == :- or ce.op == :*) and ce.lexpr.kind_of?(C::CExpression) and ce.type.integral? and not ce.lexpr.op and ce.lexpr.rexpr.kind_of?(::Integer) and ce.rexpr.kind_of?(C::CExpression) and not ce.rexpr.op and ce.rexpr.rexpr.kind_of?(::Integer)
+				ce.lexpr, ce.op, ce.rexpr = nil, nil, ce.lexpr.rexpr.send(ce.op, ce.rexpr.rexpr)
+			end
+
+			# 4 * (a + 1) => 4*a + 4
+			if ce.op == :* and ce.lexpr.kind_of?(C::CExpression) and ce.type.integral? and not ce.lexpr.op and ce.lexpr.rexpr.kind_of?(::Integer) and ce.rexpr.kind_of?(C::CExpression) and (ce.rexpr.op == :+ or ce.rexpr.op == :-) and ce.rexpr.lexpr and ce.rexpr.rexpr.kind_of?(C::CExpression) and not ce.rexpr.rexpr.op and ce.rexpr.rexpr.rexpr.kind_of?(::Integer)
+				ce.replace C::CExpression[[ce.lexpr, ce.op, ce.rexpr.lexpr], ce.rexpr.op, [ce.lexpr.rexpr * ce.rexpr.rexpr.rexpr]]
+				optimize_code(ce)
+			end
 
 			# int *ptr; *(ptr + 4) => ptr[4]
 			if ce.op == :* and not ce.lexpr and ce.rexpr.kind_of?(C::CExpression) and ce.rexpr.op == :+ and var = ce.rexpr.lexpr and var.kind_of?(C::Variable) and var.type.pointer?
@@ -2302,6 +2319,15 @@ class Decompiler
 						not v.type.qualifier.to_a.include?(:volatile) and not find_next_read_ce[e.rexpr, v]
 
 					# reduce trivial static assignments
+					# b = a + 1 ; a = b => a = a + 1 ; b = a
+					if ne = g.exprs[label][i] and ne.op == :'=' and ne.rexpr == e.lexpr and ne.lexpr.kind_of?(C::Variable) and find_next_read_ce[e.rexpr, ne.lexpr]
+						e.lexpr, ne.lexpr, ne.rexpr = ne.lexpr, ne.rexpr, ne.lexpr
+						optimize_code(e)
+						i -= 1
+						g.invalidate(label)
+						next
+					end
+
 					# i = 4 ; f(i) => f(4)
 					if (e.rexpr.kind_of?(C::CExpression) and iv = e.rexpr.reduce(@c_parser) and iv.kind_of?(::Integer)) or
 					   (e.rexpr.kind_of?(C::CExpression) and e.rexpr.op == :& and not e.rexpr.lexpr and e.rexpr.lexpr.kind_of?(C::Variable)) or
@@ -2542,6 +2568,7 @@ class Decompiler
 						e.lexpr = e.op = e.rexpr = nil
 					else
 						ce_patch(e, var, value)
+						optimize_code(e)
 					end
 				}
 			}
