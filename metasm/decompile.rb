@@ -814,43 +814,58 @@ class Decompiler
 		return if forbid_decompile_ifwhile
 
 		# find the next instruction that is not a label
-		ni = lambda { |l| ary[ary.index(l)..-1].find { |s| not s.kind_of?(C::Label) } }
+		ni = lambda { |li| (li..ary.length).find { |ni_| not ary[ni_].kind_of?(C::Label) } }
 
-		# TODO XXX get rid of #index
-		finished = false ; while not finished ; finished = true # 1.9 does not support 'retry'
-		ary.each { |s|
+		finished = false; while not finished; finished = true		# ruby1.9 does not support 'retry'
+		i = 0
+		while i < ary.length
+			si = i
+			s = ary[si]
+			i += 1
 			case s
 			when C::Label
-				if ss = ni[s] and ss.kind_of?(C::If) and not ss.belse and ss.bthen.kind_of?(C::Block)
+				if ssi = ni[si] and ss = ary[ssi] and ss.kind_of?(C::If) and not ss.belse and ss.bthen.kind_of?(C::Block)
 					if ss.bthen.statements.last.kind_of?(C::Goto) and ss.bthen.statements.last.target == s.name
+						# l: if (a) { b; goto l; }  =>  while(a) { b; }
 						ss.bthen.statements.pop
-						if l = ary[ary.index(ss)+1] and l.kind_of?(C::Label)
-							ss.bthen.statements.grep(C::If).each { |i|
-								i.bthen = C::Break.new if i.bthen.kind_of?(C::Goto) and i.bthen.target == l.name
+						if l = ary[ssi+1] and l.kind_of?(C::Label)
+							ss.bthen.statements.grep(C::If).each { |it|
+								it.bthen = C::Break.new if it.bthen.kind_of?(C::Goto) and it.bthen.target == l.name
 							}
 						end
-						ary[ary.index(ss)] = C::While.new(ss.test, ss.bthen)
-					elsif ss.bthen.statements.last.kind_of?(C::Return) and g = ary[ary.index(s)+1..-1].reverse.find { |_s| _s.kind_of?(C::Goto) and _s.target == s.name }
+						ary[ssi] = C::While.new(ss.test, ss.bthen)
+					elsif ss.bthen.statements.last.kind_of?(C::Return) and gi = ((si+1)..ary.length).to_a.reverse.find { |_si| ary[_si].kind_of?(C::Goto) and ary[_si].target == s.name }
+						# l: if (a) { b; return; } c; goto l;  =>  while (!a) { c; } b; return;
 						wb = C::Block.new(scope)
-						wb.statements = decompile_cseq_while(ary[ary.index(ss)+1...ary.index(g)], wb)
+						wb.statements = decompile_cseq_while(ary[ssi+1...gi], wb)
 						w = C::While.new(C::CExpression.negate(ss.test), wb)
-						ary[ary.index(ss)..ary.index(g)] = [w, *ss.bthen.statements]
+						ary[ssi..gi] = [w, *ss.bthen.statements]
 						finished = false ; break	#retry
 					end
 				end
-				if g = ary[ary.index(s)..-1].reverse.find { |_s| _s.kind_of?(C::Goto) and _s.target == s.name }
+				if gi = (si..ary.length).to_a.reverse.find { |_si| ary[_si].kind_of?(C::Goto) and ary[_si].target == s.name }
+					# l: a; goto l;  =>  while(1) { a; }
 					wb = C::Block.new(scope)
-					wb.statements = decompile_cseq_while(ary[ary.index(s)...ary.index(g)], wb)
+					wb.statements = decompile_cseq_while(ary[si...gi], wb)
 					w = C::While.new(C::CExpression[1], wb)
-					ary[ary.index(s)..ary.index(g)] = [w]
+					ary[si..gi] = [w]
 					finished = false ; break	#retry
 				end
-				if g = ary[ary.index(s)..-1].reverse.find { |_s| _s.kind_of?(C::If) and not _s.belse and gt = _s.bthen and
-						(gt = gt.kind_of?(C::Block) && gt.statements.length == 1 ? gt.statements.first : gt) and gt.kind_of?(C::Goto) and gt.target == s.name }
+				if gi = (si..ary.length).to_a.reverse.find { |_si| ary[_si].kind_of?(C::If) and not ary[_si].belse and gt = ary[_si].bthen and
+						(gt = gt.kind_of?(C::Block) ? gt.statements.last : gt) and gt.kind_of?(C::Goto) and gt.target == s.name }
+					# l: a; if (b) goto l;  =>  do { a; } while (b);
+					# l: a; if (b) { c; goto l; }  =>  do { a; if (!b) break; c; } while(1);
 					wb = C::Block.new(scope)
-					wb.statements = decompile_cseq_while(ary[ary.index(s)...ary.index(g)], wb)
-					w = C::DoWhile.new(g.test, wb)
-					ary[ary.index(s)..ary.index(g)] = [w]
+					g = ary[gi]
+					if g.bthen.kind_of?(C::Block) and g.bthen.statements.length > 1
+						nary = ary[si...gi] + [C::If.new(C::CExpression.negate(g.test), C::Break.new)] + g.bthen.statements[0...-1]
+						wb.statements = decompile_cseq_while(nary, wb)
+						w = C::DoWhile.new(C::CExpression[1], wb)
+					else
+						wb.statements = decompile_cseq_while(ary[si...gi], wb)
+						w = C::DoWhile.new(g.test, wb)
+					end
+					ary[si..gi] = [w]
 					finished = false ; break	#retry
 				end
 			when C::If
@@ -859,8 +874,8 @@ class Decompiler
 			when C::While, C::DoWhile
 				decompile_cseq_while(s.body.statements, s.body) if s.body.kind_of?(C::Block)
 			end
-		}
 		end
+		end	# while finished
 		ary
 	end
 
