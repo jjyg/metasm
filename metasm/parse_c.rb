@@ -3994,6 +3994,10 @@ EOH
 
 		def dump_inner(scope, r=[CRenderString.new], dep=[], brace = false)
 			r.last << CRenderString.new(self)
+			if misc and misc[:custom_display]
+				r.last << misc[:custom_display]
+				return [r, dep]
+			end
 			r.last << '(' if brace and @op != :'->' and @op != :'.' and @op != :'[]' and (@op or @rexpr.kind_of?(CExpression))
 			if not @lexpr
 				if not @op

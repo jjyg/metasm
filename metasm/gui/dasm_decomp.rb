@@ -167,6 +167,8 @@ class CdecompListingWidget < DrawableWidget
 			@parent_widget.decompile(@curfuncaddr)
 		when ?t, ?y	# change variable type (you'll want to redecompile after that)
 			prompt_retype
+		when ?h
+			display_hex
 		else return false
 		end
 		true
@@ -248,6 +250,20 @@ class CdecompListingWidget < DrawableWidget
 				end
 				cp.readtok until cp.eos?
 			}
+		end
+	end
+
+	# change the display of an integer from hex to decimal
+	def display_hex
+		ce = curobj
+		if ce.kind_of?(C::CExpression) and not ce.op and ce.rexpr.kind_of?(::Integer)
+			ce.misc ||= {}
+			if ce.misc[:custom_display] =~ /^0x/
+				ce.misc[:custom_display] = ce.rexpr.to_s
+			else
+				ce.misc[:custom_display] = '0x%X' % ce.rexpr
+			end
+			gui_update
 		end
 	end
 
