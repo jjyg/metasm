@@ -75,9 +75,14 @@ class WebAsm
 	end
 
 	def decompile_makestackvars(dasm, funcstart, blocks)
-		oldfuncbd = dasm.address_binding[funcstart]
+		@decomp_mkstackvars_terminals = [:frameptr, :local_base, :mem]
+		oldbd = {}
+		oldbd[funcstart] = dasm.address_binding[funcstart]
 		dasm.address_binding[funcstart] = { :opstack => Expression[:frameptr] }
 		blocks.each { |block|
+			oldbd[block.address] = dasm.address_binding[block.address]
+			stkoff = dasm.backtrace(:opstack, block.address, :snapshot_addr => funcstart)
+			dasm.address_binding[block.address] = { :opstack => Expression[:frameptr, :+, stkoff[0]-:frameptr] }
 			yield block
 			# store frameptr offset at each 'end' 'return' or 'else' instruction
 			if di = block.list.last and %w[end return else].include?(di.opcode.name)
@@ -87,7 +92,7 @@ class WebAsm
 				end
 			end
 		}
-		dasm.address_binding[funcstart] = oldfuncbd
+		oldbd.each { |a, b| b ? dasm.address_binding[a] = b : dasm.address_binding.delete(a) }
 	end
 
 	def decompile_func_finddeps_di(dcmp, func, di, a, w)
