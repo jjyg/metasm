@@ -643,13 +643,13 @@ class Decompiler
 				i = ce.body.statements.last
 				if i.kind_of?(C::If) and not i.belse and i.bthen.kind_of?(C::Break)
 					ce.body.statements.pop
-					C::DoWhile.new(i.test.negate, ce.body)
+					next C::DoWhile.new(i.test.negate, ce.body)
 				end
 			end
 
 			# if (a) b = 1; else b = 2;  =>  b = a ? 1 : 2
 			if ce.kind_of?(C::If) and ce.belse.kind_of?(C::CExpression) and ce.belse.op == :'=' and ce.belse.lexpr.kind_of?(C::Variable) and ce.bthen.kind_of?(C::CExpression) and ce.bthen.op == :'=' and ce.bthen.lexpr == ce.belse.lexpr
-				C::CExpression[ce.bthen.lexpr, :'=', [ce.test, :'?:', [ce.bthen.rexpr, ce.belse.rexpr]]]
+				next C::CExpression[ce.bthen.lexpr, :'=', [ce.test, :'?:', [ce.bthen.rexpr, ce.belse.rexpr]]]
 			end
 		}
 
