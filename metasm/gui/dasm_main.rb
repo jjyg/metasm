@@ -561,8 +561,11 @@ class DisasmWidget < ContainerChoiceWidget
 				[k, Expression[@dasm.normalize(vv)]] if k.downcase.include? v.downcase
 			}.compact
 			case labels.length
-			when 0; focus_addr(v)
-			when 1; focus_addr(labels[0][0])
+			when 0
+				vv = @dasm.normalize(Expression.parse(v))
+				focus_addr(v) if not focus_addr(vv, nil, true)
+			when 1
+				focus_addr(labels[0][0])
 			else
 				if labels.all? { |k, vv| vv == labels[0][1] }
 					focus_addr(labels[0][0])

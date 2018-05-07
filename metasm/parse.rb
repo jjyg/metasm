@@ -755,6 +755,8 @@ class Expression
 
 		# for boolean operators, true is 1 (or anything != 0), false is 0
 		def parse(lexer)
+			lexer = Preprocessor.new(lexer) if lexer.kind_of?(::String)
+
 			opstack = []
 			stack = []
 
