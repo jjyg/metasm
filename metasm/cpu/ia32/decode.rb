@@ -297,12 +297,6 @@ class Ia32
 		REG_SYMS
 	end
 
-	# return the list of backtraced EFLAGS as symbols
-	EFLAG_SYMS = [:eflag_z, :eflag_s, :eflag_c, :eflag_o]
-	def eflag_symbols
-		EFLAG_SYMS
-	end
-
 	# interprets a condition code (in an opcode name) as an expression involving backtracked eflags
 	# eflag_p is never computed, and this returns Expression::Unknown for this flag
 	# ex: 'z' => Expression[:eflag_z]
@@ -1245,9 +1239,9 @@ class Ia32
 	# entry should be an entrypoint of the disassembler if finish is nil
 	# the code sequence must have only one end, with no to_normal
 	# options:
-	#  :include_eflags => include EFLAGS in the returned binding
+	#  :include_flags => include EFLAGS in the returned binding
 	def code_binding(dasm, entry, finish=nil, **nargs)
-		include_eflags = nargs.delete :include_eflags
+		include_flags = nargs.delete :include_flags
 
 		entry = dasm.normalize(entry)
 		finish = dasm.normalize(finish) if finish
@@ -1323,8 +1317,8 @@ class Ia32
 		}
 
 		# add EFLAGS binding
-		if include_eflags
-			eflag_symbols.each { |eflag|
+		if include_flags
+			[:eflag_z, :eflag_s, :eflag_c, :eflag_o].each { |eflag|
 				val =
 					if lastdi; bt[lastdi.address, eflag, true]
 					else bt[finish, eflag, false]
