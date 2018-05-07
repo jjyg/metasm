@@ -144,6 +144,8 @@ class WebAsm
 		ce_local_offset = lambda { |ee| ce_ptr_offset[ee, 'local_base'] }
 		ce_opstack_offset = lambda { |ee| ce_ptr_offset[ee, 'frameptr'] }
 
+		di_addr = nil
+
 		# Expr => CExpr
 		ce = lambda { |*e|
 			c_expr = dcmp.decompile_cexpr(Expression[Expression[*e].reduce], scope)
@@ -184,13 +186,15 @@ class WebAsm
 					ee.lexpr = opstack[-soff/8]
 				end
 			}
-			if loff = ce_local_offset[c_expr]
+			ret = if loff = ce_local_offset[c_expr]
 				C::CExpression[local[loff/8]]
 			elsif soff = ce_opstack_offset[c_expr]
 				C::CExpression[opstack[-soff/8]]
 			else
 				c_expr
 			end
+			dcmp.walk_ce(ret) { |ee| ee.with_misc :di_addr => di_addr if di_addr }
+			ret
 		}
 
 
@@ -204,13 +208,14 @@ class WebAsm
 			# go !
 			di_list = dcmp.dasm.decoded[b].block.list.dup
 			di_list.each { |di|
+				di_addr = di.address
 				if di.opcode.name == 'if' or di.opcode.name == 'br_if'
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					bd = get_fwdemu_binding(di)
 					if di.opcode.name == 'if'
-						cc = ce[:!, bd[:flag]].with_misc(:di_addr => di.address)
+						cc = ce[:!, bd[:flag]]
 					else
-						cc = ce[bd[:flag]].with_misc(:di_addr => di.address)
+						cc = ce[bd[:flag]]
 					end
 					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n).with_misc(:di_addr => di.address)).with_misc(:di_addr => di.address)
 					to.delete dcmp.dasm.normalize(n)
@@ -253,7 +258,7 @@ class WebAsm
 					end
 					e = C::CExpression[f, :funcall, args].with_misc(:di_addr => di.address)
 					if bd_ret = bd.index(Expression["ret_0"])
-						e = ce[bd_ret, :'=', e].with_misc(:di_addr => di.address)
+						e = ce[bd_ret, :'=', e]
 					end
 					stmts << e
 				else
@@ -263,11 +268,12 @@ class WebAsm
 					else
 						bd.each { |k, v|
 							next if k == :opstack
-							e = ce[k, :'=', v].with_misc(:di_addr => di.address)
+							e = ce[k, :'=', v]
 							stmts << e if not e.kind_of?(C::Variable)	# [:eflag_s, :=, :unknown].reduce
 						}
 					end
 				end
+				di_addr = nil
 			}
 
 			case to.length
