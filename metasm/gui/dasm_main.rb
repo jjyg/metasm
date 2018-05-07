@@ -562,8 +562,8 @@ class DisasmWidget < ContainerChoiceWidget
 			}.compact
 			case labels.length
 			when 0
-				vv = @dasm.normalize(Expression.parse(v))
-				focus_addr(v) if not focus_addr(vv, nil, true)
+				ve = @dasm.normalize(Expression.parse(v))
+				focus_addr(v) if not focus_addr(ve, nil, true)
 			when 1
 				focus_addr(labels[0][0])
 			else
