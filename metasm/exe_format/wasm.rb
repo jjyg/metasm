@@ -337,10 +337,17 @@ class WasmFile < ExeFormat
 	def decode_module_data(m)
 		@data = []
 		decode_uleb(m.edata).times {
-			@data << { :index => decode_uleb(m.edata),
-				   :init_offset => read_code_until_end(m),
-				   :data => m.edata.read(decode_uleb(m.edata)) }
-			@encoded.add_export new_label("data_#{@data.length-1}_init_addr"), @data.last[:init_offset]
+			idx = decode_uleb(m.edata)
+			initoff = read_code_until_end(m)
+			data_len = decode_uleb(m.edata)
+			data_start_ptr = m.raw_offset + m.edata.ptr
+			data = m.edata.read(data_len)
+			data_end_ptr = m.raw_offset + m.edata.ptr
+
+			@data << { :index => idx, :init_offset => initoff, :data => data }
+			@encoded.add_export new_label("data_#{@data.length-1}_init_addr"), initoff
+			@encoded.add_export new_label("data_#{@data.length-1}_start"), data_start_ptr
+			@encoded.add_export new_label("data_#{@data.length-1}_end"), data_end_ptr
 		}
 	end
 
