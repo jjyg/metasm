@@ -230,7 +230,7 @@ class WebAsm
 					if start_rettype != 'none'
 						retsz = dcmp.sizeof(wasm_type_to_type(start_rettype))
 						off = di.misc[:dcmp_stackoff]
-						if not start.misc[:dcmp_retval]
+						if not start.misc[:dcmp_retval] or not scope.symbol[start.misc[:dcmp_retval]]
 							stmts << C::CExpression[ce[Indirection[[:frameptr, :+, off], retsz], :'=', Indirection[[:frameptr, :+, off], retsz]]]
 							start.misc[:dcmp_retval] = stmts.last.lexpr.name
 						else
