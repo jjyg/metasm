@@ -166,7 +166,7 @@ def self.find_loop(dasm, addr)
 	first = b1.address
 	last = b2.list.last.address
 	post = (b2.to_normal - [b1.address]).first
-	loop_bd = dasm.code_binding(first, post, :include_eflags => true)
+	loop_bd = dasm.code_binding(first, post, :include_flags => true)
 
 	[pre, first, last, post, loop_bd]
 end
