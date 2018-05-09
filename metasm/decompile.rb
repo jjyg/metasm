@@ -2543,7 +2543,7 @@ class Decompiler
 								# written twice, abort
 								writtenonce.delete varname
 								break
-							elsif e.op == :'=' and e.lexpr == var and not ce_write(e.rexpr, var)
+							elsif e.op == :'=' and e.lexpr == var and not ce_write(e.rexpr, var) and not ce_read(e.rexpr, var)
 								# good !
 								writtenonce[varname] = [label, expr_idx]
 							else
