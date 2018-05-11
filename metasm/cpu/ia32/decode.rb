@@ -657,6 +657,24 @@ class Ia32
 						{ a0 => 0 }
 					end
 				}
+			when 'movdqa', 'movdqu', 'movaps', 'movups'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'cmpxchg'; lambda { |di, a0, a1|	# eax == a0 ? a0 <= a1, zf <= 1 : eax <= a0, zf <= 0
+				eax_ = self.class::Reg.new(0, opsz(di)).symbolic
+				cmp = Expression[eax_, :==, a0]
+				{ :eflag_z => cmp,
+				  eax_ => Expression[[cmp, :*, eax_], :|, [[1, :-, cmp], :*, a0]],
+				  a0 => Expression[[cmp, :*, a1], :|, [[1, :-, cmp], :*, a0]] } }
+			when 'cmpxchg8b', 'cmpxchg16b'; lambda { |di, a0|	# edx:eax == mem ? mem <= ecx:ebx, zf <= 1 : edx:eax <= mem, zf <= 0
+				sz = (di.opcode.name =~ /8b/ ? 32 : 64)
+				eax_ = self.class::Reg.new(0, sz).symbolic
+				ecx_ = self.class::Reg.new(1, sz).symbolic
+				edx_ = self.class::Reg.new(2, sz).symbolic
+				ebx_ = self.class::Reg.new(3, sz).symbolic
+				cmp = Expression[[[edx_, :<<, sz], :|, eax_], :==, a0]
+				{ :eflag_z => cmp,
+				  eax_ => Expression[[cmp, :*, eax_], :|, [[1, :-, cmp], :*, [a0, :&, (1 << sz) - 1]]],
+				  edx_ => Expression[[cmp, :*, edx_], :|, [[1, :-, cmp], :*, [a0, :>>, sz]]],
+				  a0 => Expression[[cmp, :*, [[ecx, :<<, sz], :|, ebx]], :|, [[1, :-, cmp], :*, a0]] } }
 			when 'nop', 'pause', 'wait', 'cmp', 'test'; lambda { |di, *a| {} }
 			end
 
