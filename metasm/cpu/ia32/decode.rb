@@ -821,9 +821,8 @@ class Ia32
 		case di.opcode.basename
 		when 'ret'; return [Indirection[register_symbols[4], sz/8, di.address]]
 		when 'jmp', 'call'
-			a = di.instruction.args.first
-			if dasm and a.kind_of?(ModRM) and a.imm and (a.s == sz/8 or a.s == 4) and not a.b and dasm.get_section_at(a.imm)
-				return get_xrefs_x_jmptable(dasm, di, a, a.s*8)
+			if dasm and not di.instruction.args.first.kind_of?(Expression) and switch_table = get_xrefs_x_jmptable(dasm, di)
+				return switch_table
 			end
 		end
 
@@ -835,70 +834,57 @@ class Ia32
 		when Expression, ::Integer; [Expression[tg]]
 		when Farptr; tg.seg.reduce < 0x30 ? [tg.addr] : [Expression[[tg.seg, :*, 0x10], :+, tg.addr]]
 		else
-			puts "unhandled setip at #{di.address} #{di.instruction}" if $DEBUG
+			puts "unhandled setip at #{Expression[di.address]} #{di.instruction}" if $DEBUG
 			[]
 		end
 	end
 
-	# we detected a jmp table (jmp [base+4*idx])
-	# try to return an accurate dest list
-	def get_xrefs_x_jmptable(dasm, di, mrm, sz)
-		# include the symbolic dest for backtrack stuff
-		ret = [Expression[mrm.symbolic(di)]]
-		i = mrm.i
-		if di.block.list.length == 2 and di.block.list[0].opcode.name =~ /^mov/ and a0 = di.block.list[0].instruction.args[0] and
-				a0.respond_to? :symbolic and a0.symbolic == i.symbolic
-			i = di.block.list[0].instruction.args[1]
-		end
-		pb = di.block.from_normal.to_a
-		if pb.length == 1 and pdi = dasm.decoded[pb[0]] and pdi.opcode.name =~ /^jn?be?/ and ppdi = pdi.block.list[-2] and ppdi.opcode.name == 'cmp' and
-				ppdi.instruction.args[0].symbolic == i.symbolic and lim = Expression[ppdi.instruction.args[1]].reduce and lim.kind_of? Integer
-			# cmp eax, 42 ; jbe switch ; switch: jmp [base+4*eax]
-			s = dasm.get_section_at(mrm.imm)
-			lim += 1 if pdi.opcode.name[-1] == ?e
-			lim.times { |v|
-				dasm.add_xref(s[1]+s[0].ptr, Xref.new(:r, di.address, sz/8))
-				ret << Indirection[[mrm.imm, :+, v*sz/8], sz/8, di.address]
-				s[0].read(sz/8)
-			}
-			l = dasm.auto_label_at(mrm.imm, 'jmp_table', 'xref')
-			replace_instr_arg_immediate(di.instruction, mrm.imm, Expression[l])
-			# add 'case 1' comments
-			cases = {}
-			ret.each_with_index { |ind, idx|
-				idx -= 1	# ret[0] = symbolic
-				next if idx < 0
-				a = dasm.backtrace(ind, di.address)
-				if a.length == 1 and a[0].kind_of?(Expression) and addr = a[0].reduce and addr.kind_of?(::Integer)
-					(cases[addr] ||= []) << idx
-				end
-			}
-			cases.each { |addr, list|
-				dasm.add_comment(addr, "case #{list.join(', ')}:")
-			}
-			return ret
-		end
+	# indirect call, try to match a switch table pattern (eg jmp [base+4*idx])
+	# return a list of target addresses if found, nil otherwise
+	def get_xrefs_x_jmptable(dasm, di)
+		puts "search jmptable for #{Expression[di.address]} #{di.instruction}" if $DEBUG
+		arg0 = di.instruction.args.first.symbolic(di)
 
-		puts "unrecognized jmp table pattern, using wild guess for #{di}" if $VERBOSE
-		di.add_comment 'wildguess'
-		if s = dasm.get_section_at(mrm.imm - 3*sz/8)
-			v = -3
-		else
-			s = dasm.get_section_at(mrm.imm)
-			v = 0
-		end
-		while s[0].ptr < s[0].length
-			ptr = dasm.normalize s[0].decode_imm("u#{sz}".to_sym, @endianness)
-			diff = Expression[ptr, :-, di.address].reduce
-			if (diff.kind_of? ::Integer and diff.abs < 4096) or (di.opcode.basename == 'call' and ptr != 0 and dasm.get_section_at(ptr))
-				dasm.add_xref(s[1]+s[0].ptr-sz/8, Xref.new(:r, di.address, sz/8))
-				ret << Indirection[[mrm.imm, :+, v*sz/8], sz/8, di.address]
-			elsif v > 0
-				break
+		bt_log = []
+		dasm.backtrace(arg0, di.address, :maxdepth => 3, :log => bt_log)
+
+		expr = nil
+		index = nil
+		index_max = nil
+
+		bt_log.each { |btl|
+			next if btl[0] != :up
+			last = dasm.di_at(btl[4])
+			break if not last or last.block.to_normal.length > 2
+			next if last.block.to_normal.length != 2
+			# search cmp eax, 42 ; ja too_big ; jmp [base+4*eax]
+			# XXX 256 cases switch => no cmp...
+			prelast = last.block.list.reverse.find { |pl| pl.opcode.name == 'cmp' }
+			break unless prelast and cmp_value = prelast.instruction.args.last and cmp_value.kind_of?(Expression) and cmp_value.reduce.kind_of?(::Integer)
+			cmp_value = cmp_value.reduce % (1 << prelast.instruction.args.first.sz)	# cmp al, -12h ; jnbe => -12h is unsigned 0eeh
+			index = prelast.instruction.args.first.symbolic(prelast)
+			index = index.externals.first if index.kind_of?(Expression)	# cmp bl, 13 => ebx
+			expr = btl[1]
+			(expr.externals.grep(Symbol) - [index]).uniq.each { |r|
+				rv = dasm.backtrace(r, prelast.address, :maxdepth => 3)
+				expr = expr.bind(r => rv[0]) if rv.length == 1
+			}
+			cmp_value = prelast.instruction.args.last.reduce % (1 << prelast.instruction.args.first.sz)
+			case last.opcode.name
+			when 'jae', 'jb', 'jnae', 'jnb'; index_max = cmp_value-1
+			when 'ja', 'jbe', 'jna', 'jnbe'; index_max = cmp_value
+			else; expr = nil
 			end
-			v += 1
+			break
+		}
+
+		if expr and expr.externals.grep(Symbol).uniq == [index]
+			# yay !
+			# include the symbolic dest for backtrace stuff
+			puts "found jmptable for #{Expression[di.address]} #{di.instruction} (#{index_max+1} entries)" if $VERBOSE
+			# TODO add labels / tables / xrefs etc
+			[Expression[arg0]] + (0..index_max).map { |i| expr.bind(index => i) }
 		end
-		ret
 	end
 
 	# checks if expr is a valid return expression matching the :saveip instruction
