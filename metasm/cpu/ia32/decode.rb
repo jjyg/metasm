@@ -882,7 +882,7 @@ class Ia32
 			cmp_value = cmp_value.reduce % (1 << prelast.instruction.args.first.sz)	# cmp al, -12h ; jnbe => -12h is unsigned 0eeh
 			index = prelast.instruction.args.first.symbolic(prelast)
 			index = index.externals.first if index.kind_of?(Expression)	# cmp bl, 13 => ebx
-			expr = btl[1]
+			expr = Expression[btl[1], :&, ((1 << @size) - 1)]		# XXX without the mask, additions may overflow (this breaks elsewhere too, need Expr32)
 			(expr.externals.grep(Symbol) - [index]).uniq.each { |r|
 				rv = dasm.backtrace(r, prelast.address, :maxdepth => 3)
 				expr = expr.bind(r => rv[0]) if rv.length == 1
