@@ -94,7 +94,6 @@ if exe
 	dasm.backtrace_maxblocks_data = -1 if opts[:nodatatrace]
 	dasm.debug_backtrace = true if opts[:debugbacktrace]
 	dasm.callback_finished = lambda { dasm.callback_finished = nil ; w.dasm_widget.focus_addr w.dasm_widget.curaddr, :decompile ; dasm.decompiler.finalize } if opts[:decompile]
-	dasm.disassemble_fast_deep(*ep) if opts[:fast]
 elsif dbg
 	dbg.load_map opts[:map] if opts[:map]
 	dbg.disassembler.parse_c_file opts[:cheader] if opts[:cheader]
@@ -108,12 +107,20 @@ elsif dbg
 end
 
 if dasm
-	w.display(dasm, ep)
+	w.display(dasm)
+	w.dasm_widget.focus_addr(ep.first) if not ep.empty?
 	opts[:plugin].to_a.each { |p|
 		begin
 			dasm.load_plugin(p)
 		rescue ::Exception
 			puts "Error with plugin #{p}: #{$!.class} #{$!}"
+		end
+	}
+	ep.each { |eep|
+		if opts[:fast]
+			w.dasm_widget.disassemble_fast_deep(eep)
+		else
+			w.disassemble(eep)
 		end
 	}
 
