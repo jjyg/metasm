@@ -415,6 +415,8 @@ class Disassembler
 	attr_accessor :disassemble_maxblocklength
 	# a cparser that parsed some C header files, prototypes are converted to DecodedFunction when jumped to
 	attr_accessor :c_parser
+	# if false, disassembler skips internal functions with a prototype defined in a C header (eg static libraries)
+	attr_accessor :disassemble_known_functions
 	# hash address => array of strings
 	# default dasm dump will only show comments at beginning of code blocks
 	attr_accessor :comment
@@ -734,12 +736,21 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		elsif bf = @function[addr]
 			detect_function_thunk_noreturn(from) if bf.noreturn
 		elsif s = get_section_at(addr)
-			block = InstructionBlock.new(normalize(addr), s[0])
-			block.add_from(from, x[:from_subfuncret] ? :subfuncret : :normal) if from and from != :default
-			disassemble_block(block, x[:cpu_context])
+			if from and c_parser and not disassemble_known_functions and name = get_label_at(addr) and
+					cs = c_parser.toplevel.symbol[name] and cs.type.untypedef.kind_of?(C::Function)
+				# do not disassemble internal function for which we have a prototype (eg static library)
+				puts "found known function #{name} at #{Expression[addr]}" if $VERBOSE
+				bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, cs)
+				detect_function_thunk_noreturn(from) if bf.noreturn
+			else
+				block = InstructionBlock.new(normalize(addr), s[0])
+				block.add_from(from, x[:from_subfuncret] ? :subfuncret : :normal) if from and from != :default
+				disassemble_block(block, x[:cpu_context])
+			end
 		elsif from and c_parser and name = Expression[addr].reduce_rec and name.kind_of?(::String) and
-				s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of?(C::Function)
-			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
+				cs = c_parser.toplevel.symbol[name] and cs.type.untypedef.kind_of?(C::Function)
+			# use C header prototype for external functions if available
+			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, cs)
 			detect_function_thunk_noreturn(from) if bf.noreturn
 		elsif from
 			if bf = @function[:default]
@@ -911,31 +922,30 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		@entrypoints ||= []
 		@entrypoints |= entrypoints
 
-		entrypoints.each { |ep| do_disassemble_fast_deep(normalize(ep)) }
+		entrypoints.each { |ep| do_disassemble_fast_deep(:addr => normalize(ep)) }
 
 		@callback_finished[] if callback_finished
 	end
 
 	def do_disassemble_fast_deep(ep)
 		disassemble_fast(ep) { |fa, di|
-			fa = normalize(fa)
-			do_disassemble_fast_deep(fa)
-			if di and ndi = di_at(fa)
-				ndi.block.add_from_normal(di.address)
-			end
+			do_disassemble_fast_deep(:addr => normalize(fa), :from => di.address)
 		}
 	end
 
 	# disassembles fast from a list of entrypoints
 	# see disassemble_fast_step
 	def disassemble_fast(entrypoint, maxdepth=-1, &b)
-		todo = [{ :addr => entrypoint, :cpu_context => get_initial_cpu_context(entrypoint) }]
+		td = entrypoint
+		td = { :addr => entrypoint } unless td.kind_of?(::Hash)
+		td[:cpu_context] ||= get_initial_cpu_context(td[:addr])
+		todo = [td]
 		until todo.empty?
 			disassemble_fast_step(todo, &b)
 			maxdepth -= 1
 			todo.delete_if { |a| not @decoded[normalize(a[:addr])] } if maxdepth == 0
 		end
-		check_noreturn_function(entrypoint)
+		check_noreturn_function(td[:addr])
 	end
 
 	# disassembles one block from the ary, see disassemble_fast_block
@@ -949,13 +959,22 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				split_block(di.block, di.address) if not di.block_head?
 				di.block.add_from(x[:from], x[:from_subfuncret] ? :subfuncret : :normal) if x[:from] and x[:from] != :default
 			end
+		elsif @function[addr]
 		elsif s = get_section_at(addr)
-			block = InstructionBlock.new(addr, s[0])
-			block.add_from(x[:from], x[:from_subfuncret] ? :subfuncret : :normal) if x[:from] and x[:from] != :default
-			todo.concat disassemble_fast_block(block, x[:cpu_context], &b)
-		elsif name = Expression[addr].reduce_rec and name.kind_of?(::String) and not @function[addr]
-			if c_parser and s = c_parser.toplevel.symbol[name] and s.type.untypedef.kind_of?(C::Function)
-				@function[addr] = @cpu.decode_c_function_prototype(@c_parser, s)
+			if x[:from] and c_parser and not disassemble_known_functions and name = get_label_at(addr) and
+					cs = c_parser.toplevel.symbol[name] and cs.type.untypedef.kind_of?(C::Function)
+				# do not disassemble internal function for which we have a prototype (eg static library)
+				puts "found known function #{name} at #{Expression[addr]}" if $VERBOSE
+				@function[addr] = @cpu.decode_c_function_prototype(@c_parser, cs)
+				detect_function_thunk_noreturn(x[:from]) if @function[addr].noreturn
+			else
+				block = InstructionBlock.new(addr, s[0])
+				block.add_from(x[:from], x[:from_subfuncret] ? :subfuncret : :normal) if x[:from] and x[:from] != :default
+				todo.concat disassemble_fast_block(block, x[:cpu_context], &b)
+			end
+		elsif name = Expression[addr].reduce_rec and name.kind_of?(::String)
+			if c_parser and cs = c_parser.toplevel.symbol[name] and cs.type.untypedef.kind_of?(C::Function)
+				@function[addr] = @cpu.decode_c_function_prototype(@c_parser, cs)
 				detect_function_thunk_noreturn(x[:from]) if @function[addr].noreturn
 			elsif @function[:default]
 				@function[addr] = @function[:default].dup
