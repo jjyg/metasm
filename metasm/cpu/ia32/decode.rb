@@ -674,7 +674,7 @@ class Ia32
 				{ :eflag_z => cmp,
 				  eax_ => Expression[[cmp, :*, eax_], :|, [[1, :-, cmp], :*, [a0, :&, (1 << sz) - 1]]],
 				  edx_ => Expression[[cmp, :*, edx_], :|, [[1, :-, cmp], :*, [a0, :>>, sz]]],
-				  a0 => Expression[[cmp, :*, [[ecx, :<<, sz], :|, ebx]], :|, [[1, :-, cmp], :*, a0]] } }
+				  a0 => Expression[[cmp, :*, [[ecx_, :<<, sz], :|, ebx_]], :|, [[1, :-, cmp], :*, a0]] } }
 			when 'nop', 'pause', 'wait', 'cmp', 'test'; lambda { |di, *a| {} }
 			end
 
