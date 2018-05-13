@@ -252,10 +252,10 @@ class DecodedFunction
 	# if btbind_callback is defined, calls it with args [dasm, binding, funcaddr, calladdr, expr, origin, maxdepth]
 	# else update lazily the binding from expr.externals, and return backtrace_binding
 	def get_backtrace_binding(dasm, funcaddr, calladdr, expr, origin, maxdepth)
-		if btbind_callback
-			@btbind_callback[dasm, @backtrace_binding, funcaddr, calladdr, expr, origin, maxdepth]
-		elsif backtrace_binding and dest = @backtrace_binding[:thunk] and target = dasm.function[dest]
+		if backtrace_binding and dest = @backtrace_binding[:thunk] and target = dasm.function[dest]
 			target.get_backtrace_binding(dasm, funcaddr, calladdr, expr, origin, maxdepth)
+		elsif btbind_callback
+			@btbind_callback[dasm, @backtrace_binding, funcaddr, calladdr, expr, origin, maxdepth]
 		else
 			unk_regs = expr.externals.grep(Symbol).uniq - @backtrace_binding.keys - [:unknown]
 			dasm.cpu.backtrace_update_function_binding(dasm, funcaddr, self, return_address, *unk_regs) if not unk_regs.empty?
@@ -266,10 +266,10 @@ class DecodedFunction
 	# if btfor_callback is defined, calls it with args [dasm, bt_for, funcaddr, calladdr]
 	# else return backtracked_for
 	def get_backtracked_for(dasm, funcaddr, calladdr)
-		if btfor_callback
-			@btfor_callback[dasm, @backtracked_for, funcaddr, calladdr]
-		elsif backtrace_binding and dest = @backtrace_binding[:thunk] and target = dasm.function[dest]
+		if backtrace_binding and dest = @backtrace_binding[:thunk] and target = dasm.function[dest]
 			target.get_backtracked_for(dasm, funcaddr, calladdr)
+		elsif btfor_callback
+			@btfor_callback[dasm, @backtracked_for, funcaddr, calladdr]
 		else
 			@backtracked_for
 		end
