@@ -78,6 +78,27 @@ class Graph
 			ar << head
 		end
 
+		# recenter boxes (a -> [b, c, d] => center a around b+c+d)
+		(ar.length - 1).times { |i|
+			g = ar[i]
+			gn = ar[i+1]
+			withchld = g.content.find_all { |b| not b.to.empty? }
+			wc = withchld[0]
+			if withchld.length == 1 and wc.to.length > 1 and wc.to & gn.content == wc.to
+				tox = wc.to.map { |gg| gg.x }.min
+				toxmax = wc.to.map { |gg| gg.x + gg.w }.max
+				# dx1: center wc center around (wc.to.xmin + wc.to.xmax)/2
+				dx1 = tox + (toxmax-tox)/2 - (wc.x + wc.w/2)
+				# dx2: center wc center around the mean of the centers of wc.to
+				dx2 = wc.to.map { |gg| gg.x + gg.w/2 }.inject(0) { |a, b| a+b } / wc.to.length - (wc.x + wc.w/2)
+				dx = (dx1 + dx2) / 2
+				ar.length.times { |j|
+					ar[j].w += dx
+					ar[j].content.each { |gg| gg.x += (j<=i ? dx/2 : -dx/2) }
+				}
+			end
+		}
+
 		# move boxes inside this group
 		maxw = ar.map { |g| g.w }.max
 		fullh = ar.inject(0) { |h, g| h + g.h }
@@ -158,10 +179,47 @@ class Graph
 			g.content.each { |b| b.x += dx ; b.y += dy }
 			curx += g.w
 		}
+
+		# shrink horizontally if possible
+		(ar.length - 1).times { |i1|
+			g1 = ar[i1]
+			g2 = ar[i1+1]
+			# only work with full groups, dont try to interleave gaps
+			# see if all of one's boxes can be slightly moved inside the other
+			g1ymin = g1.content.map { |b| b.y }.min
+			g1ymax = g1.content.map { |b| b.y+b.h }.max
+			g2ymin = g2.content.map { |b| b.y }.min
+			g2ymax = g2.content.map { |b| b.y+b.h }.max
+			g1_matchg2 = g1.content.find_all { |b| b.y + b.h > g2ymin and b.y < g2ymax }
+			g2_matchg1 = g2.content.find_all { |b| b.y + b.h > g1ymin and b.y < g1ymax }
+			if g1_matchg2.length > 0 and g2_matchg1.length > 0
+				g1_up = g1.content.find_all { |b| b.y + b.h < g2ymin }
+				g1_down = g1.content.find_all { |b| b.y > g2ymax }
+				g2_up = g2.content.find_all { |b| b.y + b.h < g1ymin }
+				g2_down = g2.content.find_all { |b| b.y > g1ymax }
+				# avoid moving into an arrow
+				xmin = g1_matchg2.map { |b| b.x + b.w + 8 }.max
+				xmax = g2_matchg1.map { |b| b.x - 8 }.min
+				if g1_up.length > 0 and g1_down.length > 0
+					xmin = [xmin, g1_up.map { |b| b.x + b.w/2 + 8 }.max, g1_down.map { |b| b.x + b.w/2 + 8 }.max].max
+				end
+				if g2_up.length > 0 and g2_down.length > 0
+					xmax = [xmax, g2_up.map { |b| b.x + b.w/2 + 8 }.min, g2_down.map { |b| b.x + b.w/2 + 8 }.min].min
+				end
+				dx = xmax - xmin
+				if dx > 0
+					ar.length.times { |i2|
+						ar[i2].content.each { |b| b.x += (i1 >= i2 ? dx/2 : -dx/2) }
+					}
+				end
+			end
+		}
+
 		# add a 'margin-top' proportionnal to the ar width
 		# this gap should be relative to the real boxes and not possible previous gaps when
 		# merging lines (eg long line + many if patterns -> dont duplicate gaps)
 		boxen = ar.map { |g| g.content }.flatten
+		fullw = boxen.map { |g| g.x + g.w }.max - boxen.map { |g| g.x }.min
 		realh = boxen.map { |g| g.y + g.h }.max - boxen.map { |g| g.y }.min
 		if maxh < realh + fullw/4
 			maxh = realh + fullw/4
