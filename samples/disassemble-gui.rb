@@ -120,7 +120,7 @@ if dasm
 		if opts[:fast]
 			w.dasm_widget.disassemble_fast_deep(eep)
 		else
-			w.disassemble(eep)
+			w.dasm_widget.disassemble(eep)
 		end
 	}
 
