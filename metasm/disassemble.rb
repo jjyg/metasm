@@ -1101,7 +1101,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					next if btt.type != :x
 					bt = backtrace(btt.expr, di.address, :include_start => true, :origin => btt.origin, :maxdepth => [@backtrace_maxblocks_fast, 1].max, :cpu_context => cpu_context)
 					if btt.detached
-						ret.concat bt	# callback argument
+						ret.concat :addr => bt	# callback argument
 					elsif bt.find { |a| normalize(a) == na }
 						do_ret = true
 					end
