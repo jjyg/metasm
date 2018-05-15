@@ -1101,8 +1101,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 					next if btt.type != :x
 					bt = backtrace(btt.expr, di.address, :include_start => true, :origin => btt.origin, :maxdepth => [@backtrace_maxblocks_fast, 1].max, :cpu_context => cpu_context)
 					if btt.detached
-						ret.concat :addr => bt	# callback argument
-					elsif bt.find { |a| normalize(a) == na }
+						ret.concat bt.map { |a| { :addr => a } }	# callback argument
+					elsif not f.noreturn and bt.find { |a| normalize(a) == na }
 						do_ret = true
 					end
 				}
@@ -1115,6 +1115,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			ret << { :addr => na, :from => di.address, :from_subfuncret => true, :cpu_context => cpu_context }
 			di.block.add_to_normal :default if not di.block.to_normal and @function[:default]
 		end
+		di.add_comment 'noreturn' if ret.empty?
 		ret
 	end
 
@@ -1219,8 +1220,8 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# should only be called with fa = target of a call
 	def check_noreturn_function(fa)
 		fb = function_blocks(fa, false, false)
+		return if fb.empty?
 		lasts = fb.keys.find_all { |k| fb[k] == [] }
-		return if lasts.empty?
 		if lasts.all? { |la|
 			b = block_at(la)
 			next if not di = b.list.last
