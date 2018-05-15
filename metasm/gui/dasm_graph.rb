@@ -84,17 +84,17 @@ class Graph
 			gn = ar[i+1]
 			withchld = g.content.find_all { |b| not b.to.empty? }
 			wc = withchld[0]
-			if withchld.length == 1 and wc.to.length > 1 and wc.to & gn.content == wc.to
-				tox = wc.to.map { |gg| gg.x }.min
-				toxmax = wc.to.map { |gg| gg.x + gg.w }.max
+			if withchld.length == 1 and wc.to.length >= 1 and wc.to & gn.content == wc.to
+				tox = wc.to.map { |b| b.x }.min
+				toxmax = wc.to.map { |b| b.x + b.w }.max
 				# dx1: center wc center around (wc.to.xmin + wc.to.xmax)/2
 				dx1 = tox + (toxmax-tox)/2 - (wc.x + wc.w/2)
 				# dx2: center wc center around the mean of the centers of wc.to
-				dx2 = wc.to.map { |gg| gg.x + gg.w/2 }.inject(0) { |a, b| a+b } / wc.to.length - (wc.x + wc.w/2)
+				dx2 = wc.to.map { |b| b.x + b.w/2 }.inject(0) { |a, b| a+b } / wc.to.length - (wc.x + wc.w/2)
 				dx = (dx1 + dx2) / 2
 				ar.length.times { |j|
 					ar[j].w += dx
-					ar[j].content.each { |gg| gg.x += (j<=i ? dx/2 : -dx/2) }
+					ar[j].content.each { |b| b.x += (j<=i ? dx/2 : -dx/2) }
 				}
 			end
 		}
@@ -184,12 +184,13 @@ class Graph
 		(ar.length - 1).times { |i1|
 			g1 = ar[i1]
 			g2 = ar[i1+1]
+			next if g1.content.empty? or g2.content.empty?
 			# only work with full groups, dont try to interleave gaps
 			# see if all of one's boxes can be slightly moved inside the other
-			g1ymin = g1.content.map { |b| b.y }.min
-			g1ymax = g1.content.map { |b| b.y+b.h }.max
-			g2ymin = g2.content.map { |b| b.y }.min
-			g2ymax = g2.content.map { |b| b.y+b.h }.max
+			g1ymin = g1.content.map { |b| b.y - 9 }.min
+			g1ymax = g1.content.map { |b| b.y + b.h + 9 }.max
+			g2ymin = g2.content.map { |b| b.y - 9 }.min
+			g2ymax = g2.content.map { |b| b.y + b.h + 9 }.max
 			g1_matchg2 = g1.content.find_all { |b| b.y + b.h > g2ymin and b.y < g2ymax }
 			g2_matchg1 = g2.content.find_all { |b| b.y + b.h > g1ymin and b.y < g1ymax }
 			if g1_matchg2.length > 0 and g2_matchg1.length > 0
@@ -698,8 +699,8 @@ class Graph
 		# no self references
 		# a box is in one and only one group in 'groups'
 		@groups.each { |g|
-			g.to   = g.content.first.to.map   { |t| h[t] if t != g }.compact
-			g.from = g.content.first.from.map { |f| h[f] if f != g }.compact
+			g.to   = g.content.first.to.map   { |t| h[t] if h[t] != g }.compact
+			g.from = g.content.first.from.map { |f| h[f] if h[f] != g }.compact
 		}
 
 		# order boxes
