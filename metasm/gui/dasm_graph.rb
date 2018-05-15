@@ -181,7 +181,7 @@ class Graph
 		}
 
 		# shrink horizontally if possible
-		(ar.length - 1).times { |i1|
+		(ar.length - 2).times { |i1|
 			g1 = ar[i1]
 			g2 = ar[i1+1]
 			# only work with full groups, dont try to interleave gaps
