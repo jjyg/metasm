@@ -14,7 +14,7 @@ def test_layout(lo)
 	$cur ||= 0
 	$cur += 1
 	if $target.to_i != 0
-		return if $cur != $target
+		return if $cur != $target.to_i
 	else
 		return if not lo.include? $target
 	end if $target
