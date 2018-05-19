@@ -735,7 +735,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			elsif di == true
 				bf = @function[addr]
 			end
-		elsif bf = @function[addr]
+		elsif from and bf = @function[addr]
 			detect_function_thunk_noreturn(from) if bf.noreturn
 		elsif s = get_section_at(addr)
 			if from and c_parser and not disassemble_known_functions and name = get_all_labels_at(addr).find { |n|
@@ -754,7 +754,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			# use C header prototype for external functions if available
 			bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, cs)
 			detect_function_thunk_noreturn(from) if bf.noreturn
-		elsif from
+		elsif from and not @function[addr]
 			if bf = @function[:default]
 				puts "using default function for #{Expression[addr]} from #{Expression[from]}" if $DEBUG
 				if name = Expression[addr].reduce_rec and name.kind_of?(::String)
@@ -961,7 +961,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				split_block(di.block, di.address) if not di.block_head?
 				di.block.add_from(x[:from], x[:from_subfuncret] ? :subfuncret : :normal) if x[:from] and x[:from] != :default
 			end
-		elsif @function[addr]
+		elsif @function[addr] and x[:from]
 		elsif s = get_section_at(addr)
 			if x[:from] and c_parser and not disassemble_known_functions and name = get_all_labels_at(addr).find { |n|
 					cs = c_parser.toplevel.symbol[n] and cs.type.untypedef.kind_of?(C::Function) }
@@ -974,7 +974,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				block.add_from(x[:from], x[:from_subfuncret] ? :subfuncret : :normal) if x[:from] and x[:from] != :default
 				todo.concat disassemble_fast_block(block, x[:cpu_context], &b)
 			end
-		elsif name = Expression[addr].reduce_rec and name.kind_of?(::String)
+		elsif name = Expression[addr].reduce_rec and name.kind_of?(::String) and not @function[addr]
 			if c_parser and cs = c_parser.toplevel.symbol[name] and cs.type.untypedef.kind_of?(C::Function)
 				@function[addr] = @cpu.decode_c_function_prototype(@c_parser, cs)
 				detect_function_thunk_noreturn(x[:from]) if @function[addr].noreturn
