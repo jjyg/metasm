@@ -281,6 +281,12 @@ class Disassembler
 		e.inv_export[e.ptr] if e
 	end
 
+	# return the array of all labels associated to an addr
+	def get_all_labels_at(addr)
+		addr = normalize(addr)
+		label_alias[addr].to_a
+	end
+
 	# sets the label for the specified address
 	# returns nil if the address is not mapped
 	# memcheck is passed to get_section_at to validate that the address is mapped

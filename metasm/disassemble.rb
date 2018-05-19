@@ -610,7 +610,9 @@ class Disassembler
 		elsif not l = e.inv_export[e.ptr]
 			l = @program.new_label(addrstr)
 			e.add_export l, e.ptr
-			@label_alias_cache = nil
+			if @label_alias_cache ||= nil
+				(@label_alias_cache[b + e.ptr] ||= []) << l
+			end
 			@old_prog_binding[l] = @prog_binding[l] = b + e.ptr
 		elsif rewritepfx.find { |p| base != p and addrstr.sub(base, p) == l }
 			newl = addrstr
@@ -736,11 +738,11 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 		elsif bf = @function[addr]
 			detect_function_thunk_noreturn(from) if bf.noreturn
 		elsif s = get_section_at(addr)
-			if from and c_parser and not disassemble_known_functions and name = get_label_at(addr) and
-					cs = c_parser.toplevel.symbol[name] and cs.type.untypedef.kind_of?(C::Function)
+			if from and c_parser and not disassemble_known_functions and name = get_all_labels_at(addr).find { |n|
+					cs = c_parser.toplevel.symbol[n] and cs.type.untypedef.kind_of?(C::Function) }
 				# do not disassemble internal function for which we have a prototype (eg static library)
 				puts "found known function #{name} at #{Expression[addr]}" if $VERBOSE
-				bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, cs)
+				bf = @function[addr] = @cpu.decode_c_function_prototype(@c_parser, c_parser.toplevel.symbol[name])
 				detect_function_thunk_noreturn(from) if bf.noreturn
 			else
 				block = InstructionBlock.new(normalize(addr), s[0])
@@ -961,11 +963,11 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			end
 		elsif @function[addr]
 		elsif s = get_section_at(addr)
-			if x[:from] and c_parser and not disassemble_known_functions and name = get_label_at(addr) and
-					cs = c_parser.toplevel.symbol[name] and cs.type.untypedef.kind_of?(C::Function)
+			if x[:from] and c_parser and not disassemble_known_functions and name = get_all_labels_at(addr).find { |n|
+					cs = c_parser.toplevel.symbol[n] and cs.type.untypedef.kind_of?(C::Function) }
 				# do not disassemble internal function for which we have a prototype (eg static library)
 				puts "found known function #{name} at #{Expression[addr]}" if $VERBOSE
-				@function[addr] = @cpu.decode_c_function_prototype(@c_parser, cs)
+				@function[addr] = @cpu.decode_c_function_prototype(@c_parser, c_parser.toplevel.symbol[name])
 				detect_function_thunk_noreturn(x[:from]) if @function[addr].noreturn
 			else
 				block = InstructionBlock.new(addr, s[0])
