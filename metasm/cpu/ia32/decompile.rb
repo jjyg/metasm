@@ -59,7 +59,7 @@ class Ia32
 
 	# add di-specific registry written/accessed
 	def decompile_func_finddeps_di(dcmp, func, di, a, w)
-		a << :eax if di.opcode.name == 'ret' and (not func.type.kind_of? C::BaseType or func.type.type.name != :void)	# standard ABI
+		a << register_symbols[0] if di.opcode.name == 'ret' and (not func.type.kind_of? C::BaseType or func.type.type.name != :void)	# standard ABI
 	end
 
 	# list variable dependency for each block, remove useless writes
@@ -111,7 +111,7 @@ class Ia32
 			}
 			if stackoff	# last block instr == subfunction call
 				deps_r[b] |= deps_subfunc[b] - deps_w[b]
-				deps_w[b] |= [:eax, :ecx, :edx]			# standard ABI
+				deps_w[b] |= register_symbols[0, 3]			# standard ABI
 			end
 		}
 
@@ -140,7 +140,7 @@ class Ia32
 					bw |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
 					false
 				}
-				if r == :eax and (rdi || blk.list.last).opcode.name == 'ret'
+				if r == register_symbols[0] and (rdi || blk.list.last).opcode.name == 'ret'
 					func.type.type = C::BaseType.new(:void)
 					false
 				elsif rdi and rdi.backtrace_binding[r]
@@ -194,6 +194,7 @@ class Ia32
 	end
 
 	def decompile_blocks(dcmp, myblocks, deps, func, nextaddr = nil)
+		eax, ecx, edx, ebx, esp, ebp, esi, edi = register_symbols
 		scope = func.initializer
 		func.type.args.each { |a| scope.symbol[a.name] = a }
 		stmts = scope.statements
@@ -240,6 +241,7 @@ class Ia32
 			# returns an array to use as funcall arguments
 			get_func_args = lambda { |di, f|
 				# XXX see remarks in #finddeps
+				# TODO x64
 				bt = dcmp.dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry, :include_start => true)
 				stackoff = Expression[[bt, :+, @size/8], :-, :esp].bind(:esp => :frameptr).reduce rescue nil
 				args_todo = f.type.args.to_a.dup
@@ -295,7 +297,7 @@ class Ia32
 					commit[]
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					if di.opcode.name =~ /^loop(.+)?/
-						cx = C::CExpression[:'--', ceb[:ecx]]
+						cx = C::CExpression[:'--', ceb[ecx]]
 						cc = $1 ? C::CExpression[cx, :'&&', ceb[decode_cc_to_expr($1)]] : cx
 					else
 						cc = ceb[decode_cc_to_expr(di.opcode.name[1..-1])]
@@ -339,7 +341,7 @@ class Ia32
 				when 'ret'
 					commit[]
 					ret = nil
-					ret = C::CExpression[ceb[:eax]] unless func.type.type.kind_of? C::BaseType and func.type.type.name == :void
+					ret = C::CExpression[ceb[eax]] unless func.type.type.kind_of? C::BaseType and func.type.type.name == :void
 					stmts << C::Return.new(ret).with_misc(:di_addr => di_addr)
 				when 'call'	# :saveip
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
@@ -373,9 +375,9 @@ class Ia32
 						end
 					end
 					commit[]
-					binding.delete :eax
+					binding.delete eax
 					e = C::CExpression[f, :funcall, args].with_misc(:di_addr => di_addr)
-					e = C::CExpression[ce[:eax], :'=', e, f.type.type].with_misc(:di_addr => di_addr) if deps[b].include? :eax and f.type.type != C::BaseType.new(:void)
+					e = C::CExpression[ce[eax], :'=', e, f.type.type].with_misc(:di_addr => di_addr) if deps[b].include? eax and f.type.type != C::BaseType.new(:void)
 					stmts << e
 				when 'jmp'
 					#if di.comment.to_a.include? 'switch'
@@ -446,17 +448,17 @@ class Ia32
 					if not dcmp.c_parser.toplevel.symbol["intrinsic_out#{sz}"]
 						dcmp.c_parser.parse("void intrinsic_out#{sz}(unsigned short port, __int#{sz} value);")
 					end
-					port = di.instruction.args.grep(Expression).first || :edx
-					stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol["intrinsic_out#{sz}"], :funcall, [ceb[port], ceb[:eax]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
+					port = di.instruction.args.grep(Expression).first || edx
+					stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol["intrinsic_out#{sz}"], :funcall, [ceb[port], ceb[eax]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
 				when 'in'
 					sz = di.instruction.args.find { |a_| a_.kind_of? Ia32::Reg and a_.val == 0 }.sz
 					if not dcmp.c_parser.toplevel.symbol["intrinsic_in#{sz}"]
 						dcmp.c_parser.parse("__int#{sz} intrinsic_in#{sz}(unsigned short port);")
 					end
-					port = di.instruction.args.grep(Expression).first || :edx
+					port = di.instruction.args.grep(Expression).first || edx
 					f = dcmp.c_parser.toplevel.symbol["intrinsic_in#{sz}"]
-					binding.delete :eax
-					stmts << C::CExpression.new(ce[:eax], :'=', C::CExpression.new(f, :funcall, [ceb[port]], f.type.type), f.type.type).with_misc(:di_addr => di_addr)
+					binding.delete eax
+					stmts << C::CExpression.new(ce[eax], :'=', C::CExpression.new(f, :funcall, [ceb[port]], f.type.type), f.type.type).with_misc(:di_addr => di_addr)
 				when 'sti', 'cli'
 					stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil)
 				when /^(mov|sto|lod)s([bwdq])/
@@ -468,15 +470,15 @@ class Ia32
 					blk = C::Block.new(scope)
 					case op
 					when 'mov'
-						blk.statements << C::CExpression[[:*, [[ceb[:edi]], pt]], :'=', [:*, [[ceb[:esi]], pt]]].with_misc(:di_addr => di_addr)
-						blk.statements << C::CExpression[ceb[:edi], :'=', [ceb[:edi], :+, [sz]]].with_misc(:di_addr => di_addr)
-						blk.statements << C::CExpression[ceb[:esi], :'=', [ceb[:esi], :+, [sz]]].with_misc(:di_addr => di_addr)
+						blk.statements << C::CExpression[[:*, [[ceb[edi]], pt]], :'=', [:*, [[ceb[esi]], pt]]].with_misc(:di_addr => di_addr)
+						blk.statements << C::CExpression[ceb[edi], :'=', [ceb[edi], :+, [sz]]].with_misc(:di_addr => di_addr)
+						blk.statements << C::CExpression[ceb[esi], :'=', [ceb[esi], :+, [sz]]].with_misc(:di_addr => di_addr)
 					when 'sto'
-						blk.statements << C::CExpression[[:*, [[ceb[:edi]], pt]], :'=', ceb[:eax]].with_misc(:di_addr => di_addr)
-						blk.statements << C::CExpression[ceb[:edi], :'=', [ceb[:edi], :+, [sz]]].with_misc(:di_addr => di_addr)
+						blk.statements << C::CExpression[[:*, [[ceb[edi]], pt]], :'=', ceb[eax]].with_misc(:di_addr => di_addr)
+						blk.statements << C::CExpression[ceb[edi], :'=', [ceb[edi], :+, [sz]]].with_misc(:di_addr => di_addr)
 					when 'lod'
-						blk.statements << C::CExpression[ceb[:eax], :'=', [:*, [[ceb[:esi]], pt]]].with_misc(:di_addr => di_addr)
-						blk.statements << C::CExpression[ceb[:esi], :'=', [ceb[:esi], :+, [sz]]].with_misc(:di_addr => di_addr)
+						blk.statements << C::CExpression[ceb[eax], :'=', [:*, [[ceb[esi]], pt]]].with_misc(:di_addr => di_addr)
+						blk.statements << C::CExpression[ceb[esi], :'=', [ceb[esi], :+, [sz]]].with_misc(:di_addr => di_addr)
 					#when 'sca'
 					#when 'cmp'
 					end
@@ -485,8 +487,8 @@ class Ia32
 					when nil
 						stmts.concat blk.statements
 					when 'rep'
-						blk.statements << C::CExpression[ceb[:ecx], :'=', [ceb[:ecx], :-, [1]]].with_misc(:di_addr => di_addr)
-						stmts << C::While.new(C::CExpression[ceb[:ecx]], blk).with_misc(:di_addr => di_addr)
+						blk.statements << C::CExpression[ceb[ecx], :'=', [ceb[ecx], :-, [1]]].with_misc(:di_addr => di_addr)
+						stmts << C::While.new(C::CExpression[ceb[ecx]], blk).with_misc(:di_addr => di_addr)
 					#when 'repz'	# sca/cmp only
 					#when 'repnz'
 					end
