@@ -2377,7 +2377,7 @@ class Decompiler
 						end
 					end
 
-					case nr = find_next_read[label, i, v]
+					case find_next_read[label, i, v]
 					when C::CExpression
 						# read in one place only, try to patch rexpr in there
 						r = e.rexpr
@@ -2484,7 +2484,8 @@ class Decompiler
 						}
 							# ignore branches that will never reuse v
 							may_to = g.to_optim[l_l].find_all { |to| find_next_read[to, 0, v].kind_of?(C::CExpression) }
-							if may_to.length == 1 and to = may_to.first and to != l_l and g.from_optim[to] == [l_l]
+							if may_to.length == 1 and to = may_to.first and to != l_l and g.from_optim[to] == [l_l] and
+									not sideeffect(e.rexpr)	# dont do cross-block var optimization, eg 'a = f() ; if() return a' =!> 'if () return f()'
 								l_i = 0
 								l_l = to
 							else break
