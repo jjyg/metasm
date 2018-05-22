@@ -220,7 +220,7 @@ class Graph
 		# this gap should be relative to the real boxes and not possible previous gaps when
 		# merging lines (eg long line + many if patterns -> dont duplicate gaps)
 		boxen = ar.map { |g| g.content }.flatten
-		fullw = boxen.map { |g| g.x + g.w }.max - boxen.map { |g| g.x }.min
+		fullw = boxen.map { |g| g.x + g.w + 8 }.max - boxen.map { |g| g.x - 8 }.min
 		realh = boxen.map { |g| g.y + g.h }.max - boxen.map { |g| g.y }.min
 		if maxh < realh + fullw/4
 			maxh = realh + fullw/4
