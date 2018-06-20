@@ -4,7 +4,7 @@
 #
 #    Licence is LGPL, see LICENCE in the top-level directory
 
-# modifies the standard ruby class String to add #decode and #encode methods
+# modifies the standard ruby class String to add #asm_decode and #asm_encode methods
 # they will respectively disassemble binary data / assemble asm source
 # the default CPU is x86 32bits, change it using eg String.cpu = Metasm::MIPS.new(:big) (mips bigendian)
 #
@@ -31,14 +31,14 @@ class String
   end
 
   # encodes the current string as a Shellcode, returns the resulting EncodedData
-  def encode_edata
+  def asm_encode_edata
     Metasm::Shellcode.assemble(@@cpu, self).encode.encoded
   end
 
   # encodes the current string as a Shellcode, returns the resulting binary String
   # outputs warnings on unresolved relocations
-  def encode
-    ed = encode_edata
+  def asm_encode
+    ed = asm_encode_edata
     if not ed.reloc.empty?
       puts 'W: encoded string has unresolved relocations: ' + ed.reloc.map { |o, r| r.target.inspect }.join(', ')
     end
@@ -48,7 +48,7 @@ class String
 
   # decodes the current string as a Shellcode, with specified base address
   # returns the resulting Disassembler
-  def decode_blocks(base_addr=0, eip=base_addr)
+  def asm_decode_blocks(base_addr=0, eip=base_addr)
     sc = Metasm::Shellcode.decode(self, @@cpu)
     sc.base_addr = base_addr
     sc.disassemble(eip)
@@ -56,8 +56,8 @@ class String
 
   # decodes the current string as a Shellcode, with specified base address
   # returns the asm source equivallent
-  def decode(base_addr=0, eip=base_addr)
-    decode_blocks(base_addr, eip).to_s
+  def asm_decode(base_addr=0, eip=base_addr)
+    asm_decode_blocks(base_addr, eip).to_s
   end
 end
 
@@ -86,7 +86,7 @@ def asm
       begin
         data = line.gsub(';', "\n")
         next if data.strip.empty?
-        e_data = data.encode
+        e_data = data.asm_encode
         puts '"' + e_data.unpack('C*').map { |c| '\\x%02x' % c }.join + '"'
       rescue Metasm::Exception => e
         puts "Error: #{e.class} #{e.message}"
