@@ -1130,7 +1130,7 @@ class DasmWindow < Window
 		addsubmenu(actions, 'Undefine function & _subfuncs') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address, true) }
 		addsubmenu(actions, 'Data', 'd') { @dasm_widget.toggle_data(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Pause dasm', 'p', :check) { |ck| !@dasm_widget.playpause_dasm }
-		addsubmenu(actions, 'Spawn EbuDb_g', 'G') { @dasm_widget.spawn_emudbg }
+		addsubmenu(actions, 'Spawn EmuDb_g', 'G') { @dasm_widget.spawn_emudbg }
 		addsubmenu(actions, 'Run ruby snippet', '^r') { promptruby }
 		addsubmenu(actions, 'Run _ruby plugin') { @dasm_widget.prompt_run_ruby_plugin }
 
