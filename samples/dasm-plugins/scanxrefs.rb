@@ -7,12 +7,14 @@
 # metasm dasm plugin: scan for xrefs to the target address, incl. relative offsets (eg near call/jmp)
 def scanxrefs(target)
 	ans = []
-	msk = (1 << cpu.size) - 1
+	csz = cpu.size
+	msk = (1 << csz) - 1
+	upq = (csz == 64 ? 'q' : 'V')
 	sections.sort.each { |s_addr, edata|
 		raw = edata.data.to_str
-		(0..raw.length-4).each { |off|
-			r = raw[off, 4].unpack('V').first
-			ans << (s_addr + off) if (r + off+4 + s_addr) & msk == target or r == target
+		(0..raw.length-csz/8).each { |off|
+			r = raw[off, csz/8].unpack(upq).first
+			ans << (s_addr + off) if (r + off+csz/8 + s_addr) & msk == target or r == target
 		}
 	}
 	ans
