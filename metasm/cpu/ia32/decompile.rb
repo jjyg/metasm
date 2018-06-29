@@ -195,6 +195,7 @@ class Ia32
 
 	def decompile_blocks(dcmp, myblocks, deps, func, nextaddr = nil)
 		eax, ecx, edx, ebx, esp, ebp, esi, edi = register_symbols
+		ebx, esp, ebp = ebx, esp, ebp	# fix ruby unused var warning
 		scope = func.initializer
 		func.type.args.each { |a| scope.symbol[a.name] = a }
 		stmts = scope.statements
