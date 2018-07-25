@@ -150,6 +150,11 @@ class Ia32 < CPU
 		def ==(o)
 			self.class == o.class and seg == o.seg and addr == o.addr
 		end
+
+		def symbolic(di=nil)
+			# XXX realmode only
+			Expression[[@seg, :<<, 4], :|, @addr]
+		end
 	end
 
 	# ModRM represents indirections in x86 (eg dword ptr [eax+4*ebx+12h])

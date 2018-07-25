@@ -74,7 +74,13 @@ dbg.callback_emulate_di = lambda { |di|
 		dbg.set_reg_value(:esp, dbg.resolve(Expression[:esp, :+, 2]))
 		w2 = dbg.memory_read_int(:esp, 2)
 		dbg.set_reg_value(:esp, dbg.resolve(Expression[:esp, :+, 2]))
+		dbg.set_reg_value(:cs, w2)
 		dbg.pc = dbg.resolve(Expression[[w2, :<<, 4], :+, w1])
+		break true
+	when 'ret'
+		w1 = dbg.memory_read_int(:esp, 2)
+		dbg.set_reg_value(:esp, dbg.resolve(Expression[:esp, :+, 2]))
+		dbg.pc = dbg.resolve(Expression[[:cs, :<<, 4], :+, w1])
 		break true
 	when 'lodsb'
 		# read from ds:si instead of 0:esi
