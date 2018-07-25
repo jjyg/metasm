@@ -123,6 +123,12 @@ class EmuDebugger < Debugger
 		end
 	end
 
+	def do_enable_bp(b)	# no need to actually patch code in memory
+	end
+
+	def do_disable_bp(b)
+	end
+
 	def do_singlestep
 		di = @disassembler.di_at(pc)
 		if not di
