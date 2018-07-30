@@ -110,7 +110,7 @@ EOS
 
 		dasm_src = Metasm::Shellcode.disassemble(Metasm::MIPS.new(:big), sc.encoded.data).to_s
 		lines = dasm_src.respond_to?(:lines) ? dasm_src.lines : dasm_src.to_a
-		assert_equal(28, lines.grep(/\S/).length)
+		assert_equal(26, lines.grep(/^[^\/].*\S/).length)
 	end
 
 	def bin(s)
