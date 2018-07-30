@@ -28,7 +28,7 @@ class Indirection < ExpressionType
 
 	def len=(len)
 		@len = len
-		@max_bits_mask ||= (1 << (len*8)) - 1
+		@max_bits_mask ||= (1 << (len*8)) - 1 if len.kind_of?(::Integer)
 	end
 
 	def reduce_rec(cb=nil)
