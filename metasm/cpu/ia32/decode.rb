@@ -1246,7 +1246,7 @@ class Ia32
 	# the code sequence must have only one end, with no to_normal
 	# options:
 	#  :include_flags => include EFLAGS in the returned binding
-	def code_binding(dasm, entry, finish=nil, **nargs)
+	def code_binding(dasm, entry, finish=nil, nargs={})
 		include_flags = nargs.delete :include_flags
 
 		entry = dasm.normalize(entry)
