@@ -40,7 +40,7 @@ class WebAsm
 		addop 'br_table',      0x0e, :br_table, :setip, :stopexec
 		addop 'return',        0x0f, :stopexec
 		addop 'call',          0x10, :uleb, :setip, :saveip, :stopexec	# function index
-		addop 'call_indirect', 0x11, :uleb, :uleb	# type index for target function signature ; fixed 1 
+		addop 'call_indirect', 0x11, :uleb, :uleb, :setip, :saveip, :stopexec	# type index for target function signature ; table index where the function indexes come from (fixed 0)
 
 		addop 'drop',   0x1a
 		addop 'select', 0x1b

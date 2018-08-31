@@ -128,7 +128,8 @@ class WebAsm
 	end
 
 	def decode_instr_interpret(di, addr)
-		if di.opcode.name == 'call'
+		case di.opcode.name
+		when 'call'
 			fnr = di.instruction.args.first.reduce
 			di.misc ||= {}
 			di.misc[:tg_func_nr] = fnr
@@ -139,6 +140,9 @@ class WebAsm
 			else
 				di.misc[:x] = [:default]
 			end
+		when 'call_indirect'
+			di.misc ||= {}
+			di.misc[:x] = [:default]
 		end
 		di
 	end
@@ -186,21 +190,24 @@ class WebAsm
 			@backtrace_binding[opname] ||= case opname
 			when 'call', 'call_indirect'
 				lambda { |di|
+					stack_off = 0
 					if opname == 'call'
 						f = @wasm_file.get_function_nr(di.misc[:tg_func_nr])
 						proto = f ? f[:type] : {}
 						# TODO use local_base
 						h = { :callstack => Expression[:callstack, :+, 8], Indirection[:callstack, 8] => Expression[di.next_addr] }
+						proto_params_offset = 0
 					else
 						proto = @wasm_file.type[di.instruction.args.first.reduce]
-						h = {}
+						h = { :callstack => Expression[:callstack, :+, 8], Indirection[:callstack, 8] => Expression[di.next_addr], 'func_idx' => Expression[opstack[0, 4]] }
+						stack_off += 8
+						proto_params_offset = 1
 					end
-					stack_off = 0
 					stack_off -= 8*proto[:ret].to_a.length
 					stack_off += 8*proto[:params].to_a.length
 					h.update :opstack => Expression[:opstack, :+, stack_off]
 					proto[:ret].to_a.each_with_index { |rt, i| h.update opstack[8*i, typesz[rt]] => Expression["ret_#{i}"] }
-					proto[:params].to_a.each_with_index { |pt, i| h.update "param_#{i}" => Expression[opstack[8*(proto[:params].length-i-1), typesz[pt]]] }
+					proto[:params].to_a.each_with_index { |pt, i| h.update "param_#{i}" => Expression[opstack[8*(proto[:params].length-i-1+proto_params_offset), typesz[pt]]] }
 					h
 				}
 			when 'if', 'br_if'; lambda { |di| add_opstack[ 8, :flag => Expression[opstack[0, 8]]] }
