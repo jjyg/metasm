@@ -54,6 +54,7 @@ class WebAsm
 			var = C::Variable.new
 			var.name = g_name
 			var.type = C::Array.new(wasm_type_to_type(g[:type]), 1)
+			var.storage = :static
 			dcmp.c_parser.toplevel.symbol[var.name] = var
 			dcmp.c_parser.toplevel.statements << C::Declaration.new(var)
 
@@ -67,6 +68,50 @@ class WebAsm
 				dcmp.c_parser.toplevel.symbol.delete(g_init_name)
 				dcmp.c_parser.toplevel.statements.delete_if { |st| st.kind_of?(C::Declaration) and st.var.name == g_init_name }
 			end
+		}
+
+		@wasm_file.table.to_a.each_with_index { |t, idx|
+			break if idx > 0
+			t_name = 'indirect_calltable'
+			var = C::Variable.new
+			var.name = t_name
+			sz = t[:limits][:initial_size]
+			var.type = C::Array.new(C::Pointer.new(wasm_type_to_type(t[:type])), sz)
+			var.storage = :static
+			dcmp.c_parser.toplevel.symbol[var.name] = var
+			dcmp.c_parser.toplevel.statements << C::Declaration.new(var)
+			var.initializer = [C::CExpression[0]] * sz
+
+			# initializer
+			@wasm_file.element.to_a.each_with_index { |e, eidx|
+				next if e[:table_index] != idx
+				# address of the code that evals the index at which to place the elements inside the table
+				e_init_name = "element_#{eidx}_init_addr"
+				dcmp.dasm.disassemble(e_init_name)
+				dcmp.decompile_func(e_init_name)
+				if init = dcmp.c_parser.toplevel.symbol[e_init_name] and init.initializer.kind_of?(C::Block) and
+						init.initializer.statements.first.kind_of?(C::Return)
+					eoff = init.initializer.statements.first.value.reduce(dcmp.c_parser)
+					dcmp.c_parser.toplevel.symbol.delete(e_init_name)
+					dcmp.c_parser.toplevel.statements.delete_if { |st| st.kind_of?(C::Declaration) and st.var.name == e_init_name }
+					e[:elems].each_with_index { |ev, vidx|
+						# table 0 is the only table in a wasm file and contains a list of function indexes used with the call_indirect asm instruction
+						# e_init_name gives the index at which we should put e[:elems], and we convert the func indexes into C names
+						vidx += eoff
+						if vidx >= sz or vidx < 0
+							puts "W: initializing indirect_calltable, would put #{ev} beyond end of table (#{vidx} > #{sz})"
+							next
+						end
+						if not tg_func = @wasm_file.get_function_nr(ev)
+							puts "W: initializing indirect_calltable, bad func index #{ev}"
+							next
+						end
+						funcname = dcmp.dasm.get_label_at(tg_func[:init_offset]) || "func_at_#{'%x' % tg_func[:init_offset]}"
+						# XXX should decompile funcname now ?
+						var.initializer[vidx] = C::CExpression[:&, C::Variable.new(funcname)]
+					}
+				end
+			}
 		}
 	end
 
@@ -247,7 +292,7 @@ class WebAsm
 							stmts << C::CExpression[ce[scope.symbol[start.misc[:dcmp_retval]], :'=', Indirection[[:frameptr, :+, off], retsz]]]
 						end
 					end
-				elsif di.opcode.name == 'call' #or di.opcode.name == 'call_indirect'
+				elsif di.opcode.name == 'call'
 					tg = di.misc[:x].first
 					raise "no call target for #{di}" if not tg
 					tg = dcmp.dasm.auto_label_at(tg, 'sub') if dcmp.dasm.get_section_at(tg)
@@ -262,6 +307,21 @@ class WebAsm
 						i += 1
 					end
 					e = C::CExpression[f, :funcall, args].with_misc(:di_addr => di.address)
+					if bd_ret = bd.index(Expression["ret_0"])
+						e = ce[bd_ret, :'=', e]
+					end
+					stmts << e
+				elsif di.opcode.name == 'call_indirect'
+					args = []
+					bd = get_fwdemu_binding(di)
+					wt = @wasm_file.type[di.instruction.args.first.reduce]
+					fptr = C::CExpression[[dcmp.c_parser.toplevel.symbol['indirect_calltable'], :[], ce[bd['func_idx']]], wasm_type_to_type(wt)]
+					i = 0
+					while bd_arg = bd["param_#{i}"]
+						args << ce[bd_arg]
+						i += 1
+					end
+					e = C::CExpression[fptr, :funcall, args].with_misc(:di_addr => di.address)
 					if bd_ret = bd.index(Expression["ret_0"])
 						e = ce[bd_ret, :'=', e]
 					end
