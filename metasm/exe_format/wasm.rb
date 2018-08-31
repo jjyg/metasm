@@ -277,7 +277,7 @@ class WasmFile < ExeFormat
 	def decode_module_global(m)
 		@global = []
 		decode_uleb(m.edata).times {
-			@global << { :type => decode_type(m.edata), :init_offset => read_code_until_end(m) }
+			@global << { :type => decode_type(m.edata), :mutable => decode_uleb(m.edata), :init_offset => read_code_until_end(m) }
 		}
 	end
 
