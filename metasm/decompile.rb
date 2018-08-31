@@ -2720,7 +2720,7 @@ class Decompiler
 	def optimize_global
 		# check all global vars (pointers to global data)
 		tl = @c_parser.toplevel
-		vars = tl.symbol.keys.find_all { |k| tl.symbol[k].kind_of?(C::Variable) and not tl.symbol[k].type.kind_of?(C::Function) and not tl.symbol[k].storage == :extern }
+		vars = tl.symbol.keys.find_all { |k| tl.symbol[k].kind_of?(C::Variable) and not tl.symbol[k].type.kind_of?(C::Function) and not tl.symbol[k].storage == :extern and not tl.symbol[k].storage == :static }
 		countref = Hash.new(0)
 
 		walk_ce(tl) { |ce|
