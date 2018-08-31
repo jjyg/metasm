@@ -397,7 +397,7 @@ class Ia32
 					a = di.instruction.args.first
 					if a.kind_of? Expression
 					elsif not a.respond_to? :symbolic
-						stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil)
+						stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil).with_misc(:di_addr => di_addr)
 					else
 						n = di.instruction.args.first.symbolic(di)
 						fptr = ceb[n]
@@ -412,8 +412,6 @@ class Ia32
 							args = []
 						end
 						ret = C::Return.new(C::CExpression[fptr, :funcall, args].with_misc(:di_addr => di_addr)).with_misc(:di_addr => di_addr)
-						class << ret ; attr_accessor :from_instr end
-						ret.from_instr = di
 						stmts << ret
 						to = []
 					end
@@ -498,7 +496,7 @@ class Ia32
 					bd = get_fwdemu_binding(di)
 					if di.backtrace_binding[:incomplete_binding]
 						commit[]
-						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil)
+						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil).with_misc(:di_addr => di_addr)
 					else
 						update = {}
 						bd.each { |k, v|
