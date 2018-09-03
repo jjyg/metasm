@@ -370,9 +370,16 @@ class WasmFile < ExeFormat
 	def init_disassembler
 		dasm = super()
 		function_body.to_a.each { |fb|
-			v = fb[:local_var].map { |lv| type_to_s(lv) }.join(' ; ')
+			v = []
+			fb[:local_var].map { |lv| type_to_s(lv) }.each { |lv|
+				v.last && lv == v.last.last ? v.last << lv : v << [lv]
+			}
+			v.map! { |sublist|
+				# i32 ; i32 ; i32 ; i32 ; i32 ; i32 ; i64  ->  5 * i32 ; i64
+				sublist.length > 3 ? "#{sublist.length} * #{sublist.first}" : sublist.join(' ; ')
+			}
 			dasm.add_comment fb[:init_offset], "proto: #{fb[:type] ? type_to_s(fb[:type]) : 'unknown'}"
-			dasm.add_comment fb[:init_offset], "vars: #{v}"
+			dasm.add_comment fb[:init_offset], "vars: #{v.join(' ; ')}"
 		}
 		global.to_a.each { |g|
 			dasm.add_comment g[:init_offset], "type: #{type_to_s(g[:type])}"
