@@ -1146,7 +1146,11 @@ class Disassembler
 				addr = Expression.parse(pp).reduce
 				len = Expression.parse(pp).reduce
 				edata = EncodedData.new(data.unpack('m*').first, :virtsize => len)
-				add_section(addr, edata)
+				# check for an existing section, eg from binarypath
+				existing_section = get_section_at(addr)
+				if not existing_section or existing_section[0].data.to_str != edata.data.to_str
+					add_section(addr, edata)
+				end
 			when 'map'
 				load_map data
 			when 'decoded'
