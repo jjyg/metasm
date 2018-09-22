@@ -24,8 +24,15 @@ class WebAsm < CPU
 		end
 
 		def symbolic(di=nil)
-			sz = 32
-			Indirection[@off, sz, (di.address if di)]
+			sz = 8
+			off = Expression[:mem, :+, [@off]]
+			if di and di.opcode.name =~ /(32|64)\.(load|store)(8|16|32)?/
+				opsz, op, mode = $1, $2, $3
+				sz = mode ? mode.to_i/8 : opsz.to_i/8
+				stack_off = (op == 'store' ? [:opstack, :+, 8] : [:opstack])
+				off = Expression[Indirection[stack_off, 4], :+, off]
+			end
+			Indirection[off, sz, (di.address if di)]
 		end
 
 		include Renderable
