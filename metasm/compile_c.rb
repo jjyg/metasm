@@ -864,7 +864,7 @@ module C
 				blk.statements.each_with_index { |s, i|
 					case s
 					when Case
-						label = compiler.new_label('case')
+						label = compiler.new_label("case_#{s.expr}")
 						if s.expr == 'default'
 							default = label
 						elsif s.exprup

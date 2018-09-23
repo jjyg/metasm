@@ -133,6 +133,8 @@ class ModRM
 
 		raise otok, 'mrm: bad reg size' if b.kind_of?(Reg) and i.kind_of?(Reg) and b.sz != i.sz
 
+		raise otok, 'mrm: cannot encode [rip+reg], only [rip+imm]' if (b and b.val == 16 and i) or (i and i.val == 16 and (b or s != 1))
+
 		# find default address size
 		adsz = b ? b.sz : i ? i.sz : nil
 		# ptsz may be nil now, will be fixed up later (in parse_instr_fixup) to match another instruction argument's size
