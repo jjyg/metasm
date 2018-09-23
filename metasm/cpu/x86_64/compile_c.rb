@@ -657,8 +657,9 @@ class CCompiler < C::Compiler
 		stackargs.reverse_each { |arg|
 			raise 'arg unhandled' if not arg.type.integral? or arg.type.pointer?
 			a = c_cexpr_inner(arg)
-			a = resolve_address a if a.kind_of? Address
-			a = make_volatile(a, arg.type) if a.kind_of? ModRM and arg.type.name != :__int64
+			a = resolve_address a if a.kind_of?(Address)
+			a = make_volatile(a, arg.type) if (a.kind_of?(ModRM) and arg.type.name != :__int64) or
+							  (a.kind_of?(Expression) and (va = a.reduce) and (not va.kind_of?(::Integer) or va < -0x8000_0000 or va > 0x7fff_ffff))
 			unuse a
 			instr 'push', a
 		}
