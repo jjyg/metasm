@@ -494,7 +494,9 @@ class CCompiler < C::Compiler
 						unuse l
 						l = Address.new(l.modrm.dup)
 						inuse l
-						if l.modrm.b
+						if (l.modrm.b and l.modrm.b.val == 16) or (l.modrm.i and l.modrm.i.val == 16)
+							# cannot encode [rip+reg+imm]
+						elsif l.modrm.b
 							if not l.modrm.i or (l.modrm.i.val == r.val and l.modrm.s == 1)
 								l.modrm.i = r
 								l.modrm.s = (l.modrm.s || 0) + 1
