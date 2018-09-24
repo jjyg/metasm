@@ -960,8 +960,8 @@ module C
 						raise ftok, 'unterminated asm block' if not tok = parser.lexer.readtok
 						break if tok.type == :punct and tok.raw == '}'
 						case tok.type
-						when :space; body << ' '
-						when :eol; body << "\n"
+						when :space; body << ' ' unless body.empty?
+						when :eol; body << "\n" unless body.empty?
 						when :punct; body << tok.raw
 						when :quoted; body << CExpression.string_inspect(tok.value)	# concat adjacent c strings
 						when :string
