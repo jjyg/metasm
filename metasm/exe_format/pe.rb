@@ -13,7 +13,7 @@ class PE < COFF
 	MAGIC = "PE\0\0"	# 0x50450000
 	MAGIC.force_encoding('BINARY') if MAGIC.respond_to?(:force_encoding)
 
-	attr_accessor :coff_offset, :signature, :mz
+	attr_accessor :coff_offset, :signature, :mz, :productid
 
 	def initialize(*a)
 		super(*a)
@@ -27,7 +27,14 @@ class PE < COFF
 	def decode_header
 		@cursection ||= self
 		@encoded.ptr = 0x3c
-		@encoded.ptr = decode_word(@encoded)
+		lfanew = decode_word(@encoded)
+
+		try_rich_sz = [0x400, lfanew].min
+		rich_ary = []
+		rich_ary << decode_word(@encoded) while @encoded.ptr < try_rich_sz
+		@productid = decode_productid(rich_ary)
+
+		@encoded.ptr = lfanew
 		@signature = @encoded.read(4)
 		raise InvalidExeFormat, "Invalid PE signature #{@signature.inspect}" if @signature != MAGIC
 		@coff_offset = @encoded.ptr
@@ -37,6 +44,20 @@ class PE < COFF
 			@mz.decode_header
 		end
 		super()
+	end
+
+	RICH_MAGIC = 0x68636952	# "Rich"
+	def decode_productid(ary)
+		return unless idx = ary.index(RICH_MAGIC) and xorkey = ary[idx+1]
+		ary = ary[0, idx-1].map { |dw| dw ^ xorkey }
+		return unless idx = ary.rindex(0x536E6144)	# "DanS"
+		ary = ary[idx+2..-1]
+		out = []
+		until ary.empty?
+			ar1 = ary.shift
+			out << { :id => ar1 >> 16, :ver => ar1 & 0xffff, :count => ary.shift.to_i }
+		end
+		out
 	end
 
 	# creates a default MZ file to be used in the PE header

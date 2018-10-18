@@ -512,8 +512,8 @@ class COFF
 
 			s.encoded.reloc.each { |off, rel|
 				# check that the relocation looks like "program_start + integer" when bound using the fake binding
-				# XXX allow :i32 etc
-				if rel.endianness == @endianness and [:u32, :a32, :u64, :a64].include?(rel.type) and
+				# TODO relocate refs to IAT (eg plt)
+				if rel.endianness == @endianness and [:i32, :u32, :a32, :i64, :u64, :a64].include?(rel.type) and
 				rel.target.bind(binding).reduce.kind_of?(Expression) and
 				Expression[rel.target, :-, startaddr].bind(binding).reduce.kind_of?(::Integer)
 					# winner !
@@ -521,7 +521,7 @@ class COFF
 					# build relocation
 					r = RelocationTable::Relocation.new
 					r.offset = off & 0xfff
-					r.type = { :u32 => 'HIGHLOW', :u64 => 'DIR64', :a32 => 'HIGHLOW', :a64 => 'DIR64' }[rel.type]
+					r.type = { '32' => 'HIGHLOW', 64 => 'DIR64' }[rel.type.to_s[1, 2]]
 
 					# check if we need to start a new relocation table
 					if rt.base_addr and (rt.base_addr & ~0xfff) != (off & ~0xfff)
