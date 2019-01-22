@@ -230,6 +230,12 @@ class COFF < ExeFormat
 		end
 	end
 
+	# unwind info
+	class ExceptionEntry < SerialStruct
+		# function start RVA, function end RVA, UNWIND_INFO RVA
+		words :func, :func_end, :unwind
+	end
+
 	# array of relocations to apply to an executable file
 	# when it is loaded at an address that is not its preferred_base_address
 	class RelocationTable < SerialStruct
@@ -407,7 +413,8 @@ class COFF < ExeFormat
 	end
 
 	attr_accessor :header, :optheader, :directory, :sections, :endianness, :symbols, :bitsize,
-		:export, :imports, :resource, :certificates, :relocations, :debug, :tls, :loadconfig, :delayimports, :com_header
+		:export, :imports, :resource, :exception_table, :certificates,
+		:relocations, :debug, :tls, :loadconfig, :delayimports, :com_header
 
 	# boolean, set to true to have #decode() ignore the base_relocs directory
 	attr_accessor :nodecode_relocs

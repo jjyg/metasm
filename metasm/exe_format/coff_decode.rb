@@ -639,6 +639,17 @@ class COFF
 		resource.decode_version(self, lang)
 	end
 
+	# decode the exception table, holding the start and end of every function in the binary (x64)
+	# includes a pointer to the UNWIND_INFO structure for exception handling
+	def decode_exception_table
+		if et = @directory['exception_table'] and sect_at_rva(et[0])
+			@exception_table = []
+			(et[1]/12).times {
+				@exception_table << ExceptionEntry.decode(self)
+			}
+		end
+	end
+
 	# decodes certificate table
 	def decode_certificates
 		if ct = @directory['certificate_table']
@@ -782,6 +793,7 @@ class COFF
 		decode_exports
 		decode_imports
 		decode_resources
+		decode_exception_table
 		decode_certificates
 		decode_debug
 		decode_tls
