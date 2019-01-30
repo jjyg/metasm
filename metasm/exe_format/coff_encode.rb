@@ -521,7 +521,7 @@ class COFF
 					# build relocation
 					r = RelocationTable::Relocation.new
 					r.offset = off & 0xfff
-					r.type = { '32' => 'HIGHLOW', 64 => 'DIR64' }[rel.type.to_s[1, 2]]
+					r.type = { '32' => 'HIGHLOW', '64' => 'DIR64' }[rel.type.to_s[1, 2]]
 
 					# check if we need to start a new relocation table
 					if rt.base_addr and (rt.base_addr & ~0xfff) != (off & ~0xfff)
