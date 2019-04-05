@@ -4,7 +4,7 @@ require 'metasm'
 
 Gem::Specification.new do |s|
   s.name          = 'metasm'
-  s.version       = '1.0.2'
+  s.version       = '1.0.4'
   s.summary       =
     "Metasm is a cross-architecture assembler, disassembler, linker, and debugger."
   s.description   = ""
@@ -14,7 +14,7 @@ Gem::Specification.new do |s|
   s.test_files    = s.files.grep(%r{^tests/})
   s.require_paths = ["."]
   s.homepage      = 'http://metasm.cr0.org'
-  s.license       = 'LGPL'
+  s.license       = 'LGPL-2.1'
 
   s.add_development_dependency "bundler", "~> 1.7"
   s.add_development_dependency "rake"
