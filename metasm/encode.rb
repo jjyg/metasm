@@ -214,8 +214,14 @@ class ExeFormat
 
 				raise EncodeError, "cannot find candidate in #{elem.inspect}, immediate too big #{wantsize.inspect} #{target_bounds.inspect}" if acceptable.empty?
 
-				# keep the shortest
-				acceptable.sort_by { |edata| edata.virtsize }.first
+				# keep the shortest, use a hack make sort consistent in all cases
+				# see https://8thlight.com/blog/will-warner/2013/03/26/stable-sorting-in-ruby.html
+				n = 0
+				mod_map = acceptable.map { |edata| n += 1 ; [[edata.virtsize, n], edata] }
+				interm_sort = mod_map.sort { |left, right| left[0] <=> right[0] }
+				mod_sort_result = interm_sort.collect { |edata| edata[1] }
+				result = mod_sort_result.first
+				result
 			else
 				elem
 			end
