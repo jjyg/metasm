@@ -781,11 +781,39 @@ class ELF
 			target = reloc_target(reloc)
 			target = Expression[target, :+, addend] if addend and addend != 0
 		else
-			puts "W: Elf: unhandled MIPS reloc #{reloc.inspect}" if $VERBOSE
+			puts "W: Elf: unhandled OpenRISC reloc #{reloc.inspect}" if $VERBOSE
 			target = nil
 		end
 
 		Metasm::Relocation.new(Expression[target], :u32, @endianness) if target
+	end
+
+	def arch_decode_segments_reloc_aarch64(reloc)
+		if reloc.symbol.kind_of?(Symbol) and n = reloc.symbol.name and reloc.symbol.shndx == 'UNDEF' and @sections and
+			s = @sections.find { |s_| s_.name and s_.offset <= @encoded.ptr and s_.offset + s_.size > @encoded.ptr }
+			@encoded.add_export(new_label("#{s.name}_#{n}"), @encoded.ptr, true)
+		end
+
+		original_xword = decode_xword
+
+		# decode addend if needed
+		case reloc.type
+		when 'NONE' # no addend
+		else addend = reloc.addend || Expression.make_signed(original_xword, 64)
+		end
+
+		case reloc.type
+		when 'NONE'
+		# TODO actual base relocs
+		when 'JUMP_SLOT'
+			target = reloc_target(reloc)
+			target = Expression[target, :+, addend] if addend and addend != 0
+		else
+			puts "W: Elf: unhandled AARCH64 reloc #{reloc.inspect}" if $VERBOSE
+			target = nil
+		end
+
+		Metasm::Relocation.new(Expression[target], :u64, @endianness) if target
 	end
 
 	class DwarfDebug
