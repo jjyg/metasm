@@ -78,7 +78,7 @@ class ARM64
 	OP_CC = %w[eq ne cs cc  mi pl vs vc  hi ls ge lt  gt le al al2]
 	def addop_cc(n, bin, *args)
 		OP_CC.each_with_index { |e, i|
-			args << :stopexec if e == 'al' and args.include?(:setip)
+			args << :stopexec if e[0, 2] == 'al' and args.include?(:setip)
 			addop n+e, bin | i, *args
 		}
 	end

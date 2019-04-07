@@ -263,6 +263,25 @@ class ARM64
 		end
 	end
 
+	def decode_cc_to_expr(cc)
+		case cc
+		when 'eq'; Expression[:eflag_z]
+		when 'ne'; Expression[:'!', :eflag_z]
+		when 'cs'; Expression[:eflag_c]		# carry set
+		when 'cc'; Expression[:'!', :eflag_c]	# carry clear
+		when 'mi'; Expression[:eflag_n]		# minus
+		when 'pl'; Expression[:'!', :eflag_n]	# plus
+		when 'vs'; Expression[:eflag_v]		# oVerflow set
+		when 'vc'; Expression[:'!', :eflag_v]	# overflow clear
+		when 'hi'; Expression[:eflag_c, :&, [:'!', :eflag_z]]	# unsigned higher
+		when 'ls'; Expression[:eflag_z, :|, [:'!', :eflag_c]]	# unsigned lower or same
+		when 'ge'; Expression[:eflag_n, :'==', :eflag_v]
+		when 'lt'; Expression[:eflag_n, :'!=', :eflag_v]
+		when 'gt'; Expression[[:eflag_n, :'==', :eflag_v], :&, [:'!', :eflag_z]]
+		when 'le'; Expression[[:eflag_n, :'!=', :eflag_v], :|, :eflag_z]
+		end
+	end
+
 	def get_xrefs_x(dasm, di)
 		if di.opcode.props[:setip]
 			tg = di.instruction.args.last
