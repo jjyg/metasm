@@ -107,6 +107,7 @@ class Decompiler
 		scope = func.initializer = C::Block.new(@c_parser.toplevel)
 		if df = @dasm.function[entry]
 			scope.decompdata = df.decompdata ||= {:unalias_type => {}, :unalias_name => {}}
+			func.add_attribute('noreturn') if df.noreturn
 		else
 			scope.decompdata ||= {:unalias_type => {}, :unalias_name => {}}
 		end
@@ -140,7 +141,11 @@ class Decompiler
 		@dasm.cpu.decompile_check_abi(self, entry, func)
 
 		case ret = scope.statements.last
-		when C::CExpression; puts "no return at end of func" if $VERBOSE
+		when C::CExpression
+			if ret.op == :funcall and ret.lexpr.has_attribute('noreturn')
+			else
+				puts "no return at end of func" if $VERBOSE
+			end
 		when C::Return
 			if not ret.value
 				scope.statements.pop
@@ -1023,8 +1028,8 @@ class Decompiler
 		g_exprs.each { |label, exprs|
 			exprs.each_with_index { |ce, i|
 				if ce_read(ce, var)
-					if (ce.op == :'=' and isvar(ce.lexpr, var) and not ce_write(ce.rexpr, var)) or
-					   (ce.op == :funcall and r and not ce_write(ce.lexpr, var) and not ce_write(ce.rexpr, var) and @dasm.cpu.abi_funcall[:changed].include?(r.to_sym))
+					if (ce.kind_of?(C::CExpression) and ce.op == :'=' and isvar(ce.lexpr, var) and not ce_write(ce.rexpr, var)) or
+					   (ce.kind_of?(C::CExpression) and ce.op == :funcall and r and not ce_write(ce.lexpr, var) and not ce_write(ce.rexpr, var) and @dasm.cpu.abi_funcall[:changed].include?(r.to_sym))
 						(ro[label] ||= []) << i
 						(wo[label] ||= []) << i
 						unchecked << [label, i, :up] << [label, i, :down]
@@ -1582,7 +1587,7 @@ class Decompiler
 		walk_ce(scope) { |ce|
 			count_refs[ce.lexpr.name] += 1 if ce.lexpr.kind_of?(C::Variable)
 			count_refs[ce.rexpr.name] += 1 if ce.rexpr.kind_of?(C::Variable)
-			if is_cast[ce] and ce.rexpr.rexpr.kind_of?(C::Variable)
+			if is_cast[ce] and ce.type.pointer? and ce.rexpr.rexpr.kind_of?(C::Variable)
 				(uses[ce.rexpr.rexpr.name] ||= []) << ce.type.pointed
 			end
 		}
