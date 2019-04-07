@@ -566,6 +566,7 @@ class ELF < ExeFormat
 
 	class SerialStruct
 		new_int_field :leb
+		new_int_field :uleb
 	end
 
 	# libdwarf/dwarf.h
@@ -629,6 +630,15 @@ class ELF < ExeFormat
 			end
 		end
 
+		class CIE < SerialStruct
+			attr_accessor :offset, :id, :version, :augmentation_string, :eh_data, :code_align,
+					:data_align, :return_reg, :augmentation_data, :initial_instrs
+		end
+
+		class FDE < SerialStruct
+			attr_accessor :offset, :cie_offset, :pc_begin, :pc_range, :augmentation_data, :instrs
+		end
+
 		word :cu_len
 		half :version, 2
 		word :abbrev_off
@@ -653,7 +663,7 @@ class ELF < ExeFormat
 		}
 	end
 
-	attr_accessor :header, :segments, :sections, :tag, :symbols, :relocations, :endianness, :bitsize, :debug
+	attr_accessor :header, :segments, :sections, :tag, :symbols, :relocations, :endianness, :bitsize, :debug, :eh_frame
 	def initialize(cpu=nil)
 		@header = Header.new
 		@tag = {}

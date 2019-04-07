@@ -850,18 +850,165 @@ class ELF
 				}
 			end
 		end
+
+		def self.decode_eh_frame_entry(elf, eh_frame)
+			start_ptr = eh_frame.ptr
+			len = elf.decode_word(eh_frame)
+			return if len == 0
+
+			if len >= 0xffff_fff0
+				puts "W: ELF: unhandled 64-bit .eh_frame entry"
+				return
+			end
+
+			id = elf.decode_word(eh_frame)
+			if id == 0
+				eh_frame.ptr = start_ptr
+				CIE.decode(elf, eh_frame)
+			else
+				eh_frame.ptr = start_ptr
+				FDE.decode(elf, eh_frame)
+			end
+		end
+
+		class CIE
+			def decode(elf, eh_frame)
+				@offset = eh_frame.ptr
+				len = elf.decode_word(eh_frame)
+				return if len == 0
+				return if len >= 0xffff_fff0
+				start_ptr = eh_frame.ptr
+
+				@id = elf.decode_word(eh_frame)
+				if id != 0
+					raise 'Not a CIE'	# FDE, decode_eh_frame_entry should have handled that
+				end
+				@version = elf.decode_byte(eh_frame)
+				@augmentation_string = elf.decode_strz(eh_frame)
+				if @augmentation_string.include?('eh')
+					@eh_data = elf.decode_word(eh_frame)
+				end
+
+				@code_align = elf.decode_uleb(eh_frame)
+				@data_align = elf.decode_leb(eh_frame)
+				@return_reg = elf.decode_uleb(eh_frame)
+
+				if @augmentation_string[0, 1] == 'z'
+					a_len = elf.decode_uleb(eh_frame)
+					@augmentation_data = eh_frame.read(a_len)
+				end
+
+				if eh_frame.ptr <= start_ptr + len
+					# DWARF opcodes
+					@initial_instrs = []
+					while eh_frame.ptr < start_ptr+len
+						@initial_instrs << DwarfDebug.decode_dw_cfa_op(elf, eh_frame)
+					end
+					@initial_instrs.pop while @initial_instrs.last == [:nop]
+				end
+
+				eh_frame.ptr = start_ptr + len
+			end
+		end
+
+		class FDE
+			def decode(elf, eh_frame)
+				@offset = eh_frame.ptr
+				len = elf.decode_word(eh_frame)
+				return if len == 0
+				return if len >= 0xffff_fff0
+				start_ptr = eh_frame.ptr
+
+				id = elf.decode_word(eh_frame)
+				if id == 0
+					raise 'Not an FDE'	# CIE
+				end
+				# in .eh_frame, this is a backward offset from current FDE to CIE, in .debug_frame, may be a direct offset from section start to CIE
+				@cie_offset = start_ptr - id
+				cie = elf.eh_frame.find { |c| c.offset == @cie_offset }
+
+				@pc_begin = elf.decode_word(eh_frame)
+				@pc_range = elf.decode_word(eh_frame)
+
+				if cie and cie.augmentation_data
+					a_len = elf.decode_uleb(eh_frame)
+					@augmentation_data = eh_frame.read(a_len)
+				end
+
+				if eh_frame.ptr <= start_ptr + len
+					# DWARF opcodes
+					@instrs = []
+					while eh_frame.ptr < start_ptr+len
+						@instrs << DwarfDebug.decode_dw_cfa_op(elf, eh_frame)
+					end
+					@instrs.pop while @instrs.last == [:nop]
+				end
+
+
+				eh_frame.ptr = start_ptr + len
+			end
+		end
+
+		# TODO make a cpu
+		def self.decode_dw_cfa_op(elf, eh_frame)
+			block = lambda {
+				blen = elf.decode_leb(eh_frame)
+				eh_frame.read(blen)
+			}
+
+			byte = elf.decode_byte(eh_frame)
+			case byte & 0xc0
+			when 0x40; [:advance_loc, byte & 0x3f]
+			when 0x80; [:offset, byte & 0x3f, elf.decode_uleb(eh_frame)]
+			when 0xc0; [:restore, byte & 0x3f]
+			else
+				case byte
+				when 0x00; [:nop]
+				when 0x01; [:set_loc, elf.decode_word(eh_frame)]
+				when 0x02; [:advance_loc, elf.decode_byte(eh_frame)]
+				when 0x03; [:advance_loc, elf.decode_half(eh_frame)]
+				when 0x04; [:advance_loc, elf.decode_word(eh_frame)]
+				when 0x05; [:offset_extended, elf.decode_uleb(eh_frame), elf.decode_uleb(eh_frame)]
+				when 0x06; [:restore_extended, elf.decode_uleb(eh_frame)]
+				when 0x07; [:undefined, elf.decode_uleb(eh_frame)]
+				when 0x08; [:same_value, elf.decode_uleb(eh_frame)]
+				when 0x09; [:register, elf.decode_uleb(eh_frame), elf.decode_uleb(eh_frame)]
+				when 0x0a; [:remember_state]
+				when 0x0b; [:restore_state]
+				when 0x0c; [:def_cfa, elf.decode_uleb(eh_frame), elf.decode_uleb(eh_frame)]
+				when 0x0d; [:def_cfa_register, elf.decode_uleb(eh_frame)]
+				when 0x0e; [:def_cfa_offset, elf.decode_uleb(eh_frame)]
+				when 0x0f; [:def_cfa_expression, block[]]
+				when 0x10; [:expression, elf.decode_uleb(eh_frame), block[]]
+				when 0x11; [:offset_extended_sf, elf.decode_uleb(eh_frame), elf.decode_leb(eh_frame)]
+				when 0x12; [:def_cfa_sf, elf.decode_uleb(eh_frame), elf.decode_leb(eh_frame)]
+				when 0x13; [:def_cfa_offset_sf, elf.decode_leb(eh_frame)]
+				when 0x14; [:val_offset, elf.decode_uleb(eh_frame), elf.decode_uleb(eh_frame)]
+				when 0x15; [:val_offset_sf, elf.decode_uleb(eh_frame), elf.decode_leb(eh_frame)]
+				when 0x16; [:val_expression, elf.decode_uleb(eh_frame), block[]]
+				when 0x1c; [:lo_user]
+				when 0x3f; [:hi_user]
+				else [byte]
+				end
+			end
+		end
 	end
 
 	# decode an ULEB128 (dwarf2): read bytes while high bit is set, littleendian
-	def decode_leb(ed = @encoded)
+	def decode_leb(ed = @encoded); decode_uleb(ed, true); end
+
+	def decode_uleb(ed, signed=false)
 		v = s = 0
-		loop {
+		while s < 10*7
 			b = ed.read(1).unpack('C').first.to_i
 			v |= (b & 0x7f) << s
 			s += 7
-			break v if (b&0x80) == 0
-		}
+			break if (b&0x80) == 0
+		end
+		v = Expression.make_signed(v, s) if signed
+		v
 	end
+
 
 	# decodes the debugging information if available
 	# only a subset of DWARF2/3 is handled right now
@@ -884,6 +1031,23 @@ class ELF
 
 		while info.ptr < info.length
 			@debug << DwarfDebug.decode(self, info, abbrev, str)
+		end
+	end
+
+	def decode_eh_frame
+		return if not @sections
+
+		eh_frame = @sections.find { |sec| sec.name == '.eh_frame' }
+		return if not eh_frame
+
+		eh_frame = @encoded[eh_frame.offset, eh_frame.size]
+
+		@eh_frame = []
+
+		while eh_frame.ptr < eh_frame.length
+			entry = DwarfDebug.decode_eh_frame_entry(self, eh_frame)
+			break if not entry
+			@eh_frame << entry
 		end
 	end
 
