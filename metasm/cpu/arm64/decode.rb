@@ -173,7 +173,13 @@ class ARM64
 			when 'mov', 'adr', 'adrp'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'movz'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
 			when 'movn'; lambda { |di, a0, a1| { a0 => Expression[:~, a1] } }
-			#when 'movk'; lambda { |di, a0, a1| a1 + lsl replace target bits of a0, other unchanged
+			when 'movk'; lambda { |di, a0, a1|
+				# set a 16bit word of the target reg, dont touch the others
+				if a1.kind_of?(Expression) and a1.op == :<< and a1.rexpr.kind_of?(::Integer)
+					{ a0 => Expression[[a0, :&, (((1<<64)-1) - (0xffff << a1.rexpr))], :|, a1] }
+				else
+					{ a0 => Expression[a0, :|, a1] }	# shouldn't happen, but should be fine with standard code
+				end }
 			when 'and', 'ands', 'orr', 'or', 'eor', 'xor'
 				bin_op = { 'and' => :&, 'ands' => :&, 'orr' => :|,
 					'or' => :|, 'eor' => :^, 'xor' => :^ }[op]
