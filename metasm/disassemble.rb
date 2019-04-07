@@ -1220,6 +1220,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	# it is if all its end blocks are calls to noreturn functions
 	# if it is, create a @function[fa] with noreturn = true
 	# should only be called with fa = target of a call
+	# populates function[fa].return_address
 	def check_noreturn_function(fa)
 		fb = function_blocks(fa, false, false)
 		return if fb.empty?
@@ -1234,6 +1235,14 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 			# yay
 			@function[fa] ||= DecodedFunction.new
 			@function[fa].noreturn = true
+		elsif @function[fa]
+			lasts.each { |la|
+				di = block_at(la).list.last
+				if di.opcode.props[:stopexec] and di.opcode.props[:setip]
+					(@function[fa].return_address ||= []) << di.address
+				end
+			}
+			false
 		end
 	end
 
