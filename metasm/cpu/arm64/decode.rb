@@ -274,12 +274,64 @@ class ARM64
 		end
 	end
 
+	# returns a DecodedFunction from a parsed C function prototype
+	def decode_c_function_prototype(cp, sym, orig=nil)
+		sym = cp.toplevel.symbol[sym] if sym.kind_of?(::String)
+		df = DecodedFunction.new
+		orig ||= Expression[sym.name]
+
+		new_bt = lambda { |expr, rlen|
+			df.backtracked_for << BacktraceTrace.new(expr, orig, expr, rlen ? :r : :x, rlen)
+		}
+
+		# return instr emulation
+		if sym.has_attribute 'noreturn' or sym.has_attribute '__noreturn__'
+			df.noreturn = true
+		else
+			new_bt[:x30, nil]
+		end
+
+		[*0..18].each { |r|
+			# dirty regs according to ABI
+			df.backtrace_binding.update "x#{r}".to_sym => Expression::Unknown
+		}
+
+		# scan args for function pointers
+		reg_args = [:x0, :x1, :x2, :x3, :x4, :x5, :x6, :x7]
+		sym.type.args.to_a.zip(reg_args).each { |a, ra|
+			break if not a or not ra
+			if a.type.untypedef.kind_of?(C::Pointer)
+				pt = a.type.untypedef.type.untypedef
+				if pt.kind_of?(C::Function)
+					new_bt[ra, nil]
+					df.backtracked_for.last.detached = true
+				elsif pt.kind_of?(C::Struct)
+					new_bt[ra, cp.typesize[:ptr]]
+				else
+					new_bt[ra, cp.sizeof(nil, pt)]
+				end
+			end
+		}
+
+		df
+	end
+
+	def disassembler_default_func
+		df = DecodedFunction.new
+		df.backtrace_binding = { :sp => Expression[:sp] }
+		(0..30).each { |r|
+			df.backtrace_binding["x#{r}".to_sym] = (r <= 18 ? Expression::Unknown : Expression["x#{r}".to_sym])
+		}
+		df.backtracked_for = [BacktraceTrace.new(Expression[:x30], :default, Expression[:x30], :x)]
+		df
+	end
+
 	def backtrace_is_function_return(expr, di=nil)
 		expr.reduce_rec == :x30
 	end
 
 	def backtrace_is_stack_address(expr)
-		Expression[expr].expr_externals.include? :sp
+		Expression[expr].expr_externals.include?(:sp)
 	end
 end
 end

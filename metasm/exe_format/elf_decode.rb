@@ -1231,7 +1231,7 @@ EOC
 				d.function[Expression[fn]] = noret
 			}
 			d.function[:default] = @cpu.disassembler_default_func
-		when 'openrisc'
+		when 'openrisc', 'arm64'
 			old_cp = d.c_parser
 			d.c_parser = nil
 			d.parse_c <<EOC
