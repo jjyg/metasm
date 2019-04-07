@@ -107,7 +107,10 @@ class Decompiler
 		scope = func.initializer = C::Block.new(@c_parser.toplevel)
 		if df = @dasm.function[entry]
 			scope.decompdata = df.decompdata ||= {:unalias_type => {}, :unalias_name => {}}
-			func.add_attribute('noreturn') if df.noreturn
+			if df.noreturn
+				func.add_attribute('noreturn')
+				func.type.type = C::BaseType.new(:void)
+			end
 		else
 			scope.decompdata ||= {:unalias_type => {}, :unalias_name => {}}
 		end
