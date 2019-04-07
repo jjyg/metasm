@@ -341,7 +341,7 @@ class Sh4
 	end
 
 	def backtrace_is_function_return(expr, di=nil)
-		expr.reduce_rec == :pr
+		Expression[expr].reduce_rec == :pr
 	end
 
 	def delay_slot(di=nil)

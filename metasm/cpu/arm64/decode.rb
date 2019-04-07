@@ -327,7 +327,7 @@ class ARM64
 	end
 
 	def backtrace_is_function_return(expr, di=nil)
-		expr.reduce_rec == :x30
+		Expression[expr].reduce_rec == :x30
 	end
 
 	def backtrace_is_stack_address(expr)

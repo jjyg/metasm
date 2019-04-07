@@ -221,7 +221,7 @@ class MIPS
 	end
 
 	def backtrace_is_function_return(expr, di=nil)
-		expr.reduce_rec == :$ra
+		Expression[expr].reduce_rec == :$ra
 	end
 
 	def backtrace_is_stack_address(expr)

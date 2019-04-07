@@ -142,7 +142,7 @@ class PowerPC
 	end
 
 	def backtrace_is_function_return(expr, di=nil)
-		expr.reduce_rec == :lr
+		Expression[expr].reduce_rec == :lr
 	end
 
 	def backtrace_is_stack_address(expr)
