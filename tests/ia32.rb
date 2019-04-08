@@ -29,6 +29,7 @@ class TestIa32 < Test::Unit::TestCase
 		assert_equal(assemble("push eax"), bin("\x50"))
 		assert_equal(assemble("push 2"), bin("\x6a\x02"))
 		assert_equal(assemble("push 142"), bin("\x68\x8e\0\0\0"))
+		assert_equal(assemble("cmp al, 'a'"), bin("\x3c\x61"))
 	end
 
 	def test_sz
