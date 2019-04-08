@@ -4,7 +4,7 @@ require 'metasm'
 
 Gem::Specification.new do |s|
   s.name          = 'metasm'
-  s.version       = '1.0.4'
+  s.version       = '1.0.5'
   s.summary       =
     "Metasm is a cross-architecture assembler, disassembler, linker, and debugger."
   s.description   = ""
