@@ -284,6 +284,17 @@ class Expression
 		end
 	end
 
+	def encode_leb(signed=false)
+		v = reduce
+		raise "need numeric value for #{self}" if not v.kind_of?(::Integer)
+		out = EncodedData.new
+		while v > 0x7f or v < -0x40 or (signed and v > 0x3f)
+			out << [0x80 | (v&0x7f)].pack('C*')
+			v >>= 7
+		end
+		out << [v & 0x7f].pack('C*')
+	end
+
 	class << self
 	def encode_imm(val, type, endianness, backtrace=nil)
 		type = INT_SIZE.keys.find { |k| k.to_s[0] == ?a and INT_SIZE[k] == 8*type } if type.kind_of? ::Integer

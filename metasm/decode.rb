@@ -165,6 +165,20 @@ class EncodedData
 		Expression.decode_imm(read(isz/8), type, endianness)
 	end
 	alias decode_immediate decode_imm
+
+	LEB_MAX_BYTES=(128.0/7).ceil
+	# decode a length-encoded immediate
+	def decode_leb(signed=false, max_bytes=LEB_MAX_BYTES)
+		v = s = 0
+		while s < 7*max_bytes
+			b = get_byte
+			v |= (b & 0x7f) << s
+			s += 7
+			break if (b&0x80) == 0
+		end
+		v = Expression.make_signed(v, s) if signed
+		v
+	end
 end
 
 class Expression
