@@ -914,16 +914,19 @@ class ELF
 				@version = elf.decode_byte(eh_frame)
 				@augmentation_string = elf.decode_strz(eh_frame)
 				if @augmentation_string.include?('eh')
-					@eh_data = elf.decode_word(eh_frame)
+					@eh_data = elf.decode_xword(eh_frame)
 				end
 
 				@code_align = elf.decode_uleb(eh_frame)
 				@data_align = elf.decode_leb(eh_frame)
-				@return_reg = elf.decode_uleb(eh_frame)
+				@return_reg = elf.decode_byte(eh_frame)
 
 				if @augmentation_string[0, 1] == 'z'
 					a_len = elf.decode_uleb(eh_frame)
 					@augmentation_data = eh_frame.read(a_len)
+					# 'L' => read_byte LSDA pointer encoding
+					# 'R' => read_byte FDE address encoding
+					# 'P' => read_encoded_value? personality routine
 				end
 
 				if eh_frame.ptr <= start_ptr + len
@@ -955,7 +958,7 @@ class ELF
 				@cie_offset = start_ptr - id
 				cie = elf.eh_frame.find { |c| c.offset == @cie_offset }
 
-				@pc_begin = elf.decode_word(eh_frame)
+				@pc_begin = Expression.make_signed(elf.decode_word(eh_frame), 32)
 				@pc_range = elf.decode_word(eh_frame)
 
 				if cie and cie.augmentation_data
