@@ -38,7 +38,7 @@ module Metasm
 		'X86_64' => 'cpu/x86_64', 'Sh4' => 'cpu/sh4', 'Dalvik' => 'cpu/dalvik', 'ARC' => 'cpu/arc',
 		'Python' => 'cpu/python', 'Z80' => 'cpu/z80', 'CY16' => 'cpu/cy16', 'BPF' => 'cpu/bpf', 'EBPF' => 'cpu/ebpf',
 		'MSP430' => 'cpu/msp430', 'ARM64' => 'cpu/arm64', 'ST20' => 'cpu/st20', 'MCS51' => 'cpu/mcs51',
-		'OpenRisc' => 'cpu/openrisc', 'WebAsm' => 'cpu/webasm',
+		'OpenRisc' => 'cpu/openrisc', 'WebAsm' => 'cpu/webasm', 'Dwarf' => 'cpu/dwarf',
 		'C' => 'compile_c',
 		'MZ' => 'exe_format/mz', 'PE' => 'exe_format/pe',
 		'ELF' => 'exe_format/elf', 'COFF' => 'exe_format/coff',
