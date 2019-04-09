@@ -78,7 +78,7 @@ else
 			opts[:map] ||= basename + '.map' if File.exist?(basename + '.map')
 			opts[:cheader] ||= basename + '.h' if File.exist?(basename + '.h')
 			(opts[:plugin] ||= []) << (basename + '.rb') if File.exist?(basename + '.rb')
-			opts[:session] ||= basename + '.metasm-session'
+			opts[:session] ||= basename + '.metasm-session' if File.exist?(basename + '.metasm-session')
 		end
 	end
 end
