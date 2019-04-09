@@ -47,11 +47,6 @@ class ARM64
 		}
 	end
 
-	def disassembler_default_func
-		df = DecodedFunction.new
-		df
-	end
-
 	def decode_instr_op(edata, di)
 		op = di.opcode
 		di.instruction.opname = op.name
@@ -96,7 +91,6 @@ class ARM64
 					mode = [ :uxtb, :uxth, :uxtw, :uxtx, :sxtb, :sxth, :sxtw, :sxtx ][x]
 					RegShift.new r, mode, shift
 				end
-			when :i16_5; Expression[field_val[a]]
 			when :il18_5;
 				v = field_val[a]
 				s = (v >> 16) & 3
@@ -146,7 +140,12 @@ class ARM64
 				Memref.new(r, nil, nil, Expression[o*mem_sz], mem_sz, op.props[:mem_incr])
 			when :cond_12
 				RegCC.new OP_CC[field_val[a]]
-			else raise SyntaxError, "Internal error: invalid argument #{a.inspect} in #{op.name}"
+			else
+				if @fields_shift[a]
+					Expression[field_val[a]]
+				else
+					raise SyntaxError, "Internal error: invalid argument #{a.inspect} in #{op.name}"
+				end
 			end
 		}
 
@@ -287,7 +286,7 @@ class ARM64
 			tg = di.instruction.args.last
 			case tg
 			when nil
-				raise 'internal error: no jmp target' if di.opcode.name != 'ret'
+				raise "internal error: no jmp target for #{di}" if di.opcode.name != 'ret' and di.opcode.name != 'eret'
 				tg = :x30
 			when Expression
 			else tg = tg.symbolic(di)

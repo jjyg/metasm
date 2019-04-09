@@ -34,12 +34,12 @@ class ARM64
 	end
 
 	def addop_data_shifted(n, bin, *args)
-		addop n, bin | (0b00 << 22), :rt, :rn, :rm_lsl_i6, :r_32, *args
-		addop n, bin | (0b01 << 22), :rt, :rn, :rm_lsr_i6, :r_32, *args
-		addop n, bin | (0b10 << 22), :rt, :rn, :rm_asr_i6, :r_32, *args
-		addop n, bin | (0b00 << 22) | (1 << 31), :rt, :rn, :rm_lsl_i5, *args
-		addop n, bin | (0b01 << 22) | (1 << 31), :rt, :rn, :rm_lsr_i5, *args
-		addop n, bin | (0b10 << 22) | (1 << 31), :rt, :rn, :rm_asr_i5, *args
+		addop n, bin | (0b00 << 22), :rt, :rn, :rm_lsl_i5, :r_32, *args
+		addop n, bin | (0b01 << 22), :rt, :rn, :rm_lsr_i5, :r_32, *args
+		addop n, bin | (0b10 << 22), :rt, :rn, :rm_asr_i5, :r_32, *args
+		addop n, bin | (0b00 << 22) | (1 << 31), :rt, :rn, :rm_lsl_i6, *args
+		addop n, bin | (0b01 << 22) | (1 << 31), :rt, :rn, :rm_lsr_i6, *args
+		addop n, bin | (0b10 << 22) | (1 << 31), :rt, :rn, :rm_asr_i6, *args
 	end
 
 	def addop_data_imm(n, bin, *args)
@@ -103,6 +103,7 @@ class ARM64
 		 :m_rm_extend, :rm_extend_i3,
 		 :i14_5, :i16_5, :il18_5, :i19_5, :i26_0, :i12_10_s1,
 		 :i19_5_2_29,
+		 :crn, :crm, :i3_16, :i3_5, :i7_5, :i15_5,
 		 :m_rn_s7, :m_rn_s9, :m_rn_u12,
 		 :bitmask, :bitmask_imm, :cond_12,
 		].each { |p| @valid_args[p] = true }
@@ -118,6 +119,7 @@ class ARM64
 			:i19_5_2_29 => 0x60ffffe0, :cond_12 => 0xf,
 			:bitmask_n => 1, :bitmask_s => 0x3f, :bitmask_r => 0x3f,
 			:regextend_13 => 7, :i1_12 => 1, :i3_10 => 7,
+			:crn => 0xf, :crm => 0xf, :i3_16 => 7, :i3_5 => 7, :i7_5 => 0x7f, :i15_5 => 0x7fff,
 			:m_rn_s7  => ((0x7f << 10) | 0x1f),
 			:m_rn_s9  => ((0x1ff << 7) | 0x1f),
 			:m_rn_u12 => ((0xfff << 5) | 0x1f)
@@ -133,6 +135,7 @@ class ARM64
 			:i19_5_2_29 => 0, :cond_12 => 12,
 			:bitmask_n => 22, :bitmask_s => 10, :bitmask_r => 16,
 			:regextend_13 => 13, :i1_12 => 12, :i3_10 => 10,
+			:crn => 12, :crm => 8, :i3_16 => 16, :i3_5 => 5, :i7_5 => 5, :i15_5 => 5,
 			:m_rn_s7 => 5, :m_rn_s9 => 5, :m_rn_u12 => 5
 
 		addop 'adr',  1 << 28, :rt, :i19_5_2_29, :pcrel
@@ -183,6 +186,31 @@ class ARM64
 		addop 'dcps2', (0b11010100 << 24) | (0b101 << 21) | (0b00010), :i16_5, :stopexec
 		addop 'dcps3', (0b11010100 << 24) | (0b101 << 21) | (0b00011), :i16_5, :stopexec
 
+		# MSR (immediate)
+		addop 'msr_sp',       (0b1101010100 << 22) | (0b0000000100 << 12) | (0b10111111), :crm
+		addop 'msr_daif_set', (0b1101010100 << 22) | (0b0000110100 << 12) | (0b11011111), :crm
+		addop 'msr_daif_clr', (0b1101010100 << 22) | (0b0000110100 << 12) | (0b11111111), :crm
+
+		# HINT
+		addop 'nop',   (0b1101010100 << 22) | (0b0000110010 << 12) | (0b000000011111)
+		addop 'sevl',  (0b1101010100 << 22) | (0b0000110010 << 12) | (0b000000111111)
+		addop 'sev',   (0b1101010100 << 22) | (0b0000110010 << 12) | (0b000001011111)
+		addop 'wfe',   (0b1101010100 << 22) | (0b0000110010 << 12) | (0b000001111111)
+		addop 'wfi',   (0b1101010100 << 22) | (0b0000110010 << 12) | (0b000010011111)
+		addop 'yield', (0b1101010100 << 22) | (0b0000110010 << 12) | (0b000010111111)
+		addop 'nop',   (0b1101010100 << 22) | (0b0000110010 << 12) | (0b000000011111), :i7_5
+
+		addop 'clrex', (0b1101010100 << 22) | (0b0000110011 << 12) | (0b01011111), :crm	# arg ignored
+		addop 'dsb',   (0b1101010100 << 22) | (0b0000110011 << 12) | (0b10011111), :crm
+		addop 'dmb',   (0b1101010100 << 22) | (0b0000110011 << 12) | (0b10111111), :crm
+		addop 'isb',   (0b1101010100 << 22) | (0b0000110011 << 12) | (0b11011111), :crm
+
+		addop 'sys',   (0b1101010100 << 22) | (0b001 << 19), :i3_16, :crn, :crm, :i3_5, :rt
+		addop 'sysl',  (0b1101010100 << 22) | (0b101 << 19), :i3_16, :crn, :crm, :i3_5, :rt
+
+		addop 'msr',   (0b1101010100 << 22) | (0b01 << 20), :i15_5, :rt	# i15 = MSR number
+		addop 'mrs',   (0b1101010100 << 22) | (0b11 << 20), :i15_5, :rt
+
 		addop_s31 'tbz', (0b0110110 << 24), :rt, :i14_5
 
 		addop 'b',   (0b000101 << 26), :i26_0, :setip, :stopexec
@@ -194,22 +222,23 @@ class ARM64
 		addop 'eret',(0b1101011 << 25) | (0b0100 << 21) | (0b11111 << 16) | (0b11111 << 5), :setip, :stopexec
 		addop 'drps',(0b1101011 << 25) | (0b0101 << 21) | (0b11111 << 16) | (0b11111 << 5), :setip, :stopexec
 
-		addop_s31 'mov',  (0b0010001 << 24), :rt, :rn			# alias for add rt, rn, 0
-		addop_s31 'add',  (0b0010001 << 24), :rt, :rn, :i12_10_s1
-		addop_s31 'adds', (0b0110001 << 24), :rt, :rn, :i12_10_s1
-		addop_s31 'sub',  (0b1010001 << 24), :rt, :rn, :i12_10_s1
-		addop_s31 'subs', (0b1110001 << 24), :rt, :rn, :i12_10_s1
+		addop_s31 'mov',  0b0010001 << 24, :rt, :rn			# alias for add rt, rn, 0
+		addop_s31 'add',  0b0010001 << 24, :rt, :rn, :i12_10_s1
+		addop_s31 'adds', 0b0110001 << 24, :rt, :rn, :i12_10_s1
+		addop_s31 'sub',  0b1010001 << 24, :rt, :rn, :i12_10_s1
+		addop_s31 'subs', 0b1110001 << 24, :rt, :rn, :i12_10_s1
 
-		addop_s31 'movn', (0b00100101 << 23), :rt, :il18_5
-		addop_s31 'mov',  (0b10100101 << 23), :rt, :i16_5	# alias movz rt, i16 LSL 0
-		addop_s31 'movz', (0b10100101 << 23), :rt, :il18_5
-		addop_s31 'movk', (0b11100101 << 23), :rt, :il18_5
+		addop_s31 'movn', 0b00100101 << 23, :rt, :il18_5
+		addop_s31 'mov',  0b10100101 << 23, :rt, :i16_5	# alias movz rt, i16 LSL 0
+		addop_s31 'movz', 0b10100101 << 23, :rt, :il18_5
+		addop_s31 'movk', 0b11100101 << 23, :rt, :il18_5
 
-		addop_store 'str',   (0b10_111_0_00_00 << 22)
-		addop_store 'ldr',   (0b10_111_0_00_01 << 22)
-		addop_store 'ldrsw', (0b10_111_0_00_10 << 22)
-		addop_store 'strb',  (0b00_111_0_00_00 << 22)
-		addop_store 'ldrb',  (0b00_111_0_00_01 << 22)
+		addop_s30 'ldr',  0b00011000 << 24 , :rt, :i19_5
+		addop_store 'str',   0b10_111_0_00_00 << 22
+		addop_store 'ldr',   0b10_111_0_00_01 << 22
+		addop_store 'ldrsw', 0b10_111_0_00_10 << 22
+		addop_store 'strb',  0b00_111_0_00_00 << 22
+		addop_store 'ldrb',  0b00_111_0_00_01 << 22
 		addop_s31 'stp',  0b00_101_0_001_0 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :post
 		addop_s31 'stp',  0b00_101_0_011_0 << 22, :rt, :rt2, :m_rn_s7, :mem_incr => :pre
 		addop_s31 'stp',  0b00_101_0_010_0 << 22, :rt, :rt2, :m_rn_s7
@@ -222,6 +251,7 @@ class ARM64
 		addop_s31 'csinv', (0b1011010100 << 21) | (0b00 << 10), :rt, :rn, :rm, :cond_12, :r_z
 		addop_s31 'csneg', (0b1011010100 << 21) | (0b01 << 10), :rt, :rn, :rm, :cond_12, :r_z
 
+		# TODO fix :bitmask decoding
 		addop_bitfield 'sbfm', 0b00_100110 << 23
 		addop_bitfield 'bfm',  0b01_100110 << 23
 		addop_bitfield 'ubfm', 0b10_100110 << 23
