@@ -25,6 +25,7 @@
 #
 
 require 'metasm'
+include Metasm
 require 'optparse'
 
 $VERBOSE = true
@@ -63,23 +64,23 @@ case exename = ARGV.shift
 when /^live:(.*)/
 	t = $1
 	t = t.to_i if $1 =~ /^[0-9]+$/
-	os = Metasm::OS.current
+	os = OS.current
 	raise 'no such target' if not target = os.find_process(t) || os.create_process(t)
 	p target if $VERBOSE
-	w = Metasm::Gui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path rescue nil} - metasm debugger")
+	w = Gui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path rescue nil} - metasm debugger")
 	dbg = w.dbg_widget.dbg
-when /^(tcp:|udp:)?..+:/
-	dbg = Metasm::GdbRemoteDebugger.new(exename, opts[:sc_cpu] || Ia32.new)
-	w = Metasm::Gui::DbgWindow.new(dbg, "remote - metasm debugger")
 when /^emu:(.*)/
 	t = $1
 	exefmt = opts[:exe_fmt] || AutoExe.orshellcode { opts[:sc_cpu] || Ia32.new }
-	exe = exefmt.decode_file(t)
-	exe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
-	dbg = Metasm::EmuDebugger.new(exe.disassembler)
-	w = Metasm::Gui::DbgWindow.new(dbg, "emudbg")
+	dbgexe = exefmt.decode_file(t)
+	dbgexe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
+	dbg = EmuDebugger.new(dbgexe.disassembler)
+	w = Gui::DbgWindow.new(dbg, "emudbg")
+when /^(tcp:|udp:)?..+:/
+	dbg = GdbRemoteDebugger.new(exename, opts[:sc_cpu] || Ia32.new)
+	w = Gui::DbgWindow.new(dbg, "remote - metasm debugger")
 else
-	w = Metasm::Gui::DasmWindow.new("#{exename + ' - ' if exename}metasm disassembler")
+	w = Gui::DasmWindow.new("#{exename + ' - ' if exename}metasm disassembler")
 	if exename
 		exe = w.loadfile(exename, opts[:sc_cpu] || 'Ia32', opts[:exe_fmt])
 		exe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
@@ -115,6 +116,10 @@ elsif dbg
 			puts "Error with plugin #{p}: #{$!.class} #{$!}"
 		end
 	}
+	if exename[0, 4] == 'emu:' and ep.first
+		dbg.pc = ep.first
+		w.dbg_widget.code.focus_addr dbg.pc
+	end
 end
 
 if dasm
@@ -150,5 +155,5 @@ end
 
 opts[:hookstr].to_a.each { |f| eval f }
 
-Metasm::Gui.main
+Gui.main
 

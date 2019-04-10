@@ -84,7 +84,7 @@ pkt = EncodedData.new(eth + ip + udp + pld)
 dasm.add_section(pkt, 0x9000)
 
 # Initialize the emulator
-dbg = Metasm::EmuDebugger.new(dasm)
+dbg = EmuDebugger.new(dasm)
 # Set the initial state of the registers
 dbg.set_reg_value(:r10, 0x8900)
 # :packet is a special register used internally by some opcodes of the EBPF cpu (packet data store/load)
