@@ -9,7 +9,7 @@ require 'metasm/cpu/dwarf/opcodes'
 module Metasm
 class Dwarf
 	def dbg_register_list
-		@dbg_register_list ||= [:r0, :r1, :r2, :r3, :opstack, :mem]
+		@dbg_register_list ||= [:r0, :r1, :r2, :r3, :opstack, :pc]
 	end
 
 	def dbg_resolve_pc(di, fbd, pc_reg, dbg_ctx)
@@ -25,6 +25,15 @@ class Dwarf
 	end
 
 	def dbg_end_stepout(dbg, addr, di)
+		true
+	end
+
+	def initialize_emudbg(dbg)
+		stack = EncodedData.new("\x00" * 0x1000)
+		stack_addr = 0x10000
+		stack_addr += 0x10000 while dbg.disassembler.get_section_at(stack_addr)
+		dbg.disassembler.add_section(stack, stack_addr)
+		dbg.set_reg_value(:opstack, stack_addr)
 	end
 end
 end

@@ -31,6 +31,10 @@ class VirtualMemoryDasm < VirtualString
 		!@disassembler.get_section_at(addr)
 	end
 
+	def get_page(addr, len=@pagelength)
+		read_range(addr, len) if !page_invalid?(addr)
+	end
+
 	# overwrite a section of the file
 	def rewrite_at(addr, data)
 		if e = @disassembler.get_section_at(addr)
@@ -74,6 +78,7 @@ class EmuDebugger < Debugger
 		@breakpoint = {}
 		@breakpoint_memory = {}
 		@breakpoint_thread = {}
+		@cpu.initialize_emudbg(self) if @cpu.respond_to?(:initialize_emudbg)
 	end
 
 	def detach
@@ -160,9 +165,11 @@ class EmuDebugger < Debugger
 		}.each { |k, v|
 			case k
 			when Indirection
+				raise "cannot assign value #{v}" if not v.kind_of?(::Integer)
 				v = v & ((1 << (k.len*8)) - 1)
 				memory_write_int(k.pointer, v, k.len)
 			when Symbol
+				raise "cannot assign value #{v}" if not v.kind_of?(::Integer)
 				set_reg_value(k, v)
 			when /^dummy_metasm_/
 			else
