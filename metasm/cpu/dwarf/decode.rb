@@ -67,7 +67,7 @@ class Dwarf
 			when 'dup';  lambda { |di| push_opstack[opstack[0]] }
 			when 'drop'; lambda { |di| { :opstack => Expression[:opstack, :-, sz] } }
 			when 'over'; lambda { |di| push_opstack[opstack[1]] }
-			when 'pick'; lambda { |di, a1| push_opstack[opstack[-a1.reduce]] }	# 0 => dup
+			when 'pick'; lambda { |di, a1| push_opstack[opstack[a1.reduce]] }	# 0 => dup
 			when 'swap'; lambda { |di| { opstack[0] => Expression[opstack[1]], opstack[1] => Expression[opstack[0]] } }
 			# backtrace order
 			when 'rot'; lambda { |di| { opstack[0] => Expression[opstack[2]], opstack[1] => Expression[opstack[0]], opstack[2] => Expression[opstack[1]] } }
