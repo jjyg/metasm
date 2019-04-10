@@ -56,6 +56,7 @@ class Dwarf
 
 		di_addr = nil
 
+		basetype = C::BaseType.new("__int#@size".to_sym)
 		# Expr => CExpr
 		ce = lambda { |*e|
 			c_expr = dcmp.decompile_cexpr(Expression[Expression[*e].reduce], scope)
@@ -69,7 +70,7 @@ class Dwarf
 					if ee.op == :'='
 						# affectation: create a new variable
 						varname = "loc_#{opstack_idx += 1}"
-						ne = C::Variable.new(varname, wasm_type_to_type("i#{8*dcmp.sizeof(ee.lexpr)}"))
+						ne = C::Variable.new(varname, basetype)
 						scope.symbol[varname] = ne
 						stmts << C::Declaration.new(ne)
 						opstack[-soff/8] = ne
@@ -138,6 +139,9 @@ class Dwarf
 				di.backtrace_binding = nil
 			}
 		}
+	end
+
+	def decompile_check_abi(dcmp, entry, func)
 	end
 end
 end

@@ -230,6 +230,7 @@ class CdecompListingWidget < DrawableWidget
 						# TODO _declspec
 						vt.args.to_a.each_with_index { |a, idx|
 							oa = curfunc.type.args.to_a[idx]
+							next if not oa
 							oa.misc ||= {}
 							a.misc ||= {}
 							uan = a.misc[:unalias_name] = oa.misc[:unalias_name] ||= oa.name
