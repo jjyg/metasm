@@ -357,6 +357,7 @@ class LinDebug
 				   raw[8,8].to_s.unpack('C*').map { |c| '%02x ' % c }.join
 			when 'dw'; text << raw.unpack('S*').map { |c| '%04x ' % c }.join
 			when 'dd'; text << raw.unpack('L*').map { |c| '%08x ' % c }.join
+			when 'dq'; text << raw.unpack('Q*').map { |c| '%016x ' % c }.join
 			end
 			text << ' ' << raw.unpack('C*').map { |c| (0x20..0x7e).include?(c) ? c : 0x2e }.pack('C*')
 			text << Ansi::ClearLineAfter << "\n"
@@ -655,6 +656,7 @@ class LinDebug
 		@command['db'] = lambda { |str| @datafmt = 'db' ; @dataptr = @dbg.resolve(str) if str.length > 0 }
 		@command['dw'] = lambda { |str| @datafmt = 'dw' ; @dataptr = @dbg.resolve(str) if str.length > 0 }
 		@command['dd'] = lambda { |str| @datafmt = 'dd' ; @dataptr = @dbg.resolve(str) if str.length > 0 }
+		@command['dq'] = lambda { |str| @datafmt = 'dq' ; @dataptr = @dbg.resolve(str) if str.length > 0 }
 		@command['r'] =  lambda { |str|
 			r, str = str.split(/\s+/, 2)
 			if r == 'fl'
@@ -700,17 +702,29 @@ end
 
 if $0 == __FILE__
 	require 'optparse'
-	opts = { :sc_cpu => 'Ia32' }
+	opts = {}
 	OptionParser.new { |opt|
 		opt.on('-m map', '--map filemap') { |f| opts[:filemap] = f }
 		opt.on('--cpu cpu') { |c| opts[:sc_cpu] = c }
 	}.parse!(ARGV)
 
 	case ARGV.first
+	when /^emu:(.*)/
+		exepath = $1
+		opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
+		opts[:sc_cpu] = Metasm.const_get(opts[:sc_cpu]) if opts[:sc_cpu].kind_of?(::String)
+		opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
+		exe = Metasm::AutoExe.orshellcode { opts[:sc_cpu] || Metasm::Ia32.new }.decode_file(exepath)
+		exe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
+		dbg = Metasm::EmuDebugger.new(exe.disassembler)
+		if ARGV[1]
+			dbg.pc = Integer(ARGV[1])
+		end
 	when /^(tcp:|udp:)?..+:/, /^ser:/
 		opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
+		opts[:sc_cpu] = Metasm.const_get(opts[:sc_cpu]) if opts[:sc_cpu].kind_of?(::String)
 		opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
-		dbg = Metasm::GdbRemoteDebugger.new(ARGV.first, opts[:sc_cpu])
+		dbg = Metasm::GdbRemoteDebugger.new(ARGV.first, opts[:sc_cpu] || Metasm::Ia32.new)
 	else
 		dbg = Metasm::LinDebugger.new(ARGV.join(' '))
 	end
