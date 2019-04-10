@@ -40,6 +40,8 @@ class Dwarf
 		scope = func.initializer
 		stmts = scope.statements
 
+		# opstack offset => current C variable
+		# TODO per-basicblock to handle crossreferences in loops / merges
 		opstack = {}
 
 		# *(_int32*)(local_base+16) => 16
@@ -61,32 +63,36 @@ class Dwarf
 		opstack_idx = -1
 		ce_opstack_offset = lambda { |ee| ce_ptr_offset[ee, 'frameptr'] }
 
+		basetype = C::BaseType.new("__int#@size".to_sym)
+		new_opstack_var = lambda { |off|
+			varname = "loc_#{opstack_idx += 1}"
+			ne = C::Variable.new(varname, basetype)
+			scope.symbol[varname] = ne
+			stmts << C::Declaration.new(ne)
+			opstack[off] = ne
+		}
+
 		di_addr = nil
 
-		basetype = C::BaseType.new("__int#@size".to_sym)
 		# Expr => CExpr
 		ce = lambda { |*e|
 			c_expr = dcmp.decompile_cexpr(Expression[Expression[*e].reduce], scope)
 			dcmp.walk_ce(c_expr, true) { |ee|
 				if soff = ce_opstack_offset[ee.rexpr]
 					# must do soff.rexpr before lexpr in case of reaffectation !
-					ee.rexpr = opstack[-soff/8]
+					ee.rexpr = opstack[soff/8] if opstack[soff/8]
 					ee.rexpr = C::CExpression[ee.rexpr] if not ee.op and ee.type.pointer?
 				end
 				if soff = ce_opstack_offset[ee.lexpr]
 					if ee.op == :'='
 						# affectation: create a new variable
-						varname = "loc_#{opstack_idx += 1}"
-						ne = C::Variable.new(varname, basetype)
-						scope.symbol[varname] = ne
-						stmts << C::Declaration.new(ne)
-						opstack[-soff/8] = ne
+						new_opstack_var[soff/8]
 					end
-					ee.lexpr = opstack[-soff/8]
+					ee.lexpr = opstack[soff/8] if opstack[soff/8]
 				end
 			}
-			ret = if soff = ce_opstack_offset[c_expr]
-				C::CExpression[opstack[-soff/8]]
+			ret = if soff = ce_opstack_offset[c_expr] and opstack[soff/8]
+				C::CExpression[opstack[soff/8]]
 			else
 				c_expr
 			end
@@ -106,12 +112,38 @@ class Dwarf
 			di_list = dcmp.dasm.decoded[b].block.list.dup
 			di_list.each { |di|
 				di_addr = di.address
-				if di.opcode.name == 'bra'
+				case di.opcode.name
+				when 'bra'
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					off = di.misc[:dcmp_stackoff] || -8
 					cc = ce[Indirection[[:frameptr, :+, off], @size/8]]
 					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n).with_misc(:di_addr => di.address)).with_misc(:di_addr => di.address)
 					to.delete dcmp.dasm.normalize(n)
+				when 'swap'
+					bd = get_fwdemu_binding(di)
+					offs = []
+					bd.each { |k, v|
+						next if k == :opstack
+						cvar = dcmp.decompile_cexpr(Expression[Expression[k].reduce], scope)
+						if soff = ce_opstack_offset[cvar]
+							offs << (soff/8)
+						end
+					}
+					off = offs.min
+					opstack[off], opstack[off+1] = opstack[off+1], opstack[off]
+				when 'rot'
+					bd = get_fwdemu_binding(di)
+					offs = []
+					bd.each { |k, v|
+						next if k == :opstack
+						cvar = dcmp.decompile_cexpr(Expression[Expression[k].reduce], scope)
+						if soff = ce_opstack_offset[cvar]
+							offs << (soff/8)
+						end
+					}
+
+					off = offs.min
+					opstack[off], opstack[off+1], opstack[off+2] = opstack[off+2], opstack[off], opstack[off+1]
 				else
 					bd = get_fwdemu_binding(di)
 					if di.backtrace_binding[:incomplete_binding]
