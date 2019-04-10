@@ -70,8 +70,11 @@ else
 	w = Metasm::Gui::DasmWindow.new("#{exename + ' - ' if exename}metasm disassembler")
 	if exename
 		opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
+		opts[:sc_cpu] = Metasm.const_get(opts[:sc_cpu]) if opts[:sc_cpu].kind_of?(::String)
+		opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
 		opts[:exe_fmt] = eval(opts[:exe_fmt]) if opts[:exe_fmt] =~ /[.(\s:]/
 		exe = w.loadfile(exename, opts[:sc_cpu], opts[:exe_fmt])
+		exe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
 		exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 		if opts[:autoload]
 			basename = exename.sub(/\.\w\w?\w?$/, '')

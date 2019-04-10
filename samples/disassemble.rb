@@ -44,28 +44,25 @@ exename = ARGV.shift
 
 t0 = Time.now if opts[:benchmark]
 
+opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
+opts[:sc_cpu] = Metasm.const_get(opts[:sc_cpu]) if opts[:sc_cpu].kind_of?(::String)
+opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
+
 # load the file
 if exename =~ /^live:(.*)/
 	raise 'no such live target' if not target = OS.current.find_process($1)
 	p target if $VERBOSE
-	opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
-	opts[:sc_cpu] = Metasm.const_get(opts[:sc_cpu]) if opts[:sc_cpu].kind_of(::String)
-	opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
 	exe = Shellcode.decode(target.memory, opts[:sc_cpu])
 else
-	opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
 	opts[:exe_fmt] = eval(opts[:exe_fmt]) if opts[:exe_fmt] =~ /[.(\s:]/
 	if opts[:exe_fmt].kind_of?(::String)
 		exefmt = opts[:exe_fmt] = Metasm.const_get(opts[:exe_fmt])
 	else
-		exefmt = opts[:exe_fmt] || AutoExe.orshellcode {
-			opts[:sc_cpu] = Metasm.const_get(opts[:sc_cpu]) if opts[:sc_cpu].kind_of?(::String)
-			opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
-			opts[:sc_cpu]
-		}
+		exefmt = opts[:exe_fmt] || AutoExe.orshellcode { opts[:sc_cpu] }
 	end
 	exefmt = exefmt.withcpu(opts[:sc_cpu]) if exefmt.kind_of?(::Class) and exefmt.name.to_s.split('::').last == 'Shellcode'
 	exe = exefmt.decode_file(exename)
+	exe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
 	exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 	if opts[:autoload]
 		basename = exename.sub(/\.\w\w?\w?$/, '')
