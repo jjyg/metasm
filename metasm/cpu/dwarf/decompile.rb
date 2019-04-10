@@ -9,7 +9,6 @@ require 'metasm/cpu/dwarf/main'
 module Metasm
 class Dwarf
 	def decompile_makestackvars(dasm, funcstart, blocks)
-		@decomp_mkstackvars_terminals = [:frameptr, :mem]
 		oldbd = {}
 		oldbd[funcstart] = dasm.address_binding[funcstart]
 		dasm.address_binding[funcstart] = { :opstack => Expression[:frameptr] }
@@ -18,6 +17,14 @@ class Dwarf
 			stkoff = dasm.backtrace(:opstack, block.address, :snapshot_addr => funcstart)
 			dasm.address_binding[block.address] = { :opstack => Expression[:frameptr, :+, stkoff[0]-:frameptr] }
 			yield block
+			if di = block.list.last and di.opcode.name == 'bra'
+				# remember the stack offset of the stack value to be checked
+				stkoff = dasm.backtrace(:opstack, di.address, :snapshot_addr => funcstart)
+				if stkoff.length == 1 and (stkoff[0] - :frameptr).kind_of?(::Integer)
+					di.misc ||= {}
+					di.misc[:dcmp_stackoff] = stkoff[0] - :frameptr
+				end
+			end
 		}
 		oldbd.each { |a, b| b ? dasm.address_binding[a] = b : dasm.address_binding.delete(a) }
 	end
@@ -101,7 +108,8 @@ class Dwarf
 				di_addr = di.address
 				if di.opcode.name == 'bra'
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
-					cc = ce[Indirection[:opstack, @size/8]]
+					off = di.misc[:dcmp_stackoff] || -8
+					cc = ce[Indirection[[:frameptr, :+, off], @size/8]]
 					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n).with_misc(:di_addr => di.address)).with_misc(:di_addr => di.address)
 					to.delete dcmp.dasm.normalize(n)
 				else

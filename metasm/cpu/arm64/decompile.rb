@@ -13,7 +13,6 @@ class ARM64
 	end
 
 	def decompile_makestackvars(dasm, funcstart, blocks)
-		@decomp_mkstackvars_terminals = [:frameptr]
 		oldbd = {}
 		oldbd[funcstart] = dasm.address_binding[funcstart]
 		dasm.address_binding[funcstart] = { :sp => Expression[:frameptr] }

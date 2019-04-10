@@ -438,10 +438,10 @@ class Decompiler
 			name = e.to_s
 			if not s = scope.symbol_ancestors[name]
 				s = C::Variable.new
-				s.type = C::BaseType.new(:__int32)
+				s.type = C::BaseType.new("__int#{@dasm.cpu.size}".to_sym)
 				case e
 				when ::String	# edata relocation (rel.length = size of pointer)
-					return @c_parser.toplevel.symbol[e] || new_global_var(e, itype || C::BaseType.new(:int), scope)
+					return @c_parser.toplevel.symbol[e] || new_global_var(e, itype || s.type, scope)
 				when ::Symbol; s.storage = :register ; s.add_attribute("register(#{name})")
 				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
