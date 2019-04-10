@@ -83,7 +83,7 @@ else
 	w = Gui::DasmWindow.new("#{exename + ' - ' if exename}metasm disassembler")
 	if exename
 		exe = w.loadfile(exename, opts[:sc_cpu] || 'Ia32', opts[:exe_fmt])
-		exe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
+		exe.disassembler.cpu = exe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
 		exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 		if opts[:autoload]
 			basename = exename.sub(/\.\w\w?\w?$/, '')
