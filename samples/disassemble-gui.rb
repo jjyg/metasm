@@ -30,7 +30,7 @@ require 'optparse'
 $VERBOSE = true
 
 # parse arguments
-opts = { :sc_cpu => 'Ia32' }
+opts = {}
 OptionParser.new { |opt|
 	opt.banner = 'Usage: disassemble-gtk.rb [options] <executable> [<entrypoints>]'
 	opt.on('--no-data-trace', 'do not backtrace memory read/write accesses') { opts[:nodatatrace] = true }
@@ -54,6 +54,11 @@ OptionParser.new { |opt|
 	opt.on('-A', '--disassemble-all-entrypoints') { opts[:dasm_all] = true }
 }.parse!(ARGV)
 
+opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
+opts[:sc_cpu] = Metasm.const_get(opts[:sc_cpu]) if opts[:sc_cpu].kind_of?(::String)
+opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
+opts[:exe_fmt] = eval(opts[:exe_fmt]) if opts[:exe_fmt] =~ /[.(\s:]/
+
 case exename = ARGV.shift
 when /^live:(.*)/
 	t = $1
@@ -64,16 +69,19 @@ when /^live:(.*)/
 	w = Metasm::Gui::DbgWindow.new(target.debugger, "#{target.pid}:#{target.modules[0].path rescue nil} - metasm debugger")
 	dbg = w.dbg_widget.dbg
 when /^(tcp:|udp:)?..+:/
-	dbg = Metasm::GdbRemoteDebugger.new(exename, opts[:sc_cpu])
+	dbg = Metasm::GdbRemoteDebugger.new(exename, opts[:sc_cpu] || Ia32.new)
 	w = Metasm::Gui::DbgWindow.new(dbg, "remote - metasm debugger")
+when /^emu:(.*)/
+	t = $1
+	exefmt = opts[:exe_fmt] || AutoExe.orshellcode { opts[:sc_cpu] || Ia32.new }
+	exe = exefmt.decode_file(t)
+	exe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
+	dbg = Metasm::EmuDebugger.new(exe.disassembler)
+	w = Metasm::Gui::DbgWindow.new(dbg, "emudbg")
 else
 	w = Metasm::Gui::DasmWindow.new("#{exename + ' - ' if exename}metasm disassembler")
 	if exename
-		opts[:sc_cpu] = eval(opts[:sc_cpu]) if opts[:sc_cpu] =~ /[.(\s:]/
-		opts[:sc_cpu] = Metasm.const_get(opts[:sc_cpu]) if opts[:sc_cpu].kind_of?(::String)
-		opts[:sc_cpu] = opts[:sc_cpu].new if opts[:sc_cpu].kind_of?(::Class)
-		opts[:exe_fmt] = eval(opts[:exe_fmt]) if opts[:exe_fmt] =~ /[.(\s:]/
-		exe = w.loadfile(exename, opts[:sc_cpu], opts[:exe_fmt])
+		exe = w.loadfile(exename, opts[:sc_cpu] || 'Ia32', opts[:exe_fmt])
 		exe.cpu = opts[:sc_cpu] if opts[:sc_cpu]
 		exe.disassembler.rebase(opts[:rebase]) if opts[:rebase]
 		if opts[:autoload]
