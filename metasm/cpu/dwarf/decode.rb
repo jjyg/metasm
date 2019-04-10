@@ -77,7 +77,7 @@ class Dwarf
 			when 'neg'; lambda { |di| { opstack[0] => Expression[:-, opstack[0]] } }
 			when 'not'; lambda { |di| { opstack[0] => Expression[:~, opstack[0]] } }
 			when 'add_u'; lambda { |di, a1| { opstack[0] => Expression[opstack[0], :+, a1] } }
-			when 'deref_size'; lambda { |di, a1| { opstack[0] => Expression[Indirection[opstack[0], a1]] } }
+			when 'deref_size'; lambda { |di, a1| { opstack[0] => Expression[Indirection[opstack[0], a1.reduce]] } }
 			when 'and', 'div', 'sub', 'mod', 'mul', 'or', 'add', 'shl', 'shr', 'shra', 'xor', 'eq', 'ge', 'gt', 'le', 'lt', 'ne'
 				o = { 'and' => :&, 'div' => :/, 'sub' => :-, 'mod' => :%, 'mul' => :*, 'or' => :|,
 					'add' => :+, 'shl' => :<<, 'shr' => :>>, 'shra' => :>>, 'xor' => :^,
