@@ -34,7 +34,8 @@ class Dwarf
 			when :uleb; Expression[edata.decode_leb(false)]
 			when :sleb; Expression[edata.decode_leb(true)]
 			when :imm; Expression[op.props[:imm]]
-			when :reg; di.instruction.args[0] = Reg.new(di.instruction.args[0]) ; next
+			when :reg; di.instruction.args[0] = Reg.new(di.instruction.args[0].reduce) ; next
+			when :gnu; len = edata.get_byte; len = @size/8 if len == 0 ; Expression[edata.decode_imm("u#{len*8}", @endianness)]
 			else raise SyntaxError, "Internal error: invalid argument #{a} in #{op.name}"
 			end
 		}
@@ -46,7 +47,7 @@ class Dwarf
 	def decode_instr_interpret(di, addr)
 		if di.opcode.props[:setip]
 			delta = di.instruction.args.first.reduce
-			di.instruction.args[0] = Expression[addr + arg + di.bin_length]
+			di.instruction.args[0] = Expression[addr + delta + di.bin_length]
 		end
 		di
 	end
@@ -67,26 +68,26 @@ class Dwarf
 			when 'drop'; lambda { |di| { :opstack => Expression[:opstack, :-, sz] } }
 			when 'over'; lambda { |di| push_opstack[opstack[1]] }
 			when 'pick'; lambda { |di, a1| push_opstack[opstack[-a1.reduce]] }	# 0 => dup
-			#when 'swap';
-			when 'rot'; lambda { |di| { opstack[0] => Expression[opstack[1]], opstack[1] => Expression[opstack[2]], opstack[2] => Expression[opstack[0]] } }	# TODO check
+			when 'swap'; lambda { |di| { opstack[0] => Expression[opstack[1]], opstack[1] => Expression[opstack[0]] } }
+			# backtrace order
+			when 'rot'; lambda { |di| { opstack[0] => Expression[opstack[2]], opstack[1] => Expression[opstack[0]], opstack[2] => Expression[opstack[1]] } }
 			#when 'xderef';
 			when 'deref'; lambda { |di| { opstack[0] => Expression[Indirection[opstack[0], sz]] } }
 			when 'abs'; lambda { |di| { opstack[0] => Expression[opstack[0], :-, [[[opstack[0], :>>, sz-1], :&, 1], :*, [2, :*, opstack[0]]]] } }
 			when 'neg'; lambda { |di| { opstack[0] => Expression[:-, opstack[0]] } }
 			when 'not'; lambda { |di| { opstack[0] => Expression[:~, opstack[0]] } }
 			when 'add_u'; lambda { |di, a1| { opstack[0] => Expression[opstack[0], :+, a1] } }
-			when 'deref_sz'; lambda { |di, a1| { opstack[0] => Expression[Indirection[opstack[0], a1]] } }
-			when 'and', 'div', 'sub', 'mod', 'mul', 'or', 'add', 'shl', 'shr', 'shra', 'xor'
+			when 'deref_size'; lambda { |di, a1| { opstack[0] => Expression[Indirection[opstack[0], a1]] } }
+			when 'and', 'div', 'sub', 'mod', 'mul', 'or', 'add', 'shl', 'shr', 'shra', 'xor', 'eq', 'ge', 'gt', 'le', 'lt', 'ne'
 				o = { 'and' => :&, 'div' => :/, 'sub' => :-, 'mod' => :%, 'mul' => :*, 'or' => :|,
-					'add' => :+, 'shl' => :<<, 'shr' => :>>, 'shra' => :>>, 'xor' => :^ }[opname]
+					'add' => :+, 'shl' => :<<, 'shr' => :>>, 'shra' => :>>, 'xor' => :^,
+					'eq' => :'==', 'ne' => :'!=', 'le' => :'<=', 'lt' => :<, 'ge' => :'>=', 'gt' => :> }[opname]
 				lambda { |di| push_op2[o] }
-			when 'eq', 'ge', 'gt', 'le', 'lt', 'ne'
-				# reverse ops (order in push_op2 is wrong for these)
-				o = { 'eq' => :'==', 'ne' => :'!=', 'ge' => :'<=', 'gt' => :<, 'le' => :'>=', 'lt' => :> }[opname]
-				lambda { |di| push_op2[o] }
-			when 'bra', 'skip', 'nop'; lambda { |di| {} }	# TODO bra -> pop condition ?
 			when 'reg'; lambda { |di, a1| push_opstack[a1] }
 			when 'breg'; lambda { |di, a1, a2| push_opstack[Expression[a1, :+, a2]] }
+			when 'bra'; lambda { |di, a| { :opstack => Expression[:opstack, :-, sz] } }
+			when 'skip'; lambda { |di, a| {} }
+			when 'nop'; lambda { |di| {} }
 			end
 		}
 
@@ -109,7 +110,7 @@ class Dwarf
 
 	def get_xrefs_x(dasm, di)
 		return [] if not di.opcode.props[:setip]
-		di.instruction.args.first
+		[di.instruction.args.first]
 	end
 
 	def backtrace_is_function_return(expr, di=nil)

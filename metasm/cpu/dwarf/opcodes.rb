@@ -11,7 +11,9 @@ class Dwarf
 		o = Opcode.new name, bin
 
 		args.each { |a|
-			if a.kind_of?(::Symbol)
+			if @valid_props[a]
+				o.props[a] = true
+			elsif a.kind_of?(::Symbol)
 				o.args << a
 			elsif a.kind_of?(::Hash)
 				o.props.update a
@@ -31,7 +33,7 @@ class Dwarf
 
 	def init
 		@opcode_list = []
-		@valid_props = { :setip => true, :stopexec => true, :imm => true }
+		@valid_props = { :setip => true, :stopexec => true }
 
 		addop 'addr', 0x03, :addr
 
@@ -99,6 +101,7 @@ class Dwarf
 		addop 'piece', 0x93
 		addop 'xderef_size', 0x95
 		addop 'nop', 0x96
+		addop 'addr', 0xF1, :gnu	# GNU_encoded_addr
 	end
 end
 end
