@@ -1529,7 +1529,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 	#  :log => Array, will be updated with the backtrace evolution
 	#  :only_upto => backtrace only to update bt_for for current block & previous ending at only_upto
 	#  :no_check => don't use backtrace_check_found (will not backtrace indirection static values)
-	#  :terminals => array of symbols with constant value (stop backtracking if all symbols in the expr are terminals) (only supported with no_check)
+	#  :terminals => array of symbols with constant value (stop backtracking if all symbols in the expr are terminals)
 	#  :cpu_context => disassembler cpu_context
 	def backtrace(expr, start_addr, nargs={})
 		include_start   = nargs.delete :include_start
@@ -1568,7 +1568,7 @@ puts "  not backtracking stack address #{expr}" if debug_backtrace
 		end
 
 		if vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) : backtrace_check_found(expr,
-				di, origin, type, len, maxdepth, detached, cpu_context, snapshot_addr))
+				di, origin, type, len, maxdepth, detached, cpu_context, snapshot_addr, terminals))
 			# no need to update backtracked_for
 			return vals
 		elsif maxdepth <= 0
@@ -1608,7 +1608,7 @@ puts "  backtrace up #{Expression[h[:addr]]}  #{oldexpr}#{" => #{expr}" if expr 
 					if expr != oldexpr and not snapshot_addr and vals = (no_check ?
 							(!need_backtrace(expr, terminals) and [expr]) :
 							backtrace_check_found(expr, nil, origin, type, len,
-								maxdepth-h[:loopdetect].length, detached, cpu_context, snapshot_addr))
+								maxdepth-h[:loopdetect].length, detached, cpu_context, snapshot_addr, terminals))
 						result |= vals
 						next
 					end
@@ -1650,7 +1650,7 @@ puts "  backtrace up #{Expression[h[:from]]}->#{Expression[h[:to]]}  #{oldexpr}#
 
 				if expr != oldexpr and vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) :
 						backtrace_check_found(expr, @decoded[h[:from]], origin, type, len,
-							maxdepth-h[:loopdetect].length, detached, cpu_context, snapshot_addr))
+							maxdepth-h[:loopdetect].length, detached, cpu_context, snapshot_addr, terminals))
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 						next expr
@@ -1719,7 +1719,7 @@ puts "  backtrace: recursive function #{Expression[h[:funcaddr]]}" if debug_back
 				end
 puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" if debug_backtrace and expr != oldexpr
 				if vals = (no_check ? (!need_backtrace(expr, terminals) and [expr]) : backtrace_check_found(expr,
-						h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached, cpu_context, snapshot_addr))
+						h[:di], origin, type, len, maxdepth-h[:loopdetect].length, detached, cpu_context, snapshot_addr, terminals))
 					if snapshot_addr
 						expr = StoppedExpr.new vals
 					else
@@ -1836,7 +1836,7 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 	# TODO trace expr evolution through backtrace, to modify immediates to an expr involving label names
 	# TODO mov [ptr], imm ; <...> ; jmp [ptr] => rename imm as loc_XX
 	#  eg. mov eax, 42 ; add eax, 4 ; jmp eax  =>  mov eax, some_label-4
-	def backtrace_check_found(expr, di, origin, type, len, maxdepth, detached, cpu_context, snapshot_addr=nil)
+	def backtrace_check_found(expr, di, origin, type, len, maxdepth, detached, cpu_context, snapshot_addr=nil, terminals=[])
 		# only entrypoints or block starts called by a :saveip are checked for being a function
 		# want to execute [esp] from a block start
 		if type == :x and di and di == di.block.list.first and @cpu.backtrace_is_function_return(expr, @decoded[origin]) and (
@@ -1865,13 +1865,13 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 			f.backtracked_for |= @decoded[addr].block.backtracked_for.find_all { |btt| not btt.address }
 		end
 
-		return if need_backtrace(expr)
+		return if need_backtrace(expr, terminals)
 		if snapshot_addr
 			return if expr.expr_externals(true).find { |ee| ee.kind_of?(Indirection) }
 		end
 
 puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expression[origin] if origin}" if debug_backtrace
-		result = backtrace_value(expr, maxdepth)
+		result = backtrace_value(expr, maxdepth, terminals)
 		# keep the ori pointer in the results to emulate volatile memory (eg decompiler prefers this)
 		#result << expr if not type	# XXX returning multiple values for nothing is too confusing, TODO fix decompiler
 		result.uniq!
@@ -1885,14 +1885,14 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 	end
 
 	# returns an array of expressions with Indirections resolved (recursive with backtrace_indirection)
-	def backtrace_value(expr, maxdepth)
+	def backtrace_value(expr, maxdepth, terminals=[])
 		# array of expression with all indirections resolved
 		result = [Expression[expr.reduce]]
 
 		# solve each indirection sequentially, clone expr for each value (aka cross-product)
 		result.first.expr_indirections.uniq.each { |i|
 			next_result = []
-			backtrace_indirection(i, maxdepth).each { |rr|
+			backtrace_indirection(i, maxdepth, terminals).each { |rr|
 				next_result |= result.map { |e| Expression[e.bind(i => rr).reduce] }
 			}
 			result = next_result
@@ -1906,7 +1906,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 	# then backtraces from ind.origin until it finds an :w xref origin
 	# if no :w access is found, returns the value encoded in the raw section data
 	# TODO handle unaligned (partial?) writes
-	def backtrace_indirection(ind, maxdepth)
+	def backtrace_indirection(ind, maxdepth, terminals=[])
 		if not ind.origin
 			puts "backtrace_ind: no origin for #{ind}" if $VERBOSE
 			return [ind]
@@ -1924,7 +1924,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 		}
 
 		# resolve pointers (they may include Indirections)
-		backtrace_value(ind.target, maxdepth).each { |ptr|
+		backtrace_value(ind.target, maxdepth, terminals).each { |ptr|
 			# find write xrefs to the ptr
 			refs = []
 			each_xref(ptr, :w) { |x|
@@ -1954,7 +1954,7 @@ puts "backtrace #{type} found #{expr} from #{di} orig #{@decoded[origin] || Expr
 puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtrace
 					ret |= [Expression::Unknown]
 				when :end
-					if not refs.empty? and (expr == true or not need_backtrace(expr))
+					if not refs.empty? and (expr == true or not need_backtrace(expr, terminals))
 						if expr == true
 							# found a path avoiding the :w xrefs, read the encoded initial value
 							ret |= [decode_imm[ptr, ind.len]]
@@ -1984,7 +1984,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 					# may have new indirections... recall bt_value ?
 					#if not need_backtrace(expr)
 					if expr.expr_externals.all? { |e| @prog_binding[e] or @function[normalize(e)] } and expr.expr_indirections.empty?
-						ret |= backtrace_value(expr, maxdepth-1-h[:loopdetect].length)
+						ret |= backtrace_value(expr, maxdepth-1-h[:loopdetect].length, terminals)
 						false
 					else
 						expr
@@ -1994,7 +1994,7 @@ puts "   backtrace_indirection for #{ind.target} failed: #{ev}" if debug_backtra
 					expr = backtrace_emu_subfunc(h[:func], h[:funcaddr], h[:addr], expr, ind.origin, maxdepth-h[:loopdetect].length)
 					#if not need_backtrace(expr)
 					if expr.expr_externals.all? { |e| @prog_binding[e] or @function[normalize(e)] } and expr.expr_indirections.empty?
-						ret |= backtrace_value(expr, maxdepth-1-h[:loopdetect].length)
+						ret |= backtrace_value(expr, maxdepth-1-h[:loopdetect].length, terminals)
 						false
 					else
 						expr
