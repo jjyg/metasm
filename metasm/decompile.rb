@@ -431,7 +431,7 @@ class Decompiler
 			p = C::CExpression[[p], itype]
 			C::CExpression[:*, p]
 		when ::Integer
-			C::CExpression[e]
+			C::CExpression[e, C::BaseType.new("__int#{@dasm.cpu.size}".to_sym)]
 		when C::CExpression
 			e
 		else
