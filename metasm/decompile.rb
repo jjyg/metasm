@@ -99,7 +99,7 @@ class Decompiler
 
 		# [esp+8] => [:frameptr-12]
 		# TODO slow
-		makestackvars entry, myblocks.map { |b, to| @dasm.decoded[b].block }
+		makestackvars(entry, myblocks.map { |b, to| @dasm.decoded[b].block })
 
 		# find registry dependencies between blocks
 		deps = @dasm.cpu.decompile_func_finddeps(self, myblocks, func)
@@ -376,6 +376,7 @@ class Decompiler
 		repl_bind = {}	# di => bt_bd
 
 		@dasm.cpu.decompile_makestackvars(@dasm, funcstart, blocks) { |block|
+			blockstart = block.address
 			block.list.each { |di|
 				bd = di.backtrace_binding ||= @dasm.cpu.get_backtrace_binding(di)
 				newbd = repl_bind[di] = {}
