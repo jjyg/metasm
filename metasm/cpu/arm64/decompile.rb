@@ -33,7 +33,6 @@ class ARM64
 	end
 
 	def decompile_blocks(dcmp, myblocks, deps, func, nextaddr = nil)
-		func_entry = myblocks.first[0]
 		scope = func.initializer
 		func.type.args.each { |a| scope.symbol[a.name] = a }
 		stmts = scope.statements
