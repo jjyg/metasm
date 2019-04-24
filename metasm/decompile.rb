@@ -1117,6 +1117,7 @@ class Decompiler
 			end
 		}
 
+		n_i = 0
 		# check it out
 		while o = unchecked.shift
 			dom = []
@@ -1158,7 +1159,6 @@ class Decompiler
 			next if func_top
 
 			# patch
-			n_i = 0
 			n_i += 1 while scope.symbol_ancestors[newvarname = "#{var.name}_a#{n_i}"]
 
 			nv = var.dup
