@@ -190,7 +190,7 @@ class Dwarf
 					if dcmp.dasm.decoded[to[0]]
 						stmts << C::Goto.new(dcmp.dasm.auto_label_at(to[0], 'unknown_goto'))
 					else
-						stmts << C::Return.new(ce[get_opstack_var[(di_list.last.misc[:opstack_after] - :frameptr)/8]])
+						stmts << C::Return.new(C::CExpression[ce[get_opstack_var[(di_list.last.misc[:opstack_after] - :frameptr)/8]]])
 					end
 				end
 			else
