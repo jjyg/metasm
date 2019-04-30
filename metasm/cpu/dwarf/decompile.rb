@@ -142,10 +142,10 @@ class Dwarf
 						end
 					}
 					off = offs.min
-					stmts << C::CExpression[get_opstack_var[:tmp], :'=', get_opstack_var[off]]
-					stmts << C::CExpression[get_opstack_var[off], :'=', get_opstack_var[off+1]]
-					stmts << C::CExpression[get_opstack_var[off+1], :'=', get_opstack_var[:tmp]]
-					stmts << C::CExpression[get_opstack_var[:tmp],  :'=', 0]
+					stmts << ce[get_opstack_var[:tmp], :'=', get_opstack_var[off]]
+					stmts << ce[get_opstack_var[off], :'=', get_opstack_var[off+1]]
+					stmts << ce[get_opstack_var[off+1], :'=', get_opstack_var[:tmp]]
+					stmts << ce[get_opstack_var[:tmp],  :'=', 0]
 				when 'rot'
 					offs = []
 					bd.each { |k, v|
@@ -156,11 +156,11 @@ class Dwarf
 					}
 
 					off = offs.min
-					stmts << C::CExpression[get_opstack_var[:tmp],  :'=', get_opstack_var[off]]
-					stmts << C::CExpression[get_opstack_var[off],   :'=', get_opstack_var[off+2]]
-					stmts << C::CExpression[get_opstack_var[off+2], :'=', get_opstack_var[off+1]]
-					stmts << C::CExpression[get_opstack_var[off+1], :'=', get_opstack_var[:tmp]]
-					stmts << C::CExpression[get_opstack_var[:tmp],  :'=', 0]
+					stmts << ce[get_opstack_var[:tmp],  :'=', get_opstack_var[off]]
+					stmts << ce[get_opstack_var[off],   :'=', get_opstack_var[off+2]]
+					stmts << ce[get_opstack_var[off+2], :'=', get_opstack_var[off+1]]
+					stmts << ce[get_opstack_var[off+1], :'=', get_opstack_var[:tmp]]
+					stmts << ce[get_opstack_var[:tmp],  :'=', 0]
 				else
 					if di.backtrace_binding[:incomplete_binding]
 						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil).with_misc(:di_addr => di.address)
