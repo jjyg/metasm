@@ -580,9 +580,9 @@ class Decompiler
 				e
 			when C::Goto
 				if e.target == brk
-					C::Break.new
+					C::Break.new.with_misc(e.misc)
 				elsif e.target == cnt
-					C::Continue.new
+					C::Continue.new.with_misc(e.misc)
 				else e
 				end
 			else e
@@ -600,7 +600,7 @@ class Decompiler
 			}
 			walk(i.bthen.statements) { |sst| sst.outer = i.bthen.outer if sst.kind_of?(C::Block) and sst.outer == i.bthen }
 			scope.statements.concat i.bthen.statements
-			i.bthen = C::Break.new
+			i.bthen = C::Break.new.with_misc(i.misc)
 		end
 
 		patch_test = lambda { |ce|
@@ -640,7 +640,7 @@ class Decompiler
 					       ce.body = ce.body.statements.first
 				       when 0
 					       if ce.kind_of?(C::DoWhile) and i = ce.body.outer.statements.index(ce)
-						      ce = ce.body.outer.statements[i] = C::While.new(ce.test, ce.body)
+						      ce = ce.body.outer.statements[i] = C::While.new(ce.test, ce.body).with_misc(ce.misc)
 					       end
 					       ce.body = nil
 				       end
@@ -654,13 +654,13 @@ class Decompiler
 				i = ce.body.statements.last
 				if i.kind_of?(C::If) and not i.belse and i.bthen.kind_of?(C::Break)
 					ce.body.statements.pop
-					next C::DoWhile.new(i.test.negate, ce.body)
+					next C::DoWhile.new(i.test.negate, ce.body).with_misc(ce.misc)
 				end
 			end
 
 			# if (a) b = 1; else b = 2;  =>  b = a ? 1 : 2
 			if ce.kind_of?(C::If) and ce.belse.kind_of?(C::CExpression) and ce.belse.op == :'=' and ce.belse.lexpr.kind_of?(C::Variable) and ce.bthen.kind_of?(C::CExpression) and ce.bthen.op == :'=' and ce.bthen.lexpr == ce.belse.lexpr
-				next C::CExpression[ce.bthen.lexpr, :'=', [ce.test, :'?:', [ce.bthen.rexpr, ce.belse.rexpr]]]
+				next C::CExpression[ce.bthen.lexpr, :'=', [ce.test, :'?:', [ce.bthen.rexpr, ce.belse.rexpr]]].with_misc(ce.misc)
 			end
 		}
 
@@ -840,15 +840,15 @@ class Decompiler
 						ss.bthen.statements.pop
 						if l = ary[ssi+1] and l.kind_of?(C::Label)
 							ss.bthen.statements.grep(C::If).each { |it|
-								it.bthen = C::Break.new if it.bthen.kind_of?(C::Goto) and it.bthen.target == l.name
+								it.bthen = C::Break.new.with_misc(it.bthen.misc) if it.bthen.kind_of?(C::Goto) and it.bthen.target == l.name
 							}
 						end
-						ary[ssi] = C::While.new(ss.test, ss.bthen)
+						ary[ssi] = C::While.new(ss.test, ss.bthen).with_misc(ss.misc)
 					elsif ss.bthen.statements.last.kind_of?(C::Return) and gi = ((si+1)..ary.length).to_a.reverse.find { |_si| ary[_si].kind_of?(C::Goto) and ary[_si].target == s.name }
 						# l: if (a) { b; return; } c; goto l;  =>  while (!a) { c; } b; return;
 						wb = C::Block.new(scope)
 						wb.statements = decompile_cseq_while(ary[ssi+1...gi], wb)
-						w = C::While.new(C::CExpression.negate(ss.test), wb)
+						w = C::While.new(C::CExpression.negate(ss.test), wb).with_misc(ss)
 						ary[ssi..gi] = [w, *ss.bthen.statements]
 						finished = false ; break	#retry
 					end
@@ -857,7 +857,7 @@ class Decompiler
 					# l: a; goto l;  =>  while(1) { a; }
 					wb = C::Block.new(scope)
 					wb.statements = decompile_cseq_while(ary[si...gi], wb)
-					w = C::While.new(C::CExpression[1], wb)
+					w = C::While.new(C::CExpression[1], wb).with_misc(ary[gi].misc)
 					ary[si..gi] = [w]
 					finished = false ; break	#retry
 				end
@@ -870,10 +870,10 @@ class Decompiler
 					if g.bthen.kind_of?(C::Block) and g.bthen.statements.length > 1
 						nary = ary[si...gi] + [C::If.new(C::CExpression.negate(g.test), C::Break.new)] + g.bthen.statements[0...-1]
 						wb.statements = decompile_cseq_while(nary, wb)
-						w = C::DoWhile.new(C::CExpression[1], wb)
+						w = C::DoWhile.new(C::CExpression[1], wb).with_misc(g.misc)
 					else
 						wb.statements = decompile_cseq_while(ary[si...gi], wb)
-						w = C::DoWhile.new(g.test, wb)
+						w = C::DoWhile.new(g.test, wb).with_misc(g.misc)
 					end
 					ary[si..gi] = [w]
 					finished = false ; break	#retry
