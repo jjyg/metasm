@@ -227,5 +227,13 @@ class Ia32
 			fbd[pc_reg] = di.next_addr
 		end
 	end
+
+	def initialize_emudbg(dbg)
+		stack = EncodedData.new("\x00" * 0x10000)
+		stack_addr = 0x10000
+		stack_addr += 0x10000 while dbg.disassembler.get_section_at(stack_addr)
+		dbg.disassembler.add_section(stack, stack_addr)
+		dbg.set_reg_value(dbg_register_list[7], stack_addr + 0xf000)
+	end
 end
 end
