@@ -3432,7 +3432,7 @@ EOH
 				oldc = nil
 				while c = dep_cycle[[t]]
 					break if oldc == c
-					r << CRenderString.new(t, "#{t.kind_of?(Struct) ? 'struct' : 'union'} #{t.name};") if not oldc
+					r << "#{t.kind_of?(Struct) ? 'struct' : 'union'} #{t.name};" if not oldc
 					oldc = c
 					c.each { |s|
 						# XXX struct z { struct a* }; struct a { void (*foo)(struct z); };
