@@ -36,6 +36,9 @@ when ELF
 	funcnames = exe.symbols.map { |s| s.name if s.shndx == 'UNDEF' and s.type == 'FUNC' }
 	opts[:hdrs] << 'stdio.h' << 'stdlib.h' << 'unistd.h'
 	opts[:gcc] = true if not opts[:vs]
+	case exe.cpu.shortname
+	when 'x64'; opts[:path] << '/usr/include/x86_64-linux-gnu/'
+	end
 else raise "unsupported #{exe.class}"
 end
 
@@ -51,7 +54,7 @@ ARGV.each { |n|
 
 src = opts[:hdrs].map { |h| "#include <#{h}>" }.join("\n")
 
-parser = Ia32.new.new_cparser
+parser = exe.cpu.new_cparser
 parser.prepare_gcc if opts[:gcc]
 parser.prepare_visualstudio if opts[:vs]
 pp = parser.lexer
