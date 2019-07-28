@@ -34,14 +34,14 @@ class Ia32
 				patched_binding << blockstart
 				dasm.address_binding[blockstart] = {}
 				foo = dasm.backtrace(esp, blockstart, :snapshot_addr => funcstart)
-				if foo.length == 1 and ee = foo.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
-						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
+				if foo.length == 1 and ee = foo.first and ee.kind_of?(Expression) and (ee == Expression[:frameptr] or
+						(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of?(::Integer)))
 					dasm.address_binding[blockstart][esp] = ee
 				end
 				if ebp_frame
 					foo = dasm.backtrace(ebp, blockstart, :snapshot_addr => funcstart)
-					if foo.length == 1 and ee = foo.first and ee.kind_of? Expression and (ee == Expression[:frameptr] or
-							(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of? ::Integer))
+					if foo.length == 1 and ee = foo.first and ee.kind_of?(Expression) and (ee == Expression[:frameptr] or
+							(ee.lexpr == :frameptr and ee.op == :+ and ee.rexpr.kind_of?(::Integer)))
 						dasm.address_binding[blockstart][ebp] = ee
 					else
 						ebp_frame = false	# func does not use ebp as frame ptr, no need to bt for later blocks
@@ -59,143 +59,194 @@ class Ia32
 
 	# add di-specific registry written/accessed
 	def decompile_func_finddeps_di(dcmp, func, di, a, w)
-		a << register_symbols[0] if di.opcode.name == 'ret' and (not func.type.kind_of? C::BaseType or func.type.type.name != :void)	# standard ABI
+		a << register_symbols[0] if di.opcode.name == 'ret' and (not func.type.kind_of?(C::BaseType) or func.type.type.name != :void)	# standard ABI
 	end
 
 	# list variable dependency for each block, remove useless writes
 	# returns { blockaddr => [list of vars that are needed by a following block] }
 	def decompile_func_finddeps(dcmp, blocks, func)
-		deps_r = {} ; deps_w = {} ; deps_to = {}
-		deps_subfunc = {}	# things read/written by subfuncs
-
-		# find read/writes by each block
-		blocks.each { |b, to|
-			deps_r[b] = [] ; deps_w[b] = [] ; deps_to[b] = to
-			deps_subfunc[b] = []
-
-			blk = dcmp.dasm.decoded[b].block
-			blk.list.each { |di|
-				a = di.backtrace_binding.values
-				w = []
-				di.backtrace_binding.keys.each { |k|
-					case k
-					when ::Symbol; w |= [k]
-					else a |= Expression[k].externals	# if dword [eax] <- 42, eax is read
-					end
-				}
-				decompile_func_finddeps_di(dcmp, func, di, a, w)
-
-				deps_r[b] |= a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - deps_w[b]
-				deps_w[b] |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
-			}
-			stackoff = nil
-			blk.each_to_normal { |t|
-				t = dcmp.backtrace_target(t, blk.list.last.address)
-				next if not t = dcmp.c_parser.toplevel.symbol[t]
-				t.type = C::Function.new(C::BaseType.new(:int)) if not t.type.kind_of? C::Function	# XXX this may seem a bit extreme, and yes, it is.
-				stackoff ||= Expression[dcmp.dasm.backtrace(:esp, blk.list.last.address, :snapshot_addr => blocks.first[0]).first, :-, :esp].reduce
-
-				# things that are needed by the subfunction
-				if t.has_attribute('fastcall')
-					a = t.type.args.to_a
-					dep = [:ecx, :edx]
-					dep.shift if not a[0] or a[0].has_attribute('unused')
-					dep.pop   if not a[1] or a[1].has_attribute('unused')
-					deps_subfunc[b] |= dep
-				end
-				t.type.args.to_a.each { |arg|
-					if reg = arg.has_attribute('register')
-						deps_subfunc[b] |= [reg.to_sym]
-					end
-				}
-			}
-			if stackoff	# last block instr == subfunction call
-				deps_r[b] |= deps_subfunc[b] - deps_w[b]
-				deps_w[b] |= register_symbols[0, 3]			# standard ABI
-			end
-		}
-
-
-		bt = blocks.transpose
-		roots = bt[0] - bt[1].flatten	# XXX jmp 1stblock ?
-
-		# find regs read and never written (must have been set by caller and are part of the func ABI)
-		uninitialized = lambda { |b, r, done|
-			if not deps_r[b]
-			elsif deps_r[b].include?(r)
-				blk = dcmp.dasm.decoded[b].block
-				bw = []
-				rdi = blk.list.find { |di|
-					a = di.backtrace_binding.values
-					w = []
-					di.backtrace_binding.keys.each { |k|
-						case k
-						when ::Symbol; w |= [k]
-						else a |= Expression[k].externals	# if dword [eax] <- 42, eax is read
-						end
-					}
-					decompile_func_finddeps_di(dcmp, func, di, a, w)
-
-					next true if (a.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown] - bw).include? r
-					bw |= w.map { |ee| Expression[ee].externals.grep(::Symbol) }.flatten - [:unknown]
-					false
-				}
-				if r == register_symbols[0] and (rdi || blk.list.last).opcode.name == 'ret'
-					func.type.type = C::BaseType.new(:void)
-					false
-				elsif rdi and rdi.backtrace_binding[r]
-					false	# mov al, 42 ; ret  -> don't regarg eax
-				else
-					true
-				end
-			elsif deps_w[b].include?(r)
-			else
-				done << b
-				(deps_to[b] - done).find { |tb| uninitialized[tb, r, done] }
-			end
-		}
-
-		regargs = []
-		register_symbols.each { |r|
-			if roots.find { |root| uninitialized[root, r, []] }
-				regargs << r
-			end
-		}
-
 		# TODO honor user-defined prototype if available (eg no, really, eax is not read in this function returning al)
-		regargs.sort_by { |r| r.to_s }.each { |r|
-			a = C::Variable.new(r.to_s, C::BaseType.new(:int, :unsigned))
-			a.add_attribute("register(#{r})")
-			func.type.args << a
+		#regargs.sort_by { |r| r.to_s }.each { |r|
+			#a = C::Variable.new(r.to_s, C::BaseType.new(:int, :unsigned))
+			#a.add_attribute("register(#{r})")
+			#func.type.args << a
+		#}
+	end
+
+	# return the array of arguments (symbols, indirections wrt frameptr) to be used as arguments for decompilation of the function call in di
+	def decompile_get_func_args(dcmp, func_entry, di, f)
+		bt = dcmp.dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry, :include_start => true)
+		stackoff = Expression[[bt, :+, @size/8], :-, :esp].bind(:esp => :frameptr).reduce rescue nil
+		args_todo = f.type.args.to_a.dup
+		args = []
+		if f.has_attribute('fastcall')	# XXX DRY
+			if a = args_todo.shift
+				mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1
+				mask = 0 if a.has_attribute('unused')
+				args << Expression[:ecx, :&, mask]
+			end
+			if a = args_todo.shift
+				mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1	# char => dl
+				mask = 0 if a.has_attribute('unused')
+				args << Expression[:edx, :&, mask]
+			end
+		end
+		args_todo.each { |a_|
+			if r = a_.has_attribute_var('register')
+				args << Expression[r.to_sym]
+			elsif stackoff.kind_of?(Integer)
+				args << Indirection[[:frameptr, :+, stackoff], @size/8]
+				stackoff += [dcmp.sizeof(a_), @size/8].max
+			else
+				args << Expression[0]
+			end
 		}
 
-		# remove writes from a block if no following block read the value
-		dw = {}
-		deps_w.each { |b, deps|
-			dw[b] = deps.reject { |dep|
-				ret = true
-				done = []
-				todo = deps_to[b].dup
-				while a = todo.pop
-					next if done.include? a
-					done << a
-					if not deps_r[a] or deps_r[a].include? dep
-						ret = false
-						break
-					elsif not deps_w[a].include? dep
-						todo.concat deps_to[a]
-					end
+		if f.type.varargs and f.type.args.last.type.pointer? and stackoff.kind_of?(Integer)
+			# check if last arg is a fmtstring
+			bt = dcmp.dasm.backtrace(args.last, di.address, :snapshot_addr => func_entry, :include_start => true)
+			if bt.length == 1 and s = dcmp.dasm.get_section_at(bt.first)
+				fmt = s[0].read(512)
+				fmt = fmt.unpack('v*').pack('C*') if dcmp.sizeof(f.type.args.last.type.untypedef.type) == 2
+				if fmt.index(?\0)
+					fmt = fmt[0...fmt.index(?\0)]
+					fmt.gsub('%%', '').count('%').times {	# XXX %.*s etc..
+						args << Indirection[[:frameptr, :+, stackoff], @size/8]
+						stackoff += @size/8
+					}
 				end
-				ret
-			}
+			end
+		end
+
+		args
+	end
+
+	def decompile_special_instr(dcmp, di, stmts, scope)
+		di_addr = di.address
+		ce  = lambda { |*e|
+			ret = dcmp.decompile_cexpr(Expression[Expression[*e].reduce], scope)
+			dcmp.walk_ce(ret) { |ee| ee.with_misc(:di_addr => di_addr) }
+			ret
 		}
 
-		dw
+		case di.opcode.name
+		when 'mov'
+			# mov cr0 etc
+			a1, a2 = di.instruction.args
+			case a1
+			when Ia32::CtrlReg, Ia32::DbgReg, Ia32::TstReg, Ia32::SegReg
+				sz = a1.kind_of?(Ia32::SegReg) ? 16 : 32
+				if not dcmp.c_parser.toplevel.symbol["intrinsic_set_#{a1}"]
+					dcmp.c_parser.parse("void intrinsic_set_#{a1}(__int#{sz});")
+				end
+				f = dcmp.c_parser.toplevel.symbol["intrinsic_set_#{a1}"]
+				a2 = a2.symbolic(di)
+				a2 = [a2, :&, 0xffff] if sz == 16
+				stmts << ce[C::CExpression.new(f, :funcall, [ce[a2]], f.type.type)]
+				return true
+			end
+			case a2
+			when Ia32::CtrlReg, Ia32::DbgReg, Ia32::TstReg, Ia32::SegReg
+				if not dcmp.c_parser.toplevel.symbol["intrinsic_get_#{a2}"]
+					sz = a2.kind_of?(Ia32::SegReg) ? 16 : 32
+					dcmp.c_parser.parse("__int#{sz} intrinsic_get_#{a2}(void);")
+				end
+				f = dcmp.c_parser.toplevel.symbol["intrinsic_get_#{a2}"]
+				t = f.type.type
+				stmts << ce[a1.symbolic(di), :'=', C::CExpression.new(f, :funcall, [], t)]
+				return true
+			end
+		when 'lgdt'
+			if not dcmp.c_parser.toplevel.struct['segment_descriptor']
+				dcmp.c_parser.parse('struct segment_descriptor { __int16 limit; __int16 base0_16; __int8 base16_24; __int8 flags1; __int8 flags2_limit_16_20; __int8 base24_32; };')
+				dcmp.c_parser.parse('struct segment_table { __int16 size; struct segment_descriptor *table; } __attribute__((pack(2)));')
+			end
+			if not dcmp.c_parser.toplevel.symbol['intrinsic_lgdt']
+				dcmp.c_parser.parse('void intrinsic_lgdt(struct segment_table *);')
+			end
+			# need a way to transform arg => :frameptr+12
+			arg = di.backtrace_binding.keys.grep(Indirection).first.pointer
+			stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol['intrinsic_lgdt'], :funcall, [ce[arg]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
+			return true
+		when 'lidt'
+			if not dcmp.c_parser.toplevel.struct['interrupt_descriptor']
+				dcmp.c_parser.parse('struct interrupt_descriptor { __int16 offset0_16; __int16 segment; __int16 flags; __int16 offset16_32; };')
+				dcmp.c_parser.parse('struct interrupt_table { __int16 size; struct interrupt_descriptor *table; } __attribute__((pack(2)));')
+			end
+			if not dcmp.c_parser.toplevel.symbol['intrinsic_lidt']
+				dcmp.c_parser.parse('void intrinsic_lidt(struct interrupt_table *);')
+			end
+			arg = di.backtrace_binding.keys.grep(Indirection).first.pointer
+			stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol['intrinsic_lidt'], :funcall, [ce[arg]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
+			return true
+		when 'ltr', 'lldt'
+			if not dcmp.c_parser.toplevel.symbol["intrinsic_#{di.opcode.name}"]
+				dcmp.c_parser.parse("void intrinsic_#{di.opcode.name}(int);")
+			end
+			arg = di.backtrace_binding.keys.first
+			stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol["intrinsic_#{di.opcode.name}"], :funcall, [ce[arg]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
+			return true
+		when 'out'
+			sz = di.instruction.args.find { |a_| a_.kind_of?(Ia32::Reg) and a_.val == 0 }.sz
+			if not dcmp.c_parser.toplevel.symbol["intrinsic_out#{sz}"]
+				dcmp.c_parser.parse("void intrinsic_out#{sz}(unsigned short port, __int#{sz} value);")
+			end
+			port = di.instruction.args.grep(Expression).first || edx
+			stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol["intrinsic_out#{sz}"], :funcall, [ce[port], ce[eax]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
+			return true
+		when 'in'
+			sz = di.instruction.args.find { |a_| a_.kind_of?(Ia32::Reg) and a_.val == 0 }.sz
+			if not dcmp.c_parser.toplevel.symbol["intrinsic_in#{sz}"]
+				dcmp.c_parser.parse("__int#{sz} intrinsic_in#{sz}(unsigned short port);")
+			end
+			port = di.instruction.args.grep(Expression).first || edx
+			f = dcmp.c_parser.toplevel.symbol["intrinsic_in#{sz}"]
+			stmts << C::CExpression.new(ce[eax], :'=', C::CExpression.new(f, :funcall, [ce[port]], f.type.type), f.type.type).with_misc(:di_addr => di_addr)
+			return true
+		when 'sti', 'cli'
+			stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil)
+			return true
+		when /^(mov|sto|lod)s([bwdq])/
+			op, sz = $1, $2
+			eax, ecx, edx, ebx, esp, ebp, esi, edi = register_symbols
+			eax, ecx, edx, ebx, esp, ebp, esi, edi = eax, ecx, edx, ebx, esp, ebp, esi, edi
+			sz = { 'b' => 1, 'w' => 2, 'd' => 4, 'q' => 8 }[sz]
+			pt = C::Pointer.new(C::BaseType.new("__int#{sz*8}".to_sym))
+
+			blk = C::Block.new(scope)
+			case op
+			when 'mov'
+				blk.statements << C::CExpression[[:*, [[ce[edi]], pt]], :'=', [:*, [[ce[esi]], pt]]].with_misc(:di_addr => di_addr)
+				blk.statements << C::CExpression[ce[edi], :'=', [ce[edi], :+, [sz]]].with_misc(:di_addr => di_addr)
+				blk.statements << C::CExpression[ce[esi], :'=', [ce[esi], :+, [sz]]].with_misc(:di_addr => di_addr)
+			when 'sto'
+				blk.statements << C::CExpression[[:*, [[ce[edi]], pt]], :'=', ce[eax]].with_misc(:di_addr => di_addr)
+				blk.statements << C::CExpression[ce[edi], :'=', [ce[edi], :+, [sz]]].with_misc(:di_addr => di_addr)
+			when 'lod'
+				blk.statements << C::CExpression[ce[eax], :'=', [:*, [[ce[esi]], pt]]].with_misc(:di_addr => di_addr)
+				blk.statements << C::CExpression[ce[esi], :'=', [ce[esi], :+, [sz]]].with_misc(:di_addr => di_addr)
+			#when 'sca'
+			#when 'cmp'
+			end
+
+			case (di.instruction.prefix || {})[:rep]
+			when nil
+				stmts.concat blk.statements
+			when 'rep'
+				blk.statements << C::CExpression[ce[ecx], :'=', [ce[ecx], :-, [1]]].with_misc(:di_addr => di_addr)
+				stmts << C::While.new(C::CExpression[ce[ecx]], blk).with_misc(:di_addr => di_addr)
+			#when 'repz'	# sca/cmp only
+			#when 'repnz'
+			end
+			return true
+		end
+
+		false
 	end
 
 	def decompile_blocks(dcmp, myblocks, deps, func, nextaddr = nil)
-		eax, ecx, edx, ebx, esp, ebp, esi, edi = register_symbols
-		ebx, esp, ebp = ebx, esp, ebp	# fix ruby unused var warning
+		eax, ecx, edx, _ = register_symbols
+		ebx, esp, ebp, esi, edi = ebx, esp, ebp	# fix ruby unused var warning
 		scope = func.initializer
 		func.type.args.each { |a| scope.symbol[a.name] = a }
 		stmts = scope.statements
@@ -208,85 +259,11 @@ class Ia32
 				stmts << C::Label.new(l).with_misc(:di_addr => b)
 			end
 
-			# list of assignments [[dest reg, expr assigned]]
-			ops = []
-			# reg binding (reg => value, values.externals = regs at block start)
-			binding = {}
 			# Expr => CExpr
 			ce  = lambda { |*e|
 				ret = dcmp.decompile_cexpr(Expression[Expression[*e].reduce], scope)
 				dcmp.walk_ce(ret) { |ee| ee.with_misc(:di_addr => di_addr) } if di_addr
 				ret
-			}
-			# Expr => Expr.bind(binding) => CExpr
-			ceb = lambda { |*e| ce[Expression[*e].bind(binding)] }
-
-			# dumps a CExprs that implements an assignment to a reg (uses ops[], patches op => [reg, nil])
-			commit = lambda {
-				deps[b].map { |k|
-					[k, ops.rindex(ops.reverse.find { |r, v| r == k })]
-				}.sort_by { |k, i| i.to_i }.each { |k, i|
-					next if not i or not binding[k]
-					e = k
-					final = []
-					ops[0..i].reverse_each { |r, v|
-						final << r if not v
-						e = Expression[e].bind(r => v).reduce if not final.include? r
-					}
-					ops[i][1] = nil
-					binding.delete k
-					stmts << ce[k, :'=', e] if k != e
-				}
-			}
-
-			# returns an array to use as funcall arguments
-			get_func_args = lambda { |di, f|
-				# XXX see remarks in #finddeps
-				# TODO x64
-				bt = dcmp.dasm.backtrace(:esp, di.address, :snapshot_addr => func_entry, :include_start => true)
-				stackoff = Expression[[bt, :+, @size/8], :-, :esp].bind(:esp => :frameptr).reduce rescue nil
-				args_todo = f.type.args.to_a.dup
-				args = []
-				if f.has_attribute('fastcall')	# XXX DRY
-					if a = args_todo.shift
-						mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1
-						mask = 0 if a.has_attribute('unused')
-						args << Expression[:ecx, :&, mask]
-					end
-					if a = args_todo.shift
-						mask = (1 << (8*dcmp.c_parser.sizeof(a))) - 1	# char => dl
-						mask = 0 if a.has_attribute('unused')
-						args << Expression[:edx, :&, mask]
-					end
-				end
-				args_todo.each { |a_|
-					if r = a_.has_attribute_var('register')
-						args << Expression[r.to_sym]
-					elsif stackoff.kind_of? Integer
-						args << Indirection[[:frameptr, :+, stackoff], @size/8]
-						stackoff += [dcmp.sizeof(a_), @size/8].max
-					else
-						args << Expression[0]
-					end
-				}
-
-				if f.type.varargs and f.type.args.last.type.pointer? and stackoff.kind_of? Integer
-					# check if last arg is a fmtstring
-					bt = dcmp.dasm.backtrace(args.last, di.address, :snapshot_addr => func_entry, :include_start => true)
-					if bt.length == 1 and s = dcmp.dasm.get_section_at(bt.first)
-						fmt = s[0].read(512)
-						fmt = fmt.unpack('v*').pack('C*') if dcmp.sizeof(f.type.args.last.type.untypedef.type) == 2
-						if fmt.index(?\0)
-							fmt = fmt[0...fmt.index(?\0)]
-							fmt.gsub('%%', '').count('%').times {	# XXX %.*s etc..
-								args << Indirection[[:frameptr, :+, stackoff], @size/8]
-								stackoff += @size/8
-							}
-						end
-					end
-				end
-
-				args.map { |e| ceb[e] }
 			}
 
 			# go !
@@ -295,13 +272,13 @@ class Ia32
 				a = di.instruction.args
 				if di.opcode.props[:setip] and not di.opcode.props[:stopexec]
 					# conditional jump
-					commit[]
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
 					if di.opcode.name =~ /^loop(.+)?/
-						cx = C::CExpression[:'--', ceb[ecx]]
-						cc = $1 ? C::CExpression[cx, :'&&', ceb[decode_cc_to_expr($1)]] : cx
+						loopcc = decode_cc_to_expr($1) if $1
+						cx = C::CExpression[:'--', ce[ecx]]
+						cc = loopcc ? C::CExpression[cx, :'&&', ce[loopcc]] : cx
 					else
-						cc = ceb[decode_cc_to_expr(di.opcode.name[1..-1])]
+						cc = ce[decode_cc_to_expr(di.opcode.name[1..-1])]
 					end
 					# XXX switch/indirect/multiple jmp
 					stmts << C::If.new(C::CExpression[cc], C::Goto.new(n).with_misc(:di_addr => di_addr)).with_misc(:di_addr => di_addr)
@@ -309,61 +286,36 @@ class Ia32
 					next
 				end
 
-				if di.opcode.name == 'mov'
-					# mov cr0 etc
-					a1, a2 = di.instruction.args
-					case a1
-					when Ia32::CtrlReg, Ia32::DbgReg, Ia32::TstReg, Ia32::SegReg
-						sz = a1.kind_of?(Ia32::SegReg) ? 16 : 32
-						if not dcmp.c_parser.toplevel.symbol["intrinsic_set_#{a1}"]
-							dcmp.c_parser.parse("void intrinsic_set_#{a1}(__int#{sz});")
-						end
-						f = dcmp.c_parser.toplevel.symbol["intrinsic_set_#{a1}"]
-						a2 = a2.symbolic(di)
-						a2 = [a2, :&, 0xffff] if sz == 16
-						stmts << C::CExpression.new(f, :funcall, [ceb[a2]], f.type.type).with_misc(:di_addr => di_addr)
-						next
-					end
-					case a2
-					when Ia32::CtrlReg, Ia32::DbgReg, Ia32::TstReg, Ia32::SegReg
-						if not dcmp.c_parser.toplevel.symbol["intrinsic_get_#{a2}"]
-							sz = a2.kind_of?(Ia32::SegReg) ? 16 : 32
-							dcmp.c_parser.parse("__int#{sz} intrinsic_get_#{a2}(void);")
-						end
-						f = dcmp.c_parser.toplevel.symbol["intrinsic_get_#{a2}"]
-						t = f.type.type
-						binding.delete a1.symbolic(di)
-						stmts << C::CExpression.new(ce[a1.symbolic(di)], :'=', C::CExpression.new(f, :funcall, [], t).with_misc(:di_addr => di_addr), t).with_misc(:di_addr => di_addr)
-						next
-					end
+				if decompile_special_instr(dcmp, di, stmts, scope)
+					next
 				end
 
 				case di.opcode.name
 				when 'ret'
-					commit[]
+					# TODO no to_normal => ret, else jmp
 					ret = nil
-					ret = C::CExpression[ceb[eax]] unless func.type.type.kind_of? C::BaseType and func.type.type.name == :void
+					ret = C::CExpression[ce[eax]] unless func.type.type.kind_of?(C::BaseType) and func.type.type.name == :void
 					stmts << C::Return.new(ret).with_misc(:di_addr => di_addr)
 				when 'call'	# :saveip
+					# TODO check actual funcall VS call/pop
 					n = dcmp.backtrace_target(get_xrefs_x(dcmp.dasm, di).first, di.address)
-					args = []
-					if f = dcmp.c_parser.toplevel.symbol[n] and f.type.kind_of? C::Function and f.type.args
-						args = get_func_args[di, f]
-					elsif defined? @dasm_func_default_off and o = @dasm_func_default_off[[dcmp.dasm, di.address]] and o.kind_of? Integer and o > @size/8
+					if f = dcmp.c_parser.toplevel.symbol[n] and f.type.kind_of?(C::Function) and f.type.args
+					elsif defined?(@dasm_func_default_off) and o = @dasm_func_default_off[[dcmp.dasm, di.address]] and o.kind_of?(::Integer) and o > @size/8
 						f = C::Variable.new
 						f.type = C::Function.new(C::BaseType.new(:int), [])
-						((o/(@size/8))-1).times { f.type.args << C::Variable.new(nil,C::BaseType.new(:int)) }
-						args = get_func_args[di, f]
+						((o/(@size/8))-1).times { f.type.args << C::Variable.new(nil, C::BaseType.new(:int)) }
+					else
+						f = C::Variable.new
+						f.type = C::Function.new(C::BaseType.new(:int), [])
 					end
-					commit[]
+					args = decompile_get_func_args(dcmp, func_entry, di, f).map { |arg| ce[arg] } 
 					#next if not di.block.to_subfuncret
 
-					if not n.kind_of? ::String or (f and not f.type.kind_of? C::Function)
+					if not n.kind_of?(::String) or (f and not f.type.kind_of?(C::Function))
 						# indirect funcall
-						fptr = ceb[n]
-						binding.delete n
+						fptr = ce[n]
 						proto = C::Function.new(C::BaseType.new(:int))
-						proto = f.type if f and f.type.kind_of? C::Function
+						proto = f.type if f and f.type.kind_of?(C::Function)
 						f = C::CExpression[[fptr], C::Pointer.new(proto)]
 					elsif not f
 						# internal functions are predeclared, so this one is extern
@@ -375,17 +327,13 @@ class Ia32
 							dcmp.c_parser.toplevel.statements << C::Declaration.new(f)
 						end
 					end
-					commit[]
-					binding.delete eax
 					e = C::CExpression[f, :funcall, args].with_misc(:di_addr => di_addr)
-					e = C::CExpression[ce[eax], :'=', e, f.type.type].with_misc(:di_addr => di_addr) if deps[b].include? eax and f.type.type != C::BaseType.new(:void)
+					e = C::CExpression[ce[eax], :'=', e, f.type.type].with_misc(:di_addr => di_addr) if f.type.type != C::BaseType.new(:void)
 					stmts << e
 				when 'jmp'
-					#if di.comment.to_a.include? 'switch'
+					#if di.comment.to_a.include?('switch')
 					#	n = di.instruction.args.first.symbolic(di)
-					#	fptr = ceb[n]
-					#	binding.delete n
-					#	commit[]
+					#	fptr = ce[n]
 					#	sw = C::Switch.new(fptr, C::Block.new(scope))
 					#	di.block.to_normal.to_a.each { |addr|
 					#		addr = dcmp.dasm.normalize addr
@@ -395,17 +343,15 @@ class Ia32
 					#	}
 					#	stmts << sw
 					a = di.instruction.args.first
-					if a.kind_of? Expression
-					elsif not a.respond_to? :symbolic
+					if a.kind_of?(Expression)
+					elsif not a.respond_to?(:symbolic)
 						stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil).with_misc(:di_addr => di_addr)
 					else
 						n = di.instruction.args.first.symbolic(di)
-						fptr = ceb[n]
-						binding.delete n
-						commit[]
-						if fptr.kind_of? C::CExpression and fptr.type.pointer? and fptr.type.untypedef.type.kind_of? C::Function
+						fptr = ce[n]
+						if fptr.kind_of?(C::CExpression) and fptr.type.pointer? and fptr.type.untypedef.type.kind_of?(C::Function)
 							proto = fptr.type.untypedef.type
-							args = get_func_args[di, fptr.type]
+							args = decompile_get_func_args(dcmp, func_entry, di, fptr.type).map { |arg| ce[arg] } 
 						else
 							proto = C::Function.new(C::BaseType.new(:void))
 							fptr = C::CExpression[[fptr], C::Pointer.new(proto)].with_misc(:di_addr => di_addr)
@@ -415,110 +361,27 @@ class Ia32
 						stmts << ret
 						to = []
 					end
-				when 'lgdt'
-					if not dcmp.c_parser.toplevel.struct['segment_descriptor']
-						dcmp.c_parser.parse('struct segment_descriptor { __int16 limit; __int16 base0_16; __int8 base16_24; __int8 flags1; __int8 flags2_limit_16_20; __int8 base24_32; };')
-						dcmp.c_parser.parse('struct segment_table { __int16 size; struct segment_descriptor *table; } __attribute__((pack(2)));')
-					end
-					if not dcmp.c_parser.toplevel.symbol['intrinsic_lgdt']
-						dcmp.c_parser.parse('void intrinsic_lgdt(struct segment_table *);')
-					end
-					# need a way to transform arg => :frameptr+12
-					arg = di.backtrace_binding.keys.grep(Indirection).first.pointer
-					stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol['intrinsic_lgdt'], :funcall, [ceb[arg]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
-				when 'lidt'
-					if not dcmp.c_parser.toplevel.struct['interrupt_descriptor']
-						dcmp.c_parser.parse('struct interrupt_descriptor { __int16 offset0_16; __int16 segment; __int16 flags; __int16 offset16_32; };')
-						dcmp.c_parser.parse('struct interrupt_table { __int16 size; struct interrupt_descriptor *table; } __attribute__((pack(2)));')
-					end
-					if not dcmp.c_parser.toplevel.symbol['intrinsic_lidt']
-						dcmp.c_parser.parse('void intrinsic_lidt(struct interrupt_table *);')
-					end
-					arg = di.backtrace_binding.keys.grep(Indirection).first.pointer
-					stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol['intrinsic_lidt'], :funcall, [ceb[arg]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
-				when 'ltr', 'lldt'
-					if not dcmp.c_parser.toplevel.symbol["intrinsic_#{di.opcode.name}"]
-						dcmp.c_parser.parse("void intrinsic_#{di.opcode.name}(int);")
-					end
-					arg = di.backtrace_binding.keys.first
-					stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol["intrinsic_#{di.opcode.name}"], :funcall, [ceb[arg]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
-				when 'out'
-					sz = di.instruction.args.find { |a_| a_.kind_of? Ia32::Reg and a_.val == 0 }.sz
-					if not dcmp.c_parser.toplevel.symbol["intrinsic_out#{sz}"]
-						dcmp.c_parser.parse("void intrinsic_out#{sz}(unsigned short port, __int#{sz} value);")
-					end
-					port = di.instruction.args.grep(Expression).first || edx
-					stmts << C::CExpression.new(dcmp.c_parser.toplevel.symbol["intrinsic_out#{sz}"], :funcall, [ceb[port], ceb[eax]], C::BaseType.new(:void)).with_misc(:di_addr => di_addr)
-				when 'in'
-					sz = di.instruction.args.find { |a_| a_.kind_of? Ia32::Reg and a_.val == 0 }.sz
-					if not dcmp.c_parser.toplevel.symbol["intrinsic_in#{sz}"]
-						dcmp.c_parser.parse("__int#{sz} intrinsic_in#{sz}(unsigned short port);")
-					end
-					port = di.instruction.args.grep(Expression).first || edx
-					f = dcmp.c_parser.toplevel.symbol["intrinsic_in#{sz}"]
-					binding.delete eax
-					stmts << C::CExpression.new(ce[eax], :'=', C::CExpression.new(f, :funcall, [ceb[port]], f.type.type), f.type.type).with_misc(:di_addr => di_addr)
-				when 'sti', 'cli'
-					stmts << C::Asm.new(di.instruction.to_s, nil, [], [], nil, nil)
-				when /^(mov|sto|lod)s([bwdq])/
-					op, sz = $1, $2
-					commit[]
-					sz = { 'b' => 1, 'w' => 2, 'd' => 4, 'q' => 8 }[sz]
-					pt = C::Pointer.new(C::BaseType.new("__int#{sz*8}".to_sym))
-
-					blk = C::Block.new(scope)
-					case op
-					when 'mov'
-						blk.statements << C::CExpression[[:*, [[ceb[edi]], pt]], :'=', [:*, [[ceb[esi]], pt]]].with_misc(:di_addr => di_addr)
-						blk.statements << C::CExpression[ceb[edi], :'=', [ceb[edi], :+, [sz]]].with_misc(:di_addr => di_addr)
-						blk.statements << C::CExpression[ceb[esi], :'=', [ceb[esi], :+, [sz]]].with_misc(:di_addr => di_addr)
-					when 'sto'
-						blk.statements << C::CExpression[[:*, [[ceb[edi]], pt]], :'=', ceb[eax]].with_misc(:di_addr => di_addr)
-						blk.statements << C::CExpression[ceb[edi], :'=', [ceb[edi], :+, [sz]]].with_misc(:di_addr => di_addr)
-					when 'lod'
-						blk.statements << C::CExpression[ceb[eax], :'=', [:*, [[ceb[esi]], pt]]].with_misc(:di_addr => di_addr)
-						blk.statements << C::CExpression[ceb[esi], :'=', [ceb[esi], :+, [sz]]].with_misc(:di_addr => di_addr)
-					#when 'sca'
-					#when 'cmp'
-					end
-
-					case (di.instruction.prefix || {})[:rep]
-					when nil
-						stmts.concat blk.statements
-					when 'rep'
-						blk.statements << C::CExpression[ceb[ecx], :'=', [ceb[ecx], :-, [1]]].with_misc(:di_addr => di_addr)
-						stmts << C::While.new(C::CExpression[ceb[ecx]], blk).with_misc(:di_addr => di_addr)
-					#when 'repz'	# sca/cmp only
-					#when 'repnz'
-					end
-					next
 				else
 					bd = get_fwdemu_binding(di)
 					if di.backtrace_binding[:incomplete_binding]
-						commit[]
 						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil).with_misc(:di_addr => di_addr)
 					else
 						update = {}
 						bd.each { |k, v|
-							if k.kind_of? ::Symbol and not deps[b].include? k
-								ops << [k, v]
-								update[k] = Expression[Expression[v].bind(binding).reduce]
-							else
-								stmts << ceb[k, :'=', v]
-								stmts.pop if stmts.last.kind_of? C::Variable	# [:eflag_s, :=, :unknown].reduce
-							end
+							stmts << ce[k, :'=', v]
+							stmts.pop if stmts.last.kind_of?(C::Variable)	# [:eflag_s, :=, :unknown].reduce
 						}
-						binding.update update
 					end
 				end
 				di_addr = nil
 			}
-			commit[]
 
 			case to.length
 			when 0
-				if not myblocks.empty? and not %w[ret jmp].include? dcmp.dasm.decoded[b].block.list.last.instruction.opname
-					puts "  block #{Expression[b]} has no to and don't end in ret"
+				if not myblocks.empty? and not %w[ret jmp].include?(dcmp.dasm.decoded[b].block.list.last.instruction.opname)
+					if not stmts.last.kind_of?(C::CExpression) or stmts.last.op != :funcall or not stmts.last.lexpr.has_attribute('noreturn')
+						puts "  block #{Expression[b]} has no to and don't end in ret"
+					end
 				end
 			when 1
 				if (myblocks.empty? ? nextaddr != to[0] : myblocks.first.first != to[0])
@@ -554,7 +417,7 @@ class Ia32
 			#func.add_attribute 'noreturn'
 		else
 			adj = f.return_address.map { |ra_| dcmp.dasm.backtrace(:esp, ra_, :include_start => true, :stopaddr => entry) }.flatten.uniq
-			if adj.length == 1 and so = Expression[adj.first, :-, :esp].reduce and so.kind_of? ::Integer
+			if adj.length == 1 and so = Expression[adj.first, :-, :esp].reduce and so.kind_of?(::Integer)
 				argsz = a.map { |fa|
 					next if not fa.stackoff
 					(fa.stackoff + [dcmp.sizeof(fa), dcmp.c_parser.typesize[:ptr]].max-1) / dcmp.c_parser.typesize[:ptr]

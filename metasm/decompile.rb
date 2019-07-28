@@ -443,7 +443,7 @@ class Decompiler
 				case e
 				when ::String	# edata relocation (rel.length = size of pointer)
 					return @c_parser.toplevel.symbol[e] || new_global_var(e, itype || s.type, scope)
-				when ::Symbol; s.storage = :register ; s.add_attribute("register(#{name})")
+				when ::Symbol; s.add_attribute("register(#{name})")
 				else s.type.qualifier = [:volatile]
 					puts "decompile_cexpr unhandled #{e.inspect}, using #{e.to_s.inspect}" if $VERBOSE
 				end
@@ -1010,10 +1010,18 @@ class Decompiler
 		vars = scope.symbol.values.sort_by { |v| walk_ce(funcalls) { |ce| break true if ce.rexpr == v } ? 0 : 1 }
 
 		# find the domains of var aliases
-		vars.each { |var| unalias_var(var, scope, g) }
+		vars.each { |var|
+			if unalias_var(var, scope, g)
+				if not var.stackoff or var.stackoff > 0	# dont allow local vars as args
+					func.type.args << var unless func.type.args.find { |aa| aa.name == var.name }
+					scope.statements.delete_if { |sm| sm.kind_of?(C::Declaration) and sm.var.name == var.name }
+				end
+			end
+		}
 	end
 
 	# duplicates a var per domain value
+	# return var if used before being set (eg func arg)
 	def unalias_var(var, scope, g = c_to_graph(scope))
 		# [label, index] of references to var (reading it, writing it, ro/wo it (eg eax = *eax => eax_0 = *eax_1))
 		read = {}
@@ -1118,6 +1126,7 @@ class Decompiler
 			end
 		}
 
+		reach_func_top = false
 		n_i = 0
 		# check it out
 		while o = unchecked.shift
@@ -1157,14 +1166,17 @@ class Decompiler
 
 			unchecked -= dom + dom_wo + dom_ro
 
-			next if func_top
+			if func_top
+				reach_func_top = true
+				next
+			end
 
 			# patch
 			n_i += 1 while scope.symbol_ancestors[newvarname = "#{var.name}_a#{n_i}"]
 
 			nv = var.dup
 			nv.misc = var.misc ? var.misc.dup : {}
-			nv.storage = :register if nv.has_attribute_var('register')
+			#nv.storage = :register if nv.has_attribute_var('register')
 			nv.attributes = nv.attributes.dup if nv.attributes
 			nv.name = newvarname
 			nv.misc[:unalias_name] = newvarname
@@ -1200,6 +1212,8 @@ class Decompiler
 				nv.add_attribute('out')
 			end
 		end
+
+		reach_func_top
 	end
 
 	# revert the unaliasing namechange of vars where no alias subsists
@@ -1442,7 +1456,7 @@ class Decompiler
 				f = f.pointed if f.pointer?
 				next if not f.kind_of?(C::Function)
 				# cast func args to arg prototypes
-				f.args.to_a.zip(ce.rexpr).each_with_index { |(proto, arg), i| ce.rexpr[i] = C::CExpression[arg, proto.type] ; known_type[arg, proto.type] }
+				f.args.to_a.zip(ce.rexpr).each_with_index { |(proto, arg), i| if arg ; ce.rexpr[i] = C::CExpression[arg, proto.type] ; known_type[arg, proto.type] ; end }
 			elsif ce.op == :* and not ce.lexpr
 				if e = ce.rexpr and e.kind_of?(C::CExpression) and not e.op and e = e.rexpr and e.kind_of?(C::CExpression) and
 						e.op == :& and not e.lexpr and e.rexpr.kind_of?(C::Variable) and e.rexpr.stackoff
@@ -2048,6 +2062,7 @@ class Decompiler
 			when C::CExpression
 				@exprs[l_cur] = [stmt]
 				@to[l_cur] = [l_after]
+				@to[l_cur] = [] if stmt.op == :funcall and stmt.lexpr.has_attribute('noreturn')
 			when C::Return
 				@exprs[l_cur] = [stmt.value] if stmt.value
 				@to[l_cur] = []
@@ -2893,7 +2908,7 @@ class Decompiler
 		rename = lambda { |var, name|
 			var = var.rexpr if var.kind_of?(C::CExpression) and not var.op
 			next if not var.kind_of?(C::Variable) or not scope.symbol[var.name] or not name
-			next if (var.name !~ /^(var|arg)_/ and not var.storage == :register) or not scope.symbol[var.name] or name =~ /^(var|arg)_/
+			next if (var.name !~ /^(var|arg)_/ and not var.has_attribute_var('register')) or not scope.symbol[var.name] or name =~ /^(var|arg)_/
 			s = scope.symbol_ancestors
 			n = name
 			i = 0
