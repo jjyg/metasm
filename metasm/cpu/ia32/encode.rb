@@ -195,7 +195,7 @@ class Ia32
 			case k
 			when :jmp;  {:jmp => 0x3e, :nojmp => 0x2e}[v]
 			when :lock; 0xf0
-			when :rep;  {'repnz' => 0xf2, 'repz' => 0xf3, 'rep' => 0xf2}[v]
+			when :rep;  {'repnz' => 0xf2, 'repz' => 0xf3, 'rep' => 0xf3}[v]
 			when :jmphint; {'hintjmp' => 0x3e, 'hintnojmp' => 0x2e}[v]
 			when :seg; [0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65][v.val]
 			end
