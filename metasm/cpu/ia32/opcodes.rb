@@ -364,7 +364,7 @@ class Ia32
 
 		# mmx
 		addop 'emms',  [0x0F, 0x77]
-		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args = [:modrm, :regmmx] ; o.props[:opsz] = o.props[:argsz] = 32 }
+		addop('movd',  [0x0F, 0x6E], :mrmmmx, {:d => [1, 4]}) { |o| o.args = [:regmmx, :modrm] ; o.props[:opsz] = o.props[:argsz] = 32 }
 		addop('movq',  [0x0F, 0x6F], :mrmmmx, {:d => [1, 4]}) { |o| o.props[:argsz] = 64 }
 		addop 'packssdw', [0x0F, 0x6B], :mrmmmx
 		addop 'packsswb', [0x0F, 0x63], :mrmmmx
@@ -556,6 +556,7 @@ class Ia32
 		addop('movdqu',  [0x0F, 0x6F], :mrmxmm, {:d => [1, 4]}) { |o| o.props[:needpfx] = 0xF3 }
 		addop('movq2dq', [0x0F, 0xD6], :mrmxmm, :modrmR) { |o| o.args[o.args.index(:modrmxmm)] = :modrmmmx ; o.props[:needpfx] = 0xF3 }
 		addop('movdq2q', [0x0F, 0xD6], :mrmmmx, :modrmR) { |o| o.args[o.args.index(:modrmmmx)] = :modrmxmm ; o.props[:needpfx] = 0xF2 }
+		addop('movd',    [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args = [:regxmm, :modrm] ; o.props[:needpfx] = 0x66 ; o.props[:argsz] = 128 }
 		addop('movq',    [0x0F, 0x7E], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 ; o.props[:argsz] = 128 }
 		addop('movq',    [0x0F, 0xD6], :mrmxmm) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 ; o.props[:argsz] = 128 }
 

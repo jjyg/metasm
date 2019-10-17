@@ -197,7 +197,8 @@ class Ia32
 			end
 		}
 
-		opsz = op.props[:argsz] || opsz(di)
+		opsz = opsz(di)
+		opsz = op.props[:argsz] if op.props[:argsz] and op.props[:needpfx] != 0x66
 		adsz = (pfx[:adsz] ? 48 - @size : @size)
 
 		mmxsz = ((op.props[:xmmx] && pfx[:opsz]) ? 128 : 64)
