@@ -432,7 +432,8 @@ class Expression < ExpressionType
 
 	# make it useable as Hash key (see +==+)
 	def hash
-		(@lexpr.hash + @op.hash + @rexpr.hash) & 0x7fff_ffff
+		# :'(
+		((@lexpr.respond_to?(:hash) ? @lexpr.hash : @lexpr.object_id) + @op.object_id + (@rexpr.respond_to?(:hash) ? @rexpr.hash : @rexpr.object_id)) & 0x7fff_ffff
 	end
 	alias eql? ==
 
