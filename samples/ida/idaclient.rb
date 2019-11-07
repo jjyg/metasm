@@ -73,7 +73,7 @@ class IdaClient
 	# parse an address, check for BAD_ADDR
 	def self.addr(a)
 		a = Integer(a)
-		a if a != 0xffffffff and a != 0xffffffff_ffffffff
+		a if a != -1
 	end
 
 	# decode a hex buffer
@@ -93,6 +93,8 @@ class IdaClient
 
 	# actual plugin command list
 
+	add_command('get_remoteid') { |s| { :software => s.split[0], :version => s.split[1] } }
+	add_command('get_cpuinfo') { |s| { :name => s.split[0], :size => Integer(s.split[1]), :endian => s.split[2].to_sym } }
 	add_command('get_label', :addr) { |s| s if s != '' }
 	add_command('set_label', :addr, :label)
 	add_command('resolve_label', :label) { |a| addr(a) }
@@ -103,7 +105,7 @@ class IdaClient
 	add_command('get_dword', :addr) { |i| Integer(i) }
 	add_command('get_qword', :addr) { |i| Integer(i) }
 	add_command('get_xrefs_to', :addr) { |lst| lst.split.map { |a| addr(a) } }
-	add_command('quit')
+	add_command('exit_plugin')
 	add_command('exit_ida', :exit_code)
 	add_command('get_comment', :addr) { |s| s if s != '' }
 	add_command('set_comment', :addr, :comment)
@@ -133,11 +135,10 @@ class IdaClient
 	add_command('make_qword', :addr)
 	add_command('make_string', :addr_start, :addr_end, :type)
 	add_command('make_code', :addr)
-	add_command('make_unknown', :addr)
+	add_command('undefine', :addr)
 	add_command('patch_byte', :addr, :newbyte)
 	add_command('get_input_path') { |s| s if s != '' }
 	add_command('get_entry', :idx) { |a| addr(a) }
-	add_command('get_cpuinfo') { |s| { :name => s.split[0], :size => Integer(s.split[1]), :endian => s.split[2].to_sym } }
 
 	# batch request handling
 	# yields, all the ida requests in the block will be buffered and sent in one request

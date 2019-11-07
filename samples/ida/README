@@ -1,2 +1,4 @@
 idaremote is an IDA Pro python plugin allowing to query the IDB using a text protocol.
 idaclient is a ruby client library for this plugin, the sample/ directory holds client code.
+
+tested in IDA7.3 (python2) and IDA7.4 (python3)

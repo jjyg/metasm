@@ -7,13 +7,14 @@ import select
 
 # remote control for IDA using a text protocol
 # by default listens on localhost:56789
-# tested with IDA7.3
-# to stop, run 'idaremote.cmd_quit()' from within IDA
+# tested with IDA7.3, IDA7.4
+# to stop, run 'idaremote.quit()' from within IDA
 
 class IdaRemote:
     sock = None
     sock_client = None
     ida_timer_delay = 50
+    debug = False
 
     # open a network socket for incoming connections
     def listen(self, host="localhost", port=56789):
@@ -32,18 +33,17 @@ class IdaRemote:
     # check if we have a pending connection, handle it
     def main_iter(self):
         if not self.sock:
-            # cli called cmd_quit(), unregister the timer
+            # cli called cmd_exitplugin(), unregister the timer
             return -1
 
         r, w, e = select.select([self.sock], [], [], 0)
         for s in r:
             client, addr = s.accept()
             select.select([client], [], [], 10)
-            rq = client.recv(4096)
             self.sock_client = client
+            rq = self.client_recv(4096)
             ans = self.handle_rq(rq)
-            if ans:
-                client.send(ans)
+            self.client_send(ans)
             client.close()
             self.sock_client = None
 
@@ -51,6 +51,11 @@ class IdaRemote:
 
     # parse one request, handle it, return the reply
     def handle_rq(self, rq):
+        if self.debug:
+            if len(rq) > 64:
+                idaapi.msg("IdaRemote request: {}...\n".format(repr(rq[:62])))
+            else:
+                idaapi.msg("IdaRemote request: {}\n".format(repr(rq)))
         splt = rq.split(" ", 1)
         cmd = splt[0]
         method = getattr(self, "cmd_" + cmd, False)
@@ -58,7 +63,7 @@ class IdaRemote:
             try:
                 # introspection to find the required number of args
                 # avoids parsing quoted strings in the queries, allow some methods to receive args containing space characters (eg set_comment)
-                method_nargs = method.func_code.co_argcount - 1
+                method_nargs = method.__code__.co_argcount - 1
                 if method_nargs == 0:
                     return method()
                 elif method_nargs == 1:
@@ -66,15 +71,52 @@ class IdaRemote:
                 else:
                     return method(*splt[1].split(" ", method_nargs-1))
             except Exception as err:
-                # TODO display call stack for debugging
                 idaapi.msg("IdaRemote exception: {}\n".format(err))
                 return ""
         else:
             return "unknown command " + cmd
 
+    def client_send(self, msg):
+        # python2+3 compat
+        try:
+            bmsg = bytes(msg, 'latin1')
+        except:
+            bmsg = bytes(msg)
+        return self.sock_client.send(bmsg)
+
+    def client_recv(self, ln):
+        bmsg = self.sock_client.recv(ln)
+        # python2+3 compat # lol
+        msg = str(bmsg.decode('latin1'))
+        return msg
+
+    def client_wait(self, time_s):
+        return select.select([self.sock_client], [], [], time_s)
+
     # hexencode a buffer
     def str2hex(self, raw):
-        return "".join(["{:02X}".format(ord(b)) for b in bytes(raw)])
+        # python2+3 compat
+        try:
+            # raw already bytes
+            return "".join(["{:02X}".format(b) for b in raw])
+        except:
+            try:
+                # python3, raw is string
+                return "".join(["{:02X}".format(b) for b in bytes(raw, 'latin1')])
+            except:
+                # python2
+                return "".join(["{:02X}".format(ord(b)) for b in bytes(raw)])
+
+    # encode an address in hex, return '-1' for invalid address
+    def fmt_addr(self, addr):
+        if addr == ida_idaapi.BADADDR:
+            return "-1"
+        else:
+            return "0x{:04X}".format(addr)
+
+    def quit(self):
+        self.cmd_exitplugin()
+        return ""
 
 
     # list of supported commands
@@ -85,55 +127,56 @@ class IdaRemote:
 
     # set a label at an address
     def cmd_set_label(self, addr, label):
-        idc.set_name(int(addr, 0), label)
+        if idaapi.set_name(int(addr, 0), label, idaapi.SN_NOWARN|idaapi.SN_NOCHECK):
+            return "ok"
         return ""
 
     # label name -> address
     # return 0xffffffff or 0xffffffffffffffff (BAD_ADDR) if not existing
     def cmd_resolve_label(self, label):
-        addr = LocByName(label)
-        return "0x{:08X}".format(addr)
+        addr = idc.get_name_ea_simple(label)
+        return self.fmt_addr(addr)
 
     # return the list of addrs for which a name exists
     def cmd_get_named_addrs(self, a_start, a_end):
-        # idautils.Names() does not work
-        return " ".join(["0x{:X}".format(a) for a in range(int(a_start, 0), int(a_end, 0)) if idc.get_name(a)])
+        # idautils.Names() does not work in 7.3
+        return " ".join([self.fmt_addr(a) for a in range(int(a_start, 0), int(a_end, 0)) if idc.get_name(a)])
 
     # read raw data from an address
     def cmd_get_bytes(self, addr, len):
         raw = idc.get_bytes(int(addr, 0), int(len, 0))
         if raw:
             return self.str2hex(raw)
-        else:
-            return ""
+        return ""
 
     # read one byte
     def cmd_get_byte(self, addr):
-        return str(Byte(int(addr, 0)))
+        return str(idc.get_wide_byte(int(addr, 0)))
 
     # read one word
     def cmd_get_word(self, addr):
-        return str(Word(int(addr, 0)))
+        return str(idc.get_wide_word(int(addr, 0)))
 
     # read one dword
     def cmd_get_dword(self, addr):
-        return str(Dword(int(addr, 0)))
+        return str(idc.get_wide_dword(int(addr, 0)))
 
     # read one qword
     def cmd_get_qword(self, addr):
-        return str(Qword(int(addr, 0)))
+        return str(idc.get_qword(int(addr, 0)))
 
     # return an array of xrefs to the specified addr
     # array is a sequence of hex addresses separate by spaces
     def cmd_get_xrefs_to(self, addr):
         ALL_XREFS = 0
         xrefs = idautils.XrefsTo(int(addr, 0), ALL_XREFS)
-        return " ".join(["0x{:08X}".format(xr.frm) for xr in xrefs])
-        
+        return " ".join([self.fmt_addr(xr.frm) for xr in xrefs])
+
     # end the idaremote plugin loop, close the listening socket
-    def cmd_quit(self):
+    def cmd_exitplugin(self):
         idaapi.msg("IdaRemote closing\n")
-        self.sock.close()
+        if self.sock:
+            self.sock.close()
         self.sock = None
         self.ida_timer_delay = -1
         return "bye"
@@ -141,141 +184,147 @@ class IdaRemote:
     # ask IDA to save IDB and exit
     def cmd_exit_ida(self, c):
         idaapi.msg("IdaRemote exiting IDA\n")
-        Exit(int(c, 0))
+        idc.qexit(int(c, 0))
         return "bye"    # not reached?
 
     # get the non-repeatable comment at address
     def cmd_get_comment(self, addr):
-        return Comment(int(addr, 0))
+        return idc.get_cmt(int(addr, 0), 0)
 
     # set the non-repeatable comment at address
     def cmd_set_comment(self, addr, cmt):
-        if MakeComm(int(addr, 0), cmt):
+        if idc.set_cmt(int(addr, 0), cmt, 0):
             return "ok"
-        return "nope"
+        return ""
 
     # return the current cursor address (ScreenEA)
     def cmd_get_cursor_pos(self):
-        return "0x{:08X}".format(ScreenEA())
+        return self.fmt_addr(idc.get_screen_ea())
 
     # set the current cursor address
     def cmd_set_cursor_pos(self, a):
-        Jump(int(a, 0))
+        if idc.jumpto(int(a, 0)):
+            return "ok"
         return ""
 
     # return the start/end address of the current selection
     def cmd_get_selection(self):
-        return "0x{:08X} 0x{:08X}".format(SelStart(), SelEnd())
+        return " ".join(self.fmt_addr(a) for a in [idc.read_selection_start(), idc.read_selection_end()])
 
     # return the flags for an address
     def cmd_get_flags(self, a):
-        return "0x{:08X}".format(GetFlags(int(a, 0)))
+        return "0x{:08X}".format(idc.get_full_flags(int(a, 0)))
 
     # return the list of head addresses (instruction or data) in a range
     def cmd_get_heads(self, a_start, a_end):
-        return " ".join(["0x{:X}".format(a) for a in Heads(int(a_start, 0), int(a_end, 0))])
+        return " ".join([self.fmt_addr(a) for a in Heads(int(a_start, 0), int(a_end, 0))])
 
     # return the previous head before an address
     def cmd_get_prev_head(self, a):
-        return "0x{:X}".format(PrevHead(int(a, 0)))
+        return self.fmt_addr(idc.prev_head(int(a, 0)))
 
     # return the next head after an address
     def cmd_get_next_head(self, a):
-        return "0x{:X}".format(NextHead(int(a, 0)))
+        return self.fmt_addr(idc.next_head(int(a, 0)))
 
     # return the list of functions in a range
     def cmd_get_functions(self, a_start, a_end):
-        return " ".join(["0x{:X}".format(a) for a in Functions(int(a_start, 0), int(a_end, 0))])
+        return " ".join([self.fmt_addr(a) for a in Functions(int(a_start, 0), int(a_end, 0))])
 
     # return the name of a function from the address of an instruction of the body
     def cmd_get_function_name(self, a):
-        return GetFunctionName(int(a, 0))
+        return idc.get_func_name(int(a, 0))
 
     # return the (nonrepeatable) function comment
     def cmd_get_function_comment(self, a):
-        return GetFunctionCmt(int(a, 0), 0)
+        return idc.get_func_cmt(int(a, 0), 0)
 
     # set the (nonrepeatable) function comment
     def cmd_set_function_comment(self, a, c):
-        return SetFunctionCmt(int(a, 0), c, 0)
+        if idc.set_func_cmt(int(a, 0), c, 0):
+            return "ok"
+        return ""
 
     # return the function flags for an address
     def cmd_get_function_flags(self, a):
-        return "0x{:08X}".format(GetFunctionFlags(int(a, 0)))
+        return "0x{:08X}".format(idc.get_func_attr(int(a, 0), idc.FUNCATTR_FLAGS))
 
     # return the address of each basicblock of the function
     def cmd_get_function_blocks(self, a):
         fc = idaapi.FlowChart(idaapi.get_func(int(a, 0)))
-        return " ".join(["0x{:X}".format(b.startEA) for b in fc])
+        return " ".join([self.fmt_addr(b.start_ea) for b in fc])
 
     # return list of all segments start address
     def cmd_get_segments(self):
-        return " ".join(["0x{:08X}".format(a) for a in Segments()])
+        return " ".join([self.fmt_addr(a) for a in Segments()])
 
     # return the start address for the segment from any address within
     def cmd_get_segment_start(self, a):
-        return "0x{:08X}".format(SegStart(int(a, 0)))
+        return self.fmt_addr(idc.get_segm_start(int(a, 0)))
 
     # return the end address for the segment starting at a
     def cmd_get_segment_end(self, a):
-        return "0x{:08X}".format(SegEnd(int(a, 0)))
+        return self.fmt_addr(idc.get_segm_end(int(a, 0)))
 
     # return the name of a segment
     def cmd_get_segment_name(self, a):
-        return SegName(int(a, 0))
+        return idc.get_segm_name(int(a, 0))
 
     # return the mnemonic of an opcode at addr
     def cmd_get_op_mnemonic(self, a):
-        return GetMnem(int(a, 0))
+        return idc.print_insn_mnem(int(a, 0))
 
     # tell IDA to convert an address into an alignment directive
     def cmd_make_align(self, a, count, align):
-        return str(MakeAlign(int(a, 0), int(count, 0), int(align, 0)))
+        return str(idc.create_align(int(a, 0), int(count, 0), int(align, 0)))
 
-    # tell IDA to make an array
+    # tell IDA to make an array, reuse current type
     def cmd_make_array(self, a, count):
-        return str(MakeArray(int(a, 0), int(count, 0)))
+        return str(idc.make_array(int(a, 0), int(count, 0)))
 
     # tell IDA to convert to a byte
     def cmd_make_byte(self, a):
-        return str(MakeByte(int(a, 0)))
+        return str(idc.create_data(int(a, 0), idc.FF_BYTE, 1, ida_idaapi.BADADDR))
 
     # tell IDA to convert to a word
     def cmd_make_word(self, a):
-        return str(MakeWord(int(a, 0)))
+        return str(idc.create_data(int(a, 0), idc.FF_WORD, 2, ida_idaapi.BADADDR))
 
     # tell IDA to convert to a dword
     def cmd_make_dword(self, a):
-        return str(MakeDword(int(a, 0)))
+        return str(idc.create_data(int(a, 0), idc.FF_DWORD, 4, ida_idaapi.BADADDR))
 
     # tell IDA to convert to a qword
     def cmd_make_qword(self, a):
-        return str(MakeQword(int(a, 0)))
+        return str(idc.create_data(int(a, 0), idc.FF_QWORD, 8, ida_idaapi.BADADDR))
 
     # tell IDA to convert to a string
+    # a_end = 0 => auto size
     def cmd_make_string(self, a, a_end, kind):
-        return str(MakeStr(int(a, 0), int(a_end, 0), int(kind, 0)))
+        return str(ida_bytes.create_strlit(int(a, 0), int(a_end, 0), int(kind, 0)))
 
     # tell IDA to disassemble
     def cmd_make_code(self, a):
-        return str(MakeCode(int(a, 0)))
+        return str(idc.create_insn(int(a, 0)))
 
     # undefine at an address
-    def cmd_make_unknown(self, a):
-        return str(MakeUnkn(int(a, 0), 1))
+    # for code, undefine following instructions too
+    def cmd_undefine(self, a):
+        return str(idc.del_items(int(a, 0), 1))
 
     # patch a raw byte in the IDB
     def cmd_patch_byte(self, a, v):
-        PatchByte(int(a, 0), int(v, 0))
+        if idc.patch_byte(int(a, 0), int(v, 0)):
+            return "ok"
         return ""
 
     # return the path of the analysed file
     def cmd_get_input_path(self):
-        return GetInputFilePath()
+        return idc.get_input_file_path()
 
     # return the nth entrypoint address
     def cmd_get_entry(self, idx):
-        return "0x{:08X}".format(GetEntryPoint(GetEntryOrdinal(int(idx, 0))))
+        return self.fmt_addr(idc.get_entry(idc.get_entry_ordinal(int(idx, 0))))
 
     # return <cpu_name> <word size> <endianness>
     def cmd_get_cpuinfo(self):
@@ -293,11 +342,16 @@ class IdaRemote:
             endian = 'little'
         return " ".join([cpu_name, str(word_size), endian])
 
-    # run many commands
+    # identify the remote version
+    # ex: "ida 7.4"
+    def cmd_get_remoteid(self):
+        return "ida " + ida_kernwin.get_kernel_version()
+
+    # run many commands at once
     # batch is a list of separate commands
     # run all of them and return the array of results
     # array encoded as sequence of <str(int(len(element)))><space><element>
-    # ex: "14 get_cursor_pos4 quit" -> "4 0x423 bye"
+    # ex: "14 get_cursor_pos4 exitplugin" -> "4 0x423 bye"
     def cmd_batch(self, batch):
         ans_ary = []
         off = 0
@@ -308,12 +362,14 @@ class IdaRemote:
             rq = batch[off_len+1:off]
 
             ans = self.handle_rq(rq)
+            if not isinstance(ans, str):
+                idaapi.msg("output of {} is not a str\n".format(rq))
 
             ans_ary.append(ans)
 
         return "".join([str(len(ans)) + " " + ans for ans in ans_ary])
 
-    # handle multiple requests/responses in the client socket
+    # handle multiple sequential requests/responses in the client socket
     # allow large requests
     # payload = <str(int(len(request0)))><space><request0>
     # sends back <str(int(len(answer0)))><space><answer0>
@@ -330,22 +386,21 @@ class IdaRemote:
                 return "0 "
 
             while int(ln) > len(buf):
-                buf += self.sock_client.recv(int(ln)-len(buf))
+                buf += self.client_recv(int(ln)-len(buf))
 
             rq = buf[:int(ln)]
             buf = buf[int(ln):]
 
             ans = self.handle_rq(rq)
 
-            self.sock_client.send(str(len(ans)) + " " + ans)
-            
+            self.client_send(str(len(ans)) + " " + ans)
+
             if " " not in buf:
-                select.select([self.sock_client], [], [], 4)
-                buf += self.sock_client.recv(4096)
+                self.client_wait(4)
+                buf += self.client_recv(4096)
 
 
 
 idaremote = IdaRemote()
 idaremote.listen()
 idaremote.register_ida_timer()
-
