@@ -227,6 +227,10 @@ class IdaRemote:
     def cmd_get_next_head(self, a):
         return self.fmt_addr(idc.next_head(int(a, 0)))
 
+    # return the size of an item (head)
+    def cmd_get_item_size(self, a):
+        return str(idc.get_item_size(int(a, 0)))
+
     # return the list of functions in a range
     def cmd_get_functions(self, a_start, a_end):
         return " ".join([self.fmt_addr(a) for a in Functions(int(a_start, 0), int(a_end, 0))])

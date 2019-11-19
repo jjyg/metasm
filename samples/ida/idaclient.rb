@@ -116,6 +116,7 @@ class IdaClient
 	add_command('get_heads', :addr_start, :addr_end) { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_prev_head', :addr) { |a| addr(a) }
 	add_command('get_next_head', :addr) { |a| addr(a) }
+	add_command('get_item_size', :addr) { |a| Integer(a) }
 	add_command('get_functions', :addr_start, :addr_end) { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_function_name', :addr) { |s| s if s != '' }
 	add_command('get_function_comment', :addr) { |s| s if s != '' }
