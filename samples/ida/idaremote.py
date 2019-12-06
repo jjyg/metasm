@@ -82,7 +82,11 @@ class IdaRemote:
             bmsg = bytes(msg, 'latin1')
         except:
             bmsg = bytes(msg)
-        return self.sock_client.send(bmsg)
+        try:
+            return self.sock_client.send(bmsg)
+        except Exception as err:
+            idaapi.msg("IdaRemote client_send(): {}\n".format(err))
+            return 0
 
     def client_recv(self, ln):
         bmsg = self.sock_client.recv(ln)
@@ -304,8 +308,8 @@ class IdaRemote:
 
     # tell IDA to convert to a string
     # a_end = 0 => auto size
-    def cmd_make_string(self, a, a_end, kind):
-        return str(ida_bytes.create_strlit(int(a, 0), int(a_end, 0), int(kind, 0)))
+    def cmd_make_string(self, a, len, kind):
+        return str(ida_bytes.create_strlit(int(a, 0), int(len, 0), int(kind, 0)))
 
     # tell IDA to disassemble
     def cmd_make_code(self, a):

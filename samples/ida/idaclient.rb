@@ -134,12 +134,42 @@ class IdaClient
 	add_command('make_word', :addr)
 	add_command('make_dword', :addr)
 	add_command('make_qword', :addr)
-	add_command('make_string', :addr_start, :addr_end, :type)
+	add_command('make_string', :addr_start, :len, :type)
 	add_command('make_code', :addr)
 	add_command('undefine', :addr)
 	add_command('patch_byte', :addr, :newbyte)
 	add_command('get_input_path') { |s| s if s != '' }
 	add_command('get_entry', :idx) { |a| addr(a) }
+
+	# multirq request handling
+	# keep the tcp session to IDA open between requests for the duration of the block
+	def multirq(&cb)
+		return cb.call(self) if @multirq_fd
+
+		@multirq_fd = true
+		out = cb.call(self)
+		multirq_close
+		out
+	end
+
+	# when inside a multirq request, call this to close the current cx
+	# use this to avoid blocking IDA for too long
+	# will be reopened on demand during the next request
+	def multirq_pause
+		multirq_close
+		@multirq_fd = true
+	end
+
+	# close a multirq session
+	def multirq_close
+		if @multirq_fd and @multirq_fd != true
+			puts "m> \"0 \"" if $DEBUG
+			@multirq_fd.write "0 "
+			puts "m< #{@multirq_fd.read.inspect}" if $DEBUG
+			@multirq_fd.close
+		end
+		@multirq_fd = nil
+	end
 
 	# batch request handling
 	# yields, all the ida requests in the block will be buffered and sent in one request
@@ -147,17 +177,7 @@ class IdaClient
 	# those callbacks may send other ida requests, these will automatically be batched, recursively
 	# all the batch is done in a single TCP session with the IDA plugin, and will block IDA until the callback returns, avoid doing slow/non-ida stuff in there
 	def batch(&cb)
-		prepare_batch
-		@multirq_fd = true
-		out = cb.call(self)
-		if send_batch(true)
-			puts "m> \"0 \"" if $DEBUG
-			@multirq_fd.write "0 "
-			puts "m< #{@multirq_fd.read.inspect}" if $DEBUG
-			@multirq_fd.close
-		end
-		@multirq_fd = nil
-		out
+		multirq { batch_nocx(&cb) }
 	end
 	
 	# same as batch, but dont keep a TCP session open between requests
