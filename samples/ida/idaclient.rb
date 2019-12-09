@@ -85,6 +85,7 @@ class IdaClient
 	def self.add_command(name, *rq_args, &postprocess)
 		PostProcess[name] = postprocess
 		define_method(name) { |*args, &pp|
+			args << 0 while rq_args.length > args.length and rq_args[args.length].to_s[-1, 1] == '0'	# allow default 0 argument values if rq_arg is named :stuff0
 			raise ArgumentError, "bad arg count for #{name}" if args.length != rq_args.length
 			rq(name, *args, &pp)
 		}
@@ -106,7 +107,7 @@ class IdaClient
 	add_command('get_qword', :addr) { |i| Integer(i) }
 	add_command('get_xrefs_to', :addr) { |lst| lst.split.map { |a| addr(a) } }
 	add_command('exit_plugin')
-	add_command('exit_ida', :exit_code)
+	add_command('exit_ida', :exit_code0)
 	add_command('get_comment', :addr) { |s| s if s != '' }
 	add_command('set_comment', :addr, :comment)
 	add_command('get_cursor_pos') { |a| addr(a) }
@@ -134,12 +135,12 @@ class IdaClient
 	add_command('make_word', :addr)
 	add_command('make_dword', :addr)
 	add_command('make_qword', :addr)
-	add_command('make_string', :addr_start, :len, :type)
+	add_command('make_string', :addr_start, :len0, :type0)
 	add_command('make_code', :addr)
 	add_command('undefine', :addr)
 	add_command('patch_byte', :addr, :newbyte)
 	add_command('get_input_path') { |s| s if s != '' }
-	add_command('get_entry', :idx) { |a| addr(a) }
+	add_command('get_entry', :idx0) { |a| addr(a) }
 
 	# multirq request handling
 	# keep the tcp session to IDA open between requests for the duration of the block
@@ -177,7 +178,12 @@ class IdaClient
 	# those callbacks may send other ida requests, these will automatically be batched, recursively
 	# all the batch is done in a single TCP session with the IDA plugin, and will block IDA until the callback returns, avoid doing slow/non-ida stuff in there
 	def batch(&cb)
-		multirq { batch_nocx(&cb) }
+		if @batch_ary
+			# already in a batch, do nothing
+			cb.call
+		else
+			multirq { batch_nocx(&cb) }
+		end
 	end
 	
 	# same as batch, but dont keep a TCP session open between requests
@@ -292,6 +298,37 @@ class IdaClient
 				get_label(a) { |n|
 					yield a, n
 				}
+			}
+		}
+	end
+
+	# yield each pointer with its index, return the table of pointers (if called out of batch)
+	def read_ptr_table(a_start, nr, &cb)
+		@ptrsz ||= nil
+		ary = []
+		if not @ptrsz
+			get_cpuinfo { |ci|
+				@ptrsz = ci[:size]/8
+				iter_ptr_table(a_start, nr) { |ptr, i|
+					ary << ptr
+					yield(ptr, i)
+				}
+			}
+		else
+			iter_ptr_table(a_start, nr) { |ptr, i|
+				ary << ptr
+				yield(ptr, i)
+			}
+		end
+		ary
+	end
+
+	# walk a table of pointers, yield each pointer with its index
+	def iter_ptr_table(a_start, nr, ptrsz=@ptrsz)
+		get_ptr = (ptrsz == 4 ? :get_dword : :get_qword)
+		batch {
+			nr.times { |i|
+				send(get_ptr, a_start + i*@ptrsz) { |ptr| yield(ptr, i) }
 			}
 		}
 	end
