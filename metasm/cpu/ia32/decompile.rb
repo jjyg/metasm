@@ -245,8 +245,8 @@ class Ia32
 	end
 
 	def decompile_blocks(dcmp, myblocks, deps, func, nextaddr = nil)
-		eax, ecx, edx, _ = register_symbols
-		ebx, esp, ebp, esi, edi = ebx, esp, ebp	# fix ruby unused var warning
+		eax, ecx, edx, ebx, esp, ebp, esi, edi = register_symbols
+		eax, ecx, edx, ebx, esp, ebp, esi, edi = eax, ecx, edx, ebx, esp, ebp, esi, edi	# fix ruby unused var warning
 		scope = func.initializer
 		func.type.args.each { |a| scope.symbol[a.name] = a }
 		stmts = scope.statements
@@ -366,7 +366,6 @@ class Ia32
 					if di.backtrace_binding[:incomplete_binding]
 						stmts << C::Asm.new(di.instruction.to_s, nil, nil, nil, nil, nil).with_misc(:di_addr => di_addr)
 					else
-						update = {}
 						bd.each { |k, v|
 							stmts << ce[k, :'=', v]
 							stmts.pop if stmts.last.kind_of?(C::Variable)	# [:eflag_s, :=, :unknown].reduce
