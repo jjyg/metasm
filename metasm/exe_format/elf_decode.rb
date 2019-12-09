@@ -420,7 +420,7 @@ class ELF
 	def decode_sections_symbols
 		@symbols ||= []
 		@sections.to_a.each { |sec|
-			next if sec.type != 'SYMTAB'
+			next if sec.type != 'SYMTAB' and sec.type != 'DYNSYM'
 			next if not strtab = @sections[sec.link]
 			strtab = @encoded[strtab.offset, strtab.size].data
 			@encoded.ptr = sec.offset
@@ -1122,12 +1122,6 @@ class ELF
 		decode_sections_symbols
 		decode_sections_relocs
 		@sections.each { |s|
-			case s.type
-			when 'PROGBITS', 'NOBITS'
-			when 'TODO'	# TODO
-			end
-		}
-		@sections.find_all { |s| s.type == 'PROGBITS' or s.type == 'NOBITS' }.each { |s|
 			if s.flags.include? 'ALLOC'
 				if s.type == 'NOBITS'
 					s.encoded = EncodedData.new '', :virtsize => s.size
