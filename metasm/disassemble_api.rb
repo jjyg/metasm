@@ -516,7 +516,7 @@ class Disassembler
 		ldi = by.last
 		ldi = DecodedInstruction.new(ldi) if ldi.kind_of? Instruction
 		nb_i = by.grep(Instruction).length
-		wantlen = nb_i if wantlen < 0 or (ldi and ldi.opcode.props[:setip])
+		wantlen = nb_i if wantlen < 0
 		if patch_by
 			by.map! { |di|
 				if di.kind_of? Instruction
