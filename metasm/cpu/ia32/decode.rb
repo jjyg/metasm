@@ -898,8 +898,8 @@ class Ia32
 		bt_log.each { |btl|
 			next if btl[0] != :up
 			last = dasm.di_at(btl[4])
-			break if not last or last.block.to_normal.length > 2
-			next if last.block.to_normal.length != 2
+			break if not last or last.block.to_normal.to_a.length > 2
+			next if last.block.to_normal.to_a.length != 2
 			# search cmp eax, 42 ; ja too_big ; jmp [base+4*eax]
 			# XXX 256 cases switch => no cmp...
 			prelast = last.block.list.reverse.find { |pl| pl.opcode.name == 'cmp' }
