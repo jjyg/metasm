@@ -14,7 +14,7 @@ class VirtualMemoryDasm < VirtualString
 
 	def initialize(disassembler, addr_start = 0, length = nil)
 		@disassembler = disassembler
-		length ||= disassembler.sections.map { |k, v| k.kind_of?(Integer) ? k + v.length : 0 }.max
+		length ||= 1 << disassembler.cpu.size
 		super(addr_start, length)
 	end
 
