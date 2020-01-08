@@ -97,7 +97,7 @@ class IdaClient
 	add_command('get_remoteid') { |s| { :software => s.split[0], :version => s.split[1] } }
 	add_command('get_cpuinfo') { |s| { :name => s.split[0], :size => Integer(s.split[1]), :endian => s.split[2].to_sym } }
 	add_command('get_label', :addr) { |s| s if s != '' }
-	add_command('set_label', :addr, :label)
+	add_command('set_label', :addr, :label) { |s| s == "ok" }
 	add_command('resolve_label', :label) { |a| addr(a) }
 	add_command('get_named_addrs', :addr_start, :addr_end) { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_bytes', :addr, :len) { |hex| unhex(hex) }
@@ -106,12 +106,12 @@ class IdaClient
 	add_command('get_dword', :addr) { |i| Integer(i) }
 	add_command('get_qword', :addr) { |i| Integer(i) }
 	add_command('get_xrefs_to', :addr) { |lst| lst.split.map { |a| addr(a) } }
-	add_command('exit_plugin')
-	add_command('exit_ida', :exit_code0)
+	add_command('exit_plugin') { |s| s == "bye" }
+	add_command('exit_ida', :exit_code0) { |s| s == "bye" }
 	add_command('get_comment', :addr) { |s| s if s != '' }
-	add_command('set_comment', :addr, :comment)
+	add_command('set_comment', :addr, :comment) { |s| s == "ok" }
 	add_command('get_cursor_pos') { |a| addr(a) }
-	add_command('set_cursor_pos', :addr)
+	add_command('set_cursor_pos', :addr) { |s| s == "ok" }
 	add_command('get_selection') { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_flags', :addr) { |f| Integer(f) }
 	add_command('get_heads', :addr_start, :addr_end) { |lst| lst.split.map { |a| addr(a) } }
@@ -121,24 +121,26 @@ class IdaClient
 	add_command('get_functions', :addr_start, :addr_end) { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_function_name', :addr) { |s| s if s != '' }
 	add_command('get_function_comment', :addr) { |s| s if s != '' }
-	add_command('set_function_comment', :addr, :comment)
+	add_command('set_function_comment', :addr, :comment) { |s| s == "ok" }
 	add_command('get_function_flags', :addr) { |f| Integer(f) }
 	add_command('get_function_blocks', :addr) { |lst| lst.split.map { |a| addr(a) } }
+	add_command('get_type', :addr) { |s| s if s != '' }
+	add_command('set_type', :addr, :type) { |s| s if s != '' }
 	add_command('get_segments') { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_segment_start', :addr) { |a| addr(a) }
 	add_command('get_segment_end', :addr) { |a| addr(a) }
 	add_command('get_segment_name', :addr) { |s| s if s != '' }
 	add_command('get_op_mnemonic', :addr) { |s| s if s != '' }
-	add_command('make_align', :addr, :count, :align)
-	add_command('make_array', :addr, :count)
-	add_command('make_byte', :addr)
-	add_command('make_word', :addr)
-	add_command('make_dword', :addr)
-	add_command('make_qword', :addr)
-	add_command('make_string', :addr_start, :len0, :type0)
-	add_command('make_code', :addr)
-	add_command('undefine', :addr)
-	add_command('patch_byte', :addr, :newbyte)
+	add_command('make_align', :addr, :count, :align) { |s| s == "ok" }
+	add_command('make_array', :addr, :count) { |s| s == "ok" }
+	add_command('make_byte', :addr) { |s| s == "ok" }
+	add_command('make_word', :addr) { |s| s == "ok" }
+	add_command('make_dword', :addr) { |s| s == "ok" }
+	add_command('make_qword', :addr) { |s| s == "ok" }
+	add_command('make_string', :addr_start, :len0, :type0) { |s| s == "ok" }
+	add_command('make_code', :addr) { |s| s == "ok" }
+	add_command('undefine', :addr) { |s| s == "ok" }
+	add_command('patch_byte', :addr, :newbyte) { |s| s == "ok" }
 	add_command('get_input_path') { |s| s if s != '' }
 	add_command('get_entry', :idx0) { |a| addr(a) }
 
@@ -311,13 +313,13 @@ class IdaClient
 				@ptrsz = ci[:size]/8
 				iter_ptr_table(a_start, nr) { |ptr, i|
 					ary << ptr
-					yield(ptr, i)
+					yield(ptr, i) if block_given?
 				}
 			}
 		else
 			iter_ptr_table(a_start, nr) { |ptr, i|
 				ary << ptr
-				yield(ptr, i)
+				yield(ptr, i) if block_given?
 			}
 		end
 		ary
@@ -326,10 +328,8 @@ class IdaClient
 	# walk a table of pointers, yield each pointer with its index
 	def iter_ptr_table(a_start, nr, ptrsz=@ptrsz)
 		get_ptr = (ptrsz == 4 ? :get_dword : :get_qword)
-		batch {
-			nr.times { |i|
-				send(get_ptr, a_start + i*@ptrsz) { |ptr| yield(ptr, i) }
-			}
+		nr.times { |i|
+			send(get_ptr, a_start + i*@ptrsz) { |ptr| yield(ptr, i) }
 		}
 	end
 end

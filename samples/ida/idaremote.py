@@ -262,6 +262,19 @@ class IdaRemote:
         fc = idaapi.FlowChart(idaapi.get_func(int(a, 0)))
         return " ".join([self.fmt_addr(b.start_ea) for b in fc])
 
+    # return the C prototype for an address
+    def cmd_get_type(self, a):
+        t = idc.GetType(int(a, 0))
+        if not t:
+            t = ""
+        return t
+
+    # set the C prototype for an address
+    def cmd_set_type(self, a, t):
+        if idc.SetType(int(a, 0), t):
+            return "ok"
+        return ""
+
     # return list of all segments start address
     def cmd_get_segments(self):
         return " ".join([self.fmt_addr(a) for a in Segments()])
