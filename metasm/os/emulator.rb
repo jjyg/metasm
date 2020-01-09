@@ -135,6 +135,10 @@ class EmuDebugger < Debugger
 	end
 
 	def do_singlestep
+		if b = @breakpoint[pc]
+			evt_bpx(b)
+		end
+
 		di = @disassembler.di_at(pc)
 		if not di
 			@disassembler.disassemble_fast(pc)
