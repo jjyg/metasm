@@ -193,7 +193,10 @@ class IdaRemote:
 
     # get the non-repeatable comment at address
     def cmd_get_comment(self, addr):
-        return idc.get_cmt(int(addr, 0), 0)
+        c = idc.get_cmt(int(addr, 0), 0)
+        if c:
+            return c
+        return ""
 
     # set the non-repeatable comment at address
     def cmd_set_comment(self, addr, cmt):
@@ -264,7 +267,7 @@ class IdaRemote:
 
     # return the C prototype for an address
     def cmd_get_type(self, a):
-        t = idc.GetType(int(a, 0))
+        t = idc.get_type(int(a, 0))
         if not t:
             t = ""
         return t
