@@ -14,6 +14,8 @@ class IdaClient
 
 	# postprocessing callbacks, to transform string answers from the IDA plugin to user-friendly data
 	PostProcess = {}
+	# commandname => safe to ignore returned value (prevent warning in a batch)
+	CanIgnoreRet = {}
 
 	# make one request to IDA
 	# in batch mode, queue the request for later
@@ -84,6 +86,7 @@ class IdaClient
 	# metaprogramming to register new commands handled by the IDA plugin
 	def self.add_command(name, *rq_args, &postprocess)
 		PostProcess[name] = postprocess
+		CanIgnoreRet[name] = true if rq_args.delete(:can_ignore_ret)
 		define_method(name) { |*args, &pp|
 			args << 0 while rq_args.length > args.length and rq_args[args.length].to_s[-1, 1] == '0'	# allow default 0 argument values if rq_arg is named :stuff0
 			raise ArgumentError, "bad arg count for #{name}" if args.length != rq_args.length
@@ -97,7 +100,7 @@ class IdaClient
 	add_command('get_remoteid') { |s| { :software => s.split[0], :version => s.split[1] } }
 	add_command('get_cpuinfo') { |s| { :name => s.split[0], :size => Integer(s.split[1]), :endian => s.split[2].to_sym } }
 	add_command('get_label', :addr) { |s| s if s != '' }
-	add_command('set_label', :addr, :label) { |s| s == "ok" }
+	add_command('set_label', :addr, :label, :can_ignore_ret) { |s| s == "ok" }
 	add_command('resolve_label', :label) { |a| addr(a) }
 	add_command('get_named_addrs', :addr_start, :addr_end) { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_bytes', :addr, :len) { |hex| unhex(hex) }
@@ -106,12 +109,12 @@ class IdaClient
 	add_command('get_dword', :addr) { |i| Integer(i) }
 	add_command('get_qword', :addr) { |i| Integer(i) }
 	add_command('get_xrefs_to', :addr) { |lst| lst.split.map { |a| addr(a) } }
-	add_command('exit_plugin') { |s| s == "bye" }
-	add_command('exit_ida', :exit_code0) { |s| s == "bye" }
+	add_command('exit_plugin', :can_ignore_ret) { |s| s == "bye" }
+	add_command('exit_ida', :exit_code0, :can_ignore_ret) { |s| s == "bye" }
 	add_command('get_comment', :addr) { |s| s if s != '' }
-	add_command('set_comment', :addr, :comment) { |s| s == "ok" }
+	add_command('set_comment', :addr, :comment, :can_ignore_ret) { |s| s == "ok" }
 	add_command('get_cursor_pos') { |a| addr(a) }
-	add_command('set_cursor_pos', :addr) { |s| s == "ok" }
+	add_command('set_cursor_pos', :addr, :can_ignore_ret) { |s| s == "ok" }
 	add_command('get_selection') { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_flags', :addr) { |f| Integer(f) }
 	add_command('get_heads', :addr_start, :addr_end) { |lst| lst.split.map { |a| addr(a) } }
@@ -121,26 +124,26 @@ class IdaClient
 	add_command('get_functions', :addr_start, :addr_end) { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_function_name', :addr) { |s| s if s != '' }
 	add_command('get_function_comment', :addr) { |s| s if s != '' }
-	add_command('set_function_comment', :addr, :comment) { |s| s == "ok" }
+	add_command('set_function_comment', :addr, :comment, :can_ignore_ret) { |s| s == "ok" }
 	add_command('get_function_flags', :addr) { |f| Integer(f) }
 	add_command('get_function_blocks', :addr) { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_type', :addr) { |s| s if s != '' }
-	add_command('set_type', :addr, :type) { |s| s if s != '' }
+	add_command('set_type', :addr, :type, :can_ignore_ret) { |s| s if s != "ok" }
 	add_command('get_segments') { |lst| lst.split.map { |a| addr(a) } }
 	add_command('get_segment_start', :addr) { |a| addr(a) }
 	add_command('get_segment_end', :addr) { |a| addr(a) }
 	add_command('get_segment_name', :addr) { |s| s if s != '' }
 	add_command('get_op_mnemonic', :addr) { |s| s if s != '' }
-	add_command('make_align', :addr, :count, :align) { |s| s == "ok" }
-	add_command('make_array', :addr, :count) { |s| s == "ok" }
-	add_command('make_byte', :addr) { |s| s == "ok" }
-	add_command('make_word', :addr) { |s| s == "ok" }
-	add_command('make_dword', :addr) { |s| s == "ok" }
-	add_command('make_qword', :addr) { |s| s == "ok" }
-	add_command('make_string', :addr_start, :len0, :type0) { |s| s == "ok" }
-	add_command('make_code', :addr) { |s| s == "ok" }
-	add_command('undefine', :addr) { |s| s == "ok" }
-	add_command('patch_byte', :addr, :newbyte) { |s| s == "ok" }
+	add_command('make_align', :addr, :count, :align, :can_ignore_ret) { |s| s == "ok" }
+	add_command('make_array', :addr, :count, :can_ignore_ret) { |s| s == "ok" }
+	add_command('make_byte', :addr, :can_ignore_ret) { |s| s == "ok" }
+	add_command('make_word', :addr, :can_ignore_ret) { |s| s == "ok" }
+	add_command('make_dword', :addr, :can_ignore_ret) { |s| s == "ok" }
+	add_command('make_qword', :addr, :can_ignore_ret) { |s| s == "ok" }
+	add_command('make_string', :addr_start, :len0, :type0, :can_ignore_ret) { |s| s == "ok" }
+	add_command('make_code', :addr, :can_ignore_ret) { |s| s == "ok" }
+	add_command('undefine', :addr, :can_ignore_ret) { |s| s == "ok" }
+	add_command('patch_byte', :addr, :newbyte, :can_ignore_ret) { |s| s == "ok" }
 	add_command('get_input_path') { |s| s if s != '' }
 	add_command('get_entry', :idx0) { |a| addr(a) }
 
@@ -221,7 +224,7 @@ class IdaClient
 		out_cb = []
 		ary.each { |rq, cb|
 			rq_buf = rq.join(' ')
-			if not cb and PostProcess[rq[0]]
+			if not cb and not CanIgnoreRet[rq[0]]
 				puts "W: IdaClient: batch mode request #{rq[0]} with no callback, will discard answer"
 			end
 			batch_entry = "#{rq_buf.length} #{rq_buf}"
