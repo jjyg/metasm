@@ -469,6 +469,14 @@ class AsmListingWidget < DrawableWidget
 					nl[]
 				else
 					curaddr += [di.bin_length, 1].max
+
+					if di.block.list.last == di and @dasm.di_at(curaddr) and not di.block.to_normal.to_a.include?(curaddr) and not di.block.to_subfuncret.to_a.include?(curaddr) and
+						# kikoo delayslot
+						not di.block.list[-[4, di.block.list.length].min, 4].reverse.find { |_di| _di.opcode.props[:stopexec] and not _di.opcode.props[:saveip] }
+						curaddr = di.address
+						nl[]
+						curaddr += [di.bin_length, 1].max
+					end
 				end
 			elsif s = @dasm.get_edata_at(curaddr) and s.ptr < s.length
 				@dasm.comment[curaddr].each { |c| str_c << ["// #{c}", :comment] ; nl[] } if @dasm.comment[curaddr]
@@ -553,7 +561,7 @@ class AsmListingWidget < DrawableWidget
 					else
 						len = [len, s.length-s.ptr].min
 						len -= curaddr % 256 if len == 256 and curaddr.kind_of? Integer
-						len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or s.inv_export[s.ptr+l] or s.reloc[s.ptr+l] } || len
+						len = (1..len).find { |l| @dasm.xrefs[curaddr+l] or s.inv_export[s.ptr+l] or s.reloc[s.ptr+l] or @dasm.decoded[curaddr+l]} || len
 						dat = "db #{Expression[len]} dup(?) "
 						aoff = len
 					end

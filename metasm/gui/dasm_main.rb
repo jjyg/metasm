@@ -360,7 +360,7 @@ class DisasmWidget < ContainerChoiceWidget
 		@dasm.section_info.each { |n,a,l,i|
 			list << [Expression[a], Expression[l], n, i]
 		}
-		listwindow("list of sections", list) { |i| focus_addr i[0] if i[0] != '0' or @dasm.get_section_at(0) }
+		listwindow("list of sections", list) { |i| focus_addr_autocomplete i[0] if i[0] != '0' or @dasm.get_section_at(0) }
 	end
 
 	def list_strings
@@ -368,7 +368,7 @@ class DisasmWidget < ContainerChoiceWidget
 		@dasm.strings_scan { |o, str|
 			list << [Expression[o], str[0, 24].inspect, str.length]
 		}
-		listwindow("list of strings", list) { |i| focus_addr i[0] }
+		listwindow("list of strings", list) { |i| focus_addr_autocomplete i[0] }
 	end
 
 	def list_xrefs(addr=nil)
@@ -399,14 +399,14 @@ class DisasmWidget < ContainerChoiceWidget
 		if list.length == 1
 			messagebox "no xref to #{Expression[addr]}" if addr
 		else
-			listwindow("list of xrefs to #{Expression[addr]}", list) { |i| focus_addr(i[0], nil, true) }
+			listwindow("list of xrefs to #{Expression[addr]}", list) { |i| focus_addr_autocomplete i[0] }
 		end
 	end
 
 	# jump to address
 	def prompt_goto
 		inputbox('address to go', :text => Expression[curaddr]) { |v|
-			focus_addr_autocomplete(v)
+			focus_addr_autocomplete v, true
 		}
 	end
 
@@ -449,7 +449,7 @@ class DisasmWidget < ContainerChoiceWidget
 			}
 			list_bghilight("backtrace #{expr} from #{Expression[addr]}", list, :bghilight_index => 1) { |i|
 				a = i[1].empty? ? i[3] : i[1]
-				focus_addr(a, nil, true)
+				focus_addr_autocomplete a
 			}
 		}
 	end
@@ -555,7 +555,7 @@ class DisasmWidget < ContainerChoiceWidget
 
 	# same as focus_addr, also understands partial label names
 	# if the partial part is ambiguous, show a listwindow with all matches (if show_alt)
-	def focus_addr_autocomplete(v, show_alt=true)
+	def focus_addr_autocomplete(v, show_alt=false)
 		if not focus_addr(v, nil, true)
 			labels = @dasm.prog_binding.map { |k, vv|
 				[k, Expression[@dasm.normalize(vv)]] if k.downcase.include? v.downcase
