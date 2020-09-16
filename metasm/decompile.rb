@@ -2062,7 +2062,7 @@ class Decompiler
 			when C::CExpression
 				@exprs[l_cur] = [stmt]
 				@to[l_cur] = [l_after]
-				@to[l_cur] = [] if stmt.op == :funcall and stmt.lexpr.has_attribute('noreturn')
+				@to[l_cur] = [] if stmt.op == :funcall and stmt.lexpr.kind_of?(C::Variable) and stmt.lexpr.has_attribute('noreturn')
 			when C::Return
 				@exprs[l_cur] = [stmt.value] if stmt.value
 				@to[l_cur] = []
