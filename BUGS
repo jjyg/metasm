@@ -1,6 +1,7 @@
 List of known bugs/missing features, in no particular order:
 
 PPC cpu cannot parse/encode code
+ARM32 does not work at all, need to handle mixing thumb/long mode
 Disassembler is sloooow
 The GTK UI is quite sluggish too
 Disassembler backtracker does weird things
@@ -9,3 +10,15 @@ ELF encoder may need tweaks to handle OpenBSD
 Ia32 compile_c misses many features (divisions, bitfields), and needs a register allocator
 Asm parser does not handle well ; comments (eg "foo ; */* blargimdead") (c-style comments are parsed before asm-style, so multiline /* after ; is bad)
 The BUGS file is incomplete
+
+
+TODO forbid_optimdata
+var_C = *(__int16*)(off+off+ptr);
+*(__int16*)(off+off+ptr) = *(__int16*)(off+off+ptr+2)
+*(__int16*)(off+off+ptr+2) = var_C & 0xffff
+
+!=
+
+*(__int16*)(off+off+ptr) = *(__int16*)(off+off+ptr+2);
+*(__int16*)(off+off+ptr+2) = *(__int16*)(off+off+ptr);
+
