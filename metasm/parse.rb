@@ -323,7 +323,7 @@ class ExeFormat
 					else
 						lname = tok.raw
 						raise tok, "invalid label name: #{lname.inspect} is reserved" if @cpu.check_reserved_name(lname)
-						raise tok, "label redefinition" if new_label(lname) != lname
+						raise tok, "label redefinition" if new_label(lname) != lname and not (@cursource[-1].kind_of?(Label) and @cursource[-1].name == lname)
 					end
 					l = Label.new(lname)
 					l.backtrace = tok.backtrace
