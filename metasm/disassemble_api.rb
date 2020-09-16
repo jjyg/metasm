@@ -716,7 +716,12 @@ class Disassembler
 
 			if not di = b.list[-1-@cpu.delay_slot] or not di.opcode.props[:stopexec] or di.opcode.props[:saveip]
 				# the current block falls through the end, ensure it falls to the right place
-				to = b.list.last.next_addr
+				tmp = b.to_subfuncret || b.to_normal
+				if tmp and tmp.length == 1
+					to = tmp[0]
+				else
+					to = b.list.last.next_addr
+				end
 				if (todo.include?(to) or done.include?(to)) and di_at(to)
 					if done.include?(to)
 						if not to_l = inv_binding[to]
@@ -730,6 +735,7 @@ class Disassembler
 						todo << to	# ensure it's next in the listing
 					end
 				else
+					puts "flatten +halt after #{to.inspect} (following #{di})"
 					ret << @cpu.instr_jump_stop
 				end
 			end
