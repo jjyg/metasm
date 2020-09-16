@@ -601,8 +601,7 @@ class Disassembler
 	# returns nil if the address is not known and is not a string
 	def auto_label_at(addr, base='xref', *rewritepfx)
 		addr = Expression[addr].reduce
-		addrstr = "#{base}_#{Expression[addr]}"
-		return if addrstr !~ /^\w+$/
+		addrstr = "#{base}_#{Expression[addr]}".gsub(/[^\w]/, '_')
 		e, b = get_section_at(addr)
 		if not e
 			l = Expression[addr].reduce_rec if Expression[addr].reduce_rec.kind_of?(::String)
