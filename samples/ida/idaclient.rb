@@ -335,6 +335,31 @@ class IdaClient
 			send(get_ptr, a_start + i*@ptrsz) { |ptr| yield(ptr, i) }
 		}
 	end
+
+	# try to set a label at addr, append integers until success
+	# yield the successful label name or nil on error
+	def set_label_unique(addr, label, &b)
+		label = label.gsub(/[^\w]/, '')
+		set_label(addr, label) { |done|
+			if done
+				b.call(label) if b
+			else
+				parts = label.split('_')
+				if parts.last =~ /^\d+$/ and parts.last.to_i < 100
+					count = parts.pop.to_i + 1
+				else
+					count = 1
+				end
+				if count >= 10
+					# avoid infinite retries
+					b.call(nil) if b
+				else
+					label = parts.join + "_#{count}"
+					set_label_unique(addr, label, &b)
+				end
+			end
+		}
+	end
 end
 
 if __FILE__ == $0
