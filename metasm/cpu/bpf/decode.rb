@@ -25,7 +25,7 @@ class BPF
 		op = di.opcode
 		di.instruction.opname = op.name
 		di.bin_length = 8
-		code, jt, jf, k = edata.read(8).unpack('vCCV')
+		_code, jt, jf, k = edata.read(8).unpack('vCCV')
 
 		op.args.each { |a|
 			di.instruction.args << case a
@@ -72,6 +72,10 @@ class BPF
 		end
 
 		di
+	end
+
+	def register_symbols
+		@register_symbols ||= [:a, :x, :len]
 	end
 
 	# populate the @backtrace_binding hash with default values
