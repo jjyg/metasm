@@ -715,8 +715,9 @@ class Disassembler
 			}
 
 			if not di = b.list[-1-@cpu.delay_slot] or not di.opcode.props[:stopexec] or di.opcode.props[:saveip]
+				# the current block falls through the end, ensure it falls to the right place
 				to = b.list.last.next_addr
-				if todo.include?(to) and di_at(to)
+				if (todo.include?(to) or done.include?(to)) and di_at(to)
 					if done.include?(to)
 						if not to_l = inv_binding[to]
 							to_l = auto_label_at(to, 'loc')
