@@ -17,7 +17,7 @@ class CoverageWidget < DrawableWidget
 		@pixel_w = @pixel_h = 2	# use a font ?
 		@sections = []
 		@section_x = []
-		@slave = nil	# another dasmwidget whose curaddr is kept sync
+		@linked = nil	# another dasmwidget whose curaddr is kept sync
 
 		@default_color_association = ColorTheme.merge :caret => :yellow, :caret_col => :darkyellow,
 			:background => :palegrey, :code => :red, :data => :blue
@@ -28,7 +28,7 @@ class CoverageWidget < DrawableWidget
 		@sections.zip(@section_x).each { |s, sx|
 			if x >= sx[0] and x < sx[1]+@pixel_w
 				@curaddr = s[0] + (x-sx[0])/@pixel_w*@byte_per_col + (y/@pixel_h-@spacing)*@byte_per_col/@col_height
-				@slave.focus_addr(@curaddr) if @slave rescue @slave=nil
+				@linked.focus_addr(@curaddr) if @linked rescue @linked=nil
 				redraw
 				break
 			end
@@ -38,8 +38,8 @@ class CoverageWidget < DrawableWidget
 	def doubleclick(x, y)
 		click(x, y)
 		cw = @parent_widget.clone_window(@curaddr, :listing)
-		@slave = cw.dasm_widget
-		@slave.focus_changed_callback = lambda { redraw rescue @slave.focus_changed_callback = nil }
+		@linked = cw.dasm_widget
+		@linked.focus_changed_callback = lambda { redraw rescue @linked.focus_changed_callback = nil }
 	end
 	alias rightclick doubleclick
 
@@ -52,7 +52,7 @@ class CoverageWidget < DrawableWidget
 	end
 
 	def paint
-		@curaddr = @slave.curaddr if @slave and @slave.curaddr rescue @slave=nil
+		@curaddr = @linked.curaddr if @linked and @linked.curaddr rescue @linked=nil
 
 		@spacing = 4	# pixels left for borders / inter-section
 
@@ -148,7 +148,7 @@ class CoverageWidget < DrawableWidget
 
 	def set_cursor_pos(p)
 		@curaddr = p
-		@slave.focus_addr(@curaddr) if @slave rescue @slave=nil
+		@linked.focus_addr(@curaddr) if @linked rescue @linked=nil
 		redraw
 	end
 
@@ -157,7 +157,7 @@ class CoverageWidget < DrawableWidget
 	def focus_addr(addr)
 		return if not addr = @parent_widget.normalize(addr) or not @dasm.get_section_at(addr)
 		@curaddr = addr
-		@slave.focus_addr(@curaddr) if @slave rescue @slave=nil
+		@linked.focus_addr(@curaddr) if @linked rescue @linked=nil
 		gui_update
 		true
 	end

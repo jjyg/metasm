@@ -234,7 +234,7 @@ end
 
 
 # a widget that displays values of registers of a Debugger
-# also controls the Debugger and commands slave windows (showing listing & memory)
+# also controls the Debugger and commands inner windows (showing listing & memory)
 class DbgRegWidget < DrawableWidget
 	attr_accessor :dbg
 
