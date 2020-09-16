@@ -41,17 +41,12 @@ def reopen_rw(addr=nil, edata=nil)
 	end
 end
 
-raise "cant find original file" if not @program.filename or not File.exist? @program.filename
+raise "cant find original file" if not @program.filename or not File.exist?(@program.filename)
 
 reopen_rw
 
-def patch_instrs(addr, asmsrc)
-	sc = Metasm::Shellcode.new(cpu, addr)	# pfx needed for autorequire
-	sc.assemble(asmsrc, cpu)
-	sc.encoded.fixup! prog_binding	# allow references to dasm labels in the shellcode
-	raw = sc.encode_string
-
-	if s = get_section_at(addr) and s[0].data.kind_of? VirtualFile
+def patch_mem(addr, raw)
+	if s = get_section_at(addr) and s[0].data.kind_of?(VirtualFile)
 		s[0][s[0].ptr, raw.length] = raw
 	elsif o = addr_to_fileoff(addr)	# section too small, not loaded as a VirtFile
 		backup_program_file
@@ -60,7 +55,17 @@ def patch_instrs(addr, asmsrc)
 			fd.write raw
 		}
 		s[0][s[0].ptr, raw.length] = raw if s
-	else
+	end
+end
+
+def patch_instrs(addr, asmsrc)
+	sc = Metasm::Shellcode.new(cpu, addr)	# pfx needed for autorequire
+	sc.assemble(asmsrc, cpu)
+	sc.encoded.fixup! prog_binding	# allow references to dasm labels in the shellcode
+	raw = sc.encode_string
+
+	if not patch_mem(addr, raw)
+		puts "patch_mem failed"
 		return
 	end
 
