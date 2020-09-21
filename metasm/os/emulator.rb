@@ -78,7 +78,13 @@ class EmuDebugger < Debugger
 		@breakpoint = {}
 		@breakpoint_memory = {}
 		@breakpoint_thread = {}
+		make_sections_editable
 		@cpu.initialize_emudbg(self) if @cpu.respond_to?(:initialize_emudbg)
+	end
+
+	def make_sections_editable
+		# load dasm sections content as strings to allow nonpersistant modifications (would raise with a readonly VirtualFile object)
+		@disassembler.sections.each_value { |edata| edata.data = edata.data.to_str if edata.data.length < 1024*1024 }
 	end
 
 	def detach
