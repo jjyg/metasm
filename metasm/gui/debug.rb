@@ -844,6 +844,19 @@ class DbgConsoleWidget < DrawableWidget
 				add_log st.to_s.gsub("\t", '  ')
 			end
 		}
+		new_command('dump', 'memdump', 'dump raw memory to disk: dump <addr> <len> <file>') { |arg|
+			addr, len, fname = arg.strip.split(/\s+/, 3)
+			addr = (addr ? solve_expr(addr) : @parent_widget.mem.curaddr)
+			len = (len ? solve_expr(len) : 0x1000)
+			fname ||= "memdump_#{Expression[addr]}_#{Expression[len]}.raw"
+			raw = @dbg[addr, len].to_str
+			if raw.empty?
+				add_log 'nothing to dump'
+			else
+				File.open(fname, 'wb') { |fd| fd.write raw }
+				add_log "saved #{fname}"
+			end
+		}
 		new_command('u', 'focus code window on an address') { |arg| p.code.focus_addr(solve_expr(arg)) }
 		new_command('.', 'focus code window on current address') { p.code.focus_addr(solve_expr(@dbg.register_pc.to_s)) }
 		new_command('wc', 'set code window height') { |arg|
