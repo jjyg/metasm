@@ -342,7 +342,7 @@ class Expression < ExpressionType
 	INT_MIN = {}
 	INT_MAX = {}
 
-	[8, 16, 32, 64].each { |sz|
+	[8, 16, 32, 64, 128, 256].each { |sz|
 		INT_SIZE["i#{sz}".to_sym] =
 		INT_SIZE["u#{sz}".to_sym] =
 		INT_SIZE["a#{sz}".to_sym] = sz
