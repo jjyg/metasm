@@ -683,6 +683,7 @@ class Ia32
 					end
 				}
 			when 'movdqa', 'movdqu', 'movaps', 'movups'; lambda { |di, a0, a1| { a0 => Expression[a1] } }
+			when 'xorps'; lambda { |di, a0, a1| { a0 => Expression[a0, :^, a1] } }
 			when 'cmpxchg'; lambda { |di, a0, a1|	# eax == a0 ? a0 <= a1, zf <= 1 : eax <= a0, zf <= 0
 				eax_ = self.class::Reg.new(0, opsz(di)).symbolic
 				cmp = Expression[eax_, :==, a0]
