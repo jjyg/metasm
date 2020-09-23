@@ -10,7 +10,8 @@ module Metasm
 class ExeFormat
 	# encodes an Array of source (Label/Data/Instruction etc) to an EncodedData
 	# resolves ambiguities using +encode_resolve+
-	def assemble_sequence(seq, cpu)
+	# uses optional ext_binding to find shortest encoding for instructions
+	def assemble_sequence(seq, cpu, ext_binding={}, startlabel=nil)
 		# an array of edata or sub-array of ambiguous edata
 		# its last element is always an edata
 		ary = [EncodedData.new]
@@ -37,26 +38,29 @@ class ExeFormat
 			end
 		}
 
-		edata = (ary.length > 1) ? assemble_resolve(ary) : ary.shift
+		edata = (ary.length > 1) ? assemble_resolve(ary, ext_binding, startlabel) : ary.shift
 		edata.fixup edata.binding
 		edata
 	end
 
 	# choose among multiple possible sub-EncodedData
-	# assumes all ambiguous edata have the equivallent relocations in the same order
-	def assemble_resolve(ary)
-		startlabel = new_label('section_start')
+	# assumes all ambiguous edata have equivalent relocations in the same order
+	# use ext_binding to select size-optimal encoding of instructions with relocs
+	# startlabel is the label/address of the beginning of the section, others internal exports
+	#  are redefined as offsets from that
+	def assemble_resolve(ary, ext_binding={}, startlabel=nil)
+		startlabel ||= new_label('section_start')
 
 		# create two bindings where all elements are the shortest/longest possible
-		minbinding = {}
+		minbinding = ext_binding.dup
 		minoff = 0
-		maxbinding = {}
+		maxbinding = ext_binding.dup
 		maxoff = 0
 
 		ary.each { |elem|
 			case elem
 			when Array
-				if elem.all? { |ed| ed.kind_of? EncodedData and ed.reloc.empty? }
+				if elem.all? { |ed| ed.kind_of?(EncodedData) and ed.reloc.empty? }
 					elem = [elem.sort_by { |ed| ed.length }.first]
 				end
 				elem.each { |e|
@@ -186,8 +190,7 @@ class ExeFormat
 				wantsize = {}
 
 				elem.each { |e|
-					e.reloc.sort.each_with_index { |r_, i|
-						r = r_[1]
+					e.reloc.sort.each_with_index { |(_, r), i|
 						# has external ref
 						if not r.target.bind(minbinding).reduce.kind_of?(Numeric) or not check_linear[r.target]
 							# find the biggest relocation type for the current target

@@ -60,8 +60,9 @@ end
 
 def patch_instrs(addr, asmsrc)
 	sc = Metasm::Shellcode.new(cpu, addr)	# pfx needed for autorequire
-	sc.assemble(asmsrc, cpu)
-	sc.encoded.fixup! prog_binding	# allow references to dasm labels in the shellcode
+	sc.parse(asmsrc, cpu)
+	sc.encoded << sc.assemble_sequence(sc.source, sc.cpu, prog_binding, addr)
+	sc.encoded.fixup!(prog_binding)	# allow references to dasm labels in the shellcode
 	raw = sc.encode_string
 
 	if not patch_mem(addr, raw)
