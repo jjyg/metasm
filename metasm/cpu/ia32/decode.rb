@@ -544,28 +544,26 @@ class Ia32
 					end
 				}
 			when 'div', 'idiv'; lambda { |di, a0|
-				# TODO idiv => signed
-				case opsz(di)
-				when 8
+				s = opsz(di)
+				m = mask[di]
+				if s == 8
 					src = Expression[eax, :&, 0xffff]
-					quot = Expression[[src, :/, a0], :&, 0xff]
-					rem  = Expression[[src, :%, a0], :&, 0xff]
+				else
+					src = Expression[[eax, :&, m], :|, [[edx, :&, m], :<<, s]]
+				end
+				quot = Expression[[src, :/, a0], :&, m]
+				rem  = Expression[[src, :%, a0], :&, m]
+				if op == 'idiv'
+					nquot = Expression[[1 << (2*s), :-, [[1 << (2*s), :-, src], :/, a0]], :&, m]
+					nrem  = Expression[[1 << (2*s), :-, [[1 << (2*s), :-, src], :%, a0]], :&, m]
+					sgn = Expression[[src, :>>, 2*s-1], :&, 1]
+					quot = Expression[[[1, :-, sgn], :*, quot], :|, [sgn, :*, nquot]]
+					rem  = Expression[[[1, :-, sgn], :*, rem ], :|, [sgn, :*, nrem ]]
+				end
+				if s == 8
 					{ Expression[eax, :&, 0xffff] => Expression[quot, :|, [rem, :<<, 8]] }
-				when 16
-					src = Expression[[eax, :&, 0xffff], :|, [[edx, :&, 0xffff], :<<, 16]]
-					quot = Expression[[src, :/, a0], :&, 0xffff]
-					rem  = Expression[[src, :%, a0], :&, 0xffff]
-					{ Expression[eax, :&, 0xffff] => quot, Expression[edx, :&, 0xffff] => rem }
-				when 32
-					src = Expression[[eax, :&, 0xffffffff], :|, [[edx, :&, 0xffffffff], :<<, 32]]
-					quot = Expression[[src, :/, a0], :&, 0xffffffff]
-					rem  = Expression[[src, :%, a0], :&, 0xffffffff]
-					{ Expression[eax, :&, 0xffffffff] => quot, Expression[edx, :&, 0xffffffff] => rem }
-				when 64
-					src = Expression[eax, :|, [edx, :<<, 64]]
-					quot = Expression[src, :/, a0]
-					rem  = Expression[src, :%, a0]
-					{ eax => quot, edx => rem }
+				else
+					{ Expression[eax, :&, m] => quot, Expression[edx, :&, m] => rem }
 				end
 			}
 			when 'rdtsc'; lambda { |di| { eax => Expression::Unknown, edx => Expression::Unknown, :incomplete_binding => Expression[1] } }
