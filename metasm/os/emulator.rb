@@ -84,7 +84,12 @@ class EmuDebugger < Debugger
 
 	def make_sections_editable
 		# load dasm sections content as strings to allow nonpersistant modifications (would raise with a readonly VirtualFile object)
-		@disassembler.sections.each_value { |edata| edata.data = edata.data.to_str if edata.data.length < 1024*1024 }
+		@disassembler.sections.each_value { |edata|
+		      if edata.length < 1024*1024
+			      edata.data = edata.data.to_str
+			      edata.fill
+		      end
+		}
 	end
 
 	def detach
