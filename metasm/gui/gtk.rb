@@ -303,7 +303,12 @@ class DrawableWidget < Gtk::DrawingArea
 		# receive keyboard/mouse signals
 		set_events Gdk::Event::ALL_EVENTS_MASK
 		set_can_focus true
-		set_font 'courier 10'
+		set_font "#{prefered_font_family} 10"
+	end
+
+	def prefered_font_family
+		can_ff = Gtk::Invisible.new.pango_context.families.map { |f| f.name }.sort
+		(can_ff.grep(/hack/i) + can_ff.grep(/code/i) + can_ff.grep(/courier/i) + can_ff).first
 	end
 
 	def initialize_widget
