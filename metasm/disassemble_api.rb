@@ -1312,6 +1312,14 @@ class Disassembler
 		delta
 	end
 
+	# backtrace, if the result is one value, return it, else return nil
+	def backtrace_one(*args)
+		ret = backtrace(*args)
+		if ret.length == 1 and ret.first.kind_of?(Expression) and ret.first != Expression::Unknown
+			normalize(ret.first)
+		end
+	end
+
 	# dataflow method
 	# walks a function, starting at addr
 	# follows the usage of registers, computing the evolution from the value they had at start_addr
