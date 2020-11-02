@@ -242,6 +242,11 @@ class IdaRemote:
     def cmd_get_functions(self, a_start, a_end):
         return " ".join([self.fmt_addr(a) for a in Functions(int(a_start, 0), int(a_end, 0))])
 
+    # return the address of a function from the address of an instruction
+    def cmd_get_function_start(self, a):
+        addr = idc.get_name_ea_simple(idc.get_func_name(int(a, 0)))
+        return self.fmt_addr(addr)
+
     # return the name of a function from the address of an instruction of the body
     def cmd_get_function_name(self, a):
         return idc.get_func_name(int(a, 0))
