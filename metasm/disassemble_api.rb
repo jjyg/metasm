@@ -489,6 +489,49 @@ class Disassembler
 		@program.fileoff_to_addr(foff)
 	end
 
+	# find the innermost asm loop including addr (single function)
+	# ctx[:exclude] is a hash { to => [from] }
+	#  this function will ignore all direct paths [from, to] when working (can be used to find not innermost loop) ; from is a block start address
+	# returns [block_start_addrs] or nil if no loop is found
+	def find_block_loop(addr, ctx={})
+		return if not di = di_at(addr) or not di.block
+		start = di.block.address
+		# { to => from } with block start addrs
+		path = {}
+		# [addr]
+		todo = [start]
+		while cur = todo.shift
+			block_at(cur).each_to_samefunc(self) { |to|
+				next if ctx[:exclude] and ctx[:exclude][to].to_a.include?(cur)
+				todo << to
+				path[to] ||= cur
+			}
+			break if path[start]
+		end
+		return if not last = path[start]
+
+		list = [last]
+		while last != start
+			last = path[last]
+			list << last
+		end
+		list.reverse
+	end
+
+	# from a list of block addrs, find all samefunc block links from something outside of the list to one of the blocks of the list
+	# return [[from_addr, block_addr]]
+	def find_block_list_entry(blocks)
+		entry = []
+		blocks.each { |ba|
+			block_at(ba).each_from_samefunc(self) { |from|
+				if not di = di_at(from) or not blocks.include?(di.block.address)
+					entry << [from, ba]
+				end
+			}
+		}
+		entry
+	end
+
 	# remove the decodedinstruction from..to, replace them by the new Instructions in 'by'
 	# this updates the block list structure, old di will still be visible in @decoded, except from original block (those are deleted)
 	# if from..to spans multiple blocks
