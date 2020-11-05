@@ -1355,10 +1355,12 @@ class Disassembler
 		delta
 	end
 
-	# backtrace, if the result is one value, return it, else return nil
+	# backtrace, ignoring final unknown/indirection
+	# if the result is one value, return it, else return nil
 	def backtrace_one(*args)
 		ret = backtrace(*args)
-		if ret.length == 1 and ret.first.kind_of?(Expression) and ret.first != Expression::Unknown
+		ret.delete_if { |v| v == Expression::Unknown or Expression[v].reduce_rec.kind_of?(Indirection) }
+		if ret.length == 1 and ret.first.kind_of?(Expression)
 			normalize(ret.first)
 		end
 	end
