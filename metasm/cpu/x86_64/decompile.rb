@@ -14,7 +14,7 @@ class X86_64
 		return @func_abi if @func_abi
 
 		if dcmp.dasm.program.shortname == 'coff'
-			@func_abi = { :args => [:rcx, :rdx, :r10, :r11], :stackoff => 32 }	# TODO
+			@func_abi = { :args => [:rcx, :rdx, :r8, :r9], :stackoff => 32 }	# TODO
 		else
 			@func_abi = { :args => [:rdi, :rsi, :rdx, :rcx], :stackoff => 0 }	# XXX saved rip offset ?
 		end
