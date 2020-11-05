@@ -356,9 +356,11 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 
 	def list_sections
-		list = [['addr', 'length', 'name', 'info']]
+		list = [['addr', 'length', 'name', 'fileoff', 'info']]
 		@dasm.section_info.each { |n,a,l,i|
-			list << [Expression[a], Expression[l], n, i]
+			ra = @dasm.addr_to_fileoff(a)
+			ra = Expression[ra] if ra
+			list << [Expression[a], Expression[l], n, ra, i]
 		}
 		listwindow("list of sections", list) { |i| focus_addr_autocomplete i[0] if i[0] != '0' or @dasm.get_section_at(0) }
 	end
