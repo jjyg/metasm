@@ -145,7 +145,7 @@ class Decompiler
 
 		case ret = scope.statements.last
 		when C::CExpression
-			if ret.op == :funcall and ret.lexpr.has_attribute('noreturn')
+			if ret.op == :funcall and ret.lexpr.kind_of?(C::Variable) and ret.lexpr.has_attribute('noreturn')
 			else
 				puts "no return at end of func" if $VERBOSE
 			end
