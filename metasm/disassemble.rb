@@ -1231,7 +1231,18 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 				tf = function_at(tfa) and tf.noreturn
 			}) or (di.opcode.props[:stopexec] and not (di.opcode.props[:setip] or not get_xrefs_x(di).empty?))
 		}
+			# check if an instruction in the first block raises the stack pointer over the stored return address (eg call+pop)
+			if cpu.respond_to?(:dbg_register_sp) and d_di = block_at(fa).list.find { |di|
+				backtrace(@cpu.dbg_register_sp, di.address, :stopaddr => fa, :include_start => true).find { |bt_sp|
+					delta = Expression[@cpu.dbg_register_sp, :-, bt_sp].reduce
+					delta.kind_of?(::Integer) and delta < 0
+				}
+			}
+				d_di.add_comment("discard retaddr")
+				return
+			end
 			# yay
+			puts "found new noreturn function at #{Expression[fa]}" if $VERBOSE and not @function[fa]
 			@function[fa] ||= DecodedFunction.new
 			@function[fa].noreturn = true
 		elsif @function[fa]
@@ -1728,6 +1739,7 @@ puts "  backtrace #{h[:di] || Expression[h[:funcaddr]]}  #{oldexpr} => #{expr}" 
 					end
 				elsif expr.complexity > max_complexity
 puts "  backtrace aborting, expr too complex" if debug_backtrace
+					@addrs_todo << { :addr => :default, :from => origin, :cpu_context => cpu_context } if type == :x and origin and @function[:default] and not detached and origin != :default
 					next false
 				end
 				expr
@@ -1841,8 +1853,14 @@ puts "  backtrace addrs_todo << #{Expression[retaddr]} from #{di} (funcret)" if 
 		if type == :x and di and di == di.block.list.first and @cpu.backtrace_is_function_return(expr, @decoded[origin]) and (
 			# which is an entrypoint..
 			(not di.block.from_normal and not di.block.from_subfuncret) or
-			# ..or called from a saveip
-			(bool = false ; di.block.each_from_normal { |fn| bool = true if @decoded[fn] and @decoded[fn].opcode.props[:saveip] } ; bool))
+			 # ..or called from a saveip
+			 (bool = false ; di.block.each_from_normal { |fn| bool = true if @decoded[fn] and @decoded[fn].opcode.props[:saveip] } ; bool)) and
+			# ensure stack is restored when returning
+			# avoids call elsewhere; some_func: <stuff>; elsewhere: pop addr_of_some_func ; push 42; call addr_of_some_func
+			(!@decoded[origin] or !cpu.respond_to?(:dbg_register_sp) or backtrace(@cpu.dbg_register_sp, origin, :stopaddr => di.address, :include_start => true).find { |bt_sp|
+				delta = Expression[@cpu.dbg_register_sp, :-, bt_sp].reduce
+				delta.kind_of?(::Integer) and delta <= 0
+			})
 
 			# now we can mark the current address a function start
 			# the actual return address will be found later (we tell the caller to continue the backtrace)
