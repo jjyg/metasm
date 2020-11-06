@@ -457,7 +457,7 @@ class DisasmWidget < ContainerChoiceWidget
 	end
 
 	# prompt the contant to use in place of some numeric value
-	def prompt_constant(di=curobj)
+	def prompt_constant(di=curobj, mask=0xffffffff)
 		return if not di.kind_of?(DecodedInstruction)
 		di.each_expr { |e|
 			next unless e.kind_of?(Expression)
@@ -465,7 +465,7 @@ class DisasmWidget < ContainerChoiceWidget
 					(!curview.hl_word or curview.hl_word == Expression[e.lexpr].to_s)
 				v = Expression[e.lexpr].reduce
 				lst = []
-				dasm.c_constants.each { |cn, cv, fm| lst << [cn, fm] if v == cv }
+				dasm.c_constants.each { |cn, cv, fm| lst << [cn, fm] if v & mask == cv & mask }
 				if not lst.empty?
 					default = Expression[v].to_s
 					lst << [default]
@@ -484,7 +484,7 @@ class DisasmWidget < ContainerChoiceWidget
 					(!curview.hl_word or curview.hl_word == Expression[e.rexpr].to_s)
 				v = Expression[e.rexpr].reduce
 				lst = []
-				dasm.c_constants.each { |cn, cv, fm| lst << [cn, fm] if v == cv }
+				dasm.c_constants.each { |cn, cv, fm| lst << [cn, fm] if v & mask == cv & mask }
 				if not lst.empty?
 					default = Expression[v].to_s
 					lst << [default]
