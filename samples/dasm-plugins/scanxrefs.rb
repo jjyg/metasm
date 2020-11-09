@@ -15,6 +15,11 @@ def scanxrefs(target)
 		(0..raw.length-csz/8).each { |off|
 			r = raw[off, csz/8].unpack(upq).first
 			ans << (s_addr + off) if (r + off+csz/8 + s_addr) & msk == target or r == target
+			next if csz != 64
+			# on 64bit platforms, also search for 32bit offsets
+			r = Expression.make_signed(r & 0xffffffff, 32)
+			next if r == 0
+			ans << (s_addr + off) if (r + off+4 + s_addr) & msk == target or r == target
 		}
 	}
 	ans
