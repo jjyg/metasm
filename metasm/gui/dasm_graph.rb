@@ -1316,8 +1316,14 @@ class GraphViewWidget < DrawableWidget
 			}
 		}
 
+		build_ctx_boxes(ctx)
+	end
+
+	def build_ctx_boxes(ctx)
 		# calc box dimensions/text
 		ctx.box.each { |b|
+			b[:line_address].clear
+			b[:line_text_col].clear
 			colstr = []
 			curaddr = nil
 			line = 0
