@@ -461,7 +461,7 @@ class Disassembler
 		@prog_binding = {}
 		@old_prog_binding = {}	# same as prog_binding, but keep old var names
 		@addrs_todo = []
-		@addrs_done = []
+		@addrs_done = {}
 		@address_binding = {}
 		@backtrace_maxblocks = @@backtrace_maxblocks
 		@backtrace_maxblocks_fast = 0
@@ -700,8 +700,8 @@ puts "  finalize subfunc #{Expression[addr]}" if debug_backtrace
 	# adds next addresses to handle to addrs_todo
 	# if @function[:default] exists, jumps to unknows locations are interpreted as to @function[:default]
 	def disassemble_step
-		return if not x = @addrs_todo.pop or @addrs_done.include?(x)
-		@addrs_done << x if x[:from]
+		return if not x = @addrs_todo.pop or @addrs_done[x[:addr]].to_a.include?(x)
+		(@addrs_done[x[:addr]] ||= []) << x if x[:from]
 
 		addr = x[:addr]
 		from = x[:from]
@@ -1449,7 +1449,7 @@ puts "  finalize subfunc #{Expression[subfunc]}" if debug_backtrace
 
 		while hop = todo.pop
 			addr, obj = hop
-			next if done.has_key?(done)
+			next if done.has_key?(addr)
 
 			di = di_at(addr)
 			next if not di

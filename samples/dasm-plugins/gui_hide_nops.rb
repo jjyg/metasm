@@ -15,5 +15,6 @@ if gui
 		gui.curview.build_ctx_boxes(gui.curview.curcontext)
 		gui.curview.curcontext.auto_arrange_boxes
 		gui.focus_addr(addr)
+		gui.redraw
 	}
 end

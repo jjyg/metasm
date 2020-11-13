@@ -696,8 +696,12 @@ class Disassembler
 			end
 			@decoded[di.address] = di
 		}
-		@addrs_done.delete_if { |ad| normalize(ad[0]) == tb.address or ad[1] == tb.address }
-		@addrs_done.delete_if { |ad| normalize(ad[0]) == fb.address or ad[1] == fb.address } if by.empty? and tb.address != fb.address
+		@addrs_done.delete tb.address
+		@addrs_done.values.each { |v| v.delete_if { |d| d[:from] == tb.address } }
+		if by.empty? and tb.address != fb.address
+			@addrs_done.delete fb.address
+			@addrs_done.values.each { |v| v.delete_if { |d| d[:from] == fb.address } }
+		end
 
 		# update to_normal/from_normal
 		fb.to_normal = tb.to_normal
@@ -777,7 +781,7 @@ class Disassembler
 				true if x.empty?
 			end
 		}
-		@addrs_done.delete_if { |ad| !(addrs & [normalize(ad[0]), normalize(ad[1])]).empty? }
+		@addrs_done.clear
 	end
 
 	# merge two instruction blocks if they form a simple chain and are adjacent
@@ -798,7 +802,7 @@ class Disassembler
 			b1.to_subfuncret = b2.to_subfuncret
 			b1.to_indirect = b2.to_indirect
 			b2.list.clear
-			@addrs_done.delete_if { |ad| normalize(ad[0]) == b2.address }
+			@addrs_done.delete b2.address
 			true
 		end
 	end
@@ -1395,13 +1399,32 @@ class Disassembler
 				a.map! { |e| fix[e] }
 			when Hash
 				tmp = {}
-				a.each { |k, v| tmp[fix[k]] = v }
+				a.each { |k, v| tmp[fix[k]] = fix[v] }
 				a.replace tmp
 			when Integer
 				a += delta
 			when BacktraceTrace
 				a.origin = fix[a.origin]
 				a.address = fix[a.address]
+			when DecodedInstruction
+				di = a
+				fix[di.block] if di.block_head?
+				di.address = fix[di.address]
+				di.next_addr = fix[di.next_addr]
+			when InstructionBlock
+				a.address = fix[a.address]
+				fix[a.to_normal]
+				fix[a.to_subfuncret]
+				fix[a.to_indirect]
+				fix[a.from_normal]
+				fix[a.from_subfuncret]
+				fix[a.from_indirect]
+				fix[a.backtracked_for]
+			when DecodedFunction
+				a.return_address = fix[a.return_address]
+				fix[a.backtracked_for]
+			when Xref
+				xr.origin = fix[xr.origin]
 			end
 			a
 		}
@@ -1413,30 +1436,10 @@ class Disassembler
 		fix[@addrs_todo]
 		fix[@addrs_done]
 		fix[@comment]
-		@prog_binding.each_key { |k| @prog_binding[k] = fix[@prog_binding[k]] }
-		@old_prog_binding.each_key { |k| @old_prog_binding[k] = fix[@old_prog_binding[k]] }
+		fix[@prog_binding]
+		fix[@old_prog_binding]
 		@label_alias_cache = nil
 
-		@decoded.values.grep(DecodedInstruction).each { |di|
-			if di.block_head?
-				b = di.block
-				b.address += delta
-				fix[b.to_normal]
-				fix[b.to_subfuncret]
-				fix[b.to_indirect]
-				fix[b.from_normal]
-				fix[b.from_subfuncret]
-				fix[b.from_indirect]
-				fix[b.backtracked_for]
-			end
-			di.address = fix[di.address]
-			di.next_addr = fix[di.next_addr]
-		}
-		@function.each_value { |f|
-			f.return_address = fix[f.return_address]
-			fix[f.backtracked_for]
-		}
-		@xrefs.values.flatten.compact.each { |x| x.origin = fix[x.origin] }
 		delta
 	end
 
