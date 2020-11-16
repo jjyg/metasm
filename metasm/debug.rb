@@ -1278,7 +1278,7 @@ class Debugger
 			end
 		}
 	end
-	alias resolve resolve_expr
+	def resolve(e) resolve_expr(e) end	# define instead of alias to allow subclassing
 
 	# return/yield an array of [addr, addr symbolic name] corresponding to the current stack trace
 	def stacktrace(maxdepth=500, &b)
@@ -1290,11 +1290,11 @@ class Debugger
 		if arg1
 			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
 			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
-			(@memory[arg0, arg1] || '').to_str
+			(memory_read(arg0, arg1) || '').to_str
 		elsif arg0.kind_of? ::Range
 			arg0.begin = resolve_expr(arg0.begin) if not arg0.begin.kind_of? ::Integer	# cannot happen, invalid ruby Range
 			arg0.end = resolve_expr(arg0.end) if not arg0.end.kind_of? ::Integer
-			(@memory[arg0] || '').to_str
+			(memory_read(arg0.begin, arg0.end - arg0.begin + (arg0.exclude_end? ? 0 : 1)) || '').to_str
 		else
 			get_reg_value(arg0)
 		end
@@ -1306,16 +1306,23 @@ class Debugger
 		if arg1
 			arg0 = resolve_expr(arg0) if not arg0.kind_of? ::Integer
 			arg1 = resolve_expr(arg1) if not arg1.kind_of? ::Integer
-			@memory[arg0, arg1] = val
+			memory_write(arg0, arg1, val)
 		elsif arg0.kind_of? ::Range
 			arg0.begin = resolve_expr(arg0.begin) if not arg0.begin.kind_of? ::Integer	# cannot happen, invalid ruby Range
 			arg0.end = resolve_expr(arg0.end) if not arg0.end.kind_of? ::Integer
-			@memory[arg0] = val
+			memory_write(arg0.begin, arg0.end - arg0.begin + (arg0.exclude_end? ? 0 : 1), val)
 		else
 			set_reg_value(arg0, val)
 		end
 	end
 
+	def memory_read(addr, len)
+		@memory[addr, len]
+	end
+
+	def memory_write(addr, len, value)
+		@memory[addr, len] = value
+	end
 
 	# read an int from the target memory, int of sz bytes (defaults to cpu.size)
 	def memory_read_int(addr, sz=@cpu.size/8)

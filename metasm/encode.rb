@@ -308,6 +308,14 @@ class Expression
 		endianness != :little ? s.reverse : s
 	end
 	alias encode_immediate encode_imm
+
+	# encode an Expression as an array of byte values
+	def encode_sym(val, type, endianness)
+		type = INT_SIZE.keys.find { |k| k.to_s[0] == ?a and INT_SIZE[k] == 8*type } if type.kind_of? ::Integer
+		endianness = endianness.endianness if not endianness.kind_of? ::Symbol
+		s = (0...INT_SIZE[type]/8).map { |i| Expression[[val, :>>, 8*i], :&, 0xff].reduce }
+		endianness != :little ? s.reverse : s
+	end
 	end
 end
 

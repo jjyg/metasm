@@ -59,8 +59,15 @@ class EmuDebugger < Debugger
 	# return true if the context was fixed
 	attr_accessor :callback_unknown_pc
 
-	def initialize(disassembler)
+	# allow only concrete values, no symbolic execution
+	attr_accessor :concrete_only
+
+	# hash { symbolic_addr => value }
+	attr_accessor :symbolic_memory
+
+	def initialize(disassembler, concrete_only=false)
 		@pid = @tid = 0
+		@concrete_only = concrete_only
 		attach(disassembler)
 	end
 
@@ -68,6 +75,7 @@ class EmuDebugger < Debugger
 
 	def attach(disassembler)
 		@memory = VirtualMemoryDasm.new(disassembler)
+		@symbolic_memory = {} if not @concrete_only
 		@cpu = disassembler.cpu
 		@disassembler = disassembler
 		@ctx = {}
@@ -109,11 +117,14 @@ class EmuDebugger < Debugger
 	end
 
 	def get_reg_value(r)
-		if r.to_s =~ /flags?_(.+)/i
+		case r.to_s
+		when /flags?_(.+)/i
 			f = $1.downcase.to_sym
 			get_flag_value(f)
+		when /^init_/
+			@ctx[r] || (@concrete_only ? 0 : r)
 		else
-			@ctx[r] || 0
+			@ctx[r] || (@concrete_only ? 0 : "init_#{r}".to_sym)
 		end
 	end
 
@@ -122,6 +133,9 @@ class EmuDebugger < Debugger
 			f = $1.downcase.to_sym
 			set_flag_value(f, v)
 		else
+			if v.kind_of?(::Integer) and sz = @cpu.dbg_register_size[r]
+				v &= (1 << sz) - 1
+			end
 			@ctx[r] = v
 		end
 	end
@@ -132,6 +146,11 @@ class EmuDebugger < Debugger
 
 	def do_wait_target
 		true
+	end
+
+	def check_pre_run(m, *a)
+		@run_method = m
+		@run_args = a
 	end
 
 	def do_continue
@@ -180,11 +199,24 @@ class EmuDebugger < Debugger
 		}.each { |k, v|
 			case k
 			when Indirection
-				raise "cannot assign value #{v}" if not v.kind_of?(::Integer)
-				v = v & ((1 << (k.len*8)) - 1)
-				memory_write_int(k.pointer, v, k.len)
+				if not k.pointer.kind_of?(::Integer)
+					if @concrete_only
+						raise "cannot assign to pointer #{k.pointer}"
+					else
+						memory_write_int(k.pointer, k.len, v)
+					end
+				elsif not v.kind_of?(::Integer)
+					if @concrete_only
+						raise "cannot assign value #{v}"
+					else
+						raise "cannot assign symbolic value #{v} to concrete address #{k.pointer}"
+					end
+				else
+					v = v & ((1 << (k.len*8)) - 1)
+					memory_write_int(k.pointer, v, k.len)
+				end
 			when Symbol
-				raise "cannot assign value #{v}" if not v.kind_of?(::Integer)
+				raise "cannot assign value #{v}" if @concrete_only and not v.kind_of?(::Integer)
 				set_reg_value(k, v)
 			when /^dummy_metasm_/
 			else
@@ -192,6 +224,69 @@ class EmuDebugger < Debugger
 			end
 		}
 		true
+	end
+
+	def resolve_expr(e)
+		v = super(e)
+		if not @concrete_only and v.kind_of?(Expression)
+			v = v.reduce { |i|
+				if i.kind_of?(Indirection) and not i.pointer.kind_of?(::Integer)
+					i.len ||= @cpu.size/8
+					Expression.decode_sym(symbolic_memory_read_bytes(i.pointer, i.len).map { |b| b || 0 }, i.len, @cpu)
+				end
+			}
+		end
+		v
+	end
+
+	# read a buffer from memory
+	# symbolic memory returns nul bytes for symbolic byte values
+	def memory_read(addr, len)
+		if not addr.kind_of?(::Integer) and not @concrete_only
+			symbolic_memory_read_bytes(addr, len).map { |b| b.kind_of?(::Integer) ? b : 0 }.pack('C*')
+		else
+			super(addr, len)
+		end
+	end
+
+	# write a concrete buffer to memory
+	def memory_write(addr, len, value)
+		if not addr.kind_of?(::Integer) and not @concrete_only
+			symbolic_memory_write_bytes(addr, len, value.unpack('C*'))
+		else
+			super(addr, len, value)
+		end
+	end
+
+	def memory_write_int(addr, len, val)
+		if not @concrete_only and (not addr.kind_of?(::Integer) or not val.kind_of?(::Integer))
+			symbolic_memory_write_bytes(addr, len, Expression.encode_sym(val, len, @cpu))
+		else
+			super(addr, len, val)
+		end
+	end
+
+	# return a byte array from symbolic memory
+	def symbolic_memory_read_bytes(ptr, len)
+		(0...len).map { |i| @symbolic_memory[ptr+i] }
+	end
+
+	# write a byte array to symbolic memory
+	def symbolic_memory_write_bytes(ptr, len, bytes)
+		bytes.each_with_index { |b, i|
+			@symbolic_memory[ptr+i] = b
+		}
+	end
+
+	# allocate a new large memory zone, return the allocation address
+	def allocate_memory(len, addr=nil, raw=nil)
+		raw ||= EncodedData.new("\x00" * len)
+		if !addr
+			addr = 0x10000
+			addr += 0x10000 while @disassembler.get_section_at(addr)
+		end
+		@disassembler.add_section(raw, addr)
+		addr
 	end
 end
 end
