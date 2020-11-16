@@ -107,6 +107,10 @@ class Shellcode < ExeFormat
 	# returns a virtual subclass of Shellcode whose cpu_from_headers will return cpu
 	def self.withcpu(cpu)
 		c = Class.new(self)
+		c.send(:define_method, :shortname) {
+			cpu_s = cpu.respond_to?(:shortname) ? cpu.shortname : cpu
+			"shellcode.withcpu(#{cpu_s})"
+		}
 		c.send(:define_method, :cpu_from_headers) {
 			cpu = Metasm.const_get(cpu) if cpu.kind_of?(::String)
 			cpu = cpu.new if cpu.kind_of?(::Class) and cpu.ancestors.include?(CPU)
