@@ -29,11 +29,10 @@ class Dwarf
 	end
 
 	def initialize_emudbg(dbg)
-		stack = EncodedData.new("\x00" * 0x1000)
-		stack_addr = 0x10000
-		stack_addr += 0x10000 while dbg.disassembler.get_section_at(stack_addr)
-		dbg.disassembler.add_section(stack, stack_addr)
-		dbg.set_reg_value(:opstack, stack_addr)
+		if dbg.concrete_only
+			stack_addr = dbg.allocate_memory(0x1000)
+			dbg.set_reg_value(:opstack, stack_addr)
+		end
 	end
 end
 end

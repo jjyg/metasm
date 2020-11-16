@@ -32,16 +32,29 @@ class Ia32
 
 	DBG_FLAGS = { :c => 0, :p => 2, :a => 4, :z => 6, :s => 7, :t => 8, :i => 9, :d => 10, :o => 11 }
 	def dbg_get_flag(dbg, f)
-		(dbg.get_reg_value(dbg_register_flags) >> DBG_FLAGS[f]) & 1
+		fl = dbg.get_reg_value(dbg_register_flags)
+		if fl.kind_of?(::Integer)
+			(fl >> DBG_FLAGS[f]) & 1
+		else
+			Expression[[fl, :>>, DBG_FLAGS[f]], :&, 1].reduce
+		end
 	end
 	def dbg_set_flag(dbg, f)
 		fl = dbg.get_reg_value(dbg_register_flags)
-		fl |= 1 << DBG_FLAGS[f]
+		if fl.kind_of?(::Integer)
+			fl |= 1 << DBG_FLAGS[f]
+		else
+			fl = Expression[fl, :|, [1, :<<, DBG_FLAGS[f]]].reduce
+		end
 		dbg.set_reg_value(dbg_register_flags, fl)
 	end
 	def dbg_unset_flag(dbg, f)
 		fl = dbg.get_reg_value(dbg_register_flags)
-		fl &= ~(1 << DBG_FLAGS[f])
+		if fl.kind_of?(::Integer)
+			fl &= ~(1 << DBG_FLAGS[f])
+		else
+			fl = Expression[fl, :&, [:~, [1, :<<, DBG_FLAGS[f]]]].reduce
+		end
 		dbg.set_reg_value(dbg_register_flags, fl)
 	end
 
@@ -229,11 +242,10 @@ class Ia32
 	end
 
 	def initialize_emudbg(dbg)
-		stack = EncodedData.new("\x00" * 0x10000)
-		stack_addr = 0x10000
-		stack_addr += 0x10000 while dbg.disassembler.get_section_at(stack_addr)
-		dbg.disassembler.add_section(stack, stack_addr)
-		dbg.set_reg_value(dbg_register_list[7], stack_addr + 0xf000)
+		if dbg.concrete_only
+			stack_addr = dbg.allocate_memory(0x10000)
+			dbg.set_reg_value(dbg_register_list[7], stack_addr + 0xf000)
+		end
 	end
 end
 end

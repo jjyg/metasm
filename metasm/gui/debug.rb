@@ -798,7 +798,7 @@ class DbgConsoleWidget < DrawableWidget
 
 		if len
 			while len > 0
-				data = @dbg.memory[addr, [len, 16].min]
+				data = @dbg[addr, [len, 16].min]
 				le = (@dbg.cpu.endianness == :little)
 				data = '' if @dbg.memory.page_invalid?(addr)
 				case dlen
@@ -976,7 +976,7 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('ma', 'memory_ascii', 'write memory (ascii) - ma <addr> foo bar') { |arg|
 			next if not addr = solve_expr!(arg)
 			data = arg.strip
-			@dbg.memory[addr, data.length] = data
+			@dbg[addr, data.length] = data
 			@dbg.invalidate
 			@dbg.dasm_invalidate
 			p.gui_update
@@ -984,7 +984,7 @@ class DbgConsoleWidget < DrawableWidget
 		new_command('mx', 'memory_hex', 'write memory (hex) - mx <addr> 0011223344') { |arg|
 			next if not addr = solve_expr!(arg)
 			data = [arg.delete(' ')].pack('H*')
-			@dbg.memory[addr, data.length] = data
+			@dbg[addr, data.length] = data
 			@dbg.invalidate
 			@dbg.dasm_invalidate
 			p.gui_update
