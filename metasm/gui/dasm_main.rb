@@ -861,6 +861,12 @@ class DisasmWidget < ContainerChoiceWidget
 		DbgWindow.new(edbg)
 	end
 
+	def spawn_symemudbg
+		edbg = SymEmuDebugger.new(@dasm)
+		edbg.pc = curaddr
+		DbgWindow.new(edbg)
+	end
+
 	def extend_contextmenu(tg, menu, addr=nil)
 		if @parent_widget.respond_to?(:extend_contextmenu)
 			@parent_widget.extend_contextmenu(tg, menu, addr)
@@ -1128,11 +1134,12 @@ class DasmWindow < Window
 		addsubmenu(actions, 'Decompile finali_ze') { @dasm_widget.dasm.decompiler.finalize ; @dasm_widget.gui_update }
 		addsubmenu(actions, 'Comment', ';') { @dasm_widget.add_comment(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, '_Undefine') { @dasm_widget.dasm.undefine_from(@dasm_widget.curview.current_address) ; @dasm_widget.gui_update }
-		addsubmenu(actions, 'Unde_fine function') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address) }
-		addsubmenu(actions, 'Undefine function & _subfuncs') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address, true) }
+		addsubmenu(actions, 'Undefine function') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address) }
+		addsubmenu(actions, 'Undefine function & subfuncs') { @dasm_widget.undefine_function(@dasm_widget.curview.current_address, true) }
 		addsubmenu(actions, 'Data', 'd') { @dasm_widget.toggle_data(@dasm_widget.curview.current_address) }
 		addsubmenu(actions, 'Pause dasm', 'p', :check) { |ck| !@dasm_widget.playpause_dasm }
 		addsubmenu(actions, 'Spawn EmuDb_g', 'G') { @dasm_widget.spawn_emudbg }
+		addsubmenu(actions, 'Spawn SymEmuDbg', 'S') { @dasm_widget.spawn_symemudbg }
 		addsubmenu(actions, 'Run ruby snippet', '^r') { promptruby }
 		addsubmenu(actions, 'Run _ruby plugin') { @dasm_widget.prompt_run_ruby_plugin }
 

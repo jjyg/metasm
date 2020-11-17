@@ -29,7 +29,7 @@ class Dwarf
 	end
 
 	def initialize_emudbg(dbg)
-		if dbg.concrete_only
+		if !dbg.is_symdbg
 			stack_addr = dbg.allocate_memory(0x1000)
 			dbg.set_reg_value(:opstack, stack_addr)
 		end

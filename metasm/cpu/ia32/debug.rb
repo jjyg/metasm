@@ -242,7 +242,7 @@ class Ia32
 	end
 
 	def initialize_emudbg(dbg)
-		if dbg.concrete_only
+		if !dbg.is_symdbg
 			stack_addr = dbg.allocate_memory(0x10000)
 			dbg.set_reg_value(dbg_register_list[7], stack_addr + 0xf000)
 		end

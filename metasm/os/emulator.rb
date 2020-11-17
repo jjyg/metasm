@@ -47,7 +47,7 @@ class VirtualMemoryDasm < VirtualString
 	end
 end
 
-# this class implements a virtual debugger over an emulated cpu (based on cpu#get_backtrace_binding)
+# Virtual debugger running emulated cpu instructions (based on cpu#get_backtrace_binding)
 class EmuDebugger < Debugger
 	attr_accessor :ctx
 	# lambda called everytime we emulate a di
@@ -59,23 +59,16 @@ class EmuDebugger < Debugger
 	# return true if the context was fixed
 	attr_accessor :callback_unknown_pc
 
-	# allow only concrete values, no symbolic execution
-	attr_accessor :concrete_only
-
-	# hash { symbolic_addr => value }
-	attr_accessor :symbolic_memory
-
-	def initialize(disassembler, concrete_only=false)
+	def initialize(disassembler)
 		@pid = @tid = 0
-		@concrete_only = concrete_only
 		attach(disassembler)
 	end
 
 	def shortname; 'emudbg'; end
+	def is_symdbg; false; end
 
 	def attach(disassembler)
 		@memory = VirtualMemoryDasm.new(disassembler)
-		@symbolic_memory = {} if not @concrete_only
 		@cpu = disassembler.cpu
 		@disassembler = disassembler
 		@ctx = {}
@@ -121,19 +114,18 @@ class EmuDebugger < Debugger
 		when /flags?_(.+)/i
 			f = $1.downcase.to_sym
 			get_flag_value(f)
-		when /^init_/
-			@ctx[r] || (@concrete_only ? 0 : r)
 		else
-			@ctx[r] || (@concrete_only ? 0 : "init_#{r}".to_sym)
+			@ctx[r] || 0
 		end
 	end
 
 	def set_reg_value(r, v)
-		if r.to_s =~ /flags?_(.+)/i
+		case r.to_s
+		when /flags?_(.+)/i
 			f = $1.downcase.to_sym
 			set_flag_value(f, v)
 		else
-			if v.kind_of?(::Integer) and sz = @cpu.dbg_register_size[r]
+			if sz = @cpu.dbg_register_size[r]
 				v &= (1 << sz) - 1
 			end
 			@ctx[r] = v
@@ -188,9 +180,15 @@ class EmuDebugger < Debugger
 
 		return if di.opcode.props[:stopexec] and not di.opcode.props[:setip]
 
-		# 2-pass to respect binding atomicity
 		fbd = @disassembler.get_fwdemu_binding(di, register_pc, self)
 
+		do_singlestep_emu(di, fbd)
+
+		true
+	end
+
+	def do_singlestep_emu(di, fbd)
+		# 2-pass to respect binding atomicity
 		fbd.map { |k, v|
 			if k.kind_of?(Indirection)
 				k = Indirection.new(resolve(k.pointer), k.len, k.origin)
@@ -200,49 +198,121 @@ class EmuDebugger < Debugger
 			case k
 			when Indirection
 				if not k.pointer.kind_of?(::Integer)
-					if @concrete_only
-						raise "cannot assign to pointer #{k.pointer}"
-					else
-						memory_write_int(k.pointer, k.len, v)
-					end
+					raise "cannot assign to pointer #{k.pointer}"
 				elsif not v.kind_of?(::Integer)
-					if @concrete_only
-						raise "cannot assign value #{v}"
-					else
-						raise "cannot assign symbolic value #{v} to concrete address #{k.pointer}"
-					end
+					raise "cannot assign value #{v}"
 				else
 					v = v & ((1 << (k.len*8)) - 1)
 					memory_write_int(k.pointer, v, k.len)
 				end
 			when Symbol
-				raise "cannot assign value #{v}" if @concrete_only and not v.kind_of?(::Integer)
+				raise "cannot assign value #{k}=#{v}" if not v.kind_of?(::Integer)
 				set_reg_value(k, v)
 			when /^dummy_metasm_/
 			else
 				puts "singlestep: badkey #{k.inspect} = #{v}"
 			end
 		}
-		true
 	end
 
+	# allocate a new large memory zone, return the allocation address
+	def allocate_memory(len, addr=nil, raw=nil)
+		raw ||= EncodedData.new("\x00" * len)
+		if !addr
+			addr = 0x10000
+			addr += 0x10000 while @disassembler.get_section_at(addr)
+		end
+		@disassembler.add_section(raw, addr)
+		addr
+	end
+end
+
+# Same as EmuDebugger, but allows symbolic context (abstract values for registers and memory pointers, represented as symbols)
+class SymEmuDebugger < EmuDebugger
+	# hash { symbolic_addr => value }
+	attr_accessor :symbolic_memory
+
+	def shortname; 'symemudbg'; end
+	def is_symdbg; true; end
+
+	def attach(*a)
+		@symbolic_memory = {}
+		super(*a)
+	end
+
+	# initial value for registers
+	# general registers are initialized to :init_<reg>, others to 0
+	# eg :eax => :init_eax, :dr6 => 0, :eflags => 0
+	attr_accessor :default_reg_value
+	def get_default_reg_value
+		@default_reg_value ||= Hash.new(0).update @cpu.dbg_register_list.inject({}) { |h, r| ir = "init_#{r}".to_sym ; h.update r => ir, ir => ir }
+	end
+
+	def get_reg_value(r)
+		case r.to_s
+		when /flags?_(.+)/i
+			f = $1.downcase.to_sym
+			get_flag_value(f)
+		else
+			@ctx[r] || get_default_reg_value[r]
+		end
+	end
+
+	def set_reg_value(r, v)
+		case r.to_s
+		when /flags?_(.+)/i
+			f = $1.downcase.to_sym
+			set_flag_value(f, v)
+		else
+			if v.kind_of?(::Integer) and sz = @cpu.dbg_register_size[r]
+				v &= (1 << sz) - 1
+			end
+			@ctx[r] = v
+		end
+	end
+
+	def do_singlestep_emu(di, fbd)
+		# 2-pass to respect binding atomicity
+		fbd.map { |k, v|
+			if k.kind_of?(Indirection)
+				k = Indirection.new(resolve(k.pointer), k.len, k.origin)
+			end
+			[k, resolve(v)]
+		}.each { |k, v|
+			case k
+			when Indirection
+				if not k.pointer.kind_of?(::Integer)
+					memory_write_int(k.pointer, k.len, v)
+				elsif not v.kind_of?(::Integer)
+					raise "cannot assign symbolic value #{v} to concrete address #{k.pointer}"
+				else
+					v = v & ((1 << (k.len*8)) - 1)
+					memory_write_int(k.pointer, v, k.len)
+				end
+			when Symbol
+				set_reg_value(k, v)
+			when /^dummy_metasm_/
+			else
+				puts "singlestep: badkey #{k.inspect} = #{v}"
+			end
+		}
+	end
+
+	# handle symbolic_memory indirections
 	def resolve_expr(e)
 		v = super(e)
-		if not @concrete_only and v.kind_of?(Expression)
-			v = v.reduce { |i|
-				if i.kind_of?(Indirection) and not i.pointer.kind_of?(::Integer)
-					i.len ||= @cpu.size/8
-					Expression.decode_sym(symbolic_memory_read_bytes(i.pointer, i.len).map { |b| b || 0 }, i.len, @cpu)
-				end
-			}
-		end
+		v = v.reduce { |i|
+			next if not i.kind_of?(Indirection) or i.pointer.kind_of?(::Integer)
+			i.len ||= @cpu.size/8
+			Expression.decode_sym(symbolic_memory_read_bytes(i.pointer, i.len).map { |b| b || 0 }, i.len, @cpu)
+		} if v.kind_of?(Expression)
 		v
 	end
 
 	# read a buffer from memory
 	# symbolic memory returns nul bytes for symbolic byte values
 	def memory_read(addr, len)
-		if not addr.kind_of?(::Integer) and not @concrete_only
+		if not addr.kind_of?(::Integer)
 			symbolic_memory_read_bytes(addr, len).map { |b| b.kind_of?(::Integer) ? b : 0 }.pack('C*')
 		else
 			super(addr, len)
@@ -251,7 +321,7 @@ class EmuDebugger < Debugger
 
 	# write a concrete buffer to memory
 	def memory_write(addr, len, value)
-		if not addr.kind_of?(::Integer) and not @concrete_only
+		if not addr.kind_of?(::Integer)
 			symbolic_memory_write_bytes(addr, len, value.unpack('C*'))
 		else
 			super(addr, len, value)
@@ -259,10 +329,11 @@ class EmuDebugger < Debugger
 	end
 
 	def memory_write_int(addr, len, val)
-		if not @concrete_only and (not addr.kind_of?(::Integer) or not val.kind_of?(::Integer))
-			symbolic_memory_write_bytes(addr, len, Expression.encode_sym(val, len, @cpu))
-		else
+		if addr.kind_of?(::Integer) and val.kind_of?(::Integer)
 			super(addr, len, val)
+		else
+			# XXX may write sym val to concrete address in sym_mem, noone will read it
+			symbolic_memory_write_bytes(addr, len, Expression.encode_sym(val, len, @cpu))
 		end
 	end
 
@@ -278,15 +349,24 @@ class EmuDebugger < Debugger
 		}
 	end
 
-	# allocate a new large memory zone, return the allocation address
-	def allocate_memory(len, addr=nil, raw=nil)
-		raw ||= EncodedData.new("\x00" * len)
-		if !addr
-			addr = 0x10000
-			addr += 0x10000 while @disassembler.get_section_at(addr)
-		end
-		@disassembler.add_section(raw, addr)
-		addr
+	# return the current value of the registers expressed from the values of the registers at the beginning of the emulation
+	# eg 'inc eax' => { :eax => Expression[:eax+1] }
+	def get_regs_changed
+		out = {}
+		@ctx.each { |k, v|
+			nv = Expression[v].reduce { |e|
+				case e
+				when Symbol
+					# :init_eax => :eax
+					e.to_s[5..-1].to_sym if e.to_s[0, 5] == 'init_'
+				when Expression
+					# :eax & 0xffffffff => :eax
+					e.lexpr if e.op == :& and e.lexpr.kind_of?(::Symbol) and sz = @cpu.dbg_register_size[e.lexpr] and e.rexpr == (1 << sz) - 1
+				end
+			}
+			out[k] = nv if nv != Expression[k]
+		}
+		out
 	end
 end
 end
