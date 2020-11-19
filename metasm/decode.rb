@@ -203,7 +203,7 @@ class Expression
 		endianness = endianness.endianness if not endianness.kind_of? ::Symbol
 		bytes = bytes[off, INT_SIZE[type]/8]
 		bytes = bytes.reverse if endianness == :little
-		val = bytes.inject { |val_, b| Expression[[val_, :<<, 8], :|, b] }.reduce
+		val = Expression[bytes.inject { |val_, b| Expression[[val_, :<<, 8], :|, b] }].reduce
 		val = make_signed(val, INT_SIZE[type]) if type.to_s[0] == ?i
 		val
 	end
