@@ -361,6 +361,17 @@ class COFF < ExeFormat
 			ret
 		end
 
+		# yield |(id0, id1, id2), raw|
+		def each
+			to_hash.each { |k1, v1|
+				v1.each { |k2, v2|
+					v2.each { |k3, v3|
+						yield [k1, k2, k3], v3
+					}
+				}
+			}
+		end
+
 		# returns a string with the to_hash key tree
 		def to_s
 			to_s_a(0).join("\n")
