@@ -489,6 +489,7 @@ class ELF
 
 	# encodes the .dynamic section, creates .hash/.gnu.hash/.rel/.rela/.dynsym/.strtab/.init,*_array as needed
 	def encode_segments_dynamic
+		return if @header.shnum == 0	# .nointerp
 		if not strtab = @sections.find { |s| s.type == 'STRTAB' and s.flags.include? 'ALLOC' }
 			strtab = Section.new
 			strtab.name = '.dynstr'
@@ -924,7 +925,7 @@ class ELF
 
 		# ensure last PT_LOAD is writeable (used for bss)
 		seg = loadsegs.last
-		if not seg or not seg.flags.include? 'W'
+		if (not seg or not seg.flags.include? 'W') and @header.shnum != 0
 			seg = Segment.new
 			seg.type = 'LOAD'
 			seg.flags = ['R', 'W']
@@ -956,7 +957,7 @@ class ELF
 			first_seg.filesz = new_label('segfilsz')
 		end
 
-		if first_seg and not @segments.find { |seg_| seg_.type == 'PHDR' }
+		if first_seg and not @segments.find { |seg_| seg_.type == 'PHDR' } and @header.shnum != 0
 			phdr = Segment.new
 			phdr.type = 'PHDR'
 			phdr.flags = first_seg.flags
