@@ -129,13 +129,27 @@ class X86_64
 		end
 
 		opsz = opsz(di)
-		opsz = op.props[:argsz] if op.props[:argsz] and op.props[:needpfx] != 0x66
+		opsz = op.props[:argsz] if op.props[:argsz]
 		adsz = pfx[:adsz] ? 32 : 64
 		mmxsz = (op.props[:xmmx] && pfx[:opsz]) ? 128 : 64
 
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :reg;    Reg.new     field_val_r[a], opsz
+			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg), Reg, pfx
+			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; Expression[edata.decode_imm(a, @endianness)]
+			when :i		# 64bit constants are sign-extended from :i32
+				if opsz == 64
+					type = op.props[:imm64] ? :a64 : :i32
+				elsif op.props[:unsigned_imm]
+					type = { 8 => :a8, 16 => :a16, 32 => :a32, 64 => :a64 }[opsz]
+				else
+					type = { 8 => :i8, 16 => :i16, 32 => :i32, 64 => :i64 }[opsz]
+				end
+				v = edata.decode_imm(type, @endianness)
+				v &= 0xffff_ffff_ffff_ffff if opsz == 64 and op.props[:unsigned_imm] and v.kind_of?(::Integer)
+				Expression[v]
+
 			when :eeec;   CtrlReg.new field_val_r[a]
 			when :eeed;   DbgReg.new  field_val_r[a]
 			when :eeet;   TstReg.new  field_val_r[a]
@@ -145,15 +159,7 @@ class X86_64
 			when :regymm; SimdReg.new field_val_r[a], 256
 
 			when :farptr; Farptr.decode edata, @endianness, opsz
-			when :i8, :u8, :i16, :u16, :i32, :u32, :i64, :u64; Expression[edata.decode_imm(a, @endianness)]
-			when :i		# 64bit constants are sign-extended from :i32
-				type = (opsz == 64 ? op.props[:imm64] ? :a64 : :i32 : "#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym )
-				v = edata.decode_imm(type, @endianness)
-				v &= 0xffff_ffff_ffff_ffff if opsz == 64 and op.props[:unsigned_imm] and v.kind_of? Integer
-				Expression[v]
-
 			when :mrm_imm;  ModRM.new(adsz, opsz, nil, nil, nil, Expression[edata.decode_imm("a#{adsz}".to_sym, @endianness)], pfx.delete(:seg))
-			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg), Reg, pfx
 			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz])
 			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz], :mrmvex => op.props[:mrmvex])
 			when :modrmymm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 256, pfx.delete(:seg), SimdReg, pfx.merge(:argsz => op.props[:argsz], :mrmvex => op.props[:mrmvex])
@@ -232,9 +238,9 @@ class X86_64
 		di
 	end
 
-	def opsz(di, op=nil)
-		if di and di.instruction.prefix and di.instruction.prefix[:rex_w]; 64
-		elsif di and di.instruction.prefix and di.instruction.prefix[:opsz] and (op || di.opcode).props[:needpfx] != 0x66; 16
+	def opsz(di, op=nil, pfx=di.instruction.prefix)
+		if di and pfx and pfx[:rex_w]; 64
+		elsif di and pfx and pfx[:opsz] and (op || di.opcode).props[:needpfx] != 0x66; 16
 		elsif di and (op || di.opcode).props[:auto64]; 64
 		else 32
 		end

@@ -556,9 +556,9 @@ class Ia32
 		addop('movdqu',  [0x0F, 0x6F], :mrmxmm, {:d => [1, 4]}) { |o| o.props[:needpfx] = 0xF3 }
 		addop('movq2dq', [0x0F, 0xD6], :mrmxmm, :modrmR) { |o| o.args[o.args.index(:modrmxmm)] = :modrmmmx ; o.props[:needpfx] = 0xF3 }
 		addop('movdq2q', [0x0F, 0xD6], :mrmmmx, :modrmR) { |o| o.args[o.args.index(:modrmmmx)] = :modrmxmm ; o.props[:needpfx] = 0xF2 }
-		addop('movd',    [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args = [:regxmm, :modrm] ; o.props[:needpfx] = 0x66 ; o.props[:argsz] = 128 }
-		addop('movq',    [0x0F, 0x7E], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 ; o.props[:argsz] = 128 }
-		addop('movq',    [0x0F, 0xD6], :mrmxmm) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 ; o.props[:argsz] = 128 }
+		addop('movd',    [0x0F, 0x6E], :mrmxmm, {:d => [1, 4]}) { |o| o.args = [:regxmm, :modrm] ; o.props[:needpfx] = 0x66 ; o.props[:opsz] = o.props[:argsz] = 32 }
+		addop('movq',    [0x0F, 0x7E], :mrmxmm) { |o| o.props[:needpfx] = 0xF3 ; o.props[:argsz] = 64 }
+		addop('movq',    [0x0F, 0xD6], :mrmxmm) { |o| o.args.reverse! ; o.props[:needpfx] = 0x66 ; o.props[:argsz] = 64 }
 
 		addop 'paddq',   [0x0F, 0xD4], :mrmmmx, :xmmx
 		addop 'pmuludq', [0x0F, 0xF4], :mrmmmx, :xmmx
@@ -675,9 +675,9 @@ class Ia32
 		addop('pblendvb', [0x0F, 0x38, 0x10], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
 		addop('pblendw',  [0x0F, 0x3A, 0x1E], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66 }
 		addop('pcmpeqq',  [0x0F, 0x38, 0x29], :mrmxmm) { |o| o.props[:needpfx] = 0x66 }
-		addop('pextrb', [0x0F, 0x3A, 0x14], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args.index(:modrmxmm); o.args.unshift(:modrm); o.props[:argsz] = 8 }
-		addop('pextrw', [0x0F, 0x3A, 0x15], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args.index(:modrmxmm); o.args.unshift(:modrm); o.props[:argsz] = 16 }
-		addop('pextrd', [0x0F, 0x3A, 0x16], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args.index(:modrmxmm); o.args.unshift(:modrm); o.props[:argsz] = 32 }
+		addop('pextrb', [0x0F, 0x3A, 0x14], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args.delete(:modrmxmm); o.args.unshift(:modrm); o.props[:argsz] = 8 }
+		addop('pextrw', [0x0F, 0x3A, 0x15], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args.delete(:modrmxmm); o.args.unshift(:modrm); o.props[:argsz] = 16 }
+		addop('pextrd', [0x0F, 0x3A, 0x16], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args.delete(:modrmxmm); o.args.unshift(:modrm); o.props[:argsz] = 32 }
 		addop('pinsrb', [0x0F, 0x3A, 0x20], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:argsz] = 8 }
 		addop('pinsrw', [0x0F, 0x3A, 0x21], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:argsz] = 16 }
 		addop('pinsrd', [0x0F, 0x3A, 0x22], :mrmxmm, :u8) { |o| o.props[:needpfx] = 0x66; o.args[o.args.index(:modrmxmm)] = :modrm; o.props[:argsz] = 32 }
@@ -752,8 +752,7 @@ class Ia32
 		   pclmulqdq punpcklbw punpcklwd punpckldq punpckhbw punpckhwd
 		   punpckhdq punpcklqdq punpckhqdq].each { |n| add128[n] = true }
 
-		%w[movups movupd movddup movsldup
-		   unpcklps unpcklpd unpckhps unpckhpd
+		%w[unpcklps unpcklpd unpckhps unpckhpd
 		   movaps movshdup movapd movntps movntpd movmskps movmskpd
 		   sqrtps sqrtpd rsqrtps rcpps andps andpd andnps andnpd
 		   orps orpd xorps xorpd addps addpd mulps mulpd
@@ -771,13 +770,16 @@ class Ia32
 		   pmovzxbw pmovzxbd pmovzxbq pmovzxwd pmovzxwq pmovzxdq
 		   aesimc aeskeygenassist lddqu maskmovdqu movapd movaps
 		   pcmpestri pcmpestrm pcmpistri pcmpistrm phminposuw
-		   cvtpd2dq cvttpd2dq cvtdq2pd cvtps2pd cvtpd2ps cvtdq2ps cvtps2dq
-		   cvttps2dq movd movq movddup movdqa movdqu movmskps movmskpd
+		   cvtpd2dq cvttpd2dq cvtdq2pd cvtps2pd cvtpd2ps cvtdq2ps
+		   cvtps2dq cvttps2dq movddup movdqa movdqu movmskps movmskpd
 		   movntdq movntps movntpd movshdup movsldup movups movupd
 		   pextrb pextrw pextrd pextrq ptest rcpps roundps roundpd
 		   extractps sqrtps sqrtpd comiss comisd ucomiss ucomisd
-		   cvttss2si cvttsd2si cvtss2si cvtsd2si
+		   cvttss2si cvttsd2si cvtss2si cvtsd2si movd movq
 		].each { |n| add128[n] = true ; varg[n] = nil }
+
+		%w[movups movupd movddup movsldup
+		].each { |n| add128[n] = add256[n] = true ; varg[n] = nil }
 
 		cvtarg128 = {	:regmmx => :regxmm, :modrmmmx => :modrmxmm }
 		cvtarg256 = {	:regmmx => :regymm, :modrmmmx => :modrmymm,

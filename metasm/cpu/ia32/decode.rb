@@ -144,6 +144,14 @@ class Ia32
 				# fetch the relevant bytes from edata
 				bseq = edata.data[edata.ptr, op.bin.length].unpack('C*')
 
+				pfx_ = pfx
+				if fld = op.fields[:vex_w] and ((bseq[fld[0]] >> fld[1]) & @fields_mask[:vex_w]) == 1
+					# rex_w is used by opsz but only decoded in decode_instr_op
+					# add it here for checks with op.props[:opsz] (eg vmovd VS vmovq)
+					pfx_ = pfx.dup
+					pfx_[:rex_w] = true
+				end
+
 				# check against full opcode mask
 				op.bin.zip(bseq, op.bin_mask).all? { |b1, b2, m| b2 and ((b1 & m) == (b2 & m)) } and
 				# check special cases
@@ -155,8 +163,8 @@ class Ia32
 				  (op.props[:modrmA] and fld = op.fields[:modrm] and (bseq[fld[0]] >> fld[1]) & 0xC0 == 0xC0) or
 				  (op.props[:modrmR] and fld = op.fields[:modrm] and (bseq[fld[0]] >> fld[1]) & 0xC0 != 0xC0) or
 				  (fld = op.fields[:vex_vvvv] and @size != 64 and (bseq[fld[0]] >> fld[1]) & @fields_mask[:vex_vvvv] < 8) or
-				  (sz = op.props[:opsz] and opsz(di, op) != sz) or
-				  (sz = op.props[:adsz] and adsz(di, op) != sz) or
+				  (op.props[:opsz] and opsz(di, op, pfx_) != op.props[:opsz]) or
+				  (op.props[:adsz] and adsz(di, op) != op.props[:adsz]) or
 				  (ndpfx = op.props[:needpfx] and not pfx[:list].to_a.include? ndpfx) or
 				  (pfx[:adsz] and op.props[:adsz] and op.props[:adsz] == @size) or
 				  # return non-ambiguous opcode (eg push.i16 in 32bit mode) / sync with addop_post in opcode.rb
@@ -198,13 +206,22 @@ class Ia32
 		}
 
 		opsz = opsz(di)
-		opsz = op.props[:argsz] if op.props[:argsz] and op.props[:needpfx] != 0x66
+		opsz = op.props[:argsz] if op.props[:argsz]
 		adsz = (pfx[:adsz] ? 48 - @size : @size)
 
 		mmxsz = ((op.props[:xmmx] && pfx[:opsz]) ? 128 : 64)
 		op.args.each { |a|
 			di.instruction.args << case a
 			when :reg;    Reg.new     field_val[a], opsz
+			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg)
+			when :i8, :u8, :u16; Expression[edata.decode_imm(a, @endianness)]
+			when :i;
+				if op.props[:unsigned_imm]
+					type = { 8 => :a8, 16 => :a16, 32 => :a32, 64 => :a64 }[opsz]
+				else
+					type = { 8 => :i8, 16 => :i16, 32 => :i32, 64 => :i64 }[opsz]
+				end
+				Expression[edata.decode_imm(type, @endianness)]
 			when :eeec;   CtrlReg.new field_val[a]
 			when :eeed;   DbgReg.new  field_val[a]
 			when :eeet;   TstReg.new  field_val[a]
@@ -215,11 +232,7 @@ class Ia32
 			when :regymm; SimdReg.new field_val[a], 256
 
 			when :farptr; Farptr.decode edata, @endianness, opsz
-			when :i8, :u8, :u16; Expression[edata.decode_imm(a, @endianness)]
-			when :i; Expression[edata.decode_imm("#{op.props[:unsigned_imm] ? 'a' : 'i'}#{opsz}".to_sym, @endianness)]
-
 			when :mrm_imm;  ModRM.decode edata, (adsz == 16 ? 6 : 5), @endianness, adsz, opsz, pfx.delete(:seg)
-			when :modrm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, opsz, pfx.delete(:seg)
 			when :modrmmmx; ModRM.decode edata, field_val[:modrm], @endianness, adsz, mmxsz, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz]
 			when :modrmxmm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 128, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz], :mrmvex => op.props[:mrmvex]
 			when :modrmymm; ModRM.decode edata, field_val[:modrm], @endianness, adsz, 256, pfx.delete(:seg), SimdReg, :argsz => op.props[:argsz], :mrmvex => op.props[:mrmvex]
@@ -324,8 +337,8 @@ class Ia32
 		end
 	end
 
-	def opsz(di, op=nil)
-		if di and di.instruction.prefix and di.instruction.prefix[:opsz] and (op || di.opcode).props[:needpfx] != 0x66; 48-@size
+	def opsz(di, op=nil, pfx=di.instruction.prefix)
+		if di and pfx and pfx[:opsz] and (op || di.opcode).props[:needpfx] != 0x66; 48-@size
 		else @size
 		end
 	end
