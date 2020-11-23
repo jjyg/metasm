@@ -281,7 +281,7 @@ end
 		when :i;        arg.kind_of? Expression
 		when :imm_val1; arg.kind_of? Expression and arg.reduce == 1
 		when :imm_val3; arg.kind_of? Expression and arg.reduce == 3
-		when :reg_eax;  arg.kind_of? Reg     and arg.val == 0
+		when :reg_eax;  arg.kind_of? Reg     and arg.val == 0 and (arg.sz >= 16 or o.props[:argsz])
 		when :reg_cl;   arg.kind_of? Reg     and arg.val == 1 and arg.sz == 8
 		when :reg_dx;   arg.kind_of? Reg     and arg.val == 2 and arg.sz == 16
 		when :seg3;     arg.kind_of? SegReg
