@@ -218,7 +218,8 @@ class ExeFormat
 				raise EncodeError, "cannot find candidate in #{elem.inspect}, immediate too big #{wantsize.inspect} #{target_bounds.inspect}" if acceptable.empty?
 
 				# keep the shortest
-				acceptable.sort_by { |edata| edata.virtsize }.first
+				minsz = acceptable.map { |edata| edata.virtsize }.min
+				acceptable.find { |edata| edata.virtsize == minsz }
 			else
 				elem
 			end
