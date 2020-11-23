@@ -10,12 +10,12 @@ So the install is quite simple.
 Download
 --------
 
-Metasm is distributed using the `mercurial` source control system.
+Metasm is distributed using the `git` source control system.
 
 The recommanded way to install is to use that tool, so you can always be
 up-to-date with the latest developpements.
 
-You will also need the Ruby interpreter (version 1.8 and 1.9 are supported).
+You will also need the Ruby interpreter (version 1.8 and newer are supported).
 
 Linux
 #####
@@ -23,11 +23,11 @@ Linux
 Issue the following commands to install the `mercurial` and `ruby` software
 
     sudo apt-get install ruby
-    sudo apt-get install mercurial
+    sudo apt-get install git
 
 Then download metasm with
 
-    hg clone http://metasm.cr0.org/hg/metasm/
+    git clone https://github.com/jjyg/metasm/
 
 This will create a new directory `metasm/` with the latest version of the
 framework.
@@ -37,15 +37,14 @@ Windows
 #######
 
 The ruby website offers many ruby packages. The *RubyInstaller* should
-work fine. Go to <http://www.ruby-lang.org/en/downloads/>, under the
-`Ruby on Windows` section.
+work fine. Go to <https://www.ruby-lang.org/en/downloads/>.
 
-The `mercurial` website has links to various installers:
-<http://mercurial.selenic.com/wiki/BinaryPackages>
-Choose one, then use the `clone repository` command with the following
-url:
+The `git` website has links to an installer:
+<https://git-scm.com/download/win>
 
-    http://metasm.cr0.org/hg/metasm/
+Choose one, then use the following command:
+
+    git clone http://metasm.cr0.org/hg/metasm/
 
 This will create a new subdirectory `metasm/` with the latest version of
 the framework.
@@ -57,12 +56,9 @@ Upgrading
 To upgrade to the latest and greatest version, launch a shell prompt and
 navigate to the metasm directory, then issue:
 
-    hg pull -u
+    git pull
 
 which will upgrade your installation to the latest available version.
-
-With `TortoiseHG`, simply issue the `upgrade` command on the `metasm`
-directory.
 
 
 Local installation
@@ -133,7 +129,7 @@ Gui
 ----
 
 If you intend to use the graphical user-interface (debugger/disassembler),
-if you are under Windows with a 32bit x86 ruby, this should work out of the
+if you are under Windows with a native ruby interpreter, this should work out of the
 box. In any other case, you'll need the `ruby-gtk2` library.
 
 Linux
@@ -142,7 +138,7 @@ Linux
 Under linux, use your package manager to install `ruby-gtk2`, e.g. for
 Debian/Ubuntu, type:
 
-    sudo apt-get install libgtk2-ruby
+    sudo apt-get install ruby-gtk2
 
 
 Windows
@@ -154,7 +150,7 @@ something like `[i386-mswin32]`), the Gui should work right away without
 
 Otherwise, you'll need to install the `gtk2` libs and the ruby bindings
 manually. Please follow the instructions at 
-<http://ruby-gnome2.sourceforge.jp/hiki.cgi?Install+Guide+for+Windows>
+<http://ruby-gnome2.osdn.jp/hiki.cgi?Install+Guide+for+Windows>
 
 
 Testing
