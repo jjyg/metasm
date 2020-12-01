@@ -281,14 +281,8 @@ class SymEmuDebugger < EmuDebugger
 		}.each { |k, v|
 			case k
 			when Indirection
-				if not k.pointer.kind_of?(::Integer)
-					memory_write_int(k.pointer, k.len, v)
-				elsif not v.kind_of?(::Integer)
-					raise "cannot assign symbolic value #{v} to concrete address #{k.pointer}"
-				else
-					v = v & ((1 << (k.len*8)) - 1)
-					memory_write_int(k.pointer, v, k.len)
-				end
+				v = v & ((1 << (k.len*8)) - 1) if v.kind_of?(::Integer)
+				memory_write_int(k.pointer, v, k.len)
 			when Symbol
 				set_reg_value(k, v)
 			when /^dummy_metasm_/
@@ -300,53 +294,68 @@ class SymEmuDebugger < EmuDebugger
 
 	# handle symbolic_memory indirections
 	def resolve_expr(e)
-		v = super(e)
-		v = v.reduce { |i|
-			next if not i.kind_of?(Indirection) or i.pointer.kind_of?(::Integer)
-			i.len ||= @cpu.size/8
-			Expression.decode_sym(symbolic_memory_read_bytes(i.pointer, i.len).map { |b| b || 0 }, i.len, @cpu)
-		} if v.kind_of?(Expression)
-		v
+		case v = super(e)
+		when Expression
+			v.reduce { |i|
+				next if not i.kind_of?(Indirection)
+				next if not (0...i.len).find { |off| @symbolic_memory[i.pointer+off] }
+				memory_read_int(i.pointer, i.len || @cpu.size/8)
+			}
+		else
+			v
+		end
 	end
 
-	# read a buffer from memory
-	# symbolic memory returns nul bytes for symbolic byte values
+	# read a concrete buffer from memory
+	# chop uninitialized memory at the end of the read buffer
+	# symbolic or uninitialized bytes read as 0
 	def memory_read(addr, len)
-		if not addr.kind_of?(::Integer)
-			symbolic_memory_read_bytes(addr, len).map { |b| b.kind_of?(::Integer) ? b : 0 }.pack('C*')
+		addr = resolve_expr(addr) if not addr.kind_of?(::Integer)
+		bytes = memory_read_bytes(addr, len)
+		bytes.pop while bytes.length > 0 and !bytes.last
+		bytes.map { |b| b.kind_of?(::Integer) ? b : 0 }.pack('C*')
+	end
+
+	# read an integer from memory
+	def memory_read_int(addr, sz=@cpu.size/8)
+		addr = resolve_expr(addr) if not addr.kind_of?(::Integer)
+		Expression.decode_sym(memory_read_bytes(addr, sz).map { |b| b || 0 }, sz, @cpu)
+	end
+
+	# return a byte array from memory
+	# may include symbolic values, or nil for uninitialized memory
+	def memory_read_bytes(ptr, len)
+		if ptr.kind_of?(::Integer)
+			bytes = @memory[ptr, len].unpack('C*')
 		else
-			super(addr, len)
+			bytes = []
 		end
+		(0...len).map { |i| @symbolic_memory[ptr+i] || bytes[i] }
 	end
 
 	# write a concrete buffer to memory
 	def memory_write(addr, len, value)
-		if not addr.kind_of?(::Integer)
-			symbolic_memory_write_bytes(addr, len, value.unpack('C*'))
-		else
-			super(addr, len, value)
-		end
+		memory_write_bytes(addr, len, value.unpack('C*'))
 	end
 
-	def memory_write_int(addr, len, val)
-		if addr.kind_of?(::Integer) and val.kind_of?(::Integer)
-			super(addr, len, val)
-		else
-			# XXX may write sym val to concrete address in sym_mem, noone will read it
-			symbolic_memory_write_bytes(addr, len, Expression.encode_sym(val, len, @cpu))
-		end
+	# write an integer value to memory
+	def memory_write_int(addr, val, len=@cpu.size/8)
+		memory_write_bytes(addr, len, Expression.encode_sym(val, len, @cpu))
 	end
 
-	# return a byte array from symbolic memory
-	def symbolic_memory_read_bytes(ptr, len)
-		(0...len).map { |i| @symbolic_memory[ptr+i] }
-	end
-
-	# write a byte array to symbolic memory
-	def symbolic_memory_write_bytes(ptr, len, bytes)
-		bytes.each_with_index { |b, i|
-			@symbolic_memory[ptr+i] = b
+	# write bytes to memory
+	# concrete values for concrete addresses update @memory, others update @symbolic_memory
+	def memory_write_bytes(ptr, len, bytes)
+		(0...len).each { |i|
+			v = bytes[i]
+			if ptr.kind_of?(::Integer) and v.kind_of?(::Integer)
+				@symbolic_memory.delete ptr+i
+				@memory[ptr+i, 1] = [v].pack('C*')
+			else
+				@symbolic_memory[ptr+i] = v
+			end
 		}
+		bytes
 	end
 
 	# return the current value of the registers expressed from the values of the registers at the beginning of the emulation
