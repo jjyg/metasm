@@ -1165,7 +1165,7 @@ class ELF
 		case @header.machine
 		when 'X86_64'; X86_64.new
 		when '386'; Ia32.new
-		when 'MIPS'; (@header.flags.include?('32BITMODE') ? MIPS64 : MIPS).new(@endianness)
+		when 'MIPS'; (bitsize == 64 ? MIPS64 : MIPS).new(@endianness)
 		when 'PPC'; PPC.new
 		when 'ARM'; ARM.new
 		when 'AARCH64'; AArch64.new
