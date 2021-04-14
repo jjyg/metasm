@@ -696,6 +696,20 @@ class LinDebug
 		@command['syscall'] = lambda { |str|
 			@dbg.syscall_wait(str)
 		}
+		@command['dump'] =
+		@command['memdump'] = lambda { |str|
+			addr, len, fname = str.strip.split(/\s+/, 3)
+			addr = @dbg.resolve(addr)
+			len = @dbg.resolve(len)
+			fname ||= "memdump_#{Expression[addr]}_#{Expression[len]}.raw"
+			raw = @dbg[addr, len].to_str
+			if raw.empty?
+				log 'nothing to dump'
+			else
+				File.open(fname, 'wb') { |fd| fd.write raw }
+				log "saved #{fname}"
+			end
+		}
 	end
 end
 
