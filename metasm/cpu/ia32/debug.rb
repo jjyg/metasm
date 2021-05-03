@@ -23,7 +23,13 @@ class Ia32
 	end
 
 	def dbg_register_size
-		@dbg_register_size ||= Hash.new(32).update(:cs => 16, :ds => 16, :es => 16, :fs => 16, :gs => 16)
+		@dbg_register_size ||= dbg_register_size_initialize(Hash.new(32))
+	end
+
+	def dbg_register_size_initialize(h=Hash.new(32))
+		[:cs, :ds, :es, :fs, :gs].each { |r| h[r] = 16 }
+		16.times { |i| h["ymm#{i}".to_sym] = 256 }
+		h
 	end
 
 	def dbg_flag_list

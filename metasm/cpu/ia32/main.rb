@@ -105,7 +105,16 @@ class Ia32 < CPU
 		double_map  64 => (0..7).map { |n| "mm#{n}" },
 			   128 => (0..7).map { |n| "xmm#{n}" },
 			   256 => (0..7).map { |n| "ymm#{n}" }
-		def symbolic(di=nil) ; to_s.to_sym end
+
+		def symbolic(di=nil)
+			# don't precompute Sym = i_to_s.to_sym to be compatible with X86_64 (=> ymm15)
+			s = self.class.i_to_s[256][@val].to_sym
+			if @sz < 256
+				Expression[s, :&, (1 << @sz) - 1]
+			else
+				s
+			end
+		end
 	end
 
 	# general purpose registers, all sizes

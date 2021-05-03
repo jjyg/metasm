@@ -20,7 +20,7 @@ class X86_64
 	end
 
 	def dbg_register_size
-		@dbg_register_size ||= Hash.new(64).update(:cs => 16, :ds => 16, :es => 16, :fs => 16, :gs => 16)
+		@dbg_register_size ||= dbg_register_size_initialize(Hash.new(64))
 	end
 
 	def dbg_func_arg(dbg, argnr)
