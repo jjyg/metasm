@@ -812,8 +812,8 @@ class Ia32
 					end
 					val = bd.delete e
 					mask <<= shift if shift
-					invmask = mask ^ (@size == 64 ? 0xffff_ffff_ffff_ffff : 0xffff_ffff)
-					if invmask == 0xffff_ffff_0000_0000 and not di.opcode.props[:op32no64]
+					invmask = mask ^ -1
+					if invmask == (0xffff_ffff ^ -1) and not di.opcode.props[:op32no64]
 						bd[reg] = Expression[val, :&, 0xffff_ffff]
 					elsif invmask == 0
 						bd[reg] = val
