@@ -1273,7 +1273,7 @@ EOC
 
 	# returns an array of [name, addr, length, info]
 	def section_info
-		if @sections
+		if @sections and @sections.length > 1
 			@sections[1..-1].map { |s|
 				[s.name, s.addr, s.size, s.flags.join(',')]
 			}
