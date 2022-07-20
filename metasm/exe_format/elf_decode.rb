@@ -816,6 +816,35 @@ class ELF
 		Metasm::Relocation.new(Expression[target], :u64, @endianness) if target
 	end
 
+	def decode_notes(off = nil, len = nil)
+		if not off
+			if s = @segments.find { |s_| s_.type == 'NOTE' }
+				# this way it also works with LoadedELF
+				off = addr_to_off(s.vaddr) || s.offset
+				len ||= s.filesz
+			elsif s = @sections.find { |s_| s_.type == 'NOTE' }
+				# if no DYNAMIC segment, assume we decode an ET_REL from file
+				off = s.offset
+				len ||= s.size
+			end
+		end
+		return if not @encoded.ptr = off
+		len ||= @encoded.length - @encoded.ptr
+
+		@note = []
+		while @encoded.ptr < off+len
+			namesz = decode_word
+			descsz = decode_word
+			type = decode_word
+			name = @encoded.read(namesz).chomp(0.chr)
+			@encoded.ptr += 4 - ((namesz-1) % 4) - 1	# name padded to next numeric field alignment
+			descr = @encoded.read(descsz)
+			@encoded.ptr += 4 - ((descsz-1) % 4) - 1	# ^
+
+			@note << [name, type, descr]
+		end
+	end
+
 	class DwarfDebug
 		# decode a DWARF2 'compilation unit'
 		def decode(elf, info, abbrev, str)
@@ -1094,6 +1123,12 @@ class ELF
 		decode_segments_relocs_interpret
 	end
 
+	# decode coredump file elements
+	def decode_core
+		decode_segments
+		decode_notes
+	end
+
 	# decodes the dynamic segment, fills segments.encoded
 	def decode_segments
 		decode_segments_dynamic
@@ -1143,7 +1178,7 @@ class ELF
 		case @header.type
 		when 'DYN', 'EXEC'; decode_segments
 		when 'REL'; decode_sections
-		when 'CORE'
+		when 'CORE'; decode_core
 		end
 	end
 

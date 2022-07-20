@@ -15,7 +15,9 @@ class ELF < ExeFormat
 	VERSION = { 0 => 'INVALID', 1 => 'CURRENT' }
 	ABI = { 0 => 'SYSV', 1 => 'HPUX', 2 => 'NETBSD', 3 => 'LINUX',
 		6 => 'SOLARIS', 7 => 'AIX', 8 => 'IRIX', 9 => 'FREEBSD',
-		10 => 'TRU64', 11 => 'MODESTO', 12 => 'OPENBSD', 97 => 'ARM',
+		10 => 'TRU64', 11 => 'MODESTO', 12 => 'OPENBSD',
+		13 => 'OPENVMS', 14 => 'NSK', 15 => 'AROS',
+		97 => 'ARM',
 		255 => 'STANDALONE'}
 	TYPE = { 0 => 'NONE', 1 => 'REL', 2 => 'EXEC', 3 => 'DYN', 4 => 'CORE' }
 	TYPE_LOPROC = 0xff00
@@ -196,7 +198,8 @@ class ELF < ExeFormat
 	SYMBOL_TYPE_LOPROC = 13
 	SYMBOL_TYPE_HIPROC = 15
 
-	SYMBOL_VISIBILITY = { 0 => 'DEFAULT', 1 => 'INTERNAL', 2 => 'HIDDEN', 3 => 'PROTECTED' }
+	SYMBOL_VISIBILITY = { 0 => 'DEFAULT', 1 => 'INTERNAL', 2 => 'HIDDEN', 3 => 'PROTECTED',
+		4 => 'EXPORTED', 5 => 'SINGLETON', 6 => 'ELIMINATE' }
 
 	RELOCATION_TYPE = {	# key are in MACHINE.values
 		'386' => { 0 => 'NONE', 1 => '32', 2 => 'PC32', 3 => 'GOT32',
@@ -711,7 +714,7 @@ class ELF < ExeFormat
 		}
 	end
 
-	attr_accessor :header, :segments, :sections, :tag, :symbols, :relocations, :endianness, :bitsize, :debug, :eh_frame
+	attr_accessor :header, :segments, :sections, :tag, :symbols, :relocations, :endianness, :bitsize, :debug, :eh_frame, :note
 	def initialize(cpu=nil)
 		@header = Header.new
 		@tag = {}
