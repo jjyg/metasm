@@ -358,7 +358,7 @@ class IdaRemote:
     # return <cpu_name> <word size> <endianness>
     def cmd_get_cpuinfo(self):
         info = idaapi.get_inf_structure()
-        cpu_name = info.procName
+        cpu_name = info.procname
         if info.is_64bit():
             word_size = 64
         elif info.is_32bit():
