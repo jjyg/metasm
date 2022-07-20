@@ -701,7 +701,7 @@ class LinDebug
 			addr, len, fname = str.strip.split(/\s+/, 3)
 			addr = @dbg.resolve(addr)
 			len = @dbg.resolve(len)
-			fname ||= "memdump_#{Expression[addr]}_#{Expression[len]}.raw"
+			fname ||= "memdump_#{Metasm::Expression[addr]}_#{Metasm::Expression[len]}.raw"
 			raw = @dbg[addr, len].to_str
 			if raw.empty?
 				log 'nothing to dump'
