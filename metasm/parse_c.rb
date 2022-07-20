@@ -3087,6 +3087,34 @@ EOH
 				str.last << "#{@struct.type} x[#{@struct.length}] = " if not off
 				mlist = (0...@struct.length)
 				fldoff = mlist.inject({}) { |h, i| h.update i => i*@cp.sizeof(@struct.type) }
+				if off and @struct.type.untypedef.kind_of?(C::BaseType) and @struct.type.untypedef.name == :char and not @struct.type.untypedef.specifier
+					# char bla = "blu"
+					vals = mlist.map { |k| self[k] }
+					if not vals.empty? and vals.all? { |c| c.kind_of?(::Integer) }
+						cur = []
+						curoff = off.to_i
+						inspect_str = lambda { ||
+							'"' << cur.map { |cc|
+								cc >= 0x20 && cc <= 0x7e && cc != 0x22 && cc != 0x5c ? cc.chr :
+								cc == 0 ? '\\0' :
+								('\\x%02X' % (cc & 0xff))
+							}.join << '"'
+						}
+						vals.each { |c|
+							if cur.length >= 32
+								str.last << inspect_str[] << ('   // +%x' % curoff)
+								str << ''
+								curoff += cur.length
+								cur = []
+							end
+							cur << c
+						}
+						if cur.length > 0
+							str.last << inspect_str[] << (off ? ',' : ';') << ('   // +%x' % curoff)
+						end
+						return str.join("\n")
+					end
+				end
 			elsif @struct.kind_of?(C::Struct)
 				str.last << "struct #{@struct.name || '_'} x = " if not off
 				@struct.update_member_cache(@cp) if not @struct.fldlist
@@ -3098,7 +3126,7 @@ EOH
 			end
 			str.last << '{'
 			mlist.each { |k|
-				if k.kind_of? Variable	# anonymous member
+				if k.kind_of?(Variable)	# anonymous member
 					curoff = off.to_i + @struct.offsetof(@cp, k)
 					val = self[k]
 					k = '?'
@@ -3114,7 +3142,7 @@ EOH
 					else
 						val = '%d,   // +%x' % [val, curoff]
 					end
-				elsif val.kind_of? AllocCStruct
+				elsif val.kind_of?(AllocCStruct)
 					val = val.to_s(curoff, maxdepth-1)
 				elsif not val
 					val = 'NULL,   // +%x' % curoff # pointer with NULL value
