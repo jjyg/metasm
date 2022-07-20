@@ -82,8 +82,10 @@ class COFF
 			if coff.sect_at_rva(@func_p)
 				@exports = []
 				addrs = []
-				@num_exports.times { addrs << coff.decode_word }
-				@num_exports.times { |i|
+				ne = @num_exports
+				ne = 128 if ne > coff.optheader.image_size/4
+				ne.times { addrs << coff.decode_word }
+				ne.times { |i|
 					e = Export.new
 					e.ordinal = i + @ordinal_base
 					addr = addrs[i]
@@ -101,13 +103,15 @@ class COFF
 					@exports << e
 				}
 			end
+			nn = num_names
+			nn = 128 if nn > coff.optheader.image_size/4
 			if coff.sect_at_rva(@names_p)
 				namep = []
-				num_names.times { namep << coff.decode_word }
+				nn.times { namep << coff.decode_word }
 			end
 			if coff.sect_at_rva(@ord_p)
 				ords = []
-				num_names.times { ords << coff.decode_half }
+				nn.times { ords << coff.decode_half }
 			end
 			if namep and ords
 				namep.zip(ords).each { |np, oi|
