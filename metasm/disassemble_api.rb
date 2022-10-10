@@ -852,7 +852,7 @@ class Disassembler
 				if tmp and tmp.length == 1
 					to = tmp[0]
 				else
-					to = b.list.last.next_addr
+					to = b.list.last.next_addr rescue nil
 				end
 				if (todo.include?(to) or done.include?(to)) and di_at(to)
 					if done.include?(to)

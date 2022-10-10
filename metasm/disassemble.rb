@@ -424,7 +424,7 @@ class Disassembler
 	attr_accessor :funcs_stdabi
 	# callback called whenever an instruction will backtrace :x (before the backtrace is started)
 	# arguments: |addr of origin, array of exprs to backtrace|
-	# must return the replacement array, nil == []
+	# returns the replacement array, nil == unmodified arg2
 	attr_accessor :callback_newaddr
 	# called whenever an instruction is decoded and added to an instruction block. arg: the new decoded instruction
 	# returns the new di to consider (nil to end block)
