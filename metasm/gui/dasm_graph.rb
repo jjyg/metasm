@@ -386,6 +386,7 @@ class Graph
 
 			# order nodes from the tentative roots
 			until todo.empty?
+				$stderr.print "og #{groups.length} #{o.length} #{todo.length}     \r" if groups.length > 5000
 				n = todo.find { |g| g.from.all? { |gg| o[gg] } } || order_solve_cycle(todo, o)
 				todo.delete n
 				o[n] = n.from.map { |g| o[g] }.compact.max + 1
@@ -441,22 +442,26 @@ class Graph
 		# pick one node from todo which no other todo can reach
 		# exclude pathing through already ordered nodes
 		todo.find { |t1|
-			not todo.find { |t2| t1 != t2 and can_find_path(t2, t1, o.dup) }
+			not todo.find { |t2| t1 != t2 and can_find_path(t2, t1, o) }
 		} ||
 		# some cycle heads are mutually recursive
 		todo.sort_by { |t1|
-			# find the one who can reach the most others
-			[todo.find_all { |t2| t1 != t2 and can_find_path(t1, t2, o.dup) }.length,
-			# and with the highest rank
-			 t1.from.map { |gg| o[gg] }.compact.max]
+			reachable = if todo.length < 30
+				todo.find_all { |t2| t1 != t2 and can_find_path(t1, t2, o) }
+			else
+				(list_reachable(t1, o).keys & todo) - [t1]
+			end
+			# find the one who can reach the most others and with the highest rank
+			[reachable.length, t1.from.map { |gg| o[gg] }.compact.max]
 		}.last
 	end
 
 	# checks if there is a path from src to dst avoiding stuff in 'done'
-	def can_find_path(src, dst, done={})
+	def can_find_path(src, dst, avoid)
 		todo = [src]
+		done = {}
 		while g = todo.pop
-			next if done[g]
+			next if avoid[g] || done[g]
 			return true if g == dst
 			done[g] = true
 			todo.concat g.to
@@ -465,10 +470,11 @@ class Graph
 	end
 
 	# returns a hash with true for every node reachable from src (included)
-	def list_reachable(src, done={})
+	def list_reachable(src, avoid={})
 		todo = [src]
+		done = {}
 		while g = todo.pop
-			next if done[g]
+			next if avoid[g] || done[g]
 			done[g] = true
 			todo.concat g.to
 		end
@@ -1260,16 +1266,18 @@ class GraphViewWidget < DrawableWidget
 	def build_ctx(ctx)
 		# graph : block -> following blocks in same function
 		block_rel = {}
+		block_rel_rev = {}
 
 		todo = ctx.root_addrs.dup
-		done = [:default, Expression::Unknown]
+		done = {:default => true, Expression::Unknown => true}
 		while a = todo.shift
 			a = @dasm.normalize a
-			next if done.include? a
-			done << a
+			next if done[a]
+			done[a] = true
 			next if not di = @dasm.di_at(a)
 			if not di.block_head?
 				block_rel[di.block.address] = [a]
+				(block_rel_rev[a] ||= []) << di.block.address
 				@dasm.split_block(a)
 			end
 			block_rel[a] = []
@@ -1278,6 +1286,7 @@ class GraphViewWidget < DrawableWidget
 				next if not @dasm.di_at(t)
 				todo << t
 				block_rel[a] << t
+				(block_rel_rev[t] ||= []) << a
 			}
 			block_rel[a].uniq!
 		end
@@ -1286,12 +1295,12 @@ class GraphViewWidget < DrawableWidget
 		addr2box = {}
 		todo = ctx.root_addrs.dup
 		todo.delete_if { |t| not @dasm.di_at(t) }	# undefined func start
-		done = []
+		done = {}
 		while a = todo.shift
-			next if done.include? a
-			done << a
-			if not ctx.keep_split.to_a.include?(a) and from = block_rel.keys.find_all { |ba| block_rel[ba].include? a } and
-					from.length == 1 and block_rel[from.first].length == 1 and
+			next if done[a]
+			done[a] = true
+			if not (ctx.keep_split and ctx.keep_split[a]) and from = block_rel_rev[a] and
+					from.uniq.length == 1 and block_rel[from.first].length == 1 and
 					addr2box[from.first] and lst = @dasm.decoded[from.first].block.list.last and
 					lst.next_addr == a and (not lst.opcode.props[:saveip] or lst.block.to_subfuncret)
 				box = addr2box[from.first]
@@ -1575,8 +1584,8 @@ class GraphViewWidget < DrawableWidget
 		when :insert		# split curbox at @caret_y
 			if @caret_box and a = @caret_box[:line_address][@caret_y] and @dasm.decoded[a]
 				@dasm.split_block(a)
-				@curcontext.keep_split ||= []
-				@curcontext.keep_split |= [a]
+				@curcontext.keep_split ||= {}
+				@curcontext.keep_split[a] = true
 				gui_update
 				focus_addr a
 			end
@@ -1630,18 +1639,18 @@ class GraphViewWidget < DrawableWidget
 	# find a suitable array of graph roots, walking up from a block (function start/entrypoint)
 	def dasm_find_roots(addr)
 		todo = [addr]
-		done = []
+		done = {}
 		roots = []
 		default_root = nil
 		while a = todo.shift
 			next if not di = @dasm.di_at(a)
 			b = di.block
 			a = b.address
-			if done.include? a
+			if done[a]
 				default_root ||= a
 				next
 			end
-			done << a
+			done[a] = true
 			newf = []
 			b.each_from_samefunc(@dasm) { |f| newf << f }
 			if newf.empty?
