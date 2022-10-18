@@ -78,6 +78,9 @@ class X86_64
 				if imm
 					i32 = :i32
 					i32 = :a32 if (self.b and self.b.sz == 32) or (self.i and self.i.sz == 32)
+					# when decoding, sometimes interpret as unsigned if large (base address), but is non-encodable
+					imm -= 1<<64 if not Expression.in_range?(imm, :i32) and Expression.in_range?(imm - (1<<64), :i32)
+
 					case Expression.in_range?(imm, :i8)
 					when true
 						or_bits[1<<6]
