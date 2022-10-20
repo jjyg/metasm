@@ -835,6 +835,8 @@ class Disassembler
 			end
 
 			b = @decoded[addr].block
+			# keep a ref to the di, for postprocessing (rip-relative addressing...)
+			b.list.each { |di| di.instruction.instance_variable_set("@di", di) }
 			ret.concat b.list.map { |di| di.instruction }
 
 			b.each_to_otherfunc(self) { |to|
