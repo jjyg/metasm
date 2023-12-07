@@ -7,7 +7,7 @@ import select
 
 # remote control for IDA using a text protocol
 # by default listens on localhost:56789
-# tested with IDA7.3, IDA7.4
+# tested with IDA7.3, IDA7.5, IDA8.1
 # to stop, run 'idaremote.quit()' from within IDA
 
 class IdaRemote:
@@ -204,6 +204,18 @@ class IdaRemote:
             return "ok"
         return ""
 
+    # set a decompiler comment
+    def cmd_set_decompiler_comment(self, addr, cmt):
+        ea = int(addr, 0)
+        cfunc = idaapi.decompile(ea)
+        tl = idaapi.treeloc_t()
+        tl.ea = ea
+        # add comment after semicolon, will not show on if() line
+        tl.itp = idaapi.ITP_SEMI
+        cfunc.set_user_cmt(tl, cmt)
+        cfunc.save_user_cmts()
+        return "ok"
+
     # return the current cursor address (ScreenEA)
     def cmd_get_cursor_pos(self):
         return self.fmt_addr(idc.get_screen_ea())
@@ -299,6 +311,24 @@ class IdaRemote:
     def cmd_get_segment_name(self, a):
         return idc.get_segm_name(int(a, 0))
 
+    # rename a segment (a address, n newname)
+    def cmd_set_segment_name(self, a, n):
+        if idc.set_segm_name(int(a, 0), n):
+            return "ok"
+        return ""
+
+    # load an existing binary file as new ida segment
+    # seek file to foff, load at address a, length l
+    def cmd_add_segment_fromfile(self, path, foff, a, l):
+        if idc.loadfile(path, int(foff, 0), int(a, 0), int(l, 0)):
+            # create a segment covering the new data
+            segtype = 1 # 32b
+            if idaapi.get_inf_structure().is_64bit():
+                segtype = 2 # 64b
+            idc.add_segm_ex(int(a, 0), int(a, 0)+int(l, 0), 0, segtype, 0, 0, 0)
+            return "ok"
+        return ""
+
     # return the mnemonic of an opcode at addr
     def cmd_get_op_mnemonic(self, a):
         return idc.print_insn_mnem(int(a, 0))
@@ -335,6 +365,10 @@ class IdaRemote:
     # tell IDA to disassemble
     def cmd_make_code(self, a):
         return str(idc.create_insn(int(a, 0)))
+
+    # tell IDA to create a function
+    def cmd_make_func(self, a):
+        return str(ida_funcs.add_func(int(a, 0)))
 
     # undefine at an address
     # for code, undefine following instructions too

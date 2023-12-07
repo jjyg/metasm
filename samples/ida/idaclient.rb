@@ -113,6 +113,7 @@ class IdaClient
 	add_command('exit_ida', :exit_code0, :can_ignore_ret) { |s| s == "bye" }
 	add_command('get_comment', :addr) { |s| s if s != '' }
 	add_command('set_comment', :addr, :comment, :can_ignore_ret) { |s| s == "ok" }
+	add_command('set_decompiler_comment', :addr, :comment, :can_ignore_ret) { |s| s == "ok" }
 	add_command('get_cursor_pos') { |a| addr(a) }
 	add_command('set_cursor_pos', :addr, :can_ignore_ret) { |s| s == "ok" }
 	add_command('get_selection') { |lst| lst.split.map { |a| addr(a) } }
@@ -134,6 +135,8 @@ class IdaClient
 	add_command('get_segment_start', :addr) { |a| addr(a) }
 	add_command('get_segment_end', :addr) { |a| addr(a) }
 	add_command('get_segment_name', :addr) { |s| s if s != '' }
+	add_command('set_segment_name', :addr, :name) { |s| s == "ok" }
+	add_command('add_segment_fromfile', :path, :off, :addr, :len) { |s| s == "ok" }
 	add_command('get_op_mnemonic', :addr) { |s| s if s != '' }
 	add_command('make_align', :addr, :count, :align, :can_ignore_ret) { |s| s == "ok" }
 	add_command('make_array', :addr, :count, :can_ignore_ret) { |s| s == "ok" }
@@ -143,6 +146,7 @@ class IdaClient
 	add_command('make_qword', :addr, :can_ignore_ret) { |s| s == "ok" }
 	add_command('make_string', :addr_start, :len0, :type0, :can_ignore_ret) { |s| s == "ok" }
 	add_command('make_code', :addr, :can_ignore_ret) { |s| s == "ok" }
+	add_command('make_func', :addr, :can_ignore_ret) { |s| s == "ok" }
 	add_command('undefine', :addr, :can_ignore_ret) { |s| s == "ok" }
 	add_command('patch_byte', :addr, :newbyte, :can_ignore_ret) { |s| s == "ok" }
 	add_command('get_input_path') { |s| s if s != '' }
