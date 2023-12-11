@@ -13,8 +13,7 @@ module Metasm
 # WebAssembly
 # leb integer encoding taken from dex.rb
 class WasmFile < ExeFormat
-	MAGIC = "\0asm"
-	MAGIC.force_encoding('binary') if MAGIC.respond_to?(:force_encoding)
+	MAGIC = "\0asm".b
 
 	SECTION_NAME = { 1 => 'Type', 2 => 'Import', 3 => 'Function', 4 => 'Table',
 		         5 => 'Memory', 6 => 'Global', 7 => 'Export', 8 => 'Start',

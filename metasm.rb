@@ -91,3 +91,13 @@ if Hash.new.respond_to?(:key)
 		alias index key
 	end
 end
+
+# not sure when String#b was actually introduced
+if not String.new.respond_to?(:b)
+	puts "using ruby1.9 workaround for String#b" if $DEBUG
+	class String
+		def b
+			dup.force_encoding(Encoding::BINARY)
+		end
+	end
+end

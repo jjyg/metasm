@@ -85,8 +85,7 @@ class Ia32
 		end
 	end
 
-	DBG_BPX = "\xcc"
-	DBG_BPX.force_encoding('BINARY') if DBG_BPX.respond_to?(:force_encoding)
+	DBG_BPX = "\xcc".b
 	def dbg_enable_bpx(dbg, bp)
 		bp.internal[:previous] ||= dbg.memory[bp.address, 1]
 		dbg.memory[bp.address, 1] = DBG_BPX

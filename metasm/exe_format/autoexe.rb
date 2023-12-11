@@ -37,7 +37,6 @@ end
 
 # register a new binary file signature
 def self.register_signature(sig, exe=nil, &b)
-	sig.force_encoding('binary') if sig.respond_to?(:force_encoding)
 	(@signatures ||= []) << [sig, exe || b]
 end
 
@@ -52,16 +51,16 @@ end
 
 # raw signature copies (avoid triggering exefmt autorequire)
 init_signatures
-register_signature("\x7fELF") { ELF }
-register_signature(lambda { |raw| raw[0, 2] == "MZ" and off = raw[0x3c, 4].to_s.unpack('V')[0] and off < raw.length and raw[off, 4] == "PE\0\0" }) { PE }
+register_signature("\x7fELF".b) { ELF }
+register_signature(lambda { |raw| raw[0, 2] == "MZ".b and off = raw[0x3c, 4].to_s.unpack('V')[0] and off < raw.length and raw[off, 4] == "PE\0\0".b }) { PE }
 %w[feedface cefaedfe feedfacf cffaedfe].each { |sig| register_signature([sig].pack('H*')) { MachO } }
-register_signature("\xca\xfe\xba\xbe") { UniversalBinary }
-register_signature("dex\n") { DEX }
-register_signature("dey\n") { DEY }
-register_signature("\xfa\x70\x0e\x1f") { FatELF }
-register_signature("\x50\x4b\x03\x04") { ZIP }
-register_signature("\0asm") { WasmFile }
-register_signature('Metasm.dasm') { Disassembler }
+register_signature("\xca\xfe\xba\xbe".b) { UniversalBinary }
+register_signature("dex\n".b) { DEX }
+register_signature("dey\n".b) { DEY }
+register_signature("\xfa\x70\x0e\x1f".b) { FatELF }
+register_signature("\x50\x4b\x03\x04".b) { ZIP }
+register_signature("\0asm".b) { WasmFile }
+register_signature('Metasm.dasm'.b) { Disassembler }
 
 # replacement for AutoExe where #load defaults to a Shellcode of the specified CPU
 def self.orshellcode(cpu=nil, &b)
@@ -79,7 +78,7 @@ end
 # special class that decodes a LoadedPE or LoadedELF from its signature (used to read memory-mapped binaries)
 class LoadedAutoExe < AutoExe
 init_signatures
-register_signature("\x7fELF") { LoadedELF }
-register_signature(lambda { |raw| raw[0, 2] == "MZ" and off = raw[0x3c, 4].to_s.unpack('V')[0] and off < raw.length and raw[off, 4] == "PE\0\0" }) { LoadedPE }
+register_signature("\x7fELF".b) { LoadedELF }
+register_signature(lambda { |raw| raw[0, 2] == "MZ".b and off = raw[0x3c, 4].to_s.unpack('V')[0] and off < raw.length and raw[off, 4] == "PE\0\0".b }) { LoadedPE }
 end
 end

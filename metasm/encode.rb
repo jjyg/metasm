@@ -277,13 +277,12 @@ class Expression
 		when Integer; EncodedData.new Expression.encode_imm(val, type, endianness, backtrace)
 		else
 			str = case INT_SIZE[type]
-			      when  8; "\0"
-			      when 16; "\0\0"
-			      when 32; "\0\0\0\0"
-			      when 64; "\0\0\0\0\0\0\0\0"
+			      when  8; "\0".b
+			      when 16; "\0\0".b
+			      when 32; "\0\0\0\0".b
+			      when 64; "\0\0\0\0\0\0\0\0".b
 			      else [0].pack('C')*(INT_SIZE[type]/8)
 			      end
-			str = str.force_encoding('BINARY') if str.respond_to?(:force_encoding)
 			EncodedData.new(str, :reloc => {0 => Relocation.new(self, type, endianness, backtrace)})
 		end
 	end

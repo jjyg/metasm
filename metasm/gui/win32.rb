@@ -2039,7 +2039,8 @@ class Window
 				:style => Win32Gui::CS_DBLCLKS,
 				:hcursor => Win32Gui.loadcursora(0, Win32Gui::IDC_ARROW),
 				:lpszclassname => cname,
-				:lpfnwndproc => Win32Gui.callback_alloc_c('__stdcall int wndproc(int, int, int, int)') { |hwnd, msg, wp, lp| windowproc(hwnd, msg, wp, lp) }
+						# __stdcall LRESULT (*WNDPROC)(HWND, UINT, WPARAM, LPARAM)
+				:lpfnwndproc => Win32Gui.callback_alloc_c('__stdcall uintptr_t wndproc(uintptr_t, int, uintptr_t, uintptr_t)') { |hwnd, msg, wp, lp| windowproc(hwnd, msg, wp, lp) }
 
 		Win32Gui.registerclassexa(cls)
 

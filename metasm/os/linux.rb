@@ -197,7 +197,7 @@ EOS
 	end
 
 	def writemem(off, str)
-		str.force_encoding('binary') if str.respond_to?(:force_encoding)
+		str = str.b
 		decal = off % @host_intsize
 		if decal > 0
 			off -= decal

@@ -10,15 +10,12 @@ require 'metasm/decode'
 
 module Metasm
 class MachO < ExeFormat
-	MAGIC = "\xfe\xed\xfa\xce"	# 0xfeedface
+	MAGIC = "\xfe\xed\xfa\xce".b	# 0xfeedface
 	CIGAM = MAGIC.reverse		# 0xcefaedfe
-	MAGIC64 = "\xfe\xed\xfa\xcf"	# 0xfeedfacf
+	MAGIC64 = "\xfe\xed\xfa\xcf".b	# 0xfeedfacf
 	CIGAM64 = MAGIC64.reverse	# 0xcffaedfe
 
 	MAGICS = [MAGIC, CIGAM, MAGIC64, CIGAM64]
-
-	# "a" != "a"   lolz!
-	MAGICS.each { |s| s.force_encoding('BINARY') } if MAGIC.respond_to?(:force_encoding)
 
 	CPU = {
 		1 => 'VAX', 2 => 'ROMP',

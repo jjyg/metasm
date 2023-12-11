@@ -1008,16 +1008,11 @@ class EncodedData
 	attr_reader   :ptr	# custom writer
 	def ptr=(p) @ptr = @export[p] || p end
 
-	INITIAL_DATA = ''
-	INITIAL_DATA.force_encoding('BINARY') if INITIAL_DATA.respond_to?(:force_encoding)
+	INITIAL_DATA = ''.b
 
 	# opts' keys in :reloc, :export, :virtsize, defaults to empty/empty/data.length
 	def initialize(data=INITIAL_DATA.dup, opts={})
-		if data.respond_to?(:force_encoding) and data.encoding.name != 'ASCII-8BIT' and data.length > 0
-			puts "Forcing edata.data.encoding = BINARY at", caller if $DEBUG
-			data = data.dup.force_encoding('binary')
-		end
-		@data     = data
+		@data     = data.b
 		@reloc    = opts[:reloc]    || {}
 		@export   = opts[:export]   || {}
 		@inv_export = @export.invert
@@ -1167,10 +1162,7 @@ class EncodedData
 			@virtsize += other.virtsize
 		else
 			fill
-			if other.respond_to?(:force_encoding) and other.encoding.name != 'ASCII-8BIT' and other.length > 0
-				puts "Forcing edata.data.encoding = BINARY at", caller if $DEBUG
-				other = other.dup.force_encoding('binary')
-			end
+			other = other.b if other.kind_of?(String)
 			if @data.empty?; @data = other.dup
 			elsif other.empty?
 			elsif not @data.kind_of?(String); @data = @data.to_str << other

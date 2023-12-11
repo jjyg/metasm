@@ -40,7 +40,7 @@ def lint_file(tg)
 end
 
 def compile_warn(tg)
-	r, w = IO.pipe('binary')
+	r, w = IO.pipe(Encoding::BINARY)
 	if !fork
 		r.close
 		$stderr.reopen w

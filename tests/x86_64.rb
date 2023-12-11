@@ -18,11 +18,7 @@ class TestX86_64 < Test::Unit::TestCase
 	end
 
 	def bin(s)
-		if s.respond_to?(:force_encoding)
-			s.force_encoding('BINARY')
-		else
-			s
-		end
+		s.b
 	end
 
 	def test_basic

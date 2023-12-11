@@ -136,6 +136,11 @@ class VirtualString
 		ret << self[addr, len]
 	end
 
+	# compat with String#b (force encoding binary)
+	def b
+		self
+	end
+
 	# alias to realstring
 	# for bad people checking respond_to? :to_str (like String#<<)
 	# XXX alias does not work (not virtual (a la C++))
