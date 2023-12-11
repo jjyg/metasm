@@ -9,7 +9,7 @@
 
 module Metasm
 class DynLdr
-	# basic C defs for ruby internals - 1.8 and 1.9 compat - x86/x64
+	# basic C defs for ruby internals - 1.8, 1.9, 3.3 compat - x86/x64
 	RUBY_H = <<EOS
 #line #{__LINE__}
 typedef uintptr_t VALUE;
@@ -26,7 +26,7 @@ typedef uintptr_t VALUE;
 struct rb_string_t {
 	VALUE flags;
 	VALUE klass;
-	VALUE len;
+	long len;
 	char *ptr;
 	union {
 		long capa;
@@ -38,7 +38,7 @@ struct rb_string_t {
 struct rb_array_t {
 	VALUE flags;
 	VALUE klass;
-	VALUE len;
+	long len;
 	union {
 		long capa;
 		VALUE shared;
@@ -52,29 +52,13 @@ extern VALUE *rb_cObject __attribute__((import));
 extern VALUE *rb_eRuntimeError __attribute__((import));
 extern VALUE *rb_eArgError __attribute__((import));
 
-// allows generating a ruby1.9 dynldr.so from ruby1.8
-#ifndef DYNLDR_RUBY_19
-#define DYNLDR_RUBY_19 #{RUBY_VERSION >= '1.9' ? 1 : 0}
-#endif
-
 #if #{RUBY_VERSION >= '2.0' ? 1 : 0}
 // flonums. WHY?
 // also breaks Qtrue/Qnil
 #define rb_float_new rb_float_new_in_heap
 #endif
 
-#if DYNLDR_RUBY_19
- #define T_STRING 0x05
- #define T_ARRAY  0x07
- #define T_FIXNUM 0x15
- #define T_MASK   0x1f
- #define RSTRING_NOEMBED (1<<13)
- #define STR_PTR(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->ptr : (char*)&RString(o)->len)
- #define STR_LEN(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->len : (RString(o)->flags >> 14) & 0x1f)
- #define RARRAY_EMBED (1<<13)
- #define ARY_PTR(o) ((RArray(o)->flags & RARRAY_EMBED) ? (VALUE*)&RArray(o)->len : RArray(o)->ptr)
- #define ARY_LEN(o) ((RArray(o)->flags & RARRAY_EMBED) ? ((RArray(o)->flags >> 15) & 3) : RArray(o)->len)
-#else
+#if #{RUBY_VERSION >= '1.9' ? 0 : 1}
  #define T_STRING 0x07
  #define T_ARRAY  0x09
  #define T_FIXNUM 0x0a
@@ -83,10 +67,30 @@ extern VALUE *rb_eArgError __attribute__((import));
  #define STR_LEN(o) (RString(o)->len)
  #define ARY_PTR(o) (RArray(o)->ptr)
  #define ARY_LEN(o) (RArray(o)->len)
+#else
+ #define T_STRING 0x05
+ #define T_ARRAY  0x07
+ #define T_FIXNUM 0x15
+ #define T_MASK   0x1f
+ #define RSTRING_NOEMBED (1<<13)
+#if #{RUBY_VERSION >= '3.2' ? 0 : 1}
+ // ruby1.9 .. 3.2
+ #define STR_PTR(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->ptr : (char*)&RString(o)->len)
+ #define STR_LEN(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->len : (RString(o)->flags >> 14) & 0x1f)
+#else
+ // ruby3.2+: len is used for NOEMBED strings, and the str buffer starts right after len (off 8+8+4 on win64)
+ // TODO find a better way to test, not depending on the compiling interpreter ?
+ #define STR_PTR(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->ptr : (((char*)&RString(o)->len) + sizeof(long)))
+ #define STR_LEN(o) RString(o)->len
+#endif
+ #define RARRAY_EMBED (1<<13)
+ #define ARY_PTR(o) ((RArray(o)->flags & RARRAY_EMBED) ? (VALUE*)&RArray(o)->len : RArray(o)->ptr)
+ // RVARGC uses more bits, should be 0/unused in earlier ruby versions
+ #define ARY_LEN(o) ((RArray(o)->flags & RARRAY_EMBED) ? ((RArray(o)->flags >> 15) & 0xff) : RArray(o)->len)
 #endif
 
-#if #{nil.object_id == 4 ? 1 : 0}
-// ruby1.8
+#if #{(RUBY_VERSION < '3.0' and nil.object_id == 4) ? 1 : 0}
+// ruby1.8 (Qnil changed in 1.9 and back in 3.3
 #define TYPE(x) (((VALUE)(x) & 1) ? T_FIXNUM : (((VALUE)(x) < 0x07) || (((VALUE)(x) & 0xf) == 0xe)) ? 0x40 : RString(x)->flags & T_MASK)
 #else
 // ruby2.0+, USE_FLONUM, world is hell
@@ -138,7 +142,6 @@ EOS
  #define os_load_sym_ord(l, s) 0U
 #endif
 
-extern int *cb_ret_table;
 extern void *callback_handler;
 extern void *callback_id_0;
 extern void *callback_id_1;
@@ -207,13 +210,12 @@ static VALUE sym_addr(VALUE self, VALUE lib, VALUE func)
 	else
 		rb_raise(*rb_eArgError, "Invalid lib");
 
-	if (TYPE(func) != T_STRING && TYPE(func) != T_FIXNUM)
-		rb_raise(*rb_eArgError, "Invalid func");
-
-	if (TYPE(func) == T_FIXNUM)
+	if (TYPE(func) == T_STRING)
+		p = os_load_sym(h, STR_PTR(func));
+        else if (TYPE(func) == T_FIXNUM)
 		p = os_load_sym_ord(h, VAL2INT(func));
 	else
-		p = os_load_sym(h, STR_PTR(func));
+		rb_raise(*rb_eArgError, "Invalid func");
 
 	return INT2VAL(p);
 }
@@ -353,6 +355,14 @@ uintptr_t do_callback_handler(uintptr_t cb_id __attribute__((register(rax))),
 	return VAL2INT(ret);
 }
 #endif
+
+unsigned long long ruby_abi_version(void) __attribute__((export))
+{
+	// mandatory to be loadable in a dev ruby build
+	// TODO find expected value in current interpreter ?
+	return 0;
+	// disable the value check interpreter side: #{ENV['RUBY_ABI_CHECK'] = '0'}
+}
 
 int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// to patch before parsing to match the .so name
 {
