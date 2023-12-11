@@ -1163,7 +1163,7 @@ class EncodedData
 		else
 			fill
 			other = other.b if other.kind_of?(String)
-			if @data.empty?; @data = other.dup
+			if @data.empty?; @data = other
 			elsif other.empty?
 			elsif not @data.kind_of?(String); @data = @data.to_str << other
 			else @data << other
