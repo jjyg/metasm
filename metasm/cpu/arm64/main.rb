@@ -15,6 +15,7 @@ class ARM64 < CPU
 		@i_to_s = { 32 => (0..30).inject({}) { |h, i| h.update i => "w#{i}" }.merge(31 => 'wsp', 32 => 'wzr'),
 			    64 => (0..30).inject({}) { |h, i| h.update i => "x#{i}" }.merge(31 => 'sp', 32 => 'xzr', 33 => 'pc')
 	       	}
+		@s_to_i = i_to_s.each_with_object({}) { |(bitsize, registers), acc| registers.each { |i, name| acc[name] = [i, bitsize] } }
 
 		attr_accessor :i, :sz
 		def initialize(i, sz)
@@ -30,6 +31,11 @@ class ARM64 < CPU
 			else
 				Expression[Sym[@i], :&, 0xffffffff]
 			end
+		end
+
+		def self.from_str(s)
+			raise "Bad #{name} #{s.inspect}" if not x = @s_to_i[s]
+			new(*x)
 		end
 	end
 
@@ -102,4 +108,3 @@ class ARM64 < CPU
 	end
 end
 end
-

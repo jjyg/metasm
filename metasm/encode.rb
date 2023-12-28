@@ -346,6 +346,7 @@ class CPU
 	# uses +encode_instr_op+ (arch-specific)
 	def encode_instruction(program, i)
 		errmsg = ''
+		# require 'pry-byebug'; binding.pry
 		oplist = opcode_list_byname[i.opname].to_a.find_all { |o|
 			o.args.length == i.args.length and
 			o.args.zip(i.args).all? { |f, a| parse_arg_valid?(o, f, a) }

@@ -4,5 +4,9 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-Dir[File.expand_path('../*.rb', __FILE__)].sort.each { |f| require f }
+Dir[File.expand_path('../*.rb', __FILE__)].sort.each do |f|
+  # Avoid a circular dependency warning; i.e. don't attempt to run 'require' on the current file again
+  next if f == __FILE__
 
+  require f
+end

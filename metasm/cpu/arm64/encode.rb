@@ -11,6 +11,7 @@ module Metasm
 class ARM64
 	def encode_instr_op(program, instr, op)
 		base = op.bin
+
 		set_field = lambda { |f, v|
 			v = v.reduce if v.kind_of?(Expression)
 			case f
@@ -28,10 +29,13 @@ class ARM64
 			when :rd, :rs, :rn, :rm, :rt
 				if arg.sz == 32
 					set_field[:sf, 0]
-				elsif op.field[:sf]
+				elsif arg.sz == 64
+					set_field[:sf, 1]
+				elsif op.fields[:sf]
 					set_field[:sf, 1]
 				end
-			       	set_field[sym, arg.i]
+
+				set_field[sym, arg.i]
 			end
 		}
 
