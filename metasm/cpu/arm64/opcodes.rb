@@ -108,7 +108,7 @@ class ARM64
 		 :bitmask, :bitmask_imm, :cond_12,
 		].each { |p| @valid_args[p] = true }
 
-		@fields_mask.update :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f, :rm => 0x1f,
+		@fields_mask.update :sf => 0x1, :rn => 0x1f, :rt => 0x1f, :rt2 => 0x1f, :rm => 0x1f,
 			:rm_lsl_i6 => 0x7ff, :rm_lsr_i6 => 0x7ff, :rm_asr_i6 => 0x7ff,
 			:rm_lsl_i5 => 0x7df, :rm_lsr_i5 => 0x7df, :rm_asr_i5 => 0x7df,
 			:m_rm_extend => ((0x1f << 11) | (0xb << 7) | 0x1f), :rm_extend_i3 => 0x7ff,
@@ -124,7 +124,7 @@ class ARM64
 			:m_rn_s9  => ((0x1ff << 7) | 0x1f),
 			:m_rn_u12 => ((0xfff << 5) | 0x1f)
 
-		@fields_shift.update :rn => 5, :rt => 0, :rt2 => 10, :rm => 16,
+		@fields_shift.update :sf => 31, :rn => 5, :rt => 0, :rt2 => 10, :rm => 16,
 			:rm_lsl_i6 => 10, :rm_lsr_i6 => 10, :rm_asr_i6 => 10,
 			:rm_lsl_i5 => 10, :rm_lsr_i5 => 10, :rm_asr_i5 => 10,
 			:m_rm_extend => 5, :rm_extend_i3 => 10,
