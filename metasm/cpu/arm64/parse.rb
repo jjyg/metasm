@@ -49,7 +49,10 @@ class ARM64
 
 		cond and
 		case spec
-		when :rd, :rs, :rn, :rm, :rt; arg.kind_of? Reg and (arg.sz == 32 or arg.sz == 64 or o.props[:argsz])
+		when :rd, :rs, :rn, :rm, :rt;
+			(arg.kind_of? Reg and (arg.sz == 32 or arg.sz == 64 or o.props[:argsz])) or
+				# TODO: Needs tightened up, can allow assigning to immediate values which is wrong - and the in_range? check is most likely wrong too
+				(arg.kind_of?(Expression) && Expression.in_range?(arg, spec) != false)	# true or nil allowed
 		# when :reg; arg.kind_of? Reg and (arg.sz >= 16 or o.props[:argsz])
 		# when :modrm; (arg.kind_of? ModRM or arg.kind_of? Reg) and (!arg.sz or arg.sz >= 16 or o.props[:argsz]) and (!o.props[:modrmA] or arg.kind_of? ModRM) and (!o.props[:modrmR] or arg.kind_of? Reg)
 		# when :i;        arg.kind_of? Expression
@@ -81,11 +84,10 @@ class ARM64
 		# when :vexvymm, :i4ymm;  arg.kind_of? SimdReg and arg.sz == 256
 
 		# when :i8, :u8, :u16,
-		when :i16_5
+		when :il18_5, :i16_5, :rm_lsl_i5, :rm_asr_i5, :rm_lsr_i5, :rm_lsl_i6, :rm_lsr_i6, :rm_asr_i6, :bitmask_imm
 			arg.kind_of? Expression and
 			(o.props[:setip] or Expression.in_range?(arg, spec) != false)	# true or nil allowed
 		else
-			require 'pry-byebug'; binding.pry
 			raise EncodeError, "Internal error: unknown argument specification #{spec.inspect}"
 		end
 	end
@@ -102,26 +104,38 @@ class ARM64
 		lexer.skip_space
 		return if not tok = lexer.readtok
 
-		if tok.type == :string and tok.raw == 'ST'
-			lexer.skip_space
-			if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == '('
-				lexer.skip_space
-				if not nntok = lexer.readtok or nntok.type != :string or nntok.raw !~ /^[0-9]$/ or
-						not ntok = (lexer.skip_space; lexer.readtok) or ntok.type != :punct or ntok.raw != ')'
-					raise tok, 'invalid FP register'
-				else
-					tok.raw << '(' << nntok.raw << ')'
-					fpr = parse_argregclasslist.last
-					if fpr.s_to_i.has_key? tok.raw
-						return fpr.new(fpr.s_to_i[tok.raw])
-					else
-						raise tok, 'invalid FP register'
-					end
-				end
-			else
-				lexer.unreadtok ntok
-			end
-		end
+		# parse immediate values, i.e. 'mov x0, #255' or `mov x0, #0xFF`
+		# if tok.type == :punct and tok.raw == '#'
+		# 	lexer.skip_space
+		# 	if not nntok = lexer.readtok or nntok.type != :string or nntok.raw !~ /^[0-9]$/
+		# 		raise tok, 'invalid immediate value'
+		# 	else
+		# 		# tok.raw << nntok.raw
+		# 		# require 'pry-byebug'; binding.pry
+		# 		# puts 'aaa'
+		# 	end
+		# end
+
+		# if tok.type == :string and tok.raw == 'ST'
+		# 	lexer.skip_space
+		# 	if ntok = lexer.readtok and ntok.type == :punct and ntok.raw == '('
+		# 		lexer.skip_space
+		# 		if not nntok = lexer.readtok or nntok.type != :string or nntok.raw !~ /^[0-9]$/ or
+		# 				not ntok = (lexer.skip_space; lexer.readtok) or ntok.type != :punct or ntok.raw != ')'
+		# 			raise tok, 'invalid FP register'
+		# 		else
+		# 			tok.raw << '(' << nntok.raw << ')'
+		# 			fpr = parse_argregclasslist.last
+		# 			if fpr.s_to_i.has_key? tok.raw
+		# 				return fpr.new(fpr.s_to_i[tok.raw])
+		# 			else
+		# 				raise tok, 'invalid FP register'
+		# 			end
+		# 		end
+		# 	else
+		# 		lexer.unreadtok ntok
+		# 	end
+		# end
 
 		# XXX: Not supported / might need to be renamed
 		#if ret = parse_modrm(lexer, tok, self)
@@ -133,7 +147,11 @@ class ARM64
 			}
 			raise tok, 'internal error'
 		else
-			lexer.unreadtok tok
+			# parse immediate values, i.e. 'mov x0, #255' or `mov x0, #0xFF`
+			unless tok.type == :punct and tok.raw == '#'
+				lexer.unreadtok tok
+			end
+			lexer.skip_space
 			expr = Expression.parse(lexer)
 			lexer.skip_space
 

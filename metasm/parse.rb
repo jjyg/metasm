@@ -38,7 +38,6 @@ class CPU
 		# find arguments list
 		loop do
 			break if not ntok = lexer.nexttok
-
 			break if i.args.empty? and opcode_list_byname[ntok.raw] and opcode_list_byname[i.opname].find { |op| op.args.empty? }
 			break if not arg = parse_argument(lexer)
 			i.args << arg
