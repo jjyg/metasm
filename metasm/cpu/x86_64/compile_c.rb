@@ -946,9 +946,11 @@ class CCompiler < C::Compiler
 		@state = State.new(func)
 		args = func.type.args.dup
 		if @parser.lexer.definition['__MS_X86_64_ABI__']
+			# windows: rcx rdx r8 r9
 			@state.args_space = 32
 			@state.regargs = [1, 2, 8, 9]
 		else
+			# linux: rdi rsi rdx rcx r8 r9
 			@state.args_space = 0
 			@state.regargs = [7, 6, 2, 1, 8, 9]
 		end
