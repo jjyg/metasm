@@ -37,7 +37,8 @@ class MIPS
 	def decode_findopcode(edata)
 		di = DecodedInstruction.new(self)
 		val = edata.decode_imm(:u32, @endianness)
-		edata.ptr -= 4
+		di.raw_data = val
+		di.bin_length = 4
 		if val.kind_of?(Expression)
 			# relocations
 			hval = Expression[val, :&, 0xff000000].reduce
@@ -61,7 +62,7 @@ class MIPS
 		before_ptr = edata.ptr
 		op = di.opcode
 		di.instruction.opname = op.name
-		val = edata.decode_imm(:u32, @endianness)
+		val = di.raw_data
 
 		field_val = lambda { |f|
 			if val.kind_of?(Expression)
