@@ -1007,7 +1007,10 @@ class Debugger
 
 	# continue_wait until @state == :dead
 	def run_forever
-		continue_wait until @state == :dead
+		until @state == :dead
+			continue if @state != :running
+			wait_target
+		end
 	end
 
 	# decode the Instruction at the address, use the @disassembler cache if available
