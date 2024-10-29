@@ -129,7 +129,9 @@ class VirtualString
 		addr = 0
 		len = length
 		while len > @pagelength
-			ret << self[addr, @pagelength]
+			p = self[addr, @pagelength]
+			return ret if not p
+			ret << p
 			addr += @pagelength
 			len -= @pagelength
 		end
