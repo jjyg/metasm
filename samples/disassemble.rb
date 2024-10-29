@@ -98,11 +98,7 @@ t1 = Time.now if opts[:benchmark]
 # do the work
 begin
 	method = opts[:fast] ? :disassemble_fast_deep : :disassemble
-	if ARGV.empty?
-		exe.send(method)
-	else
-		exe.send(method, *ARGV.map { |addr| makeint[addr] })
-	end
+	exe.send(method, *ARGV.map { |addr| makeint[addr] })
 rescue Interrupt
 	puts $!, $!.backtrace
 end
