@@ -2374,6 +2374,7 @@ EOH
 				if not @lexpr
 					# unary
 					case @op
+					when :'&'; return self
 					when :'+', nil, :'-', :'~'
 						return CExpression.new(nil, @op, r, @type) if not r.kind_of? ::Numeric
 						case @op

@@ -603,7 +603,7 @@ module C
 					@var.initializer = nil
 				else
 					scope.statements << self if appendme
-					@var.initializer = Declaration.precompile_static_initializer(compiler, @var.type, i)
+					@var.initializer = Declaration.precompile_static_initializer(compiler, scope, @var.type, i)
 				end
 			else
 				scope.statements << self if appendme
@@ -670,23 +670,23 @@ module C
 		end
 
 		# returns a precompiled static initializer (eg string constants)
-		def self.precompile_static_initializer(compiler, type, init)
+		def self.precompile_static_initializer(compiler, scope, type, init)
 			# TODO
 			case type = type.untypedef
 			when Array
 				if init.kind_of? ::Array
-					init.map { |i| precompile_static_initializer(compiler, type.type, i) }
+					init.map { |i| precompile_static_initializer(compiler, scope, type.type, i) }
 				else
 					init
 				end
 			when Union
 				if init.kind_of? ::Array
-					init.zip(type.members).map { |i, m| precompile_static_initializer(compiler, m.type, i) }
+					init.zip(type.members).map { |i, m| precompile_static_initializer(compiler, scope, m.type, i) }
 				else
 					init
 				end
 			else
-				if init.kind_of? CExpression and init = init.reduce(compiler) and init.kind_of? CExpression
+				if init.kind_of?(CExpression) and init = init.reduce(compiler) and init.kind_of?(CExpression)
 					if not init.op and init.rexpr.kind_of? ::String
 						v = Variable.new
 						v.storage = :static
@@ -698,8 +698,14 @@ module C
 						Declaration.new(v).precompile(compiler, compiler.toplevel)
 						init.rexpr = v
 					end
-					init.rexpr = precompile_static_initializer(compiler, init.rexpr.type, init.rexpr) if init.rexpr.kind_of? CExpression
-					init.lexpr = precompile_static_initializer(compiler, init.lexpr.type, init.lexpr) if init.lexpr.kind_of? CExpression
+					if init.op == :'&' and not init.lexpr
+						# &st.foo -> &st + offsetof
+						# &st[4] -> &st + 4*sizeof
+						init = init.precompile_inner(compiler, scope)
+					else
+						init.rexpr = precompile_static_initializer(compiler, scope, init.rexpr.type, init.rexpr) if init.rexpr.kind_of?(CExpression)
+						init.lexpr = precompile_static_initializer(compiler, scope, init.lexpr.type, init.lexpr) if init.lexpr.kind_of?(CExpression)
+					end
 				end
 				init
 			end
@@ -1363,7 +1369,7 @@ module C
 					# simplify casts
 					CExpression.precompile_type(compiler, scope, self)
 					# propagate type first so that __uint64 foo() { return -1 } => 0xffffffffffffffff
-					@rexpr.type = @type if @rexpr.kind_of? CExpression and @rexpr.op == :- and not @rexpr.lexpr and @type.kind_of? BaseType and @type.name == :__int64	# XXX kill me
+					@rexpr.type = @type if @rexpr.kind_of? CExpression and @rexpr.op == :- and not @rexpr.lexpr and @type.kind_of? BaseType and @type.name == :__int64
 					@rexpr = @rexpr.precompile_inner(compiler, scope)
 					if @type.kind_of? BaseType and @rexpr.type.kind_of? BaseType
 						if @rexpr.type == @type
