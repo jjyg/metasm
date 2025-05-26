@@ -78,9 +78,8 @@ extern VALUE *rb_eArgError __attribute__((import));
  #define STR_PTR(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->ptr : (char*)&RString(o)->len)
  #define STR_LEN(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->len : (RString(o)->flags >> 14) & 0x1f)
 #else
- // ruby3.2+: len is used for NOEMBED strings, and the str buffer starts right after len (off 8+8+4 on win64)
- // TODO find a better way to test, not depending on the compiling interpreter ?
- #define STR_PTR(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->ptr : (((char*)&RString(o)->len) + sizeof(long)))
+ // ruby3.2+: len is used for NOEMBED strings, and the str buffer starts right after len (off 8+8+4 on win64, usually, do a dynamic validation
+ #define STR_PTR(o) ((RString(o)->flags & RSTRING_NOEMBED) ? RString(o)->ptr : (((char*)o) + x_str_ptr_off))
  #define STR_LEN(o) RString(o)->len
 #endif
  #define RARRAY_EMBED (1<<13)
@@ -147,7 +146,14 @@ extern void *callback_id_0;
 extern void *callback_id_1;
 
 static VALUE dynldr;
+static uintptr_t x_str_ptr_off = sizeof(VALUE)+sizeof(VALUE)+sizeof(long);
 
+// define the internal offset to find an inline string buffer
+static VALUE set_x_str_ptr_off(VALUE self, VALUE newoff)
+{
+	x_str_ptr_off = VAL2INT(newoff);
+	return newoff;
+}
 
 static VALUE memory_read(VALUE self, VALUE addr, VALUE len)
 {
@@ -183,6 +189,11 @@ static VALUE str_ptr(VALUE self, VALUE str)
 	if (TYPE(str) != T_STRING)
 		rb_raise(*rb_eArgError, "Invalid ptr");
 	return INT2VAL((uintptr_t)STR_PTR(str));
+}
+
+static VALUE value_ptr(VALUE self, VALUE val)
+{
+	return INT2VAL((uintptr_t)val);
 }
 
 // return the VALUE of an object (different of .object_id for Symbols, maybe others)
@@ -367,11 +378,13 @@ unsigned long long ruby_abi_version(void) __attribute__((export))
 int Init_dynldr(void) __attribute__((export_as(Init_<insertfilenamehere>)))	// to patch before parsing to match the .so name
 {
 	dynldr = rb_const_get(rb_const_get(*rb_cObject, rb_intern("Metasm")), rb_intern("DynLdr"));
+	rb_define_singleton_method(dynldr, "set_x_str_ptr_off",  set_x_str_ptr_off, 1);
 	rb_define_singleton_method(dynldr, "memory_read",  memory_read, 2);
 	rb_define_singleton_method(dynldr, "memory_read_int",  memory_read_int, 1);
 	rb_define_singleton_method(dynldr, "memory_write", memory_write, 2);
 	rb_define_singleton_method(dynldr, "memory_write_int", memory_write_int, 2);
 	rb_define_singleton_method(dynldr, "str_ptr", str_ptr, 1);
+	rb_define_singleton_method(dynldr, "value_ptr", value_ptr, 1);
 	rb_define_singleton_method(dynldr, "rb_obj_to_value", rb_obj_to_value, 1);
 	rb_define_singleton_method(dynldr, "rb_value_to_obj", rb_value_to_obj, 1);
 	rb_define_singleton_method(dynldr, "sym_addr", sym_addr, 2);
@@ -627,6 +640,16 @@ EOS
 		require binmodule
 
 		@@callback_addrs << CALLBACK_ID_0 << CALLBACK_ID_1
+
+		# ruby 3.4.2 windows may have specific str_ptr embed offset
+		teststr = 'foo'.freeze
+		if memory_read(str_ptr(teststr), 3) != 'foo'
+			raw = memory_read(value_ptr(teststr), 8*5)
+			off = raw.index('foo')
+			raise 'cannot str_ptr' if not off
+			set_x_str_ptr_off(off)
+			raise 'failed str_ptr' if memory_read(str_ptr(teststr), 3) != 'foo'
+		end
 	end
 
 	# compile the dynldr binary ruby module for a specific arch/cpu/modulename
