@@ -37,7 +37,7 @@ class Preprocessor
 		def initialize(backtrace)
 			@backtrace = backtrace
 			@value = nil
-			@raw = ''
+			@raw = +''
 		end
 
 		# used when doing 'raise tok, "foo"'

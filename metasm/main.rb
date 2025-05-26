@@ -158,7 +158,7 @@ module Backtrace
 	def self.backtrace_str(ary)
 		return '' if not ary
 		i = ary.length
-		bt = ''
+		bt = +''
 		while i > 0
 			bt << ",\n\tincluded from " if ary[i]
 			i -= 2

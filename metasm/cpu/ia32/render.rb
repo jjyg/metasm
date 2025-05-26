@@ -42,7 +42,7 @@ class Ia32
 		attr_accessor :instruction
 		def render
 			r = []
-			r << ( qualifier(@sz) << ' ptr ' ) if @sz and (not instruction or not @instruction.args.find { |a| a.kind_of? Reg and a.sz == @sz })
+			r << ( qualifier(@sz) + ' ptr ' ) if @sz and (not instruction or not @instruction.args.find { |a| a.kind_of? Reg and a.sz == @sz })
 			r << @seg << ':' if seg
 
 			e = nil

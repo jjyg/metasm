@@ -74,7 +74,7 @@ module C
 				raise tok || parser if not tok = parser.skipspaces or tok.type != :punct or tok.raw != '('
 				raise tok || parser if keyword == '__attribute__' and (not tok = parser.skipspaces or tok.type != :punct or tok.raw != '(')
 				nest = 0
-				attrib = ''
+				attrib = +''
 				loop do
 					raise parser if not tok = parser.skipspaces
 					if tok.type == :punct and tok.raw == ')'
@@ -3094,7 +3094,7 @@ EOH
 						cur = []
 						curoff = off.to_i
 						inspect_str = lambda { ||
-							'"' << cur.map { |cc|
+							+'"' << cur.map { |cc|
 								cc >= 0x20 && cc <= 0x7e && cc != 0x22 && cc != 0x5c ? cc.chr :
 								cc == 0 ? '\\0' :
 								('\\x%02X' % (cc & 0xff))
@@ -4109,7 +4109,7 @@ EOH
 					r, dep = CExpression.dump(@rexpr[1], scope, r, dep, true)
 				else
 					r, dep = CExpression.dump(@lexpr, scope, r, dep, (@lexpr.kind_of?(CExpression) and @lexpr.lexpr and @lexpr.op != @op and @lexpr.op != :funcall))
-					r.last << CRenderString.new(self, ' ' << @op.to_s << ' ')
+					r.last << CRenderString.new(self, +' ' << @op.to_s << ' ')
 					r, dep = CExpression.dump(@rexpr, scope, r, dep, (@rexpr.kind_of?(CExpression) and @rexpr.lexpr and @rexpr.op != @op and @rexpr.op != :funcall and @op != :'='))
 				end
 			end

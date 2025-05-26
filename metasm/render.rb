@@ -75,9 +75,9 @@ class Expression
 		if e < 10; e = e.to_s
 		else
 			e = '%xh' % e
-			e = '0' << e unless (?0..?9).include? e[0]
+			e = +'0' << e unless (?0..?9).include? e[0]
 		end
-		e = '-' << e if neg
+		e = +'-' << e if neg
 		e
 	end
 
