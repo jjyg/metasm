@@ -4,7 +4,7 @@
 #    Licence is LGPL, see LICENCE in the top-level directory
 
 
-require 'gtk2'
+require 'gtk3'
 
 module Metasm
 module Gui
@@ -80,8 +80,8 @@ class ContainerChoiceWidget < Gtk::Notebook
 		@view_indexes = []
 
 		signal_connect('realize') { initialize_visible } if respond_to? :initialize_visible
-
 		initialize_widget(*a, &b)
+		signal_connect('map') { curview.grab_focus }
 
 		show_all
 	end
@@ -156,7 +156,7 @@ class DrawableWidget < Gtk::DrawingArea
 	attr_accessor :default_color_association
 
 	# keypress event keyval traduction table
-	Keyboard_trad = Gdk::Keyval.constants.grep(/^GDK_/).inject({}) { |h, cst|
+	Keyboard_trad = Gdk::Keyval.constants.grep(/^GDK_|^KEY_/).inject({}) { |h, cst|
 		v = Gdk::Keyval.const_get(cst)
 		key = cst.to_s.sub(/^GDK_/, '').sub(/^KEY_/, '').sub(/^KP_/, '')
 		if key.length == 1
@@ -210,18 +210,18 @@ class DrawableWidget < Gtk::DrawingArea
 		@oldcaret_x = @oldcaret_y = 1
 		@hl_word = nil
 
-		@layout = Pango::Layout.new Gdk::Pango.context	# text rendering
-
 		@color = {}
 		@default_color_association = {:background => :palegrey}
 
 		super()
 
 		# events callbacks
-		signal_connect('expose_event') {
-			@w = window ; @gc = Gdk::GC.new(@w)
+		signal_connect('draw') { |w, cr|
+			@w, @cr = w, cr
+			draw_color(:background)
+			cr.paint
 			protect { paint }
-			@w = @gc = nil
+			@w = @cr = nil
 			true
 		}
 
@@ -232,16 +232,16 @@ class DrawableWidget < Gtk::DrawingArea
 		signal_connect('button_press_event') { |w, ev|
 			@last_kb_ev = ev
 			if keyboard_state(:control)
-				next protect { click_ctrl(ev.x, ev.y) } if ev.event_type == Gdk::Event::Type::BUTTON_PRESS and ev.button == 1 and respond_to? :click_ctrl
+				next protect { click_ctrl(ev.x, ev.y) } if ev.event_type == Gdk::EventType::BUTTON_PRESS and ev.button == 1 and respond_to? :click_ctrl
 				next
 			end
 			case ev.event_type
-			when Gdk::Event::Type::BUTTON_PRESS
+			when Gdk::EventType::BUTTON_PRESS
 				grab_focus
 				case ev.button
 				when 1; protect { click(ev.x, ev.y) } if respond_to? :click
 				end
-			when Gdk::Event::Type::BUTTON2_PRESS
+			when Gdk::EventType::BUTTON2_PRESS
 				case ev.button
 				when 1; protect { doubleclick(ev.x, ev.y) } if respond_to? :doubleclick
 				end
@@ -266,8 +266,9 @@ class DrawableWidget < Gtk::DrawingArea
 
 		signal_connect('scroll_event') { |w, ev|
 			dir = case ev.direction
-			when Gdk::EventScroll::Direction::UP; :up
-			when Gdk::EventScroll::Direction::DOWN; :down
+			when Gdk::ScrollDirection::UP; :up
+			when Gdk::ScrollDirection::DOWN; :down
+			when nil; (5*ev.delta_y).round
 			else next
 			end
 			@last_kb_ev = ev
@@ -301,9 +302,9 @@ class DrawableWidget < Gtk::DrawingArea
 		initialize_widget(*a, &b)
 
 		# receive keyboard/mouse signals
-		set_events Gdk::Event::ALL_EVENTS_MASK
+		set_events :all_events_mask
 		set_can_focus true
-		set_font "#{prefered_font_family} 10"
+		set_font "#{prefered_font_family} 12"
 	end
 
 	def prefered_font_family
@@ -319,11 +320,11 @@ class DrawableWidget < Gtk::DrawingArea
 	def color(val)
 		if not @color[val]
 			v = case val.length
-			when 3; val.scan(/./).map { |c| (c*4).to_i(16) }
-			when 6; val.scan(/../).map { |c| (c+c).to_i(16) }
+			when 3; val.scan(/./).map { |c| (c*4).to_i(16) / 0xffff.to_f }
+			when 6; val.scan(/../).map { |c| (c+c).to_i(16) / 0xffff.to_f }
+			else raise "bad color #{val}"
 			end
-			@color[val] = Gdk::Color.new(*v)
-			window.colormap.alloc_color(@color[val], true, true)
+			@color[val] = Gdk::RGBA.new(*v)
 		end
 		@color[val]
 	end
@@ -337,9 +338,12 @@ class DrawableWidget < Gtk::DrawingArea
 	# change the font of the widget
 	# arg is a Gtk Fontdescription string (eg 'courier 10')
 	def set_font(descr)
-		@layout.font_description = Pango::FontDescription.new(descr)
-		@layout.text = 'x'
-		@font_width, @font_height = @layout.pixel_size
+		@font_description = Pango::FontDescription.new(descr)
+		ctx = Pango::CairoFontMap.default.create_context
+		ctx.font_description = @font_description
+		layout = Pango::Layout.new(ctx)
+		layout.text = 'x'
+		@font_width, @font_height = layout.size.map { |s| (s / Pango::SCALE).round }
 		gui_update
 	end
 
@@ -356,7 +360,6 @@ class DrawableWidget < Gtk::DrawingArea
 		else
 			hord = Hash.new { |h, k| h[k] = (hash[k] ? h[hash[k]] + 1 : 0) }
 			hash.sort_by { |k, v| hord[k] }.each { |k, v| @color[k] = color(v) }
-			modify_bg Gtk::STATE_NORMAL, @color[:background]
 			gui_update
 		end
 	end
@@ -394,7 +397,7 @@ class DrawableWidget < Gtk::DrawingArea
 
 	# invalidate the whole widget area
 	def redraw
-		invalidate(0, 0, 1000000, 1000000)
+		invalidate(0, 0, width, height)
 	end
 
 	def invalidate_caret(cx, cy, x=0, y=0)
@@ -415,6 +418,7 @@ class DrawableWidget < Gtk::DrawingArea
 	end
 
 	def resized(w, h)
+		set_size_request(w, h)
 		redraw
 	end
 
@@ -429,7 +433,7 @@ class DrawableWidget < Gtk::DrawingArea
 	end
 
 	def draw_color(col)
-		@gc.set_foreground color(col)
+		@cr.set_source_rgba color(col)
 	end
 
 	def draw_rectangle(x, y, w, h)
@@ -446,8 +450,8 @@ class DrawableWidget < Gtk::DrawingArea
 		return if w <= 0 or h <= 0
 		w = 0x7000 if w > 0x7000
 		h = 0x7000 if h > 0x7000
-
-		@w.draw_rectangle(@gc, true, x, y, w, h)
+		@cr.rectangle(x, y, w, h)
+		@cr.fill	# .stroke = contour only
 	end
 
 	def draw_rectangle_color(col, x, y, w, h)
@@ -479,7 +483,10 @@ class DrawableWidget < Gtk::DrawingArea
 			ex = x+(ey-y)*(ex-x)/(oey-y)
 		end
 
-		@w.draw_line(@gc, x, y, ex, ey)
+		@cr.set_line_width(1)
+		@cr.move_to(x, y)
+		@cr.line_to(ex, ey)
+		@cr.stroke
 	end
 
 	def draw_line_color(col, x, y, ex, ey)
@@ -489,8 +496,11 @@ class DrawableWidget < Gtk::DrawingArea
 
 	def draw_string(x, y, str)
 		return if x.abs > 0x7000 or y.abs > 0x7000
-		@layout.text = str
-		@w.draw_layout(@gc, x, y, @layout)
+		@cr.move_to(x, y)
+		layout = @cr.create_pango_layout
+		layout.text = str
+		layout.font_description = @font_description if @font_description
+		@cr.show_pango_layout(layout)
 	end
 
 	def draw_string_color(col, x, y, str)
@@ -528,11 +538,11 @@ class DrawableWidget < Gtk::DrawingArea
 	def keyboard_state(query=nil)
 		case query
 		when :control, :ctrl
-			ev = @last_kb_ev and ev.state & Gdk::Window::CONTROL_MASK == Gdk::Window::CONTROL_MASK
+			ev = @last_kb_ev and ev.state.control_mask?
 		when :shift
-			ev = @last_kb_ev and ev.state & Gdk::Window::SHIFT_MASK   == Gdk::Window::SHIFT_MASK
+			ev = @last_kb_ev and ev.state.shift_mask?
 		when :alt
-			ev = @last_kb_ev and ev.state & Gdk::Window::MOD1_MASK    == Gdk::Window::MOD1_MASK
+			ev = @last_kb_ev and ev.state.mod1_mask?
 		else
 			[:control, :shift, :alt].find_all { |s| keyboard_state(s) }
 		end
@@ -556,8 +566,8 @@ class MessageBox < Gtk::MessageDialog
 		owner = nil if owner and (not owner.kind_of? Gtk::Window or owner.destroyed?)
 		owner ||= Gtk::Window.toplevels.first
 		opts = {:title => opts} if opts.kind_of? String
-		super(owner, Gtk::Dialog::DESTROY_WITH_PARENT, INFO, BUTTONS_CLOSE, str)
-		self.title = opts[:title] if opts[:title]
+		super(parent: owner, flags: :destroy_with_parent, type: :info, buttons: :close, message: str)
+		set_title(opts[:title]) if opts[:title]
 		signal_connect('response') { destroy }
 		show_all
 		present		# bring the window to the foreground & set focus
@@ -572,8 +582,8 @@ class InputBox < Gtk::Dialog
 	# TODO history, dropdown, autocomplete, contexts, 3D stereo surround, etc
 	def initialize(owner, str, opts={})
 		owner ||= Gtk::Window.toplevels.first
-		super(nil, owner, Gtk::Dialog::DESTROY_WITH_PARENT,
-			[Gtk::Stock::OK, Gtk::Dialog::RESPONSE_ACCEPT], [Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_REJECT])
+		super(parent: owner, flags: :destroy_with_parent, buttons:
+		      [[Gtk::Stock::OK, Gtk::ResponseType::OK], [Gtk::Stock::CANCEL, Gtk::ResponseType::CANCEL]])
 		self.title = opts[:title] if opts[:title]
 
 		@label = Gtk::Label.new(str)
@@ -593,7 +603,7 @@ class InputBox < Gtk::Dialog
 			case key
 			when :escape
 				@history_off = @history.length
-				response(RESPONSE_REJECT)
+				response(Gtk::ResponseType::CANCEL)
 				true
 			when :enter
 				@history.pop if @history.last == ''
@@ -601,7 +611,7 @@ class InputBox < Gtk::Dialog
 				@history.pop if @history.last == ''
 				@history.pop if @history.last == @history[-2]
 				@history_off = @history.length
-				response(RESPONSE_ACCEPT)
+				response(Gtk::ResponseType::OK)
 				true
 			when :up, :down
 				txt = @textwidget.buffer.text.to_s
@@ -616,20 +626,16 @@ class InputBox < Gtk::Dialog
 		}
 
 		signal_connect('response') { |win, id|
-			resp = @textwidget.buffer.text if id == RESPONSE_ACCEPT
+			resp = @textwidget.buffer.text if id == Gtk::ResponseType::OK
 			destroy
 			yield resp.strip if resp
 			true
 		}
 
-		vbox.pack_start label, false, false, 8
-		vbox.pack_start @textwidget, false, false, 8
+		content_area.pack_start label, expand: false, fill: false, padding: 8
+		content_area.pack_start @textwidget, expand: false, fill: false, padding: 8
 
-		Gtk::Drag.dest_set(self,
-				   Gtk::Drag::DEST_DEFAULT_MOTION |
-				   Gtk::Drag::DEST_DEFAULT_DROP,
-				   [['text/plain', 0, 0], ['text/uri-list', 0, 0]],
-				   Gdk::DragContext::ACTION_COPY | Gdk::DragContext::ACTION_MOVE)
+		drag_dest_set :all, [['text/plain', 0, 0], ['text/uri-list', 0, 0]], :copy
 
 		signal_connect('drag_data_received') { |w, dc, x, y, data, info, time|
 			dc.targets.each { |target|
@@ -639,7 +645,7 @@ class InputBox < Gtk::Dialog
 					self.text = l
 				}
 			}
-			Gtk::Drag.finish(dc, true, false, time)
+			dc.finish(success: true, delete: false, time: time)
 		}
 
 
@@ -648,8 +654,8 @@ class InputBox < Gtk::Dialog
 	end
 
 	def text_select_all
-		@textwidget.buffer.move_mark('selection_bound', @textwidget.buffer.start_iter)
-		@textwidget.buffer.move_mark('insert', @textwidget.buffer.end_iter)
+		b = @textwidget.buffer
+		b.select_range(b.start_iter, b.end_iter)
 	end
 
 	def text ; @textwidget.buffer.text ; end
@@ -664,12 +670,12 @@ class OpenFile < Gtk::FileChooserDialog
 	# TODO save last path
 	def initialize(owner, title, opts={})
 		owner ||= Gtk::Window.toplevels.first
-		super(title, owner, Gtk::FileChooser::ACTION_OPEN, nil,
-		[Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_CANCEL], [Gtk::Stock::OPEN, Gtk::Dialog::RESPONSE_ACCEPT])
+		super(title: title, parent: owner, action: :open, buttons:
+			[[Gtk::Stock::CANCEL, :cancel], [Gtk::Stock::OPEN, :accept]])
 		f = opts[:path] || @@currentfolder
 		self.current_folder = f if f
 		signal_connect('response') { |win, id|
-			if id == Gtk::Dialog::RESPONSE_ACCEPT
+			if id == :accept
 				file = filename
 				@@currentfolder = File.dirname(file)
 			end
@@ -718,13 +724,12 @@ class ListWindow < Gtk::Dialog
 	# each item clicked yields the block with the selected iterator, double-click also close the popup
 	def initialize(owner, title, list, h={})
 		owner ||= Gtk::Window.toplevels.first
-		super(title, owner, Gtk::Dialog::DESTROY_WITH_PARENT)
+		super(title: title, parent: owner, flags: :destroy_with_parent)
 
 		cols = list.shift
 
 		treeview = Gtk::TreeView.new
 		treeview.model = Gtk::ListStore.new(*[String]*cols.length)
-		treeview.selection.mode = Gtk::SELECTION_NONE
 		if @color_callback = h[:color_callback]
 			@drawable = DrawableWidget.new	# needed for color()...
 			@drawable.signal_emit('realize')
@@ -732,7 +737,7 @@ class ListWindow < Gtk::Dialog
 
 		cols.each_with_index { |col, i|
 			crt = Gtk::CellRendererText.new
-			tvc = Gtk::TreeViewColumn.new(col, crt)
+			tvc = Gtk::TreeViewColumn.new(col, crt, text: i)
 			tvc.sort_column_id = i
 			tvc.set_cell_data_func(crt) { |_tvc, _crt, model, iter|
 				_crt.text = iter[i]
@@ -753,7 +758,7 @@ class ListWindow < Gtk::Dialog
 			e.each_with_index { |v, i| iter[i] = v.to_s }
 		}
 
-		treeview.model.set_sort_column_id(0)
+		treeview.model.set_sort_column_id(0, :ascending)
 
 		treeview.signal_connect('cursor_changed') { |x|
 			if iter = treeview.selection.selected
@@ -764,14 +769,15 @@ class ListWindow < Gtk::Dialog
 
 		signal_connect('destroy') { h[:ondestroy].call } if h[:ondestroy]
 
-		remove vbox
-		add Gtk::ScrolledWindow.new.add(treeview)
+		#remove child
+		#child.add Gtk::ScrolledWindow.new.add(treeview)
+		content_area.pack_start Gtk::ScrolledWindow.new.add(treeview), expand: true, fill: true, padding: 0
 		toplevel.set_default_size cols.length*240, 400
 
 		show if not h[:noshow]
 
 		# so that the 1st line is not selected by default
-		treeview.selection.mode = Gtk::SELECTION_SINGLE
+		treeview.selection.unselect_all
 	end
 
 	def show
@@ -780,25 +786,30 @@ class ListWindow < Gtk::Dialog
 	end
 end
 
-class Window < Gtk::Window
+class Window < Gtk::ApplicationWindow
 	include WindowPos
 	include Msgbox
 
+	# app must be registered before we can add windows
+	@@gtkapp = Gtk::Application.new('org.ruby.metasm', :non_unique)
+	@@gtkapp.signal_connect('activate') { }  # rm warning
+	@@gtkapp.register
+
 	attr_accessor :menu
 	def initialize(*a, &b)
-		super()
+		super(@@gtkapp)
 
 		signal_connect('destroy') { destroy_window }
 
-		@vbox = Gtk::VBox.new
+		@vbox = Gtk::Box.new(:vertical)
 		add @vbox
 
 		@menu = []
 		@menubar = Gtk::MenuBar.new
 		@accel_group = Gtk::AccelGroup.new
+		add_accel_group(@accel_group)	# shortcut works also with menu closed
 
-		set_gravity Gdk::Window::GRAVITY_STATIC
-		@vbox.add @menubar, 'expand' => false
+		@vbox.add @menubar, expand: false
 		@child = nil
 		s = Gdk::Screen.default
 		set_default_size s.width*3/4, s.height*3/4
@@ -811,22 +822,20 @@ class Window < Gtk::Window
 		build_menu
 		update_menu
 
-		Gtk::Drag.dest_set(self,
-				   Gtk::Drag::DEST_DEFAULT_MOTION |
-				   Gtk::Drag::DEST_DEFAULT_DROP,
-				   [['text/plain', 0, 0], ['text/uri-list', 0, 0]],
-				   Gdk::DragContext::ACTION_COPY | Gdk::DragContext::ACTION_MOVE)
+		drag_dest_set :all, [['text/plain', 0, 0], ['text/uri-list', 0, 0]], :copy
 
 		signal_connect('drag_data_received') { |w, dc, x, y, data, info, time|
 			dc.targets.each { |target|
 				next if target.name != 'text/plain' and target.name != 'text/uri-list'
-				data.data.each_line { |l|
+				d = data.data
+				d = d.pack('C*') if d.kind_of?(::Array) and d[0].kind_of?(::Integer)
+				d.each_line { |l|
 					next if not @child or not @child.respond_to? :dragdropfile
 					l = l.chomp.sub(%r{^file://}, '')
 					protect { @child.dragdropfile(l) }
 				}
 			}
-			Gtk::Drag.finish(dc, true, false, time)
+			dc.finish(success: true, delete: false, time: time)
 		}
 
 		show_all
@@ -840,7 +849,7 @@ class Window < Gtk::Window
 	def widget=(w)
 		@vbox.remove @child if @child
 		@child = w
-		@vbox.add w if w
+		@vbox.pack_start(w, expand: true, fill: true, padding: 0) if w
 		show_all
 	end
 
@@ -867,6 +876,7 @@ class Window < Gtk::Window
 
 	def popupmenu(m, x, y)
 		mh = Gtk::Menu.new
+		mh.set_attach_widget self
 		m.each { |e| create_menu_item(mh, e) }
 		mh.show_all
 		mh.popup(nil, nil, 2, 0) { |_m, _x, _y, _p| [position[0]+x, position[1]+y, true] }
@@ -917,21 +927,21 @@ class Window < Gtk::Window
 		end
 		label = args.shift
 
+		iargs = {}
+		iargs[:label] = label if label
+		iargs[:use_underline] = true if label
 		if stock
-			item = Gtk::ImageMenuItem.new(Gtk::Stock.const_get(stock))
-			begin
-				item.label = label if label
-			rescue
-				# in some version of gtk, no #label=
-				item = Gtk::MenuItem.new(label) if label
-			end
+			iargs[:stock_id] = Gtk::Stock.const_get(stock)
+			iargs[:label] ||= '_' + stock.capitalize # Stock is broken/deprecated
+			iargs[:use_underline] = true
+			item = Gtk::ImageMenuItem.new(iargs)
 		elsif check
-			item = Gtk::CheckMenuItem.new(label)
+			item = Gtk::CheckMenuItem.new(iargs)
 			item.active = args.shift
 		elsif label
-			item = Gtk::MenuItem.new(label)
+			item = Gtk::MenuItem.new(iargs)
 		else
-			item = Gtk::MenuItem.new
+			item = Gtk::SeparatorMenuItem.new
 		end
 		item.set_submenu(submenu) if submenu
 
@@ -939,13 +949,10 @@ class Window < Gtk::Window
 			key = accel[-1]
 			if key == ?>
 				key = accel[/<(.*)>/, 1]
-				key = DrawableWidget::Keyboard_trad.index(case key
-				  when 'enter', 'esc', 'tab', /^f(\d\d?)$/i; key.downcase.to_sym
-				  else ??
-				  end)
+				key = DrawableWidget::Keyboard_trad.index(key.downcase.to_sym) or raise "invalid accel #{accel.inspect}"
 			end
-			key = key.unpack('C')[0] if key.kind_of? String	# yay rb19
-			item.add_accelerator('activate', @accel_group, key, (accel[0] == ?^ ? Gdk::Window::CONTROL_MASK : 0), Gtk::ACCEL_VISIBLE)
+			key = key.unpack('C')[0] if key.kind_of? String
+			item.add_accelerator('activate', @accel_group, key, (accel[0] == ?^ ? :control_mask : 0), :visible)
 		end
 		if action
 			a = action
@@ -965,11 +972,12 @@ end
 class ToolWindow < Gtk::Dialog
 	include WindowPos
 
-	def initialize(parent=nil, *a, &b)
-		super('toolwin', parent, Gtk::Dialog::DESTROY_WITH_PARENT)
-		set_events Gdk::Event::ALL_EVENTS_MASK
+	def initialize(owner=nil, *a, &b)
+		owner ||= Gtk::Window.toplevels.first
+		super(parent: owner, flags: :destroy_with_parent, message: 'toolwin')
+		set_events :all_events_mask
 		set_can_focus true
-		@child = vbox
+		@child = content_area
 		initialize_window(*a, &b)
 		show_all
 	end

@@ -3,10 +3,10 @@ backend = ENV['METASM_GUI'] || (
 		'win32'
 	else
 		begin
-			require 'gtk2'
+			require 'gtk3'
 			'gtk'
 		rescue LoadError
-			raise LoadError, 'No GUI ruby binding installed - please install ruby-gtk2'
+			raise LoadError, 'No GUI ruby binding installed - please install ruby-gtk3'
 		end
 	end
 )
