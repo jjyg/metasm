@@ -50,9 +50,14 @@ class AsmOpcodeWidget < DrawableWidget
 
 	def mouse_wheel(dir, x, y)
 		case dir
-		when :up; (height/@font_height/4).times { scrollup }
-		when :down; (height/@font_height/4).times { scrolldown }
+		when :up; move = -4
+		when :down; move = 4
+		when Integer; move = dir
+		else return
 		end
+		(move.to_f.abs/4*height/@font_height/4).round.times {
+			move < 0 ? scrollup : scrolldown
+		}
 	end
 
 	def di_at(addr)

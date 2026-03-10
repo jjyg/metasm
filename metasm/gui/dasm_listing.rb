@@ -82,18 +82,21 @@ class AsmListingWidget < DrawableWidget
 
 	def mouse_wheel(dir, x, y)
 		case dir
-		when :up
+		when :up; move = -4
+		when :down; move = 4
+		when Integer; move = dir
+		else return
+		end
+		if move < 0
 			# TODO handle block start (multiline) / data aggregation (db 100h dup(?), strings..)
 			@wantaddr = @line_address[@caret_y]
-			adjust_startaddr(-1, false)
-			adjust_startaddr(-1, false)
-			adjust_startaddr(-1, false)
+			(-move - 1).times { adjust_startaddr(-1, false) }
 			adjust_startaddr(-1)
-		when :down
+		elsif move > 0
 			# scroll down 4 lines, or more if all the 4 1st lines have the same addr (eg block start)
 			@wantaddr = @line_address[@caret_y]
-			a = @line_address[4..-1].find { |v| v != @line_address[0] } if @line_address[4]
-			@startaddr = a || (@startaddr + 4)
+			a = @line_address[move..-1].find { |v| v != @line_address[0] } if @line_address[move]
+			@startaddr = a || (@startaddr + move)
 			adjust_startaddr
 		end
 	end

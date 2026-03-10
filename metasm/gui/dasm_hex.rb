@@ -108,7 +108,13 @@ class HexWidget < DrawableWidget
 	end
 
 	def mouse_wheel(dir, x, y)
-		off = height.to_i/@font_height/4*@line_size
+		case dir
+		when :up; move = -4
+		when :down; move = 4
+		when Integer; move = dir
+		else return
+		end
+		off = (move.to_f/4*height/@font_height/4*@line_size).round
 		case dir
 		when :up; @view_addr -= off
 		when :down; @view_addr += off

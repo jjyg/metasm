@@ -44,20 +44,26 @@ class CStructWidget < DrawableWidget
 
 	def mouse_wheel(dir, x, y)
 		case dir
-		when :up
+		when :up; move = -4
+		when :down; move = 4
+		when Integer; move = dir
+		else return
+		end
+		if move < 0
 			if @caret_y > 0
-				@view_y -= 4
+				@view_y -= dir
 				@view_y = 0 if @view_y < 0
-				@caret_y -= 4
+				@caret_y -= dir
 				@caret_y = 0 if @caret_y < 0
+				redraw
 			end
-		when :down
+		elsif move > 0
 			if @caret_y < @line_text.length - 1
-				@view_y += 4
-				@caret_y += 4
+				@view_y -= dir
+				@caret_y -= dir
+				redraw
 			end
 		end
-		redraw
 	end
 
 	def paint

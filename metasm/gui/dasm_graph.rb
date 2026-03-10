@@ -867,6 +867,12 @@ class GraphViewWidget < DrawableWidget
 				@curcontext.view_x += (x / oldzoom - x / @zoom)
 				@curcontext.view_y += (y / oldzoom - y / @zoom)
 			end
+		when Integer
+			oldzoom = @zoom
+			@zoom *= 1.0 + dir*0.02
+			@zoom = 1.0 if (@zoom-1.0).abs < 0.05
+			@curcontext.view_x += (x / oldzoom - x / @zoom)
+			@curcontext.view_y += (y / oldzoom - y / @zoom)
 		end
 		redraw
 	end
@@ -875,6 +881,7 @@ class GraphViewWidget < DrawableWidget
 		case dir
 		when :up; @curcontext.view_y -= height/4 / @zoom
 		when :down; @curcontext.view_y += height/4 / @zoom
+		when Integer; @curcontext.view_y += dir*height/4 / @zoom
 		end
 		redraw
 	end

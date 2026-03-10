@@ -48,6 +48,7 @@ class CoverageWidget < DrawableWidget
 		case dir
 		when :up
 		when :down
+		when Integer
 		end
 	end
 

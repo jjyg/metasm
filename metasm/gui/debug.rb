@@ -562,6 +562,7 @@ class DbgConsoleWidget < DrawableWidget
 		case dir
 		when :up; @log_offset += 3
 		when :down; @log_offset -= 3
+		when Integer; @log_offset -= dir
 		end
 		redraw
 	end
