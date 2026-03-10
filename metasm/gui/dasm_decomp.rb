@@ -62,12 +62,10 @@ class CdecompListingWidget < DrawableWidget
 				@caret_y += 4
 			end
 		when Integer
-			if dir > 0 and @caret_y < @line_text.length-1
+			if (dir > 0 and @caret_y < @line_text.length-1) or
+			   (dir < 0 and @caret_y > 0)
 				@view_y += dir
 				@caret_y += dir
-			elsif dir < 0 and @caret_y > 0
-				@view_y -= dir
-				@caret_y -= dir
 				@caret_y = 0 if @caret_y < 0
 			end
 		end
