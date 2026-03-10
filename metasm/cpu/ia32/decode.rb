@@ -937,6 +937,8 @@ class Ia32
 			# yay !
 			# include the symbolic dest for backtrace stuff
 			puts "found jmptable for #{Expression[di.address]} #{di.instruction} (#{index_max+1} entries)" if $VERBOSE
+			# limit in case we get very large range
+			index_max = 16384 if index_max > 16384
 			# TODO add labels / tables / xrefs etc
 			[Expression[arg0]] + (0..index_max).map { |i| expr.bind(index => i) }
 		end
